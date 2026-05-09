@@ -2,7 +2,7 @@ import type { FileChange } from '@craft-agent/ui'
 import {
   categorizeNovelPath,
   type WritingFileCategory,
-} from '@craft-agent/shared/writing'
+} from '@craft-agent/shared/writing/file-categories'
 import type { FileSearchResult } from '@craft-agent/shared/protocol'
 
 export type NovelWorkspaceTab =
@@ -146,4 +146,18 @@ export function mapSearchResultsToNovelWorkspaceFiles(results: FileSearchResult[
       path: result.path,
       relativePath: result.relativePath,
     }))
+}
+
+export function detectNovelProjectFromSearchResults(results: FileSearchResult[]): boolean {
+  if (results.some((result) => result.relativePath === 'craft-writing.json' && result.type === 'file')) {
+    return true
+  }
+
+  const rootDirectories = new Set(
+    results
+      .filter((result) => result.type === 'directory')
+      .map((result) => result.relativePath.split('/')[0])
+  )
+
+  return ['bible', 'story', 'state', 'timeline'].every((dir) => rootDirectories.has(dir))
 }

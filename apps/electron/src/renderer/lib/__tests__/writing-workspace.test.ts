@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import type { FileChange } from '@craft-agent/ui'
 import {
   buildNovelWorkspaceTree,
+  detectNovelProjectFromSearchResults,
   mapSearchResultsToNovelWorkspaceFiles,
   groupNovelFileChanges,
   selectDefaultNovelTab,
@@ -81,6 +82,28 @@ describe('writing workspace helpers', () => {
     expect(files).toEqual([
       { path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md' },
     ])
+  })
+
+  it('detects a novel project from a manifest search result', () => {
+    expect(detectNovelProjectFromSearchResults([
+      { name: 'craft-writing.json', path: '/novel/craft-writing.json', relativePath: 'craft-writing.json', type: 'file' },
+    ])).toBe(true)
+  })
+
+  it('detects a Claude-Book-compatible novel directory structure from search results', () => {
+    expect(detectNovelProjectFromSearchResults([
+      { name: 'bible', path: '/novel/bible', relativePath: 'bible', type: 'directory' },
+      { name: 'story', path: '/novel/story', relativePath: 'story', type: 'directory' },
+      { name: 'state', path: '/novel/state', relativePath: 'state', type: 'directory' },
+      { name: 'timeline', path: '/novel/timeline', relativePath: 'timeline', type: 'directory' },
+    ])).toBe(true)
+  })
+
+  it('does not detect partial writing-like structures as a novel project', () => {
+    expect(detectNovelProjectFromSearchResults([
+      { name: 'story', path: '/repo/story', relativePath: 'story', type: 'directory' },
+      { name: 'README.md', path: '/repo/README.md', relativePath: 'README.md', type: 'file' },
+    ])).toBe(false)
   })
 })
 

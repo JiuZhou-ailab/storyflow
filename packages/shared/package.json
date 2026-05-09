@@ -33,6 +33,7 @@
     "./skills": "./src/skills/index.ts",
     "./workspaces": "./src/workspaces/index.ts",
     "./writing": "./src/writing/index.ts",
+    "./writing/file-categories": "./src/writing/file-categories.ts",
     "./utils": "./src/utils/index.ts",
     "./utils/toolNames": "./src/utils/toolNames.ts",
     "./utils/logo": "./src/utils/logo.ts",

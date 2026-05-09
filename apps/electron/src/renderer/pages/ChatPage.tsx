@@ -25,11 +25,10 @@ import { rendererPerf } from '@/lib/perf'
 import { routes } from '@/lib/navigate'
 import { coerceInputText } from '@/lib/input-text'
 import { collectFileChangesFromActivities } from '@/lib/file-changes'
-import { mapSearchResultsToNovelWorkspaceFiles } from '@/lib/writing-workspace'
+import { detectNovelProjectFromSearchResults, mapSearchResultsToNovelWorkspaceFiles } from '@/lib/writing-workspace'
 import { deriveSessionMessagesLoadState, formatSessionLoadFailure } from '@/lib/session-load'
 import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, loadedSessionsAtom, sessionMetaMapAtom } from '@/atoms/sessions'
 import { getSessionTitle } from '@/utils/session'
-import { detectWritingProject } from '@craft-agent/shared/writing'
 import { groupMessagesByTurn } from '@craft-agent/ui'
 import type { FileChange } from '@craft-agent/ui'
 // Model resolution: connection.defaultModel (no hardcoded defaults)
@@ -326,15 +325,12 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
   // Working directory for this session
   const workingDirectory = session?.workingDirectory
-  const writingProject = React.useMemo(
-    () => workingDirectory ? detectWritingProject(workingDirectory) : null,
-    [workingDirectory]
-  )
-  const isNovelWritingProject = writingProject?.type === 'novel'
+  const [isNovelWritingProject, setIsNovelWritingProject] = React.useState(false)
   const [novelWorkspaceFiles, setNovelWorkspaceFiles] = React.useState<import('@/lib/writing-workspace').NovelWorkspaceFile[]>([])
 
   React.useEffect(() => {
-    if (!isNovelWritingProject || !workingDirectory) {
+    if (!workingDirectory) {
+      setIsNovelWritingProject(false)
       setNovelWorkspaceFiles([])
       return
     }
@@ -342,16 +338,22 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     let cancelled = false
     window.electronAPI.searchFiles(workingDirectory, '')
       .then((results) => {
-        if (!cancelled) setNovelWorkspaceFiles(mapSearchResultsToNovelWorkspaceFiles(results))
+        if (!cancelled) {
+          setIsNovelWritingProject(detectNovelProjectFromSearchResults(results))
+          setNovelWorkspaceFiles(mapSearchResultsToNovelWorkspaceFiles(results))
+        }
       })
       .catch(() => {
-        if (!cancelled) setNovelWorkspaceFiles([])
+        if (!cancelled) {
+          setIsNovelWritingProject(false)
+          setNovelWorkspaceFiles([])
+        }
       })
 
     return () => {
       cancelled = true
     }
-  }, [isNovelWritingProject, workingDirectory])
+  }, [workingDirectory])
 
   const latestNovelFileChanges = React.useMemo<FileChange[]>(() => {
     if (!session?.messages?.length) return []
