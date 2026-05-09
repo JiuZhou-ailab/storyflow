@@ -25,6 +25,7 @@ import { getDefaultLabelConfig, saveLabelConfig } from '../labels/storage.ts';
 import { loadConfigDefaults } from '../config/storage.ts';
 import { parsePermissionMode, PERMISSION_MODE_ORDER } from '../agent/mode-types.ts';
 import { normalizeThinkingLevel } from '../agent/thinking-levels.ts';
+import { createNovelProjectScaffold } from '../writing/novel-template.ts';
 import type {
   WorkspaceConfig,
   CreateWorkspaceInput,
@@ -343,6 +344,25 @@ export function createWorkspaceAtPath(
   // Initialize plugin manifest for SDK integration (enables skills, commands, agents)
   ensurePluginManifest(rootPath, name);
 
+  return config;
+}
+
+/**
+ * Create a workspace folder structure and seed it as a novel writing project.
+ * Existing generic workspace behavior remains unchanged; callers must opt in.
+ *
+ * @param rootPath - Absolute path where workspace folder will be created
+ * @param name - Display name for the workspace and novel title
+ * @param defaults - Optional default settings for new sessions
+ * @returns The created WorkspaceConfig
+ */
+export function createNovelWorkspaceAtPath(
+  rootPath: string,
+  name: string,
+  defaults?: WorkspaceConfig['defaults']
+): WorkspaceConfig {
+  const config = createWorkspaceAtPath(rootPath, name, defaults);
+  createNovelProjectScaffold(rootPath, { title: name });
   return config;
 }
 

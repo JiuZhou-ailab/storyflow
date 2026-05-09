@@ -31,6 +31,7 @@ export {
   generateSlug,
   generateUniqueWorkspacePath,
   createWorkspaceAtPath,
+  createNovelWorkspaceAtPath,
   deleteWorkspaceFolder,
   isValidWorkspace,
   renameWorkspaceFolder,
