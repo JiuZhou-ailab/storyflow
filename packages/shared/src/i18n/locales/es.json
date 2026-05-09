@@ -1415,5 +1415,18 @@
   "workspace.selectWorkspaceDesc": "Elige un Workspace en este servidor o crea uno nuevo.",
   "workspace.selectWorkspacePlaceholder": "Selecciona un Workspace...",
   "workspace.serverAuthToken": "Token de autenticación del servidor",
-  "workspace.underDefaultFolder": "bajo la carpeta .craft-agent"
+  "workspace.underDefaultFolder": "bajo la carpeta .craft-agent",
+  "writing.chat": "Chat",
+  "writing.emptySection": "Sección vacía",
+  "writing.generalWorkspace": "Workspace general",
+  "writing.novelWorkspace": "Workspace de novela",
+  "writing.openChat": "Abrir chat",
+  "writing.tabs.changes": "Cambios",
+  "writing.tabs.characters": "Personajes",
+  "writing.tabs.locations": "Lugares",
+  "writing.tabs.manuscript": "Manuscrito",
+  "writing.tabs.outline": "Esquema",
+  "writing.tabs.state": "Estado",
+  "writing.tabs.timeline": "Cronología",
+  "writing.workspace": "Workspace de escritura"
 }

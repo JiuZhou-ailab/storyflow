@@ -1415,5 +1415,18 @@
   "workspace.selectWorkspaceDesc": "Válassz egy munkaterületet ezen a szerveren, vagy hozz létre újat.",
   "workspace.selectWorkspacePlaceholder": "Válassz munkaterületet...",
   "workspace.serverAuthToken": "Szerver hitelesítési token",
-  "workspace.underDefaultFolder": "a .craft-agent mappában"
+  "workspace.underDefaultFolder": "a .craft-agent mappában",
+  "writing.chat": "Csevegés",
+  "writing.emptySection": "Üres szakasz",
+  "writing.generalWorkspace": "Általános munkaterület",
+  "writing.novelWorkspace": "Regényíró munkaterület",
+  "writing.openChat": "Csevegés megnyitása",
+  "writing.tabs.changes": "Változások",
+  "writing.tabs.characters": "Szereplők",
+  "writing.tabs.locations": "Helyszínek",
+  "writing.tabs.manuscript": "Kézirat",
+  "writing.tabs.outline": "Vázlat",
+  "writing.tabs.state": "Állapot",
+  "writing.tabs.timeline": "Idővonal",
+  "writing.workspace": "Írói munkaterület"
 }

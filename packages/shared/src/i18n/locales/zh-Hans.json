@@ -1415,5 +1415,18 @@
   "workspace.selectWorkspaceDesc": "选择此服务器上的 Workspace 或创建新的。",
   "workspace.selectWorkspacePlaceholder": "选择 Workspace...",
   "workspace.serverAuthToken": "服务器认证令牌",
-  "workspace.underDefaultFolder": ".craft-agent 文件夹下"
+  "workspace.underDefaultFolder": ".craft-agent 文件夹下",
+  "writing.chat": "聊天",
+  "writing.emptySection": "空章节",
+  "writing.generalWorkspace": "通用工作区",
+  "writing.novelWorkspace": "小说工作区",
+  "writing.openChat": "打开聊天",
+  "writing.tabs.changes": "变更",
+  "writing.tabs.characters": "角色",
+  "writing.tabs.locations": "地点",
+  "writing.tabs.manuscript": "正文",
+  "writing.tabs.outline": "大纲",
+  "writing.tabs.state": "状态",
+  "writing.tabs.timeline": "时间线",
+  "writing.workspace": "写作工作区"
 }

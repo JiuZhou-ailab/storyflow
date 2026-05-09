@@ -1415,5 +1415,18 @@
   "workspace.selectWorkspaceDesc": "このサーバー上のWorkspaceを選択するか、新規作成してください。",
   "workspace.selectWorkspacePlaceholder": "Workspaceを選択...",
   "workspace.serverAuthToken": "サーバー認証トークン",
-  "workspace.underDefaultFolder": ".craft-agentフォルダ内"
+  "workspace.underDefaultFolder": ".craft-agentフォルダ内",
+  "writing.chat": "チャット",
+  "writing.emptySection": "空のセクション",
+  "writing.generalWorkspace": "汎用ワークスペース",
+  "writing.novelWorkspace": "小説ワークスペース",
+  "writing.openChat": "チャットを開く",
+  "writing.tabs.changes": "変更",
+  "writing.tabs.characters": "登場人物",
+  "writing.tabs.locations": "場所",
+  "writing.tabs.manuscript": "本文",
+  "writing.tabs.outline": "アウトライン",
+  "writing.tabs.state": "状態",
+  "writing.tabs.timeline": "タイムライン",
+  "writing.workspace": "執筆ワークスペース"
 }
