@@ -1,3 +1,7 @@
+// input: app configuration, workspace metadata, and prompt profile options
+// output: system prompt strings for Craft Agent runtime contexts
+// pos: central prompt composition module for agent sessions
+
 import { formatPreferencesForPrompt, getCoAuthorPreference } from '../config/preferences.ts';
 import { getBrowserToolEnabled } from '../config/storage.ts';
 import { debug } from '../utils/debug.ts';
@@ -297,8 +301,9 @@ export interface SystemPromptOptions {
  * System prompt preset types for different agent contexts.
  * - 'default': Full Craft Agent system prompt
  * - 'mini': Focused prompt for quick configuration edits
+ * - 'novel': Full Craft Agent prompt plus novel writing workspace rules
  */
-export type SystemPromptPreset = 'default' | 'mini';
+export type SystemPromptPreset = 'default' | 'mini' | 'novel';
 
 /**
  * Get a focused system prompt for mini agents (quick edit tasks).
@@ -327,6 +332,26 @@ ${workspaceContext}
 ## Available Tools
 Use Read, Edit, Write tools for file operations.
 Use config_validate to verify changes match the expected schema.
+`;
+}
+
+/**
+ * Get additional guidance for novel writing workspaces.
+ */
+function getNovelWritingSystemPrompt(): string {
+  return `
+
+## Novel Writing Workspace
+
+Treat novel projects as long-form creative work where manuscript fidelity and continuity matter.
+
+- preserve manuscript prose: Do not rewrite, summarize, normalize, or reorganize draft text unless the user explicitly asks for that prose change.
+- Treat the bible as canon for characters, locations, world rules, terminology, voice, and other durable story facts.
+- Treat story files as manuscript or planning material based on their location and metadata; do not collapse drafting and planning concerns into one category.
+- Treat state and timeline files as continuity records. Keep them consistent with manuscript events and update them when drafting changes continuity.
+- Before drafting or revising, read the relevant bible, outline, current state, and timeline files so new prose fits canon and sequence.
+- Group changes by manuscript, outline, characters, locations, state, timeline, and working notes so creative text, planning, and continuity records stay easy to review.
+- prefer project and workspace skills for novel-specific workflows before inventing ad hoc processes.
 `;
 }
 
@@ -373,7 +398,8 @@ export function getSystemPrompt(
   // to enable prompt caching. The system prompt stays static and cacheable.
   // Safe Mode context is also in user messages for the same reason.
   const basePrompt = getCraftAssistantPrompt(workspaceRootPath, backendName, resolvedIncludeCoAuthoredBy);
-  const fullPrompt = `${basePrompt}${preferences}${debugContext}${projectContextFiles}`;
+  const presetPrompt = preset === 'novel' ? getNovelWritingSystemPrompt() : '';
+  const fullPrompt = `${basePrompt}${presetPrompt}${preferences}${debugContext}${projectContextFiles}`;
 
   debug('[getSystemPrompt] full prompt length:', fullPrompt.length);
 
