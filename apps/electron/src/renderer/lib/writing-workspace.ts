@@ -19,12 +19,24 @@ export interface NovelWorkspaceFile {
   modifiedAt?: number
 }
 
+export type NovelWorkspaceFileSectionId =
+  | 'manuscript'
+  | 'outline'
+  | 'characters'
+  | 'locations'
+  | 'style'
+  | 'state'
+  | 'timeline'
+  | 'analysis'
+  | 'work'
+  | 'other'
+
 export interface NovelWorkspaceSection {
-  id: NovelWorkspaceTab | 'style' | 'analysis' | 'work' | 'other'
+  id: NovelWorkspaceFileSectionId
   files: NovelWorkspaceFile[]
 }
 
-export type NovelWorkspaceTree = Record<NovelWorkspaceSection['id'], NovelWorkspaceSection>
+export type NovelWorkspaceTree = Record<NovelWorkspaceFileSectionId, NovelWorkspaceSection>
 
 export interface NovelSectionSummary {
   count: number
@@ -33,23 +45,19 @@ export interface NovelSectionSummary {
 
 export type NovelFileChangeGroups = Record<WritingFileCategory, FileChange[]>
 
-const SECTION_IDS: NovelWorkspaceSection['id'][] = [
-  'manuscript',
-  'outline',
-  'characters',
-  'locations',
-  'style',
-  'state',
-  'timeline',
-  'analysis',
-  'work',
-  'other',
-]
-
 function createEmptyTree(): NovelWorkspaceTree {
-  return Object.fromEntries(
-    SECTION_IDS.map((id) => [id, { id, files: [] }])
-  ) as NovelWorkspaceTree
+  return {
+    manuscript: { id: 'manuscript', files: [] },
+    outline: { id: 'outline', files: [] },
+    characters: { id: 'characters', files: [] },
+    locations: { id: 'locations', files: [] },
+    style: { id: 'style', files: [] },
+    state: { id: 'state', files: [] },
+    timeline: { id: 'timeline', files: [] },
+    analysis: { id: 'analysis', files: [] },
+    work: { id: 'work', files: [] },
+    other: { id: 'other', files: [] },
+  }
 }
 
 function createEmptyChangeGroups(): NovelFileChangeGroups {
