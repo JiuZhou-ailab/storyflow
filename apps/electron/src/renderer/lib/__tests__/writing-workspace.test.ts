@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import type { FileChange } from '@craft-agent/ui'
 import {
   buildNovelWorkspaceTree,
+  mapSearchResultsToNovelWorkspaceFiles,
   groupNovelFileChanges,
   selectDefaultNovelTab,
   summarizeNovelSection,
@@ -68,6 +69,18 @@ describe('writing workspace helpers', () => {
     expect(grouped.manuscript.map(item => item.filePath)).toEqual(['/novel/story/chapters/chapter-02.md'])
     expect(grouped.timeline.map(item => item.filePath)).toEqual(['/novel/timeline/current-chapter.md'])
     expect(grouped.other.map(item => item.filePath)).toEqual(['/novel/README.md'])
+  })
+
+  it('maps file search results to novel workspace files and drops unknown files', () => {
+    const files = mapSearchResultsToNovelWorkspaceFiles([
+      { name: 'chapter-01.md', path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md', type: 'file' },
+      { name: 'README.md', path: '/novel/README.md', relativePath: 'README.md', type: 'file' },
+      { name: 'characters', path: '/novel/bible/characters', relativePath: 'bible/characters', type: 'directory' },
+    ])
+
+    expect(files).toEqual([
+      { path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md' },
+    ])
   })
 })
 

@@ -3,6 +3,7 @@ import {
   categorizeNovelPath,
   type WritingFileCategory,
 } from '@craft-agent/shared/writing'
+import type { FileSearchResult } from '@craft-agent/shared/protocol'
 
 export type NovelWorkspaceTab =
   | 'manuscript'
@@ -135,4 +136,14 @@ export function groupNovelFileChanges(changes: FileChange[], rootPath = ''): Nov
   }
 
   return groups
+}
+
+export function mapSearchResultsToNovelWorkspaceFiles(results: FileSearchResult[]): NovelWorkspaceFile[] {
+  return results
+    .filter((result) => result.type === 'file')
+    .filter((result) => categorizeNovelPath(result.relativePath) !== 'other')
+    .map((result) => ({
+      path: result.path,
+      relativePath: result.relativePath,
+    }))
 }
