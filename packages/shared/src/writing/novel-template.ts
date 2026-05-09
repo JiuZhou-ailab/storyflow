@@ -5,6 +5,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { getClaudeBookNotice } from "./claude-book-notice.ts";
+import { getBundledNovelSkillFiles } from "./novel-skills.ts";
 import type { WritingProjectManifest } from "./types.ts";
 
 export interface CreateNovelProjectScaffoldOptions {
@@ -142,4 +143,8 @@ export function createNovelProjectScaffold(
 `);
   writeFileIfMissing(join(rootPath, "timeline/current-chapter.md"), `# Current Chapter Timeline
 `);
+
+  for (const file of getBundledNovelSkillFiles()) {
+    writeFileIfMissing(join(rootPath, "skills", file.relativePath), file.content);
+  }
 }
