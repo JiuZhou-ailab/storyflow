@@ -7,6 +7,12 @@ import { perf } from '@craft-agent/shared/utils'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { isValidWorkspaceRootPath } from '../../utils/path-validation'
+import {
+  ensureWorkspaceRootForProject,
+  normalizeCreateWorkspaceOptions,
+  type CreateWorkspaceOptions,
+  type WorkspaceProjectType,
+} from './workspace-creation'
 
 export const CORE_HANDLED_CHANNELS = [
   RPC_CHANNELS.workspaces.GET,
@@ -44,17 +50,26 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
   })
 
   // Create a new workspace at a folder path (Obsidian-style: folder IS the workspace)
-  server.handle(RPC_CHANNELS.workspaces.CREATE, async (_ctx, folderPath: string, name: string, remoteServer?: { url: string; token: string; remoteWorkspaceId: string }) => {
+  server.handle(RPC_CHANNELS.workspaces.CREATE, async (
+    _ctx,
+    folderPath: string,
+    name: string,
+    input?: CreateWorkspaceOptions | { url: string; token: string; remoteWorkspaceId: string },
+    projectType?: WorkspaceProjectType,
+  ) => {
     const rootPath = folderPath.trim()
     const validation = isValidWorkspaceRootPath(rootPath)
     if (!validation.valid) {
       throw new Error(validation.reason!)
     }
 
-    const workspace = addWorkspace({ name, rootPath, ...(remoteServer && { remoteServer }) })
+    const options = normalizeCreateWorkspaceOptions(input, projectType)
+    ensureWorkspaceRootForProject(rootPath, name, options.projectType)
+
+    const workspace = addWorkspace({ name, rootPath, ...(options.remoteServer && { remoteServer: options.remoteServer }) })
     // Make it active
     setActiveWorkspace(workspace.id)
-    deps.platform.logger.info(`Created workspace "${name}" at ${rootPath}${remoteServer ? ` (remote: ${remoteServer.url})` : ''}`)
+    deps.platform.logger.info(`Created workspace "${name}" at ${rootPath}${options.remoteServer ? ` (remote: ${options.remoteServer.url})` : ''}`)
     return workspace
   })
 

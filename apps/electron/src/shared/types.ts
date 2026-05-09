@@ -15,6 +15,7 @@ import type {
   TokenUsage as CoreTokenUsage,
   WorkspaceInfo as CoreWorkspaceInfo,
   Workspace as CoreWorkspace,
+  RemoteServerConfig as CoreRemoteServerConfig,
   SessionMetadata as CoreSessionMetadata,
   StoredAttachment as CoreStoredAttachment,
   ContentBadge,
@@ -39,6 +40,7 @@ export type {
   CoreTokenUsage as TokenUsage,
   CoreWorkspaceInfo as WorkspaceInfo,
   CoreWorkspace as Workspace,
+  CoreRemoteServerConfig as RemoteServerConfig,
   CoreSessionMetadata as SessionMetadata,
   CoreStoredAttachment as StoredAttachment,
   ContentBadge,
@@ -70,6 +72,13 @@ export type { ExportResourcesOptions, ExportResult, ResourceImportMode, Resource
 // LLM connection types
 import type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings } from '@craft-agent/shared/config';
 export type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings };
+
+export type WorkspaceProjectType = 'general' | 'novel';
+
+export interface CreateWorkspaceOptions {
+  remoteServer?: CoreRemoteServerConfig;
+  projectType?: WorkspaceProjectType;
+}
 
 // =============================================================================
 // GUI-only types (not used by server/handler code)
@@ -261,7 +270,7 @@ export interface ElectronAPI {
 
   // Workspace management
   getWorkspaces(): Promise<Workspace[]>
-  createWorkspace(folderPath: string, name: string, remoteServer?: { url: string; token: string; remoteWorkspaceId: string }): Promise<Workspace>
+  createWorkspace(folderPath: string, name: string, options?: CreateWorkspaceOptions): Promise<Workspace>
   checkWorkspaceSlug(slug: string): Promise<{ exists: boolean; path: string }>
   updateWorkspaceRemoteServer(workspaceId: string, remoteServer: { url: string; token: string; remoteWorkspaceId: string }): Promise<{ success: boolean }>
 

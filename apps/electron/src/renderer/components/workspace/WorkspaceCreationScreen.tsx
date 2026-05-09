@@ -10,7 +10,7 @@ import { AddWorkspaceStep_Choice } from "./AddWorkspaceStep_Choice"
 import { AddWorkspaceStep_CreateNew } from "./AddWorkspaceStep_CreateNew"
 import { AddWorkspaceStep_OpenFolder } from "./AddWorkspaceStep_OpenFolder"
 import { AddWorkspaceStep_ConnectRemote } from "./AddWorkspaceStep_ConnectRemote"
-import type { Workspace } from "../../../shared/types"
+import type { RemoteServerConfig, Workspace, WorkspaceProjectType } from "../../../shared/types"
 import { toast } from "sonner"
 
 type CreationStep = 'choice' | 'create' | 'open' | 'remote'
@@ -66,10 +66,18 @@ export function WorkspaceCreationScreen({
     }
   }, [isCreating, onClose])
 
-  const handleCreateWorkspace = useCallback(async (folderPath: string, name: string, remoteServer?: { url: string; token: string; remoteWorkspaceId: string }) => {
+  const handleCreateWorkspace = useCallback(async (
+    folderPath: string,
+    name: string,
+    remoteServer?: RemoteServerConfig,
+    projectType: WorkspaceProjectType = 'general',
+  ) => {
     setIsCreating(true)
     try {
-      const workspace = await window.electronAPI.createWorkspace(folderPath, name, remoteServer)
+      const workspace = await window.electronAPI.createWorkspace(folderPath, name, {
+        ...(remoteServer && { remoteServer }),
+        projectType,
+      })
       onWorkspaceCreated(workspace)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
