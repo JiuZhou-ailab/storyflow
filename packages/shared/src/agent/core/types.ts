@@ -9,6 +9,7 @@
 import type { LoadedSource } from '../../sources/types.ts';
 import type { Workspace } from '../../config/storage.ts';
 import type { SessionConfig } from '../../sessions/storage.ts';
+import type { SystemPromptPreset } from '../../prompts/system.ts';
 
 // Re-export common types from mode-types for convenience
 // These are the types needed by permission evaluation
@@ -90,8 +91,8 @@ export interface PromptBuilderConfig {
     enabled: boolean;
     logFilePath?: string;
   };
-  /** System prompt preset ('default' | 'mini' | custom string) */
-  systemPromptPreset?: 'default' | 'mini' | string;
+  /** System prompt preset ('default' | 'mini' | 'novel' | custom string) */
+  systemPromptPreset?: SystemPromptPreset | string;
   /** Whether running in headless mode */
   isHeadless?: boolean;
 }

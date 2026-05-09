@@ -1,6 +1,7 @@
 // Export ClaudeAgent (renamed from CraftAgent) and backward-compatible aliases
 export * from './claude-agent.ts';
 export * from './conversation-summary.ts';
+export * from './system-prompt-preset.ts';
 
 // Export PiAgent for direct use
 export { PiAgent, PiBackend } from './pi-agent.ts';

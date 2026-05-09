@@ -22,6 +22,7 @@ import type { McpClientPool } from '../../mcp/mcp-pool.ts';
 import type { Workspace } from '../../config/storage.ts';
 import type { SessionConfig as Session } from '../../sessions/storage.ts';
 import type { SourceManager } from '../core/source-manager.ts';
+import type { SystemPromptPreset } from '../../prompts/system.ts';
 
 // Import AbortReason and RecoveryMessage from core module (single source of truth)
 import { AbortReason, type RecoveryMessage } from '../core/index.ts';
@@ -194,8 +195,8 @@ export interface CoreBackendConfig {
     logFilePath?: string;
   };
 
-  /** System prompt preset ('default' | 'mini' | custom string) */
-  systemPromptPreset?: 'default' | 'mini' | string;
+  /** System prompt preset ('default' | 'mini' | 'novel' | custom string) */
+  systemPromptPreset?: SystemPromptPreset | string;
 
   /** Workspace-level automation system for user-defined automations (automations.json) */
   automationSystem?: AutomationSystem;

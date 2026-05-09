@@ -62,6 +62,7 @@ import type { AgentEvent as AutomationAgentEvent, SdkAutomationInput } from '../
 import { getSessionPlansPath, getSessionDataPath, getSessionPath } from '../sessions/storage.ts';
 import { getMiniAgentSystemPrompt } from '../prompts/system.ts';
 import { buildTitlePrompt, buildRegenerateTitlePrompt, validateTitle } from '../utils/title-generator.ts';
+import { resolveSystemPromptPresetForWorkingDirectory } from './system-prompt-preset.ts';
 
 // Skill extraction for Codex/Copilot backends (Claude uses native SDK Skill tool)
 import { parseMentions, resolveSkillMentions, resolveSourceMentions, resolveFileMentions } from '../mentions/index.ts';
@@ -258,6 +259,7 @@ export abstract class BaseAgent implements AgentBackend {
     this.config = config;
     // Use session's workingDirectory if set (user-changeable), fallback to workspace root
     this.workingDirectory = config.session?.workingDirectory ?? config.workspace.rootPath ?? process.cwd();
+    this.config.systemPromptPreset ??= resolveSystemPromptPresetForWorkingDirectory(config.session?.workingDirectory);
     this._sessionId = config.session?.id || `agent-${Date.now()}`;
     this._model = config.model || defaultModel;
     this._thinkingLevel = normalizeThinkingLevel(config.thinkingLevel) ?? DEFAULT_THINKING_LEVEL;

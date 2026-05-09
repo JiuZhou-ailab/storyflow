@@ -7,7 +7,7 @@ type ContentBlockParam =
   | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
   | { type: 'document'; source: { type: 'base64'; media_type: string; data: string } };
 import { z } from 'zod';
-import { getSystemPrompt } from '../prompts/system.ts';
+import { getSystemPrompt, type SystemPromptPreset } from '../prompts/system.ts';
 import { BaseAgent, type MiniAgentConfig, MINI_AGENT_TOOLS, MINI_AGENT_MCP_KEYS } from './base-agent.ts';
 import type { BackendConfig, PostInitResult, PermissionRequestType, SdkMcpServerConfig } from './backend/types.ts';
 // Plan types are used by UI components; not needed in craft-agent.ts since Safe Mode is user-controlled
@@ -199,8 +199,8 @@ export interface ClaudeAgentConfig {
     enabled: boolean;          // Whether debug mode is active
     logFilePath?: string;      // Path to the log file for querying
   };
-  /** System prompt preset for mini agents ('default' | 'mini' or custom string) */
-  systemPromptPreset?: 'default' | 'mini' | string;
+  /** System prompt preset for agent sessions ('default' | 'mini' | 'novel' or custom string) */
+  systemPromptPreset?: SystemPromptPreset | string;
   /** Workspace-level AutomationSystem instance (shared across all agents in the workspace) */
   automationSystem?: AutomationSystem;
   /**
@@ -987,7 +987,7 @@ export class ClaudeAgent extends BaseAgent {
                 this.config.debugMode,
                 this.workspaceRootPath,
                 this.config.session?.workingDirectory,
-                undefined, // preset
+                this.config.systemPromptPreset,
                 undefined, // backendName
                 this.pinnedIncludeCoAuthoredBy ?? undefined
               ),
