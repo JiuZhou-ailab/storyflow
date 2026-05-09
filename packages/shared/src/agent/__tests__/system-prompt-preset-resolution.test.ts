@@ -46,6 +46,16 @@ function createBackendConfig(overrides: Partial<BackendConfig> = {}): BackendCon
   };
 }
 
+function createSessionConfig(workingDirectory: string) {
+  return {
+    id: "session-1",
+    workspaceRootPath: createTempDir(),
+    workingDirectory,
+    createdAt: 1,
+    lastUsedAt: 1,
+  };
+}
+
 class TestAgent extends BaseAgent {
   protected backendName = "Test";
 
@@ -98,10 +108,7 @@ describe("BaseAgent system prompt preset resolution", () => {
   it("uses the novel preset for full sessions in novel working directories", () => {
     const agent = new TestAgent(
       createBackendConfig({
-        session: {
-          id: "session-1",
-          workingDirectory: createNovelProject(),
-        },
+        session: createSessionConfig(createNovelProject()),
       }),
       "claude-test"
     );
@@ -112,10 +119,7 @@ describe("BaseAgent system prompt preset resolution", () => {
   it("keeps explicit mini agent preset unchanged", () => {
     const agent = new TestAgent(
       createBackendConfig({
-        session: {
-          id: "session-1",
-          workingDirectory: createNovelProject(),
-        },
+        session: createSessionConfig(createNovelProject()),
         systemPromptPreset: "mini",
       }),
       "claude-test"
