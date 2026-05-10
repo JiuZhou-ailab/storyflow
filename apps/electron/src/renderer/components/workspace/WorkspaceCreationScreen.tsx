@@ -1,3 +1,7 @@
+// input: Workspace creation steps and workspace connection callbacks
+// output: Full-screen workspace creation flow that calls the typed Electron workspace API
+// pos: Renderer orchestrator for local, existing-folder, and remote workspace setup
+
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { X } from "lucide-react"
@@ -11,6 +15,7 @@ import { AddWorkspaceStep_CreateNew } from "./AddWorkspaceStep_CreateNew"
 import { AddWorkspaceStep_OpenFolder } from "./AddWorkspaceStep_OpenFolder"
 import { AddWorkspaceStep_ConnectRemote } from "./AddWorkspaceStep_ConnectRemote"
 import type { RemoteServerConfig, Workspace, WorkspaceProjectType } from "../../../shared/types"
+import type { MethodPackId } from "@craft-agent/shared/writing/method-packs"
 import { toast } from "sonner"
 
 type CreationStep = 'choice' | 'create' | 'open' | 'remote'
@@ -71,12 +76,14 @@ export function WorkspaceCreationScreen({
     name: string,
     remoteServer?: RemoteServerConfig,
     projectType: WorkspaceProjectType = 'general',
+    methodPackId?: MethodPackId,
   ) => {
     setIsCreating(true)
     try {
       const workspace = await window.electronAPI.createWorkspace(folderPath, name, {
         ...(remoteServer && { remoteServer }),
         projectType,
+        ...(methodPackId && { methodPackId }),
       })
       onWorkspaceCreated(workspace)
     } catch (error) {

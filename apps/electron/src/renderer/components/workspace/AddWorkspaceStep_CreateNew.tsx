@@ -1,3 +1,7 @@
+// input: User-entered workspace name, location choice, and workspace creation method
+// output: New workspace creation request with explicit Method Pack intent when needed
+// pos: Renderer step for creating a local workspace from a built-in creation method
+
 import { useState, useEffect, useCallback } from "react"
 import { useTranslation } from "react-i18next"
 import { ArrowLeft } from "lucide-react"
@@ -9,13 +13,25 @@ import { AddWorkspaceContainer, AddWorkspaceStepHeader, AddWorkspaceSecondaryBut
 import { AddWorkspace_RadioOption } from "./AddWorkspace_RadioOption"
 import { useDirectoryPicker } from "@/hooks/useDirectoryPicker"
 import { ServerDirectoryBrowser } from "@/components/ServerDirectoryBrowser"
+import {
+  buildWorkspaceCreationOptions,
+  WORKSPACE_CREATION_METHOD_OPTIONS,
+  type WorkspaceCreationMethodId,
+} from "./workspace-method-options"
+import type { MethodPackId } from "@craft-agent/shared/writing/method-packs"
 import type { WorkspaceProjectType } from "../../../shared/types"
 
 type LocationOption = 'default' | 'custom'
 
 interface AddWorkspaceStep_CreateNewProps {
   onBack: () => void
-  onCreate: (folderPath: string, name: string, remoteServer: undefined, projectType: WorkspaceProjectType) => Promise<void>
+  onCreate: (
+    folderPath: string,
+    name: string,
+    remoteServer: undefined,
+    projectType: WorkspaceProjectType,
+    methodPackId?: MethodPackId,
+  ) => Promise<void>
   isCreating: boolean
 }
 
@@ -33,7 +49,7 @@ export function AddWorkspaceStep_CreateNew({
 }: AddWorkspaceStep_CreateNewProps) {
   const { t } = useTranslation()
   const [name, setName] = useState('')
-  const [projectType, setProjectType] = useState<WorkspaceProjectType>('general')
+  const [selectedMethodId, setSelectedMethodId] = useState<WorkspaceCreationMethodId>('general')
   const [locationOption, setLocationOption] = useState<LocationOption>('default')
   const [customPath, setCustomPath] = useState<string | null>(null)
   const [homeDir, setHomeDir] = useState('')
@@ -95,8 +111,9 @@ export function AddWorkspaceStep_CreateNew({
 
   const handleCreate = useCallback(async () => {
     if (!name.trim() || !finalPath || error) return
-    await onCreate(finalPath, name.trim(), undefined, projectType)
-  }, [name, finalPath, error, onCreate, projectType])
+    const options = buildWorkspaceCreationOptions(selectedMethodId)
+    await onCreate(finalPath, name.trim(), undefined, options.projectType, options.methodPackId)
+  }, [name, finalPath, error, onCreate, selectedMethodId])
 
   const canCreate = name.trim() && finalPath && !error && !isValidating && !isCreating
 
@@ -145,26 +162,20 @@ export function AddWorkspaceStep_CreateNew({
         {/* Workspace type selection */}
         <div className="space-y-3">
           <label className="block text-sm font-medium text-foreground mb-2.5">
-            Workspace type
+            {t("workspace.methodPackLabel")}
           </label>
 
-          <AddWorkspace_RadioOption
-            name="project-type"
-            checked={projectType === 'general'}
-            onChange={() => setProjectType('general')}
-            disabled={isCreating}
-            title="General workspace"
-            subtitle="Start with the standard workspace structure."
-          />
-
-          <AddWorkspace_RadioOption
-            name="project-type"
-            checked={projectType === 'novel'}
-            onChange={() => setProjectType('novel')}
-            disabled={isCreating}
-            title="Novel writing workspace"
-            subtitle="Create a workspace with the novel writing scaffold."
-          />
+          {WORKSPACE_CREATION_METHOD_OPTIONS.map((option) => (
+            <AddWorkspace_RadioOption
+              key={option.id}
+              name="workspace-method"
+              checked={selectedMethodId === option.id}
+              onChange={() => setSelectedMethodId(option.id)}
+              disabled={isCreating}
+              title={t(option.titleKey, { defaultValue: option.fallbackTitle })}
+              subtitle={t(option.subtitleKey, { defaultValue: option.fallbackSubtitle })}
+            />
+          ))}
         </div>
 
         {/* Location selection */}
