@@ -79,9 +79,10 @@ import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
 import { restoreFiles } from '@craft-agent/shared/utils/bundle-files'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { CraftMcpClient, McpClientPool, McpPoolServer } from '@craft-agent/shared/mcp'
-import { type Session, type SessionEvent, type FileAttachment, type SendMessageOptions, type UnreadSummary, type RemoteSessionTransferPayload, type ImportRemoteSessionTransferResult, RPC_CHANNELS, generateMessageId } from '@craft-agent/shared/protocol'
+import { type Session, type SessionEvent, type FileAttachment, type SendMessageOptions, type OneShotLlmRequest, type OneShotLlmResult, type NovelSelectionRewriteRequest, type NovelSelectionRewriteResult, type UnreadSummary, type RemoteSessionTransferPayload, type ImportRemoteSessionTransferResult, RPC_CHANNELS, generateMessageId } from '@craft-agent/shared/protocol'
 import { messageToStored, storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta } from '@craft-agent/core/types'
 import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlAsync, getEmojiIcon, resetSummarizationClient, resolveToolIcon, readFileAttachment, selectSpreadMessages, normalizePath } from '@craft-agent/shared/utils'
+import { buildNovelSelectionRewritePrompt, sanitizeNovelSelectionReplacement } from '@craft-agent/shared/writing'
 import { loadAllSkills, loadSkillBySlug, invalidateSkillsCache, type LoadedSkill } from '@craft-agent/shared/skills'
 import { invalidateContextFileCache } from '@craft-agent/shared/prompts/system'
 import { getToolIconsDir, getMiniModel } from '@craft-agent/shared/config'
@@ -137,6 +138,24 @@ const defaultSessionRuntimeHooks: SessionRuntimeHooks = {
       stack: err.stack,
     })
   },
+}
+
+const ONE_SHOT_LLM_MAX_ATTEMPTS = 2
+
+function isRetryableOneShotLlmError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  const normalized = message.toLowerCase()
+  return (
+    normalized.includes('stream ended before message_stop') ||
+    normalized.includes('econnreset') ||
+    normalized.includes('etimedout') ||
+    normalized.includes('socket hang up') ||
+    normalized.includes('network')
+  )
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 let sessionRuntimeHooks: SessionRuntimeHooks = defaultSessionRuntimeHooks
@@ -5130,6 +5149,48 @@ export class SessionManager implements ISessionManager {
     sessionLog.info(`Deleted session ${sessionId}`)
   }
 
+  async queryOnce(sessionId: string, request: OneShotLlmRequest): Promise<OneShotLlmResult> {
+    const managed = this.sessions.get(sessionId)
+    if (!managed) {
+      throw new Error(`Session ${sessionId} not found`)
+    }
+
+    const agent = await this.getOrCreateAgent(managed)
+    let lastError: unknown
+
+    for (let attempt = 1; attempt <= ONE_SHOT_LLM_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        return await agent.queryLlm(request)
+      } catch (error) {
+        lastError = error
+        if (attempt >= ONE_SHOT_LLM_MAX_ATTEMPTS || !isRetryableOneShotLlmError(error)) {
+          break
+        }
+        sessionLog.warn('[queryOnce] retrying one-shot LLM request after transient failure', {
+          sessionId,
+          attempt,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        await delay(350 * attempt)
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error(String(lastError))
+  }
+
+  async rewriteNovelSelection(sessionId: string, request: NovelSelectionRewriteRequest): Promise<NovelSelectionRewriteResult> {
+    const prompt = buildNovelSelectionRewritePrompt(request)
+    const result = await this.queryOnce(sessionId, {
+      prompt,
+      temperature: 0.2,
+      maxTokens: 4096,
+    })
+
+    return {
+      replacement: sanitizeNovelSelectionReplacement(result.text),
+    }
+  }
+
   async sendMessage(
     sessionId: string,
     message: string,
@@ -5160,6 +5221,17 @@ export class SessionManager implements ISessionManager {
     // Ensure messages are loaded before we try to add new ones
     await this.ensureMessagesLoaded(managed)
 
+    const hideUserMessage = options?.hideUserMessage === true
+    const modelMessage = options?.oneTimeContext?.trim()
+      ? [
+          message,
+          '',
+          '<system-reminder>Additional one-time context follows. It is for this request only and is not durable conversation history.</system-reminder>',
+          '',
+          options.oneTimeContext.trim(),
+        ].join('\n')
+      : message
+
     // If currently processing, behavior depends on the connection's
     // `midStreamBehavior` (resolved via {@link resolveMidStreamBehavior},
     // defaults to provider-appropriate value):
@@ -5180,7 +5252,7 @@ export class SessionManager implements ISessionManager {
       const agent = managed.agent
       let steered = false
       if (behavior === 'steer') {
-        steered = agent?.redirect(message) ?? false
+        steered = agent?.redirect(modelMessage) ?? false
       }
       // For 'queue': skip redirect entirely. The current turn is undisturbed.
 
@@ -5193,8 +5265,7 @@ export class SessionManager implements ISessionManager {
         connectionSlug: connection?.slug,
       })
 
-      // Create user message for UI
-      const userMessage: Message = {
+      const userMessage: Message | undefined = hideUserMessage ? undefined : {
         id: generateMessageId(),
         role: 'user',
         content: message,
@@ -5202,24 +5273,27 @@ export class SessionManager implements ISessionManager {
         attachments: storedAttachments,
         badges: options?.badges,
       }
-      managed.messages.push(userMessage)
 
-      // Emit to UI — 'accepted' iff a steer succeeded; 'queued' otherwise
-      // (covers both queue-direct and queue-after-abort paths).
-      this.sendEvent({
-        type: 'user_message',
-        sessionId,
-        message: userMessage,
-        status: steered ? 'accepted' : 'queued',
-        optimisticMessageId: options?.optimisticMessageId
-      }, managed.workspace.id)
+      if (!hideUserMessage && userMessage) {
+        managed.messages.push(userMessage)
+
+        // Emit to UI — 'accepted' iff a steer succeeded; 'queued' otherwise
+        // (covers both queue-direct and queue-after-abort paths).
+        this.sendEvent({
+          type: 'user_message',
+          sessionId,
+          message: userMessage,
+          status: steered ? 'accepted' : 'queued',
+          optimisticMessageId: options?.optimisticMessageId
+        }, managed.workspace.id)
+      }
 
       if (!steered) {
         // Push for FIFO replay on next onProcessingStopped tick. Same shape
         // for both queue-direct (current turn still running) and
         // queue-after-abort (backend already aborted) — the replay path in
         // processNextQueuedMessage is identical.
-        managed.messageQueue.push({ message, attachments, storedAttachments, options, messageId: userMessage.id, optimisticMessageId: options?.optimisticMessageId })
+        managed.messageQueue.push({ message, attachments, storedAttachments, options, messageId: userMessage?.id, optimisticMessageId: options?.optimisticMessageId })
         managed.wasInterrupted = true
       }
 
@@ -5228,20 +5302,20 @@ export class SessionManager implements ISessionManager {
       // before we tell the renderer "accepted" — `persistSession` only
       // enqueues with a 500ms debounce. (#616 reliability fix.)
       await this.flushSession(managed.id)
-      onAck?.(userMessage.id)
+      onAck?.(userMessage?.id ?? generateMessageId())
       return
     }
 
     // Add user message with stored attachments for persistence
     // Skip if existingMessageId is provided (message was already created when queued)
-    let userMessage: Message
+    let userMessage: Message | undefined
     if (existingMessageId) {
       // Find existing message (already added when queued)
       userMessage = managed.messages.find(m => m.id === existingMessageId)!
       if (!userMessage) {
         throw new Error(`Existing message ${existingMessageId} not found`)
       }
-    } else {
+    } else if (!hideUserMessage) {
       // Create new message
       userMessage = {
         id: generateMessageId(),
@@ -5304,12 +5378,14 @@ export class SessionManager implements ISessionManager {
         // (waits briefly for agent creation if needed)
         this.generateTitle(managed, message)
       }
+    } else {
+      onAck?.(generateMessageId())
     }
 
     // Evaluate auto-label rules against the user message (common path for both
     // fresh and queued messages). Scans regex patterns configured on labels,
     // then merges any new matches into the session's label array.
-    try {
+    if (!hideUserMessage) try {
       const labelTree = listLabels(managed.workspace.rootPath)
       const autoMatches = evaluateAutoLabels(message, labelTree)
 
@@ -5501,9 +5577,9 @@ export class SessionManager implements ISessionManager {
       // Uses <system-reminder> tags so the LLM treats it as transient system guidance
       // rather than part of the user's message content. The original message is stored
       // in session JSONL (line ~3952); this only affects the SDK's in-process context.
-      let effectiveMessage = message
+      let effectiveMessage = modelMessage
       if (managed.wasInterrupted) {
-        effectiveMessage = `${message}\n\n<system-reminder>The previous assistant response was interrupted by the user and may be incomplete. Do not repeat or continue the interrupted response unless asked. Focus on the new message above.</system-reminder>`
+        effectiveMessage = `${modelMessage}\n\n<system-reminder>The previous assistant response was interrupted by the user and may be incomplete. Do not repeat or continue the interrupted response unless asked. Focus on the new message above.</system-reminder>`
         managed.wasInterrupted = false
       }
 

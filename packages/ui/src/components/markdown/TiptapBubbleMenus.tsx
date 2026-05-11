@@ -1,14 +1,23 @@
+// input: TipTap editor selections and optional selection-AI callbacks
+// output: Floating formatting, rich block editing, math editing, and selection-AI menus
+// pos: Shared BubbleMenu layer for Markdown editing surfaces
+
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { BubbleMenu } from '@tiptap/react/menus'
 import type { Editor } from '@tiptap/react'
 import { NodeSelection } from '@tiptap/pm/state'
-import { Bold, Italic, Strikethrough, Code, Sigma } from 'lucide-react'
+import { Bold, Italic, Loader2, SendHorizontal, Strikethrough, Code, Sigma } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { RICH_BLOCK_EDIT_EVENT } from './rich-block-events'
 
 // Custom event name used to signal "open inline math editor"
 const INLINE_MATH_EDIT_EVENT = 'inlineMathEdit'
+
+export interface TiptapSelectionAiRequest {
+  selectedText: string
+  instruction: string
+}
 
 // ============================================================================
 // Bubble menu toolbar button
@@ -29,6 +38,7 @@ function BubbleButton({
     <button
       type="button"
       onClick={onClick}
+      onMouseDown={(event) => event.preventDefault()}
       title={title}
       className={cn(
         'tiptap-bubble-btn',
@@ -44,8 +54,14 @@ function BubbleButton({
 // Text formatting bubble menu — Bold, Italic, Strike, Code
 // ============================================================================
 
+function getSelectedText(editor: Editor): string {
+  const { from, to } = editor.state.selection
+  return editor.state.doc.textBetween(from, to, '\n\n')
+}
+
 function TextFormattingMenu({ editor }: { editor: Editor }) {
   const { t } = useTranslation()
+
   return (
     <div className="tiptap-bubble-menu">
       <BubbleButton
@@ -101,6 +117,133 @@ function TextFormattingMenu({ editor }: { editor: Editor }) {
       >
         <Sigma className="w-3.5 h-3.5" />
       </BubbleButton>
+    </div>
+  )
+}
+
+function SelectionAiPrompt({
+  editor,
+  onAskAiForSelection,
+}: {
+  editor: Editor
+  onAskAiForSelection: (request: TiptapSelectionAiRequest) => Promise<string>
+}) {
+  const { t } = useTranslation()
+  const [selectionPrompt, setSelectionPrompt] = React.useState('')
+  const [selectedText, setSelectedText] = React.useState('')
+  const [selectionRange, setSelectionRange] = React.useState<{ from: number; to: number } | null>(null)
+  const [isSubmitting, setIsSubmitting] = React.useState(false)
+  const inputRef = React.useRef<HTMLInputElement>(null)
+
+  const syncSelectedText = React.useCallback(() => {
+    const { selection } = editor.state
+    if (selection.from === selection.to || selection instanceof NodeSelection || editor.isActive('codeBlock')) {
+      if (document.activeElement === inputRef.current) return
+      setSelectedText('')
+      setSelectionRange(null)
+      setSelectionPrompt('')
+      return
+    }
+
+    setSelectedText(getSelectedText(editor))
+    setSelectionRange({ from: selection.from, to: selection.to })
+    setSelectionPrompt('')
+  }, [editor])
+
+  const clearSelectionPrompt = React.useCallback(() => {
+    setSelectionPrompt('')
+  }, [])
+
+  const submitSelectionPrompt = React.useCallback(async () => {
+    const instruction = selectionPrompt.trim()
+    if (!instruction || !selectedText.trim() || !selectionRange || isSubmitting) return
+
+    setIsSubmitting(true)
+    try {
+      const replacement = await onAskAiForSelection({ selectedText, instruction })
+      editor
+        .chain()
+        .focus()
+        .insertContentAt({ from: selectionRange.from, to: selectionRange.to }, replacement, { contentType: 'markdown' } as never)
+        .run()
+      clearSelectionPrompt()
+      setSelectedText('')
+      setSelectionRange(null)
+    } catch (error) {
+      console.error('[SelectionAiPrompt] Failed to rewrite selection:', error)
+    } finally {
+      setIsSubmitting(false)
+      requestAnimationFrame(() => editor.chain().focus().run())
+    }
+  }, [clearSelectionPrompt, editor, isSubmitting, onAskAiForSelection, selectedText, selectionPrompt, selectionRange])
+
+  React.useEffect(() => {
+    syncSelectedText()
+
+    const frame = requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      if (!editor.isDestroyed) {
+        const tr = editor.state.tr.setMeta('selectionAiPrompt', 'updatePosition')
+        editor.view.dispatch(tr)
+      }
+    })
+
+    return () => cancelAnimationFrame(frame)
+  }, [editor, syncSelectedText])
+
+  React.useEffect(() => {
+    editor.on('selectionUpdate', syncSelectedText)
+    return () => {
+      editor.off('selectionUpdate', syncSelectedText)
+    }
+  }, [editor, syncSelectedText])
+
+  return (
+    <div className="tiptap-bubble-menu tiptap-bubble-menu--selection-ai">
+      <input
+        ref={inputRef}
+        type="text"
+        value={selectionPrompt}
+        onChange={(event) => setSelectionPrompt(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            event.stopPropagation()
+            void submitSelectionPrompt()
+            return
+          }
+
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            event.stopPropagation()
+            clearSelectionPrompt()
+            requestAnimationFrame(() => editor.chain().focus().run())
+            return
+          }
+
+          event.stopPropagation()
+        }}
+        onMouseDown={(event) => {
+          event.stopPropagation()
+          if (document.activeElement !== inputRef.current) {
+            event.preventDefault()
+            inputRef.current?.focus()
+          }
+        }}
+        placeholder={t('editor.askAiPlaceholder', 'Tell AI what to change')}
+        className="tiptap-bubble-ai-input"
+        disabled={isSubmitting}
+      />
+      <button
+        type="button"
+        className="tiptap-bubble-ai-send-btn"
+        title={t('editor.askAiSend', 'Send')}
+        disabled={isSubmitting || !selectionPrompt.trim() || !selectedText.trim() || !selectionRange}
+        onClick={() => { void submitSelectionPrompt() }}
+        onMouseDown={(event) => event.preventDefault()}
+      >
+        {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <SendHorizontal className="w-3.5 h-3.5" />}
+      </button>
     </div>
   )
 }
@@ -433,7 +576,13 @@ const TIPTAP_BUBBLE_MENU_BASE_OPTIONS = {
   zIndex: TIPTAP_BUBBLE_MENU_Z_INDEX,
 }
 
-export function TiptapBubbleMenus({ editor }: { editor: Editor }) {
+export function TiptapBubbleMenus({
+  editor,
+  onAskAiForSelection,
+}: {
+  editor: Editor
+  onAskAiForSelection?: (request: TiptapSelectionAiRequest) => Promise<string>
+}) {
   const getRichBlockEditAnchor = React.useCallback(() => {
     const { selection } = editor.state
     if (!(selection instanceof NodeSelection)) return null
@@ -487,6 +636,24 @@ export function TiptapBubbleMenus({ editor }: { editor: Editor }) {
       >
         <TextFormattingMenu editor={editor} />
       </BubbleMenu>
+
+      {onAskAiForSelection ? (
+        <BubbleMenu
+          editor={editor}
+          pluginKey="selectionAiPrompt"
+          updateDelay={0}
+          shouldShow={({ editor: e, state }) => {
+            const { selection } = state
+            if (selection.from === selection.to) return false
+            if (selection instanceof NodeSelection) return false
+            if (e.isActive('codeBlock')) return false
+            return true
+          }}
+          options={{ ...TIPTAP_BUBBLE_MENU_BASE_OPTIONS, placement: 'bottom-start', offset: 8 }}
+        >
+          <SelectionAiPrompt editor={editor} onAskAiForSelection={onAskAiForSelection} />
+        </BubbleMenu>
+      ) : null}
 
       {/* Rich block edit — shows for selected Mermaid/LaTeX rich blocks (and legacy codeBlock fallback). */}
       <BubbleMenu

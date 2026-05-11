@@ -26,6 +26,7 @@ export const RPC_CHANNELS = {
     DELETE: 'sessions:delete',
     GET_MESSAGES: 'sessions:getMessages',
     SEND_MESSAGE: 'sessions:sendMessage',
+    REWRITE_NOVEL_SELECTION: 'sessions:rewriteNovelSelection',
     CANCEL: 'sessions:cancel',
     KILL_SHELL: 'sessions:killShell',
     RESPOND_TO_PERMISSION: 'sessions:respondToPermission',
@@ -79,6 +80,8 @@ export const RPC_CHANNELS = {
   },
   file: {
     READ: 'file:read',
+    WRITE: 'file:write',
+    CREATE_DIRECTORY: 'file:createDirectory',
     READ_DATA_URL: 'file:readDataUrl',
     READ_PREVIEW_DATA_URL: 'file:readPreviewDataUrl',
     READ_BINARY: 'file:readBinary',

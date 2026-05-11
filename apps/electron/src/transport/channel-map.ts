@@ -25,6 +25,7 @@ export const CHANNEL_MAP = {
   createSession: invoke(RPC_CHANNELS.sessions.CREATE),
   deleteSession: invoke(RPC_CHANNELS.sessions.DELETE),
   sendMessage: invoke(RPC_CHANNELS.sessions.SEND_MESSAGE),
+  rewriteNovelSelection: invoke(RPC_CHANNELS.sessions.REWRITE_NOVEL_SELECTION),
   cancelProcessing: invoke(RPC_CHANNELS.sessions.CANCEL),
   killShell: invoke(RPC_CHANNELS.sessions.KILL_SHELL),
   getTaskOutput: invoke(RPC_CHANNELS.tasks.GET_OUTPUT),
@@ -70,6 +71,8 @@ export const CHANNEL_MAP = {
 
   // File operations
   readFile: invoke(RPC_CHANNELS.file.READ),
+  writeFile: invoke(RPC_CHANNELS.file.WRITE),
+  createDirectory: invoke(RPC_CHANNELS.file.CREATE_DIRECTORY),
   readFileDataUrl: invoke(RPC_CHANNELS.file.READ_DATA_URL),
   readFilePreviewDataUrl: invoke(RPC_CHANNELS.file.READ_PREVIEW_DATA_URL),
   readFileBinary: invoke(RPC_CHANNELS.file.READ_BINARY),

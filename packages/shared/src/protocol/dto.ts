@@ -214,6 +214,38 @@ export interface SendMessageOptions {
   skillSlugs?: string[]
   badges?: ContentBadge[]
   optimisticMessageId?: string
+  /** Runtime-only context appended to the model request without persisting in chat history. */
+  oneTimeContext?: string
+  /** Send to the model without creating or persisting a visible user-message bubble. */
+  hideUserMessage?: boolean
+}
+
+export interface OneShotLlmRequest {
+  prompt: string
+  systemPrompt?: string
+  model?: string
+  maxTokens?: number
+  temperature?: number
+  outputSchema?: Record<string, unknown>
+}
+
+export interface OneShotLlmResult {
+  text: string
+  model?: string
+  inputTokens?: number
+  outputTokens?: number
+  warning?: string
+}
+
+export interface NovelSelectionRewriteRequest {
+  filePath: string
+  relativePath: string
+  selectedText: string
+  instruction: string
+}
+
+export interface NovelSelectionRewriteResult {
+  replacement: string
 }
 
 // ---------------------------------------------------------------------------

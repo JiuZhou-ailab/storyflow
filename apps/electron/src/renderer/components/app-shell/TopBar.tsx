@@ -160,6 +160,8 @@ interface TopBarProps {
   onToggleFocusMode: () => void
   onAddSessionPanel: () => void
   onAddBrowserPanel: () => void
+  workspaceTools?: React.ReactNode
+  rightTools?: React.ReactNode
   /** When true, hides controls that don't apply in compact/mobile layout */
   isCompact?: boolean
 }
@@ -186,6 +188,8 @@ export function TopBar({
   onToggleFocusMode,
   onAddSessionPanel,
   onAddBrowserPanel,
+  workspaceTools,
+  rightTools,
   isCompact,
 }: TopBarProps) {
   const { t } = useTranslation()
@@ -408,15 +412,25 @@ export function TopBar({
               workspaceUnreadMap={workspaceUnreadMap}
             />
           </div>
+          {workspaceTools ? (
+            <div className="titlebar-no-drag min-w-0 shrink-0">
+              {workspaceTools}
+            </div>
+          ) : null}
         </div>
       </div>
 
       {/* === RIGHT: Browser strip + add + help === */}
       {!isCompact && (
-      <div ref={rightSlotRef} className="flex min-w-0 shrink-0 items-center justify-end gap-1" style={{ paddingRight: 12 }}>
-        <div className="min-w-0">
+      <div ref={rightSlotRef} className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1" style={{ paddingRight: 12 }}>
+        <div className="min-w-0 flex justify-end">
           <BrowserTabStrip activeSessionId={activeSessionId} maxVisibleBadges={maxVisibleBrowserBadges} />
         </div>
+        {rightTools ? (
+          <div className="titlebar-no-drag flex shrink-0 items-center gap-1">
+            {rightTools}
+          </div>
+        ) : null}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <TopBarButton aria-label={t("menu.addPanelMenu")} className="ml-1 h-[26px] w-[26px] rounded-lg">

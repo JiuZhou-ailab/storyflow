@@ -41,6 +41,8 @@ interface PanelSlotProps {
   sash?: React.ReactNode
   /** Compact (mobile) mode — shows back button in panel header */
   isCompact?: boolean
+  /** Hide the per-panel close button when the surrounding workspace owns navigation. */
+  hideCloseButton?: boolean
 }
 
 export function PanelSlot({
@@ -53,6 +55,7 @@ export function PanelSlot({
   proportion,
   sash,
   isCompact,
+  hideCloseButton,
 }: PanelSlotProps) {
   const { t } = useTranslation()
   const closePanel = useSetAtom(closePanelAtom)
@@ -66,6 +69,7 @@ export function PanelSlot({
 
   // Build close button for PanelHeader (via context override)
   const closeButton = useMemo(() => {
+    if (hideCloseButton) return undefined
     return (
       <PanelHeaderCenterButton
         icon={<X className="h-4 w-4" />}
@@ -73,7 +77,7 @@ export function PanelSlot({
         tooltip={t("common.close")}
       />
     )
-  }, [handleClose])
+  }, [handleClose, hideCloseButton])
 
   // Build back button for compact mode — closes the panel to reveal the session list.
   // Same PanelHeaderCenterButton style as X and share, just on the left side.

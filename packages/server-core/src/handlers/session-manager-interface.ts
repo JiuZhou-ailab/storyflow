@@ -17,6 +17,10 @@ import type {
   CreateSessionOptions,
   FileAttachment,
   SendMessageOptions,
+  OneShotLlmRequest,
+  OneShotLlmResult,
+  NovelSelectionRewriteRequest,
+  NovelSelectionRewriteResult,
   PermissionResponseOptions,
   CredentialResponse,
   PermissionModeState,
@@ -88,6 +92,8 @@ export interface ISessionManager {
     _isAuthRetry?: boolean,
     onAck?: (messageId: string) => void,
   ): Promise<void>
+  queryOnce(sessionId: string, request: OneShotLlmRequest): Promise<OneShotLlmResult>
+  rewriteNovelSelection(sessionId: string, request: NovelSelectionRewriteRequest): Promise<NovelSelectionRewriteResult>
   cancelProcessing(sessionId: string, silent?: boolean): Promise<void>
   killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }>
   getTaskOutput(taskId: string): Promise<string | null>

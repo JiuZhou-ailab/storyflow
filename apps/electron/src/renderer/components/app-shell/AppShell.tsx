@@ -1,3 +1,7 @@
+// input: Workspace/session state, navigation state, and shell callbacks
+// output: Desktop app shell with sidebar, navigator, and main content panels
+// pos: Top-level renderer layout coordinator for workspace navigation
+
 import * as React from "react"
 import { useTranslation, Trans } from "react-i18next"
 import { useRef, useState, useEffect, useCallback, useMemo } from "react"
@@ -25,6 +29,7 @@ import {
   FolderOpen,
   Cake,
   Calendar,
+  Palette,
   Layers,
   ListTodo,
   Clock,
@@ -32,16 +37,23 @@ import {
   Bot,
   Info,
   MailOpen,
+  BookOpenText,
+  FileText,
+  Library,
+  MapPinned,
+  ScrollText,
+  UsersRound,
+  Download,
 } from "lucide-react"
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
 import { TopBar } from "./TopBar"
-import { SquarePenRounded } from "../icons/SquarePenRounded"
 import { McpIcon } from "../icons/McpIcon"
 import { cn } from "@/lib/utils"
 import { isMac } from "@/lib/platform"
 import { Button } from "@/components/ui/button"
 import { HeaderIconButton } from "@/components/ui/HeaderIconButton"
+import type { MentionFileReference } from "@/components/ui/mention-menu"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipTrigger, TooltipContent, DocumentFormattedMarkdownOverlay } from "@craft-agent/ui"
 import {
@@ -54,13 +66,6 @@ import {
   StyledDropdownMenuSubTrigger,
   StyledDropdownMenuSubContent,
 } from "@/components/ui/styled-dropdown"
-import {
-  ContextMenu,
-  ContextMenuTrigger,
-  StyledContextMenuContent,
-} from "@/components/ui/styled-context-menu"
-import { ContextMenuProvider } from "@/components/ui/menu-context"
-import { SidebarMenu } from "./SidebarMenu"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { FadingText } from "@/components/ui/fading-text"
 import {
@@ -73,20 +78,22 @@ import { SessionList, type ChatGroupingMode } from "./SessionList"
 import { MainContentPanel } from "./MainContentPanel"
 import { PanelStackContainer } from "./PanelStackContainer"
 import type { ChatDisplayHandle } from "./ChatDisplay"
-import { LeftSidebar } from "./LeftSidebar"
+import { NovelDocumentEditorPanel, type NovelSelectionAiRequest } from "@/components/writing/NovelDocumentEditorPanel"
+import { NovelExportDialog } from "@/components/writing/NovelExportDialog"
+import { formatNovelWorkspaceFileTitle } from "@/components/writing/novel-file-display"
+import { LeftSidebar, type LinkItem as LeftSidebarLinkItem, type SidebarItem as LeftSidebarItem } from "./LeftSidebar"
 import { useSession } from "@/hooks/useSession"
-import { ensureSessionMessagesLoadedAtom } from "@/atoms/sessions"
 import { AppShellProvider, type AppShellContextType } from "@/context/AppShellContext"
 import { EscapeInterruptProvider, useEscapeInterrupt } from "@/context/EscapeInterruptContext"
 import { useTheme } from "@/context/ThemeContext"
 import { getResizeGradientStyle } from "@/hooks/useResizeGradient"
-import { useAction, useActionLabel } from "@/actions"
+import { useAction } from "@/actions"
 import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
 import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter } from "../../../shared/types"
-import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
+import { ensureSessionMessagesLoadedAtom, sessionAtomFamily, sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
 import { panelStackAtom, panelCountAtom, focusedPanelIdAtom, focusedSessionIdAtom, focusNextPanelAtom, focusPrevPanelAtom, parseSessionIdFromRoute } from "@/atoms/panel-stack"
@@ -139,6 +146,31 @@ import {
 import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
+import { collectFileChangesFromActivities } from "@/lib/file-changes"
+import { buildRejectedFileContent } from "@/lib/file-change-review"
+import {
+  buildMergedManuscriptContent,
+  buildNovelExportPlan,
+  createNovelExportFolderName,
+  type NovelExportOptions,
+} from "@/lib/novel-export"
+import {
+  getAdjacentChangedFilePath,
+  getPendingChangedFilePaths,
+  getPendingChangesForFile,
+  normalizeNovelFileChangePaths,
+} from "@/lib/novel-review-workflow"
+import {
+  buildNovelWorkspaceTree,
+  detectNovelProjectFromSearchResults,
+  getNovelWorkspaceCandidateRoots,
+  mapSearchResultsToNovelWorkspaceFiles,
+  NOVEL_WORKSPACE_FILE_SEARCH_QUERIES,
+  selectDefaultNovelFile,
+  type NovelWorkspaceFile,
+  type NovelWorkspaceFileSectionId,
+} from "@/lib/writing-workspace"
+import { groupMessagesByTurn, type FileChange } from "@craft-agent/ui"
 
 /**
  * AppShellProps - Minimal props interface for AppShell component
@@ -166,6 +198,21 @@ interface AppShellProps {
 type FilterMode = 'include' | 'exclude'
 
 const altClickTooltipLabel = isMac ? '⌥ click to exclude' : 'Alt click to exclude'
+const SESSION_LIST_MIN_WIDTH = 240
+const SESSION_LIST_MAX_WIDTH = 480
+const NOVEL_WORKSPACE_NAVIGATOR_MIN_WIDTH = 420
+const NOVEL_WORKSPACE_NAVIGATOR_DEFAULT_WIDTH = 560
+const NOVEL_WORKSPACE_NAVIGATOR_MAX_WIDTH = 860
+const NAVIGATOR_SASH_HIT_WIDTH = 14
+const NAVIGATOR_SASH_HALF_HIT_WIDTH = NAVIGATOR_SASH_HIT_WIDTH / 2
+const NAVIGATOR_SASH_FLEX_MARGIN = -(NAVIGATOR_SASH_HALF_HIT_WIDTH + (PANEL_GAP / 2))
+const NAVIGATOR_SASH_CAPTURE_HALF_WIDTH = 18
+
+function joinWorkspacePath(rootPath: string, relativePath: string): string {
+  const root = rootPath.replace(/[\\/]+$/, '')
+  const relative = relativePath.replace(/^[\\/]+/, '')
+  return relative ? `${root}/${relative}` : root
+}
 
 /** Wraps children in a Tooltip that shows instantly on hover — only rendered when `show` is true. */
 function AltExcludeTooltip({ show, children }: { show: boolean; children: React.ReactNode }) {
@@ -176,6 +223,77 @@ function AltExcludeTooltip({ show, children }: { show: boolean; children: React.
       <TooltipContent side="right" className="text-xs">{altClickTooltipLabel}</TooltipContent>
     </Tooltip>
   )
+}
+
+function NovelWorkspaceUtilityTopNav({
+  links,
+  getItemProps,
+  focusedItemId,
+}: {
+  links: LeftSidebarItem[]
+  getItemProps?: (id: string) => {
+    tabIndex: number
+    'data-focused': boolean
+    ref: (el: HTMLElement | null) => void
+  }
+  focusedItemId?: string | null
+}) {
+  const items = links.filter((item): item is LeftSidebarLinkItem => !('type' in item))
+  if (items.length === 0) return null
+
+  return (
+    <nav className="shrink-0" aria-label="Workspace tools">
+      <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
+        {items.map((item) => {
+          const itemProps = getItemProps?.(item.id)
+          const isFocused = focusedItemId === item.id
+          return (
+            <button
+              key={item.id}
+              {...(() => {
+                const { ref: _ref, ...rest } = itemProps || { ref: undefined }
+                return rest
+              })()}
+              ref={(el) => itemProps?.ref(el)}
+              type="button"
+              title={item.tooltip ?? item.title}
+              data-focused={isFocused || undefined}
+              onClick={item.onClick}
+              className={cn(
+                'flex h-[28px] min-w-0 shrink-0 items-center gap-1.5 rounded-[6px] px-2 text-xs outline-none transition-colors',
+                'focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring',
+                item.variant === 'default'
+                  ? 'bg-foreground/[0.08] text-foreground'
+                  : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground'
+              )}
+            >
+              <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center [&>svg]:h-3.5 [&>svg]:w-3.5">
+                {renderNovelUtilityIcon(item.icon)}
+              </span>
+              <span className="truncate">{item.title}</span>
+              {item.label ? (
+                <span className="ml-0.5 rounded-[4px] bg-foreground/[0.06] px-1 text-[10px] text-muted-foreground">
+                  {item.label}
+                </span>
+              ) : null}
+            </button>
+          )
+        })}
+      </div>
+    </nav>
+  )
+}
+
+function renderNovelUtilityIcon(icon: LeftSidebarLinkItem['icon']) {
+  const isComponent = typeof icon === 'function' ||
+    (typeof icon === 'object' && icon !== null && 'render' in icon)
+
+  if (isComponent) {
+    const Icon = icon as React.ComponentType<{ className?: string }>
+    return <Icon className="h-3.5 w-3.5" />
+  }
+
+  return icon
 }
 
 /**
@@ -521,6 +639,7 @@ function AppShellContent({
     onOpenStoredUserPreferences,
     onReset,
     onSendMessage,
+    onOpenFile,
     openNewChat,
     pendingPermissions,
   } = contextValue
@@ -528,7 +647,6 @@ function AppShellContent({
   const { t } = useTranslation()
 
   // Get hotkey labels from centralized action registry
-  const newChatHotkey = useActionLabel('app.newChat').hotkey
 
   const [isSidebarVisible, setIsSidebarVisible] = React.useState(() => {
     return storage.get(storage.KEYS.sidebarVisible, !defaultCollapsed)
@@ -539,6 +657,9 @@ function AppShellContent({
   // Session list width in pixels (min 240, max 480)
   const [sessionListWidth, setSessionListWidth] = React.useState(() => {
     return storage.get(storage.KEYS.sessionListWidth, 300)
+  })
+  const [novelWorkspaceNavigatorWidth, setNovelWorkspaceNavigatorWidth] = React.useState(() => {
+    return storage.get(storage.KEYS.novelWorkspaceNavigatorWidth, NOVEL_WORKSPACE_NAVIGATOR_DEFAULT_WIDTH)
   })
 
   // Hides both sidebar and navigator (CMD+. toggle)
@@ -571,11 +692,15 @@ function AppShellContent({
     })
   }, [])
 
-  const [isResizing, setIsResizing] = React.useState<'sidebar' | 'session-list' | null>(null)
+  const [isResizing, setIsResizing] = React.useState<'sidebar' | 'session-list' | 'novel-workspace-navigator' | null>(null)
   const [sidebarHandleY, setSidebarHandleY] = React.useState<number | null>(null)
   const [sessionListHandleY, setSessionListHandleY] = React.useState<number | null>(null)
   const resizeHandleRef = React.useRef<HTMLDivElement>(null)
   const sessionListHandleRef = React.useRef<HTMLDivElement>(null)
+  const navigatorPanelRef = React.useRef<HTMLDivElement>(null)
+  const latestSidebarWidthRef = React.useRef(sidebarWidth)
+  const latestSessionListWidthRef = React.useRef(sessionListWidth)
+  const latestNovelWorkspaceNavigatorWidthRef = React.useRef(novelWorkspaceNavigatorWidth)
   const [session, setSession] = useSession()
   const { resolvedMode, isDark, setMode } = useTheme()
   const { canGoBack, canGoForward, goBack, goForward, navigateToSource, navigateToSession } = useNavigation()
@@ -1221,53 +1346,103 @@ function AppShellContent({
     return () => document.removeEventListener('paste', handleGlobalPaste)
   }, [focusedSessionId, session.selected])
 
-  // Resize effect for sidebar, session list, browser host lane, and metadata right sidebar.
   React.useEffect(() => {
-    if (!isResizing) return
+    latestSidebarWidthRef.current = sidebarWidth
+  }, [sidebarWidth])
 
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isResizing === 'sidebar') {
-        const newWidth = Math.min(Math.max(e.clientX, 180), 320)
-        setSidebarWidth(newWidth)
-        if (resizeHandleRef.current) {
-          const rect = resizeHandleRef.current.getBoundingClientRect()
-          setSidebarHandleY(e.clientY - rect.top)
-        }
-      } else if (isResizing === 'session-list') {
-        const offset = isSidebarVisible ? sidebarWidth : 0
-        const newWidth = Math.min(Math.max(e.clientX - offset, 240), 480)
-        setSessionListWidth(newWidth)
-        if (sessionListHandleRef.current) {
-          const rect = sessionListHandleRef.current.getBoundingClientRect()
-          setSessionListHandleY(e.clientY - rect.top)
-        }
+  React.useEffect(() => {
+    latestSessionListWidthRef.current = sessionListWidth
+  }, [sessionListWidth])
+
+  React.useEffect(() => {
+    latestNovelWorkspaceNavigatorWidthRef.current = novelWorkspaceNavigatorWidth
+  }, [novelWorkspaceNavigatorWidth])
+
+  const beginResize = React.useCallback((
+    mode: 'sidebar' | 'session-list' | 'novel-workspace-navigator',
+    e: React.MouseEvent<HTMLDivElement>
+  ) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsResizing(mode)
+
+    const previousCursor = document.body.style.cursor
+    const previousUserSelect = document.body.style.userSelect
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    const updateHandleY = (clientY: number) => {
+      const handle = mode === 'sidebar' ? resizeHandleRef.current : sessionListHandleRef.current
+      if (!handle) return
+      const rect = handle.getBoundingClientRect()
+      if (mode === 'sidebar') {
+        setSidebarHandleY(clientY - rect.top)
+      } else {
+        setSessionListHandleY(clientY - rect.top)
       }
+    }
+
+    const updateWidth = (clientX: number) => {
+      if (mode === 'sidebar') {
+        const newWidth = Math.min(Math.max(clientX - (PANEL_GAP / 2), 180), 320)
+        latestSidebarWidthRef.current = newWidth
+        setSidebarWidth(newWidth)
+        return
+      }
+
+      const minWidth = mode === 'novel-workspace-navigator'
+        ? NOVEL_WORKSPACE_NAVIGATOR_MIN_WIDTH
+        : SESSION_LIST_MIN_WIDTH
+      const maxWidth = mode === 'novel-workspace-navigator'
+        ? NOVEL_WORKSPACE_NAVIGATOR_MAX_WIDTH
+        : SESSION_LIST_MAX_WIDTH
+      const fallbackNavigatorStartX = isSidebarVisible
+        ? latestSidebarWidthRef.current + PANEL_GAP
+        : PANEL_EDGE_INSET
+      const navigatorStartX = navigatorPanelRef.current?.getBoundingClientRect().left ?? fallbackNavigatorStartX
+      const newWidth = Math.min(
+        Math.max(clientX - navigatorStartX - (PANEL_GAP / 2), minWidth),
+        maxWidth
+      )
+      if (mode === 'novel-workspace-navigator') {
+        latestNovelWorkspaceNavigatorWidthRef.current = newWidth
+        setNovelWorkspaceNavigatorWidth(newWidth)
+        return
+      }
+
+      latestSessionListWidthRef.current = newWidth
+      setSessionListWidth(newWidth)
+    }
+
+    const handleMouseMove = (event: MouseEvent) => {
+      event.preventDefault()
+      updateWidth(event.clientX)
+      updateHandleY(event.clientY)
     }
 
     const handleMouseUp = () => {
-      if (isResizing === 'sidebar') {
-        storage.set(storage.KEYS.sidebarWidth, sidebarWidth)
+      if (mode === 'sidebar') {
+        storage.set(storage.KEYS.sidebarWidth, latestSidebarWidthRef.current)
         setSidebarHandleY(null)
-      } else if (isResizing === 'session-list') {
-        storage.set(storage.KEYS.sessionListWidth, sessionListWidth)
+      } else if (mode === 'novel-workspace-navigator') {
+        storage.set(storage.KEYS.novelWorkspaceNavigatorWidth, latestNovelWorkspaceNavigatorWidthRef.current)
+        setSessionListHandleY(null)
+      } else {
+        storage.set(storage.KEYS.sessionListWidth, latestSessionListWidthRef.current)
         setSessionListHandleY(null)
       }
+
+      document.body.style.cursor = previousCursor
+      document.body.style.userSelect = previousUserSelect
       setIsResizing(null)
+      document.removeEventListener('mousemove', handleMouseMove, true)
+      document.removeEventListener('mouseup', handleMouseUp, true)
     }
 
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [
-    isResizing,
-    sidebarWidth,
-    sessionListWidth,
-    isSidebarVisible,
-  ])
+    updateHandleY(e.clientY)
+    document.addEventListener('mousemove', handleMouseMove, true)
+    document.addEventListener('mouseup', handleMouseUp, true)
+  }, [isSidebarVisible])
 
   // Spring transition config - shared between sidebar and header
   // Critical damping (no bounce): damping = 2 * sqrt(stiffness * mass)
@@ -1281,6 +1456,7 @@ function AppShellContent({
   // This prevents closures from retaining full message arrays
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
   const setSessionMetaMap = useSetAtom(sessionMetaMapAtom)
+  const effectiveSession = useAtomValue(sessionAtomFamily(effectiveSessionId ?? '__missing__'))
 
   const hasPendingPrompt = React.useCallback((sessionId: string) => {
     return (pendingPermissions.get(sessionId)?.length ?? 0) > 0
@@ -1291,9 +1467,350 @@ function AppShellContent({
 
   // Reload skills when active session's workingDirectory changes (for project-level skills)
   // Skills are loaded from: global (~/.agents/skills/), workspace, and project ({workingDirectory}/.agents/skills/)
-  const activeSessionWorkingDirectory = session.selected
-    ? sessionMetaMap.get(session.selected)?.workingDirectory
+  const activeSessionWorkingDirectory = effectiveSessionId
+    ? sessionMetaMap.get(effectiveSessionId)?.workingDirectory
     : undefined
+
+  const latestNovelFileChanges = React.useMemo<FileChange[]>(() => {
+    if (!effectiveSession?.messages?.length) return []
+
+    const turns = groupMessagesByTurn(effectiveSession.messages)
+    for (const turn of [...turns].reverse()) {
+      if (turn.type !== 'assistant') continue
+      const changes = collectFileChangesFromActivities(turn.activities)
+      if (changes.length > 0) return changes
+    }
+    return []
+  }, [effectiveSession?.messages])
+
+  const novelWorkspaceCandidateRoots = React.useMemo(
+    () => getNovelWorkspaceCandidateRoots({
+      activeWorkspaceRootPath: activeWorkspace?.rootPath,
+      sessionWorkingDirectory: activeSessionWorkingDirectory,
+    }),
+    [activeWorkspace?.rootPath, activeSessionWorkingDirectory]
+  )
+  const [novelWorkspaceRoot, setNovelWorkspaceRoot] = React.useState<string | null>(null)
+  const [novelWorkspaceFiles, setNovelWorkspaceFiles] = React.useState<NovelWorkspaceFile[]>([])
+  const novelWorkspaceRootRef = React.useRef<string | null>(null)
+
+  React.useEffect(() => {
+    novelWorkspaceRootRef.current = novelWorkspaceRoot
+  }, [novelWorkspaceRoot])
+
+  React.useEffect(() => {
+    if (novelWorkspaceCandidateRoots.length === 0) {
+      setNovelWorkspaceRoot(null)
+      setNovelWorkspaceFiles([])
+      return
+    }
+
+    const nextCandidateRoots = new Set(novelWorkspaceCandidateRoots)
+    const currentNovelWorkspaceRoot = novelWorkspaceRootRef.current
+    if (currentNovelWorkspaceRoot && !nextCandidateRoots.has(currentNovelWorkspaceRoot)) {
+      setNovelWorkspaceRoot(null)
+      setNovelWorkspaceFiles([])
+    }
+
+    let cancelled = false
+
+    async function detectNovelWorkspace(): Promise<void> {
+      for (const rootPath of novelWorkspaceCandidateRoots) {
+        try {
+          const results = await window.electronAPI.searchFiles(rootPath, '')
+          if (cancelled) return
+
+          if (detectNovelProjectFromSearchResults(results)) {
+            const fileResultSets = await Promise.all(
+              NOVEL_WORKSPACE_FILE_SEARCH_QUERIES.map(async (query) => {
+                try {
+                  return await window.electronAPI.searchFiles(rootPath, query)
+                } catch {
+                  return []
+                }
+              })
+            )
+            if (cancelled) return
+
+            setNovelWorkspaceRoot(rootPath)
+            setNovelWorkspaceFiles(mapSearchResultsToNovelWorkspaceFiles([
+              ...results,
+              ...fileResultSets.flat(),
+            ]))
+            return
+          }
+        } catch {
+          if (cancelled) return
+        }
+      }
+
+      setNovelWorkspaceRoot(null)
+      setNovelWorkspaceFiles([])
+    }
+
+    void detectNovelWorkspace()
+
+    return () => {
+      cancelled = true
+    }
+  }, [novelWorkspaceCandidateRoots])
+
+  const showNovelWorkspaceSidebar = !!novelWorkspaceRoot
+  const showNovelDocumentNavigator = isSessionsNavigation(navState) && showNovelWorkspaceSidebar
+  const reviewableNovelFileChanges = React.useMemo(
+    () => normalizeNovelFileChangePaths(latestNovelFileChanges, novelWorkspaceRoot, novelWorkspaceFiles),
+    [latestNovelFileChanges, novelWorkspaceFiles, novelWorkspaceRoot]
+  )
+  const novelWorkspaceTree = React.useMemo(
+    () => buildNovelWorkspaceTree(novelWorkspaceFiles),
+    [novelWorkspaceFiles]
+  )
+  const defaultNovelFile = React.useMemo(
+    () => selectDefaultNovelFile(novelWorkspaceFiles),
+    [novelWorkspaceFiles]
+  )
+  const [selectedNovelFilePath, setSelectedNovelFilePath] = React.useState<string | null>(null)
+  const selectedNovelFile = React.useMemo(() => {
+    if (!showNovelWorkspaceSidebar) return undefined
+    return novelWorkspaceFiles.find(file => file.path === selectedNovelFilePath) ?? defaultNovelFile
+  }, [defaultNovelFile, novelWorkspaceFiles, selectedNovelFilePath, showNovelWorkspaceSidebar])
+
+  React.useEffect(() => {
+    if (!showNovelWorkspaceSidebar) {
+      setSelectedNovelFilePath(null)
+      return
+    }
+
+    if (selectedNovelFilePath && novelWorkspaceFiles.some(file => file.path === selectedNovelFilePath)) {
+      return
+    }
+
+    setSelectedNovelFilePath(defaultNovelFile?.path ?? null)
+  }, [defaultNovelFile?.path, novelWorkspaceFiles, selectedNovelFilePath, showNovelWorkspaceSidebar])
+
+  const [novelDocumentContent, setNovelDocumentContent] = React.useState('')
+  const [savedNovelDocumentContent, setSavedNovelDocumentContent] = React.useState('')
+  const [novelDocumentLoading, setNovelDocumentLoading] = React.useState(false)
+  const [novelDocumentSaving, setNovelDocumentSaving] = React.useState(false)
+  const [novelDocumentError, setNovelDocumentError] = React.useState<string | null>(null)
+  const [novelExportDialogOpen, setNovelExportDialogOpen] = React.useState(false)
+  const [novelExporting, setNovelExporting] = React.useState(false)
+  const selectedNovelDocumentPath = selectedNovelFile?.path ?? null
+  const latestNovelDocumentPathRef = React.useRef<string | null>(null)
+  const novelDocumentSaveSeqRef = React.useRef(0)
+
+  React.useEffect(() => {
+    latestNovelDocumentPathRef.current = selectedNovelDocumentPath
+  }, [selectedNovelDocumentPath])
+
+  React.useEffect(() => {
+    if (!selectedNovelDocumentPath) {
+      setNovelDocumentContent('')
+      setSavedNovelDocumentContent('')
+      setNovelDocumentLoading(false)
+      setNovelDocumentError(null)
+      return
+    }
+
+    let cancelled = false
+    setNovelDocumentLoading(true)
+    setNovelDocumentError(null)
+
+    window.electronAPI.readFile(selectedNovelDocumentPath)
+      .then((content) => {
+        if (cancelled) return
+        setNovelDocumentContent(content)
+        setSavedNovelDocumentContent(content)
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setNovelDocumentContent('')
+        setSavedNovelDocumentContent('')
+        setNovelDocumentError(error instanceof Error ? error.message : 'Failed to load document')
+      })
+      .finally(() => {
+        if (!cancelled) setNovelDocumentLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedNovelDocumentPath])
+
+  const novelDocumentDirty = !!selectedNovelFile && novelDocumentContent !== savedNovelDocumentContent
+
+  React.useEffect(() => {
+    if (!selectedNovelDocumentPath || !novelDocumentDirty || novelDocumentLoading) return
+
+    const pathToSave = selectedNovelDocumentPath
+    const contentToSave = novelDocumentContent
+    const timeoutId = window.setTimeout(() => {
+      const saveSeq = ++novelDocumentSaveSeqRef.current
+      setNovelDocumentSaving(true)
+      setNovelDocumentError(null)
+
+      window.electronAPI.writeFile(pathToSave, contentToSave)
+        .then(() => {
+          if (novelDocumentSaveSeqRef.current === saveSeq && latestNovelDocumentPathRef.current === pathToSave) {
+            setSavedNovelDocumentContent(contentToSave)
+          }
+        })
+        .catch((error) => {
+          if (novelDocumentSaveSeqRef.current !== saveSeq || latestNovelDocumentPathRef.current !== pathToSave) return
+          setNovelDocumentError(error instanceof Error ? error.message : 'Failed to save document')
+        })
+        .finally(() => {
+          if (novelDocumentSaveSeqRef.current === saveSeq) {
+            setNovelDocumentSaving(false)
+          }
+        })
+    }, 800)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [novelDocumentContent, novelDocumentDirty, novelDocumentLoading, selectedNovelDocumentPath])
+
+  const ensureNovelDocumentSaved = React.useCallback(async (): Promise<boolean> => {
+    if (!selectedNovelDocumentPath || !novelDocumentDirty) return true
+
+    const saveSeq = ++novelDocumentSaveSeqRef.current
+    setNovelDocumentSaving(true)
+    setNovelDocumentError(null)
+    try {
+      await window.electronAPI.writeFile(selectedNovelDocumentPath, novelDocumentContent)
+      if (novelDocumentSaveSeqRef.current === saveSeq && latestNovelDocumentPathRef.current === selectedNovelDocumentPath) {
+        setSavedNovelDocumentContent(novelDocumentContent)
+      }
+      return true
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save document'
+      setNovelDocumentError(message)
+      toast.error(t('writing.autoSaveFailed', 'Failed to save document'), { description: message })
+      return false
+    } finally {
+      if (novelDocumentSaveSeqRef.current === saveSeq) {
+        setNovelDocumentSaving(false)
+      }
+    }
+  }, [novelDocumentContent, novelDocumentDirty, selectedNovelDocumentPath, t])
+
+  const handleExportNovelWorkspace = React.useCallback(async (options: NovelExportOptions) => {
+    if (!novelWorkspaceRoot) return
+
+    const saved = await ensureNovelDocumentSaved()
+    if (!saved) return
+
+    const plan = buildNovelExportPlan(novelWorkspaceFiles, options)
+    if (plan.entries.length === 0) {
+      toast.error(t('writing.export.empty', '没有可导出的内容'))
+      return
+    }
+
+    const exportRootPath = joinWorkspacePath(novelWorkspaceRoot, createNovelExportFolderName())
+    const toastId = toast.loading(t('writing.export.exporting', '正在导出'))
+    setNovelExporting(true)
+
+    try {
+      await window.electronAPI.createDirectory(exportRootPath)
+
+      for (const entry of plan.entries) {
+        const targetPath = joinWorkspacePath(exportRootPath, entry.targetRelativePath)
+
+        if (entry.kind === 'copy') {
+          const content = await window.electronAPI.readFile(entry.sourcePath)
+          await window.electronAPI.writeFile(targetPath, content)
+          continue
+        }
+
+        const parts = await Promise.all(entry.sourcePaths.map(async (sourcePath) => ({
+          sourcePath,
+          content: await window.electronAPI.readFile(sourcePath),
+        })))
+        await window.electronAPI.writeFile(targetPath, buildMergedManuscriptContent(parts))
+      }
+
+      toast.success(t('writing.export.success', '已导出 {{count}} 个文件', { count: plan.sourceFileCount }), {
+        id: toastId,
+        description: exportRootPath,
+        action: {
+          label: t('writing.export.reveal', '显示'),
+          onClick: () => { void window.electronAPI.showInFolder(exportRootPath).catch(() => {}) },
+        },
+      })
+      setNovelExportDialogOpen(false)
+    } catch (error) {
+      toast.error(t('writing.export.failed', '导出写作工作区失败'), {
+        id: toastId,
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setNovelExporting(false)
+    }
+  }, [ensureNovelDocumentSaved, novelWorkspaceFiles, novelWorkspaceRoot, t])
+
+  const [novelChangeReviewStatus, setNovelChangeReviewStatus] = React.useState<Record<string, 'accepted' | 'rejected'>>({})
+
+  const pendingNovelChangedFilePaths = React.useMemo(
+    () => getPendingChangedFilePaths(reviewableNovelFileChanges, novelChangeReviewStatus),
+    [reviewableNovelFileChanges, novelChangeReviewStatus]
+  )
+  const selectedNovelPendingChanges = React.useMemo(
+    () => getPendingChangesForFile(reviewableNovelFileChanges, novelChangeReviewStatus, selectedNovelFile?.path),
+    [reviewableNovelFileChanges, novelChangeReviewStatus, selectedNovelFile?.path]
+  )
+  const selectedNovelReviewChange = selectedNovelPendingChanges[0]
+  const selectedNovelReviewFileIndex = selectedNovelFile?.path
+    ? pendingNovelChangedFilePaths.indexOf(selectedNovelFile.path)
+    : -1
+
+  const handleAskAiForNovelSelection = React.useCallback(async ({ selectedText, instruction }: NovelSelectionAiRequest) => {
+    if (!selectedNovelFile || !effectiveSessionId) {
+      throw new Error('No active writing document or session')
+    }
+    const saved = await ensureNovelDocumentSaved()
+    if (!saved) {
+      throw new Error('Document was not saved')
+    }
+
+    try {
+      const result = await window.electronAPI.rewriteNovelSelection(effectiveSessionId, {
+        filePath: selectedNovelFile.path,
+        relativePath: selectedNovelFile.relativePath,
+        selectedText,
+        instruction,
+      })
+      return result.replacement
+    } catch (error) {
+      toast.error(t('writing.selectionRewrite.failed', '改写选中文本失败'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+      throw error
+    }
+  }, [effectiveSessionId, ensureNovelDocumentSaved, selectedNovelFile, t])
+
+  const navigatorPanelWidth = showNovelDocumentNavigator
+    ? novelWorkspaceNavigatorWidth
+    : sessionListWidth
+
+  const handleNavigatorResizeBoundaryMouseDownCapture = React.useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (effectiveSidebarAndNavigatorHidden || isAutoCompact || isResizing || e.button !== 0) return
+
+    const navigatorPanelRect = navigatorPanelRef.current?.getBoundingClientRect()
+    if (!navigatorPanelRect) return
+
+    const boundaryCenter = navigatorPanelRect.right + (PANEL_GAP / 2)
+    if (Math.abs(e.clientX - boundaryCenter) > NAVIGATOR_SASH_CAPTURE_HALF_WIDTH) return
+
+    beginResize(showNovelDocumentNavigator ? 'novel-workspace-navigator' : 'session-list', e)
+  }, [
+    beginResize,
+    effectiveSidebarAndNavigatorHidden,
+    isAutoCompact,
+    isResizing,
+    showNovelDocumentNavigator,
+  ])
+
   React.useEffect(() => {
     if (!activeWorkspaceId) return
     window.electronAPI.getSkills(activeWorkspaceId, activeSessionWorkingDirectory).then((loaded) => {
@@ -1568,12 +2085,23 @@ function AppShellContent({
     return onDeleteSession(sessionId, skipConfirmation)
   }, [session.selected, setSession, onDeleteSession])
 
+  const mentionFiles = React.useMemo<MentionFileReference[]>(() => {
+    return novelWorkspaceFiles.map(file => ({
+      path: file.path,
+      relativePath: file.relativePath,
+      label: formatNovelWorkspaceFileTitle(file, t),
+      type: 'file',
+      description: file.relativePath,
+    }))
+  }, [novelWorkspaceFiles, t])
+
   // Extend context value with local overrides (wrapped onDeleteSession, sources, skills, labels, enabledModes, rightSidebarOpenButton, effectiveSessionStatuses)
   const appShellContextValue = React.useMemo<AppShellContextType>(() => ({
     ...contextValue,
     onDeleteSession: handleDeleteSession,
     enabledSources: sources,
     skills,
+    mentionFiles,
     activeSessionWorkingDirectory,
     labels: displayLabelConfigs,
     onSessionLabelsChange: handleSessionLabelsChange,
@@ -1594,7 +2122,7 @@ function AppShellContent({
     automationTestResults,
     getAutomationHistory,
     onReplayAutomation: handleReplayAutomation,
-  }), [contextValue, handleDeleteSession, sources, skills, activeSessionWorkingDirectory, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
+  }), [contextValue, handleDeleteSession, sources, skills, mentionFiles, activeSessionWorkingDirectory, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
 
   // Persist expanded folders to localStorage (workspace-scoped)
   React.useEffect(() => {
@@ -1643,6 +2171,122 @@ function AppShellContent({
   const handleAllSessionsClick = useCallback(() => {
     navigate(routes.view.allSessions())
   }, [])
+
+  const handleSelectNovelFile = React.useCallback(async (file: NovelWorkspaceFile) => {
+    if (file.path !== selectedNovelFile?.path) {
+      const saved = await ensureNovelDocumentSaved()
+      if (!saved) return
+    }
+    setSelectedNovelFilePath(file.path)
+    handleAllSessionsClick()
+  }, [ensureNovelDocumentSaved, handleAllSessionsClick, selectedNovelFile?.path])
+
+  const handleSelectNovelFileByPath = React.useCallback(async (filePath: string | null) => {
+    if (!filePath) return
+    const file = novelWorkspaceFiles.find(item => item.path === filePath)
+    if (!file) {
+      onOpenFile(filePath)
+      return
+    }
+    await handleSelectNovelFile(file)
+  }, [handleSelectNovelFile, novelWorkspaceFiles, onOpenFile])
+
+  const handleSelectAdjacentNovelChangeFile = React.useCallback(async (direction: 'next' | 'previous') => {
+    const targetPath = getAdjacentChangedFilePath(
+      pendingNovelChangedFilePaths,
+      selectedNovelFile?.path,
+      direction
+    )
+    await handleSelectNovelFileByPath(targetPath)
+  }, [handleSelectNovelFileByPath, pendingNovelChangedFilePaths, selectedNovelFile?.path])
+
+  const handleSelectNextNovelChangeAfterStatus = React.useCallback(async (
+    change: FileChange,
+    nextStatus: Record<string, 'accepted' | 'rejected'>
+  ) => {
+    const nextPendingPaths = getPendingChangedFilePaths(reviewableNovelFileChanges, nextStatus)
+    if (nextPendingPaths.length === 0) return
+
+    const currentIndex = pendingNovelChangedFilePaths.indexOf(change.filePath)
+    const searchOrder = currentIndex >= 0
+      ? [
+          ...pendingNovelChangedFilePaths.slice(currentIndex + 1),
+          ...pendingNovelChangedFilePaths.slice(0, currentIndex + 1),
+        ]
+      : nextPendingPaths
+    const targetPath = searchOrder.find(path => nextPendingPaths.includes(path)) ?? nextPendingPaths[0]
+    await handleSelectNovelFileByPath(targetPath)
+  }, [handleSelectNovelFileByPath, pendingNovelChangedFilePaths, reviewableNovelFileChanges])
+
+  const handleAcceptNovelChange = React.useCallback((change: FileChange) => {
+    if (change.error) {
+      toast.error(t('writing.review.acceptUnavailable', 'Cannot accept a failed change.'))
+      return
+    }
+
+    const nextStatus = {
+      ...novelChangeReviewStatus,
+      [change.id]: 'accepted' as const,
+    }
+    setNovelChangeReviewStatus(nextStatus)
+    void handleSelectNextNovelChangeAfterStatus(change, nextStatus)
+    toast.success(t('writing.review.accepted', 'Change accepted'))
+  }, [handleSelectNextNovelChangeAfterStatus, novelChangeReviewStatus, t])
+
+  const handleAcceptAllNovelChanges = React.useCallback(() => {
+    const nextStatus: Record<string, 'accepted' | 'rejected'> = { ...novelChangeReviewStatus }
+    for (const change of reviewableNovelFileChanges) {
+      if (change.error) continue
+      if (nextStatus[change.id]) continue
+      nextStatus[change.id] = 'accepted'
+    }
+
+    setNovelChangeReviewStatus(nextStatus)
+    toast.success(t('writing.review.acceptedAll', 'All changes accepted'))
+  }, [novelChangeReviewStatus, reviewableNovelFileChanges, t])
+
+  const handleRejectNovelChange = React.useCallback(async (change: FileChange) => {
+    if (selectedNovelFile?.path === change.filePath) {
+      const saved = await ensureNovelDocumentSaved()
+      if (!saved) return
+    }
+
+    try {
+      const currentContent = await window.electronAPI.readFile(change.filePath)
+      const rejected = buildRejectedFileContent(change, currentContent)
+      if (!rejected.ok) {
+        toast.error(t('writing.review.rejectUnavailable', 'Cannot safely reject this change'), {
+          description: rejected.reason,
+        })
+        return
+      }
+
+      await window.electronAPI.writeFile(change.filePath, rejected.content)
+      const nextStatus = {
+        ...novelChangeReviewStatus,
+        [change.id]: 'rejected' as const,
+      }
+      setNovelChangeReviewStatus(nextStatus)
+
+      if (selectedNovelFile?.path === change.filePath) {
+        setNovelDocumentContent(rejected.content)
+        setSavedNovelDocumentContent(rejected.content)
+      }
+
+      void handleSelectNextNovelChangeAfterStatus(change, nextStatus)
+      toast.success(t('writing.review.rejected', 'Change rejected'))
+    } catch (error) {
+      toast.error(t('writing.review.rejectFailed', 'Failed to reject this change'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }, [
+    ensureNovelDocumentSaved,
+    handleSelectNextNovelChangeAfterStatus,
+    novelChangeReviewStatus,
+    selectedNovelFile?.path,
+    t,
+  ])
 
   const handleFlaggedClick = useCallback(() => {
     navigate(routes.view.flagged())
@@ -1923,6 +2567,166 @@ function AppShellContent({
     handleNewChat()
   }, [menuNewChatTrigger, handleNewChat])
 
+  const novelWorkspaceSidebarLinks = React.useMemo((): LeftSidebarItem[] => {
+    if (!showNovelWorkspaceSidebar) return []
+
+    const sectionDefinitions: Array<{
+      id: NovelWorkspaceFileSectionId
+      title: string
+      icon: LeftSidebarLinkItem['icon']
+      files: NovelWorkspaceFile[]
+    }> = [
+      { id: 'manuscript', title: t('writing.tabs.manuscript'), icon: BookOpenText, files: novelWorkspaceTree.manuscript.files },
+      { id: 'outline', title: t('writing.tabs.outline'), icon: ScrollText, files: novelWorkspaceTree.outline.files },
+      { id: 'characters', title: t('writing.tabs.characters'), icon: UsersRound, files: novelWorkspaceTree.characters.files },
+      { id: 'locations', title: t('writing.tabs.locations'), icon: MapPinned, files: novelWorkspaceTree.locations.files },
+      { id: 'style', title: t('writing.tabs.style', 'Style'), icon: Palette, files: novelWorkspaceTree.style.files },
+      { id: 'timeline', title: t('writing.tabs.timeline'), icon: Calendar, files: novelWorkspaceTree.timeline.files },
+      { id: 'state', title: t('writing.tabs.state'), icon: ListTodo, files: novelWorkspaceTree.state.files },
+      { id: 'analysis', title: t('writing.tabs.analysis', 'Analysis'), icon: Search, files: novelWorkspaceTree.analysis.files },
+      { id: 'work', title: t('writing.tabs.work', 'Work'), icon: Layers, files: novelWorkspaceTree.work.files },
+    ]
+
+    const fileItem = (file: NovelWorkspaceFile): LeftSidebarItem => ({
+      id: `writing:file:${file.path}`,
+      title: formatNovelWorkspaceFileTitle(file, t),
+      tooltip: file.relativePath,
+      icon: FileText,
+      variant: file.path === selectedNovelFile?.path ? 'default' : 'ghost',
+      compact: true,
+      onClick: () => {
+        handleSelectNovelFile(file)
+      },
+    })
+
+    const sectionItems: LeftSidebarItem[] = sectionDefinitions.map((section) => {
+      const sectionId = `writing:section:${section.id}`
+      const hasSelectedFile = section.files.some(file => file.path === selectedNovelFile?.path)
+
+      return {
+        id: sectionId,
+        title: section.title,
+        label: String(section.files.length),
+        icon: section.icon,
+        variant: hasSelectedFile ? 'default' : 'ghost',
+        expandable: true,
+        expanded: isExpanded(sectionId),
+        onToggle: () => toggleExpanded(sectionId),
+        onClick: () => {
+          const firstFile = section.files[0]
+          if (firstFile) {
+            handleSelectNovelFile(firstFile)
+          }
+        },
+        items: section.files.map(fileItem),
+      }
+    })
+
+    return [{
+      id: 'nav:writingCatalog',
+      title: t('writing.workspace'),
+      label: String(novelWorkspaceFiles.length),
+      icon: Library,
+      variant: 'ghost',
+      expandable: true,
+      expanded: isExpanded('nav:writingCatalog'),
+      onToggle: () => toggleExpanded('nav:writingCatalog'),
+      onClick: () => toggleExpanded('nav:writingCatalog'),
+      items: sectionItems,
+    }]
+  }, [
+    handleSelectNovelFile,
+    isExpanded,
+    novelWorkspaceFiles,
+    novelWorkspaceTree,
+    selectedNovelFile?.path,
+    showNovelWorkspaceSidebar,
+    t,
+    toggleExpanded,
+  ])
+
+  const novelWorkspaceUtilitySidebarLinks = React.useMemo((): LeftSidebarItem[] => {
+    if (!showNovelWorkspaceSidebar) return []
+
+    return [
+      {
+        id: "nav:sources",
+        title: t("sidebar.sources"),
+        label: String(sources.length),
+        icon: DatabaseZap,
+        variant: (isSourcesNavigation(navState) && !sourceFilter) ? "default" : "ghost",
+        onClick: handleSourcesClick,
+        dataTutorial: "sources-nav",
+        contextMenu: {
+          type: 'sources',
+          onAddSource: () => openAddSource(),
+        },
+      },
+      {
+        id: "nav:skills",
+        title: t("sidebar.skills"),
+        label: String(skills.length),
+        icon: Zap,
+        variant: isSkillsNavigation(navState) ? "default" : "ghost",
+        onClick: handleSkillsClick,
+        contextMenu: {
+          type: 'skills',
+          onAddSkill: openAddSkill,
+        },
+      },
+      {
+        id: "nav:automations",
+        title: t("sidebar.automations"),
+        label: String(automations.length),
+        icon: ListTodo,
+        variant: (isAutomationsNavigation(navState) && !automationFilter) ? "default" : "ghost",
+        onClick: handleAutomationsClick,
+        contextMenu: {
+          type: 'automations' as const,
+          onAddAutomation: openAddAutomation,
+        },
+      },
+      { id: "separator:writing-settings", type: "separator" },
+      {
+        id: "nav:settings",
+        title: t("sidebar.settings"),
+        icon: Settings,
+        variant: isSettingsNavigation(navState) ? "default" : "ghost",
+        onClick: () => handleSettingsClick('app'),
+      },
+      {
+        id: "nav:whats-new",
+        title: t("sidebar.whatsNew"),
+        icon: hasUnseenReleaseNotes ? (
+          <span className="relative">
+            <Cake className="h-3.5 w-3.5" />
+            <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-accent" />
+          </span>
+        ) : Cake,
+        variant: "ghost" as const,
+        onClick: handleWhatsNewClick,
+      },
+    ]
+  }, [
+    automationFilter,
+    automations.length,
+    handleAutomationsClick,
+    handleSettingsClick,
+    handleSkillsClick,
+    handleSourcesClick,
+    handleWhatsNewClick,
+    hasUnseenReleaseNotes,
+    navState,
+    openAddAutomation,
+    openAddSkill,
+    openAddSource,
+    showNovelWorkspaceSidebar,
+    skills.length,
+    sourceFilter,
+    sources.length,
+    t,
+  ])
+
   // Unified sidebar items: nav buttons only (agents system removed)
   type SidebarItem = {
     id: string
@@ -1932,6 +2736,29 @@ function AppShellContent({
 
   const unifiedSidebarItems = React.useMemo((): SidebarItem[] => {
     const result: SidebarItem[] = []
+
+    if (showNovelWorkspaceSidebar) {
+      const rootItem = novelWorkspaceSidebarLinks[0]
+      result.push({ id: 'nav:writingCatalog', type: 'nav', action: rootItem && !('type' in rootItem) ? rootItem.onClick : undefined })
+      for (const item of novelWorkspaceSidebarLinks) {
+        if ('items' in item && item.items) {
+          for (const section of item.items) {
+            if ('type' in section) continue
+            result.push({ id: section.id, type: 'nav', action: section.onClick })
+            for (const child of section.items ?? []) {
+              if ('type' in child) continue
+              result.push({ id: child.id, type: 'nav', action: child.onClick })
+            }
+          }
+        }
+      }
+      result.push({ id: 'nav:sources', type: 'nav', action: handleSourcesClick })
+      result.push({ id: 'nav:skills', type: 'nav', action: handleSkillsClick })
+      result.push({ id: 'nav:automations', type: 'nav', action: handleAutomationsClick })
+      result.push({ id: 'nav:settings', type: 'nav', action: () => handleSettingsClick('app') })
+      result.push({ id: 'nav:whats-new', type: 'nav', action: handleWhatsNewClick })
+      return result
+    }
 
     // 1. Sessions section: All Sessions (expandable) with status items, Flagged, Archived as children
     result.push({ id: 'nav:allSessions', type: 'nav', action: handleAllSessionsClick })
@@ -1962,7 +2789,7 @@ function AppShellContent({
     result.push({ id: 'nav:whats-new', type: 'nav', action: handleWhatsNewClick })
 
     return result
-  }, [handleAllSessionsClick, handleFlaggedClick, handleArchivedClick, handleSessionStatusClick, effectiveSessionStatuses, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleSourcesClick, handleSkillsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
+  }, [handleAllSessionsClick, handleFlaggedClick, handleArchivedClick, handleSessionStatusClick, effectiveSessionStatuses, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleSourcesClick, handleSkillsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick, novelWorkspaceSidebarLinks, showNovelWorkspaceSidebar])
 
   // Toggle folder expanded state
   const handleToggleFolder = React.useCallback((path: string) => {
@@ -2195,12 +3022,29 @@ function AppShellContent({
           onToggleFocusMode={() => setIsSidebarAndNavigatorHidden(prev => !prev)}
           onAddSessionPanel={() => handleNewChat(true)}
           onAddBrowserPanel={() => { void handleNewBrowserWindow() }}
+          workspaceTools={showNovelWorkspaceSidebar ? (
+            <NovelWorkspaceUtilityTopNav
+              links={novelWorkspaceUtilitySidebarLinks}
+              getItemProps={getSidebarItemProps}
+              focusedItemId={focusedSidebarItemId}
+            />
+          ) : undefined}
+          rightTools={showNovelWorkspaceSidebar ? (
+            <HeaderIconButton
+              icon={<Download className="h-4 w-4" />}
+              tooltip={t('writing.export.action', '导出')}
+              disabled={novelWorkspaceFiles.length === 0}
+              onClick={() => setNovelExportDialogOpen(true)}
+              className="h-[26px] w-[26px] rounded-lg"
+            />
+          ) : undefined}
           isCompact={isAutoCompact}
         />
 
       {/* === OUTER LAYOUT: Unified Panel Stack | Right Sidebar === */}
       <div
         ref={shellRef}
+        onMouseDownCapture={handleNavigatorResizeBoundaryMouseDownCapture}
         className="flex items-stretch relative"
         style={{ height: '100%', paddingRight: PANEL_EDGE_INSET, paddingBottom: PANEL_EDGE_INSET, paddingLeft: 0, gap: PANEL_GAP }}
       >
@@ -2217,34 +3061,6 @@ function AppShellContent({
             <div className="flex h-full flex-col select-none">
               {/* Sidebar Top Section */}
               <div className="flex-1 flex flex-col min-h-0">
-                {/* New Session Button - Gmail-style, with context menu for "Open in New Window" */}
-                <div className="px-2 pb-2 shrink-0">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div>
-                        <ContextMenu modal={true}>
-                          <ContextMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              onClick={(e) => handleNewChat(e.metaKey || e.ctrlKey)}
-                              className="w-full justify-start gap-2 py-[7px] px-2 text-[13px] font-normal rounded-[6px] shadow-minimal bg-background"
-                              data-tutorial="new-chat-button"
-                            >
-                              <SquarePenRounded className="h-3.5 w-3.5 shrink-0" />
-                              {t("session.newSession")}
-                            </Button>
-                          </ContextMenuTrigger>
-                          <StyledContextMenuContent>
-                            <ContextMenuProvider>
-                              <SidebarMenu type="newSession" />
-                            </ContextMenuProvider>
-                          </StyledContextMenuContent>
-                        </ContextMenu>
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent side="right">{newChatHotkey}</TooltipContent>
-                  </Tooltip>
-                </div>
                 {/* Primary Nav: All Sessions (▸ Statuses, Flagged, Archived), Labels | Sources, Skills | Settings */}
                 {/* pb-4 provides clearance so the last item scrolls above the mask-fade-bottom gradient */}
                 <div className="flex-1 overflow-y-auto min-h-0 mask-fade-bottom pb-4">
@@ -2252,7 +3068,7 @@ function AppShellContent({
                   isCollapsed={false}
                   getItemProps={getSidebarItemProps}
                   focusedItemId={focusedSidebarItemId}
-                  links={[
+                  links={showNovelWorkspaceSidebar ? novelWorkspaceSidebarLinks : [
                     // --- Sessions Section ---
                     // All Sessions: expandable with status children (sortable) + Flagged & Archived as trailing items
                     {
@@ -2495,9 +3311,30 @@ function AppShellContent({
           sidebarWidth={effectiveSidebarAndNavigatorHidden ? 0 : (isSidebarVisible ? sidebarWidth : 0)}
           navigatorSlot={
             <div
-              style={{ width: isAutoCompact ? '100%' : sessionListWidth }}
+              ref={navigatorPanelRef}
+              style={{ width: isAutoCompact ? '100%' : navigatorPanelWidth }}
               className="h-full flex flex-col min-w-0 relative z-panel"
             >
+            {showNovelDocumentNavigator && novelWorkspaceRoot ? (
+              <NovelDocumentEditorPanel
+                file={selectedNovelFile}
+                content={novelDocumentContent}
+                loading={novelDocumentLoading}
+                saving={novelDocumentSaving}
+                error={novelDocumentError}
+                onChange={setNovelDocumentContent}
+                onAskAiForSelection={handleAskAiForNovelSelection}
+                reviewChange={selectedNovelReviewChange}
+                pendingChangeCount={pendingNovelChangedFilePaths.length}
+                pendingFileIndex={selectedNovelReviewFileIndex >= 0 ? selectedNovelReviewFileIndex : undefined}
+                onAcceptReviewChange={selectedNovelReviewChange ? () => handleAcceptNovelChange(selectedNovelReviewChange) : undefined}
+                onAcceptAllReviewChanges={pendingNovelChangedFilePaths.length > 0 ? handleAcceptAllNovelChanges : undefined}
+                onRejectReviewChange={selectedNovelReviewChange ? () => { void handleRejectNovelChange(selectedNovelReviewChange) } : undefined}
+                onPreviousReviewFile={() => { void handleSelectAdjacentNovelChangeFile('previous') }}
+                onNextReviewFile={() => { void handleSelectAdjacentNovelChangeFile('next') }}
+              />
+            ) : (
+              <>
             <PanelHeader
               title={isSidebarVisible ? listTitle : undefined}
               compensateForStoplight={!isSidebarVisible}
@@ -3228,20 +4065,65 @@ function AppShellContent({
                 />
               </>
             )}
+              </>
+            )}
             </div>
           }
-          navigatorWidth={isAutoCompact ? sessionListWidth : (effectiveSidebarAndNavigatorHidden ? 0 : sessionListWidth)}
+          navigatorWidth={isAutoCompact ? navigatorPanelWidth : (effectiveSidebarAndNavigatorHidden ? 0 : navigatorPanelWidth)}
+          navigatorResizeSash={!effectiveSidebarAndNavigatorHidden ? (
+            <div
+              ref={sessionListHandleRef}
+              data-panel-role="navigator-resize-sash"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={showNovelDocumentNavigator ? t('writing.workspace') : t('sidebar.allSessions')}
+              onMouseDown={(e) => { beginResize(showNovelDocumentNavigator ? 'novel-workspace-navigator' : 'session-list', e) }}
+              onMouseMove={(e) => {
+                if (sessionListHandleRef.current) {
+                  const rect = sessionListHandleRef.current.getBoundingClientRect()
+                  setSessionListHandleY(e.clientY - rect.top)
+                }
+              }}
+              onMouseLeave={() => {
+                if (isResizing !== 'session-list' && isResizing !== 'novel-workspace-navigator') {
+                  setSessionListHandleY(null)
+                }
+              }}
+              className="relative h-full cursor-col-resize flex justify-center shrink-0 z-dropdown"
+              style={{
+                width: NAVIGATOR_SASH_HIT_WIDTH,
+                margin: `0 ${NAVIGATOR_SASH_FLEX_MARGIN}px`,
+              }}
+            >
+              <div
+                className="absolute inset-0 flex justify-center cursor-col-resize"
+              >
+                <div
+                  className="absolute left-1/2 -translate-x-1/2"
+                  style={{
+                    ...getResizeGradientStyle(sessionListHandleY, sessionListHandleRef.current?.clientHeight ?? null),
+                    width: PANEL_SASH_LINE_WIDTH,
+                    top: PANEL_STACK_VERTICAL_OVERFLOW,
+                    bottom: PANEL_STACK_VERTICAL_OVERFLOW,
+                  }}
+                />
+              </div>
+            </div>
+          ) : null}
           isSidebarAndNavigatorHidden={effectiveSidebarAndNavigatorHidden}
           isRightSidebarVisible={false}
           isCompact={isAutoCompact}
           isResizing={!!isResizing}
+          hidePanelCloseButton={showNovelWorkspaceSidebar}
         />
 
         {/* Sidebar Resize Handle (absolute, hidden in focused mode) */}
         {!effectiveSidebarAndNavigatorHidden && (
         <div
           ref={resizeHandleRef}
-          onMouseDown={(e) => { e.preventDefault(); setIsResizing('sidebar') }}
+          role="separator"
+          aria-orientation="vertical"
+          onMouseDown={(e) => { beginResize('sidebar', e) }}
           onMouseMove={(e) => {
             if (resizeHandleRef.current) {
               const rect = resizeHandleRef.current.getBoundingClientRect()
@@ -3249,7 +4131,7 @@ function AppShellContent({
             }
           }}
           onMouseLeave={() => { if (!isResizing) setSidebarHandleY(null) }}
-          className="absolute cursor-col-resize z-panel flex justify-center"
+          className="absolute cursor-col-resize z-dropdown flex justify-center"
           style={{
             width: PANEL_SASH_HIT_WIDTH,
             top: PANEL_STACK_VERTICAL_OVERFLOW,
@@ -3264,41 +4146,6 @@ function AppShellContent({
             className="h-full"
             style={{
               ...getResizeGradientStyle(sidebarHandleY, resizeHandleRef.current?.clientHeight ?? null),
-              width: PANEL_SASH_LINE_WIDTH,
-            }}
-          />
-        </div>
-        )}
-
-        {/* Session List Resize Handle (absolute, hidden in focused mode) */}
-        {!effectiveSidebarAndNavigatorHidden && (
-        <div
-          ref={sessionListHandleRef}
-          onMouseDown={(e) => { e.preventDefault(); setIsResizing('session-list') }}
-          onMouseMove={(e) => {
-            if (sessionListHandleRef.current) {
-              const rect = sessionListHandleRef.current.getBoundingClientRect()
-              setSessionListHandleY(e.clientY - rect.top)
-            }
-          }}
-          onMouseLeave={() => { if (isResizing !== 'session-list') setSessionListHandleY(null) }}
-          className="absolute cursor-col-resize z-panel flex justify-center"
-          style={{
-            width: PANEL_SASH_HIT_WIDTH,
-            top: PANEL_STACK_VERTICAL_OVERFLOW,
-            bottom: PANEL_STACK_VERTICAL_OVERFLOW,
-            left:
-              (isSidebarVisible ? sidebarWidth + PANEL_GAP : PANEL_EDGE_INSET) +
-              sessionListWidth +
-              (PANEL_GAP / 2) -
-              PANEL_SASH_HALF_HIT_WIDTH,
-            transition: isResizing === 'session-list' ? undefined : 'left 0.15s ease-out',
-          }}
-        >
-          <div
-            className="h-full"
-            style={{
-              ...getResizeGradientStyle(sessionListHandleY, sessionListHandleRef.current?.clientHeight ?? null),
               width: PANEL_SASH_LINE_WIDTH,
             }}
           />
@@ -3522,6 +4369,16 @@ function AppShellContent({
         workspaces={workspaces}
         activeWorkspaceId={activeWorkspaceId}
         onTransferComplete={handleTransferComplete}
+      />
+
+      <NovelExportDialog
+        open={novelExportDialogOpen}
+        files={novelWorkspaceFiles}
+        exporting={novelExporting}
+        onOpenChange={(open) => {
+          if (!novelExporting) setNovelExportDialogOpen(open)
+        }}
+        onExport={handleExportNovelWorkspace}
       />
 
       {/* Messaging dialogs (pairing-code + WA connect) — driven by messagingDialogAtom.

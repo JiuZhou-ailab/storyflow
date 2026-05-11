@@ -4,3 +4,5 @@ export * from "./file-categories.ts";
 export * from "./claude-book-notice.ts";
 export * from "./novel-skills.ts";
 export * from "./novel-template.ts";
+export * from "./selection-rewrite.ts";
+export * from "./method-packs/index.ts";

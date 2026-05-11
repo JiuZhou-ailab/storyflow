@@ -5,6 +5,324 @@
   --tiptap-image-selection-width: 1.5px;
   --tiptap-image-selection-color: color-mix(in oklch, var(--accent) 45%, transparent);
   --tiptap-list-indent: 1.5rem;
+  position: relative;
+}
+
+.tiptap-editor--with-toolbar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tiptap-editor-content {
+  min-height: 0;
+}
+
+.tiptap-editor--with-toolbar .tiptap-editor-content {
+  flex: 1;
+  overflow: auto;
+}
+
+.tiptap-editor--with-toolbar .tiptap-prose {
+  min-height: 100%;
+}
+
+.tiptap-toolbar {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 0.25rem;
+  overflow-x: auto;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 75%, transparent);
+  background: color-mix(in oklch, var(--background) 96%, var(--foreground) 4%);
+  padding: 0.25rem 0.5rem;
+  scrollbar-width: none;
+}
+
+.tiptap-toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+.tiptap-toolbar-group {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.tiptap-toolbar-divider {
+  width: 1px;
+  height: 18px;
+  flex: 0 0 auto;
+  background: color-mix(in oklch, var(--border) 75%, transparent);
+  margin: 0 0.125rem;
+}
+
+.tiptap-toolbar-btn {
+  display: inline-flex;
+  height: 28px;
+  width: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in oklch, var(--foreground) 62%, transparent);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.tiptap-toolbar-btn:hover {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  color: var(--foreground);
+}
+
+.tiptap-toolbar-btn.is-active {
+  background: color-mix(in oklch, var(--accent) 15%, transparent);
+  color: var(--foreground);
+}
+
+.tiptap-toolbar-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--ring);
+}
+
+.tiptap-toolbar-btn:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.tiptap-editor--manuscript {
+  --tiptap-manuscript-width: 720px;
+  --tiptap-manuscript-paper: color-mix(in oklch, var(--background) 99.5%, var(--foreground) 0.5%);
+  --tiptap-manuscript-ink: color-mix(in oklch, var(--foreground) 95%, transparent);
+  --tiptap-manuscript-muted: color-mix(in oklch, var(--foreground) 54%, transparent);
+  --tiptap-manuscript-rule: color-mix(in oklch, var(--foreground) 6%, transparent);
+  container-type: inline-size;
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--background) 97%, var(--foreground) 3%) 0%,
+      color-mix(in oklch, var(--background) 99.5%, var(--foreground) 0.5%) 20%,
+      color-mix(in oklch, var(--background) 99.5%, var(--foreground) 0.5%) 80%,
+      color-mix(in oklch, var(--background) 97%, var(--foreground) 3%) 100%
+    );
+}
+
+.tiptap-editor--manuscript .tiptap-toolbar {
+  min-height: 32px;
+  justify-content: center;
+  border-bottom-color: color-mix(in oklch, var(--border) 36%, transparent);
+  background: color-mix(in oklch, var(--background) 99%, var(--foreground) 1%);
+  padding: 0.15rem clamp(0.75rem, 1.6vw, 1rem);
+  opacity: 0.72;
+  transition: opacity 0.16s ease, background-color 0.16s ease;
+}
+
+.tiptap-editor--manuscript:hover .tiptap-toolbar,
+.tiptap-editor--manuscript:focus-within .tiptap-toolbar {
+  opacity: 1;
+}
+
+.tiptap-editor--manuscript .tiptap-toolbar-btn {
+  height: 25px;
+  width: 25px;
+  border-radius: 5px;
+  color: color-mix(in oklch, var(--foreground) 44%, transparent);
+}
+
+.tiptap-editor--manuscript .tiptap-toolbar-btn:hover,
+.tiptap-editor--manuscript .tiptap-toolbar-btn.is-active {
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
+  color: color-mix(in oklch, var(--foreground) 78%, transparent);
+}
+
+.tiptap-editor--manuscript .tiptap-toolbar-divider {
+  height: 16px;
+  background: color-mix(in oklch, var(--border) 58%, transparent);
+}
+
+.tiptap-editor--manuscript .tiptap-editor-content {
+  padding: clamp(12px, 2vw, 24px) clamp(12px, 2.8vw, 36px) clamp(32px, 5vw, 64px);
+  background: transparent;
+}
+
+.tiptap-editor--manuscript .tiptap-prose {
+  box-sizing: border-box;
+  width: min(100%, var(--tiptap-manuscript-width));
+  min-height: 100%;
+  margin: 0 auto;
+  padding: clamp(32px, 4.2vw, 52px) clamp(34px, 5vw, 62px);
+  border-left: 1px solid var(--tiptap-manuscript-rule);
+  border-right: 1px solid var(--tiptap-manuscript-rule);
+  background: var(--tiptap-manuscript-paper);
+  color: var(--tiptap-manuscript-ink);
+  font-family: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "Times New Roman", serif;
+  font-size: 16.5px;
+  line-height: 1.96;
+  letter-spacing: 0;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  box-shadow:
+    0 1px 0 color-mix(in oklch, var(--foreground) 3%, transparent),
+    0 14px 32px color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+
+.tiptap-editor-status-badge {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  z-index: 3;
+  pointer-events: none;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklch, var(--border) 52%, transparent);
+  background: color-mix(in oklch, var(--background) 82%, transparent);
+  color: color-mix(in oklch, var(--foreground) 56%, transparent);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 1;
+  padding: 5px 8px;
+  box-shadow: 0 6px 18px color-mix(in oklch, var(--foreground) 6%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.tiptap-editor--line-numbers .tiptap-prose {
+  counter-reset: tiptap-line;
+}
+
+.tiptap-editor--line-numbers .tiptap-prose > * {
+  position: relative;
+  counter-increment: tiptap-line;
+}
+
+.tiptap-editor--line-numbers .tiptap-prose > *::before {
+  content: counter(tiptap-line);
+  position: absolute;
+  top: 0.2em;
+  right: calc(100% + 14px);
+  width: 2.4rem;
+  color: color-mix(in oklch, var(--foreground) 26%, transparent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.6;
+  text-align: right;
+  user-select: none;
+  pointer-events: none;
+}
+
+.tiptap-editor--line-numbers.tiptap-editor--manuscript .tiptap-prose {
+  padding-left: clamp(48px, 5.8vw, 76px);
+}
+
+.tiptap-editor--manuscript .tiptap-prose p {
+  margin: 0.72em 0;
+  line-height: inherit;
+}
+
+.tiptap-editor--manuscript .tiptap-prose h1 {
+  margin: 0 0 1.15em;
+  padding-bottom: 0.75em;
+  border-bottom: 1px solid var(--tiptap-manuscript-rule);
+  color: color-mix(in oklch, var(--foreground) 94%, transparent);
+  font-family: var(--font-sans);
+  font-size: 1.45rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.tiptap-editor--manuscript .tiptap-prose h2 {
+  margin: 1.9em 0 0.72em;
+  color: color-mix(in oklch, var(--foreground) 88%, transparent);
+  font-family: var(--font-sans);
+  font-size: 1.08rem;
+  font-weight: 620;
+  line-height: 1.5;
+}
+
+.tiptap-editor--manuscript .tiptap-prose h3 {
+  margin: 1.45em 0 0.6em;
+  color: color-mix(in oklch, var(--foreground) 78%, transparent);
+  font-family: var(--font-sans);
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.tiptap-editor--manuscript .tiptap-prose strong {
+  color: color-mix(in oklch, var(--foreground) 94%, transparent);
+  font-weight: 700;
+}
+
+.tiptap-editor--manuscript .tiptap-prose hr {
+  margin: 1.55rem 0;
+  border-top-color: var(--tiptap-manuscript-rule);
+}
+
+.tiptap-editor--manuscript .tiptap-prose blockquote {
+  margin: 1rem 0;
+  border-left-color: color-mix(in oklch, var(--accent) 32%, transparent);
+  color: var(--tiptap-manuscript-muted);
+  font-style: normal;
+}
+
+.tiptap-editor--manuscript .tiptap-prose ul,
+.tiptap-editor--manuscript .tiptap-prose ol {
+  margin: 0.8rem 0;
+  line-height: inherit;
+}
+
+.tiptap-editor--manuscript .tiptap-prose li {
+  line-height: inherit;
+}
+
+.tiptap-editor--manuscript .tiptap-prose code {
+  font-size: 0.86em;
+}
+
+@container (max-width: 520px) {
+  .tiptap-editor--manuscript .tiptap-editor-content {
+    padding: 8px 0 40px;
+  }
+
+  .tiptap-editor--manuscript .tiptap-prose {
+    width: 100%;
+    padding: 34px 36px 48px;
+    border-right: 0;
+    border-left: 0;
+    box-shadow: none;
+  }
+
+  .tiptap-editor--line-numbers.tiptap-editor--manuscript .tiptap-prose {
+    padding-left: 48px;
+  }
+
+  .tiptap-editor--line-numbers .tiptap-prose > *::before {
+    right: calc(100% + 10px);
+    width: 1.8rem;
+  }
+}
+
+@container (max-width: 360px) {
+  .tiptap-editor--manuscript .tiptap-editor-content {
+    padding: 0;
+  }
+
+  .tiptap-editor--manuscript .tiptap-prose {
+    width: 100%;
+    padding: 26px 22px 40px;
+    border-right: 0;
+    border-left: 0;
+    box-shadow: none;
+  }
+
+  .tiptap-editor--line-numbers .tiptap-prose > *::before {
+    display: none;
+  }
+
+  .tiptap-editor--line-numbers.tiptap-editor--manuscript .tiptap-prose {
+    padding-left: 22px;
+  }
 }
 
 .tiptap-editor .tiptap-prose {
@@ -361,6 +679,62 @@
 .tiptap-bubble-btn.is-active {
   background: color-mix(in oklch, var(--foreground) 10%, transparent);
   color: var(--foreground);
+}
+
+.tiptap-bubble-menu--selection-ai {
+  gap: 6px;
+  width: min(420px, calc(100vw - 32px));
+  padding: 6px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
+}
+
+.tiptap-bubble-ai-input {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 28px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 28px;
+}
+
+.tiptap-bubble-ai-input::placeholder {
+  color: color-mix(in oklch, var(--foreground) 42%, transparent);
+}
+
+.tiptap-bubble-ai-send-btn {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
+  color: color-mix(in oklch, var(--foreground) 78%, transparent);
+  cursor: pointer;
+  transition: background-color 0.1s, color 0.1s, opacity 0.1s;
+}
+
+.tiptap-bubble-ai-send-btn:hover:not(:disabled),
+.tiptap-bubble-ai-send-btn:focus-visible {
+  background: color-mix(in oklch, var(--accent) 18%, transparent);
+  color: var(--foreground);
+}
+
+.tiptap-bubble-ai-send-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--ring);
+}
+
+.tiptap-bubble-ai-send-btn:disabled {
+  cursor: default;
+  opacity: 0.38;
 }
 
 .tiptap-bubble-label {

@@ -3,8 +3,13 @@ import type { FileChange } from '@craft-agent/ui'
 import {
   buildNovelWorkspaceTree,
   detectNovelProjectFromSearchResults,
+  describeNovelWorkspaceFile,
+  getNovelWorkspaceCandidateRoots,
+  getNovelWorkspaceRelativePath,
   mapSearchResultsToNovelWorkspaceFiles,
   groupNovelFileChanges,
+  NOVEL_WORKSPACE_FILE_SEARCH_QUERIES,
+  selectDefaultNovelFile,
   selectDefaultNovelTab,
   summarizeNovelSection,
 } from '../writing-workspace'
@@ -37,6 +42,66 @@ describe('writing workspace helpers', () => {
     ])
 
     expect(selectDefaultNovelTab(tree)).toBe('manuscript')
+  })
+
+  it('selects the first manuscript file as the default editable document', () => {
+    expect(selectDefaultNovelFile([
+      { path: '/novel/story/plan.md', relativePath: 'story/plan.md' },
+      { path: '/novel/story/chapters/chapter-02.md', relativePath: 'story/chapters/chapter-02.md' },
+      { path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md' },
+    ])).toEqual({
+      path: '/novel/story/chapters/chapter-01.md',
+      relativePath: 'story/chapters/chapter-01.md',
+    })
+  })
+
+  it('sorts manuscript chapters by numeric chapter order', () => {
+    const tree = buildNovelWorkspaceTree([
+      { path: '/novel/story/chapters/chapter-10.md', relativePath: 'story/chapters/chapter-10.md' },
+      { path: '/novel/story/chapters/chapter-2.md', relativePath: 'story/chapters/chapter-2.md' },
+      { path: '/novel/story/chapters/chapter-1.md', relativePath: 'story/chapters/chapter-1.md' },
+    ])
+
+    expect(tree.manuscript.files.map(file => file.relativePath)).toEqual([
+      'story/chapters/chapter-1.md',
+      'story/chapters/chapter-2.md',
+      'story/chapters/chapter-10.md',
+    ])
+  })
+
+  it('describes fixed novel files with writer-facing labels instead of paths', () => {
+    expect(describeNovelWorkspaceFile('bible/structure.md')).toEqual({
+      labelKey: 'writing.fileLabels.narrativeStructure',
+      fallbackTitle: 'Narrative structure',
+    })
+    expect(describeNovelWorkspaceFile('story/plan.md')).toEqual({
+      labelKey: 'writing.fileLabels.chapterPlan',
+      fallbackTitle: 'Chapter plan',
+    })
+    expect(describeNovelWorkspaceFile('story/chapters/chapter-01.md')).toEqual({
+      labelKey: 'writing.fileLabels.chapter',
+      labelParams: { number: '1' },
+      fallbackTitle: 'Chapter 1',
+    })
+  })
+
+  it('falls back to a humanized file name for custom novel files', () => {
+    expect(describeNovelWorkspaceFile('bible/characters/lin-qing.md')).toEqual({
+      fallbackTitle: 'Lin Qing',
+    })
+    expect(describeNovelWorkspaceFile('story/chapters/prologue.md')).toEqual({
+      fallbackTitle: 'Prologue',
+    })
+  })
+
+  it('falls back to outline when no manuscript file exists', () => {
+    expect(selectDefaultNovelFile([
+      { path: '/novel/bible/characters/alice.md', relativePath: 'bible/characters/alice.md' },
+      { path: '/novel/story/plan.md', relativePath: 'story/plan.md' },
+    ])).toEqual({
+      path: '/novel/story/plan.md',
+      relativePath: 'story/plan.md',
+    })
   })
 
   it('selects outline as default before chapters exist', () => {
@@ -72,15 +137,49 @@ describe('writing workspace helpers', () => {
     expect(grouped.other.map(item => item.filePath)).toEqual(['/novel/README.md'])
   })
 
+  it('strips the novel workspace root before deriving display paths', () => {
+    expect(getNovelWorkspaceRelativePath('/novel/bible/structure.md', '/novel')).toBe('bible/structure.md')
+    expect(getNovelWorkspaceRelativePath('/other/bible/structure.md', '/novel')).toBe('/other/bible/structure.md')
+  })
+
   it('maps file search results to novel workspace files and drops unknown files', () => {
     const files = mapSearchResultsToNovelWorkspaceFiles([
       { name: 'chapter-01.md', path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md', type: 'file' },
+      { name: 'chapter-01.md', path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md', type: 'file' },
       { name: 'README.md', path: '/novel/README.md', relativePath: 'README.md', type: 'file' },
+      { name: 'situation.md', path: '/novel/state/template/situation.md', relativePath: 'state/template/situation.md', type: 'file' },
       { name: 'characters', path: '/novel/bible/characters', relativePath: 'bible/characters', type: 'directory' },
     ])
 
     expect(files).toEqual([
       { path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md' },
+      { path: '/novel/state/template/situation.md', relativePath: 'state/template/situation.md' },
+    ])
+  })
+
+  it('defines targeted searches for the fixed novel workspace catalog', () => {
+    expect(NOVEL_WORKSPACE_FILE_SEARCH_QUERIES).toEqual([
+      'story/chapters',
+      'story/plan.md',
+      'story/synopsis.md',
+      'story',
+      'bible/structure.md',
+      'bible/characters',
+      'bible/universe',
+      'state',
+      'timeline',
+      '设定',
+      '大纲',
+      '正文',
+      '追踪',
+      '参考资料',
+      '拆文库',
+      '对标',
+      'planning',
+      'outline',
+      'draft',
+      'work',
+      'kb',
     ])
   })
 
@@ -104,6 +203,23 @@ describe('writing workspace helpers', () => {
       { name: 'story', path: '/repo/story', relativePath: 'story', type: 'directory' },
       { name: 'README.md', path: '/repo/README.md', relativePath: 'README.md', type: 'file' },
     ])).toBe(false)
+  })
+
+  it('checks the active workspace root before the session working directory', () => {
+    expect(getNovelWorkspaceCandidateRoots({
+      activeWorkspaceRootPath: '/workspaces/book',
+      sessionWorkingDirectory: '/workspaces/book/sessions/260509-session',
+    })).toEqual([
+      '/workspaces/book',
+      '/workspaces/book/sessions/260509-session',
+    ])
+  })
+
+  it('deduplicates equivalent novel workspace candidate roots', () => {
+    expect(getNovelWorkspaceCandidateRoots({
+      activeWorkspaceRootPath: '/workspaces/book/',
+      sessionWorkingDirectory: '/workspaces/book',
+    })).toEqual(['/workspaces/book'])
   })
 })
 

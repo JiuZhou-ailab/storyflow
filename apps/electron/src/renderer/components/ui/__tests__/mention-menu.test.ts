@@ -13,10 +13,16 @@ mock.module('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '' }));
 mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDocument: () => ({}) }));
 
 let isValidMentionTrigger: (text: string, position: number) => boolean;
+let parseInlineMentionQuery: typeof import('../mention-menu').parseInlineMentionQuery;
+let filterMentionFileReferences: typeof import('../mention-menu').filterMentionFileReferences;
+let getMentionInsertionText: typeof import('../mention-menu').getMentionInsertionText;
 
 beforeAll(async () => {
   const mod = await import('../mention-menu');
   isValidMentionTrigger = mod.isValidMentionTrigger;
+  parseInlineMentionQuery = mod.parseInlineMentionQuery;
+  filterMentionFileReferences = mod.filterMentionFileReferences;
+  getMentionInsertionText = mod.getMentionInsertionText;
 });
 
 describe('isValidMentionTrigger', () => {
@@ -123,3 +129,31 @@ describe('isValidMentionTrigger', () => {
     });
   });
 });
+
+describe('parseInlineMentionQuery', () => {
+  it('keeps Chinese query text after @ so chapter titles can be suggested', () => {
+    expect(parseInlineMentionQuery('@第')).toEqual({ start: 0, filter: '第' })
+    expect(parseInlineMentionQuery('改写 @第4章')).toEqual({ start: 3, filter: '第4章' })
+  })
+
+  it('still rejects email-like @ usage', () => {
+    expect(parseInlineMentionQuery('user@test')).toBeNull()
+  })
+})
+
+describe('writing file mention references', () => {
+  it('matches files by display label while preserving the relative path as mention payload', () => {
+    const [item] = filterMentionFileReferences([
+      {
+        path: '/novel/正文/第4章-零点一秒的生死线.md',
+        relativePath: '正文/第4章-零点一秒的生死线.md',
+        label: '第4章 零点一秒的生死线',
+        type: 'file',
+      },
+    ], '零点')
+
+    expect(item?.label).toBe('第4章 零点一秒的生死线')
+    expect(item?.file?.relativePath).toBe('正文/第4章-零点一秒的生死线.md')
+    expect(getMentionInsertionText(item!)).toBe('[file:' + '正文/第4章-零点一秒的生死线.md' + '] ')
+  })
+})

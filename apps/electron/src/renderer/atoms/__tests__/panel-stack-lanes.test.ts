@@ -3,6 +3,7 @@ import { createStore } from 'jotai'
 import {
   panelStackAtom,
   focusedPanelIdAtom,
+  routeHasSelectedContent,
   pushPanelAtom,
   reconcilePanelStackAtom,
   updateFocusedPanelRouteAtom,
@@ -107,5 +108,20 @@ describe('panel stack single-lane behavior', () => {
 
     expect(changed).toBe(false)
     expect(store.get(focusedPanelIdAtom)).toBe(secondId)
+  })
+
+  it('detects selected content for all compact detail route types', () => {
+    expect(routeHasSelectedContent('allSessions/session/s1')).toBe(true)
+    expect(routeHasSelectedContent('sources/source/github')).toBe(true)
+    expect(routeHasSelectedContent('sources/api/source/gmail')).toBe(true)
+    expect(routeHasSelectedContent('skills/skill/story-ideator')).toBe(true)
+    expect(routeHasSelectedContent('automations/automation/a1')).toBe(true)
+    expect(routeHasSelectedContent('settings/app')).toBe(true)
+
+    expect(routeHasSelectedContent('allSessions')).toBe(false)
+    expect(routeHasSelectedContent('sources')).toBe(false)
+    expect(routeHasSelectedContent('sources/api')).toBe(false)
+    expect(routeHasSelectedContent('skills')).toBe(false)
+    expect(routeHasSelectedContent('automations')).toBe(false)
   })
 })

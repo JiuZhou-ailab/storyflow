@@ -20,7 +20,7 @@ import { useRef, useEffect } from 'react'
 import { useAtomValue } from 'jotai'
 import { motion } from 'motion/react'
 import { cn } from '@/lib/utils'
-import { panelStackAtom, focusedPanelIdAtom, focusedSessionIdAtom } from '@/atoms/panel-stack'
+import { panelStackAtom, focusedPanelIdAtom, focusedRouteHasSelectedContentAtom } from '@/atoms/panel-stack'
 import { PanelSlot } from './PanelSlot'
 import { PanelResizeSash } from './PanelResizeSash'
 import {
@@ -39,11 +39,13 @@ interface PanelStackContainerProps {
   sidebarWidth: number
   navigatorSlot: React.ReactNode
   navigatorWidth: number
+  navigatorResizeSash?: React.ReactNode
   isSidebarAndNavigatorHidden: boolean
   isRightSidebarVisible?: boolean
   /** Compact mode: single-panel, list/content toggle (mobile or narrow window) */
   isCompact?: boolean
   isResizing?: boolean
+  hidePanelCloseButton?: boolean
 }
 
 export function PanelStackContainer({
@@ -51,14 +53,16 @@ export function PanelStackContainer({
   sidebarWidth,
   navigatorSlot,
   navigatorWidth,
+  navigatorResizeSash,
   isSidebarAndNavigatorHidden,
   isRightSidebarVisible,
   isCompact = false,
   isResizing,
+  hidePanelCloseButton,
 }: PanelStackContainerProps) {
   const panelStack = useAtomValue(panelStackAtom)
   const focusedPanelId = useAtomValue(focusedPanelIdAtom)
-  const focusedSessionId = useAtomValue(focusedSessionIdAtom)
+  const focusedRouteHasSelectedContent = useAtomValue(focusedRouteHasSelectedContentAtom)
 
   const contentPanels = panelStack
 
@@ -67,7 +71,7 @@ export function PanelStackContainer({
   // (e.g., allSessions/session/abc), show content. When on a list view
   // (e.g., allSessions), show navigator. This allows back-navigation to
   // return to the session list.
-  const hasSelectedContent = isCompact && !!focusedSessionId
+  const hasSelectedContent = isCompact && focusedRouteHasSelectedContent
   const visiblePanels = isCompact
     ? contentPanels.filter(e => e.id === focusedPanelId).slice(0, 1)
     : contentPanels
@@ -170,6 +174,8 @@ export function PanelStackContainer({
           </div>
         </motion.div>
 
+        {hasNavigator ? navigatorResizeSash : null}
+
         {/* === CONTENT PANELS WITH SASHES === */}
         {visiblePanels.length === 0 ? (
           // Only show empty placeholder when not in compact mode (compact shows navigator instead)
@@ -186,6 +192,7 @@ export function PanelStackContainer({
               isAtRightEdge={index === visiblePanels.length - 1 && !isRightSidebarVisible}
               proportion={entry.proportion}
               isCompact={isCompact}
+              hideCloseButton={hidePanelCloseButton}
               sash={index > 0 ? (
                 <PanelResizeSash
                   leftIndex={index - 1}

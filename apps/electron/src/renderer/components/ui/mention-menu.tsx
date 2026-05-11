@@ -24,6 +24,14 @@ export interface MentionItem {
   file?: { path: string; type: 'file' | 'directory'; relativePath: string }
 }
 
+export interface MentionFileReference {
+  path: string
+  relativePath: string
+  label: string
+  type: 'file' | 'directory'
+  description?: string
+}
+
 export interface MentionSection {
   id: string
   label: string
@@ -107,6 +115,79 @@ function filterCacheResults(cache: FileSearchResult[], query: string): MentionIt
     description: f.relativePath,
     file: { path: f.path, type: f.type, relativePath: f.relativePath },
   }))
+}
+
+function scoreMentionFileReference(file: MentionFileReference, query: string): number {
+  const lowerQuery = query.trimEnd().toLowerCase()
+  if (!lowerQuery) return 1
+
+  const candidates = [
+    file.label,
+    file.relativePath,
+    file.description ?? '',
+  ].map(value => value.toLowerCase())
+
+  if (candidates.some(candidate => candidate.includes(lowerQuery))) return 2
+  if (candidates.some(candidate => subsequenceMatch(candidate, lowerQuery))) return 1
+  return 0
+}
+
+export function filterMentionFileReferences(files: MentionFileReference[], query: string): MentionItem[] {
+  const scored = files
+    .map(file => ({ file, score: scoreMentionFileReference(file, query) }))
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => {
+      if (a.score !== b.score) return b.score - a.score
+      return a.file.label.localeCompare(b.file.label)
+    })
+    .slice(0, 30)
+
+  return scored.map(({ file }) => ({
+    id: file.path,
+    type: file.type === 'directory' ? 'folder' as const : 'file' as const,
+    label: file.label,
+    description: file.description ?? file.relativePath,
+    file: { path: file.path, type: file.type, relativePath: file.relativePath },
+  }))
+}
+
+function dedupeMentionItems(items: MentionItem[]): MentionItem[] {
+  const seen = new Set<string>()
+  const deduped: MentionItem[] = []
+
+  for (const item of items) {
+    const key = `${item.type}:${item.file?.relativePath ?? item.id}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    deduped.push(item)
+  }
+
+  return deduped
+}
+
+export function getMentionInsertionText(item: MentionItem, workspaceId?: string): string {
+  const buildMentionText = (kind: 'skill' | 'source' | 'file' | 'folder', value: string): string =>
+    '[' + kind + ':' + value + '] '
+
+  if (item.type === 'skill') {
+    const pluginName = item.skill?.source === 'workspace' ? workspaceId : AGENTS_PLUGIN_NAME
+    const qualifiedName = pluginName ? `${pluginName}:${item.id}` : item.id
+    return buildMentionText('skill', qualifiedName)
+  }
+
+  if (item.type === 'source') {
+    return buildMentionText('source', item.id)
+  }
+
+  if (item.type === 'file') {
+    return buildMentionText('file', item.file?.relativePath || item.id)
+  }
+
+  if (item.type === 'folder') {
+    return buildMentionText('folder', item.file?.relativePath || item.id)
+  }
+
+  return buildMentionText('skill', item.id)
 }
 
 // ============================================================================
@@ -193,6 +274,18 @@ export function isValidMentionTrigger(textBeforeCursor: string, atPosition: numb
   if (charBefore === undefined) return false
   // Allow whitespace or opening brackets/quotes before @
   return /\s/.test(charBefore) || /[("']/.test(charBefore)
+}
+
+export function parseInlineMentionQuery(textBeforeCursor: string): { start: number; filter: string } | null {
+  // Unicode letters/numbers are allowed so localized file titles like "第4章" work.
+  const atMatch = textBeforeCursor.match(/@([\p{L}\p{N}\p{M}_\-\/.\s]{0,100})?$/u)
+  const matchStart = atMatch ? textBeforeCursor.lastIndexOf('@') : -1
+  if (!atMatch || !isValidMentionTrigger(textBeforeCursor, matchStart)) return null
+
+  return {
+    start: matchStart,
+    filter: atMatch[1] || '',
+  }
 }
 
 // ============================================================================
@@ -450,6 +543,8 @@ export interface UseInlineMentionOptions {
   inputRef: React.RefObject<MentionInputElement | null>
   skills: LoadedSkill[]
   sources: LoadedSource[]
+  /** Files that should be mentionable by their user-facing display labels. */
+  files?: MentionFileReference[]
   /** Base path for file search (working directory) */
   basePath?: string
   onSelect: (item: MentionItem) => void
@@ -473,6 +568,7 @@ export function useInlineMention({
   inputRef,
   skills,
   sources,
+  files = [],
   basePath,
   onSelect,
   workspaceId,
@@ -539,34 +635,29 @@ export function useInlineMention({
       })
     }
 
-    // Files section (from async search results)
-    if (fileResults.length > 0) {
+    // Files section (indexed writing files + async filesystem search results)
+    const indexedFileResults = filterMentionFileReferences(files, filter)
+    const mergedFileResults = dedupeMentionItems([...indexedFileResults, ...fileResults])
+    if (mergedFileResults.length > 0) {
       result.push({
         id: 'files',
         label: 'Files',
-        items: fileResults,
+        items: mergedFileResults,
       })
     }
 
     return result
-  }, [skills, sources, fileResults])
+  }, [skills, sources, files, filter, fileResults])
 
   const handleInputChange = React.useCallback((value: string, cursorPosition: number) => {
     // Store current state for handleSelect
     currentInputRef.current = { value, cursorPosition }
 
     const textBeforeCursor = value.slice(0, cursorPosition)
-    // Match @ followed by up to 100 chars (word chars, hyphens, slashes, dots, and spaces).
-    // Spaces are allowed so users can type filenames with spaces (e.g. @app availability.md).
-    // The menu auto-closes when a space produces no matches (Slack-style behavior).
-    const atMatch = textBeforeCursor.match(/@([\w\-\/.\s]{0,100})?$/)
+    const query = parseInlineMentionQuery(textBeforeCursor)
 
-    // Check if this is a valid @ mention trigger
-    const matchStart = atMatch ? textBeforeCursor.lastIndexOf('@') : -1
-    const isValidTrigger = atMatch && isValidMentionTrigger(textBeforeCursor, matchStart)
-
-    if (isValidTrigger) {
-      const filterText = atMatch[1] || ''
+    if (query) {
+      const filterText = query.filter
 
       // Slack-style auto-close: if the query contains a space and the file cache is
       // populated but produces zero matches, close the menu. This prevents the
@@ -590,8 +681,11 @@ export function useInlineMention({
         }
       }
 
-      setAtStart(matchStart)
+      setAtStart(query.start)
       setFilter(filterText)
+      if (files.length > 0) {
+        setCommittedFilter(filterText)
+      }
 
       // Cache-first file search: if cache has entries from a previous IPC call,
       // filter client-side instantly (no IPC, no debounce). Otherwise fire a
@@ -673,7 +767,7 @@ export function useInlineMention({
       setFileResults([])
       fileCache.current = []
     }
-  }, [inputRef, basePath])
+  }, [inputRef, basePath, files.length])
 
   const handleSelect = React.useCallback((item: MentionItem): { value: string; cursorPosition: number } => {
     let result = ''
@@ -684,29 +778,7 @@ export function useInlineMention({
       const before = currentValue.slice(0, atStart)
       const after = currentValue.slice(cursorPosition)
 
-      const buildMentionText = (kind: 'skill' | 'source' | 'file' | 'folder', value: string): string =>
-        '[' + kind + ':' + value + '] '
-
-      // Build the mention text based on type using bracket syntax.
-      // Skills use fully-qualified names (workspaceId:slug) because the SDK's
-      // Skill tool requires this format to resolve workspace-scoped skills.
-      let mentionText: string
-      if (item.type === 'skill') {
-        // Plugin name depends on which tier the skill came from:
-        //   workspace → workspaceId, project/global → ".agents"
-        const pluginName = item.skill?.source === 'workspace' ? workspaceId : AGENTS_PLUGIN_NAME
-        const qualifiedName = pluginName ? `${pluginName}:${item.id}` : item.id
-        mentionText = buildMentionText('skill', qualifiedName)
-      } else if (item.type === 'source') {
-        mentionText = buildMentionText('source', item.id)
-      } else if (item.type === 'file') {
-        // Use relative path for file mentions
-        mentionText = buildMentionText('file', item.file?.relativePath || item.id)
-      } else if (item.type === 'folder') {
-        mentionText = buildMentionText('folder', item.file?.relativePath || item.id)
-      } else {
-        mentionText = buildMentionText('skill', item.id)
-      }
+      const mentionText = getMentionInsertionText(item, workspaceId)
 
       result = before + mentionText + after
       newCursorPosition = before.length + mentionText.length

@@ -69,6 +69,9 @@ export type { LoadedSkill, SkillMetadata };
 import type { ExportResourcesOptions, ExportResult, ResourceImportMode, ResourceBundle, ResourceImportResult } from '@craft-agent/shared/resources';
 export type { ExportResourcesOptions, ExportResult, ResourceImportMode, ResourceBundle, ResourceImportResult };
 
+// Writing method pack types
+import type { MethodPackId } from '@craft-agent/shared/writing/method-packs';
+
 // LLM connection types
 import type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings } from '@craft-agent/shared/config';
 export type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings };
@@ -78,6 +81,7 @@ export type WorkspaceProjectType = 'general' | 'novel';
 export interface CreateWorkspaceOptions {
   remoteServer?: CoreRemoteServerConfig;
   projectType?: WorkspaceProjectType;
+  methodPackId?: MethodPackId;
 }
 
 // =============================================================================
@@ -192,6 +196,8 @@ import type {
   CreateSessionOptions,
   FileAttachment,
   SendMessageOptions,
+  NovelSelectionRewriteRequest,
+  NovelSelectionRewriteResult,
   SessionEvent,
   PermissionResponseOptions,
   CredentialResponse,
@@ -231,6 +237,7 @@ export interface ElectronAPI {
   createSession(workspaceId: string, options?: CreateSessionOptions): Promise<Session>
   deleteSession(sessionId: string): Promise<void>
   sendMessage(sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachmentType[], options?: SendMessageOptions): Promise<void>
+  rewriteNovelSelection(sessionId: string, request: NovelSelectionRewriteRequest): Promise<NovelSelectionRewriteResult>
   cancelProcessing(sessionId: string, silent?: boolean): Promise<void>
   killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }>
   getTaskOutput(taskId: string): Promise<string | null>
@@ -309,6 +316,8 @@ export interface ElectronAPI {
 
   // File operations
   readFile(path: string): Promise<string>
+  writeFile(path: string, content: string): Promise<void>
+  createDirectory(path: string): Promise<void>
   /** Read a file as binary data (Uint8Array) */
   readFileBinary(path: string): Promise<Uint8Array>
   /** Read a file as a data URL (data:{mime};base64,...) for binary preview (images, PDFs) */

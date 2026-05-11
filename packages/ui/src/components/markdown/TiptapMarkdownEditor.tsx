@@ -1,3 +1,7 @@
+// input: Markdown content, editor configuration, and optional document actions
+// output: TipTap-powered Markdown editing surface with toolbar and bubble menus
+// pos: Shared Markdown editor used by app document and writing surfaces
+
 import * as React from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -9,8 +13,26 @@ import Image from '@tiptap/extension-image'
 import FileHandler from '@tiptap/extension-file-handler'
 import { Markdown as OfficialMarkdown } from '@tiptap/markdown'
 import { Markdown as LegacyMarkdown } from 'tiptap-markdown'
+import type { Editor } from '@tiptap/react'
+import {
+  Bold,
+  Code,
+  Heading1,
+  Heading2,
+  Heading3,
+  Italic,
+  List,
+  ListChecks,
+  ListOrdered,
+  Minus,
+  Pilcrow,
+  Quote,
+  Redo2,
+  Strikethrough,
+  Undo2,
+} from 'lucide-react'
 import { tiptapCodeBlock } from './TiptapCodeBlockView'
-import { TiptapBubbleMenus, INLINE_MATH_EDIT_EVENT } from './TiptapBubbleMenus'
+import { TiptapBubbleMenus, INLINE_MATH_EDIT_EVENT, type TiptapSelectionAiRequest } from './TiptapBubbleMenus'
 import { TiptapSlashMenu } from './TiptapSlashMenu'
 import { MermaidBlock } from './extensions/MermaidBlock'
 import { looksLikeMermaidSource } from './mermaid-source'
@@ -22,6 +44,144 @@ import './tiptap-editor.css'
 import './extensions/animated-task-item.css'
 
 export type MarkdownEngine = 'legacy' | 'official'
+
+function useEditorToolbarRefresh(editor: Editor) {
+  const [, setVersion] = React.useState(0)
+
+  React.useEffect(() => {
+    const refresh = () => setVersion((version) => (version + 1) % 10000)
+
+    editor.on('selectionUpdate', refresh)
+    editor.on('transaction', refresh)
+    editor.on('update', refresh)
+
+    return () => {
+      editor.off('selectionUpdate', refresh)
+      editor.off('transaction', refresh)
+      editor.off('update', refresh)
+    }
+  }, [editor])
+}
+
+function ToolbarButton({
+  title,
+  active,
+  disabled,
+  onClick,
+  children,
+}: {
+  title: string
+  active?: boolean
+  disabled?: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      aria-pressed={active}
+      disabled={disabled}
+      className={cn('tiptap-toolbar-btn', active && 'is-active')}
+      onMouseDown={(event) => {
+        event.preventDefault()
+      }}
+      onClick={() => {
+        if (!disabled) onClick()
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+export type IncomingContentSyncAction = 'ignore' | 'record' | 'sync'
+
+export function getIncomingContentSyncAction({
+  previousContent,
+  incomingContent,
+  currentMarkdown,
+}: {
+  previousContent: string
+  incomingContent: string
+  currentMarkdown: string
+}): IncomingContentSyncAction {
+  if (incomingContent === previousContent) return 'ignore'
+  if (currentMarkdown === incomingContent) return 'record'
+  return 'sync'
+}
+
+function ToolbarDivider() {
+  return <div className="tiptap-toolbar-divider" aria-hidden="true" />
+}
+
+function TiptapFixedToolbar({ editor, editable }: { editor: Editor; editable: boolean }) {
+  useEditorToolbarRefresh(editor)
+
+  const disabled = !editable
+
+  return (
+    <div className="tiptap-toolbar" role="toolbar" aria-label="Markdown formatting toolbar">
+      <div className="tiptap-toolbar-group">
+        <ToolbarButton title="Undo" disabled={disabled} onClick={() => editor.chain().focus().undo().run()}>
+          <Undo2 className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton title="Redo" disabled={disabled} onClick={() => editor.chain().focus().redo().run()}>
+          <Redo2 className="h-3.5 w-3.5" />
+        </ToolbarButton>
+      </div>
+      <ToolbarDivider />
+      <div className="tiptap-toolbar-group">
+        <ToolbarButton title="Paragraph" disabled={disabled} active={editor.isActive('paragraph')} onClick={() => editor.chain().focus().setParagraph().run()}>
+          <Pilcrow className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton title="Heading 1" disabled={disabled} active={editor.isActive('heading', { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>
+          <Heading1 className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton title="Heading 2" disabled={disabled} active={editor.isActive('heading', { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
+          <Heading2 className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton title="Heading 3" disabled={disabled} active={editor.isActive('heading', { level: 3 })} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
+          <Heading3 className="h-3.5 w-3.5" />
+        </ToolbarButton>
+      </div>
+      <ToolbarDivider />
+      <div className="tiptap-toolbar-group">
+        <ToolbarButton title="Bold" disabled={disabled} active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}>
+          <Bold className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton title="Italic" disabled={disabled} active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}>
+          <Italic className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton title="Strikethrough" disabled={disabled} active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()}>
+          <Strikethrough className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton title="Inline code" disabled={disabled} active={editor.isActive('code')} onClick={() => editor.chain().focus().toggleCode().run()}>
+          <Code className="h-3.5 w-3.5" />
+        </ToolbarButton>
+      </div>
+      <ToolbarDivider />
+      <div className="tiptap-toolbar-group">
+        <ToolbarButton title="Bullet list" disabled={disabled} active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()}>
+          <List className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton title="Numbered list" disabled={disabled} active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()}>
+          <ListOrdered className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton title="Task list" disabled={disabled} active={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()}>
+          <ListChecks className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton title="Quote" disabled={disabled} active={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()}>
+          <Quote className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton title="Divider" disabled={disabled} onClick={() => editor.chain().focus().setHorizontalRule().run()}>
+          <Minus className="h-3.5 w-3.5" />
+        </ToolbarButton>
+      </div>
+    </div>
+  )
+}
 
 
 function getLegacyMarkdown(editor: { storage: { markdown?: { getMarkdown?: () => string } } }): string {
@@ -209,6 +369,16 @@ export interface TiptapMarkdownEditorProps {
    * - `official`: @tiptap/markdown + mathematics extension
    */
   markdownEngine?: MarkdownEngine
+  /** Show a fixed formatting toolbar above the editable document. */
+  showToolbar?: boolean
+  /** Visual surface tuned for the current document type. */
+  surface?: 'default' | 'manuscript'
+  /** Show a subtle line-number gutter for long-form editing surfaces. */
+  showLineNumbers?: boolean
+  /** Optional fixed status content in the lower-right corner of the editor. */
+  bottomRightAccessory?: React.ReactNode
+  /** Called when the user asks AI to work on the current text selection. */
+  onAskAiForSelection?: (request: TiptapSelectionAiRequest) => Promise<string>
 }
 
 export function TiptapMarkdownEditor({
@@ -218,13 +388,18 @@ export function TiptapMarkdownEditor({
   className,
   editable = true,
   markdownEngine = 'legacy',
+  showToolbar = false,
+  surface = 'default',
+  showLineNumbers = false,
+  bottomRightAccessory,
+  onAskAiForSelection,
 }: TiptapMarkdownEditorProps) {
   const onUpdateRef = React.useRef(onUpdate)
   onUpdateRef.current = onUpdate
 
   // Ref for the editor instance — used by the Mathematics onClick callback
   // which is created at extension-configure time (before useEditor returns).
-  const editorRef = React.useRef<ReturnType<typeof useEditor>>(null!)
+  const editorRef = React.useRef<Editor | null>(null)
 
   const useOfficialMarkdown = markdownEngine === 'official'
 
@@ -305,6 +480,7 @@ export function TiptapMarkdownEditor({
   const editor = useEditor({
     extensions,
     content: initialContent,
+    immediatelyRender: false,
     ...(useOfficialMarkdown ? { contentType: 'markdown' as const } : {}),
     editable,
     editorProps: {
@@ -355,7 +531,6 @@ export function TiptapMarkdownEditor({
   // Keep editorRef in sync for the Mathematics onClick callback
   editorRef.current = editor
 
-
   // Sync editable prop
   React.useEffect(() => {
     if (editor && editor.isEditable !== editable) {
@@ -367,39 +542,61 @@ export function TiptapMarkdownEditor({
   // but as a safety net for direct content prop changes)
   const prevContentRef = React.useRef(content)
   React.useEffect(() => {
-    if (editor && content !== prevContentRef.current) {
-      prevContentRef.current = content
-
-      // Important: when this editor is currently focused, treat incoming content as
-      // local controlled echo and avoid setContent resets that can collapse transient
-      // block states (e.g. slash-inserted code blocks) and jump selection.
-      if (editor.isFocused) return
-
+    if (editor) {
       const currentMd = useOfficialMarkdown
         ? postprocessMarkdownFromOfficial(getOfficialMarkdown(editor as { getMarkdown?: () => string }))
         : getLegacyMarkdown(editor as { storage: { markdown?: { getMarkdown?: () => string } } })
+      const syncAction = getIncomingContentSyncAction({
+        previousContent: prevContentRef.current,
+        incomingContent: content,
+        currentMarkdown: currentMd,
+      })
 
-      if (currentMd !== content) {
-        if (useOfficialMarkdown) {
-          const normalized = preprocessMarkdownForOfficial(content)
-          editor.commands.setContent(normalized, { contentType: 'markdown' } as never)
-        } else {
-          editor.commands.setContent(content)
-        }
+      if (syncAction === 'ignore') return
 
-        queueMicrotask(() => {
-          if (!editor.isDestroyed) {
-            scheduleShikiRefresh(editor)
-          }
-        })
+      prevContentRef.current = content
+      if (syncAction === 'record') return
+
+      if (useOfficialMarkdown) {
+        const normalized = preprocessMarkdownForOfficial(content)
+        editor.commands.setContent(normalized, { contentType: 'markdown' } as never)
+      } else {
+        editor.commands.setContent(content)
       }
+
+      queueMicrotask(() => {
+        if (!editor.isDestroyed) {
+          scheduleShikiRefresh(editor)
+        }
+      })
     }
   }, [editor, content, useOfficialMarkdown])
 
   return (
-    <div className={cn('tiptap-editor', className)}>
-      <EditorContent editor={editor} />
-      {editor && editable && <TiptapBubbleMenus editor={editor} />}
+    <div
+      className={cn(
+        'tiptap-editor',
+        showToolbar && 'tiptap-editor--with-toolbar',
+        surface === 'manuscript' && 'tiptap-editor--manuscript',
+        showLineNumbers && 'tiptap-editor--line-numbers',
+        className
+      )}
+    >
+      {editor && showToolbar && <TiptapFixedToolbar editor={editor} editable={editable} />}
+      <div className="tiptap-editor-content">
+        <EditorContent editor={editor} />
+      </div>
+      {editor && editable && (
+        <TiptapBubbleMenus
+          editor={editor}
+          onAskAiForSelection={onAskAiForSelection}
+        />
+      )}
+      {bottomRightAccessory ? (
+        <div className="tiptap-editor-status-badge">
+          {bottomRightAccessory}
+        </div>
+      ) : null}
     </div>
   )
 }

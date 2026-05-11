@@ -114,10 +114,23 @@ export function parseSessionIdFromRoute(route: ViewRoute): string | null {
   return null
 }
 
+export function routeHasSelectedContent(route: ViewRoute): boolean {
+  const navState = parseRouteToNavigationState(route)
+  if (!navState) return false
+  if (navState.navigator === 'settings') return true
+  return !!navState.details
+}
+
 export const focusedSessionIdAtom = atom((get) => {
   const route = get(focusedPanelRouteAtom)
   if (!route) return null
   return parseSessionIdFromRoute(route)
+})
+
+export const focusedRouteHasSelectedContentAtom = atom((get) => {
+  const route = get(focusedPanelRouteAtom)
+  if (!route) return false
+  return routeHasSelectedContent(route)
 })
 
 export const pushPanelAtom = atom(

@@ -1,3 +1,7 @@
+// input: File search results, file changes, and workspace/session root paths
+// output: Browser-safe novel workspace projection helpers
+// pos: Renderer adapter between workspace files and writing workspace UI
+
 import type { FileChange } from '@craft-agent/ui'
 import {
   categorizeNovelPath,
@@ -10,8 +14,11 @@ export type NovelWorkspaceTab =
   | 'outline'
   | 'characters'
   | 'locations'
+  | 'style'
   | 'state'
   | 'timeline'
+  | 'analysis'
+  | 'work'
   | 'changes'
 
 export interface NovelWorkspaceFile {
@@ -46,6 +53,41 @@ export interface NovelSectionSummary {
 
 export type NovelFileChangeGroups = Record<WritingFileCategory, FileChange[]>
 
+export interface NovelWorkspaceFileDisplayDescriptor {
+  labelKey?: `writing.fileLabels.${string}`
+  labelParams?: Record<string, string>
+  fallbackTitle: string
+}
+
+export interface NovelWorkspaceRootCandidates {
+  activeWorkspaceRootPath?: string
+  sessionWorkingDirectory?: string
+}
+
+export const NOVEL_WORKSPACE_FILE_SEARCH_QUERIES = [
+  'story/chapters',
+  'story/plan.md',
+  'story/synopsis.md',
+  'story',
+  'bible/structure.md',
+  'bible/characters',
+  'bible/universe',
+  'state',
+  'timeline',
+  '设定',
+  '大纲',
+  '正文',
+  '追踪',
+  '参考资料',
+  '拆文库',
+  '对标',
+  'planning',
+  'outline',
+  'draft',
+  'work',
+  'kb',
+] as const
+
 function createEmptyTree(): NovelWorkspaceTree {
   return {
     manuscript: { id: 'manuscript', files: [] },
@@ -76,8 +118,13 @@ function createEmptyChangeGroups(): NovelFileChangeGroups {
   }
 }
 
+const relativePathCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: 'base',
+})
+
 function sortByRelativePath(a: NovelWorkspaceFile, b: NovelWorkspaceFile): number {
-  return a.relativePath.localeCompare(b.relativePath)
+  return relativePathCollator.compare(a.relativePath, b.relativePath)
 }
 
 function stripRootPath(path: string, rootPath: string): string {
@@ -89,6 +136,97 @@ function stripRootPath(path: string, rootPath: string): string {
     return normalizedPath.slice(normalizedRoot.length + 1)
   }
   return normalizedPath
+}
+
+export function getNovelWorkspaceRelativePath(path: string, rootPath: string): string {
+  return stripRootPath(path, rootPath)
+}
+
+function normalizeRootPath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/, '')
+}
+
+function normalizeRelativePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/^\/+/, '')
+}
+
+function basename(path: string): string {
+  const normalized = normalizeRelativePath(path)
+  return normalized.slice(normalized.lastIndexOf('/') + 1)
+}
+
+function stripMarkdownExtension(filename: string): string {
+  return filename.replace(/\.md$/i, '')
+}
+
+function normalizeChapterNumber(rawNumber: string): string {
+  const parsed = Number(rawNumber)
+  return Number.isFinite(parsed) ? String(parsed) : rawNumber.replace(/^0+/, '') || rawNumber
+}
+
+function humanizeFileStem(stem: string): string {
+  return stem
+    .replace(/^_+|_+$/g, '')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b[a-z]/g, char => char.toUpperCase())
+}
+
+function descriptor(
+  fallbackTitle: string,
+  labelKey?: NovelWorkspaceFileDisplayDescriptor['labelKey'],
+  labelParams?: Record<string, string>
+): NovelWorkspaceFileDisplayDescriptor {
+  return {
+    ...(labelKey ? { labelKey } : {}),
+    ...(labelParams ? { labelParams } : {}),
+    fallbackTitle,
+  }
+}
+
+const FIXED_NOVEL_FILE_DESCRIPTORS: Record<string, NovelWorkspaceFileDisplayDescriptor> = {
+  'bible/style.md': descriptor('Style guide', 'writing.fileLabels.styleGuide'),
+  'bible/structure.md': descriptor('Narrative structure', 'writing.fileLabels.narrativeStructure'),
+  'bible/characters/_template.md': descriptor('Character template', 'writing.fileLabels.characterTemplate'),
+  'bible/universe/_template.md': descriptor('Location template', 'writing.fileLabels.locationTemplate'),
+  'story/synopsis.md': descriptor('Synopsis', 'writing.fileLabels.synopsis'),
+  'story/plan.md': descriptor('Chapter plan', 'writing.fileLabels.chapterPlan'),
+  'timeline/current-chapter.md': descriptor('Current chapter timeline', 'writing.fileLabels.currentChapterTimeline'),
+  'timeline/history.md': descriptor('Story history', 'writing.fileLabels.storyHistory'),
+  'state/template/characters.md': descriptor('Character state', 'writing.fileLabels.characterState'),
+  'state/template/knowledge.md': descriptor('Knowledge state', 'writing.fileLabels.knowledgeState'),
+  'state/template/situation.md': descriptor('Situation state', 'writing.fileLabels.situationState'),
+}
+
+export function describeNovelWorkspaceFile(fileOrPath: NovelWorkspaceFile | string): NovelWorkspaceFileDisplayDescriptor {
+  const relativePath = typeof fileOrPath === 'string' ? fileOrPath : fileOrPath.relativePath
+  const normalizedPath = normalizeRelativePath(relativePath)
+  const fixedDescriptor = FIXED_NOVEL_FILE_DESCRIPTORS[normalizedPath]
+
+  if (fixedDescriptor) return fixedDescriptor
+
+  const fileStem = stripMarkdownExtension(basename(normalizedPath))
+  const chapterMatch = normalizedPath.match(/^story\/chapters\/chapter[-_ ]*(\d+)\.md$/i)
+
+  if (chapterMatch?.[1]) {
+    const number = normalizeChapterNumber(chapterMatch[1])
+    return descriptor('Chapter ' + number, 'writing.fileLabels.chapter', { number })
+  }
+
+  const fallbackTitle = humanizeFileStem(fileStem)
+  return descriptor(fallbackTitle || normalizedPath)
+}
+
+export function getNovelWorkspaceCandidateRoots({
+  activeWorkspaceRootPath,
+  sessionWorkingDirectory,
+}: NovelWorkspaceRootCandidates): string[] {
+  const roots = [activeWorkspaceRootPath, sessionWorkingDirectory]
+    .filter((path): path is string => typeof path === 'string' && path.trim().length > 0)
+    .map(normalizeRootPath)
+
+  return [...new Set(roots)]
 }
 
 export function buildNovelWorkspaceTree(files: NovelWorkspaceFile[]): NovelWorkspaceTree {
@@ -111,6 +249,28 @@ export function selectDefaultNovelTab(tree: NovelWorkspaceTree): NovelWorkspaceT
   if (tree.outline.files.length > 0) return 'outline'
   if (tree.characters.files.length > 0) return 'characters'
   return 'outline'
+}
+
+export function selectDefaultNovelFile(files: NovelWorkspaceFile[]): NovelWorkspaceFile | undefined {
+  const tree = buildNovelWorkspaceTree(files)
+  const orderedSections: NovelWorkspaceFileSectionId[] = [
+    'manuscript',
+    'outline',
+    'characters',
+    'locations',
+    'timeline',
+    'state',
+    'style',
+    'analysis',
+    'work',
+  ]
+
+  for (const sectionId of orderedSections) {
+    const file = tree[sectionId].files[0]
+    if (file) return file
+  }
+
+  return undefined
 }
 
 export function summarizeNovelSection(files: NovelWorkspaceFile[]): NovelSectionSummary {
@@ -139,13 +299,22 @@ export function groupNovelFileChanges(changes: FileChange[], rootPath = ''): Nov
 }
 
 export function mapSearchResultsToNovelWorkspaceFiles(results: FileSearchResult[]): NovelWorkspaceFile[] {
-  return results
-    .filter((result) => result.type === 'file')
-    .filter((result) => categorizeNovelPath(result.relativePath) !== 'other')
-    .map((result) => ({
+  const files: NovelWorkspaceFile[] = []
+  const seen = new Set<string>()
+
+  for (const result of results) {
+    if (result.type !== 'file') continue
+    if (categorizeNovelPath(result.relativePath) === 'other') continue
+    if (seen.has(result.path)) continue
+
+    seen.add(result.path)
+    files.push({
       path: result.path,
       relativePath: result.relativePath,
-    }))
+    })
+  }
+
+  return files
 }
 
 export function detectNovelProjectFromSearchResults(results: FileSearchResult[]): boolean {
