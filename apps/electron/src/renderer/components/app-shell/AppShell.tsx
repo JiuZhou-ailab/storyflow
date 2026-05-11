@@ -1774,15 +1774,18 @@ function AppShellContent({
     }
 
     try {
-      const result = await window.electronAPI.sessionCommand(effectiveSessionId, {
-        type: 'rewriteNovelSelection',
-        request: {
-          filePath: selectedNovelFile.path,
-          relativePath: selectedNovelFile.relativePath,
-          selectedText,
-          instruction,
-        },
-      }) as NovelSelectionRewriteResult
+      const request = {
+        filePath: selectedNovelFile.path,
+        relativePath: selectedNovelFile.relativePath,
+        selectedText,
+        instruction,
+      }
+      const result = typeof window.electronAPI.rewriteNovelSelection === 'function'
+        ? await window.electronAPI.rewriteNovelSelection(effectiveSessionId, request)
+        : await window.electronAPI.sessionCommand(effectiveSessionId, {
+          type: 'rewriteNovelSelection',
+          request,
+        }) as NovelSelectionRewriteResult
       return result.replacement
     } catch (error) {
       toast.error(t('writing.selectionRewrite.failed', '改写选中文本失败'), {
