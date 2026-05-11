@@ -1516,5 +1516,22 @@
   "writing.tabs.timeline": "Cronología",
   "writing.tabs.work": "Trabajo",
   "writing.totalCharacters": "Total {{count}} caracteres",
-  "writing.workspace": "Workspace de escritura"
+  "writing.workspace": "Workspace de escritura",
+  "writing.selectionRewrite.failed": "Failed to rewrite selected text",
+  "writing.selectionRewrite.runtimeReloadRequired": "Restart the app to finish loading the selection rewrite bridge.",
+  "writing.version.description": "Automatic saves create a local version after writing changes exceed 100 characters or a few minutes pass.",
+  "writing.version.empty": "No versions saved yet",
+  "writing.version.loadFailed": "Failed to load version history",
+  "writing.version.manualSnapshot": "Save current version",
+  "writing.version.manualSnapshotDescription": "Commits the current writing workspace to local git history.",
+  "writing.version.noChanges": "No new changes to save",
+  "writing.version.restore": "Restore",
+  "writing.version.restoreFailed": "Failed to restore version",
+  "writing.version.restored": "Restored selected version",
+  "writing.version.restoring": "Restoring",
+  "writing.version.save": "Save",
+  "writing.version.saveFailed": "Failed to save version",
+  "writing.version.saved": "Current version saved",
+  "writing.version.saving": "Saving",
+  "writing.version.title": "Version history"
 }

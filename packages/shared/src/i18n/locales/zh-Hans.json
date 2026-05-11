@@ -1516,5 +1516,22 @@
   "writing.tabs.timeline": "时间线",
   "writing.tabs.work": "工作",
   "writing.totalCharacters": "总字数 {{count}}",
-  "writing.workspace": "写作工作区"
+  "writing.workspace": "写作工作区",
+  "writing.selectionRewrite.failed": "改写选中文本失败",
+  "writing.selectionRewrite.runtimeReloadRequired": "请重启应用以完成选中文本改写桥接加载。",
+  "writing.version.description": "自动保存会在写作变更超过 100 字或间隔数分钟后创建本地版本。",
+  "writing.version.empty": "还没有保存过版本",
+  "writing.version.loadFailed": "加载版本历史失败",
+  "writing.version.manualSnapshot": "保存当前版本",
+  "writing.version.manualSnapshotDescription": "会把当前写作工作区提交到本地 git 历史。",
+  "writing.version.noChanges": "没有新的改动需要保存",
+  "writing.version.restore": "恢复",
+  "writing.version.restoreFailed": "恢复版本失败",
+  "writing.version.restored": "已恢复到所选版本",
+  "writing.version.restoring": "恢复中",
+  "writing.version.save": "保存",
+  "writing.version.saveFailed": "保存版本失败",
+  "writing.version.saved": "已保存当前版本",
+  "writing.version.saving": "保存中",
+  "writing.version.title": "版本管理"
 }
