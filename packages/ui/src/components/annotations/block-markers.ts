@@ -1,3 +1,7 @@
+// input: Resolved block annotations and rendered markdown DOM roots
+// output: DOM marker attributes/classes for annotated block highlights
+// pos: Runtime bridge between annotation resolution and visual block markers
+
 import type { AnnotationV1 } from '@craft-agent/core'
 import { annotationColorToCss } from './annotation-style-tokens'
 
@@ -5,7 +9,7 @@ export function clearBlockAnnotationMarkers(root: HTMLElement): void {
   const blocks = root.querySelectorAll<HTMLElement>('[data-ca-block-annotated="true"]')
   blocks.forEach((block) => {
     block.removeAttribute('data-ca-block-annotated')
-    block.style.boxShadow = ''
+    block.classList.remove('ca-block-annotation-marker')
     block.style.backgroundColor = ''
   })
 }
@@ -26,6 +30,6 @@ export function applyBlockAnnotationMarker(root: HTMLElement, annotation: Annota
   if (!target) return
 
   target.setAttribute('data-ca-block-annotated', 'true')
+  target.classList.add('ca-block-annotation-marker')
   target.style.backgroundColor = annotationColorToCss(annotation.style?.color)
-  target.style.boxShadow = 'inset 0 0 0 1px color-mix(in srgb, var(--info) 22%, transparent)'
 }

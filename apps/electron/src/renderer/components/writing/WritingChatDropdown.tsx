@@ -1,3 +1,7 @@
+// input: Writing workspace chat trigger content
+// output: Compact dropdown shell for the current writing chat
+// pos: Header-level access point from manuscript editing back to chat context
+
 import * as React from 'react'
 import { ChevronDown, MessageSquareText } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -24,7 +28,7 @@ export function WritingChatDropdown({ children }: WritingChatDropdownProps) {
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={8} className="h-[min(620px,calc(100vh-120px))] w-[min(760px,calc(100vw-80px))] overflow-hidden rounded-[8px] border-border/70 p-0 shadow-2xl">
+      <DropdownMenuContent align="end" sideOffset={8} className="h-[min(620px,calc(100vh-120px))] w-[min(760px,calc(100vw-80px))] overflow-hidden rounded-[8px] border-border/70 p-0 shadow-modal-small">
         {children}
       </DropdownMenuContent>
     </DropdownMenu>

@@ -1,5 +1,10 @@
+// input: Code text, optional language hints, render mode, and current Shiki theme
+// output: Syntax-highlighted or plain text code blocks for Markdown surfaces
+// pos: Shared renderer used by chat responses, previews, and document overlays
+
 import * as React from 'react'
 import { codeToHtml, bundledLanguages, type BundledLanguage } from 'shiki'
+import { Check, Copy } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useShikiTheme } from '../../context/ShikiThemeContext'
 
@@ -42,6 +47,14 @@ const LANGUAGE_ALIASES: Record<string, BundledLanguage> = {
   'objc': 'objc',
 }
 
+const PLAIN_TEXT_LANGUAGES = new Set(['text', 'txt', 'plain', 'plaintext', 'plain-text'])
+
+function normalizeLanguage(language: string): string {
+  const langLower = language.toLowerCase()
+  if (PLAIN_TEXT_LANGUAGES.has(langLower)) return 'text'
+  return LANGUAGE_ALIASES[langLower] || langLower
+}
+
 // Simple LRU cache for highlighted code
 const highlightCache = new Map<string, string>()
 const CACHE_MAX_SIZE = 200
@@ -51,7 +64,7 @@ function getCacheKey(code: string, lang: string, theme: string): string {
 }
 
 function isValidLanguage(lang: string): lang is BundledLanguage {
-  const normalized = LANGUAGE_ALIASES[lang] || lang
+  const normalized = normalizeLanguage(lang)
   return normalized in bundledLanguages
 }
 
@@ -71,13 +84,20 @@ export function CodeBlock({ code, language = 'text', className, mode = 'full', f
   const contextShikiTheme = useShikiTheme()
 
   // Resolve language alias - keep as string to allow 'text' fallback
-  const langLower = language.toLowerCase()
-  const resolvedLang: string = LANGUAGE_ALIASES[langLower] || langLower
+  const resolvedLang = normalizeLanguage(language)
+  const isPlainText = resolvedLang === 'text'
+  const languageLabel = isPlainText ? null : resolvedLang
 
   React.useEffect(() => {
     let cancelled = false
 
     async function highlight() {
+      if (isPlainText) {
+        setHighlighted(null)
+        setIsLoading(false)
+        return
+      }
+
       // Theme priority:
       // 1. Context theme (from ShikiThemeProvider) - handles supportedModes correctly
       // 2. forcedTheme prop - explicit override for specific use cases
@@ -137,7 +157,7 @@ export function CodeBlock({ code, language = 'text', className, mode = 'full', f
     return () => {
       cancelled = true
     }
-  }, [code, resolvedLang, forcedTheme, contextShikiTheme])
+  }, [code, resolvedLang, forcedTheme, contextShikiTheme, isPlainText])
 
   const handleCopy = React.useCallback(async () => {
     try {
@@ -162,7 +182,7 @@ export function CodeBlock({ code, language = 'text', className, mode = 'full', f
   if (mode === 'minimal') {
     if (isLoading || !highlighted) {
       return (
-        <pre className={cn('font-mono text-sm whitespace-pre-wrap', className)}>
+        <pre className={cn('font-mono text-sm whitespace-pre-wrap break-words', className)}>
           <code>{code}</code>
         </pre>
       )
@@ -170,46 +190,66 @@ export function CodeBlock({ code, language = 'text', className, mode = 'full', f
 
     return (
       <div
-        className={cn('font-mono text-sm [&_pre]:!bg-transparent [&_pre]:!p-0 [&_pre]:whitespace-pre-wrap [&_pre]:break-all [&_code]:!bg-transparent', className)}
+        className={cn('font-mono text-sm [&_pre]:!bg-transparent [&_pre]:!p-0 [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_code]:!bg-transparent', className)}
         dangerouslySetInnerHTML={{ __html: highlighted }}
       />
     )
   }
 
+  const copyLabel = languageLabel ? 'Copy code' : 'Copy text'
+  const copyButton = (
+    <button
+      onClick={handleCopy}
+      className={cn(
+        'inline-flex h-6 w-6 items-center justify-center rounded-[5px]',
+        'text-muted-foreground/60 transition-all hover:bg-foreground/[0.06] hover:text-foreground',
+        'focus:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+        !languageLabel && 'absolute right-2 top-2 opacity-0 shadow-minimal group-hover/code-block:opacity-100 focus-visible:opacity-100',
+      )}
+      aria-label={copyLabel}
+      title={copyLabel}
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  )
+
+  if (isPlainText) {
+    return (
+      <div
+        className={cn(
+          'relative group/code-block overflow-hidden border-l border-foreground/[0.12] bg-transparent py-2 pl-3.5 pr-8',
+          className,
+        )}
+      >
+        {copyButton}
+        <pre className="m-0 whitespace-pre-wrap break-words font-mono text-[12px] leading-[1.72] text-foreground/[0.74]">
+          <code>{code}</code>
+        </pre>
+      </div>
+    )
+  }
+
   // Full mode: rich styling with header and copy button
   return (
-    <div className={cn('relative group rounded-[8px] overflow-hidden border bg-muted/30', className)}>
-      {/* Language label + copy button */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-muted/50 border-b text-xs">
-        <span className="text-muted-foreground font-medium uppercase tracking-wide">
-          {resolvedLang !== 'text' ? resolvedLang : 'plain text'}
-        </span>
-        <button
-          onClick={handleCopy}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
-          aria-label="Copy code"
-        >
-          {copied ? (
-            <svg className="w-4 h-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-          ) : (
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
-          )}
-        </button>
-      </div>
+    <div className={cn('relative group/code-block overflow-hidden rounded-[7px] border border-border/55 bg-foreground/[0.025]', className)}>
+      {languageLabel ? (
+        <div className="flex min-h-8 items-center justify-between border-b border-border/45 bg-foreground/[0.025] px-3 py-1 text-xs">
+          <span className="font-medium text-muted-foreground/75">
+            {languageLabel}
+          </span>
+          {copyButton}
+        </div>
+      ) : copyButton}
 
       {/* Code content */}
-      <div className="p-3 overflow-x-auto">
+      <div className={cn('overflow-x-auto', languageLabel ? 'p-3' : 'px-3 py-2.5')}>
         {isLoading || !highlighted ? (
-          <pre className="font-mono text-sm whitespace-pre-wrap break-all">
+          <pre className="font-mono text-[12.5px] leading-5 text-foreground/85 whitespace-pre-wrap break-words">
             <code>{code}</code>
           </pre>
         ) : (
           <div
-            className="font-mono text-sm [&_pre]:!bg-transparent [&_pre]:!m-0 [&_pre]:!p-0 [&_pre]:whitespace-pre-wrap [&_pre]:break-all [&_code]:!bg-transparent"
+            className="font-mono text-[12.5px] leading-5 text-foreground/85 [&_pre]:!bg-transparent [&_pre]:!m-0 [&_pre]:!p-0 [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_code]:!bg-transparent"
             dangerouslySetInnerHTML={{ __html: highlighted }}
           />
         )}

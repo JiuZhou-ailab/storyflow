@@ -1,3 +1,7 @@
+// input: Session turns, tool activity metadata, annotations, and chat display callbacks
+// output: Rendered assistant/user turn cards with rich blocks and annotation affordances
+// pos: Shared chat transcript presentation layer for Electron and viewer surfaces
+
 import * as React from 'react'
 import { useMemo, useEffect, useRef, useCallback, useState } from 'react'
 import i18n from 'i18next'
@@ -1476,7 +1480,7 @@ function clearAnnotationMarks(root: HTMLElement): void {
   annotatedInlineCodeNodes.forEach((codeNode) => {
     codeNode.removeAttribute('data-ca-annotation-inline-code')
     codeNode.style.backgroundColor = ''
-    codeNode.style.boxShadow = ''
+    codeNode.classList.remove('ca-annotation-inline-code')
   })
 
   const marks = root.querySelectorAll('span[data-ca-annotation-id]')
@@ -1550,8 +1554,8 @@ function applyTextHighlightRange(
     const inlineCodeParent = selected.parentElement?.closest<HTMLElement>('code')
     if (inlineCodeParent) {
       inlineCodeParent.setAttribute('data-ca-annotation-inline-code', 'true')
+      inlineCodeParent.classList.add('ca-annotation-inline-code')
       inlineCodeParent.style.backgroundColor = annotationColorToCss(annotation.style?.color)
-      inlineCodeParent.style.boxShadow = 'none'
     }
 
     const mark = document.createElement('span')

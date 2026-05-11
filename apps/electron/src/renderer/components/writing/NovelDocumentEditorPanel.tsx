@@ -97,22 +97,28 @@ export function NovelDocumentEditorPanel({
             <Loader2 className="h-4 w-4 animate-spin" />
             {t('fileViewer.loadingContent')}
           </div>
-        ) : reviewChange ? (
-          <NovelInlineReviewDiff change={reviewChange} />
         ) : (
-          <TiptapMarkdownEditor
-            content={content}
-            onUpdate={onChange}
-            placeholder={t('writing.emptySection')}
-            editable={!saving}
-            markdownEngine="official"
-            showToolbar
-            surface="manuscript"
-            showLineNumbers
-            bottomRightAccessory={t('writing.totalCharacters', 'Total {{count}} characters', { count: characterCount })}
-            onAskAiForSelection={onAskAiForSelection}
-            className="h-full"
-          />
+          <div className="flex h-full min-h-0 flex-col">
+            {reviewChange ? (
+              <NovelInlineReviewDiff
+                change={reviewChange}
+                className="max-h-[45%] min-h-[180px] shrink-0"
+              />
+            ) : null}
+            <TiptapMarkdownEditor
+              content={content}
+              onUpdate={onChange}
+              placeholder={t('writing.emptySection')}
+              editable={!saving}
+              markdownEngine="official"
+              showToolbar
+              surface="manuscript"
+              showLineNumbers
+              bottomRightAccessory={t('writing.totalCharacters', 'Total {{count}} characters', { count: characterCount })}
+              onAskAiForSelection={onAskAiForSelection}
+              className="min-h-0 flex-1"
+            />
+          </div>
         )}
       </div>
 
@@ -191,9 +197,12 @@ export function NovelDocumentEditorPanel({
   )
 }
 
-function NovelInlineReviewDiff({ change }: { change: FileChange }) {
+function NovelInlineReviewDiff({ change, className }: { change: FileChange; className?: string }) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background" data-testid="novel-inline-review-diff">
+    <div
+      className={cn('flex min-h-0 flex-col border-b border-border/60 bg-background', className)}
+      data-testid="novel-inline-review-diff"
+    >
       <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3">
         <div className="min-w-0 truncate text-xs font-medium text-foreground/75">
           Inline diff

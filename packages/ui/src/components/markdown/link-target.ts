@@ -29,6 +29,10 @@ function resolveFileUrlPath(target: string): string | null {
   }
 }
 
+function stripLineSuffix(target: string): string {
+  return target.replace(/:\d+(?::\d+)?$/, '')
+}
+
 /**
  * Resolve markdown link targets for click dispatch.
  *
@@ -42,6 +46,11 @@ export function resolveMarkdownLinkTarget(target: string): ResolvedMarkdownLinkT
   const fileUrlPath = resolveFileUrlPath(trimmed)
   if (fileUrlPath) {
     return { kind: 'file', path: fileUrlPath }
+  }
+
+  const withoutLineSuffix = stripLineSuffix(trimmed)
+  if (withoutLineSuffix !== trimmed && isFilePathTarget(withoutLineSuffix)) {
+    return { kind: 'file', path: withoutLineSuffix }
   }
 
   if (isFilePathTarget(trimmed)) {

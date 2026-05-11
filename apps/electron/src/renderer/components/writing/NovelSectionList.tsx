@@ -1,9 +1,14 @@
+// input: Novel workspace files and selection callbacks
+// output: Writer-facing document list for a single novel workspace section
+// pos: Reusable file list used by writing navigator and workspace panels
+
 import * as React from 'react'
 import { FileText } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import type { NovelWorkspaceFile } from '@/lib/writing-workspace'
+import { formatNovelWorkspaceFileTitle } from './novel-file-display'
 
 export interface NovelSectionListProps {
   files: NovelWorkspaceFile[]
@@ -33,11 +38,13 @@ export function NovelSectionList({
       <div className="divide-y divide-border/50">
         {files.map((file) => {
           const isActive = file.path === activePath
+          const displayTitle = formatNovelWorkspaceFileTitle(file, t)
 
           return (
             <button
               key={file.path}
               type="button"
+              title={file.relativePath}
               onClick={() => onSelectFile?.(file)}
               className={cn(
                 'flex h-9 w-full items-center gap-2 px-3 text-left text-xs transition-colors hover:bg-foreground/[0.04]',
@@ -45,7 +52,7 @@ export function NovelSectionList({
               )}
             >
               <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate">{file.relativePath}</span>
+              <span className="min-w-0 flex-1 truncate">{displayTitle}</span>
             </button>
           )
         })}

@@ -8,8 +8,11 @@ describe('NOVEL_WORKSPACE_TABS', () => {
       'outline',
       'characters',
       'locations',
+      'style',
       'state',
       'timeline',
+      'analysis',
+      'work',
       'changes',
     ])
   })

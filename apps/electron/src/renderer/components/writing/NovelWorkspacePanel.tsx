@@ -1,6 +1,10 @@
+// input: Novel workspace files, file changes, and preview callbacks
+// output: Tabbed writing workspace surface for manuscript, planning, state, and changes
+// pos: Legacy full-panel writing workspace used when the app shell owns normal navigation
+
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
-import { GitPullRequestArrow, Library, MapPinned, ScrollText, UsersRound } from 'lucide-react'
+import { GitPullRequestArrow, Layers, Library, MapPinned, Palette, ScrollText, Search, UsersRound } from 'lucide-react'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import {
@@ -16,6 +20,7 @@ import { NovelWorkspaceTabs } from './NovelWorkspaceTabs'
 import { NovelSectionList } from './NovelSectionList'
 import { NovelDocumentPreview } from './NovelDocumentPreview'
 import { NOVEL_WORKSPACE_TABS } from './novel-workspace-config'
+import { formatNovelWorkspacePathTitle } from './novel-file-display'
 
 export interface NovelWorkspacePanelProps {
   rootPath: string
@@ -31,8 +36,11 @@ const TAB_TO_SECTION: Partial<Record<NovelWorkspaceTab, keyof ReturnType<typeof 
   outline: 'outline',
   characters: 'characters',
   locations: 'locations',
+  style: 'style',
   state: 'state',
   timeline: 'timeline',
+  analysis: 'analysis',
+  work: 'work',
 }
 
 export function NovelWorkspacePanel({
@@ -110,7 +118,7 @@ export function NovelWorkspacePanel({
                 <div className="min-h-0 border-r border-border/60">
                   <SectionHeader
                     icon={getTabIcon(tab.id)}
-                    label={t(tab.labelKey)}
+                    label={t(tab.labelKey, tab.fallbackTitle)}
                     count={summary.count}
                   />
                   <div className="h-[calc(100%-40px)]">
@@ -150,10 +158,11 @@ export function NovelWorkspacePanel({
                       <button
                         key={change.id}
                         type="button"
+                        title={change.filePath}
                         onClick={() => onOpenFile?.(change.filePath)}
                         className="flex h-8 w-full items-center justify-between gap-3 rounded-[4px] px-2 text-left text-xs hover:bg-foreground/[0.04]"
                       >
-                        <span className="min-w-0 truncate">{change.filePath}</span>
+                        <span className="min-w-0 truncate">{formatNovelWorkspacePathTitle(change.filePath, rootPath, t)}</span>
                         <span className="shrink-0 text-muted-foreground">{change.toolType}</span>
                       </button>
                     ))}
@@ -195,5 +204,8 @@ function SectionHeader({
 function getTabIcon(tab: NovelWorkspaceTab): React.ReactNode {
   if (tab === 'characters') return <UsersRound className="h-4 w-4" />
   if (tab === 'locations') return <MapPinned className="h-4 w-4" />
+  if (tab === 'style') return <Palette className="h-4 w-4" />
+  if (tab === 'analysis') return <Search className="h-4 w-4" />
+  if (tab === 'work') return <Layers className="h-4 w-4" />
   return <ScrollText className="h-4 w-4" />
 }

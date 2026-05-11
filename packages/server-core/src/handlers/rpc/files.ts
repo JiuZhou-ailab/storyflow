@@ -17,6 +17,8 @@ import { requestClientOpenFileDialog } from '@craft-agent/server-core/transport'
 
 export const HANDLED_CHANNELS = [
   RPC_CHANNELS.file.READ,
+  RPC_CHANNELS.file.WRITE,
+  RPC_CHANNELS.file.CREATE_DIRECTORY,
   RPC_CHANNELS.file.READ_DATA_URL,
   RPC_CHANNELS.file.READ_PREVIEW_DATA_URL,
   RPC_CHANNELS.file.READ_BINARY,
@@ -46,6 +48,35 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
         deps.platform.logger.error('readFile error:', path, message)
       }
       throw new Error(`Failed to read file: ${message}`)
+    }
+  })
+
+  server.handle(RPC_CHANNELS.file.WRITE, async (ctx, path: string, content: string) => {
+    try {
+      if (typeof content !== 'string') {
+        throw new Error('File content must be a string')
+      }
+
+      const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
+      const safePath = await validateFilePath(path, getWorkspaceAllowedDirs(workspaceId))
+      await mkdir(dirname(safePath), { recursive: true })
+      await writeFile(safePath, content, 'utf-8')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      deps.platform.logger.error('writeFile error:', path, message)
+      throw new Error(`Failed to write file: ${message}`)
+    }
+  })
+
+  server.handle(RPC_CHANNELS.file.CREATE_DIRECTORY, async (ctx, path: string) => {
+    try {
+      const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
+      const safePath = await validateFilePath(path, getWorkspaceAllowedDirs(workspaceId))
+      await mkdir(safePath, { recursive: true })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      deps.platform.logger.error('createDirectory error:', path, message)
+      throw new Error(`Failed to create directory: ${message}`)
     }
   })
 

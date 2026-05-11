@@ -14,7 +14,7 @@ export function NovelWorkspaceTabs() {
           value={tab.id}
           className="h-7 rounded-[5px] px-2.5 text-xs"
         >
-          {t(tab.labelKey)}
+          {t(tab.labelKey, tab.fallbackTitle)}
         </TabsTrigger>
       ))}
     </TabsList>

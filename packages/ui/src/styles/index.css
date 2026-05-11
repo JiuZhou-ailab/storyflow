@@ -436,6 +436,14 @@ html[data-font="inter"] {
     box-shadow: var(--shadow-modal-small);
   }
 
+  .ca-block-annotation-marker {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--info) 22%, transparent);
+  }
+
+  .ca-annotation-inline-code {
+    box-shadow: none;
+  }
+
   /* Smooth corners (iOS-style superellipse)
    * Uses CSS continuous corners when supported, falls back to standard border-radius.
    * The border-radius value should be set on the element using this class.

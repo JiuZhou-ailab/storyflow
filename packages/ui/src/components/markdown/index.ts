@@ -1,5 +1,9 @@
 /**
  * Markdown component exports for @craft-agent/ui
+ *
+ * input: Markdown component modules
+ * output: Public Markdown component exports
+ * pos: Barrel export for shared Markdown UI
  */
 
 export { Markdown, MemoizedMarkdown, type MarkdownProps, type RenderMode } from './Markdown'
@@ -12,3 +16,4 @@ export { MarkdownSpreadsheetBlock, type MarkdownSpreadsheetBlockProps } from './
 export { MarkdownImageBlock, type MarkdownImageBlockProps } from './MarkdownImageBlock'
 export { ImageCardStack, type ImageCardStackProps, type ImageCardStackItem } from './ImageCardStack'
 export { TiptapMarkdownEditor, type TiptapMarkdownEditorProps, type MarkdownEngine } from './TiptapMarkdownEditor'
+export type { TiptapSelectionAiRequest } from './TiptapBubbleMenus'

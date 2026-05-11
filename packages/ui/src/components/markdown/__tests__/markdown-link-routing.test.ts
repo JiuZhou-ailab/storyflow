@@ -23,6 +23,17 @@ describe('resolveMarkdownLinkTarget', () => {
     })
   })
 
+  it('resolves file paths with line suffixes as file targets', () => {
+    expect(resolveMarkdownLinkTarget('/Users/tester/project/src/App.tsx:42')).toEqual({
+      kind: 'file',
+      path: '/Users/tester/project/src/App.tsx',
+    })
+    expect(resolveMarkdownLinkTarget('apps/electron/src/main.ts:12:4')).toEqual({
+      kind: 'file',
+      path: 'apps/electron/src/main.ts',
+    })
+  })
+
   it('resolves unix file URLs as file targets', () => {
     expect(resolveMarkdownLinkTarget('file:///Users/tester/report.xlsx')).toEqual({
       kind: 'file',
@@ -62,6 +73,10 @@ describe('resolveMarkdownLinkTarget', () => {
 describe('classifyMarkdownLinkTarget', () => {
   it('classifies absolute unix file paths as file', () => {
     expect(classifyMarkdownLinkTarget('/Users/balintorosz/.craft-agent/sessions/abc/image.jpg')).toBe('file')
+  })
+
+  it('classifies file paths with line suffixes as file', () => {
+    expect(classifyMarkdownLinkTarget('/Users/tester/project/src/App.tsx:42')).toBe('file')
   })
 
   it('classifies file URLs as file', () => {
