@@ -1,6 +1,10 @@
 /**
  * Workspace Storage
  *
+ * input: Workspace folders, global defaults, and persisted workspace config files
+ * output: Workspace CRUD, discovery, and default-setting persistence
+ * pos: Shared filesystem-backed workspace storage layer
+ *
  * CRUD operations for workspaces.
  * Workspaces can be stored anywhere on disk via rootPath.
  * Default location: ~/.craft-agent/workspaces/
@@ -25,7 +29,12 @@ import { getDefaultLabelConfig, saveLabelConfig } from '../labels/storage.ts';
 import { loadConfigDefaults } from '../config/storage.ts';
 import { parsePermissionMode, PERMISSION_MODE_ORDER } from '../agent/mode-types.ts';
 import { normalizeThinkingLevel } from '../agent/thinking-levels.ts';
+import { generateUniqueSessionId } from '../sessions/slug-generator.ts';
+import { writeSessionJsonl } from '../sessions/jsonl.ts';
+import type { StoredSession } from '../sessions/types.ts';
 import { createNovelProjectScaffold } from '../writing/novel-template.ts';
+import { detectWritingProject } from '../writing/manifest.ts';
+import { getBuiltInMethodPack, type MethodPack, type MethodPackId } from '../writing/method-packs/index.ts';
 import type {
   WorkspaceConfig,
   CreateWorkspaceInput,
@@ -130,6 +139,27 @@ export function loadWorkspaceConfig(rootPath: string): WorkspaceConfig | null {
       // TODO: Remove legacy 'think' normalization after old persisted workspace configs
       // have realistically aged out across upgrades.
       config.defaults.thinkingLevel = normalizeThinkingLevel(config.defaults.thinkingLevel);
+    }
+
+    const writingProject = detectWritingProject(rootPath);
+    if (writingProject?.type === 'novel') {
+      const detectedMethodPackId = writingProject.manifest.methodPack?.id;
+      const detectedMethodPack = detectedMethodPackId ? getBuiltInMethodPack(detectedMethodPackId) : null;
+
+      if (!detectedMethodPackId || detectedMethodPack) {
+        createNovelProjectScaffold(rootPath, {
+          title: config.name,
+          ...(detectedMethodPack ? { methodPackId: detectedMethodPack.id } : {}),
+        });
+      }
+    }
+
+    if (!config.defaults?.workingDirectory && writingProject?.type === 'novel') {
+      config.defaults = {
+        ...config.defaults,
+        workingDirectory: rootPath,
+      };
+      saveWorkspaceConfig(rootPath, config);
     }
 
     return config;
@@ -359,11 +389,80 @@ export function createWorkspaceAtPath(
 export function createNovelWorkspaceAtPath(
   rootPath: string,
   name: string,
-  defaults?: WorkspaceConfig['defaults']
+  defaults?: WorkspaceConfig['defaults'],
+  methodPackId: MethodPackId = 'novel.claude-book'
 ): WorkspaceConfig {
-  const config = createWorkspaceAtPath(rootPath, name, defaults);
-  createNovelProjectScaffold(rootPath, { title: name });
+  const methodPack = getBuiltInMethodPack(methodPackId);
+  if (!methodPack) {
+    throw new Error(`Unknown method pack: ${methodPackId}`);
+  }
+
+  const config = createWorkspaceAtPath(rootPath, name, {
+    ...defaults,
+    workingDirectory: rootPath,
+  });
+  createNovelProjectScaffold(rootPath, { title: name, methodPackId: methodPack.id });
+  ensureWritingStarterSession(rootPath, methodPack);
   return config;
+}
+
+function ensureSessionSubdirs(sessionDir: string): void {
+  for (const dir of ["plans", "attachments", "long_responses", "data", "downloads"]) {
+    mkdirSync(join(sessionDir, dir), { recursive: true });
+  }
+}
+
+function hasStoredSession(sessionsDir: string): boolean {
+  if (!existsSync(sessionsDir)) return false;
+  try {
+    return readdirSync(sessionsDir, { withFileTypes: true }).some((entry) => {
+      if (!entry.isDirectory()) return false;
+      return existsSync(join(sessionsDir, entry.name, "session.jsonl"));
+    });
+  } catch {
+    return false;
+  }
+}
+
+function ensureWritingStarterSession(rootPath: string, methodPack: MethodPack): void {
+  const sessionsDir = getWorkspaceSessionsPath(rootPath);
+  mkdirSync(sessionsDir, { recursive: true });
+  if (hasStoredSession(sessionsDir)) return;
+
+  const existingIds = readdirSync(sessionsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  const sessionId = generateUniqueSessionId(existingIds);
+  const sessionDir = join(sessionsDir, sessionId);
+  mkdirSync(sessionDir, { recursive: true });
+  ensureSessionSubdirs(sessionDir);
+
+  const now = Date.now();
+  const session: StoredSession = {
+    id: sessionId,
+    workspaceRootPath: rootPath,
+    name: "Start writing",
+    createdAt: now,
+    lastUsedAt: now,
+    lastMessageAt: now,
+    workingDirectory: rootPath,
+    sdkCwd: rootPath,
+    messages: [{
+      id: `${sessionId}-starter`,
+      type: "assistant",
+      content: `${methodPack.starterMessage}\n\nMethod Pack: ${methodPack.id}`,
+      timestamp: now,
+    }],
+    tokenUsage: {
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      contextTokens: 0,
+      costUsd: 0,
+    },
+  };
+
+  writeSessionJsonl(join(sessionDir, "session.jsonl"), session);
 }
 
 /**

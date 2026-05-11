@@ -6,6 +6,11 @@ export interface WritingProjectManifest {
   title?: string;
   language?: string;
   profile?: string;
+  methodPack?: {
+    id: string;
+    version: number;
+  };
+  storageProfile?: string;
 }
 
 export interface WritingProjectDirectories {

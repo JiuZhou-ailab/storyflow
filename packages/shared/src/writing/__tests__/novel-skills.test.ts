@@ -47,6 +47,14 @@ describe("bundled novel skills", () => {
     expect(joined).not.toContain("perplexity-improver as a required gate");
   });
 
+  it("defines hard Claude-Book workflow gates for outline-driven chapter generation", () => {
+    const joined = getBundledNovelSkillFiles().map((file) => file.content).join("\n");
+
+    expect(joined).toContain("Do not write or update `story/chapters/` until `story/synopsis.md` and `story/plan.md` contain non-template content.");
+    expect(joined).toContain("The number and order of manuscript chapters must come from `story/plan.md`.");
+    expect(joined).toContain("Natural prose paragraphs should usually contain 2-5 sentences.");
+  });
+
   it("keeps reviewable SKILL.md source files in the repository", () => {
     const skillsRoot = join(import.meta.dir, "..", "skills", "novel");
 

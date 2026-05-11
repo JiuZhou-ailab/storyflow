@@ -64,7 +64,7 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
     }
 
     const options = normalizeCreateWorkspaceOptions(input, projectType)
-    ensureWorkspaceRootForProject(rootPath, name, options.projectType)
+    ensureWorkspaceRootForProject(rootPath, name, options)
 
     const workspace = addWorkspace({ name, rootPath, ...(options.remoteServer && { remoteServer: options.remoteServer }) })
     // Make it active

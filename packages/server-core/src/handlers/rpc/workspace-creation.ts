@@ -3,17 +3,19 @@ import {
   createNovelWorkspaceAtPath as defaultCreateNovelWorkspaceAtPath,
   isValidWorkspace as defaultIsValidWorkspace,
 } from '@craft-agent/shared/workspaces'
+import { getBuiltInMethodPack, type MethodPackId } from '@craft-agent/shared/writing/method-packs'
 
 export type WorkspaceProjectType = 'general' | 'novel'
 
 export interface CreateWorkspaceOptions {
   remoteServer?: RemoteServerConfig
   projectType?: WorkspaceProjectType
+  methodPackId?: MethodPackId
 }
 
 export interface WorkspaceRootProjectDeps {
   isValidWorkspace: (rootPath: string) => boolean
-  createNovelWorkspaceAtPath: (rootPath: string, name: string) => void
+  createNovelWorkspaceAtPath: (rootPath: string, name: string, methodPackId?: MethodPackId) => void
 }
 
 function isRemoteServerConfig(value: unknown): value is RemoteServerConfig {
@@ -30,31 +32,47 @@ export function normalizeCreateWorkspaceOptions(
   input?: CreateWorkspaceOptions | RemoteServerConfig,
   projectType?: WorkspaceProjectType,
 ): CreateWorkspaceOptions {
-  if (!input) {
-    return projectType ? { projectType } : {}
-  }
-
-  if (isRemoteServerConfig(input)) {
+  const withDefaultMethodPack = (options: CreateWorkspaceOptions): CreateWorkspaceOptions => {
+    if (options.methodPackId || options.projectType !== 'novel') return options
     return {
-      remoteServer: input,
-      ...(projectType && { projectType }),
+      ...options,
+      methodPackId: 'novel.claude-book',
     }
   }
 
-  return input
+  if (!input) {
+    return withDefaultMethodPack(projectType ? { projectType } : {})
+  }
+
+  if (isRemoteServerConfig(input)) {
+    return withDefaultMethodPack({
+      remoteServer: input,
+      ...(projectType && { projectType }),
+    })
+  }
+
+  return withDefaultMethodPack(input)
 }
 
 export function ensureWorkspaceRootForProject(
   rootPath: string,
   name: string,
-  projectType: WorkspaceProjectType | undefined,
+  options: CreateWorkspaceOptions,
   deps: WorkspaceRootProjectDeps = {
     isValidWorkspace: defaultIsValidWorkspace,
-    createNovelWorkspaceAtPath: defaultCreateNovelWorkspaceAtPath,
+    createNovelWorkspaceAtPath: (rootPath, workspaceName, methodPackId) =>
+      defaultCreateNovelWorkspaceAtPath(rootPath, workspaceName, undefined, methodPackId),
   },
 ): void {
-  if (projectType !== 'novel') return
+  const methodPackId = options.methodPackId ?? (options.projectType === 'novel' ? 'novel.claude-book' : undefined)
+  if (!methodPackId) return
+
+  const methodPack = getBuiltInMethodPack(methodPackId)
+  if (!methodPack) {
+    throw new Error(`Unknown method pack: ${methodPackId}`)
+  }
+  if (methodPack.projectType !== 'novel') return
   if (deps.isValidWorkspace(rootPath)) return
 
-  deps.createNovelWorkspaceAtPath(rootPath, name)
+  deps.createNovelWorkspaceAtPath(rootPath, name, methodPack.id)
 }

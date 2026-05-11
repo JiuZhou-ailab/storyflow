@@ -20,6 +20,11 @@ describe("detectWritingProject", () => {
       type: "novel",
       language: "zh-Hans",
       title: "Test Novel",
+      methodPack: {
+        id: "novel.claude-book",
+        version: 1,
+      },
+      storageProfile: "claude-book-compatible",
     }));
 
     const project = detectWritingProject(rootPath);
@@ -27,6 +32,11 @@ describe("detectWritingProject", () => {
     expect(project?.type).toBe("novel");
     expect(project?.source).toBe("manifest");
     expect(project?.manifest.title).toBe("Test Novel");
+    expect(project?.manifest.methodPack).toEqual({
+      id: "novel.claude-book",
+      version: 1,
+    });
+    expect(project?.manifest.storageProfile).toBe("claude-book-compatible");
     expect(project?.directories.bible).toBe(join(rootPath, "bible"));
   });
 

@@ -31,6 +31,9 @@ function parseManifest(rootPath: string): WritingProjectManifest | null {
     const raw = JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<string, unknown>;
     if (raw.schemaVersion !== 1) return null;
     if (!isSupportedProjectType(raw.type)) return null;
+    const methodPack = raw.methodPack && typeof raw.methodPack === "object"
+      ? raw.methodPack as Record<string, unknown>
+      : null;
 
     return {
       schemaVersion: 1,
@@ -38,6 +41,15 @@ function parseManifest(rootPath: string): WritingProjectManifest | null {
       title: typeof raw.title === "string" ? raw.title : undefined,
       language: typeof raw.language === "string" ? raw.language : undefined,
       profile: typeof raw.profile === "string" ? raw.profile : undefined,
+      methodPack: methodPack
+        && typeof methodPack.id === "string"
+        && typeof methodPack.version === "number"
+        ? {
+            id: methodPack.id,
+            version: methodPack.version,
+          }
+        : undefined,
+      storageProfile: typeof raw.storageProfile === "string" ? raw.storageProfile : undefined,
     };
   } catch {
     return null;
