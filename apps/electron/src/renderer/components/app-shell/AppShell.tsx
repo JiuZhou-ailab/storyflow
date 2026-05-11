@@ -92,7 +92,7 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
-import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, NovelSelectionRewriteResult } from "../../../shared/types"
+import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter } from "../../../shared/types"
 import { ensureSessionMessagesLoadedAtom, sessionAtomFamily, sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
@@ -1780,12 +1780,19 @@ function AppShellContent({
         selectedText,
         instruction,
       }
-      const result = typeof window.electronAPI.rewriteNovelSelection === 'function'
-        ? await window.electronAPI.rewriteNovelSelection(effectiveSessionId, request)
-        : await window.electronAPI.sessionCommand(effectiveSessionId, {
-          type: 'rewriteNovelSelection',
-          request,
-        }) as NovelSelectionRewriteResult
+      if (typeof window.electronAPI.rewriteNovelSelection !== 'function') {
+        const message = t(
+          'writing.selectionRewrite.runtimeReloadRequired',
+          'The selection rewrite runtime is out of date. Restarting the app to load the update.'
+        )
+        if (typeof window.electronAPI.relaunchApp === 'function') {
+          toast.info(message)
+          await window.electronAPI.relaunchApp()
+        }
+        throw new Error(message)
+      }
+
+      const result = await window.electronAPI.rewriteNovelSelection(effectiveSessionId, request)
       return result.replacement
     } catch (error) {
       toast.error(t('writing.selectionRewrite.failed', '改写选中文本失败'), {
