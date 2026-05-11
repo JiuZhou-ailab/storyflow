@@ -607,6 +607,8 @@ export function createAnthropicSseStrippingStream(): TransformStream<Uint8Array,
     },
 
     flush(controller) {
+      lineBuffer += decoder.decode();
+
       if (lineBuffer.trim()) {
         const lines = lineBuffer.split('\n');
 
@@ -633,7 +635,15 @@ export function createAnthropicSseStrippingStream(): TransformStream<Uint8Array,
 
         if (currentEventType && currentData) {
           processEvent(currentEventType, currentData, controller);
+          currentEventType = '';
+          currentData = '';
         }
+      }
+
+      if (currentEventType && currentData) {
+        processEvent(currentEventType, currentData, controller);
+        currentEventType = '';
+        currentData = '';
       }
 
       for (const [index, block] of trackedBlocks) {

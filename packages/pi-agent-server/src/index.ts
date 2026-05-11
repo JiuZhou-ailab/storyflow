@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 /**
+ * input: JSONL control messages from the main process, Pi SDK session files, model credentials, and tool definitions.
+ * output: JSONL agent events, tool requests, auth/test results, and Pi session state updates.
+ * pos: Out-of-process Pi SDK adapter that isolates provider/runtime details from the Electron main process.
+ *
  * Pi Agent Server
  *
  * Out-of-process Pi agent server communicating via JSONL over stdio.
@@ -78,6 +82,18 @@ import { resolveSearchProvider } from './tools/search/resolve-provider.ts';
 import { createSearchTool } from './tools/search/create-search-tool.ts';
 import { allowCraftMetadataProperties, stripCraftMetadata } from './craft-metadata-schema.ts';
 import { applySystemPromptOverride } from './system-prompt-override.ts';
+import {
+  sanitizeAssistantMessageForResume,
+  sanitizeSessionFileForResume,
+  type PiSessionSanitizeResult,
+} from './pi-session-sanitizer.ts';
+import {
+  createPromptAttemptState,
+  isAnthropicMessageStopStreamError,
+  recordPromptAttemptEvent,
+  shouldAutoRetryPromptFailure,
+  type PromptAttemptState,
+} from './prompt-retry.ts';
 
 // ============================================================
 // Types — JSONL Protocol
@@ -247,6 +263,7 @@ let initConfig: Extract<InboundMessage, { type: 'init' }> | null = null;
 
 // Mutable state
 let currentUserMessage = '';
+let currentPromptAttemptState: PromptAttemptState | null = null;
 
 // Pending promises for async handshakes
 const pendingPreToolUse = new Map<string, { resolve: (response: { action: string; input?: Record<string, unknown>; reason?: string }) => void }>();
@@ -289,6 +306,14 @@ function send(msg: OutboundMessage): void {
 function debugLog(message: string): void {
   // Write debug messages to stderr so they don't interfere with JSONL protocol
   process.stderr.write(`[pi-server] ${message}\n`);
+}
+
+function logSanitizeResult(scope: string, result: PiSessionSanitizeResult): void {
+  if (!result.changed) return;
+  debugLog(
+    `${scope}: removed ${result.removedToolCalls} incomplete tool call(s), ` +
+    `normalized ${result.normalizedToolCalls} tool call(s)`,
+  );
 }
 
 /** Find the most recent .jsonl session file in a directory. */
@@ -604,6 +629,10 @@ async function ensureSession(): Promise<AgentSession> {
       }
 
       debugLog(`Forking Pi session from parent: ${parentPiSessionFile}`);
+      logSanitizeResult(
+        `Sanitized parent Pi session before fork (${parentPiSessionFile})`,
+        sanitizeSessionFileForResume(parentPiSessionFile),
+      );
       const forkedSessionManager = PiSessionManager.forkFrom(parentPiSessionFile, cwd, sessionDir);
 
       // Strict branch cutoff: move leaf to the selected parent entry if provided.
@@ -620,6 +649,13 @@ async function ensureSession(): Promise<AgentSession> {
 
       sessionOptions.sessionManager = forkedSessionManager;
     } else {
+      const recentPiSessionFile = findMostRecentSessionFile(sessionDir);
+      if (recentPiSessionFile) {
+        logSanitizeResult(
+          `Sanitized Pi session before resume (${recentPiSessionFile})`,
+          sanitizeSessionFileForResume(recentPiSessionFile),
+        );
+      }
       sessionOptions.sessionManager = PiSessionManager.continueRecent(cwd, sessionDir);
     }
 
@@ -1115,7 +1151,61 @@ function extractToolExecutionMetadata(args: Record<string, unknown> | undefined)
   };
 }
 
+function getAssistantErrorMessage(event: AgentSessionEvent): string | null {
+  if (event.type !== 'message_end') return null;
+
+  const msg = event.message as { role?: string; stopReason?: string; errorMessage?: string } | undefined;
+  if (msg?.role !== 'assistant' || msg.stopReason !== 'error' || !msg.errorMessage) {
+    return null;
+  }
+
+  return msg.errorMessage;
+}
+
+async function retryPromptFromCurrentTranscript(session: AgentSession): Promise<void> {
+  const messages = session.agent.state.messages;
+  const lastMessage = messages[messages.length - 1] as {
+    role?: string;
+    stopReason?: string;
+    errorMessage?: string;
+  } | undefined;
+
+  if (
+    lastMessage?.role === 'assistant' &&
+    lastMessage.stopReason === 'error' &&
+    isAnthropicMessageStopStreamError(lastMessage.errorMessage)
+  ) {
+    session.agent.state.messages = messages.slice(0, -1);
+  }
+
+  await session.agent.continue();
+
+  const retryAwareSession = session as unknown as { waitForRetry?: () => Promise<void> };
+  await retryAwareSession.waitForRetry?.();
+}
+
 function handleSessionEvent(event: AgentSessionEvent): void {
+  const promptAttemptState = currentPromptAttemptState;
+  if (promptAttemptState) {
+    recordPromptAttemptEvent(promptAttemptState, event as unknown as Record<string, unknown>);
+
+    const assistantErrorMessage = getAssistantErrorMessage(event);
+    if (assistantErrorMessage && shouldAutoRetryPromptFailure(assistantErrorMessage, promptAttemptState)) {
+      promptAttemptState.suppressedRetryableFailure = true;
+      debugLog(`Suppressing retryable stream failure before automatic retry: ${assistantErrorMessage}`);
+      return;
+    }
+
+    if (
+      event.type === 'agent_end' &&
+      promptAttemptState.suppressedRetryableFailure &&
+      !promptAttemptState.retryAttempted
+    ) {
+      debugLog('Suppressing agent_end for retryable stream failure before automatic retry');
+      return;
+    }
+  }
+
   let forwardedEvent: OutboundAgentEvent = event;
 
   // Log API errors for debugging and attach provider-native turn anchor for branch cutoffs.
@@ -1126,6 +1216,11 @@ function handleSessionEvent(event: AgentSessionEvent): void {
     }
 
     if (msg?.role === 'assistant' && piSession) {
+      logSanitizeResult(
+        'Sanitized assistant message before Pi persistence',
+        sanitizeAssistantMessageForResume(event.message),
+      );
+
       const sdkTurnAnchor = piSession.sessionManager.getLeafId();
       if (sdkTurnAnchor) {
         // Enrichment: main process reads `sdkTurnAnchor` off the forwarded event to
@@ -1146,7 +1241,8 @@ function handleSessionEvent(event: AgentSessionEvent): void {
           (c) => c.type === 'toolCall' && c.name && isPrefetchableTool(c.name),
         );
         if (prefetchableToolCalls.length >= 2) {
-          debugLog(`Prefetching ${prefetchableToolCalls.length} parallel ${prefetchableToolCalls[0].name} calls`);
+          const firstToolName = prefetchableToolCalls[0]?.name ?? 'tool';
+          debugLog(`Prefetching ${prefetchableToolCalls.length} parallel ${firstToolName} calls`);
           for (const tc of prefetchableToolCalls) {
             const requestId = `prefetch-${tc.id}`;
             const promise = new Promise<{ content: string; isError: boolean }>((resolve) => {
@@ -1264,6 +1360,9 @@ async function waitForCompaction(session: { isCompacting: boolean }, timeoutMs =
 
 async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): Promise<void> {
   currentUserMessage = msg.message;
+  const promptAttemptState = createPromptAttemptState();
+  currentPromptAttemptState = promptAttemptState;
+  let session: AgentSession | null = null;
 
   try {
     // If proxy tools changed since last session creation, dispose and recreate.
@@ -1279,7 +1378,7 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
       piSession = null;
     }
 
-    const session = await ensureSession();
+    session = await ensureSession();
 
     // Force the Craft-built system prompt onto the Pi session. Direct assignment
     // to `state.systemPrompt` is wiped on every `session.prompt()` call by the Pi
@@ -1304,7 +1403,7 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
       streamingBehavior: 'followUp',
     });
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
+    let errorMsg = error instanceof Error ? error.message : String(error);
 
     // No wrapper-side overflow recovery here. The Pi SDK's _checkCompaction
     // already runs `_runAutoCompaction("overflow", true)` on overflow and
@@ -1315,10 +1414,26 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
     // queue open across the SDK's recovery flow so the recovered turn
     // reaches the UI.
 
+    if (session && shouldAutoRetryPromptFailure(errorMsg, promptAttemptState)) {
+      promptAttemptState.retryAttempted = true;
+      debugLog(`Retrying prompt once after transient stream interruption: ${errorMsg}`);
+      try {
+        await waitForCompaction(session);
+        await retryPromptFromCurrentTranscript(session);
+        return;
+      } catch (retryError) {
+        errorMsg = retryError instanceof Error ? retryError.message : String(retryError);
+      }
+    }
+
     debugLog(`Prompt failed: ${errorMsg}`);
     send({ type: 'error', message: errorMsg, code: 'prompt_error' });
     // Send synthetic agent_end so the main process event queue unblocks
     send({ type: 'event', event: { type: 'agent_end', messages: [] } });
+  } finally {
+    if (currentPromptAttemptState === promptAttemptState) {
+      currentPromptAttemptState = null;
+    }
   }
 }
 

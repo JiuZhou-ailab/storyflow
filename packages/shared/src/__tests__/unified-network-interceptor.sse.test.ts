@@ -150,6 +150,18 @@ describe('unified-network-interceptor SSE processors', () => {
     rmSync(sessionDir, { recursive: true, force: true });
   });
 
+  it('Anthropic: flushes a final event that ends without a blank separator', async () => {
+    const sse = [
+      'event: message_stop\n',
+      'data: {"type":"message_stop"}\n',
+    ];
+
+    const out = await runThroughProcessor(createAnthropicSseStrippingStream(), sse);
+
+    expect(out).toContain('event: message_stop');
+    expect(out).toContain('data: {"type":"message_stop"}');
+  });
+
   describe('stripMetadataFieldsFromRawJson', () => {
     it('strips _intent and _displayName from valid JSON', () => {
       const input = '{"path":"/tmp","_intent":"Read file","_displayName":"Read Tmp"}';

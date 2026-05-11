@@ -367,6 +367,10 @@ function buildProxyErrorMessage(errorMessage: string, fullErrorText: string): st
   return `Received an unexpected HTML error page${suffix} instead of a JSON API response. This is usually caused by a proxy, firewall, or captive portal intercepting the request. Check your proxy settings in Settings > Network.`;
 }
 
+function isAnthropicMessageStopStreamError(textLower: string): boolean {
+  return textLower.includes('anthropic stream ended before message_stop');
+}
+
 /**
  * Parse an error and return a typed AgentError with user-friendly info
  */
@@ -419,6 +423,8 @@ export function parseError(
     }
   } else if (lowerMessage.includes('429') || lowerMessage.includes('rate limit') || lowerMessage.includes('too many requests')) {
     code = 'rate_limited';
+  } else if (isAnthropicMessageStopStreamError(lowerMessage)) {
+    code = 'provider_error';
   } else if (lowerMessage.includes('500') || lowerMessage.includes('502') || lowerMessage.includes('503') || lowerMessage.includes('504') || lowerMessage.includes('internal server error') || lowerMessage.includes('service unavailable')) {
     code = 'service_error';
   } else if (lowerMessage.includes('network') || lowerMessage.includes('econnrefused') || lowerMessage.includes('enotfound') || lowerMessage.includes('fetch failed') || lowerMessage.includes('connection')) {
@@ -460,6 +466,17 @@ export function parseError(
       code,
       ...definition,
       message: buildProxyErrorMessage(errorMessage, fullErrorText),
+      originalError: errorMessage,
+      providerInfo,
+    };
+  }
+
+  if (code === 'provider_error' && isAnthropicMessageStopStreamError(lowerMessage)) {
+    return {
+      code,
+      ...definition,
+      title: 'Stream Interrupted',
+      message: 'The AI provider stream ended before the final stop event. This is usually transient; retry the message.',
       originalError: errorMessage,
       providerInfo,
     };

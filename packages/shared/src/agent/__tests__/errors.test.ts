@@ -34,4 +34,13 @@ describe('parseError proxy interception handling', () => {
 
     expect(parsed.code).toBe('invalid_api_key')
   })
+
+  it('maps missing Anthropic message_stop stream endings to retryable provider_error', () => {
+    const parsed = parseError(new Error('Anthropic stream ended before message_stop'))
+
+    expect(parsed.code).toBe('provider_error')
+    expect(parsed.canRetry).toBe(true)
+    expect(parsed.actions.some(action => action.action === 'retry')).toBe(true)
+    expect(parsed.message.toLowerCase()).toContain('stream')
+  })
 })
