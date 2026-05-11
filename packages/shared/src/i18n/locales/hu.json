@@ -1434,9 +1434,9 @@
   "workspace.methodOptions.ohStoryNovel.previewMermaid": "flowchart TD\n  A[Market positioning] --> B[Settings]\n  B --> C[Outline]\n  C --> D[Manuscript]\n  D --> E[Tracking]\n  D --> F[Benchmark analysis]\n  F --> C",
   "workspace.methodOptions.ohStoryNovel.subtitle": "Online-fiction workspace with settings, outline, manuscript, benchmarks, tracking, and cleanup skills.",
   "workspace.methodOptions.ohStoryNovel.title": "Oh Story Web Fiction Pack",
+  "workspace.methodPackLabel": "Method Pack",
   "workspace.methodPreviewAssets": "Workspace assets",
   "workspace.methodPreviewBestFor": "Best for",
-  "workspace.methodPackLabel": "Method Pack",
   "workspace.methodPreviewLabel": "Method logic",
   "workspace.methodPreviewWorkflow": "Workflow map",
   "workspace.myRemoteWorkspace": "Távoli munkaterületem",
@@ -1504,6 +1504,8 @@
   "writing.review.rejectFailed": "Nem sikerült elutasítani a változtatást",
   "writing.review.rejectUnavailable": "Ez a változtatás nem utasítható el biztonságosan",
   "writing.review.rejected": "Változtatás elutasítva",
+  "writing.selectionRewrite.failed": "Failed to rewrite selected text",
+  "writing.selectionRewrite.runtimeReloadRequired": "Restart the app to finish loading the selection rewrite bridge.",
   "writing.switchBlockedByUnsavedEdits": "Mentsd ezt a dokumentumot fájlváltás előtt.",
   "writing.tabs.analysis": "Elemzés",
   "writing.tabs.changes": "Változások",
@@ -1516,9 +1518,6 @@
   "writing.tabs.timeline": "Idővonal",
   "writing.tabs.work": "Munka",
   "writing.totalCharacters": "Összesen {{count}} karakter",
-  "writing.workspace": "Írói munkaterület",
-  "writing.selectionRewrite.failed": "Failed to rewrite selected text",
-  "writing.selectionRewrite.runtimeReloadRequired": "Restart the app to finish loading the selection rewrite bridge.",
   "writing.version.description": "Automatic saves create a local version after writing changes exceed 100 characters or a few minutes pass.",
   "writing.version.empty": "No versions saved yet",
   "writing.version.loadFailed": "Failed to load version history",
@@ -1533,5 +1532,6 @@
   "writing.version.saveFailed": "Failed to save version",
   "writing.version.saved": "Current version saved",
   "writing.version.saving": "Saving",
-  "writing.version.title": "Version history"
+  "writing.version.title": "Version history",
+  "writing.workspace": "Írói munkaterület"
 }

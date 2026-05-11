@@ -2013,11 +2013,19 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       return
     }
 
+    const runCleanup = (label: string, action: () => void): void => {
+      try {
+        action()
+      } catch (error) {
+        mainLog.warn(`[browser-pane] finalize cleanup failed id=${instance.id} step=${label} error=${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+
     this.destroyingIds.delete(instance.id)
-    this.closePopupsForParent(instance.id, 'parent_destroy')
-    this.applyAgentControlLock(instance, false)
-    this.updateNativeOverlayState(instance)
-    instance.cdp.detach()
+    runCleanup('closePopupsForParent', () => this.closePopupsForParent(instance.id, 'parent_destroy'))
+    runCleanup('applyAgentControlLock', () => this.applyAgentControlLock(instance, false))
+    runCleanup('updateNativeOverlayState', () => this.updateNativeOverlayState(instance))
+    runCleanup('cdp.detach', () => instance.cdp.detach())
     this.instances.delete(instance.id)
     this.removedCallback?.(instance.id)
     mainLog.info(`[browser-pane] Destroyed instance: ${instance.id} (${source})`)
@@ -3049,7 +3057,15 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       }
     })
 
-    pageWc.on('did-create-window', (popupWindow, details) => {
+    pageWc.on('did-create-window', (...rawArgs) => {
+      const args = rawArgs as unknown as any[]
+      const [first, second, third] = args
+      const popupWindow = first?.webContents ? first : second
+      const details = first?.webContents ? second : third
+      if (!popupWindow?.webContents) {
+        mainLog.warn(`[browser-pane] did-create-window ignored id=${instance.id} reason=missing_webContents`)
+        return
+      }
       const popupUrl = details?.url || popupWindow.webContents.getURL?.() || 'about:blank'
       this.registerPopupWindow(instance, popupWindow, popupUrl)
     })

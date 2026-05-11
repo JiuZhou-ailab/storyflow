@@ -1434,9 +1434,9 @@
   "workspace.methodOptions.ohStoryNovel.previewMermaid": "flowchart TD\n  A[题材定位] --> B[设定]\n  B --> C[大纲]\n  C --> D[正文]\n  D --> E[追踪]\n  D --> F[对标与拆文]\n  F --> C",
   "workspace.methodOptions.ohStoryNovel.subtitle": "网文 Workspace，包含设定、大纲、正文、对标、追踪与去 AI 味流程。",
   "workspace.methodOptions.ohStoryNovel.title": "Oh Story 网文 Method Pack",
+  "workspace.methodPackLabel": "Method Pack",
   "workspace.methodPreviewAssets": "工作区资产",
   "workspace.methodPreviewBestFor": "适合项目",
-  "workspace.methodPackLabel": "Method Pack",
   "workspace.methodPreviewLabel": "逻辑预览",
   "workspace.methodPreviewWorkflow": "工作流地图",
   "workspace.myRemoteWorkspace": "我的远程 Workspace",
@@ -1504,6 +1504,8 @@
   "writing.review.rejectFailed": "拒绝变更失败",
   "writing.review.rejectUnavailable": "无法安全拒绝此变更",
   "writing.review.rejected": "已拒绝变更",
+  "writing.selectionRewrite.failed": "改写选中文本失败",
+  "writing.selectionRewrite.runtimeReloadRequired": "请重启应用以完成选中文本改写桥接加载。",
   "writing.switchBlockedByUnsavedEdits": "先保存本文档，再切换文件。",
   "writing.tabs.analysis": "分析",
   "writing.tabs.changes": "变更",
@@ -1516,9 +1518,6 @@
   "writing.tabs.timeline": "时间线",
   "writing.tabs.work": "工作",
   "writing.totalCharacters": "总字数 {{count}}",
-  "writing.workspace": "写作工作区",
-  "writing.selectionRewrite.failed": "改写选中文本失败",
-  "writing.selectionRewrite.runtimeReloadRequired": "请重启应用以完成选中文本改写桥接加载。",
   "writing.version.description": "自动保存会在写作变更超过 100 字或间隔数分钟后创建本地版本。",
   "writing.version.empty": "还没有保存过版本",
   "writing.version.loadFailed": "加载版本历史失败",
@@ -1533,5 +1532,6 @@
   "writing.version.saveFailed": "保存版本失败",
   "writing.version.saved": "已保存当前版本",
   "writing.version.saving": "保存中",
-  "writing.version.title": "版本管理"
+  "writing.version.title": "版本管理",
+  "writing.workspace": "写作工作区"
 }

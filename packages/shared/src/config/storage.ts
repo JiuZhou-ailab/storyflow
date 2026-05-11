@@ -458,8 +458,13 @@ export function getBrowserToolEnabled(): boolean {
   if (config?.browserToolEnabled !== undefined) {
     return config.browserToolEnabled;
   }
-  const defaults = loadConfigDefaults();
-  return defaults.defaults.browserToolEnabled;
+  try {
+    const defaults = loadConfigDefaults();
+    return defaults.defaults.browserToolEnabled;
+  } catch (error) {
+    debug('[config] Failed to load browserToolEnabled default - falling back to enabled: ' + error);
+    return true;
+  }
 }
 
 /**

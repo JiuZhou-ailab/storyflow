@@ -240,6 +240,7 @@ describe('WorkspaceEventBus', () => {
     it('should reset rate window after 60s', async () => {
       jest.useFakeTimers();
       try {
+        jest.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
         const handler = jest.fn();
         bus.on('LabelAdd', handler);
 
@@ -254,7 +255,7 @@ describe('WorkspaceEventBus', () => {
         expect(handler).toHaveBeenCalledTimes(10);
 
         // Advance past the window
-        jest.advanceTimersByTime(61_000);
+        jest.setSystemTime(new Date('2026-01-01T00:01:01.000Z'));
 
         // Should fire again
         await bus.emit('LabelAdd', labelPayload());

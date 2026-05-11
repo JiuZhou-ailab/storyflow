@@ -1,6 +1,6 @@
 {
   "name": "craft-agent",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "license": "Apache-2.0",
   "description": "Claude Code-like agent for Craft documents",
   "type": "module",
@@ -21,7 +21,7 @@
     "!apps/online-docs"
   ],
   "scripts": {
-    "test": "bun test && for f in $(find . -name '*.isolated.ts' -not -path './node_modules/*'); do bun test \"$f\" || exit 1; done",
+    "test": "bun test $(rg --files -g '*.test.ts' -g '*.test.tsx' -g '*.test.js' -g '*.test.jsx' -g '*.spec.ts' -g '*.spec.tsx' -g '!node_modules/**' -g '!apps/electron/dist/**' -g '!apps/electron/release/**' -g '!packages/server-core/src/webui/__tests__/http-server.test.ts') && bun test packages/server-core/src/webui/__tests__/http-server.test.ts && for f in $(rg --files -g '*.isolated.ts' -g '!node_modules/**' -g '!apps/electron/dist/**' -g '!apps/electron/release/**'); do bun test \"./$f\" || exit 1; done",
     "typecheck": "bun run typecheck:shared",
     "typecheck:shared": "cd packages/shared && bun run tsc --noEmit",
     "typecheck:staged": "bash scripts/typecheck-staged.sh",

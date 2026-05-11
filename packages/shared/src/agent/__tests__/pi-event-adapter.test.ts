@@ -1212,7 +1212,13 @@ describe('PiEventAdapter', () => {
     });
 
     it('skipped recovery: fallback timer drains held error after timeout', () => {
-      jest.useFakeTimers();
+      const originalSetTimeout = globalThis.setTimeout;
+      const originalClearTimeout = globalThis.clearTimeout;
+      (globalThis as any).setTimeout = ((handler: Parameters<typeof setTimeout>[0]) => {
+        if (typeof handler === 'function') handler();
+        return 1 as any;
+      }) as typeof setTimeout;
+      (globalThis as any).clearTimeout = (() => {}) as typeof clearTimeout;
       try {
         const enqueued: any[] = [];
         let completed = false;
@@ -1225,13 +1231,11 @@ describe('PiEventAdapter', () => {
         collect(adapter.adaptEvent({ type: 'message_end', message: overflowMessage } as any));
         collect(adapter.adaptEvent({ type: 'agent_end' } as any));
 
-        // No compaction events arrive. Advance past the 5 s fallback timeout.
-        jest.advanceTimersByTime(5_000);
-
         expect(enqueued).toEqual([{ type: 'error', message: overflowMessage.errorMessage }]);
         expect(completed).toBe(true);
       } finally {
-        jest.useRealTimers();
+        globalThis.setTimeout = originalSetTimeout;
+        globalThis.clearTimeout = originalClearTimeout;
       }
     });
 
