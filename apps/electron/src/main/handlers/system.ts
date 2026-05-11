@@ -2,10 +2,20 @@ import { resolve } from 'path'
 import { join } from 'path'
 import { homedir } from 'os'
 import { execSync } from 'child_process'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import {
+  RPC_CHANNELS,
+  type CreateWorkspaceVersionOptions,
+} from '@craft-agent/shared/protocol'
 import { getGitBashPath, setGitBashPath, clearGitBashPath } from '@craft-agent/shared/config'
 import { isSafeExternalUrl } from '@craft-agent/shared/utils/url-safety'
-import { isUsableGitBashPath, validateGitBashPath } from '@craft-agent/server-core/services'
+import {
+  createWorkspaceVersion,
+  getWorkspaceVersionStatus,
+  isUsableGitBashPath,
+  listWorkspaceVersions,
+  restoreWorkspaceVersion,
+  validateGitBashPath,
+} from '@craft-agent/server-core/services'
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from './handler-deps'
@@ -28,6 +38,10 @@ export const CORE_HANDLED_CHANNELS = [
   RPC_CHANNELS.releaseNotes.GET,
   RPC_CHANNELS.releaseNotes.GET_LATEST_VERSION,
   RPC_CHANNELS.git.GET_BRANCH,
+  RPC_CHANNELS.git.GET_VERSION_STATUS,
+  RPC_CHANNELS.git.CREATE_VERSION,
+  RPC_CHANNELS.git.LIST_VERSIONS,
+  RPC_CHANNELS.git.RESTORE_VERSION,
   RPC_CHANNELS.gitbash.CHECK,
   RPC_CHANNELS.gitbash.BROWSE,
   RPC_CHANNELS.gitbash.SET_PATH,
@@ -117,6 +131,31 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
     } catch {
       return null
     }
+  })
+
+  async function validateWorkspaceRoot(ctx: { workspaceId?: string | null; webContentsId?: number | null }, rootPath: string): Promise<string> {
+    const workspaceId = ctx.workspaceId ?? (ctx.webContentsId != null ? windowManager?.getWorkspaceForWindow(ctx.webContentsId) : undefined)
+    return validateFilePath(rootPath, getWorkspaceAllowedDirs(workspaceId))
+  }
+
+  server.handle(RPC_CHANNELS.git.GET_VERSION_STATUS, async (ctx, rootPath: string) => {
+    const safeRoot = await validateWorkspaceRoot(ctx, rootPath)
+    return getWorkspaceVersionStatus(safeRoot)
+  })
+
+  server.handle(RPC_CHANNELS.git.CREATE_VERSION, async (ctx, rootPath: string, options: CreateWorkspaceVersionOptions) => {
+    const safeRoot = await validateWorkspaceRoot(ctx, rootPath)
+    return createWorkspaceVersion(safeRoot, options)
+  })
+
+  server.handle(RPC_CHANNELS.git.LIST_VERSIONS, async (ctx, rootPath: string, limit?: number) => {
+    const safeRoot = await validateWorkspaceRoot(ctx, rootPath)
+    return listWorkspaceVersions(safeRoot, limit)
+  })
+
+  server.handle(RPC_CHANNELS.git.RESTORE_VERSION, async (ctx, rootPath: string, commitHash: string) => {
+    const safeRoot = await validateWorkspaceRoot(ctx, rootPath)
+    return restoreWorkspaceVersion(safeRoot, commitHash)
   })
 
   // Git Bash detection and configuration (Windows only)

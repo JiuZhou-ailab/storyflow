@@ -198,4 +198,17 @@ describe('RPC handler registration', () => {
 
     expect(missingOnboarding).toEqual([])
   })
+
+  it('keeps Electron local system core registration aligned with writing version channels', async () => {
+    const { RPC_CHANNELS } = await import('@craft-agent/shared/protocol')
+    const { registerSystemCoreHandlers } = await import('../system')
+
+    registerSystemCoreHandlers(createMockServer(), createMockDeps())
+
+    const actual = new Set(registeredChannels)
+    expect(actual.has(RPC_CHANNELS.git.GET_VERSION_STATUS)).toBe(true)
+    expect(actual.has(RPC_CHANNELS.git.CREATE_VERSION)).toBe(true)
+    expect(actual.has(RPC_CHANNELS.git.LIST_VERSIONS)).toBe(true)
+    expect(actual.has(RPC_CHANNELS.git.RESTORE_VERSION)).toBe(true)
+  })
 })
