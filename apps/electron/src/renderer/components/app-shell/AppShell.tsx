@@ -92,7 +92,7 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
-import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter } from "../../../shared/types"
+import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, NovelSelectionRewriteResult } from "../../../shared/types"
 import { ensureSessionMessagesLoadedAtom, sessionAtomFamily, sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
@@ -1774,12 +1774,15 @@ function AppShellContent({
     }
 
     try {
-      const result = await window.electronAPI.rewriteNovelSelection(effectiveSessionId, {
-        filePath: selectedNovelFile.path,
-        relativePath: selectedNovelFile.relativePath,
-        selectedText,
-        instruction,
-      })
+      const result = await window.electronAPI.sessionCommand(effectiveSessionId, {
+        type: 'rewriteNovelSelection',
+        request: {
+          filePath: selectedNovelFile.path,
+          relativePath: selectedNovelFile.relativePath,
+          selectedText,
+          instruction,
+        },
+      }) as NovelSelectionRewriteResult
       return result.replacement
     } catch (error) {
       toast.error(t('writing.selectionRewrite.failed', '改写选中文本失败'), {

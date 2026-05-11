@@ -230,7 +230,6 @@ const EXPECTED_CHANNELS: string[] = [
   'sessions:markAllRead',
   'sessions:respondToCredential',
   'sessions:respondToPermission',
-  'sessions:rewriteNovelSelection',
   'sessions:searchContent',
   'sessions:sendMessage',
   'sessions:setNotes',

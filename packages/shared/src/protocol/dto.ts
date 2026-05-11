@@ -278,6 +278,7 @@ export type SessionCommand =
   | { type: 'markCompactionComplete' }
   | { type: 'markPendingPlanExecutionDispatched' }
   | { type: 'clearPendingPlanExecution' }
+  | { type: 'rewriteNovelSelection'; request: NovelSelectionRewriteRequest }
   | { type: 'addAnnotation'; messageId: string; annotation: AnnotationV1 }
   | { type: 'removeAnnotation'; messageId: string; annotationId: string }
   | { type: 'updateAnnotation'; messageId: string; annotationId: string; patch: Partial<AnnotationV1> }
