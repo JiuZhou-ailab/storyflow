@@ -202,6 +202,7 @@ describe('novel writing workspace layout', () => {
   it('exposes selectable writing workspace export controls', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const exportDialogSource = readFileSync(new URL('../NovelExportDialog.tsx', import.meta.url), 'utf-8')
+    const versionDialogSource = readFileSync(new URL('../NovelVersionHistoryDialog.tsx', import.meta.url), 'utf-8')
     const topBarSource = readFileSync(new URL('../../app-shell/TopBar.tsx', import.meta.url), 'utf-8')
     const zhHansLocale = JSON.parse(readFileSync(new URL('../../../../../../../packages/shared/src/i18n/locales/zh-Hans.json', import.meta.url), 'utf-8'))
     const topBarRightSlotSource = topBarSource.slice(
@@ -210,11 +211,21 @@ describe('novel writing workspace layout', () => {
     )
 
     expect(appShellSource).toContain('NovelExportDialog')
+    expect(appShellSource).toContain('NovelVersionHistoryDialog')
     expect(appShellSource).toContain('handleExportNovelWorkspace')
+    expect(appShellSource).toContain('handleCreateNovelVersion')
+    expect(appShellSource).toContain('handleRestoreNovelVersion')
     expect(appShellSource).toContain('setNovelExportDialogOpen(true)')
+    expect(appShellSource).toContain('setNovelVersionDialogOpen(true)')
     expect(appShellSource).toContain('rightTools={showNovelWorkspaceSidebar ? (')
     expect(appShellSource).toContain('buildNovelExportPlan')
     expect(appShellSource).toContain('buildMergedManuscriptContent')
+    expect(appShellSource).toContain('NOVEL_AUTO_VERSION_CHAR_THRESHOLD = 100')
+    expect(appShellSource).toContain('NOVEL_AUTO_VERSION_INTERVAL_MS = 5 * 60 * 1000')
+    expect(appShellSource).toContain('novelAutoVersionTimerRef')
+    expect(appShellSource).toContain("window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'auto' })")
+    expect(appShellSource).toContain('window.electronAPI.listWorkspaceVersions(novelWorkspaceRoot, 30)')
+    expect(appShellSource).toContain('window.electronAPI.restoreWorkspaceVersion(novelWorkspaceRoot, commitHash)')
     expect(appShellSource.indexOf('await window.electronAPI.createDirectory(exportRootPath)')).toBeLessThan(
       appShellSource.indexOf('await window.electronAPI.writeFile(targetPath')
     )
@@ -228,6 +239,9 @@ describe('novel writing workspace layout', () => {
     expect(exportDialogSource).toContain("t('writing.export.title', '导出写作工作区')")
     expect(exportDialogSource).toContain("t('writing.export.action', '导出')")
     expect(exportDialogSource).toContain("manuscript: '正文'")
+    expect(versionDialogSource).toContain("t('writing.version.title', '版本管理')")
+    expect(versionDialogSource).toContain('onCreateVersion')
+    expect(versionDialogSource).toContain('onRestore(version.hash)')
     expect(appShellSource).toContain("t('writing.export.action', '导出')")
     expect(zhHansLocale['writing.export.title']).toBe('导出写作工作区')
     expect(zhHansLocale['writing.export.sections.manuscript']).toBe('正文')
@@ -286,6 +300,8 @@ describe('novel writing workspace layout', () => {
 
     expect(editorPanelSource).toContain('NovelInlineReviewDiff')
     expect(editorPanelSource).toContain('reviewChange ? (')
+    expect(editorPanelSource).not.toContain(') : reviewChange ? (')
+    expect(editorPanelSource).toContain('<TiptapMarkdownEditor')
     expect(editorPanelSource).toContain('ShikiDiffViewer')
     expect(editorPanelSource).toContain('UnifiedDiffViewer')
     expect(appShellSource).toContain('handleAcceptNovelChange')

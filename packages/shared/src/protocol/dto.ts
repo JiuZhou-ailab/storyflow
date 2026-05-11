@@ -289,6 +289,40 @@ export interface NewChatActionParams {
 }
 
 // ---------------------------------------------------------------------------
+// Workspace version control
+// ---------------------------------------------------------------------------
+
+export interface WorkspaceVersionEntry {
+  hash: string
+  timestamp: number
+  subject: string
+}
+
+export interface WorkspaceVersionStatus {
+  isGitRepo: boolean
+  hasChanges: boolean
+  lastCommit: WorkspaceVersionEntry | null
+}
+
+export interface CreateWorkspaceVersionOptions {
+  reason: 'auto' | 'manual' | 'before-restore' | 'restore'
+  label?: string
+}
+
+export interface CreateWorkspaceVersionResult {
+  created: boolean
+  commitHash?: string
+  message?: string
+  changedFiles: number
+}
+
+export interface RestoreWorkspaceVersionResult {
+  restored: boolean
+  commitHash: string
+  restoreCommitHash?: string
+}
+
+// ---------------------------------------------------------------------------
 // Permission / credential types
 // ---------------------------------------------------------------------------
 

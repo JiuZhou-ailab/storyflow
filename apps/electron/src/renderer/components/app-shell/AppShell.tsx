@@ -39,6 +39,7 @@ import {
   MailOpen,
   BookOpenText,
   FileText,
+  History,
   Library,
   MapPinned,
   ScrollText,
@@ -80,6 +81,7 @@ import { PanelStackContainer } from "./PanelStackContainer"
 import type { ChatDisplayHandle } from "./ChatDisplay"
 import { NovelDocumentEditorPanel, type NovelSelectionAiRequest } from "@/components/writing/NovelDocumentEditorPanel"
 import { NovelExportDialog } from "@/components/writing/NovelExportDialog"
+import { NovelVersionHistoryDialog } from "@/components/writing/NovelVersionHistoryDialog"
 import { formatNovelWorkspaceFileTitle } from "@/components/writing/novel-file-display"
 import { LeftSidebar, type LinkItem as LeftSidebarLinkItem, type SidebarItem as LeftSidebarItem } from "./LeftSidebar"
 import { useSession } from "@/hooks/useSession"
@@ -92,7 +94,7 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
-import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter } from "../../../shared/types"
+import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WorkspaceVersionEntry } from "../../../shared/types"
 import { ensureSessionMessagesLoadedAtom, sessionAtomFamily, sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
@@ -207,11 +209,35 @@ const NAVIGATOR_SASH_HIT_WIDTH = 14
 const NAVIGATOR_SASH_HALF_HIT_WIDTH = NAVIGATOR_SASH_HIT_WIDTH / 2
 const NAVIGATOR_SASH_FLEX_MARGIN = -(NAVIGATOR_SASH_HALF_HIT_WIDTH + (PANEL_GAP / 2))
 const NAVIGATOR_SASH_CAPTURE_HALF_WIDTH = 18
+const NOVEL_AUTO_VERSION_CHAR_THRESHOLD = 100
+const NOVEL_AUTO_VERSION_INTERVAL_MS = 5 * 60 * 1000
 
 function joinWorkspacePath(rootPath: string, relativePath: string): string {
   const root = rootPath.replace(/[\\/]+$/, '')
   const relative = relativePath.replace(/^[\\/]+/, '')
   return relative ? `${root}/${relative}` : root
+}
+
+function getContentChangeSize(previous: string, next: string): number {
+  if (previous === next) return 0
+
+  let prefixLength = 0
+  const minLength = Math.min(previous.length, next.length)
+  while (prefixLength < minLength && previous[prefixLength] === next[prefixLength]) {
+    prefixLength += 1
+  }
+
+  let suffixLength = 0
+  while (
+    suffixLength < minLength - prefixLength
+    && previous[previous.length - 1 - suffixLength] === next[next.length - 1 - suffixLength]
+  ) {
+    suffixLength += 1
+  }
+
+  const previousChanged = previous.length - prefixLength - suffixLength
+  const nextChanged = next.length - prefixLength - suffixLength
+  return Math.max(previousChanged, nextChanged)
 }
 
 /** Wraps children in a Tooltip that shows instantly on hover — only rendered when `show` is true. */
@@ -1595,13 +1621,30 @@ function AppShellContent({
   const [novelDocumentError, setNovelDocumentError] = React.useState<string | null>(null)
   const [novelExportDialogOpen, setNovelExportDialogOpen] = React.useState(false)
   const [novelExporting, setNovelExporting] = React.useState(false)
+  const [novelVersionDialogOpen, setNovelVersionDialogOpen] = React.useState(false)
+  const [novelVersions, setNovelVersions] = React.useState<WorkspaceVersionEntry[]>([])
+  const [novelVersionsLoading, setNovelVersionsLoading] = React.useState(false)
+  const [novelVersionSaving, setNovelVersionSaving] = React.useState(false)
+  const [novelVersionRestoringHash, setNovelVersionRestoringHash] = React.useState<string | null>(null)
   const selectedNovelDocumentPath = selectedNovelFile?.path ?? null
   const latestNovelDocumentPathRef = React.useRef<string | null>(null)
   const novelDocumentSaveSeqRef = React.useRef(0)
+  const novelVersionBaselinesRef = React.useRef<Record<string, { content: string; timestamp: number }>>({})
+  const novelAutoVersionInFlightRef = React.useRef(false)
+  const novelAutoVersionTimerRef = React.useRef<number | null>(null)
 
   React.useEffect(() => {
     latestNovelDocumentPathRef.current = selectedNovelDocumentPath
   }, [selectedNovelDocumentPath])
+
+  React.useEffect(() => {
+    novelVersionBaselinesRef.current = {}
+    setNovelVersions([])
+    if (novelAutoVersionTimerRef.current != null) {
+      window.clearTimeout(novelAutoVersionTimerRef.current)
+      novelAutoVersionTimerRef.current = null
+    }
+  }, [novelWorkspaceRoot])
 
   React.useEffect(() => {
     if (!selectedNovelDocumentPath) {
@@ -1621,6 +1664,10 @@ function AppShellContent({
         if (cancelled) return
         setNovelDocumentContent(content)
         setSavedNovelDocumentContent(content)
+        novelVersionBaselinesRef.current[selectedNovelDocumentPath] ??= {
+          content,
+          timestamp: Date.now(),
+        }
       })
       .catch((error) => {
         if (cancelled) return
@@ -1639,6 +1686,66 @@ function AppShellContent({
 
   const novelDocumentDirty = !!selectedNovelFile && novelDocumentContent !== savedNovelDocumentContent
 
+  const refreshNovelVersions = React.useCallback(async () => {
+    if (!novelWorkspaceRoot) {
+      setNovelVersions([])
+      return
+    }
+    setNovelVersionsLoading(true)
+    try {
+      setNovelVersions(await window.electronAPI.listWorkspaceVersions(novelWorkspaceRoot, 30))
+    } catch (error) {
+      toast.error(t('writing.version.loadFailed', '加载版本历史失败'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setNovelVersionsLoading(false)
+    }
+  }, [novelWorkspaceRoot, t])
+
+  const maybeCreateNovelAutoVersion = React.useCallback(async (filePath: string, content: string) => {
+    if (!novelWorkspaceRoot || novelAutoVersionInFlightRef.current) return
+
+    const now = Date.now()
+    const baseline = novelVersionBaselinesRef.current[filePath] ?? { content, timestamp: now }
+    if (content === baseline.content) return
+
+    const charDelta = getContentChangeSize(baseline.content, content)
+    const elapsed = now - baseline.timestamp
+    if (charDelta < NOVEL_AUTO_VERSION_CHAR_THRESHOLD && elapsed < NOVEL_AUTO_VERSION_INTERVAL_MS) {
+      if (novelAutoVersionTimerRef.current == null) {
+        novelAutoVersionTimerRef.current = window.setTimeout(async () => {
+          novelAutoVersionTimerRef.current = null
+          try {
+            const latestContent = await window.electronAPI.readFile(filePath)
+            await maybeCreateNovelAutoVersion(filePath, latestContent)
+          } catch (error) {
+            console.warn('[writing] Failed to create scheduled auto version:', error)
+          }
+        }, NOVEL_AUTO_VERSION_INTERVAL_MS - elapsed)
+      }
+      return
+    }
+
+    if (novelAutoVersionTimerRef.current != null) {
+      window.clearTimeout(novelAutoVersionTimerRef.current)
+      novelAutoVersionTimerRef.current = null
+    }
+
+    novelAutoVersionInFlightRef.current = true
+    try {
+      await window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'auto' })
+      novelVersionBaselinesRef.current[filePath] = { content, timestamp: Date.now() }
+      if (novelVersionDialogOpen) {
+        await refreshNovelVersions()
+      }
+    } catch (error) {
+      console.warn('[writing] Failed to create auto version:', error)
+    } finally {
+      novelAutoVersionInFlightRef.current = false
+    }
+  }, [novelVersionDialogOpen, novelWorkspaceRoot, refreshNovelVersions])
+
   React.useEffect(() => {
     if (!selectedNovelDocumentPath || !novelDocumentDirty || novelDocumentLoading) return
 
@@ -1654,6 +1761,7 @@ function AppShellContent({
           if (novelDocumentSaveSeqRef.current === saveSeq && latestNovelDocumentPathRef.current === pathToSave) {
             setSavedNovelDocumentContent(contentToSave)
           }
+          void maybeCreateNovelAutoVersion(pathToSave, contentToSave)
         })
         .catch((error) => {
           if (novelDocumentSaveSeqRef.current !== saveSeq || latestNovelDocumentPathRef.current !== pathToSave) return
@@ -1669,7 +1777,7 @@ function AppShellContent({
     return () => {
       window.clearTimeout(timeoutId)
     }
-  }, [novelDocumentContent, novelDocumentDirty, novelDocumentLoading, selectedNovelDocumentPath])
+  }, [maybeCreateNovelAutoVersion, novelDocumentContent, novelDocumentDirty, novelDocumentLoading, selectedNovelDocumentPath])
 
   const ensureNovelDocumentSaved = React.useCallback(async (): Promise<boolean> => {
     if (!selectedNovelDocumentPath || !novelDocumentDirty) return true
@@ -1682,6 +1790,7 @@ function AppShellContent({
       if (novelDocumentSaveSeqRef.current === saveSeq && latestNovelDocumentPathRef.current === selectedNovelDocumentPath) {
         setSavedNovelDocumentContent(novelDocumentContent)
       }
+      void maybeCreateNovelAutoVersion(selectedNovelDocumentPath, novelDocumentContent)
       return true
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save document'
@@ -1693,7 +1802,65 @@ function AppShellContent({
         setNovelDocumentSaving(false)
       }
     }
-  }, [novelDocumentContent, novelDocumentDirty, selectedNovelDocumentPath, t])
+  }, [maybeCreateNovelAutoVersion, novelDocumentContent, novelDocumentDirty, selectedNovelDocumentPath, t])
+
+  const handleCreateNovelVersion = React.useCallback(async () => {
+    if (!novelWorkspaceRoot) return
+    const saved = await ensureNovelDocumentSaved()
+    if (!saved) return
+
+    setNovelVersionSaving(true)
+    try {
+      const result = await window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'manual' })
+      if (selectedNovelDocumentPath) {
+        novelVersionBaselinesRef.current[selectedNovelDocumentPath] = {
+          content: novelDocumentContent,
+          timestamp: Date.now(),
+        }
+      }
+      await refreshNovelVersions()
+      toast.success(
+        result.created
+          ? t('writing.version.saved', '已保存当前版本')
+          : t('writing.version.noChanges', '没有新的改动需要保存')
+      )
+    } catch (error) {
+      toast.error(t('writing.version.saveFailed', '保存版本失败'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setNovelVersionSaving(false)
+    }
+  }, [ensureNovelDocumentSaved, novelDocumentContent, novelWorkspaceRoot, refreshNovelVersions, selectedNovelDocumentPath, t])
+
+  const handleRestoreNovelVersion = React.useCallback(async (commitHash: string) => {
+    if (!novelWorkspaceRoot) return
+    const saved = await ensureNovelDocumentSaved()
+    if (!saved) return
+
+    setNovelVersionRestoringHash(commitHash)
+    try {
+      await window.electronAPI.restoreWorkspaceVersion(novelWorkspaceRoot, commitHash)
+      novelVersionBaselinesRef.current = {}
+      if (selectedNovelDocumentPath) {
+        const content = await window.electronAPI.readFile(selectedNovelDocumentPath)
+        setNovelDocumentContent(content)
+        setSavedNovelDocumentContent(content)
+        novelVersionBaselinesRef.current[selectedNovelDocumentPath] = {
+          content,
+          timestamp: Date.now(),
+        }
+      }
+      await refreshNovelVersions()
+      toast.success(t('writing.version.restored', '已恢复到所选版本'))
+    } catch (error) {
+      toast.error(t('writing.version.restoreFailed', '恢复版本失败'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setNovelVersionRestoringHash(null)
+    }
+  }, [ensureNovelDocumentSaved, novelWorkspaceRoot, refreshNovelVersions, selectedNovelDocumentPath, t])
 
   const handleExportNovelWorkspace = React.useCallback(async (options: NovelExportOptions) => {
     if (!novelWorkspaceRoot) return
@@ -3043,13 +3210,22 @@ function AppShellContent({
             />
           ) : undefined}
           rightTools={showNovelWorkspaceSidebar ? (
-            <HeaderIconButton
-              icon={<Download className="h-4 w-4" />}
-              tooltip={t('writing.export.action', '导出')}
-              disabled={novelWorkspaceFiles.length === 0}
-              onClick={() => setNovelExportDialogOpen(true)}
-              className="h-[26px] w-[26px] rounded-lg"
-            />
+            <div className="flex items-center gap-1">
+              <HeaderIconButton
+                icon={<History className="h-4 w-4" />}
+                tooltip={t('writing.version.title', '版本管理')}
+                disabled={!novelWorkspaceRoot}
+                onClick={() => setNovelVersionDialogOpen(true)}
+                className="h-[26px] w-[26px] rounded-lg"
+              />
+              <HeaderIconButton
+                icon={<Download className="h-4 w-4" />}
+                tooltip={t('writing.export.action', '导出')}
+                disabled={novelWorkspaceFiles.length === 0}
+                onClick={() => setNovelExportDialogOpen(true)}
+                className="h-[26px] w-[26px] rounded-lg"
+              />
+            </div>
           ) : undefined}
           isCompact={isAutoCompact}
         />
@@ -4392,6 +4568,18 @@ function AppShellContent({
           if (!novelExporting) setNovelExportDialogOpen(open)
         }}
         onExport={handleExportNovelWorkspace}
+      />
+
+      <NovelVersionHistoryDialog
+        open={novelVersionDialogOpen}
+        versions={novelVersions}
+        loading={novelVersionsLoading}
+        saving={novelVersionSaving}
+        restoringHash={novelVersionRestoringHash}
+        onOpenChange={setNovelVersionDialogOpen}
+        onCreateVersion={handleCreateNovelVersion}
+        onRefresh={refreshNovelVersions}
+        onRestore={handleRestoreNovelVersion}
       />
 
       {/* Messaging dialogs (pairing-code + WA connect) — driven by messagingDialogAtom.
