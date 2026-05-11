@@ -29,6 +29,7 @@ import {
   InlineMentionMenu,
   useInlineMention,
   type MentionItem,
+  type MentionFileReference,
   type MentionItemType,
 } from '@/components/ui/mention-menu'
 import {
@@ -89,19 +90,7 @@ import {
   removeRecentWorkingDir,
 } from './working-directory-history'
 import { CompactPermissionModeSelector } from './CompactPermissionModeSelector'
-
-/**
- * Format token count for display (e.g., 1500 -> "1.5k", 200000 -> "200k")
- */
-function formatTokenCount(tokens: number): string {
-  if (tokens >= 1000000) {
-    return `${(tokens / 1000000).toFixed(1)}M`
-  }
-  if (tokens >= 1000) {
-    return `${(tokens / 1000).toFixed(tokens >= 10000 ? 0 : 1)}k`
-  }
-  return tokens.toString()
-}
+import { formatTokenCount, resolveContextUsage } from './context-usage'
 
 function stripPiPrefixForDisplay(value: string): string {
   return value.startsWith('pi/') ? value.slice(3) : value
@@ -194,6 +183,8 @@ export interface FreeFormInputProps {
   // Skill selection (for @mentions)
   /** Available skills for @mention autocomplete */
   skills?: LoadedSkill[]
+  /** Files that can be mentioned by display name while preserving their paths. */
+  mentionFiles?: MentionFileReference[]
   // Label selection (for #labels)
   /** Available labels for #label autocomplete */
   labels?: LabelConfig[]
@@ -223,6 +214,8 @@ export interface FreeFormInputProps {
     isCompacting?: boolean
     /** Input tokens used so far in this session */
     inputTokens?: number
+    /** Context tokens currently occupying the model context window */
+    contextTokens?: number
     /** Model's context window size in tokens */
     contextWindow?: number
   }
@@ -278,6 +271,7 @@ export function FreeFormInput({
   enabledSourceSlugs = [],
   onSourcesChange,
   skills = [],
+  mentionFiles = [],
   labels = [],
   sessionLabels = [],
   onLabelAdd,
@@ -373,6 +367,12 @@ export function FreeFormInput({
     // never goes blank.
     return model.name ?? stripPiPrefixForDisplay(model.id)
   }, [availableModels, currentModel, connectionDefaultModel])
+
+  const contextUsage = React.useMemo(() => resolveContextUsage({
+    inputTokens: contextStatus?.inputTokens,
+    contextTokens: contextStatus?.contextTokens,
+    contextWindow: contextStatus?.contextWindow || getModelContextWindow(currentModel),
+  }), [contextStatus?.inputTokens, contextStatus?.contextTokens, contextStatus?.contextWindow, currentModel])
 
   // Group connections by provider type for hierarchical dropdown
   // Each provider (Anthropic, Pi) can have multiple connections (API Key, OAuth, etc.)
@@ -1008,6 +1008,7 @@ export function FreeFormInput({
     inputRef: richInputRef,
     skills,
     sources,
+    files: mentionFiles,
     basePath: workingDirectory,
     onSelect: handleMentionSelect,
     // Use workspace slug (not UUID) for SDK skill qualification
@@ -1769,6 +1770,7 @@ export function FreeFormInput({
           disabled={disabled}
           skills={skills}
           sources={sources}
+          mentionFiles={mentionFiles}
           workspaceId={workspaceSlug}
           className="pl-5 pr-4 pt-4 pb-3 overflow-y-auto min-h-[88px]"
           style={{ maxHeight: inputMaxHeight }}
@@ -2346,17 +2348,17 @@ export function FreeFormInput({
               )}
 
               {/* Context usage footer - only show when we have token data */}
-              {contextStatus?.inputTokens != null && contextStatus.inputTokens > 0 && (
+              {contextUsage && contextUsage.tokens > 0 && (
                 <>
                   <StyledDropdownMenuSeparator className="my-1" />
                   <div className="px-2 py-1.5 select-none">
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span>{t('chat.context')}</span>
                       <span className="flex items-center gap-1.5">
-                        {contextStatus.isCompacting && (
+                        {contextStatus?.isCompacting && (
                           <Spinner className="h-3 w-3" />
                         )}
-                        {t('chat.tokensUsed', { displayCount: formatTokenCount(contextStatus.inputTokens) })}
+                        {t('chat.tokensUsed', { displayCount: formatTokenCount(contextUsage.tokens) })}
                       </span>
                     </div>
                   </div>
@@ -2366,56 +2368,31 @@ export function FreeFormInput({
           </DropdownMenu>
           )}
 
-          {/* 5.5 Context Usage Warning Badge - shows when approaching auto-compaction threshold */}
-          {(() => {
-            // Calculate usage percentage based on compaction threshold (~77.5% of context window),
-            // not the full context window - this gives users meaningful warnings before compaction kicks in.
-            // SDK triggers compaction at ~155k tokens for a 200k context window.
-            // Falls back to known per-model context window when SDK hasn't reported usage yet.
-            const effectiveContextWindow = contextStatus?.contextWindow || getModelContextWindow(currentModel)
-            const compactionThreshold = effectiveContextWindow
-              ? Math.round(effectiveContextWindow * 0.775)
-              : null
-            const usagePercent = contextStatus?.inputTokens && compactionThreshold
-              ? Math.min(99, Math.round((contextStatus.inputTokens / compactionThreshold) * 100))
-              : null
-            // Show badge when >= 80% of compaction threshold AND not currently compacting
-            // Hide for Codex and Copilot models which don't support context compaction
-            const showWarning = usagePercent !== null && usagePercent >= 80 && !contextStatus?.isCompacting
-
-            if (!showWarning) return null
-
-            const handleCompactClick = () => {
-              if (!isProcessing) {
-                onSubmit('/compact', [])
-              }
-            }
-
-            return (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={handleCompactClick}
-                    disabled={isProcessing}
-                    className="inline-flex items-center h-6 px-2 text-[12px] font-medium bg-info/10 rounded-[6px] shadow-tinted select-none cursor-pointer hover:bg-info/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{
-                      '--shadow-color': 'var(--info-rgb)',
-                      color: 'color-mix(in oklab, var(--info) 30%, var(--foreground))',
-                    } as React.CSSProperties}
-                  >
-                    {usagePercent}%
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  {isProcessing
-                    ? `${usagePercent}% context used — wait for current operation`
-                    : `${usagePercent}% context used — click to compact`
-                  }
-                </TooltipContent>
-              </Tooltip>
-            )
-          })()}
+          {/* 5.5 Context Usage Button */}
+          {contextUsage && !compactMode && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    "ml-1 inline-flex h-6 min-w-9 items-center justify-center rounded-[6px] px-2 text-[12px] font-medium transition-colors select-none",
+                    contextUsage.percent >= 80
+                      ? "bg-info/10 text-info hover:bg-info/20"
+                      : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+                  )}
+                  aria-label={t('chat.contextUsage', 'Context usage')}
+                >
+                  {contextStatus?.isCompacting ? <Spinner className="h-3 w-3" /> : contextUsage.label}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <span className="flex flex-col gap-0.5">
+                  <span>{t('chat.contextUsage', 'Context usage')}: {contextUsage.label}</span>
+                  <span className="text-xs opacity-70">{contextUsage.tokenLabel}</span>
+                </span>
+              </TooltipContent>
+            </Tooltip>
+          )}
 
           {/* 6. Send/Stop Button - Always show stop when processing */}
           {isProcessing ? (

@@ -11,7 +11,7 @@ import {
   EMOJI_ICON_PREFIX,
 } from '@/lib/icon-cache'
 import type { LoadedSkill, LoadedSource } from '../../../shared/types'
-import type { MentionItemType } from './mention-menu'
+import type { MentionFileReference, MentionItemType } from './mention-menu'
 
 // ============================================================================
 // Types
@@ -53,6 +53,8 @@ export interface RichTextInputProps extends Omit<React.HTMLAttributes<HTMLDivEle
   skills?: LoadedSkill[]
   /** Available sources for mention parsing */
   sources?: LoadedSource[]
+  /** Files with user-facing labels for rendering file mention badges. */
+  mentionFiles?: MentionFileReference[]
   /** Workspace ID for avatars */
   workspaceId?: string
   /** Whether the input is disabled */
@@ -356,7 +358,8 @@ function textToHTML(
   text: string,
   skills: LoadedSkill[],
   sources: LoadedSource[],
-  workspaceId?: string
+  workspaceId?: string,
+  fileLabelByRelativePath: Map<string, string> = new Map()
 ): string {
   if (!text) return ''
 
@@ -403,11 +406,11 @@ function textToHTML(
       label = source?.config.name || match.id
     } else if (match.type === 'file') {
       // Show filename as badge label, full path as tooltip
-      label = match.id.split('/').pop() || match.id
+      label = fileLabelByRelativePath.get(match.id) || match.id.split('/').pop() || match.id
       tooltip = match.id
     } else if (match.type === 'folder') {
       // Show folder name as badge label, full path as tooltip
-      label = match.id.split('/').pop() || match.id
+      label = fileLabelByRelativePath.get(match.id) || match.id.split('/').pop() || match.id
       tooltip = match.id
     }
 
@@ -505,6 +508,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       placeholder,
       skills = [],
       sources = [],
+      mentionFiles = [],
       workspaceId,
       disabled = false,
       className,
@@ -532,6 +536,10 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
 
     const skillSlugs = React.useMemo(() => skills.map(s => s.slug), [skills])
     const sourceSlugs = React.useMemo(() => sources.map(s => s.config.slug), [sources])
+    const fileLabelByRelativePath = React.useMemo(
+      () => new Map(mentionFiles.map(file => [file.relativePath, file.label])),
+      [mentionFiles]
+    )
 
     // Preload icons for sources and skills
     React.useEffect(() => {
@@ -606,7 +614,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
         lastMentionSignatureRef.current = newSignature
         // Re-render with badges
         isInternalUpdate.current = true
-        const html = textToHTML(newText, skills, sources, workspaceId)
+        const html = textToHTML(newText, skills, sources, workspaceId, fileLabelByRelativePath)
         divRef.current.innerHTML = html || '<br>' // Empty contenteditable needs a BR
         // Restore cursor
         setCursorPosition(divRef.current, cursorPos)
@@ -615,7 +623,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
 
       onChange(newText)
       onInput?.(newText, cursorPos)
-    }, [onChange, onInput, skills, sources, skillSlugs, sourceSlugs, workspaceId])
+    }, [onChange, onInput, skills, sources, skillSlugs, sourceSlugs, workspaceId, fileLabelByRelativePath])
 
     // Handle composition (IME)
     const handleCompositionStart = React.useCallback(() => {
@@ -690,7 +698,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       lastValueRef.current = safeValue
       lastMentionSignatureRef.current = getMentionSignature(safeValue, skillSlugs, sourceSlugs)
 
-      const html = textToHTML(safeValue, skills, sources, workspaceId)
+      const html = textToHTML(safeValue, skills, sources, workspaceId, fileLabelByRelativePath)
       divRef.current.innerHTML = html || '<br>'
 
       // Restore cursor position after innerHTML update.
@@ -703,13 +711,13 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
         setCursorPosition(divRef.current, cursorPos)
         pendingCursorRef.current = null // Clear after use
       }
-    }, [safeValue, skills, sources, skillSlugs, sourceSlugs, workspaceId])
+    }, [safeValue, skills, sources, skillSlugs, sourceSlugs, workspaceId, fileLabelByRelativePath])
 
     // Initialize content on mount
     React.useEffect(() => {
       if (!divRef.current) return
       lastMentionSignatureRef.current = getMentionSignature(safeValue, skillSlugs, sourceSlugs)
-      const html = textToHTML(safeValue, skills, sources, workspaceId)
+      const html = textToHTML(safeValue, skills, sources, workspaceId, fileLabelByRelativePath)
       divRef.current.innerHTML = html || '<br>'
       lastValueRef.current = safeValue
     }, []) // eslint-disable-line react-hooks/exhaustive-deps

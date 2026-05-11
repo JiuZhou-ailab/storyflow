@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useTheme } from '@/hooks/useTheme'
 import type { ThemeOverrides } from '@config/theme'
 import { useSetAtom, useStore, useAtomValue, useAtom } from 'jotai'
-import type { Session, Workspace, SessionEvent, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, SetupNeeds, SessionStatus, NewChatActionParams, ContentBadge, LlmConnectionWithStatus, PermissionModeState } from '../shared/types'
+import type { Session, Workspace, SessionEvent, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, SetupNeeds, SessionStatus, NewChatActionParams, ContentBadge, LlmConnectionWithStatus, PermissionModeState, SendMessageOptions } from '../shared/types'
 import type { SessionDraft, DraftAttachmentRef } from '@craft-agent/shared/config'
 import type { SessionOptions, SessionOptionUpdates } from './hooks/useSessionOptions'
 import { defaultSessionOptions, mergeSessionOptions } from './hooks/useSessionOptions'
@@ -1204,8 +1204,9 @@ export default function App() {
     window.electronAPI.sessionCommand(sessionId, { type: 'rename', name })
   }, [updateSessionById])
 
-  const handleSendMessage = useCallback(async (sessionId: string, message: string, attachments?: FileAttachment[], skillSlugs?: string[], externalBadges?: ContentBadge[]) => {
+  const handleSendMessage = useCallback(async (sessionId: string, message: string, attachments?: FileAttachment[], skillSlugs?: string[], externalBadges?: ContentBadge[], sendOptions?: Pick<SendMessageOptions, 'oneTimeContext' | 'hideUserMessage'>) => {
     try {
+      const hideUserMessage = sendOptions?.hideUserMessage === true
       // Capture pre-send processing state so we can flag mid-stream sends
       // for the queued badge (#616 follow-up — covers Pi steer path which
       // returns status 'accepted', not 'queued').
@@ -1329,29 +1330,40 @@ export default function App() {
       // isQueued through that update) and Claude queues (server emits 'queued'
       // which confirms it). Cleared by 'processing' status or when the current
       // turn ends.
-      const userMessage: Message = {
-        id: generateMessageId(),
-        role: 'user',
-        content: message,
-        timestamp: Date.now(),
-        attachments: storedAttachments,
-        badges: badges.length > 0 ? badges : undefined,
-        isPending: true,  // Optimistic - will be confirmed by backend
-        isQueued: sendingMidStream,
-      }
+      const optimisticMessageId = hideUserMessage ? undefined : generateMessageId()
 
-      // Optimistic UI update - add user message and set processing state
-      updateSessionById(sessionId, (s) => ({
-        messages: [...s.messages, userMessage],
-        isProcessing: true,
-        lastMessageAt: Date.now()
-      }))
+      if (!hideUserMessage) {
+        const userMessage: Message = {
+          id: optimisticMessageId!,
+          role: 'user',
+          content: message,
+          timestamp: Date.now(),
+          attachments: storedAttachments,
+          badges: badges.length > 0 ? badges : undefined,
+          isPending: true,  // Optimistic - will be confirmed by backend
+          isQueued: sendingMidStream,
+        }
+
+        // Optimistic UI update - add user message and set processing state
+        updateSessionById(sessionId, (s) => ({
+          messages: [...s.messages, userMessage],
+          isProcessing: true,
+          lastMessageAt: Date.now()
+        }))
+      } else {
+        updateSessionById(sessionId, {
+          isProcessing: true,
+          lastMessageAt: Date.now()
+        })
+      }
 
       // Step 6: Send to Claude with processed attachments + stored attachments for persistence
       await window.electronAPI.sendMessage(sessionId, message, processedAttachments, storedAttachments, {
         skillSlugs,
         badges: badges.length > 0 ? badges : undefined,
-        optimisticMessageId: userMessage.id,
+        optimisticMessageId,
+        oneTimeContext: sendOptions?.oneTimeContext,
+        hideUserMessage,
       })
     } catch (error) {
       console.error('Failed to send message:', error)

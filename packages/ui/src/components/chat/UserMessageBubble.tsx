@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Clock } from 'lucide-react'
+import { Clock, PencilLine } from 'lucide-react'
 import type { StoredAttachment, ContentBadge } from '@craft-agent/core'
 import { normalizePath } from '@craft-agent/core/utils'
 import { cn } from '../../lib/utils'
@@ -321,6 +321,8 @@ export interface UserMessageBubbleProps {
   isQueued?: boolean
   /** Compact mode - reduces padding for popover embedding */
   compactMode?: boolean
+  /** Callback to edit this historical user message in a rewind branch */
+  onEdit?: () => void
 }
 
 /** Minimum visible duration of the "Queued" chip. Both backends ack
@@ -338,6 +340,7 @@ export function UserMessageBubble({
   badges,
   isQueued,
   compactMode,
+  onEdit,
 }: UserMessageBubbleProps) {
   const { t } = useTranslation()
   const hasAttachments = attachments && attachments.length > 0
@@ -410,7 +413,7 @@ export function UserMessageBubble({
   }
 
   return (
-    <div className={cn("flex flex-col items-end gap-3 w-full", className)}>
+    <div className={cn("group flex flex-col items-end gap-3 w-full", className)}>
       {/* Attachment preview row - stored attachments with thumbnails */}
       {hasAttachments && (
         <div className="flex gap-2 justify-end max-w-[80%] flex-wrap">
@@ -484,35 +487,56 @@ export function UserMessageBubble({
           separate pill below — keeps the chat to one bubble per message
           while the chip and pulsing icon make the waiting state obvious
           (#616 follow-up). */}
-      <div
-        className={cn(
-          "max-w-[80%] bg-user-message-bubble rounded-[16px] break-words min-w-0 select-text [&_p]:m-0",
-          compactMode ? "px-4 py-2" : "px-5 py-3.5"
+      <div className="flex w-full items-center justify-end gap-1.5">
+        {onEdit && !showQueued && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={onEdit}
+                  aria-label={t('chat.editAndRegenerate', 'Edit and regenerate')}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 transition-all hover:bg-foreground/5 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
+                >
+                  <PencilLine className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {t('chat.editAndRegenerate', 'Edit and regenerate')}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
-      >
-        {showQueued && (
-          <div
-            className="flex items-center gap-1.5 text-foreground/55 mb-1.5"
-            role="status"
-            aria-live="polite"
-          >
-            <Clock className="h-3 w-3 animate-pulse" aria-hidden="true" />
-            <span className="text-[11px] italic">{t('chat.queuedBadge')}</span>
-          </div>
-        )}
-        {hasInlineBadges
-          ? renderContentWithBadges(displayContent, inlineBadges, onUrlClick, onFileClick)
-          : (
-            <Markdown
-              mode="minimal"
-              onUrlClick={onUrlClick}
-              onFileClick={onFileClick}
-              className="text-sm [&_a]:underline [&_code]:bg-foreground/10 [&_p]:whitespace-pre-wrap"
+        <div
+          className={cn(
+            "max-w-[80%] bg-user-message-bubble rounded-[16px] break-words min-w-0 select-text [&_p]:m-0",
+            compactMode ? "px-4 py-2" : "px-5 py-3.5"
+          )}
+        >
+          {showQueued && (
+            <div
+              className="flex items-center gap-1.5 text-foreground/55 mb-1.5"
+              role="status"
+              aria-live="polite"
             >
-              {displayContent}
-            </Markdown>
-          )
-        }
+              <Clock className="h-3 w-3 animate-pulse" aria-hidden="true" />
+              <span className="text-[11px] italic">{t('chat.queuedBadge')}</span>
+            </div>
+          )}
+          {hasInlineBadges
+            ? renderContentWithBadges(displayContent, inlineBadges, onUrlClick, onFileClick)
+            : (
+              <Markdown
+                mode="minimal"
+                onUrlClick={onUrlClick}
+                onFileClick={onFileClick}
+                className="text-sm [&_a]:underline [&_code]:bg-foreground/10 [&_p]:whitespace-pre-wrap"
+              >
+                {displayContent}
+              </Markdown>
+            )
+          }
+        </div>
       </div>
     </div>
   )

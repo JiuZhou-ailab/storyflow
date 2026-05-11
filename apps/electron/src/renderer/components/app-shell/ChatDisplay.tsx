@@ -18,6 +18,7 @@ import { toast } from "sonner"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { Markdown, CollapsibleMarkdownProvider, StreamingMarkdown, type RenderMode } from "@/components/markdown"
+import type { MentionFileReference } from "@/components/ui/mention-menu"
 import { AnimatedCollapsibleContent } from "@/components/ui/collapsible"
 import {
   Spinner,
@@ -73,6 +74,7 @@ import { navigate, routes } from "@/lib/navigate"
 import { CHAT_LAYOUT } from "@/config/layout"
 import { collectFileChangesFromActivities, getFirstFileChangeIdForActivity } from "@/lib/file-changes"
 import { resolveBranchNewPanelOption } from "./branching"
+import { buildRewindSessionOptions, resolveRewindBranchMessageId } from "./chat-rewind"
 import { handleErrorMessageAction } from "./error-message-actions"
 
 // ============================================================================
@@ -185,6 +187,8 @@ interface ChatDisplayProps {
   // Skill selection (for @mentions)
   /** Available skills for @mention autocomplete */
   skills?: LoadedSkill[]
+  /** Files that can be mentioned by display name while preserving their paths. */
+  mentionFiles?: MentionFileReference[]
   // Label selection (for #labels)
   /** Available label configs (tree) for label menu and badge display */
   labels?: import('@craft-agent/shared/labels').LabelConfig[]
@@ -459,6 +463,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   onSourcesChange,
   // Skills (for @mentions)
   skills,
+  mentionFiles,
   // Labels (for #labels)
   labels,
   onLabelsChange,
@@ -1362,6 +1367,37 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     return undefined
   }, [pendingPermission, pendingCredential])
 
+  const handleRewindUserMessage = useCallback(async (message: Message) => {
+    if (!session) return
+    if (message.role !== 'user') return
+
+    const originalContent = typeof message.content === 'string' ? message.content : ''
+    const branchFromMessageId = resolveRewindBranchMessageId(session.messages, message.id)
+
+    if (branchFromMessageId && !session.supportsBranching) {
+      toast.error(t('chat.rewindUnavailable', 'This conversation cannot be rewound yet.'))
+      return
+    }
+
+    try {
+      const child = await appShellContext.onCreateSession(
+        session.workspaceId,
+        buildRewindSessionOptions(session, branchFromMessageId)
+      )
+      appShellContext.onInputChange(child.id, originalContent)
+      navigate(routes.view.allSessions(child.id))
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('craft:focus-input', {
+          detail: { sessionId: child.id },
+        }))
+      }, 80)
+      toast.success(t('chat.rewindReady', 'Edit the restored message, then send to regenerate.'))
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : 'Failed to create rewind branch'
+      toast.error(t('chat.rewindFailed', 'Could not rewind conversation'), { description: messageText })
+    }
+  }, [appShellContext, navigate, session, t])
+
   // Memoize turn grouping - avoids O(n) iteration on every render/keystroke
   const allTurns = React.useMemo(() => {
     if (!session) return []
@@ -1609,6 +1645,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                             onOpenUrl={onOpenUrl}
                             sessionId={session?.id}
                             compactMode={compactMode}
+                            onEdit={session.isProcessing ? undefined : () => {
+                              void handleRewindUserMessage(turn.message)
+                            }}
                           />
                         </div>
                       )
@@ -1930,6 +1969,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
               enabledSourceSlugs: session.enabledSourceSlugs,
               onSourcesChange,
               skills,
+              mentionFiles,
               workspaceId,
               workingDirectory,
               onWorkingDirectoryChange,
@@ -1941,6 +1981,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
               contextStatus: {
                 isCompacting: session.currentStatus?.statusType === 'compacting',
                 inputTokens: session.tokenUsage?.inputTokens,
+                contextTokens: session.tokenUsage?.contextTokens,
                 contextWindow: session.tokenUsage?.contextWindow,
               },
               followUpItems: followUpInputItems,
@@ -2118,6 +2159,8 @@ interface MessageBubbleProps {
   compactMode?: boolean
   /** Callback to resend the user message that preceded an error */
   onRetry?: () => void
+  /** Callback to edit this user message in a rewind branch */
+  onEdit?: () => void
 }
 
 /**
@@ -2205,6 +2248,7 @@ function MessageBubble({
   onPopOut,
   compactMode,
   onRetry,
+  onEdit,
 }: MessageBubbleProps) {
   const { t } = useTranslation()
 
@@ -2220,6 +2264,7 @@ function MessageBubble({
         onUrlClick={onOpenUrl}
         onFileClick={onOpenFile}
         compactMode={compactMode}
+        onEdit={onEdit}
       />
     )
   }
@@ -2355,6 +2400,7 @@ const MemoizedMessageBubble = React.memo(MessageBubble, (prev, next) => {
     prev.message.content === next.message.content &&
     prev.message.role === next.message.role &&
     prev.sessionId === next.sessionId &&
-    prev.compactMode === next.compactMode
+    prev.compactMode === next.compactMode &&
+    prev.onEdit === next.onEdit
   )
 })

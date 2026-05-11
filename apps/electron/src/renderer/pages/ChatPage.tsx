@@ -1,6 +1,10 @@
 /**
  * ChatPage
  *
+ * input: Session state, workspace state, chat actions, and renderer IPC APIs
+ * output: Chat view for the selected session
+ * pos: Primary session page inside the Electron app shell
+ *
  * Displays a single session's chat with a consistent PanelHeader.
  * Extracted from MainContentPanel for consistency with other pages.
  */
@@ -8,10 +12,10 @@
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { AlertCircle, Globe, Copy, RefreshCw, Link2Off, Info } from 'lucide-react'
+import { formatDistanceToNowStrict } from 'date-fns'
+import { AlertCircle, Check, Clock3, Globe, Copy, History, RefreshCw, Link2Off, Info, MessageSquareText } from 'lucide-react'
+import { getDateLocale } from '@craft-agent/shared/i18n'
 import { ChatDisplay, type ChatDisplayHandle } from '@/components/app-shell/ChatDisplay'
-import { NovelWorkspacePanel } from '@/components/writing/NovelWorkspacePanel'
-import { WritingChatDropdown } from '@/components/writing/WritingChatDropdown'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { SessionMenu } from '@/components/app-shell/SessionMenu'
 import { SessionInfoPopover } from '@/components/app-shell/SessionInfoPopover'
@@ -20,22 +24,107 @@ import { toast } from 'sonner'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { StyledDropdownMenuContent, StyledDropdownMenuItem, StyledDropdownMenuSeparator } from '@/components/ui/styled-dropdown'
+import { ContextMenu, ContextMenuTrigger, StyledContextMenuContent } from '@/components/ui/styled-context-menu'
+import { ContextMenuProvider } from '@/components/ui/menu-context'
 import { useAppShellContext, usePendingPermission, usePendingCredential, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
+import { SidebarMenu } from '@/components/app-shell/SidebarMenu'
+import { SquarePenRounded } from '@/components/icons/SquarePenRounded'
 import { rendererPerf } from '@/lib/perf'
-import { routes } from '@/lib/navigate'
+import { navigate, routes } from '@/lib/navigate'
 import { coerceInputText } from '@/lib/input-text'
-import { collectFileChangesFromActivities } from '@/lib/file-changes'
-import { detectNovelProjectFromSearchResults, mapSearchResultsToNovelWorkspaceFiles } from '@/lib/writing-workspace'
 import { deriveSessionMessagesLoadState, formatSessionLoadFailure } from '@/lib/session-load'
-import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, loadedSessionsAtom, sessionMetaMapAtom } from '@/atoms/sessions'
-import { getSessionTitle } from '@/utils/session'
-import { groupMessagesByTurn } from '@craft-agent/ui'
-import type { FileChange } from '@craft-agent/ui'
+import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, loadedSessionsAtom, sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
+import { getSessionPreviewText, getSessionTitle, shortTimeLocale } from '@/utils/session'
 // Model resolution: connection.defaultModel (no hardcoded defaults)
 import { resolveEffectiveConnectionSlug, isSessionConnectionUnavailable } from '@config/llm-connections'
 
 export interface ChatPageProps {
   sessionId: string
+}
+
+function ConversationHistoryMenu({
+  activeSessionId,
+  items,
+}: {
+  activeSessionId: string
+  items: SessionMeta[]
+}) {
+  const { t, i18n } = useTranslation()
+  const [open, setOpen] = React.useState(false)
+  const visibleItems = items.slice(0, 24)
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <PanelHeaderCenterButton
+          aria-label={t('chat.history')}
+          title={t('chat.history')}
+          icon={(
+            <span className="flex items-center gap-1.5">
+              <History className="h-4 w-4" />
+              <span className="text-[11px] font-medium leading-none">{t('chat.history')}</span>
+            </span>
+          )}
+          className={open ? 'opacity-100 bg-foreground/[0.05]' : undefined}
+        />
+      </DropdownMenuTrigger>
+      <StyledDropdownMenuContent align="end" sideOffset={8} className="w-[320px] p-1.5">
+        <div className="px-2 pb-1 pt-0.5 text-[11px] font-medium text-muted-foreground">
+          {t('chat.history')}
+        </div>
+        {visibleItems.length === 0 ? (
+          <div className="px-2 py-6 text-center text-xs text-muted-foreground">
+            {t('chat.historyEmpty')}
+          </div>
+        ) : (
+          <div className="max-h-[360px] overflow-y-auto">
+            {visibleItems.map((item) => {
+              const isActive = item.id === activeSessionId
+              const title = getSessionTitle(item)
+              const preview = getSessionPreviewText(item, 72)
+              const time = item.lastMessageAt || item.createdAt
+                ? formatDistanceToNowStrict(new Date(item.lastMessageAt || item.createdAt || Date.now()), {
+                    addSuffix: true,
+                    locale: {
+                      ...getDateLocale(i18n.language),
+                      formatDistance: shortTimeLocale.formatDistance,
+                    },
+                  })
+                : ''
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="flex w-full min-w-0 items-start gap-2 rounded-[6px] px-2 py-2 text-left transition-colors hover:bg-foreground/[0.04]"
+                  onClick={() => {
+                    setOpen(false)
+                    navigate(routes.view.allSessions(item.id))
+                  }}
+                >
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] bg-foreground/[0.05] text-muted-foreground">
+                    {isActive ? <Check className="h-3.5 w-3.5" /> : <MessageSquareText className="h-3.5 w-3.5" />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-medium text-foreground">{title}</span>
+                    {preview ? (
+                      <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{preview}</span>
+                    ) : null}
+                  </span>
+                  {time ? (
+                    <span className="ml-1 flex shrink-0 items-center gap-1 pt-0.5 text-[10px] text-muted-foreground/70">
+                      <Clock3 className="h-3 w-3" />
+                      {time}
+                    </span>
+                  ) : null}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </StyledDropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
 const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
@@ -64,6 +153,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onAttachmentsChange,
     enabledSources,
     skills,
+    mentionFiles,
     labels,
     onSessionLabelsChange,
     enabledModes,
@@ -323,54 +413,22 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     return connection?.defaultModel ?? ''
   }, [session?.id, session?.model, session?.llmConnection, workspaceDefaultLlmConnection, llmConnections, connectionUnavailable])
 
-  // Working directory for this session
-  const workingDirectory = session?.workingDirectory
-  const [isNovelWritingProject, setIsNovelWritingProject] = React.useState(false)
-  const [novelWorkspaceFiles, setNovelWorkspaceFiles] = React.useState<import('@/lib/writing-workspace').NovelWorkspaceFile[]>([])
-
-  React.useEffect(() => {
-    if (!workingDirectory) {
-      setIsNovelWritingProject(false)
-      setNovelWorkspaceFiles([])
-      return
-    }
-
-    let cancelled = false
-    window.electronAPI.searchFiles(workingDirectory, '')
-      .then((results) => {
-        if (!cancelled) {
-          setIsNovelWritingProject(detectNovelProjectFromSearchResults(results))
-          setNovelWorkspaceFiles(mapSearchResultsToNovelWorkspaceFiles(results))
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setIsNovelWritingProject(false)
-          setNovelWorkspaceFiles([])
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [workingDirectory])
-
-  const latestNovelFileChanges = React.useMemo<FileChange[]>(() => {
-    if (!session?.messages?.length) return []
-
-    const turns = groupMessagesByTurn(session.messages)
-    for (const turn of [...turns].reverse()) {
-      if (turn.type !== 'assistant') continue
-      const changes = collectFileChangesFromActivities(turn.activities)
-      if (changes.length > 0) return changes
-    }
-    return []
-  }, [session?.messages])
-
   const activeWorkspace = React.useMemo(
     () => workspaces.find((w) => w.id === activeWorkspaceId) || null,
     [workspaces, activeWorkspaceId]
   )
+  const workspaceSessionMetas = React.useMemo(() => {
+    const remoteWorkspaceId = activeWorkspace?.remoteServer?.remoteWorkspaceId
+
+    return Array.from(sessionMetaMap.values())
+      .filter((item) => item.workspaceId === activeWorkspaceId || (!!remoteWorkspaceId && item.workspaceId === remoteWorkspaceId))
+      .filter((item) => !item.hidden && !item.isArchived)
+      .sort((a, b) => (b.lastMessageAt || b.createdAt || 0) - (a.lastMessageAt || a.createdAt || 0))
+  }, [activeWorkspace?.remoteServer?.remoteWorkspaceId, activeWorkspaceId, sessionMetaMap])
+
+  // Working directory for this session
+  const workingDirectory = session?.workingDirectory
+
   const handleWorkingDirectoryChange = React.useCallback(async (path: string) => {
     if (!session) return
     await window.electronAPI.sessionCommand(session.id, { type: 'updateWorkingDirectory', dir: path })
@@ -647,7 +705,52 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     )
   }, [isCompactMode, sessionId, session?.sessionFolderPath, sessionMeta])
 
-  const headerActions = isCompactMode ? compactInfoButton : shareButton
+  const conversationHistoryMenu = React.useMemo(() => (
+    <ConversationHistoryMenu
+      activeSessionId={sessionId}
+      items={workspaceSessionMetas}
+    />
+  ), [sessionId, workspaceSessionMetas])
+
+  const handleNewSession = React.useCallback((newPanel: boolean = false) => {
+    navigate(
+      routes.action.newSession(),
+      newPanel ? { newPanel: true, targetLaneId: 'main' } : undefined
+    )
+  }, [])
+
+  const newSessionButton = React.useMemo(() => (
+    <ContextMenu modal={true}>
+      <ContextMenuTrigger asChild>
+        <PanelHeaderCenterButton
+          icon={<SquarePenRounded className="h-4 w-4" />}
+          onClick={(event) => handleNewSession(event.metaKey || event.ctrlKey)}
+          tooltip={t("session.newSession")}
+          aria-label={t("session.newSession")}
+          className="bg-background shadow-minimal"
+        />
+      </ContextMenuTrigger>
+      <StyledContextMenuContent>
+        <ContextMenuProvider>
+          <SidebarMenu type="newSession" />
+        </ContextMenuProvider>
+      </StyledContextMenuContent>
+    </ContextMenu>
+  ), [handleNewSession, t])
+
+  const headerLeadingAction = React.useMemo(() => (
+    <div className="flex items-center gap-1">
+      {leadingAction}
+      {newSessionButton}
+    </div>
+  ), [leadingAction, newSessionButton])
+
+  const headerActions = React.useMemo(() => (
+    <div className="flex items-center gap-1">
+      {conversationHistoryMenu}
+      {isCompactMode ? compactInfoButton : shareButton}
+    </div>
+  ), [compactInfoButton, conversationHistoryMenu, isCompactMode, shareButton])
 
   // Build title menu content for chat sessions using shared SessionMenu
   const titleMenu = React.useMemo(() => sessionMeta ? (
@@ -703,7 +806,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
       return (
         <>
           <div className="h-full flex flex-col">
-            <PanelHeader  title={displayTitle} titleMenu={titleMenu} leadingAction={leadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
+            <PanelHeader  title={displayTitle} titleMenu={titleMenu} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
             <div className="flex-1 flex flex-col min-h-0">
               <ChatDisplay
                 ref={chatDisplayRef}
@@ -729,6 +832,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
                 onAttachmentsChange={handleAttachmentsChange}
                 sources={enabledSources}
                 skills={skills}
+                mentionFiles={mentionFiles}
                 sessionStatuses={sessionStatuses}
                 onSessionStatusChange={handleSessionStatusChange}
                 workspaceId={activeWorkspaceId || undefined}
@@ -763,7 +867,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     // Session truly doesn't exist
     return (
       <div className="h-full flex flex-col">
-        <PanelHeader  title={t('chat.session')} leadingAction={leadingAction} rightSidebarButton={rightSidebarButton} />
+        <PanelHeader  title={t('chat.session')} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} />
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
           <AlertCircle className="h-10 w-10" />
           <p className="text-sm">{t('chat.sessionNoLongerExists')}</p>
@@ -775,116 +879,56 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   return (
     <>
       <div className="h-full flex flex-col">
-        <PanelHeader  title={displayTitle} titleMenu={titleMenu} leadingAction={leadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
+        <PanelHeader  title={displayTitle} titleMenu={titleMenu} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
         <div className="flex-1 flex flex-col min-h-0">
-          {isNovelWritingProject && workingDirectory && !isCompactMode ? (
-            <div className="flex h-full min-h-0 flex-col">
-              <div className="flex h-9 shrink-0 items-center justify-end border-b border-border/60 px-3">
-                <WritingChatDropdown>
-                  <ChatDisplay
-                    ref={chatDisplayRef}
-                    session={session}
-                    onSendMessage={(message, attachments, skillSlugs) => {
-                      onSendMessage(session.id, message, attachments, skillSlugs)
-                    }}
-                    onOpenFile={handleOpenFile}
-                    onOpenUrl={handleOpenUrl}
-                    currentModel={effectiveModel}
-                    onModelChange={handleModelChange}
-                    onConnectionChange={handleConnectionChange}
-                    pendingPermission={pendingPermission}
-                    onRespondToPermission={onRespondToPermission}
-                    pendingCredential={pendingCredential}
-                    onRespondToCredential={onRespondToCredential}
-                    thinkingLevel={sessionOpts.thinkingLevel}
-                    onThinkingLevelChange={(level) => setOption('thinkingLevel', level)}
-                    permissionMode={sessionOpts.permissionMode}
-                    onPermissionModeChange={setPermissionMode}
-                    enabledModes={enabledModes}
-                    inputValue={inputValue}
-                    onInputChange={handleInputChange}
-                    attachmentsValue={attachmentsValue}
-                    onAttachmentsChange={handleAttachmentsChange}
-                    sources={enabledSources}
-                    skills={skills}
-                    labels={labels}
-                    onLabelsChange={(newLabels) => onSessionLabelsChange?.(sessionId, newLabels)}
-                    sessionStatuses={sessionStatuses}
-                    onSessionStatusChange={handleSessionStatusChange}
-                    workspaceId={activeWorkspaceId || undefined}
-                    onSourcesChange={(slugs) => onSessionSourcesChange?.(sessionId, slugs)}
-                    workingDirectory={workingDirectory}
-                    onWorkingDirectoryChange={handleWorkingDirectoryChange}
-                    sessionFolderPath={session?.sessionFolderPath}
-                    messagesLoading={messageLoadState.messagesLoading || (messagesRetrying && !messageLoadState.messagesReady)}
-                    messagesLoadError={messageLoadState.error}
-                    messagesRetrying={messagesRetrying}
-                    onRetryMessagesLoad={handleRetryMessagesLoad}
-                    searchQuery={sessionListSearchQuery}
-                    isSearchModeActive={isSearchModeActive}
-                    onMatchInfoChange={onChatMatchInfoChange}
-                    connectionUnavailable={connectionUnavailable}
-                    compactMode
-                  />
-                </WritingChatDropdown>
-              </div>
-              <NovelWorkspacePanel
-                rootPath={workingDirectory}
-                files={novelWorkspaceFiles}
-                changes={latestNovelFileChanges}
-                onOpenFile={handleOpenFile}
-                onReadFile={(path) => window.electronAPI.readFile(path)}
-              />
-            </div>
-          ) : (
-            <ChatDisplay
-              ref={chatDisplayRef}
-              session={session}
-              onSendMessage={(message, attachments, skillSlugs) => {
-                if (session) {
-                  onSendMessage(session.id, message, attachments, skillSlugs)
-                }
-              }}
-              onOpenFile={handleOpenFile}
-              onOpenUrl={handleOpenUrl}
-              currentModel={effectiveModel}
-              onModelChange={handleModelChange}
-              onConnectionChange={handleConnectionChange}
-              pendingPermission={pendingPermission}
-              onRespondToPermission={onRespondToPermission}
-              pendingCredential={pendingCredential}
-              onRespondToCredential={onRespondToCredential}
-              thinkingLevel={sessionOpts.thinkingLevel}
-              onThinkingLevelChange={(level) => setOption('thinkingLevel', level)}
-              permissionMode={sessionOpts.permissionMode}
-              onPermissionModeChange={setPermissionMode}
-              enabledModes={enabledModes}
-              inputValue={inputValue}
-              onInputChange={handleInputChange}
-              attachmentsValue={attachmentsValue}
-              onAttachmentsChange={handleAttachmentsChange}
-              sources={enabledSources}
-              skills={skills}
-              labels={labels}
-              onLabelsChange={(newLabels) => onSessionLabelsChange?.(sessionId, newLabels)}
-              sessionStatuses={sessionStatuses}
-              onSessionStatusChange={handleSessionStatusChange}
-              workspaceId={activeWorkspaceId || undefined}
-              onSourcesChange={(slugs) => onSessionSourcesChange?.(sessionId, slugs)}
-              workingDirectory={workingDirectory}
-              onWorkingDirectoryChange={handleWorkingDirectoryChange}
-              sessionFolderPath={session?.sessionFolderPath}
-              messagesLoading={messageLoadState.messagesLoading || (messagesRetrying && !messageLoadState.messagesReady)}
-              messagesLoadError={messageLoadState.error}
-              messagesRetrying={messagesRetrying}
-              onRetryMessagesLoad={handleRetryMessagesLoad}
-              searchQuery={sessionListSearchQuery}
-              isSearchModeActive={isSearchModeActive}
-              onMatchInfoChange={onChatMatchInfoChange}
-              connectionUnavailable={connectionUnavailable}
-              compactMode={!!isCompactMode}
-            />
-          )}
+          <ChatDisplay
+            ref={chatDisplayRef}
+            session={session}
+            onSendMessage={(message, attachments, skillSlugs) => {
+              if (session) {
+                onSendMessage(session.id, message, attachments, skillSlugs)
+              }
+            }}
+            onOpenFile={handleOpenFile}
+            onOpenUrl={handleOpenUrl}
+            currentModel={effectiveModel}
+            onModelChange={handleModelChange}
+            onConnectionChange={handleConnectionChange}
+            pendingPermission={pendingPermission}
+            onRespondToPermission={onRespondToPermission}
+            pendingCredential={pendingCredential}
+            onRespondToCredential={onRespondToCredential}
+            thinkingLevel={sessionOpts.thinkingLevel}
+            onThinkingLevelChange={(level) => setOption('thinkingLevel', level)}
+            permissionMode={sessionOpts.permissionMode}
+            onPermissionModeChange={setPermissionMode}
+            enabledModes={enabledModes}
+            inputValue={inputValue}
+            onInputChange={handleInputChange}
+            attachmentsValue={attachmentsValue}
+            onAttachmentsChange={handleAttachmentsChange}
+            sources={enabledSources}
+            skills={skills}
+            mentionFiles={mentionFiles}
+            labels={labels}
+            onLabelsChange={(newLabels) => onSessionLabelsChange?.(sessionId, newLabels)}
+            sessionStatuses={sessionStatuses}
+            onSessionStatusChange={handleSessionStatusChange}
+            workspaceId={activeWorkspaceId || undefined}
+            onSourcesChange={(slugs) => onSessionSourcesChange?.(sessionId, slugs)}
+            workingDirectory={workingDirectory}
+            onWorkingDirectoryChange={handleWorkingDirectoryChange}
+            sessionFolderPath={session?.sessionFolderPath}
+            messagesLoading={messageLoadState.messagesLoading || (messagesRetrying && !messageLoadState.messagesReady)}
+            messagesLoadError={messageLoadState.error}
+            messagesRetrying={messagesRetrying}
+            onRetryMessagesLoad={handleRetryMessagesLoad}
+            searchQuery={sessionListSearchQuery}
+            isSearchModeActive={isSearchModeActive}
+            onMatchInfoChange={onChatMatchInfoChange}
+            connectionUnavailable={connectionUnavailable}
+            compactMode={!!isCompactMode}
+          />
         </div>
       </div>
       <RenameDialog
