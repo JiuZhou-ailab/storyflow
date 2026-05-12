@@ -4,6 +4,12 @@ import {
   resolveRewindBranchMessageId,
 } from '../chat-rewind'
 
+const baseMessages: Parameters<typeof resolveRewindBranchMessageId>[0] = [
+  { id: 'u1', role: 'user' },
+  { id: 'a1', role: 'assistant' },
+  { id: 'u2', role: 'user' },
+]
+
 const baseSession = {
   id: 'session-1',
   workspaceId: 'workspace-1',
@@ -13,16 +19,22 @@ const baseSession = {
   permissionMode: 'ask' as const,
   workingDirectory: '/repo',
   enabledSourceSlugs: ['docs'],
-  messages: [
-    { id: 'u1', role: 'user', content: 'first' },
-    { id: 'a1', role: 'assistant', content: 'answer' },
-    { id: 'u2', role: 'user', content: 'second' },
-  ],
+  messages: baseMessages,
 }
 
 describe('chat rewind helpers', () => {
   it('branches from the message before the edited user message', () => {
     expect(resolveRewindBranchMessageId(baseSession.messages, 'u2')).toBe('a1')
+  })
+
+  it('skips non-final messages when resolving the rewind branch point', () => {
+    expect(resolveRewindBranchMessageId([
+      { id: 'u1', role: 'user' },
+      { id: 'a1', role: 'assistant' },
+      { id: 't1', role: 'tool' },
+      { id: 'a2', role: 'assistant', isIntermediate: true },
+      { id: 'u2', role: 'user' },
+    ], 'u2')).toBe('a1')
   })
 
   it('uses a fresh session when editing the first user message', () => {

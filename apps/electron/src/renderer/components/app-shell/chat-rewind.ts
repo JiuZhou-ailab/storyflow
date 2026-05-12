@@ -17,12 +17,18 @@ type RewindSourceSession = Pick<
 >
 
 export function resolveRewindBranchMessageId(
-  messages: Array<Pick<Message, 'id'>>,
+  messages: Array<Pick<Message, 'id' | 'role' | 'isIntermediate'>>,
   userMessageId: string
 ): string | null {
   const index = messages.findIndex(message => message.id === userMessageId)
   if (index <= 0) return null
-  return messages[index - 1]?.id ?? null
+  for (let i = index - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (message?.role === 'assistant' && !message.isIntermediate) {
+      return message.id
+    }
+  }
+  return null
 }
 
 export function buildRewindSessionOptions(

@@ -279,6 +279,21 @@ function isClaudeMessageUuid(turnId: string): boolean {
   return /^msg_[A-Za-z0-9]+$/.test(turnId)
 }
 
+export function requireSdkForkBranchAnchor(input: {
+  provider: string
+  branchFromSessionId: string
+  branchFromMessageId: string
+  branchFromSdkTurnId?: string
+}): string {
+  if (input.branchFromSdkTurnId) {
+    return input.branchFromSdkTurnId
+  }
+
+  throw new Error(
+    `Cannot create branch yet: selected message is missing a provider branch anchor (${input.provider}; source=${input.branchFromSessionId}; message=${input.branchFromMessageId}). Branch from a completed assistant response and try again.`
+  )
+}
+
 async function loadClaudeTurnAnchors(sessionPath: string): Promise<ClaudeTurnAnchorsIndex> {
   const filePath = getClaudeTurnAnchorsPath(sessionPath)
   try {
@@ -1814,6 +1829,54 @@ export class SessionManager implements ISessionManager {
     await sessionPersistenceQueue.flushAll()
   }
 
+  private async handlePlanSubmitted(managed: ManagedSession, planPath: string): Promise<void> {
+    sessionLog.info(`Plan submitted for session ${managed.id}:`, planPath)
+    try {
+      const planContent = await readFile(planPath, 'utf-8')
+
+      const submitPlanMsg = managed.messages.find(
+        m => m.toolName?.includes('SubmitPlan') && m.toolStatus === 'executing'
+      )
+      if (submitPlanMsg) {
+        submitPlanMsg.toolStatus = 'completed'
+        submitPlanMsg.content = 'Plan submitted for review'
+        submitPlanMsg.toolResult = 'Plan submitted for review'
+      }
+
+      const planMessage = {
+        id: `plan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        role: 'plan' as const,
+        content: planContent,
+        timestamp: this.monotonic(),
+        planPath,
+      }
+
+      managed.messages.push(planMessage)
+      managed.lastMessageRole = 'plan'
+
+      this.persistSession(managed)
+      await this.flushSession(managed.id)
+
+      this.sendEvent({
+        type: 'plan_submitted',
+        sessionId: managed.id,
+        message: planMessage,
+      }, managed.workspace.id)
+
+      if (managed.isProcessing && managed.agent) {
+        sessionLog.info(`Interrupting for plan submission in session ${managed.id}`)
+        managed.agent.interruptForHandoff(AbortReason.PlanSubmitted)
+        this.setProcessing(managed, false)
+
+        await releaseBrowserOwnershipOnForcedStop(this.browserPaneManager, managed.id)
+
+        this.sendEvent({ type: 'complete', sessionId: managed.id, tokenUsage: managed.tokenUsage }, managed.workspace.id)
+      }
+    } catch (error) {
+      sessionLog.error(`Failed to read plan file:`, error)
+    }
+  }
+
   // ============================================
   // Unified Auth Request Helpers
   // ============================================
@@ -2452,7 +2515,7 @@ export class SessionManager implements ISessionManager {
           if (branchFromSessionPath) {
             branchFromSdkTurnId = await getPiTurnAnchor(branchFromSessionPath, options.branchFromMessageId)
             if (!branchFromSdkTurnId) {
-              sessionLog.warn('Pi branch anchor missing: falling back to full-history fork for this branch', {
+              sessionLog.warn('Pi branch anchor missing: rejecting unsafe SDK fork branch', {
                 workspaceId,
                 branchFromSessionId: options.branchFromSessionId,
                 branchFromMessageId: options.branchFromMessageId,
@@ -2463,20 +2526,20 @@ export class SessionManager implements ISessionManager {
           if (branchFromSessionPath && branchFromSdkSessionId) {
             const anchor = await getClaudeTurnAnchor(branchFromSessionPath, options.branchFromMessageId)
             if (!anchor) {
-              sessionLog.warn('Claude branch anchor missing: falling back to full-history fork for this branch', {
+              sessionLog.warn('Claude branch anchor missing: rejecting unsafe SDK fork branch', {
                 workspaceId,
                 branchFromSessionId: options.branchFromSessionId,
                 branchFromMessageId: options.branchFromMessageId,
               })
             } else if (!anchor.sdkMessageUuid || !isClaudeMessageUuid(anchor.sdkMessageUuid)) {
-              sessionLog.warn('Claude branch anchor malformed: falling back to full-history fork for this branch', {
+              sessionLog.warn('Claude branch anchor malformed: rejecting unsafe SDK fork branch', {
                 workspaceId,
                 branchFromSessionId: options.branchFromSessionId,
                 branchFromMessageId: options.branchFromMessageId,
                 anchorSdkSessionId: anchor.sdkSessionId,
               })
             } else if (anchor.sdkSessionId !== branchFromSdkSessionId) {
-              sessionLog.warn('Claude branch anchor lineage mismatch: falling back to full-history fork for this branch', {
+              sessionLog.warn('Claude branch anchor lineage mismatch: rejecting unsafe SDK fork branch', {
                 workspaceId,
                 branchFromSessionId: options.branchFromSessionId,
                 branchFromMessageId: options.branchFromMessageId,
@@ -2500,6 +2563,15 @@ export class SessionManager implements ISessionManager {
           targetProvider: targetBackendContext.provider,
         })
         throw new Error('Cannot create branch yet: parent session SDK context is not initialized. Send one message in the parent session and try again.')
+      }
+
+      if (branchContextStrategy === 'sdk-fork') {
+        branchFromSdkTurnId = requireSdkForkBranchAnchor({
+          provider: sourceBackendContext.provider,
+          branchFromSessionId: options.branchFromSessionId,
+          branchFromMessageId: options.branchFromMessageId,
+          branchFromSdkTurnId,
+        })
       }
 
       validatedBranch = {
@@ -3625,63 +3697,7 @@ export class SessionManager implements ISessionManager {
 
       // Wire up onPlanSubmitted to add plan message to conversation
       managed.agent.onPlanSubmitted = async (planPath) => {
-        sessionLog.info(`Plan submitted for session ${managed.id}:`, planPath)
-        try {
-          // Read the plan file content
-          const planContent = await readFile(planPath, 'utf-8')
-
-          // Mark the SubmitPlan tool message as completed (it won't get a tool_result due to forceAbort)
-          const submitPlanMsg = managed.messages.find(
-            m => m.toolName?.includes('SubmitPlan') && m.toolStatus === 'executing'
-          )
-          if (submitPlanMsg) {
-            submitPlanMsg.toolStatus = 'completed'
-            submitPlanMsg.content = 'Plan submitted for review'
-            submitPlanMsg.toolResult = 'Plan submitted for review'
-          }
-
-          // Create a plan message
-          const planMessage = {
-            id: `plan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            role: 'plan' as const,
-            content: planContent,
-            timestamp: this.monotonic(),
-            planPath,
-          }
-
-          // Add to session messages
-          managed.messages.push(planMessage)
-
-          // Update lastMessageRole for badge display
-          managed.lastMessageRole = 'plan'
-
-          // Send event to renderer
-          this.sendEvent({
-            type: 'plan_submitted',
-            sessionId: managed.id,
-            message: planMessage,
-          }, managed.workspace.id)
-
-          // Interrupt execution - plan presentation is a stopping point
-          // The user needs to review and respond before continuing
-          if (managed.isProcessing && managed.agent) {
-            sessionLog.info(`Interrupting for plan submission in session ${managed.id}`)
-            managed.agent.interruptForHandoff(AbortReason.PlanSubmitted)
-            this.setProcessing(managed, false)
-
-            // Release browser overlay + session binding because the agent is no longer running.
-            // Plan submission pauses execution until user review, so browser ownership should not remain locked.
-            await releaseBrowserOwnershipOnForcedStop(this.browserPaneManager, managed.id)
-
-            // Send complete event so renderer knows processing stopped (include tokenUsage for real-time updates)
-            this.sendEvent({ type: 'complete', sessionId: managed.id, tokenUsage: managed.tokenUsage }, managed.workspace.id)
-
-            // Persist session state
-            this.persistSession(managed)
-          }
-        } catch (error) {
-          sessionLog.error(`Failed to read plan file:`, error)
-        }
+        await this.handlePlanSubmitted(managed, planPath)
       }
 
       // Wire up onAuthRequest to add auth message to conversation and pause execution

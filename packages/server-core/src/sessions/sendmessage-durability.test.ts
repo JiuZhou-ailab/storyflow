@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { getSessionFilePath } from '@craft-agent/shared/sessions/storage'
@@ -110,5 +110,61 @@ describe('sendMessage durability', () => {
 
     expect(ackedMessageId).not.toBeNull()
     expect(onDiskAtAck).toBe(true)
+  })
+})
+
+describe('plan submission durability', () => {
+  let tmpRoot: string
+  let sm: SessionManager
+
+  beforeEach(() => {
+    tmpRoot = mkdtempSync(join(tmpdir(), 'sm-plan-durability-'))
+    sm = new SessionManager()
+  })
+
+  afterEach(() => {
+    rmSync(tmpRoot, { recursive: true, force: true })
+  })
+
+  it('plan message is on disk before the complete event is emitted', async () => {
+    const sessionId = 'plan-durability'
+    const managed = createManagedSession(
+      { id: sessionId, name: 'plan durability' },
+      {
+        id: 'ws_test',
+        name: 'Test Workspace',
+        rootPath: tmpRoot,
+        createdAt: Date.now(),
+      } as never,
+      { messagesLoaded: true },
+    )
+    managed.isProcessing = true
+    managed.agent = {
+      interruptForHandoff: () => {},
+    } as never
+    ;(sm as unknown as { sessions: Map<string, unknown> }).sessions.set(sessionId, managed)
+
+    const planPath = join(tmpRoot, 'PLAN.md')
+    writeFileSync(planPath, '# Test plan', 'utf-8')
+
+    let onDiskAtComplete = false
+    sm.setEventSink((_channel, _target, event) => {
+      if (event?.type !== 'complete') return
+
+      const path = getSessionFilePath(tmpRoot, sessionId)
+      if (!existsSync(path)) return
+
+      const lines = readFileSync(path, 'utf-8').trim().split('\n')
+      onDiskAtComplete = lines
+        .slice(1)
+        .map(l => JSON.parse(l))
+        .some(m => m.type === 'plan' && m.content === '# Test plan')
+    })
+
+    await (sm as unknown as {
+      handlePlanSubmitted(managed: unknown, planPath: string): Promise<void>
+    }).handlePlanSubmitted(managed, planPath)
+
+    expect(onDiskAtComplete).toBe(true)
   })
 })
