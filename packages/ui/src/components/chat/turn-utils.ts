@@ -397,7 +397,6 @@ export function groupMessagesByTurn(messages: Message[]): Turn[] {
           currentTurn.response = {
             text: lastTextActivity.content,
             isStreaming: false,
-            messageId: lastTextActivity.id,
           }
         }
       }

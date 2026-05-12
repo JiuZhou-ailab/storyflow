@@ -314,6 +314,25 @@ describe('turn lifecycle scenarios', () => {
       expect(deriveTurnPhase(assistantTurn)).toBe('awaiting')
     })
   })
+
+  describe('promoted intermediate fallback', () => {
+    it('does not expose a branchable message id for promoted intermediate text', () => {
+      resetCounters()
+      turnIdCounter++
+
+      const messages: Message[] = [
+        createUserMessage(),
+        createToolMessage('completed', 'Read', 'turn-1'),
+        createAssistantMessage(false, true, 'turn-1'),
+        createUserMessage('Next turn'),
+      ]
+
+      const assistantTurn = getLastAssistantTurn(groupMessagesByTurn(messages))!
+
+      expect(assistantTurn.response?.text).toBe('Response text')
+      expect(assistantTurn.response?.messageId).toBeUndefined()
+    })
+  })
 })
 
 describe('edge cases', () => {
