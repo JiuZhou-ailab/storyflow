@@ -68,4 +68,11 @@ describe('channel routing behavior', () => {
       }
     }
   })
+
+  test('user profile channels are local-only user configuration', () => {
+    expect(LOCAL_ONLY_CHANNELS.has(RPC_CHANNELS.userProfile.READ)).toBe(true)
+    expect(LOCAL_ONLY_CHANNELS.has(RPC_CHANNELS.userProfile.WRITE)).toBe(true)
+    expect(REMOTE_ELIGIBLE_CHANNELS.has(RPC_CHANNELS.userProfile.READ)).toBe(false)
+    expect(REMOTE_ELIGIBLE_CHANNELS.has(RPC_CHANNELS.userProfile.WRITE)).toBe(false)
+  })
 })

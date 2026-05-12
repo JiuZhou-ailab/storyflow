@@ -1,10 +1,11 @@
 /**
  * PreferencesPage
  *
- * Form-based editor for stored user preferences (~/.craft-agent/preferences.json).
+ * Form-based editor for stored user preferences and user profile context.
  * Features:
  * - Fixed input fields for known preferences (name, timezone, location, language)
  * - Free-form textarea for notes
+ * - Markdown textarea for user-authored identity and preference context
  * - Auto-saves on change with debouncing
  */
 
@@ -85,30 +86,51 @@ function serializePreferences(state: PreferencesFormState): string {
 export default function PreferencesPage() {
   const { t } = useTranslation()
   const [formState, setFormState] = useState<PreferencesFormState>(emptyFormState)
+  const [userProfile, setUserProfile] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [preferencesPath, setPreferencesPath] = useState<string | null>(null)
+  const [userProfilePath, setUserProfilePath] = useState<string | null>(null)
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const userProfileSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isInitialLoadRef = useRef(true)
   const formStateRef = useRef(formState)
+  const userProfileRef = useRef(userProfile)
   const lastSavedRef = useRef<string | null>(null)
+  const lastSavedUserProfileRef = useRef<string | null>(null)
 
   // Keep formStateRef in sync for use in cleanup
   useEffect(() => {
     formStateRef.current = formState
   }, [formState])
 
+  useEffect(() => {
+    userProfileRef.current = userProfile
+  }, [userProfile])
+
   // Load stored user preferences on mount
   useEffect(() => {
     const load = async () => {
       try {
-        const result = await window.electronAPI.readPreferences()
-        const parsed = parsePreferences(result.content)
+        const preferencesResult = await window.electronAPI.readPreferences()
+        const parsed = parsePreferences(preferencesResult.content)
         setFormState(parsed)
-        setPreferencesPath(result.path)
+        setPreferencesPath(preferencesResult.path)
         lastSavedRef.current = serializePreferences(parsed)
       } catch (err) {
         console.error('Failed to load stored user preferences:', err)
         setFormState(emptyFormState)
+        lastSavedRef.current = serializePreferences(emptyFormState)
+      }
+
+      try {
+        const userProfileResult = await window.electronAPI.readUserProfile()
+        setUserProfile(userProfileResult.content)
+        setUserProfilePath(userProfileResult.path)
+        lastSavedUserProfileRef.current = userProfileResult.content
+      } catch (err) {
+        console.error('Failed to load user profile:', err)
+        setUserProfile('')
+        lastSavedUserProfileRef.current = ''
       } finally {
         setIsLoading(false)
         // Mark initial load as complete after a short delay
@@ -152,12 +174,44 @@ export default function PreferencesPage() {
     }
   }, [formState, isLoading])
 
+  useEffect(() => {
+    if (isInitialLoadRef.current || isLoading) return
+
+    if (userProfileSaveTimeoutRef.current) {
+      clearTimeout(userProfileSaveTimeoutRef.current)
+    }
+
+    userProfileSaveTimeoutRef.current = setTimeout(async () => {
+      if (lastSavedUserProfileRef.current === userProfile) return
+
+      try {
+        const result = await window.electronAPI.writeUserProfile(userProfile)
+        if (result.success) {
+          lastSavedUserProfileRef.current = userProfile
+        } else {
+          console.error('Failed to save user profile:', result.error)
+        }
+      } catch (err) {
+        console.error('Failed to save user profile:', err)
+      }
+    }, 500)
+
+    return () => {
+      if (userProfileSaveTimeoutRef.current) {
+        clearTimeout(userProfileSaveTimeoutRef.current)
+      }
+    }
+  }, [userProfile, isLoading])
+
   // Force save on unmount if there are unsaved changes
   useEffect(() => {
     return () => {
       // Clear any pending debounced save
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current)
+      }
+      if (userProfileSaveTimeoutRef.current) {
+        clearTimeout(userProfileSaveTimeoutRef.current)
       }
 
       // Check if there are unsaved changes and save immediately
@@ -166,6 +220,13 @@ export default function PreferencesPage() {
         // Fire and forget - we can't await in cleanup
         window.electronAPI.writePreferences(currentJson).catch((err) => {
           console.error('Failed to save preferences on unmount:', err)
+        })
+      }
+
+      const currentUserProfile = userProfileRef.current
+      if (lastSavedUserProfileRef.current !== currentUserProfile && !isInitialLoadRef.current) {
+        window.electronAPI.writeUserProfile(currentUserProfile).catch((err) => {
+          console.error('Failed to save user profile on unmount:', err)
         })
       }
     }
@@ -266,6 +327,31 @@ export default function PreferencesPage() {
                 onChange={(v) => updateField('notes', v)}
                 placeholder={t("settings.preferences.notesPlaceholder")}
                 rows={5}
+                inCard
+              />
+            </SettingsCard>
+          </SettingsSection>
+
+          <SettingsSection
+            title={t("settings.preferences.userProfile")}
+            description={
+              <span>
+                {t("settings.preferences.userProfileDesc")}
+                {userProfilePath ? (
+                  <>
+                    <br />
+                    <code className="font-mono text-xs break-all">{userProfilePath}</code>
+                  </>
+                ) : null}
+              </span>
+            }
+          >
+            <SettingsCard divided={false}>
+              <SettingsTextarea
+                value={userProfile}
+                onChange={setUserProfile}
+                placeholder={t("settings.preferences.userProfilePlaceholder")}
+                rows={10}
                 inCard
               />
             </SettingsCard>

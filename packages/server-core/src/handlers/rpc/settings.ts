@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'path'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
-import { getPreferencesPath, getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, getWorkspaceByNameOrId, getDefaultThinkingLevel, setDefaultThinkingLevel } from '@craft-agent/shared/config'
+import { getPreferencesPath, getUserProfilePath, saveUserProfileMarkdown, getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, getWorkspaceByNameOrId, getDefaultThinkingLevel, setDefaultThinkingLevel } from '@craft-agent/shared/config'
 import { isValidThinkingLevel, normalizeThinkingLevel, THINKING_LEVEL_IDS } from '@craft-agent/shared/agent/thinking-levels'
 
 const VALID_THINKING_LEVELS_LIST = THINKING_LEVEL_IDS.map(id => `'${id}'`).join(', ')
@@ -16,6 +16,8 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.workspace.SETTINGS_UPDATE,
   RPC_CHANNELS.preferences.READ,
   RPC_CHANNELS.preferences.WRITE,
+  RPC_CHANNELS.userProfile.READ,
+  RPC_CHANNELS.userProfile.WRITE,
   RPC_CHANNELS.drafts.GET,
   RPC_CHANNELS.drafts.SET,
   RPC_CHANNELS.drafts.DELETE,
@@ -189,6 +191,27 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
       const path = getPreferencesPath()
       mkdirSync(dirname(path), { recursive: true })
       writeFileSync(path, content, 'utf-8')
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+    }
+  })
+
+  server.handle(RPC_CHANNELS.userProfile.READ, async () => {
+    const path = getUserProfilePath()
+    try {
+      if (!existsSync(path)) {
+        return { content: '', exists: false, path }
+      }
+      return { content: readFileSync(path, 'utf-8'), exists: true, path }
+    } catch {
+      return { content: '', exists: false, path }
+    }
+  })
+
+  server.handle(RPC_CHANNELS.userProfile.WRITE, async (_, content: string) => {
+    try {
+      saveUserProfileMarkdown(content)
       return { success: true }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }

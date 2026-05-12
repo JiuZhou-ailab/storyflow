@@ -5,6 +5,7 @@ import { CONFIG_DIR } from './paths.ts';
 import { readJsonFileSync } from '../utils/files.ts';
 import { i18n } from '../i18n/index.ts';
 import { LOCALE_REGISTRY, type LanguageCode } from '../i18n/registry.ts';
+import { formatUserProfileForPrompt } from './user-profile.ts';
 
 export interface UserLocation {
   city?: string;
@@ -84,6 +85,7 @@ export function getPreferencesPath(): string {
  */
 export function formatPreferencesForPrompt(): string {
   const prefs = loadPreferences();
+  const userProfile = formatUserProfileForPrompt();
 
   // Derive language from the app's i18n setting (Appearance > Language).
   // This replaces the old prefs.language field which is now ignored.
@@ -91,39 +93,49 @@ export function formatPreferencesForPrompt(): string {
   const langEntry = LOCALE_REGISTRY[langCode];
   const langName = langEntry?.nativeName ?? 'English';
 
-  if (Object.keys(prefs).length === 0 ||
-      (!prefs.name && !prefs.timezone && !prefs.location && !prefs.notes && langCode === 'en')) {
+  const hasStructuredPrefs = Object.keys(prefs).length > 0 &&
+    Boolean(prefs.name || prefs.timezone || prefs.location || prefs.notes || langCode !== 'en');
+  if (!hasStructuredPrefs && !userProfile) {
     return '';
   }
 
+  const sections: string[] = [];
   const lines: string[] = ['## User Preferences - User has explicitly set these preferences, so adhere to them', ''];
 
-  if (prefs.name) {
-    lines.push(`- Name: ${prefs.name}`);
-  }
-
-  if (prefs.timezone) {
-    lines.push(`- Timezone: ${prefs.timezone}`);
-  }
-
-  if (prefs.location) {
-    const loc = prefs.location;
-    const parts = [loc.city, loc.region, loc.country].filter(Boolean);
-    if (parts.length > 0) {
-      lines.push(`- Location: ${parts.join(', ')}`);
+  if (hasStructuredPrefs) {
+    if (prefs.name) {
+      lines.push(`- Name: ${prefs.name}`);
     }
+
+    if (prefs.timezone) {
+      lines.push(`- Timezone: ${prefs.timezone}`);
+    }
+
+    if (prefs.location) {
+      const loc = prefs.location;
+      const parts = [loc.city, loc.region, loc.country].filter(Boolean);
+      if (parts.length > 0) {
+        lines.push(`- Location: ${parts.join(', ')}`);
+      }
+    }
+
+    // Always include language so the AI knows which language to respond in.
+    // Derived from the Appearance language setting, not the old prefs.language field.
+    lines.push(`- Preferred language: ${langName}`);
+
+    if (prefs.notes) {
+      lines.push('', '### Notes about this user', prefs.notes);
+    }
+
+    lines.push('');
+    sections.push(lines.join('\n'));
   }
 
-  // Always include language so the AI knows which language to respond in.
-  // Derived from the Appearance language setting, not the old prefs.language field.
-  lines.push(`- Preferred language: ${langName}`);
-
-  if (prefs.notes) {
-    lines.push('', '### Notes about this user', prefs.notes);
+  if (userProfile) {
+    sections.push(userProfile);
   }
 
-  lines.push('');
-  return lines.join('\n');
+  return sections.join('\n');
 }
 
 /**

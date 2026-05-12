@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { RPC_CHANNELS } from '../../../shared/types'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
@@ -7,9 +10,12 @@ type HandlerFn = (ctx: { clientId: string }, ...args: any[]) => Promise<any> | a
 
 const getDefaultThinkingLevelMock = mock(() => 'think')
 const setDefaultThinkingLevelMock = mock((_level: string) => true)
+let userProfilePath = '/tmp/USER.md'
 
 mock.module('@craft-agent/shared/config', () => ({
   getPreferencesPath: () => '/tmp/preferences.json',
+  getUserProfilePath: () => userProfilePath,
+  saveUserProfileMarkdown: () => {},
   getSessionDraft: () => null,
   setSessionDraft: () => {},
   deleteSessionDraft: () => {},
@@ -26,6 +32,7 @@ describe('settings default thinking RPC handlers', () => {
     handlers.clear()
     getDefaultThinkingLevelMock.mockClear()
     setDefaultThinkingLevelMock.mockClear()
+    userProfilePath = '/tmp/USER.md'
 
     const server: RpcServer = {
       handle(channel, handler) {
@@ -95,5 +102,18 @@ describe('settings default thinking RPC handlers', () => {
 
     await expect(setHandler!({ clientId: 'client-1' }, 'ultra')).rejects.toThrow('Invalid thinking level')
     expect(setDefaultThinkingLevelMock).not.toHaveBeenCalled()
+  })
+
+  it('returns an empty user profile instead of throwing when the profile path is unreadable', async () => {
+    userProfilePath = mkdtempSync(join(tmpdir(), 'craft-user-profile-dir-'))
+
+    const readHandler = handlers.get(RPC_CHANNELS.userProfile.READ)
+    expect(readHandler).toBeTruthy()
+
+    await expect(readHandler!({ clientId: 'client-1' })).resolves.toEqual({
+      content: '',
+      exists: false,
+      path: userProfilePath,
+    })
   })
 })

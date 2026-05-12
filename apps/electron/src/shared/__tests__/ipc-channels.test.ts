@@ -303,6 +303,8 @@ const EXPECTED_CHANNELS: string[] = [
   'update:getDismissed',
   'update:getInfo',
   'update:install',
+  'userProfile:read',
+  'userProfile:write',
   'views:list',
   'views:save',
   'window:cancelClose',
