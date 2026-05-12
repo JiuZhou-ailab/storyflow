@@ -19,6 +19,7 @@ import type { ProviderChoice } from '@/components/onboarding/ProviderSelectStep'
 import type { LocalModelSubmitData } from '@/components/onboarding/LocalModelStep'
 import type { ApiKeySubmitData } from '@/components/apisetup'
 import type { CustomEndpointConfig } from '@config/llm-connections'
+import { isMaskedCredential } from '@craft-agent/shared/utils/mask'
 import type { SetupNeeds, LlmConnectionSetup } from '../../shared/types'
 
 interface UseOnboardingOptions {
@@ -120,6 +121,14 @@ export function resolveSlugForMethod(
   return `${base}-${i}`
 }
 
+export function normalizeCredentialForSetup(credential?: string): string | undefined {
+  const trimmed = credential?.trim()
+  if (!trimmed || isMaskedCredential(trimmed)) {
+    return undefined
+  }
+  return trimmed
+}
+
 // Map ApiSetupMethod to LlmConnectionSetup for the new unified connection system
 function isLoopbackEndpoint(baseUrl?: string): boolean {
   if (!baseUrl?.trim()) return false
@@ -152,12 +161,13 @@ export function apiSetupMethodToConnectionSetup(
   existingSlugs: Set<string>,
 ): LlmConnectionSetup {
   const slug = resolveSlugForMethod(method, editingSlug, existingSlugs)
+  const credential = normalizeCredentialForSetup(options.credential)
 
   switch (method) {
     case 'anthropic_api_key':
       return {
         slug,
-        credential: options.credential,
+        credential,
         baseUrl: options.baseUrl,
         defaultModel: options.connectionDefaultModel,
         models: options.models,
@@ -166,18 +176,18 @@ export function apiSetupMethodToConnectionSetup(
     case 'claude_oauth':
       return {
         slug,
-        credential: options.credential,
+        credential,
       }
     case 'pi_chatgpt_oauth':
     case 'pi_copilot_oauth':
       return {
         slug,
-        credential: options.credential,
+        credential,
       }
     case 'pi_api_key':
       return {
         slug,
-        credential: options.credential,
+        credential,
         baseUrl: options.baseUrl,
         defaultModel: options.connectionDefaultModel,
         models: options.models,
@@ -381,6 +391,7 @@ export function useOnboarding({
     setState(s => ({ ...s, credentialStatus: 'validating', errorMessage: undefined }))
 
     const isPiApiKeyFlow = state.apiSetupMethod === 'pi_api_key'
+    const normalizedApiKey = normalizeCredentialForSetup(data.apiKey)
 
     try {
       // Bedrock (Pi+amazon-bedrock) — skip API key validation and connection test
@@ -404,7 +415,7 @@ export function useOnboarding({
       }
 
       // When editing an existing connection, API key is optional (empty = keep existing credential)
-      if (!data.apiKey.trim() && editingSlug) {
+      if (!normalizedApiKey && editingSlug) {
         const saved = await handleSaveConfig(undefined, {
           baseUrl: data.baseUrl,
           connectionDefaultModel: data.connectionDefaultModel,
@@ -426,7 +437,7 @@ export function useOnboarding({
       // - Non-local endpoints require an API key
       const isLoopbackCustomEndpoint = isLoopbackEndpoint(data.baseUrl)
       if (isPiApiKeyFlow) {
-        if (!data.apiKey.trim() && !isLoopbackCustomEndpoint) {
+        if (!normalizedApiKey && !isLoopbackCustomEndpoint) {
           setState(s => ({
             ...s,
             credentialStatus: 'error',
@@ -435,7 +446,7 @@ export function useOnboarding({
           return
         }
       } else {
-        if (!data.apiKey.trim() && !isLoopbackCustomEndpoint) {
+        if (!normalizedApiKey && !isLoopbackCustomEndpoint) {
           setState(s => ({
             ...s,
             credentialStatus: 'error',
@@ -450,7 +461,7 @@ export function useOnboarding({
       const setupTestProvider = data.customEndpoint ? 'pi' : (isPiApiKeyFlow ? 'pi' : 'anthropic')
       const testResult = await window.electronAPI.testLlmConnectionSetup({
         provider: setupTestProvider,
-        apiKey: data.apiKey,
+        apiKey: normalizedApiKey ?? '',
         baseUrl: data.baseUrl,
         model: data.models?.[0],
         piAuthProvider: data.piAuthProvider,
@@ -466,7 +477,7 @@ export function useOnboarding({
         return
       }
 
-      const saved = await handleSaveConfig(data.apiKey, {
+      const saved = await handleSaveConfig(normalizedApiKey, {
         baseUrl: data.baseUrl,
         connectionDefaultModel: data.connectionDefaultModel,
         models: data.models,

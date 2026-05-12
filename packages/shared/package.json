@@ -38,6 +38,7 @@
     "./writing/method-packs/draft-contract": "./src/writing/method-packs/draft-contract.ts",
     "./writing/method-packs/validation": "./src/writing/method-packs/validation.ts",
     "./utils": "./src/utils/index.ts",
+    "./utils/mask": "./src/utils/mask.ts",
     "./utils/toolNames": "./src/utils/toolNames.ts",
     "./utils/logo": "./src/utils/logo.ts",
     "./utils/service-url": "./src/utils/service-url.ts",

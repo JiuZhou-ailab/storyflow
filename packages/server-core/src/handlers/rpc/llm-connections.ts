@@ -1,6 +1,7 @@
 import { RPC_CHANNELS, type LlmConnectionSetup } from '@craft-agent/shared/protocol'
 import { getLlmConnections, getLlmConnection, addLlmConnection, updateLlmConnection, deleteLlmConnection, getDefaultLlmConnection, setDefaultLlmConnection, touchLlmConnection, isCompatProvider, isAnthropicProvider, getDefaultModelsForConnection, getDefaultModelForConnection, type LlmConnection, type LlmConnectionWithStatus, toBedrockNativeId, deriveBedrockRegionPrefix } from '@craft-agent/shared/config'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
+import { isMaskedCredential } from '@craft-agent/shared/utils/mask'
 import { setSetupDeferred } from '@craft-agent/shared/config/storage'
 import {
   resolveSetupTestConnectionHint,
@@ -230,14 +231,14 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
       }
 
       // Store credential if provided (skip masked placeholders from GET_API_KEY)
-      const isMasked = setup.credential?.includes('••')
-      if (setup.credential && !isMasked) {
+      const credential = setup.credential?.trim()
+      if (credential && !isMaskedCredential(credential)) {
         const authType = pendingConnection.authType
         if (authType === 'oauth') {
-          await manager.setLlmOAuth(setup.slug, { accessToken: setup.credential })
+          await manager.setLlmOAuth(setup.slug, { accessToken: credential })
           deps.platform.logger?.info('Saved OAuth access token to LLM connection')
         } else {
-          await manager.setLlmApiKey(setup.slug, setup.credential)
+          await manager.setLlmApiKey(setup.slug, credential)
           deps.platform.logger?.info('Saved API key to LLM connection')
         }
       }

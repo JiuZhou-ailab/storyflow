@@ -3,6 +3,7 @@ import {
   resolveSlugForMethod,
   apiSetupMethodToConnectionSetup,
   BASE_SLUG_FOR_METHOD,
+  normalizeCredentialForSetup,
 } from '../useOnboarding'
 import type { ApiSetupMethod } from '@/components/onboarding'
 
@@ -111,6 +112,17 @@ describe('apiSetupMethodToConnectionSetup', () => {
     expect(setup.slug).toBe('existing-connection')
   })
 
+  it('omits masked credential placeholders from connection setup', () => {
+    const setup = apiSetupMethodToConnectionSetup(
+      'anthropic_api_key',
+      { credential: 'sk-ant-••••••••abcd' },
+      'existing-connection',
+      new Set(['anthropic-api']),
+    )
+
+    expect(setup.credential).toBeUndefined()
+  })
+
   it('generates unique slug when base is taken', () => {
     const setup = apiSetupMethodToConnectionSetup(
       'claude_oauth',
@@ -119,6 +131,18 @@ describe('apiSetupMethodToConnectionSetup', () => {
       new Set(['claude-max']),
     )
     expect(setup.slug).toBe('claude-max-2')
+  })
+})
+
+describe('normalizeCredentialForSetup', () => {
+  it('returns undefined for masked API key placeholders', () => {
+    expect(normalizeCredentialForSetup('sk-ant-••••••••abcd')).toBeUndefined()
+    expect(normalizeCredentialForSetup('sk-ant-...abcd')).toBeUndefined()
+    expect(normalizeCredentialForSetup('••••••••')).toBeUndefined()
+  })
+
+  it('preserves real credential values', () => {
+    expect(normalizeCredentialForSetup(' sk-ant-real-key ')).toBe('sk-ant-real-key')
   })
 })
 

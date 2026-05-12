@@ -13,6 +13,19 @@ export interface MaskOptions {
   notSetText?: string;
 }
 
+export function isMaskedCredential(value: string | undefined | null): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  return trimmed.includes('•') || trimmed.includes('...') || /^\*+$/.test(trimmed);
+}
+
 /**
  * Mask a credential value for safe display.
  *
