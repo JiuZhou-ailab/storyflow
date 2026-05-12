@@ -1,12 +1,13 @@
 // input: Workspace create RPC registration with Method Pack scaffolding
-// output: Regression coverage for hydrating starter sessions after workspace creation
+// output: Regression coverage for starter sessions and stale default workspace reuse
 // pos: Guards the server-side boundary between workspace scaffolding and in-memory sessions
 
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, mock } from 'bun:test'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { createNovelWorkspaceAtPath } from '@craft-agent/shared/workspaces'
 import type { HandlerFn, RequestContext, RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
@@ -107,6 +108,47 @@ describe('workspace create RPC registration', () => {
       await createWorkspace(ctx, rootPath, 'Book', { projectType: 'novel', methodPackId: 'novel.claude-book' })
 
       expect(getReloadSessionsCount()).toBe(1)
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true })
+    }
+  })
+
+  it('reinitializes an untracked stale default workspace folder before applying the selected method pack', async () => {
+    createdWorkspaces.length = 0
+    const slug = `craft-stale-default-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const rootPath = join(homedir(), '.craft-agent', 'workspaces', slug)
+    rmSync(rootPath, { recursive: true, force: true })
+    createNovelWorkspaceAtPath(rootPath, 'Old Book', undefined, 'novel.oh-story')
+    const { createWorkspace, ctx } = createWorkspaceHarness()
+
+    try {
+      await createWorkspace(ctx, rootPath, 'Book', { projectType: 'novel', methodPackId: 'novel.claude-book' })
+
+      const manifest = JSON.parse(readFileSync(join(rootPath, 'craft-writing.json'), 'utf-8')) as {
+        methodPack?: { id?: string }
+      }
+      expect(manifest.methodPack?.id).toBe('novel.claude-book')
+      expect(existsSync(join(rootPath, 'bible', 'style.md'))).toBe(true)
+      expect(existsSync(join(rootPath, '大纲', '大纲.md'))).toBe(false)
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true })
+    }
+  })
+
+  it('does not reinitialize an existing custom workspace folder when creating at an explicit path', async () => {
+    createdWorkspaces.length = 0
+    const rootPath = mkdtempSync(join(tmpdir(), 'craft-custom-stale-workspace-'))
+    createNovelWorkspaceAtPath(rootPath, 'Old Book', undefined, 'novel.oh-story')
+    const { createWorkspace, ctx } = createWorkspaceHarness()
+
+    try {
+      await createWorkspace(ctx, rootPath, 'Book', { projectType: 'novel', methodPackId: 'novel.claude-book' })
+
+      const manifest = JSON.parse(readFileSync(join(rootPath, 'craft-writing.json'), 'utf-8')) as {
+        methodPack?: { id?: string }
+      }
+      expect(manifest.methodPack?.id).toBe('novel.oh-story')
+      expect(existsSync(join(rootPath, '大纲', '大纲.md'))).toBe(true)
     } finally {
       rmSync(rootPath, { recursive: true, force: true })
     }

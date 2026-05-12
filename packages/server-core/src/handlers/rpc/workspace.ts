@@ -9,6 +9,7 @@ import { isValidWorkspaceRootPath } from '../../utils/path-validation'
 import {
   ensureWorkspaceRootForProject,
   normalizeCreateWorkspaceOptions,
+  resetStaleDefaultWorkspaceRoot,
   type CreateWorkspaceOptions,
   type WorkspaceProjectType,
 } from './workspace-creation'
@@ -63,6 +64,10 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
     }
 
     const options = normalizeCreateWorkspaceOptions(input, projectType)
+    const trackedRootPaths = getWorkspaces().map((workspace) => workspace.rootPath)
+    if (resetStaleDefaultWorkspaceRoot(rootPath, trackedRootPaths)) {
+      deps.platform.logger.info(`Reinitialized stale default workspace root at ${rootPath}`)
+    }
     ensureWorkspaceRootForProject(rootPath, name, options)
 
     const workspace = addWorkspace({ name, rootPath, ...(options.remoteServer && { remoteServer: options.remoteServer }) })
