@@ -24,6 +24,7 @@ mock.module('@craft-agent/shared/config', () => ({
     return workspace
   },
   getWorkspaceByNameOrId: (id: string) => createdWorkspaces.find(workspace => workspace.id === id) ?? null,
+  getWorkspaces: () => createdWorkspaces,
   setActiveWorkspace: () => {},
   updateWorkspaceRemoteServer: () => {},
 }))
@@ -64,6 +65,10 @@ function createWorkspaceHarness() {
         error: () => {},
         debug: () => {},
       },
+      imageProcessor: {
+        getMetadata: async () => null,
+        process: async () => Buffer.from(''),
+      },
     },
   }
 
@@ -72,6 +77,10 @@ function createWorkspaceHarness() {
   const createWorkspace = handlers.get(RPC_CHANNELS.workspaces.CREATE)
   if (!createWorkspace) {
     throw new Error('workspace create handler not registered')
+  }
+  const checkWorkspaceSlug = handlers.get(RPC_CHANNELS.workspaces.CHECK_SLUG)
+  if (!checkWorkspaceSlug) {
+    throw new Error('workspace slug check handler not registered')
   }
 
   const ctx: RequestContext = {
@@ -82,6 +91,7 @@ function createWorkspaceHarness() {
 
   return {
     createWorkspace,
+    checkWorkspaceSlug,
     ctx,
     getReloadSessionsCount: () => reloadSessionsCount,
   }
@@ -100,5 +110,35 @@ describe('workspace create RPC registration', () => {
     } finally {
       rmSync(rootPath, { recursive: true, force: true })
     }
+  })
+
+  it('does not treat an untracked default workspace folder as a slug conflict', async () => {
+    createdWorkspaces.length = 0
+    const { checkWorkspaceSlug, ctx } = createWorkspaceHarness()
+
+    const result = await checkWorkspaceSlug(ctx, 'workspace-2b7t9p')
+
+    expect(result).toEqual({
+      exists: false,
+      path: expect.stringContaining(join('.craft-agent', 'workspaces', 'workspace-2b7t9p')),
+    })
+  })
+
+  it('treats a tracked default workspace folder as a slug conflict', async () => {
+    createdWorkspaces.length = 0
+    const { checkWorkspaceSlug, ctx } = createWorkspaceHarness()
+    createdWorkspaces.push({
+      id: 'workspace-1',
+      name: 'Existing',
+      rootPath: join(process.env.HOME ?? '', '.craft-agent', 'workspaces', 'workspace-2b7t9p'),
+      slug: 'workspace-2b7t9p',
+    })
+
+    const result = await checkWorkspaceSlug(ctx, 'workspace-2b7t9p')
+
+    expect(result).toEqual({
+      exists: true,
+      path: expect.stringContaining(join('.craft-agent', 'workspaces', 'workspace-2b7t9p')),
+    })
   })
 })
