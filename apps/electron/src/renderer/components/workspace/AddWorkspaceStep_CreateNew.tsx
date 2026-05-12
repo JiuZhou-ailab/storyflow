@@ -14,6 +14,7 @@ import { AddWorkspace_RadioOption } from "./AddWorkspace_RadioOption"
 import { useDirectoryPicker } from "@/hooks/useDirectoryPicker"
 import { ServerDirectoryBrowser } from "@/components/ServerDirectoryBrowser"
 import {
+  DEFAULT_WORKSPACE_CREATION_METHOD_ID,
   buildWorkspaceFolderPath,
   buildWorkspaceCreationOptions,
   getWorkspaceCreationMethodOption,
@@ -23,7 +24,7 @@ import {
   type WorkspaceCreationMethodOption,
   type WorkspaceCreationMethodPreview,
 } from "./workspace-method-options"
-import type { MethodPackId, MethodPackRequiredPath } from "@craft-agent/shared/writing/method-packs"
+import type { MethodPackId } from "@craft-agent/shared/writing/method-packs"
 import type { WorkspaceProjectType } from "../../../shared/types"
 
 function getLocalizedMethodPreview(
@@ -38,22 +39,16 @@ export function MethodPackPreviewPanel({
   description,
   preview,
   mermaidCode,
-  fileContract,
   labels,
 }: {
   title: string
   description: string
   preview: WorkspaceCreationMethodPreview
   mermaidCode: string
-  fileContract: MethodPackRequiredPath[]
   labels: {
     logic: string
     workflow: string
-    structure: string
     assets: string
-    fileContract: string
-    file: string
-    directory: string
     bestFor: string
   }
 }) {
@@ -98,48 +93,6 @@ export function MethodPackPreviewPanel({
             ))}
           </ol>
         </section>
-
-        <section className="border-t border-foreground/10 pt-4">
-          <div className="text-xs font-medium text-foreground/75">{labels.structure}</div>
-          <div className="mt-3 space-y-3">
-            {preview.structure.map((group) => (
-              <div key={group.label}>
-                <div className="font-medium leading-5 text-foreground">{group.label}</div>
-                <ul className="mt-1 space-y-1">
-                  {group.items.map((item) => (
-                    <li key={item} className="text-xs leading-5 text-muted-foreground">
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {fileContract.length > 0 ? (
-          <section className="border-t border-foreground/10 pt-4">
-            <div className="flex items-center justify-between gap-3 text-xs font-medium text-foreground/75">
-              <span>{labels.fileContract}</span>
-              <span className="tabular-nums text-muted-foreground">{fileContract.length}</span>
-            </div>
-            <ul className="mt-3 max-h-40 space-y-1 overflow-y-auto pr-1">
-              {fileContract.map((entry) => (
-                <li
-                  key={`${entry.kind}:${entry.path}`}
-                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 text-xs leading-5"
-                >
-                  <span className="truncate font-mono text-foreground/80" title={entry.path}>
-                    {entry.path}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {entry.kind === 'file' ? labels.file : labels.directory}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
 
         <section className="border-t border-foreground/10 pt-4">
           <div className="text-xs font-medium text-foreground/75">{labels.assets}</div>
@@ -187,7 +140,7 @@ export function AddWorkspaceStep_CreateNew({
 }: AddWorkspaceStep_CreateNewProps) {
   const { t, i18n } = useTranslation()
   const [name, setName] = useState('')
-  const [selectedMethodId, setSelectedMethodId] = useState<WorkspaceCreationMethodId>('novel.claude-book')
+  const [selectedMethodId, setSelectedMethodId] = useState<WorkspaceCreationMethodId>(DEFAULT_WORKSPACE_CREATION_METHOD_ID)
   const [locationOption, setLocationOption] = useState<WorkspaceCreationLocationOption>('default')
   const [customPath, setCustomPath] = useState<string | null>(null)
   const [homeDir, setHomeDir] = useState('')
@@ -376,15 +329,10 @@ export function AddWorkspaceStep_CreateNew({
           description={selectedMethodPreviewDescription}
           preview={selectedMethodPreview}
           mermaidCode={selectedMethodPreviewMermaid}
-          fileContract={selectedMethodOption.fileContract}
           labels={{
             logic: "方法逻辑",
             workflow: "流程图",
-            structure: "结构层",
             assets: "工作区资产",
-            fileContract: "文件契约",
-            file: "文件",
-            directory: "目录",
             bestFor: "适合项目",
           }}
         />

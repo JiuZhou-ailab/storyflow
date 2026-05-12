@@ -12,6 +12,7 @@ import {
 
 export type WorkspaceCreationMethodId = MethodPackId
 export type WorkspaceCreationLocationOption = "default" | "custom"
+export const DEFAULT_WORKSPACE_CREATION_METHOD_ID = "novel.claude-book" satisfies WorkspaceCreationMethodId
 
 export interface WorkspaceCreationMethodPreview {
   accent: "neutral" | "canon" | "market" | "structure" | "craft"
@@ -94,9 +95,9 @@ export const WORKSPACE_CREATION_METHOD_OPTIONS = [
     subtitleKey: "workspace.methodOptions.claudeBookNovel.subtitle",
     previewMermaidKey: "workspace.methodOptions.claudeBookNovel.previewMermaid",
     previewDescriptionKey: "workspace.methodOptions.claudeBookNovel.previewDescription",
-    fallbackTitle: "Claude-Book 长篇小说法",
+    fallbackTitle: "Claude-Book 小说法",
     fallbackSubtitle: "以项目圣经、章节计划、当前状态和时间线维护长篇一致性。",
-    fallbackPreviewMermaid: "flowchart TD\n  A[项目圣经] --> B[故事梗概与章节计划]\n  B --> C[章节草稿]\n  C --> D[当前状态]\n  D --> B\n  C --> E[时间线]\n  E --> B",
+    fallbackPreviewMermaid: "flowchart TD\n  A[项目圣经] --> A1[风格指南]\n  A --> A2[角色档案]\n  A --> A3[世界设定]\n  A1 --> B[故事梗概]\n  A2 --> B\n  A3 --> B\n  B --> C[章节计划]\n  C --> D[章节草稿]\n  D --> E[连续性检查]\n  E --> F[当前状态]\n  E --> G[时间线]\n  F --> C\n  G --> C\n  D --> H[写作技能]",
     fallbackPreviewDescription: "适合需要稳定世界观、章节计划、连续性状态和时间线维护的长篇小说。",
     richPreview: {
       accent: "canon",
@@ -145,7 +146,7 @@ export const WORKSPACE_CREATION_METHOD_OPTIONS = [
     previewDescriptionKey: "workspace.methodOptions.ohStoryNovel.previewDescription",
     fallbackTitle: "Oh Story 网文连载法",
     fallbackSubtitle: "围绕题材定位、对标拆文、章节钩子、追读节奏和去 AI 味组织网文。",
-    fallbackPreviewMermaid: "flowchart TD\n  A[题材定位] --> B[设定]\n  B --> C[大纲]\n  C --> D[正文连载]\n  D --> E[追踪伏笔与时间线]\n  D --> F[对标与拆文]\n  F --> C\n  E --> C",
+    fallbackPreviewMermaid: "flowchart TD\n  A[题材定位] --> A1[平台节奏]\n  A --> A2[读者承诺]\n  A1 --> B[设定]\n  A2 --> B\n  B --> C[对标作品]\n  C --> D[拆文策略]\n  D --> E[卷章大纲]\n  E --> F[章节钩子]\n  F --> G[正文连载]\n  G --> H[伏笔追踪]\n  G --> I[去 AI 味清理]\n  H --> E\n  I --> G",
     fallbackPreviewDescription: "适合需要市场定位、对标拆文、更新节奏、连续性追踪和章节钩子的连载网文。",
     richPreview: {
       accent: "market",
@@ -194,7 +195,7 @@ export const WORKSPACE_CREATION_METHOD_OPTIONS = [
     previewDescriptionKey: "workspace.methodOptions.crucibleNovel.previewDescription",
     fallbackTitle: "Crucible 结构长篇法",
     fallbackSubtitle: "用三条叙事线、36 个 beats、forge points 和审校关卡管理强结构长篇。",
-    fallbackPreviewMermaid: "flowchart TD\n  A[主题与主角负担] --> B[三条叙事线]\n  B --> C[36 个 Beats]\n  C --> D[Forge Points]\n  D --> E[章节大纲]\n  E --> F[起草与审校]\n  F --> D",
+    fallbackPreviewMermaid: "flowchart TD\n  A[主题与主角负担] --> B[反派镜像]\n  B --> C[三条叙事线]\n  C --> C1[外部任务线]\n  C --> C2[内部火焰线]\n  C --> C3[关系压力线]\n  C1 --> D[36 个 Beats]\n  C2 --> D\n  C3 --> D\n  D --> E[Forge Points]\n  E --> F[章节大纲]\n  F --> G[章节草稿]\n  G --> H[审校关卡]\n  H --> E",
     fallbackPreviewDescription: "适合史诗奇幻或强结构长篇，尤其适合多线叙事、明确节拍治理和审校关卡。",
     richPreview: {
       accent: "structure",
@@ -243,7 +244,7 @@ export const WORKSPACE_CREATION_METHOD_OPTIONS = [
     previewDescriptionKey: "workspace.methodOptions.creativeWritingNovel.previewDescription",
     fallbackTitle: "Creative Writing 技法工坊",
     fallbackSubtitle: "用知识库、声线捕捉、自由探索、批评反馈和修订循环支持弹性小说创作。",
-    fallbackPreviewMermaid: "flowchart TD\n  A[知识库] --> B[头脑风暴]\n  B --> C[大纲与场景实验]\n  C --> D[章节草稿]\n  D --> E[批评报告]\n  E --> F[修订]\n  F --> A",
+    fallbackPreviewMermaid: "flowchart TD\n  A[知识库] --> A1[Canon 事实]\n  A --> A2[声线参考]\n  A --> A3[时间线]\n  A1 --> B[头脑风暴]\n  A2 --> B\n  A3 --> B\n  B --> C[大纲与场景实验]\n  C --> D[章节草稿]\n  D --> E[批评报告]\n  E --> F[行文修正]\n  F --> G[修订稿]\n  G --> A",
     fallbackPreviewDescription: "适合流程要保持弹性，但仍需要沉淀知识库、声线参考、批评报告和修订循环的小说项目。",
     richPreview: {
       accent: "craft",

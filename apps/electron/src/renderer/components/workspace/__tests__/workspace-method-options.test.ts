@@ -15,6 +15,7 @@ import {
 } from '@craft-agent/shared/writing/method-packs'
 import { slugify } from '../../../lib/slugify'
 import {
+  DEFAULT_WORKSPACE_CREATION_METHOD_ID,
   buildWorkspaceFolderPath,
   buildWorkspaceCreationOptions,
   WORKSPACE_CREATION_METHOD_OPTIONS,
@@ -36,7 +37,8 @@ describe('workspace creation method options', () => {
     const crucibleOption = WORKSPACE_CREATION_METHOD_OPTIONS.find(option => option.id === 'novel.crucible')
     const creativeOption = WORKSPACE_CREATION_METHOD_OPTIONS.find(option => option.id === 'novel.creative-writing')
 
-    expect(novelOption?.fallbackTitle).toBe('Claude-Book 长篇小说法')
+    expect(novelOption?.fallbackTitle).toBe('Claude-Book 小说法')
+    expect(novelOption?.fallbackTitle).not.toContain('长篇')
     expect(novelOption?.fallbackSubtitle).toMatch(/[\u4e00-\u9fff]/)
     expect(novelOption?.fallbackPreviewDescription).toContain('长篇小说')
     expect(novelOption?.fallbackPreviewMermaid).toContain('项目圣经')
@@ -45,11 +47,16 @@ describe('workspace creation method options', () => {
     expect(creativeOption?.fallbackTitle).toBe('Creative Writing 技法工坊')
   })
 
+  it('uses Claude-Book as the default creation method', () => {
+    expect(DEFAULT_WORKSPACE_CREATION_METHOD_ID).toBe('novel.claude-book')
+  })
+
   it('provides a preview diagram and description for each creation method', () => {
     for (const option of WORKSPACE_CREATION_METHOD_OPTIONS) {
       expect(option.previewMermaidKey).toBe(`workspace.methodOptions.${option.previewKey}.previewMermaid`)
       expect(option.previewDescriptionKey).toBe(`workspace.methodOptions.${option.previewKey}.previewDescription`)
       expect(option.fallbackPreviewMermaid).toContain('flowchart TD')
+      expect(option.fallbackPreviewMermaid.match(/-->/g)?.length ?? 0).toBeGreaterThanOrEqual(10)
       expect(option.fallbackPreviewDescription.length).toBeGreaterThan(20)
       expect(option.fallbackPreviewMermaid).toMatch(/[\u4e00-\u9fff]/)
       expect(option.richPreview.thesis.length).toBeGreaterThan(30)
