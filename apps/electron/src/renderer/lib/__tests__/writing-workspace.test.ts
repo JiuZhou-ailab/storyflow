@@ -157,6 +157,47 @@ describe('writing workspace helpers', () => {
     ])
   })
 
+  it('maps short-form article workspace files into the writing workspace projection', () => {
+    const files = mapSearchResultsToNovelWorkspaceFiles([
+      { name: 'reader-promise.md', path: '/short/brief/reader-promise.md', relativePath: 'brief/reader-promise.md', type: 'file' },
+      { name: 'source-cards.md', path: '/short/notes/source-cards.md', relativePath: 'notes/source-cards.md', type: 'file' },
+      { name: 'voice.md', path: '/short/style/voice.md', relativePath: 'style/voice.md', type: 'file' },
+      { name: 'draft-1.md', path: '/short/drafts/draft-1.md', relativePath: 'drafts/draft-1.md', type: 'file' },
+      { name: 'final.md', path: '/short/published/final.md', relativePath: 'published/final.md', type: 'file' },
+    ])
+
+    expect(files.map(file => file.relativePath)).toEqual([
+      'brief/reader-promise.md',
+      'notes/source-cards.md',
+      'style/voice.md',
+      'drafts/draft-1.md',
+      'published/final.md',
+    ])
+
+    const tree = buildNovelWorkspaceTree(files)
+    expect(tree.outline.files.map(file => file.relativePath)).toEqual(['brief/reader-promise.md'])
+    expect(tree.analysis.files.map(file => file.relativePath)).toEqual(['notes/source-cards.md'])
+    expect(tree.style.files.map(file => file.relativePath)).toEqual(['style/voice.md'])
+    expect(tree.manuscript.files.map(file => file.relativePath)).toEqual(['drafts/draft-1.md', 'published/final.md'])
+  })
+
+  it('maps short-drama workspace files into the writing workspace projection', () => {
+    const files = mapSearchResultsToNovelWorkspaceFiles([
+      { name: 'audience.md', path: '/drama/brief/audience.md', relativePath: 'brief/audience.md', type: 'file' },
+      { name: 'characters.md', path: '/drama/series/characters.md', relativePath: 'series/characters.md', type: 'file' },
+      { name: 'world.md', path: '/drama/series/world.md', relativePath: 'series/world.md', type: 'file' },
+      { name: 'episode-01.md', path: '/drama/episodes/drafts/episode-01.md', relativePath: 'episodes/drafts/episode-01.md', type: 'file' },
+      { name: 'hook.md', path: '/drama/reviews/hook.md', relativePath: 'reviews/hook.md', type: 'file' },
+    ])
+
+    const tree = buildNovelWorkspaceTree(files)
+    expect(tree.outline.files.map(file => file.relativePath)).toEqual(['brief/audience.md'])
+    expect(tree.characters.files.map(file => file.relativePath)).toEqual(['series/characters.md'])
+    expect(tree.locations.files.map(file => file.relativePath)).toEqual(['series/world.md'])
+    expect(tree.manuscript.files.map(file => file.relativePath)).toEqual(['episodes/drafts/episode-01.md'])
+    expect(tree.analysis.files.map(file => file.relativePath)).toEqual(['reviews/hook.md'])
+  })
+
   it('defines targeted searches for the fixed novel workspace catalog', () => {
     expect(NOVEL_WORKSPACE_FILE_SEARCH_QUERIES).toEqual([
       'story/chapters',
@@ -178,6 +219,16 @@ describe('writing workspace helpers', () => {
       'planning',
       'outline',
       'draft',
+      'brief',
+      'notes',
+      'style',
+      'drafts',
+      'revisions',
+      'published',
+      'reviews',
+      'series',
+      'reference',
+      'episodes',
       'work',
       'kb',
     ])

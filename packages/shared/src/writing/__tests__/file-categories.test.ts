@@ -59,6 +59,21 @@ describe("categorizeNovelPath", () => {
     expect(categorizeNovelPath("kb/issues/open.md")).toBe("analysis");
   });
 
+  it("categorizes short-form article and drama files", () => {
+    expect(categorizeNovelPath("brief/reader-promise.md")).toBe("outline");
+    expect(categorizeNovelPath("notes/source-cards.md")).toBe("analysis");
+    expect(categorizeNovelPath("style/voice.md")).toBe("style");
+    expect(categorizeNovelPath("drafts/draft-1.md")).toBe("manuscript");
+    expect(categorizeNovelPath("published/final.md")).toBe("manuscript");
+    expect(categorizeNovelPath("revisions/social-post.md")).toBe("work");
+    expect(categorizeNovelPath("reviews/clarity.md")).toBe("analysis");
+    expect(categorizeNovelPath("series/characters.md")).toBe("characters");
+    expect(categorizeNovelPath("series/world.md")).toBe("locations");
+    expect(categorizeNovelPath("series/season-arc.md")).toBe("outline");
+    expect(categorizeNovelPath("episodes/drafts/episode-01.md")).toBe("manuscript");
+    expect(categorizeNovelPath("reference/benchmark.md")).toBe("analysis");
+  });
+
   it("falls back to other for unknown paths", () => {
     expect(categorizeNovelPath("README.md")).toBe("other");
     expect(categorizeNovelPath("story/random-note.md")).toBe("other");
