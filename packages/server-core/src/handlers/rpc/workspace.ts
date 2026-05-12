@@ -67,6 +67,7 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
     ensureWorkspaceRootForProject(rootPath, name, options)
 
     const workspace = addWorkspace({ name, rootPath, ...(options.remoteServer && { remoteServer: options.remoteServer }) })
+    sessionManager.reloadSessions()
     // Make it active
     setActiveWorkspace(workspace.id)
     deps.platform.logger.info(`Created workspace "${name}" at ${rootPath}${options.remoteServer ? ` (remote: ${options.remoteServer.url})` : ''}`)

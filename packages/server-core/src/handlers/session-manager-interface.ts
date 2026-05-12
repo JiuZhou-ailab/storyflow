@@ -193,6 +193,7 @@ export interface ISessionManager {
   // ---------------------------------------------------------------------------
 
   getSessionPath(sessionId: string): string | null
+  reloadSessions(): void
   refreshTitle(sessionId: string): Promise<{ success: boolean; title?: string; error?: string }>
   refreshBadge(): void
   getUnreadSummary(): UnreadSummary
