@@ -3,7 +3,7 @@
 // pos: Shared storage guard for Method Pack-backed workspace creation
 
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createNovelProjectScaffold } from "../../writing/novel-template.ts";
@@ -118,5 +118,31 @@ describe("createNovelWorkspaceAtPath", () => {
     expect(sessionContent).toContain("目标读者");
     expect(sessionContent).toContain("Method Pack: short-form.article");
     expect(sessionContent).not.toContain("I created a short-form writing workspace");
+  });
+
+  it("repairs stale generated starter sessions for every built-in method pack", () => {
+    for (const methodPack of getBuiltInMethodPacks()) {
+      const rootPath = mkdtempSync(join(tmpdir(), "craft-stale-method-starter-session-"));
+
+      createNovelWorkspaceAtPath(rootPath, methodPack.displayName, undefined, methodPack.id);
+
+      const sessionIds = readdirSync(join(rootPath, "sessions"));
+      const sessionPath = join(rootPath, "sessions", sessionIds[0]!, "session.jsonl");
+      const lines = readFileSync(sessionPath, "utf-8").trim().split(/\r?\n/);
+      const staleMessage = {
+        ...JSON.parse(lines[1] ?? "{}"),
+        content: `I created a short-form writing workspace. Start by sharing the target reader, platform, intended length, central claim or reader promise, source material, examples you like, and whether the first piece should be an essay, newsletter, social post, blog article, memo, or opinion piece.\n\nMethod Pack: ${methodPack.id}`,
+      };
+      writeFileSync(sessionPath, `${lines[0]}\n${JSON.stringify(staleMessage)}\n`, "utf-8");
+
+      expect(loadWorkspaceConfig(rootPath)).not.toBeNull();
+
+      const repairedContent = readFileSync(sessionPath, "utf-8");
+      const repairedMessage = JSON.parse(repairedContent.trim().split(/\r?\n/)[1] ?? "{}") as { content?: string };
+      expect(repairedMessage.content).toContain(methodPack.starterMessage);
+      expect(repairedMessage.content).toContain(`Method Pack: ${methodPack.id}`);
+      expect(repairedMessage.content).not.toContain("I created a short-form writing workspace");
+      expect(repairedMessage.content).not.toContain("Start by sharing");
+    }
   });
 });
