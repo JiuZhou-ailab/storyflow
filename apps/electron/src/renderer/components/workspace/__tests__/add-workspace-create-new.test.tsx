@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it, mock } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { setupI18n } from '@craft-agent/shared/i18n/setupI18n'
 import { initReactI18next } from 'react-i18next'
+import { ModalProvider } from '../../../context/ModalContext'
 import { getWorkspaceCreationMethodOption } from '../workspace-method-options'
 
 mock.module('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '' }))
@@ -18,13 +19,30 @@ mock.module('beautiful-mermaid', () => ({
 setupI18n([initReactI18next])
 
 let MethodPackPreviewPanel: typeof import('../AddWorkspaceStep_CreateNew').MethodPackPreviewPanel
+let AddWorkspaceStep_CreateNew: typeof import('../AddWorkspaceStep_CreateNew').AddWorkspaceStep_CreateNew
 
 beforeAll(async () => {
   const module = await import('../AddWorkspaceStep_CreateNew')
   MethodPackPreviewPanel = module.MethodPackPreviewPanel
+  AddWorkspaceStep_CreateNew = module.AddWorkspaceStep_CreateNew
 })
 
 describe('AddWorkspaceStep_CreateNew preview panel', () => {
+  it('allocates a wider desktop preview column for workflow diagrams', () => {
+    const html = renderToStaticMarkup(
+      <ModalProvider>
+        <AddWorkspaceStep_CreateNew
+          onBack={() => {}}
+          onCreate={async () => {}}
+          isCreating={false}
+        />
+      </ModalProvider>
+    )
+
+    expect(html).toContain('max-w-[88rem]')
+    expect(html).toContain('lg:grid-cols-[minmax(0,0.75fr)_minmax(32rem,1.25fr)]')
+  })
+
   it('omits structure and file contract explanations from the default preview', () => {
     const option = getWorkspaceCreationMethodOption('novel.claude-book')
     const html = renderToStaticMarkup(

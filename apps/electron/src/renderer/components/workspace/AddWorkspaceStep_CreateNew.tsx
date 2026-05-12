@@ -214,7 +214,7 @@ export function AddWorkspaceStep_CreateNew({
   const selectedMethodPreview = getLocalizedMethodPreview(selectedMethodOption, i18n.language)
 
   return (
-    <AddWorkspaceContainer className="max-h-[calc(100vh-7rem)] max-w-[64rem] items-stretch overflow-y-auto">
+    <AddWorkspaceContainer className="max-h-[calc(100vh-7rem)] max-w-[88rem] items-stretch overflow-y-auto">
       {/* Back button */}
       <button
         onClick={onBack}
@@ -234,7 +234,7 @@ export function AddWorkspaceStep_CreateNew({
         description={t("workspace.createWorkspaceDesc")}
       />
 
-      <div className="mt-6 grid w-full gap-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(20rem,0.95fr)]">
+      <div className="mt-6 grid w-full gap-6 lg:grid-cols-[minmax(0,0.75fr)_minmax(32rem,1.25fr)]">
         <div className="space-y-6">
           {/* Workspace name */}
           <div className="space-y-2">
