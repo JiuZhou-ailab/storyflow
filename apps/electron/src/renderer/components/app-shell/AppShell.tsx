@@ -650,6 +650,7 @@ function AppShellContent({
     activeWorkspaceId,
     sessionOptions,
     onSelectWorkspace,
+    onWorkspaceCreated,
     onRefreshWorkspaces,
     onDeleteSession,
     onFlagSession,
@@ -3185,7 +3186,7 @@ function AppShellContent({
           activeWorkspaceId={activeWorkspaceId}
           onSelectWorkspace={onSelectWorkspace}
           workspaceUnreadMap={workspaceUnreadMap}
-          onWorkspaceCreated={() => onRefreshWorkspaces?.()}
+          onWorkspaceCreated={(workspace) => onWorkspaceCreated?.(workspace) ?? onRefreshWorkspaces?.()}
           onWorkspaceRemoved={() => onRefreshWorkspaces?.()}
           activeSessionId={effectiveSessionId}
           onNewChat={() => handleNewChat()}

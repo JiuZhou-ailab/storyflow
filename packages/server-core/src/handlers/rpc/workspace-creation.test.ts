@@ -1,8 +1,13 @@
+// input: Workspace creation RPC normalization and project root scaffolding helpers
+// output: Regression tests for Method Pack option propagation
+// pos: Server-core guard for new workspace creation behavior
+
 import { describe, expect, it } from 'bun:test'
 import {
   ensureWorkspaceRootForProject,
   normalizeCreateWorkspaceOptions,
 } from './workspace-creation'
+import { getBuiltInMethodPacks } from '@craft-agent/shared/writing/method-packs'
 
 describe('normalizeCreateWorkspaceOptions', () => {
   it('keeps legacy remoteServer argument while accepting projectType as a fourth argument', () => {
@@ -94,30 +99,19 @@ describe('ensureWorkspaceRootForProject', () => {
     expect(created).toEqual([])
   })
 
-  it('creates the novel scaffold for an explicit Claude-Book method pack', () => {
-    const created: Array<{ rootPath: string; name: string; methodPackId?: string }> = []
+  it('creates the novel scaffold for each explicit built-in method pack', () => {
+    for (const methodPack of getBuiltInMethodPacks()) {
+      const created: Array<{ rootPath: string; name: string; methodPackId?: string }> = []
 
-    ensureWorkspaceRootForProject('/tmp/book', 'Book', { methodPackId: 'novel.claude-book' }, {
-      isValidWorkspace: () => false,
-      createNovelWorkspaceAtPath: (rootPath, name, methodPackId) => {
-        created.push({ rootPath, name, methodPackId })
-      },
-    })
+      ensureWorkspaceRootForProject('/tmp/book', 'Book', { methodPackId: methodPack.id }, {
+        isValidWorkspace: () => false,
+        createNovelWorkspaceAtPath: (rootPath, name, methodPackId) => {
+          created.push({ rootPath, name, methodPackId })
+        },
+      })
 
-    expect(created).toEqual([{ rootPath: '/tmp/book', name: 'Book', methodPackId: 'novel.claude-book' }])
-  })
-
-  it('creates the novel scaffold for an explicit Oh Story method pack', () => {
-    const created: Array<{ rootPath: string; name: string; methodPackId?: string }> = []
-
-    ensureWorkspaceRootForProject('/tmp/book', 'Book', { methodPackId: 'novel.oh-story' }, {
-      isValidWorkspace: () => false,
-      createNovelWorkspaceAtPath: (rootPath, name, methodPackId) => {
-        created.push({ rootPath, name, methodPackId })
-      },
-    })
-
-    expect(created).toEqual([{ rootPath: '/tmp/book', name: 'Book', methodPackId: 'novel.oh-story' }])
+      expect(created).toEqual([{ rootPath: '/tmp/book', name: 'Book', methodPackId: methodPack.id }])
+    }
   })
 
   it('rejects unknown method packs', () => {

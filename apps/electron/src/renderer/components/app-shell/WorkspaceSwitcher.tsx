@@ -29,7 +29,7 @@ interface WorkspaceSwitcherProps {
   workspaces: Workspace[]
   activeWorkspaceId: string | null
   onSelect: (workspaceId: string, openInNewWindow?: boolean) => void | Promise<void>
-  onWorkspaceCreated?: (workspace: Workspace) => void
+  onWorkspaceCreated?: (workspace: Workspace) => void | Promise<void>
   onWorkspaceRemoved?: () => void
   /** workspaceId -> has unread */
   workspaceUnreadMap?: Record<string, boolean>
@@ -129,12 +129,12 @@ export function WorkspaceSwitcher({
     setFullscreenOverlayOpen(true)
   }
 
-  const handleWorkspaceCreated = (workspace: Workspace) => {
+  const handleWorkspaceCreated = async (workspace: Workspace) => {
     setShowCreationScreen(false)
     setFullscreenOverlayOpen(false)
     toast.success(t('toast.createdWorkspace', { name: workspace.name }))
-    onWorkspaceCreated?.(workspace)
-    onSelect(workspace.id)
+    await onWorkspaceCreated?.(workspace)
+    await onSelect(workspace.id)
   }
 
   const handleRemoveWorkspace = useCallback(async (workspace: Workspace) => {

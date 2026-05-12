@@ -4,7 +4,8 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { useTranslation } from "react-i18next"
-import { ArrowLeft, CheckCircle2, FolderTree, GitBranch, Target } from "lucide-react"
+import { ArrowLeft } from "lucide-react"
+import { MarkdownMermaidBlock } from "@craft-agent/ui/markdown"
 import { cn } from "@/lib/utils"
 import { slugify } from "@/lib/slugify"
 import { Input } from "../ui/input"
@@ -13,158 +14,148 @@ import { AddWorkspace_RadioOption } from "./AddWorkspace_RadioOption"
 import { useDirectoryPicker } from "@/hooks/useDirectoryPicker"
 import { ServerDirectoryBrowser } from "@/components/ServerDirectoryBrowser"
 import {
+  buildWorkspaceFolderPath,
   buildWorkspaceCreationOptions,
   getWorkspaceCreationMethodOption,
   WORKSPACE_CREATION_METHOD_OPTIONS,
+  type WorkspaceCreationLocationOption,
   type WorkspaceCreationMethodId,
   type WorkspaceCreationMethodOption,
   type WorkspaceCreationMethodPreview,
 } from "./workspace-method-options"
-import type { MethodPackId } from "@craft-agent/shared/writing/method-packs"
+import type { MethodPackId, MethodPackRequiredPath } from "@craft-agent/shared/writing/method-packs"
 import type { WorkspaceProjectType } from "../../../shared/types"
-
-type LocationOption = 'default' | 'custom'
 
 function getLocalizedMethodPreview(
   option: WorkspaceCreationMethodOption,
-  language: string | undefined,
+  _language: string | undefined,
 ): WorkspaceCreationMethodPreview {
-  return language?.startsWith('zh') ? option.richPreviewZh : option.richPreview
+  return option.richPreview
 }
 
-const previewAccentClasses: Record<WorkspaceCreationMethodPreview['accent'], {
-  panel: string
-  line: string
-  node: string
-  badge: string
-}> = {
-  neutral: {
-    panel: 'from-foreground/[0.025] to-background',
-    line: 'bg-foreground/20',
-    node: 'border-foreground/15 bg-background',
-    badge: 'bg-foreground/[0.06] text-foreground/70',
-  },
-  canon: {
-    panel: 'from-violet-500/[0.08] to-background',
-    line: 'bg-violet-500/35',
-    node: 'border-violet-500/25 bg-violet-500/[0.04]',
-    badge: 'bg-violet-500/[0.10] text-violet-700 dark:text-violet-300',
-  },
-  market: {
-    panel: 'from-emerald-500/[0.08] to-background',
-    line: 'bg-emerald-500/35',
-    node: 'border-emerald-500/25 bg-emerald-500/[0.04]',
-    badge: 'bg-emerald-500/[0.10] text-emerald-700 dark:text-emerald-300',
-  },
-  structure: {
-    panel: 'from-amber-500/[0.10] to-background',
-    line: 'bg-amber-500/40',
-    node: 'border-amber-500/30 bg-amber-500/[0.05]',
-    badge: 'bg-amber-500/[0.12] text-amber-800 dark:text-amber-300',
-  },
-  craft: {
-    panel: 'from-sky-500/[0.08] to-background',
-    line: 'bg-sky-500/35',
-    node: 'border-sky-500/25 bg-sky-500/[0.04]',
-    badge: 'bg-sky-500/[0.10] text-sky-700 dark:text-sky-300',
-  },
-}
-
-function MethodPackPreviewPanel({
+export function MethodPackPreviewPanel({
   title,
   description,
   preview,
+  mermaidCode,
+  fileContract,
   labels,
 }: {
   title: string
   description: string
   preview: WorkspaceCreationMethodPreview
+  mermaidCode: string
+  fileContract: MethodPackRequiredPath[]
   labels: {
     logic: string
     workflow: string
+    structure: string
     assets: string
+    fileContract: string
+    file: string
+    directory: string
     bestFor: string
   }
 }) {
-  const accent = previewAccentClasses[preview.accent]
-
   return (
     <aside
       className={cn(
-        "flex min-h-[28rem] flex-col border-t border-foreground/10 pt-5",
+        "flex min-h-[28rem] flex-col border-t border-foreground/10 pt-5 text-sm",
         "lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0"
       )}
       aria-live="polite"
     >
-      <div>
+      <div className="space-y-4">
         <div className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
           {labels.logic}
         </div>
-        <h2 className="mt-1 text-sm font-semibold text-foreground">
-          {title}
-        </h2>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          {preview.thesis}
-        </p>
-      </div>
-
-      <div className={cn(
-        "mt-4 flex min-h-[18rem] flex-1 flex-col overflow-hidden rounded-lg border border-foreground/10 bg-linear-to-br p-4 shadow-minimal",
-        accent.panel
-      )}>
-        <div className="flex items-center gap-2 text-xs font-medium text-foreground/75">
-          <GitBranch className="h-3.5 w-3.5" />
-          {labels.workflow}
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+          <p className="mt-2 leading-6 text-muted-foreground">{preview.thesis}</p>
+          <p className="mt-2 leading-6 text-muted-foreground">{description}</p>
         </div>
 
-        <div className="mt-4 grid flex-1 content-center gap-3">
-          {preview.stages.map((stage, index) => (
-            <div key={stage.label} className="relative flex items-start gap-3">
-              {index < preview.stages.length - 1 ? (
-                <div className={cn("absolute left-[0.95rem] top-8 h-[calc(100%+0.25rem)] w-px", accent.line)} />
-              ) : null}
-              <div className={cn(
-                "relative z-[1] flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold",
-                accent.node
-              )}>
-                {index + 1}
-              </div>
-              <div className={cn("min-w-0 rounded-md border px-3 py-2", accent.node)}>
-                <div className="text-sm font-semibold leading-5 text-foreground">
-                  {stage.label}
+        <section className="border-t border-foreground/10 pt-4">
+          <div className="text-xs font-medium text-foreground/75">{labels.workflow}</div>
+          <MarkdownMermaidBlock
+            code={mermaidCode}
+            className="mt-3"
+            showExpandButton={false}
+            tapToOpen={false}
+            minHeight={160}
+          />
+          <ol className="mt-3 space-y-3">
+            {preview.stages.map((stage, index) => (
+              <li key={stage.label} className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-3">
+                <span className="pt-0.5 text-xs tabular-nums text-muted-foreground">
+                  {index + 1}.
+                </span>
+                <div>
+                  <div className="font-medium leading-5 text-foreground">{stage.label}</div>
+                  <div className="mt-1 text-xs leading-5 text-muted-foreground">{stage.detail}</div>
                 </div>
-                <div className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                  {stage.detail}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+              </li>
+            ))}
+          </ol>
+        </section>
 
-        <div className="mt-4 border-t border-foreground/10 pt-3">
-          <div className="flex items-center gap-2 text-xs font-medium text-foreground/75">
-            <FolderTree className="h-3.5 w-3.5" />
-            {labels.assets}
+        <section className="border-t border-foreground/10 pt-4">
+          <div className="text-xs font-medium text-foreground/75">{labels.structure}</div>
+          <div className="mt-3 space-y-3">
+            {preview.structure.map((group) => (
+              <div key={group.label}>
+                <div className="font-medium leading-5 text-foreground">{group.label}</div>
+                <ul className="mt-1 space-y-1">
+                  {group.items.map((item) => (
+                    <li key={item} className="text-xs leading-5 text-muted-foreground">
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
+        </section>
+
+        {fileContract.length > 0 ? (
+          <section className="border-t border-foreground/10 pt-4">
+            <div className="flex items-center justify-between gap-3 text-xs font-medium text-foreground/75">
+              <span>{labels.fileContract}</span>
+              <span className="tabular-nums text-muted-foreground">{fileContract.length}</span>
+            </div>
+            <ul className="mt-3 max-h-40 space-y-1 overflow-y-auto pr-1">
+              {fileContract.map((entry) => (
+                <li
+                  key={`${entry.kind}:${entry.path}`}
+                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 text-xs leading-5"
+                >
+                  <span className="truncate font-mono text-foreground/80" title={entry.path}>
+                    {entry.path}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {entry.kind === 'file' ? labels.file : labels.directory}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        <section className="border-t border-foreground/10 pt-4">
+          <div className="text-xs font-medium text-foreground/75">{labels.assets}</div>
+          <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1">
             {preview.assets.map((asset) => (
-              <span key={asset} className={cn("rounded-[5px] px-2 py-1 text-[11px] font-medium", accent.badge)}>
+              <span key={asset} className="font-mono text-[11px] leading-5 text-muted-foreground">
                 {asset}
               </span>
             ))}
           </div>
-        </div>
-      </div>
+        </section>
 
-      <div className="mt-4 space-y-3">
-        <div className="flex items-start gap-2 text-sm leading-6 text-muted-foreground">
-          <Target className="mt-1 h-4 w-4 shrink-0 text-foreground/50" />
-          <span>{preview.bestFor}</span>
-        </div>
-        <div className="flex items-start gap-2 text-sm leading-6 text-muted-foreground">
-          <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-foreground/50" />
-          <span>{description}</span>
-        </div>
+        <section className="border-t border-foreground/10 pt-4">
+          <div className="text-xs font-medium text-foreground/75">{labels.bestFor}</div>
+          <p className="mt-2 leading-6 text-muted-foreground">{preview.bestFor}</p>
+        </section>
       </div>
     </aside>
   )
@@ -196,8 +187,8 @@ export function AddWorkspaceStep_CreateNew({
 }: AddWorkspaceStep_CreateNewProps) {
   const { t, i18n } = useTranslation()
   const [name, setName] = useState('')
-  const [selectedMethodId, setSelectedMethodId] = useState<WorkspaceCreationMethodId>('general')
-  const [locationOption, setLocationOption] = useState<LocationOption>('default')
+  const [selectedMethodId, setSelectedMethodId] = useState<WorkspaceCreationMethodId>('novel.claude-book')
+  const [locationOption, setLocationOption] = useState<WorkspaceCreationLocationOption>('default')
   const [customPath, setCustomPath] = useState<string | null>(null)
   const [homeDir, setHomeDir] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -209,12 +200,12 @@ export function AddWorkspaceStep_CreateNew({
   }, [])
 
   const slug = slugify(name)
-  const defaultBasePath = homeDir ? `${homeDir}/.craft-agent/workspaces` : null
-  const finalPath = locationOption === 'default'
-    ? (defaultBasePath && slug ? `${defaultBasePath}/${slug}` : null)
-    : customPath && slug
-      ? `${customPath}/${slug}`
-      : null
+  const finalPath = buildWorkspaceFolderPath({
+    homeDir,
+    name,
+    customPath,
+    locationOption,
+  })
 
   // Validate slug uniqueness when name changes
   useEffect(() => {
@@ -264,8 +255,9 @@ export function AddWorkspaceStep_CreateNew({
 
   const canCreate = name.trim() && finalPath && !error && !isValidating && !isCreating
   const selectedMethodOption = getWorkspaceCreationMethodOption(selectedMethodId)
-  const selectedMethodTitle = t(selectedMethodOption.titleKey, { defaultValue: selectedMethodOption.fallbackTitle })
-  const selectedMethodPreviewDescription = t(selectedMethodOption.previewDescriptionKey, { defaultValue: selectedMethodOption.fallbackPreviewDescription })
+  const selectedMethodTitle = selectedMethodOption.fallbackTitle
+  const selectedMethodPreviewDescription = selectedMethodOption.fallbackPreviewDescription
+  const selectedMethodPreviewMermaid = selectedMethodOption.fallbackPreviewMermaid
   const selectedMethodPreview = getLocalizedMethodPreview(selectedMethodOption, i18n.language)
 
   return (
@@ -324,8 +316,8 @@ export function AddWorkspaceStep_CreateNew({
                 checked={selectedMethodId === option.id}
                 onChange={() => setSelectedMethodId(option.id)}
                 disabled={isCreating}
-                title={t(option.titleKey, { defaultValue: option.fallbackTitle })}
-                subtitle={t(option.subtitleKey, { defaultValue: option.fallbackSubtitle })}
+                title={option.fallbackTitle}
+                subtitle={option.fallbackSubtitle}
               />
             ))}
           </div>
@@ -383,11 +375,17 @@ export function AddWorkspaceStep_CreateNew({
           title={selectedMethodTitle}
           description={selectedMethodPreviewDescription}
           preview={selectedMethodPreview}
+          mermaidCode={selectedMethodPreviewMermaid}
+          fileContract={selectedMethodOption.fileContract}
           labels={{
-            logic: t("workspace.methodPreviewLabel", { defaultValue: "Method logic" }),
-            workflow: t("workspace.methodPreviewWorkflow", { defaultValue: "Workflow map" }),
-            assets: t("workspace.methodPreviewAssets", { defaultValue: "Workspace assets" }),
-            bestFor: t("workspace.methodPreviewBestFor", { defaultValue: "Best for" }),
+            logic: "方法逻辑",
+            workflow: "流程图",
+            structure: "结构层",
+            assets: "工作区资产",
+            fileContract: "文件契约",
+            file: "文件",
+            directory: "目录",
+            bestFor: "适合项目",
           }}
         />
       </div>

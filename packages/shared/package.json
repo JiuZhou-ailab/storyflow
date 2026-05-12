@@ -35,6 +35,8 @@
     "./writing": "./src/writing/index.ts",
     "./writing/file-categories": "./src/writing/file-categories.ts",
     "./writing/method-packs": "./src/writing/method-packs/index.ts",
+    "./writing/method-packs/draft-contract": "./src/writing/method-packs/draft-contract.ts",
+    "./writing/method-packs/validation": "./src/writing/method-packs/validation.ts",
     "./utils": "./src/utils/index.ts",
     "./utils/toolNames": "./src/utils/toolNames.ts",
     "./utils/logo": "./src/utils/logo.ts",

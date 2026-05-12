@@ -274,14 +274,20 @@ export function getWorkspaceSummary(rootPath: string): WorkspaceSummary | null {
  * Generate URL-safe slug from name
  */
 export function generateSlug(name: string): string {
-  let slug = name
+  const trimmed = name.trim();
+  let slug = trimmed
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
     .substring(0, 50);
 
   if (!slug) {
-    slug = 'workspace';
+    let hash = 0x811c9dc5;
+    for (const char of trimmed) {
+      hash ^= char.codePointAt(0) ?? 0;
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    slug = trimmed ? `workspace-${hash.toString(36)}` : 'workspace';
   }
 
   return slug;

@@ -2,16 +2,27 @@
 // output: Behavioral checks for project type and Method Pack option mapping
 // pos: Protects the UI-to-scaffold contract for new workspace creation
 
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'bun:test'
+import { build } from 'esbuild'
+import { renderMermaidSVG } from 'beautiful-mermaid'
+import { generateSlug } from '@craft-agent/shared/workspaces'
 import {
+  getBuiltInMethodPack,
+  type MethodPackId,
+} from '@craft-agent/shared/writing/method-packs'
+import { slugify } from '../../../lib/slugify'
+import {
+  buildWorkspaceFolderPath,
   buildWorkspaceCreationOptions,
   WORKSPACE_CREATION_METHOD_OPTIONS,
 } from '../workspace-method-options'
 
 describe('workspace creation method options', () => {
-  it('keeps the UI choices intentionally small', () => {
+  it('offers only the four built-in novel Method Packs', () => {
     expect(WORKSPACE_CREATION_METHOD_OPTIONS.map(option => option.id)).toEqual([
-      'general',
       'novel.claude-book',
       'novel.oh-story',
       'novel.crucible',
@@ -19,19 +30,19 @@ describe('workspace creation method options', () => {
     ])
   })
 
-  it('names choices as Method Pack selections, not generic workspace types', () => {
-    const generalOption = WORKSPACE_CREATION_METHOD_OPTIONS.find(option => option.id === 'general')
+  it('uses Chinese copy for Method Pack choices and explanations', () => {
     const novelOption = WORKSPACE_CREATION_METHOD_OPTIONS.find(option => option.id === 'novel.claude-book')
     const ohStoryOption = WORKSPACE_CREATION_METHOD_OPTIONS.find(option => option.id === 'novel.oh-story')
     const crucibleOption = WORKSPACE_CREATION_METHOD_OPTIONS.find(option => option.id === 'novel.crucible')
     const creativeOption = WORKSPACE_CREATION_METHOD_OPTIONS.find(option => option.id === 'novel.creative-writing')
 
-    expect(generalOption?.fallbackTitle).toBe('No Method Pack')
-    expect(novelOption?.fallbackTitle).toBe('Claude-Book Method Pack')
-    expect(novelOption?.fallbackSubtitle).toContain('canon')
-    expect(ohStoryOption?.fallbackTitle).toBe('Oh Story Web Fiction Pack')
-    expect(crucibleOption?.fallbackTitle).toBe('Crucible Structure Pack')
-    expect(creativeOption?.fallbackTitle).toBe('Creative Writing Skills Pack')
+    expect(novelOption?.fallbackTitle).toBe('Claude-Book 长篇小说法')
+    expect(novelOption?.fallbackSubtitle).toMatch(/[\u4e00-\u9fff]/)
+    expect(novelOption?.fallbackPreviewDescription).toContain('长篇小说')
+    expect(novelOption?.fallbackPreviewMermaid).toContain('项目圣经')
+    expect(ohStoryOption?.fallbackTitle).toBe('Oh Story 网文连载法')
+    expect(crucibleOption?.fallbackTitle).toBe('Crucible 结构长篇法')
+    expect(creativeOption?.fallbackTitle).toBe('Creative Writing 技法工坊')
   })
 
   it('provides a preview diagram and description for each creation method', () => {
@@ -40,12 +51,60 @@ describe('workspace creation method options', () => {
       expect(option.previewDescriptionKey).toBe(`workspace.methodOptions.${option.previewKey}.previewDescription`)
       expect(option.fallbackPreviewMermaid).toContain('flowchart TD')
       expect(option.fallbackPreviewDescription.length).toBeGreaterThan(20)
+      expect(option.fallbackPreviewMermaid).toMatch(/[\u4e00-\u9fff]/)
       expect(option.richPreview.thesis.length).toBeGreaterThan(30)
       expect(option.richPreview.stages.length).toBeGreaterThanOrEqual(3)
+      expect(option.richPreview.structure.length).toBeGreaterThanOrEqual(3)
+      expect(option.richPreview.structure.every(group => group.items.length >= 2)).toBe(true)
       expect(option.richPreview.assets.length).toBeGreaterThanOrEqual(4)
-      expect(option.richPreview.bestFor.length).toBeGreaterThan(30)
+      expect(option.richPreview.bestFor.length).toBeGreaterThan(15)
       expect(option.richPreviewZh.thesis.length).toBeGreaterThan(20)
       expect(option.richPreviewZh.stages.length).toBe(option.richPreview.stages.length)
+      expect(option.richPreviewZh.structure.length).toBe(option.richPreview.structure.length)
+    }
+  })
+
+  it('renders every Chinese preview diagram with beautiful-mermaid', () => {
+    for (const option of WORKSPACE_CREATION_METHOD_OPTIONS) {
+      expect(renderMermaidSVG(option.fallbackPreviewMermaid)).toContain('<svg')
+    }
+  })
+
+  it('exposes each Method Pack file contract to the renderer preview', () => {
+    for (const option of WORKSPACE_CREATION_METHOD_OPTIONS.filter(option => option.methodPackId)) {
+      const methodPack = getBuiltInMethodPack(option.methodPackId as MethodPackId)
+
+      if (!methodPack) {
+        throw new Error(`Missing Method Pack: ${option.methodPackId}`)
+      }
+      expect(option.fileContract).toEqual(methodPack.requiredPaths)
+    }
+  })
+
+  it('keeps renderer method options browser-bundleable', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'craft-method-options-'))
+    const entryPath = join(tempDir, 'entry.ts')
+    const methodOptionsPath = join(process.cwd(), 'apps/electron/src/renderer/components/workspace/workspace-method-options.ts')
+
+    writeFileSync(
+      entryPath,
+      `import { WORKSPACE_CREATION_METHOD_OPTIONS } from ${JSON.stringify(methodOptionsPath)};\n` +
+        `globalThis.__methodOptionCount = WORKSPACE_CREATION_METHOD_OPTIONS.length;\n`
+    )
+
+    try {
+      const result = await build({
+        entryPoints: [entryPath],
+        bundle: true,
+        platform: 'browser',
+        format: 'esm',
+        write: false,
+      })
+
+      expect(result.outputFiles[0]?.text).not.toContain('node:fs')
+      expect(result.outputFiles[0]?.text).not.toContain('__vite-browser-external')
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true })
     }
   })
 
@@ -53,7 +112,6 @@ describe('workspace creation method options', () => {
     const previews = WORKSPACE_CREATION_METHOD_OPTIONS.map(option => option.richPreview)
 
     expect(previews.map(preview => preview.accent)).toEqual([
-      'neutral',
       'canon',
       'market',
       'structure',
@@ -63,6 +121,34 @@ describe('workspace creation method options', () => {
     expect(previews.some(preview => preview.assets.some(asset => asset === '对标/'))).toBe(true)
     expect(previews.some(preview => preview.assets.some(asset => asset === 'planning/'))).toBe(true)
     expect(previews.some(preview => preview.assets.some(asset => asset === 'kb/'))).toBe(true)
+    expect(previews.some(preview => preview.structure.some(group => group.label === 'Canon 层'))).toBe(true)
+    expect(previews.some(preview => preview.structure.some(group => group.label === '市场层'))).toBe(true)
+    expect(previews.some(preview => preview.structure.some(group => group.label === '节拍治理'))).toBe(true)
+    expect(previews.some(preview => preview.structure.some(group => group.label === '工坊层'))).toBe(true)
+  })
+
+  it('builds a default workspace folder path for Chinese names on Windows', () => {
+    expect(buildWorkspaceFolderPath({
+      homeDir: 'C:\\Users\\zjding',
+      name: '九州小说',
+      customPath: null,
+      locationOption: 'default',
+    })).toMatch(/^C:\\Users\\zjding\\\.craft-agent\\workspaces\\workspace-[a-z0-9]+$/)
+  })
+
+  it('builds a custom workspace folder path for Chinese names on Windows', () => {
+    expect(buildWorkspaceFolderPath({
+      homeDir: 'C:\\Users\\zjding',
+      name: '九州小说',
+      customPath: 'D:\\写作项目',
+      locationOption: 'custom',
+    })).toMatch(/^D:\\写作项目\\workspace-[a-z0-9]+$/)
+  })
+
+  it('keeps renderer slug generation aligned with shared workspace storage', () => {
+    for (const name of ['九州小说', '九州 Story', 'Story_九州 01', 'Story九州01']) {
+      expect(slugify(name)).toBe(generateSlug(name))
+    }
   })
 
   it('maps the Claude-Book novel choice to an explicit Method Pack request', () => {
@@ -93,9 +179,4 @@ describe('workspace creation method options', () => {
     })
   })
 
-  it('maps the general choice to a plain workspace request', () => {
-    expect(buildWorkspaceCreationOptions('general')).toEqual({
-      projectType: 'general',
-    })
-  })
 })

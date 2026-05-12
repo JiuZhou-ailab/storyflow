@@ -22,7 +22,7 @@ type CreationStep = 'choice' | 'create' | 'open' | 'remote'
 
 interface WorkspaceCreationScreenProps {
   /** Callback when a workspace is created successfully */
-  onWorkspaceCreated: (workspace: Workspace) => void
+  onWorkspaceCreated: (workspace: Workspace) => void | Promise<void>
   /** Callback when the screen is dismissed */
   onClose: () => void
   className?: string
@@ -85,7 +85,7 @@ export function WorkspaceCreationScreen({
         projectType,
         ...(methodPackId && { methodPackId }),
       })
-      onWorkspaceCreated(workspace)
+      await onWorkspaceCreated(workspace)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       toast.error(t('toast.failedToCreateWorkspace'), {

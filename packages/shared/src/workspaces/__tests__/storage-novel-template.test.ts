@@ -1,11 +1,20 @@
+// input: Workspace storage creation helpers and built-in novel Method Packs
+// output: Regression tests for novel workspace scaffolding and starter session creation
+// pos: Shared storage guard for Method Pack-backed workspace creation
+
 import { describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createNovelProjectScaffold } from "../../writing/novel-template.ts";
-import { createNovelWorkspaceAtPath, createWorkspaceAtPath, loadWorkspaceConfig, saveWorkspaceConfig } from "../storage.ts";
+import { getBuiltInMethodPacks } from "../../writing/method-packs/index.ts";
+import { createNovelWorkspaceAtPath, createWorkspaceAtPath, generateSlug, loadWorkspaceConfig, saveWorkspaceConfig } from "../storage.ts";
 
 describe("createNovelWorkspaceAtPath", () => {
+  it("generates a stable non-empty slug for non-ASCII workspace names", () => {
+    expect(generateSlug("九州小说")).toMatch(/^workspace-[a-z0-9]+$/);
+  });
+
   it("creates a normal workspace with a novel scaffold", () => {
     const rootPath = mkdtempSync(join(tmpdir(), "craft-novel-workspace-"));
 
@@ -80,14 +89,16 @@ describe("createNovelWorkspaceAtPath", () => {
     expect(sessionContent).toContain("Claude-Book");
   });
 
-  it("creates a starter chat session for the selected method pack", () => {
-    const rootPath = mkdtempSync(join(tmpdir(), "craft-novel-oh-story-session-"));
+  it("creates a starter chat session for each selected method pack", () => {
+    for (const methodPack of getBuiltInMethodPacks()) {
+      const rootPath = mkdtempSync(join(tmpdir(), "craft-novel-method-session-"));
 
-    createNovelWorkspaceAtPath(rootPath, "Web Fiction", undefined, "novel.oh-story");
+      createNovelWorkspaceAtPath(rootPath, methodPack.displayName, undefined, methodPack.id);
 
-    const sessionIds = readdirSync(join(rootPath, "sessions"));
-    const sessionContent = readFileSync(join(rootPath, "sessions", sessionIds[0]!, "session.jsonl"), "utf-8");
-    expect(sessionContent).toContain("novel.oh-story");
-    expect(sessionContent).toContain("web-fiction");
+      const sessionIds = readdirSync(join(rootPath, "sessions"));
+      const sessionContent = readFileSync(join(rootPath, "sessions", sessionIds[0]!, "session.jsonl"), "utf-8");
+      expect(sessionContent).toContain(methodPack.id);
+      expect(sessionContent).toContain(methodPack.starterMessage);
+    }
   });
 });

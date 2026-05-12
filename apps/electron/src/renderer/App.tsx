@@ -1,3 +1,7 @@
+// input: Electron preload API, persisted app/workspace/session state, and renderer navigation events
+// output: Top-level renderer state orchestration and AppShell context wiring
+// pos: Root renderer application component
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '@/hooks/useTheme'
@@ -1779,6 +1783,32 @@ export default function App() {
     window.electronAPI.getWorkspaces().then(setWorkspaces)
   }, [])
 
+  const handleWorkspaceCreated = useCallback(async (workspace: Workspace) => {
+    setWorkspaces(prev => {
+      const existingIndex = prev.findIndex(item => item.id === workspace.id)
+      if (existingIndex === -1) return [...prev, workspace]
+
+      const next = [...prev]
+      next[existingIndex] = workspace
+      return next
+    })
+
+    try {
+      const refreshed = await window.electronAPI.getWorkspaces()
+      setWorkspaces(prev => {
+        const canonical = refreshed.length > 0 ? refreshed : prev
+        const existingIndex = canonical.findIndex(item => item.id === workspace.id)
+        if (existingIndex === -1) return [...canonical, workspace]
+
+        const next = [...canonical]
+        next[existingIndex] = workspace
+        return next
+      })
+    } catch (error) {
+      console.error('[App] Failed to refresh workspaces after creation:', error)
+    }
+  }, [])
+
   // Handle cancel during onboarding
   const handleOnboardingCancel = useCallback(() => {
     onboarding.handleCancel()
@@ -1823,6 +1853,7 @@ export default function App() {
     onOpenUrl: handleOpenUrl,
     // Workspace
     onSelectWorkspace: handleSelectWorkspace,
+    onWorkspaceCreated: handleWorkspaceCreated,
     onRefreshWorkspaces: handleRefreshWorkspaces,
     // App actions
     onOpenSettings: handleOpenSettings,
@@ -1866,6 +1897,7 @@ export default function App() {
     handleOpenFile,
     handleOpenUrl,
     handleSelectWorkspace,
+    handleWorkspaceCreated,
     handleRefreshWorkspaces,
     handleOpenSettings,
     handleOpenKeyboardShortcuts,
