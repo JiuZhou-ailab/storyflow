@@ -8,7 +8,7 @@ import type {
 } from "./types.ts";
 
 const WRITING_MANIFEST_FILENAME = "craft-writing.json";
-const SUPPORTED_PROJECT_TYPES = new Set<WritingProjectType>(["novel", "screenplay"]);
+const SUPPORTED_PROJECT_TYPES = new Set<WritingProjectType>(["novel", "screenplay", "short-form"]);
 const CLAUDE_BOOK_NOVEL_DIRECTORIES = ["bible", "story", "state", "timeline"] as const;
 
 function isDirectory(path: string): boolean {
@@ -64,6 +64,13 @@ function getDefaultDirectories(rootPath: string): WritingProjectDirectories {
     timeline: join(rootPath, "timeline"),
     analysis: join(rootPath, "analysis"),
     work: join(rootPath, ".work"),
+    brief: join(rootPath, "brief"),
+    notes: join(rootPath, "notes"),
+    style: join(rootPath, "style"),
+    drafts: join(rootPath, "drafts"),
+    revisions: join(rootPath, "revisions"),
+    published: join(rootPath, "published"),
+    reviews: join(rootPath, "reviews"),
   };
 }
 

@@ -76,7 +76,7 @@ import type { MethodPackId } from '@craft-agent/shared/writing/method-packs';
 import type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings } from '@craft-agent/shared/config';
 export type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings };
 
-export type WorkspaceProjectType = 'general' | 'novel';
+export type WorkspaceProjectType = 'general' | 'novel' | 'short-form';
 
 export interface CreateWorkspaceOptions {
   remoteServer?: CoreRemoteServerConfig;

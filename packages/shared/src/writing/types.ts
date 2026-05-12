@@ -1,4 +1,4 @@
-export type WritingProjectType = "novel" | "screenplay";
+export type WritingProjectType = "novel" | "screenplay" | "short-form";
 
 export interface WritingProjectManifest {
   schemaVersion: 1;
@@ -20,6 +20,13 @@ export interface WritingProjectDirectories {
   timeline?: string;
   analysis?: string;
   work?: string;
+  brief?: string;
+  notes?: string;
+  style?: string;
+  drafts?: string;
+  revisions?: string;
+  published?: string;
+  reviews?: string;
 }
 
 export interface DetectedWritingProject {

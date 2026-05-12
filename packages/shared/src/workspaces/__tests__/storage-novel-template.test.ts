@@ -97,8 +97,26 @@ describe("createNovelWorkspaceAtPath", () => {
 
       const sessionIds = readdirSync(join(rootPath, "sessions"));
       const sessionContent = readFileSync(join(rootPath, "sessions", sessionIds[0]!, "session.jsonl"), "utf-8");
+      const starterMessage = JSON.parse(sessionContent.trim().split(/\r?\n/)[1] ?? "{}") as { content?: string };
       expect(sessionContent).toContain(methodPack.id);
-      expect(sessionContent).toContain(methodPack.starterMessage);
+      expect(starterMessage.content).toContain(methodPack.starterMessage);
     }
+  });
+
+  it("writes a localized short-form starter chat session", () => {
+    const rootPath = mkdtempSync(join(tmpdir(), "craft-short-form-starter-session-"));
+
+    createNovelWorkspaceAtPath(rootPath, "Short Starter", undefined, "short-form.article");
+
+    const sessionIds = readdirSync(join(rootPath, "sessions"));
+    const sessionContent = readFileSync(join(rootPath, "sessions", sessionIds[0]!, "session.jsonl"), "utf-8");
+    expect(sessionContent).toContain("## 这是什么");
+    expect(sessionContent).toContain("## 我会怎么做");
+    expect(sessionContent).toContain("## 流程");
+    expect(sessionContent).toContain("## 你现在可以提供");
+    expect(sessionContent).toContain("短文写作工作区");
+    expect(sessionContent).toContain("目标读者");
+    expect(sessionContent).toContain("Method Pack: short-form.article");
+    expect(sessionContent).not.toContain("I created a short-form writing workspace");
   });
 });

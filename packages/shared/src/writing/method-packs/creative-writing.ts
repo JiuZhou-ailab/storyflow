@@ -46,5 +46,23 @@ export const CREATIVE_WRITING_METHOD_PACK: MethodPack = {
     "writing-staffing",
   ],
   runtimePreamble: "This project uses the novel.creative-writing method pack. Use kb/ for durable canon and style knowledge, work/ for temporary exploration, drafts, critiques, and outlines, and story/chapters/ for accepted manuscript.",
-  starterMessage: "I created a Creative Writing Skills workspace with a durable knowledge base. Start by sharing the project premise, current manuscript status, voice references, important canon, and what kind of help you want first: brainstorm, outline, style capture, draft, critique, or revision.",
+  starterMessage: `## 这是什么
+
+这是 Creative Writing Skills 技法工坊工作区，适合流程需要保持弹性，但仍要沉淀知识库、声线参考、草稿、批评报告和修订循环的小说项目。
+
+## 我会怎么做
+
+我会先把已有素材整理进知识库，区分 canon、声线、角色、世界、时间线和开放问题。之后根据当前任务选择头脑风暴、大纲、起草、批评、风格分析或修订流程。
+
+## 流程
+
+1. 建立知识库和声线参考。
+2. 明确当前创作目标和约束。
+3. 选择最小可用的写作技能流程。
+4. 生成草稿、批评报告或修订稿。
+5. 把已确认事实和经验回写知识库。
+
+## 你现在可以提供
+
+请提供项目 premise、当前稿件状态、声线参考、重要 canon、已有片段，以及你希望先做头脑风暴、大纲、风格捕捉、起草、批评还是修订。`,
 };

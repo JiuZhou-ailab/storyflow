@@ -20,7 +20,7 @@ function createTempProject(): string {
   return mkdtempSync(join(tmpdir(), "craft-novel-skills-"));
 }
 
-describe("bundled novel skills", () => {
+describe("bundled writing skills", () => {
   it("defines Craft-compatible skill files with attribution", () => {
     const files = getBundledNovelSkillFiles();
     const slugs = files
@@ -77,5 +77,26 @@ describe("bundled novel skills", () => {
     const notice = readFileSync(join(rootPath, "skills", "NOTICE-Claude-Book.md"), "utf-8");
     expect(notice).toContain("Claude-Book");
     expect(notice).toContain("MIT");
+  });
+
+  it("seeds short-form writing skills into a short-form project scaffold", () => {
+    const rootPath = createTempProject();
+
+    createNovelProjectScaffold(rootPath, {
+      title: "Short Piece",
+      methodPackId: "short-form.article",
+    });
+
+    for (const slug of [
+      "short-brief",
+      "short-source-curator",
+      "short-angle",
+      "short-drafter",
+      "short-variant",
+      "short-editor",
+      "short-publisher",
+    ]) {
+      expect(existsSync(join(rootPath, "skills", slug, "SKILL.md"))).toBe(true);
+    }
   });
 });

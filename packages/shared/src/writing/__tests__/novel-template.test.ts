@@ -205,4 +205,40 @@ describe("createNovelProjectScaffold", () => {
     expect(manifest.methodPack).toEqual({ id: "novel.creative-writing", version: 1 });
     expect(manifest.storageProfile).toBe("creative-writing-compatible");
   });
+
+  it("creates a Short-Form Writing scaffold when selected", () => {
+    const rootPath = createTempProject();
+
+    createNovelProjectScaffold(rootPath, {
+      title: "The Short Piece",
+      methodPackId: "short-form.article",
+    });
+
+    for (const relativePath of [
+      "brief/reader-promise.md",
+      "brief/angle.md",
+      "brief/platform.md",
+      "notes/source-cards.md",
+      "notes/examples.md",
+      "style/voice.md",
+      "style/checklist.md",
+      "drafts",
+      "revisions",
+      "published",
+      "reviews",
+      "skills/short-drafter/SKILL.md",
+      "skills/short-editor/SKILL.md",
+      "NOTICE-Short-Form-Writing.md",
+    ]) {
+      expect(existsSync(join(rootPath, relativePath))).toBe(true);
+    }
+
+    const manifest = JSON.parse(readFileSync(join(rootPath, "craft-writing.json"), "utf-8"));
+    expect(manifest).toMatchObject({
+      type: "short-form",
+      profile: "short-form",
+      methodPack: { id: "short-form.article", version: 1 },
+      storageProfile: "short-form-compatible",
+    });
+  });
 });

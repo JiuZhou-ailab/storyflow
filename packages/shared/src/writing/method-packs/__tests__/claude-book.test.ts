@@ -2,12 +2,13 @@ import { describe, expect, it } from "bun:test";
 import { getBuiltInMethodPack, getBuiltInMethodPacks } from "../index.ts";
 
 describe("built-in method packs", () => {
-  it("exposes all built-in novel method pack ids", () => {
+  it("exposes all built-in writing method pack ids", () => {
     expect(getBuiltInMethodPacks().map((pack) => pack.id)).toEqual([
       "novel.claude-book",
       "novel.oh-story",
       "novel.crucible",
       "novel.creative-writing",
+      "short-form.article",
     ]);
   });
 
@@ -38,7 +39,7 @@ describe("built-in method packs", () => {
     });
     expect(pack?.requiredSkills).toContain("story-long-write");
     expect(pack?.requiredSkills).toContain("story-deslop");
-    expect(pack?.starterMessage).toContain("web-fiction");
+    expect(pack?.starterMessage).toContain("网文");
   });
 
   it("exposes the Crucible method pack contract", () => {
@@ -65,7 +66,44 @@ describe("built-in method packs", () => {
     });
     expect(pack?.requiredSkills).toContain("prose-writing");
     expect(pack?.requiredSkills).toContain("kb-management");
-    expect(pack?.starterMessage).toContain("knowledge base");
+    expect(pack?.starterMessage).toContain("知识库");
+  });
+
+  it("exposes the Short-Form Writing method pack contract", () => {
+    const pack = getBuiltInMethodPack("short-form.article");
+
+    expect(pack?.projectType).toBe("short-form");
+    expect(pack?.storageProfile).toBe("short-form-compatible");
+    expect(pack?.requiredPaths).toContainEqual({
+      path: "brief/reader-promise.md",
+      kind: "file",
+    });
+    expect(pack?.requiredSkills).toContain("short-drafter");
+    expect(pack?.requiredSkills).toContain("short-editor");
+    expect(pack?.starterMessage).toContain("短文");
+  });
+
+  it("uses localized and pack-specific starter messages", () => {
+    const expectedKeywords: Record<string, string[]> = {
+      "novel.claude-book": ["项目圣经", "梗概", "章节计划"],
+      "novel.oh-story": ["网文", "平台", "更新节奏"],
+      "novel.crucible": ["36-beat", "三条叙事线", "forge points"],
+      "novel.creative-writing": ["知识库", "声线", "修订"],
+      "short-form.article": ["短文", "目标读者", "平台"],
+    };
+
+    for (const pack of getBuiltInMethodPacks()) {
+      expect(pack.starterMessage).toMatch(/[\u4e00-\u9fff]/);
+      expect(pack.starterMessage).toStartWith("## 这是什么");
+      expect(pack.starterMessage).toContain("## 我会怎么做");
+      expect(pack.starterMessage).toContain("## 流程");
+      expect(pack.starterMessage).toContain("## 你现在可以提供");
+      expect(pack.starterMessage).not.toContain("I created");
+      expect(pack.starterMessage).not.toContain("Start by");
+      for (const keyword of expectedKeywords[pack.id] ?? []) {
+        expect(pack.starterMessage).toContain(keyword);
+      }
+    }
   });
 
   it("returns null for unknown method packs", () => {

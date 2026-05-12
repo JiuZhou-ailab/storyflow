@@ -281,6 +281,55 @@ export const WORKSPACE_CREATION_METHOD_OPTIONS = [
       bestFor: "不想被固定节拍束缚，但需要强写作技法支持和修订循环的小说项目。",
     },
   },
+  {
+    id: "short-form.article",
+    projectType: "short-form",
+    methodPackId: "short-form.article",
+    fileContract: getMethodPackFileContract("short-form.article"),
+    previewKey: "shortFormArticle",
+    titleKey: "workspace.methodOptions.shortFormArticle.title",
+    subtitleKey: "workspace.methodOptions.shortFormArticle.subtitle",
+    previewMermaidKey: "workspace.methodOptions.shortFormArticle.previewMermaid",
+    previewDescriptionKey: "workspace.methodOptions.shortFormArticle.previewDescription",
+    fallbackTitle: "Short-Form 短文写作法",
+    fallbackSubtitle: "围绕读者承诺、中心论点、素材卡片、短草稿、平台变体和审校清单组织短文。",
+    fallbackPreviewMermaid: "flowchart TD\n  A[读者承诺] --> A1[目标读者]\n  A --> A2[平台约束]\n  A --> A3[篇幅目标]\n  A1 --> B[中心角度]\n  A2 --> B\n  A3 --> B\n  B --> C[素材卡片]\n  C --> D[短文大纲]\n  D --> E[草稿]\n  E --> F[清晰度审校]\n  F --> G[平台变体]\n  G --> H[发布稿]\n  F --> C",
+    fallbackPreviewDescription: "适合公众号短文、newsletter、博客短文、社媒长帖、观点短评、备忘录等需要快速成稿但不能牺牲逻辑和事实边界的短内容。",
+    richPreview: {
+      accent: "neutral",
+      thesis: "面向短内容的高压缩写作系统，用读者承诺、单一论点和素材卡片保证短而不散。",
+      stages: [
+        { label: "定约", detail: "明确读者、平台、篇幅、中心承诺和不可越界事实。" },
+        { label: "取材", detail: "把笔记、链接、访谈和例子整理成可追溯素材卡片。" },
+        { label: "成文", detail: "围绕一个角度写开头、支撑、转折、收束和行动。" },
+        { label: "变体", detail: "按公众号、newsletter、博客、社媒等渠道压缩或展开。" },
+      ],
+      structure: [
+        { label: "短文契约", items: ["目标读者、读者承诺、平台限制", "单一中心论点和明确结尾收益"] },
+        { label: "素材层", items: ["事实、例子、引用和信心等级", "参考开头、结尾和声线样本"] },
+        { label: "审校层", items: ["清晰度、证据、节奏和空话检查", "发布稿和渠道变体分离"] },
+      ],
+      assets: ["brief/", "notes/", "style/", "drafts/", "revisions/", "published/", "reviews/"],
+      bestFor: "公众号短文、newsletter、博客短文、社媒长帖、观点短评和短 memo。",
+    },
+    richPreviewZh: {
+      accent: "neutral",
+      thesis: "面向短内容的高压缩写作系统，用读者承诺、单一论点和素材卡片保证短而不散。",
+      stages: [
+        { label: "定约", detail: "明确读者、平台、篇幅、中心承诺和不可越界事实。" },
+        { label: "取材", detail: "把笔记、链接、访谈和例子整理成可追溯素材卡片。" },
+        { label: "成文", detail: "围绕一个角度写开头、支撑、转折、收束和行动。" },
+        { label: "变体", detail: "按公众号、newsletter、博客、社媒等渠道压缩或展开。" },
+      ],
+      structure: [
+        { label: "短文契约", items: ["目标读者、读者承诺、平台限制", "单一中心论点和明确结尾收益"] },
+        { label: "素材层", items: ["事实、例子、引用和信心等级", "参考开头、结尾和声线样本"] },
+        { label: "审校层", items: ["清晰度、证据、节奏和空话检查", "发布稿和渠道变体分离"] },
+      ],
+      assets: ["brief/", "notes/", "style/", "drafts/", "revisions/", "published/", "reviews/"],
+      bestFor: "公众号短文、newsletter、博客短文、社媒长帖、观点短评和短 memo。",
+    },
+  },
 ] as const satisfies readonly WorkspaceCreationMethodOption[]
 
 export function getWorkspaceCreationMethodOption(methodId: WorkspaceCreationMethodId): WorkspaceCreationMethodOption {

@@ -48,5 +48,23 @@ export const CLAUDE_BOOK_METHOD_PACK: MethodPack = {
     "state-updater",
   ],
   runtimePreamble: "This project uses the novel.claude-book method pack. Use bible/ as canon, story/chapters/ as manuscript, state/current/ as current continuity state, timeline/ as chronology, and .work/ for drafts and reports.",
-  starterMessage: "I created a Claude-Book novel workspace for this project. Start by defining the bible, synopsis, and chapter plan before drafting chapters. Share the premise, genre, target reader, point of view, tone, and any must-keep constraints, and I can turn them into the first canon and outline files.",
+  starterMessage: `## 这是什么
+
+这是 Claude-Book 小说工作区，适合需要先建立项目圣经、故事梗概和章节计划，再稳定推进章节起草的长篇小说项目。
+
+## 我会怎么做
+
+我会先把你的故事信息整理成 canon、风格规则、角色与世界设定，再把故事梗概拆成章节计划。进入写作后，每一章都会对齐项目圣经、当前状态和时间线。
+
+## 流程
+
+1. 建立项目圣经和风格约束。
+2. 写出故事梗概和章节计划。
+3. 按章节计划起草章节。
+4. 审查风格、角色和连续性。
+5. 接受章节后更新当前状态和时间线。
+
+## 你现在可以提供
+
+请提供故事 premise、题材类型、目标读者、叙述视角、语气风格、主要角色、世界设定，以及必须保留或必须避免的硬约束。`,
 };

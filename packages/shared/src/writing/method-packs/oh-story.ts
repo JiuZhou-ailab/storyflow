@@ -47,5 +47,23 @@ export const OH_STORY_METHOD_PACK: MethodPack = {
     "story-cover",
   ],
   runtimePreamble: "This project uses the novel.oh-story method pack. Use 设定/ for canon, 大纲/ for book and chapter planning, 正文/ for manuscript, 追踪/ for continuity and foreshadowing, 拆文库/ and 对标/ for benchmark analysis, and 参考资料/ for research.",
-  starterMessage: "I created an Oh Story web-fiction workspace. Start by choosing long-form or short-form web-fiction, target platform, genre lane, core hook, target emotion, benchmark titles, and update cadence. I can then build the market positioning, outline, character setup, and first chapter plan.",
+  starterMessage: `## 这是什么
+
+这是 Oh Story 网文连载工作区，适合围绕题材定位、平台节奏、对标拆文、章节钩子和追读动能推进的网文项目。
+
+## 我会怎么做
+
+我会先明确目标平台、题材赛道和读者承诺，再拆解对标作品的钩子、爽点、节奏和更新策略。之后把定位落到设定、大纲、章节计划和连载追踪里。
+
+## 流程
+
+1. 确定平台、题材、读者承诺和更新节奏。
+2. 建立对标作品和拆文库。
+3. 生成设定、角色和大纲。
+4. 按章节钩子起草正文。
+5. 更新伏笔、上下文和时间线，并做去 AI 味清理。
+
+## 你现在可以提供
+
+请说明要做长篇还是短篇网文、目标平台、题材赛道、核心钩子、目标情绪、对标作品、更新节奏，以及你希望第一阶段先做定位、拆文、大纲还是首章。`,
 };

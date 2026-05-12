@@ -22,12 +22,13 @@ import {
 } from '../workspace-method-options'
 
 describe('workspace creation method options', () => {
-  it('offers only the four built-in novel Method Packs', () => {
+  it('offers the built-in writing Method Packs', () => {
     expect(WORKSPACE_CREATION_METHOD_OPTIONS.map(option => option.id)).toEqual([
       'novel.claude-book',
       'novel.oh-story',
       'novel.crucible',
       'novel.creative-writing',
+      'short-form.article',
     ])
   })
 
@@ -36,6 +37,7 @@ describe('workspace creation method options', () => {
     const ohStoryOption = WORKSPACE_CREATION_METHOD_OPTIONS.find(option => option.id === 'novel.oh-story')
     const crucibleOption = WORKSPACE_CREATION_METHOD_OPTIONS.find(option => option.id === 'novel.crucible')
     const creativeOption = WORKSPACE_CREATION_METHOD_OPTIONS.find(option => option.id === 'novel.creative-writing')
+    const shortFormOption = WORKSPACE_CREATION_METHOD_OPTIONS.find(option => option.id === 'short-form.article')
 
     expect(novelOption?.fallbackTitle).toBe('Claude-Book 小说法')
     expect(novelOption?.fallbackTitle).not.toContain('长篇')
@@ -45,6 +47,8 @@ describe('workspace creation method options', () => {
     expect(ohStoryOption?.fallbackTitle).toBe('Oh Story 网文连载法')
     expect(crucibleOption?.fallbackTitle).toBe('Crucible 结构长篇法')
     expect(creativeOption?.fallbackTitle).toBe('Creative Writing 技法工坊')
+    expect(shortFormOption?.fallbackTitle).toBe('Short-Form 短文写作法')
+    expect(shortFormOption?.fallbackSubtitle).toContain('短文')
   })
 
   it('uses Claude-Book as the default creation method', () => {
@@ -115,7 +119,7 @@ describe('workspace creation method options', () => {
     }
   })
 
-  it('uses distinct rich preview strategies for the built-in novel method packs', () => {
+  it('uses distinct rich preview strategies for the built-in writing method packs', () => {
     const previews = WORKSPACE_CREATION_METHOD_OPTIONS.map(option => option.richPreview)
 
     expect(previews.map(preview => preview.accent)).toEqual([
@@ -123,15 +127,18 @@ describe('workspace creation method options', () => {
       'market',
       'structure',
       'craft',
+      'neutral',
     ])
     expect(previews.some(preview => preview.assets.some(asset => asset === 'timeline/'))).toBe(true)
     expect(previews.some(preview => preview.assets.some(asset => asset === '对标/'))).toBe(true)
     expect(previews.some(preview => preview.assets.some(asset => asset === 'planning/'))).toBe(true)
     expect(previews.some(preview => preview.assets.some(asset => asset === 'kb/'))).toBe(true)
+    expect(previews.some(preview => preview.assets.some(asset => asset === 'brief/'))).toBe(true)
     expect(previews.some(preview => preview.structure.some(group => group.label === 'Canon 层'))).toBe(true)
     expect(previews.some(preview => preview.structure.some(group => group.label === '市场层'))).toBe(true)
     expect(previews.some(preview => preview.structure.some(group => group.label === '节拍治理'))).toBe(true)
     expect(previews.some(preview => preview.structure.some(group => group.label === '工坊层'))).toBe(true)
+    expect(previews.some(preview => preview.structure.some(group => group.label === '短文契约'))).toBe(true)
   })
 
   it('builds a default workspace folder path for Chinese names on Windows', () => {
@@ -183,6 +190,13 @@ describe('workspace creation method options', () => {
     expect(buildWorkspaceCreationOptions('novel.creative-writing')).toEqual({
       projectType: 'novel',
       methodPackId: 'novel.creative-writing',
+    })
+  })
+
+  it('maps the Short-Form Writing choice to an explicit Method Pack request', () => {
+    expect(buildWorkspaceCreationOptions('short-form.article')).toEqual({
+      projectType: 'short-form',
+      methodPackId: 'short-form.article',
     })
   })
 

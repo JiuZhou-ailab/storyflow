@@ -1,5 +1,5 @@
-// input: Workspace root path, optional novel metadata, and selected Method Pack
-// output: Idempotent novel project scaffold for built-in writing method packs
+// input: Workspace root path, optional writing metadata, and selected Method Pack
+// output: Idempotent writing project scaffold for built-in Method Packs
 // pos: Scaffold creator for project-level creative writing environments
 
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "fs";
@@ -60,10 +60,10 @@ function createManifest(
 ): WritingProjectManifest {
   return {
     schemaVersion: 1,
-    type: "novel",
+    type: pack.projectType,
     title: options.title,
     language: options.language,
-    profile: "novel",
+    profile: pack.projectType,
     methodPack: {
       id: pack.id,
       version: pack.version,
@@ -142,6 +142,8 @@ function getNoticeFileName(pack: MethodPack): string {
       return "NOTICE-Crucible.md";
     case "novel.creative-writing":
       return "NOTICE-Creative-Writing-Skills.md";
+    case "short-form.article":
+      return "NOTICE-Short-Form-Writing.md";
   }
 }
 
@@ -480,6 +482,101 @@ Durable project knowledge lives here. Keep it concise, factual, and source-aware
   }
 }
 
+function scaffoldShortForm(rootPath: string): void {
+  for (const dir of [
+    "brief",
+    "notes",
+    "style",
+    "drafts",
+    "revisions",
+    "published",
+    "reviews",
+    ".work",
+  ]) {
+    ensureDir(join(rootPath, dir));
+  }
+
+  writeFileIfMissing(join(rootPath, "brief/reader-promise.md"), `# Reader Promise
+
+## Target Reader
+
+## Reader Problem Or Desire
+
+## Promise
+
+## Desired Aftertaste
+`);
+  writeFileIfMissing(join(rootPath, "brief/angle.md"), `# Angle
+
+## Central Claim
+
+## Why Now
+
+## Hook
+
+## Counterpoint
+
+## Takeaway
+`);
+  writeFileIfMissing(join(rootPath, "brief/platform.md"), `# Platform
+
+## Format
+
+## Length Target
+
+## Distribution Channel
+
+## Constraints
+
+## Call To Action
+`);
+  writeFileIfMissing(join(rootPath, "notes/source-cards.md"), `# Source Cards
+
+| Source | Fact Or Quote | Use | Confidence |
+| --- | --- | --- | --- |
+`);
+  writeFileIfMissing(join(rootPath, "notes/examples.md"), `# Examples
+
+## Reference Pieces
+
+## Hooks
+
+## Endings
+
+## Voice Notes
+`);
+  writeFileIfMissing(join(rootPath, "style/voice.md"), `# Voice
+
+## Tone
+
+## Diction
+
+## Sentence Rhythm
+
+## Avoid
+`);
+  writeFileIfMissing(join(rootPath, "style/checklist.md"), `# Short-Form Quality Checklist
+
+## Contract
+
+- Reader and platform are explicit.
+- One central claim or promise controls the piece.
+- Opening earns attention quickly.
+- Every section advances the claim, evidence, or payoff.
+
+## Clarity
+
+- Sentences are direct.
+- Paragraphs are short enough to scan.
+- Abstract claims are supported by examples or evidence.
+- The ending delivers the promised takeaway.
+`);
+
+  for (const dir of ["drafts", "revisions", "published", "reviews", ".work"]) {
+    writeFileIfMissing(join(rootPath, dir, ".gitkeep"), "");
+  }
+}
+
 function scaffoldPackSpecificFiles(rootPath: string, pack: MethodPack): void {
   switch (pack.id) {
     case "novel.claude-book":
@@ -493,6 +590,9 @@ function scaffoldPackSpecificFiles(rootPath: string, pack: MethodPack): void {
       return;
     case "novel.creative-writing":
       scaffoldCreativeWriting(rootPath);
+      return;
+    case "short-form.article":
+      scaffoldShortForm(rootPath);
       return;
   }
 }

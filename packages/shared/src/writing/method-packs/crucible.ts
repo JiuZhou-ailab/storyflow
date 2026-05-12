@@ -44,5 +44,23 @@ export const CRUCIBLE_METHOD_PACK: MethodPack = {
     "crucible-reviewer",
   ],
   runtimePreamble: "This project uses the novel.crucible method pack. Treat planning/ as the 36-beat source of truth, outline/ as the chapter contract, draft/chapters/ as manuscript, draft/reviews/ as review output, and .crucible/state/ as workflow state.",
-  starterMessage: "I created a Crucible 36-beat novel workspace. Start with a premise, protagonist burden, external quest, internal fire, key relationships, antagonist mirror, and desired ending shape. I can guide the planning pass into the three strands, forge points, mercy ledger, and chapter outline.",
+  starterMessage: `## 这是什么
+
+这是 Crucible 36-beat 结构长篇工作区，适合用三条叙事线、forge points、mercy ledger 和章节审校关卡管理强结构故事。
+
+## 我会怎么做
+
+我会先把故事命题拆成外部任务线、内部火焰线和关系压力线，再把三条叙事线压入 36-beat 结构。之后用 forge points 检查关键转折是否同时推动任务、内心和关系。
+
+## 流程
+
+1. 定义主题、主角负担、反派镜像和结局形状。
+2. 拆出三条叙事线。
+3. 生成 36-beat 结构和 forge points。
+4. 转成章节大纲。
+5. 起草章节，并按结构、连续性和声线做审校。
+
+## 你现在可以提供
+
+请提供故事 premise、主角负担、外部任务线、内部火焰线、关键关系、反派镜像、世界约束和期望结局形状。`,
 };

@@ -142,19 +142,23 @@ export function loadWorkspaceConfig(rootPath: string): WorkspaceConfig | null {
     }
 
     const writingProject = detectWritingProject(rootPath);
-    if (writingProject?.type === 'novel') {
+    if (writingProject) {
       const detectedMethodPackId = writingProject.manifest.methodPack?.id;
       const detectedMethodPack = detectedMethodPackId ? getBuiltInMethodPack(detectedMethodPackId) : null;
 
-      if (!detectedMethodPackId || detectedMethodPack) {
+      if (!detectedMethodPackId && writingProject.type === 'novel') {
         createNovelProjectScaffold(rootPath, {
           title: config.name,
-          ...(detectedMethodPack ? { methodPackId: detectedMethodPack.id } : {}),
+        });
+      } else if (detectedMethodPack && detectedMethodPack.projectType === writingProject.type) {
+        createNovelProjectScaffold(rootPath, {
+          title: config.name,
+          methodPackId: detectedMethodPack.id,
         });
       }
     }
 
-    if (!config.defaults?.workingDirectory && writingProject?.type === 'novel') {
+    if (!config.defaults?.workingDirectory && writingProject && writingProject.type !== 'screenplay') {
       config.defaults = {
         ...config.defaults,
         workingDirectory: rootPath,

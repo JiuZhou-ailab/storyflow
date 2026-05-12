@@ -6,13 +6,15 @@ export type MethodPackId =
   | "novel.claude-book"
   | "novel.oh-story"
   | "novel.crucible"
-  | "novel.creative-writing";
-export type MethodPackProjectType = "novel";
+  | "novel.creative-writing"
+  | "short-form.article";
+export type MethodPackProjectType = "novel" | "short-form";
 export type MethodPackStorageProfile =
   | "claude-book-compatible"
   | "oh-story-compatible"
   | "crucible-compatible"
-  | "creative-writing-compatible";
+  | "creative-writing-compatible"
+  | "short-form-compatible";
 
 export interface MethodPackRequiredPath {
   path: string;

@@ -57,6 +57,16 @@ describe('normalizeCreateWorkspaceOptions', () => {
       methodPackId: 'novel.oh-story',
     })
   })
+
+  it('preserves explicit short-form method pack ids', () => {
+    expect(normalizeCreateWorkspaceOptions({
+      projectType: 'short-form',
+      methodPackId: 'short-form.article',
+    })).toEqual({
+      projectType: 'short-form',
+      methodPackId: 'short-form.article',
+    })
+  })
 })
 
 describe('ensureWorkspaceRootForProject', () => {

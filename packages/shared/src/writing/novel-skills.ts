@@ -1,6 +1,6 @@
-// input: Built-in novel writing skill definitions
-// output: File payloads seeded into novel workspaces
-// pos: Packaged skill bundle for the novel writing project profile
+// input: Built-in writing skill definitions
+// output: File payloads seeded into writing workspaces
+// pos: Packaged skill bundle for built-in writing Method Packs
 
 import { getClaudeBookNotice } from "./claude-book-notice.ts";
 import type { MethodPackId } from "./method-packs/types.ts";
@@ -14,6 +14,7 @@ const ATTRIBUTION = "Adapted for Craft Agent from Claude-Book concepts. Source: 
 const OH_STORY_ATTRIBUTION = "Adapted for Craft Agent from oh-story-claudecode concepts. Source: https://github.com/worldwonderer/oh-story-claudecode";
 const CRUCIBLE_ATTRIBUTION = "Adapted for Craft Agent from The Crucible Writing System For Claude concepts. Source: https://github.com/forsonny/The-Crucible-Writing-System-For-Claude";
 const CREATIVE_WRITING_ATTRIBUTION = "Adapted for Craft Agent from creative-writing-skills concepts. Source: https://github.com/haowjy/creative-writing-skills";
+const SHORT_FORM_ATTRIBUTION = "Synthesized for Craft Agent from public short-form writing guidance, including copywriting skill patterns, web readability research, plain-language guidance, paragraph argument structure, and social writing style guides.";
 
 const CLAUDE_BOOK_SKILLS: Array<{ slug: string; content: string }> = [
   {
@@ -719,6 +720,79 @@ const CREATIVE_WRITING_SKILLS = [
   }),
 ];
 
+const SHORT_FORM_SKILLS = [
+  adapterSkill({
+    slug: "short-brief",
+    title: "Short Brief",
+    description: "Use when defining the reader, promise, format, and constraints for a short-form writing task.",
+    attribution: SHORT_FORM_ATTRIBUTION,
+    purpose: "Turn an under-specified short writing request into a usable brief before drafting.",
+    context: ["brief/ is the source of truth for the piece contract.", "A short piece should have one controlling claim or reader promise.", "Platform and length constraints should be explicit before drafting."],
+    workflow: ["Read any existing brief files.", "Identify target reader, reader problem or desire, intended format, length target, channel, call to action, and forbidden moves.", "Write or update brief/reader-promise.md, brief/angle.md, and brief/platform.md with explicit unknowns instead of invented certainty."],
+    output: ["Brief completeness status.", "Updated brief files.", "Blocking unknowns that materially affect the piece."],
+  }),
+  adapterSkill({
+    slug: "short-source-curator",
+    title: "Short Source Curator",
+    description: "Use when turning notes, links, transcripts, or rough material into source cards for a short piece.",
+    attribution: SHORT_FORM_ATTRIBUTION,
+    purpose: "Preserve source material losslessly enough that the draft can use evidence without blurring fact and interpretation.",
+    context: ["notes/source-cards.md stores facts, examples, quotes, and confidence.", "notes/examples.md stores benchmark openings, endings, and voice observations.", "The draft may compress sources, but source cards must keep provenance clear."],
+    workflow: ["Inventory all supplied material.", "Extract only claims, examples, data points, quotes, and anecdotes that can support the current angle.", "Record source, usable fact or excerpt, intended use, and confidence in notes/source-cards.md.", "Flag weak, unsourced, or off-angle material instead of forcing it into the draft."],
+    output: ["Updated source cards.", "Evidence gaps.", "Material excluded from the current piece and why."],
+  }),
+  adapterSkill({
+    slug: "short-angle",
+    title: "Short Angle",
+    description: "Use when selecting the hook, thesis, outline, or payoff structure for a short piece.",
+    attribution: SHORT_FORM_ATTRIBUTION,
+    purpose: "Choose a compact angle that can survive the target length and platform.",
+    context: ["brief/angle.md stores the controlling claim, hook, counterpoint, and takeaway.", "A short piece should not carry multiple unrelated theses.", "Use notes/source-cards.md to test whether the angle has enough support."],
+    workflow: ["Generate 3-5 angle candidates when the direction is unclear.", "Score each candidate by reader relevance, evidence strength, novelty, compression fit, and payoff clarity.", "Select one angle and outline it as hook, setup, support, turn, payoff, and call to action when relevant.", "Update brief/angle.md with the selected direction and rejected alternatives."],
+    output: ["Recommended angle with rationale.", "Brief outline.", "Rejected alternatives and risk notes."],
+  }),
+  adapterSkill({
+    slug: "short-drafter",
+    title: "Short Drafter",
+    description: "Use when drafting a short article, essay, memo, newsletter, post, or concise opinion piece.",
+    attribution: SHORT_FORM_ATTRIBUTION,
+    purpose: "Draft a compact piece that delivers one reader promise with clear structure and minimal filler.",
+    context: ["Read brief/ before drafting.", "Use notes/source-cards.md for evidence and examples.", "Drafts belong in drafts/ before final acceptance into published/."],
+    workflow: ["Confirm the target format and length.", "Draft from the selected angle using a strong opening, fast context, evidence or example, turn, and payoff.", "Keep paragraphs scannable and transitions functional.", "Name the draft by date or topic under drafts/ and record assumptions at the end if context was incomplete."],
+    output: ["Draft file path.", "Draft text.", "Assumptions and source cards used."],
+  }),
+  adapterSkill({
+    slug: "short-variant",
+    title: "Short Variant",
+    description: "Use when adapting one short piece into platform-specific variants without changing the underlying claim.",
+    attribution: SHORT_FORM_ATTRIBUTION,
+    purpose: "Create channel-specific versions while preserving the central argument, factual claims, and voice constraints.",
+    context: ["brief/platform.md defines channel constraints.", "published/ is reserved for accepted final versions.", "revisions/ stores platform or length variants."],
+    workflow: ["Identify the source draft and target channels.", "Preserve the controlling claim and evidence.", "Adapt opening, paragraphing, call to action, and length for each channel.", "Record semantic changes and any facts removed for compression."],
+    output: ["Variant drafts under revisions/.", "Channel notes.", "Semantic change summary."],
+  }),
+  adapterSkill({
+    slug: "short-editor",
+    title: "Short Editor",
+    description: "Use when reviewing or revising a short piece for clarity, structure, evidence, voice, and generic prose.",
+    attribution: SHORT_FORM_ATTRIBUTION,
+    purpose: "Run a concise editing pass that protects reader value and removes filler without mutating facts.",
+    context: ["style/checklist.md contains quality gates.", "reviews/ stores critique reports.", "Do not edit accepted published files unless explicitly requested."],
+    workflow: ["Check that the opening, central claim, support, turn, and ending match the brief.", "Flag unsupported claims, vague abstractions, duplicated points, slow setup, weak ending, and generic AI patterns.", "Revise the smallest necessary surface while preserving source facts.", "Write a review report when issues are non-trivial."],
+    output: ["Edited draft or targeted patch.", "Review report under reviews/ when useful.", "Blocking issues and remaining tradeoffs."],
+  }),
+  adapterSkill({
+    slug: "short-publisher",
+    title: "Short Publisher",
+    description: "Use when finalizing a short piece into the accepted published folder with metadata and reuse notes.",
+    attribution: SHORT_FORM_ATTRIBUTION,
+    purpose: "Move a reviewed short piece into its final artifact location while preserving revision history.",
+    context: ["published/ contains accepted final pieces.", "revisions/ keeps edited variants.", "brief/ and notes/ remain reusable for future pieces."],
+    workflow: ["Confirm the target channel and final version.", "Write the final piece to published/ with a clear filename.", "Record title, channel, date, source draft, length, and reuse rights at the top of the file.", "Summarize what changed from the draft and what future variants remain useful."],
+    output: ["Published file path.", "Metadata summary.", "Future reuse or follow-up ideas."],
+  }),
+];
+
 export function getBundledNovelSkillFiles(methodPackId: MethodPackId = "novel.claude-book"): BundledNovelSkillFile[] {
   if (methodPackId === "novel.oh-story") {
     return OH_STORY_SKILLS.map((skill) => ({
@@ -736,6 +810,13 @@ export function getBundledNovelSkillFiles(methodPackId: MethodPackId = "novel.cl
 
   if (methodPackId === "novel.creative-writing") {
     return CREATIVE_WRITING_SKILLS.map((skill) => ({
+      relativePath: `${skill.slug}/SKILL.md`,
+      content: skill.content,
+    }));
+  }
+
+  if (methodPackId === "short-form.article") {
+    return SHORT_FORM_SKILLS.map((skill) => ({
       relativePath: `${skill.slug}/SKILL.md`,
       content: skill.content,
     }));

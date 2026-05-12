@@ -5,7 +5,7 @@ import {
 } from '@craft-agent/shared/workspaces'
 import { getBuiltInMethodPack, type MethodPackId } from '@craft-agent/shared/writing/method-packs'
 
-export type WorkspaceProjectType = 'general' | 'novel'
+export type WorkspaceProjectType = 'general' | 'novel' | 'short-form'
 
 export interface CreateWorkspaceOptions {
   remoteServer?: RemoteServerConfig
@@ -33,7 +33,14 @@ export function normalizeCreateWorkspaceOptions(
   projectType?: WorkspaceProjectType,
 ): CreateWorkspaceOptions {
   const withDefaultMethodPack = (options: CreateWorkspaceOptions): CreateWorkspaceOptions => {
-    if (options.methodPackId || options.projectType !== 'novel') return options
+    if (options.methodPackId) return options
+    if (options.projectType === 'short-form') {
+      return {
+        ...options,
+        methodPackId: 'short-form.article',
+      }
+    }
+    if (options.projectType !== 'novel') return options
     return {
       ...options,
       methodPackId: 'novel.claude-book',
@@ -64,14 +71,15 @@ export function ensureWorkspaceRootForProject(
       defaultCreateNovelWorkspaceAtPath(rootPath, workspaceName, undefined, methodPackId),
   },
 ): void {
-  const methodPackId = options.methodPackId ?? (options.projectType === 'novel' ? 'novel.claude-book' : undefined)
+  const methodPackId = options.methodPackId
+    ?? (options.projectType === 'novel' ? 'novel.claude-book' : undefined)
+    ?? (options.projectType === 'short-form' ? 'short-form.article' : undefined)
   if (!methodPackId) return
 
   const methodPack = getBuiltInMethodPack(methodPackId)
   if (!methodPack) {
     throw new Error(`Unknown method pack: ${methodPackId}`)
   }
-  if (methodPack.projectType !== 'novel') return
   if (deps.isValidWorkspace(rootPath)) return
 
   deps.createNovelWorkspaceAtPath(rootPath, name, methodPack.id)
