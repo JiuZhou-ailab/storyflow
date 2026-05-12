@@ -36,6 +36,7 @@ import { stripMarkdown } from './utils/text'
 import { coerceInputText } from './lib/input-text'
 import { getSessionsToRefreshAfterStaleReconnect } from './lib/reconnect-recovery'
 import { formatSessionLoadFailure, shouldTreatSessionLoadFailureAsTransportFallback } from './lib/session-load'
+import { getAutoSessionIdForWorkspaceSwitch } from './lib/workspace-switch'
 import { extractWorkspaceSlugFromPath } from '@craft-agent/shared/utils/workspace-slug'
 import { DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels'
 import { initRendererPerf } from './lib/perf'
@@ -268,6 +269,7 @@ export default function App() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   // Window's workspace ID — shared atom so Root/ThemeProvider stays in sync on switch
   const [windowWorkspaceId, setWindowWorkspaceId] = useAtom(windowWorkspaceIdAtom)
+  const pendingCreatedWorkspaceRef = useRef<Workspace | null>(null)
 
   // Derive workspace slug for SDK skill qualification
   const windowWorkspaceSlug = useMemo(() => {
@@ -466,7 +468,7 @@ export default function App() {
     }
   }, [clearStreamingState, replaceLoadedSession, syncSessionOptionsFromSession, reconcilePermissionModeState, store])
 
-  const loadSessionsFromServer = useCallback(async () => {
+  const loadSessionsFromServer = useCallback(async (): Promise<Session[]> => {
     setSessionLoadError(null)
 
     try {
@@ -502,6 +504,8 @@ export default function App() {
           navigate(routes.view.allSessions(session.id))
         }
       }
+
+      return loadedSessions
     } catch (err) {
       console.error('[App] Failed to load sessions:', err)
       const transportState = await window.electronAPI.getTransportConnectionState().catch(() => null)
@@ -510,11 +514,12 @@ export default function App() {
         console.error('[App] Treating session load failure as transport fallback:', transportState)
         setSessionsLoaded(true)
         setSessionLoadError(null)
-        return
+        return []
       }
 
       setSessionLoadError(formatSessionLoadFailure(err))
       setSessionsLoaded(true)
+      return []
     }
   }, [initializeSessions, initialSessionId, reconcilePermissionModeState, windowWorkspaceId])
 
@@ -1732,43 +1737,66 @@ export default function App() {
       // 1. Update the main process's window-workspace mapping
       await window.electronAPI.switchWorkspace(workspaceId)
 
-      // 2. Update React state to trigger re-renders
+      // 2. Mark session metadata as not ready for the new workspace.
+      // Navigation restoration is gated on this flag so it cannot reconcile
+      // a new workspace against an intentionally empty metadata map.
+      setSessionsLoaded(false)
+      setSessionLoadError(null)
+
+      // 3. Update React state to trigger re-renders
       setWindowWorkspaceId(workspaceId)
 
-      // 3. Clear selected session - the old session belongs to the previous workspace
+      // 4. Clear selected session - the old session belongs to the previous workspace
       // and should not remain selected when switching to a new workspace.
       // This prevents showing stale session data from the wrong workspace.
       setSession({ selected: null })
 
-      // 4. Clear pending permissions/credentials (not relevant to new workspace)
+      // 5. Clear pending permissions/credentials (not relevant to new workspace)
       setPendingPermissions(new Map())
       setPendingCredentials(new Map())
 
-      // 5. Clear session options from previous workspace
+      // 6. Clear session options from previous workspace
       // (session IDs are unique UUIDs, but clearing prevents unbounded memory growth
       // and ensures no stale state from old workspace persists)
       setSessionOptions(new Map())
 
-      // 6. Clear message drafts from previous workspace
+      // 7. Clear message drafts from previous workspace
       // (prevents memory growth on repeated workspace switches)
       sessionDraftsRef.current.clear()
 
-      // 7. Reset sources and skills atoms to empty
+      // 8. Reset sources and skills atoms to empty
       // (prevents stale data flash during workspace switch - AppShell will reload)
       store.set(sourcesAtom, [])
       store.set(skillsAtom, [])
 
-      // 8. Clear session atoms BEFORE workspace switch
+      // 9. Clear session atoms BEFORE workspace switch
       // This prevents stale session data from the previous workspace being visible.
       store.set(sessionMetaMapAtom, new Map())
       store.set(sessionIdsAtom, [])
 
-      // Note: NavigationContext detects the workspaceId change and handles
-      // panel restoration from the stored workspace URL (or defaults to allSessions).
-      // Sessions and theme will reload automatically due to windowWorkspaceId dependency
-      // in useEffect hooks.
+      const pendingCreatedWorkspace = pendingCreatedWorkspaceRef.current
+      const shouldOpenStarterSession = pendingCreatedWorkspace?.id === workspaceId
+      const loadedSessions = shouldOpenStarterSession
+        ? await loadSessionsFromServer()
+        : []
+
+      if (shouldOpenStarterSession) {
+        pendingCreatedWorkspaceRef.current = null
+        const remoteWorkspaceId = pendingCreatedWorkspace?.remoteServer?.remoteWorkspaceId
+          ?? workspaces.find(workspace => workspace.id === workspaceId)?.remoteServer?.remoteWorkspaceId
+        const sessionId = getAutoSessionIdForWorkspaceSwitch(loadedSessions, workspaceId, remoteWorkspaceId)
+        if (sessionId) {
+          navigate(routes.view.allSessions(sessionId))
+        }
+      }
+
+      // Note: NavigationContext detects the workspaceId change and handles panel
+      // restoration from the stored workspace URL (or defaults to allSessions).
+      // Sessions and theme reload automatically due to windowWorkspaceId dependency
+      // in useEffect hooks. Newly-created workspaces are loaded immediately above
+      // so their starter session is visible without a manual refresh.
     }
-  }, [windowWorkspaceId, setSession, store])
+  }, [windowWorkspaceId, setSession, store, loadSessionsFromServer, workspaces])
 
   // Handle workspace switch by slug (called by NavigationContext on popstate when ?ws= changes)
   const handleSwitchWorkspaceBySlug = useCallback((slug: string) => {
@@ -1784,6 +1812,8 @@ export default function App() {
   }, [])
 
   const handleWorkspaceCreated = useCallback(async (workspace: Workspace) => {
+    pendingCreatedWorkspaceRef.current = workspace
+
     setWorkspaces(prev => {
       const existingIndex = prev.findIndex(item => item.id === workspace.id)
       if (existingIndex === -1) return [...prev, workspace]

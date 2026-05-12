@@ -146,7 +146,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
     const windowWorkspaceId = ctx.webContentsId != null
       ? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId)
       : undefined
-    const workspaceId = ctx.workspaceId ?? windowWorkspaceId
+    const workspaceId = windowWorkspaceId ?? ctx.workspaceId
     const sessions = sessionManager.getSessions(workspaceId ?? undefined)
     end()
 
