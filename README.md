@@ -2,58 +2,58 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-Craft Agents OSS is a Bun monorepo for a desktop and headless AI-agent workspace. The main product is an Electron app that combines chat sessions, local workspaces, sources, skills, file editing, diff review, automations, and writing-project workflows.
+Craft Agents OSS 是一个基于 Bun workspace 的 AI Agent 工作台项目，支持桌面端和无头服务端两种运行形态。核心产品是 Electron 桌面应用，集成聊天会话、本地工作区、外部来源、技能、文件编辑、差异审阅、自动化和写作项目工作流。
 
-This repository is currently optimized for source development, local packaging, and custom workspace workflows. It is not only a thin Claude wrapper: it includes a shared RPC server, a Pi SDK subprocess adapter, reusable UI packages, a web client, a session viewer, and writing method-pack scaffolds.
+当前仓库主要面向源码开发、本地打包和自定义工作区流程。它不只是一个 Claude 包装层：仓库内包含共享 RPC 服务、Pi SDK 子进程适配器、可复用 UI 包、Web 客户端、会话查看器，以及写作方法包脚手架。
 
-## What This Project Provides
+## 项目能力
 
-- **Electron desktop app** for multi-session agent work, source management, file editing, local diff review, and workspace navigation.
-- **Headless server** that keeps sessions and tools running remotely over WebSocket.
-- **CLI client** for scripting against a headless server.
-- **Shared UI and protocol packages** used by Electron, web UI, and viewer surfaces.
-- **Multiple agent backends** through Anthropic Claude Agent SDK and Pi SDK based provider integrations.
-- **Writing workspace mode** with Markdown editing, file mentions, line numbers, total character counts, inline selection rewrite, export, local version snapshots, and diff review.
-- **Writing method packs** for Claude-Book, Oh Story, Crucible, and general creative-writing scaffolds.
-- **Sources and skills** for MCP servers, REST APIs, local files, workspace-specific instructions, and agent-native integrations.
+- **Electron 桌面应用**：支持多会话 Agent 工作、来源管理、文件编辑、本地差异审阅和工作区导航。
+- **无头服务端**：通过 WebSocket 远程运行会话和工具。
+- **CLI 客户端**：用于脚本化访问无头服务端。
+- **共享 UI 与协议包**：供 Electron、Web UI 和 Viewer 复用。
+- **多 Agent 后端**：支持 Anthropic Claude Agent SDK 和基于 Pi SDK 的 Provider 集成。
+- **写作工作区模式**：支持 Markdown 编辑、文件提及、行号、总字数、选区改写、导出、本地版本快照和差异审阅。
+- **写作方法包**：内置 Claude-Book、Oh Story、Crucible 和通用创意写作脚手架。
+- **来源、技能和自动化**：支持 MCP server、REST API、本地文件、工作区指令和 Agent 原生集成。
 
-## Repository Map
+## 仓库结构
 
 ```text
 craft-agents-oss/
 ├── apps/
-│   ├── cli/                 # Terminal client for the headless server
-│   ├── electron/            # Primary desktop app: main, preload, renderer
-│   ├── viewer/              # Shared session transcript viewer
-│   └── webui/               # Browser client for the headless server
+│   ├── cli/                 # 无头服务端的命令行客户端
+│   ├── electron/            # 主桌面应用：main、preload、renderer
+│   ├── viewer/              # 共享会话记录查看器
+│   └── webui/               # 无头服务端的浏览器客户端
 ├── packages/
-│   ├── core/                # Shared low-level types and utilities
-│   ├── messaging-gateway/   # Messaging gateway integration
+│   ├── core/                # 共享底层类型和工具
+│   ├── messaging-gateway/   # 消息网关集成
 │   ├── messaging-whatsapp-worker/
-│   ├── pi-agent-server/     # Out-of-process Pi SDK adapter
-│   ├── server/              # Standalone headless server entry
-│   ├── server-core/         # RPC transport, reusable handlers, platform contracts
-│   ├── session-mcp-server/  # Bundled MCP server used by sessions
-│   ├── session-tools-core/  # Tool implementations shared by runtime surfaces
-│   ├── shared/              # Config, protocol, sessions, sources, writing logic
-│   └── ui/                  # Shared React UI, Markdown, diff, chat components
+│   ├── pi-agent-server/     # 独立进程 Pi SDK 适配器
+│   ├── server/              # 独立无头服务入口
+│   ├── server-core/         # RPC 传输、可复用 handler、平台契约
+│   ├── session-mcp-server/  # 会话使用的内置 MCP server
+│   ├── session-tools-core/  # 多运行时共享的工具实现
+│   ├── shared/              # 配置、协议、会话、来源、写作逻辑
+│   └── ui/                  # 共享 React UI、Markdown、diff、chat 组件
 ├── docs/
-│   └── plans/               # Design and implementation planning notes
-├── scripts/                 # Build, validation, release, and maintenance scripts
-└── README.md                # Project overview and development entry point
+│   └── plans/               # 设计和实现规划文档
+├── scripts/                 # 构建、验证、发布和维护脚本
+└── README.md                # 项目总览和开发入口
 ```
 
-## Requirements
+## 环境要求
 
-- [Bun](https://bun.sh/) 1.2 or newer.
-- Git.
-- Node-compatible native tooling required by Electron packages.
-- Python 3 only for document-tool smoke tests.
-- Platform-specific build tools if you package Electron installers.
+- [Bun](https://bun.sh/) 1.2 或更高版本。
+- Git。
+- Electron 相关包所需的 Node 兼容原生工具链。
+- Python 3，仅用于文档工具 smoke test。
+- 如果要打包 Electron 安装包，需要对应平台的构建工具。
 
-The project uses Bun workspaces. Use `bun`, not npm or pnpm, for install, test, build, and script execution.
+本项目使用 Bun workspaces。安装、测试、构建和脚本执行都应使用 `bun`，不要使用 npm 或 pnpm。
 
-## Quick Start
+## 快速开始
 
 ```bash
 git clone https://github.com/JiuZhou-ailab/craft-agents-oss.git
@@ -62,48 +62,48 @@ bun install
 bun run electron:dev
 ```
 
-For a production-like local run:
+生产形态的本地运行：
 
 ```bash
 bun run electron:start
 ```
 
-`electron:start` builds the Electron main process, preload scripts, renderer, bundled resources, and then launches the app.
+`electron:start` 会构建 Electron main process、preload scripts、renderer、内置资源，然后启动应用。
 
-## Common Development Commands
+## 常用开发命令
 
-| Command | Purpose |
+| 命令 | 用途 |
 | --- | --- |
-| `bun install` | Install workspace dependencies |
-| `bun run electron:dev` | Start the Electron app in development mode |
-| `bun run electron:start` | Build and run the Electron app |
-| `bun run electron:build` | Build Electron main, preload, renderer, resources, and assets |
-| `bun run electron:dist:dev:mac` | Build an unsigned development macOS package through the runtime-staged packaging path |
-| `bun run release -- --platform=darwin --arch=arm64` | Run version checks, CI validation, and a runtime-staged local package build |
-| `bun run server:start` | Start the standalone headless server |
-| `bun run server:dev` | Start the headless server with debug settings |
-| `bun run webui:dev` | Start the browser client |
-| `bun run viewer:dev` | Start the session viewer |
-| `bun run typecheck:all` | Typecheck all major packages and apps |
-| `bun test` | Run Bun tests |
-| `bun run validate:ci` | Run the broader validation suite |
-| `bun run lint:i18n:coverage` | Check that literal i18n keys exist |
+| `bun install` | 安装 workspace 依赖 |
+| `bun run electron:dev` | 以开发模式启动 Electron 应用 |
+| `bun run electron:start` | 构建并运行 Electron 应用 |
+| `bun run electron:build` | 构建 Electron main、preload、renderer、resources 和 assets |
+| `bun run electron:dist:dev:mac` | 通过 runtime-staged 打包路径构建未签名的 macOS 开发包 |
+| `bun run release -- --platform=darwin --arch=arm64` | 运行版本检查、CI 验证和 runtime-staged 本地打包 |
+| `bun run server:start` | 启动独立无头服务端 |
+| `bun run server:dev` | 以 debug 设置启动无头服务端 |
+| `bun run webui:dev` | 启动浏览器客户端 |
+| `bun run viewer:dev` | 启动会话查看器 |
+| `bun run typecheck:all` | 对主要 packages 和 apps 做类型检查 |
+| `bun test` | 运行 Bun 测试 |
+| `bun run validate:ci` | 运行更完整的验证套件 |
+| `bun run lint:i18n:coverage` | 检查字面量 i18n key 是否存在 |
 
-## Desktop App
+## 桌面应用
 
-The Electron app lives in `apps/electron`.
+Electron 应用位于 `apps/electron`。
 
-Important paths:
+关键路径：
 
 ```text
-apps/electron/src/main/       # Main process, app lifecycle, windows, local handlers
-apps/electron/src/preload/    # Context bridges exposed to renderer
-apps/electron/src/transport/  # Channel map and RPC client bridge
-apps/electron/src/renderer/   # React UI, shell, chat, writing workspace
-apps/electron/resources/      # Runtime scripts and packaged resources
+apps/electron/src/main/       # Main process、应用生命周期、窗口、本地 handlers
+apps/electron/src/preload/    # 暴露给 renderer 的 context bridge
+apps/electron/src/transport/  # Channel map 和 RPC client bridge
+apps/electron/src/renderer/   # React UI、shell、chat、写作工作区
+apps/electron/resources/      # 运行时脚本和打包资源
 ```
 
-Useful commands:
+常用命令：
 
 ```bash
 bun run electron:build:main
@@ -113,32 +113,32 @@ bun run electron:build
 bun run electron:start
 ```
 
-Logs in development are written under the Electron log directory, usually:
+开发日志通常写入 Electron 日志目录：
 
 ```text
 ~/Library/Logs/@craft-agent/electron/main.log
 ```
 
-## Writing Workspace
+## 写作工作区
 
-Writing projects are first-class workspaces. They support:
+写作项目是一等工作区，支持：
 
-- Method-pack based project scaffolds.
-- Markdown manuscript editing with line numbers and total character count.
-- Writer-facing file labels for chapter and planning files.
-- `@file` mentions by display name while preserving the real file path.
-- Inline selection rewrite that edits the active document instead of routing through the normal chat transcript.
-- Inline diff review for generated file changes.
-- Export controls for manuscript, outline, state, timeline, style, work, and analysis files.
-- Local git-backed version snapshots from the version-history button near export.
+- 基于方法包的项目脚手架。
+- 带行号和总字数的 Markdown 稿件编辑。
+- 面向作者的章节、规划文件标签。
+- 按展示名进行 `@file` 提及，同时保留真实文件路径。
+- 选区改写：直接编辑当前文档，而不是走普通聊天转录流程。
+- 生成文件变更的内联差异审阅。
+- 对稿件、大纲、状态、时间线、风格、作品和分析文件的导出控制。
+- 通过导出附近的版本历史按钮创建本地 git 版本快照。
 
-Built-in method packs live in:
+内置方法包位于：
 
 ```text
 packages/shared/src/writing/method-packs/
 ```
 
-The scaffold and writing project logic live in:
+脚手架和写作项目逻辑位于：
 
 ```text
 packages/shared/src/writing/
@@ -146,26 +146,26 @@ packages/shared/src/workspaces/
 apps/electron/src/renderer/components/writing/
 ```
 
-## Headless Server
+## 无头服务端
 
-The standalone server runs agent sessions and tools without the Electron UI.
+独立服务端可以在没有 Electron UI 的情况下运行 Agent 会话和工具。
 
 ```bash
 CRAFT_SERVER_TOKEN=$(openssl rand -hex 32) bun run server:start
 ```
 
-Common environment variables:
+常见环境变量：
 
-| Variable | Required | Default | Description |
+| 变量 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `CRAFT_SERVER_TOKEN` | Yes | - | Bearer token for client authentication |
-| `CRAFT_RPC_HOST` | No | `127.0.0.1` | Bind address |
-| `CRAFT_RPC_PORT` | No | `9100` | Bind port |
-| `CRAFT_RPC_TLS_CERT` | No | - | PEM certificate path for `wss://` |
-| `CRAFT_RPC_TLS_KEY` | No | - | PEM private key path |
-| `CRAFT_DEBUG` | No | `false` | Enable debug logging |
+| `CRAFT_SERVER_TOKEN` | 是 | - | 客户端认证 Bearer token |
+| `CRAFT_RPC_HOST` | 否 | `127.0.0.1` | 绑定地址 |
+| `CRAFT_RPC_PORT` | 否 | `9100` | 绑定端口 |
+| `CRAFT_RPC_TLS_CERT` | 否 | - | `wss://` 使用的 PEM 证书路径 |
+| `CRAFT_RPC_TLS_KEY` | 否 | - | PEM 私钥路径 |
+| `CRAFT_DEBUG` | 否 | `false` | 启用 debug 日志 |
 
-Connect the Electron app to a remote server with:
+让 Electron 应用连接远程服务端：
 
 ```bash
 CRAFT_SERVER_URL=ws://127.0.0.1:9100 \
@@ -173,16 +173,16 @@ CRAFT_SERVER_TOKEN=<token> \
 bun run electron:start
 ```
 
-## CLI Client
+## CLI 客户端
 
-The CLI lives in `apps/cli` and talks to the headless server.
+CLI 位于 `apps/cli`，用于访问无头服务端。
 
 ```bash
 bun run apps/cli/src/index.ts --help
 bun run apps/cli/src/index.ts --url ws://127.0.0.1:9100 --token <token> ping
 ```
 
-Typical commands include:
+常见命令：
 
 ```bash
 bun run apps/cli/src/index.ts workspaces
@@ -191,9 +191,9 @@ bun run apps/cli/src/index.ts send <session-id> "Summarize this workspace"
 bun run apps/cli/src/index.ts run --workspace-dir . "Inspect this repository"
 ```
 
-## Runtime Data
+## 运行时数据
 
-Local user data is stored under:
+本地用户数据存放在：
 
 ```text
 ~/.craft-agent/
@@ -204,28 +204,28 @@ Local user data is stored under:
 └── sessions/
 ```
 
-Writing workspaces may also contain their own project files, skills, `craft-writing.json`, `craft-pack-lock.json`, and a local `.git` directory for version snapshots.
+写作工作区还可能包含项目文件、skills、`craft-writing.json`、`craft-pack-lock.json`，以及用于版本快照的本地 `.git` 目录。
 
-## LLM Providers
+## LLM Provider
 
-The project supports multiple connection types through two runtime paths:
+项目通过两条运行时路径支持多种连接类型：
 
-- **Claude backend**: Anthropic Claude Agent SDK, Anthropic API key, Claude Max/Pro OAuth, and compatible custom endpoints.
-- **Pi backend**: Pi SDK based connections for Google AI Studio, ChatGPT/Codex OAuth, GitHub Copilot OAuth, OpenAI API keys, and related provider flows.
+- **Claude backend**：Anthropic Claude Agent SDK、Anthropic API key、Claude Max/Pro OAuth，以及兼容的自定义 endpoint。
+- **Pi backend**：基于 Pi SDK 的连接，包括 Google AI Studio、ChatGPT/Codex OAuth、GitHub Copilot OAuth、OpenAI API key 和相关 provider 流程。
 
-Connection configuration is stored in the user config and credential store, not in repository source.
+连接配置保存在用户配置和凭据存储中，不写入仓库源码。
 
-## Sources, Skills, and Automations
+## 来源、技能和自动化
 
-- **Sources** connect external systems such as MCP servers, REST APIs, local files, and service integrations.
-- **Skills** are workspace-scoped instructions and workflows that can be mentioned in chat.
-- **Automations** can create or update sessions based on labels, schedules, tool events, permission changes, and session lifecycle events.
+- **Sources**：连接 MCP server、REST API、本地文件和服务集成等外部系统。
+- **Skills**：可在聊天中提及的工作区级指令和工作流。
+- **Automations**：可根据标签、计划任务、工具事件、权限变化和会话生命周期创建或更新会话。
 
-Most shared logic for these systems is in `packages/shared/src`, with reusable server handlers in `packages/server-core/src/handlers/rpc`.
+这些系统的大部分共享逻辑位于 `packages/shared/src`，可复用服务端 handler 位于 `packages/server-core/src/handlers/rpc`。
 
-## Validation Strategy
+## 验证策略
 
-Use focused checks while developing:
+开发中优先使用聚焦检查：
 
 ```bash
 bun test path/to/test.ts
@@ -233,7 +233,7 @@ cd apps/electron && bun run typecheck
 cd packages/shared && bun run tsc --noEmit
 ```
 
-Use broader checks before release:
+发布前使用更完整检查：
 
 ```bash
 bun run check-version
@@ -242,7 +242,7 @@ bun run validate:ci
 bun run electron:build
 ```
 
-For packaging:
+打包命令：
 
 ```bash
 bun run electron:dist:dev:mac -- --arch=arm64
@@ -250,40 +250,40 @@ bun run electron:dist:dev:mac -- --arch=x64
 bun run electron:dist:dev:win
 ```
 
-Current GitHub releases publish only macOS `.dmg` and Windows `.exe` artifacts. macOS artifacts are architecture-specific: Apple Silicon Macs require `Craft-Agents-arm64.dmg`, Intel Macs require `Craft-Agents-x64.dmg`, and the Electron runtime requires macOS 12.0 or newer. Opening the wrong macOS artifact, or running on macOS 11 or older, can produce the system message that this Mac does not support the application.
+当前 GitHub release 只发布 macOS `.dmg` 和 Windows `.exe` 产物。macOS 产物按架构区分：Apple Silicon Mac 使用 `Craft-Agents-arm64.dmg`，Intel Mac 使用 `Craft-Agents-x64.dmg`，并且 Electron runtime 需要 macOS 12.0 或更高版本。打开错误架构的 macOS 产物，或在 macOS 11 及更早系统运行，可能会看到系统提示此 Mac 不支持该应用。
 
-### macOS Security Warning
+### macOS 安全提示
 
-Until the macOS app is signed with a Developer ID certificate and notarized by Apple, macOS Gatekeeper may show a warning that Apple cannot verify whether Craft Agents contains malware or may harm privacy. Only use the steps below for Craft Agents downloads from the official GitHub release page.
+在 macOS 应用使用 Developer ID 证书签名并通过 Apple notarization 之前，macOS Gatekeeper 可能会提示 Apple 无法验证 Craft Agents 是否包含恶意软件或是否会影响隐私。下面步骤只适用于从官方 GitHub release 页面下载的 Craft Agents。
 
-To open the app:
+打开应用：
 
-1. Open `System Settings`.
-2. Search for `Security`, then open `Privacy & Security`.
-3. Scroll to `Security`.
-4. Find the blocked `Craft Agents` entry.
-5. Click `Open Anyway`, then confirm.
+1. 打开 `System Settings`。
+2. 搜索 `Security`，进入 `Privacy & Security`。
+3. 滚动到 `Security` 区域。
+4. 找到被拦截的 `Craft Agents` 条目。
+5. 点击 `Open Anyway` 并确认。
 
-The long-term distribution fix is Developer ID signing plus Apple notarization. This manual approval step is only a temporary workaround for unsigned or non-notarized builds.
+长期发布方案是 Developer ID 签名加 Apple notarization。这个手动批准步骤只是未签名或未公证构建的临时绕过方式。
 
-The root packaging scripts call the platform build scripts under `apps/electron/scripts` so runtime assets such as bundled `uv`, Bun, SDK binaries, ripgrep, and helper subprocesses are staged before `electron-builder` runs. Direct `electron-builder` commands from the repository root are not the release path.
+根打包脚本会调用 `apps/electron/scripts` 下的平台构建脚本，确保内置 `uv`、Bun、SDK binary、ripgrep 和辅助子进程等运行时资源在 `electron-builder` 执行前完成 staging。不要直接从仓库根目录运行裸 `electron-builder` 命令作为 release 路径。
 
-For the full local release gate:
+完整本地发布门禁：
 
 ```bash
 bun run release -- --platform=darwin --arch=arm64
 ```
 
-## Development Notes
+## 开发注意事项
 
-- Keep Electron IPC/RPC channels declared in `packages/shared/src/protocol`, mapped in `apps/electron/src/transport`, typed in `apps/electron/src/shared/types.ts`, and registered in the appropriate handler package.
-- Some system handlers exist in both reusable `server-core` and Electron-local GUI/main-process layers. When adding runtime channels, verify both registration paths when applicable.
-- Keep generated or runtime-only files out of commits, especially `.playwright-mcp/`, packaged `dist/` output, logs, and local credentials.
-- Use local helper packages and existing abstractions before adding new dependencies.
-- Root documentation should stay aligned with actual package layout and supported commands.
+- Electron IPC/RPC channel 应在 `packages/shared/src/protocol` 声明，在 `apps/electron/src/transport` 映射，在 `apps/electron/src/shared/types.ts` 类型化，并在对应 handler package 中注册。
+- 部分 system handler 同时存在于可复用的 `server-core` 和 Electron 本地 GUI/main-process 层。新增运行时 channel 时，需要按场景检查两条注册路径。
+- 不要提交生成文件或仅运行时文件，尤其是 `.playwright-mcp/`、打包后的 `dist/` 输出、日志和本地凭据。
+- 添加新依赖前，优先使用本地 helper package 和已有抽象。
+- 根文档应与实际 package 布局和支持命令保持一致。
 
-## License
+## 许可证
 
-This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
+本项目使用 Apache License 2.0。详见 [LICENSE](LICENSE)。
 
-Third-party SDKs and services may have their own terms. In particular, Claude Agent SDK usage is subject to Anthropic terms, and Pi SDK/provider usage is subject to the relevant provider terms.
+第三方 SDK 和服务可能有各自条款。尤其是 Claude Agent SDK 受 Anthropic 条款约束，Pi SDK/provider 使用受对应 provider 条款约束。
