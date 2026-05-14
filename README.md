@@ -38,7 +38,6 @@ craft-agents-oss/
 │   ├── shared/              # Config, protocol, sessions, sources, writing logic
 │   └── ui/                  # Shared React UI, Markdown, diff, chat components
 ├── docs/
-│   ├── assets/              # Documentation images and diagrams
 │   └── plans/               # Design and implementation planning notes
 ├── scripts/                 # Build, validation, release, and maintenance scripts
 └── README.md                # Project overview and development entry point
@@ -256,8 +255,6 @@ Current GitHub releases publish only macOS `.dmg` and Windows `.exe` artifacts. 
 ### macOS Security Warning
 
 Until the macOS app is signed with a Developer ID certificate and notarized by Apple, macOS Gatekeeper may show a warning that Apple cannot verify whether Craft Agents contains malware or may harm privacy. Only use the steps below for Craft Agents downloads from the official GitHub release page.
-
-![macOS Privacy and Security Open Anyway guidance](docs/assets/macos-gatekeeper-open-anyway.svg)
 
 To open the app:
 
