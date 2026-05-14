@@ -227,6 +227,8 @@ done
 # 6. Build Electron app
 echo "Building Electron app..."
 cd "$ROOT_DIR"
+export CRAFT_BUILD_PLATFORM=darwin
+export CRAFT_BUILD_ARCH="$ARCH"
 bun run electron:build
 
 # 7. Package with electron-builder

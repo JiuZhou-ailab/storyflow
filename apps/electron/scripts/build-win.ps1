@@ -28,6 +28,8 @@ function Get-Sha256Hex {
 }
 
 Write-Host "=== Building Craft Agents Windows Installer using electron-builder ===" -ForegroundColor Cyan
+$env:CRAFT_BUILD_PLATFORM = "win32"
+$env:CRAFT_BUILD_ARCH = "x64"
 
 # Debug: System information
 Write-Host ""
@@ -334,6 +336,13 @@ try {
 Write-Host "  Copying resources and bundled assets..."
 Push-Location $ElectronDir
 try {
+    Push-Location $RootDir
+    try {
+        bun run server:build:subprocess
+        if ($LASTEXITCODE -ne 0) { throw "Subprocess server build failed" }
+    } finally {
+        Pop-Location
+    }
     bun scripts/copy-assets.ts
     if ($LASTEXITCODE -ne 0) { throw "Asset copy failed" }
     Write-Host "  Assets copied" -ForegroundColor Green

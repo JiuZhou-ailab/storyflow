@@ -1,18 +1,21 @@
-/**
- * Cross-platform asset copy script.
- *
- * Copies the resources/ directory to dist/resources/.
- * All bundled assets (docs, themes, permissions, tool-icons) now live in resources/
- * which electron-builder handles natively via directories.buildResources.
- *
- * At Electron startup, setBundledAssetsRoot(__dirname) is called, and then
- * getBundledAssetsDir('docs') resolves to <__dirname>/resources/docs/, etc.
- *
- * Run: bun scripts/copy-assets.ts
- */
+// input: Electron resources, bundled assets, and built subprocess bundles
+// output: dist/resources tree with static assets and subprocess runtime entrypoints
+// pos: Electron-local resource copy step used by platform packaging scripts
 
 import { cpSync, copyFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
+import { resolveBuildTargetFromEnv, stageSubprocessResources } from '../../../scripts/build/resource-staging.ts';
+
+const electronDir = join(import.meta.dir, '..');
+const rootDir = join(electronDir, '..', '..');
+const target = resolveBuildTargetFromEnv();
+
+stageSubprocessResources({
+  rootDir,
+  electronDir,
+  platform: target.platform,
+  arch: target.arch,
+});
 
 // Copy all resources (icons, themes, docs, permissions, tool-icons, etc.)
 cpSync('resources', 'dist/resources', { recursive: true });
