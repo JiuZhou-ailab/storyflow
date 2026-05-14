@@ -169,11 +169,11 @@ Remove-Item -Recurse -Force "$ElectronDir\node_modules\@anthropic-ai\claude-agen
 Copy-Item -Recurse -Force $SdkSource "$ElectronDir\node_modules\@anthropic-ai\"
 
 # 4a. Resolve the target arch's binary package (cross-fetch from npm if absent).
-# Target arch is hard-coded x64 — Windows arm64 is not currently shipped.
+# Target arch is hard-coded x64 - Windows arm64 is not currently shipped.
 $SdkBinPkg = "claude-agent-sdk-win32-x64"
 $SdkBinSource = "$RootDir\node_modules\@anthropic-ai\$SdkBinPkg"
 if (-not (Test-Path $SdkBinSource)) {
-    Write-Host "Cross-arch build: $SdkBinPkg not in node_modules — fetching from npm..."
+    Write-Host "Cross-arch build: $SdkBinPkg not in node_modules - fetching from npm..."
     $RootPackageJson = Join-Path $RootDir "package.json"
     $RootPackage = Get-Content -Raw -Path $RootPackageJson | ConvertFrom-Json
     $SdkVersion = $RootPackage.dependencies.'@anthropic-ai/claude-agent-sdk'
@@ -227,7 +227,7 @@ Remove-Item -Recurse -Force "$ElectronDir\node_modules\@vscode\ripgrep" -ErrorAc
 Copy-Item -Recurse -Force $RgSource "$ElectronDir\node_modules\@vscode\"
 
 # 6. Copy network interceptor sources (for Pi subprocess; Claude no longer
-#    uses --preload — see Phase 2 in plans/sdk-uplift-plan.md).
+#    uses --preload - see Phase 2 in plans/sdk-uplift-plan.md).
 $InterceptorSource = "$RootDir\packages\shared\src\unified-network-interceptor.ts"
 if (-not (Test-Path $InterceptorSource)) {
     Write-Host "ERROR: Interceptor not found at $InterceptorSource" -ForegroundColor Red
@@ -312,7 +312,7 @@ try {
 }
 
 # Copy all resources and bundled assets using the shared script.
-# Single source of truth — matches Mac/Linux build (bun run build:copy).
+# Single source of truth - matches Mac/Linux build (bun run build:copy).
 # Copies: resources (icons, DMG bg), docs, tool-icons, themes, permissions, config-defaults.
 Write-Host "  Copying resources and bundled assets..."
 Push-Location $ElectronDir
