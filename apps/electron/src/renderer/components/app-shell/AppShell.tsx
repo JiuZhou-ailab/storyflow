@@ -1837,6 +1837,59 @@ function AppShellContent({
     }
   }, [maybeCreateNovelAutoVersion, novelDocumentContent, novelDocumentDirty, selectedNovelDocumentPath, t])
 
+  const syncSelectedNovelDocumentFromDisk = React.useCallback(async (filePath: string): Promise<boolean> => {
+    if (selectedNovelFile?.path !== filePath) return true
+
+    if (novelDocumentDirty) {
+      toast.error(t(
+        'writing.review.acceptBlockedByUnsavedEdits',
+        'Save or discard your current edits before accepting this change.'
+      ))
+      return false
+    }
+
+    try {
+      const content = await window.electronAPI.readFile(filePath)
+      if (latestNovelDocumentPathRef.current !== filePath) return true
+
+      setNovelDocumentContent(content)
+      setSavedNovelDocumentContent(content)
+      novelVersionBaselinesRef.current[filePath] ??= {
+        content,
+        timestamp: Date.now(),
+      }
+      return true
+    } catch (error) {
+      toast.error(t('writing.review.acceptFailed', 'Failed to accept this change'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+      return false
+    }
+  }, [novelDocumentDirty, selectedNovelFile?.path, t])
+
+  React.useEffect(() => {
+    if (!selectedNovelDocumentPath || novelDocumentDirty || latestNovelFileChanges.length === 0) return
+
+    const hasSelectedFileChange = reviewableNovelFileChanges.some(change =>
+      !change.error && change.filePath === selectedNovelDocumentPath
+    )
+    if (!hasSelectedFileChange) return
+
+    const timeoutId = window.setTimeout(() => {
+      void syncSelectedNovelDocumentFromDisk(selectedNovelDocumentPath)
+    }, 250)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [
+    latestNovelFileChanges.length,
+    novelDocumentDirty,
+    reviewableNovelFileChanges,
+    selectedNovelDocumentPath,
+    syncSelectedNovelDocumentFromDisk,
+  ])
+
   const handleCreateNovelVersion = React.useCallback(async () => {
     if (!novelWorkspaceRoot) return
     const saved = await ensureNovelDocumentSaved()
@@ -1991,6 +2044,58 @@ function AppShellContent({
   const selectedNovelReviewFileIndex = selectedNovelFile?.path
     ? pendingNovelChangedFilePaths.indexOf(selectedNovelFile.path)
     : -1
+  const [dismissedNovelReviewDotKeys, setDismissedNovelReviewDotKeys] = React.useState<Set<string>>(() => new Set())
+  const pendingNovelReviewDotKeysByPath = React.useMemo(() => {
+    const keysByPath = new Map<string, string[]>()
+
+    for (const change of reviewableNovelFileChanges) {
+      if (change.error) continue
+      const changeKey = getNovelReviewChangeKey(change)
+      if (novelChangeReviewStatus[changeKey]) continue
+
+      const keys = keysByPath.get(change.filePath) ?? []
+      keys.push(changeKey)
+      keysByPath.set(change.filePath, keys)
+    }
+
+    return keysByPath
+  }, [novelChangeReviewStatus, reviewableNovelFileChanges])
+
+  React.useEffect(() => {
+    const pendingKeys = new Set<string>()
+    for (const keys of pendingNovelReviewDotKeysByPath.values()) {
+      for (const key of keys) pendingKeys.add(key)
+    }
+
+    setDismissedNovelReviewDotKeys((current) => {
+      let changed = false
+      const next = new Set<string>()
+      for (const key of current) {
+        if (pendingKeys.has(key)) {
+          next.add(key)
+        } else {
+          changed = true
+        }
+      }
+      return changed ? next : current
+    })
+  }, [pendingNovelReviewDotKeysByPath])
+
+  const hasNovelReviewDot = React.useCallback((filePath: string): boolean => {
+    const keys = pendingNovelReviewDotKeysByPath.get(filePath)
+    return !!keys?.some(key => !dismissedNovelReviewDotKeys.has(key))
+  }, [dismissedNovelReviewDotKeys, pendingNovelReviewDotKeysByPath])
+
+  const handleDismissNovelReviewDot = React.useCallback((filePath: string) => {
+    const keys = pendingNovelReviewDotKeysByPath.get(filePath)
+    if (!keys || keys.length === 0) return
+
+    setDismissedNovelReviewDotKeys((current) => {
+      const next = new Set(current)
+      for (const key of keys) next.add(key)
+      return next
+    })
+  }, [pendingNovelReviewDotKeysByPath])
 
   const handleAskAiForNovelSelection = React.useCallback(async ({ selectedText, instruction }: NovelSelectionAiRequest) => {
     if (!selectedNovelFile || !effectiveSessionId) {
@@ -2459,11 +2564,14 @@ function AppShellContent({
     await handleSelectNovelFileByPath(targetPath)
   }, [handleSelectNovelFileByPath, pendingNovelChangedFilePaths, reviewableNovelFileChanges])
 
-  const handleAcceptNovelChange = React.useCallback((change: FileChange) => {
+  const handleAcceptNovelChange = React.useCallback(async (change: FileChange) => {
     if (change.error) {
       toast.error(t('writing.review.acceptUnavailable', 'Cannot accept a failed change.'))
       return
     }
+
+    const synced = await syncSelectedNovelDocumentFromDisk(change.filePath)
+    if (!synced) return
 
     const changeKey = getNovelReviewChangeKey(change)
     const nextStatus = {
@@ -2473,9 +2581,27 @@ function AppShellContent({
     persistNovelChangeReviewStatus(nextStatus)
     void handleSelectNextNovelChangeAfterStatus(change, nextStatus)
     toast.success(t('writing.review.accepted', 'Change accepted'))
-  }, [handleSelectNextNovelChangeAfterStatus, novelChangeReviewStatus, persistNovelChangeReviewStatus, t])
+  }, [
+    handleSelectNextNovelChangeAfterStatus,
+    novelChangeReviewStatus,
+    persistNovelChangeReviewStatus,
+    syncSelectedNovelDocumentFromDisk,
+    t,
+  ])
 
-  const handleAcceptAllNovelChanges = React.useCallback(() => {
+  const handleAcceptAllNovelChanges = React.useCallback(async () => {
+    const selectedPendingChange = selectedNovelFile?.path
+      ? reviewableNovelFileChanges.find(change =>
+          !change.error
+          && change.filePath === selectedNovelFile.path
+          && !novelChangeReviewStatus[getNovelReviewChangeKey(change)]
+        )
+      : undefined
+    if (selectedPendingChange) {
+      const synced = await syncSelectedNovelDocumentFromDisk(selectedPendingChange.filePath)
+      if (!synced) return
+    }
+
     const nextStatus: NovelReviewStatusMap = { ...novelChangeReviewStatus }
     for (const change of reviewableNovelFileChanges) {
       if (change.error) continue
@@ -2486,7 +2612,14 @@ function AppShellContent({
 
     persistNovelChangeReviewStatus(nextStatus)
     toast.success(t('writing.review.acceptedAll', 'All changes accepted'))
-  }, [novelChangeReviewStatus, persistNovelChangeReviewStatus, reviewableNovelFileChanges, t])
+  }, [
+    novelChangeReviewStatus,
+    persistNovelChangeReviewStatus,
+    reviewableNovelFileChanges,
+    selectedNovelFile?.path,
+    syncSelectedNovelDocumentFromDisk,
+    t,
+  ])
 
   const handleRejectNovelChange = React.useCallback(async (change: FileChange) => {
     if (selectedNovelFile?.path === change.filePath) {
@@ -2839,6 +2972,10 @@ function AppShellContent({
       icon: FileText,
       variant: file.path === selectedNovelFile?.path ? 'default' : 'ghost',
       compact: true,
+      reviewDot: hasNovelReviewDot(file.path) ? {
+        title: t('writing.review.changedFile', 'Changed file'),
+        onDismiss: () => handleDismissNovelReviewDot(file.path),
+      } : undefined,
       onClick: () => {
         handleSelectNovelFile(file)
       },
@@ -2881,6 +3018,8 @@ function AppShellContent({
     }]
   }, [
     handleSelectNovelFile,
+    handleDismissNovelReviewDot,
+    hasNovelReviewDot,
     isExpanded,
     novelWorkspaceFiles,
     novelWorkspaceTree,

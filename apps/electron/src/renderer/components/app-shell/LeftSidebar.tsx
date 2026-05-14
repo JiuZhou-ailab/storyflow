@@ -1,5 +1,5 @@
-// input: Sidebar item tree, navigation focus props, and optional context menus
-// output: Expandable app sidebar with compact nested navigation buttons
+// input: Sidebar item tree, navigation focus props, optional context menus, and review markers
+// output: Expandable app sidebar with compact nested navigation buttons and dismissible file hints
 // pos: Shared left navigation renderer for sessions, resources, and writing catalog
 
 import type { LucideIcon } from "lucide-react"
@@ -86,6 +86,11 @@ export interface LinkItem {
   sortable?: SortableConfig
   // Optional element rendered after the title (e.g., label type icon), revealed on hover
   afterTitle?: React.ReactNode
+  // Optional dismissible marker rendered before the icon, used for file-level review hints.
+  reviewDot?: {
+    title?: string
+    onDismiss: () => void
+  }
 }
 
 export interface SeparatorItem {
@@ -504,6 +509,22 @@ const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & R
           extraClassName,
         )}
       >
+        {link.reviewDot ? (
+          <span
+            role="button"
+            tabIndex={-1}
+            title={link.reviewDot.title}
+            aria-label={link.reviewDot.title}
+            className="flex h-3.5 w-3.5 shrink-0 items-center justify-center"
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              link.reviewDot?.onDismiss()
+            }}
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 ring-2 ring-background" />
+          </span>
+        ) : null}
         {/* Icon container with hover toggle for expandable items */}
         <span className="relative h-3.5 w-3.5 shrink-0 flex items-center justify-center">
           {link.expandable && !isOverlay ? (
