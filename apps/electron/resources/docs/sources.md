@@ -397,6 +397,49 @@ With environment variables:
 }
 ```
 
+#### Search MCP Preset: Brave Search
+
+Use this preset when the user asks for a single MCP that provides web search/current information. It is an external stdio MCP source, not a built-in session tool.
+
+`config.json`:
+```json
+{
+  "id": "brave-search_a1b2c3d4",
+  "name": "Brave Search",
+  "slug": "brave-search",
+  "enabled": true,
+  "provider": "brave",
+  "type": "mcp",
+  "icon": "🔎",
+  "tagline": "Web search for current information and source-backed research",
+  "mcp": {
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+    "env": {
+      "BRAVE_API_KEY": "<your-brave-search-api-key>"
+    },
+    "authType": "none"
+  }
+}
+```
+
+`permissions.json`:
+```json
+{
+  "allowedMcpPatterns": [
+    { "pattern": "search", "comment": "Search the public web" },
+    { "pattern": "brave_web_search", "comment": "Brave web search" },
+    { "pattern": "brave_local_search", "comment": "Brave local search" }
+  ]
+}
+```
+
+Setup notes:
+- Replace `BRAVE_API_KEY` with a real Brave Search API key before running `source_test`.
+- Keep this as one source folder under `sources/brave-search/`.
+- If the user requested only "a search MCP", do not add API sources or built-in session search tools.
+
 ### API Sources
 
 REST APIs become flexible tools that Claude can call.

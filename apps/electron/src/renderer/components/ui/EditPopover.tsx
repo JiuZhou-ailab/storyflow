@@ -348,7 +348,9 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'The user is viewing MCP sources and wants to add a new MCP server. ' +
         'Default to creating an MCP source (type: "mcp") unless they specify otherwise. ' +
         'MCP servers can use HTTP/SSE transport (remote) or stdio transport (local subprocess). ' +
+        'If the user asks for search, web search, or Brave Search, prefer the Brave Search MCP preset from ~/.craft-agent/docs/sources.md: stdio command "npx" with args ["-y", "@modelcontextprotocol/server-brave-search"], env BRAVE_API_KEY, and read-only search permissions. ' +
         'Ask about the service they want to connect to and whether it\'s a remote URL or local command. ' +
+        'For the Brave Search preset, only ask for the API key if it is not already available; otherwise create the source directly. ' +
         'Create the source folder and config.json in the workspace sources directory. ' +
         'Follow the patterns in ~/.craft-agent/docs/sources.md. ' +
         'After creating the source, call source_test with the source slug to verify the configuration.',

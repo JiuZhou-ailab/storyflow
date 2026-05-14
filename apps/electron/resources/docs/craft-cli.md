@@ -108,6 +108,8 @@ craft-agent source get linear
 craft-agent source create --name "Linear" --provider "linear" --type mcp --url "https://mcp.linear.app/sse" --auth-type oauth
 # MCP source with --json for nested config
 craft-agent source create --name "Linear" --provider "linear" --type mcp --json '{"mcp":{"transport":"http","url":"https://mcp.linear.app/sse","authType":"oauth"}}'
+# Search MCP source (requires BRAVE_API_KEY)
+craft-agent source create --name "Brave Search" --provider "brave" --type mcp --json '{"mcp":{"transport":"stdio","command":"npx","args":["-y","@modelcontextprotocol/server-brave-search"],"env":{"BRAVE_API_KEY":"<your-brave-search-api-key>"},"authType":"none"}}'
 # API source
 craft-agent source create --name "Exa" --provider "exa" --type api --base-url "https://api.exa.ai/" --auth-type header
 # Local source
