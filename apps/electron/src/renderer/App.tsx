@@ -28,7 +28,6 @@ import { useWindowCloseHandler } from '@/hooks/useWindowCloseHandler'
 import { useOnboarding } from '@/hooks/useOnboarding'
 import { useNotifications } from '@/hooks/useNotifications'
 import { useSession } from '@/hooks/useSession'
-import { useUpdateChecker } from '@/hooks/useUpdateChecker'
 import { NavigationProvider } from '@/contexts/NavigationContext'
 import { navigate, routes } from './lib/navigate'
 import { attachmentFromContentRef, toDraftRef } from './lib/drafts'
@@ -323,9 +322,6 @@ export default function App() {
   const [appTheme, setAppTheme] = useState<ThemeOverrides | null>(null)
   // Reset confirmation dialog
   const [showResetDialog, setShowResetDialog] = useState(false)
-
-  // Auto-update state
-  const updateChecker = useUpdateChecker()
 
   // Splash screen state - tracks when app is fully ready (all data loaded)
   const [sessionsLoaded, setSessionsLoaded] = useState(false)

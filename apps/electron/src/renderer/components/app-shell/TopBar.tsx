@@ -1,7 +1,11 @@
+// input: Workspace/session navigation state, shell actions, and renderer update status
+// output: Persistent top bar controls including the right-side update indicator
+// pos: Primary window chrome for the renderer app shell
+
 /**
  * TopBar - Persistent top bar above all panels (Slack-style)
  *
- * Layout: [Sidebar] [Menu] [Back] [Forward] [Workspace selector] ... [Browser strip] [+] [Help]
+ * Layout: [Sidebar] [Menu] [Back] [Forward] [Workspace selector] ... [Browser strip] [+] [Help] [Update]
  *
  * Fixed at top of window, 48px tall.
  * macOS: offset left to avoid stoplight controls.
@@ -42,6 +46,8 @@ import { BrowserTabStrip } from "../browser/BrowserTabStrip"
 import type { Workspace } from "../../../shared/types"
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher"
 import { getDocUrl } from "@craft-agent/shared/docs/doc-links"
+import { useUpdateChecker } from "@/hooks/useUpdateChecker"
+import { getUpdateIndicatorState } from "@/lib/update-indicator"
 
 // --- Menu rendering (moved from AppMenu) ---
 
@@ -207,6 +213,8 @@ export function TopBar({
   const quitHotkey = useActionLabel('app.quit').hotkey
   const goBackHotkey = useActionLabel('nav.goBackAlt').hotkey
   const goForwardHotkey = useActionLabel('nav.goForwardAlt').hotkey
+  const updateChecker = useUpdateChecker()
+  const updateIndicator = getUpdateIndicatorState(updateChecker.updateInfo)
 
   useEffect(() => {
     window.electronAPI.isDebugMode().then(setIsDebugMode)
@@ -266,6 +274,52 @@ export function TopBar({
       </TooltipContent>
     </Tooltip>
   )
+  const updateIndicatorButton = updateIndicator ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <TopBarButton
+          onClick={() => {
+            if (updateIndicator.actionable) {
+              void updateChecker.installUpdate()
+            }
+          }}
+          aria-label={
+            updateIndicator.kind === 'ready'
+              ? t("settings.about.restartToUpdate", { version: updateIndicator.version ?? '' })
+              : updateIndicator.kind === 'downloading'
+                ? t("settings.about.downloading", { version: updateIndicator.version ?? '', percent: updateIndicator.progress })
+                : t("toast.installingUpdate")
+          }
+          aria-disabled={!updateIndicator.actionable}
+          className={cn(
+            "relative h-[26px] w-[26px] rounded-lg",
+            updateIndicator.kind === 'ready'
+              ? "bg-accent/10 text-accent hover:bg-accent/15"
+              : "bg-foreground/5 text-foreground/60 hover:bg-foreground/5 cursor-default"
+          )}
+        >
+          {updateIndicator.kind === 'ready' ? (
+            <Icons.Download className="h-4 w-4" strokeWidth={1.7} />
+          ) : (
+            <Icons.RefreshCw className="h-4 w-4 animate-spin" strokeWidth={1.7} />
+          )}
+          <span
+            className={cn(
+              "absolute right-1 top-1 h-1.5 w-1.5 rounded-full",
+              updateIndicator.kind === 'ready' ? "bg-accent" : "bg-foreground/40"
+            )}
+          />
+        </TopBarButton>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        {updateIndicator.kind === 'ready'
+          ? t("settings.about.restartToUpdate", { version: updateIndicator.version ?? '' })
+          : updateIndicator.kind === 'downloading'
+            ? t("settings.about.downloading", { version: updateIndicator.version ?? '', percent: updateIndicator.progress })
+            : t("toast.installingUpdate")}
+      </TooltipContent>
+    </Tooltip>
+  ) : null
 
   return (
     <div
@@ -437,6 +491,7 @@ export function TopBar({
             </div>
           ) : null}
           {isCompact ? globalSearchButton : null}
+          {isCompact ? updateIndicatorButton : null}
         </div>
       </div>
 
@@ -469,7 +524,6 @@ export function TopBar({
             </StyledDropdownMenuItem>
           </StyledDropdownMenuContent>
         </DropdownMenu>
-
         {/* Help button */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -515,6 +569,7 @@ export function TopBar({
             </StyledDropdownMenuItem>
           </StyledDropdownMenuContent>
         </DropdownMenu>
+        {updateIndicatorButton}
       </div>
       )}
       </div>
