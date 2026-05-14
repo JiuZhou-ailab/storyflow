@@ -93,14 +93,7 @@ mac:
   extendInfo:
     CFBundleIconName: AppIcon
   target:
-    - target: dmg
-      arch:
-        - arm64
-        - x64
-    - target: zip
-      arch:
-        - arm64
-        - x64
+    - dmg
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
@@ -139,6 +132,7 @@ mac:
 dmg:
   # Use predictable naming: Craft-Agents-arm64.dmg, Craft-Agents-x64.dmg
   artifactName: "Craft-Agents-${arch}.dmg"
+  writeUpdateInfo: false
   # Custom background (multi-resolution TIFF with 1x+2x for retina support)
   background: resources/dmg-background.tiff
   # Use app icon as the mounted volume icon in Finder

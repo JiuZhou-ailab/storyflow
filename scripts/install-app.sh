@@ -1,9 +1,13 @@
 #!/bin/bash
+# input: Host platform details and release metadata from the Craft Agents update endpoint
+# output: A compatible Craft Agents desktop installation or a clear preflight failure
+# pos: User-facing installer that selects the correct release artifact for this machine
 
 set -e
 
 VERSIONS_URL="https://agents.craft.do/electron"
 DOWNLOAD_DIR="$HOME/.craft-agent/downloads"
+MIN_MACOS_VERSION="12.0"
 
 # Colors for output
 RED='\033[0;31m'
@@ -17,6 +21,25 @@ info() { printf "%b\n" "${BLUE}>${NC} $1"; }
 success() { printf "%b\n" "${GREEN}>${NC} $1"; }
 warn() { printf "%b\n" "${YELLOW}!${NC} $1"; }
 error() { printf "%b\n" "${RED}x${NC} $1"; exit 1; }
+
+version_at_least() {
+    local current="$1"
+    local required="$2"
+
+    awk -v current="$current" -v required="$required" '
+        BEGIN {
+            split(current, c, ".");
+            split(required, r, ".");
+            for (i = 1; i <= 3; i++) {
+                cv = (c[i] == "" ? 0 : c[i]) + 0;
+                rv = (r[i] == "" ? 0 : r[i]) + 0;
+                if (cv > rv) exit 0;
+                if (cv < rv) exit 1;
+            }
+            exit 0;
+        }
+    '
+}
 
 # Detect OS
 OS="$(uname -s)"
@@ -141,6 +164,14 @@ esac
 
 # Set platform-specific variables
 if [ "$OS_TYPE" = "darwin" ]; then
+    macos_version="$(sw_vers -productVersion 2>/dev/null || echo "")"
+    if [ -z "$macos_version" ]; then
+        error "Unable to detect macOS version"
+    fi
+    if ! version_at_least "$macos_version" "$MIN_MACOS_VERSION"; then
+        error "Craft Agents requires macOS $MIN_MACOS_VERSION or newer. Detected macOS $macos_version on this Mac."
+    fi
+
     platform="darwin-${arch}"
     APP_NAME="Craft Agents.app"
     INSTALL_DIR="/Applications"
@@ -159,7 +190,11 @@ else
 fi
 
 echo ""
-info "Detected platform: $platform"
+if [ "$OS_TYPE" = "darwin" ]; then
+    info "Detected platform: $platform (macOS $macos_version)"
+else
+    info "Detected platform: $platform"
+fi
 
 mkdir -p "$DOWNLOAD_DIR"
 mkdir -p "$INSTALL_DIR"
@@ -196,7 +231,7 @@ fi
 
 # Validate checksum format (SHA512 base64 = 88 characters)
 if [ -z "$checksum" ] || [ ${#checksum} -lt 80 ]; then
-    error "Architecture $arch not found in $yml_file"
+    error "Architecture $arch not found in $yml_file. This release may be missing the $platform artifact."
 fi
 
 # Use default filename if not found

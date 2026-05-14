@@ -1,4 +1,8 @@
 #!/bin/bash
+# input: Local Electron build inputs, runtime asset versions, and optional download proxy settings
+# output: A signed or ad-hoc signed macOS Craft Agents DMG for the requested architecture
+# pos: macOS desktop packaging script used by local builds and release workflow
+
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -91,6 +95,15 @@ fi
 
 CURL_FLAGS=(-fSL --retry 3 --retry-delay 2 --connect-timeout 20 --speed-time 30 --speed-limit 10240)
 
+download_url() {
+    local url="$1"
+    if [ -n "${CRAFT_DOWNLOAD_PROXY_PREFIX:-}" ]; then
+        echo "${CRAFT_DOWNLOAD_PROXY_PREFIX}${url}"
+    else
+        echo "$url"
+    fi
+}
+
 # 1. Clean previous build artifacts
 echo "Cleaning previous builds..."
 rm -rf "$ELECTRON_DIR/vendor"
@@ -113,8 +126,8 @@ TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
 
 # Download binary and checksums
-curl "${CURL_FLAGS[@]}" "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/${BUN_DOWNLOAD}.zip" -o "$TEMP_DIR/${BUN_DOWNLOAD}.zip"
-curl "${CURL_FLAGS[@]}" "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/SHASUMS256.txt" -o "$TEMP_DIR/SHASUMS256.txt"
+curl "${CURL_FLAGS[@]}" "$(download_url "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/${BUN_DOWNLOAD}.zip")" -o "$TEMP_DIR/${BUN_DOWNLOAD}.zip"
+curl "${CURL_FLAGS[@]}" "$(download_url "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/SHASUMS256.txt")" -o "$TEMP_DIR/SHASUMS256.txt"
 
 # Verify checksum
 echo "Verifying checksum..."

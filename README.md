@@ -246,9 +246,11 @@ For packaging:
 
 ```bash
 bun run electron:dist:dev:mac -- --arch=arm64
+bun run electron:dist:dev:mac -- --arch=x64
 bun run electron:dist:dev:win
-bun run electron:dist:dev:linux -- --arch=x64
 ```
+
+Current GitHub releases publish only macOS `.dmg` and Windows `.exe` artifacts. macOS artifacts are architecture-specific: Apple Silicon Macs require `Craft-Agents-arm64.dmg`, Intel Macs require `Craft-Agents-x64.dmg`, and the Electron runtime requires macOS 12.0 or newer. Opening the wrong macOS artifact, or running on macOS 11 or older, can produce the system message that this Mac does not support the application.
 
 The root packaging scripts call the platform build scripts under `apps/electron/scripts` so runtime assets such as bundled `uv`, Bun, SDK binaries, ripgrep, and helper subprocesses are staged before `electron-builder` runs. Direct `electron-builder` commands from the repository root are not the release path.
 

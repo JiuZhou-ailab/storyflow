@@ -1,4 +1,8 @@
 /**
+ * input: Electron build config, staged runtime assets, and macOS target architecture
+ * output: A verified architecture-specific Craft Agents DMG path
+ * pos: macOS packaging gate for the desktop release pipeline
+ *
  * macOS-specific build logic
  */
 
@@ -67,20 +71,14 @@ export async function packageDarwin(config: BuildConfig): Promise<string> {
   console.log('Verifying SDK in packaged app...');
   verifyPackagedSDK(appPath, arch);
 
-  // Verify the DMG and ZIP were built (ZIP is used by electron-updater for auto-updates)
+  // Verify the DMG was built.
   const dmgName = `Craft-Agents-${arch}.dmg`;
-  const zipName = `Craft-Agents-${arch}.zip`;
   const dmgPath = join(electronDir, 'release', dmgName);
-  const zipPath = join(electronDir, 'release', zipName);
 
   if (!existsSync(dmgPath)) {
     console.error('Contents of release directory:');
     await $`ls -la ${join(electronDir, 'release')}`;
     throw new Error(`Expected DMG not found at ${dmgPath}`);
-  }
-
-  if (!existsSync(zipPath)) {
-    console.warn(`  Warning: ZIP not found at ${zipPath} (needed for auto-updates)`);
   }
 
   // Get file sizes
@@ -89,11 +87,6 @@ export async function packageDarwin(config: BuildConfig): Promise<string> {
 
   console.log(`\n=== Build Complete ===`);
   console.log(`DMG: ${dmgPath} (${dmgSizeMB} MB)`);
-  if (existsSync(zipPath)) {
-    const zipFile = Bun.file(zipPath);
-    const zipSizeMB = ((await zipFile.size) / 1024 / 1024).toFixed(2);
-    console.log(`ZIP: ${zipPath} (${zipSizeMB} MB)`);
-  }
 
   return dmgPath;
 }
