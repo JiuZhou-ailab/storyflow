@@ -126,11 +126,11 @@ export async function downloadBun(config: BuildConfig): Promise<void> {
     const checksumPath = join(tempDir, 'SHASUMS256.txt');
 
     console.log(`  Downloading ${zipUrl}...`);
-    await $`curl -fsSL --retry 3 --retry-delay 2 -o ${zipPath} ${zipUrl}`;
+    await $`curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --speed-time 30 --speed-limit 10240 -o ${zipPath} ${zipUrl}`;
     console.log('  Download complete');
 
     console.log('  Downloading checksums...');
-    await $`curl -fsSL --retry 3 --retry-delay 2 -o ${checksumPath} ${checksumUrl}`;
+    await $`curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --speed-time 30 --speed-limit 10240 -o ${checksumPath} ${checksumUrl}`;
 
     // Verify checksum
     console.log('  Verifying checksum...');
@@ -225,10 +225,10 @@ export async function downloadUv(config: BuildConfig): Promise<void> {
     const extractDir = join(tempDir, 'extract');
 
     console.log(`  Downloading ${assetUrl}...`);
-    await $`curl -fsSL --retry 3 --retry-delay 2 -o ${assetPath} ${assetUrl}`;
+    await $`curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --speed-time 30 --speed-limit 10240 -o ${assetPath} ${assetUrl}`;
 
     console.log('  Downloading checksum...');
-    await $`curl -fsSL --retry 3 --retry-delay 2 -o ${checksumPath} ${checksumUrl}`;
+    await $`curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --speed-time 30 --speed-limit 10240 -o ${checksumPath} ${checksumUrl}`;
 
     console.log('  Verifying checksum...');
     const checksumContent = await Bun.file(checksumPath).text();

@@ -78,7 +78,8 @@ bun run electron:start
 | `bun run electron:dev` | Start the Electron app in development mode |
 | `bun run electron:start` | Build and run the Electron app |
 | `bun run electron:build` | Build Electron main, preload, renderer, resources, and assets |
-| `bun run electron:dist:dev:mac` | Build an unsigned development macOS package |
+| `bun run electron:dist:dev:mac` | Build an unsigned development macOS package through the runtime-staged packaging path |
+| `bun run release -- --platform=darwin --arch=arm64` | Run version checks, CI validation, and a runtime-staged local package build |
 | `bun run server:start` | Start the standalone headless server |
 | `bun run server:dev` | Start the headless server with debug settings |
 | `bun run webui:dev` | Start the browser client |
@@ -235,6 +236,7 @@ cd packages/shared && bun run tsc --noEmit
 Use broader checks before release:
 
 ```bash
+bun run check-version
 bun run typecheck:all
 bun run validate:ci
 bun run electron:build
@@ -243,9 +245,17 @@ bun run electron:build
 For packaging:
 
 ```bash
-bun run electron:dist:dev:mac
+bun run electron:dist:dev:mac -- --arch=arm64
 bun run electron:dist:dev:win
-bun run electron:dist:dev:linux
+bun run electron:dist:dev:linux -- --arch=x64
+```
+
+The root packaging scripts call the platform build scripts under `apps/electron/scripts` so runtime assets such as bundled `uv`, Bun, SDK binaries, ripgrep, and helper subprocesses are staged before `electron-builder` runs. Direct `electron-builder` commands from the repository root are not the release path.
+
+For the full local release gate:
+
+```bash
+bun run release -- --platform=darwin --arch=arm64
 ```
 
 ## Development Notes

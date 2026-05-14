@@ -68,7 +68,13 @@ BUN_VERSION="bun-v1.3.9"  # Pinned version for reproducible builds
 echo "=== Building Craft Agents AppImage (${ARCH}) using electron-builder ==="
 if [ "$UPLOAD" = true ]; then
     echo "Will upload to S3 after build"
+    if [ ! -f "$ROOT_DIR/scripts/upload.ts" ]; then
+        echo "ERROR: Upload requested, but scripts/upload.ts is missing."
+        exit 1
+    fi
 fi
+
+CURL_FLAGS=(-fSL --retry 3 --retry-delay 2 --connect-timeout 20 --speed-time 30 --speed-limit 10240)
 
 # 1. Clean previous build artifacts
 echo "Cleaning previous builds..."
@@ -98,8 +104,8 @@ TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
 
 # Download binary and checksums
-curl -fSL "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/${BUN_DOWNLOAD}.zip" -o "$TEMP_DIR/${BUN_DOWNLOAD}.zip"
-curl -fSL "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/SHASUMS256.txt" -o "$TEMP_DIR/SHASUMS256.txt"
+curl "${CURL_FLAGS[@]}" "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/${BUN_DOWNLOAD}.zip" -o "$TEMP_DIR/${BUN_DOWNLOAD}.zip"
+curl "${CURL_FLAGS[@]}" "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/SHASUMS256.txt" -o "$TEMP_DIR/SHASUMS256.txt"
 
 # Verify checksum
 echo "Verifying checksum..."

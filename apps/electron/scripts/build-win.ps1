@@ -115,8 +115,8 @@ try {
     $ChecksumUrl = "https://github.com/oven-sh/bun/releases/download/$BunVersion/SHASUMS256.txt"
 
     Write-Host "Downloading from $ZipUrl..."
-    Invoke-WebRequest -Uri $ZipUrl -OutFile "$TempDir\$BunDownload.zip"
-    Invoke-WebRequest -Uri $ChecksumUrl -OutFile "$TempDir\SHASUMS256.txt"
+    Invoke-WebRequest -Uri $ZipUrl -OutFile "$TempDir\$BunDownload.zip" -TimeoutSec 120
+    Invoke-WebRequest -Uri $ChecksumUrl -OutFile "$TempDir\SHASUMS256.txt" -TimeoutSec 120
 
     # Verify checksum
     Write-Host "Verifying checksum..."

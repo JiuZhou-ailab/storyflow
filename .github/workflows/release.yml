@@ -47,6 +47,10 @@ jobs:
     needs: validate
     runs-on: macos-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
 
     steps:
       - name: Checkout
@@ -66,12 +70,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build macOS artifacts
-        run: bun run electron:dist:dev:mac
+        run: bun run electron:dist:dev:mac -- --arch=${{ matrix.arch }}
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macos-artifacts
+          name: macos-${{ matrix.arch }}-artifacts
           path: |
             apps/electron/release/Craft-Agents-*.dmg
             apps/electron/release/Craft-Agents-*.zip
