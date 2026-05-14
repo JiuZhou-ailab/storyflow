@@ -188,6 +188,15 @@ export interface LlmConnection {
    */
   midStreamBehavior?: MidStreamBehavior;
 
+  /** Hide this connection from user-facing connection management surfaces. */
+  hidden?: boolean;
+
+  /** Marks a connection managed by the app/distribution rather than the user. */
+  managed?: boolean;
+
+  /** Optional provenance marker for distribution-provided connections. */
+  source?: 'builtin' | string;
+
   // --- Timestamps ---
 
   /** Timestamp when connection was created */

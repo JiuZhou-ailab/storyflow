@@ -114,4 +114,22 @@ describe('updateLlmConnection – customEndpoint', () => {
     const conn = readConnection('custom-compat')
     expect(conn.customEndpoint).toEqual({ api: 'anthropic-messages' })
   })
+
+  it('preserves hidden managed metadata when updates do not include it', () => {
+    const { runUpdate, readConnection } = setup([
+      makeConnection({
+        hidden: true,
+        managed: true,
+        source: 'builtin',
+      }),
+    ])
+
+    const ok = runUpdate('custom-compat', { name: 'Renamed Endpoint' })
+    expect(ok).toBe(true)
+
+    const conn = readConnection('custom-compat')
+    expect(conn.hidden).toBe(true)
+    expect(conn.managed).toBe(true)
+    expect(conn.source).toBe('builtin')
+  })
 })

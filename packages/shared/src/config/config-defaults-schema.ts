@@ -7,6 +7,13 @@
 
 import type { PermissionMode } from '../agent/mode-manager.ts';
 import type { ThinkingLevel } from '../agent/thinking-levels.ts';
+import type { LlmConnection } from './llm-connections.ts';
+
+export interface BuiltinLlmConnectionDefaults {
+  enabled: boolean;
+  connection?: LlmConnection;
+  apiKey?: string;
+}
 
 export interface ConfigDefaults {
   version: string;
@@ -30,4 +37,5 @@ export interface ConfigDefaults {
       enabled: boolean;
     };
   };
+  builtinLlmConnection?: BuiltinLlmConnectionDefaults;
 }

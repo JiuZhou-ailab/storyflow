@@ -31,6 +31,7 @@ import {
   migrateLegacyCredentials,
   migrateLegacyLlmConnectionsConfig,
   migrateOrphanedDefaultConnections,
+  seedBuiltinLlmConnectionFromDefaults,
   MODEL_REGISTRY,
   type Workspace,
   type WorkspaceInfo,
@@ -1626,6 +1627,10 @@ export class SessionManager implements ISessionManager {
 
       // Fix defaultLlmConnection if it points to a non-existent connection
       migrateOrphanedDefaultConnections()
+
+      // Seed distribution-provided internal LLM defaults after legacy migration
+      // but before auth env resolution, so first launch can work without setup.
+      await seedBuiltinLlmConnectionFromDefaults()
 
       // Migrate legacy credentials to LLM connection format (one-time migration)
       // This ensures credentials saved before LLM connections are available via the new system

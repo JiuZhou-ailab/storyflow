@@ -587,6 +587,10 @@ function getApiKeyMethodForConnection(conn: LlmConnectionWithStatus): ApiSetupMe
 export default function AiSettingsPage() {
   const { t } = useTranslation()
   const { llmConnections, refreshLlmConnections, activeWorkspaceId } = useAppShellContext()
+  const visibleLlmConnections = useMemo(
+    () => llmConnections.filter(conn => !conn.hidden),
+    [llmConnections],
+  )
 
   // API Setup overlay state
   const [showApiSetup, setShowApiSetup] = useState(false)
@@ -710,13 +714,13 @@ export default function AiSettingsPage() {
   // Handler for re-authenticate button in credential health banner
   const handleReauthenticate = useCallback(() => {
     // Open API setup for the default connection (or first connection if available)
-    const defaultConn = llmConnections.find(c => c.isDefault) || llmConnections[0]
+    const defaultConn = visibleLlmConnections.find(c => c.isDefault) || visibleLlmConnections[0]
     if (defaultConn) {
       openApiSetup(defaultConn.slug)
     } else {
       openApiSetup()
     }
-  }, [llmConnections, openApiSetup])
+  }, [visibleLlmConnections, openApiSetup])
 
   // Connection action handlers
   const handleRenameClick = useCallback((connection: LlmConnectionWithStatus) => {
@@ -893,8 +897,8 @@ export default function AiSettingsPage() {
 
   // Get the default connection for display
   const defaultConnection = useMemo(() => {
-    return llmConnections.find(c => c.isDefault)
-  }, [llmConnections])
+    return visibleLlmConnections.find(c => c.isDefault)
+  }, [visibleLlmConnections])
 
   const defaultModel = defaultConnection?.defaultModel ?? ''
 
@@ -957,7 +961,7 @@ export default function AiSettingsPage() {
 
             <div className="space-y-8">
               {/* Default Settings - only show if connections exist */}
-              {llmConnections.length > 0 && (
+              {visibleLlmConnections.length > 0 && (
               <SettingsSection title={t("settings.ai.defaultSection")} description={t("settings.ai.defaultSectionDesc")}>
                 <SettingsCard>
                   <SettingsMenuSelectRow
@@ -965,7 +969,7 @@ export default function AiSettingsPage() {
                     description={t("settings.ai.connectionDesc")}
                     value={defaultConnection?.slug || ''}
                     onValueChange={handleSetDefaultConnection}
-                    options={llmConnections.map((conn) => ({
+                    options={visibleLlmConnections.map((conn) => ({
                       value: conn.slug,
                       label: conn.name,
                       description: conn.providerType === 'anthropic' ? 'Anthropic API' :
@@ -999,14 +1003,14 @@ export default function AiSettingsPage() {
               )}
 
               {/* Workspace Overrides - only show if connections exist */}
-              {workspaces.length > 0 && llmConnections.length > 0 && (
+              {workspaces.length > 0 && visibleLlmConnections.length > 0 && (
                 <SettingsSection title={t("settings.ai.workspaceOverrides")} description={t("settings.ai.workspaceOverridesDesc")}>
                   <div className="space-y-2">
                     {workspaces.map((workspace) => (
                       <WorkspaceOverrideCard
                         key={workspace.id}
                         workspace={workspace}
-                        llmConnections={llmConnections}
+                        llmConnections={visibleLlmConnections}
                         onSettingsChange={handleWorkspaceSettingsChange}
                       />
                     ))}
@@ -1017,12 +1021,12 @@ export default function AiSettingsPage() {
               {/* Connections Management */}
               <SettingsSection title={t("settings.ai.connections")} description={t("settings.ai.connectionsDesc")}>
                 <SettingsCard>
-                  {llmConnections.length === 0 ? (
+                  {visibleLlmConnections.length === 0 ? (
                     <div className="px-4 py-6 text-center text-sm text-muted-foreground">
                       {t("settings.ai.noConnections")}
                     </div>
                   ) : (
-                    [...llmConnections]
+                    [...visibleLlmConnections]
                       .sort((a, b) => {
                         if (a.isDefault && !b.isDefault) return -1
                         if (!a.isDefault && b.isDefault) return 1

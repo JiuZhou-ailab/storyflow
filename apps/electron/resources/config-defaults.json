@@ -15,9 +15,36 @@
   "workspaceDefaults": {
     "thinkingLevel": "think",
     "permissionMode": "safe",
-    "cyclablePermissionModes": ["safe", "allow-all"],
+    "cyclablePermissionModes": [
+      "safe",
+      "allow-all"
+    ],
     "localMcpServers": {
       "enabled": true
     }
+  },
+  "builtinLlmConnection": {
+    "enabled": true,
+    "connection": {
+      "slug": "wangsu-default",
+      "name": "网宿",
+      "providerType": "pi_compat",
+      "authType": "api_key_with_endpoint",
+      "baseUrl": "https://aigateway.edgecloudapp.com/v2/gws/ktpvzme4/anthropic",
+      "models": [
+        "glm-5.1",
+        "claude-sonnet-4-6"
+      ],
+      "defaultModel": "glm-5.1",
+      "modelSelectionMode": "userDefined3Tier",
+      "customEndpoint": {
+        "api": "anthropic-messages"
+      },
+      "hidden": true,
+      "managed": true,
+      "source": "builtin",
+      "createdAt": 0
+    },
+    "apiKey": "5ab3a025d7fe448796cbda8ede3647ea"
   }
 }

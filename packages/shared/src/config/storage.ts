@@ -91,6 +91,16 @@ export interface StoredConfig {
   migrationsApplied?: string[];
 }
 
+export interface BuiltinLlmCredentialToSeed {
+  connectionSlug: string;
+  apiKey: string;
+}
+
+export interface ApplyBuiltinLlmConnectionDefaultsResult {
+  changed: boolean;
+  credentialToSeed?: BuiltinLlmCredentialToSeed;
+}
+
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 const CONFIG_DEFAULTS_FILE = join(CONFIG_DIR, 'config-defaults.json');
 
@@ -127,46 +137,96 @@ const FALLBACK_CONFIG_DEFAULTS: ConfigDefaults = {
   },
 };
 
-function syncConfigDefaults(): void {
-  if (configDefaultsSynced) return;
-  configDefaultsSynced = true;
-
-  // Get bundled config-defaults.json from resources folder
-  const bundledDir = getBundledAssetsDir('.');
-  if (!bundledDir) {
-    debug('[config] No bundled assets dir found - using fallback config-defaults');
-    if (!existsSync(CONFIG_DEFAULTS_FILE)) {
-      writeFileSync(CONFIG_DEFAULTS_FILE, JSON.stringify(FALLBACK_CONFIG_DEFAULTS, null, 2), 'utf-8');
-    }
-    return;
-  }
-
-  const bundledFile = join(bundledDir, 'config-defaults.json');
-  if (!existsSync(bundledFile)) {
-    debug('[config] Bundled config-defaults.json not found at: ' + bundledFile + ' - using fallback');
-    if (!existsSync(CONFIG_DEFAULTS_FILE)) {
-      writeFileSync(CONFIG_DEFAULTS_FILE, JSON.stringify(FALLBACK_CONFIG_DEFAULTS, null, 2), 'utf-8');
-    }
-    return;
-  }
-
-  // Sync from bundled file (same pattern as docs)
-  const content = readFileSync(bundledFile, 'utf-8');
-  writeFileSync(CONFIG_DEFAULTS_FILE, content, 'utf-8');
-  debug('[config] Synced config-defaults.json from bundled assets');
+function isValidBuiltinLlmConnection(connection: LlmConnection | undefined): connection is LlmConnection {
+  return !!connection
+    && typeof connection.slug === 'string'
+    && connection.slug.trim().length > 0
+    && typeof connection.name === 'string'
+    && connection.name.trim().length > 0
+    && typeof connection.providerType === 'string'
+    && typeof connection.authType === 'string';
 }
 
 /**
- * Load config defaults from ~/.craft-agent/config-defaults.json
- * This file is synced from bundled assets on every launch.
+ * Applies bundled internal LLM defaults to an in-memory config.
+ * API keys are returned separately so they never get serialized into config.json.
  */
-export function loadConfigDefaults(): ConfigDefaults {
-  if (!existsSync(CONFIG_DEFAULTS_FILE)) {
-    throw new Error('config-defaults.json not found at ' + CONFIG_DEFAULTS_FILE + '. Ensure ensureConfigDir() was called at startup.');
+export function applyBuiltinLlmConnectionDefaults(
+  config: StoredConfig,
+  defaults: ConfigDefaults,
+): ApplyBuiltinLlmConnectionDefaultsResult {
+  const builtin = defaults.builtinLlmConnection;
+  const connection = builtin?.connection;
+
+  if (!builtin?.enabled || !isValidBuiltinLlmConnection(connection)) {
+    return { changed: false };
   }
 
-  const defaults = readJsonFileSync<ConfigDefaults>(CONFIG_DEFAULTS_FILE);
+  let changed = false;
+  if (!config.llmConnections) {
+    config.llmConnections = [];
+    changed = true;
+  }
 
+  const slug = connection.slug.trim();
+  const exists = config.llmConnections.some(c => c.slug === slug);
+  if (!exists) {
+    config.llmConnections.push({
+      ...connection,
+      slug,
+      hidden: connection.hidden ?? true,
+      managed: connection.managed ?? true,
+      source: connection.source ?? 'builtin',
+      createdAt: connection.createdAt || Date.now(),
+    });
+    changed = true;
+  }
+
+  if (!config.defaultLlmConnection) {
+    config.defaultLlmConnection = slug;
+    changed = true;
+  }
+
+  const apiKey = builtin.apiKey?.trim();
+  return {
+    changed,
+    credentialToSeed: apiKey ? { connectionSlug: slug, apiKey } : undefined,
+  };
+}
+
+/**
+ * Seeds an internal distribution-provided LLM connection from config-defaults.json.
+ * The credential is copied into the encrypted credential store and is not saved in config.json.
+ */
+export async function seedBuiltinLlmConnectionFromDefaults(): Promise<boolean> {
+  ensureConfigDir();
+
+  const config = loadStoredConfig();
+  if (!config) return false;
+
+  const result = applyBuiltinLlmConnectionDefaults(config, loadConfigDefaultsForBuiltinSeed());
+  if (result.changed) {
+    saveConfig(config);
+  }
+
+  let credentialSeeded = false;
+  if (result.credentialToSeed) {
+    try {
+      const manager = getCredentialManager();
+      const existing = await manager.getLlmApiKey(result.credentialToSeed.connectionSlug);
+      if (!existing) {
+        await manager.setLlmApiKey(result.credentialToSeed.connectionSlug, result.credentialToSeed.apiKey);
+        credentialSeeded = true;
+      }
+    } catch (error) {
+      debug('[config] Failed to seed builtin LLM credential:', error instanceof Error ? error.message : error);
+    }
+  }
+
+  return result.changed || credentialSeeded;
+}
+
+function normalizeConfigDefaults(defaults: ConfigDefaults): ConfigDefaults {
   const parsedPermissionMode =
     typeof defaults.workspaceDefaults?.permissionMode === 'string'
       ? parsePermissionMode(defaults.workspaceDefaults.permissionMode)
@@ -191,6 +251,68 @@ export function loadConfigDefaults(): ConfigDefaults {
     normalizedCyclable.length >= 2 ? normalizedCyclable : [...PERMISSION_MODE_ORDER];
 
   return defaults;
+}
+
+function sanitizeConfigDefaultsForDisk(content: string): string {
+  try {
+    const defaults = JSON.parse(content) as ConfigDefaults;
+    if (defaults.builtinLlmConnection?.apiKey) {
+      defaults.builtinLlmConnection.apiKey = '';
+    }
+    return JSON.stringify(defaults, null, 2);
+  } catch {
+    return content;
+  }
+}
+
+function loadConfigDefaultsForBuiltinSeed(): ConfigDefaults {
+  const bundledDir = getBundledAssetsDir('.');
+  const bundledFile = bundledDir ? join(bundledDir, 'config-defaults.json') : null;
+  if (bundledFile && existsSync(bundledFile)) {
+    return normalizeConfigDefaults(readJsonFileSync<ConfigDefaults>(bundledFile));
+  }
+  return loadConfigDefaults();
+}
+
+function syncConfigDefaults(): void {
+  if (configDefaultsSynced) return;
+  configDefaultsSynced = true;
+
+  // Get bundled config-defaults.json from resources folder
+  const bundledDir = getBundledAssetsDir('.');
+  if (!bundledDir) {
+    debug('[config] No bundled assets dir found - using fallback config-defaults');
+    if (!existsSync(CONFIG_DEFAULTS_FILE)) {
+      writeFileSync(CONFIG_DEFAULTS_FILE, sanitizeConfigDefaultsForDisk(JSON.stringify(FALLBACK_CONFIG_DEFAULTS, null, 2)), 'utf-8');
+    }
+    return;
+  }
+
+  const bundledFile = join(bundledDir, 'config-defaults.json');
+  if (!existsSync(bundledFile)) {
+    debug('[config] Bundled config-defaults.json not found at: ' + bundledFile + ' - using fallback');
+    if (!existsSync(CONFIG_DEFAULTS_FILE)) {
+      writeFileSync(CONFIG_DEFAULTS_FILE, sanitizeConfigDefaultsForDisk(JSON.stringify(FALLBACK_CONFIG_DEFAULTS, null, 2)), 'utf-8');
+    }
+    return;
+  }
+
+  // Sync from bundled file (same pattern as docs)
+  const content = readFileSync(bundledFile, 'utf-8');
+  writeFileSync(CONFIG_DEFAULTS_FILE, sanitizeConfigDefaultsForDisk(content), 'utf-8');
+  debug('[config] Synced config-defaults.json from bundled assets');
+}
+
+/**
+ * Load config defaults from ~/.craft-agent/config-defaults.json
+ * This file is synced from bundled assets on every launch.
+ */
+export function loadConfigDefaults(): ConfigDefaults {
+  if (!existsSync(CONFIG_DEFAULTS_FILE)) {
+    throw new Error('config-defaults.json not found at ' + CONFIG_DEFAULTS_FILE + '. Ensure ensureConfigDir() was called at startup.');
+  }
+
+  return normalizeConfigDefaults(readJsonFileSync<ConfigDefaults>(CONFIG_DEFAULTS_FILE));
 }
 
 /**
@@ -2590,6 +2712,10 @@ export function updateLlmConnection(slug: string, updates: Partial<Omit<LlmConne
     customEndpoint: updates.customEndpoint !== undefined ? updates.customEndpoint : existing.customEndpoint,
     // Mid-stream send behavior (steer vs queue) — read via resolveMidStreamBehavior()
     midStreamBehavior: updates.midStreamBehavior !== undefined ? updates.midStreamBehavior : existing.midStreamBehavior,
+    // Distribution metadata
+    hidden: updates.hidden !== undefined ? updates.hidden : existing.hidden,
+    managed: updates.managed !== undefined ? updates.managed : existing.managed,
+    source: updates.source !== undefined ? updates.source : existing.source,
     // Timestamps
     lastUsedAt: updates.lastUsedAt !== undefined ? updates.lastUsedAt : existing.lastUsedAt,
   };
