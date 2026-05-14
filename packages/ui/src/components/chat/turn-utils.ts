@@ -1,9 +1,6 @@
-/**
- * turn-utils.ts
- *
- * Utilities for grouping messages by turn for TurnCard rendering.
- * Converts the flat Message[] array into grouped turns for email-like display.
- */
+// input: Flat persisted or live chat messages from agent sessions
+// output: Grouped user, assistant, system, and auth turns with render metadata
+// pos: Shared transcript normalization layer before TurnCard rendering
 
 import type { Message, StoredMessage, MessageRole } from '@craft-agent/core'
 import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
@@ -619,6 +616,7 @@ export function groupMessagesByTurn(messages: Message[]): Turn[] {
         isStreaming: !!message.isStreaming,
         streamStartTime: message.isStreaming ? message.timestamp : undefined,
         messageId: message.id,
+        canBranch: !!message.turnId,
         annotations: message.annotations,
       }
       currentTurn.isStreaming = !!message.isStreaming

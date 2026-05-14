@@ -92,11 +92,35 @@ describe("bundled writing skills", () => {
       "short-source-curator",
       "short-angle",
       "short-drafter",
-      "short-variant",
       "short-editor",
       "short-publisher",
     ]) {
       expect(existsSync(join(rootPath, "skills", slug, "SKILL.md"))).toBe(true);
     }
+
+    expect(existsSync(join(rootPath, "skills", "short-variant", "SKILL.md"))).toBe(false);
   });
+
+  it("routes broad web-fiction creation prompts through intake before drafting", () => {
+    const rootPath = createTempProject();
+
+    createNovelProjectScaffold(rootPath, {
+      title: "Web Fiction",
+      methodPackId: "novel.oh-story",
+    });
+
+    const router = readFileSync(join(rootPath, "skills", "story", "SKILL.md"), "utf-8");
+    expect(router).toContain("写一个");
+    expect(router).toContain("打脸");
+    expect(router).toContain("爽文");
+    expect(router).toContain("男频");
+    expect(router).toContain("女频");
+    expect(router).toContain("黄金三章");
+    expect(router).toContain("Do not draft");
+
+    const shortWriter = readFileSync(join(rootPath, "skills", "story-short-write", "SKILL.md"), "utf-8");
+    expect(shortWriter).toContain("after the story router");
+    expect(shortWriter).toContain("first ambiguous");
+  });
+
 });

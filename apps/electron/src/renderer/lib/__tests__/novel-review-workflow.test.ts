@@ -8,7 +8,9 @@ import {
   getAdjacentChangedFilePath,
   getPendingChangedFilePaths,
   getPendingChangesForFile,
+  getNovelReviewChangeKey,
   normalizeNovelFileChangePaths,
+  parseNovelReviewStatusMap,
 } from '../novel-review-workflow'
 
 function change(id: string, filePath: string): FileChange {
@@ -42,6 +44,36 @@ describe('novel review workflow', () => {
     ]
 
     expect(getPendingChangesForFile(changes, { a: 'rejected' }, '/novel/chapter-1.md').map(c => c.id)).toEqual(['b'])
+  })
+
+  it('keeps accepted decisions stable when activity ids change after reload', () => {
+    const beforeReload = change('activity-before', '/novel/chapter-1.md')
+    const afterReload = change('activity-after', '/novel/chapter-1.md')
+    const status = {
+      [getNovelReviewChangeKey(beforeReload)]: 'accepted' as const,
+    }
+
+    expect(getNovelReviewChangeKey(afterReload)).toBe(getNovelReviewChangeKey(beforeReload))
+    expect(getPendingChangesForFile([afterReload], status, '/novel/chapter-1.md')).toEqual([])
+    expect(getPendingChangedFilePaths([afterReload], status)).toEqual([])
+  })
+
+  it('hydrates only terminal review decisions for the current change set', () => {
+    const changes = [
+      change('a', '/novel/chapter-1.md'),
+      change('b', '/novel/chapter-2.md'),
+    ]
+
+    expect(parseNovelReviewStatusMap({
+      a: 'accepted',
+      b: 'rejected',
+      c: 'accepted',
+      d: 'pending',
+      e: 'unknown',
+    }, changes)).toEqual({
+      [getNovelReviewChangeKey(changes[0])]: 'accepted',
+      [getNovelReviewChangeKey(changes[1])]: 'rejected',
+    })
   })
 
   it('wraps next and previous changed-file navigation', () => {

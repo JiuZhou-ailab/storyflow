@@ -281,6 +281,14 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('setNovelWorkspaceFiles([])')
   })
 
+  it('refreshes writing workspace files after assistant-generated file changes', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+
+    expect(appShellSource).toContain('refreshNovelWorkspaceFiles')
+    expect(appShellSource).toContain('latestNovelFileChanges.length === 0')
+    expect(appShellSource).toContain('void refreshNovelWorkspaceFiles(novelWorkspaceRoot)')
+  })
+
   it('hides the generic content panel close button in writing workspace mode', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const panelStackSource = readFileSync(new URL('../../app-shell/PanelStackContainer.tsx', import.meta.url), 'utf-8')
@@ -317,6 +325,18 @@ describe('novel writing workspace layout', () => {
     expect(multiDiffSource).toContain('onRejectChange?: (change: FileChange) => void')
   })
 
+  it('persists novel review decisions by session so accepted changes stay accepted after reload', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const localStorageSource = readFileSync(new URL('../../../lib/local-storage.ts', import.meta.url), 'utf-8')
+
+    expect(localStorageSource).toContain('novelChangeReviewStatus')
+    expect(appShellSource).toContain('parseNovelReviewStatusMap')
+    expect(appShellSource).toContain('persistNovelChangeReviewStatus')
+    expect(appShellSource).toContain('storage.KEYS.novelChangeReviewStatus')
+    expect(appShellSource).toContain('storage.get<Record<string, unknown>>(storage.KEYS.novelChangeReviewStatus')
+    expect(appShellSource).toContain('storage.set(storage.KEYS.novelChangeReviewStatus')
+  })
+
   it('normalizes agent file-change paths before matching them to selected writing files', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
 
@@ -337,6 +357,30 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('links={showNovelWorkspaceSidebar ? novelWorkspaceSidebarLinks : [')
     expect(appShellSource).toContain('{showNovelDocumentNavigator && novelWorkspaceRoot ? (')
     expect(appShellSource).toContain('handleAllSessionsClick()')
+  })
+
+  it('exposes a top-bar global search button backed by the global search dialog', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const topBarSource = readFileSync(new URL('../../app-shell/TopBar.tsx', import.meta.url), 'utf-8')
+    const globalSearchSource = readFileSync(new URL('../../app-shell/GlobalSearchDialog.tsx', import.meta.url), 'utf-8')
+
+    expect(topBarSource).toContain('onOpenGlobalSearch')
+    expect(topBarSource).toContain('aria-label={t("globalSearch.open"')
+    expect(topBarSource).toContain('<Icons.Search')
+    expect(appShellSource).toContain('const [globalSearchOpen, setGlobalSearchOpen]')
+    expect(appShellSource).toContain("useAction('app.search', () => setGlobalSearchOpen(true))")
+    expect(appShellSource).toContain('<GlobalSearchDialog')
+    expect(globalSearchSource).toContain('buildGlobalSearchResults')
+    expect(globalSearchSource).toContain('onOpenSession')
+    expect(globalSearchSource).toContain('onOpenNovelFile')
+  })
+
+  it('keeps the global search button visible in compact top-bar layout', () => {
+    const topBarSource = readFileSync(new URL('../../app-shell/TopBar.tsx', import.meta.url), 'utf-8')
+
+    expect(topBarSource).toContain('const globalSearchButton =')
+    expect(topBarSource).toContain('{isCompact ? globalSearchButton : null}')
+    expect(topBarSource).toContain('{!isCompact && (')
   })
 
   it('left-aligns sidebar item content instead of letting writing catalog labels drift toward the center', () => {

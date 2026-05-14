@@ -1,3 +1,7 @@
+// input: Electron app lifecycle, user config, workspace state, and local server runtime
+// output: Desktop main-process bootstrap, IPC bridges, windows, and cleanup
+// pos: Coordinates the Electron shell around the shared Craft Agent server core
+
 // Load user's shell environment first (before other imports that may use env)
 // This ensures tools like Homebrew, nvm, etc. are available to the agent
 import { loadShellEnv } from './shell-env'
@@ -105,6 +109,7 @@ import { initNotificationService, initBadgeIcon, initInstanceBadge, updateBadgeC
 import { checkForUpdatesOnLaunch, setAutoUpdateEventSink, isUpdating } from './auto-update'
 import type { EventSink } from '@craft-agent/server-core/transport'
 import { validateGitBashPath, checkVCRedistInstalled } from '@craft-agent/server-core/services'
+import { shouldCreateWindowsAfterStartup } from './startup-state'
 
 // Initialize electron-log for renderer process support
 log.initialize()
@@ -192,6 +197,8 @@ let browserPaneManager: BrowserPaneManager | null = null
 let oauthFlowStore: OAuthFlowStore | null = null
 let moduleSink: EventSink | null = null
 let moduleClientResolver: ((webContentsId: number) => string | undefined) | null = null
+let mainStartupSucceeded = false
+let mainStartupIsHeadless = !!process.env.CRAFT_HEADLESS
 
 // Messaging gateway: the bootstrap handle is created once sessionManager is
 // available (inside createHandlerDeps) and populated with the WS publisher
@@ -443,6 +450,7 @@ app.whenReady().then(async () => {
     // Skip server-side initialization (SessionManager, model refresh, platform injection).
     const isClientOnly = !!process.env.CRAFT_SERVER_URL
     const isHeadless = !!process.env.CRAFT_HEADLESS
+    mainStartupIsHeadless = isHeadless
 
     if (isClientOnly) {
       mainLog.info(`Client-only mode: CRAFT_SERVER_URL=${process.env.CRAFT_SERVER_URL} (server initialization skipped)`)
@@ -993,7 +1001,11 @@ app.whenReady().then(async () => {
 
     // Create initial windows (restores from saved state or opens first workspace)
     // In headless mode the server runs without any UI — skip window creation.
-    if (!isHeadless) {
+    mainStartupSucceeded = true
+    if (shouldCreateWindowsAfterStartup({
+      initSucceeded: mainStartupSucceeded,
+      isHeadless,
+    })) {
       await createInitialWindows()
     }
 
@@ -1064,13 +1076,28 @@ app.whenReady().then(async () => {
     }
     mainLog.info('Messaging gateway log path:', getMessagingGatewayLogFilePath())
   } catch (error) {
+    mainStartupSucceeded = false
     mainLog.error('Failed to initialize app:', error instanceof Error ? error.message : error, (error as any)?.stack)
-    // Continue anyway - the app will show errors in the UI
+    releaseServerLock()
+    if (!mainStartupIsHeadless) {
+      dialog.showErrorBox(
+        'Craft Agents failed to start',
+        error instanceof Error ? error.message : String(error),
+      )
+      app.quit()
+    }
   }
 
   // macOS: Re-create window when dock icon is clicked
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0 && windowManager) {
+    if (
+      BrowserWindow.getAllWindows().length === 0
+      && windowManager
+      && shouldCreateWindowsAfterStartup({
+        initSucceeded: mainStartupSucceeded,
+        isHeadless: mainStartupIsHeadless,
+      })
+    ) {
       // Open first workspace or last focused
       const workspaces = getWorkspaces()
       if (workspaces.length > 0) {

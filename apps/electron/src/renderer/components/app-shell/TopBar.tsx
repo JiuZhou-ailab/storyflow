@@ -160,6 +160,7 @@ interface TopBarProps {
   onToggleFocusMode: () => void
   onAddSessionPanel: () => void
   onAddBrowserPanel: () => void
+  onOpenGlobalSearch: () => void
   workspaceTools?: React.ReactNode
   rightTools?: React.ReactNode
   /** When true, hides controls that don't apply in compact/mobile layout */
@@ -188,6 +189,7 @@ export function TopBar({
   onToggleFocusMode,
   onAddSessionPanel,
   onAddBrowserPanel,
+  onOpenGlobalSearch,
   workspaceTools,
   rightTools,
   isCompact,
@@ -201,6 +203,7 @@ export function TopBar({
   const newWindowHotkey = useActionLabel('app.newWindow').hotkey
   const settingsHotkey = useActionLabel('app.settings').hotkey
   const keyboardShortcutsHotkey = useActionLabel('app.keyboardShortcuts').hotkey
+  const searchHotkey = useActionLabel('app.search').hotkey
   const quitHotkey = useActionLabel('app.quit').hotkey
   const goBackHotkey = useActionLabel('nav.goBackAlt').hotkey
   const goForwardHotkey = useActionLabel('nav.goForwardAlt').hotkey
@@ -247,6 +250,22 @@ export function TopBar({
   }
 
   const menuLeftPadding = isMac ? 86 : 12
+  const globalSearchButton = (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <TopBarButton
+          onClick={onOpenGlobalSearch}
+          aria-label={t("globalSearch.open", "Search")}
+          className="h-[26px] w-[26px] rounded-lg"
+        >
+          <Icons.Search className="h-4 w-4 text-foreground/50" strokeWidth={1.5} />
+        </TopBarButton>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        {t("globalSearch.open", "Search")} {searchHotkey}
+      </TooltipContent>
+    </Tooltip>
+  )
 
   return (
     <div
@@ -417,6 +436,7 @@ export function TopBar({
               {workspaceTools}
             </div>
           ) : null}
+          {isCompact ? globalSearchButton : null}
         </div>
       </div>
 
@@ -431,6 +451,7 @@ export function TopBar({
             {rightTools}
           </div>
         ) : null}
+        {globalSearchButton}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <TopBarButton aria-label={t("menu.addPanelMenu")} className="ml-1 h-[26px] w-[26px] rounded-lg">

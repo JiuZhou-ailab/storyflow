@@ -3,12 +3,16 @@
 // pos: validates prompt profiles for writing workspaces
 
 import { describe, expect, it, mock } from 'bun:test'
+import { mkdtempSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 
 mock.module('../../config/preferences.ts', () => ({
   getCoAuthorPreference: () => false,
   formatPreferencesForPrompt: () => '',
 }))
 
+import { createNovelProjectScaffold } from '../../writing/novel-template'
 import { getMiniAgentSystemPrompt, getSystemPrompt, type SystemPromptPreset } from '../system'
 
 describe('novel system prompt preset', () => {
@@ -34,6 +38,8 @@ describe('novel system prompt preset', () => {
     expect(prompt).toContain('read the relevant bible, outline, current state, and timeline')
     expect(prompt).toContain('Group changes by manuscript, outline, characters, locations, state, timeline, and working notes')
     expect(prompt).toContain('prefer project and workspace skills')
+    expect(prompt).toContain('Do not draft directly from a broad first writing request')
+    expect(prompt).toContain('use the workspace Method Pack intake or router skill')
   })
 
   it('keeps the mini preset focused on quick configuration edits', () => {
@@ -46,5 +52,31 @@ describe('novel system prompt preset', () => {
       'Craft Agents Backend',
       false
     )).toBe(getMiniAgentSystemPrompt('/tmp/workspace'))
+  })
+
+  it('injects the selected Method Pack agent runtime from the writing manifest', () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'craft-method-runtime-'))
+    createNovelProjectScaffold(rootPath, {
+      title: 'Web Fiction Runtime',
+      methodPackId: 'novel.oh-story',
+    })
+
+    const prompt = getSystemPrompt(
+      undefined,
+      undefined,
+      rootPath,
+      rootPath,
+      'novel',
+      'Craft Agents Backend',
+      false
+    )
+
+    expect(prompt).toContain('<method_pack_runtime id="novel.oh-story"')
+    expect(prompt).toContain('Oh Story')
+    expect(prompt).toContain('Default Skill')
+    expect(prompt).toContain('story')
+    expect(prompt).toContain('Artifact Contract')
+    expect(prompt).toContain('Skill Routing')
+    expect(prompt).toContain('Do not draft directly')
   })
 })

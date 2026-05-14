@@ -84,27 +84,154 @@ function createPackLock(pack: MethodPack): string {
   }, null, 2)}\n`;
 }
 
+function createChineseRuntimeSummary(pack: MethodPack): string {
+  switch (pack.id) {
+    case "novel.claude-book":
+      return `## Agent 运行画像
+
+- 身份：长篇小说架构与连续性守门员，优先保护正典、章节顺序、状态延续和正文一致性。
+- 默认入口 skill：\`${pack.defaultSkill}\`。
+- 初始请求：不要从宽泛首轮请求直接起草正文；先确认前提、设定约束、简介、章节计划、视角、语气和连续性假设。
+
+## 文件结构契约
+
+- \`bible/\`：长期正典，包括风格、结构、角色、世界观和不可推翻事实。
+- \`story/synopsis.md\`：起草章节前接受的故事方向。
+- \`story/plan.md\`：章节数量、顺序、标题、篇幅和 beats 的唯一契约。
+- \`story/chapters/\`：已接受正文；工作草稿不要放入这里。
+- \`state/current/\`：已接受章节后的当前局面、角色状态和信息边界。
+- \`timeline/\`：时间线、历史记录和当前章节 chronology。
+- \`.work/\`：临时章节计划、草稿、审校报告和分析碎片。
+
+## Skill 路由
+
+- 缺少前提、简介或章节计划：先用 \`story-ideator\`。
+- 需要起草章节：先经过 \`chapter-workflow\`。
+- 需要风格、角色或连续性审校：分别使用对应 review skill。
+- 已接受章节改变连续性：使用 \`state-updater\` 更新状态。`;
+    case "novel.oh-story":
+      return `## Agent 运行画像
+
+- 身份：网文连载策划编辑，优先处理题材承诺、平台节奏、情绪回报、对标学习和追读动能。
+- 默认入口 skill：\`${pack.defaultSkill}\`。
+- 初始请求：不要从宽泛首轮请求直接起草正文；先判断男频、女频、双男主等赛道维度，以及题材承诺、主角设置、情绪引擎、反转节奏、爽点回报和下一产物。
+
+## 文件结构契约
+
+- \`设定/\`：世界观、角色、势力、关系、术语和故事约束。
+- \`设定/题材定位.md\`：市场赛道、读者承诺、题材期待、语气和差异化钩子。
+- \`大纲/大纲.md\`：已接受结构、弧线、反转、回报和章节计划。
+- \`正文/\`：定位与大纲清楚后的已接受正文。
+- \`追踪/\`：上下文、伏笔、时间线和连载状态。
+- \`拆文库/\`、\`对标/\`：对标拆解和可复用写法观察。
+- \`参考资料/\`：可追溯素材。
+- \`.work/\`：临时信息收集、草稿、试验和审校报告。
+
+## Skill 路由
+
+- 初始创作请求需要赛道判断或维度补齐：先用 \`story\`。
+- 工作区创建或修复：使用 \`story-setup\`。
+- 长篇拆文、分析、起草：按需使用 \`story-long-scan\`、\`story-long-analyze\`、\`story-long-write\`。
+- 短篇种子、反转、爽点分析或起草：按需使用 \`story-short-scan\`、\`story-short-analyze\`、\`story-short-write\`。
+- 草稿需要去 AI 味或质量审校：使用 \`story-deslop\` 或 \`story-review\`。`;
+    case "novel.crucible":
+      return `## Agent 运行画像
+
+- 身份：Crucible 结构型小说规划者，优先保护主题问题、strand map、forge point 和章节结构。
+- 默认入口 skill：\`${pack.defaultSkill}\`。
+- 初始请求：先建立核心命题、strand、世界锻造和章节地图，再进入正文。
+
+## 文件结构契约
+
+- \`planning/\`：主题、strand、forge point、角色镜像、世界和代价账本。
+- \`outline/\`：总纲与分章结构。
+- \`draft/chapters/\`：章节工作稿。
+- \`draft/reviews/\`：审校与修改意见。
+- \`story-bible.json\`：结构化正典。
+- \`style-profile.md\`：风格要求。
+- \`.work/\`：临时推演和分析。
+
+## Skill 路由
+
+- 缺少核心命题或结构地图：先用 \`${pack.defaultSkill}\`。
+- 正文前先补齐规划文档与大纲。
+- 审校意见放入 \`draft/reviews/\`，不要混入已接受正文。`;
+    case "novel.creative-writing":
+      return `## Agent 运行画像
+
+- 身份：通用创意写作助手，优先管理知识库、风格、角色、世界观、草稿和审校反馈。
+- 默认入口 skill：\`${pack.defaultSkill}\`。
+- 初始请求：先确认项目目标、体裁、读者预期、风格、角色与世界约束，再进入大纲或正文。
+
+## 文件结构契约
+
+- \`story/chapters/\`：已接受正文。
+- \`work/outline/\`：大纲与结构规划。
+- \`work/drafts/\`：工作草稿。
+- \`work/critique-reports/\`：审校报告。
+- \`work/brainstorm/\`：头脑风暴和备选方向。
+- \`kb/\`：风格、角色、世界、时间线、正典事实和问题清单。
+
+## Skill 路由
+
+- 需要正文起草：使用 \`prose-writing\`。
+- 需要维护知识库或正典：使用 \`kb-management\`。
+- 草稿和审校材料保持在 \`work/\` 下，只有接受稿进入 \`story/chapters/\`。`;
+    case "short-form.article":
+      return `## Agent 运行画像
+
+- 身份：短文编辑型 Agent，把模糊请求推进为简报、素材、草稿、修改稿和定稿，避免过度拆分文件。
+- 默认入口 skill：\`${pack.defaultSkill}\`。
+- 初始请求：不要从宽泛首轮请求直接起草正文；先澄清目标读者、发布平台、目标篇幅、读者承诺、素材可用性、立场、语气、结尾收益和下一产物。
+
+## 文件结构契约
+
+- \`目录说明.md\`：人类可读的文件结构、生命周期和命名规则。
+- \`短文简报.md\`：目标读者、平台、角度、大纲、声线、质量门槛和开放问题的单一规划源。
+- \`素材卡.md\`：来源、事实、引用、例子、对标观察和事实边界。
+- \`草稿/\`：工作草稿、修改稿和平台变体。
+- \`定稿/\`：已接受、可发布的最终稿。
+- \`.work/\`：临时大纲、审校记录、废弃角度和中间笔记。
+
+## 命名规则
+
+- \`草稿/\`：\`YYYYMMDD-topic-vNN.md\`，例如 \`20260513-乡村螃蟹反目-v01.md\`。
+- \`定稿/\`：\`YYYYMMDD-topic-final.md\`，例如 \`20260513-乡村螃蟹反目-final.md\`。
+- \`.work/\`：\`YYYYMMDD-topic-purpose.md\`，例如 \`20260513-乡村螃蟹反目-outline.md\`。
+
+## Skill 路由
+
+- 首轮请求缺少读者、平台、角度或读者承诺：先用 \`short-brief\`。
+- 需要整理事实、例子或证据：使用 \`short-source-curator\`。
+- 需要选择中心论点、开头钩子、结构或结尾收益：使用 \`short-angle\`。
+- 简报和角度已接受后再使用 \`short-drafter\` 起草。
+- 修改、平台适配、清晰度和去空话：使用 \`short-editor\`。
+- 需要可发布包装：使用 \`short-publisher\`。`;
+  }
+}
+
 function createClaudeBookAgentInstructions(): string {
   return `# Claude-Book Novel Method Pack
 
-This project uses the novel.claude-book method pack.
+本项目使用 \`novel.claude-book\` Method Pack。
 
-- Treat bible/ as canon.
-- Treat story/chapters/ as manuscript.
-- Treat story/synopsis.md and story/plan.md as outline.
-- Treat state/current/ as current continuity state.
-- Treat timeline/history.md as append-only chronology.
-- Use .work/ for drafts and review reports.
+${createChineseRuntimeSummary(CLAUDE_BOOK_METHOD_PACK)}
 
-## Hard Workflow Gates
+## 工作流硬门禁
 
-- Do not write or update story/chapters/ until story/synopsis.md and story/plan.md contain non-template content.
-- The number and order of manuscript chapters must come from story/plan.md.
-- Draft each chapter through .work/chapter-XX-plan.md and .work/chapter-XX-draft.md before accepting it into story/chapters/.
-- After each accepted chapter, update state/current/ and timeline/ before starting the next chapter.
-- Natural prose paragraphs should usually contain 2-5 sentences. Avoid one-sentence-per-blank-line output except for dialogue, lists, or deliberate emphasis.
+- 在 story/synopsis.md 和 story/plan.md 仍为空模板前，不要写入或更新 story/chapters/。
+- 正文章节数量与顺序必须来自 story/plan.md。
+- 每章先经过 .work/chapter-XX-plan.md 和 .work/chapter-XX-draft.md，再接受进入 story/chapters/。
+- 每个已接受章节之后，先更新 state/current/ 和 timeline/，再开始下一章。
+- 自然叙事段落通常保持 2-5 句；除对白、列表或刻意强调外，避免一行一句的正文。
 
-Do not modify bible/ during chapter drafting unless explicitly requested.
+## 初始创作请求门禁
+
+- 不要从宽泛的首轮请求直接起草正文。
+- 先使用相关规划、构思或信息收集 skill，并检查 story/synopsis.md、story/plan.md、bible/、state/ 和 timeline/。
+- 从用户输入中提取已知约束，只追问会实质改变方法、读者承诺、结构、角色设定或章节计划的缺失决策。
+
+除非用户明确要求，章节起草期间不要修改 bible/。
 `;
 }
 
@@ -115,18 +242,25 @@ function createAgentInstructions(pack: MethodPack): string {
 
   return `# ${pack.displayName}
 
-This project uses the ${pack.id} method pack.
+本项目使用 \`${pack.id}\` Method Pack。
 
-${pack.runtimePreamble}
+${createChineseRuntimeSummary(pack)}
 
-## Workflow Gates
+## 工作流门禁
 
-- Keep accepted manuscript separate from drafts and scratch work.
-- Record durable story facts in the pack's canon or knowledge files before relying on them later.
-- Do not overwrite existing project files when repairing the scaffold.
-- Keep analysis, benchmark, critique, and research artifacts out of accepted manuscript files unless explicitly requested.
+- 已接受正文必须和草稿、临时分析、审校报告分开保存。
+- 后续会依赖的持久事实，先写入该 Method Pack 的正典、知识库或简报文件。
+- 修复脚手架时不要覆盖用户已经写过的项目文件。
+- 分析、对标、批评、研究材料不要写入已接受正文，除非用户明确要求。
 
-## Starter Request
+## 初始创作请求门禁
+
+- 不要从宽泛的首轮请求直接起草正文。
+- 先使用该 Method Pack 的基础路由或信息收集 skill，例如 \`story\`、\`short-brief\`、\`project-setup\`，或 \`skills/\` 下其他 setup-oriented skill。
+- 从用户输入中提取已知约束，识别缺失的关键方法选择，只追问会实质改变大纲、市场赛道、节奏、视角、关系设置或生产约束的问题。
+- 信息收集层形成可用简报后，再进入大纲、黄金章节、分集地图或正文草稿。
+
+## 启动说明
 
 ${pack.starterMessage}
 `;
@@ -484,95 +618,123 @@ Durable project knowledge lives here. Keep it concise, factual, and source-aware
 
 function scaffoldShortForm(rootPath: string): void {
   for (const dir of [
-    "brief",
-    "notes",
-    "style",
-    "drafts",
-    "revisions",
-    "published",
-    "reviews",
+    "草稿",
+    "定稿",
     ".work",
   ]) {
     ensureDir(join(rootPath, dir));
   }
 
-  writeFileIfMissing(join(rootPath, "brief/reader-promise.md"), `# Reader Promise
+  writeFileIfMissing(join(rootPath, "目录说明.md"), `# 短文工作区目录说明
 
-## Target Reader
+## 生命周期
 
-## Reader Problem Or Desire
+| 路径 | 用途 | 何时写入 |
+| --- | --- | --- |
+| 短文简报.md | 目标读者、平台、篇幅、读者承诺、中心角度、大纲、声线和质量门槛 | 首轮信息收集、定位变化或起草前 |
+| 素材卡.md | 来源、事实、引用、例子、对标观察和可信度 | 使用素材前 |
+| 草稿/ | 未接受的工作草稿、修改稿和平台变体 | 完成正文或改稿时 |
+| 定稿/ | 已接受、可发布的最终稿 | 用户确认或进入发布阶段时 |
+| .work/ | 临时大纲、审校记录、废弃角度、草稿碎片 | 不应长期保存的中间工作 |
 
-## Promise
+## 命名规则
 
-## Desired Aftertaste
+- 草稿：\`YYYYMMDD-topic-vNN.md\`，例如 \`20260513-乡村螃蟹反目-v01.md\`。
+- 定稿：\`YYYYMMDD-topic-final.md\`，例如 \`20260513-乡村螃蟹反目-final.md\`。
+- 临时工作：\`YYYYMMDD-topic-purpose.md\`，例如 \`20260513-乡村螃蟹反目-outline.md\`。
+
+## 写入原则
+
+- 宽泛初始请求先进入 \`短文简报.md\`，不要直接写正文。
+- 大纲、角度候选和废弃方向先放 \`.work/\`；被确认的核心角度同步到 \`短文简报.md\`。
+- 正文草稿只放 \`草稿/\`，不要写进 \`短文简报.md\` 或 \`素材卡.md\`。
+- 平台改写或反馈修改继续放 \`草稿/\` 的新版本，不要覆盖原始草稿。
+- 只有被接受的可发布版本进入 \`定稿/\`。
+- 审校结论、风险、证据缺口和修改建议放 \`.work/\`。
 `);
-  writeFileIfMissing(join(rootPath, "brief/angle.md"), `# Angle
 
-## Central Claim
+  writeFileIfMissing(join(rootPath, "短文简报.md"), `# 短文简报
 
-## Why Now
+## 目标读者
 
-## Hook
+## 读者问题或欲望
 
-## Counterpoint
+## 读者承诺
 
-## Takeaway
+## 预期余味
+
+## 发布平台
+
+### 内容形式
+
+### 目标篇幅
+
+### 分发渠道
+
+### 约束
+
+### 行动召唤
+
+## 中心角度
+
+### 核心判断
+
+### 当下理由
+
+### 开头钩子
+
+### 反方或阻力
+
+### 结尾收益
+
+## 大纲
+
+### 开头
+
+### 铺垫
+
+### 支撑
+
+### 转折
+
+### 回报
+
+## 声线备注
+
+### 语气
+
+### 用词
+
+### 句子节奏
+
+### 避免事项
+
+## 质量门槛
+
+- 目标读者和发布平台明确。
+- 一个中心判断或读者承诺控制全文。
+- 开头快速兑现注意力。
+- 每一段都推进判断、证据或回报。
+
+## 清晰度
+
+- 句子直接。
+- 段落足够短，便于扫读。
+- 抽象判断有例子或证据支撑。
+- 结尾兑现承诺的收益。
 `);
-  writeFileIfMissing(join(rootPath, "brief/platform.md"), `# Platform
+  writeFileIfMissing(join(rootPath, "素材卡.md"), `# 素材卡
 
-## Format
+| 来源 | 事实或引用 | 用途 | 可信度 |
+| --- | --- | --- | --- |
 
-## Length Target
+## 参考样例
 
-## Distribution Channel
-
-## Constraints
-
-## Call To Action
-`);
-  writeFileIfMissing(join(rootPath, "notes/source-cards.md"), `# Source Cards
-
-| Source | Fact Or Quote | Use | Confidence |
+| 来源 | 开头钩子 | 结尾方式 | 声线备注 |
 | --- | --- | --- | --- |
 `);
-  writeFileIfMissing(join(rootPath, "notes/examples.md"), `# Examples
 
-## Reference Pieces
-
-## Hooks
-
-## Endings
-
-## Voice Notes
-`);
-  writeFileIfMissing(join(rootPath, "style/voice.md"), `# Voice
-
-## Tone
-
-## Diction
-
-## Sentence Rhythm
-
-## Avoid
-`);
-  writeFileIfMissing(join(rootPath, "style/checklist.md"), `# Short-Form Quality Checklist
-
-## Contract
-
-- Reader and platform are explicit.
-- One central claim or promise controls the piece.
-- Opening earns attention quickly.
-- Every section advances the claim, evidence, or payoff.
-
-## Clarity
-
-- Sentences are direct.
-- Paragraphs are short enough to scan.
-- Abstract claims are supported by examples or evidence.
-- The ending delivers the promised takeaway.
-`);
-
-  for (const dir of ["drafts", "revisions", "published", "reviews", ".work"]) {
+  for (const dir of ["草稿", "定稿", ".work"]) {
     writeFileIfMissing(join(rootPath, dir, ".gitkeep"), "");
   }
 }

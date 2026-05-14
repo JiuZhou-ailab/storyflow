@@ -18,17 +18,11 @@ export const SHORT_FORM_METHOD_PACK: MethodPack = {
   },
   requiredPaths: [
     { path: "craft-writing.json", kind: "file" },
-    { path: "brief/reader-promise.md", kind: "file" },
-    { path: "brief/angle.md", kind: "file" },
-    { path: "brief/platform.md", kind: "file" },
-    { path: "notes/source-cards.md", kind: "file" },
-    { path: "notes/examples.md", kind: "file" },
-    { path: "style/voice.md", kind: "file" },
-    { path: "style/checklist.md", kind: "file" },
-    { path: "drafts", kind: "directory" },
-    { path: "revisions", kind: "directory" },
-    { path: "published", kind: "directory" },
-    { path: "reviews", kind: "directory" },
+    { path: "目录说明.md", kind: "file" },
+    { path: "短文简报.md", kind: "file" },
+    { path: "素材卡.md", kind: "file" },
+    { path: "草稿", kind: "directory" },
+    { path: "定稿", kind: "directory" },
     { path: ".work", kind: "directory" },
   ],
   requiredSkills: [
@@ -36,18 +30,42 @@ export const SHORT_FORM_METHOD_PACK: MethodPack = {
     "short-source-curator",
     "short-angle",
     "short-drafter",
-    "short-variant",
     "short-editor",
     "short-publisher",
   ],
-  runtimePreamble: "This project uses the short-form.article method pack. Use brief/ for audience, promise, angle, and platform constraints; notes/ for evidence and examples; style/ for voice and quality gates; drafts/ for working drafts; revisions/ for edited versions; published/ for accepted final pieces; and reviews/ for critique reports.",
+  runtimePreamble: "This project uses the short-form.article method pack. Use 短文简报.md for audience, promise, platform, angle, and outline; 素材卡.md for evidence and examples; 草稿/ for working drafts and revisions; 定稿/ for accepted final pieces; and .work/ for temporary outlines, reviews, and discarded alternatives.",
+  agentIdentity: "You are a lean short-form editorial agent who turns vague requests into a compact brief, traceable material, draft, edit, and final copy without over-splitting artifacts.",
+  defaultSkill: "short-brief",
+  alwaysOnInstructions: "Treat 目录说明.md as the file-structure contract, 短文简报.md as the single planning source for reader, platform, angle, outline, voice notes, and quality gates, 素材卡.md as the evidence ledger, 草稿/ as working copy and revisions, 定稿/ as accepted final copy, and .work/ as temporary outlines, reviews, and discarded alternatives.",
+  initialRequestPolicy: "Do not draft directly from a broad first writing request. First use short-brief to clarify audience, platform, desired length, reader promise, evidence/source availability, stance, tone, ending payoff, and whether the next artifact should be a brief update, outline, draft, edit, or publishable final.",
+  artifactContract: [
+    { path: "目录说明.md", role: "Human-readable file structure, lifecycle, and naming contract for the short-form workspace.", lifecycle: "canon" },
+    { path: "短文简报.md", role: "Single source for audience, reader promise, platform, angle, outline, voice notes, quality gates, and open decisions.", lifecycle: "intake" },
+    { path: "素材卡.md", role: "Traceable source cards, evidence, quotes, examples, benchmark notes, and factual constraints.", lifecycle: "reference" },
+    { path: "草稿/", role: "Working drafts, edited drafts, and platform variants before final acceptance.", lifecycle: "draft" },
+    { path: "定稿/", role: "Accepted final copy ready for use.", lifecycle: "final" },
+    { path: ".work/", role: "Temporary outlines, reviews, discarded angles, and intermediate notes that should not become durable files.", lifecycle: "draft" },
+  ],
+  namingConventions: [
+    { path: "草稿/", pattern: "YYYYMMDD-topic-vNN.md for working drafts before review.", example: "20260513-乡村螃蟹反目-v01.md" },
+    { path: "定稿/", pattern: "YYYYMMDD-topic-final.md for accepted publishable copy only.", example: "20260513-乡村螃蟹反目-final.md" },
+    { path: ".work/", pattern: "YYYYMMDD-topic-purpose.md for scratch outlines, reviews, rejected angles, and temporary notes.", example: "20260513-乡村螃蟹反目-outline.md" },
+  ],
+  skillRouting: [
+    { when: "initial request lacks audience, platform, angle, or reader promise", skill: "short-brief" },
+    { when: "sources, facts, examples, or evidence must be organized", skill: "short-source-curator" },
+    { when: "central claim, hook, structure, or ending payoff must be chosen", skill: "short-angle" },
+    { when: "brief and angle are accepted and draft copy is requested", skill: "short-drafter" },
+    { when: "draft needs revision, platform adaptation, clarity, evidence, rhythm, or anti-fluff editing", skill: "short-editor" },
+    { when: "final copy needs publish-ready packaging", skill: "short-publisher" },
+  ],
   starterMessage: `## 这是什么
 
 这是短文写作工作区，适合公众号短文、newsletter、博客短文、社媒长帖、观点短评和 memo 等需要快速成稿但不能牺牲逻辑与事实边界的短内容。
 
 ## 我会怎么做
 
-我会先把目标读者、发布平台、目标篇幅和读者承诺整理成 brief，再把素材来源转成可追溯的 source cards。之后围绕一个中心论点生成角度、大纲、草稿、审校意见和平台变体。
+我会先把目标读者、发布平台、目标篇幅和读者承诺整理到 短文简报.md，再把素材来源转成可追溯的 素材卡.md。之后围绕一个中心论点生成大纲、草稿、修改意见和定稿，并按目录说明里的命名规则保存。
 
 ## 流程
 

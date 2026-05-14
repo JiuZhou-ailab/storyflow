@@ -1,3 +1,7 @@
+// input: Chat transcript snippets around user messages
+// output: Regression checks for rewind branch target selection and session option cloning
+// pos: Guards edit-and-regenerate branching behavior in the app shell
+
 import { describe, expect, it } from 'bun:test'
 import {
   buildRewindSessionOptions,
@@ -6,7 +10,7 @@ import {
 
 const baseMessages: Parameters<typeof resolveRewindBranchMessageId>[0] = [
   { id: 'u1', role: 'user' },
-  { id: 'a1', role: 'assistant' },
+  { id: 'a1', role: 'assistant', turnId: 'turn-a1' },
   { id: 'u2', role: 'user' },
 ]
 
@@ -30,11 +34,18 @@ describe('chat rewind helpers', () => {
   it('skips non-final messages when resolving the rewind branch point', () => {
     expect(resolveRewindBranchMessageId([
       { id: 'u1', role: 'user' },
-      { id: 'a1', role: 'assistant' },
+      { id: 'a1', role: 'assistant', turnId: 'turn-a1' },
       { id: 't1', role: 'tool' },
       { id: 'a2', role: 'assistant', isIntermediate: true },
       { id: 'u2', role: 'user' },
     ], 'u2')).toBe('a1')
+  })
+
+  it('uses a fresh session when the previous assistant message is local-only', () => {
+    expect(resolveRewindBranchMessageId([
+      { id: 'starter', role: 'assistant' },
+      { id: 'u1', role: 'user' },
+    ], 'u1')).toBeNull()
   })
 
   it('uses a fresh session when editing the first user message', () => {

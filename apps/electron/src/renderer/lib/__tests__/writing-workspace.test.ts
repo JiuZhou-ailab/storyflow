@@ -85,6 +85,39 @@ describe('writing workspace helpers', () => {
     })
   })
 
+  it('describes short-form workspace files with Chinese writer-facing labels', () => {
+    expect(describeNovelWorkspaceFile('目录说明.md')).toEqual({
+      fallbackTitle: '目录说明',
+    })
+    expect(describeNovelWorkspaceFile('短文简报.md')).toEqual({
+      fallbackTitle: '短文简报',
+    })
+    expect(describeNovelWorkspaceFile('素材卡.md')).toEqual({
+      fallbackTitle: '素材卡',
+    })
+    expect(describeNovelWorkspaceFile('brief/angle.md')).toEqual({
+      fallbackTitle: '角度',
+    })
+    expect(describeNovelWorkspaceFile('brief/platform.md')).toEqual({
+      fallbackTitle: '发布平台',
+    })
+    expect(describeNovelWorkspaceFile('brief/reader-promise.md')).toEqual({
+      fallbackTitle: '读者承诺',
+    })
+    expect(describeNovelWorkspaceFile('style/checklist.md')).toEqual({
+      fallbackTitle: '质量清单',
+    })
+    expect(describeNovelWorkspaceFile('style/voice.md')).toEqual({
+      fallbackTitle: '声线',
+    })
+    expect(describeNovelWorkspaceFile('notes/examples.md')).toEqual({
+      fallbackTitle: '参考样例',
+    })
+    expect(describeNovelWorkspaceFile('notes/source-cards.md')).toEqual({
+      fallbackTitle: '素材卡',
+    })
+  })
+
   it('falls back to a humanized file name for custom novel files', () => {
     expect(describeNovelWorkspaceFile('bible/characters/lin-qing.md')).toEqual({
       fallbackTitle: 'Lin Qing',
@@ -159,43 +192,23 @@ describe('writing workspace helpers', () => {
 
   it('maps short-form article workspace files into the writing workspace projection', () => {
     const files = mapSearchResultsToNovelWorkspaceFiles([
-      { name: 'reader-promise.md', path: '/short/brief/reader-promise.md', relativePath: 'brief/reader-promise.md', type: 'file' },
-      { name: 'source-cards.md', path: '/short/notes/source-cards.md', relativePath: 'notes/source-cards.md', type: 'file' },
-      { name: 'voice.md', path: '/short/style/voice.md', relativePath: 'style/voice.md', type: 'file' },
-      { name: 'draft-1.md', path: '/short/drafts/draft-1.md', relativePath: 'drafts/draft-1.md', type: 'file' },
-      { name: 'final.md', path: '/short/published/final.md', relativePath: 'published/final.md', type: 'file' },
+      { name: '短文简报.md', path: '/short/短文简报.md', relativePath: '短文简报.md', type: 'file' },
+      { name: '素材卡.md', path: '/short/素材卡.md', relativePath: '素材卡.md', type: 'file' },
+      { name: 'draft-1.md', path: '/short/草稿/draft-1.md', relativePath: '草稿/draft-1.md', type: 'file' },
+      { name: 'final.md', path: '/short/定稿/final.md', relativePath: '定稿/final.md', type: 'file' },
     ])
 
     expect(files.map(file => file.relativePath)).toEqual([
-      'brief/reader-promise.md',
-      'notes/source-cards.md',
-      'style/voice.md',
-      'drafts/draft-1.md',
-      'published/final.md',
+      '短文简报.md',
+      '素材卡.md',
+      '草稿/draft-1.md',
+      '定稿/final.md',
     ])
 
     const tree = buildNovelWorkspaceTree(files)
-    expect(tree.outline.files.map(file => file.relativePath)).toEqual(['brief/reader-promise.md'])
-    expect(tree.analysis.files.map(file => file.relativePath)).toEqual(['notes/source-cards.md'])
-    expect(tree.style.files.map(file => file.relativePath)).toEqual(['style/voice.md'])
-    expect(tree.manuscript.files.map(file => file.relativePath)).toEqual(['drafts/draft-1.md', 'published/final.md'])
-  })
-
-  it('maps short-drama workspace files into the writing workspace projection', () => {
-    const files = mapSearchResultsToNovelWorkspaceFiles([
-      { name: 'audience.md', path: '/drama/brief/audience.md', relativePath: 'brief/audience.md', type: 'file' },
-      { name: 'characters.md', path: '/drama/series/characters.md', relativePath: 'series/characters.md', type: 'file' },
-      { name: 'world.md', path: '/drama/series/world.md', relativePath: 'series/world.md', type: 'file' },
-      { name: 'episode-01.md', path: '/drama/episodes/drafts/episode-01.md', relativePath: 'episodes/drafts/episode-01.md', type: 'file' },
-      { name: 'hook.md', path: '/drama/reviews/hook.md', relativePath: 'reviews/hook.md', type: 'file' },
-    ])
-
-    const tree = buildNovelWorkspaceTree(files)
-    expect(tree.outline.files.map(file => file.relativePath)).toEqual(['brief/audience.md'])
-    expect(tree.characters.files.map(file => file.relativePath)).toEqual(['series/characters.md'])
-    expect(tree.locations.files.map(file => file.relativePath)).toEqual(['series/world.md'])
-    expect(tree.manuscript.files.map(file => file.relativePath)).toEqual(['episodes/drafts/episode-01.md'])
-    expect(tree.analysis.files.map(file => file.relativePath)).toEqual(['reviews/hook.md'])
+    expect(tree.outline.files.map(file => file.relativePath)).toEqual(['短文简报.md'])
+    expect(tree.analysis.files.map(file => file.relativePath)).toEqual(['素材卡.md'])
+    expect(tree.manuscript.files.map(file => file.relativePath)).toEqual(['定稿/final.md', '草稿/draft-1.md'])
   })
 
   it('defines targeted searches for the fixed novel workspace catalog', () => {
@@ -216,6 +229,11 @@ describe('writing workspace helpers', () => {
       '参考资料',
       '拆文库',
       '对标',
+      '目录说明.md',
+      '短文简报.md',
+      '素材卡.md',
+      '草稿',
+      '定稿',
       'planning',
       'outline',
       'draft',

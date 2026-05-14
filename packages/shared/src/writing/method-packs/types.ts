@@ -21,6 +21,33 @@ export interface MethodPackRequiredPath {
   kind: "file" | "directory";
 }
 
+export type MethodPackArtifactLifecycle =
+  | "intake"
+  | "reference"
+  | "canon"
+  | "outline"
+  | "draft"
+  | "final"
+  | "review"
+  | "state";
+
+export interface MethodPackArtifactContract {
+  path: string;
+  role: string;
+  lifecycle: MethodPackArtifactLifecycle;
+}
+
+export interface MethodPackSkillRouting {
+  when: string;
+  skill: string;
+}
+
+export interface MethodPackNamingConvention {
+  path: string;
+  pattern: string;
+  example: string;
+}
+
 export interface MethodPack {
   id: MethodPackId;
   version: 1;
@@ -37,4 +64,11 @@ export interface MethodPack {
   requiredSkills: string[];
   runtimePreamble: string;
   starterMessage: string;
+  agentIdentity: string;
+  defaultSkill: string;
+  alwaysOnInstructions: string;
+  initialRequestPolicy: string;
+  artifactContract: MethodPackArtifactContract[];
+  namingConventions?: MethodPackNamingConvention[];
+  skillRouting: MethodPackSkillRouting[];
 }

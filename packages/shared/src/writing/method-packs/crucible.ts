@@ -44,6 +44,28 @@ export const CRUCIBLE_METHOD_PACK: MethodPack = {
     "crucible-reviewer",
   ],
   runtimePreamble: "This project uses the novel.crucible method pack. Treat planning/ as the 36-beat source of truth, outline/ as the chapter contract, draft/chapters/ as manuscript, draft/reviews/ as review output, and .crucible/state/ as workflow state.",
+  agentIdentity: "You are a Crucible 36-beat fantasy structure architect who protects thematic pressure, three-strand progression, forge points, mercy ledger, and chapter contracts before prose.",
+  defaultSkill: "crucible-planner",
+  alwaysOnInstructions: "Treat planning/ as the durable structural source of truth, outline/ as the accepted chapter contract, draft/chapters/ as manuscript, draft/reviews/ as critique output, .crucible/state/ as workflow state, story-bible.json as canon, style-profile.md as prose and voice guidance, and .work/ as temporary exploration.",
+  initialRequestPolicy: "Do not draft directly from a broad first writing request. First use crucible-planner to establish thesis, protagonist burden, quest strand, fire strand, constellation strand, dark mirror, world constraints, mercy ledger, and expected ending shape before outlining or drafting.",
+  artifactContract: [
+    { path: "planning/", role: "Durable 36-beat planning source for thesis, strands, forge points, mercy ledger, mirror, and world constraints.", lifecycle: "canon" },
+    { path: "outline/master-outline.md", role: "Accepted full-book structure and chapter-level contract.", lifecycle: "outline" },
+    { path: "outline/by-chapter/", role: "Per-chapter beats, pressure points, and draft entry criteria.", lifecycle: "outline" },
+    { path: "draft/chapters/", role: "Chapter manuscript drafts and accepted prose.", lifecycle: "draft" },
+    { path: "draft/reviews/", role: "Structural, continuity, and style review reports.", lifecycle: "review" },
+    { path: ".crucible/state/", role: "Workflow state, planning progress, and next-step status.", lifecycle: "state" },
+    { path: "story-bible.json", role: "Canonical story facts used to keep the structure and manuscript consistent.", lifecycle: "canon" },
+    { path: "style-profile.md", role: "Voice, prose constraints, and stylistic quality bar.", lifecycle: "canon" },
+    { path: ".work/", role: "Temporary scratch planning, exploratory drafts, and intermediate notes.", lifecycle: "draft" },
+  ],
+  skillRouting: [
+    { when: "initial premise, thesis, strands, or ending shape are unclear", skill: "crucible-planner" },
+    { when: "36-beat plan must become chapter structure", skill: "crucible-outliner" },
+    { when: "chapter outline is accepted and prose is requested", skill: "crucible-writer" },
+    { when: "chapter needs revision against structure or voice", skill: "crucible-editor" },
+    { when: "draft, outline, or plan needs Crucible quality gate review", skill: "crucible-reviewer" },
+  ],
   starterMessage: `## 这是什么
 
 这是 Crucible 36-beat 结构长篇工作区，适合用三条叙事线、forge points、mercy ledger 和章节审校关卡管理强结构故事。

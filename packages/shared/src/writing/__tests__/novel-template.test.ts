@@ -64,8 +64,10 @@ describe("createNovelProjectScaffold", () => {
     expect(lock.installedSkills).toContain("chapter-workflow");
     expect(lock.installedPaths).toContain("state/current/situation.md");
     const agentInstructions = readFileSync(join(rootPath, "AGENTS.md"), "utf-8");
-    expect(agentInstructions).toContain("Do not write or update story/chapters/ until story/synopsis.md and story/plan.md contain non-template content.");
-    expect(agentInstructions).toContain("The number and order of manuscript chapters must come from story/plan.md.");
+    expect(agentInstructions).toContain("## 工作流硬门禁");
+    expect(agentInstructions).toContain("在 story/synopsis.md 和 story/plan.md 仍为空模板前，不要写入或更新 story/chapters/。");
+    expect(agentInstructions).toContain("正文章节数量与顺序必须来自 story/plan.md。");
+    expect(agentInstructions).not.toContain("Workflow Gates");
     expect(readFileSync(join(rootPath, "story/chapters/chapter-01.md"), "utf-8"))
       .toContain("# Chapter 1");
   });
@@ -136,6 +138,12 @@ describe("createNovelProjectScaffold", () => {
     const manifest = JSON.parse(readFileSync(join(rootPath, "craft-writing.json"), "utf-8"));
     expect(manifest.methodPack).toEqual({ id: "novel.oh-story", version: 1 });
     expect(manifest.storageProfile).toBe("oh-story-compatible");
+
+    const agents = readFileSync(join(rootPath, "AGENTS.md"), "utf-8");
+    expect(agents).toContain("## 初始创作请求门禁");
+    expect(agents).toContain("不要从宽泛的首轮请求直接起草正文");
+    expect(agents).toContain("先使用该 Method Pack 的基础路由或信息收集 skill");
+    expect(agents).not.toContain("Initial Creative Request Gate");
   });
 
   it("creates a Crucible scaffold when selected", () => {
@@ -215,23 +223,27 @@ describe("createNovelProjectScaffold", () => {
     });
 
     for (const relativePath of [
-      "brief/reader-promise.md",
-      "brief/angle.md",
-      "brief/platform.md",
-      "notes/source-cards.md",
-      "notes/examples.md",
-      "style/voice.md",
-      "style/checklist.md",
-      "drafts",
-      "revisions",
-      "published",
-      "reviews",
+      "目录说明.md",
+      "短文简报.md",
+      "素材卡.md",
+      "草稿",
+      "定稿",
       "skills/short-drafter/SKILL.md",
       "skills/short-editor/SKILL.md",
       "NOTICE-Short-Form-Writing.md",
     ]) {
       expect(existsSync(join(rootPath, relativePath))).toBe(true);
     }
+
+    const structureDoc = readFileSync(join(rootPath, "目录说明.md"), "utf-8");
+    expect(structureDoc).toContain("草稿/");
+    expect(structureDoc).toContain("YYYYMMDD-topic-vNN.md");
+    expect(structureDoc).toContain("定稿/");
+    expect(structureDoc).toContain("YYYYMMDD-topic-final.md");
+    expect(structureDoc).toContain("宽泛初始请求先进入 `短文简报.md`");
+    expect(existsSync(join(rootPath, "简报"))).toBe(false);
+    expect(existsSync(join(rootPath, "修订"))).toBe(false);
+    expect(existsSync(join(rootPath, "评审"))).toBe(false);
 
     const manifest = JSON.parse(readFileSync(join(rootPath, "craft-writing.json"), "utf-8"));
     expect(manifest).toMatchObject({
@@ -240,5 +252,24 @@ describe("createNovelProjectScaffold", () => {
       methodPack: { id: "short-form.article", version: 1 },
       storageProfile: "short-form-compatible",
     });
+
+    const brief = readFileSync(join(rootPath, "短文简报.md"), "utf-8");
+    expect(brief).toContain("## 目标读者");
+    expect(brief).toContain("## 读者承诺");
+    expect(brief).not.toContain("## Target Reader");
+
+    const sourceCards = readFileSync(join(rootPath, "素材卡.md"), "utf-8");
+    expect(sourceCards).toContain("# 素材卡");
+    expect(sourceCards).toContain("| 来源 | 事实或引用 | 用途 | 可信度 |");
+
+    const agents = readFileSync(join(rootPath, "AGENTS.md"), "utf-8");
+    expect(agents).toContain("# Short-Form Writing Pack");
+    expect(agents).toContain("## Agent 运行画像");
+    expect(agents).toContain("短文简报.md");
+    expect(agents).toContain("素材卡.md");
+    expect(agents).toContain("不要从宽泛的首轮请求直接起草正文");
+    expect(agents).not.toContain("This project uses");
+    expect(agents).not.toContain("Starter Request");
   });
+
 });

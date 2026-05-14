@@ -49,6 +49,7 @@ import {
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
 import { TopBar } from "./TopBar"
+import { GlobalSearchDialog } from "./GlobalSearchDialog"
 import { McpIcon } from "../icons/McpIcon"
 import { cn } from "@/lib/utils"
 import { isMac } from "@/lib/platform"
@@ -158,9 +159,12 @@ import {
 } from "@/lib/novel-export"
 import {
   getAdjacentChangedFilePath,
+  getNovelReviewChangeKey,
   getPendingChangedFilePaths,
   getPendingChangesForFile,
   normalizeNovelFileChangePaths,
+  parseNovelReviewStatusMap,
+  type NovelReviewStatusMap,
 } from "@/lib/novel-review-workflow"
 import {
   buildNovelWorkspaceTree,
@@ -872,6 +876,7 @@ function AppShellContent({
   // Search state for session list
   const [searchActive, setSearchActive] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
+  const [globalSearchOpen, setGlobalSearchOpen] = React.useState(false)
 
   // Grouping mode for chat list: per-view (stored in viewFiltersMap), forced to 'date' for state sub-views
   const isStateSubView = sessionFilter?.kind === 'state'
@@ -933,8 +938,8 @@ function AppShellContent({
     setSearchQuery('')
   }, [navFilterKey])
 
-  // Cmd+F to activate search
-  useAction('app.search', () => setSearchActive(true))
+  // Cmd+F opens the global search surface; the sidebar menu still owns local list search.
+  useAction('app.search', () => setGlobalSearchOpen(true))
 
   // Unified sidebar keyboard navigation state
   // Load expanded folders from localStorage (default: all collapsed)
@@ -1525,6 +1530,35 @@ function AppShellContent({
     novelWorkspaceRootRef.current = novelWorkspaceRoot
   }, [novelWorkspaceRoot])
 
+  const loadNovelWorkspaceFiles = React.useCallback(async (rootPath: string): Promise<NovelWorkspaceFile[] | null> => {
+    const results = await window.electronAPI.searchFiles(rootPath, '')
+    if (!detectNovelProjectFromSearchResults(results)) return null
+
+    const fileResultSets = await Promise.all(
+      NOVEL_WORKSPACE_FILE_SEARCH_QUERIES.map(async (query) => {
+        try {
+          return await window.electronAPI.searchFiles(rootPath, query)
+        } catch {
+          return []
+        }
+      })
+    )
+
+    return mapSearchResultsToNovelWorkspaceFiles([
+      ...results,
+      ...fileResultSets.flat(),
+    ])
+  }, [])
+
+  const refreshNovelWorkspaceFiles = React.useCallback(async (rootPath: string): Promise<boolean> => {
+    const files = await loadNovelWorkspaceFiles(rootPath)
+    if (!files) return false
+
+    setNovelWorkspaceRoot(rootPath)
+    setNovelWorkspaceFiles(files)
+    return true
+  }, [loadNovelWorkspaceFiles])
+
   React.useEffect(() => {
     if (novelWorkspaceCandidateRoots.length === 0) {
       setNovelWorkspaceRoot(null)
@@ -1544,26 +1578,12 @@ function AppShellContent({
     async function detectNovelWorkspace(): Promise<void> {
       for (const rootPath of novelWorkspaceCandidateRoots) {
         try {
-          const results = await window.electronAPI.searchFiles(rootPath, '')
+          const files = await loadNovelWorkspaceFiles(rootPath)
           if (cancelled) return
 
-          if (detectNovelProjectFromSearchResults(results)) {
-            const fileResultSets = await Promise.all(
-              NOVEL_WORKSPACE_FILE_SEARCH_QUERIES.map(async (query) => {
-                try {
-                  return await window.electronAPI.searchFiles(rootPath, query)
-                } catch {
-                  return []
-                }
-              })
-            )
-            if (cancelled) return
-
+          if (files) {
             setNovelWorkspaceRoot(rootPath)
-            setNovelWorkspaceFiles(mapSearchResultsToNovelWorkspaceFiles([
-              ...results,
-              ...fileResultSets.flat(),
-            ]))
+            setNovelWorkspaceFiles(files)
             return
           }
         } catch {
@@ -1580,7 +1600,19 @@ function AppShellContent({
     return () => {
       cancelled = true
     }
-  }, [novelWorkspaceCandidateRoots])
+  }, [loadNovelWorkspaceFiles, novelWorkspaceCandidateRoots])
+
+  React.useEffect(() => {
+    if (!novelWorkspaceRoot || latestNovelFileChanges.length === 0) return
+
+    const timeoutId = window.setTimeout(() => {
+      void refreshNovelWorkspaceFiles(novelWorkspaceRoot)
+    }, 250)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [latestNovelFileChanges, novelWorkspaceRoot, refreshNovelWorkspaceFiles])
 
   const showNovelWorkspaceSidebar = !!novelWorkspaceRoot
   const showNovelDocumentNavigator = isSessionsNavigation(navState) && showNovelWorkspaceSidebar
@@ -1917,7 +1949,35 @@ function AppShellContent({
     }
   }, [ensureNovelDocumentSaved, novelWorkspaceFiles, novelWorkspaceRoot, t])
 
-  const [novelChangeReviewStatus, setNovelChangeReviewStatus] = React.useState<Record<string, 'accepted' | 'rejected'>>({})
+  const [novelChangeReviewStatus, setNovelChangeReviewStatus] = React.useState<NovelReviewStatusMap>({})
+
+  React.useEffect(() => {
+    if (!effectiveSessionId) {
+      setNovelChangeReviewStatus({})
+      return
+    }
+
+    const saved = storage.get<Record<string, unknown>>(storage.KEYS.novelChangeReviewStatus, {}, effectiveSessionId)
+    setNovelChangeReviewStatus(parseNovelReviewStatusMap(saved))
+  }, [effectiveSessionId])
+
+  React.useEffect(() => {
+    if (!effectiveSessionId || reviewableNovelFileChanges.length === 0) return
+
+    setNovelChangeReviewStatus((current) => {
+      const nextStatus = parseNovelReviewStatusMap(current, reviewableNovelFileChanges)
+      storage.set(storage.KEYS.novelChangeReviewStatus, nextStatus, effectiveSessionId)
+      return nextStatus
+    })
+  }, [effectiveSessionId, reviewableNovelFileChanges])
+
+  const persistNovelChangeReviewStatus = React.useCallback((nextStatus: NovelReviewStatusMap) => {
+    const normalizedStatus = parseNovelReviewStatusMap(nextStatus, reviewableNovelFileChanges)
+    setNovelChangeReviewStatus(normalizedStatus)
+    if (effectiveSessionId) {
+      storage.set(storage.KEYS.novelChangeReviewStatus, normalizedStatus, effectiveSessionId)
+    }
+  }, [effectiveSessionId, reviewableNovelFileChanges])
 
   const pendingNovelChangedFilePaths = React.useMemo(
     () => getPendingChangedFilePaths(reviewableNovelFileChanges, novelChangeReviewStatus),
@@ -2383,7 +2443,7 @@ function AppShellContent({
 
   const handleSelectNextNovelChangeAfterStatus = React.useCallback(async (
     change: FileChange,
-    nextStatus: Record<string, 'accepted' | 'rejected'>
+    nextStatus: NovelReviewStatusMap
   ) => {
     const nextPendingPaths = getPendingChangedFilePaths(reviewableNovelFileChanges, nextStatus)
     if (nextPendingPaths.length === 0) return
@@ -2405,26 +2465,28 @@ function AppShellContent({
       return
     }
 
+    const changeKey = getNovelReviewChangeKey(change)
     const nextStatus = {
       ...novelChangeReviewStatus,
-      [change.id]: 'accepted' as const,
+      [changeKey]: 'accepted' as const,
     }
-    setNovelChangeReviewStatus(nextStatus)
+    persistNovelChangeReviewStatus(nextStatus)
     void handleSelectNextNovelChangeAfterStatus(change, nextStatus)
     toast.success(t('writing.review.accepted', 'Change accepted'))
-  }, [handleSelectNextNovelChangeAfterStatus, novelChangeReviewStatus, t])
+  }, [handleSelectNextNovelChangeAfterStatus, novelChangeReviewStatus, persistNovelChangeReviewStatus, t])
 
   const handleAcceptAllNovelChanges = React.useCallback(() => {
-    const nextStatus: Record<string, 'accepted' | 'rejected'> = { ...novelChangeReviewStatus }
+    const nextStatus: NovelReviewStatusMap = { ...novelChangeReviewStatus }
     for (const change of reviewableNovelFileChanges) {
       if (change.error) continue
-      if (nextStatus[change.id]) continue
-      nextStatus[change.id] = 'accepted'
+      const changeKey = getNovelReviewChangeKey(change)
+      if (nextStatus[changeKey]) continue
+      nextStatus[changeKey] = 'accepted'
     }
 
-    setNovelChangeReviewStatus(nextStatus)
+    persistNovelChangeReviewStatus(nextStatus)
     toast.success(t('writing.review.acceptedAll', 'All changes accepted'))
-  }, [novelChangeReviewStatus, reviewableNovelFileChanges, t])
+  }, [novelChangeReviewStatus, persistNovelChangeReviewStatus, reviewableNovelFileChanges, t])
 
   const handleRejectNovelChange = React.useCallback(async (change: FileChange) => {
     if (selectedNovelFile?.path === change.filePath) {
@@ -2443,11 +2505,12 @@ function AppShellContent({
       }
 
       await window.electronAPI.writeFile(change.filePath, rejected.content)
+      const changeKey = getNovelReviewChangeKey(change)
       const nextStatus = {
         ...novelChangeReviewStatus,
-        [change.id]: 'rejected' as const,
+        [changeKey]: 'rejected' as const,
       }
-      setNovelChangeReviewStatus(nextStatus)
+      persistNovelChangeReviewStatus(nextStatus)
 
       if (selectedNovelFile?.path === change.filePath) {
         setNovelDocumentContent(rejected.content)
@@ -2465,6 +2528,7 @@ function AppShellContent({
     ensureNovelDocumentSaved,
     handleSelectNextNovelChangeAfterStatus,
     novelChangeReviewStatus,
+    persistNovelChangeReviewStatus,
     selectedNovelFile?.path,
     t,
   ])
@@ -3203,6 +3267,7 @@ function AppShellContent({
           onToggleFocusMode={() => setIsSidebarAndNavigatorHidden(prev => !prev)}
           onAddSessionPanel={() => handleNewChat(true)}
           onAddBrowserPanel={() => { void handleNewBrowserWindow() }}
+          onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
           workspaceTools={showNovelWorkspaceSidebar ? (
             <NovelWorkspaceUtilityTopNav
               links={novelWorkspaceUtilitySidebarLinks}
@@ -4529,6 +4594,19 @@ function AppShellContent({
         onClose={() => setShowWhatsNew(false)}
         content={releaseNotesContent}
         onOpenUrl={(url) => window.electronAPI.openUrl(url)}
+      />
+
+      <GlobalSearchDialog
+        open={globalSearchOpen}
+        onOpenChange={setGlobalSearchOpen}
+        workspaceId={activeWorkspaceId ?? undefined}
+        sessions={workspaceSessionMetas}
+        novelFiles={novelWorkspaceFiles}
+        formatNovelFileTitle={(file) => formatNovelWorkspaceFileTitle(file, t)}
+        onOpenSession={navigateToSession}
+        onOpenNovelFile={(file) => {
+          void handleSelectNovelFile(file)
+        }}
       />
 
       {/* Delete automation confirmation dialog */}

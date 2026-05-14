@@ -30,6 +30,9 @@ export const KEYS = {
   // Session files panel state
   sessionFilesExpandedFolders: 'session-files-expanded', // Expanded folders in session files tree (keyed by sessionId)
 
+  // Writing workspace review state (session-scoped via suffix)
+  novelChangeReviewStatus: 'novel-change-review-status',
+
   // Theme
   theme: 'theme',
 

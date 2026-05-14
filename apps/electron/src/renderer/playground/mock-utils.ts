@@ -281,6 +281,15 @@ export const mockElectronAPI = {
     console.log('[Playground] writePreferences called:', prefs)
   },
 
+  readUserProfile: async () => {
+    return { content: '', exists: false, path: '/mock/.craft-agent/USER.md' }
+  },
+
+  writeUserProfile: async (content: string) => {
+    console.log('[Playground] writeUserProfile called:', content)
+    return { success: true }
+  },
+
   // FreeFormInput required mocks
   getAutoCapitalisation: async () => false,
 

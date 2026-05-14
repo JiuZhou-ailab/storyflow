@@ -75,12 +75,28 @@ describe("built-in method packs", () => {
     expect(pack?.projectType).toBe("short-form");
     expect(pack?.storageProfile).toBe("short-form-compatible");
     expect(pack?.requiredPaths).toContainEqual({
-      path: "brief/reader-promise.md",
+      path: "短文简报.md",
       kind: "file",
+    });
+    expect(pack?.requiredPaths).toContainEqual({
+      path: "素材卡.md",
+      kind: "file",
+    });
+    expect(pack?.requiredPaths).not.toContainEqual({
+      path: "风格/声线.md",
+      kind: "file",
+    });
+    expect(pack?.requiredPaths).not.toContainEqual({
+      path: "评审",
+      kind: "directory",
     });
     expect(pack?.requiredSkills).toContain("short-drafter");
     expect(pack?.requiredSkills).toContain("short-editor");
     expect(pack?.starterMessage).toContain("短文");
+  });
+
+  it("does not expose the removed Short Drama method pack", () => {
+    expect(getBuiltInMethodPack("short-form.drama")).toBeNull();
   });
 
   it("uses localized and pack-specific starter messages", () => {

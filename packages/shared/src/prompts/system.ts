@@ -12,6 +12,8 @@ import { PERMISSION_MODE_CONFIG } from '../agent/mode-types.ts';
 import { FEATURE_FLAGS } from '../feature-flags.ts';
 import { APP_VERSION } from '../version/index.ts';
 import { readPluginName } from '../utils/workspace.ts';
+import { detectWritingProject } from '../writing/manifest.ts';
+import { buildMethodPackRuntimeContext, getBuiltInMethodPack } from '../writing/method-packs/index.ts';
 import { globSync } from 'glob';
 import os from 'os';
 
@@ -286,6 +288,32 @@ ${fileList}
 </project_context_files>`;
 }
 
+/**
+ * Get the active writing Method Pack runtime context.
+ *
+ * This is intentionally system-prompt injected instead of relying on AGENTS.md or
+ * CLAUDE.md discovery, because selected Method Pack identity and routing should
+ * behave like stable runtime context for the whole session.
+ */
+export function getMethodPackRuntimePrompt(workingDirectory?: string): string {
+  if (!workingDirectory) {
+    return '';
+  }
+
+  const writingProject = detectWritingProject(workingDirectory);
+  const methodPackId = writingProject?.manifest.methodPack?.id;
+  if (!methodPackId) {
+    return '';
+  }
+
+  const methodPack = getBuiltInMethodPack(methodPackId);
+  if (!methodPack) {
+    return '';
+  }
+
+  return `\n\n${buildMethodPackRuntimeContext(methodPack)}`;
+}
+
 /** Options for getSystemPrompt */
 export interface SystemPromptOptions {
   pinnedPreferencesPrompt?: string;
@@ -352,6 +380,8 @@ Treat novel projects as long-form creative work where manuscript fidelity and co
 - Before drafting or revising, read the relevant bible, outline, current state, and timeline files so new prose fits canon and sequence.
 - Group changes by manuscript, outline, characters, locations, state, timeline, and working notes so creative text, planning, and continuity records stay easy to review.
 - prefer project and workspace skills for novel-specific workflows before inventing ad hoc processes.
+- Do not draft directly from a broad first writing request. First use the workspace Method Pack intake or router skill, extract known constraints, and ask only the missing decisions that materially change the story method.
+- For prompts like "write a story" or "写一个...", clarify method-defining dimensions before outline or prose: audience lane, genre promise, protagonist/relationship setup, emotional engine, reversal rhythm, ending/payoff, and length or chapter target.
 `;
 }
 
@@ -389,6 +419,7 @@ export function getSystemPrompt(
 
   // Get project context files for monorepo support (lives in system prompt for persistence across compaction)
   const projectContextFiles = getProjectContextFilesPrompt(workingDirectory);
+  const methodPackRuntimePrompt = getMethodPackRuntimePrompt(workingDirectory);
 
   // Fall back to the user's current preference when callers don't pin/pass a value,
   // so forgetting the argument can't silently re-enable the co-author trailer (see #576).
@@ -399,7 +430,7 @@ export function getSystemPrompt(
   // Safe Mode context is also in user messages for the same reason.
   const basePrompt = getCraftAssistantPrompt(workspaceRootPath, backendName, resolvedIncludeCoAuthoredBy);
   const presetPrompt = preset === 'novel' ? getNovelWritingSystemPrompt() : '';
-  const fullPrompt = `${basePrompt}${presetPrompt}${preferences}${debugContext}${projectContextFiles}`;
+  const fullPrompt = `${basePrompt}${presetPrompt}${methodPackRuntimePrompt}${preferences}${debugContext}${projectContextFiles}`;
 
   debug('[getSystemPrompt] full prompt length:', fullPrompt.length);
 

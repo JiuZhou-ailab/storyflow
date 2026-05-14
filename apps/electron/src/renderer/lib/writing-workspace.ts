@@ -81,6 +81,11 @@ export const NOVEL_WORKSPACE_FILE_SEARCH_QUERIES = [
   '参考资料',
   '拆文库',
   '对标',
+  '目录说明.md',
+  '短文简报.md',
+  '素材卡.md',
+  '草稿',
+  '定稿',
   'planning',
   'outline',
   'draft',
@@ -207,6 +212,16 @@ const FIXED_NOVEL_FILE_DESCRIPTORS: Record<string, NovelWorkspaceFileDisplayDesc
   'state/template/characters.md': descriptor('Character state', 'writing.fileLabels.characterState'),
   'state/template/knowledge.md': descriptor('Knowledge state', 'writing.fileLabels.knowledgeState'),
   'state/template/situation.md': descriptor('Situation state', 'writing.fileLabels.situationState'),
+  '目录说明.md': descriptor('目录说明'),
+  '短文简报.md': descriptor('短文简报'),
+  '素材卡.md': descriptor('素材卡'),
+  'brief/angle.md': descriptor('角度'),
+  'brief/platform.md': descriptor('发布平台'),
+  'brief/reader-promise.md': descriptor('读者承诺'),
+  'style/checklist.md': descriptor('质量清单'),
+  'style/voice.md': descriptor('声线'),
+  'notes/examples.md': descriptor('参考样例'),
+  'notes/source-cards.md': descriptor('素材卡'),
 }
 
 export function describeNovelWorkspaceFile(fileOrPath: NovelWorkspaceFile | string): NovelWorkspaceFileDisplayDescriptor {

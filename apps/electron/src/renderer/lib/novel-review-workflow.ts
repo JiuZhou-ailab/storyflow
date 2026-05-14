@@ -5,7 +5,16 @@
 import type { FileChange } from '@craft-agent/ui'
 import type { NovelWorkspaceFile } from './writing-workspace'
 
-export type NovelReviewStatusMap = Record<string, 'pending' | 'accepted' | 'rejected'>
+export type NovelReviewStatus = 'accepted' | 'rejected'
+export type NovelReviewStatusMap = Record<string, NovelReviewStatus>
+
+function stableHash(value: string): string {
+  let hash = 5381
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) + hash) ^ value.charCodeAt(index)
+  }
+  return (hash >>> 0).toString(36)
+}
 
 function normalizeReviewPath(path: string): string {
   return path.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '')
@@ -35,6 +44,22 @@ function stripRootPath(path: string, rootPath: string): string {
 
 function stripDiffSidePrefix(path: string): string {
   return path.replace(/^(?:a|b)\//, '')
+}
+
+export function getNovelReviewChangeKey(change: Pick<FileChange, 'filePath' | 'toolType' | 'original' | 'modified' | 'unifiedDiff'>): string {
+  const signature = change.unifiedDiff ?? `${change.original}\u0000${change.modified}`
+  return [
+    change.toolType,
+    normalizeReviewPath(change.filePath),
+    stableHash(signature),
+  ].join(':')
+}
+
+function getNovelReviewStatus(
+  statusByChangeId: NovelReviewStatusMap,
+  change: Pick<FileChange, 'id' | 'filePath' | 'toolType' | 'original' | 'modified' | 'unifiedDiff'>,
+): NovelReviewStatus | undefined {
+  return statusByChangeId[getNovelReviewChangeKey(change)] ?? statusByChangeId[change.id]
 }
 
 export function normalizeNovelFileChangePaths(
@@ -89,7 +114,7 @@ export function getPendingChangesForFile(
   return changes.filter(change =>
     change.filePath === filePath
     && !change.error
-    && (statusByChangeId[change.id] ?? 'pending') === 'pending'
+    && getNovelReviewStatus(statusByChangeId, change) == null
   )
 }
 
@@ -102,13 +127,40 @@ export function getPendingChangedFilePaths(
 
   for (const change of changes) {
     if (change.error) continue
-    if ((statusByChangeId[change.id] ?? 'pending') !== 'pending') continue
+    if (getNovelReviewStatus(statusByChangeId, change) != null) continue
     if (seen.has(change.filePath)) continue
     seen.add(change.filePath)
     paths.push(change.filePath)
   }
 
   return paths
+}
+
+export function parseNovelReviewStatusMap(
+  value: unknown,
+  changes?: Pick<FileChange, 'id' | 'filePath' | 'toolType' | 'original' | 'modified' | 'unifiedDiff'>[],
+): NovelReviewStatusMap {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+
+  if (changes) {
+    const parsed: NovelReviewStatusMap = {}
+    for (const change of changes) {
+      const key = getNovelReviewChangeKey(change)
+      const status = (value as Record<string, unknown>)[key] ?? (value as Record<string, unknown>)[change.id]
+      if (status !== 'accepted' && status !== 'rejected') continue
+      parsed[key] = status
+    }
+    return parsed
+  }
+
+  const parsed: NovelReviewStatusMap = {}
+
+  for (const [changeId, status] of Object.entries(value)) {
+    if (status !== 'accepted' && status !== 'rejected') continue
+    parsed[changeId] = status
+  }
+
+  return parsed
 }
 
 export function getAdjacentChangedFilePath(

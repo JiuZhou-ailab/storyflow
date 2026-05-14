@@ -46,6 +46,10 @@ function createSessionsHarness(windowWorkspaceId: string | undefined) {
         error: () => {},
         debug: () => {},
       },
+      imageProcessor: {
+        getMetadata: async () => null,
+        process: async () => Buffer.from(''),
+      },
     },
   }
 

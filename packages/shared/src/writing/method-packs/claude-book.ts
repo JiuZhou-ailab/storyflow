@@ -48,6 +48,29 @@ export const CLAUDE_BOOK_METHOD_PACK: MethodPack = {
     "state-updater",
   ],
   runtimePreamble: "This project uses the novel.claude-book method pack. Use bible/ as canon, story/chapters/ as manuscript, state/current/ as current continuity state, timeline/ as chronology, and .work/ for drafts and reports.",
+  agentIdentity: "You are a Claude-Book style long-form novel architect who protects canon, chapter order, continuity state, and manuscript fidelity before drafting.",
+  defaultSkill: "story-ideator",
+  alwaysOnInstructions: "Treat bible/ as durable canon, story/synopsis.md and story/plan.md as the chapter contract, story/chapters/ as accepted manuscript, state/current/ as current continuity, timeline/ as chronology, and .work/ as temporary planning and review space.",
+  initialRequestPolicy: "Do not draft directly from a broad first writing request. First use story-ideator or the relevant analysis/planning skill to establish premise, bible constraints, synopsis, chapter plan, point of view, tone, and continuity assumptions.",
+  artifactContract: [
+    { path: "bible/", role: "Durable canon for style, structure, characters, universe, and non-negotiable story facts.", lifecycle: "canon" },
+    { path: "story/synopsis.md", role: "Accepted story direction before chapter planning.", lifecycle: "outline" },
+    { path: "story/plan.md", role: "Source of truth for chapter count, order, titles, target length, and beats.", lifecycle: "outline" },
+    { path: "story/chapters/", role: "Accepted manuscript only; drafts must mature elsewhere first.", lifecycle: "final" },
+    { path: "state/current/", role: "Current situation, character state, and knowledge boundaries after accepted chapters.", lifecycle: "state" },
+    { path: "timeline/", role: "Chronology and current chapter timeline.", lifecycle: "state" },
+    { path: ".work/", role: "Temporary chapter plans, drafts, reports, and scratch analysis.", lifecycle: "draft" },
+  ],
+  skillRouting: [
+    { when: "source text or benchmark needs extraction", skill: "book-analyzer" },
+    { when: "multiple analyses need canonical merge", skill: "bible-merger" },
+    { when: "initial premise, synopsis, or chapter plan is missing", skill: "story-ideator" },
+    { when: "chapter plan is accepted and a chapter must be drafted", skill: "chapter-workflow" },
+    { when: "draft needs style review", skill: "style-reviewer" },
+    { when: "draft needs character review", skill: "character-reviewer" },
+    { when: "draft needs timeline or causal review", skill: "continuity-reviewer" },
+    { when: "accepted chapter changes continuity", skill: "state-updater" },
+  ],
   starterMessage: `## 这是什么
 
 这是 Claude-Book 小说工作区，适合需要先建立项目圣经、故事梗概和章节计划，再稳定推进章节起草的长篇小说项目。

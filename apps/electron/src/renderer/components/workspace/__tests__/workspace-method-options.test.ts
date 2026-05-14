@@ -133,7 +133,7 @@ describe('workspace creation method options', () => {
     expect(previews.some(preview => preview.assets.some(asset => asset === '对标/'))).toBe(true)
     expect(previews.some(preview => preview.assets.some(asset => asset === 'planning/'))).toBe(true)
     expect(previews.some(preview => preview.assets.some(asset => asset === 'kb/'))).toBe(true)
-    expect(previews.some(preview => preview.assets.some(asset => asset === 'brief/'))).toBe(true)
+    expect(previews.some(preview => preview.assets.some(asset => asset === '短文简报.md'))).toBe(true)
     expect(previews.some(preview => preview.structure.some(group => group.label === 'Canon 层'))).toBe(true)
     expect(previews.some(preview => preview.structure.some(group => group.label === '市场层'))).toBe(true)
     expect(previews.some(preview => preview.structure.some(group => group.label === '节拍治理'))).toBe(true)
