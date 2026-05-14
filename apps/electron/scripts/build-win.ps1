@@ -317,9 +317,15 @@ try {
     $RendererDir = "$ElectronDir\dist\renderer"
     if (Test-Path $RendererDir) { Remove-Item -Recurse -Force $RendererDir }
 
-    # Run vite build
-    npx vite build --config apps/electron/vite.config.ts
-    if ($LASTEXITCODE -ne 0) { throw "Renderer build failed" }
+    # Run vite build with the same heap limit used by the cross-platform renderer build.
+    $PreviousNodeOptions = $env:NODE_OPTIONS
+    try {
+        $env:NODE_OPTIONS = "--max-old-space-size=4096"
+        npx vite build --config apps/electron/vite.config.ts
+        if ($LASTEXITCODE -ne 0) { throw "Renderer build failed" }
+    } finally {
+        $env:NODE_OPTIONS = $PreviousNodeOptions
+    }
 
     # Verify renderer was built
     if (-not (Test-Path "$RendererDir\index.html")) {
