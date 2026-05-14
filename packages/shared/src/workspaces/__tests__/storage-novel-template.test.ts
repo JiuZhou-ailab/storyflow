@@ -15,7 +15,7 @@ describe("createNovelWorkspaceAtPath", () => {
     expect(generateSlug("九州小说")).toMatch(/^workspace-[a-z0-9]+$/);
   });
 
-  it("creates a normal workspace with a novel scaffold", () => {
+  it("creates a normal workspace with the default short-form scaffold", () => {
     const rootPath = mkdtempSync(join(tmpdir(), "craft-novel-workspace-"));
 
     const config = createNovelWorkspaceAtPath(rootPath, "Novel Workspace");
@@ -27,11 +27,13 @@ describe("createNovelWorkspaceAtPath", () => {
     expect(existsSync(join(rootPath, "sessions"))).toBe(true);
     expect(existsSync(join(rootPath, "skills"))).toBe(true);
     expect(existsSync(join(rootPath, "craft-writing.json"))).toBe(true);
-    expect(existsSync(join(rootPath, "bible", "style.md"))).toBe(true);
+    expect(existsSync(join(rootPath, "简报.md"))).toBe(true);
+    expect(existsSync(join(rootPath, "正文"))).toBe(true);
 
     const manifest = JSON.parse(readFileSync(join(rootPath, "craft-writing.json"), "utf-8"));
-    expect(manifest.type).toBe("novel");
+    expect(manifest.type).toBe("short-form");
     expect(manifest.title).toBe("Novel Workspace");
+    expect(manifest.methodPack.id).toBe("short-form.article");
   });
 
   it("migrates existing novel workspace configs to use the workspace root as the default working directory", () => {
@@ -86,7 +88,8 @@ describe("createNovelWorkspaceAtPath", () => {
     const sessionContent = readFileSync(join(rootPath, "sessions", sessionIds[0]!, "session.jsonl"), "utf-8");
     expect(sessionContent).toContain('"name":"Start writing"');
     expect(sessionContent).toContain('"type":"assistant"');
-    expect(sessionContent).toContain("Claude-Book");
+    expect(sessionContent).toContain("Method Pack: short-form.article");
+    expect(sessionContent).toContain("中文短篇/中篇网文");
   });
 
   it("creates a starter chat session for each selected method pack", () => {
@@ -114,8 +117,8 @@ describe("createNovelWorkspaceAtPath", () => {
     expect(sessionContent).toContain("## 我会怎么做");
     expect(sessionContent).toContain("## 流程");
     expect(sessionContent).toContain("## 你现在可以提供");
-    expect(sessionContent).toContain("短文写作工作区");
-    expect(sessionContent).toContain("目标读者");
+    expect(sessionContent).toContain("中文短篇/中篇网文");
+    expect(sessionContent).toContain("钩子");
     expect(sessionContent).toContain("Method Pack: short-form.article");
     expect(sessionContent).not.toContain("I created a short-form writing workspace");
   });

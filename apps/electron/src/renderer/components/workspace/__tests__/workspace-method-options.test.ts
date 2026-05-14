@@ -47,12 +47,12 @@ describe('workspace creation method options', () => {
     expect(ohStoryOption?.fallbackTitle).toBe('Oh Story 网文连载法')
     expect(crucibleOption?.fallbackTitle).toBe('Crucible 结构长篇法')
     expect(creativeOption?.fallbackTitle).toBe('Creative Writing 技法工坊')
-    expect(shortFormOption?.fallbackTitle).toBe('Short-Form 短文写作法')
-    expect(shortFormOption?.fallbackSubtitle).toContain('短文')
+    expect(shortFormOption?.fallbackTitle).toBe('短篇/中篇小说')
+    expect(shortFormOption?.fallbackSubtitle).toContain('网文')
   })
 
-  it('uses Claude-Book as the default creation method', () => {
-    expect(DEFAULT_WORKSPACE_CREATION_METHOD_ID).toBe('novel.claude-book')
+  it('uses Short-Form as the default creation method', () => {
+    expect(DEFAULT_WORKSPACE_CREATION_METHOD_ID).toBe('short-form.article')
   })
 
   it('provides a preview diagram and description for each creation method', () => {
@@ -133,12 +133,12 @@ describe('workspace creation method options', () => {
     expect(previews.some(preview => preview.assets.some(asset => asset === '对标/'))).toBe(true)
     expect(previews.some(preview => preview.assets.some(asset => asset === 'planning/'))).toBe(true)
     expect(previews.some(preview => preview.assets.some(asset => asset === 'kb/'))).toBe(true)
-    expect(previews.some(preview => preview.assets.some(asset => asset === '短文简报.md'))).toBe(true)
+    expect(previews.some(preview => preview.assets.some(asset => asset === '简报.md'))).toBe(true)
     expect(previews.some(preview => preview.structure.some(group => group.label === 'Canon 层'))).toBe(true)
     expect(previews.some(preview => preview.structure.some(group => group.label === '市场层'))).toBe(true)
     expect(previews.some(preview => preview.structure.some(group => group.label === '节拍治理'))).toBe(true)
     expect(previews.some(preview => preview.structure.some(group => group.label === '工坊层'))).toBe(true)
-    expect(previews.some(preview => preview.structure.some(group => group.label === '短文契约'))).toBe(true)
+    expect(previews.some(preview => preview.structure.some(group => group.label === '长期约定'))).toBe(true)
   })
 
   it('builds a default workspace folder path for Chinese names on Windows', () => {

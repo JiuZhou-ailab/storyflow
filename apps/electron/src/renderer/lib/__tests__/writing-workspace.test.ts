@@ -85,36 +85,24 @@ describe('writing workspace helpers', () => {
     })
   })
 
-  it('describes short-form workspace files with Chinese writer-facing labels', () => {
+  it('describes short-form web-fiction workspace files with Chinese writer-facing labels', () => {
     expect(describeNovelWorkspaceFile('目录说明.md')).toEqual({
       fallbackTitle: '目录说明',
     })
-    expect(describeNovelWorkspaceFile('短文简报.md')).toEqual({
-      fallbackTitle: '短文简报',
+    expect(describeNovelWorkspaceFile('创作要求.md')).toEqual({
+      fallbackTitle: '创作要求',
     })
-    expect(describeNovelWorkspaceFile('素材卡.md')).toEqual({
-      fallbackTitle: '素材卡',
+    expect(describeNovelWorkspaceFile('简报.md')).toEqual({
+      fallbackTitle: '简报',
     })
-    expect(describeNovelWorkspaceFile('brief/angle.md')).toEqual({
-      fallbackTitle: '角度',
+    expect(describeNovelWorkspaceFile('大纲.md')).toEqual({
+      fallbackTitle: '大纲',
     })
-    expect(describeNovelWorkspaceFile('brief/platform.md')).toEqual({
-      fallbackTitle: '发布平台',
+    expect(describeNovelWorkspaceFile('人物.md')).toEqual({
+      fallbackTitle: '人物',
     })
-    expect(describeNovelWorkspaceFile('brief/reader-promise.md')).toEqual({
-      fallbackTitle: '读者承诺',
-    })
-    expect(describeNovelWorkspaceFile('style/checklist.md')).toEqual({
-      fallbackTitle: '质量清单',
-    })
-    expect(describeNovelWorkspaceFile('style/voice.md')).toEqual({
-      fallbackTitle: '声线',
-    })
-    expect(describeNovelWorkspaceFile('notes/examples.md')).toEqual({
-      fallbackTitle: '参考样例',
-    })
-    expect(describeNovelWorkspaceFile('notes/source-cards.md')).toEqual({
-      fallbackTitle: '素材卡',
+    expect(describeNovelWorkspaceFile('素材.md')).toEqual({
+      fallbackTitle: '素材',
     })
   })
 
@@ -190,25 +178,31 @@ describe('writing workspace helpers', () => {
     ])
   })
 
-  it('maps short-form article workspace files into the writing workspace projection', () => {
+  it('maps short-form web fiction workspace files into the writing workspace projection', () => {
     const files = mapSearchResultsToNovelWorkspaceFiles([
-      { name: '短文简报.md', path: '/short/短文简报.md', relativePath: '短文简报.md', type: 'file' },
-      { name: '素材卡.md', path: '/short/素材卡.md', relativePath: '素材卡.md', type: 'file' },
-      { name: 'draft-1.md', path: '/short/草稿/draft-1.md', relativePath: '草稿/draft-1.md', type: 'file' },
-      { name: 'final.md', path: '/short/定稿/final.md', relativePath: '定稿/final.md', type: 'file' },
+      { name: '创作要求.md', path: '/short/创作要求.md', relativePath: '创作要求.md', type: 'file' },
+      { name: '简报.md', path: '/short/简报.md', relativePath: '简报.md', type: 'file' },
+      { name: '大纲.md', path: '/short/大纲.md', relativePath: '大纲.md', type: 'file' },
+      { name: '人物.md', path: '/short/人物.md', relativePath: '人物.md', type: 'file' },
+      { name: '素材.md', path: '/short/素材.md', relativePath: '素材.md', type: 'file' },
+      { name: '01-未婚夫和闺蜜在我葬礼上接吻.md', path: '/short/正文/01-未婚夫和闺蜜在我葬礼上接吻.md', relativePath: '正文/01-未婚夫和闺蜜在我葬礼上接吻.md', type: 'file' },
     ])
 
     expect(files.map(file => file.relativePath)).toEqual([
-      '短文简报.md',
-      '素材卡.md',
-      '草稿/draft-1.md',
-      '定稿/final.md',
+      '创作要求.md',
+      '简报.md',
+      '大纲.md',
+      '人物.md',
+      '素材.md',
+      '正文/01-未婚夫和闺蜜在我葬礼上接吻.md',
     ])
 
     const tree = buildNovelWorkspaceTree(files)
-    expect(tree.outline.files.map(file => file.relativePath)).toEqual(['短文简报.md'])
-    expect(tree.analysis.files.map(file => file.relativePath)).toEqual(['素材卡.md'])
-    expect(tree.manuscript.files.map(file => file.relativePath)).toEqual(['定稿/final.md', '草稿/draft-1.md'])
+    expect(tree.style.files.map(file => file.relativePath)).toEqual(['创作要求.md'])
+    expect(tree.outline.files.map(file => file.relativePath)).toEqual(['大纲.md', '简报.md'])
+    expect(tree.characters.files.map(file => file.relativePath)).toEqual(['人物.md'])
+    expect(tree.analysis.files.map(file => file.relativePath)).toEqual(['素材.md'])
+    expect(tree.manuscript.files.map(file => file.relativePath)).toEqual(['正文/01-未婚夫和闺蜜在我葬礼上接吻.md'])
   })
 
   it('defines targeted searches for the fixed novel workspace catalog', () => {
@@ -230,10 +224,11 @@ describe('writing workspace helpers', () => {
       '拆文库',
       '对标',
       '目录说明.md',
-      '短文简报.md',
-      '素材卡.md',
-      '草稿',
-      '定稿',
+      '创作要求.md',
+      '简报.md',
+      '大纲.md',
+      '人物.md',
+      '素材.md',
       'planning',
       'outline',
       'draft',

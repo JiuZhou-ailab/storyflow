@@ -12,7 +12,7 @@ import {
 
 export type WorkspaceCreationMethodId = MethodPackId
 export type WorkspaceCreationLocationOption = "default" | "custom"
-export const DEFAULT_WORKSPACE_CREATION_METHOD_ID = "novel.claude-book" satisfies WorkspaceCreationMethodId
+export const DEFAULT_WORKSPACE_CREATION_METHOD_ID = "short-form.article" satisfies WorkspaceCreationMethodId
 
 export interface WorkspaceCreationMethodPreview {
   accent: "neutral" | "canon" | "market" | "structure" | "craft"
@@ -291,43 +291,43 @@ export const WORKSPACE_CREATION_METHOD_OPTIONS = [
     subtitleKey: "workspace.methodOptions.shortFormArticle.subtitle",
     previewMermaidKey: "workspace.methodOptions.shortFormArticle.previewMermaid",
     previewDescriptionKey: "workspace.methodOptions.shortFormArticle.previewDescription",
-    fallbackTitle: "Short-Form 短文写作法",
-    fallbackSubtitle: "用一个短文简报、一份素材卡、草稿和定稿组织短内容，减少目录拆分。",
-    fallbackPreviewMermaid: "flowchart TD\n  A[初始请求] --> B[短文简报]\n  B --> B1[目标读者]\n  B --> B2[平台与篇幅]\n  B --> B3[中心角度]\n  B3 --> C[素材卡]\n  C --> D[临时大纲]\n  D --> E[草稿]\n  E --> F[修改意见]\n  F --> E\n  E --> G[定稿]\n  G --> H[发布]",
-    fallbackPreviewDescription: "适合公众号短文、newsletter、博客短文、社媒长帖、观点短评、备忘录等需要快速成稿但不能牺牲逻辑和事实边界的短内容。",
+    fallbackTitle: "短篇/中篇小说",
+    fallbackSubtitle: "面向 5,000-40,000 字中文网文，一个工作区一本书，靠简报、大纲、人物、素材撑住正文。",
+    fallbackPreviewMermaid: "flowchart TD\n  A[初始请求] --> B[简报.md]\n  B --> B1[题材定位]\n  B --> B2[主角设置]\n  B --> B3[核心钩子]\n  B3 --> C[大纲.md]\n  C --> C1[分章 beat]\n  C --> D[人物.md]\n  C --> E[素材.md]\n  C1 --> F[正文/NN-标题.md]\n  F --> G[git diff 留痕]\n  F --> H[.work/ 试稿与审校]",
+    fallbackPreviewDescription: "适合情感反转、复仇打脸、追妻火葬场、马甲爽文等强钩子中文网文，篇幅在 5,000-40,000 字之间，一个工作区只承载一本书。",
     richPreview: {
       accent: "neutral",
-      thesis: "面向短内容的轻量写作 Agent，用简报、素材卡、草稿、定稿四层保证短而不散。",
+      thesis: "面向中文短篇/中篇网文的写作搭档，用 简报 / 大纲 / 人物 / 素材 撑住正文，每章一个 NN-标题.md。",
       stages: [
-        { label: "定约", detail: "把读者、平台、篇幅、中心承诺、角度和大纲压进一个简报。" },
-        { label: "取材", detail: "把笔记、链接、访谈和例子整理成一份可追溯素材卡。" },
-        { label: "成文", detail: "围绕一个角度写开头、支撑、转折、收束和行动。" },
-        { label: "定稿", detail: "修改仍留在草稿版本里，确认后再进入定稿。" },
+        { label: "定题", detail: "在 简报.md 写清题材定位、主角设置、核心钩子和篇幅目标。" },
+        { label: "排章", detail: "在 大纲.md 按章列出钩子、冲突、反转和情绪落点。" },
+        { label: "立人立料", detail: "同步充实 人物.md 与 素材.md，给正文留足支撑。" },
+        { label: "写章", detail: "每章一个 正文/NN-标题.md，章节标题就是钩子。" },
       ],
       structure: [
-        { label: "短文契约", items: ["短文简报.md", "读者、平台、角度、大纲和质量门槛"] },
-        { label: "素材层", items: ["素材卡.md", "事实、例子、引用、对标和可信度"] },
-        { label: "正文层", items: ["草稿/ 保存版本", "定稿/ 只放已接受发布稿"] },
+        { label: "长期约定", items: ["创作要求.md 长期写作风格", "禁区与个人偏好"] },
+        { label: "当前作品", items: ["简报.md 当前作品的卖点", "大纲.md / 人物.md / 素材.md"] },
+        { label: "正文", items: ["正文/NN-标题.md 每章一个文件", ".work/ 试稿与审校"] },
       ],
-      assets: ["目录说明.md", "短文简报.md", "素材卡.md", "草稿/", "定稿/"],
-      bestFor: "公众号短文、newsletter、博客短文、社媒长帖、观点短评和短 memo。",
+      assets: ["创作要求.md", "简报.md", "大纲.md", "人物.md", "素材.md", "正文/"],
+      bestFor: "情感反转、复仇打脸、追妻火葬场、马甲爽文等中文短中篇网文。",
     },
     richPreviewZh: {
       accent: "neutral",
-      thesis: "面向短内容的轻量写作 Agent，用简报、素材卡、草稿、定稿四层保证短而不散。",
+      thesis: "面向中文短篇/中篇网文的写作搭档，用 简报 / 大纲 / 人物 / 素材 撑住正文，每章一个 NN-标题.md。",
       stages: [
-        { label: "定约", detail: "把读者、平台、篇幅、中心承诺、角度和大纲压进一个简报。" },
-        { label: "取材", detail: "把笔记、链接、访谈和例子整理成一份可追溯素材卡。" },
-        { label: "成文", detail: "围绕一个角度写开头、支撑、转折、收束和行动。" },
-        { label: "定稿", detail: "修改仍留在草稿版本里，确认后再进入定稿。" },
+        { label: "定题", detail: "在 简报.md 写清题材定位、主角设置、核心钩子和篇幅目标。" },
+        { label: "排章", detail: "在 大纲.md 按章列出钩子、冲突、反转和情绪落点。" },
+        { label: "立人立料", detail: "同步充实 人物.md 与 素材.md，给正文留足支撑。" },
+        { label: "写章", detail: "每章一个 正文/NN-标题.md，章节标题就是钩子。" },
       ],
       structure: [
-        { label: "短文契约", items: ["短文简报.md", "读者、平台、角度、大纲和质量门槛"] },
-        { label: "素材层", items: ["素材卡.md", "事实、例子、引用、对标和可信度"] },
-        { label: "正文层", items: ["草稿/ 保存版本", "定稿/ 只放已接受发布稿"] },
+        { label: "长期约定", items: ["创作要求.md 长期写作风格", "禁区与个人偏好"] },
+        { label: "当前作品", items: ["简报.md 当前作品的卖点", "大纲.md / 人物.md / 素材.md"] },
+        { label: "正文", items: ["正文/NN-标题.md 每章一个文件", ".work/ 试稿与审校"] },
       ],
-      assets: ["目录说明.md", "短文简报.md", "素材卡.md", "草稿/", "定稿/"],
-      bestFor: "公众号短文、newsletter、博客短文、社媒长帖、观点短评和短 memo。",
+      assets: ["创作要求.md", "简报.md", "大纲.md", "人物.md", "素材.md", "正文/"],
+      bestFor: "情感反转、复仇打脸、追妻火葬场、马甲爽文等中文短中篇网文。",
     },
   },
 ] as const satisfies readonly WorkspaceCreationMethodOption[]

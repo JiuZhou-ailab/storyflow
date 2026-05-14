@@ -79,7 +79,7 @@ describe("bundled writing skills", () => {
     expect(notice).toContain("MIT");
   });
 
-  it("seeds short-form writing skills into a short-form project scaffold", () => {
+  it("seeds no skills into a short-form web-fiction scaffold", () => {
     const rootPath = createTempProject();
 
     createNovelProjectScaffold(rootPath, {
@@ -95,10 +95,8 @@ describe("bundled writing skills", () => {
       "short-editor",
       "short-publisher",
     ]) {
-      expect(existsSync(join(rootPath, "skills", slug, "SKILL.md"))).toBe(true);
+      expect(existsSync(join(rootPath, "skills", slug, "SKILL.md"))).toBe(false);
     }
-
-    expect(existsSync(join(rootPath, "skills", "short-variant", "SKILL.md"))).toBe(false);
   });
 
   it("routes broad web-fiction creation prompts through intake before drafting", () => {

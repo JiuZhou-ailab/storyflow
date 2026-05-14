@@ -59,11 +59,13 @@ describe("categorizeNovelPath", () => {
     expect(categorizeNovelPath("kb/issues/open.md")).toBe("analysis");
   });
 
-  it("categorizes short-form article files", () => {
-    expect(categorizeNovelPath("短文简报.md")).toBe("outline");
-    expect(categorizeNovelPath("素材卡.md")).toBe("analysis");
-    expect(categorizeNovelPath("草稿/draft-1.md")).toBe("manuscript");
-    expect(categorizeNovelPath("定稿/final.md")).toBe("manuscript");
+  it("categorizes short-form web fiction files", () => {
+    expect(categorizeNovelPath("创作要求.md")).toBe("style");
+    expect(categorizeNovelPath("简报.md")).toBe("outline");
+    expect(categorizeNovelPath("大纲.md")).toBe("outline");
+    expect(categorizeNovelPath("人物.md")).toBe("characters");
+    expect(categorizeNovelPath("素材.md")).toBe("analysis");
+    expect(categorizeNovelPath("正文/01-未婚夫和闺蜜在我葬礼上接吻.md")).toBe("manuscript");
   });
 
   it("falls back to other for unknown paths", () => {

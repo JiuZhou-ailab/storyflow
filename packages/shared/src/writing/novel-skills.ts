@@ -14,7 +14,6 @@ const ATTRIBUTION = "Adapted for Craft Agent from Claude-Book concepts. Source: 
 const OH_STORY_ATTRIBUTION = "Adapted for Craft Agent from oh-story-claudecode concepts. Source: https://github.com/worldwonderer/oh-story-claudecode";
 const CRUCIBLE_ATTRIBUTION = "Adapted for Craft Agent from The Crucible Writing System For Claude concepts. Source: https://github.com/forsonny/The-Crucible-Writing-System-For-Claude";
 const CREATIVE_WRITING_ATTRIBUTION = "Adapted for Craft Agent from creative-writing-skills concepts. Source: https://github.com/haowjy/creative-writing-skills";
-const SHORT_FORM_ATTRIBUTION = "Synthesized for Craft Agent from public short-form writing guidance, including copywriting skill patterns, web readability research, plain-language guidance, paragraph argument structure, and social writing style guides.";
 
 const CLAUDE_BOOK_SKILLS: Array<{ slug: string; content: string }> = [
   {
@@ -720,68 +719,7 @@ const CREATIVE_WRITING_SKILLS = [
   }),
 ];
 
-const SHORT_FORM_SKILLS = [
-  adapterSkill({
-    slug: "short-brief",
-    title: "Short Brief",
-    description: "Use when the user gives an initial or broad short-form writing request such as 写一个短文, article, essay, memo, newsletter, post, opinion piece, or asks for a draft before reader, promise, format, and constraints are clear.",
-    attribution: SHORT_FORM_ATTRIBUTION,
-    purpose: "Turn an under-specified short writing request into a usable brief before drafting.",
-    context: ["目录说明.md defines where every artifact belongs and how files are named.", "短文简报.md is the single source of truth for reader, platform, angle, outline, voice notes, and quality gates.", "A short piece should have one controlling claim or reader promise.", "Platform and length constraints should be explicit before drafting."],
-    workflow: ["Do not draft from a first ambiguous short-form request.", "Read 短文简报.md if it exists.", "Identify target reader, reader problem or desire, intended format, length target, channel, call to action, and forbidden moves.", "Write or update 短文简报.md with explicit unknowns instead of invented certainty."],
-    output: ["Brief completeness status.", "Updated brief files.", "Blocking unknowns that materially affect the piece."],
-  }),
-  adapterSkill({
-    slug: "short-source-curator",
-    title: "Short Source Curator",
-    description: "Use when turning notes, links, transcripts, or rough material into source cards for a short piece.",
-    attribution: SHORT_FORM_ATTRIBUTION,
-    purpose: "Preserve source material losslessly enough that the draft can use evidence without blurring fact and interpretation.",
-    context: ["素材卡.md stores facts, examples, quotes, benchmark notes, and confidence.", "The draft may compress sources, but source cards must keep provenance clear."],
-    workflow: ["Inventory all supplied material.", "Extract only claims, examples, data points, quotes, and anecdotes that can support the current angle.", "Record source, usable fact or excerpt, intended use, and confidence in 素材卡.md.", "Flag weak, unsourced, or off-angle material instead of forcing it into the draft."],
-    output: ["Updated source cards.", "Evidence gaps.", "Material excluded from the current piece and why."],
-  }),
-  adapterSkill({
-    slug: "short-angle",
-    title: "Short Angle",
-    description: "Use when selecting the hook, thesis, outline, or payoff structure for a short piece.",
-    attribution: SHORT_FORM_ATTRIBUTION,
-    purpose: "Choose a compact angle that can survive the target length and platform.",
-    context: ["短文简报.md stores the controlling claim, hook, counterpoint, takeaway, and accepted outline.", "A short piece should not carry multiple unrelated theses.", "Use 素材卡.md to test whether the angle has enough support.", "Temporary outlines and rejected angles belong in .work/ using YYYYMMDD-topic-purpose.md."],
-    workflow: ["Generate 3-5 angle candidates when the direction is unclear.", "Score each candidate by reader relevance, evidence strength, novelty, compression fit, and payoff clarity.", "Select one angle and outline it as hook, setup, support, turn, payoff, and call to action when relevant.", "Save temporary outlines under .work/ when useful, then update 短文简报.md with the selected direction and rejected alternatives."],
-    output: ["Recommended angle with rationale.", ".work/ outline path when an outline is created.", "Rejected alternatives and risk notes."],
-  }),
-  adapterSkill({
-    slug: "short-drafter",
-    title: "Short Drafter",
-    description: "Use when drafting a short article, essay, memo, newsletter, post, or concise opinion piece after the short brief and angle are clear.",
-    attribution: SHORT_FORM_ATTRIBUTION,
-    purpose: "Draft a compact piece that delivers one reader promise with clear structure and minimal filler.",
-    context: ["Read 目录说明.md and 短文简报.md before drafting.", "Use 素材卡.md for evidence and examples.", "Drafts belong in 草稿/ before final acceptance into 定稿/.", "Draft filenames must follow YYYYMMDD-topic-vNN.md."],
-    workflow: ["Confirm the target format and length.", "Draft from the selected angle using a strong opening, fast context, evidence or example, turn, and payoff.", "Keep paragraphs scannable and transitions functional.", "Name the draft under 草稿/ using YYYYMMDD-topic-vNN.md and record assumptions at the end if context was incomplete."],
-    output: ["Draft file path.", "Draft text.", "Assumptions and source cards used."],
-  }),
-  adapterSkill({
-    slug: "short-editor",
-    title: "Short Editor",
-    description: "Use when reviewing or revising a short piece for clarity, structure, evidence, voice, and generic prose.",
-    attribution: SHORT_FORM_ATTRIBUTION,
-    purpose: "Run a concise editing pass that protects reader value and removes filler without mutating facts.",
-    context: ["短文简报.md contains voice notes and quality gates.", ".work/ stores temporary critique reports.", "Do not edit accepted 定稿 files unless explicitly requested.", "Edited drafts and platform variants remain in 草稿/ with a new version number."],
-    workflow: ["Check that the opening, central claim, support, turn, and ending match the brief.", "Flag unsupported claims, vague abstractions, duplicated points, slow setup, weak ending, and generic AI patterns.", "Revise the smallest necessary surface while preserving source facts.", "Write a temporary review report under .work/ when issues are non-trivial."],
-    output: ["Edited draft or targeted patch.", "Temporary review report under .work/ when useful.", "Blocking issues and remaining tradeoffs."],
-  }),
-  adapterSkill({
-    slug: "short-publisher",
-    title: "Short Publisher",
-    description: "Use when finalizing a short piece into 定稿/ with metadata and reuse notes.",
-    attribution: SHORT_FORM_ATTRIBUTION,
-    purpose: "Move a reviewed short piece into its final artifact location while preserving revision history.",
-    context: ["定稿/ contains accepted final pieces.", "草稿/ keeps edited variants.", "短文简报.md and 素材卡.md remain reusable for future pieces.", "Final filenames must follow YYYYMMDD-topic-final.md."],
-    workflow: ["Confirm the target channel and final version.", "Write the final piece to 定稿/ using YYYYMMDD-topic-final.md.", "Record title, channel, date, source draft, length, and reuse rights at the top of the file.", "Summarize what changed from the draft and what future variants remain useful."],
-    output: ["Published file path.", "Metadata summary.", "Future reuse or follow-up ideas."],
-  }),
-];
+const SHORT_FORM_SKILLS: Array<{ slug: string; content: string }> = [];
 
 export function getBundledNovelSkillFiles(methodPackId: MethodPackId = "novel.claude-book"): BundledNovelSkillFile[] {
   if (methodPackId === "novel.oh-story") {

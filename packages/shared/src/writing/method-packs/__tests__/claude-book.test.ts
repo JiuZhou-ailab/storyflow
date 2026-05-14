@@ -69,30 +69,41 @@ describe("built-in method packs", () => {
     expect(pack?.starterMessage).toContain("知识库");
   });
 
-  it("exposes the Short-Form Writing method pack contract", () => {
+  it("exposes the Short-Form web-fiction method pack contract", () => {
     const pack = getBuiltInMethodPack("short-form.article");
 
     expect(pack?.projectType).toBe("short-form");
     expect(pack?.storageProfile).toBe("short-form-compatible");
     expect(pack?.requiredPaths).toContainEqual({
-      path: "短文简报.md",
+      path: "简报.md",
       kind: "file",
     });
     expect(pack?.requiredPaths).toContainEqual({
-      path: "素材卡.md",
+      path: "大纲.md",
       kind: "file",
     });
-    expect(pack?.requiredPaths).not.toContainEqual({
-      path: "风格/声线.md",
+    expect(pack?.requiredPaths).toContainEqual({
+      path: "人物.md",
       kind: "file",
     });
-    expect(pack?.requiredPaths).not.toContainEqual({
-      path: "评审",
+    expect(pack?.requiredPaths).toContainEqual({
+      path: "素材.md",
+      kind: "file",
+    });
+    expect(pack?.requiredPaths).toContainEqual({
+      path: "正文",
       kind: "directory",
     });
-    expect(pack?.requiredSkills).toContain("short-drafter");
-    expect(pack?.requiredSkills).toContain("short-editor");
-    expect(pack?.starterMessage).toContain("短文");
+    expect(pack?.requiredPaths).not.toContainEqual({
+      path: "草稿",
+      kind: "directory",
+    });
+    expect(pack?.requiredPaths).not.toContainEqual({
+      path: "定稿",
+      kind: "directory",
+    });
+    expect(pack?.requiredSkills).toEqual([]);
+    expect(pack?.starterMessage).toContain("网文");
   });
 
   it("does not expose the removed Short Drama method pack", () => {
@@ -105,7 +116,7 @@ describe("built-in method packs", () => {
       "novel.oh-story": ["网文", "平台", "更新节奏"],
       "novel.crucible": ["36-beat", "三条叙事线", "forge points"],
       "novel.creative-writing": ["知识库", "声线", "修订"],
-      "short-form.article": ["短文", "目标读者", "平台"],
+      "short-form.article": ["网文", "钩子", "章节"],
     };
 
     for (const pack of getBuiltInMethodPacks()) {

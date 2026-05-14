@@ -41,6 +41,7 @@ describe('AddWorkspaceStep_CreateNew preview panel', () => {
 
     expect(html).toContain('max-w-[88rem]')
     expect(html).toContain('lg:grid-cols-[minmax(0,0.75fr)_minmax(32rem,1.25fr)]')
+    expect(html).toContain('短篇/中篇小说')
   })
 
   it('omits structure and file contract explanations from the default preview', () => {

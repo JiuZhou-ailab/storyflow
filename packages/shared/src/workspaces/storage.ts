@@ -405,7 +405,7 @@ export function createNovelWorkspaceAtPath(
   rootPath: string,
   name: string,
   defaults?: WorkspaceConfig['defaults'],
-  methodPackId: MethodPackId = 'novel.claude-book'
+  methodPackId: MethodPackId = 'short-form.article'
 ): WorkspaceConfig {
   const methodPack = getBuiltInMethodPack(methodPackId);
   if (!methodPack) {

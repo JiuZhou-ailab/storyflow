@@ -214,7 +214,7 @@ describe("createNovelProjectScaffold", () => {
     expect(manifest.storageProfile).toBe("creative-writing-compatible");
   });
 
-  it("creates a Short-Form Writing scaffold when selected", () => {
+  it("creates a Short-Form web-fiction scaffold when selected", () => {
     const rootPath = createTempProject();
 
     createNovelProjectScaffold(rootPath, {
@@ -224,26 +224,30 @@ describe("createNovelProjectScaffold", () => {
 
     for (const relativePath of [
       "目录说明.md",
-      "短文简报.md",
-      "素材卡.md",
-      "草稿",
-      "定稿",
-      "skills/short-drafter/SKILL.md",
-      "skills/short-editor/SKILL.md",
+      "创作要求.md",
+      "简报.md",
+      "大纲.md",
+      "人物.md",
+      "素材.md",
+      "正文",
+      ".work",
       "NOTICE-Short-Form-Writing.md",
     ]) {
       expect(existsSync(join(rootPath, relativePath))).toBe(true);
     }
 
+    expect(existsSync(join(rootPath, "草稿"))).toBe(false);
+    expect(existsSync(join(rootPath, "定稿"))).toBe(false);
+    expect(existsSync(join(rootPath, "短文简报.md"))).toBe(false);
+    expect(existsSync(join(rootPath, "素材卡.md"))).toBe(false);
+    expect(existsSync(join(rootPath, "skills", "short-brief", "SKILL.md"))).toBe(false);
+    expect(existsSync(join(rootPath, "skills", "short-drafter", "SKILL.md"))).toBe(false);
+
     const structureDoc = readFileSync(join(rootPath, "目录说明.md"), "utf-8");
-    expect(structureDoc).toContain("草稿/");
-    expect(structureDoc).toContain("YYYYMMDD-topic-vNN.md");
-    expect(structureDoc).toContain("定稿/");
-    expect(structureDoc).toContain("YYYYMMDD-topic-final.md");
-    expect(structureDoc).toContain("宽泛初始请求先进入 `短文简报.md`");
-    expect(existsSync(join(rootPath, "简报"))).toBe(false);
-    expect(existsSync(join(rootPath, "修订"))).toBe(false);
-    expect(existsSync(join(rootPath, "评审"))).toBe(false);
+    expect(structureDoc).toContain("正文/");
+    expect(structureDoc).toContain("NN-标题.md");
+    expect(structureDoc).toContain("git diff");
+    expect(structureDoc).toContain("不另立 `草稿/` 或 `定稿/`");
 
     const manifest = JSON.parse(readFileSync(join(rootPath, "craft-writing.json"), "utf-8"));
     expect(manifest).toMatchObject({
@@ -253,21 +257,29 @@ describe("createNovelProjectScaffold", () => {
       storageProfile: "short-form-compatible",
     });
 
-    const brief = readFileSync(join(rootPath, "短文简报.md"), "utf-8");
-    expect(brief).toContain("## 目标读者");
-    expect(brief).toContain("## 读者承诺");
-    expect(brief).not.toContain("## Target Reader");
+    const brief = readFileSync(join(rootPath, "简报.md"), "utf-8");
+    expect(brief).toContain("## 题材定位");
+    expect(brief).toContain("## 核心钩子");
 
-    const sourceCards = readFileSync(join(rootPath, "素材卡.md"), "utf-8");
-    expect(sourceCards).toContain("# 素材卡");
-    expect(sourceCards).toContain("| 来源 | 事实或引用 | 用途 | 可信度 |");
+    const outline = readFileSync(join(rootPath, "大纲.md"), "utf-8");
+    expect(outline).toContain("## 全书弧线");
+    expect(outline).toContain("### 第 01 章");
+
+    const characters = readFileSync(join(rootPath, "人物.md"), "utf-8");
+    expect(characters).toContain("## 主角");
+
+    const sources = readFileSync(join(rootPath, "素材.md"), "utf-8");
+    expect(sources).toContain("# 素材");
+
+    const requirements = readFileSync(join(rootPath, "创作要求.md"), "utf-8");
+    expect(requirements).toContain("# 创作要求");
 
     const agents = readFileSync(join(rootPath, "AGENTS.md"), "utf-8");
-    expect(agents).toContain("# Short-Form Writing Pack");
+    expect(agents).toContain("# 短篇/中篇小说");
     expect(agents).toContain("## Agent 运行画像");
-    expect(agents).toContain("短文简报.md");
-    expect(agents).toContain("素材卡.md");
-    expect(agents).toContain("不要从宽泛的首轮请求直接起草正文");
+    expect(agents).toContain("简报.md");
+    expect(agents).toContain("大纲.md");
+    expect(agents).toContain("git diff");
     expect(agents).not.toContain("This project uses");
     expect(agents).not.toContain("Starter Request");
   });

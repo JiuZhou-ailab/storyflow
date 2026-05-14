@@ -1,11 +1,14 @@
-# Pending Release Notes
+# 最新动态
 
-This file accumulates release notes for the next unreleased version. PRs that add user-visible behavior should append a bullet to the relevant section here. Versioned files (`X.Y.Z.md`) are owned by the release skill — never create them in feature commits.
+## 默认短篇/中篇小说模板
 
-## Features
+新建写作工作区现在默认使用“短篇/中篇小说”模板，适合 5,000-40,000 字中文网文项目，例如情感反转、复仇打脸、追妻火葬场、马甲爽文等强钩子题材。内部发行版已内置默认模型连接，打开后可以直接创建项目并开始写作。
 
-## Improvements
+## 当前项目用法
 
-## Bug Fixes
-
-## Breaking Changes
+1. 新建工作区时直接使用默认模板；一个工作区只写一本书。
+2. 先维护 `创作要求.md`，写清长期风格、读者偏好和不能触碰的红线。
+3. 在 `简报.md` 填题材定位、主角设置、目标读者、核心钩子和篇幅目标。
+4. 在 `大纲.md` 按章列出钩子、冲突、反转和情绪落点，再补 `人物.md` 与 `素材.md`。
+5. 正文只放在 `正文/` 目录，每章一个 `NN-标题.md` 文件，章节标题就是钩子。
+6. 临时试写、废弃版本和审校笔记放进 `.work/`；正式章节直接覆盖修改，用 git diff 留痕，不再区分 `草稿/` 和 `定稿/`。

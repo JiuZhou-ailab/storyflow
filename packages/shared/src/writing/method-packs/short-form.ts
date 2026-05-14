@@ -1,5 +1,5 @@
 // input: Short-form writing workflow contract
-// output: Built-in Method Pack definition for articles, posts, essays, and concise opinion pieces
+// output: Built-in Method Pack definition for 5,000-40,000 character web fiction projects
 // pos: Source-of-truth metadata for the short-form writing creation option
 
 import type { MethodPack } from "./types.ts";
@@ -7,75 +7,79 @@ import type { MethodPack } from "./types.ts";
 export const SHORT_FORM_METHOD_PACK: MethodPack = {
   id: "short-form.article",
   version: 1,
-  displayName: "Short-Form Writing Pack",
+  displayName: "短篇/中篇小说",
   projectType: "short-form",
   storageProfile: "short-form-compatible",
   source: {
-    name: "boraoztunc/skills and public short-form writing guidance",
-    url: "https://github.com/boraoztunc/skills",
-    license: "MIT for skill source; no upstream text copied",
-    inspectedCommit: "52eb13623df7f03393b272a43fb76545cdb6cabe",
+    name: "Craft Agent web-fiction short-form template",
+    url: "https://github.com/craft-agent/craft-agents-oss",
+    license: "internal",
+    inspectedCommit: "",
   },
   requiredPaths: [
     { path: "craft-writing.json", kind: "file" },
     { path: "目录说明.md", kind: "file" },
-    { path: "短文简报.md", kind: "file" },
-    { path: "素材卡.md", kind: "file" },
-    { path: "草稿", kind: "directory" },
-    { path: "定稿", kind: "directory" },
+    { path: "创作要求.md", kind: "file" },
+    { path: "简报.md", kind: "file" },
+    { path: "大纲.md", kind: "file" },
+    { path: "人物.md", kind: "file" },
+    { path: "素材.md", kind: "file" },
+    { path: "正文", kind: "directory" },
     { path: ".work", kind: "directory" },
   ],
-  requiredSkills: [
-    "short-brief",
-    "short-source-curator",
-    "short-angle",
-    "short-drafter",
-    "short-editor",
-    "short-publisher",
-  ],
-  runtimePreamble: "This project uses the short-form.article method pack. Use 短文简报.md for audience, promise, platform, angle, and outline; 素材卡.md for evidence and examples; 草稿/ for working drafts and revisions; 定稿/ for accepted final pieces; and .work/ for temporary outlines, reviews, and discarded alternatives.",
-  agentIdentity: "You are a lean short-form editorial agent who turns vague requests into a compact brief, traceable material, draft, edit, and final copy without over-splitting artifacts.",
-  defaultSkill: "short-brief",
-  alwaysOnInstructions: "Treat 目录说明.md as the file-structure contract, 短文简报.md as the single planning source for reader, platform, angle, outline, voice notes, and quality gates, 素材卡.md as the evidence ledger, 草稿/ as working copy and revisions, 定稿/ as accepted final copy, and .work/ as temporary outlines, reviews, and discarded alternatives.",
-  initialRequestPolicy: "Do not draft directly from a broad first writing request. First use short-brief to clarify audience, platform, desired length, reader promise, evidence/source availability, stance, tone, ending payoff, and whether the next artifact should be a brief update, outline, draft, edit, or publishable final.",
+  requiredSkills: [],
+  runtimePreamble: "This project uses the short-form.article method pack. 创作要求.md carries the long-lived writing style and cross-project conventions; 简报.md captures the current piece's premise, audience, and core hooks; 大纲.md is the chapter beat plan; 人物.md tracks characters; 素材.md collects research and reference material; 正文/ holds the manuscript as one Markdown file per chapter named NN-标题.md; .work/ stores throwaway scratch work. Use git diff for revision history instead of separating drafts and finals.",
+  agentIdentity: "你是一名中文短篇/中篇网文（5,000-40,000 字）写作搭档，按 简报.md → 大纲.md → 人物.md / 素材.md → 正文/ 的顺序推进单一作品。优先保护单作品聚焦、第一人称口语化叙事、章节钩子与情绪反转节奏，不要拆出多份草稿目录或多余的工作流文件。",
+  defaultSkill: "",
+  alwaysOnInstructions: `本工作区遵循以下文件契约：
+
+- 创作要求.md：跨项目长期写作风格、读者偏好与禁区。改动幅度低，通常用户主笔。
+- 简报.md：当前这本书的题材、卖点、目标读者、风格选择与核心钩子。
+- 大纲.md：分章节 beat 计划，每章一段，含钩子和反转点。
+- 人物.md：主要角色档案、关系、口头禅、动机和成长弧线。
+- 素材.md：地点、行业知识、参考案例、对标桥段、可复用台词。
+- 正文/：唯一的成稿目录，每章一个文件，命名 NN-标题.md（例如 01-未婚夫和闺蜜在我葬礼上接吻.md）。先有 简报.md 与 大纲.md，再进入 正文/。
+- .work/：临时大纲实验、被废弃的章节版本、人物试稿和审校笔记。
+
+写作约定：
+
+- 默认中文第一人称，章节标题就是钩子，开篇直接进冲突。
+- 修订靠 git diff 留痕，不要新建 草稿/ 或 定稿/ 目录，也不要把多版本塞进同一文件。
+- 宽泛的初始请求先把 简报.md 写满，再补 大纲.md，最后才写 正文/。
+- 不要预先生成空章节文件，写到哪一章再创建对应 NN-标题.md。`,
+  initialRequestPolicy: "在 简报.md 与 大纲.md 仍是模板时不要直接写 正文/。先与用户确认题材定位、主角设置、核心钩子、章节数量与篇幅目标，把答案落到 简报.md 与 大纲.md，再进入 正文/ 中的章节文件。",
   artifactContract: [
-    { path: "目录说明.md", role: "Human-readable file structure, lifecycle, and naming contract for the short-form workspace.", lifecycle: "canon" },
-    { path: "短文简报.md", role: "Single source for audience, reader promise, platform, angle, outline, voice notes, quality gates, and open decisions.", lifecycle: "intake" },
-    { path: "素材卡.md", role: "Traceable source cards, evidence, quotes, examples, benchmark notes, and factual constraints.", lifecycle: "reference" },
-    { path: "草稿/", role: "Working drafts, edited drafts, and platform variants before final acceptance.", lifecycle: "draft" },
-    { path: "定稿/", role: "Accepted final copy ready for use.", lifecycle: "final" },
-    { path: ".work/", role: "Temporary outlines, reviews, discarded angles, and intermediate notes that should not become durable files.", lifecycle: "draft" },
+    { path: "目录说明.md", role: "面向人的目录契约，描述每个文件的作用、命名规则与写入时机。", lifecycle: "canon" },
+    { path: "创作要求.md", role: "跨项目长期写作风格、读者偏好与个人禁区。", lifecycle: "canon" },
+    { path: "简报.md", role: "当前作品的题材、卖点、目标读者、核心钩子与成功条件。", lifecycle: "intake" },
+    { path: "大纲.md", role: "分章节 beat 计划：每章一段，包含钩子、冲突、反转和情绪落点。", lifecycle: "outline" },
+    { path: "人物.md", role: "主要角色档案、关系、动机、口头禅和成长曲线。", lifecycle: "reference" },
+    { path: "素材.md", role: "题材所需的地点、行业、案例、对标桥段和可复用台词。", lifecycle: "reference" },
+    { path: "正文/", role: "唯一成稿目录，按 NN-标题.md 命名，每章一个文件。", lifecycle: "final" },
+    { path: ".work/", role: "临时大纲实验、被废弃的章节版本、试写片段和审校笔记。", lifecycle: "draft" },
   ],
   namingConventions: [
-    { path: "草稿/", pattern: "YYYYMMDD-topic-vNN.md for working drafts before review.", example: "20260513-乡村螃蟹反目-v01.md" },
-    { path: "定稿/", pattern: "YYYYMMDD-topic-final.md for accepted publishable copy only.", example: "20260513-乡村螃蟹反目-final.md" },
-    { path: ".work/", pattern: "YYYYMMDD-topic-purpose.md for scratch outlines, reviews, rejected angles, and temporary notes.", example: "20260513-乡村螃蟹反目-outline.md" },
+    { path: "正文/", pattern: "NN-标题.md，NN 是两位章节编号，标题取章节钩子。", example: "01-未婚夫和闺蜜在我葬礼上接吻.md" },
+    { path: ".work/", pattern: "YYYYMMDD-目的.md，用于临时大纲、试写和审校笔记。", example: "20260514-反派人设试稿.md" },
   ],
-  skillRouting: [
-    { when: "initial request lacks audience, platform, angle, or reader promise", skill: "short-brief" },
-    { when: "sources, facts, examples, or evidence must be organized", skill: "short-source-curator" },
-    { when: "central claim, hook, structure, or ending payoff must be chosen", skill: "short-angle" },
-    { when: "brief and angle are accepted and draft copy is requested", skill: "short-drafter" },
-    { when: "draft needs revision, platform adaptation, clarity, evidence, rhythm, or anti-fluff editing", skill: "short-editor" },
-    { when: "final copy needs publish-ready packaging", skill: "short-publisher" },
-  ],
+  skillRouting: [],
   starterMessage: `## 这是什么
 
-这是短文写作工作区，适合公众号短文、newsletter、博客短文、社媒长帖、观点短评和 memo 等需要快速成稿但不能牺牲逻辑与事实边界的短内容。
+这是一个面向 5,000-40,000 字中文短篇/中篇网文的写作工作区，适合情感反转、复仇打脸、追妻火葬场、马甲爽文等强钩子题材。每个工作区只承载一本书。
 
 ## 我会怎么做
 
-我会先把目标读者、发布平台、目标篇幅和读者承诺整理到 短文简报.md，再把素材来源转成可追溯的 素材卡.md。之后围绕一个中心论点生成大纲、草稿、修改意见和定稿，并按目录说明里的命名规则保存。
+我会先在 简报.md 写清题材定位、主角设置、目标读者和核心钩子；然后在 大纲.md 列出分章节 beat；同时在 人物.md 立起角色，在 素材.md 收集所需素材。简报和大纲就绪后，我再把章节写进 正文/，每章一个 NN-标题.md。
 
 ## 流程
 
-1. 明确目标读者、平台、篇幅和读者承诺。
-2. 整理素材来源、参考样例和可用证据。
-3. 选择中心论点、开头钩子和结尾收益。
-4. 起草短文，并检查清晰度、证据、节奏和空话。
-5. 生成发布稿或适配不同平台的变体。
+1. 在 简报.md 里写清题材定位、主角、目标读者、核心钩子与篇幅目标。
+2. 在 大纲.md 里按章列出钩子、冲突、反转和情绪落点。
+3. 同步充实 人物.md 与 素材.md，给正文留足支撑。
+4. 进入 正文/，每章一个 NN-标题.md，章节标题就是钩子。
+5. 修订靠 git diff 留痕，不另立 草稿/ 或 定稿/。
 
 ## 你现在可以提供
 
-请提供目标读者、发布平台、目标篇幅、中心论点或读者承诺、素材来源、喜欢的参考样例，以及第一篇要写成短 essay、newsletter、社媒长帖、博客短文、memo 还是观点短评。`,
+请告诉我题材方向（情感反转 / 复仇打脸 / 追妻火葬场 / 马甲爽文 / 其他）、主角设置（性别、身份、起点）、情绪基调、目标章节数与单章字数、不可触碰的禁区，以及若干你认可的对标作品或桥段。`,
 };

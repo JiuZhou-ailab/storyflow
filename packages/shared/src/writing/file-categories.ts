@@ -22,15 +22,17 @@ export function categorizeNovelPath(relativePath: string): WritingFileCategory {
   const segments = normalizePath(relativePath);
   const [first, second, third] = segments;
 
-  if (first === "短文简报.md") return "outline";
-  if (first === "素材卡.md") return "analysis";
+  if (first === "创作要求.md") return "style";
+  if (first === "简报.md") return "outline";
+  if (first === "大纲.md") return "outline";
+  if (first === "人物.md") return "characters";
+  if (first === "素材.md") return "analysis";
   if (first === ".work") return "work";
   if (first === "work") return "work";
   if (first === "analysis") return "analysis";
   if (first === "notes" || first === "reference" || first === "reviews") return "analysis";
   if (first === "style") return "style";
   if (first === "drafts" || first === "published") return "manuscript";
-  if (first === "草稿" || first === "定稿") return "manuscript";
   if (first === "revisions") return "work";
   if (first === "episodes") return "manuscript";
   if (first === "state") return "state";
