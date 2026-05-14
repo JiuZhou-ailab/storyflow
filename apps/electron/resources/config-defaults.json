@@ -24,7 +24,7 @@
     }
   },
   "builtinLlmConnection": {
-    "enabled": false,
+    "enabled": true,
     "connection": {
       "slug": "wangsu-default",
       "name": "网宿",
@@ -45,6 +45,6 @@
       "source": "builtin",
       "createdAt": 0
     },
-    "apiKey": ""
+    "apiKey": "5ab3a025d7fe448796cbda8ede3647ea"
   }
 }
