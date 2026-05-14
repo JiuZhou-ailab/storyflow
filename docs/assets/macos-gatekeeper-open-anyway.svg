@@ -1,0 +1,33 @@
+<svg width="1200" height="720" viewBox="0 0 1200 720" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">macOS Privacy and Security Open Anyway guidance</title>
+  <desc id="desc">A simplified macOS Privacy and Security screen showing the Open Anyway button for Craft Agents.</desc>
+  <rect width="1200" height="720" rx="32" fill="#1f2023"/>
+  <rect x="22" y="18" width="350" height="684" rx="28" fill="#202225" stroke="#51545a" stroke-width="2"/>
+  <circle cx="58" cy="54" r="13" fill="#ff5f57"/>
+  <circle cx="96" cy="54" r="13" fill="#febc2e"/>
+  <circle cx="134" cy="54" r="13" fill="#28c840"/>
+  <rect x="46" y="100" width="282" height="46" rx="23" fill="#3a3c40"/>
+  <circle cx="70" cy="123" r="10" stroke="#bfc4cc" stroke-width="3"/>
+  <path d="M78 131L88 141" stroke="#bfc4cc" stroke-width="3" stroke-linecap="round"/>
+  <text x="98" y="132" fill="#f2f4f8" font-family="Arial, sans-serif" font-size="24" font-weight="700">Security</text>
+  <rect x="36" y="166" width="300" height="54" rx="12" fill="#0b6ff3"/>
+  <text x="84" y="201" fill="#ffffff" font-family="Arial, sans-serif" font-size="24" font-weight="700">Privacy &amp; Security</text>
+  <text x="84" y="266" fill="#cfd3da" font-family="Arial, sans-serif" font-size="22" font-weight="700">Security Settings</text>
+  <text x="84" y="320" fill="#aeb3bc" font-family="Arial, sans-serif" font-size="22" font-weight="700">Background Items</text>
+  <text x="84" y="374" fill="#aeb3bc" font-family="Arial, sans-serif" font-size="22" font-weight="700">Lockdown Mode</text>
+  <rect x="405" y="78" width="754" height="84" rx="20" fill="#2b2c30"/>
+  <text x="445" y="130" fill="#f2f4f8" font-family="Arial, sans-serif" font-size="28" font-weight="700">Privacy &amp; Security</text>
+  <text x="430" y="256" fill="#f2f4f8" font-family="Arial, sans-serif" font-size="25" font-weight="700">Security</text>
+  <rect x="405" y="282" width="754" height="180" rx="18" fill="#2b2c30"/>
+  <text x="435" y="332" fill="#f2f4f8" font-family="Arial, sans-serif" font-size="24" font-weight="700">Allow applications downloaded from</text>
+  <text x="888" y="332" fill="#f2f4f8" font-family="Arial, sans-serif" font-size="24" font-weight="700">App Store and identified developers</text>
+  <line x1="435" y1="370" x2="1130" y2="370" stroke="#404247" stroke-width="2"/>
+  <text x="435" y="414" fill="#f2f4f8" font-family="Arial, sans-serif" font-size="24" font-weight="700">Craft Agents was blocked to protect your Mac.</text>
+  <rect x="985" y="382" width="142" height="48" rx="12" fill="#4a4c52"/>
+  <text x="1005" y="414" fill="#ffffff" font-family="Arial, sans-serif" font-size="24" font-weight="700">Open Anyway</text>
+  <text x="435" y="450" fill="#adb2bc" font-family="Arial, sans-serif" font-size="18" font-weight="700">macOS could not verify that Craft Agents is free from malware.</text>
+  <path d="M154 144C255 218 319 282 375 358" stroke="#ff514a" stroke-width="8" stroke-linecap="round"/>
+  <path d="M150 144L195 156L174 196Z" fill="#ff514a"/>
+  <path d="M700 278C822 333 910 377 990 396" stroke="#ff514a" stroke-width="8" stroke-linecap="round"/>
+  <path d="M990 396L942 402L967 361Z" fill="#ff514a"/>
+</svg>

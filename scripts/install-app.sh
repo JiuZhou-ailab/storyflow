@@ -22,6 +22,32 @@ success() { printf "%b\n" "${GREEN}>${NC} $1"; }
 warn() { printf "%b\n" "${YELLOW}!${NC} $1"; }
 error() { printf "%b\n" "${RED}x${NC} $1"; exit 1; }
 
+print_macos_gatekeeper_notice() {
+    cat <<'EOF'
+
+macOS security notice
+─────────────────────────────────────────────────────────────────────────
+If macOS says Apple cannot verify "Craft Agents", only continue if this
+copy was downloaded from the official Craft Agents release source.
+
+To open it:
+  1. Open System Settings.
+  2. Search for Security and open Privacy & Security.
+  3. Scroll to Security.
+  4. Find the blocked "Craft Agents" entry.
+  5. Click Open Anyway, then confirm.
+
+This is a temporary workaround for unsigned or non-notarized builds. The
+proper distribution fix is Developer ID signing plus Apple notarization.
+EOF
+
+    if command -v osascript >/dev/null 2>&1; then
+        osascript <<'OSA' >/dev/null 2>&1 || true
+display dialog "If macOS says Apple cannot verify \"Craft Agents\", open System Settings, search for Security, go to Privacy & Security, then click Open Anyway for Craft Agents. Only do this for downloads from the official Craft Agents release source." buttons {"OK"} default button "OK" with title "Craft Agents macOS Security"
+OSA
+    fi
+}
+
 version_at_least() {
     local current="$1"
     local required="$2"
@@ -344,6 +370,7 @@ if [ "$OS_TYPE" = "darwin" ]; then
     printf "%b\n" "  You can launch it from ${BOLD}Applications${NC} or by running:"
     printf "%b\n" "    ${BOLD}open -a 'Craft Agents'${NC}"
     echo ""
+    print_macos_gatekeeper_notice
 
 else
     # Linux installation

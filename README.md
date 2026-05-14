@@ -38,6 +38,7 @@ craft-agents-oss/
 │   ├── shared/              # Config, protocol, sessions, sources, writing logic
 │   └── ui/                  # Shared React UI, Markdown, diff, chat components
 ├── docs/
+│   ├── assets/              # Documentation images and diagrams
 │   └── plans/               # Design and implementation planning notes
 ├── scripts/                 # Build, validation, release, and maintenance scripts
 └── README.md                # Project overview and development entry point
@@ -251,6 +252,22 @@ bun run electron:dist:dev:win
 ```
 
 Current GitHub releases publish only macOS `.dmg` and Windows `.exe` artifacts. macOS artifacts are architecture-specific: Apple Silicon Macs require `Craft-Agents-arm64.dmg`, Intel Macs require `Craft-Agents-x64.dmg`, and the Electron runtime requires macOS 12.0 or newer. Opening the wrong macOS artifact, or running on macOS 11 or older, can produce the system message that this Mac does not support the application.
+
+### macOS Security Warning
+
+Until the macOS app is signed with a Developer ID certificate and notarized by Apple, macOS Gatekeeper may show a warning that Apple cannot verify whether Craft Agents contains malware or may harm privacy. Only use the steps below for Craft Agents downloads from the official GitHub release page.
+
+![macOS Privacy and Security Open Anyway guidance](docs/assets/macos-gatekeeper-open-anyway.svg)
+
+To open the app:
+
+1. Open `System Settings`.
+2. Search for `Security`, then open `Privacy & Security`.
+3. Scroll to `Security`.
+4. Find the blocked `Craft Agents` entry.
+5. Click `Open Anyway`, then confirm.
+
+The long-term distribution fix is Developer ID signing plus Apple notarization. This manual approval step is only a temporary workaround for unsigned or non-notarized builds.
 
 The root packaging scripts call the platform build scripts under `apps/electron/scripts` so runtime assets such as bundled `uv`, Bun, SDK binaries, ripgrep, and helper subprocesses are staged before `electron-builder` runs. Direct `electron-builder` commands from the repository root are not the release path.
 
