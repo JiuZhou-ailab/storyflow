@@ -1,3 +1,7 @@
+// input: Session draft text, attachments, model/source controls, and processing state
+// output: Free-form chat composer that submits messages and manages chat input affordances
+// pos: Main app-shell message composer above the session transcript
+
 import * as React from 'react'
 import { useTranslation } from "react-i18next"
 import { Command as CommandPrimitive } from 'cmdk'
@@ -38,7 +42,7 @@ import {
 } from '@/components/ui/label-menu'
 import type { LabelConfig } from '@craft-agent/shared/labels'
 import { parseMentions } from '@/lib/mentions'
-import { RichTextInput, type RichTextInputHandle } from '@/components/ui/rich-text-input'
+import { RichTextInput, type RichTextInputChangeMeta, type RichTextInputHandle } from '@/components/ui/rich-text-input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@craft-agent/ui'
 import {
   DropdownMenu,
@@ -91,6 +95,12 @@ import {
 } from './working-directory-history'
 import { CompactPermissionModeSelector } from './CompactPermissionModeSelector'
 import { formatTokenCount, resolveContextUsage } from './context-usage'
+import {
+  getPrimaryInputAction,
+  isCompositionInput,
+  resolveAutoCapitalisedInput,
+  shouldShowTextInput,
+} from './free-form-input-behavior'
 
 function stripPiPrefixForDisplay(value: string): string {
   return value.startsWith('pi/') ? value.slice(3) : value
@@ -1442,8 +1452,9 @@ export function FreeFormInput({
   }, [syncToParent, sources, optimisticSourceSlugs, onSourcesChange])
 
   // Handle input with cursor position (for menu detection)
-  const handleRichInput = React.useCallback((value: string, cursorPosition: number) => {
+  const handleRichInput = React.useCallback((value: string, cursorPosition: number, meta?: RichTextInputChangeMeta) => {
     const nextValue = coerceInputText(value)
+    const compositionInput = isCompositionInput(meta)
 
     // Update inline slash command state
     inlineSlash.handleInputChange(nextValue, cursorPosition)
@@ -1454,20 +1465,22 @@ export function FreeFormInput({
     // Update inline label state (for #labels)
     inlineLabel.handleInputChange(nextValue, cursorPosition)
 
-    // Auto-capitalize first letter (but not for slash commands, @mentions, or #labels)
-    // Only if autoCapitalisation setting is enabled
+    // Auto-capitalize first letter (but not for slash commands, @mentions, #labels, or IME text)
     let newValue = nextValue
-    if (autoCapitalisation && nextValue.length > 0 && nextValue.charAt(0) !== '/' && nextValue.charAt(0) !== '@' && nextValue.charAt(0) !== '#') {
-      const capitalizedFirst = nextValue.charAt(0).toUpperCase()
-      if (capitalizedFirst !== nextValue.charAt(0)) {
-        newValue = capitalizedFirst + nextValue.slice(1)
-        // Set cursor position BEFORE state update so it's used when useEffect syncs the value
-        richInputRef.current?.setSelectionRange(cursorPosition, cursorPosition)
-        setInput(newValue)
-        syncToParent(newValue)
-        return
-      }
+    const capitalised = resolveAutoCapitalisedInput(nextValue, cursorPosition, {
+      enabled: autoCapitalisation,
+      isCompositionInput: compositionInput,
+    })
+    if (capitalised) {
+      newValue = capitalised.text
+      // Set cursor position BEFORE state update so it's used when useEffect syncs the value
+      richInputRef.current?.setSelectionRange(capitalised.cursor, capitalised.cursor)
+      setInput(newValue)
+      syncToParent(newValue)
+      return
     }
+
+    if (compositionInput) return
 
     // Apply smart typography (-> to →, etc.)
     const typography = applySmartTypography(nextValue, cursorPosition)
@@ -1555,6 +1568,13 @@ export function FreeFormInput({
   }, [followUpLayoutKey])
 
   const hasContent = input.trim() || attachments.length > 0 || followUpItems.length > 0
+  const primaryInputAction = getPrimaryInputAction({
+    isProcessing,
+    hasContent: Boolean(hasContent),
+    disabled,
+    disableSend,
+  })
+  const showTextInput = shouldShowTextInput({ compactMode, isProcessing })
 
   // Pre-flight image-support check: warn when staged images would be silently
   // stripped by Pi SDK because the active custom-endpoint model is text-only.
@@ -1749,8 +1769,7 @@ export function FreeFormInput({
         </AnimatePresence>
 
         {/* Rich Text Input with inline mention badges */}
-        {/* In compact mode, hide input while processing (collapses to just bottom bar) */}
-        {!(compactMode && isProcessing) && (
+        {showTextInput && (
         <RichTextInput
           ref={richInputRef}
           value={input}
@@ -2394,8 +2413,8 @@ export function FreeFormInput({
             </Tooltip>
           )}
 
-          {/* 6. Send/Stop Button - Always show stop when processing */}
-          {isProcessing ? (
+          {/* 6. Send/Stop Button - Queue new drafts while processing, otherwise stop */}
+          {primaryInputAction === 'stop' ? (
             <Button
               type="button"
               size="icon"

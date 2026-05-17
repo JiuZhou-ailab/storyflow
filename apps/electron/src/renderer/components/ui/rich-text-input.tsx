@@ -1,3 +1,7 @@
+// input: Plain text drafts plus inline mention metadata rendered in a contenteditable control
+// output: Rich text composer surface with stable plain-text extraction and IME-safe input events
+// pos: Shared low-level chat input primitive used by app-shell free-form composer
+
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { coerceInputText } from '@/lib/input-text'
@@ -60,11 +64,17 @@ export interface RichTextInputProps extends Omit<React.HTMLAttributes<HTMLDivEle
   /** Whether the input is disabled */
   disabled?: boolean
   /** Called when input changes (provides value and cursor position for mention detection) */
-  onInput?: (value: string, cursorPosition: number) => void
+  onInput?: (value: string, cursorPosition: number, meta?: RichTextInputChangeMeta) => void
   /** Called on paste */
   onPaste?: (e: React.ClipboardEvent) => void
   /** Called when pasted text exceeds line threshold - should create file attachment */
   onLongTextPaste?: (text: string) => void
+}
+
+export interface RichTextInputChangeMeta {
+  isComposing: boolean
+  nativeIsComposing: boolean
+  inputType?: string
 }
 
 export interface RichTextInputHandle {
@@ -598,8 +608,14 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
     }), [])
 
     // Handle input events
-    const handleInput = React.useCallback(() => {
-      if (isComposing.current) return
+    const handleInput = React.useCallback((
+      event?: React.FormEvent<HTMLDivElement>,
+      overrideMeta?: Partial<RichTextInputChangeMeta>,
+    ) => {
+      const nativeEvent = event?.nativeEvent as InputEvent | undefined
+      const nativeIsComposing = overrideMeta?.nativeIsComposing ?? Boolean(nativeEvent?.isComposing)
+      const composing = overrideMeta?.isComposing ?? isComposing.current
+      if (composing || nativeIsComposing) return
       if (!divRef.current) return
 
       const newText = getTextFromElement(divRef.current)
@@ -622,7 +638,11 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       }
 
       onChange(newText)
-      onInput?.(newText, cursorPos)
+      onInput?.(newText, cursorPos, {
+        isComposing: composing,
+        nativeIsComposing,
+        inputType: overrideMeta?.inputType ?? nativeEvent?.inputType,
+      })
     }, [onChange, onInput, skills, sources, skillSlugs, sourceSlugs, workspaceId, fileLabelByRelativePath])
 
     // Handle composition (IME)
@@ -632,7 +652,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
 
     const handleCompositionEnd = React.useCallback(() => {
       isComposing.current = false
-      handleInput()
+      handleInput(undefined, { inputType: 'insertFromComposition' })
     }, [handleInput])
 
     const handleKeyDownInternal = React.useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
