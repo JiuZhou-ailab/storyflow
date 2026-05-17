@@ -159,7 +159,7 @@
   "chat.inputFailedDescription": "The rest of this chat is still available. You can retry, or clear the local draft if it became corrupted.",
   "chat.inputFailedTitle": "The input failed to load",
   "chat.learnMore": "Learn More",
-  "chat.mentionFilesSkillsSources": "Mention files, skills, sources",
+  "chat.mentionFilesSkillsSources": "Attach files, folders, sources",
   "chat.modelPicker.supportsImagesOff": "Image input disabled — click to enable",
   "chat.modelPicker.supportsImagesOn": "Image input enabled",
   "chat.modelPicker.toggleVisionFailed": "Failed to update image support",

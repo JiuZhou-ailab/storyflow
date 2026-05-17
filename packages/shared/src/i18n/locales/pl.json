@@ -159,7 +159,7 @@
   "chat.inputFailedDescription": "Reszta tego czatu jest nadal dostępna. Możesz spróbować ponownie albo wyczyścić lokalny szkic, jeśli został uszkodzony.",
   "chat.inputFailedTitle": "Nie udało się załadować pola wejściowego",
   "chat.learnMore": "Dowiedz się więcej",
-  "chat.mentionFilesSkillsSources": "Wspomnij pliki, umiejętności, źródła",
+  "chat.mentionFilesSkillsSources": "Dołącz pliki, foldery, źródła",
   "chat.modelPicker.supportsImagesOff": "Obrazy wyłączone — kliknij, aby włączyć",
   "chat.modelPicker.supportsImagesOn": "Obrazy włączone",
   "chat.modelPicker.toggleVisionFailed": "Nie udało się zaktualizować obsługi obrazów",

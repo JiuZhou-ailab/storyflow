@@ -159,7 +159,7 @@
   "chat.inputFailedDescription": "このチャットの他の部分は引き続き利用できます。再試行するか、ローカルの下書きが壊れている場合は削除してください。",
   "chat.inputFailedTitle": "入力欄を読み込めませんでした",
   "chat.learnMore": "詳細を見る",
-  "chat.mentionFilesSkillsSources": "ファイル、スキル、ソースをメンション",
+  "chat.mentionFilesSkillsSources": "ファイル、フォルダ、ソースを添付",
   "chat.modelPicker.supportsImagesOff": "画像入力は無効 — クリックして有効化",
   "chat.modelPicker.supportsImagesOn": "画像入力は有効",
   "chat.modelPicker.toggleVisionFailed": "画像サポートの更新に失敗しました",

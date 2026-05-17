@@ -159,7 +159,7 @@
   "chat.inputFailedDescription": "此聊天的其余部分仍可使用。你可以重试，或者在本地草稿损坏时将其清除。",
   "chat.inputFailedTitle": "输入区域加载失败",
   "chat.learnMore": "了解更多",
-  "chat.mentionFilesSkillsSources": "提及文件、技能、数据源",
+  "chat.mentionFilesSkillsSources": "附加文件、文件夹、数据源",
   "chat.modelPicker.supportsImagesOff": "图像输入已禁用 — 点击启用",
   "chat.modelPicker.supportsImagesOn": "图像输入已启用",
   "chat.modelPicker.toggleVisionFailed": "更新图像支持失败",

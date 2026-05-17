@@ -159,7 +159,7 @@
   "chat.inputFailedDescription": "Der Rest dieses Chats ist weiterhin verfügbar. Du kannst es erneut versuchen oder den lokalen Entwurf löschen, falls er beschädigt wurde.",
   "chat.inputFailedTitle": "Der Eingabebereich konnte nicht geladen werden",
   "chat.learnMore": "Mehr erfahren",
-  "chat.mentionFilesSkillsSources": "Dateien, Skills oder Quellen erwähnen",
+  "chat.mentionFilesSkillsSources": "Dateien, Ordner oder Quellen anhängen",
   "chat.modelPicker.supportsImagesOff": "Bildeingabe deaktiviert — klicken zum Aktivieren",
   "chat.modelPicker.supportsImagesOn": "Bildeingabe aktiviert",
   "chat.modelPicker.toggleVisionFailed": "Bildunterstützung konnte nicht aktualisiert werden",

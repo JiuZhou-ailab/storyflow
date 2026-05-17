@@ -159,7 +159,7 @@
   "chat.inputFailedDescription": "A beszélgetés többi része továbbra is elérhető. Megpróbálhatod újra, vagy törölheted a helyi piszkozatot, ha megsérült.",
   "chat.inputFailedTitle": "Nem sikerült betölteni a beviteli mezőt",
   "chat.learnMore": "Tudj meg többet",
-  "chat.mentionFilesSkillsSources": "Fájlok, skillek, források megemlítése",
+  "chat.mentionFilesSkillsSources": "Fájlok, mappák, források csatolása",
   "chat.modelPicker.supportsImagesOff": "Képbevitel kikapcsolva — kattints a bekapcsoláshoz",
   "chat.modelPicker.supportsImagesOn": "Képbevitel bekapcsolva",
   "chat.modelPicker.toggleVisionFailed": "Nem sikerült frissíteni a képtámogatást",

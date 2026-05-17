@@ -159,7 +159,7 @@
   "chat.inputFailedDescription": "El resto de este chat sigue disponible. Puedes reintentarlo o borrar el borrador local si se dañó.",
   "chat.inputFailedTitle": "No se pudo cargar la entrada",
   "chat.learnMore": "Más información",
-  "chat.mentionFilesSkillsSources": "Menciona archivos, habilidades, fuentes",
+  "chat.mentionFilesSkillsSources": "Adjunta archivos, carpetas, fuentes",
   "chat.modelPicker.supportsImagesOff": "Imágenes deshabilitadas — haz clic para habilitar",
   "chat.modelPicker.supportsImagesOn": "Imágenes habilitadas",
   "chat.modelPicker.toggleVisionFailed": "No se pudo actualizar el soporte de imágenes",

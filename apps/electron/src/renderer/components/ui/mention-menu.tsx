@@ -1,3 +1,7 @@
+// input: Mentionable context objects and typed @ queries from the chat input
+// output: Inline mention menu state and bracket-token insertion helpers
+// pos: Context attachment discovery layer for sources, files, and folders
+
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
@@ -188,6 +192,53 @@ export function getMentionInsertionText(item: MentionItem, workspaceId?: string)
   }
 
   return buildMentionText('skill', item.id)
+}
+
+export interface CreateMentionSectionsOptions {
+  skills: LoadedSkill[]
+  sources: LoadedSource[]
+  files: MentionFileReference[]
+  filter: string
+  fileResults: MentionItem[]
+}
+
+export function createMentionSections({
+  sources,
+  files,
+  filter,
+  fileResults,
+}: CreateMentionSectionsOptions): MentionSection[] {
+  const result: MentionSection[] = []
+
+  // Sources are context attachments. Skills live in the slash command menu.
+  if (sources.length > 0) {
+    result.push({
+      id: 'sources',
+      label: 'Sources',
+      items: sources
+        .filter(source => source.config.slug && source.config.name)
+        .map(source => ({
+          id: source.config.slug,
+          type: 'source' as const,
+          label: source.config.name,
+          description: source.config.tagline,
+          source,
+        })),
+    })
+  }
+
+  // Files section (indexed writing files + async filesystem search results)
+  const indexedFileResults = filterMentionFileReferences(files, filter)
+  const mergedFileResults = dedupeMentionItems([...indexedFileResults, ...fileResults])
+  if (mergedFileResults.length > 0) {
+    result.push({
+      id: 'files',
+      label: 'Files',
+      items: mergedFileResults,
+    })
+  }
+
+  return result
 }
 
 // ============================================================================
@@ -599,54 +650,9 @@ export function useInlineMention({
     }
   }, [])
 
-  // Build sections from available data (skills, sources, and file search results)
+  // Build sections from available context data (sources and file search results)
   const sections = React.useMemo((): MentionSection[] => {
-    const result: MentionSection[] = []
-
-    // Skills section
-    if (skills.length > 0) {
-      result.push({
-        id: 'skills',
-        label: 'Skills',
-        items: skills.map(skill => ({
-          id: skill.slug,
-          type: 'skill' as const,
-          label: skill.metadata.name,
-          description: skill.metadata.description,
-          skill,
-        })),
-      })
-    }
-
-    // Sources section
-    if (sources.length > 0) {
-      result.push({
-        id: 'sources',
-        label: 'Sources',
-        items: sources
-          .filter(source => source.config.slug && source.config.name)
-          .map(source => ({
-            id: source.config.slug,
-            type: 'source' as const,
-            label: source.config.name,
-            description: source.config.tagline,
-            source,
-          })),
-      })
-    }
-
-    // Files section (indexed writing files + async filesystem search results)
-    const indexedFileResults = filterMentionFileReferences(files, filter)
-    const mergedFileResults = dedupeMentionItems([...indexedFileResults, ...fileResults])
-    if (mergedFileResults.length > 0) {
-      result.push({
-        id: 'files',
-        label: 'Files',
-        items: mergedFileResults,
-      })
-    }
-
-    return result
+    return createMentionSections({ skills, sources, files, filter, fileResults })
   }, [skills, sources, files, filter, fileResults])
 
   const handleInputChange = React.useCallback((value: string, cursorPosition: number) => {
