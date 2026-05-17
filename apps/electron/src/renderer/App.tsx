@@ -36,6 +36,7 @@ import { coerceInputText } from './lib/input-text'
 import { getSessionsToRefreshAfterStaleReconnect } from './lib/reconnect-recovery'
 import { formatSessionLoadFailure, shouldTreatSessionLoadFailureAsTransportFallback } from './lib/session-load'
 import { getAutoSessionIdForWorkspaceSwitch } from './lib/workspace-switch'
+import { isAppFullyReady } from './lib/app-readiness'
 import { extractWorkspaceSlugFromPath } from '@craft-agent/shared/utils/workspace-slug'
 import { DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels'
 import { initRendererPerf } from './lib/perf'
@@ -325,6 +326,11 @@ export default function App() {
 
   // Splash screen state - tracks when app is fully ready (all data loaded)
   const [sessionsLoaded, setSessionsLoaded] = useState(false)
+  const [workspacesLoaded, setWorkspacesLoaded] = useState(false)
+  const [themeLoaded, setThemeLoaded] = useState(false)
+  const [llmConnectionsLoaded, setLlmConnectionsLoaded] = useState(false)
+  const [draftsLoaded, setDraftsLoaded] = useState(false)
+  const [notificationsLoaded, setNotificationsLoaded] = useState(false)
   const [sessionLoadError, setSessionLoadError] = useState<string | null>(null)
   const [splashExiting, setSplashExiting] = useState(false)
   const [splashHidden, setSplashHidden] = useState(false)
@@ -337,7 +343,15 @@ export default function App() {
   const skills = useAtomValue(skillsAtom)
 
   // Compute if app is fully ready (all data loaded)
-  const isFullyReady = appState === 'ready' && sessionsLoaded
+  const isFullyReady = isAppFullyReady({
+    appState,
+    sessionsLoaded,
+    workspacesLoaded,
+    themeLoaded,
+    llmConnectionsLoaded,
+    draftsLoaded,
+    notificationsLoaded,
+  })
 
   // Trigger splash exit animation when fully ready
   useEffect(() => {
@@ -710,8 +724,17 @@ export default function App() {
   useEffect(() => {
     if (appState !== 'ready') return
 
-    window.electronAPI.getWorkspaces().then(setWorkspaces)
-    window.electronAPI.getNotificationsEnabled().then(setNotificationsEnabled).catch(() => {})
+    window.electronAPI.getWorkspaces()
+      .then(setWorkspaces)
+      .catch((error) => {
+        console.error('[App] Failed to load workspaces:', error)
+      })
+      .finally(() => setWorkspacesLoaded(true))
+
+    window.electronAPI.getNotificationsEnabled()
+      .then(setNotificationsEnabled)
+      .catch(() => {})
+      .finally(() => setNotificationsLoaded(true))
 
     // Show actionable toast for missing system dependencies (Windows only)
     window.electronAPI.getSystemWarnings().then((warnings) => {
@@ -731,17 +754,29 @@ export default function App() {
     window.electronAPI.listLlmConnectionsWithStatus().then((connections) => {
       setLlmConnections(connections)
       setDefaultLlmConnectionSlug(resolveDefaultConnectionSlug(connections))
-    })
+    }).catch((error) => {
+      console.error('[App] Failed to load LLM connections:', error)
+    }).finally(() => setLlmConnectionsLoaded(true))
     // Load persisted input drafts into ref (no re-render needed).
     // Attachment files are not read here — hydration happens lazily when the session
     // is opened so app startup isn't delayed by reading potentially large files.
-    window.electronAPI.getAllDrafts().then((drafts) => {
-      if (Object.keys(drafts).length > 0) {
-        sessionDraftsRef.current = new Map(Object.entries(drafts))
-      }
-    })
+    window.electronAPI.getAllDrafts()
+      .then((drafts) => {
+        if (Object.keys(drafts).length > 0) {
+          sessionDraftsRef.current = new Map(Object.entries(drafts))
+        }
+      })
+      .catch((error) => {
+        console.error('[App] Failed to load drafts:', error)
+      })
+      .finally(() => setDraftsLoaded(true))
     // Load app-level theme
-    window.electronAPI.getAppTheme().then(setAppTheme)
+    window.electronAPI.getAppTheme()
+      .then(setAppTheme)
+      .catch((error) => {
+        console.error('[App] Failed to load app theme:', error)
+      })
+      .finally(() => setThemeLoaded(true))
   }, [appState, loadSessionsFromServer, resolveDefaultConnectionSlug])
 
   // Subscribe to theme change events (live updates when theme.json changes)
