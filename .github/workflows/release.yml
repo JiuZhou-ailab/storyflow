@@ -26,6 +26,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -44,7 +46,7 @@ jobs:
         run: bun run validate:ci
 
   build-macos:
-    needs: validate
+    needs: create-release
     runs-on: macos-latest
     timeout-minutes: 60
     strategy:
@@ -55,6 +57,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -72,21 +76,29 @@ jobs:
       - name: Build macOS artifacts
         run: bun run electron:dist:dev:mac -- --arch=${{ matrix.arch }}
 
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-${{ matrix.arch }}-artifacts
-          path: apps/electron/release/Craft-Agents-*.dmg
-          if-no-files-found: error
+      - name: Upload macOS artifacts to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          shopt -s nullglob
+          files=(apps/electron/release/Craft-Agents-*.dmg)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No macOS artifacts found"
+            exit 1
+          fi
+          gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
 
   build-windows:
-    needs: validate
+    needs: create-release
     runs-on: windows-latest
     timeout-minutes: 60
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -104,14 +116,38 @@ jobs:
       - name: Build Windows artifacts
         run: bun run electron:dist:dev:win
 
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-artifacts
-          path: apps/electron/release/Craft-Agents-*.exe
-          if-no-files-found: error
+      - name: Upload Windows artifacts to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          shopt -s nullglob
+          files=(apps/electron/release/Craft-Agents-*.exe)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No Windows artifacts found"
+            exit 1
+          fi
+          gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
 
-  publish-release:
+  create-release:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG"
+          else
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --generate-notes --verify-tag
+          fi
+
+  verify-release:
     needs:
       - build-macos
       - build-windows
@@ -119,18 +155,12 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Download release artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist-artifacts
-          merge-multiple: true
-
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
-          name: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
-          generate_release_notes: true
-          files: |
-            dist-artifacts/Craft-Agents-*.dmg
-            dist-artifacts/Craft-Agents-*.exe
+      - name: Verify release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          asset_names="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')"
+          echo "$asset_names"
+          echo "$asset_names" | grep -E '^Craft-Agents-.*\.dmg$'
+          echo "$asset_names" | grep -E '^Craft-Agents-.*\.exe$'
