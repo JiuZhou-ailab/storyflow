@@ -65,6 +65,7 @@ import { pickProviderAppropriateMiniModel } from './pick-mini-model.ts';
 import {
   buildCustomEndpointModelDef,
   normalizeCustomEndpointModelEntry,
+  resolveCustomEndpointProviderApiKey,
   stripPiPrefix,
   type CustomEndpointModelEntry,
   type CustomEndpointModelOverrides,
@@ -433,26 +434,13 @@ function resolveCustomEndpointApiKey(): string {
   }
   const key = initConfig?.apiKey || '';
   if (!key && initConfig?.baseUrl) {
-    if (isLocalhostUrl(initConfig.baseUrl)) {
-      // Local endpoints (Ollama, LM Studio) don't need auth.
-      // Pi SDK requires a truthy apiKey to register models, so use a placeholder.
-      return 'not-needed';
-    }
-    debugLog('[custom-endpoint] Warning: no API key found for non-localhost endpoint — requests will likely fail');
+    debugLog('[custom-endpoint] Warning: no API key found; using placeholder key for provider registration');
   }
-  return key;
-}
-
-function isLocalhostUrl(url: string): boolean {
-  try {
-    const hostname = new URL(url).hostname;
-    const normalizedHostname = hostname.startsWith('[') && hostname.endsWith(']')
-      ? hostname.slice(1, -1)
-      : hostname;
-    return normalizedHostname === 'localhost' || normalizedHostname === '127.0.0.1' || normalizedHostname === '::1';
-  } catch {
-    return false;
-  }
+  return resolveCustomEndpointProviderApiKey({
+    apiKey: key,
+    baseUrl: initConfig?.baseUrl,
+    authType: initConfig?.authType,
+  });
 }
 
 /** Model IDs currently registered under the custom-endpoint provider */

@@ -19,9 +19,28 @@ export type CustomEndpointModelConfig = string | {
   supportsImages?: boolean
 }
 
+export interface CustomEndpointProviderApiKeyInput {
+  apiKey?: string
+  baseUrl?: string
+  authType?: string
+}
+
+export const KEYLESS_CUSTOM_ENDPOINT_API_KEY = 'not-needed'
+
 /** Strip bare model IDs (remove pi/ prefix if present). */
 export function stripPiPrefix(id: string): string {
   return id.startsWith('pi/') ? id.slice(3) : id
+}
+
+/**
+ * Pi requires custom providers that define models to include a truthy apiKey
+ * unless they use SDK-owned OAuth. Keyless local/proxy endpoints still need a
+ * stable placeholder so registration can complete before the real request path
+ * decides whether auth matters.
+ */
+export function resolveCustomEndpointProviderApiKey(input: CustomEndpointProviderApiKeyInput): string {
+  const key = input.apiKey?.trim()
+  return key || KEYLESS_CUSTOM_ENDPOINT_API_KEY
 }
 
 /**

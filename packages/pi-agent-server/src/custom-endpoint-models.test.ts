@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   buildCustomEndpointModelDef,
   normalizeCustomEndpointModelEntry,
+  resolveCustomEndpointProviderApiKey,
   stripPiPrefix,
 } from './custom-endpoint-models.ts'
 
@@ -64,5 +65,29 @@ describe('buildCustomEndpointModelDef', () => {
     const model = buildCustomEndpointModelDef('vision-model', undefined, { supportsImages: true, contextWindow: 262_144 })
     expect(model.input).toEqual(['text', 'image'])
     expect(model.contextWindow).toBe(262_144)
+  })
+})
+
+describe('resolveCustomEndpointProviderApiKey', () => {
+  it('uses the configured API key when present', () => {
+    expect(resolveCustomEndpointProviderApiKey({
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.example.com/v1',
+    })).toBe('sk-test')
+  })
+
+  it('uses a placeholder for keyless custom endpoints so Pi can register models', () => {
+    expect(resolveCustomEndpointProviderApiKey({
+      apiKey: '',
+      baseUrl: 'https://keyless.example.com/v1',
+      authType: 'none',
+    })).toBe('not-needed')
+  })
+
+  it('uses a placeholder for local endpoints that do not require auth', () => {
+    expect(resolveCustomEndpointProviderApiKey({
+      apiKey: '',
+      baseUrl: 'http://127.0.0.1:11434/v1',
+    })).toBe('not-needed')
   })
 })
