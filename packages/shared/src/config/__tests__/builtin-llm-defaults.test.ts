@@ -1,4 +1,8 @@
+// input: Bundled LLM defaults fixtures and temporary config directories
+// output: Regression coverage for managed default connection and credential seeding behavior
+// pos: Tests distribution-provided LLM connection bootstrapping
 import { describe, expect, it } from 'bun:test'
+import { createHash } from 'crypto'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -127,6 +131,20 @@ describe('builtin LLM connection defaults', () => {
     expect(config.llmConnections).toEqual([])
   })
 
+  it('adds the bundled managed connection without seeding a credential when no API key is bundled', () => {
+    const config = makeConfig()
+    const result = applyBuiltinLlmConnectionDefaults(config, makeDefaults({ apiKey: '' }))
+
+    expect(result.changed).toBe(true)
+    expect(result.credentialToSeed).toBeUndefined()
+    expect(config.defaultLlmConnection).toBe('wangsu-default')
+    expect(config.llmConnections?.[0]).toMatchObject({
+      slug: 'wangsu-default',
+      hidden: true,
+      managed: true,
+    })
+  })
+
   it('seeds the credential from bundled defaults without copying the key to local config files', () => {
     const configDir = mkdtempSync(join(tmpdir(), 'craft-agent-builtin-'))
     const bundledRoot = join(configDir, 'bundle')
@@ -175,5 +193,66 @@ describe('builtin LLM connection defaults', () => {
     expect(readFileSync(join(configDir, 'config.json'), 'utf-8')).not.toContain('internal-secret')
     expect(readFileSync(join(configDir, 'config-defaults.json'), 'utf-8')).not.toContain('internal-secret')
     expect(existsSync(join(configDir, 'credentials.enc'))).toBe(true)
+  })
+
+  it('removes a revoked bundled credential without touching user-provided credentials', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'craft-agent-revoked-builtin-'))
+    const bundledRoot = join(configDir, 'bundle')
+    const bundledResources = join(bundledRoot, 'resources')
+    mkdirSync(bundledResources, { recursive: true })
+
+    const revokedKey = 'revoked-distribution-key'
+    const revokedHash = createHash('sha256').update(revokedKey, 'utf8').digest('hex')
+
+    writeFileSync(
+      join(configDir, 'config.json'),
+      JSON.stringify({
+        workspaces: [],
+        activeWorkspaceId: null,
+        activeSessionId: null,
+        llmConnections: [],
+      }, null, 2),
+      'utf-8',
+    )
+    writeFileSync(
+      join(bundledResources, 'config-defaults.json'),
+      JSON.stringify(makeDefaults({
+        apiKey: '',
+        revokedApiKeySha256: [revokedHash],
+      }), null, 2),
+      'utf-8',
+    )
+
+    const run = Bun.spawnSync([
+      process.execPath,
+      '--eval',
+      `
+        import { setBundledAssetsRoot } from '${UTILS_MODULE_PATH}';
+        import { seedBuiltinLlmConnectionFromDefaults } from '${STORAGE_MODULE_PATH}';
+        import { getCredentialManager } from '${CREDENTIALS_MODULE_PATH}';
+        setBundledAssetsRoot(${JSON.stringify(bundledRoot)});
+        const manager = getCredentialManager();
+        await manager.setLlmApiKey('wangsu-default', ${JSON.stringify(revokedKey)});
+        await seedBuiltinLlmConnectionFromDefaults();
+        const afterRevoked = await manager.getLlmApiKey('wangsu-default');
+        await manager.setLlmApiKey('wangsu-default', 'author-owned-key');
+        await seedBuiltinLlmConnectionFromDefaults();
+        const afterUserKey = await manager.getLlmApiKey('wangsu-default');
+        console.log(JSON.stringify({ afterRevoked, afterUserKey }));
+      `,
+    ], {
+      env: { ...process.env, CRAFT_CONFIG_DIR: configDir },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+
+    if (run.exitCode !== 0) {
+      throw new Error(`revoked seed subprocess failed:\n${run.stderr.toString()}`)
+    }
+
+    expect(JSON.parse(run.stdout.toString().trim())).toEqual({
+      afterRevoked: null,
+      afterUserKey: 'author-owned-key',
+    })
   })
 })

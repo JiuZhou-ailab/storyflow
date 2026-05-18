@@ -1,3 +1,7 @@
+// input: Config files, bundled defaults, workspace metadata, and encrypted credentials
+// output: Persistent app config, default workspace/session records, and seeded connection credentials
+// pos: Shared configuration persistence layer used by Electron, server, and tests
+import { createHash } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { getCredentialManager } from '../credentials/index.ts';
@@ -204,26 +208,50 @@ export async function seedBuiltinLlmConnectionFromDefaults(): Promise<boolean> {
   const config = loadStoredConfig();
   if (!config) return false;
 
-  const result = applyBuiltinLlmConnectionDefaults(config, loadConfigDefaultsForBuiltinSeed());
+  const defaults = loadConfigDefaultsForBuiltinSeed();
+  const result = applyBuiltinLlmConnectionDefaults(config, defaults);
   if (result.changed) {
     saveConfig(config);
   }
 
-  let credentialSeeded = false;
-  if (result.credentialToSeed) {
-    try {
-      const manager = getCredentialManager();
-      const existing = await manager.getLlmApiKey(result.credentialToSeed.connectionSlug);
-      if (!existing) {
-        await manager.setLlmApiKey(result.credentialToSeed.connectionSlug, result.credentialToSeed.apiKey);
-        credentialSeeded = true;
+  let credentialChanged = false;
+  try {
+    const manager = getCredentialManager();
+    const connectionSlug = result.credentialToSeed?.connectionSlug
+      ?? defaults.builtinLlmConnection?.connection?.slug?.trim();
+
+    if (connectionSlug) {
+      const revokedHashes = normalizeRevokedApiKeyHashes(defaults.builtinLlmConnection?.revokedApiKeySha256);
+      const existing = await manager.getLlmApiKey(connectionSlug);
+      const existingIsRevoked = !!existing && revokedHashes.has(hashApiKey(existing));
+
+      if (existingIsRevoked) {
+        await manager.deleteLlmApiKey(connectionSlug);
+        credentialChanged = true;
       }
-    } catch (error) {
-      debug('[config] Failed to seed builtin LLM credential:', error instanceof Error ? error.message : error);
+
+      if (result.credentialToSeed && (!existing || existingIsRevoked)) {
+        await manager.setLlmApiKey(connectionSlug, result.credentialToSeed.apiKey);
+        credentialChanged = true;
+      }
     }
+  } catch (error) {
+    debug('[config] Failed to seed builtin LLM credential:', error instanceof Error ? error.message : error);
   }
 
-  return result.changed || credentialSeeded;
+  return result.changed || credentialChanged;
+}
+
+function hashApiKey(apiKey: string): string {
+  return createHash('sha256').update(apiKey, 'utf8').digest('hex');
+}
+
+function normalizeRevokedApiKeyHashes(values: string[] | undefined): Set<string> {
+  return new Set(
+    (values ?? [])
+      .map(value => value.trim().toLowerCase())
+      .filter(value => /^[a-f0-9]{64}$/.test(value)),
+  );
 }
 
 function normalizeConfigDefaults(defaults: ConfigDefaults): ConfigDefaults {

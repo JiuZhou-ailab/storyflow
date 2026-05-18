@@ -45,6 +45,9 @@
       "source": "builtin",
       "createdAt": 0
     },
-    "apiKey": "5ab3a025d7fe448796cbda8ede3647ea"
+    "apiKey": "",
+    "revokedApiKeySha256": [
+      "daf6bda28991cd19d5d62cc6bfe97583f0370d6c41385f510eb21f3f9700662b"
+    ]
   }
 }

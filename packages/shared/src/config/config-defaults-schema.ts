@@ -1,3 +1,6 @@
+// input: Bundled config-defaults.json shape
+// output: TypeScript interfaces for distribution-provided defaults
+// pos: Schema contract between packaged Electron resources and shared config loading
 /**
  * TypeScript types for config-defaults.json
  *
@@ -13,6 +16,7 @@ export interface BuiltinLlmConnectionDefaults {
   enabled: boolean;
   connection?: LlmConnection;
   apiKey?: string;
+  revokedApiKeySha256?: string[];
 }
 
 export interface ConfigDefaults {
