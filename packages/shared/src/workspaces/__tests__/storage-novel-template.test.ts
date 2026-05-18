@@ -8,9 +8,24 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { createNovelProjectScaffold } from "../../writing/novel-template.ts";
 import { getBuiltInMethodPacks } from "../../writing/method-packs/index.ts";
-import { createNovelWorkspaceAtPath, createWorkspaceAtPath, generateSlug, loadWorkspaceConfig, saveWorkspaceConfig } from "../storage.ts";
+import { createDefaultWorkspaceAtPath, createNovelWorkspaceAtPath, createWorkspaceAtPath, generateSlug, loadWorkspaceConfig, saveWorkspaceConfig } from "../storage.ts";
 
 describe("createNovelWorkspaceAtPath", () => {
+  it("creates the product default workspace as a short-form novel workspace", () => {
+    const rootPath = mkdtempSync(join(tmpdir(), "craft-default-workspace-"));
+
+    const config = createDefaultWorkspaceAtPath(rootPath);
+
+    expect(config.name).toBe("短篇/中篇小说");
+    expect(config.defaults?.workingDirectory).toBe(rootPath);
+    expect(existsSync(join(rootPath, "简报.md"))).toBe(true);
+    expect(existsSync(join(rootPath, "正文"))).toBe(true);
+
+    const manifest = JSON.parse(readFileSync(join(rootPath, "craft-writing.json"), "utf-8"));
+    expect(manifest.type).toBe("short-form");
+    expect(manifest.methodPack.id).toBe("short-form.article");
+  });
+
   it("generates a stable non-empty slug for non-ASCII workspace names", () => {
     expect(generateSlug("九州小说")).toMatch(/^workspace-[a-z0-9]+$/);
   });

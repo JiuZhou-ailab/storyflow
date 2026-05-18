@@ -84,7 +84,7 @@ function getMethodPackFileContract(methodPackId?: MethodPackId): MethodPackRequi
   return methodPack.requiredPaths
 }
 
-export const WORKSPACE_CREATION_METHOD_OPTIONS = [
+const WORKSPACE_CREATION_METHOD_OPTIONS_INTERNAL = [
   {
     id: "novel.claude-book",
     projectType: "novel",
@@ -331,6 +331,11 @@ export const WORKSPACE_CREATION_METHOD_OPTIONS = [
     },
   },
 ] as const satisfies readonly WorkspaceCreationMethodOption[]
+
+export const WORKSPACE_CREATION_METHOD_OPTIONS = [
+  ...WORKSPACE_CREATION_METHOD_OPTIONS_INTERNAL.filter(option => option.id === DEFAULT_WORKSPACE_CREATION_METHOD_ID),
+  ...WORKSPACE_CREATION_METHOD_OPTIONS_INTERNAL.filter(option => option.id !== DEFAULT_WORKSPACE_CREATION_METHOD_ID),
+] satisfies readonly WorkspaceCreationMethodOption[]
 
 export function getWorkspaceCreationMethodOption(methodId: WorkspaceCreationMethodId): WorkspaceCreationMethodOption {
   const option = WORKSPACE_CREATION_METHOD_OPTIONS.find(candidate => candidate.id === methodId)

@@ -42,6 +42,9 @@ import type {
   WorkspaceSummary,
 } from './types.ts';
 
+export const DEFAULT_STARTER_WORKSPACE_NAME = '短篇/中篇小说';
+export const DEFAULT_STARTER_WORKSPACE_METHOD_PACK_ID = 'short-form.article' satisfies MethodPackId;
+
 const CONFIG_DIR = join(homedir(), '.craft-agent');
 const DEFAULT_WORKSPACES_DIR = join(CONFIG_DIR, 'workspaces');
 
@@ -419,6 +422,15 @@ export function createNovelWorkspaceAtPath(
   createNovelProjectScaffold(rootPath, { title: name, methodPackId: methodPack.id });
   ensureWritingStarterSession(rootPath, methodPack);
   return config;
+}
+
+export function createDefaultWorkspaceAtPath(rootPath: string): WorkspaceConfig {
+  return createNovelWorkspaceAtPath(
+    rootPath,
+    DEFAULT_STARTER_WORKSPACE_NAME,
+    undefined,
+    DEFAULT_STARTER_WORKSPACE_METHOD_PACK_ID,
+  );
 }
 
 function ensureSessionSubdirs(sessionDir: string): void {

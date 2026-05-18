@@ -24,11 +24,11 @@ import {
 describe('workspace creation method options', () => {
   it('offers the built-in writing Method Packs', () => {
     expect(WORKSPACE_CREATION_METHOD_OPTIONS.map(option => option.id)).toEqual([
+      'short-form.article',
       'novel.claude-book',
       'novel.oh-story',
       'novel.crucible',
       'novel.creative-writing',
-      'short-form.article',
     ])
   })
 
@@ -127,11 +127,11 @@ describe('workspace creation method options', () => {
     const previews = WORKSPACE_CREATION_METHOD_OPTIONS.map(option => option.richPreview)
 
     expect(previews.map(preview => preview.accent)).toEqual([
+      'neutral',
       'canon',
       'market',
       'structure',
       'craft',
-      'neutral',
     ])
     expect(previews.some(preview => preview.assets.some(asset => asset === 'timeline/'))).toBe(true)
     expect(previews.some(preview => preview.assets.some(asset => asset === '对标/'))).toBe(true)

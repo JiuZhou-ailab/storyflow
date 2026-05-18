@@ -89,7 +89,7 @@ import { createApplicationMenu } from './menu'
 import { WindowManager } from './window-manager'
 import { loadWindowState, saveWindowState } from './window-state'
 import { getWorkspaces, getWorkspaceByNameOrId, loadStoredConfig, addWorkspace, saveConfig } from '@craft-agent/shared/config'
-import { getDefaultWorkspacesDir } from '@craft-agent/shared/workspaces'
+import { createDefaultWorkspaceAtPath, DEFAULT_STARTER_WORKSPACE_NAME, getDefaultWorkspacesDir } from '@craft-agent/shared/workspaces'
 import { initializeDocs } from '@craft-agent/shared/docs'
 import { initializeReleaseNotes } from '@craft-agent/shared/release-notes'
 import { ensureDefaultPermissions } from '@craft-agent/shared/agent/permissions-config'
@@ -320,14 +320,15 @@ async function createInitialWindows(): Promise<void> {
   const savedState = loadWindowState()
   let workspaces = getWorkspaces()
 
-  // If no workspaces exist, create default "My Workspace" on first run
+  // If no workspaces exist, create the product-default writing workspace on first run
   if (workspaces.length === 0) {
     // Ensure config file exists (addWorkspace requires it)
     if (!loadStoredConfig()) {
       saveConfig({ workspaces: [], activeWorkspaceId: null, activeSessionId: null })
     }
-    const defaultPath = join(getDefaultWorkspacesDir(), 'my-workspace')
-    addWorkspace({ rootPath: defaultPath, name: 'My Workspace' })
+    const defaultPath = join(getDefaultWorkspacesDir(), 'short-mid-novel')
+    createDefaultWorkspaceAtPath(defaultPath)
+    addWorkspace({ rootPath: defaultPath, name: DEFAULT_STARTER_WORKSPACE_NAME })
     workspaces = getWorkspaces() // Refresh after creation
     mainLog.info('Created default workspace on first run')
   }
