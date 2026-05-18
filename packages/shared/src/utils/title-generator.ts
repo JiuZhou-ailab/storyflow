@@ -7,6 +7,8 @@
  * - CodexAgent: Uses OpenAI SDK
  */
 
+export const DEFAULT_TITLE_LANGUAGE = '简体中文';
+
 /** Slice text at the last word boundary within `max` characters. */
 export function sliceAtWord(text: string, max: number): string {
   if (text.length <= max) return text;
@@ -44,14 +46,11 @@ export function sanitizeLanguage(language?: string): string | undefined {
 
 /**
  * Build a language instruction for title prompts.
- * Explicit preference takes priority; otherwise auto-detect from message content.
+ * Explicit preference takes priority; otherwise use the product default.
  */
 function buildLanguageInstruction(language?: string): string {
   const safe = sanitizeLanguage(language);
-  if (safe) {
-    return `Reply in ${safe}.`;
-  }
-  return 'Reply in the same language as the user\'s messages.';
+  return `Reply in ${safe ?? DEFAULT_TITLE_LANGUAGE}.`;
 }
 
 /**
