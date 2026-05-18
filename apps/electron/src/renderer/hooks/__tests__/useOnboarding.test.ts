@@ -34,7 +34,7 @@ describe('resolveSlugForMethod', () => {
 
   it('works for all setup methods', () => {
     const methods: ApiSetupMethod[] = [
-      'anthropic_api_key', 'claude_oauth',
+      'jiuzhou_api_key', 'anthropic_api_key', 'claude_oauth',
       'pi_chatgpt_oauth', 'pi_copilot_oauth', 'pi_api_key',
     ]
     for (const method of methods) {
@@ -100,6 +100,27 @@ describe('apiSetupMethodToConnectionSetup', () => {
     expect(setup.credential).toBe('sk-pi')
     expect(setup.piAuthProvider).toBe('anthropic')
     expect(setup.modelSelectionMode).toBe('userDefined3Tier')
+  })
+
+  it('jiuzhou_api_key reuses the managed default slug and includes endpoint config', () => {
+    const setup = apiSetupMethodToConnectionSetup(
+      'jiuzhou_api_key',
+      {
+        credential: 'author-key',
+        baseUrl: 'https://aigateway.edgecloudapp.com/v2/gws/ktpvzme4/anthropic',
+        connectionDefaultModel: 'glm-5.1',
+        models: ['glm-5.1', 'claude-sonnet-4-6'],
+        customEndpoint: { api: 'anthropic-messages' },
+      },
+      null,
+      new Set(['wangsu-default']),
+    )
+    expect(setup.slug).toBe('wangsu-default')
+    expect(setup.credential).toBe('author-key')
+    expect(setup.baseUrl).toBe('https://aigateway.edgecloudapp.com/v2/gws/ktpvzme4/anthropic')
+    expect(setup.defaultModel).toBe('glm-5.1')
+    expect(setup.models).toEqual(['glm-5.1', 'claude-sonnet-4-6'])
+    expect(setup.customEndpoint).toEqual({ api: 'anthropic-messages' })
   })
 
   it('uses editingSlug when editing', () => {

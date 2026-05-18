@@ -27,7 +27,7 @@
     "enabled": true,
     "connection": {
       "slug": "wangsu-default",
-      "name": "网宿",
+      "name": "JiuZhou",
       "providerType": "pi_compat",
       "authType": "api_key_with_endpoint",
       "baseUrl": "https://aigateway.edgecloudapp.com/v2/gws/ktpvzme4/anthropic",
@@ -40,7 +40,7 @@
       "customEndpoint": {
         "api": "anthropic-messages"
       },
-      "hidden": true,
+      "hidden": false,
       "managed": true,
       "source": "builtin",
       "createdAt": 0

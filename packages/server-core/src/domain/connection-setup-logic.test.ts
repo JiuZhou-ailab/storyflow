@@ -139,6 +139,16 @@ describe('createBuiltInConnection seeds midStreamBehavior', () => {
     expect(conn.midStreamBehavior).toBe('steer')
   })
 
+  it("JiuZhou managed provider is visible and editable", () => {
+    const conn = createBuiltInConnection('wangsu-default')
+    expect(conn.name).toBe('JiuZhou')
+    expect(conn.providerType).toBe('pi_compat')
+    expect(conn.authType).toBe('api_key_with_endpoint')
+    expect(conn.hidden).toBe(false)
+    expect(conn.managed).toBe(true)
+    expect(conn.source).toBe('builtin')
+  })
+
   it("anthropic-api with custom endpoint becomes pi_compat → 'steer'", () => {
     const conn = createBuiltInConnection('anthropic-api', 'http://localhost:11434/v1')
     expect(conn.providerType).toBe('pi_compat')

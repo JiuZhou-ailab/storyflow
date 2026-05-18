@@ -19,6 +19,14 @@ import {
 } from "../apisetup"
 import type { CustomEndpointApi } from '@config/llm-connections'
 
+const JIUZHOU_INITIAL_VALUES = {
+  baseUrl: 'https://aigateway.edgecloudapp.com/v2/gws/ktpvzme4/anthropic',
+  connectionDefaultModel: 'glm-5.1, claude-sonnet-4-6',
+  activePreset: 'custom',
+  models: ['glm-5.1', 'claude-sonnet-4-6'],
+  customApi: 'anthropic-messages' as CustomEndpointApi,
+}
+
 export type CredentialStatus = ApiKeyStatus | OAuthStatus
 
 interface CredentialsStepProps {
@@ -62,8 +70,9 @@ export function CredentialsStep({
   const isClaudeOAuth = apiSetupMethod === 'claude_oauth'
   const isChatGptOAuth = apiSetupMethod === 'pi_chatgpt_oauth'
   const isCopilotOAuth = apiSetupMethod === 'pi_copilot_oauth'
+  const isJiuZhouApiKey = apiSetupMethod === 'jiuzhou_api_key'
   const isAnthropicApiKey = apiSetupMethod === 'anthropic_api_key'
-  const isPiApiKey = apiSetupMethod === 'pi_api_key'
+  const isPiApiKey = apiSetupMethod === 'pi_api_key' || isJiuZhouApiKey
   const isApiKey = isAnthropicApiKey || isPiApiKey
 
   // Copilot device code clipboard handling
@@ -262,21 +271,27 @@ export function CredentialsStep({
   // Determine provider type and description based on selected method
   const providerType = isPiApiKey ? 'pi_api_key' : 'anthropic'
   const apiKeyDescription = isPiApiKey
-    ? "Select a provider preset and enter the API key. For arbitrary Anthropic-compatible endpoints, use Anthropic API Key mode."
+    ? (isJiuZhouApiKey
+      ? "输入分发给作者的 JiuZhou API Key。Endpoint 和模型已预设。"
+      : "Select a provider preset and enter the API key. For arbitrary Anthropic-compatible endpoints, use Anthropic API Key mode.")
     : "Enter your API key. Optionally configure a custom endpoint for OpenRouter, Ollama, or compatible APIs."
+
+  const effectiveInitialValues = isJiuZhouApiKey
+    ? (editInitialValues ?? JIUZHOU_INITIAL_VALUES)
+    : editInitialValues
 
   const apiKeyInputKey = [
     apiSetupMethod,
-    editInitialValues?.activePreset ?? '',
-    editInitialValues?.baseUrl ?? '',
-    editInitialValues?.connectionDefaultModel ?? '',
-    (editInitialValues?.models ?? []).join('|'),
-    editInitialValues?.customApi ?? '',
+    effectiveInitialValues?.activePreset ?? '',
+    effectiveInitialValues?.baseUrl ?? '',
+    effectiveInitialValues?.connectionDefaultModel ?? '',
+    (effectiveInitialValues?.models ?? []).join('|'),
+    effectiveInitialValues?.customApi ?? '',
   ].join('::')
 
   return (
     <StepFormLayout
-      title={t("onboarding.credentials.apiConfiguration")}
+      title={isJiuZhouApiKey ? 'JiuZhou' : t("onboarding.credentials.apiConfiguration")}
       description={apiKeyDescription}
       actions={
         <>
@@ -297,7 +312,7 @@ export function CredentialsStep({
         errorMessage={errorMessage}
         onSubmit={onSubmit}
         providerType={providerType}
-        initialValues={editInitialValues}
+        initialValues={effectiveInitialValues}
       />
     </StepFormLayout>
   )

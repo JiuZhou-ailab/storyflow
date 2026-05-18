@@ -93,6 +93,7 @@ interface UseOnboardingReturn {
 
 // Base slug for each setup method (used as template key in ipc.ts)
 export const BASE_SLUG_FOR_METHOD: Record<ApiSetupMethod, string> = {
+  jiuzhou_api_key: 'wangsu-default',
   anthropic_api_key: 'anthropic-api',
   claude_oauth: 'claude-max',
   pi_chatgpt_oauth: 'chatgpt-plus',
@@ -114,6 +115,7 @@ export function resolveSlugForMethod(
   if (editingSlug) return editingSlug
 
   const base = BASE_SLUG_FOR_METHOD[method]
+  if (method === 'jiuzhou_api_key') return base
   if (!existingSlugs.has(base)) return base
 
   let i = 2
@@ -165,6 +167,7 @@ export function apiSetupMethodToConnectionSetup(
 
   switch (method) {
     case 'anthropic_api_key':
+    case 'jiuzhou_api_key':
       return {
         slug,
         credential,
@@ -643,6 +646,7 @@ export function useOnboarding({
   // Map ProviderChoice → ApiSetupMethod and navigate to the right step
   const handleSelectProvider = useCallback((choice: ProviderChoice) => {
     const CHOICE_TO_METHOD: Record<Exclude<ProviderChoice, 'local'>, ApiSetupMethod> = {
+      jiuzhou: 'jiuzhou_api_key',
       claude: 'claude_oauth',
       chatgpt: 'pi_chatgpt_oauth',
       copilot: 'pi_copilot_oauth',

@@ -173,8 +173,8 @@ export function applyBuiltinLlmConnectionDefaults(
   }
 
   const slug = connection.slug.trim();
-  const exists = config.llmConnections.some(c => c.slug === slug);
-  if (!exists) {
+  const existing = config.llmConnections.find(c => c.slug === slug);
+  if (!existing) {
     config.llmConnections.push({
       ...connection,
       slug,
@@ -184,6 +184,27 @@ export function applyBuiltinLlmConnectionDefaults(
       createdAt: connection.createdAt || Date.now(),
     });
     changed = true;
+  } else if (existing.managed || existing.source === 'builtin') {
+    const managedUpdates: Partial<LlmConnection> = {
+      name: connection.name,
+      providerType: connection.providerType,
+      authType: connection.authType,
+      baseUrl: connection.baseUrl,
+      models: connection.models,
+      defaultModel: connection.defaultModel,
+      modelSelectionMode: connection.modelSelectionMode,
+      customEndpoint: connection.customEndpoint,
+      hidden: connection.hidden ?? true,
+      managed: connection.managed ?? true,
+      source: connection.source ?? 'builtin',
+    };
+
+    for (const [key, value] of Object.entries(managedUpdates) as Array<[keyof LlmConnection, LlmConnection[keyof LlmConnection]]>) {
+      if (JSON.stringify(existing[key]) !== JSON.stringify(value)) {
+        (existing as unknown as Record<string, unknown>)[key] = value;
+        changed = true;
+      }
+    }
   }
 
   if (!config.defaultLlmConnection) {

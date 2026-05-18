@@ -59,6 +59,7 @@ function makeDefaults(overrides: Partial<ConfigDefaults['builtinLlmConnection']>
         customEndpoint: { api: 'anthropic-messages' },
         hidden: true,
         managed: true,
+        source: 'builtin',
         createdAt: 0,
       },
       apiKey: 'internal-secret',
@@ -120,6 +121,33 @@ describe('builtin LLM connection defaults', () => {
       apiKey: 'internal-secret',
     })
     expect(config.llmConnections).toHaveLength(1)
+  })
+
+  it('updates existing managed bundled connection metadata', () => {
+    const config = makeConfig({
+      defaultLlmConnection: 'wangsu-default',
+      llmConnections: [{
+        ...makeDefaults().builtinLlmConnection!.connection!,
+        name: '网宿',
+        hidden: true,
+        managed: true,
+        source: 'builtin',
+      }],
+    })
+
+    const result = applyBuiltinLlmConnectionDefaults(config, makeDefaults({
+      connection: {
+        ...makeDefaults().builtinLlmConnection!.connection!,
+        name: 'JiuZhou',
+        hidden: false,
+      },
+      apiKey: '',
+    }))
+
+    expect(result.changed).toBe(true)
+    expect(config.llmConnections?.[0]?.name).toBe('JiuZhou')
+    expect(config.llmConnections?.[0]?.hidden).toBe(false)
+    expect(result.credentialToSeed).toBeUndefined()
   })
 
   it('ignores disabled defaults', () => {

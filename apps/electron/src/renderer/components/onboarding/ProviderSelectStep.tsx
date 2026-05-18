@@ -12,7 +12,7 @@ import copilotIcon from "@/assets/provider-icons/copilot.svg"
  * The high-level provider choice the user makes on first launch.
  * This maps to one or more ApiSetupMethods downstream.
  */
-export type ProviderChoice = 'claude' | 'chatgpt' | 'copilot' | 'api_key' | 'local'
+export type ProviderChoice = 'jiuzhou' | 'claude' | 'chatgpt' | 'copilot' | 'api_key' | 'local'
 
 interface ProviderOption {
   id: ProviderChoice
@@ -22,6 +22,7 @@ interface ProviderOption {
 }
 
 const PROVIDER_ICONS: Record<ProviderChoice, React.ReactNode> = {
+  jiuzhou: <CraftAgentsSymbol className="size-5 text-accent" />,
   claude: <img src={claudeIcon} alt="" className="size-5 rounded-[3px]" />,
   chatgpt: <img src={openaiIcon} alt="" className="size-5 rounded-[3px]" />,
   copilot: <img src={copilotIcon} alt="" className="size-5 rounded-[3px]" />,
@@ -46,6 +47,12 @@ export function ProviderSelectStep({ onSelect, onSkip }: ProviderSelectStepProps
   const { t } = useTranslation()
 
   const PROVIDER_OPTIONS: ProviderOption[] = [
+    {
+      id: 'jiuzhou',
+      name: 'JiuZhou',
+      description: '使用分发给作者的 JiuZhou API Key。',
+      icon: PROVIDER_ICONS.jiuzhou,
+    },
     {
       id: 'claude',
       name: t("onboarding.providerSelect.claudeProMax"),

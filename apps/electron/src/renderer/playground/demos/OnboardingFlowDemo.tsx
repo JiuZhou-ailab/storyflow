@@ -20,6 +20,7 @@ type DemoStep = 'welcome' | 'provider-select' | 'credentials' | 'local-model' | 
 
 /** Map ProviderChoice → ApiSetupMethod for the credentials step */
 const CHOICE_TO_METHOD: Record<Exclude<ProviderChoice, 'local'>, ApiSetupMethod> = {
+  jiuzhou: 'jiuzhou_api_key',
   claude: 'claude_oauth',
   chatgpt: 'pi_chatgpt_oauth',
   copilot: 'pi_copilot_oauth',

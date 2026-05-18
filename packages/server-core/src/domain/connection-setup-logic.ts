@@ -159,6 +159,11 @@ export const BUILT_IN_CONNECTION_TEMPLATES: Record<string, {
     authType: 'oauth',
     piAuthProvider: 'github-copilot',
   },
+  'wangsu-default': {
+    name: 'JiuZhou',
+    providerType: 'pi_compat',
+    authType: 'api_key_with_endpoint',
+  },
   'pi-api-key': {
     name: 'Craft Agents Backend (API Key)',
     providerType: 'pi',
@@ -240,6 +245,9 @@ export function createBuiltInConnection(slug: string, baseUrl?: string | null): 
     modelSelectionMode: providerType === 'pi' ? 'automaticallySyncedFromProvider' : undefined,
     piAuthProvider: template.piAuthProvider,
     midStreamBehavior: defaultMidStreamBehavior(providerType),
+    hidden: slug === 'wangsu-default' ? false : undefined,
+    managed: slug === 'wangsu-default' ? true : undefined,
+    source: slug === 'wangsu-default' ? 'builtin' : undefined,
     createdAt: Date.now(),
   }
 }

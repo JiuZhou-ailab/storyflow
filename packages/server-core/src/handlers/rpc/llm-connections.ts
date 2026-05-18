@@ -103,6 +103,12 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
       if (setup.modelSelectionMode !== undefined) {
         updates.modelSelectionMode = setup.modelSelectionMode
       }
+      if (setup.slug === 'wangsu-default') {
+        updates.name = 'JiuZhou'
+        updates.hidden = false
+        updates.managed = true
+        updates.source = 'builtin'
+      }
 
       const customEndpoint = hasConfiguredBaseUrl ? setup.customEndpoint : undefined
       const isCustomEndpointCompat = !!customEndpoint

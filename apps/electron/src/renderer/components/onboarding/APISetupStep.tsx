@@ -23,8 +23,10 @@ const BetaBadge = ({ label }: { label: string }) => (
  * - 'pi_chatgpt_oauth' → pi + oauth
  * - 'pi_copilot_oauth' → pi + oauth
  * - 'pi_api_key' → pi + api_key
+ * - 'jiuzhou_api_key' → pi_compat + api_key_with_endpoint
  */
 export type ApiSetupMethod =
+  | 'jiuzhou_api_key'
   | 'anthropic_api_key'
   | 'claude_oauth'
   | 'pi_chatgpt_oauth'
@@ -43,6 +45,8 @@ export function apiSetupMethodToConnectionTypes(method: ApiSetupMethod): {
       return { providerType: 'anthropic', authType: 'oauth' };
     case 'anthropic_api_key':
       return { providerType: 'anthropic', authType: 'api_key' };
+    case 'jiuzhou_api_key':
+      return { providerType: 'pi_compat', authType: 'api_key_with_endpoint' };
     case 'pi_chatgpt_oauth':
       return { providerType: 'pi', authType: 'oauth' };
     case 'pi_copilot_oauth':
@@ -61,6 +65,7 @@ interface ApiSetupOption {
 }
 
 const API_SETUP_ICONS: Record<ApiSetupMethod, React.ReactNode> = {
+  jiuzhou_api_key: <Key className="size-4" />,
   claude_oauth: <CreditCard className="size-4" />,
   anthropic_api_key: <Key className="size-4" />,
   pi_chatgpt_oauth: <Cpu className="size-4" />,
@@ -212,6 +217,13 @@ export function APISetupStep({
       description: t("onboarding.apiSetup.anthropicApiKeyDesc"),
       icon: API_SETUP_ICONS.anthropic_api_key,
       providerType: 'anthropic',
+    },
+    {
+      id: 'jiuzhou_api_key',
+      name: 'JiuZhou',
+      description: '使用分发给作者的 API Key，默认连接 JiuZhou 网关。',
+      icon: API_SETUP_ICONS.jiuzhou_api_key,
+      providerType: 'pi',
     },
     {
       id: 'pi_chatgpt_oauth',
