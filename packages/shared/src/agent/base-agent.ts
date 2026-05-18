@@ -216,6 +216,7 @@ export abstract class BaseAgent implements AgentBackend {
   // ============================================================
   protected _pendingSourceActivationRestart: { sourceSlug: string; userMessage: string } | null = null;
   protected _currentTurnUserMessage: string | null = null;
+  protected _currentUserIteration: number | undefined;
 
   setPendingSourceActivationRestart(pending: { sourceSlug: string; userMessage: string }): void {
     this._pendingSourceActivationRestart = pending;
@@ -233,6 +234,10 @@ export abstract class BaseAgent implements AgentBackend {
 
   protected setCurrentTurnUserMessage(message: string | null): void {
     this._currentTurnUserMessage = message;
+  }
+
+  protected getCurrentUserIteration(): number | undefined {
+    return this._currentUserIteration;
   }
 
   // ============================================================
@@ -1036,10 +1041,12 @@ ${formattedMessages}
     // has skill paths stripped but otherwise matches what the user typed — exactly
     // what we want to resend when an activation forces a turn restart.
     this.setCurrentTurnUserMessage(cleanMessage);
+    this._currentUserIteration = options?.userIteration;
     try {
       yield* this.chatImpl(effectiveMessage, attachments, options);
     } finally {
       this.setCurrentTurnUserMessage(null);
+      this._currentUserIteration = undefined;
     }
   }
 

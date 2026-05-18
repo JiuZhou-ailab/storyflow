@@ -299,6 +299,8 @@ export interface CoreBackendConfig {
 export interface ChatOptions {
   /** Retry flag (internal use for session recovery) */
   isRetry?: boolean;
+  /** 1-based count of user messages in the session, including the current user message */
+  userIteration?: number;
   /** Override thinking level for this message only */
   thinkingOverride?: ThinkingLevel;
 }

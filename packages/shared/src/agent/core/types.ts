@@ -103,6 +103,8 @@ export interface PromptBuilderConfig {
 export interface ContextBlockOptions {
   /** Current permission mode (optional - included in session state via formatSessionState) */
   permissionMode?: string;
+  /** 1-based count of user messages in the current session, including the message being sent */
+  userIteration?: number;
   /** Plans folder path */
   plansFolderPath?: string;
   /** Data folder path (transform_data tool output) */

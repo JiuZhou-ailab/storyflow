@@ -2118,7 +2118,10 @@ This is a branched conversation. All prior messages in this conversation are par
       `modeVersion=${textPromptDiagnostics.modeVersion} changedBy=${textPromptDiagnostics.lastChangedBy} changedAt=${textPromptDiagnostics.lastChangedAt}`
     )
     const contextParts = this.promptBuilder.buildContextParts(
-      { plansFolderPath: getSessionPlansPath(this.workspaceRootPath, this.modeSessionId) },
+      {
+        plansFolderPath: getSessionPlansPath(this.workspaceRootPath, this.modeSessionId),
+        userIteration: this.getCurrentUserIteration(),
+      },
       this.sourceManager.formatSourceState()
     );
 
@@ -2164,7 +2167,10 @@ This is a branched conversation. All prior messages in this conversation are par
       `modeVersion=${sdkPromptDiagnostics.modeVersion} changedBy=${sdkPromptDiagnostics.lastChangedBy} changedAt=${sdkPromptDiagnostics.lastChangedAt}`
     )
     const contextParts = this.promptBuilder.buildContextParts(
-      { plansFolderPath: getSessionPlansPath(this.workspaceRootPath, this.modeSessionId) },
+      {
+        plansFolderPath: getSessionPlansPath(this.workspaceRootPath, this.modeSessionId),
+        userIteration: this.getCurrentUserIteration(),
+      },
       this.sourceManager.formatSourceState()
     );
 

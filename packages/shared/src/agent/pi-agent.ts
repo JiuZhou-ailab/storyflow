@@ -1955,7 +1955,10 @@ export class PiAgent extends BaseAgent {
 
       // Build context parts using centralized PromptBuilder
       const contextParts = this.promptBuilder.buildContextParts(
-        { plansFolderPath: getSessionPlansPath(this.config.workspace.rootPath, this._sessionId) },
+        {
+          plansFolderPath: getSessionPlansPath(this.config.workspace.rootPath, this._sessionId),
+          userIteration: this.getCurrentUserIteration(),
+        },
         sourceContext
       );
 

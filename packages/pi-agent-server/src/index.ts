@@ -80,7 +80,11 @@ import { getDefaultSummarizationModel } from '../../shared/src/config/models.ts'
 import { createWebFetchTool } from './tools/web-fetch.ts';
 import { resolveSearchProvider } from './tools/search/resolve-provider.ts';
 import { createSearchTool } from './tools/search/create-search-tool.ts';
-import { allowCraftMetadataProperties, stripCraftMetadata } from './craft-metadata-schema.ts';
+import {
+  allowCraftMetadataPropertiesForTool,
+  normalizeCraftToolArgumentsForSchema,
+  stripCraftMetadata,
+} from './craft-metadata-schema.ts';
 import { applySystemPromptOverride } from './system-prompt-override.ts';
 import {
   sanitizeAssistantMessageForResume,
@@ -764,7 +768,12 @@ function makeErrorResult(message: string): AgentToolResult<any> {
 
 function wrapSingleTool(tool: ToolDefinition<any, any>): ToolDefinition<any, any> {
   const originalExecute = tool.execute;
-  const parameters = allowCraftMetadataProperties(tool.parameters);
+  const originalPrepareArguments = tool.prepareArguments;
+  const parameters = allowCraftMetadataPropertiesForTool(tool.name, tool.parameters);
+  const prepareArguments: ToolDefinition<any, any>['prepareArguments'] = (args) => {
+    const normalized = normalizeCraftToolArgumentsForSchema(tool.name, tool.parameters, args);
+    return originalPrepareArguments ? originalPrepareArguments(normalized) : normalized;
+  };
 
   const wrappedExecute: ToolDefinition<any, any>['execute'] = async (
     toolCallId,
@@ -846,6 +855,7 @@ function wrapSingleTool(tool: ToolDefinition<any, any>): ToolDefinition<any, any
   return {
     ...tool,
     parameters,
+    prepareArguments,
     execute: wrappedExecute,
   };
 }

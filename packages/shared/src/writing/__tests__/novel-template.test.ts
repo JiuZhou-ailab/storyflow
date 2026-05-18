@@ -246,8 +246,11 @@ describe("createNovelProjectScaffold", () => {
     const structureDoc = readFileSync(join(rootPath, "目录说明.md"), "utf-8");
     expect(structureDoc).toContain("正文/");
     expect(structureDoc).toContain("NN-标题.md");
+    expect(structureDoc).toContain("5,000-30,000");
+    expect(structureDoc).not.toContain("5,000-40,000");
     expect(structureDoc).toContain("git diff");
     expect(structureDoc).toContain("不另立 `草稿/` 或 `定稿/`");
+    expect(structureDoc).toContain("默认逐章推进");
 
     const manifest = JSON.parse(readFileSync(join(rootPath, "craft-writing.json"), "utf-8"));
     expect(manifest).toMatchObject({
@@ -275,11 +278,15 @@ describe("createNovelProjectScaffold", () => {
     expect(requirements).toContain("# 创作要求");
 
     const agents = readFileSync(join(rootPath, "AGENTS.md"), "utf-8");
-    expect(agents).toContain("# 短篇/中篇小说");
+    expect(agents).toContain("short-form.article");
     expect(agents).toContain("## Agent 运行画像");
     expect(agents).toContain("简报.md");
     expect(agents).toContain("大纲.md");
+    expect(agents).toContain("5,000-30,000");
+    expect(agents).not.toContain("5,000-40,000");
     expect(agents).toContain("git diff");
+    expect(agents).toContain("默认一次只写一章");
+    expect(agents).toContain("用户明确要求批量生成");
     expect(agents).not.toContain("This project uses");
     expect(agents).not.toContain("Starter Request");
   });

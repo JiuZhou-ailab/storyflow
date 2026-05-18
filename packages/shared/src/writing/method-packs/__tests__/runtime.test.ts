@@ -70,4 +70,34 @@ describe("method pack runtime preamble", () => {
     expect(context).not.toContain("YYYYMMDD-topic-vNN.md");
     expect(context).not.toContain("YYYYMMDD-topic-final.md");
   });
+
+  it("renders short-form operating rules with always and periodic reminders", () => {
+    const pack = getBuiltInMethodPack("short-form.article");
+    expect(pack).not.toBeNull();
+
+    const context = buildMethodPackRuntimeContext(pack!);
+
+    expect(pack?.operatingRules).toEqual({
+      always: [
+        "默认一次只写当前下一章，注意前后衔接，除非用户明确要求不遵循。",
+        "简报.md 与 大纲.md 未完成前不要写入 正文/。",
+      ],
+      periodic: {
+        intervalTurns: 2,
+        rules: [
+          "连续正文写作时，快速核对 创作要求.md / 简报.md / 大纲.md / 人物.md 中与当前章节相关的约束，避免人物、钩子和节奏漂移。",
+          "修订直接覆盖同一章节文件，用 git diff 留痕。",
+          "实验、废弃版本、审校笔记放 .work/。",
+          "人物动机、设定、素材冲突时，优先回到 简报.md / 人物.md / 素材.md 修正。",
+        ],
+      },
+    });
+    expect(context).toContain("## Operating Rules");
+    expect(context).toContain("### Always");
+    expect(context).toContain("默认一次只写当前下一章");
+    expect(context).toContain("简报.md 与 大纲.md 未完成前不要写入 正文/");
+    expect(context).toContain("Interval: every 2 user messages.");
+    expect(context).toContain("快速核对 创作要求.md / 简报.md / 大纲.md / 人物.md");
+    expect(context).toContain("修订直接覆盖同一章节文件，用 git diff 留痕。");
+  });
 });

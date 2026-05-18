@@ -25,7 +25,7 @@ describe('workspace version control', () => {
       expect(status.hasChanges).toBe(false)
       expect(typeof result.commitHash).toBe('string')
       expect(versions[0]?.hash).toBe(result.commitHash as string)
-      expect(versions[0]?.subject).toContain('Manual snapshot')
+      expect(versions[0]?.subject).toContain('手动保存')
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -48,7 +48,7 @@ describe('workspace version control', () => {
 
       expect(result.restored).toBe(true)
       expect(restored).toBe('version one\n')
-      expect(versions[0]?.subject).toContain('Restore snapshot')
+      expect(versions[0]?.subject).toContain('恢复版本')
     } finally {
       await rm(root, { recursive: true, force: true })
     }

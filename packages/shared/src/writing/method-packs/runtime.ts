@@ -8,6 +8,48 @@ export function buildMethodPackRuntimePreamble(pack: MethodPack): string {
   return pack.runtimePreamble;
 }
 
+function formatOperatingRuleList(rules: string[]): string {
+  return rules
+    .map((rule) => `- ${rule}`)
+    .join("\n");
+}
+
+function buildOperatingRulesContext(pack: MethodPack): string {
+  if (!pack.operatingRules) {
+    return "";
+  }
+
+  const alwaysRules = formatOperatingRuleList(pack.operatingRules.always);
+  const periodicRules = formatOperatingRuleList(pack.operatingRules.periodic.rules);
+
+  return `\n\n## Operating Rules
+### Always
+${alwaysRules}
+
+### Periodic Reminder Policy
+Interval: every ${pack.operatingRules.periodic.intervalTurns} user messages.
+${periodicRules}`;
+}
+
+export function buildMethodPackPeriodicReminderContext(
+  pack: MethodPack,
+  userIteration: number | undefined,
+): string {
+  const periodic = pack.operatingRules?.periodic;
+  if (!periodic || !userIteration || userIteration <= 1) {
+    return "";
+  }
+
+  const interval = periodic.intervalTurns;
+  if (!Number.isInteger(interval) || interval <= 0 || userIteration % interval !== 0) {
+    return "";
+  }
+
+  return `<method_pack_periodic_reminder id="${pack.id}" iteration="${userIteration}" interval="${interval}" cadence="user messages">
+${formatOperatingRuleList(periodic.rules)}
+</method_pack_periodic_reminder>`;
+}
+
 export function buildMethodPackRuntimeContext(pack: MethodPack): string {
   const artifactContract = pack.artifactContract
     .map((artifact) => `- ${artifact.path} [${artifact.lifecycle}]: ${artifact.role}`)
@@ -20,6 +62,7 @@ export function buildMethodPackRuntimeContext(pack: MethodPack): string {
         .map((rule) => `- ${rule.path}: ${rule.pattern} Example: ${rule.example}`)
         .join("\n")}`
     : "";
+  const operatingRules = buildOperatingRulesContext(pack);
 
   return `<method_pack_runtime id="${pack.id}" version="${pack.version}">
 ## Agent Identity
@@ -37,6 +80,7 @@ ${pack.defaultSkill}
 ## Artifact Contract
 ${artifactContract}
 ${namingConventions}
+${operatingRules}
 
 ## Skill Routing
 ${skillRouting}

@@ -180,8 +180,9 @@ function createChineseRuntimeSummary(pack: MethodPack): string {
     case "short-form.article":
       return `## Agent 运行画像
 
-- 身份：中文短篇/中篇网文（5,000-40,000 字）写作搭档，单工作区只承载一本书。
+- 身份：中文短篇/中篇网文（5,000-30,000 字）写作搭档，单工作区只承载一本书。
 - 默认中文第一人称口语化叙事；章节标题就是钩子。
+- 默认一次只写一章；不要一次生成多章或多篇正文，除非用户明确要求批量生成。
 - 初始请求：先把题材定位、主角设置、目标读者、核心钩子写进 简报.md，再补 大纲.md，最后才进入 正文/。
 
 ## 文件契约
@@ -210,7 +211,7 @@ function createChineseRuntimeSummary(pack: MethodPack): string {
 function createShortFormAgentInstructions(pack: MethodPack): string {
   return `# ${pack.displayName}
 
-本项目使用 \`${pack.id}\` Method Pack。一个工作区只承载一本书，目标篇幅 5,000-40,000 字。
+本项目使用 \`${pack.id}\` Method Pack。一个工作区只承载一本书，目标篇幅 5,000-30,000 字。
 
 ${createChineseRuntimeSummary(pack)}
 
@@ -219,6 +220,7 @@ ${createChineseRuntimeSummary(pack)}
 - 在 简报.md 与 大纲.md 仍是模板时，不要写入 正文/。
 - 先确认题材定位、主角设置、目标读者、核心钩子和篇幅目标，把答案落到 简报.md 与 大纲.md，再进入正文。
 - 章节先有大纲对应段落，再写 \`正文/NN-标题.md\`。
+- 默认逐章推进，一次只写当前下一章；不要一次生成多章或多篇正文，除非用户明确要求批量生成。
 - 修订直接覆盖同一章节文件，让 git diff 承担版本历史；不要新建 \`草稿/\` 或 \`定稿/\` 目录。
 - 实验、被废弃的章节版本、试写和审校笔记放 \`.work/\`，不要污染 \`正文/\`。
 
@@ -654,7 +656,7 @@ function scaffoldShortForm(rootPath: string): void {
 
   writeFileIfMissing(join(rootPath, "目录说明.md"), `# 短篇/中篇小说工作区目录说明
 
-> 一个工作区只承载一本书，篇幅范围 5,000-40,000 字。
+> 一个工作区只承载一本书，篇幅范围 5,000-30,000 字。
 
 ## 文件契约
 
@@ -678,6 +680,7 @@ function scaffoldShortForm(rootPath: string): void {
 - 不要在 简报.md / 大纲.md 仍是模板时直接写正文。
 - 简报、人物、素材 是单一源，不在正文里重复世界设定，遇到冲突回头改这几份。
 - 章节先有大纲段落，再写 \`正文/NN-标题.md\`。
+- 默认逐章推进，一次只写当前下一章；不要一次生成多章或多篇正文，除非用户明确要求批量生成。
 - 修订靠 git diff 留痕：直接覆盖同一章节文件，不另立 \`草稿/\` 或 \`定稿/\` 目录，也不要把多版本塞进同一文件。
 - 实验、被废弃的版本、试稿放 \`.work/\`，不要污染 \`正文/\`。
 - 不要预先生成空章节文件，写到哪一章再创建。

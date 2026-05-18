@@ -80,10 +80,10 @@ async function getPorcelainStatus(rootPath: string): Promise<string[]> {
 
 function buildSnapshotSubject(options: CreateWorkspaceVersionOptions): string {
   const stamp = new Date().toISOString().slice(0, 19).replace('T', ' ')
-  if (options.reason === 'auto') return `Auto snapshot ${stamp}`
-  if (options.reason === 'before-restore') return `Before restore snapshot ${stamp}`
-  if (options.reason === 'restore') return `Restore snapshot ${options.label ?? stamp}`
-  return `Manual snapshot ${stamp}`
+  if (options.reason === 'auto') return `自动保存 ${stamp}`
+  if (options.reason === 'before-restore') return `恢复前保存 ${stamp}`
+  if (options.reason === 'restore') return `恢复版本 ${options.label ?? stamp}`
+  return `手动保存 ${stamp}`
 }
 
 async function getHeadHash(rootPath: string): Promise<string | undefined> {

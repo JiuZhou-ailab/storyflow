@@ -48,6 +48,14 @@ export interface MethodPackNamingConvention {
   example: string;
 }
 
+export interface MethodPackOperatingRules {
+  always: string[];
+  periodic: {
+    intervalTurns: number;
+    rules: string[];
+  };
+}
+
 export interface MethodPack {
   id: MethodPackId;
   version: 1;
@@ -70,5 +78,6 @@ export interface MethodPack {
   initialRequestPolicy: string;
   artifactContract: MethodPackArtifactContract[];
   namingConventions?: MethodPackNamingConvention[];
+  operatingRules?: MethodPackOperatingRules;
   skillRouting: MethodPackSkillRouting[];
 }

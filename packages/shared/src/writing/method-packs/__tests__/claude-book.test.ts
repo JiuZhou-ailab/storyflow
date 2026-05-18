@@ -103,6 +103,10 @@ describe("built-in method packs", () => {
       kind: "directory",
     });
     expect(pack?.requiredSkills).toEqual([]);
+    expect(pack?.agentIdentity).toContain("5,000-30,000");
+    expect(pack?.agentIdentity).not.toContain("5,000-40,000");
+    expect(pack?.starterMessage).toContain("5,000-30,000");
+    expect(pack?.starterMessage).not.toContain("5,000-40,000");
     expect(pack?.starterMessage).toContain("网文");
   });
 

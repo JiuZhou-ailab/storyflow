@@ -5626,7 +5626,11 @@ export class SessionManager implements ISessionManager {
       }
 
       sendSpan.mark('chat.starting')
-      const chatIterator = agent.chat(effectiveMessage, modelInputAttachments.attachments)
+      const userIteration = managed.messages.filter(message => message.role === 'user').length
+      const chatIterator = agent.chat(effectiveMessage, modelInputAttachments.attachments, {
+        ...options,
+        userIteration,
+      })
       sessionLog.info('Got chat iterator, starting iteration...')
 
       for await (const event of chatIterator) {

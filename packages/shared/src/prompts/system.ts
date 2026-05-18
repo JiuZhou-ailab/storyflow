@@ -13,7 +13,11 @@ import { FEATURE_FLAGS } from '../feature-flags.ts';
 import { APP_VERSION } from '../version/index.ts';
 import { readPluginName } from '../utils/workspace.ts';
 import { detectWritingProject } from '../writing/manifest.ts';
-import { buildMethodPackRuntimeContext, getBuiltInMethodPack } from '../writing/method-packs/index.ts';
+import {
+  buildMethodPackPeriodicReminderContext,
+  buildMethodPackRuntimeContext,
+  getBuiltInMethodPack,
+} from '../writing/method-packs/index.ts';
 import { globSync } from 'glob';
 import os from 'os';
 
@@ -312,6 +316,28 @@ export function getMethodPackRuntimePrompt(workingDirectory?: string): string {
   }
 
   return `\n\n${buildMethodPackRuntimeContext(methodPack)}`;
+}
+
+export function getMethodPackPeriodicReminderPrompt(
+  workingDirectory: string | undefined,
+  userIteration: number | undefined,
+): string {
+  if (!workingDirectory) {
+    return '';
+  }
+
+  const writingProject = detectWritingProject(workingDirectory);
+  const methodPackId = writingProject?.manifest.methodPack?.id;
+  if (!methodPackId) {
+    return '';
+  }
+
+  const methodPack = getBuiltInMethodPack(methodPackId);
+  if (!methodPack) {
+    return '';
+  }
+
+  return buildMethodPackPeriodicReminderContext(methodPack, userIteration);
 }
 
 /** Options for getSystemPrompt */
