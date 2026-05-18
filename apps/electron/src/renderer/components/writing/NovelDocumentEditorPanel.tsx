@@ -95,6 +95,10 @@ function countOccurrences(haystack: string, needle: string): number {
   return count
 }
 
+function isInlineReviewSafe(text: string): boolean {
+  return !/[\r\n]/.test(text)
+}
+
 export function buildNovelInlineReviewParts(
   content: string,
   change?: FileChange,
@@ -109,6 +113,7 @@ export function buildNovelInlineReviewParts(
         modified: change.modified,
       }
   if (!reviewText?.modified) return null
+  if (!isInlineReviewSafe(reviewText.original) || !isInlineReviewSafe(reviewText.modified)) return null
   if (countOccurrences(content, reviewText.modified) !== 1) return null
 
   const index = content.indexOf(reviewText.modified)
@@ -259,7 +264,7 @@ export function NovelDocumentEditorPanel({
                 content={content}
                 onUpdate={onChange}
                 placeholder={t('writing.emptySection')}
-                editable={!saving}
+                editable
                 markdownEngine="official"
                 showToolbar
                 surface="manuscript"

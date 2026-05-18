@@ -49,6 +49,10 @@ describe('workspace creation method options', () => {
     expect(creativeOption?.fallbackTitle).toBe('Creative Writing 技法工坊')
     expect(shortFormOption?.fallbackTitle).toBe('短篇/中篇小说')
     expect(shortFormOption?.fallbackSubtitle).toContain('网文')
+    expect(shortFormOption?.fallbackSubtitle).toContain('5,000-30,000')
+    expect(shortFormOption?.fallbackSubtitle).not.toContain('5,000-40,000')
+    expect(shortFormOption?.fallbackPreviewDescription).toContain('5,000-30,000')
+    expect(shortFormOption?.fallbackPreviewDescription).not.toContain('5,000-40,000')
   })
 
   it('uses Short-Form as the default creation method', () => {

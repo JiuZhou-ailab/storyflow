@@ -1,3 +1,7 @@
+// input: Tool activity payloads from backend adapters.
+// output: Regression coverage for renderer file-change extraction.
+// pos: Unit tests for chat diff overlay change normalization.
+
 import { describe, expect, it } from 'bun:test'
 import type { ActivityItem } from '@craft-agent/ui'
 import { collectFileChangesFromActivities, getFirstFileChangeIdForActivity } from '../file-changes'
@@ -88,5 +92,87 @@ describe('collectFileChangesFromActivities', () => {
     ])
 
     expect(getFirstFileChangeIdForActivity('edit-4', changes)).toBe('edit-4-/src/a.ts')
+  })
+
+  it('uses the created file path from a new-file unified diff instead of /dev/null', () => {
+    const changes = collectFileChangesFromActivities([
+      activity({
+        id: 'edit-new-file',
+        toolName: 'Edit',
+        toolInput: {
+          changes: [
+            {
+              path: '/dev/null',
+              diff: [
+                'diff --git a/dev/null b/src/new.ts',
+                'new file mode 100644',
+                'index 0000000..1111111',
+                '--- /dev/null',
+                '+++ b/src/new.ts',
+                '@@ -0,0 +1 @@',
+                '+export const value = 1',
+              ].join('\n'),
+            },
+          ],
+        },
+      }),
+    ])
+
+    expect(changes[0]?.filePath).toBe('src/new.ts')
+    expect(changes[0]?.id).toBe('edit-new-file-src/new.ts')
+  })
+
+  it('resolves relative unified diff paths against the session working directory', () => {
+    const changes = collectFileChangesFromActivities([
+      activity({
+        id: 'edit-new-file',
+        toolName: 'Edit',
+        toolInput: {
+          changes: [
+            {
+              path: '/dev/null',
+              diff: [
+                'diff --git a/dev/null b/src/new.ts',
+                'new file mode 100644',
+                '--- /dev/null',
+                '+++ b/src/new.ts',
+                '@@ -0,0 +1 @@',
+                '+export const value = 1',
+              ].join('\n'),
+            },
+          ],
+        },
+      }),
+    ], { basePath: '/Users/me/project' })
+
+    expect(changes[0]?.filePath).toBe('/Users/me/project/src/new.ts')
+  })
+
+  it('does not prefix the base path when a patch path is the same absolute path without its leading slash', () => {
+    const basePath = '/Users/dingzhijian/.craft-agent/workspaces/workspace-f5a8fu'
+    const filePath = `${basePath}/正文/01.md`
+    const changes = collectFileChangesFromActivities([
+      activity({
+        id: 'edit-absolute-new-file',
+        toolName: 'Edit',
+        toolInput: {
+          changes: [
+            {
+              path: '/dev/null',
+              diff: [
+                `diff --git a/dev/null b${filePath}`,
+                'new file mode 100644',
+                '--- /dev/null',
+                `+++ b${filePath}`,
+                '@@ -0,0 +1 @@',
+                '+chapter',
+              ].join('\n'),
+            },
+          ],
+        },
+      }),
+    ], { basePath })
+
+    expect(changes[0]?.filePath).toBe(filePath)
   })
 })

@@ -1,19 +1,15 @@
-/**
- * SourceInfoPage
- *
- * Displays source details including connection info, authentication status,
- * documentation (guide.md), and metadata. View-only.
- */
+// input: Workspace source slug and source configuration files
+// output: Source details, permissions, tools, documentation, and explicit edit actions
+// pos: Detail page for inspecting and maintaining reusable data/tool sources
 
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { AlertCircle } from 'lucide-react'
-import { EditPopover, EditButton, getEditConfig } from '@/components/ui/EditPopover'
+import { getEditConfig, type EditContextKey } from '@/components/ui/EditPopover'
+import { ResourceEditActions } from '@/components/ui/resource-edit-actions'
 import { SourceAvatar } from '@/components/ui/source-avatar'
 import { SourceMenu } from '@/components/app-shell/SourceMenu'
-import { cn } from '@/lib/utils'
-import { routes, navigate } from '@/lib/navigate'
 import { useNavigation } from '@/contexts/NavigationContext'
 import { toast } from 'sonner'
 import {
@@ -356,6 +352,16 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
 
   // Get source name for header
   const sourceName = source?.config.name || sourceSlug
+  const renderEditActions = (configKey: EditContextKey, fileName: string) => {
+    if (!source) return null
+    const filePath = `${source.folderPath}/${fileName}`
+    return (
+      <ResourceEditActions
+        filePath={filePath}
+        {...getEditConfig(configKey, source.folderPath)}
+      />
+    )
+  }
 
   return (
     <Info_Page
@@ -399,17 +405,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
           <Info_Section
             title={t('sourceInfo.connection')}
             description={getConnectionDescription(source, t)}
-            actions={
-              // EditPopover for AI-assisted config.json editing with "Edit File" as secondary action
-              <EditPopover
-                trigger={<EditButton />}
-                {...getEditConfig('source-config', source.folderPath)}
-                secondaryAction={{
-                  label: t('common.editFile'),
-                  filePath: `${source.folderPath}/config.json`,
-                }}
-              />
-            }
+            actions={renderEditActions('source-config', 'config.json')}
           >
             <Info_Table
               footer={source.config.connectionError && (
@@ -441,17 +437,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
             <Info_Section
               title={t('sourceInfo.permissions')}
               description={getPermissionsDescription(source, t)}
-              actions={
-                // EditPopover for AI-assisted permissions.json editing
-                <EditPopover
-                  trigger={<EditButton />}
-                  {...getEditConfig('source-permissions', source.folderPath)}
-                  secondaryAction={{
-                    label: t('common.editFile'),
-                    filePath: `${source.folderPath}/permissions.json`,
-                  }}
-                />
-              }
+              actions={renderEditActions('source-permissions', 'permissions.json')}
             >
               <PermissionsDataTable data={apiPermissionsData} fullscreen fullscreenTitle="Permissions" />
             </Info_Section>
@@ -462,17 +448,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
             <Info_Section
               title={t('sourceInfo.tools')}
               description={t('sourceInfo.toolsDesc')}
-              actions={
-                // EditPopover for AI-assisted tool permissions editing
-                <EditPopover
-                  trigger={<EditButton />}
-                  {...getEditConfig('source-tool-permissions', source.folderPath)}
-                  secondaryAction={{
-                    label: t('common.editFile'),
-                    filePath: `${source.folderPath}/permissions.json`,
-                  }}
-                />
-              }
+              actions={renderEditActions('source-tool-permissions', 'permissions.json')}
             >
               <ToolsDataTable
                 data={toolsData}
@@ -487,17 +463,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
             <Info_Section
               title={t('sourceInfo.permissions')}
               description={getPermissionsDescription(source, t)}
-              actions={
-                // EditPopover for AI-assisted permissions.json editing
-                <EditPopover
-                  trigger={<EditButton />}
-                  {...getEditConfig('source-permissions', source.folderPath)}
-                  secondaryAction={{
-                    label: t('common.editFile'),
-                    filePath: `${source.folderPath}/permissions.json`,
-                  }}
-                />
-              }
+              actions={renderEditActions('source-permissions', 'permissions.json')}
             >
               <PermissionsDataTable data={mcpPermissionsData} hideTypeColumn fullscreen fullscreenTitle="Permissions" />
             </Info_Section>
@@ -508,17 +474,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
             <Info_Section
               title={t('sourceInfo.documentation')}
               description={t('sourceInfo.documentationDesc')}
-              actions={
-                // EditPopover for AI-assisted guide.md editing with "Edit File" as secondary action
-                <EditPopover
-                  trigger={<EditButton />}
-                  {...getEditConfig('source-guide', source.folderPath)}
-                  secondaryAction={{
-                    label: t('common.editFile'),
-                    filePath: `${source.folderPath}/guide.md`,
-                  }}
-                />
-              }
+              actions={renderEditActions('source-guide', 'guide.md')}
             >
               <Info_Markdown maxHeight={540} fullscreen>
                 {source.guide.raw}

@@ -116,6 +116,38 @@ describe('novel writing workspace layout', () => {
     expect(html.indexOf('她走进明亮的房间。')).toBeLessThan(html.indexOf('尾声'))
   })
 
+  it('uses the formatted Markdown editor for multiline review changes', () => {
+    const html = renderToStaticMarkup(
+      <NovelDocumentEditorPanel
+        file={{ path: '/novel/正文/01.md', relativePath: '正文/01.md' }}
+        content={'# 第一章\n\n- 第一段\n- 第二段'}
+        loading={false}
+        saving={false}
+        onChange={() => {}}
+        reviewChange={{
+          id: 'change-1',
+          filePath: '/novel/正文/01.md',
+          toolType: 'Edit',
+          original: '',
+          modified: '',
+          unifiedDiff: [
+            '--- a/正文/01.md',
+            '+++ b/正文/01.md',
+            '@@ -0,0 +1,4 @@',
+            '+# 第一章',
+            '+',
+            '+- 第一段',
+            '+- 第二段',
+          ].join('\n'),
+        }}
+      />
+    )
+
+    expect(html).not.toContain('data-testid="novel-inline-review-document"')
+    expect(html).toContain('tiptap-editor--with-toolbar')
+    expect(html).toContain('tiptap-editor--manuscript')
+  })
+
   it('falls back to the editable manuscript when a review change cannot be placed safely', () => {
     const html = renderToStaticMarkup(
       <NovelDocumentEditorPanel
@@ -278,6 +310,42 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).not.toContain('[...novelWorkspaceUtilitySidebarLinks, ...novelWorkspaceSidebarLinks]')
   })
 
+  it('splits the writing catalog into global information and manuscript groups', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const sidebarSource = appShellSource.slice(
+      appShellSource.indexOf('const novelWorkspaceSidebarLinks'),
+      appShellSource.indexOf('const novelWorkspaceUtilitySidebarLinks')
+    )
+
+    expect(sidebarSource).toContain("id: 'writing:group:global'")
+    expect(sidebarSource).toContain("t('writing.catalog.globalInfo', '全局信息')")
+    expect(sidebarSource).toContain("const manuscriptGroupId = 'writing:group:manuscript'")
+    expect(sidebarSource).toContain('globalSectionDefinitions')
+    expect(sidebarSource).toContain('manuscriptSection')
+    expect(sidebarSource).not.toContain("sectionDefinitions.map((section)")
+  })
+
+  it('uses current novel project history instead of global release notes in novel utility navigation', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const novelUtilityLinksSource = appShellSource.slice(
+      appShellSource.indexOf('const novelWorkspaceUtilitySidebarLinks'),
+      appShellSource.indexOf('// Unified sidebar items')
+    )
+    const novelKeyboardItemsSource = appShellSource.slice(
+      appShellSource.indexOf('if (showNovelWorkspaceSidebar) {'),
+      appShellSource.indexOf('// 1. Sessions section')
+    )
+
+    expect(novelUtilityLinksSource).toContain('nav:writing-version')
+    expect(novelUtilityLinksSource).toContain("t('writing.version.title', '版本管理')")
+    expect(novelUtilityLinksSource).toContain('setNovelVersionDialogOpen(true)')
+    expect(novelUtilityLinksSource).not.toContain('nav:whats-new')
+    expect(novelUtilityLinksSource).not.toContain('handleWhatsNewClick')
+    expect(novelKeyboardItemsSource).toContain("result.push({ id: 'nav:writing-version'")
+    expect(novelKeyboardItemsSource).toContain('setNovelVersionDialogOpen(true)')
+    expect(novelKeyboardItemsSource).not.toContain("result.push({ id: 'nav:whats-new'")
+  })
+
   it('exposes every selectable writing file section in the left catalog', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
 
@@ -323,6 +391,8 @@ describe('novel writing workspace layout', () => {
     expect(topBarRightSlotSource).toContain('{rightTools ? (')
     expect(topBarRightSlotSource.indexOf('{rightTools ? (')).toBeLessThan(topBarRightSlotSource.indexOf('<DropdownMenu>'))
     expect(topBarSource).toContain('ml-auto flex min-w-0 flex-1 items-center justify-end gap-1')
+    expect(topBarSource).toContain('w-[clamp(220px,42vw,640px)]')
+    expect(topBarSource).toContain('titlebar-no-drag min-w-0 shrink-0')
     expect(exportDialogSource).toContain('NOVEL_EXPORT_SECTIONS')
     expect(exportDialogSource).toContain('mergeManuscript')
     expect(exportDialogSource).toContain("'writing.export.sections.manuscript'")
@@ -361,6 +431,13 @@ describe('novel writing workspace layout', () => {
     expect(askAiSource).toContain('relaunchApp')
     expect(askAiSource).not.toContain("type: 'rewriteNovelSelection'")
     expect(askAiSource).not.toContain('onSendMessage(effectiveSessionId')
+  })
+
+  it('keeps the writing editor editable during background autosave so typing focus is not stolen', () => {
+    const editorPanelSource = readFileSync(new URL('../NovelDocumentEditorPanel.tsx', import.meta.url), 'utf-8')
+
+    expect(editorPanelSource).not.toContain('editable={!saving}')
+    expect(editorPanelSource).toContain('editable')
   })
 
   it('clears stale writing workspace state before probing a different root', () => {

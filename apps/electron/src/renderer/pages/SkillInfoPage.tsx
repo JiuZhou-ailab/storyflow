@@ -1,16 +1,13 @@
-/**
- * SkillInfoPage
- *
- * Displays comprehensive skill details including metadata,
- * permission modes, and instructions.
- * Uses the Info_ component system for consistent styling with SourceInfoPage.
- */
+// input: Workspace skill slug, workspace id, and optional working directory
+// output: Skill metadata, instructions, permissions, and explicit edit actions
+// pos: Detail page for inspecting and maintaining reusable agent skills
 
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useEffect, useState, useCallback } from 'react'
 import { Check, X, Minus } from 'lucide-react'
-import { EditPopover, EditButton, getEditConfig } from '@/components/ui/EditPopover'
+import { getEditConfig } from '@/components/ui/EditPopover'
+import { ResourceEditActions } from '@/components/ui/resource-edit-actions'
 import { toast } from 'sonner'
 import { SkillMenu } from '@/components/app-shell/SkillMenu'
 import { SkillAvatar } from '@/components/ui/skill-avatar'
@@ -136,6 +133,18 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory
     window.electronAPI.showInFolder(`${skill.path}/SKILL.md`)
   }
 
+  const renderEditActions = (configKey: 'skill-metadata' | 'skill-instructions') => {
+    if (!skill) return null
+    const filePath = `${skill.path}/SKILL.md`
+    return (
+      <ResourceEditActions
+        filePath={filePath}
+        canEditFile={canRevealLocally}
+        {...getEditConfig(configKey, skill.path)}
+      />
+    )
+  }
+
   return (
     <Info_Page
       loading={loading}
@@ -170,17 +179,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory
           {/* Metadata */}
           <Info_Section
             title={t('skillInfo.metadata')}
-            actions={
-              // EditPopover for AI-assisted metadata editing (name, description in frontmatter)
-              <EditPopover
-                trigger={<EditButton />}
-                {...getEditConfig('skill-metadata', skill.path)}
-                secondaryAction={{
-                  label: t('common.editFile'),
-                  filePath: `${skill.path}/SKILL.md`,
-                }}
-              />
-            }
+            actions={renderEditActions('skill-metadata')}
           >
             <Info_Table>
               <Info_Table.Row label={t('common.slug')} value={skill.slug} />
@@ -250,17 +249,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory
           {/* Instructions */}
           <Info_Section
             title={t('skillInfo.instructions')}
-            actions={
-              // EditPopover for AI-assisted editing with "Edit File" as secondary action
-              <EditPopover
-                trigger={<EditButton />}
-                {...getEditConfig('skill-instructions', skill.path)}
-                secondaryAction={{
-                  label: t('common.editFile'),
-                  filePath: `${skill.path}/SKILL.md`,
-                }}
-              />
-            }
+            actions={renderEditActions('skill-instructions')}
           >
             <Info_Markdown maxHeight={540} fullscreen>
               {skill.content || t('skillInfo.noInstructions')}

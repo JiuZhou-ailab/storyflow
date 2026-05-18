@@ -1,3 +1,7 @@
+// input: Shared package DTOs and renderer-facing Electron API contracts
+// output: Re-exported GUI types plus typed preload API surface
+// pos: Type boundary between Electron renderer, preload, and shared protocol packages
+
 // =============================================================================
 // Protocol re-exports (channels, DTOs, events, wire types)
 // =============================================================================
@@ -58,8 +62,8 @@ import type { CredentialHealthStatus, CredentialHealthIssue, CredentialHealthIss
 export type { CredentialHealthStatus, CredentialHealthIssue, CredentialHealthIssueType };
 
 // Source types for session source selection
-import type { LoadedSource, FolderSourceConfig, SourceConnectionStatus } from '@craft-agent/shared/sources/types';
-export type { LoadedSource, FolderSourceConfig, SourceConnectionStatus };
+import type { LoadedSource, FolderSourceConfig, SourceConnectionStatus, CreateSourceInput } from '@craft-agent/shared/sources/types';
+export type { LoadedSource, FolderSourceConfig, SourceConnectionStatus, CreateSourceInput };
 
 // Skill types
 import type { LoadedSkill, SkillMetadata } from '@craft-agent/shared/skills/types';
@@ -479,7 +483,7 @@ export interface ElectronAPI {
 
   // Sources
   getSources(workspaceId: string): Promise<LoadedSource[]>
-  createSource(workspaceId: string, config: Partial<FolderSourceConfig>): Promise<FolderSourceConfig>
+  createSource(workspaceId: string, config: Partial<CreateSourceInput>): Promise<FolderSourceConfig>
   deleteSource(workspaceId: string, sourceSlug: string): Promise<void>
   startSourceOAuth(workspaceId: string, sourceSlug: string): Promise<{ success: boolean; error?: string }>
   saveSourceCredentials(workspaceId: string, sourceSlug: string, credential: string): Promise<void>

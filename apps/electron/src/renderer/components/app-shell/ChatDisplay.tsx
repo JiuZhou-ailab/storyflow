@@ -971,6 +971,11 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
   // Overlay state - controls which overlay is shown (if any)
   const [overlayState, setOverlayState] = useState<OverlayState>(null)
+  const fileChangeBasePath = workingDirectory || sessionFolderPath
+  const collectTurnFileChanges = useCallback(
+    (activities: ActivityItem[]) => collectFileChangesFromActivities(activities, { basePath: fileChangeBasePath }),
+    [fileChangeBasePath],
+  )
 
   // Diff viewer settings - loaded from user preferences on mount, persisted on change
   // These settings are stored in ~/.craft-agent/preferences.json (not localStorage)
@@ -1876,7 +1881,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                           // Edit/Write tool → Multi-file diff overlay (ungrouped, focused on this change)
                           // Exception: Write to .md/.txt files goes to document overlay instead
                           if ((activity.toolName === 'Edit' || activity.toolName === 'Write') && !isDocumentWrite) {
-                            const changes = collectFileChangesFromActivities(turn.activities)
+                            const changes = collectTurnFileChanges(turn.activities)
                             if (changes.length > 0) {
                               setOverlayState({
                                 type: 'multi-diff',
@@ -1894,7 +1899,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                           a.toolName === 'Edit' || a.toolName === 'Write'
                         )}
                         onOpenMultiFileDiff={() => {
-                          const changes = collectFileChangesFromActivities(turn.activities)
+                          const changes = collectTurnFileChanges(turn.activities)
                           if (changes.length > 0) {
                             setOverlayState({
                               type: 'multi-diff',

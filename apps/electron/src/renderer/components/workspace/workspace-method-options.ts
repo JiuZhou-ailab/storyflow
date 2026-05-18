@@ -292,9 +292,9 @@ export const WORKSPACE_CREATION_METHOD_OPTIONS = [
     previewMermaidKey: "workspace.methodOptions.shortFormArticle.previewMermaid",
     previewDescriptionKey: "workspace.methodOptions.shortFormArticle.previewDescription",
     fallbackTitle: "短篇/中篇小说",
-    fallbackSubtitle: "面向 5,000-40,000 字中文网文，一个工作区一本书，靠简报、大纲、人物、素材撑住正文。",
+    fallbackSubtitle: "面向 5,000-30,000 字中文网文，一个工作区一本书，靠简报、大纲、人物、素材撑住正文。",
     fallbackPreviewMermaid: "flowchart TD\n  A[初始请求] --> B[简报.md]\n  B --> B1[题材定位]\n  B --> B2[主角设置]\n  B --> B3[核心钩子]\n  B3 --> C[大纲.md]\n  C --> C1[分章 beat]\n  C --> D[人物.md]\n  C --> E[素材.md]\n  C1 --> F[正文/NN-标题.md]\n  F --> G[git diff 留痕]\n  F --> H[.work/ 试稿与审校]",
-    fallbackPreviewDescription: "适合情感反转、复仇打脸、追妻火葬场、马甲爽文等强钩子中文网文，篇幅在 5,000-40,000 字之间，一个工作区只承载一本书。",
+    fallbackPreviewDescription: "适合情感反转、复仇打脸、追妻火葬场、马甲爽文等强钩子中文网文，篇幅在 5,000-30,000 字之间，一个工作区只承载一本书。",
     richPreview: {
       accent: "neutral",
       thesis: "面向中文短篇/中篇网文的写作搭档，用 简报 / 大纲 / 人物 / 素材 撑住正文，每章一个 NN-标题.md。",

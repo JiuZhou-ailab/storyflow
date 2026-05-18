@@ -1509,11 +1509,13 @@ function AppShellContent({
     const turns = groupMessagesByTurn(effectiveSession.messages)
     for (const turn of [...turns].reverse()) {
       if (turn.type !== 'assistant') continue
-      const changes = collectFileChangesFromActivities(turn.activities)
+      const changes = collectFileChangesFromActivities(turn.activities, {
+        basePath: activeSessionWorkingDirectory || effectiveSession.sessionFolderPath,
+      })
       if (changes.length > 0) return changes
     }
     return []
-  }, [effectiveSession?.messages])
+  }, [activeSessionWorkingDirectory, effectiveSession?.messages, effectiveSession?.sessionFolderPath])
 
   const novelWorkspaceCandidateRoots = React.useMemo(
     () => getNovelWorkspaceCandidateRoots({
@@ -2948,13 +2950,19 @@ function AppShellContent({
   const novelWorkspaceSidebarLinks = React.useMemo((): LeftSidebarItem[] => {
     if (!showNovelWorkspaceSidebar) return []
 
-    const sectionDefinitions: Array<{
+    const manuscriptSection: {
+      id: NovelWorkspaceFileSectionId
+      title: string
+      icon: LeftSidebarLinkItem['icon']
+      files: NovelWorkspaceFile[]
+    } = { id: 'manuscript', title: t('writing.tabs.manuscript'), icon: BookOpenText, files: novelWorkspaceTree.manuscript.files }
+
+    const globalSectionDefinitions: Array<{
       id: NovelWorkspaceFileSectionId
       title: string
       icon: LeftSidebarLinkItem['icon']
       files: NovelWorkspaceFile[]
     }> = [
-      { id: 'manuscript', title: t('writing.tabs.manuscript'), icon: BookOpenText, files: novelWorkspaceTree.manuscript.files },
       { id: 'outline', title: t('writing.tabs.outline'), icon: ScrollText, files: novelWorkspaceTree.outline.files },
       { id: 'characters', title: t('writing.tabs.characters'), icon: UsersRound, files: novelWorkspaceTree.characters.files },
       { id: 'locations', title: t('writing.tabs.locations'), icon: MapPinned, files: novelWorkspaceTree.locations.files },
@@ -2981,7 +2989,7 @@ function AppShellContent({
       },
     })
 
-    const sectionItems: LeftSidebarItem[] = sectionDefinitions.map((section) => {
+    const sectionItem = (section: typeof globalSectionDefinitions[number]): LeftSidebarItem => {
       const sectionId = `writing:section:${section.id}`
       const hasSelectedFile = section.files.some(file => file.path === selectedNovelFile?.path)
 
@@ -3002,7 +3010,15 @@ function AppShellContent({
         },
         items: section.files.map(fileItem),
       }
-    })
+    }
+
+    const globalSectionItems = globalSectionDefinitions.map(sectionItem)
+    const globalFileCount = globalSectionDefinitions.reduce((count, section) => count + section.files.length, 0)
+    const hasSelectedGlobalFile = globalSectionDefinitions.some(section =>
+      section.files.some(file => file.path === selectedNovelFile?.path)
+    )
+    const hasSelectedManuscriptFile = manuscriptSection.files.some(file => file.path === selectedNovelFile?.path)
+    const manuscriptGroupId = 'writing:group:manuscript'
 
     return [{
       id: 'nav:writingCatalog',
@@ -3014,7 +3030,39 @@ function AppShellContent({
       expanded: isExpanded('nav:writingCatalog'),
       onToggle: () => toggleExpanded('nav:writingCatalog'),
       onClick: () => toggleExpanded('nav:writingCatalog'),
-      items: sectionItems,
+      items: [
+        {
+          id: 'writing:group:global',
+          title: t('writing.catalog.globalInfo', '全局信息'),
+          label: String(globalFileCount),
+          icon: Library,
+          variant: hasSelectedGlobalFile ? 'default' : 'ghost',
+          expandable: true,
+          expanded: isExpanded('writing:group:global'),
+          onToggle: () => toggleExpanded('writing:group:global'),
+          onClick: () => toggleExpanded('writing:group:global'),
+          items: globalSectionItems,
+        },
+        {
+          id: manuscriptGroupId,
+          title: manuscriptSection.title,
+          label: String(manuscriptSection.files.length),
+          icon: manuscriptSection.icon,
+          variant: hasSelectedManuscriptFile ? 'default' : 'ghost',
+          expandable: true,
+          expanded: isExpanded(manuscriptGroupId),
+          onToggle: () => toggleExpanded(manuscriptGroupId),
+          onClick: () => {
+            const firstFile = manuscriptSection.files[0]
+            if (firstFile) {
+              handleSelectNovelFile(firstFile)
+            } else {
+              toggleExpanded(manuscriptGroupId)
+            }
+          },
+          items: manuscriptSection.files.map(fileItem),
+        },
+      ],
     }]
   }, [
     handleSelectNovelFile,
@@ -3079,16 +3127,11 @@ function AppShellContent({
         onClick: () => handleSettingsClick('app'),
       },
       {
-        id: "nav:whats-new",
-        title: t("sidebar.whatsNew"),
-        icon: hasUnseenReleaseNotes ? (
-          <span className="relative">
-            <Cake className="h-3.5 w-3.5" />
-            <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-accent" />
-          </span>
-        ) : Cake,
+        id: "nav:writing-version",
+        title: t('writing.version.title', '版本管理'),
+        icon: History,
         variant: "ghost" as const,
-        onClick: handleWhatsNewClick,
+        onClick: () => setNovelVersionDialogOpen(true),
       },
     ]
   }, [
@@ -3098,8 +3141,6 @@ function AppShellContent({
     handleSettingsClick,
     handleSkillsClick,
     handleSourcesClick,
-    handleWhatsNewClick,
-    hasUnseenReleaseNotes,
     navState,
     openAddAutomation,
     openAddSkill,
@@ -3140,7 +3181,7 @@ function AppShellContent({
       result.push({ id: 'nav:skills', type: 'nav', action: handleSkillsClick })
       result.push({ id: 'nav:automations', type: 'nav', action: handleAutomationsClick })
       result.push({ id: 'nav:settings', type: 'nav', action: () => handleSettingsClick('app') })
-      result.push({ id: 'nav:whats-new', type: 'nav', action: handleWhatsNewClick })
+      result.push({ id: 'nav:writing-version', type: 'nav', action: () => setNovelVersionDialogOpen(true) })
       return result
     }
 
@@ -4363,6 +4404,7 @@ function AppShellContent({
               <SourcesListPanel
                 sources={sources}
                 sourceFilter={sourceFilter}
+                workspaceId={activeWorkspaceId ?? undefined}
                 workspaceRootPath={activeWorkspace?.rootPath}
                 onDeleteSource={handleDeleteSource}
                 onSourceClick={handleSourceSelect}

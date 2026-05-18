@@ -999,6 +999,15 @@ export function EditPopover({
     setOpen(false)
   }, [context, displayLabel, workingDirectory, model, systemPromptPreset, permissionMode, setOpen])
 
+  const handleSecondaryAction = useCallback(async () => {
+    if (!secondaryAction) return
+    try {
+      onOpenFile?.(secondaryAction.filePath)
+    } catch (error) {
+      console.error('[EditPopover] Failed to open file:', error)
+    }
+  }, [onOpenFile, secondaryAction])
+
   return (
     <>
       {/* Full-screen backdrop - rendered BEHIND the popover during processing */}
@@ -1052,6 +1061,16 @@ export function EditPopover({
               >
                 <GripHorizontal className="w-4 h-4 text-muted-foreground/30" />
               </div>
+
+              {secondaryAction && (
+                <button
+                  type="button"
+                  onClick={handleSecondaryAction}
+                  className="absolute left-3 top-3 z-50 rounded-[6px] px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                >
+                  {secondaryAction.label}
+                </button>
+              )}
 
               {/* Content area - always uses compact ChatDisplay */}
               <div className="flex-1 flex flex-col bg-foreground-2" style={{ height: '100%' }}>

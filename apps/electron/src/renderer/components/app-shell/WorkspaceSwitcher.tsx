@@ -22,6 +22,7 @@ import { waitForTransportConnected } from '@/lib/transport-wait'
 import { useWorkspaceIcons } from "@/hooks/useWorkspaceIcon"
 import { useTransportConnectionState } from "@/hooks/useTransportConnectionState"
 import type { Workspace } from "../../../shared/types"
+import { formatTopbarWorkspaceName } from './workspace-switcher-label'
 
 interface WorkspaceSwitcherProps {
   variant?: 'sidebar' | 'topbar'
@@ -57,6 +58,8 @@ export function WorkspaceSwitcher({
   const [reconnectTarget, setReconnectTarget] = useState<Workspace | null>(null)
   const setFullscreenOverlayOpen = useSetAtom(fullscreenOverlayOpenAtom)
   const selectedWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
+  const selectedWorkspaceName = selectedWorkspace?.name || 'Workspace'
+  const topbarWorkspaceName = formatTopbarWorkspaceName(selectedWorkspaceName)
   const workspaceIconMap = useWorkspaceIcons(workspaces)
   const connectionState = useTransportConnectionState()
   const isRemote = connectionState?.mode === 'remote'
@@ -189,8 +192,9 @@ export function WorkspaceSwitcher({
           {variant === 'topbar' ? (
             <button
               type="button"
-              className="header-icon-btn titlebar-no-drag ml-1 flex-1 min-w-0 flex items-center justify-start gap-0.5 h-[30px] px-3 rounded-[8px] border border-foreground/6 text-[13px] text-foreground/50 hover:bg-foreground/5 hover:text-foreground transition-colors cursor-pointer data-[state=open]:bg-foreground/5 data-[state=open]:text-foreground"
-              aria-label="Select workspace"
+              className="header-icon-btn titlebar-no-drag ml-1 flex-1 min-w-0 overflow-hidden flex items-center justify-start gap-0.5 h-[30px] px-3 rounded-[8px] border border-foreground/6 text-[13px] text-foreground/50 whitespace-nowrap hover:bg-foreground/5 hover:text-foreground transition-colors cursor-pointer data-[state=open]:bg-foreground/5 data-[state=open]:text-foreground"
+              aria-label={t("workspace.selectWorkspace", "选择工作区")}
+              title={selectedWorkspaceName}
             >
               <CrossfadeAvatar
                 src={selectedWorkspace ? workspaceIconMap.get(selectedWorkspace.id) : undefined}
@@ -199,7 +203,7 @@ export function WorkspaceSwitcher({
                 fallbackClassName="bg-muted text-[10px] rounded-full"
                 fallback={selectedWorkspace?.name?.charAt(0) || 'W'}
               />
-              <span className="truncate min-w-0 flex-1 text-left">{selectedWorkspace?.name || 'Workspace'}</span>
+              <span className="min-w-0 flex-1 overflow-hidden text-left whitespace-nowrap">{topbarWorkspaceName}</span>
               {selectedWorkspace?.remoteServer && (
                 isRemoteDisconnected(selectedWorkspace.id)
                   ? <CloudOff className="h-3 w-3 text-destructive shrink-0" />
@@ -277,7 +281,7 @@ export function WorkspaceSwitcher({
                     fallbackClassName="bg-muted text-xs rounded-full"
                     fallback={workspace.name.charAt(0)}
                   />
-                  <span className="truncate">{workspace.name}</span>
+                  <span className="min-w-0 truncate">{workspace.name}</span>
                   {workspace.remoteServer && (
                     disconnected
                       ? <span title={getDisconnectTooltip(workspace.id)} className="shrink-0"><CloudOff className="h-3.5 w-3.5 text-destructive" /></span>
