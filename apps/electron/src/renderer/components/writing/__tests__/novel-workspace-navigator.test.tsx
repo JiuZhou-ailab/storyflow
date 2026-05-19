@@ -116,7 +116,7 @@ describe('novel writing workspace layout', () => {
     expect(html.indexOf('她走进明亮的房间。')).toBeLessThan(html.indexOf('尾声'))
   })
 
-  it('uses the formatted Markdown editor for multiline review changes', () => {
+  it('renders multiline review changes in the formatted Markdown manuscript body', () => {
     const html = renderToStaticMarkup(
       <NovelDocumentEditorPanel
         file={{ path: '/novel/正文/01.md', relativePath: '正文/01.md' }}
@@ -143,9 +143,50 @@ describe('novel writing workspace layout', () => {
       />
     )
 
-    expect(html).not.toContain('data-testid="novel-inline-review-document"')
-    expect(html).toContain('tiptap-editor--with-toolbar')
-    expect(html).toContain('tiptap-editor--manuscript')
+    expect(html).toContain('data-testid="novel-rendered-review-document"')
+    expect(html).toContain('<h1>第一章</h1>')
+    expect(html).toContain('<li>第一段</li>')
+    expect(html).toContain('<li>第二段</li>')
+    expect(html).toContain('novel-review-inserted')
+    expect(html).not.toContain('tiptap-editor--with-toolbar')
+  })
+
+  it('renders new Chinese manuscript files as formatted Markdown review content instead of a diff panel', () => {
+    const html = renderToStaticMarkup(
+      <NovelDocumentEditorPanel
+        file={{ path: '/novel/正文/02.md', relativePath: '正文/02.md' }}
+        content={'# 第二章\n\n她推开门。\n\n风从长廊尽头吹来。'}
+        loading={false}
+        saving={false}
+        onChange={() => {}}
+        reviewChange={{
+          id: 'change-1',
+          filePath: '/novel/正文/02.md',
+          toolType: 'Edit',
+          original: '',
+          modified: '',
+          unifiedDiff: [
+            'diff --git a/dev/null b/正文/02.md',
+            'new file mode 100644',
+            '--- /dev/null',
+            '+++ b/正文/02.md',
+            '@@ -0,0 +1,5 @@',
+            '+# 第二章',
+            '+',
+            '+她推开门。',
+            '+',
+            '+风从长廊尽头吹来。',
+          ].join('\n'),
+        }}
+      />
+    )
+
+    expect(html).toContain('data-testid="novel-rendered-review-document"')
+    expect(html).toContain('<h1>第二章</h1>')
+    expect(html).toContain('她推开门。')
+    expect(html).toContain('风从长廊尽头吹来。')
+    expect(html).toContain('novel-review-inserted')
+    expect(html).not.toContain('tiptap-editor--with-toolbar')
   })
 
   it('falls back to the editable manuscript when a review change cannot be placed safely', () => {
@@ -168,6 +209,7 @@ describe('novel writing workspace layout', () => {
 
     expect(html).toContain('tiptap-editor--with-toolbar')
     expect(html).not.toContain('data-testid="novel-inline-review-document"')
+    expect(html).not.toContain('data-testid="novel-rendered-review-document"')
   })
 
   it('renders writer-facing file labels in the writing catalog', () => {
@@ -468,13 +510,14 @@ describe('novel writing workspace layout', () => {
     expect(panelSlotSource).toContain('if (hideCloseButton) return undefined')
   })
 
-  it('keeps novel file review controls in the workspace without rendering a top diff panel', () => {
+  it('keeps novel file review controls in the workspace and renders placeable changes in Markdown format', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const editorPanelSource = readFileSync(new URL('../NovelDocumentEditorPanel.tsx', import.meta.url), 'utf-8')
     const multiDiffSource = readFileSync(new URL('../../../../../../../packages/ui/src/components/overlay/MultiDiffPreviewOverlay.tsx', import.meta.url), 'utf-8')
 
     expect(editorPanelSource).not.toContain('NovelInlineReviewDiff')
-    expect(editorPanelSource).not.toContain('novel-inline-review-diff')
+    expect(editorPanelSource).toContain('NovelRenderedReviewDocument')
+    expect(editorPanelSource).toContain('novel-rendered-review-document')
     expect(editorPanelSource).not.toContain('ShikiDiffViewer')
     expect(editorPanelSource).not.toContain('UnifiedDiffViewer')
     expect(editorPanelSource).toContain('<TiptapMarkdownEditor')

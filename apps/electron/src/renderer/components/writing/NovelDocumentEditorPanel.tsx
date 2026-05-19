@@ -34,7 +34,7 @@ export interface NovelSelectionAiRequest {
   instruction: string
 }
 
-interface NovelInlineReviewParts {
+interface NovelReviewParts {
   before: string
   original: string
   modified: string
@@ -55,7 +55,7 @@ interface MarkdownAstNode {
   }
 }
 
-function extractUnifiedDiffReviewText(unifiedDiff: string): Pick<NovelInlineReviewParts, 'original' | 'modified'> | null {
+function extractUnifiedDiffReviewText(unifiedDiff: string): Pick<NovelReviewParts, 'original' | 'modified'> | null {
   const originalLines: string[] = []
   const modifiedLines: string[] = []
 
@@ -99,10 +99,10 @@ function isInlineReviewSafe(text: string): boolean {
   return !/[\r\n]/.test(text)
 }
 
-export function buildNovelInlineReviewParts(
+function buildNovelReviewParts(
   content: string,
   change?: FileChange,
-): NovelInlineReviewParts | null {
+): NovelReviewParts | null {
   if (!change || change.error) return null
   if (content.includes(NOVEL_INLINE_REVIEW_TOKEN)) return null
 
@@ -113,7 +113,6 @@ export function buildNovelInlineReviewParts(
         modified: change.modified,
       }
   if (!reviewText?.modified) return null
-  if (!isInlineReviewSafe(reviewText.original) || !isInlineReviewSafe(reviewText.modified)) return null
   if (countOccurrences(content, reviewText.modified) !== 1) return null
 
   const index = content.indexOf(reviewText.modified)
@@ -123,6 +122,16 @@ export function buildNovelInlineReviewParts(
     modified: reviewText.modified,
     after: content.slice(index + reviewText.modified.length),
   }
+}
+
+export function buildNovelInlineReviewParts(
+  content: string,
+  change?: FileChange,
+): NovelReviewParts | null {
+  const parts = buildNovelReviewParts(content, change)
+  if (!parts) return null
+  if (!isInlineReviewSafe(parts.original) || !isInlineReviewSafe(parts.modified)) return null
+  return parts
 }
 
 function createReviewTextNode(value: string): MarkdownAstNode {
@@ -145,7 +154,7 @@ function createReviewInlineNode(tagName: 'del' | 'ins', className: string, value
   }
 }
 
-function createReviewReplacementNodes(parts: NovelInlineReviewParts): MarkdownAstNode[] {
+function createReviewReplacementNodes(parts: NovelReviewParts): MarkdownAstNode[] {
   return [
     ...(parts.original
       ? [createReviewInlineNode('del', NOVEL_REVIEW_DELETED_CLASS, parts.original)]
@@ -154,7 +163,7 @@ function createReviewReplacementNodes(parts: NovelInlineReviewParts): MarkdownAs
   ]
 }
 
-function replaceReviewToken(node: MarkdownAstNode, parts: NovelInlineReviewParts): void {
+function replaceReviewToken(node: MarkdownAstNode, parts: NovelReviewParts): void {
   if (!node.children) return
 
   const nextChildren: MarkdownAstNode[] = []
@@ -177,7 +186,7 @@ function replaceReviewToken(node: MarkdownAstNode, parts: NovelInlineReviewParts
   node.children = nextChildren
 }
 
-function createNovelInlineReviewPlugin(parts: NovelInlineReviewParts) {
+function createNovelInlineReviewPlugin(parts: NovelReviewParts) {
   return () => (tree: MarkdownAstNode) => {
     replaceReviewToken(tree, parts)
   }
@@ -222,9 +231,17 @@ export function NovelDocumentEditorPanel({
 }: NovelDocumentEditorPanelProps) {
   const { t } = useTranslation()
   const characterCount = React.useMemo(() => countMarkdownTextCharacters(content), [content])
-  const inlineReviewParts = React.useMemo(
-    () => buildNovelInlineReviewParts(content, reviewChange),
+  const reviewParts = React.useMemo(
+    () => buildNovelReviewParts(content, reviewChange),
     [content, reviewChange]
+  )
+  const inlineReviewParts = React.useMemo(
+    () => {
+      if (!reviewParts) return null
+      if (!isInlineReviewSafe(reviewParts.original) || !isInlineReviewSafe(reviewParts.modified)) return null
+      return reviewParts
+    },
+    [reviewParts]
   )
 
   if (!file) {
@@ -257,6 +274,11 @@ export function NovelDocumentEditorPanel({
             {inlineReviewParts ? (
               <NovelInlineReviewDocument
                 parts={inlineReviewParts}
+                characterCountLabel={t('writing.totalCharacters', 'Total {{count}} characters', { count: characterCount })}
+              />
+            ) : reviewParts ? (
+              <NovelRenderedReviewDocument
+                parts={reviewParts}
                 characterCountLabel={t('writing.totalCharacters', 'Total {{count}} characters', { count: characterCount })}
               />
             ) : (
@@ -353,11 +375,67 @@ export function NovelDocumentEditorPanel({
   )
 }
 
+function NovelRenderedReviewDocument({
+  parts,
+  characterCountLabel,
+}: {
+  parts: NovelReviewParts
+  characterCountLabel: string
+}) {
+  return (
+    <div
+      className="tiptap-editor tiptap-editor--manuscript tiptap-editor--line-numbers flex min-h-0 flex-1 flex-col"
+      data-testid="novel-rendered-review-document"
+    >
+      <div className="tiptap-editor-content min-h-0 flex-1 overflow-auto">
+        <article
+          className="tiptap-prose novel-review-change"
+          data-testid="novel-rendered-review-change"
+        >
+          <MarkdownReviewChunk markdown={parts.before} />
+          {parts.original ? (
+            <MarkdownReviewChunk
+              markdown={parts.original}
+              className={NOVEL_REVIEW_DELETED_CLASS}
+            />
+          ) : null}
+          <MarkdownReviewChunk
+            markdown={parts.modified}
+            className={NOVEL_REVIEW_INSERTED_CLASS}
+          />
+          <MarkdownReviewChunk markdown={parts.after} />
+        </article>
+      </div>
+      <div className="tiptap-editor-status-badge">
+        {characterCountLabel}
+      </div>
+    </div>
+  )
+}
+
+function MarkdownReviewChunk({
+  markdown,
+  className,
+}: {
+  markdown: string
+  className?: string
+}) {
+  if (!markdown) return null
+
+  return (
+    <div className={className}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        {markdown}
+      </ReactMarkdown>
+    </div>
+  )
+}
+
 function NovelInlineReviewDocument({
   parts,
   characterCountLabel,
 }: {
-  parts: NovelInlineReviewParts
+  parts: NovelReviewParts
   characterCountLabel: string
 }) {
   const reviewMarkdown = React.useMemo(
