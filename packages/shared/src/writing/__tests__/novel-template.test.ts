@@ -1,3 +1,7 @@
+// input: Temporary workspace roots and built-in Method Pack selections
+// output: Scaffold contract assertions for generated writing workspaces
+// pos: Protects file templates and agent instructions produced by novel-template
+
 import { describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
@@ -223,34 +227,27 @@ describe("createNovelProjectScaffold", () => {
     });
 
     for (const relativePath of [
-      "目录说明.md",
       "创作要求.md",
       "简报.md",
       "大纲.md",
       "人物.md",
       "素材.md",
       "正文",
-      ".work",
+      "自由区",
       "NOTICE-Short-Form-Writing.md",
     ]) {
       expect(existsSync(join(rootPath, relativePath))).toBe(true);
     }
 
+    expect(existsSync(join(rootPath, "目录说明.md"))).toBe(false);
+    expect(existsSync(join(rootPath, ".work"))).toBe(false);
     expect(existsSync(join(rootPath, "草稿"))).toBe(false);
     expect(existsSync(join(rootPath, "定稿"))).toBe(false);
     expect(existsSync(join(rootPath, "短文简报.md"))).toBe(false);
     expect(existsSync(join(rootPath, "素材卡.md"))).toBe(false);
+    expect(existsSync(join(rootPath, "黄金三章.md"))).toBe(false);
     expect(existsSync(join(rootPath, "skills", "short-brief", "SKILL.md"))).toBe(false);
     expect(existsSync(join(rootPath, "skills", "short-drafter", "SKILL.md"))).toBe(false);
-
-    const structureDoc = readFileSync(join(rootPath, "目录说明.md"), "utf-8");
-    expect(structureDoc).toContain("正文/");
-    expect(structureDoc).toContain("NN-标题.md");
-    expect(structureDoc).toContain("5,000-30,000");
-    expect(structureDoc).not.toContain("5,000-40,000");
-    expect(structureDoc).toContain("git diff");
-    expect(structureDoc).toContain("不另立 `草稿/` 或 `定稿/`");
-    expect(structureDoc).toContain("默认逐章推进");
 
     const manifest = JSON.parse(readFileSync(join(rootPath, "craft-writing.json"), "utf-8"));
     expect(manifest).toMatchObject({
@@ -263,9 +260,23 @@ describe("createNovelProjectScaffold", () => {
     const brief = readFileSync(join(rootPath, "简报.md"), "utf-8");
     expect(brief).toContain("## 题材定位");
     expect(brief).toContain("## 核心钩子");
+    expect(brief).toContain("## 黄金三章留存设计");
+    expect(brief).toContain("### 第 1 章：拉新");
+    expect(brief).toContain("### 第 2 章：加压");
+    expect(brief).toContain("### 第 3 章：锁留存");
+    expect(brief).toContain("## 密度与情绪选择");
+    expect(brief).toContain("小说密度");
+    expect(brief).toContain("事件密度");
+    expect(brief).toContain("情绪调动程度");
+    expect(brief).toContain("## 生动度执行标准");
+    expect(brief).toContain("高压开场");
+    expect(brief).toContain("连续阻断");
+    expect(brief).toContain("即时兑现");
+    expect(brief).toContain("章尾强悬念");
 
     const outline = readFileSync(join(rootPath, "大纲.md"), "utf-8");
     expect(outline).toContain("## 全书弧线");
+    expect(outline).toContain("黄金三章");
     expect(outline).toContain("### 第 01 章");
 
     const characters = readFileSync(join(rootPath, "人物.md"), "utf-8");
@@ -276,17 +287,39 @@ describe("createNovelProjectScaffold", () => {
 
     const requirements = readFileSync(join(rootPath, "创作要求.md"), "utf-8");
     expect(requirements).toContain("# 创作要求");
+    expect(requirements).toContain("## 默认密度偏好");
+    expect(requirements).toContain("小说密度");
+    expect(requirements).toContain("事件密度");
+    expect(requirements).toContain("情绪调动程度");
+    expect(requirements).toContain("## 生动度底线");
+    expect(requirements).toContain("场景可视化");
+    expect(requirements).toContain("情绪账本");
 
     const agents = readFileSync(join(rootPath, "AGENTS.md"), "utf-8");
     expect(agents).toContain("short-form.article");
     expect(agents).toContain("## Agent 运行画像");
     expect(agents).toContain("简报.md");
+    expect(agents).not.toContain("黄金三章.md");
     expect(agents).toContain("大纲.md");
     expect(agents).toContain("5,000-30,000");
     expect(agents).not.toContain("5,000-40,000");
     expect(agents).toContain("git diff");
     expect(agents).toContain("默认一次只写一章");
     expect(agents).toContain("用户明确要求批量生成");
+    expect(agents).toContain("正文/ 可以按卷、篇或阶段建立子目录");
+    expect(agents).toContain("自由区/ 可以自由创建文件和文件夹");
+    expect(agents).toContain("前三章留存设计");
+    expect(agents).toContain("第 1 章拉新");
+    expect(agents).toContain("第 2 章加压");
+    expect(agents).toContain("第 3 章锁留存");
+    expect(agents).toContain("小说密度");
+    expect(agents).toContain("事件密度");
+    expect(agents).toContain("情绪调动程度");
+    expect(agents).toContain("高压开场");
+    expect(agents).toContain("连续阻断");
+    expect(agents).toContain("即时兑现");
+    expect(agents).toContain("场景可视化");
+    expect(agents).toContain("章尾强悬念");
     expect(agents).not.toContain("This project uses");
     expect(agents).not.toContain("Starter Request");
   });

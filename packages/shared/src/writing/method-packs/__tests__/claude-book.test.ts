@@ -74,6 +74,10 @@ describe("built-in method packs", () => {
 
     expect(pack?.projectType).toBe("short-form");
     expect(pack?.storageProfile).toBe("short-form-compatible");
+    expect(pack?.requiredPaths).not.toContainEqual({
+      path: "目录说明.md",
+      kind: "file",
+    });
     expect(pack?.requiredPaths).toContainEqual({
       path: "简报.md",
       kind: "file",
@@ -92,6 +96,14 @@ describe("built-in method packs", () => {
     });
     expect(pack?.requiredPaths).toContainEqual({
       path: "正文",
+      kind: "directory",
+    });
+    expect(pack?.requiredPaths).toContainEqual({
+      path: "自由区",
+      kind: "directory",
+    });
+    expect(pack?.requiredPaths).not.toContainEqual({
+      path: ".work",
       kind: "directory",
     });
     expect(pack?.requiredPaths).not.toContainEqual({

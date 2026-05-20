@@ -1,3 +1,7 @@
+// input: Novel workspace relative file paths
+// output: Stable writing UI category labels for each path
+// pos: Shared classifier between writing scaffolds and workspace navigation
+
 export type WritingFileCategory =
   | "manuscript"
   | "outline"
@@ -28,6 +32,7 @@ export function categorizeNovelPath(relativePath: string): WritingFileCategory {
   if (first === "人物.md") return "characters";
   if (first === "素材.md") return "analysis";
   if (first === ".work") return "work";
+  if (first === "自由区") return "work";
   if (first === "work") return "work";
   if (first === "analysis") return "analysis";
   if (first === "notes" || first === "reference" || first === "reviews") return "analysis";

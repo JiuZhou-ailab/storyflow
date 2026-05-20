@@ -1,3 +1,7 @@
+// input: Relative paths from supported writing workspace layouts
+// output: Category assertions for writing workspace grouping
+// pos: Protects shared file classification behavior
+
 import { describe, expect, it } from "bun:test";
 import { categorizeNovelPath } from "../file-categories.ts";
 
@@ -62,10 +66,13 @@ describe("categorizeNovelPath", () => {
   it("categorizes short-form web fiction files", () => {
     expect(categorizeNovelPath("创作要求.md")).toBe("style");
     expect(categorizeNovelPath("简报.md")).toBe("outline");
+    expect(categorizeNovelPath("黄金三章.md")).toBe("other");
     expect(categorizeNovelPath("大纲.md")).toBe("outline");
     expect(categorizeNovelPath("人物.md")).toBe("characters");
     expect(categorizeNovelPath("素材.md")).toBe("analysis");
     expect(categorizeNovelPath("正文/01-未婚夫和闺蜜在我葬礼上接吻.md")).toBe("manuscript");
+    expect(categorizeNovelPath("正文/第一卷/01-未婚夫和闺蜜在我葬礼上接吻.md")).toBe("manuscript");
+    expect(categorizeNovelPath("自由区/脑洞/反派试稿.md")).toBe("work");
   });
 
   it("falls back to other for unknown paths", () => {

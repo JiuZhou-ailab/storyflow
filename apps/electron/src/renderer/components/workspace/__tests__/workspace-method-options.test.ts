@@ -52,6 +52,12 @@ describe('workspace creation method options', () => {
     expect(shortFormOption?.fallbackSubtitle).toContain('5,000-30,000')
     expect(shortFormOption?.fallbackSubtitle).not.toContain('5,000-40,000')
     expect(shortFormOption?.fallbackPreviewDescription).toContain('5,000-30,000')
+    expect(shortFormOption?.fallbackPreviewDescription).toContain('黄金三章')
+    expect(shortFormOption?.fallbackPreviewMermaid).toContain('黄金三章')
+    expect(shortFormOption?.richPreview.thesis).toContain('黄金三章')
+    expect(shortFormOption?.richPreview.stages.some(stage => stage.label === '黄金三章')).toBe(true)
+    expect(shortFormOption?.richPreview.structure.some(group => group.items.some(item => item.includes('简报.md')))).toBe(true)
+    expect(shortFormOption?.richPreview.structure.some(group => group.items.some(item => item.includes('黄金三章.md')))).toBe(false)
     expect(shortFormOption?.fallbackPreviewDescription).not.toContain('5,000-40,000')
   })
 
@@ -125,6 +131,7 @@ describe('workspace creation method options', () => {
 
   it('uses distinct rich preview strategies for the built-in writing method packs', () => {
     const previews = WORKSPACE_CREATION_METHOD_OPTIONS.map(option => option.richPreview)
+    const previewAssets: string[] = previews.flatMap(preview => preview.assets)
 
     expect(previews.map(preview => preview.accent)).toEqual([
       'neutral',
@@ -133,11 +140,12 @@ describe('workspace creation method options', () => {
       'structure',
       'craft',
     ])
-    expect(previews.some(preview => preview.assets.some(asset => asset === 'timeline/'))).toBe(true)
-    expect(previews.some(preview => preview.assets.some(asset => asset === '对标/'))).toBe(true)
-    expect(previews.some(preview => preview.assets.some(asset => asset === 'planning/'))).toBe(true)
-    expect(previews.some(preview => preview.assets.some(asset => asset === 'kb/'))).toBe(true)
-    expect(previews.some(preview => preview.assets.some(asset => asset === '简报.md'))).toBe(true)
+    expect(previewAssets).toContain('timeline/')
+    expect(previewAssets).toContain('对标/')
+    expect(previewAssets).toContain('planning/')
+    expect(previewAssets).toContain('kb/')
+    expect(previewAssets).toContain('简报.md')
+    expect(previewAssets).not.toContain('黄金三章.md')
     expect(previews.some(preview => preview.structure.some(group => group.label === 'Canon 层'))).toBe(true)
     expect(previews.some(preview => preview.structure.some(group => group.label === '市场层'))).toBe(true)
     expect(previews.some(preview => preview.structure.some(group => group.label === '节拍治理'))).toBe(true)
