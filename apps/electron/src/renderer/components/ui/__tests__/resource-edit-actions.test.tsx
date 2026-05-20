@@ -13,10 +13,12 @@ mock.module('beautiful-mermaid', () => ({
 }))
 
 let ManualEditButton: typeof import('../manual-edit-button').ManualEditButton
+let selectManualEditOpener: typeof import('../manual-edit-button').selectManualEditOpener
 
 beforeAll(async () => {
   const module = await import('../manual-edit-button')
   ManualEditButton = module.ManualEditButton
+  selectManualEditOpener = module.selectManualEditOpener
 })
 
 describe('resource edit actions', () => {
@@ -32,5 +34,22 @@ describe('resource edit actions', () => {
     expect(html).toContain('data-testid="manual-edit-file-button"')
     expect(html).toContain('Edit File')
     expect(html).toContain('title="Edit File"')
+  })
+
+  it('uses the external file opener for manual editing instead of the preview opener', async () => {
+    const calls: string[] = []
+    const previewOpen = async (path: string) => { calls.push(`preview:${path}`) }
+    const externalOpen = async (path: string) => { calls.push(`external:${path}`) }
+
+    const openFile = selectManualEditOpener({
+      onOpenFileExternal: externalOpen,
+      onOpenFile: previewOpen,
+    })
+
+    expect(openFile).toBeDefined()
+    if (!openFile) throw new Error('Expected manual edit opener')
+    await openFile('/workspace/skills/review/SKILL.md')
+
+    expect(calls).toEqual(['external:/workspace/skills/review/SKILL.md'])
   })
 })

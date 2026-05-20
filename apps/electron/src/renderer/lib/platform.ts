@@ -14,20 +14,28 @@
  * const folderName = getPathBasename('/Users/alice/projects') // 'projects'
  */
 
+export type RendererPlatformName = 'darwin' | 'win32' | 'linux' | 'other'
+
+export function getRendererPlatformName(platform?: string): RendererPlatformName {
+  const normalized = (platform ?? '').toLowerCase()
+  if (normalized.includes('mac')) return 'darwin'
+  if (normalized.includes('win')) return 'win32'
+  if (normalized.includes('linux')) return 'linux'
+  return 'other'
+}
+
+export const rendererPlatform = getRendererPlatformName(
+  typeof navigator !== 'undefined' ? navigator.platform : undefined,
+)
+
 /** True if running on macOS */
-export const isMac =
-  typeof navigator !== 'undefined' &&
-  navigator.platform.toLowerCase().includes('mac')
+export const isMac = rendererPlatform === 'darwin'
 
 /** True if running on Windows */
-export const isWindows =
-  typeof navigator !== 'undefined' &&
-  navigator.platform.toLowerCase().includes('win')
+export const isWindows = rendererPlatform === 'win32'
 
 /** True if running on Linux */
-export const isLinux =
-  typeof navigator !== 'undefined' &&
-  navigator.platform.toLowerCase().includes('linux')
+export const isLinux = rendererPlatform === 'linux'
 
 /**
  * Get the platform-specific file manager name.

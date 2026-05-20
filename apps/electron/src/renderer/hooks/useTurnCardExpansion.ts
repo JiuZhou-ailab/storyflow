@@ -2,9 +2,10 @@
  * Hook for persisting TurnCard expanded/collapsed state across session switches.
  *
  * Stores expansion state in a single localStorage key as a bounded LRU map
- * (max 100 sessions). Only expanded IDs are stored since collapsed is the default.
+ * (max 100 sessions). Only collapsed turn IDs are stored since expanded is
+ * the default for thinking/activity content.
  *
- * Shape: { [sessionId]: { turns: string[], groups: string[], lastAccessed: number } }
+ * Shape: { [sessionId]: { collapsedTurns: string[], groups: string[], lastAccessed: number } }
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react'
@@ -13,14 +14,36 @@ import * as storage from '@/lib/local-storage'
 const MAX_SESSIONS = 100
 
 /** Entry for a single session's expansion state */
-interface ExpansionEntry {
-  turns: string[]
+export interface ExpansionEntry {
+  /** Legacy expanded-only field from the old collapsed-by-default model. */
+  turns?: string[]
+  collapsedTurns?: string[]
   groups: string[]
   lastAccessed: number
 }
 
 /** Full map stored in localStorage */
 type ExpansionMap = Record<string, ExpansionEntry>
+
+export function readCollapsedTurns(entry: ExpansionEntry | undefined): Set<string> {
+  return new Set(entry?.collapsedTurns ?? [])
+}
+
+export function isTurnExpandedByDefault(turnId: string, collapsedTurns: Set<string>): boolean {
+  return !collapsedTurns.has(turnId)
+}
+
+export function createTurnExpansionEntry(
+  collapsedTurns: string[],
+  groups: string[],
+  lastAccessed = Date.now(),
+): ExpansionEntry {
+  return {
+    collapsedTurns,
+    groups,
+    lastAccessed,
+  }
+}
 
 /**
  * Read the full expansion map from localStorage.
@@ -56,11 +79,11 @@ function writeMap(map: ExpansionMap): void {
  */
 export function useTurnCardExpansion(sessionId: string | undefined) {
   // Initialize state from localStorage for this session
-  const [expandedTurns, setExpandedTurns] = useState<Set<string>>(() => {
+  const [collapsedTurns, setCollapsedTurns] = useState<Set<string>>(() => {
     if (!sessionId) return new Set()
     const map = readMap()
     const entry = map[sessionId]
-    return entry ? new Set(entry.turns) : new Set()
+    return readCollapsedTurns(entry)
   })
 
   const [expandedActivityGroups, setExpandedActivityGroups] = useState<Set<string>>(() => {
@@ -81,10 +104,10 @@ export function useTurnCardExpansion(sessionId: string | undefined) {
     if (sessionId) {
       const map = readMap()
       const entry = map[sessionId]
-      setExpandedTurns(entry ? new Set(entry.turns) : new Set())
+      setCollapsedTurns(readCollapsedTurns(entry))
       setExpandedActivityGroups(entry ? new Set(entry.groups) : new Set())
     } else {
-      setExpandedTurns(new Set())
+      setCollapsedTurns(new Set())
       setExpandedActivityGroups(new Set())
     }
 
@@ -93,18 +116,18 @@ export function useTurnCardExpansion(sessionId: string | undefined) {
 
   // Persist to localStorage whenever expansion state changes.
   // Uses a ref to avoid stale closures and only writes when we have a valid session.
-  const expandedTurnsRef = useRef(expandedTurns)
+  const collapsedTurnsRef = useRef(collapsedTurns)
   const expandedGroupsRef = useRef(expandedActivityGroups)
-  expandedTurnsRef.current = expandedTurns
+  collapsedTurnsRef.current = collapsedTurns
   expandedGroupsRef.current = expandedActivityGroups
 
   useEffect(() => {
     if (!sessionId) return
     const map = readMap()
-    const turns = [...expandedTurnsRef.current]
+    const turns = [...collapsedTurnsRef.current]
     const groups = [...expandedGroupsRef.current]
 
-    // Only write an entry if there's something expanded; remove entry if empty
+    // Only write an entry if the user changed the expanded-by-default state.
     if (turns.length === 0 && groups.length === 0) {
       if (map[sessionId]) {
         delete map[sessionId]
@@ -113,29 +136,29 @@ export function useTurnCardExpansion(sessionId: string | undefined) {
       return
     }
 
-    map[sessionId] = {
-      turns,
-      groups,
-      lastAccessed: Date.now(),
-    }
+    map[sessionId] = createTurnExpansionEntry(turns, groups)
     writeMap(map)
-  }, [sessionId, expandedTurns, expandedActivityGroups])
+  }, [sessionId, collapsedTurns, expandedActivityGroups])
+
+  const isTurnExpanded = useCallback((turnId: string) => {
+    return isTurnExpandedByDefault(turnId, collapsedTurnsRef.current)
+  }, [])
 
   // Toggle a single turn's expansion state
   const toggleTurn = useCallback((turnId: string, expanded: boolean) => {
-    setExpandedTurns(prev => {
+    setCollapsedTurns(prev => {
       const next = new Set(prev)
       if (expanded) {
-        next.add(turnId)
-      } else {
         next.delete(turnId)
+      } else {
+        next.add(turnId)
       }
       return next
     })
   }, [])
 
   return {
-    expandedTurns,
+    isTurnExpanded,
     toggleTurn,
     expandedActivityGroups,
     setExpandedActivityGroups,

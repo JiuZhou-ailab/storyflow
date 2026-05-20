@@ -491,6 +491,12 @@ html[data-font="inter"] {
     -moz-osx-font-smoothing: grayscale;
   }
 
+  html[data-platform="win32"]:not([data-scenic]) body,
+  html[data-platform="linux"]:not([data-scenic]) body,
+  html[data-platform="other"]:not([data-scenic]) body {
+    background: var(--background);
+  }
+
   /* Scrollbar styling */
   ::-webkit-scrollbar {
     width: 8px;

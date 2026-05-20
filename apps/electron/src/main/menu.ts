@@ -92,8 +92,8 @@ export async function rebuildMenu(): Promise<void> {
         },
         { type: 'separator' as const },
         { role: 'hide' as const, label: i18n.t('menu.hideCraftAgents') },
-        { role: 'hideOthers' as const },
-        { role: 'unhide' as const },
+        { role: 'hideOthers' as const, label: i18n.t('menu.hideOthers') },
+        { role: 'unhide' as const, label: i18n.t('menu.showAll') },
         { type: 'separator' as const },
         { role: 'quit' as const, label: i18n.t('menu.quitCraftAgents') }
       ]
@@ -124,7 +124,9 @@ export async function rebuildMenu(): Promise<void> {
           }
         },
         { type: 'separator' as const },
-        isMac ? { role: 'close' as const } : { role: 'quit' as const }
+        isMac
+          ? { role: 'close' as const, label: i18n.t('menu.closeWindow') }
+          : { role: 'quit' as const, label: i18n.t('menu.quitCraftAgents') }
       ]
     },
 
@@ -184,7 +186,7 @@ export async function rebuildMenu(): Promise<void> {
         ...WINDOW_MENU.items.map(toElectronMenuItem),
         ...(isMac ? [
           { type: 'separator' as const },
-          { role: 'front' as const }
+          { role: 'front' as const, label: i18n.t('menu.bringAllToFront') }
         ] : [])
       ]
     },
@@ -277,7 +279,10 @@ function toElectronMenuItem(item: MenuItem): Electron.MenuItemConstructorOptions
 
   if (item.type === 'role') {
     // Use Electron's built-in role - it handles accelerators automatically
-    return { role: item.role as Electron.MenuItemConstructorOptions['role'] }
+    return {
+      role: item.role as Electron.MenuItemConstructorOptions['role'],
+      label: i18n.t(item.labelKey),
+    }
   }
 
   if (item.type === 'action') {

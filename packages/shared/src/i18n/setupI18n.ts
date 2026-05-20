@@ -1,3 +1,7 @@
+// input: Bundled locale registry and optional i18next plugins
+// output: Shared synchronous i18next initialization for app and tests
+// pos: Single process-wide i18n setup boundary
+
 import i18n, { type i18n as I18nInstance, type InitOptions } from "i18next";
 import { LOCALE_REGISTRY } from "./registry";
 import { SUPPORTED_LANGUAGE_CODES } from "./languages";
@@ -13,6 +17,22 @@ const resources = Object.fromEntries(
 // Safe as a boolean guard because init is synchronous (initImmediate: false).
 // If async init is ever needed, replace with a promise-based singleton.
 let initialized = false;
+const appliedPlugins = new Set<any>();
+
+function applyPlugins(instance: I18nInstance, plugins: any[]): I18nInstance {
+  let nextInstance = instance;
+
+  for (const plugin of plugins) {
+    if (appliedPlugins.has(plugin)) continue;
+    nextInstance = nextInstance.use(plugin);
+    if (initialized && typeof plugin.init === "function") {
+      plugin.init(nextInstance);
+    }
+    appliedPlugins.add(plugin);
+  }
+
+  return nextInstance;
+}
 
 /**
  * Initialize i18next with bundled translations.
@@ -23,12 +43,8 @@ export function setupI18n(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   plugins: any[] = [],
 ): I18nInstance {
+  const instance = applyPlugins(i18n, plugins);
   if (initialized) return i18n;
-
-  let instance = i18n;
-  for (const plugin of plugins) {
-    instance = instance.use(plugin);
-  }
 
   instance.init({
     resources,

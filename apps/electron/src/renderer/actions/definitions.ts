@@ -1,3 +1,7 @@
+// input: Renderer action metadata and default keyboard shortcuts
+// output: Central action definitions consumed by the action registry and shortcut UI
+// pos: Declarative keyboard/action contract for the Electron renderer
+
 import type { ActionDefinition } from './types'
 
 export const actions = {
@@ -38,6 +42,7 @@ export const actions = {
     description: 'Open search panel',
     defaultHotkey: 'mod+f',
     category: 'General',
+    when: '!menuOpen',
   },
   'app.keyboardShortcuts': {
     id: 'app.keyboardShortcuts',

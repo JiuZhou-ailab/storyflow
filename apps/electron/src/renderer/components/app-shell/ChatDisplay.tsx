@@ -559,7 +559,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
   // TurnCard expansion state — persisted to localStorage across session switches
   const {
-    expandedTurns,
+    isTurnExpanded,
     toggleTurn,
     expandedActivityGroups,
     setExpandedActivityGroups,
@@ -1740,7 +1740,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                         intent={turn.intent}
                         isStreaming={turn.isStreaming}
                         isComplete={turn.isComplete}
-                        isExpanded={expandedTurns.has(assistantUiKey)}
+                        isExpanded={isTurnExpanded(assistantUiKey)}
                         onExpandedChange={(expanded) => toggleTurn(assistantUiKey, expanded)}
                         expandedActivityGroups={expandedActivityGroups}
                         onExpandedActivityGroupsChange={setExpandedActivityGroups}

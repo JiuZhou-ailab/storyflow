@@ -9,12 +9,26 @@ import { usePlatform } from '@craft-agent/ui'
 import { cn } from '@/lib/utils'
 import { Button } from './button'
 
+type FileOpener = (filePath: string) => void | Promise<void>
+
 export interface ManualEditButtonProps {
   label?: string
   filePath: string
   disabled?: boolean
-  onOpenFile?: (filePath: string) => void | Promise<void>
+  onOpenFile?: FileOpener
   className?: string
+}
+
+export function selectManualEditOpener({
+  explicitOpenFile,
+  onOpenFileExternal,
+  onOpenFile,
+}: {
+  explicitOpenFile?: FileOpener
+  onOpenFileExternal?: FileOpener
+  onOpenFile?: FileOpener
+}): FileOpener | undefined {
+  return explicitOpenFile ?? onOpenFileExternal ?? onOpenFile
 }
 
 export function ManualEditButton({
@@ -24,12 +38,16 @@ export function ManualEditButton({
   onOpenFile,
   className,
 }: ManualEditButtonProps) {
-  const { onOpenFile: platformOpenFile } = usePlatform()
+  const { onOpenFile: platformOpenFile, onOpenFileExternal } = usePlatform()
 
   const handleClick = React.useCallback(async () => {
     if (disabled) return
     try {
-      const openFile = onOpenFile ?? platformOpenFile
+      const openFile = selectManualEditOpener({
+        explicitOpenFile: onOpenFile,
+        onOpenFileExternal,
+        onOpenFile: platformOpenFile,
+      })
       if (!openFile) {
         toast.error('Failed to open file')
         return
@@ -40,7 +58,7 @@ export function ManualEditButton({
         description: error instanceof Error ? error.message : undefined,
       })
     }
-  }, [disabled, filePath, onOpenFile, platformOpenFile])
+  }, [disabled, filePath, onOpenFile, onOpenFileExternal, platformOpenFile])
 
   return (
     <Button

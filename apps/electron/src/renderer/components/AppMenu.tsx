@@ -204,7 +204,7 @@ export function AppMenu({
       <div className="pointer-events-auto titlebar-no-drag">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <TopBarButton aria-label="Craft menu">
+          <TopBarButton aria-label={t("menu.craftMenu")}>
             <CraftAgentsSymbol className="h-4 text-accent" />
           </TopBarButton>
         </DropdownMenuTrigger>
@@ -212,13 +212,13 @@ export function AppMenu({
           {/* File actions at root level */}
           <StyledDropdownMenuItem onClick={onNewChat}>
             <SquarePenRounded className="h-3.5 w-3.5" />
-            New Chat
+            {t("menu.newChat")}
             {newChatHotkey && <DropdownMenuShortcut className="pl-6">{newChatHotkey}</DropdownMenuShortcut>}
           </StyledDropdownMenuItem>
           {onNewWindow && (
             <StyledDropdownMenuItem onClick={onNewWindow}>
               <Icons.AppWindow className="h-3.5 w-3.5" />
-              New Window
+              {t("menu.newWindow")}
               {newWindowHotkey && <DropdownMenuShortcut className="pl-6">{newWindowHotkey}</DropdownMenuShortcut>}
             </StyledDropdownMenuItem>
           )}
@@ -236,13 +236,13 @@ export function AppMenu({
           <DropdownMenuSub>
             <StyledDropdownMenuSubTrigger>
               <Icons.Settings className="h-3.5 w-3.5" />
-              Settings
+              {t("settings.app.title")}
             </StyledDropdownMenuSubTrigger>
             <StyledDropdownMenuSubContent>
               {/* Main settings entry with keyboard shortcut */}
               <StyledDropdownMenuItem onClick={onOpenSettings}>
                 <Icons.Settings className="h-3.5 w-3.5" />
-                Settings...
+                {t("menu.settings")}
                 {settingsHotkey && <DropdownMenuShortcut className="pl-6">{settingsHotkey}</DropdownMenuShortcut>}
               </StyledDropdownMenuItem>
               <StyledDropdownMenuSeparator />
@@ -266,23 +266,23 @@ export function AppMenu({
           <DropdownMenuSub>
             <StyledDropdownMenuSubTrigger>
               <Icons.HelpCircle className="h-3.5 w-3.5" />
-              Help
+              {t("menu.help")}
             </StyledDropdownMenuSubTrigger>
             <StyledDropdownMenuSubContent>
               <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl('https://agents.craft.do/docs')}>
                 <Icons.HelpCircle className="h-3.5 w-3.5" />
-                Help & Documentation
+                {t("menu.helpAndDocs")}
                 <Icons.ExternalLink className="h-3 w-3 ml-auto text-muted-foreground" />
               </StyledDropdownMenuItem>
               <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('automations'))}>
                 <Icons.Webhook className="h-3.5 w-3.5" />
-                Automations
+                {t("menu.helpAutomations")}
                 <Icons.ExternalLink className="h-3 w-3 ml-auto text-muted-foreground" />
               </StyledDropdownMenuItem>
               <StyledDropdownMenuSeparator />
               <StyledDropdownMenuItem onClick={onOpenKeyboardShortcuts}>
                 <Icons.Keyboard className="h-3.5 w-3.5" />
-                Keyboard Shortcuts
+                {t("menu.keyboardShortcuts")}
                 {keyboardShortcutsHotkey && <DropdownMenuShortcut className="pl-6">{keyboardShortcutsHotkey}</DropdownMenuShortcut>}
               </StyledDropdownMenuItem>
             </StyledDropdownMenuSubContent>
@@ -294,21 +294,21 @@ export function AppMenu({
               <DropdownMenuSub>
                 <StyledDropdownMenuSubTrigger>
                   <Icons.Bug className="h-3.5 w-3.5" />
-                  Debug
+                  {t("menu.debug")}
                 </StyledDropdownMenuSubTrigger>
                 <StyledDropdownMenuSubContent>
                   <StyledDropdownMenuItem onClick={() => window.electronAPI.checkForUpdates()}>
                     <Icons.Download className="h-3.5 w-3.5" />
-                    Check for Updates
+                    {t("menu.checkForUpdates")}
                   </StyledDropdownMenuItem>
                   <StyledDropdownMenuItem onClick={() => window.electronAPI.installUpdate()}>
                     <Icons.Download className="h-3.5 w-3.5" />
-                    Install Update
+                    {t("menu.installUpdate")}
                   </StyledDropdownMenuItem>
                   <StyledDropdownMenuSeparator />
                   <StyledDropdownMenuItem onClick={() => window.electronAPI.menuToggleDevTools()}>
                     <Icons.Bug className="h-3.5 w-3.5" />
-                    Toggle DevTools
+                    {t("menu.toggleDevTools")}
                     <DropdownMenuShortcut className="pl-6">{isMac ? '⌥⌘I' : 'Ctrl+Shift+I'}</DropdownMenuShortcut>
                   </StyledDropdownMenuItem>
                 </StyledDropdownMenuSubContent>
@@ -339,12 +339,12 @@ export function AppMenu({
             <TopBarButton
               onClick={onBack}
               disabled={!canGoBack}
-              aria-label="Go back"
+              aria-label={t("common.back")}
             >
               <Icons.ChevronLeft className="h-[22px] w-[22px] text-foreground/70" strokeWidth={1.5} />
             </TopBarButton>
           </TooltipTrigger>
-          <TooltipContent side="bottom">Back {goBackHotkey}</TooltipContent>
+          <TooltipContent side="bottom">{t("common.back")} {goBackHotkey}</TooltipContent>
         </Tooltip>
 
         {/* Forward Navigation */}
@@ -353,12 +353,12 @@ export function AppMenu({
             <TopBarButton
               onClick={onForward}
               disabled={!canGoForward}
-              aria-label="Go forward"
+              aria-label={t("common.forward")}
             >
               <Icons.ChevronRight className="h-[22px] w-[22px] text-foreground/70" strokeWidth={1.5} />
             </TopBarButton>
           </TooltipTrigger>
-          <TooltipContent side="bottom">Forward {goForwardHotkey}</TooltipContent>
+          <TooltipContent side="bottom">{t("common.forward")} {goForwardHotkey}</TooltipContent>
         </Tooltip>
       </div>
     </div>
