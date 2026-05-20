@@ -14,6 +14,10 @@ describe('session tool safe-mode classification', () => {
       'mcp__session__call_llm',
       'mcp__session__browser_tool',
       'mcp__session__script_sandbox',
+      'TaskCreate',
+      'TaskUpdate',
+      'TaskGet',
+      'TaskList',
     ] as const;
 
     for (const toolName of allowedTools) {

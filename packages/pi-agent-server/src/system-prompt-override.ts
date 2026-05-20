@@ -1,9 +1,9 @@
-import type { AgentSession } from '@mariozechner/pi-coding-agent';
+import type { AgentSession } from '@earendil-works/pi-coding-agent';
 
 /**
  * Force a system prompt onto a Pi AgentSession.
  *
- * Pi SDK 0.72.1 has no public per-turn system-prompt API. Setting
+ * Pi SDK has no public per-turn system-prompt API. Setting
  * `state.systemPrompt` directly is wiped on every `session.prompt()` call
  * (agent-session.js ~L796: `state.systemPrompt = _baseSystemPrompt`), and
  * `_baseSystemPrompt` itself can be regenerated from the SDK's resource loader

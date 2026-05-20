@@ -6,8 +6,8 @@ import { describe, expect, it } from 'bun:test';
 import {
   createBashToolDefinition,
   createEditToolDefinition,
-} from '@mariozechner/pi-coding-agent';
-import { validateToolArguments } from '@mariozechner/pi-ai';
+} from '@earendil-works/pi-coding-agent';
+import { validateToolArguments } from '@earendil-works/pi-ai';
 import {
   allowCraftMetadataProperties,
   allowCraftMetadataPropertiesForTool,

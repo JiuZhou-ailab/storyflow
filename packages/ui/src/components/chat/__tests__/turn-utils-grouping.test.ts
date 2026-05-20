@@ -3,7 +3,7 @@
  *
  * These tests cover:
  * - groupActivitiesByParent() - Task subagent grouping
- * - extractTodosFromActivities() - TodoWrite parsing (internal, tested via exports)
+ * - extractTodosFromActivities() - task tracking parsing (internal, tested via exports)
  * - computeLastChildSet() - Tree view last-child detection
  * - extractTaskOutputData() - TaskOutput JSON parsing (internal, tested indirectly)
  */
@@ -648,5 +648,21 @@ describe('TodoWrite extraction', () => {
     const group = result[0] as ActivityGroup
     expect(group.children.length).toBe(1)
     expect(group.children[0]!.toolName).toBe('TodoWrite')
+  })
+
+  it('includes SDK 0.3 TaskUpdate activities in flat list', () => {
+    resetCounters()
+    const taskUpdateActivity = createActivity({
+      toolName: 'TaskUpdate',
+      toolInput: { content: 'Review SDK changelog', status: 'in_progress' },
+      content: 'Task updated',
+      status: 'completed',
+    })
+
+    const result = groupActivitiesByParent([taskUpdateActivity])
+
+    expect(result.length).toBe(1)
+    expect(isActivityGroup(result[0]!)).toBe(false)
+    expect((result[0] as ActivityItem).toolName).toBe('TaskUpdate')
   })
 })

@@ -3,7 +3,7 @@
 // pos: Shared transcript normalization layer before TurnCard rendering
 
 import type { Message, StoredMessage, MessageRole } from '@craft-agent/core'
-import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
+import { isParentTaskTool, isTodoMutationTool } from '@craft-agent/shared/utils/toolNames'
 import { storedToMessage } from '@craft-agent/core'
 
 export { storedToMessage }
@@ -46,7 +46,7 @@ export interface AssistantTurn {
   isStreaming: boolean
   isComplete: boolean
   timestamp: number
-  /** Extracted from TodoWrite tool - latest todo state in this turn */
+  /** Extracted from task tracking tools - latest todo state in this turn */
   todos?: TodoItem[]
 }
 
@@ -284,28 +284,22 @@ function calculateActivityDepths(activities: ActivityItem[]): void {
 }
 
 // ============================================================================
-// TodoWrite Extraction
+// Task Tracking Extraction
 // ============================================================================
 
 /**
- * Extract todos from TodoWrite tool results in activities.
- * Returns the latest todo state (from the most recent TodoWrite call).
+ * Extract todos from legacy TodoWrite or SDK 0.3+ Task* tool results in activities.
+ * Returns the latest complete task state available in the turn.
  */
 function extractTodosFromActivities(activities: ActivityItem[]): TodoItem[] | undefined {
-  // Find all TodoWrite tool results, get the latest one
-  const todoWriteActivities = activities
-    .filter(a => a.toolName === 'TodoWrite' && a.status === 'completed' && a.content)
+  const trackingActivities = activities
+    .filter(a => a.toolName && isTodoMutationTool(a.toolName) && a.status === 'completed')
     .sort((a, b) => b.timestamp - a.timestamp) // Most recent first
 
-  const latestActivity = todoWriteActivities[0]
+  const latestActivity = trackingActivities[0]
   if (!latestActivity) return undefined
 
-  const latestResult = latestActivity.content
-  if (!latestResult) return undefined
-
   try {
-    // TodoWrite result is typically a success message, but the input contains the todos
-    // We need to get the toolInput which has the todos array
     const input = latestActivity.toolInput
     if (input && Array.isArray(input.todos)) {
       return input.todos.map((todo: { content: string; status: string; activeForm?: string }) => ({
@@ -313,6 +307,37 @@ function extractTodosFromActivities(activities: ActivityItem[]): TodoItem[] | un
         status: todo.status as 'pending' | 'in_progress' | 'completed',
         activeForm: todo.activeForm,
       }))
+    }
+
+    if (input && latestActivity.toolName === 'TaskCreate') {
+      const content = typeof input.content === 'string'
+        ? input.content
+        : typeof input.description === 'string'
+          ? input.description
+          : typeof input.task === 'string'
+            ? input.task
+            : undefined
+      if (content) {
+        return [{ content, status: 'pending' }]
+      }
+    }
+
+    if (input && latestActivity.toolName === 'TaskUpdate') {
+      const content = typeof input.content === 'string'
+        ? input.content
+        : typeof input.description === 'string'
+          ? input.description
+          : typeof input.task === 'string'
+            ? input.task
+            : undefined
+      const status = typeof input.status === 'string'
+        ? input.status
+        : typeof input.state === 'string'
+          ? input.state
+          : undefined
+      if (content && (status === 'pending' || status === 'in_progress' || status === 'completed')) {
+        return [{ content, status }]
+      }
     }
   } catch {
     // Failed to parse, return undefined
@@ -358,7 +383,7 @@ export function groupMessagesByTurn(messages: Message[]): Turn[] {
       // Calculate nesting depths for parent-child tool relationships
       calculateActivityDepths(currentTurn.activities)
 
-      // Extract todos from TodoWrite tool results
+      // Extract todos from task tracking tool results
       currentTurn.todos = extractTodosFromActivities(currentTurn.activities)
 
       // If interrupted, mark any running activities as error and todos as interrupted

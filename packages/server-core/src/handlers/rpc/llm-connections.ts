@@ -361,7 +361,7 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
   })
 
   server.handle(RPC_CHANNELS.pi.GET_PROVIDER_MODELS, async (_ctx, provider: string) => {
-    const { getModels } = await import('@mariozechner/pi-ai')
+    const { getModels } = await import('@earendil-works/pi-ai')
     try {
       const models = getModels(provider as Parameters<typeof getModels>[0])
       const sorted = [...models].sort((a, b) => b.cost.output - a.cost.output || b.cost.input - a.cost.input)
@@ -748,7 +748,7 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
     error?: string
   }> => {
     try {
-      const { loginGitHubCopilot } = await import('@mariozechner/pi-ai/oauth')
+      const { loginGitHubCopilot } = await import('@earendil-works/pi-ai/oauth')
       const credentialManager = getCredentialManager()
 
       // Cancel any previous in-flight flow

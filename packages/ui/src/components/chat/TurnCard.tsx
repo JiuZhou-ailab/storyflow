@@ -223,7 +223,7 @@ export type ActivityType = 'tool' | 'thinking' | 'intermediate' | 'status' | 'pl
 export type AnnotationInteractionMode = 'interactive' | 'tooltip-only'
 
 // ============================================================================
-// Todo Types (for TodoWrite tool visualization)
+// Todo Types (for task tracking tool visualization)
 // ============================================================================
 
 export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'interrupted'
@@ -332,7 +332,7 @@ export interface TurnCardProps {
   onOpenMultiFileDiff?: () => void
   /** Whether this turn has any Edit or Write activities */
   hasEditOrWriteActivities?: boolean
-  /** TodoWrite tool state - shown at bottom of turn */
+  /** Task tracking state - shown at bottom of turn */
   todos?: TodoItem[]
   /** Optional render prop for actions menu (Electron provides dropdown) */
   renderActionsMenu?: () => React.ReactNode
@@ -531,6 +531,10 @@ function getToolDisplayName(name: string): string {
   // Friendly display names for specific tools
   const displayNames: Record<string, string> = {
     'TodoWrite': 'Todo List Updated',
+    'TaskCreate': 'Task Created',
+    'TaskUpdate': 'Task Updated',
+    'TaskGet': 'Task Read',
+    'TaskList': 'Task List',
     'set_session_labels': 'Set Session Labels',
     'set_session_status': 'Set Session Status',
     'get_session_info': 'Get Session Info',
@@ -2623,7 +2627,7 @@ export function ResponseCard({
 }
 
 // ============================================================================
-// TodoList Component (for TodoWrite tool visualization)
+// TodoList Component (for task tracking tool visualization)
 // ============================================================================
 
 /** Status icon for a todo item - uses purple filled icon for completed */
@@ -2672,7 +2676,7 @@ interface TodoListProps {
 }
 
 /**
- * TodoList - Displays the current state of TodoWrite tool
+ * TodoList - Displays the current task tracking state
  * Styled to blend with TurnCard activities
  */
 function TodoList({ todos }: TodoListProps) {

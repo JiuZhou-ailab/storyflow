@@ -24,6 +24,14 @@ const MAIN_PROCESS_ALIAS: Record<string, string> = {
   "abort-controller": join(ROOT_DIR, "apps/electron/src/main/shims/abort-controller.cjs"),
 };
 
+const MAIN_PROCESS_EXTERNAL = [
+  "electron",
+  // Claude Agent SDK uses top-level import.meta.url to initialize
+  // createRequire(). Keep it external so Electron loads the real ESM file
+  // instead of an inlined CJS bundle where import.meta.url is undefined.
+  "@anthropic-ai/claude-agent-sdk",
+];
+
 // MCP server paths
 const SESSION_SERVER_DIR = join(ROOT_DIR, "packages/session-mcp-server");
 const SESSION_SERVER_OUTPUT = join(SESSION_SERVER_DIR, "dist/index.js");
@@ -305,7 +313,7 @@ async function runEsbuild(
       platform: "node",
       format: "cjs",
       outfile: join(ROOT_DIR, outfile),
-      external: ["electron"],
+      external: MAIN_PROCESS_EXTERNAL,
       ...(options.packagesExternal ? { packages: "external" as const } : {}),
       ...(options.alias ? { alias: options.alias } : {}),
       define: defines,
@@ -318,7 +326,7 @@ async function runEsbuild(
 }
 
 // Build Pi agent server using bun instead of esbuild.
-// The Pi SDK (@mariozechner/pi-coding-agent) is ESM-only, and esbuild with
+// The Pi SDK (@earendil-works/pi-coding-agent) is ESM-only, and esbuild with
 // packages:external leaves ESM imports as require() calls that fail at runtime.
 // Bun's bundler handles ESM→ESM bundling correctly.
 async function buildPiAgentServer(): Promise<{ success: boolean; error?: string }> {
@@ -542,7 +550,7 @@ async function main(): Promise<void> {
     platform: "node",
     format: "cjs",
     outfile: join(ROOT_DIR, "apps/electron/dist/main.cjs"),
-    external: ["electron"],
+    external: MAIN_PROCESS_EXTERNAL,
     alias: MAIN_PROCESS_ALIAS,
     define: oauthDefines,
     logLevel: "info",

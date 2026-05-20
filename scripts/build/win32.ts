@@ -126,6 +126,10 @@ function buildMainProcess(config: BuildConfig): void {
     '--format=cjs',
     '--outfile=apps/electron/dist/main.cjs',
     '--external:electron',
+    // Claude Agent SDK uses top-level import.meta.url to initialize
+    // createRequire(). Keep it external so Electron loads the real ESM file
+    // instead of an inlined CJS bundle where import.meta.url is undefined.
+    '--external:@anthropic-ai/claude-agent-sdk',
     // Replace grammY's bundled polyfills (node-fetch@2 + abort-controller@3)
     // with native Node globals. Keeps parity with electron-dev.ts,
     // electron-build-main.ts, and apps/electron/package.json build:main.

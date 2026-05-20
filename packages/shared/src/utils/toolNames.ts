@@ -20,6 +20,10 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   'WebFetch': 'Fetching URL',
   'WebSearch': 'Searching Web',
   'TodoWrite': 'Updating Tasks',
+  'TaskCreate': 'Creating Tasks',
+  'TaskUpdate': 'Updating Tasks',
+  'TaskGet': 'Reading Tasks',
+  'TaskList': 'Listing Tasks',
   'NotebookEdit': 'Editing Notebook',
 
   // Documentation tools
@@ -35,6 +39,23 @@ export const PARENT_TASK_TOOLS: ReadonlySet<string> = new Set(['Task', 'Agent'])
 
 /** Check whether a tool name is a parent task tool (Task or Agent). */
 export const isParentTaskTool = (name: string): boolean => PARENT_TASK_TOOLS.has(name);
+
+export const TODO_TRACKING_TOOLS: ReadonlySet<string> = new Set([
+  'TodoWrite',
+  'TaskCreate',
+  'TaskUpdate',
+  'TaskGet',
+  'TaskList',
+]);
+
+export const TODO_MUTATION_TOOLS: ReadonlySet<string> = new Set([
+  'TodoWrite',
+  'TaskCreate',
+  'TaskUpdate',
+]);
+
+export const isTodoTrackingTool = (name: string): boolean => TODO_TRACKING_TOOLS.has(name);
+export const isTodoMutationTool = (name: string): boolean => TODO_MUTATION_TOOLS.has(name);
 
 /**
  * Tools that should be hidden from the UI (purely internal state changes)

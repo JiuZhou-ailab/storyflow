@@ -1777,6 +1777,10 @@ const ALWAYS_ALLOWED_TOOLS = new Set([
   'Task', 'TaskOutput',             // Agent orchestration
   'WebFetch', 'WebSearch',          // Web research
   'TodoWrite',                      // Task tracking
+  'TaskCreate',
+  'TaskUpdate',
+  'TaskGet',
+  'TaskList',
   'SubmitPlan',                     // Plan submission
   'LSP',                            // Language server (read-only)
   // Browser automation tool (canonical wrapper)

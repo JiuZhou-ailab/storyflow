@@ -224,7 +224,7 @@ async function buildPiAgentServer(): Promise<void> {
     mkdirSync(distDir, { recursive: true });
   }
 
-  // Use --target=bun --format=esm because the Pi SDK (@mariozechner/pi-coding-agent)
+  // Use --target=bun --format=esm because the Pi SDK (@earendil-works/pi-coding-agent)
   // is ESM-only. --target=node --format=cjs leaves ESM deps as external require()
   // calls that fail at runtime since there are no node_modules relative to dist/.
   const proc = spawn({
@@ -347,6 +347,10 @@ async function main(): Promise<void> {
       "--format=cjs",
       "--outfile=apps/electron/dist/main.cjs",
       "--external:electron",
+      // Claude Agent SDK uses top-level import.meta.url to initialize
+      // createRequire(). Keep it external so Electron loads the real ESM file
+      // instead of an inlined CJS bundle where import.meta.url is undefined.
+      "--external:@anthropic-ai/claude-agent-sdk",
       // Replace grammY's bundled polyfills (node-fetch@2 + abort-controller@3)
       // with native Node globals. esbuild otherwise renames the polyfill's
       // `class AbortSignal` to `_AbortSignal` to dodge collision with the
