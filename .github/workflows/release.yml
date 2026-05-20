@@ -84,16 +84,21 @@ jobs:
         run: |
           shopt -s nullglob
           dmg_files=(apps/electron/release/Craft-Agents-*.dmg)
-          files=(
-            "${dmg_files[@]}"
-            apps/electron/release/Craft-Agents-*.zip
-            apps/electron/release/Craft-Agents-*.dmg.blockmap
-            apps/electron/release/Craft-Agents-*.zip.blockmap
-            apps/electron/release/latest-mac.yml
-          )
           if [ ${#dmg_files[@]} -eq 0 ]; then
             echo "No macOS artifacts found"
             exit 1
+          fi
+          files=("${dmg_files[@]}")
+          optional_files=(
+            apps/electron/release/Craft-Agents-*.zip
+            apps/electron/release/Craft-Agents-*.dmg.blockmap
+            apps/electron/release/Craft-Agents-*.zip.blockmap
+          )
+          for file in "${optional_files[@]}"; do
+            files+=("$file")
+          done
+          if [ -f apps/electron/release/latest-mac.yml ]; then
+            files+=(apps/electron/release/latest-mac.yml)
           fi
           gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
 
@@ -191,9 +196,7 @@ jobs:
           asset_names="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')"
           echo "$asset_names"
           echo "$asset_names" | grep -E '^Craft-Agents-.*\.dmg$'
-          echo "$asset_names" | grep -E '^Craft-Agents-.*\.zip$'
           echo "$asset_names" | grep -E '^Craft-Agents-.*\.exe$'
-          echo "$asset_names" | grep -E '^latest-mac\.yml$'
           echo "$asset_names" | grep -E '^latest\.yml$'
           echo "$asset_names" | grep -E '^install-app\.sh$'
           echo "$asset_names" | grep -E '^install-app\.ps1$'
