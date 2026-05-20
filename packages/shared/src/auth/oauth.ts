@@ -1,3 +1,6 @@
+// input: MCP OAuth URLs, HTTP fetch responses, and local callback flow state.
+// output: OAuth metadata discovery, client registration, token exchange, and refresh helpers.
+// pos: Shared OAuth implementation used by Electron and server-side MCP authentication flows.
 import { createServer, type Server } from 'http';
 import { URL } from 'url';
 import { randomBytes, createHash } from 'crypto';
@@ -657,10 +660,9 @@ async function tryFetchAuthServerMetadata(
 ): Promise<OAuthMetadata | null> {
   try {
     onLog?.(`  Trying: ${url}`);
-    const response = await fetch(url);
+    const { response, data } = await fetchJsonWithTimeout<OAuthMetadata>(url);
     if (response.ok) {
-      const data = await response.json() as OAuthMetadata;
-      if (data.authorization_endpoint && data.token_endpoint) {
+      if (data?.authorization_endpoint && data.token_endpoint) {
         onLog?.(`  ✓ Found OAuth metadata at ${url}`);
         return data;
       }
@@ -669,6 +671,10 @@ async function tryFetchAuthServerMetadata(
       onLog?.(`  ✗ ${response.status} at ${url}`);
     }
   } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      onLog?.(`  ✗ Request timeout fetching ${url}`);
+      return null;
+    }
     const msg = error instanceof Error ? error.message : String(error);
     onLog?.(`  ✗ Error fetching ${url}: ${msg}`);
   }
@@ -773,6 +779,63 @@ async function fetchWithTimeout(
   }
 }
 
+function createAbortError(): Error {
+  const error = new Error('The operation was aborted.');
+  error.name = 'AbortError';
+  return error;
+}
+
+/**
+ * Fetch JSON with a timeout that covers both response headers and body parsing.
+ */
+async function fetchJsonWithTimeout<T>(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = DISCOVERY_TIMEOUT_MS
+): Promise<{ response: Response; data?: T }> {
+  const controller = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let response: Response | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      controller.abort();
+      void response?.body?.cancel().catch(() => undefined);
+      reject(createAbortError());
+    }, timeoutMs);
+  });
+
+  try {
+    const fetchPromise = fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    fetchPromise.catch(() => undefined);
+
+    response = await Promise.race([
+      fetchPromise,
+      timeoutPromise,
+    ]);
+
+    if (!response.ok) {
+      return { response };
+    }
+
+    const jsonPromise = response.json() as Promise<T>;
+    jsonPromise.catch(() => undefined);
+
+    const data = await Promise.race([
+      jsonPromise,
+      timeoutPromise,
+    ]);
+
+    return { response, data };
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
 /**
  * Normalize URL by removing trailing slash
  */
@@ -811,13 +874,11 @@ async function fetchProtectedResourceMetadata(
 
   try {
     onLog?.(`  Fetching protected resource metadata...`);
-    const response = await fetchWithTimeout(metadataUrl);
+    const { response, data } = await fetchJsonWithTimeout<ProtectedResourceMetadata>(metadataUrl);
     if (!response.ok) {
       onLog?.(`  ✗ ${response.status} at metadata endpoint`);
       return null;
     }
-
-    const data: unknown = await response.json();
 
     // Type guard validation
     if (!isProtectedResourceMetadata(data)) {

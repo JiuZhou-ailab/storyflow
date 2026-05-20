@@ -1,4 +1,10 @@
+// input: Mocked Electron runtime, shared config/backend stubs, and SessionManager branch operations
+// output: Isolated rollback coverage for failed session branch creation
+// pos: Guards main-process session branch cleanup without loading real app services
+
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import { mkdirSync, rmSync, writeFileSync } from 'fs'
+import { join } from 'path'
 
 const workspaceRootPath = '/tmp/ws-rollback'
 const workspace = {
@@ -11,6 +17,34 @@ let idCounter = 0
 const storedById = new Map<string, any>()
 const deletedIds: string[] = []
 let mockedProvider: 'anthropic' | 'pi' = 'anthropic'
+
+function writeSourceBranchAnchors() {
+  const metaDir = join(workspaceRootPath, 'sessions', 'source-1', 'meta')
+  mkdirSync(metaDir, { recursive: true })
+  writeFileSync(
+    join(metaDir, 'claude-turn-anchors.json'),
+    JSON.stringify({
+      version: 1,
+      anchors: {
+        m1: {
+          sdkSessionId: 'sdk-parent',
+          sdkMessageUuid: 'msg_parentbranch1',
+        },
+      },
+    }),
+    'utf-8',
+  )
+  writeFileSync(
+    join(metaDir, 'pi-turn-anchors.json'),
+    JSON.stringify({
+      version: 1,
+      anchors: {
+        m1: 'pi-turn-anchor-1',
+      },
+    }),
+    'utf-8',
+  )
+}
 
 // Partial-mock baseline: import real modules via file paths (avoids recursive mock imports)
 const actualSharedAgentModule = await import('../../../../../packages/shared/src/agent/index.ts')
@@ -81,6 +115,7 @@ mock.module('@craft-agent/shared/config', () => ({
   migrateLegacyCredentials: async () => {},
   migrateLegacyLlmConnectionsConfig: async () => {},
   migrateOrphanedDefaultConnections: async () => {},
+  seedBuiltinLlmConnectionFromDefaults: async () => false,
   MODEL_REGISTRY: [],
   // Targeted stubs: prevent SyntaxError in tests that import these from the barrel
   DEFAULT_MODEL: 'claude-sonnet-4-20250514',
@@ -271,6 +306,8 @@ describe('session branch rollback on preflight failure', () => {
     idCounter = 0
     storedById.clear()
     deletedIds.length = 0
+    rmSync(workspaceRootPath, { recursive: true, force: true })
+    writeSourceBranchAnchors()
 
     storedById.set('source-1', {
       id: 'source-1',

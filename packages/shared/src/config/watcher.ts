@@ -9,6 +9,7 @@
  * - ~/.craft-agent/preferences.json - User preferences
  * - ~/.craft-agent/theme.json - App-level theme overrides
  * - ~/.craft-agent/themes/*.json - Preset theme files (app-level)
+ * - ~/.agents/skills/{slug}/SKILL.md, icon.* - Global agent skills
  * - ~/.craft-agent/workspaces/{slug}/ - Workspace directory (recursive)
  *   - sources/{slug}/config.json, guide.md, permissions.json
  *   - skills/{slug}/SKILL.md, icon.*
@@ -43,7 +44,7 @@ import {
 import { permissionsConfigCache, getAppPermissionsDir } from '../agent/permissions-config.ts';
 import { getWorkspacePath, getWorkspaceSourcesPath, getWorkspaceSkillsPath } from '../workspaces/storage.ts';
 import type { LoadedSkill } from '../skills/types.ts';
-import { loadSkill, loadAllSkills, invalidateSkillsCache, skillNeedsIconDownload, downloadSkillIcon } from '../skills/storage.ts';
+import { GLOBAL_AGENT_SKILLS_DIR, loadSkill, loadAllSkills, invalidateSkillsCache, skillNeedsIconDownload, downloadSkillIcon } from '../skills/storage.ts';
 import {
   loadStatusConfig,
   statusNeedsIconDownload,
@@ -278,6 +279,10 @@ export class ConfigWatcher {
     this.watchWorkspaceDir();
     span.mark('watchWorkspaceDir');
 
+    // Watch global agent skills directory
+    this.watchGlobalSkillsDir();
+    span.mark('watchGlobalSkillsDir');
+
     // Watch app-level themes directory
     this.watchAppThemesDir();
     span.mark('watchAppThemesDir');
@@ -407,6 +412,47 @@ export class ConfigWatcher {
     } catch (error) {
       debug('[ConfigWatcher] Error watching workspace directory:', error);
     }
+  }
+
+  /**
+   * Watch global agent skills (~/.agents/skills) so edits to global SKILL.md
+   * files refresh every workspace's skill sidebar.
+   */
+  private watchGlobalSkillsDir(): void {
+    if (!existsSync(GLOBAL_AGENT_SKILLS_DIR)) {
+      mkdirSync(GLOBAL_AGENT_SKILLS_DIR, { recursive: true });
+    }
+
+    try {
+      const watcher = watch(GLOBAL_AGENT_SKILLS_DIR, { recursive: true }, (_eventType, filename) => {
+        if (!filename) return;
+
+        const normalizedPath = filename.replace(/\\/g, '/');
+        const parts = normalizedPath.split('/');
+        const file = parts[1];
+
+        if (parts.length === 1 || file === 'SKILL.md' || (file && /^icon\.(svg|png|jpg|jpeg)$/i.test(file))) {
+          this.debounce('global-skills', () => this.handleGlobalSkillsChange());
+        }
+      });
+
+      this.watchers.push(watcher);
+      debug('[ConfigWatcher] Watching global skills recursively:', GLOBAL_AGENT_SKILLS_DIR);
+    } catch (error) {
+      debug('[ConfigWatcher] Error watching global skills directory:', error);
+    }
+  }
+
+  /**
+   * Handle global skill changes. Global skills can affect the full visible
+   * skill list for every workspace, especially when no workspace/project skill
+   * overrides the same slug.
+   */
+  private handleGlobalSkillsChange(): void {
+    debug('[ConfigWatcher] Global skills changed');
+    invalidateSkillsCache();
+    const allSkills = loadAllSkills(this.workspaceDir);
+    this.callbacks.onSkillsListChange?.(allSkills);
   }
 
   /**
@@ -793,6 +839,7 @@ export class ConfigWatcher {
   private handleSkillChange(slug: string): void {
     debug('[ConfigWatcher] Skill changed:', slug);
 
+    invalidateSkillsCache();
     const skill = loadSkill(this.workspaceDir, slug);
     this.callbacks.onSkillChange?.(slug, skill);
 
@@ -808,6 +855,7 @@ export class ConfigWatcher {
             // Reload the skill with the new icon and emit another change
             const updatedSkill = loadSkill(this.workspaceDir, slug);
             debug('[ConfigWatcher] Icon downloaded, emitting updated skill:', slug);
+            invalidateSkillsCache();
             this.callbacks.onSkillChange?.(slug, updatedSkill);
           }
         })

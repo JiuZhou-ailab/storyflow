@@ -1,3 +1,6 @@
+// input: Public MCP server URLs and live OAuth metadata endpoints.
+// output: E2E coverage for OAuth metadata discovery against representative MCP providers.
+// pos: Network-tolerant integration test for shared OAuth discovery behavior.
 /**
  * E2E tests for OAuth metadata discovery against real MCP servers.
  *
@@ -8,6 +11,8 @@
  */
 import { describe, it, expect } from 'bun:test';
 import { discoverOAuthMetadata, getMcpBaseUrl } from '../oauth';
+
+const E2E_TEST_TIMEOUT_MS = 30000;
 
 // Helper to check if a URL is reachable
 async function isReachable(url: string, timeoutMs = 5000): Promise<boolean> {
@@ -63,7 +68,7 @@ describe('E2E: OAuth Metadata Discovery', () => {
       expect(metadata.authorization_endpoint).toBeTruthy();
       expect(metadata.token_endpoint).toBeTruthy();
       console.log('GitHub MCP OAuth metadata:', metadata);
-    });
+    }, E2E_TEST_TIMEOUT_MS);
   });
 
   describe('Linear MCP (mcp.linear.app)', () => {
@@ -86,7 +91,7 @@ describe('E2E: OAuth Metadata Discovery', () => {
       expect(metadata.authorization_endpoint).toBeTruthy();
       expect(metadata.token_endpoint).toBeTruthy();
       console.log('Linear MCP OAuth metadata:', metadata);
-    });
+    }, E2E_TEST_TIMEOUT_MS);
   });
 
   describe('Ahrefs MCP (api.ahrefs.com/mcp/mcp)', () => {
@@ -110,7 +115,7 @@ describe('E2E: OAuth Metadata Discovery', () => {
       expect(metadata.authorization_endpoint).toBeTruthy();
       expect(metadata.token_endpoint).toBeTruthy();
       console.log('Ahrefs MCP OAuth metadata:', metadata);
-    });
+    }, E2E_TEST_TIMEOUT_MS);
   });
 
   describe('Multiple path segments', () => {

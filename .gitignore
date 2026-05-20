@@ -33,6 +33,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 *.tsbuildinfo
 .wrangler
 .mintlify
+.antigravitycli/
+tmp/
 
 # OSS sync temp directory
 .oss-sync-temp/

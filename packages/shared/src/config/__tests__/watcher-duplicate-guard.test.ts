@@ -6,7 +6,23 @@
  * event loop on Linux due to duplicate recursive fs.watch calls.
  */
 import { describe, it, expect, beforeEach } from 'bun:test';
-import { _getActiveWatchers } from '../watcher.ts';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { ConfigWatcher, _getActiveWatchers } from '../watcher.ts';
+import { invalidateSkillsCache, loadAllSkills } from '../../skills/storage.ts';
+
+function writeSkill(workspaceRoot: string, slug: string, name: string): void {
+  const skillDir = join(workspaceRoot, 'skills', slug);
+  mkdirSync(skillDir, { recursive: true });
+  writeFileSync(join(skillDir, 'SKILL.md'), `---
+name: "${name}"
+description: "A test skill"
+---
+
+Instructions
+`);
+}
 
 describe('ConfigWatcher duplicate guard', () => {
   beforeEach(() => {
@@ -28,5 +44,53 @@ describe('ConfigWatcher duplicate guard', () => {
     // Note: we can't guarantee emptiness if other tests start watchers,
     // but we can verify the type and that the getter works.
     expect(typeof watchers.size).toBe('number');
+  });
+
+  it('invalidates cached skill metadata when a SKILL.md file changes', () => {
+    const root = mkdtempSync(join(tmpdir(), 'watcher-skill-cache-'));
+    try {
+      writeSkill(root, 'rename-me', 'Original Name');
+      expect(loadAllSkills(root).find(s => s.slug === 'rename-me')?.metadata.name).toBe('Original Name');
+
+      writeSkill(root, 'rename-me', 'Renamed Skill');
+
+      let broadcastName: string | undefined;
+      const watcher = new ConfigWatcher(root, {
+        onSkillChange: () => {
+          broadcastName = loadAllSkills(root).find(s => s.slug === 'rename-me')?.metadata.name;
+        },
+      });
+
+      (watcher as unknown as { handleSkillChange: (slug: string) => void }).handleSkillChange('rename-me');
+
+      expect(broadcastName).toBe('Renamed Skill');
+    } finally {
+      invalidateSkillsCache();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('broadcasts fresh skills when the global skills directory changes', () => {
+    const root = mkdtempSync(join(tmpdir(), 'watcher-global-skill-cache-'));
+    try {
+      writeSkill(root, 'global-refresh', 'Original Name');
+      expect(loadAllSkills(root).find(s => s.slug === 'global-refresh')?.metadata.name).toBe('Original Name');
+
+      writeSkill(root, 'global-refresh', 'Renamed Skill');
+
+      let broadcastName: string | undefined;
+      const watcher = new ConfigWatcher(root, {
+        onSkillsListChange: (skills) => {
+          broadcastName = skills.find(s => s.slug === 'global-refresh')?.metadata.name;
+        },
+      });
+
+      (watcher as unknown as { handleGlobalSkillsChange: () => void }).handleGlobalSkillsChange();
+
+      expect(broadcastName).toBe('Renamed Skill');
+    } finally {
+      invalidateSkillsCache();
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

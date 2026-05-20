@@ -21,6 +21,7 @@ import {
   loadAllSkills,
   loadWorkspaceSkills,
   loadSkill,
+  invalidateSkillsCache,
   skillExists,
   listSkillSlugs,
   deleteSkill,
@@ -103,6 +104,7 @@ function getExistingGlobalSlugs(): Set<string> {
 // ============================================================
 
 beforeEach(() => {
+  invalidateSkillsCache();
   tempDir = mkdtempSync(join(tmpdir(), 'skills-test-'));
   workspaceRoot = join(tempDir, 'workspace');
   projectRoot = join(tempDir, 'project');
@@ -113,6 +115,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  invalidateSkillsCache();
   if (tempDir && existsSync(tempDir)) {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -528,6 +531,36 @@ describe('loadAllSkills', () => {
     const dup = skills.find(s => s.slug === `${TEST_PREFIX}dup`);
     expect(dup!.source).toBe('project');
     expect(dup!.metadata.name).toBe('Proj Dup');
+  });
+});
+
+// ============================================================
+// Tests: cache invalidation
+// ============================================================
+
+describe('skills cache invalidation', () => {
+  it('reloads changed skill metadata after cache invalidation', () => {
+    const skillsDir = join(workspaceRoot, 'skills');
+    createSkill(skillsDir, 'rename-me', {
+      name: 'Original Name',
+      description: 'Before rename',
+    });
+
+    const before = loadAllSkills(workspaceRoot).find(s => s.slug === 'rename-me');
+    expect(before?.metadata.name).toBe('Original Name');
+
+    createSkill(skillsDir, 'rename-me', {
+      name: 'Renamed Skill',
+      description: 'After rename',
+    });
+
+    const cached = loadAllSkills(workspaceRoot).find(s => s.slug === 'rename-me');
+    expect(cached?.metadata.name).toBe('Original Name');
+
+    invalidateSkillsCache();
+
+    const after = loadAllSkills(workspaceRoot).find(s => s.slug === 'rename-me');
+    expect(after?.metadata.name).toBe('Renamed Skill');
   });
 });
 
