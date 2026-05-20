@@ -165,6 +165,21 @@ get_filename_from_yaml() {
     return 1
 }
 
+ensure_single_manifest_value() {
+    local value="$1"
+    local description="$2"
+
+    if [ -z "$value" ]; then
+        error "Expected exactly one .zip artifact for architecture $arch in $yml_file, but found none"
+    fi
+
+    case "$value" in
+        *$'\n'*)
+            error "Expected exactly one .zip artifact for architecture $arch in $yml_file, but found multiple $description values"
+            ;;
+    esac
+}
+
 # Detect architecture
 case "$(uname -m)" in
     x86_64|amd64) arch="x64" ;;
@@ -232,8 +247,10 @@ info "Latest version: $version"
 
 # Extract sha512 and filename for our architecture
 if [ "$HAS_YQ" = true ]; then
-    checksum=$(echo "$manifest_yaml" | yq -r ".files[] | select(.arch == \"$arch\") | .sha512")
-    filename=$(echo "$manifest_yaml" | yq -r ".files[] | select(.arch == \"$arch\") | .url")
+    checksum=$(echo "$manifest_yaml" | yq -r ".files[] | select(.arch == \"$arch\" and (.url | endswith(\".zip\"))) | .sha512")
+    filename=$(echo "$manifest_yaml" | yq -r ".files[] | select(.arch == \"$arch\" and (.url | endswith(\".zip\"))) | .url")
+    ensure_single_manifest_value "$checksum" "checksum"
+    ensure_single_manifest_value "$filename" "filename"
 else
     checksum=$(get_sha512_from_yaml "$manifest_yaml" "$arch")
     filename=$(get_filename_from_yaml "$manifest_yaml" "$arch")
@@ -305,6 +322,23 @@ if [ "$OS_TYPE" = "darwin" ]; then
 
     verify_macos_app_trust "$app_source"
 
+    install_temp_dir=$(mktemp -d "$INSTALL_DIR/.craft-agents-install.XXXXXX")
+    backup_temp_dir=$(mktemp -d "$INSTALL_DIR/.craft-agents-backup.XXXXXX")
+    staged_app="$install_temp_dir/$APP_NAME"
+    backup_app="$backup_temp_dir/$APP_NAME"
+    preserve_backup=false
+
+    cleanup_install_temps() {
+        rm -rf "$install_temp_dir"
+        if [ "$preserve_backup" != true ]; then
+            rm -rf "$backup_temp_dir"
+        fi
+    }
+    trap cleanup_install_temps EXIT
+
+    info "Staging app for installation..."
+    cp -R "$app_source" "$staged_app"
+
     # Quit the app only after the replacement bundle has been extracted and trusted.
     APP_BUNDLE_ID="com.lukilabs.craft-agent"
     if pgrep -x "Craft Agents" >/dev/null 2>&1; then
@@ -328,20 +362,32 @@ if [ "$OS_TYPE" = "darwin" ]; then
         fi
     fi
 
-    # Remove existing installation only after the new bundle passed trust checks.
+    # Remove existing installation only after the staged replacement is ready.
     if [ -d "$INSTALL_DIR/$APP_NAME" ]; then
         info "Removing previous installation..."
-        rm -rf "$INSTALL_DIR/$APP_NAME"
+        mv "$INSTALL_DIR/$APP_NAME" "$backup_app"
     fi
 
     # Copy app to /Applications
     info "Installing to $INSTALL_DIR..."
-    cp -R "$app_source" "$INSTALL_DIR/$APP_NAME"
+    if ! mv "$staged_app" "$INSTALL_DIR/$APP_NAME"; then
+        if [ -d "$backup_app" ] && [ ! -d "$INSTALL_DIR/$APP_NAME" ]; then
+            if mv "$backup_app" "$INSTALL_DIR/$APP_NAME"; then
+                backup_app=""
+            else
+                preserve_backup=true
+                warn "Previous installation backup remains at $backup_app"
+            fi
+        fi
+        error "Failed to install Craft Agents. Previous installation was restored if it existed."
+    fi
 
     # Clean up
     info "Cleaning up..."
     rm -rf "$temp_dir"
     rm -f "$zip_path"
+    cleanup_install_temps
+    trap - EXIT
 
     # Remove quarantine attribute if present
     xattr -rd com.apple.quarantine "$INSTALL_DIR/$APP_NAME" 2>/dev/null || true

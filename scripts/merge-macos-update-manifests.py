@@ -42,7 +42,7 @@ def read_manifest(path: Path, explicit_arch: str | None = None) -> dict[str, obj
             current = {"url": url.group(1).strip()}
             continue
 
-        field = re.match(r"^\s*(sha512|arch):\s*(.+)$", line)
+        field = re.match(r"^\s*([A-Za-z][A-Za-z0-9_-]*):\s*(.+)$", line)
         if field and current:
             current[field.group(1)] = field.group(2).strip()
 
@@ -88,6 +88,9 @@ def merge_manifests(inputs: list[tuple[Path, str | None]], output: Path) -> None
             f"    sha512: {file['sha512']}",
             f"    arch: {file['arch']}",
         ])
+        for key, value in file.items():
+            if key not in {"url", "sha512", "arch"}:
+                lines.append(f"    {key}: {value}")
 
     lines.extend([
         f"path: {primary['url']}",

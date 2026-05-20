@@ -22,6 +22,7 @@ function writeMacManifest(path: string, arch: 'arm64' | 'x64'): void {
       'files:',
       `  - url: Craft-Agents-${arch}.zip`,
       `    sha512: ${arch === 'arm64' ? 'arm64-sha512' : 'x64-sha512'}`,
+      `    size: ${arch === 'arm64' ? '1234' : '5678'}`,
       `path: Craft-Agents-${arch}.zip`,
       `sha512: ${arch === 'arm64' ? 'arm64-sha512' : 'x64-sha512'}`,
       'releaseDate: 2026-05-21T00:00:00.000Z',
@@ -52,11 +53,16 @@ describe('macOS release configuration', () => {
     expect(workflow).toContain('Annotate macOS update manifest');
     expect(workflow).toContain('${{ matrix.arch }}=$manifest');
     expect(workflow).toContain('latest-mac-${{ matrix.arch }}.yml');
+    expect(workflow).not.toContain('files+=(apps/electron/release/latest-mac.yml)');
     expect(workflow).toContain('Merge macOS update manifests');
     expect(workflow).toContain("gh release download \"$RELEASE_TAG\"");
     expect(workflow).toContain('scripts/merge-macos-update-manifests.py');
     expect(workflow).not.toContain('awk');
     expect(workflow).toContain("gh release upload \"$RELEASE_TAG\" latest-mac.yml --clobber");
+    expect(workflow).toContain("grep -E '^Craft-Agents-arm64\\.dmg$'");
+    expect(workflow).toContain("grep -E '^Craft-Agents-x64\\.dmg$'");
+    expect(workflow).toContain("grep -E '^Craft-Agents-arm64\\.zip$'");
+    expect(workflow).toContain("grep -E '^Craft-Agents-x64\\.zip$'");
     expect(existsSync(join(rootDir, 'scripts/merge-macos-update-manifests.py'))).toBe(true);
   });
 
@@ -83,7 +89,17 @@ describe('macOS release configuration', () => {
     expect(installScript).not.toContain('Open Anyway');
     expect(installScript).not.toContain('temporary workaround for unsigned or non-notarized builds');
     expect(installScript).toContain('verify_macos_app_trust');
+    expect(installScript).toContain('staged_app="$install_temp_dir/$APP_NAME"');
+    expect(installScript).toContain('backup_app="$backup_temp_dir/$APP_NAME"');
+    expect(installScript).toContain('mv "$INSTALL_DIR/$APP_NAME" "$backup_app"');
+    expect(installScript).toContain('mv "$staged_app" "$INSTALL_DIR/$APP_NAME"');
+    expect(installScript).toContain('mv "$backup_app" "$INSTALL_DIR/$APP_NAME"');
+    expect(installScript).toContain('endswith(\\".zip\\")');
+    expect(installScript).toContain('Expected exactly one .zip artifact for architecture');
     expect(installScript.indexOf('verify_macos_app_trust "$app_source"')).toBeLessThan(
+      installScript.indexOf('Removing previous installation'),
+    );
+    expect(installScript.indexOf('staged_app="$install_temp_dir/$APP_NAME"')).toBeLessThan(
       installScript.indexOf('Removing previous installation'),
     );
   });
@@ -104,6 +120,7 @@ describe('macOS release configuration', () => {
     const manifest = readFileSync(output, 'utf8');
     expect(manifest).toContain('  - url: Craft-Agents-arm64.zip');
     expect(manifest).toContain('    arch: arm64');
+    expect(manifest).toContain('    size: 1234');
   });
 
   test('macOS manifest helper merges arm64 and x64 manifests', () => {
@@ -129,8 +146,10 @@ describe('macOS release configuration', () => {
     const manifest = readFileSync(output, 'utf8');
     expect(manifest).toContain('  - url: Craft-Agents-arm64.zip');
     expect(manifest).toContain('    arch: arm64');
+    expect(manifest).toContain('    size: 1234');
     expect(manifest).toContain('  - url: Craft-Agents-x64.zip');
     expect(manifest).toContain('    arch: x64');
+    expect(manifest).toContain('    size: 5678');
     expect(manifest).toContain('path: Craft-Agents-arm64.zip');
   });
 });
