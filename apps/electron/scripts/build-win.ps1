@@ -27,7 +27,7 @@ function Get-Sha256Hex {
     }
 }
 
-Write-Host "=== Building Craft Agents Windows Installer using electron-builder ===" -ForegroundColor Cyan
+Write-Host "=== Building Storyflow Windows Installer using electron-builder ===" -ForegroundColor Cyan
 $env:CRAFT_BUILD_PLATFORM = "win32"
 $env:CRAFT_BUILD_ARCH = "x64"
 

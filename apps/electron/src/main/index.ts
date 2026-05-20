@@ -1,6 +1,6 @@
 // input: Electron app lifecycle, user config, workspace state, and local server runtime
 // output: Desktop main-process bootstrap, IPC bridges, windows, and cleanup
-// pos: Coordinates the Electron shell around the shared Craft Agent server core
+// pos: Coordinates the Electron shell around the shared Storyflow server core
 
 // Load user's shell environment first (before other imports that may use env)
 // This ensures tools like Homebrew, nvm, etc. are available to the agent
@@ -211,8 +211,8 @@ let messagingHandle: MessagingBootstrapHandle | null = null
 let pendingDeepLink: string | null = null
 
 // Set app name early (before app.whenReady) to ensure correct macOS menu bar title
-// Supports multi-instance dev: CRAFT_APP_NAME env var (e.g., "Craft Agents [1]")
-app.setName(process.env.CRAFT_APP_NAME || 'Craft Agents')
+// Supports multi-instance dev: CRAFT_APP_NAME env var (e.g., "Storyflow [1]")
+app.setName(process.env.CRAFT_APP_NAME || 'Storyflow')
 
 // Register as default protocol client for craftagents:// URLs
 // This must be done before app.whenReady() on some platforms
@@ -1082,7 +1082,7 @@ app.whenReady().then(async () => {
     releaseServerLock()
     if (!mainStartupIsHeadless) {
       dialog.showErrorBox(
-        'Craft Agents failed to start',
+        'Storyflow failed to start',
         error instanceof Error ? error.message : String(error),
       )
       app.quit()

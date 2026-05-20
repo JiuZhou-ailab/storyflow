@@ -16,7 +16,7 @@ import { createNovelProjectScaffold } from '../../writing/novel-template'
 import { getMiniAgentSystemPrompt, getSystemPrompt, type SystemPromptPreset } from '../system'
 
 describe('novel system prompt preset', () => {
-  it('adds novel writing workspace guidance while preserving the base Craft Agent prompt', () => {
+  it('adds novel writing workspace guidance while preserving the base Storyflow prompt', () => {
     const preset: SystemPromptPreset = 'novel'
 
     const prompt = getSystemPrompt(
@@ -25,11 +25,11 @@ describe('novel system prompt preset', () => {
       '/tmp/workspace',
       '/tmp/workspace',
       preset,
-      'Craft Agents Backend',
+      'Storyflow Backend',
       false
     )
 
-    expect(prompt).toContain('You are Craft Agent - an AI assistant')
+    expect(prompt).toContain('You are Storyflow - an AI assistant')
     expect(prompt).toContain('Novel Writing Workspace')
     expect(prompt).toContain('preserve manuscript prose')
     expect(prompt).toContain('bible as canon')
@@ -49,7 +49,7 @@ describe('novel system prompt preset', () => {
       '/tmp/workspace',
       '/tmp/workspace',
       'mini',
-      'Craft Agents Backend',
+      'Storyflow Backend',
       false
     )).toBe(getMiniAgentSystemPrompt('/tmp/workspace'))
   })
@@ -67,7 +67,7 @@ describe('novel system prompt preset', () => {
       rootPath,
       rootPath,
       'novel',
-      'Craft Agents Backend',
+      'Storyflow Backend',
       false
     )
 

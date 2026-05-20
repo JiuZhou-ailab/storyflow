@@ -1,6 +1,6 @@
 #!/bin/bash
 # input: Local Electron build inputs, runtime asset versions, and optional download proxy settings
-# output: A signed or ad-hoc signed macOS Craft Agents DMG for the requested architecture
+# output: A signed or ad-hoc signed macOS Storyflow DMG for the requested architecture
 # pos: macOS desktop packaging script used by local builds and release workflow
 
 set -e
@@ -84,7 +84,7 @@ done
 # Configuration
 BUN_VERSION="bun-v1.3.9"  # Pinned version for reproducible builds
 
-echo "=== Building Craft Agents DMG (${ARCH}) using electron-builder ==="
+echo "=== Building Storyflow DMG (${ARCH}) using electron-builder ==="
 if [ "$UPLOAD" = true ]; then
     echo "Will upload to S3 after build"
     if [ ! -f "$ROOT_DIR/scripts/upload.ts" ]; then
@@ -266,8 +266,8 @@ fi
 npx electron-builder $BUILDER_ARGS
 
 # 8. Verify the DMG was built
-# electron-builder.yml uses artifactName to output: Craft-Agents-${arch}.dmg
-DMG_NAME="Craft-Agents-${ARCH}.dmg"
+# electron-builder.yml uses artifactName to output: Storyflow-${arch}.dmg
+DMG_NAME="Storyflow-${ARCH}.dmg"
 DMG_PATH="$ELECTRON_DIR/release/$DMG_NAME"
 
 if [ ! -f "$DMG_PATH" ]; then

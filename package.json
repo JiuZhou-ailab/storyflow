@@ -1,5 +1,5 @@
 {
-  "name": "craft-agent",
+  "name": "storyflow",
   "version": "0.9.11",
   "license": "Apache-2.0",
   "description": "Claude Code-like agent for Craft documents",

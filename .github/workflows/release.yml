@@ -83,16 +83,16 @@ jobs:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
         run: |
           shopt -s nullglob
-          dmg_files=(apps/electron/release/Craft-Agents-*.dmg)
+          dmg_files=(apps/electron/release/Storyflow-*.dmg)
           if [ ${#dmg_files[@]} -eq 0 ]; then
             echo "No macOS artifacts found"
             exit 1
           fi
           files=("${dmg_files[@]}")
           optional_files=(
-            apps/electron/release/Craft-Agents-*.zip
-            apps/electron/release/Craft-Agents-*.dmg.blockmap
-            apps/electron/release/Craft-Agents-*.zip.blockmap
+            apps/electron/release/Storyflow-*.zip
+            apps/electron/release/Storyflow-*.dmg.blockmap
+            apps/electron/release/Storyflow-*.zip.blockmap
           )
           for file in "${optional_files[@]}"; do
             files+=("$file")
@@ -137,10 +137,10 @@ jobs:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
         run: |
           shopt -s nullglob
-          exe_files=(apps/electron/release/Craft-Agents-*.exe)
+          exe_files=(apps/electron/release/Storyflow-*.exe)
           files=(
             "${exe_files[@]}"
-            apps/electron/release/Craft-Agents-*.exe.blockmap
+            apps/electron/release/Storyflow-*.exe.blockmap
             apps/electron/release/latest.yml
           )
           if [ ${#exe_files[@]} -eq 0 ]; then
@@ -195,8 +195,8 @@ jobs:
         run: |
           asset_names="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')"
           echo "$asset_names"
-          echo "$asset_names" | grep -E '^Craft-Agents-.*\.dmg$'
-          echo "$asset_names" | grep -E '^Craft-Agents-.*\.exe$'
+          echo "$asset_names" | grep -E '^Storyflow-.*\.dmg$'
+          echo "$asset_names" | grep -E '^Storyflow-.*\.exe$'
           echo "$asset_names" | grep -E '^latest\.yml$'
           echo "$asset_names" | grep -E '^install-app\.sh$'
           echo "$asset_names" | grep -E '^install-app\.ps1$'

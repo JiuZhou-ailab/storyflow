@@ -1,6 +1,6 @@
 /**
  * input: Electron build config, staged runtime assets, and macOS target architecture
- * output: A verified architecture-specific Craft Agents DMG path
+ * output: A verified architecture-specific Storyflow DMG path
  * pos: macOS packaging gate for the desktop release pipeline
  *
  * macOS-specific build logic
@@ -67,12 +67,12 @@ export async function packageDarwin(config: BuildConfig): Promise<string> {
 
   // Verify SDK is bundled in the .app before checking artifacts
   const macDir = arch === 'arm64' ? 'mac-arm64' : 'mac';
-  const appPath = join(electronDir, 'release', macDir, 'Craft Agents.app');
+  const appPath = join(electronDir, 'release', macDir, 'Storyflow.app');
   console.log('Verifying SDK in packaged app...');
   verifyPackagedSDK(appPath, arch);
 
   // Verify the DMG was built.
-  const dmgName = `Craft-Agents-${arch}.dmg`;
+  const dmgName = `Storyflow-${arch}.dmg`;
   const dmgPath = join(electronDir, 'release', dmgName);
 
   if (!existsSync(dmgPath)) {

@@ -1,6 +1,6 @@
 #!/bin/bash
-# input: Host platform details and release metadata from the Craft Agents update endpoint
-# output: A compatible Craft Agents desktop installation or a clear preflight failure
+# input: Host platform details and release metadata from the Storyflow update endpoint
+# output: A compatible Storyflow desktop installation or a clear preflight failure
 # pos: User-facing installer that selects the correct release artifact for this machine
 
 set -e
@@ -27,14 +27,14 @@ print_macos_gatekeeper_notice() {
 
 macOS security notice
 ─────────────────────────────────────────────────────────────────────────
-If macOS says Apple cannot verify "Craft Agents", only continue if this
-copy was downloaded from the official Craft Agents release source.
+If macOS says Apple cannot verify "Storyflow", only continue if this
+copy was downloaded from the official Storyflow release source.
 
 To open it:
   1. Open System Settings.
   2. Search for Security and open Privacy & Security.
   3. Scroll to Security.
-  4. Find the blocked "Craft Agents" entry.
+  4. Find the blocked "Storyflow" entry.
   5. Click Open Anyway, then confirm.
 
 This is a temporary workaround for unsigned or non-notarized builds. The
@@ -43,7 +43,7 @@ EOF
 
     if command -v osascript >/dev/null 2>&1; then
         osascript <<'OSA' >/dev/null 2>&1 || true
-display dialog "If macOS says Apple cannot verify \"Craft Agents\", open System Settings, search for Security, go to Privacy & Security, then click Open Anyway for Craft Agents. Only do this for downloads from the official Craft Agents release source." buttons {"OK"} default button "OK" with title "Craft Agents macOS Security"
+display dialog "If macOS says Apple cannot verify \"Storyflow\", open System Settings, search for Security, go to Privacy & Security, then click Open Anyway for Storyflow. Only do this for downloads from the official Storyflow release source." buttons {"OK"} default button "OK" with title "Storyflow macOS Security"
 OSA
     fi
 }
@@ -195,11 +195,11 @@ if [ "$OS_TYPE" = "darwin" ]; then
         error "Unable to detect macOS version"
     fi
     if ! version_at_least "$macos_version" "$MIN_MACOS_VERSION"; then
-        error "Craft Agents requires macOS $MIN_MACOS_VERSION or newer. Detected macOS $macos_version on this Mac."
+        error "Storyflow requires macOS $MIN_MACOS_VERSION or newer. Detected macOS $macos_version on this Mac."
     fi
 
     platform="darwin-${arch}"
-    APP_NAME="Craft Agents.app"
+    APP_NAME="Storyflow.app"
     INSTALL_DIR="/Applications"
     ext="zip"
     yml_file="latest-mac.yml"
@@ -209,7 +209,7 @@ else
         error "Linux currently only supports x64 architecture. Your architecture: $arch"
     fi
     platform="linux-${arch}"
-    APP_NAME="Craft-Agents-x64.AppImage"
+    APP_NAME="Storyflow-x64.AppImage"
     INSTALL_DIR="$HOME/.local/bin"
     ext="AppImage"
     yml_file="latest-linux.yml"
@@ -262,7 +262,7 @@ fi
 
 # Use default filename if not found
 if [ -z "$filename" ]; then
-    filename="Craft-Agents-${arch}.${ext}"
+    filename="Storyflow-${arch}.${ext}"
 fi
 
 info "Expected sha512: ${checksum:0:20}..."
@@ -303,22 +303,22 @@ if [ "$OS_TYPE" = "darwin" ]; then
 
     # Quit the app if it's running (use bundle ID for reliability)
     APP_BUNDLE_ID="com.lukilabs.craft-agent"
-    if pgrep -x "Craft Agents" >/dev/null 2>&1; then
-        info "Quitting Craft Agents..."
+    if pgrep -x "Storyflow" >/dev/null 2>&1; then
+        info "Quitting Storyflow..."
         osascript -e "tell application id \"$APP_BUNDLE_ID\" to quit" 2>/dev/null || true
         # Wait for app to quit (max 5 seconds) - POSIX compatible loop
         i=0
         while [ $i -lt 10 ]; do
-            if ! pgrep -x "Craft Agents" >/dev/null 2>&1; then
+            if ! pgrep -x "Storyflow" >/dev/null 2>&1; then
                 break
             fi
             sleep 0.5
             i=$((i + 1))
         done
         # Force kill if still running
-        if pgrep -x "Craft Agents" >/dev/null 2>&1; then
+        if pgrep -x "Storyflow" >/dev/null 2>&1; then
             warn "App didn't quit gracefully. Force quitting (unsaved data may be lost)..."
-            pkill -9 -x "Craft Agents" 2>/dev/null || true
+            pkill -9 -x "Storyflow" 2>/dev/null || true
             # Wait longer for macOS to release file handles
             sleep 3
         fi
@@ -365,10 +365,10 @@ if [ "$OS_TYPE" = "darwin" ]; then
     echo ""
     success "Installation complete!"
     echo ""
-    printf "%b\n" "  Craft Agents has been installed to ${BOLD}$INSTALL_DIR/$APP_NAME${NC}"
+    printf "%b\n" "  Storyflow has been installed to ${BOLD}$INSTALL_DIR/$APP_NAME${NC}"
     echo ""
     printf "%b\n" "  You can launch it from ${BOLD}Applications${NC} or by running:"
-    printf "%b\n" "    ${BOLD}open -a 'Craft Agents'${NC}"
+    printf "%b\n" "    ${BOLD}open -a 'Storyflow'${NC}"
     echo ""
     print_macos_gatekeeper_notice
 
@@ -378,12 +378,12 @@ else
 
     # New paths
     APP_DIR="$HOME/.craft-agent/app"
-    WRAPPER_PATH="$INSTALL_DIR/craft-agents"
-    APPIMAGE_INSTALL_PATH="$APP_DIR/Craft-Agents-x64.AppImage"
+    WRAPPER_PATH="$INSTALL_DIR/storyflow"
+    APPIMAGE_INSTALL_PATH="$APP_DIR/Storyflow-x64.AppImage"
 
     # Kill the app if it's running
     if pgrep -f "Craft-Agent.*AppImage" >/dev/null 2>&1; then
-        info "Stopping Craft Agents..."
+        info "Stopping Storyflow..."
         pkill -f "Craft-Agent.*AppImage" 2>/dev/null || true
         sleep 2
     fi
@@ -404,15 +404,15 @@ else
     info "Creating launcher at $WRAPPER_PATH..."
     cat > "$WRAPPER_PATH" << 'WRAPPER_EOF'
 #!/bin/bash
-# Craft Agent launcher - handles Linux-specific AppImage issues
+# Storyflow launcher - handles Linux-specific AppImage issues
 
-APPIMAGE_PATH="$HOME/.craft-agent/app/Craft-Agents-x64.AppImage"
+APPIMAGE_PATH="$HOME/.craft-agent/app/Storyflow-x64.AppImage"
 ELECTRON_CACHE="$HOME/.config/@craft-agent"
 ELECTRON_CACHE_ALT="$HOME/.cache/@craft-agent"
 
 # Verify AppImage exists
 if [ ! -f "$APPIMAGE_PATH" ]; then
-    echo "Error: Craft Agent not found at $APPIMAGE_PATH"
+    echo "Error: Storyflow not found at $APPIMAGE_PATH"
     echo "Reinstall: curl -fsSL $RELEASE_DOWNLOAD_URL/install-app.sh | bash"
     exit 1
 fi
@@ -440,7 +440,7 @@ WRAPPER_EOF
     chmod +x "$WRAPPER_PATH"
 
     # Migrate old installation
-    OLD_APPIMAGE="$INSTALL_DIR/Craft-Agents-x64.AppImage"
+    OLD_APPIMAGE="$INSTALL_DIR/Storyflow-x64.AppImage"
     [ -f "$OLD_APPIMAGE" ] && rm -f "$OLD_APPIMAGE"
 
     echo ""
@@ -451,7 +451,7 @@ WRAPPER_EOF
     printf "%b\n" "  AppImage: ${BOLD}$APPIMAGE_INSTALL_PATH${NC}"
     printf "%b\n" "  Launcher: ${BOLD}$WRAPPER_PATH${NC}"
     echo ""
-    printf "%b\n" "  Run with: ${BOLD}craft-agents${NC}"
+    printf "%b\n" "  Run with: ${BOLD}storyflow${NC}"
     echo ""
     printf "%b\n" "  Add to PATH if needed:"
     printf "%b\n" "    ${BOLD}echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc${NC}"

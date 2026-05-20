@@ -2,7 +2,7 @@
   "name": "@craft-agent/core",
   "version": "0.9.11",
   "license": "Apache-2.0",
-  "description": "Core types, storage, and agent logic for Craft Agents",
+  "description": "Core types, storage, and agent logic for Storyflow",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
