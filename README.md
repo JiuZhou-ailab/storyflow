@@ -78,7 +78,8 @@ bun run electron:start
 | `bun run electron:dev` | 以开发模式启动 Electron 应用 |
 | `bun run electron:start` | 构建并运行 Electron 应用 |
 | `bun run electron:build` | 构建 Electron main、preload、renderer、resources 和 assets |
-| `bun run electron:dist:dev:mac` | 通过 runtime-staged 打包路径构建未签名的 macOS 开发包 |
+| `bun run electron:dist:mac` | 构建正式 macOS 包；需要 Developer ID 签名和 Apple 公证凭据 |
+| `bun run electron:dist:dev:mac` | 通过 runtime-staged 打包路径构建 macOS 开发包；缺少签名/公证凭据时不会作为正式发布产物 |
 | `bun run release -- --platform=darwin --arch=arm64` | 运行版本检查、CI 验证和 runtime-staged 本地打包 |
 | `bun run server:start` | 启动独立无头服务端 |
 | `bun run server:dev` | 以 debug 设置启动无头服务端 |
@@ -245,26 +246,25 @@ bun run electron:build
 打包命令：
 
 ```bash
-bun run electron:dist:dev:mac -- --arch=arm64
-bun run electron:dist:dev:mac -- --arch=x64
+bun run electron:dist:mac -- --arch=arm64
+bun run electron:dist:mac -- --arch=x64
 bun run electron:dist:dev:win
 ```
 
-当前 GitHub release 只发布 macOS `.dmg` 和 Windows `.exe` 产物。macOS 产物按架构区分：Apple Silicon Mac 使用 `Craft-Agents-arm64.dmg`，Intel Mac 使用 `Craft-Agents-x64.dmg`，并且 Electron runtime 需要 macOS 12.0 或更高版本。打开错误架构的 macOS 产物，或在 macOS 11 及更早系统运行，可能会看到系统提示此 Mac 不支持该应用。
+当前 GitHub release 发布 macOS `.dmg`、macOS `.zip` 自动更新包、合并后的 `latest-mac.yml` 和 Windows `.exe` 产物。macOS 产物按架构区分：Apple Silicon Mac 使用 `Craft-Agents-arm64.dmg`，Intel Mac 使用 `Craft-Agents-x64.dmg`，并且 Electron runtime 需要 macOS 12.0 或更高版本。打开错误架构的 macOS 产物，或在 macOS 11 及更早系统运行，可能会看到系统提示此 Mac 不支持该应用。
 
-### macOS 安全提示
+### macOS 正式发布
 
-在 macOS 应用使用 Developer ID 证书签名并通过 Apple notarization 之前，macOS Gatekeeper 可能会提示 Apple 无法验证 Craft Agents 是否包含恶意软件或是否会影响隐私。下面步骤只适用于从官方 GitHub release 页面下载的 Craft Agents。
+正式 macOS release 必须通过 Developer ID Application 证书签名，并完成 Apple notarization。CI 发布 job 会设置 `CRAFT_REQUIRE_MAC_SIGNING=1`，缺少签名或公证凭据时会在上传前失败。
 
-打开应用：
+GitHub Actions secrets 至少需要：
 
-1. 打开 `System Settings`。
-2. 搜索 `Security`，进入 `Privacy & Security`。
-3. 滚动到 `Security` 区域。
-4. 找到被拦截的 `Craft Agents` 条目。
-5. 点击 `Open Anyway` 并确认。
+- `CSC_LINK`：Developer ID Application 证书，可以是 base64 编码的 `.p12` 内容或 electron-builder 支持的证书路径/URL。
+- `CSC_KEY_PASSWORD`：证书密码；如果证书无密码可留空。
+- `APPLE_API_KEY_BASE64`、`APPLE_API_KEY_ID`、`APPLE_API_ISSUER`：推荐的 App Store Connect API key 公证凭据。
+- 或使用 `APPLE_ID`、`APPLE_TEAM_ID`、`APPLE_APP_SPECIFIC_PASSWORD` 作为密码式公证凭据。
 
-长期发布方案是 Developer ID 签名加 Apple notarization。这个手动批准步骤只是未签名或未公证构建的临时绕过方式。
+macOS release 构建会验证 `.app` 的签名、Gatekeeper assessment 和 notarization staple，并确认 `.dmg` 与 `.zip` 产物都已生成。不要把 `electron:dist:dev:mac` 产物发布给普通用户。
 
 根打包脚本会调用 `apps/electron/scripts` 下的平台构建脚本，确保内置 `uv`、Bun、SDK binary、ripgrep 和辅助子进程等运行时资源在 `electron-builder` 执行前完成 staging。不要直接从仓库根目录运行裸 `electron-builder` 命令作为 release 路径。
 

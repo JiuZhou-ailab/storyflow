@@ -74,7 +74,39 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build macOS artifacts
-        run: bun run electron:dist:dev:mac -- --arch=${{ matrix.arch }}
+        run: bun run electron:dist:mac -- --arch=${{ matrix.arch }}
+        env:
+          CRAFT_REQUIRE_MAC_SIGNING: "1"
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+
+      - name: Verify macOS signing and notarization
+        run: |
+          set -euo pipefail
+          app_dir="apps/electron/release/${{ matrix.arch == 'arm64' && 'mac-arm64' || 'mac' }}/Craft Agents.app"
+          dmg_file="apps/electron/release/Craft-Agents-${{ matrix.arch }}.dmg"
+          zip_file="apps/electron/release/Craft-Agents-${{ matrix.arch }}.zip"
+          codesign --verify --deep --strict --verbose=2 "$app_dir"
+          spctl --assess --type execute --verbose=4 "$app_dir"
+          xcrun stapler validate "$app_dir"
+          test -f "$dmg_file"
+          test -f "$zip_file"
+
+      - name: Annotate macOS update manifest
+        run: |
+          set -euo pipefail
+          manifest="apps/electron/release/latest-mac.yml"
+          python3 scripts/merge-macos-update-manifests.py \
+            "$manifest.tmp" \
+            "${{ matrix.arch }}=$manifest"
+          mv "$manifest.tmp" "$manifest"
+          cp "$manifest" "apps/electron/release/latest-mac-${{ matrix.arch }}.yml"
 
       - name: Upload macOS artifacts to release
         env:
@@ -93,6 +125,7 @@ jobs:
             apps/electron/release/Craft-Agents-*.zip
             apps/electron/release/Craft-Agents-*.dmg.blockmap
             apps/electron/release/Craft-Agents-*.zip.blockmap
+            apps/electron/release/latest-mac-*.yml
           )
           for file in "${optional_files[@]}"; do
             files+=("$file")
@@ -187,6 +220,29 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
+
+      - name: Merge macOS update manifests
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          cd "$tmp"
+          gh release download "$RELEASE_TAG" \
+            --pattern 'latest-mac-arm64.yml' \
+            --pattern 'latest-mac-x64.yml'
+          python3 "$GITHUB_WORKSPACE/scripts/merge-macos-update-manifests.py" \
+            latest-mac.yml \
+            arm64=latest-mac-arm64.yml \
+            x64=latest-mac-x64.yml
+          gh release upload "$RELEASE_TAG" latest-mac.yml --clobber
+
       - name: Verify release assets
         env:
           GH_REPO: ${{ github.repository }}
@@ -196,7 +252,11 @@ jobs:
           asset_names="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')"
           echo "$asset_names"
           echo "$asset_names" | grep -E '^Craft-Agents-.*\.dmg$'
+          echo "$asset_names" | grep -E '^Craft-Agents-.*\.zip$'
           echo "$asset_names" | grep -E '^Craft-Agents-.*\.exe$'
+          echo "$asset_names" | grep -E '^latest-mac\.yml$'
+          echo "$asset_names" | grep -E '^latest-mac-arm64\.yml$'
+          echo "$asset_names" | grep -E '^latest-mac-x64\.yml$'
           echo "$asset_names" | grep -E '^latest\.yml$'
           echo "$asset_names" | grep -E '^install-app\.sh$'
           echo "$asset_names" | grep -E '^install-app\.ps1$'

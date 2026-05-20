@@ -22,30 +22,14 @@ success() { printf "%b\n" "${GREEN}>${NC} $1"; }
 warn() { printf "%b\n" "${YELLOW}!${NC} $1"; }
 error() { printf "%b\n" "${RED}x${NC} $1"; exit 1; }
 
-print_macos_gatekeeper_notice() {
-    cat <<'EOF'
+verify_macos_app_trust() {
+    local app_path="$1"
 
-macOS security notice
-─────────────────────────────────────────────────────────────────────────
-If macOS says Apple cannot verify "Craft Agents", only continue if this
-copy was downloaded from the official Craft Agents release source.
+    info "Verifying macOS app signature..."
+    codesign --verify --deep --strict "$app_path" >/dev/null
 
-To open it:
-  1. Open System Settings.
-  2. Search for Security and open Privacy & Security.
-  3. Scroll to Security.
-  4. Find the blocked "Craft Agents" entry.
-  5. Click Open Anyway, then confirm.
-
-This is a temporary workaround for unsigned or non-notarized builds. The
-proper distribution fix is Developer ID signing plus Apple notarization.
-EOF
-
-    if command -v osascript >/dev/null 2>&1; then
-        osascript <<'OSA' >/dev/null 2>&1 || true
-display dialog "If macOS says Apple cannot verify \"Craft Agents\", open System Settings, search for Security, go to Privacy & Security, then click Open Anyway for Craft Agents. Only do this for downloads from the official Craft Agents release source." buttons {"OK"} default button "OK" with title "Craft Agents macOS Security"
-OSA
-    fi
+    info "Checking macOS Gatekeeper trust..."
+    spctl --assess --type execute "$app_path" >/dev/null
 }
 
 version_at_least() {
@@ -301,7 +285,27 @@ if [ "$OS_TYPE" = "darwin" ]; then
     # macOS installation (from ZIP)
     zip_path="$installer_path"
 
-    # Quit the app if it's running (use bundle ID for reliability)
+    # Extract ZIP to temp directory
+    info "Extracting..."
+    temp_dir=$(mktemp -d)
+    if ! unzip -q "$zip_path" -d "$temp_dir"; then
+        rm -rf "$temp_dir"
+        rm -f "$zip_path"
+        error "Failed to extract ZIP"
+    fi
+
+    # Find the .app in the extracted contents
+    app_source=$(find "$temp_dir" -maxdepth 1 -name "*.app" -type d | head -1)
+
+    if [ -z "$app_source" ]; then
+        rm -rf "$temp_dir"
+        rm -f "$zip_path"
+        error "No .app found in ZIP"
+    fi
+
+    verify_macos_app_trust "$app_source"
+
+    # Quit the app only after the replacement bundle has been extracted and trusted.
     APP_BUNDLE_ID="com.lukilabs.craft-agent"
     if pgrep -x "Craft Agents" >/dev/null 2>&1; then
         info "Quitting Craft Agents..."
@@ -324,28 +328,10 @@ if [ "$OS_TYPE" = "darwin" ]; then
         fi
     fi
 
-    # Remove existing installation if present
+    # Remove existing installation only after the new bundle passed trust checks.
     if [ -d "$INSTALL_DIR/$APP_NAME" ]; then
         info "Removing previous installation..."
         rm -rf "$INSTALL_DIR/$APP_NAME"
-    fi
-
-    # Extract ZIP to temp directory
-    info "Extracting..."
-    temp_dir=$(mktemp -d)
-    if ! unzip -q "$zip_path" -d "$temp_dir"; then
-        rm -rf "$temp_dir"
-        rm -f "$zip_path"
-        error "Failed to extract ZIP"
-    fi
-
-    # Find the .app in the extracted contents
-    app_source=$(find "$temp_dir" -maxdepth 1 -name "*.app" -type d | head -1)
-
-    if [ -z "$app_source" ]; then
-        rm -rf "$temp_dir"
-        rm -f "$zip_path"
-        error "No .app found in ZIP"
     fi
 
     # Copy app to /Applications
@@ -370,7 +356,6 @@ if [ "$OS_TYPE" = "darwin" ]; then
     printf "%b\n" "  You can launch it from ${BOLD}Applications${NC} or by running:"
     printf "%b\n" "    ${BOLD}open -a 'Craft Agents'${NC}"
     echo ""
-    print_macos_gatekeeper_notice
 
 else
     # Linux installation

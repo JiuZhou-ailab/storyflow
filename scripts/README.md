@@ -24,6 +24,7 @@ Build, validation, packaging, install, and local development entry scripts for t
 - `install-app.ps1` - Windows app installer.
 - `install-app.sh` - Unix app installer.
 - `install-server.sh` - server installer.
+- `merge-macos-update-manifests.py` - merges per-architecture macOS update manifests after CI matrix builds.
 - `oss-sync.ts` - explicit placeholder for the unavailable OSS sync workflow.
 - `release.ts` - release gate that runs version checks, CI validation, and packaging.
 - `sort-locales.ts` - locale key sorter.
