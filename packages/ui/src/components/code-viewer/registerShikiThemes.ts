@@ -1,6 +1,15 @@
+// input: @pierre/diffs theme registry and bundled Shiki themes
+// output: Craft diff themes with transparent backgrounds and readable semantic colors
+// pos: Shared bridge between app theming and @pierre/diffs rendering
+
 import { registerCustomTheme, resolveTheme } from '@pierre/diffs'
 
 const GLOBAL_THEME_KEY = '__craftShikiThemesRegistered__'
+const LIGHT_DIFF_COLORS = {
+  addition: '#1a7f37',
+  deletion: '#cf222e',
+  modified: '#0969da',
+} as const
 
 /**
  * Register craft-dark / craft-light Shiki themes once per runtime.
@@ -18,7 +27,22 @@ export function registerCraftShikiThemes() {
   })
 
   registerCustomTheme('craft-light', async () => {
-    const theme = await resolveTheme('pierre-light')
-    return { ...theme, name: 'craft-light', bg: 'transparent', colors: { ...theme.colors, 'editor.background': 'transparent' } }
+    const theme = await resolveTheme('github-light')
+    return {
+      ...theme,
+      name: 'craft-light',
+      bg: 'transparent',
+      colors: {
+        ...theme.colors,
+        'editor.background': 'transparent',
+        'terminal.ansiGreen': LIGHT_DIFF_COLORS.addition,
+        'terminal.ansiRed': LIGHT_DIFF_COLORS.deletion,
+        'terminal.ansiBlue': LIGHT_DIFF_COLORS.modified,
+        'gitDecoration.addedResourceForeground': LIGHT_DIFF_COLORS.addition,
+        'gitDecoration.deletedResourceForeground': LIGHT_DIFF_COLORS.deletion,
+        'gitDecoration.modifiedResourceForeground': LIGHT_DIFF_COLORS.modified,
+        'gitDecoration.untrackedResourceForeground': LIGHT_DIFF_COLORS.addition,
+      },
+    }
   })
 }

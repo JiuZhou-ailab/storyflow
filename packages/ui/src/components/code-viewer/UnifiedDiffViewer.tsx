@@ -1,3 +1,7 @@
+// input: Pre-computed unified diff strings and optional app Shiki theme
+// output: Rendered @pierre/diffs file diff viewer with app-aware theming
+// pos: Shared viewer for Codex-format unified patches
+
 /**
  * UnifiedDiffViewer - Diff viewer for pre-computed unified diff strings
  *
@@ -11,9 +15,10 @@
 import * as React from 'react'
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { FileDiff, type FileDiffProps } from '@pierre/diffs/react'
-import { parsePatchFiles, DIFFS_TAG_NAME, registerCustomTheme, resolveTheme, type FileDiffMetadata } from '@pierre/diffs'
+import { parsePatchFiles, DIFFS_TAG_NAME, type FileDiffMetadata } from '@pierre/diffs'
 import { cn } from '../../lib/utils'
 import { LANGUAGE_MAP } from './language-map'
+import { registerCraftShikiThemes } from './registerShikiThemes'
 
 // Register the diffs-container custom element if not already registered
 // (shared with ShikiDiffViewer - safe to call multiple times)
@@ -28,7 +33,8 @@ if (typeof HTMLElement !== 'undefined' && !customElements.get(DIFFS_TAG_NAME)) {
   customElements.define(DIFFS_TAG_NAME, FileDiffContainer)
 }
 
-// Custom themes are registered in ShikiDiffViewer and shared across components
+// Register custom themes once per runtime.
+registerCraftShikiThemes()
 
 export interface UnifiedDiffViewerProps {
   /** Raw unified diff string (e.g., from Codex fileChange.diff) */

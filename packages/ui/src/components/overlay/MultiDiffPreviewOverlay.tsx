@@ -1,3 +1,7 @@
+// input: Edit/Write file changes, review callbacks, theme mode, and Shiki theme context
+// output: Multi-file diff preview overlay with readable app-aware syntax colors
+// pos: User-facing review surface for generated file changes
+
 /**
  * MultiDiffPreviewOverlay - Overlay for multiple file changes (Edit/Write tools)
  *
@@ -16,13 +20,14 @@
 import * as React from 'react'
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { Check, PencilLine, FilePlus, RotateCcw, X } from 'lucide-react'
-import { parseDiffFromFile, parsePatchFiles, type FileContents } from '@pierre/diffs'
+import { parseDiffFromFile, type FileContents } from '@pierre/diffs'
 import { ShikiDiffViewer, getDiffStats } from '../code-viewer/ShikiDiffViewer'
 import { UnifiedDiffViewer, getUnifiedDiffStats } from '../code-viewer/UnifiedDiffViewer'
 import { DiffViewerControls } from '../code-viewer/DiffViewerControls'
 import { LANGUAGE_MAP } from '../code-viewer/language-map'
 import { PreviewOverlay, type BadgeVariant } from './PreviewOverlay'
 import { usePlatform } from '../../context/PlatformContext'
+import { useShikiTheme } from '../../context/ShikiThemeContext'
 import { cn } from '../../lib/utils'
 
 /**
@@ -163,6 +168,7 @@ export function MultiDiffPreviewOverlay({
   onRejectChange,
 }: MultiDiffPreviewOverlayProps) {
   const { onOpenFileExternal } = usePlatform()
+  const shikiTheme = useShikiTheme() ?? undefined
 
   // Ref map for scroll-to-focused-change support
   const changeRefs = useRef<Map<string, HTMLDivElement>>(new Map())
@@ -386,6 +392,7 @@ export function MultiDiffPreviewOverlay({
                         disableFileHeader={false}
                         onFileHeaderClick={onOpenFileExternal}
                         theme={theme}
+                        shikiTheme={shikiTheme}
                         onReady={handleDiffReady}
                       />
                     ) : (
@@ -399,6 +406,7 @@ export function MultiDiffPreviewOverlay({
                         disableFileHeader={false}
                         onFileHeaderClick={onOpenFileExternal}
                         theme={theme}
+                        shikiTheme={shikiTheme}
                         onReady={handleDiffReady}
                       />
                     )}

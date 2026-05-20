@@ -1,3 +1,7 @@
+// input: Raw markdown diff fence content and optional Shiki theme context
+// output: Rendered @pierre/diffs block with normalized patch structure
+// pos: Inline diff renderer for markdown messages
+
 /**
  * MarkdownDiffBlock - Renders diff code blocks using @pierre/diffs
  *
@@ -21,6 +25,7 @@ import { cn } from '../../lib/utils'
 import { CodeBlock } from './CodeBlock'
 import { ensureUnifiedDiffFormat } from './diff-normalize'
 import { registerCraftShikiThemes } from '../code-viewer/registerShikiThemes'
+import { useShikiTheme } from '../../context/ShikiThemeContext'
 
 // ── Custom element + theme registration (same as ShikiDiffViewer) ──────────
 // Idempotent: safe to run even if ShikiDiffViewer already registered these.
@@ -90,7 +95,8 @@ export interface MarkdownDiffBlockProps {
 
 export function MarkdownDiffBlock({ code, className }: MarkdownDiffBlockProps) {
   const dark = isDarkMode()
-  const themeName = dark ? 'craft-dark' : 'craft-light'
+  const shikiTheme = useShikiTheme()
+  const themeName = shikiTheme || (dark ? 'craft-dark' : 'craft-light')
 
   // Build the same options used in ShikiDiffViewer for visual consistency
   const options: PatchDiffProps<undefined>['options'] = React.useMemo(() => ({
