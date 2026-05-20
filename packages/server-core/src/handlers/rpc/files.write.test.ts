@@ -147,7 +147,7 @@ describe('file write RPC registration', () => {
       const results = await searchFiles(ctx, root, '正文', {
         mode: 'path',
         includeDescendants: false,
-      }) as Array<{ relativePath: string; type: string }>
+      }) as Array<{ name: string; path: string; relativePath: string; type: string }>
 
       expect(results).toEqual([
         { name: '正文', path: join(root, '正文'), relativePath: '正文', type: 'directory' },
