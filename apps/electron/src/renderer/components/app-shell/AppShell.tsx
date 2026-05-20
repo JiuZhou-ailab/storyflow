@@ -171,6 +171,11 @@ import {
   type NovelReviewStatusMap,
 } from "@/lib/novel-review-workflow"
 import {
+  buildAcceptNovelChangeUndoEntry,
+  buildRejectNovelChangeUndoEntry,
+  type NovelReviewUndoEntry,
+} from "@/lib/novel-review-undo"
+import {
   buildNovelWorkspaceTree,
   detectNovelProjectFromSearchResults,
   getNovelWorkspaceCandidateRoots,
@@ -204,6 +209,23 @@ interface AppShellProps {
   menuNewChatTrigger?: number
   /** Focused mode - hides sidebars, shows only the chat content */
   isFocusedMode?: boolean
+}
+
+function isNovelReviewUndoShortcut(event: KeyboardEvent): boolean {
+  return (event.metaKey || event.ctrlKey)
+    && !event.shiftKey
+    && !event.altKey
+    && event.key.toLowerCase() === 'z'
+}
+
+function isTextEditingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+
+  const tagName = target.tagName.toLowerCase()
+  return tagName === 'input'
+    || tagName === 'textarea'
+    || target.isContentEditable
+    || target.closest('[contenteditable="true"]') != null
 }
 
 /** Filter mode for tri-state filtering: include shows only matching, exclude hides matching */
@@ -2269,10 +2291,12 @@ function AppShellContent({
   }, [ensureNovelDocumentSaved, novelWorkspaceFiles, novelWorkspaceRoot, t])
 
   const [novelChangeReviewStatus, setNovelChangeReviewStatus] = React.useState<NovelReviewStatusMap>({})
+  const novelReviewUndoStackRef = React.useRef<NovelReviewUndoEntry[]>([])
 
   React.useEffect(() => {
     if (!effectiveSessionId) {
       setNovelChangeReviewStatus({})
+      novelReviewUndoStackRef.current = []
       return
     }
 
@@ -2297,6 +2321,75 @@ function AppShellContent({
       storage.set(storage.KEYS.novelChangeReviewStatus, normalizedStatus, effectiveSessionId)
     }
   }, [effectiveSessionId, reviewableNovelFileChanges])
+
+  const pushNovelReviewUndoEntry = React.useCallback((entry: NovelReviewUndoEntry | null | undefined) => {
+    if (!entry || (entry.writes.length === 0 && Object.keys(entry.status).length === 0)) return
+
+    novelReviewUndoStackRef.current.push(entry)
+    if (novelReviewUndoStackRef.current.length > 20) {
+      novelReviewUndoStackRef.current.shift()
+    }
+  }, [])
+
+  const handleUndoNovelReviewAction = React.useCallback(async () => {
+    const entry = novelReviewUndoStackRef.current.pop()
+    if (!entry) return false
+
+    if (novelDocumentDirty) {
+      novelReviewUndoStackRef.current.push(entry)
+      toast.error(t(
+        'writing.review.undoBlockedByUnsavedEdits',
+        'Save or discard your current edits before undoing the review action.'
+      ))
+      return true
+    }
+
+    try {
+      for (const write of entry.writes) {
+        await window.electronAPI.writeFile(write.filePath, write.content)
+      }
+
+      persistNovelChangeReviewStatus(entry.status)
+
+      const selectedWrite = selectedNovelFile?.path
+        ? entry.writes.find(write => write.filePath === selectedNovelFile.path)
+        : undefined
+      if (selectedWrite) {
+        setNovelDocumentContent(selectedWrite.content)
+        setSavedNovelDocumentContent(selectedWrite.content)
+      }
+
+      toast.success(t('writing.review.undone', 'Review action undone'))
+      return true
+    } catch (error) {
+      novelReviewUndoStackRef.current.push(entry)
+      toast.error(t('writing.review.undoFailed', 'Failed to undo review action'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+      return true
+    }
+  }, [
+    novelDocumentDirty,
+    persistNovelChangeReviewStatus,
+    selectedNovelFile?.path,
+    t,
+  ])
+
+  React.useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!isNovelReviewUndoShortcut(event)) return
+      if (novelReviewUndoStackRef.current.length === 0) return
+      if (isTextEditingTarget(event.target)) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      void handleUndoNovelReviewAction()
+    }
+
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [handleUndoNovelReviewAction])
 
   const pendingNovelChangedFilePaths = React.useMemo(
     () => getPendingChangedFilePaths(reviewableNovelFileChanges, novelChangeReviewStatus),
@@ -2790,18 +2883,37 @@ function AppShellContent({
     const synced = await syncSelectedNovelDocumentFromDisk(change.filePath)
     if (!synced) return
 
+    let undoEntry: NovelReviewUndoEntry | undefined
+    try {
+      const currentContent = await window.electronAPI.readFile(change.filePath)
+      const undo = buildAcceptNovelChangeUndoEntry(change, currentContent, novelChangeReviewStatus)
+      if (undo.ok) {
+        undoEntry = undo.entry
+      }
+    } catch (error) {
+      console.warn('[writing] Failed to capture accept undo entry:', error)
+    }
+
     const changeKey = getNovelReviewChangeKey(change)
     const nextStatus = {
       ...novelChangeReviewStatus,
       [changeKey]: 'accepted' as const,
     }
     persistNovelChangeReviewStatus(nextStatus)
+    pushNovelReviewUndoEntry(undoEntry)
     void handleSelectNextNovelChangeAfterStatus(change, nextStatus)
-    toast.success(t('writing.review.accepted', 'Change accepted'))
+    toast.success(t('writing.review.accepted', 'Change accepted'), undoEntry ? {
+      action: {
+        label: t('common.undo', 'Undo'),
+        onClick: () => { void handleUndoNovelReviewAction() },
+      },
+    } : undefined)
   }, [
+    handleUndoNovelReviewAction,
     handleSelectNextNovelChangeAfterStatus,
     novelChangeReviewStatus,
     persistNovelChangeReviewStatus,
+    pushNovelReviewUndoEntry,
     syncSelectedNovelDocumentFromDisk,
     t,
   ])
@@ -2820,18 +2932,50 @@ function AppShellContent({
     }
 
     const nextStatus: NovelReviewStatusMap = { ...novelChangeReviewStatus }
+    let undoStatus: NovelReviewStatusMap = { ...novelChangeReviewStatus }
+    const undoContentByPath = new Map<string, string>()
     for (const change of reviewableNovelFileChanges) {
       if (change.error) continue
       const changeKey = getNovelReviewChangeKey(change)
       if (nextStatus[changeKey]) continue
+
+      try {
+        const currentContent = undoContentByPath.get(change.filePath)
+          ?? await window.electronAPI.readFile(change.filePath)
+        const undo = buildAcceptNovelChangeUndoEntry(change, currentContent, undoStatus)
+        if (undo.ok) {
+          undoStatus = undo.entry.status
+          const write = undo.entry.writes[0]
+          if (write) {
+            undoContentByPath.set(write.filePath, write.content)
+          }
+        }
+      } catch (error) {
+        console.warn('[writing] Failed to capture accept-all undo entry:', error)
+      }
+
       nextStatus[changeKey] = 'accepted'
     }
 
     persistNovelChangeReviewStatus(nextStatus)
-    toast.success(t('writing.review.acceptedAll', 'All changes accepted'))
+    const undoEntry: NovelReviewUndoEntry | undefined = undoContentByPath.size > 0
+      ? {
+          status: undoStatus,
+          writes: Array.from(undoContentByPath, ([filePath, content]) => ({ filePath, content })),
+        }
+      : undefined
+    pushNovelReviewUndoEntry(undoEntry)
+    toast.success(t('writing.review.acceptedAll', 'All changes accepted'), undoEntry ? {
+      action: {
+        label: t('common.undo', 'Undo'),
+        onClick: () => { void handleUndoNovelReviewAction() },
+      },
+    } : undefined)
   }, [
+    handleUndoNovelReviewAction,
     novelChangeReviewStatus,
     persistNovelChangeReviewStatus,
+    pushNovelReviewUndoEntry,
     reviewableNovelFileChanges,
     selectedNovelFile?.path,
     syncSelectedNovelDocumentFromDisk,
@@ -2854,6 +2998,7 @@ function AppShellContent({
         return
       }
 
+      const undoEntry = buildRejectNovelChangeUndoEntry(change, currentContent, novelChangeReviewStatus)
       await window.electronAPI.writeFile(change.filePath, rejected.content)
       const changeKey = getNovelReviewChangeKey(change)
       const nextStatus = {
@@ -2861,6 +3006,7 @@ function AppShellContent({
         [changeKey]: 'rejected' as const,
       }
       persistNovelChangeReviewStatus(nextStatus)
+      pushNovelReviewUndoEntry(undoEntry)
 
       if (selectedNovelFile?.path === change.filePath) {
         setNovelDocumentContent(rejected.content)
@@ -2868,7 +3014,12 @@ function AppShellContent({
       }
 
       void handleSelectNextNovelChangeAfterStatus(change, nextStatus)
-      toast.success(t('writing.review.rejected', 'Change rejected'))
+      toast.success(t('writing.review.rejected', 'Change rejected'), {
+        action: {
+          label: t('common.undo', 'Undo'),
+          onClick: () => { void handleUndoNovelReviewAction() },
+        },
+      })
     } catch (error) {
       toast.error(t('writing.review.rejectFailed', 'Failed to reject this change'), {
         description: error instanceof Error ? error.message : String(error),
@@ -2876,9 +3027,11 @@ function AppShellContent({
     }
   }, [
     ensureNovelDocumentSaved,
+    handleUndoNovelReviewAction,
     handleSelectNextNovelChangeAfterStatus,
     novelChangeReviewStatus,
     persistNovelChangeReviewStatus,
+    pushNovelReviewUndoEntry,
     selectedNovelFile?.path,
     t,
   ])
