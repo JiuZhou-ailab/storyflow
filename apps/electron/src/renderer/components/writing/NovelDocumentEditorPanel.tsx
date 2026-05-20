@@ -51,8 +51,8 @@ interface NovelReviewParts {
 }
 
 const NOVEL_INLINE_REVIEW_TOKEN = '\uE000craft-novel-review-change\uE001'
-const NOVEL_REVIEW_DELETED_CLASS = 'novel-review-deleted rounded-[3px] bg-destructive/[0.075] px-0.5 text-destructive/85 decoration-destructive/55 decoration-1 leading-[inherit]'
-const NOVEL_REVIEW_INSERTED_CLASS = 'novel-review-inserted rounded-[3px] bg-emerald-500/[0.13] px-0.5 text-emerald-950 no-underline dark:text-emerald-100 leading-[inherit]'
+const NOVEL_REVIEW_DELETED_CLASS = 'novel-review-deleted rounded-[3px] bg-[color-mix(in_srgb,var(--destructive)_8%,transparent)] px-0.5 text-[color-mix(in_srgb,var(--foreground)_70%,var(--destructive))] decoration-[color-mix(in_srgb,var(--foreground)_45%,var(--destructive))] decoration-1 leading-[inherit]'
+const NOVEL_REVIEW_INSERTED_CLASS = 'novel-review-inserted rounded-[3px] bg-[color-mix(in_srgb,var(--success)_10%,transparent)] px-0.5 text-[color-mix(in_srgb,var(--foreground)_78%,var(--success))] no-underline leading-[inherit]'
 
 interface MarkdownAstNode {
   type: string
@@ -460,15 +460,52 @@ function MarkdownReviewChunk({
   markdown: string
   className?: string
 }) {
+  const components = React.useMemo(
+    () => className ? createReviewMarkdownComponents(className) : undefined,
+    [className]
+  )
   if (!markdown) return null
 
   return (
-    <div className={className}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+    <div>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {markdown}
       </ReactMarkdown>
     </div>
   )
+}
+
+function createReviewMarkdownComponents(className: string) {
+  const wrap = (children: React.ReactNode) => (
+    <span className={className}>{children}</span>
+  )
+
+  return {
+    p: ({ node: _node, children, ...props }: React.HTMLAttributes<HTMLParagraphElement> & { node?: unknown }) => (
+      <p {...props}>{wrap(children)}</p>
+    ),
+    li: ({ node: _node, children, ...props }: React.HTMLAttributes<HTMLLIElement> & { node?: unknown }) => (
+      <li {...props}>{wrap(children)}</li>
+    ),
+    h1: ({ node: _node, children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { node?: unknown }) => (
+      <h1 {...props}>{wrap(children)}</h1>
+    ),
+    h2: ({ node: _node, children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { node?: unknown }) => (
+      <h2 {...props}>{wrap(children)}</h2>
+    ),
+    h3: ({ node: _node, children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { node?: unknown }) => (
+      <h3 {...props}>{wrap(children)}</h3>
+    ),
+    h4: ({ node: _node, children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { node?: unknown }) => (
+      <h4 {...props}>{wrap(children)}</h4>
+    ),
+    h5: ({ node: _node, children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { node?: unknown }) => (
+      <h5 {...props}>{wrap(children)}</h5>
+    ),
+    h6: ({ node: _node, children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { node?: unknown }) => (
+      <h6 {...props}>{wrap(children)}</h6>
+    ),
+  }
 }
 
 function NovelInlineReviewDocument({

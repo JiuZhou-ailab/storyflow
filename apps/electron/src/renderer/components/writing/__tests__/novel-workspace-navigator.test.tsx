@@ -144,10 +144,14 @@ describe('novel writing workspace layout', () => {
     )
 
     expect(html).toContain('data-testid="novel-rendered-review-document"')
-    expect(html).toContain('<h1>第一章</h1>')
-    expect(html).toContain('<li>第一段</li>')
-    expect(html).toContain('<li>第二段</li>')
+    expect(html).toContain('<h1><span class="novel-review-inserted')
+    expect(html).toContain('>第一章</span></h1>')
+    expect(html).toContain('<li><span class="novel-review-inserted')
+    expect(html).toContain('>第一段</span></li>')
+    expect(html).toContain('>第二段</span></li>')
     expect(html).toContain('novel-review-inserted')
+    expect(html).not.toContain('bg-emerald-500')
+    expect(html).not.toContain('<div class="novel-review-inserted')
     expect(html).not.toContain('tiptap-editor--with-toolbar')
   })
 
@@ -182,10 +186,13 @@ describe('novel writing workspace layout', () => {
     )
 
     expect(html).toContain('data-testid="novel-rendered-review-document"')
-    expect(html).toContain('<h1>第二章</h1>')
+    expect(html).toContain('<h1><span class="novel-review-inserted')
+    expect(html).toContain('>第二章</span></h1>')
     expect(html).toContain('她推开门。')
     expect(html).toContain('风从长廊尽头吹来。')
     expect(html).toContain('novel-review-inserted')
+    expect(html).not.toContain('bg-emerald-500')
+    expect(html).not.toContain('<div class="novel-review-inserted')
     expect(html).not.toContain('tiptap-editor--with-toolbar')
   })
 
