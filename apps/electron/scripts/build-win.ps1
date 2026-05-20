@@ -273,7 +273,14 @@ $MainArgs = @(
     "--platform=node",
     "--format=cjs",
     "--outfile=apps/electron/dist/main.cjs",
-    "--external:electron"
+    "--external:electron",
+    # Claude Agent SDK uses top-level import.meta.url to initialize
+    # createRequire(). Keep it external so Electron loads the real ESM file
+    # instead of an inlined CJS bundle where import.meta.url is undefined.
+    "--external:@anthropic-ai/claude-agent-sdk",
+    # Keep parity with the other Electron main build entrypoints.
+    "--alias:node-fetch=./apps/electron/src/main/shims/node-fetch.cjs",
+    "--alias:abort-controller=./apps/electron/src/main/shims/abort-controller.cjs"
 )
 # Add OAuth defines if env vars are set
 if ($env:GOOGLE_OAUTH_CLIENT_ID) {

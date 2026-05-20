@@ -20,6 +20,7 @@ describe('Electron main process build config', () => {
       'scripts/electron-build-main.ts',
       'scripts/build/win32.ts',
       'apps/electron/package.json',
+      'apps/electron/scripts/build-win.ps1',
     ];
 
     for (const file of checkedFiles) {
