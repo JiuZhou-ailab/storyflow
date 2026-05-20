@@ -6,9 +6,9 @@
 
 ## 桌面端安装
 
-Release 流程已精简为只发布 macOS `.dmg` 和 Windows `.exe`。macOS 包按架构区分：Apple Silicon 使用 `Craft-Agents-arm64.dmg`，Intel Mac 使用 `Craft-Agents-x64.dmg`；Windows 使用 `Craft-Agents-x64.exe`。macOS 需要 12.0 或更新版本。
+Release 流程发布 macOS `.dmg`、macOS 自动更新用 `.zip` 和 Windows `.exe`。macOS 包按架构区分：Apple Silicon 使用 `Storyflow-arm64.dmg` / `Storyflow-arm64.zip`，Intel Mac 使用 `Storyflow-x64.dmg` / `Storyflow-x64.zip`；Windows 使用 `Storyflow-x64.exe`。macOS 需要 12.0 或更新版本。
 
-如果 macOS 提示 Apple 无法验证 `Craft Agents`，这是当前包尚未完成 Apple Developer ID 签名和 notarization 的 Gatekeeper 提示。确认安装包来自内部 release 后，可以到 `系统设置 -> 隐私与安全性`，在安全性区域对 `Craft Agents` 点击 `仍要打开`。长期方案仍是完成 Developer ID 签名和 Apple notarization。
+macOS 正式包会使用 Apple Developer ID 签名和 notarization。安装脚本会在替换应用前验证签名与 Gatekeeper 信任，并在验证失败时停止安装。
 
 ## 推荐写作流程
 

@@ -94,8 +94,11 @@ mac:
     CFBundleIconName: AppIcon
   target:
     - dmg
+    - zip
   hardenedRuntime: true
   gatekeeperAssess: false
+  strictVerify: true
+  forceCodeSigning: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   extraResources:
@@ -124,10 +127,11 @@ mac:
     - "!**/resources/bin/linux-*/**"
   # Use predictable naming for macOS packages (applies to zip; dmg uses its own config below)
   artifactName: "Storyflow-${arch}.${ext}"
-  # Code signing & notarization (disabled by default for local builds)
-  # To enable: set CSC_LINK, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
-  # notarize:
-  #   teamId: ${APPLE_TEAM_ID}
+  # Official macOS releases must be Developer ID signed and Apple notarized.
+  # electron-builder activates notarization when the release environment provides
+  # APPLE_API_KEY/APPLE_API_KEY_ID/APPLE_API_ISSUER or
+  # APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/APPLE_TEAM_ID.
+  notarize: true
 
 dmg:
   # Use predictable naming: Storyflow-arm64.dmg, Storyflow-x64.dmg

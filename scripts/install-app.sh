@@ -22,30 +22,14 @@ success() { printf "%b\n" "${GREEN}>${NC} $1"; }
 warn() { printf "%b\n" "${YELLOW}!${NC} $1"; }
 error() { printf "%b\n" "${RED}x${NC} $1"; exit 1; }
 
-print_macos_gatekeeper_notice() {
-    cat <<'EOF'
+verify_macos_app_trust() {
+    local app_path="$1"
 
-macOS security notice
-─────────────────────────────────────────────────────────────────────────
-If macOS says Apple cannot verify "Storyflow", only continue if this
-copy was downloaded from the official Storyflow release source.
+    info "Verifying macOS app signature..."
+    codesign --verify --deep --strict "$app_path" >/dev/null
 
-To open it:
-  1. Open System Settings.
-  2. Search for Security and open Privacy & Security.
-  3. Scroll to Security.
-  4. Find the blocked "Storyflow" entry.
-  5. Click Open Anyway, then confirm.
-
-This is a temporary workaround for unsigned or non-notarized builds. The
-proper distribution fix is Developer ID signing plus Apple notarization.
-EOF
-
-    if command -v osascript >/dev/null 2>&1; then
-        osascript <<'OSA' >/dev/null 2>&1 || true
-display dialog "If macOS says Apple cannot verify \"Storyflow\", open System Settings, search for Security, go to Privacy & Security, then click Open Anyway for Storyflow. Only do this for downloads from the official Storyflow release source." buttons {"OK"} default button "OK" with title "Storyflow macOS Security"
-OSA
-    fi
+    info "Checking macOS Gatekeeper trust..."
+    spctl --assess --type execute "$app_path" >/dev/null
 }
 
 version_at_least() {
@@ -181,6 +165,21 @@ get_filename_from_yaml() {
     return 1
 }
 
+ensure_single_manifest_value() {
+    local value="$1"
+    local description="$2"
+
+    if [ -z "$value" ]; then
+        error "Expected exactly one .zip artifact for architecture $arch in $yml_file, but found none"
+    fi
+
+    case "$value" in
+        *$'\n'*)
+            error "Expected exactly one .zip artifact for architecture $arch in $yml_file, but found multiple $description values"
+            ;;
+    esac
+}
+
 # Detect architecture
 case "$(uname -m)" in
     x86_64|amd64) arch="x64" ;;
@@ -248,8 +247,10 @@ info "Latest version: $version"
 
 # Extract sha512 and filename for our architecture
 if [ "$HAS_YQ" = true ]; then
-    checksum=$(echo "$manifest_yaml" | yq -r ".files[] | select(.arch == \"$arch\") | .sha512")
-    filename=$(echo "$manifest_yaml" | yq -r ".files[] | select(.arch == \"$arch\") | .url")
+    checksum=$(echo "$manifest_yaml" | yq -r ".files[] | select(.arch == \"$arch\" and (.url | endswith(\".zip\"))) | .sha512")
+    filename=$(echo "$manifest_yaml" | yq -r ".files[] | select(.arch == \"$arch\" and (.url | endswith(\".zip\"))) | .url")
+    ensure_single_manifest_value "$checksum" "checksum"
+    ensure_single_manifest_value "$filename" "filename"
 else
     checksum=$(get_sha512_from_yaml "$manifest_yaml" "$arch")
     filename=$(get_filename_from_yaml "$manifest_yaml" "$arch")
@@ -301,7 +302,44 @@ if [ "$OS_TYPE" = "darwin" ]; then
     # macOS installation (from ZIP)
     zip_path="$installer_path"
 
-    # Quit the app if it's running (use bundle ID for reliability)
+    # Extract ZIP to temp directory
+    info "Extracting..."
+    temp_dir=$(mktemp -d)
+    if ! unzip -q "$zip_path" -d "$temp_dir"; then
+        rm -rf "$temp_dir"
+        rm -f "$zip_path"
+        error "Failed to extract ZIP"
+    fi
+
+    # Find the .app in the extracted contents
+    app_source=$(find "$temp_dir" -maxdepth 1 -name "*.app" -type d | head -1)
+
+    if [ -z "$app_source" ]; then
+        rm -rf "$temp_dir"
+        rm -f "$zip_path"
+        error "No .app found in ZIP"
+    fi
+
+    verify_macos_app_trust "$app_source"
+
+    install_temp_dir=$(mktemp -d "$INSTALL_DIR/.storyflow-install.XXXXXX")
+    backup_temp_dir=$(mktemp -d "$INSTALL_DIR/.storyflow-backup.XXXXXX")
+    staged_app="$install_temp_dir/$APP_NAME"
+    backup_app="$backup_temp_dir/$APP_NAME"
+    preserve_backup=false
+
+    cleanup_install_temps() {
+        rm -rf "$install_temp_dir"
+        if [ "$preserve_backup" != true ]; then
+            rm -rf "$backup_temp_dir"
+        fi
+    }
+    trap cleanup_install_temps EXIT
+
+    info "Staging app for installation..."
+    cp -R "$app_source" "$staged_app"
+
+    # Quit the app only after the replacement bundle has been extracted and trusted.
     APP_BUNDLE_ID="com.lukilabs.craft-agent"
     if pgrep -x "Storyflow" >/dev/null 2>&1; then
         info "Quitting Storyflow..."
@@ -324,38 +362,32 @@ if [ "$OS_TYPE" = "darwin" ]; then
         fi
     fi
 
-    # Remove existing installation if present
+    # Remove existing installation only after the staged replacement is ready.
     if [ -d "$INSTALL_DIR/$APP_NAME" ]; then
         info "Removing previous installation..."
-        rm -rf "$INSTALL_DIR/$APP_NAME"
-    fi
-
-    # Extract ZIP to temp directory
-    info "Extracting..."
-    temp_dir=$(mktemp -d)
-    if ! unzip -q "$zip_path" -d "$temp_dir"; then
-        rm -rf "$temp_dir"
-        rm -f "$zip_path"
-        error "Failed to extract ZIP"
-    fi
-
-    # Find the .app in the extracted contents
-    app_source=$(find "$temp_dir" -maxdepth 1 -name "*.app" -type d | head -1)
-
-    if [ -z "$app_source" ]; then
-        rm -rf "$temp_dir"
-        rm -f "$zip_path"
-        error "No .app found in ZIP"
+        mv "$INSTALL_DIR/$APP_NAME" "$backup_app"
     fi
 
     # Copy app to /Applications
     info "Installing to $INSTALL_DIR..."
-    cp -R "$app_source" "$INSTALL_DIR/$APP_NAME"
+    if ! mv "$staged_app" "$INSTALL_DIR/$APP_NAME"; then
+        if [ -d "$backup_app" ] && [ ! -d "$INSTALL_DIR/$APP_NAME" ]; then
+            if mv "$backup_app" "$INSTALL_DIR/$APP_NAME"; then
+                backup_app=""
+            else
+                preserve_backup=true
+                warn "Previous installation backup remains at $backup_app"
+            fi
+        fi
+        error "Failed to install Storyflow. Previous installation was restored if it existed."
+    fi
 
     # Clean up
     info "Cleaning up..."
     rm -rf "$temp_dir"
     rm -f "$zip_path"
+    cleanup_install_temps
+    trap - EXIT
 
     # Remove quarantine attribute if present
     xattr -rd com.apple.quarantine "$INSTALL_DIR/$APP_NAME" 2>/dev/null || true
@@ -370,7 +402,6 @@ if [ "$OS_TYPE" = "darwin" ]; then
     printf "%b\n" "  You can launch it from ${BOLD}Applications${NC} or by running:"
     printf "%b\n" "    ${BOLD}open -a 'Storyflow'${NC}"
     echo ""
-    print_macos_gatekeeper_notice
 
 else
     # Linux installation
