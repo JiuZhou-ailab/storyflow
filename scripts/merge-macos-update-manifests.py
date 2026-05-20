@@ -99,7 +99,7 @@ def merge_manifests(inputs: list[tuple[Path, str | None]], output: Path) -> None
 
 
 def main(argv: list[str]) -> None:
-    if len(argv) < 4:
+    if len(argv) < 3:
         raise SystemExit(
             "Usage: merge-macos-update-manifests.py <output.yml> [arch=]<input.yml> [...]"
         )

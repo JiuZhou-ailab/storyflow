@@ -3,13 +3,31 @@
 // pos: Release safety guard preventing unsigned macOS artifacts from being published
 
 import { describe, expect, test } from 'bun:test';
-import { existsSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const rootDir = join(import.meta.dir, '..', '..');
 
 function readRepoFile(path: string): string {
   return readFileSync(join(rootDir, path), 'utf8');
+}
+
+function writeMacManifest(path: string, arch: 'arm64' | 'x64'): void {
+  writeFileSync(
+    path,
+    [
+      'version: 0.9.11',
+      'files:',
+      `  - url: Craft-Agents-${arch}.zip`,
+      `    sha512: ${arch === 'arm64' ? 'arm64-sha512' : 'x64-sha512'}`,
+      `path: Craft-Agents-${arch}.zip`,
+      `sha512: ${arch === 'arm64' ? 'arm64-sha512' : 'x64-sha512'}`,
+      'releaseDate: 2026-05-21T00:00:00.000Z',
+      '',
+    ].join('\n'),
+  );
 }
 
 describe('macOS release configuration', () => {
@@ -68,5 +86,51 @@ describe('macOS release configuration', () => {
     expect(installScript.indexOf('verify_macos_app_trust "$app_source"')).toBeLessThan(
       installScript.indexOf('Removing previous installation'),
     );
+  });
+
+  test('macOS manifest helper annotates a single architecture manifest', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'craft-mac-manifest-'));
+    const input = join(tempDir, 'latest-mac.yml');
+    const output = join(tempDir, 'latest-mac-arm64.yml');
+    writeMacManifest(input, 'arm64');
+
+    const result = spawnSync(
+      'python3',
+      [join(rootDir, 'scripts/merge-macos-update-manifests.py'), output, `arm64=${input}`],
+      { encoding: 'utf8' },
+    );
+
+    expect(result.status).toBe(0);
+    const manifest = readFileSync(output, 'utf8');
+    expect(manifest).toContain('  - url: Craft-Agents-arm64.zip');
+    expect(manifest).toContain('    arch: arm64');
+  });
+
+  test('macOS manifest helper merges arm64 and x64 manifests', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'craft-mac-manifest-'));
+    const arm64 = join(tempDir, 'latest-mac-arm64.yml');
+    const x64 = join(tempDir, 'latest-mac-x64.yml');
+    const output = join(tempDir, 'latest-mac.yml');
+    writeMacManifest(arm64, 'arm64');
+    writeMacManifest(x64, 'x64');
+
+    const result = spawnSync(
+      'python3',
+      [
+        join(rootDir, 'scripts/merge-macos-update-manifests.py'),
+        output,
+        `arm64=${arm64}`,
+        `x64=${x64}`,
+      ],
+      { encoding: 'utf8' },
+    );
+
+    expect(result.status).toBe(0);
+    const manifest = readFileSync(output, 'utf8');
+    expect(manifest).toContain('  - url: Craft-Agents-arm64.zip');
+    expect(manifest).toContain('    arch: arm64');
+    expect(manifest).toContain('  - url: Craft-Agents-x64.zip');
+    expect(manifest).toContain('    arch: x64');
+    expect(manifest).toContain('path: Craft-Agents-arm64.zip');
   });
 });
