@@ -1,3 +1,7 @@
+// input: Protocol namespaces and stable wire-format channel names
+// output: Shared RPC channel constants for all clients and servers
+// pos: Wire contract registry for local and remote transport
+
 /**
  * RPC channel names — organized by domain namespace.
  * Wire-format strings (values) are the stable API contract.
@@ -93,6 +97,7 @@ export const RPC_CHANNELS = {
   },
   fs: {
     SEARCH: 'fs:search',
+    SEARCH_BATCH: 'fs:searchBatch',
     LIST_DIRECTORY: 'fs:listDirectory',
   },
   debug: {

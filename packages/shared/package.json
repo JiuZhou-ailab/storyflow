@@ -34,6 +34,7 @@
     "./workspaces": "./src/workspaces/index.ts",
     "./writing": "./src/writing/index.ts",
     "./writing/file-categories": "./src/writing/file-categories.ts",
+    "./writing/selection-context": "./src/writing/selection-context.ts",
     "./writing/method-packs": "./src/writing/method-packs/index.ts",
     "./writing/method-packs/draft-contract": "./src/writing/method-packs/draft-contract.ts",
     "./writing/method-packs/validation": "./src/writing/method-packs/validation.ts",

@@ -32,7 +32,13 @@ import {
   Undo2,
 } from 'lucide-react'
 import { tiptapCodeBlock } from './TiptapCodeBlockView'
-import { TiptapBubbleMenus, INLINE_MATH_EDIT_EVENT, type TiptapSelectionAiRequest } from './TiptapBubbleMenus'
+import {
+  TiptapBubbleMenus,
+  INLINE_MATH_EDIT_EVENT,
+  SelectionAiRangeHighlight,
+  type TiptapSelectionAiRequest,
+  type TiptapSelectionChatRequest,
+} from './TiptapBubbleMenus'
 import { TiptapSlashMenu } from './TiptapSlashMenu'
 import { MermaidBlock } from './extensions/MermaidBlock'
 import { looksLikeMermaidSource } from './mermaid-source'
@@ -379,6 +385,8 @@ export interface TiptapMarkdownEditorProps {
   bottomRightAccessory?: React.ReactNode
   /** Called when the user asks AI to work on the current text selection. */
   onAskAiForSelection?: (request: TiptapSelectionAiRequest) => Promise<string>
+  /** Called when the user adds the current text selection to the chat draft. */
+  onAddSelectionToChat?: (request: TiptapSelectionChatRequest) => void
 }
 
 export function TiptapMarkdownEditor({
@@ -393,6 +401,7 @@ export function TiptapMarkdownEditor({
   showLineNumbers = false,
   bottomRightAccessory,
   onAskAiForSelection,
+  onAddSelectionToChat,
 }: TiptapMarkdownEditorProps) {
   const onUpdateRef = React.useRef(onUpdate)
   onUpdateRef.current = onUpdate
@@ -434,6 +443,7 @@ export function TiptapMarkdownEditor({
         },
       }),
       RichBlockInteractions,
+      SelectionAiRangeHighlight,
       ...(editable ? [TiptapSlashMenu] : []),
     ]
 
@@ -590,6 +600,7 @@ export function TiptapMarkdownEditor({
         <TiptapBubbleMenus
           editor={editor}
           onAskAiForSelection={onAskAiForSelection}
+          onAddSelectionToChat={onAddSelectionToChat}
         />
       )}
       {bottomRightAccessory ? (

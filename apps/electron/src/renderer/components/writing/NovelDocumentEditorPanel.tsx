@@ -8,6 +8,11 @@ import ReactMarkdown from 'react-markdown'
 import { useTranslation } from 'react-i18next'
 import remarkGfm from 'remark-gfm'
 import type { FileChange } from '@craft-agent/ui'
+import {
+  buildNovelSelectionContext,
+  formatNovelSelectionChatMessage,
+  formatNovelSelectionContextForChat,
+} from '@craft-agent/shared/writing/selection-context'
 import { TiptapMarkdownEditor } from '@/components/markdown'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -32,6 +37,10 @@ export function countMarkdownTextCharacters(markdown: string): number {
 export interface NovelSelectionAiRequest {
   selectedText: string
   instruction: string
+}
+
+export interface NovelSelectionChatRequest {
+  selectedText: string
 }
 
 interface NovelReviewParts {
@@ -200,6 +209,8 @@ export interface NovelDocumentEditorPanelProps {
   error?: string | null
   onChange: (content: string) => void
   onAskAiForSelection?: (request: NovelSelectionAiRequest) => Promise<string>
+  onAddSelectionToChat?: (message: string) => void
+  onSendSelectionToChat?: (message: string) => Promise<void> | void
   reviewChange?: FileChange
   pendingChangeCount?: number
   pendingFileIndex?: number
@@ -219,6 +230,8 @@ export function NovelDocumentEditorPanel({
   error,
   onChange,
   onAskAiForSelection,
+  onAddSelectionToChat,
+  onSendSelectionToChat,
   reviewChange,
   pendingChangeCount = 0,
   pendingFileIndex,
@@ -243,6 +256,32 @@ export function NovelDocumentEditorPanel({
     },
     [reviewParts]
   )
+  const handleAddSelectionToChat = React.useCallback(({ selectedText }: NovelSelectionChatRequest) => {
+    if (!file || !onAddSelectionToChat) return
+
+    const context = buildNovelSelectionContext({
+      content,
+      selectedText,
+      filePath: file.path,
+      relativePath: file.relativePath,
+    })
+    onAddSelectionToChat(formatNovelSelectionContextForChat(context))
+  }, [content, file, onAddSelectionToChat])
+  const handleAskAiForSelection = React.useCallback(async ({ selectedText, instruction }: NovelSelectionAiRequest) => {
+    if (file && onSendSelectionToChat) {
+      const context = buildNovelSelectionContext({
+        content,
+        selectedText,
+        filePath: file.path,
+        relativePath: file.relativePath,
+      })
+      await onSendSelectionToChat(formatNovelSelectionChatMessage(context, instruction))
+      return selectedText
+    }
+
+    if (!onAskAiForSelection) return selectedText
+    return onAskAiForSelection({ selectedText, instruction })
+  }, [content, file, onAskAiForSelection, onSendSelectionToChat])
 
   if (!file) {
     return (
@@ -274,12 +313,12 @@ export function NovelDocumentEditorPanel({
             {inlineReviewParts ? (
               <NovelInlineReviewDocument
                 parts={inlineReviewParts}
-                characterCountLabel={t('writing.totalCharacters', 'Total {{count}} characters', { count: characterCount })}
+                characterCountLabel={t('writing.totalCharacters', { defaultValue: 'Total {{count}} characters', count: characterCount })}
               />
             ) : reviewParts ? (
               <NovelRenderedReviewDocument
                 parts={reviewParts}
-                characterCountLabel={t('writing.totalCharacters', 'Total {{count}} characters', { count: characterCount })}
+                characterCountLabel={t('writing.totalCharacters', { defaultValue: 'Total {{count}} characters', count: characterCount })}
               />
             ) : (
               <TiptapMarkdownEditor
@@ -291,8 +330,9 @@ export function NovelDocumentEditorPanel({
                 showToolbar
                 surface="manuscript"
                 showLineNumbers
-                bottomRightAccessory={t('writing.totalCharacters', 'Total {{count}} characters', { count: characterCount })}
-                onAskAiForSelection={onAskAiForSelection}
+                bottomRightAccessory={t('writing.totalCharacters', { defaultValue: 'Total {{count}} characters', count: characterCount })}
+                onAskAiForSelection={onSendSelectionToChat || onAskAiForSelection ? handleAskAiForSelection : undefined}
+                onAddSelectionToChat={onAddSelectionToChat ? handleAddSelectionToChat : undefined}
                 className="min-h-0 flex-1"
               />
             )}

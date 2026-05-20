@@ -17,4 +17,4 @@ export { MarkdownSpreadsheetBlock, type MarkdownSpreadsheetBlockProps } from './
 export { MarkdownImageBlock, type MarkdownImageBlockProps } from './MarkdownImageBlock'
 export { ImageCardStack, type ImageCardStackProps, type ImageCardStackItem } from './ImageCardStack'
 export { TiptapMarkdownEditor, type TiptapMarkdownEditorProps, type MarkdownEngine } from './TiptapMarkdownEditor'
-export type { TiptapSelectionAiRequest } from './TiptapBubbleMenus'
+export type { TiptapSelectionAiRequest, TiptapSelectionChatRequest } from './TiptapBubbleMenus'

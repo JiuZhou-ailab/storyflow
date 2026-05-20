@@ -1,4 +1,6 @@
-/* TiptapMarkdownEditor — styles matching the app's markdown rendering (minimal mode) */
+/* input: TipTap editor DOM classes, app theme variables, and manuscript surface mode */
+/* output: Shared Markdown editor visual rhythm, toolbar, rich-block, and manuscript styling */
+/* pos: Presentation contract for editable Markdown surfaces across app and writing workspace */
 
 .tiptap-editor {
   --tiptap-bubble-z: var(--z-floating-menu, 400);
@@ -93,7 +95,9 @@
 }
 
 .tiptap-editor--manuscript {
-  --tiptap-manuscript-width: 720px;
+  --tiptap-manuscript-width: min(100%, 1120px);
+  --tiptap-manuscript-line-height: 2.12;
+  --tiptap-manuscript-paragraph-spacing: 1.05em;
   --tiptap-manuscript-paper: color-mix(in oklch, var(--background) 99.5%, var(--foreground) 0.5%);
   --tiptap-manuscript-ink: color-mix(in oklch, var(--foreground) 95%, transparent);
   --tiptap-manuscript-muted: color-mix(in oklch, var(--foreground) 54%, transparent);
@@ -159,7 +163,7 @@
   color: var(--tiptap-manuscript-ink);
   font-family: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "Times New Roman", serif;
   font-size: 16.5px;
-  line-height: 1.96;
+  line-height: var(--tiptap-manuscript-line-height);
   letter-spacing: 0;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -216,7 +220,7 @@
 }
 
 .tiptap-editor--manuscript .tiptap-prose p {
-  margin: 0.72em 0;
+  margin: var(--tiptap-manuscript-paragraph-spacing) 0;
   line-height: inherit;
 }
 
@@ -857,6 +861,12 @@
 /* Match text selection color to the block-level highlight */
 .tiptap-editor .tiptap-prose ::selection {
   background: color-mix(in oklch, var(--accent) 12%, transparent);
+}
+
+.selection-ai-range-highlight {
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--accent) 18%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 20%, transparent);
 }
 
 /* Unified rich-block selection outline (image + mermaid + latex).

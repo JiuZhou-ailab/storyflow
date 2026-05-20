@@ -1,3 +1,7 @@
+// input: ElectronAPI method names and shared RPC channel constants
+// output: Runtime method-to-channel map consumed by the client API builder
+// pos: Renderer transport adapter between typed API calls and RPC wires
+
 /**
  * Channel map — maps ElectronAPI method names to IPC channels.
  *
@@ -186,6 +190,7 @@ export const CHANNEL_MAP = {
 
   // Filesystem search
   searchFiles: invoke(RPC_CHANNELS.fs.SEARCH),
+  searchFilesBatch: invoke(RPC_CHANNELS.fs.SEARCH_BATCH),
 
   // Server filesystem browsing (remote mode)
   listServerDirectory: invoke(RPC_CHANNELS.fs.LIST_DIRECTORY),

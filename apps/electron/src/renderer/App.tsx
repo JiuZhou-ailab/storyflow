@@ -91,6 +91,28 @@ type SessionListRefreshOptions = {
 }
 
 const SESSION_REFRESH_LOG_ID_LIMIT = 25
+const STARTUP_RPC_TIMEOUT_MS = 5000
+const SESSION_RPC_TIMEOUT_MS = 8000
+const WORKSPACE_SWITCH_RPC_TIMEOUT_MS = 5000
+
+function withTimeout<T>(operation: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+
+    operation.then(
+      (value) => {
+        window.clearTimeout(timeoutId)
+        resolve(value)
+      },
+      (error) => {
+        window.clearTimeout(timeoutId)
+        reject(error)
+      }
+    )
+  })
+}
 
 function summarizeIds(ids: Iterable<string>, limit = SESSION_REFRESH_LOG_ID_LIMIT) {
   const all = Array.from(ids)
@@ -334,6 +356,8 @@ export default function App() {
   const [sessionLoadError, setSessionLoadError] = useState<string | null>(null)
   const [splashExiting, setSplashExiting] = useState(false)
   const [splashHidden, setSplashHidden] = useState(false)
+  const lastLoadedSessionsWorkspaceRef = useRef<string | null>(null)
+  const workspaceSwitchInFlightRef = useRef<string | null>(null)
 
   // Notifications enabled state (from app settings)
   const [notificationsEnabled, setNotificationsEnabled] = useState(true)
@@ -478,11 +502,16 @@ export default function App() {
     }
   }, [clearStreamingState, replaceLoadedSession, syncSessionOptionsFromSession, reconcilePermissionModeState, store])
 
-  const loadSessionsFromServer = useCallback(async (): Promise<Session[]> => {
+  const loadSessionsFromServer = useCallback(async (workspaceIdForLoad = windowWorkspaceId): Promise<Session[]> => {
+    const loadingWorkspaceId = workspaceIdForLoad
     setSessionLoadError(null)
 
     try {
-      const loadedSessions = await window.electronAPI.getSessions()
+      const loadedSessions = await withTimeout(
+        window.electronAPI.getSessions(),
+        SESSION_RPC_TIMEOUT_MS,
+        'getSessions'
+      )
 
       // Initialize per-session atoms and metadata map
       // NOTE: No sessionsAtom used - sessions are only in per-session atoms
@@ -502,13 +531,13 @@ export default function App() {
       }
       setSessionOptions(optionsMap)
 
-      await Promise.allSettled(
+      setSessionsLoaded(true)
+      lastLoadedSessionsWorkspaceRef.current = loadingWorkspaceId
+      void Promise.allSettled(
         loadedSessions.map((s) => reconcilePermissionModeState(s.id))
       )
 
-      setSessionsLoaded(true)
-
-      if (initialSessionId && windowWorkspaceId) {
+      if (initialSessionId && loadingWorkspaceId) {
         const session = loadedSessions.find(s => s.id === initialSessionId)
         if (session) {
           navigate(routes.view.allSessions(session.id))
@@ -524,11 +553,13 @@ export default function App() {
         console.error('[App] Treating session load failure as transport fallback:', transportState)
         setSessionsLoaded(true)
         setSessionLoadError(null)
+        lastLoadedSessionsWorkspaceRef.current = loadingWorkspaceId
         return []
       }
 
       setSessionLoadError(formatSessionLoadFailure(err))
       setSessionsLoaded(true)
+      lastLoadedSessionsWorkspaceRef.current = loadingWorkspaceId
       return []
     }
   }, [initializeSessions, initialSessionId, reconcilePermissionModeState, windowWorkspaceId])
@@ -675,10 +706,18 @@ export default function App() {
     const initialize = async () => {
       try {
         // Get this window's workspace ID (passed via URL query param from main process)
-        const wsId = await window.electronAPI.getWindowWorkspace()
+        const wsId = await withTimeout(
+          window.electronAPI.getWindowWorkspace(),
+          STARTUP_RPC_TIMEOUT_MS,
+          'getWindowWorkspace'
+        )
         setWindowWorkspaceId(wsId)
 
-        const needs = await window.electronAPI.getSetupNeeds()
+        const needs = await withTimeout(
+          window.electronAPI.getSetupNeeds(),
+          STARTUP_RPC_TIMEOUT_MS,
+          'getSetupNeeds'
+        )
         setSetupNeeds(needs)
 
         if (needs.isFullyConfigured) {
@@ -720,18 +759,26 @@ export default function App() {
     enabled: notificationsEnabled,
   })
 
-  // Load workspaces, sessions, model, notifications setting, and drafts when app is ready
+  // Load startup-global data when app is ready
   useEffect(() => {
     if (appState !== 'ready') return
 
-    window.electronAPI.getWorkspaces()
+    withTimeout(
+      window.electronAPI.getWorkspaces(),
+      STARTUP_RPC_TIMEOUT_MS,
+      'getWorkspaces'
+    )
       .then(setWorkspaces)
       .catch((error) => {
         console.error('[App] Failed to load workspaces:', error)
       })
       .finally(() => setWorkspacesLoaded(true))
 
-    window.electronAPI.getNotificationsEnabled()
+    withTimeout(
+      window.electronAPI.getNotificationsEnabled(),
+      STARTUP_RPC_TIMEOUT_MS,
+      'getNotificationsEnabled'
+    )
       .then(setNotificationsEnabled)
       .catch(() => {})
       .finally(() => setNotificationsLoaded(true))
@@ -749,9 +796,12 @@ export default function App() {
         })
       }
     }).catch(() => { /* non-fatal startup check */ })
-    void loadSessionsFromServer()
     // Load LLM connections with authentication status
-    window.electronAPI.listLlmConnectionsWithStatus().then((connections) => {
+    withTimeout(
+      window.electronAPI.listLlmConnectionsWithStatus(),
+      STARTUP_RPC_TIMEOUT_MS,
+      'listLlmConnectionsWithStatus'
+    ).then((connections) => {
       setLlmConnections(connections)
       setDefaultLlmConnectionSlug(resolveDefaultConnectionSlug(connections))
     }).catch((error) => {
@@ -760,7 +810,11 @@ export default function App() {
     // Load persisted input drafts into ref (no re-render needed).
     // Attachment files are not read here — hydration happens lazily when the session
     // is opened so app startup isn't delayed by reading potentially large files.
-    window.electronAPI.getAllDrafts()
+    withTimeout(
+      window.electronAPI.getAllDrafts(),
+      STARTUP_RPC_TIMEOUT_MS,
+      'getAllDrafts'
+    )
       .then((drafts) => {
         if (Object.keys(drafts).length > 0) {
           sessionDraftsRef.current = new Map(Object.entries(drafts))
@@ -771,13 +825,26 @@ export default function App() {
       })
       .finally(() => setDraftsLoaded(true))
     // Load app-level theme
-    window.electronAPI.getAppTheme()
+    withTimeout(
+      window.electronAPI.getAppTheme(),
+      STARTUP_RPC_TIMEOUT_MS,
+      'getAppTheme'
+    )
       .then(setAppTheme)
       .catch((error) => {
         console.error('[App] Failed to load app theme:', error)
       })
       .finally(() => setThemeLoaded(true))
-  }, [appState, loadSessionsFromServer, resolveDefaultConnectionSlug])
+  }, [appState, resolveDefaultConnectionSlug, t])
+
+  // Load sessions for the active workspace
+  useEffect(() => {
+    if (appState !== 'ready' || !windowWorkspaceId) return
+    if (workspaceSwitchInFlightRef.current === windowWorkspaceId) return
+    if (sessionsLoaded && lastLoadedSessionsWorkspaceRef.current === windowWorkspaceId) return
+
+    void loadSessionsFromServer()
+  }, [appState, loadSessionsFromServer, sessionsLoaded, windowWorkspaceId])
 
   // Subscribe to theme change events (live updates when theme.json changes)
   useEffect(() => {
@@ -1764,60 +1831,74 @@ export default function App() {
       // Open (or focus) the window for the selected workspace
       window.electronAPI.openWorkspace(workspaceId)
     } else {
-      // Switch workspace in current window
-      // 1. Update the main process's window-workspace mapping
-      await window.electronAPI.switchWorkspace(workspaceId)
+      workspaceSwitchInFlightRef.current = workspaceId
 
-      // 2. Mark session metadata as not ready for the new workspace.
+      // Switch the renderer shell immediately so the first frame reflects the
+      // user's target workspace while backend hydration catches up.
+      setWindowWorkspaceId(workspaceId)
+
+      // Mark session metadata as not ready for the new workspace.
       // Navigation restoration is gated on this flag so it cannot reconcile
       // a new workspace against an intentionally empty metadata map.
       setSessionsLoaded(false)
       setSessionLoadError(null)
 
-      // 3. Update React state to trigger re-renders
-      setWindowWorkspaceId(workspaceId)
-
-      // 4. Clear selected session - the old session belongs to the previous workspace
+      // Clear selected session - the old session belongs to the previous workspace
       // and should not remain selected when switching to a new workspace.
       // This prevents showing stale session data from the wrong workspace.
       setSession({ selected: null })
 
-      // 5. Clear pending permissions/credentials (not relevant to new workspace)
+      // Clear pending permissions/credentials (not relevant to new workspace)
       setPendingPermissions(new Map())
       setPendingCredentials(new Map())
 
-      // 6. Clear session options from previous workspace
+      // Clear session options from previous workspace
       // (session IDs are unique UUIDs, but clearing prevents unbounded memory growth
       // and ensures no stale state from old workspace persists)
       setSessionOptions(new Map())
 
-      // 7. Clear message drafts from previous workspace
+      // Clear message drafts from previous workspace
       // (prevents memory growth on repeated workspace switches)
       sessionDraftsRef.current.clear()
 
-      // 8. Reset sources and skills atoms to empty
+      // Reset sources and skills atoms to empty
       // (prevents stale data flash during workspace switch - AppShell will reload)
       store.set(sourcesAtom, [])
       store.set(skillsAtom, [])
 
-      // 9. Clear session atoms BEFORE workspace switch
+      // Clear session atoms before backend hydration for the new workspace.
       // This prevents stale session data from the previous workspace being visible.
       store.set(sessionMetaMapAtom, new Map())
       store.set(sessionIdsAtom, [])
 
       const pendingCreatedWorkspace = pendingCreatedWorkspaceRef.current
       const shouldOpenStarterSession = pendingCreatedWorkspace?.id === workspaceId
-      const loadedSessions = shouldOpenStarterSession
-        ? await loadSessionsFromServer()
-        : []
 
-      if (shouldOpenStarterSession) {
-        pendingCreatedWorkspaceRef.current = null
-        const remoteWorkspaceId = pendingCreatedWorkspace?.remoteServer?.remoteWorkspaceId
-          ?? workspaces.find(workspace => workspace.id === workspaceId)?.remoteServer?.remoteWorkspaceId
-        const sessionId = getAutoSessionIdForWorkspaceSwitch(loadedSessions, workspaceId, remoteWorkspaceId)
-        if (sessionId) {
-          navigate(routes.view.allSessions(sessionId))
+      try {
+        await withTimeout(
+          window.electronAPI.switchWorkspace(workspaceId),
+          WORKSPACE_SWITCH_RPC_TIMEOUT_MS,
+          'switchWorkspace'
+        )
+        const loadedSessions = await loadSessionsFromServer(workspaceId)
+
+        if (shouldOpenStarterSession) {
+          pendingCreatedWorkspaceRef.current = null
+          const remoteWorkspaceId = pendingCreatedWorkspace?.remoteServer?.remoteWorkspaceId
+            ?? workspaces.find(workspace => workspace.id === workspaceId)?.remoteServer?.remoteWorkspaceId
+          const sessionId = getAutoSessionIdForWorkspaceSwitch(loadedSessions, workspaceId, remoteWorkspaceId)
+          if (sessionId) {
+            navigate(routes.view.allSessions(sessionId))
+          }
+        }
+      } catch (error) {
+        console.error('[App] Failed to switch workspace:', error)
+        setSessionLoadError(formatSessionLoadFailure(error))
+        setSessionsLoaded(true)
+        lastLoadedSessionsWorkspaceRef.current = workspaceId
+      } finally {
+        if (workspaceSwitchInFlightRef.current === workspaceId) {
+          workspaceSwitchInFlightRef.current = null
         }
       }
 

@@ -261,11 +261,30 @@ describe('novel writing workspace layout', () => {
     expect(tiptapBubbleSource).not.toContain('Sparkles')
     expect(tiptapEditorStyles).toContain('.tiptap-editor--manuscript .tiptap-prose')
     expect(tiptapEditorStyles).toContain('--tiptap-manuscript-width')
+    expect(tiptapEditorStyles).toContain('--tiptap-manuscript-width: min(100%, 1120px)')
+    expect(tiptapEditorStyles).toContain('--tiptap-manuscript-line-height: 2.12')
+    expect(tiptapEditorStyles).toContain('--tiptap-manuscript-paragraph-spacing: 1.05em')
+    expect(tiptapEditorStyles).toContain('line-height: var(--tiptap-manuscript-line-height)')
+    expect(tiptapEditorStyles).toContain('margin: var(--tiptap-manuscript-paragraph-spacing) 0')
+    expect(tiptapEditorStyles).not.toContain('--tiptap-manuscript-width: 720px')
     expect(tiptapEditorStyles).toContain('.tiptap-editor--line-numbers .tiptap-prose')
     expect(tiptapEditorStyles).toContain('.tiptap-editor-status-badge')
   })
 
-  it('rewrites selected novel text in place without routing through the chat stream', () => {
+  it('keeps the selected manuscript range visibly highlighted while the selection AI input is focused', () => {
+    const tiptapEditorSource = readFileSync(new URL('../../../../../../../packages/ui/src/components/markdown/TiptapMarkdownEditor.tsx', import.meta.url), 'utf-8')
+    const tiptapBubbleSource = readFileSync(new URL('../../../../../../../packages/ui/src/components/markdown/TiptapBubbleMenus.tsx', import.meta.url), 'utf-8')
+    const tiptapEditorStyles = readFileSync(new URL('../../../../../../../packages/ui/src/components/markdown/tiptap-editor.css', import.meta.url), 'utf-8')
+
+    expect(tiptapEditorSource).toContain('SelectionAiRangeHighlight')
+    expect(tiptapBubbleSource).toContain('SELECTION_AI_RANGE_HIGHLIGHT_KEY')
+    expect(tiptapBubbleSource).toContain("class: 'selection-ai-range-highlight'")
+    expect(tiptapBubbleSource).toContain('setSelectionAiRangeHighlight(editor, { from: selection.from, to: selection.to })')
+    expect(tiptapBubbleSource).toContain('setSelectionAiRangeHighlight(editor, null)')
+    expect(tiptapEditorStyles).toContain('.selection-ai-range-highlight')
+  })
+
+  it('routes selected novel text through chat when available so resulting file edits have diffs', () => {
     const editorPanelSource = readFileSync(new URL('../NovelDocumentEditorPanel.tsx', import.meta.url), 'utf-8')
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const appSource = readFileSync(new URL('../../../App.tsx', import.meta.url), 'utf-8')
@@ -274,16 +293,20 @@ describe('novel writing workspace layout', () => {
     const tiptapBubbleSource = readFileSync(new URL('../../../../../../../packages/ui/src/components/markdown/TiptapBubbleMenus.tsx', import.meta.url), 'utf-8')
 
     expect(editorPanelSource).toContain('onAskAiForSelection')
+    expect(editorPanelSource).toContain('onSendSelectionToChat')
+    expect(editorPanelSource).toContain('formatNovelSelectionChatMessage')
     expect(appShellSource).toContain('handleAskAiForNovelSelection')
+    expect(appShellSource).toContain('handleSendNovelSelectionToChat')
     expect(appShellSource).toContain('selectedNovelFile.path')
     expect(appShellSource).toContain('window.electronAPI.rewriteNovelSelection')
     expect(appShellSource).toContain('relaunchApp')
     expect(appShellSource).not.toContain("type: 'rewriteNovelSelection'")
+    expect(tiptapBubbleSource).toContain('onAddSelectionToChat')
     expect(tiptapBubbleSource).toContain('insertContentAt({ from: selectionRange.from, to: selectionRange.to }, replacement')
     expect(tiptapBubbleSource).toContain("contentType: 'markdown'")
-    expect(appShellSource).not.toContain('buildNovelSelectionChatMessage')
+    expect(appShellSource).toContain('onSendMessage(effectiveSessionId')
+    expect(appShellSource).toContain('onInputChange(effectiveSessionId, nextDraft)')
     expect(appShellSource).not.toContain('buildNovelSelectionOneTimeContext')
-    expect(appShellSource).not.toContain('onSendMessage(effectiveSessionId')
     expect(appShellSource).not.toContain('oneTimeContext')
     expect(appSource).toContain('const hideUserMessage = sendOptions?.hideUserMessage === true')
     expect(appSource).toContain('if (!hideUserMessage)')
@@ -321,6 +344,10 @@ describe('novel writing workspace layout', () => {
     expect(chatPageSource).toContain('routes.view.allSessions(item.id)')
     expect(historyMenuSource).toContain('<PanelHeaderCenterButton')
     expect(historyMenuSource).toContain("title={t('chat.history')}")
+    expect(chatPageSource).toContain('const headerLeadingAction = React.useMemo(() => leadingAction')
+    expect(chatPageSource).toContain('{newSessionButton}')
+    expect(chatPageSource.indexOf('{newSessionButton}')).toBeGreaterThan(chatPageSource.indexOf('const headerActions = React.useMemo'))
+    expect(chatPageSource.indexOf('{newSessionButton}')).toBeLessThan(chatPageSource.indexOf('{conversationHistoryMenu}'))
     expect(chatPageSource).toContain("title={t('chat.session')} leadingAction={headerLeadingAction} actions={headerActions}")
   })
 
@@ -348,7 +375,9 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('nav:sources')
     expect(appShellSource).toContain('nav:skills')
     expect(appShellSource).toContain('nav:settings')
-    expect(appShellSource).toContain('links={showNovelWorkspaceSidebar ? novelWorkspaceSidebarLinks : [')
+    expect(appShellSource).toContain('getPrimarySidebarLinks(novelWorkspaceSidebarLinks)')
+    expect(appShellSource).toContain('links={primarySidebarLinks}')
+    expect(appShellSource).not.toContain('links={showNovelWorkspaceSidebar ? novelWorkspaceSidebarLinks : [')
     expect(appShellSource).not.toContain('[...novelWorkspaceUtilitySidebarLinks, ...novelWorkspaceSidebarLinks]')
   })
 
@@ -362,20 +391,46 @@ describe('novel writing workspace layout', () => {
     expect(sidebarSource).toContain("id: 'writing:group:global'")
     expect(sidebarSource).toContain("t('writing.catalog.globalInfo', '全局信息')")
     expect(sidebarSource).toContain("const manuscriptGroupId = 'writing:group:manuscript'")
+    expect(sidebarSource).toContain("const freeAreaGroupId = 'writing:group:free-area'")
+    expect(sidebarSource).toContain("t('writing.catalog.freeArea', '自由区')")
     expect(sidebarSource).toContain('globalSectionDefinitions')
     expect(sidebarSource).toContain('manuscriptSection')
+    expect(sidebarSource).toContain('freeAreaSection')
+    expect(sidebarSource).toContain('visibleGlobalSectionItems')
+    expect(sidebarSource).toContain("section.files.length > 0")
     expect(sidebarSource).not.toContain("sectionDefinitions.map((section)")
+  })
+
+  it('exposes plus actions for creating writing files in manuscript and free area groups', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const sidebarSource = appShellSource.slice(
+      appShellSource.indexOf('const novelWorkspaceSidebarLinks'),
+      appShellSource.indexOf('const novelWorkspaceUtilitySidebarLinks')
+    )
+
+    expect(appShellSource).toContain('novelCreateFileTarget')
+    expect(appShellSource).toContain('handleSubmitNovelCreateFile')
+    expect(appShellSource).toContain('window.electronAPI.createDirectory(parentPath)')
+    expect(appShellSource).toContain('window.electronAPI.writeFile(targetPath,')
+    expect(sidebarSource).toContain("afterTitle: createNovelWorkspaceAddAction('正文'")
+    expect(sidebarSource).toContain("afterTitle: createNovelWorkspaceAddAction('自由区'")
+    expect(appShellSource).toContain('placeholder={novelCreateFileTarget?.placeholder}')
+    expect(appShellSource).toContain('relative = `${relative}.md`')
+    expect(sidebarSource).toContain("placeholder: '07-标题 或 第一卷/07-标题'")
+    expect(sidebarSource).toContain("placeholder: '脑洞 或 临时/脑洞'")
+    expect(sidebarSource).not.toContain("placeholder: '07-标题.md 或 第一卷/07-标题.md'")
+    expect(sidebarSource).not.toContain("placeholder: '脑洞.md 或 临时/脑洞.md'")
   })
 
   it('uses current novel project history instead of global release notes in novel utility navigation', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const novelUtilityLinksSource = appShellSource.slice(
       appShellSource.indexOf('const novelWorkspaceUtilitySidebarLinks'),
-      appShellSource.indexOf('// Unified sidebar items')
+      appShellSource.indexOf('const primarySidebarLinks')
     )
     const novelKeyboardItemsSource = appShellSource.slice(
-      appShellSource.indexOf('if (showNovelWorkspaceSidebar) {'),
-      appShellSource.indexOf('// 1. Sessions section')
+      appShellSource.indexOf('const unifiedSidebarItems'),
+      appShellSource.indexOf('// Toggle folder expanded state')
     )
 
     expect(novelUtilityLinksSource).toContain('nav:writing-version')
@@ -409,6 +464,10 @@ describe('novel writing workspace layout', () => {
       topBarSource.indexOf('{rightTools ? ('),
       topBarSource.indexOf('{/* Help button */')
     )
+    const exportHandlerSource = appShellSource.slice(
+      appShellSource.indexOf('const handleExportNovelWorkspace'),
+      appShellSource.indexOf('const [novelChangeReviewStatus')
+    )
 
     expect(appShellSource).toContain('NovelExportDialog')
     expect(appShellSource).toContain('NovelVersionHistoryDialog')
@@ -426,8 +485,8 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain("window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'auto' })")
     expect(appShellSource).toContain('window.electronAPI.listWorkspaceVersions(novelWorkspaceRoot, 30)')
     expect(appShellSource).toContain('window.electronAPI.restoreWorkspaceVersion(novelWorkspaceRoot, commitHash)')
-    expect(appShellSource.indexOf('await window.electronAPI.createDirectory(exportRootPath)')).toBeLessThan(
-      appShellSource.indexOf('await window.electronAPI.writeFile(targetPath')
+    expect(exportHandlerSource.indexOf('await window.electronAPI.createDirectory(exportRootPath)')).toBeLessThan(
+      exportHandlerSource.indexOf('await window.electronAPI.writeFile(targetPath')
     )
     expect(topBarSource).toContain('rightTools?: React.ReactNode')
     expect(topBarRightSlotSource).toContain('{rightTools ? (')
@@ -472,7 +531,7 @@ describe('novel writing workspace layout', () => {
     expect(askAiSource).toContain('window.electronAPI.rewriteNovelSelection')
     expect(askAiSource).toContain('relaunchApp')
     expect(askAiSource).not.toContain("type: 'rewriteNovelSelection'")
-    expect(askAiSource).not.toContain('onSendMessage(effectiveSessionId')
+    expect(askAiSource).toContain('onSendMessage(effectiveSessionId')
   })
 
   it('keeps the writing editor editable during background autosave so typing focus is not stolen', () => {
@@ -503,7 +562,7 @@ describe('novel writing workspace layout', () => {
     const panelStackSource = readFileSync(new URL('../../app-shell/PanelStackContainer.tsx', import.meta.url), 'utf-8')
     const panelSlotSource = readFileSync(new URL('../../app-shell/PanelSlot.tsx', import.meta.url), 'utf-8')
 
-    expect(appShellSource).toContain('hidePanelCloseButton={showNovelWorkspaceSidebar}')
+    expect(appShellSource).toContain('hidePanelCloseButton={hasPrimarySidebar}')
     expect(panelStackSource).toContain('hidePanelCloseButton?: boolean')
     expect(panelStackSource).toContain('hideCloseButton={hidePanelCloseButton}')
     expect(panelSlotSource).toContain('hideCloseButton?: boolean')
@@ -583,16 +642,212 @@ describe('novel writing workspace layout', () => {
 
   it('keeps the novel catalog sidebar while opening workspace utility views', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const navigatorSlotSource = appShellSource.slice(
+      appShellSource.indexOf('navigatorSlot={'),
+      appShellSource.indexOf('navigatorWidth=')
+    )
 
-    expect(appShellSource).toContain('const showNovelWorkspaceSidebar = !!novelWorkspaceRoot')
+    expect(appShellSource).toContain('const showNovelWorkspaceSidebar = novelWorkspaceRootMatchesCandidates')
     expect(appShellSource).toContain('const showNovelDocumentNavigator = isSessionsNavigation(navState) && showNovelWorkspaceSidebar')
+    expect(appShellSource).toContain('const hasUnsettledNovelWorkspaceCandidates = novelWorkspaceCandidateRoots.length > 0 && novelWorkspaceDetectionSettledKey !== novelWorkspaceCandidateKey')
+    expect(appShellSource).toContain('const showNovelWorkspacePending = isSessionsNavigation(navState) && (')
+    expect(appShellSource).toContain('const showNovelWorkspaceUnavailable = isSessionsNavigation(navState)')
+    expect(appShellSource).toContain('setNovelWorkspaceDetecting(shouldKeepWorkspaceChromeWhileDetecting)')
+    expect(appShellSource).toContain('(showNovelWorkspacePending || showNovelWorkspaceUnavailable) ? novelWorkspaceNavigatorWidth : sessionListWidth')
+    expect(appShellSource).toContain('(showNovelWorkspacePending || showNovelWorkspaceUnavailable) ? [')
+    expect(appShellSource).toContain("t('writing.loadingWorkspace'")
+    expect(navigatorSlotSource).toContain(') : showNovelWorkspacePending ? (')
+    expect(navigatorSlotSource).toContain(') : showNovelWorkspaceUnavailable ? (')
+    expect(navigatorSlotSource.indexOf('showNovelWorkspacePending')).toBeLessThan(navigatorSlotSource.indexOf('<SessionList'))
+    expect(navigatorSlotSource.indexOf('showNovelWorkspaceUnavailable')).toBeLessThan(navigatorSlotSource.indexOf('<SessionList'))
     expect(appShellSource).toContain('if (!showNovelWorkspaceSidebar) return []')
-    expect(appShellSource).toContain('if (showNovelWorkspaceSidebar) {')
+    expect(appShellSource).toContain('if (primarySidebarLinks.length > 0) {')
     expect(appShellSource).toContain('NovelWorkspaceUtilityTopNav')
     expect(appShellSource).toContain('workspaceTools={showNovelWorkspaceSidebar ? (')
-    expect(appShellSource).toContain('links={showNovelWorkspaceSidebar ? novelWorkspaceSidebarLinks : [')
+    expect(appShellSource).toContain('getPrimarySidebarLinks(novelWorkspaceSidebarLinks)')
+    expect(appShellSource).toContain('links={primarySidebarLinks}')
     expect(appShellSource).toContain('{showNovelDocumentNavigator && novelWorkspaceRoot ? (')
     expect(appShellSource).toContain('handleAllSessionsClick()')
+  })
+
+  it('does not derive writing workspace roots from a stale session outside the active workspace', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const workingDirectorySource = appShellSource.slice(
+      appShellSource.indexOf('const activeSessionMeta ='),
+      appShellSource.indexOf('const latestNovelFileChanges')
+    )
+
+    expect(workingDirectorySource).toContain('activeSessionMeta?.workspaceId === activeWorkspaceId')
+    expect(workingDirectorySource).toContain('activeSessionMeta?.workspaceId === remoteWorkspaceId')
+    expect(workingDirectorySource).toContain('? activeSessionMeta?.workingDirectory')
+    expect(workingDirectorySource).not.toContain('? sessionMetaMap.get(effectiveSessionId)?.workingDirectory')
+  })
+
+  it('does not sync a stale focused-panel session into the selected session during workspace switches', () => {
+    const navigationSource = readFileSync(new URL('../../../contexts/NavigationContext.tsx', import.meta.url), 'utf-8')
+    const selectionSyncSource = navigationSource.slice(
+      navigationSource.indexOf('// Keep the global session selection in sync with the focused panel'),
+      navigationSource.indexOf('// =========================================================================', navigationSource.indexOf('// Keep the global session selection in sync with the focused panel') + 1)
+    )
+
+    expect(selectionSyncSource).toContain('const selectedSessionMeta = store.get(sessionMetaMapAtom).get(navigationState.details.sessionId)')
+    expect(selectionSyncSource).toContain('selectedSessionMeta?.workspaceId === workspaceId')
+    expect(selectionSyncSource).toContain('selectedSessionMeta?.workspaceId === remoteWorkspaceId')
+    expect(selectionSyncSource.indexOf('if (!selectedSessionMatchesWorkspace) return')).toBeLessThan(
+      selectionSyncSource.indexOf('setSession({ selected: navigationState.details.sessionId })')
+    )
+  })
+
+  it('does not render a stale focused-panel session as the effective chat session during workspace switches', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const effectiveSessionSource = appShellSource.slice(
+      appShellSource.indexOf('const rawEffectiveSessionId ='),
+      appShellSource.indexOf('// Focus chat input for the target session only')
+    )
+
+    expect(effectiveSessionSource).toContain('const rawEffectiveSessionId = focusedSessionId ?? session.selected')
+    expect(effectiveSessionSource).toContain('const rawEffectiveSessionMeta = rawEffectiveSessionId ? sessionMetaMap.get(rawEffectiveSessionId) : undefined')
+    expect(effectiveSessionSource).toContain('rawEffectiveSessionMeta?.workspaceId === activeWorkspaceId')
+    expect(effectiveSessionSource).toContain('rawEffectiveSessionMeta?.workspaceId === remoteWorkspaceId')
+    expect(effectiveSessionSource).toContain('const effectiveSessionId = rawEffectiveSessionBelongsToWorkspace ? rawEffectiveSessionId : null')
+  })
+
+  it('does not render stale chat panel routes from another workspace during workspace switches', () => {
+    const mainContentSource = readFileSync(new URL('../../app-shell/MainContentPanel.tsx', import.meta.url), 'utf-8')
+    const sessionsContentSource = mainContentSource.slice(
+      mainContentSource.indexOf('// Chats navigator - show chat, multi-select panel, or empty state'),
+      mainContentSource.indexOf('// Fallback')
+    )
+
+    expect(sessionsContentSource).toContain('const selectedSessionMeta = sessionMetaMap.get(navState.details.sessionId)')
+    expect(sessionsContentSource).toContain('selectedSessionMeta?.workspaceId === activeWorkspaceId')
+    expect(sessionsContentSource).toContain('selectedSessionMeta?.workspaceId === remoteWorkspaceId')
+    expect(sessionsContentSource.indexOf('if (!selectedSessionMatchesWorkspace)')).toBeLessThan(
+      sessionsContentSource.indexOf('<ChatPage sessionId={navState.details.sessionId} />')
+    )
+  })
+
+  it('reuses cached writing workspace files during project switches before refreshing from disk', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const detectionSource = appShellSource.slice(
+      appShellSource.indexOf('async function detectNovelWorkspace'),
+      appShellSource.indexOf('void detectNovelWorkspace()')
+    )
+
+    expect(appShellSource).toContain('novelWorkspaceFilesCacheRef.current.set(rootPath, files)')
+    expect(detectionSource).toContain('const cachedNovelWorkspaceFiles = novelWorkspaceFilesCacheRef.current.get(rootPath)')
+    expect(detectionSource.indexOf('setNovelWorkspaceFiles(cachedNovelWorkspaceFiles)')).toBeLessThan(
+      detectionSource.indexOf('loadNovelWorkspaceFiles(rootPath')
+    )
+  })
+
+  it('loads writing workspace files from targeted catalog searches without an empty root search', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const loadSource = appShellSource.slice(
+      appShellSource.indexOf('const loadNovelWorkspaceFiles ='),
+      appShellSource.indexOf('const refreshNovelWorkspaceFiles')
+    )
+
+    expect(loadSource).not.toContain("searchFiles(rootPath, '')")
+    expect(loadSource).toContain('searchNovelWorkspaceFiles(rootPath')
+    expect(loadSource).toContain('NOVEL_WORKSPACE_DETECTION_QUERIES.map')
+    expect(loadSource).toContain('NOVEL_WORKSPACE_CATALOG_DIRECTORY_QUERIES.map')
+    expect(loadSource).toContain("includeDescendants: false")
+    expect(loadSource.indexOf('detectNovelProjectFromSearchResults(probeResults)')).toBeLessThan(
+      loadSource.indexOf('NOVEL_WORKSPACE_CATALOG_DIRECTORY_QUERIES.map')
+    )
+    expect(loadSource).toContain('onDetected?.(probeFiles)')
+    expect(loadSource.indexOf('onDetected?.(probeFiles)')).toBeLessThan(
+      loadSource.indexOf('NOVEL_WORKSPACE_CATALOG_DIRECTORY_QUERIES.map')
+    )
+    expect(loadSource.indexOf('const results = [...probeResults, ...catalogResults]')).toBeLessThan(
+      loadSource.indexOf('mapSearchResultsToNovelWorkspaceFiles(results)')
+    )
+  })
+
+  it('falls back to single search calls when batch file search is unavailable or stalls', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const searchHelperSource = appShellSource.slice(
+      appShellSource.indexOf('async function searchNovelWorkspaceFiles'),
+      appShellSource.indexOf('function getContentChangeSize')
+    )
+
+    expect(searchHelperSource).toContain('window.electronAPI.isChannelAvailable(RPC_CHANNELS.fs.SEARCH_BATCH)')
+    expect(searchHelperSource).toContain('withTimeout(')
+    expect(searchHelperSource).toContain('window.electronAPI.searchFilesBatch(rootPath, requests)')
+    expect(searchHelperSource).toContain('window.electronAPI.searchFiles(rootPath, request.query, request.options)')
+    expect(searchHelperSource).toContain('1000')
+  })
+
+  it('keeps the renderer editor away from the Node-only writing barrel', () => {
+    const editorPanelSource = readFileSync(new URL('../NovelDocumentEditorPanel.tsx', import.meta.url), 'utf-8')
+    const sharedPackageJson = JSON.parse(
+      readFileSync(new URL('../../../../../../../packages/shared/package.json', import.meta.url), 'utf-8')
+    )
+
+    expect(editorPanelSource).not.toContain("from '@craft-agent/shared/writing'")
+    expect(editorPanelSource).not.toContain('from "@craft-agent/shared/writing"')
+    expect(sharedPackageJson.exports['./writing/selection-context']).toBe('./src/writing/selection-context.ts')
+  })
+
+  it('treats a previously detected writing workspace root as invalid during render once it leaves current candidates', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const visibilitySource = appShellSource.slice(
+      appShellSource.indexOf('const novelWorkspaceCandidateRootSet ='),
+      appShellSource.indexOf('const reviewableNovelFileChanges')
+    )
+
+    expect(visibilitySource).toContain('const novelWorkspaceRootMatchesCandidates = !!novelWorkspaceRoot && novelWorkspaceCandidateRootSet.has(novelWorkspaceRoot)')
+    expect(visibilitySource).toContain('const hasStaleNovelWorkspaceRoot = !!novelWorkspaceRoot && novelWorkspaceCandidateRoots.length > 0 && !novelWorkspaceRootMatchesCandidates')
+    expect(visibilitySource).toContain('const showNovelWorkspaceSidebar = novelWorkspaceRootMatchesCandidates')
+    expect(visibilitySource).toContain('const showNovelWorkspacePending = isSessionsNavigation(navState) && (')
+    expect(visibilitySource).toContain('const showNovelWorkspaceUnavailable = isSessionsNavigation(navState)')
+    expect(visibilitySource).toContain('hasStaleNovelWorkspaceRoot')
+    expect(visibilitySource).toContain('(!showNovelWorkspaceSidebar && hasUnsettledNovelWorkspaceCandidates)')
+  })
+
+  it('does not render the legacy session navigator on cold start before writing workspace detection settles', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const visibilitySource = appShellSource.slice(
+      appShellSource.indexOf('const novelWorkspaceCandidateKey ='),
+      appShellSource.indexOf('const reviewableNovelFileChanges')
+    )
+    const navigatorSlotSource = appShellSource.slice(
+      appShellSource.indexOf('navigatorSlot={'),
+      appShellSource.indexOf('navigatorWidth=')
+    )
+
+    expect(visibilitySource).toContain('const hasUnsettledNovelWorkspaceCandidates = novelWorkspaceCandidateRoots.length > 0 && novelWorkspaceDetectionSettledKey !== novelWorkspaceCandidateKey')
+    expect(visibilitySource).toContain('(!showNovelWorkspaceSidebar && hasUnsettledNovelWorkspaceCandidates)')
+    expect(navigatorSlotSource.indexOf('showNovelWorkspacePending')).toBeLessThan(navigatorSlotSource.indexOf('<SessionList'))
+  })
+
+  it('does not render the legacy session navigator after writing workspace detection misses', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const visibilitySource = appShellSource.slice(
+      appShellSource.indexOf('const novelWorkspaceCandidateRootSet ='),
+      appShellSource.indexOf('const reviewableNovelFileChanges')
+    )
+    const navigatorSizingSource = appShellSource.slice(
+      appShellSource.indexOf('const navigatorPanelWidth ='),
+      appShellSource.indexOf('const handleNavigatorResizeBoundaryMouseDownCapture')
+    )
+    const primarySidebarSource = appShellSource.slice(
+      appShellSource.indexOf('const primarySidebarLinks ='),
+      appShellSource.indexOf('const hasPrimarySidebar')
+    )
+    const navigatorSlotSource = appShellSource.slice(
+      appShellSource.indexOf('navigatorSlot={'),
+      appShellSource.indexOf('navigatorWidth=')
+    )
+
+    expect(visibilitySource).toContain('novelWorkspaceCandidateRoots.length > 0')
+    expect(visibilitySource).toContain('&& !showNovelWorkspaceSidebar')
+    expect(visibilitySource).toContain('&& !showNovelWorkspacePending')
+    expect(navigatorSizingSource).toContain('showNovelWorkspaceUnavailable')
+    expect(primarySidebarSource).toContain('showNovelWorkspacePending || showNovelWorkspaceUnavailable')
+    expect(navigatorSlotSource).toContain("t('writing.workspaceUnavailable'")
+    expect(navigatorSlotSource.indexOf('showNovelWorkspaceUnavailable')).toBeLessThan(navigatorSlotSource.indexOf('<SessionList'))
   })
 
   it('exposes a top-bar global search button backed by the global search dialog', () => {
@@ -638,7 +893,9 @@ describe('novel writing workspace layout', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
 
     expect(appShellSource).not.toContain('Math.max(sessionListWidth, 560)')
-    expect(appShellSource).toContain('NOVEL_WORKSPACE_NAVIGATOR_MAX_WIDTH')
+    expect(appShellSource).not.toContain('NOVEL_WORKSPACE_NAVIGATOR_MAX_WIDTH')
+    expect(appShellSource).toContain('getNavigatorResizeMaxWidth')
+    expect(appShellSource).toContain('assistantMinWidth: PANEL_MIN_WIDTH')
   })
 
   it('keeps novel navigator width separate from the regular session list width', () => {
@@ -659,7 +916,7 @@ describe('novel writing workspace layout', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
 
     expect(appShellSource).toContain('beginResize')
-    expect(appShellSource).toContain("beginResize(showNovelDocumentNavigator ? 'novel-workspace-navigator' : 'session-list', e)")
+    expect(appShellSource).toContain("beginResize(isNovelWorkspaceNavigatorActive ? 'novel-workspace-navigator' : 'session-list', e)")
     expect(appShellSource).toContain("document.addEventListener('mousemove', handleMouseMove, true)")
     expect(appShellSource).toContain('z-dropdown')
   })
@@ -673,8 +930,9 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('navigatorResizeSash=')
     expect(appShellSource).toContain('navigatorPanelRef.current?.getBoundingClientRect().left')
     expect(appShellSource).toContain('data-panel-role="navigator-resize-sash"')
+    expect(appShellSource).toContain('width: 0')
     expect(appShellSource).toContain('width: NAVIGATOR_SASH_HIT_WIDTH')
-    expect(appShellSource).toContain('NAVIGATOR_SASH_FLEX_MARGIN')
+    expect(appShellSource).toContain('const NAVIGATOR_SASH_FLEX_MARGIN = -(PANEL_GAP / 2)')
     expect(appShellSource).not.toContain('relative w-0 h-full cursor-col-resize')
     expect(appShellSource).not.toContain('/* Navigator Resize Handle (absolute, hidden in focused mode) */')
   })
@@ -686,6 +944,6 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('handleNavigatorResizeBoundaryMouseDownCapture')
     expect(appShellSource).toContain('onMouseDownCapture={handleNavigatorResizeBoundaryMouseDownCapture}')
     expect(appShellSource).toContain('navigatorPanelRect.right + (PANEL_GAP / 2)')
-    expect(appShellSource).toContain("beginResize(showNovelDocumentNavigator ? 'novel-workspace-navigator' : 'session-list', e)")
+    expect(appShellSource).toContain("beginResize(isNovelWorkspaceNavigatorActive ? 'novel-workspace-navigator' : 'session-list', e)")
   })
 })

@@ -511,18 +511,21 @@ export function NavigationProvider({
   // Keep the global session selection in sync with the focused panel
   useEffect(() => {
     if (isSessionsNavigation(navigationState) && navigationState.details) {
+      const selectedSessionMeta = store.get(sessionMetaMapAtom).get(navigationState.details.sessionId)
+      const selectedSessionMatchesWorkspace = !workspaceId || (
+        selectedSessionMeta?.workspaceId === workspaceId
+        || (!!remoteWorkspaceId && selectedSessionMeta?.workspaceId === remoteWorkspaceId)
+      )
+      if (!selectedSessionMatchesWorkspace) return
+
       setSession({ selected: navigationState.details.sessionId })
       if (workspaceId) {
-        // Only persist if the session belongs to this workspace (prevents cross-workspace
-        // pollution during workspace switch, when workspaceId changed but navigationState
-        // still reflects the old workspace's focused panel)
-        const meta = store.get(sessionMetaMapAtom).get(navigationState.details.sessionId)
-        if (meta && meta.workspaceId === workspaceId) {
+        if (selectedSessionMeta?.workspaceId === workspaceId || (!!remoteWorkspaceId && selectedSessionMeta?.workspaceId === remoteWorkspaceId)) {
           storage.set(storage.KEYS.lastSelectedSessionId, navigationState.details.sessionId, workspaceId)
         }
       }
     }
-  }, [navigationState, setSession, workspaceId, store])
+  }, [navigationState, setSession, workspaceId, remoteWorkspaceId, store])
 
   // =========================================================================
   // HELPERS

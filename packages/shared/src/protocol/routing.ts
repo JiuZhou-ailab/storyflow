@@ -1,3 +1,7 @@
+// input: Shared RPC channel registry
+// output: Local-only and remote-eligible routing classifications
+// pos: Transport routing contract for hybrid local/remote execution
+
 /**
  * Exhaustive channel routing table for hybrid local/remote transport.
  *
@@ -277,6 +281,7 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
 
   // fs — workspace filesystem
   RPC_CHANNELS.fs.SEARCH,
+  RPC_CHANNELS.fs.SEARCH_BATCH,
   RPC_CHANNELS.fs.LIST_DIRECTORY,
 
   // credentials — remote server's credential state

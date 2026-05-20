@@ -8,7 +8,6 @@ import { useRef, useState, useEffect, useCallback, useMemo } from "react"
 import { useAtomValue, useStore } from "jotai"
 import { motion, AnimatePresence } from "motion/react"
 import {
-  Archive,
   Settings,
   ChevronRight,
   ChevronDown,
@@ -25,16 +24,11 @@ import {
   DatabaseZap,
   Zap,
   Inbox,
-  Globe,
-  FolderOpen,
   Cake,
   Calendar,
   Palette,
   Layers,
   ListTodo,
-  Clock,
-  Radio,
-  Bot,
   Info,
   MailOpen,
   BookOpenText,
@@ -54,6 +48,7 @@ import { McpIcon } from "../icons/McpIcon"
 import { cn } from "@/lib/utils"
 import { isMac } from "@/lib/platform"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { HeaderIconButton } from "@/components/ui/HeaderIconButton"
 import type { MentionFileReference } from "@/components/ui/mention-menu"
 import { Separator } from "@/components/ui/separator"
@@ -105,11 +100,11 @@ import { useStatuses } from "@/hooks/useStatuses"
 import { useLabels } from "@/hooks/useLabels"
 import { useViews } from "@/hooks/useViews"
 import { useContainerWidth } from "@/hooks/useContainerWidth"
-import { LabelIcon, LabelValueTypeIcon } from "@/components/ui/label-icon"
+import { LabelIcon } from "@/components/ui/label-icon"
 import { filterSessionStatuses as filterLabelMenuStates } from "@/components/ui/label-menu"
 import { createLabelMenuItems, filterItems as filterLabelMenuItems, type LabelMenuItem } from "@/components/ui/label-menu-utils"
-import { buildLabelTree, getDescendantIds, getLabelDisplayName, flattenLabels, extractLabelId, findLabelById, sortLabelsForDisplay } from "@craft-agent/shared/labels"
-import type { LabelConfig, LabelTreeNode } from "@craft-agent/shared/labels"
+import { getDescendantIds, getLabelDisplayName, extractLabelId, findLabelById, sortLabelsForDisplay } from "@craft-agent/shared/labels"
+import type { LabelConfig } from "@craft-agent/shared/labels"
 import { resolveEntityColor } from "@craft-agent/shared/colors"
 import * as storage from "@/lib/local-storage"
 import { toast } from "sonner"
@@ -128,7 +123,7 @@ import type { SettingsSubpage } from "../../../shared/types"
 import { SourcesListPanel } from "./SourcesListPanel"
 import { SkillsListPanel } from "./SkillsListPanel"
 import { AutomationsListPanel } from "../automations/AutomationsListPanel"
-import { APP_EVENTS, AGENT_EVENTS, type AutomationFilterKind, AUTOMATION_TYPE_TO_FILTER_KIND } from "../automations/types"
+import { AUTOMATION_TYPE_TO_FILTER_KIND } from "../automations/types"
 import { useAutomations } from "@/hooks/useAutomations"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { PanelHeader } from "./PanelHeader"
@@ -143,9 +138,18 @@ import {
   PANEL_SASH_HIT_WIDTH,
   PANEL_SASH_LINE_WIDTH,
   PANEL_STACK_VERTICAL_OVERFLOW,
+  PANEL_MIN_WIDTH,
   RADIUS_EDGE,
   RADIUS_INNER,
 } from "./panel-constants"
+import {
+  DEFAULT_SIDEBAR_WIDTH,
+  DEFAULT_WORKSPACE_WIDTH,
+  getNavigatorResizeMaxWidth,
+  isUserConfiguredShellLayoutWidth,
+  resolveInitialShellLayoutWidths,
+} from "./layout-defaults"
+import { getPrimarySidebarLinks } from "./primary-sidebar-links"
 import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
@@ -171,12 +175,14 @@ import {
   detectNovelProjectFromSearchResults,
   getNovelWorkspaceCandidateRoots,
   mapSearchResultsToNovelWorkspaceFiles,
-  NOVEL_WORKSPACE_FILE_SEARCH_QUERIES,
+  NOVEL_WORKSPACE_CATALOG_DIRECTORY_QUERIES,
+  NOVEL_WORKSPACE_DETECTION_QUERIES,
   selectDefaultNovelFile,
   type NovelWorkspaceFile,
   type NovelWorkspaceFileSectionId,
 } from "@/lib/writing-workspace"
 import { groupMessagesByTurn, type FileChange } from "@craft-agent/ui"
+import { RPC_CHANNELS, type FileSearchBatchRequest, type FileSearchBatchResult } from "@craft-agent/shared/protocol"
 
 /**
  * AppShellProps - Minimal props interface for AppShell component
@@ -202,16 +208,22 @@ interface AppShellProps {
 
 /** Filter mode for tri-state filtering: include shows only matching, exclude hides matching */
 type FilterMode = 'include' | 'exclude'
+type NovelCreateFileBasePath = '正文' | '自由区'
+
+interface NovelCreateFileTarget {
+  basePath: NovelCreateFileBasePath
+  title: string
+  placeholder: string
+  initialValue: string
+}
 
 const altClickTooltipLabel = isMac ? '⌥ click to exclude' : 'Alt click to exclude'
 const SESSION_LIST_MIN_WIDTH = 240
 const SESSION_LIST_MAX_WIDTH = 480
 const NOVEL_WORKSPACE_NAVIGATOR_MIN_WIDTH = 420
-const NOVEL_WORKSPACE_NAVIGATOR_DEFAULT_WIDTH = 560
-const NOVEL_WORKSPACE_NAVIGATOR_MAX_WIDTH = 860
+const NOVEL_WORKSPACE_NAVIGATOR_DEFAULT_WIDTH = DEFAULT_WORKSPACE_WIDTH
 const NAVIGATOR_SASH_HIT_WIDTH = 14
-const NAVIGATOR_SASH_HALF_HIT_WIDTH = NAVIGATOR_SASH_HIT_WIDTH / 2
-const NAVIGATOR_SASH_FLEX_MARGIN = -(NAVIGATOR_SASH_HALF_HIT_WIDTH + (PANEL_GAP / 2))
+const NAVIGATOR_SASH_FLEX_MARGIN = -(PANEL_GAP / 2)
 const NAVIGATOR_SASH_CAPTURE_HALF_WIDTH = 18
 const NOVEL_AUTO_VERSION_CHAR_THRESHOLD = 100
 const NOVEL_AUTO_VERSION_INTERVAL_MS = 5 * 60 * 1000
@@ -220,6 +232,96 @@ function joinWorkspacePath(rootPath: string, relativePath: string): string {
   const root = rootPath.replace(/[\\/]+$/, '')
   const relative = relativePath.replace(/^[\\/]+/, '')
   return relative ? `${root}/${relative}` : root
+}
+
+function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      reject(new Error(`Operation timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+
+    operation.then(
+      (value) => {
+        window.clearTimeout(timeoutId)
+        resolve(value)
+      },
+      (error) => {
+        window.clearTimeout(timeoutId)
+        reject(error)
+      }
+    )
+  })
+}
+
+async function searchNovelWorkspaceFiles(
+  rootPath: string,
+  requests: FileSearchBatchRequest[]
+): Promise<FileSearchBatchResult[]> {
+  const canUseBatchSearch = typeof window.electronAPI.searchFilesBatch === 'function'
+    && window.electronAPI.isChannelAvailable(RPC_CHANNELS.fs.SEARCH_BATCH)
+
+  if (canUseBatchSearch) {
+    try {
+      return await withTimeout(
+        window.electronAPI.searchFilesBatch(rootPath, requests),
+        2500
+      )
+    } catch (error) {
+      console.warn('[AppShell] Falling back to single file searches:', error)
+    }
+  }
+
+  return Promise.all(
+    requests.map(async (request) => {
+      try {
+        return {
+          query: request.query,
+          results: await withTimeout(
+            window.electronAPI.searchFiles(rootPath, request.query, request.options),
+            1000
+          ),
+        }
+      } catch {
+        return {
+          query: request.query,
+          results: [],
+        }
+      }
+    })
+  )
+}
+
+function hasFileExtension(path: string): boolean {
+  const fileName = path.split('/').pop() ?? ''
+  return /\.[^/.]+$/.test(fileName)
+}
+
+function normalizeNovelCreateFilePath(input: string, basePath: NovelCreateFileBasePath): string | null {
+  let relative = input.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+  if (!relative) return null
+
+  const segments = relative.split('/').map(segment => segment.trim())
+  if (segments.some(segment => !segment || segment === '.' || segment === '..')) {
+    return null
+  }
+
+  relative = segments.join('/')
+  if (!hasFileExtension(relative)) {
+    relative = `${relative}.md`
+  }
+
+  return `${basePath}/${relative}`
+}
+
+function getParentRelativePath(relativePath: string): string {
+  const segments = relativePath.split('/')
+  segments.pop()
+  return segments.join('/')
+}
+
+function getMarkdownTitleFromRelativePath(relativePath: string): string {
+  const fileName = relativePath.split('/').pop() ?? ''
+  return fileName.replace(/\.[^/.]+$/, '').replace(/-/g, ' ').trim()
 }
 
 function getContentChangeSize(previous: string, next: string): number {
@@ -619,7 +721,7 @@ function FilterLabelItems({
 /**
  * AppShell - Main 3-panel layout container
  *
- * Layout: [LeftSidebar 20%] | [NavigatorPanel 32%] | [MainContentPanel 48%]
+ * Layout: [LeftSidebar 20%] | [Workspace 50%] | [Assistant 30%]
  *
  * Session Filters:
  * - 'allSessions': Shows all sessions
@@ -671,6 +773,8 @@ function AppShellContent({
     onReset,
     onSendMessage,
     onOpenFile,
+    onInputChange,
+    getDraft,
     openNewChat,
     pendingPermissions,
   } = contextValue
@@ -683,7 +787,7 @@ function AppShellContent({
     return storage.get(storage.KEYS.sidebarVisible, !defaultCollapsed)
   })
   const [sidebarWidth, setSidebarWidth] = React.useState(() => {
-    return storage.get(storage.KEYS.sidebarWidth, 220)
+    return storage.get(storage.KEYS.sidebarWidth, DEFAULT_SIDEBAR_WIDTH)
   })
   // Session list width in pixels (min 240, max 480)
   const [sessionListWidth, setSessionListWidth] = React.useState(() => {
@@ -692,6 +796,7 @@ function AppShellContent({
   const [novelWorkspaceNavigatorWidth, setNovelWorkspaceNavigatorWidth] = React.useState(() => {
     return storage.get(storage.KEYS.novelWorkspaceNavigatorWidth, NOVEL_WORKSPACE_NAVIGATOR_DEFAULT_WIDTH)
   })
+  const initialShellLayoutResolvedRef = React.useRef(false)
 
   // Hides both sidebar and navigator (CMD+. toggle)
   // Seed from either focused window param or persisted preference, then keep it toggleable.
@@ -949,12 +1054,10 @@ function AppShellContent({
   })
   const [focusedSidebarItemId, setFocusedSidebarItemId] = React.useState<string | null>(null)
   const sidebarItemRefs = React.useRef<Map<string, HTMLElement>>(new Map())
-  // Track which expandable sidebar items are collapsed
-  // Labels are collapsed by default; user preference is persisted once toggled
+  // Track which expandable directory items are collapsed.
   const [collapsedItems, setCollapsedItems] = React.useState<Set<string>>(() => {
     const saved = storage.get<string[] | null>(storage.KEYS.collapsedSidebarItems, null)
-    if (saved !== null) return new Set(saved)
-    return new Set(['nav:labels'])
+    return new Set(saved ?? [])
   })
   const isExpanded = React.useCallback((id: string) => !collapsedItems.has(id), [collapsedItems])
   const toggleExpanded = React.useCallback((id: string) => {
@@ -982,6 +1085,8 @@ function AppShellContent({
   }, [skills, setSkillsAtom])
   // Automations — state, handlers, loading, subscriptions
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
+  const remoteWorkspaceId = activeWorkspace?.remoteServer?.remoteWorkspaceId
+  const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
 
   // Send to Workspace dialog state (driven by sendToWorkspaceAtom set from SessionMenu/BatchSessionMenu)
   const sendToWorkspaceIds = useAtomValue(sendToWorkspaceAtom)
@@ -1050,7 +1155,7 @@ function AppShellContent({
       setExpandedFolders(new Set(newExpandedFolders))
 
       const newCollapsedItems = storage.get<string[] | null>(storage.KEYS.collapsedSidebarItems, null, activeWorkspaceId)
-      setCollapsedItems(newCollapsedItems !== null ? new Set(newCollapsedItems) : new Set(['nav:labels']))
+      setCollapsedItems(new Set(newCollapsedItems ?? []))
     }
 
     previousWorkspaceRef.current = activeWorkspaceId
@@ -1154,9 +1259,6 @@ function AppShellContent({
   // Views: compiled once on config load, evaluated per session in list/chat
   const { evaluateSession: evaluateViews, viewConfigs } = useViews(activeWorkspace?.id || null)
 
-  // Build hierarchical label tree from the display-sorted label config structure
-  const labelTree = useMemo(() => buildLabelTree(displayLabelConfigs), [displayLabelConfigs])
-
   // Build flat LabelMenuItem[] from hierarchical labels for the filter dropdown's search mode.
   // Uses the same structure as the # inline menu so the two search surfaces stay aligned.
   const flatLabelMenuItems = useMemo(
@@ -1235,7 +1337,13 @@ function AppShellContent({
 
   // Shift+Tab cycles permission mode through enabled modes (textarea handles its own, this handles when focus is elsewhere)
   // In multi-panel, targets the focused panel's session
-  const effectiveSessionId = focusedSessionId ?? session.selected
+  const rawEffectiveSessionId = focusedSessionId ?? session.selected
+  const rawEffectiveSessionMeta = rawEffectiveSessionId ? sessionMetaMap.get(rawEffectiveSessionId) : undefined
+  const rawEffectiveSessionBelongsToWorkspace = !!rawEffectiveSessionMeta && (
+    rawEffectiveSessionMeta?.workspaceId === activeWorkspaceId
+    || (!!remoteWorkspaceId && rawEffectiveSessionMeta?.workspaceId === remoteWorkspaceId)
+  )
+  const effectiveSessionId = rawEffectiveSessionBelongsToWorkspace ? rawEffectiveSessionId : null
 
   // Focus chat input for the target session only (multi-panel safe).
   const focusChatInputForSession = useCallback((targetSessionId?: string | null) => {
@@ -1390,6 +1498,42 @@ function AppShellContent({
     latestNovelWorkspaceNavigatorWidthRef.current = novelWorkspaceNavigatorWidth
   }, [novelWorkspaceNavigatorWidth])
 
+  React.useEffect(() => {
+    if (initialShellLayoutResolvedRef.current || shellWidth <= 0) return
+    initialShellLayoutResolvedRef.current = true
+
+    const sidebarPersisted = isUserConfiguredShellLayoutWidth(
+      'sidebar',
+      latestSidebarWidthRef.current,
+      storage.getRaw(storage.KEYS.sidebarWidth) !== null
+    )
+    const workspacePersisted = isUserConfiguredShellLayoutWidth(
+      'workspace',
+      latestNovelWorkspaceNavigatorWidthRef.current,
+      storage.getRaw(storage.KEYS.novelWorkspaceNavigatorWidth) !== null
+    )
+    if (sidebarPersisted && workspacePersisted) return
+
+    const widths = resolveInitialShellLayoutWidths({
+      totalWidth: shellWidth,
+      edgeInset: PANEL_EDGE_INSET,
+      panelGap: PANEL_GAP,
+      sidebarPersisted,
+      workspacePersisted,
+      currentSidebarWidth: latestSidebarWidthRef.current,
+      currentWorkspaceWidth: latestNovelWorkspaceNavigatorWidthRef.current,
+    })
+
+    if (!sidebarPersisted) {
+      latestSidebarWidthRef.current = widths.sidebar
+      setSidebarWidth(widths.sidebar)
+    }
+    if (!workspacePersisted) {
+      latestNovelWorkspaceNavigatorWidthRef.current = widths.workspace
+      setNovelWorkspaceNavigatorWidth(widths.workspace)
+    }
+  }, [shellWidth])
+
   const beginResize = React.useCallback((
     mode: 'sidebar' | 'session-list' | 'novel-workspace-navigator',
     e: React.MouseEvent<HTMLDivElement>
@@ -1426,15 +1570,27 @@ function AppShellContent({
         ? NOVEL_WORKSPACE_NAVIGATOR_MIN_WIDTH
         : SESSION_LIST_MIN_WIDTH
       const maxWidth = mode === 'novel-workspace-navigator'
-        ? NOVEL_WORKSPACE_NAVIGATOR_MAX_WIDTH
+        ? Number.POSITIVE_INFINITY
         : SESSION_LIST_MAX_WIDTH
       const fallbackNavigatorStartX = isSidebarVisible
         ? latestSidebarWidthRef.current + PANEL_GAP
         : PANEL_EDGE_INSET
       const navigatorStartX = navigatorPanelRef.current?.getBoundingClientRect().left ?? fallbackNavigatorStartX
+      const effectiveMaxWidth = mode === 'novel-workspace-navigator'
+        ? Math.max(
+          minWidth,
+          getNavigatorResizeMaxWidth({
+            shellWidth,
+            navigatorStartX,
+            edgeInset: PANEL_EDGE_INSET,
+            panelGap: PANEL_GAP,
+            assistantMinWidth: PANEL_MIN_WIDTH,
+          })
+        )
+        : maxWidth
       const newWidth = Math.min(
         Math.max(clientX - navigatorStartX - (PANEL_GAP / 2), minWidth),
-        maxWidth
+        effectiveMaxWidth
       )
       if (mode === 'novel-workspace-navigator') {
         latestNovelWorkspaceNavigatorWidthRef.current = newWidth
@@ -1474,7 +1630,7 @@ function AppShellContent({
     updateHandleY(e.clientY)
     document.addEventListener('mousemove', handleMouseMove, true)
     document.addEventListener('mouseup', handleMouseUp, true)
-  }, [isSidebarVisible])
+  }, [isSidebarVisible, shellWidth])
 
   // Spring transition config - shared between sidebar and header
   // Critical damping (no bounce): damping = 2 * sqrt(stiffness * mass)
@@ -1484,10 +1640,6 @@ function AppShellContent({
     damping: 49,
   }
 
-  // Use session metadata from Jotai atom (lightweight, no messages)
-  // This prevents closures from retaining full message arrays
-  const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
-  const setSessionMetaMap = useSetAtom(sessionMetaMapAtom)
   const effectiveSession = useAtomValue(sessionAtomFamily(effectiveSessionId ?? '__missing__'))
 
   const hasPendingPrompt = React.useCallback((sessionId: string) => {
@@ -1499,8 +1651,13 @@ function AppShellContent({
 
   // Reload skills when active session's workingDirectory changes (for project-level skills)
   // Skills are loaded from: global (~/.agents/skills/), workspace, and project ({workingDirectory}/.agents/skills/)
-  const activeSessionWorkingDirectory = effectiveSessionId
-    ? sessionMetaMap.get(effectiveSessionId)?.workingDirectory
+  const activeSessionMeta = effectiveSessionId ? sessionMetaMap.get(effectiveSessionId) : undefined
+  const activeSessionBelongsToWorkspace = !!activeSessionMeta && (
+    activeSessionMeta?.workspaceId === activeWorkspaceId
+    || (!!remoteWorkspaceId && activeSessionMeta?.workspaceId === remoteWorkspaceId)
+  )
+  const activeSessionWorkingDirectory = activeSessionBelongsToWorkspace
+    ? activeSessionMeta?.workingDirectory
     : undefined
 
   const latestNovelFileChanges = React.useMemo<FileChange[]>(() => {
@@ -1524,32 +1681,51 @@ function AppShellContent({
     }),
     [activeWorkspace?.rootPath, activeSessionWorkingDirectory]
   )
+  const novelWorkspaceCandidateKey = React.useMemo(
+    () => novelWorkspaceCandidateRoots.join('\0'),
+    [novelWorkspaceCandidateRoots]
+  )
   const [novelWorkspaceRoot, setNovelWorkspaceRoot] = React.useState<string | null>(null)
   const [novelWorkspaceFiles, setNovelWorkspaceFiles] = React.useState<NovelWorkspaceFile[]>([])
+  const [novelWorkspaceDetecting, setNovelWorkspaceDetecting] = React.useState(false)
+  const [novelWorkspaceDetectionSettledKey, setNovelWorkspaceDetectionSettledKey] = React.useState<string | null>(null)
   const novelWorkspaceRootRef = React.useRef<string | null>(null)
+  const novelWorkspaceFilesCacheRef = React.useRef<Map<string, NovelWorkspaceFile[]>>(new Map())
+  const [novelCreateFileTarget, setNovelCreateFileTarget] = React.useState<NovelCreateFileTarget | null>(null)
+  const [novelCreateFileValue, setNovelCreateFileValue] = React.useState('')
+  const [novelCreatingFile, setNovelCreatingFile] = React.useState(false)
 
   React.useEffect(() => {
     novelWorkspaceRootRef.current = novelWorkspaceRoot
   }, [novelWorkspaceRoot])
 
-  const loadNovelWorkspaceFiles = React.useCallback(async (rootPath: string): Promise<NovelWorkspaceFile[] | null> => {
-    const results = await window.electronAPI.searchFiles(rootPath, '')
-    if (!detectNovelProjectFromSearchResults(results)) return null
-
-    const fileResultSets = await Promise.all(
-      NOVEL_WORKSPACE_FILE_SEARCH_QUERIES.map(async (query) => {
-        try {
-          return await window.electronAPI.searchFiles(rootPath, query)
-        } catch {
-          return []
-        }
-      })
+  const loadNovelWorkspaceFiles = React.useCallback(async (
+    rootPath: string,
+    onDetected?: (files: NovelWorkspaceFile[]) => void
+  ): Promise<NovelWorkspaceFile[] | null> => {
+    const probeResultSets = await searchNovelWorkspaceFiles(rootPath,
+      NOVEL_WORKSPACE_DETECTION_QUERIES.map((query) => ({
+        query,
+        options: { mode: 'path' as const, includeDescendants: false },
+      }))
     )
+    const probeResults = probeResultSets.flatMap(resultSet => resultSet.results)
+    if (!detectNovelProjectFromSearchResults(probeResults)) return null
+    const probeFiles = mapSearchResultsToNovelWorkspaceFiles(probeResults)
+    onDetected?.(probeFiles)
 
-    return mapSearchResultsToNovelWorkspaceFiles([
-      ...results,
-      ...fileResultSets.flat(),
-    ])
+    const catalogResultSets = await searchNovelWorkspaceFiles(rootPath,
+      NOVEL_WORKSPACE_CATALOG_DIRECTORY_QUERIES.map((query) => ({
+        query,
+        options: { mode: 'path' as const },
+      }))
+    )
+    const catalogResults = catalogResultSets.flatMap(resultSet => resultSet.results)
+    const results = [...probeResults, ...catalogResults]
+
+    const files = mapSearchResultsToNovelWorkspaceFiles(results)
+    novelWorkspaceFilesCacheRef.current.set(rootPath, files)
+    return files
   }, [])
 
   const refreshNovelWorkspaceFiles = React.useCallback(async (rootPath: string): Promise<boolean> => {
@@ -1561,8 +1737,51 @@ function AppShellContent({
     return true
   }, [loadNovelWorkspaceFiles])
 
+  const openNovelCreateFileDialog = React.useCallback((target: NovelCreateFileTarget) => {
+    setNovelCreateFileTarget(target)
+    setNovelCreateFileValue(target.initialValue)
+  }, [])
+
+  const handleSubmitNovelCreateFile = React.useCallback(async () => {
+    if (!novelWorkspaceRoot || !novelCreateFileTarget) return
+
+    const relativePath = normalizeNovelCreateFilePath(novelCreateFileValue, novelCreateFileTarget.basePath)
+    if (!relativePath) {
+      toast.error(t('writing.createFile.invalidName', '请输入有效文件名'))
+      return
+    }
+    if (novelWorkspaceFiles.some(file => file.relativePath === relativePath)) {
+      toast.error(t('writing.createFile.exists', '文件已存在'))
+      return
+    }
+
+    const targetPath = joinWorkspacePath(novelWorkspaceRoot, relativePath)
+    const parentRelativePath = getParentRelativePath(relativePath)
+    const parentPath = joinWorkspacePath(novelWorkspaceRoot, parentRelativePath)
+    const title = getMarkdownTitleFromRelativePath(relativePath)
+    const initialContent = title ? `# ${title}\n\n` : ''
+
+    setNovelCreatingFile(true)
+    try {
+      await window.electronAPI.createDirectory(parentPath)
+      await window.electronAPI.writeFile(targetPath, initialContent)
+      await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
+      setSelectedNovelFilePath(targetPath)
+      navigate(routes.view.allSessions())
+      setNovelCreateFileTarget(null)
+      setNovelCreateFileValue('')
+    } catch (error) {
+      console.error('[AppShell] Failed to create writing file:', error)
+      toast.error(t('writing.createFile.failed', '创建文件失败'))
+    } finally {
+      setNovelCreatingFile(false)
+    }
+  }, [novelCreateFileTarget, novelCreateFileValue, novelWorkspaceFiles, novelWorkspaceRoot, refreshNovelWorkspaceFiles, t])
+
   React.useEffect(() => {
     if (novelWorkspaceCandidateRoots.length === 0) {
+      setNovelWorkspaceDetecting(false)
+      setNovelWorkspaceDetectionSettledKey(null)
       setNovelWorkspaceRoot(null)
       setNovelWorkspaceFiles([])
       return
@@ -1570,6 +1789,9 @@ function AppShellContent({
 
     const nextCandidateRoots = new Set(novelWorkspaceCandidateRoots)
     const currentNovelWorkspaceRoot = novelWorkspaceRootRef.current
+    const shouldKeepWorkspaceChromeWhileDetecting = !currentNovelWorkspaceRoot || !nextCandidateRoots.has(currentNovelWorkspaceRoot)
+    setNovelWorkspaceDetecting(shouldKeepWorkspaceChromeWhileDetecting)
+
     if (currentNovelWorkspaceRoot && !nextCandidateRoots.has(currentNovelWorkspaceRoot)) {
       setNovelWorkspaceRoot(null)
       setNovelWorkspaceFiles([])
@@ -1579,13 +1801,29 @@ function AppShellContent({
 
     async function detectNovelWorkspace(): Promise<void> {
       for (const rootPath of novelWorkspaceCandidateRoots) {
+        const cachedNovelWorkspaceFiles = novelWorkspaceFilesCacheRef.current.get(rootPath)
+        if (cachedNovelWorkspaceFiles) {
+          setNovelWorkspaceRoot(rootPath)
+          setNovelWorkspaceFiles(cachedNovelWorkspaceFiles)
+          setNovelWorkspaceDetectionSettledKey(novelWorkspaceCandidateKey)
+          setNovelWorkspaceDetecting(false)
+        }
+
         try {
-          const files = await loadNovelWorkspaceFiles(rootPath)
+          const files = await loadNovelWorkspaceFiles(rootPath, (probeFiles) => {
+            if (cancelled) return
+            setNovelWorkspaceRoot(rootPath)
+            setNovelWorkspaceFiles(probeFiles)
+            setNovelWorkspaceDetectionSettledKey(novelWorkspaceCandidateKey)
+            setNovelWorkspaceDetecting(false)
+          })
           if (cancelled) return
 
           if (files) {
             setNovelWorkspaceRoot(rootPath)
             setNovelWorkspaceFiles(files)
+            setNovelWorkspaceDetectionSettledKey(novelWorkspaceCandidateKey)
+            setNovelWorkspaceDetecting(false)
             return
           }
         } catch {
@@ -1595,6 +1833,8 @@ function AppShellContent({
 
       setNovelWorkspaceRoot(null)
       setNovelWorkspaceFiles([])
+      setNovelWorkspaceDetectionSettledKey(novelWorkspaceCandidateKey)
+      setNovelWorkspaceDetecting(false)
     }
 
     void detectNovelWorkspace()
@@ -1602,7 +1842,7 @@ function AppShellContent({
     return () => {
       cancelled = true
     }
-  }, [loadNovelWorkspaceFiles, novelWorkspaceCandidateRoots])
+  }, [loadNovelWorkspaceFiles, novelWorkspaceCandidateKey, novelWorkspaceCandidateRoots])
 
   React.useEffect(() => {
     if (!novelWorkspaceRoot || latestNovelFileChanges.length === 0) return
@@ -1616,14 +1856,38 @@ function AppShellContent({
     }
   }, [latestNovelFileChanges, novelWorkspaceRoot, refreshNovelWorkspaceFiles])
 
-  const showNovelWorkspaceSidebar = !!novelWorkspaceRoot
+  const novelWorkspaceCandidateRootSet = React.useMemo(
+    () => new Set(novelWorkspaceCandidateRoots),
+    [novelWorkspaceCandidateRoots]
+  )
+  const novelWorkspaceRootMatchesCandidates = !!novelWorkspaceRoot && novelWorkspaceCandidateRootSet.has(novelWorkspaceRoot)
+  const hasStaleNovelWorkspaceRoot = !!novelWorkspaceRoot && novelWorkspaceCandidateRoots.length > 0 && !novelWorkspaceRootMatchesCandidates
+  const hasUnsettledNovelWorkspaceCandidates = novelWorkspaceCandidateRoots.length > 0 && novelWorkspaceDetectionSettledKey !== novelWorkspaceCandidateKey
+  const showNovelWorkspaceSidebar = novelWorkspaceRootMatchesCandidates
   const showNovelDocumentNavigator = isSessionsNavigation(navState) && showNovelWorkspaceSidebar
+  const showNovelWorkspacePending = isSessionsNavigation(navState) && (
+    novelWorkspaceDetecting
+    || hasStaleNovelWorkspaceRoot
+    || (!showNovelWorkspaceSidebar && hasUnsettledNovelWorkspaceCandidates)
+  )
+  const showNovelWorkspaceUnavailable = isSessionsNavigation(navState)
+    && novelWorkspaceCandidateRoots.length > 0
+    && !showNovelWorkspaceSidebar
+    && !showNovelWorkspacePending
   const reviewableNovelFileChanges = React.useMemo(
     () => normalizeNovelFileChangePaths(latestNovelFileChanges, novelWorkspaceRoot, novelWorkspaceFiles),
     [latestNovelFileChanges, novelWorkspaceFiles, novelWorkspaceRoot]
   )
   const novelWorkspaceTree = React.useMemo(
     () => buildNovelWorkspaceTree(novelWorkspaceFiles),
+    [novelWorkspaceFiles]
+  )
+  const isShortFormNovelWorkspace = React.useMemo(
+    () => novelWorkspaceFiles.some(file =>
+      file.relativePath === '创作要求.md'
+      || file.relativePath === '简报.md'
+      || file.relativePath.startsWith('自由区/')
+    ),
     [novelWorkspaceFiles]
   )
   const defaultNovelFile = React.useMemo(
@@ -2137,9 +2401,32 @@ function AppShellContent({
     }
   }, [effectiveSessionId, ensureNovelDocumentSaved, selectedNovelFile, t])
 
+  const handleAddNovelSelectionToChat = React.useCallback((message: string) => {
+    if (!effectiveSessionId) return
+
+    const currentDraft = getDraft(effectiveSessionId)
+    const nextDraft = currentDraft.trim()
+      ? `${currentDraft.trimEnd()}\n\n${message}`
+      : message
+
+    onInputChange(effectiveSessionId, nextDraft)
+    window.dispatchEvent(new CustomEvent('craft:restore-input', {
+      detail: { sessionId: effectiveSessionId, text: nextDraft },
+    }))
+    toast.success(t('writing.selectionContext.addedToChat', '已添加到对话框'))
+  }, [effectiveSessionId, getDraft, onInputChange, t])
+
+  const handleSendNovelSelectionToChat = React.useCallback(async (message: string) => {
+    if (!effectiveSessionId) return
+    const saved = await ensureNovelDocumentSaved()
+    if (!saved) return
+    onSendMessage(effectiveSessionId, message)
+  }, [effectiveSessionId, ensureNovelDocumentSaved, onSendMessage])
+
   const navigatorPanelWidth = showNovelDocumentNavigator
     ? novelWorkspaceNavigatorWidth
-    : sessionListWidth
+    : (showNovelWorkspacePending || showNovelWorkspaceUnavailable) ? novelWorkspaceNavigatorWidth : sessionListWidth
+  const isNovelWorkspaceNavigatorActive = showNovelDocumentNavigator || showNovelWorkspacePending || showNovelWorkspaceUnavailable
 
   const handleNavigatorResizeBoundaryMouseDownCapture = React.useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (effectiveSidebarAndNavigatorHidden || isAutoCompact || isResizing || e.button !== 0) return
@@ -2150,13 +2437,13 @@ function AppShellContent({
     const boundaryCenter = navigatorPanelRect.right + (PANEL_GAP / 2)
     if (Math.abs(e.clientX - boundaryCenter) > NAVIGATOR_SASH_CAPTURE_HALF_WIDTH) return
 
-    beginResize(showNovelDocumentNavigator ? 'novel-workspace-navigator' : 'session-list', e)
+    beginResize(isNovelWorkspaceNavigatorActive ? 'novel-workspace-navigator' : 'session-list', e)
   }, [
     beginResize,
     effectiveSidebarAndNavigatorHidden,
     isAutoCompact,
     isResizing,
-    showNovelDocumentNavigator,
+    isNovelWorkspaceNavigatorActive,
   ])
 
   React.useEffect(() => {
@@ -2172,7 +2459,6 @@ function AppShellContent({
   // Also exclude hidden sessions (mini-agent sessions) from all counts and lists
   // For remote workspaces, sessions have the remote workspace ID (not the local one),
   // so we match against both the local and remote workspace IDs.
-  const remoteWorkspaceId = activeWorkspace?.remoteServer?.remoteWorkspaceId
   const workspaceSessionMetas = useMemo(() => {
     const metas = Array.from(sessionMetaMap.values())
     if (!activeWorkspaceId) return metas.filter(s => !s.hidden)
@@ -2225,77 +2511,6 @@ function AppShellContent({
 
     return cleanup
   }, [workspaces])
-
-  // Count sessions by todo state (scoped to workspace)
-  const isMetaDone = (s: SessionMeta) => s.sessionStatus === 'done' || s.sessionStatus === 'cancelled'
-  const flaggedCount = activeSessionMetas.filter(s => s.isFlagged).length
-  const archivedCount = workspaceSessionMetas.filter(s => s.isArchived).length
-
-  // Compute session counts per label (cumulative: parent includes descendants).
-  // Flatten the tree for iteration, use the tree for descendant lookups.
-  // Uses activeSessionMetas to exclude archived sessions from counts.
-  const labelCounts = useMemo(() => {
-    const allLabels = flattenLabels(labelConfigs)
-    const counts: Record<string, number> = {}
-    for (const label of allLabels) {
-      // Direct count: sessions explicitly tagged with this label (handles valued entries like "priority::3")
-      const directCount = activeSessionMetas.filter(
-        s => s.labels?.some(l => extractLabelId(l) === label.id)
-      ).length
-      counts[label.id] = directCount
-    }
-    // Add descendant counts to parents (cumulative)
-    for (const label of allLabels) {
-      const descendants = getDescendantIds(labelConfigs, label.id)
-      if (descendants.length > 0) {
-        const descendantCount = activeSessionMetas.filter(
-          s => s.labels?.some(l => descendants.includes(extractLabelId(l)))
-        ).length
-        counts[label.id] = (counts[label.id] || 0) + descendantCount
-      }
-    }
-    return counts
-  }, [activeSessionMetas, labelConfigs])
-
-  // Count sessions by individual todo state (dynamic based on effectiveSessionStatuses)
-  // Uses activeSessionMetas to exclude archived sessions from counts.
-  const sessionStatusCounts = useMemo(() => {
-    const counts: Record<SessionStatusId, number> = {}
-    // Initialize counts for all dynamic statuses
-    for (const state of effectiveSessionStatuses) {
-      counts[state.id] = 0
-    }
-    // Count sessions
-    for (const s of activeSessionMetas) {
-      const state = (s.sessionStatus || 'todo') as SessionStatusId
-      // Increment count (initialize to 0 if status not in effectiveSessionStatuses yet)
-      counts[state] = (counts[state] || 0) + 1
-    }
-    return counts
-  }, [activeSessionMetas, effectiveSessionStatuses])
-
-  // Count sources by type for the Sources dropdown subcategories
-  const sourceTypeCounts = useMemo(() => {
-    const counts = { api: 0, mcp: 0, local: 0 }
-    for (const source of sources) {
-      const t = source.config.type
-      if (t === 'api' || t === 'mcp' || t === 'local') {
-        counts[t]++
-      }
-    }
-    return counts
-  }, [sources])
-
-  // Count automations by type for the Automations dropdown subcategories
-  const automationTypeCounts = useMemo(() => {
-    const counts = { scheduled: 0, event: 0, agentic: 0 }
-    for (const automation of automations) {
-      if (automation.event === 'SchedulerTick') counts.scheduled++
-      else if ((APP_EVENTS as string[]).includes(automation.event)) counts.event++
-      else if ((AGENT_EVENTS as string[]).includes(automation.event)) counts.agentic++
-    }
-    return counts
-  }, [automations])
 
   // Filter session metadata based on sidebar mode and chat filter
   const filteredSessionMetas = useMemo(() => {
@@ -2756,132 +2971,6 @@ function AppShellContent({
     }
   }, [])
 
-  // ============================================================================
-  // EDIT POPOVER STATE
-  // ============================================================================
-  // State to control which EditPopover is open (triggered from context menus).
-  // We use controlled popovers instead of deep links so the user can type
-  // their request in the popover UI before opening a new chat window.
-  // add-source variants: add-source (generic), add-source-api, add-source-mcp, add-source-local
-  const [editPopoverOpen, setEditPopoverOpen] = useState<'statuses' | 'labels' | 'views' | 'add-source' | 'add-source-api' | 'add-source-mcp' | 'add-source-local' | 'add-skill' | 'add-label' | 'automation-config' | null>(null)
-
-  // Stores the Y position of the last right-clicked sidebar item so the EditPopover
-  // appears near it rather than at a fixed location. Updated synchronously before
-  // the setTimeout that opens the popover, ensuring the ref is set before render.
-  const editPopoverAnchorY = useRef<number>(120)
-  // Tracks which label was right-clicked when opening label EditPopovers,
-  // so the agent knows the target for commands like "make this red" or "add below this"
-  const editLabelTargetId = useRef<string | undefined>(undefined)
-
-  // Stores the trigger element (button) so we can keep it highlighted while the
-  // EditPopover is open (after Radix removes data-state="open" on context menu close).
-  const editPopoverTriggerRef = useRef<Element | null>(null)
-
-  // Captures the bounding rect of the currently-open context menu trigger (the button).
-  // Radix sets data-state="open" on the button (via ContextMenuTrigger asChild)
-  // while the menu is visible, so we can locate it in the DOM at click time.
-  const captureContextMenuPosition = useCallback(() => {
-    const trigger = document.querySelector('.group\\/section > [data-state="open"]')
-    if (trigger) {
-      const rect = trigger.getBoundingClientRect()
-      editPopoverAnchorY.current = rect.top
-      editPopoverTriggerRef.current = trigger
-    }
-  }, [])
-
-  // Sync data-edit-active attribute on the trigger element with EditPopover open state.
-  // This keeps the sidebar item visually highlighted while the popover is shown,
-  // since Radix's data-state="open" disappears when the context menu closes.
-  useEffect(() => {
-    const el = editPopoverTriggerRef.current
-    if (!el) return
-    if (editPopoverOpen) {
-      el.setAttribute('data-edit-active', 'true')
-    } else {
-      el.removeAttribute('data-edit-active')
-      editPopoverTriggerRef.current = null
-    }
-  }, [editPopoverOpen])
-
-  // Handler for "Configure Statuses" context menu action
-  // Opens the EditPopover for status configuration
-  // Uses setTimeout to delay opening until after context menu closes,
-  // preventing the popover from immediately closing due to focus shift
-  const openConfigureStatuses = useCallback(() => {
-    captureContextMenuPosition()
-    setTimeout(() => setEditPopoverOpen('statuses'), 50)
-  }, [captureContextMenuPosition])
-
-  // Handler for "Configure Labels" context menu action
-  // Opens the EditPopover for label configuration, storing which label was right-clicked
-  const openConfigureLabels = useCallback((labelId?: string) => {
-    editLabelTargetId.current = labelId
-    captureContextMenuPosition()
-    setTimeout(() => setEditPopoverOpen('labels'), 50)
-  }, [captureContextMenuPosition])
-
-  // Handler for "Edit Views" context menu action
-  // Opens the EditPopover for view configuration
-  const openConfigureViews = useCallback(() => {
-    captureContextMenuPosition()
-    setTimeout(() => setEditPopoverOpen('views'), 50)
-  }, [captureContextMenuPosition])
-
-  // Handler for "Delete View" context menu action
-  // Removes the view from config by filtering it out and saving
-  const handleDeleteView = useCallback(async (viewId: string) => {
-    if (!activeWorkspace?.id) return
-    try {
-      const updated = viewConfigs.filter(v => v.id !== viewId)
-      await window.electronAPI.saveViews(activeWorkspace.id, updated)
-    } catch (err) {
-      console.error('[AppShell] Failed to delete view:', err)
-    }
-  }, [activeWorkspace?.id, viewConfigs])
-
-  // Handler for "Add New Label" context menu action
-  // Opens the EditPopover with 'add-label' context, storing which label was right-clicked
-  // so the agent knows to add the new label relative to it
-  const handleAddLabel = useCallback((parentId?: string) => {
-    editLabelTargetId.current = parentId
-    captureContextMenuPosition()
-    setTimeout(() => setEditPopoverOpen('add-label'), 50)
-  }, [captureContextMenuPosition])
-
-  // Handler for "Delete Label" context menu action
-  // Deletes the label and all its descendants, stripping from sessions
-  const handleDeleteLabel = useCallback(async (labelId: string) => {
-    if (!activeWorkspace?.id) return
-    try {
-      await window.electronAPI.deleteLabel(activeWorkspace.id, labelId)
-    } catch (err) {
-      console.error('[AppShell] Failed to delete label:', err)
-    }
-  }, [activeWorkspace?.id])
-
-  // Handler for "Add Source" context menu action
-  // Opens the EditPopover for adding a new source
-  // Optional sourceType param allows filter-aware context (from subcategory menus or filtered views)
-  const openAddSource = useCallback((sourceType?: 'api' | 'mcp' | 'local') => {
-    captureContextMenuPosition()
-    const key = sourceType ? `add-source-${sourceType}` as const : 'add-source' as const
-    setTimeout(() => setEditPopoverOpen(key), 50)
-  }, [captureContextMenuPosition])
-
-  // Handler for "Add Skill" context menu action
-  // Opens the EditPopover for adding a new skill
-  const openAddSkill = useCallback(() => {
-    captureContextMenuPosition()
-    setTimeout(() => setEditPopoverOpen('add-skill'), 50)
-  }, [captureContextMenuPosition])
-
-  // Handler for "Add Automation" context menu action
-  // Opens the EditPopover for adding a new automation
-  const openAddAutomation = useCallback(() => {
-    captureContextMenuPosition()
-    setTimeout(() => setEditPopoverOpen('automation-config'), 50)
-  }, [captureContextMenuPosition])
-
   // Create a new chat and select it
   const handleNewChat = useCallback((newPanel: boolean = false) => {
     if (!activeWorkspace) return
@@ -2956,6 +3045,12 @@ function AppShellContent({
       icon: LeftSidebarLinkItem['icon']
       files: NovelWorkspaceFile[]
     } = { id: 'manuscript', title: t('writing.tabs.manuscript'), icon: BookOpenText, files: novelWorkspaceTree.manuscript.files }
+    const freeAreaSection: {
+      id: NovelWorkspaceFileSectionId
+      title: string
+      icon: LeftSidebarLinkItem['icon']
+      files: NovelWorkspaceFile[]
+    } = { id: 'work', title: t('writing.catalog.freeArea', '自由区'), icon: Layers, files: novelWorkspaceTree.work.files }
 
     const globalSectionDefinitions: Array<{
       id: NovelWorkspaceFileSectionId
@@ -2965,12 +3060,13 @@ function AppShellContent({
     }> = [
       { id: 'outline', title: t('writing.tabs.outline'), icon: ScrollText, files: novelWorkspaceTree.outline.files },
       { id: 'characters', title: t('writing.tabs.characters'), icon: UsersRound, files: novelWorkspaceTree.characters.files },
-      { id: 'locations', title: t('writing.tabs.locations'), icon: MapPinned, files: novelWorkspaceTree.locations.files },
       { id: 'style', title: t('writing.tabs.style', 'Style'), icon: Palette, files: novelWorkspaceTree.style.files },
-      { id: 'timeline', title: t('writing.tabs.timeline'), icon: Calendar, files: novelWorkspaceTree.timeline.files },
-      { id: 'state', title: t('writing.tabs.state'), icon: ListTodo, files: novelWorkspaceTree.state.files },
       { id: 'analysis', title: t('writing.tabs.analysis', 'Analysis'), icon: Search, files: novelWorkspaceTree.analysis.files },
-      { id: 'work', title: t('writing.tabs.work', 'Work'), icon: Layers, files: novelWorkspaceTree.work.files },
+      ...(!isShortFormNovelWorkspace ? [
+        { id: 'locations' as const, title: t('writing.tabs.locations'), icon: MapPinned, files: novelWorkspaceTree.locations.files },
+        { id: 'timeline' as const, title: t('writing.tabs.timeline'), icon: Calendar, files: novelWorkspaceTree.timeline.files },
+        { id: 'state' as const, title: t('writing.tabs.state'), icon: ListTodo, files: novelWorkspaceTree.state.files },
+      ] : []),
     ]
 
     const fileItem = (file: NovelWorkspaceFile): LeftSidebarItem => ({
@@ -2988,6 +3084,27 @@ function AppShellContent({
         handleSelectNovelFile(file)
       },
     })
+
+    const createNovelWorkspaceAddAction = (
+      basePath: NovelCreateFileBasePath,
+      target: Omit<NovelCreateFileTarget, 'basePath'>
+    ) => (
+      <span
+        role="button"
+        tabIndex={-1}
+        title={target.title}
+        aria-label={target.title}
+        className="flex h-4 w-4 items-center justify-center rounded-[4px] text-foreground/45 hover:bg-foreground/10 hover:text-foreground"
+        data-no-dnd="true"
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          openNovelCreateFileDialog({ basePath, ...target })
+        }}
+      >
+        <Plus className="h-3 w-3" />
+      </span>
+    )
 
     const sectionItem = (section: typeof globalSectionDefinitions[number]): LeftSidebarItem => {
       const sectionId = `writing:section:${section.id}`
@@ -3012,13 +3129,18 @@ function AppShellContent({
       }
     }
 
-    const globalSectionItems = globalSectionDefinitions.map(sectionItem)
-    const globalFileCount = globalSectionDefinitions.reduce((count, section) => count + section.files.length, 0)
-    const hasSelectedGlobalFile = globalSectionDefinitions.some(section =>
+    const visibleGlobalSectionDefinitions = isShortFormNovelWorkspace
+      ? globalSectionDefinitions.filter(section => section.files.length > 0)
+      : globalSectionDefinitions
+    const visibleGlobalSectionItems = visibleGlobalSectionDefinitions.map(sectionItem)
+    const globalFileCount = visibleGlobalSectionDefinitions.reduce((count, section) => count + section.files.length, 0)
+    const hasSelectedGlobalFile = visibleGlobalSectionDefinitions.some(section =>
       section.files.some(file => file.path === selectedNovelFile?.path)
     )
     const hasSelectedManuscriptFile = manuscriptSection.files.some(file => file.path === selectedNovelFile?.path)
+    const hasSelectedFreeAreaFile = freeAreaSection.files.some(file => file.path === selectedNovelFile?.path)
     const manuscriptGroupId = 'writing:group:manuscript'
+    const freeAreaGroupId = 'writing:group:free-area'
 
     return [{
       id: 'nav:writingCatalog',
@@ -3041,7 +3163,7 @@ function AppShellContent({
           expanded: isExpanded('writing:group:global'),
           onToggle: () => toggleExpanded('writing:group:global'),
           onClick: () => toggleExpanded('writing:group:global'),
-          items: globalSectionItems,
+          items: visibleGlobalSectionItems,
         },
         {
           id: manuscriptGroupId,
@@ -3049,6 +3171,11 @@ function AppShellContent({
           label: String(manuscriptSection.files.length),
           icon: manuscriptSection.icon,
           variant: hasSelectedManuscriptFile ? 'default' : 'ghost',
+          afterTitle: createNovelWorkspaceAddAction('正文', {
+            title: t('writing.createFile.manuscript', '新建正文文件'),
+            placeholder: '07-标题 或 第一卷/07-标题',
+            initialValue: '',
+          }),
           expandable: true,
           expanded: isExpanded(manuscriptGroupId),
           onToggle: () => toggleExpanded(manuscriptGroupId),
@@ -3062,6 +3189,30 @@ function AppShellContent({
           },
           items: manuscriptSection.files.map(fileItem),
         },
+        {
+          id: freeAreaGroupId,
+          title: freeAreaSection.title,
+          label: String(freeAreaSection.files.length),
+          icon: freeAreaSection.icon,
+          variant: hasSelectedFreeAreaFile ? 'default' : 'ghost',
+          afterTitle: createNovelWorkspaceAddAction('自由区', {
+            title: t('writing.createFile.freeArea', '新建自由区文件'),
+            placeholder: '脑洞 或 临时/脑洞',
+            initialValue: '',
+          }),
+          expandable: true,
+          expanded: isExpanded(freeAreaGroupId),
+          onToggle: () => toggleExpanded(freeAreaGroupId),
+          onClick: () => {
+            const firstFile = freeAreaSection.files[0]
+            if (firstFile) {
+              handleSelectNovelFile(firstFile)
+            } else {
+              toggleExpanded(freeAreaGroupId)
+            }
+          },
+          items: freeAreaSection.files.map(fileItem),
+        },
       ],
     }]
   }, [
@@ -3069,8 +3220,10 @@ function AppShellContent({
     handleDismissNovelReviewDot,
     hasNovelReviewDot,
     isExpanded,
+    isShortFormNovelWorkspace,
     novelWorkspaceFiles,
     novelWorkspaceTree,
+    openNovelCreateFileDialog,
     selectedNovelFile?.path,
     showNovelWorkspaceSidebar,
     t,
@@ -3089,10 +3242,6 @@ function AppShellContent({
         variant: (isSourcesNavigation(navState) && !sourceFilter) ? "default" : "ghost",
         onClick: handleSourcesClick,
         dataTutorial: "sources-nav",
-        contextMenu: {
-          type: 'sources',
-          onAddSource: () => openAddSource(),
-        },
       },
       {
         id: "nav:skills",
@@ -3101,10 +3250,6 @@ function AppShellContent({
         icon: Zap,
         variant: isSkillsNavigation(navState) ? "default" : "ghost",
         onClick: handleSkillsClick,
-        contextMenu: {
-          type: 'skills',
-          onAddSkill: openAddSkill,
-        },
       },
       {
         id: "nav:automations",
@@ -3113,10 +3258,6 @@ function AppShellContent({
         icon: ListTodo,
         variant: (isAutomationsNavigation(navState) && !automationFilter) ? "default" : "ghost",
         onClick: handleAutomationsClick,
-        contextMenu: {
-          type: 'automations' as const,
-          onAddAutomation: openAddAutomation,
-        },
       },
       { id: "separator:writing-settings", type: "separator" },
       {
@@ -3142,15 +3283,29 @@ function AppShellContent({
     handleSkillsClick,
     handleSourcesClick,
     navState,
-    openAddAutomation,
-    openAddSkill,
-    openAddSource,
     showNovelWorkspaceSidebar,
     skills.length,
     sourceFilter,
     sources.length,
     t,
   ])
+
+  const primarySidebarLinks = React.useMemo(
+    () => {
+      const links = getPrimarySidebarLinks(novelWorkspaceSidebarLinks)
+      return links.length > 0 ? links : (showNovelWorkspacePending || showNovelWorkspaceUnavailable) ? [
+        {
+          id: 'writing:loading',
+          title: t('writing.workspace'),
+          icon: Library,
+          variant: 'default' as const,
+          onClick: () => {},
+        },
+      ] : []
+    },
+    [novelWorkspaceSidebarLinks, showNovelWorkspacePending, showNovelWorkspaceUnavailable, t]
+  )
+  const hasPrimarySidebar = primarySidebarLinks.length > 0
 
   // Unified sidebar items: nav buttons only (agents system removed)
   type SidebarItem = {
@@ -3162,10 +3317,10 @@ function AppShellContent({
   const unifiedSidebarItems = React.useMemo((): SidebarItem[] => {
     const result: SidebarItem[] = []
 
-    if (showNovelWorkspaceSidebar) {
-      const rootItem = novelWorkspaceSidebarLinks[0]
+    if (primarySidebarLinks.length > 0) {
+      const rootItem = primarySidebarLinks[0]
       result.push({ id: 'nav:writingCatalog', type: 'nav', action: rootItem && !('type' in rootItem) ? rootItem.onClick : undefined })
-      for (const item of novelWorkspaceSidebarLinks) {
+      for (const item of primarySidebarLinks) {
         if ('items' in item && item.items) {
           for (const section of item.items) {
             if ('type' in section) continue
@@ -3185,36 +3340,8 @@ function AppShellContent({
       return result
     }
 
-    // 1. Sessions section: All Sessions (expandable) with status items, Flagged, Archived as children
-    result.push({ id: 'nav:allSessions', type: 'nav', action: handleAllSessionsClick })
-    for (const state of effectiveSessionStatuses) {
-      result.push({ id: `nav:state:${state.id}`, type: 'nav', action: () => handleSessionStatusClick(state.id) })
-    }
-    result.push({ id: 'nav:flagged', type: 'nav', action: handleFlaggedClick })
-    result.push({ id: 'nav:archived', type: 'nav', action: handleArchivedClick })
-
-    // 2. Labels section header + regular label tree for keyboard nav
-    result.push({ id: 'nav:labels', type: 'nav', action: () => handleLabelClick('__all__') })
-    // Flatten regular label tree for keyboard navigation (depth-first)
-    const flattenTree = (nodes: LabelTreeNode[]) => {
-      for (const node of nodes) {
-        if (node.label) {
-          result.push({ id: `nav:label:${node.fullId}`, type: 'nav', action: () => handleLabelClick(node.fullId) })
-        }
-        if (node.children.length > 0) flattenTree(node.children)
-      }
-    }
-    flattenTree(labelTree)
-
-    // 3. Sources, Skills, Settings
-    result.push({ id: 'nav:sources', type: 'nav', action: handleSourcesClick })
-    result.push({ id: 'nav:skills', type: 'nav', action: handleSkillsClick })
-    result.push({ id: 'nav:automations', type: 'nav', action: handleAutomationsClick })
-    result.push({ id: 'nav:settings', type: 'nav', action: () => handleSettingsClick('app') })
-    result.push({ id: 'nav:whats-new', type: 'nav', action: handleWhatsNewClick })
-
     return result
-  }, [handleAllSessionsClick, handleFlaggedClick, handleArchivedClick, handleSessionStatusClick, effectiveSessionStatuses, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleSourcesClick, handleSkillsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick, novelWorkspaceSidebarLinks, showNovelWorkspaceSidebar])
+  }, [handleAutomationsClick, handleSettingsClick, handleSkillsClick, handleSourcesClick, primarySidebarLinks])
 
   // Toggle folder expanded state
   const handleToggleFolder = React.useCallback((path: string) => {
@@ -3366,62 +3493,6 @@ function AppShellContent({
     }
   }, [navState, t, sessionFilter, automationFilter, labelConfigs, viewConfigs, effectiveSessionStatuses])
 
-  // Build recursive sidebar items from the shared display-sorted label tree.
-  // Each node renders with condensed height (compact: true) since many labels expected.
-  // Clicking any label navigates to its filter view; the chevron toggles expand/collapse.
-  const buildLabelSidebarItems = useCallback((nodes: LabelTreeNode[]): any[] => {
-    return nodes.map(node => {
-      const hasChildren = node.children.length > 0
-      const isActive = sessionFilter?.kind === 'label' && sessionFilter.labelId === node.fullId
-      const count = labelCounts[node.fullId] || 0
-
-      const item: any = {
-        id: `nav:label:${node.fullId}`,
-        title: node.label?.name || node.segment.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-        label: count > 0 ? String(count) : undefined,
-        // Show label type icon (Hash/Calendar/Type) right-aligned before count, with tooltip explaining the type
-        afterTitle: node.label?.valueType ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="flex items-center"><LabelValueTypeIcon valueType={node.label.valueType} size={10} /></span>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="text-xs">
-              {t("sidebar.labelValueTypeTooltip", { valueType: t(`sidebar.labelValueType.${node.label.valueType}`) })}
-            </TooltipContent>
-          </Tooltip>
-        ) : undefined,
-        icon: node.label && activeWorkspace?.id ? (
-          <LabelIcon
-            label={node.label}
-            size="sm"
-            hasChildren={hasChildren}
-          />
-        ) : <Tag className="h-3.5 w-3.5" />,
-        variant: isActive ? "default" : "ghost",
-        compact: true, // Reduced height for label items (many labels expected)
-        // All labels navigate on click — parent and leaf alike
-        onClick: () => handleLabelClick(node.fullId),
-        contextMenu: {
-          type: 'labels' as const,
-          labelId: node.fullId,
-          onConfigureLabels: openConfigureLabels,
-          onAddLabel: handleAddLabel,
-          onDeleteLabel: handleDeleteLabel,
-        },
-      }
-
-      if (hasChildren) {
-        item.expandable = true
-        item.expanded = isExpanded(`nav:label:${node.fullId}`)
-        // Chevron toggles expand/collapse independently of navigation
-        item.onToggle = () => toggleExpanded(`nav:label:${node.fullId}`)
-        item.items = buildLabelSidebarItems(node.children)
-      }
-
-      return item
-    })
-  }, [sessionFilter, labelCounts, activeWorkspace?.id, handleLabelClick, isExpanded, toggleExpanded, openConfigureLabels, handleAddLabel, handleDeleteLabel])
-
   return (
     <AppShellProvider value={appShellContextValue}>
         {/* === TOP BAR === */}
@@ -3496,244 +3567,14 @@ function AppShellContent({
             <div className="flex h-full flex-col select-none">
               {/* Sidebar Top Section */}
               <div className="flex-1 flex flex-col min-h-0">
-                {/* Primary Nav: All Sessions (▸ Statuses, Flagged, Archived), Labels | Sources, Skills | Settings */}
+                {/* Primary Nav: workspace directory catalog */}
                 {/* pb-4 provides clearance so the last item scrolls above the mask-fade-bottom gradient */}
                 <div className="flex-1 overflow-y-auto min-h-0 mask-fade-bottom pb-4">
                 <LeftSidebar
                   isCollapsed={false}
                   getItemProps={getSidebarItemProps}
                   focusedItemId={focusedSidebarItemId}
-                  links={showNovelWorkspaceSidebar ? novelWorkspaceSidebarLinks : [
-                    // --- Sessions Section ---
-                    // All Sessions: expandable with status children (sortable) + Flagged & Archived as trailing items
-                    {
-                      id: "nav:allSessions",
-                      title: t("sidebar.allSessions"),
-                      label: String(workspaceSessionMetas.length),
-                      icon: Inbox,
-                      variant: sessionFilter?.kind === 'allSessions' ? "default" : "ghost",
-                      onClick: handleAllSessionsClick,
-                      expandable: true,
-                      expanded: isExpanded('nav:allSessions'),
-                      onToggle: () => toggleExpanded('nav:allSessions'),
-                      contextMenu: {
-                        type: 'allSessions',
-                        onConfigureStatuses: openConfigureStatuses,
-                        onMarkAllRead: () => {
-                          if (!activeWorkspaceId) return
-                          // Optimistic: clear hasUnread on all workspace session metas
-                          setSessionMetaMap(prev => {
-                            const next = new Map(prev)
-                            for (const [id, meta] of next) {
-                              if (meta.workspaceId === activeWorkspaceId && meta.hasUnread) {
-                                next.set(id, { ...meta, hasUnread: false })
-                              }
-                            }
-                            return next
-                          })
-                          window.electronAPI.markAllSessionsRead(activeWorkspaceId)
-                        },
-                      },
-                      // Enable flat DnD reorder for status items
-                      sortable: { onReorder: handleStatusReorder },
-                      items: [
-                        // Status items (sortable via SortableStatusList)
-                        ...effectiveSessionStatuses.map(state => ({
-                          id: `nav:state:${state.id}`,
-                          title: t(`status.${state.id}`, state.label),
-                          label: String(sessionStatusCounts[state.id] || 0),
-                          icon: state.icon,
-                          iconColor: state.resolvedColor,
-                          iconColorable: state.iconColorable,
-                          variant: (sessionFilter?.kind === 'state' && sessionFilter.stateId === state.id ? "default" : "ghost") as "default" | "ghost",
-                          onClick: () => handleSessionStatusClick(state.id),
-                          contextMenu: {
-                            type: 'status' as const,
-                            statusId: state.id,
-                            onConfigureStatuses: openConfigureStatuses,
-                          },
-                        })),
-                        // Separator: SortableStatusList splits here — items after become non-sortable trailingItems
-                        { id: 'separator:states-flagged', type: 'separator' as const },
-                        // Flagged (trailing, non-sortable)
-                        {
-                          id: "nav:flagged",
-                          title: t("sidebar.flagged"),
-                          label: String(flaggedCount),
-                          icon: <Flag className="h-3.5 w-3.5" />,
-                          variant: (sessionFilter?.kind === 'flagged' ? "default" : "ghost") as "default" | "ghost",
-                          onClick: handleFlaggedClick,
-                        },
-                        // Archived (trailing, non-sortable)
-                        {
-                          id: "nav:archived",
-                          title: t("sidebar.archived"),
-                          label: archivedCount > 0 ? String(archivedCount) : undefined,
-                          icon: Archive,
-                          variant: (sessionFilter?.kind === 'archived' ? "default" : "ghost") as "default" | "ghost",
-                          onClick: handleArchivedClick,
-                        },
-                      ],
-                    },
-                    // Labels: navigable header (shows all labeled sessions) + hierarchical tree (drag-and-drop reorder + re-parent)
-                    {
-                      id: "nav:labels",
-                      title: t("sidebar.labels"),
-                      icon: Tag,
-                      // Only highlighted when "Labels" itself is selected (not sub-labels)
-                      variant: (sessionFilter?.kind === 'label' && sessionFilter.labelId === '__all__') ? "default" as const : "ghost" as const,
-                      // Clicking navigates to "all labeled sessions" view
-                      onClick: () => handleLabelClick('__all__'),
-                      expandable: true,
-                      expanded: isExpanded('nav:labels'),
-                      onToggle: () => toggleExpanded('nav:labels'),
-                      contextMenu: {
-                        type: 'labels' as const,
-                        onConfigureLabels: openConfigureLabels,
-                        onAddLabel: handleAddLabel,
-                      },
-                      items: buildLabelSidebarItems(labelTree),
-                    },
-                    // --- Separator ---
-                    { id: "separator:chats-sources", type: "separator" },
-                    // --- Sources & Skills Section ---
-                    {
-                      id: "nav:sources",
-                      title: t("sidebar.sources"),
-                      label: String(sources.length),
-                      icon: DatabaseZap,
-                      variant: (isSourcesNavigation(navState) && !sourceFilter) ? "default" : "ghost",
-                      onClick: handleSourcesClick,
-                      dataTutorial: "sources-nav",
-                      expandable: true,
-                      expanded: isExpanded('nav:sources'),
-                      onToggle: () => toggleExpanded('nav:sources'),
-                      contextMenu: {
-                        type: 'sources',
-                        onAddSource: () => openAddSource(),
-                      },
-                      items: [
-                        {
-                          id: "nav:sources:api",
-                          title: t("sidebar.apis"),
-                          label: String(sourceTypeCounts.api),
-                          icon: Globe,
-                          variant: (sourceFilter?.kind === 'type' && sourceFilter.sourceType === 'api') ? "default" : "ghost",
-                          onClick: handleSourcesApiClick,
-                          contextMenu: {
-                            type: 'sources' as const,
-                            onAddSource: () => openAddSource('api'),
-                            sourceType: 'api',
-                          },
-                        },
-                        {
-                          id: "nav:sources:mcp",
-                          title: t("sidebar.mcps"),
-                          label: String(sourceTypeCounts.mcp),
-                          icon: <McpIcon className="h-3.5 w-3.5" />,
-                          variant: (sourceFilter?.kind === 'type' && sourceFilter.sourceType === 'mcp') ? "default" : "ghost",
-                          onClick: handleSourcesMcpClick,
-                          contextMenu: {
-                            type: 'sources' as const,
-                            onAddSource: () => openAddSource('mcp'),
-                            sourceType: 'mcp',
-                          },
-                        },
-                        {
-                          id: "nav:sources:local",
-                          title: t("sidebar.localFolders"),
-                          label: String(sourceTypeCounts.local),
-                          icon: FolderOpen,
-                          variant: (sourceFilter?.kind === 'type' && sourceFilter.sourceType === 'local') ? "default" : "ghost",
-                          onClick: handleSourcesLocalClick,
-                          contextMenu: {
-                            type: 'sources' as const,
-                            onAddSource: () => openAddSource('local'),
-                            sourceType: 'local',
-                          },
-                        },
-                      ],
-                    },
-                    {
-                      id: "nav:skills",
-                      title: t("sidebar.skills"),
-                      label: String(skills.length),
-                      icon: Zap,
-                      variant: isSkillsNavigation(navState) ? "default" : "ghost",
-                      onClick: handleSkillsClick,
-                      contextMenu: {
-                        type: 'skills',
-                        onAddSkill: openAddSkill,
-                      },
-                    },
-                    {
-                      id: "nav:automations",
-                      title: t("sidebar.automations"),
-                      label: String(automations.length),
-                      icon: ListTodo,
-                      variant: (isAutomationsNavigation(navState) && !automationFilter) ? "default" : "ghost",
-                      onClick: handleAutomationsClick,
-                      expandable: true,
-                      expanded: isExpanded('nav:automations'),
-                      onToggle: () => toggleExpanded('nav:automations'),
-                      contextMenu: {
-                        type: 'automations' as const,
-                        onAddAutomation: openAddAutomation,
-                      },
-                      items: [
-                        {
-                          id: "nav:automations:scheduled",
-                          title: t("sidebar.scheduled"),
-                          label: String(automationTypeCounts.scheduled),
-                          icon: Clock,
-                          variant: (automationFilter?.kind === 'type' && automationFilter.automationType === 'scheduled') ? "default" : "ghost",
-                          onClick: handleAutomationsScheduledClick,
-                          contextMenu: { type: 'automations' as const, onAddAutomation: openAddAutomation },
-                        },
-                        {
-                          id: "nav:automations:event",
-                          title: t("sidebar.eventBased"),
-                          label: String(automationTypeCounts.event),
-                          icon: Radio,
-                          variant: (automationFilter?.kind === 'type' && automationFilter.automationType === 'event') ? "default" : "ghost",
-                          onClick: handleAutomationsEventClick,
-                          contextMenu: { type: 'automations' as const, onAddAutomation: openAddAutomation },
-                        },
-                        {
-                          id: "nav:automations:agentic",
-                          title: t("sidebar.agentic"),
-                          label: String(automationTypeCounts.agentic),
-                          icon: Bot,
-                          variant: (automationFilter?.kind === 'type' && automationFilter.automationType === 'agentic') ? "default" : "ghost",
-                          onClick: handleAutomationsAgenticClick,
-                          contextMenu: { type: 'automations' as const, onAddAutomation: openAddAutomation },
-                        },
-                      ],
-                    },
-                    // --- Separator ---
-                    { id: "separator:skills-settings", type: "separator" },
-                    // --- Settings ---
-                    {
-                      id: "nav:settings",
-                      title: t("sidebar.settings"),
-                      icon: Settings,
-                      variant: isSettingsNavigation(navState) ? "default" : "ghost",
-                      onClick: () => handleSettingsClick('app'),
-                    },
-                    // --- What's New ---
-                    {
-                      id: "nav:whats-new",
-                      title: t("sidebar.whatsNew"),
-                      icon: hasUnseenReleaseNotes ? (
-                        <span className="relative">
-                          <Cake className="h-3.5 w-3.5" />
-                          <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-accent" />
-                        </span>
-                      ) : Cake,
-                      variant: "ghost" as const,
-                      onClick: handleWhatsNewClick,
-                    },
-                  ]}
+                  links={primarySidebarLinks}
                 />
                 {/* Agent Tree: Hierarchical list of agents */}
                 {/* Agents section removed */}
@@ -3743,7 +3584,7 @@ function AppShellContent({
             </div>
           </div>
           }
-          sidebarWidth={effectiveSidebarAndNavigatorHidden ? 0 : (isSidebarVisible ? sidebarWidth : 0)}
+          sidebarWidth={effectiveSidebarAndNavigatorHidden ? 0 : (isSidebarVisible && hasPrimarySidebar ? sidebarWidth : 0)}
           navigatorSlot={
             <div
               ref={navigatorPanelRef}
@@ -3759,6 +3600,8 @@ function AppShellContent({
                 error={novelDocumentError}
                 onChange={setNovelDocumentContent}
                 onAskAiForSelection={handleAskAiForNovelSelection}
+                onAddSelectionToChat={handleAddNovelSelectionToChat}
+                onSendSelectionToChat={handleSendNovelSelectionToChat}
                 reviewChange={selectedNovelReviewChange}
                 pendingChangeCount={pendingNovelChangedFilePaths.length}
                 pendingFileIndex={selectedNovelReviewFileIndex >= 0 ? selectedNovelReviewFileIndex : undefined}
@@ -3768,6 +3611,26 @@ function AppShellContent({
                 onPreviousReviewFile={() => { void handleSelectAdjacentNovelChangeFile('previous') }}
                 onNextReviewFile={() => { void handleSelectAdjacentNovelChangeFile('next') }}
               />
+            ) : showNovelWorkspacePending ? (
+              <div className="flex h-full flex-col">
+                <PanelHeader
+                  title={isSidebarVisible ? t('writing.workspace') : undefined}
+                  compensateForStoplight={!isSidebarVisible}
+                />
+                <div className="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
+                  {t('writing.loadingWorkspace', '正在加载项目目录...')}
+                </div>
+              </div>
+            ) : showNovelWorkspaceUnavailable ? (
+              <div className="flex h-full flex-col">
+                <PanelHeader
+                  title={isSidebarVisible ? t('writing.workspace') : undefined}
+                  compensateForStoplight={!isSidebarVisible}
+                />
+                <div className="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
+                  {t('writing.workspaceUnavailable', '未检测到项目目录')}
+                </div>
+              </div>
             ) : (
               <>
             <PanelHeader
@@ -4512,8 +4375,8 @@ function AppShellContent({
               data-panel-role="navigator-resize-sash"
               role="separator"
               aria-orientation="vertical"
-              aria-label={showNovelDocumentNavigator ? t('writing.workspace') : t('sidebar.allSessions')}
-              onMouseDown={(e) => { beginResize(showNovelDocumentNavigator ? 'novel-workspace-navigator' : 'session-list', e) }}
+              aria-label={isNovelWorkspaceNavigatorActive ? t('writing.workspace') : t('sidebar.allSessions')}
+              onMouseDown={(e) => { beginResize(isNovelWorkspaceNavigatorActive ? 'novel-workspace-navigator' : 'session-list', e) }}
               onMouseMove={(e) => {
                 if (sessionListHandleRef.current) {
                   const rect = sessionListHandleRef.current.getBoundingClientRect()
@@ -4527,12 +4390,13 @@ function AppShellContent({
               }}
               className="relative h-full cursor-col-resize flex justify-center shrink-0 z-dropdown"
               style={{
-                width: NAVIGATOR_SASH_HIT_WIDTH,
+                width: 0,
                 margin: `0 ${NAVIGATOR_SASH_FLEX_MARGIN}px`,
               }}
             >
               <div
-                className="absolute inset-0 flex justify-center cursor-col-resize"
+                className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 flex justify-center cursor-col-resize"
+                style={{ width: NAVIGATOR_SASH_HIT_WIDTH }}
               >
                 <div
                   className="absolute left-1/2 -translate-x-1/2"
@@ -4550,11 +4414,11 @@ function AppShellContent({
           isRightSidebarVisible={false}
           isCompact={isAutoCompact}
           isResizing={!!isResizing}
-          hidePanelCloseButton={showNovelWorkspaceSidebar}
+          hidePanelCloseButton={hasPrimarySidebar}
         />
 
         {/* Sidebar Resize Handle (absolute, hidden in focused mode) */}
-        {!effectiveSidebarAndNavigatorHidden && (
+        {!effectiveSidebarAndNavigatorHidden && hasPrimarySidebar && (
         <div
           ref={resizeHandleRef}
           role="separator"
@@ -4589,185 +4453,6 @@ function AppShellContent({
         )}
 
       </div>
-
-      {/* ============================================================================
-       * CONTEXT MENU TRIGGERED EDIT POPOVERS
-       * ============================================================================
-       * These EditPopovers are opened programmatically from sidebar context menus.
-       * They use controlled state (editPopoverOpen) and invisible anchors for positioning.
-       * The anchor Y position is captured from the right-clicked item (editPopoverAnchorY ref)
-       * so the popover appears near the triggering item rather than at a fixed location.
-       * modal={true} prevents auto-close when focus shifts after context menu closes.
-       */}
-      {activeWorkspace && (
-        <>
-          {/* Configure Statuses EditPopover - anchored near sidebar */}
-          <EditPopover
-            open={editPopoverOpen === 'statuses'}
-            onOpenChange={(isOpen) => setEditPopoverOpen(isOpen ? 'statuses' : null)}
-            modal={true}
-            trigger={
-              <div
-                className="fixed w-0 h-0 pointer-events-none"
-                style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
-                aria-hidden="true"
-              />
-            }
-            side="bottom"
-            align="start"
-            secondaryAction={{
-              label: 'Edit File',
-              filePath: `${activeWorkspace.rootPath}/statuses/config.json`,
-            }}
-            {...getEditConfig('edit-statuses', activeWorkspace.rootPath)}
-          />
-          {/* Configure Labels EditPopover - anchored near sidebar */}
-          <EditPopover
-            open={editPopoverOpen === 'labels'}
-            onOpenChange={(isOpen) => setEditPopoverOpen(isOpen ? 'labels' : null)}
-            modal={true}
-            trigger={
-              <div
-                className="fixed w-0 h-0 pointer-events-none"
-                style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
-                aria-hidden="true"
-              />
-            }
-            side="bottom"
-            align="start"
-            secondaryAction={{
-              label: 'Edit File',
-              filePath: `${activeWorkspace.rootPath}/labels/config.json`,
-            }}
-            {...(() => {
-              // Spread base config, override context to include which label was right-clicked
-              const config = getEditConfig('edit-labels', activeWorkspace.rootPath)
-              const targetLabel = editLabelTargetId.current
-                ? findLabelById(labelConfigs, editLabelTargetId.current)
-                : undefined
-              if (!targetLabel) return config
-              return {
-                ...config,
-                context: {
-                  ...config.context,
-                  context: (config.context.context || '') +
-                    ` The user right-clicked on the label "${targetLabel.name}" (id: "${targetLabel.id}"). ` +
-                    'If they refer to "this label" or "this", they mean this specific label.',
-                },
-              }
-            })()}
-          />
-          {/* Edit Views EditPopover - anchored near sidebar */}
-          <EditPopover
-            open={editPopoverOpen === 'views'}
-            onOpenChange={(isOpen) => setEditPopoverOpen(isOpen ? 'views' : null)}
-            modal={true}
-            trigger={
-              <div
-                className="fixed w-0 h-0 pointer-events-none"
-                style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
-                aria-hidden="true"
-              />
-            }
-            side="bottom"
-            align="start"
-            secondaryAction={{
-              label: 'Edit File',
-              filePath: `${activeWorkspace.rootPath}/views.json`,
-            }}
-            {...getEditConfig('edit-views', activeWorkspace.rootPath)}
-          />
-          {/* Add Source EditPopovers - one for each variant (generic + filter-specific)
-           * editPopoverOpen can be: 'add-source', 'add-source-api', 'add-source-mcp', 'add-source-local'
-           * Each variant uses its corresponding EditContextKey for filter-aware agent context */}
-          {(['add-source', 'add-source-api', 'add-source-mcp', 'add-source-local'] as const).map((variant) => (
-            <EditPopover
-              key={variant}
-              open={editPopoverOpen === variant}
-              onOpenChange={(isOpen) => setEditPopoverOpen(isOpen ? variant : null)}
-              modal={true}
-              trigger={
-                <div
-                  className="fixed w-0 h-0 pointer-events-none"
-                  style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
-                  aria-hidden="true"
-                />
-              }
-              side="bottom"
-              align="start"
-              {...getEditConfig(variant, activeWorkspace.rootPath)}
-            />
-          ))}
-          {/* Add Skill EditPopover */}
-          <EditPopover
-            open={editPopoverOpen === 'add-skill'}
-            onOpenChange={(isOpen) => setEditPopoverOpen(isOpen ? 'add-skill' : null)}
-            modal={true}
-            trigger={
-              <div
-                className="fixed w-0 h-0 pointer-events-none"
-                style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
-                aria-hidden="true"
-              />
-            }
-            side="bottom"
-            align="start"
-            {...getEditConfig('add-skill', activeWorkspace.rootPath)}
-          />
-          {/* Add Automation EditPopover - triggered from "Add Automation" context menu in automations */}
-          <EditPopover
-            open={editPopoverOpen === 'automation-config'}
-            onOpenChange={(isOpen) => setEditPopoverOpen(isOpen ? 'automation-config' : null)}
-            modal={true}
-            trigger={
-              <div
-                className="fixed w-0 h-0 pointer-events-none"
-                style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
-                aria-hidden="true"
-              />
-            }
-            side="bottom"
-            align="start"
-            {...getEditConfig('automation-config', activeWorkspace.rootPath)}
-          />
-          {/* Add Label EditPopover - triggered from "Add New Label" context menu on labels */}
-          <EditPopover
-            open={editPopoverOpen === 'add-label'}
-            onOpenChange={(isOpen) => setEditPopoverOpen(isOpen ? 'add-label' : null)}
-            modal={true}
-            trigger={
-              <div
-                className="fixed w-0 h-0 pointer-events-none"
-                style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
-                aria-hidden="true"
-              />
-            }
-            side="bottom"
-            align="start"
-            secondaryAction={{
-              label: 'Edit File',
-              filePath: `${activeWorkspace.rootPath}/labels/config.json`,
-            }}
-            {...(() => {
-              // Spread base config, override context to include which label was right-clicked
-              const config = getEditConfig('add-label', activeWorkspace.rootPath)
-              const targetLabel = editLabelTargetId.current
-                ? findLabelById(labelConfigs, editLabelTargetId.current)
-                : undefined
-              if (!targetLabel) return config
-              return {
-                ...config,
-                context: {
-                  ...config.context,
-                  context: (config.context.context || '') +
-                    ` The user right-clicked on the label "${targetLabel.name}" (id: "${targetLabel.id}"). ` +
-                    'The new label should be added as a sibling after this label, or as a child if the user specifies.',
-                },
-              }
-            })()}
-          />
-        </>
-      )}
 
       {/* What's New overlay */}
       <DocumentFormattedMarkdownOverlay
@@ -4841,6 +4526,52 @@ function AppShellContent({
         onRefresh={refreshNovelVersions}
         onRestore={handleRestoreNovelVersion}
       />
+
+      <Dialog open={!!novelCreateFileTarget} onOpenChange={(open) => {
+        if (!open && !novelCreatingFile) {
+          setNovelCreateFileTarget(null)
+          setNovelCreateFileValue('')
+        }
+      }}>
+        <DialogContent className="sm:max-w-[420px]" showCloseButton={!novelCreatingFile}>
+          <DialogHeader>
+            <DialogTitle>{novelCreateFileTarget?.title}</DialogTitle>
+          </DialogHeader>
+          <div className="py-3">
+            <Input
+              value={novelCreateFileValue}
+              onChange={(event) => setNovelCreateFileValue(event.target.value)}
+              placeholder={novelCreateFileTarget?.placeholder}
+              disabled={novelCreatingFile}
+              autoFocus
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  void handleSubmitNovelCreateFile()
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={novelCreatingFile}
+              onClick={() => {
+                setNovelCreateFileTarget(null)
+                setNovelCreateFileValue('')
+              }}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              disabled={novelCreatingFile || !novelCreateFileValue.trim()}
+              onClick={() => void handleSubmitNovelCreateFile()}
+            >
+              {t('common.create', '创建')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Messaging dialogs (pairing-code + WA connect) — driven by messagingDialogAtom.
           Mounted here so they survive context-menu / dropdown close. */}

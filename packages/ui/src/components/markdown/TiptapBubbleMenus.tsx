@@ -6,8 +6,10 @@ import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { BubbleMenu } from '@tiptap/react/menus'
 import type { Editor } from '@tiptap/react'
-import { NodeSelection } from '@tiptap/pm/state'
-import { Bold, Italic, Loader2, SendHorizontal, Strikethrough, Code, Sigma } from 'lucide-react'
+import { Extension } from '@tiptap/core'
+import { NodeSelection, Plugin, PluginKey } from '@tiptap/pm/state'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { Bold, Italic, Loader2, MessageSquarePlus, SendHorizontal, Strikethrough, Code, Sigma } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { RICH_BLOCK_EDIT_EVENT } from './rich-block-events'
 
@@ -18,6 +20,65 @@ export interface TiptapSelectionAiRequest {
   selectedText: string
   instruction: string
 }
+
+export interface TiptapSelectionChatRequest {
+  selectedText: string
+}
+
+type SelectionAiRangeHighlightState = {
+  range: { from: number; to: number } | null
+}
+
+export const SELECTION_AI_RANGE_HIGHLIGHT_KEY = new PluginKey<SelectionAiRangeHighlightState>('selectionAiRangeHighlight')
+
+export function setSelectionAiRangeHighlight(editor: Editor, range: SelectionAiRangeHighlightState['range']) {
+  if (editor.isDestroyed) return
+  editor.view.dispatch(editor.state.tr.setMeta(SELECTION_AI_RANGE_HIGHLIGHT_KEY, { range }))
+}
+
+export const SelectionAiRangeHighlight = Extension.create({
+  name: 'selectionAiRangeHighlight',
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin<SelectionAiRangeHighlightState>({
+        key: SELECTION_AI_RANGE_HIGHLIGHT_KEY,
+        state: {
+          init: () => ({ range: null }),
+          apply(tr, previous, _oldState, newState) {
+            const meta = tr.getMeta(SELECTION_AI_RANGE_HIGHLIGHT_KEY) as Partial<SelectionAiRangeHighlightState> | undefined
+            let range = Object.prototype.hasOwnProperty.call(meta ?? {}, 'range')
+              ? meta?.range ?? null
+              : previous.range
+
+            if (range && tr.docChanged) {
+              range = {
+                from: tr.mapping.map(range.from, -1),
+                to: tr.mapping.map(range.to, 1),
+              }
+            }
+
+            if (!range || range.from >= range.to || range.from < 0 || range.to > newState.doc.content.size) {
+              return { range: null }
+            }
+
+            return { range }
+          },
+        },
+        props: {
+          decorations(state) {
+            const range = SELECTION_AI_RANGE_HIGHLIGHT_KEY.getState(state)?.range
+            if (!range) return DecorationSet.empty
+
+            return DecorationSet.create(state.doc, [
+              Decoration.inline(range.from, range.to, { class: 'selection-ai-range-highlight' }),
+            ])
+          },
+        },
+      }),
+    ]
+  },
+})
 
 // ============================================================================
 // Bubble menu toolbar button
@@ -124,9 +185,11 @@ function TextFormattingMenu({ editor }: { editor: Editor }) {
 function SelectionAiPrompt({
   editor,
   onAskAiForSelection,
+  onAddSelectionToChat,
 }: {
   editor: Editor
   onAskAiForSelection: (request: TiptapSelectionAiRequest) => Promise<string>
+  onAddSelectionToChat?: (request: TiptapSelectionChatRequest) => void
 }) {
   const { t } = useTranslation()
   const [selectionPrompt, setSelectionPrompt] = React.useState('')
@@ -142,11 +205,13 @@ function SelectionAiPrompt({
       setSelectedText('')
       setSelectionRange(null)
       setSelectionPrompt('')
+      setSelectionAiRangeHighlight(editor, null)
       return
     }
 
     setSelectedText(getSelectedText(editor))
     setSelectionRange({ from: selection.from, to: selection.to })
+    setSelectionAiRangeHighlight(editor, { from: selection.from, to: selection.to })
     setSelectionPrompt('')
   }, [editor])
 
@@ -169,6 +234,7 @@ function SelectionAiPrompt({
       clearSelectionPrompt()
       setSelectedText('')
       setSelectionRange(null)
+      setSelectionAiRangeHighlight(editor, null)
     } catch (error) {
       console.error('[SelectionAiPrompt] Failed to rewrite selection:', error)
     } finally {
@@ -176,6 +242,14 @@ function SelectionAiPrompt({
       requestAnimationFrame(() => editor.chain().focus().run())
     }
   }, [clearSelectionPrompt, editor, isSubmitting, onAskAiForSelection, selectedText, selectionPrompt, selectionRange])
+
+  const addSelectionToChat = React.useCallback(() => {
+    if (!selectedText.trim() || !selectionRange) return
+    onAddSelectionToChat?.({ selectedText })
+    clearSelectionPrompt()
+    setSelectionAiRangeHighlight(editor, null)
+    requestAnimationFrame(() => editor.chain().focus().run())
+  }, [clearSelectionPrompt, editor, onAddSelectionToChat, selectedText, selectionRange])
 
   React.useEffect(() => {
     syncSelectedText()
@@ -190,6 +264,10 @@ function SelectionAiPrompt({
 
     return () => cancelAnimationFrame(frame)
   }, [editor, syncSelectedText])
+
+  React.useEffect(() => {
+    return () => setSelectionAiRangeHighlight(editor, null)
+  }, [editor])
 
   React.useEffect(() => {
     editor.on('selectionUpdate', syncSelectedText)
@@ -217,6 +295,7 @@ function SelectionAiPrompt({
             event.preventDefault()
             event.stopPropagation()
             clearSelectionPrompt()
+            setSelectionAiRangeHighlight(editor, null)
             requestAnimationFrame(() => editor.chain().focus().run())
             return
           }
@@ -244,6 +323,18 @@ function SelectionAiPrompt({
       >
         {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <SendHorizontal className="w-3.5 h-3.5" />}
       </button>
+      {onAddSelectionToChat ? (
+        <button
+          type="button"
+          className="tiptap-bubble-ai-send-btn"
+          title={t('editor.addSelectionToChat', 'Add selection to chat')}
+          disabled={isSubmitting || !selectedText.trim() || !selectionRange}
+          onClick={addSelectionToChat}
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          <MessageSquarePlus className="w-3.5 h-3.5" />
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -579,9 +670,11 @@ const TIPTAP_BUBBLE_MENU_BASE_OPTIONS = {
 export function TiptapBubbleMenus({
   editor,
   onAskAiForSelection,
+  onAddSelectionToChat,
 }: {
   editor: Editor
   onAskAiForSelection?: (request: TiptapSelectionAiRequest) => Promise<string>
+  onAddSelectionToChat?: (request: TiptapSelectionChatRequest) => void
 }) {
   const getRichBlockEditAnchor = React.useCallback(() => {
     const { selection } = editor.state
@@ -651,7 +744,11 @@ export function TiptapBubbleMenus({
           }}
           options={{ ...TIPTAP_BUBBLE_MENU_BASE_OPTIONS, placement: 'bottom-start', offset: 8 }}
         >
-          <SelectionAiPrompt editor={editor} onAskAiForSelection={onAskAiForSelection} />
+          <SelectionAiPrompt
+            editor={editor}
+            onAskAiForSelection={onAskAiForSelection}
+            onAddSelectionToChat={onAddSelectionToChat}
+          />
         </BubbleMenu>
       ) : null}
 

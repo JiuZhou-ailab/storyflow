@@ -738,19 +738,15 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     </ContextMenu>
   ), [handleNewSession, t])
 
-  const headerLeadingAction = React.useMemo(() => (
-    <div className="flex items-center gap-1">
-      {leadingAction}
-      {newSessionButton}
-    </div>
-  ), [leadingAction, newSessionButton])
+  const headerLeadingAction = React.useMemo(() => leadingAction, [leadingAction])
 
   const headerActions = React.useMemo(() => (
     <div className="flex items-center gap-1">
+      {newSessionButton}
       {conversationHistoryMenu}
       {isCompactMode ? compactInfoButton : shareButton}
     </div>
-  ), [compactInfoButton, conversationHistoryMenu, isCompactMode, shareButton])
+  ), [compactInfoButton, conversationHistoryMenu, isCompactMode, newSessionButton, shareButton])
 
   // Build title menu content for chat sessions using shared SessionMenu
   const titleMenu = React.useMemo(() => sessionMeta ? (

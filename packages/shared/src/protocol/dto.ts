@@ -1,3 +1,7 @@
+// input: Cross-process domain models and transport payload shapes
+// output: Shared DTO interfaces for RPC handlers and clients
+// pos: Data contract layer for Electron, web, and server-core packages
+
 /**
  * Server DTO types — data shapes used by RPC handlers and SessionManager.
  *
@@ -403,6 +407,21 @@ export interface FileSearchResult {
   path: string
   type: 'file' | 'directory'
   relativePath: string
+}
+
+export interface FileSearchOptions {
+  mode?: 'fuzzy' | 'path'
+  includeDescendants?: boolean
+}
+
+export interface FileSearchBatchRequest {
+  query: string
+  options?: FileSearchOptions
+}
+
+export interface FileSearchBatchResult {
+  query: string
+  results: FileSearchResult[]
 }
 
 // ---------------------------------------------------------------------------

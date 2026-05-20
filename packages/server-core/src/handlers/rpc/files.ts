@@ -1,9 +1,20 @@
+// input: RPC request context, workspace file paths, attachments, and filesystem search queries
+// output: Registered file read/write, attachment, directory, and search RPC handlers
+// pos: Server-side filesystem boundary for renderer and remote clients
+
 import { readFile, writeFile, unlink, mkdir, readdir, stat } from 'fs/promises'
 import { isAbsolute, join, resolve, dirname, parse as parsePath } from 'path'
 import { homedir } from 'os'
 import { validatePathFormat } from '../../utils/path-validation'
 import { randomUUID } from 'crypto'
-import { RPC_CHANNELS, type FileAttachment, type DirectoryListingResult } from '@craft-agent/shared/protocol'
+import {
+  RPC_CHANNELS,
+  type DirectoryListingResult,
+  type FileAttachment,
+  type FileSearchBatchRequest,
+  type FileSearchBatchResult,
+  type FileSearchOptions,
+} from '@craft-agent/shared/protocol'
 import type { StoredAttachment } from '@craft-agent/core/types'
 import { readFileAttachment, validateImageForClaudeAPI, IMAGE_LIMITS } from '@craft-agent/shared/utils'
 import { getSessionAttachmentsPath, validateSessionId } from '@craft-agent/shared/sessions'
@@ -28,8 +39,196 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.file.STORE_ATTACHMENT,
   RPC_CHANNELS.file.GENERATE_THUMBNAIL,
   RPC_CHANNELS.fs.SEARCH,
+  RPC_CHANNELS.fs.SEARCH_BATCH,
   RPC_CHANNELS.fs.LIST_DIRECTORY,
 ] as const
+
+type FileSearchEntry = {
+  name: string
+  path: string
+  type: 'file' | 'directory'
+  relativePath: string
+}
+
+const FILE_SEARCH_MAX_RESULTS = 50
+
+const FILE_SEARCH_SKIP_DIRS = new Set([
+  'node_modules', '.git', '.svn', '.hg', 'dist', 'build',
+  '.next', '.nuxt', '.cache', '__pycache__', 'vendor',
+  '.idea', '.vscode', 'coverage', '.nyc_output', '.turbo', 'out',
+])
+
+function isPathInsideRoot(path: string, rootPath: string): boolean {
+  return path === rootPath || path.startsWith(`${rootPath}/`)
+}
+
+function normalizeSearchPathQuery(query: string): string | null {
+  const normalized = query.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+  if (!normalized || normalized.split('/').some(segment => !segment || segment === '.' || segment === '..')) {
+    return null
+  }
+  return normalized
+}
+
+async function collectDirectPathSearchResults(
+  basePath: string,
+  query: string,
+  maxResults: number,
+  skipDirs: Set<string>,
+  includeDescendants = true
+): Promise<FileSearchEntry[] | null> {
+  const normalizedQuery = normalizeSearchPathQuery(query)
+  if (!normalizedQuery) return null
+
+  const resolvedBasePath = resolve(basePath).replace(/\\/g, '/').replace(/\/+$/, '')
+  const directPath = resolve(basePath, normalizedQuery).replace(/\\/g, '/')
+  if (!isPathInsideRoot(directPath, resolvedBasePath)) return null
+
+  let directStat: Awaited<ReturnType<typeof stat>>
+  try {
+    directStat = await stat(directPath)
+  } catch {
+    return null
+  }
+
+  const directName = parsePath(directPath).base
+  if (!directStat.isDirectory()) {
+    return [{
+      name: directName,
+      path: directPath,
+      type: 'file',
+      relativePath: normalizedQuery,
+    }]
+  }
+
+  const results: FileSearchEntry[] = [{
+    name: directName,
+    path: directPath,
+    type: 'directory',
+    relativePath: normalizedQuery,
+  }]
+  if (!includeDescendants) return results
+
+  let queue = ['']
+
+  while (queue.length > 0 && results.length < maxResults) {
+    const nextQueue: string[] = []
+    const dirResults = await Promise.all(
+      queue.map(async (relDir) => {
+        const absDir = relDir ? join(directPath, relDir) : directPath
+        try {
+          return { relDir, entries: await readdir(absDir, { withFileTypes: true }) }
+        } catch {
+          return { relDir, entries: [] as import('fs').Dirent[] }
+        }
+      })
+    )
+
+    for (const { relDir, entries } of dirResults) {
+      if (results.length >= maxResults) break
+
+      for (const entry of entries) {
+        if (results.length >= maxResults) break
+
+        const name = entry.name
+        if (name.startsWith('.') || skipDirs.has(name)) continue
+
+        const childRelativeToDirect = relDir ? `${relDir}/${name}` : name
+        const relativePath = `${normalizedQuery}/${childRelativeToDirect}`
+        const isDir = entry.isDirectory()
+
+        if (isDir) {
+          nextQueue.push(childRelativeToDirect)
+        }
+
+        results.push({
+          name,
+          path: join(directPath, childRelativeToDirect),
+          type: isDir ? 'directory' : 'file',
+          relativePath,
+        })
+      }
+    }
+
+    queue = nextQueue
+  }
+
+  return results
+}
+
+async function searchFilesInBase(
+  basePath: string,
+  query: string,
+  options?: FileSearchOptions
+): Promise<FileSearchEntry[]> {
+  const lowerQuery = query.toLowerCase()
+  const results: FileSearchEntry[] = []
+
+  const directPathResults = await collectDirectPathSearchResults(
+    basePath,
+    query,
+    FILE_SEARCH_MAX_RESULTS,
+    FILE_SEARCH_SKIP_DIRS,
+    options?.includeDescendants !== false
+  )
+  if (directPathResults) return directPathResults
+  if (options?.mode === 'path') return []
+
+  let queue = ['']
+
+  while (queue.length > 0 && results.length < FILE_SEARCH_MAX_RESULTS) {
+    const nextQueue: string[] = []
+
+    const dirResults = await Promise.all(
+      queue.map(async (relDir) => {
+        const absDir = relDir ? join(basePath, relDir) : basePath
+        try {
+          return { relDir, entries: await readdir(absDir, { withFileTypes: true }) }
+        } catch {
+          return { relDir, entries: [] as import('fs').Dirent[] }
+        }
+      })
+    )
+
+    for (const { relDir, entries } of dirResults) {
+      if (results.length >= FILE_SEARCH_MAX_RESULTS) break
+
+      for (const entry of entries) {
+        if (results.length >= FILE_SEARCH_MAX_RESULTS) break
+
+        const name = entry.name
+        if (name.startsWith('.') || FILE_SEARCH_SKIP_DIRS.has(name)) continue
+
+        const relativePath = relDir ? `${relDir}/${name}` : name
+        const isDir = entry.isDirectory()
+
+        if (isDir) {
+          nextQueue.push(relativePath)
+        }
+
+        const lowerName = name.toLowerCase()
+        const lowerRelative = relativePath.toLowerCase()
+        if (lowerName.includes(lowerQuery) || lowerRelative.includes(lowerQuery)) {
+          results.push({
+            name,
+            path: join(basePath, relativePath),
+            type: isDir ? 'directory' : 'file',
+            relativePath,
+          })
+        }
+      }
+    }
+
+    queue = nextQueue
+  }
+
+  results.sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'directory' ? -1 : 1
+    return a.name.length - b.name.length
+  })
+
+  return results
+}
 
 export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): void {
   // Read a file (with path validation to prevent traversal attacks)
@@ -472,87 +671,42 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
   // Parallel BFS walk that skips ignored directories BEFORE entering them,
   // avoiding reading node_modules/etc. contents entirely. Uses withFileTypes
   // to get entry types without separate stat calls.
-  server.handle(RPC_CHANNELS.fs.SEARCH, async (_ctx, basePath: string, query: string) => {
+  server.handle(RPC_CHANNELS.fs.SEARCH, async (_ctx, basePath: string, query: string, options?: FileSearchOptions) => {
     deps.platform.logger.info('[FS_SEARCH] called:', basePath, query)
-    const MAX_RESULTS = 50
-
-    // Directories to never recurse into
-    const SKIP_DIRS = new Set([
-      'node_modules', '.git', '.svn', '.hg', 'dist', 'build',
-      '.next', '.nuxt', '.cache', '__pycache__', 'vendor',
-      '.idea', '.vscode', 'coverage', '.nyc_output', '.turbo', 'out',
-    ])
-
-    const lowerQuery = query.toLowerCase()
-    const results: Array<{ name: string; path: string; type: 'file' | 'directory'; relativePath: string }> = []
 
     try {
-      // BFS queue: each entry is a relative path prefix ('' for root)
-      let queue = ['']
-
-      while (queue.length > 0 && results.length < MAX_RESULTS) {
-        // Process current level: read all directories in parallel
-        const nextQueue: string[] = []
-
-        const dirResults = await Promise.all(
-          queue.map(async (relDir) => {
-            const absDir = relDir ? join(basePath, relDir) : basePath
-            try {
-              return { relDir, entries: await readdir(absDir, { withFileTypes: true }) }
-            } catch {
-              // Skip dirs we can't read (permissions, broken symlinks, etc.)
-              return { relDir, entries: [] as import('fs').Dirent[] }
-            }
-          })
-        )
-
-        for (const { relDir, entries } of dirResults) {
-          if (results.length >= MAX_RESULTS) break
-
-          for (const entry of entries) {
-            if (results.length >= MAX_RESULTS) break
-
-            const name = entry.name
-            // Skip hidden files/dirs and ignored directories
-            if (name.startsWith('.') || SKIP_DIRS.has(name)) continue
-
-            const relativePath = relDir ? `${relDir}/${name}` : name
-            const isDir = entry.isDirectory()
-
-            // Queue subdirectories for next BFS level
-            if (isDir) {
-              nextQueue.push(relativePath)
-            }
-
-            // Check if name or path matches the query
-            const lowerName = name.toLowerCase()
-            const lowerRelative = relativePath.toLowerCase()
-            if (lowerName.includes(lowerQuery) || lowerRelative.includes(lowerQuery)) {
-              results.push({
-                name,
-                path: join(basePath, relativePath),
-                type: isDir ? 'directory' : 'file',
-                relativePath,
-              })
-            }
-          }
-        }
-
-        queue = nextQueue
-      }
-
-      // Sort: directories first, then by name length (shorter = better match)
-      results.sort((a, b) => {
-        if (a.type !== b.type) return a.type === 'directory' ? -1 : 1
-        return a.name.length - b.name.length
-      })
-
+      const results = await searchFilesInBase(basePath, query, options)
       deps.platform.logger.info('[FS_SEARCH] returning', results.length, 'results')
       return results
     } catch (err) {
       deps.platform.logger.error('[FS_SEARCH] error:', err)
       return []
     }
+  })
+
+  server.handle(RPC_CHANNELS.fs.SEARCH_BATCH, async (_ctx, basePath: string, requests: FileSearchBatchRequest[]): Promise<FileSearchBatchResult[]> => {
+    const safeRequests = Array.isArray(requests) ? requests.slice(0, 100) : []
+    deps.platform.logger.info('[FS_SEARCH_BATCH] called:', basePath, safeRequests.length)
+
+    const resultSets = await Promise.all(
+      safeRequests.map(async (request) => {
+        try {
+          return {
+            query: request.query,
+            results: await searchFilesInBase(basePath, request.query, request.options),
+          }
+        } catch (err) {
+          deps.platform.logger.error('[FS_SEARCH_BATCH] query error:', request.query, err)
+          return {
+            query: request.query,
+            results: [],
+          }
+        }
+      })
+    )
+
+    deps.platform.logger.info('[FS_SEARCH_BATCH] returning', resultSets.reduce((count, resultSet) => count + resultSet.results.length, 0), 'results')
+    return resultSets
   })
 
   // List directories in a given path (for remote directory browsing).

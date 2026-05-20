@@ -143,6 +143,8 @@ export function MainContentPanel({
   const [sendResourceIds, setSendResourceIds] = useState<string[]>([])
   const [sendResourceLabel, setSendResourceLabel] = useState('')
   const hasOtherWorkspaces = workspaces.length > 1
+  const activeWorkspace = workspaces.find(workspace => workspace.id === activeWorkspaceId)
+  const remoteWorkspaceId = activeWorkspace?.remoteServer?.remoteWorkspaceId
 
   const openSendDialog = useCallback((type: SendResourceType, ids: Set<string>) => {
     const count = ids.size
@@ -373,6 +375,21 @@ export function MainContentPanel({
     }
 
     if (navState.details) {
+      const selectedSessionMeta = sessionMetaMap.get(navState.details.sessionId)
+      const selectedSessionMatchesWorkspace = !activeWorkspaceId || (
+        selectedSessionMeta?.workspaceId === activeWorkspaceId
+        || (!!remoteWorkspaceId && selectedSessionMeta?.workspaceId === remoteWorkspaceId)
+      )
+      if (!selectedSessionMatchesWorkspace) {
+        return wrapWithStoplight(
+          <Panel variant="grow" className={className}>
+            <div className="flex items-center justify-center h-full text-muted-foreground">
+              <p className="text-sm">{t("session.noSessionSelected")}</p>
+            </div>
+          </Panel>
+        )
+      }
+
       return wrapWithStoplight(
         <Panel variant="grow" className={className}>
           <ChatPage sessionId={navState.details.sessionId} />

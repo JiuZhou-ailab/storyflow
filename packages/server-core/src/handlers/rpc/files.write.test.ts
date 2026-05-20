@@ -1,5 +1,5 @@
 import { existsSync, rmSync } from 'node:fs'
-import { mkdtemp, readFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'bun:test'
@@ -47,7 +47,9 @@ function createFileHarness() {
 
   const writeFile = handlers.get(RPC_CHANNELS.file.WRITE)
   const createDirectory = handlers.get(RPC_CHANNELS.file.CREATE_DIRECTORY)
-  if (!writeFile || !createDirectory) {
+  const searchFiles = handlers.get(RPC_CHANNELS.fs.SEARCH)
+  const searchFilesBatch = handlers.get(RPC_CHANNELS.fs.SEARCH_BATCH)
+  if (!writeFile || !createDirectory || !searchFiles || !searchFilesBatch) {
     throw new Error('file handlers not registered')
   }
 
@@ -57,7 +59,7 @@ function createFileHarness() {
     webContentsId: 1,
   }
 
-  return { writeFile, createDirectory, ctx }
+  return { writeFile, createDirectory, searchFiles, searchFilesBatch, ctx }
 }
 
 describe('file write RPC registration', () => {
@@ -67,6 +69,10 @@ describe('file write RPC registration', () => {
 
   it('registers the workspace-scoped directory creation channel', () => {
     expect(HANDLED_CHANNELS).toContain('file:createDirectory')
+  })
+
+  it('registers the batch filesystem search channel', () => {
+    expect(HANDLED_CHANNELS).toContain('fs:searchBatch')
   })
 
   it('creates missing parent directories before writing text files', async () => {
@@ -92,6 +98,80 @@ describe('file write RPC registration', () => {
       await createDirectory(ctx, exportDir)
 
       expect(existsSync(exportDir)).toBe(true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('scopes exact directory searches to the requested subtree', async () => {
+    const { searchFiles, ctx } = createFileHarness()
+    const root = await mkdtemp(join(tmpdir(), 'craft-file-search-'))
+
+    try {
+      await mkdir(join(root, '正文', '第一卷'), { recursive: true })
+      await writeFile(join(root, '正文', '第一卷', '01.md'), 'chapter')
+      await writeFile(join(root, '正文-notes.md'), 'outside')
+
+      const results = await searchFiles(ctx, root, '正文') as Array<{ relativePath: string }>
+
+      expect(results.map(result => result.relativePath)).toContain('正文/第一卷/01.md')
+      expect(results.map(result => result.relativePath)).not.toContain('正文-notes.md')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('returns no fuzzy fallback results for missing path-only searches', async () => {
+    const { searchFiles, ctx } = createFileHarness()
+    const root = await mkdtemp(join(tmpdir(), 'craft-file-search-path-'))
+
+    try {
+      await writeFile(join(root, '正文-notes.md'), 'outside')
+
+      const results = await searchFiles(ctx, root, '正文', { mode: 'path' }) as Array<{ relativePath: string }>
+
+      expect(results).toEqual([])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('can probe an exact directory without recursively listing descendants', async () => {
+    const { searchFiles, ctx } = createFileHarness()
+    const root = await mkdtemp(join(tmpdir(), 'craft-file-search-probe-'))
+
+    try {
+      await mkdir(join(root, '正文', '第一卷'), { recursive: true })
+      await writeFile(join(root, '正文', '第一卷', '01.md'), 'chapter')
+
+      const results = await searchFiles(ctx, root, '正文', {
+        mode: 'path',
+        includeDescendants: false,
+      }) as Array<{ relativePath: string; type: string }>
+
+      expect(results).toEqual([
+        { name: '正文', path: join(root, '正文'), relativePath: '正文', type: 'directory' },
+      ])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('batches path probes through one filesystem search handler call', async () => {
+    const { searchFilesBatch, ctx } = createFileHarness()
+    const root = await mkdtemp(join(tmpdir(), 'craft-file-search-batch-'))
+
+    try {
+      await mkdir(join(root, '正文'), { recursive: true })
+      await writeFile(join(root, '大纲.md'), 'outline')
+
+      const results = await searchFilesBatch(ctx, root, [
+        { query: '正文', options: { mode: 'path', includeDescendants: false } },
+        { query: '大纲.md', options: { mode: 'path', includeDescendants: false } },
+      ]) as Array<{ query: string; results: Array<{ relativePath: string }> }>
+
+      expect(results.map(result => result.query)).toEqual(['正文', '大纲.md'])
+      expect(results.flatMap(result => result.results.map(item => item.relativePath))).toEqual(['正文', '大纲.md'])
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
