@@ -78,6 +78,9 @@ describe("method pack runtime preamble", () => {
     expect(context).toContain("第 1 章拉新");
     expect(context).toContain("第 2 章加压");
     expect(context).toContain("第 3 章锁留存");
+    expect(context).toContain("首章入场坡道");
+    expect(context).toContain("原创题记");
+    expect(context).toContain("前三段");
     expect(context).toContain("小说密度");
     expect(context).toContain("事件密度");
     expect(context).toContain("情绪调动程度");
@@ -105,11 +108,13 @@ describe("method pack runtime preamble", () => {
     expect(pack?.operatingRules).toEqual({
       always: [
         "默认一次只写当前下一章，注意前后衔接，除非用户明确要求不遵循。",
-        "简报.md 与 大纲.md 未完成前不要写入 正文/；简报必须包含黄金三章、小说密度、事件密度和情绪调动程度选择。",
+        "修订已有文件时优先使用 patch/Edit 做局部替换，只有新建文件或明确要求全文重写时才用 Write 覆盖全文。",
       ],
       periodic: {
         intervalTurns: 2,
         rules: [
+          "简报.md 与 大纲.md 未完成前不要写入 正文/；简报必须包含黄金三章、小说密度、事件密度和情绪调动程度选择。",
+          "第一章开写前先核对首章入场坡道：原创题记或引文、开场第一镜头、前三段钩子和读者疑问必须已经写进 简报.md / 大纲.md。",
           "连续正文写作时，快速核对 创作要求.md / 简报.md / 大纲.md / 人物.md 中与当前章节相关的约束，避免人物、钩子、密度和情绪节奏漂移。",
           "检查当前章节是否具备高压开场、连续阻断、即时兑现、场景可视化、情绪账本和章尾强悬念；缺一项时先补结构再润色。",
           "修订直接覆盖同一章节文件，用 git diff 留痕。",
@@ -123,10 +128,12 @@ describe("method pack runtime preamble", () => {
     expect(context).toContain("默认一次只写当前下一章");
     expect(context).toContain("简报.md 与 大纲.md 未完成前不要写入 正文/");
     expect(context).toContain("简报必须包含黄金三章、小说密度、事件密度和情绪调动程度选择");
+    expect(context).toContain("第一章开写前先核对首章入场坡道");
     expect(context).toContain("Interval: every 2 user messages.");
     expect(context).toContain("快速核对 创作要求.md / 简报.md / 大纲.md / 人物.md");
     expect(context).toContain("密度和情绪节奏漂移");
     expect(context).toContain("缺一项时先补结构再润色");
     expect(context).toContain("修订直接覆盖同一章节文件，用 git diff 留痕。");
+    expect(context).toContain("优先使用 patch/Edit 做局部替换");
   });
 });

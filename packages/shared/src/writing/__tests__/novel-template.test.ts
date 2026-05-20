@@ -264,6 +264,10 @@ describe("createNovelProjectScaffold", () => {
     expect(brief).toContain("### 第 1 章：拉新");
     expect(brief).toContain("### 第 2 章：加压");
     expect(brief).toContain("### 第 3 章：锁留存");
+    expect(brief).toContain("## 首章开篇引导");
+    expect(brief).toContain("章首题记 / 引文");
+    expect(brief).toContain("开场第一镜头");
+    expect(brief).toContain("前三段节奏");
     expect(brief).toContain("## 密度与情绪选择");
     expect(brief).toContain("小说密度");
     expect(brief).toContain("事件密度");
@@ -278,6 +282,8 @@ describe("createNovelProjectScaffold", () => {
     expect(outline).toContain("## 全书弧线");
     expect(outline).toContain("黄金三章");
     expect(outline).toContain("### 第 01 章");
+    expect(outline).toContain("章首题记 / 引文");
+    expect(outline).toContain("前三段推进");
 
     const characters = readFileSync(join(rootPath, "人物.md"), "utf-8");
     expect(characters).toContain("## 主角");
@@ -292,6 +298,8 @@ describe("createNovelProjectScaffold", () => {
     expect(requirements).toContain("事件密度");
     expect(requirements).toContain("情绪调动程度");
     expect(requirements).toContain("## 生动度底线");
+    expect(requirements).toContain("## 首章头部");
+    expect(requirements).toContain("题记 / 引文");
     expect(requirements).toContain("场景可视化");
     expect(requirements).toContain("情绪账本");
 
@@ -312,6 +320,9 @@ describe("createNovelProjectScaffold", () => {
     expect(agents).toContain("第 1 章拉新");
     expect(agents).toContain("第 2 章加压");
     expect(agents).toContain("第 3 章锁留存");
+    expect(agents).toContain("首章入场坡道");
+    expect(agents).toContain("原创题记");
+    expect(agents).toContain("前三段");
     expect(agents).toContain("小说密度");
     expect(agents).toContain("事件密度");
     expect(agents).toContain("情绪调动程度");
