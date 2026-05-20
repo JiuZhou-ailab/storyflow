@@ -43,6 +43,11 @@ describe('macOS release configuration', () => {
   test('injects Apple signing and notarization credentials into the release workflow', () => {
     const workflow = readRepoFile('.github/workflows/release.yml');
 
+    expect(workflow).toContain('preflight-release-secrets:');
+    expect(workflow).toContain('Verify macOS release secrets');
+    expect(workflow).toContain('Missing CSC_LINK');
+    expect(workflow).toContain('Missing Apple notarization credentials');
+    expect(workflow).toMatch(/create-release:\n\s+needs:\n\s+- validate\n\s+- preflight-release-secrets/);
     expect(workflow).toContain('CRAFT_REQUIRE_MAC_SIGNING: "1"');
     expect(workflow).toContain('CSC_LINK: ${{ secrets.CSC_LINK }}');
     expect(workflow).toContain('CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}');

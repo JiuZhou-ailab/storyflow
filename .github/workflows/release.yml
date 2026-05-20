@@ -45,6 +45,47 @@ jobs:
       - name: Run validation suite
         run: bun run validate:ci
 
+  preflight-release-secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Verify macOS release secrets
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          missing=()
+          if [ -z "$CSC_LINK" ]; then
+            missing+=("Missing CSC_LINK")
+          fi
+
+          has_api_key=false
+          if [ -n "$APPLE_API_KEY_BASE64" ] && [ -n "$APPLE_API_KEY_ID" ] && [ -n "$APPLE_API_ISSUER" ]; then
+            has_api_key=true
+          fi
+
+          has_password=false
+          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ]; then
+            has_password=true
+          fi
+
+          if [ "$has_api_key" != true ] && [ "$has_password" != true ]; then
+            missing+=("Missing Apple notarization credentials")
+          fi
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            printf '%s\n' "${missing[@]}"
+            exit 1
+          fi
+
   build-macos:
     needs: create-release
     runs-on: macos-latest
@@ -180,7 +221,9 @@ jobs:
           gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
 
   create-release:
-    needs: validate
+    needs:
+      - validate
+      - preflight-release-secrets
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
