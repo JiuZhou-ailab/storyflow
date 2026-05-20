@@ -12,6 +12,8 @@ import {
   getNovelWorkspaceRelativePath,
   mapSearchResultsToNovelWorkspaceFiles,
   groupNovelFileChanges,
+  getNovelImportTargetRelativePath,
+  normalizeNovelCreateFilePath,
   NOVEL_WORKSPACE_CATALOG_DIRECTORY_QUERIES,
   NOVEL_WORKSPACE_DETECTION_QUERIES,
   NOVEL_WORKSPACE_FILE_SEARCH_QUERIES,
@@ -189,8 +191,10 @@ describe('writing workspace helpers', () => {
       { name: '人物.md', path: '/short/人物.md', relativePath: '人物.md', type: 'file' },
       { name: '素材.md', path: '/short/素材.md', relativePath: '素材.md', type: 'file' },
       { name: '01-未婚夫和闺蜜在我葬礼上接吻.md', path: '/short/正文/01-未婚夫和闺蜜在我葬礼上接吻.md', relativePath: '正文/01-未婚夫和闺蜜在我葬礼上接吻.md', type: 'file' },
+      { name: '03-番外.txt', path: '/short/正文/03-番外.txt', relativePath: '正文/03-番外.txt', type: 'file' },
       { name: '02-雨夜.md', path: '/short/正文/第一卷/02-雨夜.md', relativePath: '正文/第一卷/02-雨夜.md', type: 'file' },
       { name: '反派试稿.md', path: '/short/自由区/脑洞/反派试稿.md', relativePath: '自由区/脑洞/反派试稿.md', type: 'file' },
+      { name: '临时笔记.txt', path: '/short/自由区/临时笔记.txt', relativePath: '自由区/临时笔记.txt', type: 'file' },
     ])
 
     expect(files.map(file => file.relativePath)).toEqual([
@@ -200,8 +204,10 @@ describe('writing workspace helpers', () => {
       '人物.md',
       '素材.md',
       '正文/01-未婚夫和闺蜜在我葬礼上接吻.md',
+      '正文/03-番外.txt',
       '正文/第一卷/02-雨夜.md',
       '自由区/脑洞/反派试稿.md',
+      '自由区/临时笔记.txt',
     ])
 
     const tree = buildNovelWorkspaceTree(files)
@@ -211,9 +217,26 @@ describe('writing workspace helpers', () => {
     expect(tree.analysis.files.map(file => file.relativePath)).toEqual(['素材.md'])
     expect(tree.manuscript.files.map(file => file.relativePath)).toEqual([
       '正文/01-未婚夫和闺蜜在我葬礼上接吻.md',
+      '正文/03-番外.txt',
       '正文/第一卷/02-雨夜.md',
     ])
-    expect(tree.work.files.map(file => file.relativePath)).toEqual(['自由区/脑洞/反派试稿.md'])
+    expect(tree.work.files.map(file => file.relativePath)).toEqual(['自由区/临时笔记.txt', '自由区/脑洞/反派试稿.md'])
+  })
+
+  it('normalizes new manuscript and free-area file paths to supported text files', () => {
+    expect(normalizeNovelCreateFilePath('07-标题', '正文')).toBe('正文/07-标题.md')
+    expect(normalizeNovelCreateFilePath('第一卷/07-标题.md', '正文')).toBe('正文/第一卷/07-标题.md')
+    expect(normalizeNovelCreateFilePath('灵感.txt', '自由区')).toBe('自由区/灵感.txt')
+    expect(normalizeNovelCreateFilePath(' 临时\\灵感.TXT ', '自由区')).toBe('自由区/临时/灵感.TXT')
+    expect(normalizeNovelCreateFilePath('资料.docx', '自由区')).toBeNull()
+    expect(normalizeNovelCreateFilePath('../资料', '自由区')).toBeNull()
+  })
+
+  it('derives import targets for supported local text files only', () => {
+    expect(getNovelImportTargetRelativePath('/Users/me/Desktop/第七章.md', '正文')).toBe('正文/第七章.md')
+    expect(getNovelImportTargetRelativePath('C:\\Users\\me\\Desktop\\笔记.TXT', '自由区')).toBe('自由区/笔记.TXT')
+    expect(getNovelImportTargetRelativePath('/Users/me/Desktop/资料.docx', '自由区')).toBeNull()
+    expect(getNovelImportTargetRelativePath('/Users/me/Desktop/.md', '正文')).toBeNull()
   })
 
   it('defines targeted searches for the fixed novel workspace catalog', () => {

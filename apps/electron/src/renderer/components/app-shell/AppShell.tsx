@@ -39,6 +39,7 @@ import {
   ScrollText,
   UsersRound,
   Download,
+  FileUp,
 } from "lucide-react"
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
@@ -178,11 +179,14 @@ import {
 import {
   buildNovelWorkspaceTree,
   detectNovelProjectFromSearchResults,
+  getNovelImportTargetRelativePath,
   getNovelWorkspaceCandidateRoots,
   mapSearchResultsToNovelWorkspaceFiles,
   NOVEL_WORKSPACE_CATALOG_DIRECTORY_QUERIES,
   NOVEL_WORKSPACE_DETECTION_QUERIES,
+  normalizeNovelCreateFilePath,
   selectDefaultNovelFile,
+  type NovelCreateFileBasePath,
   type NovelWorkspaceFile,
   type NovelWorkspaceFileSectionId,
 } from "@/lib/writing-workspace"
@@ -230,7 +234,6 @@ function isTextEditingTarget(target: EventTarget | null): boolean {
 
 /** Filter mode for tri-state filtering: include shows only matching, exclude hides matching */
 type FilterMode = 'include' | 'exclude'
-type NovelCreateFileBasePath = '正文' | '自由区'
 
 interface NovelCreateFileTarget {
   basePath: NovelCreateFileBasePath
@@ -313,28 +316,6 @@ async function searchNovelWorkspaceFiles(
   )
 }
 
-function hasFileExtension(path: string): boolean {
-  const fileName = path.split('/').pop() ?? ''
-  return /\.[^/.]+$/.test(fileName)
-}
-
-function normalizeNovelCreateFilePath(input: string, basePath: NovelCreateFileBasePath): string | null {
-  let relative = input.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
-  if (!relative) return null
-
-  const segments = relative.split('/').map(segment => segment.trim())
-  if (segments.some(segment => !segment || segment === '.' || segment === '..')) {
-    return null
-  }
-
-  relative = segments.join('/')
-  if (!hasFileExtension(relative)) {
-    relative = `${relative}.md`
-  }
-
-  return `${basePath}/${relative}`
-}
-
 function getParentRelativePath(relativePath: string): string {
   const segments = relativePath.split('/')
   segments.pop()
@@ -344,6 +325,10 @@ function getParentRelativePath(relativePath: string): string {
 function getMarkdownTitleFromRelativePath(relativePath: string): string {
   const fileName = relativePath.split('/').pop() ?? ''
   return fileName.replace(/\.[^/.]+$/, '').replace(/-/g, ' ').trim()
+}
+
+function shouldCreateMarkdownStarter(relativePath: string): boolean {
+  return relativePath.toLowerCase().endsWith('.md')
 }
 
 function getContentChangeSize(previous: string, next: string): number {
@@ -1781,7 +1766,7 @@ function AppShellContent({
     const parentRelativePath = getParentRelativePath(relativePath)
     const parentPath = joinWorkspacePath(novelWorkspaceRoot, parentRelativePath)
     const title = getMarkdownTitleFromRelativePath(relativePath)
-    const initialContent = title ? `# ${title}\n\n` : ''
+    const initialContent = shouldCreateMarkdownStarter(relativePath) && title ? `# ${title}\n\n` : ''
 
     setNovelCreatingFile(true)
     try {
@@ -1799,6 +1784,59 @@ function AppShellContent({
       setNovelCreatingFile(false)
     }
   }, [novelCreateFileTarget, novelCreateFileValue, novelWorkspaceFiles, novelWorkspaceRoot, refreshNovelWorkspaceFiles, t])
+
+  const handleImportNovelFiles = React.useCallback(async (basePath: NovelCreateFileBasePath) => {
+    if (!novelWorkspaceRoot) return
+
+    const sourcePaths = await window.electronAPI.openFileDialog()
+    if (sourcePaths.length === 0) return
+
+    let importedCount = 0
+    let skippedCount = 0
+    let lastImportedPath: string | null = null
+    const reservedRelativePaths = new Set(novelWorkspaceFiles.map(file => file.relativePath))
+
+    for (const sourcePath of sourcePaths) {
+      const relativePath = getNovelImportTargetRelativePath(sourcePath, basePath)
+      if (!relativePath || reservedRelativePaths.has(relativePath)) {
+        skippedCount += 1
+        continue
+      }
+
+      try {
+        const attachment = await window.electronAPI.readUserAttachment(sourcePath)
+        if (!attachment || attachment.text === undefined) {
+          skippedCount += 1
+          continue
+        }
+
+        const targetPath = joinWorkspacePath(novelWorkspaceRoot, relativePath)
+        const parentRelativePath = getParentRelativePath(relativePath)
+        const parentPath = joinWorkspacePath(novelWorkspaceRoot, parentRelativePath)
+
+        await window.electronAPI.createDirectory(parentPath)
+        await window.electronAPI.writeFile(targetPath, attachment.text)
+        importedCount += 1
+        reservedRelativePaths.add(relativePath)
+        lastImportedPath = targetPath
+      } catch (error) {
+        console.error('[AppShell] Failed to import writing file:', error)
+        skippedCount += 1
+      }
+    }
+
+    if (importedCount > 0) {
+      await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
+      if (lastImportedPath) {
+        setSelectedNovelFilePath(lastImportedPath)
+        navigate(routes.view.allSessions())
+      }
+      toast.success(t('writing.importFile.success', '已导入文件'))
+    }
+    if (skippedCount > 0) {
+      toast.error(t('writing.importFile.skipped', '部分文件未导入，仅支持不重名的 md/txt 文件'))
+    }
+  }, [novelWorkspaceFiles, novelWorkspaceRoot, refreshNovelWorkspaceFiles, t])
 
   React.useEffect(() => {
     if (novelWorkspaceCandidateRoots.length === 0) {
@@ -3259,6 +3297,35 @@ function AppShellContent({
       </span>
     )
 
+    const createNovelWorkspaceImportAction = (basePath: NovelCreateFileBasePath, title: string) => (
+      <span
+        role="button"
+        tabIndex={-1}
+        title={title}
+        aria-label={title}
+        className="flex h-4 w-4 items-center justify-center rounded-[4px] text-foreground/45 hover:bg-foreground/10 hover:text-foreground"
+        data-no-dnd="true"
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          void handleImportNovelFiles(basePath)
+        }}
+      >
+        <FileUp className="h-3 w-3" />
+      </span>
+    )
+
+    const createNovelWorkspaceFileActions = (
+      basePath: NovelCreateFileBasePath,
+      target: Omit<NovelCreateFileTarget, 'basePath'>,
+      importTitle: string
+    ) => (
+      <span className="ml-1 flex items-center gap-1">
+        {createNovelWorkspaceImportAction(basePath, importTitle)}
+        {createNovelWorkspaceAddAction(basePath, target)}
+      </span>
+    )
+
     const sectionItem = (section: typeof globalSectionDefinitions[number]): LeftSidebarItem => {
       const sectionId = `writing:section:${section.id}`
       const hasSelectedFile = section.files.some(file => file.path === selectedNovelFile?.path)
@@ -3324,11 +3391,15 @@ function AppShellContent({
           label: String(manuscriptSection.files.length),
           icon: manuscriptSection.icon,
           variant: hasSelectedManuscriptFile ? 'default' : 'ghost',
-          afterTitle: createNovelWorkspaceAddAction('正文', {
-            title: t('writing.createFile.manuscript', '新建正文文件'),
-            placeholder: '07-标题 或 第一卷/07-标题',
-            initialValue: '',
-          }),
+          afterTitle: createNovelWorkspaceFileActions(
+            '正文',
+            {
+              title: t('writing.createFile.manuscript', '新建正文文件'),
+              placeholder: '07-标题、07-标题.md 或 第一卷/07-标题.txt',
+              initialValue: '',
+            },
+            t('writing.importFile.manuscript', '导入正文文件')
+          ),
           expandable: true,
           expanded: isExpanded(manuscriptGroupId),
           onToggle: () => toggleExpanded(manuscriptGroupId),
@@ -3348,11 +3419,15 @@ function AppShellContent({
           label: String(freeAreaSection.files.length),
           icon: freeAreaSection.icon,
           variant: hasSelectedFreeAreaFile ? 'default' : 'ghost',
-          afterTitle: createNovelWorkspaceAddAction('自由区', {
-            title: t('writing.createFile.freeArea', '新建自由区文件'),
-            placeholder: '脑洞 或 临时/脑洞',
-            initialValue: '',
-          }),
+          afterTitle: createNovelWorkspaceFileActions(
+            '自由区',
+            {
+              title: t('writing.createFile.freeArea', '新建自由区文件'),
+              placeholder: '脑洞、脑洞.md 或 临时/脑洞.txt',
+              initialValue: '',
+            },
+            t('writing.importFile.freeArea', '导入自由区文件')
+          ),
           expandable: true,
           expanded: isExpanded(freeAreaGroupId),
           onToggle: () => toggleExpanded(freeAreaGroupId),
@@ -3372,6 +3447,7 @@ function AppShellContent({
     handleSelectNovelFile,
     handleDismissNovelReviewDot,
     hasNovelReviewDot,
+    handleImportNovelFiles,
     isExpanded,
     isShortFormNovelWorkspace,
     novelWorkspaceFiles,

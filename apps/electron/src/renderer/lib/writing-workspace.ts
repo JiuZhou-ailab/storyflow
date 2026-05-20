@@ -64,6 +64,10 @@ export interface NovelWorkspaceRootCandidates {
   sessionWorkingDirectory?: string
 }
 
+export type NovelCreateFileBasePath = '正文' | '自由区'
+
+const NOVEL_CREATE_FILE_ALLOWED_EXTENSIONS = new Set(['.md', '.txt'])
+
 export const NOVEL_WORKSPACE_DETECTION_QUERIES = [
   'craft-writing.json',
   'story/chapters',
@@ -196,6 +200,46 @@ function basename(path: string): string {
 
 function stripMarkdownExtension(filename: string): string {
   return filename.replace(/\.md$/i, '')
+}
+
+function getFileExtension(path: string): string | null {
+  const fileName = path.split('/').pop() ?? ''
+  const match = fileName.match(/(\.[^/.]+)$/)
+  return match?.[1]?.toLowerCase() ?? null
+}
+
+export function normalizeNovelCreateFilePath(input: string, basePath: NovelCreateFileBasePath): string | null {
+  let relative = input.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+  if (!relative) return null
+
+  const segments = relative.split('/').map(segment => segment.trim())
+  if (segments.some(segment => !segment || segment === '.' || segment === '..')) {
+    return null
+  }
+
+  relative = segments.join('/')
+  const extension = getFileExtension(relative)
+  if (!extension) {
+    relative = `${relative}.md`
+  } else if (!NOVEL_CREATE_FILE_ALLOWED_EXTENSIONS.has(extension)) {
+    return null
+  }
+
+  return `${basePath}/${relative}`
+}
+
+export function getNovelImportTargetRelativePath(sourcePath: string, basePath: NovelCreateFileBasePath): string | null {
+  const normalizedPath = sourcePath.trim().replace(/\\/g, '/')
+  const fileName = normalizedPath.split('/').pop()?.trim() ?? ''
+  if (!fileName || fileName === '.' || fileName === '..') return null
+
+  const extension = getFileExtension(fileName)
+  const stem = extension ? fileName.slice(0, -extension.length) : fileName
+  if (!extension || !stem || !NOVEL_CREATE_FILE_ALLOWED_EXTENSIONS.has(extension)) {
+    return null
+  }
+
+  return `${basePath}/${fileName}`
 }
 
 function normalizeChapterNumber(rawNumber: string): string {
