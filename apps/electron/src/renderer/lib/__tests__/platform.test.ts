@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { getRendererPlatformName } from '../platform'
+import { getDefaultColorThemeForPlatform, getRendererPlatformName } from '../platform'
 
 describe('getRendererPlatformName', () => {
   it('normalizes Windows navigator platforms to win32', () => {
@@ -15,5 +15,17 @@ describe('getRendererPlatformName', () => {
   it('falls back to other for unknown platforms', () => {
     expect(getRendererPlatformName('FreeBSD')).toBe('other')
     expect(getRendererPlatformName(undefined)).toBe('other')
+  })
+})
+
+describe('getDefaultColorThemeForPlatform', () => {
+  it('uses a neutral preset as the Windows default theme', () => {
+    expect(getDefaultColorThemeForPlatform('win32')).toBe('github')
+  })
+
+  it('keeps the existing default theme on non-Windows platforms', () => {
+    expect(getDefaultColorThemeForPlatform('darwin')).toBe('default')
+    expect(getDefaultColorThemeForPlatform('linux')).toBe('default')
+    expect(getDefaultColorThemeForPlatform('other')).toBe('default')
   })
 })

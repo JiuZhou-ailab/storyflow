@@ -38,6 +38,17 @@ export const isWindows = rendererPlatform === 'win32'
 export const isLinux = rendererPlatform === 'linux'
 
 /**
+ * Resolve the app's first-run color theme for each platform.
+ *
+ * Windows' native frame/material rendering can make the purple-tinted default
+ * feel inconsistent around the app chrome, so use a neutral preset there.
+ * User-selected themes still take precedence in ThemeContext.
+ */
+export function getDefaultColorThemeForPlatform(platform: RendererPlatformName): string {
+  return platform === 'win32' ? 'github' : 'default'
+}
+
+/**
  * Get the platform-specific file manager name.
  * macOS → "Finder", Windows → "Explorer", Linux → "File Manager"
  */
