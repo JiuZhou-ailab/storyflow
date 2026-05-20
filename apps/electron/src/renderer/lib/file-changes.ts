@@ -13,6 +13,14 @@ function getFilePath(input: Record<string, unknown>): string {
   return asString(input.file_path) || asString(input.path) || 'unknown'
 }
 
+function getWriteOriginal(input: Record<string, unknown>): string | undefined {
+  return asString(input.original)
+    || asString(input.oldContent)
+    || asString(input.old_content)
+    || asString(input.previousContent)
+    || asString(input.previous_content)
+}
+
 function getEditChangeId(activityId: string, editIndex: number, editCount: number): string {
   return editCount <= 1 ? activityId : `${activityId}:${editIndex}`
 }
@@ -123,7 +131,7 @@ export function collectFileChangesFromActivities(
         id: activity.id,
         filePath: resolveFileChangePath(getFilePath(input), options.basePath),
         toolType: 'Write',
-        original: '',
+        original: getWriteOriginal(input) || '',
         modified: asString(input.content) || '',
         error: activity.error || undefined,
       })

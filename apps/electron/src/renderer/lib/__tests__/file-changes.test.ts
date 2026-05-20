@@ -175,4 +175,23 @@ describe('collectFileChangesFromActivities', () => {
 
     expect(changes[0]?.filePath).toBe(filePath)
   })
+
+  it('captures previous content for write changes when the tool payload includes it', () => {
+    const changes = collectFileChangesFromActivities([
+      activity({
+        id: 'write-previous-content',
+        toolName: 'Write',
+        toolInput: {
+          file_path: '/novel/chapter.md',
+          previous_content: '# Old chapter',
+          content: '# New chapter',
+        },
+      }),
+    ])
+
+    expect(changes).toHaveLength(1)
+    expect(changes[0]?.toolType).toBe('Write')
+    expect(changes[0]?.original).toBe('# Old chapter')
+    expect(changes[0]?.modified).toBe('# New chapter')
+  })
 })

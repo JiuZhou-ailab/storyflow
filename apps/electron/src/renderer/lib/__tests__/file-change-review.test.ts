@@ -102,4 +102,16 @@ describe('buildRejectedFileContent', () => {
       expect(result.reason).toContain('Previous file content was not captured')
     }
   })
+
+  it('reverts write changes when captured previous content is available', () => {
+    const result = buildRejectedFileContent(
+      change({ toolType: 'Write', original: '# Old file', modified: '# New file' }),
+      '# New file'
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      content: '# Old file',
+    })
+  })
 })

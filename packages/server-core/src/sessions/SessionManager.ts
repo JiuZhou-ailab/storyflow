@@ -96,6 +96,7 @@ import { ensureLabelsExist } from '@craft-agent/shared/labels/crud'
 import { loadStatusConfig } from '@craft-agent/shared/statuses/storage'
 import { AutomationSystem, createPromptHistoryEntry, appendAutomationHistoryEntry, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
 import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput } from './runtime-config'
+import { captureWriteOriginalContent } from './write-original-content'
 
 // Import from server-core domain utilities
 import { sanitizeForTitle, shouldActivateBrowserOverlay, normalizeBrowserToolName, rollbackFailedBranchCreation, releaseBrowserOwnershipOnForcedStop } from '@craft-agent/server-core/domain'
@@ -6655,8 +6656,18 @@ export class SessionManager implements ISessionManager {
       }
 
       case 'tool_start': {
+        const toolInput = await captureWriteOriginalContent({
+          toolName: event.toolName,
+          input: event.input,
+          workspaceRootPath: managed.workspace.rootPath,
+          validatePath: (path) => validateFilePath(path, getWorkspaceAllowedDirs(workspaceId)),
+          readTextFile: (path) => readFile(path, 'utf-8'),
+        })
         // Format tool input paths to relative for better readability
-        const formattedToolInput = formatToolInputPaths(event.input)
+        const formattedToolInput = formatToolInputPaths(toolInput)
+        if (formattedToolInput && typeof toolInput.previous_content === 'string') {
+          formattedToolInput.previous_content = toolInput.previous_content
+        }
 
         // Resolve call_llm model for TurnCard badge display.
         // Resolve call_llm model short names to full IDs for display.
