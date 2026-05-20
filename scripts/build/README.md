@@ -6,6 +6,7 @@ Shared and platform-specific helpers for packaging Electron and server release a
 
 - `common.ts` - shared build utilities for downloads, runtime staging, uploads, and verification.
 - `darwin.ts` - macOS packaging helpers.
+- `electron-main-build-config.test.ts` - regression tests for Electron main process bundling constraints.
 - `linux.ts` - Linux packaging helpers.
 - `resource-staging.test.ts` - regression tests for Electron subprocess resource staging.
 - `resource-staging.ts` - stages built subprocess bundles into Electron resources.
