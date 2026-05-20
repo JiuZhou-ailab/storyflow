@@ -24,6 +24,7 @@ storyflow/
 ├── apps/
 │   ├── cli/                 # 无头服务端的命令行客户端
 │   ├── electron/            # 主桌面应用：main、preload、renderer
+│   ├── marketing/           # Storyflow 官网和下载入口
 │   ├── viewer/              # 共享会话记录查看器
 │   └── webui/               # 无头服务端的浏览器客户端
 ├── packages/
@@ -84,6 +85,7 @@ bun run electron:start
 | `bun run server:dev` | 以 debug 设置启动无头服务端 |
 | `bun run webui:dev` | 启动浏览器客户端 |
 | `bun run viewer:dev` | 启动会话查看器 |
+| `bun run marketing:dev` | 启动 Storyflow 官网 landing 页面 |
 | `bun run typecheck:all` | 对主要 packages 和 apps 做类型检查 |
 | `bun test` | 运行 Bun 测试 |
 | `bun run validate:ci` | 运行更完整的验证套件 |

@@ -179,6 +179,20 @@
         "@types/ws": "^8.18.1",
       },
     },
+    "apps/marketing": {
+      "name": "@craft-agent/marketing",
+      "version": "0.9.11",
+      "dependencies": {
+        "lucide-react": "^0.561.0",
+        "react": "^18.3.1",
+        "react-dom": "^18.3.1",
+      },
+      "devDependencies": {
+        "@vitejs/plugin-react": "^5.1.2",
+        "typescript": "^5.0.0",
+        "vite": "^6.2.4",
+      },
+    },
     "apps/viewer": {
       "name": "@craft-agent/viewer",
       "version": "0.9.11",
@@ -634,6 +648,8 @@
     "@craft-agent/core": ["@craft-agent/core@workspace:packages/core"],
 
     "@craft-agent/electron": ["@craft-agent/electron@workspace:apps/electron"],
+
+    "@craft-agent/marketing": ["@craft-agent/marketing@workspace:apps/marketing"],
 
     "@craft-agent/messaging-gateway": ["@craft-agent/messaging-gateway@workspace:packages/messaging-gateway"],
 

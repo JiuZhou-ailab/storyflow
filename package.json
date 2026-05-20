@@ -90,7 +90,7 @@
     "server:prod": "bun run server:build:subprocess && bun run webui:build && CRAFT_WEBUI_DIR=apps/webui/dist CRAFT_BUNDLED_ASSETS_ROOT=$PWD/apps/electron bun run packages/server/src/index.ts",
     "server:dev:webui": "bun run server:build:subprocess && bun run webui:build && CRAFT_WEBUI_DIR=apps/webui/dist CRAFT_WEBUI_PORT=3100 bun run server:dev",
     "marketing:dev": "vite dev --config apps/marketing/vite.config.ts",
-    "marketing:build": "vite build --config apps/marketing/vite.config.ts",
+    "marketing:build": "bun run scripts/build-marketing.ts",
     "marketing:preview": "vite preview --config apps/marketing/vite.config.ts",
     "docs:dev": "cd apps/online-docs && npm install && npx mintlify dev",
     "build": "bun run scripts/build.ts",
