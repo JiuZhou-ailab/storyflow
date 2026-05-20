@@ -53,7 +53,7 @@ Usage: build-dmg.sh [arm64|x64] [--upload] [--latest] [--script]
 Arguments:
   arm64|x64    Target architecture (default: arm64)
   --upload     Upload DMG to S3 after building
-  --latest     Also update electron/latest (requires --upload)
+  --latest     Also update latest release assets (requires --upload)
   --script     Also upload install-app.sh (requires --upload)
 
 Environment variables (from .env or environment):

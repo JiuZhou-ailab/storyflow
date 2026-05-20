@@ -38,7 +38,7 @@ Usage: build-linux.sh [x64|arm64] [--upload] [--latest] [--script]
 Arguments:
   x64|arm64    Target architecture (default: x64)
   --upload     Upload AppImage to S3 after building
-  --latest     Also update electron/latest (requires --upload)
+  --latest     Also update latest release assets (requires --upload)
   --script     Also upload install-app.sh (requires --upload)
 
 Environment variables (from .env or environment):

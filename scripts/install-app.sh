@@ -5,7 +5,7 @@
 
 set -e
 
-VERSIONS_URL="https://agents.craft.do/electron"
+RELEASE_DOWNLOAD_URL="https://github.com/JiuZhou-ailab/craft-agents-oss/releases/latest/download"
 DOWNLOAD_DIR="$HOME/.craft-agent/downloads"
 MIN_MACOS_VERSION="12.0"
 
@@ -225,9 +225,9 @@ fi
 mkdir -p "$DOWNLOAD_DIR"
 mkdir -p "$INSTALL_DIR"
 
-# Fetch YAML manifest directly from /electron/latest/ (no version endpoint needed)
+# Fetch YAML manifest directly from the latest GitHub Release assets.
 info "Fetching release info..."
-manifest_yaml=$(download_file "$VERSIONS_URL/latest/$yml_file")
+manifest_yaml=$(download_file "$RELEASE_DOWNLOAD_URL/$yml_file")
 
 if [ -z "$manifest_yaml" ]; then
     error "Failed to fetch release info from $yml_file"
@@ -268,7 +268,7 @@ fi
 info "Expected sha512: ${checksum:0:20}..."
 
 # Download installer
-installer_url="$VERSIONS_URL/latest/$filename"
+installer_url="$RELEASE_DOWNLOAD_URL/$filename"
 installer_path="$DOWNLOAD_DIR/$filename"
 
 info "Downloading $filename..."
@@ -413,7 +413,7 @@ ELECTRON_CACHE_ALT="$HOME/.cache/@craft-agent"
 # Verify AppImage exists
 if [ ! -f "$APPIMAGE_PATH" ]; then
     echo "Error: Craft Agent not found at $APPIMAGE_PATH"
-    echo "Reinstall: curl -fsSL https://agents.craft.do/install-app.sh | bash"
+    echo "Reinstall: curl -fsSL $RELEASE_DOWNLOAD_URL/install-app.sh | bash"
     exit 1
 fi
 

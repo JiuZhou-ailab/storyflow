@@ -1,17 +1,27 @@
 import { debug } from "../utils/debug";
 
-const VERSIONS_URL = 'https://agents.craft.do/electron';
+const GITHUB_REPOSITORY = 'JiuZhou-ailab/craft-agents-oss';
+const GITHUB_RELEASES_API_URL = `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases`;
+const GITHUB_RELEASES_DOWNLOAD_URL = `https://github.com/${GITHUB_REPOSITORY}/releases/download`;
+
+function versionFromTag(tagName: string): string {
+    return tagName.startsWith('v') ? tagName.slice(1) : tagName;
+}
+
+function tagFromVersion(version: string): string {
+    return version.startsWith('v') ? version : `v${version}`;
+}
 
 export async function getLatestVersion(): Promise<string | null> {
     try {
-      const response = await fetch(`${VERSIONS_URL}/latest`);
+      const response = await fetch(`${GITHUB_RELEASES_API_URL}/latest`);
       const data = await response.json();
-      const version = (data as { version?: string }).version;
-      if (typeof version !== 'string') {
+      const tagName = (data as { tag_name?: string }).tag_name;
+      if (typeof tagName !== 'string') {
         debug('[manifest] Latest version is not a valid string');
         return null;
       }
-      return version ?? null;
+      return versionFromTag(tagName);
     } catch (error) {
       debug(`[manifest] Failed to get latest version: ${error}`);
     }
@@ -20,7 +30,7 @@ export async function getLatestVersion(): Promise<string | null> {
 
 export async function getManifest(version: string): Promise<VersionManifest | null> {
     try {
-        const url = `${VERSIONS_URL}/${version}/manifest.json`;
+        const url = `${GITHUB_RELEASES_DOWNLOAD_URL}/${tagFromVersion(version)}/manifest.json`;
         debug(`[manifest] Getting manifest for version: ${url}`);
         const response = await fetch(url);
         const data = await response.json();

@@ -77,10 +77,10 @@ files:
 extraMetadata:
   main: dist/main.cjs
 
-# Auto-update: electron-updater fetches from this URL for update manifests (.yml files)
+# Auto-update: electron-updater fetches release manifests from this fork's GitHub Releases.
 publish:
   provider: generic
-  url: https://agents.craft.do/electron/latest
+  url: https://github.com/JiuZhou-ailab/craft-agents-oss/releases/latest/download
 
 # Disable ASAR to avoid decompression overhead and click delays
 asar: false

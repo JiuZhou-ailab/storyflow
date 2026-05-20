@@ -1,10 +1,10 @@
 # Craft Agents Windows Installer
-# Usage: irm https://agents.craft.do/install-app.ps1 | iex
+# Usage: irm https://github.com/JiuZhou-ailab/craft-agents-oss/releases/latest/download/install-app.ps1 | iex
 
 & {
 $ErrorActionPreference = "Stop"
 
-$VERSIONS_URL = "https://agents.craft.do/electron"
+$RELEASE_DOWNLOAD_URL = "https://github.com/JiuZhou-ailab/craft-agents-oss/releases/latest/download"
 $DOWNLOAD_DIR = "$env:TEMP\craft-agent-install"
 $APP_NAME = "Craft Agents"
 
@@ -29,11 +29,11 @@ Write-Info "Detected platform: $platform (arch: $arch)"
 # Create download directory
 New-Item -ItemType Directory -Force -Path $DOWNLOAD_DIR | Out-Null
 
-# Fetch YAML manifest directly from /electron/latest/ (no version endpoint needed)
+# Fetch YAML manifest directly from the latest GitHub Release assets.
 Write-Info "Fetching release info..."
 $yamlPath = Join-Path $DOWNLOAD_DIR "latest.yml"
 try {
-    Invoke-WebRequest -Uri "$VERSIONS_URL/latest/latest.yml" -OutFile $yamlPath -UseBasicParsing
+    Invoke-WebRequest -Uri "$RELEASE_DOWNLOAD_URL/latest.yml" -OutFile $yamlPath -UseBasicParsing
 } catch {
     Write-Err "Failed to fetch release info: $_"
 }
@@ -111,7 +111,7 @@ if (-not $filename) {
     $filename = "Craft-Agents-$arch.exe"
 }
 
-$installerUrl = "$VERSIONS_URL/latest/$filename"
+$installerUrl = "$RELEASE_DOWNLOAD_URL/$filename"
 
 Write-Info "Expected sha512: $($checksum.Substring(0, 20))..."
 

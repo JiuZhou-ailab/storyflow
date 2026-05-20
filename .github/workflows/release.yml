@@ -83,8 +83,15 @@ jobs:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
         run: |
           shopt -s nullglob
-          files=(apps/electron/release/Craft-Agents-*.dmg)
-          if [ ${#files[@]} -eq 0 ]; then
+          dmg_files=(apps/electron/release/Craft-Agents-*.dmg)
+          files=(
+            "${dmg_files[@]}"
+            apps/electron/release/Craft-Agents-*.zip
+            apps/electron/release/Craft-Agents-*.dmg.blockmap
+            apps/electron/release/Craft-Agents-*.zip.blockmap
+            apps/electron/release/latest-mac.yml
+          )
+          if [ ${#dmg_files[@]} -eq 0 ]; then
             echo "No macOS artifacts found"
             exit 1
           fi
@@ -125,8 +132,13 @@ jobs:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
         run: |
           shopt -s nullglob
-          files=(apps/electron/release/Craft-Agents-*.exe)
-          if [ ${#files[@]} -eq 0 ]; then
+          exe_files=(apps/electron/release/Craft-Agents-*.exe)
+          files=(
+            "${exe_files[@]}"
+            apps/electron/release/Craft-Agents-*.exe.blockmap
+            apps/electron/release/latest.yml
+          )
+          if [ ${#exe_files[@]} -eq 0 ]; then
             echo "No Windows artifacts found"
             exit 1
           fi
@@ -155,6 +167,13 @@ jobs:
             gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --generate-notes --verify-tag
           fi
 
+      - name: Upload installer scripts to release
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: gh release upload "$RELEASE_TAG" scripts/install-app.sh scripts/install-app.ps1 --clobber
+
   verify-release:
     needs:
       - build-macos
@@ -172,4 +191,9 @@ jobs:
           asset_names="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')"
           echo "$asset_names"
           echo "$asset_names" | grep -E '^Craft-Agents-.*\.dmg$'
+          echo "$asset_names" | grep -E '^Craft-Agents-.*\.zip$'
           echo "$asset_names" | grep -E '^Craft-Agents-.*\.exe$'
+          echo "$asset_names" | grep -E '^latest-mac\.yml$'
+          echo "$asset_names" | grep -E '^latest\.yml$'
+          echo "$asset_names" | grep -E '^install-app\.sh$'
+          echo "$asset_names" | grep -E '^install-app\.ps1$'
