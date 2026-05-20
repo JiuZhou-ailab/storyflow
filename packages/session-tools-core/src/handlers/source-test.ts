@@ -1,6 +1,10 @@
 /**
  * Source Test Handler
  *
+ * input: Source slug, session tool context, and optional auto-enable preference
+ * output: Source validation/test report plus persisted connection metadata when available
+ * pos: Session tool handler for validating source configuration before activation
+ *
  * Validates and tests a source configuration comprehensively.
  * Performs schema validation, completeness checks, icon handling,
  * connection tests, and auth verification.
@@ -70,7 +74,7 @@ export async function handleSourceTest(
 
   // 1. Check source exists
   if (!sourceExists(ctx.workspacePath, sourceSlug)) {
-    return errorResponse(`Source '${sourceSlug}' not found in workspace.`);
+    return errorResponse(`Source '${sourceSlug}' not found in workspace or global sources.`);
   }
 
   // 2. Schema validation

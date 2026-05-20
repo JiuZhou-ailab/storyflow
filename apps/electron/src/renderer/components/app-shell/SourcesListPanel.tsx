@@ -237,7 +237,7 @@ export function SourcesListPanel({
                   onOpenInNewWindow={() => window.electronAPI.openUrl(`craftagents://sources/source/${source.config.slug}?window=focused`)}
                   onShowInFinder={() => window.electronAPI.showInFolder(source.folderPath)}
                   onDelete={() => onDeleteSource(source.config.slug)}
-                  onSendToWorkspace={hasOtherWorkspaces ? () => {
+                  onSendToWorkspace={hasOtherWorkspaces && source.source === 'workspace' ? () => {
                     setSendResourceSlug(source.config.slug)
                     setSendResourceLabel(source.config.name)
                     setSendDialogOpen(true)

@@ -1,6 +1,10 @@
 /**
  * EditPopover
  *
+ * input: Edit context keys, workspace paths, and compact user instructions
+ * output: Popover-driven focused editing sessions with scoped file targets
+ * pos: Shared UI entry point for lightweight config/resource edits
+ *
  * A popover with title, subtitle, and multiline textarea for editing settings.
  * Supports two modes:
  * - Legacy: Opens a new focused window with a chat session
@@ -303,12 +307,12 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
   'add-source': (location) => ({
     context: {
       label: 'Add Source',
-      filePath: `${location}/sources/`, // location is the workspace root path
+      filePath: '~/.agents/sources/',
       context:
-        'The user wants to add a new source to their workspace. ' +
+        'The user wants to add a new global source. ' +
         'Sources can be MCP servers (HTTP/SSE or stdio), REST APIs, or local filesystems. ' +
         'Ask clarifying questions if needed: What service? MCP or API? Auth type? ' +
-        'Create the source folder and config.json in the workspace sources directory. ' +
+        'Create the source folder and config.json in the global sources directory: ~/.agents/sources/. ' +
         'Follow the patterns in ~/.craft-agent/docs/sources.md. ' +
         'After creating the source, call source_test with the source slug to verify the configuration.',
     },
@@ -323,13 +327,13 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
   'add-source-api': (location) => ({
     context: {
       label: 'Add API',
-      filePath: `${location}/sources/`,
+      filePath: '~/.agents/sources/',
       context:
         'The user is viewing API sources and wants to add a new REST API. ' +
         'Default to creating an API source (type: "api") unless they specify otherwise. ' +
         'APIs connect to REST endpoints with authentication (bearer, header, basic, or query). ' +
         'Ask about the API endpoint URL and auth type. ' +
-        'Create the source folder and config.json in the workspace sources directory. ' +
+        'Create the source folder and config.json in the global sources directory: ~/.agents/sources/. ' +
         'Follow the patterns in ~/.craft-agent/docs/sources.md. ' +
         'After creating the source, call source_test with the source slug to verify the configuration.',
     },
@@ -343,7 +347,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
   'add-source-mcp': (location) => ({
     context: {
       label: 'Add MCP Server',
-      filePath: `${location}/sources/`,
+      filePath: '~/.agents/sources/',
       context:
         'The user is viewing MCP sources and wants to add a new MCP server. ' +
         'Default to creating an MCP source (type: "mcp") unless they specify otherwise. ' +
@@ -351,7 +355,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'If the user asks for search, web search, or Brave Search, prefer the Brave Search MCP preset from ~/.craft-agent/docs/sources.md: stdio command "npx" with args ["-y", "@modelcontextprotocol/server-brave-search"], env BRAVE_API_KEY, and read-only search permissions. ' +
         'Ask about the service they want to connect to and whether it\'s a remote URL or local command. ' +
         'For the Brave Search preset, only ask for the API key if it is not already available; otherwise create the source directly. ' +
-        'Create the source folder and config.json in the workspace sources directory. ' +
+        'Create the source folder and config.json in the global sources directory: ~/.agents/sources/. ' +
         'Follow the patterns in ~/.craft-agent/docs/sources.md. ' +
         'After creating the source, call source_test with the source slug to verify the configuration.',
     },
@@ -365,14 +369,14 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
   'add-source-local': (location) => ({
     context: {
       label: 'Add Local Folder',
-      filePath: `${location}/sources/`,
+      filePath: '~/.agents/sources/',
       context:
         'The user wants to add a local folder source. ' +
         'First, look up the guide: mcp__craft-agents-docs__SearchCraftAgents({ query: "filesystem" }). ' +
         'Local folders are bookmarks - use type: "local" with a local.path field. ' +
         'They use existing Read, Write, Glob, Grep tools - no MCP server needed. ' +
         'If unclear, ask about the folder path they want to connect. ' +
-        'Create the source folder and config.json in the workspace sources directory. ' +
+        'Create the source folder and config.json in the global sources directory: ~/.agents/sources/. ' +
         'Follow the patterns in ~/.craft-agent/docs/sources.md. ' +
         'After creating the source, call source_test with the source slug to verify the configuration.',
     },
@@ -386,12 +390,12 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
   'add-skill': (location) => ({
     context: {
       label: 'Add Skill',
-      filePath: `${location}/skills/`, // location is the workspace root path
+      filePath: '~/.agents/skills/',
       context:
-        'The user wants to add a new skill to their workspace. ' +
+        'The user wants to add a new global skill. ' +
         'Skills are specialized instructions with a SKILL.md file containing YAML frontmatter (name, description) and markdown instructions. ' +
         'Ask clarifying questions if needed: What should the skill do? When should it trigger? ' +
-        'Create the skill folder and SKILL.md in the workspace skills directory. ' +
+        'Create the skill folder and SKILL.md in the global skills directory: ~/.agents/skills/. ' +
         'Follow the patterns in ~/.craft-agent/docs/skills.md. ' +
         'After creating the skill, call skill_validate with the skill slug to verify the SKILL.md file.',
     },

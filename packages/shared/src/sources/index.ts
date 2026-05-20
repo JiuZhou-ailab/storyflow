@@ -1,6 +1,10 @@
 /**
  * Sources Module
  *
+ * input: Source storage, credential, server-builder, and built-in source modules
+ * output: Public source management exports for app, server, and agent packages
+ * pos: Shared package entry point for external data/tool source features
+ *
  * Public exports for source management.
  */
 
@@ -35,6 +39,8 @@ export {
 // Storage functions
 export {
   // Directory utilities
+  GLOBAL_AGENT_ROOT_DIR,
+  GLOBAL_AGENT_SOURCES_DIR,
   ensureSourcesDir,
   getSourcePath,
   // Config operations

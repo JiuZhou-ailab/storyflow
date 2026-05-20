@@ -217,8 +217,8 @@ bun run apps/cli/src/index.ts run --workspace-dir . "Inspect this repository"
 
 ## 来源、技能和自动化
 
-- **Sources**：连接 MCP server、REST API、本地文件和服务集成等外部系统。
-- **Skills**：可在聊天中提及的工作区级指令和工作流。
+- **Sources**：连接 MCP server、REST API、本地文件和服务集成等外部系统；默认保存在全局 `~/.agents/sources/`，工作区内同名配置可覆盖。
+- **Skills**：可在聊天中提及的全局/工作区/项目级指令和工作流。
 - **Automations**：可根据标签、计划任务、工具事件、权限变化和会话生命周期创建或更新会话。
 
 这些系统的大部分共享逻辑位于 `packages/shared/src`，可复用服务端 handler 位于 `packages/server-core/src/handlers/rpc`。

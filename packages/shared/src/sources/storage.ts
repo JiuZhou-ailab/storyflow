@@ -1,14 +1,20 @@
 /**
  * Source Storage
  *
- * CRUD operations for workspace-scoped sources.
- * Sources are stored at {workspaceRootPath}/sources/{sourceSlug}/
+ * input: Global/workspace source folders and source creation inputs
+ * output: Source CRUD, merged source discovery, guide loading, and icon persistence
+ * pos: Shared filesystem-backed storage layer for reusable data/tool sources
+ *
+ * CRUD operations for reusable sources.
+ * Global sources are stored at ~/.agents/sources/{sourceSlug}/
+ * Workspace sources are stored at {workspaceRootPath}/sources/{sourceSlug}/
  *
  * Note: All functions take `workspaceRootPath` (absolute path to workspace folder),
  * NOT a workspace slug. The `LoadedSource.workspaceId` is derived via basename().
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'fs';
+import { homedir } from 'os';
 import { join, basename } from 'path';
 import { randomUUID } from 'crypto';
 import type {
@@ -35,18 +41,32 @@ import {
 // Directory Utilities
 // ============================================================
 
-/**
- * Get path to a source folder within a workspace
- */
-export function getSourcePath(workspaceRootPath: string, sourceSlug: string): string {
-  return join(getWorkspaceSourcesPath(workspaceRootPath), sourceSlug);
+/** Global agent root directory: ~/.agents/ */
+export const GLOBAL_AGENT_ROOT_DIR = join(homedir(), '.agents');
+
+/** Global agent sources directory: ~/.agents/sources/ */
+export const GLOBAL_AGENT_SOURCES_DIR = join(GLOBAL_AGENT_ROOT_DIR, 'sources');
+
+type SourceDefinitionScope = 'global' | 'workspace';
+
+function getSourcesPathForRoot(rootPath: string): string {
+  return rootPath === GLOBAL_AGENT_ROOT_DIR
+    ? GLOBAL_AGENT_SOURCES_DIR
+    : getWorkspaceSourcesPath(rootPath);
 }
 
 /**
- * Ensure sources directory exists for a workspace
+ * Get path to a source folder within a workspace or global agents root.
+ */
+export function getSourcePath(workspaceRootPath: string, sourceSlug: string): string {
+  return join(getSourcesPathForRoot(workspaceRootPath), sourceSlug);
+}
+
+/**
+ * Ensure sources directory exists for a workspace or global agents root.
  */
 export function ensureSourcesDir(workspaceRootPath: string): void {
-  const dir = getWorkspaceSourcesPath(workspaceRootPath);
+  const dir = getSourcesPathForRoot(workspaceRootPath);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
@@ -121,7 +141,13 @@ export function saveSourceConfig(
     throw new Error(`Invalid source config: ${errorMessages}`);
   }
 
-  const dir = getSourcePath(workspaceRootPath, config.slug);
+  const targetRootPath = workspaceRootPath !== GLOBAL_AGENT_ROOT_DIR
+    && !existsSync(join(getSourcePath(workspaceRootPath, config.slug), 'config.json'))
+    && existsSync(join(getSourcePath(GLOBAL_AGENT_ROOT_DIR, config.slug), 'config.json'))
+    ? GLOBAL_AGENT_ROOT_DIR
+    : workspaceRootPath;
+
+  const dir = getSourcePath(targetRootPath, config.slug);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
@@ -300,45 +326,76 @@ export { isIconUrl } from '../utils/icon.ts';
  * @param sourceSlug - Source folder name
  */
 export function loadSource(workspaceRootPath: string, sourceSlug: string): LoadedSource | null {
-  const folderPath = getSourcePath(workspaceRootPath, sourceSlug);
-  const config = loadSourceConfig(workspaceRootPath, sourceSlug);
+  const workspaceSource = loadSourceFromRoot(workspaceRootPath, sourceSlug, 'workspace');
+  if (workspaceSource) return workspaceSource;
+  return loadSourceFromRoot(GLOBAL_AGENT_ROOT_DIR, sourceSlug, 'global', workspaceRootPath);
+}
+
+function loadSourceFromRoot(
+  sourceRootPath: string,
+  sourceSlug: string,
+  source: SourceDefinitionScope,
+  consumerWorkspaceRootPath = sourceRootPath
+): LoadedSource | null {
+  const folderPath = getSourcePath(sourceRootPath, sourceSlug);
+  const config = loadSourceConfig(sourceRootPath, sourceSlug);
   if (!config) return null;
 
-  // Extract workspace folder name for credential lookup
-  // Credentials are keyed by folder name (e.g., "046a02d0-..."), not full path
-  const workspaceId = basename(workspaceRootPath);
+  const workspaceId = source === 'global'
+    ? 'global'
+    : basename(consumerWorkspaceRootPath);
 
   // Pre-compute icon path for renderer (avoids fs access in browser)
   const iconPath = findIconFile(folderPath);
 
   return {
     config,
-    guide: loadSourceGuide(workspaceRootPath, sourceSlug),
+    guide: loadSourceGuide(sourceRootPath, sourceSlug),
     folderPath,
-    workspaceRootPath,
+    workspaceRootPath: sourceRootPath,
     workspaceId,
     iconPath,
+    source,
   };
 }
 
 /**
- * Load all sources for a workspace
+ * Load all user-configured sources visible in a workspace.
+ * Global sources are loaded first and workspace sources override matching slugs.
  */
 export function loadWorkspaceSources(workspaceRootPath: string): LoadedSource[] {
   ensureSourcesDir(workspaceRootPath);
+  ensureSourcesDir(GLOBAL_AGENT_ROOT_DIR);
 
+  const sourcesBySlug = new Map<string, LoadedSource>();
+
+  for (const source of loadSourcesFromRoot(GLOBAL_AGENT_ROOT_DIR, 'global', workspaceRootPath)) {
+    sourcesBySlug.set(source.config.slug, source);
+  }
+
+  for (const source of loadSourcesFromRoot(workspaceRootPath, 'workspace')) {
+    sourcesBySlug.set(source.config.slug, source);
+  }
+
+  return Array.from(sourcesBySlug.values());
+}
+
+function loadSourcesFromRoot(
+  sourceRootPath: string,
+  source: SourceDefinitionScope,
+  consumerWorkspaceRootPath = sourceRootPath
+): LoadedSource[] {
   const sources: LoadedSource[] = [];
-  const sourcesDir = getWorkspaceSourcesPath(workspaceRootPath);
-
+  const sourcesDir = getSourcesPathForRoot(sourceRootPath);
   if (!existsSync(sourcesDir)) return sources;
 
   const entries = readdirSync(sourcesDir, { withFileTypes: true });
 
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      const source = loadSource(workspaceRootPath, entry.name);
-      if (source) {
-        sources.push(source);
+      const loadedSource = loadSourceFromRoot(sourceRootPath, entry.name, source, consumerWorkspaceRootPath);
+      if (loadedSource) {
+        sources.push(loadedSource);
       }
     }
   }
@@ -434,7 +491,7 @@ export function generateSourceSlug(workspaceRootPath: string, name: string): str
   }
 
   // Check for existing slugs and append number if needed
-  const sourcesDir = getWorkspaceSourcesPath(workspaceRootPath);
+  const sourcesDir = getSourcesPathForRoot(workspaceRootPath);
   const existingSlugs = new Set<string>();
   if (existsSync(sourcesDir)) {
     const entries = readdirSync(sourcesDir, { withFileTypes: true });
@@ -459,13 +516,14 @@ export function generateSourceSlug(workspaceRootPath: string, name: string): str
 }
 
 /**
- * Create a new source in a workspace
+ * Create a new source globally by default.
  */
 export async function createSource(
-  workspaceRootPath: string,
+  _workspaceRootPath: string,
   input: CreateSourceInput
 ): Promise<FolderSourceConfig> {
-  const slug = generateSourceSlug(workspaceRootPath, input.name);
+  const sourceRootPath = GLOBAL_AGENT_ROOT_DIR;
+  const slug = generateSourceSlug(sourceRootPath, input.name);
   const now = Date.now();
 
   const config: FolderSourceConfig = {
@@ -509,11 +567,11 @@ export async function createSource(
   }
 
   // Save config first to create the directory
-  saveSourceConfig(workspaceRootPath, config);
+  saveSourceConfig(sourceRootPath, config);
 
   // If icon is a URL, download it immediately
   // (watcher will also handle this, but doing it here provides immediate feedback)
-  const sourcePath = getSourcePath(workspaceRootPath, slug);
+  const sourcePath = getSourcePath(sourceRootPath, slug);
   if (config.icon && isIconUrl(config.icon)) {
     const iconPath = await downloadIcon(sourcePath, config.icon, 'Sources');
     if (iconPath) {
@@ -531,7 +589,7 @@ export async function createSource(
         if (iconPath) {
           // Store the source URL for reference (not the cached path)
           config.icon = logoUrl;
-          saveSourceConfig(workspaceRootPath, config);
+          saveSourceConfig(sourceRootPath, config);
         }
       }
     }
@@ -549,16 +607,19 @@ export async function createSource(
 
 (Add context about this source)
 `;
-  saveSourceGuide(workspaceRootPath, slug, { raw: guideContent });
+  saveSourceGuide(sourceRootPath, slug, { raw: guideContent });
 
   return config;
 }
 
 /**
- * Delete a source from a workspace
+ * Delete a workspace source, falling back to a global source when no workspace override exists.
  */
 export function deleteSource(workspaceRootPath: string, sourceSlug: string): void {
-  const dir = getSourcePath(workspaceRootPath, sourceSlug);
+  const workspaceDir = getSourcePath(workspaceRootPath, sourceSlug);
+  const dir = existsSync(workspaceDir)
+    ? workspaceDir
+    : getSourcePath(GLOBAL_AGENT_ROOT_DIR, sourceSlug);
   if (existsSync(dir)) {
     rmSync(dir, { recursive: true });
   }
@@ -568,7 +629,8 @@ export function deleteSource(workspaceRootPath: string, sourceSlug: string): voi
  * Check if a source exists in a workspace
  */
 export function sourceExists(workspaceRootPath: string, sourceSlug: string): boolean {
-  return existsSync(join(getSourcePath(workspaceRootPath, sourceSlug), 'config.json'));
+  return existsSync(join(getSourcePath(workspaceRootPath, sourceSlug), 'config.json'))
+    || existsSync(join(getSourcePath(GLOBAL_AGENT_ROOT_DIR, sourceSlug), 'config.json'));
 }
 
 // ============================================================
@@ -583,4 +645,3 @@ export function sourceExists(workspaceRootPath: string, sourceSlug: string): boo
 // ============================================================
 
 export { parseGuideMarkdown };
-

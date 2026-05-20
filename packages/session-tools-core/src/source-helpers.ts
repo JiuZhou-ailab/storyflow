@@ -1,14 +1,22 @@
 /**
  * Session Tools Core - Source Helpers
  *
+ * input: Workspace roots, global agent source/skill folders, and resource slugs
+ * output: Resolved resource paths and lightweight config loading helpers
+ * pos: Filesystem helper layer for session tool handlers
+ *
  * Utilities for loading and working with source configurations.
  * These are standalone functions that don't depend on the full
  * packages/shared infrastructure.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync, openSync, readSync, closeSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { SourceConfig } from './types.ts';
+
+const GLOBAL_AGENT_ROOT_DIR = join(homedir(), '.agents');
+const GLOBAL_AGENT_SOURCES_DIR = join(GLOBAL_AGENT_ROOT_DIR, 'sources');
 
 /** Strip UTF-8 BOM that breaks JSON.parse */
 function stripBom(text: string): string {
@@ -19,7 +27,17 @@ function stripBom(text: string): string {
  * Get the path to a source's directory
  */
 export function getSourcePath(workspaceRootPath: string, sourceSlug: string): string {
-  return join(workspaceRootPath, 'sources', sourceSlug);
+  const workspaceSourcePath = join(workspaceRootPath, 'sources', sourceSlug);
+  if (existsSync(workspaceSourcePath)) {
+    return workspaceSourcePath;
+  }
+
+  const globalSourcePath = join(GLOBAL_AGENT_SOURCES_DIR, sourceSlug);
+  if (existsSync(globalSourcePath)) {
+    return globalSourcePath;
+  }
+
+  return workspaceSourcePath;
 }
 
 /**
@@ -77,21 +95,25 @@ export function loadSourceConfig(
  * List all source slugs in a workspace
  */
 export function listSourceSlugs(workspaceRootPath: string): string[] {
-  const sourcesDir = join(workspaceRootPath, 'sources');
+  const slugs = new Set<string>();
 
-  if (!existsSync(sourcesDir)) {
-    return [];
+  for (const sourcesDir of [GLOBAL_AGENT_SOURCES_DIR, join(workspaceRootPath, 'sources')]) {
+    if (!existsSync(sourcesDir)) continue;
+
+    try {
+      const entries = readdirSync(sourcesDir);
+      for (const entry of entries) {
+        const entryPath = join(sourcesDir, entry);
+        if (statSync(entryPath).isDirectory()) {
+          slugs.add(entry);
+        }
+      }
+    } catch {
+      continue;
+    }
   }
 
-  try {
-    const entries = readdirSync(sourcesDir);
-    return entries.filter((entry) => {
-      const entryPath = join(sourcesDir, entry);
-      return statSync(entryPath).isDirectory();
-    });
-  } catch {
-    return [];
-  }
+  return Array.from(slugs);
 }
 
 /**

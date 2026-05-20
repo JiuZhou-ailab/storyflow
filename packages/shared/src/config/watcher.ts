@@ -1,6 +1,10 @@
 /**
  * Config File Watcher
  *
+ * input: App, global agent, and workspace configuration file changes
+ * output: Debounced callbacks for config, sources, skills, permissions, themes, and metadata
+ * pos: Shared filesystem watch coordinator for live runtime configuration updates
+ *
  * Watches configuration files for changes and triggers callbacks.
  * Uses recursive directory watching for simplicity and reliability.
  *
@@ -9,6 +13,7 @@
  * - ~/.craft-agent/preferences.json - User preferences
  * - ~/.craft-agent/theme.json - App-level theme overrides
  * - ~/.craft-agent/themes/*.json - Preset theme files (app-level)
+ * - ~/.agents/sources/{slug}/config.json, guide.md, icon.* - Global agent sources
  * - ~/.agents/skills/{slug}/SKILL.md, icon.* - Global agent skills
  * - ~/.craft-agent/workspaces/{slug}/ - Workspace directory (recursive)
  *   - sources/{slug}/config.json, guide.md, permissions.json
@@ -40,6 +45,7 @@ import {
   loadSourceGuide,
   sourceNeedsIconDownload,
   downloadSourceIcon,
+  GLOBAL_AGENT_SOURCES_DIR,
 } from '../sources/storage.ts';
 import { permissionsConfigCache, getAppPermissionsDir } from '../agent/permissions-config.ts';
 import { getWorkspacePath, getWorkspaceSourcesPath, getWorkspaceSkillsPath } from '../workspaces/storage.ts';
@@ -279,6 +285,10 @@ export class ConfigWatcher {
     this.watchWorkspaceDir();
     span.mark('watchWorkspaceDir');
 
+    // Watch global agent sources directory
+    this.watchGlobalSourcesDir();
+    span.mark('watchGlobalSourcesDir');
+
     // Watch global agent skills directory
     this.watchGlobalSkillsDir();
     span.mark('watchGlobalSkillsDir');
@@ -441,6 +451,50 @@ export class ConfigWatcher {
     } catch (error) {
       debug('[ConfigWatcher] Error watching global skills directory:', error);
     }
+  }
+
+  /**
+   * Watch global agent sources (~/.agents/sources) so changes refresh every
+   * workspace's source sidebar and active source server configuration.
+   */
+  private watchGlobalSourcesDir(): void {
+    if (!existsSync(GLOBAL_AGENT_SOURCES_DIR)) {
+      mkdirSync(GLOBAL_AGENT_SOURCES_DIR, { recursive: true });
+    }
+
+    try {
+      const watcher = watch(GLOBAL_AGENT_SOURCES_DIR, { recursive: true }, (_eventType, filename) => {
+        if (!filename) return;
+
+        const normalizedPath = filename.replace(/\\/g, '/');
+        const parts = normalizedPath.split('/');
+        const file = parts[1];
+
+        if (
+          parts.length === 1
+          || file === 'config.json'
+          || file === 'guide.md'
+          || (file && /^icon\.(svg|png|jpg|jpeg)$/i.test(file))
+        ) {
+          this.debounce('global-sources', () => this.handleGlobalSourcesChange());
+        }
+      });
+
+      this.watchers.push(watcher);
+      debug('[ConfigWatcher] Watching global sources recursively:', GLOBAL_AGENT_SOURCES_DIR);
+    } catch (error) {
+      debug('[ConfigWatcher] Error watching global sources directory:', error);
+    }
+  }
+
+  /**
+   * Handle global source changes. Global sources are visible from every
+   * workspace unless a workspace source overrides the same slug.
+   */
+  private handleGlobalSourcesChange(): void {
+    debug('[ConfigWatcher] Global sources changed');
+    const allSources = loadWorkspaceSources(this.workspaceDir);
+    this.callbacks.onSourcesListChange?.(allSources);
   }
 
   /**
