@@ -58,6 +58,17 @@ describe('novel review workflow', () => {
     expect(getPendingChangedFilePaths([afterReload], status)).toEqual([])
   })
 
+  it('keeps accepted decisions stable across sessions for the same workspace change', () => {
+    const sessionAChange = change('session-a-activity', '/novel/chapter-1.md')
+    const sessionBChange = change('session-b-activity', '/novel/chapter-1.md')
+    const workspaceReviewStatus = {
+      [getNovelReviewChangeKey(sessionAChange)]: 'accepted' as const,
+    }
+
+    expect(getPendingChangesForFile([sessionBChange], workspaceReviewStatus, '/novel/chapter-1.md')).toEqual([])
+    expect(getPendingChangedFilePaths([sessionBChange], workspaceReviewStatus)).toEqual([])
+  })
+
   it('hydrates only terminal review decisions for the current change set', () => {
     const changes = [
       change('a', '/novel/chapter-1.md'),

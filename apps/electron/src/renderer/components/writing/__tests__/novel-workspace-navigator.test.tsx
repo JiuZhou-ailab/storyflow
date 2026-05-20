@@ -624,16 +624,23 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('novelDocumentDirty')
   })
 
-  it('persists novel review decisions by session so accepted changes stay accepted after reload', () => {
+  it('persists novel review decisions by workspace root so accepted changes stay accepted across sessions', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const localStorageSource = readFileSync(new URL('../../../lib/local-storage.ts', import.meta.url), 'utf-8')
+    const statusSource = appShellSource.slice(
+      appShellSource.indexOf('const [novelChangeReviewStatus'),
+      appShellSource.indexOf('const pendingNovelChangedFilePaths')
+    )
 
     expect(localStorageSource).toContain('novelChangeReviewStatus')
+    expect(localStorageSource).toContain('workspace-root-scoped via suffix')
     expect(appShellSource).toContain('parseNovelReviewStatusMap')
     expect(appShellSource).toContain('persistNovelChangeReviewStatus')
     expect(appShellSource).toContain('storage.KEYS.novelChangeReviewStatus')
-    expect(appShellSource).toContain('storage.get<Record<string, unknown>>(storage.KEYS.novelChangeReviewStatus')
-    expect(appShellSource).toContain('storage.set(storage.KEYS.novelChangeReviewStatus')
+    expect(statusSource).toContain('storage.get<Record<string, unknown>>(storage.KEYS.novelChangeReviewStatus, {}, novelWorkspaceRoot)')
+    expect(statusSource).toContain('storage.set(storage.KEYS.novelChangeReviewStatus, nextStatus, novelWorkspaceRoot)')
+    expect(statusSource).toContain('storage.set(storage.KEYS.novelChangeReviewStatus, normalizedStatus, novelWorkspaceRoot)')
+    expect(statusSource).not.toContain('effectiveSessionId')
   })
 
   it('normalizes agent file-change paths before matching them to selected writing files', () => {

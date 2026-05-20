@@ -2332,33 +2332,34 @@ function AppShellContent({
   const novelReviewUndoStackRef = React.useRef<NovelReviewUndoEntry[]>([])
 
   React.useEffect(() => {
-    if (!effectiveSessionId) {
+    if (!novelWorkspaceRoot) {
       setNovelChangeReviewStatus({})
       novelReviewUndoStackRef.current = []
       return
     }
 
-    const saved = storage.get<Record<string, unknown>>(storage.KEYS.novelChangeReviewStatus, {}, effectiveSessionId)
+    const saved = storage.get<Record<string, unknown>>(storage.KEYS.novelChangeReviewStatus, {}, novelWorkspaceRoot)
     setNovelChangeReviewStatus(parseNovelReviewStatusMap(saved))
-  }, [effectiveSessionId])
+    novelReviewUndoStackRef.current = []
+  }, [novelWorkspaceRoot])
 
   React.useEffect(() => {
-    if (!effectiveSessionId || reviewableNovelFileChanges.length === 0) return
+    if (!novelWorkspaceRoot || reviewableNovelFileChanges.length === 0) return
 
     setNovelChangeReviewStatus((current) => {
       const nextStatus = parseNovelReviewStatusMap(current, reviewableNovelFileChanges)
-      storage.set(storage.KEYS.novelChangeReviewStatus, nextStatus, effectiveSessionId)
+      storage.set(storage.KEYS.novelChangeReviewStatus, nextStatus, novelWorkspaceRoot)
       return nextStatus
     })
-  }, [effectiveSessionId, reviewableNovelFileChanges])
+  }, [novelWorkspaceRoot, reviewableNovelFileChanges])
 
   const persistNovelChangeReviewStatus = React.useCallback((nextStatus: NovelReviewStatusMap) => {
     const normalizedStatus = parseNovelReviewStatusMap(nextStatus, reviewableNovelFileChanges)
     setNovelChangeReviewStatus(normalizedStatus)
-    if (effectiveSessionId) {
-      storage.set(storage.KEYS.novelChangeReviewStatus, normalizedStatus, effectiveSessionId)
+    if (novelWorkspaceRoot) {
+      storage.set(storage.KEYS.novelChangeReviewStatus, normalizedStatus, novelWorkspaceRoot)
     }
-  }, [effectiveSessionId, reviewableNovelFileChanges])
+  }, [novelWorkspaceRoot, reviewableNovelFileChanges])
 
   const pushNovelReviewUndoEntry = React.useCallback((entry: NovelReviewUndoEntry | null | undefined) => {
     if (!entry || (entry.writes.length === 0 && Object.keys(entry.status).length === 0)) return
