@@ -57,10 +57,16 @@ Arguments:
   --script     Also upload install-app.sh (requires --upload)
 
 Environment variables (from .env or environment):
-  APPLE_SIGNING_IDENTITY    - Code signing identity
-  APPLE_ID                  - Apple ID for notarization
-  APPLE_TEAM_ID             - Apple Team ID
-  APPLE_APP_SPECIFIC_PASSWORD - App-specific password
+  CRAFT_REQUIRE_MAC_SIGNING - Set to 1 for official releases; fails fast if signing/notarization credentials are missing
+  CSC_LINK                  - Developer ID Application certificate, base64 or file path, for electron-builder signing
+  CSC_KEY_PASSWORD          - Password for CSC_LINK, if the certificate is password-protected
+  APPLE_API_KEY_BASE64      - Optional App Store Connect API private key as base64 text
+  APPLE_API_KEY_ID          - App Store Connect API key ID
+  APPLE_API_ISSUER          - App Store Connect API issuer ID
+  APPLE_ID                  - Apple ID for password-based notarization
+  APPLE_TEAM_ID             - Apple Team ID for password-based notarization
+  APPLE_APP_SPECIFIC_PASSWORD - App-specific password for password-based notarization
+  APPLE_SIGNING_IDENTITY    - Optional local keychain signing identity override
   S3_VERSIONS_BUCKET_*      - S3 credentials (for --upload)
 EOF
     exit 0
@@ -83,6 +89,114 @@ done
 
 # Configuration
 BUN_VERSION="bun-v1.3.9"  # Pinned version for reproducible builds
+
+require_env() {
+    local name="$1"
+    if [ -z "${!name:-}" ]; then
+        echo "ERROR: Missing required environment variable: $name"
+        exit 1
+    fi
+}
+
+has_apple_api_notarization_credentials() {
+    [ -n "${APPLE_API_KEY:-}" ] && [ -n "${APPLE_API_KEY_ID:-}" ] && [ -n "${APPLE_API_ISSUER:-}" ]
+}
+
+has_apple_password_notarization_credentials() {
+    [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]
+}
+
+should_enable_macos_release_signing() {
+    [ "${CRAFT_REQUIRE_MAC_SIGNING:-}" = "1" ] ||
+        [ -n "${APPLE_API_KEY_BASE64:-}" ] ||
+        has_apple_api_notarization_credentials ||
+        has_apple_password_notarization_credentials
+}
+
+prepare_apple_api_key() {
+    if [ -z "${APPLE_API_KEY_BASE64:-}" ]; then
+        return 0
+    fi
+
+    require_env APPLE_API_KEY_ID
+    require_env APPLE_API_ISSUER
+
+    local api_key_dir="$TEMP_DIR/craft-apple-api-key"
+
+    mkdir -p "$api_key_dir"
+    export APPLE_API_KEY="$api_key_dir/AuthKey_${APPLE_API_KEY_ID}.p8"
+    if ! printf '%s' "$APPLE_API_KEY_BASE64" | base64 --decode > "$APPLE_API_KEY" 2>/dev/null; then
+        printf '%s' "$APPLE_API_KEY_BASE64" | base64 -D > "$APPLE_API_KEY"
+    fi
+    chmod 600 "$APPLE_API_KEY"
+}
+
+select_notarization_credentials() {
+    if [ -n "${APPLE_API_KEY_BASE64:-}" ] || [ -n "${APPLE_API_KEY:-}" ]; then
+        require_env APPLE_API_KEY_ID
+        require_env APPLE_API_ISSUER
+        unset APPLE_ID
+        unset APPLE_APP_SPECIFIC_PASSWORD
+        unset APPLE_TEAM_ID
+        echo "Using App Store Connect Team API key notarization"
+        return 0
+    fi
+
+    if has_apple_password_notarization_credentials; then
+        echo "Using Apple ID app-specific password notarization"
+        return 0
+    fi
+
+    return 1
+}
+
+validate_macos_release_credentials() {
+    if [ "${CRAFT_REQUIRE_MAC_SIGNING:-}" != "1" ]; then
+        return 0
+    fi
+
+    require_env CSC_LINK
+
+    if ! select_notarization_credentials; then
+        cat <<'EOF'
+ERROR: Official macOS release builds require Apple notarization credentials.
+Set either:
+  APPLE_API_KEY_BASE64, APPLE_API_KEY_ID, APPLE_API_ISSUER (Team API key)
+or:
+  APPLE_ID, APPLE_TEAM_ID, APPLE_APP_SPECIFIC_PASSWORD
+EOF
+        exit 1
+    fi
+}
+
+verify_macos_release_artifacts() {
+    local app_path="$1"
+    local dmg_path="$2"
+    local zip_path="$3"
+
+    echo "Verifying Developer ID signature..."
+    codesign --verify --deep --strict --verbose=2 "$app_path"
+
+    echo "Verifying Gatekeeper assessment for app bundle..."
+    spctl --assess --type execute --verbose=4 "$app_path"
+
+    echo "Validating notarization staple for app bundle..."
+    xcrun stapler validate "$app_path"
+
+    if [ -f "$dmg_path" ]; then
+        echo "DMG artifact present: $dmg_path"
+    else
+        echo "ERROR: Expected DMG artifact not found at $dmg_path"
+        exit 1
+    fi
+
+    if [ -f "$zip_path" ]; then
+        echo "ZIP artifact present: $zip_path"
+    else
+        echo "ERROR: Expected ZIP artifact not found at $zip_path"
+        exit 1
+    fi
+}
 
 echo "=== Building Craft Agents DMG (${ARCH}) using electron-builder ==="
 if [ "$UPLOAD" = true ]; then
@@ -121,9 +235,12 @@ echo "Downloading Bun ${BUN_VERSION} for darwin-${ARCH}..."
 mkdir -p "$ELECTRON_DIR/vendor/bun"
 BUN_DOWNLOAD="bun-darwin-$([ "$ARCH" = "arm64" ] && echo "aarch64" || echo "x64")"
 
-# Create temp directory to avoid race conditions
+# Create temp directory to avoid race conditions and hold short-lived signing material
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
+
+prepare_apple_api_key
+validate_macos_release_credentials
 
 # Download binary and checksums
 curl "${CURL_FLAGS[@]}" "$(download_url "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/${BUN_DOWNLOAD}.zip")" -o "$TEMP_DIR/${BUN_DOWNLOAD}.zip"
@@ -240,6 +357,11 @@ export CSC_IDENTITY_AUTO_DISCOVERY=true
 
 # Build electron-builder arguments
 BUILDER_ARGS="--mac --${ARCH}"
+if should_enable_macos_release_signing; then
+    BUILDER_ARGS="$BUILDER_ARGS -c.mac.forceCodeSigning=true -c.mac.notarize=true"
+else
+    BUILDER_ARGS="$BUILDER_ARGS -c.mac.forceCodeSigning=false -c.mac.notarize=false"
+fi
 
 # Add code signing if identity is available
 if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
@@ -250,16 +372,11 @@ if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
 fi
 
 # Add notarization if all credentials are available
-if [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ]; then
+if should_enable_macos_release_signing; then
+    select_notarization_credentials
     echo "Notarization enabled"
-    export APPLE_ID="$APPLE_ID"
-    export APPLE_TEAM_ID="$APPLE_TEAM_ID"
-    export APPLE_APP_SPECIFIC_PASSWORD="$APPLE_APP_SPECIFIC_PASSWORD"
-
-    # Enable notarization in electron-builder by setting env vars
-    # The electron-builder.yml has notarize section commented out,
-    # but we can enable it via environment
-    export NOTARIZE=true
+else
+    echo "Notarization credentials not present; building a local unsigned macOS package."
 fi
 
 # Run electron-builder
@@ -277,9 +394,19 @@ if [ ! -f "$DMG_PATH" ]; then
     exit 1
 fi
 
+ZIP_NAME="Craft-Agents-${ARCH}.zip"
+ZIP_PATH="$ELECTRON_DIR/release/$ZIP_NAME"
+MAC_DIR="$([ "$ARCH" = "arm64" ] && echo "mac-arm64" || echo "mac")"
+APP_PATH="$ELECTRON_DIR/release/$MAC_DIR/Craft Agents.app"
+
+if [ "${CRAFT_REQUIRE_MAC_SIGNING:-}" = "1" ]; then
+    verify_macos_release_artifacts "$APP_PATH" "$DMG_PATH" "$ZIP_PATH"
+fi
+
 echo ""
 echo "=== Build Complete ==="
 echo "DMG: $ELECTRON_DIR/release/${DMG_NAME}"
+[ -f "$ZIP_PATH" ] && echo "ZIP: $ELECTRON_DIR/release/${ZIP_NAME}"
 echo "Size: $(du -h "$ELECTRON_DIR/release/${DMG_NAME}" | cut -f1)"
 
 # 9. Create manifest.json for upload script
