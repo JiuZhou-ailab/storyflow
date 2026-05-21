@@ -260,30 +260,21 @@ describe("createNovelProjectScaffold", () => {
     const brief = readFileSync(join(rootPath, "简报.md"), "utf-8");
     expect(brief).toContain("## 题材定位");
     expect(brief).toContain("## 核心钩子");
-    expect(brief).toContain("## 黄金三章留存设计");
-    expect(brief).toContain("### 第 1 章：拉新");
-    expect(brief).toContain("### 第 2 章：加压");
-    expect(brief).toContain("### 第 3 章：锁留存");
-    expect(brief).toContain("## 首章开篇引导");
-    expect(brief).toContain("章首题记 / 引文");
-    expect(brief).toContain("开场第一镜头");
-    expect(brief).toContain("前三段节奏");
-    expect(brief).toContain("## 密度与情绪选择");
-    expect(brief).toContain("小说密度");
-    expect(brief).toContain("事件密度");
-    expect(brief).toContain("情绪调动程度");
-    expect(brief).toContain("## 生动度执行标准");
-    expect(brief).toContain("高压开场");
-    expect(brief).toContain("连续阻断");
-    expect(brief).toContain("即时兑现");
-    expect(brief).toContain("章尾强悬念");
+    expect(brief).toContain("## 篇幅与生产约束");
+    expect(brief).toContain("## 待确认问题");
+    expect(brief).not.toContain("黄金三章");
+    expect(brief).not.toContain("章首题记");
+    expect(brief).not.toContain("前三段");
+    expect(brief).not.toContain("高压开场");
+    expect(brief).not.toContain("情绪账本");
 
     const outline = readFileSync(join(rootPath, "大纲.md"), "utf-8");
     expect(outline).toContain("## 全书弧线");
-    expect(outline).toContain("黄金三章");
     expect(outline).toContain("### 第 01 章");
-    expect(outline).toContain("章首题记 / 引文");
-    expect(outline).toContain("前三段推进");
+    expect(outline).toContain("章节目标");
+    expect(outline).not.toContain("黄金三章");
+    expect(outline).not.toContain("章首题记");
+    expect(outline).not.toContain("前三段");
 
     const characters = readFileSync(join(rootPath, "人物.md"), "utf-8");
     expect(characters).toContain("## 主角");
@@ -293,15 +284,13 @@ describe("createNovelProjectScaffold", () => {
 
     const requirements = readFileSync(join(rootPath, "创作要求.md"), "utf-8");
     expect(requirements).toContain("# 创作要求");
-    expect(requirements).toContain("## 默认密度偏好");
-    expect(requirements).toContain("小说密度");
-    expect(requirements).toContain("事件密度");
-    expect(requirements).toContain("情绪调动程度");
-    expect(requirements).toContain("## 生动度底线");
-    expect(requirements).toContain("## 首章头部");
-    expect(requirements).toContain("题记 / 引文");
-    expect(requirements).toContain("场景可视化");
-    expect(requirements).toContain("情绪账本");
+    expect(requirements).toContain("## 读者与题材偏好");
+    expect(requirements).toContain("## 叙事风格偏好");
+    expect(requirements).toContain("## 内容边界");
+    expect(requirements).not.toContain("小说密度");
+    expect(requirements).not.toContain("高压开场");
+    expect(requirements).not.toContain("题记 / 引文");
+    expect(requirements).not.toContain("情绪账本");
 
     const agents = readFileSync(join(rootPath, "AGENTS.md"), "utf-8");
     expect(agents).toContain("short-form.article");
