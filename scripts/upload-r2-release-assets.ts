@@ -42,7 +42,7 @@ function usage(): string {
     "Optional environment:",
     "  STORYFLOW_R2_LATEST_PREFIX=latest",
     "  STORYFLOW_R2_RELEASE_PREFIX=releases",
-    "  STORYFLOW_R2_PUBLIC_BASE_URL=https://download.storyflow.ai",
+    "  STORYFLOW_R2_PUBLIC_BASE_URL=https://story.zjding.com",
   ].join("\n");
 }
 
@@ -137,7 +137,7 @@ async function main(): Promise<void> {
   const latestPrefix = normalizePrefix(process.env.STORYFLOW_R2_LATEST_PREFIX ?? "latest");
   const releasePrefix = normalizePrefix(process.env.STORYFLOW_R2_RELEASE_PREFIX ?? "releases");
   const publicBaseUrl = normalizeBaseUrl(
-    process.env.STORYFLOW_R2_PUBLIC_BASE_URL ?? "https://download.storyflow.ai",
+    process.env.STORYFLOW_R2_PUBLIC_BASE_URL ?? "https://story.zjding.com",
   );
 
   const allFiles = readdirSync(options.assetsDir)

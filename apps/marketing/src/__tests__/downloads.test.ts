@@ -14,7 +14,7 @@ import {
 
 describe("downloadOptions", () => {
   test("points every installer at the public R2 release assets with Chinese labels", () => {
-    expect(defaultDownloadBaseUrl).toBe("https://download.storyflow.ai/latest");
+    expect(defaultDownloadBaseUrl).toBe("https://story.zjding.com/latest");
     expect(downloadBaseUrl).toBe(defaultDownloadBaseUrl);
 
     expect(downloadOptions).toEqual(

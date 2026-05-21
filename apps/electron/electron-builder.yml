@@ -80,7 +80,7 @@ extraMetadata:
 # Auto-update: electron-updater fetches public manifests from Cloudflare R2.
 publish:
   provider: generic
-  url: https://download.storyflow.ai/latest
+  url: https://story.zjding.com/latest
 
 # Disable ASAR to avoid decompression overhead and click delays
 asar: false

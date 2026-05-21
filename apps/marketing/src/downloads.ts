@@ -11,7 +11,7 @@ export type DownloadOption = {
   href: string;
 };
 
-export const defaultDownloadBaseUrl = "https://download.storyflow.ai/latest";
+export const defaultDownloadBaseUrl = "https://story.zjding.com/latest";
 
 type ViteImportMeta = ImportMeta & {
   env?: {

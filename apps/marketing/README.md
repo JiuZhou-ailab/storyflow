@@ -4,7 +4,7 @@ Storyflow public landing page and release-download entry.
 
 ## Downloads
 
-Download buttons point at `https://download.storyflow.ai/latest` by default. Override the
+Download buttons point at `https://story.zjding.com/latest` by default. Override the
 base URL at build time with `VITE_STORYFLOW_DOWNLOAD_BASE_URL` when testing another R2
 custom domain or prefix.
 

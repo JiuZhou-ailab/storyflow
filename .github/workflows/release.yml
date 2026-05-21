@@ -351,7 +351,7 @@ jobs:
           STORYFLOW_R2_ENDPOINT: ${{ secrets.STORYFLOW_R2_ENDPOINT }}
           STORYFLOW_R2_ACCESS_KEY_ID: ${{ secrets.STORYFLOW_R2_ACCESS_KEY_ID }}
           STORYFLOW_R2_SECRET_ACCESS_KEY: ${{ secrets.STORYFLOW_R2_SECRET_ACCESS_KEY }}
-          STORYFLOW_R2_PUBLIC_BASE_URL: ${{ vars.STORYFLOW_R2_PUBLIC_BASE_URL || 'https://download.storyflow.ai' }}
+          STORYFLOW_R2_PUBLIC_BASE_URL: ${{ vars.STORYFLOW_R2_PUBLIC_BASE_URL || 'https://story.zjding.com' }}
           STORYFLOW_R2_LATEST_PREFIX: ${{ vars.STORYFLOW_R2_LATEST_PREFIX || 'latest' }}
           STORYFLOW_R2_RELEASE_PREFIX: ${{ vars.STORYFLOW_R2_RELEASE_PREFIX || 'releases' }}
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}

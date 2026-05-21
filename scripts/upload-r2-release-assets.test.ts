@@ -42,7 +42,7 @@ function runUpload(args: string[], assetsDir: string) {
       STORYFLOW_R2_ENDPOINT: "https://account-id.r2.cloudflarestorage.com",
       STORYFLOW_R2_ACCESS_KEY_ID: "test-access-key",
       STORYFLOW_R2_SECRET_ACCESS_KEY: "test-secret-key",
-      STORYFLOW_R2_PUBLIC_BASE_URL: "https://download.storyflow.ai",
+      STORYFLOW_R2_PUBLIC_BASE_URL: "https://story.zjding.com",
     },
   });
 }
@@ -54,10 +54,10 @@ describe("upload-r2-release-assets", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      "https://download.storyflow.ai/releases/v0.9.12/Storyflow-arm64.dmg",
+      "https://story.zjding.com/releases/v0.9.12/Storyflow-arm64.dmg",
     );
-    expect(result.stdout).toContain("https://download.storyflow.ai/latest/Storyflow-arm64.dmg");
-    expect(result.stdout).toContain("https://download.storyflow.ai/latest/latest-mac.yml");
+    expect(result.stdout).toContain("https://story.zjding.com/latest/Storyflow-arm64.dmg");
+    expect(result.stdout).toContain("https://story.zjding.com/latest/latest-mac.yml");
     expect(result.stdout).toContain("Published 9 asset(s)");
   });
 

@@ -86,12 +86,12 @@ describe('macOS release configuration', () => {
     const windowsInstallScript = readRepoFile('scripts/install-app.ps1');
 
     expect(builderConfig).toContain('provider: generic');
-    expect(builderConfig).toContain('url: https://download.storyflow.ai/latest');
+    expect(builderConfig).toContain('url: https://story.zjding.com/latest');
     expect(autoUpdate).toContain('public R2 download');
     expect(installScript).toContain(
-      'RELEASE_DOWNLOAD_URL="${STORYFLOW_DOWNLOAD_BASE_URL:-https://download.storyflow.ai/latest}"',
+      'RELEASE_DOWNLOAD_URL="${STORYFLOW_DOWNLOAD_BASE_URL:-https://story.zjding.com/latest}"',
     );
-    expect(windowsInstallScript).toContain('https://download.storyflow.ai/latest');
+    expect(windowsInstallScript).toContain('https://story.zjding.com/latest');
     expect(builderConfig).not.toContain('craft-agents-oss/releases/latest/download');
     expect(installScript).not.toContain('craft-agents-oss/releases/latest/download');
   });
