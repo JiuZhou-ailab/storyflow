@@ -12,12 +12,6 @@ import { PERMISSION_MODE_CONFIG } from '../agent/mode-types.ts';
 import { FEATURE_FLAGS } from '../feature-flags.ts';
 import { APP_VERSION } from '../version/index.ts';
 import { readPluginName } from '../utils/workspace.ts';
-import { detectWritingProject } from '../writing/manifest.ts';
-import {
-  buildMethodPackPeriodicReminderContext,
-  buildMethodPackRuntimeContext,
-  getBuiltInMethodPack,
-} from '../writing/method-packs/index.ts';
 import { globSync } from 'glob';
 import os from 'os';
 
@@ -293,51 +287,19 @@ ${fileList}
 }
 
 /**
- * Get the active writing Method Pack runtime context.
- *
- * This is intentionally system-prompt injected instead of relying on AGENTS.md or
- * CLAUDE.md discovery, because selected Method Pack identity and routing should
- * behave like stable runtime context for the whole session.
+ * Work Profiles are product metadata for scaffold, validation, repair, and
+ * migration. Agent-readable runtime instructions belong in AGENTS.md and
+ * workspace skills, so profile metadata is not injected into system prompts.
  */
-export function getMethodPackRuntimePrompt(workingDirectory?: string): string {
-  if (!workingDirectory) {
-    return '';
-  }
-
-  const writingProject = detectWritingProject(workingDirectory);
-  const methodPackId = writingProject?.manifest.methodPack?.id;
-  if (!methodPackId) {
-    return '';
-  }
-
-  const methodPack = getBuiltInMethodPack(methodPackId);
-  if (!methodPack) {
-    return '';
-  }
-
-  return `\n\n${buildMethodPackRuntimeContext(methodPack)}`;
+export function getMethodPackRuntimePrompt(_workingDirectory?: string): string {
+  return '';
 }
 
 export function getMethodPackPeriodicReminderPrompt(
-  workingDirectory: string | undefined,
-  userIteration: number | undefined,
+  _workingDirectory: string | undefined,
+  _userIteration: number | undefined,
 ): string {
-  if (!workingDirectory) {
-    return '';
-  }
-
-  const writingProject = detectWritingProject(workingDirectory);
-  const methodPackId = writingProject?.manifest.methodPack?.id;
-  if (!methodPackId) {
-    return '';
-  }
-
-  const methodPack = getBuiltInMethodPack(methodPackId);
-  if (!methodPack) {
-    return '';
-  }
-
-  return buildMethodPackPeriodicReminderContext(methodPack, userIteration);
+  return '';
 }
 
 /** Options for getSystemPrompt */

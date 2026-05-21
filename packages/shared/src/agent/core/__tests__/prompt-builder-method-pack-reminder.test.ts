@@ -33,27 +33,19 @@ function createBuilder(rootPath: string): PromptBuilder {
   })
 }
 
-describe('PromptBuilder method pack periodic reminders', () => {
-  it('injects short-form method-pack reminders on the configured user-message cadence', () => {
-    const rootPath = mkdtempSync(join(tmpdir(), 'craft-method-reminder-'))
+describe('PromptBuilder writing profile context', () => {
+  it('does not inject method-pack periodic reminders', () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'craft-profile-reminder-'))
     createNovelProjectScaffold(rootPath, {
       title: 'Short Form Reminder',
       methodPackId: 'short-form.article',
     })
     const builder = createBuilder(rootPath)
 
-    const firstTurn = builder.buildContextParts({ userIteration: 1 }).join('\n\n')
     const secondTurn = builder.buildContextParts({ userIteration: 2 }).join('\n\n')
-    const thirdTurn = builder.buildContextParts({ userIteration: 3 }).join('\n\n')
     const fourthTurn = builder.buildContextParts({ userIteration: 4 }).join('\n\n')
 
-    expect(firstTurn).not.toContain('<method_pack_periodic_reminder')
-    expect(secondTurn).toContain('<method_pack_periodic_reminder id="short-form.article"')
-    expect(secondTurn).toContain('iteration="2"')
-    expect(secondTurn).toContain('interval="2"')
-    expect(secondTurn).toContain('user messages')
-    expect(secondTurn).toContain('人物动机')
-    expect(thirdTurn).not.toContain('<method_pack_periodic_reminder')
-    expect(fourthTurn).toContain('<method_pack_periodic_reminder id="short-form.article"')
+    expect(secondTurn).not.toContain('<method_pack_periodic_reminder')
+    expect(fourthTurn).not.toContain('<method_pack_periodic_reminder')
   })
 })

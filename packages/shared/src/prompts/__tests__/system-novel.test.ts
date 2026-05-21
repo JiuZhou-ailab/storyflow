@@ -54,11 +54,11 @@ describe('novel system prompt preset', () => {
     )).toBe(getMiniAgentSystemPrompt('/tmp/workspace'))
   })
 
-  it('injects the selected Method Pack agent runtime from the writing manifest', () => {
-    const rootPath = mkdtempSync(join(tmpdir(), 'craft-method-runtime-'))
+  it('does not inject Method Pack runtime prompts from the writing manifest', () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'craft-profile-runtime-'))
     createNovelProjectScaffold(rootPath, {
-      title: 'Web Fiction Runtime',
-      methodPackId: 'novel.oh-story',
+      title: 'Short Profile Runtime',
+      methodPackId: 'short-form.article',
     })
 
     const prompt = getSystemPrompt(
@@ -71,12 +71,9 @@ describe('novel system prompt preset', () => {
       false
     )
 
-    expect(prompt).toContain('<method_pack_runtime id="novel.oh-story"')
-    expect(prompt).toContain('Oh Story')
-    expect(prompt).toContain('Default Skill')
-    expect(prompt).toContain('story')
-    expect(prompt).toContain('Artifact Contract')
-    expect(prompt).toContain('Skill Routing')
-    expect(prompt).toContain('Do not draft directly')
+    expect(prompt).not.toContain('<method_pack_runtime')
+    expect(prompt).not.toContain('method_pack_periodic_reminder')
+    expect(prompt).not.toContain('首章入场坡道')
+    expect(prompt).toContain('Novel Writing Workspace')
   })
 })
