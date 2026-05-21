@@ -53,12 +53,15 @@ describe('macOS release configuration', () => {
     expect(workflow).toContain('missing+=("Missing $name")');
     expect(workflow).toMatch(/create-release:\n\s+needs:\n\s+- validate\n\s+- preflight-release-secrets/);
     expect(workflow).toContain('CRAFT_REQUIRE_MAC_SIGNING: "1"');
+    expect(workflow).toContain('timeout-minutes: 90');
     expect(workflow).toContain('CSC_LINK: ${{ secrets.CSC_LINK }}');
     expect(workflow).toContain('CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}');
     expect(workflow).toContain('APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}');
     expect(workflow).toContain('APPLE_ID: ${{ secrets.APPLE_ID }}');
     expect(workflow).toContain('APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}');
     expect(workflow).toContain('APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}');
+    expect(workflow).toContain('CRAFT_MACOS_NOTARIZE_ATTEMPTS: "3"');
+    expect(workflow).toContain('CRAFT_MACOS_NOTARIZE_RETRY_DELAY_SECONDS: "60"');
     expect(workflow).toContain('CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}');
     expect(workflow).toContain('CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}');
     expect(workflow).not.toContain('STORYFLOW_R2_ACCESS_KEY_ID');
@@ -104,6 +107,8 @@ describe('macOS release configuration', () => {
 
     expect(buildScript).toContain('validate_macos_release_credentials');
     expect(buildScript).toContain('verify_macos_release_artifacts');
+    expect(buildScript).toContain('run_electron_builder_with_retries');
+    expect(buildScript).toContain('Apple notarization can return transient timeouts');
     expect(buildScript).toContain('-c.mac.forceCodeSigning=true -c.mac.notarize=true');
     expect(buildScript).toContain('select_notarization_credentials');
     expect(buildScript).toContain('unset APPLE_ID');

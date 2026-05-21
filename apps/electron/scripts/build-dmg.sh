@@ -198,6 +198,29 @@ verify_macos_release_artifacts() {
     fi
 }
 
+run_electron_builder_with_retries() {
+    local max_attempts="${CRAFT_MACOS_NOTARIZE_ATTEMPTS:-3}"
+    local retry_delay_seconds="${CRAFT_MACOS_NOTARIZE_RETRY_DELAY_SECONDS:-60}"
+    local attempt=1
+    local status=0
+
+    while true; do
+        echo "electron-builder attempt ${attempt} of ${max_attempts}..."
+        if npx electron-builder $BUILDER_ARGS; then
+            return 0
+        fi
+
+        status=$?
+        if ! should_enable_macos_release_signing || [ "$attempt" -ge "$max_attempts" ]; then
+            return "$status"
+        fi
+
+        echo "electron-builder failed during signed macOS packaging; retrying after ${retry_delay_seconds}s because Apple notarization can return transient timeouts."
+        sleep "$retry_delay_seconds"
+        attempt=$((attempt + 1))
+    done
+}
+
 echo "=== Building Storyflow DMG (${ARCH}) using electron-builder ==="
 if [ "$UPLOAD" = true ]; then
     echo "Will upload to S3 after build"
@@ -379,8 +402,10 @@ else
     echo "Notarization credentials not present; building a local unsigned macOS package."
 fi
 
-# Run electron-builder
-npx electron-builder $BUILDER_ARGS
+# Run electron-builder. Official release builds include Apple notarization, which
+# can intermittently return NSURLErrorDomain timeouts while the submission keeps
+# processing server-side.
+run_electron_builder_with_retries
 
 # 8. Verify the DMG was built
 # electron-builder.yml uses artifactName to output: Storyflow-${arch}.dmg
