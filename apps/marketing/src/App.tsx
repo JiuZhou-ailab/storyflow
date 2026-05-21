@@ -10,7 +10,6 @@ import {
   Download,
   FileText,
   GitBranch,
-  Github,
   Layers3,
   MessagesSquare,
   PenLine,
@@ -18,7 +17,7 @@ import {
   Sparkles,
 } from "lucide-react";
 
-import { downloadOptions, latestReleaseUrl, repositoryUrl } from "./downloads";
+import { downloadBaseUrl, downloadOptions, updateManifestUrls } from "./downloads";
 
 const capabilities = [
   {
@@ -156,8 +155,8 @@ export function App() {
         </a>
         <nav aria-label="主导航">
           <a href="#workspace">工作区</a>
+          <a href="#flow">工作流</a>
           <a href="#downloads">下载</a>
-          <a href={repositoryUrl}>GitHub</a>
         </nav>
       </header>
 
@@ -178,8 +177,8 @@ export function App() {
                 下载 Storyflow
                 <ArrowRight size={18} />
               </a>
-              <a className="secondary-action" href={latestReleaseUrl}>
-                查看发布版本
+              <a className="secondary-action" href={updateManifestUrls.macOS}>
+                查看更新清单
                 <ChevronRight size={17} />
               </a>
             </div>
@@ -192,7 +191,7 @@ export function App() {
             macOS 签名发布链路
           </span>
           <span>Apple Silicon 与 Intel 双架构</span>
-          <span>GitHub Releases 自动更新</span>
+          <span>公开下载与自动更新</span>
         </section>
 
         <section className="section-block" id="workspace">
@@ -214,7 +213,7 @@ export function App() {
           </div>
         </section>
 
-        <section className="flow-section">
+        <section className="flow-section" id="flow">
           <div className="flow-copy">
             <div className="section-kicker">工作流</div>
             <h2>为 AI 时代仍需要判断力的部分而设计。</h2>
@@ -254,13 +253,17 @@ export function App() {
           </div>
           <DownloadButtons compact />
           <div className="release-links">
-            <a href={latestReleaseUrl}>
-              最新发布
+            <a href={downloadBaseUrl}>
+              完整下载列表
               <ChevronRight size={16} />
             </a>
-            <a href={repositoryUrl}>
-              <Github size={16} />
-              源代码
+            <a href={updateManifestUrls.macOS}>
+              macOS 更新清单
+              <ChevronRight size={16} />
+            </a>
+            <a href={updateManifestUrls.Windows}>
+              Windows 更新清单
+              <ChevronRight size={16} />
             </a>
           </div>
         </section>
@@ -274,9 +277,9 @@ export function App() {
         <p>
           为创作者、开发者和团队准备的桌面 AI 工作区。需要的是可审阅、可编辑、可落地的产出，而不是一次性聊天。
         </p>
-        <a href={repositoryUrl}>
+        <a href={downloadBaseUrl}>
           <PenLine size={16} />
-          开源仓库
+          下载目录
         </a>
       </footer>
     </div>

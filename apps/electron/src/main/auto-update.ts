@@ -2,8 +2,8 @@
  * Auto-update module using electron-updater
  *
  * Handles checking for updates, downloading, and installing via the standard
- * electron-updater library. Updates are served from this fork's GitHub Releases
- * using the generic provider (YAML manifests + release assets).
+ * electron-updater library. Updates are served from the public R2 download
+ * endpoint using the generic provider (YAML manifests + release assets).
  *
  * Platform behavior:
  * - macOS: Downloads zip, extracts and swaps app bundle atomically

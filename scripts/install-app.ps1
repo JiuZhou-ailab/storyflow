@@ -1,10 +1,10 @@
 # Storyflow Windows Installer
-# Usage: irm https://github.com/JiuZhou-ailab/craft-agents-oss/releases/latest/download/install-app.ps1 | iex
+# Usage: irm https://download.storyflow.ai/latest/install-app.ps1 | iex
 
 & {
 $ErrorActionPreference = "Stop"
 
-$RELEASE_DOWNLOAD_URL = "https://github.com/JiuZhou-ailab/craft-agents-oss/releases/latest/download"
+$RELEASE_DOWNLOAD_URL = if ($env:STORYFLOW_DOWNLOAD_BASE_URL) { $env:STORYFLOW_DOWNLOAD_BASE_URL } else { "https://download.storyflow.ai/latest" }
 $DOWNLOAD_DIR = "$env:TEMP\storyflow-install"
 $APP_NAME = "Storyflow"
 

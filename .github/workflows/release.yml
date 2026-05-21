@@ -50,7 +50,7 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Verify macOS release secrets
+      - name: Verify release secrets
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
@@ -59,6 +59,10 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          STORYFLOW_R2_BUCKET: ${{ secrets.STORYFLOW_R2_BUCKET }}
+          STORYFLOW_R2_ENDPOINT: ${{ secrets.STORYFLOW_R2_ENDPOINT }}
+          STORYFLOW_R2_ACCESS_KEY_ID: ${{ secrets.STORYFLOW_R2_ACCESS_KEY_ID }}
+          STORYFLOW_R2_SECRET_ACCESS_KEY: ${{ secrets.STORYFLOW_R2_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
 
@@ -80,6 +84,12 @@ jobs:
           if [ "$has_api_key" != true ] && [ "$has_password" != true ]; then
             missing+=("Missing Apple notarization credentials")
           fi
+
+          for name in STORYFLOW_R2_BUCKET STORYFLOW_R2_ENDPOINT STORYFLOW_R2_ACCESS_KEY_ID STORYFLOW_R2_SECRET_ACCESS_KEY; do
+            if [ -z "${!name}" ]; then
+              missing+=("Missing $name")
+            fi
+          done
 
           if [ ${#missing[@]} -gt 0 ]; then
             printf '%s\n' "${missing[@]}"
@@ -302,3 +312,47 @@ jobs:
           echo "$asset_names" | grep -E '^latest\.yml$'
           echo "$asset_names" | grep -E '^install-app\.sh$'
           echo "$asset_names" | grep -E '^install-app\.ps1$'
+
+  publish-r2:
+    needs: verify-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.10"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download release assets
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p .release-assets
+          gh release download "$RELEASE_TAG" --dir .release-assets
+          ls -lah .release-assets
+
+      - name: Publish release assets to Cloudflare R2
+        env:
+          STORYFLOW_R2_BUCKET: ${{ secrets.STORYFLOW_R2_BUCKET }}
+          STORYFLOW_R2_ENDPOINT: ${{ secrets.STORYFLOW_R2_ENDPOINT }}
+          STORYFLOW_R2_ACCESS_KEY_ID: ${{ secrets.STORYFLOW_R2_ACCESS_KEY_ID }}
+          STORYFLOW_R2_SECRET_ACCESS_KEY: ${{ secrets.STORYFLOW_R2_SECRET_ACCESS_KEY }}
+          STORYFLOW_R2_PUBLIC_BASE_URL: ${{ vars.STORYFLOW_R2_PUBLIC_BASE_URL || 'https://download.storyflow.ai' }}
+          STORYFLOW_R2_LATEST_PREFIX: ${{ vars.STORYFLOW_R2_LATEST_PREFIX || 'latest' }}
+          STORYFLOW_R2_RELEASE_PREFIX: ${{ vars.STORYFLOW_R2_RELEASE_PREFIX || 'releases' }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: bun run release:upload-r2 -- --tag="$RELEASE_TAG" --assets-dir=.release-assets

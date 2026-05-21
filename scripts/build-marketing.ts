@@ -12,6 +12,7 @@ const assetsDir = join(distDir, "assets");
 const entrypoint = join(appDir, "src", "main.tsx");
 const htmlPath = join(appDir, "index.html");
 const faviconPath = join(appDir, "favicon.svg");
+const downloadBaseUrl = process.env.VITE_STORYFLOW_DOWNLOAD_BASE_URL ?? "";
 
 if (!existsSync(entrypoint)) {
   throw new Error(`Missing marketing entrypoint: ${relative(rootDir, entrypoint)}`);
@@ -25,6 +26,11 @@ const result = await Bun.build({
   outdir: assetsDir,
   target: "browser",
   format: "esm",
+  define: {
+    "import.meta.env": JSON.stringify({
+      VITE_STORYFLOW_DOWNLOAD_BASE_URL: downloadBaseUrl,
+    }),
+  },
   minify: true,
   sourcemap: "external",
   splitting: true,

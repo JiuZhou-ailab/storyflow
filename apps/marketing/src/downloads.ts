@@ -1,4 +1,4 @@
-// input: Public GitHub release naming contract
+// input: Public R2 release naming contract
 // output: Typed download options for the Storyflow landing page
 // pos: Single source of truth for public installer links
 
@@ -11,9 +11,29 @@ export type DownloadOption = {
   href: string;
 };
 
-export const repositoryUrl = "https://github.com/JiuZhou-ailab/craft-agents-oss";
+export const defaultDownloadBaseUrl = "https://download.storyflow.ai/latest";
 
-export const latestReleaseUrl = `${repositoryUrl}/releases/latest`;
+type ViteImportMeta = ImportMeta & {
+  env?: {
+    VITE_STORYFLOW_DOWNLOAD_BASE_URL?: string;
+  };
+};
+
+export function normalizeDownloadBaseUrl(value: string): string {
+  const trimmed = value.trim().replace(/\/+$/, "");
+  return trimmed || defaultDownloadBaseUrl;
+}
+
+const configuredDownloadBaseUrl =
+  ((import.meta as ViteImportMeta).env?.VITE_STORYFLOW_DOWNLOAD_BASE_URL ?? "").trim();
+
+export const downloadBaseUrl = normalizeDownloadBaseUrl(
+  configuredDownloadBaseUrl || defaultDownloadBaseUrl,
+);
+
+function buildDownloadUrl(fileName: string): string {
+  return `${downloadBaseUrl}/${fileName}`;
+}
 
 export const downloadOptions: DownloadOption[] = [
   {
@@ -22,7 +42,7 @@ export const downloadOptions: DownloadOption[] = [
     platform: "macOS",
     detail: "适用于 M 系列 Mac",
     fileName: "Storyflow-arm64.dmg",
-    href: `${latestReleaseUrl}/download/Storyflow-arm64.dmg`,
+    href: buildDownloadUrl("Storyflow-arm64.dmg"),
   },
   {
     id: "mac-x64",
@@ -30,7 +50,7 @@ export const downloadOptions: DownloadOption[] = [
     platform: "macOS",
     detail: "适用于 Intel Mac",
     fileName: "Storyflow-x64.dmg",
-    href: `${latestReleaseUrl}/download/Storyflow-x64.dmg`,
+    href: buildDownloadUrl("Storyflow-x64.dmg"),
   },
   {
     id: "windows-x64",
@@ -38,6 +58,11 @@ export const downloadOptions: DownloadOption[] = [
     platform: "Windows",
     detail: "适用于 Windows x64",
     fileName: "Storyflow-x64.exe",
-    href: `${latestReleaseUrl}/download/Storyflow-x64.exe`,
+    href: buildDownloadUrl("Storyflow-x64.exe"),
   },
 ];
+
+export const updateManifestUrls = {
+  macOS: buildDownloadUrl("latest-mac.yml"),
+  Windows: buildDownloadUrl("latest.yml"),
+} as const;

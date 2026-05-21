@@ -92,6 +92,7 @@
     "marketing:dev": "vite dev --config apps/marketing/vite.config.ts",
     "marketing:build": "bun run scripts/build-marketing.ts",
     "marketing:preview": "vite preview --config apps/marketing/vite.config.ts",
+    "release:upload-r2": "bun run scripts/upload-r2-release-assets.ts",
     "docs:dev": "cd apps/online-docs && npm install && npx mintlify dev",
     "build": "bun run scripts/build.ts",
     "release": "bun run scripts/release.ts",

@@ -5,7 +5,7 @@
 
 set -e
 
-RELEASE_DOWNLOAD_URL="https://github.com/JiuZhou-ailab/craft-agents-oss/releases/latest/download"
+RELEASE_DOWNLOAD_URL="${STORYFLOW_DOWNLOAD_BASE_URL:-https://download.storyflow.ai/latest}"
 DOWNLOAD_DIR="$HOME/.craft-agent/downloads"
 MIN_MACOS_VERSION="12.0"
 

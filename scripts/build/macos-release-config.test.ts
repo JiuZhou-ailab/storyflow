@@ -40,13 +40,17 @@ describe('macOS release configuration', () => {
     expect(builderConfig).toMatch(/target:\n\s+- dmg\n\s+- zip/);
   });
 
-  test('injects Apple signing and notarization credentials into the release workflow', () => {
+  test('injects Apple signing, notarization, and R2 credentials into the release workflow', () => {
     const workflow = readRepoFile('.github/workflows/release.yml');
 
     expect(workflow).toContain('preflight-release-secrets:');
-    expect(workflow).toContain('Verify macOS release secrets');
+    expect(workflow).toContain('Verify release secrets');
     expect(workflow).toContain('Missing CSC_LINK');
     expect(workflow).toContain('Missing Apple notarization credentials');
+    expect(workflow).toContain(
+      'for name in STORYFLOW_R2_BUCKET STORYFLOW_R2_ENDPOINT STORYFLOW_R2_ACCESS_KEY_ID STORYFLOW_R2_SECRET_ACCESS_KEY',
+    );
+    expect(workflow).toContain('missing+=("Missing $name")');
     expect(workflow).toMatch(/create-release:\n\s+needs:\n\s+- validate\n\s+- preflight-release-secrets/);
     expect(workflow).toContain('CRAFT_REQUIRE_MAC_SIGNING: "1"');
     expect(workflow).toContain('CSC_LINK: ${{ secrets.CSC_LINK }}');
@@ -55,6 +59,9 @@ describe('macOS release configuration', () => {
     expect(workflow).toContain('APPLE_ID: ${{ secrets.APPLE_ID }}');
     expect(workflow).toContain('APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}');
     expect(workflow).toContain('APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}');
+    expect(workflow).toContain('STORYFLOW_R2_ENDPOINT: ${{ secrets.STORYFLOW_R2_ENDPOINT }}');
+    expect(workflow).toContain('Publish release assets to Cloudflare R2');
+    expect(workflow).toContain('bun run release:upload-r2');
     expect(workflow).toContain('Annotate macOS update manifest');
     expect(workflow).toContain('${{ matrix.arch }}=$manifest');
     expect(workflow).toContain('latest-mac-${{ matrix.arch }}.yml');
@@ -69,6 +76,24 @@ describe('macOS release configuration', () => {
     expect(workflow).toContain("grep -E '^Storyflow-arm64\\.zip$'");
     expect(workflow).toContain("grep -E '^Storyflow-x64\\.zip$'");
     expect(existsSync(join(rootDir, 'scripts/merge-macos-update-manifests.py'))).toBe(true);
+    expect(existsSync(join(rootDir, 'scripts/upload-r2-release-assets.ts'))).toBe(true);
+  });
+
+  test('publishes updater manifests from the public R2 endpoint', () => {
+    const builderConfig = readRepoFile('apps/electron/electron-builder.yml');
+    const autoUpdate = readRepoFile('apps/electron/src/main/auto-update.ts');
+    const installScript = readRepoFile('scripts/install-app.sh');
+    const windowsInstallScript = readRepoFile('scripts/install-app.ps1');
+
+    expect(builderConfig).toContain('provider: generic');
+    expect(builderConfig).toContain('url: https://download.storyflow.ai/latest');
+    expect(autoUpdate).toContain('public R2 download');
+    expect(installScript).toContain(
+      'RELEASE_DOWNLOAD_URL="${STORYFLOW_DOWNLOAD_BASE_URL:-https://download.storyflow.ai/latest}"',
+    );
+    expect(windowsInstallScript).toContain('https://download.storyflow.ai/latest');
+    expect(builderConfig).not.toContain('craft-agents-oss/releases/latest/download');
+    expect(installScript).not.toContain('craft-agents-oss/releases/latest/download');
   });
 
   test('fails the official macOS release build before upload if Gatekeeper verification fails', () => {
