@@ -48,7 +48,7 @@ describe('macOS release configuration', () => {
     expect(workflow).toContain('Missing CSC_LINK');
     expect(workflow).toContain('Missing Apple notarization credentials');
     expect(workflow).toContain(
-      'for name in STORYFLOW_R2_BUCKET CLOUDFLARE_API_TOKEN',
+      'for name in STORYFLOW_R2_BUCKET CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID',
     );
     expect(workflow).toContain('missing+=("Missing $name")');
     expect(workflow).toMatch(/create-release:\n\s+needs:\n\s+- validate\n\s+- preflight-release-secrets/);
