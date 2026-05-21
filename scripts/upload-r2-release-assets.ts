@@ -1,9 +1,8 @@
-// input: Release artifacts downloaded from GitHub Actions and Cloudflare R2 credentials
+// input: Release artifacts downloaded from GitHub Actions and Wrangler R2 authentication
 // output: Versioned and latest public Storyflow download assets in R2
 // pos: Public release publisher for landing-page downloads and electron-updater manifests
 
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { createReadStream, readdirSync, statSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 
 type CliOptions = {
@@ -35,9 +34,7 @@ function usage(): string {
     "",
     "Required environment:",
     "  STORYFLOW_R2_BUCKET",
-    "  STORYFLOW_R2_ENDPOINT",
-    "  STORYFLOW_R2_ACCESS_KEY_ID",
-    "  STORYFLOW_R2_SECRET_ACCESS_KEY",
+    "  Wrangler authentication via local `wrangler login` or CI CLOUDFLARE_API_TOKEN",
     "",
     "Optional environment:",
     "  STORYFLOW_R2_LATEST_PREFIX=latest",
@@ -128,12 +125,58 @@ function contentTypeFor(fileName: string): string {
   return "application/octet-stream";
 }
 
+function wranglerCommand(): string[] {
+  return (process.env.STORYFLOW_R2_WRANGLER_COMMAND ?? "bunx wrangler")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+async function putObjectWithWrangler(params: {
+  bucket: string;
+  filePath: string;
+  target: UploadTarget;
+}): Promise<void> {
+  const [command, ...baseArgs] = wranglerCommand();
+  if (!command) {
+    throw new Error("Missing Wrangler command");
+  }
+
+  const fileName = basename(params.filePath);
+  const child = Bun.spawn(
+    [
+      command,
+      ...baseArgs,
+      "r2",
+      "object",
+      "put",
+      `${params.bucket}/${params.target.key}`,
+      "--file",
+      params.filePath,
+      "--content-type",
+      contentTypeFor(fileName),
+      "--cache-control",
+      params.target.cacheControl,
+      "--remote",
+      "--force",
+    ],
+    {
+      cwd: process.cwd(),
+      stdout: "inherit",
+      stderr: "inherit",
+      env: process.env,
+    },
+  );
+
+  const exitCode = await child.exited;
+  if (exitCode !== 0) {
+    throw new Error(`Wrangler upload failed for ${params.target.key} with exit code ${exitCode}`);
+  }
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(Bun.argv.slice(2));
   const bucket = requireEnv("STORYFLOW_R2_BUCKET");
-  const endpoint = requireEnv("STORYFLOW_R2_ENDPOINT");
-  const accessKeyId = requireEnv("STORYFLOW_R2_ACCESS_KEY_ID");
-  const secretAccessKey = requireEnv("STORYFLOW_R2_SECRET_ACCESS_KEY");
   const latestPrefix = normalizePrefix(process.env.STORYFLOW_R2_LATEST_PREFIX ?? "latest");
   const releasePrefix = normalizePrefix(process.env.STORYFLOW_R2_RELEASE_PREFIX ?? "releases");
   const publicBaseUrl = normalizeBaseUrl(
@@ -149,17 +192,6 @@ async function main(): Promise<void> {
     throw new Error(`Missing required release asset(s): ${missingFiles.join(", ")}`);
   }
 
-  const s3 = new S3Client({
-    region: "auto",
-    endpoint,
-    requestChecksumCalculation: "WHEN_REQUIRED",
-    responseChecksumValidation: "WHEN_REQUIRED",
-    credentials: {
-      accessKeyId,
-      secretAccessKey,
-    },
-  });
-
   const targetsFor = (fileName: string): UploadTarget[] => [
     {
       key: `${releasePrefix}/${options.tag}/${fileName}`,
@@ -173,7 +205,6 @@ async function main(): Promise<void> {
 
   for (const fileName of allFiles) {
     const filePath = join(options.assetsDir, fileName);
-    const stats = statSync(filePath);
 
     for (const target of targetsFor(fileName)) {
       const publicUrl = `${publicBaseUrl}/${target.key}`;
@@ -183,16 +214,7 @@ async function main(): Promise<void> {
         continue;
       }
 
-      await s3.send(
-        new PutObjectCommand({
-          Bucket: bucket,
-          Key: target.key,
-          Body: createReadStream(filePath),
-          ContentLength: stats.size,
-          ContentType: contentTypeFor(basename(filePath)),
-          CacheControl: target.cacheControl,
-        }),
-      );
+      await putObjectWithWrangler({ bucket, filePath, target });
     }
   }
 

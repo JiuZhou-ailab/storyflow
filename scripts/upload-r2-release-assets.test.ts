@@ -39,9 +39,6 @@ function runUpload(args: string[], assetsDir: string) {
     env: {
       ...process.env,
       STORYFLOW_R2_BUCKET: "storyflow-downloads",
-      STORYFLOW_R2_ENDPOINT: "https://account-id.r2.cloudflarestorage.com",
-      STORYFLOW_R2_ACCESS_KEY_ID: "test-access-key",
-      STORYFLOW_R2_SECRET_ACCESS_KEY: "test-secret-key",
       STORYFLOW_R2_PUBLIC_BASE_URL: "https://story.zjding.com",
     },
   });

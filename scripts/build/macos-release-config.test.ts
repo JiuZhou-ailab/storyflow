@@ -48,7 +48,7 @@ describe('macOS release configuration', () => {
     expect(workflow).toContain('Missing CSC_LINK');
     expect(workflow).toContain('Missing Apple notarization credentials');
     expect(workflow).toContain(
-      'for name in STORYFLOW_R2_BUCKET STORYFLOW_R2_ENDPOINT STORYFLOW_R2_ACCESS_KEY_ID STORYFLOW_R2_SECRET_ACCESS_KEY',
+      'for name in STORYFLOW_R2_BUCKET CLOUDFLARE_API_TOKEN',
     );
     expect(workflow).toContain('missing+=("Missing $name")');
     expect(workflow).toMatch(/create-release:\n\s+needs:\n\s+- validate\n\s+- preflight-release-secrets/);
@@ -59,7 +59,9 @@ describe('macOS release configuration', () => {
     expect(workflow).toContain('APPLE_ID: ${{ secrets.APPLE_ID }}');
     expect(workflow).toContain('APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}');
     expect(workflow).toContain('APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}');
-    expect(workflow).toContain('STORYFLOW_R2_ENDPOINT: ${{ secrets.STORYFLOW_R2_ENDPOINT }}');
+    expect(workflow).toContain('CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}');
+    expect(workflow).toContain('CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}');
+    expect(workflow).not.toContain('STORYFLOW_R2_ACCESS_KEY_ID');
     expect(workflow).toContain('Publish release assets to Cloudflare R2');
     expect(workflow).toContain('bun run release:upload-r2');
     expect(workflow).toContain('Annotate macOS update manifest');

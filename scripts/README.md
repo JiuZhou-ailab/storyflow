@@ -29,3 +29,4 @@ Build, validation, packaging, install, and local development entry scripts for t
 - `release.ts` - release gate that runs version checks, CI validation, and packaging.
 - `sort-locales.ts` - locale key sorter.
 - `test-workflow-local.sh` - local workflow test helper.
+- `upload-r2-release-assets.ts` - publish GitHub release assets to Cloudflare R2 with Wrangler.
