@@ -8,7 +8,8 @@
   color: #211d19;
   background: #f7f2ea;
   font-family:
-    "Avenir Next", "Segoe UI", "Helvetica Neue", system-ui, -apple-system, sans-serif;
+    "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Segoe UI",
+    "Helvetica Neue", system-ui, -apple-system, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -156,6 +157,17 @@ button {
   letter-spacing: 0;
   line-height: 0.86;
   margin: 28px 0 26px;
+}
+
+.editor-pane h2,
+.editor-pane p,
+.section-heading h2,
+.flow-copy h2,
+.integrations-section h2,
+.download-copy h2 {
+  font-family:
+    "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", Georgia, "Times New Roman",
+    serif;
 }
 
 .hero-lede {
@@ -336,7 +348,6 @@ button {
 }
 
 .editor-pane h2 {
-  font-family: Georgia, "Times New Roman", serif;
   font-size: 34px;
   font-weight: 500;
   letter-spacing: 0;
@@ -347,7 +358,6 @@ button {
 
 .editor-pane p {
   color: #4a4239;
-  font-family: Georgia, "Times New Roman", serif;
   font-size: 18px;
   line-height: 1.68;
   margin: 0 0 22px;
@@ -452,7 +462,6 @@ button {
 .flow-copy h2,
 .integrations-section h2,
 .download-copy h2 {
-  font-family: Georgia, "Times New Roman", serif;
   font-size: clamp(40px, 5vw, 70px);
   font-weight: 500;
   letter-spacing: 0;

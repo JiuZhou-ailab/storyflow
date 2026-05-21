@@ -22,27 +22,27 @@ import { downloadOptions, latestReleaseUrl, repositoryUrl } from "./downloads";
 
 const capabilities = [
   {
-    title: "Writing workspace",
-    body: "Draft, revise, compare, and export manuscripts from a project surface built around chapters, outlines, states, and source files.",
+    title: "写作工作台",
+    body: "围绕章节、大纲、状态和素材文件组织长篇项目，在同一个界面里起草、修订、对比和导出。",
     icon: BookOpenText,
   },
   {
-    title: "Agent sessions with memory",
-    body: "Run multi-turn coding and writing work with local workspace context, permissions, sources, skills, and durable session history.",
+    title: "有记忆的 Agent 会话",
+    body: "把本地工作区、权限、来源、技能和会话历史交给 Agent，让多轮写作与开发任务保持上下文。",
     icon: MessagesSquare,
   },
   {
-    title: "Review before merge",
-    body: "Inspect generated edits as readable diffs, keep author control, and preserve local version snapshots for long-running work.",
+    title: "落稿前审阅",
+    body: "所有生成改动都以可读 diff 呈现，作者保留最终控制权，并为长任务保存本地版本快照。",
     icon: GitBranch,
   },
 ];
 
 const workflow = [
-  "Create a writing project from a method pack.",
-  "Attach drafts, notes, references, and local folders.",
-  "Ask agents to revise with source-aware constraints.",
-  "Review every changed line before it lands.",
+  "从方法包创建写作项目。",
+  "接入草稿、笔记、参考资料和本地文件夹。",
+  "让 Agent 在来源约束下定向修订。",
+  "逐行审阅改动，再写入项目。",
 ];
 
 const integrations = [
@@ -50,8 +50,8 @@ const integrations = [
   "OpenAI API",
   "GitHub Copilot",
   "Google AI Studio",
-  "MCP sources",
-  "Local files",
+  "MCP 来源",
+  "本地文件",
 ];
 
 function LogoMark() {
@@ -92,56 +92,54 @@ function DownloadButtons({ compact = false }: { compact?: boolean }) {
 
 function ProductFrame() {
   return (
-    <div className="product-frame" aria-label="Storyflow workspace preview">
+    <div className="product-frame" aria-label="Storyflow 工作区预览">
       <div className="window-bar">
         <div className="traffic-lights">
           <i />
           <i />
           <i />
         </div>
-        <span>Storyflow / Manuscript Workspace</span>
+        <span>Storyflow / 长篇创作工作区</span>
       </div>
       <div className="workspace">
         <aside className="workspace-nav">
-          <p>Drafts</p>
-          <strong>The lighthouse chapter</strong>
-          <strong className="muted">Character ledger</strong>
-          <strong className="muted">Timeline notes</strong>
+          <p>草稿</p>
+          <strong>灯塔章节</strong>
+          <strong className="muted">人物台账</strong>
+          <strong className="muted">时间线笔记</strong>
           <div className="nav-rule" />
-          <p>Agents</p>
-          <strong className="active">Line editor</strong>
-          <strong className="muted">Continuity audit</strong>
+          <p>Agent</p>
+          <strong className="active">行文编辑</strong>
+          <strong className="muted">连续性审查</strong>
         </aside>
         <main className="editor-pane">
           <div className="editor-meta">
-            <span>Chapter 04</span>
-            <span>2,418 words</span>
-            <span>review ready</span>
+            <span>第 04 章</span>
+            <span>2,418 字</span>
+            <span>等待审阅</span>
           </div>
-          <h2>The room had remembered the rain.</h2>
+          <h2>房间仍记得那场雨。</h2>
           <p>
-            Mara crossed out the sentence, then restored it. The agent had found the
-            continuity break, but the rhythm was hers to keep.
+            玛拉删掉那句话，又把它恢复。Agent 找到了连续性断点，但句子的节奏仍由她决定。
           </p>
           <p>
-            In the margin, Storyflow held the note open beside the draft: lighthouse key
-            introduced before page 19; do not reveal the keeper yet.
+            Storyflow 把素材注记固定在页边：灯塔钥匙已在第 19 页前出现，守塔人的身份暂不揭示。
           </p>
           <div className="change-strip">
             <span>
               <Check size={15} />
-              3 edits accepted
+              已接受 3 处改动
             </span>
-            <span>1 unresolved source note</span>
+            <span>1 条来源注记待处理</span>
           </div>
         </main>
         <aside className="review-pane">
           <div>
             <FileText size={16} />
-            <span>Inline review</span>
+            <span>行内审阅</span>
           </div>
-          <p>Keep the image. Tighten the causal bridge before the next reveal.</p>
-          <button type="button">Apply edit</button>
+          <p>保留这个意象。在下一次揭示之前，补强事件之间的因果桥。</p>
+          <button type="button">应用改动</button>
         </aside>
       </div>
     </div>
@@ -152,13 +150,13 @@ export function App() {
   return (
     <div className="site-shell">
       <header className="site-header">
-        <a className="brand" href="#top" aria-label="Storyflow home">
+        <a className="brand" href="#top" aria-label="Storyflow 首页">
           <LogoMark />
           <span>Storyflow</span>
         </a>
-        <nav aria-label="Primary navigation">
-          <a href="#workspace">Workspace</a>
-          <a href="#downloads">Download</a>
+        <nav aria-label="主导航">
+          <a href="#workspace">工作区</a>
+          <a href="#downloads">下载</a>
           <a href={repositoryUrl}>GitHub</a>
         </nav>
       </header>
@@ -169,42 +167,40 @@ export function App() {
           <div className="hero-copy">
             <div className="eyebrow">
               <Sparkles size={16} />
-              Native desktop AI workspace for long-form work
+              为长篇创作而生的桌面 AI 工作区
             </div>
             <h1>Storyflow</h1>
             <p className="hero-lede">
-              A local-first writing and agent workspace for drafting, revising, reviewing,
-              and shipping complex projects without losing control of the text.
+              本地优先的写作与 Agent 工作台。起草、修订、审阅、交付复杂项目，同时保留对文本的最终控制。
             </p>
             <div className="hero-actions">
               <a className="primary-action" href="#downloads">
-                Download Storyflow
+                下载 Storyflow
                 <ArrowRight size={18} />
               </a>
               <a className="secondary-action" href={latestReleaseUrl}>
-                View releases
+                查看发布版本
                 <ChevronRight size={17} />
               </a>
             </div>
           </div>
         </section>
 
-        <section className="trust-strip" aria-label="Release status">
+        <section className="trust-strip" aria-label="发布状态">
           <span>
             <ShieldCheck size={16} />
-            Signed macOS release chain
+            macOS 签名发布链路
           </span>
-          <span>Apple Silicon and Intel builds</span>
-          <span>GitHub Releases updater</span>
+          <span>Apple Silicon 与 Intel 双架构</span>
+          <span>GitHub Releases 自动更新</span>
         </section>
 
         <section className="section-block" id="workspace">
-          <div className="section-kicker">What it is</div>
+          <div className="section-kicker">产品定位</div>
           <div className="section-heading">
-            <h2>One surface for draft, context, agent work, and review.</h2>
+            <h2>把草稿、上下文、Agent 协作和审阅放在同一张桌面上。</h2>
             <p>
-              Storyflow keeps writing projects close to the filesystem while giving agents
-              enough structure to make targeted edits instead of vague suggestions.
+              Storyflow 让写作项目贴近本地文件系统，同时为 Agent 提供足够结构，使它们能做定向改稿，而不是给出松散建议。
             </p>
           </div>
           <div className="capability-grid">
@@ -220,12 +216,10 @@ export function App() {
 
         <section className="flow-section">
           <div className="flow-copy">
-            <div className="section-kicker">Workflow</div>
-            <h2>Built for the parts of AI work that still need judgment.</h2>
+            <div className="section-kicker">工作流</div>
+            <h2>为 AI 时代仍需要判断力的部分而设计。</h2>
             <p>
-              The interface is organized around source material, workspace state, explicit
-              method packs, and reviewable changes. Agents can move fast; the author keeps
-              the final hand on the manuscript.
+              界面围绕素材、工作区状态、明确的方法包和可审阅改动组织。Agent 可以快速推进，作者始终握住最后的落笔权。
             </p>
           </div>
           <ol className="workflow-list">
@@ -238,10 +232,10 @@ export function App() {
           </ol>
         </section>
 
-        <section className="integrations-section" aria-label="Supported integrations">
+        <section className="integrations-section" aria-label="支持的集成">
           <div>
             <Layers3 size={22} />
-            <h2>Bring your own stack.</h2>
+            <h2>接入你自己的工具栈。</h2>
           </div>
           <div className="integration-list">
             {integrations.map((item) => (
@@ -252,22 +246,21 @@ export function App() {
 
         <section className="download-section" id="downloads">
           <div className="download-copy">
-            <div className="section-kicker">Download</div>
-            <h2>Install Storyflow for desktop.</h2>
+            <div className="section-kicker">下载</div>
+            <h2>安装桌面版 Storyflow。</h2>
             <p>
-              macOS requires 12.0 or later. Use the Apple Silicon build for M-series Macs
-              and the Intel build for older Intel Macs.
+              macOS 需要 12.0 或更高版本。M 系列 Mac 使用 Apple Silicon 版，较早的 Intel Mac 使用 Intel 版。
             </p>
           </div>
           <DownloadButtons compact />
           <div className="release-links">
             <a href={latestReleaseUrl}>
-              Latest release
+              最新发布
               <ChevronRight size={16} />
             </a>
             <a href={repositoryUrl}>
               <Github size={16} />
-              Source code
+              源代码
             </a>
           </div>
         </section>
@@ -279,12 +272,11 @@ export function App() {
           <span>Storyflow</span>
         </div>
         <p>
-          Desktop AI workspace for writers, builders, and teams who need editable output
-          instead of disposable chat.
+          为创作者、开发者和团队准备的桌面 AI 工作区。需要的是可审阅、可编辑、可落地的产出，而不是一次性聊天。
         </p>
         <a href={repositoryUrl}>
           <PenLine size={16} />
-          Open source repository
+          开源仓库
         </a>
       </footer>
     </div>

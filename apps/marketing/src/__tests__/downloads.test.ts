@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 import { downloadOptions, latestReleaseUrl, repositoryUrl } from "../downloads";
 
 describe("downloadOptions", () => {
-  test("points every installer at the real Storyflow GitHub release assets", () => {
+  test("points every installer at the real Storyflow GitHub release assets with Chinese labels", () => {
     expect(repositoryUrl).toBe("https://github.com/JiuZhou-ailab/craft-agents-oss");
     expect(latestReleaseUrl).toBe(`${repositoryUrl}/releases/latest`);
 
@@ -15,19 +15,19 @@ describe("downloadOptions", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "mac-arm64",
-          label: "Download for Apple Silicon",
+          label: "下载 Apple Silicon 版",
           fileName: "Storyflow-arm64.dmg",
           href: `${latestReleaseUrl}/download/Storyflow-arm64.dmg`,
         }),
         expect.objectContaining({
           id: "mac-x64",
-          label: "Download for Intel Mac",
+          label: "下载 Intel Mac 版",
           fileName: "Storyflow-x64.dmg",
           href: `${latestReleaseUrl}/download/Storyflow-x64.dmg`,
         }),
         expect.objectContaining({
           id: "windows-x64",
-          label: "Download for Windows",
+          label: "下载 Windows 版",
           fileName: "Storyflow-x64.exe",
           href: `${latestReleaseUrl}/download/Storyflow-x64.exe`,
         }),
