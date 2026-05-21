@@ -53,7 +53,7 @@ describe('macOS release configuration', () => {
     expect(workflow).toContain('missing+=("Missing $name")');
     expect(workflow).toMatch(/create-release:\n\s+needs:\n\s+- validate\n\s+- preflight-release-secrets/);
     expect(workflow).toContain('CRAFT_REQUIRE_MAC_SIGNING: "1"');
-    expect(workflow).toContain('timeout-minutes: 90');
+    expect(workflow).toContain('timeout-minutes: 360');
     expect(workflow).toContain('CSC_LINK: ${{ secrets.CSC_LINK }}');
     expect(workflow).toContain('CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}');
     expect(workflow).toContain('APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}');

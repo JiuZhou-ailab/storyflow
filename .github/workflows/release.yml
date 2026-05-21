@@ -98,7 +98,7 @@ jobs:
   build-macos:
     needs: create-release
     runs-on: macos-latest
-    timeout-minutes: 90
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
