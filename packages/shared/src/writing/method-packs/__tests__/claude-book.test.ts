@@ -120,8 +120,7 @@ describe("built-in method packs", () => {
       "short-draft-chapter",
       "short-reviser",
     ]);
-    expect(pack?.agentIdentity).toContain("5,000-30,000");
-    expect(pack?.agentIdentity).not.toContain("5,000-40,000");
+    expect(pack?.agentIdentity).toBe("");
     expect(pack?.starterMessage).toContain("5,000-30,000");
     expect(pack?.starterMessage).not.toContain("5,000-40,000");
     expect(pack?.starterMessage).toContain("网文");
@@ -137,15 +136,19 @@ describe("built-in method packs", () => {
       "novel.oh-story": ["网文", "平台", "更新节奏"],
       "novel.crucible": ["36-beat", "三条叙事线", "forge points"],
       "novel.creative-writing": ["知识库", "声线", "修订"],
-      "short-form.article": ["网文", "钩子", "章节"],
+      "short-form.article": ["网文", "skills", "## 文件"],
     };
 
     for (const pack of getBuiltInMethodPacks()) {
       expect(pack.starterMessage).toMatch(/[\u4e00-\u9fff]/);
       expect(pack.starterMessage).toStartWith("## 这是什么");
-      expect(pack.starterMessage).toContain("## 我会怎么做");
-      expect(pack.starterMessage).toContain("## 流程");
-      expect(pack.starterMessage).toContain("## 你现在可以提供");
+      if (pack.id === "short-form.article") {
+        expect(pack.starterMessage).toContain("## 文件");
+      } else {
+        expect(pack.starterMessage).toContain("## 我会怎么做");
+        expect(pack.starterMessage).toContain("## 流程");
+        expect(pack.starterMessage).toContain("## 你现在可以提供");
+      }
       expect(pack.starterMessage).not.toContain("I created");
       expect(pack.starterMessage).not.toContain("Start by");
       for (const keyword of expectedKeywords[pack.id] ?? []) {
