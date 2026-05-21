@@ -8,6 +8,7 @@ export type MethodPackId =
   | "novel.crucible"
   | "novel.creative-writing"
   | "short-form.article";
+export type WorkspaceProfileId = MethodPackId;
 export type MethodPackProjectType = "novel" | "short-form";
 export type MethodPackStorageProfile =
   | "claude-book-compatible"
@@ -81,3 +82,5 @@ export interface MethodPack {
   operatingRules?: MethodPackOperatingRules;
   skillRouting: MethodPackSkillRouting[];
 }
+
+export type WorkspaceProfile = MethodPack;

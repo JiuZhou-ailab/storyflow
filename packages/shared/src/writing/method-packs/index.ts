@@ -7,7 +7,7 @@ import { CREATIVE_WRITING_METHOD_PACK } from "./creative-writing.ts";
 import { CRUCIBLE_METHOD_PACK } from "./crucible.ts";
 import { OH_STORY_METHOD_PACK } from "./oh-story.ts";
 import { SHORT_FORM_METHOD_PACK } from "./short-form.ts";
-import type { MethodPack } from "./types.ts";
+import type { MethodPack, WorkspaceProfile } from "./types.ts";
 
 export * from "./types.ts";
 export { CLAUDE_BOOK_METHOD_PACK } from "./claude-book.ts";
@@ -32,3 +32,6 @@ export function getBuiltInMethodPacks(): readonly MethodPack[] {
 export function getBuiltInMethodPack(id: string): MethodPack | null {
   return BUILT_IN_METHOD_PACKS.find((pack) => pack.id === id) ?? null;
 }
+
+export const getBuiltInWorkspaceProfiles: () => readonly WorkspaceProfile[] = getBuiltInMethodPacks;
+export const getBuiltInWorkspaceProfile: (id: string) => WorkspaceProfile | null = getBuiltInMethodPack;

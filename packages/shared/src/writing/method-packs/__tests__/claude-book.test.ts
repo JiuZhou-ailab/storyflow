@@ -1,5 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import { getBuiltInMethodPack, getBuiltInMethodPacks } from "../index.ts";
+import {
+  getBuiltInMethodPack,
+  getBuiltInMethodPacks,
+  getBuiltInWorkspaceProfile,
+  getBuiltInWorkspaceProfiles,
+  type WorkspaceProfile,
+  type WorkspaceProfileId,
+} from "../index.ts";
 
 describe("built-in method packs", () => {
   it("exposes all built-in writing method pack ids", () => {
@@ -10,6 +17,14 @@ describe("built-in method packs", () => {
       "novel.creative-writing",
       "short-form.article",
     ]);
+  });
+
+  it("exposes workspace profile aliases for the method pack registry", () => {
+    const profileId: WorkspaceProfileId = "short-form.article";
+    const profile: WorkspaceProfile | null = getBuiltInWorkspaceProfile(profileId);
+
+    expect(getBuiltInWorkspaceProfiles()).toBe(getBuiltInMethodPacks());
+    expect(profile).toBe(getBuiltInMethodPack(profileId));
   });
 
   it("exposes the Claude-Book novel method pack contract", () => {
