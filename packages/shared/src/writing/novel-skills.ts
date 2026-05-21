@@ -719,7 +719,97 @@ const CREATIVE_WRITING_SKILLS = [
   }),
 ];
 
-const SHORT_FORM_SKILLS: Array<{ slug: string; content: string }> = [];
+const SHORT_FORM_ATTRIBUTION = "Craft Agent short-form writing profile";
+
+const SHORT_FORM_SKILLS = [
+  adapterSkill({
+    slug: "short-opening-designer",
+    title: "Short Opening Designer",
+    description: "Use when planning, diagnosing, or revising the first screen of a short-form Chinese web-fiction piece, especially when writing chapter 1, improving an abrupt opening, or filling the opening section of 简报.md / 大纲.md.",
+    attribution: SHORT_FORM_ATTRIBUTION,
+    purpose: "Design the first-screen retention artifact before prose drafting.",
+    context: [
+      "Read 创作要求.md, 简报.md, 大纲.md, 人物.md, and 素材.md when present.",
+      "Do not write accepted prose into 正文/.",
+      "Use 自由区/ for competing opening experiments when needed.",
+    ],
+    workflow: [
+      "Extract title promise, genre promise, protagonist pressure, relationship pressure, and known taboo constraints.",
+      "Design the opening artifact: impossible fact, evidence object, relationship pressure, irreversible cost, protagonist first choice, three-paragraph progression, and first-800-character pursuit question.",
+      "Update 简报.md and 大纲.md with the accepted opening design.",
+      "If multiple options are useful, put comparison notes in 自由区/YYYYMMDD-开篇方案.md.",
+    ],
+    output: [
+      "Updated 简报.md opening section.",
+      "Updated 大纲.md chapter-01 opening beats.",
+      "Optional 自由区 opening comparison note.",
+    ],
+  }),
+  adapterSkill({
+    slug: "short-golden-three",
+    title: "Short Golden Three Planner",
+    description: "Use when planning or repairing the first three chapters of a short-form Chinese web-fiction piece for retention, escalation, and payoff.",
+    attribution: SHORT_FORM_ATTRIBUTION,
+    purpose: "Turn premise and opening promise into a chapter-1 pull, chapter-2 pressure, and chapter-3 lock-in plan.",
+    context: [
+      "Use 简报.md as intake.",
+      "Use 大纲.md as outline.",
+      "Do not write accepted prose into 正文/.",
+    ],
+    workflow: [
+      "Identify chapter-1 pull, chapter-2 pressure escalation, and chapter-3 retention lock.",
+      "Check that each chapter has a state change, visible conflict, and pursuit question.",
+      "Update 简报.md and 大纲.md rather than creating a separate 黄金三章.md file.",
+    ],
+    output: [
+      "Updated 简报.md golden-three section.",
+      "Updated 大纲.md first-three chapter beats.",
+    ],
+  }),
+  adapterSkill({
+    slug: "short-draft-chapter",
+    title: "Short Chapter Drafter",
+    description: "Use when drafting the current next chapter of a short-form Chinese web-fiction piece after 简报.md and 大纲.md contain usable planning content.",
+    attribution: SHORT_FORM_ATTRIBUTION,
+    purpose: "Draft one accepted chapter from the current brief, outline, characters, and source material.",
+    context: [
+      "正文/ contains accepted prose only.",
+      "自由区/ contains experiments and discarded drafts.",
+      "Default to one chapter per request unless the user explicitly asks for batch drafting.",
+    ],
+    workflow: [
+      "Read 创作要求.md, 简报.md, 大纲.md, 人物.md, and 素材.md.",
+      "Find the next planned chapter and confirm no accepted chapter already exists for that number.",
+      "Draft only the current chapter into 正文/NN-标题.md.",
+      "Keep experiments or alternative openings in 自由区/.",
+    ],
+    output: [
+      "One 正文/NN-标题.md chapter file.",
+      "Brief note of any unresolved assumptions.",
+    ],
+  }),
+  adapterSkill({
+    slug: "short-reviser",
+    title: "Short Form Reviser",
+    description: "Use when diagnosing or revising an existing short-form Chinese web-fiction chapter for retention, conflict, pacing, payoff, abruptness, or weak opening.",
+    attribution: SHORT_FORM_ATTRIBUTION,
+    purpose: "Revise accepted or draft short-form prose against the project brief and reader-retention contract.",
+    context: [
+      "Use patch-style local edits for existing files.",
+      "Do not fork 草稿/ or 定稿/ directories.",
+      "Put review notes in 自由区/ when needed.",
+    ],
+    workflow: [
+      "Separate original text facts, inferred reader response, and revision recommendations.",
+      "Check first 300-800 characters for pressure, conflict, question, and consequence.",
+      "Apply scoped revisions to the target chapter or produce a review note if the user asked for diagnosis only.",
+    ],
+    output: [
+      "Patched chapter file or 自由区 review note.",
+      "Concise summary of structural changes.",
+    ],
+  }),
+];
 
 export function getBundledNovelSkillFiles(methodPackId: MethodPackId = "novel.claude-book"): BundledNovelSkillFile[] {
   if (methodPackId === "novel.oh-story") {

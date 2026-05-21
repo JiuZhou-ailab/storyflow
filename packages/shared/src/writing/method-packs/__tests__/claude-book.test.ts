@@ -114,7 +114,12 @@ describe("built-in method packs", () => {
       path: "定稿",
       kind: "directory",
     });
-    expect(pack?.requiredSkills).toEqual([]);
+    expect(pack?.requiredSkills).toEqual([
+      "short-opening-designer",
+      "short-golden-three",
+      "short-draft-chapter",
+      "short-reviser",
+    ]);
     expect(pack?.agentIdentity).toContain("5,000-30,000");
     expect(pack?.agentIdentity).not.toContain("5,000-40,000");
     expect(pack?.starterMessage).toContain("5,000-30,000");

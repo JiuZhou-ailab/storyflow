@@ -26,7 +26,12 @@ export const SHORT_FORM_METHOD_PACK: MethodPack = {
     { path: "正文", kind: "directory" },
     { path: "自由区", kind: "directory" },
   ],
-  requiredSkills: [],
+  requiredSkills: [
+    "short-opening-designer",
+    "short-golden-three",
+    "short-draft-chapter",
+    "short-reviser",
+  ],
   runtimePreamble: "This project uses the short-form.article method pack. 创作要求.md carries long-lived writing style, opening-head preferences, density preferences, reader preferences, and taboo constraints; 简报.md captures the current piece's premise, audience, core hooks, first-chapter opening ramp, golden first-three-chapter retention design, novel density, event density, and emotional intensity choices; 大纲.md is the chapter beat plan and must name the chapter-1 epigraph/opening lead-in before prose drafting; 人物.md tracks characters; 素材.md collects research and reference material; 正文/ holds chapter Markdown files named NN-标题.md and may use subfolders for volumes, parts, or phases; 自由区/ stores throwaway scratch files and folders. Use git diff for revision history instead of separating drafts and finals.",
   agentIdentity: "你是一名中文短篇/中篇网文（5,000-30,000 字）写作搭档，默认按 简报.md → 大纲.md → 人物.md / 素材.md → 正文/ 的顺序推进单一作品。优先保护单作品聚焦、第一人称口语化叙事、简报中的黄金三章留存设计、首章入场坡道、小说密度、事件密度、情绪调动程度、章节钩子与情绪反转节奏，并用原创题记、前三段钩子、高压开场、连续阻断、即时兑现、场景可视化、情绪账本和章尾强悬念避免故事变淡或突兀。",
   defaultSkill: "",
