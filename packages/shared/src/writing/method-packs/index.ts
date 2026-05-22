@@ -33,5 +33,7 @@ export function getBuiltInMethodPack(id: string): MethodPack | null {
   return BUILT_IN_METHOD_PACKS.find((pack) => pack.id === id) ?? null;
 }
 
+// Work Profile naming is an incremental product-language bridge. The registry
+// stays backed by Method Packs until manifest and package-path migration exist.
 export const getBuiltInWorkspaceProfiles: () => readonly WorkspaceProfile[] = getBuiltInMethodPacks;
 export const getBuiltInWorkspaceProfile: (id: string) => WorkspaceProfile | null = getBuiltInMethodPack;

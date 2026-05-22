@@ -1,9 +1,9 @@
-// input: apps/marketing React source and HTML shell
+// input: apps/marketing React source, HTML shell, and static marketing assets
 // output: Static production assets in apps/marketing/dist
-// pos: Build script for the public Storyflow landing page
+// pos: Build script for the public marketing landing page
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { basename, join, relative } from "path";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { basename, join, relative } from "node:path";
 
 const rootDir = join(import.meta.dir, "..");
 const appDir = join(rootDir, "apps", "marketing");
@@ -12,6 +12,9 @@ const assetsDir = join(distDir, "assets");
 const entrypoint = join(appDir, "src", "main.tsx");
 const htmlPath = join(appDir, "index.html");
 const faviconPath = join(appDir, "favicon.svg");
+const faviconIcoPath = join(appDir, "favicon.ico");
+const appleTouchIconPath = join(appDir, "apple-touch-icon.png");
+const referenceAssetsDir = join(appDir, "reference-assets");
 const downloadBaseUrl = process.env.VITE_STORYFLOW_DOWNLOAD_BASE_URL ?? "";
 
 if (!existsSync(entrypoint)) {
@@ -67,6 +70,15 @@ html = html.replace(
 writeFileSync(join(distDir, "index.html"), html);
 if (existsSync(faviconPath)) {
   copyFileSync(faviconPath, join(distDir, "favicon.svg"));
+}
+if (existsSync(faviconIcoPath)) {
+  copyFileSync(faviconIcoPath, join(distDir, "favicon.ico"));
+}
+if (existsSync(appleTouchIconPath)) {
+  copyFileSync(appleTouchIconPath, join(distDir, "apple-touch-icon.png"));
+}
+if (existsSync(referenceAssetsDir)) {
+  cpSync(referenceAssetsDir, join(distDir, "reference-assets"), { recursive: true });
 }
 
 console.log(`Built marketing site to ${relative(rootDir, distDir)}`);

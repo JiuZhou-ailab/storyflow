@@ -1,12 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="299px" height="300px" viewBox="0 0 299 300" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-    <title>craft_logo_c</title>
-    <g id="craft_logo_c" stroke="none" fill="none" fill-rule="evenodd" stroke-width="1">
-        <g id="Group">
-            <path d="M137.879,300.001 L137.875,300.001 C62.3239,300.001 0.966154,239.232 0.0117188,163.908 L2.56478e-10,162.126 L137.879,162.126 L137.879,300.001 Z" id="Path" fill="#06367A"></path>
-            <path d="M137.879,0 L137.875,0 C61.729,0 0,61.729 0,137.875 L0,137.878 L137.879,137.878 L137.879,0 Z" id="Path" fill="#FF51FF"></path>
-            <path d="M160.558,137.883 L160.561,137.883 C236.707,137.883 298.436,76.1537 298.436,0.00758561 L298.436,0.00562043 L160.558,0.00562043 L160.558,137.883 Z" id="Path" fill="#007CFF"></path>
-            <path d="M160.558,162.123 L160.561,162.123 C236.112,162.123 297.471,222.891 298.426,298.216 L298.436,299.998 L160.558,299.998 L160.558,162.123 Z" id="Path" fill="#0A377B"></path>
-        </g>
-    </g>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Storyflow app icon</title>
+  <defs>
+    <filter id="surfaceShadow" x="-8%" y="-8%" width="116%" height="116%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="28" stdDeviation="42" flood-color="#0F172A" flood-opacity="0.13"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0F172A" flood-opacity="0.08"/>
+    </filter>
+    <linearGradient id="surface" x1="192" y1="108" x2="832" y2="916" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F6F7FA"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="330" y1="250" x2="710" y2="786" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3D8BFF"/>
+      <stop offset="1" stop-color="#1E5BFF"/>
+    </linearGradient>
+  </defs>
+  <rect x="96" y="86" width="832" height="852" rx="224" fill="url(#surface)" filter="url(#surfaceShadow)"/>
+  <path d="M362 252H700V360H470V416H642C674.033 416 700 441.967 700 474V550C700 582.033 674.033 608 642 608H470V664H700V772H362V664H254V556H584V468H312C279.967 468 254 442.033 254 410V310C254 277.967 279.967 252 312 252H362Z" fill="url(#mark)"/>
 </svg>

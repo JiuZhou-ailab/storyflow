@@ -1,3 +1,7 @@
+// input: Radix ScrollArea primitive props and optional viewport refs/classes.
+// output: Shared scroll area wrapper with app defaults and viewport customization.
+// pos: UI primitive used by app-shell panels and scrollable surfaces.
+
 import * as React from "react"
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { cn } from "@/lib/utils"
@@ -5,23 +9,26 @@ import { cn } from "@/lib/utils"
 interface ScrollAreaProps extends React.ComponentProps<typeof ScrollAreaPrimitive.Root> {
   /** Ref to the scrollable viewport element */
   viewportRef?: React.RefObject<HTMLDivElement>
+  /** Classes applied to the Radix viewport instead of the root wrapper. */
+  viewportClassName?: string
 }
 
 function ScrollArea({
   className,
   children,
   viewportRef,
+  viewportClassName,
   ...props
 }: ScrollAreaProps) {
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
-      className={cn("relative overflow-hidden", className)}
+      className={cn("relative min-h-0 overflow-hidden", className)}
       {...props}
     >
       <ScrollAreaPrimitive.Viewport
         ref={viewportRef}
-        className="h-full w-full rounded-[inherit]"
+        className={cn("h-full min-h-0 w-full rounded-[inherit]", viewportClassName)}
       >
         {children}
       </ScrollAreaPrimitive.Viewport>

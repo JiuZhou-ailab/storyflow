@@ -34,6 +34,8 @@ export interface RefreshManagerOptions {
   cooldownMs?: number;
   /** Logger function for debug output */
   log?: (message: string) => void;
+  /** Persistence hook used after a successful refresh. */
+  markAuthenticated?: (workspaceRootPath: string, sourceSlug: string) => boolean;
 }
 
 export class TokenRefreshManager {
@@ -41,6 +43,7 @@ export class TokenRefreshManager {
   private cooldownMs: number;
   private log: (message: string) => void;
   private credManager: SourceCredentialManager;
+  private markAuthenticated: (workspaceRootPath: string, sourceSlug: string) => boolean;
 
   constructor(
     credManager: SourceCredentialManager,
@@ -49,6 +52,7 @@ export class TokenRefreshManager {
     this.credManager = credManager;
     this.cooldownMs = options.cooldownMs ?? DEFAULT_COOLDOWN_MS;
     this.log = options.log ?? (() => {});
+    this.markAuthenticated = options.markAuthenticated ?? markSourceAuthenticated;
   }
 
   /**
@@ -155,7 +159,7 @@ export class TokenRefreshManager {
         this.clearFailure(slug);
 
         // Restore auth state — undoes markSourceNeedsReauth() from startup
-        markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
+        this.markAuthenticated(source.workspaceRootPath, source.config.slug);
         source.config['isAuthenticated'] = true;
         source.config.connectionStatus = 'connected';
         source.config.connectionError = undefined;

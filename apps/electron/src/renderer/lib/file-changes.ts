@@ -13,12 +13,18 @@ function getFilePath(input: Record<string, unknown>): string {
   return asString(input.file_path) || asString(input.path) || 'unknown'
 }
 
-function getWriteOriginal(input: Record<string, unknown>): string | undefined {
-  return asString(input.original)
-    || asString(input.oldContent)
+function getWriteOriginal(input: Record<string, unknown>, content: string): string | undefined {
+  const capturedOriginal = asString(input.oldContent)
     || asString(input.old_content)
     || asString(input.previousContent)
     || asString(input.previous_content)
+  if (capturedOriginal != null) {
+    return capturedOriginal === content ? undefined : capturedOriginal
+  }
+
+  const legacyOriginal = asString(input.original)
+  if (legacyOriginal === content) return undefined
+  return legacyOriginal
 }
 
 function getEditChangeId(activityId: string, editIndex: number, editCount: number): string {
@@ -127,12 +133,13 @@ export function collectFileChangesFromActivities(
     }
 
     if (activity.toolName === 'Write') {
+      const content = asString(input.content) || ''
       changes.push({
         id: activity.id,
         filePath: resolveFileChangePath(getFilePath(input), options.basePath),
         toolType: 'Write',
-        original: getWriteOriginal(input) || '',
-        modified: asString(input.content) || '',
+        original: getWriteOriginal(input, content) || '',
+        modified: content,
         error: activity.error || undefined,
       })
     }

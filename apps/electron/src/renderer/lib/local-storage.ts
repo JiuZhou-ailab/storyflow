@@ -32,6 +32,7 @@ export const KEYS = {
 
   // Writing workspace review state (workspace-root-scoped via suffix)
   novelChangeReviewStatus: 'novel-change-review-status',
+  workspaceVersionKnownCommit: 'workspace-version-known-commit',
 
   // Theme
   theme: 'theme',

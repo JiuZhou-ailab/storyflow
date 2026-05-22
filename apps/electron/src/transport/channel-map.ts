@@ -95,6 +95,7 @@ export const CHANNEL_MAP = {
   getHomeDir: invoke(RPC_CHANNELS.system.HOME_DIR),
   isDebugMode: invoke(RPC_CHANNELS.system.IS_DEBUG_MODE),
   getWorkspaceVersionStatus: invoke(RPC_CHANNELS.git.GET_VERSION_STATUS),
+  compareWorkspaceVersions: invoke(RPC_CHANNELS.git.COMPARE_VERSIONS),
   createWorkspaceVersion: invoke(RPC_CHANNELS.git.CREATE_VERSION),
   listWorkspaceVersions: invoke(RPC_CHANNELS.git.LIST_VERSIONS),
   restoreWorkspaceVersion: invoke(RPC_CHANNELS.git.RESTORE_VERSION),

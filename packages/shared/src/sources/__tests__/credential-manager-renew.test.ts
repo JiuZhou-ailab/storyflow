@@ -9,12 +9,9 @@ import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test';
 import { SourceCredentialManager } from '../credential-manager.ts';
 import type { FolderSourceConfig } from '../types.ts';
 
-// Mock storage module to prevent disk I/O
-mock.module('../storage.ts', () => ({
-  markSourceAuthenticated: mock(() => true),
-  loadSourceConfig: mock(() => null),
-  saveSourceConfig: mock(() => {}),
-}));
+const mockMarkSourceAuthenticated = mock(() => true);
+const mockLoadSourceConfig = mock(() => null);
+const mockSaveSourceConfig = mock(() => {});
 
 // Mock credentials module — track set() calls to verify saves
 let setCalls: unknown[][] = [];
@@ -81,10 +78,17 @@ describe('refreshApiRenew via refresh()', () => {
   let originalFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
-    credManager = new SourceCredentialManager();
+    credManager = new SourceCredentialManager({
+      markSourceAuthenticated: mockMarkSourceAuthenticated,
+      loadSourceConfig: mockLoadSourceConfig,
+      saveSourceConfig: mockSaveSourceConfig,
+    });
     originalFetch = globalThis.fetch;
     setCalls = [];
     fetchCalls = [];
+    mockMarkSourceAuthenticated.mockClear();
+    mockLoadSourceConfig.mockClear();
+    mockSaveSourceConfig.mockClear();
   });
 
   afterEach(() => {

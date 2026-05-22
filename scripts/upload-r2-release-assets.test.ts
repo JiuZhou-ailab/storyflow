@@ -7,23 +7,12 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { releaseAssetFiles, requiredPublicReleaseAssets } from "@craft-agent/shared/release-assets";
 
 const rootDir = join(import.meta.dir, "..");
 const uploadScript = join(rootDir, "scripts", "upload-r2-release-assets.ts");
 
-const requiredFiles = [
-  "Storyflow-arm64.dmg",
-  "Storyflow-x64.dmg",
-  "Storyflow-arm64.zip",
-  "Storyflow-x64.zip",
-  "Storyflow-x64.exe",
-  "latest-mac.yml",
-  "latest.yml",
-  "install-app.sh",
-  "install-app.ps1",
-] as const;
-
-function makeAssetsDir(files = requiredFiles): string {
+function makeAssetsDir(files: readonly string[] = requiredPublicReleaseAssets): string {
   const dir = mkdtempSync(join(tmpdir(), "storyflow-r2-assets-"));
   mkdirSync(dir, { recursive: true });
   for (const fileName of files) {
@@ -51,20 +40,20 @@ describe("upload-r2-release-assets", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      "https://story.zjding.com/releases/v0.9.12/Storyflow-arm64.dmg",
+      `https://story.zjding.com/releases/v0.9.12/${releaseAssetFiles.macArm64Dmg}`,
     );
-    expect(result.stdout).toContain("https://story.zjding.com/latest/Storyflow-arm64.dmg");
-    expect(result.stdout).toContain("https://story.zjding.com/latest/latest-mac.yml");
+    expect(result.stdout).toContain(`https://story.zjding.com/latest/${releaseAssetFiles.macArm64Dmg}`);
+    expect(result.stdout).toContain(`https://story.zjding.com/latest/${releaseAssetFiles.macManifest}`);
     expect(result.stdout).toContain("Published 9 asset(s)");
   });
 
   test("fails before upload when a required public asset is missing", () => {
     const assetsDir = makeAssetsDir(
-      requiredFiles.filter((fileName) => fileName !== "latest-mac.yml"),
+      requiredPublicReleaseAssets.filter((fileName) => fileName !== releaseAssetFiles.macManifest),
     );
     const result = runUpload(["--dry-run"], assetsDir);
 
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("Missing required release asset(s): latest-mac.yml");
+    expect(result.stderr).toContain(`Missing required release asset(s): ${releaseAssetFiles.macManifest}`);
   });
 });

@@ -8,6 +8,9 @@ export type MethodPackId =
   | "novel.crucible"
   | "novel.creative-writing"
   | "short-form.article";
+
+// Transitional name for new Work Profile semantics. Keep persisted manifests and
+// package paths on MethodPack until the migration has a compatibility plan.
 export type WorkspaceProfileId = MethodPackId;
 export type MethodPackProjectType = "novel" | "short-form";
 export type MethodPackStorageProfile =
@@ -83,4 +86,5 @@ export interface MethodPack {
   skillRouting: MethodPackSkillRouting[];
 }
 
+// Transitional alias only; do not treat this as a completed repo-wide rename.
 export type WorkspaceProfile = MethodPack;

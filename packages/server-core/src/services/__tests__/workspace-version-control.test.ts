@@ -3,6 +3,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { describe, expect, it } from 'bun:test'
 import {
+  compareWorkspaceVersions,
   createWorkspaceVersion,
   getWorkspaceVersionStatus,
   listWorkspaceVersions,
@@ -75,6 +76,52 @@ describe('workspace version control', () => {
       expect(parentLog.trim().split('\n')).toHaveLength(1)
     } finally {
       await rm(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('labels collaboration boundary snapshots distinctly', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'craft-version-'))
+    try {
+      const filePath = join(root, 'chapter.md')
+      await writeFile(filePath, 'first\n')
+
+      const preprompt = await createWorkspaceVersion(root, { reason: 'user-preprompt' })
+      await writeFile(filePath, 'second\n')
+      const agentTurn = await createWorkspaceVersion(root, { reason: 'agent-turn' })
+      const versions = await listWorkspaceVersions(root, 5)
+
+      expect(preprompt.created).toBe(true)
+      expect(agentTurn.created).toBe(true)
+      expect(versions[1]?.subject).toContain('发送前保存')
+      expect(versions[0]?.subject).toContain('Agent 回合保存')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('compares changed files between workspace versions', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'craft-version-'))
+    try {
+      await writeFile(join(root, 'chapter.md'), 'first\n')
+      await writeFile(join(root, 'notes.md'), 'keep\n')
+      const base = await createWorkspaceVersion(root, { reason: 'manual' })
+      expect(typeof base.commitHash).toBe('string')
+
+      await writeFile(join(root, 'chapter.md'), 'second\n')
+      await writeFile(join(root, 'new.md'), 'new\n')
+      await rm(join(root, 'notes.md'))
+      const head = await createWorkspaceVersion(root, { reason: 'manual' })
+      expect(typeof head.commitHash).toBe('string')
+
+      const changes = await compareWorkspaceVersions(root, base.commitHash as string, head.commitHash as string)
+
+      expect(changes).toEqual([
+        { path: 'chapter.md', status: 'modified' },
+        { path: 'new.md', status: 'added' },
+        { path: 'notes.md', status: 'deleted' },
+      ])
+    } finally {
+      await rm(root, { recursive: true, force: true })
     }
   })
 })

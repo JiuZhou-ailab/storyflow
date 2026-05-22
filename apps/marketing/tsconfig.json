@@ -12,6 +12,9 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": true,
+    "paths": {
+      "@storyflow/release-assets": ["../../packages/shared/src/release-assets.ts"]
+    },
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true

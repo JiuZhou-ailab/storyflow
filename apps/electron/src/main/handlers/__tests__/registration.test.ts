@@ -207,6 +207,7 @@ describe('RPC handler registration', () => {
 
     const actual = new Set(registeredChannels)
     expect(actual.has(RPC_CHANNELS.git.GET_VERSION_STATUS)).toBe(true)
+    expect(actual.has(RPC_CHANNELS.git.COMPARE_VERSIONS)).toBe(true)
     expect(actual.has(RPC_CHANNELS.git.CREATE_VERSION)).toBe(true)
     expect(actual.has(RPC_CHANNELS.git.LIST_VERSIONS)).toBe(true)
     expect(actual.has(RPC_CHANNELS.git.RESTORE_VERSION)).toBe(true)

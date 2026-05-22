@@ -88,6 +88,12 @@ export type MultiHeaderCredential = Record<string, string>;
 
 export type ApiCredential = string | BasicAuthCredential | MultiHeaderCredential;
 
+export interface SourceCredentialManagerStorage {
+  loadSourceConfig: typeof loadSourceConfig;
+  saveSourceConfig: typeof saveSourceConfig;
+  markSourceAuthenticated: typeof markSourceAuthenticated;
+}
+
 /**
  * Type guard to check if credential is a MultiHeaderCredential.
  * Returns true for Record<string, string> objects that are NOT BasicAuthCredential.
@@ -124,6 +130,16 @@ export class SourceCredentialManager {
   // Track in-flight refresh promises to prevent concurrent refreshes for the same source
   // This prevents race conditions (especially important for Microsoft which rotates refresh tokens)
   private pendingRefreshes = new Map<string, Promise<string | null>>();
+  private storage: SourceCredentialManagerStorage;
+
+  constructor(storage: Partial<SourceCredentialManagerStorage> = {}) {
+    this.storage = {
+      loadSourceConfig,
+      saveSourceConfig,
+      markSourceAuthenticated,
+      ...storage,
+    };
+  }
 
   // ============================================================
   // Core CRUD Operations
@@ -340,12 +356,12 @@ export class SourceCredentialManager {
    */
   markSourceNeedsReauth(source: LoadedSource, errorMessage: string): void {
     try {
-      const config = loadSourceConfig(source.workspaceRootPath, source.config.slug);
+      const config = this.storage.loadSourceConfig(source.workspaceRootPath, source.config.slug);
       if (config) {
         config.isAuthenticated = false;
         config.connectionStatus = 'needs_auth';
         config.connectionError = errorMessage;
-        saveSourceConfig(source.workspaceRootPath, config);
+        this.storage.saveSourceConfig(source.workspaceRootPath, config);
         debug(`[SourceCredentialManager] Marked ${source.config.slug} as needing re-auth: ${errorMessage}`);
       }
     } catch (error) {
@@ -554,7 +570,7 @@ export class SourceCredentialManager {
     });
 
     // Mark source as authenticated in config.json
-    markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
+    this.storage.markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
 
     debug(`[SourceCredentialManager] OAuth exchange+store complete for ${source.config.slug}`);
     return { success: true, email: result.email };
@@ -643,7 +659,7 @@ export class SourceCredentialManager {
       });
 
       // Mark source as authenticated in config.json
-      markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
+      this.storage.markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
 
       return { success: true };
     } catch (error) {
@@ -718,7 +734,7 @@ export class SourceCredentialManager {
       });
 
       // Mark source as authenticated in config.json
-      markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
+      this.storage.markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
 
       callbacks.onStatus(`${serviceName} authentication successful`);
       return { success: true, email: result.email };
@@ -783,7 +799,7 @@ export class SourceCredentialManager {
       });
 
       // Mark source as authenticated in config.json
-      markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
+      this.storage.markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
 
       callbacks.onStatus(`${serviceName} authentication successful`);
       // Use teamName as the identifier (similar to email for Google)
@@ -855,7 +871,7 @@ export class SourceCredentialManager {
       });
 
       // Mark source as authenticated in config.json
-      markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
+      this.storage.markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
 
       callbacks.onStatus(`${serviceName} authentication successful`);
       return { success: true, email: result.email };

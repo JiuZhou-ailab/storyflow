@@ -237,6 +237,7 @@ import type {
   WorkspaceVersionStatus,
   CreateWorkspaceVersionOptions,
   CreateWorkspaceVersionResult,
+  WorkspaceVersionFileChange,
   RestoreWorkspaceVersionResult,
 } from '@craft-agent/shared/protocol'
 
@@ -366,6 +367,7 @@ export interface ElectronAPI {
   getHomeDir(): Promise<string>
   isDebugMode(): Promise<boolean>
   getWorkspaceVersionStatus(rootPath: string): Promise<WorkspaceVersionStatus>
+  compareWorkspaceVersions(rootPath: string, baseCommit: string, headCommit?: string): Promise<WorkspaceVersionFileChange[]>
   createWorkspaceVersion(rootPath: string, options: CreateWorkspaceVersionOptions): Promise<CreateWorkspaceVersionResult>
   listWorkspaceVersions(rootPath: string, limit?: number): Promise<WorkspaceVersionEntry[]>
   restoreWorkspaceVersion(rootPath: string, commitHash: string): Promise<RestoreWorkspaceVersionResult>

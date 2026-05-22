@@ -18,7 +18,7 @@ export interface WorkspaceVersionStatus {
 }
 
 export interface CreateWorkspaceVersionOptions {
-  reason: 'auto' | 'manual' | 'before-restore' | 'restore'
+  reason: 'auto' | 'manual' | 'before-restore' | 'restore' | 'user-preprompt' | 'agent-turn'
   label?: string
 }
 
@@ -33,6 +33,12 @@ export interface RestoreWorkspaceVersionResult {
   restored: boolean
   commitHash: string
   restoreCommitHash?: string
+}
+
+export interface WorkspaceVersionFileChange {
+  path: string
+  status: 'added' | 'modified' | 'deleted' | 'renamed'
+  previousPath?: string
 }
 
 const GIT_TIMEOUT_MS = 10_000
@@ -81,9 +87,31 @@ async function getPorcelainStatus(rootPath: string): Promise<string[]> {
 function buildSnapshotSubject(options: CreateWorkspaceVersionOptions): string {
   const stamp = new Date().toISOString().slice(0, 19).replace('T', ' ')
   if (options.reason === 'auto') return `自动保存 ${stamp}`
+  if (options.reason === 'user-preprompt') return `发送前保存 ${stamp}`
+  if (options.reason === 'agent-turn') return `Agent 回合保存 ${stamp}`
   if (options.reason === 'before-restore') return `恢复前保存 ${stamp}`
   if (options.reason === 'restore') return `恢复版本 ${options.label ?? stamp}`
   return `手动保存 ${stamp}`
+}
+
+function parseNameStatusLine(line: string): WorkspaceVersionFileChange | null {
+  const parts = line.split('\t')
+  const code = parts[0]
+  if (!code) return null
+
+  if (code.startsWith('R')) {
+    const previousPath = parts[1]
+    const path = parts[2]
+    return previousPath && path ? { path, status: 'renamed', previousPath } : null
+  }
+
+  const path = parts[1]
+  if (!path) return null
+
+  if (code === 'A') return { path, status: 'added' }
+  if (code === 'M') return { path, status: 'modified' }
+  if (code === 'D') return { path, status: 'deleted' }
+  return { path, status: 'modified' }
 }
 
 async function getHeadHash(rootPath: string): Promise<string | undefined> {
@@ -167,6 +195,27 @@ export async function listWorkspaceVersions(rootPath: string, limit = 20): Promi
   } catch {
     return []
   }
+}
+
+export async function compareWorkspaceVersions(
+  rootPath: string,
+  baseCommit: string,
+  headCommit = 'HEAD',
+): Promise<WorkspaceVersionFileChange[]> {
+  if (!await isGitRepo(rootPath)) return []
+
+  const output = await runGit(rootPath, [
+    'diff',
+    '--name-status',
+    '--find-renames',
+    `${baseCommit}..${headCommit}`,
+  ])
+  if (!output) return []
+
+  return output
+    .split('\n')
+    .map(parseNameStatusLine)
+    .filter((change): change is WorkspaceVersionFileChange => change !== null)
 }
 
 export async function restoreWorkspaceVersion(

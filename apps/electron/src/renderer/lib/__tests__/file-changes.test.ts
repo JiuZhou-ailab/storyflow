@@ -194,4 +194,42 @@ describe('collectFileChangesFromActivities', () => {
     expect(changes[0]?.original).toBe('# Old chapter')
     expect(changes[0]?.modified).toBe('# New chapter')
   })
+
+  it('treats write payloads whose original mirrors content as new-file writes', () => {
+    const changes = collectFileChangesFromActivities([
+      activity({
+        id: 'write-new-file',
+        toolName: 'Write',
+        toolInput: {
+          file_path: '/novel/正文/03.md',
+          original: '# 第三章',
+          content: '# 第三章',
+        },
+      }),
+    ])
+
+    expect(changes).toHaveLength(1)
+    expect(changes[0]?.toolType).toBe('Write')
+    expect(changes[0]?.original).toBe('')
+    expect(changes[0]?.modified).toBe('# 第三章')
+  })
+
+  it('treats captured write metadata that mirrors content as a new-file write', () => {
+    const changes = collectFileChangesFromActivities([
+      activity({
+        id: 'write-new-file-captured',
+        toolName: 'Write',
+        toolInput: {
+          file_path: '/novel/正文/04.md',
+          previous_content: '# 第四章',
+          content: '# 第四章',
+        },
+      }),
+    ])
+
+    expect(changes).toHaveLength(1)
+    expect(changes[0]?.toolType).toBe('Write')
+    expect(changes[0]?.original).toBe('')
+    expect(changes[0]?.modified).toBe('# 第四章')
+  })
 })

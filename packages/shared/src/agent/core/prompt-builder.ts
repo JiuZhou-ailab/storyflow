@@ -15,7 +15,7 @@
 import { isLocalMcpEnabled } from '../../workspaces/storage.ts';
 import { formatPreferencesForPrompt } from '../../config/preferences.ts';
 import { formatSessionState } from '../mode-manager.ts';
-import { getDateTimeContext, getMethodPackPeriodicReminderPrompt, getWorkingDirectoryContext } from '../../prompts/system.ts';
+import { getDateTimeContext, getWorkingDirectoryContext } from '../../prompts/system.ts';
 import { getSessionPlansPath, getSessionDataPath, getSessionPath } from '../../sessions/storage.ts';
 import type {
   PromptBuilderConfig,
@@ -96,14 +96,6 @@ export class PromptBuilder {
     const workingDirContext = this.getWorkingDirectoryContext();
     if (workingDirContext) {
       parts.push(workingDirContext);
-    }
-
-    const methodPackReminder = getMethodPackPeriodicReminderPrompt(
-      this.config.session?.workingDirectory ?? this.workspaceRootPath,
-      options.userIteration
-    );
-    if (methodPackReminder) {
-      parts.push(methodPackReminder);
     }
 
     return parts;

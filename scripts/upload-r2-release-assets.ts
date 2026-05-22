@@ -4,6 +4,7 @@
 
 import { readdirSync } from "node:fs";
 import { basename, join, relative } from "node:path";
+import { requiredPublicReleaseAssets } from "@craft-agent/shared/release-assets";
 
 type CliOptions = {
   assetsDir: string;
@@ -15,18 +16,6 @@ type UploadTarget = {
   key: string;
   cacheControl: string;
 };
-
-const requiredFiles = [
-  "Storyflow-arm64.dmg",
-  "Storyflow-x64.dmg",
-  "Storyflow-arm64.zip",
-  "Storyflow-x64.zip",
-  "Storyflow-x64.exe",
-  "latest-mac.yml",
-  "latest.yml",
-  "install-app.sh",
-  "install-app.ps1",
-] as const;
 
 function usage(): string {
   return [
@@ -187,7 +176,7 @@ async function main(): Promise<void> {
     .filter((fileName) => shouldUploadFile(fileName))
     .sort((a, b) => a.localeCompare(b));
 
-  const missingFiles = requiredFiles.filter((fileName) => !allFiles.includes(fileName));
+  const missingFiles = requiredPublicReleaseAssets.filter((fileName) => !allFiles.includes(fileName));
   if (missingFiles.length > 0) {
     throw new Error(`Missing required release asset(s): ${missingFiles.join(", ")}`);
   }

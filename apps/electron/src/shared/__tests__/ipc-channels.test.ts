@@ -96,6 +96,7 @@ const EXPECTED_CHANNELS: string[] = [
   'fs:listDirectory',
   'fs:search',
   'fs:searchBatch',
+  'git:compareVersions',
   'git:createVersion',
   'git:getBranch',
   'git:getVersionStatus',

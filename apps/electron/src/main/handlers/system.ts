@@ -9,6 +9,7 @@ import {
 import { getGitBashPath, setGitBashPath, clearGitBashPath } from '@craft-agent/shared/config'
 import { isSafeExternalUrl } from '@craft-agent/shared/utils/url-safety'
 import {
+  compareWorkspaceVersions,
   createWorkspaceVersion,
   getWorkspaceVersionStatus,
   isUsableGitBashPath,
@@ -39,6 +40,7 @@ export const CORE_HANDLED_CHANNELS = [
   RPC_CHANNELS.releaseNotes.GET_LATEST_VERSION,
   RPC_CHANNELS.git.GET_BRANCH,
   RPC_CHANNELS.git.GET_VERSION_STATUS,
+  RPC_CHANNELS.git.COMPARE_VERSIONS,
   RPC_CHANNELS.git.CREATE_VERSION,
   RPC_CHANNELS.git.LIST_VERSIONS,
   RPC_CHANNELS.git.RESTORE_VERSION,
@@ -141,6 +143,11 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
   server.handle(RPC_CHANNELS.git.GET_VERSION_STATUS, async (ctx, rootPath: string) => {
     const safeRoot = await validateWorkspaceRoot(ctx, rootPath)
     return getWorkspaceVersionStatus(safeRoot)
+  })
+
+  server.handle(RPC_CHANNELS.git.COMPARE_VERSIONS, async (ctx, rootPath: string, baseCommit: string, headCommit?: string) => {
+    const safeRoot = await validateWorkspaceRoot(ctx, rootPath)
+    return compareWorkspaceVersions(safeRoot, baseCommit, headCommit)
   })
 
   server.handle(RPC_CHANNELS.git.CREATE_VERSION, async (ctx, rootPath: string, options: CreateWorkspaceVersionOptions) => {

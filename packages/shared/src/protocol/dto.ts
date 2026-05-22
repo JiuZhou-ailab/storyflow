@@ -309,7 +309,7 @@ export interface WorkspaceVersionStatus {
 }
 
 export interface CreateWorkspaceVersionOptions {
-  reason: 'auto' | 'manual' | 'before-restore' | 'restore'
+  reason: 'auto' | 'manual' | 'before-restore' | 'restore' | 'user-preprompt' | 'agent-turn'
   label?: string
 }
 
@@ -324,6 +324,12 @@ export interface RestoreWorkspaceVersionResult {
   restored: boolean
   commitHash: string
   restoreCommitHash?: string
+}
+
+export interface WorkspaceVersionFileChange {
+  path: string
+  status: 'added' | 'modified' | 'deleted' | 'renamed'
+  previousPath?: string
 }
 
 // ---------------------------------------------------------------------------

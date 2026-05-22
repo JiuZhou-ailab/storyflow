@@ -290,11 +290,18 @@ ${fileList}
  * Work Profiles are product metadata for scaffold, validation, repair, and
  * migration. Agent-readable runtime instructions belong in AGENTS.md and
  * workspace skills, so profile metadata is not injected into system prompts.
+ *
+ * @deprecated Retained for source compatibility; Storyflow no longer calls this
+ * from system prompt construction.
  */
 export function getMethodPackRuntimePrompt(_workingDirectory?: string): string {
   return '';
 }
 
+/**
+ * @deprecated Retained for source compatibility; periodic writing reminders are
+ * owned by workspace skills instead of PromptBuilder context injection.
+ */
 export function getMethodPackPeriodicReminderPrompt(
   _workingDirectory: string | undefined,
   _userIteration: number | undefined,
@@ -407,7 +414,6 @@ export function getSystemPrompt(
 
   // Get project context files for monorepo support (lives in system prompt for persistence across compaction)
   const projectContextFiles = getProjectContextFilesPrompt(workingDirectory);
-  const methodPackRuntimePrompt = getMethodPackRuntimePrompt(workingDirectory);
 
   // Fall back to the user's current preference when callers don't pin/pass a value,
   // so forgetting the argument can't silently re-enable the co-author trailer (see #576).
@@ -418,7 +424,7 @@ export function getSystemPrompt(
   // Safe Mode context is also in user messages for the same reason.
   const basePrompt = getCraftAssistantPrompt(workspaceRootPath, backendName, resolvedIncludeCoAuthoredBy);
   const presetPrompt = preset === 'novel' ? getNovelWritingSystemPrompt() : '';
-  const fullPrompt = `${basePrompt}${presetPrompt}${methodPackRuntimePrompt}${preferences}${debugContext}${projectContextFiles}`;
+  const fullPrompt = `${basePrompt}${presetPrompt}${preferences}${debugContext}${projectContextFiles}`;
 
   debug('[getSystemPrompt] full prompt length:', fullPrompt.length);
 

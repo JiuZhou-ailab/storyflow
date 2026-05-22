@@ -2,12 +2,18 @@
 // output: Typed download options for the Storyflow landing page
 // pos: Single source of truth for public installer links
 
+import {
+  publicInstallerAssets,
+  updateManifestFiles,
+  type PublicInstallerAsset,
+} from "@storyflow/release-assets";
+
 export type DownloadOption = {
-  id: "mac-arm64" | "mac-x64" | "windows-x64";
+  id: PublicInstallerAsset["id"];
   label: string;
-  platform: string;
+  platform: PublicInstallerAsset["platform"];
   detail: string;
-  fileName: string;
+  fileName: PublicInstallerAsset["fileName"];
   href: string;
 };
 
@@ -35,34 +41,28 @@ function buildDownloadUrl(fileName: string): string {
   return `${downloadBaseUrl}/${fileName}`;
 }
 
-export const downloadOptions: DownloadOption[] = [
-  {
-    id: "mac-arm64",
+const downloadLabels: Record<PublicInstallerAsset["id"], Pick<DownloadOption, "label" | "detail">> = {
+  "mac-arm64": {
     label: "下载 Apple Silicon 版",
-    platform: "macOS",
     detail: "适用于 M 系列 Mac",
-    fileName: "Storyflow-arm64.dmg",
-    href: buildDownloadUrl("Storyflow-arm64.dmg"),
   },
-  {
-    id: "mac-x64",
+  "mac-x64": {
     label: "下载 Intel Mac 版",
-    platform: "macOS",
     detail: "适用于 Intel Mac",
-    fileName: "Storyflow-x64.dmg",
-    href: buildDownloadUrl("Storyflow-x64.dmg"),
   },
-  {
-    id: "windows-x64",
+  "windows-x64": {
     label: "下载 Windows 版",
-    platform: "Windows",
     detail: "适用于 Windows x64",
-    fileName: "Storyflow-x64.exe",
-    href: buildDownloadUrl("Storyflow-x64.exe"),
   },
-];
+};
+
+export const downloadOptions: DownloadOption[] = publicInstallerAssets.map((asset) => ({
+  ...asset,
+  ...downloadLabels[asset.id],
+  href: buildDownloadUrl(asset.fileName),
+}));
 
 export const updateManifestUrls = {
-  macOS: buildDownloadUrl("latest-mac.yml"),
-  Windows: buildDownloadUrl("latest.yml"),
+  macOS: buildDownloadUrl(updateManifestFiles.macOS),
+  Windows: buildDownloadUrl(updateManifestFiles.Windows),
 } as const;

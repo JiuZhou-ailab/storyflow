@@ -1,12 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="24px" height="24px" viewBox="0 0 24 24" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-    <title>favicon</title>
-    <defs>
-        <path d="M0,0 L24,0 L24,24 L0,24 L0,0 Z" id="path-1"></path>
-    </defs>
-    <g id="favicon" stroke="none" fill="none" xlink:href="#path-1" fill-rule="evenodd" stroke-width="1">
-        <g id="Group" transform="translate(3.4502, 3)" fill="#9570BE">
-            <path d="M3.17890888,3.6 L3.17890888,0 L16,0 L16,3.6 L3.17890888,3.6 Z M9.642,7.2 L9.64218223,10.8 L0,10.8 L0,3.6 L16,3.6 L16,7.2 L9.642,7.2 Z M3.17890888,18 L3.178,14.4 L0,14.4 L0,10.8 L16,10.8 L16,18 L3.17890888,18 Z" id="Combined-Shape" fill-rule="nonzero"></path>
-        </g>
-    </g>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Storyflow app icon</title>
+  <defs>
+    <filter id="surfaceShadow" x="-8%" y="-8%" width="116%" height="116%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="28" stdDeviation="42" flood-color="#0F172A" flood-opacity="0.13"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0F172A" flood-opacity="0.08"/>
+    </filter>
+    <linearGradient id="surface" x1="192" y1="108" x2="832" y2="916" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F6F7FA"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="330" y1="250" x2="710" y2="786" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3D8BFF"/>
+      <stop offset="1" stop-color="#1E5BFF"/>
+    </linearGradient>
+  </defs>
+  <rect x="96" y="86" width="832" height="852" rx="224" fill="url(#surface)" filter="url(#surfaceShadow)"/>
+  <path d="M362 252H700V360H470V416H642C674.033 416 700 441.967 700 474V550C700 582.033 674.033 608 642 608H470V664H700V772H362V664H254V556H584V468H312C279.967 468 254 442.033 254 410V310C254 277.967 279.967 252 312 252H362Z" fill="url(#mark)"/>
 </svg>

@@ -91,7 +91,7 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
-import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WorkspaceVersionEntry } from "../../../shared/types"
+import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange } from "../../../shared/types"
 import { ensureSessionMessagesLoadedAtom, sessionAtomFamily, sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
@@ -180,6 +180,7 @@ import {
   buildNovelWorkspaceTree,
   detectNovelProjectFromSearchResults,
   getNovelImportTargetRelativePath,
+  getNovelWorkspaceRelativePath,
   getNovelWorkspaceCandidateRoots,
   mapSearchResultsToNovelWorkspaceFiles,
   NOVEL_WORKSPACE_CATALOG_DIRECTORY_QUERIES,
@@ -242,6 +243,11 @@ interface NovelCreateFileTarget {
   initialValue: string
 }
 
+interface NovelWorkspaceBriefPreparation {
+  shouldSend: boolean
+  brief?: string
+}
+
 const altClickTooltipLabel = isMac ? '⌥ click to exclude' : 'Alt click to exclude'
 const SESSION_LIST_MIN_WIDTH = 240
 const SESSION_LIST_MAX_WIDTH = 480
@@ -252,11 +258,75 @@ const NAVIGATOR_SASH_FLEX_MARGIN = -(PANEL_GAP / 2)
 const NAVIGATOR_SASH_CAPTURE_HALF_WIDTH = 18
 const NOVEL_AUTO_VERSION_CHAR_THRESHOLD = 100
 const NOVEL_AUTO_VERSION_INTERVAL_MS = 5 * 60 * 1000
+const NOVEL_WORKSPACE_BRIEF_CHANGE_LIMIT = 20
 
 function joinWorkspacePath(rootPath: string, relativePath: string): string {
   const root = rootPath.replace(/[\\/]+$/, '')
   const relative = relativePath.replace(/^[\\/]+/, '')
   return relative ? `${root}/${relative}` : root
+}
+
+function mergeOneTimeContext(existing: string | undefined, addition: string | undefined): string | undefined {
+  const next = addition?.trim()
+  if (!next) return existing
+  const current = existing?.trim()
+  return current ? `${current}\n\n${next}` : next
+}
+
+function getKnownWorkspaceCommit(rootPath: string, sessionId: string): string | undefined {
+  const commits = storage.get<Record<string, string>>(storage.KEYS.workspaceVersionKnownCommit, {}, rootPath)
+  return commits[sessionId]
+}
+
+function setKnownWorkspaceCommit(rootPath: string, sessionId: string, commitHash: string): void {
+  const commits = storage.get<Record<string, string>>(storage.KEYS.workspaceVersionKnownCommit, {}, rootPath)
+  storage.set(storage.KEYS.workspaceVersionKnownCommit, {
+    ...commits,
+    [sessionId]: commitHash,
+  }, rootPath)
+}
+
+function formatWorkspaceChange(change: WorkspaceVersionFileChange): string {
+  if (change.status === 'renamed' && change.previousPath) {
+    return `${change.previousPath} -> ${change.path} renamed`
+  }
+  return `${change.path} ${change.status}`
+}
+
+function buildNovelWorkspaceFreshnessBrief(
+  changes: WorkspaceVersionFileChange[],
+  activeFile?: string | null,
+): string | undefined {
+  if (changes.length === 0) return undefined
+
+  const visibleChanges = changes.slice(0, NOVEL_WORKSPACE_BRIEF_CHANGE_LIMIT)
+  const overflow = changes.length - visibleChanges.length
+  const lines = [
+    '<workspace-brief>',
+    'Workspace files changed since your last known checkpoint in this session.',
+    activeFile ? `Active writing file: ${activeFile}` : undefined,
+    '',
+    'Unknown changes:',
+    ...visibleChanges.map(change => `- ${formatWorkspaceChange(change)}`),
+    overflow > 0 ? `- ...and ${overflow} more file(s)` : undefined,
+    '',
+    'Before editing these files, read the latest content first.',
+    '</workspace-brief>',
+  ].filter((line): line is string => line !== undefined)
+
+  return lines.join('\n')
+}
+
+function collectAgentTouchedRelativePaths(
+  changes: FileChange[],
+  rootPath: string,
+  files: Pick<NovelWorkspaceFile, 'path' | 'relativePath'>[],
+): string[] {
+  const relativeByAbsolutePath = new Map(files.map(file => [file.path, file.relativePath]))
+  return [...new Set(changes
+    .filter(change => !change.error)
+    .map(change => relativeByAbsolutePath.get(change.filePath) ?? getNovelWorkspaceRelativePath(change.filePath, rootPath))
+    .filter(Boolean))]
 }
 
 function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
@@ -1991,6 +2061,9 @@ function AppShellContent({
   const novelVersionBaselinesRef = React.useRef<Record<string, { content: string; timestamp: number }>>({})
   const novelAutoVersionInFlightRef = React.useRef(false)
   const novelAutoVersionTimerRef = React.useRef<number | null>(null)
+  const novelAgentTurnCheckpointInFlightRef = React.useRef(false)
+  const novelSessionProcessingRef = React.useRef<Record<string, boolean>>({})
+  const novelAgentTouchedPathsRef = React.useRef<Record<string, string[]>>({})
 
   React.useEffect(() => {
     latestNovelDocumentPathRef.current = selectedNovelDocumentPath
@@ -2162,6 +2235,74 @@ function AppShellContent({
       }
     }
   }, [maybeCreateNovelAutoVersion, novelDocumentContent, novelDocumentDirty, selectedNovelDocumentPath, t])
+
+  const prepareNovelWorkspaceBriefForSend = React.useCallback(async (sessionId: string): Promise<NovelWorkspaceBriefPreparation> => {
+    if (!novelWorkspaceRoot) return { shouldSend: true }
+
+    const saved = await ensureNovelDocumentSaved()
+    if (!saved) return { shouldSend: false }
+
+    try {
+      const snapshot = await window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'user-preprompt' })
+      const headCommit = snapshot.commitHash
+      if (!headCommit) return { shouldSend: true }
+
+      const previousCommit = getKnownWorkspaceCommit(novelWorkspaceRoot, sessionId)
+      if (!previousCommit || previousCommit === headCommit) {
+        setKnownWorkspaceCommit(novelWorkspaceRoot, sessionId, headCommit)
+        return { shouldSend: true }
+      }
+
+      const changedFiles = await window.electronAPI.compareWorkspaceVersions(novelWorkspaceRoot, previousCommit, headCommit)
+      const agentTouchedPaths = new Set(novelAgentTouchedPathsRef.current[sessionId] ?? [])
+      novelAgentTouchedPathsRef.current[sessionId] = []
+
+      const unknownChanges = changedFiles.filter(change => !agentTouchedPaths.has(change.path))
+      setKnownWorkspaceCommit(novelWorkspaceRoot, sessionId, headCommit)
+
+      return {
+        shouldSend: true,
+        brief: buildNovelWorkspaceFreshnessBrief(unknownChanges, selectedNovelFile?.relativePath),
+      }
+    } catch (error) {
+      console.warn('[writing] Failed to prepare workspace freshness brief:', error)
+      return { shouldSend: true }
+    }
+  }, [ensureNovelDocumentSaved, novelWorkspaceRoot, selectedNovelFile?.relativePath])
+
+  const checkpointNovelWorkspaceAgentTurn = React.useCallback(async (sessionId: string): Promise<void> => {
+    if (!novelWorkspaceRoot || novelAgentTurnCheckpointInFlightRef.current) return
+
+    novelAgentTouchedPathsRef.current[sessionId] = collectAgentTouchedRelativePaths(
+      reviewableNovelFileChanges,
+      novelWorkspaceRoot,
+      novelWorkspaceFiles,
+    )
+
+    novelAgentTurnCheckpointInFlightRef.current = true
+    try {
+      await window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'agent-turn' })
+      if (novelVersionDialogOpen) {
+        await refreshNovelVersions()
+      }
+    } catch (error) {
+      console.warn('[writing] Failed to create agent turn workspace version:', error)
+    } finally {
+      novelAgentTurnCheckpointInFlightRef.current = false
+    }
+  }, [novelVersionDialogOpen, novelWorkspaceFiles, novelWorkspaceRoot, refreshNovelVersions, reviewableNovelFileChanges])
+
+  React.useEffect(() => {
+    if (!effectiveSessionId || !novelWorkspaceRoot) return
+
+    const isProcessing = effectiveSession?.isProcessing === true
+    const wasProcessing = novelSessionProcessingRef.current[effectiveSessionId] === true
+    novelSessionProcessingRef.current[effectiveSessionId] = isProcessing
+
+    if (wasProcessing && !isProcessing) {
+      void checkpointNovelWorkspaceAgentTurn(effectiveSessionId)
+    }
+  }, [checkpointNovelWorkspaceAgentTurn, effectiveSession?.isProcessing, effectiveSessionId, novelWorkspaceRoot])
 
   const syncSelectedNovelDocumentFromDisk = React.useCallback(async (filePath: string): Promise<boolean> => {
     if (selectedNovelFile?.path !== filePath) return true
@@ -2548,12 +2689,31 @@ function AppShellContent({
     toast.success(t('writing.selectionContext.addedToChat', '已添加到对话框'))
   }, [effectiveSessionId, getDraft, onInputChange, t])
 
+  const handleNovelWorkspaceSendMessage = React.useCallback<AppShellContextType['onSendMessage']>(async (
+    sessionId,
+    message,
+    attachments,
+    skillSlugs,
+    badges,
+    options,
+  ) => {
+    const preparation = sessionId === effectiveSessionId
+      ? await prepareNovelWorkspaceBriefForSend(sessionId)
+      : { shouldSend: true }
+    if (!preparation.shouldSend) return
+
+    onSendMessage(sessionId, message, attachments, skillSlugs, badges, {
+      ...options,
+      oneTimeContext: mergeOneTimeContext(options?.oneTimeContext, preparation.brief),
+    })
+  }, [effectiveSessionId, onSendMessage, prepareNovelWorkspaceBriefForSend])
+
   const handleSendNovelSelectionToChat = React.useCallback(async (message: string) => {
     if (!effectiveSessionId) return
     const saved = await ensureNovelDocumentSaved()
     if (!saved) return
-    onSendMessage(effectiveSessionId, message)
-  }, [effectiveSessionId, ensureNovelDocumentSaved, onSendMessage])
+    handleNovelWorkspaceSendMessage(effectiveSessionId, message)
+  }, [effectiveSessionId, ensureNovelDocumentSaved, handleNovelWorkspaceSendMessage])
 
   const navigatorPanelWidth = showNovelDocumentNavigator
     ? novelWorkspaceNavigatorWidth
@@ -2794,6 +2954,7 @@ function AppShellContent({
   const appShellContextValue = React.useMemo<AppShellContextType>(() => ({
     ...contextValue,
     onDeleteSession: handleDeleteSession,
+    onSendMessage: handleNovelWorkspaceSendMessage,
     enabledSources: sources,
     skills,
     mentionFiles,
@@ -2817,7 +2978,7 @@ function AppShellContent({
     automationTestResults,
     getAutomationHistory,
     onReplayAutomation: handleReplayAutomation,
-  }), [contextValue, handleDeleteSession, sources, skills, mentionFiles, activeSessionWorkingDirectory, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
+  }), [contextValue, handleDeleteSession, handleNovelWorkspaceSendMessage, sources, skills, mentionFiles, activeSessionWorkingDirectory, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
 
   // Persist expanded folders to localStorage (workspace-scoped)
   React.useEffect(() => {

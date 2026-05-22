@@ -1,20 +1,24 @@
 // input: Marketing React app source
 // output: Static landing-page build served from apps/marketing/dist
-// pos: Vite configuration for Storyflow public website
+// pos: Vite configuration for the marketing website
 
-import { resolve } from "path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+const appDir = dirname(fileURLToPath(import.meta.url));
+
 export default defineConfig({
   plugins: [react()],
-  root: __dirname,
-  base: "/",
+  root: appDir,
+  base: "./",
   resolve: {
     alias: {
-      "@": resolve(__dirname, "./src"),
-      react: resolve(__dirname, "../../node_modules/react"),
-      "react-dom": resolve(__dirname, "../../node_modules/react-dom"),
+      "@storyflow/release-assets": resolve(appDir, "../../packages/shared/src/release-assets.ts"),
+      "@": resolve(appDir, "./src"),
+      react: resolve(appDir, "../../node_modules/react"),
+      "react-dom": resolve(appDir, "../../node_modules/react-dom"),
     },
     dedupe: ["react", "react-dom"],
   },

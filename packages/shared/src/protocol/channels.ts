@@ -342,6 +342,7 @@ export const RPC_CHANNELS = {
   git: {
     GET_BRANCH: 'git:getBranch',
     GET_VERSION_STATUS: 'git:getVersionStatus',
+    COMPARE_VERSIONS: 'git:compareVersions',
     CREATE_VERSION: 'git:createVersion',
     LIST_VERSIONS: 'git:listVersions',
     RESTORE_VERSION: 'git:restoreVersion',

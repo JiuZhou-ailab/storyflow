@@ -1,3 +1,7 @@
+// input: Session state, transcript messages, tool activities, and chat input callbacks.
+// output: Scrollable chat transcript, action overlays, and composer for a selected session.
+// pos: Main renderer surface for session conversation panels.
+
 import * as React from "react"
 import { useTranslation } from "react-i18next"
 import { useEffect, useState, useMemo, useCallback } from "react"
@@ -1514,16 +1518,20 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
           {/* Content layer */}
           <div className="flex flex-1 flex-col min-h-0 min-w-0 relative z-10">
           {/* === MESSAGES AREA: Scrollable list of message bubbles === */}
-          <div className="relative flex-1 min-h-0">
+          <div className="relative flex-1 min-h-0 overflow-hidden">
             {/* Mask wrapper - fades content at top and bottom over transparent/image backgrounds */}
             <div
-              className="h-full"
+              className="h-full min-h-0 overflow-hidden"
               style={{
                 maskImage: 'linear-gradient(to bottom, transparent 0%, black 32px, black calc(100% - 32px), transparent 100%)',
                 WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 32px, black calc(100% - 32px), transparent 100%)'
               }}
             >
-              <ScrollArea className="h-full min-w-0" viewportRef={scrollViewportRef}>
+              <ScrollArea
+                className="h-full min-w-0"
+                viewportRef={scrollViewportRef}
+                viewportClassName="h-full min-h-0 overflow-y-auto"
+              >
               <div className={cn(
                 CHAT_LAYOUT.maxWidth,
                 "mx-auto min-w-0",

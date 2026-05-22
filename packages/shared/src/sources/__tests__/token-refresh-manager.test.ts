@@ -12,11 +12,7 @@ import { TokenRefreshManager } from '../token-refresh-manager.ts';
 import { isSourceUsable } from '../storage.ts';
 import type { SourceCredentialManager } from '../credential-manager.ts';
 
-// Mock storage module to prevent disk I/O
 const mockMarkSourceAuthenticated = mock(() => true);
-mock.module('../storage.ts', () => ({
-  markSourceAuthenticated: mockMarkSourceAuthenticated,
-}));
 
 /**
  * Helper to create a mock LoadedSource for testing
@@ -317,6 +313,12 @@ describe('TokenRefreshManager', () => {
     mockMarkSourceAuthenticated.mockClear();
   });
 
+  function createTokenRefreshManager(credManager: SourceCredentialManager): TokenRefreshManager {
+    return new TokenRefreshManager(credManager, {
+      markAuthenticated: mockMarkSourceAuthenticated,
+    });
+  }
+
   describe('needsRefresh', () => {
     test('returns false when credential has no refreshToken', async () => {
       const credManager = createMockCredManager({
@@ -327,7 +329,7 @@ describe('TokenRefreshManager', () => {
         })),
       });
 
-      const manager = new TokenRefreshManager(credManager);
+      const manager = createTokenRefreshManager(credManager);
       const source = createMockSource({
         type: 'mcp',
         provider: 'linear',
@@ -348,7 +350,7 @@ describe('TokenRefreshManager', () => {
         isExpired: mock(() => true),
       });
 
-      const manager = new TokenRefreshManager(credManager);
+      const manager = createTokenRefreshManager(credManager);
       const source = createMockSource({
         type: 'api',
         provider: 'google',
@@ -371,7 +373,7 @@ describe('TokenRefreshManager', () => {
         isExpired: mock(() => true),
       });
 
-      const manager = new TokenRefreshManager(credManager);
+      const manager = createTokenRefreshManager(credManager);
       const source = createMockSource({
         slug: 'craft-mcp',
         type: 'mcp',
@@ -395,7 +397,7 @@ describe('TokenRefreshManager', () => {
         isExpired: mock(() => true),
       });
 
-      const manager = new TokenRefreshManager(credManager);
+      const manager = createTokenRefreshManager(credManager);
       const source = createMockSource({
         slug: 'craft-mcp',
         type: 'mcp',
@@ -421,7 +423,7 @@ describe('TokenRefreshManager', () => {
         refresh: mock(() => Promise.resolve('new-fresh-token')),
       });
 
-      const manager = new TokenRefreshManager(credManager);
+      const manager = createTokenRefreshManager(credManager);
       const source = createMockSource({
         slug: 'craft-mcp',
         type: 'mcp',
@@ -453,7 +455,7 @@ describe('TokenRefreshManager', () => {
         refresh: mock(() => Promise.resolve(null)),
       });
 
-      const manager = new TokenRefreshManager(credManager);
+      const manager = createTokenRefreshManager(credManager);
       const source = createMockSource({
         slug: 'craft-mcp',
         type: 'mcp',
@@ -484,7 +486,7 @@ describe('TokenRefreshManager', () => {
         refresh: mock(() => Promise.resolve(null)),
       });
 
-      const manager = new TokenRefreshManager(credManager);
+      const manager = createTokenRefreshManager(credManager);
       const source = createMockSource({
         slug: 'craft-mcp',
         type: 'mcp',
@@ -515,7 +517,7 @@ describe('TokenRefreshManager', () => {
         refresh: mock(() => Promise.reject(new Error('network down'))),
       });
 
-      const manager = new TokenRefreshManager(credManager);
+      const manager = createTokenRefreshManager(credManager);
       const source = createMockSource({
         slug: 'craft-mcp',
         type: 'mcp',
@@ -549,7 +551,7 @@ describe('TokenRefreshManager', () => {
         refresh: mock(() => Promise.resolve('fresh-token')),
       });
 
-      const manager = new TokenRefreshManager(credManager);
+      const manager = createTokenRefreshManager(credManager);
       const source = createMockSource({
         slug: 'craft-mcp',
         type: 'mcp',
@@ -588,7 +590,7 @@ describe('TokenRefreshManager', () => {
         isExpired: mock(() => true),
       });
 
-      const manager = new TokenRefreshManager(credManager);
+      const manager = createTokenRefreshManager(credManager);
       const source = createMockSource({
         type: 'api',
         provider: 'custom-api',
@@ -615,7 +617,7 @@ describe('TokenRefreshManager', () => {
         refresh: mock(() => Promise.resolve('new-fresh-token')),
       });
 
-      const manager = new TokenRefreshManager(credManager);
+      const manager = createTokenRefreshManager(credManager);
       const source = createMockSource({
         type: 'api',
         provider: 'custom-api',
@@ -642,7 +644,7 @@ describe('TokenRefreshManager', () => {
         isExpired: mock(() => true),
       });
 
-      const manager = new TokenRefreshManager(credManager);
+      const manager = createTokenRefreshManager(credManager);
       const renewSource = createMockSource({
         slug: 'custom-api',
         type: 'api',

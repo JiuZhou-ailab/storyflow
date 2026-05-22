@@ -191,9 +191,33 @@ describe('novel writing workspace layout', () => {
     expect(html).toContain('她推开门。')
     expect(html).toContain('风从长廊尽头吹来。')
     expect(html).toContain('novel-review-inserted')
+    expect(html).not.toContain('novel-review-deleted')
     expect(html).not.toContain('bg-emerald-500')
     expect(html).not.toContain('<div class="novel-review-inserted')
     expect(html).not.toContain('tiptap-editor--with-toolbar')
+  })
+
+  it('renders write-created manuscript files as inserted content without a deleted mirror', () => {
+    const html = renderToStaticMarkup(
+      <NovelDocumentEditorPanel
+        file={{ path: '/novel/正文/03.md', relativePath: '正文/03.md' }}
+        content={'# 第三章\n\n她停在窗前。'}
+        loading={false}
+        saving={false}
+        onChange={() => {}}
+        reviewChange={{
+          id: 'change-1',
+          filePath: '/novel/正文/03.md',
+          toolType: 'Write',
+          original: '',
+          modified: '# 第三章\n\n她停在窗前。',
+        }}
+      />
+    )
+
+    expect(html).toContain('data-testid="novel-rendered-review-document"')
+    expect(html).toContain('novel-review-inserted')
+    expect(html).not.toContain('novel-review-deleted')
   })
 
   it('falls back to the editable manuscript when a review change cannot be placed safely', () => {
@@ -311,10 +335,9 @@ describe('novel writing workspace layout', () => {
     expect(tiptapBubbleSource).toContain('onAddSelectionToChat')
     expect(tiptapBubbleSource).toContain('insertContentAt({ from: selectionRange.from, to: selectionRange.to }, replacement')
     expect(tiptapBubbleSource).toContain("contentType: 'markdown'")
-    expect(appShellSource).toContain('onSendMessage(effectiveSessionId')
+    expect(appShellSource).toContain('handleNovelWorkspaceSendMessage(effectiveSessionId')
     expect(appShellSource).toContain('onInputChange(effectiveSessionId, nextDraft)')
     expect(appShellSource).not.toContain('buildNovelSelectionOneTimeContext')
-    expect(appShellSource).not.toContain('oneTimeContext')
     expect(appSource).toContain('const hideUserMessage = sendOptions?.hideUserMessage === true')
     expect(appSource).toContain('if (!hideUserMessage)')
     expect(sessionManagerSource).toContain('async queryOnce')
@@ -542,7 +565,7 @@ describe('novel writing workspace layout', () => {
     expect(askAiSource).toContain('window.electronAPI.rewriteNovelSelection')
     expect(askAiSource).toContain('relaunchApp')
     expect(askAiSource).not.toContain("type: 'rewriteNovelSelection'")
-    expect(askAiSource).toContain('onSendMessage(effectiveSessionId')
+    expect(askAiSource).toContain('handleNovelWorkspaceSendMessage(effectiveSessionId')
   })
 
   it('keeps the writing editor editable during background autosave so typing focus is not stolen', () => {
@@ -566,6 +589,18 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('refreshNovelWorkspaceFiles')
     expect(appShellSource).toContain('latestNovelFileChanges.length === 0')
     expect(appShellSource).toContain('void refreshNovelWorkspaceFiles(novelWorkspaceRoot)')
+  })
+
+  it('creates git freshness checkpoints around writing workspace agent turns', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const storageSource = readFileSync(new URL('../../../lib/local-storage.ts', import.meta.url), 'utf-8')
+
+    expect(storageSource).toContain("workspaceVersionKnownCommit: 'workspace-version-known-commit'")
+    expect(appShellSource).toContain('prepareNovelWorkspaceBriefForSend')
+    expect(appShellSource).toContain("reason: 'user-preprompt'")
+    expect(appShellSource).toContain("reason: 'agent-turn'")
+    expect(appShellSource).toContain('window.electronAPI.compareWorkspaceVersions')
+    expect(appShellSource).toContain('oneTimeContext: mergeOneTimeContext')
   })
 
   it('hides the generic content panel close button in writing workspace mode', () => {
