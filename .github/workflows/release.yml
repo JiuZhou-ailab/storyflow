@@ -356,7 +356,7 @@ jobs:
           STORYFLOW_R2_BUCKET: ${{ secrets.STORYFLOW_R2_BUCKET }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          STORYFLOW_R2_PUBLIC_BASE_URL: ${{ vars.STORYFLOW_R2_PUBLIC_BASE_URL || 'https://story.zjding.com' }}
+          STORYFLOW_R2_PUBLIC_BASE_URL: ${{ vars.STORYFLOW_R2_PUBLIC_BASE_URL || 'https://story-storage.zjding.com' }}
           STORYFLOW_R2_LATEST_PREFIX: ${{ vars.STORYFLOW_R2_LATEST_PREFIX || 'latest' }}
           STORYFLOW_R2_RELEASE_PREFIX: ${{ vars.STORYFLOW_R2_RELEASE_PREFIX || 'releases' }}
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}

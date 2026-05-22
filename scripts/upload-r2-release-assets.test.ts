@@ -28,7 +28,7 @@ function runUpload(args: string[], assetsDir: string) {
     env: {
       ...process.env,
       STORYFLOW_R2_BUCKET: "storyflow-downloads",
-      STORYFLOW_R2_PUBLIC_BASE_URL: "https://story.zjding.com",
+      STORYFLOW_R2_PUBLIC_BASE_URL: "https://story-storage.zjding.com",
     },
   });
 }
@@ -40,10 +40,10 @@ describe("upload-r2-release-assets", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      `https://story.zjding.com/releases/v0.9.12/${releaseAssetFiles.macArm64Dmg}`,
+      `https://story-storage.zjding.com/releases/v0.9.12/${releaseAssetFiles.macArm64Dmg}`,
     );
-    expect(result.stdout).toContain(`https://story.zjding.com/latest/${releaseAssetFiles.macArm64Dmg}`);
-    expect(result.stdout).toContain(`https://story.zjding.com/latest/${releaseAssetFiles.macManifest}`);
+    expect(result.stdout).toContain(`https://story-storage.zjding.com/latest/${releaseAssetFiles.macArm64Dmg}`);
+    expect(result.stdout).toContain(`https://story-storage.zjding.com/latest/${releaseAssetFiles.macManifest}`);
     expect(result.stdout).toContain("Published 9 asset(s)");
   });
 

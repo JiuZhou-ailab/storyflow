@@ -5,7 +5,7 @@
 
 set -e
 
-RELEASE_DOWNLOAD_URL="${STORYFLOW_DOWNLOAD_BASE_URL:-https://story.zjding.com/latest}"
+RELEASE_DOWNLOAD_URL="${STORYFLOW_DOWNLOAD_BASE_URL:-https://story-storage.zjding.com/latest}"
 DOWNLOAD_DIR="$HOME/.craft-agent/downloads"
 MIN_MACOS_VERSION="12.0"
 

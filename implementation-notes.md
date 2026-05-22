@@ -10,3 +10,4 @@
 - Tightened chat transcript scroll containment by giving the shared ScrollArea an explicit viewport class hook and applying `min-h-0 overflow-y-auto` to the transcript viewport.
 - During release verification, full tests exposed a stale short-form starter message contract. I expanded the user-facing starter copy to match the localized four-section onboarding expected by workspace creation tests.
 - Full-suite source tests exposed a leaking Bun module mock in token refresh tests. I replaced the storage-module mock with an injected persistence hook on `TokenRefreshManager`, so the tests no longer contaminate global source storage imports.
+- Release validation showed the old public R2 hostname resolves through an unusable local/proxy address for installer downloads. I moved the default release/update base URL to `story-storage.zjding.com`, updated the GitHub Actions variable, and will cut a new patch release instead of mutating the already-built `v0.9.15` artifacts.

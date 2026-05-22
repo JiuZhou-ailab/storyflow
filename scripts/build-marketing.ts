@@ -14,6 +14,7 @@ const htmlPath = join(appDir, "index.html");
 const faviconPath = join(appDir, "favicon.svg");
 const faviconIcoPath = join(appDir, "favicon.ico");
 const appleTouchIconPath = join(appDir, "apple-touch-icon.png");
+const redirectsPath = join(appDir, "_redirects");
 const referenceAssetsDir = join(appDir, "reference-assets");
 const downloadBaseUrl = process.env.VITE_STORYFLOW_DOWNLOAD_BASE_URL ?? "";
 
@@ -76,6 +77,9 @@ if (existsSync(faviconIcoPath)) {
 }
 if (existsSync(appleTouchIconPath)) {
   copyFileSync(appleTouchIconPath, join(distDir, "apple-touch-icon.png"));
+}
+if (existsSync(redirectsPath)) {
+  copyFileSync(redirectsPath, join(distDir, "_redirects"));
 }
 if (existsSync(referenceAssetsDir)) {
   cpSync(referenceAssetsDir, join(distDir, "reference-assets"), { recursive: true });

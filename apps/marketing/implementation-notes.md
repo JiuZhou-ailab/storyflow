@@ -11,3 +11,5 @@
 - Tuned the mobile diagram width down from the desktop canvas size so the initial mobile viewport shows useful early-flow content instead of landing on an empty part of the chart.
 - Unified the landing page visual width with `--landing-content-width` for hero media, diagram, text sections, screenshots, card rows, and footer. Body copy still uses `--landing-read-width` inside those sections so line length stays readable without making the whole page look ragged.
 - Matched the footer's actual box width to the same content edges instead of using a full-width footer with horizontal padding.
+- Split visual widths after follow-up review: `--landing-showcase-width` stays 1100px for the hero video and Mermaid canvas, while `--landing-content-width` is 896px for downstream text sections, screenshots, card rows, and footer.
+- Switched default installer links to the storage hostname and copied `_redirects` into marketing builds so the legacy root-domain release paths can forward to the public R2 storage domain.

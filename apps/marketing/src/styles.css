@@ -16,7 +16,8 @@
   --foreground-10: color-mix(in oklch, var(--foreground) 10%, var(--background));
   --muted: color-mix(in oklch, var(--foreground) 70%, transparent);
   --faint: color-mix(in oklch, var(--foreground) 50%, transparent);
-  --landing-content-width: 1100px;
+  --landing-showcase-width: 1100px;
+  --landing-content-width: 896px;
   --landing-read-width: 896px;
   --shadow-minimal:
     rgba(var(--foreground-rgb), 0.06) 0 0 0 1px,
@@ -317,7 +318,7 @@ figure {
 .hero-shot {
   box-shadow: var(--shadow-hero);
   margin-bottom: 48px;
-  max-width: var(--landing-content-width);
+  max-width: var(--landing-showcase-width);
   position: relative;
   width: 100%;
 }
@@ -418,7 +419,7 @@ figure {
 
 .diagram-section {
   margin-top: 64px;
-  max-width: var(--landing-content-width);
+  max-width: var(--landing-showcase-width);
   padding: 32px 0;
   scroll-margin-top: 88px;
   width: 100%;

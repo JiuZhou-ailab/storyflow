@@ -25,7 +25,7 @@ import {
 
 describe("downloadOptions", () => {
   test("points every installer at the public R2 release assets with Chinese labels", () => {
-    expect(defaultDownloadBaseUrl).toBe("https://story.zjding.com/latest");
+    expect(defaultDownloadBaseUrl).toBe("https://story-storage.zjding.com/latest");
     expect(downloadBaseUrl).toBe(defaultDownloadBaseUrl);
 
     expect(downloadOptions).toEqual(
@@ -113,15 +113,27 @@ describe("downloadOptions", () => {
     expect(html).not.toContain("window-bar");
   });
 
-  test("keeps primary landing sections on a shared visual width", () => {
+  test("keeps legacy root-domain release paths redirected to storage", () => {
+    const redirects = readFileSync(resolve(import.meta.dir, "../../_redirects"), "utf8");
+
+    expect(redirects).toContain("/latest/* https://story-storage.zjding.com/latest/:splat 301");
+    expect(redirects).toContain("/releases/* https://story-storage.zjding.com/releases/:splat 301");
+  });
+
+  test("uses a wider showcase width and a narrower content width", () => {
     const css = readFileSync(resolve(import.meta.dir, "../styles.css"), "utf8");
 
-    expect(css).toContain("--landing-content-width: 1100px;");
+    expect(css).toContain("--landing-showcase-width: 1100px;");
+    expect(css).toContain("--landing-content-width: 896px;");
     expect(css).toContain("--landing-read-width: 896px;");
 
+    for (const selector of [".hero-shot", ".diagram-section"]) {
+      expect(css).toMatch(
+        new RegExp(`${selector.replace(".", "\\.")}[^{}]*\\{[^}]*max-width: var\\(--landing-showcase-width\\);`),
+      );
+    }
+
     for (const selector of [
-      ".hero-shot",
-      ".diagram-section",
       ".text-section",
       ".wide-image",
       ".section-cards",

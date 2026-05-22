@@ -1,10 +1,10 @@
 # Storyflow Windows Installer
-# Usage: irm https://story.zjding.com/latest/install-app.ps1 | iex
+# Usage: irm https://story-storage.zjding.com/latest/install-app.ps1 | iex
 
 & {
 $ErrorActionPreference = "Stop"
 
-$RELEASE_DOWNLOAD_URL = if ($env:STORYFLOW_DOWNLOAD_BASE_URL) { $env:STORYFLOW_DOWNLOAD_BASE_URL } else { "https://story.zjding.com/latest" }
+$RELEASE_DOWNLOAD_URL = if ($env:STORYFLOW_DOWNLOAD_BASE_URL) { $env:STORYFLOW_DOWNLOAD_BASE_URL } else { "https://story-storage.zjding.com/latest" }
 $DOWNLOAD_DIR = "$env:TEMP\storyflow-install"
 $APP_NAME = "Storyflow"
 

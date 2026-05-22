@@ -464,7 +464,7 @@ export function App() {
           </p>
           <CardGrid cards={sections.workflow} />
           <p className="fine-print">
-            下载链接默认指向 story.zjding.com/latest。桌面版适合把本地项目、章节文件、素材和 Agent 工作流稳定地放在一起。
+            下载链接默认指向 story-storage.zjding.com/latest。桌面版适合把本地项目、章节文件、素材和 Agent 工作流稳定地放在一起。
           </p>
         </TextSection>
 
