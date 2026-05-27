@@ -10,11 +10,22 @@ type RewindSourceSession = Pick<
   | 'id'
   | 'name'
   | 'llmConnection'
-  | 'model'
   | 'permissionMode'
   | 'workingDirectory'
   | 'enabledSourceSlugs'
 >
+
+export const MANAGED_DEFAULT_CONNECTION_SLUG = 'wangsu-default'
+
+export function canCreateDefaultRewindBranch(
+  session: Pick<RewindSourceSession, 'llmConnection'>,
+  branchFromMessageId: string | null,
+  defaultConnectionSlug: string | null | undefined
+): boolean {
+  if (!branchFromMessageId) return true
+  if (!session.llmConnection || !defaultConnectionSlug) return true
+  return session.llmConnection === defaultConnectionSlug
+}
 
 export function resolveRewindBranchMessageId(
   messages: Array<Pick<Message, 'id' | 'role' | 'isIntermediate' | 'turnId' | 'canBranch'>>,
@@ -37,8 +48,6 @@ export function buildRewindSessionOptions(
 ): CreateSessionOptions {
   const options: CreateSessionOptions = {
     name: `Rewind of ${session.name || 'Untitled'}`,
-    llmConnection: session.llmConnection,
-    model: session.model,
     permissionMode: session.permissionMode,
     workingDirectory: session.workingDirectory,
     enabledSourceSlugs: session.enabledSourceSlugs,

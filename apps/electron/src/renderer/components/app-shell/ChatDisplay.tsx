@@ -78,7 +78,12 @@ import { navigate, routes } from "@/lib/navigate"
 import { CHAT_LAYOUT } from "@/config/layout"
 import { collectFileChangesFromActivities, getFirstFileChangeIdForActivity } from "@/lib/file-changes"
 import { resolveBranchNewPanelOption } from "./branching"
-import { buildRewindSessionOptions, resolveRewindBranchMessageId } from "./chat-rewind"
+import {
+  buildRewindSessionOptions,
+  canCreateDefaultRewindBranch,
+  MANAGED_DEFAULT_CONNECTION_SLUG,
+  resolveRewindBranchMessageId,
+} from "./chat-rewind"
 import { handleErrorMessageAction } from "./error-message-actions"
 
 // ============================================================================
@@ -1382,9 +1387,16 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
     const originalContent = typeof message.content === 'string' ? message.content : ''
     const branchFromMessageId = resolveRewindBranchMessageId(session.messages, message.id)
+    const defaultConnectionSlug = appShellContext.workspaceDefaultLlmConnection
+      ?? appShellContext.llmConnections.find(connection => connection.isDefault)?.slug
+      ?? MANAGED_DEFAULT_CONNECTION_SLUG
 
     if (branchFromMessageId && !session.supportsBranching) {
       toast.error(t('chat.rewindUnavailable', 'This conversation cannot be rewound yet.'))
+      return
+    }
+    if (!canCreateDefaultRewindBranch(session, branchFromMessageId, defaultConnectionSlug)) {
+      toast.error(t('chat.rewindUnavailable', 'This message cannot be safely rewound.'))
       return
     }
 

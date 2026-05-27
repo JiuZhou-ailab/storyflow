@@ -139,12 +139,12 @@ describe('createBuiltInConnection seeds midStreamBehavior', () => {
     expect(conn.midStreamBehavior).toBe('steer')
   })
 
-  it("JiuZhou managed provider is visible and editable", () => {
+  it("JiuZhou managed provider is hidden from normal connection selection", () => {
     const conn = createBuiltInConnection('wangsu-default')
     expect(conn.name).toBe('JiuZhou')
     expect(conn.providerType).toBe('pi_compat')
     expect(conn.authType).toBe('api_key_with_endpoint')
-    expect(conn.hidden).toBe(false)
+    expect(conn.hidden).toBe(true)
     expect(conn.managed).toBe(true)
     expect(conn.source).toBe('builtin')
   })

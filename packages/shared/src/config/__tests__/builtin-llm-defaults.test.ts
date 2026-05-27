@@ -88,7 +88,7 @@ describe('builtin LLM connection defaults', () => {
     expect(JSON.stringify(config)).not.toContain('internal-secret')
   })
 
-  it('does not override an existing user default connection', () => {
+  it('promotes the bundled managed connection as the default even when a legacy default exists', () => {
     const config = makeConfig({
       defaultLlmConnection: 'user-default',
       llmConnections: [{
@@ -103,7 +103,7 @@ describe('builtin LLM connection defaults', () => {
     const result = applyBuiltinLlmConnectionDefaults(config, makeDefaults())
 
     expect(result.changed).toBe(true)
-    expect(config.defaultLlmConnection).toBe('user-default')
+    expect(config.defaultLlmConnection).toBe('wangsu-default')
     expect(config.llmConnections?.map(c => c.slug)).toEqual(['user-default', 'wangsu-default'])
   })
 

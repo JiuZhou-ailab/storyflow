@@ -245,7 +245,7 @@ export function createBuiltInConnection(slug: string, baseUrl?: string | null): 
     modelSelectionMode: providerType === 'pi' ? 'automaticallySyncedFromProvider' : undefined,
     piAuthProvider: template.piAuthProvider,
     midStreamBehavior: defaultMidStreamBehavior(providerType),
-    hidden: slug === 'wangsu-default' ? false : undefined,
+    hidden: slug === 'wangsu-default' ? true : undefined,
     managed: slug === 'wangsu-default' ? true : undefined,
     source: slug === 'wangsu-default' ? 'builtin' : undefined,
     createdAt: Date.now(),

@@ -207,7 +207,7 @@ export function applyBuiltinLlmConnectionDefaults(
     }
   }
 
-  if (!config.defaultLlmConnection) {
+  if (config.defaultLlmConnection !== slug) {
     config.defaultLlmConnection = slug;
     changed = true;
   }
