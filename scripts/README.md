@@ -42,3 +42,7 @@ not S3 access keys. Required GitHub settings:
 - Variable `STORYFLOW_R2_PUBLIC_BASE_URL`: public R2 custom domain, for example `https://story-storage.zjding.com`.
 - Variable `STORYFLOW_R2_LATEST_PREFIX`: `latest`.
 - Variable `STORYFLOW_R2_RELEASE_PREFIX`: `releases`.
+
+Installer artifacts are uploaded twice under each prefix: the original stable names used by
+release manifests, such as `Storyflow-arm64.dmg`, and versioned browser-download aliases,
+such as `Storyflow-<version>-arm64.dmg`.

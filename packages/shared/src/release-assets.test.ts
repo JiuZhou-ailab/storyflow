@@ -8,6 +8,7 @@ import {
   publicInstallerAssets,
   releaseAssetFiles,
   requiredPublicReleaseAssets,
+  versionedInstallerFileName,
   updateManifestFiles,
 } from "./release-assets.ts";
 
@@ -37,5 +38,17 @@ describe("release asset contract", () => {
       macOS: releaseAssetFiles.macManifest,
       Windows: releaseAssetFiles.windowsManifest,
     });
+  });
+
+  test("derives versioned installer download names without changing release asset names", () => {
+    expect(versionedInstallerFileName(releaseAssetFiles.macArm64Dmg, "v0.9.17")).toBe(
+      "Storyflow-0.9.17-arm64.dmg",
+    );
+    expect(versionedInstallerFileName(releaseAssetFiles.macX64Dmg, "0.9.17")).toBe(
+      "Storyflow-0.9.17-x64.dmg",
+    );
+    expect(versionedInstallerFileName(releaseAssetFiles.windowsX64Exe, "v0.9.17")).toBe(
+      "Storyflow-0.9.17-x64.exe",
+    );
   });
 });

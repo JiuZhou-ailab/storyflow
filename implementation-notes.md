@@ -38,6 +38,7 @@
 - Corrected macOS notarization credential handling for App Store Connect API keys. `APPLE_API_ISSUER` is now optional and only used for Team API keys; Individual API keys must provide `APPLE_API_KEY_BASE64`/`APPLE_API_KEY` plus `APPLE_API_KEY_ID` without an issuer.
 - Confirmed the existing App Store Connect Team API key `69KNT3WRS7` belongs to Issuer ID `4876acbd-c986-4873-92b4-b22e49ebd596` and passes `notarytool history` when the issuer is supplied. Local `.env` now points `APPLE_API_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER` at that verified notarization credential set.
 - Found that a successful app-bundle notarization is not enough for downloaded distribution: the generated DMG was initially rejected by Gatekeeper because it had no usable DMG signature or stapled ticket. The release config now signs the DMG through electron-builder and the build script submits/staples/verifies the DMG separately after packaging.
+- Optimized public installer downloads without changing updater contracts. GitHub Release assets and update manifests keep stable names like `Storyflow-arm64.dmg`, while the R2 publisher now also creates versioned installer aliases like `Storyflow-<version>-arm64.dmg`; the marketing download buttons point at those aliases and include a matching `download` filename.
 
 ## 2026-05-26
 

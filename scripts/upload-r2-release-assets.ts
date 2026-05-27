@@ -4,7 +4,11 @@
 
 import { readdirSync } from "node:fs";
 import { basename, join, relative } from "node:path";
-import { requiredPublicReleaseAssets } from "@craft-agent/shared/release-assets";
+import {
+  publicInstallerAssets,
+  requiredPublicReleaseAssets,
+  versionedInstallerFileName,
+} from "@craft-agent/shared/release-assets";
 
 type CliOptions = {
   assetsDir: string;
@@ -114,6 +118,16 @@ function contentTypeFor(fileName: string): string {
   return "application/octet-stream";
 }
 
+function versionedAliasFor(fileName: string, tag: string): string | undefined {
+  const installerAsset = publicInstallerAssets.find(
+    (asset) => asset.fileName === fileName,
+  );
+  if (!installerAsset) {
+    return undefined;
+  }
+  return versionedInstallerFileName(installerAsset.fileName, tag);
+}
+
 function wranglerCommand(): string[] {
   return (process.env.STORYFLOW_R2_WRANGLER_COMMAND ?? "bunx wrangler")
     .trim()
@@ -181,16 +195,32 @@ async function main(): Promise<void> {
     throw new Error(`Missing required release asset(s): ${missingFiles.join(", ")}`);
   }
 
-  const targetsFor = (fileName: string): UploadTarget[] => [
-    {
-      key: `${releasePrefix}/${options.tag}/${fileName}`,
-      cacheControl: "public, max-age=31536000, immutable",
-    },
-    {
-      key: `${latestPrefix}/${fileName}`,
-      cacheControl: "public, max-age=300, must-revalidate",
-    },
-  ];
+  const targetsFor = (fileName: string): UploadTarget[] => {
+    const targets: UploadTarget[] = [
+      {
+        key: `${releasePrefix}/${options.tag}/${fileName}`,
+        cacheControl: "public, max-age=31536000, immutable",
+      },
+      {
+        key: `${latestPrefix}/${fileName}`,
+        cacheControl: "public, max-age=300, must-revalidate",
+      },
+    ];
+    const versionedAlias = versionedAliasFor(fileName, options.tag);
+    if (versionedAlias) {
+      targets.push(
+        {
+          key: `${releasePrefix}/${options.tag}/${versionedAlias}`,
+          cacheControl: "public, max-age=31536000, immutable",
+        },
+        {
+          key: `${latestPrefix}/${versionedAlias}`,
+          cacheControl: "public, max-age=300, must-revalidate",
+        },
+      );
+    }
+    return targets;
+  };
 
   for (const fileName of allFiles) {
     const filePath = join(options.assetsDir, fileName);

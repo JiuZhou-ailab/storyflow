@@ -39,3 +39,23 @@ export const updateManifestFiles = {
 
 export type PublicInstallerAsset = (typeof publicInstallerAssets)[number];
 export type PublicReleaseAssetFile = (typeof requiredPublicReleaseAssets)[number];
+
+export function normalizeReleaseVersion(value: string): string {
+  const version = value.trim().replace(/^v/, "");
+  if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
+    throw new Error(`Invalid release version: ${value || "(empty)"}`);
+  }
+  return version;
+}
+
+export function versionedInstallerFileName(
+  fileName: PublicInstallerAsset["fileName"],
+  releaseVersion: string,
+): string {
+  const version = normalizeReleaseVersion(releaseVersion);
+  const match = /^Storyflow-(.+)\.(dmg|exe)$/.exec(fileName);
+  if (!match) {
+    throw new Error(`Unsupported installer file name: ${fileName}`);
+  }
+  return `Storyflow-${version}-${match[1]}.${match[2]}`;
+}

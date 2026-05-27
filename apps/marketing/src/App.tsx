@@ -309,7 +309,7 @@ function DownloadMenu() {
       {open ? (
         <div className="download-popover">
           {releaseDownloadOptions.map((option) => (
-            <a href={option.href} key={option.id}>
+            <a download={option.downloadFileName} href={option.href} key={option.id}>
               <Icon name={option.platform === "Windows" ? "windows" : "apple"} />
               {option.label}
             </a>

@@ -42,7 +42,11 @@ describe("upload-r2-release-assets", () => {
     expect(result.stdout).toContain(
       `https://story-storage.zjding.com/releases/v0.9.12/${releaseAssetFiles.macArm64Dmg}`,
     );
+    expect(result.stdout).toContain(
+      "https://story-storage.zjding.com/releases/v0.9.12/Storyflow-0.9.12-arm64.dmg",
+    );
     expect(result.stdout).toContain(`https://story-storage.zjding.com/latest/${releaseAssetFiles.macArm64Dmg}`);
+    expect(result.stdout).toContain("https://story-storage.zjding.com/latest/Storyflow-0.9.12-arm64.dmg");
     expect(result.stdout).toContain(`https://story-storage.zjding.com/latest/${releaseAssetFiles.macManifest}`);
     expect(result.stdout).toContain("Published 9 asset(s)");
   });
