@@ -59,7 +59,7 @@ async function handleRequest(
   const request = new Request(url, {
     method: nodeReq.method,
     headers,
-    body,
+    body: body ? new Uint8Array(body) : null,
   })
 
   const response = await handler(request)

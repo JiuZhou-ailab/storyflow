@@ -33,16 +33,16 @@ Extract evidence-backed writing bible files from source texts so a new project c
 
 ## Inputs
 
-- Source text files under \`analysis/src/\`
+- Source text files under \`.work/analysis/src/\`
 - Existing templates under \`bible/\` when present
 
 ## Workflow
 
 1. Read the complete source text before extracting rules.
-2. Create \`analysis/output/<source-slug>/style.md\` with point of view, tense, dialogue style, sentence rhythm, vocabulary, and description patterns.
-3. Create \`analysis/output/<source-slug>/structure.md\` with act structure, chapter pattern, openings, endings, pacing, and genre mechanics.
-4. Create one file per major character under \`analysis/output/<source-slug>/characters/\`.
-5. Create one file per significant location or world element under \`analysis/output/<source-slug>/universe/\`.
+2. Create \`.work/analysis/output/<source-slug>/style.md\` with point of view, tense, dialogue style, sentence rhythm, vocabulary, and description patterns.
+3. Create \`.work/analysis/output/<source-slug>/structure.md\` with act structure, chapter pattern, openings, endings, pacing, and genre mechanics.
+4. Create one file per major character under \`.work/analysis/output/<source-slug>/characters/\`.
+5. Create one file per significant location or world element under \`.work/analysis/output/<source-slug>/universe/\`.
 6. Support every trait, pattern, and rule with direct evidence or a measurable observation.
 
 ## Evidence Rules
@@ -70,7 +70,7 @@ ${ATTRIBUTION}
 
 ## Purpose
 
-Consolidate multiple \`analysis/output/*/\` analyses into the canonical \`bible/\` directory while preserving source evidence and conflict notes.
+Consolidate multiple \`.work/analysis/output/*/\` analyses into the canonical \`bible/\` directory while preserving source evidence and conflict notes.
 
 ## Workflow
 
@@ -79,7 +79,7 @@ Consolidate multiple \`analysis/output/*/\` analyses into the canonical \`bible/
 3. Merge character files by preserving traits demonstrated across sources and marking single-source traits with provenance.
 4. Merge universe files by consolidating recurring locations and keeping contradictions explicit.
 5. Merge \`structure.md\` into durable narrative rules and non-binding observations.
-6. Write \`analysis/merge-report.md\` with sources, consistency analysis, coverage, and conflict resolution.
+6. Write \`.work/analysis/merge-report.md\` with sources, consistency analysis, coverage, and conflict resolution.
 
 ## Conflict Rules
 
@@ -110,7 +110,7 @@ Generate original story ideas that fit the project's bible without copying sourc
 - \`bible/structure.md\`
 - \`bible/characters/*.md\`
 - \`bible/universe/*.md\`
-- \`analysis/output/*/structure.md\` when available for anti-plagiarism checks
+- \`.work/analysis/output/*/structure.md\` when available for anti-plagiarism checks
 
 ## Workflow
 
@@ -375,25 +375,39 @@ function adapterSkill({
   slug,
   title,
   description,
+  metadataName,
   attribution,
   purpose,
   context,
   workflow,
   output,
+  sectionLabels = {
+    purpose: "Purpose",
+    context: "Project Context",
+    workflow: "Workflow",
+    output: "Output",
+  },
 }: {
   slug: string;
   title: string;
   description: string;
+  metadataName?: string;
   attribution: string;
   purpose: string;
   context: string[];
   workflow: string[];
   output: string[];
+  sectionLabels?: {
+    purpose: string;
+    context: string;
+    workflow: string;
+    output: string;
+  };
 }): { slug: string; content: string } {
   return {
     slug,
     content: `---
-name: ${slug}
+name: ${metadataName ?? slug}
 description: ${description}
 ---
 
@@ -401,19 +415,19 @@ description: ${description}
 
 ${attribution}
 
-## Purpose
+## ${sectionLabels.purpose}
 
 ${purpose}
 
-## Project Context
+## ${sectionLabels.context}
 
 ${context.map((item) => `- ${item}`).join("\n")}
 
-## Workflow
+## ${sectionLabels.workflow}
 
 ${workflow.map((item, index) => `${index + 1}. ${item}`).join("\n")}
 
-## Output
+## ${sectionLabels.output}
 
 ${output.map((item) => `- ${item}`).join("\n")}
 `,
@@ -719,94 +733,108 @@ const CREATIVE_WRITING_SKILLS = [
   }),
 ];
 
-const SHORT_FORM_ATTRIBUTION = "Craft Agent short-form writing profile";
+const SHORT_FORM_ATTRIBUTION = "Craft Agent 短篇写作配置";
+const SHORT_FORM_SECTION_LABELS = {
+  purpose: "用途",
+  context: "项目上下文",
+  workflow: "工作流程",
+  output: "输出",
+};
 
 const SHORT_FORM_SKILLS = [
   adapterSkill({
     slug: "short-opening-designer",
-    title: "Short Opening Designer",
-    description: "Use when planning, diagnosing, or revising the first screen of a short-form Chinese web-fiction piece, especially when writing chapter 1, improving an abrupt opening, or filling the opening section of 简报.md / 大纲.md.",
+    title: "短篇开篇设计",
+    metadataName: "短篇开篇设计",
+    description: "用于规划、诊断或修订中文短篇网文的第一屏、第一章开篇、开篇钩子，以及补全 简报.md 或 大纲.md 中的开篇设计。",
     attribution: SHORT_FORM_ATTRIBUTION,
-    purpose: "Design the first-screen retention artifact before prose drafting.",
+    purpose: "在正文起草前设计第一屏留存结构。",
+    sectionLabels: SHORT_FORM_SECTION_LABELS,
     context: [
-      "Read 创作要求.md, 简报.md, 大纲.md, 人物.md, and 素材.md when present.",
-      "Do not write accepted prose into 正文/.",
-      "Use 自由区/ for competing opening experiments when needed.",
+      "存在 创作要求.md、简报.md、大纲.md、人物.md、素材.md 时先读取。",
+      "不要把已接受正文写入 正文/。",
+      "需要比较多个开篇方案时使用 自由区/。",
     ],
     workflow: [
-      "Extract title promise, genre promise, protagonist pressure, relationship pressure, and known taboo constraints.",
-      "Design the opening artifact: impossible fact, evidence object, relationship pressure, irreversible cost, protagonist first choice, three-paragraph progression, and first-800-character pursuit question.",
-      "Update 简报.md and 大纲.md with the accepted opening design.",
-      "If multiple options are useful, put comparison notes in 自由区/YYYYMMDD-开篇方案.md.",
+      "提取标题承诺、题材承诺、主角压力、关系压力和已知禁区。",
+      "设计开篇结构：不可能事实、证据物、关系压力、不可逆代价、主角第一次选择、前三段推进和前 800 字追读问题。",
+      "把已接受的开篇设计更新到 简报.md 和 大纲.md。",
+      "如果需要多个方案，把比较记录写到 自由区/YYYYMMDD-开篇方案.md。",
     ],
     output: [
-      "Updated 简报.md opening section.",
-      "Updated 大纲.md chapter-01 opening beats.",
-      "Optional 自由区 opening comparison note.",
+      "更新后的 简报.md 开篇部分。",
+      "更新后的 大纲.md 第一章开篇节拍。",
+      "可选的 自由区 开篇方案比较记录。",
     ],
   }),
   adapterSkill({
     slug: "short-golden-three",
-    title: "Short Golden Three Planner",
-    description: "Use when planning or repairing the first three chapters of a short-form Chinese web-fiction piece for retention, escalation, and payoff.",
+    title: "黄金三章规划",
+    metadataName: "黄金三章规划",
+    description: "用于规划或修复中文短篇网文前三章的留存、升级、状态变化和兑现节奏。",
     attribution: SHORT_FORM_ATTRIBUTION,
-    purpose: "Turn premise and opening promise into a chapter-1 pull, chapter-2 pressure, and chapter-3 lock-in plan.",
+    purpose: "把前提和开篇承诺转成第一章牵引、第二章加压、第三章锁读的执行方案。",
+    sectionLabels: SHORT_FORM_SECTION_LABELS,
     context: [
-      "Use 简报.md as intake.",
-      "Use 大纲.md as outline.",
-      "Do not write accepted prose into 正文/.",
+      "简报.md 是作品 intake。",
+      "大纲.md 是章节 outline。",
+      "不要把已接受正文写入 正文/。",
     ],
     workflow: [
-      "Identify chapter-1 pull, chapter-2 pressure escalation, and chapter-3 retention lock.",
-      "Check that each chapter has a state change, visible conflict, and pursuit question.",
-      "Update 简报.md and 大纲.md rather than creating a separate 黄金三章.md file.",
+      "识别第一章牵引、第二章压力升级和第三章锁读点。",
+      "检查每章是否都有状态变化、可见冲突和追读问题。",
+      "更新 简报.md 和 大纲.md，不单独创建 黄金三章.md。",
     ],
     output: [
-      "Updated 简报.md golden-three section.",
-      "Updated 大纲.md first-three chapter beats.",
+      "更新后的 简报.md 黄金三章部分。",
+      "更新后的 大纲.md 前三章节拍。",
     ],
   }),
   adapterSkill({
     slug: "short-draft-chapter",
-    title: "Short Chapter Drafter",
-    description: "Use when drafting the current next chapter of a short-form Chinese web-fiction piece after 简报.md and 大纲.md contain usable planning content.",
+    title: "短篇章节起草",
+    metadataName: "短篇章节起草",
+    description: "用于在 简报.md 和 大纲.md 已有可执行规划后，起草中文短篇网文的当前下一章。",
     attribution: SHORT_FORM_ATTRIBUTION,
-    purpose: "Draft one accepted chapter from the current brief, outline, characters, and source material.",
+    purpose: "根据当前简报、大纲、人物和素材起草一个可接受章节。",
+    sectionLabels: SHORT_FORM_SECTION_LABELS,
     context: [
-      "正文/ contains accepted prose only.",
-      "自由区/ contains experiments and discarded drafts.",
-      "Default to one chapter per request unless the user explicitly asks for batch drafting.",
+      "正文/ 只放已接受正文。",
+      "自由区/ 放试验稿和废弃稿。",
+      "默认每次只写一章，除非用户明确要求批量起草。",
     ],
     workflow: [
-      "Read 创作要求.md, 简报.md, 大纲.md, 人物.md, and 素材.md.",
-      "Find the next planned chapter and confirm no accepted chapter already exists for that number.",
-      "Draft only the current chapter into 正文/NN-标题.md.",
-      "Keep experiments or alternative openings in 自由区/.",
+      "读取 创作要求.md、简报.md、大纲.md、人物.md 和 素材.md。",
+      "找到下一章规划，并确认 正文/ 中还没有同编号已接受章节。",
+      "只把当前章节写入 正文/NN-标题.md。",
+      "试写或替代开篇保留在 自由区/。",
     ],
     output: [
-      "One 正文/NN-标题.md chapter file.",
-      "Brief note of any unresolved assumptions.",
+      "一个 正文/NN-标题.md 章节文件。",
+      "未解决假设的简短说明。",
     ],
   }),
   adapterSkill({
     slug: "short-reviser",
-    title: "Short Form Reviser",
-    description: "Use when diagnosing or revising an existing short-form Chinese web-fiction chapter for retention, conflict, pacing, payoff, abruptness, or weak opening.",
+    title: "短篇正文修订",
+    metadataName: "短篇正文修订",
+    description: "用于诊断或修订既有中文短篇网文章节的留存、冲突、节奏、兑现、开篇突兀或开篇无力问题。",
     attribution: SHORT_FORM_ATTRIBUTION,
-    purpose: "Revise accepted or draft short-form prose against the project brief and reader-retention contract.",
+    purpose: "根据项目简报和读者留存契约修订已接受正文或草稿。",
+    sectionLabels: SHORT_FORM_SECTION_LABELS,
     context: [
-      "Use patch-style local edits for existing files.",
-      "Do not fork 草稿/ or 定稿/ directories.",
-      "Put review notes in 自由区/ when needed.",
+      "对已有文件使用局部 patch 式修改。",
+      "不要派生 草稿/ 或 定稿/ 目录。",
+      "需要审校记录时放入 自由区/。",
     ],
     workflow: [
-      "Separate original text facts, inferred reader response, and revision recommendations.",
-      "Check first 300-800 characters for pressure, conflict, question, and consequence.",
-      "Apply scoped revisions to the target chapter or produce a review note if the user asked for diagnosis only.",
+      "区分原文事实、推断的读者反应和修订建议。",
+      "检查前 300-800 字是否具备压力、冲突、问题和后果。",
+      "对目标章节做限定范围修订；如果用户只要求诊断，则输出审校记录。",
     ],
     output: [
-      "Patched chapter file or 自由区 review note.",
-      "Concise summary of structural changes.",
+      "修订后的章节文件或 自由区 审校记录。",
+      "结构变化的简要说明。",
     ],
   }),
 ];

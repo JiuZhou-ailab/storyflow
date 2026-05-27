@@ -1,14 +1,18 @@
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { NOVEL_WORKSPACE_TABS } from './novel-workspace-config'
+import { NOVEL_WORKSPACE_TABS, type NovelWorkspaceTabConfig } from './novel-workspace-config'
 
-export function NovelWorkspaceTabs() {
+export function NovelWorkspaceTabs({
+  tabs = NOVEL_WORKSPACE_TABS,
+}: {
+  tabs?: NovelWorkspaceTabConfig[]
+}) {
   const { t } = useTranslation()
 
   return (
     <TabsList className="h-8 rounded-md bg-foreground/[0.04] p-0.5">
-      {NOVEL_WORKSPACE_TABS.map((tab) => (
+      {tabs.map((tab) => (
         <TabsTrigger
           key={tab.id}
           value={tab.id}

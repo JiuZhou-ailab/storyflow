@@ -19,8 +19,21 @@
  *   CRAFT_DEBUG                — 'true' for debug logging
  *   CRAFT_WEBUI_DIR            — path to built web UI assets (enables web UI on RPC port)
  *   CRAFT_WEBUI_PASSWORD       — optional shorter password for web login (falls back to CRAFT_SERVER_TOKEN)
+ *   CRAFT_WEBUI_PASSWORD_AUTH_ENABLED — optional true/false; set false to require account auth instead of server-token login
  *   CRAFT_WEBUI_SECURE_COOKIE  — optional true/false override for the session cookie Secure flag
  *   CRAFT_WEBUI_WS_URL         — optional browser-facing ws:// or wss:// URL returned by /api/config
+ *   CRAFT_WEBUI_FEISHU_APP_ID  — optional Feishu OAuth app ID for Web UI login
+ *   CRAFT_WEBUI_FEISHU_APP_SECRET — optional Feishu OAuth app secret for Web UI login
+ *   CRAFT_WEBUI_FEISHU_REDIRECT_URI — optional fixed Feishu OAuth callback URL
+ *   CRAFT_WEBUI_FEISHU_SCOPE — optional Feishu OAuth scope string
+ *   CRAFT_WEBUI_FEISHU_INTERNAL_TENANT_KEYS — comma-separated tenant_key allow-list for internal users
+ *   CRAFT_WEBUI_FEISHU_ALLOW_ALL_USERS — optional true/false; allow any Feishu account after OAuth
+ *   CRAFT_WEBUI_AUTH_DATABASE_URL — optional Neon/Postgres URL for external Feishu registration checks
+ *   CRAFT_WEBUI_NEON_AUTH_BASE_URL — optional Neon Auth base URL for email login
+ *   CRAFT_WEBUI_NEON_AUTH_JWKS_URL — optional Neon Auth JWKS URL override
+ *   CRAFT_WEBUI_NEON_AUTH_ISSUER — optional Neon Auth JWT issuer override
+ *   CRAFT_WEBUI_NEON_AUTH_AUDIENCE — optional Neon Auth JWT audience override
+ *   CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN — optional internal email domain for username login
  *   CRAFT_MESSAGING_WA_WORKER  — absolute path to worker.cjs (default: packages/messaging-whatsapp-worker/dist/worker.cjs)
  *   CRAFT_MESSAGING_NODE_BIN   — Node binary used to spawn the WhatsApp worker (default: node)
  */
@@ -31,7 +44,14 @@ import { readFileSync, existsSync } from 'node:fs'
 import { version as packageVersion } from '../package.json'
 import { enableDebug } from '@craft-agent/shared/utils/debug'
 import { bootstrapServer, startHealthHttpServer, generateServerToken } from '@craft-agent/server-core/bootstrap'
-import { validateSession, createWebuiHandler, nodeHttpAdapter } from '@craft-agent/server-core/webui'
+import {
+  validateSession,
+  createWebuiHandler,
+  nodeHttpAdapter,
+  createPostgresFeishuRegistrationStore,
+  type FeishuAuthConfig,
+  type NeonAuthConfig,
+} from '@craft-agent/server-core/webui'
 import type { WebuiHandler } from '@craft-agent/server-core/webui'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { getWorkspaces } from '@craft-agent/shared/config'
@@ -90,6 +110,14 @@ function parseOptionalWebSocketUrl(name: string, value: string | undefined): str
   }
 }
 
+function parseCsvEnv(value: string | undefined): string[] {
+  if (!value) return []
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
 // In dev (monorepo), bundled assets root is the repo root (4 levels up from this file).
 // In packaged mode, use CRAFT_BUNDLED_ASSETS_ROOT env or cwd.
 const bundledAssetsRoot = process.env.CRAFT_BUNDLED_ASSETS_ROOT
@@ -115,8 +143,51 @@ if (tlsCertPath || tlsKeyPath) {
 const webuiDir = process.env.CRAFT_WEBUI_DIR || undefined
 const webuiEnabled = webuiDir && existsSync(webuiDir)
 const webuiSecureCookies = parseOptionalBooleanEnv('CRAFT_WEBUI_SECURE_COOKIE', process.env.CRAFT_WEBUI_SECURE_COOKIE)
+const webuiPasswordAuthEnabled = parseOptionalBooleanEnv(
+  'CRAFT_WEBUI_PASSWORD_AUTH_ENABLED',
+  process.env.CRAFT_WEBUI_PASSWORD_AUTH_ENABLED,
+) ?? true
 const webuiWsUrl = parseOptionalWebSocketUrl('CRAFT_WEBUI_WS_URL', process.env.CRAFT_WEBUI_WS_URL)
 const serverToken = process.env.CRAFT_SERVER_TOKEN
+
+function createFeishuAuthConfigFromEnv(): FeishuAuthConfig | undefined {
+  const appId = process.env.CRAFT_WEBUI_FEISHU_APP_ID?.trim()
+  const appSecret = process.env.CRAFT_WEBUI_FEISHU_APP_SECRET?.trim()
+  if (!appId && !appSecret) return undefined
+
+  if (!appId || !appSecret) {
+    console.warn('Feishu Web UI login requires both CRAFT_WEBUI_FEISHU_APP_ID and CRAFT_WEBUI_FEISHU_APP_SECRET.')
+    return undefined
+  }
+
+  const databaseUrl = process.env.CRAFT_WEBUI_AUTH_DATABASE_URL
+  return {
+    appId,
+    appSecret,
+    redirectUri: process.env.CRAFT_WEBUI_FEISHU_REDIRECT_URI?.trim() || undefined,
+    scope: process.env.CRAFT_WEBUI_FEISHU_SCOPE?.trim() || undefined,
+    internalTenantKeys: parseCsvEnv(process.env.CRAFT_WEBUI_FEISHU_INTERNAL_TENANT_KEYS),
+    allowAllUsers: parseOptionalBooleanEnv('CRAFT_WEBUI_FEISHU_ALLOW_ALL_USERS', process.env.CRAFT_WEBUI_FEISHU_ALLOW_ALL_USERS) ?? false,
+    registrationStore: createPostgresFeishuRegistrationStore(databaseUrl),
+  }
+}
+
+const webuiFeishuAuth = createFeishuAuthConfigFromEnv()
+
+function createNeonAuthConfigFromEnv(): NeonAuthConfig | undefined {
+  const baseUrl = process.env.CRAFT_WEBUI_NEON_AUTH_BASE_URL?.trim()
+  if (!baseUrl) return undefined
+
+  return {
+    baseUrl,
+    jwksUrl: process.env.CRAFT_WEBUI_NEON_AUTH_JWKS_URL?.trim() || undefined,
+    issuer: process.env.CRAFT_WEBUI_NEON_AUTH_ISSUER?.trim() || undefined,
+    audience: process.env.CRAFT_WEBUI_NEON_AUTH_AUDIENCE?.trim() || undefined,
+    usernameEmailDomain: process.env.CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN?.trim() || undefined,
+  }
+}
+
+const webuiNeonAuth = createNeonAuthConfigFromEnv()
 
 // ---------------------------------------------------------------------------
 // Create WebUI handler early so it can be embedded in the WsRpcServer.
@@ -139,8 +210,11 @@ if (webuiEnabled && serverToken) {
     webuiDir: webuiDir!,
     secret: serverToken,
     password: process.env.CRAFT_WEBUI_PASSWORD || undefined,
+    passwordAuthEnabled: webuiPasswordAuthEnabled,
     secureCookies: webuiSecureCookies,
     publicWsUrl: webuiWsUrl,
+    feishuAuth: webuiFeishuAuth,
+    neonAuth: webuiNeonAuth,
     wsProtocol: rpcProtocol,
     // WebUI is served on the same port as WS — wsPort matches the RPC port
     wsPort: rpcPort,

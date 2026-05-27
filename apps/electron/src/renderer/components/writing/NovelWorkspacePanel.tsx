@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import {
   buildNovelWorkspaceTree,
   groupNovelFileChanges,
+  isShortFormNovelWorkspaceFiles,
   selectDefaultNovelTab,
   summarizeNovelSection,
   type NovelWorkspaceFile,
@@ -19,7 +20,7 @@ import type { FileChange } from '@craft-agent/ui'
 import { NovelWorkspaceTabs } from './NovelWorkspaceTabs'
 import { NovelSectionList } from './NovelSectionList'
 import { NovelDocumentPreview } from './NovelDocumentPreview'
-import { NOVEL_WORKSPACE_TABS } from './novel-workspace-config'
+import { getVisibleNovelWorkspaceTabs } from './novel-workspace-config'
 import { formatNovelWorkspacePathTitle } from './novel-file-display'
 
 export interface NovelWorkspacePanelProps {
@@ -54,6 +55,14 @@ export function NovelWorkspacePanel({
   const { t } = useTranslation()
   const tree = React.useMemo(() => buildNovelWorkspaceTree(files), [files])
   const changeGroups = React.useMemo(() => groupNovelFileChanges(changes, rootPath), [changes, rootPath])
+  const isShortFormWorkspace = React.useMemo(() => isShortFormNovelWorkspaceFiles(files), [files])
+  const visibleTabs = React.useMemo(
+    () => getVisibleNovelWorkspaceTabs({
+      hasAnalysisFiles: tree.analysis.files.length > 0,
+      isShortFormWorkspace,
+    }),
+    [isShortFormWorkspace, tree.analysis.files.length]
+  )
   const [activeTab, setActiveTab] = React.useState<NovelWorkspaceTab>(() => selectDefaultNovelTab(tree))
   const [selectedFiles, setSelectedFiles] = React.useState<Partial<Record<NovelWorkspaceTab, NovelWorkspaceFile>>>({})
   const selectedFile = selectedFiles[activeTab]
@@ -61,8 +70,9 @@ export function NovelWorkspacePanel({
   const [previewLoading, setPreviewLoading] = React.useState(false)
 
   React.useEffect(() => {
-    setActiveTab(selectDefaultNovelTab(tree))
-  }, [tree])
+    const nextDefaultTab = selectDefaultNovelTab(tree)
+    setActiveTab(visibleTabs.some(tab => tab.id === nextDefaultTab) ? nextDefaultTab : visibleTabs[0]?.id ?? 'manuscript')
+  }, [tree, visibleTabs])
 
   React.useEffect(() => {
     const sectionId = TAB_TO_SECTION[activeTab]
@@ -101,12 +111,12 @@ export function NovelWorkspacePanel({
           <div className="min-w-0 truncate text-sm font-medium">{t('writing.workspace')}</div>
         </div>
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as NovelWorkspaceTab)}>
-          <NovelWorkspaceTabs />
+          <NovelWorkspaceTabs tabs={visibleTabs} />
         </Tabs>
       </div>
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as NovelWorkspaceTab)} className="min-h-0 flex-1">
-        {NOVEL_WORKSPACE_TABS.filter(tab => tab.id !== 'changes').map((tab) => {
+        {visibleTabs.filter(tab => tab.id !== 'changes').map((tab) => {
           const sectionId = TAB_TO_SECTION[tab.id]
           if (!sectionId) return null
           const section = tree[sectionId]

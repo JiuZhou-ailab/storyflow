@@ -324,8 +324,8 @@ function scaffoldClaudeBook(rootPath: string): void {
     "state/current",
     "state/template",
     "timeline",
-    "analysis/src",
-    "analysis/output",
+    ".work/analysis/src",
+    ".work/analysis/output",
     ".work",
   ]) {
     ensureDir(join(rootPath, dir));

@@ -426,9 +426,20 @@ describe('novel writing workspace layout', () => {
     expect(sidebarSource).toContain('globalSectionDefinitions')
     expect(sidebarSource).toContain('manuscriptSection')
     expect(sidebarSource).toContain('freeAreaSection')
+    expect(sidebarSource).toContain('shortFormGlobalInfoFiles.map(fileItem)')
     expect(sidebarSource).toContain('visibleGlobalSectionItems')
     expect(sidebarSource).toContain("section.files.length > 0")
     expect(sidebarSource).not.toContain("sectionDefinitions.map((section)")
+  })
+
+  it('renders compact writing file titles with a softer two-line clamp', () => {
+    const leftSidebarSource = readFileSync(new URL('../../app-shell/LeftSidebar.tsx', import.meta.url), 'utf-8')
+
+    expect(leftSidebarSource).toContain('const titleClassName')
+    expect(leftSidebarSource).toContain('link.compact')
+    expect(leftSidebarSource).toContain('line-clamp-2')
+    expect(leftSidebarSource).toContain('leading-[1.25]')
+    expect(leftSidebarSource).toContain('min-h-[34px]')
   })
 
   it('exposes plus actions for creating writing files in manuscript and free area groups', () => {
@@ -931,7 +942,8 @@ describe('novel writing workspace layout', () => {
     const leftSidebarSource = readFileSync(new URL('../../app-shell/LeftSidebar.tsx', import.meta.url), 'utf-8')
 
     expect(leftSidebarSource).toContain('"group flex w-full items-center justify-start gap-2 rounded-[6px] text-left text-[13px] select-none outline-none"')
-    expect(leftSidebarSource).toContain('<span className="min-w-0 flex-1 truncate text-left">{link.title}</span>')
+    expect(leftSidebarSource).toContain(': "min-w-0 flex-1 truncate text-left"')
+    expect(leftSidebarSource).toContain('<span className={titleClassName}>{link.title}</span>')
   })
 
   it('does not position the navigator resize handle with detached left math', () => {

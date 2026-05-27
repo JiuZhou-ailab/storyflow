@@ -173,6 +173,59 @@ describe('builtin LLM connection defaults', () => {
     })
   })
 
+  it('seeds the managed gateway credential from CRAFT_BUILTIN_LLM_API_KEY when the bundle omits a key', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'craft-agent-builtin-env-'))
+    const bundledRoot = join(configDir, 'bundle')
+    const bundledResources = join(bundledRoot, 'resources')
+    mkdirSync(bundledResources, { recursive: true })
+
+    writeFileSync(
+      join(configDir, 'config.json'),
+      JSON.stringify({
+        workspaces: [],
+        activeWorkspaceId: null,
+        activeSessionId: null,
+        llmConnections: [],
+      }, null, 2),
+      'utf-8',
+    )
+    writeFileSync(
+      join(bundledResources, 'config-defaults.json'),
+      JSON.stringify(makeDefaults({ apiKey: '' }), null, 2),
+      'utf-8',
+    )
+
+    const run = Bun.spawnSync([
+      process.execPath,
+      '--eval',
+      `
+        import { setBundledAssetsRoot } from '${UTILS_MODULE_PATH}';
+        import { seedBuiltinLlmConnectionFromDefaults } from '${STORAGE_MODULE_PATH}';
+        import { getCredentialManager } from '${CREDENTIALS_MODULE_PATH}';
+        setBundledAssetsRoot(${JSON.stringify(bundledRoot)});
+        await seedBuiltinLlmConnectionFromDefaults();
+        const key = await getCredentialManager().getLlmApiKey('wangsu-default');
+        console.log(key ?? '');
+      `,
+    ], {
+      env: {
+        ...process.env,
+        CRAFT_CONFIG_DIR: configDir,
+        CRAFT_BUILTIN_LLM_API_KEY: 'env-managed-secret',
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+
+    if (run.exitCode !== 0) {
+      throw new Error(`env seed subprocess failed:\n${run.stderr.toString()}`)
+    }
+
+    expect(run.stdout.toString().trim()).toBe('env-managed-secret')
+    expect(readFileSync(join(configDir, 'config.json'), 'utf-8')).not.toContain('env-managed-secret')
+    expect(readFileSync(join(configDir, 'config-defaults.json'), 'utf-8')).not.toContain('env-managed-secret')
+  })
+
   it('seeds the credential from bundled defaults without copying the key to local config files', () => {
     const configDir = mkdtempSync(join(tmpdir(), 'craft-agent-builtin-'))
     const bundledRoot = join(configDir, 'bundle')

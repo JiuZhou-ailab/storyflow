@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { startWebuiHttpServer } from '../http-server'
+import type { FeishuAuthConfig, FeishuOAuthClient, FeishuUserInfo } from '../feishu-auth'
+import type { NeonAuthConfig } from '../neon-auth'
 
 const SECRET = 'test-server-secret'
 const PASSWORD = 'test-password'
@@ -29,6 +31,9 @@ async function createServer(overrides?: {
   publicWsUrl?: string
   wsProtocol?: 'ws' | 'wss'
   wsPort?: number
+  feishuAuth?: FeishuAuthConfig
+  neonAuth?: NeonAuthConfig
+  passwordAuthEnabled?: boolean
 }) {
   const server = await startWebuiHttpServer({
     port: 0,
@@ -41,6 +46,9 @@ async function createServer(overrides?: {
     wsPort: overrides?.wsPort ?? 9100,
     getHealthCheck: () => ({ status: 'ok' }),
     logger,
+    feishuAuth: overrides?.feishuAuth,
+    neonAuth: overrides?.neonAuth,
+    passwordAuthEnabled: overrides?.passwordAuthEnabled,
   })
 
   SERVERS.push(server)
@@ -55,6 +63,46 @@ function extractSessionCookie(res: Response): string {
   const setCookie = res.headers.get('set-cookie')
   expect(setCookie).toBeTruthy()
   return setCookie!.split(';')[0]!
+}
+
+function createFeishuAuthConfig(user: FeishuUserInfo, registered = false): FeishuAuthConfig {
+  const client: FeishuOAuthClient = {
+    exchangeCode: async () => ({ accessToken: 'feishu-access-token' }),
+    getUserInfo: async () => user,
+  }
+
+  return {
+    appId: 'cli_test',
+    appSecret: 'secret_test',
+    internalTenantKeys: ['tenant_internal'],
+    client,
+    registrationStore: {
+      isRegistered: async () => registered,
+    },
+  }
+}
+
+function createNeonAuthConfig(overrides?: Partial<NeonAuthConfig>): NeonAuthConfig {
+  return {
+    baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+    tokenVerifier: async (token) => {
+      if (token !== 'valid-neon-token') return null
+      return {
+        sub: 'neon_user_123',
+        email: 'Neon.User@Example.com',
+        emailVerified: true,
+      }
+    },
+    ...overrides,
+  }
+}
+
+async function startFeishuLogin(baseUrl: string): Promise<URL> {
+  const res = await fetch(`${baseUrl}/api/auth/feishu/start`, { redirect: 'manual' })
+  expect(res.status).toBe(302)
+  const location = res.headers.get('location')
+  expect(location).toBeTruthy()
+  return new URL(location!)
 }
 
 afterEach(() => {
@@ -187,5 +235,344 @@ describe('startWebuiHttpServer', () => {
     expect(await configRes.json()).toEqual({
       wsUrl: 'wss://craft.example.com/ws',
     })
+  })
+
+  it('reports Feishu login disabled by default', async () => {
+    const { baseUrl } = await createServer()
+
+    const res = await fetch(`${baseUrl}/api/auth/feishu/config`)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ enabled: false })
+  })
+
+  it('reports Neon Auth disabled by default', async () => {
+    const { baseUrl } = await createServer()
+
+    const res = await fetch(`${baseUrl}/api/auth/neon/config`)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ enabled: false })
+  })
+
+  it('exposes configured Neon Auth base URL without verifier details', async () => {
+    const { baseUrl } = await createServer({
+      neonAuth: createNeonAuthConfig({
+        baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth/',
+        jwksUrl: 'https://private.example.com/jwks.json',
+      }),
+    })
+
+    const res = await fetch(`${baseUrl}/api/auth/neon/config`)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      enabled: true,
+      baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+    })
+  })
+
+  it('can disable server-token password login when account auth is required', async () => {
+    const { baseUrl } = await createServer({
+      passwordAuthEnabled: false,
+      neonAuth: createNeonAuthConfig(),
+    })
+
+    const configRes = await fetch(`${baseUrl}/api/auth/neon/config`)
+    expect(configRes.status).toBe(200)
+    expect(await configRes.json()).toEqual({
+      enabled: true,
+      baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+      passwordAuthEnabled: false,
+    })
+
+    const passwordRes = await fetch(`${baseUrl}/api/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: PASSWORD }),
+    })
+
+    expect(passwordRes.status).toBe(403)
+    expect(await passwordRes.json()).toEqual({ error: 'Password login is disabled' })
+    expect(passwordRes.headers.get('set-cookie')).toBeNull()
+  })
+
+  it('rejects Neon Auth exchange without a token', async () => {
+    const { baseUrl } = await createServer({
+      neonAuth: createNeonAuthConfig(),
+    })
+
+    const res = await fetch(`${baseUrl}/api/auth/neon/exchange`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'Neon Auth token is required' })
+  })
+
+  it('rejects invalid Neon Auth exchange tokens', async () => {
+    const { baseUrl } = await createServer({
+      neonAuth: createNeonAuthConfig(),
+    })
+
+    const res = await fetch(`${baseUrl}/api/auth/neon/exchange`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: 'wrong-token' }),
+    })
+
+    expect(res.status).toBe(401)
+    expect(await res.json()).toEqual({ error: 'Invalid Neon Auth token' })
+    expect(res.headers.get('set-cookie')).toBeNull()
+  })
+
+  it('sets a session cookie for valid Neon Auth exchange tokens', async () => {
+    const { baseUrl } = await createServer({
+      neonAuth: createNeonAuthConfig(),
+    })
+
+    const exchangeRes = await fetch(`${baseUrl}/api/auth/neon/exchange`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: 'valid-neon-token' }),
+    })
+
+    expect(exchangeRes.status).toBe(200)
+    expect(await exchangeRes.json()).toEqual({
+      ok: true,
+      user: {
+        provider: 'neon',
+        userId: 'neon_user_123',
+        email: 'neon.user@example.com',
+        emailVerified: true,
+      },
+    })
+
+    const configRes = await fetch(`${baseUrl}/api/config`, {
+      headers: {
+        cookie: extractSessionCookie(exchangeRes),
+      },
+    })
+
+    expect(configRes.status).toBe(200)
+  })
+
+  it('sets a session cookie after Neon Auth email sign-in returns a valid access token', async () => {
+    const requests: Array<{ url: string, init?: RequestInit }> = []
+    const { baseUrl } = await createServer({
+      neonAuth: createNeonAuthConfig({
+        fetch: async (input, init) => {
+          requests.push({ url: String(input), init })
+          return Response.json({
+            data: {
+              session: { access_token: 'email-sign-in-token' },
+              user: {
+                id: 'neon_email_user',
+                email: 'email.user@example.com',
+                emailVerified: true,
+              },
+            },
+          })
+        },
+        tokenVerifier: async (token) => {
+          if (token !== 'email-sign-in-token') return null
+          return {
+            sub: 'neon_email_user',
+            email: 'email.user@example.com',
+            emailVerified: true,
+          }
+        },
+      }),
+    })
+
+    const res = await fetch(`${baseUrl}/api/auth/neon/email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'sign-in',
+        email: 'Email.User@Example.com',
+        password: 'secret-password',
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      ok: true,
+      user: {
+        provider: 'neon',
+        userId: 'neon_email_user',
+        email: 'email.user@example.com',
+        emailVerified: true,
+      },
+    })
+    expect(requests[0]?.url).toBe('https://ep-test.neonauth.aws.neon.build/neondb/auth/sign-in/email')
+    expect(JSON.parse(String(requests[0]?.init?.body))).toEqual({
+      email: 'email.user@example.com',
+      password: 'secret-password',
+    })
+
+    const configRes = await fetch(`${baseUrl}/api/config`, {
+      headers: {
+        cookie: extractSessionCookie(res),
+      },
+    })
+
+    expect(configRes.status).toBe(200)
+  })
+
+  it('reports Neon Auth email sign-up verification without setting a local session', async () => {
+    const { baseUrl } = await createServer({
+      neonAuth: createNeonAuthConfig({
+        fetch: async () => Response.json({
+          data: {
+            user: {
+              id: 'neon_pending_user',
+              email: 'pending@example.com',
+              emailVerified: false,
+            },
+          },
+        }),
+      }),
+    })
+
+    const res = await fetch(`${baseUrl}/api/auth/neon/email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'sign-up',
+        email: 'pending@example.com',
+        password: 'secret-password',
+      }),
+    })
+
+    expect(res.status).toBe(202)
+    expect(await res.json()).toEqual({
+      ok: false,
+      status: 'verification-required',
+      user: {
+        id: 'neon_pending_user',
+        email: 'pending@example.com',
+        emailVerified: false,
+      },
+    })
+    expect(res.headers.get('set-cookie')).toBeNull()
+  })
+
+  it('starts Feishu login when configured', async () => {
+    const { baseUrl } = await createServer({
+      feishuAuth: createFeishuAuthConfig({
+        openId: 'ou_internal',
+        tenantKey: 'tenant_internal',
+      }),
+    })
+
+    const url = await startFeishuLogin(baseUrl)
+
+    expect(url.origin + url.pathname).toBe('https://accounts.feishu.cn/open-apis/authen/v1/authorize')
+    expect(url.searchParams.get('client_id')).toBe('cli_test')
+    expect(url.searchParams.get('redirect_uri')).toBe(`${baseUrl}/api/auth/feishu/callback`)
+    expect(url.searchParams.get('state')).toBeTruthy()
+    expect(url.searchParams.get('code_challenge')).toBeTruthy()
+  })
+
+  it('sets a session cookie for company-internal Feishu users', async () => {
+    const { baseUrl } = await createServer({
+      feishuAuth: createFeishuAuthConfig({
+        openId: 'ou_internal',
+        tenantKey: 'tenant_internal',
+        email: 'internal@example.com',
+      }),
+    })
+
+    const authUrl = await startFeishuLogin(baseUrl)
+    const callbackRes = await fetch(
+      `${baseUrl}/api/auth/feishu/callback?code=auth_code&state=${authUrl.searchParams.get('state')}`,
+      { redirect: 'manual' },
+    )
+
+    expect(callbackRes.status).toBe(302)
+    expect(callbackRes.headers.get('location')).toBe('/')
+    const cookie = extractSessionCookie(callbackRes)
+
+    const configRes = await fetch(`${baseUrl}/api/config`, {
+      headers: { cookie },
+    })
+
+    expect(configRes.status).toBe(200)
+  })
+
+  it('exchanges desktop Feishu OAuth codes through the server-side auth broker', async () => {
+    const exchangeCalls: Array<{ code: string, redirectUri: string, codeVerifier: string }> = []
+    const client: FeishuOAuthClient = {
+      exchangeCode: async (input) => {
+        exchangeCalls.push(input)
+        return { accessToken: 'feishu-access-token' }
+      },
+      getUserInfo: async () => ({
+        openId: 'ou_desktop',
+        tenantKey: 'tenant_internal',
+        enterpriseEmail: 'Desktop.User@Example.com',
+        name: 'Desktop User',
+      }),
+    }
+    const { baseUrl } = await createServer({
+      feishuAuth: {
+        appId: 'cli_test',
+        appSecret: 'server-only-secret',
+        internalTenantKeys: ['tenant_internal'],
+        client,
+      },
+    })
+
+    const res = await fetch(`${baseUrl}/api/client-auth/feishu/exchange`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: 'desktop-code',
+        redirectUri: 'http://localhost:6477/callback',
+        codeVerifier: 'desktop-verifier',
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as Record<string, unknown>
+    expect(body).toMatchObject({
+      ok: true,
+      user: {
+        provider: 'feishu',
+        userId: 'ou_desktop',
+        email: 'desktop.user@example.com',
+        name: 'Desktop User',
+      },
+    })
+    expect(typeof body.appSessionToken).toBe('string')
+    expect(body.gatewayToken).toBe(body.appSessionToken)
+    expect(exchangeCalls).toEqual([{
+      code: 'desktop-code',
+      redirectUri: 'http://localhost:6477/callback',
+      codeVerifier: 'desktop-verifier',
+    }])
+  })
+
+  it('requires registration for unregistered external Feishu users', async () => {
+    const { baseUrl } = await createServer({
+      feishuAuth: createFeishuAuthConfig({
+        openId: 'ou_external',
+        tenantKey: 'tenant_external',
+        email: 'external@example.com',
+      }),
+    })
+
+    const authUrl = await startFeishuLogin(baseUrl)
+    const callbackRes = await fetch(
+      `${baseUrl}/api/auth/feishu/callback?code=auth_code&state=${authUrl.searchParams.get('state')}`,
+      { redirect: 'manual' },
+    )
+
+    expect(callbackRes.status).toBe(403)
+    expect(await callbackRes.text()).toContain('Registration required')
+    expect(callbackRes.headers.get('set-cookie')).toBeNull()
   })
 })

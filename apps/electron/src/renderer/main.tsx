@@ -1,10 +1,13 @@
+// input: Electron preload API and renderer startup container
+// output: React root with client auth gating before the workspace App mounts
+// pos: Renderer entrypoint for the desktop application
+
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { init as sentryInit } from '@sentry/electron/renderer'
 import * as Sentry from '@sentry/react'
 import { captureConsoleIntegration } from '@sentry/react'
 import { Provider as JotaiProvider, useAtomValue } from 'jotai'
-import App from './App'
 import { ThemeProvider } from './context/ThemeContext'
 import { windowWorkspaceIdAtom } from './atoms/sessions'
 import { Toaster } from '@/components/ui/sonner'
@@ -13,7 +16,10 @@ import { initReactI18next } from 'react-i18next'
 import { useTranslation } from 'react-i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 import { getDefaultColorThemeForPlatform, rendererPlatform } from '@/lib/platform'
+import { ClientAuthGate } from '@/components/auth/ClientAuthGate'
 import './index.css'
+
+const App = React.lazy(() => import('./App'))
 
 // Initialize i18n before any React rendering
 setupI18n([LanguageDetector, initReactI18next])
@@ -96,6 +102,14 @@ function CrashFallback() {
   )
 }
 
+function AppLoadingFallback() {
+  return (
+    <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">
+      正在打开工作区
+    </div>
+  )
+}
+
 /**
  * Root component - loads workspace ID for theme context and renders App
  * App.tsx handles window mode detection internally (main vs tab-content)
@@ -109,7 +123,11 @@ function Root() {
       activeWorkspaceId={workspaceId}
       defaultColorTheme={getDefaultColorThemeForPlatform(rendererPlatform)}
     >
-      <App />
+      <ClientAuthGate>
+        <React.Suspense fallback={<AppLoadingFallback />}>
+          <App />
+        </React.Suspense>
+      </ClientAuthGate>
       <Toaster />
     </ThemeProvider>
   )

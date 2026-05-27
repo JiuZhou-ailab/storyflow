@@ -67,6 +67,23 @@ export interface NovelWorkspaceRootCandidates {
 export type NovelCreateFileBasePath = '正文' | '自由区'
 
 const NOVEL_CREATE_FILE_ALLOWED_EXTENSIONS = new Set(['.md', '.txt'])
+const SHORT_FORM_WORKSPACE_SIGNAL_PATHS = new Set([
+  '创作要求.md',
+  '简报.md',
+  '大纲.md',
+  '人物.md',
+  '素材.md',
+])
+const SHORT_FORM_GLOBAL_INFO_FILE_ORDER = [
+  '创作要求.md',
+  '简报.md',
+  '大纲.md',
+  '人物.md',
+  '素材.md',
+] as const
+const SHORT_FORM_GLOBAL_INFO_FILE_INDEX = new Map<string, number>(
+  SHORT_FORM_GLOBAL_INFO_FILE_ORDER.map((path, index) => [path, index])
+)
 
 export const NOVEL_WORKSPACE_DETECTION_QUERIES = [
   'craft-writing.json',
@@ -337,6 +354,30 @@ export function buildNovelWorkspaceTree(files: NovelWorkspaceFile[]): NovelWorks
   }
 
   return tree
+}
+
+export function isShortFormNovelWorkspaceFiles(files: NovelWorkspaceFile[]): boolean {
+  return files.some((file) => {
+    const relativePath = normalizeRelativePath(file.relativePath)
+    return SHORT_FORM_WORKSPACE_SIGNAL_PATHS.has(relativePath) || relativePath.startsWith('自由区/')
+  })
+}
+
+export function getShortFormGlobalInfoFiles(tree: NovelWorkspaceTree): NovelWorkspaceFile[] {
+  const files = [
+    ...tree.style.files,
+    ...tree.outline.files,
+    ...tree.characters.files,
+    ...tree.analysis.files,
+  ]
+
+  return files
+    .filter((file) => SHORT_FORM_GLOBAL_INFO_FILE_INDEX.has(normalizeRelativePath(file.relativePath)))
+    .sort((a, b) => {
+      const aIndex = SHORT_FORM_GLOBAL_INFO_FILE_INDEX.get(normalizeRelativePath(a.relativePath)) ?? Number.MAX_SAFE_INTEGER
+      const bIndex = SHORT_FORM_GLOBAL_INFO_FILE_INDEX.get(normalizeRelativePath(b.relativePath)) ?? Number.MAX_SAFE_INTEGER
+      return aIndex - bIndex || sortByRelativePath(a, b)
+    })
 }
 
 export function selectDefaultNovelTab(tree: NovelWorkspaceTree): NovelWorkspaceTab {

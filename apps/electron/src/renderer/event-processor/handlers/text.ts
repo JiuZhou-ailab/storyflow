@@ -116,6 +116,7 @@ export function handleTextComplete(
       isIntermediate: event.isIntermediate,
       turnId: event.turnId,
       parentToolUseId: event.parentToolUseId,
+      ...(event.canBranch !== undefined ? { canBranch: event.canBranch } : {}),
       // Overwrite text_delta's Date.now() with main process monotonic timestamp
       // This ensures reload order matches live order
       ...(event.timestamp ? { timestamp: event.timestamp } : {}),
@@ -136,6 +137,7 @@ export function handleTextComplete(
     isIntermediate: event.isIntermediate,
     turnId: event.turnId,
     parentToolUseId: event.parentToolUseId,
+    ...(event.canBranch !== undefined ? { canBranch: event.canBranch } : {}),
   }
 
   // Only update lastMessageAt for final (non-intermediate) messages

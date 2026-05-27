@@ -185,6 +185,29 @@ export interface TransportConnectionState {
   updatedAt: number
 }
 
+export interface ClientAuthUser {
+  provider: 'neon' | 'feishu'
+  userId: string
+  email?: string
+  emailVerified?: boolean
+  name?: string
+}
+
+export interface ClientAuthState {
+  required: boolean
+  configured: boolean
+  authenticated: boolean
+  emailPasswordEnabled: boolean
+  feishuLoginEnabled: boolean
+  usernameLoginEnabled?: boolean
+  user?: ClientAuthUser
+}
+
+export interface ClientAuthSignInInput {
+  identifier: string
+  password: string
+}
+
 // =============================================================================
 // ElectronAPI — type-safe IPC API exposed to renderer
 // =============================================================================
@@ -272,6 +295,11 @@ export interface ElectronAPI {
   relaunchApp(): Promise<void>
   removeWorkspace(workspaceId: string): Promise<boolean>
   invokeOnServer(url: string, token: string, channel: string, ...args: any[]): Promise<any>
+  getClientAuthState(): Promise<ClientAuthState>
+  signInClient(input: ClientAuthSignInInput): Promise<ClientAuthUser>
+  signInWithFeishuClient(): Promise<ClientAuthUser>
+  cancelFeishuSignInClient(): Promise<void>
+  signOutClient(): Promise<void>
 
   // Remote session transfer (main-process orchestrated, supports chunked upload)
   transferSessionToWorkspace(sessionId: string, targetWorkspaceId: string, sessionIndex?: number, sessionCount?: number): Promise<{ sessionId: string }>

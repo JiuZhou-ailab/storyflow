@@ -232,6 +232,10 @@ interface SidebarButtonProps {
 
 const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & React.ButtonHTMLAttributes<HTMLButtonElement>>(
   ({ link, itemProps, className: extraClassName, ...buttonProps }, forwardedRef) => {
+    const titleClassName = link.compact
+      ? "min-w-0 flex-1 line-clamp-2 break-words text-left leading-[1.25]"
+      : "min-w-0 flex-1 truncate text-left"
+
     return (
       <button
         {...(() => {
@@ -253,6 +257,7 @@ const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & R
           // Compact mode: 4px less total height (py-[3px] vs py-[5px])
           link.compact ? "py-[3px]" : "py-[5px]",
           "px-2",
+          link.compact && "min-h-[34px]",
           link.variant === "default"
             ? "bg-foreground/[0.07]"
             : "hover:bg-sidebar-hover data-[state=open]:bg-sidebar-hover data-[edit-active=true]:bg-sidebar-hover",
@@ -303,7 +308,7 @@ const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & R
             renderIcon(link)
           )}
         </span>
-        <span className="min-w-0 flex-1 truncate text-left">{link.title}</span>
+        <span className={titleClassName}>{link.title}</span>
         {/* After-title element: type indicator icon, right-aligned before count badge, revealed on hover */}
         {link.afterTitle && (
           <span className="ml-auto opacity-0 group-hover/section:opacity-100 group-data-[state=open]:opacity-100 group-data-[edit-active=true]:opacity-100 transition-opacity">

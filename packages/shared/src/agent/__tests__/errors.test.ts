@@ -43,4 +43,13 @@ describe('parseError proxy interception handling', () => {
     expect(parsed.actions.some(action => action.action === 'retry')).toBe(true)
     expect(parsed.message.toLowerCase()).toContain('stream')
   })
+
+  it('maps provider content filtering to non-retryable content_filtered', () => {
+    const parsed = parseError(new Error('Provider finish_reason: content_filtered'))
+
+    expect(parsed.code).toBe('content_filtered')
+    expect(parsed.canRetry).toBe(false)
+    expect(parsed.message.toLowerCase()).toContain('safety filter')
+    expect(parsed.originalError).toBe('Provider finish_reason: content_filtered')
+  })
 })

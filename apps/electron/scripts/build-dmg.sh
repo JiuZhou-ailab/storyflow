@@ -62,7 +62,7 @@ Environment variables (from .env or environment):
   CSC_KEY_PASSWORD          - Password for CSC_LINK, if the certificate is password-protected
   APPLE_API_KEY_BASE64      - Optional App Store Connect API private key as base64 text
   APPLE_API_KEY_ID          - App Store Connect API key ID
-  APPLE_API_ISSUER          - App Store Connect API issuer ID
+  APPLE_API_ISSUER          - Optional App Store Connect API issuer ID; required for Team API keys, omitted for Individual keys
   APPLE_ID                  - Apple ID for password-based notarization
   APPLE_TEAM_ID             - Apple Team ID for password-based notarization
   APPLE_APP_SPECIFIC_PASSWORD - App-specific password
@@ -99,7 +99,7 @@ require_env() {
 }
 
 has_apple_api_notarization_credentials() {
-    [ -n "${APPLE_API_KEY:-}" ] && [ -n "${APPLE_API_KEY_ID:-}" ] && [ -n "${APPLE_API_ISSUER:-}" ]
+    ([ -n "${APPLE_API_KEY_BASE64:-}" ] || [ -n "${APPLE_API_KEY:-}" ]) && [ -n "${APPLE_API_KEY_ID:-}" ]
 }
 
 has_apple_password_notarization_credentials() {
@@ -108,7 +108,6 @@ has_apple_password_notarization_credentials() {
 
 should_enable_macos_release_signing() {
     [ "${CRAFT_REQUIRE_MAC_SIGNING:-}" = "1" ] ||
-        [ -n "${APPLE_API_KEY_BASE64:-}" ] ||
         has_apple_api_notarization_credentials ||
         has_apple_password_notarization_credentials
 }
@@ -119,7 +118,6 @@ prepare_apple_api_key() {
     fi
 
     require_env APPLE_API_KEY_ID
-    require_env APPLE_API_ISSUER
 
     local api_key_dir="$TEMP_DIR/storyflow-apple-api-key"
 
@@ -134,11 +132,15 @@ prepare_apple_api_key() {
 select_notarization_credentials() {
     if [ -n "${APPLE_API_KEY_BASE64:-}" ] || [ -n "${APPLE_API_KEY:-}" ]; then
         require_env APPLE_API_KEY_ID
-        require_env APPLE_API_ISSUER
         unset APPLE_ID
         unset APPLE_APP_SPECIFIC_PASSWORD
         unset APPLE_TEAM_ID
-        echo "Using App Store Connect Team API key notarization"
+        # APPLE_API_ISSUER is optional and must be omitted for Individual API keys.
+        if [ -n "${APPLE_API_ISSUER:-}" ]; then
+            echo "Using App Store Connect Team API key notarization"
+        else
+            echo "Using App Store Connect Individual API key notarization"
+        fi
         return 0
     fi
 
@@ -148,6 +150,39 @@ select_notarization_credentials() {
     fi
 
     return 1
+}
+
+notarize_macos_dmg_artifact() {
+    local dmg_path="$1"
+
+    require_path "$dmg_path" "DMG artifact" ""
+
+    echo "Submitting DMG for Apple notarization..."
+    if [ -n "${APPLE_API_KEY_BASE64:-}" ] || [ -n "${APPLE_API_KEY:-}" ]; then
+        require_env APPLE_API_KEY
+        require_env APPLE_API_KEY_ID
+        if [ -n "${APPLE_API_ISSUER:-}" ]; then
+            xcrun notarytool submit "$dmg_path" --wait --output-format json \
+                --key "$APPLE_API_KEY" \
+                --key-id "$APPLE_API_KEY_ID" \
+                --issuer "$APPLE_API_ISSUER"
+        else
+            xcrun notarytool submit "$dmg_path" --wait --output-format json \
+                --key "$APPLE_API_KEY" \
+                --key-id "$APPLE_API_KEY_ID"
+        fi
+    elif has_apple_password_notarization_credentials; then
+        xcrun notarytool submit "$dmg_path" --wait --output-format json \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD"
+    else
+        echo "ERROR: Missing Apple notarization credentials for DMG artifact."
+        exit 1
+    fi
+
+    echo "Stapling DMG notarization ticket..."
+    xcrun stapler staple "$dmg_path"
 }
 
 validate_macos_release_credentials() {
@@ -161,7 +196,7 @@ validate_macos_release_credentials() {
         cat <<'EOF'
 ERROR: Official macOS release builds require Apple notarization credentials.
 Set either:
-  APPLE_API_KEY_BASE64, APPLE_API_KEY_ID, APPLE_API_ISSUER (Team API key)
+  APPLE_API_KEY_BASE64/APPLE_API_KEY and APPLE_API_KEY_ID (App Store Connect API key; set APPLE_API_ISSUER only for Team API keys)
 or:
   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_SPECIFIC_PASSWORD
 EOF
@@ -173,15 +208,6 @@ verify_macos_release_artifacts() {
     local app_path="$1"
     local dmg_path="$2"
     local zip_path="$3"
-
-    echo "Verifying Developer ID signature..."
-    codesign --verify --deep --strict --verbose=2 "$app_path"
-
-    echo "Verifying Gatekeeper assessment for app bundle..."
-    spctl --assess --type execute --verbose=4 "$app_path"
-
-    echo "Validating notarization staple for app bundle..."
-    xcrun stapler validate "$app_path"
 
     if [ -f "$dmg_path" ]; then
         echo "DMG artifact present: $dmg_path"
@@ -196,6 +222,21 @@ verify_macos_release_artifacts() {
         echo "ERROR: Expected ZIP artifact not found at $zip_path"
         exit 1
     fi
+
+    echo "Verifying Developer ID signature..."
+    codesign --verify --deep --strict --verbose=2 "$app_path"
+
+    echo "Verifying Gatekeeper assessment for app bundle..."
+    spctl --assess --type execute --verbose=4 "$app_path"
+
+    echo "Validating notarization staple for app bundle..."
+    xcrun stapler validate "$app_path"
+
+    echo "Verifying Gatekeeper assessment for DMG..."
+    spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg_path"
+
+    echo "Validating notarization staple for DMG..."
+    xcrun stapler validate "$dmg_path"
 }
 
 run_electron_builder_with_retries() {
@@ -423,6 +464,10 @@ ZIP_NAME="Storyflow-${ARCH}.zip"
 ZIP_PATH="$ELECTRON_DIR/release/$ZIP_NAME"
 MAC_DIR="$([ "$ARCH" = "arm64" ] && echo "mac-arm64" || echo "mac")"
 APP_PATH="$ELECTRON_DIR/release/$MAC_DIR/Storyflow.app"
+
+if should_enable_macos_release_signing; then
+    notarize_macos_dmg_artifact "$DMG_PATH"
+fi
 
 if [ "${CRAFT_REQUIRE_MAC_SIGNING:-}" = "1" ]; then
     verify_macos_release_artifacts "$APP_PATH" "$DMG_PATH" "$ZIP_PATH"

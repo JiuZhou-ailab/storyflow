@@ -48,6 +48,14 @@ describe('chat rewind helpers', () => {
     ], 'u1')).toBeNull()
   })
 
+  it('does not branch from a provider message whose branch anchor is unavailable', () => {
+    expect(resolveRewindBranchMessageId([
+      { id: 'u1', role: 'user' },
+      { id: 'a1', role: 'assistant', turnId: 'turn-a1', canBranch: false },
+      { id: 'u2', role: 'user' },
+    ], 'u2')).toBeNull()
+  })
+
   it('uses a fresh session when editing the first user message', () => {
     expect(resolveRewindBranchMessageId(baseSession.messages, 'u1')).toBeNull()
   })

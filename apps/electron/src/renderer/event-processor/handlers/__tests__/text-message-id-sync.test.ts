@@ -63,6 +63,34 @@ describe('handleTextComplete messageId synchronization', () => {
     expect((next.session.messages[0] as any).id).toBe('msg-main-race')
   })
 
+  it('stores authoritative branchability metadata from text_complete events', () => {
+    const state = makeState([
+      {
+        id: 'msg-local-temp-1',
+        role: 'assistant',
+        content: 'partial',
+        isStreaming: true,
+        isPending: true,
+        turnId: 'turn-1',
+        timestamp: 100,
+      },
+    ])
+
+    const event: TextCompleteEvent = {
+      type: 'text_complete',
+      sessionId: 'session-1',
+      text: 'final response',
+      turnId: 'turn-1',
+      messageId: 'msg-main-1',
+      timestamp: 200,
+      canBranch: false,
+    }
+
+    const next = handleTextComplete(state, event)
+
+    expect((next.session.messages[0] as any).canBranch).toBe(false)
+  })
+
   it('keeps backward compatibility when messageId is missing', () => {
     const state = makeState([])
 

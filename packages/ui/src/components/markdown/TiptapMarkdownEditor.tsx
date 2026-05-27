@@ -405,6 +405,8 @@ export function TiptapMarkdownEditor({
 }: TiptapMarkdownEditorProps) {
   const onUpdateRef = React.useRef(onUpdate)
   onUpdateRef.current = onUpdate
+  const [bubbleMenuAppendTo, setBubbleMenuAppendTo] = React.useState<HTMLElement | null>(null)
+  const [bubbleMenuScrollTarget, setBubbleMenuScrollTarget] = React.useState<HTMLElement | null>(null)
 
   // Ref for the editor instance — used by the Mathematics onClick callback
   // which is created at extension-configure time (before useEditor returns).
@@ -584,6 +586,7 @@ export function TiptapMarkdownEditor({
 
   return (
     <div
+      ref={setBubbleMenuAppendTo}
       className={cn(
         'tiptap-editor',
         showToolbar && 'tiptap-editor--with-toolbar',
@@ -593,12 +596,14 @@ export function TiptapMarkdownEditor({
       )}
     >
       {editor && showToolbar && <TiptapFixedToolbar editor={editor} editable={editable} />}
-      <div className="tiptap-editor-content">
+      <div ref={setBubbleMenuScrollTarget} className="tiptap-editor-content">
         <EditorContent editor={editor} />
       </div>
       {editor && editable && (
         <TiptapBubbleMenus
           editor={editor}
+          appendTo={bubbleMenuAppendTo}
+          scrollTarget={bubbleMenuScrollTarget}
           onAskAiForSelection={onAskAiForSelection}
           onAddSelectionToChat={onAddSelectionToChat}
         />

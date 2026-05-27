@@ -35,7 +35,7 @@ import {
 import type { ConfirmDialogSpec, FileDialogSpec } from '@craft-agent/server-core/transport'
 import type { RpcClient } from '@craft-agent/server-core/transport'
 import type { RemoteServerConfig } from '@craft-agent/core/types'
-import type { ElectronAPI } from '../shared/types'
+import type { ClientAuthState, ElectronAPI } from '../shared/types'
 
 // ---------------------------------------------------------------------------
 // Client interface — common surface for both RoutedClient and WsRpcClient
@@ -180,7 +180,22 @@ client.handleCapability(CLIENT_OPEN_FILE_DIALOG, async (spec: FileDialogSpec) =>
 // Build ElectronAPI proxy
 // ---------------------------------------------------------------------------
 
-const api = buildClientApi(client, CHANNEL_MAP, (ch) => client.isChannelAvailable(ch))
+let cachedClientAuthState: ClientAuthState | null = null
+
+async function readClientAuthState(): Promise<ClientAuthState> {
+  const nextState = await ipcRenderer.invoke('client-auth:get-state') as ClientAuthState
+  cachedClientAuthState = nextState
+  return nextState
+}
+
+async function ensureClientAuthAllowed(): Promise<void> {
+  const state = cachedClientAuthState ?? await readClientAuthState()
+  if (state.required && !state.authenticated) {
+    throw new Error('Client authentication is required')
+  }
+}
+
+const api = buildClientApi(client, CHANNEL_MAP, (ch) => client.isChannelAvailable(ch), ensureClientAuthAllowed)
 
 ;(api as any).getRuntimeEnvironment = (): 'electron' | 'web' => 'electron'
 
@@ -269,6 +284,8 @@ client.onConnectionStateChanged((state) => {
   let state: string | undefined
 
   try {
+    await ensureClientAuthAllowed()
+
     // 1. Start local callback server to receive OAuth redirect
     callbackServer = await createCallbackServer({ appType: 'electron' })
     const callbackUrl = `${callbackServer.url}/callback`
@@ -329,6 +346,8 @@ client.onConnectionStateChanged((state) => {
   error?: string
 }> => {
   try {
+    await ensureClientAuthAllowed()
+
     const result = await client.invoke('onboarding:startClaudeOAuth')
     if (result.success && result.authUrl) {
       await shell.openExternal(result.authUrl)
@@ -354,6 +373,8 @@ client.onConnectionStateChanged((state) => {
   let state: string | undefined
 
   try {
+    await ensureClientAuthAllowed()
+
     // 1. Start callback server on ChatGPT's fixed port with /auth/callback path
     callbackServer = await createCallbackServer({
       appType: 'electron',
@@ -403,11 +424,34 @@ client.onConnectionStateChanged((state) => {
 
 // App lifecycle — direct IPC (not WS RPC) since it restarts the server itself
 ;(api as ElectronAPI).relaunchApp = () => ipcRenderer.invoke('app:relaunch')
-;(api as ElectronAPI).removeWorkspace = (workspaceId: string) => ipcRenderer.invoke('workspace:remove', workspaceId)
+;(api as ElectronAPI).removeWorkspace = async (workspaceId: string) => {
+  await ensureClientAuthAllowed()
+  return ipcRenderer.invoke('workspace:remove', workspaceId)
+}
 ;(api as ElectronAPI).invokeOnServer = (url: string, token: string, channel: string, ...args: any[]) =>
-  ipcRenderer.invoke('server:invokeOnServer', url, token, channel, ...args)
-;(api as ElectronAPI).transferSessionToWorkspace = (sessionId: string, targetWorkspaceId: string, sessionIndex?: number, sessionCount?: number) =>
-  ipcRenderer.invoke('session:transferToRemoteWorkspace', sessionId, targetWorkspaceId, sessionIndex, sessionCount)
+  ensureClientAuthAllowed().then(() => ipcRenderer.invoke('server:invokeOnServer', url, token, channel, ...args))
+;(api as ElectronAPI).getClientAuthState = () => readClientAuthState()
+;(api as ElectronAPI).signInClient = async (input) => {
+  const user = await ipcRenderer.invoke('client-auth:sign-in', input)
+  await readClientAuthState()
+  return user
+}
+;(api as ElectronAPI).signInWithFeishuClient = async () => {
+  const user = await ipcRenderer.invoke('client-auth:sign-in-feishu')
+  await readClientAuthState()
+  return user
+}
+;(api as ElectronAPI).cancelFeishuSignInClient = async () => {
+  await ipcRenderer.invoke('client-auth:cancel-feishu-sign-in')
+}
+;(api as ElectronAPI).signOutClient = async () => {
+  await ipcRenderer.invoke('client-auth:sign-out')
+  await readClientAuthState()
+}
+;(api as ElectronAPI).transferSessionToWorkspace = async (sessionId: string, targetWorkspaceId: string, sessionIndex?: number, sessionCount?: number) => {
+  await ensureClientAuthAllowed()
+  return ipcRenderer.invoke('session:transferToRemoteWorkspace', sessionId, targetWorkspaceId, sessionIndex, sessionCount)
+}
 ;(api as ElectronAPI).onTransferProgress = (cb: (progress: { sessionIndex: number; sessionCount: number; chunkSent: number; chunkTotal: number }) => void) => {
   const handler = (_e: any, progress: { sessionIndex: number; sessionCount: number; chunkSent: number; chunkTotal: number }) => cb(progress)
   ipcRenderer.on('transfer:progress', handler)

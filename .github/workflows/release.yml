@@ -71,7 +71,8 @@ jobs:
           fi
 
           has_api_key=false
-          if [ -n "$APPLE_API_KEY_BASE64" ] && [ -n "$APPLE_API_KEY_ID" ] && [ -n "$APPLE_API_ISSUER" ]; then
+          # APPLE_API_ISSUER is optional and should be omitted for Individual API keys.
+          if [ -n "$APPLE_API_KEY_BASE64" ] && [ -n "$APPLE_API_KEY_ID" ]; then
             has_api_key=true
           fi
 

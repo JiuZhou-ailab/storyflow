@@ -129,13 +129,14 @@ mac:
   artifactName: "Storyflow-${arch}.${ext}"
   # Official macOS releases must be Developer ID signed and Apple notarized.
   # electron-builder activates notarization when the release environment provides
-  # APPLE_API_KEY/APPLE_API_KEY_ID/APPLE_API_ISSUER or
+  # APPLE_API_KEY/APPLE_API_KEY_ID, with APPLE_API_ISSUER only for Team keys, or
   # APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/APPLE_TEAM_ID.
   notarize: true
 
 dmg:
   # Use predictable naming: Storyflow-arm64.dmg, Storyflow-x64.dmg
   artifactName: "Storyflow-${arch}.dmg"
+  sign: true
   writeUpdateInfo: false
   # Custom background (multi-resolution TIFF with 1x+2x for retina support)
   background: resources/dmg-background.tiff

@@ -17,13 +17,14 @@ import { cn } from '@/lib/utils'
 import {
   buildNovelWorkspaceTree,
   groupNovelFileChanges,
+  isShortFormNovelWorkspaceFiles,
   selectDefaultNovelTab,
   summarizeNovelSection,
   type NovelWorkspaceFile,
   type NovelWorkspaceTab,
 } from '@/lib/writing-workspace'
 import type { FileChange } from '@craft-agent/ui'
-import { NOVEL_WORKSPACE_TABS } from './novel-workspace-config'
+import { getVisibleNovelWorkspaceTabs } from './novel-workspace-config'
 import { NovelSectionList } from './NovelSectionList'
 import { formatNovelWorkspacePathTitle } from './novel-file-display'
 
@@ -57,18 +58,31 @@ export function NovelWorkspaceNavigatorPanel({
   const { t } = useTranslation()
   const tree = React.useMemo(() => buildNovelWorkspaceTree(files), [files])
   const changeGroups = React.useMemo(() => groupNovelFileChanges(changes, rootPath), [changes, rootPath])
+  const isShortFormWorkspace = React.useMemo(() => isShortFormNovelWorkspaceFiles(files), [files])
+  const visibleTabs = React.useMemo(
+    () => getVisibleNovelWorkspaceTabs({
+      hasAnalysisFiles: tree.analysis.files.length > 0,
+      isShortFormWorkspace,
+    }),
+    [isShortFormWorkspace, tree.analysis.files.length]
+  )
   const [activeTab, setActiveTab] = React.useState<NovelWorkspaceTab>(() => selectDefaultNovelTab(tree))
   const [activePath, setActivePath] = React.useState<string | undefined>(undefined)
 
   React.useEffect(() => {
-    setActiveTab(selectDefaultNovelTab(tree))
+    const nextDefaultTab = selectDefaultNovelTab(tree)
+    setActiveTab(visibleTabs.some(tab => tab.id === nextDefaultTab) ? nextDefaultTab : visibleTabs[0]?.id ?? 'manuscript')
     setActivePath(undefined)
-  }, [tree])
+  }, [tree, visibleTabs])
 
   const sectionId = TAB_TO_SECTION[activeTab]
   const section = sectionId ? tree[sectionId] : null
   const summary = section ? summarizeNovelSection(section.files) : { count: changes.length }
-  const activeTabConfig = NOVEL_WORKSPACE_TABS.find(tab => tab.id === activeTab) ?? NOVEL_WORKSPACE_TABS[0]
+  const activeTabConfig = visibleTabs.find(tab => tab.id === activeTab) ?? visibleTabs[0] ?? {
+    id: 'manuscript' as const,
+    labelKey: 'writing.tabs.manuscript' as const,
+    fallbackTitle: 'Manuscript',
+  }
 
   return (
     <div className={cn('flex h-full min-w-0 flex-col bg-background', className)}>
@@ -82,7 +96,7 @@ export function NovelWorkspaceNavigatorPanel({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {NOVEL_WORKSPACE_TABS.map((tab) => (
+            {visibleTabs.map((tab) => (
               <SelectItem key={tab.id} value={tab.id} className="text-xs">
                 {t(tab.labelKey, tab.fallbackTitle)}
               </SelectItem>

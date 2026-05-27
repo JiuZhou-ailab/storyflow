@@ -24,6 +24,11 @@ type ApiToChannelMapKeys = Exclude<
   | 'relaunchApp' // direct IPC to main process — not through WS RPC
   | 'removeWorkspace' // direct IPC to main process — modifies local config
   | 'invokeOnServer' // direct IPC to main process — cross-server RPC
+  | 'getClientAuthState' // direct IPC to main process — client startup auth state
+  | 'signInClient' // direct IPC to main process — Neon Auth email/password login
+  | 'signInWithFeishuClient' // direct IPC to main process — Feishu OAuth login
+  | 'cancelFeishuSignInClient' // direct IPC to main process — cancels pending Feishu OAuth login
+  | 'signOutClient' // direct IPC to main process — clears process-local auth state
   | 'transferSessionToWorkspace' // direct IPC to main process — orchestrated remote transfer
   | 'onTransferProgress' // direct IPC listener — chunk upload progress
   | 'changeLanguage' // direct IPC to main process — syncs i18n language

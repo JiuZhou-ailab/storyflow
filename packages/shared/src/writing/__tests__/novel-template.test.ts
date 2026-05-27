@@ -40,6 +40,8 @@ describe("createNovelProjectScaffold", () => {
       "timeline/history.md",
       "timeline/current-chapter.md",
       ".work/.gitkeep",
+      ".work/analysis/src",
+      ".work/analysis/output",
       "AGENTS.md",
       "CLAUDE.md",
       "craft-pack-lock.json",
@@ -47,6 +49,7 @@ describe("createNovelProjectScaffold", () => {
     ]) {
       expect(existsSync(join(rootPath, relativePath))).toBe(true);
     }
+    expect(existsSync(join(rootPath, "analysis"))).toBe(false);
 
     const manifest = JSON.parse(readFileSync(join(rootPath, "craft-writing.json"), "utf-8"));
     expect(manifest).toMatchObject({

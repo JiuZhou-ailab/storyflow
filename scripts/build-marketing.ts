@@ -59,8 +59,8 @@ if (!jsOutput) {
   throw new Error("Marketing build did not emit a JavaScript entry file.");
 }
 
-const jsAsset = `./assets/${basename(jsOutput.path)}`;
-const cssAsset = cssOutput ? `./assets/${basename(cssOutput.path)}` : undefined;
+const jsAsset = `/assets/${basename(jsOutput.path)}`;
+const cssAsset = cssOutput ? `/assets/${basename(cssOutput.path)}` : undefined;
 let html = readFileSync(htmlPath, "utf8");
 
 html = html.replace(

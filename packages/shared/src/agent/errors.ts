@@ -197,6 +197,14 @@ const ERROR_DEFINITIONS: Record<ErrorCode, Omit<AgentError, 'code' | 'originalEr
     ],
     canRetry: false,
   },
+  content_filtered: {
+    title: 'Content Filtered',
+    message: 'The AI provider stopped this response because its safety filter flagged the generated content. Revise the request or steer the response away from explicit or highly sensitive details, then try again.',
+    actions: [
+      { key: 's', label: 'Change model or settings', command: '/settings', action: 'settings' },
+    ],
+    canRetry: false,
+  },
   invalid_request: {
     title: 'Invalid Request',
     message: 'The API rejected this request.',
@@ -391,6 +399,16 @@ export function parseError(
     code = 'data_policy_error';
   // Check for model-specific errors (OpenRouter, etc.)
   // Tool support errors must be checked BEFORE model errors since tool errors often contain "model"
+  } else if (
+    lowerMessage.includes('content_filtered') ||
+    lowerMessage.includes('content_filter') ||
+    lowerMessage.includes('finish_reason: content_filtered') ||
+    lowerMessage.includes('finish reason: content_filtered') ||
+    lowerMessage.includes('filtered due to content') ||
+    lowerMessage.includes('filtered by safety') ||
+    lowerMessage.includes('safety filter')
+  ) {
+    code = 'content_filtered';
   } else if (
     lowerMessage.includes('no endpoints found that support tool use') ||
     lowerMessage.includes('does not support tool') ||

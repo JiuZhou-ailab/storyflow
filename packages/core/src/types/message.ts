@@ -289,6 +289,8 @@ export interface Message {
   isIntermediate?: boolean;
   // Turn ID: Correlation ID from the API's message.id, groups all messages in an assistant turn
   turnId?: string;
+  // Whether this final assistant message has provider-native metadata required for safe branching
+  canBranch?: boolean;
   // Status type for special status messages (e.g., compacting)
   statusType?: 'compacting' | 'compaction_complete';
   // Info level for info messages (determines icon/color)
@@ -463,6 +465,7 @@ export type ErrorCode =
   | 'model_no_tool_support'  // Model doesn't support tool/function calling
   | 'invalid_model'          // Model ID not found
   | 'data_policy_error'      // OpenRouter data policy restriction
+  | 'content_filtered'       // Provider safety filter stopped generation
   | 'invalid_request'        // API rejected the request (e.g., bad image, invalid content)
   | 'image_too_large'        // Image exceeds API dimension/size limits
   | 'provider_error'         // AI provider experiencing issues (overloaded, unavailable)

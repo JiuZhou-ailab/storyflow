@@ -10,6 +10,7 @@ import {
   getDefaultShellLayoutWidths,
   isUserConfiguredShellLayoutWidth,
   resolveInitialShellLayoutWidths,
+  shouldResolveInitialShellLayoutWidths,
 } from '../layout-defaults'
 
 describe('app shell layout defaults', () => {
@@ -90,5 +91,26 @@ describe('app shell layout defaults', () => {
       panelGap: 6,
       assistantMinWidth: 440,
     })).toBe(1318)
+  })
+
+  it('keeps the assistant panel at its minimum width when resolving first-run desktop proportions', () => {
+    const widths = resolveInitialShellLayoutWidths({
+      totalWidth: 1400,
+      edgeInset: 6,
+      panelGap: 6,
+      sidebarPersisted: false,
+      workspacePersisted: false,
+      assistantMinWidth: 440,
+    })
+
+    expect(widths.sidebar).toBe(276)
+    expect(widths.workspace).toBe(666)
+    expect(widths.assistant).toBe(440)
+  })
+
+  it('defers first-run desktop proportions while the shell is still compact', () => {
+    expect(shouldResolveInitialShellLayoutWidths(0, 768)).toBe(false)
+    expect(shouldResolveInitialShellLayoutWidths(767, 768)).toBe(false)
+    expect(shouldResolveInitialShellLayoutWidths(768, 768)).toBe(true)
   })
 })

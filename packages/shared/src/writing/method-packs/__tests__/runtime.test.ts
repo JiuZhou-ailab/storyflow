@@ -17,6 +17,7 @@ describe("method pack runtime preamble", () => {
     expect(preamble).toContain("state/current/");
     expect(preamble).toContain("timeline/");
     expect(preamble).toContain(".work/");
+    expect(preamble).toContain("temporary analysis");
   });
 
   it("builds legacy agent runtime context for non-profile method packs", () => {

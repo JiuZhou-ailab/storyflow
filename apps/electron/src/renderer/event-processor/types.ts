@@ -48,6 +48,8 @@ export interface TextCompleteEvent {
   timestamp?: number
   /** Authoritative message ID from main process for persistence/branching parity */
   messageId?: string
+  /** Whether the final assistant message has provider-native metadata required for safe branching */
+  canBranch?: boolean
 }
 
 /**

@@ -149,6 +149,7 @@ import {
   getNavigatorResizeMaxWidth,
   isUserConfiguredShellLayoutWidth,
   resolveInitialShellLayoutWidths,
+  shouldResolveInitialShellLayoutWidths,
 } from "./layout-defaults"
 import { getPrimarySidebarLinks } from "./primary-sidebar-links"
 import { hasOpenOverlay } from "@/lib/overlay-detection"
@@ -180,8 +181,10 @@ import {
   buildNovelWorkspaceTree,
   detectNovelProjectFromSearchResults,
   getNovelImportTargetRelativePath,
+  getShortFormGlobalInfoFiles,
   getNovelWorkspaceRelativePath,
   getNovelWorkspaceCandidateRoots,
+  isShortFormNovelWorkspaceFiles,
   mapSearchResultsToNovelWorkspaceFiles,
   NOVEL_WORKSPACE_CATALOG_DIRECTORY_QUERIES,
   NOVEL_WORKSPACE_DETECTION_QUERIES,
@@ -1576,7 +1579,10 @@ function AppShellContent({
   }, [novelWorkspaceNavigatorWidth])
 
   React.useEffect(() => {
-    if (initialShellLayoutResolvedRef.current || shellWidth <= 0) return
+    if (
+      initialShellLayoutResolvedRef.current
+      || !shouldResolveInitialShellLayoutWidths(shellWidth, MOBILE_THRESHOLD)
+    ) return
     initialShellLayoutResolvedRef.current = true
 
     const sidebarPersisted = isUserConfiguredShellLayoutWidth(
@@ -1595,6 +1601,7 @@ function AppShellContent({
       totalWidth: shellWidth,
       edgeInset: PANEL_EDGE_INSET,
       panelGap: PANEL_GAP,
+      assistantMinWidth: PANEL_MIN_WIDTH,
       sidebarPersisted,
       workspacePersisted,
       currentSidebarWidth: latestSidebarWidthRef.current,
@@ -2013,11 +2020,7 @@ function AppShellContent({
     [novelWorkspaceFiles]
   )
   const isShortFormNovelWorkspace = React.useMemo(
-    () => novelWorkspaceFiles.some(file =>
-      file.relativePath === '创作要求.md'
-      || file.relativePath === '简报.md'
-      || file.relativePath.startsWith('自由区/')
-    ),
+    () => isShortFormNovelWorkspaceFiles(novelWorkspaceFiles),
     [novelWorkspaceFiles]
   )
   const defaultNovelFile = React.useMemo(
@@ -3414,7 +3417,9 @@ function AppShellContent({
       { id: 'outline', title: t('writing.tabs.outline'), icon: ScrollText, files: novelWorkspaceTree.outline.files },
       { id: 'characters', title: t('writing.tabs.characters'), icon: UsersRound, files: novelWorkspaceTree.characters.files },
       { id: 'style', title: t('writing.tabs.style', 'Style'), icon: Palette, files: novelWorkspaceTree.style.files },
-      { id: 'analysis', title: t('writing.tabs.analysis', 'Analysis'), icon: Search, files: novelWorkspaceTree.analysis.files },
+      ...(novelWorkspaceTree.analysis.files.length > 0 ? [
+        { id: 'analysis' as const, title: t('writing.tabs.analysis', 'Analysis'), icon: Search, files: novelWorkspaceTree.analysis.files },
+      ] : []),
       ...(!isShortFormNovelWorkspace ? [
         { id: 'locations' as const, title: t('writing.tabs.locations'), icon: MapPinned, files: novelWorkspaceTree.locations.files },
         { id: 'timeline' as const, title: t('writing.tabs.timeline'), icon: Calendar, files: novelWorkspaceTree.timeline.files },
@@ -3515,10 +3520,18 @@ function AppShellContent({
       ? globalSectionDefinitions.filter(section => section.files.length > 0)
       : globalSectionDefinitions
     const visibleGlobalSectionItems = visibleGlobalSectionDefinitions.map(sectionItem)
-    const globalFileCount = visibleGlobalSectionDefinitions.reduce((count, section) => count + section.files.length, 0)
-    const hasSelectedGlobalFile = visibleGlobalSectionDefinitions.some(section =>
-      section.files.some(file => file.path === selectedNovelFile?.path)
-    )
+    const shortFormGlobalInfoFiles = getShortFormGlobalInfoFiles(novelWorkspaceTree)
+    const globalItems = isShortFormNovelWorkspace
+      ? shortFormGlobalInfoFiles.map(fileItem)
+      : visibleGlobalSectionItems
+    const globalFileCount = isShortFormNovelWorkspace
+      ? shortFormGlobalInfoFiles.length
+      : visibleGlobalSectionDefinitions.reduce((count, section) => count + section.files.length, 0)
+    const hasSelectedGlobalFile = isShortFormNovelWorkspace
+      ? shortFormGlobalInfoFiles.some(file => file.path === selectedNovelFile?.path)
+      : visibleGlobalSectionDefinitions.some(section =>
+        section.files.some(file => file.path === selectedNovelFile?.path)
+      )
     const hasSelectedManuscriptFile = manuscriptSection.files.some(file => file.path === selectedNovelFile?.path)
     const hasSelectedFreeAreaFile = freeAreaSection.files.some(file => file.path === selectedNovelFile?.path)
     const manuscriptGroupId = 'writing:group:manuscript'
@@ -3545,7 +3558,7 @@ function AppShellContent({
           expanded: isExpanded('writing:group:global'),
           onToggle: () => toggleExpanded('writing:group:global'),
           onClick: () => toggleExpanded('writing:group:global'),
-          items: visibleGlobalSectionItems,
+          items: globalItems,
         },
         {
           id: manuscriptGroupId,

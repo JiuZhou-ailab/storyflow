@@ -37,6 +37,7 @@ describe('macOS release configuration', () => {
 
     expect(builderConfig).toContain('forceCodeSigning: true');
     expect(builderConfig).toContain('notarize: true');
+    expect(builderConfig).toContain('sign: true');
     expect(builderConfig).toMatch(/target:\n\s+- dmg\n\s+- zip/);
   });
 
@@ -60,6 +61,8 @@ describe('macOS release configuration', () => {
     expect(workflow).toContain('APPLE_ID: ${{ secrets.APPLE_ID }}');
     expect(workflow).toContain('APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}');
     expect(workflow).toContain('APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}');
+    expect(workflow).toContain('if [ -n "$APPLE_API_KEY_BASE64" ] && [ -n "$APPLE_API_KEY_ID" ]; then');
+    expect(workflow).toContain('APPLE_API_ISSUER is optional and should be omitted for Individual API keys');
     expect(workflow).toContain('CRAFT_MACOS_NOTARIZE_ATTEMPTS: "3"');
     expect(workflow).toContain('CRAFT_MACOS_NOTARIZE_RETRY_DELAY_SECONDS: "60"');
     expect(workflow).toContain('CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}');
@@ -106,14 +109,20 @@ describe('macOS release configuration', () => {
     const workflow = readRepoFile('.github/workflows/release.yml');
 
     expect(buildScript).toContain('validate_macos_release_credentials');
+    expect(buildScript).toContain('notarize_macos_dmg_artifact');
     expect(buildScript).toContain('verify_macos_release_artifacts');
     expect(buildScript).toContain('run_electron_builder_with_retries');
     expect(buildScript).toContain('Apple notarization can return transient timeouts');
     expect(buildScript).toContain('-c.mac.forceCodeSigning=true -c.mac.notarize=true');
     expect(buildScript).toContain('select_notarization_credentials');
+    expect(buildScript).toContain('APPLE_API_ISSUER is optional and must be omitted for Individual API keys');
+    expect(buildScript).toContain('[ -n "${APPLE_API_KEY_BASE64:-}" ] || [ -n "${APPLE_API_KEY:-}" ]');
     expect(buildScript).toContain('unset APPLE_ID');
     expect(buildScript).toContain('codesign --verify --deep --strict');
     expect(buildScript).toContain('spctl --assess');
+    expect(buildScript).toContain('xcrun notarytool submit "$dmg_path" --wait');
+    expect(buildScript).toContain('xcrun stapler staple "$dmg_path"');
+    expect(buildScript).toContain('spctl --assess --type open --context context:primary-signature');
     expect(buildScript).toContain('xcrun stapler validate');
     expect(buildScript).toContain('DMG artifact present');
     expect(buildScript).toContain('ZIP artifact present');

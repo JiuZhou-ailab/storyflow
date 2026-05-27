@@ -81,6 +81,9 @@ describe("downloadOptions", () => {
     expect(html).toContain("Storyflow");
     expect(html).toContain("写作者的本地 AI 工作台");
     expect(html).toContain("下载 Storyflow 桌面版");
+    expect(html).toContain("文档");
+    expect(html).toContain('href="/docs/"');
+    expect(html).not.toContain("https://ehyg6a9wjd.feishu.cn/wiki");
     expect(html).toContain('href="#how-it-works-diagram"');
     expect(html).toContain('id="how-it-works-diagram"');
     expect(html).toContain("创建 Workspace 后，写作流程如何展开");
@@ -91,6 +94,9 @@ describe("downloadOptions", () => {
     expect(html).toContain("<svg");
     expect(html).toContain("不是聊天窗口，而是写作工作台");
     expect(html).toContain("围绕长文本上下文设计");
+    expect(html).toContain("角色动机");
+    expect(html).toContain("语气要求");
+    expect(html).not.toContain('title="正文">正</span>');
     expect(html).toContain("数据源和素材可以被 Agent 读取");
     expect(html).toContain("多章节推进，不打断写作节奏");
     expect(html).toContain("审阅不是泛泛评价");
@@ -113,31 +119,72 @@ describe("downloadOptions", () => {
     expect(html).not.toContain("window-bar");
   });
 
+  test("renders the documentation as an in-site page", () => {
+    const originalWindow = globalThis.window;
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: { location: { pathname: "/docs" } },
+    });
+
+    try {
+      const html = renderToStaticMarkup(createElement(App));
+
+      expect(html).toContain("小说 Agents 写作工作区说明");
+      expect(html).toContain("一句话理解");
+      expect(html).toContain("图 0：Header 功能区");
+      expect(html).toContain("图 1：整窗地图");
+      expect(html).toContain("图 4：创建新项目时怎么选模板");
+      expect(html).toContain("图 5：查看项目");
+      expect(html).toContain("判断是否用对了");
+      expect(html).toContain("初始给出的信息越明确越好");
+      expect(html).toContain("然后在对话框中打出");
+      expect(html).toContain("doc-00-header.png");
+      expect(html).toContain("doc-08-skill-menu.png");
+      expect(html).not.toContain("https://ehyg6a9wjd.feishu.cn/wiki");
+      expect(html).toContain('aria-current="page"');
+    } finally {
+      Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: originalWindow,
+      });
+    }
+  });
+
+  test("marks same-site page links for client-side navigation", () => {
+    const html = renderToStaticMarkup(createElement(App));
+
+    expect(html).toContain('href="/docs/"');
+    expect(html).toContain('data-storyflow-page-link="true"');
+    expect(html).toContain('href="/#workflow"');
+    expect(html).toContain('href="/#downloads"');
+  });
+
   test("keeps legacy root-domain release paths redirected to storage", () => {
     const redirects = readFileSync(resolve(import.meta.dir, "../../_redirects"), "utf8");
 
     expect(redirects).toContain("/latest/* https://story-storage.zjding.com/latest/:splat 301");
     expect(redirects).toContain("/releases/* https://story-storage.zjding.com/releases/:splat 301");
+    expect(redirects).toContain("/docs /docs/ 301");
+    expect(redirects).toContain("/docs/ /index.html 200");
   });
 
   test("uses a wider showcase width and a narrower content width", () => {
     const css = readFileSync(resolve(import.meta.dir, "../styles.css"), "utf8");
 
     expect(css).toContain("--landing-showcase-width: 1100px;");
+    expect(css).toContain("--landing-diagram-width: 760px;");
     expect(css).toContain("--landing-content-width: 896px;");
     expect(css).toContain("--landing-read-width: 896px;");
 
-    for (const selector of [".hero-shot", ".diagram-section"]) {
-      expect(css).toMatch(
-        new RegExp(`${selector.replace(".", "\\.")}[^{}]*\\{[^}]*max-width: var\\(--landing-showcase-width\\);`),
-      );
-    }
+    expect(css).toMatch(/\.hero-shot[^{}]*\{[^}]*max-width: var\(--landing-showcase-width\);/);
+    expect(css).toMatch(/\.diagram-section[^{}]*\{[^}]*max-width: var\(--landing-diagram-width\);/);
 
     for (const selector of [
       ".text-section",
       ".wide-image",
       ".section-cards",
       ".site-footer",
+      ".docs-page",
     ]) {
       expect(css).toMatch(
         new RegExp(`${selector.replace(".", "\\.")}[^{}]*\\{[^}]*max-width: var\\(--landing-content-width\\);`),

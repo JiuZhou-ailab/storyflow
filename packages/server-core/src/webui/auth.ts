@@ -44,9 +44,9 @@ export async function verifyJwt(token: string, secret: string): Promise<JwtPaylo
   }
 }
 
-export async function createSessionToken(secret: string): Promise<string> {
+export async function createSessionToken(secret: string, subject = 'webui'): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
-  return signJwt({ sub: 'webui', iat: now, exp: now + JWT_EXPIRY_SECONDS }, secret)
+  return signJwt({ sub: subject, iat: now, exp: now + JWT_EXPIRY_SECONDS }, secret)
 }
 
 // ---------------------------------------------------------------------------

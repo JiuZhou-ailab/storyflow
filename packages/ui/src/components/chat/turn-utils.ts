@@ -641,7 +641,7 @@ export function groupMessagesByTurn(messages: Message[]): Turn[] {
         isStreaming: !!message.isStreaming,
         streamStartTime: message.isStreaming ? message.timestamp : undefined,
         messageId: message.id,
-        canBranch: !!message.turnId,
+        canBranch: message.canBranch ?? !!message.turnId,
         annotations: message.annotations,
       }
       currentTurn.isStreaming = !!message.isStreaming

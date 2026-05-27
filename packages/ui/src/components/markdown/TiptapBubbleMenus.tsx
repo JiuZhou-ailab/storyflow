@@ -667,15 +667,90 @@ const TIPTAP_BUBBLE_MENU_BASE_OPTIONS = {
   zIndex: TIPTAP_BUBBLE_MENU_Z_INDEX,
 }
 
+type BubbleMenuPlacement = 'top' | 'right' | 'bottom' | 'left' | 'top-start' | 'top-end' | 'right-start' | 'right-end' | 'bottom-start' | 'bottom-end' | 'left-start' | 'left-end'
+type BubbleMenuOffset = number | { mainAxis?: number; crossAxis?: number; alignmentAxis?: number | null } | boolean
+
+export function buildTextSelectionBubbleMenuOptions({
+  appendTo,
+  scrollTarget,
+  placement,
+  offset,
+}: {
+  appendTo?: HTMLElement | null
+  scrollTarget?: HTMLElement | Window | null
+  placement: BubbleMenuPlacement
+  offset: BubbleMenuOffset
+}) {
+  return {
+    appendTo: appendTo ?? undefined,
+    options: {
+      ...TIPTAP_BUBBLE_MENU_BASE_OPTIONS,
+      placement,
+      offset,
+      hide: true,
+      ...(scrollTarget ? { scrollTarget } : {}),
+    },
+  }
+}
+
+export function shouldRenderTextSelectionBubbleMenu({
+  dismissedByScroll,
+  hasTextSelection,
+  isNodeSelection,
+  isCodeBlockActive,
+}: {
+  dismissedByScroll: boolean
+  hasTextSelection: boolean
+  isNodeSelection: boolean
+  isCodeBlockActive: boolean
+}): boolean {
+  if (dismissedByScroll) return false
+  if (!hasTextSelection) return false
+  if (isNodeSelection) return false
+  if (isCodeBlockActive) return false
+  return true
+}
+
 export function TiptapBubbleMenus({
   editor,
+  appendTo,
+  scrollTarget,
   onAskAiForSelection,
   onAddSelectionToChat,
 }: {
   editor: Editor
+  appendTo?: HTMLElement | null
+  scrollTarget?: HTMLElement | Window | null
   onAskAiForSelection?: (request: TiptapSelectionAiRequest) => Promise<string>
   onAddSelectionToChat?: (request: TiptapSelectionChatRequest) => void
 }) {
+  const [textSelectionDismissedByScroll, setTextSelectionDismissedByScroll] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!scrollTarget) return
+
+    const dismissTextSelectionMenus = () => {
+      setTextSelectionDismissedByScroll(true)
+      setSelectionAiRangeHighlight(editor, null)
+    }
+
+    scrollTarget.addEventListener('scroll', dismissTextSelectionMenus, { passive: true })
+    return () => {
+      scrollTarget.removeEventListener('scroll', dismissTextSelectionMenus)
+    }
+  }, [editor, scrollTarget])
+
+  React.useEffect(() => {
+    const allowTextSelectionMenus = () => {
+      setTextSelectionDismissedByScroll(false)
+    }
+
+    editor.on('selectionUpdate', allowTextSelectionMenus)
+    return () => {
+      editor.off('selectionUpdate', allowTextSelectionMenus)
+    }
+  }, [editor])
+
   const getRichBlockEditAnchor = React.useCallback(() => {
     const { selection } = editor.state
     if (!(selection instanceof NodeSelection)) return null
@@ -720,14 +795,16 @@ export function TiptapBubbleMenus({
         updateDelay={0}
         shouldShow={({ editor: e, state }) => {
           const { selection } = state
-          if (selection.from === selection.to) return false
-          if (selection instanceof NodeSelection) return false
-          if (e.isActive('codeBlock')) return false
-          return true
+          return shouldRenderTextSelectionBubbleMenu({
+            dismissedByScroll: textSelectionDismissedByScroll,
+            hasTextSelection: selection.from !== selection.to,
+            isNodeSelection: selection instanceof NodeSelection,
+            isCodeBlockActive: e.isActive('codeBlock'),
+          })
         }}
-        options={{ ...TIPTAP_BUBBLE_MENU_BASE_OPTIONS, placement: 'top', offset: 8 }}
+        {...buildTextSelectionBubbleMenuOptions({ appendTo, scrollTarget, placement: 'top', offset: 8 })}
       >
-        <TextFormattingMenu editor={editor} />
+        {textSelectionDismissedByScroll ? null : <TextFormattingMenu editor={editor} />}
       </BubbleMenu>
 
       {onAskAiForSelection ? (
@@ -737,18 +814,22 @@ export function TiptapBubbleMenus({
           updateDelay={0}
           shouldShow={({ editor: e, state }) => {
             const { selection } = state
-            if (selection.from === selection.to) return false
-            if (selection instanceof NodeSelection) return false
-            if (e.isActive('codeBlock')) return false
-            return true
+            return shouldRenderTextSelectionBubbleMenu({
+              dismissedByScroll: textSelectionDismissedByScroll,
+              hasTextSelection: selection.from !== selection.to,
+              isNodeSelection: selection instanceof NodeSelection,
+              isCodeBlockActive: e.isActive('codeBlock'),
+            })
           }}
-          options={{ ...TIPTAP_BUBBLE_MENU_BASE_OPTIONS, placement: 'bottom-start', offset: 8 }}
+          {...buildTextSelectionBubbleMenuOptions({ appendTo, scrollTarget, placement: 'bottom-start', offset: 8 })}
         >
-          <SelectionAiPrompt
-            editor={editor}
-            onAskAiForSelection={onAskAiForSelection}
-            onAddSelectionToChat={onAddSelectionToChat}
-          />
+          {textSelectionDismissedByScroll ? null : (
+            <SelectionAiPrompt
+              editor={editor}
+              onAskAiForSelection={onAskAiForSelection}
+              onAddSelectionToChat={onAddSelectionToChat}
+            />
+          )}
         </BubbleMenu>
       ) : null}
 

@@ -1,3 +1,7 @@
+// input: Electron app lifecycle, workspace IDs, saved window URLs, and renderer resources
+// output: Managed BrowserWindow instances with workspace-aware routing and native window behavior
+// pos: Owns desktop app window creation, restoration, and per-window lifecycle wiring
+
 import { BrowserWindow, shell, nativeTheme, Menu, app } from 'electron'
 import { windowLog } from './logger'
 import { join } from 'path'
@@ -8,6 +12,10 @@ import type { SavedWindow } from './window-state'
 
 // Vite dev server URL for hot reload
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
+
+function getNativeWindowBackgroundColor(): string {
+  return nativeTheme.shouldUseDarkColors ? '#2b292e' : '#fafafb'
+}
 
 /**
  * Get the appropriate background material for Windows transparency effects
@@ -139,6 +147,7 @@ export class WindowManager {
       minWidth: 800,
       minHeight: 600,
       show: false, // Don't show until ready-to-show event (faster perceived startup)
+      backgroundColor: getNativeWindowBackgroundColor(),
       title: '',
       icon: iconExists ? iconPath : undefined,
       // macOS-specific: hidden title bar with inset traffic lights
@@ -170,6 +179,8 @@ export class WindowManager {
         webviewTag: false // Browser integration uses WebContentsView, not <webview>
       }
     })
+
+    window.webContents.setZoomFactor(1)
 
     // Show window when first paint is ready (faster perceived startup)
     window.once('ready-to-show', () => {

@@ -8,14 +8,22 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { downloadOptions as releaseDownloadOptions } from "./downloads";
 
 const assets = {
-  workspace: "./reference-assets/storyflow-workspace.png",
-  promoVideo: "./reference-assets/storyflow-promo-45s.mp4",
-  promoPoster: "./reference-assets/storyflow-promo-poster.jpg",
-  dataSource: "./reference-assets/storyflow-data-source.png",
-  skills: "./reference-assets/storyflow-skills.png",
-  reviewDiff: "./reference-assets/storyflow-review-diff.png",
-  delivery: "./reference-assets/storyflow-delivery.png",
-  versionHistory: "./reference-assets/storyflow-version-history.png",
+  workspace: "/reference-assets/storyflow-workspace.png",
+  promoVideo: "/reference-assets/storyflow-promo-45s.mp4",
+  promoPoster: "/reference-assets/storyflow-promo-poster.jpg",
+  dataSource: "/reference-assets/storyflow-data-source.png",
+  skills: "/reference-assets/storyflow-skills.png",
+  reviewDiff: "/reference-assets/storyflow-review-diff.png",
+  delivery: "/reference-assets/storyflow-delivery.png",
+  versionHistory: "/reference-assets/storyflow-version-history.png",
+};
+
+const docsPath = "/docs/";
+const landingPath = "/";
+
+type PageTarget = {
+  pathname: string;
+  hash: string;
 };
 
 const faqs = [
@@ -51,17 +59,17 @@ const faqs = [
   },
 ] as const;
 
-const sourceLogos = [
-  "正文",
-  "大纲",
-  "人物",
-  "设定",
-  "风格",
-  "素材",
-  "任务",
-  "审阅",
-  "总结",
-  "导出",
+const contextSources = [
+  { label: "正文", detail: "章节稿" },
+  { label: "大纲", detail: "结构线" },
+  { label: "人物", detail: "角色动机" },
+  { label: "设定", detail: "世界规则" },
+  { label: "风格", detail: "语气要求" },
+  { label: "素材", detail: "参考资料" },
+  { label: "任务", detail: "Agent 计划" },
+  { label: "审阅", detail: "修改建议" },
+  { label: "总结", detail: "进度记录" },
+  { label: "导出", detail: "交付文件" },
 ] as const;
 
 const sections = {
@@ -161,6 +169,18 @@ const sections = {
   ],
 } as const;
 
+const docsImages = {
+  header: "/reference-assets/docs/doc-00-header.png",
+  windowMap: "/reference-assets/docs/doc-01-window-map.png",
+  sourceTree: "/reference-assets/docs/doc-02-source-tree.png",
+  collaboration: "/reference-assets/docs/doc-03-collaboration.png",
+  templatePicker: "/reference-assets/docs/doc-04-template-picker.png",
+  initialBrief: "/reference-assets/docs/doc-05-initial-brief.png",
+  chapterCheck: "/reference-assets/docs/doc-06-chapter-check.png",
+  fullReview: "/reference-assets/docs/doc-07-full-review.png",
+  skillMenu: "/reference-assets/docs/doc-08-skill-menu.png",
+} as const;
+
 const howItWorksDiagram = `flowchart TD
   request["初始化请求"] --> brief["简报.md"]
   brief --> topic["题材定位"]
@@ -225,7 +245,7 @@ function Icon({ name }: { name: string }) {
   );
 }
 
-function Header() {
+function Header({ isDocsPage }: { isDocsPage: boolean }) {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -238,12 +258,28 @@ function Header() {
   return (
     <header className={scrolled ? "site-header is-scrolled" : "site-header"}>
       <div className="header-inner">
-        <a className="header-mark" href="/" aria-label="Storyflow">
-          <img src="./apple-touch-icon.png" alt="" />
+        <a
+          className="header-mark"
+          href={landingPath}
+          aria-label="Storyflow"
+          data-storyflow-page-link="true"
+        >
+          <img src="/apple-touch-icon.png" alt="" />
         </a>
         <nav className="header-nav" aria-label="页面导航">
-          <a href="#workflow">理解产品</a>
-          <a href="#downloads">下载桌面版</a>
+          <a href="/#workflow" data-storyflow-page-link="true">
+            理解产品
+          </a>
+          <a
+            href={docsPath}
+            aria-current={isDocsPage ? "page" : undefined}
+            data-storyflow-page-link="true"
+          >
+            文档
+          </a>
+          <a href="/#downloads" data-storyflow-page-link="true">
+            下载桌面版
+          </a>
         </nav>
       </div>
     </header>
@@ -438,21 +474,58 @@ function FaqSection() {
 function SourceStrip() {
   return (
     <div className="source-strip" aria-label="Storyflow 写作上下文">
-      {sourceLogos.map((name) => (
-        <span title={name} key={name}>
-          {name.slice(0, 1)}
+      {contextSources.map((source) => (
+        <span title={`${source.label}：${source.detail}`} key={source.label}>
+          <strong>{source.label}</strong>
+          <small>{source.detail}</small>
         </span>
       ))}
     </div>
   );
 }
 
-export function App() {
+function getCurrentPageTarget(): PageTarget {
+  if (typeof window === "undefined") {
+    return { pathname: landingPath, hash: "" };
+  }
+
+  return {
+    pathname: window.location.pathname,
+    hash: window.location.hash,
+  };
+}
+
+function normalizePagePath(pathname: string) {
+  const normalized = pathname.replace(/\/$/, "");
+  return normalized === "" ? landingPath : normalized;
+}
+
+function isDocsPagePath(pathname: string) {
+  return normalizePagePath(pathname) === "/docs";
+}
+
+function isHandledPagePath(pathname: string) {
+  const normalized = normalizePagePath(pathname);
+  return normalized === landingPath || normalized === "/docs";
+}
+
+function scrollToPageHash(hash: string) {
+  window.requestAnimationFrame(() => {
+    if (!hash) {
+      window.scrollTo({ top: 0 });
+      return;
+    }
+
+    const target = document.getElementById(decodeURIComponent(hash.slice(1)));
+    if (target) {
+      target.scrollIntoView();
+    }
+  });
+}
+
+function LandingPage() {
   return (
-    <div className="page-shell">
-      <div className="background-pattern" aria-hidden="true" />
-      <Header />
-      <main className="main-content">
+    <>
         <Hero />
         <FaqSection />
         <HowItWorksDiagram />
@@ -555,12 +628,321 @@ export function App() {
             Storyflow 的界面围绕这个边界设计：AI 是工作台的一部分，不是替代写作者的黑箱。
           </p>
         </TextSection>
-      </main>
+    </>
+  );
+}
+
+function DocsPage() {
+  return (
+    <article className="docs-page">
+      <section className="docs-hero">
+        <p className="docs-kicker">Storyflow 文档</p>
+        <h1>小说 Agents 写作工作区说明</h1>
+        <p>面向编剧、网文作者和内容策划；配图来自当前 Electron 应用截图。</p>
+      </section>
+
+      <section className="docs-summary">
+        <h2>一句话理解</h2>
+        <p>
+          小说 Agents 的写作工作区像一个带助手的作品资料柜：左侧是一本书的目录分区，
+          中间是正在沉淀的作品文件，右侧是你和助手讨论、确认、改稿的地方。
+        </p>
+      </section>
+
+      <section className="docs-section" id="header-tools">
+        <div className="docs-section-copy">
+          <h2>图 0：Header 功能区</h2>
+        </div>
+        <figure className="docs-figure docs-figure-wide">
+          <img src={docsImages.header} alt="真实截图：Header 功能区" />
+          <figcaption>图 0：Header 功能区</figcaption>
+        </figure>
+        <ul className="docs-bullet-list">
+          <li>
+            <strong>项目切换：</strong>从一本书切到另一本书。
+          </li>
+          <li>
+            <strong>数据源：</strong>接入资料、文件夹、外部服务，适合挂参考资料和素材库。
+          </li>
+          <li>
+            <strong>技能：</strong>给助手加载专门工作方法，例如写作法、拆文法、审校法。
+          </li>
+          <li>
+            <strong>自动化：</strong>让任务按规则自动运行，适合定时检查和持续跟进。
+          </li>
+          <li>
+            <strong>设置：</strong>模型、权限和应用设置。
+          </li>
+          <li>
+            <strong>版本管理：</strong>保存、查看、恢复写作版本，相当于作品的时间机器。
+          </li>
+        </ul>
+      </section>
+
+      <section className="docs-section" id="window-map">
+        <div className="docs-section-copy">
+          <h2>图 1：整窗地图</h2>
+        </div>
+        <figure className="docs-figure docs-figure-wide">
+          <img src={docsImages.windowMap} alt="真实截图：整体框选" />
+          <figcaption>图 1：整体框选</figcaption>
+        </figure>
+        <ul className="docs-bullet-list">
+          <li>
+            <strong>资料目录：</strong>一本书的分区书架。正文、大纲、角色、风格、素材分开放，避免所有信息混在聊天记录里。
+          </li>
+          <li>
+            <strong>正文 / 文档区：</strong>正在编辑的作品文件。截图里打开的是第一章正文，它会被保存成作品资产。
+          </li>
+          <li>
+            <strong>助手协作区：</strong>助手检查章节是否和大纲 beat 对齐，也可以继续写下一章、重写、扩写或改方向。
+          </li>
+          <li>
+            <strong>输入区：</strong>作者给助手下一步任务，例如继续、重写、加强冲突、改成更爽。
+          </li>
+        </ul>
+      </section>
+
+      <section className="docs-section" id="source-tree">
+        <div className="docs-section-copy">
+          <h2>图 2：资料树框选</h2>
+          <p>左侧资料树不是工程目录，而是一套写作资料柜。</p>
+        </div>
+        <figure className="docs-figure docs-figure-contain">
+          <img src={docsImages.sourceTree} alt="真实截图：资料树框选" />
+          <figcaption>图 2：资料树框选</figcaption>
+        </figure>
+        <ul className="docs-bullet-list">
+          <li>
+            <strong>全局信息：</strong>放大纲、人物、地点、风格、时间线、状态、素材等长期资料。
+          </li>
+          <li>
+            <strong>正文：</strong>只放真正会给读者看的章节。
+          </li>
+          <li>
+            <strong>当前章节：</strong>正在编辑的具体正文文件。
+          </li>
+        </ul>
+      </section>
+
+      <section className="docs-section" id="collaboration">
+        <div className="docs-section-copy">
+          <h2>图 3：写作协作区框选</h2>
+        </div>
+        <figure className="docs-figure docs-figure-wide">
+          <img src={docsImages.collaboration} alt="真实截图：写作协作区框选" />
+          <figcaption>图 3：写作协作区框选</figcaption>
+        </figure>
+        <ul className="docs-bullet-list">
+          <li>
+            <strong>作品草稿：</strong>沉淀正文和修改痕迹。
+          </li>
+          <li>
+            <strong>助手反馈：</strong>检查章节钩子、主要事件、信息差、情绪落点等 beat 是否对齐。
+          </li>
+          <li>
+            <strong>下一步：</strong>作者像和编辑沟通一样，要求继续写、重写、调整节奏或加强某条线。
+          </li>
+        </ul>
+      </section>
+
+      <section className="docs-section" id="template-picker">
+        <div className="docs-section-copy">
+          <h2>图 4：创建新项目时怎么选模板</h2>
+          <p>模板决定新项目的文件结构、助手默认工作法、适合的写作任务。默认是短篇/中篇小说。</p>
+        </div>
+        <figure className="docs-figure docs-figure-wide">
+          <img src={docsImages.templatePicker} alt="真实截图：创建新项目时的模板选择" />
+          <figcaption>图 4：创建新项目时的模板选择</figcaption>
+        </figure>
+        <ul className="docs-bullet-list">
+          <li>
+            <strong>短篇/中篇小说：</strong>5,000-30,000 字中文短中篇网文；强钩子、强反转、每章一个正文文件。
+          </li>
+          <li>
+            <strong>Claude-Book 小说法：</strong>长篇小说；用项目圣经、章节计划、时间线和当前状态保证连续性。
+          </li>
+          <li>
+            <strong>Oh Story 网文连载法：</strong>连载网文；强调题材定位、对标拆文、章节钩子、追读节奏和去 AI 味。
+          </li>
+          <li>
+            <strong>Crucible 结构长篇法：</strong>强结构长篇；三条叙事线、36 beats、forge points 和审校关卡。
+          </li>
+          <li>
+            <strong>Creative Writing 技法工坊：</strong>探索型文学创作；知识库、声线捕捉、自由探索、批评反馈和修订循环。
+          </li>
+        </ul>
+      </section>
+
+      <section className="docs-section" id="create-project">
+        <div className="docs-section-copy">
+          <h2>图 5：查看项目</h2>
+          <h3>创建项目功能怎么用</h3>
+          <p>
+            创建项目可以理解成给一本新作品开一个独立资料柜。它不是新建一段聊天，而是新建一个可以长期保存大纲、人物、正文、素材和修改记录的作品空间。
+          </p>
+          <h3>创建时要决定什么</h3>
+          <ul className="docs-inline-list">
+            <li>项目名称：建议直接写作品名或暂定名，例如《女扮男装入朝后》。</li>
+            <li>保存位置：决定这个项目放在哪个工作区或文件夹里，方便以后找回。</li>
+            <li>模板：决定项目一开始自带哪些写作分区、默认流程和助手工作方法。</li>
+            <li>初始方向：可以先用一句话写清题材、主角、冲突和篇幅，后面再逐步补充。</li>
+          </ul>
+          <h3>模板会影响什么</h3>
+          <p>
+            模板不是标签，而是新项目的写作模板。选完之后，系统会按这个方法准备项目结构，让作者从合适的资料格子开始写。
+          </p>
+          <ul className="docs-inline-list">
+            <li>短篇/中篇小说：更适合先抓开篇钩子、反转和章节节奏。</li>
+            <li>长篇小说方法：更适合先建世界观、人物线、章节计划和连续性记录。</li>
+            <li>连载网文方法：更适合先做题材定位、对标拆文、追读点和章末钩子。</li>
+            <li>强结构长篇方法：更适合多线叙事、复杂伏笔和结构审校。</li>
+            <li>创意写作方法：更适合探索声线、风格、主题和多轮修订。</li>
+          </ul>
+          <h3>创建后第一件事</h3>
+          <p>创建完成后，不要马上让助手写正文。更稳的顺序是：</p>
+          <ul className="docs-inline-list">
+            <li>先填简报：题材、主角、核心钩子、篇幅、禁区。</li>
+            <li>再推大纲：每章钩子、冲突、反转、情绪落点。</li>
+            <li>再补人物和素材：动机、秘密、关系变化、可复用设定。</li>
+            <li>最后写正文：每章一个文件，把正式内容沉淀到正文区。</li>
+          </ul>
+          <p>如果作者只是想临时问一个问题，可以继续用聊天；如果要认真推进一篇作品，就应该创建项目。</p>
+        </div>
+        <ul className="docs-bullet-list">
+          <li>把选题信息丢给助手，让助手先追问会影响大纲的关键问题。</li>
+          <li>确认题材、人设、篇幅、读者期待和禁区。</li>
+          <li>让助手先填简报，再推大纲，不要一上来直接写正文。</li>
+          <li>大纲确认后，逐章写正文，每章一个文件。</li>
+          <li>每次改动都回到对应文件里沉淀，不只留在聊天里。</li>
+        </ul>
+      </section>
+
+      <section className="docs-section docs-checklist" id="checklist">
+        <div className="docs-section-copy">
+          <h2>判断是否用对了</h2>
+        </div>
+        <ul className="docs-bullet-list">
+          <li>不用在聊天记录里翻找设定，资料都在左侧分类里。</li>
+          <li>助手不会每次重新理解一本书，因为简报、大纲、人物、风格都能作为上下文。</li>
+          <li>写正文前，章节钩子、反转点和情绪落点已经比较清楚。</li>
+        </ul>
+      </section>
+
+      <section className="docs-section" id="initial-brief">
+        <div className="docs-section-copy">
+          <h2>1. 初始给出的信息越明确越好</h2>
+          <p>主要就是题材，人设，核心梗，金手指之类的。</p>
+        </div>
+        <figure className="docs-figure docs-figure-wide">
+          <img src={docsImages.initialBrief} alt="真实截图：初始信息和关键问题确认" />
+          <figcaption>初始给出的信息越明确越好</figcaption>
+        </figure>
+      </section>
+
+      <section className="docs-section" id="chapter-check">
+        <div className="docs-section-copy">
+          <h2>2. 最好一章写完后进行检查</h2>
+          <p>不要一次性全部写完，效果会变差；如果一章一章写，模型检查会更仔细。</p>
+        </div>
+        <figure className="docs-figure docs-figure-wide">
+          <img src={docsImages.chapterCheck} alt="真实截图：一章写完后进行检查" />
+          <figcaption>一章写完后进行检查</figcaption>
+        </figure>
+      </section>
+
+      <section className="docs-section" id="full-review">
+        <div className="docs-section-copy">
+          <h2>3. 写完后审查</h2>
+          <p>
+            写完后让 Agent 审查一遍全文，查看哪里有逻辑上的问题和错误。你可以自定义自己的技能，告诉 Agent 后它会帮你写，比如小说审查。
+          </p>
+        </div>
+        <figure className="docs-figure docs-figure-wide">
+          <img src={docsImages.fullReview} alt="真实截图：小说审查技能" />
+          <figcaption>写完后让 Agent 审查一遍全文</figcaption>
+        </figure>
+        <div className="docs-section-copy docs-subsection">
+          <p>然后在对话框中打出 “/” 字符后就可以看到你定义的技能了。</p>
+        </div>
+        <figure className="docs-figure docs-figure-contain">
+          <img src={docsImages.skillMenu} alt="真实截图：对话框中输入斜杠查看技能" />
+          <figcaption>在对话框中打出 “/” 字符后可以看到你定义的技能</figcaption>
+        </figure>
+      </section>
+    </article>
+  );
+}
+
+export function App() {
+  const [pageTarget, setPageTarget] = useState<PageTarget>(() => getCurrentPageTarget());
+  const isDocsPage = isDocsPagePath(pageTarget.pathname);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setPageTarget(getCurrentPageTarget());
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  const handlePageClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.shiftKey
+    ) {
+      return;
+    }
+
+    const link = (event.target as Element).closest<HTMLAnchorElement>("a[data-storyflow-page-link='true']");
+    if (!link || link.target || link.hasAttribute("download")) {
+      return;
+    }
+
+    const targetUrl = new URL(link.href, window.location.href);
+    if (targetUrl.origin !== window.location.origin || !isHandledPagePath(targetUrl.pathname)) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const nextTarget = {
+      pathname: targetUrl.pathname,
+      hash: targetUrl.hash,
+    };
+    const nextUrl = `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`;
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+
+    if (nextUrl !== currentUrl) {
+      window.history.pushState(null, "", nextUrl);
+    }
+
+    setPageTarget(nextTarget);
+    scrollToPageHash(nextTarget.hash);
+  };
+
+  return (
+    <div className="page-shell" onClick={handlePageClick}>
+      <div className="background-pattern" aria-hidden="true" />
+      <Header isDocsPage={isDocsPage} />
+      <main className="main-content">{isDocsPage ? <DocsPage /> : <LandingPage />}</main>
       <footer className="site-footer">
         <span>© 2026 Storyflow</span>
         <span className="footer-links">
-          <a href="#workflow">理解产品</a>
-          <a href="#downloads">下载桌面版</a>
+          <a href="/#workflow" data-storyflow-page-link="true">
+            理解产品
+          </a>
+          <a href={docsPath} data-storyflow-page-link="true">
+            文档
+          </a>
+          <a href="/#downloads" data-storyflow-page-link="true">
+            下载桌面版
+          </a>
         </span>
       </footer>
     </div>

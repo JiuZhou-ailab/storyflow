@@ -554,6 +554,22 @@ describe('PiEventAdapter', () => {
       expect(events[0].error.code).toBe('rate_limited');
     });
 
+    it('should emit typed_error for provider content filtering', () => {
+      const events = collect(adapter.adaptEvent({
+        type: 'message_end',
+        message: {
+          role: 'assistant',
+          stopReason: 'error',
+          errorMessage: 'Provider finish_reason: content_filtered',
+        },
+      } as any));
+
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe('typed_error');
+      expect(events[0].error.code).toBe('content_filtered');
+      expect(events[0].error.message).not.toContain('finish_reason');
+    });
+
     it('should not emit error without errorMessage even if stopReason is error', () => {
       collect(adapter.adaptEvent({ type: 'turn_start' } as any));
       const events = collect(adapter.adaptEvent({

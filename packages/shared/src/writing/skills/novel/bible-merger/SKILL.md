@@ -7,4 +7,4 @@ description: Use when merging multiple narrative analyses into one canonical pro
 
 Adapted for Craft Agent from Claude-Book concepts. Source: https://github.com/ThomasHoussin/Claude-Book
 
-Merge `analysis/output/*/` into `bible/` with provenance, conflict notes, stable style rules, consolidated characters, recurring locations, and a merge report.
+Merge `.work/analysis/output/*/` into `bible/` with provenance, conflict notes, stable style rules, consolidated characters, recurring locations, and a merge report.

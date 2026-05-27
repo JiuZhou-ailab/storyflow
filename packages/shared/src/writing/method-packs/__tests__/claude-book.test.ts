@@ -38,6 +38,22 @@ describe("built-in method packs", () => {
       path: "state/current/situation.md",
       kind: "file",
     });
+    expect(pack?.requiredPaths).not.toContainEqual({
+      path: "analysis/src",
+      kind: "directory",
+    });
+    expect(pack?.requiredPaths).not.toContainEqual({
+      path: "analysis/output",
+      kind: "directory",
+    });
+    expect(pack?.requiredPaths).toContainEqual({
+      path: ".work/analysis/src",
+      kind: "directory",
+    });
+    expect(pack?.requiredPaths).toContainEqual({
+      path: ".work/analysis/output",
+      kind: "directory",
+    });
     expect(pack?.requiredSkills).toContain("chapter-workflow");
     expect(pack?.requiredSkills).toContain("state-updater");
     expect(pack?.starterMessage).toContain("Claude-Book");
@@ -151,7 +167,7 @@ describe("built-in method packs", () => {
       "novel.oh-story": ["网文", "平台", "更新节奏"],
       "novel.crucible": ["36-beat", "三条叙事线", "forge points"],
       "novel.creative-writing": ["知识库", "声线", "修订"],
-      "short-form.article": ["网文", "skills", "## 文件"],
+      "short-form.article": ["网文", "技能", "## 文件"],
     };
 
     for (const pack of getBuiltInMethodPacks()) {

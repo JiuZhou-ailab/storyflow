@@ -110,6 +110,7 @@ import { checkForUpdatesOnLaunch, setAutoUpdateEventSink, isUpdating } from './a
 import type { EventSink } from '@craft-agent/server-core/transport'
 import { validateGitBashPath, checkVCRedistInstalled } from '@craft-agent/server-core/services'
 import { shouldCreateWindowsAfterStartup } from './startup-state'
+import { createClientAuthConfigFromEnv, createClientAuthService } from './client-auth'
 
 // Initialize electron-log for renderer process support
 log.initialize()
@@ -536,6 +537,55 @@ app.whenReady().then(async () => {
       const result = await dialog.showOpenDialog(win, spec)
       return { canceled: result.canceled, filePaths: result.filePaths }
     })
+
+    const reinitializeClientGatewayAuth = async (connectionSlug: string): Promise<void> => {
+      try {
+        await sessionManager?.reinitializeAuth(connectionSlug)
+      } catch (err) {
+        mainLog.warn(
+          `[client-auth] Failed to reinitialize gateway auth for ${connectionSlug}:`,
+          err instanceof Error ? err.message : err,
+        )
+      }
+    }
+    const clientAuthService = createClientAuthService(createClientAuthConfigFromEnv(process.env), {
+      openExternal: (url) => shell.openExternal(url).then(() => undefined),
+      gatewayCredentialStore: {
+        async setGatewayToken({ connectionSlug, token }) {
+          const manager = getCredentialManager()
+          await manager.setLlmApiKey(connectionSlug, token)
+          await reinitializeClientGatewayAuth(connectionSlug)
+        },
+        async clearGatewayToken({ connectionSlug, token }) {
+          const manager = getCredentialManager()
+          const existing = await manager.getLlmApiKey(connectionSlug).catch(() => null)
+          if (token && existing !== token) return
+
+          await manager.deleteLlmApiKey(connectionSlug)
+          await reinitializeClientGatewayAuth(connectionSlug)
+        },
+      },
+    })
+    const initialClientAuthState = clientAuthService.getState()
+    if (initialClientAuthState.required) {
+      mainLog.info(`[client-auth] Required (${initialClientAuthState.configured ? 'configured' : 'not configured'})`)
+    }
+
+    ipcMain.handle('client-auth:get-state', () => clientAuthService.getState())
+    ipcMain.handle('client-auth:sign-in', async (_event, input: unknown) => {
+      const record = input && typeof input === 'object'
+        ? input as Record<string, unknown>
+        : {}
+      return clientAuthService.signIn({
+        identifier: typeof record.identifier === 'string' ? record.identifier : '',
+        password: typeof record.password === 'string' ? record.password : '',
+      })
+    })
+    ipcMain.handle('client-auth:sign-in-feishu', () => clientAuthService.signInWithFeishu())
+    ipcMain.handle('client-auth:cancel-feishu-sign-in', () => {
+      clientAuthService.cancelFeishuSignIn()
+    })
+    ipcMain.handle('client-auth:sign-out', () => clientAuthService.signOut())
 
     if (!isClientOnly) {
       // Restore persisted Git Bash path on Windows (must happen before any SDK subprocess spawn)

@@ -81,21 +81,24 @@ describe("bundled writing skills", () => {
 
   it("seeds short-form runtime skills into a short-form web-fiction scaffold", () => {
     const rootPath = createTempProject();
+    const expectedSkillNames: Record<string, string> = {
+      "short-opening-designer": "短篇开篇设计",
+      "short-golden-three": "黄金三章规划",
+      "short-draft-chapter": "短篇章节起草",
+      "short-reviser": "短篇正文修订",
+    };
 
     createNovelProjectScaffold(rootPath, {
       title: "Short Piece",
       methodPackId: "short-form.article",
     });
 
-    for (const slug of [
-      "short-opening-designer",
-      "short-golden-three",
-      "short-draft-chapter",
-      "short-reviser",
-    ]) {
+    for (const [slug, name] of Object.entries(expectedSkillNames)) {
       const skillPath = join(rootPath, "skills", slug, "SKILL.md");
+      const content = readFileSync(skillPath, "utf-8");
       expect(existsSync(skillPath)).toBe(true);
-      expect(readFileSync(skillPath, "utf-8")).toContain(`name: ${slug}`);
+      expect(content).toContain(`name: ${name}`);
+      expect(content).not.toContain("description: Use when");
     }
   });
 

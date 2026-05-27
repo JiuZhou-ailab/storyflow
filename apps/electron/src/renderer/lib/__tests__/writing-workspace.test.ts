@@ -12,8 +12,10 @@ import {
   getNovelWorkspaceRelativePath,
   mapSearchResultsToNovelWorkspaceFiles,
   groupNovelFileChanges,
+  getShortFormGlobalInfoFiles,
   getNovelImportTargetRelativePath,
   normalizeNovelCreateFilePath,
+  isShortFormNovelWorkspaceFiles,
   NOVEL_WORKSPACE_CATALOG_DIRECTORY_QUERIES,
   NOVEL_WORKSPACE_DETECTION_QUERIES,
   NOVEL_WORKSPACE_FILE_SEARCH_QUERIES,
@@ -221,6 +223,28 @@ describe('writing workspace helpers', () => {
       '正文/第一卷/02-雨夜.md',
     ])
     expect(tree.work.files.map(file => file.relativePath)).toEqual(['自由区/临时笔记.txt', '自由区/脑洞/反派试稿.md'])
+  })
+
+  it('flattens short-form global information files in method pack order', () => {
+    const files = mapSearchResultsToNovelWorkspaceFiles([
+      { name: '素材.md', path: '/short/素材.md', relativePath: '素材.md', type: 'file' },
+      { name: '人物.md', path: '/short/人物.md', relativePath: '人物.md', type: 'file' },
+      { name: '正文', path: '/short/正文', relativePath: '正文', type: 'directory' },
+      { name: '大纲.md', path: '/short/大纲.md', relativePath: '大纲.md', type: 'file' },
+      { name: '简报.md', path: '/short/简报.md', relativePath: '简报.md', type: 'file' },
+      { name: '创作要求.md', path: '/short/创作要求.md', relativePath: '创作要求.md', type: 'file' },
+      { name: '01-开篇.md', path: '/short/正文/01-开篇.md', relativePath: '正文/01-开篇.md', type: 'file' },
+    ])
+    const tree = buildNovelWorkspaceTree(files)
+
+    expect(isShortFormNovelWorkspaceFiles(files)).toBe(true)
+    expect(getShortFormGlobalInfoFiles(tree).map(file => file.relativePath)).toEqual([
+      '创作要求.md',
+      '简报.md',
+      '大纲.md',
+      '人物.md',
+      '素材.md',
+    ])
   })
 
   it('normalizes new manuscript and free-area file paths to supported text files', () => {

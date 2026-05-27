@@ -26,6 +26,7 @@ export function buildClientApi(
   client: RpcClient,
   channelMap: ChannelMap,
   isChannelAvailable?: (channel: string) => boolean,
+  beforeInvoke?: () => void | Promise<void>,
 ): ElectronAPI {
   const api: Record<string, any> = {}
   const nested: Record<string, Record<string, any>> = {}
@@ -36,9 +37,15 @@ export function buildClientApi(
       fn = (cb: (...args: any[]) => void) => client.on(entry.channel, cb)
     } else if (entry.transform) {
       const t = entry.transform
-      fn = async (...args: any[]) => t(await client.invoke(entry.channel, ...args))
+      fn = async (...args: any[]) => {
+        await beforeInvoke?.()
+        return t(await client.invoke(entry.channel, ...args))
+      }
     } else {
-      fn = (...args: any[]) => client.invoke(entry.channel, ...args)
+      fn = async (...args: any[]) => {
+        await beforeInvoke?.()
+        return client.invoke(entry.channel, ...args)
+      }
     }
 
     // Dotted keys like "browserPane.create" become nested: api.browserPane.create

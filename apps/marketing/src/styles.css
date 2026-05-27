@@ -17,6 +17,7 @@
   --muted: color-mix(in oklch, var(--foreground) 70%, transparent);
   --faint: color-mix(in oklch, var(--foreground) 50%, transparent);
   --landing-showcase-width: 1100px;
+  --landing-diagram-width: 760px;
   --landing-content-width: 896px;
   --landing-read-width: 896px;
   --shadow-minimal:
@@ -158,6 +159,10 @@ figure {
 .header-nav a:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+
+.header-nav a[aria-current="page"] {
+  color: #2563eb;
 }
 
 .main-content {
@@ -419,7 +424,7 @@ figure {
 
 .diagram-section {
   margin-top: 64px;
-  max-width: var(--landing-showcase-width);
+  max-width: var(--landing-diagram-width);
   padding: 32px 0;
   scroll-margin-top: 88px;
   width: 100%;
@@ -451,14 +456,14 @@ figure {
   border-radius: 12px;
   box-shadow: var(--shadow-hero);
   overflow-x: auto;
-  padding: 32px;
+  padding: 28px;
 }
 
 .mermaid-diagram-frame svg {
   height: auto;
   margin: 0 auto;
-  max-width: 980px;
-  min-width: 900px;
+  max-width: 692px;
+  min-width: 0;
   width: 100%;
 }
 
@@ -556,24 +561,38 @@ figure {
 .source-strip {
   display: flex;
   flex-wrap: wrap;
-  gap: 24px;
+  gap: 10px;
   margin-top: 32px;
-  max-height: 88px;
-  opacity: 0.5;
-  overflow: hidden;
+  max-width: var(--landing-read-width);
 }
 
 .source-strip span {
   align-items: center;
-  background: var(--foreground);
+  background: var(--background);
+  border: 1px solid color-mix(in oklch, var(--foreground) 10%, transparent);
   border-radius: 8px;
-  color: var(--background);
+  box-shadow: var(--shadow-minimal);
+  color: var(--foreground);
   display: flex;
+  flex: 0 1 128px;
+  gap: 8px;
+  justify-content: space-between;
+  min-height: 38px;
+  padding: 9px 10px;
+}
+
+.source-strip strong {
   font-size: 13px;
   font-weight: 700;
-  height: 32px;
-  justify-content: center;
-  width: 32px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.source-strip small {
+  color: color-mix(in oklch, var(--foreground) 50%, transparent);
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .split-section {
@@ -614,6 +633,195 @@ figure {
 
 .section-cards.flush-bottom {
   padding-bottom: 0;
+}
+
+.docs-page {
+  max-width: var(--landing-content-width);
+  padding: 72px 0 0;
+  width: 100%;
+}
+
+.docs-hero {
+  margin: 0 auto 64px;
+  max-width: var(--landing-read-width);
+  text-align: center;
+}
+
+.docs-kicker {
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+}
+
+.docs-hero h1 {
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1.18;
+  margin-bottom: 18px;
+}
+
+.docs-hero p,
+.docs-summary p,
+.docs-section-copy p,
+.docs-section-copy li,
+.docs-bullet-list li {
+  color: color-mix(in oklch, var(--foreground) 70%, transparent);
+  font-size: 17px;
+  line-height: 1.625;
+}
+
+.docs-summary,
+.docs-section {
+  margin-top: 56px;
+  padding: 32px 0;
+}
+
+.docs-summary {
+  border-bottom: 1px solid color-mix(in oklch, var(--foreground) 10%, transparent);
+  border-top: 1px solid color-mix(in oklch, var(--foreground) 10%, transparent);
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 720px;
+  text-align: center;
+}
+
+.docs-summary h2,
+.docs-section-copy h2,
+.docs-section-copy h3 {
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.25;
+  margin-bottom: 16px;
+}
+
+.docs-section-copy h3 {
+  font-size: 18px;
+  margin-bottom: 10px;
+  margin-top: 28px;
+}
+
+.docs-section-copy {
+  max-width: var(--landing-read-width);
+}
+
+.docs-figure {
+  background: var(--background);
+  border-radius: 12px;
+  box-shadow: var(--shadow-hero);
+  margin: 32px 0 0;
+  overflow: hidden;
+}
+
+.docs-figure img {
+  display: block;
+  height: auto;
+  width: 100%;
+}
+
+.docs-figure-contain {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+}
+
+.docs-figure-contain img {
+  max-height: 780px;
+  object-fit: contain;
+  width: auto;
+}
+
+.docs-figure figcaption {
+  background: color-mix(in oklch, var(--background) 92%, transparent);
+  border-top: 1px solid color-mix(in oklch, var(--foreground) 10%, transparent);
+  color: color-mix(in oklch, var(--foreground) 54%, transparent);
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 11px 14px 12px;
+  text-align: center;
+  width: 100%;
+}
+
+.docs-figure-contain figcaption {
+  background: transparent;
+  margin: 16px -18px -18px;
+}
+
+.docs-bullet-list,
+.docs-inline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+}
+
+.docs-bullet-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.docs-bullet-list li {
+  background: var(--background);
+  border-radius: 8px;
+  box-shadow: var(--shadow-minimal);
+  margin: 0;
+  padding: 18px;
+}
+
+.docs-bullet-list strong {
+  color: var(--foreground);
+  font-weight: 700;
+}
+
+.docs-inline-list {
+  gap: 8px;
+}
+
+.docs-inline-list li {
+  padding-left: 18px;
+  position: relative;
+}
+
+.docs-inline-list li::before {
+  background: color-mix(in oklch, var(--foreground) 38%, transparent);
+  border-radius: 999px;
+  content: "";
+  height: 5px;
+  left: 2px;
+  position: absolute;
+  top: 13px;
+  width: 5px;
+}
+
+.docs-subsection {
+  margin-top: 32px;
+}
+
+.docs-point-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 24px;
+}
+
+.docs-point-grid p {
+  background: var(--background);
+  border-radius: 8px;
+  box-shadow: var(--shadow-minimal);
+  color: color-mix(in oklch, var(--foreground) 72%, transparent);
+  font-size: 14px;
+  line-height: 1.625;
+  margin: 0;
+  padding: 18px;
+}
+
+.docs-checklist {
+  margin-bottom: 48px;
 }
 
 .site-footer {
@@ -683,8 +891,27 @@ figure {
   }
 
   .card-grid,
-  .split-section {
+  .split-section,
+  .docs-point-grid,
+  .docs-bullet-list {
     grid-template-columns: 1fr;
+  }
+
+  .docs-page {
+    padding-top: 48px;
+  }
+
+  .docs-hero {
+    margin-bottom: 48px;
+  }
+
+  .docs-hero h1 {
+    font-size: 28px;
+  }
+
+  .docs-figure-contain img {
+    max-height: none;
+    width: 100%;
   }
 
   .mermaid-diagram-frame {

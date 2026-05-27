@@ -1,258 +1,589 @@
 <!DOCTYPE html>
+<!-- input: Browser runtime plus optional auth config endpoints. -->
+<!-- output: Standalone responsive login page for the Web UI. -->
+<!-- pos: Public auth entry surface for the headless Web UI. -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Craft Agents — Login</title>
+  <title>Craft Agents - Login</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
   <link rel="icon" type="image/x-icon" href="./favicon.ico" />
   <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
-  <meta name="theme-color" content="#1F1F24" />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600&display=swap" rel="stylesheet">
+  <meta name="theme-color" content="#f9f9fb" />
   <style>
     :root {
       color-scheme: light dark;
-      --page-bg: #f8f8fa;
-      --page-fg: #1a1a2e;
-      --card-bg: rgba(255, 255, 255, 0.86);
-      --card-border: rgba(228, 228, 232, 0.9);
-      --card-shadow: 0 32px 96px rgba(41, 25, 63, 0.14), 0 16px 40px rgba(41, 25, 63, 0.08);
-      --subtitle: rgba(26, 26, 46, 0.56);
-      --input-bg: rgba(255, 255, 255, 0.72);
-      --input-border: rgba(212, 212, 216, 0.95);
-      --placeholder: rgba(26, 26, 46, 0.34);
-      --accent: #6d5dfc;
-      --accent-hover: #5a4be0;
-      --ambient-strong: rgba(104, 78, 133, 0.18);
-      --ambient-soft: rgba(104, 78, 133, 0.1);
-      --grain-1: rgba(104, 78, 133, 0.055);
-      --grain-2: rgba(104, 78, 133, 0.03);
-      --error-bg: #fef2f2;
-      --error-border: #fecaca;
-      --error-fg: #b91c1c;
-    }
-
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      overflow: hidden;
-      position: relative;
-      isolation: isolate;
-      background: var(--page-bg);
-      color: var(--page-fg);
-      padding: 16px;
-    }
-
-    body::before,
-    body::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-    }
-
-    body::before {
-      inset: -18%;
-      background:
-        radial-gradient(circle at 18% 20%, var(--ambient-strong) 0, transparent 34%),
-        radial-gradient(circle at 82% 18%, var(--ambient-soft) 0, transparent 28%),
-        radial-gradient(circle at 76% 76%, rgba(104, 78, 133, 0.16) 0, transparent 34%),
-        radial-gradient(circle at 30% 78%, rgba(104, 78, 133, 0.11) 0, transparent 30%);
-      filter: blur(44px);
-      opacity: 0.95;
-      transform: scale(1.08);
-      animation: drift 24s ease-in-out infinite alternate;
-    }
-
-    body::after {
-      background:
-        radial-gradient(circle at center, rgba(104, 78, 133, 0.06), transparent 58%),
-        repeating-linear-gradient(135deg, var(--grain-1) 0 1px, transparent 1px 7px),
-        repeating-linear-gradient(45deg, var(--grain-2) 0 1px, transparent 1px 11px);
-      opacity: 0.45;
-      mix-blend-mode: multiply;
-    }
-
-    .card {
-      position: relative;
-      z-index: 1;
-      width: 100%;
-      max-width: 28rem;
-      padding: 32px;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 20px;
-      text-align: center;
-      box-shadow: var(--card-shadow);
-      backdrop-filter: blur(24px) saturate(140%);
-      -webkit-backdrop-filter: blur(24px) saturate(140%);
-    }
-
-    h1 {
-      font-size: 20px;
-      font-weight: 600;
-      margin-bottom: 4px;
-    }
-
-    .subtitle {
-      margin: 0 auto 28px;
-      max-width: 20rem;
-      font-size: 13px;
-      line-height: 1.5;
-      color: var(--subtitle);
-    }
-
-    label {
-      display: block;
-      text-align: left;
-      font-size: 13px;
-      font-weight: 500;
-      margin-bottom: 6px;
-    }
-
-    input {
-      width: 100%;
-      padding: 10px 12px;
-      font-size: 14px;
-      font-family: 'JetBrains Mono', monospace;
-      border: 1px solid var(--input-border);
-      border-radius: 8px;
-      outline: none;
-      background: var(--input-bg);
-      color: var(--page-fg);
-      transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
-    }
-
-    input::placeholder {
-      color: var(--placeholder);
-    }
-
-    input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(109, 93, 252, 0.1);
-    }
-
-    button {
-      width: 100%;
-      margin-top: 20px;
-      padding: 10px;
-      font-size: 14px;
-      font-weight: 500;
-      font-family: 'Inter', sans-serif;
-      color: white;
-      background: linear-gradient(180deg, #7b6dff 0%, var(--accent) 100%);
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: transform 0.15s, filter 0.15s, background 0.15s;
-      box-shadow: 0 10px 24px rgba(109, 93, 252, 0.28);
-    }
-
-    button:hover {
-      background: linear-gradient(180deg, #705fff 0%, var(--accent-hover) 100%);
-      transform: translateY(-1px);
-      filter: brightness(1.02);
-    }
-
-    button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-      transform: none;
-      filter: none;
-    }
-
-    .error {
-      display: none;
-      margin-top: 16px;
-      padding: 10px 12px;
-      font-size: 13px;
-      background: var(--error-bg);
-      border: 1px solid var(--error-border);
-      border-radius: 8px;
-      color: var(--error-fg);
-    }
-
-    .error.visible { display: block; }
-
-    @keyframes drift {
-      from { transform: scale(1.08) translate3d(-2%, -1%, 0); }
-      to { transform: scale(1.12) translate3d(2%, 1.5%, 0); }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      body::before {
-        animation: none;
-      }
-
-      button {
-        transition: background 0.15s;
-      }
-
-      button:hover {
-        transform: none;
-        filter: none;
-      }
+      --background: oklch(0.98 0.003 265);
+      --foreground: oklch(0.185 0.01 270);
+      --foreground-3: color-mix(in srgb, var(--foreground) 3%, var(--background));
+      --foreground-5: color-mix(in srgb, var(--foreground) 5%, var(--background));
+      --foreground-10: color-mix(in srgb, var(--foreground) 10%, var(--background));
+      --foreground-30: color-mix(in srgb, var(--foreground) 30%, var(--background));
+      --foreground-50: color-mix(in srgb, var(--foreground) 50%, var(--background));
+      --accent: oklch(0.62 0.13 293);
+      --accent-hover: color-mix(in oklab, var(--accent) 84%, var(--foreground));
+      --accent-soft: oklch(from var(--accent) l c h / 0.1);
+      --destructive: oklch(0.58 0.24 28);
+      --success: oklch(0.55 0.17 145);
+      --shadow-minimal:
+        rgba(0, 0, 0, 0) 0 0 0 0,
+        rgba(0, 0, 0, 0) 0 0 0 0,
+        oklch(from var(--foreground) l c h / 0.06) 0 0 0 1px,
+        rgba(0, 0, 0, 0.06) 0 1px 1px -0.5px,
+        rgba(0, 0, 0, 0.06) 0 3px 3px -1.5px;
     }
 
     @media (prefers-color-scheme: dark) {
       :root {
-        --page-bg: #0f0f14;
-        --page-fg: #e0e0e8;
-        --card-bg: rgba(26, 26, 34, 0.82);
-        --card-border: rgba(42, 42, 53, 0.95);
-        --card-shadow: 0 32px 96px rgba(0, 0, 0, 0.42), 0 16px 40px rgba(0, 0, 0, 0.24);
-        --subtitle: rgba(224, 224, 232, 0.64);
-        --input-bg: rgba(15, 15, 20, 0.72);
-        --input-border: rgba(42, 42, 53, 0.95);
-        --placeholder: rgba(224, 224, 232, 0.32);
-        --ambient-strong: rgba(155, 123, 184, 0.22);
-        --ambient-soft: rgba(155, 123, 184, 0.12);
-        --grain-1: rgba(155, 123, 184, 0.06);
-        --grain-2: rgba(155, 123, 184, 0.035);
-        --error-bg: #2d1a1a;
-        --error-border: #5a2020;
-        --error-fg: #f5a0a0;
+        --background: oklch(0.145 0.01 270);
+        --foreground: oklch(0.92 0.006 270);
+        --accent: oklch(0.72 0.12 293);
+        --accent-hover: oklch(0.78 0.1 293);
+        --shadow-minimal:
+          rgba(0, 0, 0, 0) 0 0 0 0,
+          rgba(0, 0, 0, 0) 0 0 0 0,
+          oklch(from var(--foreground) l c h / 0.08) 0 0 0 1px,
+          rgba(0, 0, 0, 0.24) 0 1px 1px -0.5px,
+          rgba(0, 0, 0, 0.24) 0 3px 3px -1.5px;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      background: var(--background);
+    }
+
+    body {
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      color: var(--foreground);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+
+    .login-shell {
+      width: min(100%, 390px);
+    }
+
+    .auth-card {
+      width: 100%;
+      padding: 26px;
+      border: 1px solid var(--foreground-5);
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--background) 96%, var(--foreground));
+      box-shadow: var(--shadow-minimal);
+    }
+
+    .auth-stack {
+      display: grid;
+      gap: 16px;
+    }
+
+    .auth-header {
+      display: grid;
+      gap: 8px;
+      padding-bottom: 2px;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-mark {
+      display: inline-grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border: 1px solid var(--foreground-10);
+      border-radius: 8px;
+      background: var(--foreground-3);
+      color: var(--foreground);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .auth-title {
+      font-size: 17px;
+      line-height: 1.2;
+      font-weight: 600;
+    }
+
+    .subtitle {
+      max-width: 28rem;
+      color: var(--foreground-50);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    form {
+      display: grid;
+      gap: 12px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field.hidden {
+      display: none;
+    }
+
+    label {
+      color: var(--foreground-50);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    input {
+      width: 100%;
+      min-height: 38px;
+      padding: 8px 10px;
+      border: 1px solid var(--foreground-10);
+      border-radius: 8px;
+      outline: none;
+      background: var(--foreground-3);
+      color: var(--foreground);
+      font: inherit;
+      font-size: 13px;
+      transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+    }
+
+    input::placeholder {
+      color: var(--foreground-30);
+    }
+
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+      background: var(--background);
+    }
+
+    button {
+      width: 100%;
+      min-height: 38px;
+      padding: 8px 12px;
+      border: 1px solid var(--foreground-10);
+      border-radius: 8px;
+      background: var(--foreground);
+      color: var(--background);
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.15s;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+      transform: none;
+    }
+
+    .secondary-button,
+    .feishu-button {
+      display: none;
+      background: var(--foreground-3);
+      color: var(--foreground);
+      box-shadow: none;
+    }
+
+    .feishu-button.visible {
+      display: block;
+    }
+
+    .secondary-button:hover,
+    .feishu-button:hover {
+      background: var(--foreground-5);
+      border-color: var(--foreground-10);
+      color: var(--foreground);
+    }
+
+    .divider {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      color: var(--foreground-30);
+      font-size: 11px;
+    }
+
+    .divider.visible {
+      display: flex;
+    }
+
+    .divider::before,
+    .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--foreground-5);
+    }
+
+    .email-form {
+      display: none;
+    }
+
+    .email-form.visible {
+      display: grid;
+    }
+
+    .mode-switch {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid var(--foreground-10);
+      border-radius: 9px;
+      background: var(--foreground-3);
+    }
+
+    .mode-button {
+      min-height: 32px;
+      padding: 6px 8px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--foreground-50);
+      box-shadow: none;
+      transform: none;
+      font-size: 12px;
+    }
+
+    .mode-button.active {
+      background: var(--background);
+      color: var(--foreground);
+      box-shadow: var(--shadow-minimal);
+    }
+
+    .mode-button:hover,
+    .mode-button.active:hover {
+      background: var(--background);
+      border-color: transparent;
+      color: var(--foreground);
+      transform: none;
+    }
+
+    .server-divider {
+      display: none;
+    }
+
+    .server-divider.visible {
+      display: flex;
+    }
+
+    .error {
+      display: none;
+      padding: 9px 10px;
+      border: 1px solid oklch(from var(--destructive) l c h / 0.22);
+      border-radius: 8px;
+      background: oklch(from var(--destructive) l c h / 0.08);
+      color: color-mix(in oklab, var(--destructive) 74%, var(--foreground));
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .error.visible {
+      display: block;
+    }
+
+    .error.success {
+      border-color: oklch(from var(--success) l c h / 0.22);
+      background: oklch(from var(--success) l c h / 0.08);
+      color: color-mix(in oklab, var(--success) 72%, var(--foreground));
+    }
+
+    @media (max-width: 480px) {
+      body {
+        align-items: flex-start;
+        padding: 18px;
+      }
+
+      .auth-card {
+        padding: 22px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      button,
+      input {
+        transition: none;
+      }
+
+      button:hover {
+        transform: none;
       }
     }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>Craft Agents</h1>
-    <p class="subtitle">Enter your server token to continue</p>
+  <main class="login-shell">
+    <section class="auth-card" aria-labelledby="auth-title">
+      <div class="auth-stack">
+        <div class="auth-header">
+          <div class="brand-row">
+            <div class="brand-mark" aria-hidden="true">CA</div>
+            <h1 id="auth-title" class="auth-title">Craft Agents</h1>
+          </div>
+          <p id="subtitle" class="subtitle">Enter your server token to continue.</p>
+        </div>
 
-    <form id="login-form">
-      <label for="password">Server Token</label>
-      <input
-        id="password"
-        name="password"
-        type="password"
-        placeholder="Enter CRAFT_SERVER_TOKEN"
-        autocomplete="current-password"
-        autofocus
-        required
-      >
-      <button type="submit" id="submit-btn">Sign In</button>
-    </form>
+        <button type="button" id="feishu-btn" class="feishu-button">Continue with Feishu</button>
+        <div id="feishu-divider" class="divider">or continue with account</div>
 
-    <div id="error" class="error"></div>
-  </div>
+        <form id="email-form" class="email-form">
+          <div class="mode-switch" aria-label="Email auth mode">
+            <button type="button" id="email-signin-tab" class="mode-button active">Sign In</button>
+            <button type="button" id="email-signup-tab" class="mode-button">Create Account</button>
+          </div>
+
+          <div id="name-field" class="field hidden">
+            <label for="email-name">Name</label>
+            <input
+              id="email-name"
+              name="name"
+              type="text"
+              placeholder="Your name"
+              autocomplete="name"
+            >
+          </div>
+
+          <div class="field">
+            <label id="email-label" for="email">Email</label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              placeholder="you@example.com"
+              autocomplete="email"
+            >
+          </div>
+
+          <div class="field">
+            <label for="email-password">Password</label>
+            <input
+              id="email-password"
+              name="password"
+              type="password"
+              placeholder="Enter your password"
+              autocomplete="current-password"
+            >
+          </div>
+
+          <button type="submit" id="email-submit-btn">Sign In</button>
+        </form>
+
+        <div id="server-divider" class="divider server-divider">or use server token</div>
+
+        <form id="login-form">
+          <div class="field">
+            <label for="password">Server Token</label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              placeholder="Enter CRAFT_SERVER_TOKEN"
+              autocomplete="current-password"
+              autofocus
+              required
+            >
+          </div>
+          <button type="submit" id="submit-btn">Sign In</button>
+        </form>
+
+        <div id="error" class="error"></div>
+      </div>
+    </section>
+  </main>
 
   <script>
-    const form = document.getElementById('login-form');
+    const serverForm = document.getElementById('login-form');
+    const emailForm = document.getElementById('email-form');
     const errorEl = document.getElementById('error');
+    const subtitle = document.getElementById('subtitle');
     const submitBtn = document.getElementById('submit-btn');
+    const emailSubmitBtn = document.getElementById('email-submit-btn');
+    const emailSigninTab = document.getElementById('email-signin-tab');
+    const emailSignupTab = document.getElementById('email-signup-tab');
+    const nameField = document.getElementById('name-field');
+    const serverDivider = document.getElementById('server-divider');
+    const feishuBtn = document.getElementById('feishu-btn');
+    const feishuDivider = document.getElementById('feishu-divider');
+    let emailMode = 'sign-in';
+    const authState = {
+      neonEnabled: false,
+      passwordAuthEnabled: true,
+      feishuEnabled: false,
+    };
 
-    form.addEventListener('submit', async (e) => {
+    function renderAuthLayout() {
+      const hasAccount = authState.neonEnabled;
+      const hasPassword = authState.passwordAuthEnabled;
+      const hasFeishu = authState.feishuEnabled;
+      const visibleMethodCount = [hasAccount, hasPassword, hasFeishu].filter(Boolean).length;
+
+      serverForm.style.display = hasPassword ? '' : 'none';
+      emailForm.classList.toggle('visible', hasAccount);
+      feishuBtn.classList.toggle('visible', hasFeishu);
+      feishuDivider.classList.toggle('visible', hasFeishu && hasAccount);
+      serverDivider.classList.toggle('visible', hasPassword && (hasAccount || hasFeishu));
+
+      if (hasAccount) {
+        subtitle.textContent = hasPassword || hasFeishu
+          ? 'Choose a sign-in method to continue.'
+          : 'Sign in with your account to continue.';
+        document.getElementById('email').required = true;
+        document.getElementById('email-password').required = true;
+        document.getElementById('password').removeAttribute('autofocus');
+        document.getElementById('email').setAttribute('autofocus', 'autofocus');
+      } else {
+        document.getElementById('email').required = false;
+        document.getElementById('email-password').required = false;
+        subtitle.textContent = hasPassword
+          ? 'Enter your server token to continue.'
+          : 'Account auth is required but not configured.';
+      }
+
+      if (visibleMethodCount === 0) {
+        showMessage('No login method is configured.');
+      }
+    }
+
+    function showMessage(message, kind = 'error') {
+      errorEl.textContent = message;
+      errorEl.classList.toggle('success', kind === 'success');
+      errorEl.classList.add('visible');
+    }
+
+    function clearMessage() {
+      errorEl.textContent = '';
+      errorEl.classList.remove('visible', 'success');
+    }
+
+    function setEmailMode(mode) {
+      emailMode = mode;
+      const isSignUp = mode === 'sign-up';
+      emailSigninTab.classList.toggle('active', !isSignUp);
+      emailSignupTab.classList.toggle('active', isSignUp);
+      nameField.classList.toggle('hidden', !isSignUp);
+      emailSubmitBtn.textContent = isSignUp ? 'Create Account' : 'Sign In';
+      document.getElementById('email-password').autocomplete = isSignUp ? 'new-password' : 'current-password';
+    }
+
+    async function loadNeonAuthConfig() {
+      try {
+        const res = await fetch('/api/auth/neon/config');
+        if (!res.ok) return;
+
+        const data = await res.json();
+        const passwordAuthEnabled = data.passwordAuthEnabled !== false;
+        authState.neonEnabled = Boolean(data.enabled);
+        authState.passwordAuthEnabled = passwordAuthEnabled;
+
+        if (data.enabled) {
+          const emailInput = document.getElementById('email');
+          if (data.usernameLoginEnabled) {
+            document.getElementById('email-label').textContent = 'Email or username';
+            emailInput.type = 'text';
+            emailInput.placeholder = 'zjding or you@example.com';
+            emailInput.autocomplete = 'username';
+          }
+        }
+
+        renderAuthLayout();
+      } catch {
+        // Server-token login remains available when optional Neon Auth probing fails.
+      }
+    }
+
+    async function loadFeishuConfig() {
+      try {
+        const res = await fetch('/api/auth/feishu/config');
+        if (!res.ok) return;
+
+        const data = await res.json();
+        if (data.enabled) {
+          authState.feishuEnabled = true;
+          renderAuthLayout();
+        }
+      } catch {
+        // Password login remains available when the optional Feishu probe fails.
+      }
+    }
+
+    feishuBtn.addEventListener('click', () => {
+      window.location.href = '/api/auth/feishu/start';
+    });
+
+    emailSigninTab.addEventListener('click', () => setEmailMode('sign-in'));
+    emailSignupTab.addEventListener('click', () => setEmailMode('sign-up'));
+
+    emailForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      errorEl.classList.remove('visible');
+      clearMessage();
+      emailSubmitBtn.disabled = true;
+      const originalLabel = emailSubmitBtn.textContent;
+      emailSubmitBtn.textContent = emailMode === 'sign-up' ? 'Creating...' : 'Signing in...';
+
+      try {
+        const body = {
+          mode: emailMode,
+          email: document.getElementById('email').value,
+          password: document.getElementById('email-password').value,
+        };
+        const name = document.getElementById('email-name').value.trim();
+        if (emailMode === 'sign-up' && name) body.name = name;
+
+        const res = await fetch('/api/auth/neon/email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) {
+          window.location.href = '/';
+          return;
+        }
+
+        if (res.status === 202 && data.status === 'verification-required') {
+          showMessage('Check your email to verify this account, then sign in.', 'success');
+          setEmailMode('sign-in');
+          return;
+        }
+
+        showMessage(data.error || 'Email authentication failed');
+      } catch {
+        showMessage('Network error - is the server running?');
+      } finally {
+        emailSubmitBtn.disabled = false;
+        emailSubmitBtn.textContent = originalLabel;
+      }
+    });
+
+    serverForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearMessage();
       submitBtn.disabled = true;
       submitBtn.textContent = 'Signing in...';
 
@@ -265,22 +596,24 @@
         });
 
         if (res.ok) {
-          // Cookie is set by the response — redirect to app
+          // Cookie is set by the response; redirect to app.
           window.location.href = '/';
           return;
         }
 
         const data = await res.json().catch(() => ({}));
-        errorEl.textContent = data.error || 'Authentication failed';
-        errorEl.classList.add('visible');
+        showMessage(data.error || 'Authentication failed');
       } catch (err) {
-        errorEl.textContent = 'Network error — is the server running?';
-        errorEl.classList.add('visible');
+        showMessage('Network error - is the server running?');
       } finally {
         submitBtn.disabled = false;
         submitBtn.textContent = 'Sign In';
       }
     });
+
+    loadNeonAuthConfig();
+    loadFeishuConfig();
+    renderAuthLayout();
   </script>
 </body>
 </html>

@@ -41,4 +41,23 @@ describe('groupMessagesByTurn branching metadata', () => {
     expect(assistantTurn.response?.messageId).toBe('assistant-1')
     expect(assistantTurn.response?.canBranch).toBe(true)
   })
+
+  it('respects explicit provider branchability metadata over turn IDs', () => {
+    const messages: Message[] = [{
+      id: 'assistant-1',
+      role: 'assistant',
+      content: 'Provider response missing a fork anchor',
+      timestamp: 1000,
+      turnId: 'turn-1',
+      canBranch: false,
+    }]
+
+    const turns = groupMessagesByTurn(messages)
+    const assistantTurn = turns.find(turn => turn.type === 'assistant')
+
+    expect(assistantTurn?.type).toBe('assistant')
+    if (!assistantTurn || assistantTurn.type !== 'assistant') return
+    expect(assistantTurn.response?.messageId).toBe('assistant-1')
+    expect(assistantTurn.response?.canBranch).toBe(false)
+  })
 })

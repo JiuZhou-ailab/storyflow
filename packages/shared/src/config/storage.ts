@@ -251,8 +251,12 @@ export async function seedBuiltinLlmConnectionFromDefaults(): Promise<boolean> {
         credentialChanged = true;
       }
 
-      if (result.credentialToSeed && (!existing || existingIsRevoked)) {
-        await manager.setLlmApiKey(connectionSlug, result.credentialToSeed.apiKey);
+      const envApiKey = process.env.CRAFT_BUILTIN_LLM_API_KEY?.trim();
+      const credentialToSeed = result.credentialToSeed
+        ?? (envApiKey ? { connectionSlug, apiKey: envApiKey } : undefined);
+
+      if (credentialToSeed && (!existing || existingIsRevoked)) {
+        await manager.setLlmApiKey(connectionSlug, credentialToSeed.apiKey);
         credentialChanged = true;
       }
     }

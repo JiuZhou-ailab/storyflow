@@ -6,4 +6,7 @@ Implementation plans for scoped product and architecture changes.
 - `2026-05-11-creative-project-template-system.md` - creative project template and agent harness plan.
 - `2026-05-11-lightweight-method-pack.md` - minimal Method Pack plan for `novel.claude-book`.
 - `2026-05-20-method-pack-layout-adaptation.md` - Method Pack layout adaptation plan.
+- `2026-05-21-work-profile-refactor.md` - work profile and workspace refactor plan.
 - `2026-05-22-recent-code-simplification.md` - recent release, marketing, and writing-profile simplification plan.
+- `2026-05-26-feishu-webui-login.md` - Feishu Web UI login and registration plan.
+- `2026-05-26-neon-auth-webui-bridge.md` - Neon Auth email login bridge for Web UI sessions.

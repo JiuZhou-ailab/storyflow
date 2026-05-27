@@ -45,16 +45,22 @@ export interface ResolveInitialShellLayoutWidthsInput {
   totalWidth: number
   edgeInset: number
   panelGap: number
+  assistantMinWidth?: number
   sidebarPersisted: boolean
   workspacePersisted: boolean
   currentSidebarWidth?: number
   currentWorkspaceWidth?: number
 }
 
+export function shouldResolveInitialShellLayoutWidths(shellWidth: number, compactThreshold: number): boolean {
+  return shellWidth >= compactThreshold
+}
+
 export function resolveInitialShellLayoutWidths({
   totalWidth,
   edgeInset,
   panelGap,
+  assistantMinWidth = 0,
   sidebarPersisted,
   workspacePersisted,
   currentSidebarWidth,
@@ -66,10 +72,11 @@ export function resolveInitialShellLayoutWidths({
   if (sidebarPersisted && !workspacePersisted) {
     const sidebar = currentSidebarWidth ?? ratioWidths.sidebar
     const remaining = Math.max(0, availableWidth - sidebar)
-    const workspace = Math.round(
+    const ratioWorkspace = Math.round(
       remaining * DEFAULT_SHELL_LAYOUT_RATIO.workspace
       / (DEFAULT_SHELL_LAYOUT_RATIO.workspace + DEFAULT_SHELL_LAYOUT_RATIO.assistant)
     )
+    const workspace = Math.min(ratioWorkspace, Math.max(0, remaining - assistantMinWidth))
 
     return {
       sidebar,
@@ -79,12 +86,15 @@ export function resolveInitialShellLayoutWidths({
   }
 
   const sidebar = sidebarPersisted ? currentSidebarWidth ?? ratioWidths.sidebar : ratioWidths.sidebar
-  const workspace = workspacePersisted ? currentWorkspaceWidth ?? ratioWidths.workspace : ratioWidths.workspace
+  const remaining = Math.max(0, availableWidth - sidebar)
+  const workspace = workspacePersisted
+    ? currentWorkspaceWidth ?? ratioWidths.workspace
+    : Math.min(ratioWidths.workspace, Math.max(0, remaining - assistantMinWidth))
 
   return {
     sidebar,
     workspace,
-    assistant: Math.max(0, availableWidth - sidebar - workspace),
+    assistant: Math.max(0, remaining - workspace),
   }
 }
 

@@ -723,7 +723,12 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     <ContextMenu modal={true}>
       <ContextMenuTrigger asChild>
         <PanelHeaderCenterButton
-          icon={<SquarePenRounded className="h-4 w-4" />}
+          icon={(
+            <span className="flex items-center gap-1.5">
+              <SquarePenRounded className="h-4 w-4" />
+              <span className="text-[11px] font-medium leading-none">{t("session.newSession")}</span>
+            </span>
+          )}
           onClick={(event) => handleNewSession(event.metaKey || event.ctrlKey)}
           tooltip={t("session.newSession")}
           aria-label={t("session.newSession")}

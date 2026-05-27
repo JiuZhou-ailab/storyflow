@@ -1,3 +1,7 @@
+// input: Workspace sessions, agent backends, persistence stores, and runtime services
+// output: Session lifecycle orchestration, chat events, persistence, and queue handling
+// pos: Central server-core boundary between UI/session state and provider-specific agents
+
 import type { EventSink } from '@craft-agent/server-core/transport'
 import type { ISessionManager, IBrowserPaneManager, ExecutePromptAutomationInput } from '@craft-agent/server-core/handlers'
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
@@ -97,6 +101,7 @@ import { loadStatusConfig } from '@craft-agent/shared/statuses/storage'
 import { AutomationSystem, createPromptHistoryEntry, appendAutomationHistoryEntry, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
 import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput } from './runtime-config'
 import { captureWriteOriginalContent } from './write-original-content'
+import { SESSION_TURN_HARD_TIMEOUT_MS, SESSION_TURN_IDLE_TIMEOUT_MS, TurnWatchdog, type TurnWatchdogTimeout } from './turn-watchdog'
 
 // Import from server-core domain utilities
 import { sanitizeForTitle, shouldActivateBrowserOverlay, normalizeBrowserToolName, rollbackFailedBranchCreation, releaseBrowserOwnershipOnForcedStop } from '@craft-agent/server-core/domain'
@@ -988,6 +993,33 @@ function resolveSupportsBranching(managed: ManagedSession): boolean {
   return true // default: branching enabled for all backends
 }
 
+function resolveManagedBackendProvider(managed: ManagedSession): string {
+  const workspaceConfig = loadWorkspaceConfig(managed.workspace.rootPath)
+  return resolveBackendContext({
+    sessionConnectionSlug: managed.llmConnection,
+    workspaceDefaultConnectionSlug: workspaceConfig?.defaults?.defaultLlmConnection,
+    managedModel: managed.model,
+  }).provider
+}
+
+function resolveLiveAssistantBranchability(
+  managed: ManagedSession,
+  event: Extract<AgentEvent, { type: 'text_complete' }>
+): boolean {
+  if (event.isIntermediate || !event.turnId || !resolveSupportsBranching(managed)) {
+    return false
+  }
+
+  const provider = resolveManagedBackendProvider(managed)
+  if (provider === 'pi') {
+    return !!event.sdkTurnAnchor
+  }
+  if (provider === 'anthropic') {
+    return !!managed.sdkSessionId && isClaudeMessageUuid(event.turnId)
+  }
+  return true
+}
+
 const DEFAULT_TOKEN_USAGE = {
   inputTokens: 0, outputTokens: 0, totalTokens: 0,
   contextTokens: 0, costUsd: 0,
@@ -1100,6 +1132,44 @@ export class SessionManager implements ISessionManager {
     } else if (was && !processing) {
       sessionRuntimeHooks.onSessionStopped()
     }
+  }
+
+  private handleTurnWatchdogTimeout(sessionId: string, generation: number, timeout: TurnWatchdogTimeout): void {
+    const managed = this.sessions.get(sessionId)
+    if (!managed || !managed.isProcessing || managed.processingGeneration !== generation) return
+
+    const minutes = Math.max(1, Math.round((timeout.reason === 'idle' ? timeout.idleMs : timeout.elapsedMs) / 60000))
+    const timeoutMessage: Message = {
+      id: generateMessageId(),
+      role: 'error',
+      content: timeout.reason === 'idle'
+        ? `Agent turn timed out after ${minutes} minutes without progress.`
+        : `Agent turn timed out after ${minutes} minutes.`,
+      timestamp: this.monotonic(),
+      errorCode: 'turn_timeout',
+      errorTitle: 'Turn Timed Out',
+      errorCanRetry: true,
+    }
+
+    sessionLog.warn('Turn watchdog timed out; forcing processing cleanup', {
+      sessionId,
+      reason: timeout.reason,
+      elapsedMs: timeout.elapsedMs,
+      idleMs: timeout.idleMs,
+      generation,
+    })
+
+    managed.messages.push(timeoutMessage)
+    this.sendEvent({
+      type: 'error',
+      sessionId,
+      error: timeoutMessage.content,
+      timestamp: timeoutMessage.timestamp,
+    }, managed.workspace.id)
+    managed.agent?.forceAbort(AbortReason.Timeout)
+    void this.onProcessingStopped(sessionId, 'timeout').catch(error => {
+      sessionLog.error('Failed to stop processing after turn timeout:', error)
+    })
   }
 
   /** Wait until initialize() has completed (sessions loaded from disk).
@@ -2246,6 +2316,7 @@ export class SessionManager implements ISessionManager {
 
     // Lazy-load messages from disk if not yet loaded
     await this.ensureMessagesLoaded(m)
+    await this.applyMessageBranchabilityMetadata(m)
 
     return managedToSession(m, { messages: m.messages })
   }
@@ -2272,6 +2343,52 @@ export class SessionManager implements ISessionManager {
       await loadPromise
     } finally {
       this.messageLoadingPromises.delete(managed.id)
+    }
+  }
+
+  /**
+   * Enrich loaded runtime messages with branchability derived from provider sidecars.
+   * This metadata is intentionally not persisted in session.jsonl; the sidecar remains
+   * the source of truth for provider-native fork anchors.
+   */
+  private async applyMessageBranchabilityMetadata(managed: ManagedSession): Promise<void> {
+    const provider = resolveManagedBackendProvider(managed)
+    const supportsBranching = resolveSupportsBranching(managed)
+    const sessionPath = getSessionStoragePath(managed.workspace.rootPath, managed.id)
+
+    const piAnchors = provider === 'pi'
+      ? await loadPiTurnAnchors(sessionPath)
+      : null
+    const claudeAnchors = provider === 'anthropic'
+      ? await loadClaudeTurnAnchors(sessionPath)
+      : null
+
+    for (const message of managed.messages) {
+      if (message.role !== 'assistant' || message.isIntermediate) {
+        delete message.canBranch
+        continue
+      }
+
+      if (!message.turnId || !supportsBranching) {
+        message.canBranch = false
+        continue
+      }
+
+      if (provider === 'pi') {
+        message.canBranch = !!piAnchors?.anchors[message.id]
+        continue
+      }
+
+      if (provider === 'anthropic') {
+        const anchor = claudeAnchors?.anchors[message.id]
+        message.canBranch = !!managed.sdkSessionId
+          && !!anchor
+          && anchor.sdkSessionId === managed.sdkSessionId
+          && isClaudeMessageUuid(anchor.sdkMessageUuid)
+        continue
+      }
+
+      message.canBranch = true
     }
   }
 
@@ -5456,6 +5573,12 @@ export class SessionManager implements ISessionManager {
     // Capture the generation to detect if a new request supersedes this one.
     // This prevents the finally block from clobbering state when a follow-up message arrives.
     const myGeneration = managed.processingGeneration
+    const turnWatchdog = new TurnWatchdog({
+      idleTimeoutMs: SESSION_TURN_IDLE_TIMEOUT_MS,
+      hardTimeoutMs: SESSION_TURN_HARD_TIMEOUT_MS,
+      onTimeout: timeout => this.handleTurnWatchdogTimeout(sessionId, myGeneration, timeout),
+    })
+    turnWatchdog.start()
 
     // Pre-enable sources required by invoked skills (Issue #249)
     // This eliminates the two-turn penalty where the agent discovers missing sources at runtime.
@@ -5635,6 +5758,16 @@ export class SessionManager implements ISessionManager {
       sessionLog.info('Got chat iterator, starting iteration...')
 
       for await (const event of chatIterator) {
+        if (turnWatchdog.getTimeout()) {
+          sessionLog.info('Dropping agent event after turn watchdog timeout', { sessionId, eventType: event.type })
+          break
+        }
+        if (managed.processingGeneration !== myGeneration) {
+          sessionLog.info('Dropping stale agent event after newer generation started', { sessionId, eventType: event.type })
+          break
+        }
+        turnWatchdog.markProgress()
+
         // Log events (skip noisy text_delta)
         if (event.type !== 'text_delta') {
           if (event.type === 'tool_start') {
@@ -5754,7 +5887,11 @@ export class SessionManager implements ISessionManager {
       }
 
       // Loop exited - either via complete event (normal) or generator ended after soft interrupt
-      if (!managed.isProcessing) {
+      if (turnWatchdog.getTimeout()) {
+        sessionLog.info('Chat loop exited after turn watchdog timeout')
+        sendSpan.mark('chat.timeout')
+        sendSpan.end()
+      } else if (!managed.isProcessing) {
         sessionLog.info('Chat loop exited after explicit handoff/stop')
         sendSpan.mark('chat.exit.already_stopped')
         sendSpan.end()
@@ -5807,6 +5944,7 @@ export class SessionManager implements ISessionManager {
         this.onProcessingStopped(sessionId, 'error')
       }
     } finally {
+      turnWatchdog.stop()
       // Only handle cleanup for unexpected exits (loop break without complete event)
       // Normal completion returns early after calling onProcessingStopped
       // Errors are handled in catch block
@@ -6607,6 +6745,7 @@ export class SessionManager implements ISessionManager {
       case 'text_complete': {
         // Flush any pending deltas before sending complete (ensures renderer has all content)
         this.flushDelta(sessionId, workspaceId)
+        const canBranch = resolveLiveAssistantBranchability(managed, event)
 
         const assistantMessage: Message = {
           id: generateMessageId(),
@@ -6616,6 +6755,7 @@ export class SessionManager implements ISessionManager {
           isIntermediate: event.isIntermediate,
           turnId: event.turnId,
           parentToolUseId: event.parentToolUseId,
+          canBranch,
         }
         managed.messages.push(assistantMessage)
         managed.streamingText = ''
@@ -6648,7 +6788,7 @@ export class SessionManager implements ISessionManager {
           }
         }
 
-        this.sendEvent({ type: 'text_complete', sessionId, text: event.text, isIntermediate: event.isIntermediate, turnId: event.turnId, parentToolUseId: event.parentToolUseId, timestamp: assistantMessage.timestamp, messageId: assistantMessage.id }, workspaceId)
+        this.sendEvent({ type: 'text_complete', sessionId, text: event.text, isIntermediate: event.isIntermediate, turnId: event.turnId, parentToolUseId: event.parentToolUseId, timestamp: assistantMessage.timestamp, messageId: assistantMessage.id, canBranch }, workspaceId)
 
         // Persist session after complete message to prevent data loss on quit
         this.persistSession(managed)

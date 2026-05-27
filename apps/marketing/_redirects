@@ -1,2 +1,4 @@
 /latest/* https://story-storage.zjding.com/latest/:splat 301
 /releases/* https://story-storage.zjding.com/releases/:splat 301
+/docs /docs/ 301
+/docs/ /index.html 200
