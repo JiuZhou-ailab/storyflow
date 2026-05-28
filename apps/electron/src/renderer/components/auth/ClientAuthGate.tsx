@@ -165,68 +165,36 @@ function ClientSignInForm({
   }
 
   return (
-    <div className="w-full max-w-[360px]">
-      <div className="mb-7 flex items-center gap-3">
-        <div className="flex size-10 items-center justify-center rounded-md border border-foreground/10 bg-foreground/[0.03]">
+    <div className="w-full max-w-[380px]">
+      <div className="mb-6 flex items-start gap-3">
+        <div className="mt-0.5 flex size-9 items-center justify-center rounded-md border border-foreground/10 bg-foreground/[0.03]">
           <LockKeyhole className="size-5 text-foreground/75" />
         </div>
         <div className="min-w-0">
           <h1 className="text-[18px] font-semibold leading-6 text-foreground">登录 Storyflow</h1>
-          <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
-            使用飞书账号继续
-          </p>
+          <p className="mt-1 text-[13px] leading-5 text-muted-foreground">登录后继续使用桌面端</p>
         </div>
       </div>
 
-      <div className="space-y-4">
-        <Button
-          className="w-full"
-          type="button"
-          variant={feishuLoginEnabled ? 'default' : 'outline'}
-          disabled={!feishuLoginEnabled || feishuSubmitting || submitting}
-          onClick={handleFeishuSignIn}
-        >
-          {feishuSubmitting ? <Loader2 className="size-4 animate-spin" /> : <MessageSquareText className="size-4" />}
-          {feishuLoginEnabled ? '使用飞书登录' : '飞书登录未配置'}
-        </Button>
-
-        {feishuSubmitting ? (
-          <Button
-            className="w-full"
-            type="button"
-            variant="outline"
-            onClick={handleCancelFeishuSignIn}
-          >
-            取消飞书登录
-          </Button>
-        ) : null}
-
-        {emailPasswordEnabled && feishuLoginEnabled ? (
-          <div className="flex items-center gap-3">
-            <div className="h-px flex-1 bg-foreground/10" />
-            <span className="text-[12px] text-muted-foreground">或</span>
-            <div className="h-px flex-1 bg-foreground/10" />
-          </div>
-        ) : null}
-
+      <div className="space-y-3">
         {emailPasswordEnabled ? (
-          <form className="space-y-4" onSubmit={handleSubmit}>
-            <div className="space-y-2">
-              <Label htmlFor="client-auth-identifier">
+          <form className="space-y-3" onSubmit={handleSubmit}>
+            <div className="space-y-1.5">
+              <Label className="text-[13px]" htmlFor="client-auth-identifier">
                 {usernameLoginEnabled ? '用户名或邮箱' : '邮箱'}
               </Label>
               <Input
                 id="client-auth-identifier"
                 autoComplete="username"
-                autoFocus={!feishuLoginEnabled}
+                autoFocus
                 value={identifier}
                 onChange={(event) => setIdentifier(event.target.value)}
                 placeholder={usernameLoginEnabled ? 'zjding 或 email@example.com' : 'email@example.com'}
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="client-auth-password">密码</Label>
+            <div className="space-y-1.5">
+              <Label className="text-[13px]" htmlFor="client-auth-password">密码</Label>
               <Input
                 id="client-auth-password"
                 type="password"
@@ -241,6 +209,40 @@ function ClientSignInForm({
               登录
             </Button>
           </form>
+        ) : null}
+
+        {emailPasswordEnabled && feishuLoginEnabled ? (
+          <div className="flex items-center gap-3 py-1">
+            <div className="h-px flex-1 bg-foreground/10" />
+            <span className="text-[12px] text-muted-foreground">或使用飞书</span>
+            <div className="h-px flex-1 bg-foreground/10" />
+          </div>
+        ) : null}
+
+        {feishuLoginEnabled ? (
+          <div className="space-y-2">
+            <Button
+              className="w-full"
+              type="button"
+              variant={emailPasswordEnabled ? 'outline' : 'default'}
+              disabled={feishuSubmitting || submitting}
+              onClick={handleFeishuSignIn}
+            >
+              {feishuSubmitting ? <Loader2 className="size-4 animate-spin" /> : <MessageSquareText className="size-4" />}
+              使用飞书登录
+            </Button>
+
+            {feishuSubmitting ? (
+              <Button
+                className="w-full"
+                type="button"
+                variant="outline"
+                onClick={handleCancelFeishuSignIn}
+              >
+                取消飞书登录
+              </Button>
+            ) : null}
+          </div>
         ) : null}
 
         {error ? (
