@@ -3,11 +3,11 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { AutomationSystem, type SessionMetadataSnapshot } from './automation-system.ts';
-import { AUTOMATIONS_CONFIG_FILE, AUTOMATIONS_HISTORY_FILE } from './constants.ts';
+import { AUTOMATIONS_CONFIG_FILE } from './constants.ts';
 
 describe('AutomationSystem', () => {
   let tempDir: string;
@@ -29,6 +29,58 @@ describe('AutomationSystem', () => {
 
       expect(system.isDisposed()).toBe(false);
       expect(system.getConfig()).toEqual({ automations: {} });
+
+      await system.dispose();
+    });
+
+    it('should stay idle without automations.json even when scheduler is enabled', async () => {
+      const system = new AutomationSystem({
+        workspaceRootPath: tempDir,
+        workspaceId: 'test-workspace',
+        enableScheduler: true,
+      });
+
+      expect(system.isSchedulerRunning()).toBe(false);
+
+      await system.updateSessionMetadata('session-1', {
+        labels: ['queued'],
+      });
+      await system.dispose();
+
+      expect(existsSync(join(tempDir, 'events.jsonl'))).toBe(false);
+    });
+
+    it('should start and stop scheduler as SchedulerTick automations appear and disappear', async () => {
+      const configPath = join(tempDir, AUTOMATIONS_CONFIG_FILE);
+      const system = new AutomationSystem({
+        workspaceRootPath: tempDir,
+        workspaceId: 'test-workspace',
+        enableScheduler: true,
+      });
+
+      expect(system.isSchedulerRunning()).toBe(false);
+
+      writeFileSync(configPath, JSON.stringify({
+        automations: {
+          SchedulerTick: [
+            {
+              cron: '* * * * *',
+              actions: [{ type: 'prompt', prompt: 'tick' }],
+            },
+          ],
+        },
+      }));
+
+      const enabled = system.reloadConfig();
+      expect(enabled.success).toBe(true);
+      expect(enabled.automationCount).toBe(1);
+      expect(system.isSchedulerRunning()).toBe(true);
+
+      unlinkSync(configPath);
+      const disabled = system.reloadConfig();
+      expect(disabled.success).toBe(true);
+      expect(disabled.automationCount).toBe(0);
+      expect(system.isSchedulerRunning()).toBe(false);
 
       await system.dispose();
     });
@@ -152,6 +204,48 @@ describe('AutomationSystem', () => {
       expect(system.getConfig()?.automations.LabelAdd).toHaveLength(1);
 
       await system.dispose();
+    });
+
+    it('should recreate handlers after automations.json is removed and restored', async () => {
+      const configPath = join(tempDir, AUTOMATIONS_CONFIG_FILE);
+      const system = new AutomationSystem({
+        workspaceRootPath: tempDir,
+        workspaceId: 'test-workspace',
+      });
+
+      writeFileSync(configPath, JSON.stringify({
+        automations: {
+          LabelAdd: [
+            {
+              matcher: 'active',
+              actions: [{ type: 'prompt', prompt: 'label added' }],
+            },
+          ],
+        },
+      }));
+
+      expect(system.reloadConfig().automationCount).toBe(1);
+
+      unlinkSync(configPath);
+      expect(system.reloadConfig().automationCount).toBe(0);
+
+      writeFileSync(configPath, JSON.stringify({
+        automations: {
+          LabelAdd: [
+            {
+              matcher: 'active',
+              actions: [{ type: 'prompt', prompt: 'label added again' }],
+            },
+          ],
+        },
+      }));
+
+      expect(system.reloadConfig().automationCount).toBe(1);
+      await system.updateSessionMetadata('session-1', { labels: ['active'] });
+      await system.dispose();
+
+      const events = readFileSync(join(tempDir, 'events.jsonl'), 'utf-8');
+      expect(events).toContain('"type":"LabelAdd"');
     });
 
     it('should return errors for invalid config', async () => {

@@ -83,13 +83,7 @@ export class AutomationSystem implements AutomationsConfigProvider {
     // Load configuration
     this.loadConfig();
 
-    // Create handlers
-    this.createHandlers();
-
-    // Start scheduler if enabled
-    if (options.enableScheduler) {
-      this.startScheduler();
-    }
+    this.syncRuntimeForConfig();
 
     log.debug(`[AutomationSystem] Created for workspace: ${options.workspaceId}`);
   }
@@ -150,6 +144,7 @@ export class AutomationSystem implements AutomationsConfigProvider {
 
     if (!existsSync(configPath)) {
       this.config = { automations: {} };
+      this.syncRuntimeForConfig();
       return { success: true, automationCount: 0, errors: [] };
     }
 
@@ -163,6 +158,7 @@ export class AutomationSystem implements AutomationsConfigProvider {
       this.config = validation.config;
       this.backfillIds(configPath, raw);
       const actionCount = this.getActionCount();
+      this.syncRuntimeForConfig();
       log.debug(`[AutomationSystem] Reloaded ${actionCount} actions`);
       return { success: true, automationCount: actionCount, errors: [] };
     } catch (e) {
@@ -224,6 +220,15 @@ export class AutomationSystem implements AutomationsConfigProvider {
     );
   }
 
+  private hasConfiguredActions(): boolean {
+    return this.getActionCount() > 0;
+  }
+
+  private hasSchedulerTickActions(): boolean {
+    const matchers = this.config?.automations.SchedulerTick ?? [];
+    return matchers.some(matcher => matcher.actions.length > 0);
+  }
+
   // ============================================================================
   // AutomationsConfigProvider Implementation
   // ============================================================================
@@ -244,6 +249,8 @@ export class AutomationSystem implements AutomationsConfigProvider {
    * Create and register all handlers.
    */
   private createHandlers(): void {
+    if (this.promptHandler || this.webhookHandler || this.eventLogHandler) return;
+
     // Prompt handler
     this.promptHandler = new PromptHandler(
       {
@@ -279,6 +286,43 @@ export class AutomationSystem implements AutomationsConfigProvider {
     log.debug(`[AutomationSystem] Handlers created and subscribed`);
   }
 
+  private async disposeHandlers(): Promise<void> {
+    const promptHandler = this.promptHandler;
+    const webhookHandler = this.webhookHandler;
+    const eventLogHandler = this.eventLogHandler;
+
+    this.promptHandler = null;
+    this.webhookHandler = null;
+    this.eventLogHandler = null;
+
+    promptHandler?.dispose();
+    webhookHandler?.dispose();
+    await eventLogHandler?.dispose();
+  }
+
+  private voidDisposeHandlers(): void {
+    const pending = this.disposeHandlers();
+    pending.catch(error => {
+      log.error('[AutomationSystem] Failed to dispose handlers:', error);
+    });
+  }
+
+  private syncRuntimeForConfig(): void {
+    if (this.disposed) return;
+
+    if (this.hasConfiguredActions()) {
+      this.createHandlers();
+    } else {
+      this.voidDisposeHandlers();
+    }
+
+    if (this.options.enableScheduler && this.hasSchedulerTickActions()) {
+      this.startScheduler();
+    } else {
+      this.stopScheduler();
+    }
+  }
+
   // ============================================================================
   // Scheduler
   // ============================================================================
@@ -311,6 +355,10 @@ export class AutomationSystem implements AutomationsConfigProvider {
       this.scheduler = null;
       log.debug(`[AutomationSystem] Scheduler stopped`);
     }
+  }
+
+  isSchedulerRunning(): boolean {
+    return this.scheduler !== null;
   }
 
   // ============================================================================
@@ -547,9 +595,7 @@ export class AutomationSystem implements AutomationsConfigProvider {
     this.stopScheduler();
 
     // Dispose handlers
-    this.promptHandler?.dispose();
-    this.webhookHandler?.dispose();
-    await this.eventLogHandler?.dispose();
+    await this.disposeHandlers();
 
     // Dispose event bus
     this.eventBus.dispose();

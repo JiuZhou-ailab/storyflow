@@ -2199,8 +2199,7 @@ export class SessionManager implements ISessionManager {
 
     return {
       automationCount,
-      // SchedulerService is running if the system was created with enableScheduler
-      schedulerRunning: !automationSystem.isDisposed(),
+      schedulerRunning: automationSystem.isSchedulerRunning(),
     }
   }
 
