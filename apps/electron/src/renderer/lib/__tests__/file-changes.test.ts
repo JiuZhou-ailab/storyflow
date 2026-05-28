@@ -37,6 +37,7 @@ describe('collectFileChangesFromActivities', () => {
     expect(changes).toHaveLength(2)
     expect(changes.map((change) => change.id)).toEqual(['edit-1:0', 'edit-1:1'])
     expect(changes.map((change) => change.filePath)).toEqual(['/src/app.ts', '/src/app.ts'])
+    expect(changes.map((change) => change.changeKind)).toEqual(['modify', 'modify'])
     expect(changes.map((change) => change.original)).toEqual(['const a = 1', 'const b = 1'])
     expect(changes.map((change) => change.modified)).toEqual(['const a = 2', 'const b = 2'])
   })
@@ -191,6 +192,7 @@ describe('collectFileChangesFromActivities', () => {
 
     expect(changes).toHaveLength(1)
     expect(changes[0]?.toolType).toBe('Write')
+    expect(changes[0]?.changeKind).toBe('replace')
     expect(changes[0]?.original).toBe('# Old chapter')
     expect(changes[0]?.modified).toBe('# New chapter')
   })
@@ -210,6 +212,7 @@ describe('collectFileChangesFromActivities', () => {
 
     expect(changes).toHaveLength(1)
     expect(changes[0]?.toolType).toBe('Write')
+    expect(changes[0]?.changeKind).toBe('create')
     expect(changes[0]?.original).toBe('')
     expect(changes[0]?.modified).toBe('# 第三章')
   })

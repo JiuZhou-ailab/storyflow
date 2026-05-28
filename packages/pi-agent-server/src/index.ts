@@ -33,7 +33,6 @@ import {
   createReadToolDefinition,
   createBashToolDefinition,
   createEditToolDefinition,
-  createWriteToolDefinition,
   createGrepToolDefinition,
   createFindToolDefinition,
   createLsToolDefinition,
@@ -83,6 +82,7 @@ import { getDefaultSummarizationModel } from '../../shared/src/config/models.ts'
 import { createWebFetchTool } from './tools/web-fetch.ts';
 import { resolveSearchProvider } from './tools/search/resolve-provider.ts';
 import { createSearchTool } from './tools/search/create-search-tool.ts';
+import { createCreateOnlyWriteToolDefinition } from './write-tool.ts';
 import {
   allowCraftMetadataPropertiesForTool,
   normalizeCraftToolArgumentsForSchema,
@@ -585,7 +585,7 @@ async function ensureSession(): Promise<AgentSession> {
     createReadToolDefinition(cwd),
     createBashToolDefinition(cwd),
     createEditToolDefinition(cwd),
-    createWriteToolDefinition(cwd),
+    createCreateOnlyWriteToolDefinition(cwd),
     createGrepToolDefinition(cwd),
     createFindToolDefinition(cwd),
     createLsToolDefinition(cwd),

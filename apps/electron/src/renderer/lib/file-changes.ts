@@ -48,6 +48,13 @@ function getFilePathFromUnifiedDiff(diff: string | undefined): string | undefine
   }
 }
 
+function getChangeKindFromUnifiedDiff(diff: string | undefined): FileChange['changeKind'] {
+  if (!diff?.trim()) return 'modify'
+  if (diff.includes('new file mode') || diff.includes('--- /dev/null')) return 'create'
+  if (diff.includes('deleted file mode') || diff.includes('+++ /dev/null')) return 'replace'
+  return 'modify'
+}
+
 function getCodexChangeFilePath(change: { path?: string; diff?: string }): string {
   return normalizePatchFilePath(change.path)
     || getFilePathFromUnifiedDiff(change.diff)
@@ -94,6 +101,7 @@ export function collectFileChangesFromActivities(
             id: `${activity.id}-${filePath}`,
             filePath,
             toolType: 'Edit',
+            changeKind: getChangeKindFromUnifiedDiff(codexChange.diff),
             original: '',
             modified: '',
             unifiedDiff: codexChange.diff,
@@ -112,6 +120,7 @@ export function collectFileChangesFromActivities(
             id: getEditChangeId(activity.id, index, input.edits.length),
             filePath,
             toolType: 'Edit',
+            changeKind: 'modify',
             original: asString(currentEdit.oldText) || '',
             modified: asString(currentEdit.newText) || '',
             error: activity.error || undefined,
@@ -125,6 +134,7 @@ export function collectFileChangesFromActivities(
         id: activity.id,
         filePath: resolveFileChangePath(getFilePath(input), options.basePath),
         toolType: 'Edit',
+        changeKind: 'modify',
         original: asString(input.old_string) || asString(input.oldText) || '',
         modified: asString(input.new_string) || asString(input.newText) || '',
         error: activity.error || undefined,
@@ -134,11 +144,13 @@ export function collectFileChangesFromActivities(
 
     if (activity.toolName === 'Write') {
       const content = asString(input.content) || ''
+      const original = getWriteOriginal(input, content) || ''
       changes.push({
         id: activity.id,
         filePath: resolveFileChangePath(getFilePath(input), options.basePath),
         toolType: 'Write',
-        original: getWriteOriginal(input, content) || '',
+        changeKind: original ? 'replace' : 'create',
+        original,
         modified: content,
         error: activity.error || undefined,
       })

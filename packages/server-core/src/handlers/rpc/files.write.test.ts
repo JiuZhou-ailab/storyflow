@@ -1,7 +1,7 @@
 import { existsSync, rmSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { describe, expect, it } from 'bun:test'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import type { HandlerFn, RequestContext, RpcServer } from '@craft-agent/server-core/transport'
@@ -51,10 +51,11 @@ function createFileHarness() {
   registerFilesHandlers(server, deps)
 
   const writeFile = handlers.get(RPC_CHANNELS.file.WRITE)
+  const deleteFile = handlers.get(RPC_CHANNELS.file.DELETE)
   const createDirectory = handlers.get(RPC_CHANNELS.file.CREATE_DIRECTORY)
   const searchFiles = handlers.get(RPC_CHANNELS.fs.SEARCH)
   const searchFilesBatch = handlers.get(RPC_CHANNELS.fs.SEARCH_BATCH)
-  if (!writeFile || !createDirectory || !searchFiles || !searchFilesBatch) {
+  if (!writeFile || !deleteFile || !createDirectory || !searchFiles || !searchFilesBatch) {
     throw new Error('file handlers not registered')
   }
 
@@ -64,12 +65,16 @@ function createFileHarness() {
     webContentsId: 1,
   }
 
-  return { writeFile, createDirectory, searchFiles, searchFilesBatch, ctx }
+  return { writeFile, deleteFile, createDirectory, searchFiles, searchFilesBatch, ctx }
 }
 
 describe('file write RPC registration', () => {
   it('registers the workspace-scoped text write channel', () => {
     expect(HANDLED_CHANNELS).toContain('file:write')
+  })
+
+  it('registers the workspace-scoped file delete channel', () => {
+    expect(HANDLED_CHANNELS).toContain('file:delete')
   })
 
   it('registers the workspace-scoped directory creation channel', () => {
@@ -120,6 +125,23 @@ describe('file write RPC registration', () => {
       await writeFile(ctx, targetPath, 'body')
 
       expect(await readFile(targetPath, 'utf-8')).toBe('body')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('deletes workspace text files', async () => {
+    const { deleteFile, ctx } = createFileHarness()
+    const root = await mkdtemp(join(homedir(), '.craft-file-delete-'))
+    const targetPath = join(root, 'story', 'new-chapter.md')
+
+    try {
+      await mkdir(join(root, 'story'), { recursive: true })
+      await writeFile(targetPath, 'body')
+
+      await deleteFile(ctx, targetPath)
+
+      expect(existsSync(targetPath)).toBe(false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

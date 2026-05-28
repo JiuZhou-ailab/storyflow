@@ -3,7 +3,7 @@
 // pos: Pure helper for writing-workspace review undo behavior
 
 import type { FileChange } from '@craft-agent/ui'
-import { buildRejectedFileContent } from './file-change-review'
+import { buildRejectFileChangeOperation } from './file-change-review'
 import {
   getNovelReviewChangeKey,
   type NovelReviewStatusMap,
@@ -14,9 +14,14 @@ export interface NovelReviewUndoWrite {
   content: string
 }
 
+export interface NovelReviewUndoDelete {
+  filePath: string
+}
+
 export interface NovelReviewUndoEntry {
   status: NovelReviewStatusMap
   writes: NovelReviewUndoWrite[]
+  deletes: NovelReviewUndoDelete[]
 }
 
 export type AcceptNovelChangeUndoEntryResult =
@@ -28,7 +33,7 @@ export function buildAcceptNovelChangeUndoEntry(
   currentContent: string,
   currentStatus: NovelReviewStatusMap,
 ): AcceptNovelChangeUndoEntryResult {
-  const rejected = buildRejectedFileContent(change, currentContent)
+  const rejected = buildRejectFileChangeOperation(change, currentContent)
   if (!rejected.ok) {
     return rejected
   }
@@ -40,12 +45,21 @@ export function buildAcceptNovelChangeUndoEntry(
         ...currentStatus,
         [getNovelReviewChangeKey(change)]: 'rejected',
       },
-      writes: [
-        {
-          filePath: change.filePath,
-          content: rejected.content,
-        },
-      ],
+      writes: rejected.operation === 'write'
+        ? [
+            {
+              filePath: change.filePath,
+              content: rejected.content,
+            },
+          ]
+        : [],
+      deletes: rejected.operation === 'delete'
+        ? [
+            {
+              filePath: change.filePath,
+            },
+          ]
+        : [],
     },
   }
 }
@@ -63,5 +77,6 @@ export function buildRejectNovelChangeUndoEntry(
         content: currentContent,
       },
     ],
+    deletes: [],
   }
 }

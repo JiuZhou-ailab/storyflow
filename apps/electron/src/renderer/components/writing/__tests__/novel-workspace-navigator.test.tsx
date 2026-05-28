@@ -514,7 +514,7 @@ describe('novel writing workspace layout', () => {
     const zhHansLocale = JSON.parse(readFileSync(new URL('../../../../../../../packages/shared/src/i18n/locales/zh-Hans.json', import.meta.url), 'utf-8'))
     const topBarRightSlotSource = topBarSource.slice(
       topBarSource.indexOf('{rightTools ? ('),
-      topBarSource.indexOf('{/* Help button */')
+      topBarSource.indexOf('{updateIndicatorButton}')
     )
     const exportHandlerSource = appShellSource.slice(
       appShellSource.indexOf('const handleExportNovelWorkspace'),
@@ -542,7 +542,7 @@ describe('novel writing workspace layout', () => {
     )
     expect(topBarSource).toContain('rightTools?: React.ReactNode')
     expect(topBarRightSlotSource).toContain('{rightTools ? (')
-    expect(topBarRightSlotSource.indexOf('{rightTools ? (')).toBeLessThan(topBarRightSlotSource.indexOf('<DropdownMenu>'))
+    expect(topBarRightSlotSource.indexOf('{rightTools ? (')).toBeLessThan(topBarRightSlotSource.indexOf('setFeedbackOpen(true)'))
     expect(topBarSource).toContain('ml-auto flex min-w-0 flex-1 items-center justify-end gap-1')
     expect(topBarSource).toContain('w-[clamp(220px,42vw,640px)]')
     expect(topBarSource).toContain('titlebar-no-drag min-w-0 shrink-0')
@@ -646,7 +646,7 @@ describe('novel writing workspace layout', () => {
     expect(editorPanelSource).toContain('<TiptapMarkdownEditor')
     expect(appShellSource).toContain('handleAcceptNovelChange')
     expect(appShellSource).toContain('handleRejectNovelChange')
-    expect(appShellSource).toContain('buildRejectedFileContent')
+    expect(appShellSource).toContain('buildRejectFileChangeOperation')
     expect(appShellSource).toContain('handleAcceptAllNovelChanges')
     expect(appShellSource).toContain('void handleSelectNextNovelChangeAfterStatus')
     expect(appShellSource).not.toContain("id: 'writing:section:changes'")

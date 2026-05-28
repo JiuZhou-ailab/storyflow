@@ -156,7 +156,7 @@ import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
 import { collectFileChangesFromActivities } from "@/lib/file-changes"
-import { buildRejectedFileContent } from "@/lib/file-change-review"
+import { buildRejectFileChangeOperation } from "@/lib/file-change-review"
 import {
   buildMergedManuscriptContent,
   buildNovelExportPlan,
@@ -2506,7 +2506,7 @@ function AppShellContent({
   }, [novelWorkspaceRoot, reviewableNovelFileChanges])
 
   const pushNovelReviewUndoEntry = React.useCallback((entry: NovelReviewUndoEntry | null | undefined) => {
-    if (!entry || (entry.writes.length === 0 && Object.keys(entry.status).length === 0)) return
+    if (!entry || (entry.writes.length === 0 && entry.deletes.length === 0 && Object.keys(entry.status).length === 0)) return
 
     novelReviewUndoStackRef.current.push(entry)
     if (novelReviewUndoStackRef.current.length > 20) {
@@ -2528,6 +2528,10 @@ function AppShellContent({
     }
 
     try {
+      for (const deleted of entry.deletes) {
+        await window.electronAPI.deleteFile(deleted.filePath)
+      }
+
       for (const write of entry.writes) {
         await window.electronAPI.writeFile(write.filePath, write.content)
       }
@@ -2541,6 +2545,13 @@ function AppShellContent({
         setNovelDocumentContent(selectedWrite.content)
         setSavedNovelDocumentContent(selectedWrite.content)
       }
+      if (selectedNovelFile?.path && entry.deletes.some(deleted => deleted.filePath === selectedNovelFile.path)) {
+        setNovelDocumentContent('')
+        setSavedNovelDocumentContent('')
+      }
+      if (novelWorkspaceRoot) {
+        void refreshNovelWorkspaceFiles(novelWorkspaceRoot)
+      }
 
       toast.success(t('writing.review.undone', 'Review action undone'))
       return true
@@ -2553,7 +2564,9 @@ function AppShellContent({
     }
   }, [
     novelDocumentDirty,
+    novelWorkspaceRoot,
     persistNovelChangeReviewStatus,
+    refreshNovelWorkspaceFiles,
     selectedNovelFile?.path,
     t,
   ])
@@ -3137,6 +3150,7 @@ function AppShellContent({
     const nextStatus: NovelReviewStatusMap = { ...novelChangeReviewStatus }
     let undoStatus: NovelReviewStatusMap = { ...novelChangeReviewStatus }
     const undoContentByPath = new Map<string, string>()
+    const undoDeletePaths = new Set<string>()
     for (const change of reviewableNovelFileChanges) {
       if (change.error) continue
       const changeKey = getNovelReviewChangeKey(change)
@@ -3148,9 +3162,12 @@ function AppShellContent({
         const undo = buildAcceptNovelChangeUndoEntry(change, currentContent, undoStatus)
         if (undo.ok) {
           undoStatus = undo.entry.status
-          const write = undo.entry.writes[0]
-          if (write) {
+          for (const write of undo.entry.writes) {
             undoContentByPath.set(write.filePath, write.content)
+          }
+          for (const deleted of undo.entry.deletes) {
+            undoDeletePaths.add(deleted.filePath)
+            undoContentByPath.delete(deleted.filePath)
           }
         }
       } catch (error) {
@@ -3161,10 +3178,11 @@ function AppShellContent({
     }
 
     persistNovelChangeReviewStatus(nextStatus)
-    const undoEntry: NovelReviewUndoEntry | undefined = undoContentByPath.size > 0
+    const undoEntry: NovelReviewUndoEntry | undefined = undoContentByPath.size > 0 || undoDeletePaths.size > 0
       ? {
           status: undoStatus,
           writes: Array.from(undoContentByPath, ([filePath, content]) => ({ filePath, content })),
+          deletes: Array.from(undoDeletePaths, (filePath) => ({ filePath })),
         }
       : undefined
     pushNovelReviewUndoEntry(undoEntry)
@@ -3193,7 +3211,7 @@ function AppShellContent({
 
     try {
       const currentContent = await window.electronAPI.readFile(change.filePath)
-      const rejected = buildRejectedFileContent(change, currentContent)
+      const rejected = buildRejectFileChangeOperation(change, currentContent)
       if (!rejected.ok) {
         toast.error(t('writing.review.rejectUnavailable', 'Cannot safely reject this change'), {
           description: rejected.reason,
@@ -3202,7 +3220,11 @@ function AppShellContent({
       }
 
       const undoEntry = buildRejectNovelChangeUndoEntry(change, currentContent, novelChangeReviewStatus)
-      await window.electronAPI.writeFile(change.filePath, rejected.content)
+      if (rejected.operation === 'write') {
+        await window.electronAPI.writeFile(change.filePath, rejected.content)
+      } else {
+        await window.electronAPI.deleteFile(change.filePath)
+      }
       const changeKey = getNovelReviewChangeKey(change)
       const nextStatus = {
         ...novelChangeReviewStatus,
@@ -3212,8 +3234,12 @@ function AppShellContent({
       pushNovelReviewUndoEntry(undoEntry)
 
       if (selectedNovelFile?.path === change.filePath) {
-        setNovelDocumentContent(rejected.content)
-        setSavedNovelDocumentContent(rejected.content)
+        const nextContent = rejected.operation === 'write' ? rejected.content : ''
+        setNovelDocumentContent(nextContent)
+        setSavedNovelDocumentContent(nextContent)
+      }
+      if (novelWorkspaceRoot) {
+        void refreshNovelWorkspaceFiles(novelWorkspaceRoot)
       }
 
       void handleSelectNextNovelChangeAfterStatus(change, nextStatus)
@@ -3233,8 +3259,10 @@ function AppShellContent({
     handleUndoNovelReviewAction,
     handleSelectNextNovelChangeAfterStatus,
     novelChangeReviewStatus,
+    novelWorkspaceRoot,
     persistNovelChangeReviewStatus,
     pushNovelReviewUndoEntry,
+    refreshNovelWorkspaceFiles,
     selectedNovelFile?.path,
     t,
   ])

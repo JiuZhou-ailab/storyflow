@@ -4,8 +4,9 @@
 
 import type { FileChange } from '@craft-agent/ui'
 
-export type RejectedFileContentResult =
-  | { ok: true; content: string }
+export type RejectFileChangeOperationResult =
+  | { ok: true; operation: 'write'; content: string }
+  | { ok: true; operation: 'delete' }
   | { ok: false; reason: string }
 
 function countOccurrences(haystack: string, needle: string): number {
@@ -20,10 +21,16 @@ function countOccurrences(haystack: string, needle: string): number {
   return count
 }
 
-export function buildRejectedFileContent(
+function getEffectiveChangeKind(change: FileChange): NonNullable<FileChange['changeKind']> {
+  if (change.changeKind) return change.changeKind
+  if (change.toolType === 'Write') return change.original ? 'replace' : 'create'
+  return 'modify'
+}
+
+export function buildRejectFileChangeOperation(
   change: FileChange,
   currentContent: string,
-): RejectedFileContentResult {
+): RejectFileChangeOperationResult {
   if (change.error) {
     return { ok: false, reason: 'Failed changes cannot be rejected from the review surface.' }
   }
@@ -32,7 +39,16 @@ export function buildRejectedFileContent(
     return { ok: false, reason: 'Patch-only diffs cannot be reversed safely yet.' }
   }
 
-  if (change.toolType === 'Write' && !change.original) {
+  const changeKind = getEffectiveChangeKind(change)
+
+  if (changeKind === 'create') {
+    if (currentContent !== change.modified) {
+      return { ok: false, reason: 'Current file no longer matches the reviewed creation.' }
+    }
+    return { ok: true, operation: 'delete' }
+  }
+
+  if (changeKind === 'replace' && !change.original) {
     return { ok: false, reason: 'Previous file content was not captured for this write.' }
   }
 
@@ -41,7 +57,11 @@ export function buildRejectedFileContent(
   }
 
   if (currentContent === change.modified) {
-    return { ok: true, content: change.original }
+    return { ok: true, operation: 'write', content: change.original }
+  }
+
+  if (changeKind === 'replace') {
+    return { ok: false, reason: 'Current file no longer matches the reviewed replacement.' }
   }
 
   const occurrences = countOccurrences(currentContent, change.modified)
@@ -55,6 +75,7 @@ export function buildRejectedFileContent(
 
   return {
     ok: true,
+    operation: 'write',
     content: currentContent.replace(change.modified, change.original),
   }
 }

@@ -12,6 +12,7 @@ function change(overrides: Partial<FileChange> = {}): FileChange {
     id: overrides.id ?? 'change-1',
     filePath: overrides.filePath ?? '/novel/story/chapters/chapter-01.md',
     toolType: overrides.toolType ?? 'Edit',
+    changeKind: overrides.changeKind,
     original: overrides.original ?? 'old sentence',
     modified: overrides.modified ?? 'new sentence',
     unifiedDiff: overrides.unifiedDiff,
@@ -37,6 +38,32 @@ describe('novel review undo entries', () => {
         filePath: acceptedChange.filePath,
         content: 'A old sentence.',
       },
+    ])
+    expect(result.entry.status).toEqual({
+      [getNovelReviewChangeKey(acceptedChange)]: 'rejected',
+    })
+  })
+
+  it('undoes an accepted create change by deleting the created file and marking it rejected', () => {
+    const acceptedChange = change({
+      toolType: 'Write',
+      changeKind: 'create',
+      original: '',
+      modified: '# New chapter',
+    })
+    const currentStatus: NovelReviewStatusMap = {}
+    const result = buildAcceptNovelChangeUndoEntry(
+      acceptedChange,
+      '# New chapter',
+      currentStatus
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.entry.writes).toEqual([])
+    expect(result.entry.deletes).toEqual([
+      { filePath: acceptedChange.filePath },
     ])
     expect(result.entry.status).toEqual({
       [getNovelReviewChangeKey(acceptedChange)]: 'rejected',

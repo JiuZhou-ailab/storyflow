@@ -380,6 +380,7 @@ export interface ElectronAPI {
   // File operations
   readFile(path: string): Promise<string>
   writeFile(path: string, content: string): Promise<void>
+  deleteFile(path: string): Promise<void>
   createDirectory(path: string): Promise<void>
   /** Read a file as binary data (Uint8Array) */
   readFileBinary(path: string): Promise<Uint8Array>

@@ -83,6 +83,7 @@ const EXPECTED_CHANNELS: string[] = [
   'drafts:getAll',
   'drafts:set',
   'file:createDirectory',
+  'file:delete',
   'file:generateThumbnail',
   'file:openDialog',
   'file:read',

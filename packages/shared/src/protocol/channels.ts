@@ -85,6 +85,7 @@ export const RPC_CHANNELS = {
   file: {
     READ: 'file:read',
     WRITE: 'file:write',
+    DELETE: 'file:delete',
     CREATE_DIRECTORY: 'file:createDirectory',
     READ_DATA_URL: 'file:readDataUrl',
     READ_PREVIEW_DATA_URL: 'file:readPreviewDataUrl',
