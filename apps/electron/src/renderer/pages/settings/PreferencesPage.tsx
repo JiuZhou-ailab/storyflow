@@ -109,6 +109,8 @@ export default function PreferencesPage() {
 
   // Load stored user preferences on mount
   useEffect(() => {
+    let initialLoadTimer: ReturnType<typeof setTimeout> | null = null
+
     const load = async () => {
       try {
         const preferencesResult = await window.electronAPI.readPreferences()
@@ -134,12 +136,16 @@ export default function PreferencesPage() {
       } finally {
         setIsLoading(false)
         // Mark initial load as complete after a short delay
-        setTimeout(() => {
+        initialLoadTimer = setTimeout(() => {
           isInitialLoadRef.current = false
         }, 100)
       }
     }
     load()
+
+    return () => {
+      if (initialLoadTimer) clearTimeout(initialLoadTimer)
+    }
   }, [])
 
   // Auto-save with debouncing

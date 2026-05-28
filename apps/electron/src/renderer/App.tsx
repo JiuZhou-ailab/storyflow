@@ -887,6 +887,7 @@ export default function App() {
     // Also includes todo_state_changed so status updates immediately reflect in sidebar
     // async_operation included so shimmer effect on session titles updates in real-time
     const handoffEventTypes = new Set(['complete', 'error', 'interrupted', 'typed_error', 'session_status_changed', 'session_flagged', 'session_unflagged', 'name_changed', 'labels_changed', 'title_generated', 'async_operation'])
+    const retryTimeouts = new Set<ReturnType<typeof setTimeout>>()
 
     // Helper to handle side effects (same logic for both paths)
     const handleEffects = (effects: Effect[], sessionId: string, eventType: string) => {
@@ -945,9 +946,11 @@ export default function App() {
             // Add suffix to indicate the source was activated
             const messageWithSuffix = `${effect.originalMessage}\n\n[${effect.sourceSlug} activated]`
             // Use setTimeout to ensure the previous turn has fully completed
-            setTimeout(() => {
+            const timer = setTimeout(() => {
+              retryTimeouts.delete(timer)
               window.electronAPI.sendMessage(effect.sessionId, messageWithSuffix)
             }, 100)
+            retryTimeouts.add(timer)
             break
           }
           case 'restore_input': {
@@ -1118,7 +1121,11 @@ export default function App() {
       store.set(sessionMetaMapAtom, newMetaMap)
     })
 
-    return cleanup
+    return () => {
+      for (const timer of retryTimeouts) clearTimeout(timer)
+      retryTimeouts.clear()
+      cleanup()
+    }
   }, [
     processAgentEvent,
     trackSessionActivity,
@@ -1138,6 +1145,16 @@ export default function App() {
   // Transport reconnect recovery — refresh session metadata plus active/processing
   // session content after stale reconnects.
   useEffect(() => {
+    let isDisposed = false
+    const reconnectRetryTimeouts = new Set<ReturnType<typeof setTimeout>>()
+    const delayReconnectRetry = (delay: number) => new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        reconnectRetryTimeouts.delete(timer)
+        resolve()
+      }, delay)
+      reconnectRetryTimeouts.add(timer)
+    })
+
     const cleanup = window.electronAPI.onReconnected(async (isStale: boolean) => {
       if (!isStale) {
         // Server replayed buffered events — we're caught up, nothing to do
@@ -1160,13 +1177,15 @@ export default function App() {
       // Refresh full message content only for the active session plus any
       // session still marked processing after the metadata refresh.
       for (const sessionId of refreshIds) {
+        if (isDisposed) break
         let refreshResult = await refreshSessionFromServer(sessionId)
         if (refreshResult !== 'refreshed') {
           // Server may need time to restart session subprocess after reconnect,
           // or it may still be lazily loading session messages.
           for (const delay of [2000, 4000]) {
             console.warn(`[App] Retrying session refresh for ${sessionId} after ${delay}ms (${refreshResult})`)
-            await new Promise(r => setTimeout(r, delay))
+            await delayReconnectRetry(delay)
+            if (isDisposed) break
             refreshResult = await refreshSessionFromServer(sessionId)
             if (refreshResult === 'refreshed') break
           }
@@ -1175,7 +1194,7 @@ export default function App() {
 
       // Final fallback: if the active session is still empty, force a reload
       // even when the session is already marked loaded.
-      if (sessionSelection.selected) {
+      if (!isDisposed && sessionSelection.selected) {
         const session = store.get(sessionAtomFamily(sessionSelection.selected))
         if (session && (!session.messages || session.messages.length === 0)) {
           console.warn('[App] Active session still has no messages after stale reconnect refresh — forcing message reload')
@@ -1187,7 +1206,12 @@ export default function App() {
 
     })
 
-    return cleanup
+    return () => {
+      isDisposed = true
+      for (const timer of reconnectRetryTimeouts) clearTimeout(timer)
+      reconnectRetryTimeouts.clear()
+      cleanup()
+    }
   }, [store, sessionSelection.selected, refreshSessionFromServer, refreshSessionListMetadataFromServer])
 
   // Listen for menu bar events

@@ -886,9 +886,11 @@ export function FreeFormInput({
   React.useEffect(() => {
     if (!consumePendingFocusForSession(sessionId)) return
 
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       richInputRef.current?.focus()
     }, 0)
+
+    return () => clearTimeout(timer)
   }, [sessionId, richInputRef])
 
   // Get the next available number for a pasted file prefix (e.g., pasted-image-1, pasted-image-2)

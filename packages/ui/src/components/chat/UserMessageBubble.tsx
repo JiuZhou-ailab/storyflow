@@ -391,6 +391,13 @@ export function UserMessageBubble({
       queuedShownAtRef.current = null
       clearTimerRef.current = null
     }, remaining)
+
+    return () => {
+      if (clearTimerRef.current) {
+        clearTimeout(clearTimerRef.current)
+        clearTimerRef.current = null
+      }
+    }
   }, [isQueued])
 
   // Separate edit_request badges (rendered above bubble) from other badges (rendered inline)

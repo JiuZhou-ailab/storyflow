@@ -412,6 +412,7 @@ export function ThemeProvider({
   // === Cross-window sync listener ===
   useEffect(() => {
     if (!window.electronAPI?.onThemePreferencesChange) return
+    const resetExternalUpdateTimers = new Set<ReturnType<typeof setTimeout>>()
 
     const cleanup = window.electronAPI.onThemePreferencesChange((preferences) => {
       isExternalUpdate.current = true
@@ -425,12 +426,18 @@ export function ThemeProvider({
         font: preferences.font as FontFamily,
         isUserOverride: true
       })
-      setTimeout(() => {
+      const timer = setTimeout(() => {
+        resetExternalUpdateTimers.delete(timer)
         isExternalUpdate.current = false
       }, 0)
+      resetExternalUpdateTimers.add(timer)
     })
 
-    return cleanup
+    return () => {
+      for (const timer of resetExternalUpdateTimers) clearTimeout(timer)
+      resetExternalUpdateTimers.clear()
+      cleanup()
+    }
   }, [])
 
   // === Setters with persistence and broadcast ===

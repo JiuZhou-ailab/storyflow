@@ -660,8 +660,6 @@ export function Island({
     }
   }, [activeView, onActiveViewSizeChange, isTransitionSettling])
 
-  if (!activeView) return null
-
   const FALLBACK_HIDDEN_SCALE = clampScale(cfg.entryStartScale)
   const isPreShowWarmup = shouldMorph && isVisible && !isMorphWarmReady
   const directionalOffset = React.useMemo(
@@ -747,6 +745,8 @@ export function Island({
       : layoutTransition),
     [isPreShowWarmup, layoutTransition]
   )
+
+  if (!activeView) return null
 
   return (
     <IslandAnimationContext.Provider value={cfg}>

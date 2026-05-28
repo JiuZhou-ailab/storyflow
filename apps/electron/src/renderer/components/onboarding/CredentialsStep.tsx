@@ -77,13 +77,19 @@ export function CredentialsStep({
 
   // Auto-copy device code to clipboard when it appears
   useEffect(() => {
+    let clearCopiedTimer: ReturnType<typeof setTimeout> | null = null
+
     if (copilotDeviceCode?.userCode) {
       navigator.clipboard.writeText(copilotDeviceCode.userCode).then(() => {
         setCopiedCode(true)
-        setTimeout(() => setCopiedCode(false), 2000)
+        clearCopiedTimer = setTimeout(() => setCopiedCode(false), 2000)
       }).catch(() => {
         // Clipboard write failed, user can still click to copy
       })
+    }
+
+    return () => {
+      if (clearCopiedTimer) clearTimeout(clearCopiedTimer)
     }
   }, [copilotDeviceCode?.userCode])
 
