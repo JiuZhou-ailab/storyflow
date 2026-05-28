@@ -10,6 +10,7 @@ type RewindSourceSession = Pick<
   | 'id'
   | 'name'
   | 'llmConnection'
+  | 'model'
   | 'permissionMode'
   | 'workingDirectory'
   | 'enabledSourceSlugs'
@@ -48,6 +49,8 @@ export function buildRewindSessionOptions(
 ): CreateSessionOptions {
   const options: CreateSessionOptions = {
     name: `Rewind of ${session.name || 'Untitled'}`,
+    ...(session.llmConnection ? { llmConnection: session.llmConnection } : {}),
+    ...(session.model ? { model: session.model } : {}),
     permissionMode: session.permissionMode,
     workingDirectory: session.workingDirectory,
     enabledSourceSlugs: session.enabledSourceSlugs,

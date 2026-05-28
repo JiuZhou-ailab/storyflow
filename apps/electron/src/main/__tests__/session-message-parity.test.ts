@@ -58,6 +58,7 @@ function createFullMessage(): Message {
     isPending: false,
     isIntermediate: false,
     turnId: 'turn-abc',
+    canBranch: false,
     infoLevel: 'warning',
     errorCode: 'network_error',
     errorTitle: 'Connection Failed',
@@ -119,7 +120,7 @@ describe('messageToStored/storedToMessage round-trip', () => {
       'parentToolUseId',
       'taskId', 'shellId', 'elapsedSeconds', 'isBackground',
       'isError', 'attachments', 'badges', 'annotations',
-      'isIntermediate', 'turnId', 'infoLevel',
+      'isIntermediate', 'turnId', 'canBranch', 'infoLevel',
       'errorCode', 'errorTitle', 'errorDetails', 'errorOriginal', 'errorCanRetry',
       'planPath',
       'authRequestId', 'authRequestType', 'authSourceSlug', 'authSourceName',
@@ -163,6 +164,7 @@ describe('messageToStored/storedToMessage round-trip', () => {
     expect(restored.annotations).toEqual(original.annotations)
     expect(restored.isIntermediate).toBe(original.isIntermediate)
     expect(restored.turnId).toBe(original.turnId)
+    expect(restored.canBranch).toBe(false)
     expect(restored.infoLevel).toBe(original.infoLevel)
     expect(restored.errorCode).toBe(original.errorCode)
     expect(restored.errorTitle).toBe(original.errorTitle)

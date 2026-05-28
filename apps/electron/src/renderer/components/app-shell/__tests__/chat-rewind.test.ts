@@ -6,6 +6,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   buildRewindSessionOptions,
   canCreateDefaultRewindBranch,
+  MANAGED_DEFAULT_CONNECTION_SLUG,
   resolveRewindBranchMessageId,
 } from '../chat-rewind'
 
@@ -66,6 +67,19 @@ describe('chat rewind helpers', () => {
       name: 'Rewind of Planning',
       branchFromMessageId: 'a1',
       branchFromSessionId: 'session-1',
+      llmConnection: 'pi',
+      model: 'glm-5.1',
+      permissionMode: 'ask',
+      workingDirectory: '/repo',
+      enabledSourceSlugs: ['docs'],
+    })
+  })
+
+  it('preserves the source connection and model when editing the first user message', () => {
+    expect(buildRewindSessionOptions(baseSession, null)).toEqual({
+      name: 'Rewind of Planning',
+      llmConnection: 'pi',
+      model: 'glm-5.1',
       permissionMode: 'ask',
       workingDirectory: '/repo',
       enabledSourceSlugs: ['docs'],
@@ -73,6 +87,7 @@ describe('chat rewind helpers', () => {
   })
 
   it('allows default rewind branches only when the source session already uses the default connection', () => {
+    expect(MANAGED_DEFAULT_CONNECTION_SLUG).toBe('wangsu-default')
     expect(canCreateDefaultRewindBranch(baseSession, 'a1', 'pi')).toBe(true)
     expect(canCreateDefaultRewindBranch(baseSession, 'a1', 'wangsu-default')).toBe(false)
     expect(canCreateDefaultRewindBranch(baseSession, null, 'wangsu-default')).toBe(true)

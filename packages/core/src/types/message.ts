@@ -370,6 +370,8 @@ export interface StoredMessage {
   // Turn grouping - critical for TurnCard rendering after reload
   isIntermediate?: boolean;
   turnId?: string;
+  // Whether this final assistant message has provider-native metadata required for safe branching
+  canBranch?: boolean;
   // Status type for compaction messages (persisted for reload)
   statusType?: 'compacting' | 'compaction_complete';
   // Info level for info messages (persisted for reload)
