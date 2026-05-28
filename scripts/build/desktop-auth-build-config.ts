@@ -13,6 +13,14 @@ function readBooleanEnv(value: string | undefined): boolean {
   return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
 }
 
+function readOptionalBooleanEnv(value: string | undefined): boolean | undefined {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return undefined;
+}
+
 function readEnv(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed || undefined;
@@ -22,18 +30,51 @@ function isLocalhostHostname(hostname: string): boolean {
   return ['localhost', '127.0.0.1', '::1'].includes(hostname);
 }
 
+function hasNeonLoginMethod(env: Env): boolean {
+  return Boolean(readEnv(env.CRAFT_CLIENT_NEON_AUTH_BASE_URL) || readEnv(env.CRAFT_WEBUI_NEON_AUTH_BASE_URL));
+}
+
 export function validateDesktopAuthBuildEnv(env: Env): DesktopAuthBuildValidationResult {
   if (readBooleanEnv(env.CRAFT_DEV_RUNTIME)) return { ok: true };
-  if (!readBooleanEnv(env.CRAFT_CLIENT_AUTH_REQUIRED)) return { ok: true };
 
+  const explicitAuthRequired = readOptionalBooleanEnv(env.CRAFT_CLIENT_AUTH_REQUIRED);
+  if (explicitAuthRequired === false) return { ok: true };
+
+  const hasNeonLogin = hasNeonLoginMethod(env);
+  const feishuAppId = readEnv(env.CRAFT_CLIENT_FEISHU_APP_ID);
   const brokerUrl = readEnv(env.CRAFT_CLIENT_AUTH_BROKER_URL)
     ?? readEnv(env.CRAFT_CLIENT_FEISHU_AUTH_BROKER_URL);
+  const hasFeishuLogin = Boolean(feishuAppId);
 
-  if (!brokerUrl) {
+  if (!hasNeonLogin && !hasFeishuLogin && !brokerUrl) {
     return {
       ok: false,
-      message: 'CRAFT_CLIENT_AUTH_BROKER_URL is required for packaged desktop client auth.',
+      message: 'Packaged desktop client auth requires CRAFT_CLIENT_FEISHU_APP_ID or CRAFT_CLIENT_NEON_AUTH_BASE_URL.',
     };
+  }
+
+  if (brokerUrl && !feishuAppId) {
+    return {
+      ok: false,
+      message: 'CRAFT_CLIENT_FEISHU_APP_ID is required when CRAFT_CLIENT_AUTH_BROKER_URL is set.',
+    };
+  }
+
+  if (feishuAppId && !brokerUrl) {
+    return {
+      ok: false,
+      message: 'CRAFT_CLIENT_AUTH_BROKER_URL is required for packaged Feishu client auth.',
+    };
+  }
+
+  if (!brokerUrl) {
+    if (!readEnv(env.CRAFT_CLIENT_GATEWAY_TOKEN) && !readEnv(env.CRAFT_BUILTIN_LLM_API_KEY)) {
+      return {
+        ok: false,
+        message: 'CRAFT_CLIENT_GATEWAY_TOKEN is required for the packaged direct Cloudflare model gateway.',
+      };
+    }
+    return { ok: true };
   }
 
   let parsed: URL;

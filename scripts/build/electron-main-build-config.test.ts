@@ -38,8 +38,17 @@ describe('Electron main process build config', () => {
 });
 
 describe('desktop auth build config', () => {
-  test('allows builds when desktop client auth is disabled', () => {
-    expect(validateDesktopAuthBuildEnv({})).toEqual({ ok: true });
+  test('allows builds when desktop client auth is explicitly disabled', () => {
+    expect(validateDesktopAuthBuildEnv({
+      CRAFT_CLIENT_AUTH_REQUIRED: 'false',
+    })).toEqual({ ok: true });
+  });
+
+  test('requires at least one client login method by default for packaged builds', () => {
+    expect(validateDesktopAuthBuildEnv({})).toEqual({
+      ok: false,
+      message: 'Packaged desktop client auth requires CRAFT_CLIENT_FEISHU_APP_ID or CRAFT_CLIENT_NEON_AUTH_BASE_URL.',
+    });
   });
 
   test('allows localhost brokers only for explicit dev-runtime builds', () => {
@@ -50,13 +59,30 @@ describe('desktop auth build config', () => {
     })).toEqual({ ok: true });
   });
 
-  test('requires a broker for packaged desktop client auth', () => {
+  test('accepts Neon-only client auth for packaged builds', () => {
+    expect(validateDesktopAuthBuildEnv({
+      CRAFT_CLIENT_NEON_AUTH_BASE_URL: 'https://auth.example.com',
+      CRAFT_CLIENT_GATEWAY_TOKEN: 'cfut-test',
+    })).toEqual({ ok: true });
+  });
+
+  test('requires a broker for Feishu client auth', () => {
     expect(validateDesktopAuthBuildEnv({
       CRAFT_CLIENT_AUTH_REQUIRED: 'true',
-      CRAFT_CLIENT_NEON_AUTH_BASE_URL: 'https://auth.example.com',
+      CRAFT_CLIENT_FEISHU_APP_ID: 'cli_test',
     })).toEqual({
       ok: false,
-      message: 'CRAFT_CLIENT_AUTH_BROKER_URL is required for packaged desktop client auth.',
+      message: 'CRAFT_CLIENT_AUTH_BROKER_URL is required for packaged Feishu client auth.',
+    });
+  });
+
+  test('requires a Feishu app id when a Feishu broker is configured', () => {
+    expect(validateDesktopAuthBuildEnv({
+      CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
+      CRAFT_CLIENT_GATEWAY_TOKEN: 'cfut-test',
+    })).toEqual({
+      ok: false,
+      message: 'CRAFT_CLIENT_FEISHU_APP_ID is required when CRAFT_CLIENT_AUTH_BROKER_URL is set.',
     });
   });
 
@@ -64,6 +90,7 @@ describe('desktop auth build config', () => {
     const result = validateDesktopAuthBuildEnv({
       CRAFT_CLIENT_AUTH_REQUIRED: 'true',
       CRAFT_CLIENT_AUTH_BROKER_URL: 'http://localhost:9100',
+      CRAFT_CLIENT_FEISHU_APP_ID: 'cli_test',
     });
 
     expect(result.ok).toBe(false);
@@ -76,6 +103,7 @@ describe('desktop auth build config', () => {
     expect(validateDesktopAuthBuildEnv({
       CRAFT_CLIENT_AUTH_REQUIRED: 'true',
       CRAFT_CLIENT_AUTH_BROKER_URL: 'http://auth.storyflow.example.com',
+      CRAFT_CLIENT_FEISHU_APP_ID: 'cli_test',
     })).toEqual({
       ok: false,
       message: 'CRAFT_CLIENT_AUTH_BROKER_URL must use https for packaged desktop client auth.',
@@ -86,6 +114,7 @@ describe('desktop auth build config', () => {
     expect(validateDesktopAuthBuildEnv({
       CRAFT_CLIENT_AUTH_REQUIRED: 'true',
       CRAFT_CLIENT_AUTH_BROKER_URL: ' https://auth.storyflow.example.com/ ',
+      CRAFT_CLIENT_FEISHU_APP_ID: 'cli_test',
       CRAFT_CLIENT_GATEWAY_TOKEN: 'cfut-test',
     })).toEqual({ ok: true });
   });
@@ -94,9 +123,19 @@ describe('desktop auth build config', () => {
     expect(validateDesktopAuthBuildEnv({
       CRAFT_CLIENT_AUTH_REQUIRED: 'true',
       CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
+      CRAFT_CLIENT_FEISHU_APP_ID: 'cli_test',
     })).toEqual({
       ok: false,
       message: 'CRAFT_CLIENT_GATEWAY_TOKEN is required for the packaged direct Cloudflare model gateway.',
     });
+  });
+
+  test('accepts both Feishu and Neon client auth for packaged builds', () => {
+    expect(validateDesktopAuthBuildEnv({
+      CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
+      CRAFT_CLIENT_FEISHU_APP_ID: 'cli_test',
+      CRAFT_CLIENT_NEON_AUTH_BASE_URL: 'https://auth.example.com',
+      CRAFT_CLIENT_GATEWAY_TOKEN: 'cfut-test',
+    })).toEqual({ ok: true });
   });
 });

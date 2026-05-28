@@ -20,6 +20,37 @@ describe('client auth', () => {
     })
   })
 
+  it('requires client auth by default in packaged runtime', () => {
+    const config = createClientAuthConfigFromEnv({
+      CRAFT_IS_PACKAGED: '1',
+    })
+    const service = createClientAuthService(config)
+
+    expect(service.getState()).toEqual({
+      required: true,
+      configured: false,
+      authenticated: false,
+      emailPasswordEnabled: false,
+      feishuLoginEnabled: false,
+    })
+  })
+
+  it('allows explicitly disabling client auth in packaged runtime', () => {
+    const config = createClientAuthConfigFromEnv({
+      CRAFT_IS_PACKAGED: '1',
+      CRAFT_CLIENT_AUTH_REQUIRED: 'false',
+    })
+    const service = createClientAuthService(config)
+
+    expect(service.getState()).toEqual({
+      required: false,
+      configured: false,
+      authenticated: true,
+      emailPasswordEnabled: false,
+      feishuLoginEnabled: false,
+    })
+  })
+
   it('blocks required auth when Neon Auth is not configured', async () => {
     const service = createClientAuthService({ required: true })
 

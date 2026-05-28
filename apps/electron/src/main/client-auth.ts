@@ -110,7 +110,7 @@ const DEFAULT_FEISHU_BROKER_CONFIG_PATH = '/api/client-auth/feishu/config'
 const DEFAULT_FEISHU_BROKER_EXCHANGE_PATH = '/api/client-auth/feishu/exchange'
 
 export function createClientAuthConfigFromEnv(env: NodeJS.ProcessEnv): ClientAuthConfig {
-  const required = readBooleanEnv(env.CRAFT_CLIENT_AUTH_REQUIRED) ?? false
+  const required = readBooleanEnv(env.CRAFT_CLIENT_AUTH_REQUIRED) ?? shouldRequireClientAuthByDefault(env)
   const baseUrl = readEnv(env.CRAFT_CLIENT_NEON_AUTH_BASE_URL) ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_BASE_URL)
   const jwksUrl = readEnv(env.CRAFT_CLIENT_NEON_AUTH_JWKS_URL) ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_JWKS_URL)
   const issuer = readEnv(env.CRAFT_CLIENT_NEON_AUTH_ISSUER) ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_ISSUER)
@@ -327,6 +327,11 @@ export function createClientAuthService(
       currentUser = null
     },
   }
+}
+
+function shouldRequireClientAuthByDefault(env: NodeJS.ProcessEnv): boolean {
+  return readBooleanEnv(env.CRAFT_IS_PACKAGED) === true
+    && readBooleanEnv(env.CRAFT_DEV_RUNTIME) !== true
 }
 
 function buildClientAuthState(input: {
