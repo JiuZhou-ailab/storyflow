@@ -1,18 +1,18 @@
 ---
-name: chapter-workflow
-description: Use when planning, drafting, reviewing, and finalizing a novel chapter inside a writing workspace.
+name: 章节工作流
+description: 用于在写作工作区内规划、起草、审校并定稿小说章节。
 ---
 
-# Chapter Workflow
+# 章节工作流
 
-Adapted for Craft Agent from Claude-Book concepts. Source: https://github.com/ThomasHoussin/Claude-Book
+基于 Claude-Book 概念为 Craft Agent 改写。来源：https://github.com/ThomasHoussin/Claude-Book
 
-Coordinate chapter plan, draft, style review, character review, continuity review, optional perplexity analysis, final manuscript placement, and state/timeline updates.
+协调章节计划、草稿、风格审校、人物审校、连续性审校、可选 perplexity 分析、最终正文归档和状态/时间线更新。
 
-## Hard Gates
+## 硬门禁
 
-- Do not write or update `story/chapters/` until `story/synopsis.md` and `story/plan.md` contain non-template content.
-- The number and order of manuscript chapters must come from `story/plan.md`.
-- Do not skip planned chapters or invent extra accepted chapters outside `story/plan.md`.
-- Natural prose paragraphs should usually contain 2-5 sentences.
-- Avoid one-sentence-per-blank-line output except for dialogue, lists, or deliberate emphasis.
+- 在 `story/synopsis.md` 和 `story/plan.md` 仍是空模板前，不要写入或更新 `story/chapters/`。
+- 正文章节数量和顺序必须来自 `story/plan.md`。
+- 不要跳过计划章节，也不要在 `story/plan.md` 之外发明额外已接受章节。
+- 自然叙事段落通常应包含 2-5 句。
+- 除对白、列表或刻意强调外，避免每句空一行。

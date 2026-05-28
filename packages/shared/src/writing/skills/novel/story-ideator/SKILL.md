@@ -1,17 +1,17 @@
 ---
-name: story-ideator
-description: Use when generating original plot seeds, synopses, chapter arcs, or scene ideas from an existing novel bible.
+name: 故事构思
+description: 用于基于既有小说圣经生成原创情节点子、故事梗概、章节弧线或场景方案。
 ---
 
-# Story Ideator
+# 故事构思
 
-Adapted for Craft Agent from Claude-Book concepts. Source: https://github.com/ThomasHoussin/Claude-Book
+基于 Claude-Book 概念为 Craft Agent 改写。来源：https://github.com/ThomasHoussin/Claude-Book
 
-Generate original story ideas from bible constraints. Use inversion, location collision, external pressure, relationship stress tests, and anti-plagiarism checks against source structures.
+根据 bible 约束生成原创故事方案。使用反转、地点碰撞、外部压力、关系压力测试，并对照源文本结构做相似风险检查。
 
-## Output Contract
+## 输出契约
 
-- Do not leave the accepted synopsis or chapter plan only in `.work/` or session plan files.
-- The selected synopsis must be written to `story/synopsis.md`.
-- The selected chapter count, order, titles, target length, and core beats must be written to `story/plan.md`.
-- `story/plan.md` is the source of truth for later chapter generation.
+- 已接受的梗概或章节计划不能只留在 `.work/` 或会话计划文件里。
+- 选定梗概必须写入 `story/synopsis.md`。
+- 选定章节数量、顺序、标题、目标篇幅和核心节拍必须写入 `story/plan.md`。
+- `story/plan.md` 是后续章节生成的真相源。

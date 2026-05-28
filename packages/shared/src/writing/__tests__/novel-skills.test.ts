@@ -16,6 +16,17 @@ const EXPECTED_SKILLS = [
   "state-updater",
 ];
 
+const EXPECTED_CLAUDE_BOOK_SKILL_NAMES: Record<string, string> = {
+  "book-analyzer": "原著分析",
+  "bible-merger": "项目圣经合并",
+  "story-ideator": "故事构思",
+  "chapter-workflow": "章节工作流",
+  "style-reviewer": "风格审校",
+  "character-reviewer": "人物审校",
+  "continuity-reviewer": "连续性审校",
+  "state-updater": "状态更新",
+};
+
 function createTempProject(): string {
   return mkdtempSync(join(tmpdir(), "craft-novel-skills-"));
 }
@@ -31,9 +42,10 @@ describe("bundled writing skills", () => {
     expect(slugs).toEqual([...EXPECTED_SKILLS].sort());
 
     for (const file of files.filter((entry) => entry.relativePath.endsWith("SKILL.md"))) {
-      expect(file.content).toMatch(/^---\nname: [a-z0-9-]+\ndescription: Use when .+\n---/);
+      expect(file.content).toMatch(/^---\nname: .+\ndescription: .+\n---/);
       expect(file.content).not.toContain("tools:");
       expect(file.content).not.toContain("model:");
+      expect(file.content).not.toContain("description: Use when");
       expect(file.content).not.toContain("Output language\nFrench");
       expect(file.content).toContain("Claude-Book");
     }
@@ -43,16 +55,16 @@ describe("bundled writing skills", () => {
     const joined = getBundledNovelSkillFiles().map((file) => file.content).join("\n");
 
     expect(joined).toContain("perplexity");
-    expect(joined).toContain("optional");
+    expect(joined).toContain("可选");
     expect(joined).not.toContain("perplexity-improver as a required gate");
   });
 
   it("defines hard Claude-Book workflow gates for outline-driven chapter generation", () => {
     const joined = getBundledNovelSkillFiles().map((file) => file.content).join("\n");
 
-    expect(joined).toContain("Do not write or update `story/chapters/` until `story/synopsis.md` and `story/plan.md` contain non-template content.");
-    expect(joined).toContain("The number and order of manuscript chapters must come from `story/plan.md`.");
-    expect(joined).toContain("Natural prose paragraphs should usually contain 2-5 sentences.");
+    expect(joined).toContain("在 `story/synopsis.md` 和 `story/plan.md` 仍是空模板前，不要写入或更新 `story/chapters/`。");
+    expect(joined).toContain("正文章节数量和顺序必须来自 `story/plan.md`。");
+    expect(joined).toContain("自然叙事段落通常应包含 2-5 句。");
   });
 
   it("keeps reviewable SKILL.md source files in the repository", () => {
@@ -61,7 +73,9 @@ describe("bundled writing skills", () => {
     for (const slug of EXPECTED_SKILLS) {
       const skillPath = join(skillsRoot, slug, "SKILL.md");
       expect(existsSync(skillPath)).toBe(true);
-      expect(readFileSync(skillPath, "utf-8")).toContain(`name: ${slug}`);
+      const content = readFileSync(skillPath, "utf-8");
+      expect(content).toContain(`name: ${EXPECTED_CLAUDE_BOOK_SKILL_NAMES[slug]}`);
+      expect(content).not.toContain("description: Use when");
     }
   });
 
@@ -117,11 +131,11 @@ describe("bundled writing skills", () => {
     expect(router).toContain("男频");
     expect(router).toContain("女频");
     expect(router).toContain("黄金三章");
-    expect(router).toContain("Do not draft");
+    expect(router).toContain("不要从第一个模糊请求直接起草");
 
     const shortWriter = readFileSync(join(rootPath, "skills", "story-short-write", "SKILL.md"), "utf-8");
-    expect(shortWriter).toContain("after the story router");
-    expect(shortWriter).toContain("first ambiguous");
+    expect(shortWriter).toContain("在故事路由之后使用");
+    expect(shortWriter).toContain("第一个模糊");
   });
 
 });

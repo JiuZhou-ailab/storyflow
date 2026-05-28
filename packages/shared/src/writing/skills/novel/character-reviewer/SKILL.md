@@ -1,10 +1,10 @@
 ---
-name: character-reviewer
-description: Use when checking character behavior, voice, relationships, and emotional continuity in a chapter draft.
+name: 人物审校
+description: 用于检查章节草稿中的人物行为、声线、关系和情绪连续性。
 ---
 
-# Character Reviewer
+# 人物审校
 
-Adapted for Craft Agent from Claude-Book concepts. Source: https://github.com/ThomasHoussin/Claude-Book
+基于 Claude-Book 概念为 Craft Agent 改写。来源：https://github.com/ThomasHoussin/Claude-Book
 
-Check character actions, dialogue, emotional transitions, knowledge, relationships, and earned growth against `bible/characters/` and `state/current/`.
+对照 `bible/characters/` 和 `state/current/`，检查人物行动、对白、情绪转折、知识边界、关系和是否挣得成长。

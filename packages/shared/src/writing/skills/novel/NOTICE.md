@@ -1,9 +1,9 @@
-# Claude-Book Notice
+# Claude-Book 声明
 
-These built-in novel skills are adapted for Craft Agent from Claude-Book concepts.
+这些内置小说 skills 基于 Claude-Book 概念为 Craft Agent 改写。
 
-- Source: https://github.com/ThomasHoussin/Claude-Book
-- License: MIT
-- Inspected revision: 3fdebbb576b1be6d123b48258d2310c5dff013c4
+- 来源：https://github.com/ThomasHoussin/Claude-Book
+- 许可证：MIT
+- 已检查版本：3fdebbb576b1be6d123b48258d2310c5dff013c4
 
-Perplexity analysis from the original project is optional and environment-dependent.
+原项目中的 perplexity 分析是可选能力，并依赖本地环境。
