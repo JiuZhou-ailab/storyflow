@@ -1,3 +1,7 @@
+// input: Renderer runtime events and debug-mode startup state
+// output: Debug-only renderer performance metrics for session switches and text deltas
+// pos: Renderer performance instrumentation boundary with no UI state ownership
+
 /**
  * Renderer-side Performance Instrumentation
  *
@@ -27,12 +31,31 @@ interface SessionSwitchMetric {
   duration?: number
 }
 
+interface TextDeltaPerfEvent {
+  sessionId: string
+  delta: string
+}
+
+interface TextDeltaPerfSummary {
+  sessionId: string
+  deltaLength: number
+}
+
+interface TextDeltaWindow {
+  startedAt: number
+  count: number
+  chars: number
+  turnId?: string
+}
+
 // Pending session switches (keyed by sessionId)
 const pendingSwitches = new Map<string, SessionSwitchMetric>()
+const textDeltaWindows = new Map<string, TextDeltaWindow>()
 
 // Recent completed metrics for analysis
 const recentMetrics: SessionSwitchMetric[] = []
 const MAX_RECENT_METRICS = 50
+const TEXT_DELTA_LOG_INTERVAL_MS = 1000
 
 // Debug mode detection (matches main process pattern)
 let debugMode = false
@@ -53,6 +76,52 @@ export function initRendererPerf(isDebug: boolean): void {
  */
 export function isRendererPerfEnabled(): boolean {
   return debugMode
+}
+
+export function summarizeTextDeltaPerfEvent(event: TextDeltaPerfEvent): TextDeltaPerfSummary {
+  return {
+    sessionId: event.sessionId,
+    deltaLength: event.delta.length,
+  }
+}
+
+export function recordTextDeltaEvent(sessionId: string, delta: string, turnId?: string): void {
+  if (!debugMode) return
+
+  const now = performance.now()
+  const summary = summarizeTextDeltaPerfEvent({ sessionId, delta })
+  const existing = textDeltaWindows.get(summary.sessionId)
+
+  if (!existing) {
+    textDeltaWindows.set(summary.sessionId, {
+      startedAt: now,
+      count: 1,
+      chars: summary.deltaLength,
+      turnId,
+    })
+    return
+  }
+
+  existing.count += 1
+  existing.chars += summary.deltaLength
+  if (turnId) existing.turnId = turnId
+
+  const elapsed = now - existing.startedAt
+  if (elapsed < TEXT_DELTA_LOG_INTERVAL_MS) {
+    return
+  }
+
+  perfLog.info(
+    `${summary.sessionId.slice(0, 8)}... text_delta.window: ` +
+      `${existing.count} events, ${existing.chars} chars, ${elapsed.toFixed(1)}ms` +
+      (existing.turnId ? `, turn=${existing.turnId}` : '')
+  )
+  textDeltaWindows.set(summary.sessionId, {
+    startedAt: now,
+    count: 0,
+    chars: 0,
+    turnId: existing.turnId,
+  })
 }
 
 /**
@@ -169,6 +238,7 @@ export function getSessionSwitchStats(): {
  */
 export function clearMetrics(): void {
   pendingSwitches.clear()
+  textDeltaWindows.clear()
   recentMetrics.length = 0
 }
 
@@ -179,6 +249,7 @@ export const rendererPerf = {
   startSessionSwitch,
   markSessionSwitch,
   endSessionSwitch,
+  recordTextDeltaEvent,
   getRecentMetrics,
   getStats: getSessionSwitchStats,
   clear: clearMetrics,

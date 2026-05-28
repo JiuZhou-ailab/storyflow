@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'bun:test'
 import type { SessionHeader } from '../types'
-import { getHeaderMetadataSignature, mergeHeaderWithExternalMetadata } from '../persistence-queue'
+import {
+  getHeaderMetadataSignature,
+  mergeHeaderWithExternalMetadata,
+  summarizeSessionPersistWrite,
+} from '../persistence-queue'
 
 function makeHeader(overrides: Partial<SessionHeader> = {}): SessionHeader {
   return {
@@ -23,6 +27,20 @@ function makeHeader(overrides: Partial<SessionHeader> = {}): SessionHeader {
 }
 
 describe('session persistence header conflict helpers', () => {
+  it('summarizes persistence write profiling metadata without serializing content', () => {
+    expect(summarizeSessionPersistWrite({
+      sessionId: 's1',
+      messageCount: 3,
+      lineCount: 4,
+      hasExternalMetadataChange: false,
+    })).toEqual({
+      sessionId: 's1',
+      messageCount: 3,
+      lineCount: 4,
+      hasExternalMetadataChange: false,
+    })
+  })
+
   it('metadata signature ignores non-metadata fields', () => {
     const a = makeHeader({ name: 'A', lastUsedAt: 100 })
     const b = makeHeader({ name: 'A', lastUsedAt: 999, messageCount: 42 })

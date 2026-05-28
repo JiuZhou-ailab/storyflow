@@ -1,3 +1,7 @@
+// input: Renderer session events, current session snapshots, and workspace identity
+// output: Processed session updates, side effects, and debug-only event metrics
+// pos: React hook boundary around the pure event processor
+
 /**
  * Event Processor Hook
  *
@@ -11,6 +15,7 @@ import type { Session } from '../../shared/types'
 import { processEvent } from './processor'
 import type { SessionState, AgentEvent, Effect, StreamingState, ErrorEvent, TypedErrorEvent } from './types'
 import { createEmptySession } from './helpers'
+import { rendererPerf } from '../lib/perf'
 
 /**
  * Report agent error/typed_error events to Sentry as exceptions (not messages).
@@ -95,6 +100,9 @@ export function useEventProcessor(): UseEventProcessorResult {
 
     // Process through pure function
     const result = processEvent(currentState, event)
+    if (event.type === 'text_delta') {
+      rendererPerf.recordTextDeltaEvent(event.sessionId, event.delta, event.turnId)
+    }
 
     // Side effect: capture error events to Sentry (outside the pure processor)
     if (event.type === 'error' || event.type === 'typed_error') {
