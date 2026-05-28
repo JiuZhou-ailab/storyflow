@@ -19,7 +19,6 @@ import {
   defaultDownloadBaseUrl,
   downloadBaseUrl,
   downloadOptions,
-  downloadReleaseVersion,
   normalizeDownloadBaseUrl,
   updateManifestUrls,
 } from "../downloads";
@@ -35,21 +34,18 @@ describe("downloadOptions", () => {
           id: "mac-arm64",
           label: "下载 Apple Silicon 版",
           fileName: releaseAssetFiles.macArm64Dmg,
-          downloadFileName: `Storyflow-${downloadReleaseVersion}-arm64.dmg`,
           href: `${downloadBaseUrl}/${releaseAssetFiles.macArm64Dmg}`,
         }),
         expect.objectContaining({
           id: "mac-x64",
           label: "下载 Intel Mac 版",
           fileName: releaseAssetFiles.macX64Dmg,
-          downloadFileName: `Storyflow-${downloadReleaseVersion}-x64.dmg`,
           href: `${downloadBaseUrl}/${releaseAssetFiles.macX64Dmg}`,
         }),
         expect.objectContaining({
           id: "windows-x64",
           label: "下载 Windows 版",
           fileName: releaseAssetFiles.windowsX64Exe,
-          downloadFileName: `Storyflow-${downloadReleaseVersion}-x64.exe`,
           href: `${downloadBaseUrl}/${releaseAssetFiles.windowsX64Exe}`,
         }),
       ]),
@@ -61,12 +57,8 @@ describe("downloadOptions", () => {
     expect(downloadOptions.every((option) => option.fileName.startsWith("Storyflow-"))).toBe(
       true,
     );
-    expect(
-      downloadOptions.every((option) =>
-        option.downloadFileName.startsWith(`Storyflow-${downloadReleaseVersion}-`),
-      ),
-    ).toBe(true);
     expect(downloadOptions.every((option) => option.href.endsWith(option.fileName))).toBe(true);
+    expect(downloadOptions.every((option) => !option.href.match(/Storyflow-\d+\.\d+\.\d+/))).toBe(true);
     expect(downloadOptions.every((option) => !option.href.includes("Craft-Agents"))).toBe(true);
     expect(downloadOptions.every((option) => !option.href.includes("github.com"))).toBe(true);
   });

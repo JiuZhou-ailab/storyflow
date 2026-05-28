@@ -4,11 +4,9 @@
 
 import {
   publicInstallerAssets,
-  versionedInstallerFileName,
   updateManifestFiles,
   type PublicInstallerAsset,
 } from "@storyflow/release-assets";
-import packageJson from "../package.json";
 
 export type DownloadOption = {
   id: PublicInstallerAsset["id"];
@@ -16,7 +14,6 @@ export type DownloadOption = {
   platform: PublicInstallerAsset["platform"];
   detail: string;
   fileName: PublicInstallerAsset["fileName"];
-  downloadFileName: string;
   href: string;
 };
 
@@ -25,7 +22,6 @@ export const defaultDownloadBaseUrl = "https://story-storage.zjding.com/latest";
 type ViteImportMeta = ImportMeta & {
   env?: {
     VITE_STORYFLOW_DOWNLOAD_BASE_URL?: string;
-    VITE_STORYFLOW_RELEASE_VERSION?: string;
   };
 };
 
@@ -36,8 +32,6 @@ export function normalizeDownloadBaseUrl(value: string): string {
 
 const configuredDownloadBaseUrl =
   ((import.meta as ViteImportMeta).env?.VITE_STORYFLOW_DOWNLOAD_BASE_URL ?? "").trim();
-const configuredReleaseVersion =
-  ((import.meta as ViteImportMeta).env?.VITE_STORYFLOW_RELEASE_VERSION ?? "").trim();
 
 export const downloadBaseUrl = normalizeDownloadBaseUrl(
   configuredDownloadBaseUrl || defaultDownloadBaseUrl,
@@ -46,8 +40,6 @@ export const downloadBaseUrl = normalizeDownloadBaseUrl(
 function buildDownloadUrl(fileName: string): string {
   return `${downloadBaseUrl}/${fileName}`;
 }
-
-export const downloadReleaseVersion = configuredReleaseVersion || packageJson.version;
 
 const downloadLabels: Record<
   PublicInstallerAsset["id"],
@@ -67,18 +59,11 @@ const downloadLabels: Record<
   },
 };
 
-export const downloadOptions: DownloadOption[] = publicInstallerAssets.map((asset) => {
-  const downloadFileName = versionedInstallerFileName(
-    asset.fileName,
-    downloadReleaseVersion,
-  );
-  return {
-    ...asset,
-    ...downloadLabels[asset.id],
-    downloadFileName,
-    href: buildDownloadUrl(asset.fileName),
-  };
-});
+export const downloadOptions: DownloadOption[] = publicInstallerAssets.map((asset) => ({
+  ...asset,
+  ...downloadLabels[asset.id],
+  href: buildDownloadUrl(asset.fileName),
+}));
 
 export const updateManifestUrls = {
   macOS: buildDownloadUrl(updateManifestFiles.macOS),

@@ -17,7 +17,6 @@ const appleTouchIconPath = join(appDir, "apple-touch-icon.png");
 const redirectsPath = join(appDir, "_redirects");
 const referenceAssetsDir = join(appDir, "reference-assets");
 const downloadBaseUrl = process.env.VITE_STORYFLOW_DOWNLOAD_BASE_URL ?? "";
-const releaseVersion = process.env.VITE_STORYFLOW_RELEASE_VERSION ?? "";
 
 if (!existsSync(entrypoint)) {
   throw new Error(`Missing marketing entrypoint: ${relative(rootDir, entrypoint)}`);
@@ -34,7 +33,6 @@ const result = await Bun.build({
   define: {
     "import.meta.env": JSON.stringify({
       VITE_STORYFLOW_DOWNLOAD_BASE_URL: downloadBaseUrl,
-      VITE_STORYFLOW_RELEASE_VERSION: releaseVersion,
     }),
   },
   minify: true,

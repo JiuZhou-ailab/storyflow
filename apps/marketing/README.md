@@ -10,11 +10,9 @@ workflow.
 ## Downloads
 
 Download buttons point at `https://story-storage.zjding.com/latest` by default and use
-versioned installer aliases such as `Storyflow-<version>-arm64.dmg` so browser downloads
-are easy to identify. Override the base URL at build time with
-`VITE_STORYFLOW_DOWNLOAD_BASE_URL` when testing another R2 custom domain or prefix.
-Override the displayed release alias with `VITE_STORYFLOW_RELEASE_VERSION`; otherwise
-the marketing package version is used.
+stable installer names such as `Storyflow-arm64.dmg`. Override the base URL at build
+time with `VITE_STORYFLOW_DOWNLOAD_BASE_URL` when testing another R2 custom domain or
+prefix. The marketing page intentionally does not know the current release version.
 
 ## Files
 
