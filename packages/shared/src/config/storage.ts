@@ -267,7 +267,8 @@ export async function seedBuiltinLlmConnectionFromDefaults(): Promise<boolean> {
   let credentialChanged = false;
   try {
     const manager = getCredentialManager();
-    const envApiKey = process.env.CRAFT_BUILTIN_LLM_API_KEY?.trim();
+    const envApiKey = process.env.CRAFT_BUILTIN_LLM_API_KEY?.trim()
+      || process.env.CRAFT_CLIENT_GATEWAY_TOKEN?.trim();
     const credentialsToSeed = new Map(
       (result.credentialsToSeed ?? [])
         .map(credential => [credential.connectionSlug, credential] as const),

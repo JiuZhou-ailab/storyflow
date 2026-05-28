@@ -52,7 +52,7 @@ import { getCredentialManager } from '../credentials/manager.ts';
 // ChatGPT OAuth token refresh (shared with CodexAgent)
 import { refreshChatGptTokens } from '../auth/chatgpt-oauth.ts';
 
-const MANAGED_GATEWAY_CONNECTION_SLUGS = new Set(['wangsu-default', 'xiaomi-default']);
+const MANAGED_GATEWAY_CONNECTION_SLUGS = new Set(['wangsu-default']);
 
 // Session-scoped tool callbacks (for SubmitPlan, source auth, etc.)
 import {
@@ -2493,11 +2493,11 @@ export class PiAgent extends BaseAgent {
 
       if (MANAGED_GATEWAY_CONNECTION_SLUGS.has(this.config.connectionSlug ?? '')) {
         return {
-          code: 'expired_oauth_token',
-          title: 'AI Access Unavailable',
-          message: 'Your app session cannot access the default AI service. Sign in again or contact support if this keeps happening.',
+          code: 'invalid_api_key',
+          title: 'Default AI Access Unavailable',
+          message: 'The default AI service rejected its model gateway credential. Open model settings or contact support if this keeps happening.',
           actions: [
-            { key: 'r', label: 'Sign in again', action: 'reauth' },
+            { key: 's', label: 'Open model settings', command: '/settings', action: 'settings' },
           ],
           canRetry: false,
           originalError: error.message,

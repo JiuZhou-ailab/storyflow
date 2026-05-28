@@ -19,6 +19,7 @@ export function ClientAuthGate({ children }: ClientAuthGateProps) {
 
   useEffect(() => {
     let cancelled = false
+    let unsubscribe: (() => void) | undefined
 
     async function loadState() {
       try {
@@ -43,8 +44,16 @@ export function ClientAuthGate({ children }: ClientAuthGateProps) {
     }
 
     void loadState()
+    unsubscribe = window.electronAPI?.onClientAuthStateChanged?.((nextState) => {
+      if (!cancelled) {
+        setLoadError(null)
+        setState(nextState)
+      }
+    })
+
     return () => {
       cancelled = true
+      unsubscribe?.()
     }
   }, [])
 

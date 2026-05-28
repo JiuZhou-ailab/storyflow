@@ -28,10 +28,6 @@ import { generateCallbackPage } from '@craft-agent/shared/auth'
 import type { PlatformServices } from '../runtime/platform'
 import { FeishuLoginService, type FeishuAuthConfig } from './feishu-auth'
 import { NeonAuthService, type NeonAuthConfig, type NeonAuthIdentity } from './neon-auth'
-import {
-  createClientGatewayToken,
-  type ClientGatewayTokenConfig,
-} from './client-gateway-token'
 
 // ---------------------------------------------------------------------------
 // MIME types for static file serving
@@ -55,8 +51,6 @@ const MIME_TYPES: Record<string, string> = {
   '.webp': 'image/webp',
   '.map': 'application/json',
 }
-
-const DEFAULT_CLIENT_GATEWAY_CONNECTION_SLUGS = ['wangsu-default', 'xiaomi-default']
 
 function getMimeType(path: string): string {
   return MIME_TYPES[extname(path).toLowerCase()] ?? 'application/octet-stream'
@@ -164,17 +158,17 @@ export interface WebuiHandlerOptions {
   feishuAuth?: FeishuAuthConfig
   /** Neon Auth configuration for email sign-in/sign-up browser sessions. */
   neonAuth?: NeonAuthConfig
-  /** Server-side model gateway token returned to authenticated desktop clients. */
+  /** Deprecated. Model access is seeded locally through CRAFT_CLIENT_GATEWAY_TOKEN. */
   clientGatewayToken?: string
-  /** Server-side HMAC secret used to issue short-lived desktop model gateway JWTs. */
+  /** Deprecated. The desktop auth broker no longer issues model gateway JWTs. */
   clientGatewayJwtSecret?: string
-  /** Lifetime for broker-issued desktop model gateway JWTs. */
+  /** Deprecated. The desktop auth broker no longer issues model gateway JWTs. */
   clientGatewayTokenTtlSeconds?: number
-  /** Audience for broker-issued desktop model gateway JWTs. */
+  /** Deprecated. The desktop auth broker no longer issues model gateway JWTs. */
   clientGatewayTokenAudience?: string
-  /** Issuer for broker-issued desktop model gateway JWTs. */
+  /** Deprecated. The desktop auth broker no longer issues model gateway JWTs. */
   clientGatewayTokenIssuer?: string
-  /** Managed connection slugs authorized by broker-issued desktop model gateway JWTs. */
+  /** Deprecated. Model connection selection is local to the desktop app. */
   clientGatewayConnectionSlugs?: string[]
   /** Enables the legacy server-token login form and /api/auth endpoint. Defaults to true. */
   passwordAuthEnabled?: boolean
@@ -223,7 +217,6 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
   const cleanupTimer = setInterval(() => rateLimiter.cleanup(), 120_000)
   const feishuLogin = options.feishuAuth ? new FeishuLoginService(options.feishuAuth) : null
   const neonAuth = options.neonAuth ? new NeonAuthService(options.neonAuth) : null
-  const clientGatewayTokenConfig = resolveClientGatewayTokenConfig(options)
   const passwordAuthEnabled = options.passwordAuthEnabled ?? true
 
   const loginPassword = password || secret
@@ -420,21 +413,12 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
 
       const { identity } = exchange
       const appSessionToken = await createSessionToken(secret, identity.subject)
-      const gatewayToken = await createClientGatewayToken(clientGatewayTokenConfig, {
-        provider: 'neon',
-        subject: identity.subject,
-        userId: identity.userId,
-        ...(identity.email ? { email: identity.email } : {}),
-        ...(identity.emailVerified !== undefined ? { emailVerified: identity.emailVerified } : {}),
-        ...(identity.name ? { name: identity.name } : {}),
-      })
       logger.info(`[webui] Successful Neon client auth broker exchange for ${formatNeonIdentity(identity)}`)
 
       return Response.json({
         ok: true,
         user: toPublicNeonIdentity(identity),
         appSessionToken,
-        ...(gatewayToken ? { gatewayToken } : {}),
       })
     }
 
@@ -600,20 +584,11 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
         }
 
         const appSessionToken = await createSessionToken(secret, `feishu:${decision.user.openId}`)
-        const feishuEmail = (decision.user.enterpriseEmail ?? decision.user.email)?.toLowerCase()
-        const gatewayToken = await createClientGatewayToken(clientGatewayTokenConfig, {
-          provider: 'feishu',
-          subject: `feishu:${decision.user.openId}`,
-          userId: decision.user.openId,
-          ...(feishuEmail ? { email: feishuEmail } : {}),
-          ...(decision.user.name ? { name: decision.user.name } : {}),
-        })
         logger.info(`[webui] Successful Feishu client auth broker exchange (${decision.reason}) for ${formatFeishuIdentity(decision.user)}`)
         return Response.json({
           ok: true,
           user: toPublicFeishuIdentity(decision.user),
           appSessionToken,
-          ...(gatewayToken ? { gatewayToken } : {}),
         })
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Feishu client auth broker exchange failed'
@@ -724,57 +699,6 @@ function formatFeishuIdentity(user: { openId: string, email?: string, tenantKey?
   if (user.email) parts.push(`email=${user.email}`)
   if (user.tenantKey) parts.push(`tenant_key=${user.tenantKey}`)
   return parts.join(' ')
-}
-
-function readOptionalSecret(value: string | undefined): string | undefined {
-  const trimmed = value?.trim()
-  return trimmed || undefined
-}
-
-function resolveClientGatewayTokenConfig(options: WebuiHandlerOptions): ClientGatewayTokenConfig {
-  const configuredConnectionSlugs = options.clientGatewayConnectionSlugs
-    ?? readConnectionSlugList(process.env.CRAFT_CLIENT_GATEWAY_LLM_CONNECTION_SLUG)
-  const connectionSlugs = configuredConnectionSlugs.length > 0
-    ? configuredConnectionSlugs
-    : DEFAULT_CLIENT_GATEWAY_CONNECTION_SLUGS
-
-  return {
-    staticToken: readOptionalSecret(options.clientGatewayToken)
-      ?? readOptionalSecret(process.env.CRAFT_CLIENT_GATEWAY_TOKEN)
-      ?? readOptionalSecret(process.env.CRAFT_BUILTIN_LLM_API_KEY),
-    jwtSecret: readOptionalSecret(options.clientGatewayJwtSecret)
-      ?? readOptionalSecret(process.env.CRAFT_CLIENT_GATEWAY_JWT_SECRET),
-    ttlSeconds: options.clientGatewayTokenTtlSeconds
-      ?? readPositiveInteger(process.env.CRAFT_CLIENT_GATEWAY_TOKEN_TTL_SECONDS),
-    audience: readOptionalSecret(options.clientGatewayTokenAudience)
-      ?? readOptionalSecret(process.env.CRAFT_CLIENT_GATEWAY_TOKEN_AUDIENCE),
-    issuer: readOptionalSecret(options.clientGatewayTokenIssuer)
-      ?? readOptionalSecret(process.env.CRAFT_CLIENT_GATEWAY_TOKEN_ISSUER),
-    connectionSlugs,
-  }
-}
-
-function readPositiveInteger(value: string | undefined): number | undefined {
-  const trimmed = value?.trim()
-  if (!trimmed) return undefined
-
-  const parsed = Number(trimmed)
-  if (!Number.isFinite(parsed) || parsed <= 0) return undefined
-  return Math.floor(parsed)
-}
-
-function readConnectionSlugList(value: string | undefined): string[] {
-  const seen = new Set<string>()
-  const slugs: string[] = []
-
-  for (const raw of value?.split(',') ?? []) {
-    const slug = raw.trim()
-    if (!slug || seen.has(slug)) continue
-    seen.add(slug)
-    slugs.push(slug)
-  }
-
-  return slugs
 }
 
 async function readNeonExchangeToken(req: Request): Promise<string | null> {

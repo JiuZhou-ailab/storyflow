@@ -68,7 +68,7 @@ afterEach(async () => {
 })
 
 describe('auth-broker-dev', () => {
-  it('starts with Neon Auth and gateway token when Feishu is not configured', async () => {
+  it('starts with Neon Auth only when Feishu is not configured', async () => {
     const port = await getFreePort()
     const proc = Bun.spawn({
       cmd: [process.execPath, 'run', 'scripts/auth-broker-dev.ts'],
@@ -81,7 +81,6 @@ describe('auth-broker-dev', () => {
         CRAFT_CLIENT_AUTH_BROKER_URL: `http://127.0.0.1:${port}`,
         CRAFT_SERVER_TOKEN: 'test-server-token',
         CRAFT_WEBUI_NEON_AUTH_BASE_URL: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
-        CRAFT_CLIENT_GATEWAY_TOKEN: 'test-gateway-token',
         CRAFT_WEBUI_FEISHU_APP_ID: '',
         CRAFT_WEBUI_FEISHU_APP_SECRET: '',
         CRAFT_CLIENT_FEISHU_APP_ID: '',
@@ -99,5 +98,10 @@ describe('auth-broker-dev', () => {
     }
 
     expect(failure, failure ? await readProcessOutput(proc) : undefined).toBeNull()
+
+    proc.kill()
+    await proc.exited.catch(() => {})
+    const output = await readProcessOutput(proc)
+    expect(output).not.toContain('Gateway token mode')
   }, 15_000)
 })

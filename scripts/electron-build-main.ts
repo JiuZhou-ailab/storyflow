@@ -72,7 +72,8 @@ function getBuildDefines(): string[] {
     "MICROSOFT_OAUTH_CLIENT_SECRET",
     "SENTRY_ELECTRON_INGEST_URL",
     "CRAFT_DEV_RUNTIME",
-    // Public desktop auth bootstrap. Do not add Feishu app secrets or gateway keys here.
+    // Desktop auth bootstrap plus the direct Cloudflare gateway token used to
+    // seed the bundled managed model credential.
     "CRAFT_CLIENT_AUTH_REQUIRED",
     "CRAFT_CLIENT_AUTH_BROKER_URL",
     "CRAFT_CLIENT_FEISHU_APP_ID",
@@ -85,7 +86,7 @@ function getBuildDefines(): string[] {
     "CRAFT_CLIENT_NEON_AUTH_AUDIENCE",
     "CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN",
     "CRAFT_CLIENT_NEON_AUTH_ORIGIN",
-    "CRAFT_CLIENT_GATEWAY_LLM_CONNECTION_SLUG",
+    "CRAFT_CLIENT_GATEWAY_TOKEN",
   ];
 
   return definedVars.map((varName) => {

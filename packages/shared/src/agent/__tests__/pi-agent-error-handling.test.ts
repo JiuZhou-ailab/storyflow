@@ -43,7 +43,7 @@ describe('PiAgent subprocess error handling', () => {
     agent.destroy()
   })
 
-  it('maps managed default gateway auth failures to reauth instead of API key setup', () => {
+  it('maps managed default gateway auth failures to model settings instead of reauth', () => {
     const agent = new PiAgent(createConfig({
       connectionSlug: 'wangsu-default',
       authType: 'api_key',
@@ -61,8 +61,9 @@ describe('PiAgent subprocess error handling', () => {
 
     expect(enqueued).toHaveLength(1)
     expect(enqueued[0].type).toBe('typed_error')
-    expect(enqueued[0].error.code).toBe('expired_oauth_token')
-    expect(enqueued[0].error.actions.some((action: any) => action.action === 'settings')).toBe(false)
+    expect(enqueued[0].error.code).toBe('invalid_api_key')
+    expect(enqueued[0].error.actions.some((action: any) => action.action === 'reauth')).toBe(false)
+    expect(enqueued[0].error.actions.some((action: any) => action.action === 'settings')).toBe(true)
     expect(enqueued[0].error.message.toLowerCase()).not.toContain('api key')
 
     agent.destroy()

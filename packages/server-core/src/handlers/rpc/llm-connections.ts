@@ -104,7 +104,7 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
         updates.modelSelectionMode = setup.modelSelectionMode
       }
       if (setup.slug === 'wangsu-default') {
-        updates.name = 'JiuZhou-AI'
+        updates.name = 'JiuZhou-AI Wangsu'
         updates.hidden = true
         updates.managed = true
         updates.source = 'builtin'

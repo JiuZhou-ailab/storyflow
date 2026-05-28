@@ -300,6 +300,7 @@ export interface ElectronAPI {
   signInWithFeishuClient(): Promise<ClientAuthUser>
   cancelFeishuSignInClient(): Promise<void>
   signOutClient(): Promise<void>
+  onClientAuthStateChanged(callback: (state: ClientAuthState) => void): () => void
 
   // Remote session transfer (main-process orchestrated, supports chunked upload)
   transferSessionToWorkspace(sessionId: string, targetWorkspaceId: string, sessionIndex?: number, sessionCount?: number): Promise<{ sessionId: string }>

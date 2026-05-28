@@ -1,7 +1,7 @@
 // input: Desktop client-auth exchange requests and Feishu/Neon identity provider responses
-// output: Public auth config and broker-signed managed model gateway JWTs
+// output: Public auth config and verified desktop login identity
 // pos: HTTPS auth broker for packaged desktop login without shipping server secrets
-import { createRemoteJWKSet, customFetch, jwtVerify, SignJWT, type JWTPayload } from 'jose'
+import { createRemoteJWKSet, customFetch, jwtVerify, type JWTPayload } from 'jose'
 
 export interface Env {
   CRAFT_WEBUI_FEISHU_APP_ID?: string
@@ -16,9 +16,6 @@ export interface Env {
   CRAFT_WEBUI_NEON_AUTH_ISSUER?: string
   CRAFT_WEBUI_NEON_AUTH_AUDIENCE?: string
   CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN?: string
-  CLIENT_GATEWAY_JWT_SECRET?: string
-  CLIENT_GATEWAY_TOKEN_TTL_SECONDS?: string
-  CLIENT_GATEWAY_CONNECTION_SLUGS?: string
 }
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
@@ -31,7 +28,7 @@ interface FeishuUserInfo {
   name?: string
 }
 
-interface GatewayIdentity {
+interface NeonIdentity {
   provider: 'feishu' | 'neon'
   subject: string
   userId: string
@@ -42,10 +39,6 @@ interface GatewayIdentity {
 
 const DEFAULT_FEISHU_AUTH_BASE_URL = 'https://accounts.feishu.cn/open-apis/authen/v1/authorize'
 const DEFAULT_FEISHU_API_BASE_URL = 'https://open.feishu.cn'
-const DEFAULT_GATEWAY_TOKEN_AUDIENCE = 'storyflow-model-gateway'
-const DEFAULT_GATEWAY_TOKEN_ISSUER = 'storyflow-auth-broker'
-const DEFAULT_GATEWAY_TOKEN_TTL_SECONDS = 12 * 60 * 60
-const DEFAULT_CONNECTION_SLUGS = ['wangsu-default', 'xiaomi-default']
 
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
@@ -160,18 +153,10 @@ async function exchangeFeishuCode(
       ...(email ? { email } : {}),
       ...(user.name ? { name: user.name } : {}),
     }
-    const gatewayToken = await createGatewayToken(env, {
-      provider: 'feishu',
-      subject: `feishu:${user.openId}`,
-      userId: user.openId,
-      ...(email ? { email } : {}),
-      ...(user.name ? { name: user.name } : {}),
-    })
 
     return Response.json({
       ok: true,
       user: publicUser,
-      ...(gatewayToken ? { gatewayToken } : {}),
     })
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : 'Feishu exchange failed' }, { status: 401 })
@@ -202,7 +187,6 @@ async function exchangeNeonToken(
     const jwks = createRemoteJWKSet(new URL(jwksUrl), { [customFetch]: fetchImpl })
     const { payload } = await jwtVerify(token, jwks, { issuer, audience })
     const identity = normalizeNeonIdentity(payload)
-    const gatewayToken = await createGatewayToken(env, identity)
 
     return Response.json({
       ok: true,
@@ -213,36 +197,10 @@ async function exchangeNeonToken(
         ...(identity.emailVerified !== undefined ? { emailVerified: identity.emailVerified } : {}),
         ...(identity.name ? { name: identity.name } : {}),
       },
-      ...(gatewayToken ? { gatewayToken } : {}),
     })
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : 'Invalid Neon Auth token' }, { status: 401 })
   }
-}
-
-async function createGatewayToken(env: Env, identity: GatewayIdentity): Promise<string | undefined> {
-  const secret = readString(env.CLIENT_GATEWAY_JWT_SECRET)
-  if (!secret) return undefined
-
-  const now = Math.floor(Date.now() / 1000)
-  const payload: Record<string, unknown> = {
-    provider: identity.provider,
-    userId: identity.userId,
-    scopes: ['model:chat'],
-    connections: readCsv(env.CLIENT_GATEWAY_CONNECTION_SLUGS, DEFAULT_CONNECTION_SLUGS),
-  }
-  if (identity.email) payload.email = identity.email
-  if (identity.emailVerified !== undefined) payload.emailVerified = identity.emailVerified
-  if (identity.name) payload.name = identity.name
-
-  return new SignJWT(payload)
-    .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
-    .setIssuer(DEFAULT_GATEWAY_TOKEN_ISSUER)
-    .setAudience(DEFAULT_GATEWAY_TOKEN_AUDIENCE)
-    .setSubject(identity.subject)
-    .setIssuedAt(now)
-    .setExpirationTime(now + readPositiveInteger(env.CLIENT_GATEWAY_TOKEN_TTL_SECONDS, DEFAULT_GATEWAY_TOKEN_TTL_SECONDS))
-    .sign(new TextEncoder().encode(secret))
 }
 
 function normalizeFeishuUser(raw: Record<string, unknown>): FeishuUserInfo {
@@ -257,7 +215,7 @@ function normalizeFeishuUser(raw: Record<string, unknown>): FeishuUserInfo {
   }
 }
 
-function normalizeNeonIdentity(payload: JWTPayload): GatewayIdentity {
+function normalizeNeonIdentity(payload: JWTPayload): NeonIdentity {
   const subject = readString(payload.sub) ?? readString((payload as Record<string, unknown>).id)
   if (!subject) throw new Error('Neon Auth token did not include a subject')
 
@@ -326,11 +284,6 @@ function readBoolean(value: unknown): boolean | undefined {
 function readCsv(value: string | undefined, fallback: string[]): string[] {
   const result = value?.split(',').map(part => part.trim()).filter(Boolean) ?? []
   return result.length > 0 ? Array.from(new Set(result)) : fallback
-}
-
-function readPositiveInteger(value: string | undefined, fallback: number): number {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback
 }
 
 function readBearerToken(header: string | null): string | undefined {

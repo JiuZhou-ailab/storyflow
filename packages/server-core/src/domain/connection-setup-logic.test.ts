@@ -141,7 +141,7 @@ describe('createBuiltInConnection seeds midStreamBehavior', () => {
 
   it("JiuZhou-AI managed provider is hidden from normal connection selection", () => {
     const conn = createBuiltInConnection('wangsu-default')
-    expect(conn.name).toBe('JiuZhou-AI')
+    expect(conn.name).toBe('JiuZhou-AI Wangsu')
     expect(conn.providerType).toBe('pi_compat')
     expect(conn.authType).toBe('api_key_with_endpoint')
     expect(conn.piAuthProvider).toBe('cloudflare-ai-gateway')

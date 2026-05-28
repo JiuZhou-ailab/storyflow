@@ -448,6 +448,14 @@ client.onConnectionStateChanged((state) => {
   await ipcRenderer.invoke('client-auth:sign-out')
   await readClientAuthState()
 }
+;(api as ElectronAPI).onClientAuthStateChanged = (callback: (state: ClientAuthState) => void) => {
+  const handler = (_event: unknown, nextState: ClientAuthState) => {
+    cachedClientAuthState = nextState
+    callback(nextState)
+  }
+  ipcRenderer.on('client-auth:state-changed', handler)
+  return () => { ipcRenderer.removeListener('client-auth:state-changed', handler) }
+}
 ;(api as ElectronAPI).transferSessionToWorkspace = async (sessionId: string, targetWorkspaceId: string, sessionIndex?: number, sessionCount?: number) => {
   await ensureClientAuthAllowed()
   return ipcRenderer.invoke('session:transferToRemoteWorkspace', sessionId, targetWorkspaceId, sessionIndex, sessionCount)

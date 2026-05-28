@@ -28,10 +28,10 @@
       "enabled": true,
       "connection": {
         "slug": "wangsu-default",
-        "name": "JiuZhou-AI",
+        "name": "JiuZhou-AI Wangsu",
         "providerType": "pi_compat",
         "authType": "api_key_with_endpoint",
-        "baseUrl": "https://storyflow-model-gateway.d1095245867.workers.dev/wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4",
+        "baseUrl": "https://gateway.ai.cloudflare.com/v1/ec286cbbbae1647af670efd1b3289631/default/custom-wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4",
         "models": [
           "gemini-3.5-flash",
           "gpt-5.5",
@@ -52,41 +52,16 @@
       "revokedApiKeySha256": [
         "daf6bda28991cd19d5d62cc6bfe97583f0370d6c41385f510eb21f3f9700662b"
       ]
-    },
-    {
-      "enabled": true,
-      "connection": {
-        "slug": "xiaomi-default",
-        "name": "JiuZhou-AI Xiaomi",
-        "providerType": "pi_compat",
-        "authType": "api_key_with_endpoint",
-        "baseUrl": "https://storyflow-model-gateway.d1095245867.workers.dev/xiaomi/v1",
-        "models": [
-          "mimo-v2.5"
-        ],
-        "defaultModel": "mimo-v2.5",
-        "modelSelectionMode": "userDefined3Tier",
-        "piAuthProvider": "cloudflare-ai-gateway",
-        "customEndpoint": {
-          "api": "openai-completions"
-        },
-        "hidden": true,
-        "managed": true,
-        "source": "builtin",
-        "createdAt": 0
-      },
-      "apiKey": "",
-      "revokedApiKeySha256": []
     }
   ],
   "builtinLlmConnection": {
     "enabled": true,
     "connection": {
       "slug": "wangsu-default",
-      "name": "JiuZhou-AI",
+      "name": "JiuZhou-AI Wangsu",
       "providerType": "pi_compat",
       "authType": "api_key_with_endpoint",
-      "baseUrl": "https://storyflow-model-gateway.d1095245867.workers.dev/wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4",
+      "baseUrl": "https://gateway.ai.cloudflare.com/v1/ec286cbbbae1647af670efd1b3289631/default/custom-wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4",
       "models": [
         "gemini-3.5-flash",
         "gpt-5.5",

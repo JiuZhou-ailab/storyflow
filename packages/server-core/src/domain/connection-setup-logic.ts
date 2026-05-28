@@ -160,7 +160,7 @@ export const BUILT_IN_CONNECTION_TEMPLATES: Record<string, {
     piAuthProvider: 'github-copilot',
   },
   'wangsu-default': {
-    name: 'JiuZhou-AI',
+    name: 'JiuZhou-AI Wangsu',
     providerType: 'pi_compat',
     authType: 'api_key_with_endpoint',
     piAuthProvider: 'cloudflare-ai-gateway',
@@ -247,11 +247,15 @@ export function createBuiltInConnection(slug: string, baseUrl?: string | null): 
     modelSelectionMode: providerType === 'pi' ? 'automaticallySyncedFromProvider' : undefined,
     piAuthProvider: template.piAuthProvider,
     midStreamBehavior: defaultMidStreamBehavior(providerType),
-    hidden: slug === 'wangsu-default' ? true : undefined,
-    managed: slug === 'wangsu-default' ? true : undefined,
-    source: slug === 'wangsu-default' ? 'builtin' : undefined,
+    hidden: isManagedJiuZhouConnectionSlug(slug) ? true : undefined,
+    managed: isManagedJiuZhouConnectionSlug(slug) ? true : undefined,
+    source: isManagedJiuZhouConnectionSlug(slug) ? 'builtin' : undefined,
     createdAt: Date.now(),
   }
+}
+
+function isManagedJiuZhouConnectionSlug(slug: string): boolean {
+  return slug === 'wangsu-default'
 }
 
 // ============================================================

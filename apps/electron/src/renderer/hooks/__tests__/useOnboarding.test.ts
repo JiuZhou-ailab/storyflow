@@ -102,7 +102,7 @@ describe('apiSetupMethodToConnectionSetup', () => {
     expect(setup.modelSelectionMode).toBe('userDefined3Tier')
   })
 
-  it('jiuzhou_api_key reuses the managed default slug and includes endpoint config', () => {
+  it('jiuzhou_api_key reuses the direct managed default slug and includes endpoint config', () => {
     const setup = apiSetupMethodToConnectionSetup(
       'jiuzhou_api_key',
       {

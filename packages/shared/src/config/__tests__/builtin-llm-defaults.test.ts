@@ -86,14 +86,14 @@ function makePluralDefaults(): ConfigDefaults {
       },
       {
         enabled: true,
-        apiKey: 'xiaomi-secret',
+        apiKey: 'backup-secret',
         connection: {
           ...wangsu.connection!,
-          slug: 'xiaomi-default',
-          name: 'JiuZhou-AI Xiaomi',
-          baseUrl: 'https://storyflow-model-gateway.d1095245867.workers.dev/xiaomi/v1',
-          defaultModel: 'mimo-v2.5',
-          models: ['mimo-v2.5'],
+          slug: 'backup-default',
+          name: 'Backup Default',
+          baseUrl: 'https://example.internal/backup/v1',
+          defaultModel: 'backup-model',
+          models: ['backup-model'],
         },
       },
     ],
@@ -101,17 +101,18 @@ function makePluralDefaults(): ConfigDefaults {
 }
 
 describe('builtin LLM connection defaults', () => {
-  it('keeps the bundled managed gateway on the configured Wangsu custom provider', () => {
+  it('keeps the bundled managed gateway on the direct Wangsu custom provider', () => {
     const defaults = JSON.parse(readFileSync(BUNDLED_DEFAULTS_PATH, 'utf-8')) as ConfigDefaults
     const connections = defaults.builtinLlmConnections?.map(entry => entry.connection) ?? []
     const connection = connections.find(entry => entry?.slug === 'wangsu-default')
-    const xiaomi = connections.find(entry => entry?.slug === 'xiaomi-default')
     const legacyConnection = defaults.builtinLlmConnection?.connection
 
+    expect(connections.map(entry => entry?.slug)).toEqual(['wangsu-default'])
+    expect(JSON.stringify(defaults)).not.toContain('storyflow-model-gateway')
     expect(connection).toMatchObject({
       slug: 'wangsu-default',
       providerType: 'pi_compat',
-      baseUrl: 'https://storyflow-model-gateway.d1095245867.workers.dev/wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4',
+      baseUrl: 'https://gateway.ai.cloudflare.com/v1/ec286cbbbae1647af670efd1b3289631/default/custom-wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4',
       defaultModel: 'gpt-5.5',
       piAuthProvider: 'cloudflare-ai-gateway',
       customEndpoint: { api: 'openai-completions' },
@@ -123,17 +124,11 @@ describe('builtin LLM connection defaults', () => {
     ])
     expect(legacyConnection).toMatchObject({
       slug: 'wangsu-default',
+      baseUrl: 'https://gateway.ai.cloudflare.com/v1/ec286cbbbae1647af670efd1b3289631/default/custom-wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4',
       defaultModel: 'gpt-5.5',
-    })
-    expect(xiaomi).toMatchObject({
-      slug: 'xiaomi-default',
-      providerType: 'pi_compat',
-      baseUrl: 'https://storyflow-model-gateway.d1095245867.workers.dev/xiaomi/v1',
-      defaultModel: 'mimo-v2.5',
       piAuthProvider: 'cloudflare-ai-gateway',
       customEndpoint: { api: 'openai-completions' },
     })
-    expect(xiaomi?.models).toEqual(['mimo-v2.5'])
   })
 
   it('adds multiple bundled managed connections and keeps the first one as the default', () => {
@@ -143,22 +138,22 @@ describe('builtin LLM connection defaults', () => {
     expect(result.changed).toBe(true)
     expect(result.credentialsToSeed).toEqual([
       { connectionSlug: 'wangsu-default', apiKey: 'wangsu-secret' },
-      { connectionSlug: 'xiaomi-default', apiKey: 'xiaomi-secret' },
+      { connectionSlug: 'backup-default', apiKey: 'backup-secret' },
     ])
     expect(result.credentialToSeed).toEqual({
       connectionSlug: 'wangsu-default',
       apiKey: 'wangsu-secret',
     })
     expect(config.defaultLlmConnection).toBe('wangsu-default')
-    expect(config.llmConnections?.map(c => c.slug)).toEqual(['wangsu-default', 'xiaomi-default'])
+    expect(config.llmConnections?.map(c => c.slug)).toEqual(['wangsu-default', 'backup-default'])
     expect(config.llmConnections?.find(c => c.slug === 'wangsu-default')?.models).toEqual([
       'gemini-3.5-flash',
       'gpt-5.5',
       'deepseek-v4-pro',
     ])
-    expect(config.llmConnections?.find(c => c.slug === 'xiaomi-default')?.models).toEqual(['mimo-v2.5'])
+    expect(config.llmConnections?.find(c => c.slug === 'backup-default')?.models).toEqual(['backup-model'])
     expect(JSON.stringify(config)).not.toContain('wangsu-secret')
-    expect(JSON.stringify(config)).not.toContain('xiaomi-secret')
+    expect(JSON.stringify(config)).not.toContain('backup-secret')
   })
 
   it('adds the bundled managed connection and returns the credential without storing it in config', () => {
@@ -320,6 +315,60 @@ describe('builtin LLM connection defaults', () => {
     expect(readFileSync(join(configDir, 'config-defaults.json'), 'utf-8')).not.toContain('env-managed-secret')
   })
 
+  it('seeds the direct Cloudflare gateway credential from CRAFT_CLIENT_GATEWAY_TOKEN when the bundle omits a key', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'craft-agent-client-gateway-env-'))
+    const bundledRoot = join(configDir, 'bundle')
+    const bundledResources = join(bundledRoot, 'resources')
+    mkdirSync(bundledResources, { recursive: true })
+
+    writeFileSync(
+      join(configDir, 'config.json'),
+      JSON.stringify({
+        workspaces: [],
+        activeWorkspaceId: null,
+        activeSessionId: null,
+        llmConnections: [],
+      }, null, 2),
+      'utf-8',
+    )
+    writeFileSync(
+      join(bundledResources, 'config-defaults.json'),
+      JSON.stringify(makeDefaults({ apiKey: '' }), null, 2),
+      'utf-8',
+    )
+
+    const run = Bun.spawnSync([
+      process.execPath,
+      '--eval',
+      `
+        import { setBundledAssetsRoot } from '${UTILS_MODULE_PATH}';
+        import { seedBuiltinLlmConnectionFromDefaults } from '${STORAGE_MODULE_PATH}';
+        import { getCredentialManager } from '${CREDENTIALS_MODULE_PATH}';
+        setBundledAssetsRoot(${JSON.stringify(bundledRoot)});
+        await seedBuiltinLlmConnectionFromDefaults();
+        const key = await getCredentialManager().getLlmApiKey('wangsu-default');
+        console.log(key ?? '');
+      `,
+    ], {
+      env: {
+        ...process.env,
+        CRAFT_CONFIG_DIR: configDir,
+        CRAFT_BUILTIN_LLM_API_KEY: '',
+        CRAFT_CLIENT_GATEWAY_TOKEN: 'direct-cloudflare-token',
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+
+    if (run.exitCode !== 0) {
+      throw new Error(`client gateway seed subprocess failed:\n${run.stderr.toString()}`)
+    }
+
+    expect(run.stdout.toString().trim()).toBe('direct-cloudflare-token')
+    expect(readFileSync(join(configDir, 'config.json'), 'utf-8')).not.toContain('direct-cloudflare-token')
+    expect(readFileSync(join(configDir, 'config-defaults.json'), 'utf-8')).not.toContain('direct-cloudflare-token')
+  })
+
   it('seeds the credential from bundled defaults without copying the key to local config files', () => {
     const configDir = mkdtempSync(join(tmpdir(), 'craft-agent-builtin-'))
     const bundledRoot = join(configDir, 'bundle')
@@ -355,7 +404,12 @@ describe('builtin LLM connection defaults', () => {
         console.log(key ?? '');
       `,
     ], {
-      env: { ...process.env, CRAFT_CONFIG_DIR: configDir },
+      env: {
+        ...process.env,
+        CRAFT_CONFIG_DIR: configDir,
+        CRAFT_BUILTIN_LLM_API_KEY: '',
+        CRAFT_CLIENT_GATEWAY_TOKEN: '',
+      },
       stdout: 'pipe',
       stderr: 'pipe',
     })
@@ -416,7 +470,12 @@ describe('builtin LLM connection defaults', () => {
         console.log(JSON.stringify({ afterRevoked, afterUserKey }));
       `,
     ], {
-      env: { ...process.env, CRAFT_CONFIG_DIR: configDir },
+      env: {
+        ...process.env,
+        CRAFT_CONFIG_DIR: configDir,
+        CRAFT_BUILTIN_LLM_API_KEY: '',
+        CRAFT_CLIENT_GATEWAY_TOKEN: '',
+      },
       stdout: 'pipe',
       stderr: 'pipe',
     })

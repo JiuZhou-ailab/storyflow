@@ -61,5 +61,12 @@ export function validateDesktopAuthBuildEnv(env: Env): DesktopAuthBuildValidatio
     };
   }
 
+  if (!readEnv(env.CRAFT_CLIENT_GATEWAY_TOKEN) && !readEnv(env.CRAFT_BUILTIN_LLM_API_KEY)) {
+    return {
+      ok: false,
+      message: 'CRAFT_CLIENT_GATEWAY_TOKEN is required for the packaged direct Cloudflare model gateway.',
+    };
+  }
+
   return { ok: true };
 }

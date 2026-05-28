@@ -7,7 +7,6 @@ import type { TypedError } from '@craft-agent/core/types'
 export const MANAGED_DEFAULT_GATEWAY_CONNECTION_SLUG = 'wangsu-default'
 export const MANAGED_GATEWAY_CONNECTION_SLUGS = new Set([
   MANAGED_DEFAULT_GATEWAY_CONNECTION_SLUG,
-  'xiaomi-default',
 ])
 
 export function isManagedDefaultGatewayConnection(connectionSlug: string | null | undefined): boolean {
@@ -24,14 +23,15 @@ export function normalizeManagedDefaultGatewayAuthError(
 
   return {
     ...error,
-    code: 'expired_oauth_token',
-    title: 'AI Access Unavailable',
-    message: 'Your app session cannot access the default AI service. Sign in again or contact support if this keeps happening.',
+    code: 'invalid_api_key',
+    title: 'Default AI Access Unavailable',
+    message: 'The default AI service rejected its model gateway credential. Open model settings or contact support if this keeps happening.',
     actions: [
       {
-        key: 'r',
-        label: 'Sign in again',
-        action: 'reauth',
+        key: 's',
+        label: 'Open model settings',
+        command: '/settings',
+        action: 'settings',
       },
     ],
     canRetry: false,

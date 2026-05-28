@@ -17,7 +17,7 @@ import {
 import type { CustomEndpointApi } from '@config/llm-connections'
 
 const JIUZHOU_INITIAL_VALUES = {
-  baseUrl: 'https://storyflow-model-gateway.d1095245867.workers.dev/wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4',
+  baseUrl: 'https://gateway.ai.cloudflare.com/v1/ec286cbbbae1647af670efd1b3289631/default/custom-wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4',
   connectionDefaultModel: 'gpt-5.5',
   activePreset: 'custom',
   models: ['gemini-3.5-flash', 'gpt-5.5', 'deepseek-v4-pro'],

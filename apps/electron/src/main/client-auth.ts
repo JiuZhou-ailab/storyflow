@@ -18,8 +18,6 @@ export interface ClientAuthConfig {
   neonAuth?: NeonAuthConfig
   authBrokerUrl?: string
   feishuBrokerAuth?: ClientFeishuBrokerAuthConfig
-  gatewayConnectionSlug?: string
-  gatewayConnectionSlugs?: string[]
   feishuCallbackPort?: number
   feishuLoginTimeoutMs?: number
 }
@@ -66,25 +64,12 @@ export interface ClientAuthNeonBrokerExchangeInput {
 export interface ClientAuthBrokerExchangeResult {
   user: ClientAuthUser
   appSessionToken?: string
-  gatewayToken?: string
 }
 
 export interface ClientAuthBrokerClient {
   getFeishuAuthConfig?(input: { brokerUrl: string }): Promise<ClientFeishuBrokerPublicConfig | null>
   exchangeNeonToken(input: ClientAuthNeonBrokerExchangeInput): Promise<ClientAuthBrokerExchangeResult>
   exchangeFeishuCode(input: ClientAuthBrokerExchangeInput): Promise<ClientAuthBrokerExchangeResult>
-}
-
-export interface ClientAuthGatewayCredentialStore {
-  setGatewayToken(input: {
-    connectionSlug: string
-    token: string
-    user: ClientAuthUser
-  }): Promise<void>
-  clearGatewayToken(input: {
-    connectionSlug: string
-    token?: string
-  }): Promise<void>
 }
 
 export interface ClientAuthState {
@@ -105,7 +90,6 @@ export type ClientAuthNeonService = Pick<
 interface ClientAuthServiceDeps {
   createNeonAuthService?: (config: NeonAuthConfig) => ClientAuthNeonService
   createAuthBrokerClient?: () => ClientAuthBrokerClient
-  gatewayCredentialStore?: ClientAuthGatewayCredentialStore
   createCallbackServer?: (options: { port: number }) => Promise<CallbackServer>
   openExternal?: (url: string) => Promise<void>
 }
@@ -119,8 +103,6 @@ export interface ClientAuthService {
 }
 
 const DEFAULT_CLIENT_AUTH_ORIGIN = 'http://localhost:9100'
-const DEFAULT_GATEWAY_CONNECTION_SLUG = 'wangsu-default'
-const DEFAULT_GATEWAY_CONNECTION_SLUGS = ['wangsu-default', 'xiaomi-default']
 const DEFAULT_FEISHU_CALLBACK_PORT = 6477
 const DEFAULT_FEISHU_LOGIN_TIMEOUT_MS = 90_000
 const DEFAULT_NEON_BROKER_EXCHANGE_PATH = '/api/client-auth/neon/exchange'
@@ -151,13 +133,9 @@ export function createClientAuthConfigFromEnv(env: NodeJS.ProcessEnv): ClientAut
   const feishuLoginTimeoutMs = readPositiveIntegerEnv(env.CRAFT_CLIENT_FEISHU_LOGIN_TIMEOUT_MS)
     ?? readPositiveIntegerEnv(env.CRAFT_WEBUI_FEISHU_LOGIN_TIMEOUT_MS)
     ?? DEFAULT_FEISHU_LOGIN_TIMEOUT_MS
-  const gatewayConnectionSlugs = readConnectionSlugList(env.CRAFT_CLIENT_GATEWAY_LLM_CONNECTION_SLUG)
-    ?? DEFAULT_GATEWAY_CONNECTION_SLUGS
 
   return {
     required,
-    gatewayConnectionSlug: gatewayConnectionSlugs[0] ?? DEFAULT_GATEWAY_CONNECTION_SLUG,
-    gatewayConnectionSlugs,
     ...(authBrokerUrl ? { authBrokerUrl } : {}),
     ...(neonAuthOrigin ? { neonAuthOrigin } : {}),
     ...(baseUrl
@@ -201,46 +179,10 @@ export function createClientAuthService(
   const feishuLoginEnabled = config.feishuBrokerAuth !== undefined && authBrokerClient !== null
   const configured = emailPasswordEnabled || feishuLoginEnabled
   let currentUser: ClientAuthUser | null = null
-  let currentGatewayCredentials: Array<{
-    connectionSlug: string
-    token: string
-  }> = []
   let activeFeishuLogin: {
     close: () => void | Promise<void>
     reject: (error: Error) => void
   } | null = null
-
-  async function storeGatewayCredential(token: string | undefined, user: ClientAuthUser): Promise<void> {
-    const connectionSlugs = getGatewayConnectionSlugs(config)
-    const gatewayToken = readEnv(token)
-    if (connectionSlugs.length === 0 || !gatewayToken || !deps.gatewayCredentialStore) return
-
-    const storedCredentials: Array<{ connectionSlug: string, token: string }> = []
-    for (const connectionSlug of connectionSlugs) {
-      await deps.gatewayCredentialStore.setGatewayToken({
-        connectionSlug,
-        token: gatewayToken,
-        user,
-      })
-      storedCredentials.push({
-        connectionSlug,
-        token: gatewayToken,
-      })
-    }
-    currentGatewayCredentials = storedCredentials
-  }
-
-  async function clearGatewayCredential(): Promise<void> {
-    if (currentGatewayCredentials.length === 0 || !deps.gatewayCredentialStore) {
-      currentGatewayCredentials = []
-      return
-    }
-
-    for (const credential of currentGatewayCredentials) {
-      await deps.gatewayCredentialStore.clearGatewayToken(credential)
-    }
-    currentGatewayCredentials = []
-  }
 
   return {
     getState(): ClientAuthState {
@@ -281,13 +223,6 @@ export function createClientAuthService(
       }
 
       const user = toClientAuthUser(await neonAuth.verifyToken(authResult.token))
-      const brokerResult = config.authBrokerUrl && authBrokerClient
-        ? await authBrokerClient.exchangeNeonToken({
-            brokerUrl: config.authBrokerUrl,
-            token: authResult.token,
-          })
-        : null
-      await storeGatewayCredential(brokerResult?.gatewayToken, user)
       currentUser = user
       return user
     },
@@ -367,7 +302,6 @@ export function createClientAuthService(
           codeVerifier: consumedState.codeVerifier,
         })
         const user = normalizeBrokerClientAuthUser(brokerResult.user)
-        await storeGatewayCredential(brokerResult.gatewayToken, user)
         currentUser = user
         return user
       } finally {
@@ -390,7 +324,6 @@ export function createClientAuthService(
         await activeFeishuLogin.close()
         activeFeishuLogin = null
       }
-      await clearGatewayCredential()
       currentUser = null
     },
   }
@@ -517,12 +450,10 @@ function normalizeFeishuBrokerPublicConfig(body: Record<string, unknown>): Clien
 function normalizeBrokerExchangeResult(body: Record<string, unknown>, defaultProvider: ClientAuthUser['provider']): ClientAuthBrokerExchangeResult {
   const user = normalizeBrokerClientAuthUser(readObjectValue(body.user), defaultProvider)
   const appSessionToken = readStringValue(body.appSessionToken) ?? readStringValue(body.sessionToken)
-  const gatewayToken = readStringValue(body.gatewayToken)
 
   return {
     user,
     ...(appSessionToken ? { appSessionToken } : {}),
-    ...(gatewayToken ? { gatewayToken } : {}),
   }
 }
 
@@ -559,35 +490,9 @@ function clientConfigRequiresUsername(config: NeonAuthClientConfig): boolean {
   return config.usernameLoginEnabled === true
 }
 
-function getGatewayConnectionSlugs(config: ClientAuthConfig): string[] {
-  const plural = normalizeConnectionSlugs(config.gatewayConnectionSlugs ?? [])
-  if (plural.length > 0) {
-    return plural
-  }
-
-  const singular = readEnv(config.gatewayConnectionSlug)
-  return singular ? [singular] : []
-}
-
 function readEnv(value: string | undefined): string | undefined {
   const trimmed = value?.trim()
   return trimmed || undefined
-}
-
-function readConnectionSlugList(value: string | undefined): string[] | undefined {
-  const slugs = normalizeConnectionSlugs(value?.split(',') ?? [])
-  return slugs.length > 0 ? slugs : undefined
-}
-
-function normalizeConnectionSlugs(values: string[]): string[] {
-  const slugs: string[] = []
-  for (const value of values) {
-    const slug = readEnv(value)
-    if (slug && !slugs.includes(slug)) {
-      slugs.push(slug)
-    }
-  }
-  return slugs
 }
 
 function readBooleanEnv(value: string | undefined): boolean | undefined {

@@ -1,5 +1,5 @@
 // input: Desktop client auth env vars and local auth broker port settings
-// output: Development auth broker for Electron email/Feishu login and gateway token exchange
+// output: Development auth broker for Electron email/Feishu login
 // pos: Local-only bootstrap script used by electron-dev when desktop auth needs a broker
 
 import { randomBytes } from 'node:crypto'
@@ -40,15 +40,6 @@ function parseCsv(value: string | undefined): string[] {
   return value?.split(',')
     .map((part) => part.trim())
     .filter(Boolean) ?? []
-}
-
-function parsePositiveInteger(value: string | undefined): number | undefined {
-  const trimmed = value?.trim()
-  if (!trimmed) return undefined
-
-  const parsed = Number(trimmed)
-  if (!Number.isFinite(parsed) || parsed <= 0) return undefined
-  return Math.floor(parsed)
 }
 
 function resolvePort(): number {
@@ -110,10 +101,6 @@ function createNeonAuthConfig(): NeonAuthConfig | undefined {
 const appId = readFirstEnv('CRAFT_WEBUI_FEISHU_APP_ID', 'CRAFT_CLIENT_FEISHU_APP_ID')
 const appSecret = readEnv('CRAFT_WEBUI_FEISHU_APP_SECRET')
 const neonAuth = createNeonAuthConfig()
-const clientGatewayToken = readFirstEnv('CRAFT_CLIENT_GATEWAY_TOKEN', 'CRAFT_BUILTIN_LLM_API_KEY')
-const clientGatewayJwtSecret = readEnv('CRAFT_CLIENT_GATEWAY_JWT_SECRET')
-const clientGatewayTokenTtlSeconds = parsePositiveInteger(readEnv('CRAFT_CLIENT_GATEWAY_TOKEN_TTL_SECONDS'))
-const clientGatewayConnectionSlugs = parseCsv(readEnv('CRAFT_CLIENT_GATEWAY_LLM_CONNECTION_SLUG'))
 const feishuAuth: FeishuAuthConfig | undefined = appId && appSecret
   ? {
       appId,
@@ -156,15 +143,10 @@ const server = await startWebuiHttpServer({
   getHealthCheck: () => ({ status: 'ok' }),
   feishuAuth,
   neonAuth,
-  clientGatewayToken,
-  clientGatewayJwtSecret,
-  clientGatewayTokenTtlSeconds,
-  clientGatewayConnectionSlugs,
   logger: console as any,
 })
 
 console.log(`[auth-broker-dev] Listening on http://127.0.0.1:${server.port}`)
-console.log(`[auth-broker-dev] Gateway token mode: ${clientGatewayJwtSecret ? 'signed-jwt' : clientGatewayToken ? 'static-token' : 'missing'}`)
 if (neonAuth) {
   console.log('[auth-broker-dev] Neon exchange endpoint: /api/client-auth/neon/exchange')
 }

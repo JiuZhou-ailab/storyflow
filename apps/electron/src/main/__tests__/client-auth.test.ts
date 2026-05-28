@@ -37,7 +37,6 @@ describe('client auth', () => {
 
   it('stores the verified Neon Auth identity after password sign-in', async () => {
     const calls: Array<{ email: string, password: string, origin?: string }> = []
-    const gatewayTokens: Array<{ connectionSlug: string, token: string }> = []
     const fakeNeonAuth: ClientAuthNeonService = {
       isConfigured: () => true,
       getClientConfig: () => ({
@@ -73,15 +72,8 @@ describe('client auth', () => {
         baseUrl: 'https://auth.example.com',
         usernameEmailDomain: 'users.craft.invalid',
       },
-      gatewayConnectionSlug: 'wangsu-default',
     }, {
       createNeonAuthService: () => fakeNeonAuth,
-      gatewayCredentialStore: {
-        setGatewayToken: async (input) => {
-          gatewayTokens.push({ connectionSlug: input.connectionSlug, token: input.token })
-        },
-        clearGatewayToken: async () => {},
-      },
     })
 
     const signedIn = await service.signIn({ identifier: 'zjding', password: 'secret' })
@@ -105,11 +97,9 @@ describe('client auth', () => {
       usernameLoginEnabled: true,
       user: signedIn,
     })
-    expect(gatewayTokens).toEqual([])
   })
 
-  it('exchanges Neon Auth tokens through the auth broker before storing a gateway credential', async () => {
-    const gatewayTokens: Array<{ connectionSlug: string, token: string }> = []
+  it('keeps Neon login separate from auth broker model credential exchange', async () => {
     const exchangedTokens: string[] = []
     const fakeNeonAuth: ClientAuthNeonService = {
       isConfigured: () => true,
@@ -133,7 +123,6 @@ describe('client auth', () => {
             email: 'user@example.com',
           },
           appSessionToken: 'app-session-token',
-          gatewayToken: 'gateway-token',
         }
       },
       exchangeFeishuCode: async () => {
@@ -145,25 +134,14 @@ describe('client auth', () => {
       required: true,
       neonAuth: { baseUrl: 'https://auth.example.com' },
       authBrokerUrl: 'https://auth.storyflow.example.com',
-      gatewayConnectionSlugs: ['wangsu-default', 'xiaomi-default'],
     }, {
       createNeonAuthService: () => fakeNeonAuth,
       createAuthBrokerClient: () => broker,
-      gatewayCredentialStore: {
-        setGatewayToken: async (input) => {
-          gatewayTokens.push({ connectionSlug: input.connectionSlug, token: input.token })
-        },
-        clearGatewayToken: async () => {},
-      },
     })
 
     await service.signIn({ identifier: 'user@example.com', password: 'secret' })
 
-    expect(exchangedTokens).toEqual(['neon-jwt-token'])
-    expect(gatewayTokens).toEqual([
-      { connectionSlug: 'wangsu-default', token: 'gateway-token' },
-      { connectionSlug: 'xiaomi-default', token: 'gateway-token' },
-    ])
+    expect(exchangedTokens).toEqual([])
   })
 
   it('clears the process-local identity on sign-out', async () => {
@@ -203,8 +181,6 @@ describe('client auth', () => {
 
     expect(config).toEqual({
       required: true,
-      gatewayConnectionSlug: 'wangsu-default',
-      gatewayConnectionSlugs: ['wangsu-default', 'xiaomi-default'],
       neonAuthOrigin: 'http://localhost:9100',
       neonAuth: {
         baseUrl: 'https://auth.example.com',
@@ -221,16 +197,6 @@ describe('client auth', () => {
     })
 
     expect(config.neonAuthOrigin).toBe('http://127.0.0.1:3100')
-  })
-
-  it('allows overriding managed gateway connection slugs from client env', () => {
-    const config = createClientAuthConfigFromEnv({
-      CRAFT_CLIENT_AUTH_REQUIRED: 'true',
-      CRAFT_CLIENT_GATEWAY_LLM_CONNECTION_SLUG: 'custom-a, custom-b, custom-a',
-    })
-
-    expect(config.gatewayConnectionSlug).toBe('custom-a')
-    expect(config.gatewayConnectionSlugs).toEqual(['custom-a', 'custom-b'])
   })
 
   it('does not configure distributed Feishu client auth from app secrets', () => {
@@ -314,7 +280,6 @@ describe('client auth', () => {
       redirectUri: string
       codeVerifier: string
     }> = []
-    const gatewayTokens: Array<{ connectionSlug: string, token: string }> = []
     let callbackState = ''
     let resolveCallback: ((value: { query: Record<string, string> }) => void) | null = null
     const broker: ClientAuthBrokerClient = {
@@ -336,7 +301,6 @@ describe('client auth', () => {
             name: 'Broker User',
           },
           appSessionToken: 'app-session-token',
-          gatewayToken: 'gateway-token',
         }
       },
     }
@@ -347,15 +311,8 @@ describe('client auth', () => {
         appId: 'cli_test',
         brokerUrl: 'https://auth.storyflow.example.com',
       },
-      gatewayConnectionSlugs: ['wangsu-default', 'xiaomi-default'],
     }, {
       createAuthBrokerClient: () => broker,
-      gatewayCredentialStore: {
-        setGatewayToken: async (input) => {
-          gatewayTokens.push({ connectionSlug: input.connectionSlug, token: input.token })
-        },
-        clearGatewayToken: async () => {},
-      },
       createCallbackServer: async () => ({
         url: 'http://localhost:6477',
         promise: new Promise((resolve) => {
@@ -400,10 +357,6 @@ describe('client auth', () => {
       feishuLoginEnabled: true,
       user: signedIn,
     })
-    expect(gatewayTokens).toEqual([
-      { connectionSlug: 'wangsu-default', token: 'gateway-token' },
-      { connectionSlug: 'xiaomi-default', token: 'gateway-token' },
-    ])
   })
 
   it('uses the broker Feishu app id instead of the packaged fallback app id', async () => {
@@ -460,8 +413,7 @@ describe('client auth', () => {
     expect(openedUrl.searchParams.get('client_id')).toBe('cli_user_deployment')
   })
 
-  it('clears the managed gateway credential on sign-out when auth stored one', async () => {
-    const clearedTokens: Array<{ connectionSlug: string, token?: string }> = []
+  it('keeps sign-out separate from managed model credentials', async () => {
     const fakeNeonAuth: ClientAuthNeonService = {
       isConfigured: () => true,
       getClientConfig: () => ({ enabled: true }),
@@ -472,41 +424,17 @@ describe('client auth', () => {
         subject: 'neon:user-1',
       }),
     }
-    const broker: ClientAuthBrokerClient = {
-      exchangeNeonToken: async () => ({
-        user: {
-          provider: 'neon',
-          userId: 'user-1',
-        },
-        gatewayToken: 'gateway-token',
-      }),
-      exchangeFeishuCode: async () => {
-        throw new Error('not used')
-      },
-    }
     const service = createClientAuthService({
       required: true,
       neonAuth: { baseUrl: 'https://auth.example.com' },
-      authBrokerUrl: 'https://auth.storyflow.example.com',
-      gatewayConnectionSlugs: ['wangsu-default', 'xiaomi-default'],
     }, {
       createNeonAuthService: () => fakeNeonAuth,
-      createAuthBrokerClient: () => broker,
-      gatewayCredentialStore: {
-        setGatewayToken: async () => {},
-        clearGatewayToken: async (input) => {
-          clearedTokens.push({ connectionSlug: input.connectionSlug, token: input.token })
-        },
-      },
     })
 
     await service.signIn({ identifier: 'user@example.com', password: 'secret' })
     await service.signOut()
 
-    expect(clearedTokens).toEqual([
-      { connectionSlug: 'wangsu-default', token: 'gateway-token' },
-      { connectionSlug: 'xiaomi-default', token: 'gateway-token' },
-    ])
+    expect(service.getState().authenticated).toBe(false)
   })
 
   it('rejects Feishu sign-in when the Feishu account requires registration', async () => {

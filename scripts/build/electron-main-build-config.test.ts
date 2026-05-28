@@ -86,6 +86,17 @@ describe('desktop auth build config', () => {
     expect(validateDesktopAuthBuildEnv({
       CRAFT_CLIENT_AUTH_REQUIRED: 'true',
       CRAFT_CLIENT_AUTH_BROKER_URL: ' https://auth.storyflow.example.com/ ',
+      CRAFT_CLIENT_GATEWAY_TOKEN: 'cfut-test',
     })).toEqual({ ok: true });
+  });
+
+  test('requires a direct model gateway token for packaged desktop client auth', () => {
+    expect(validateDesktopAuthBuildEnv({
+      CRAFT_CLIENT_AUTH_REQUIRED: 'true',
+      CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
+    })).toEqual({
+      ok: false,
+      message: 'CRAFT_CLIENT_GATEWAY_TOKEN is required for the packaged direct Cloudflare model gateway.',
+    });
   });
 });

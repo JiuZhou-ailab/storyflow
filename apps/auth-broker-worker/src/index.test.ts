@@ -1,8 +1,8 @@
 // input: Desktop auth broker HTTP requests and mocked Feishu/Neon identity providers
-// output: Regression coverage for broker-issued managed model gateway JWTs
+// output: Regression coverage for login-only auth broker exchanges
 // pos: Tests the deployed HTTPS auth broker used by packaged desktop client auth
 import { describe, expect, it } from 'bun:test'
-import { exportJWK, generateKeyPair, jwtVerify, SignJWT } from 'jose'
+import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { handleRequest } from './index'
 
 function makeEnv(overrides: Record<string, string | undefined> = {}) {
@@ -12,8 +12,6 @@ function makeEnv(overrides: Record<string, string | undefined> = {}) {
     CRAFT_WEBUI_FEISHU_ALLOW_ALL_USERS: 'true',
     CRAFT_WEBUI_NEON_AUTH_BASE_URL: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
     CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN: 'users.craft.invalid',
-    CLIENT_GATEWAY_JWT_SECRET: 'broker-signing-secret',
-    CLIENT_GATEWAY_CONNECTION_SLUGS: 'wangsu-default,xiaomi-default',
     ...overrides,
   }
 }
@@ -32,7 +30,7 @@ describe('auth broker worker', () => {
     })
   })
 
-  it('exchanges Feishu OAuth codes and returns a scoped gateway JWT', async () => {
+  it('exchanges Feishu OAuth codes without returning a model gateway token', async () => {
     const fetchCalls: Array<{ url: string, init?: RequestInit }> = []
     const res = await handleRequest(
       new Request('https://auth.example.com/api/client-auth/feishu/exchange', {
@@ -73,18 +71,7 @@ describe('auth broker worker', () => {
       email: 'desktop.user@example.com',
       name: 'Desktop User',
     })
-
-    const { payload } = await jwtVerify(
-      body.gatewayToken,
-      new TextEncoder().encode('broker-signing-secret'),
-      {
-        audience: 'storyflow-model-gateway',
-        issuer: 'storyflow-auth-broker',
-      },
-    )
-    expect(payload.sub).toBe('feishu:ou_desktop')
-    expect(payload.scopes).toEqual(['model:chat'])
-    expect(payload.connections).toEqual(['wangsu-default', 'xiaomi-default'])
+    expect(body.gatewayToken).toBeUndefined()
 
     const tokenCall = fetchCalls[0]
     expect(tokenCall?.init?.method).toBe('POST')
@@ -97,7 +84,7 @@ describe('auth broker worker', () => {
     })
   })
 
-  it('exchanges verified Neon Auth JWTs for a managed gateway JWT', async () => {
+  it('exchanges verified Neon Auth JWTs without returning a model gateway token', async () => {
     const { publicKey, privateKey } = await generateKeyPair('RS256')
     const publicJwk = await exportJWK(publicKey)
     publicJwk.kid = 'test-key'
@@ -134,16 +121,6 @@ describe('auth broker worker', () => {
       email: 'neon.user@example.com',
       emailVerified: true,
     })
-
-    const { payload } = await jwtVerify(
-      body.gatewayToken,
-      new TextEncoder().encode('broker-signing-secret'),
-      {
-        audience: 'storyflow-model-gateway',
-        issuer: 'storyflow-auth-broker',
-      },
-    )
-    expect(payload.sub).toBe('neon:neon_user_123')
-    expect(payload.provider).toBe('neon')
+    expect(body.gatewayToken).toBeUndefined()
   })
 })
