@@ -49,6 +49,17 @@ function collectExtraResourceTargets(value: unknown): string[] {
 }
 
 describe('Electron package size configuration', () => {
+  test('electron build has a single resource staging step', () => {
+    const rootPackage = JSON.parse(readRepoFile('package.json')) as {
+      scripts: Record<string, string>;
+    };
+
+    expect(rootPackage.scripts['electron:build']).not.toContain(
+      'electron:build:resources && bun run electron:build:assets',
+    );
+    expect(rootPackage.scripts['electron:build']).toContain('electron:build:assets');
+  });
+
   test('uses explicit platform allowlists instead of negative-only platform file rules', () => {
     expectExplicitPackagedAppAllowlist('mac');
     expectExplicitPackagedAppAllowlist('win');

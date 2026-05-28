@@ -95,6 +95,15 @@ describe('macOS release configuration', () => {
     expect(workflow).not.toContain('run: bun run electron:dist:dev:win');
   });
 
+  test('macOS release build can skip duplicate dependency install after CI install', () => {
+    const buildScript = readRepoFile('apps/electron/scripts/build-dmg.sh');
+    const workflow = readRepoFile('.github/workflows/release.yml');
+
+    expect(buildScript).toContain('CRAFT_SKIP_INSTALL');
+    expect(buildScript).toContain('bun install --frozen-lockfile');
+    expect(workflow).toContain('CRAFT_SKIP_INSTALL: "1"');
+  });
+
   test('publishes updater manifests from the public R2 endpoint', () => {
     const builderConfig = readRepoFile('apps/electron/electron-builder.yml');
     const autoUpdate = readRepoFile('apps/electron/src/main/auto-update.ts');

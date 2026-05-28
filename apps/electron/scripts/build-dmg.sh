@@ -113,6 +113,7 @@ Arguments:
 
 Environment variables (from .env or environment):
   CRAFT_REQUIRE_MAC_SIGNING - Set to 1 for official releases; fails fast if signing/notarization credentials are missing
+  CRAFT_SKIP_INSTALL        - Set to 1 to skip dependency install after a prior bun install --frozen-lockfile
   CSC_LINK                  - Developer ID Application certificate, base64 or file path, for electron-builder signing
   CSC_KEY_PASSWORD          - Password for CSC_LINK, if the certificate is password-protected
   APPLE_API_KEY_BASE64      - Optional App Store Connect API private key as base64 text
@@ -393,9 +394,13 @@ rm -rf "$ELECTRON_DIR/packages"
 rm -rf "$ELECTRON_DIR/release"
 
 # 2. Install dependencies
-echo "Installing dependencies..."
 cd "$ROOT_DIR"
-bun install
+if [ "${CRAFT_SKIP_INSTALL:-}" = "1" ]; then
+    echo "Skipping dependency install because CRAFT_SKIP_INSTALL=1"
+else
+    echo "Installing dependencies..."
+    bun install --frozen-lockfile
+fi
 
 # 3. Download Bun binary with checksum verification
 echo "Downloading Bun ${BUN_VERSION} for darwin-${ARCH}..."
