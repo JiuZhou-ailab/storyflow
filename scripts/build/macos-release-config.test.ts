@@ -190,6 +190,9 @@ describe('macOS release configuration', () => {
   test('macOS build keeps explicit environment values ahead of local dotenv values', () => {
     const buildScript = readRepoFile('apps/electron/scripts/build-dmg.sh');
 
+    expect(buildScript).toContain('load_dotenv_file "$ROOT_DIR/.env.local"');
+    expect(buildScript).toContain('load_dotenv_file "$ROOT_DIR/.env"');
+    expect(buildScript).not.toContain('load_dotenv_file "$ROOT_DIR/.env.dev"');
     expect(buildScript).toContain('[ -z "${!key+x}" ]');
     expect(buildScript).toContain('current_value="${!key}"');
     expect(buildScript).toContain('resolve_dotenv_value "$value"');

@@ -59,8 +59,12 @@ if command -v op &> /dev/null; then
     fi
 fi
 
-# Load environment variables from .env without overriding explicit env values
-if [ -f "$ROOT_DIR/.env" ]; then
+load_dotenv_file() {
+    local env_file="$1"
+    if [ ! -f "$env_file" ]; then
+        return
+    fi
+
     while IFS= read -r line || [ -n "$line" ]; do
         trimmed="${line#"${line%%[![:space:]]*}"}"
         trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
@@ -92,8 +96,13 @@ if [ -f "$ROOT_DIR/.env" ]; then
                 fi
             fi
         fi
-    done < "$ROOT_DIR/.env"
-fi
+    done < "$env_file"
+}
+
+# Load local environment files without overriding explicit env values.
+# Build/release mode intentionally ignores .env.dev.
+load_dotenv_file "$ROOT_DIR/.env.local"
+load_dotenv_file "$ROOT_DIR/.env"
 
 # Parse arguments
 ARCH="arm64"
@@ -533,7 +542,7 @@ BUILDER_ARGS="--mac --${ARCH}"
 if should_enable_macos_release_signing; then
     BUILDER_ARGS="$BUILDER_ARGS -c.mac.forceCodeSigning=true -c.mac.notarize=true"
 else
-    BUILDER_ARGS="$BUILDER_ARGS -c.mac.forceCodeSigning=false -c.mac.notarize=false"
+    BUILDER_ARGS="$BUILDER_ARGS -c.mac.forceCodeSigning=false -c.mac.notarize=false -c.mac.identity=null -c.dmg.sign=false"
 fi
 
 # Add code signing if identity is available

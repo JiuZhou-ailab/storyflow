@@ -4,13 +4,14 @@
 
 /**
  * Cross-platform main process build script
- * Loads .env and passes OAuth defines to esbuild
+ * Loads layered local env files and passes OAuth defines to esbuild
  */
 
 import { spawn } from "bun";
-import { existsSync, readFileSync, statSync, mkdirSync } from "fs";
+import { existsSync, statSync, mkdirSync } from "fs";
 import { join } from "path";
 import { validateDesktopAuthBuildEnv } from "./build/desktop-auth-build-config";
+import { loadEnvFiles } from "./env-loader";
 
 const ROOT_DIR = join(import.meta.dir, "..");
 const DIST_DIR = join(ROOT_DIR, "apps/electron/dist");
@@ -25,31 +26,6 @@ const PI_AGENT_SERVER_OUTPUT = join(PI_AGENT_SERVER_DIR, "dist/index.js");
 const WA_WORKER_DIR = join(ROOT_DIR, "packages/messaging-whatsapp-worker");
 const WA_WORKER_SOURCE = join(WA_WORKER_DIR, "src/worker.ts");
 const WA_WORKER_OUTPUT = join(WA_WORKER_DIR, "dist/worker.cjs");
-
-// Load .env file if it exists
-function loadEnvFile(): void {
-  const envPath = join(ROOT_DIR, ".env");
-  if (existsSync(envPath)) {
-    const content = readFileSync(envPath, "utf-8");
-    for (const line of content.split("\n")) {
-      const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith("#")) {
-        const eqIndex = trimmed.indexOf("=");
-        if (eqIndex > 0) {
-          const key = trimmed.slice(0, eqIndex).trim();
-          let value = trimmed.slice(eqIndex + 1).trim();
-          if ((value.startsWith('"') && value.endsWith('"')) ||
-              (value.startsWith("'") && value.endsWith("'"))) {
-            value = value.slice(1, -1);
-          }
-          if (process.env[key] === undefined) {
-            process.env[key] = value;
-          }
-        }
-      }
-    }
-  }
-}
 
 function validateDesktopAuthBuildConfig(): void {
   const validation = validateDesktopAuthBuildEnv(process.env);
@@ -343,7 +319,7 @@ async function buildWhatsAppWorker(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  loadEnvFile();
+  loadEnvFiles({ rootDir: ROOT_DIR, mode: "build" });
   validateDesktopAuthBuildConfig();
 
   // Ensure dist directory exists

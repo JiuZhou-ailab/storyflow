@@ -18,12 +18,41 @@ require_path() {
     fi
 }
 
-# Load environment variables from .env
-if [ -f "$ROOT_DIR/.env" ]; then
-    set -a
-    source "$ROOT_DIR/.env"
-    set +a
-fi
+load_dotenv_file() {
+    local env_file="$1"
+    if [ ! -f "$env_file" ]; then
+        return
+    fi
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        trimmed="${line#"${line%%[![:space:]]*}"}"
+        trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+        if [ -z "$trimmed" ] || [[ "$trimmed" == \#* ]]; then
+            continue
+        fi
+        if [[ "$trimmed" != *=* ]]; then
+            continue
+        fi
+        key="${trimmed%%=*}"
+        value="${trimmed#*=}"
+        key="${key%"${key##*[![:space:]]}"}"
+        value="${value#"${value%%[![:space:]]*}"}"
+        value="${value%"${value##*[![:space:]]}"}"
+        if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+            value="${value:1:${#value}-2}"
+        elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+            value="${value:1:${#value}-2}"
+        fi
+        if [ -n "$key" ] && [ -z "${!key+x}" ]; then
+            export "$key=$value"
+        fi
+    done < "$env_file"
+}
+
+# Load local environment files without overriding explicit env values.
+# Build/release mode intentionally ignores .env.dev.
+load_dotenv_file "$ROOT_DIR/.env.local"
+load_dotenv_file "$ROOT_DIR/.env"
 
 # Parse arguments
 ARCH="x64"

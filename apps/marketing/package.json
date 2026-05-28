@@ -1,6 +1,6 @@
 {
   "name": "@craft-agent/marketing",
-  "version": "0.9.22",
+  "version": "0.9.23",
   "license": "Apache-2.0",
   "description": "Storyflow public landing page",
   "private": true,

@@ -77,7 +77,7 @@ For Feishu-authenticated users, model access remains independent of login. Login
 Packaged desktop builds use the deployed HTTPS auth broker:
 
 ```text
-https://storyflow-auth-broker.d1095245867.workers.dev
+https://storyflow-auth.zjding.com
 ```
 
 The auth broker Worker exposes:
@@ -97,7 +97,7 @@ Packaged builds must use a deployed HTTPS broker:
 ```dotenv
 CRAFT_CLIENT_AUTH_REQUIRED=true
 CRAFT_CLIENT_FEISHU_APP_ID=cli_xxx
-CRAFT_CLIENT_AUTH_BROKER_URL=https://storyflow-auth-broker.d1095245867.workers.dev
+CRAFT_CLIENT_AUTH_BROKER_URL=https://storyflow-auth.zjding.com
 CRAFT_CLIENT_GATEWAY_TOKEN=cfut_xxx
 ```
 
@@ -112,3 +112,19 @@ CRAFT_WEBUI_AUTH_DATABASE_URL=postgres://...
 ```
 
 Normal packaged builds fail fast if Feishu client auth points at localhost or a non-HTTPS broker. Use `CRAFT_DEV_RUNTIME=1` only for dev-only builds.
+
+## Runtime Broker Override
+
+If the packaged broker URL becomes unreachable for an installed client, drop a `client-auth.json` into the Electron user data directory to redirect login without rebuilding:
+
+```json
+{ "authBrokerUrl": "https://your-broker.example.com" }
+```
+
+The app maps `authBrokerUrl` to `CRAFT_CLIENT_AUTH_BROKER_URL` at startup. Empty, malformed, or non-object JSON files are ignored.
+
+User data paths:
+
+- macOS: `~/Library/Application Support/Storyflow/client-auth.json`
+- Windows: `%APPDATA%/Storyflow/client-auth.json`
+- Linux: `~/.config/Storyflow/client-auth.json`

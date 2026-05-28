@@ -38,6 +38,17 @@ describe('Electron main process build config', () => {
 });
 
 describe('desktop auth build config', () => {
+  test('documents the production auth broker on a first-party domain', () => {
+    const docs = [
+      readRepoFile('.env.example'),
+      readRepoFile('docs/feishu-desktop-auth.md'),
+      readRepoFile('apps/auth-broker-worker/wrangler.toml'),
+    ].join('\n');
+
+    expect(docs).toContain('https://storyflow-auth.zjding.com');
+    expect(docs).not.toContain('storyflow-auth-broker.d1095245867.workers.dev');
+  });
+
   test('allows builds when desktop client auth is explicitly disabled', () => {
     expect(validateDesktopAuthBuildEnv({
       CRAFT_CLIENT_AUTH_REQUIRED: 'false',

@@ -599,7 +599,9 @@ function formatBrokerNetworkError(endpoint: string, error: unknown): string {
     ? ` (${error.message})`
     : ''
   return `Auth broker is unreachable at ${endpoint}${detail}. ` +
-    'Start the auth broker for local development or set CRAFT_CLIENT_AUTH_BROKER_URL to the deployed auth broker.'
+    '若网络受限或 broker 已迁移，可在客户端用户数据目录创建 client-auth.json '
+    + '（内容形如 {"authBrokerUrl":"https://your-broker"}）以覆盖打包默认值；'
+    + 'or set CRAFT_CLIENT_AUTH_BROKER_URL and rebuild the desktop client.'
 }
 
 function requestBrokerJson(

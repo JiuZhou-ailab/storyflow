@@ -112,6 +112,7 @@ import type { EventSink } from '@craft-agent/server-core/transport'
 import { validateGitBashPath, checkVCRedistInstalled } from '@craft-agent/server-core/services'
 import { shouldCreateWindowsAfterStartup } from './startup-state'
 import { createClientAuthConfigFromRuntimeEnv, createClientAuthService } from './client-auth'
+import { readClientAuthOverrides } from './client-auth-overrides'
 import { resolveElectronRuntimePaths } from './runtime-paths'
 import { getAppVersion } from '@craft-agent/shared/version'
 
@@ -540,7 +541,15 @@ app.whenReady().then(async () => {
       return { canceled: result.canceled, filePaths: result.filePaths }
     })
 
-    const clientAuthService = createClientAuthService(createClientAuthConfigFromRuntimeEnv(), {
+    const clientAuthOverrides = readClientAuthOverrides(app.getPath('userData'))
+    const clientAuthOverrideKeys = Object.keys(clientAuthOverrides.values)
+    if (clientAuthOverrideKeys.length > 0) {
+      mainLog.info(`[client-auth] Applying overrides from ${clientAuthOverrides.filePath}: ${clientAuthOverrideKeys.join(', ')}`)
+    }
+    const clientAuthService = createClientAuthService(createClientAuthConfigFromRuntimeEnv({
+      ...process.env,
+      ...clientAuthOverrides.values,
+    }), {
       openExternal: (url) => shell.openExternal(url).then(() => undefined),
     })
     const initialClientAuthState = clientAuthService.getState()

@@ -1,6 +1,6 @@
 {
   "name": "@craft-agent/server",
-  "version": "0.9.22",
+  "version": "0.9.23",
   "description": "Standalone headless Storyflow server (Bun runtime)",
   "type": "module",
   "main": "src/index.ts",
