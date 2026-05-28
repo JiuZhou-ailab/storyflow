@@ -1,3 +1,7 @@
+// input: User preferences, Electron settings IPC, and updater hook state
+// output: App-level settings UI including notifications, network proxy, and about/update controls
+// pos: Renderer settings page for global application preferences
+
 /**
  * AppSettingsPage
  *
@@ -341,6 +345,30 @@ export default function AppSettingsPage() {
                           t("settings.about.checkNow")
                         )}
                       </Button>
+                    </SettingsRow>
+                  )}
+                  {isElectron && updateChecker.updateInfo?.downloadState === 'error' && updateChecker.updateInfo.error && (
+                    <SettingsRow label={t("toast.failedToCheckUpdates")}>
+                      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-end">
+                        <span className="max-w-md text-sm text-destructive break-words">
+                          {updateChecker.updateInfo.error}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleCheckForUpdates}
+                          disabled={isCheckingForUpdates}
+                        >
+                          {isCheckingForUpdates ? (
+                            <>
+                              <Spinner className="mr-1.5" />
+                              {t("common.checking")}
+                            </>
+                          ) : (
+                            t("common.retry")
+                          )}
+                        </Button>
+                      </div>
                     </SettingsRow>
                   )}
                   {isElectron && updateChecker.isReadyToInstall && updateChecker.updateInfo?.latestVersion && (

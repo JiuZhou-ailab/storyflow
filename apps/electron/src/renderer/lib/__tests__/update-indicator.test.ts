@@ -4,7 +4,10 @@
 
 import { describe, expect, it } from 'bun:test'
 import type { UpdateInfo } from '../../../shared/types'
-import { getUpdateIndicatorState } from '../update-indicator'
+import {
+  getUpdateIndicatorState,
+  shouldRunScheduledUpdateCheck,
+} from '../update-indicator'
 
 function updateInfo(downloadState: UpdateInfo['downloadState'], overrides: Partial<UpdateInfo> = {}): UpdateInfo {
   return {
@@ -61,5 +64,41 @@ describe('getUpdateIndicatorState', () => {
       progress: 100,
       actionable: false,
     })
+  })
+})
+
+describe('shouldRunScheduledUpdateCheck', () => {
+  it('runs scheduled checks only for packaged builds after the interval expires', () => {
+    const sixHours = 6 * 60 * 60 * 1000
+
+    expect(shouldRunScheduledUpdateCheck({
+      now: 12 * 60 * 60 * 1000,
+      lastCheckedAt: 0,
+      intervalMs: sixHours,
+      isPackaged: true,
+    })).toBe(true)
+
+    expect(shouldRunScheduledUpdateCheck({
+      now: 60 * 1000,
+      lastCheckedAt: 0,
+      intervalMs: sixHours,
+      isPackaged: true,
+    })).toBe(false)
+
+    expect(shouldRunScheduledUpdateCheck({
+      now: 12 * 60 * 60 * 1000,
+      lastCheckedAt: 0,
+      intervalMs: sixHours,
+      isPackaged: false,
+    })).toBe(false)
+  })
+
+  it('runs the first scheduled packaged check when there is no previous timestamp', () => {
+    expect(shouldRunScheduledUpdateCheck({
+      now: 1,
+      lastCheckedAt: null,
+      intervalMs: 6 * 60 * 60 * 1000,
+      isPackaged: true,
+    })).toBe(true)
   })
 })

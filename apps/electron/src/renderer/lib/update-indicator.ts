@@ -11,6 +11,13 @@ export type UpdateIndicatorState = {
   actionable: boolean
 }
 
+export type ScheduledUpdateCheckArgs = {
+  now: number
+  lastCheckedAt: number | null
+  intervalMs: number
+  isPackaged: boolean
+}
+
 export function getUpdateIndicatorState(info: UpdateInfo | null): UpdateIndicatorState | null {
   if (!info) return null
 
@@ -42,6 +49,12 @@ export function getUpdateIndicatorState(info: UpdateInfo | null): UpdateIndicato
   }
 
   return null
+}
+
+export function shouldRunScheduledUpdateCheck(args: ScheduledUpdateCheckArgs): boolean {
+  if (!args.isPackaged) return false
+  if (args.lastCheckedAt === null) return true
+  return args.now - args.lastCheckedAt >= args.intervalMs
 }
 
 function clampProgress(progress: number): number {

@@ -1,3 +1,7 @@
+// input: Electron auto-update IPC state and renderer runtime environment
+// output: React hook exposing update state, manual retry, scheduled checks, and install action
+// pos: Renderer coordinator between updater IPC and update-related UI surfaces
+
 /**
  * Update Checker Hook
  *
@@ -13,6 +17,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import type { UpdateInfo } from '../../shared/types'
+import { shouldRunScheduledUpdateCheck } from '../lib/update-indicator'
 
 interface UseUpdateCheckerResult {
   /** Current update info */
@@ -33,12 +38,28 @@ interface UseUpdateCheckerResult {
 
 // Toast ID for update notification (allows dismiss/update)
 const UPDATE_TOAST_ID = 'update-available'
+const SCHEDULED_UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
+
+async function canRunScheduledUpdateChecks(): Promise<boolean> {
+  if (window.electronAPI.getRuntimeEnvironment() !== 'electron') {
+    return false
+  }
+
+  try {
+    return !(await window.electronAPI.isDebugMode())
+  } catch (error) {
+    console.error('[useUpdateChecker] Failed to read packaged state:', error)
+    return false
+  }
+}
 
 export function useUpdateChecker(): UseUpdateCheckerResult {
   const { t } = useTranslation()
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
   // Track if we've shown the toast for this version to avoid duplicates
   const shownToastVersionRef = useRef<string | null>(null)
+  const lastScheduledCheckAtRef = useRef<number | null>(null)
+  const scheduledCheckInFlightRef = useRef(false)
 
   // Show toast notification when update is ready
   const showUpdateToast = useCallback((version: string, onInstall: () => void) => {
@@ -81,22 +102,22 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
     }
   }, [])
 
-  // Load initial state and check if update ready
-  useEffect(() => {
-    const checkAndNotify = async (info: UpdateInfo) => {
-      if (!info.available || !info.latestVersion) return
-      if (info.downloadState !== 'ready') return
+  const checkAndNotify = useCallback(async (info: UpdateInfo) => {
+    if (!info.available || !info.latestVersion) return
+    if (info.downloadState !== 'ready') return
 
-      // Check if this version was dismissed
-      const dismissedVersion = await window.electronAPI.getDismissedUpdateVersion()
-      if (dismissedVersion === info.latestVersion) {
-        return
-      }
-
-      // Show toast for ready update
-      showUpdateToast(info.latestVersion, installUpdate)
+    // Check if this version was dismissed
+    const dismissedVersion = await window.electronAPI.getDismissedUpdateVersion()
+    if (dismissedVersion === info.latestVersion) {
+      return
     }
 
+    // Show toast for ready update
+    showUpdateToast(info.latestVersion, installUpdate)
+  }, [showUpdateToast, installUpdate])
+
+  // Load initial state and check if update ready
+  useEffect(() => {
     // Get initial update info
     window.electronAPI.getUpdateInfo().then((info) => {
       setUpdateInfo(info)
@@ -118,15 +139,78 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
       cleanupAvailable()
       cleanupProgress()
     }
-  }, [showUpdateToast, installUpdate])
+  }, [checkAndNotify])
+
+  const runScheduledUpdateCheck = useCallback(async () => {
+    const now = Date.now()
+    const isPackaged = await canRunScheduledUpdateChecks()
+
+    if (!shouldRunScheduledUpdateCheck({
+      now,
+      lastCheckedAt: lastScheduledCheckAtRef.current,
+      intervalMs: SCHEDULED_UPDATE_CHECK_INTERVAL_MS,
+      isPackaged,
+    })) {
+      return
+    }
+
+    if (scheduledCheckInFlightRef.current) {
+      return
+    }
+
+    lastScheduledCheckAtRef.current = now
+    scheduledCheckInFlightRef.current = true
+
+    try {
+      const info = await window.electronAPI.checkForUpdates()
+      setUpdateInfo(info)
+      await checkAndNotify(info)
+    } catch (error) {
+      console.error('[useUpdateChecker] Scheduled check failed:', error)
+    } finally {
+      scheduledCheckInFlightRef.current = false
+    }
+  }, [checkAndNotify])
+
+  useEffect(() => {
+    let cancelled = false
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+
+    const scheduleNextCheck = () => {
+      timeoutId = setTimeout(() => {
+        if (cancelled) return
+        void runScheduledUpdateCheck().finally(() => {
+          if (!cancelled) scheduleNextCheck()
+        })
+      }, SCHEDULED_UPDATE_CHECK_INTERVAL_MS)
+    }
+
+    void canRunScheduledUpdateChecks().then((canRun) => {
+      if (!cancelled && canRun) {
+        scheduleNextCheck()
+      }
+    })
+
+    return () => {
+      cancelled = true
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId)
+      }
+    }
+  }, [runScheduledUpdateCheck])
 
   // Check for updates manually
   const checkForUpdates = useCallback(async () => {
     try {
       const info = await window.electronAPI.checkForUpdates()
       setUpdateInfo(info)
+      lastScheduledCheckAtRef.current = Date.now()
 
-      if (!info.available) {
+      if (info.downloadState === 'error') {
+        toast.error(t('toast.failedToCheckUpdates'), {
+          description: info.error ?? 'Unknown error',
+        })
+      } else if (!info.available) {
         toast.success(t('toast.upToDate'), {
           description: t('toast.versionIsLatest', { version: info.currentVersion }),
           duration: 3000,
