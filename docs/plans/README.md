@@ -11,3 +11,4 @@ Implementation plans for scoped product and architecture changes.
 - `2026-05-26-feishu-webui-login.md` - Feishu Web UI login and registration plan.
 - `2026-05-26-neon-auth-webui-bridge.md` - Neon Auth email login bridge for Web UI sessions.
 - `2026-05-28-electron-package-size-optimization.md` - Electron package-size optimization plan.
+- `2026-05-28-performance-build-update-plan.md` - performance, build speed, and update reminder implementation plan.
