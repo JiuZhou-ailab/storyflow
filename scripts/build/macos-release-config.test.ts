@@ -87,6 +87,14 @@ describe('macOS release configuration', () => {
     expect(existsSync(join(rootDir, 'scripts/upload-r2-release-assets.ts'))).toBe(true);
   });
 
+  test('official release workflow validates versions and never builds Windows with dev runtime', () => {
+    const workflow = readRepoFile('.github/workflows/release.yml');
+
+    expect(workflow).toContain('bun run check-version');
+    expect(workflow).toContain('run: bun run electron:dist:win');
+    expect(workflow).not.toContain('run: bun run electron:dist:dev:win');
+  });
+
   test('publishes updater manifests from the public R2 endpoint', () => {
     const builderConfig = readRepoFile('apps/electron/electron-builder.yml');
     const autoUpdate = readRepoFile('apps/electron/src/main/auto-update.ts');
@@ -117,6 +125,9 @@ describe('macOS release configuration', () => {
     expect(buildScript).toContain('verify_macos_release_artifacts');
     expect(buildScript).toContain('run_electron_builder_with_retries');
     expect(buildScript).toContain('Apple notarization can return transient timeouts');
+    expect(buildScript).toContain('npx electron-builder $BUILDER_ARGS');
+    expect(buildScript).toContain('status=$?');
+    expect(buildScript).not.toContain('if npx electron-builder $BUILDER_ARGS; then');
     expect(buildScript).toContain('-c.mac.forceCodeSigning=true -c.mac.notarize=true');
     expect(buildScript).toContain('select_notarization_credentials');
     expect(buildScript).toContain('APPLE_API_ISSUER is optional and must be omitted for Individual API keys');

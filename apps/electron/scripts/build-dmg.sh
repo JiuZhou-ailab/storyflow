@@ -346,11 +346,15 @@ run_electron_builder_with_retries() {
 
     while true; do
         echo "electron-builder attempt ${attempt} of ${max_attempts}..."
-        if npx electron-builder $BUILDER_ARGS; then
+        set +e
+        npx electron-builder $BUILDER_ARGS
+        status=$?
+        set -e
+
+        if [ "$status" -eq 0 ]; then
             return 0
         fi
 
-        status=$?
         if ! should_enable_macos_release_signing || [ "$attempt" -ge "$max_attempts" ]; then
             return "$status"
         fi
