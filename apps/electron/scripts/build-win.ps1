@@ -30,87 +30,6 @@ function Get-Sha256Hex {
     }
 }
 
-function Get-ParentProcessId {
-    param(
-        [Parameter(Mandatory = $true)]
-        [int]$ProcessId
-    )
-
-    try {
-        $process = Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction Stop
-        return [int]$process.ParentProcessId
-    } catch {
-        return $null
-    }
-}
-
-function Stop-BuildLockProcesses {
-    param(
-        [int[]]$PreserveProcessIds = @()
-    )
-
-    $preserve = @{}
-    foreach ($processId in $PreserveProcessIds) {
-        if ($processId -gt 0) {
-            $preserve[$processId] = $true
-        }
-    }
-
-    $regularProcessNames = @('node', 'npm', 'electron', 'electron-builder')
-    foreach ($procName in $regularProcessNames) {
-        Get-Process -Name $procName -ErrorAction SilentlyContinue | ForEach-Object {
-            if ($preserve.ContainsKey($_.Id)) {
-                Write-Host "  Preserving $($_.ProcessName) (PID: $($_.Id))..." -ForegroundColor DarkGray
-            } else {
-                Write-Host "  Killing $($_.ProcessName) (PID: $($_.Id))..." -ForegroundColor Yellow
-                Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
-            }
-        }
-    }
-
-    # Bun build subprocesses can keep dist/main.cjs open on Windows after the
-    # build command returns. Keep the parent Bun that owns this PowerShell step,
-    # but kill any leftover child Bun processes before electron-builder copies.
-    Get-CimInstance Win32_Process -Filter "Name = 'bun.exe'" -ErrorAction SilentlyContinue | ForEach-Object {
-        if ($preserve.ContainsKey([int]$_.ProcessId)) {
-            Write-Host "  Preserving bun (PID: $($_.ProcessId))..." -ForegroundColor DarkGray
-        } else {
-            Write-Host "  Killing bun (PID: $($_.ProcessId))..." -ForegroundColor Yellow
-            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
-        }
-    }
-}
-
-function Wait-PathUnlocked {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Path,
-        [int]$MaxAttempts = 10,
-        [int]$DelaySeconds = 2
-    )
-
-    if (-not (Test-Path $Path)) {
-        return
-    }
-
-    for ($i = 1; $i -le $MaxAttempts; $i++) {
-        try {
-            $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::None)
-            $stream.Close()
-            $stream.Dispose()
-            Write-Host "  File handle released: $Path" -ForegroundColor Green
-            return
-        } catch {
-            if ($i -eq $MaxAttempts) {
-                Write-Host "  WARNING: File still appears locked after $MaxAttempts attempts: $Path" -ForegroundColor Yellow
-                return
-            }
-            Write-Host "  Waiting for file handle release ($i/$MaxAttempts): $Path" -ForegroundColor Yellow
-            Start-Sleep -Seconds $DelaySeconds
-        }
-    }
-}
-
 Write-Host "=== Building Storyflow Windows Installer using electron-builder ===" -ForegroundColor Cyan
 $env:CRAFT_BUILD_PLATFORM = "win32"
 $env:CRAFT_BUILD_ARCH = "x64"
@@ -159,9 +78,14 @@ try {
 Write-Host ""
 
 # 0. Kill any lingering processes that might lock files.
-Write-Host "Killing any lingering build processes..."
-$PowerShellParentPid = Get-ParentProcessId -ProcessId $PID
-Stop-BuildLockProcesses -PreserveProcessIds @($PID, $PowerShellParentPid)
+Write-Host "Killing any lingering node/npm/electron processes..."
+$processesToKill = @('node', 'npm', 'electron', 'electron-builder')
+foreach ($procName in $processesToKill) {
+    Get-Process -Name $procName -ErrorAction SilentlyContinue | ForEach-Object {
+        Write-Host "  Killing $($_.ProcessName) (PID: $($_.Id))..." -ForegroundColor Yellow
+        Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+    }
+}
 # Give processes time to fully terminate
 Start-Sleep -Seconds 2
 
@@ -495,12 +419,6 @@ while ($retryCount -lt $maxRetries) {
 [System.GC]::Collect()
 [System.GC]::WaitForPendingFinalizers()
 
-Write-Host "Releasing build process handles before electron-builder..."
-$BuilderParentPid = Get-ParentProcessId -ProcessId $PID
-Stop-BuildLockProcesses -PreserveProcessIds @($PID, $BuilderParentPid)
-Wait-PathUnlocked -Path "$ElectronDir\dist\main.cjs" -MaxAttempts 10 -DelaySeconds 2
-Start-Sleep -Seconds 2
-
 # Run electron-builder with retry logic for EBUSY errors
 Push-Location $ElectronDir
 $maxBuilderRetries = 3
@@ -529,8 +447,11 @@ while (-not $builderSuccess -and $builderRetry -lt $maxBuilderRetries) {
         if ($builderRetry -lt $maxBuilderRetries) {
             Write-Host "  Waiting 10 seconds before retry..." -ForegroundColor Yellow
 
-            Stop-BuildLockProcesses -PreserveProcessIds @($PID, $BuilderParentPid)
-            Wait-PathUnlocked -Path "$ElectronDir\dist\main.cjs" -MaxAttempts 10 -DelaySeconds 2
+            # Kill any processes that might be holding file locks.
+            Get-Process -Name 'node', 'npm' -ErrorAction SilentlyContinue | ForEach-Object {
+                Write-Host "    Killing $($_.ProcessName) (PID: $($_.Id))..." -ForegroundColor Yellow
+                Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+            }
 
             Start-Sleep -Seconds 10
         }

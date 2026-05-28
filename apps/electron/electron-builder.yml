@@ -146,6 +146,16 @@ win:
         - x64
   # Use predictable naming: Storyflow-x64.exe
   artifactName: "Storyflow-${arch}.${ext}"
+  # Keep signing/editing for the app and installer executables, but skip bundled
+  # tool binaries. On Windows Server 2025, signing those extra tool executables
+  # can race with electron-builder's app file copy and lock dist/main.cjs.
+  signExts:
+    - "!bun.exe"
+    - "!claude.exe"
+    - "!codex.exe"
+    - "!copilot.exe"
+    - "!rg.exe"
+    - "!uv.exe"
   files:
     - dist/**/*
     - package.json
