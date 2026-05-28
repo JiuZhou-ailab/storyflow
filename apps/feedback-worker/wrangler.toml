@@ -1,0 +1,12 @@
+name = "storyflow-feedback"
+main = "src/index.ts"
+compatibility_date = "2026-05-28"
+workers_dev = true
+
+[vars]
+GITHUB_REPOSITORY = "JiuZhou-ailab/storyflow"
+FEEDBACK_GITHUB_LABELS = "feedback,ai-triage"
+
+[[r2_buckets]]
+binding = "FEEDBACK_ASSETS"
+bucket_name = "storyflow-feedback-assets"

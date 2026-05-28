@@ -24,6 +24,7 @@ storyflow/
 ├── apps/
 │   ├── cli/                 # 无头服务端的命令行客户端
 │   ├── electron/            # 主桌面应用：main、preload、renderer
+│   ├── feedback-worker/     # 用户反馈入口：截图上传和 GitHub issue 创建
 │   ├── marketing/           # Storyflow 官网和下载入口
 │   ├── viewer/              # 共享会话记录查看器
 │   └── webui/               # 无头服务端的浏览器客户端

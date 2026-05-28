@@ -15,6 +15,7 @@ describe('electron build defines', () => {
     expect(source).toContain('"CRAFT_CLIENT_FEISHU_APP_ID"')
     expect(source).toContain('"CRAFT_CLIENT_FEISHU_SCOPE"')
     expect(source).toContain('"CRAFT_CLIENT_GATEWAY_TOKEN"')
+    expect(source).toContain('"STORYFLOW_FEEDBACK_ENDPOINT"')
     expect(source).not.toContain('"CRAFT_CLIENT_FEISHU_APP_SECRET"')
     expect(source).not.toContain('"CRAFT_WEBUI_FEISHU_APP_SECRET"')
   })

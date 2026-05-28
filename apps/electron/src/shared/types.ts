@@ -82,6 +82,26 @@ export type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderTy
 
 export type WorkspaceProjectType = 'general' | 'novel' | 'short-form';
 
+export interface FeedbackIssueAttachment {
+  name: string
+  mimeType: string
+  size: number
+  base64: string
+}
+
+export interface FeedbackIssueInput {
+  title: string
+  message: string
+  email?: string
+  appVersion: string
+  platform: string
+  attachments: FeedbackIssueAttachment[]
+}
+
+export interface FeedbackIssueResult {
+  url: string
+}
+
 export interface CreateWorkspaceOptions {
   remoteServer?: CoreRemoteServerConfig;
   projectType?: WorkspaceProjectType;
@@ -298,6 +318,7 @@ export interface ElectronAPI {
   getClientAuthState(): Promise<ClientAuthState>
   signInClient(input: ClientAuthSignInInput): Promise<ClientAuthUser>
   signInWithFeishuClient(): Promise<ClientAuthUser>
+  submitFeedbackIssue(input: FeedbackIssueInput): Promise<FeedbackIssueResult>
   cancelFeishuSignInClient(): Promise<void>
   signOutClient(): Promise<void>
   onClientAuthStateChanged(callback: (state: ClientAuthState) => void): () => void

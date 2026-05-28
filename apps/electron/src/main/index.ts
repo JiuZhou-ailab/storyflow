@@ -115,6 +115,7 @@ import { createClientAuthConfigFromRuntimeEnv, createClientAuthService } from '.
 import { readClientAuthOverrides } from './client-auth-overrides'
 import { resolveElectronRuntimePaths } from './runtime-paths'
 import { getAppVersion } from '@craft-agent/shared/version'
+import { normalizeFeedbackIssueInput, submitFeedbackIssue } from './feedback'
 
 // Initialize electron-log for renderer process support
 log.initialize()
@@ -589,6 +590,9 @@ app.whenReady().then(async () => {
     ipcMain.handle('client-auth:sign-out', async () => {
       await clientAuthService.signOut()
       broadcastClientAuthState()
+    })
+    ipcMain.handle('feedback:submitIssue', async (_event, input: unknown) => {
+      return submitFeedbackIssue(normalizeFeedbackIssueInput(input))
     })
 
     if (!isClientOnly) {

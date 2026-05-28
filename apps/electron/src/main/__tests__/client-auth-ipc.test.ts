@@ -36,3 +36,13 @@ describe('client auth IPC propagation', () => {
     expect(source).toContain('setState(nextState)')
   })
 })
+
+describe('feedback IPC contract', () => {
+  it('registers the main handler exposed by preload', () => {
+    const mainSource = readElectronFile('main/index.ts')
+    const preloadSource = readElectronFile('preload/bootstrap.ts')
+
+    expect(preloadSource).toContain("ipcRenderer.invoke('feedback:submitIssue'")
+    expect(mainSource).toContain("ipcMain.handle('feedback:submitIssue'")
+  })
+})

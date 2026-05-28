@@ -441,6 +441,7 @@ client.onConnectionStateChanged((state) => {
   await readClientAuthState()
   return user
 }
+;(api as ElectronAPI).submitFeedbackIssue = (input) => ipcRenderer.invoke('feedback:submitIssue', input)
 ;(api as ElectronAPI).cancelFeishuSignInClient = async () => {
   await ipcRenderer.invoke('client-auth:cancel-feishu-sign-in')
 }

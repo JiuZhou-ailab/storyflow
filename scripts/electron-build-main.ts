@@ -65,6 +65,7 @@ function getBuildDefines(): string[] {
     "CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN",
     "CRAFT_CLIENT_NEON_AUTH_ORIGIN",
     "CRAFT_CLIENT_GATEWAY_TOKEN",
+    "STORYFLOW_FEEDBACK_ENDPOINT",
   ];
 
   return definedVars.map((varName) => {
