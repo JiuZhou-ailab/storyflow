@@ -393,6 +393,8 @@ jobs:
     needs: publish-r2
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      CLOUDFLARE_PAGES_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_API_TOKEN }}
 
     steps:
       - name: Checkout
@@ -413,12 +415,20 @@ jobs:
       - name: Build marketing site
         run: bun run marketing:build
 
+      - name: Skip marketing deploy without Pages token
+        run: |
+          if [ -z "$CLOUDFLARE_PAGES_API_TOKEN" ]; then
+            echo "CLOUDFLARE_PAGES_API_TOKEN is not configured; skipping Cloudflare Pages deploy."
+          fi
+
       - name: Deploy marketing site to Cloudflare Pages
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           STORYFLOW_PAGES_PROJECT_NAME: ${{ vars.STORYFLOW_PAGES_PROJECT_NAME || 'storyflow' }}
         run: |
-          bunx wrangler pages deploy apps/marketing/dist \
-            --project-name "$STORYFLOW_PAGES_PROJECT_NAME" \
-            --branch main
+          if [ -n "$CLOUDFLARE_PAGES_API_TOKEN" ]; then
+            bunx wrangler pages deploy apps/marketing/dist \
+              --project-name "$STORYFLOW_PAGES_PROJECT_NAME" \
+              --branch main
+          fi
