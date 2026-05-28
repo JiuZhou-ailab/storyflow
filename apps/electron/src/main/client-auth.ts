@@ -109,6 +109,51 @@ const DEFAULT_NEON_BROKER_EXCHANGE_PATH = '/api/client-auth/neon/exchange'
 const DEFAULT_FEISHU_BROKER_CONFIG_PATH = '/api/client-auth/feishu/config'
 const DEFAULT_FEISHU_BROKER_EXCHANGE_PATH = '/api/client-auth/feishu/exchange'
 
+type ClientAuthEnv = Partial<Pick<NodeJS.ProcessEnv,
+  | 'CRAFT_CLIENT_AUTH_REQUIRED'
+  | 'CRAFT_CLIENT_AUTH_BROKER_URL'
+  | 'CRAFT_CLIENT_FEISHU_AUTH_BROKER_URL'
+  | 'CRAFT_CLIENT_FEISHU_APP_ID'
+  | 'CRAFT_CLIENT_FEISHU_SCOPE'
+  | 'CRAFT_CLIENT_FEISHU_AUTH_BASE_URL'
+  | 'CRAFT_CLIENT_FEISHU_CALLBACK_PORT'
+  | 'CRAFT_CLIENT_FEISHU_LOGIN_TIMEOUT_MS'
+  | 'CRAFT_CLIENT_NEON_AUTH_BASE_URL'
+  | 'CRAFT_CLIENT_NEON_AUTH_JWKS_URL'
+  | 'CRAFT_CLIENT_NEON_AUTH_ISSUER'
+  | 'CRAFT_CLIENT_NEON_AUTH_AUDIENCE'
+  | 'CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN'
+  | 'CRAFT_CLIENT_NEON_AUTH_ORIGIN'
+>>
+
+const BUNDLED_CLIENT_AUTH_ENV: ClientAuthEnv = {
+  CRAFT_CLIENT_AUTH_REQUIRED: process.env.CRAFT_CLIENT_AUTH_REQUIRED,
+  CRAFT_CLIENT_AUTH_BROKER_URL: process.env.CRAFT_CLIENT_AUTH_BROKER_URL,
+  CRAFT_CLIENT_FEISHU_AUTH_BROKER_URL: process.env.CRAFT_CLIENT_FEISHU_AUTH_BROKER_URL,
+  CRAFT_CLIENT_FEISHU_APP_ID: process.env.CRAFT_CLIENT_FEISHU_APP_ID,
+  CRAFT_CLIENT_FEISHU_SCOPE: process.env.CRAFT_CLIENT_FEISHU_SCOPE,
+  CRAFT_CLIENT_FEISHU_AUTH_BASE_URL: process.env.CRAFT_CLIENT_FEISHU_AUTH_BASE_URL,
+  CRAFT_CLIENT_FEISHU_CALLBACK_PORT: process.env.CRAFT_CLIENT_FEISHU_CALLBACK_PORT,
+  CRAFT_CLIENT_FEISHU_LOGIN_TIMEOUT_MS: process.env.CRAFT_CLIENT_FEISHU_LOGIN_TIMEOUT_MS,
+  CRAFT_CLIENT_NEON_AUTH_BASE_URL: process.env.CRAFT_CLIENT_NEON_AUTH_BASE_URL,
+  CRAFT_CLIENT_NEON_AUTH_JWKS_URL: process.env.CRAFT_CLIENT_NEON_AUTH_JWKS_URL,
+  CRAFT_CLIENT_NEON_AUTH_ISSUER: process.env.CRAFT_CLIENT_NEON_AUTH_ISSUER,
+  CRAFT_CLIENT_NEON_AUTH_AUDIENCE: process.env.CRAFT_CLIENT_NEON_AUTH_AUDIENCE,
+  CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN: process.env.CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN,
+  CRAFT_CLIENT_NEON_AUTH_ORIGIN: process.env.CRAFT_CLIENT_NEON_AUTH_ORIGIN,
+}
+
+function mergeBundledClientAuthEnv(
+  runtimeEnv: NodeJS.ProcessEnv,
+  bundledEnv: ClientAuthEnv,
+): NodeJS.ProcessEnv {
+  const merged: NodeJS.ProcessEnv = { ...runtimeEnv }
+  for (const [key, value] of Object.entries(bundledEnv)) {
+    if (!readEnv(merged[key])) merged[key] = value
+  }
+  return merged
+}
+
 export function createClientAuthConfigFromEnv(env: NodeJS.ProcessEnv): ClientAuthConfig {
   const required = readBooleanEnv(env.CRAFT_CLIENT_AUTH_REQUIRED) ?? shouldRequireClientAuthByDefault(env)
   const baseUrl = readEnv(env.CRAFT_CLIENT_NEON_AUTH_BASE_URL) ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_BASE_URL)
@@ -162,6 +207,13 @@ export function createClientAuthConfigFromEnv(env: NodeJS.ProcessEnv): ClientAut
         }
       : {}),
   }
+}
+
+export function createClientAuthConfigFromRuntimeEnv(
+  runtimeEnv: NodeJS.ProcessEnv = process.env,
+  bundledEnv: ClientAuthEnv = BUNDLED_CLIENT_AUTH_ENV,
+): ClientAuthConfig {
+  return createClientAuthConfigFromEnv(mergeBundledClientAuthEnv(runtimeEnv, bundledEnv))
 }
 
 export function createClientAuthService(

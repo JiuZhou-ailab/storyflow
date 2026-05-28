@@ -76,7 +76,7 @@ export const downloadOptions: DownloadOption[] = publicInstallerAssets.map((asse
     ...asset,
     ...downloadLabels[asset.id],
     downloadFileName,
-    href: buildDownloadUrl(downloadFileName),
+    href: buildDownloadUrl(asset.fileName),
   };
 });
 

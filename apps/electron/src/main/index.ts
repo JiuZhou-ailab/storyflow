@@ -107,11 +107,13 @@ import { registerPiModelResolver } from '@craft-agent/shared/config'
 import { getPiModelsForAuthProvider, getAllPiModels } from '@craft-agent/shared/config'
 import { initNotificationService, initBadgeIcon, initInstanceBadge, updateBadgeCount } from './notifications'
 import { checkForUpdatesOnLaunch, setAutoUpdateEventSink, isUpdating } from './auto-update'
+import { consumeLaunchUpdateCheckDecision } from './auto-update-launch-policy'
 import type { EventSink } from '@craft-agent/server-core/transport'
 import { validateGitBashPath, checkVCRedistInstalled } from '@craft-agent/server-core/services'
 import { shouldCreateWindowsAfterStartup } from './startup-state'
-import { createClientAuthConfigFromEnv, createClientAuthService } from './client-auth'
+import { createClientAuthConfigFromRuntimeEnv, createClientAuthService } from './client-auth'
 import { resolveElectronRuntimePaths } from './runtime-paths'
+import { getAppVersion } from '@craft-agent/shared/version'
 
 // Initialize electron-log for renderer process support
 log.initialize()
@@ -538,7 +540,7 @@ app.whenReady().then(async () => {
       return { canceled: result.canceled, filePaths: result.filePaths }
     })
 
-    const clientAuthService = createClientAuthService(createClientAuthConfigFromEnv(process.env), {
+    const clientAuthService = createClientAuthService(createClientAuthConfigFromRuntimeEnv(), {
       openExternal: (url) => shell.openExternal(url).then(() => undefined),
     })
     const initialClientAuthState = clientAuthService.getState()
@@ -1100,9 +1102,18 @@ app.whenReady().then(async () => {
     // Skip in dev mode to avoid replacing /Applications app and launching it instead
     if (moduleSink) setAutoUpdateEventSink(moduleSink)
     if (app.isPackaged) {
-      checkForUpdatesOnLaunch().catch(err => {
-        mainLog.error('[auto-update] Launch check failed:', err)
+      const launchUpdateDecision = consumeLaunchUpdateCheckDecision({
+        userDataDir: app.getPath('userData'),
+        currentVersion: getAppVersion(),
       })
+
+      if (launchUpdateDecision.shouldCheck) {
+        checkForUpdatesOnLaunch().catch(err => {
+          mainLog.error('[auto-update] Launch check failed:', err)
+        })
+      } else {
+        mainLog.info(`[auto-update] Skipping launch check: ${launchUpdateDecision.reason}`)
+      }
     } else {
       mainLog.info('[auto-update] Skipping auto-update in dev mode')
     }

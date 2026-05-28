@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import {
   createClientAuthConfigFromEnv,
+  createClientAuthConfigFromRuntimeEnv,
   createClientAuthService,
   DefaultClientAuthBrokerClient,
   type ClientAuthBrokerClient,
@@ -49,6 +50,36 @@ describe('client auth', () => {
       emailPasswordEnabled: false,
       feishuLoginEnabled: false,
     })
+  })
+
+  it('uses bundled auth values when runtime process env is empty in packaged builds', () => {
+    const config = createClientAuthConfigFromRuntimeEnv({}, {
+      CRAFT_CLIENT_AUTH_REQUIRED: 'true',
+      CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
+      CRAFT_CLIENT_FEISHU_APP_ID: 'cli_test',
+      CRAFT_CLIENT_NEON_AUTH_BASE_URL: 'https://auth.example.com',
+      CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN: 'users.craft.invalid',
+    })
+
+    expect(config.required).toBe(true)
+    expect(config.authBrokerUrl).toBe('https://auth.storyflow.example.com')
+    expect(config.feishuBrokerAuth?.appId).toBe('cli_test')
+    expect(config.neonAuth?.baseUrl).toBe('https://auth.example.com')
+    expect(config.neonAuth?.usernameEmailDomain).toBe('users.craft.invalid')
+  })
+
+  it('does not let empty runtime env values erase bundled auth config', () => {
+    const config = createClientAuthConfigFromRuntimeEnv({
+      CRAFT_CLIENT_AUTH_BROKER_URL: '',
+      CRAFT_CLIENT_FEISHU_APP_ID: '',
+    }, {
+      CRAFT_CLIENT_AUTH_REQUIRED: 'true',
+      CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
+      CRAFT_CLIENT_FEISHU_APP_ID: 'cli_test',
+    })
+
+    expect(config.authBrokerUrl).toBe('https://auth.storyflow.example.com')
+    expect(config.feishuBrokerAuth?.appId).toBe('cli_test')
   })
 
   it('blocks required auth when Neon Auth is not configured', async () => {
