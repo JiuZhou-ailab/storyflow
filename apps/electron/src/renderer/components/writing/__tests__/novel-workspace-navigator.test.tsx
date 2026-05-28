@@ -442,7 +442,7 @@ describe('novel writing workspace layout', () => {
     expect(leftSidebarSource).toContain('min-h-[34px]')
   })
 
-  it('exposes plus actions for creating writing files in manuscript and free area groups', () => {
+  it('collapses writing file create and import actions behind one menu trigger', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const sidebarSource = appShellSource.slice(
       appShellSource.indexOf('const novelWorkspaceSidebarLinks'),
@@ -458,8 +458,15 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('getNovelImportTargetRelativePath')
     expect(sidebarSource).toContain("afterTitle: createNovelWorkspaceFileActions(\n            '正文'")
     expect(sidebarSource).toContain("afterTitle: createNovelWorkspaceFileActions(\n            '自由区'")
-    expect(sidebarSource).toContain('{createNovelWorkspaceAddAction(basePath, target)}')
-    expect(sidebarSource).toContain('{createNovelWorkspaceImportAction(basePath, importTitle)}')
+    expect(sidebarSource).toContain('const createNovelWorkspaceFileActions = (')
+    expect(sidebarSource).toContain('<DropdownMenu>')
+    expect(sidebarSource).toContain('<DropdownMenuTrigger asChild>')
+    expect(sidebarSource).toContain('<MoreHorizontal className="h-3 w-3" />')
+    expect(sidebarSource).toContain('<StyledDropdownMenuItem')
+    expect(sidebarSource).toContain('void handleImportNovelFiles(basePath)')
+    expect(sidebarSource).toContain('openNovelCreateFileDialog({ basePath, ...target })')
+    expect(sidebarSource).not.toContain('const createNovelWorkspaceAddAction =')
+    expect(sidebarSource).not.toContain('const createNovelWorkspaceImportAction =')
     expect(appShellSource).toContain('placeholder={novelCreateFileTarget?.placeholder}')
     expect(appShellSource).toContain('normalizeNovelCreateFilePath')
     expect(appShellSource).toContain('shouldCreateMarkdownStarter(relativePath)')

@@ -41,5 +41,6 @@ export interface ConfigDefaults {
       enabled: boolean;
     };
   };
+  builtinLlmConnections?: BuiltinLlmConnectionDefaults[];
   builtinLlmConnection?: BuiltinLlmConnectionDefaults;
 }

@@ -1,0 +1,4 @@
+name = "storyflow-auth-broker"
+main = "src/index.ts"
+compatibility_date = "2026-05-28"
+workers_dev = true

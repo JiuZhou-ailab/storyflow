@@ -1,0 +1,12 @@
+{
+  "name": "@craft-agent/auth-broker-worker",
+  "version": "0.9.19",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test src/index.test.ts"
+  },
+  "dependencies": {
+    "jose": "^6.0.0"
+  }
+}

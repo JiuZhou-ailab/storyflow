@@ -49,8 +49,8 @@ export function ProviderSelectStep({ onSelect, onSkip }: ProviderSelectStepProps
   const PROVIDER_OPTIONS: ProviderOption[] = [
     {
       id: 'jiuzhou',
-      name: 'JiuZhou',
-      description: '使用分发给作者的 JiuZhou API Key。',
+      name: 'JiuZhou-AI',
+      description: '使用默认 JiuZhou-AI。',
       icon: PROVIDER_ICONS.jiuzhou,
     },
     {

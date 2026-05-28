@@ -1,13 +1,18 @@
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import { Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CHAT_LAYOUT } from '@/config/layout'
 import { flattenLabels, type LabelConfig } from '@craft-agent/shared/labels'
 import type { PermissionMode } from '@craft-agent/shared/agent/modes'
+import type { Message } from '../../../../shared/types'
 import type { SessionStatus } from '@/config/session-status-config'
 import type { BackgroundTask } from '../ActiveTasksBar'
 import { ActiveOptionBadges } from '../ActiveOptionBadges'
 import { InputContainer } from './InputContainer'
 import { InputErrorBoundary } from './InputErrorBoundary'
+
+export type QueuedInputMessage = Pick<Message, 'id' | 'content' | 'attachments'>
 
 interface ChatInputZoneProps {
   compactMode?: boolean
@@ -25,6 +30,7 @@ interface ChatInputZoneProps {
   sessionStatuses?: SessionStatus[]
   currentSessionStatus?: string
   onSessionStatusChange?: (stateId: string) => void
+  queuedMessages?: QueuedInputMessage[]
   className?: string
   inputProps: React.ComponentProps<typeof InputContainer>
 }
@@ -45,10 +51,13 @@ export function ChatInputZone({
   sessionStatuses = [],
   currentSessionStatus = 'todo',
   onSessionStatusChange,
+  queuedMessages = [],
   className,
   inputProps,
 }: ChatInputZoneProps) {
+  const { t } = useTranslation()
   const [autoOpenLabelId, setAutoOpenLabelId] = React.useState<string | null>(null)
+  const queuedCount = queuedMessages.length
   const shouldShowOptionBadges = showOptionBadges ?? !compactMode
   const inputResetKey = `${sessionId}::${inputProps.structuredInput?.type ?? 'freeform'}`
 
@@ -98,6 +107,41 @@ export function ChatInputZone({
           currentSessionStatus={currentSessionStatus}
           onSessionStatusChange={onSessionStatusChange}
         />
+      )}
+
+      {queuedMessages.length > 0 && (
+        <div
+          className="mb-1.5 overflow-hidden rounded-[10px] border border-border/45 bg-background/90 px-3 py-2 shadow-minimal"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+            <Clock className="h-3 w-3 animate-pulse" aria-hidden="true" />
+            <span>{t('chat.queuedBadge')}</span>
+            {queuedCount > 1 && <span className="text-muted-foreground/60">× {queuedCount}</span>}
+          </div>
+          <div className="max-h-24 space-y-1 overflow-y-auto">
+            {queuedMessages.map((message) => (
+              (() => {
+                const text = message.content.trim()
+                const fallback = message.attachments?.length
+                  ? t('chat.filesCount', { count: message.attachments.length })
+                  : t('chat.queuedBadge')
+                const label = text || fallback
+
+                return (
+                  <div
+                    key={message.id}
+                    className="min-w-0 truncate rounded-[6px] bg-foreground/[0.035] px-2 py-1 text-xs text-foreground/75"
+                    title={label}
+                  >
+                    {label}
+                  </div>
+                )
+              })()
+            ))}
+          </div>
+        </div>
       )}
 
       <InputErrorBoundary

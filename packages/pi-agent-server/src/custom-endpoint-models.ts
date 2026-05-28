@@ -26,6 +26,8 @@ export interface CustomEndpointProviderApiKeyInput {
 }
 
 export const KEYLESS_CUSTOM_ENDPOINT_API_KEY = 'not-needed'
+export const CUSTOM_ENDPOINT_PROVIDER_NAME = 'custom-endpoint'
+export const CLOUDFLARE_AI_GATEWAY_PROVIDER_NAME = 'cloudflare-ai-gateway'
 
 /** Strip bare model IDs (remove pi/ prefix if present). */
 export function stripPiPrefix(id: string): string {
@@ -41,6 +43,22 @@ export function stripPiPrefix(id: string): string {
 export function resolveCustomEndpointProviderApiKey(input: CustomEndpointProviderApiKeyInput): string {
   const key = input.apiKey?.trim()
   return key || KEYLESS_CUSTOM_ENDPOINT_API_KEY
+}
+
+/**
+ * Cloudflare AI Gateway has first-class header handling inside Pi's
+ * OpenAI-compatible adapter. Keep managed Cloudflare custom models on that
+ * provider instead of the generic synthetic provider so requests use
+ * cf-aig-authorization instead of Authorization.
+ */
+export function resolveCustomEndpointProviderName(piAuthProvider: string | undefined): string {
+  return piAuthProvider === CLOUDFLARE_AI_GATEWAY_PROVIDER_NAME
+    ? CLOUDFLARE_AI_GATEWAY_PROVIDER_NAME
+    : CUSTOM_ENDPOINT_PROVIDER_NAME
+}
+
+export function shouldUseCustomEndpointBearerAuthHeader(providerName: string): boolean {
+  return providerName !== CLOUDFLARE_AI_GATEWAY_PROVIDER_NAME
 }
 
 /**

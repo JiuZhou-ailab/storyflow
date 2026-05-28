@@ -68,7 +68,7 @@ import {
   type AuthRequestTurn,
 } from "@craft-agent/ui"
 import { MemoizedAuthRequestCard } from "@/components/chat/AuthRequestCard"
-import { ChatInputZone, type StructuredInputState, type StructuredResponse, type PermissionResponse, type AdminApprovalResponse } from "./input"
+import { ChatInputZone, type QueuedInputMessage, type StructuredInputState, type StructuredResponse, type PermissionResponse, type AdminApprovalResponse } from "./input"
 import type { RichTextInputHandle } from "@/components/ui/rich-text-input"
 import { useBackgroundTasks } from "@/hooks/useBackgroundTasks"
 import { useTurnCardExpansion } from "@/hooks/useTurnCardExpansion"
@@ -541,6 +541,21 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     nonce: number
   } | null>(null)
   const followUpOpenNonceRef = React.useRef(0)
+  const queuedUserMessages = React.useMemo<QueuedInputMessage[]>(() => {
+    if (!session?.messages?.length) return []
+
+    return session.messages
+      .filter(message => message.role === 'user' && message.isQueued)
+      .map(message => ({
+        id: message.id,
+        content: message.content,
+        attachments: message.attachments,
+      }))
+  }, [session?.messages])
+  const transcriptMessages = React.useMemo(() => {
+    if (!session?.messages?.length) return []
+    return session.messages.filter(message => !(message.role === 'user' && message.isQueued))
+  }, [session?.messages])
 
   // Navigation for session branching
   const { navigate } = useNavigation()
@@ -667,10 +682,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // Find ALL individual match occurrences (not just turns)
   // Returns array with unique matchId for each occurrence
   const matchingOccurrences = useMemo(() => {
-    if (!searchQuery.trim() || !session?.messages) return []
+    if (!searchQuery.trim()) return []
     const startTime = performance.now()
     const query = searchQuery.toLowerCase()
-    const turns = groupMessagesByTurn(session.messages)
+    const turns = groupMessagesByTurn(transcriptMessages)
     const matches: { matchId: string; turnId: string; turnIndex: number; matchIndexInTurn: number }[] = []
 
     for (let turnIndex = 0; turnIndex < turns.length; turnIndex++) {
@@ -711,7 +726,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       }
     }
     return matches
-  }, [searchQuery, session?.messages, countOccurrences])
+  }, [searchQuery, transcriptMessages, countOccurrences])
 
   // Auto-expand pagination when search is active to show all matching turns
   // This ensures match count is stable and all matches are highlightable from the start
@@ -723,7 +738,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       (min, m) => m.turnIndex < min ? m.turnIndex : min,
       matchingOccurrences[0]!.turnIndex
     )
-    const totalTurns = groupMessagesByTurn(session?.messages || []).length
+    const totalTurns = groupMessagesByTurn(transcriptMessages).length
 
     // Calculate how many turns we need to show to include all matches
     // totalTurns - visibleTurnCount = startIndex, so we need visibleTurnCount = totalTurns - earliestMatchTurnIndex + buffer
@@ -732,7 +747,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     if (requiredVisibleCount > visibleTurnCount) {
       setVisibleTurnCount(requiredVisibleCount)
     }
-  }, [isSearchActive, matchingOccurrences, session?.messages, visibleTurnCount])
+  }, [isSearchActive, matchingOccurrences, transcriptMessages, visibleTurnCount])
 
   // Extract unique turn IDs that have matches (for highlighting)
   const matchingTurnIds = useMemo(() => {
@@ -1058,8 +1073,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const totalTurnCountRef = React.useRef(0)
 
   // Latest message metadata (for commit-time auto-scroll)
-  const messageCount = session?.messages.length ?? 0
-  const lastMessage = messageCount > 0 ? session?.messages[messageCount - 1] : undefined
+  const messageCount = transcriptMessages.length
+  const lastMessage = messageCount > 0 ? transcriptMessages[messageCount - 1] : undefined
   const lastMessageId = lastMessage?.id
   const lastMessageRole = lastMessage?.role
 
@@ -1422,8 +1437,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // Memoize turn grouping - avoids O(n) iteration on every render/keystroke
   const allTurns = React.useMemo(() => {
     if (!session) return []
-    return groupMessagesByTurn(session.messages)
-  }, [session?.messages])
+    return groupMessagesByTurn(transcriptMessages)
+  }, [session?.id, transcriptMessages])
 
   // Keep ref in sync for scroll handler
   totalTurnCountRef.current = allTurns.length
@@ -1521,7 +1536,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const skipScrollToBottom = isSessionSwitchForScroll && isSearchActive
   const hasUnrenderedLoadedMessages = !messagesLoading
     && turns.length === 0
-    && ((session?.messages?.length ?? 0) > 0 || (session?.messageCount ?? 0) > 0)
+    && queuedUserMessages.length === 0
+    && (transcriptMessages.length > 0 || (session?.messageCount ?? 0) > 0)
 
   return (
     <div ref={zoneRef} className="flex h-full flex-col min-w-0" data-focus-zone="chat">
@@ -1940,7 +1956,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                 {/* Processing Indicator - always visible while processing */}
                 {session.isProcessing && (() => {
                   // Find the last user message timestamp for accurate elapsed time
-                  const lastUserMsg = [...session.messages].reverse().find(m => m.role === 'user')
+                  const lastUserMsg = [...transcriptMessages].reverse().find(m => m.role === 'user')
                   return (
                     <ProcessingIndicator
                       startTime={lastUserMsg?.timestamp}
@@ -1971,6 +1987,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
             sessionStatuses={sessionStatuses}
             currentSessionStatus={session.sessionStatus || 'todo'}
             onSessionStatusChange={onSessionStatusChange}
+            queuedMessages={queuedUserMessages}
             inputProps={{
               placeholder,
               disabled: isInputDisabled,

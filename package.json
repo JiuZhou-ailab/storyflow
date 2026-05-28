@@ -1,6 +1,6 @@
 {
   "name": "storyflow",
-  "version": "0.9.18",
+  "version": "0.9.19",
   "license": "Apache-2.0",
   "description": "Claude Code-like agent for Craft documents",
   "type": "module",
@@ -89,6 +89,7 @@
     "server:build:subprocess": "cd packages/session-mcp-server && bun run build && cd ../pi-agent-server && bun run build",
     "server:prod": "bun run server:build:subprocess && bun run webui:build && CRAFT_WEBUI_DIR=apps/webui/dist CRAFT_BUNDLED_ASSETS_ROOT=$PWD/apps/electron bun run packages/server/src/index.ts",
     "server:dev:webui": "bun run server:build:subprocess && bun run webui:build && CRAFT_WEBUI_DIR=apps/webui/dist CRAFT_WEBUI_PORT=3100 bun run server:dev",
+    "auth-broker:dev": "bun run scripts/auth-broker-dev.ts",
     "marketing:dev": "vite dev --config apps/marketing/vite.config.ts",
     "marketing:build": "bun run scripts/build-marketing.ts",
     "marketing:preview": "vite preview --config apps/marketing/vite.config.ts",

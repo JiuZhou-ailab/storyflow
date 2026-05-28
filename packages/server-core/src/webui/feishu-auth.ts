@@ -53,6 +53,13 @@ export interface FeishuAuthConfig {
   registrationStore?: FeishuRegistrationStore
 }
 
+export interface FeishuClientAuthConfig {
+  enabled: boolean
+  appId?: string
+  scope?: string
+  authBaseUrl?: string
+}
+
 export type FeishuLoginDecision =
   | { allowed: true, reason: 'internal' | 'registered' | 'feishu-account', user: FeishuUserInfo }
   | { allowed: false, reason: 'registration-required', user: FeishuUserInfo }
@@ -242,6 +249,22 @@ export class FeishuLoginService {
 
   isConfigured(): boolean {
     return this.config.appId.trim().length > 0 && this.config.appSecret.trim().length > 0
+  }
+
+  getClientAuthConfig(): FeishuClientAuthConfig {
+    if (!this.isConfigured()) {
+      return { enabled: false }
+    }
+
+    const appId = this.config.appId.trim()
+    const scope = this.config.scope?.trim()
+    const authBaseUrl = this.config.authBaseUrl?.trim()
+    return {
+      enabled: true,
+      appId,
+      ...(scope ? { scope } : {}),
+      ...(authBaseUrl ? { authBaseUrl } : {}),
+    }
   }
 
   startLogin(defaultRedirectUri: string): { authUrl: string } {

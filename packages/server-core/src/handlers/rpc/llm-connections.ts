@@ -104,8 +104,8 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
         updates.modelSelectionMode = setup.modelSelectionMode
       }
       if (setup.slug === 'wangsu-default') {
-        updates.name = 'JiuZhou'
-        updates.hidden = false
+        updates.name = 'JiuZhou-AI'
+        updates.hidden = true
         updates.managed = true
         updates.source = 'builtin'
       }
@@ -122,7 +122,11 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
         })
         updates.authType = branch.authType
         if (branch.name !== undefined) updates.name = branch.name
-        if (branch.piAuthProvider !== undefined) updates.piAuthProvider = branch.piAuthProvider
+        if (setup.slug === 'wangsu-default') {
+          updates.piAuthProvider = 'cloudflare-ai-gateway'
+        } else if (branch.piAuthProvider !== undefined) {
+          updates.piAuthProvider = branch.piAuthProvider
+        }
       } else if (setup.baseUrl !== undefined) {
         // Base URL was explicitly updated without custom protocol config.
         // Treat this as non-custom mode and clear stale custom endpoint metadata.

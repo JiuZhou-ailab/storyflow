@@ -111,6 +111,7 @@ import type { EventSink } from '@craft-agent/server-core/transport'
 import { validateGitBashPath, checkVCRedistInstalled } from '@craft-agent/server-core/services'
 import { shouldCreateWindowsAfterStartup } from './startup-state'
 import { createClientAuthConfigFromEnv, createClientAuthService } from './client-auth'
+import { resolveElectronRuntimePaths } from './runtime-paths'
 
 // Initialize electron-log for renderer process support
 log.initialize()
@@ -126,59 +127,58 @@ if (isDebugMode) {
 // These are available to all agent Bash sessions via CRAFT_UV, CRAFT_SCRIPTS env vars
 // and PATH prepend. uv auto-downloads Python 3.12 on first use (~5s, then cached).
 {
-  // In packaged app: resources are at process.resourcesPath/app/resources/
+  // In packaged app: runtime resources are single-rooted at app/dist/resources/.
   // In dev: resources are at __dirname/../resources/ (sibling of dist/)
-  const resourcesBase = app.isPackaged
-    ? join(process.resourcesPath, 'app')
-    : join(__dirname, '..')
-  const platformKey = `${process.platform}-${process.arch}`
-  const uvPlatformDir = join(resourcesBase, 'resources', 'bin', platformKey)
-  const uvBinary = join(uvPlatformDir, process.platform === 'win32' ? 'uv.exe' : 'uv')
-  const binDir = join(resourcesBase, 'resources', 'bin')
-  const scriptsDir = join(resourcesBase, 'resources', 'scripts')
+  const runtimePaths = resolveElectronRuntimePaths({
+    isPackaged: app.isPackaged,
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+    dirname: __dirname,
+    cwd: process.cwd(),
+    platform: process.platform,
+    arch: process.arch,
+  })
 
-  const bundledUvExists = existsSync(uvBinary)
+  const bundledUvExists = existsSync(runtimePaths.uvBinary)
   const fallbackUv = bundledUvExists ? null : 'uv'
 
   // Runtime resolver hints for shared session tools
   process.env.CRAFT_IS_PACKAGED = app.isPackaged ? '1' : '0'
-  process.env.CRAFT_RESOURCES_BASE = resourcesBase
-  process.env.CRAFT_APP_ROOT = app.isPackaged ? app.getAppPath() : process.cwd()
+  process.env.CRAFT_RESOURCES_BASE = runtimePaths.resourcesBase
+  process.env.CRAFT_APP_ROOT = runtimePaths.appRoot
 
-  process.env.CRAFT_UV = bundledUvExists ? uvBinary : (fallbackUv ?? uvBinary)
+  process.env.CRAFT_UV = bundledUvExists ? runtimePaths.uvBinary : (fallbackUv ?? runtimePaths.uvBinary)
 
   // Bun runtime (packaged builds should prefer bundled runtime over PATH)
-  const bunBinary = join(resourcesBase, 'vendor', 'bun', process.platform === 'win32' ? 'bun.exe' : 'bun')
-  if (existsSync(bunBinary)) {
-    process.env.CRAFT_BUN = bunBinary
+  if (existsSync(runtimePaths.bunBinary)) {
+    process.env.CRAFT_BUN = runtimePaths.bunBinary
   }
 
-  process.env.CRAFT_SCRIPTS = scriptsDir
-  process.env.CRAFT_COMMANDS_ENTRY = app.isPackaged
-    ? join(app.getAppPath(), 'packages', 'craft-agents-commands', 'src', 'main.ts')
-    : join(process.cwd(), 'packages', 'craft-agents-commands', 'src', 'main.ts')
-  process.env.CRAFT_CLI_ENTRY = app.isPackaged
-    ? join(app.getAppPath(), 'packages', 'craft-cli', 'src', 'cli.ts')
-    : join(process.cwd(), 'packages', 'craft-cli', 'src', 'cli.ts')
-  process.env.CRAFT_COMMANDS_DOC_PATH = app.isPackaged
-    ? join(resourcesBase, 'resources', 'docs', 'craft-cli.md')
-    : join(process.cwd(), 'apps', 'electron', 'resources', 'docs', 'craft-cli.md')
+  process.env.CRAFT_SCRIPTS = runtimePaths.scriptsDir
+  process.env.CRAFT_COMMANDS_ENTRY = runtimePaths.commandsEntry
+  process.env.CRAFT_CLI_ENTRY = runtimePaths.cliEntry
+  process.env.CRAFT_COMMANDS_DOC_PATH = runtimePaths.commandsDocPath
   process.env.CRAFT_CLI_DOC_PATH = process.env.CRAFT_COMMANDS_DOC_PATH
   process.env.CRAFT_AGENT_VERSION = app.getVersion()
   // Prepend both generic wrappers dir and platform uv dir:
   // - binDir exposes wrapper commands (pdf-tool, docx-tool, ...)
   // - uvPlatformDir exposes raw `uv` for direct shell usage / debugging
-  process.env.PATH = `${binDir}${delimiter}${uvPlatformDir}${delimiter}${process.env.PATH}`
+  process.env.PATH = `${runtimePaths.binDir}${delimiter}${runtimePaths.uvPlatformDir}${delimiter}${process.env.PATH}`
 
   if (!bundledUvExists) {
     mainLog.warn('Bundled uv binary missing, CLI document tools may fail unless uv is available on PATH.', {
-      expectedUvPath: uvBinary,
+      expectedUvPath: runtimePaths.uvBinary,
       usingCraftUv: process.env.CRAFT_UV,
     })
   }
 
   if (isDebugMode) {
-    mainLog.info('CLI tools configured:', { uvBinary: process.env.CRAFT_UV, binDir, scriptsDir, bundledUvExists })
+    mainLog.info('CLI tools configured:', {
+      uvBinary: process.env.CRAFT_UV,
+      binDir: runtimePaths.binDir,
+      scriptsDir: runtimePaths.scriptsDir,
+      bundledUvExists,
+    })
   }
 }
 

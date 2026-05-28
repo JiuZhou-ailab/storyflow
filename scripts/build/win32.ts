@@ -112,48 +112,14 @@ async function safeRmDir(dir: string, maxRetries = 5): Promise<void> {
 }
 
 /**
- * Build main process with OAuth defines (Windows-specific inline build)
+ * Build main process through the shared root script so auth defines and release
+ * guards stay identical across macOS, Linux, and Windows.
  */
 function buildMainProcess(config: BuildConfig): void {
   const { rootDir } = config;
 
   console.log('  Building main process...');
-
-  const mainArgs = [
-    'apps/electron/src/main/index.ts',
-    '--bundle',
-    '--platform=node',
-    '--format=cjs',
-    '--outfile=apps/electron/dist/main.cjs',
-    '--external:electron',
-    // Claude Agent SDK uses top-level import.meta.url to initialize
-    // createRequire(). Keep it external so Electron loads the real ESM file
-    // instead of an inlined CJS bundle where import.meta.url is undefined.
-    '--external:@anthropic-ai/claude-agent-sdk',
-    // Replace grammY's bundled polyfills (node-fetch@2 + abort-controller@3)
-    // with native Node globals. Keeps parity with electron-dev.ts,
-    // electron-build-main.ts, and apps/electron/package.json build:main.
-    '--alias:node-fetch=./apps/electron/src/main/shims/node-fetch.cjs',
-    '--alias:abort-controller=./apps/electron/src/main/shims/abort-controller.cjs',
-  ];
-
-  // Add OAuth defines if env vars are set
-  const oauthDefines = [
-    ['GOOGLE_OAUTH_CLIENT_ID', process.env.GOOGLE_OAUTH_CLIENT_ID],
-    ['GOOGLE_OAUTH_CLIENT_SECRET', process.env.GOOGLE_OAUTH_CLIENT_SECRET],
-    ['SLACK_OAUTH_CLIENT_ID', process.env.SLACK_OAUTH_CLIENT_ID],
-    ['SLACK_OAUTH_CLIENT_SECRET', process.env.SLACK_OAUTH_CLIENT_SECRET],
-    ['MICROSOFT_OAUTH_CLIENT_ID', process.env.MICROSOFT_OAUTH_CLIENT_ID],
-  ];
-
-  for (const [key, value] of oauthDefines) {
-    if (value) {
-      mainArgs.push(`--define:process.env.${key}="'${value}'"`);
-    }
-  }
-
-  // Use node to run esbuild directly
-  run(`node ./node_modules/esbuild/bin/esbuild ${mainArgs.join(' ')}`, rootDir);
+  run('bun run electron:build:main', rootDir);
 }
 
 /**
@@ -164,7 +130,7 @@ export async function buildElectronAppWindows(config: BuildConfig): Promise<void
 
   console.log('Building Electron app...');
 
-  // Build main process with OAuth defines
+  // Build main process with shared auth-aware release guards
   buildMainProcess(config);
 
   // Build unified network interceptor (--require hook for tool metadata)

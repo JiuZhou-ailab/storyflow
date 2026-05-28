@@ -2,7 +2,7 @@
 // output: dist/resources tree with static assets and subprocess runtime entrypoints
 // pos: Electron-local resource copy step used by platform packaging scripts
 
-import { cpSync, copyFileSync, mkdirSync } from 'fs';
+import { cpSync, copyFileSync, rmSync } from 'fs';
 import { join } from 'path';
 import { resolveBuildTargetFromEnv, stageSubprocessResources } from '../../../scripts/build/resource-staging.ts';
 
@@ -18,6 +18,7 @@ stageSubprocessResources({
 });
 
 // Copy all resources (icons, themes, docs, permissions, tool-icons, etc.)
+rmSync('dist/resources', { recursive: true, force: true });
 cpSync('resources', 'dist/resources', { recursive: true });
 
 console.log('✓ Copied resources/ → dist/resources/');

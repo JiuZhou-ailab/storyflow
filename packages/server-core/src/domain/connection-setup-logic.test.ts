@@ -139,14 +139,20 @@ describe('createBuiltInConnection seeds midStreamBehavior', () => {
     expect(conn.midStreamBehavior).toBe('steer')
   })
 
-  it("JiuZhou managed provider is hidden from normal connection selection", () => {
+  it("JiuZhou-AI managed provider is hidden from normal connection selection", () => {
     const conn = createBuiltInConnection('wangsu-default')
-    expect(conn.name).toBe('JiuZhou')
+    expect(conn.name).toBe('JiuZhou-AI')
     expect(conn.providerType).toBe('pi_compat')
     expect(conn.authType).toBe('api_key_with_endpoint')
+    expect(conn.piAuthProvider).toBe('cloudflare-ai-gateway')
     expect(conn.hidden).toBe(true)
     expect(conn.managed).toBe(true)
     expect(conn.source).toBe('builtin')
+  })
+
+  it("keeps JiuZhou-AI managed provider hidden during setup updates", () => {
+    const conn = createBuiltInConnection('wangsu-default')
+    expect(conn.hidden).toBe(true)
   })
 
   it("anthropic-api with custom endpoint becomes pi_compat → 'steer'", () => {

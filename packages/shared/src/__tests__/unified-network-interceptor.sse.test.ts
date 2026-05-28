@@ -104,6 +104,24 @@ describe('unified-network-interceptor SSE processors', () => {
     rmSync(sessionDir, { recursive: true, force: true });
   });
 
+  it('OpenAI: synthesizes tool_calls finish_reason when upstream ends after tool deltas', async () => {
+    const sse = [
+      'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_missing_finish","type":"function","function":{"name":"Read","arguments":"{\\"file_path\\":\\"CLAUDE.md\\",\\"_intent\\":\\"Read context\\"}"}}]}}]}\n\n',
+      'data: [DONE]\n\n',
+    ];
+
+    const out = await runThroughProcessor(createOpenAiSseStrippingStream(), sse);
+
+    const toolCallIndex = out.indexOf('"id":"call_missing_finish"');
+    const finishIndex = out.indexOf('"finish_reason":"tool_calls"');
+    const doneIndex = out.indexOf('data: [DONE]');
+
+    expect(toolCallIndex).toBeGreaterThanOrEqual(0);
+    expect(finishIndex).toBeGreaterThan(toolCallIndex);
+    expect(doneIndex).toBeGreaterThan(finishIndex);
+    expect(out).not.toContain('_intent');
+  });
+
   it('OpenAI Responses: strips metadata on function_call done events', async () => {
     const sse = [
       'data: {"type":"response.function_call_arguments.done","call_id":"call_resp_1","arguments":"{\\"foo\\":1,\\"_intent\\":\\"do thing\\",\\"_displayName\\":\\"Do Thing\\"}"}\n\n',

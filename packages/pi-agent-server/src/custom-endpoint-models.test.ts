@@ -2,6 +2,8 @@ import { describe, expect, it } from 'bun:test'
 import {
   buildCustomEndpointModelDef,
   normalizeCustomEndpointModelEntry,
+  resolveCustomEndpointProviderName,
+  shouldUseCustomEndpointBearerAuthHeader,
   resolveCustomEndpointProviderApiKey,
   stripPiPrefix,
 } from './custom-endpoint-models.ts'
@@ -89,5 +91,26 @@ describe('resolveCustomEndpointProviderApiKey', () => {
       apiKey: '',
       baseUrl: 'http://127.0.0.1:11434/v1',
     })).toBe('not-needed')
+  })
+})
+
+describe('resolveCustomEndpointProviderName', () => {
+  it('uses the normal synthetic provider for generic compatible endpoints', () => {
+    expect(resolveCustomEndpointProviderName('openai')).toBe('custom-endpoint')
+    expect(resolveCustomEndpointProviderName(undefined)).toBe('custom-endpoint')
+  })
+
+  it('keeps Cloudflare AI Gateway models under the Cloudflare provider', () => {
+    expect(resolveCustomEndpointProviderName('cloudflare-ai-gateway')).toBe('cloudflare-ai-gateway')
+  })
+})
+
+describe('shouldUseCustomEndpointBearerAuthHeader', () => {
+  it('lets Cloudflare AI Gateway attach cf-aig-authorization itself', () => {
+    expect(shouldUseCustomEndpointBearerAuthHeader('cloudflare-ai-gateway')).toBe(false)
+  })
+
+  it('keeps Authorization bearer auth for generic compatible endpoints', () => {
+    expect(shouldUseCustomEndpointBearerAuthHeader('custom-endpoint')).toBe(true)
   })
 })

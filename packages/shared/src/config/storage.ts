@@ -26,7 +26,7 @@ import type { PermissionMode } from '../agent/mode-manager.ts';
 import type { ThinkingLevel } from '../agent/thinking-levels.ts';
 import { isValidThinkingLevel, normalizeThinkingLevel } from '../agent/thinking-levels.ts';
 import { parsePermissionMode, PERMISSION_MODE_ORDER } from '../agent/mode-types.ts';
-import { type ConfigDefaults } from './config-defaults-schema.ts';
+import { type BuiltinLlmConnectionDefaults, type ConfigDefaults } from './config-defaults-schema.ts';
 import { isValidThemeFile } from './validators.ts';
 
 // Re-export CONFIG_DIR for convenience (centralized in paths.ts)
@@ -102,6 +102,7 @@ export interface BuiltinLlmCredentialToSeed {
 
 export interface ApplyBuiltinLlmConnectionDefaultsResult {
   changed: boolean;
+  credentialsToSeed?: BuiltinLlmCredentialToSeed[];
   credentialToSeed?: BuiltinLlmCredentialToSeed;
 }
 
@@ -151,6 +152,17 @@ function isValidBuiltinLlmConnection(connection: LlmConnection | undefined): con
     && typeof connection.authType === 'string';
 }
 
+function getBuiltinLlmConnectionDefaults(defaults: ConfigDefaults): BuiltinLlmConnectionDefaults[] {
+  const plural = Array.isArray(defaults.builtinLlmConnections)
+    ? defaults.builtinLlmConnections
+    : [];
+  if (plural.length > 0) {
+    return plural;
+  }
+
+  return defaults.builtinLlmConnection ? [defaults.builtinLlmConnection] : [];
+}
+
 /**
  * Applies bundled internal LLM defaults to an in-memory config.
  * API keys are returned separately so they never get serialized into config.json.
@@ -159,10 +171,10 @@ export function applyBuiltinLlmConnectionDefaults(
   config: StoredConfig,
   defaults: ConfigDefaults,
 ): ApplyBuiltinLlmConnectionDefaultsResult {
-  const builtin = defaults.builtinLlmConnection;
-  const connection = builtin?.connection;
+  const builtins = getBuiltinLlmConnectionDefaults(defaults)
+    .filter(builtin => builtin.enabled && isValidBuiltinLlmConnection(builtin.connection));
 
-  if (!builtin?.enabled || !isValidBuiltinLlmConnection(connection)) {
+  if (builtins.length === 0) {
     return { changed: false };
   }
 
@@ -172,50 +184,67 @@ export function applyBuiltinLlmConnectionDefaults(
     changed = true;
   }
 
-  const slug = connection.slug.trim();
-  const existing = config.llmConnections.find(c => c.slug === slug);
-  if (!existing) {
-    config.llmConnections.push({
-      ...connection,
-      slug,
-      hidden: connection.hidden ?? true,
-      managed: connection.managed ?? true,
-      source: connection.source ?? 'builtin',
-      createdAt: connection.createdAt || Date.now(),
-    });
-    changed = true;
-  } else if (existing.managed || existing.source === 'builtin') {
-    const managedUpdates: Partial<LlmConnection> = {
-      name: connection.name,
-      providerType: connection.providerType,
-      authType: connection.authType,
-      baseUrl: connection.baseUrl,
-      models: connection.models,
-      defaultModel: connection.defaultModel,
-      modelSelectionMode: connection.modelSelectionMode,
-      customEndpoint: connection.customEndpoint,
-      hidden: connection.hidden ?? true,
-      managed: connection.managed ?? true,
-      source: connection.source ?? 'builtin',
-    };
+  const credentialsToSeed: BuiltinLlmCredentialToSeed[] = [];
+  let defaultSlug: string | undefined;
 
-    for (const [key, value] of Object.entries(managedUpdates) as Array<[keyof LlmConnection, LlmConnection[keyof LlmConnection]]>) {
-      if (JSON.stringify(existing[key]) !== JSON.stringify(value)) {
-        (existing as unknown as Record<string, unknown>)[key] = value;
-        changed = true;
+  for (const builtin of builtins) {
+    const connection = builtin.connection!;
+    const slug = connection.slug.trim();
+    defaultSlug ??= slug;
+
+    const existing = config.llmConnections.find(c => c.slug === slug);
+    if (!existing) {
+      config.llmConnections.push({
+        ...connection,
+        slug,
+        hidden: connection.hidden ?? true,
+        managed: connection.managed ?? true,
+        source: connection.source ?? 'builtin',
+        createdAt: connection.createdAt || Date.now(),
+      });
+      changed = true;
+    } else if (existing.managed || existing.source === 'builtin') {
+      const managedUpdates: Partial<LlmConnection> = {
+        name: connection.name,
+        providerType: connection.providerType,
+        authType: connection.authType,
+        baseUrl: connection.baseUrl,
+        models: connection.models,
+        defaultModel: connection.defaultModel,
+        modelSelectionMode: connection.modelSelectionMode,
+        piAuthProvider: connection.piAuthProvider,
+        customEndpoint: connection.customEndpoint,
+        hidden: connection.hidden ?? true,
+        managed: connection.managed ?? true,
+        source: connection.source ?? 'builtin',
+      };
+
+      for (const [key, value] of Object.entries(managedUpdates) as Array<[keyof LlmConnection, LlmConnection[keyof LlmConnection]]>) {
+        if (JSON.stringify(existing[key]) !== JSON.stringify(value)) {
+          (existing as unknown as Record<string, unknown>)[key] = value;
+          changed = true;
+        }
       }
+    }
+
+    const apiKey = builtin.apiKey?.trim();
+    if (apiKey) {
+      credentialsToSeed.push({ connectionSlug: slug, apiKey });
     }
   }
 
-  if (config.defaultLlmConnection !== slug) {
-    config.defaultLlmConnection = slug;
+  const defaultConnectionExists = config.defaultLlmConnection
+    ? config.llmConnections.some(c => c.slug === config.defaultLlmConnection)
+    : false;
+  if (defaultSlug && !defaultConnectionExists) {
+    config.defaultLlmConnection = defaultSlug;
     changed = true;
   }
 
-  const apiKey = builtin.apiKey?.trim();
   return {
     changed,
-    credentialToSeed: apiKey ? { connectionSlug: slug, apiKey } : undefined,
+    ...(credentialsToSeed.length > 0 ? { credentialsToSeed } : {}),
+    ...(credentialsToSeed[0] ? { credentialToSeed: credentialsToSeed[0] } : {}),
   };
 }
 
@@ -238,11 +267,19 @@ export async function seedBuiltinLlmConnectionFromDefaults(): Promise<boolean> {
   let credentialChanged = false;
   try {
     const manager = getCredentialManager();
-    const connectionSlug = result.credentialToSeed?.connectionSlug
-      ?? defaults.builtinLlmConnection?.connection?.slug?.trim();
+    const envApiKey = process.env.CRAFT_BUILTIN_LLM_API_KEY?.trim();
+    const credentialsToSeed = new Map(
+      (result.credentialsToSeed ?? [])
+        .map(credential => [credential.connectionSlug, credential] as const),
+    );
 
-    if (connectionSlug) {
-      const revokedHashes = normalizeRevokedApiKeyHashes(defaults.builtinLlmConnection?.revokedApiKeySha256);
+    for (const builtin of getBuiltinLlmConnectionDefaults(defaults)) {
+      if (!builtin.enabled || !isValidBuiltinLlmConnection(builtin.connection)) continue;
+
+      const connectionSlug = builtin.connection.slug.trim();
+      if (!connectionSlug) continue;
+
+      const revokedHashes = normalizeRevokedApiKeyHashes(builtin.revokedApiKeySha256);
       const existing = await manager.getLlmApiKey(connectionSlug);
       const existingIsRevoked = !!existing && revokedHashes.has(hashApiKey(existing));
 
@@ -251,8 +288,7 @@ export async function seedBuiltinLlmConnectionFromDefaults(): Promise<boolean> {
         credentialChanged = true;
       }
 
-      const envApiKey = process.env.CRAFT_BUILTIN_LLM_API_KEY?.trim();
-      const credentialToSeed = result.credentialToSeed
+      const credentialToSeed = credentialsToSeed.get(connectionSlug)
         ?? (envApiKey ? { connectionSlug, apiKey: envApiKey } : undefined);
 
       if (credentialToSeed && (!existing || existingIsRevoked)) {
@@ -311,6 +347,11 @@ function sanitizeConfigDefaultsForDisk(content: string): string {
     const defaults = JSON.parse(content) as ConfigDefaults;
     if (defaults.builtinLlmConnection?.apiKey) {
       defaults.builtinLlmConnection.apiKey = '';
+    }
+    for (const builtin of defaults.builtinLlmConnections ?? []) {
+      if (builtin.apiKey) {
+        builtin.apiKey = '';
+      }
     }
     return JSON.stringify(defaults, null, 2);
   } catch {

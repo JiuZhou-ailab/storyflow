@@ -1,3 +1,6 @@
+import { rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, it, expect } from 'bun:test'
 import { parseArgs, resolveApiKey, shouldSetupLlmConnection } from './index.ts'
 
@@ -366,6 +369,60 @@ describe('getValidateSteps', () => {
     const names = getValidateSteps().map((s) => s.name)
     expect(names).toContain('webhook:test (RPC)')
     expect(names).toContain('webhook:verify failure')
+  })
+
+  it('automation:create writes automations.json through the file RPC so the server reloads config', async () => {
+    const step = getValidateSteps().find((s) => s.name === 'automation:create')
+    expect(step).toBeDefined()
+
+    const root = await import('node:fs/promises').then(({ mkdtemp }) =>
+      mkdtemp(join(tmpdir(), 'craft-cli-automation-create-')),
+    )
+    const calls: Array<{ channel: string; args: unknown[] }> = []
+    const client = {
+      invoke: async (channel: string, ...args: unknown[]) => {
+        calls.push({ channel, args })
+        if (channel === 'file:write') {
+          await writeFile(args[0] as string, args[1] as string, 'utf-8')
+        }
+        return undefined
+      },
+    }
+
+    try {
+      await step!.fn(client as never, {
+        createdSessionId: 'session-1',
+        workspaceRootPath: root,
+      })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+
+    expect(calls.some((call) =>
+      call.channel === 'file:write' &&
+      call.args[0] === join(root, 'automations.json')
+    )).toBe(true)
+  })
+
+  it('webhook:test passes an automation id so failed webhook tests are persisted to history', async () => {
+    const step = getValidateSteps().find((s) => s.name === 'webhook:test (RPC)')
+    expect(step).toBeDefined()
+
+    const calls: Array<{ channel: string; args: unknown[] }> = []
+    const client = {
+      invoke: async (channel: string, ...args: unknown[]) => {
+        calls.push({ channel, args })
+        return { actions: [{ type: 'webhook', success: false, statusCode: 0, error: 'Unable to connect' }] }
+      },
+    }
+
+    await step!.fn(client as never, { workspaceId: 'workspace-1' })
+
+    const payload = calls[0]?.args[0] as { automationId?: unknown; actions?: Array<{ method?: string }> }
+    expect(calls[0]?.channel).toBe('automations:test')
+    expect(typeof payload.automationId).toBe('string')
+    expect((payload.automationId as string).length).toBeGreaterThan(0)
+    expect(payload.actions?.[0]?.method).toBe('POST')
   })
 
   it('creates session with allow-all permission mode', () => {

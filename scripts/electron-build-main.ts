@@ -1,3 +1,7 @@
+// input: Build-time env vars and Electron main-process source
+// output: Bundled main process and subprocess assets under apps/electron/dist
+// pos: Shared Electron main build entrypoint used by dev and release packaging
+
 /**
  * Cross-platform main process build script
  * Loads .env and passes OAuth defines to esbuild
@@ -6,6 +10,7 @@
 import { spawn } from "bun";
 import { existsSync, readFileSync, statSync, mkdirSync } from "fs";
 import { join } from "path";
+import { validateDesktopAuthBuildEnv } from "./build/desktop-auth-build-config";
 
 const ROOT_DIR = join(import.meta.dir, "..");
 const DIST_DIR = join(ROOT_DIR, "apps/electron/dist");
@@ -37,11 +42,21 @@ function loadEnvFile(): void {
               (value.startsWith("'") && value.endsWith("'"))) {
             value = value.slice(1, -1);
           }
-          process.env[key] = value;
+          if (process.env[key] === undefined) {
+            process.env[key] = value;
+          }
         }
       }
     }
   }
+}
+
+function validateDesktopAuthBuildConfig(): void {
+  const validation = validateDesktopAuthBuildEnv(process.env);
+  if (validation.ok) return;
+
+  console.error("❌", validation.message);
+  process.exit(1);
 }
 
 // Get build-time defines for esbuild (OAuth, Sentry DSN, etc.)
@@ -326,6 +341,7 @@ async function buildWhatsAppWorker(): Promise<void> {
 
 async function main(): Promise<void> {
   loadEnvFile();
+  validateDesktopAuthBuildConfig();
 
   // Ensure dist directory exists
   if (!existsSync(DIST_DIR)) {

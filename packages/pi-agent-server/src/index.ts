@@ -66,6 +66,8 @@ import {
   buildCustomEndpointModelDef,
   normalizeCustomEndpointModelEntry,
   resolveCustomEndpointProviderApiKey,
+  resolveCustomEndpointProviderName,
+  shouldUseCustomEndpointBearerAuthHeader,
   stripPiPrefix,
   type CustomEndpointModelEntry,
   type CustomEndpointModelOverrides,
@@ -443,6 +445,10 @@ function resolveCustomEndpointApiKey(): string {
   });
 }
 
+function getCustomEndpointProviderName(): string {
+  return resolveCustomEndpointProviderName(initConfig?.piAuth?.provider);
+}
+
 /** Model IDs currently registered under the custom-endpoint provider */
 let customEndpointModelIds: Set<string> = new Set();
 
@@ -469,18 +475,19 @@ function registerCustomEndpointModels(
     }
   }
   const allIds = [...customEndpointModelIds];
-  registry.registerProvider('custom-endpoint', {
+  const providerName = getCustomEndpointProviderName();
+  registry.registerProvider(providerName, {
     baseUrl,
     apiKey: resolveCustomEndpointApiKey(),
     api,
-    authHeader: true,
+    authHeader: shouldUseCustomEndpointBearerAuthHeader(providerName),
     models: allIds.map(id => buildCustomEndpointModelDef(
       id,
       { supportsImages: initConfig?.customEndpoint?.supportsImages === true },
       customModelOverrides.get(id),
     )),
   });
-  debugLog(`Registered custom endpoint: ${baseUrl} with ${allIds.length} model(s) [${allIds.join(', ')}], api: ${api}`);
+  debugLog(`Registered custom endpoint provider=${providerName}: ${baseUrl} with ${allIds.length} model(s) [${allIds.join(', ')}], api: ${api}`);
 }
 
 /**
@@ -1621,7 +1628,7 @@ async function handleUpdateRuntimeConfig(msg: RuntimeConfigUpdateMessage): Promi
       if (!piModel && initConfig.baseUrl?.trim() && initConfig.customEndpoint) {
         const bareId = stripPiPrefix(msg.model);
         registerCustomEndpointModels(piModelRegistry, initConfig.customEndpoint.api, initConfig.baseUrl.trim(), [{ id: bareId }]);
-        piModel = piModelRegistry.find('custom-endpoint', bareId) ?? undefined;
+        piModel = piModelRegistry.find(getCustomEndpointProviderName(), bareId) ?? undefined;
         debugLog(`[runtime_config] Dynamically registered custom endpoint model: ${bareId}`);
       }
 
@@ -1658,7 +1665,7 @@ async function handleSetModel(msg: Extract<InboundMessage, { type: 'set_model' }
   if (!piModel && initConfig?.baseUrl?.trim() && initConfig?.customEndpoint) {
     const bareId = stripPiPrefix(msg.model);
     registerCustomEndpointModels(piModelRegistry, initConfig.customEndpoint.api, initConfig.baseUrl!.trim(), [{ id: bareId }]);
-    piModel = piModelRegistry.find('custom-endpoint', bareId) ?? undefined;
+    piModel = piModelRegistry.find(getCustomEndpointProviderName(), bareId) ?? undefined;
     debugLog(`[set_model] Dynamically registered custom endpoint model: ${bareId}`);
   }
 

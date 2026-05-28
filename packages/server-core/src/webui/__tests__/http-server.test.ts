@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { jwtVerify } from 'jose'
 import { startWebuiHttpServer } from '../http-server'
 import type { FeishuAuthConfig, FeishuOAuthClient, FeishuUserInfo } from '../feishu-auth'
 import type { NeonAuthConfig } from '../neon-auth'
@@ -34,6 +35,10 @@ async function createServer(overrides?: {
   feishuAuth?: FeishuAuthConfig
   neonAuth?: NeonAuthConfig
   passwordAuthEnabled?: boolean
+  clientGatewayToken?: string
+  clientGatewayJwtSecret?: string
+  clientGatewayTokenTtlSeconds?: number
+  clientGatewayConnectionSlugs?: string[]
 }) {
   const server = await startWebuiHttpServer({
     port: 0,
@@ -49,6 +54,10 @@ async function createServer(overrides?: {
     feishuAuth: overrides?.feishuAuth,
     neonAuth: overrides?.neonAuth,
     passwordAuthEnabled: overrides?.passwordAuthEnabled,
+    clientGatewayToken: overrides?.clientGatewayToken,
+    clientGatewayJwtSecret: overrides?.clientGatewayJwtSecret,
+    clientGatewayTokenTtlSeconds: overrides?.clientGatewayTokenTtlSeconds,
+    clientGatewayConnectionSlugs: overrides?.clientGatewayConnectionSlugs,
   })
 
   SERVERS.push(server)
@@ -56,6 +65,37 @@ async function createServer(overrides?: {
   return {
     server,
     baseUrl: `http://127.0.0.1:${server.port}`,
+  }
+}
+
+async function withoutGatewayTokenEnv<T>(fn: () => Promise<T>): Promise<T> {
+  const previousClientToken = process.env.CRAFT_CLIENT_GATEWAY_TOKEN
+  const previousBuiltinToken = process.env.CRAFT_BUILTIN_LLM_API_KEY
+  const previousJwtSecret = process.env.CRAFT_CLIENT_GATEWAY_JWT_SECRET
+  delete process.env.CRAFT_CLIENT_GATEWAY_TOKEN
+  delete process.env.CRAFT_BUILTIN_LLM_API_KEY
+  delete process.env.CRAFT_CLIENT_GATEWAY_JWT_SECRET
+
+  try {
+    return await fn()
+  } finally {
+    if (previousClientToken === undefined) {
+      delete process.env.CRAFT_CLIENT_GATEWAY_TOKEN
+    } else {
+      process.env.CRAFT_CLIENT_GATEWAY_TOKEN = previousClientToken
+    }
+
+    if (previousBuiltinToken === undefined) {
+      delete process.env.CRAFT_BUILTIN_LLM_API_KEY
+    } else {
+      process.env.CRAFT_BUILTIN_LLM_API_KEY = previousBuiltinToken
+    }
+
+    if (previousJwtSecret === undefined) {
+      delete process.env.CRAFT_CLIENT_GATEWAY_JWT_SECRET
+    } else {
+      process.env.CRAFT_CLIENT_GATEWAY_JWT_SECRET = previousJwtSecret
+    }
   }
 }
 
@@ -477,6 +517,30 @@ describe('startWebuiHttpServer', () => {
     expect(url.searchParams.get('code_challenge')).toBeTruthy()
   })
 
+  it('exposes public Feishu client auth config from the broker', async () => {
+    const { baseUrl } = await createServer({
+      feishuAuth: {
+        ...createFeishuAuthConfig({
+          openId: 'ou_internal',
+          tenantKey: 'tenant_internal',
+        }),
+        appId: 'cli_user_deployment',
+        scope: 'offline_access',
+        authBaseUrl: 'https://accounts.feishu.cn/open-apis/authen/v1/authorize',
+      },
+    })
+
+    const res = await fetch(`${baseUrl}/api/client-auth/feishu/config`)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      enabled: true,
+      appId: 'cli_user_deployment',
+      scope: 'offline_access',
+      authBaseUrl: 'https://accounts.feishu.cn/open-apis/authen/v1/authorize',
+    })
+  })
+
   it('sets a session cookie for company-internal Feishu users', async () => {
     const { baseUrl } = await createServer({
       feishuAuth: createFeishuAuthConfig({
@@ -524,6 +588,7 @@ describe('startWebuiHttpServer', () => {
         internalTenantKeys: ['tenant_internal'],
         client,
       },
+      clientGatewayToken: 'model-gateway-token',
     })
 
     const res = await fetch(`${baseUrl}/api/client-auth/feishu/exchange`, {
@@ -548,12 +613,101 @@ describe('startWebuiHttpServer', () => {
       },
     })
     expect(typeof body.appSessionToken).toBe('string')
-    expect(body.gatewayToken).toBe(body.appSessionToken)
+    expect(body.gatewayToken).toBe('model-gateway-token')
     expect(exchangeCalls).toEqual([{
       code: 'desktop-code',
       redirectUri: 'http://localhost:6477/callback',
       codeVerifier: 'desktop-verifier',
     }])
+  })
+
+  it('exchanges desktop Neon Auth tokens through the server-side auth broker', async () => {
+    const { baseUrl } = await createServer({
+      neonAuth: createNeonAuthConfig(),
+      clientGatewayToken: 'model-gateway-token',
+    })
+
+    const res = await fetch(`${baseUrl}/api/client-auth/neon/exchange`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer valid-neon-token',
+      },
+    })
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as Record<string, unknown>
+    expect(body).toMatchObject({
+      ok: true,
+      user: {
+        provider: 'neon',
+        userId: 'neon_user_123',
+        email: 'neon.user@example.com',
+        emailVerified: true,
+      },
+      gatewayToken: 'model-gateway-token',
+    })
+    expect(typeof body.appSessionToken).toBe('string')
+  })
+
+  it('issues a scoped model gateway JWT instead of returning the upstream gateway credential', async () => {
+    const { baseUrl } = await createServer({
+      neonAuth: createNeonAuthConfig(),
+      clientGatewayToken: 'cfut-upstream-token',
+      clientGatewayJwtSecret: 'broker-signing-secret',
+      clientGatewayTokenTtlSeconds: 60,
+      clientGatewayConnectionSlugs: ['wangsu-default', 'xiaomi-default'],
+    })
+
+    const res = await fetch(`${baseUrl}/api/client-auth/neon/exchange`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer valid-neon-token',
+      },
+    })
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as Record<string, unknown>
+    expect(typeof body.gatewayToken).toBe('string')
+    expect(body.gatewayToken).not.toBe('cfut-upstream-token')
+
+    const { payload, protectedHeader } = await jwtVerify(
+      body.gatewayToken as string,
+      new TextEncoder().encode('broker-signing-secret'),
+      {
+        audience: 'storyflow-model-gateway',
+        issuer: 'storyflow-auth-broker',
+      },
+    )
+
+    expect(protectedHeader.alg).toBe('HS256')
+    expect(payload.sub).toBe('neon:neon_user_123')
+    expect(payload.provider).toBe('neon')
+    expect(payload.userId).toBe('neon_user_123')
+    expect(payload.email).toBe('neon.user@example.com')
+    expect(payload.emailVerified).toBe(true)
+    expect(payload.scopes).toEqual(['model:chat'])
+    expect(payload.connections).toEqual(['wangsu-default', 'xiaomi-default'])
+    expect(typeof payload.exp).toBe('number')
+  })
+
+  it('does not return a model gateway token when the broker has no gateway credential configured', async () => {
+    await withoutGatewayTokenEnv(async () => {
+      const { baseUrl } = await createServer({
+        neonAuth: createNeonAuthConfig(),
+      })
+
+      const res = await fetch(`${baseUrl}/api/client-auth/neon/exchange`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer valid-neon-token',
+        },
+      })
+
+      expect(res.status).toBe(200)
+      const body = await res.json() as Record<string, unknown>
+      expect(body.appSessionToken).toBeTruthy()
+      expect(body.gatewayToken).toBeUndefined()
+    })
   })
 
   it('requires registration for unregistered external Feishu users', async () => {

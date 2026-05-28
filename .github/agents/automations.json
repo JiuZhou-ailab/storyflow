@@ -1,0 +1,46 @@
+{
+  "version": 2,
+  "automations": {
+    "SessionStatusChange": [
+      {
+        "id": "c1b10c",
+        "name": "CLI Validate Condition Blocked",
+        "matcher": "^in-progress$",
+        "conditions": [
+          {
+            "condition": "state",
+            "field": "sessionStatus",
+            "to": "never-for-cli-validation"
+          }
+        ],
+        "actions": [
+          {
+            "type": "prompt",
+            "prompt": "Reply with exactly: BLOCKED_AUTOMATION_SHOULD_NOT_RUN"
+          }
+        ]
+      },
+      {
+        "id": "c1a11d",
+        "name": "CLI Validate Condition Pass",
+        "matcher": "^in-progress$",
+        "conditions": [
+          {
+            "condition": "state",
+            "field": "sessionStatus",
+            "to": "in-progress"
+          }
+        ],
+        "labels": [
+          "cli-validate-label"
+        ],
+        "actions": [
+          {
+            "type": "prompt",
+            "prompt": "Reply with exactly: CLI_VALIDATE_AUTOMATION_OK"
+          }
+        ]
+      }
+    ]
+  }
+}

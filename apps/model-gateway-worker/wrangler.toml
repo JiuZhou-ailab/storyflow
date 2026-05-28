@@ -1,0 +1,10 @@
+name = "storyflow-model-gateway"
+main = "src/index.ts"
+compatibility_date = "2026-05-28"
+workers_dev = true
+
+[vars]
+STORYFLOW_GATEWAY_JWT_AUDIENCE = "storyflow-model-gateway"
+STORYFLOW_GATEWAY_JWT_ISSUER = "storyflow-auth-broker"
+WANGSU_UPSTREAM_BASE_URL = "https://gateway.ai.cloudflare.com/v1/ec286cbbbae1647af670efd1b3289631/default/custom-wangsu"
+XIAOMI_UPSTREAM_BASE_URL = "https://gateway.ai.cloudflare.com/v1/ec286cbbbae1647af670efd1b3289631/default/custom-xiaomi"

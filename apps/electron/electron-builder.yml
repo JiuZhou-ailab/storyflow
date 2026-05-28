@@ -13,53 +13,24 @@ directories:
 
 files:
   - dist/**/*
-  - "!dist/renderer/src/**"
-  - "!**/*.map"
   - package.json
-  # Include bundled MCP servers (bridge + session) for Codex sessions
-  - resources/bridge-mcp-server/**/*
-  - resources/session-mcp-server/**/*
-  # Include Pi agent server subprocess for Pi SDK sessions
-  - resources/pi-agent-server/**/*
-  # Note: Bundled assets (docs, themes, permissions, tool-icons) are in resources/
-  # and copied to dist/resources/ by build:copy. They're included via dist/**/* above.
-  # Include network interceptor for API error capture and MCP schema injection
-  - packages/shared/src/unified-network-interceptor.ts
-  - packages/shared/src/interceptor-common.ts
-  - packages/shared/src/feature-flags.ts
-  - packages/shared/src/interceptor-request-utils.ts
-  # Include CLI tool Python scripts (platform-independent)
-  - resources/scripts/**/*
-  # Include CLI tool shell wrappers (platform-independent, both Unix and Windows)
-  - resources/bin/markitdown
-  - resources/bin/markitdown.cmd
-  - resources/bin/pdf-tool
-  - resources/bin/pdf-tool.cmd
-  - resources/bin/xlsx-tool
-  - resources/bin/xlsx-tool.cmd
-  - resources/bin/doc-diff
-  - resources/bin/doc-diff.cmd
-  - resources/bin/img-tool
-  - resources/bin/img-tool.cmd
-  - resources/bin/docx-tool
-  - resources/bin/docx-tool.cmd
-  - resources/bin/pptx-tool
-  - resources/bin/pptx-tool.cmd
-  - resources/bin/ical-tool
-  - resources/bin/ical-tool.cmd
-  # Include bundled uv binary (platform-specific, only the relevant one ships per build)
-  - resources/bin/darwin-arm64/**/*
-  - resources/bin/darwin-x64/**/*
-  - resources/bin/win32-x64/**/*
-  - resources/bin/linux-x64/**/*
+  # Bundled assets and subprocess entrypoints are copied to dist/resources/
+  # by build:copy and included through dist/**/* above. Do not also package
+  # the top-level resources/ tree, or uv and subprocess bundles are duplicated.
   # Include bundled Bun runtime (platform-specific, set by build script)
   - vendor/bun/**/*
   # Include bundled Codex binary (platform-specific, downloaded by build script)
   - vendor/codex/**/*
   # Include bundled Copilot CLI binary (platform-specific, copied from node_modules by build script)
   - vendor/copilot/**/*
-  # Exclude everything from node_modules (will use extraResources for SDK)
+  # Exclude development-only trees and generated source maps from app payload.
   - "!node_modules/**/*"
+  - "!src/**/*"
+  - "!resources/**/*"
+  - "!release/**/*"
+  - "!dist/**/*.map"
+  - "!**/*.map"
+  - "!dist/resources/dmg-background*"
 
 # Since SDK 0.2.113 the SDK ships a thin core (`@anthropic-ai/claude-agent-sdk`)
 # and a per-platform optional dependency (`-darwin-arm64`, `-darwin-x64`, etc.)
@@ -119,6 +90,18 @@ mac:
       to: messaging-whatsapp-worker/worker.cjs
   # Exclude binaries for other platforms
   files:
+    - dist/**/*
+    - package.json
+    - vendor/bun/**/*
+    - vendor/codex/**/*
+    - vendor/copilot/**/*
+    - "!node_modules/**/*"
+    - "!src/**/*"
+    - "!resources/**/*"
+    - "!release/**/*"
+    - "!dist/**/*.map"
+    - "!**/*.map"
+    - "!dist/resources/dmg-background*"
     - "!**/vendor/codex/linux-*/**"
     - "!**/vendor/codex/win32-*/**"
     - "!**/vendor/copilot/linux-*/**"
@@ -164,7 +147,15 @@ win:
   # Use predictable naming: Storyflow-x64.exe
   artifactName: "Storyflow-${arch}.${ext}"
   files:
-    # Exclude binaries for other platforms
+    - dist/**/*
+    - package.json
+    - "!node_modules/**/*"
+    - "!src/**/*"
+    - "!resources/**/*"
+    - "!release/**/*"
+    - "!dist/**/*.map"
+    - "!**/*.map"
+    - "!dist/resources/dmg-background*"
     - "!**/vendor/codex/darwin-*/**"
     - "!**/vendor/codex/linux-*/**"
     - "!**/vendor/copilot/darwin-*/**"
@@ -195,7 +186,7 @@ win:
     - from: vendor/copilot/win32-x64
       to: app/vendor/copilot/win32-x64
     - from: resources/bin/win32-x64
-      to: app/resources/bin/win32-x64
+      to: app/dist/resources/bin/win32-x64
     # WhatsApp worker subprocess (self-contained; Baileys bundled in).
     - from: ../../packages/messaging-whatsapp-worker/dist/worker.cjs
       to: messaging-whatsapp-worker/worker.cjs
@@ -228,6 +219,18 @@ linux:
       to: messaging-whatsapp-worker/worker.cjs
   # Exclude binaries for other platforms
   files:
+    - dist/**/*
+    - package.json
+    - vendor/bun/**/*
+    - vendor/codex/**/*
+    - vendor/copilot/**/*
+    - "!node_modules/**/*"
+    - "!src/**/*"
+    - "!resources/**/*"
+    - "!release/**/*"
+    - "!dist/**/*.map"
+    - "!**/*.map"
+    - "!dist/resources/dmg-background*"
     - "!**/vendor/codex/darwin-*/**"
     - "!**/vendor/codex/win32-*/**"
     - "!**/vendor/copilot/darwin-*/**"

@@ -16,8 +16,10 @@ export interface ClientAuthConfig {
   required: boolean
   neonAuthOrigin?: string
   neonAuth?: NeonAuthConfig
+  authBrokerUrl?: string
   feishuBrokerAuth?: ClientFeishuBrokerAuthConfig
   gatewayConnectionSlug?: string
+  gatewayConnectionSlugs?: string[]
   feishuCallbackPort?: number
   feishuLoginTimeoutMs?: number
 }
@@ -25,6 +27,13 @@ export interface ClientAuthConfig {
 export interface ClientFeishuBrokerAuthConfig {
   appId: string
   brokerUrl: string
+  scope?: string
+  authBaseUrl?: string
+}
+
+export interface ClientFeishuBrokerPublicConfig {
+  enabled: boolean
+  appId?: string
   scope?: string
   authBaseUrl?: string
 }
@@ -49,6 +58,11 @@ export interface ClientAuthBrokerExchangeInput {
   codeVerifier: string
 }
 
+export interface ClientAuthNeonBrokerExchangeInput {
+  brokerUrl: string
+  token: string
+}
+
 export interface ClientAuthBrokerExchangeResult {
   user: ClientAuthUser
   appSessionToken?: string
@@ -56,6 +70,8 @@ export interface ClientAuthBrokerExchangeResult {
 }
 
 export interface ClientAuthBrokerClient {
+  getFeishuAuthConfig?(input: { brokerUrl: string }): Promise<ClientFeishuBrokerPublicConfig | null>
+  exchangeNeonToken(input: ClientAuthNeonBrokerExchangeInput): Promise<ClientAuthBrokerExchangeResult>
   exchangeFeishuCode(input: ClientAuthBrokerExchangeInput): Promise<ClientAuthBrokerExchangeResult>
 }
 
@@ -104,8 +120,11 @@ export interface ClientAuthService {
 
 const DEFAULT_CLIENT_AUTH_ORIGIN = 'http://localhost:9100'
 const DEFAULT_GATEWAY_CONNECTION_SLUG = 'wangsu-default'
+const DEFAULT_GATEWAY_CONNECTION_SLUGS = ['wangsu-default', 'xiaomi-default']
 const DEFAULT_FEISHU_CALLBACK_PORT = 6477
 const DEFAULT_FEISHU_LOGIN_TIMEOUT_MS = 90_000
+const DEFAULT_NEON_BROKER_EXCHANGE_PATH = '/api/client-auth/neon/exchange'
+const DEFAULT_FEISHU_BROKER_CONFIG_PATH = '/api/client-auth/feishu/config'
 const DEFAULT_FEISHU_BROKER_EXCHANGE_PATH = '/api/client-auth/feishu/exchange'
 
 export function createClientAuthConfigFromEnv(env: NodeJS.ProcessEnv): ClientAuthConfig {
@@ -120,23 +139,26 @@ export function createClientAuthConfigFromEnv(env: NodeJS.ProcessEnv): ClientAut
     ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_ORIGIN)
     ?? (baseUrl ? DEFAULT_CLIENT_AUTH_ORIGIN : undefined)
 
-  const feishuAppId = readEnv(env.CRAFT_CLIENT_FEISHU_APP_ID) ?? readEnv(env.CRAFT_WEBUI_FEISHU_APP_ID)
-  const feishuBrokerUrl = normalizeUrlString(
+  const feishuAppId = readEnv(env.CRAFT_CLIENT_FEISHU_APP_ID)
+  const authBrokerUrl = normalizeUrlString(
     readEnv(env.CRAFT_CLIENT_AUTH_BROKER_URL)
       ?? readEnv(env.CRAFT_CLIENT_FEISHU_AUTH_BROKER_URL),
   )
+  const feishuBrokerUrl = authBrokerUrl
   const feishuScope = readEnv(env.CRAFT_CLIENT_FEISHU_SCOPE) ?? readEnv(env.CRAFT_WEBUI_FEISHU_SCOPE)
   const feishuAuthBaseUrl = readEnv(env.CRAFT_CLIENT_FEISHU_AUTH_BASE_URL) ?? readEnv(env.CRAFT_WEBUI_FEISHU_AUTH_BASE_URL)
   const feishuCallbackPort = readPortEnv(env.CRAFT_CLIENT_FEISHU_CALLBACK_PORT) ?? DEFAULT_FEISHU_CALLBACK_PORT
   const feishuLoginTimeoutMs = readPositiveIntegerEnv(env.CRAFT_CLIENT_FEISHU_LOGIN_TIMEOUT_MS)
     ?? readPositiveIntegerEnv(env.CRAFT_WEBUI_FEISHU_LOGIN_TIMEOUT_MS)
     ?? DEFAULT_FEISHU_LOGIN_TIMEOUT_MS
-  const gatewayConnectionSlug = readEnv(env.CRAFT_CLIENT_GATEWAY_LLM_CONNECTION_SLUG)
-    ?? DEFAULT_GATEWAY_CONNECTION_SLUG
+  const gatewayConnectionSlugs = readConnectionSlugList(env.CRAFT_CLIENT_GATEWAY_LLM_CONNECTION_SLUG)
+    ?? DEFAULT_GATEWAY_CONNECTION_SLUGS
 
   return {
     required,
-    gatewayConnectionSlug,
+    gatewayConnectionSlug: gatewayConnectionSlugs[0] ?? DEFAULT_GATEWAY_CONNECTION_SLUG,
+    gatewayConnectionSlugs,
+    ...(authBrokerUrl ? { authBrokerUrl } : {}),
     ...(neonAuthOrigin ? { neonAuthOrigin } : {}),
     ...(baseUrl
       ? {
@@ -171,47 +193,53 @@ export function createClientAuthService(
   const neonAuth = config.neonAuth
     ? (deps.createNeonAuthService ?? ((neonAuthConfig) => new NeonAuthService(neonAuthConfig)))(config.neonAuth)
     : null
-  const feishuBrokerClient = config.feishuBrokerAuth
+  const authBrokerClient = config.authBrokerUrl || config.feishuBrokerAuth
     ? (deps.createAuthBrokerClient ?? (() => new DefaultClientAuthBrokerClient()))()
     : null
   const feishuBrokerStateStore = config.feishuBrokerAuth ? new FeishuOAuthStateStore() : null
   const emailPasswordEnabled = neonAuth?.isConfigured() ?? false
-  const feishuLoginEnabled = config.feishuBrokerAuth !== undefined && feishuBrokerClient !== null
+  const feishuLoginEnabled = config.feishuBrokerAuth !== undefined && authBrokerClient !== null
   const configured = emailPasswordEnabled || feishuLoginEnabled
   let currentUser: ClientAuthUser | null = null
-  let currentGatewayCredential: {
+  let currentGatewayCredentials: Array<{
     connectionSlug: string
     token: string
-  } | null = null
+  }> = []
   let activeFeishuLogin: {
     close: () => void | Promise<void>
     reject: (error: Error) => void
   } | null = null
 
   async function storeGatewayCredential(token: string | undefined, user: ClientAuthUser): Promise<void> {
-    const connectionSlug = readEnv(config.gatewayConnectionSlug)
+    const connectionSlugs = getGatewayConnectionSlugs(config)
     const gatewayToken = readEnv(token)
-    if (!connectionSlug || !gatewayToken || !deps.gatewayCredentialStore) return
+    if (connectionSlugs.length === 0 || !gatewayToken || !deps.gatewayCredentialStore) return
 
-    await deps.gatewayCredentialStore.setGatewayToken({
-      connectionSlug,
-      token: gatewayToken,
-      user,
-    })
-    currentGatewayCredential = {
-      connectionSlug,
-      token: gatewayToken,
+    const storedCredentials: Array<{ connectionSlug: string, token: string }> = []
+    for (const connectionSlug of connectionSlugs) {
+      await deps.gatewayCredentialStore.setGatewayToken({
+        connectionSlug,
+        token: gatewayToken,
+        user,
+      })
+      storedCredentials.push({
+        connectionSlug,
+        token: gatewayToken,
+      })
     }
+    currentGatewayCredentials = storedCredentials
   }
 
   async function clearGatewayCredential(): Promise<void> {
-    if (!currentGatewayCredential || !deps.gatewayCredentialStore) {
-      currentGatewayCredential = null
+    if (currentGatewayCredentials.length === 0 || !deps.gatewayCredentialStore) {
+      currentGatewayCredentials = []
       return
     }
 
-    await deps.gatewayCredentialStore.clearGatewayToken(currentGatewayCredential)
-    currentGatewayCredential = null
+    for (const credential of currentGatewayCredentials) {
+      await deps.gatewayCredentialStore.clearGatewayToken(credential)
+    }
+    currentGatewayCredentials = []
   }
 
   return {
@@ -253,7 +281,13 @@ export function createClientAuthService(
       }
 
       const user = toClientAuthUser(await neonAuth.verifyToken(authResult.token))
-      await storeGatewayCredential(authResult.token, user)
+      const brokerResult = config.authBrokerUrl && authBrokerClient
+        ? await authBrokerClient.exchangeNeonToken({
+            brokerUrl: config.authBrokerUrl,
+            token: authResult.token,
+          })
+        : null
+      await storeGatewayCredential(brokerResult?.gatewayToken, user)
       currentUser = user
       return user
     },
@@ -265,6 +299,11 @@ export function createClientAuthService(
       if (activeFeishuLogin) {
         throw new Error('Feishu login is already in progress')
       }
+      if (!config.feishuBrokerAuth || !authBrokerClient || !feishuBrokerStateStore) {
+        throw new Error('Feishu login is not configured')
+      }
+
+      const feishuBrokerAuth = await resolveFeishuBrokerAuthConfig(config.feishuBrokerAuth, authBrokerClient)
 
       const createServer = deps.createCallbackServer
         ?? ((options) => createCallbackServer({
@@ -289,18 +328,15 @@ export function createClientAuthService(
           }
         })
         const redirectUri = `${callbackServer.url}/callback`
-        if (!config.feishuBrokerAuth || !feishuBrokerClient || !feishuBrokerStateStore) {
-          throw new Error('Feishu login is not configured')
-        }
 
         const brokerState = feishuBrokerStateStore.create(redirectUri)
         const authUrl = buildFeishuAuthorizeUrl({
-          appId: config.feishuBrokerAuth.appId,
+          appId: feishuBrokerAuth.appId,
           redirectUri,
           state: brokerState.state,
           codeChallenge: brokerState.codeChallenge,
-          scope: config.feishuBrokerAuth.scope,
-          authBaseUrl: config.feishuBrokerAuth.authBaseUrl,
+          scope: feishuBrokerAuth.scope,
+          authBaseUrl: feishuBrokerAuth.authBaseUrl,
         })
         await openExternal(authUrl)
         const callback = await withTimeout(
@@ -324,14 +360,14 @@ export function createClientAuthService(
           throw new Error('Invalid or expired Feishu OAuth state')
         }
 
-        const brokerResult = await feishuBrokerClient.exchangeFeishuCode({
-          brokerUrl: config.feishuBrokerAuth.brokerUrl,
+        const brokerResult = await authBrokerClient.exchangeFeishuCode({
+          brokerUrl: feishuBrokerAuth.brokerUrl,
           code,
           redirectUri: consumedState.redirectUri,
           codeVerifier: consumedState.codeVerifier,
         })
         const user = normalizeBrokerClientAuthUser(brokerResult.user)
-        await storeGatewayCredential(brokerResult.gatewayToken ?? brokerResult.appSessionToken, user)
+        await storeGatewayCredential(brokerResult.gatewayToken, user)
         currentUser = user
         return user
       } finally {
@@ -392,8 +428,32 @@ function toClientAuthUser(identity: NeonAuthIdentity): ClientAuthUser {
 }
 
 export class DefaultClientAuthBrokerClient implements ClientAuthBrokerClient {
+  async getFeishuAuthConfig(input: { brokerUrl: string }): Promise<ClientFeishuBrokerPublicConfig | null> {
+    const endpoint = buildBrokerEndpointUrl(input.brokerUrl, DEFAULT_FEISHU_BROKER_CONFIG_PATH)
+    const body = await requestBrokerJson(endpoint, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    }, 'Feishu broker config request failed', { allowNotFound: true })
+
+    return body ? normalizeFeishuBrokerPublicConfig(body) : null
+  }
+
+  async exchangeNeonToken(input: ClientAuthNeonBrokerExchangeInput): Promise<ClientAuthBrokerExchangeResult> {
+    const endpoint = buildBrokerEndpointUrl(input.brokerUrl, DEFAULT_NEON_BROKER_EXCHANGE_PATH)
+    const body = await requestBrokerJson(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${input.token}`,
+        Accept: 'application/json',
+      },
+    }, 'Neon broker exchange failed')
+
+    return normalizeBrokerExchangeResult(body, 'neon')
+  }
+
   async exchangeFeishuCode(input: ClientAuthBrokerExchangeInput): Promise<ClientAuthBrokerExchangeResult> {
-    const res = await fetch(buildBrokerEndpointUrl(input.brokerUrl, DEFAULT_FEISHU_BROKER_EXCHANGE_PATH), {
+    const endpoint = buildBrokerEndpointUrl(input.brokerUrl, DEFAULT_FEISHU_BROKER_EXCHANGE_PATH)
+    const body = await requestBrokerJson(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -404,19 +464,58 @@ export class DefaultClientAuthBrokerClient implements ClientAuthBrokerClient {
         redirectUri: input.redirectUri,
         codeVerifier: input.codeVerifier,
       }),
-    })
-    const body = await parseJsonObject(res)
+    }, 'Feishu broker exchange failed')
 
-    if (!res.ok) {
-      throw new Error(readBrokerError(body) ?? `Feishu broker exchange failed: HTTP ${res.status}`)
-    }
-
-    return normalizeBrokerExchangeResult(body)
+    return normalizeBrokerExchangeResult(body, 'feishu')
   }
 }
 
-function normalizeBrokerExchangeResult(body: Record<string, unknown>): ClientAuthBrokerExchangeResult {
-  const user = normalizeBrokerClientAuthUser(readObjectValue(body.user))
+async function resolveFeishuBrokerAuthConfig(
+  fallback: ClientFeishuBrokerAuthConfig,
+  brokerClient: ClientAuthBrokerClient,
+): Promise<ClientFeishuBrokerAuthConfig> {
+  if (!brokerClient.getFeishuAuthConfig) {
+    return fallback
+  }
+
+  const brokerConfig = await brokerClient.getFeishuAuthConfig({ brokerUrl: fallback.brokerUrl })
+  if (!brokerConfig) {
+    return fallback
+  }
+
+  if (!brokerConfig.enabled) {
+    throw new Error('Feishu login is not configured on the auth broker')
+  }
+
+  const appId = readEnv(brokerConfig.appId)
+  if (!appId) {
+    throw new Error('Feishu auth broker config did not include an app id')
+  }
+
+  const scope = readEnv(brokerConfig.scope)
+  const authBaseUrl = readEnv(brokerConfig.authBaseUrl)
+  return {
+    appId,
+    brokerUrl: fallback.brokerUrl,
+    ...(scope ? { scope } : {}),
+    ...(authBaseUrl ? { authBaseUrl } : {}),
+  }
+}
+
+function normalizeFeishuBrokerPublicConfig(body: Record<string, unknown>): ClientFeishuBrokerPublicConfig {
+  const appId = readStringValue(body.appId)
+  const scope = readStringValue(body.scope)
+  const authBaseUrl = readStringValue(body.authBaseUrl)
+  return {
+    enabled: body.enabled === true,
+    ...(appId ? { appId } : {}),
+    ...(scope ? { scope } : {}),
+    ...(authBaseUrl ? { authBaseUrl } : {}),
+  }
+}
+
+function normalizeBrokerExchangeResult(body: Record<string, unknown>, defaultProvider: ClientAuthUser['provider']): ClientAuthBrokerExchangeResult {
+  const user = normalizeBrokerClientAuthUser(readObjectValue(body.user), defaultProvider)
   const appSessionToken = readStringValue(body.appSessionToken) ?? readStringValue(body.sessionToken)
   const gatewayToken = readStringValue(body.gatewayToken)
 
@@ -427,7 +526,7 @@ function normalizeBrokerExchangeResult(body: Record<string, unknown>): ClientAut
   }
 }
 
-function normalizeBrokerClientAuthUser(value: unknown): ClientAuthUser {
+function normalizeBrokerClientAuthUser(value: unknown, defaultProvider: ClientAuthUser['provider'] = 'feishu'): ClientAuthUser {
   const record = readObjectValue(value)
   if (!record) {
     throw new Error('Feishu broker exchange response did not include a user')
@@ -435,7 +534,7 @@ function normalizeBrokerClientAuthUser(value: unknown): ClientAuthUser {
 
   const provider = record.provider === 'neon' || record.provider === 'feishu'
     ? record.provider
-    : 'feishu'
+    : defaultProvider
   const userId = readStringValue(record.userId)
     ?? readStringValue(record.openId)
     ?? readStringValue(record.id)
@@ -460,9 +559,35 @@ function clientConfigRequiresUsername(config: NeonAuthClientConfig): boolean {
   return config.usernameLoginEnabled === true
 }
 
+function getGatewayConnectionSlugs(config: ClientAuthConfig): string[] {
+  const plural = normalizeConnectionSlugs(config.gatewayConnectionSlugs ?? [])
+  if (plural.length > 0) {
+    return plural
+  }
+
+  const singular = readEnv(config.gatewayConnectionSlug)
+  return singular ? [singular] : []
+}
+
 function readEnv(value: string | undefined): string | undefined {
   const trimmed = value?.trim()
   return trimmed || undefined
+}
+
+function readConnectionSlugList(value: string | undefined): string[] | undefined {
+  const slugs = normalizeConnectionSlugs(value?.split(',') ?? [])
+  return slugs.length > 0 ? slugs : undefined
+}
+
+function normalizeConnectionSlugs(values: string[]): string[] {
+  const slugs: string[] = []
+  for (const value of values) {
+    const slug = readEnv(value)
+    if (slug && !slugs.includes(slug)) {
+      slugs.push(slug)
+    }
+  }
+  return slugs
 }
 
 function readBooleanEnv(value: string | undefined): boolean | undefined {
@@ -505,6 +630,51 @@ function normalizeUrlString(value: string | undefined): string | undefined {
 function buildBrokerEndpointUrl(baseUrl: string, path: string): string {
   const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
   return new URL(path.replace(/^\/+/, ''), normalizedBase).toString()
+}
+
+function formatBrokerNetworkError(endpoint: string, error: unknown): string {
+  const detail = error instanceof Error && error.message
+    ? ` (${error.message})`
+    : ''
+  return `Auth broker is unreachable at ${endpoint}${detail}. ` +
+    'Start the auth broker for local development or set CRAFT_CLIENT_AUTH_BROKER_URL to the deployed auth broker.'
+}
+
+function requestBrokerJson(
+  endpoint: string,
+  init: RequestInit,
+  failurePrefix: string,
+  options: { allowNotFound: true },
+): Promise<Record<string, unknown> | null>
+function requestBrokerJson(
+  endpoint: string,
+  init: RequestInit,
+  failurePrefix: string,
+  options?: { allowNotFound?: false },
+): Promise<Record<string, unknown>>
+async function requestBrokerJson(
+  endpoint: string,
+  init: RequestInit,
+  failurePrefix: string,
+  options: { allowNotFound?: boolean } = {},
+): Promise<Record<string, unknown> | null> {
+  let res: Response
+  try {
+    res = await fetch(endpoint, init)
+  } catch (err) {
+    throw new Error(formatBrokerNetworkError(endpoint, err))
+  }
+
+  if (options.allowNotFound && res.status === 404) {
+    return null
+  }
+
+  const body = await parseJsonObject(res)
+  if (!res.ok) {
+    throw new Error(readBrokerError(body) ?? `${failurePrefix}: HTTP ${res.status}`)
+  }
+
+  return body
 }
 
 async function parseJsonObject(res: Response): Promise<Record<string, unknown>> {

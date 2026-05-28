@@ -3443,55 +3443,56 @@ function AppShellContent({
       },
     })
 
-    const createNovelWorkspaceAddAction = (
-      basePath: NovelCreateFileBasePath,
-      target: Omit<NovelCreateFileTarget, 'basePath'>
-    ) => (
-      <span
-        role="button"
-        tabIndex={-1}
-        title={target.title}
-        aria-label={target.title}
-        className="flex h-4 w-4 items-center justify-center rounded-[4px] text-foreground/45 hover:bg-foreground/10 hover:text-foreground"
-        data-no-dnd="true"
-        onClick={(event) => {
-          event.preventDefault()
-          event.stopPropagation()
-          openNovelCreateFileDialog({ basePath, ...target })
-        }}
-      >
-        <Plus className="h-3 w-3" />
-      </span>
-    )
-
-    const createNovelWorkspaceImportAction = (basePath: NovelCreateFileBasePath, title: string) => (
-      <span
-        role="button"
-        tabIndex={-1}
-        title={title}
-        aria-label={title}
-        className="flex h-4 w-4 items-center justify-center rounded-[4px] text-foreground/45 hover:bg-foreground/10 hover:text-foreground"
-        data-no-dnd="true"
-        onClick={(event) => {
-          event.preventDefault()
-          event.stopPropagation()
-          void handleImportNovelFiles(basePath)
-        }}
-      >
-        <FileUp className="h-3 w-3" />
-      </span>
-    )
-
     const createNovelWorkspaceFileActions = (
       basePath: NovelCreateFileBasePath,
       target: Omit<NovelCreateFileTarget, 'basePath'>,
       importTitle: string
-    ) => (
-      <span className="ml-1 flex items-center gap-1">
-        {createNovelWorkspaceImportAction(basePath, importTitle)}
-        {createNovelWorkspaceAddAction(basePath, target)}
-      </span>
-    )
+    ) => {
+      const menuTitle = `${importTitle} / ${target.title}`
+
+      return (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <span
+              role="button"
+              tabIndex={-1}
+              title={menuTitle}
+              aria-label={menuTitle}
+              className="ml-1 flex h-4 w-4 items-center justify-center rounded-[4px] text-foreground/45 hover:bg-foreground/10 hover:text-foreground data-[state=open]:bg-foreground/10 data-[state=open]:text-foreground"
+              data-no-dnd="true"
+              onPointerDown={(event) => {
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.stopPropagation()
+              }}
+            >
+              <MoreHorizontal className="h-3 w-3" />
+            </span>
+          </DropdownMenuTrigger>
+          <StyledDropdownMenuContent align="end" sideOffset={4} className="min-w-[9.5rem]">
+            <StyledDropdownMenuItem
+              onClick={(event) => {
+                event.stopPropagation()
+                void handleImportNovelFiles(basePath)
+              }}
+            >
+              <FileUp className="h-3.5 w-3.5" />
+              {importTitle}
+            </StyledDropdownMenuItem>
+            <StyledDropdownMenuItem
+              onClick={(event) => {
+                event.stopPropagation()
+                openNovelCreateFileDialog({ basePath, ...target })
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              {target.title}
+            </StyledDropdownMenuItem>
+          </StyledDropdownMenuContent>
+        </DropdownMenu>
+      )
+    }
 
     const sectionItem = (section: typeof globalSectionDefinitions[number]): LeftSidebarItem => {
       const sectionId = `writing:section:${section.id}`

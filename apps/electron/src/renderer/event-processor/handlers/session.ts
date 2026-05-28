@@ -577,8 +577,10 @@ export function handleUserMessage(
         messages: updatedMessages,
         lastMessageAt: Date.now(),
         lastMessageRole: 'user',  // Clear plan badge when user responds
-        // Set isProcessing when message is accepted/processing (enables multi-window sync)
-        isProcessing: status === 'accepted' || status === 'processing',
+        // Queued messages wait behind the active turn; do not mark the session idle.
+        isProcessing: status === 'queued'
+          ? session.isProcessing
+          : status === 'accepted' || status === 'processing',
       },
       streaming,
     },
@@ -946,4 +948,3 @@ export function handleUsageUpdate(
     effects: [],
   }
 }
-

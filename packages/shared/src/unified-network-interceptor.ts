@@ -849,12 +849,13 @@ export function createOpenAiSseStrippingStream(): TransformStream<Uint8Array, Ui
     controller.enqueue(encoder.encode(`data: ${dataStr}\n\n`));
   }
 
-  function flushTrackedCalls(controller: TransformStreamDefaultController<Uint8Array>): void {
+  function flushTrackedCalls(controller: TransformStreamDefaultController<Uint8Array>): number[] {
     // Iterate in toolIndex order so downstream sees a stable sequence.
     const sorted = Array.from(trackedCalls.values()).sort((a, b) => {
       if (a.choiceIndex !== b.choiceIndex) return a.choiceIndex - b.choiceIndex;
       return a.toolIndex - b.toolIndex;
     });
+    const choiceIndexes = Array.from(new Set(sorted.map(tc => tc.choiceIndex)));
 
     for (const tc of sorted) {
       // Merge in this priority: phase-1 args (partial-JSON concatenation)
@@ -921,12 +922,24 @@ export function createOpenAiSseStrippingStream(): TransformStream<Uint8Array, Ui
     }
     trackedCalls.clear();
     bufferingToolCalls = false;
+    return choiceIndexes;
+  }
+
+  function emitSyntheticToolCallFinish(choiceIndexes: number[], controller: TransformStreamDefaultController<Uint8Array>): void {
+    if (choiceIndexes.length === 0) return;
+    emitSseLine(JSON.stringify({
+      choices: choiceIndexes.map(index => ({
+        index,
+        finish_reason: 'tool_calls',
+      })),
+    }), controller);
   }
 
   function processDataLine(dataStr: string, controller: TransformStreamDefaultController<Uint8Array>): void {
     if (DEBUG_SSE_RAW) debugLog(`[SSE RAW IN  openai] ${dataStr.slice(0, 4000)}`);
     if (dataStr === '[DONE]') {
-      flushTrackedCalls(controller);
+      const choiceIndexes = flushTrackedCalls(controller);
+      emitSyntheticToolCallFinish(choiceIndexes, controller);
       emitSseLine(dataStr, controller);
       return;
     }
@@ -1105,7 +1118,8 @@ export function createOpenAiSseStrippingStream(): TransformStream<Uint8Array, Ui
       }
       // Flush any remaining tracked calls on stream end
       if (trackedCalls.size > 0) {
-        flushTrackedCalls(controller);
+        const choiceIndexes = flushTrackedCalls(controller);
+        emitSyntheticToolCallFinish(choiceIndexes, controller);
       }
       lineBuffer = '';
     },

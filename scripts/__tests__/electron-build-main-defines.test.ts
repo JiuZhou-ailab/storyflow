@@ -17,4 +17,17 @@ describe('electron build defines', () => {
     expect(source).not.toContain('"CRAFT_WEBUI_FEISHU_APP_SECRET"')
     expect(source).not.toContain('"CRAFT_BUILTIN_LLM_API_KEY"')
   })
+
+  it('runs desktop auth build validation before bundling the main process', async () => {
+    const source = await Bun.file(join(import.meta.dir, '..', 'electron-build-main.ts')).text()
+
+    expect(source).toContain('validateDesktopAuthBuildEnv(process.env)')
+    expect(source).toContain('validateDesktopAuthBuildConfig()')
+  })
+
+  it('does not let local .env values override explicit release environment values', async () => {
+    const source = await Bun.file(join(import.meta.dir, '..', 'electron-build-main.ts')).text()
+
+    expect(source).toContain('if (process.env[key] === undefined)')
+  })
 })

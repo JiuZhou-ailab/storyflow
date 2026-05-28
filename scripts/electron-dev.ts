@@ -186,6 +186,76 @@ async function killProcessOnPort(port: string): Promise<void> {
   }
 }
 
+function resolveLocalBrokerHealthUrl(): string | null {
+  const rawBrokerUrl = process.env.CRAFT_CLIENT_AUTH_BROKER_URL
+    || process.env.CRAFT_CLIENT_FEISHU_AUTH_BROKER_URL;
+  if (!rawBrokerUrl) return null;
+
+  try {
+    const url = new URL(rawBrokerUrl);
+    if (!["localhost", "127.0.0.1", "::1"].includes(url.hostname)) return null;
+    return new URL("/health", url).toString();
+  } catch {
+    return null;
+  }
+}
+
+async function isBrokerHealthy(healthUrl: string): Promise<boolean> {
+  try {
+    const res = await fetch(healthUrl);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForBrokerHealthy(healthUrl: string, timeoutMs = 15000): Promise<boolean> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await isBrokerHealthy(healthUrl)) return true;
+    await Bun.sleep(250);
+  }
+  return false;
+}
+
+async function maybeStartLocalAuthBroker(processes: Subprocess[]): Promise<void> {
+  const healthUrl = resolveLocalBrokerHealthUrl();
+  if (!healthUrl) return;
+
+  if (await isBrokerHealthy(healthUrl)) {
+    console.log(`🔐 Local auth broker already healthy: ${healthUrl}`);
+    return;
+  }
+
+  const hasFeishuBrokerConfig = Boolean(
+    (process.env.CRAFT_WEBUI_FEISHU_APP_ID || process.env.CRAFT_CLIENT_FEISHU_APP_ID)
+      && process.env.CRAFT_WEBUI_FEISHU_APP_SECRET,
+  );
+  const hasNeonBrokerConfig = Boolean(
+    process.env.CRAFT_WEBUI_NEON_AUTH_BASE_URL || process.env.CRAFT_CLIENT_NEON_AUTH_BASE_URL,
+  );
+
+  if (!hasFeishuBrokerConfig && !hasNeonBrokerConfig) {
+    console.warn("⚠️  Local auth broker not started: configure CRAFT_WEBUI_NEON_AUTH_BASE_URL for email login or CRAFT_WEBUI_FEISHU_APP_ID/CRAFT_WEBUI_FEISHU_APP_SECRET for Feishu login.");
+    return;
+  }
+
+  console.log("🔐 Starting local auth broker...");
+  const brokerProc = spawn({
+    cmd: ["bun", "run", "scripts/auth-broker-dev.ts"],
+    cwd: ROOT_DIR,
+    stdin: "ignore",
+    stdout: "inherit",
+    stderr: "inherit",
+    env: process.env as Record<string, string>,
+  });
+  processes.push(brokerProc);
+
+  if (!await waitForBrokerHealthy(healthUrl)) {
+    console.warn(`⚠️  Local auth broker did not become healthy at ${healthUrl}`);
+  }
+}
+
 // Clean Vite cache directory
 function cleanViteCache(): void {
   const viteCacheDir = join(ELECTRON_DIR, "node_modules/.vite");
@@ -531,6 +601,8 @@ async function main(): Promise<void> {
 
   const processes: Subprocess[] = [];
   const esbuildContexts: esbuild.BuildContext[] = [];
+
+  await maybeStartLocalAuthBroker(processes);
 
   // 1. Vite dev server (strictPort ensures we don't silently switch ports)
   const viteProc = spawn({

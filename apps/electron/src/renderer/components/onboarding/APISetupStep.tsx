@@ -220,8 +220,8 @@ export function APISetupStep({
     },
     {
       id: 'jiuzhou_api_key',
-      name: 'JiuZhou',
-      description: '使用分发给作者的 API Key，默认连接 JiuZhou 网关。',
+      name: 'JiuZhou-AI',
+      description: '使用默认 JiuZhou-AI。',
       icon: API_SETUP_ICONS.jiuzhou_api_key,
       providerType: 'pi',
     },

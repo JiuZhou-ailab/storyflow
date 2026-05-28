@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import { PiAgent } from '../pi-agent.ts'
 import type { BackendConfig } from '../backend/types.ts'
 
-function createConfig(): BackendConfig {
+function createConfig(overrides: Partial<BackendConfig> = {}): BackendConfig {
   return {
     provider: 'pi',
     workspace: {
@@ -17,6 +17,7 @@ function createConfig(): BackendConfig {
       lastUsedAt: Date.now(),
     } as any,
     isHeadless: true,
+    ...overrides,
   }
 }
 
@@ -38,6 +39,31 @@ describe('PiAgent subprocess error handling', () => {
     expect(enqueued[0].type).toBe('typed_error')
     expect(enqueued[0].error.code).toBe('proxy_error')
     expect(enqueued[0].error.message.toLowerCase()).not.toContain('<html')
+
+    agent.destroy()
+  })
+
+  it('maps managed default gateway auth failures to reauth instead of API key setup', () => {
+    const agent = new PiAgent(createConfig({
+      connectionSlug: 'wangsu-default',
+      authType: 'api_key',
+    }))
+
+    const enqueued: any[] = []
+    ;(agent as any).eventQueue.enqueue = (event: any) => {
+      enqueued.push(event)
+    }
+
+    ;(agent as any).handleLine(JSON.stringify({
+      type: 'error',
+      message: '401 {"error":{"code":"auth_failed","message":"ApiKey Validate fail","type":"auth_failed"}}',
+    }))
+
+    expect(enqueued).toHaveLength(1)
+    expect(enqueued[0].type).toBe('typed_error')
+    expect(enqueued[0].error.code).toBe('expired_oauth_token')
+    expect(enqueued[0].error.actions.some((action: any) => action.action === 'settings')).toBe(false)
+    expect(enqueued[0].error.message.toLowerCase()).not.toContain('api key')
 
     agent.destroy()
   })

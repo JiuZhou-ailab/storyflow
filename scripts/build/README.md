@@ -6,6 +6,8 @@ Shared and platform-specific helpers for packaging Electron and server release a
 
 - `common.ts` - shared build utilities for downloads, runtime staging, uploads, and verification.
 - `darwin.ts` - macOS packaging helpers.
+- `desktop-auth-build-config.ts` - validates packaged Electron client-auth broker settings.
+- `electron-package-size-config.test.ts` - regression tests for Electron package-size inputs.
 - `electron-main-build-config.test.ts` - regression tests for Electron main process bundling constraints.
 - `linux.ts` - Linux packaging helpers.
 - `macos-release-config.test.ts` - regression tests for signed/notarized macOS release configuration.

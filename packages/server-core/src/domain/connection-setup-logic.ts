@@ -160,9 +160,10 @@ export const BUILT_IN_CONNECTION_TEMPLATES: Record<string, {
     piAuthProvider: 'github-copilot',
   },
   'wangsu-default': {
-    name: 'JiuZhou',
+    name: 'JiuZhou-AI',
     providerType: 'pi_compat',
     authType: 'api_key_with_endpoint',
+    piAuthProvider: 'cloudflare-ai-gateway',
   },
   'pi-api-key': {
     name: 'Storyflow Backend (API Key)',
@@ -183,6 +184,7 @@ const PI_AUTH_PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   google: 'Google AI Studio',
   openrouter: 'OpenRouter',
   'azure-openai-responses': 'Azure OpenAI',
+  'cloudflare-ai-gateway': 'Cloudflare AI Gateway',
   'amazon-bedrock': 'Amazon Bedrock',
   groq: 'Groq',
   mistral: 'Mistral',

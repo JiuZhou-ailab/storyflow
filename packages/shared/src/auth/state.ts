@@ -20,6 +20,7 @@ import {
   type AuthType,
   type Workspace,
 } from '../config/storage.ts';
+import { isLocalConnection } from '../config/llm-connections.ts';
 import { refreshClaudeToken, isTokenExpired } from './claude-token.ts';
 import { debug } from '../utils/debug.ts';
 
@@ -293,8 +294,11 @@ export async function getAuthState(): Promise<AuthState> {
 
     if (connection.authType === 'api_key' || connection.authType === 'api_key_with_endpoint' || connection.authType === 'bearer_token') {
       apiKey = await manager.getLlmApiKey(defaultConnectionSlug);
-      // Keyless providers (Ollama) are valid when a custom base URL is configured
-      if (!apiKey && connection.baseUrl) {
+      const isManagedBuiltinGateway = connection.managed === true && connection.source === 'builtin';
+      // Local loopback runtimes are keyless. Managed bundled gateways are also
+      // hidden app infrastructure: their credentials come from bundled secrets
+      // or client auth, not from user-facing API-key setup.
+      if (!apiKey && (isLocalConnection(connection) || isManagedBuiltinGateway)) {
         hasCredentials = true;
       }
     } else if (connection.authType === 'oauth') {

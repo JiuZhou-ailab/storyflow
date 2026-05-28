@@ -2,7 +2,7 @@
  * Tests for runtime-resolver.ts
  *
  * Verifies:
- * - Packaged server path resolution with dist/resources/ fallback
+ * - Packaged server path resolution with dist/resources/ preference
  * - Ripgrep path resolution with system rg fallback
  */
 import { describe, it, expect, afterEach } from 'bun:test';
@@ -37,7 +37,7 @@ describe('resolveServerPath fallback', () => {
     expect(paths.piServerPath).toBe(join(serverDir, 'index.js'));
   });
 
-  it('prefers resources/ over dist/resources/ when both exist', () => {
+  it('prefers dist/resources/ over resources/ when both exist', () => {
     const appRoot = join(tmpBase, 'app2');
 
     // Create both paths
@@ -55,7 +55,23 @@ describe('resolveServerPath fallback', () => {
     };
 
     const paths = resolveBackendRuntimePaths(hostRuntime);
-    expect(paths.piServerPath).toBe(join(primaryDir, 'index.js'));
+    expect(paths.piServerPath).toBe(join(fallbackDir, 'index.js'));
+  });
+
+  it('keeps resources/ as a legacy fallback when dist/resources/ is absent', () => {
+    const appRoot = join(tmpBase, 'app3');
+    const serverDir = join(appRoot, 'resources', 'pi-agent-server');
+    mkdirSync(serverDir, { recursive: true });
+    writeFileSync(join(serverDir, 'index.js'), '// legacy');
+
+    const hostRuntime: BackendHostRuntimeContext = {
+      appRootPath: appRoot,
+      resourcesPath: appRoot,
+      isPackaged: true,
+    };
+
+    const paths = resolveBackendRuntimePaths(hostRuntime);
+    expect(paths.piServerPath).toBe(join(serverDir, 'index.js'));
   });
 });
 

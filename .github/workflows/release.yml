@@ -62,6 +62,9 @@ jobs:
           STORYFLOW_R2_BUCKET: ${{ secrets.STORYFLOW_R2_BUCKET }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CRAFT_CLIENT_AUTH_BROKER_URL: ${{ vars.CRAFT_CLIENT_AUTH_BROKER_URL }}
+          CRAFT_CLIENT_FEISHU_APP_ID: ${{ vars.CRAFT_CLIENT_FEISHU_APP_ID }}
+          CRAFT_CLIENT_NEON_AUTH_BASE_URL: ${{ vars.CRAFT_CLIENT_NEON_AUTH_BASE_URL }}
         run: |
           set -euo pipefail
 
@@ -86,6 +89,12 @@ jobs:
           fi
 
           for name in STORYFLOW_R2_BUCKET CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            if [ -z "${!name}" ]; then
+              missing+=("Missing $name")
+            fi
+          done
+
+          for name in CRAFT_CLIENT_AUTH_BROKER_URL CRAFT_CLIENT_FEISHU_APP_ID CRAFT_CLIENT_NEON_AUTH_BASE_URL; do
             if [ -z "${!name}" ]; then
               missing+=("Missing $name")
             fi
@@ -138,6 +147,12 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           CRAFT_MACOS_NOTARIZE_ATTEMPTS: "3"
           CRAFT_MACOS_NOTARIZE_RETRY_DELAY_SECONDS: "60"
+          CRAFT_CLIENT_AUTH_REQUIRED: "true"
+          CRAFT_CLIENT_AUTH_BROKER_URL: ${{ vars.CRAFT_CLIENT_AUTH_BROKER_URL }}
+          CRAFT_CLIENT_FEISHU_APP_ID: ${{ vars.CRAFT_CLIENT_FEISHU_APP_ID }}
+          CRAFT_CLIENT_NEON_AUTH_BASE_URL: ${{ vars.CRAFT_CLIENT_NEON_AUTH_BASE_URL }}
+          CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN: ${{ vars.CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN }}
+          CRAFT_CLIENT_GATEWAY_LLM_CONNECTION_SLUG: "wangsu-default,xiaomi-default"
 
       - name: Verify macOS signing and notarization
         run: |
@@ -211,6 +226,13 @@ jobs:
 
       - name: Build Windows artifacts
         run: bun run electron:dist:dev:win
+        env:
+          CRAFT_CLIENT_AUTH_REQUIRED: "true"
+          CRAFT_CLIENT_AUTH_BROKER_URL: ${{ vars.CRAFT_CLIENT_AUTH_BROKER_URL }}
+          CRAFT_CLIENT_FEISHU_APP_ID: ${{ vars.CRAFT_CLIENT_FEISHU_APP_ID }}
+          CRAFT_CLIENT_NEON_AUTH_BASE_URL: ${{ vars.CRAFT_CLIENT_NEON_AUTH_BASE_URL }}
+          CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN: ${{ vars.CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN }}
+          CRAFT_CLIENT_GATEWAY_LLM_CONNECTION_SLUG: "wangsu-default,xiaomi-default"
 
       - name: Upload Windows artifacts to release
         shell: bash

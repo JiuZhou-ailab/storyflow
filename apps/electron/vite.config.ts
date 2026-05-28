@@ -38,7 +38,7 @@ export default defineConfig({
   build: {
     outDir: resolve(__dirname, 'dist/renderer'),
     emptyDirBeforeWrite: true,
-    sourcemap: true,  // Source maps generated for debugging. Not uploaded to Sentry (see CLAUDE.md).
+    sourcemap: process.env.CRAFT_RENDERER_SOURCEMAP === '1',
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'src/renderer/index.html'),

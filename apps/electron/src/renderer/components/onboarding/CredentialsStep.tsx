@@ -1,9 +1,6 @@
-/**
- * CredentialsStep - Onboarding step wrapper for API key or OAuth flow
- *
- * Thin wrapper that composes ApiKeyInput or OAuthConnect controls
- * with StepFormLayout for the onboarding wizard context.
- */
+// input: Selected onboarding API setup method, credential status, and optional edit initial values
+// output: Credential entry or OAuth connection step for onboarding
+// pos: Onboarding credential collection wrapper for provider-specific setup controls
 
 import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -20,11 +17,11 @@ import {
 import type { CustomEndpointApi } from '@config/llm-connections'
 
 const JIUZHOU_INITIAL_VALUES = {
-  baseUrl: 'https://aigateway.edgecloudapp.com/v2/gws/ktpvzme4/anthropic',
-  connectionDefaultModel: 'glm-5.1, claude-sonnet-4-6',
+  baseUrl: 'https://storyflow-model-gateway.d1095245867.workers.dev/wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4',
+  connectionDefaultModel: 'gpt-5.5',
   activePreset: 'custom',
-  models: ['glm-5.1', 'claude-sonnet-4-6'],
-  customApi: 'anthropic-messages' as CustomEndpointApi,
+  models: ['gemini-3.5-flash', 'gpt-5.5', 'deepseek-v4-pro'],
+  customApi: 'openai-completions' as CustomEndpointApi,
 }
 
 export type CredentialStatus = ApiKeyStatus | OAuthStatus
@@ -272,7 +269,7 @@ export function CredentialsStep({
   const providerType = isPiApiKey ? 'pi_api_key' : 'anthropic'
   const apiKeyDescription = isPiApiKey
     ? (isJiuZhouApiKey
-      ? "输入分发给作者的 JiuZhou API Key。Endpoint 和模型已预设。"
+      ? "输入分发给作者的 JiuZhou-AI API Key。Endpoint 和模型已预设。"
       : "Select a provider preset and enter the API key. For arbitrary Anthropic-compatible endpoints, use Anthropic API Key mode.")
     : "Enter your API key. Optionally configure a custom endpoint for OpenRouter, Ollama, or compatible APIs."
 
@@ -291,7 +288,7 @@ export function CredentialsStep({
 
   return (
     <StepFormLayout
-      title={isJiuZhouApiKey ? 'JiuZhou' : t("onboarding.credentials.apiConfiguration")}
+      title={isJiuZhouApiKey ? 'JiuZhou-AI' : t("onboarding.credentials.apiConfiguration")}
       description={apiKeyDescription}
       actions={
         <>

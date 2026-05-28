@@ -12,6 +12,9 @@ export { useAutoGrow } from './useAutoGrow'
 
 // Types
 export type {
+  QueuedInputMessage,
+} from './ChatInputZone'
+export type {
   InputMode,
   StructuredInputType,
   StructuredInputState,

@@ -109,6 +109,10 @@ describe('macOS release configuration', () => {
     const workflow = readRepoFile('.github/workflows/release.yml');
 
     expect(buildScript).toContain('validate_macos_release_credentials');
+    expect(buildScript).toContain('normalize_csc_link_for_macos_security');
+    expect(buildScript).toContain('Normalized CSC_LINK for macOS keychain import.');
+    expect(buildScript).toContain('pkcs12 -legacy');
+    expect(buildScript).toContain('local export_openssl="/usr/bin/openssl"');
     expect(buildScript).toContain('notarize_macos_dmg_artifact');
     expect(buildScript).toContain('verify_macos_release_artifacts');
     expect(buildScript).toContain('run_electron_builder_with_retries');
@@ -149,6 +153,18 @@ describe('macOS release configuration', () => {
     expect(installScript.indexOf('staged_app="$install_temp_dir/$APP_NAME"')).toBeLessThan(
       installScript.indexOf('Removing previous installation'),
     );
+  });
+
+  test('macOS build keeps explicit environment values ahead of local dotenv values', () => {
+    const buildScript = readRepoFile('apps/electron/scripts/build-dmg.sh');
+
+    expect(buildScript).toContain('[ -z "${!key+x}" ]');
+    expect(buildScript).toContain('current_value="${!key}"');
+    expect(buildScript).toContain('resolve_dotenv_value "$value"');
+    expect(buildScript).toContain('resolve_dotenv_value "$current_value"');
+    expect(buildScript).toContain('[ "${value:0:5}" = \'(cat \' ]');
+    expect(buildScript).toContain('[ "${current_value:0:5}" = \'(cat \' ]');
+    expect(buildScript).toContain('CSC_KEY_PASSWORD="$(cat /path/to/password)"');
   });
 
   test('macOS manifest helper annotates a single architecture manifest', () => {

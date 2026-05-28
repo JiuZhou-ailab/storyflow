@@ -10,6 +10,7 @@ export {
   buildFeishuAuthorizeUrl,
   decideFeishuLoginAccess,
   type FeishuAuthConfig,
+  type FeishuClientAuthConfig,
   type FeishuLoginDecision,
   type FeishuOAuthClient,
   type FeishuRegistrationStore,

@@ -52,6 +52,8 @@ import { getCredentialManager } from '../credentials/manager.ts';
 // ChatGPT OAuth token refresh (shared with CodexAgent)
 import { refreshChatGptTokens } from '../auth/chatgpt-oauth.ts';
 
+const MANAGED_GATEWAY_CONNECTION_SLUGS = new Set(['wangsu-default', 'xiaomi-default']);
+
 // Session-scoped tool callbacks (for SubmitPlan, source auth, etc.)
 import {
   registerSessionScopedToolCallbacks,
@@ -996,7 +998,7 @@ export class PiAgent extends BaseAgent {
           this.subprocessErrorRepeatCount = 1;
         }
 
-        const parsed = parseError(new Error(rawMessage));
+        const parsed = this.parsePiError(new Error(rawMessage));
         if (parsed.code !== 'unknown_error') {
           this.eventQueue.enqueue({ type: 'typed_error', error: parsed });
         } else {
@@ -2487,6 +2489,19 @@ export class PiAgent extends BaseAgent {
         this.refreshAndPushTokens().catch(err => {
           this.debug(`Token refresh from parsePiError failed: ${err}`);
         });
+      }
+
+      if (MANAGED_GATEWAY_CONNECTION_SLUGS.has(this.config.connectionSlug ?? '')) {
+        return {
+          code: 'expired_oauth_token',
+          title: 'AI Access Unavailable',
+          message: 'Your app session cannot access the default AI service. Sign in again or contact support if this keeps happening.',
+          actions: [
+            { key: 'r', label: 'Sign in again', action: 'reauth' },
+          ],
+          canRetry: false,
+          originalError: error.message,
+        };
       }
 
       return {

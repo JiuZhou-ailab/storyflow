@@ -22,6 +22,32 @@ require_path() {
     fi
 }
 
+resolve_dotenv_value() {
+    local value="$1"
+
+    # Keep the loader non-evaluating, but preserve the existing local pattern
+    # used for large secrets: CSC_KEY_PASSWORD="$(cat /path/to/password)".
+    if [ "${value:0:6}" = '$(cat ' ] && [ "${value: -1}" = ')' ]; then
+        local path="${value:6:${#value}-7}"
+    elif [ "${value:0:5}" = '(cat ' ] && [ "${value: -1}" = ')' ]; then
+        local path="${value:5:${#value}-6}"
+    else
+        printf '%s' "$value"
+        return
+    fi
+
+        path="${path#"${path%%[![:space:]]*}"}"
+        path="${path%"${path##*[![:space:]]}"}"
+        if [[ "$path" == \"*\" && "$path" == *\" ]]; then
+            path="${path:1:${#path}-2}"
+        elif [[ "$path" == \'*\' && "$path" == *\' ]]; then
+            path="${path:1:${#path}-2}"
+        fi
+        require_path "$path" "dotenv cat target" ""
+        cat "$path"
+        return
+}
+
 # Sync secrets from 1Password if CLI is available
 if command -v op &> /dev/null; then
     echo "1Password CLI detected, syncing secrets..."
@@ -33,11 +59,40 @@ if command -v op &> /dev/null; then
     fi
 fi
 
-# Load environment variables from .env
+# Load environment variables from .env without overriding explicit env values
 if [ -f "$ROOT_DIR/.env" ]; then
-    set -a
-    source "$ROOT_DIR/.env"
-    set +a
+    while IFS= read -r line || [ -n "$line" ]; do
+        trimmed="${line#"${line%%[![:space:]]*}"}"
+        trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+        if [ -z "$trimmed" ] || [[ "$trimmed" == \#* ]]; then
+            continue
+        fi
+        if [[ "$trimmed" != *=* ]]; then
+            continue
+        fi
+        key="${trimmed%%=*}"
+        value="${trimmed#*=}"
+        key="${key%"${key##*[![:space:]]}"}"
+        value="${value#"${value%%[![:space:]]*}"}"
+        value="${value%"${value##*[![:space:]]}"}"
+        if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+            value="${value:1:${#value}-2}"
+        elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+            value="${value:1:${#value}-2}"
+        fi
+        if [ -n "$key" ]; then
+            if [ -z "${!key+x}" ]; then
+                value="$(resolve_dotenv_value "$value")"
+                export "$key=$value"
+            else
+                current_value="${!key}"
+                if [ "${current_value:0:6}" = '$(cat ' ] || [ "${current_value:0:5}" = '(cat ' ]; then
+                    current_value="$(resolve_dotenv_value "$current_value")"
+                    export "$key=$current_value"
+                fi
+            fi
+        fi
+    done < "$ROOT_DIR/.env"
 fi
 
 # Parse arguments
@@ -150,6 +205,50 @@ select_notarization_credentials() {
     fi
 
     return 1
+}
+
+normalize_csc_link_for_macos_security() {
+    if [ -z "${CSC_LINK:-}" ] || [ ! -f "$CSC_LINK" ]; then
+        return 0
+    fi
+
+    case "${CSC_LINK##*.}" in
+        p12|pfx) ;;
+        *) return 0 ;;
+    esac
+
+    if ! command -v openssl >/dev/null 2>&1; then
+        echo "OpenSSL not found; using CSC_LINK as provided."
+        return 0
+    fi
+
+    local pass_file="$TEMP_DIR/storyflow-csc-password"
+    local pem_file="$TEMP_DIR/storyflow-csc-extracted.pem"
+    local normalized_p12="$TEMP_DIR/storyflow-csc-normalized.p12"
+
+    printf '%s' "${CSC_KEY_PASSWORD:-}" > "$pass_file"
+    chmod 600 "$pass_file"
+
+    if ! openssl pkcs12 -in "$CSC_LINK" -passin "file:$pass_file" -nodes -out "$pem_file" >/dev/null 2>&1 &&
+       ! openssl pkcs12 -legacy -in "$CSC_LINK" -passin "file:$pass_file" -nodes -out "$pem_file" >/dev/null 2>&1; then
+        echo "OpenSSL could not read CSC_LINK; using CSC_LINK as provided."
+        return 0
+    fi
+    chmod 600 "$pem_file"
+
+    local export_openssl="/usr/bin/openssl"
+    if [ ! -x "$export_openssl" ]; then
+        export_openssl="$(command -v openssl)"
+    fi
+
+    if ! "$export_openssl" pkcs12 -export -in "$pem_file" -out "$normalized_p12" -passout "file:$pass_file" >/dev/null 2>&1; then
+        echo "OpenSSL could not normalize CSC_LINK; using CSC_LINK as provided."
+        return 0
+    fi
+
+    chmod 600 "$normalized_p12"
+    export CSC_LINK="$normalized_p12"
+    echo "Normalized CSC_LINK for macOS keychain import."
 }
 
 notarize_macos_dmg_artifact() {
@@ -305,6 +404,7 @@ trap "rm -rf $TEMP_DIR" EXIT
 
 prepare_apple_api_key
 validate_macos_release_credentials
+normalize_csc_link_for_macos_security
 
 # Download binary and checksums
 curl "${CURL_FLAGS[@]}" "$(download_url "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/${BUN_DOWNLOAD}.zip")" -o "$TEMP_DIR/${BUN_DOWNLOAD}.zip"

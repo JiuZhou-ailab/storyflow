@@ -102,6 +102,7 @@ import { AutomationSystem, createPromptHistoryEntry, appendAutomationHistoryEntr
 import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput } from './runtime-config'
 import { captureWriteOriginalContent } from './write-original-content'
 import { SESSION_TURN_HARD_TIMEOUT_MS, SESSION_TURN_IDLE_TIMEOUT_MS, TurnWatchdog, type TurnWatchdogTimeout } from './turn-watchdog'
+import { isManagedDefaultGatewayConnection, normalizeManagedDefaultGatewayAuthError } from './managed-gateway-auth-error'
 
 // Import from server-core domain utilities
 import { sanitizeForTitle, shouldActivateBrowserOverlay, normalizeBrowserToolName, rollbackFailedBranchCreation, releaseBrowserOwnershipOnForcedStop } from '@craft-agent/server-core/domain'
@@ -7123,7 +7124,11 @@ export class SessionManager implements ISessionManager {
           lowerErr.includes('please try signing in again') ||
           (lowerErr.includes('401') && (lowerErr.includes('unauthorized') || lowerErr.includes('auth')))
 
-        if (isPlainAuthError && this.attemptAuthRetry(sessionId, managed, workspaceId)) {
+        if (
+          isPlainAuthError &&
+          !isManagedDefaultGatewayConnection(managed.llmConnection) &&
+          this.attemptAuthRetry(sessionId, managed, workspaceId)
+        ) {
           break
         }
 
@@ -7152,8 +7157,10 @@ export class SessionManager implements ISessionManager {
           sessionLog.info('Skipping typed abort error event (expected during interrupt)')
           break
         }
+        const typedError = normalizeManagedDefaultGatewayAuthError(event.error, managed.llmConnection)
+
         // Typed errors have structured information - send both formats for compatibility
-        sessionLog.info('typed_error:', JSON.stringify(event.error, null, 2))
+        sessionLog.info('typed_error:', JSON.stringify(typedError, null, 2))
 
         // Check for auth errors that can be retried by refreshing the token
         // The SDK subprocess caches the token at startup, so if it expires mid-session,
@@ -7161,10 +7168,14 @@ export class SessionManager implements ISessionManager {
         // 1. Resetting the summarization client cache
         // 2. Destroying the agent (new agent's postInit() refreshes the token)
         // 3. Retrying the message
-        const isAuthError = event.error.code === 'invalid_api_key' ||
-          event.error.code === 'expired_oauth_token'
+        const isAuthError = typedError.code === 'invalid_api_key' ||
+          typedError.code === 'expired_oauth_token'
 
-        if (isAuthError && this.attemptAuthRetry(sessionId, managed, workspaceId, event.error.code)) {
+        if (
+          isAuthError &&
+          !isManagedDefaultGatewayConnection(managed.llmConnection) &&
+          this.attemptAuthRetry(sessionId, managed, workspaceId, typedError.code)
+        ) {
           // Don't add error message or send to renderer - we're handling it via retry
           break
         }
@@ -7174,14 +7185,14 @@ export class SessionManager implements ISessionManager {
           id: generateMessageId(),
           role: 'error',
           // Combine title and message for content display (handles undefined gracefully)
-          content: [event.error.title, event.error.message].filter(Boolean).join(': ') || 'An error occurred',
+          content: [typedError.title, typedError.message].filter(Boolean).join(': ') || 'An error occurred',
           timestamp: this.monotonic(),
           // Rich error fields for diagnostics and retry functionality
-          errorCode: event.error.code,
-          errorTitle: event.error.title,
-          errorDetails: event.error.details,
-          errorOriginal: event.error.originalError,
-          errorCanRetry: event.error.canRetry,
+          errorCode: typedError.code,
+          errorTitle: typedError.title,
+          errorDetails: typedError.details,
+          errorOriginal: typedError.originalError,
+          errorCanRetry: typedError.canRetry,
         }
         managed.messages.push(typedErrorMessage)
         // Send typed_error event with full structure for renderer to handle
@@ -7189,13 +7200,13 @@ export class SessionManager implements ISessionManager {
           type: 'typed_error',
           sessionId,
           error: {
-            code: event.error.code,
-            title: event.error.title,
-            message: event.error.message,
-            actions: event.error.actions,
-            canRetry: event.error.canRetry,
-            details: event.error.details,
-            originalError: event.error.originalError,
+            code: typedError.code,
+            title: typedError.title,
+            message: typedError.message,
+            actions: typedError.actions,
+            canRetry: typedError.canRetry,
+            details: typedError.details,
+            originalError: typedError.originalError,
           },
           timestamp: typedErrorMessage.timestamp,
         }, workspaceId)

@@ -107,20 +107,20 @@ describe('apiSetupMethodToConnectionSetup', () => {
       'jiuzhou_api_key',
       {
         credential: 'author-key',
-        baseUrl: 'https://aigateway.edgecloudapp.com/v2/gws/ktpvzme4/anthropic',
-        connectionDefaultModel: 'glm-5.1',
-        models: ['glm-5.1', 'claude-sonnet-4-6'],
-        customEndpoint: { api: 'anthropic-messages' },
+        baseUrl: 'https://gateway.ai.cloudflare.com/v1/ec286cbbbae1647af670efd1b3289631/default/custom-wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4',
+        connectionDefaultModel: 'gpt-5.5',
+        models: ['gemini-3.5-flash', 'gpt-5.5', 'deepseek-v4-pro'],
+        customEndpoint: { api: 'openai-completions' },
       },
       null,
       new Set(['wangsu-default']),
     )
     expect(setup.slug).toBe('wangsu-default')
     expect(setup.credential).toBe('author-key')
-    expect(setup.baseUrl).toBe('https://aigateway.edgecloudapp.com/v2/gws/ktpvzme4/anthropic')
-    expect(setup.defaultModel).toBe('glm-5.1')
-    expect(setup.models).toEqual(['glm-5.1', 'claude-sonnet-4-6'])
-    expect(setup.customEndpoint).toEqual({ api: 'anthropic-messages' })
+    expect(setup.baseUrl).toBe('https://gateway.ai.cloudflare.com/v1/ec286cbbbae1647af670efd1b3289631/default/custom-wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4')
+    expect(setup.defaultModel).toBe('gpt-5.5')
+    expect(setup.models).toEqual(['gemini-3.5-flash', 'gpt-5.5', 'deepseek-v4-pro'])
+    expect(setup.customEndpoint).toEqual({ api: 'openai-completions' })
   })
 
   it('uses editingSlug when editing', () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
-import { handleInterrupted } from '../session'
-import type { SessionState, InterruptedEvent } from '../../types'
+import { handleInterrupted, handleUserMessage } from '../session'
+import type { SessionState, InterruptedEvent, UserMessageEvent } from '../../types'
 
 function makeState(messages: any[]): SessionState {
   return {
@@ -63,7 +63,7 @@ describe('handleInterrupted (#616)', () => {
   })
 
   describe('silent redirect (event.message absent)', () => {
-    it('KEEPS queued bubbles in chat and does NOT emit restore_input (#616 fix)', () => {
+    it('keeps queued messages for auto-replay and does NOT emit restore_input (#616 fix)', () => {
       const state = makeState([
         { id: 'msg-1', role: 'user', content: 'first' },
         { id: 'msg-2', role: 'user', content: 'queued during run', isQueued: true },
@@ -78,7 +78,7 @@ describe('handleInterrupted (#616)', () => {
 
       const next = handleInterrupted(state, event)
 
-      // queued bubble must remain so the user sees it
+      // queued message remains in session state; the input queue preview renders it.
       const ids = next.state.session.messages.map(m => m.id)
       expect(ids).toContain('msg-2')
       // no info bubble appended
@@ -120,5 +120,31 @@ describe('handleInterrupted (#616)', () => {
     const ids = next.state.session.messages.map(m => m.id)
     expect(ids).not.toContain('status-1')
     expect(ids).toContain('msg-1')
+  })
+})
+
+describe('handleUserMessage queued state', () => {
+  it('keeps the active turn processing when a mid-stream message is queued', () => {
+    const state = makeState([
+      { id: 'msg-1', role: 'user', content: 'first' },
+      { id: 'assistant-1', role: 'assistant', content: 'working', isStreaming: true },
+    ])
+
+    const event: UserMessageEvent = {
+      type: 'user_message',
+      sessionId: 'session-1',
+      status: 'queued',
+      message: {
+        id: 'msg-2',
+        role: 'user',
+        content: 'queued next',
+        timestamp: 1,
+      },
+    }
+
+    const next = handleUserMessage(state, event)
+
+    expect(next.state.session.isProcessing).toBe(true)
+    expect(next.state.session.messages.find(m => m.id === 'msg-2')?.isQueued).toBe(true)
   })
 })

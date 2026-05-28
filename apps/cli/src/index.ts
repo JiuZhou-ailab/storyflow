@@ -956,9 +956,11 @@ async function cleanupAutomationArtifacts(
       const configPath = `${ctx.workspaceRootPath}/automations.json`
       const historyPath = `${ctx.workspaceRootPath}/automations-history.jsonl`
       if (ctx.automationsJsonBackup != null) {
-        await writeFile(configPath, ctx.automationsJsonBackup).catch(() => {})
+        await client.invoke('file:write', configPath, ctx.automationsJsonBackup).catch(() => writeFile(configPath, ctx.automationsJsonBackup ?? ''))
         cleaned.push('automations.json (restored)')
       } else {
+        const emptyConfig = JSON.stringify({ version: 2, automations: {} }, null, 2) + '\n'
+        await client.invoke('file:write', configPath, emptyConfig).catch(() => writeFile(configPath, emptyConfig))
         await unlink(configPath).catch(() => {})
         cleaned.push('automations.json (removed)')
       }
@@ -1423,7 +1425,7 @@ SKILLEOF`, 90_000, true, undefined, ctx.onEvent)
         if (!ctx.createdSessionId || !ctx.workspaceRootPath) return 'skipped (no session or workspace)'
         const configPath = `${ctx.workspaceRootPath}/automations.json`
         const historyPath = `${ctx.workspaceRootPath}/automations-history.jsonl`
-        const { readFile, writeFile } = await import('fs/promises')
+        const { readFile } = await import('fs/promises')
 
         // Always backup + overwrite with deterministic validation config,
         // then restore during cleanup.
@@ -1454,7 +1456,7 @@ SKILLEOF`, 90_000, true, undefined, ctx.onEvent)
         ctx.automationBlockedName = blocked.name
         ctx.automationName = pass.name
 
-        await writeFile(configPath, templateConfig)
+        await client.invoke('file:write', configPath, templateConfig)
         ctx.createdAutomation = true
         // ConfigWatcher auto-detects automations.json changes (debounced)
         await new Promise((r) => setTimeout(r, 2000))
@@ -1586,10 +1588,11 @@ SKILLEOF`, 90_000, true, undefined, ctx.onEvent)
         if (!ctx.workspaceId) return 'skipped (no workspace)'
         const r = (await client.invoke('automations:test', {
           workspaceId: ctx.workspaceId,
+          automationId: 'c1feed',
           actions: [{
             type: 'webhook',
             url: 'http://127.0.0.1:19999/validate-test',
-            method: 'GET',
+            method: 'POST',
           }],
         })) as any
         const result = r?.actions?.[0]

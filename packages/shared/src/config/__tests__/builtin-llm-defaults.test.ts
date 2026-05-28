@@ -13,6 +13,7 @@ import type { ConfigDefaults } from '../config-defaults-schema.ts'
 const STORAGE_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', 'storage.ts')).href
 const UTILS_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', '..', 'utils', 'index.ts')).href
 const CREDENTIALS_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', '..', 'credentials', 'index.ts')).href
+const BUNDLED_DEFAULTS_PATH = join(import.meta.dir, '../../../../../apps/electron/resources/config-defaults.json')
 
 function makeConfig(overrides: Partial<StoredConfig> = {}): StoredConfig {
   return {
@@ -56,6 +57,7 @@ function makeDefaults(overrides: Partial<ConfigDefaults['builtinLlmConnection']>
         defaultModel: 'internal-model',
         models: ['internal-model'],
         modelSelectionMode: 'userDefined3Tier',
+        piAuthProvider: 'openai',
         customEndpoint: { api: 'anthropic-messages' },
         hidden: true,
         managed: true,
@@ -68,7 +70,97 @@ function makeDefaults(overrides: Partial<ConfigDefaults['builtinLlmConnection']>
   }
 }
 
+function makePluralDefaults(): ConfigDefaults {
+  const wangsu = makeDefaults().builtinLlmConnection!
+  return {
+    ...makeDefaults(),
+    builtinLlmConnection: undefined,
+    builtinLlmConnections: [
+      {
+        ...wangsu,
+        apiKey: 'wangsu-secret',
+        connection: {
+          ...wangsu.connection!,
+          models: ['gemini-3.5-flash', 'gpt-5.5', 'deepseek-v4-pro'],
+        },
+      },
+      {
+        enabled: true,
+        apiKey: 'xiaomi-secret',
+        connection: {
+          ...wangsu.connection!,
+          slug: 'xiaomi-default',
+          name: 'JiuZhou-AI Xiaomi',
+          baseUrl: 'https://storyflow-model-gateway.d1095245867.workers.dev/xiaomi/v1',
+          defaultModel: 'mimo-v2.5',
+          models: ['mimo-v2.5'],
+        },
+      },
+    ],
+  } as ConfigDefaults
+}
+
 describe('builtin LLM connection defaults', () => {
+  it('keeps the bundled managed gateway on the configured Wangsu custom provider', () => {
+    const defaults = JSON.parse(readFileSync(BUNDLED_DEFAULTS_PATH, 'utf-8')) as ConfigDefaults
+    const connections = defaults.builtinLlmConnections?.map(entry => entry.connection) ?? []
+    const connection = connections.find(entry => entry?.slug === 'wangsu-default')
+    const xiaomi = connections.find(entry => entry?.slug === 'xiaomi-default')
+    const legacyConnection = defaults.builtinLlmConnection?.connection
+
+    expect(connection).toMatchObject({
+      slug: 'wangsu-default',
+      providerType: 'pi_compat',
+      baseUrl: 'https://storyflow-model-gateway.d1095245867.workers.dev/wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4',
+      defaultModel: 'gpt-5.5',
+      piAuthProvider: 'cloudflare-ai-gateway',
+      customEndpoint: { api: 'openai-completions' },
+    })
+    expect(connection?.models).toEqual([
+      'gemini-3.5-flash',
+      'gpt-5.5',
+      'deepseek-v4-pro',
+    ])
+    expect(legacyConnection).toMatchObject({
+      slug: 'wangsu-default',
+      defaultModel: 'gpt-5.5',
+    })
+    expect(xiaomi).toMatchObject({
+      slug: 'xiaomi-default',
+      providerType: 'pi_compat',
+      baseUrl: 'https://storyflow-model-gateway.d1095245867.workers.dev/xiaomi/v1',
+      defaultModel: 'mimo-v2.5',
+      piAuthProvider: 'cloudflare-ai-gateway',
+      customEndpoint: { api: 'openai-completions' },
+    })
+    expect(xiaomi?.models).toEqual(['mimo-v2.5'])
+  })
+
+  it('adds multiple bundled managed connections and keeps the first one as the default', () => {
+    const config = makeConfig()
+    const result = applyBuiltinLlmConnectionDefaults(config, makePluralDefaults())
+
+    expect(result.changed).toBe(true)
+    expect(result.credentialsToSeed).toEqual([
+      { connectionSlug: 'wangsu-default', apiKey: 'wangsu-secret' },
+      { connectionSlug: 'xiaomi-default', apiKey: 'xiaomi-secret' },
+    ])
+    expect(result.credentialToSeed).toEqual({
+      connectionSlug: 'wangsu-default',
+      apiKey: 'wangsu-secret',
+    })
+    expect(config.defaultLlmConnection).toBe('wangsu-default')
+    expect(config.llmConnections?.map(c => c.slug)).toEqual(['wangsu-default', 'xiaomi-default'])
+    expect(config.llmConnections?.find(c => c.slug === 'wangsu-default')?.models).toEqual([
+      'gemini-3.5-flash',
+      'gpt-5.5',
+      'deepseek-v4-pro',
+    ])
+    expect(config.llmConnections?.find(c => c.slug === 'xiaomi-default')?.models).toEqual(['mimo-v2.5'])
+    expect(JSON.stringify(config)).not.toContain('wangsu-secret')
+    expect(JSON.stringify(config)).not.toContain('xiaomi-secret')
+  })
+
   it('adds the bundled managed connection and returns the credential without storing it in config', () => {
     const config = makeConfig()
     const result = applyBuiltinLlmConnectionDefaults(config, makeDefaults())
@@ -88,7 +180,7 @@ describe('builtin LLM connection defaults', () => {
     expect(JSON.stringify(config)).not.toContain('internal-secret')
   })
 
-  it('promotes the bundled managed connection as the default even when a legacy default exists', () => {
+  it('preserves a user-selected default connection when adding the bundled managed connection', () => {
     const config = makeConfig({
       defaultLlmConnection: 'user-default',
       llmConnections: [{
@@ -103,7 +195,7 @@ describe('builtin LLM connection defaults', () => {
     const result = applyBuiltinLlmConnectionDefaults(config, makeDefaults())
 
     expect(result.changed).toBe(true)
-    expect(config.defaultLlmConnection).toBe('wangsu-default')
+    expect(config.defaultLlmConnection).toBe('user-default')
     expect(config.llmConnections?.map(c => c.slug)).toEqual(['user-default', 'wangsu-default'])
   })
 
@@ -129,6 +221,7 @@ describe('builtin LLM connection defaults', () => {
       llmConnections: [{
         ...makeDefaults().builtinLlmConnection!.connection!,
         name: '网宿',
+        piAuthProvider: 'anthropic',
         hidden: true,
         managed: true,
         source: 'builtin',
@@ -138,14 +231,15 @@ describe('builtin LLM connection defaults', () => {
     const result = applyBuiltinLlmConnectionDefaults(config, makeDefaults({
       connection: {
         ...makeDefaults().builtinLlmConnection!.connection!,
-        name: 'JiuZhou',
+        name: 'JiuZhou-AI',
         hidden: false,
       },
       apiKey: '',
     }))
 
     expect(result.changed).toBe(true)
-    expect(config.llmConnections?.[0]?.name).toBe('JiuZhou')
+    expect(config.llmConnections?.[0]?.name).toBe('JiuZhou-AI')
+    expect(config.llmConnections?.[0]?.piAuthProvider).toBe('openai')
     expect(config.llmConnections?.[0]?.hidden).toBe(false)
     expect(result.credentialToSeed).toBeUndefined()
   })

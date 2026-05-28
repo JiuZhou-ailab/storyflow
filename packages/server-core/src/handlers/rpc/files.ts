@@ -3,7 +3,7 @@
 // pos: Server-side filesystem boundary for renderer and remote clients
 
 import { readFile, writeFile, unlink, mkdir, readdir, stat } from 'fs/promises'
-import { isAbsolute, join, resolve, dirname, parse as parsePath } from 'path'
+import { isAbsolute, join, resolve, dirname, parse as parsePath, relative } from 'path'
 import { homedir } from 'os'
 import { validatePathFormat } from '../../utils/path-validation'
 import { randomUUID } from 'crypto'
@@ -57,6 +57,18 @@ const FILE_SEARCH_SKIP_DIRS = new Set([
   '.next', '.nuxt', '.cache', '__pycache__', 'vendor',
   '.idea', '.vscode', 'coverage', '.nyc_output', '.turbo', 'out',
 ])
+
+function notifyConfigWatcherForWrite(deps: HandlerDeps, workspaceId: string | null | undefined, safePath: string): void {
+  if (!workspaceId) return
+
+  const workspace = getWorkspaceByNameOrId(workspaceId)
+  if (!workspace) return
+
+  const relativePath = relative(workspace.rootPath, safePath).replace(/\\/g, '/')
+  if (relativePath === 'automations.json') {
+    deps.sessionManager.notifyConfigFileChange(workspace.rootPath, relativePath)
+  }
+}
 
 function isPathInsideRoot(path: string, rootPath: string): boolean {
   return path === rootPath || path.startsWith(`${rootPath}/`)
@@ -260,6 +272,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
       const safePath = await validateFilePath(path, getWorkspaceAllowedDirs(workspaceId))
       await mkdir(dirname(safePath), { recursive: true })
       await writeFile(safePath, content, 'utf-8')
+      notifyConfigWatcherForWrite(deps, workspaceId, safePath)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       deps.platform.logger.error('writeFile error:', path, message)
