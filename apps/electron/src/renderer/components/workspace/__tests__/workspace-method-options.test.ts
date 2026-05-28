@@ -54,6 +54,7 @@ describe('workspace creation method options', () => {
     expect(shortFormOption?.fallbackPreviewDescription).toContain('5,000-30,000')
     expect(shortFormOption?.fallbackPreviewDescription).toContain('黄金三章')
     expect(shortFormOption?.fallbackPreviewMermaid).toContain('黄金三章')
+    expect(JSON.stringify(shortFormOption)).not.toContain('素材')
     expect(shortFormOption?.richPreview.thesis).toContain('黄金三章')
     expect(shortFormOption?.richPreview.stages.some(stage => stage.label === '黄金三章')).toBe(true)
     expect(shortFormOption?.richPreview.structure.some(group => group.items.some(item => item.includes('简报.md')))).toBe(true)

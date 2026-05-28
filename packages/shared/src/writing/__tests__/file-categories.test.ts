@@ -69,7 +69,7 @@ describe("categorizeNovelPath", () => {
     expect(categorizeNovelPath("黄金三章.md")).toBe("other");
     expect(categorizeNovelPath("大纲.md")).toBe("outline");
     expect(categorizeNovelPath("人物.md")).toBe("characters");
-    expect(categorizeNovelPath("素材.md")).toBe("analysis");
+    expect(categorizeNovelPath("素材.md")).toBe("other");
     expect(categorizeNovelPath("正文/01-未婚夫和闺蜜在我葬礼上接吻.md")).toBe("manuscript");
     expect(categorizeNovelPath("正文/第一卷/01-未婚夫和闺蜜在我葬礼上接吻.md")).toBe("manuscript");
     expect(categorizeNovelPath("自由区/脑洞/反派试稿.md")).toBe("work");

@@ -72,14 +72,12 @@ const SHORT_FORM_WORKSPACE_SIGNAL_PATHS = new Set([
   '简报.md',
   '大纲.md',
   '人物.md',
-  '素材.md',
 ])
 const SHORT_FORM_GLOBAL_INFO_FILE_ORDER = [
   '创作要求.md',
   '简报.md',
   '大纲.md',
   '人物.md',
-  '素材.md',
 ] as const
 const SHORT_FORM_GLOBAL_INFO_FILE_INDEX = new Map<string, number>(
   SHORT_FORM_GLOBAL_INFO_FILE_ORDER.map((path, index) => [path, index])
@@ -100,7 +98,6 @@ export const NOVEL_WORKSPACE_DETECTION_QUERIES = [
   '简报.md',
   '大纲.md',
   '人物.md',
-  '素材.md',
 ] as const
 
 export const NOVEL_WORKSPACE_CATALOG_DIRECTORY_QUERIES = [
@@ -141,7 +138,6 @@ export const NOVEL_WORKSPACE_FILE_SEARCH_QUERIES = [
   '简报.md',
   '大纲.md',
   '人物.md',
-  '素材.md',
 ] as const
 
 function createEmptyTree(): NovelWorkspaceTree {
@@ -301,7 +297,6 @@ const FIXED_NOVEL_FILE_DESCRIPTORS: Record<string, NovelWorkspaceFileDisplayDesc
   '简报.md': descriptor('简报'),
   '大纲.md': descriptor('大纲'),
   '人物.md': descriptor('人物'),
-  '素材.md': descriptor('素材'),
 }
 
 export function describeNovelWorkspaceFile(fileOrPath: NovelWorkspaceFile | string): NovelWorkspaceFileDisplayDescriptor {
@@ -478,7 +473,6 @@ export function detectNovelProjectFromSearchResults(results: FileSearchResult[])
     '简报.md',
     '大纲.md',
     '人物.md',
-    '素材.md',
   ].some((path) => relativeFiles.has(path))
 
   return rootDirectories.has('正文') && hasShortFormAnchor

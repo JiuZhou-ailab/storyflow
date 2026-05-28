@@ -189,7 +189,6 @@ function createChineseRuntimeSummary(pack: MethodPack): string {
 - \`简报.md\`：当前作品 intake，记录本书的输入约束和已确认方向。
 - \`大纲.md\`：章节 outline，正文写作前的结构依据。
 - \`人物.md\`：角色 reference。
-- \`素材.md\`：素材 reference。
 - \`正文/\`：accepted prose，唯一成稿目录。
 - \`自由区/\`：scratch，用于试写、临时方案、审校笔记和废弃版本。
 
@@ -778,31 +777,6 @@ function scaffoldShortForm(rootPath: string): void {
 
 - 主要关系节点：
 - 易混淆的称呼或身份：
-`);
-
-  writeFileIfMissing(join(rootPath, "素材.md"), `# 素材
-
-> 题材所需的地点、行业、案例、对标桥段、可复用台词。正文里出现的具体细节优先来自这里。
-
-## 地点 / 场景
-
-| 地点 | 用途 | 关键细节 |
-| --- | --- | --- |
-
-## 行业 / 专业知识
-
-| 主题 | 关键事实 | 用法 |
-| --- | --- | --- |
-
-## 对标桥段
-
-| 来源 | 桥段 | 想借用的效果 |
-| --- | --- | --- |
-
-## 可复用台词
-
-| 场景 | 台词 | 出自谁 |
-| --- | --- | --- |
 `);
 
   writeFileIfMissing(join(rootPath, "自由区", ".gitkeep"), "");

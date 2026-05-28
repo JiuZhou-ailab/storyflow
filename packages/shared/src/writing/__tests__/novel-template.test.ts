@@ -234,7 +234,6 @@ describe("createNovelProjectScaffold", () => {
       "简报.md",
       "大纲.md",
       "人物.md",
-      "素材.md",
       "正文",
       "自由区",
       "NOTICE-Short-Form-Writing.md",
@@ -247,6 +246,7 @@ describe("createNovelProjectScaffold", () => {
     expect(existsSync(join(rootPath, "草稿"))).toBe(false);
     expect(existsSync(join(rootPath, "定稿"))).toBe(false);
     expect(existsSync(join(rootPath, "短文简报.md"))).toBe(false);
+    expect(existsSync(join(rootPath, "素材.md"))).toBe(false);
     expect(existsSync(join(rootPath, "素材卡.md"))).toBe(false);
     expect(existsSync(join(rootPath, "黄金三章.md"))).toBe(false);
     expect(existsSync(join(rootPath, "skills", "short-brief", "SKILL.md"))).toBe(false);
@@ -282,9 +282,6 @@ describe("createNovelProjectScaffold", () => {
     const characters = readFileSync(join(rootPath, "人物.md"), "utf-8");
     expect(characters).toContain("## 主角");
 
-    const sources = readFileSync(join(rootPath, "素材.md"), "utf-8");
-    expect(sources).toContain("# 素材");
-
     const requirements = readFileSync(join(rootPath, "创作要求.md"), "utf-8");
     expect(requirements).toContain("# 创作要求");
     expect(requirements).toContain("## 读者与题材偏好");
@@ -302,6 +299,7 @@ describe("createNovelProjectScaffold", () => {
     expect(agents).toContain("## Skills");
     expect(agents).toContain("简报.md");
     expect(agents).not.toContain("黄金三章.md");
+    expect(agents).not.toContain("素材.md");
     expect(agents).toContain("大纲.md");
     expect(agents).toContain("正文/");
     expect(agents).toContain("自由区/");

@@ -121,7 +121,7 @@ describe("built-in method packs", () => {
       path: "人物.md",
       kind: "file",
     });
-    expect(pack?.requiredPaths).toContainEqual({
+    expect(pack?.requiredPaths).not.toContainEqual({
       path: "素材.md",
       kind: "file",
     });
@@ -155,6 +155,7 @@ describe("built-in method packs", () => {
     expect(pack?.starterMessage).toContain("5,000-30,000");
     expect(pack?.starterMessage).not.toContain("5,000-40,000");
     expect(pack?.starterMessage).toContain("网文");
+    expect(JSON.stringify(pack)).not.toContain("素材.md");
   });
 
   it("does not expose the removed Short Drama method pack", () => {

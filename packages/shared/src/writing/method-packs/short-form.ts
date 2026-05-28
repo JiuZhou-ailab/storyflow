@@ -22,7 +22,6 @@ export const SHORT_FORM_METHOD_PACK: MethodPack = {
     { path: "简报.md", kind: "file" },
     { path: "大纲.md", kind: "file" },
     { path: "人物.md", kind: "file" },
-    { path: "素材.md", kind: "file" },
     { path: "正文", kind: "directory" },
     { path: "自由区", kind: "directory" },
   ],
@@ -42,7 +41,6 @@ export const SHORT_FORM_METHOD_PACK: MethodPack = {
     { path: "简报.md", role: "当前作品 intake。", lifecycle: "intake" },
     { path: "大纲.md", role: "章节 outline。", lifecycle: "outline" },
     { path: "人物.md", role: "角色 reference。", lifecycle: "reference" },
-    { path: "素材.md", role: "素材 reference。", lifecycle: "reference" },
     { path: "正文/", role: "Accepted prose。", lifecycle: "final" },
     { path: "自由区/", role: "Scratch。", lifecycle: "draft" },
   ],
@@ -54,27 +52,27 @@ export const SHORT_FORM_METHOD_PACK: MethodPack = {
   skillRouting: [],
   starterMessage: `## 这是什么
 
-这是一个面向 5,000-30,000 字中文短篇/中篇网文的写作工作区。系统会创建简报、大纲、人物、素材、正文和自由区，并安装短篇写作技能。
+这是一个面向 5,000-30,000 字中文短篇/中篇网文的写作工作区。系统会创建简报、大纲、人物、正文和自由区，并安装短篇写作技能。
 
 ## 文件
 
 - 创作要求.md：长期偏好与禁区。
 - 简报.md：当前作品 intake。
 - 大纲.md：章节 outline。
-- 人物.md / 素材.md：reference。
+- 人物.md：reference。
 - 正文/：accepted prose。
 - 自由区/：scratch。
 
 ## 我会怎么做
 
-我会先把读者爽点、主角处境、反派压力、核心钩子和结局承诺收束成可执行简报，再把大纲、人物和素材拆成能直接写正文的依据。正文改写会保留可见 review 路径，避免静默覆盖已接受内容。
+我会先把读者爽点、主角处境、反派压力、核心钩子和结局承诺收束成可执行简报，再把大纲和人物拆成能直接写正文的依据。正文改写会保留可见 review 路径，避免静默覆盖已接受内容。
 
 ## 流程
 
 1. 先确认题材、平台、目标字数和读者期待。
 2. 建立主角、对手、误会或压力源，以及开篇钩子。
 3. 输出短篇结构和章节节奏，再逐段推进正文。
-4. 每轮修改同步更新大纲、人物或素材里的事实变化。
+4. 每轮修改同步更新大纲或人物里的事实变化。
 
 ## 你现在可以提供
 

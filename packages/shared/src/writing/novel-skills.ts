@@ -751,7 +751,7 @@ const SHORT_FORM_SKILLS = [
     purpose: "在正文起草前设计第一屏留存结构。",
     sectionLabels: SHORT_FORM_SECTION_LABELS,
     context: [
-      "存在 创作要求.md、简报.md、大纲.md、人物.md、素材.md 时先读取。",
+      "存在 创作要求.md、简报.md、大纲.md、人物.md 时先读取。",
       "不要把已接受正文写入 正文/。",
       "需要比较多个开篇方案时使用 自由区/。",
     ],
@@ -796,7 +796,7 @@ const SHORT_FORM_SKILLS = [
     metadataName: "短篇章节起草",
     description: "用于在 简报.md 和 大纲.md 已有可执行规划后，起草中文短篇网文的当前下一章。",
     attribution: SHORT_FORM_ATTRIBUTION,
-    purpose: "根据当前简报、大纲、人物和素材起草一个可接受章节。",
+    purpose: "根据当前简报、大纲和人物起草一个可接受章节。",
     sectionLabels: SHORT_FORM_SECTION_LABELS,
     context: [
       "正文/ 只放已接受正文。",
@@ -804,7 +804,7 @@ const SHORT_FORM_SKILLS = [
       "默认每次只写一章，除非用户明确要求批量起草。",
     ],
     workflow: [
-      "读取 创作要求.md、简报.md、大纲.md、人物.md 和 素材.md。",
+      "读取 创作要求.md、简报.md、大纲.md 和 人物.md。",
       "找到下一章规划，并确认 正文/ 中还没有同编号已接受章节。",
       "只把当前章节写入 正文/NN-标题.md。",
       "试写或替代开篇保留在 自由区/。",

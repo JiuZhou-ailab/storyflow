@@ -108,9 +108,6 @@ describe('writing workspace helpers', () => {
     expect(describeNovelWorkspaceFile('人物.md')).toEqual({
       fallbackTitle: '人物',
     })
-    expect(describeNovelWorkspaceFile('素材.md')).toEqual({
-      fallbackTitle: '素材',
-    })
   })
 
   it('falls back to a humanized file name for custom novel files', () => {
@@ -204,7 +201,6 @@ describe('writing workspace helpers', () => {
       '简报.md',
       '大纲.md',
       '人物.md',
-      '素材.md',
       '正文/01-未婚夫和闺蜜在我葬礼上接吻.md',
       '正文/03-番外.txt',
       '正文/第一卷/02-雨夜.md',
@@ -216,7 +212,7 @@ describe('writing workspace helpers', () => {
     expect(tree.style.files.map(file => file.relativePath)).toEqual(['创作要求.md'])
     expect(tree.outline.files.map(file => file.relativePath)).toEqual(['大纲.md', '简报.md'])
     expect(tree.characters.files.map(file => file.relativePath)).toEqual(['人物.md'])
-    expect(tree.analysis.files.map(file => file.relativePath)).toEqual(['素材.md'])
+    expect(tree.analysis.files.map(file => file.relativePath)).toEqual([])
     expect(tree.manuscript.files.map(file => file.relativePath)).toEqual([
       '正文/01-未婚夫和闺蜜在我葬礼上接吻.md',
       '正文/03-番外.txt',
@@ -243,7 +239,6 @@ describe('writing workspace helpers', () => {
       '简报.md',
       '大纲.md',
       '人物.md',
-      '素材.md',
     ])
   })
 
@@ -279,7 +274,6 @@ describe('writing workspace helpers', () => {
       '简报.md',
       '大纲.md',
       '人物.md',
-      '素材.md',
     ])
     expect(NOVEL_WORKSPACE_CATALOG_DIRECTORY_QUERIES).toEqual([
       'story/chapters',
@@ -318,7 +312,6 @@ describe('writing workspace helpers', () => {
       '简报.md',
       '大纲.md',
       '人物.md',
-      '素材.md',
     ])
   })
 
@@ -344,6 +337,13 @@ describe('writing workspace helpers', () => {
       { name: '大纲.md', path: '/short/大纲.md', relativePath: '大纲.md', type: 'file' },
       { name: '人物.md', path: '/short/人物.md', relativePath: '人物.md', type: 'file' },
     ])).toBe(true)
+  })
+
+  it('does not treat legacy 素材.md as a short-form workspace anchor', () => {
+    expect(detectNovelProjectFromSearchResults([
+      { name: '正文', path: '/short/正文', relativePath: '正文', type: 'directory' },
+      { name: '素材.md', path: '/short/素材.md', relativePath: '素材.md', type: 'file' },
+    ])).toBe(false)
   })
 
   it('does not detect partial writing-like structures as a novel project', () => {

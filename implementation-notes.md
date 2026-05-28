@@ -2,6 +2,10 @@
 
 ## 2026-05-28
 
+- Removed `素材.md` from the short-form writing workspace's default structure. New short-form projects now scaffold only `创作要求.md`, `简报.md`, `大纲.md`, `人物.md`, `正文/`, and `自由区/`.
+- Kept the removal scoped to the short-form common structure: Oh Story's `参考资料/`, generic external sources, chat attachments, and other method-pack material concepts are still valid separate surfaces.
+- Treated legacy root `素材.md` as an ordinary unknown file for the writing catalog. It is no longer a short-form detection anchor, sidebar global-info item, required path, skill prompt dependency, or workspace creation preview asset.
+
 - Investigating CLI `--validate-server` E2E failures after the named Bun E2E tests passed. The first failure was environmental: an existing Electron server owned the default lock, so validation is run with an isolated `CRAFT_CONFIG_DIR`.
 - Added the missing repository automation validation template at `.github/agents/automations.json`. The template uses deterministic matcher IDs so prompt automation history can be attributed on the first reload, not only after a later ID backfill.
 - Changed CLI validation to write `automations.json` through the server `file:write` RPC instead of direct filesystem writes. The server now notifies the workspace ConfigWatcher for `automations.json` writes so the in-memory AutomationSystem reloads before status-change validation.

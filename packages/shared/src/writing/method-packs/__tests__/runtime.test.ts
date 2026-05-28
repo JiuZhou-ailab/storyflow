@@ -72,10 +72,11 @@ describe("method pack runtime preamble", () => {
     expect(pack?.requiredPaths).not.toContainEqual({ path: "黄金三章.md", kind: "file" });
     expect(pack?.requiredPaths).toContainEqual({ path: "大纲.md", kind: "file" });
     expect(pack?.requiredPaths).toContainEqual({ path: "人物.md", kind: "file" });
-    expect(pack?.requiredPaths).toContainEqual({ path: "素材.md", kind: "file" });
+    expect(pack?.requiredPaths).not.toContainEqual({ path: "素材.md", kind: "file" });
     expect(pack?.requiredPaths).toContainEqual({ path: "正文", kind: "directory" });
     expect(pack?.requiredPaths).toContainEqual({ path: "自由区", kind: "directory" });
     expect(pack?.requiredPaths).not.toContainEqual({ path: ".work", kind: "directory" });
+    expect(serialized).not.toContain("素材.md");
     expect(serialized).not.toContain("首章入场坡道");
     expect(serialized).not.toContain("原创题记");
     expect(serialized).not.toContain("前三段");
