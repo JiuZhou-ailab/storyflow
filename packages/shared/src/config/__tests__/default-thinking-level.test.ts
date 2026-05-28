@@ -44,7 +44,7 @@ function setupWorkspaceConfigDir() {
       defaults: {
         notificationsEnabled: true,
         colorTheme: 'default',
-        autoCapitalisation: true,
+        autoCapitalisation: false,
         sendMessageKey: 'enter',
         spellCheck: false,
         keepAwakeWhileRunning: false,

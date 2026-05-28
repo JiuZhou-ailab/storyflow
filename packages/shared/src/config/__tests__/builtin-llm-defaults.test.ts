@@ -32,7 +32,7 @@ function makeDefaults(overrides: Partial<ConfigDefaults['builtinLlmConnection']>
     defaults: {
       notificationsEnabled: true,
       colorTheme: 'default',
-      autoCapitalisation: true,
+      autoCapitalisation: false,
       sendMessageKey: 'enter',
       spellCheck: false,
       keepAwakeWhileRunning: false,
@@ -101,6 +101,12 @@ function makePluralDefaults(): ConfigDefaults {
 }
 
 describe('builtin LLM connection defaults', () => {
+  it('ships chat auto capitalisation disabled by default for IME-safe input', () => {
+    const defaults = JSON.parse(readFileSync(BUNDLED_DEFAULTS_PATH, 'utf-8')) as ConfigDefaults
+
+    expect(defaults.defaults.autoCapitalisation).toBe(false)
+  })
+
   it('keeps the bundled managed gateway on the direct Wangsu custom provider', () => {
     const defaults = JSON.parse(readFileSync(BUNDLED_DEFAULTS_PATH, 'utf-8')) as ConfigDefaults
     const connections = defaults.builtinLlmConnections?.map(entry => entry.connection) ?? []

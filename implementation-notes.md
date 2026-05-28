@@ -7,6 +7,7 @@
 - Persisted `canBranch` metadata through `messageToStored` / `storedToMessage` so reloads do not resurrect unsafe branch buttons for provider messages that lacked native fork anchors.
 - Preserved the source session `llmConnection` and `model` in rewind-created sessions. This keeps editing the first user message from silently switching to the workspace/global default model.
 - Added a minimal client-auth state broadcast from main to every BrowserWindow, plus preload cache invalidation and renderer subscription, so a login or logout in one window updates the other restored/open windows without requiring reload.
+- Disabled chat auto-capitalisation by default and set composer/input controls to `autoCapitalize="off"` after triaging upstream IME reports. Users can still opt into the setting, but the shipped default no longer rewrites the first pinyin keystroke before the browser marks composition.
 
 - Removed `素材.md` from the short-form writing workspace's default structure. New short-form projects now scaffold only `创作要求.md`, `简报.md`, `大纲.md`, `人物.md`, `正文/`, and `自由区/`.
 - Kept the removal scoped to the short-form common structure: Oh Story's `参考资料/`, generic external sources, chat attachments, and other method-pack material concepts are still valid separate surfaces.

@@ -576,7 +576,7 @@ export function FreeFormInput({
   const [modelDropdownOpen, setModelDropdownOpen] = React.useState(false)
 
   // Input settings (loaded from config)
-  const [autoCapitalisation, setAutoCapitalisation] = React.useState(true)
+  const [autoCapitalisation, setAutoCapitalisation] = React.useState(false)
   const [sendMessageKey, setSendMessageKey] = React.useState<'enter' | 'cmd-enter'>('enter')
   const [spellCheck, setSpellCheck] = React.useState(false)
 
@@ -1807,6 +1807,7 @@ export function FreeFormInput({
           style={{ maxHeight: inputMaxHeight }}
           data-tutorial="chat-input"
           spellCheck={spellCheck}
+          autoCapitalize="off"
         />
         )}
 
