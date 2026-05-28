@@ -28,6 +28,7 @@ import {
 import type { MenuItem, MenuSection, SettingsMenuItem } from "../../shared/menu-schema"
 import { SETTINGS_ICONS } from "./icons/SettingsIcons"
 import { getDocUrl } from '@craft-agent/shared/docs/doc-links'
+import { useUpdateChecker } from "@/hooks/useUpdateChecker"
 
 // Map of action handlers for menu items that need custom behavior
 type MenuActionHandlers = {
@@ -178,6 +179,7 @@ export function AppMenu({
 }: AppMenuProps) {
   const { t } = useTranslation()
   const [isDebugMode, setIsDebugMode] = useState(false)
+  const updateChecker = useUpdateChecker()
 
   // Get hotkey labels from centralized action registry
   const newChatHotkey = useActionLabel('app.newChat').hotkey
@@ -297,11 +299,11 @@ export function AppMenu({
                   {t("menu.debug")}
                 </StyledDropdownMenuSubTrigger>
                 <StyledDropdownMenuSubContent>
-                  <StyledDropdownMenuItem onClick={() => window.electronAPI.checkForUpdates()}>
+                  <StyledDropdownMenuItem onClick={() => void updateChecker.checkForUpdates()}>
                     <Icons.Download className="h-3.5 w-3.5" />
                     {t("menu.checkForUpdates")}
                   </StyledDropdownMenuItem>
-                  <StyledDropdownMenuItem onClick={() => window.electronAPI.installUpdate()}>
+                  <StyledDropdownMenuItem onClick={() => void updateChecker.installUpdate()}>
                     <Icons.Download className="h-3.5 w-3.5" />
                     {t("menu.installUpdate")}
                   </StyledDropdownMenuItem>

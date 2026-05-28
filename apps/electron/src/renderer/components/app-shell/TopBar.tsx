@@ -424,7 +424,7 @@ export function TopBar({
                     Debug
                   </StyledDropdownMenuSubTrigger>
                   <StyledDropdownMenuSubContent>
-                    <StyledDropdownMenuItem onClick={() => window.electronAPI.checkForUpdates()}>
+                    <StyledDropdownMenuItem onClick={() => void updateChecker.checkForUpdates()}>
                       <Icons.Download className="h-3.5 w-3.5" />
                       Check for Updates
                     </StyledDropdownMenuItem>

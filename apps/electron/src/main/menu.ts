@@ -1,11 +1,12 @@
-import { Menu, app, shell, BrowserWindow } from 'electron'
+import { Menu, app, shell, BrowserWindow, dialog } from 'electron'
 import { i18n } from '@craft-agent/shared/i18n'
-import { RPC_CHANNELS, type BroadcastEventMap } from '../shared/types'
+import { RPC_CHANNELS, type BroadcastEventMap, type UpdateInfo } from '../shared/types'
 import { EDIT_MENU, VIEW_MENU, WINDOW_MENU } from '../shared/menu-schema'
 import type { MenuItem } from '../shared/menu-schema'
 import type { WindowManager } from './window-manager'
 import type { EventSink } from '@craft-agent/server-core/transport'
 import { mainLog, isDebugMode } from './logger'
+import { getManualUpdateCheckDialog } from './manual-update-check'
 
 type ClientResolver = (webContentsId: number) => string | undefined
 
@@ -13,6 +14,18 @@ type ClientResolver = (webContentsId: number) => string | undefined
 let cachedWindowManager: WindowManager | null = null
 let cachedEventSink: EventSink | null = null
 let cachedClientResolver: ClientResolver | null = null
+
+async function showManualUpdateCheckResult(info: UpdateInfo): Promise<void> {
+  const feedback = getManualUpdateCheckDialog(info)
+  if (!feedback) return
+
+  await dialog.showMessageBox({
+    type: feedback.type,
+    message: feedback.message,
+    detail: feedback.detail,
+    buttons: [i18n.t("common.ok")],
+  })
+}
 
 /**
  * Creates and sets the application menu for macOS.
@@ -72,7 +85,8 @@ export async function rebuildMenu(): Promise<void> {
     : {
         label: i18n.t("menu.checkForUpdatesEllipsis"),
         click: async () => {
-          await checkForUpdates({ autoDownload: true })
+          const info = await checkForUpdates({ autoDownload: true })
+          await showManualUpdateCheckResult(info)
         }
       }
 
@@ -201,6 +215,7 @@ export async function rebuildMenu(): Promise<void> {
             const { checkForUpdates } = await import('./auto-update')
             const info = await checkForUpdates({ autoDownload: true })
             mainLog.info('[debug-menu] Update check result:', info)
+            await showManualUpdateCheckResult(info)
           }
         },
         {
