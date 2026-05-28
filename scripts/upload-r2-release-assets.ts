@@ -1,5 +1,5 @@
 // input: Release artifacts downloaded from GitHub Actions and Wrangler R2 authentication
-// output: Versioned and latest public Storyflow download assets in R2
+// output: Versioned release assets and stable latest public Storyflow download assets in R2
 // pos: Public release publisher for landing-page downloads and electron-updater manifests
 
 import { readdirSync } from "node:fs";
@@ -212,10 +212,6 @@ async function main(): Promise<void> {
         {
           key: `${releasePrefix}/${options.tag}/${versionedAlias}`,
           cacheControl: "public, max-age=31536000, immutable",
-        },
-        {
-          key: `${latestPrefix}/${versionedAlias}`,
-          cacheControl: "public, max-age=300, must-revalidate",
         },
       );
     }

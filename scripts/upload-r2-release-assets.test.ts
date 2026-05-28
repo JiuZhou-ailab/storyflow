@@ -34,7 +34,7 @@ function runUpload(args: string[], assetsDir: string) {
 }
 
 describe("upload-r2-release-assets", () => {
-  test("dry-runs versioned and latest uploads for required release assets", () => {
+  test("dry-runs versioned release uploads and stable latest uploads for required release assets", () => {
     const assetsDir = makeAssetsDir();
     const result = runUpload(["--dry-run"], assetsDir);
 
@@ -46,7 +46,7 @@ describe("upload-r2-release-assets", () => {
       "https://story-storage.zjding.com/releases/v0.9.12/Storyflow-0.9.12-arm64.dmg",
     );
     expect(result.stdout).toContain(`https://story-storage.zjding.com/latest/${releaseAssetFiles.macArm64Dmg}`);
-    expect(result.stdout).toContain("https://story-storage.zjding.com/latest/Storyflow-0.9.12-arm64.dmg");
+    expect(result.stdout).not.toContain("https://story-storage.zjding.com/latest/Storyflow-0.9.12-arm64.dmg");
     expect(result.stdout).toContain(`https://story-storage.zjding.com/latest/${releaseAssetFiles.macManifest}`);
     expect(result.stdout).toContain("Published 9 asset(s)");
   });

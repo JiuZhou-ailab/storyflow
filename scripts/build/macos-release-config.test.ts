@@ -70,6 +70,13 @@ describe('macOS release configuration', () => {
     expect(workflow).not.toContain('STORYFLOW_R2_ACCESS_KEY_ID');
     expect(workflow).toContain('Publish release assets to Cloudflare R2');
     expect(workflow).toContain('bun run release:upload-r2');
+    expect(workflow).toContain('deploy-marketing:');
+    expect(workflow).toMatch(/deploy-marketing:\n\s+needs: publish-r2/);
+    expect(workflow).toContain('Build marketing site');
+    expect(workflow).toContain('bun run marketing:build');
+    expect(workflow).toContain('Deploy marketing site to Cloudflare Pages');
+    expect(workflow).toContain('bunx wrangler pages deploy apps/marketing/dist');
+    expect(workflow).toContain("STORYFLOW_PAGES_PROJECT_NAME: ${{ vars.STORYFLOW_PAGES_PROJECT_NAME || 'storyflow' }}");
     expect(workflow).toContain('Annotate macOS update manifest');
     expect(workflow).toContain('${{ matrix.arch }}=$manifest');
     expect(workflow).toContain('latest-mac-${{ matrix.arch }}.yml');
