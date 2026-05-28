@@ -6,7 +6,12 @@ import { describe, expect, it } from 'bun:test'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import type { HandlerFn, RequestContext, RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
-import { HANDLED_CHANNELS, registerFilesHandlers } from './files'
+import {
+  HANDLED_CHANNELS,
+  filterFileSearchSnapshot,
+  registerFilesHandlers,
+  summarizeFileSearchBatch,
+} from './files'
 
 function createFileHarness() {
   const handlers = new Map<string, HandlerFn>()
@@ -73,6 +78,37 @@ describe('file write RPC registration', () => {
 
   it('registers the batch filesystem search channel', () => {
     expect(HANDLED_CHANNELS).toContain('fs:searchBatch')
+  })
+
+  it('summarizes batch filesystem search profiling metadata without scanning', () => {
+    expect(summarizeFileSearchBatch('/tmp/workspace', [
+      { query: '正文', options: { mode: 'path' } },
+      { query: '大纲.md', options: { mode: 'path' } },
+    ])).toEqual({
+      requestCount: 2,
+      uniqueRootCount: 1,
+    })
+
+    expect(summarizeFileSearchBatch('/tmp/workspace', [])).toEqual({
+      requestCount: 0,
+      uniqueRootCount: 0,
+    })
+  })
+
+  it('filters a shared filesystem search snapshot for multiple fuzzy queries', () => {
+    const snapshot = [
+      { name: '正文', path: '/workspace/正文', type: 'directory', relativePath: '正文' },
+      { name: '01.md', path: '/workspace/正文/01.md', type: 'file', relativePath: '正文/01.md' },
+      { name: '大纲.md', path: '/workspace/大纲.md', type: 'file', relativePath: '大纲.md' },
+    ] as const
+
+    expect(filterFileSearchSnapshot(snapshot, '正文').map(result => result.relativePath)).toEqual([
+      '正文',
+      '正文/01.md',
+    ])
+    expect(filterFileSearchSnapshot(snapshot, '大纲').map(result => result.relativePath)).toEqual([
+      '大纲.md',
+    ])
   })
 
   it('creates missing parent directories before writing text files', async () => {

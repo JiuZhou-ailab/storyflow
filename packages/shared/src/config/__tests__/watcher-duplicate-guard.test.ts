@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach } from 'bun:test';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ConfigWatcher, _getActiveWatchers } from '../watcher.ts';
+import { ConfigWatcher, _getActiveWatchers, _getGlobalWatcherState } from '../watcher.ts';
 import { invalidateSkillsCache, loadAllSkills } from '../../skills/storage.ts';
 
 function writeSkill(workspaceRoot: string, slug: string, name: string): void {
@@ -44,6 +44,34 @@ describe('ConfigWatcher duplicate guard', () => {
     // Note: we can't guarantee emptiness if other tests start watchers,
     // but we can verify the type and that the getter works.
     expect(typeof watchers.size).toBe('number');
+  });
+
+  it('shares global filesystem watchers across workspace watcher instances', () => {
+    const rootA = mkdtempSync(join(tmpdir(), 'watcher-global-owner-a-'));
+    const rootB = mkdtempSync(join(tmpdir(), 'watcher-global-owner-b-'));
+    const watcherA = new ConfigWatcher(rootA, {});
+    const watcherB = new ConfigWatcher(rootB, {});
+
+    try {
+      watcherA.start();
+      const afterFirst = _getGlobalWatcherState();
+      watcherB.start();
+      const afterSecond = _getGlobalWatcherState();
+
+      expect(afterFirst.subscriberCount).toBe(1);
+      expect(afterSecond.subscriberCount).toBe(2);
+      expect(afterSecond.watcherCount).toBe(afterFirst.watcherCount);
+      expect(afterSecond.started).toBe(true);
+    } finally {
+      watcherA.stop();
+      watcherB.stop();
+      rmSync(rootA, { recursive: true, force: true });
+      rmSync(rootB, { recursive: true, force: true });
+    }
+
+    expect(_getGlobalWatcherState().subscriberCount).toBe(0);
+    expect(_getGlobalWatcherState().watcherCount).toBe(0);
+    expect(_getGlobalWatcherState().started).toBe(false);
   });
 
   it('invalidates cached skill metadata when a SKILL.md file changes', () => {

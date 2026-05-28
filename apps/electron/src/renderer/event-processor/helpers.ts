@@ -26,9 +26,13 @@ export function findMessageByTurnId(
   role?: 'assistant' | 'tool'
 ): number {
   if (!turnId) return -1
-  return messages.findIndex(m =>
-    m.turnId === turnId && (!role || m.role === role)
-  )
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (message.turnId === turnId && (!role || message.role === role)) {
+      return i
+    }
+  }
+  return -1
 }
 
 /**
@@ -40,10 +44,12 @@ export function findStreamingMessage(
   turnId?: string
 ): number {
   if (turnId) {
-    const index = messages.findIndex(m =>
-      m.role === 'assistant' && m.turnId === turnId && m.isStreaming
-    )
-    if (index !== -1) return index
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i]
+      if (message.role === 'assistant' && message.turnId === turnId && message.isStreaming) {
+        return i
+      }
+    }
   }
   // Fallback: find last streaming assistant message
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -62,10 +68,12 @@ export function findAssistantMessage(
   turnId?: string
 ): number {
   if (turnId) {
-    const index = messages.findIndex(m =>
-      m.role === 'assistant' && m.turnId === turnId
-    )
-    if (index !== -1) return index
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i]
+      if (message.role === 'assistant' && message.turnId === turnId) {
+        return i
+      }
+    }
   }
   // Fallback: find last streaming assistant message
   for (let i = messages.length - 1; i >= 0; i--) {

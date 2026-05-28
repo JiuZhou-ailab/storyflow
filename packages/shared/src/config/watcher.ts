@@ -78,6 +78,14 @@ export function _getActiveWatchers(): ReadonlyMap<string, string> {
   return activeWatchers;
 }
 
+export function _getGlobalWatcherState(): {
+  started: boolean;
+  watcherCount: number;
+  subscriberCount: number;
+} {
+  return ConfigWatcher.getGlobalWatcherState();
+}
+
 // ============================================================
 // Constants
 // ============================================================
@@ -207,6 +215,11 @@ export function loadPreferences(): UserPreferences | null {
  * Uses recursive directory watching for workspace files.
  */
 export class ConfigWatcher {
+  private static globalWatchers: FSWatcher[] = [];
+  private static globalSubscribers: Set<ConfigWatcher> = new Set();
+  private static globalDebounceTimers: Map<string, NodeJS.Timeout> = new Map();
+  private static globalStarted = false;
+
   private workspaceId: string;
   private callbacks: ConfigWatcherCallbacks;
   private watchers: FSWatcher[] = [];
@@ -278,27 +291,18 @@ export class ConfigWatcher {
     span.mark('ensureDir');
 
     // Watch global config files
-    this.watchGlobalConfigs();
+    ConfigWatcher.addGlobalSubscriber(this);
     span.mark('watchGlobalConfigs');
 
     // Watch workspace directory recursively
     this.watchWorkspaceDir();
     span.mark('watchWorkspaceDir');
 
-    // Watch global agent sources directory
-    this.watchGlobalSourcesDir();
+    // Global config/source/skill/theme/permission OS watchers are process-level
+    // singletons. This instance only owns the workspace-local recursive watcher.
     span.mark('watchGlobalSourcesDir');
-
-    // Watch global agent skills directory
-    this.watchGlobalSkillsDir();
     span.mark('watchGlobalSkillsDir');
-
-    // Watch app-level themes directory
-    this.watchAppThemesDir();
     span.mark('watchAppThemesDir');
-
-    // Watch app-level permissions directory
-    this.watchAppPermissionsDir();
     span.mark('watchAppPermissionsDir');
 
     // Initial scan to populate known sources, skills, and themes
@@ -353,6 +357,7 @@ export class ConfigWatcher {
 
     this.isRunning = false;
     activeWatchers.delete(this.workspaceDir);
+    ConfigWatcher.removeGlobalSubscriber(this);
 
     // Clear all debounce timers
     for (const timer of this.debounceTimers.values()) {
@@ -400,6 +405,209 @@ export class ConfigWatcher {
       debug('[ConfigWatcher] Watching global configs:', CONFIG_DIR);
     } catch (error) {
       debug('[ConfigWatcher] Error watching global configs:', error);
+    }
+  }
+
+  static getGlobalWatcherState(): {
+    started: boolean;
+    watcherCount: number;
+    subscriberCount: number;
+  } {
+    return {
+      started: ConfigWatcher.globalStarted,
+      watcherCount: ConfigWatcher.globalWatchers.length,
+      subscriberCount: ConfigWatcher.globalSubscribers.size,
+    };
+  }
+
+  private static addGlobalSubscriber(watcher: ConfigWatcher): void {
+    ConfigWatcher.globalSubscribers.add(watcher);
+    if (!ConfigWatcher.globalStarted) {
+      ConfigWatcher.startGlobalWatchers();
+    }
+  }
+
+  private static removeGlobalSubscriber(watcher: ConfigWatcher): void {
+    ConfigWatcher.globalSubscribers.delete(watcher);
+    if (ConfigWatcher.globalSubscribers.size > 0) return;
+
+    for (const timer of ConfigWatcher.globalDebounceTimers.values()) {
+      clearTimeout(timer);
+    }
+    ConfigWatcher.globalDebounceTimers.clear();
+
+    for (const globalWatcher of ConfigWatcher.globalWatchers) {
+      globalWatcher.close();
+    }
+    ConfigWatcher.globalWatchers = [];
+    ConfigWatcher.globalStarted = false;
+  }
+
+  private static debounceGlobal(key: string, handler: () => void, delayMs: number = DEBOUNCE_MS): void {
+    const existing = ConfigWatcher.globalDebounceTimers.get(key);
+    if (existing) {
+      clearTimeout(existing);
+    }
+
+    const timer = setTimeout(() => {
+      ConfigWatcher.globalDebounceTimers.delete(key);
+      handler();
+    }, delayMs);
+
+    ConfigWatcher.globalDebounceTimers.set(key, timer);
+  }
+
+  private static forEachGlobalSubscriber(handler: (watcher: ConfigWatcher) => void): void {
+    for (const watcher of ConfigWatcher.globalSubscribers) {
+      if (watcher.isRunning) {
+        handler(watcher);
+      }
+    }
+  }
+
+  private static startGlobalWatchers(): void {
+    ConfigWatcher.globalStarted = true;
+    ConfigWatcher.watchGlobalConfigsOnce();
+    ConfigWatcher.watchGlobalSkillsDirOnce();
+    ConfigWatcher.watchGlobalSourcesDirOnce();
+    ConfigWatcher.watchAppThemesDirOnce();
+    ConfigWatcher.watchAppPermissionsDirOnce();
+  }
+
+  private static watchGlobalConfigsOnce(): void {
+    if (!existsSync(CONFIG_DIR)) {
+      mkdirSync(CONFIG_DIR, { recursive: true });
+    }
+
+    try {
+      const watcher = watch(CONFIG_DIR, (_eventType, filename) => {
+        if (!filename) return;
+
+        if (filename === 'config.json') {
+          ConfigWatcher.debounceGlobal('config.json', () => {
+            ConfigWatcher.forEachGlobalSubscriber(w => w.handleConfigChange());
+          });
+        } else if (filename === 'preferences.json') {
+          ConfigWatcher.debounceGlobal('preferences.json', () => {
+            ConfigWatcher.forEachGlobalSubscriber(w => w.handlePreferencesChange());
+          });
+        } else if (filename === 'theme.json') {
+          ConfigWatcher.debounceGlobal('app-theme', () => {
+            ConfigWatcher.forEachGlobalSubscriber(w => w.handleAppThemeChange());
+          });
+        }
+      });
+
+      ConfigWatcher.globalWatchers.push(watcher);
+      debug('[ConfigWatcher] Watching global configs once:', CONFIG_DIR);
+    } catch (error) {
+      debug('[ConfigWatcher] Error watching global configs:', error);
+    }
+  }
+
+  private static watchGlobalSkillsDirOnce(): void {
+    if (!existsSync(GLOBAL_AGENT_SKILLS_DIR)) {
+      mkdirSync(GLOBAL_AGENT_SKILLS_DIR, { recursive: true });
+    }
+
+    try {
+      const watcher = watch(GLOBAL_AGENT_SKILLS_DIR, { recursive: true }, (_eventType, filename) => {
+        if (!filename) return;
+
+        const normalizedPath = filename.replace(/\\/g, '/');
+        const parts = normalizedPath.split('/');
+        const file = parts[1];
+
+        if (parts.length === 1 || file === 'SKILL.md' || (file && /^icon\.(svg|png|jpg|jpeg)$/i.test(file))) {
+          ConfigWatcher.debounceGlobal('global-skills', () => {
+            ConfigWatcher.forEachGlobalSubscriber(w => w.handleGlobalSkillsChange());
+          });
+        }
+      });
+
+      ConfigWatcher.globalWatchers.push(watcher);
+      debug('[ConfigWatcher] Watching global skills once:', GLOBAL_AGENT_SKILLS_DIR);
+    } catch (error) {
+      debug('[ConfigWatcher] Error watching global skills directory:', error);
+    }
+  }
+
+  private static watchGlobalSourcesDirOnce(): void {
+    if (!existsSync(GLOBAL_AGENT_SOURCES_DIR)) {
+      mkdirSync(GLOBAL_AGENT_SOURCES_DIR, { recursive: true });
+    }
+
+    try {
+      const watcher = watch(GLOBAL_AGENT_SOURCES_DIR, { recursive: true }, (_eventType, filename) => {
+        if (!filename) return;
+
+        const normalizedPath = filename.replace(/\\/g, '/');
+        const parts = normalizedPath.split('/');
+        const file = parts[1];
+
+        if (
+          parts.length === 1
+          || file === 'config.json'
+          || file === 'guide.md'
+          || (file && /^icon\.(svg|png|jpg|jpeg)$/i.test(file))
+        ) {
+          ConfigWatcher.debounceGlobal('global-sources', () => {
+            ConfigWatcher.forEachGlobalSubscriber(w => w.handleGlobalSourcesChange());
+          });
+        }
+      });
+
+      ConfigWatcher.globalWatchers.push(watcher);
+      debug('[ConfigWatcher] Watching global sources once:', GLOBAL_AGENT_SOURCES_DIR);
+    } catch (error) {
+      debug('[ConfigWatcher] Error watching global sources directory:', error);
+    }
+  }
+
+  private static watchAppThemesDirOnce(): void {
+    const themesDir = getAppThemesDir();
+    if (!existsSync(themesDir)) {
+      mkdirSync(themesDir, { recursive: true });
+    }
+
+    try {
+      const watcher = watch(themesDir, (_eventType, filename) => {
+        if (!filename) return;
+        if (filename.endsWith('.json')) {
+          const themeId = filename.replace('.json', '');
+          ConfigWatcher.debounceGlobal(`preset-theme:${themeId}`, () => {
+            ConfigWatcher.forEachGlobalSubscriber(w => w.handlePresetThemeChange(themeId));
+          });
+        }
+      });
+
+      ConfigWatcher.globalWatchers.push(watcher);
+      debug('[ConfigWatcher] Watching app themes once:', themesDir);
+    } catch (error) {
+      debug('[ConfigWatcher] Error watching app themes directory:', error);
+    }
+  }
+
+  private static watchAppPermissionsDirOnce(): void {
+    const permissionsDir = getAppPermissionsDir();
+    if (!existsSync(permissionsDir)) {
+      mkdirSync(permissionsDir, { recursive: true });
+    }
+
+    try {
+      const watcher = watch(permissionsDir, (_eventType, filename) => {
+        if (!filename) return;
+        if (filename === 'default.json') {
+          ConfigWatcher.debounceGlobal('default-permissions', () => {
+            ConfigWatcher.forEachGlobalSubscriber(w => w.handleDefaultPermissionsChange());
+          });
+        }
+      });
+
+      ConfigWatcher.globalWatchers.push(watcher);
+      debug('[ConfigWatcher] Watching app permissions once:', permissionsDir);
+    } catch (error) {
+      debug('[ConfigWatcher] Error watching app permissions directory:', error);
     }
   }
 

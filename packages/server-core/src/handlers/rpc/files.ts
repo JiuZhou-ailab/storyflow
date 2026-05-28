@@ -16,7 +16,7 @@ import {
   type FileSearchOptions,
 } from '@craft-agent/shared/protocol'
 import type { StoredAttachment } from '@craft-agent/core/types'
-import { readFileAttachment, validateImageForClaudeAPI, IMAGE_LIMITS } from '@craft-agent/shared/utils'
+import { readFileAttachment, validateImageForClaudeAPI, IMAGE_LIMITS, perf } from '@craft-agent/shared/utils'
 import { getSessionAttachmentsPath, validateSessionId } from '@craft-agent/shared/sessions'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { resizeImageForAPI, inspectImageBuffer } from '@craft-agent/server-core/services'
@@ -51,12 +51,48 @@ type FileSearchEntry = {
 }
 
 const FILE_SEARCH_MAX_RESULTS = 50
+const FILE_SEARCH_BATCH_MAX_ENTRIES = 5000
 
 const FILE_SEARCH_SKIP_DIRS = new Set([
   'node_modules', '.git', '.svn', '.hg', 'dist', 'build',
   '.next', '.nuxt', '.cache', '__pycache__', 'vendor',
   '.idea', '.vscode', 'coverage', '.nyc_output', '.turbo', 'out',
 ])
+
+export type FileSearchBatchSummary = {
+  requestCount: number
+  uniqueRootCount: number
+}
+
+export function summarizeFileSearchBatch(
+  basePath: string,
+  requests: FileSearchBatchRequest[],
+): FileSearchBatchSummary {
+  return {
+    requestCount: requests.length,
+    uniqueRootCount: requests.length > 0 && basePath.trim() ? 1 : 0,
+  }
+}
+
+export function filterFileSearchSnapshot(
+  entries: readonly FileSearchEntry[],
+  query: string,
+  maxResults = FILE_SEARCH_MAX_RESULTS,
+): FileSearchEntry[] {
+  const lowerQuery = query.toLowerCase()
+  const results = entries.filter((entry) => {
+    const lowerName = entry.name.toLowerCase()
+    const lowerRelative = entry.relativePath.toLowerCase()
+    return lowerName.includes(lowerQuery) || lowerRelative.includes(lowerQuery)
+  }).slice(0, maxResults)
+
+  results.sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'directory' ? -1 : 1
+    return a.name.length - b.name.length
+  })
+
+  return results
+}
 
 function notifyConfigWatcherForWrite(deps: HandlerDeps, workspaceId: string | null | undefined, safePath: string): void {
   if (!workspaceId) return
@@ -240,6 +276,59 @@ async function searchFilesInBase(
   })
 
   return results
+}
+
+async function collectFileSearchSnapshot(
+  basePath: string,
+  maxEntries: number,
+  skipDirs: Set<string>,
+): Promise<FileSearchEntry[]> {
+  const entries: FileSearchEntry[] = []
+  let queue = ['']
+
+  while (queue.length > 0 && entries.length < maxEntries) {
+    const nextQueue: string[] = []
+
+    const dirResults = await Promise.all(
+      queue.map(async (relDir) => {
+        const absDir = relDir ? join(basePath, relDir) : basePath
+        try {
+          return { relDir, entries: await readdir(absDir, { withFileTypes: true }) }
+        } catch {
+          return { relDir, entries: [] as import('fs').Dirent[] }
+        }
+      })
+    )
+
+    for (const { relDir, entries: dirEntries } of dirResults) {
+      if (entries.length >= maxEntries) break
+
+      for (const entry of dirEntries) {
+        if (entries.length >= maxEntries) break
+
+        const name = entry.name
+        if (name.startsWith('.') || skipDirs.has(name)) continue
+
+        const relativePath = relDir ? `${relDir}/${name}` : name
+        const isDir = entry.isDirectory()
+
+        if (isDir) {
+          nextQueue.push(relativePath)
+        }
+
+        entries.push({
+          name,
+          path: join(basePath, relativePath),
+          type: isDir ? 'directory' : 'file',
+          relativePath,
+        })
+      }
+    }
+
+    queue = nextQueue
+  }
+
+  return entries
 }
 
 export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): void {
@@ -699,27 +788,62 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
 
   server.handle(RPC_CHANNELS.fs.SEARCH_BATCH, async (_ctx, basePath: string, requests: FileSearchBatchRequest[]): Promise<FileSearchBatchResult[]> => {
     const safeRequests = Array.isArray(requests) ? requests.slice(0, 100) : []
-    deps.platform.logger.info('[FS_SEARCH_BATCH] called:', basePath, safeRequests.length)
+    const fuzzyRequests = safeRequests.filter((request) => request.options?.mode !== 'path')
+    const searchSummary = summarizeFileSearchBatch(basePath, safeRequests)
+    const searchSpan = perf.span('fs.searchBatch', {
+      basePath,
+      requestCount: searchSummary.requestCount,
+      uniqueRootCount: searchSummary.uniqueRootCount,
+    })
+    deps.platform.logger.debug('[FS_SEARCH_BATCH] called:', basePath, safeRequests.length)
 
-    const resultSets = await Promise.all(
-      safeRequests.map(async (request) => {
-        try {
-          return {
-            query: request.query,
-            results: await searchFilesInBase(basePath, request.query, request.options),
-          }
-        } catch (err) {
-          deps.platform.logger.error('[FS_SEARCH_BATCH] query error:', request.query, err)
-          return {
-            query: request.query,
-            results: [],
-          }
-        }
-      })
-    )
+    try {
+      const snapshot = fuzzyRequests.length > 0
+        ? await collectFileSearchSnapshot(basePath, FILE_SEARCH_BATCH_MAX_ENTRIES, FILE_SEARCH_SKIP_DIRS)
+        : []
+      searchSpan.setMetadata('snapshotEntryCount', snapshot.length)
 
-    deps.platform.logger.info('[FS_SEARCH_BATCH] returning', resultSets.reduce((count, resultSet) => count + resultSet.results.length, 0), 'results')
-    return resultSets
+      const resultSets = await Promise.all(
+        safeRequests.map(async (request) => {
+          try {
+            const directPathResults = await collectDirectPathSearchResults(
+              basePath,
+              request.query,
+              FILE_SEARCH_MAX_RESULTS,
+              FILE_SEARCH_SKIP_DIRS,
+              request.options?.includeDescendants !== false
+            )
+            if (directPathResults) {
+              return {
+                query: request.query,
+                results: directPathResults,
+              }
+            }
+            if (request.options?.mode === 'path') {
+              return {
+                query: request.query,
+                results: [],
+              }
+            }
+            return {
+              query: request.query,
+              results: filterFileSearchSnapshot(snapshot, request.query),
+            }
+          } catch (err) {
+            deps.platform.logger.error('[FS_SEARCH_BATCH] query error:', request.query, err)
+            return {
+              query: request.query,
+              results: [],
+            }
+          }
+        })
+      )
+
+      searchSpan.setMetadata('resultCount', resultSets.reduce((count, resultSet) => count + resultSet.results.length, 0))
+      return resultSets
+    } finally {
+      searchSpan.end()
+    }
   })
 
   // List directories in a given path (for remote directory browsing).
