@@ -135,7 +135,7 @@ autoUpdater.on('update-available', (info) => {
   mainLog.info(`[auto-update] Update available: ${updateInfo.currentVersion} → ${info.version}`)
 
   // First, check electron-updater's internal state (most reliable)
-  const internalState = checkElectronUpdaterState()
+  const internalState = checkElectronUpdaterState(info.version)
   if (internalState.ready) {
     mainLog.info(`[auto-update] electron-updater reports download ready`)
     updateInfo = {
@@ -150,7 +150,7 @@ autoUpdater.on('update-available', (info) => {
   }
 
   // Fallback: check if file exists in cache directory
-  const existing = checkForExistingDownload()
+  const existing = checkForExistingDownload(info)
   if (existing.exists) {
     mainLog.info(`[auto-update] Update already downloaded (file check), setting state to ready`)
     updateInfo = {
@@ -226,7 +226,7 @@ autoUpdater.on('error', (error) => {
  * Check if electron-updater already has a validated download ready.
  * This uses electron-updater's internal state which is more reliable than file checks.
  */
-function checkElectronUpdaterState(): { ready: boolean; version?: string } {
+function checkElectronUpdaterState(expectedVersion?: string): { ready: boolean; version?: string } {
   try {
     // Access electron-updater's internal downloadedUpdateHelper
     // @ts-expect-error - accessing internal API for reliability
@@ -236,8 +236,14 @@ function checkElectronUpdaterState(): { ready: boolean; version?: string } {
       // @ts-expect-error - accessing internal API
       const versionInfo = helper.versionInfo
       if (versionInfo) {
+        const version = asNonEmptyString(versionInfo.version)
+        if (expectedVersion && version !== expectedVersion) {
+          mainLog.info(`[auto-update] Ignoring cached updater state for ${version ?? 'unknown'} while checking ${expectedVersion}`)
+          return { ready: false }
+        }
+
         mainLog.info(`[auto-update] electron-updater has validated download: ${JSON.stringify(versionInfo)}`)
-        return { ready: true, version: versionInfo.version }
+        return { ready: true, version }
       }
     }
   } catch (error) {
@@ -254,13 +260,89 @@ interface CheckOptions {
   autoDownload?: boolean
 }
 
+interface ExpectedUpdateFile {
+  fileName: string
+  sha512?: string
+}
+
+interface ExpectedUpdateInfo {
+  version?: string
+  files?: Array<{
+    url?: string
+    path?: string
+    sha512?: string
+  }>
+  path?: string
+  sha512?: string
+}
+
+function asNonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+function updateFileName(value: unknown): string | undefined {
+  const text = asNonEmptyString(value)
+  if (!text) return undefined
+
+  const withoutQuery = text.split(/[?#]/, 1)[0]
+  try {
+    return path.basename(new URL(withoutQuery).pathname)
+  } catch {
+    return path.basename(withoutQuery)
+  }
+}
+
+function expectedUpdateFiles(update: ExpectedUpdateInfo): ExpectedUpdateFile[] {
+  const files: ExpectedUpdateFile[] = []
+
+  for (const file of update.files ?? []) {
+    const fileName = updateFileName(file.url ?? file.path)
+    if (!fileName) continue
+    files.push({
+      fileName,
+      sha512: asNonEmptyString(file.sha512),
+    })
+  }
+
+  const topLevelFileName = updateFileName(update.path)
+  if (topLevelFileName) {
+    files.push({
+      fileName: topLevelFileName,
+      sha512: asNonEmptyString(update.sha512),
+    })
+  }
+
+  const seen = new Set<string>()
+  return files.filter((file) => {
+    const key = `${file.fileName}:${file.sha512 ?? ''}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function matchesExpectedDownload(params: {
+  fileName: string
+  sha512?: string
+  expectedFiles: ExpectedUpdateFile[]
+}): boolean {
+  if (params.expectedFiles.length === 0) return true
+
+  return params.expectedFiles.some((expected) => {
+    if (expected.fileName !== params.fileName) return false
+    if (!expected.sha512) return true
+    return params.sha512 === expected.sha512
+  })
+}
+
 /**
  * Check if a downloaded update already exists in the cache directory.
  * This helps detect updates that were downloaded in a previous session.
  */
-function checkForExistingDownload(): { exists: boolean; version?: string } {
+function checkForExistingDownload(expectedUpdate?: ExpectedUpdateInfo): { exists: boolean; version?: string } {
   try {
     const cacheDir = getUpdateCacheDir()
+    const expectedFiles = expectedUpdate ? expectedUpdateFiles(expectedUpdate) : []
     mainLog.info(`[auto-update] Checking cache directory: ${cacheDir}`)
 
     if (!fs.existsSync(cacheDir)) {
@@ -281,6 +363,12 @@ function checkForExistingDownload(): { exists: boolean; version?: string } {
       // electron-updater uses 'fileName' (not 'path') in update-info.json
       const fileName = (info?.fileName || info?.path) as string | undefined
       if (fileName && fs.existsSync(path.join(cacheDir, fileName))) {
+        const sha512 = asNonEmptyString(info?.sha512)
+        if (!matchesExpectedDownload({ fileName, sha512, expectedFiles })) {
+          mainLog.info(`[auto-update] Ignoring stale pending download: ${fileName}`)
+          return { exists: false }
+        }
+
         mainLog.info(`[auto-update] Found existing download via update-info.json: ${fileName}`)
         return { exists: true, version: info?.version as string }
       }
@@ -295,6 +383,11 @@ function checkForExistingDownload(): { exists: boolean; version?: string } {
       f.endsWith('.nupkg')
     )
     if (downloadFile) {
+      if (!matchesExpectedDownload({ fileName: downloadFile, expectedFiles })) {
+        mainLog.info(`[auto-update] Ignoring unverified pending download: ${downloadFile}`)
+        return { exists: false }
+      }
+
       mainLog.info(`[auto-update] Found existing download file: ${downloadFile}`)
       return { exists: true }
     }
@@ -316,6 +409,20 @@ function checkForExistingDownload(): { exists: boolean; version?: string } {
 export async function checkForUpdates(options: CheckOptions = {}): Promise<UpdateInfo> {
   const { autoDownload = true } = options
 
+  if (!app.isPackaged) {
+    const message = 'Update checks are only available in packaged Storyflow builds.'
+    mainLog.warn(`[auto-update] ${message}`)
+    updateInfo = {
+      ...updateInfo,
+      available: false,
+      latestVersion: null,
+      downloadState: 'error',
+      error: message,
+    }
+    broadcastUpdateInfo()
+    return getUpdateInfo()
+  }
+
   // Temporarily override autoDownload for this check if needed
   // (e.g., manual check from settings shouldn't auto-download on metered connections)
   const previousAutoDownload = autoUpdater.autoDownload
@@ -333,7 +440,7 @@ export async function checkForUpdates(options: CheckOptions = {}): Promise<Updat
 
       // Double-check: if we're still showing 'downloading' but file exists, update state
       if (updateInfo.downloadState === 'downloading') {
-        const existing = checkForExistingDownload()
+        const existing = checkForExistingDownload(result.updateInfo)
         if (existing.exists) {
           mainLog.info('[auto-update] Update already downloaded, updating state to ready')
           updateInfo = {
