@@ -30,6 +30,8 @@ interface WorkspaceCreationScreenProps {
   reconnectWorkspace?: Workspace
   /** Reconnect an existing remote workspace and resolve only on real success. */
   onReconnectWorkspace?: (workspaceId: string, remoteServer: { url: string; token: string; remoteWorkspaceId: string }) => Promise<void>
+  /** Whether the user may dismiss the flow without creating/reconnecting a workspace. */
+  canClose?: boolean
 }
 
 /**
@@ -46,6 +48,7 @@ export function WorkspaceCreationScreen({
   className,
   reconnectWorkspace,
   onReconnectWorkspace,
+  canClose = true,
 }: WorkspaceCreationScreenProps) {
   const { t } = useTranslation()
   // Start at 'remote' step directly when reconnecting
@@ -66,10 +69,10 @@ export function WorkspaceCreationScreen({
   // Wrap onClose to prevent closing during creation
   // FullscreenOverlayBase handles ESC key, this wrapper prevents closing when busy
   const handleClose = useCallback(() => {
-    if (!isCreating) {
+    if (canClose && !isCreating) {
       onClose()
     }
-  }, [isCreating, onClose])
+  }, [canClose, isCreating, onClose])
 
   const handleCreateWorkspace = useCallback(async (
     folderPath: string,
@@ -208,27 +211,29 @@ export function WorkspaceCreationScreen({
         {/* Header with drag region and close button */}
         <header className="titlebar-drag-region relative h-[50px] shrink-0 flex items-center justify-end px-6">
           {/* Close button - explicitly no-drag */}
-          <motion.button
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={overlayTransitionIn}
-            onClick={(e) => {
-              e.stopPropagation()
-              handleClose()
-            }}
-            disabled={isCreating}
-            className={cn(
-              "titlebar-no-drag flex items-center justify-center p-2 rounded-[6px]",
-              "bg-background shadow-minimal hover:bg-foreground-5",
-              "text-muted-foreground hover:text-foreground",
-              "transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              "mr-[-8px] mt-2",
-              isCreating && "opacity-50 cursor-not-allowed"
-            )}
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </motion.button>
+          {canClose && (
+            <motion.button
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={overlayTransitionIn}
+              onClick={(e) => {
+                e.stopPropagation()
+                handleClose()
+              }}
+              disabled={isCreating}
+              className={cn(
+                "titlebar-no-drag flex items-center justify-center p-2 rounded-[6px]",
+                "bg-background shadow-minimal hover:bg-foreground-5",
+                "text-muted-foreground hover:text-foreground",
+                "transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "mr-[-8px] mt-2",
+                isCreating && "opacity-50 cursor-not-allowed"
+              )}
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </motion.button>
+          )}
         </header>
 
         {/* Main content */}

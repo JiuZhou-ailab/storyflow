@@ -88,8 +88,7 @@ import { setSearchPlatform, setImageProcessor } from '@craft-agent/server-core/s
 import { createApplicationMenu } from './menu'
 import { WindowManager } from './window-manager'
 import { loadWindowState, saveWindowState } from './window-state'
-import { getWorkspaces, getWorkspaceByNameOrId, loadStoredConfig, addWorkspace, saveConfig } from '@craft-agent/shared/config'
-import { createDefaultWorkspaceAtPath, DEFAULT_STARTER_WORKSPACE_NAME, getDefaultWorkspacesDir } from '@craft-agent/shared/workspaces'
+import { getWorkspaces, getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { initializeDocs } from '@craft-agent/shared/docs'
 import { initializeReleaseNotes } from '@craft-agent/shared/release-notes'
 import { ensureDefaultPermissions } from '@craft-agent/shared/agent/permissions-config'
@@ -103,6 +102,7 @@ import { OAuthFlowStore } from '@craft-agent/shared/auth'
 import { registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath, getMessagingGatewayLogFilePath, messagingGatewayLog } from './logger'
 import { setPerfEnabled, enableDebug } from '@craft-agent/shared/utils'
+import { resolveStartupWindowWorkspaceId } from './startup-window'
 import { registerPiModelResolver } from '@craft-agent/shared/config'
 import { getPiModelsForAuthProvider, getAllPiModels } from '@craft-agent/shared/config'
 import { initNotificationService, initBadgeIcon, initInstanceBadge, updateBadgeCount } from './notifications'
@@ -323,20 +323,7 @@ async function createInitialWindows(): Promise<void> {
 
   // Load saved window state
   const savedState = loadWindowState()
-  let workspaces = getWorkspaces()
-
-  // If no workspaces exist, create the product-default writing workspace on first run
-  if (workspaces.length === 0) {
-    // Ensure config file exists (addWorkspace requires it)
-    if (!loadStoredConfig()) {
-      saveConfig({ workspaces: [], activeWorkspaceId: null, activeSessionId: null })
-    }
-    const defaultPath = join(getDefaultWorkspacesDir(), 'short-mid-novel')
-    createDefaultWorkspaceAtPath(defaultPath)
-    addWorkspace({ rootPath: defaultPath, name: DEFAULT_STARTER_WORKSPACE_NAME })
-    workspaces = getWorkspaces() // Refresh after creation
-    mainLog.info('Created default workspace on first run')
-  }
+  const workspaces = getWorkspaces()
 
   const validWorkspaceIds = workspaces.map(ws => ws.id)
 
@@ -366,9 +353,11 @@ async function createInitialWindows(): Promise<void> {
     }
   }
 
-  // Default: open window for first workspace
-  windowManager.createWindow({ workspaceId: workspaces[0].id })
-  mainLog.info(`Created window for first workspace: ${workspaces[0].name}`)
+  const startupWorkspaceId = resolveStartupWindowWorkspaceId(workspaces)
+  windowManager.createWindow({ workspaceId: startupWorkspaceId })
+  mainLog.info(startupWorkspaceId
+    ? `Created window for first workspace: ${workspaces[0].name}`
+    : 'Created first-run window without a workspace')
 }
 
 app.whenReady().then(async () => {

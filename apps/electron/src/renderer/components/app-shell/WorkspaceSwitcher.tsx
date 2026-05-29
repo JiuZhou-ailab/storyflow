@@ -192,6 +192,7 @@ export function WorkspaceSwitcher({
           {variant === 'topbar' ? (
             <button
               type="button"
+              data-tutorial="workspace-switcher"
               className="header-icon-btn titlebar-no-drag ml-1 flex-1 min-w-0 overflow-hidden flex items-center justify-start gap-0.5 h-[30px] px-3 rounded-[8px] border border-foreground/6 text-[13px] text-foreground/50 whitespace-nowrap hover:bg-foreground/5 hover:text-foreground transition-colors cursor-pointer data-[state=open]:bg-foreground/5 data-[state=open]:text-foreground"
               aria-label={t("workspace.selectWorkspace", "选择工作区")}
               title={selectedWorkspaceName}
@@ -214,6 +215,7 @@ export function WorkspaceSwitcher({
             </button>
           ) : (
             <button
+              data-tutorial="workspace-switcher"
               className={cn(
                 "flex items-center gap-1 w-full min-w-0 justify-start px-2 py-1.5 rounded-md",
                 "text-foreground hover:bg-foreground/5 data-[state=open]:bg-foreground/5 transition-colors duration-150",

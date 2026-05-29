@@ -17,7 +17,7 @@ import type { AgentEvent, Effect } from './event-processor'
 import { AppShell } from '@/components/app-shell/AppShell'
 import type { AppShellContextType } from '@/context/AppShellContext'
 import { OnboardingWizard, ReauthScreen } from '@/components/onboarding'
-import { WorkspacePicker } from '@/components/workspace'
+import { WorkspaceCreationScreen, WorkspacePicker } from '@/components/workspace'
 import { ResetConfirmationDialog } from '@/components/ResetConfirmationDialog'
 import { SplashScreen } from '@/components/SplashScreen'
 import { TooltipProvider } from '@craft-agent/ui'
@@ -36,6 +36,7 @@ import { coerceInputText } from './lib/input-text'
 import { getSessionsToRefreshAfterStaleReconnect } from './lib/reconnect-recovery'
 import { formatSessionLoadFailure, shouldTreatSessionLoadFailureAsTransportFallback } from './lib/session-load'
 import { getAutoSessionIdForWorkspaceSwitch } from './lib/workspace-switch'
+import { resolvePostSetupAppState } from './lib/startup-flow'
 import { isAppFullyReady } from './lib/app-readiness'
 import { extractWorkspaceSlugFromPath } from '@craft-agent/shared/utils/workspace-slug'
 import { DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels'
@@ -78,8 +79,9 @@ import { getFileManagerName } from '@/lib/platform'
 import { rendererLog } from '@/lib/logger'
 import { ActionRegistryProvider } from '@/actions'
 import { toast } from 'sonner'
+import * as storage from '@/lib/local-storage'
 
-type AppState = 'loading' | 'onboarding' | 'reauth' | 'workspace-picker' | 'ready'
+type AppState = 'loading' | 'onboarding' | 'reauth' | 'workspace-picker' | 'workspace-creation' | 'ready'
 
 /** Type for the Jotai store returned by useStore() */
 type JotaiStore = ReturnType<typeof getDefaultStore>
@@ -661,20 +663,17 @@ export default function App() {
     try {
       // Reload workspaces after onboarding
       const ws = await window.electronAPI.getWorkspaces()
-      if (ws.length > 0) {
-        // Switch to workspace in-place (no window close/reopen)
-        await window.electronAPI.switchWorkspace(ws[0].id)
-        setWindowWorkspaceId(ws[0].id)
-        setWorkspaces(ws)
-      } else {
-        setWorkspaces(ws)
-      }
+      setWorkspaces(ws)
+      setAppState(resolvePostSetupAppState({
+        windowWorkspaceId,
+        workspaceCount: ws.length,
+      }))
     } catch (error) {
       console.error('[App] Failed to load workspaces after onboarding:', error)
       // Still transition to ready — the app can recover via reconnect
+      setAppState('ready')
     }
-    setAppState('ready')
-  }, [])
+  }, [windowWorkspaceId])
 
   // Onboarding hook — onConfigSaved fires immediately when billing is saved,
   // ensuring connection state updates before the wizard closes.
@@ -721,13 +720,16 @@ export default function App() {
         setSetupNeeds(needs)
 
         if (needs.isFullyConfigured) {
-          // If no workspace is selected (thin client without CRAFT_WORKSPACE_ID),
-          // show workspace picker before entering the main app
-          if (!wsId) {
-            setAppState('workspace-picker')
-          } else {
-            setAppState('ready')
-          }
+          const ws = await withTimeout(
+            window.electronAPI.getWorkspaces(),
+            STARTUP_RPC_TIMEOUT_MS,
+            'getWorkspaces'
+          )
+          setWorkspaces(ws)
+          setAppState(resolvePostSetupAppState({
+            windowWorkspaceId: wsId,
+            workspaceCount: ws.length,
+          }))
         } else {
           // New user or needs setup - show onboarding
           setAppState('onboarding')
@@ -1975,6 +1977,15 @@ export default function App() {
     }
   }, [])
 
+  const handleRequiredWorkspaceCreated = useCallback(async (workspace: Workspace) => {
+    await handleWorkspaceCreated(workspace)
+    storage.set(storage.KEYS.firstRunTourCompleted, false)
+    storage.set(storage.KEYS.firstRunTourPending, true)
+    await window.electronAPI.switchWorkspace(workspace.id)
+    setWindowWorkspaceId(workspace.id)
+    setAppState('ready')
+  }, [handleWorkspaceCreated])
+
   // Handle cancel during onboarding
   const handleOnboardingCancel = useCallback(() => {
     onboarding.handleCancel()
@@ -2173,6 +2184,22 @@ export default function App() {
               setWindowWorkspaceId(id)
               setAppState('ready')
             }}
+          />
+        </ModalProvider>
+      </DismissibleLayerProvider>
+    )
+  }
+
+  // Required workspace creation — first local run after login/setup.
+  if (appState === 'workspace-creation') {
+    return (
+      <DismissibleLayerProvider>
+        <ModalProvider>
+          <WindowCloseHandler />
+          <WorkspaceCreationScreen
+            canClose={false}
+            onClose={() => {}}
+            onWorkspaceCreated={handleRequiredWorkspaceCreated}
           />
         </ModalProvider>
       </DismissibleLayerProvider>

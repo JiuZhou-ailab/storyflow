@@ -59,6 +59,7 @@ function ConversationHistoryMenu({
         <PanelHeaderCenterButton
           aria-label={t('chat.history')}
           title={t('chat.history')}
+          data-tutorial="chat-history"
           icon={(
             <span className="flex items-center gap-1.5">
               <History className="h-4 w-4" />
@@ -723,6 +724,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     <ContextMenu modal={true}>
       <ContextMenuTrigger asChild>
         <PanelHeaderCenterButton
+          data-tutorial="new-session-button"
           icon={(
             <span className="flex items-center gap-1.5">
               <SquarePenRounded className="h-4 w-4" />

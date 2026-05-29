@@ -61,6 +61,10 @@ export const KEYS = {
   // What's New
   whatsNewLastSeenVersion: 'whats-new-last-seen-version',
 
+  // First-run guide
+  firstRunTourCompleted: 'first-run-tour-completed',
+  firstRunTourPending: 'first-run-tour-pending',
+
   // Workspace navigation state (workspace-scoped via suffix = workspaceSlug)
   // Stores the full URL search string so switching back restores panels/focus/sidebar
   workspaceUrl: 'workspace-url',

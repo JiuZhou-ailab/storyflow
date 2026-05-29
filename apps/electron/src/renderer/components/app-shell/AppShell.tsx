@@ -44,6 +44,7 @@ import {
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
 import { TopBar } from "./TopBar"
+import { FirstRunTour } from "./FirstRunTour"
 import { GlobalSearchDialog } from "./GlobalSearchDialog"
 import { McpIcon } from "../icons/McpIcon"
 import { cn } from "@/lib/utils"
@@ -3571,6 +3572,7 @@ function AppShellContent({
       title: t('writing.workspace'),
       label: String(novelWorkspaceFiles.length),
       icon: Library,
+      dataTutorial: 'writing-catalog',
       variant: 'ghost',
       expandable: true,
       expanded: isExpanded('nav:writingCatalog'),
@@ -3582,6 +3584,7 @@ function AppShellContent({
           title: t('writing.catalog.globalInfo', '全局信息'),
           label: String(globalFileCount),
           icon: Library,
+          dataTutorial: 'writing-global-info',
           variant: hasSelectedGlobalFile ? 'default' : 'ghost',
           expandable: true,
           expanded: isExpanded('writing:group:global'),
@@ -3594,6 +3597,7 @@ function AppShellContent({
           title: manuscriptSection.title,
           label: String(manuscriptSection.files.length),
           icon: manuscriptSection.icon,
+          dataTutorial: 'writing-manuscript',
           variant: hasSelectedManuscriptFile ? 'default' : 'ghost',
           afterTitle: createNovelWorkspaceFileActions(
             '正文',
@@ -3622,6 +3626,7 @@ function AppShellContent({
           title: freeAreaSection.title,
           label: String(freeAreaSection.files.length),
           icon: freeAreaSection.icon,
+          dataTutorial: 'writing-free-area',
           variant: hasSelectedFreeAreaFile ? 'default' : 'ghost',
           afterTitle: createNovelWorkspaceFileActions(
             '自由区',
@@ -3683,6 +3688,7 @@ function AppShellContent({
         icon: Zap,
         variant: isSkillsNavigation(navState) ? "default" : "ghost",
         onClick: handleSkillsClick,
+        dataTutorial: "skills-nav",
       },
       {
         id: "nav:automations",
@@ -3691,6 +3697,7 @@ function AppShellContent({
         icon: ListTodo,
         variant: (isAutomationsNavigation(navState) && !automationFilter) ? "default" : "ghost",
         onClick: handleAutomationsClick,
+        dataTutorial: "automations-nav",
       },
       { id: "separator:writing-settings", type: "separator" },
       {
@@ -3699,6 +3706,7 @@ function AppShellContent({
         icon: Settings,
         variant: isSettingsNavigation(navState) ? "default" : "ghost",
         onClick: () => handleSettingsClick('app'),
+        dataTutorial: "settings-nav",
       },
       {
         id: "nav:writing-version",
@@ -5009,6 +5017,7 @@ function AppShellContent({
       {/* Messaging dialogs (pairing-code + WA connect) — driven by messagingDialogAtom.
           Mounted here so they survive context-menu / dropdown close. */}
       <MessagingDialogHost />
+      <FirstRunTour />
 
     </AppShellProvider>
   )
