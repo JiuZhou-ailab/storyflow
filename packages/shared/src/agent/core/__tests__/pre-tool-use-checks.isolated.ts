@@ -23,6 +23,9 @@ let mockIsReadOnlyBashCommandWithConfig = mock(
   (_command: string, _config: any) => false
 );
 
+let mockExtractBashWriteTarget = mock((_command: string) => null as string | null);
+let mockLooksLikePotentialWrite = mock((_command: string) => false);
+
 let mockEffectivePermissionMode: 'safe' | 'ask' | 'allow-all' = 'safe';
 
 // Paths resolve from THIS file's location (core/__tests__/)
@@ -30,6 +33,8 @@ mock.module('../../mode-manager.ts', () => ({
   shouldAllowToolInMode: (a: any, b: any, c: any, d?: any) => mockShouldAllowToolInMode(a, b, c, d),
   isApiEndpointAllowed: (a: any, b: any, c?: any) => mockIsApiEndpointAllowed(a, b, c),
   isReadOnlyBashCommandWithConfig: (a: any, b: any) => mockIsReadOnlyBashCommandWithConfig(a, b),
+  extractBashWriteTarget: (a: any) => mockExtractBashWriteTarget(a),
+  looksLikePotentialWrite: (a: any) => mockLooksLikePotentialWrite(a),
   getPermissionModeDiagnostics: () => ({
     permissionMode: mockEffectivePermissionMode,
     modeVersion: 7,
@@ -159,6 +164,10 @@ describe('runPreToolUseChecks', () => {
     mockIsApiEndpointAllowed.mockImplementation(() => false);
     mockIsReadOnlyBashCommandWithConfig.mockReset();
     mockIsReadOnlyBashCommandWithConfig.mockImplementation(() => false);
+    mockExtractBashWriteTarget.mockReset();
+    mockExtractBashWriteTarget.mockImplementation(() => null);
+    mockLooksLikePotentialWrite.mockReset();
+    mockLooksLikePotentialWrite.mockImplementation(() => false);
     mockDetectConfigFileType.mockReset();
     mockDetectConfigFileType.mockImplementation(() => null);
     mockDetectAppConfigFileType.mockReset();
