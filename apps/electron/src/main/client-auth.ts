@@ -85,6 +85,7 @@ export interface ClientAuthState {
   configured: boolean
   authenticated: boolean
   emailPasswordEnabled: boolean
+  emailSignUpEnabled: boolean
   feishuLoginEnabled: boolean
   usernameLoginEnabled?: boolean
   user?: ClientAuthUser
@@ -132,6 +133,7 @@ type ClientAuthEnv = Partial<Pick<NodeJS.ProcessEnv,
   | 'CRAFT_CLIENT_NEON_AUTH_ISSUER'
   | 'CRAFT_CLIENT_NEON_AUTH_AUDIENCE'
   | 'CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN'
+  | 'CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED'
   | 'CRAFT_CLIENT_NEON_AUTH_ORIGIN'
 >>
 
@@ -149,6 +151,7 @@ const BUNDLED_CLIENT_AUTH_ENV: ClientAuthEnv = {
   CRAFT_CLIENT_NEON_AUTH_ISSUER: process.env.CRAFT_CLIENT_NEON_AUTH_ISSUER,
   CRAFT_CLIENT_NEON_AUTH_AUDIENCE: process.env.CRAFT_CLIENT_NEON_AUTH_AUDIENCE,
   CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN: process.env.CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN,
+  CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED: process.env.CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED,
   CRAFT_CLIENT_NEON_AUTH_ORIGIN: process.env.CRAFT_CLIENT_NEON_AUTH_ORIGIN,
 }
 
@@ -171,6 +174,9 @@ export function createClientAuthConfigFromEnv(env: NodeJS.ProcessEnv): ClientAut
   const audience = readEnv(env.CRAFT_CLIENT_NEON_AUTH_AUDIENCE) ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_AUDIENCE)
   const usernameEmailDomain = readEnv(env.CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN)
     ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN)
+  const emailSignUpEnabled = readBooleanEnv(env.CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED)
+    ?? readBooleanEnv(env.CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED)
+    ?? false
   const neonAuthOrigin = readEnv(env.CRAFT_CLIENT_NEON_AUTH_ORIGIN)
     ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_ORIGIN)
     ?? (baseUrl ? DEFAULT_CLIENT_AUTH_ORIGIN : undefined)
@@ -200,6 +206,7 @@ export function createClientAuthConfigFromEnv(env: NodeJS.ProcessEnv): ClientAut
             ...(issuer ? { issuer } : {}),
             ...(audience ? { audience } : {}),
             ...(usernameEmailDomain ? { usernameEmailDomain } : {}),
+            emailSignUpEnabled,
           },
         }
       : {}),
@@ -237,6 +244,8 @@ export function createClientAuthService(
     : null
   const feishuBrokerStateStore = config.feishuBrokerAuth ? new FeishuOAuthStateStore() : null
   const emailPasswordEnabled = neonAuth?.isConfigured() ?? false
+  const neonClientConfig = emailPasswordEnabled ? neonAuth?.getClientConfig() : undefined
+  const emailSignUpEnabled = neonClientConfig?.emailSignUpEnabled === true
   const feishuLoginEnabled = config.feishuBrokerAuth !== undefined && authBrokerClient !== null
   const configured = emailPasswordEnabled || feishuLoginEnabled
   let currentUser: ClientAuthUser | null = null
@@ -247,13 +256,13 @@ export function createClientAuthService(
 
   return {
     getState(): ClientAuthState {
-      const clientConfig = configured ? neonAuth?.getClientConfig() : undefined
       return buildClientAuthState({
         required: config.required,
         configured,
         emailPasswordEnabled,
+        emailSignUpEnabled,
         feishuLoginEnabled,
-        clientConfig,
+        clientConfig: neonClientConfig,
         user: currentUser,
       })
     },
@@ -291,6 +300,9 @@ export function createClientAuthService(
     async signUp(input: ClientAuthSignUpInput): Promise<ClientAuthSignUpResult> {
       if (!neonAuth || !configured) {
         throw new Error('Client auth is not configured')
+      }
+      if (!emailSignUpEnabled) {
+        throw new Error('Email sign-up is disabled')
       }
 
       const identifier = readEnv(input.identifier)
@@ -434,6 +446,7 @@ function buildClientAuthState(input: {
   required: boolean
   configured: boolean
   emailPasswordEnabled: boolean
+  emailSignUpEnabled: boolean
   feishuLoginEnabled: boolean
   clientConfig?: NeonAuthClientConfig
   user: ClientAuthUser | null
@@ -445,6 +458,7 @@ function buildClientAuthState(input: {
     configured: input.configured,
     authenticated,
     emailPasswordEnabled: input.emailPasswordEnabled,
+    emailSignUpEnabled: input.emailSignUpEnabled,
     feishuLoginEnabled: input.feishuLoginEnabled,
     ...(input.clientConfig?.usernameLoginEnabled ? { usernameLoginEnabled: true } : {}),
     ...(input.user ? { user: input.user } : {}),

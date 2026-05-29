@@ -403,7 +403,7 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Neon Auth email login failed'
         logger.warn(`[webui] Neon Auth email request rejected from ${ip}: ${msg}`)
-        return Response.json({ error: msg }, { status: 401 })
+        return Response.json({ error: msg }, { status: msg === 'Email sign-up is disabled' ? 403 : 401 })
       }
     }
 

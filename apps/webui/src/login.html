@@ -258,6 +258,10 @@
       background: var(--foreground-3);
     }
 
+    .mode-switch.signin-only {
+      grid-template-columns: 1fr;
+    }
+
     .mode-button {
       min-height: 32px;
       padding: 6px 8px;
@@ -432,6 +436,7 @@
     let emailMode = 'sign-in';
     const authState = {
       neonEnabled: false,
+      emailSignUpEnabled: false,
       passwordAuthEnabled: true,
       feishuEnabled: false,
     };
@@ -444,9 +449,16 @@
 
       serverForm.style.display = hasPassword ? '' : 'none';
       emailForm.classList.toggle('visible', hasAccount);
+      emailSignupTab.hidden = !authState.emailSignUpEnabled;
+      emailSignupTab.disabled = !authState.emailSignUpEnabled;
+      emailSigninTab.parentElement.classList.toggle('signin-only', !authState.emailSignUpEnabled);
       feishuBtn.classList.toggle('visible', hasFeishu);
       feishuDivider.classList.toggle('visible', hasFeishu && hasAccount);
       serverDivider.classList.toggle('visible', hasPassword && (hasAccount || hasFeishu));
+
+      if (!authState.emailSignUpEnabled && emailMode === 'sign-up') {
+        setEmailMode('sign-in');
+      }
 
       if (hasAccount) {
         subtitle.textContent = hasPassword || hasFeishu
@@ -481,6 +493,9 @@
     }
 
     function setEmailMode(mode) {
+      if (mode === 'sign-up' && !authState.emailSignUpEnabled) {
+        return;
+      }
       emailMode = mode;
       const isSignUp = mode === 'sign-up';
       emailSigninTab.classList.toggle('active', !isSignUp);
@@ -498,6 +513,7 @@
         const data = await res.json();
         const passwordAuthEnabled = data.passwordAuthEnabled !== false;
         authState.neonEnabled = Boolean(data.enabled);
+        authState.emailSignUpEnabled = Boolean(data.emailSignUpEnabled);
         authState.passwordAuthEnabled = passwordAuthEnabled;
 
         if (data.enabled) {
@@ -541,6 +557,10 @@
     emailForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       clearMessage();
+      if (emailMode === 'sign-up' && !authState.emailSignUpEnabled) {
+        showMessage('Email sign-up is disabled');
+        return;
+      }
       emailSubmitBtn.disabled = true;
       const originalLabel = emailSubmitBtn.textContent;
       emailSubmitBtn.textContent = emailMode === 'sign-up' ? 'Creating...' : 'Signing in...';

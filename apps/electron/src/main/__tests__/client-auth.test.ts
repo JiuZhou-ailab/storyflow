@@ -17,6 +17,7 @@ describe('client auth', () => {
       configured: false,
       authenticated: true,
       emailPasswordEnabled: false,
+      emailSignUpEnabled: false,
       feishuLoginEnabled: false,
     })
   })
@@ -32,6 +33,7 @@ describe('client auth', () => {
       configured: false,
       authenticated: false,
       emailPasswordEnabled: false,
+      emailSignUpEnabled: false,
       feishuLoginEnabled: false,
     })
   })
@@ -48,6 +50,7 @@ describe('client auth', () => {
       configured: false,
       authenticated: true,
       emailPasswordEnabled: false,
+      emailSignUpEnabled: false,
       feishuLoginEnabled: false,
     })
   })
@@ -90,6 +93,7 @@ describe('client auth', () => {
       configured: false,
       authenticated: false,
       emailPasswordEnabled: false,
+      emailSignUpEnabled: false,
       feishuLoginEnabled: false,
     })
     await expect(service.signIn({ identifier: 'zjding', password: 'secret' }))
@@ -155,17 +159,51 @@ describe('client auth', () => {
       configured: true,
       authenticated: true,
       emailPasswordEnabled: true,
+      emailSignUpEnabled: false,
       feishuLoginEnabled: false,
       usernameLoginEnabled: true,
       user: signedIn,
     })
   })
 
+  it('keeps email sign-up disabled unless the desktop config explicitly enables it', async () => {
+    const calls: Array<{ mode: string }> = []
+    const fakeNeonAuth: ClientAuthNeonService = {
+      isConfigured: () => true,
+      getClientConfig: () => ({ enabled: true, emailSignUpEnabled: false }),
+      authenticateWithEmailPassword: async (input) => {
+        calls.push({ mode: input.mode })
+        return { status: 'authenticated', token: 'unexpected-token' }
+      },
+      verifyToken: async () => {
+        throw new Error('verifyToken should not be called')
+      },
+    }
+    const service = createClientAuthService(
+      { required: true, neonAuth: { baseUrl: 'https://auth.example.com' } },
+      { createNeonAuthService: () => fakeNeonAuth },
+    )
+
+    expect(service.getState()).toEqual({
+      required: true,
+      configured: true,
+      authenticated: false,
+      emailPasswordEnabled: true,
+      emailSignUpEnabled: false,
+      feishuLoginEnabled: false,
+    })
+    await expect(service.signUp({
+      identifier: 'new@example.com',
+      password: 'secret',
+    })).rejects.toThrow('Email sign-up is disabled')
+    expect(calls).toEqual([])
+  })
+
   it('registers a Neon Auth email account and signs in when the provider returns a token', async () => {
     const calls: Array<{ mode: string, email: string, password: string, name?: string, origin?: string }> = []
     const fakeNeonAuth: ClientAuthNeonService = {
       isConfigured: () => true,
-      getClientConfig: () => ({ enabled: true }),
+      getClientConfig: () => ({ enabled: true, emailSignUpEnabled: true }),
       authenticateWithEmailPassword: async (input) => {
         calls.push({
           mode: input.mode,
@@ -191,7 +229,7 @@ describe('client auth', () => {
     const service = createClientAuthService({
       required: true,
       neonAuthOrigin: 'http://localhost:9100',
-      neonAuth: { baseUrl: 'https://auth.example.com' },
+      neonAuth: { baseUrl: 'https://auth.example.com', emailSignUpEnabled: true },
     }, {
       createNeonAuthService: () => fakeNeonAuth,
     })
@@ -225,7 +263,7 @@ describe('client auth', () => {
   it('keeps the client unauthenticated when Neon Auth registration requires email verification', async () => {
     const fakeNeonAuth: ClientAuthNeonService = {
       isConfigured: () => true,
-      getClientConfig: () => ({ enabled: true }),
+      getClientConfig: () => ({ enabled: true, emailSignUpEnabled: true }),
       authenticateWithEmailPassword: async () => ({
         status: 'verification-required',
         user: {
@@ -240,7 +278,7 @@ describe('client auth', () => {
       },
     }
     const service = createClientAuthService(
-      { required: true, neonAuth: { baseUrl: 'https://auth.example.com' } },
+      { required: true, neonAuth: { baseUrl: 'https://auth.example.com', emailSignUpEnabled: true } },
       { createNeonAuthService: () => fakeNeonAuth },
     )
 
@@ -332,15 +370,17 @@ describe('client auth', () => {
       configured: true,
       authenticated: false,
       emailPasswordEnabled: true,
+      emailSignUpEnabled: false,
       feishuLoginEnabled: false,
     })
   })
 
-  it('reads Electron client auth config from client env with WebUI Neon fallback and a stable Origin', () => {
+  it('reads Electron client auth config from client env with WebUI Neon fallback, sign-up flag, and a stable Origin', () => {
     const config = createClientAuthConfigFromEnv({
       CRAFT_CLIENT_AUTH_REQUIRED: 'true',
       CRAFT_WEBUI_NEON_AUTH_BASE_URL: 'https://auth.example.com',
       CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN: 'users.craft.invalid',
+      CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED: 'true',
     })
 
     expect(config).toEqual({
@@ -349,8 +389,20 @@ describe('client auth', () => {
       neonAuth: {
         baseUrl: 'https://auth.example.com',
         usernameEmailDomain: 'users.craft.invalid',
+        emailSignUpEnabled: true,
       },
     })
+  })
+
+  it('prefers the client Neon sign-up flag over the WebUI fallback', () => {
+    const config = createClientAuthConfigFromEnv({
+      CRAFT_CLIENT_AUTH_REQUIRED: 'true',
+      CRAFT_CLIENT_NEON_AUTH_BASE_URL: 'https://auth.example.com',
+      CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED: 'false',
+      CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED: 'true',
+    })
+
+    expect(config.neonAuth?.emailSignUpEnabled).toBe(false)
   })
 
   it('allows overriding the Neon Auth Origin for Electron client sign-in', () => {
@@ -518,6 +570,7 @@ describe('client auth', () => {
       configured: true,
       authenticated: true,
       emailPasswordEnabled: false,
+      emailSignUpEnabled: false,
       feishuLoginEnabled: true,
       user: signedIn,
     })

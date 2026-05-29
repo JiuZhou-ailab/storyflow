@@ -49,6 +49,7 @@ CRAFT_CLIENT_AUTH_BROKER_URL=https://storyflow-auth.zjding.com
 CRAFT_CLIENT_FEISHU_APP_ID=cli_aa9d901dfbb8dcd3
 CRAFT_CLIENT_NEON_AUTH_BASE_URL=https://your-neon-auth.example.com/neondb/auth
 CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN=users.craft.invalid
+CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED=false
 CLOUDFLARE_ACCOUNT_ID=...
 STORYFLOW_R2_PUBLIC_BASE_URL=https://story-storage.zjding.com
 STORYFLOW_R2_LATEST_PREFIX=latest
@@ -76,6 +77,12 @@ CLOUDFLARE_PAGES_API_TOKEN=...
 `CRAFT_CLIENT_FEISHU_AUTH_BROKER_URL` remains a compatibility fallback in code,
 but new configuration should not use it.
 
+`CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED` only controls whether the packaged
+desktop UI exposes email registration and allows the local sign-up IPC path.
+Keep it `false` for invite-only or Feishu-only distribution. Set it to `true`
+only after the matching Neon Auth branch allows email sign-up and has a working
+email provider / verification policy.
+
 ## Auth Broker / Web UI Server
 
 Server-only values stay on the broker or Web UI server. They must not be baked
@@ -91,11 +98,19 @@ CRAFT_WEBUI_FEISHU_INTERNAL_TENANT_KEYS=
 CRAFT_WEBUI_AUTH_DATABASE_URL=...
 CRAFT_WEBUI_NEON_AUTH_BASE_URL=...
 CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN=users.craft.invalid
+CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED=false
 ```
 
 The desktop app asks the broker for public Feishu config and sends OAuth codes
 back to the broker. The Feishu app secret and user allow policy belong on the
 broker side only.
+
+`CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED` controls the standalone Web UI email
+registration endpoint and sign-up tab. Email sign-in remains available when it
+is `false`; sign-up requests return 403 before contacting Neon Auth. Neon Auth
+itself must still be configured in the Neon Console or API: enable email/password
+sign-up, pick the verification policy, and configure email delivery. Neon shared
+email supports verification codes; verification links require a custom provider.
 
 ## Electron Runtime Internals
 

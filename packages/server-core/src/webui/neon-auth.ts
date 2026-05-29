@@ -49,6 +49,7 @@ export type NeonAuthEmailPasswordResult =
 export interface NeonAuthClientConfig {
   enabled: boolean
   baseUrl?: string
+  emailSignUpEnabled?: boolean
   usernameLoginEnabled?: boolean
 }
 
@@ -71,11 +72,13 @@ export interface NeonAuthConfig {
   issuer?: string
   audience?: string
   usernameEmailDomain?: string
+  emailSignUpEnabled?: boolean
   fetch?: FetchLike
   tokenVerifier?: NeonAuthTokenVerifier
 }
 
 interface NormalizedNeonAuthConfig extends NeonAuthVerifierContext {
+  emailSignUpEnabled: boolean
   fetch?: FetchLike
   tokenVerifier?: NeonAuthTokenVerifier
 }
@@ -100,6 +103,7 @@ export class NeonAuthService {
     return {
       enabled: true,
       baseUrl: this.config.baseUrl,
+      emailSignUpEnabled: this.config.emailSignUpEnabled,
       ...(this.config.usernameEmailDomain ? { usernameLoginEnabled: true } : {}),
     }
   }
@@ -138,6 +142,9 @@ export class NeonAuthService {
       throw new Error(this.config.usernameEmailDomain ? 'Email or username is required' : 'Email is required')
     }
     if (!password) throw new Error('Password is required')
+    if (input.mode === 'sign-up' && !this.config.emailSignUpEnabled) {
+      throw new Error('Email sign-up is disabled')
+    }
 
     const path = input.mode === 'sign-up' ? 'sign-up' : 'sign-in'
     const body: Record<string, unknown> = {
@@ -223,6 +230,7 @@ function normalizeNeonAuthConfig(config: NeonAuthConfig | undefined): Normalized
     issuer: config?.issuer?.trim() || origin,
     audience: config?.audience?.trim() || origin,
     usernameEmailDomain: normalizeUsernameEmailDomain(config?.usernameEmailDomain),
+    emailSignUpEnabled: config?.emailSignUpEnabled === true,
     fetch: config?.fetch,
     tokenVerifier: config?.tokenVerifier,
   }

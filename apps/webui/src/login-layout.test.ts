@@ -17,4 +17,11 @@ describe('webui login layout', () => {
     expect(loginHtml).not.toContain('class="brand-panel"')
     expect(loginHtml).not.toContain('A focused workspace for running agents against real projects.')
   })
+
+  it('keeps the email registration tab behind the Neon sign-up flag', () => {
+    expect(loginHtml).toContain('emailSignUpEnabled')
+    expect(loginHtml).toContain('Boolean(data.emailSignUpEnabled)')
+    expect(loginHtml).toContain('emailSignupTab.hidden = !authState.emailSignUpEnabled')
+    expect(loginHtml).toContain("if (mode === 'sign-up' && !authState.emailSignUpEnabled)")
+  })
 })

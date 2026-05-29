@@ -34,6 +34,7 @@
  *   CRAFT_WEBUI_NEON_AUTH_ISSUER — optional Neon Auth JWT issuer override
  *   CRAFT_WEBUI_NEON_AUTH_AUDIENCE — optional Neon Auth JWT audience override
  *   CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN — optional internal email domain for username login
+ *   CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED — enables public Neon Auth email/password registration
  *   CRAFT_MESSAGING_WA_WORKER  — absolute path to worker.cjs (default: packages/messaging-whatsapp-worker/dist/worker.cjs)
  *   CRAFT_MESSAGING_NODE_BIN   — Node binary used to spawn the WhatsApp worker (default: node)
  */
@@ -184,6 +185,10 @@ function createNeonAuthConfigFromEnv(): NeonAuthConfig | undefined {
     issuer: process.env.CRAFT_WEBUI_NEON_AUTH_ISSUER?.trim() || undefined,
     audience: process.env.CRAFT_WEBUI_NEON_AUTH_AUDIENCE?.trim() || undefined,
     usernameEmailDomain: process.env.CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN?.trim() || undefined,
+    emailSignUpEnabled: parseOptionalBooleanEnv(
+      'CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED',
+      process.env.CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED,
+    ) ?? false,
   }
 }
 

@@ -90,6 +90,22 @@ POST /api/client-auth/neon/exchange
 
 Keep Feishu app secrets and Neon Auth verification config on the Worker. The desktop build only receives public auth bootstrap values plus the direct model gateway token used by the bundled managed connection.
 
+## Email Registration
+
+Neon Auth email/password sign-in and sign-up are separate product switches.
+The desktop app can keep email login available while hiding and rejecting new
+registrations:
+
+```dotenv
+CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED=false
+CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED=false
+```
+
+Set these to `true` only when the matching Neon Auth branch has email/password
+sign-up enabled and a deliberate email verification policy. If verification is
+required, the app reports the pending account and leaves the client
+unauthenticated until the user verifies and signs in.
+
 ## Distribution
 
 Packaged builds must use a deployed HTTPS broker:

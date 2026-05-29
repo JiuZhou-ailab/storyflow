@@ -277,6 +277,7 @@ describe('startWebuiHttpServer', () => {
     expect(await res.json()).toEqual({
       enabled: true,
       baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+      emailSignUpEnabled: false,
     })
   })
 
@@ -291,6 +292,7 @@ describe('startWebuiHttpServer', () => {
     expect(await configRes.json()).toEqual({
       enabled: true,
       baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+      emailSignUpEnabled: false,
       passwordAuthEnabled: false,
     })
 
@@ -433,6 +435,7 @@ describe('startWebuiHttpServer', () => {
   it('reports Neon Auth email sign-up verification without setting a local session', async () => {
     const { baseUrl } = await createServer({
       neonAuth: createNeonAuthConfig({
+        emailSignUpEnabled: true,
         fetch: async () => Response.json({
           data: {
             user: {
@@ -466,6 +469,33 @@ describe('startWebuiHttpServer', () => {
       },
     })
     expect(res.headers.get('set-cookie')).toBeNull()
+  })
+
+  it('rejects Neon Auth email sign-up when registration is not enabled', async () => {
+    const requests: string[] = []
+    const { baseUrl } = await createServer({
+      neonAuth: createNeonAuthConfig({
+        fetch: async (input) => {
+          requests.push(String(input))
+          return Response.json({ ok: true })
+        },
+      }),
+    })
+
+    const res = await fetch(`${baseUrl}/api/auth/neon/email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'sign-up',
+        email: 'blocked@example.com',
+        password: 'secret-password',
+      }),
+    })
+
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'Email sign-up is disabled' })
+    expect(res.headers.get('set-cookie')).toBeNull()
+    expect(requests).toEqual([])
   })
 
   it('starts Feishu login when configured', async () => {

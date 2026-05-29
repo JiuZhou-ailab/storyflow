@@ -49,6 +49,7 @@ export function ClientAuthGate({ children }: ClientAuthGateProps) {
               configured: false,
               authenticated: true,
               emailPasswordEnabled: false,
+              emailSignUpEnabled: false,
               feishuLoginEnabled: false,
             })
           }
@@ -131,6 +132,7 @@ export function ClientAuthGate({ children }: ClientAuthGateProps) {
     <AuthShell>
       <ClientSignInForm
         emailPasswordEnabled={state.emailPasswordEnabled}
+        emailSignUpEnabled={state.emailSignUpEnabled}
         feishuLoginEnabled={state.feishuLoginEnabled}
         usernameLoginEnabled={state.usernameLoginEnabled === true}
         onSignedIn={async () => {
@@ -143,11 +145,13 @@ export function ClientAuthGate({ children }: ClientAuthGateProps) {
 
 function ClientSignInForm({
   emailPasswordEnabled,
+  emailSignUpEnabled,
   feishuLoginEnabled,
   usernameLoginEnabled,
   onSignedIn,
 }: {
   emailPasswordEnabled: boolean
+  emailSignUpEnabled: boolean
   feishuLoginEnabled: boolean
   usernameLoginEnabled: boolean
   onSignedIn: () => Promise<void>
@@ -170,11 +174,25 @@ function ClientSignInForm({
         transition: { duration: 0.22, ease: AUTH_MOTION_EASE },
       }
 
+  useEffect(() => {
+    if (!emailSignUpEnabled && authMode === 'sign-up') {
+      setAuthMode('sign-in')
+      setRegistrationNotice(null)
+      setError(null)
+    }
+  }, [authMode, emailSignUpEnabled])
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSubmitting(true)
     setError(null)
     setRegistrationNotice(null)
+
+    if (authMode === 'sign-up' && !emailSignUpEnabled) {
+      setSubmitting(false)
+      setError('邮箱注册未开放')
+      return
+    }
 
     if (authMode === 'sign-up' && password !== confirmPassword) {
       setSubmitting(false)
@@ -208,6 +226,7 @@ function ClientSignInForm({
   }
 
   function switchAuthMode(nextMode: EmailAuthMode) {
+    if (nextMode === 'sign-up' && !emailSignUpEnabled) return
     setAuthMode(nextMode)
     setError(null)
     setRegistrationNotice(null)
@@ -241,7 +260,7 @@ function ClientSignInForm({
     emailPasswordEnabled ? (usernameLoginEnabled ? '邮箱 / 用户名' : '邮箱') : null,
     feishuLoginEnabled ? '飞书' : null,
   ].filter(Boolean).join(' · ')
-  const formTitle = authMode === 'sign-up' ? '创建账号' : '登录账号'
+  const formTitle = authMode === 'sign-up' && emailSignUpEnabled ? '创建账号' : '登录账号'
   const identifierLabel = usernameLoginEnabled ? '用户名或邮箱' : '邮箱'
 
   return (
@@ -288,7 +307,9 @@ function ClientSignInForm({
                 <div className="min-w-0">
                   <h2 className="text-[19px] font-semibold leading-6 text-foreground">{formTitle}</h2>
                   <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
-                    {authMode === 'sign-up' ? '注册后继续进入桌面端。' : '验证身份后继续进入桌面端。'}
+                    {authMode === 'sign-up'
+                      ? (emailSignUpEnabled ? '注册后继续进入桌面端。' : '请输入已有账号继续。')
+                      : '验证身份后继续进入桌面端。'}
                   </p>
                 </div>
                 <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-foreground-2 shadow-minimal">
@@ -299,14 +320,16 @@ function ClientSignInForm({
               <div className="space-y-3">
                 {emailPasswordEnabled ? (
                   <form className="space-y-3" onSubmit={handleSubmit}>
-                    <div className="grid grid-cols-2 rounded-lg bg-foreground-2 p-1 shadow-minimal" role="tablist" aria-label="邮箱账号模式">
-                      <AuthModeButton active={authMode === 'sign-in'} onClick={() => switchAuthMode('sign-in')}>
-                        已有账号
-                      </AuthModeButton>
-                      <AuthModeButton active={authMode === 'sign-up'} onClick={() => switchAuthMode('sign-up')}>
-                        创建账号
-                      </AuthModeButton>
-                    </div>
+                    {emailSignUpEnabled ? (
+                      <div className="grid grid-cols-2 rounded-lg bg-foreground-2 p-1 shadow-minimal" role="tablist" aria-label="邮箱账号模式">
+                        <AuthModeButton active={authMode === 'sign-in'} onClick={() => switchAuthMode('sign-in')}>
+                          已有账号
+                        </AuthModeButton>
+                        <AuthModeButton active={authMode === 'sign-up'} onClick={() => switchAuthMode('sign-up')}>
+                          创建账号
+                        </AuthModeButton>
+                      </div>
+                    ) : null}
 
                     <div className="space-y-1.5">
                       <Label className="text-[13px]" htmlFor="client-auth-identifier">

@@ -25,7 +25,31 @@ describe('NeonAuthService', () => {
     expect(service.getClientConfig()).toEqual({
       enabled: true,
       baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+      emailSignUpEnabled: false,
     })
+  })
+
+  it('keeps email sign-up disabled unless explicitly enabled', async () => {
+    const requests: Array<{ url: string, init?: RequestInit }> = []
+    const service = new NeonAuthService({
+      baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+      fetch: async (input, init) => {
+        requests.push({ url: String(input), init })
+        return Response.json({ ok: true })
+      },
+    })
+
+    expect(service.getClientConfig()).toEqual({
+      enabled: true,
+      baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+      emailSignUpEnabled: false,
+    })
+    await expect(service.authenticateWithEmailPassword({
+      mode: 'sign-up',
+      email: 'signup@example.com',
+      password: 'secret-password',
+    })).rejects.toThrow('Email sign-up is disabled')
+    expect(requests).toEqual([])
   })
 
   it('normalizes a valid Neon Auth token payload into an app identity', async () => {
@@ -161,6 +185,7 @@ describe('NeonAuthService', () => {
     expect(service.getClientConfig()).toEqual({
       enabled: true,
       baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+      emailSignUpEnabled: false,
       usernameLoginEnabled: true,
     })
     expect(JSON.parse(String(requests[0]?.init?.body))).toEqual({
@@ -218,6 +243,7 @@ describe('NeonAuthService', () => {
   it('posts email sign-up and reports verification-required when Neon Auth does not return a session token', async () => {
     const service = new NeonAuthService({
       baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+      emailSignUpEnabled: true,
       fetch: async () => Response.json({
         data: {
           user: {

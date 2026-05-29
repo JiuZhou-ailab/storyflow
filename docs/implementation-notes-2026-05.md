@@ -1,5 +1,11 @@
 # Implementation Notes
 
+## 2026-05-29
+
+- Split Neon Auth email sign-in from email registration. Configuring a Neon Auth base URL now enables email/password login only; sign-up remains hidden and rejected until `CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED=true` or `CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED=true` is set for the matching surface.
+- Kept the app-side registration switch separate from Neon Console state. The app switch prevents accidental public registration in desktop/Web UI, while Neon Auth still owns the actual email/password method, verification policy, and email provider delivery.
+- Verified the live Neon Auth branch `young-cherry-15654428` / `br-square-feather-a1kv8pnz` currently allows email/password sign-up, does not require verification, and uses Neon's shared sender. Changing that production policy should be done deliberately through Neon Auth config, not silently through the client build.
+
 ## 2026-05-28
 
 - Triaged the recent review findings for MVP usability. Deferred legacy model-gateway Worker hardening and banned-user edge cases because the active desktop path has moved to direct Cloudflare AI Gateway credential seeding; prioritized release correctness, chat rewind behavior, branchability persistence, and login gate state sync.

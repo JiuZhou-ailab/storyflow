@@ -218,6 +218,7 @@ export interface ClientAuthState {
   configured: boolean
   authenticated: boolean
   emailPasswordEnabled: boolean
+  emailSignUpEnabled: boolean
   feishuLoginEnabled: boolean
   usernameLoginEnabled?: boolean
   user?: ClientAuthUser

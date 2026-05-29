@@ -38,6 +38,8 @@ describe('ClientAuthGate layout', () => {
     expect(source).toContain('authMode')
     expect(source).toContain('setAuthMode')
     expect(source).toContain('signUpClient')
+    expect(source).toContain('emailSignUpEnabled')
+    expect(source).toContain("emailSignUpEnabled ? '注册后继续进入桌面端。' : '请输入已有账号继续。'")
     expect(source).toContain('创建账号')
     expect(source).toContain('已有账号')
     expect(source).toContain('registrationNotice')
