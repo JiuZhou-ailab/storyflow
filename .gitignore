@@ -98,6 +98,13 @@ skills/
 skills-lock.json
 error.log
 
+# Local design/audit artifacts
+react-doctor.config.json
+tokens.css
+craft-agents-clone-*.png
+storyflow-landing-*.png
+apps/marketing/promo-video/renders/
+
 # SSH keys and secrets
 *.pem
 *.key

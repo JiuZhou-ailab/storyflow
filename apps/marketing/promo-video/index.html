@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <!--
+      input: Real Storyflow screen-recording excerpts and release positioning
+      output: 45-second HyperFrames promo composition
+      pos: Source of truth for the Storyflow product promo video
+    -->
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #f4f6f8;
+        color: #111827;
+        font-family:
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+
+      #root {
+        background: #f4f6f8;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .screen {
+        background: #eef2f6;
+        height: 100%;
+        inset: 0;
+        object-fit: cover;
+        position: absolute;
+        width: 100%;
+      }
+
+      .vignette {
+        background:
+          radial-gradient(circle at 12% 18%, rgba(37, 99, 235, 0.12), rgba(37, 99, 235, 0) 32%),
+          linear-gradient(90deg, rgba(244, 246, 248, 0.9), rgba(244, 246, 248, 0.15) 28%, rgba(244, 246, 248, 0) 58%),
+          linear-gradient(0deg, rgba(244, 246, 248, 0.88), rgba(244, 246, 248, 0) 32%);
+        inset: 0;
+        pointer-events: none;
+        position: absolute;
+        z-index: 4;
+      }
+
+      .brand-bug {
+        align-items: center;
+        background: rgba(255, 255, 255, 0.76);
+        border: 1px solid rgba(17, 24, 39, 0.08);
+        border-radius: 999px;
+        box-shadow: 0 8px 24px rgba(17, 24, 39, 0.08);
+        display: flex;
+        gap: 12px;
+        left: 56px;
+        padding: 12px 18px 12px 12px;
+        position: absolute;
+        top: 48px;
+        z-index: 12;
+      }
+
+      .mark {
+        align-items: center;
+        background: #eaf1ff;
+        border: 1px solid rgba(37, 99, 235, 0.2);
+        border-radius: 12px;
+        color: #1d4ed8;
+        display: flex;
+        font-size: 24px;
+        font-weight: 900;
+        height: 40px;
+        justify-content: center;
+        letter-spacing: -0.04em;
+        width: 40px;
+      }
+
+      .brand-bug span:last-child {
+        color: #111827;
+        font-size: 24px;
+        font-weight: 800;
+        letter-spacing: 0;
+      }
+
+      .caption {
+        background: rgba(255, 255, 255, 0.86);
+        border: 1px solid rgba(17, 24, 39, 0.08);
+        border-radius: 24px;
+        bottom: 72px;
+        box-shadow:
+          0 1px 1px rgba(17, 24, 39, 0.06),
+          0 18px 60px rgba(17, 24, 39, 0.12);
+        left: 56px;
+        max-width: 640px;
+        padding: 34px 38px 36px;
+        position: absolute;
+        z-index: 11;
+      }
+
+      .caption.right {
+        left: auto;
+        right: 56px;
+      }
+
+      .eyebrow {
+        color: #2563eb;
+        font-family: monospace;
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        margin-bottom: 18px;
+        text-transform: uppercase;
+      }
+
+      .caption h1,
+      .caption h2 {
+        color: #111827;
+        font-size: 66px;
+        font-weight: 900;
+        letter-spacing: -0.045em;
+        line-height: 1.02;
+        margin: 0 0 20px;
+      }
+
+      .caption h2 {
+        font-size: 52px;
+      }
+
+      .caption p {
+        color: #4b5563;
+        font-size: 29px;
+        font-weight: 400;
+        letter-spacing: 0;
+        line-height: 1.34;
+        margin: 0;
+      }
+
+      .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 26px;
+      }
+
+      .pill {
+        background: #eef4ff;
+        border: 1px solid rgba(37, 99, 235, 0.18);
+        border-radius: 999px;
+        color: #1d4ed8;
+        font-family: monospace;
+        font-size: 16px;
+        font-weight: 700;
+        padding: 9px 13px;
+      }
+
+      .wipe {
+        inset: 0;
+        overflow: hidden;
+        position: absolute;
+        z-index: 20;
+      }
+
+      .wipe-bar {
+        background: #f4f6f8;
+        height: 100%;
+        transform: translateX(-110%);
+        width: 122%;
+      }
+
+      .progress {
+        background: rgba(17, 24, 39, 0.08);
+        border-radius: 999px;
+        bottom: 36px;
+        height: 5px;
+        left: 56px;
+        overflow: hidden;
+        position: absolute;
+        right: 56px;
+        z-index: 12;
+      }
+
+      .progress-fill {
+        background: #2563eb;
+        height: 100%;
+        transform: scaleX(0);
+        transform-origin: left center;
+        width: 100%;
+      }
+
+      .outro {
+        align-items: center;
+        background: rgba(244, 246, 248, 0.92);
+        display: flex;
+        inset: 0;
+        justify-content: center;
+        padding: 120px;
+        position: absolute;
+        text-align: center;
+        z-index: 24;
+      }
+
+      .outro-card {
+        align-items: center;
+        display: flex;
+        flex-direction: column;
+        gap: 22px;
+      }
+
+      .outro-card h2 {
+        color: #111827;
+        font-size: 84px;
+        font-weight: 900;
+        letter-spacing: -0.05em;
+        line-height: 1.02;
+      }
+
+      .outro-card p {
+        color: #4b5563;
+        font-size: 30px;
+        line-height: 1.32;
+        max-width: 780px;
+      }
+
+      .download-cta {
+        background: #111827;
+        border-radius: 16px;
+        color: #ffffff;
+        font-size: 26px;
+        font-weight: 800;
+        margin-top: 12px;
+        padding: 20px 28px;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="45"
+      data-width="1920"
+      data-height="1080"
+    >
+      <video
+        id="scene-open"
+        class="clip screen"
+        data-start="0"
+        data-duration="4"
+        data-track-index="0"
+        src="assets/01-open-workspace.mp4"
+        muted
+        playsinline
+      ></video>
+      <video
+        id="scene-context"
+        class="clip screen"
+        data-start="4"
+        data-duration="6"
+        data-track-index="0"
+        src="assets/02-context-sources.mp4"
+        muted
+        playsinline
+      ></video>
+      <video
+        id="scene-data"
+        class="clip screen"
+        data-start="10"
+        data-duration="6"
+        data-track-index="0"
+        src="assets/03-data-analysis.mp4"
+        muted
+        playsinline
+      ></video>
+      <video
+        id="scene-review"
+        class="clip screen"
+        data-start="31"
+        data-duration="6"
+        data-track-index="0"
+        src="assets/04-review-workflow.mp4"
+        muted
+        playsinline
+      ></video>
+      <video
+        id="scene-accept"
+        class="clip screen"
+        data-start="37"
+        data-duration="6"
+        data-track-index="0"
+        src="assets/05-accept-diff.mp4"
+        muted
+        playsinline
+      ></video>
+      <video
+        id="scene-plan"
+        class="clip screen"
+        data-start="16"
+        data-duration="5"
+        data-track-index="0"
+        src="assets/06-structure-plan.mp4"
+        muted
+        playsinline
+      ></video>
+      <video
+        id="scene-materials"
+        class="clip screen"
+        data-start="21"
+        data-duration="5"
+        data-track-index="0"
+        src="assets/07-materials-map.mp4"
+        muted
+        playsinline
+      ></video>
+      <video
+        id="scene-draft"
+        class="clip screen"
+        data-start="26"
+        data-duration="5"
+        data-track-index="0"
+        src="assets/08-chapter-draft.mp4"
+        muted
+        playsinline
+      ></video>
+
+      <div id="vignette" class="clip vignette" data-start="0" data-duration="45" data-track-index="2"></div>
+      <div id="brand" class="clip brand-bug" data-start="0" data-duration="45" data-track-index="3" data-layout-allow-overflow>
+        <span class="mark">S</span>
+        <span>Storyflow</span>
+      </div>
+
+      <div id="caption-open" class="clip caption" data-start="0.2" data-duration="3.35" data-track-index="4" data-layout-allow-overflow>
+        <div class="eyebrow">Local AI Writing Workspace</div>
+        <h1>把写作项目打开</h1>
+        <p>正文、大纲、人物、素材和 Agent 执行，放在同一个本地桌面工作台。</p>
+      </div>
+
+      <div id="caption-context" class="clip caption right" data-start="4.25" data-duration="4.9" data-track-index="5" data-layout-allow-overflow>
+        <div class="eyebrow">Context</div>
+        <h2>上下文不再散落</h2>
+        <p>Agent 读取项目资料、数据源和写作约束，再进入章节生成。</p>
+        <div class="pill-row">
+          <span class="pill">正文</span>
+          <span class="pill">大纲</span>
+          <span class="pill">MCP 数据源</span>
+        </div>
+      </div>
+
+      <div id="caption-data" class="clip caption" data-start="10.25" data-duration="4.9" data-track-index="6" data-layout-allow-overflow>
+        <div class="eyebrow">Research</div>
+        <h2>用真实数据做判断</h2>
+        <p>网文榜单、标签、题材趋势和素材说明，都可以进入创作决策。</p>
+      </div>
+
+      <div id="caption-plan" class="clip caption right" data-start="16.25" data-duration="4" data-track-index="7" data-layout-allow-overflow>
+        <div class="eyebrow">Plan</div>
+        <h2>十章结构先落地</h2>
+        <p>从创作要求到章节节奏，先把任务拆成可追踪的项目。</p>
+      </div>
+
+      <div id="caption-materials" class="clip caption" data-start="21.25" data-duration="4" data-track-index="8" data-layout-allow-overflow>
+        <div class="eyebrow">Materials</div>
+        <h2>素材和设定一起沉淀</h2>
+        <p>人物、地点、标签和钩子留在文档里，后续章节可以持续复用。</p>
+      </div>
+
+      <div id="caption-draft" class="clip caption right" data-start="26.25" data-duration="4" data-track-index="9" data-layout-allow-overflow>
+        <div class="eyebrow">Draft</div>
+        <h2>章节正文直接生成</h2>
+        <p>生成后进入正文区，作者继续审阅、改写和落稿。</p>
+      </div>
+
+      <div id="caption-review" class="clip caption right" data-start="31.25" data-duration="4.9" data-track-index="10" data-layout-allow-overflow>
+        <div class="eyebrow">Review</div>
+        <h2>审阅具体到句子</h2>
+        <p>不是泛泛评价，而是把可落稿的修改建议放回正文旁边。</p>
+      </div>
+
+      <div id="caption-accept" class="clip caption" data-start="37.25" data-duration="4.9" data-track-index="11" data-layout-allow-overflow>
+        <div class="eyebrow">Control</div>
+        <h2>最终判断权仍在作者手里</h2>
+        <p>逐段接受、拒绝或改写，让 AI 变成写作流程的一部分。</p>
+      </div>
+
+      <div id="outro" class="clip outro" data-start="42.3" data-duration="2.7" data-track-index="12" data-layout-allow-overflow>
+        <div class="outro-card">
+          <div class="mark">S</div>
+          <h2>Storyflow</h2>
+          <p>写作者的本地 AI 工作台</p>
+          <div class="download-cta">下载桌面版</div>
+        </div>
+      </div>
+
+      <div id="wipe-1" class="clip wipe" data-start="3.55" data-duration="0.7" data-track-index="10">
+        <div class="wipe-bar"></div>
+      </div>
+      <div id="wipe-2" class="clip wipe" data-start="9.55" data-duration="0.7" data-track-index="11">
+        <div class="wipe-bar"></div>
+      </div>
+      <div id="wipe-3" class="clip wipe" data-start="15.55" data-duration="0.7" data-track-index="12">
+        <div class="wipe-bar"></div>
+      </div>
+      <div id="wipe-4" class="clip wipe" data-start="20.55" data-duration="0.7" data-track-index="13">
+        <div class="wipe-bar"></div>
+      </div>
+      <div id="wipe-5" class="clip wipe" data-start="25.55" data-duration="0.7" data-track-index="14">
+        <div class="wipe-bar"></div>
+      </div>
+      <div id="wipe-6" class="clip wipe" data-start="30.55" data-duration="0.7" data-track-index="15">
+        <div class="wipe-bar"></div>
+      </div>
+      <div id="wipe-7" class="clip wipe" data-start="36.55" data-duration="0.7" data-track-index="16">
+        <div class="wipe-bar"></div>
+      </div>
+
+      <div id="progress" class="clip progress" data-start="0" data-duration="45" data-track-index="17">
+        <div class="progress-fill"></div>
+      </div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      tl.from("#scene-open", { opacity: 0, duration: 0.45, ease: "power2.out" }, 0.15);
+      tl.from("#scene-context", { opacity: 0, duration: 0.45, ease: "sine.out" }, 4.05);
+      tl.from("#scene-data", { opacity: 0, duration: 0.45, ease: "power3.out" }, 10.05);
+      tl.from("#scene-plan", { opacity: 0, duration: 0.45, ease: "expo.out" }, 16.05);
+      tl.from("#scene-materials", { opacity: 0, duration: 0.45, ease: "sine.out" }, 21.05);
+      tl.from("#scene-draft", { opacity: 0, duration: 0.45, ease: "power3.out" }, 26.05);
+      tl.from("#scene-review", { opacity: 0, duration: 0.45, ease: "expo.out" }, 31.05);
+      tl.from("#scene-accept", { opacity: 0, duration: 0.45, ease: "power2.out" }, 37.05);
+
+      tl.from("#brand", { opacity: 0, y: -18, scale: 0.96, duration: 0.45, ease: "back.out(1.4)" }, 0.25);
+      tl.from("#vignette", { opacity: 0, duration: 0.8, ease: "sine.out" }, 0.1);
+
+      const captions = [
+        ["#caption-open", 0.35],
+        ["#caption-context", 4.45],
+        ["#caption-data", 10.45],
+        ["#caption-plan", 16.45],
+        ["#caption-materials", 21.45],
+        ["#caption-draft", 26.45],
+        ["#caption-review", 31.45],
+        ["#caption-accept", 37.45],
+      ];
+      captions.forEach(([selector, at], index) => {
+        const ease = ["power3.out", "back.out(1.25)", "expo.out", "power2.out", "circ.out", "back.out(1.2)", "power3.out", "sine.out"][index];
+        tl.from(selector, { opacity: 0, y: 34, scale: 0.98, duration: 0.62, ease }, at);
+        tl.from(`${selector} .eyebrow`, { opacity: 0, x: -18, duration: 0.42, ease: "power2.out" }, at + 0.12);
+        tl.from(`${selector} h1, ${selector} h2`, { opacity: 0, y: 24, duration: 0.5, ease: "power3.out" }, at + 0.2);
+        tl.from(`${selector} p`, { opacity: 0, y: 18, duration: 0.48, ease: "sine.out" }, at + 0.34);
+        if (selector === "#caption-context") {
+          tl.from("#caption-context .pill", { opacity: 0, y: 10, stagger: 0.08, duration: 0.34, ease: "back.out(1.7)" }, at + 0.5);
+        }
+      });
+
+      ["#wipe-1", "#wipe-2", "#wipe-3", "#wipe-4", "#wipe-5", "#wipe-6", "#wipe-7"].forEach((selector, index) => {
+        tl.fromTo(
+          `${selector} .wipe-bar`,
+          { xPercent: -110 },
+          { xPercent: 110, duration: 0.7, ease: "power2.inOut" },
+          [3.55, 9.55, 15.55, 20.55, 25.55, 30.55, 36.55][index],
+        );
+      });
+
+      tl.from("#outro", { opacity: 0, duration: 0.45, ease: "sine.out" }, 42.3);
+      tl.from("#outro .mark", { opacity: 0, scale: 0.84, duration: 0.42, ease: "back.out(1.6)" }, 42.55);
+      tl.from("#outro h2", { opacity: 0, y: 24, duration: 0.48, ease: "power3.out" }, 42.72);
+      tl.from("#outro p", { opacity: 0, y: 18, duration: 0.42, ease: "sine.out" }, 42.95);
+      tl.from("#outro .download-cta", { opacity: 0, y: 18, scale: 0.96, duration: 0.42, ease: "back.out(1.4)" }, 43.2);
+      tl.to("#outro", { opacity: 0, duration: 0.5, ease: "sine.in" }, 44.5);
+
+      tl.to(".progress-fill", { scaleX: 1, duration: 45, ease: "none" }, 0);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>
