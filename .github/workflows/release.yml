@@ -10,6 +10,14 @@ on:
         description: "Release tag, for example v0.9.4"
         required: true
         type: string
+      validation_mode:
+        description: "Validation profile for manual releases"
+        required: false
+        default: "full"
+        type: choice
+        options:
+          - full
+          - electron-hotfix
 
 permissions:
   contents: write
@@ -27,7 +35,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -43,9 +51,35 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run validation suite
+        env:
+          VALIDATION_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.validation_mode || 'full' }}
         run: |
+          set -euo pipefail
+
           bun run check-version
-          bun run validate:ci
+
+          case "$VALIDATION_MODE" in
+            full|"")
+              bun run validate:ci
+              ;;
+            electron-hotfix)
+              bun test \
+                ./apps/electron/src/main/__tests__/auto-update-stale-cache.isolated.ts \
+                apps/electron/src/main/__tests__/manual-update-check.test.ts \
+                apps/electron/src/main/__tests__/auto-update-launch-policy.test.ts \
+                apps/electron/src/renderer/lib/__tests__/manual-update-check-entrypoints.test.ts \
+                apps/electron/src/renderer/lib/__tests__/update-indicator.test.ts
+              bun run typecheck:electron
+              cd apps/electron
+              bunx eslint \
+                src/main/auto-update.ts \
+                src/main/__tests__/auto-update-stale-cache.isolated.ts
+              ;;
+            *)
+              echo "Unknown validation mode: $VALIDATION_MODE"
+              exit 1
+              ;;
+          esac
 
   preflight-release-secrets:
     runs-on: ubuntu-latest
@@ -121,7 +155,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -213,7 +247,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -269,7 +303,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref }}
 
       - name: Create GitHub Release
         env:
@@ -279,6 +313,8 @@ jobs:
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG"
+          elif [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --generate-notes --target "$GITHUB_SHA"
           else
             gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --generate-notes --verify-tag
           fi
@@ -301,7 +337,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref }}
 
       - name: Merge macOS update manifests
         env:
@@ -350,7 +386,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -400,7 +436,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
