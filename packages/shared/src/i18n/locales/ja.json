@@ -315,6 +315,7 @@
   "common.noResultsFound": "結果が見つかりません",
   "common.ok": "OK",
   "common.open": "開く",
+  "common.optional": "任意",
   "common.reconfigure": "再設定",
   "common.reconnect": "再接続",
   "common.reject": "却下",

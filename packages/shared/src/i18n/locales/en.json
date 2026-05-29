@@ -315,6 +315,7 @@
   "common.noResultsFound": "No results found",
   "common.ok": "OK",
   "common.open": "Open",
+  "common.optional": "Optional",
   "common.reconfigure": "Reconfigure",
   "common.reconnect": "Reconnect",
   "common.reject": "Reject",
