@@ -76,6 +76,18 @@ export function ClientAuthGate({ children }: ClientAuthGateProps) {
     }
   }, [])
 
+  // While the auth gate blocks the App tree, useWindowCloseHandler (mounted inside App)
+  // is absent — so nothing answers the main process's CLOSE_REQUESTED ping and the window
+  // only closes after the 3s fallback timeout (the "close is laggy" symptom). The gate has
+  // no modals/panels, so confirm the close immediately for any source.
+  const gateActive = loadError != null || !state || (state.required && !state.authenticated)
+  useEffect(() => {
+    if (!gateActive) return
+    return window.electronAPI?.onCloseRequested?.(() => {
+      window.electronAPI?.confirmCloseWindow?.()
+    })
+  }, [gateActive])
+
   if (loadError) {
     return (
       <AuthShell>
@@ -528,7 +540,12 @@ function AuthContextRow({
 function AuthShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-foreground-2 text-foreground">
-      <div className="titlebar-drag-region fixed left-0 right-0 top-0 z-titlebar h-[50px]" />
+      <div className="titlebar-drag-region fixed left-0 right-0 top-0 z-titlebar h-[50px]">
+        {/* macOS: the native traffic-light cluster sits at the top-left ({x:18,y:16}).
+            A drag region covering it swallows clicks, so the window can't be closed.
+            Carve out a no-drag zone to keep the close/minimize/zoom buttons clickable. */}
+        <div className="titlebar-no-drag absolute left-0 top-0 h-full w-[80px]" />
+      </div>
       <div className="flex min-h-screen items-center justify-center px-8 py-12 max-[720px]:px-4">
         {children}
       </div>

@@ -210,6 +210,8 @@ export function WorkspaceCreationScreen({
 
         {/* Header with drag region and close button */}
         <header className="titlebar-drag-region relative h-[50px] shrink-0 flex items-center justify-end px-6">
+          {/* macOS: keep the native traffic-light cluster (top-left) clickable */}
+          <div className="titlebar-no-drag absolute left-0 top-0 h-full w-[80px]" />
           {/* Close button - explicitly no-drag */}
           {canClose && (
             <motion.button
