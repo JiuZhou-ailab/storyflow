@@ -33,6 +33,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .playwright-mcp/
 *.tsbuildinfo
 .wrangler
+apps/*/.dev.vars
+apps/*/.dev.vars.*
 .mintlify
 .antigravitycli/
 tmp/
