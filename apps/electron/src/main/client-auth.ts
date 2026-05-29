@@ -41,6 +41,10 @@ export interface ClientAuthSignInInput {
   password: string
 }
 
+export interface ClientAuthSignUpInput extends ClientAuthSignInInput {
+  name?: string
+}
+
 export interface ClientAuthUser {
   provider: 'neon' | 'feishu'
   userId: string
@@ -48,6 +52,10 @@ export interface ClientAuthUser {
   emailVerified?: boolean
   name?: string
 }
+
+export type ClientAuthSignUpResult =
+  | { status: 'authenticated', user: ClientAuthUser }
+  | { status: 'verification-required', user?: ClientAuthUser }
 
 export interface ClientAuthBrokerExchangeInput {
   brokerUrl: string
@@ -97,6 +105,7 @@ interface ClientAuthServiceDeps {
 export interface ClientAuthService {
   getState(): ClientAuthState
   signIn(input: ClientAuthSignInInput): Promise<ClientAuthUser>
+  signUp(input: ClientAuthSignUpInput): Promise<ClientAuthSignUpResult>
   signInWithFeishu(): Promise<ClientAuthUser>
   cancelFeishuSignIn(): void
   signOut(): Promise<void>
@@ -279,6 +288,41 @@ export function createClientAuthService(
       return user
     },
 
+    async signUp(input: ClientAuthSignUpInput): Promise<ClientAuthSignUpResult> {
+      if (!neonAuth || !configured) {
+        throw new Error('Client auth is not configured')
+      }
+
+      const identifier = readEnv(input.identifier)
+      if (!identifier) {
+        throw new Error(clientConfigRequiresUsername(neonAuth.getClientConfig())
+          ? 'Email or username is required'
+          : 'Email is required')
+      }
+      if (!input.password) {
+        throw new Error('Password is required')
+      }
+
+      const authResult = await neonAuth.authenticateWithEmailPassword({
+        mode: 'sign-up',
+        email: identifier,
+        password: input.password,
+        name: readEnv(input.name),
+        origin: config.neonAuthOrigin,
+      })
+
+      if (authResult.status === 'verification-required') {
+        return {
+          status: 'verification-required',
+          ...(authResult.user ? { user: toClientAuthUserFromEmailPasswordUser(authResult.user) } : {}),
+        }
+      }
+
+      const user = toClientAuthUser(await neonAuth.verifyToken(authResult.token))
+      currentUser = user
+      return { status: 'authenticated', user }
+    },
+
     async signInWithFeishu(): Promise<ClientAuthUser> {
       if (!feishuLoginEnabled) {
         throw new Error('Feishu login is not configured')
@@ -414,6 +458,26 @@ function toClientAuthUser(identity: NeonAuthIdentity): ClientAuthUser {
     ...(identity.email ? { email: identity.email } : {}),
     ...(identity.emailVerified !== undefined ? { emailVerified: identity.emailVerified } : {}),
     ...(identity.name ? { name: identity.name } : {}),
+  }
+}
+
+function toClientAuthUserFromEmailPasswordUser(user: {
+  id?: string
+  email?: string
+  emailVerified?: boolean
+  name?: string
+}): ClientAuthUser | undefined {
+  const userId = readEnv(user.id)
+  if (!userId) return undefined
+
+  const email = readEnv(user.email)
+  const name = readEnv(user.name)
+  return {
+    provider: 'neon',
+    userId,
+    ...(email ? { email: email.toLowerCase() } : {}),
+    ...(user.emailVerified !== undefined ? { emailVerified: user.emailVerified } : {}),
+    ...(name ? { name } : {}),
   }
 }
 

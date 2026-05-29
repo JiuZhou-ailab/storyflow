@@ -228,6 +228,14 @@ export interface ClientAuthSignInInput {
   password: string
 }
 
+export interface ClientAuthSignUpInput extends ClientAuthSignInInput {
+  name?: string
+}
+
+export type ClientAuthSignUpResult =
+  | { status: 'authenticated', user: ClientAuthUser }
+  | { status: 'verification-required', user?: ClientAuthUser }
+
 // =============================================================================
 // ElectronAPI — type-safe IPC API exposed to renderer
 // =============================================================================
@@ -317,6 +325,7 @@ export interface ElectronAPI {
   invokeOnServer(url: string, token: string, channel: string, ...args: any[]): Promise<any>
   getClientAuthState(): Promise<ClientAuthState>
   signInClient(input: ClientAuthSignInInput): Promise<ClientAuthUser>
+  signUpClient(input: ClientAuthSignUpInput): Promise<ClientAuthSignUpResult>
   signInWithFeishuClient(): Promise<ClientAuthUser>
   submitFeedbackIssue(input: FeedbackIssueInput): Promise<FeedbackIssueResult>
   cancelFeishuSignInClient(): Promise<void>

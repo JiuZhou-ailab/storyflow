@@ -579,6 +579,18 @@ app.whenReady().then(async () => {
       broadcastClientAuthState()
       return user
     })
+    ipcMain.handle('client-auth:sign-up', async (_event, input: unknown) => {
+      const record = input && typeof input === 'object'
+        ? input as Record<string, unknown>
+        : {}
+      const result = await clientAuthService.signUp({
+        identifier: typeof record.identifier === 'string' ? record.identifier : '',
+        password: typeof record.password === 'string' ? record.password : '',
+        name: typeof record.name === 'string' ? record.name : undefined,
+      })
+      broadcastClientAuthState()
+      return result
+    })
     ipcMain.handle('client-auth:sign-in-feishu', async () => {
       const user = await clientAuthService.signInWithFeishu()
       broadcastClientAuthState()

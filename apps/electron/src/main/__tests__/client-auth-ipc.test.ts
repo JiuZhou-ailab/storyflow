@@ -25,6 +25,7 @@ describe('client auth IPC propagation', () => {
     const source = readElectronFile('preload/bootstrap.ts')
 
     expect(source).toContain('onClientAuthStateChanged')
+    expect(source).toContain('signUpClient')
     expect(source).toContain("ipcRenderer.on('client-auth:state-changed'")
     expect(source).toContain('cachedClientAuthState = nextState')
   })
@@ -33,6 +34,7 @@ describe('client auth IPC propagation', () => {
     const source = readElectronFile('renderer/components/auth/ClientAuthGate.tsx')
 
     expect(source).toContain('onClientAuthStateChanged')
+    expect(source).toContain('signUpClient')
     expect(source).toContain('setState(nextState)')
   })
 })

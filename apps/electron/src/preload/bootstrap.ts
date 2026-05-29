@@ -436,6 +436,11 @@ client.onConnectionStateChanged((state) => {
   await readClientAuthState()
   return user
 }
+;(api as ElectronAPI).signUpClient = async (input) => {
+  const result = await ipcRenderer.invoke('client-auth:sign-up', input)
+  await readClientAuthState()
+  return result
+}
 ;(api as ElectronAPI).signInWithFeishuClient = async () => {
   const user = await ipcRenderer.invoke('client-auth:sign-in-feishu')
   await readClientAuthState()

@@ -161,6 +161,108 @@ describe('client auth', () => {
     })
   })
 
+  it('registers a Neon Auth email account and signs in when the provider returns a token', async () => {
+    const calls: Array<{ mode: string, email: string, password: string, name?: string, origin?: string }> = []
+    const fakeNeonAuth: ClientAuthNeonService = {
+      isConfigured: () => true,
+      getClientConfig: () => ({ enabled: true }),
+      authenticateWithEmailPassword: async (input) => {
+        calls.push({
+          mode: input.mode,
+          email: input.email,
+          password: input.password,
+          name: input.name,
+          origin: input.origin,
+        })
+        return { status: 'authenticated', token: 'signup-jwt-token' }
+      },
+      verifyToken: async (token) => {
+        expect(token).toBe('signup-jwt-token')
+        return {
+          provider: 'neon',
+          userId: 'user-registered',
+          subject: 'neon:user-registered',
+          email: 'new@example.com',
+          emailVerified: true,
+          name: 'New User',
+        }
+      },
+    }
+    const service = createClientAuthService({
+      required: true,
+      neonAuthOrigin: 'http://localhost:9100',
+      neonAuth: { baseUrl: 'https://auth.example.com' },
+    }, {
+      createNeonAuthService: () => fakeNeonAuth,
+    })
+
+    const result = await service.signUp({
+      identifier: 'new@example.com',
+      password: 'secret',
+      name: 'New User',
+    })
+
+    expect(calls).toEqual([{
+      mode: 'sign-up',
+      email: 'new@example.com',
+      password: 'secret',
+      name: 'New User',
+      origin: 'http://localhost:9100',
+    }])
+    expect(result).toEqual({
+      status: 'authenticated',
+      user: {
+        provider: 'neon',
+        userId: 'user-registered',
+        email: 'new@example.com',
+        emailVerified: true,
+        name: 'New User',
+      },
+    })
+    expect(service.getState().authenticated).toBe(true)
+  })
+
+  it('keeps the client unauthenticated when Neon Auth registration requires email verification', async () => {
+    const fakeNeonAuth: ClientAuthNeonService = {
+      isConfigured: () => true,
+      getClientConfig: () => ({ enabled: true }),
+      authenticateWithEmailPassword: async () => ({
+        status: 'verification-required',
+        user: {
+          id: 'pending-user',
+          email: 'pending@example.com',
+          emailVerified: false,
+          name: 'Pending User',
+        },
+      }),
+      verifyToken: async () => {
+        throw new Error('verifyToken should not be called')
+      },
+    }
+    const service = createClientAuthService(
+      { required: true, neonAuth: { baseUrl: 'https://auth.example.com' } },
+      { createNeonAuthService: () => fakeNeonAuth },
+    )
+
+    const result = await service.signUp({
+      identifier: 'pending@example.com',
+      password: 'secret',
+      name: 'Pending User',
+    })
+
+    expect(result).toEqual({
+      status: 'verification-required',
+      user: {
+        provider: 'neon',
+        userId: 'pending-user',
+        email: 'pending@example.com',
+        emailVerified: false,
+        name: 'Pending User',
+      },
+    })
+    expect(service.getState().authenticated).toBe(false)
+  })
+
   it('keeps Neon login separate from auth broker model credential exchange', async () => {
     const exchangedTokens: string[] = []
     const fakeNeonAuth: ClientAuthNeonService = {
