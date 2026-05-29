@@ -122,6 +122,7 @@ If the packaged broker URL becomes unreachable for an installed client, drop a `
 ```
 
 The app maps `authBrokerUrl` to `CRAFT_CLIENT_AUTH_BROKER_URL` at startup. Empty, malformed, or non-object JSON files are ignored.
+The override takes precedence over the URL baked in at build time. The main process logs which keys were applied on startup under `[client-auth]`.
 
 User data paths:
 

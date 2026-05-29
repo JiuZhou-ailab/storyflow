@@ -116,6 +116,14 @@ describe('macOS release configuration', () => {
     expect(workflow).toContain('CRAFT_SKIP_INSTALL: "1"');
   });
 
+  test('local unsigned macOS builds disable app and DMG signing explicitly', () => {
+    const buildScript = readRepoFile('apps/electron/scripts/build-dmg.sh');
+
+    expect(buildScript).toContain('-c.mac.forceCodeSigning=false -c.mac.notarize=false');
+    expect(buildScript).toContain('-c.mac.identity=null');
+    expect(buildScript).toContain('-c.dmg.sign=false');
+  });
+
   test('publishes updater manifests from the public R2 endpoint', () => {
     const builderConfig = readRepoFile('apps/electron/electron-builder.yml');
     const autoUpdate = readRepoFile('apps/electron/src/main/auto-update.ts');
