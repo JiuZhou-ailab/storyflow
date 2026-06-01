@@ -126,6 +126,23 @@ export const LabelsIcon = ({ className }: IconProps) => (
   </svg>
 )
 
+/** Webhook node icon for automation settings */
+export const AutomationSettingsIcon = ({ className }: IconProps) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+  >
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M7.5 3C5.01472 3 3 5.01472 3 7.5C3 9.66269 4.52527 11.4691 6.55892 11.9021C6.23832 13.3773 5.55752 14.5541 4.47295 15.6694C4.08798 16.0654 4.09688 16.6985 4.49282 17.0835C4.88876 17.4685 5.5219 17.4596 5.90687 17.0636C7.33373 15.5964 8.18414 14.0304 8.56419 11.8866C9.62833 11.6285 10.5375 10.9917 11.1561 10.125H12.8439C13.5646 11.1347 14.7459 11.7931 16.0816 11.7931C16.3448 11.7931 16.602 11.7675 16.8507 11.7186C17.3467 13.4394 18.2629 14.8496 19.6349 16.1191C20.0403 16.4942 20.6729 16.4696 21.048 16.0642C21.423 15.6588 21.3985 15.0261 20.9931 14.6511C19.9588 13.6941 19.2896 12.6734 18.9061 11.384C19.6008 10.6561 20.0278 9.67027 20.0278 8.58621C20.0278 6.35074 18.2538 4.53682 16.0816 4.53682C14.7459 4.53682 13.5646 5.19518 12.8439 6.2049H11.8548C11.287 4.34385 9.5554 3 7.5 3ZM7.5 5C8.88071 5 10 6.11929 10 7.5C10 8.88071 8.88071 10 7.5 10C6.11929 10 5 8.88071 5 7.5C5 6.11929 6.11929 5 7.5 5ZM14.1354 8.16496C14.1354 7.26378 15.0109 6.53682 16.0816 6.53682C17.1523 6.53682 18.0278 7.26378 18.0278 8.16496C18.0278 9.06614 17.1523 9.7931 16.0816 9.7931C15.0109 9.7931 14.1354 9.06614 14.1354 8.16496ZM14 17C12.8954 17 12 17.8954 12 19C12 20.1046 12.8954 21 14 21H15C16.1046 21 17 20.1046 17 19C17 17.8954 16.1046 17 15 17H14Z"
+      fill="currentColor"
+    />
+  </svg>
+)
+
 /** Keyboard icon for shortcuts */
 export const ShortcutsIcon = ({ className }: IconProps) => (
   <svg
@@ -204,6 +221,7 @@ export const SETTINGS_ICONS: Record<SettingsSubpage, React.ComponentType<IconPro
   workspace: WorkspaceIcon,
   permissions: PermissionsIcon,
   labels: LabelsIcon,
+  automations: AutomationSettingsIcon,
   messaging: MessagingSettingsIcon,
   server: ServerSettingsIcon,
   shortcuts: ShortcutsIcon,
