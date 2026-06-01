@@ -48,7 +48,7 @@ describe('novel writing workspace layout', () => {
     expect(html).not.toContain('Source')
   })
 
-  it('renders review changes directly in the manuscript body at the changed text', () => {
+  it('renders mergeable review changes through the native TipTap diff surface', () => {
     const html = renderToStaticMarkup(
       <NovelDocumentEditorPanel
         file={{ path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md' }}
@@ -56,35 +56,21 @@ describe('novel writing workspace layout', () => {
         loading={false}
         saving={false}
         onChange={() => {}}
-        reviewChange={{
+        reviewChanges={[{
           id: 'change-1',
           filePath: '/novel/story/chapters/chapter-01.md',
           toolType: 'Edit',
           original: '安静的房间',
           modified: '明亮的房间',
-        }}
+        }]}
       />
     )
 
-    expect(html).toContain('data-testid="novel-inline-review-document"')
-    expect(html).toContain('data-testid="novel-inline-review-change"')
-    expect(html).toContain('<del')
-    expect(html).toContain('<ins')
-    expect(html).toContain('novel-review-deleted')
-    expect(html).toContain('安静的房间')
-    expect(html).toContain('novel-review-inserted')
-    expect(html).toContain('明亮的房间')
-    expect(html).toContain('<p>她走进<del')
-    expect(html).toContain('</ins>。</p>')
-    expect(html.indexOf('她走进')).toBeLessThan(html.indexOf('安静的房间'))
-    expect(html.indexOf('明亮的房间')).toBeLessThan(html.indexOf('尾声'))
-    expect(html).not.toContain('py-3')
-    expect(html).not.toContain('my-4')
-    expect(html).not.toContain('novel-review-markdown')
-    expect(html).not.toContain('tiptap-editor--with-toolbar')
+    expect(html).not.toContain('data-testid="novel-file-review-diff"')
+    expect(html).toContain('tiptap-editor--with-toolbar')
   })
 
-  it('renders unified-diff review changes in the manuscript body when the patch maps to current text', () => {
+  it('keeps unified-diff review changes out of the editable manuscript fallback panel', () => {
     const html = renderToStaticMarkup(
       <NovelDocumentEditorPanel
         file={{ path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md' }}
@@ -92,7 +78,7 @@ describe('novel writing workspace layout', () => {
         loading={false}
         saving={false}
         onChange={() => {}}
-        reviewChange={{
+        reviewChanges={[{
           id: 'change-1',
           filePath: '/novel/story/chapters/chapter-01.md',
           toolType: 'Edit',
@@ -106,17 +92,16 @@ describe('novel writing workspace layout', () => {
             '-她走进安静的房间。',
             '+她走进明亮的房间。',
           ].join('\n'),
-        }}
+        }]}
       />
     )
 
-    expect(html).toContain('data-testid="novel-inline-review-document"')
-    expect(html).toContain('她走进安静的房间。')
-    expect(html).toContain('她走进明亮的房间。')
-    expect(html.indexOf('她走进明亮的房间。')).toBeLessThan(html.indexOf('尾声'))
+    expect(html).not.toContain('data-testid="novel-file-review-diff"')
+    expect(html).not.toContain('Snippet diffs')
+    expect(html).toContain('tiptap-editor--with-toolbar')
   })
 
-  it('renders multiline review changes in the formatted Markdown manuscript body', () => {
+  it('renders multiline review changes without replacing the editable manuscript', () => {
     const html = renderToStaticMarkup(
       <NovelDocumentEditorPanel
         file={{ path: '/novel/正文/01.md', relativePath: '正文/01.md' }}
@@ -124,7 +109,7 @@ describe('novel writing workspace layout', () => {
         loading={false}
         saving={false}
         onChange={() => {}}
-        reviewChange={{
+        reviewChanges={[{
           id: 'change-1',
           filePath: '/novel/正文/01.md',
           toolType: 'Edit',
@@ -139,23 +124,17 @@ describe('novel writing workspace layout', () => {
             '+- 第一段',
             '+- 第二段',
           ].join('\n'),
-        }}
+        }]}
       />
     )
 
-    expect(html).toContain('data-testid="novel-rendered-review-document"')
-    expect(html).toContain('<h1><span class="novel-review-inserted')
-    expect(html).toContain('>第一章</span></h1>')
-    expect(html).toContain('<li><span class="novel-review-inserted')
-    expect(html).toContain('>第一段</span></li>')
-    expect(html).toContain('>第二段</span></li>')
-    expect(html).toContain('novel-review-inserted')
-    expect(html).not.toContain('bg-emerald-500')
-    expect(html).not.toContain('<div class="novel-review-inserted')
-    expect(html).not.toContain('tiptap-editor--with-toolbar')
+    expect(html).not.toContain('data-testid="novel-file-review-diff"')
+    expect(html).not.toContain('Snippet diffs')
+    expect(html).toContain('tiptap-editor--with-toolbar')
+    expect(html).not.toContain('novel-rendered-review-document')
   })
 
-  it('renders new Chinese manuscript files as formatted Markdown review content instead of a diff panel', () => {
+  it('keeps new Chinese manuscript unified diffs in the single editable surface', () => {
     const html = renderToStaticMarkup(
       <NovelDocumentEditorPanel
         file={{ path: '/novel/正文/02.md', relativePath: '正文/02.md' }}
@@ -163,7 +142,7 @@ describe('novel writing workspace layout', () => {
         loading={false}
         saving={false}
         onChange={() => {}}
-        reviewChange={{
+        reviewChanges={[{
           id: 'change-1',
           filePath: '/novel/正文/02.md',
           toolType: 'Edit',
@@ -181,23 +160,16 @@ describe('novel writing workspace layout', () => {
             '+',
             '+风从长廊尽头吹来。',
           ].join('\n'),
-        }}
+        }]}
       />
     )
 
-    expect(html).toContain('data-testid="novel-rendered-review-document"')
-    expect(html).toContain('<h1><span class="novel-review-inserted')
-    expect(html).toContain('>第二章</span></h1>')
-    expect(html).toContain('她推开门。')
-    expect(html).toContain('风从长廊尽头吹来。')
-    expect(html).toContain('novel-review-inserted')
-    expect(html).not.toContain('novel-review-deleted')
-    expect(html).not.toContain('bg-emerald-500')
-    expect(html).not.toContain('<div class="novel-review-inserted')
-    expect(html).not.toContain('tiptap-editor--with-toolbar')
+    expect(html).not.toContain('data-testid="novel-file-review-diff"')
+    expect(html).not.toContain('Snippet diffs')
+    expect(html).toContain('tiptap-editor--with-toolbar')
   })
 
-  it('renders write-created manuscript files as inserted content without a deleted mirror', () => {
+  it('renders write-created manuscript files through the native TipTap diff surface', () => {
     const html = renderToStaticMarkup(
       <NovelDocumentEditorPanel
         file={{ path: '/novel/正文/03.md', relativePath: '正文/03.md' }}
@@ -205,22 +177,21 @@ describe('novel writing workspace layout', () => {
         loading={false}
         saving={false}
         onChange={() => {}}
-        reviewChange={{
+        reviewChanges={[{
           id: 'change-1',
           filePath: '/novel/正文/03.md',
           toolType: 'Write',
           original: '',
           modified: '# 第三章\n\n她停在窗前。',
-        }}
+        }]}
       />
     )
 
-    expect(html).toContain('data-testid="novel-rendered-review-document"')
-    expect(html).toContain('novel-review-inserted')
-    expect(html).not.toContain('novel-review-deleted')
+    expect(html).not.toContain('data-testid="novel-file-review-diff"')
+    expect(html).toContain('tiptap-editor--with-toolbar')
   })
 
-  it('falls back to the editable manuscript when a review change cannot be placed safely', () => {
+  it('keeps the editable manuscript as the only surface when a review change cannot be merged into a file diff', () => {
     const html = renderToStaticMarkup(
       <NovelDocumentEditorPanel
         file={{ path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md' }}
@@ -228,17 +199,19 @@ describe('novel writing workspace layout', () => {
         loading={false}
         saving={false}
         onChange={() => {}}
-        reviewChange={{
+        reviewChanges={[{
           id: 'change-1',
           filePath: '/novel/story/chapters/chapter-01.md',
           toolType: 'Edit',
           original: '安静的房间',
           modified: '重复的房间',
-        }}
+        }]}
       />
     )
 
     expect(html).toContain('tiptap-editor--with-toolbar')
+    expect(html).not.toContain('data-testid="novel-file-review-diff"')
+    expect(html).not.toContain('Snippet diffs')
     expect(html).not.toContain('data-testid="novel-inline-review-document"')
     expect(html).not.toContain('data-testid="novel-rendered-review-document"')
   })
@@ -633,22 +606,25 @@ describe('novel writing workspace layout', () => {
     expect(panelSlotSource).toContain('if (hideCloseButton) return undefined')
   })
 
-  it('keeps novel file review controls in the workspace and renders placeable changes in Markdown format', () => {
+  it('keeps novel file review controls in the workspace and uses the editable manuscript as the only review surface', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const editorPanelSource = readFileSync(new URL('../NovelDocumentEditorPanel.tsx', import.meta.url), 'utf-8')
     const multiDiffSource = readFileSync(new URL('../../../../../../../packages/ui/src/components/overlay/MultiDiffPreviewOverlay.tsx', import.meta.url), 'utf-8')
 
     expect(editorPanelSource).not.toContain('NovelInlineReviewDiff')
-    expect(editorPanelSource).toContain('NovelRenderedReviewDocument')
-    expect(editorPanelSource).toContain('novel-rendered-review-document')
+    expect(editorPanelSource).not.toContain('NovelRenderedReviewDocument')
+    expect(editorPanelSource).not.toContain('novel-rendered-review-document')
+    expect(editorPanelSource).not.toContain('NovelFileReviewDiff')
+    expect(editorPanelSource).not.toContain('novel-file-review-diff')
     expect(editorPanelSource).not.toContain('ShikiDiffViewer')
     expect(editorPanelSource).not.toContain('UnifiedDiffViewer')
     expect(editorPanelSource).toContain('<TiptapMarkdownEditor')
-    expect(appShellSource).toContain('handleAcceptNovelChange')
-    expect(appShellSource).toContain('handleRejectNovelChange')
-    expect(appShellSource).toContain('buildRejectFileChangeOperation')
+    expect(appShellSource).toContain('reviewChanges={selectedNovelPendingChanges}')
+    expect(appShellSource).toContain('handleAcceptNovelFileChanges')
+    expect(appShellSource).toContain('handleRejectNovelFileChanges')
+    expect(appShellSource).toContain('buildRejectFileChangesOperation')
     expect(appShellSource).toContain('handleAcceptAllNovelChanges')
-    expect(appShellSource).toContain('void handleSelectNextNovelChangeAfterStatus')
+    expect(appShellSource).toContain('void handleSelectNextNovelChangeAfterStatus(filePath, nextStatus)')
     expect(appShellSource).not.toContain("id: 'writing:section:changes'")
     expect(appShellSource).not.toContain('handleOpenNovelChangeReview')
     expect(appShellSource).not.toContain('focusedChangeId: change.id')
@@ -670,15 +646,23 @@ describe('novel writing workspace layout', () => {
     expect(leftSidebarSource).toContain('bg-emerald-500')
   })
 
-  it('syncs the selected writing document from disk when accepting review changes', () => {
+  it('saves the selected writing document before accepting file-level review changes', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const acceptSource = appShellSource.slice(
-      appShellSource.indexOf('const handleAcceptNovelChange'),
-      appShellSource.indexOf('const handleRejectNovelChange')
+      appShellSource.indexOf('const handleAcceptNovelFileChanges'),
+      appShellSource.indexOf('const handleAcceptAllNovelChanges')
+    )
+    const acceptAllSource = appShellSource.slice(
+      appShellSource.indexOf('const handleAcceptAllNovelChanges'),
+      appShellSource.indexOf('const handleRejectNovelFileChanges')
     )
 
-    expect(appShellSource).toContain('syncSelectedNovelDocumentFromDisk')
-    expect(acceptSource).toContain('await syncSelectedNovelDocumentFromDisk(change.filePath)')
+    expect(acceptSource).toContain('await ensureNovelDocumentSaved()')
+    expect(acceptSource).toContain('buildRejectFileChangesOperation(reviewableChanges, currentContent)')
+    expect(acceptAllSource).toContain('const pendingChangesByPath = new Map<string, FileChange[]>()')
+    expect(acceptAllSource).toContain('pendingChangesByPath.has(selectedNovelFile.path)')
+    expect(acceptAllSource).toContain('buildRejectFileChangesOperation(changes, currentContent)')
+    expect(acceptAllSource).not.toContain('buildAcceptNovelChangeUndoEntry')
     expect(appShellSource).toContain('setNovelDocumentContent(content)')
     expect(appShellSource).toContain('setSavedNovelDocumentContent(content)')
     expect(appShellSource).toContain('novelDocumentDirty')

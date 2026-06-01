@@ -190,6 +190,30 @@
   backdrop-filter: blur(10px);
 }
 
+.tiptap-review-diff-inserted {
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--success, #16a34a) 18%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--success, #16a34a) 18%, transparent);
+}
+
+.tiptap-review-diff-block.tiptap-review-diff-inserted {
+  display: block;
+  margin-inline: -0.35rem;
+  padding-inline: 0.35rem;
+}
+
+.tiptap-review-diff-deleted {
+  display: inline;
+  white-space: pre-wrap;
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--destructive) 12%, transparent);
+  color: color-mix(in oklch, var(--destructive) 78%, var(--foreground) 22%);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in oklch, var(--destructive) 64%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--destructive) 18%, transparent);
+}
+
 .tiptap-editor--line-numbers .tiptap-prose {
   counter-reset: tiptap-line;
 }

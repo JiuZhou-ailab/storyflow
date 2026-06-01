@@ -44,6 +44,7 @@ import { MermaidBlock } from './extensions/MermaidBlock'
 import { looksLikeMermaidSource } from './mermaid-source'
 import { LatexBlock } from './extensions/LatexBlock'
 import { RichBlockInteractions } from './extensions/RichBlockInteractions'
+import { TiptapReviewDiff, TIPTAP_REVIEW_DIFF_KEY } from './TiptapReviewDiff'
 import { cn } from '../../lib/utils'
 import 'katex/dist/katex.min.css'
 import './tiptap-editor.css'
@@ -383,6 +384,8 @@ export interface TiptapMarkdownEditorProps {
   showLineNumbers?: boolean
   /** Optional fixed status content in the lower-right corner of the editor. */
   bottomRightAccessory?: React.ReactNode
+  /** Previous Markdown content to compare against the current editor document. */
+  reviewDiffOriginalContent?: string | null
   /** Called when the user asks AI to work on the current text selection. */
   onAskAiForSelection?: (request: TiptapSelectionAiRequest) => Promise<string>
   /** Called when the user adds the current text selection to the chat draft. */
@@ -400,6 +403,7 @@ export function TiptapMarkdownEditor({
   surface = 'default',
   showLineNumbers = false,
   bottomRightAccessory,
+  reviewDiffOriginalContent = null,
   onAskAiForSelection,
   onAddSelectionToChat,
 }: TiptapMarkdownEditorProps) {
@@ -445,6 +449,7 @@ export function TiptapMarkdownEditor({
         },
       }),
       RichBlockInteractions,
+      TiptapReviewDiff,
       SelectionAiRangeHighlight,
       ...(editable ? [TiptapSlashMenu] : []),
     ]
@@ -483,7 +488,7 @@ export function TiptapMarkdownEditor({
         transformCopiedText: true,
       }),
     ]
-  }, [placeholder, useOfficialMarkdown])
+  }, [placeholder, useOfficialMarkdown, editable])
 
   const initialContent = useOfficialMarkdown
     ? preprocessMarkdownForOfficial(content)
@@ -549,6 +554,26 @@ export function TiptapMarkdownEditor({
       editor.setEditable(editable)
     }
   }, [editor, editable])
+
+  React.useEffect(() => {
+    if (!editor || !useOfficialMarkdown) return
+
+    const markdown = reviewDiffOriginalContent
+    if (markdown == null) {
+      editor.view.dispatch(editor.state.tr.setMeta(TIPTAP_REVIEW_DIFF_KEY, { previousDoc: null }))
+      return
+    }
+
+    try {
+      const normalized = preprocessMarkdownForOfficial(markdown)
+      const previousDoc = editor.schema.nodeFromJSON(
+        (editor as Editor & { markdown?: { parse: (value: string) => unknown } }).markdown?.parse(normalized)
+      )
+      editor.view.dispatch(editor.state.tr.setMeta(TIPTAP_REVIEW_DIFF_KEY, { previousDoc }))
+    } catch {
+      editor.view.dispatch(editor.state.tr.setMeta(TIPTAP_REVIEW_DIFF_KEY, { previousDoc: null }))
+    }
+  }, [editor, reviewDiffOriginalContent, useOfficialMarkdown])
 
   // Sync content when the selected task changes (key prop handles this,
   // but as a safety net for direct content prop changes)

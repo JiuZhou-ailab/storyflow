@@ -4,7 +4,12 @@
 
 import { describe, expect, it } from 'bun:test'
 import type { FileChange } from '@craft-agent/ui'
-import { buildRejectFileChangeOperation } from '../file-change-review'
+import {
+  buildRejectFileChangeOperation,
+  buildRejectFileChangesOperation,
+  buildReviewFileChange,
+  resolveReviewFileChangeSnapshot,
+} from '../file-change-review'
 
 function change(overrides: Partial<FileChange> = {}): FileChange {
   return {
@@ -129,5 +134,81 @@ describe('buildRejectFileChangeOperation', () => {
       operation: 'write',
       content: '# Old file',
     })
+  })
+
+  it('rejects multiple changes in one file while preserving unrelated user edits', () => {
+    const changes = [
+      change({ id: 'change-1', original: 'quiet room', modified: 'crowded room' }),
+      change({ id: 'change-2', original: 'before dawn', modified: 'under red moonlight' }),
+    ]
+
+    const result = buildRejectFileChangesOperation(
+      changes,
+      'User note.\nShe crossed the crowded room under red moonlight.'
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      operation: 'write',
+      content: 'User note.\nShe crossed the quiet room before dawn.',
+    })
+  })
+
+  it('rejects sequential edits at the same location in reverse change order', () => {
+    const changes = [
+      change({ id: 'change-1', original: 'quiet room', modified: 'crowded room' }),
+      change({ id: 'change-2', original: 'crowded room', modified: 'burning hall' }),
+    ]
+
+    const result = buildRejectFileChangesOperation(
+      changes,
+      'She crossed the burning hall.'
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      operation: 'write',
+      content: 'She crossed the quiet room.',
+    })
+  })
+
+  it('builds one file-level review change from multiple snippet edits', () => {
+    const changes = [
+      change({ id: 'change-1', original: 'quiet room', modified: 'crowded room' }),
+      change({ id: 'change-2', original: 'before dawn', modified: 'under red moonlight' }),
+    ]
+
+    expect(buildReviewFileChange(
+      changes,
+      'User note.\nShe crossed the crowded room under red moonlight.'
+    )).toEqual({
+      id: 'file-review:change-1:change-2',
+      filePath: '/novel/story/chapters/chapter-01.md',
+      toolType: 'Edit',
+      changeKind: 'modify',
+      original: 'User note.\nShe crossed the quiet room before dawn.',
+      modified: 'User note.\nShe crossed the crowded room under red moonlight.',
+    })
+  })
+
+  it('keeps the review baseline stable when the user edits during review', () => {
+    const changes = [
+      change({ id: 'change-1', original: 'quiet room', modified: 'crowded room' }),
+    ]
+
+    const first = resolveReviewFileChangeSnapshot(
+      null,
+      changes,
+      'She crossed the crowded room.'
+    )
+    const second = resolveReviewFileChangeSnapshot(
+      first,
+      changes,
+      'She crossed the crowded warm room.'
+    )
+
+    expect(first.change?.original).toBe('She crossed the quiet room.')
+    expect(second).toBe(first)
+    expect(second.change?.original).toBe('She crossed the quiet room.')
   })
 })

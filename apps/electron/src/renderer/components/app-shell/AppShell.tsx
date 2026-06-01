@@ -157,7 +157,7 @@ import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
 import { collectFileChangesFromActivities } from "@/lib/file-changes"
-import { buildRejectFileChangeOperation } from "@/lib/file-change-review"
+import { buildRejectFileChangesOperation } from "@/lib/file-change-review"
 import {
   buildMergedManuscriptContent,
   buildNovelExportPlan,
@@ -173,11 +173,7 @@ import {
   parseNovelReviewStatusMap,
   type NovelReviewStatusMap,
 } from "@/lib/novel-review-workflow"
-import {
-  buildAcceptNovelChangeUndoEntry,
-  buildRejectNovelChangeUndoEntry,
-  type NovelReviewUndoEntry,
-} from "@/lib/novel-review-undo"
+import type { NovelReviewUndoEntry } from "@/lib/novel-review-undo"
 import {
   buildNovelWorkspaceTree,
   detectNovelProjectFromSearchResults,
@@ -2596,7 +2592,6 @@ function AppShellContent({
     () => getPendingChangesForFile(reviewableNovelFileChanges, novelChangeReviewStatus, selectedNovelFile?.path),
     [reviewableNovelFileChanges, novelChangeReviewStatus, selectedNovelFile?.path]
   )
-  const selectedNovelReviewChange = selectedNovelPendingChanges[0]
   const selectedNovelReviewFileIndex = selectedNovelFile?.path
     ? pendingNovelChangedFilePaths.indexOf(selectedNovelFile.path)
     : -1
@@ -3074,13 +3069,13 @@ function AppShellContent({
   }, [handleSelectNovelFileByPath, pendingNovelChangedFilePaths, selectedNovelFile?.path])
 
   const handleSelectNextNovelChangeAfterStatus = React.useCallback(async (
-    change: FileChange,
+    filePath: string,
     nextStatus: NovelReviewStatusMap
   ) => {
     const nextPendingPaths = getPendingChangedFilePaths(reviewableNovelFileChanges, nextStatus)
     if (nextPendingPaths.length === 0) return
 
-    const currentIndex = pendingNovelChangedFilePaths.indexOf(change.filePath)
+    const currentIndex = pendingNovelChangedFilePaths.indexOf(filePath)
     const searchOrder = currentIndex >= 0
       ? [
           ...pendingNovelChangedFilePaths.slice(currentIndex + 1),
@@ -3091,91 +3086,109 @@ function AppShellContent({
     await handleSelectNovelFileByPath(targetPath)
   }, [handleSelectNovelFileByPath, pendingNovelChangedFilePaths, reviewableNovelFileChanges])
 
-  const handleAcceptNovelChange = React.useCallback(async (change: FileChange) => {
-    if (change.error) {
+  const handleAcceptNovelFileChanges = React.useCallback(async (changes: FileChange[]) => {
+    const reviewableChanges = changes.filter(change => !change.error)
+    const filePath = reviewableChanges[0]?.filePath
+    if (!filePath || reviewableChanges.length === 0) {
       toast.error(t('writing.review.acceptUnavailable', 'Cannot accept a failed change.'))
       return
     }
+    if (reviewableChanges.some(change => change.filePath !== filePath)) {
+      toast.error(t('writing.review.acceptUnavailable', 'Cannot accept changes from multiple files here.'))
+      return
+    }
 
-    const synced = await syncSelectedNovelDocumentFromDisk(change.filePath)
-    if (!synced) return
+    if (selectedNovelFile?.path === filePath) {
+      const saved = await ensureNovelDocumentSaved()
+      if (!saved) return
+    }
 
     let undoEntry: NovelReviewUndoEntry | undefined
     try {
-      const currentContent = await window.electronAPI.readFile(change.filePath)
-      const undo = buildAcceptNovelChangeUndoEntry(change, currentContent, novelChangeReviewStatus)
-      if (undo.ok) {
-        undoEntry = undo.entry
+      const currentContent = await window.electronAPI.readFile(filePath)
+      const rejected = buildRejectFileChangesOperation(reviewableChanges, currentContent)
+      if (rejected.ok) {
+        const undoStatus: NovelReviewStatusMap = { ...novelChangeReviewStatus }
+        for (const change of reviewableChanges) {
+          undoStatus[getNovelReviewChangeKey(change)] = 'rejected'
+        }
+        undoEntry = {
+          status: undoStatus,
+          writes: rejected.operation === 'write' ? [{ filePath, content: rejected.content }] : [],
+          deletes: rejected.operation === 'delete' ? [{ filePath }] : [],
+        }
       }
     } catch (error) {
       console.warn('[writing] Failed to capture accept undo entry:', error)
     }
 
-    const changeKey = getNovelReviewChangeKey(change)
-    const nextStatus = {
-      ...novelChangeReviewStatus,
-      [changeKey]: 'accepted' as const,
+    const nextStatus: NovelReviewStatusMap = { ...novelChangeReviewStatus }
+    for (const change of reviewableChanges) {
+      nextStatus[getNovelReviewChangeKey(change)] = 'accepted'
     }
     persistNovelChangeReviewStatus(nextStatus)
     pushNovelReviewUndoEntry(undoEntry)
-    void handleSelectNextNovelChangeAfterStatus(change, nextStatus)
-    toast.success(t('writing.review.accepted', 'Change accepted'), undoEntry ? {
+    void handleSelectNextNovelChangeAfterStatus(filePath, nextStatus)
+    toast.success(t('writing.review.fileAccepted', 'File changes accepted'), undoEntry ? {
       action: {
         label: t('common.undo', 'Undo'),
         onClick: () => { void handleUndoNovelReviewAction() },
       },
     } : undefined)
   }, [
+    ensureNovelDocumentSaved,
     handleUndoNovelReviewAction,
     handleSelectNextNovelChangeAfterStatus,
     novelChangeReviewStatus,
     persistNovelChangeReviewStatus,
     pushNovelReviewUndoEntry,
-    syncSelectedNovelDocumentFromDisk,
+    selectedNovelFile?.path,
     t,
   ])
 
   const handleAcceptAllNovelChanges = React.useCallback(async () => {
-    const selectedPendingChange = selectedNovelFile?.path
-      ? reviewableNovelFileChanges.find(change =>
-          !change.error
-          && change.filePath === selectedNovelFile.path
-          && !novelChangeReviewStatus[getNovelReviewChangeKey(change)]
-        )
-      : undefined
-    if (selectedPendingChange) {
-      const synced = await syncSelectedNovelDocumentFromDisk(selectedPendingChange.filePath)
-      if (!synced) return
+    const pendingChangesByPath = new Map<string, FileChange[]>()
+    for (const change of reviewableNovelFileChanges) {
+      if (change.error) continue
+      const changeKey = getNovelReviewChangeKey(change)
+      if (novelChangeReviewStatus[changeKey]) continue
+
+      const changesForFile = pendingChangesByPath.get(change.filePath) ?? []
+      changesForFile.push(change)
+      pendingChangesByPath.set(change.filePath, changesForFile)
+    }
+
+    if (selectedNovelFile?.path && pendingChangesByPath.has(selectedNovelFile.path)) {
+      const saved = await ensureNovelDocumentSaved()
+      if (!saved) return
     }
 
     const nextStatus: NovelReviewStatusMap = { ...novelChangeReviewStatus }
     let undoStatus: NovelReviewStatusMap = { ...novelChangeReviewStatus }
     const undoContentByPath = new Map<string, string>()
     const undoDeletePaths = new Set<string>()
-    for (const change of reviewableNovelFileChanges) {
-      if (change.error) continue
-      const changeKey = getNovelReviewChangeKey(change)
-      if (nextStatus[changeKey]) continue
-
+    for (const [filePath, changes] of pendingChangesByPath) {
       try {
-        const currentContent = undoContentByPath.get(change.filePath)
-          ?? await window.electronAPI.readFile(change.filePath)
-        const undo = buildAcceptNovelChangeUndoEntry(change, currentContent, undoStatus)
-        if (undo.ok) {
-          undoStatus = undo.entry.status
-          for (const write of undo.entry.writes) {
-            undoContentByPath.set(write.filePath, write.content)
+        const currentContent = await window.electronAPI.readFile(filePath)
+        const rejected = buildRejectFileChangesOperation(changes, currentContent)
+        if (rejected.ok) {
+          for (const change of changes) {
+            undoStatus[getNovelReviewChangeKey(change)] = 'rejected'
           }
-          for (const deleted of undo.entry.deletes) {
-            undoDeletePaths.add(deleted.filePath)
-            undoContentByPath.delete(deleted.filePath)
+          if (rejected.operation === 'write') {
+            undoContentByPath.set(filePath, rejected.content)
+          } else {
+            undoDeletePaths.add(filePath)
+            undoContentByPath.delete(filePath)
           }
         }
       } catch (error) {
         console.warn('[writing] Failed to capture accept-all undo entry:', error)
       }
 
-      nextStatus[changeKey] = 'accepted'
+      for (const change of changes) {
+        nextStatus[getNovelReviewChangeKey(change)] = 'accepted'
+      }
     }
 
     persistNovelChangeReviewStatus(nextStatus)
@@ -3194,25 +3207,36 @@ function AppShellContent({
       },
     } : undefined)
   }, [
+    ensureNovelDocumentSaved,
     handleUndoNovelReviewAction,
     novelChangeReviewStatus,
     persistNovelChangeReviewStatus,
     pushNovelReviewUndoEntry,
     reviewableNovelFileChanges,
     selectedNovelFile?.path,
-    syncSelectedNovelDocumentFromDisk,
     t,
   ])
 
-  const handleRejectNovelChange = React.useCallback(async (change: FileChange) => {
-    if (selectedNovelFile?.path === change.filePath) {
+  const handleRejectNovelFileChanges = React.useCallback(async (changes: FileChange[]) => {
+    const reviewableChanges = changes.filter(change => !change.error)
+    const filePath = reviewableChanges[0]?.filePath
+    if (!filePath || reviewableChanges.length === 0) {
+      toast.error(t('writing.review.rejectUnavailable', 'Cannot safely reject this change'))
+      return
+    }
+    if (reviewableChanges.some(change => change.filePath !== filePath)) {
+      toast.error(t('writing.review.rejectUnavailable', 'Cannot safely reject changes from multiple files here.'))
+      return
+    }
+
+    if (selectedNovelFile?.path === filePath) {
       const saved = await ensureNovelDocumentSaved()
       if (!saved) return
     }
 
     try {
-      const currentContent = await window.electronAPI.readFile(change.filePath)
-      const rejected = buildRejectFileChangeOperation(change, currentContent)
+      const currentContent = await window.electronAPI.readFile(filePath)
+      const rejected = buildRejectFileChangesOperation(reviewableChanges, currentContent)
       if (!rejected.ok) {
         toast.error(t('writing.review.rejectUnavailable', 'Cannot safely reject this change'), {
           description: rejected.reason,
@@ -3220,21 +3244,26 @@ function AppShellContent({
         return
       }
 
-      const undoEntry = buildRejectNovelChangeUndoEntry(change, currentContent, novelChangeReviewStatus)
-      if (rejected.operation === 'write') {
-        await window.electronAPI.writeFile(change.filePath, rejected.content)
-      } else {
-        await window.electronAPI.deleteFile(change.filePath)
+      const undoEntry: NovelReviewUndoEntry = {
+        status: novelChangeReviewStatus,
+        writes: [{ filePath, content: currentContent }],
+        deletes: [],
       }
-      const changeKey = getNovelReviewChangeKey(change)
-      const nextStatus = {
+      if (rejected.operation === 'write') {
+        await window.electronAPI.writeFile(filePath, rejected.content)
+      } else {
+        await window.electronAPI.deleteFile(filePath)
+      }
+      const nextStatus: NovelReviewStatusMap = {
         ...novelChangeReviewStatus,
-        [changeKey]: 'rejected' as const,
+      }
+      for (const change of reviewableChanges) {
+        nextStatus[getNovelReviewChangeKey(change)] = 'rejected'
       }
       persistNovelChangeReviewStatus(nextStatus)
       pushNovelReviewUndoEntry(undoEntry)
 
-      if (selectedNovelFile?.path === change.filePath) {
+      if (selectedNovelFile?.path === filePath) {
         const nextContent = rejected.operation === 'write' ? rejected.content : ''
         setNovelDocumentContent(nextContent)
         setSavedNovelDocumentContent(nextContent)
@@ -3243,8 +3272,8 @@ function AppShellContent({
         void refreshNovelWorkspaceFiles(novelWorkspaceRoot)
       }
 
-      void handleSelectNextNovelChangeAfterStatus(change, nextStatus)
-      toast.success(t('writing.review.rejected', 'Change rejected'), {
+      void handleSelectNextNovelChangeAfterStatus(filePath, nextStatus)
+      toast.success(t('writing.review.fileRejected', 'File changes rejected'), {
         action: {
           label: t('common.undo', 'Undo'),
           onClick: () => { void handleUndoNovelReviewAction() },
@@ -4043,12 +4072,12 @@ function AppShellContent({
                 onAskAiForSelection={handleAskAiForNovelSelection}
                 onAddSelectionToChat={handleAddNovelSelectionToChat}
                 onSendSelectionToChat={handleSendNovelSelectionToChat}
-                reviewChange={selectedNovelReviewChange}
+                reviewChanges={selectedNovelPendingChanges}
                 pendingChangeCount={pendingNovelChangedFilePaths.length}
                 pendingFileIndex={selectedNovelReviewFileIndex >= 0 ? selectedNovelReviewFileIndex : undefined}
-                onAcceptReviewChange={selectedNovelReviewChange ? () => handleAcceptNovelChange(selectedNovelReviewChange) : undefined}
+                onAcceptReviewChanges={selectedNovelPendingChanges.length > 0 ? () => handleAcceptNovelFileChanges(selectedNovelPendingChanges) : undefined}
                 onAcceptAllReviewChanges={pendingNovelChangedFilePaths.length > 0 ? handleAcceptAllNovelChanges : undefined}
-                onRejectReviewChange={selectedNovelReviewChange ? () => { void handleRejectNovelChange(selectedNovelReviewChange) } : undefined}
+                onRejectReviewChanges={selectedNovelPendingChanges.length > 0 ? () => { void handleRejectNovelFileChanges(selectedNovelPendingChanges) } : undefined}
                 onPreviousReviewFile={() => { void handleSelectAdjacentNovelChangeFile('previous') }}
                 onNextReviewFile={() => { void handleSelectAdjacentNovelChangeFile('next') }}
               />
