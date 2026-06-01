@@ -71,6 +71,9 @@ setupI18n()
 const machineId = createHash('sha256').update(hostname() + homedir()).digest('hex').slice(0, 16)
 Sentry.setUser({ id: machineId })
 
+import { initAnalytics, shutdownAnalytics } from './analytics'
+initAnalytics(machineId)
+
 import { join, delimiter } from 'path'
 import { existsSync, readFileSync } from 'fs'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
@@ -1258,6 +1261,9 @@ app.on('before-quit', async (event) => {
     // Clean up power manager (release power blocker)
     const { cleanup: cleanupPowerManager } = await import('./power-manager')
     cleanupPowerManager()
+
+    // Flush PostHog analytics before exit so no events are dropped.
+    await shutdownAnalytics()
 
     // Release the server lock file so the next launch doesn't see a stale PID.
     // This must happen regardless of the exit path (normal quit or update quit).
