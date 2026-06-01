@@ -24,8 +24,27 @@ describe('ChatDisplay scroll layout', () => {
     expect(chatDisplaySource).toContain("!(message.role === 'user' && message.isQueued)")
     expect(chatDisplaySource).toContain('groupMessagesByTurn(transcriptMessages)')
     expect(chatDisplaySource).toContain('queuedMessages={queuedUserMessages}')
+    expect(chatDisplaySource).toContain('forceQueuePreview: session?.isProcessing === true')
     expect(chatInputZoneSource).toContain('queuedMessages?: QueuedInputMessage[]')
     expect(chatInputZoneSource).toContain('queuedMessages.length > 0')
     expect(chatInputZoneSource).toContain("t('chat.queuedBadge')")
+  })
+
+  it('wires queued message previews to the send-now interruption command', () => {
+    expect(chatInputZoneSource).toContain('onSendQueuedMessageNow?: (messageId: string) => void')
+    expect(chatInputZoneSource).toContain("t('chat.sendQueuedNow')")
+    expect(chatInputZoneSource).toContain('onSendQueuedMessageNow?.(message.id)')
+    expect(chatDisplaySource).toContain("type: 'sendQueuedMessageNow'")
+    expect(chatDisplaySource).toContain('onSendQueuedMessageNow={handleSendQueuedMessageNow}')
+  })
+
+  it('wires queued message previews to edit and delete actions', () => {
+    expect(chatInputZoneSource).toContain('onEditQueuedMessage?: (message: QueuedInputMessage) => void')
+    expect(chatInputZoneSource).toContain('onRemoveQueuedMessage?: (messageId: string) => void')
+    expect(chatInputZoneSource).toContain('onEditQueuedMessage?.(message)')
+    expect(chatInputZoneSource).toContain('onRemoveQueuedMessage?.(message.id)')
+    expect(chatDisplaySource).toContain("type: 'removeQueuedMessage'")
+    expect(chatDisplaySource).toContain('onEditQueuedMessage={handleEditQueuedMessage}')
+    expect(chatDisplaySource).toContain('onRemoveQueuedMessage={handleRemoveQueuedMessage}')
   })
 })

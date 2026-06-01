@@ -34,6 +34,7 @@ import type {
   LLMConnectionChangedEvent,
   UserMessageEvent,
   MessageAnnotationsUpdatedEvent,
+  QueuedMessageRemovedEvent,
   SessionSharedEvent,
   SessionUnsharedEvent,
   AuthRequestEvent,
@@ -345,7 +346,7 @@ export function handleInterrupted(
     state: {
       session: {
         ...session,
-        isProcessing: false,
+        isProcessing: event.reason === 'queued_handoff' ? true : false,
         messages,
         currentStatus: undefined,  // Clear any lingering status
       },
@@ -533,16 +534,16 @@ export function handleUserMessage(
 
     // Event sequence protection: don't regress from 'processing' back to 'queued'
     // This handles out-of-order events (e.g., 'processing' arrives before 'queued')
-    if (status === 'queued' && existingMessage.isQueued === false) {
+    if (status === 'queued' && existingMessage.isQueued === false && !existingMessage.isPending) {
       // Already progressed past queued state, ignore this late 'queued' event
       return { state, effects: [] }
     }
 
     // Update existing message — clear isPending, set isQueued based on status.
     //
-    // - 'queued'     → isQueued = true  (Claude path: backend queued for re-send)
+    // - 'queued'     → isQueued = true  (backend queued for re-send)
     // - 'processing' → isQueued = false (queued message is now actually running)
-    // - 'accepted'   → isQueued = false (Pi steer path: agent has the message)
+    // - 'accepted'   → isQueued = false (agent has the message)
     //
     // We deliberately do NOT swap `m.id` to the backend's canonical id here.
     // ChatDisplay's `getTurnKey` keys user-message bubbles by id, and a swap
@@ -606,6 +607,24 @@ export function handleMessageAnnotationsUpdated(
             ? { ...m, annotations: event.annotations }
             : m
         ),
+      },
+      streaming,
+    },
+    effects: [],
+  }
+}
+
+export function handleQueuedMessageRemoved(
+  state: SessionState,
+  event: QueuedMessageRemovedEvent
+): ProcessResult {
+  const { session, streaming } = state
+
+  return {
+    state: {
+      session: {
+        ...session,
+        messages: session.messages.filter(message => message.id !== event.messageId),
       },
       streaming,
     },

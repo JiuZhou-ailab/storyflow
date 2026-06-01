@@ -28,6 +28,13 @@ export function canCreateDefaultRewindBranch(
   return session.llmConnection === defaultConnectionSlug
 }
 
+export function canRewindWithoutDroppingHistory(
+  _session: RewindSourceSession,
+  branchFromMessageId: string | null
+): boolean {
+  return !!branchFromMessageId
+}
+
 export function resolveRewindBranchMessageId(
   messages: Array<Pick<Message, 'id' | 'role' | 'isIntermediate' | 'turnId' | 'canBranch'>>,
   userMessageId: string

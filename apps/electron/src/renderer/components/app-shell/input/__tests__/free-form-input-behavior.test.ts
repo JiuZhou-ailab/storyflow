@@ -67,6 +67,15 @@ describe('FreeFormInput behavior helpers', () => {
         disableSend: false,
       })).toBe('stop')
     })
+
+    it('keeps send as the primary action for a draft while processing even when sending is disabled', () => {
+      expect(getPrimaryInputAction({
+        isProcessing: true,
+        hasContent: true,
+        disabled: true,
+        disableSend: true,
+      })).toBe('send')
+    })
   })
 
   describe('shouldShowTextInput', () => {

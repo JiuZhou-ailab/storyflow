@@ -81,6 +81,7 @@ import { resolveBranchNewPanelOption } from "./branching"
 import {
   buildRewindSessionOptions,
   canCreateDefaultRewindBranch,
+  canRewindWithoutDroppingHistory,
   MANAGED_DEFAULT_CONNECTION_SLUG,
   resolveRewindBranchMessageId,
 } from "./chat-rewind"
@@ -141,7 +142,12 @@ function getTurnKey(turn: Turn): string {
 
 interface ChatDisplayProps {
   session: Session | null
-  onSendMessage: (message: string, attachments?: FileAttachment[], skillSlugs?: string[]) => void
+  onSendMessage: (
+    message: string,
+    attachments?: FileAttachment[],
+    skillSlugs?: string[],
+    runtimeOptions?: { forceQueuePreview?: boolean },
+  ) => void
   onOpenFile: (path: string) => void
   onOpenUrl: (url: string) => void
   // Model selection
@@ -1259,7 +1265,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
     // Force stick-to-bottom when user sends a message
     isStickToBottomRef.current = true
-    onSendMessage(normalizedMessage, attachments, skillSlugs)
+    onSendMessage(normalizedMessage, attachments, skillSlugs, {
+      forceQueuePreview: session?.isProcessing === true,
+    })
 
     // Persist sent marker on follow-up annotations so TurnCard can distinguish
     // sent vs pending follow-ups. If user edits a follow-up later, TurnCard
@@ -1329,6 +1337,53 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       console.error('[ChatDisplay] Failed to cancel processing:', error)
     })
   }
+
+  const handleSendQueuedMessageNow = useCallback((messageId: string) => {
+    if (!session?.id) return
+    window.electronAPI.sessionCommand(session.id, {
+      type: 'sendQueuedMessageNow',
+      messageId,
+    }).catch(error => {
+      console.error('[ChatDisplay] Failed to send queued message now:', error)
+      toast.error(t('toast.cannotSendRightNow'), {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    })
+  }, [session?.id, t])
+
+  const removeQueuedMessage = useCallback((messageId: string) => {
+    if (!session?.id) return Promise.resolve()
+    return window.electronAPI.sessionCommand(session.id, {
+      type: 'removeQueuedMessage',
+      messageId,
+    })
+  }, [session?.id])
+
+  const handleRemoveQueuedMessage = useCallback((messageId: string) => {
+    removeQueuedMessage(messageId).catch(error => {
+      console.error('[ChatDisplay] Failed to remove queued message:', error)
+      toast.error(t('toast.cannotSendRightNow'), {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    })
+  }, [removeQueuedMessage, t])
+
+  const handleEditQueuedMessage = useCallback((message: QueuedInputMessage) => {
+    removeQueuedMessage(message.id)
+      .then(() => {
+        onInputChange?.(message.content)
+        onAttachmentsChange?.([])
+        requestAnimationFrame(() => {
+          textareaRef.current?.focus()
+        })
+      })
+      .catch(error => {
+        console.error('[ChatDisplay] Failed to edit queued message:', error)
+        toast.error(t('toast.cannotSendRightNow'), {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      })
+  }, [onAttachmentsChange, onInputChange, removeQueuedMessage, t, textareaRef])
 
   // Per-frame scroll compensation during input height animation
   // Only compensate when user is "stuck to bottom" - otherwise let them control their scroll position
@@ -1406,6 +1461,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       ?? appShellContext.llmConnections.find(connection => connection.isDefault)?.slug
       ?? MANAGED_DEFAULT_CONNECTION_SLUG
 
+    if (!canRewindWithoutDroppingHistory(session, branchFromMessageId)) {
+      toast.error(t('chat.rewindUnavailable', 'This message cannot be safely rewound.'))
+      return
+    }
     if (branchFromMessageId && !session.supportsBranching) {
       toast.error(t('chat.rewindUnavailable', 'This conversation cannot be rewound yet.'))
       return
@@ -1988,6 +2047,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
             currentSessionStatus={session.sessionStatus || 'todo'}
             onSessionStatusChange={onSessionStatusChange}
             queuedMessages={queuedUserMessages}
+            onSendQueuedMessageNow={handleSendQueuedMessageNow}
+            onEditQueuedMessage={handleEditQueuedMessage}
+            onRemoveQueuedMessage={handleRemoveQueuedMessage}
             inputProps={{
               placeholder,
               disabled: isInputDisabled,

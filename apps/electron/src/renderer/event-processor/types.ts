@@ -238,6 +238,7 @@ export interface InterruptedEvent {
   type: 'interrupted'
   sessionId: string
   message?: Message
+  reason?: 'queued_handoff'
   /** Messages that were queued but not processed — should be restored to input field */
   queuedMessages?: string[]
 }
@@ -407,6 +408,15 @@ export interface MessageAnnotationsUpdatedEvent {
 }
 
 /**
+ * Queued message removed event
+ */
+export interface QueuedMessageRemovedEvent {
+  type: 'queued_message_removed'
+  sessionId: string
+  messageId: string
+}
+
+/**
  * Session shared event - session was shared to viewer
  */
 export interface SessionSharedEvent {
@@ -510,6 +520,7 @@ export type AgentEvent =
   | TaskCompletedEvent
   | UserMessageEvent
   | MessageAnnotationsUpdatedEvent
+  | QueuedMessageRemovedEvent
   | SessionSharedEvent
   | SessionUnsharedEvent
   | AuthRequestEvent

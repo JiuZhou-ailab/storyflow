@@ -1337,13 +1337,14 @@ export default function App() {
     window.electronAPI.sessionCommand(sessionId, { type: 'rename', name })
   }, [updateSessionById])
 
-  const handleSendMessage = useCallback(async (sessionId: string, message: string, attachments?: FileAttachment[], skillSlugs?: string[], externalBadges?: ContentBadge[], sendOptions?: Pick<SendMessageOptions, 'oneTimeContext' | 'hideUserMessage'>) => {
+  const handleSendMessage = useCallback(async (sessionId: string, message: string, attachments?: FileAttachment[], skillSlugs?: string[], externalBadges?: ContentBadge[], sendOptions?: Pick<SendMessageOptions, 'oneTimeContext' | 'hideUserMessage'> & { forceQueuedUserMessage?: boolean }) => {
     try {
       const hideUserMessage = sendOptions?.hideUserMessage === true
       // Capture pre-send processing state so we can flag mid-stream sends
       // for the queued badge (#616 follow-up — covers Pi steer path which
       // returns status 'accepted', not 'queued').
-      const sendingMidStream = store.get(sessionAtomFamily(sessionId))?.isProcessing === true
+      const sendingMidStream = sendOptions?.forceQueuedUserMessage === true
+        || store.get(sessionAtomFamily(sessionId))?.isProcessing === true
 
       // Step 1: Store attachments and get persistent metadata
       let storedAttachments: StoredAttachment[] | undefined
@@ -1457,12 +1458,9 @@ export default function App() {
 
       // Step 5: Create user message with StoredAttachments (for UI display)
       // Mark as isPending for optimistic UI — will be confirmed by user_message
-      // event. Flag mid-stream sends as queued so the bubble renders with the
-      // dashed-draft treatment immediately. Applies to both backends:
-      // Pi steers (server emits status: 'accepted' but the renderer preserves
-      // isQueued through that update) and Claude queues (server emits 'queued'
-      // which confirms it). Cleared by 'processing' status or when the current
-      // turn ends.
+      // event. Flag mid-stream sends as queued so the composer queue preview
+      // appears immediately. The backend now treats ordinary mid-stream sends
+      // as queue-only; explicit interruption is a separate queued-item action.
       const optimisticMessageId = hideUserMessage ? undefined : generateMessageId()
 
       if (!hideUserMessage) {

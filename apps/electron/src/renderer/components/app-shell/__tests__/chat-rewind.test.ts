@@ -7,6 +7,7 @@ import {
   buildRewindSessionOptions,
   canCreateDefaultRewindBranch,
   MANAGED_DEFAULT_CONNECTION_SLUG,
+  canRewindWithoutDroppingHistory,
   resolveRewindBranchMessageId,
 } from '../chat-rewind'
 
@@ -91,5 +92,10 @@ describe('chat rewind helpers', () => {
     expect(canCreateDefaultRewindBranch(baseSession, 'a1', 'pi')).toBe(true)
     expect(canCreateDefaultRewindBranch(baseSession, 'a1', 'wangsu-default')).toBe(false)
     expect(canCreateDefaultRewindBranch(baseSession, null, 'wangsu-default')).toBe(true)
+  })
+
+  it('does not allow rewind to fall back to an empty session when history cannot be branched', () => {
+    expect(canRewindWithoutDroppingHistory(baseSession, 'a1')).toBe(true)
+    expect(canRewindWithoutDroppingHistory(baseSession, null)).toBe(false)
   })
 })

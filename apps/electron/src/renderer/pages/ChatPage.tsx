@@ -887,9 +887,16 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
           <ChatDisplay
             ref={chatDisplayRef}
             session={session}
-            onSendMessage={(message, attachments, skillSlugs) => {
+            onSendMessage={(message, attachments, skillSlugs, runtimeOptions) => {
               if (session) {
-                onSendMessage(session.id, message, attachments, skillSlugs)
+                onSendMessage(
+                  session.id,
+                  message,
+                  attachments,
+                  skillSlugs,
+                  undefined,
+                  runtimeOptions?.forceQueuePreview ? { forceQueuedUserMessage: true } : undefined,
+                )
               }
             }}
             onOpenFile={handleOpenFile}
