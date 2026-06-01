@@ -7,17 +7,21 @@ export type MethodPackId =
   | "novel.oh-story"
   | "novel.crucible"
   | "novel.creative-writing"
+  | "screenplay.logic"
+  | "novel.free-creation"
   | "short-form.article";
 
 // Transitional name for new Work Profile semantics. Keep persisted manifests and
 // package paths on MethodPack until the migration has a compatibility plan.
 export type WorkspaceProfileId = MethodPackId;
-export type MethodPackProjectType = "novel" | "short-form";
+export type MethodPackProjectType = "novel" | "screenplay" | "short-form";
 export type MethodPackStorageProfile =
   | "claude-book-compatible"
   | "oh-story-compatible"
   | "crucible-compatible"
   | "creative-writing-compatible"
+  | "screenplay-logic-compatible"
+  | "free-creation-compatible"
   | "short-form-compatible";
 
 export interface MethodPackRequiredPath {

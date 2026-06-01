@@ -3,26 +3,23 @@
 // pos: Registry boundary for creative writing project setup
 
 import { CLAUDE_BOOK_METHOD_PACK } from "./claude-book.ts";
-import { CREATIVE_WRITING_METHOD_PACK } from "./creative-writing.ts";
-import { CRUCIBLE_METHOD_PACK } from "./crucible.ts";
-import { OH_STORY_METHOD_PACK } from "./oh-story.ts";
+import { FREE_CREATION_METHOD_PACK } from "./free-creation.ts";
+import { SCREENPLAY_LOGIC_METHOD_PACK } from "./screenplay-logic.ts";
 import { SHORT_FORM_METHOD_PACK } from "./short-form.ts";
 import type { MethodPack, WorkspaceProfile } from "./types.ts";
 
 export * from "./types.ts";
 export { CLAUDE_BOOK_METHOD_PACK } from "./claude-book.ts";
-export { CREATIVE_WRITING_METHOD_PACK } from "./creative-writing.ts";
-export { CRUCIBLE_METHOD_PACK } from "./crucible.ts";
-export { OH_STORY_METHOD_PACK } from "./oh-story.ts";
+export { FREE_CREATION_METHOD_PACK } from "./free-creation.ts";
+export { SCREENPLAY_LOGIC_METHOD_PACK } from "./screenplay-logic.ts";
 export { SHORT_FORM_METHOD_PACK } from "./short-form.ts";
 export * from "./runtime.ts";
 
 const BUILT_IN_METHOD_PACKS = [
-  CLAUDE_BOOK_METHOD_PACK,
-  OH_STORY_METHOD_PACK,
-  CRUCIBLE_METHOD_PACK,
-  CREATIVE_WRITING_METHOD_PACK,
   SHORT_FORM_METHOD_PACK,
+  CLAUDE_BOOK_METHOD_PACK,
+  SCREENPLAY_LOGIC_METHOD_PACK,
+  FREE_CREATION_METHOD_PACK,
 ] as const satisfies readonly MethodPack[];
 
 export function getBuiltInMethodPacks(): readonly MethodPack[] {

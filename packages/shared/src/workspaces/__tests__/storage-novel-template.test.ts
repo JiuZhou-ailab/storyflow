@@ -78,17 +78,17 @@ describe("createNovelWorkspaceAtPath", () => {
   });
 
   it("repairs existing novel workspaces using the manifest method pack", () => {
-    const rootPath = mkdtempSync(join(tmpdir(), "craft-existing-oh-story-scaffold-"));
-    createWorkspaceAtPath(rootPath, "Existing Web Fiction Workspace");
+    const rootPath = mkdtempSync(join(tmpdir(), "craft-existing-screenplay-scaffold-"));
+    createWorkspaceAtPath(rootPath, "Existing Screenplay Workspace");
     createNovelProjectScaffold(rootPath, {
-      title: "Existing Web Fiction Workspace",
-      methodPackId: "novel.oh-story",
+      title: "Existing Screenplay Workspace",
+      methodPackId: "screenplay.logic",
     });
 
-    rmSync(join(rootPath, "大纲", "大纲.md"), { force: true });
+    rmSync(join(rootPath, "剧本", "分场大纲.md"), { force: true });
 
     expect(loadWorkspaceConfig(rootPath)).not.toBeNull();
-    expect(existsSync(join(rootPath, "大纲", "大纲.md"))).toBe(true);
+    expect(existsSync(join(rootPath, "剧本", "分场大纲.md"))).toBe(true);
     expect(existsSync(join(rootPath, "bible", "style.md"))).toBe(false);
   });
 

@@ -177,6 +177,50 @@ function createChineseRuntimeSummary(pack: MethodPack): string {
 - 需要正文起草：使用 \`prose-writing\`。
 - 需要维护知识库或正典：使用 \`kb-management\`。
 - 草稿和审校材料保持在 \`work/\` 下，只有接受稿进入 \`story/chapters/\`。`;
+    case "screenplay.logic":
+      return `## Agent 运行画像
+
+- 身份：剧本逻辑编辑，优先保护分场因果、人物行动线、冲突升级、对白功能和序列兑现。
+- 默认入口 skill：\`${pack.defaultSkill}\`。
+- 初始请求：不要从宽泛前提直接写完整剧本；先确认主角目标、对抗力量、分场顺序、因果转场和对白功能。
+
+## 文件结构契约
+
+- \`创作要求.md\`：长期写作偏好与禁区。
+- \`剧本/故事梗概.md\`：故事前提、结局承诺和序列形状。
+- \`剧本/分场大纲.md\`：对白起草前的场景契约。
+- \`剧本/对白草稿/\`：工作对白和场景草稿。
+- \`角色/人物表.md\`：人物目标、策略、口吻和关系压力。
+- \`场景/场景表.md\`：地点、时间、场景功能和限制。
+- \`逻辑/因果链.md\`：场景之间的原因、结果和信息传递。
+- \`逻辑/冲突升级.md\`：压力阶梯、转折和兑现。
+- \`自由区/\`：临时方案、废弃节拍和审校笔记。
+
+## Skill 路由
+
+- 前提需要变成分场或因果主线：先用 \`script-logic-planner\`。
+- 对白请求缺少场景目的、阻碍或离场状态：先补分场逻辑。
+- 审校时先检查因果链和冲突升级，再处理台词质感。`;
+    case "novel.free-creation":
+      return `## Agent 运行画像
+
+- 身份：自由创作搭档，尊重用户自己的写作流程，不强塞结构。
+- 默认入口 skill：无固定默认 skill。
+- 初始请求：从用户输入中提取已知意图，用最小必要产物推进；不要把自由创作改造成固定模板。
+
+## 文件结构契约
+
+- \`项目说明.md\`：当前项目目的、范围和轻量约定。
+- \`创作要求.md\`：长期写作偏好与禁区。
+- \`正文/\`：已接受正文或最终创作产物。
+- \`自由区/\`：试写、临时方案、废弃版本和审校笔记。
+- \`参考资料/\`：素材、样例和研究资料。
+
+## 工作边界
+
+- 不主动创建复杂分类、人物库、世界观库或章节治理文件。
+- 用户已有结构时跟随用户结构；没有结构时只补最小的下一步。
+- 已接受内容放 \`正文/\`，探索内容放 \`自由区/\`，来源资料放 \`参考资料/\`。`;
     case "short-form.article":
       return `## Agent 运行画像
 
@@ -224,9 +268,9 @@ ${createChineseRuntimeSummary(pack)}
 }
 
 function createClaudeBookAgentInstructions(): string {
-  return `# Claude-Book Novel Method Pack
+  return `# Long-Form Novel Method Pack
 
-本项目使用 \`novel.claude-book\` Method Pack。
+本项目使用 \`novel.claude-book\` 长文小说 Method Pack。
 
 ${createChineseRuntimeSummary(CLAUDE_BOOK_METHOD_PACK)}
 
@@ -293,6 +337,10 @@ function getNoticeFileName(pack: MethodPack): string {
       return "NOTICE-Crucible.md";
     case "novel.creative-writing":
       return "NOTICE-Creative-Writing-Skills.md";
+    case "screenplay.logic":
+      return "NOTICE-Screenplay-Logic.md";
+    case "novel.free-creation":
+      return "NOTICE-Free-Creation.md";
     case "short-form.article":
       return "NOTICE-Short-Form-Writing.md";
   }
@@ -633,6 +681,129 @@ Durable project knowledge lives here. Keep it concise, factual, and source-aware
   }
 }
 
+function scaffoldScreenplayLogic(rootPath: string): void {
+  for (const dir of [
+    "剧本/对白草稿",
+    "角色",
+    "场景",
+    "逻辑",
+    "自由区",
+  ]) {
+    ensureDir(join(rootPath, dir));
+  }
+
+  writeFileIfMissing(join(rootPath, "创作要求.md"), `# 创作要求
+
+## 类型与尺度
+
+- 剧本类型：
+- 片长 / 集数：
+- 目标观众：
+
+## 表达偏好
+
+- 对白风格：
+- 场景密度：
+- 情绪尺度：
+
+## 禁区
+
+- 不能触碰的内容：
+- 必须避免的桥段：
+`);
+  writeFileIfMissing(join(rootPath, "剧本/故事梗概.md"), `# 故事梗概
+
+## Logline
+
+## 主角目标
+
+## 对抗力量
+
+## 结局承诺
+
+## 序列结构
+`);
+  writeFileIfMissing(join(rootPath, "剧本/分场大纲.md"), `# 分场大纲
+
+## 场次表
+
+### 场 01
+
+- 地点 / 时间：
+- 入场状态：
+- 场景目标：
+- 阻碍：
+- 转折：
+- 离场状态：
+- 对白功能：
+`);
+  writeFileIfMissing(join(rootPath, "角色/人物表.md"), `# 人物表
+
+## 主角
+
+- 目标：
+- 外在策略：
+- 内在缺口：
+- 说话方式：
+
+## 对手
+
+- 目标：
+- 压力手段：
+- 与主角的对立点：
+`);
+  writeFileIfMissing(join(rootPath, "场景/场景表.md"), `# 场景表
+
+| 场次 | 地点 | 时间 | 场景功能 | 关键限制 |
+| --- | --- | --- | --- | --- |
+`);
+  writeFileIfMissing(join(rootPath, "逻辑/因果链.md"), `# 因果链
+
+| 场次 | 原因 | 结果 | 信息变化 | 下一场触发 |
+| --- | --- | --- | --- | --- |
+`);
+  writeFileIfMissing(join(rootPath, "逻辑/冲突升级.md"), `# 冲突升级
+
+## 压力阶梯
+
+## 关键转折
+
+## 兑现点
+`);
+  writeFileIfMissing(join(rootPath, "剧本/对白草稿", ".gitkeep"), "");
+  writeFileIfMissing(join(rootPath, "自由区", ".gitkeep"), "");
+}
+
+function scaffoldFreeCreation(rootPath: string): void {
+  for (const dir of [
+    "正文",
+    "自由区",
+    "参考资料",
+  ]) {
+    ensureDir(join(rootPath, dir));
+  }
+
+  writeFileIfMissing(join(rootPath, "项目说明.md"), `# 项目说明
+
+## 当前想写什么
+
+## 已知约定
+
+## 下一步
+`);
+  writeFileIfMissing(join(rootPath, "创作要求.md"), `# 创作要求
+
+## 风格偏好
+
+## 内容边界
+
+## 输出偏好
+`);
+  writeFileIfMissing(join(rootPath, "正文", ".gitkeep"), "");
+  writeFileIfMissing(join(rootPath, "自由区", ".gitkeep"), "");
+  writeFileIfMissing(join(rootPath, "参考资料", ".gitkeep"), "");
+}
+
 function scaffoldShortForm(rootPath: string): void {
   for (const dir of [
     "正文",
@@ -796,6 +967,12 @@ function scaffoldPackSpecificFiles(rootPath: string, pack: MethodPack): void {
       return;
     case "novel.creative-writing":
       scaffoldCreativeWriting(rootPath);
+      return;
+    case "screenplay.logic":
+      scaffoldScreenplayLogic(rootPath);
+      return;
+    case "novel.free-creation":
+      scaffoldFreeCreation(rootPath);
       return;
     case "short-form.article":
       scaffoldShortForm(rootPath);

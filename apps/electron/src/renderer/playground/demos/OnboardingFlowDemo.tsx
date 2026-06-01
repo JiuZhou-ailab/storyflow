@@ -4,27 +4,23 @@
  * Manages its own state so you can click through the entire sequence
  * in the playground without needing real IPC or OAuth.
  *
- * Flow: WelcomeStep → ProviderSelectStep → CredentialsStep / LocalModelStep → CompletionStep
+ * Flow: WelcomeStep → ProviderSelectStep → CredentialsStep → CompletionStep
  */
 import { useState, useCallback, useEffect } from 'react'
 import { ensureMockElectronAPI } from '../mock-utils'
 import { WelcomeStep } from '@/components/onboarding/WelcomeStep'
 import { ProviderSelectStep, type ProviderChoice } from '@/components/onboarding/ProviderSelectStep'
 import { CredentialsStep } from '@/components/onboarding/CredentialsStep'
-import { LocalModelStep } from '@/components/onboarding/LocalModelStep'
 import { CompletionStep } from '@/components/onboarding/CompletionStep'
 import type { ApiSetupMethod } from '@/components/onboarding/APISetupStep'
 import type { CredentialStatus } from '@/components/onboarding/CredentialsStep'
 
-type DemoStep = 'welcome' | 'provider-select' | 'credentials' | 'local-model' | 'complete'
+type DemoStep = 'welcome' | 'provider-select' | 'credentials' | 'complete'
 
 /** Map ProviderChoice → ApiSetupMethod for the credentials step */
-const CHOICE_TO_METHOD: Record<Exclude<ProviderChoice, 'local'>, ApiSetupMethod> = {
+const CHOICE_TO_METHOD: Record<ProviderChoice, ApiSetupMethod> = {
   jiuzhou: 'jiuzhou_api_key',
-  claude: 'claude_oauth',
-  chatgpt: 'pi_chatgpt_oauth',
-  copilot: 'pi_copilot_oauth',
-  api_key: 'pi_api_key',
+  custom_provider: 'pi_api_key',
 }
 
 export function OnboardingFlowDemo() {
@@ -33,7 +29,6 @@ export function OnboardingFlowDemo() {
   const [step, setStep] = useState<DemoStep>('welcome')
   const [method, setMethod] = useState<ApiSetupMethod | null>(null)
   const [credStatus, setCredStatus] = useState<CredentialStatus>('idle')
-  const [localStatus, setLocalStatus] = useState<'idle' | 'validating' | 'success' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState<string | undefined>()
 
   // Track history for the step indicator
@@ -42,16 +37,9 @@ export function OnboardingFlowDemo() {
   const handleProviderSelect = useCallback((choice: ProviderChoice) => {
     setProviderChoice(choice)
     setCredStatus('idle')
-    setLocalStatus('idle')
     setErrorMessage(undefined)
-
-    if (choice === 'local') {
-      setMethod(null)
-      setStep('local-model')
-    } else {
-      setMethod(CHOICE_TO_METHOD[choice])
-      setStep('credentials')
-    }
+    setMethod(CHOICE_TO_METHOD[choice])
+    setStep('credentials')
   }, [])
 
   const handleBack = useCallback(() => {
@@ -60,10 +48,8 @@ export function OnboardingFlowDemo() {
         setStep('welcome')
         break
       case 'credentials':
-      case 'local-model':
         setStep('provider-select')
         setCredStatus('idle')
-        setLocalStatus('idle')
         setErrorMessage(undefined)
         break
     }
@@ -85,20 +71,11 @@ export function OnboardingFlowDemo() {
     }, 1200)
   }, [])
 
-  const simulateLocalSubmit = useCallback(() => {
-    setLocalStatus('validating')
-    setTimeout(() => {
-      setLocalStatus('success')
-      setTimeout(() => setStep('complete'), 600)
-    }, 1200)
-  }, [])
-
   const handleRestart = useCallback(() => {
     setStep('welcome')
     setMethod(null)
     setProviderChoice(null)
     setCredStatus('idle')
-    setLocalStatus('idle')
     setErrorMessage(undefined)
   }, [])
 
@@ -110,11 +87,10 @@ export function OnboardingFlowDemo() {
   }, [handleRestart])
 
   // Step labels for the breadcrumb
-  const activeStepLabel = step === 'local-model' ? 'Local Model' : 'Credentials'
   const STEP_ORDER: { key: DemoStep; label: string }[] = [
     { key: 'welcome', label: 'Welcome' },
     { key: 'provider-select', label: 'Provider' },
-    { key: step === 'local-model' ? 'local-model' : 'credentials', label: activeStepLabel },
+    { key: 'credentials', label: 'Credentials' },
     { key: 'complete', label: 'Done' },
   ]
 
@@ -179,15 +155,6 @@ export function OnboardingFlowDemo() {
                 ? { userCode: 'DEMO-1234', verificationUri: 'https://github.com/login/device' }
                 : undefined
             }
-          />
-        )}
-
-        {step === 'local-model' && (
-          <LocalModelStep
-            onSubmit={simulateLocalSubmit}
-            onBack={handleBack}
-            status={localStatus}
-            errorMessage={errorMessage}
           />
         )}
 

@@ -51,10 +51,19 @@ describe('normalizeCreateWorkspaceOptions', () => {
   it('preserves explicit non-default novel method pack ids', () => {
     expect(normalizeCreateWorkspaceOptions({
       projectType: 'novel',
-      methodPackId: 'novel.oh-story',
+      methodPackId: 'novel.free-creation',
     })).toEqual({
       projectType: 'novel',
-      methodPackId: 'novel.oh-story',
+      methodPackId: 'novel.free-creation',
+    })
+  })
+
+  it('defaults screenplay project creation to screenplay logic', () => {
+    expect(normalizeCreateWorkspaceOptions({
+      projectType: 'screenplay',
+    })).toEqual({
+      projectType: 'screenplay',
+      methodPackId: 'screenplay.logic',
     })
   })
 

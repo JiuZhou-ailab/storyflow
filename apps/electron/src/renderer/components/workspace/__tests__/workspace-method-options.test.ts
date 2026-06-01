@@ -26,27 +26,26 @@ describe('workspace creation method options', () => {
     expect(WORKSPACE_CREATION_METHOD_OPTIONS.map(option => option.id)).toEqual([
       'short-form.article',
       'novel.claude-book',
-      'novel.oh-story',
-      'novel.crucible',
-      'novel.creative-writing',
+      'screenplay.logic',
+      'novel.free-creation',
     ])
   })
 
   it('uses Chinese copy for Method Pack choices and explanations', () => {
     const novelOption = WORKSPACE_CREATION_METHOD_OPTIONS.find(option => option.id === 'novel.claude-book')
-    const ohStoryOption = WORKSPACE_CREATION_METHOD_OPTIONS.find(option => option.id === 'novel.oh-story')
-    const crucibleOption = WORKSPACE_CREATION_METHOD_OPTIONS.find(option => option.id === 'novel.crucible')
-    const creativeOption = WORKSPACE_CREATION_METHOD_OPTIONS.find(option => option.id === 'novel.creative-writing')
+    const screenplayOption = WORKSPACE_CREATION_METHOD_OPTIONS.find(option => option.id === 'screenplay.logic')
+    const freeCreationOption = WORKSPACE_CREATION_METHOD_OPTIONS.find(option => option.id === 'novel.free-creation')
     const shortFormOption = WORKSPACE_CREATION_METHOD_OPTIONS.find(option => option.id === 'short-form.article')
 
-    expect(novelOption?.fallbackTitle).toBe('Claude-Book 小说法')
-    expect(novelOption?.fallbackTitle).not.toContain('长篇')
+    expect(novelOption?.fallbackTitle).toBe('长文小说')
+    expect(novelOption?.fallbackTitle).not.toContain('Claude')
     expect(novelOption?.fallbackSubtitle).toMatch(/[\u4e00-\u9fff]/)
     expect(novelOption?.fallbackPreviewDescription).toContain('长篇小说')
     expect(novelOption?.fallbackPreviewMermaid).toContain('项目圣经')
-    expect(ohStoryOption?.fallbackTitle).toBe('Oh Story 网文连载法')
-    expect(crucibleOption?.fallbackTitle).toBe('Crucible 结构长篇法')
-    expect(creativeOption?.fallbackTitle).toBe('Creative Writing 技法工坊')
+    expect(screenplayOption?.fallbackTitle).toBe('剧本逻辑')
+    expect(screenplayOption?.fallbackPreviewDescription).toContain('分场')
+    expect(freeCreationOption?.fallbackTitle).toBe('自由创作')
+    expect(freeCreationOption?.fallbackPreviewDescription).toContain('不强塞结构')
     expect(shortFormOption?.fallbackTitle).toBe('短篇/中篇小说')
     expect(shortFormOption?.fallbackSubtitle).toContain('网文')
     expect(shortFormOption?.fallbackSubtitle).toContain('5,000-30,000')
@@ -137,20 +136,17 @@ describe('workspace creation method options', () => {
     expect(previews.map(preview => preview.accent)).toEqual([
       'neutral',
       'canon',
-      'market',
       'structure',
-      'craft',
+      'free',
     ])
     expect(previewAssets).toContain('timeline/')
-    expect(previewAssets).toContain('对标/')
-    expect(previewAssets).toContain('planning/')
-    expect(previewAssets).toContain('kb/')
+    expect(previewAssets).toContain('剧本/')
+    expect(previewAssets).toContain('项目说明.md')
     expect(previewAssets).toContain('简报.md')
     expect(previewAssets).not.toContain('黄金三章.md')
     expect(previews.some(preview => preview.structure.some(group => group.label === 'Canon 层'))).toBe(true)
-    expect(previews.some(preview => preview.structure.some(group => group.label === '市场层'))).toBe(true)
-    expect(previews.some(preview => preview.structure.some(group => group.label === '节拍治理'))).toBe(true)
-    expect(previews.some(preview => preview.structure.some(group => group.label === '工坊层'))).toBe(true)
+    expect(previews.some(preview => preview.structure.some(group => group.label === '剧本层'))).toBe(true)
+    expect(previews.some(preview => preview.structure.some(group => group.label === '自由层'))).toBe(true)
     expect(previews.some(preview => preview.structure.some(group => group.label === '长期约定'))).toBe(true)
   })
 
@@ -185,24 +181,17 @@ describe('workspace creation method options', () => {
     })
   })
 
-  it('maps the Oh Story choice to an explicit Method Pack request', () => {
-    expect(buildWorkspaceCreationOptions('novel.oh-story')).toEqual({
-      projectType: 'novel',
-      methodPackId: 'novel.oh-story',
+  it('maps the screenplay logic choice to an explicit Method Pack request', () => {
+    expect(buildWorkspaceCreationOptions('screenplay.logic')).toEqual({
+      projectType: 'screenplay',
+      methodPackId: 'screenplay.logic',
     })
   })
 
-  it('maps the Crucible choice to an explicit Method Pack request', () => {
-    expect(buildWorkspaceCreationOptions('novel.crucible')).toEqual({
+  it('maps the free creation choice to an explicit Method Pack request', () => {
+    expect(buildWorkspaceCreationOptions('novel.free-creation')).toEqual({
       projectType: 'novel',
-      methodPackId: 'novel.crucible',
-    })
-  })
-
-  it('maps the Creative Writing Skills choice to an explicit Method Pack request', () => {
-    expect(buildWorkspaceCreationOptions('novel.creative-writing')).toEqual({
-      projectType: 'novel',
-      methodPackId: 'novel.creative-writing',
+      methodPackId: 'novel.free-creation',
     })
   })
 

@@ -118,7 +118,7 @@ describe('workspace create RPC registration', () => {
     const slug = `craft-stale-default-${Date.now()}-${Math.random().toString(36).slice(2)}`
     const rootPath = join(homedir(), '.craft-agent', 'workspaces', slug)
     rmSync(rootPath, { recursive: true, force: true })
-    createNovelWorkspaceAtPath(rootPath, 'Old Book', undefined, 'novel.oh-story')
+    createNovelWorkspaceAtPath(rootPath, 'Old Book', undefined, 'novel.free-creation')
     const { createWorkspace, ctx } = createWorkspaceHarness()
 
     try {
@@ -129,7 +129,7 @@ describe('workspace create RPC registration', () => {
       }
       expect(manifest.methodPack?.id).toBe('novel.claude-book')
       expect(existsSync(join(rootPath, 'bible', 'style.md'))).toBe(true)
-      expect(existsSync(join(rootPath, '大纲', '大纲.md'))).toBe(false)
+      expect(existsSync(join(rootPath, '项目说明.md'))).toBe(false)
     } finally {
       rmSync(rootPath, { recursive: true, force: true })
     }
@@ -138,7 +138,7 @@ describe('workspace create RPC registration', () => {
   it('does not reinitialize an existing custom workspace folder when creating at an explicit path', async () => {
     createdWorkspaces.length = 0
     const rootPath = mkdtempSync(join(tmpdir(), 'craft-custom-stale-workspace-'))
-    createNovelWorkspaceAtPath(rootPath, 'Old Book', undefined, 'novel.oh-story')
+    createNovelWorkspaceAtPath(rootPath, 'Old Book', undefined, 'novel.free-creation')
     const { createWorkspace, ctx } = createWorkspaceHarness()
 
     try {
@@ -147,8 +147,8 @@ describe('workspace create RPC registration', () => {
       const manifest = JSON.parse(readFileSync(join(rootPath, 'craft-writing.json'), 'utf-8')) as {
         methodPack?: { id?: string }
       }
-      expect(manifest.methodPack?.id).toBe('novel.oh-story')
-      expect(existsSync(join(rootPath, '大纲', '大纲.md'))).toBe(true)
+      expect(manifest.methodPack?.id).toBe('novel.free-creation')
+      expect(existsSync(join(rootPath, '项目说明.md'))).toBe(true)
     } finally {
       rmSync(rootPath, { recursive: true, force: true })
     }

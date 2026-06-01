@@ -8,7 +8,7 @@ import {
 } from '@craft-agent/shared/workspaces'
 import { getBuiltInMethodPack, type MethodPackId } from '@craft-agent/shared/writing/method-packs'
 
-export type WorkspaceProjectType = 'general' | 'novel' | 'short-form'
+export type WorkspaceProjectType = 'general' | 'novel' | 'screenplay' | 'short-form'
 
 export interface CreateWorkspaceOptions {
   remoteServer?: RemoteServerConfig
@@ -47,6 +47,12 @@ export function normalizeCreateWorkspaceOptions(
       return {
         ...options,
         methodPackId: 'short-form.article',
+      }
+    }
+    if (options.projectType === 'screenplay') {
+      return {
+        ...options,
+        methodPackId: 'screenplay.logic',
       }
     }
     if (options.projectType !== 'novel') return options
@@ -110,6 +116,7 @@ export function ensureWorkspaceRootForProject(
 ): void {
   const methodPackId = options.methodPackId
     ?? (options.projectType === 'novel' ? 'novel.claude-book' : undefined)
+    ?? (options.projectType === 'screenplay' ? 'screenplay.logic' : undefined)
     ?? (options.projectType === 'short-form' ? 'short-form.article' : undefined)
   if (!methodPackId) return
 

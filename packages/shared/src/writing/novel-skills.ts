@@ -14,6 +14,7 @@ const ATTRIBUTION = "基于 Claude-Book 概念为 Craft Agent 改写。来源：
 const OH_STORY_ATTRIBUTION = "基于 oh-story-claudecode 概念为 Craft Agent 改写。来源：https://github.com/worldwonderer/oh-story-claudecode";
 const CRUCIBLE_ATTRIBUTION = "基于 The Crucible Writing System For Claude 概念为 Craft Agent 改写。来源：https://github.com/forsonny/The-Crucible-Writing-System-For-Claude";
 const CREATIVE_WRITING_ATTRIBUTION = "基于 creative-writing-skills 概念为 Craft Agent 改写。来源：https://github.com/haowjy/creative-writing-skills";
+const SCRIPT_LOGIC_ATTRIBUTION = "Storyflow 剧本逻辑配置";
 
 const CLAUDE_BOOK_SKILLS: Array<{ slug: string; content: string }> = [
   {
@@ -762,6 +763,35 @@ const CREATIVE_WRITING_SKILLS = [
   }),
 ];
 
+const SCRIPT_LOGIC_SKILLS = [
+  adapterSkill({
+    slug: "script-logic-planner",
+    title: "剧本逻辑规划",
+    metadataName: "剧本逻辑规划",
+    description: "用于把剧本前提转成分场大纲、人物行动线、因果链和冲突升级表。",
+    attribution: SCRIPT_LOGIC_ATTRIBUTION,
+    purpose: "在写对白或剧本正文前，确保每场戏都有目标、阻碍、转折、离场状态和下一场触发。",
+    context: [
+      "剧本/分场大纲.md 是场景契约。",
+      "逻辑/因果链.md 记录场景之间的原因、结果和信息变化。",
+      "逻辑/冲突升级.md 记录压力阶梯和兑现点。",
+      "对白草稿必须服务场景目的，不要只承担信息解释。",
+    ],
+    workflow: [
+      "抽取题材、片长或集数、主角目标、对抗力量、结局方向和关键场景。",
+      "把故事拆成场次，并为每场写入入场状态、场景目标、阻碍、转折和离场状态。",
+      "检查每场是否由前一场触发，避免靠巧合或作者硬推连接。",
+      "标记对白功能：隐瞒、施压、诱导、试探、决裂、和解或兑现。",
+      "把已接受结果更新到 剧本/分场大纲.md、逻辑/因果链.md 和 逻辑/冲突升级.md。",
+    ],
+    output: [
+      "分场大纲更新。",
+      "因果链和冲突升级检查。",
+      "可进入对白起草的下一场列表。",
+    ],
+  }),
+];
+
 const SHORT_FORM_ATTRIBUTION = "Craft Agent 短篇写作配置";
 const SHORT_FORM_SECTION_LABELS = {
   purpose: "用途",
@@ -895,6 +925,17 @@ export function getBundledNovelSkillFiles(methodPackId: MethodPackId = "novel.cl
       relativePath: `${skill.slug}/SKILL.md`,
       content: skill.content,
     }));
+  }
+
+  if (methodPackId === "screenplay.logic") {
+    return SCRIPT_LOGIC_SKILLS.map((skill) => ({
+      relativePath: `${skill.slug}/SKILL.md`,
+      content: skill.content,
+    }));
+  }
+
+  if (methodPackId === "novel.free-creation") {
+    return [];
   }
 
   return [
