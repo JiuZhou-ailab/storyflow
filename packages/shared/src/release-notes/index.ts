@@ -12,6 +12,13 @@ import { homedir } from 'os';
 import { existsSync, mkdirSync, writeFileSync, readdirSync, readFileSync } from 'fs';
 import { getBundledAssetsDir } from '../utils/paths.ts';
 import { debug } from '../utils/debug.ts';
+import {
+  createWhatsNewDigest,
+  deriveWhatsNewAccentColor,
+  type WhatsNewManifest,
+} from './whats-new.ts';
+
+export * from './whats-new.ts';
 
 const CONFIG_DIR = join(homedir(), '.craft-agent');
 const RELEASE_NOTES_DIR = join(CONFIG_DIR, 'release-notes');
@@ -138,6 +145,31 @@ export function getLatestReleaseVersion(): string | undefined {
   return list[0]?.version;
 }
 
+export function getLatestWhatsNewManifest(): WhatsNewManifest | undefined {
+  const latest = getReleaseNotesList()[0];
+  if (!latest) return undefined;
+
+  const content = latest.content.trimStart().startsWith('# ')
+    ? latest.content
+    : `# v${latest.version}\n\n${latest.content}`;
+  const digest = createWhatsNewDigest(content);
+  const accent = deriveWhatsNewAccentColor(digest);
+
+  return {
+    version: latest.version,
+    digest,
+    generatedAt: '',
+    title: `What is new in v${latest.version}`,
+    summary: extractReleaseSummary(content),
+    accentColor: accent.hex,
+    accentTextColor: accent.textColor,
+    source: {
+      commitCount: 0,
+      userVisibleCommitCount: 0,
+    },
+  };
+}
+
 /**
  * Get all release notes combined into a single markdown string.
  * Each version is separated by a horizontal rule.
@@ -151,4 +183,12 @@ export function getCombinedReleaseNotes(): string {
     }
     return n.content;
   }).join('\n\n---\n\n');
+}
+
+function extractReleaseSummary(content: string): string {
+  const line = content
+    .split('\n')
+    .map((item) => item.trim())
+    .find((item) => item && !item.startsWith('#') && !item.startsWith('-'));
+  return line ?? '查看本次更新中的新功能与修复。';
 }

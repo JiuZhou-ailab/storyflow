@@ -104,7 +104,8 @@ function shouldUploadFile(fileName: string): boolean {
     /^Storyflow-.+\.(dmg|zip|exe)$/.test(fileName) ||
     /^Storyflow-.+\.(dmg|zip|exe)\.blockmap$/.test(fileName) ||
     /^latest(?:-mac(?:-(?:arm64|x64))?)?\.yml$/.test(fileName) ||
-    /^install-app\.(?:sh|ps1)$/.test(fileName)
+    /^install-app\.(?:sh|ps1)$/.test(fileName) ||
+    fileName === "whats-new.json"
   );
 }
 
@@ -113,6 +114,7 @@ function contentTypeFor(fileName: string): string {
   if (fileName.endsWith(".zip")) return "application/zip";
   if (fileName.endsWith(".exe")) return "application/octet-stream";
   if (fileName.endsWith(".yml")) return "text/yaml; charset=utf-8";
+  if (fileName.endsWith(".json")) return "application/json; charset=utf-8";
   if (fileName.endsWith(".sh")) return "text/x-shellscript; charset=utf-8";
   if (fileName.endsWith(".ps1")) return "text/plain; charset=utf-8";
   return "application/octet-stream";

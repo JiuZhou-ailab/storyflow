@@ -113,6 +113,7 @@ export const CHANNEL_MAP = {
   // Release notes
   getReleaseNotes: invoke(RPC_CHANNELS.releaseNotes.GET),
   getLatestReleaseVersion: invoke(RPC_CHANNELS.releaseNotes.GET_LATEST_VERSION),
+  getWhatsNewManifest: invoke(RPC_CHANNELS.releaseNotes.GET_WHATS_NEW_MANIFEST),
 
   // Shell operations
   openUrl: invoke(RPC_CHANNELS.shell.OPEN_URL),

@@ -339,6 +339,7 @@ export const RPC_CHANNELS = {
   releaseNotes: {
     GET: 'releaseNotes:get',
     GET_LATEST_VERSION: 'releaseNotes:getLatestVersion',
+    GET_WHATS_NEW_MANIFEST: 'releaseNotes:getWhatsNewManifest',
   },
   git: {
     GET_BRANCH: 'git:getBranch',
