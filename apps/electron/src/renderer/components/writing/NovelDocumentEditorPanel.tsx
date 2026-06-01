@@ -60,6 +60,7 @@ export interface NovelDocumentEditorPanelProps {
   onRejectReviewChanges?: () => void
   onPreviousReviewFile?: () => void
   onNextReviewFile?: () => void
+  workspaceActions?: React.ReactNode
   className?: string
 }
 
@@ -81,6 +82,7 @@ export function NovelDocumentEditorPanel({
   onRejectReviewChanges,
   onPreviousReviewFile,
   onNextReviewFile,
+  workspaceActions,
   className,
 }: NovelDocumentEditorPanelProps) {
   const { t } = useTranslation()
@@ -142,6 +144,16 @@ export function NovelDocumentEditorPanel({
 
   return (
     <div className={cn('flex h-full min-w-0 flex-col bg-background', className)}>
+      {workspaceActions ? (
+        <div className="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-border/50 px-3">
+          <div className="min-w-0 truncate text-xs font-medium text-muted-foreground">
+            {formatNovelWorkspaceFileTitle(file, t)}
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {workspaceActions}
+          </div>
+        </div>
+      ) : null}
 
       {error ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">

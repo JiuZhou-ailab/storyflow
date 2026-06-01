@@ -105,7 +105,11 @@ import { OAuthFlowStore } from '@craft-agent/shared/auth'
 import { registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath, getMessagingGatewayLogFilePath, messagingGatewayLog } from './logger'
 import { setPerfEnabled, enableDebug } from '@craft-agent/shared/utils'
-import { resolveStartupWindowWorkspaceId } from './startup-window'
+import {
+  resolveActivateWindowWorkspaceId,
+  resolveStartupWindowWorkspaceId,
+  shouldRestoreWorkspaceWindowsOnOrdinaryStartup,
+} from './startup-window'
 import { registerPiModelResolver } from '@craft-agent/shared/config'
 import { getPiModelsForAuthProvider, getAllPiModels } from '@craft-agent/shared/config'
 import { initNotificationService, initBadgeIcon, initInstanceBadge, updateBadgeCount } from './notifications'
@@ -330,7 +334,7 @@ async function createInitialWindows(): Promise<void> {
 
   const validWorkspaceIds = workspaces.map(ws => ws.id)
 
-  if (savedState?.windows.length) {
+  if (savedState?.windows.length && shouldRestoreWorkspaceWindowsOnOrdinaryStartup({ savedWindowCount: savedState.windows.length })) {
     // Restore windows from saved state
     let restoredCount = 0
 
@@ -360,7 +364,7 @@ async function createInitialWindows(): Promise<void> {
   windowManager.createWindow({ workspaceId: startupWorkspaceId })
   mainLog.info(startupWorkspaceId
     ? `Created window for first workspace: ${workspaces[0].name}`
-    : 'Created first-run window without a workspace')
+    : 'Created project hub window without a workspace')
 }
 
 app.whenReady().then(async () => {
@@ -1170,18 +1174,8 @@ app.whenReady().then(async () => {
         isHeadless: mainStartupIsHeadless,
       })
     ) {
-      // Open first workspace or last focused
       const workspaces = getWorkspaces()
-      if (workspaces.length > 0) {
-        const savedState = loadWindowState()
-        const wsId = savedState?.lastFocusedWorkspaceId || workspaces[0].id
-        // Verify workspace still exists
-        if (workspaces.some(ws => ws.id === wsId)) {
-          windowManager.createWindow({ workspaceId: wsId })
-        } else {
-          windowManager.createWindow({ workspaceId: workspaces[0].id })
-        }
-      }
+      windowManager.createWindow({ workspaceId: resolveActivateWindowWorkspaceId(workspaces) })
     }
   })
 })

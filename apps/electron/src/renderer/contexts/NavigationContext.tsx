@@ -50,7 +50,7 @@ import {
 import { routes, type Route, type ViewRoute } from '../../shared/routes'
 import { parsePermissionMode } from '@craft-agent/shared/agent/mode-types'
 import { NAVIGATE_EVENT, type NavigateOptions } from '../lib/navigate'
-import { normalizePanelRouteForReconcile } from './navigation-reconcile'
+import { normalizePanelRouteForReconcile, shouldPreserveProjectLandingRoute } from './navigation-reconcile'
 import { buildSemanticHistoryKey, canRunInitialRestore } from './navigation-history'
 import * as storage from '@/lib/local-storage'
 import type {
@@ -401,6 +401,17 @@ export function NavigationProvider({
       const sidebarParam = params.get('sidebar') || undefined
       const panelsParam = params.get('panels')
       const focusedIndexParam = params.get('fi')
+      const shouldSkipAutoSelect = shouldPreserveProjectLandingRoute(params)
+      if (shouldSkipAutoSelect) {
+        suppressAutoSelectRef.current = true
+      }
+
+      const resolveForReconcile = (state: NavigationState, options?: { skipAutoSelect?: boolean }) => {
+        if (options?.skipAutoSelect) {
+          return resolveAutoSelectionRef.current(state, { skipAutoSelect: true })
+        }
+        return resolveAutoSelectionRef.current(state)
+      }
 
       // Restore right sidebar
       if (sidebarParam) {
@@ -427,12 +438,20 @@ export function NavigationProvider({
             const proportion = parseFloat(entry.slice(colonIdx + 1))
             if (!isNaN(proportion) && proportion > 0 && proportion < 1) {
               const rawRoute = entry.slice(0, colonIdx) as ViewRoute
-              const route = normalizePanelRouteForReconcile(rawRoute, (state) => resolveAutoSelectionRef.current(state))
+              const route = normalizePanelRouteForReconcile(
+                rawRoute,
+                resolveForReconcile,
+                shouldSkipAutoSelect ? { skipAutoSelect: true } : undefined
+              )
               return { route, proportion }
             }
           }
           const rawRoute = entry as ViewRoute
-          const route = normalizePanelRouteForReconcile(rawRoute, (state) => resolveAutoSelectionRef.current(state))
+          const route = normalizePanelRouteForReconcile(
+            rawRoute,
+            resolveForReconcile,
+            shouldSkipAutoSelect ? { skipAutoSelect: true } : undefined
+          )
           return { route, proportion: 0 }
         })
 
@@ -452,9 +471,15 @@ export function NavigationProvider({
         // Single panel from ?route=
         const navState = parseRouteToNavigationState(initialRoute)
         if (navState) {
-          const finalRoute = ('details' in navState && navState.details)
-            ? (initialRoute as ViewRoute)
-            : (buildRouteFromNavigationState(resolveAutoSelectionRef.current(navState)) as ViewRoute)
+          let finalRoute: ViewRoute
+          if ('details' in navState && navState.details) {
+            finalRoute = initialRoute as ViewRoute
+          } else {
+            finalRoute = buildRouteFromNavigationState(resolveForReconcile(
+              navState,
+              shouldSkipAutoSelect ? { skipAutoSelect: true } : undefined
+            )) as ViewRoute
+          }
           entries = [{ route: finalRoute, proportion: 1 }]
         }
       }
@@ -1060,7 +1085,7 @@ export function NavigationProvider({
 
     // If nothing was in the URL, navigate to default
     if (!params.get('route') && !params.get('panels')) {
-      navigate(routes.view.allSessions())
+      navigate(routes.view.allSessions(), { skipAutoSelect: true })
     }
 
     // Initialize history with seq=0 (replaceState so we don't create an extra entry)

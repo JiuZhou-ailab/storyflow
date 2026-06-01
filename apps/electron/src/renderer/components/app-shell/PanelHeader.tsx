@@ -103,10 +103,10 @@ export function PanelHeader({
       initial={false}
       animate={{ opacity: title ? 1 : 0 }}
       transition={{ duration: 0.15 }}
-      className="flex items-center gap-1"
+      className="flex min-w-0 items-center justify-center gap-1"
     >
       <h1 className={cn(
-        "text-sm font-semibold truncate font-sans leading-tight",
+        "min-w-0 truncate text-center text-[13px] font-medium leading-none",
         isRegeneratingTitle && "animate-shimmer-text"
       )}>{title}</h1>
       {badge}
@@ -126,9 +126,10 @@ export function PanelHeader({
             <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
               {/* Wrapper button for the whole clickable area */}
               <button
+                type="button"
                 onClick={() => setDropdownOpen(true)}
                 className={cn(
-                  "flex items-center gap-1 px-2 py-1 rounded-md titlebar-no-drag min-w-0",
+                  "flex h-7 max-w-full items-center justify-center gap-1 rounded-md px-2 titlebar-no-drag min-w-0",
                   "hover:bg-foreground/[0.03] transition-colors",
                   "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                   dropdownOpen && "bg-foreground/[0.03]"
@@ -138,7 +139,7 @@ export function PanelHeader({
                 {/* Chevron is the actual trigger anchor point */}
                 <DropdownMenuTrigger asChild>
                   <span className="shrink-0 flex items-center justify-center">
-                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground translate-y-[1px]" />
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
                   </span>
                 </DropdownMenuTrigger>
               </button>

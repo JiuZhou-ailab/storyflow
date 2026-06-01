@@ -8,7 +8,6 @@ import { useRef, useState, useEffect, useCallback, useMemo } from "react"
 import { useAtomValue, useStore } from "jotai"
 import { motion, AnimatePresence } from "motion/react"
 import {
-  Settings,
   ChevronRight,
   ChevronDown,
   MoreHorizontal,
@@ -21,8 +20,6 @@ import {
   Search,
   Plus,
   Trash2,
-  DatabaseZap,
-  Zap,
   Inbox,
   Cake,
   Calendar,
@@ -44,6 +41,8 @@ import {
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
 import { TopBar } from "./TopBar"
+import { ActivityRail } from "./ActivityRail"
+import { ACTIVITY_RAIL_WIDTH, type ActivityRailItemId } from "./ActivityRail"
 import { FirstRunTour } from "./FirstRunTour"
 import { GlobalSearchDialog } from "./GlobalSearchDialog"
 import { McpIcon } from "../icons/McpIcon"
@@ -92,7 +91,7 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
-import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange } from "../../../shared/types"
+import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange, WhatsNewManifest } from "../../../shared/types"
 import { ensureSessionMessagesLoadedAtom, sessionAtomFamily, sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
@@ -214,6 +213,12 @@ interface AppShellProps {
   menuNewChatTrigger?: number
   /** Focused mode - hides sidebars, shows only the chat content */
   isFocusedMode?: boolean
+  /** Monotonic signal for opening global search after entering the ready shell */
+  openGlobalSearchSignal?: number
+  /** Open the global project management hub */
+  onOpenProjectHub?: () => void
+  /** Open the account and points center */
+  onOpenAccount?: () => void
 }
 
 function isNovelReviewUndoShortcut(event: KeyboardEvent): boolean {
@@ -246,6 +251,37 @@ interface NovelCreateFileTarget {
 interface NovelWorkspaceBriefPreparation {
   shouldSend: boolean
   brief?: string
+}
+
+interface WhatsNewNotificationState {
+  deliveries: Array<{ digest: string; deliveredAt: number }>
+}
+
+function getWhatsNewNotificationDecision(
+  state: WhatsNewNotificationState,
+  digest: string,
+  now: number,
+): { shouldNotify: boolean; nextState: WhatsNewNotificationState } {
+  const day = getLocalDayKey(now)
+  const todaysDeliveries = state.deliveries.filter((delivery) => getLocalDayKey(delivery.deliveredAt) === day)
+  if (todaysDeliveries.some((delivery) => delivery.digest === digest) || todaysDeliveries.length >= 2) {
+    return { shouldNotify: false, nextState: { deliveries: todaysDeliveries } }
+  }
+  return {
+    shouldNotify: true,
+    nextState: {
+      deliveries: [...todaysDeliveries, { digest, deliveredAt: now }],
+    },
+  }
+}
+
+function getLocalDayKey(timestamp: number): string {
+  const date = new Date(timestamp)
+  return [
+    date.getFullYear(),
+    `${date.getMonth() + 1}`.padStart(2, '0'),
+    `${date.getDate()}`.padStart(2, '0'),
+  ].join('-')
 }
 
 const altClickTooltipLabel = isMac ? '⌥ click to exclude' : 'Alt click to exclude'
@@ -432,77 +468,6 @@ function AltExcludeTooltip({ show, children }: { show: boolean; children: React.
       <TooltipContent side="right" className="text-xs">{altClickTooltipLabel}</TooltipContent>
     </Tooltip>
   )
-}
-
-function NovelWorkspaceUtilityTopNav({
-  links,
-  getItemProps,
-  focusedItemId,
-}: {
-  links: LeftSidebarItem[]
-  getItemProps?: (id: string) => {
-    tabIndex: number
-    'data-focused': boolean
-    ref: (el: HTMLElement | null) => void
-  }
-  focusedItemId?: string | null
-}) {
-  const items = links.filter((item): item is LeftSidebarLinkItem => !('type' in item))
-  if (items.length === 0) return null
-
-  return (
-    <nav className="shrink-0" aria-label="Workspace tools">
-      <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
-        {items.map((item) => {
-          const itemProps = getItemProps?.(item.id)
-          const isFocused = focusedItemId === item.id
-          return (
-            <button
-              key={item.id}
-              {...(() => {
-                const { ref: _ref, ...rest } = itemProps || { ref: undefined }
-                return rest
-              })()}
-              ref={(el) => itemProps?.ref(el)}
-              type="button"
-              title={item.tooltip ?? item.title}
-              data-focused={isFocused || undefined}
-              onClick={item.onClick}
-              className={cn(
-                'flex h-[28px] min-w-0 shrink-0 items-center gap-1.5 rounded-[6px] px-2 text-xs outline-none transition-colors',
-                'focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring',
-                item.variant === 'default'
-                  ? 'bg-foreground/[0.08] text-foreground'
-                  : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground'
-              )}
-            >
-              <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center [&>svg]:h-3.5 [&>svg]:w-3.5">
-                {renderNovelUtilityIcon(item.icon)}
-              </span>
-              <span className="truncate">{item.title}</span>
-              {item.label ? (
-                <span className="ml-0.5 rounded-[4px] bg-foreground/[0.06] px-1 text-[10px] text-muted-foreground">
-                  {item.label}
-                </span>
-              ) : null}
-            </button>
-          )
-        })}
-      </div>
-    </nav>
-  )
-}
-
-function renderNovelUtilityIcon(icon: LeftSidebarLinkItem['icon']) {
-  const isComponent = typeof icon === 'function' ||
-    (typeof icon === 'object' && icon !== null && 'render' in icon)
-
-  if (isComponent) {
-    const Icon = icon as React.ComponentType<{ className?: string }>
-    return <Icon className="h-3.5 w-3.5" />
-  }
-
-  return icon
 }
 
 /**
@@ -824,6 +789,9 @@ function AppShellContent({
   defaultCollapsed = false,
   menuNewChatTrigger,
   isFocusedMode = false,
+  openGlobalSearchSignal = 0,
+  onOpenProjectHub,
+  onOpenAccount,
 }: AppShellProps) {
   // Destructure commonly used values from context
   // Note: sessions is NOT destructured here - we use sessionMetaMapAtom instead
@@ -846,7 +814,6 @@ function AppShellContent({
     onRenameSession,
     onOpenSettings,
     onOpenKeyboardShortcuts,
-    onOpenStoredUserPreferences,
     onReset,
     onSendMessage,
     onOpenFile,
@@ -894,14 +861,33 @@ function AppShellContent({
   // What's New overlay
   const [showWhatsNew, setShowWhatsNew] = React.useState(false)
   const [releaseNotesContent, setReleaseNotesContent] = React.useState('')
+  const [whatsNewManifest, setWhatsNewManifest] = React.useState<WhatsNewManifest | null>(null)
   const [hasUnseenReleaseNotes, setHasUnseenReleaseNotes] = React.useState(false)
 
   // Check for unseen release notes on mount
   useEffect(() => {
-    window.electronAPI.getLatestReleaseVersion().then((latestVersion) => {
-      if (!latestVersion) return
-      const lastSeen = storage.get(storage.KEYS.whatsNewLastSeenVersion, '')
-      setHasUnseenReleaseNotes(lastSeen !== latestVersion)
+    window.electronAPI.getWhatsNewManifest().then((manifest) => {
+      if (!manifest) return
+      setWhatsNewManifest(manifest)
+      const lastSeenDigest = storage.get(storage.KEYS.whatsNewLastSeenDigest, '')
+      const lastSeenVersion = storage.get(storage.KEYS.whatsNewLastSeenVersion, '')
+      const unseen = lastSeenDigest ? lastSeenDigest !== manifest.digest : lastSeenVersion !== manifest.version
+      setHasUnseenReleaseNotes(unseen)
+
+      if (!unseen) return
+      const notificationState = storage.get<WhatsNewNotificationState>(
+        storage.KEYS.whatsNewNotificationState,
+        { deliveries: [] },
+      )
+      const notificationDecision = getWhatsNewNotificationDecision(notificationState, manifest.digest, Date.now())
+      if (!notificationDecision.shouldNotify) return
+
+      storage.set(storage.KEYS.whatsNewNotificationState, notificationDecision.nextState)
+      toast.info('发现新版本更新', {
+        id: `whats-new-${manifest.digest}`,
+        description: manifest.summary,
+        duration: 8000,
+      })
     })
   }, [])
 
@@ -916,7 +902,7 @@ function AppShellContent({
   const latestNovelWorkspaceNavigatorWidthRef = React.useRef(novelWorkspaceNavigatorWidth)
   const [session, setSession] = useSession()
   const { resolvedMode, isDark, setMode } = useTheme()
-  const { canGoBack, canGoForward, goBack, goForward, navigateToSource, navigateToSession } = useNavigation()
+  const { goBack, goForward, navigateToSource, navigateToSession } = useNavigation()
 
   // Double-Esc interrupt feature: first Esc shows warning, second Esc interrupts
   const { handleEscapePress } = useEscapeInterrupt()
@@ -1059,6 +1045,12 @@ function AppShellContent({
   const [searchActive, setSearchActive] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
   const [globalSearchOpen, setGlobalSearchOpen] = React.useState(false)
+
+  React.useEffect(() => {
+    if (openGlobalSearchSignal > 0) {
+      setGlobalSearchOpen(true)
+    }
+  }, [openGlobalSearchSignal])
 
   // Grouping mode for chat list: per-view (stored in viewFiltersMap), forced to 'date' for state sub-views
   const isStateSubView = sessionFilter?.kind === 'state'
@@ -1727,8 +1719,8 @@ function AppShellContent({
     return (pendingPermissions.get(sessionId)?.length ?? 0) > 0
   }, [pendingPermissions])
 
-  // Workspace-level unread indicators (needed for workspace selectors across all workspaces)
-  const [workspaceUnreadMap, setWorkspaceUnreadMap] = useState<Record<string, boolean>>({})
+  // Workspace-level unread indicators are still kept fresh for legacy workspace selector surfaces.
+  const [, setWorkspaceUnreadMap] = useState<Record<string, boolean>>({})
 
   // Reload skills when active session's workingDirectory changes (for project-level skills)
   // Skills are loaded from: global (~/.agents/skills/), workspace, and project ({workingDirectory}/.agents/skills/)
@@ -3350,23 +3342,6 @@ function AppShellContent({
     navigate(routes.view.skills())
   }, [])
 
-  // Handlers for automations view
-  const handleAutomationsClick = useCallback(() => {
-    navigate(routes.view.automations())
-  }, [])
-
-  const handleAutomationsScheduledClick = useCallback(() => {
-    navigate(routes.view.automationsScheduled())
-  }, [])
-
-  const handleAutomationsEventClick = useCallback(() => {
-    navigate(routes.view.automationsEvent())
-  }, [])
-
-  const handleAutomationsAgenticClick = useCallback(() => {
-    navigate(routes.view.automationsAgentic())
-  }, [])
-
   // Handler for settings view
   const handleSettingsClick = useCallback((subpage: SettingsSubpage = 'app') => {
     navigate(routes.view.settings(subpage))
@@ -3379,11 +3354,18 @@ function AppShellContent({
     setShowWhatsNew(true)
     setHasUnseenReleaseNotes(false)
     // Update last seen version
-    const latestVersion = await window.electronAPI.getLatestReleaseVersion()
-    if (latestVersion) {
-      storage.set(storage.KEYS.whatsNewLastSeenVersion, latestVersion)
+    const manifest = whatsNewManifest ?? await window.electronAPI.getWhatsNewManifest()
+    if (manifest) {
+      setWhatsNewManifest(manifest)
+      storage.set(storage.KEYS.whatsNewLastSeenDigest, manifest.digest)
+      storage.set(storage.KEYS.whatsNewLastSeenVersion, manifest.version)
+    } else {
+      const latestVersion = await window.electronAPI.getLatestReleaseVersion()
+      if (latestVersion) {
+        storage.set(storage.KEYS.whatsNewLastSeenVersion, latestVersion)
+      }
     }
-  }, [])
+  }, [whatsNewManifest])
 
   // Create a new chat and select it
   const handleNewChat = useCallback((newPanel: boolean = false) => {
@@ -3697,69 +3679,6 @@ function AppShellContent({
     toggleExpanded,
   ])
 
-  const novelWorkspaceUtilitySidebarLinks = React.useMemo((): LeftSidebarItem[] => {
-    if (!showNovelWorkspaceSidebar) return []
-
-    return [
-      {
-        id: "nav:sources",
-        title: t("sidebar.sources"),
-        label: String(sources.length),
-        icon: DatabaseZap,
-        variant: (isSourcesNavigation(navState) && !sourceFilter) ? "default" : "ghost",
-        onClick: handleSourcesClick,
-        dataTutorial: "sources-nav",
-      },
-      {
-        id: "nav:skills",
-        title: t("sidebar.skills"),
-        label: String(skills.length),
-        icon: Zap,
-        variant: isSkillsNavigation(navState) ? "default" : "ghost",
-        onClick: handleSkillsClick,
-        dataTutorial: "skills-nav",
-      },
-      {
-        id: "nav:automations",
-        title: t("sidebar.automations"),
-        label: String(automations.length),
-        icon: ListTodo,
-        variant: (isAutomationsNavigation(navState) && !automationFilter) ? "default" : "ghost",
-        onClick: handleAutomationsClick,
-        dataTutorial: "automations-nav",
-      },
-      { id: "separator:writing-settings", type: "separator" },
-      {
-        id: "nav:settings",
-        title: t("sidebar.settings"),
-        icon: Settings,
-        variant: isSettingsNavigation(navState) ? "default" : "ghost",
-        onClick: () => handleSettingsClick('app'),
-        dataTutorial: "settings-nav",
-      },
-      {
-        id: "nav:writing-version",
-        title: t('writing.version.title', '版本管理'),
-        icon: History,
-        variant: "ghost" as const,
-        onClick: () => setNovelVersionDialogOpen(true),
-      },
-    ]
-  }, [
-    automationFilter,
-    automations.length,
-    handleAutomationsClick,
-    handleSettingsClick,
-    handleSkillsClick,
-    handleSourcesClick,
-    navState,
-    showNovelWorkspaceSidebar,
-    skills.length,
-    sourceFilter,
-    sources.length,
-    t,
-  ])
-
   const primarySidebarLinks = React.useMemo(
     () => {
       const links = getPrimarySidebarLinks(novelWorkspaceSidebarLinks)
@@ -3776,6 +3695,16 @@ function AppShellContent({
     [novelWorkspaceSidebarLinks, showNovelWorkspacePending, showNovelWorkspaceUnavailable, t]
   )
   const hasPrimarySidebar = primarySidebarLinks.length > 0
+  const showPrimarySidebar = hasPrimarySidebar && isSessionsNavigation(navState)
+  const showActivityRail = !isSidebarAndNavigatorHidden
+  const activityRailOffset = showActivityRail ? ACTIVITY_RAIL_WIDTH : 0
+  const activeActivityRailItem = React.useMemo<ActivityRailItemId>(() => {
+    if (globalSearchOpen) return 'search'
+    if (isSourcesNavigation(navState)) return 'sources'
+    if (isSkillsNavigation(navState)) return 'skills'
+    if (isSettingsNavigation(navState) || isAutomationsNavigation(navState)) return 'settings'
+    return 'writing'
+  }, [globalSearchOpen, navState])
 
   // Unified sidebar items: nav buttons only (agents system removed)
   type SidebarItem = {
@@ -3802,16 +3731,11 @@ function AppShellContent({
           }
         }
       }
-      result.push({ id: 'nav:sources', type: 'nav', action: handleSourcesClick })
-      result.push({ id: 'nav:skills', type: 'nav', action: handleSkillsClick })
-      result.push({ id: 'nav:automations', type: 'nav', action: handleAutomationsClick })
-      result.push({ id: 'nav:settings', type: 'nav', action: () => handleSettingsClick('app') })
-      result.push({ id: 'nav:writing-version', type: 'nav', action: () => setNovelVersionDialogOpen(true) })
       return result
     }
 
     return result
-  }, [handleAutomationsClick, handleSettingsClick, handleSkillsClick, handleSourcesClick, primarySidebarLinks])
+  }, [primarySidebarLinks])
 
   // Toggle folder expanded state
   const handleToggleFolder = React.useCallback((path: string) => {
@@ -3969,51 +3893,6 @@ function AppShellContent({
         <TopBar
           workspaces={workspaces}
           activeWorkspaceId={activeWorkspaceId}
-          onSelectWorkspace={onSelectWorkspace}
-          workspaceUnreadMap={workspaceUnreadMap}
-          onWorkspaceCreated={(workspace) => onWorkspaceCreated?.(workspace) ?? onRefreshWorkspaces?.()}
-          onWorkspaceRemoved={() => onRefreshWorkspaces?.()}
-          activeSessionId={effectiveSessionId}
-          onNewChat={() => handleNewChat()}
-          onNewWindow={() => window.electronAPI.menuNewWindow()}
-          onOpenSettings={onOpenSettings}
-          onOpenSettingsSubpage={handleSettingsClick}
-          onOpenKeyboardShortcuts={onOpenKeyboardShortcuts}
-          onOpenStoredUserPreferences={onOpenStoredUserPreferences}
-          onBack={goBack}
-          onForward={goForward}
-          canGoBack={canGoBack}
-          canGoForward={canGoForward}
-          onToggleSidebar={handleToggleSidebar}
-          onToggleFocusMode={() => setIsSidebarAndNavigatorHidden(prev => !prev)}
-          onAddSessionPanel={() => handleNewChat(true)}
-          onAddBrowserPanel={() => { void handleNewBrowserWindow() }}
-          onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
-          workspaceTools={showNovelWorkspaceSidebar ? (
-            <NovelWorkspaceUtilityTopNav
-              links={novelWorkspaceUtilitySidebarLinks}
-              getItemProps={getSidebarItemProps}
-              focusedItemId={focusedSidebarItemId}
-            />
-          ) : undefined}
-          rightTools={showNovelWorkspaceSidebar ? (
-            <div className="flex items-center gap-1">
-              <HeaderIconButton
-                icon={<History className="h-4 w-4" />}
-                tooltip={t('writing.version.title', '版本管理')}
-                disabled={!novelWorkspaceRoot}
-                onClick={() => setNovelVersionDialogOpen(true)}
-                className="h-[26px] w-[26px] rounded-lg"
-              />
-              <HeaderIconButton
-                icon={<Download className="h-4 w-4" />}
-                tooltip={t('writing.export.action', '导出')}
-                disabled={novelWorkspaceFiles.length === 0}
-                onClick={() => setNovelExportDialogOpen(true)}
-                className="h-[26px] w-[26px] rounded-lg"
-              />
-            </div>
-          ) : undefined}
           isCompact={isAutoCompact}
         />
 
@@ -4022,8 +3901,27 @@ function AppShellContent({
         ref={shellRef}
         onMouseDownCapture={handleNavigatorResizeBoundaryMouseDownCapture}
         className="flex items-stretch relative"
-        style={{ height: '100%', paddingRight: PANEL_EDGE_INSET, paddingBottom: PANEL_EDGE_INSET, paddingLeft: 0, gap: PANEL_GAP }}
+        style={{ height: '100%', paddingRight: PANEL_EDGE_INSET, paddingBottom: PANEL_EDGE_INSET, paddingLeft: 0, gap: showActivityRail ? 0 : PANEL_GAP }}
       >
+        {showActivityRail ? (
+          <ActivityRail
+            activeItem={activeActivityRailItem}
+            onOpenProjectHub={onOpenProjectHub}
+            onOpenWritingWorkspace={handleAllSessionsClick}
+            onOpenSources={handleSourcesClick}
+            onOpenSkills={handleSkillsClick}
+            onOpenSearch={() => setGlobalSearchOpen(true)}
+            onOpenSettings={() => handleSettingsClick('app')}
+            onOpenAccount={onOpenAccount}
+            onOpenWhatsNew={handleWhatsNewClick}
+            whatsNew={{
+              unseen: hasUnseenReleaseNotes,
+              accentColor: whatsNewManifest?.accentColor,
+              textColor: whatsNewManifest?.accentTextColor,
+            }}
+          />
+        ) : null}
+
         <PanelStackContainer
           sidebarSlot={
             <div
@@ -4054,7 +3952,7 @@ function AppShellContent({
             </div>
           </div>
           }
-          sidebarWidth={effectiveSidebarAndNavigatorHidden ? 0 : (isSidebarVisible && hasPrimarySidebar ? sidebarWidth : 0)}
+          sidebarWidth={effectiveSidebarAndNavigatorHidden ? 0 : (isSidebarVisible && showPrimarySidebar ? sidebarWidth : 0)}
           navigatorSlot={
             <div
               ref={navigatorPanelRef}
@@ -4080,6 +3978,24 @@ function AppShellContent({
                 onRejectReviewChanges={selectedNovelPendingChanges.length > 0 ? () => { void handleRejectNovelFileChanges(selectedNovelPendingChanges) } : undefined}
                 onPreviousReviewFile={() => { void handleSelectAdjacentNovelChangeFile('previous') }}
                 onNextReviewFile={() => { void handleSelectAdjacentNovelChangeFile('next') }}
+                workspaceActions={(
+                  <>
+                    <HeaderIconButton
+                      icon={<History className="h-4 w-4" />}
+                      tooltip={t('writing.version.title', '版本管理')}
+                      disabled={!novelWorkspaceRoot}
+                      onClick={() => setNovelVersionDialogOpen(true)}
+                      className="h-[26px] w-[26px] rounded-lg"
+                    />
+                    <HeaderIconButton
+                      icon={<Download className="h-4 w-4" />}
+                      tooltip={t('writing.export.action', '导出')}
+                      disabled={novelWorkspaceFiles.length === 0}
+                      onClick={() => setNovelExportDialogOpen(true)}
+                      className="h-[26px] w-[26px] rounded-lg"
+                    />
+                  </>
+                )}
               />
             ) : showNovelWorkspacePending ? (
               <div className="flex h-full flex-col">
@@ -4884,11 +4800,11 @@ function AppShellContent({
           isRightSidebarVisible={false}
           isCompact={isAutoCompact}
           isResizing={!!isResizing}
-          hidePanelCloseButton={hasPrimarySidebar}
+          hidePanelCloseButton={showPrimarySidebar}
         />
 
         {/* Sidebar Resize Handle (absolute, hidden in focused mode) */}
-        {!effectiveSidebarAndNavigatorHidden && hasPrimarySidebar && (
+        {!effectiveSidebarAndNavigatorHidden && showPrimarySidebar && (
         <div
           ref={resizeHandleRef}
           role="separator"
@@ -4907,8 +4823,8 @@ function AppShellContent({
             top: PANEL_STACK_VERTICAL_OVERFLOW,
             bottom: PANEL_STACK_VERTICAL_OVERFLOW,
             left: isSidebarVisible
-              ? sidebarWidth + (PANEL_GAP / 2) - PANEL_SASH_HALF_HIT_WIDTH
-              : -PANEL_GAP,
+              ? activityRailOffset + sidebarWidth + (PANEL_GAP / 2) - PANEL_SASH_HALF_HIT_WIDTH
+              : activityRailOffset - PANEL_GAP,
             transition: isResizing === 'sidebar' ? undefined : 'left 0.15s ease-out',
           }}
         >

@@ -2,7 +2,20 @@ import { buildRouteFromNavigationState, parseRouteToNavigationState } from '../.
 import type { ViewRoute } from '../../shared/routes'
 import type { NavigationState } from '../../shared/types'
 
-export type AutoSelectionResolver = (state: NavigationState) => NavigationState
+export interface AutoSelectionOptions {
+  skipAutoSelect?: boolean
+}
+
+export type AutoSelectionResolver = (
+  state: NavigationState,
+  options?: AutoSelectionOptions
+) => NavigationState
+
+export function shouldPreserveProjectLandingRoute(params: URLSearchParams): boolean {
+  if (params.get('panels')) return false
+  const route = params.get('route')
+  return !route || route === 'allSessions'
+}
 
 /**
  * Normalize a panel route during URL reconciliation.
@@ -14,6 +27,7 @@ export type AutoSelectionResolver = (state: NavigationState) => NavigationState
 export function normalizePanelRouteForReconcile(
   route: ViewRoute,
   resolveAutoSelection: AutoSelectionResolver,
+  options?: AutoSelectionOptions,
 ): ViewRoute {
   const navState = parseRouteToNavigationState(route)
   if (!navState) return route
@@ -24,6 +38,6 @@ export function normalizePanelRouteForReconcile(
     return route
   }
 
-  const resolved = resolveAutoSelection(navState)
+  const resolved = resolveAutoSelection(navState, options)
   return buildRouteFromNavigationState(resolved) as ViewRoute
 }

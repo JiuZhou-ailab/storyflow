@@ -367,19 +367,25 @@ describe('novel writing workspace layout', () => {
     expect(chatPageSource).not.toContain('WritingChatDropdown')
   })
 
-  it('moves global workspace tools into the workspace header top bar', () => {
+  it('moves primary workspace navigation into the left activity rail', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
-    const topBarSource = readFileSync(new URL('../../app-shell/TopBar.tsx', import.meta.url), 'utf-8')
+    const activityRailSource = readFileSync(new URL('../../app-shell/ActivityRail.tsx', import.meta.url), 'utf-8')
 
-    expect(appShellSource).toContain('novelWorkspaceUtilitySidebarLinks')
-    expect(appShellSource).toContain('workspaceTools={showNovelWorkspaceSidebar ? (')
-    expect(topBarSource).toContain('workspaceTools?: React.ReactNode')
-    expect(topBarSource).toContain('{workspaceTools ? (')
-    expect(appShellSource).toContain('nav:sources')
-    expect(appShellSource).toContain('nav:skills')
-    expect(appShellSource).toContain('nav:settings')
+    expect(appShellSource).toContain('<ActivityRail')
+    expect(appShellSource).toContain('activeItem={activeActivityRailItem}')
+    expect(appShellSource).toContain('onOpenWritingWorkspace={handleAllSessionsClick}')
+    expect(appShellSource).toContain('onOpenSources={handleSourcesClick}')
+    expect(appShellSource).toContain('onOpenSkills={handleSkillsClick}')
+    expect(appShellSource).toContain("onOpenSettings={() => handleSettingsClick('app')}")
+    expect(activityRailSource).toContain('label="写作工作区"')
+    expect(activityRailSource).toContain('label="数据源"')
+    expect(activityRailSource).toContain('label="技能"')
+    expect(activityRailSource).toContain('label="设置"')
     expect(appShellSource).toContain('getPrimarySidebarLinks(novelWorkspaceSidebarLinks)')
     expect(appShellSource).toContain('links={primarySidebarLinks}')
+    expect(appShellSource).not.toContain('novelWorkspaceUtilitySidebarLinks')
+    expect(appShellSource).not.toContain('workspaceTools={showNovelWorkspaceSidebar ? (')
+    expect(appShellSource).not.toContain('rightTools={showNovelWorkspaceSidebar ? (')
     expect(appShellSource).not.toContain('links={showNovelWorkspaceSidebar ? novelWorkspaceSidebarLinks : [')
     expect(appShellSource).not.toContain('[...novelWorkspaceUtilitySidebarLinks, ...novelWorkspaceSidebarLinks]')
   })
@@ -388,7 +394,7 @@ describe('novel writing workspace layout', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const sidebarSource = appShellSource.slice(
       appShellSource.indexOf('const novelWorkspaceSidebarLinks'),
-      appShellSource.indexOf('const novelWorkspaceUtilitySidebarLinks')
+      appShellSource.indexOf('const primarySidebarLinks')
     )
 
     expect(sidebarSource).toContain("id: 'writing:group:global'")
@@ -419,7 +425,7 @@ describe('novel writing workspace layout', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const sidebarSource = appShellSource.slice(
       appShellSource.indexOf('const novelWorkspaceSidebarLinks'),
-      appShellSource.indexOf('const novelWorkspaceUtilitySidebarLinks')
+      appShellSource.indexOf('const primarySidebarLinks')
     )
 
     expect(appShellSource).toContain('novelCreateFileTarget')
@@ -449,23 +455,22 @@ describe('novel writing workspace layout', () => {
 
   it('uses current novel project history instead of global release notes in novel utility navigation', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
-    const novelUtilityLinksSource = appShellSource.slice(
-      appShellSource.indexOf('const novelWorkspaceUtilitySidebarLinks'),
-      appShellSource.indexOf('const primarySidebarLinks')
-    )
     const novelKeyboardItemsSource = appShellSource.slice(
       appShellSource.indexOf('const unifiedSidebarItems'),
       appShellSource.indexOf('// Toggle folder expanded state')
     )
+    const novelWorkspaceActionsSource = appShellSource.slice(
+      appShellSource.indexOf('workspaceActions={('),
+      appShellSource.indexOf('</NovelDocumentEditorPanel>', appShellSource.indexOf('workspaceActions={('))
+    )
 
-    expect(novelUtilityLinksSource).toContain('nav:writing-version')
-    expect(novelUtilityLinksSource).toContain("t('writing.version.title', '版本管理')")
-    expect(novelUtilityLinksSource).toContain('setNovelVersionDialogOpen(true)')
-    expect(novelUtilityLinksSource).not.toContain('nav:whats-new')
-    expect(novelUtilityLinksSource).not.toContain('handleWhatsNewClick')
-    expect(novelKeyboardItemsSource).toContain("result.push({ id: 'nav:writing-version'")
-    expect(novelKeyboardItemsSource).toContain('setNovelVersionDialogOpen(true)')
+    expect(appShellSource).not.toContain('nav:writing-version')
+    expect(appShellSource).not.toContain('nav:whats-new')
+    expect(novelWorkspaceActionsSource).not.toContain('handleWhatsNewClick')
+    expect(novelKeyboardItemsSource).not.toContain("result.push({ id: 'nav:writing-version'")
     expect(novelKeyboardItemsSource).not.toContain("result.push({ id: 'nav:whats-new'")
+    expect(novelWorkspaceActionsSource).toContain("tooltip={t('writing.version.title', '版本管理')}")
+    expect(novelWorkspaceActionsSource).toContain('setNovelVersionDialogOpen(true)')
   })
 
   it('exposes every selectable writing file section in the left catalog', () => {
@@ -484,11 +489,8 @@ describe('novel writing workspace layout', () => {
     const exportDialogSource = readFileSync(new URL('../NovelExportDialog.tsx', import.meta.url), 'utf-8')
     const versionDialogSource = readFileSync(new URL('../NovelVersionHistoryDialog.tsx', import.meta.url), 'utf-8')
     const topBarSource = readFileSync(new URL('../../app-shell/TopBar.tsx', import.meta.url), 'utf-8')
+    const editorPanelSource = readFileSync(new URL('../NovelDocumentEditorPanel.tsx', import.meta.url), 'utf-8')
     const zhHansLocale = JSON.parse(readFileSync(new URL('../../../../../../../packages/shared/src/i18n/locales/zh-Hans.json', import.meta.url), 'utf-8'))
-    const topBarRightSlotSource = topBarSource.slice(
-      topBarSource.indexOf('{rightTools ? ('),
-      topBarSource.indexOf('{updateIndicatorButton}')
-    )
     const exportHandlerSource = appShellSource.slice(
       appShellSource.indexOf('const handleExportNovelWorkspace'),
       appShellSource.indexOf('const [novelChangeReviewStatus')
@@ -501,7 +503,7 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('handleRestoreNovelVersion')
     expect(appShellSource).toContain('setNovelExportDialogOpen(true)')
     expect(appShellSource).toContain('setNovelVersionDialogOpen(true)')
-    expect(appShellSource).toContain('rightTools={showNovelWorkspaceSidebar ? (')
+    expect(appShellSource).toContain('workspaceActions={(')
     expect(appShellSource).toContain('buildNovelExportPlan')
     expect(appShellSource).toContain('buildMergedManuscriptContent')
     expect(appShellSource).toContain('NOVEL_AUTO_VERSION_CHAR_THRESHOLD = 100')
@@ -513,12 +515,14 @@ describe('novel writing workspace layout', () => {
     expect(exportHandlerSource.indexOf('await window.electronAPI.createDirectory(exportRootPath)')).toBeLessThan(
       exportHandlerSource.indexOf('await window.electronAPI.writeFile(targetPath')
     )
-    expect(topBarSource).toContain('rightTools?: React.ReactNode')
-    expect(topBarRightSlotSource).toContain('{rightTools ? (')
-    expect(topBarRightSlotSource.indexOf('{rightTools ? (')).toBeLessThan(topBarRightSlotSource.indexOf('setFeedbackOpen(true)'))
-    expect(topBarSource).toContain('ml-auto flex min-w-0 flex-1 items-center justify-end gap-1')
-    expect(topBarSource).toContain('w-[clamp(220px,42vw,640px)]')
-    expect(topBarSource).toContain('titlebar-no-drag min-w-0 shrink-0')
+    expect(topBarSource).not.toContain('rightTools?: React.ReactNode')
+    expect(topBarSource).not.toContain('{rightTools ? (')
+    expect(editorPanelSource).toContain('workspaceActions?: React.ReactNode')
+    expect(editorPanelSource).toContain('{workspaceActions ? (')
+    expect(topBarSource).toContain('data-testid="window-title-bar"')
+    expect(topBarSource).not.toContain('ml-auto flex min-w-0 flex-1 items-center justify-end gap-1')
+    expect(topBarSource).not.toContain('w-[clamp(220px,42vw,640px)]')
+    expect(topBarSource).not.toContain('titlebar-no-drag min-w-0 shrink-0')
     expect(exportDialogSource).toContain('NOVEL_EXPORT_SECTIONS')
     expect(exportDialogSource).toContain('mergeManuscript')
     expect(exportDialogSource).toContain("'writing.export.sections.manuscript'")
@@ -599,7 +603,7 @@ describe('novel writing workspace layout', () => {
     const panelStackSource = readFileSync(new URL('../../app-shell/PanelStackContainer.tsx', import.meta.url), 'utf-8')
     const panelSlotSource = readFileSync(new URL('../../app-shell/PanelSlot.tsx', import.meta.url), 'utf-8')
 
-    expect(appShellSource).toContain('hidePanelCloseButton={hasPrimarySidebar}')
+    expect(appShellSource).toContain('hidePanelCloseButton={showPrimarySidebar}')
     expect(panelStackSource).toContain('hidePanelCloseButton?: boolean')
     expect(panelStackSource).toContain('hideCloseButton={hidePanelCloseButton}')
     expect(panelSlotSource).toContain('hideCloseButton?: boolean')
@@ -695,7 +699,7 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('getPendingChangesForFile(reviewableNovelFileChanges')
   })
 
-  it('keeps the novel catalog sidebar while opening workspace utility views', () => {
+  it('keeps the novel catalog sidebar scoped to writing mode while utility views use the navigator column', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const navigatorSlotSource = appShellSource.slice(
       appShellSource.indexOf('navigatorSlot={'),
@@ -717,8 +721,10 @@ describe('novel writing workspace layout', () => {
     expect(navigatorSlotSource.indexOf('showNovelWorkspaceUnavailable')).toBeLessThan(navigatorSlotSource.indexOf('<SessionList'))
     expect(appShellSource).toContain('if (!showNovelWorkspaceSidebar) return []')
     expect(appShellSource).toContain('if (primarySidebarLinks.length > 0) {')
-    expect(appShellSource).toContain('NovelWorkspaceUtilityTopNav')
-    expect(appShellSource).toContain('workspaceTools={showNovelWorkspaceSidebar ? (')
+    expect(appShellSource).toContain('const showPrimarySidebar = hasPrimarySidebar && isSessionsNavigation(navState)')
+    expect(appShellSource).toContain('sidebarWidth={effectiveSidebarAndNavigatorHidden ? 0 : (isSidebarVisible && showPrimarySidebar ? sidebarWidth : 0)}')
+    expect(appShellSource).not.toContain('NovelWorkspaceUtilityTopNav')
+    expect(appShellSource).not.toContain('workspaceTools={showNovelWorkspaceSidebar ? (')
     expect(appShellSource).toContain('getPrimarySidebarLinks(novelWorkspaceSidebarLinks)')
     expect(appShellSource).toContain('links={primarySidebarLinks}')
     expect(appShellSource).toContain('{showNovelDocumentNavigator && novelWorkspaceRoot ? (')
@@ -905,14 +911,14 @@ describe('novel writing workspace layout', () => {
     expect(navigatorSlotSource.indexOf('showNovelWorkspaceUnavailable')).toBeLessThan(navigatorSlotSource.indexOf('<SessionList'))
   })
 
-  it('exposes a top-bar global search button backed by the global search dialog', () => {
+  it('exposes global search from the activity rail backed by the global search dialog', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
-    const topBarSource = readFileSync(new URL('../../app-shell/TopBar.tsx', import.meta.url), 'utf-8')
+    const activityRailSource = readFileSync(new URL('../../app-shell/ActivityRail.tsx', import.meta.url), 'utf-8')
     const globalSearchSource = readFileSync(new URL('../../app-shell/GlobalSearchDialog.tsx', import.meta.url), 'utf-8')
 
-    expect(topBarSource).toContain('onOpenGlobalSearch')
-    expect(topBarSource).toContain('aria-label={t("globalSearch.open"')
-    expect(topBarSource).toContain('<Icons.Search')
+    expect(activityRailSource).toContain('label="搜索"')
+    expect(activityRailSource).toContain('<Search className="h-[18px] w-[18px]" />')
+    expect(appShellSource).toContain('onOpenSearch={() => setGlobalSearchOpen(true)}')
     expect(appShellSource).toContain('const [globalSearchOpen, setGlobalSearchOpen]')
     expect(appShellSource).toContain("useAction('app.search', () => setGlobalSearchOpen(true))")
     expect(appShellSource).toContain('<GlobalSearchDialog')
@@ -921,12 +927,15 @@ describe('novel writing workspace layout', () => {
     expect(globalSearchSource).toContain('onOpenNovelFile')
   })
 
-  it('keeps the global search button visible in compact top-bar layout', () => {
+  it('keeps global search outside the top bar so compact layout does not hide it', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const topBarSource = readFileSync(new URL('../../app-shell/TopBar.tsx', import.meta.url), 'utf-8')
+    const activityRailSource = readFileSync(new URL('../../app-shell/ActivityRail.tsx', import.meta.url), 'utf-8')
 
-    expect(topBarSource).toContain('const globalSearchButton =')
-    expect(topBarSource).toContain('{isCompact ? globalSearchButton : null}')
-    expect(topBarSource).toContain('{!isCompact && (')
+    expect(topBarSource).not.toContain('const globalSearchButton =')
+    expect(topBarSource).not.toContain('{isCompact ? globalSearchButton : null}')
+    expect(appShellSource).toContain('const showActivityRail = !isSidebarAndNavigatorHidden')
+    expect(activityRailSource).toContain('label="搜索"')
   })
 
   it('left-aligns sidebar item content instead of letting writing catalog labels drift toward the center', () => {

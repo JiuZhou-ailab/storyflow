@@ -1,7 +1,19 @@
 // input: Persisted workspace records at desktop startup
-// output: Workspace id assigned to the first BrowserWindow
-// pos: Keeps startup window selection separate from workspace creation policy
+// output: Workspace id assigned to the ordinary startup BrowserWindow
+// pos: Keeps ordinary desktop startup on the project hub before any workspace is opened
 
 export function resolveStartupWindowWorkspaceId(workspaces: Array<{ id: string }>): string {
-  return workspaces[0]?.id ?? ''
+  void workspaces
+  return ''
+}
+
+export function shouldRestoreWorkspaceWindowsOnOrdinaryStartup(input: {
+  savedWindowCount: number
+}): boolean {
+  void input
+  return false
+}
+
+export function resolveActivateWindowWorkspaceId(workspaces: Array<{ id: string }>): string {
+  return resolveStartupWindowWorkspaceId(workspaces)
 }

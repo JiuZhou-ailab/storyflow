@@ -11,10 +11,10 @@ export interface FirstRunTourStep {
 
 export const FIRST_RUN_TOUR_STEPS: FirstRunTourStep[] = [
   {
-    target: 'workspace-switcher',
-    selector: '[data-tutorial="workspace-switcher"]',
-    title: '当前项目',
-    body: '这里切换项目，也可以新建项目。你刚选择的创作逻辑会决定项目里的目录、模板和默认工作流。',
+    target: 'activity-project-hub',
+    selector: '[data-tutorial="activity-project-hub"]',
+    title: '项目中心',
+    body: '这里回到项目中心，查看、打开或新建项目。你选择的创作逻辑会决定项目里的目录、模板和默认工作流。',
   },
   {
     target: 'writing-catalog',
@@ -41,28 +41,22 @@ export const FIRST_RUN_TOUR_STEPS: FirstRunTourStep[] = [
     body: '临时脑洞、片段、参考、未归档材料可以先放这里。等内容稳定后，再整理进全局信息或正文。',
   },
   {
-    target: 'sources-nav',
-    selector: '[data-tutorial="sources-nav"]',
+    target: 'activity-sources',
+    selector: '[data-tutorial="activity-sources"]',
     title: '项目资料',
     body: '资料源用于接入项目外部信息，例如文件夹、网页、知识库或服务。需要长期复用的材料优先放到资料里。',
   },
   {
-    target: 'skills-nav',
-    selector: '[data-tutorial="skills-nav"]',
+    target: 'activity-skills',
+    selector: '[data-tutorial="activity-skills"]',
     title: '技能',
     body: '技能是给智能体的专项工作说明。写作、审查、拆文、资料整理这类高频任务，都适合沉淀成技能。',
   },
   {
-    target: 'automations-nav',
-    selector: '[data-tutorial="automations-nav"]',
-    title: '自动化',
-    body: '自动化用来定时或按事件触发任务。适合周期检查、批量整理、状态更新这类不需要每次手动发起的工作。',
-  },
-  {
-    target: 'settings-nav',
-    selector: '[data-tutorial="settings-nav"]',
+    target: 'activity-settings',
+    selector: '[data-tutorial="activity-settings"]',
     title: '设置',
-    body: '模型连接、权限、外观和工作区选项都在这里调整。遇到连接或默认模型问题，优先从设置检查。',
+    body: '模型连接、权限、外观和项目选项都在这里调整。遇到连接或默认模型问题，优先从设置检查。',
   },
   {
     target: 'chat-history',

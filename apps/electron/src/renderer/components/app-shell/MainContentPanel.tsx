@@ -19,12 +19,15 @@ import * as React from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
+import { FolderOpen, MessageSquarePlus, Settings2 } from 'lucide-react'
 import { Panel } from './Panel'
 import { MultiSelectPanel } from './MultiSelectPanel'
 import { useAppShellContext } from '@/context/AppShellContext'
 import { sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
 import { StoplightProvider } from '@/context/StoplightContext'
 import {
+  routes,
+  useNavigation,
   useNavigationState,
   isSessionsNavigation,
   isSourcesNavigation,
@@ -43,6 +46,7 @@ import { AutomationInfoPage } from '../automations/AutomationInfoPage'
 import type { ExecutionEntry } from '../automations/types'
 import { automationsAtom } from '@/atoms/automations'
 import { SendResourceToWorkspaceDialog, type SendResourceType } from './SendResourceToWorkspaceDialog'
+import { Button } from '@/components/ui/button'
 
 export interface MainContentPanelProps {
   /** Whether both sidebar and navigator are hidden (focus mode / CMD+.) */
@@ -57,12 +61,73 @@ export interface MainContentPanelProps {
   navStateOverride?: import('../../../shared/types').NavigationState | null
 }
 
+interface ProjectLandingEmptyStateProps {
+  workspaceName?: string
+  workspaceRootPath?: string
+  onNewSession: () => void
+  onOpenWorkspaceSettings: () => void
+}
+
+function ProjectLandingEmptyState({
+  workspaceName,
+  workspaceRootPath,
+  onNewSession,
+  onOpenWorkspaceSettings,
+}: ProjectLandingEmptyStateProps) {
+  const { t } = useTranslation()
+  const title = workspaceName || t('projectLanding.title', { defaultValue: 'Project overview' })
+
+  return (
+    <div className="flex h-full items-center justify-center px-8 py-10">
+      <div className="w-full max-w-xl space-y-6">
+        <div className="flex items-start gap-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted/40 text-muted-foreground">
+            <FolderOpen className="h-5 w-5" aria-hidden="true" />
+          </div>
+          <div className="min-w-0 space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">
+              {t('projectLanding.eyebrow', { defaultValue: 'Project' })}
+            </p>
+            <h2 className="truncate text-xl font-semibold text-foreground">
+              {title}
+            </h2>
+            <p className="text-sm leading-6 text-muted-foreground">
+              {t('projectLanding.description', {
+                defaultValue: 'Use the project catalog to open files, sources, skills, or previous sessions.',
+              })}
+            </p>
+          </div>
+        </div>
+
+        {workspaceRootPath ? (
+          <div className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
+            <FolderOpen className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="truncate">{workspaceRootPath}</span>
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" onClick={onNewSession}>
+            <MessageSquarePlus className="h-4 w-4" aria-hidden="true" />
+            {t('session.newSession')}
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={onOpenWorkspaceSettings}>
+            <Settings2 className="h-4 w-4" aria-hidden="true" />
+            项目设置
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function MainContentPanel({
   isSidebarAndNavigatorHidden = false,
   className,
   navStateOverride,
 }: MainContentPanelProps) {
   const { t } = useTranslation()
+  const { navigate } = useNavigation()
   const globalNavState = useNavigationState()
   const navState = navStateOverride ?? globalNavState
   const {
@@ -145,6 +210,14 @@ export function MainContentPanel({
   const hasOtherWorkspaces = workspaces.length > 1
   const activeWorkspace = workspaces.find(workspace => workspace.id === activeWorkspaceId)
   const remoteWorkspaceId = activeWorkspace?.remoteServer?.remoteWorkspaceId
+
+  const handleCreateSessionFromLanding = useCallback(() => {
+    void navigate(routes.action.newSession())
+  }, [navigate])
+
+  const handleOpenWorkspaceSettings = useCallback(() => {
+    void navigate(routes.view.settings('workspace'))
+  }, [navigate])
 
   const openSendDialog = useCallback((type: SendResourceType, ids: Set<string>) => {
     const count = ids.size
@@ -396,12 +469,14 @@ export function MainContentPanel({
         </Panel>
       )
     }
-    // No session selected - empty state
     return wrapWithStoplight(
       <Panel variant="grow" className={className}>
-        <div className="flex items-center justify-center h-full text-muted-foreground">
-          <p className="text-sm">{t("session.noSessionSelected")}</p>
-        </div>
+        <ProjectLandingEmptyState
+          workspaceName={activeWorkspace?.name}
+          workspaceRootPath={activeWorkspace?.rootPath}
+          onNewSession={handleCreateSessionFromLanding}
+          onOpenWorkspaceSettings={handleOpenWorkspaceSettings}
+        />
       </Panel>
     )
   }

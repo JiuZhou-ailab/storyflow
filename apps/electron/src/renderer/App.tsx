@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { useTheme } from '@/hooks/useTheme'
 import type { ThemeOverrides } from '@config/theme'
 import { useSetAtom, useStore, useAtomValue, useAtom } from 'jotai'
-import type { Session, Workspace, SessionEvent, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, SetupNeeds, SessionStatus, NewChatActionParams, ContentBadge, LlmConnectionWithStatus, PermissionModeState, SendMessageOptions } from '../shared/types'
+import type { Session, Workspace, SessionEvent, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, SetupNeeds, SessionStatus, NewChatActionParams, ContentBadge, LlmConnectionWithStatus, PermissionModeState, SendMessageOptions, ClientAuthState } from '../shared/types'
 import type { SessionDraft, DraftAttachmentRef } from '@craft-agent/shared/config'
 import type { SessionOptions, SessionOptionUpdates } from './hooks/useSessionOptions'
 import { defaultSessionOptions, mergeSessionOptions } from './hooks/useSessionOptions'
@@ -15,9 +15,13 @@ import { generateMessageId } from '../shared/types'
 import { useEventProcessor } from './event-processor'
 import type { AgentEvent, Effect } from './event-processor'
 import { AppShell } from '@/components/app-shell/AppShell'
+import { ActivityRailFrame } from '@/components/app-shell/ActivityRailFrame'
+import { WINDOW_TITLE_BAR_HEIGHT } from '@/components/app-shell/TopBar'
 import type { AppShellContextType } from '@/context/AppShellContext'
 import { OnboardingWizard, ReauthScreen } from '@/components/onboarding'
-import { WorkspaceCreationScreen, WorkspacePicker } from '@/components/workspace'
+import { WorkspaceCreationScreen, WorkspacePicker, type WorkspaceCreationInitialStep } from '@/components/workspace'
+import { AccountCenterPage } from '@/components/account'
+import { ProjectHub } from '@/components/project-hub'
 import { ResetConfirmationDialog } from '@/components/ResetConfirmationDialog'
 import { SplashScreen } from '@/components/SplashScreen'
 import { TooltipProvider } from '@craft-agent/ui'
@@ -29,14 +33,14 @@ import { useOnboarding } from '@/hooks/useOnboarding'
 import { useNotifications } from '@/hooks/useNotifications'
 import { useSession } from '@/hooks/useSession'
 import { NavigationProvider } from '@/contexts/NavigationContext'
-import { navigate, routes } from './lib/navigate'
+import { navigate, routes, type Route } from './lib/navigate'
 import { attachmentFromContentRef, toDraftRef } from './lib/drafts'
 import { stripMarkdown } from './utils/text'
 import { coerceInputText } from './lib/input-text'
 import { getSessionsToRefreshAfterStaleReconnect } from './lib/reconnect-recovery'
 import { formatSessionLoadFailure, shouldTreatSessionLoadFailureAsTransportFallback } from './lib/session-load'
-import { getAutoSessionIdForWorkspaceSwitch } from './lib/workspace-switch'
 import { resolvePostSetupAppState } from './lib/startup-flow'
+import { buildProjectSummaries } from './lib/project-summary'
 import { isAppFullyReady } from './lib/app-readiness'
 import { extractWorkspaceSlugFromPath } from '@craft-agent/shared/utils/workspace-slug'
 import { DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels'
@@ -81,7 +85,7 @@ import { ActionRegistryProvider } from '@/actions'
 import { toast } from 'sonner'
 import * as storage from '@/lib/local-storage'
 
-type AppState = 'loading' | 'onboarding' | 'reauth' | 'workspace-picker' | 'workspace-creation' | 'ready'
+type AppState = 'loading' | 'account' | 'onboarding' | 'reauth' | 'project-hub' | 'workspace-picker' | 'workspace-creation' | 'ready'
 
 /** Type for the Jotai store returned by useStore() */
 type JotaiStore = ReturnType<typeof getDefaultStore>
@@ -264,6 +268,11 @@ export default function App() {
   // App state: loading -> check auth -> onboarding or ready
   const [appState, setAppState] = useState<AppState>('loading')
   const [setupNeeds, setSetupNeeds] = useState<SetupNeeds | null>(null)
+  const [clientAuthState, setClientAuthState] = useState<ClientAuthState | null>(null)
+  const [accountReturnState, setAccountReturnState] = useState<'project-hub' | 'ready'>('project-hub')
+  const [workspaceCreationInitialStep, setWorkspaceCreationInitialStep] = useState<WorkspaceCreationInitialStep>('choice')
+  const [pendingReadyRoute, setPendingReadyRoute] = useState<Route | null>(null)
+  const [openGlobalSearchSignal, setOpenGlobalSearchSignal] = useState(0)
 
   // Per-session Jotai atom setters for isolated updates
   // NOTE: No sessionsAtom - we don't store a Session[] array anywhere to prevent memory leaks
@@ -291,6 +300,7 @@ export default function App() {
   }, [updateSessionDirect])
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const projectSummaries = useMemo(() => buildProjectSummaries(workspaces), [workspaces])
   // Window's workspace ID — shared atom so Root/ThemeProvider stays in sync on switch
   const [windowWorkspaceId, setWindowWorkspaceId] = useAtom(windowWorkspaceIdAtom)
   const pendingCreatedWorkspaceRef = useRef<Workspace | null>(null)
@@ -658,12 +668,25 @@ export default function App() {
     }
   }, [resolveDefaultConnectionSlug, windowWorkspaceId])
 
+  const loadClientAuthState = useCallback(async (): Promise<ClientAuthState | null> => {
+    if (!window.electronAPI?.getClientAuthState) return null
+    try {
+      const nextState = await window.electronAPI.getClientAuthState()
+      setClientAuthState(nextState)
+      return nextState
+    } catch (error) {
+      console.error('[App] Failed to load client auth state:', error)
+      return null
+    }
+  }, [])
+
   // Handle onboarding completion
   const handleOnboardingComplete = useCallback(async () => {
     try {
       // Reload workspaces after onboarding
       const ws = await window.electronAPI.getWorkspaces()
       setWorkspaces(ws)
+      await loadClientAuthState()
       setAppState(resolvePostSetupAppState({
         windowWorkspaceId,
         workspaceCount: ws.length,
@@ -673,7 +696,7 @@ export default function App() {
       // Still transition to ready — the app can recover via reconnect
       setAppState('ready')
     }
-  }, [windowWorkspaceId])
+  }, [loadClientAuthState, windowWorkspaceId])
 
   // Onboarding hook — onConfigSaved fires immediately when billing is saved,
   // ensuring connection state updates before the wizard closes.
@@ -718,6 +741,7 @@ export default function App() {
           'getSetupNeeds'
         )
         setSetupNeeds(needs)
+        await loadClientAuthState()
 
         if (needs.isFullyConfigured) {
           const ws = await withTimeout(
@@ -742,7 +766,7 @@ export default function App() {
     }
 
     initialize()
-  }, [])
+  }, [loadClientAuthState])
 
   // Session selection state
   const [sessionSelection, setSession] = useSession()
@@ -1895,25 +1919,15 @@ export default function App() {
       store.set(sessionMetaMapAtom, new Map())
       store.set(sessionIdsAtom, [])
 
-      const pendingCreatedWorkspace = pendingCreatedWorkspaceRef.current
-      const shouldOpenStarterSession = pendingCreatedWorkspace?.id === workspaceId
-
       try {
         await withTimeout(
           window.electronAPI.switchWorkspace(workspaceId),
           WORKSPACE_SWITCH_RPC_TIMEOUT_MS,
           'switchWorkspace'
         )
-        const loadedSessions = await loadSessionsFromServer(workspaceId)
-
-        if (shouldOpenStarterSession) {
+        await loadSessionsFromServer(workspaceId)
+        if (pendingCreatedWorkspaceRef.current?.id === workspaceId) {
           pendingCreatedWorkspaceRef.current = null
-          const remoteWorkspaceId = pendingCreatedWorkspace?.remoteServer?.remoteWorkspaceId
-            ?? workspaces.find(workspace => workspace.id === workspaceId)?.remoteServer?.remoteWorkspaceId
-          const sessionId = getAutoSessionIdForWorkspaceSwitch(loadedSessions, workspaceId, remoteWorkspaceId)
-          if (sessionId) {
-            navigate(routes.view.allSessions(sessionId))
-          }
         }
       } catch (error) {
         console.error('[App] Failed to switch workspace:', error)
@@ -1928,9 +1942,8 @@ export default function App() {
 
       // Note: NavigationContext detects the workspaceId change and handles panel
       // restoration from the stored workspace URL (or defaults to allSessions).
-      // Sessions and theme reload automatically due to windowWorkspaceId dependency
-      // in useEffect hooks. Newly-created workspaces are loaded immediately above
-      // so their starter session is visible without a manual refresh.
+      // Sessions and theme reload automatically due to windowWorkspaceId dependency.
+      // Newly-created workspaces land on the project overview instead of auto-opening chat.
     }
   }, [windowWorkspaceId, setSession, store, loadSessionsFromServer, workspaces])
 
@@ -1975,19 +1988,81 @@ export default function App() {
     }
   }, [])
 
-  const handleRequiredWorkspaceCreated = useCallback(async (workspace: Workspace) => {
+  const handleProjectHubWorkspaceCreated = useCallback(async (workspace: Workspace) => {
     await handleWorkspaceCreated(workspace)
-    storage.set(storage.KEYS.firstRunTourCompleted, false)
-    storage.set(storage.KEYS.firstRunTourPending, true)
-    await window.electronAPI.switchWorkspace(workspace.id)
-    setWindowWorkspaceId(workspace.id)
+    if (!storage.get(storage.KEYS.firstRunTourCompleted, false)) {
+      storage.set(storage.KEYS.firstRunTourPending, true)
+    }
+    await handleSelectWorkspace(workspace.id)
     setAppState('ready')
-  }, [handleWorkspaceCreated])
+  }, [handleWorkspaceCreated, handleSelectWorkspace])
 
   // Handle cancel during onboarding
   const handleOnboardingCancel = useCallback(() => {
     onboarding.handleCancel()
   }, [onboarding])
+
+  const handleOpenAccountCenter = useCallback((returnState: 'project-hub' | 'ready') => {
+    setAccountReturnState(returnState)
+    setAppState('account')
+  }, [])
+
+  const handleAccountBack = useCallback(() => {
+    setAppState(accountReturnState)
+  }, [accountReturnState])
+
+  const handleAccountSignOut = useCallback(async () => {
+    await window.electronAPI.signOutClient()
+    await loadClientAuthState()
+    setAppState('onboarding')
+  }, [loadClientAuthState])
+
+  const handleOpenProjectFromHub = useCallback(async (workspaceId: string) => {
+    await handleSelectWorkspace(workspaceId)
+    setAppState('ready')
+  }, [handleSelectWorkspace])
+
+  const handleOpenProjectHub = useCallback(() => {
+    setAppState('project-hub')
+  }, [])
+
+  const handleReturnToActiveProject = useCallback(() => {
+    if (windowWorkspaceId) {
+      setAppState('ready')
+    }
+  }, [windowWorkspaceId])
+
+  const handleOpenActiveProjectRoute = useCallback((route: Route) => {
+    if (!windowWorkspaceId) return
+    setPendingReadyRoute(route)
+    setAppState('ready')
+  }, [windowWorkspaceId])
+
+  const handleOpenActiveProjectSearch = useCallback(() => {
+    if (!windowWorkspaceId) return
+    setOpenGlobalSearchSignal(signal => signal + 1)
+    setAppState('ready')
+  }, [windowWorkspaceId])
+
+  useEffect(() => {
+    if (appState !== 'ready' || !pendingReadyRoute) return
+
+    const route = pendingReadyRoute
+    setPendingReadyRoute(null)
+    const frame = window.requestAnimationFrame(() => {
+      navigate(route)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [appState, pendingReadyRoute])
+
+  const openWorkspaceCreation = useCallback((initialStep: WorkspaceCreationInitialStep) => {
+    setWorkspaceCreationInitialStep(initialStep)
+    setAppState('workspace-creation')
+  }, [])
+
+  const handleWorkspaceCreationClose = useCallback(() => {
+    setAppState('project-hub')
+  }, [])
 
   // Build context value for AppShell component
   // This is memoized to prevent unnecessary re-renders
@@ -2170,6 +2245,76 @@ export default function App() {
     )
   }
 
+  // Account center — user/avatar entry for account, points, and sign-out actions.
+  if (appState === 'account') {
+    return (
+      <DismissibleLayerProvider>
+        <ModalProvider>
+        <TooltipProvider delayDuration={0}>
+          <WindowCloseHandler />
+          <ActivityRailFrame
+            activeItem="account"
+            onOpenProjectHub={handleOpenProjectHub}
+            onOpenWritingWorkspace={windowWorkspaceId ? handleReturnToActiveProject : undefined}
+            onOpenSources={windowWorkspaceId ? () => handleOpenActiveProjectRoute(routes.view.sources()) : undefined}
+            onOpenSkills={windowWorkspaceId ? () => handleOpenActiveProjectRoute(routes.view.skills()) : undefined}
+            onOpenSearch={windowWorkspaceId ? handleOpenActiveProjectSearch : undefined}
+            onOpenSettings={windowWorkspaceId ? () => handleOpenActiveProjectRoute(routes.view.settings('app')) : undefined}
+            onOpenAccount={() => handleOpenAccountCenter(accountReturnState)}
+          >
+            <AccountCenterPage
+              clientAuthState={clientAuthState}
+              workspaces={workspaces}
+              activeWorkspaceId={windowWorkspaceId}
+              onBack={handleAccountBack}
+              onSignOut={handleAccountSignOut}
+            />
+          </ActivityRailFrame>
+        </TooltipProvider>
+        </ModalProvider>
+      </DismissibleLayerProvider>
+    )
+  }
+
+  // Project hub — ordinary authenticated startup lands here before any workspace production UI.
+  if (appState === 'project-hub') {
+    return (
+      <DismissibleLayerProvider>
+        <ModalProvider>
+        <TooltipProvider delayDuration={0}>
+          <WindowCloseHandler />
+          <ActivityRailFrame
+            activeItem="project-hub"
+            onOpenProjectHub={handleOpenProjectHub}
+            onOpenWritingWorkspace={windowWorkspaceId ? handleReturnToActiveProject : undefined}
+            onOpenSources={windowWorkspaceId ? () => handleOpenActiveProjectRoute(routes.view.sources()) : undefined}
+            onOpenSkills={windowWorkspaceId ? () => handleOpenActiveProjectRoute(routes.view.skills()) : undefined}
+            onOpenSearch={windowWorkspaceId ? handleOpenActiveProjectSearch : undefined}
+            onOpenSettings={windowWorkspaceId ? () => handleOpenActiveProjectRoute(routes.view.settings('app')) : undefined}
+            onOpenAccount={() => handleOpenAccountCenter('project-hub')}
+          >
+            <ProjectHub
+              projects={projectSummaries}
+              activeWorkspaceId={windowWorkspaceId}
+              onReturnToActiveProject={windowWorkspaceId ? handleReturnToActiveProject : undefined}
+              onOpenProject={(workspaceId) => {
+                void handleOpenProjectFromHub(workspaceId)
+              }}
+              onCreateProject={() => openWorkspaceCreation('create')}
+              onImportProject={() => openWorkspaceCreation('open')}
+              onConnectRemoteProject={() => openWorkspaceCreation('remote')}
+              onOpenAccount={() => handleOpenAccountCenter('project-hub')}
+              onOpenProjectInNewWindow={(workspaceId) => {
+                void window.electronAPI.openWorkspace(workspaceId)
+              }}
+            />
+          </ActivityRailFrame>
+        </TooltipProvider>
+        </ModalProvider>
+      </DismissibleLayerProvider>
+    )
+  }
+
   // Workspace picker — thin client with no workspace selected
   if (appState === 'workspace-picker') {
     return (
@@ -2188,16 +2333,18 @@ export default function App() {
     )
   }
 
-  // Required workspace creation — first local run after login/setup.
+  // Explicit workspace creation — opened from the project hub.
   if (appState === 'workspace-creation') {
     return (
       <DismissibleLayerProvider>
         <ModalProvider>
           <WindowCloseHandler />
           <WorkspaceCreationScreen
-            canClose={false}
-            onClose={() => {}}
-            onWorkspaceCreated={handleRequiredWorkspaceCreated}
+            canClose={true}
+            closeLabel="返回项目中心"
+            initialStep={workspaceCreationInitialStep}
+            onClose={handleWorkspaceCreationClose}
+            onWorkspaceCreated={handleProjectHubWorkspaceCreated}
           />
         </ModalProvider>
       </DismissibleLayerProvider>
@@ -2240,7 +2387,7 @@ export default function App() {
           )}
 
           {/* Main UI - always rendered, splash fades away to reveal it */}
-          <div className="h-full flex flex-col pt-[48px] text-foreground">
+          <div className="h-full flex flex-col text-foreground" style={{ paddingTop: WINDOW_TITLE_BAR_HEIGHT }}>
             {showTransportConnectionBanner && connectionState && (
               <TransportConnectionBanner
                 state={connectionState}
@@ -2259,6 +2406,9 @@ export default function App() {
                   defaultLayout={[20, 32, 48]}
                   menuNewChatTrigger={menuNewChatTrigger}
                   isFocusedMode={isFocusedMode}
+                  openGlobalSearchSignal={openGlobalSearchSignal}
+                  onOpenProjectHub={handleOpenProjectHub}
+                  onOpenAccount={() => handleOpenAccountCenter('ready')}
                 />
               )}
             </div>
