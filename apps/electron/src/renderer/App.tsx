@@ -304,6 +304,7 @@ export default function App() {
   // Window's workspace ID — shared atom so Root/ThemeProvider stays in sync on switch
   const [windowWorkspaceId, setWindowWorkspaceId] = useAtom(windowWorkspaceIdAtom)
   const pendingCreatedWorkspaceRef = useRef<Workspace | null>(null)
+  const openNewProjectConversationAfterSwitchRef = useRef<string | null>(null)
 
   // Derive workspace slug for SDK skill qualification
   const windowWorkspaceSlug = useMemo(() => {
@@ -1943,7 +1944,6 @@ export default function App() {
       // Note: NavigationContext detects the workspaceId change and handles panel
       // restoration from the stored workspace URL (or defaults to allSessions).
       // Sessions and theme reload automatically due to windowWorkspaceId dependency.
-      // Newly-created workspaces land on the project overview instead of auto-opening chat.
     }
   }, [windowWorkspaceId, setSession, store, loadSessionsFromServer, workspaces])
 
@@ -1993,6 +1993,7 @@ export default function App() {
     if (!storage.get(storage.KEYS.firstRunTourCompleted, false)) {
       storage.set(storage.KEYS.firstRunTourPending, true)
     }
+    openNewProjectConversationAfterSwitchRef.current = workspace.id
     await handleSelectWorkspace(workspace.id)
     setAppState('ready')
   }, [handleWorkspaceCreated, handleSelectWorkspace])
@@ -2054,6 +2055,17 @@ export default function App() {
     })
     return () => window.cancelAnimationFrame(frame)
   }, [appState, pendingReadyRoute])
+
+  useEffect(() => {
+    if (appState !== 'ready' || !windowWorkspaceId || !sessionsLoaded) return
+    if (openNewProjectConversationAfterSwitchRef.current !== windowWorkspaceId) return
+
+    openNewProjectConversationAfterSwitchRef.current = null
+    const frame = window.requestAnimationFrame(() => {
+      navigate(routes.action.newSession())
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [appState, sessionsLoaded, windowWorkspaceId])
 
   const openWorkspaceCreation = useCallback((initialStep: WorkspaceCreationInitialStep) => {
     setWorkspaceCreationInitialStep(initialStep)

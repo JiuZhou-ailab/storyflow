@@ -91,7 +91,7 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
-import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange, WhatsNewManifest } from "../../../shared/types"
+import type { Session, Workspace, WorkspaceProjectType, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange, WhatsNewManifest } from "../../../shared/types"
 import { ensureSessionMessagesLoadedAtom, sessionAtomFamily, sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
@@ -296,6 +296,11 @@ const NOVEL_AUTO_VERSION_CHAR_THRESHOLD = 100
 const NOVEL_AUTO_VERSION_INTERVAL_MS = 5 * 60 * 1000
 const NOVEL_WORKSPACE_BRIEF_CHANGE_LIMIT = 20
 
+type WorkspaceOpeningMetadata = {
+  projectType?: WorkspaceProjectType
+  methodPackId?: string
+}
+
 function joinWorkspacePath(rootPath: string, relativePath: string): string {
   const root = rootPath.replace(/[\\/]+$/, '')
   const relative = relativePath.replace(/^[\\/]+/, '')
@@ -363,6 +368,24 @@ function collectAgentTouchedRelativePaths(
     .filter(change => !change.error)
     .map(change => relativeByAbsolutePath.get(change.filePath) ?? getNovelWorkspaceRelativePath(change.filePath, rootPath))
     .filter(Boolean))]
+}
+
+function buildWorkspaceVersionReviewChanges(
+  changes: WorkspaceVersionFileChange[],
+  rootPath: string,
+): FileChange[] {
+  const normalizedRoot = rootPath.replace(/\/+$/, '')
+  return changes
+    .filter(change => change.unifiedDiff?.trim())
+    .map((change): FileChange => ({
+      id: `workspace-version:${change.path}`,
+      filePath: `${normalizedRoot}/${change.path}`,
+      toolType: 'Edit',
+      changeKind: change.status === 'added' ? 'create' : change.status === 'deleted' ? 'replace' : 'modify',
+      original: '',
+      modified: '',
+      unifiedDiff: change.unifiedDiff,
+    }))
 }
 
 function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
@@ -835,12 +858,11 @@ function AppShellContent({
   })
   // Session list width in pixels (min 240, max 480)
   const [sessionListWidth, setSessionListWidth] = React.useState(() => {
-    return storage.get(storage.KEYS.sessionListWidth, 300)
+    return storage.get(storage.KEYS.sessionListWidth, DEFAULT_WORKSPACE_WIDTH)
   })
   const [novelWorkspaceNavigatorWidth, setNovelWorkspaceNavigatorWidth] = React.useState(() => {
     return storage.get(storage.KEYS.novelWorkspaceNavigatorWidth, NOVEL_WORKSPACE_NAVIGATOR_DEFAULT_WIDTH)
   })
-  const initialShellLayoutResolvedRef = React.useRef(false)
 
   // Hides both sidebar and navigator (CMD+. toggle)
   // Seed from either focused window param or persisted preference, then keep it toggleable.
@@ -1568,24 +1590,20 @@ function AppShellContent({
   }, [novelWorkspaceNavigatorWidth])
 
   React.useEffect(() => {
-    if (
-      initialShellLayoutResolvedRef.current
-      || !shouldResolveInitialShellLayoutWidths(shellWidth, MOBILE_THRESHOLD)
-    ) return
-    initialShellLayoutResolvedRef.current = true
+    if (!shouldResolveInitialShellLayoutWidths(shellWidth, MOBILE_THRESHOLD)) return
 
+    const persistedSidebarWidth = storage.get<number | undefined>(storage.KEYS.sidebarWidth, undefined)
+    const persistedWorkspaceWidth = storage.get<number | undefined>(storage.KEYS.novelWorkspaceNavigatorWidth, undefined)
     const sidebarPersisted = isUserConfiguredShellLayoutWidth(
       'sidebar',
-      latestSidebarWidthRef.current,
+      persistedSidebarWidth,
       storage.getRaw(storage.KEYS.sidebarWidth) !== null
     )
     const workspacePersisted = isUserConfiguredShellLayoutWidth(
       'workspace',
-      latestNovelWorkspaceNavigatorWidthRef.current,
+      persistedWorkspaceWidth,
       storage.getRaw(storage.KEYS.novelWorkspaceNavigatorWidth) !== null
     )
-    if (sidebarPersisted && workspacePersisted) return
-
     const widths = resolveInitialShellLayoutWidths({
       totalWidth: shellWidth,
       edgeInset: PANEL_EDGE_INSET,
@@ -1597,11 +1615,14 @@ function AppShellContent({
       currentWorkspaceWidth: latestNovelWorkspaceNavigatorWidthRef.current,
     })
 
-    if (!sidebarPersisted) {
+    if (!sidebarPersisted && latestSidebarWidthRef.current !== widths.sidebar) {
       latestSidebarWidthRef.current = widths.sidebar
       setSidebarWidth(widths.sidebar)
     }
-    if (!workspacePersisted) {
+    if (
+      latestNovelWorkspaceNavigatorWidthRef.current !== widths.workspace
+      && (!workspacePersisted || latestNovelWorkspaceNavigatorWidthRef.current > widths.workspace)
+    ) {
       latestNovelWorkspaceNavigatorWidthRef.current = widths.workspace
       setNovelWorkspaceNavigatorWidth(widths.workspace)
     }
@@ -1714,6 +1735,7 @@ function AppShellContent({
   }
 
   const effectiveSession = useAtomValue(sessionAtomFamily(effectiveSessionId ?? '__missing__'))
+  const [snapshotNovelFileChanges, setSnapshotNovelFileChanges] = React.useState<FileChange[]>([])
 
   const hasPendingPrompt = React.useCallback((sessionId: string) => {
     return (pendingPermissions.get(sessionId)?.length ?? 0) > 0
@@ -1744,8 +1766,8 @@ function AppShellContent({
       })
       if (changes.length > 0) return changes
     }
-    return []
-  }, [activeSessionWorkingDirectory, effectiveSession?.messages, effectiveSession?.sessionFolderPath])
+    return snapshotNovelFileChanges
+  }, [activeSessionWorkingDirectory, effectiveSession?.messages, effectiveSession?.sessionFolderPath, snapshotNovelFileChanges])
 
   const novelWorkspaceCandidateRoots = React.useMemo(
     () => getNovelWorkspaceCandidateRoots({
@@ -2265,6 +2287,7 @@ function AppShellContent({
   const checkpointNovelWorkspaceAgentTurn = React.useCallback(async (sessionId: string): Promise<void> => {
     if (!novelWorkspaceRoot || novelAgentTurnCheckpointInFlightRef.current) return
 
+    const previousCommit = getKnownWorkspaceCommit(novelWorkspaceRoot, sessionId)
     novelAgentTouchedPathsRef.current[sessionId] = collectAgentTouchedRelativePaths(
       reviewableNovelFileChanges,
       novelWorkspaceRoot,
@@ -2273,7 +2296,19 @@ function AppShellContent({
 
     novelAgentTurnCheckpointInFlightRef.current = true
     try {
-      await window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'agent-turn' })
+      const snapshot = await window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'agent-turn' })
+      const headCommit = snapshot.commitHash
+      if (previousCommit && headCommit && previousCommit !== headCommit) {
+        const changedFiles = await window.electronAPI.compareWorkspaceVersions(novelWorkspaceRoot, previousCommit, headCommit)
+        const snapshotChanges = buildWorkspaceVersionReviewChanges(changedFiles, novelWorkspaceRoot)
+        setSnapshotNovelFileChanges(snapshotChanges)
+        novelAgentTouchedPathsRef.current[sessionId] = collectAgentTouchedRelativePaths(
+          snapshotChanges.length > 0 ? snapshotChanges : reviewableNovelFileChanges,
+          novelWorkspaceRoot,
+          novelWorkspaceFiles,
+        )
+        setKnownWorkspaceCommit(novelWorkspaceRoot, sessionId, headCommit)
+      }
       if (novelVersionDialogOpen) {
         await refreshNovelVersions()
       }
@@ -2290,6 +2325,10 @@ function AppShellContent({
     const isProcessing = effectiveSession?.isProcessing === true
     const wasProcessing = novelSessionProcessingRef.current[effectiveSessionId] === true
     novelSessionProcessingRef.current[effectiveSessionId] = isProcessing
+
+    if (!wasProcessing && isProcessing) {
+      setSnapshotNovelFileChanges([])
+    }
 
     if (wasProcessing && !isProcessing) {
       void checkpointNovelWorkspaceAgentTurn(effectiveSessionId)
@@ -2954,6 +2993,34 @@ function AppShellContent({
     }))
   }, [novelWorkspaceFiles, t])
 
+  const openingProjectMetadata = React.useMemo<WorkspaceOpeningMetadata | undefined>(() => {
+    const workspaceMetadata = activeWorkspace as (Workspace & WorkspaceOpeningMetadata) | undefined
+    const workspaceProjectType = workspaceMetadata?.projectType
+    const workspaceMethodPackId = typeof workspaceMetadata?.methodPackId === 'string'
+      ? workspaceMetadata.methodPackId
+      : undefined
+
+    if (workspaceMethodPackId || (workspaceProjectType && workspaceProjectType !== 'general')) {
+      return {
+        projectType: workspaceProjectType,
+        methodPackId: workspaceMethodPackId,
+      }
+    }
+
+    if (showNovelWorkspaceSidebar && isShortFormNovelWorkspace) {
+      return {
+        projectType: 'short-form',
+        methodPackId: 'short-form.article',
+      }
+    }
+
+    if (showNovelWorkspaceSidebar) {
+      return { projectType: 'novel' }
+    }
+
+    return workspaceProjectType ? { projectType: workspaceProjectType } : undefined
+  }, [activeWorkspace, isShortFormNovelWorkspace, showNovelWorkspaceSidebar])
+
   // Extend context value with local overrides (wrapped onDeleteSession, sources, skills, labels, enabledModes, rightSidebarOpenButton, effectiveSessionStatuses)
   const appShellContextValue = React.useMemo<AppShellContextType>(() => ({
     ...contextValue,
@@ -2963,6 +3030,7 @@ function AppShellContent({
     skills,
     mentionFiles,
     activeSessionWorkingDirectory,
+    openingProjectMetadata,
     labels: displayLabelConfigs,
     onSessionLabelsChange: handleSessionLabelsChange,
     enabledModes,
@@ -2982,7 +3050,7 @@ function AppShellContent({
     automationTestResults,
     getAutomationHistory,
     onReplayAutomation: handleReplayAutomation,
-  }), [contextValue, handleDeleteSession, handleNovelWorkspaceSendMessage, sources, skills, mentionFiles, activeSessionWorkingDirectory, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
+  }), [contextValue, handleDeleteSession, handleNovelWorkspaceSendMessage, sources, skills, mentionFiles, activeSessionWorkingDirectory, openingProjectMetadata, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
 
   // Persist expanded folders to localStorage (workspace-scoped)
   React.useEffect(() => {

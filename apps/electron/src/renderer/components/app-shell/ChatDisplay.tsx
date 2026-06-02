@@ -46,7 +46,7 @@ import {
 } from "@craft-agent/ui"
 import { useFocusZone } from "@/hooks/keyboard"
 import { useTheme } from "@/hooks/useTheme"
-import type { Session, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, LoadedSource, LoadedSkill } from "../../../shared/types"
+import type { Session, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, LoadedSource, LoadedSkill, WorkspaceProjectType } from "../../../shared/types"
 import type { PermissionMode } from "@craft-agent/shared/agent/modes"
 import type { ThinkingLevel } from "@craft-agent/shared/agent/thinking-levels"
 import {
@@ -79,6 +79,11 @@ import { CHAT_LAYOUT } from "@/config/layout"
 import { collectFileChangesFromActivities, getFirstFileChangeIdForActivity } from "@/lib/file-changes"
 import { resolveBranchNewPanelOption } from "./branching"
 import {
+  resolveChatOpeningPrompt,
+  type ChatOpeningAction,
+  type ChatOpeningPrompt,
+} from "./chat-opening"
+import {
   buildRewindSessionOptions,
   canCreateDefaultRewindBranch,
   canRewindWithoutDroppingHistory,
@@ -86,6 +91,12 @@ import {
   resolveRewindBranchMessageId,
 } from "./chat-rewind"
 import { handleErrorMessageAction } from "./error-message-actions"
+
+type WorkspaceWithOpeningMetadata = {
+  name?: string
+  projectType?: WorkspaceProjectType
+  methodPackId?: string
+}
 
 // ============================================================================
 // CSS Custom Highlight API helper
@@ -437,6 +448,50 @@ function ScrollOnMount({
   return null
 }
 
+function ChatOpeningEmptyState({
+  opening,
+  onAction,
+}: {
+  opening: ChatOpeningPrompt
+  onAction: (action: ChatOpeningAction) => void
+}) {
+  const { t } = useTranslation()
+  const contextParts = [
+    opening.workspaceName ? t('chatOpening.contextProject', { workspaceName: opening.workspaceName }) : undefined,
+    opening.methodPackName,
+  ].filter((part): part is string => Boolean(part))
+
+  return (
+    <div className="flex min-h-[360px] items-center justify-center px-6 py-16">
+      <div className="w-full max-w-[560px] text-center">
+        <div className="text-[17px] font-medium leading-6 text-foreground">
+          {t(opening.titleKey)}
+        </div>
+        {contextParts.length > 0 ? (
+          <div className="mt-2 text-xs text-muted-foreground">
+            {contextParts.join(' · ')}
+          </div>
+        ) : null}
+        <div className="mt-1 text-xs text-muted-foreground/70">
+          {t(opening.hintKey)}
+        </div>
+        <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {opening.actions.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              onClick={() => onAction(action)}
+              className="min-h-10 rounded-[7px] border border-border/60 bg-background px-3 py-2 text-left text-sm text-foreground/80 shadow-minimal transition-colors hover:border-foreground/20 hover:bg-foreground/[0.03]"
+            >
+              {t(action.labelKey)}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /**
  * ChatDisplay - Main chat interface for a selected session
  *
@@ -537,6 +592,31 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const prevSessionIdForCommitScrollRef = React.useRef<string | null>(null)
   const internalTextareaRef = React.useRef<RichTextInputHandle>(null)
   const textareaRef = externalTextareaRef || internalTextareaRef
+  const activeWorkspace = React.useMemo(
+    () => appShellContext.workspaces.find((workspace) => workspace.id === appShellContext.activeWorkspaceId),
+    [appShellContext.activeWorkspaceId, appShellContext.workspaces]
+  )
+  const activeWorkspaceMetadata = activeWorkspace as WorkspaceWithOpeningMetadata | undefined
+  const openingProjectMetadata = appShellContext.openingProjectMetadata
+  const chatOpening = React.useMemo(() => resolveChatOpeningPrompt({
+    workspaceName: activeWorkspaceMetadata?.name,
+    projectType: openingProjectMetadata?.projectType ?? activeWorkspaceMetadata?.projectType,
+    methodPackId: openingProjectMetadata?.methodPackId ?? activeWorkspaceMetadata?.methodPackId,
+  }), [
+    openingProjectMetadata?.methodPackId,
+    openingProjectMetadata?.projectType,
+    activeWorkspaceMetadata?.methodPackId,
+    activeWorkspaceMetadata?.name,
+    activeWorkspaceMetadata?.projectType,
+  ])
+  const handleOpeningAction = React.useCallback((action: ChatOpeningAction) => {
+    const prompt = t(action.promptKey)
+    onInputChange?.(prompt)
+    textareaRef.current?.focus()
+    window.setTimeout(() => {
+      textareaRef.current?.setSelectionRange(prompt.length, prompt.length)
+    }, 0)
+  }, [onInputChange, t, textareaRef])
   const [sendMessageKey, setSendMessageKey] = useState<'enter' | 'cmd-enter'>('enter')
   const [openAnnotationRequest, setOpenAnnotationRequest] = React.useState<{
     messageId: string
@@ -1703,6 +1783,12 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                       <span className="text-sm text-muted-foreground">{t("editPopover.whatToChange")}</span>
                       <span className="text-xs text-muted-foreground/50">{t("editPopover.justDescribe")}</span>
                     </div>
+                  )}
+                  {!compactMode && turns.length === 0 && !hasUnrenderedLoadedMessages && (
+                    <ChatOpeningEmptyState
+                      opening={chatOpening}
+                      onAction={handleOpeningAction}
+                    />
                   )}
                   {!compactMode && hasUnrenderedLoadedMessages && (
                     <div className="flex h-64 items-center justify-center px-4 text-center">

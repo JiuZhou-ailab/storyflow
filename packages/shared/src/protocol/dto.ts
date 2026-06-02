@@ -333,6 +333,7 @@ export interface WorkspaceVersionFileChange {
   path: string
   status: 'added' | 'modified' | 'deleted' | 'renamed'
   previousPath?: string
+  unifiedDiff?: string
 }
 
 // ---------------------------------------------------------------------------

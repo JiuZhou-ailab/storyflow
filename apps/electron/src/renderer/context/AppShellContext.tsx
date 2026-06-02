@@ -26,6 +26,7 @@ import type {
   LlmConnectionWithStatus,
   TestAutomationResult,
   SendMessageOptions,
+  WorkspaceProjectType,
 } from '../../shared/types'
 import type { SessionStatus as SessionStatusConfig } from '@/config/session-status-config'
 import type { SessionOptions, SessionOptionUpdates } from '../hooks/useSessionOptions'
@@ -63,6 +64,11 @@ export interface AppShellContextType {
   mentionFiles?: MentionFileReference[]
   /** Working directory of the active session — needed for project-level skill resolution */
   activeSessionWorkingDirectory?: string
+  /** Project metadata used by the empty chat opening state. */
+  openingProjectMetadata?: {
+    projectType?: WorkspaceProjectType
+    methodPackId?: string
+  }
   /** All label configs (tree) for label menu and badge display */
   labels?: import('@craft-agent/shared/labels').LabelConfig[]
   /** Callback when session labels change */

@@ -116,10 +116,15 @@ describe('workspace version control', () => {
       const changes = await compareWorkspaceVersions(root, base.commitHash as string, head.commitHash as string)
 
       expect(changes).toEqual([
-        { path: 'chapter.md', status: 'modified' },
-        { path: 'new.md', status: 'added' },
-        { path: 'notes.md', status: 'deleted' },
+        expect.objectContaining({ path: 'chapter.md', status: 'modified' }),
+        expect.objectContaining({ path: 'new.md', status: 'added' }),
+        expect.objectContaining({ path: 'notes.md', status: 'deleted' }),
       ])
+      expect(changes[0]?.unifiedDiff).toContain('diff --git a/chapter.md b/chapter.md')
+      expect(changes[0]?.unifiedDiff).toContain('-first')
+      expect(changes[0]?.unifiedDiff).toContain('+second')
+      expect(changes[1]?.unifiedDiff).toContain('new file mode')
+      expect(changes[2]?.unifiedDiff).toContain('deleted file mode')
     } finally {
       await rm(root, { recursive: true, force: true })
     }

@@ -1085,7 +1085,7 @@ export function NavigationProvider({
 
     // If nothing was in the URL, navigate to default
     if (!params.get('route') && !params.get('panels')) {
-      navigate(routes.view.allSessions(), { skipAutoSelect: true })
+      navigate(routes.view.allSessions())
     }
 
     // Initialize history with seq=0 (replaceState so we don't create an extra entry)
