@@ -2,7 +2,7 @@
 // output: Managed BrowserWindow instances with workspace-aware routing and native window behavior
 // pos: Owns desktop app window creation, restoration, and per-window lifecycle wiring
 
-import { BrowserWindow, shell, nativeTheme, Menu, app } from 'electron'
+import { BrowserWindow, shell, nativeTheme, Menu, app, screen } from 'electron'
 import { windowLog } from './logger'
 import { join } from 'path'
 import { existsSync } from 'fs'
@@ -12,6 +12,25 @@ import type { SavedWindow } from './window-state'
 
 // Vite dev server URL for hot reload
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
+const WINDOW_SCREEN_MARGIN = 64
+const DEFAULT_MAIN_WINDOW_SIZE = { width: 1400, height: 900 }
+const DEFAULT_FOCUSED_WINDOW_SIZE = { width: 900, height: 700 }
+const MIN_WINDOW_SIZE = { width: 800, height: 600 }
+
+function resolveInitialWindowSize(focused: boolean): { width: number, height: number } {
+  const baseSize = focused ? DEFAULT_FOCUSED_WINDOW_SIZE : DEFAULT_MAIN_WINDOW_SIZE
+  const workAreaSize = screen.getPrimaryDisplay()?.workAreaSize
+  if (!workAreaSize?.width || !workAreaSize.height) return baseSize
+
+  const maxWidth = Math.max(MIN_WINDOW_SIZE.width, workAreaSize.width - WINDOW_SCREEN_MARGIN)
+  const maxHeight = Math.max(MIN_WINDOW_SIZE.height, workAreaSize.height - WINDOW_SCREEN_MARGIN)
+  const scale = Math.min(1, maxWidth / baseSize.width, maxHeight / baseSize.height)
+
+  return {
+    width: Math.max(MIN_WINDOW_SIZE.width, Math.round(baseSize.width * scale)),
+    height: Math.max(MIN_WINDOW_SIZE.height, Math.round(baseSize.height * scale)),
+  }
+}
 
 function getNativeWindowBackgroundColor(): string {
   return nativeTheme.shouldUseDarkColors ? '#2b292e' : '#fafafb'
@@ -133,8 +152,7 @@ export class WindowManager {
     }
 
     // Use smaller window size for focused mode (single session view)
-    const windowWidth = focused ? 900 : 1400
-    const windowHeight = focused ? 700 : 900
+    const { width: windowWidth, height: windowHeight } = resolveInitialWindowSize(focused)
 
     // Platform-specific window options
     const isMac = process.platform === 'darwin'
@@ -144,8 +162,8 @@ export class WindowManager {
     const window = new BrowserWindow({
       width: windowWidth,
       height: windowHeight,
-      minWidth: 800,
-      minHeight: 600,
+      minWidth: MIN_WINDOW_SIZE.width,
+      minHeight: MIN_WINDOW_SIZE.height,
       show: false, // Don't show until ready-to-show event (faster perceived startup)
       backgroundColor: getNativeWindowBackgroundColor(),
       title: '',

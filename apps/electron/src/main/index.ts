@@ -120,6 +120,7 @@ import { validateGitBashPath, checkVCRedistInstalled } from '@craft-agent/server
 import { shouldCreateWindowsAfterStartup } from './startup-state'
 import { createClientAuthConfigFromRuntimeEnv, createClientAuthService } from './client-auth'
 import { readClientAuthOverrides } from './client-auth-overrides'
+import { createClientAuthSessionStore } from './client-auth-session-store'
 import { resolveElectronRuntimePaths } from './runtime-paths'
 import { getAppVersion } from '@craft-agent/shared/version'
 import { normalizeFeedbackIssueInput, submitFeedbackIssue } from './feedback'
@@ -543,10 +544,14 @@ app.whenReady().then(async () => {
     if (clientAuthOverrideKeys.length > 0) {
       mainLog.info(`[client-auth] Applying overrides from ${clientAuthOverrides.filePath}: ${clientAuthOverrideKeys.join(', ')}`)
     }
+    const clientAuthSessionStore = createClientAuthSessionStore()
+    const initialClientAuthSession = await clientAuthSessionStore.load()
     const clientAuthService = createClientAuthService(createClientAuthConfigFromRuntimeEnv({
       ...process.env,
       ...clientAuthOverrides.values,
     }), {
+      initialSession: initialClientAuthSession,
+      sessionStore: clientAuthSessionStore,
       openExternal: (url) => shell.openExternal(url).then(() => undefined),
     })
     const initialClientAuthState = clientAuthService.getState()

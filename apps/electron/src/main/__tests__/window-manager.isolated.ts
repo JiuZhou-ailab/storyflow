@@ -26,7 +26,13 @@ mock.module('electron', () => ({
   app: {
     isPackaged: true,
   },
+  screen: {
+    getPrimaryDisplay: () => ({
+      workAreaSize: { width: 1280, height: 720 },
+    }),
+  },
   BrowserWindow: class MockBrowserWindow {
+    private listeners: Record<string, Function[]> = {}
     webContents = createMockWebContents()
 
     constructor(opts?: any) {
@@ -34,7 +40,10 @@ mock.module('electron', () => ({
     }
 
     once = mock(() => {})
-    on = mock(() => {})
+    on = mock((event: string, cb: Function) => {
+      if (!this.listeners[event]) this.listeners[event] = []
+      this.listeners[event].push(cb)
+    })
     loadFile = mock(() => {})
     loadURL = mock(() => {})
     show = mock(() => {})
@@ -90,11 +99,30 @@ describe('WindowManager', () => {
     expect(createdWindowOptions[0]?.backgroundColor).toBe('#fafafb')
   })
 
-  it('resets renderer zoom for a stable first project layout', () => {
+  it('keeps native renderer zoom stable for smooth window resizing', () => {
     const manager = new WindowManager()
 
     const win = manager.createWindow({ workspaceId: 'workspace-1' }) as any
 
     expect(win.webContents.setZoomFactor).toHaveBeenCalledWith(1)
+  })
+
+  it('fits the ordinary startup window inside the primary display work area', () => {
+    const manager = new WindowManager()
+
+    manager.createWindow({ workspaceId: '' })
+
+    expect(createdWindowOptions[0]?.width).toBeLessThanOrEqual(1280 - 64)
+    expect(createdWindowOptions[0]?.height).toBeLessThanOrEqual(720 - 64)
+    expect(createdWindowOptions[0]?.width / createdWindowOptions[0]?.height).toBeCloseTo(1400 / 900, 1)
+  })
+
+  it('does not attach a native resize handler for renderer zoom', () => {
+    const manager = new WindowManager()
+
+    const win = manager.createWindow({ workspaceId: 'workspace-1' }) as any
+
+    const resizeHandlers = win.on.mock.calls.filter((call: unknown[]) => call[0] === 'resize')
+    expect(resizeHandlers).toHaveLength(0)
   })
 })

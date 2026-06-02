@@ -20,6 +20,7 @@ export type CredentialType =
   // Global credentials (legacy, kept for backwards compatibility)
   | 'anthropic_api_key'  // Anthropic API key for Claude
   | 'claude_oauth'       // Claude OAuth token (Max subscription)
+  | 'client_auth_session' // Desktop client login session
   // LLM connection credentials (keyed by connection slug)
   | 'llm_api_key'        // API key for LLM connection
   | 'llm_oauth'          // OAuth token for LLM connection
@@ -39,6 +40,7 @@ export type CredentialType =
 const VALID_CREDENTIAL_TYPES: readonly CredentialType[] = [
   'anthropic_api_key',
   'claude_oauth',
+  'client_auth_session',
   'llm_api_key',
   'llm_oauth',
   'llm_iam',

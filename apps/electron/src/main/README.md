@@ -9,6 +9,7 @@ Electron main-process shell: app startup, native windows, IPC registration, auth
 - `browser-pane-manager.ts` - Native browser-pane window manager.
 - `chunked-rpc.ts` - Chunked RPC payload helper.
 - `client-auth.ts` - Desktop client authentication service.
+- `client-auth-session-store.ts` - Encrypted desktop auth session persistence.
 - `deep-link.ts` - Deep-link parsing and dispatch.
 - `index.ts` - Main-process bootstrap.
 - `logger.ts` - Main-process logging setup.
