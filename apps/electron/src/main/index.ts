@@ -7,7 +7,7 @@
 import { loadShellEnv } from './shell-env'
 loadShellEnv()
 
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, net, shell } from 'electron'
 import { createHash, randomUUID } from 'crypto'
 import { hostname, homedir } from 'os'
 import * as Sentry from '@sentry/electron/main'
@@ -605,7 +605,9 @@ app.whenReady().then(async () => {
       broadcastClientAuthState()
     })
     ipcMain.handle('feedback:submitIssue', async (_event, input: unknown) => {
-      return submitFeedbackIssue(normalizeFeedbackIssueInput(input))
+      return submitFeedbackIssue(normalizeFeedbackIssueInput(input), {
+        fetch: (url, init) => net.fetch(url, init),
+      })
     })
 
     if (!isClientOnly) {

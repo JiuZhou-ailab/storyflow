@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, mock } from 'bun:test'
 import {
   buildFeedbackIssueBody,
   submitFeedbackIssue,
+  type FeedbackFetch,
   type FeedbackIssueInput,
 } from '../feedback'
 
@@ -112,5 +113,30 @@ describe('desktop feedback issue submission', () => {
     })).resolves.toEqual({
       url: 'https://github.com/JiuZhou-ailab/storyflow/issues/88',
     })
+  })
+
+  it('allows the Electron main process to use its Chromium network stack for worker submissions', async () => {
+    delete process.env.STORYFLOW_FEEDBACK_ENDPOINT
+    delete process.env.STORYFLOW_FEEDBACK_GITHUB_TOKEN
+    delete process.env.GITHUB_TOKEN
+
+    globalThis.fetch = mock(async () => {
+      throw new TypeError('fetch failed')
+    }) as unknown as typeof fetch
+    const electronFetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toBe('https://storyflow-feedback.d1095245867.workers.dev/api/feedback')
+      expect(init?.method).toBe('POST')
+      return Response.json({ url: 'https://github.com/JiuZhou-ailab/storyflow/issues/125' })
+    })
+
+    await expect(submitFeedbackIssue(input, {
+      fetch: electronFetch as unknown as FeedbackFetch,
+      getGitHubToken: async () => {
+        throw new Error('worker submissions should not require local GitHub auth')
+      },
+    })).resolves.toEqual({
+      url: 'https://github.com/JiuZhou-ailab/storyflow/issues/125',
+    })
+    expect(electronFetch).toHaveBeenCalledTimes(1)
   })
 })

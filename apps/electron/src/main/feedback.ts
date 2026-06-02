@@ -29,7 +29,10 @@ export type FeedbackIssueResult = {
   url: string
 }
 
+export type FeedbackFetch = (url: string, init?: RequestInit) => Promise<Response>
+
 export type SubmitFeedbackIssueDeps = {
+  fetch?: FeedbackFetch
   getGitHubToken?: () => Promise<string | null>
 }
 
@@ -88,8 +91,13 @@ export function buildFeedbackIssueBody(input: FeedbackIssueInput): string {
   return lines.join('\n')
 }
 
-async function postJson(url: string, body: unknown, headers: Record<string, string> = {}): Promise<unknown> {
-  const response = await fetch(url, {
+async function postJson(
+  fetchImpl: FeedbackFetch,
+  url: string,
+  body: unknown,
+  headers: Record<string, string> = {}
+): Promise<unknown> {
+  const response = await fetchImpl(url, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -131,7 +139,7 @@ export async function submitFeedbackIssue(
 
   const endpoint = resolveFeedbackEndpoint()
   if (endpoint) {
-    const data = await postJson(endpoint, input)
+    const data = await postJson(deps.fetch ?? fetch, endpoint, input)
     const url = data && typeof data === 'object' ? (data as Record<string, unknown>).url : undefined
     return { url: typeof url === 'string' ? url : endpoint }
   }
@@ -144,6 +152,7 @@ export async function submitFeedbackIssue(
   }
 
   const issue = await postJson(
+    deps.fetch ?? fetch,
     `https://api.github.com/repos/${FEEDBACK_REPOSITORY}/issues`,
     {
       title: `[Feedback] ${input.title}`,
