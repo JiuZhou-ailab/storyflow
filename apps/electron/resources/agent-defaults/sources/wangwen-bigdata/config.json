@@ -1,0 +1,18 @@
+{
+  "id": "builtin-wangwen-bigdata",
+  "name": "Wangwen BigData",
+  "slug": "wangwen-bigdata",
+  "enabled": false,
+  "provider": "wangwen",
+  "type": "mcp",
+  "icon": "📊",
+  "tagline": "网文、短剧、漫剧榜单和标签分析数据源",
+  "mcp": {
+    "transport": "http",
+    "url": "https://wwdsj-mcp.lingjingai.cn/mcp",
+    "authType": "none"
+  },
+  "createdAt": 1747739700000,
+  "updatedAt": 1747739700000,
+  "connectionStatus": "untested"
+}

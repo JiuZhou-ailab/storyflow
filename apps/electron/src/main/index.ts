@@ -94,6 +94,7 @@ import { loadWindowState, saveWindowState } from './window-state'
 import { getWorkspaces, getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { initializeDocs } from '@craft-agent/shared/docs'
 import { initializeReleaseNotes } from '@craft-agent/shared/release-notes'
+import { seedDefaultAgentResources } from '@craft-agent/shared/agent-defaults'
 import { ensureDefaultPermissions } from '@craft-agent/shared/agent/permissions-config'
 import { ensureToolIcons, ensurePresetThemes } from '@craft-agent/shared/config'
 import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
@@ -394,6 +395,9 @@ app.whenReady().then(async () => {
 
   // Initialize bundled release notes
   initializeReleaseNotes()
+
+  // Seed default skills and sources to ~/.agents/ without overwriting user edits
+  seedDefaultAgentResources()
 
   // Ensure default permissions file exists (copies bundled default.json on first run)
   ensureDefaultPermissions()

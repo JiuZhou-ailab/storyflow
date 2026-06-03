@@ -1,0 +1,4 @@
+interface:
+  display_name: "网文短篇诊断"
+  short_description: "诊断短篇网文的开篇留存、冲突节奏、爽点与结尾兑现问题"
+  default_prompt: "使用 $webnovel-short-diagnose 诊断这篇短篇网文，并列出最高影响的修改优先级。"
