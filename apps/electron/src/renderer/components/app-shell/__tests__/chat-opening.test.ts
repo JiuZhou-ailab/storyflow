@@ -9,6 +9,7 @@ import { resolveChatOpeningPrompt } from '../chat-opening'
 
 const chatDisplaySource = readFileSync(new URL('../ChatDisplay.tsx', import.meta.url), 'utf8')
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf8')
+const zhHansLocale = JSON.parse(readFileSync(new URL('../../../../../../../packages/shared/src/i18n/locales/zh-Hans.json', import.meta.url), 'utf8'))
 
 describe('resolveChatOpeningPrompt', () => {
   it('uses a general opening when the workspace has no writing method pack', () => {
@@ -25,6 +26,16 @@ describe('resolveChatOpeningPrompt', () => {
       'general.fix',
       'general.implement',
       'general.summarize',
+    ])
+    expect(opening.sections.map(section => section.id)).toEqual([
+      'project',
+      'sources',
+      'tools',
+    ])
+    expect(opening.sections.find(section => section.id === 'tools')?.actions.map(action => action.id)).toEqual([
+      'tools.tutorial',
+      'tools.skill',
+      'tools.inspect',
     ])
   })
 
@@ -43,6 +54,11 @@ describe('resolveChatOpeningPrompt', () => {
       'freeCreation.materials',
       'freeCreation.idea',
       'freeCreation.review',
+    ])
+    expect(opening.sections.map(section => section.id)).toEqual([
+      'writing',
+      'sources',
+      'tools',
     ])
   })
 
@@ -94,6 +110,23 @@ describe('resolveChatOpeningPrompt', () => {
     expect(chatDisplaySource).toContain('turns.length === 0')
     expect(chatDisplaySource).toContain('handleOpeningAction')
     expect(chatDisplaySource).toContain('onInputChange?.(prompt)')
+    expect(chatDisplaySource).toContain('opening.sections.map')
+    expect(chatDisplaySource).toContain('action.descriptionKey')
+  })
+
+  it('keeps guided start copy concise', () => {
+    const opening = resolveChatOpeningPrompt({
+      workspaceName: '短篇项目',
+      projectType: 'short-form',
+      methodPackId: 'short-form.article',
+    })
+    const allActions = opening.sections.flatMap(section => section.actions)
+
+    expect(allActions).toHaveLength(9)
+    for (const action of allActions) {
+      expect(zhHansLocale[action.labelKey].length).toBeLessThanOrEqual(8)
+      expect(zhHansLocale[action.descriptionKey].length).toBeLessThanOrEqual(14)
+    }
   })
 
   it('uses normalized AppShell opening metadata before raw workspace metadata', () => {

@@ -462,8 +462,8 @@ function ChatOpeningEmptyState({
   ].filter((part): part is string => Boolean(part))
 
   return (
-    <div className="flex min-h-[360px] items-center justify-center px-6 py-16">
-      <div className="w-full max-w-[560px] text-center">
+    <div className="flex min-h-[420px] items-center justify-center px-6 py-12">
+      <div className="w-full max-w-[680px] text-center">
         <div className="text-[17px] font-medium leading-6 text-foreground">
           {t(opening.titleKey)}
         </div>
@@ -475,16 +475,30 @@ function ChatOpeningEmptyState({
         <div className="mt-1 text-xs text-muted-foreground/70">
           {t(opening.hintKey)}
         </div>
-        <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {opening.actions.map((action) => (
-            <button
-              key={action.id}
-              type="button"
-              onClick={() => onAction(action)}
-              className="min-h-10 rounded-[7px] border border-border/60 bg-background px-3 py-2 text-left text-sm text-foreground/80 shadow-minimal transition-colors hover:border-foreground/20 hover:bg-foreground/[0.03]"
-            >
-              {t(action.labelKey)}
-            </button>
+        <div className="mt-6 space-y-4 text-left">
+          {opening.sections.map((section) => (
+            <section key={section.id}>
+              <div className="mb-2 px-1 text-[11px] font-medium text-muted-foreground">
+                {t(section.labelKey)}
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {section.actions.map((action) => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    onClick={() => onAction(action)}
+                    className="min-h-[52px] rounded-[7px] border border-border/60 bg-background px-3 py-2 text-left shadow-minimal transition-colors hover:border-foreground/20 hover:bg-foreground/[0.03]"
+                  >
+                    <span className="block text-sm font-medium text-foreground/85">
+                      {t(action.labelKey)}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                      {t(action.descriptionKey)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       </div>

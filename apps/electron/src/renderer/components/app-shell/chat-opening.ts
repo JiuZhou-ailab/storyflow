@@ -11,7 +11,14 @@ import type { WorkspaceProjectType } from '../../../shared/types'
 export interface ChatOpeningAction {
   id: string
   labelKey: string
+  descriptionKey: string
   promptKey: string
+}
+
+export interface ChatOpeningSection {
+  id: 'project' | 'writing' | 'sources' | 'tools'
+  labelKey: string
+  actions: ChatOpeningAction[]
 }
 
 export interface ChatOpeningPrompt {
@@ -19,6 +26,7 @@ export interface ChatOpeningPrompt {
   workspaceName?: string
   methodPackName?: string
   hintKey: string
+  sections: ChatOpeningSection[]
   actions: ChatOpeningAction[]
 }
 
@@ -30,67 +38,101 @@ export interface ResolveChatOpeningPromptInput {
 
 interface OpeningPreset {
   titleKey: string
+  primarySection: ChatOpeningSection
   actions: ChatOpeningAction[]
 }
 
+function starterAction(id: string): ChatOpeningAction {
+  const keyPrefix = `chatOpening.${id}`
+  return {
+    id,
+    labelKey: `${keyPrefix}.label`,
+    descriptionKey: `${keyPrefix}.desc`,
+    promptKey: `${keyPrefix}.prompt`,
+  }
+}
+
+const GENERAL_ACTIONS: ChatOpeningAction[] = [
+  starterAction('general.analyze'),
+  starterAction('general.fix'),
+  starterAction('general.implement'),
+  starterAction('general.summarize'),
+]
+
 const GENERAL_OPENING: OpeningPreset = {
   titleKey: 'chatOpening.general.title',
-  actions: [
-    { id: 'general.analyze', labelKey: 'chatOpening.general.analyze.label', promptKey: 'chatOpening.general.analyze.prompt' },
-    { id: 'general.fix', labelKey: 'chatOpening.general.fix.label', promptKey: 'chatOpening.general.fix.prompt' },
-    { id: 'general.implement', labelKey: 'chatOpening.general.implement.label', promptKey: 'chatOpening.general.implement.prompt' },
-    { id: 'general.summarize', labelKey: 'chatOpening.general.summarize.label', promptKey: 'chatOpening.general.summarize.prompt' },
-  ],
+  primarySection: {
+    id: 'project',
+    labelKey: 'chatOpening.section.project',
+    actions: GENERAL_ACTIONS,
+  },
+  actions: GENERAL_ACTIONS,
 }
 
 const SHORT_FORM_SKILL_ACTIONS: ChatOpeningAction[] = [
-  { id: 'shortForm.goldenThree', labelKey: 'chatOpening.shortForm.goldenThree.label', promptKey: 'chatOpening.shortForm.goldenThree.prompt' },
-  { id: 'shortForm.draftChapter', labelKey: 'chatOpening.shortForm.draftChapter.label', promptKey: 'chatOpening.shortForm.draftChapter.prompt' },
-  { id: 'shortForm.revise', labelKey: 'chatOpening.shortForm.revise.label', promptKey: 'chatOpening.shortForm.revise.prompt' },
-  { id: 'shortForm.opening', labelKey: 'chatOpening.shortForm.opening.label', promptKey: 'chatOpening.shortForm.opening.prompt' },
+  starterAction('shortForm.goldenThree'),
+  starterAction('shortForm.draftChapter'),
+  starterAction('shortForm.revise'),
+  starterAction('shortForm.opening'),
 ]
+
+const SOURCE_SECTION: ChatOpeningSection = {
+  id: 'sources',
+  labelKey: 'chatOpening.section.sources',
+  actions: [
+    starterAction('sources.collect'),
+    starterAction('sources.compare'),
+  ],
+}
+
+const TOOL_SECTION: ChatOpeningSection = {
+  id: 'tools',
+  labelKey: 'chatOpening.section.tools',
+  actions: [
+    starterAction('tools.tutorial'),
+    starterAction('tools.skill'),
+    starterAction('tools.inspect'),
+  ],
+}
+
+function createWritingPreset(titleKey: string, actions: ChatOpeningAction[]): OpeningPreset {
+  return {
+    titleKey,
+    primarySection: {
+      id: 'writing',
+      labelKey: 'chatOpening.section.writing',
+      actions,
+    },
+    actions,
+  }
+}
 
 const PROJECT_TYPE_OPENINGS: Record<WorkspaceProjectType, OpeningPreset> = {
   general: GENERAL_OPENING,
-  novel: {
-    titleKey: 'chatOpening.novel.title',
-    actions: [
-      { id: 'novel.continue', labelKey: 'chatOpening.novel.continue.label', promptKey: 'chatOpening.novel.continue.prompt' },
-      { id: 'novel.causality', labelKey: 'chatOpening.novel.causality.label', promptKey: 'chatOpening.novel.causality.prompt' },
-      { id: 'novel.characters', labelKey: 'chatOpening.novel.characters.label', promptKey: 'chatOpening.novel.characters.prompt' },
-      { id: 'novel.outline', labelKey: 'chatOpening.novel.outline.label', promptKey: 'chatOpening.novel.outline.prompt' },
-    ],
-  },
-  screenplay: {
-    titleKey: 'chatOpening.screenplay.title',
-    actions: [
-      { id: 'screenplay.logic', labelKey: 'chatOpening.screenplay.logic.label', promptKey: 'chatOpening.screenplay.logic.prompt' },
-      { id: 'screenplay.scene', labelKey: 'chatOpening.screenplay.scene.label', promptKey: 'chatOpening.screenplay.scene.prompt' },
-      { id: 'screenplay.motivation', labelKey: 'chatOpening.screenplay.motivation.label', promptKey: 'chatOpening.screenplay.motivation.prompt' },
-      { id: 'screenplay.sceneList', labelKey: 'chatOpening.screenplay.sceneList.label', promptKey: 'chatOpening.screenplay.sceneList.prompt' },
-    ],
-  },
-  'short-form': {
-    titleKey: 'chatOpening.shortForm.title',
-    actions: SHORT_FORM_SKILL_ACTIONS,
-  },
+  novel: createWritingPreset('chatOpening.novel.title', [
+    starterAction('novel.continue'),
+    starterAction('novel.causality'),
+    starterAction('novel.characters'),
+    starterAction('novel.outline'),
+  ]),
+  screenplay: createWritingPreset('chatOpening.screenplay.title', [
+    starterAction('screenplay.logic'),
+    starterAction('screenplay.scene'),
+    starterAction('screenplay.motivation'),
+    starterAction('screenplay.sceneList'),
+  ]),
+  'short-form': createWritingPreset('chatOpening.shortForm.title', SHORT_FORM_SKILL_ACTIONS),
 }
 
 const METHOD_PACK_OPENINGS: Partial<Record<MethodPackId, OpeningPreset>> = {
-  'novel.claude-book': {
-    titleKey: 'chatOpening.longForm.title',
-    actions: PROJECT_TYPE_OPENINGS.novel.actions,
-  },
+  'novel.claude-book': createWritingPreset('chatOpening.longForm.title', PROJECT_TYPE_OPENINGS.novel.actions),
   'screenplay.logic': PROJECT_TYPE_OPENINGS.screenplay,
-  'novel.free-creation': {
-    titleKey: 'chatOpening.freeCreation.title',
-    actions: [
-      { id: 'freeCreation.continue', labelKey: 'chatOpening.freeCreation.continue.label', promptKey: 'chatOpening.freeCreation.continue.prompt' },
-      { id: 'freeCreation.materials', labelKey: 'chatOpening.freeCreation.materials.label', promptKey: 'chatOpening.freeCreation.materials.prompt' },
-      { id: 'freeCreation.idea', labelKey: 'chatOpening.freeCreation.idea.label', promptKey: 'chatOpening.freeCreation.idea.prompt' },
-      { id: 'freeCreation.review', labelKey: 'chatOpening.freeCreation.review.label', promptKey: 'chatOpening.freeCreation.review.prompt' },
-    ],
-  },
+  'novel.free-creation': createWritingPreset('chatOpening.freeCreation.title', [
+    starterAction('freeCreation.continue'),
+    starterAction('freeCreation.materials'),
+    starterAction('freeCreation.idea'),
+    starterAction('freeCreation.review'),
+  ]),
   'short-form.article': PROJECT_TYPE_OPENINGS['short-form'],
 }
 
@@ -133,6 +175,7 @@ export function resolveChatOpeningPrompt({
     workspaceName: workspaceName?.trim() || undefined,
     methodPackName: methodPack?.displayName,
     hintKey: 'chatOpening.hint',
+    sections: [preset.primarySection, SOURCE_SECTION, TOOL_SECTION],
     actions: preset.actions,
   }
 }
