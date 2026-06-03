@@ -78,6 +78,26 @@ describe('resolveChatOpeningPrompt', () => {
     ])
   })
 
+  it('adds an inspiration exploration starter backed by Wangwen BigData', () => {
+    const opening = resolveChatOpeningPrompt({
+      workspaceName: '短篇项目',
+      projectType: 'short-form',
+      methodPackId: 'short-form.article',
+    })
+    const sourceActions = opening.sections.find(section => section.id === 'sources')?.actions ?? []
+
+    expect(sourceActions.map(action => action.id)).toEqual([
+      'sources.inspiration',
+      'sources.collect',
+      'sources.compare',
+    ])
+    expect(zhHansLocale['chatOpening.sources.inspiration.label']).toBe('灵感探索')
+    expect(zhHansLocale['chatOpening.sources.inspiration.desc']).toBe('近一周新秀榜')
+    expect(zhHansLocale['chatOpening.sources.inspiration.prompt']).toContain('[source:wangwen-bigdata]')
+    expect(zhHansLocale['chatOpening.sources.inspiration.prompt']).toContain('近一周')
+    expect(zhHansLocale['chatOpening.sources.inspiration.prompt']).toContain('新秀榜')
+  })
+
   it('keeps unknown writing Method Pack ids on writing actions instead of falling back to generic project buttons', () => {
     const opening = resolveChatOpeningPrompt({
       workspaceName: '短篇项目',
@@ -122,7 +142,7 @@ describe('resolveChatOpeningPrompt', () => {
     })
     const allActions = opening.sections.flatMap(section => section.actions)
 
-    expect(allActions).toHaveLength(9)
+    expect(allActions).toHaveLength(10)
     for (const action of allActions) {
       expect(zhHansLocale[action.labelKey].length).toBeLessThanOrEqual(8)
       expect(zhHansLocale[action.descriptionKey].length).toBeLessThanOrEqual(14)

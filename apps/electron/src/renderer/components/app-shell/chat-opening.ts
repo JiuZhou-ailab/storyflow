@@ -80,6 +80,7 @@ const SOURCE_SECTION: ChatOpeningSection = {
   id: 'sources',
   labelKey: 'chatOpening.section.sources',
   actions: [
+    starterAction('sources.inspiration'),
     starterAction('sources.collect'),
     starterAction('sources.compare'),
   ],
