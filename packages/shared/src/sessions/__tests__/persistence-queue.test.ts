@@ -3,6 +3,7 @@ import type { SessionHeader } from '../types'
 import {
   getHeaderMetadataSignature,
   mergeHeaderWithExternalMetadata,
+  shouldLogMetadataMismatch,
   summarizeSessionPersistWrite,
 } from '../persistence-queue'
 
@@ -112,5 +113,17 @@ describe('session persistence header conflict helpers', () => {
     const merged = mergeHeaderWithExternalMetadata(local, disk)
     expect(merged.name).toBe('External Name')
     expect(merged.labels).toEqual(['external'])
+  })
+
+  it('logs only external metadata preservation, not normal local title updates', () => {
+    expect(shouldLogMetadataMismatch({
+      hasMetadataMismatch: true,
+      hasExternalMetadataChange: false,
+    })).toBe(false)
+
+    expect(shouldLogMetadataMismatch({
+      hasMetadataMismatch: true,
+      hasExternalMetadataChange: true,
+    })).toBe(true)
   })
 })
