@@ -9,6 +9,7 @@ import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import {
   buildNovelWorkspaceTree,
+  filterReviewableNovelFileChanges,
   groupNovelFileChanges,
   isShortFormNovelWorkspaceFiles,
   selectDefaultNovelTab,
@@ -54,7 +55,8 @@ export function NovelWorkspacePanel({
 }: NovelWorkspacePanelProps) {
   const { t } = useTranslation()
   const tree = React.useMemo(() => buildNovelWorkspaceTree(files), [files])
-  const changeGroups = React.useMemo(() => groupNovelFileChanges(changes, rootPath), [changes, rootPath])
+  const reviewableChanges = React.useMemo(() => filterReviewableNovelFileChanges(changes, rootPath), [changes, rootPath])
+  const changeGroups = React.useMemo(() => groupNovelFileChanges(reviewableChanges, rootPath), [reviewableChanges, rootPath])
   const isShortFormWorkspace = React.useMemo(() => isShortFormNovelWorkspaceFiles(files), [files])
   const visibleTabs = React.useMemo(
     () => getVisibleNovelWorkspaceTabs({
@@ -155,7 +157,7 @@ export function NovelWorkspacePanel({
             <SectionHeader
               icon={<GitPullRequestArrow className="h-4 w-4" />}
               label={t('writing.tabs.changes')}
-              count={changes.length}
+              count={reviewableChanges.length}
               flush
             />
             <div className="mt-2 divide-y divide-border/60 border-y border-border/60">
@@ -178,7 +180,7 @@ export function NovelWorkspacePanel({
                     ))}
                   </div>
                 ))}
-              {changes.length === 0 && (
+              {reviewableChanges.length === 0 && (
                 <div className="py-12 text-center text-xs text-muted-foreground">{t('writing.emptySection')}</div>
               )}
             </div>

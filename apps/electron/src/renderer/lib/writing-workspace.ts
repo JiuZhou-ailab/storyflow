@@ -419,14 +419,22 @@ export function groupNovelFileChanges(changes: FileChange[], rootPath = ''): Nov
   const groups = createEmptyChangeGroups()
 
   for (const change of changes) {
-    const relativePath = rootPath
-      ? stripRootPath(change.filePath, rootPath)
-      : change.filePath
-    const category = categorizeNovelPath(relativePath)
+    const category = categorizeNovelFileChange(change, rootPath)
     groups[category].push(change)
   }
 
   return groups
+}
+
+export function filterReviewableNovelFileChanges(changes: FileChange[], rootPath = ''): FileChange[] {
+  return changes.filter(change => categorizeNovelFileChange(change, rootPath) !== 'other')
+}
+
+function categorizeNovelFileChange(change: FileChange, rootPath: string): WritingFileCategory {
+  const relativePath = rootPath
+    ? stripRootPath(change.filePath, rootPath)
+    : change.filePath
+  return categorizeNovelPath(relativePath)
 }
 
 export function mapSearchResultsToNovelWorkspaceFiles(results: FileSearchResult[]): NovelWorkspaceFile[] {

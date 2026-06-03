@@ -45,6 +45,8 @@ describe('workspace structure context', () => {
     expect(context).toContain('正文/')
     expect(context).toContain('01-opening.md')
     expect(context).toContain('Do not invent paths from display names')
+    expect(context).toContain('Durable project deliverables belong in workspace files')
+    expect(context).toContain('Use chat for questions, clarification, progress, and summaries')
     expect(context).toContain('</workspace_structure>')
   })
 })

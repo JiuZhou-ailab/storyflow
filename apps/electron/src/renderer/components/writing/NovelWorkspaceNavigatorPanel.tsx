@@ -16,6 +16,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import {
   buildNovelWorkspaceTree,
+  filterReviewableNovelFileChanges,
   groupNovelFileChanges,
   isShortFormNovelWorkspaceFiles,
   selectDefaultNovelTab,
@@ -57,7 +58,8 @@ export function NovelWorkspaceNavigatorPanel({
 }: NovelWorkspaceNavigatorPanelProps) {
   const { t } = useTranslation()
   const tree = React.useMemo(() => buildNovelWorkspaceTree(files), [files])
-  const changeGroups = React.useMemo(() => groupNovelFileChanges(changes, rootPath), [changes, rootPath])
+  const reviewableChanges = React.useMemo(() => filterReviewableNovelFileChanges(changes, rootPath), [changes, rootPath])
+  const changeGroups = React.useMemo(() => groupNovelFileChanges(reviewableChanges, rootPath), [reviewableChanges, rootPath])
   const isShortFormWorkspace = React.useMemo(() => isShortFormNovelWorkspaceFiles(files), [files])
   const visibleTabs = React.useMemo(
     () => getVisibleNovelWorkspaceTabs({
@@ -77,7 +79,7 @@ export function NovelWorkspaceNavigatorPanel({
 
   const sectionId = TAB_TO_SECTION[activeTab]
   const section = sectionId ? tree[sectionId] : null
-  const summary = section ? summarizeNovelSection(section.files) : { count: changes.length }
+  const summary = section ? summarizeNovelSection(section.files) : { count: reviewableChanges.length }
   const activeTabConfig = visibleTabs.find(tab => tab.id === activeTab) ?? visibleTabs[0] ?? {
     id: 'manuscript' as const,
     labelKey: 'writing.tabs.manuscript' as const,
@@ -115,7 +117,7 @@ export function NovelWorkspaceNavigatorPanel({
         <ChangesList
           rootPath={rootPath}
           changeGroups={changeGroups}
-          changes={changes}
+          changes={reviewableChanges}
           onOpenFile={onOpenFile}
         />
       ) : section ? (

@@ -8,6 +8,7 @@ import {
   buildNovelWorkspaceTree,
   detectNovelProjectFromSearchResults,
   describeNovelWorkspaceFile,
+  filterReviewableNovelFileChanges,
   getNovelWorkspaceCandidateRoots,
   getNovelWorkspaceRelativePath,
   mapSearchResultsToNovelWorkspaceFiles,
@@ -160,6 +161,22 @@ describe('writing workspace helpers', () => {
     expect(grouped.manuscript.map(item => item.filePath)).toEqual(['/novel/story/chapters/chapter-02.md'])
     expect(grouped.timeline.map(item => item.filePath)).toEqual(['/novel/timeline/current-chapter.md'])
     expect(grouped.other.map(item => item.filePath)).toEqual(['/novel/README.md'])
+  })
+
+  it('filters changes that are not visible in the writing workspace catalog', () => {
+    const changes: FileChange[] = [
+      change('/novel/story/chapters/chapter-02.md'),
+      change('/novel/自由区/灵感.md'),
+      change('/novel/README.md'),
+      change('/novel/.codex/session.json'),
+    ]
+
+    const reviewableChanges = filterReviewableNovelFileChanges(changes, '/novel')
+
+    expect(reviewableChanges.map(item => item.filePath)).toEqual([
+      '/novel/story/chapters/chapter-02.md',
+      '/novel/自由区/灵感.md',
+    ])
   })
 
   it('strips the novel workspace root before deriving display paths', () => {
