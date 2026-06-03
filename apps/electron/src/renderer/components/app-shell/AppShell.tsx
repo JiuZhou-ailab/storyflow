@@ -45,6 +45,8 @@ import { ActivityRail } from "./ActivityRail"
 import { ACTIVITY_RAIL_WIDTH, type ActivityRailItemId } from "./ActivityRail"
 import { FirstRunTour } from "./FirstRunTour"
 import { GlobalSearchDialog } from "./GlobalSearchDialog"
+import { WhatsNewAnnouncementDialog } from "./WhatsNewAnnouncementDialog"
+import { buildWhatsNewAnnouncementCopy, getWhatsNewStartupAction } from "./whats-new-announcement"
 import { McpIcon } from "../icons/McpIcon"
 import { cn } from "@/lib/utils"
 import { isMac } from "@/lib/platform"
@@ -251,37 +253,6 @@ interface NovelCreateFileTarget {
 interface NovelWorkspaceBriefPreparation {
   shouldSend: boolean
   brief?: string
-}
-
-interface WhatsNewNotificationState {
-  deliveries: Array<{ digest: string; deliveredAt: number }>
-}
-
-function getWhatsNewNotificationDecision(
-  state: WhatsNewNotificationState,
-  digest: string,
-  now: number,
-): { shouldNotify: boolean; nextState: WhatsNewNotificationState } {
-  const day = getLocalDayKey(now)
-  const todaysDeliveries = state.deliveries.filter((delivery) => getLocalDayKey(delivery.deliveredAt) === day)
-  if (todaysDeliveries.some((delivery) => delivery.digest === digest) || todaysDeliveries.length >= 2) {
-    return { shouldNotify: false, nextState: { deliveries: todaysDeliveries } }
-  }
-  return {
-    shouldNotify: true,
-    nextState: {
-      deliveries: [...todaysDeliveries, { digest, deliveredAt: now }],
-    },
-  }
-}
-
-function getLocalDayKey(timestamp: number): string {
-  const date = new Date(timestamp)
-  return [
-    date.getFullYear(),
-    `${date.getMonth() + 1}`.padStart(2, '0'),
-    `${date.getDate()}`.padStart(2, '0'),
-  ].join('-')
 }
 
 const altClickTooltipLabel = isMac ? '⌥ click to exclude' : 'Alt click to exclude'
@@ -882,35 +853,39 @@ function AppShellContent({
 
   // What's New overlay
   const [showWhatsNew, setShowWhatsNew] = React.useState(false)
+  const [showWhatsNewAnnouncement, setShowWhatsNewAnnouncement] = React.useState(false)
   const [releaseNotesContent, setReleaseNotesContent] = React.useState('')
   const [whatsNewManifest, setWhatsNewManifest] = React.useState<WhatsNewManifest | null>(null)
   const [hasUnseenReleaseNotes, setHasUnseenReleaseNotes] = React.useState(false)
+  const whatsNewAnnouncementCopy = React.useMemo(
+    () => whatsNewManifest ? buildWhatsNewAnnouncementCopy(whatsNewManifest) : null,
+    [whatsNewManifest],
+  )
 
   // Check for unseen release notes on mount
   useEffect(() => {
+    let cancelled = false
+
     window.electronAPI.getWhatsNewManifest().then((manifest) => {
+      if (cancelled) return
       if (!manifest) return
       setWhatsNewManifest(manifest)
       const lastSeenDigest = storage.get(storage.KEYS.whatsNewLastSeenDigest, '')
       const lastSeenVersion = storage.get(storage.KEYS.whatsNewLastSeenVersion, '')
-      const unseen = lastSeenDigest ? lastSeenDigest !== manifest.digest : lastSeenVersion !== manifest.version
-      setHasUnseenReleaseNotes(unseen)
-
-      if (!unseen) return
-      const notificationState = storage.get<WhatsNewNotificationState>(
-        storage.KEYS.whatsNewNotificationState,
-        { deliveries: [] },
-      )
-      const notificationDecision = getWhatsNewNotificationDecision(notificationState, manifest.digest, Date.now())
-      if (!notificationDecision.shouldNotify) return
-
-      storage.set(storage.KEYS.whatsNewNotificationState, notificationDecision.nextState)
-      toast.info('发现新版本更新', {
-        id: `whats-new-${manifest.digest}`,
-        description: manifest.summary,
-        duration: 8000,
+      const startupAction = getWhatsNewStartupAction({
+        manifest,
+        lastSeenDigest,
+        lastSeenVersion,
       })
+      setHasUnseenReleaseNotes(startupAction.hasUnseenReleaseNotes)
+      setShowWhatsNewAnnouncement(startupAction.shouldOpenDialog)
+    }).catch((error) => {
+      console.warn('[whats-new] Failed to load update announcement:', error)
     })
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const [isResizing, setIsResizing] = React.useState<'sidebar' | 'session-list' | 'novel-workspace-navigator' | null>(null)
@@ -3415,14 +3390,10 @@ function AppShellContent({
     navigate(routes.view.settings(subpage))
   }, [])
 
-  // Handler for What's New overlay
-  const handleWhatsNewClick = useCallback(async () => {
-    const content = await window.electronAPI.getReleaseNotes()
-    setReleaseNotesContent(content)
-    setShowWhatsNew(true)
+  const markWhatsNewSeen = useCallback(async (manifestOverride?: WhatsNewManifest | null) => {
+    const manifest = manifestOverride ?? whatsNewManifest ?? await window.electronAPI.getWhatsNewManifest()
     setHasUnseenReleaseNotes(false)
-    // Update last seen version
-    const manifest = whatsNewManifest ?? await window.electronAPI.getWhatsNewManifest()
+
     if (manifest) {
       setWhatsNewManifest(manifest)
       storage.set(storage.KEYS.whatsNewLastSeenDigest, manifest.digest)
@@ -3434,6 +3405,26 @@ function AppShellContent({
       }
     }
   }, [whatsNewManifest])
+
+  const handleWhatsNewAnnouncementOpenChange = useCallback((open: boolean) => {
+    setShowWhatsNewAnnouncement(open)
+    if (!open) {
+      void markWhatsNewSeen()
+    }
+  }, [markWhatsNewSeen])
+
+  // Handler for What's New overlay
+  const handleWhatsNewClick = useCallback(async () => {
+    const content = await window.electronAPI.getReleaseNotes()
+    setReleaseNotesContent(content)
+    setShowWhatsNew(true)
+    await markWhatsNewSeen()
+  }, [markWhatsNewSeen])
+
+  const handleWhatsNewAnnouncementDetailsClick = useCallback(() => {
+    setShowWhatsNewAnnouncement(false)
+    void handleWhatsNewClick()
+  }, [handleWhatsNewClick])
 
   // Create a new chat and select it
   const handleNewChat = useCallback((newPanel: boolean = false) => {
@@ -4907,6 +4898,15 @@ function AppShellContent({
         )}
 
       </div>
+
+      <WhatsNewAnnouncementDialog
+        open={showWhatsNewAnnouncement}
+        copy={whatsNewAnnouncementCopy}
+        accentColor={whatsNewManifest?.accentColor}
+        accentTextColor={whatsNewManifest?.accentTextColor}
+        onOpenChange={handleWhatsNewAnnouncementOpenChange}
+        onShowDetails={handleWhatsNewAnnouncementDetailsClick}
+      />
 
       {/* What's New overlay */}
       <DocumentFormattedMarkdownOverlay
