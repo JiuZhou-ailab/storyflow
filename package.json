@@ -1,6 +1,6 @@
 {
   "name": "storyflow",
-  "version": "0.9.29",
+  "version": "0.9.30",
   "license": "Apache-2.0",
   "description": "Claude Code-like agent for Craft documents",
   "type": "module",
