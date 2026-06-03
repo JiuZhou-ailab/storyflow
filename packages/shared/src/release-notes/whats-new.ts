@@ -156,7 +156,7 @@ export function shouldNotifyWhatsNew(input: ShouldNotifyWhatsNewInput): {
   }
 }
 
-function isUserVisibleCommit(commit: WhatsNewCommit): boolean {
+export function isUserVisibleCommit(commit: WhatsNewCommit): boolean {
   const match = commit.subject.match(/^([a-z]+)(?:\([^)]+\))?!?:\s+(.+)$/i)
   if (!match) return false
   const prefix = match[1]

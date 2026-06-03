@@ -6,7 +6,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
   buildWhatsNewDraft,
+  createWhatsNewDigest,
+  deriveWhatsNewAccentColor,
+  isUserVisibleCommit,
   type WhatsNewCommit,
+  type WhatsNewDraft,
 } from '../packages/shared/src/release-notes/whats-new.ts'
 
 interface CliOptions {
@@ -17,6 +21,8 @@ interface CliOptions {
   from?: string
   to: string
   limit: number
+  curatedNotes?: string
+  curatedNotesExplicit: boolean
 }
 
 const ROOT_DIR = join(import.meta.dir, '..')
@@ -32,6 +38,8 @@ function usage(): string {
     '  --from=<git-ref>                       Base ref; defaults to previous release tag',
     '  --to=<git-ref>                         Head ref; defaults to HEAD',
     '  --limit=30                             Fallback commit count when no base tag exists',
+    '  --curated-notes=/path/to/next.md       Prefer curated markdown for the release note body',
+    '  --no-curated-notes                     Always generate notes from commits',
     '',
     'Optional AI environment:',
     '  OPENAI_API_KEY or STORYFLOW_WHATS_NEW_OPENAI_API_KEY',
@@ -46,6 +54,8 @@ function parseArgs(argv: string[]): CliOptions {
     outDir: join(ROOT_DIR, 'apps/electron/resources/release-notes'),
     to: 'HEAD',
     limit: 30,
+    curatedNotes: join(ROOT_DIR, 'apps/electron/resources/release-notes/next.md'),
+    curatedNotesExplicit: false,
   }
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -76,6 +86,12 @@ function parseArgs(argv: string[]): CliOptions {
       if (!Number.isFinite(options.limit) || options.limit <= 0) {
         throw new Error(`Invalid --limit value: ${value}`)
       }
+    } else if (name === '--curated-notes') {
+      options.curatedNotes = value
+      options.curatedNotesExplicit = true
+    } else if (name === '--no-curated-notes') {
+      options.curatedNotes = undefined
+      options.curatedNotesExplicit = true
     } else {
       throw new Error(`Unknown argument: ${arg}`)
     }
@@ -92,6 +108,52 @@ function parseArgs(argv: string[]): CliOptions {
 
 function normalizeVersion(value: string): string {
   return value.trim().replace(/^v/, '')
+}
+
+function loadCuratedMarkdown(options: CliOptions): string | undefined {
+  if (!options.curatedNotes) return undefined
+  if (options.commitsJson && !options.curatedNotesExplicit) return undefined
+  if (!existsSync(options.curatedNotes)) return undefined
+
+  const content = readFileSync(options.curatedNotes, 'utf8').trim()
+  if (!content) return undefined
+  return content.endsWith('\n') ? content : `${content}\n`
+}
+
+function buildCuratedWhatsNewDraft(input: {
+  version: string
+  generatedAt: string
+  markdown: string
+  commits: WhatsNewCommit[]
+}): WhatsNewDraft {
+  const digest = createWhatsNewDigest(input.markdown)
+  const accent = deriveWhatsNewAccentColor(digest)
+  const userVisibleCommits = input.commits.filter(isUserVisibleCommit)
+
+  return {
+    markdown: input.markdown,
+    manifest: {
+      version: input.version,
+      digest,
+      generatedAt: input.generatedAt,
+      title: `What is new in v${input.version}`,
+      summary: extractCuratedSummary(input.markdown),
+      accentColor: accent.hex,
+      accentTextColor: accent.textColor,
+      source: {
+        commitCount: input.commits.length,
+        userVisibleCommitCount: userVisibleCommits.length,
+      },
+    },
+  }
+}
+
+function extractCuratedSummary(markdown: string): string {
+  const line = markdown
+    .split('\n')
+    .map((item) => item.trim())
+    .find((item) => item && !item.startsWith('#') && !item.startsWith('-'))
+  return line ?? '查看本次更新中的新功能与修复。'
 }
 
 function loadCommits(options: CliOptions): WhatsNewCommit[] {
@@ -216,13 +278,21 @@ async function maybeGenerateAiSummary(commits: WhatsNewCommit[]): Promise<string
 async function main(): Promise<void> {
   const options = parseArgs(Bun.argv.slice(2))
   const commits = loadCommits(options)
-  const aiSummary = await maybeGenerateAiSummary(commits)
-  const draft = buildWhatsNewDraft({
-    version: options.version,
-    generatedAt: new Date().toISOString(),
-    commits,
-    aiSummary,
-  })
+  const generatedAt = new Date().toISOString()
+  const curatedMarkdown = loadCuratedMarkdown(options)
+  const draft = curatedMarkdown
+    ? buildCuratedWhatsNewDraft({
+      version: options.version,
+      generatedAt,
+      markdown: curatedMarkdown,
+      commits,
+    })
+    : buildWhatsNewDraft({
+      version: options.version,
+      generatedAt,
+      commits,
+      aiSummary: await maybeGenerateAiSummary(commits),
+    })
 
   mkdirSync(options.outDir, { recursive: true })
   const markdownPath = join(options.outDir, `${options.version}.md`)
