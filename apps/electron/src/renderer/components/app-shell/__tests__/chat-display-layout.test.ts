@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs'
 
 const chatDisplaySource = readFileSync(new URL('../ChatDisplay.tsx', import.meta.url), 'utf-8')
 const chatInputZoneSource = readFileSync(new URL('../input/ChatInputZone.tsx', import.meta.url), 'utf-8')
+const freeFormInputSource = readFileSync(new URL('../input/FreeFormInput.tsx', import.meta.url), 'utf-8')
 const scrollAreaSource = readFileSync(new URL('../../ui/scroll-area.tsx', import.meta.url), 'utf-8')
 
 describe('ChatDisplay scroll layout', () => {
@@ -46,5 +47,13 @@ describe('ChatDisplay scroll layout', () => {
     expect(chatDisplaySource).toContain("type: 'removeQueuedMessage'")
     expect(chatDisplaySource).toContain('onEditQueuedMessage={handleEditQueuedMessage}')
     expect(chatDisplaySource).toContain('onRemoveQueuedMessage={handleRemoveQueuedMessage}')
+  })
+
+  it('keeps the composer toolbar actions visible in narrow side panels', () => {
+    expect(freeFormInputSource).toContain('flex min-w-0 items-center gap-1 px-2 py-2')
+    expect(freeFormInputSource).toContain('flex min-w-0 flex-1 items-center gap-1 overflow-hidden')
+    expect(freeFormInputSource).toContain('flex min-w-0 max-w-[52%] items-center justify-end shrink-0')
+    expect(freeFormInputSource).toContain('inline-flex min-w-0 max-w-[140px] items-center h-7')
+    expect(freeFormInputSource).toContain('<span className="min-w-0 truncate">{currentModelDisplayName}</span>')
   })
 })
