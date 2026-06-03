@@ -1,6 +1,6 @@
 {
   "name": "storyflow",
-  "version": "0.9.25",
+  "version": "0.9.30",
   "license": "Apache-2.0",
   "description": "Claude Code-like agent for Craft documents",
   "type": "module",
@@ -94,6 +94,7 @@
     "marketing:build": "bun run scripts/build-marketing.ts",
     "marketing:preview": "vite preview --config apps/marketing/vite.config.ts",
     "release:upload-r2": "bun run scripts/upload-r2-release-assets.ts",
+    "release:whats-new": "bun run scripts/generate-whats-new.ts",
     "docs:dev": "cd apps/online-docs && npm install && npx mintlify dev",
     "build": "bun run scripts/build.ts",
     "release": "bun run scripts/release.ts",

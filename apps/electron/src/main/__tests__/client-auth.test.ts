@@ -199,6 +199,104 @@ describe('client auth', () => {
     expect(calls).toEqual([])
   })
 
+  it('restores a persisted desktop auth session on process start', () => {
+    const service = createClientAuthService({
+      required: true,
+    }, {
+      initialSession: {
+        user: {
+          provider: 'neon',
+          userId: 'user-1',
+          email: 'user@example.com',
+        },
+        appSessionToken: 'app-session-token',
+      },
+    })
+
+    expect(service.getState()).toEqual({
+      required: true,
+      configured: false,
+      authenticated: true,
+      emailPasswordEnabled: false,
+      emailSignUpEnabled: false,
+      feishuLoginEnabled: false,
+      user: {
+        provider: 'neon',
+        userId: 'user-1',
+        email: 'user@example.com',
+      },
+    })
+  })
+
+  it('persists and clears the desktop auth session around password sign-in', async () => {
+    const savedSessions: unknown[] = []
+    let clearCount = 0
+    const fakeNeonAuth: ClientAuthNeonService = {
+      isConfigured: () => true,
+      getClientConfig: () => ({ enabled: true }),
+      authenticateWithEmailPassword: async () => ({ status: 'authenticated', token: 'jwt-token' }),
+      verifyToken: async () => ({
+        provider: 'neon',
+        userId: 'user-1',
+        subject: 'neon:user-1',
+        email: 'user@example.com',
+      }),
+    }
+
+    const service = createClientAuthService({
+      required: true,
+      neonAuth: { baseUrl: 'https://auth.example.com' },
+    }, {
+      createNeonAuthService: () => fakeNeonAuth,
+      sessionStore: {
+        save: async (session) => { savedSessions.push(session) },
+        clear: async () => { clearCount += 1 },
+      },
+    })
+
+    await service.signIn({ identifier: 'user@example.com', password: 'secret' })
+    await service.signOut()
+
+    expect(savedSessions).toEqual([{
+      user: {
+        provider: 'neon',
+        userId: 'user-1',
+        email: 'user@example.com',
+      },
+      appSessionToken: 'jwt-token',
+    }])
+    expect(clearCount).toBe(1)
+    expect(service.getState().authenticated).toBe(false)
+  })
+
+  it('keeps the live auth state unchanged when session persistence fails', async () => {
+    const fakeNeonAuth: ClientAuthNeonService = {
+      isConfigured: () => true,
+      getClientConfig: () => ({ enabled: true }),
+      authenticateWithEmailPassword: async () => ({ status: 'authenticated', token: 'jwt-token' }),
+      verifyToken: async () => ({
+        provider: 'neon',
+        userId: 'user-1',
+        subject: 'neon:user-1',
+      }),
+    }
+    const service = createClientAuthService({
+      required: true,
+      neonAuth: { baseUrl: 'https://auth.example.com' },
+    }, {
+      createNeonAuthService: () => fakeNeonAuth,
+      sessionStore: {
+        save: async () => { throw new Error('store failed') },
+        clear: async () => {},
+      },
+    })
+
+    await expect(service.signIn({ identifier: 'user@example.com', password: 'secret' }))
+      .rejects
+      .toThrow('store failed')
+    expect(service.getState().authenticated).toBe(false)
+  })
+
   it('registers a Neon Auth email account and signs in when the provider returns a token', async () => {
     const calls: Array<{ mode: string, email: string, password: string, name?: string, origin?: string }> = []
     const fakeNeonAuth: ClientAuthNeonService = {

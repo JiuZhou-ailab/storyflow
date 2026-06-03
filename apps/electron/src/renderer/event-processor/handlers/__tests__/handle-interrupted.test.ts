@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { handleInterrupted, handleUserMessage } from '../session'
+import { processEvent } from '../../processor'
 import type { SessionState, InterruptedEvent, UserMessageEvent } from '../../types'
 
 function makeState(messages: any[]): SessionState {
@@ -89,6 +90,25 @@ describe('handleInterrupted (#616)', () => {
       expect(next.state.session.isProcessing).toBe(false)
     })
 
+    it('keeps the session processing during a queued send-now handoff', () => {
+      const state = makeState([
+        { id: 'msg-1', role: 'user', content: 'first' },
+        { id: 'msg-2', role: 'user', content: 'queued during run', isQueued: true },
+      ])
+
+      const event: InterruptedEvent = {
+        type: 'interrupted',
+        sessionId: 'session-1',
+        reason: 'queued_handoff',
+      } as InterruptedEvent
+
+      const next = handleInterrupted(state, event)
+
+      expect(next.state.session.messages.map(m => m.id)).toContain('msg-2')
+      expect(next.effects).toEqual([])
+      expect(next.state.session.isProcessing).toBe(true)
+    })
+
     it('marks running tools as interrupted regardless of redirect type', () => {
       const state = makeState([
         { id: 'tool-1', role: 'tool', toolStatus: 'executing', toolResult: undefined },
@@ -123,7 +143,52 @@ describe('handleInterrupted (#616)', () => {
   })
 })
 
+describe('queued message preview events', () => {
+  it('removes a queued user message by id', () => {
+    const state = makeState([
+      { id: 'msg-1', role: 'user', content: 'first' },
+      { id: 'msg-2', role: 'user', content: 'queued one', isQueued: true },
+      { id: 'msg-3', role: 'user', content: 'queued two', isQueued: true },
+    ])
+
+    const next = processEvent(state, {
+      type: 'queued_message_removed',
+      sessionId: 'session-1',
+      messageId: 'msg-2',
+    } as any)
+
+    expect(next.state.session.messages.map(m => m.id)).toEqual(['msg-1', 'msg-3'])
+    expect(next.effects).toEqual([])
+  })
+})
+
 describe('handleUserMessage queued state', () => {
+  it('moves a pending optimistic user message into the queue preview when the backend confirms queued', () => {
+    const state = makeState([
+      { id: 'optimistic-1', role: 'user', content: 'queued next', timestamp: 1000, isPending: true, isQueued: false },
+    ])
+
+    const event: UserMessageEvent = {
+      type: 'user_message',
+      sessionId: 'session-1',
+      status: 'queued',
+      optimisticMessageId: 'optimistic-1',
+      message: {
+        id: 'optimistic-1',
+        role: 'user',
+        content: 'queued next',
+        timestamp: 1001,
+      } as any,
+    }
+
+    const next = handleUserMessage(state, event)
+
+    expect(next.state.session.messages).toHaveLength(1)
+    expect(next.state.session.messages[0]?.isPending).toBe(false)
+    expect(next.state.session.messages[0]?.isQueued).toBe(true)
+    expect(next.state.session.isProcessing).toBe(true)
+  })
+
   it('keeps the active turn processing when a mid-stream message is queued', () => {
     const state = makeState([
       { id: 'msg-1', role: 'user', content: 'first' },

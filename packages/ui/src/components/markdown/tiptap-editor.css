@@ -95,9 +95,9 @@
 }
 
 .tiptap-editor--manuscript {
-  --tiptap-manuscript-width: min(100%, 1120px);
-  --tiptap-manuscript-line-height: 2.12;
-  --tiptap-manuscript-paragraph-spacing: 1.05em;
+  --tiptap-manuscript-width: min(100%, 920px);
+  --tiptap-manuscript-line-height: 1.82;
+  --tiptap-manuscript-paragraph-spacing: 1.45em;
   --tiptap-manuscript-paper: color-mix(in oklch, var(--background) 99.5%, var(--foreground) 0.5%);
   --tiptap-manuscript-ink: color-mix(in oklch, var(--foreground) 95%, transparent);
   --tiptap-manuscript-muted: color-mix(in oklch, var(--foreground) 54%, transparent);
@@ -165,6 +165,7 @@
   font-size: 16.5px;
   line-height: var(--tiptap-manuscript-line-height);
   letter-spacing: 0;
+  text-wrap: pretty;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   box-shadow:
@@ -188,6 +189,30 @@
   padding: 5px 8px;
   box-shadow: 0 6px 18px color-mix(in oklch, var(--foreground) 6%, transparent);
   backdrop-filter: blur(10px);
+}
+
+.tiptap-review-diff-inserted {
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--success, #16a34a) 18%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--success, #16a34a) 18%, transparent);
+}
+
+.tiptap-review-diff-block.tiptap-review-diff-inserted {
+  display: block;
+  margin-inline: -0.35rem;
+  padding-inline: 0.35rem;
+}
+
+.tiptap-review-diff-deleted {
+  display: inline;
+  white-space: pre-wrap;
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--destructive) 12%, transparent);
+  color: color-mix(in oklch, var(--destructive) 78%, var(--foreground) 22%);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in oklch, var(--destructive) 64%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--destructive) 18%, transparent);
 }
 
 .tiptap-editor--line-numbers .tiptap-prose {
@@ -220,8 +245,12 @@
 }
 
 .tiptap-editor--manuscript .tiptap-prose p {
-  margin: var(--tiptap-manuscript-paragraph-spacing) 0;
+  margin: 0;
   line-height: inherit;
+}
+
+.tiptap-editor--manuscript .tiptap-prose p + p {
+  margin-top: var(--tiptap-manuscript-paragraph-spacing);
 }
 
 .tiptap-editor--manuscript .tiptap-prose h1 {

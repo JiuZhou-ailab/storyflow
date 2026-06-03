@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'bun:test'
-import { normalizePanelRouteForReconcile } from '../navigation-reconcile'
+import { normalizePanelRouteForReconcile, shouldPreserveProjectLandingRoute } from '../navigation-reconcile'
 import type { NavigationState } from '../../../shared/types'
+
+describe('shouldPreserveProjectLandingRoute', () => {
+  it('treats an empty initial URL and default allSessions route as project landing', () => {
+    expect(shouldPreserveProjectLandingRoute(new URLSearchParams())).toBe(true)
+    expect(shouldPreserveProjectLandingRoute(new URLSearchParams('ws=demo&route=allSessions'))).toBe(true)
+  })
+
+  it('does not treat explicit session or panel URLs as project landing', () => {
+    expect(shouldPreserveProjectLandingRoute(new URLSearchParams('route=allSessions/session/s1'))).toBe(false)
+    expect(shouldPreserveProjectLandingRoute(new URLSearchParams('panels=allSessions/session/s1:1&fi=0'))).toBe(false)
+  })
+})
 
 describe('normalizePanelRouteForReconcile', () => {
   it('auto-selects session details for filter-only session routes', () => {
@@ -56,6 +68,38 @@ describe('normalizePanelRouteForReconcile', () => {
 
     const normalized = normalizePanelRouteForReconcile('allSessions', resolver)
     expect(normalized).toBe('allSessions')
+  })
+
+  it('passes skipAutoSelect through so default session landing stays list-only', () => {
+    const resolver = (state: NavigationState, options?: { skipAutoSelect?: boolean }): NavigationState => {
+      if (options?.skipAutoSelect) return state
+      if (state.navigator === 'sessions' && !state.details) {
+        return {
+          ...state,
+          details: { type: 'session', sessionId: 's1' },
+        }
+      }
+      return state
+    }
+
+    const normalized = normalizePanelRouteForReconcile('allSessions', resolver, { skipAutoSelect: true })
+    expect(normalized).toBe('allSessions')
+  })
+
+  it('keeps explicit session routes selected even when auto-select is skipped', () => {
+    const resolver = (state: NavigationState, options?: { skipAutoSelect?: boolean }): NavigationState => {
+      if (options?.skipAutoSelect) return state
+      if (state.navigator === 'sessions' && !state.details) {
+        return {
+          ...state,
+          details: { type: 'session', sessionId: 's1' },
+        }
+      }
+      return state
+    }
+
+    const normalized = normalizePanelRouteForReconcile('allSessions/session/s2', resolver, { skipAutoSelect: true })
+    expect(normalized).toBe('allSessions/session/s2')
   })
 
   it('keeps non-session routes unchanged with session-only resolver', () => {

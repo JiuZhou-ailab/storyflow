@@ -396,11 +396,10 @@ export function MainContentPanel({
         </Panel>
       )
     }
-    // No session selected - empty state
     return wrapWithStoplight(
       <Panel variant="grow" className={className}>
         <div className="flex items-center justify-center h-full text-muted-foreground">
-          <p className="text-sm">{t("session.noSessionSelected")}</p>
+          <p className="text-sm">{t("session.selectConversation")}</p>
         </div>
       </Panel>
     )

@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next"
-import { X } from "lucide-react"
+import { ChevronLeft, X } from "lucide-react"
 import { motion } from "motion/react"
 import { Dithering } from "@paper-design/shaders-react"
 import { FullscreenOverlayBase } from "@craft-agent/ui"
@@ -18,7 +18,8 @@ import type { RemoteServerConfig, Workspace, WorkspaceProjectType } from "../../
 import type { MethodPackId } from "@craft-agent/shared/writing/method-packs"
 import { toast } from "sonner"
 
-type CreationStep = 'choice' | 'create' | 'open' | 'remote'
+export type WorkspaceCreationInitialStep = 'choice' | 'create' | 'open' | 'remote'
+type CreationStep = WorkspaceCreationInitialStep
 
 interface WorkspaceCreationScreenProps {
   /** Callback when a workspace is created successfully */
@@ -32,6 +33,10 @@ interface WorkspaceCreationScreenProps {
   onReconnectWorkspace?: (workspaceId: string, remoteServer: { url: string; token: string; remoteWorkspaceId: string }) => Promise<void>
   /** Whether the user may dismiss the flow without creating/reconnecting a workspace. */
   canClose?: boolean
+  /** Optional visible label for the dismiss action, used when returning to project management. */
+  closeLabel?: string
+  /** Initial step selected by the action that opened the flow. */
+  initialStep?: WorkspaceCreationInitialStep
 }
 
 /**
@@ -49,10 +54,12 @@ export function WorkspaceCreationScreen({
   reconnectWorkspace,
   onReconnectWorkspace,
   canClose = true,
+  closeLabel,
+  initialStep = 'choice',
 }: WorkspaceCreationScreenProps) {
   const { t } = useTranslation()
   // Start at 'remote' step directly when reconnecting
-  const [step, setStep] = useState<CreationStep>(reconnectWorkspace ? 'remote' : 'choice')
+  const [step, setStep] = useState<CreationStep>(reconnectWorkspace ? 'remote' : initialStep)
   const [isCreating, setIsCreating] = useState(false)
   const [dimensions, setDimensions] = useState({ width: 1920, height: 1080 })
 
@@ -208,10 +215,33 @@ export function WorkspaceCreationScreen({
           />
         </motion.div>
 
-        {/* Header with drag region and close button */}
-        <header className="titlebar-drag-region relative h-[50px] shrink-0 flex items-center justify-end px-6">
+        {/* Header with drag region and close controls */}
+        <header className="titlebar-drag-region relative flex h-[50px] shrink-0 items-center justify-between px-6">
           {/* macOS: keep the native traffic-light cluster (top-left) clickable */}
           <div className="titlebar-no-drag absolute left-0 top-0 h-full w-[80px]" />
+          {canClose && closeLabel && (
+            <motion.button
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={overlayTransitionIn}
+              onClick={(e) => {
+                e.stopPropagation()
+                handleClose()
+              }}
+              disabled={isCreating}
+              className={cn(
+                "titlebar-no-drag ml-[74px] mt-2 inline-flex h-9 items-center gap-1.5 rounded-lg border border-border/60 bg-background px-3 text-[13px] font-medium shadow-minimal",
+                "text-muted-foreground hover:bg-foreground-5 hover:text-foreground",
+                "transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                isCreating && "cursor-not-allowed opacity-50"
+              )}
+              aria-label={closeLabel}
+            >
+              <ChevronLeft className="size-4" />
+              {closeLabel}
+            </motion.button>
+          )}
+          <div className="flex-1" />
           {/* Close button - explicitly no-drag */}
           {canClose && (
             <motion.button

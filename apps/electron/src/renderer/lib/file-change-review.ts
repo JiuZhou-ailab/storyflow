@@ -9,6 +9,11 @@ export type RejectFileChangeOperationResult =
   | { ok: true; operation: 'delete' }
   | { ok: false; reason: string }
 
+export interface ReviewFileChangeSnapshot {
+  key: string
+  change: FileChange | null
+}
+
 function countOccurrences(haystack: string, needle: string): number {
   if (!needle) return 0
 
@@ -77,5 +82,86 @@ export function buildRejectFileChangeOperation(
     ok: true,
     operation: 'write',
     content: currentContent.replace(change.modified, change.original),
+  }
+}
+
+export function buildRejectFileChangesOperation(
+  changes: FileChange[],
+  currentContent: string,
+): RejectFileChangeOperationResult {
+  const reviewableChanges = changes.filter(change => !change.error)
+  if (reviewableChanges.length === 0) {
+    return { ok: false, reason: 'There are no reviewable changes to reject.' }
+  }
+
+  const filePath = reviewableChanges[0]?.filePath
+  if (!filePath || reviewableChanges.some(change => change.filePath !== filePath)) {
+    return { ok: false, reason: 'A file-level rejection can only include one file.' }
+  }
+
+  let content = currentContent
+  for (const change of [...reviewableChanges].reverse()) {
+    const rejected = buildRejectFileChangeOperation(change, content)
+    if (!rejected.ok) return rejected
+    if (rejected.operation === 'delete') return rejected
+    content = rejected.content
+  }
+
+  return {
+    ok: true,
+    operation: 'write',
+    content,
+  }
+}
+
+export function buildReviewFileChange(
+  changes: FileChange[],
+  currentContent: string,
+): FileChange | null {
+  const reviewableChanges = changes.filter(change => !change.error)
+  if (reviewableChanges.length === 0) return null
+
+  const filePath = reviewableChanges[0]?.filePath
+  if (!filePath || reviewableChanges.some(change => change.filePath !== filePath)) return null
+
+  const rejected = buildRejectFileChangesOperation(reviewableChanges, currentContent)
+  if (!rejected.ok) return null
+
+  return {
+    id: `file-review:${reviewableChanges.map(change => change.id).join(':')}`,
+    filePath,
+    toolType: reviewableChanges.some(change => change.toolType === 'Write') ? 'Write' : 'Edit',
+    changeKind: rejected.operation === 'delete' ? 'create' : 'modify',
+    original: rejected.operation === 'delete' ? '' : rejected.content,
+    modified: currentContent,
+  }
+}
+
+function getReviewFileChangesKey(changes: FileChange[]): string {
+  return changes
+    .filter(change => !change.error)
+    .map(change => [
+      change.id,
+      change.filePath,
+      change.toolType,
+      change.changeKind ?? '',
+      change.original,
+      change.modified,
+      change.unifiedDiff ?? '',
+    ].join('\u0000'))
+    .join('\u0001')
+}
+
+export function resolveReviewFileChangeSnapshot(
+  previous: ReviewFileChangeSnapshot | null,
+  changes: FileChange[],
+  currentContent: string,
+): ReviewFileChangeSnapshot {
+  const key = getReviewFileChangesKey(changes)
+  if (previous?.key === key && (previous.change != null || key === '')) return previous
+
+  return {
+    key,
+    change: buildReviewFileChange(changes, currentContent),
   }
 }

@@ -38,6 +38,7 @@ export const CORE_HANDLED_CHANNELS = [
   RPC_CHANNELS.shell.SHOW_IN_FOLDER,
   RPC_CHANNELS.releaseNotes.GET,
   RPC_CHANNELS.releaseNotes.GET_LATEST_VERSION,
+  RPC_CHANNELS.releaseNotes.GET_WHATS_NEW_MANIFEST,
   RPC_CHANNELS.git.GET_BRANCH,
   RPC_CHANNELS.git.GET_VERSION_STATUS,
   RPC_CHANNELS.git.COMPARE_VERSIONS,
@@ -118,6 +119,11 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
   server.handle(RPC_CHANNELS.releaseNotes.GET_LATEST_VERSION, async () => {
     const { getLatestReleaseVersion } = require('@craft-agent/shared/release-notes') as typeof import('@craft-agent/shared/release-notes')
     return getLatestReleaseVersion()
+  })
+
+  server.handle(RPC_CHANNELS.releaseNotes.GET_WHATS_NEW_MANIFEST, async () => {
+    const { getLatestWhatsNewManifest } = require('@craft-agent/shared/release-notes') as typeof import('@craft-agent/shared/release-notes')
+    return getLatestWhatsNewManifest()
   })
 
   // Get git branch for a directory (returns null if not a git repo or git unavailable)

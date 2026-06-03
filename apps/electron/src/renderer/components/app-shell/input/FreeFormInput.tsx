@@ -1821,7 +1821,7 @@ export function FreeFormInput({
             sessionId={sessionId}
           />
 
-          <div className={cn("flex items-center gap-1 px-2 py-2", !compactMode && "border-t border-border/50")}>
+          <div className={cn("flex min-w-0 items-center gap-1 px-2 py-2", !compactMode && "border-t border-border/50")}>
           {/* Hidden file input for attach button (shared by compact and desktop) */}
           <input
             ref={fileInputRef}
@@ -1939,7 +1939,7 @@ export function FreeFormInput({
 
           {/* Desktop: full badges row with labels and working directory */}
           {!compactMode && (
-          <div className="flex items-center gap-1 min-w-32 shrink overflow-hidden">
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
           {/* 1. Attach Files Badge */}
           <FreeFormInputContextBadge
             icon={<Paperclip className="h-4 w-4" />}
@@ -2046,10 +2046,10 @@ export function FreeFormInput({
           )}
 
           {/* Spacer */}
-          <div className="flex-1" />
+          <div className="min-w-1 flex-1" />
 
-          {/* Right side: Model + Send - never shrink so they're always visible */}
-          <div className="flex items-center shrink-0">
+          {/* Right side: keep primary actions visible while truncating long model names. */}
+          <div className="flex min-w-0 max-w-[52%] items-center justify-end shrink-0">
           {/* 5. Model/Connection Selector - Hidden in compact mode (EditPopover embedding) */}
           {!compactMode && (
           <DropdownMenu open={modelDropdownOpen} onOpenChange={setModelDropdownOpen}>
@@ -2059,7 +2059,7 @@ export function FreeFormInput({
                   <button
                     type="button"
                     className={cn(
-                      "input-toolbar-btn inline-flex items-center h-7 px-1.5 gap-0.5 text-[13px] shrink-0 rounded-[6px] hover:bg-foreground/5 transition-colors select-none",
+                      "input-toolbar-btn inline-flex min-w-0 max-w-[140px] items-center h-7 px-1.5 gap-0.5 text-[13px] rounded-[6px] hover:bg-foreground/5 transition-colors select-none",
                       modelDropdownOpen && "bg-foreground/5",
                       connectionUnavailable && "text-destructive",
                     )}
@@ -2067,12 +2067,12 @@ export function FreeFormInput({
                     {connectionUnavailable ? (
                       <>
                         <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                        {t('common.unavailable')}
+                        <span className="min-w-0 truncate">{t('common.unavailable')}</span>
                       </>
                     ) : (
                       <>
                         {effectiveConnectionDetails && llmConnections.length > 1 && storage.get(storage.KEYS.showConnectionIcons, true) && <ConnectionIcon connection={effectiveConnectionDetails} size={14} showTooltip />}
-                        {currentModelDisplayName}
+                        <span className="min-w-0 truncate">{currentModelDisplayName}</span>
                         {!connectionDefaultModel && <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />}
                       </>
                     )}

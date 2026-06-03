@@ -1,524 +1,144 @@
-// input: Workspace/session navigation state, shell actions, and renderer update status
-// output: Persistent top bar controls including feedback and the right-side update indicator
-// pos: Primary window chrome for the renderer app shell
+// input: Workspace identity, transport state, and update status
+// output: Thin desktop window title bar with current project context only
+// pos: Window chrome layer above ActivityRail and project work surfaces
 
-/**
- * TopBar - Persistent top bar above all panels (Slack-style)
- *
- * Layout: [Sidebar] [Menu] [Back] [Forward] [Workspace selector] ... [Browser strip] [Feedback] [Update]
- *
- * Fixed at top of window, 48px tall.
- * macOS: offset left to avoid stoplight controls.
- */
+import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Cloud, CloudOff, Download, RefreshCw } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@craft-agent/ui'
+import { FadingText } from '@/components/ui/fading-text'
+import { cn } from '@/lib/utils'
+import { useTransportConnectionState } from '@/hooks/useTransportConnectionState'
+import { useUpdateChecker } from '@/hooks/useUpdateChecker'
+import { getUpdateIndicatorState } from '@/lib/update-indicator'
+import type { Workspace, WorkspaceProjectType } from '../../../shared/types'
+import { formatTopbarWorkspaceName } from './workspace-switcher-label'
 
-import { useTranslation } from "react-i18next"
-import * as Icons from "lucide-react"
-import { Tooltip, TooltipTrigger, TooltipContent } from "@craft-agent/ui"
-import { CraftAgentsSymbol } from "../icons/CraftAgentsSymbol"
-import { PanelLeftRounded } from "../icons/PanelLeftRounded"
-import { TopBarButton } from "../ui/TopBarButton"
-import { cn } from "@/lib/utils"
-import { isMac } from "@/lib/platform"
-import { useActionLabel } from "@/actions"
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuShortcut,
-  DropdownMenuSub,
-  StyledDropdownMenuContent,
-  StyledDropdownMenuItem,
-  StyledDropdownMenuSeparator,
-  StyledDropdownMenuSubTrigger,
-  StyledDropdownMenuSubContent,
-} from "@/components/ui/styled-dropdown"
-import {
-  EDIT_MENU,
-  VIEW_MENU,
-  WINDOW_MENU,
-  SETTINGS_ITEMS,
-  getShortcutDisplay,
-} from "../../../shared/menu-schema"
-import type { MenuItem, MenuSection, SettingsMenuItem } from "../../../shared/menu-schema"
-import { SETTINGS_ICONS } from "../icons/SettingsIcons"
-import { SquarePenRounded } from "../icons/SquarePenRounded"
-import { useEffect, useRef, useState } from "react"
-import { BrowserTabStrip } from "../browser/BrowserTabStrip"
-import type { Workspace } from "../../../shared/types"
-import { WorkspaceSwitcher } from "./WorkspaceSwitcher"
-import { useUpdateChecker } from "@/hooks/useUpdateChecker"
-import { getUpdateIndicatorState } from "@/lib/update-indicator"
-import { FeedbackDialog } from "./FeedbackDialog"
-
-// --- Menu rendering (moved from AppMenu) ---
-
-type MenuActionHandlers = {
-  toggleFocusMode?: () => void
-  toggleSidebar?: () => void
-}
-
-const roleHandlers: Record<string, () => void> = {
-  undo: () => window.electronAPI.menuUndo(),
-  redo: () => window.electronAPI.menuRedo(),
-  cut: () => window.electronAPI.menuCut(),
-  copy: () => window.electronAPI.menuCopy(),
-  paste: () => window.electronAPI.menuPaste(),
-  selectAll: () => window.electronAPI.menuSelectAll(),
-  zoomIn: () => window.electronAPI.menuZoomIn(),
-  zoomOut: () => window.electronAPI.menuZoomOut(),
-  resetZoom: () => window.electronAPI.menuZoomReset(),
-  minimize: () => window.electronAPI.menuMinimize(),
-  zoom: () => window.electronAPI.menuMaximize(),
-}
-
-const RIGHT_SLOT_FULL_BADGES_THRESHOLD = 420
-const RIGHT_SLOT_TWO_BADGES_THRESHOLD = 300
-
-function getIcon(name: string): React.ComponentType<{ className?: string }> | null {
-  const IconComponent = Icons[name as keyof typeof Icons] as React.ComponentType<{ className?: string }> | undefined
-  return IconComponent ?? null
-}
-
-function renderMenuItem(
-  item: MenuItem,
-  index: number,
-  actionHandlers: MenuActionHandlers,
-  t: (key: string) => string
-): React.ReactNode {
-  if (item.type === 'separator') {
-    return <StyledDropdownMenuSeparator key={`sep-${index}`} />
-  }
-
-  const Icon = getIcon(item.icon)
-  const shortcut = getShortcutDisplay(item, isMac)
-
-  if (item.type === 'role') {
-    const handler = roleHandlers[item.role]
-    const safeHandler = handler ?? (() => {
-      console.warn(`[TopBar] No handler registered for role: ${item.role}`)
-    })
-    return (
-      <StyledDropdownMenuItem key={item.role} onClick={safeHandler}>
-        {Icon && <Icon className="h-3.5 w-3.5" />}
-        {t(item.labelKey)}
-        {shortcut && <DropdownMenuShortcut className="pl-6">{shortcut}</DropdownMenuShortcut>}
-      </StyledDropdownMenuItem>
-    )
-  }
-
-  if (item.type === 'action') {
-    const handler = item.id === 'toggleFocusMode'
-      ? actionHandlers.toggleFocusMode
-      : item.id === 'toggleSidebar'
-        ? actionHandlers.toggleSidebar
-        : undefined
-    return (
-      <StyledDropdownMenuItem key={item.id} onClick={handler}>
-        {Icon && <Icon className="h-3.5 w-3.5" />}
-        {t(item.labelKey)}
-        {shortcut && <DropdownMenuShortcut className="pl-6">{shortcut}</DropdownMenuShortcut>}
-      </StyledDropdownMenuItem>
-    )
-  }
-
-  return null
-}
-
-function renderMenuSection(
-  section: MenuSection,
-  actionHandlers: MenuActionHandlers,
-  t: (key: string) => string
-): React.ReactNode {
-  const Icon = getIcon(section.icon)
-  return (
-    <DropdownMenuSub key={section.id}>
-      <StyledDropdownMenuSubTrigger>
-        {Icon && <Icon className="h-3.5 w-3.5" />}
-        {t(section.labelKey)}
-      </StyledDropdownMenuSubTrigger>
-      <StyledDropdownMenuSubContent>
-        {section.items.map((item, index) => renderMenuItem(item, index, actionHandlers, t))}
-      </StyledDropdownMenuSubContent>
-    </DropdownMenuSub>
-  )
-}
-
-// --- TopBar ---
+export const WINDOW_TITLE_BAR_HEIGHT = 40
 
 interface TopBarProps {
   workspaces: Workspace[]
   activeWorkspaceId: string | null
-  onSelectWorkspace: (workspaceId: string, openInNewWindow?: boolean) => void | Promise<void>
-  workspaceUnreadMap?: Record<string, boolean>
-  onWorkspaceCreated?: (workspace: Workspace) => void | Promise<void>
-  onWorkspaceRemoved?: () => void
-  activeSessionId?: string | null
-  onNewChat: () => void
-  onNewWindow?: () => void
-  onOpenSettings: () => void
-  onOpenSettingsSubpage: (subpage: SettingsMenuItem['id']) => void
-  onOpenKeyboardShortcuts: () => void
-  onOpenStoredUserPreferences: () => void
-  onBack: () => void
-  onForward: () => void
-  canGoBack: boolean
-  canGoForward: boolean
-  onToggleSidebar: () => void
-  onToggleFocusMode: () => void
-  onAddSessionPanel: () => void
-  onAddBrowserPanel: () => void
-  onOpenGlobalSearch: () => void
-  workspaceTools?: React.ReactNode
-  rightTools?: React.ReactNode
-  /** When true, hides controls that don't apply in compact/mobile layout */
   isCompact?: boolean
 }
 
 export function TopBar({
   workspaces,
   activeWorkspaceId,
-  onSelectWorkspace,
-  workspaceUnreadMap,
-  onWorkspaceCreated,
-  onWorkspaceRemoved,
-  activeSessionId,
-  onNewChat,
-  onNewWindow,
-  onOpenSettings,
-  onOpenSettingsSubpage,
-  onOpenKeyboardShortcuts,
-  onOpenStoredUserPreferences,
-  onBack,
-  onForward,
-  canGoBack,
-  canGoForward,
-  onToggleSidebar,
-  onToggleFocusMode,
-  onOpenGlobalSearch,
-  workspaceTools,
-  rightTools,
   isCompact,
 }: TopBarProps) {
   const { t } = useTranslation()
-  const [isDebugMode, setIsDebugMode] = useState(false)
-  const [maxVisibleBrowserBadges, setMaxVisibleBrowserBadges] = useState(3)
-  const [feedbackOpen, setFeedbackOpen] = useState(false)
-  const rightSlotRef = useRef<HTMLDivElement | null>(null)
-
-  const newChatHotkey = useActionLabel('app.newChat').hotkey
-  const newWindowHotkey = useActionLabel('app.newWindow').hotkey
-  const settingsHotkey = useActionLabel('app.settings').hotkey
-  const keyboardShortcutsHotkey = useActionLabel('app.keyboardShortcuts').hotkey
-  const searchHotkey = useActionLabel('app.search').hotkey
-  const quitHotkey = useActionLabel('app.quit').hotkey
-  const goBackHotkey = useActionLabel('nav.goBackAlt').hotkey
-  const goForwardHotkey = useActionLabel('nav.goForwardAlt').hotkey
+  const connectionState = useTransportConnectionState()
   const updateChecker = useUpdateChecker()
   const updateIndicator = getUpdateIndicatorState(updateChecker.updateInfo)
 
-  useEffect(() => {
-    window.electronAPI.isDebugMode().then(setIsDebugMode)
-  }, [])
-
-  useEffect(() => {
-    const slotEl = rightSlotRef.current
-    if (!slotEl) return
-
-    let frame = 0
-
-    const updateBadgeDensity = () => {
-      const slotWidth = slotEl.getBoundingClientRect().width
-      const nextMaxVisibleBadges = slotWidth >= RIGHT_SLOT_FULL_BADGES_THRESHOLD
-        ? 3
-        : slotWidth >= RIGHT_SLOT_TWO_BADGES_THRESHOLD
-          ? 2
-          : 1
-
-      setMaxVisibleBrowserBadges((prev) => (prev === nextMaxVisibleBadges ? prev : nextMaxVisibleBadges))
-    }
-
-    const schedule = () => {
-      if (frame) cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(updateBadgeDensity)
-    }
-
-    const observer = new ResizeObserver(schedule)
-    observer.observe(slotEl)
-    updateBadgeDensity()
-
-    return () => {
-      if (frame) cancelAnimationFrame(frame)
-      observer.disconnect()
-    }
-  }, [workspaces.length, activeWorkspaceId])
-
-  const actionHandlers: MenuActionHandlers = {
-    toggleFocusMode: onToggleFocusMode,
-    toggleSidebar: onToggleSidebar,
-  }
-
-  const menuLeftPadding = isMac ? 86 : 12
-  const globalSearchButton = (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <TopBarButton
-          onClick={onOpenGlobalSearch}
-          aria-label={t("globalSearch.open", "Search")}
-          className="h-[26px] w-[26px] rounded-lg"
-        >
-          <Icons.Search className="h-4 w-4 text-foreground/50" strokeWidth={1.5} />
-        </TopBarButton>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">
-        {t("globalSearch.open", "Search")} {searchHotkey}
-      </TooltipContent>
-    </Tooltip>
+  const selectedWorkspace = useMemo(
+    () => workspaces.find((workspace) => workspace.id === activeWorkspaceId),
+    [activeWorkspaceId, workspaces]
   )
-  const updateIndicatorButton = updateIndicator ? (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <TopBarButton
-          onClick={() => {
-            if (updateIndicator.actionable) {
-              void updateChecker.installUpdate()
-            }
-          }}
-          aria-label={
-            updateIndicator.kind === 'ready'
-              ? t("settings.about.restartToUpdate", { version: updateIndicator.version ?? '' })
-              : updateIndicator.kind === 'downloading'
-                ? t("settings.about.downloading", { version: updateIndicator.version ?? '', percent: updateIndicator.progress })
-                : t("toast.installingUpdate")
-          }
-          aria-disabled={!updateIndicator.actionable}
-          className={cn(
-            "relative h-[26px] w-[26px] rounded-lg",
-            updateIndicator.kind === 'ready'
-              ? "bg-accent/10 text-accent hover:bg-accent/15"
-              : "bg-foreground/5 text-foreground/60 hover:bg-foreground/5 cursor-default"
-          )}
-        >
-          {updateIndicator.kind === 'ready' ? (
-            <Icons.Download className="h-4 w-4" strokeWidth={1.7} />
-          ) : (
-            <Icons.RefreshCw className="h-4 w-4 animate-spin" strokeWidth={1.7} />
-          )}
-          <span
-            className={cn(
-              "absolute right-1 top-1 h-1.5 w-1.5 rounded-full",
-              updateIndicator.kind === 'ready' ? "bg-accent" : "bg-foreground/40"
-            )}
-          />
-        </TopBarButton>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">
-        {updateIndicator.kind === 'ready'
-          ? t("settings.about.restartToUpdate", { version: updateIndicator.version ?? '' })
-          : updateIndicator.kind === 'downloading'
-            ? t("settings.about.downloading", { version: updateIndicator.version ?? '', percent: updateIndicator.progress })
-            : t("toast.installingUpdate")}
-      </TooltipContent>
-    </Tooltip>
-  ) : null
+  const workspaceName = selectedWorkspace?.name ?? '未选择项目'
+  const displayName = formatTopbarWorkspaceName(workspaceName)
+  const projectTypeLabel = getWorkspaceProjectTypeLabel(selectedWorkspace)
+  const isRemoteWorkspace = Boolean(selectedWorkspace?.remoteServer)
+  const isDisconnected = isRemoteWorkspace
+    && connectionState?.mode === 'remote'
+    && connectionState.status !== 'connected'
 
   return (
-    <div
-      className="fixed top-0 left-0 right-0 h-[48px] z-panel titlebar-drag-region"
+    <header
+      data-testid="window-title-bar"
+      aria-label="窗口上下文"
+      className="fixed left-0 right-0 top-0 z-panel titlebar-drag-region border-b border-border/25 bg-background/90 text-foreground"
+      style={{ height: WINDOW_TITLE_BAR_HEIGHT }}
     >
-      <div className="flex h-full w-full items-center justify-between gap-2">
-      {/* === LEFT: Sidebar + Menu + Navigation + Workspace === */}
-      {/* Keep this container draggable. Only individual interactive controls should use titlebar-no-drag. */}
-      <div className="pointer-events-auto flex min-w-0 flex-1 items-center gap-0.5" style={{ paddingLeft: menuLeftPadding }}>
-        <div className="flex items-center gap-0.5">
-        {!isCompact && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <TopBarButton onClick={onToggleSidebar} aria-label={t("menu.toggleSidebar")}>
-              <PanelLeftRounded className="h-[18px] w-[18px] text-foreground/70" />
-            </TopBarButton>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{t("menu.toggleSidebar")}</TooltipContent>
-        </Tooltip>
+      <div
+        className={cn(
+          'pointer-events-none absolute left-1/2 top-1/2 flex min-w-0 max-w-[min(520px,58vw)] -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-1.5 text-center',
+          isCompact && 'max-w-[min(360px,62vw)]'
         )}
-
-        {/* Craft Menu */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <TopBarButton aria-label={t("menu.craftMenu")}>
-              <CraftAgentsSymbol className="h-4 text-accent" />
-            </TopBarButton>
-          </DropdownMenuTrigger>
-          <StyledDropdownMenuContent align="start" minWidth="min-w-48">
-            <StyledDropdownMenuItem onClick={onNewChat}>
-              <SquarePenRounded className="h-3.5 w-3.5" />
-              {t("menu.newChat")}
-              {newChatHotkey && <DropdownMenuShortcut className="pl-6">{newChatHotkey}</DropdownMenuShortcut>}
-            </StyledDropdownMenuItem>
-            {onNewWindow && (
-              <StyledDropdownMenuItem onClick={onNewWindow}>
-                <Icons.AppWindow className="h-3.5 w-3.5" />
-                {t("menu.newWindow")}
-                {newWindowHotkey && <DropdownMenuShortcut className="pl-6">{newWindowHotkey}</DropdownMenuShortcut>}
-              </StyledDropdownMenuItem>
-            )}
-
-            <StyledDropdownMenuSeparator />
-
-            {renderMenuSection(EDIT_MENU, actionHandlers, t)}
-            {renderMenuSection(VIEW_MENU, actionHandlers, t)}
-            {renderMenuSection(WINDOW_MENU, actionHandlers, t)}
-
-            <StyledDropdownMenuSeparator />
-
-            <DropdownMenuSub>
-              <StyledDropdownMenuSubTrigger>
-                <Icons.Settings className="h-3.5 w-3.5" />
-                {t("sidebar.settings")}
-              </StyledDropdownMenuSubTrigger>
-              <StyledDropdownMenuSubContent>
-                <StyledDropdownMenuItem onClick={onOpenSettings}>
-                  <Icons.Settings className="h-3.5 w-3.5" />
-                  {t("menu.settings")}
-                  {settingsHotkey && <DropdownMenuShortcut className="pl-6">{settingsHotkey}</DropdownMenuShortcut>}
-                </StyledDropdownMenuItem>
-                <StyledDropdownMenuSeparator />
-                {SETTINGS_ITEMS.map((item) => {
-                  const Icon = SETTINGS_ICONS[item.id]
-                  return (
-                    <StyledDropdownMenuItem
-                      key={item.id}
-                      onClick={() => onOpenSettingsSubpage(item.id)}
-                    >
-                      <Icon className="h-3.5 w-3.5" />
-                      {t(item.labelKey)}
-                    </StyledDropdownMenuItem>
-                  )
-                })}
-              </StyledDropdownMenuSubContent>
-            </DropdownMenuSub>
-
-            <DropdownMenuSub>
-              <StyledDropdownMenuSubTrigger>
-                <Icons.HelpCircle className="h-3.5 w-3.5" />
-                {t("menu.help")}
-              </StyledDropdownMenuSubTrigger>
-              <StyledDropdownMenuSubContent>
-                <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl('https://agents.craft.do/docs')}>
-                  <Icons.HelpCircle className="h-3.5 w-3.5" />
-                  {t("menu.helpAndDocs")}
-                  <Icons.ExternalLink className="h-3 w-3 ml-auto text-muted-foreground" />
-                </StyledDropdownMenuItem>
-                <StyledDropdownMenuItem onClick={onOpenKeyboardShortcuts}>
-                  <Icons.Keyboard className="h-3.5 w-3.5" />
-                  {t("menu.keyboardShortcuts")}
-                  {keyboardShortcutsHotkey && <DropdownMenuShortcut className="pl-6">{keyboardShortcutsHotkey}</DropdownMenuShortcut>}
-                </StyledDropdownMenuItem>
-              </StyledDropdownMenuSubContent>
-            </DropdownMenuSub>
-
-            {isDebugMode && (
-              <>
-                <DropdownMenuSub>
-                  <StyledDropdownMenuSubTrigger>
-                    <Icons.Bug className="h-3.5 w-3.5" />
-                    Debug
-                  </StyledDropdownMenuSubTrigger>
-                  <StyledDropdownMenuSubContent>
-                    <StyledDropdownMenuItem onClick={() => void updateChecker.checkForUpdates()}>
-                      <Icons.Download className="h-3.5 w-3.5" />
-                      Check for Updates
-                    </StyledDropdownMenuItem>
-                    <StyledDropdownMenuItem onClick={() => window.electronAPI.installUpdate()}>
-                      <Icons.Download className="h-3.5 w-3.5" />
-                      Install Update
-                    </StyledDropdownMenuItem>
-                    <StyledDropdownMenuSeparator />
-                    <StyledDropdownMenuItem onClick={() => window.electronAPI.menuToggleDevTools()}>
-                      <Icons.Bug className="h-3.5 w-3.5" />
-                      Toggle DevTools
-                      <DropdownMenuShortcut className="pl-6">{isMac ? '⌥⌘I' : 'Ctrl+Shift+I'}</DropdownMenuShortcut>
-                    </StyledDropdownMenuItem>
-                  </StyledDropdownMenuSubContent>
-                </DropdownMenuSub>
-              </>
-            )}
-
-            <StyledDropdownMenuSeparator />
-
-            <StyledDropdownMenuItem onClick={() => window.electronAPI.menuQuit()}>
-              <Icons.LogOut className="h-3.5 w-3.5" />
-              {t("menu.quitCraftAgents")}
-              {quitHotkey && <DropdownMenuShortcut className="pl-6">{quitHotkey}</DropdownMenuShortcut>}
-            </StyledDropdownMenuItem>
-          </StyledDropdownMenuContent>
-        </DropdownMenu>
-        </div>
-
-        {/* Back / Forward / Workspace selector (moved from center) */}
-        <div className={cn("ml-1 flex min-w-0 items-center gap-1", isCompact ? "flex-1" : "w-[clamp(220px,42vw,640px)]")}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <TopBarButton onClick={onBack} disabled={!canGoBack} aria-label={t("common.back")}>
-                <Icons.ChevronLeft className="h-[18px] w-[18px] text-foreground/70" strokeWidth={1.5} />
-              </TopBarButton>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">{t("common.back")} {goBackHotkey}</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <TopBarButton onClick={onForward} disabled={!canGoForward} aria-label={t("common.forward")}>
-                <Icons.ChevronRight className="h-[18px] w-[18px] text-foreground/70" strokeWidth={1.5} />
-              </TopBarButton>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">{t("common.forward")} {goForwardHotkey}</TooltipContent>
-          </Tooltip>
-
-          <div className="min-w-0 flex-1">
-            <WorkspaceSwitcher
-              variant="topbar"
-              workspaces={workspaces}
-              activeWorkspaceId={activeWorkspaceId}
-              onSelect={onSelectWorkspace}
-              onWorkspaceCreated={onWorkspaceCreated}
-              onWorkspaceRemoved={onWorkspaceRemoved}
-              workspaceUnreadMap={workspaceUnreadMap}
-            />
-          </div>
-          {workspaceTools ? (
-            <div className="titlebar-no-drag min-w-0 shrink-0">
-              {workspaceTools}
-            </div>
-          ) : null}
-          {isCompact ? globalSearchButton : null}
-          {isCompact ? updateIndicatorButton : null}
-        </div>
+      >
+        <span className="shrink-0 text-[12px] font-medium text-muted-foreground">
+          {projectTypeLabel}
+        </span>
+        <span className="shrink-0 text-[12px] text-muted-foreground/40" aria-hidden="true">/</span>
+        <FadingText className="min-w-0 max-w-[320px] whitespace-nowrap text-[13px] font-medium text-foreground" fadeWidth={24}>
+          {displayName}
+        </FadingText>
+        {isRemoteWorkspace ? (
+          isDisconnected
+            ? <CloudOff className="h-3 w-3 shrink-0 text-destructive" />
+            : <Cloud className="h-3 w-3 shrink-0 text-muted-foreground" />
+        ) : null}
       </div>
 
-      {/* === RIGHT: Browser strip + add + help === */}
-      {!isCompact && (
-      <div ref={rightSlotRef} className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1" style={{ paddingRight: 12 }}>
-        <div className="min-w-0 flex justify-end">
-          <BrowserTabStrip activeSessionId={activeSessionId} maxVisibleBadges={maxVisibleBrowserBadges} />
-        </div>
-        {rightTools ? (
-          <div className="titlebar-no-drag flex shrink-0 items-center gap-1">
-            {rightTools}
-          </div>
-        ) : null}
-        {globalSearchButton}
+      {updateIndicator ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <TopBarButton onClick={() => setFeedbackOpen(true)} aria-label={t("menu.feedback")} className="ml-1 h-[26px] w-[26px] rounded-lg">
-              <Icons.MessageSquarePlus className="h-4 w-4 text-foreground/50" strokeWidth={1.5} />
-            </TopBarButton>
+            <button
+              type="button"
+              aria-label={
+                updateIndicator.kind === 'ready'
+                  ? t('settings.about.restartToUpdate', { version: updateIndicator.version ?? '' })
+                  : updateIndicator.kind === 'downloading'
+                    ? t('settings.about.downloading', { version: updateIndicator.version ?? '', percent: updateIndicator.progress })
+                    : t('toast.installingUpdate')
+              }
+              disabled={!updateIndicator.actionable}
+              onClick={() => {
+                if (updateIndicator.actionable) {
+                  void updateChecker.installUpdate()
+                }
+              }}
+              className={cn(
+                'titlebar-no-drag absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md outline-none transition-colors',
+                'focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default',
+                updateIndicator.kind === 'ready'
+                  ? 'bg-accent/10 text-accent hover:bg-accent/15'
+                  : 'bg-foreground/5 text-foreground/60'
+              )}
+            >
+              {updateIndicator.kind === 'ready' ? (
+                <Download className="h-3.5 w-3.5" strokeWidth={1.7} />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" strokeWidth={1.7} />
+              )}
+            </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">{t("menu.feedback")}</TooltipContent>
+          <TooltipContent side="bottom">
+            {updateIndicator.kind === 'ready'
+              ? t('settings.about.restartToUpdate', { version: updateIndicator.version ?? '' })
+              : updateIndicator.kind === 'downloading'
+                ? t('settings.about.downloading', { version: updateIndicator.version ?? '', percent: updateIndicator.progress })
+                : t('toast.installingUpdate')}
+          </TooltipContent>
         </Tooltip>
-        {updateIndicatorButton}
-      </div>
+      ) : (
+        <div className="absolute right-3 top-1/2 h-6 w-6 -translate-y-1/2" aria-hidden="true" />
       )}
-      <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
-      </div>
-    </div>
+    </header>
   )
+}
+
+type WorkspaceWithProjectMetadata = Workspace & {
+  projectType?: WorkspaceProjectType
+  methodPackId?: string
+}
+
+function getWorkspaceProjectTypeLabel(workspace: Workspace | undefined): string {
+  const metadata = workspace as WorkspaceWithProjectMetadata | undefined
+  switch (metadata?.projectType) {
+    case 'novel':
+      return '小说'
+    case 'short-form':
+      return '短篇'
+    case 'screenplay':
+      return '剧本'
+    case 'general':
+      return '项目'
+    default:
+      if (metadata?.methodPackId?.startsWith('short-form.')) return '短篇'
+      if (metadata?.methodPackId?.startsWith('novel.')) return '小说'
+      if (metadata?.methodPackId?.startsWith('screenplay.')) return '剧本'
+      return '项目'
+  }
 }

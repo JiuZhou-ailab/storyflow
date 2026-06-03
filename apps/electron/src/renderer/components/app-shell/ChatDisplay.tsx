@@ -46,7 +46,7 @@ import {
 } from "@craft-agent/ui"
 import { useFocusZone } from "@/hooks/keyboard"
 import { useTheme } from "@/hooks/useTheme"
-import type { Session, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, LoadedSource, LoadedSkill } from "../../../shared/types"
+import type { Session, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, LoadedSource, LoadedSkill, WorkspaceProjectType } from "../../../shared/types"
 import type { PermissionMode } from "@craft-agent/shared/agent/modes"
 import type { ThinkingLevel } from "@craft-agent/shared/agent/thinking-levels"
 import {
@@ -79,12 +79,24 @@ import { CHAT_LAYOUT } from "@/config/layout"
 import { collectFileChangesFromActivities, getFirstFileChangeIdForActivity } from "@/lib/file-changes"
 import { resolveBranchNewPanelOption } from "./branching"
 import {
+  resolveChatOpeningPrompt,
+  type ChatOpeningAction,
+  type ChatOpeningPrompt,
+} from "./chat-opening"
+import {
   buildRewindSessionOptions,
   canCreateDefaultRewindBranch,
+  canRewindWithoutDroppingHistory,
   MANAGED_DEFAULT_CONNECTION_SLUG,
   resolveRewindBranchMessageId,
 } from "./chat-rewind"
 import { handleErrorMessageAction } from "./error-message-actions"
+
+type WorkspaceWithOpeningMetadata = {
+  name?: string
+  projectType?: WorkspaceProjectType
+  methodPackId?: string
+}
 
 // ============================================================================
 // CSS Custom Highlight API helper
@@ -141,7 +153,12 @@ function getTurnKey(turn: Turn): string {
 
 interface ChatDisplayProps {
   session: Session | null
-  onSendMessage: (message: string, attachments?: FileAttachment[], skillSlugs?: string[]) => void
+  onSendMessage: (
+    message: string,
+    attachments?: FileAttachment[],
+    skillSlugs?: string[],
+    runtimeOptions?: { forceQueuePreview?: boolean },
+  ) => void
   onOpenFile: (path: string) => void
   onOpenUrl: (url: string) => void
   // Model selection
@@ -431,6 +448,64 @@ function ScrollOnMount({
   return null
 }
 
+function ChatOpeningEmptyState({
+  opening,
+  onAction,
+}: {
+  opening: ChatOpeningPrompt
+  onAction: (action: ChatOpeningAction) => void
+}) {
+  const { t } = useTranslation()
+  const contextParts = [
+    opening.workspaceName ? t('chatOpening.contextProject', { workspaceName: opening.workspaceName }) : undefined,
+    opening.methodPackName,
+  ].filter((part): part is string => Boolean(part))
+
+  return (
+    <div className="flex min-h-[420px] items-center justify-center px-6 py-12">
+      <div className="w-full max-w-[680px] text-center">
+        <div className="text-[17px] font-medium leading-6 text-foreground">
+          {t(opening.titleKey)}
+        </div>
+        {contextParts.length > 0 ? (
+          <div className="mt-2 text-xs text-muted-foreground">
+            {contextParts.join(' · ')}
+          </div>
+        ) : null}
+        <div className="mt-1 text-xs text-muted-foreground/70">
+          {t(opening.hintKey)}
+        </div>
+        <div className="mt-6 space-y-4 text-left">
+          {opening.sections.map((section) => (
+            <section key={section.id}>
+              <div className="mb-2 px-1 text-[11px] font-medium text-muted-foreground">
+                {t(section.labelKey)}
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {section.actions.map((action) => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    onClick={() => onAction(action)}
+                    className="min-h-[52px] rounded-[7px] border border-border/60 bg-background px-3 py-2 text-left shadow-minimal transition-colors hover:border-foreground/20 hover:bg-foreground/[0.03]"
+                  >
+                    <span className="block text-sm font-medium text-foreground/85">
+                      {t(action.labelKey)}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                      {t(action.descriptionKey)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /**
  * ChatDisplay - Main chat interface for a selected session
  *
@@ -531,6 +606,31 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const prevSessionIdForCommitScrollRef = React.useRef<string | null>(null)
   const internalTextareaRef = React.useRef<RichTextInputHandle>(null)
   const textareaRef = externalTextareaRef || internalTextareaRef
+  const activeWorkspace = React.useMemo(
+    () => appShellContext.workspaces.find((workspace) => workspace.id === appShellContext.activeWorkspaceId),
+    [appShellContext.activeWorkspaceId, appShellContext.workspaces]
+  )
+  const activeWorkspaceMetadata = activeWorkspace as WorkspaceWithOpeningMetadata | undefined
+  const openingProjectMetadata = appShellContext.openingProjectMetadata
+  const chatOpening = React.useMemo(() => resolveChatOpeningPrompt({
+    workspaceName: activeWorkspaceMetadata?.name,
+    projectType: openingProjectMetadata?.projectType ?? activeWorkspaceMetadata?.projectType,
+    methodPackId: openingProjectMetadata?.methodPackId ?? activeWorkspaceMetadata?.methodPackId,
+  }), [
+    openingProjectMetadata?.methodPackId,
+    openingProjectMetadata?.projectType,
+    activeWorkspaceMetadata?.methodPackId,
+    activeWorkspaceMetadata?.name,
+    activeWorkspaceMetadata?.projectType,
+  ])
+  const handleOpeningAction = React.useCallback((action: ChatOpeningAction) => {
+    const prompt = t(action.promptKey)
+    onInputChange?.(prompt)
+    textareaRef.current?.focus()
+    window.setTimeout(() => {
+      textareaRef.current?.setSelectionRange(prompt.length, prompt.length)
+    }, 0)
+  }, [onInputChange, t, textareaRef])
   const [sendMessageKey, setSendMessageKey] = useState<'enter' | 'cmd-enter'>('enter')
   const [openAnnotationRequest, setOpenAnnotationRequest] = React.useState<{
     messageId: string
@@ -1259,7 +1359,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
     // Force stick-to-bottom when user sends a message
     isStickToBottomRef.current = true
-    onSendMessage(normalizedMessage, attachments, skillSlugs)
+    onSendMessage(normalizedMessage, attachments, skillSlugs, {
+      forceQueuePreview: session?.isProcessing === true,
+    })
 
     // Persist sent marker on follow-up annotations so TurnCard can distinguish
     // sent vs pending follow-ups. If user edits a follow-up later, TurnCard
@@ -1329,6 +1431,53 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       console.error('[ChatDisplay] Failed to cancel processing:', error)
     })
   }
+
+  const handleSendQueuedMessageNow = useCallback((messageId: string) => {
+    if (!session?.id) return
+    window.electronAPI.sessionCommand(session.id, {
+      type: 'sendQueuedMessageNow',
+      messageId,
+    }).catch(error => {
+      console.error('[ChatDisplay] Failed to send queued message now:', error)
+      toast.error(t('toast.cannotSendRightNow'), {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    })
+  }, [session?.id, t])
+
+  const removeQueuedMessage = useCallback((messageId: string) => {
+    if (!session?.id) return Promise.resolve()
+    return window.electronAPI.sessionCommand(session.id, {
+      type: 'removeQueuedMessage',
+      messageId,
+    })
+  }, [session?.id])
+
+  const handleRemoveQueuedMessage = useCallback((messageId: string) => {
+    removeQueuedMessage(messageId).catch(error => {
+      console.error('[ChatDisplay] Failed to remove queued message:', error)
+      toast.error(t('toast.cannotSendRightNow'), {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    })
+  }, [removeQueuedMessage, t])
+
+  const handleEditQueuedMessage = useCallback((message: QueuedInputMessage) => {
+    removeQueuedMessage(message.id)
+      .then(() => {
+        onInputChange?.(message.content)
+        onAttachmentsChange?.([])
+        requestAnimationFrame(() => {
+          textareaRef.current?.focus()
+        })
+      })
+      .catch(error => {
+        console.error('[ChatDisplay] Failed to edit queued message:', error)
+        toast.error(t('toast.cannotSendRightNow'), {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      })
+  }, [onAttachmentsChange, onInputChange, removeQueuedMessage, t, textareaRef])
 
   // Per-frame scroll compensation during input height animation
   // Only compensate when user is "stuck to bottom" - otherwise let them control their scroll position
@@ -1406,6 +1555,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       ?? appShellContext.llmConnections.find(connection => connection.isDefault)?.slug
       ?? MANAGED_DEFAULT_CONNECTION_SLUG
 
+    if (!canRewindWithoutDroppingHistory(session, branchFromMessageId)) {
+      toast.error(t('chat.rewindUnavailable', 'This message cannot be safely rewound.'))
+      return
+    }
     if (branchFromMessageId && !session.supportsBranching) {
       toast.error(t('chat.rewindUnavailable', 'This conversation cannot be rewound yet.'))
       return
@@ -1644,6 +1797,12 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                       <span className="text-sm text-muted-foreground">{t("editPopover.whatToChange")}</span>
                       <span className="text-xs text-muted-foreground/50">{t("editPopover.justDescribe")}</span>
                     </div>
+                  )}
+                  {!compactMode && turns.length === 0 && !hasUnrenderedLoadedMessages && (
+                    <ChatOpeningEmptyState
+                      opening={chatOpening}
+                      onAction={handleOpeningAction}
+                    />
                   )}
                   {!compactMode && hasUnrenderedLoadedMessages && (
                     <div className="flex h-64 items-center justify-center px-4 text-center">
@@ -1988,6 +2147,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
             currentSessionStatus={session.sessionStatus || 'todo'}
             onSessionStatusChange={onSessionStatusChange}
             queuedMessages={queuedUserMessages}
+            onSendQueuedMessageNow={handleSendQueuedMessageNow}
+            onEditQueuedMessage={handleEditQueuedMessage}
+            onRemoveQueuedMessage={handleRemoveQueuedMessage}
             inputProps={{
               placeholder,
               disabled: isInputDisabled,

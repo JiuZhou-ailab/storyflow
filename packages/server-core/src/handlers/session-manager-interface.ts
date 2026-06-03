@@ -95,6 +95,8 @@ export interface ISessionManager {
   queryOnce(sessionId: string, request: OneShotLlmRequest): Promise<OneShotLlmResult>
   rewriteNovelSelection(sessionId: string, request: NovelSelectionRewriteRequest): Promise<NovelSelectionRewriteResult>
   cancelProcessing(sessionId: string, silent?: boolean): Promise<void>
+  sendQueuedMessageNow(sessionId: string, messageId: string): Promise<void>
+  removeQueuedMessage(sessionId: string, messageId: string): Promise<void>
   killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }>
   getTaskOutput(taskId: string): Promise<string | null>
   addMessageAnnotation(sessionId: string, messageId: string, annotation: AnnotationV1): void

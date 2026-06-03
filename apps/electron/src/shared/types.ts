@@ -31,6 +31,8 @@ import type {
 import type { PermissionMode } from '@craft-agent/shared/agent/modes';
 export type { PermissionMode };
 export { PERMISSION_MODE_CONFIG } from '@craft-agent/shared/agent/modes';
+import type { WhatsNewManifest } from '@craft-agent/shared/release-notes';
+export type { WhatsNewManifest };
 
 // Thinking level types
 import type { ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels';
@@ -80,7 +82,7 @@ import type { MethodPackId } from '@craft-agent/shared/writing/method-packs';
 import type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings } from '@craft-agent/shared/config';
 export type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings };
 
-export type WorkspaceProjectType = 'general' | 'novel' | 'short-form';
+export type WorkspaceProjectType = 'general' | 'novel' | 'screenplay' | 'short-form';
 
 export interface FeedbackIssueAttachment {
   name: string
@@ -456,6 +458,7 @@ export interface ElectronAPI {
   // Release notes
   getReleaseNotes(): Promise<string>
   getLatestReleaseVersion(): Promise<string | undefined>
+  getWhatsNewManifest(): Promise<WhatsNewManifest | undefined>
 
   // System warnings (startup checks)
   getSystemWarnings(): Promise<{ vcredistMissing: boolean; downloadUrl?: string }>

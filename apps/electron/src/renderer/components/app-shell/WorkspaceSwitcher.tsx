@@ -204,6 +204,7 @@ export function WorkspaceSwitcher({
                 fallbackClassName="bg-muted text-[10px] rounded-full"
                 fallback={selectedWorkspace?.name?.charAt(0) || 'W'}
               />
+              <span className="shrink-0 text-[11px] font-medium text-muted-foreground">项目</span>
               <span className="min-w-0 flex-1 overflow-hidden text-left whitespace-nowrap">{topbarWorkspaceName}</span>
               {selectedWorkspace?.remoteServer && (
                 isRemoteDisconnected(selectedWorkspace.id)

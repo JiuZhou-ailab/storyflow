@@ -1,22 +1,16 @@
-/**
- * PromptBuilder - System Prompt and Context Building
- *
- * Provides utilities for building system prompts and context blocks that both
- * ClaudeAgent and CodexAgent can use. Handles workspace capabilities, recovery
- * context, and user preferences formatting.
- *
- * Key responsibilities:
- * - Build workspace capabilities context
- * - Format recovery context for session resume failures
- * - Build session state context blocks
- * - Format user preferences for prompt injection
- */
+// input: Workspace/session metadata, source state, preferences, and current filesystem shape
+// output: Per-turn prompt context blocks for Storyflow agent sessions
+// pos: Shared prompt-context builder used by Claude and Pi-backed sessions
 
 import { isLocalMcpEnabled } from '../../workspaces/storage.ts';
 import { formatPreferencesForPrompt } from '../../config/preferences.ts';
 import { formatSessionState } from '../mode-manager.ts';
 import { getDateTimeContext, getWorkingDirectoryContext } from '../../prompts/system.ts';
 import { getSessionPlansPath, getSessionDataPath, getSessionPath } from '../../sessions/storage.ts';
+import {
+  buildWorkspaceStructureSnapshot,
+  renderWorkspaceStructureContext,
+} from './workspace-structure-context.ts';
 import type {
   PromptBuilderConfig,
   ContextBlockOptions,
@@ -98,6 +92,11 @@ export class PromptBuilder {
       parts.push(workingDirContext);
     }
 
+    const workspaceStructureContext = this.formatWorkspaceStructure();
+    if (workspaceStructureContext) {
+      parts.push(workspaceStructureContext);
+    }
+
     return parts;
   }
 
@@ -132,6 +131,26 @@ export class PromptBuilder {
       effectiveWorkingDir,
       isSessionRoot,
       this.config.session?.sdkCwd
+    );
+  }
+
+  /**
+   * Format the current workspace structure as a bounded per-turn anchor.
+   */
+  formatWorkspaceStructure(): string | null {
+    const sessionId = this.config.session?.id;
+    const effectiveWorkingDir = this.config.session?.workingDirectory ??
+      (sessionId ? getSessionPath(this.workspaceRootPath, sessionId) : undefined);
+    const structureRoot = effectiveWorkingDir ?? this.workspaceRootPath;
+
+    if (!structureRoot) return null;
+
+    return renderWorkspaceStructureContext(
+      buildWorkspaceStructureSnapshot(structureRoot),
+      {
+        activeWorkspaceRoot: this.workspaceRootPath || undefined,
+        workingDirectory: effectiveWorkingDir,
+      },
     );
   }
 

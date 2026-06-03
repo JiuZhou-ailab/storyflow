@@ -643,20 +643,11 @@ export function useOnboarding({
     }
   }, [state.apiSetupMethod, saveAndValidateConnection, editingSlug, existingSlugs])
 
-  // Map ProviderChoice → ApiSetupMethod and navigate to the right step
+  // Map product provider mode → ApiSetupMethod and navigate to the right step
   const handleSelectProvider = useCallback((choice: ProviderChoice) => {
-    const CHOICE_TO_METHOD: Record<Exclude<ProviderChoice, 'local'>, ApiSetupMethod> = {
+    const CHOICE_TO_METHOD: Record<ProviderChoice, ApiSetupMethod> = {
       jiuzhou: 'jiuzhou_api_key',
-      claude: 'claude_oauth',
-      chatgpt: 'pi_chatgpt_oauth',
-      copilot: 'pi_copilot_oauth',
-      api_key: 'pi_api_key',
-    }
-
-    if (choice === 'local') {
-      // Local uses anthropic_api_key with custom endpoint (Ollama doesn't need an API key)
-      setState(s => ({ ...s, step: 'local-model', apiSetupMethod: 'anthropic_api_key', credentialStatus: 'idle', errorMessage: undefined }))
-      return
+      custom_provider: 'pi_api_key',
     }
 
     const method = CHOICE_TO_METHOD[choice]
@@ -668,12 +659,7 @@ export function useOnboarding({
       errorMessage: undefined,
     }))
 
-    // OAuth methods start immediately
-    if (choice === 'claude' || choice === 'chatgpt' || choice === 'copilot') {
-      // Defer to next tick so state is updated before handleStartOAuth reads it
-      setTimeout(() => handleStartOAuth(method), 0)
-    }
-  }, [handleStartOAuth])
+  }, [])
 
   // Submit authorization code (second step of OAuth flow)
   const handleSubmitAuthCode = useCallback(async (code: string) => {

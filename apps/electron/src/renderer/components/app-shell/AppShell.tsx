@@ -8,7 +8,6 @@ import { useRef, useState, useEffect, useCallback, useMemo } from "react"
 import { useAtomValue, useStore } from "jotai"
 import { motion, AnimatePresence } from "motion/react"
 import {
-  Settings,
   ChevronRight,
   ChevronDown,
   MoreHorizontal,
@@ -21,8 +20,6 @@ import {
   Search,
   Plus,
   Trash2,
-  DatabaseZap,
-  Zap,
   Inbox,
   Cake,
   Calendar,
@@ -44,8 +41,12 @@ import {
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
 import { TopBar } from "./TopBar"
+import { ActivityRail } from "./ActivityRail"
+import { ACTIVITY_RAIL_WIDTH, type ActivityRailItemId } from "./ActivityRail"
 import { FirstRunTour } from "./FirstRunTour"
 import { GlobalSearchDialog } from "./GlobalSearchDialog"
+import { WhatsNewAnnouncementDialog } from "./WhatsNewAnnouncementDialog"
+import { buildWhatsNewAnnouncementCopy, getWhatsNewStartupAction } from "./whats-new-announcement"
 import { McpIcon } from "../icons/McpIcon"
 import { cn } from "@/lib/utils"
 import { isMac } from "@/lib/platform"
@@ -92,7 +93,7 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
-import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange } from "../../../shared/types"
+import type { Session, Workspace, WorkspaceProjectType, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange, WhatsNewManifest } from "../../../shared/types"
 import { ensureSessionMessagesLoadedAtom, sessionAtomFamily, sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
@@ -157,7 +158,7 @@ import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
 import { collectFileChangesFromActivities } from "@/lib/file-changes"
-import { buildRejectFileChangeOperation } from "@/lib/file-change-review"
+import { buildRejectFileChangesOperation } from "@/lib/file-change-review"
 import {
   buildMergedManuscriptContent,
   buildNovelExportPlan,
@@ -173,11 +174,7 @@ import {
   parseNovelReviewStatusMap,
   type NovelReviewStatusMap,
 } from "@/lib/novel-review-workflow"
-import {
-  buildAcceptNovelChangeUndoEntry,
-  buildRejectNovelChangeUndoEntry,
-  type NovelReviewUndoEntry,
-} from "@/lib/novel-review-undo"
+import type { NovelReviewUndoEntry } from "@/lib/novel-review-undo"
 import {
   buildNovelWorkspaceTree,
   detectNovelProjectFromSearchResults,
@@ -218,6 +215,12 @@ interface AppShellProps {
   menuNewChatTrigger?: number
   /** Focused mode - hides sidebars, shows only the chat content */
   isFocusedMode?: boolean
+  /** Monotonic signal for opening global search after entering the ready shell */
+  openGlobalSearchSignal?: number
+  /** Open the global project management hub */
+  onOpenProjectHub?: () => void
+  /** Open the account and points center */
+  onOpenAccount?: () => void
 }
 
 function isNovelReviewUndoShortcut(event: KeyboardEvent): boolean {
@@ -263,6 +266,11 @@ const NAVIGATOR_SASH_CAPTURE_HALF_WIDTH = 18
 const NOVEL_AUTO_VERSION_CHAR_THRESHOLD = 100
 const NOVEL_AUTO_VERSION_INTERVAL_MS = 5 * 60 * 1000
 const NOVEL_WORKSPACE_BRIEF_CHANGE_LIMIT = 20
+
+type WorkspaceOpeningMetadata = {
+  projectType?: WorkspaceProjectType
+  methodPackId?: string
+}
 
 function joinWorkspacePath(rootPath: string, relativePath: string): string {
   const root = rootPath.replace(/[\\/]+$/, '')
@@ -331,6 +339,24 @@ function collectAgentTouchedRelativePaths(
     .filter(change => !change.error)
     .map(change => relativeByAbsolutePath.get(change.filePath) ?? getNovelWorkspaceRelativePath(change.filePath, rootPath))
     .filter(Boolean))]
+}
+
+function buildWorkspaceVersionReviewChanges(
+  changes: WorkspaceVersionFileChange[],
+  rootPath: string,
+): FileChange[] {
+  const normalizedRoot = rootPath.replace(/\/+$/, '')
+  return changes
+    .filter(change => change.unifiedDiff?.trim())
+    .map((change): FileChange => ({
+      id: `workspace-version:${change.path}`,
+      filePath: `${normalizedRoot}/${change.path}`,
+      toolType: 'Edit',
+      changeKind: change.status === 'added' ? 'create' : change.status === 'deleted' ? 'replace' : 'modify',
+      original: '',
+      modified: '',
+      unifiedDiff: change.unifiedDiff,
+    }))
 }
 
 function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
@@ -436,77 +462,6 @@ function AltExcludeTooltip({ show, children }: { show: boolean; children: React.
       <TooltipContent side="right" className="text-xs">{altClickTooltipLabel}</TooltipContent>
     </Tooltip>
   )
-}
-
-function NovelWorkspaceUtilityTopNav({
-  links,
-  getItemProps,
-  focusedItemId,
-}: {
-  links: LeftSidebarItem[]
-  getItemProps?: (id: string) => {
-    tabIndex: number
-    'data-focused': boolean
-    ref: (el: HTMLElement | null) => void
-  }
-  focusedItemId?: string | null
-}) {
-  const items = links.filter((item): item is LeftSidebarLinkItem => !('type' in item))
-  if (items.length === 0) return null
-
-  return (
-    <nav className="shrink-0" aria-label="Workspace tools">
-      <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
-        {items.map((item) => {
-          const itemProps = getItemProps?.(item.id)
-          const isFocused = focusedItemId === item.id
-          return (
-            <button
-              key={item.id}
-              {...(() => {
-                const { ref: _ref, ...rest } = itemProps || { ref: undefined }
-                return rest
-              })()}
-              ref={(el) => itemProps?.ref(el)}
-              type="button"
-              title={item.tooltip ?? item.title}
-              data-focused={isFocused || undefined}
-              onClick={item.onClick}
-              className={cn(
-                'flex h-[28px] min-w-0 shrink-0 items-center gap-1.5 rounded-[6px] px-2 text-xs outline-none transition-colors',
-                'focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring',
-                item.variant === 'default'
-                  ? 'bg-foreground/[0.08] text-foreground'
-                  : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground'
-              )}
-            >
-              <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center [&>svg]:h-3.5 [&>svg]:w-3.5">
-                {renderNovelUtilityIcon(item.icon)}
-              </span>
-              <span className="truncate">{item.title}</span>
-              {item.label ? (
-                <span className="ml-0.5 rounded-[4px] bg-foreground/[0.06] px-1 text-[10px] text-muted-foreground">
-                  {item.label}
-                </span>
-              ) : null}
-            </button>
-          )
-        })}
-      </div>
-    </nav>
-  )
-}
-
-function renderNovelUtilityIcon(icon: LeftSidebarLinkItem['icon']) {
-  const isComponent = typeof icon === 'function' ||
-    (typeof icon === 'object' && icon !== null && 'render' in icon)
-
-  if (isComponent) {
-    const Icon = icon as React.ComponentType<{ className?: string }>
-    return <Icon className="h-3.5 w-3.5" />
-  }
-
-  return icon
 }
 
 /**
@@ -828,6 +783,9 @@ function AppShellContent({
   defaultCollapsed = false,
   menuNewChatTrigger,
   isFocusedMode = false,
+  openGlobalSearchSignal = 0,
+  onOpenProjectHub,
+  onOpenAccount,
 }: AppShellProps) {
   // Destructure commonly used values from context
   // Note: sessions is NOT destructured here - we use sessionMetaMapAtom instead
@@ -850,7 +808,6 @@ function AppShellContent({
     onRenameSession,
     onOpenSettings,
     onOpenKeyboardShortcuts,
-    onOpenStoredUserPreferences,
     onReset,
     onSendMessage,
     onOpenFile,
@@ -872,12 +829,11 @@ function AppShellContent({
   })
   // Session list width in pixels (min 240, max 480)
   const [sessionListWidth, setSessionListWidth] = React.useState(() => {
-    return storage.get(storage.KEYS.sessionListWidth, 300)
+    return storage.get(storage.KEYS.sessionListWidth, DEFAULT_WORKSPACE_WIDTH)
   })
   const [novelWorkspaceNavigatorWidth, setNovelWorkspaceNavigatorWidth] = React.useState(() => {
     return storage.get(storage.KEYS.novelWorkspaceNavigatorWidth, NOVEL_WORKSPACE_NAVIGATOR_DEFAULT_WIDTH)
   })
-  const initialShellLayoutResolvedRef = React.useRef(false)
 
   // Hides both sidebar and navigator (CMD+. toggle)
   // Seed from either focused window param or persisted preference, then keep it toggleable.
@@ -897,16 +853,39 @@ function AppShellContent({
 
   // What's New overlay
   const [showWhatsNew, setShowWhatsNew] = React.useState(false)
+  const [showWhatsNewAnnouncement, setShowWhatsNewAnnouncement] = React.useState(false)
   const [releaseNotesContent, setReleaseNotesContent] = React.useState('')
+  const [whatsNewManifest, setWhatsNewManifest] = React.useState<WhatsNewManifest | null>(null)
   const [hasUnseenReleaseNotes, setHasUnseenReleaseNotes] = React.useState(false)
+  const whatsNewAnnouncementCopy = React.useMemo(
+    () => whatsNewManifest ? buildWhatsNewAnnouncementCopy(whatsNewManifest) : null,
+    [whatsNewManifest],
+  )
 
   // Check for unseen release notes on mount
   useEffect(() => {
-    window.electronAPI.getLatestReleaseVersion().then((latestVersion) => {
-      if (!latestVersion) return
-      const lastSeen = storage.get(storage.KEYS.whatsNewLastSeenVersion, '')
-      setHasUnseenReleaseNotes(lastSeen !== latestVersion)
+    let cancelled = false
+
+    window.electronAPI.getWhatsNewManifest().then((manifest) => {
+      if (cancelled) return
+      if (!manifest) return
+      setWhatsNewManifest(manifest)
+      const lastSeenDigest = storage.get(storage.KEYS.whatsNewLastSeenDigest, '')
+      const lastSeenVersion = storage.get(storage.KEYS.whatsNewLastSeenVersion, '')
+      const startupAction = getWhatsNewStartupAction({
+        manifest,
+        lastSeenDigest,
+        lastSeenVersion,
+      })
+      setHasUnseenReleaseNotes(startupAction.hasUnseenReleaseNotes)
+      setShowWhatsNewAnnouncement(startupAction.shouldOpenDialog)
+    }).catch((error) => {
+      console.warn('[whats-new] Failed to load update announcement:', error)
     })
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const [isResizing, setIsResizing] = React.useState<'sidebar' | 'session-list' | 'novel-workspace-navigator' | null>(null)
@@ -920,7 +899,7 @@ function AppShellContent({
   const latestNovelWorkspaceNavigatorWidthRef = React.useRef(novelWorkspaceNavigatorWidth)
   const [session, setSession] = useSession()
   const { resolvedMode, isDark, setMode } = useTheme()
-  const { canGoBack, canGoForward, goBack, goForward, navigateToSource, navigateToSession } = useNavigation()
+  const { goBack, goForward, navigateToSource, navigateToSession } = useNavigation()
 
   // Double-Esc interrupt feature: first Esc shows warning, second Esc interrupts
   const { handleEscapePress } = useEscapeInterrupt()
@@ -1063,6 +1042,12 @@ function AppShellContent({
   const [searchActive, setSearchActive] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
   const [globalSearchOpen, setGlobalSearchOpen] = React.useState(false)
+
+  React.useEffect(() => {
+    if (openGlobalSearchSignal > 0) {
+      setGlobalSearchOpen(true)
+    }
+  }, [openGlobalSearchSignal])
 
   // Grouping mode for chat list: per-view (stored in viewFiltersMap), forced to 'date' for state sub-views
   const isStateSubView = sessionFilter?.kind === 'state'
@@ -1580,24 +1565,20 @@ function AppShellContent({
   }, [novelWorkspaceNavigatorWidth])
 
   React.useEffect(() => {
-    if (
-      initialShellLayoutResolvedRef.current
-      || !shouldResolveInitialShellLayoutWidths(shellWidth, MOBILE_THRESHOLD)
-    ) return
-    initialShellLayoutResolvedRef.current = true
+    if (!shouldResolveInitialShellLayoutWidths(shellWidth, MOBILE_THRESHOLD)) return
 
+    const persistedSidebarWidth = storage.get<number | undefined>(storage.KEYS.sidebarWidth, undefined)
+    const persistedWorkspaceWidth = storage.get<number | undefined>(storage.KEYS.novelWorkspaceNavigatorWidth, undefined)
     const sidebarPersisted = isUserConfiguredShellLayoutWidth(
       'sidebar',
-      latestSidebarWidthRef.current,
+      persistedSidebarWidth,
       storage.getRaw(storage.KEYS.sidebarWidth) !== null
     )
     const workspacePersisted = isUserConfiguredShellLayoutWidth(
       'workspace',
-      latestNovelWorkspaceNavigatorWidthRef.current,
+      persistedWorkspaceWidth,
       storage.getRaw(storage.KEYS.novelWorkspaceNavigatorWidth) !== null
     )
-    if (sidebarPersisted && workspacePersisted) return
-
     const widths = resolveInitialShellLayoutWidths({
       totalWidth: shellWidth,
       edgeInset: PANEL_EDGE_INSET,
@@ -1609,11 +1590,14 @@ function AppShellContent({
       currentWorkspaceWidth: latestNovelWorkspaceNavigatorWidthRef.current,
     })
 
-    if (!sidebarPersisted) {
+    if (!sidebarPersisted && latestSidebarWidthRef.current !== widths.sidebar) {
       latestSidebarWidthRef.current = widths.sidebar
       setSidebarWidth(widths.sidebar)
     }
-    if (!workspacePersisted) {
+    if (
+      latestNovelWorkspaceNavigatorWidthRef.current !== widths.workspace
+      && (!workspacePersisted || latestNovelWorkspaceNavigatorWidthRef.current > widths.workspace)
+    ) {
       latestNovelWorkspaceNavigatorWidthRef.current = widths.workspace
       setNovelWorkspaceNavigatorWidth(widths.workspace)
     }
@@ -1726,13 +1710,14 @@ function AppShellContent({
   }
 
   const effectiveSession = useAtomValue(sessionAtomFamily(effectiveSessionId ?? '__missing__'))
+  const [snapshotNovelFileChanges, setSnapshotNovelFileChanges] = React.useState<FileChange[]>([])
 
   const hasPendingPrompt = React.useCallback((sessionId: string) => {
     return (pendingPermissions.get(sessionId)?.length ?? 0) > 0
   }, [pendingPermissions])
 
-  // Workspace-level unread indicators (needed for workspace selectors across all workspaces)
-  const [workspaceUnreadMap, setWorkspaceUnreadMap] = useState<Record<string, boolean>>({})
+  // Workspace-level unread indicators are still kept fresh for legacy workspace selector surfaces.
+  const [, setWorkspaceUnreadMap] = useState<Record<string, boolean>>({})
 
   // Reload skills when active session's workingDirectory changes (for project-level skills)
   // Skills are loaded from: global (~/.agents/skills/), workspace, and project ({workingDirectory}/.agents/skills/)
@@ -1756,8 +1741,8 @@ function AppShellContent({
       })
       if (changes.length > 0) return changes
     }
-    return []
-  }, [activeSessionWorkingDirectory, effectiveSession?.messages, effectiveSession?.sessionFolderPath])
+    return snapshotNovelFileChanges
+  }, [activeSessionWorkingDirectory, effectiveSession?.messages, effectiveSession?.sessionFolderPath, snapshotNovelFileChanges])
 
   const novelWorkspaceCandidateRoots = React.useMemo(
     () => getNovelWorkspaceCandidateRoots({
@@ -2277,6 +2262,7 @@ function AppShellContent({
   const checkpointNovelWorkspaceAgentTurn = React.useCallback(async (sessionId: string): Promise<void> => {
     if (!novelWorkspaceRoot || novelAgentTurnCheckpointInFlightRef.current) return
 
+    const previousCommit = getKnownWorkspaceCommit(novelWorkspaceRoot, sessionId)
     novelAgentTouchedPathsRef.current[sessionId] = collectAgentTouchedRelativePaths(
       reviewableNovelFileChanges,
       novelWorkspaceRoot,
@@ -2285,7 +2271,19 @@ function AppShellContent({
 
     novelAgentTurnCheckpointInFlightRef.current = true
     try {
-      await window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'agent-turn' })
+      const snapshot = await window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'agent-turn' })
+      const headCommit = snapshot.commitHash
+      if (previousCommit && headCommit && previousCommit !== headCommit) {
+        const changedFiles = await window.electronAPI.compareWorkspaceVersions(novelWorkspaceRoot, previousCommit, headCommit)
+        const snapshotChanges = buildWorkspaceVersionReviewChanges(changedFiles, novelWorkspaceRoot)
+        setSnapshotNovelFileChanges(snapshotChanges)
+        novelAgentTouchedPathsRef.current[sessionId] = collectAgentTouchedRelativePaths(
+          snapshotChanges.length > 0 ? snapshotChanges : reviewableNovelFileChanges,
+          novelWorkspaceRoot,
+          novelWorkspaceFiles,
+        )
+        setKnownWorkspaceCommit(novelWorkspaceRoot, sessionId, headCommit)
+      }
       if (novelVersionDialogOpen) {
         await refreshNovelVersions()
       }
@@ -2302,6 +2300,10 @@ function AppShellContent({
     const isProcessing = effectiveSession?.isProcessing === true
     const wasProcessing = novelSessionProcessingRef.current[effectiveSessionId] === true
     novelSessionProcessingRef.current[effectiveSessionId] = isProcessing
+
+    if (!wasProcessing && isProcessing) {
+      setSnapshotNovelFileChanges([])
+    }
 
     if (wasProcessing && !isProcessing) {
       void checkpointNovelWorkspaceAgentTurn(effectiveSessionId)
@@ -2596,7 +2598,6 @@ function AppShellContent({
     () => getPendingChangesForFile(reviewableNovelFileChanges, novelChangeReviewStatus, selectedNovelFile?.path),
     [reviewableNovelFileChanges, novelChangeReviewStatus, selectedNovelFile?.path]
   )
-  const selectedNovelReviewChange = selectedNovelPendingChanges[0]
   const selectedNovelReviewFileIndex = selectedNovelFile?.path
     ? pendingNovelChangedFilePaths.indexOf(selectedNovelFile.path)
     : -1
@@ -2967,6 +2968,34 @@ function AppShellContent({
     }))
   }, [novelWorkspaceFiles, t])
 
+  const openingProjectMetadata = React.useMemo<WorkspaceOpeningMetadata | undefined>(() => {
+    const workspaceMetadata = activeWorkspace as (Workspace & WorkspaceOpeningMetadata) | undefined
+    const workspaceProjectType = workspaceMetadata?.projectType
+    const workspaceMethodPackId = typeof workspaceMetadata?.methodPackId === 'string'
+      ? workspaceMetadata.methodPackId
+      : undefined
+
+    if (workspaceMethodPackId || (workspaceProjectType && workspaceProjectType !== 'general')) {
+      return {
+        projectType: workspaceProjectType,
+        methodPackId: workspaceMethodPackId,
+      }
+    }
+
+    if (showNovelWorkspaceSidebar && isShortFormNovelWorkspace) {
+      return {
+        projectType: 'short-form',
+        methodPackId: 'short-form.article',
+      }
+    }
+
+    if (showNovelWorkspaceSidebar) {
+      return { projectType: 'novel' }
+    }
+
+    return workspaceProjectType ? { projectType: workspaceProjectType } : undefined
+  }, [activeWorkspace, isShortFormNovelWorkspace, showNovelWorkspaceSidebar])
+
   // Extend context value with local overrides (wrapped onDeleteSession, sources, skills, labels, enabledModes, rightSidebarOpenButton, effectiveSessionStatuses)
   const appShellContextValue = React.useMemo<AppShellContextType>(() => ({
     ...contextValue,
@@ -2976,6 +3005,7 @@ function AppShellContent({
     skills,
     mentionFiles,
     activeSessionWorkingDirectory,
+    openingProjectMetadata,
     labels: displayLabelConfigs,
     onSessionLabelsChange: handleSessionLabelsChange,
     enabledModes,
@@ -2995,7 +3025,7 @@ function AppShellContent({
     automationTestResults,
     getAutomationHistory,
     onReplayAutomation: handleReplayAutomation,
-  }), [contextValue, handleDeleteSession, handleNovelWorkspaceSendMessage, sources, skills, mentionFiles, activeSessionWorkingDirectory, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
+  }), [contextValue, handleDeleteSession, handleNovelWorkspaceSendMessage, sources, skills, mentionFiles, activeSessionWorkingDirectory, openingProjectMetadata, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
 
   // Persist expanded folders to localStorage (workspace-scoped)
   React.useEffect(() => {
@@ -3074,13 +3104,13 @@ function AppShellContent({
   }, [handleSelectNovelFileByPath, pendingNovelChangedFilePaths, selectedNovelFile?.path])
 
   const handleSelectNextNovelChangeAfterStatus = React.useCallback(async (
-    change: FileChange,
+    filePath: string,
     nextStatus: NovelReviewStatusMap
   ) => {
     const nextPendingPaths = getPendingChangedFilePaths(reviewableNovelFileChanges, nextStatus)
     if (nextPendingPaths.length === 0) return
 
-    const currentIndex = pendingNovelChangedFilePaths.indexOf(change.filePath)
+    const currentIndex = pendingNovelChangedFilePaths.indexOf(filePath)
     const searchOrder = currentIndex >= 0
       ? [
           ...pendingNovelChangedFilePaths.slice(currentIndex + 1),
@@ -3091,91 +3121,109 @@ function AppShellContent({
     await handleSelectNovelFileByPath(targetPath)
   }, [handleSelectNovelFileByPath, pendingNovelChangedFilePaths, reviewableNovelFileChanges])
 
-  const handleAcceptNovelChange = React.useCallback(async (change: FileChange) => {
-    if (change.error) {
+  const handleAcceptNovelFileChanges = React.useCallback(async (changes: FileChange[]) => {
+    const reviewableChanges = changes.filter(change => !change.error)
+    const filePath = reviewableChanges[0]?.filePath
+    if (!filePath || reviewableChanges.length === 0) {
       toast.error(t('writing.review.acceptUnavailable', 'Cannot accept a failed change.'))
       return
     }
+    if (reviewableChanges.some(change => change.filePath !== filePath)) {
+      toast.error(t('writing.review.acceptUnavailable', 'Cannot accept changes from multiple files here.'))
+      return
+    }
 
-    const synced = await syncSelectedNovelDocumentFromDisk(change.filePath)
-    if (!synced) return
+    if (selectedNovelFile?.path === filePath) {
+      const saved = await ensureNovelDocumentSaved()
+      if (!saved) return
+    }
 
     let undoEntry: NovelReviewUndoEntry | undefined
     try {
-      const currentContent = await window.electronAPI.readFile(change.filePath)
-      const undo = buildAcceptNovelChangeUndoEntry(change, currentContent, novelChangeReviewStatus)
-      if (undo.ok) {
-        undoEntry = undo.entry
+      const currentContent = await window.electronAPI.readFile(filePath)
+      const rejected = buildRejectFileChangesOperation(reviewableChanges, currentContent)
+      if (rejected.ok) {
+        const undoStatus: NovelReviewStatusMap = { ...novelChangeReviewStatus }
+        for (const change of reviewableChanges) {
+          undoStatus[getNovelReviewChangeKey(change)] = 'rejected'
+        }
+        undoEntry = {
+          status: undoStatus,
+          writes: rejected.operation === 'write' ? [{ filePath, content: rejected.content }] : [],
+          deletes: rejected.operation === 'delete' ? [{ filePath }] : [],
+        }
       }
     } catch (error) {
       console.warn('[writing] Failed to capture accept undo entry:', error)
     }
 
-    const changeKey = getNovelReviewChangeKey(change)
-    const nextStatus = {
-      ...novelChangeReviewStatus,
-      [changeKey]: 'accepted' as const,
+    const nextStatus: NovelReviewStatusMap = { ...novelChangeReviewStatus }
+    for (const change of reviewableChanges) {
+      nextStatus[getNovelReviewChangeKey(change)] = 'accepted'
     }
     persistNovelChangeReviewStatus(nextStatus)
     pushNovelReviewUndoEntry(undoEntry)
-    void handleSelectNextNovelChangeAfterStatus(change, nextStatus)
-    toast.success(t('writing.review.accepted', 'Change accepted'), undoEntry ? {
+    void handleSelectNextNovelChangeAfterStatus(filePath, nextStatus)
+    toast.success(t('writing.review.fileAccepted', 'File changes accepted'), undoEntry ? {
       action: {
         label: t('common.undo', 'Undo'),
         onClick: () => { void handleUndoNovelReviewAction() },
       },
     } : undefined)
   }, [
+    ensureNovelDocumentSaved,
     handleUndoNovelReviewAction,
     handleSelectNextNovelChangeAfterStatus,
     novelChangeReviewStatus,
     persistNovelChangeReviewStatus,
     pushNovelReviewUndoEntry,
-    syncSelectedNovelDocumentFromDisk,
+    selectedNovelFile?.path,
     t,
   ])
 
   const handleAcceptAllNovelChanges = React.useCallback(async () => {
-    const selectedPendingChange = selectedNovelFile?.path
-      ? reviewableNovelFileChanges.find(change =>
-          !change.error
-          && change.filePath === selectedNovelFile.path
-          && !novelChangeReviewStatus[getNovelReviewChangeKey(change)]
-        )
-      : undefined
-    if (selectedPendingChange) {
-      const synced = await syncSelectedNovelDocumentFromDisk(selectedPendingChange.filePath)
-      if (!synced) return
+    const pendingChangesByPath = new Map<string, FileChange[]>()
+    for (const change of reviewableNovelFileChanges) {
+      if (change.error) continue
+      const changeKey = getNovelReviewChangeKey(change)
+      if (novelChangeReviewStatus[changeKey]) continue
+
+      const changesForFile = pendingChangesByPath.get(change.filePath) ?? []
+      changesForFile.push(change)
+      pendingChangesByPath.set(change.filePath, changesForFile)
+    }
+
+    if (selectedNovelFile?.path && pendingChangesByPath.has(selectedNovelFile.path)) {
+      const saved = await ensureNovelDocumentSaved()
+      if (!saved) return
     }
 
     const nextStatus: NovelReviewStatusMap = { ...novelChangeReviewStatus }
     let undoStatus: NovelReviewStatusMap = { ...novelChangeReviewStatus }
     const undoContentByPath = new Map<string, string>()
     const undoDeletePaths = new Set<string>()
-    for (const change of reviewableNovelFileChanges) {
-      if (change.error) continue
-      const changeKey = getNovelReviewChangeKey(change)
-      if (nextStatus[changeKey]) continue
-
+    for (const [filePath, changes] of pendingChangesByPath) {
       try {
-        const currentContent = undoContentByPath.get(change.filePath)
-          ?? await window.electronAPI.readFile(change.filePath)
-        const undo = buildAcceptNovelChangeUndoEntry(change, currentContent, undoStatus)
-        if (undo.ok) {
-          undoStatus = undo.entry.status
-          for (const write of undo.entry.writes) {
-            undoContentByPath.set(write.filePath, write.content)
+        const currentContent = await window.electronAPI.readFile(filePath)
+        const rejected = buildRejectFileChangesOperation(changes, currentContent)
+        if (rejected.ok) {
+          for (const change of changes) {
+            undoStatus[getNovelReviewChangeKey(change)] = 'rejected'
           }
-          for (const deleted of undo.entry.deletes) {
-            undoDeletePaths.add(deleted.filePath)
-            undoContentByPath.delete(deleted.filePath)
+          if (rejected.operation === 'write') {
+            undoContentByPath.set(filePath, rejected.content)
+          } else {
+            undoDeletePaths.add(filePath)
+            undoContentByPath.delete(filePath)
           }
         }
       } catch (error) {
         console.warn('[writing] Failed to capture accept-all undo entry:', error)
       }
 
-      nextStatus[changeKey] = 'accepted'
+      for (const change of changes) {
+        nextStatus[getNovelReviewChangeKey(change)] = 'accepted'
+      }
     }
 
     persistNovelChangeReviewStatus(nextStatus)
@@ -3194,25 +3242,36 @@ function AppShellContent({
       },
     } : undefined)
   }, [
+    ensureNovelDocumentSaved,
     handleUndoNovelReviewAction,
     novelChangeReviewStatus,
     persistNovelChangeReviewStatus,
     pushNovelReviewUndoEntry,
     reviewableNovelFileChanges,
     selectedNovelFile?.path,
-    syncSelectedNovelDocumentFromDisk,
     t,
   ])
 
-  const handleRejectNovelChange = React.useCallback(async (change: FileChange) => {
-    if (selectedNovelFile?.path === change.filePath) {
+  const handleRejectNovelFileChanges = React.useCallback(async (changes: FileChange[]) => {
+    const reviewableChanges = changes.filter(change => !change.error)
+    const filePath = reviewableChanges[0]?.filePath
+    if (!filePath || reviewableChanges.length === 0) {
+      toast.error(t('writing.review.rejectUnavailable', 'Cannot safely reject this change'))
+      return
+    }
+    if (reviewableChanges.some(change => change.filePath !== filePath)) {
+      toast.error(t('writing.review.rejectUnavailable', 'Cannot safely reject changes from multiple files here.'))
+      return
+    }
+
+    if (selectedNovelFile?.path === filePath) {
       const saved = await ensureNovelDocumentSaved()
       if (!saved) return
     }
 
     try {
-      const currentContent = await window.electronAPI.readFile(change.filePath)
-      const rejected = buildRejectFileChangeOperation(change, currentContent)
+      const currentContent = await window.electronAPI.readFile(filePath)
+      const rejected = buildRejectFileChangesOperation(reviewableChanges, currentContent)
       if (!rejected.ok) {
         toast.error(t('writing.review.rejectUnavailable', 'Cannot safely reject this change'), {
           description: rejected.reason,
@@ -3220,21 +3279,26 @@ function AppShellContent({
         return
       }
 
-      const undoEntry = buildRejectNovelChangeUndoEntry(change, currentContent, novelChangeReviewStatus)
-      if (rejected.operation === 'write') {
-        await window.electronAPI.writeFile(change.filePath, rejected.content)
-      } else {
-        await window.electronAPI.deleteFile(change.filePath)
+      const undoEntry: NovelReviewUndoEntry = {
+        status: novelChangeReviewStatus,
+        writes: [{ filePath, content: currentContent }],
+        deletes: [],
       }
-      const changeKey = getNovelReviewChangeKey(change)
-      const nextStatus = {
+      if (rejected.operation === 'write') {
+        await window.electronAPI.writeFile(filePath, rejected.content)
+      } else {
+        await window.electronAPI.deleteFile(filePath)
+      }
+      const nextStatus: NovelReviewStatusMap = {
         ...novelChangeReviewStatus,
-        [changeKey]: 'rejected' as const,
+      }
+      for (const change of reviewableChanges) {
+        nextStatus[getNovelReviewChangeKey(change)] = 'rejected'
       }
       persistNovelChangeReviewStatus(nextStatus)
       pushNovelReviewUndoEntry(undoEntry)
 
-      if (selectedNovelFile?.path === change.filePath) {
+      if (selectedNovelFile?.path === filePath) {
         const nextContent = rejected.operation === 'write' ? rejected.content : ''
         setNovelDocumentContent(nextContent)
         setSavedNovelDocumentContent(nextContent)
@@ -3243,8 +3307,8 @@ function AppShellContent({
         void refreshNovelWorkspaceFiles(novelWorkspaceRoot)
       }
 
-      void handleSelectNextNovelChangeAfterStatus(change, nextStatus)
-      toast.success(t('writing.review.rejected', 'Change rejected'), {
+      void handleSelectNextNovelChangeAfterStatus(filePath, nextStatus)
+      toast.success(t('writing.review.fileRejected', 'File changes rejected'), {
         action: {
           label: t('common.undo', 'Undo'),
           onClick: () => { void handleUndoNovelReviewAction() },
@@ -3321,40 +3385,46 @@ function AppShellContent({
     navigate(routes.view.skills())
   }, [])
 
-  // Handlers for automations view
-  const handleAutomationsClick = useCallback(() => {
-    navigate(routes.view.automations())
-  }, [])
-
-  const handleAutomationsScheduledClick = useCallback(() => {
-    navigate(routes.view.automationsScheduled())
-  }, [])
-
-  const handleAutomationsEventClick = useCallback(() => {
-    navigate(routes.view.automationsEvent())
-  }, [])
-
-  const handleAutomationsAgenticClick = useCallback(() => {
-    navigate(routes.view.automationsAgentic())
-  }, [])
-
   // Handler for settings view
   const handleSettingsClick = useCallback((subpage: SettingsSubpage = 'app') => {
     navigate(routes.view.settings(subpage))
   }, [])
+
+  const markWhatsNewSeen = useCallback(async (manifestOverride?: WhatsNewManifest | null) => {
+    const manifest = manifestOverride ?? whatsNewManifest ?? await window.electronAPI.getWhatsNewManifest()
+    setHasUnseenReleaseNotes(false)
+
+    if (manifest) {
+      setWhatsNewManifest(manifest)
+      storage.set(storage.KEYS.whatsNewLastSeenDigest, manifest.digest)
+      storage.set(storage.KEYS.whatsNewLastSeenVersion, manifest.version)
+    } else {
+      const latestVersion = await window.electronAPI.getLatestReleaseVersion()
+      if (latestVersion) {
+        storage.set(storage.KEYS.whatsNewLastSeenVersion, latestVersion)
+      }
+    }
+  }, [whatsNewManifest])
+
+  const handleWhatsNewAnnouncementOpenChange = useCallback((open: boolean) => {
+    setShowWhatsNewAnnouncement(open)
+    if (!open) {
+      void markWhatsNewSeen()
+    }
+  }, [markWhatsNewSeen])
 
   // Handler for What's New overlay
   const handleWhatsNewClick = useCallback(async () => {
     const content = await window.electronAPI.getReleaseNotes()
     setReleaseNotesContent(content)
     setShowWhatsNew(true)
-    setHasUnseenReleaseNotes(false)
-    // Update last seen version
-    const latestVersion = await window.electronAPI.getLatestReleaseVersion()
-    if (latestVersion) {
-      storage.set(storage.KEYS.whatsNewLastSeenVersion, latestVersion)
-    }
-  }, [])
+    await markWhatsNewSeen()
+  }, [markWhatsNewSeen])
+
+  const handleWhatsNewAnnouncementDetailsClick = useCallback(() => {
+    setShowWhatsNewAnnouncement(false)
+    void handleWhatsNewClick()
+  }, [handleWhatsNewClick])
 
   // Create a new chat and select it
   const handleNewChat = useCallback((newPanel: boolean = false) => {
@@ -3668,69 +3738,6 @@ function AppShellContent({
     toggleExpanded,
   ])
 
-  const novelWorkspaceUtilitySidebarLinks = React.useMemo((): LeftSidebarItem[] => {
-    if (!showNovelWorkspaceSidebar) return []
-
-    return [
-      {
-        id: "nav:sources",
-        title: t("sidebar.sources"),
-        label: String(sources.length),
-        icon: DatabaseZap,
-        variant: (isSourcesNavigation(navState) && !sourceFilter) ? "default" : "ghost",
-        onClick: handleSourcesClick,
-        dataTutorial: "sources-nav",
-      },
-      {
-        id: "nav:skills",
-        title: t("sidebar.skills"),
-        label: String(skills.length),
-        icon: Zap,
-        variant: isSkillsNavigation(navState) ? "default" : "ghost",
-        onClick: handleSkillsClick,
-        dataTutorial: "skills-nav",
-      },
-      {
-        id: "nav:automations",
-        title: t("sidebar.automations"),
-        label: String(automations.length),
-        icon: ListTodo,
-        variant: (isAutomationsNavigation(navState) && !automationFilter) ? "default" : "ghost",
-        onClick: handleAutomationsClick,
-        dataTutorial: "automations-nav",
-      },
-      { id: "separator:writing-settings", type: "separator" },
-      {
-        id: "nav:settings",
-        title: t("sidebar.settings"),
-        icon: Settings,
-        variant: isSettingsNavigation(navState) ? "default" : "ghost",
-        onClick: () => handleSettingsClick('app'),
-        dataTutorial: "settings-nav",
-      },
-      {
-        id: "nav:writing-version",
-        title: t('writing.version.title', '版本管理'),
-        icon: History,
-        variant: "ghost" as const,
-        onClick: () => setNovelVersionDialogOpen(true),
-      },
-    ]
-  }, [
-    automationFilter,
-    automations.length,
-    handleAutomationsClick,
-    handleSettingsClick,
-    handleSkillsClick,
-    handleSourcesClick,
-    navState,
-    showNovelWorkspaceSidebar,
-    skills.length,
-    sourceFilter,
-    sources.length,
-    t,
-  ])
-
   const primarySidebarLinks = React.useMemo(
     () => {
       const links = getPrimarySidebarLinks(novelWorkspaceSidebarLinks)
@@ -3747,6 +3754,16 @@ function AppShellContent({
     [novelWorkspaceSidebarLinks, showNovelWorkspacePending, showNovelWorkspaceUnavailable, t]
   )
   const hasPrimarySidebar = primarySidebarLinks.length > 0
+  const showPrimarySidebar = hasPrimarySidebar && isSessionsNavigation(navState)
+  const showActivityRail = !isSidebarAndNavigatorHidden
+  const activityRailOffset = showActivityRail ? ACTIVITY_RAIL_WIDTH : 0
+  const activeActivityRailItem = React.useMemo<ActivityRailItemId>(() => {
+    if (globalSearchOpen) return 'search'
+    if (isSourcesNavigation(navState)) return 'sources'
+    if (isSkillsNavigation(navState)) return 'skills'
+    if (isSettingsNavigation(navState) || isAutomationsNavigation(navState)) return 'settings'
+    return 'writing'
+  }, [globalSearchOpen, navState])
 
   // Unified sidebar items: nav buttons only (agents system removed)
   type SidebarItem = {
@@ -3773,16 +3790,11 @@ function AppShellContent({
           }
         }
       }
-      result.push({ id: 'nav:sources', type: 'nav', action: handleSourcesClick })
-      result.push({ id: 'nav:skills', type: 'nav', action: handleSkillsClick })
-      result.push({ id: 'nav:automations', type: 'nav', action: handleAutomationsClick })
-      result.push({ id: 'nav:settings', type: 'nav', action: () => handleSettingsClick('app') })
-      result.push({ id: 'nav:writing-version', type: 'nav', action: () => setNovelVersionDialogOpen(true) })
       return result
     }
 
     return result
-  }, [handleAutomationsClick, handleSettingsClick, handleSkillsClick, handleSourcesClick, primarySidebarLinks])
+  }, [primarySidebarLinks])
 
   // Toggle folder expanded state
   const handleToggleFolder = React.useCallback((path: string) => {
@@ -3940,51 +3952,6 @@ function AppShellContent({
         <TopBar
           workspaces={workspaces}
           activeWorkspaceId={activeWorkspaceId}
-          onSelectWorkspace={onSelectWorkspace}
-          workspaceUnreadMap={workspaceUnreadMap}
-          onWorkspaceCreated={(workspace) => onWorkspaceCreated?.(workspace) ?? onRefreshWorkspaces?.()}
-          onWorkspaceRemoved={() => onRefreshWorkspaces?.()}
-          activeSessionId={effectiveSessionId}
-          onNewChat={() => handleNewChat()}
-          onNewWindow={() => window.electronAPI.menuNewWindow()}
-          onOpenSettings={onOpenSettings}
-          onOpenSettingsSubpage={handleSettingsClick}
-          onOpenKeyboardShortcuts={onOpenKeyboardShortcuts}
-          onOpenStoredUserPreferences={onOpenStoredUserPreferences}
-          onBack={goBack}
-          onForward={goForward}
-          canGoBack={canGoBack}
-          canGoForward={canGoForward}
-          onToggleSidebar={handleToggleSidebar}
-          onToggleFocusMode={() => setIsSidebarAndNavigatorHidden(prev => !prev)}
-          onAddSessionPanel={() => handleNewChat(true)}
-          onAddBrowserPanel={() => { void handleNewBrowserWindow() }}
-          onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
-          workspaceTools={showNovelWorkspaceSidebar ? (
-            <NovelWorkspaceUtilityTopNav
-              links={novelWorkspaceUtilitySidebarLinks}
-              getItemProps={getSidebarItemProps}
-              focusedItemId={focusedSidebarItemId}
-            />
-          ) : undefined}
-          rightTools={showNovelWorkspaceSidebar ? (
-            <div className="flex items-center gap-1">
-              <HeaderIconButton
-                icon={<History className="h-4 w-4" />}
-                tooltip={t('writing.version.title', '版本管理')}
-                disabled={!novelWorkspaceRoot}
-                onClick={() => setNovelVersionDialogOpen(true)}
-                className="h-[26px] w-[26px] rounded-lg"
-              />
-              <HeaderIconButton
-                icon={<Download className="h-4 w-4" />}
-                tooltip={t('writing.export.action', '导出')}
-                disabled={novelWorkspaceFiles.length === 0}
-                onClick={() => setNovelExportDialogOpen(true)}
-                className="h-[26px] w-[26px] rounded-lg"
-              />
-            </div>
-          ) : undefined}
           isCompact={isAutoCompact}
         />
 
@@ -3993,8 +3960,27 @@ function AppShellContent({
         ref={shellRef}
         onMouseDownCapture={handleNavigatorResizeBoundaryMouseDownCapture}
         className="flex items-stretch relative"
-        style={{ height: '100%', paddingRight: PANEL_EDGE_INSET, paddingBottom: PANEL_EDGE_INSET, paddingLeft: 0, gap: PANEL_GAP }}
+        style={{ height: '100%', paddingRight: PANEL_EDGE_INSET, paddingBottom: PANEL_EDGE_INSET, paddingLeft: 0, gap: showActivityRail ? 0 : PANEL_GAP }}
       >
+        {showActivityRail ? (
+          <ActivityRail
+            activeItem={activeActivityRailItem}
+            onOpenProjectHub={onOpenProjectHub}
+            onOpenWritingWorkspace={handleAllSessionsClick}
+            onOpenSources={handleSourcesClick}
+            onOpenSkills={handleSkillsClick}
+            onOpenSearch={() => setGlobalSearchOpen(true)}
+            onOpenSettings={() => handleSettingsClick('app')}
+            onOpenAccount={onOpenAccount}
+            onOpenWhatsNew={handleWhatsNewClick}
+            whatsNew={{
+              unseen: hasUnseenReleaseNotes,
+              accentColor: whatsNewManifest?.accentColor,
+              textColor: whatsNewManifest?.accentTextColor,
+            }}
+          />
+        ) : null}
+
         <PanelStackContainer
           sidebarSlot={
             <div
@@ -4025,7 +4011,7 @@ function AppShellContent({
             </div>
           </div>
           }
-          sidebarWidth={effectiveSidebarAndNavigatorHidden ? 0 : (isSidebarVisible && hasPrimarySidebar ? sidebarWidth : 0)}
+          sidebarWidth={effectiveSidebarAndNavigatorHidden ? 0 : (isSidebarVisible && showPrimarySidebar ? sidebarWidth : 0)}
           navigatorSlot={
             <div
               ref={navigatorPanelRef}
@@ -4043,14 +4029,32 @@ function AppShellContent({
                 onAskAiForSelection={handleAskAiForNovelSelection}
                 onAddSelectionToChat={handleAddNovelSelectionToChat}
                 onSendSelectionToChat={handleSendNovelSelectionToChat}
-                reviewChange={selectedNovelReviewChange}
+                reviewChanges={selectedNovelPendingChanges}
                 pendingChangeCount={pendingNovelChangedFilePaths.length}
                 pendingFileIndex={selectedNovelReviewFileIndex >= 0 ? selectedNovelReviewFileIndex : undefined}
-                onAcceptReviewChange={selectedNovelReviewChange ? () => handleAcceptNovelChange(selectedNovelReviewChange) : undefined}
+                onAcceptReviewChanges={selectedNovelPendingChanges.length > 0 ? () => handleAcceptNovelFileChanges(selectedNovelPendingChanges) : undefined}
                 onAcceptAllReviewChanges={pendingNovelChangedFilePaths.length > 0 ? handleAcceptAllNovelChanges : undefined}
-                onRejectReviewChange={selectedNovelReviewChange ? () => { void handleRejectNovelChange(selectedNovelReviewChange) } : undefined}
+                onRejectReviewChanges={selectedNovelPendingChanges.length > 0 ? () => { void handleRejectNovelFileChanges(selectedNovelPendingChanges) } : undefined}
                 onPreviousReviewFile={() => { void handleSelectAdjacentNovelChangeFile('previous') }}
                 onNextReviewFile={() => { void handleSelectAdjacentNovelChangeFile('next') }}
+                workspaceActions={(
+                  <>
+                    <HeaderIconButton
+                      icon={<History className="h-4 w-4" />}
+                      tooltip={t('writing.version.title', '版本管理')}
+                      disabled={!novelWorkspaceRoot}
+                      onClick={() => setNovelVersionDialogOpen(true)}
+                      className="h-[26px] w-[26px] rounded-lg"
+                    />
+                    <HeaderIconButton
+                      icon={<Download className="h-4 w-4" />}
+                      tooltip={t('writing.export.action', '导出')}
+                      disabled={novelWorkspaceFiles.length === 0}
+                      onClick={() => setNovelExportDialogOpen(true)}
+                      className="h-[26px] w-[26px] rounded-lg"
+                    />
+                  </>
+                )}
               />
             ) : showNovelWorkspacePending ? (
               <div className="flex h-full flex-col">
@@ -4855,11 +4859,11 @@ function AppShellContent({
           isRightSidebarVisible={false}
           isCompact={isAutoCompact}
           isResizing={!!isResizing}
-          hidePanelCloseButton={hasPrimarySidebar}
+          hidePanelCloseButton={showPrimarySidebar}
         />
 
         {/* Sidebar Resize Handle (absolute, hidden in focused mode) */}
-        {!effectiveSidebarAndNavigatorHidden && hasPrimarySidebar && (
+        {!effectiveSidebarAndNavigatorHidden && showPrimarySidebar && (
         <div
           ref={resizeHandleRef}
           role="separator"
@@ -4878,8 +4882,8 @@ function AppShellContent({
             top: PANEL_STACK_VERTICAL_OVERFLOW,
             bottom: PANEL_STACK_VERTICAL_OVERFLOW,
             left: isSidebarVisible
-              ? sidebarWidth + (PANEL_GAP / 2) - PANEL_SASH_HALF_HIT_WIDTH
-              : -PANEL_GAP,
+              ? activityRailOffset + sidebarWidth + (PANEL_GAP / 2) - PANEL_SASH_HALF_HIT_WIDTH
+              : activityRailOffset - PANEL_GAP,
             transition: isResizing === 'sidebar' ? undefined : 'left 0.15s ease-out',
           }}
         >
@@ -4894,6 +4898,15 @@ function AppShellContent({
         )}
 
       </div>
+
+      <WhatsNewAnnouncementDialog
+        open={showWhatsNewAnnouncement}
+        copy={whatsNewAnnouncementCopy}
+        accentColor={whatsNewManifest?.accentColor}
+        accentTextColor={whatsNewManifest?.accentTextColor}
+        onOpenChange={handleWhatsNewAnnouncementOpenChange}
+        onShowDetails={handleWhatsNewAnnouncementDetailsClick}
+      />
 
       {/* What's New overlay */}
       <DocumentFormattedMarkdownOverlay

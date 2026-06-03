@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
-import { Clock } from 'lucide-react'
+import { Clock, Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CHAT_LAYOUT } from '@/config/layout'
 import { flattenLabels, type LabelConfig } from '@craft-agent/shared/labels'
@@ -31,6 +31,9 @@ interface ChatInputZoneProps {
   currentSessionStatus?: string
   onSessionStatusChange?: (stateId: string) => void
   queuedMessages?: QueuedInputMessage[]
+  onSendQueuedMessageNow?: (messageId: string) => void
+  onEditQueuedMessage?: (message: QueuedInputMessage) => void
+  onRemoveQueuedMessage?: (messageId: string) => void
   className?: string
   inputProps: React.ComponentProps<typeof InputContainer>
 }
@@ -52,6 +55,9 @@ export function ChatInputZone({
   currentSessionStatus = 'todo',
   onSessionStatusChange,
   queuedMessages = [],
+  onSendQueuedMessageNow,
+  onEditQueuedMessage,
+  onRemoveQueuedMessage,
   className,
   inputProps,
 }: ChatInputZoneProps) {
@@ -132,10 +138,42 @@ export function ChatInputZone({
                 return (
                   <div
                     key={message.id}
-                    className="min-w-0 truncate rounded-[6px] bg-foreground/[0.035] px-2 py-1 text-xs text-foreground/75"
+                    className="flex min-w-0 items-center gap-2 rounded-[6px] bg-foreground/[0.035] px-2 py-1 text-xs text-foreground/75"
                     title={label}
                   >
-                    {label}
+                    <span className="min-w-0 flex-1 truncate">{label}</span>
+                    {onSendQueuedMessageNow && (
+                      <button
+                        type="button"
+                        className="shrink-0 rounded-[5px] px-1.5 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10 hover:text-primary"
+                        aria-label={t('chat.sendQueuedNow')}
+                        onClick={() => onSendQueuedMessageNow?.(message.id)}
+                      >
+                        {t('chat.sendQueuedNow')}
+                      </button>
+                    )}
+                    {onEditQueuedMessage && (
+                      <button
+                        type="button"
+                        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[5px] text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+                        aria-label={t('chat.editQueuedMessage')}
+                        title={t('chat.editQueuedMessage')}
+                        onClick={() => onEditQueuedMessage?.(message)}
+                      >
+                        <Pencil className="h-3 w-3" aria-hidden="true" />
+                      </button>
+                    )}
+                    {onRemoveQueuedMessage && (
+                      <button
+                        type="button"
+                        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[5px] text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                        aria-label={t('chat.removeQueuedMessage')}
+                        title={t('chat.removeQueuedMessage')}
+                        onClick={() => onRemoveQueuedMessage?.(message.id)}
+                      >
+                        <Trash2 className="h-3 w-3" aria-hidden="true" />
+                      </button>
+                    )}
                   </div>
                 )
               })()

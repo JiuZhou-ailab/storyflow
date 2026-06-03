@@ -1,13 +1,13 @@
-// input: Auth/setup completion state and workspace availability
+// input: Auth/setup completion state, window workspace, and project availability
 // output: Renderer app state after setup has completed
-// pos: Central startup decision point for first-run workspace creation
+// pos: Central startup decision point before project or workspace UI is shown
 
-export type PostSetupAppState = 'ready' | 'workspace-picker' | 'workspace-creation'
+export type PostSetupAppState = 'ready' | 'project-hub' | 'workspace-picker' | 'workspace-creation'
 
 export function resolvePostSetupAppState(input: {
   windowWorkspaceId: string | null | undefined
   workspaceCount: number
 }): PostSetupAppState {
   if (input.windowWorkspaceId) return 'ready'
-  return input.workspaceCount === 0 ? 'workspace-creation' : 'workspace-picker'
+  return 'project-hub'
 }

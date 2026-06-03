@@ -60,6 +60,8 @@ export const KEYS = {
 
   // What's New
   whatsNewLastSeenVersion: 'whats-new-last-seen-version',
+  whatsNewLastSeenDigest: 'whats-new-last-seen-digest',
+  whatsNewNotificationState: 'whats-new-notification-state',
 
   // First-run guide
   firstRunTourCompleted: 'first-run-tour-completed',

@@ -116,26 +116,24 @@ describe("bundled writing skills", () => {
     }
   });
 
-  it("routes broad web-fiction creation prompts through intake before drafting", () => {
+  it("routes screenplay requests through logic planning before dialogue drafting", () => {
     const rootPath = createTempProject();
 
     createNovelProjectScaffold(rootPath, {
-      title: "Web Fiction",
-      methodPackId: "novel.oh-story",
+      title: "Script",
+      methodPackId: "screenplay.logic",
     });
 
-    const router = readFileSync(join(rootPath, "skills", "story", "SKILL.md"), "utf-8");
-    expect(router).toContain("写一个");
-    expect(router).toContain("打脸");
-    expect(router).toContain("爽文");
-    expect(router).toContain("男频");
-    expect(router).toContain("女频");
-    expect(router).toContain("黄金三章");
-    expect(router).toContain("不要从第一个模糊请求直接起草");
+    const planner = readFileSync(join(rootPath, "skills", "script-logic-planner", "SKILL.md"), "utf-8");
+    expect(planner).toContain("分场大纲");
+    expect(planner).toContain("人物行动线");
+    expect(planner).toContain("因果链");
+    expect(planner).toContain("冲突升级");
+    expect(planner).toContain("写对白或剧本正文前");
 
-    const shortWriter = readFileSync(join(rootPath, "skills", "story-short-write", "SKILL.md"), "utf-8");
-    expect(shortWriter).toContain("在故事路由之后使用");
-    expect(shortWriter).toContain("第一个模糊");
+    const agents = readFileSync(join(rootPath, "AGENTS.md"), "utf-8");
+    expect(agents).toContain("screenplay.logic");
+    expect(agents).toContain("对白请求缺少场景目的");
   });
 
 });

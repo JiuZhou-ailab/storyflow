@@ -1,0 +1,4 @@
+interface:
+  display_name: "剧情因果审查"
+  short_description: "审查剧情因果链、人物动机、信息来源、转折铺垫与规则一致性"
+  default_prompt: "使用 $plot-causality-audit 审查这段剧情的因果、动机、信息来源和基础事实错误。"

@@ -2,6 +2,7 @@
 // output: regression coverage for default shell column sizing
 // pos: protects the default three-column app shell layout contract
 
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'bun:test'
 
 import {
@@ -12,6 +13,9 @@ import {
   resolveInitialShellLayoutWidths,
   shouldResolveInitialShellLayoutWidths,
 } from '../layout-defaults'
+
+const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf8')
+const panelSlotSource = readFileSync(new URL('../PanelSlot.tsx', import.meta.url), 'utf8')
 
 describe('app shell layout defaults', () => {
   it('uses a 2:5:3 default ratio for sidebar, workspace, and assistant columns', () => {
@@ -56,6 +60,23 @@ describe('app shell layout defaults', () => {
     expect(widths.sidebar).toBe(240)
     expect(widths.workspace).toBe(720)
     expect(widths.assistant).toBe(1022)
+  })
+
+  it('clamps an oversized persisted writing workspace so the assistant keeps its desktop minimum', () => {
+    const widths = resolveInitialShellLayoutWidths({
+      totalWidth: 2000,
+      edgeInset: 6,
+      panelGap: 6,
+      assistantMinWidth: 440,
+      sidebarPersisted: true,
+      workspacePersisted: true,
+      currentSidebarWidth: 300,
+      currentWorkspaceWidth: 1600,
+    })
+
+    expect(widths.sidebar).toBe(300)
+    expect(widths.workspace).toBe(1242)
+    expect(widths.assistant).toBe(440)
   })
 
   it('does not treat legacy default widths as user-configured layout choices', () => {
@@ -112,5 +133,26 @@ describe('app shell layout defaults', () => {
     expect(shouldResolveInitialShellLayoutWidths(0, 768)).toBe(false)
     expect(shouldResolveInitialShellLayoutWidths(767, 768)).toBe(false)
     expect(shouldResolveInitialShellLayoutWidths(768, 768)).toBe(true)
+  })
+
+  it('keeps default shell proportions responsive after the first desktop measurement', () => {
+    expect(appShellSource).not.toContain('initialShellLayoutResolvedRef')
+    expect(appShellSource).toContain('shouldResolveInitialShellLayoutWidths(shellWidth, MOBILE_THRESHOLD)')
+    expect(appShellSource).toContain('storage.get<number | undefined>(storage.KEYS.sidebarWidth, undefined)')
+    expect(appShellSource).toContain('storage.get<number | undefined>(storage.KEYS.novelWorkspaceNavigatorWidth, undefined)')
+    expect(appShellSource).not.toContain('if (sidebarPersisted && workspacePersisted) return')
+    expect(appShellSource).toContain('latestSidebarWidthRef.current !== widths.sidebar')
+    expect(appShellSource).toContain('latestNovelWorkspaceNavigatorWidthRef.current !== widths.workspace')
+    expect(appShellSource).toContain('(!workspacePersisted || latestNovelWorkspaceNavigatorWidthRef.current > widths.workspace)')
+  })
+
+  it('keeps the desktop assistant panel from shrinking below the shared panel minimum', () => {
+    expect(panelSlotSource).toContain('? { flexGrow: 1, minWidth: isCompact ? 0 : PANEL_MIN_WIDTH }')
+    expect(panelSlotSource).toContain(': { flexGrow: proportion, flexShrink: 1, flexBasis: 0, minWidth: PANEL_MIN_WIDTH }')
+  })
+
+  it('uses shared default layout constants for both navigator widths before measurement', () => {
+    expect(appShellSource).toContain('storage.get(storage.KEYS.sessionListWidth, DEFAULT_WORKSPACE_WIDTH)')
+    expect(appShellSource).toContain('const NOVEL_WORKSPACE_NAVIGATOR_DEFAULT_WIDTH = DEFAULT_WORKSPACE_WIDTH')
   })
 })

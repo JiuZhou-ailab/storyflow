@@ -66,6 +66,8 @@ function getBuildDefines(): string[] {
     "CRAFT_CLIENT_NEON_AUTH_ORIGIN",
     "CRAFT_CLIENT_GATEWAY_TOKEN",
     "STORYFLOW_FEEDBACK_ENDPOINT",
+    "POSTHOG_API_KEY",
+    "POSTHOG_HOST",
   ];
 
   return definedVars.map((varName) => {

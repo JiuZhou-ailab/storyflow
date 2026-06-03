@@ -113,112 +113,76 @@ describe("createNovelProjectScaffold", () => {
     expect(notice).toContain("3fdebbb576b1be6d123b48258d2310c5dff013c4");
   });
 
-  it("creates an Oh Story web-fiction scaffold when selected", () => {
+  it("creates a screenplay logic scaffold when selected", () => {
     const rootPath = createTempProject();
 
     createNovelProjectScaffold(rootPath, {
-      title: "The Web Novel",
-      methodPackId: "novel.oh-story",
+      title: "The Script",
+      methodPackId: "screenplay.logic",
     });
 
     for (const relativePath of [
-      "设定/世界观",
-      "设定/角色",
-      "设定/势力",
-      "设定/关系.md",
-      "设定/题材定位.md",
-      "大纲/大纲.md",
-      "正文",
-      "对标",
-      "拆文库",
-      "追踪/上下文.md",
-      "追踪/伏笔.md",
-      "追踪/时间线.md",
-      "参考资料",
-      "skills/story-long-write/SKILL.md",
-      "skills/story-deslop/SKILL.md",
-      "NOTICE-Oh-Story.md",
+      "创作要求.md",
+      "剧本/故事梗概.md",
+      "剧本/分场大纲.md",
+      "剧本/对白草稿",
+      "角色/人物表.md",
+      "场景/场景表.md",
+      "逻辑/因果链.md",
+      "逻辑/冲突升级.md",
+      "自由区",
+      "skills/script-logic-planner/SKILL.md",
+      "NOTICE-Screenplay-Logic.md",
     ]) {
       expect(existsSync(join(rootPath, relativePath))).toBe(true);
     }
 
     const manifest = JSON.parse(readFileSync(join(rootPath, "craft-writing.json"), "utf-8"));
-    expect(manifest.methodPack).toEqual({ id: "novel.oh-story", version: 1 });
-    expect(manifest.storageProfile).toBe("oh-story-compatible");
+    expect(manifest).toMatchObject({
+      type: "screenplay",
+      profile: "screenplay",
+      methodPack: { id: "screenplay.logic", version: 1 },
+      storageProfile: "screenplay-logic-compatible",
+    });
 
     const agents = readFileSync(join(rootPath, "AGENTS.md"), "utf-8");
-    expect(agents).toContain("## 初始创作请求门禁");
-    expect(agents).toContain("不要从宽泛的首轮请求直接起草正文");
-    expect(agents).toContain("先使用该 Method Pack 的基础路由或信息收集 skill");
-    expect(agents).not.toContain("Initial Creative Request Gate");
+    expect(agents).toContain("screenplay.logic");
+    expect(agents).toContain("分场");
+    expect(agents).toContain("对白");
+    expect(agents).not.toContain("Crucible");
   });
 
-  it("creates a Crucible scaffold when selected", () => {
+  it("creates a free creation scaffold when selected", () => {
     const rootPath = createTempProject();
 
     createNovelProjectScaffold(rootPath, {
-      title: "The Crucible Novel",
-      methodPackId: "novel.crucible",
+      title: "The Free Project",
+      methodPackId: "novel.free-creation",
     });
 
     for (const relativePath of [
-      ".crucible/state/planning-state.json",
-      "planning/CLAUDE.md",
-      "planning/crucible-thesis.md",
-      "planning/quest-strand-map.md",
-      "planning/fire-strand-map.md",
-      "planning/constellation-strand-map.md",
-      "planning/forge-points",
-      "planning/mercy-ledger.md",
-      "planning/dark-mirror-profile.md",
-      "planning/world-forge.md",
-      "outline/master-outline.md",
-      "outline/by-chapter",
-      "draft/chapters",
-      "draft/reviews",
-      "story-bible.json",
-      "style-profile.md",
-      "skills/crucible-writer/SKILL.md",
-      "NOTICE-Crucible.md",
+      "项目说明.md",
+      "创作要求.md",
+      "正文",
+      "自由区",
+      "参考资料",
+      "NOTICE-Free-Creation.md",
     ]) {
       expect(existsSync(join(rootPath, relativePath))).toBe(true);
     }
 
-    const manifest = JSON.parse(readFileSync(join(rootPath, "craft-writing.json"), "utf-8"));
-    expect(manifest.methodPack).toEqual({ id: "novel.crucible", version: 1 });
-    expect(manifest.storageProfile).toBe("crucible-compatible");
-  });
-
-  it("creates a Creative Writing Skills scaffold when selected", () => {
-    const rootPath = createTempProject();
-
-    createNovelProjectScaffold(rootPath, {
-      title: "The Creative Novel",
-      methodPackId: "novel.creative-writing",
-    });
-
-    for (const relativePath of [
-      "story/chapters",
-      "work/outline",
-      "work/drafts",
-      "work/critique-reports",
-      "work/brainstorm",
-      "kb/styles",
-      "kb/characters",
-      "kb/world",
-      "kb/timeline/timeline.md",
-      "kb/canon/facts.md",
-      "kb/issues",
-      "skills/prose-writing/SKILL.md",
-      "skills/kb-management/SKILL.md",
-      "NOTICE-Creative-Writing-Skills.md",
-    ]) {
-      expect(existsSync(join(rootPath, relativePath))).toBe(true);
-    }
+    expect(existsSync(join(rootPath, "skills"))).toBe(false);
+    expect(existsSync(join(rootPath, "kb"))).toBe(false);
+    expect(existsSync(join(rootPath, "work"))).toBe(false);
 
     const manifest = JSON.parse(readFileSync(join(rootPath, "craft-writing.json"), "utf-8"));
-    expect(manifest.methodPack).toEqual({ id: "novel.creative-writing", version: 1 });
-    expect(manifest.storageProfile).toBe("creative-writing-compatible");
+    expect(manifest.methodPack).toEqual({ id: "novel.free-creation", version: 1 });
+    expect(manifest.storageProfile).toBe("free-creation-compatible");
+
+    const agents = readFileSync(join(rootPath, "AGENTS.md"), "utf-8");
+    expect(agents).toContain("novel.free-creation");
+    expect(agents).toContain("不强塞结构");
+    expect(agents).not.toContain("Creative Writing");
   });
 
   it("creates a Short-Form web-fiction scaffold when selected", () => {

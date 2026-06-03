@@ -22,7 +22,7 @@ import {
   type BackendHostRuntimeContext,
   type PostInitResult,
 } from '@craft-agent/shared/agent/backend'
-import { getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, resetManagedAnthropicAuthEnvVars, resolveMidStreamBehavior } from '@craft-agent/shared/config'
+import { getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, resetManagedAnthropicAuthEnvVars } from '@craft-agent/shared/config'
 import { PrivilegedExecutionBroker } from '@craft-agent/server-core/services'
 import { isValidWorkingDirectory } from '../utils/path-validation'
 import { InitGate } from '@craft-agent/server-core/domain'
@@ -5371,70 +5371,41 @@ export class SessionManager implements ISessionManager {
         ].join('\n')
       : message
 
-    // If currently processing, behavior depends on the connection's
-    // `midStreamBehavior` (resolved via {@link resolveMidStreamBehavior},
-    // defaults to provider-appropriate value):
-    //
-    // - 'steer': try to deliver into the in-flight turn. Pi steers natively;
-    //   Claude emulates via PreToolUse hook. If `redirect()` returns false
-    //   (Claude with no live query, or backend can't steer), the backend has
-    //   already called forceAbort(Redirect) and we queue for replay.
-    // - 'queue': hold the message untouched; the current turn keeps running
-    //   to natural completion; replay as a new turn afterwards. NO call to
-    //   `agent.redirect()`, NO forceAbort, NO interruption.
+    // If currently processing, an ordinary send is only queued. The active
+    // turn continues to natural completion; explicit interruption is reserved
+    // for sendQueuedMessageNow().
     if (managed.isProcessing) {
-      const connection = resolveSessionConnection(managed.llmConnection, undefined)
-      // Fallback to 'steer' when no connection is resolvable — preserves
-      // today's exact behavior (call redirect, take whatever it returns).
-      const behavior = connection ? resolveMidStreamBehavior(connection) : 'steer'
-
-      const agent = managed.agent
-      let steered = false
-      if (behavior === 'steer') {
-        steered = agent?.redirect(modelMessage) ?? false
-      }
-      // For 'queue': skip redirect entirely. The current turn is undisturbed.
-
       sessionLog.info('mid-stream send', {
         sessionId,
-        behavior,
-        steered,
+        behavior: 'queue',
         queueLengthBefore: managed.messageQueue.length,
-        backend: agent ? agent.constructor.name : 'none',
-        connectionSlug: connection?.slug,
+        backend: managed.agent ? managed.agent.constructor.name : 'none',
       })
 
+      const queuedMessageId = options?.optimisticMessageId ?? generateMessageId()
       const userMessage: Message | undefined = hideUserMessage ? undefined : {
-        id: generateMessageId(),
+        id: queuedMessageId,
         role: 'user',
         content: message,
         timestamp: this.monotonic(),
         attachments: storedAttachments,
         badges: options?.badges,
+        isQueued: true,
       }
 
       if (!hideUserMessage && userMessage) {
         managed.messages.push(userMessage)
 
-        // Emit to UI — 'accepted' iff a steer succeeded; 'queued' otherwise
-        // (covers both queue-direct and queue-after-abort paths).
         this.sendEvent({
           type: 'user_message',
           sessionId,
           message: userMessage,
-          status: steered ? 'accepted' : 'queued',
+          status: 'queued',
           optimisticMessageId: options?.optimisticMessageId
         }, managed.workspace.id)
       }
 
-      if (!steered) {
-        // Push for FIFO replay on next onProcessingStopped tick. Same shape
-        // for both queue-direct (current turn still running) and
-        // queue-after-abort (backend already aborted) — the replay path in
-        // processNextQueuedMessage is identical.
-        managed.messageQueue.push({ message, attachments, storedAttachments, options, messageId: userMessage?.id, optimisticMessageId: options?.optimisticMessageId })
-        managed.wasInterrupted = true
-      }
+      managed.messageQueue.push({ message, attachments, storedAttachments, options, messageId: userMessage?.id, optimisticMessageId: options?.optimisticMessageId })
 
       this.persistSession(managed)
       // Force a synchronous flush so the user message is genuinely on disk
@@ -6033,6 +6004,82 @@ export class SessionManager implements ISessionManager {
 
     // NOTE: We don't clear isProcessing or send complete event here anymore.
     // The event loop will drain remaining events and call onProcessingStopped when done.
+  }
+
+  async sendQueuedMessageNow(sessionId: string, messageId: string): Promise<void> {
+    const managed = this.sessions.get(sessionId)
+    if (!managed) {
+      throw new Error(`Session ${sessionId} not found`)
+    }
+
+    await this.ensureMessagesLoaded(managed)
+
+    const queuedIndex = managed.messageQueue.findIndex(entry => entry.messageId === messageId)
+    if (queuedIndex < 0) {
+      throw new Error(`Queued message ${messageId} not found`)
+    }
+
+    const [selected] = managed.messageQueue.splice(queuedIndex, 1)
+    if (!selected) {
+      throw new Error(`Queued message ${messageId} not found`)
+    }
+    managed.messageQueue.unshift(selected)
+    this.persistSession(managed)
+
+    if (!managed.isProcessing) {
+      this.processNextQueuedMessage(sessionId)
+      return
+    }
+
+    sessionLog.info('Sending queued message now:', {
+      sessionId,
+      messageId,
+      queueLength: managed.messageQueue.length,
+    })
+
+    managed.stopRequested = true
+    managed.wasInterrupted = true
+
+    if (managed.agent) {
+      managed.agent.forceAbort(AbortReason.Redirect)
+    }
+
+    this.sendEvent({
+      type: 'interrupted',
+      sessionId,
+      reason: 'queued_handoff',
+    }, managed.workspace.id)
+
+    setTimeout(() => {
+      if (managed.stopRequested && managed.isProcessing) {
+        sessionLog.warn('Generator did not complete after queued send-now request, forcing cleanup')
+        this.onProcessingStopped(sessionId, 'timeout')
+      }
+    }, 5000)
+  }
+
+  async removeQueuedMessage(sessionId: string, messageId: string): Promise<void> {
+    const managed = this.sessions.get(sessionId)
+    if (!managed) {
+      throw new Error(`Session ${sessionId} not found`)
+    }
+
+    await this.ensureMessagesLoaded(managed)
+
+    const queuedIndex = managed.messageQueue.findIndex(entry => entry.messageId === messageId)
+    if (queuedIndex < 0) {
+      throw new Error(`Queued message ${messageId} not found`)
+    }
+
+    managed.messageQueue.splice(queuedIndex, 1)
+    managed.messages = managed.messages.filter(message => message.id !== messageId)
+    this.persistSession(managed)
+
+    this.sendEvent({
+      type: 'queued_message_removed',
+      sessionId,
+      messageId,
+    }, managed.workspace.id)
   }
 
   /**

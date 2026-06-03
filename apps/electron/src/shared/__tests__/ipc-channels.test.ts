@@ -203,6 +203,7 @@ const EXPECTED_CHANNELS: string[] = [
   'preferences:write',
   'releaseNotes:get',
   'releaseNotes:getLatestVersion',
+  'releaseNotes:getWhatsNewManifest',
   'remote:testConnection',
   'resources:export',
   'resources:import',

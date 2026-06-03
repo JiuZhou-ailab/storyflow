@@ -7,7 +7,7 @@
 import { loadShellEnv } from './shell-env'
 loadShellEnv()
 
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, net, shell } from 'electron'
 import { createHash, randomUUID } from 'crypto'
 import { hostname, homedir } from 'os'
 import * as Sentry from '@sentry/electron/main'
@@ -71,6 +71,9 @@ setupI18n()
 const machineId = createHash('sha256').update(hostname() + homedir()).digest('hex').slice(0, 16)
 Sentry.setUser({ id: machineId })
 
+import { initAnalytics, shutdownAnalytics } from './analytics'
+initAnalytics(machineId)
+
 import { join, delimiter } from 'path'
 import { existsSync, readFileSync } from 'fs'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
@@ -91,6 +94,7 @@ import { loadWindowState, saveWindowState } from './window-state'
 import { getWorkspaces, getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { initializeDocs } from '@craft-agent/shared/docs'
 import { initializeReleaseNotes } from '@craft-agent/shared/release-notes'
+import { seedDefaultAgentResources } from '@craft-agent/shared/agent-defaults'
 import { ensureDefaultPermissions } from '@craft-agent/shared/agent/permissions-config'
 import { ensureToolIcons, ensurePresetThemes } from '@craft-agent/shared/config'
 import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
@@ -102,7 +106,11 @@ import { OAuthFlowStore } from '@craft-agent/shared/auth'
 import { registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath, getMessagingGatewayLogFilePath, messagingGatewayLog } from './logger'
 import { setPerfEnabled, enableDebug } from '@craft-agent/shared/utils'
-import { resolveStartupWindowWorkspaceId } from './startup-window'
+import {
+  resolveActivateWindowWorkspaceId,
+  resolveStartupWindowWorkspaceId,
+  shouldRestoreWorkspaceWindowsOnOrdinaryStartup,
+} from './startup-window'
 import { registerPiModelResolver } from '@craft-agent/shared/config'
 import { getPiModelsForAuthProvider, getAllPiModels } from '@craft-agent/shared/config'
 import { initNotificationService, initBadgeIcon, initInstanceBadge, updateBadgeCount } from './notifications'
@@ -113,6 +121,7 @@ import { validateGitBashPath, checkVCRedistInstalled } from '@craft-agent/server
 import { shouldCreateWindowsAfterStartup } from './startup-state'
 import { createClientAuthConfigFromRuntimeEnv, createClientAuthService } from './client-auth'
 import { readClientAuthOverrides } from './client-auth-overrides'
+import { createClientAuthSessionStore } from './client-auth-session-store'
 import { resolveElectronRuntimePaths } from './runtime-paths'
 import { getAppVersion } from '@craft-agent/shared/version'
 import { normalizeFeedbackIssueInput, submitFeedbackIssue } from './feedback'
@@ -327,7 +336,7 @@ async function createInitialWindows(): Promise<void> {
 
   const validWorkspaceIds = workspaces.map(ws => ws.id)
 
-  if (savedState?.windows.length) {
+  if (savedState?.windows.length && shouldRestoreWorkspaceWindowsOnOrdinaryStartup({ savedWindowCount: savedState.windows.length })) {
     // Restore windows from saved state
     let restoredCount = 0
 
@@ -357,7 +366,7 @@ async function createInitialWindows(): Promise<void> {
   windowManager.createWindow({ workspaceId: startupWorkspaceId })
   mainLog.info(startupWorkspaceId
     ? `Created window for first workspace: ${workspaces[0].name}`
-    : 'Created first-run window without a workspace')
+    : 'Created project hub window without a workspace')
 }
 
 app.whenReady().then(async () => {
@@ -386,6 +395,9 @@ app.whenReady().then(async () => {
 
   // Initialize bundled release notes
   initializeReleaseNotes()
+
+  // Seed default skills and sources to ~/.agents/ without overwriting user edits
+  seedDefaultAgentResources()
 
   // Ensure default permissions file exists (copies bundled default.json on first run)
   ensureDefaultPermissions()
@@ -536,10 +548,14 @@ app.whenReady().then(async () => {
     if (clientAuthOverrideKeys.length > 0) {
       mainLog.info(`[client-auth] Applying overrides from ${clientAuthOverrides.filePath}: ${clientAuthOverrideKeys.join(', ')}`)
     }
+    const clientAuthSessionStore = createClientAuthSessionStore()
+    const initialClientAuthSession = await clientAuthSessionStore.load()
     const clientAuthService = createClientAuthService(createClientAuthConfigFromRuntimeEnv({
       ...process.env,
       ...clientAuthOverrides.values,
     }), {
+      initialSession: initialClientAuthSession,
+      sessionStore: clientAuthSessionStore,
       openExternal: (url) => shell.openExternal(url).then(() => undefined),
     })
     const initialClientAuthState = clientAuthService.getState()
@@ -593,7 +609,9 @@ app.whenReady().then(async () => {
       broadcastClientAuthState()
     })
     ipcMain.handle('feedback:submitIssue', async (_event, input: unknown) => {
-      return submitFeedbackIssue(normalizeFeedbackIssueInput(input))
+      return submitFeedbackIssue(normalizeFeedbackIssueInput(input), {
+        fetch: (url, init) => net.fetch(url, init),
+      })
     })
 
     if (!isClientOnly) {
@@ -1167,18 +1185,8 @@ app.whenReady().then(async () => {
         isHeadless: mainStartupIsHeadless,
       })
     ) {
-      // Open first workspace or last focused
       const workspaces = getWorkspaces()
-      if (workspaces.length > 0) {
-        const savedState = loadWindowState()
-        const wsId = savedState?.lastFocusedWorkspaceId || workspaces[0].id
-        // Verify workspace still exists
-        if (workspaces.some(ws => ws.id === wsId)) {
-          windowManager.createWindow({ workspaceId: wsId })
-        } else {
-          windowManager.createWindow({ workspaceId: workspaces[0].id })
-        }
-      }
+      windowManager.createWindow({ workspaceId: resolveActivateWindowWorkspaceId(workspaces) })
     }
   })
 })
@@ -1258,6 +1266,9 @@ app.on('before-quit', async (event) => {
     // Clean up power manager (release power blocker)
     const { cleanup: cleanupPowerManager } = await import('./power-manager')
     cleanupPowerManager()
+
+    // Flush PostHog analytics before exit so no events are dropped.
+    await shutdownAnalytics()
 
     // Release the server lock file so the next launch doesn't see a stale PID.
     // This must happen regardless of the exit path (normal quit or update quit).

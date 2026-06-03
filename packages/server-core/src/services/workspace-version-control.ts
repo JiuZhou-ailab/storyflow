@@ -39,6 +39,7 @@ export interface WorkspaceVersionFileChange {
   path: string
   status: 'added' | 'modified' | 'deleted' | 'renamed'
   previousPath?: string
+  unifiedDiff?: string
 }
 
 const GIT_TIMEOUT_MS = 10_000
@@ -212,10 +213,25 @@ export async function compareWorkspaceVersions(
   ])
   if (!output) return []
 
-  return output
+  const changes = output
     .split('\n')
     .map(parseNameStatusLine)
     .filter((change): change is WorkspaceVersionFileChange => change !== null)
+
+  return Promise.all(changes.map(async (change) => {
+    const diffPaths = change.previousPath ? [change.previousPath, change.path] : [change.path]
+    const unifiedDiff = await runGit(rootPath, [
+      'diff',
+      '--find-renames',
+      `${baseCommit}..${headCommit}`,
+      '--',
+      ...diffPaths,
+    ])
+    return {
+      ...change,
+      unifiedDiff: unifiedDiff || undefined,
+    }
+  }))
 }
 
 export async function restoreWorkspaceVersion(

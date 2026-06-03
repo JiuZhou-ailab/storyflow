@@ -37,6 +37,16 @@ function summarizeSessionPersistWrite(summary: SessionPersistWriteSummary): Sess
   return summary
 }
 
+function shouldLogMetadataMismatch({
+  hasMetadataMismatch,
+  hasExternalMetadataChange,
+}: {
+  hasMetadataMismatch: boolean
+  hasExternalMetadataChange: boolean
+}): boolean {
+  return hasMetadataMismatch && hasExternalMetadataChange
+}
+
 function getHeaderMetadataSignature(header: SessionHeader): string {
   const signature: HeaderMetadataSignature = {
     name: header.name,
@@ -154,10 +164,9 @@ class SessionPersistenceQueue {
             ? mergeHeaderWithExternalMetadata(localHeader, diskHeader)
             : localHeader
 
-          if (hasMetadataMismatch) {
+          if (shouldLogMetadataMismatch({ hasMetadataMismatch, hasExternalMetadataChange })) {
             const baseline = previousSig ? `, previousSig=${previousSig.slice(0, 12)}` : ', previousSig=<none>'
-            const mode = hasExternalMetadataChange ? 'disk preserved' : 'local preserved'
-            debug(`[PersistenceQueue] Session ${sessionId} metadata mismatch detected (${mode}${baseline})`)
+            debug(`[PersistenceQueue] Session ${sessionId} metadata mismatch detected (disk preserved${baseline})`)
           }
 
           const persistableMessages = storageSession.messages
@@ -287,4 +296,10 @@ class SessionPersistenceQueue {
 export const sessionPersistenceQueue = new SessionPersistenceQueue()
 
 // Named exports for testing/customization
-export { SessionPersistenceQueue, getHeaderMetadataSignature, mergeHeaderWithExternalMetadata, summarizeSessionPersistWrite }
+export {
+  SessionPersistenceQueue,
+  getHeaderMetadataSignature,
+  mergeHeaderWithExternalMetadata,
+  shouldLogMetadataMismatch,
+  summarizeSessionPersistWrite,
+}

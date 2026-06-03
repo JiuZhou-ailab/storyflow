@@ -11,11 +11,10 @@ import {
 describe("built-in method packs", () => {
   it("exposes all built-in writing method pack ids", () => {
     expect(getBuiltInMethodPacks().map((pack) => pack.id)).toEqual([
-      "novel.claude-book",
-      "novel.oh-story",
-      "novel.crucible",
-      "novel.creative-writing",
       "short-form.article",
+      "novel.claude-book",
+      "screenplay.logic",
+      "novel.free-creation",
     ]);
   });
 
@@ -27,10 +26,11 @@ describe("built-in method packs", () => {
     expect(profile).toBe(getBuiltInMethodPack(profileId));
   });
 
-  it("exposes the Claude-Book novel method pack contract", () => {
+  it("exposes the long-form novel method pack contract", () => {
     const pack = getBuiltInMethodPack("novel.claude-book");
 
     expect(pack?.id).toBe("novel.claude-book");
+    expect(pack?.displayName).toBe("长文小说");
     expect(pack?.version).toBe(1);
     expect(pack?.projectType).toBe("novel");
     expect(pack?.storageProfile).toBe("claude-book-compatible");
@@ -56,48 +56,43 @@ describe("built-in method packs", () => {
     });
     expect(pack?.requiredSkills).toContain("chapter-workflow");
     expect(pack?.requiredSkills).toContain("state-updater");
-    expect(pack?.starterMessage).toContain("Claude-Book");
+    expect(pack?.starterMessage).toContain("长篇小说");
   });
 
-  it("exposes the Oh Story web-fiction method pack contract", () => {
-    const pack = getBuiltInMethodPack("novel.oh-story");
+  it("exposes the screenplay logic method pack contract", () => {
+    const pack = getBuiltInMethodPack("screenplay.logic");
 
-    expect(pack?.projectType).toBe("novel");
-    expect(pack?.storageProfile).toBe("oh-story-compatible");
+    expect(pack?.displayName).toBe("剧本逻辑");
+    expect(pack?.projectType).toBe("screenplay");
+    expect(pack?.storageProfile).toBe("screenplay-logic-compatible");
     expect(pack?.requiredPaths).toContainEqual({
-      path: "追踪/伏笔.md",
+      path: "剧本/分场大纲.md",
       kind: "file",
     });
-    expect(pack?.requiredSkills).toContain("story-long-write");
-    expect(pack?.requiredSkills).toContain("story-deslop");
-    expect(pack?.starterMessage).toContain("网文");
+    expect(pack?.requiredSkills).toContain("script-logic-planner");
+    expect(pack?.starterMessage).toContain("剧本");
   });
 
-  it("exposes the Crucible method pack contract", () => {
-    const pack = getBuiltInMethodPack("novel.crucible");
+  it("exposes the free creation method pack contract", () => {
+    const pack = getBuiltInMethodPack("novel.free-creation");
 
+    expect(pack?.displayName).toBe("自由创作");
     expect(pack?.projectType).toBe("novel");
-    expect(pack?.storageProfile).toBe("crucible-compatible");
+    expect(pack?.storageProfile).toBe("free-creation-compatible");
     expect(pack?.requiredPaths).toContainEqual({
-      path: "planning/forge-points",
+      path: "自由区",
       kind: "directory",
     });
-    expect(pack?.requiredSkills).toContain("crucible-writer");
-    expect(pack?.starterMessage).toContain("36-beat");
-  });
-
-  it("exposes the Creative Writing Skills method pack contract", () => {
-    const pack = getBuiltInMethodPack("novel.creative-writing");
-
-    expect(pack?.projectType).toBe("novel");
-    expect(pack?.storageProfile).toBe("creative-writing-compatible");
     expect(pack?.requiredPaths).toContainEqual({
-      path: "kb/canon/facts.md",
+      path: "正文",
+      kind: "directory",
+    });
+    expect(pack?.requiredPaths).toContainEqual({
+      path: "项目说明.md",
       kind: "file",
     });
-    expect(pack?.requiredSkills).toContain("prose-writing");
-    expect(pack?.requiredSkills).toContain("kb-management");
-    expect(pack?.starterMessage).toContain("知识库");
+    expect(pack?.requiredSkills).toEqual([]);
+    expect(pack?.starterMessage).toContain("不强塞结构");
   });
 
   it("exposes the Short-Form web-fiction method pack contract", () => {
@@ -162,13 +157,18 @@ describe("built-in method packs", () => {
     expect(getBuiltInMethodPack("short-form.drama")).toBeNull();
   });
 
+  it("does not expose retired Craft Agent writing method packs", () => {
+    expect(getBuiltInMethodPack("novel.oh-story")).toBeNull();
+    expect(getBuiltInMethodPack("novel.crucible")).toBeNull();
+    expect(getBuiltInMethodPack("novel.creative-writing")).toBeNull();
+  });
+
   it("uses localized and pack-specific starter messages", () => {
     const expectedKeywords: Record<string, string[]> = {
-      "novel.claude-book": ["项目圣经", "梗概", "章节计划"],
-      "novel.oh-story": ["网文", "平台", "更新节奏"],
-      "novel.crucible": ["36-beat", "三条叙事线", "forge points"],
-      "novel.creative-writing": ["知识库", "声线", "修订"],
       "short-form.article": ["网文", "技能", "## 文件"],
+      "novel.claude-book": ["项目圣经", "梗概", "章节计划"],
+      "screenplay.logic": ["剧本", "分场", "对白"],
+      "novel.free-creation": ["自由区", "正文", "不强塞结构"],
     };
 
     for (const pack of getBuiltInMethodPacks()) {

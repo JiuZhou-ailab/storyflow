@@ -1,5 +1,5 @@
 // input: Electron auth environment and Neon Auth email/password credentials
-// output: Process-local client auth state and sign-in/sign-out operations
+// output: Client auth state, persisted session handoff, and sign-in/sign-out operations
 // pos: Main-process auth boundary that gates the desktop renderer before App mounts
 
 import {
@@ -53,6 +53,11 @@ export interface ClientAuthUser {
   name?: string
 }
 
+export interface ClientAuthSession {
+  user: ClientAuthUser
+  appSessionToken?: string
+}
+
 export type ClientAuthSignUpResult =
   | { status: 'authenticated', user: ClientAuthUser }
   | { status: 'verification-required', user?: ClientAuthUser }
@@ -101,6 +106,8 @@ interface ClientAuthServiceDeps {
   createAuthBrokerClient?: () => ClientAuthBrokerClient
   createCallbackServer?: (options: { port: number }) => Promise<CallbackServer>
   openExternal?: (url: string) => Promise<void>
+  initialSession?: ClientAuthSession | null
+  sessionStore?: ClientAuthSessionStore
 }
 
 export interface ClientAuthService {
@@ -110,6 +117,11 @@ export interface ClientAuthService {
   signInWithFeishu(): Promise<ClientAuthUser>
   cancelFeishuSignIn(): void
   signOut(): Promise<void>
+}
+
+export interface ClientAuthSessionStore {
+  save(session: ClientAuthSession): Promise<void>
+  clear(): Promise<void>
 }
 
 const DEFAULT_CLIENT_AUTH_ORIGIN = 'http://localhost:9100'
@@ -248,11 +260,16 @@ export function createClientAuthService(
   const emailSignUpEnabled = neonClientConfig?.emailSignUpEnabled === true
   const feishuLoginEnabled = config.feishuBrokerAuth !== undefined && authBrokerClient !== null
   const configured = emailPasswordEnabled || feishuLoginEnabled
-  let currentUser: ClientAuthUser | null = null
+  let currentSession: ClientAuthSession | null = deps.initialSession ?? null
   let activeFeishuLogin: {
     close: () => void | Promise<void>
     reject: (error: Error) => void
   } | null = null
+
+  async function saveCurrentSession(session: ClientAuthSession): Promise<void> {
+    await deps.sessionStore?.save(session)
+    currentSession = session
+  }
 
   return {
     getState(): ClientAuthState {
@@ -263,7 +280,7 @@ export function createClientAuthService(
         emailSignUpEnabled,
         feishuLoginEnabled,
         clientConfig: neonClientConfig,
-        user: currentUser,
+        user: currentSession?.user ?? null,
       })
     },
 
@@ -293,7 +310,7 @@ export function createClientAuthService(
       }
 
       const user = toClientAuthUser(await neonAuth.verifyToken(authResult.token))
-      currentUser = user
+      await saveCurrentSession({ user, appSessionToken: authResult.token })
       return user
     },
 
@@ -331,7 +348,7 @@ export function createClientAuthService(
       }
 
       const user = toClientAuthUser(await neonAuth.verifyToken(authResult.token))
-      currentUser = user
+      await saveCurrentSession({ user, appSessionToken: authResult.token })
       return { status: 'authenticated', user }
     },
 
@@ -410,7 +427,10 @@ export function createClientAuthService(
           codeVerifier: consumedState.codeVerifier,
         })
         const user = normalizeBrokerClientAuthUser(brokerResult.user)
-        currentUser = user
+        await saveCurrentSession({
+          user,
+          ...(brokerResult.appSessionToken ? { appSessionToken: brokerResult.appSessionToken } : {}),
+        })
         return user
       } finally {
         activeFeishuLogin = null
@@ -432,7 +452,8 @@ export function createClientAuthService(
         await activeFeishuLogin.close()
         activeFeishuLogin = null
       }
-      currentUser = null
+      await deps.sessionStore?.clear()
+      currentSession = null
     },
   }
 }

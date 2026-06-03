@@ -7,7 +7,7 @@ import type { MethodPack } from "./types.ts";
 export const CLAUDE_BOOK_METHOD_PACK: MethodPack = {
   id: "novel.claude-book",
   version: 1,
-  displayName: "Claude-Book Method Pack",
+  displayName: "长文小说",
   projectType: "novel",
   storageProfile: "claude-book-compatible",
   source: {
@@ -73,7 +73,7 @@ export const CLAUDE_BOOK_METHOD_PACK: MethodPack = {
   ],
   starterMessage: `## 这是什么
 
-这是 Claude-Book 小说工作区，适合需要先建立项目圣经、故事梗概和章节计划，再稳定推进章节起草的长篇小说项目。
+这是长文小说工作区，适合需要先建立项目圣经、故事梗概和章节计划，再稳定推进章节起草的长篇小说项目。
 
 ## 我会怎么做
 

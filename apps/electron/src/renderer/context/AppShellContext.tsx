@@ -26,6 +26,7 @@ import type {
   LlmConnectionWithStatus,
   TestAutomationResult,
   SendMessageOptions,
+  WorkspaceProjectType,
 } from '../../shared/types'
 import type { SessionStatus as SessionStatusConfig } from '@/config/session-status-config'
 import type { SessionOptions, SessionOptionUpdates } from '../hooks/useSessionOptions'
@@ -63,6 +64,11 @@ export interface AppShellContextType {
   mentionFiles?: MentionFileReference[]
   /** Working directory of the active session — needed for project-level skill resolution */
   activeSessionWorkingDirectory?: string
+  /** Project metadata used by the empty chat opening state. */
+  openingProjectMetadata?: {
+    projectType?: WorkspaceProjectType
+    methodPackId?: string
+  }
   /** All label configs (tree) for label menu and badge display */
   labels?: import('@craft-agent/shared/labels').LabelConfig[]
   /** Callback when session labels change */
@@ -78,7 +84,7 @@ export interface AppShellContextType {
 
   // Session callbacks
   onCreateSession: (workspaceId: string, options?: import('../../shared/types').CreateSessionOptions) => Promise<Session>
-  onSendMessage: (sessionId: string, message: string, attachments?: FileAttachment[], skillSlugs?: string[], badges?: import('@craft-agent/core').ContentBadge[], options?: Pick<SendMessageOptions, 'oneTimeContext' | 'hideUserMessage'>) => void
+  onSendMessage: (sessionId: string, message: string, attachments?: FileAttachment[], skillSlugs?: string[], badges?: import('@craft-agent/core').ContentBadge[], options?: Pick<SendMessageOptions, 'oneTimeContext' | 'hideUserMessage'> & { forceQueuedUserMessage?: boolean }) => void
   onRenameSession: (sessionId: string, name: string) => void
   onFlagSession: (sessionId: string) => void
   onUnflagSession: (sessionId: string) => void

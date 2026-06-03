@@ -1,6 +1,6 @@
 {
   "name": "@craft-agent/shared",
-  "version": "0.9.25",
+  "version": "0.9.30",
   "license": "Apache-2.0",
   "description": "Shared business logic for Storyflow - agent, auth, config, credentials, MCP integration",
   "type": "module",
@@ -14,6 +14,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./agent": "./src/agent/index.ts",
+    "./agent-defaults": "./src/agent-defaults/index.ts",
     "./agent/modes": "./src/agent/mode-types.ts",
     "./agent/mode-types": "./src/agent/mode-types.ts",
     "./agent/thinking-levels": "./src/agent/thinking-levels.ts",
@@ -70,7 +71,8 @@
     "./protocol": "./src/protocol/index.ts",
     "./i18n": "./src/i18n/index.ts",
     "./resources": "./src/resources/index.ts",
-    "./release-assets": "./src/release-assets.ts"
+    "./release-assets": "./src/release-assets.ts",
+    "./release-notes": "./src/release-notes/index.ts"
   },
   "dependencies": {
     "@craft-agent/core": "workspace:*",

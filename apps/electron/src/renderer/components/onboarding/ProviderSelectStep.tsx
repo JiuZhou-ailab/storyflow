@@ -1,18 +1,11 @@
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
-import { Key, Monitor } from "lucide-react"
+import { Key } from "lucide-react"
 import { CraftAgentsSymbol } from "@/components/icons/CraftAgentsSymbol"
 import { StepFormLayout } from "./primitives"
+import type { ProviderChoice } from "./provider-options"
 
-import claudeIcon from "@/assets/provider-icons/claude.svg"
-import openaiIcon from "@/assets/provider-icons/openai.svg"
-import copilotIcon from "@/assets/provider-icons/copilot.svg"
-
-/**
- * The high-level provider choice the user makes on first launch.
- * This maps to one or more ApiSetupMethods downstream.
- */
-export type ProviderChoice = 'jiuzhou' | 'claude' | 'chatgpt' | 'copilot' | 'api_key' | 'local'
+export type { ProviderChoice } from "./provider-options"
 
 interface ProviderOption {
   id: ProviderChoice
@@ -23,11 +16,7 @@ interface ProviderOption {
 
 const PROVIDER_ICONS: Record<ProviderChoice, React.ReactNode> = {
   jiuzhou: <CraftAgentsSymbol className="size-5 text-accent" />,
-  claude: <img src={claudeIcon} alt="" className="size-5 rounded-[3px]" />,
-  chatgpt: <img src={openaiIcon} alt="" className="size-5 rounded-[3px]" />,
-  copilot: <img src={copilotIcon} alt="" className="size-5 rounded-[3px]" />,
-  api_key: <Key className="size-5" />,
-  local: <Monitor className="size-5" />,
+  custom_provider: <Key className="size-5" />,
 }
 
 interface ProviderSelectStepProps {
@@ -46,44 +35,20 @@ interface ProviderSelectStepProps {
 export function ProviderSelectStep({ onSelect, onSkip }: ProviderSelectStepProps) {
   const { t } = useTranslation()
 
-  const PROVIDER_OPTIONS: ProviderOption[] = [
+  const PROVIDER_OPTIONS = [
     {
       id: 'jiuzhou',
       name: 'JiuZhou-AI',
-      description: '使用默认 JiuZhou-AI。',
+      description: '使用内置托管模型，普通用户无需配置 provider。',
       icon: PROVIDER_ICONS.jiuzhou,
     },
     {
-      id: 'claude',
-      name: t("onboarding.providerSelect.claudeProMax"),
-      description: t("onboarding.providerSelect.claudeProMaxDesc"),
-      icon: PROVIDER_ICONS.claude,
-    },
-    {
-      id: 'chatgpt',
-      name: t("onboarding.providerSelect.codexChatGPT"),
-      description: t("onboarding.providerSelect.codexChatGPTDesc"),
-      icon: PROVIDER_ICONS.chatgpt,
-    },
-    {
-      id: 'copilot',
-      name: t("onboarding.providerSelect.githubCopilot"),
-      description: t("onboarding.providerSelect.githubCopilotDesc"),
-      icon: PROVIDER_ICONS.copilot,
-    },
-    {
-      id: 'api_key',
+      id: 'custom_provider',
       name: t("onboarding.providerSelect.otherProvider"),
-      description: 'Anthropic, AWS Bedrock, OpenRouter, Google or any compatible provider.',
-      icon: PROVIDER_ICONS.api_key,
+      description: '配置自己的 endpoint、API Key 和模型，支持兼容协议。',
+      icon: PROVIDER_ICONS.custom_provider,
     },
-    {
-      id: 'local',
-      name: t("onboarding.providerSelect.localModel"),
-      description: 'Run models locally with Ollama.',
-      icon: PROVIDER_ICONS.local,
-    },
-  ]
+  ] satisfies ProviderOption[]
 
   return (
     <StepFormLayout

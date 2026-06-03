@@ -69,6 +69,10 @@ export function resolveInitialShellLayoutWidths({
   const availableWidth = Math.max(0, totalWidth - edgeInset - (panelGap * 2))
   const ratioWidths = getDefaultShellLayoutWidths(availableWidth)
 
+  const clampWorkspaceWidth = (width: number, remaining: number) => {
+    return Math.min(width, Math.max(0, remaining - assistantMinWidth))
+  }
+
   if (sidebarPersisted && !workspacePersisted) {
     const sidebar = currentSidebarWidth ?? ratioWidths.sidebar
     const remaining = Math.max(0, availableWidth - sidebar)
@@ -76,7 +80,7 @@ export function resolveInitialShellLayoutWidths({
       remaining * DEFAULT_SHELL_LAYOUT_RATIO.workspace
       / (DEFAULT_SHELL_LAYOUT_RATIO.workspace + DEFAULT_SHELL_LAYOUT_RATIO.assistant)
     )
-    const workspace = Math.min(ratioWorkspace, Math.max(0, remaining - assistantMinWidth))
+    const workspace = clampWorkspaceWidth(ratioWorkspace, remaining)
 
     return {
       sidebar,
@@ -88,8 +92,8 @@ export function resolveInitialShellLayoutWidths({
   const sidebar = sidebarPersisted ? currentSidebarWidth ?? ratioWidths.sidebar : ratioWidths.sidebar
   const remaining = Math.max(0, availableWidth - sidebar)
   const workspace = workspacePersisted
-    ? currentWorkspaceWidth ?? ratioWidths.workspace
-    : Math.min(ratioWidths.workspace, Math.max(0, remaining - assistantMinWidth))
+    ? clampWorkspaceWidth(currentWorkspaceWidth ?? ratioWidths.workspace, remaining)
+    : clampWorkspaceWidth(ratioWidths.workspace, remaining)
 
   return {
     sidebar,

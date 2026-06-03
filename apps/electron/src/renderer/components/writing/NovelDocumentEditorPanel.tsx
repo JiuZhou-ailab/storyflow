@@ -4,9 +4,7 @@
 
 import * as React from 'react'
 import { AlertCircle, Check, ChevronLeft, ChevronRight, GitPullRequestArrow, Loader2, RotateCcw } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
 import { useTranslation } from 'react-i18next'
-import remarkGfm from 'remark-gfm'
 import type { FileChange } from '@craft-agent/ui'
 import {
   buildNovelSelectionContext,
@@ -15,6 +13,7 @@ import {
 } from '@craft-agent/shared/writing/selection-context'
 import { TiptapMarkdownEditor } from '@/components/markdown'
 import { Button } from '@/components/ui/button'
+import { resolveReviewFileChangeSnapshot, type ReviewFileChangeSnapshot } from '@/lib/file-change-review'
 import { cn } from '@/lib/utils'
 import type { NovelWorkspaceFile } from '@/lib/writing-workspace'
 import { formatNovelWorkspaceFileTitle } from './novel-file-display'
@@ -43,164 +42,6 @@ export interface NovelSelectionChatRequest {
   selectedText: string
 }
 
-interface NovelReviewParts {
-  before: string
-  original: string
-  modified: string
-  after: string
-}
-
-const NOVEL_INLINE_REVIEW_TOKEN = '\uE000craft-novel-review-change\uE001'
-const NOVEL_REVIEW_DELETED_CLASS = 'novel-review-deleted rounded-[3px] bg-[color-mix(in_srgb,var(--destructive)_8%,transparent)] px-0.5 text-[color-mix(in_srgb,var(--foreground)_70%,var(--destructive))] decoration-[color-mix(in_srgb,var(--foreground)_45%,var(--destructive))] decoration-1 leading-[inherit]'
-const NOVEL_REVIEW_INSERTED_CLASS = 'novel-review-inserted rounded-[3px] bg-[color-mix(in_srgb,var(--success)_10%,transparent)] px-0.5 text-[color-mix(in_srgb,var(--foreground)_78%,var(--success))] no-underline leading-[inherit]'
-
-interface MarkdownAstNode {
-  type: string
-  value?: string
-  children?: MarkdownAstNode[]
-  data?: {
-    hName?: string
-    hProperties?: Record<string, unknown>
-  }
-}
-
-function extractUnifiedDiffReviewText(unifiedDiff: string): Pick<NovelReviewParts, 'original' | 'modified'> | null {
-  const originalLines: string[] = []
-  const modifiedLines: string[] = []
-
-  for (const line of unifiedDiff.split('\n')) {
-    if (!line) continue
-    if (line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('@@')) continue
-    if (line.startsWith('---') || line.startsWith('+++') || line.startsWith('\\')) continue
-
-    if (line.startsWith('-')) {
-      originalLines.push(line.slice(1))
-      continue
-    }
-
-    if (line.startsWith('+')) {
-      modifiedLines.push(line.slice(1))
-    }
-  }
-
-  const modified = modifiedLines.join('\n')
-  if (!modified) return null
-
-  return {
-    original: originalLines.join('\n'),
-    modified,
-  }
-}
-
-function countOccurrences(haystack: string, needle: string): number {
-  if (!needle) return 0
-
-  let count = 0
-  let index = haystack.indexOf(needle)
-  while (index !== -1) {
-    count += 1
-    index = haystack.indexOf(needle, index + needle.length)
-  }
-  return count
-}
-
-function isInlineReviewSafe(text: string): boolean {
-  return !/[\r\n]/.test(text)
-}
-
-function buildNovelReviewParts(
-  content: string,
-  change?: FileChange,
-): NovelReviewParts | null {
-  if (!change || change.error) return null
-  if (content.includes(NOVEL_INLINE_REVIEW_TOKEN)) return null
-
-  const reviewText = change.unifiedDiff
-    ? extractUnifiedDiffReviewText(change.unifiedDiff)
-    : {
-        original: change.original,
-        modified: change.modified,
-      }
-  if (!reviewText?.modified) return null
-  if (countOccurrences(content, reviewText.modified) !== 1) return null
-
-  const index = content.indexOf(reviewText.modified)
-  return {
-    before: content.slice(0, index),
-    original: reviewText.original,
-    modified: reviewText.modified,
-    after: content.slice(index + reviewText.modified.length),
-  }
-}
-
-export function buildNovelInlineReviewParts(
-  content: string,
-  change?: FileChange,
-): NovelReviewParts | null {
-  const parts = buildNovelReviewParts(content, change)
-  if (!parts) return null
-  if (!isInlineReviewSafe(parts.original) || !isInlineReviewSafe(parts.modified)) return null
-  return parts
-}
-
-function createReviewTextNode(value: string): MarkdownAstNode {
-  return {
-    type: 'text',
-    value,
-  }
-}
-
-function createReviewInlineNode(tagName: 'del' | 'ins', className: string, value: string): MarkdownAstNode {
-  return {
-    type: 'strong',
-    data: {
-      hName: tagName,
-      hProperties: {
-        className,
-      },
-    },
-    children: [createReviewTextNode(value)],
-  }
-}
-
-function createReviewReplacementNodes(parts: NovelReviewParts): MarkdownAstNode[] {
-  return [
-    ...(parts.original
-      ? [createReviewInlineNode('del', NOVEL_REVIEW_DELETED_CLASS, parts.original)]
-      : []),
-    createReviewInlineNode('ins', NOVEL_REVIEW_INSERTED_CLASS, parts.modified),
-  ]
-}
-
-function replaceReviewToken(node: MarkdownAstNode, parts: NovelReviewParts): void {
-  if (!node.children) return
-
-  const nextChildren: MarkdownAstNode[] = []
-  for (const child of node.children) {
-    if (child.type === 'text' && typeof child.value === 'string' && child.value.includes(NOVEL_INLINE_REVIEW_TOKEN)) {
-      const segments = child.value.split(NOVEL_INLINE_REVIEW_TOKEN)
-      segments.forEach((segment, index) => {
-        if (segment) nextChildren.push(createReviewTextNode(segment))
-        if (index < segments.length - 1) {
-          nextChildren.push(...createReviewReplacementNodes(parts))
-        }
-      })
-      continue
-    }
-
-    replaceReviewToken(child, parts)
-    nextChildren.push(child)
-  }
-
-  node.children = nextChildren
-}
-
-function createNovelInlineReviewPlugin(parts: NovelReviewParts) {
-  return () => (tree: MarkdownAstNode) => {
-    replaceReviewToken(tree, parts)
-  }
-}
-
 export interface NovelDocumentEditorPanelProps {
   file?: NovelWorkspaceFile
   content: string
@@ -211,14 +52,15 @@ export interface NovelDocumentEditorPanelProps {
   onAskAiForSelection?: (request: NovelSelectionAiRequest) => Promise<string>
   onAddSelectionToChat?: (message: string) => void
   onSendSelectionToChat?: (message: string) => Promise<void> | void
-  reviewChange?: FileChange
+  reviewChanges?: FileChange[]
   pendingChangeCount?: number
   pendingFileIndex?: number
-  onAcceptReviewChange?: () => void
+  onAcceptReviewChanges?: () => void
   onAcceptAllReviewChanges?: () => void
-  onRejectReviewChange?: () => void
+  onRejectReviewChanges?: () => void
   onPreviousReviewFile?: () => void
   onNextReviewFile?: () => void
+  workspaceActions?: React.ReactNode
   className?: string
 }
 
@@ -232,29 +74,36 @@ export function NovelDocumentEditorPanel({
   onAskAiForSelection,
   onAddSelectionToChat,
   onSendSelectionToChat,
-  reviewChange,
+  reviewChanges,
   pendingChangeCount = 0,
   pendingFileIndex,
-  onAcceptReviewChange,
+  onAcceptReviewChanges,
   onAcceptAllReviewChanges,
-  onRejectReviewChange,
+  onRejectReviewChanges,
   onPreviousReviewFile,
   onNextReviewFile,
+  workspaceActions,
   className,
 }: NovelDocumentEditorPanelProps) {
   const { t } = useTranslation()
   const characterCount = React.useMemo(() => countMarkdownTextCharacters(content), [content])
-  const reviewParts = React.useMemo(
-    () => buildNovelReviewParts(content, reviewChange),
-    [content, reviewChange]
+  const reviewChangesForFile = React.useMemo(
+    () => (reviewChanges ?? []).filter(change => !change.error),
+    [reviewChanges]
   )
-  const inlineReviewParts = React.useMemo(
+  const reviewChangeCount = reviewChangesForFile.length
+  const reviewFileChangeSnapshotRef = React.useRef<ReviewFileChangeSnapshot | null>(null)
+  const fileReviewChange = React.useMemo(
     () => {
-      if (!reviewParts) return null
-      if (!isInlineReviewSafe(reviewParts.original) || !isInlineReviewSafe(reviewParts.modified)) return null
-      return reviewParts
+      const snapshot = resolveReviewFileChangeSnapshot(
+        reviewFileChangeSnapshotRef.current,
+        reviewChangesForFile,
+        content
+      )
+      reviewFileChangeSnapshotRef.current = snapshot
+      return snapshot.change
     },
-    [reviewParts]
+    [reviewChangesForFile, content]
   )
   const handleAddSelectionToChat = React.useCallback(({ selectedText }: NovelSelectionChatRequest) => {
     if (!file || !onAddSelectionToChat) return
@@ -295,6 +144,17 @@ export function NovelDocumentEditorPanel({
 
   return (
     <div className={cn('flex h-full min-w-0 flex-col bg-background', className)}>
+      {workspaceActions ? (
+        <div className="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-border/50 px-3">
+          <div className="min-w-0 truncate text-xs font-medium text-muted-foreground">
+            {formatNovelWorkspaceFileTitle(file, t)}
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {workspaceActions}
+          </div>
+        </div>
+      ) : null}
+
       {error ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
@@ -310,32 +170,21 @@ export function NovelDocumentEditorPanel({
           </div>
         ) : (
           <div className="flex h-full min-h-0 flex-col">
-            {inlineReviewParts ? (
-              <NovelInlineReviewDocument
-                parts={inlineReviewParts}
-                characterCountLabel={t('writing.totalCharacters', { defaultValue: 'Total {{count}} characters', count: characterCount })}
-              />
-            ) : reviewParts ? (
-              <NovelRenderedReviewDocument
-                parts={reviewParts}
-                characterCountLabel={t('writing.totalCharacters', { defaultValue: 'Total {{count}} characters', count: characterCount })}
-              />
-            ) : (
-              <TiptapMarkdownEditor
-                content={content}
-                onUpdate={onChange}
-                placeholder={t('writing.emptySection')}
-                editable
-                markdownEngine="official"
-                showToolbar
-                surface="manuscript"
-                showLineNumbers
-                bottomRightAccessory={t('writing.totalCharacters', { defaultValue: 'Total {{count}} characters', count: characterCount })}
-                onAskAiForSelection={onSendSelectionToChat || onAskAiForSelection ? handleAskAiForSelection : undefined}
-                onAddSelectionToChat={onAddSelectionToChat ? handleAddSelectionToChat : undefined}
-                className="min-h-0 flex-1"
-              />
-            )}
+            <TiptapMarkdownEditor
+              content={content}
+              onUpdate={onChange}
+              placeholder={t('writing.emptySection')}
+              editable
+              markdownEngine="official"
+              showToolbar
+              surface="manuscript"
+              showLineNumbers
+              reviewDiffOriginalContent={fileReviewChange?.original ?? null}
+              bottomRightAccessory={t('writing.totalCharacters', { defaultValue: 'Total {{count}} characters', count: characterCount })}
+              onAskAiForSelection={onSendSelectionToChat || onAskAiForSelection ? handleAskAiForSelection : undefined}
+              onAddSelectionToChat={onAddSelectionToChat ? handleAddSelectionToChat : undefined}
+              className="min-h-0 flex-1"
+            />
           </div>
         )}
       </div>
@@ -352,7 +201,7 @@ export function NovelDocumentEditorPanel({
                   })
                 : t('writing.review.pendingFiles', '{{count}} files with changes', { count: pendingChangeCount })}
             </span>
-            {reviewChange ? (
+            {reviewChangeCount > 0 ? (
               <span className="ml-2">{formatNovelWorkspaceFileTitle(file, t)}</span>
             ) : null}
           </div>
@@ -392,156 +241,25 @@ export function NovelDocumentEditorPanel({
             variant="ghost"
             size="sm"
             className="h-7 px-2 text-xs"
-            disabled={!reviewChange || !onRejectReviewChange}
-            onClick={onRejectReviewChange}
+            disabled={reviewChangeCount === 0 || !onRejectReviewChanges}
+            onClick={onRejectReviewChanges}
           >
             <RotateCcw className="h-3.5 w-3.5" />
-            {t('common.reject', 'Reject')}
+            {t('writing.review.rejectFile', 'Reject file')}
           </Button>
           <Button
             type="button"
             variant="default"
             size="sm"
             className="h-7 px-2 text-xs"
-            disabled={!reviewChange || !onAcceptReviewChange}
-            onClick={onAcceptReviewChange}
+            disabled={reviewChangeCount === 0 || !onAcceptReviewChanges}
+            onClick={onAcceptReviewChanges}
           >
             <Check className="h-3.5 w-3.5" />
-            {t('common.accept', 'Accept')}
+            {t('writing.review.acceptFile', 'Accept file')}
           </Button>
         </div>
       ) : null}
-    </div>
-  )
-}
-
-function NovelRenderedReviewDocument({
-  parts,
-  characterCountLabel,
-}: {
-  parts: NovelReviewParts
-  characterCountLabel: string
-}) {
-  return (
-    <div
-      className="tiptap-editor tiptap-editor--manuscript tiptap-editor--line-numbers flex min-h-0 flex-1 flex-col"
-      data-testid="novel-rendered-review-document"
-    >
-      <div className="tiptap-editor-content min-h-0 flex-1 overflow-auto">
-        <article
-          className="tiptap-prose novel-review-change"
-          data-testid="novel-rendered-review-change"
-        >
-          <MarkdownReviewChunk markdown={parts.before} />
-          {parts.original ? (
-            <MarkdownReviewChunk
-              markdown={parts.original}
-              className={NOVEL_REVIEW_DELETED_CLASS}
-            />
-          ) : null}
-          <MarkdownReviewChunk
-            markdown={parts.modified}
-            className={NOVEL_REVIEW_INSERTED_CLASS}
-          />
-          <MarkdownReviewChunk markdown={parts.after} />
-        </article>
-      </div>
-      <div className="tiptap-editor-status-badge">
-        {characterCountLabel}
-      </div>
-    </div>
-  )
-}
-
-function MarkdownReviewChunk({
-  markdown,
-  className,
-}: {
-  markdown: string
-  className?: string
-}) {
-  const components = React.useMemo(
-    () => className ? createReviewMarkdownComponents(className) : undefined,
-    [className]
-  )
-  if (!markdown) return null
-
-  return (
-    <div>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {markdown}
-      </ReactMarkdown>
-    </div>
-  )
-}
-
-function createReviewMarkdownComponents(className: string) {
-  const wrap = (children: React.ReactNode) => (
-    <span className={className}>{children}</span>
-  )
-
-  return {
-    p: ({ node: _node, children, ...props }: React.HTMLAttributes<HTMLParagraphElement> & { node?: unknown }) => (
-      <p {...props}>{wrap(children)}</p>
-    ),
-    li: ({ node: _node, children, ...props }: React.HTMLAttributes<HTMLLIElement> & { node?: unknown }) => (
-      <li {...props}>{wrap(children)}</li>
-    ),
-    h1: ({ node: _node, children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { node?: unknown }) => (
-      <h1 {...props}>{wrap(children)}</h1>
-    ),
-    h2: ({ node: _node, children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { node?: unknown }) => (
-      <h2 {...props}>{wrap(children)}</h2>
-    ),
-    h3: ({ node: _node, children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { node?: unknown }) => (
-      <h3 {...props}>{wrap(children)}</h3>
-    ),
-    h4: ({ node: _node, children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { node?: unknown }) => (
-      <h4 {...props}>{wrap(children)}</h4>
-    ),
-    h5: ({ node: _node, children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { node?: unknown }) => (
-      <h5 {...props}>{wrap(children)}</h5>
-    ),
-    h6: ({ node: _node, children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { node?: unknown }) => (
-      <h6 {...props}>{wrap(children)}</h6>
-    ),
-  }
-}
-
-function NovelInlineReviewDocument({
-  parts,
-  characterCountLabel,
-}: {
-  parts: NovelReviewParts
-  characterCountLabel: string
-}) {
-  const reviewMarkdown = React.useMemo(
-    () => `${parts.before}${NOVEL_INLINE_REVIEW_TOKEN}${parts.after}`,
-    [parts.after, parts.before]
-  )
-  const remarkPlugins = React.useMemo(
-    () => [remarkGfm, createNovelInlineReviewPlugin(parts)],
-    [parts]
-  )
-
-  return (
-    <div
-      className="tiptap-editor tiptap-editor--manuscript tiptap-editor--line-numbers flex min-h-0 flex-1 flex-col"
-      data-testid="novel-inline-review-document"
-    >
-      <div className="tiptap-editor-content min-h-0 flex-1 overflow-auto">
-        <article
-          className="tiptap-prose novel-review-change"
-          data-testid="novel-inline-review-change"
-        >
-          <ReactMarkdown remarkPlugins={remarkPlugins}>
-            {reviewMarkdown}
-          </ReactMarkdown>
-        </article>
-      </div>
-      <div className="tiptap-editor-status-badge">
-        {characterCountLabel}
-      </div>
     </div>
   )
 }

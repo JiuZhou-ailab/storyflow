@@ -176,7 +176,7 @@ export type SessionEvent =
   | { type: 'error'; sessionId: string; error: string; timestamp?: number }
   | { type: 'typed_error'; sessionId: string; error: TypedError; timestamp?: number }
   | { type: 'complete'; sessionId: string; tokenUsage?: Session['tokenUsage']; hasUnread?: boolean }
-  | { type: 'interrupted'; sessionId: string; message?: Message; queuedMessages?: string[] }
+  | { type: 'interrupted'; sessionId: string; message?: Message; queuedMessages?: string[]; reason?: 'queued_handoff' }
   | { type: 'status'; sessionId: string; message: string; statusType?: 'compacting' }
   | { type: 'info'; sessionId: string; message: string; statusType?: 'compaction_complete'; level?: 'info' | 'warning' | 'error' | 'success'; timestamp?: number }
   | { type: 'title_generated'; sessionId: string; title: string }
@@ -212,6 +212,7 @@ export type SessionEvent =
   | { type: 'source_activated'; sessionId: string; sourceSlug: string; originalMessage: string }
   | { type: 'usage_update'; sessionId: string; tokenUsage: { inputTokens: number; contextWindow?: number } }
   | { type: 'message_annotations_updated'; sessionId: string; messageId: string; annotations: AnnotationV1[] }
+  | { type: 'queued_message_removed'; sessionId: string; messageId: string }
   | { type: 'working_directory_error'; sessionId: string; error: string }
 
 export interface SendMessageOptions {
@@ -282,6 +283,8 @@ export type SessionCommand =
   | { type: 'markCompactionComplete' }
   | { type: 'markPendingPlanExecutionDispatched' }
   | { type: 'clearPendingPlanExecution' }
+  | { type: 'sendQueuedMessageNow'; messageId: string }
+  | { type: 'removeQueuedMessage'; messageId: string }
   | { type: 'rewriteNovelSelection'; request: NovelSelectionRewriteRequest }
   | { type: 'addAnnotation'; messageId: string; annotation: AnnotationV1 }
   | { type: 'removeAnnotation'; messageId: string; annotationId: string }
@@ -330,6 +333,7 @@ export interface WorkspaceVersionFileChange {
   path: string
   status: 'added' | 'modified' | 'deleted' | 'renamed'
   previousPath?: string
+  unifiedDiff?: string
 }
 
 // ---------------------------------------------------------------------------

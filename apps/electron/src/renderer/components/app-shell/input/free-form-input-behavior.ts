@@ -53,7 +53,7 @@ export function getPrimaryInputAction(input: {
   disabled?: boolean
   disableSend?: boolean
 }): PrimaryInputAction {
-  if (input.isProcessing && (!input.hasContent || input.disabled || input.disableSend)) {
+  if (input.isProcessing && !input.hasContent) {
     return 'stop'
   }
   return 'send'
