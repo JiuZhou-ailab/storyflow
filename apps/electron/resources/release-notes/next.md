@@ -15,6 +15,7 @@ macOS 正式包会使用 Apple Developer ID 签名和 notarization。安装脚�
 ## 本次修复
 
 - **修复反馈提交与首次写作体验** — 反馈提交改走桌面应用的 Chromium 网络栈，降低国内网络或系统代理环境下 `fetch failed` 的概率；写作编辑区重新区分段内行距和段间距，长文阅读更清晰；首次新手教程也收敛为一次可控写作任务闭环，并提示用户从帮助入口提交反馈。
+- **修复未翻墙时反馈提交失败** — 反馈服务默认入口从 `workers.dev` 切到一等自定义域名，并在网络不可达时显示可理解的反馈服务错误，不再把 Electron IPC 的 `Error invoking remote method` 暴露给用户。
 - **修复聊天滚动与新文件 diff** — 聊天栏在高度切换后不再出现底部空白或无法继续下滑；新文件写入的 diff 不再把红绿两侧渲染成相同内容，新增文件会按新增内容展示。
 - **收敛托管模型路径** — 内置托管模型只保留 `wangsu-default`，继续承载 `gemini-3.5-flash`、`gpt-5.5`、`deepseek-v4-pro`；暂不引入 Xiaomi API，后续稳定性问题集中在 Wangsu 的 Cloudflare 自定义 provider 上排查。
 - **精简登录与模型链路** — Feishu/Neon 登录只做 App 门禁，不再签发或写入模型网关 JWT；内置模型连接改为直连 Cloudflare AI Gateway，减少一次 Worker 验签和一次本地 token 同步。

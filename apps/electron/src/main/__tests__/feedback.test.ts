@@ -4,7 +4,6 @@
 
 import { afterEach, describe, expect, it, mock } from 'bun:test'
 import {
-  buildFeedbackIssueBody,
   submitFeedbackIssue,
   type FeedbackFetch,
   type FeedbackIssueInput,
@@ -13,8 +12,6 @@ import {
 const originalFetch = globalThis.fetch
 const originalEnv = {
   STORYFLOW_FEEDBACK_ENDPOINT: process.env.STORYFLOW_FEEDBACK_ENDPOINT,
-  STORYFLOW_FEEDBACK_GITHUB_TOKEN: process.env.STORYFLOW_FEEDBACK_GITHUB_TOKEN,
-  GITHUB_TOKEN: process.env.GITHUB_TOKEN,
   CRAFT_IS_PACKAGED: process.env.CRAFT_IS_PACKAGED,
 }
 
@@ -43,18 +40,6 @@ const input: FeedbackIssueInput = {
 }
 
 describe('desktop feedback issue submission', () => {
-  it('builds an issue body with context and attachment facts', () => {
-    const body = buildFeedbackIssueBody(input)
-
-    expect(body).toContain('## Feedback')
-    expect(body).toContain('The feedback form should accept pasted screenshots.')
-    expect(body).toContain('## Contact')
-    expect(body).toContain('user@example.com')
-    expect(body).toContain('- App version: 0.9.20')
-    expect(body).toContain('- Platform: darwin')
-    expect(body).toContain('- pasted-image-1.png (image/png, 1234 bytes)')
-  })
-
   it('posts the full payload to the configured feedback endpoint', async () => {
     process.env.STORYFLOW_FEEDBACK_ENDPOINT = 'https://feedback.example.com/issues'
     const fetchMock = mock(async (url: string | URL | Request, init?: RequestInit) => {
@@ -70,73 +55,66 @@ describe('desktop feedback issue submission', () => {
     })
   })
 
-  it('uses the deployed feedback worker when feedback env vars are not configured', async () => {
+  it('uses the first-party feedback worker domain when feedback env vars are not configured', async () => {
     delete process.env.STORYFLOW_FEEDBACK_ENDPOINT
-    delete process.env.STORYFLOW_FEEDBACK_GITHUB_TOKEN
-    delete process.env.GITHUB_TOKEN
     delete process.env.CRAFT_IS_PACKAGED
 
     const fetchMock = mock(async (url: string | URL | Request, init?: RequestInit) => {
-      expect(String(url)).toBe('https://storyflow-feedback.d1095245867.workers.dev/api/feedback')
+      expect(String(url)).toBe('https://storyflow-feedback.zjding.com/api/feedback')
       expect(init?.method).toBe('POST')
       expect(JSON.parse(String(init?.body))).toEqual(input)
       return Response.json({ url: 'https://github.com/JiuZhou-ailab/storyflow/issues/124' })
     })
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    await expect(submitFeedbackIssue(input, {
-      getGitHubToken: async () => {
-        throw new Error('default feedback submissions should not require local GitHub auth')
-      },
-    })).resolves.toEqual({
+    await expect(submitFeedbackIssue(input)).resolves.toEqual({
       url: 'https://github.com/JiuZhou-ailab/storyflow/issues/124',
     })
   })
 
-  it('uses the deployed feedback worker by default in packaged builds', async () => {
+  it('uses the first-party feedback worker domain by default in packaged builds', async () => {
     delete process.env.STORYFLOW_FEEDBACK_ENDPOINT
-    delete process.env.STORYFLOW_FEEDBACK_GITHUB_TOKEN
-    delete process.env.GITHUB_TOKEN
     process.env.CRAFT_IS_PACKAGED = '1'
 
     const fetchMock = mock(async (url: string | URL | Request, init?: RequestInit) => {
-      expect(String(url)).toBe('https://storyflow-feedback.d1095245867.workers.dev/api/feedback')
+      expect(String(url)).toBe('https://storyflow-feedback.zjding.com/api/feedback')
       expect(init?.method).toBe('POST')
       return Response.json({ url: 'https://github.com/JiuZhou-ailab/storyflow/issues/88' })
     })
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    await expect(submitFeedbackIssue(input, {
-      getGitHubToken: async () => {
-        throw new Error('packaged builds should not require local GitHub auth')
-      },
-    })).resolves.toEqual({
+    await expect(submitFeedbackIssue(input)).resolves.toEqual({
       url: 'https://github.com/JiuZhou-ailab/storyflow/issues/88',
     })
   })
 
   it('allows the Electron main process to use its Chromium network stack for worker submissions', async () => {
     delete process.env.STORYFLOW_FEEDBACK_ENDPOINT
-    delete process.env.STORYFLOW_FEEDBACK_GITHUB_TOKEN
-    delete process.env.GITHUB_TOKEN
 
     globalThis.fetch = mock(async () => {
       throw new TypeError('fetch failed')
     }) as unknown as typeof fetch
     const electronFetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
-      expect(String(url)).toBe('https://storyflow-feedback.d1095245867.workers.dev/api/feedback')
+      expect(String(url)).toBe('https://storyflow-feedback.zjding.com/api/feedback')
       expect(init?.method).toBe('POST')
       return Response.json({ url: 'https://github.com/JiuZhou-ailab/storyflow/issues/125' })
     })
 
     await expect(submitFeedbackIssue(input, {
       fetch: electronFetch as unknown as FeedbackFetch,
-      getGitHubToken: async () => {
-        throw new Error('worker submissions should not require local GitHub auth')
-      },
     })).resolves.toEqual({
       url: 'https://github.com/JiuZhou-ailab/storyflow/issues/125',
     })
     expect(electronFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('turns feedback worker network failures into a user-facing service error', async () => {
+    delete process.env.STORYFLOW_FEEDBACK_ENDPOINT
+
+    await expect(submitFeedbackIssue(input, {
+      fetch: async () => {
+        throw new TypeError('fetch failed')
+      },
+    })).rejects.toThrow('Feedback service is unreachable')
   })
 })

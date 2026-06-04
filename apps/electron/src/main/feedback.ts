@@ -1,13 +1,8 @@
 // input: Feedback form payloads from the renderer
-// output: Submitted GitHub issue URLs through a safe main-process boundary
+// output: Submitted feedback issue URLs through a safe main-process boundary
 // pos: Main-process feedback submission adapter
 
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
-
-const FEEDBACK_REPOSITORY = 'JiuZhou-ailab/storyflow'
-const DEFAULT_FEEDBACK_ENDPOINT = 'https://storyflow-feedback.d1095245867.workers.dev/api/feedback'
-const execFileAsync = promisify(execFile)
+const DEFAULT_FEEDBACK_ENDPOINT = 'https://storyflow-feedback.zjding.com/api/feedback'
 
 export type FeedbackIssueAttachment = {
   name: string
@@ -33,7 +28,6 @@ export type FeedbackFetch = (url: string, init?: RequestInit) => Promise<Respons
 
 export type SubmitFeedbackIssueDeps = {
   fetch?: FeedbackFetch
-  getGitHubToken?: () => Promise<string | null>
 }
 
 function cleanText(value: unknown): string {
@@ -65,46 +59,23 @@ export function normalizeFeedbackIssueInput(raw: unknown): FeedbackIssueInput {
   }
 }
 
-export function buildFeedbackIssueBody(input: FeedbackIssueInput): string {
-  const lines = [
-    '## Feedback',
-    '',
-    input.message,
-    '',
-    '## Context',
-    '',
-    `- App version: ${input.appVersion || 'unknown'}`,
-    `- Platform: ${input.platform || 'unknown'}`,
-  ]
-
-  if (input.email) {
-    lines.push('', '## Contact', '', input.email)
-  }
-
-  if (input.attachments.length > 0) {
-    lines.push('', '## Attachments', '')
-    for (const attachment of input.attachments) {
-      lines.push(`- ${attachment.name} (${attachment.mimeType}, ${attachment.size} bytes)`)
-    }
-  }
-
-  return lines.join('\n')
-}
-
 async function postJson(
   fetchImpl: FeedbackFetch,
   url: string,
-  body: unknown,
-  headers: Record<string, string> = {}
+  body: unknown
 ): Promise<unknown> {
-  const response = await fetchImpl(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...headers,
-    },
-    body: JSON.stringify(body),
-  })
+  let response: Response
+  try {
+    response = await fetchImpl(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    })
+  } catch {
+    throw new Error('Feedback service is unreachable. Check your network and try again.')
+  }
 
   if (!response.ok) {
     const text = await response.text().catch(() => '')
@@ -112,18 +83,6 @@ async function postJson(
   }
 
   return await response.json().catch(() => ({}))
-}
-
-async function getGitHubCliToken(): Promise<string | null> {
-  try {
-    const { stdout } = await execFileAsync('gh', ['auth', 'token'], {
-      encoding: 'utf8',
-      timeout: 5000,
-    })
-    return cleanText(stdout) || null
-  } catch {
-    return null
-  }
 }
 
 function resolveFeedbackEndpoint(): string {
@@ -138,36 +97,7 @@ export async function submitFeedbackIssue(
   if (!input.message.trim()) throw new Error('Feedback details are required.')
 
   const endpoint = resolveFeedbackEndpoint()
-  if (endpoint) {
-    const data = await postJson(deps.fetch ?? fetch, endpoint, input)
-    const url = data && typeof data === 'object' ? (data as Record<string, unknown>).url : undefined
-    return { url: typeof url === 'string' ? url : endpoint }
-  }
-
-  const token = cleanText(process.env.STORYFLOW_FEEDBACK_GITHUB_TOKEN)
-    || cleanText(process.env.GITHUB_TOKEN)
-    || cleanText(await (deps.getGitHubToken ?? getGitHubCliToken)())
-  if (!token) {
-    throw new Error('Feedback submission is not configured. Set STORYFLOW_FEEDBACK_ENDPOINT for production, STORYFLOW_FEEDBACK_GITHUB_TOKEN for local development, or run `gh auth login`.')
-  }
-
-  const issue = await postJson(
-    deps.fetch ?? fetch,
-    `https://api.github.com/repos/${FEEDBACK_REPOSITORY}/issues`,
-    {
-      title: `[Feedback] ${input.title}`,
-      body: buildFeedbackIssueBody(input),
-      labels: ['feedback'],
-    },
-    {
-      accept: 'application/vnd.github+json',
-      authorization: `Bearer ${token}`,
-      'x-github-api-version': '2022-11-28',
-    }
-  )
-  const htmlUrl = issue && typeof issue === 'object' ? (issue as Record<string, unknown>).html_url : undefined
-  if (typeof htmlUrl !== 'string') {
-    throw new Error('GitHub did not return an issue URL.')
-  }
-  return { url: htmlUrl }
+  const data = await postJson(deps.fetch ?? fetch, endpoint, input)
+  const url = data && typeof data === 'object' ? (data as Record<string, unknown>).url : undefined
+  return { url: typeof url === 'string' ? url : endpoint }
 }

@@ -11,6 +11,7 @@ Electron main-process shell: app startup, native windows, IPC registration, auth
 - `client-auth.ts` - Desktop client authentication service.
 - `client-auth-session-store.ts` - Encrypted desktop auth session persistence.
 - `deep-link.ts` - Deep-link parsing and dispatch.
+- `feedback.ts` - Feedback issue submission adapter.
 - `index.ts` - Main-process bootstrap.
 - `logger.ts` - Main-process logging setup.
 - `menu.ts` - Application menu setup.

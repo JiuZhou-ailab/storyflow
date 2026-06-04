@@ -50,6 +50,7 @@ CRAFT_CLIENT_FEISHU_APP_ID=cli_aa9d901dfbb8dcd3
 CRAFT_CLIENT_NEON_AUTH_BASE_URL=https://your-neon-auth.example.com/neondb/auth
 CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN=users.craft.invalid
 CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED=false
+STORYFLOW_FEEDBACK_ENDPOINT=https://storyflow-feedback.zjding.com/api/feedback
 CLOUDFLARE_ACCOUNT_ID=...
 STORYFLOW_R2_PUBLIC_BASE_URL=https://story-storage.zjding.com
 STORYFLOW_R2_LATEST_PREFIX=latest
@@ -82,6 +83,11 @@ desktop UI exposes email registration and allows the local sign-up IPC path.
 Keep it `false` for invite-only or Feishu-only distribution. Set it to `true`
 only after the matching Neon Auth branch allows email sign-up and has a working
 email provider / verification policy.
+
+`STORYFLOW_FEEDBACK_ENDPOINT` is public client bootstrap configuration. Official
+builds should point it at the first-party feedback Worker custom domain, not the
+`workers.dev` deployment URL, because installed desktop clients must not depend
+on Cloudflare's development hostname being reachable from the user's network.
 
 ## Auth Broker / Web UI Server
 

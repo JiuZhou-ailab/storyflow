@@ -50,6 +50,47 @@ describe('environment contract', () => {
     expect(advertisedConfig).not.toContain('storyflow-auth-broker.d1095245867.workers.dev');
   });
 
+  test('keeps the first-party feedback worker as the advertised desktop default', () => {
+    const advertisedConfig = [
+      readRepoFile('.env.example'),
+      readRepoFile('docs/environment.md'),
+      readRepoFile('docs/feedback-issue-ingestion.md'),
+      readRepoFile('apps/feedback-worker/README.md'),
+      readRepoFile('apps/feedback-worker/wrangler.toml'),
+      readRepoFile('.github/workflows/deploy-feedback-worker.yml'),
+    ].join('\n');
+
+    expect(advertisedConfig).toContain('https://storyflow-feedback.zjding.com/api/feedback');
+    expect(advertisedConfig).toContain('storyflow-feedback.zjding.com');
+    expect(advertisedConfig).not.toContain('storyflow-feedback.d1095245867.workers.dev');
+  });
+
+  test('keeps feedback Worker deployment on an explicit manual workflow', () => {
+    const workflow = readRepoFile('.github/workflows/deploy-feedback-worker.yml');
+
+    expect(workflow).toContain('workflow_dispatch');
+    expect(workflow).toContain('CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}');
+    expect(workflow).toContain('CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}');
+    expect(workflow).toContain('FEEDBACK_GITHUB_TOKEN');
+    expect(workflow).toContain('bunx wrangler secret list --format=json');
+    expect(workflow).toContain('working-directory: apps/feedback-worker');
+    expect(workflow).toContain('bunx wrangler deploy');
+    expect(workflow).not.toContain('push:');
+  });
+
+  test('keeps desktop feedback submissions on the Worker boundary instead of local GitHub fallbacks', () => {
+    const mainFeedbackSource = readRepoFile('apps/electron/src/main/feedback.ts');
+    const feedbackDocs = readRepoFile('docs/feedback-issue-ingestion.md');
+
+    expect(mainFeedbackSource).not.toContain('STORYFLOW_FEEDBACK_GITHUB_TOKEN');
+    expect(mainFeedbackSource).not.toContain('GITHUB_TOKEN');
+    expect(mainFeedbackSource).not.toContain('gh auth token');
+    expect(mainFeedbackSource).not.toContain('api.github.com/repos');
+    expect(mainFeedbackSource).not.toContain('buildFeedbackIssueBody');
+    expect(feedbackDocs).not.toContain('The desktop app keeps `STORYFLOW_FEEDBACK_GITHUB_TOKEN`');
+    expect(feedbackDocs).not.toContain('gh auth token');
+  });
+
   test('does not advertise deprecated Feishu-specific broker env in local examples', () => {
     const envExample = readRepoFile('.env.example');
 

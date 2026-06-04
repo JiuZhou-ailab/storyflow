@@ -20,6 +20,7 @@ import { useRegisterModal } from "@/context/ModalContext"
 import { rendererPlatform } from "@/lib/platform"
 import appPackage from "../../../../package.json"
 import type { FeedbackIssueAttachment } from "../../../shared/types"
+import { formatFeedbackErrorMessage } from "./feedback-error"
 
 type FeedbackDialogProps = {
   open: boolean
@@ -128,7 +129,7 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
       onOpenChange(false)
       reset()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(formatFeedbackErrorMessage(err))
     } finally {
       setSubmitting(false)
     }

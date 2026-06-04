@@ -16,8 +16,8 @@ bunx wrangler r2 bucket create storyflow-feedback-assets
 bunx wrangler deploy --var FEEDBACK_ASSET_PUBLIC_BASE_URL:https://feedback-assets.example.com
 ```
 
-Desktop builds should bake:
+Desktop builds should bake the first-party custom domain:
 
 ```dotenv
-STORYFLOW_FEEDBACK_ENDPOINT=https://storyflow-feedback.d1095245867.workers.dev/api/feedback
+STORYFLOW_FEEDBACK_ENDPOINT=https://storyflow-feedback.zjding.com/api/feedback
 ```

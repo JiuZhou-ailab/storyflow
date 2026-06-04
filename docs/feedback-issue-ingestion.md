@@ -12,7 +12,7 @@ Flow:
 Production defaults:
 
 ```dotenv
-STORYFLOW_FEEDBACK_ENDPOINT=https://storyflow-feedback.d1095245867.workers.dev/api/feedback
+STORYFLOW_FEEDBACK_ENDPOINT=https://storyflow-feedback.zjding.com/api/feedback
 ```
 
 Worker secrets and vars:
@@ -24,6 +24,6 @@ bunx wrangler secret put FEEDBACK_GITHUB_TOKEN
 bunx wrangler deploy
 ```
 
-Use a fine-grained GitHub token scoped to the target repository with Issues read/write permission. Do not put a user's local `gh auth token` into production unless it is intentionally created for this automation.
+Use a fine-grained GitHub token scoped to the target repository with Issues read/write permission. Keep it as a Worker secret; desktop clients should never receive GitHub credentials.
 
-The desktop app keeps `STORYFLOW_FEEDBACK_GITHUB_TOKEN`, `GITHUB_TOKEN`, and `gh auth token` as local development fallbacks only. Packaged builds should route through the Worker so GitHub credentials never reach user machines.
+The desktop app always routes feedback through `STORYFLOW_FEEDBACK_ENDPOINT`. For local development, point that endpoint at a local or preview Worker rather than adding a desktop-side GitHub fallback. Use the first-party `storyflow-feedback.zjding.com` custom domain for production; `workers.dev` is only a Cloudflare development surface and is not a reliable installed-client endpoint.

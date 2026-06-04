@@ -2,6 +2,9 @@ name = "storyflow-feedback"
 main = "src/index.ts"
 compatibility_date = "2026-05-28"
 workers_dev = true
+routes = [
+  { pattern = "storyflow-feedback.zjding.com", custom_domain = true },
+]
 
 [vars]
 GITHUB_REPOSITORY = "JiuZhou-ailab/storyflow"
