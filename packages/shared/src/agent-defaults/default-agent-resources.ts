@@ -1,6 +1,6 @@
 // input: Bundled agent-defaults assets and the user's ~/.agents directory
-// output: First-run seeding for default skills and sources without overwriting user edits
-// pos: Distribution resource bootstrap for globally visible agent resources
+// output: Best-effort first-run seeding for default skills and sources with failed slug reporting
+// pos: Non-critical distribution resource bootstrap for globally visible agent resources
 
 import {
   cpSync,
@@ -37,6 +37,7 @@ export interface SeedDefaultAgentResourcesOptions {
 export interface SeedBucketResult {
   imported: string[];
   skipped: string[];
+  failed: string[];
 }
 
 export interface SeedDefaultAgentResourcesResult {
@@ -45,16 +46,20 @@ export interface SeedDefaultAgentResourcesResult {
 }
 
 function emptyBucket(): SeedBucketResult {
-  return { imported: [], skipped: [] };
+  return { imported: [], skipped: [], failed: [] };
 }
 
 function listResourceDirs(rootPath: string): string[] {
   if (!existsSync(rootPath)) return [];
 
-  return readdirSync(rootPath, { withFileTypes: true })
-    .filter(entry => entry.isDirectory())
-    .map(entry => entry.name)
-    .sort();
+  try {
+    return readdirSync(rootPath, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name)
+      .sort();
+  } catch {
+    return [];
+  }
 }
 
 function copyMissingResourceDirs(sourceRoot: string, targetRoot: string): SeedBucketResult {
@@ -62,7 +67,12 @@ function copyMissingResourceDirs(sourceRoot: string, targetRoot: string): SeedBu
   const slugs = listResourceDirs(sourceRoot);
   if (slugs.length === 0) return result;
 
-  mkdirSync(targetRoot, { recursive: true });
+  try {
+    mkdirSync(targetRoot, { recursive: true });
+  } catch {
+    result.failed.push(...slugs);
+    return result;
+  }
 
   for (const slug of slugs) {
     const sourcePath = join(sourceRoot, slug);
@@ -73,10 +83,14 @@ function copyMissingResourceDirs(sourceRoot: string, targetRoot: string): SeedBu
       continue;
     }
 
-    if (!statSync(sourcePath).isDirectory()) continue;
+    try {
+      if (!statSync(sourcePath).isDirectory()) continue;
 
-    cpSync(sourcePath, targetPath, { recursive: true });
-    result.imported.push(slug);
+      cpSync(sourcePath, targetPath, { recursive: true });
+      result.imported.push(slug);
+    } catch {
+      result.failed.push(slug);
+    }
   }
 
   return result;

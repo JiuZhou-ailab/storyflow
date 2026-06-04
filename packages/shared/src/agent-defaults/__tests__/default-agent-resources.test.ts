@@ -63,6 +63,26 @@ describe('default agent resources', () => {
     expect(readFileSync(existingSource, 'utf-8')).toBe('{"name":"User"}\n');
   });
 
+  it('does not throw when the user agent root is not writable as a directory', () => {
+    const assetsDir = join(tempDir, 'resources', 'agent-defaults');
+    const agentRootDir = join(tempDir, '.agents');
+
+    writeFile(join(assetsDir, 'skills', 'demo-skill', 'SKILL.md'), 'bundled skill');
+    writeFile(join(assetsDir, 'sources', 'demo-source', 'config.json'), '{"name":"Bundled"}\n');
+    writeFileSync(agentRootDir, 'occupied by a file');
+
+    let result: ReturnType<typeof seedDefaultAgentResources> | undefined;
+
+    expect(() => {
+      result = seedDefaultAgentResources({ assetsDir, agentRootDir });
+    }).not.toThrow();
+
+    expect(result?.skills.imported).toEqual([]);
+    expect(result?.skills.failed).toEqual(['demo-skill']);
+    expect(result?.sources.imported).toEqual([]);
+    expect(result?.sources.failed).toEqual(['demo-source']);
+  });
+
   it('ships reviewable default resources without bundled secrets', () => {
     const assetsDir = join(import.meta.dir, '../../../../../apps/electron/resources/agent-defaults');
 
