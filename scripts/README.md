@@ -44,9 +44,16 @@ current release's download metadata. Required GitHub settings:
 - Variable `STORYFLOW_R2_PUBLIC_BASE_URL`: public R2 custom domain, for example `https://story-storage.zjding.com`.
 - Variable `STORYFLOW_R2_LATEST_PREFIX`: `latest`.
 - Variable `STORYFLOW_R2_RELEASE_PREFIX`: `releases`.
+- Variable `STORYFLOW_R2_RETAIN_RELEASES`: number of immutable `releases/<tag>/` prefixes to keep, default `5`.
 - Variable `STORYFLOW_PAGES_PROJECT_NAME`: Cloudflare Pages project name, default `storyflow`.
 
 Installer artifacts are uploaded under stable names in `latest/`, such as
 `Storyflow-arm64.dmg`, so stale web pages cannot keep downloading an old latest alias.
 The immutable `releases/<tag>/` prefix also receives versioned browser-download aliases,
 such as `Storyflow-<version>-arm64.dmg`, for direct archival links.
+Manual releases can choose `release_profile=windows-hotfix` or `release_profile=macos-hotfix`
+to build and publish only the affected platform. R2 publishing maps those profiles to
+`--profile=windows` or `--profile=macos`, while full tag releases continue to publish every
+required public asset. After a successful upload, the publisher prunes old immutable release
+prefixes so only the newest configured release tags remain in R2; `latest/` is always
+overwritten and is never pruned by tag retention.

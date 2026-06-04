@@ -107,6 +107,22 @@ describe('macOS release configuration', () => {
     expect(workflow).not.toContain('run: bun run electron:dist:dev:win');
   });
 
+  test('manual release profiles can publish platform hotfixes and prune old R2 releases', () => {
+    const workflow = readRepoFile('.github/workflows/release.yml');
+
+    expect(workflow).toContain('release_profile:');
+    expect(workflow).toContain('- windows-hotfix');
+    expect(workflow).toContain('- macos-hotfix');
+    expect(workflow).toContain("RELEASE_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_profile || 'full' }}");
+    expect(workflow).toContain("inputs.release_profile == 'full' || inputs.release_profile == 'macos-hotfix'");
+    expect(workflow).toContain("inputs.release_profile == 'full' || inputs.release_profile == 'windows-hotfix'");
+    expect(workflow).toContain('UPLOAD_PROFILE="windows"');
+    expect(workflow).toContain('UPLOAD_PROFILE="macos"');
+    expect(workflow).toContain('--profile="$UPLOAD_PROFILE"');
+    expect(workflow).toContain('--retain-releases="${STORYFLOW_R2_RETAIN_RELEASES:-5}"');
+    expect(workflow).toContain("if: ${{ github.event_name != 'workflow_dispatch' || inputs.release_profile == 'full' }}");
+  });
+
   test('macOS release build can skip duplicate dependency install after CI install', () => {
     const buildScript = readRepoFile('apps/electron/scripts/build-dmg.sh');
     const workflow = readRepoFile('.github/workflows/release.yml');

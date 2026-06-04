@@ -1,11 +1,12 @@
-// input: Release artifacts downloaded from GitHub Actions and Wrangler R2 authentication
-// output: Versioned release assets and stable latest public Storyflow download assets in R2
+// input: Release artifacts downloaded from GitHub Actions, release profile, and Cloudflare R2 authentication
+// output: Profile-scoped release assets, stable latest public assets, and optional old-release pruning in R2
 // pos: Public release publisher for landing-page downloads and electron-updater manifests
 
 import { readdirSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import {
   publicInstallerAssets,
+  releaseAssetFiles,
   requiredPublicReleaseAssets,
   versionedInstallerFileName,
 } from "@craft-agent/shared/release-assets";
@@ -14,11 +15,27 @@ type CliOptions = {
   assetsDir: string;
   tag: string;
   dryRun: boolean;
+  profile: ReleaseAssetProfile;
+  retainReleases?: number;
 };
 
 type UploadTarget = {
   key: string;
   cacheControl: string;
+};
+
+export type ReleaseAssetProfile = "full" | "windows" | "macos" | "metadata";
+
+export type R2ReleaseRetentionPlan = {
+  keptTags: string[];
+  deletedTags: string[];
+  deleteKeys: string[];
+};
+
+export type R2ReleaseRetentionInput = {
+  objectKeys: string[];
+  releasePrefix: string;
+  retainReleases: number;
 };
 
 function usage(): string {
@@ -33,6 +50,10 @@ function usage(): string {
     "  STORYFLOW_R2_LATEST_PREFIX=latest",
     "  STORYFLOW_R2_RELEASE_PREFIX=releases",
     "  STORYFLOW_R2_PUBLIC_BASE_URL=https://story-storage.zjding.com",
+    "",
+    "Options:",
+    "  --profile=full|windows|macos|metadata",
+    "  --retain-releases=5",
   ].join("\n");
 }
 
@@ -41,6 +62,7 @@ function parseArgs(argv: string[]): CliOptions {
     assetsDir: "",
     tag: "",
     dryRun: false,
+    profile: "full",
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -65,6 +87,22 @@ function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
+    if (name === "--profile") {
+      options.profile = parseReleaseAssetProfile(value);
+      if (!inlineValue) index += 1;
+      continue;
+    }
+
+    if (name === "--retain-releases") {
+      const parsed = Number.parseInt(value, 10);
+      if (!Number.isInteger(parsed) || parsed < 1) {
+        throw new Error(`Invalid --retain-releases value: ${value}`);
+      }
+      options.retainReleases = parsed;
+      if (!inlineValue) index += 1;
+      continue;
+    }
+
     if (arg === "-h" || arg === "--help") {
       console.log(usage());
       process.exit(0);
@@ -81,6 +119,13 @@ function parseArgs(argv: string[]): CliOptions {
   }
 
   return options;
+}
+
+function parseReleaseAssetProfile(value: string): ReleaseAssetProfile {
+  if (value === "full" || value === "windows" || value === "macos" || value === "metadata") {
+    return value;
+  }
+  throw new Error(`Invalid --profile value: ${value}`);
 }
 
 function requireEnv(name: string): string {
@@ -107,6 +152,63 @@ function shouldUploadFile(fileName: string): boolean {
     /^install-app\.(?:sh|ps1)$/.test(fileName) ||
     fileName === "whats-new.json"
   );
+}
+
+function shouldUploadFileForProfile(fileName: string, profile: ReleaseAssetProfile): boolean {
+  if (!shouldUploadFile(fileName)) return false;
+  if (profile === "full") return true;
+
+  if (profile === "windows") {
+    return (
+      /^Storyflow-.+\.exe$/.test(fileName) ||
+      /^Storyflow-.+\.exe\.blockmap$/.test(fileName) ||
+      fileName === releaseAssetFiles.windowsManifest ||
+      fileName === releaseAssetFiles.installPs1
+    );
+  }
+
+  if (profile === "macos") {
+    return (
+      /^Storyflow-.+\.(dmg|zip)$/.test(fileName) ||
+      /^Storyflow-.+\.(dmg|zip)\.blockmap$/.test(fileName) ||
+      /^latest-mac(?:-(?:arm64|x64))?\.yml$/.test(fileName) ||
+      fileName === releaseAssetFiles.installSh
+    );
+  }
+
+  return (
+    fileName === releaseAssetFiles.installSh ||
+    fileName === releaseAssetFiles.installPs1 ||
+    fileName === "whats-new.json"
+  );
+}
+
+function requiredAssetsForProfile(profile: ReleaseAssetProfile): readonly string[] {
+  if (profile === "windows") {
+    return [
+      releaseAssetFiles.windowsX64Exe,
+      releaseAssetFiles.windowsManifest,
+    ];
+  }
+
+  if (profile === "macos") {
+    return [
+      releaseAssetFiles.macArm64Dmg,
+      releaseAssetFiles.macX64Dmg,
+      releaseAssetFiles.macArm64Zip,
+      releaseAssetFiles.macX64Zip,
+      releaseAssetFiles.macManifest,
+    ];
+  }
+
+  if (profile === "metadata") {
+    return [
+      releaseAssetFiles.installSh,
+      releaseAssetFiles.installPs1,
+    ];
+  }
+
+  return requiredPublicReleaseAssets;
 }
 
 function contentTypeFor(fileName: string): string {
@@ -179,6 +281,162 @@ async function putObjectWithWrangler(params: {
   }
 }
 
+function parseReleaseTag(tag: string): [number, number, number] {
+  const match = /^v(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(tag);
+  if (!match) return [0, 0, 0];
+  return [
+    Number.parseInt(match[1], 10),
+    Number.parseInt(match[2], 10),
+    Number.parseInt(match[3], 10),
+  ];
+}
+
+function compareReleaseTagsDesc(left: string, right: string): number {
+  const leftParts = parseReleaseTag(left);
+  const rightParts = parseReleaseTag(right);
+  for (let index = 0; index < 3; index += 1) {
+    const diff = rightParts[index] - leftParts[index];
+    if (diff !== 0) return diff;
+  }
+  return right.localeCompare(left);
+}
+
+export function planR2ReleaseRetention(input: R2ReleaseRetentionInput): R2ReleaseRetentionPlan {
+  const releasePrefix = normalizePrefix(input.releasePrefix);
+  const releasePathPrefix = `${releasePrefix}/`;
+  const tags = new Set<string>();
+
+  for (const key of input.objectKeys) {
+    if (!key.startsWith(releasePathPrefix)) continue;
+    const rest = key.slice(releasePathPrefix.length);
+    const slashIndex = rest.indexOf("/");
+    if (slashIndex <= 0) continue;
+
+    const tag = rest.slice(0, slashIndex);
+    if (/^v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(tag)) {
+      tags.add(tag);
+    }
+  }
+
+  const sortedTags = Array.from(tags).sort(compareReleaseTagsDesc);
+  const keptTags = sortedTags.slice(0, input.retainReleases);
+  const deletedTags = sortedTags.slice(input.retainReleases);
+  const deletedTagSet = new Set(deletedTags);
+  const deleteKeys = input.objectKeys
+    .filter((key) => {
+      if (!key.startsWith(releasePathPrefix)) return false;
+      const rest = key.slice(releasePathPrefix.length);
+      const tag = rest.split("/", 1)[0];
+      return deletedTagSet.has(tag);
+    })
+    .sort((a, b) => a.localeCompare(b));
+
+  return { keptTags, deletedTags, deleteKeys };
+}
+
+function encodeR2ObjectKeyPath(key: string): string {
+  return key.split("/").map((part) => encodeURIComponent(part)).join("/");
+}
+
+async function cloudflareFetchJson<T>(url: string, token: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+
+  const response = await fetch(url, {
+    ...init,
+    headers,
+  });
+  const text = await response.text();
+  const body = (text ? JSON.parse(text) : {}) as T & { success?: boolean; errors?: unknown[] };
+
+  if (!response.ok || body.success === false) {
+    throw new Error(`Cloudflare R2 API request failed: ${JSON.stringify(body.errors ?? body)}`);
+  }
+
+  return body;
+}
+
+async function listR2ObjectKeys(params: {
+  accountId: string;
+  bucket: string;
+  apiToken: string;
+  prefix: string;
+}): Promise<string[]> {
+  const keys: string[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const search = new URLSearchParams({ prefix: params.prefix });
+    if (cursor) search.set("cursor", cursor);
+
+    const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(params.accountId)}/r2/buckets/${encodeURIComponent(params.bucket)}/objects?${search.toString()}`;
+    const response = await cloudflareFetchJson<{
+      result?: { objects?: Array<{ key?: string }>; cursor?: string; truncated?: boolean } | Array<{ key?: string }>;
+      result_info?: { cursor?: string; is_truncated?: boolean };
+    }>(url, params.apiToken);
+
+    const result = response.result;
+    const objects = Array.isArray(result) ? result : result?.objects ?? [];
+    for (const object of objects) {
+      if (object.key) keys.push(object.key);
+    }
+
+    const isTruncated = response.result_info?.is_truncated ?? (!Array.isArray(result) && result?.truncated) ?? false;
+    cursor = isTruncated
+      ? response.result_info?.cursor ?? (!Array.isArray(result) ? result?.cursor : undefined)
+      : undefined;
+  } while (cursor);
+
+  return keys;
+}
+
+async function deleteR2ObjectKey(params: {
+  accountId: string;
+  bucket: string;
+  apiToken: string;
+  key: string;
+}): Promise<void> {
+  const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(params.accountId)}/r2/buckets/${encodeURIComponent(params.bucket)}/objects/${encodeR2ObjectKeyPath(params.key)}`;
+  await cloudflareFetchJson(url, params.apiToken, { method: "DELETE" });
+}
+
+async function pruneR2ReleaseObjects(params: {
+  bucket: string;
+  releasePrefix: string;
+  retainReleases: number;
+  dryRun: boolean;
+}): Promise<void> {
+  if (params.dryRun) {
+    console.log(`Would prune R2 releases to retain ${params.retainReleases} tag(s) under ${params.releasePrefix}/`);
+    return;
+  }
+
+  const accountId = requireEnv("CLOUDFLARE_ACCOUNT_ID");
+  const apiToken = requireEnv("CLOUDFLARE_API_TOKEN");
+  const objectKeys = await listR2ObjectKeys({
+    accountId,
+    bucket: params.bucket,
+    apiToken,
+    prefix: `${normalizePrefix(params.releasePrefix)}/`,
+  });
+  const plan = planR2ReleaseRetention({
+    objectKeys,
+    releasePrefix: params.releasePrefix,
+    retainReleases: params.retainReleases,
+  });
+
+  console.log(`Keeping R2 release tags: ${plan.keptTags.join(", ") || "(none)"}`);
+  if (plan.deleteKeys.length === 0) {
+    console.log("No old R2 release objects to delete.");
+    return;
+  }
+
+  console.log(`Deleting ${plan.deleteKeys.length} old R2 release object(s): ${plan.deletedTags.join(", ")}`);
+  for (const key of plan.deleteKeys) {
+    await deleteR2ObjectKey({ accountId, bucket: params.bucket, apiToken, key });
+  }
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(Bun.argv.slice(2));
   const bucket = requireEnv("STORYFLOW_R2_BUCKET");
@@ -189,10 +447,10 @@ async function main(): Promise<void> {
   );
 
   const allFiles = readdirSync(options.assetsDir)
-    .filter((fileName) => shouldUploadFile(fileName))
+    .filter((fileName) => shouldUploadFileForProfile(fileName, options.profile))
     .sort((a, b) => a.localeCompare(b));
 
-  const missingFiles = requiredPublicReleaseAssets.filter((fileName) => !allFiles.includes(fileName));
+  const missingFiles = requiredAssetsForProfile(options.profile).filter((fileName) => !allFiles.includes(fileName));
   if (missingFiles.length > 0) {
     throw new Error(`Missing required release asset(s): ${missingFiles.join(", ")}`);
   }
@@ -236,11 +494,22 @@ async function main(): Promise<void> {
   }
 
   console.log(`Published ${allFiles.length} asset(s) to ${publicBaseUrl}/${latestPrefix}`);
+
+  if (options.retainReleases !== undefined) {
+    await pruneR2ReleaseObjects({
+      bucket,
+      releasePrefix,
+      retainReleases: options.retainReleases,
+      dryRun: options.dryRun,
+    });
+  }
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  console.error("");
-  console.error(usage());
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    console.error("");
+    console.error(usage());
+    process.exit(1);
+  });
+}
