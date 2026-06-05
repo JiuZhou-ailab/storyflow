@@ -242,6 +242,7 @@ function isTextEditingTarget(target: EventTarget | null): boolean {
 
 /** Filter mode for tri-state filtering: include shows only matching, exclude hides matching */
 type FilterMode = 'include' | 'exclude'
+type NovelWorkspaceCatalogOrder = 'manuscript-first' | 'global-first'
 
 interface NovelCreateFileTarget {
   basePath: NovelCreateFileBasePath
@@ -429,6 +430,24 @@ function getMarkdownTitleFromRelativePath(relativePath: string): string {
 
 function shouldCreateMarkdownStarter(relativePath: string): boolean {
   return relativePath.toLowerCase().endsWith('.md')
+}
+
+function getNovelFileCreateBasePath(
+  file: NovelWorkspaceFile,
+  sectionId: NovelWorkspaceFileSectionId
+): NovelCreateFileBasePath | null {
+  if (sectionId === 'work' && file.relativePath.replace(/\\/g, '/').startsWith('自由区/')) return '自由区'
+  if (sectionId === 'manuscript' && file.relativePath.replace(/\\/g, '/').startsWith('正文/')) return '正文'
+  return null
+}
+
+function getNearbyNovelCreateInitialValue(file: NovelWorkspaceFile, basePath: NovelCreateFileBasePath): string {
+  const normalized = file.relativePath.replace(/\\/g, '/')
+  const withoutBase = normalized.startsWith(`${basePath}/`)
+    ? normalized.slice(basePath.length + 1)
+    : normalized
+  const parent = getParentRelativePath(withoutBase)
+  return parent ? `${parent}/` : ''
 }
 
 function getContentChangeSize(previous: string, next: string): number {
@@ -834,6 +853,14 @@ function AppShellContent({
   const [novelWorkspaceNavigatorWidth, setNovelWorkspaceNavigatorWidth] = React.useState(() => {
     return storage.get(storage.KEYS.novelWorkspaceNavigatorWidth, NOVEL_WORKSPACE_NAVIGATOR_DEFAULT_WIDTH)
   })
+  const [novelWorkspaceCatalogOrder, setNovelWorkspaceCatalogOrder] = React.useState<NovelWorkspaceCatalogOrder>(() => {
+    const saved = storage.get<NovelWorkspaceCatalogOrder>(storage.KEYS.novelWorkspaceCatalogOrder, 'manuscript-first')
+    return saved === 'global-first' ? 'global-first' : 'manuscript-first'
+  })
+  const updateNovelWorkspaceCatalogOrder = React.useCallback((order: NovelWorkspaceCatalogOrder) => {
+    setNovelWorkspaceCatalogOrder(order)
+    storage.set(storage.KEYS.novelWorkspaceCatalogOrder, order)
+  }, [])
 
   // Hides both sidebar and navigator (CMD+. toggle)
   // Seed from either focused window param or persisted preference, then keep it toggleable.
@@ -2106,6 +2133,46 @@ function AppShellContent({
   }, [selectedNovelDocumentPath])
 
   const novelDocumentDirty = !!selectedNovelFile && novelDocumentContent !== savedNovelDocumentContent
+
+  const handleDeleteNovelWorkspaceFile = React.useCallback(async (file: NovelWorkspaceFile) => {
+    if (!novelWorkspaceRoot) return
+
+    if (file.path === selectedNovelFilePath && novelDocumentDirty) {
+      toast.error(t('writing.deleteFile.unsaved', '当前文件有未保存修改，请先保存或切换文件'))
+      return
+    }
+
+    const confirmed = window.confirm(t(
+      'writing.deleteFile.confirm',
+      '删除「{{name}}」？此操作无法撤销。',
+      { name: formatNovelWorkspaceFileTitle(file, t) }
+    ))
+    if (!confirmed) return
+
+    try {
+      await window.electronAPI.deleteFile(file.path)
+      const remainingFiles = novelWorkspaceFiles.filter(entry => entry.path !== file.path)
+      novelWorkspaceFilesCacheRef.current.delete(novelWorkspaceRoot)
+      setNovelWorkspaceFiles(remainingFiles)
+      if (selectedNovelFilePath === file.path) {
+        setSelectedNovelFilePath(selectDefaultNovelFile(remainingFiles)?.path ?? null)
+      }
+      await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
+      toast.success(t('writing.deleteFile.success', '已删除文件'))
+    } catch (error) {
+      console.error('[AppShell] Failed to delete writing file:', error)
+      toast.error(t('writing.deleteFile.failed', '删除文件失败'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }, [
+    novelDocumentDirty,
+    novelWorkspaceFiles,
+    novelWorkspaceRoot,
+    refreshNovelWorkspaceFiles,
+    selectedNovelFilePath,
+    t,
+  ])
 
   const refreshNovelVersions = React.useCallback(async () => {
     if (!novelWorkspaceRoot) {
@@ -3526,22 +3593,6 @@ function AppShellContent({
       ] : []),
     ]
 
-    const fileItem = (file: NovelWorkspaceFile): LeftSidebarItem => ({
-      id: `writing:file:${file.path}`,
-      title: formatNovelWorkspaceFileTitle(file, t),
-      tooltip: file.relativePath,
-      icon: FileText,
-      variant: file.path === selectedNovelFile?.path ? 'default' : 'ghost',
-      compact: true,
-      reviewDot: hasNovelReviewDot(file.path) ? {
-        title: t('writing.review.changedFile', 'Changed file'),
-        onDismiss: () => handleDismissNovelReviewDot(file.path),
-      } : undefined,
-      onClick: () => {
-        handleSelectNovelFile(file)
-      },
-    })
-
     const createNovelWorkspaceFileActions = (
       basePath: NovelCreateFileBasePath,
       target: Omit<NovelCreateFileTarget, 'basePath'>,
@@ -3593,6 +3644,132 @@ function AppShellContent({
       )
     }
 
+    const createNovelWorkspaceFileItemActions = (
+      file: NovelWorkspaceFile,
+      sectionId: NovelWorkspaceFileSectionId
+    ) => {
+      const basePath = getNovelFileCreateBasePath(file, sectionId)
+      const menuTitle = t('writing.fileActions.title', '文件操作')
+
+      return (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <span
+              role="button"
+              tabIndex={-1}
+              title={menuTitle}
+              aria-label={menuTitle}
+              className="ml-1 flex h-4 w-4 items-center justify-center rounded-[4px] text-foreground/45 hover:bg-foreground/10 hover:text-foreground data-[state=open]:bg-foreground/10 data-[state=open]:text-foreground"
+              data-no-dnd="true"
+              onPointerDown={(event) => {
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.stopPropagation()
+              }}
+            >
+              <MoreHorizontal className="h-3 w-3" />
+            </span>
+          </DropdownMenuTrigger>
+          <StyledDropdownMenuContent align="end" sideOffset={4} className="min-w-[10rem]">
+            {basePath ? (
+              <StyledDropdownMenuItem
+                onClick={(event) => {
+                  event.stopPropagation()
+                  openNovelCreateFileDialog({
+                    basePath,
+                    title: t('writing.createFile.nearby', '新建同目录文件'),
+                    placeholder: basePath === '正文'
+                      ? '07-标题、07-标题.md 或 第一卷/07-标题.txt'
+                      : '脑洞、脑洞.md 或 临时/脑洞.txt',
+                    initialValue: getNearbyNovelCreateInitialValue(file, basePath),
+                  })
+                }}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                {t('writing.createFile.nearby', '新建同目录文件')}
+              </StyledDropdownMenuItem>
+            ) : null}
+            <StyledDropdownMenuItem
+              onClick={(event) => {
+                event.stopPropagation()
+                void handleDeleteNovelWorkspaceFile(file)
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {t('writing.deleteFile.title', '删除文件')}
+            </StyledDropdownMenuItem>
+          </StyledDropdownMenuContent>
+        </DropdownMenu>
+      )
+    }
+
+    const fileItem = (file: NovelWorkspaceFile, sectionId?: NovelWorkspaceFileSectionId): LeftSidebarItem => ({
+      id: `writing:file:${file.path}`,
+      title: formatNovelWorkspaceFileTitle(file, t),
+      tooltip: file.relativePath,
+      icon: FileText,
+      variant: file.path === selectedNovelFile?.path ? 'default' : 'ghost',
+      compact: true,
+      afterTitle: sectionId === 'manuscript'
+        ? createNovelWorkspaceFileItemActions(file, 'manuscript')
+        : sectionId === 'work'
+          ? createNovelWorkspaceFileItemActions(file, 'work')
+          : undefined,
+      reviewDot: hasNovelReviewDot(file.path) ? {
+        title: t('writing.review.changedFile', 'Changed file'),
+        onDismiss: () => handleDismissNovelReviewDot(file.path),
+      } : undefined,
+      onClick: () => {
+        handleSelectNovelFile(file)
+      },
+    })
+
+    const createNovelCatalogOrderActions = () => (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <span
+            role="button"
+            tabIndex={-1}
+            title={t('writing.catalog.order', '目录顺序')}
+            aria-label={t('writing.catalog.order', '目录顺序')}
+            className="ml-1 flex h-4 w-4 items-center justify-center rounded-[4px] text-foreground/45 hover:bg-foreground/10 hover:text-foreground data-[state=open]:bg-foreground/10 data-[state=open]:text-foreground"
+            data-no-dnd="true"
+            onPointerDown={(event) => {
+              event.stopPropagation()
+            }}
+            onClick={(event) => {
+              event.stopPropagation()
+            }}
+          >
+            <MoreHorizontal className="h-3 w-3" />
+          </span>
+        </DropdownMenuTrigger>
+        <StyledDropdownMenuContent align="end" sideOffset={4} className="min-w-[10rem]">
+          <StyledDropdownMenuItem
+            onClick={(event) => {
+              event.stopPropagation()
+              updateNovelWorkspaceCatalogOrder('manuscript-first')
+            }}
+          >
+            <BookOpenText className="h-3.5 w-3.5" />
+            {t('writing.catalog.manuscriptFirst', '正文置顶')}
+            {novelWorkspaceCatalogOrder === 'manuscript-first' ? <Check className="ml-auto h-3.5 w-3.5" /> : null}
+          </StyledDropdownMenuItem>
+          <StyledDropdownMenuItem
+            onClick={(event) => {
+              event.stopPropagation()
+              updateNovelWorkspaceCatalogOrder('global-first')
+            }}
+          >
+            <Library className="h-3.5 w-3.5" />
+            {t('writing.catalog.globalFirst', '全局信息置顶')}
+            {novelWorkspaceCatalogOrder === 'global-first' ? <Check className="ml-auto h-3.5 w-3.5" /> : null}
+          </StyledDropdownMenuItem>
+        </StyledDropdownMenuContent>
+      </DropdownMenu>
+    )
+
     const sectionItem = (section: typeof globalSectionDefinitions[number]): LeftSidebarItem => {
       const sectionId = `writing:section:${section.id}`
       const hasSelectedFile = section.files.some(file => file.path === selectedNovelFile?.path)
@@ -3612,7 +3789,7 @@ function AppShellContent({
             handleSelectNovelFile(firstFile)
           }
         },
-        items: section.files.map(fileItem),
+        items: section.files.map(file => fileItem(file)),
       }
     }
 
@@ -3622,7 +3799,7 @@ function AppShellContent({
     const visibleGlobalSectionItems = visibleGlobalSectionDefinitions.map(sectionItem)
     const shortFormGlobalInfoFiles = getShortFormGlobalInfoFiles(novelWorkspaceTree)
     const globalItems = isShortFormNovelWorkspace
-      ? shortFormGlobalInfoFiles.map(fileItem)
+      ? shortFormGlobalInfoFiles.map(file => fileItem(file))
       : visibleGlobalSectionItems
     const globalFileCount = isShortFormNovelWorkspace
       ? shortFormGlobalInfoFiles.length
@@ -3637,6 +3814,84 @@ function AppShellContent({
     const manuscriptGroupId = 'writing:group:manuscript'
     const freeAreaGroupId = 'writing:group:free-area'
 
+    const globalGroupItem: LeftSidebarItem = {
+      id: 'writing:group:global',
+      title: t('writing.catalog.globalInfo', '全局信息'),
+      label: String(globalFileCount),
+      icon: Library,
+      dataTutorial: 'writing-global-info',
+      variant: hasSelectedGlobalFile ? 'default' : 'ghost',
+      expandable: true,
+      expanded: isExpanded('writing:group:global'),
+      onToggle: () => toggleExpanded('writing:group:global'),
+      onClick: () => toggleExpanded('writing:group:global'),
+      items: globalItems,
+    }
+
+    const manuscriptGroupItem: LeftSidebarItem = {
+      id: manuscriptGroupId,
+      title: manuscriptSection.title,
+      label: String(manuscriptSection.files.length),
+      icon: manuscriptSection.icon,
+      dataTutorial: 'writing-manuscript',
+      variant: hasSelectedManuscriptFile ? 'default' : 'ghost',
+      afterTitle: createNovelWorkspaceFileActions(
+        '正文',
+        {
+          title: t('writing.createFile.manuscript', '新建正文文件'),
+          placeholder: '07-标题、07-标题.md 或 第一卷/07-标题.txt',
+          initialValue: '',
+        },
+        t('writing.importFile.manuscript', '导入正文文件')
+      ),
+      expandable: true,
+      expanded: isExpanded(manuscriptGroupId),
+      onToggle: () => toggleExpanded(manuscriptGroupId),
+      onClick: () => {
+        const firstFile = manuscriptSection.files[0]
+        if (firstFile) {
+          handleSelectNovelFile(firstFile)
+        } else {
+          toggleExpanded(manuscriptGroupId)
+        }
+      },
+      items: manuscriptSection.files.map(file => fileItem(file, 'manuscript')),
+    }
+
+    const freeAreaGroupItem: LeftSidebarItem = {
+      id: freeAreaGroupId,
+      title: freeAreaSection.title,
+      label: String(freeAreaSection.files.length),
+      icon: freeAreaSection.icon,
+      dataTutorial: 'writing-free-area',
+      variant: hasSelectedFreeAreaFile ? 'default' : 'ghost',
+      afterTitle: createNovelWorkspaceFileActions(
+        '自由区',
+        {
+          title: t('writing.createFile.freeArea', '新建自由区文件'),
+          placeholder: '脑洞、脑洞.md 或 临时/脑洞.txt',
+          initialValue: '',
+        },
+        t('writing.importFile.freeArea', '导入自由区文件')
+      ),
+      expandable: true,
+      expanded: isExpanded(freeAreaGroupId),
+      onToggle: () => toggleExpanded(freeAreaGroupId),
+      onClick: () => {
+        const firstFile = freeAreaSection.files[0]
+        if (firstFile) {
+          handleSelectNovelFile(firstFile)
+        } else {
+          toggleExpanded(freeAreaGroupId)
+        }
+      },
+      items: freeAreaSection.files.map(file => fileItem(file, 'work')),
+    }
+
+    const orderedNovelCatalogItems = novelWorkspaceCatalogOrder === 'manuscript-first'
+      ? [manuscriptGroupItem, globalGroupItem, freeAreaGroupItem]
+      : [globalGroupItem, manuscriptGroupItem, freeAreaGroupItem]
+
     return [{
       id: 'nav:writingCatalog',
       title: t('writing.workspace'),
@@ -3644,91 +3899,22 @@ function AppShellContent({
       icon: Library,
       dataTutorial: 'writing-catalog',
       variant: 'ghost',
+      afterTitle: createNovelCatalogOrderActions(),
       expandable: true,
       expanded: isExpanded('nav:writingCatalog'),
       onToggle: () => toggleExpanded('nav:writingCatalog'),
       onClick: () => toggleExpanded('nav:writingCatalog'),
-      items: [
-        {
-          id: 'writing:group:global',
-          title: t('writing.catalog.globalInfo', '全局信息'),
-          label: String(globalFileCount),
-          icon: Library,
-          dataTutorial: 'writing-global-info',
-          variant: hasSelectedGlobalFile ? 'default' : 'ghost',
-          expandable: true,
-          expanded: isExpanded('writing:group:global'),
-          onToggle: () => toggleExpanded('writing:group:global'),
-          onClick: () => toggleExpanded('writing:group:global'),
-          items: globalItems,
-        },
-        {
-          id: manuscriptGroupId,
-          title: manuscriptSection.title,
-          label: String(manuscriptSection.files.length),
-          icon: manuscriptSection.icon,
-          dataTutorial: 'writing-manuscript',
-          variant: hasSelectedManuscriptFile ? 'default' : 'ghost',
-          afterTitle: createNovelWorkspaceFileActions(
-            '正文',
-            {
-              title: t('writing.createFile.manuscript', '新建正文文件'),
-              placeholder: '07-标题、07-标题.md 或 第一卷/07-标题.txt',
-              initialValue: '',
-            },
-            t('writing.importFile.manuscript', '导入正文文件')
-          ),
-          expandable: true,
-          expanded: isExpanded(manuscriptGroupId),
-          onToggle: () => toggleExpanded(manuscriptGroupId),
-          onClick: () => {
-            const firstFile = manuscriptSection.files[0]
-            if (firstFile) {
-              handleSelectNovelFile(firstFile)
-            } else {
-              toggleExpanded(manuscriptGroupId)
-            }
-          },
-          items: manuscriptSection.files.map(fileItem),
-        },
-        {
-          id: freeAreaGroupId,
-          title: freeAreaSection.title,
-          label: String(freeAreaSection.files.length),
-          icon: freeAreaSection.icon,
-          dataTutorial: 'writing-free-area',
-          variant: hasSelectedFreeAreaFile ? 'default' : 'ghost',
-          afterTitle: createNovelWorkspaceFileActions(
-            '自由区',
-            {
-              title: t('writing.createFile.freeArea', '新建自由区文件'),
-              placeholder: '脑洞、脑洞.md 或 临时/脑洞.txt',
-              initialValue: '',
-            },
-            t('writing.importFile.freeArea', '导入自由区文件')
-          ),
-          expandable: true,
-          expanded: isExpanded(freeAreaGroupId),
-          onToggle: () => toggleExpanded(freeAreaGroupId),
-          onClick: () => {
-            const firstFile = freeAreaSection.files[0]
-            if (firstFile) {
-              handleSelectNovelFile(firstFile)
-            } else {
-              toggleExpanded(freeAreaGroupId)
-            }
-          },
-          items: freeAreaSection.files.map(fileItem),
-        },
-      ],
+      items: orderedNovelCatalogItems,
     }]
   }, [
+    handleDeleteNovelWorkspaceFile,
     handleSelectNovelFile,
     handleDismissNovelReviewDot,
     hasNovelReviewDot,
     handleImportNovelFiles,
     isExpanded,
     isShortFormNovelWorkspace,
+    novelWorkspaceCatalogOrder,
     novelWorkspaceFiles,
     novelWorkspaceTree,
     openNovelCreateFileDialog,
@@ -3736,6 +3922,7 @@ function AppShellContent({
     showNovelWorkspaceSidebar,
     t,
     toggleExpanded,
+    updateNovelWorkspaceCatalogOrder,
   ])
 
   const primarySidebarLinks = React.useMemo(

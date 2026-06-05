@@ -30,7 +30,8 @@ export function countMarkdownTextCharacters(markdown: string): number {
     .replace(/^\s*\d+\.\s+/gm, '')
     .replace(/[*_~]/g, '')
 
-  return text.match(/[\p{L}\p{N}]/gu)?.length ?? 0
+  const foldedText = text.replace(/(?:\u2026+|\.{3,})/gu, '…')
+  return Array.from(foldedText).filter(character => !/\s/u.test(character)).length
 }
 
 export interface NovelSelectionAiRequest {

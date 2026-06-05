@@ -15,12 +15,14 @@ mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDo
 setupI18n([initReactI18next])
 
 let NovelDocumentEditorPanel: typeof import('../NovelDocumentEditorPanel').NovelDocumentEditorPanel
+let countMarkdownTextCharacters: typeof import('../NovelDocumentEditorPanel').countMarkdownTextCharacters
 let NovelSectionList: typeof import('../NovelSectionList').NovelSectionList
 
 beforeAll(async () => {
   const editorModule = await import('../NovelDocumentEditorPanel')
   const listModule = await import('../NovelSectionList')
   NovelDocumentEditorPanel = editorModule.NovelDocumentEditorPanel
+  countMarkdownTextCharacters = editorModule.countMarkdownTextCharacters
   NovelSectionList = listModule.NovelSectionList
 })
 
@@ -46,6 +48,11 @@ describe('novel writing workspace layout', () => {
     expect(html).not.toContain('Write')
     expect(html).not.toContain('Preview')
     expect(html).not.toContain('Source')
+  })
+
+  it('counts punctuation while folding ellipsis variants as one writing character', () => {
+    expect(countMarkdownTextCharacters('他说：“你好。”')).toBe(8)
+    expect(countMarkdownTextCharacters('番茄……起点......结束。')).toBe(9)
   })
 
   it('renders mergeable review changes through the native TipTap diff surface', () => {
@@ -408,7 +415,7 @@ describe('novel writing workspace layout', () => {
     expect(sidebarSource).toContain('globalSectionDefinitions')
     expect(sidebarSource).toContain('manuscriptSection')
     expect(sidebarSource).toContain('freeAreaSection')
-    expect(sidebarSource).toContain('shortFormGlobalInfoFiles.map(fileItem)')
+    expect(sidebarSource).toContain('shortFormGlobalInfoFiles.map(file => fileItem(file))')
     expect(sidebarSource).toContain('visibleGlobalSectionItems')
     expect(sidebarSource).toContain("section.files.length > 0")
     expect(sidebarSource).not.toContain("sectionDefinitions.map((section)")
@@ -438,8 +445,8 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('handleImportNovelFiles')
     expect(appShellSource).toContain('window.electronAPI.openFileDialog()')
     expect(appShellSource).toContain('getNovelImportTargetRelativePath')
-    expect(sidebarSource).toContain("afterTitle: createNovelWorkspaceFileActions(\n            '正文'")
-    expect(sidebarSource).toContain("afterTitle: createNovelWorkspaceFileActions(\n            '自由区'")
+    expect(sidebarSource).toContain("afterTitle: createNovelWorkspaceFileActions(\n        '正文'")
+    expect(sidebarSource).toContain("afterTitle: createNovelWorkspaceFileActions(\n        '自由区'")
     expect(sidebarSource).toContain('const createNovelWorkspaceFileActions = (')
     expect(sidebarSource).toContain('<DropdownMenu>')
     expect(sidebarSource).toContain('<DropdownMenuTrigger asChild>')
@@ -454,6 +461,44 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('shouldCreateMarkdownStarter(relativePath)')
     expect(sidebarSource).toContain("placeholder: '07-标题、07-标题.md 或 第一卷/07-标题.txt'")
     expect(sidebarSource).toContain("placeholder: '脑洞、脑洞.md 或 临时/脑洞.txt'")
+  })
+
+  it('lets writers put manuscript before global information in the writing catalog', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const localStorageSource = readFileSync(new URL('../../../lib/local-storage.ts', import.meta.url), 'utf-8')
+    const sidebarSource = appShellSource.slice(
+      appShellSource.indexOf('const novelWorkspaceSidebarLinks'),
+      appShellSource.indexOf('const primarySidebarLinks')
+    )
+
+    expect(localStorageSource).toContain("novelWorkspaceCatalogOrder: 'novel-workspace-catalog-order'")
+    expect(appShellSource).toContain("type NovelWorkspaceCatalogOrder = 'manuscript-first' | 'global-first'")
+    expect(appShellSource).toContain('const [novelWorkspaceCatalogOrder, setNovelWorkspaceCatalogOrder]')
+    expect(appShellSource).toContain('storage.KEYS.novelWorkspaceCatalogOrder')
+    expect(sidebarSource).toContain('const orderedNovelCatalogItems = novelWorkspaceCatalogOrder ===')
+    expect(sidebarSource).toContain("[manuscriptGroupItem, globalGroupItem, freeAreaGroupItem]")
+    expect(sidebarSource).toContain("[globalGroupItem, manuscriptGroupItem, freeAreaGroupItem]")
+    expect(sidebarSource).toContain("t('writing.catalog.manuscriptFirst', '正文置顶')")
+    expect(sidebarSource).toContain("t('writing.catalog.globalFirst', '全局信息置顶')")
+  })
+
+  it('exposes file-level add and delete controls for writable novel files', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const sidebarSource = appShellSource.slice(
+      appShellSource.indexOf('const novelWorkspaceSidebarLinks'),
+      appShellSource.indexOf('const primarySidebarLinks')
+    )
+
+    expect(appShellSource).toContain('const handleDeleteNovelWorkspaceFile = React.useCallback')
+    expect(appShellSource).toContain('window.confirm(')
+    expect(appShellSource).toContain('await window.electronAPI.deleteFile(file.path)')
+    expect(appShellSource).toContain('novelWorkspaceFilesCacheRef.current.delete(novelWorkspaceRoot)')
+    expect(sidebarSource).toContain('const createNovelWorkspaceFileItemActions = (')
+    expect(sidebarSource).toContain('openNovelCreateFileDialog({')
+    expect(sidebarSource).toContain("title: t('writing.createFile.nearby', '新建同目录文件')")
+    expect(sidebarSource).toContain("t('writing.deleteFile.title', '删除文件')")
+    expect(sidebarSource).toContain("? createNovelWorkspaceFileItemActions(file, 'manuscript')")
+    expect(sidebarSource).toContain("? createNovelWorkspaceFileItemActions(file, 'work')")
   })
 
   it('uses current novel project history instead of global release notes in novel utility navigation', () => {
