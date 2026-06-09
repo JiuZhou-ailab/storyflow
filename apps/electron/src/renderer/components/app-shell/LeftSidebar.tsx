@@ -7,6 +7,7 @@ import * as React from "react"
 import { AnimatePresence, motion, type Variants } from "motion/react"
 import { ChevronRight } from "lucide-react"
 
+import { SortableList } from "@/components/ui/sortable-list"
 import { cn } from "@/lib/utils"
 
 export interface LinkItem {
@@ -36,6 +37,10 @@ export interface LinkItem {
     title?: string
     onDismiss: () => void
   }
+  /** Whether this item's child items can be reordered by dragging. */
+  reorderable?: boolean
+  /** Called with reordered child item ids when a drag operation completes. */
+  onItemsReorder?: (orderedIds: string[]) => void
 }
 
 export interface SeparatorItem {
@@ -61,6 +66,8 @@ interface LeftSidebarProps {
   focusedItemId?: string | null
   /** Whether this is a nested sidebar (child of expandable item) */
   isNested?: boolean
+  /** Optional reorder handler for this concrete list of links. */
+  onLinksReorder?: (orderedIds: string[]) => void
 }
 
 // Stagger animation for child items
@@ -105,7 +112,7 @@ const itemVariants: Variants = {
  * Expandable items show a chevron toggle on hover, render children with
  * animated expand/collapse, and indent nested items with a vertical guide.
  */
-export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, isNested }: LeftSidebarProps) {
+export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, isNested, onLinksReorder }: LeftSidebarProps) {
   // For nested sidebars, wrap in motion container for stagger effect
   const NavWrapper = isNested ? motion.nav : 'nav'
   const navProps = isNested ? {
@@ -114,6 +121,67 @@ export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, i
     animate: 'visible',
     exit: 'exit',
   } : {}
+
+  const renderItem = (item: SidebarItem, useMotionWrapper = isNested) => {
+    // Handle separator items
+    if (isSeparatorItem(item)) {
+      return (
+        <div key={item.id} className="py-1 px-2" aria-hidden="true">
+          <div className="h-px bg-foreground/5" />
+        </div>
+      )
+    }
+
+    const link = item
+    const itemProps = getItemProps?.(link.id)
+
+    const buttonElement = (
+      <SidebarButton
+        link={link}
+        itemProps={itemProps}
+      />
+    )
+
+    const expandedContent = link.expandable && link.items && link.expanded
+      ? renderExpandedContent(link, getItemProps, focusedItemId, isNested)
+      : null
+
+    const content = (
+      <div className="group/section">
+        {buttonElement}
+        {/* Expandable subitems are rendered below the parent button. */}
+        {link.expandable && link.items && (
+          <AnimatePresence initial={false}>
+            {link.expanded && (
+              <motion.div
+                initial={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
+                animate={{ height: 'auto', opacity: 1, marginTop: 2, marginBottom: isNested ? 4 : 8 }}
+                exit={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
+                transition={{ duration: 0.2, ease: 'easeInOut' }}
+                className="overflow-hidden"
+              >
+                {expandedContent}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        )}
+      </div>
+    )
+
+    // For nested items, wrap in motion.div for stagger animation
+    return useMotionWrapper ? (
+      <motion.div key={link.id} variants={itemVariants}>
+        {content}
+      </motion.div>
+    ) : (
+      <React.Fragment key={link.id}>
+        {content}
+      </React.Fragment>
+    )
+  }
+
+  const canReorderLinks = !!onLinksReorder && links.every((item): item is LinkItem => !isSeparatorItem(item))
+  const reorderableLinks = canReorderLinks ? (links as LinkItem[]) : []
 
   return (
     <div className={cn("flex flex-col select-none", !isNested && "py-1")}>
@@ -133,64 +201,17 @@ export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, i
             aria-hidden="true"
           />
         )}
-        {links.map((item) => {
-          // Handle separator items
-          if (isSeparatorItem(item)) {
-            return (
-              <div key={item.id} className="py-1 px-2" aria-hidden="true">
-                <div className="h-px bg-foreground/5" />
-              </div>
-            )
-          }
-
-          const link = item
-          const itemProps = getItemProps?.(link.id)
-          const isFocused = focusedItemId === link.id
-
-          const buttonElement = (
-            <SidebarButton
-              link={link}
-              itemProps={itemProps}
-            />
-          )
-
-          const expandedContent = link.expandable && link.items && link.expanded
-            ? renderExpandedContent(link, getItemProps, focusedItemId, isNested)
-            : null
-
-          const content = (
-            <div className="group/section">
-              {buttonElement}
-              {/* Expandable subitems are rendered below the parent button. */}
-              {link.expandable && link.items && (
-                <AnimatePresence initial={false}>
-                  {link.expanded && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
-                      animate={{ height: 'auto', opacity: 1, marginTop: 2, marginBottom: isNested ? 4 : 8 }}
-                      exit={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
-                      transition={{ duration: 0.2, ease: 'easeInOut' }}
-                      className="overflow-hidden"
-                    >
-                      {expandedContent}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              )}
-            </div>
-          )
-
-          // For nested items, wrap in motion.div for stagger animation
-          return isNested ? (
-            <motion.div key={link.id} variants={itemVariants}>
-              {content}
-            </motion.div>
-          ) : (
-            <React.Fragment key={link.id}>
-              {content}
-            </React.Fragment>
-          )
-        })}
+        {canReorderLinks ? (
+          <SortableList
+            items={reorderableLinks}
+            onReorder={(orderedItems) => onLinksReorder?.(orderedItems.map(item => item.id))}
+            renderItem={(item) => renderItem(item, false)}
+            renderOverlay={(item) => <SidebarButton link={item} />}
+            className="grid gap-0.5"
+          />
+        ) : (
+          links.map(item => renderItem(item))
+        )}
       </NavWrapper>
     </div>
   )
@@ -212,6 +233,7 @@ function renderExpandedContent(
       isNested={true}
       getItemProps={getItemProps}
       focusedItemId={focusedItemId}
+      onLinksReorder={link.reorderable ? link.onItemsReorder : undefined}
       links={link.items!}
     />
   )
@@ -291,6 +313,7 @@ const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & R
               {/* Toggle chevron - shown on hover. */}
               <span
                 className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 cursor-pointer"
+                data-no-dnd="true"
                 onClick={(e) => {
                   e.stopPropagation()
                   link.onToggle?.()

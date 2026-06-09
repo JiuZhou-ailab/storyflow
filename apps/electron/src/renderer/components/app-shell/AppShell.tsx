@@ -179,7 +179,6 @@ import {
   buildNovelWorkspaceTree,
   detectNovelProjectFromSearchResults,
   getNovelImportTargetRelativePath,
-  getShortFormGlobalInfoFiles,
   getNovelWorkspaceRelativePath,
   getNovelWorkspaceCandidateRoots,
   isShortFormNovelWorkspaceFiles,
@@ -240,7 +239,28 @@ function isTextEditingTarget(target: EventTarget | null): boolean {
 
 /** Filter mode for tri-state filtering: include shows only matching, exclude hides matching */
 type FilterMode = 'include' | 'exclude'
-type NovelWorkspaceCatalogOrder = 'manuscript-first' | 'global-first'
+
+const NOVEL_WORKSPACE_GLOBAL_GROUP_ID = 'writing:group:global'
+const NOVEL_WORKSPACE_MANUSCRIPT_GROUP_ID = 'writing:group:manuscript'
+const NOVEL_WORKSPACE_FREE_AREA_GROUP_ID = 'writing:group:free-area'
+const NOVEL_WORKSPACE_CATALOG_GROUP_IDS = [
+  NOVEL_WORKSPACE_MANUSCRIPT_GROUP_ID,
+  NOVEL_WORKSPACE_GLOBAL_GROUP_ID,
+  NOVEL_WORKSPACE_FREE_AREA_GROUP_ID,
+] as const
+type NovelWorkspaceCatalogGroupId = typeof NOVEL_WORKSPACE_CATALOG_GROUP_IDS[number]
+type NovelWorkspaceCatalogOrder = NovelWorkspaceCatalogGroupId[]
+type NovelWorkspaceSidebarItemOrders = Record<string, string[]>
+const DEFAULT_NOVEL_WORKSPACE_CATALOG_ORDER: NovelWorkspaceCatalogOrder = [
+  NOVEL_WORKSPACE_MANUSCRIPT_GROUP_ID,
+  NOVEL_WORKSPACE_GLOBAL_GROUP_ID,
+  NOVEL_WORKSPACE_FREE_AREA_GROUP_ID,
+]
+const GLOBAL_FIRST_NOVEL_WORKSPACE_CATALOG_ORDER: NovelWorkspaceCatalogOrder = [
+  NOVEL_WORKSPACE_GLOBAL_GROUP_ID,
+  NOVEL_WORKSPACE_MANUSCRIPT_GROUP_ID,
+  NOVEL_WORKSPACE_FREE_AREA_GROUP_ID,
+]
 
 interface NovelCreateFileTarget {
   basePath: NovelCreateFileBasePath
@@ -269,6 +289,50 @@ const NOVEL_WORKSPACE_BRIEF_CHANGE_LIMIT = 20
 type WorkspaceOpeningMetadata = {
   projectType?: WorkspaceProjectType
   methodPackId?: string
+}
+
+function isNovelWorkspaceCatalogGroupId(value: unknown): value is NovelWorkspaceCatalogGroupId {
+  return typeof value === 'string' && NOVEL_WORKSPACE_CATALOG_GROUP_IDS.includes(value as NovelWorkspaceCatalogGroupId)
+}
+
+function normalizeNovelWorkspaceCatalogOrder(value: unknown): NovelWorkspaceCatalogOrder {
+  if (value === 'global-first') {
+    return [...GLOBAL_FIRST_NOVEL_WORKSPACE_CATALOG_ORDER]
+  }
+  if (value === 'manuscript-first' || value == null) {
+    return [...DEFAULT_NOVEL_WORKSPACE_CATALOG_ORDER]
+  }
+
+  const orderedIds = Array.isArray(value)
+    ? value.filter(isNovelWorkspaceCatalogGroupId)
+    : []
+  const uniqueIds = [...new Set(orderedIds)]
+  const missingIds = DEFAULT_NOVEL_WORKSPACE_CATALOG_ORDER.filter(id => !uniqueIds.includes(id))
+  return [...uniqueIds, ...missingIds]
+}
+
+function areNovelWorkspaceCatalogOrdersEqual(
+  left: NovelWorkspaceCatalogOrder,
+  right: NovelWorkspaceCatalogOrder
+): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index])
+}
+
+function orderSidebarItemsByStoredIds<T extends { id: string }>(
+  items: T[],
+  orderedIds: string[] | undefined
+): T[] {
+  if (!orderedIds || orderedIds.length === 0) return items
+
+  const itemsById = new Map(items.map(item => [item.id, item]))
+  const orderedItems = orderedIds
+    .map(id => itemsById.get(id))
+    .filter((item): item is T => !!item)
+  const orderedIdSet = new Set(orderedItems.map(item => item.id))
+  return [
+    ...orderedItems,
+    ...items.filter(item => !orderedIdSet.has(item.id)),
+  ]
 }
 
 function joinWorkspacePath(rootPath: string, relativePath: string): string {
@@ -434,8 +498,10 @@ function getNovelFileCreateBasePath(
   file: NovelWorkspaceFile,
   sectionId: NovelWorkspaceFileSectionId
 ): NovelCreateFileBasePath | null {
-  if (sectionId === 'work' && file.relativePath.replace(/\\/g, '/').startsWith('自由区/')) return '自由区'
-  if (sectionId === 'manuscript' && file.relativePath.replace(/\\/g, '/').startsWith('正文/')) return '正文'
+  const normalizedPath = file.relativePath.replace(/\\/g, '/')
+  if (sectionId === 'work' && normalizedPath.startsWith('自由区/')) return '自由区'
+  if (sectionId === 'manuscript' && normalizedPath.startsWith('正文/')) return '正文'
+  if (normalizedPath.startsWith('设定/')) return '设定'
   return null
 }
 
@@ -851,12 +917,15 @@ function AppShellContent({
     return storage.get(storage.KEYS.novelWorkspaceNavigatorWidth, NOVEL_WORKSPACE_NAVIGATOR_DEFAULT_WIDTH)
   })
   const [novelWorkspaceCatalogOrder, setNovelWorkspaceCatalogOrder] = React.useState<NovelWorkspaceCatalogOrder>(() => {
-    const saved = storage.get<NovelWorkspaceCatalogOrder>(storage.KEYS.novelWorkspaceCatalogOrder, 'manuscript-first')
-    return saved === 'global-first' ? 'global-first' : 'manuscript-first'
+    return normalizeNovelWorkspaceCatalogOrder(storage.get<unknown>(storage.KEYS.novelWorkspaceCatalogOrder, null))
   })
-  const updateNovelWorkspaceCatalogOrder = React.useCallback((order: NovelWorkspaceCatalogOrder) => {
-    setNovelWorkspaceCatalogOrder(order)
-    storage.set(storage.KEYS.novelWorkspaceCatalogOrder, order)
+  const updateNovelWorkspaceCatalogOrder = React.useCallback((order: unknown) => {
+    const normalizedOrder = normalizeNovelWorkspaceCatalogOrder(order)
+    setNovelWorkspaceCatalogOrder(normalizedOrder)
+    storage.set(storage.KEYS.novelWorkspaceCatalogOrder, normalizedOrder)
+  }, [])
+  React.useEffect(() => {
+    storage.remove(storage.KEYS.focusModeEnabled)
   }, [])
 
   const isSidebarAndNavigatorHidden = false
@@ -1774,12 +1843,37 @@ function AppShellContent({
   const [novelWorkspaceDetectionSettledKey, setNovelWorkspaceDetectionSettledKey] = React.useState<string | null>(null)
   const novelWorkspaceRootRef = React.useRef<string | null>(null)
   const novelWorkspaceFilesCacheRef = React.useRef<Map<string, NovelWorkspaceFile[]>>(new Map())
+  const [novelWorkspaceSidebarItemOrders, setNovelWorkspaceSidebarItemOrders] = React.useState<NovelWorkspaceSidebarItemOrders>({})
   const [novelCreateFileTarget, setNovelCreateFileTarget] = React.useState<NovelCreateFileTarget | null>(null)
   const [novelCreateFileValue, setNovelCreateFileValue] = React.useState('')
   const [novelCreatingFile, setNovelCreatingFile] = React.useState(false)
 
   React.useEffect(() => {
     novelWorkspaceRootRef.current = novelWorkspaceRoot
+  }, [novelWorkspaceRoot])
+
+  React.useEffect(() => {
+    if (!novelWorkspaceRoot) {
+      setNovelWorkspaceSidebarItemOrders({})
+      return
+    }
+
+    setNovelWorkspaceSidebarItemOrders(
+      storage.get<NovelWorkspaceSidebarItemOrders>(storage.KEYS.novelWorkspaceSidebarItemOrders, {}, novelWorkspaceRoot)
+    )
+  }, [novelWorkspaceRoot])
+
+  const updateNovelWorkspaceSidebarItemOrder = React.useCallback((parentId: string, orderedIds: string[]) => {
+    setNovelWorkspaceSidebarItemOrders((previous) => {
+      const next = {
+        ...previous,
+        [parentId]: orderedIds,
+      }
+      if (novelWorkspaceRoot) {
+        storage.set(storage.KEYS.novelWorkspaceSidebarItemOrders, next, novelWorkspaceRoot)
+      }
+      return next
+    })
   }, [novelWorkspaceRoot])
 
   const loadNovelWorkspaceFiles = React.useCallback(async (
@@ -3556,14 +3650,11 @@ function AppShellContent({
       { id: 'outline', title: t('writing.tabs.outline'), icon: ScrollText, files: novelWorkspaceTree.outline.files },
       { id: 'characters', title: t('writing.tabs.characters'), icon: UsersRound, files: novelWorkspaceTree.characters.files },
       { id: 'style', title: t('writing.tabs.style', 'Style'), icon: Palette, files: novelWorkspaceTree.style.files },
-      ...(novelWorkspaceTree.analysis.files.length > 0 ? [
-        { id: 'analysis' as const, title: t('writing.tabs.analysis', 'Analysis'), icon: Search, files: novelWorkspaceTree.analysis.files },
-      ] : []),
-      ...(!isShortFormNovelWorkspace ? [
-        { id: 'locations' as const, title: t('writing.tabs.locations'), icon: MapPinned, files: novelWorkspaceTree.locations.files },
-        { id: 'timeline' as const, title: t('writing.tabs.timeline'), icon: Calendar, files: novelWorkspaceTree.timeline.files },
-        { id: 'state' as const, title: t('writing.tabs.state'), icon: ListTodo, files: novelWorkspaceTree.state.files },
-      ] : []),
+      { id: 'analysis', title: t('writing.tabs.analysis', 'Analysis'), icon: Search, files: novelWorkspaceTree.analysis.files },
+      { id: 'locations', title: t('writing.tabs.locations'), icon: MapPinned, files: novelWorkspaceTree.locations.files },
+      { id: 'timeline', title: t('writing.tabs.timeline'), icon: Calendar, files: novelWorkspaceTree.timeline.files },
+      { id: 'state', title: t('writing.tabs.state'), icon: ListTodo, files: novelWorkspaceTree.state.files },
+      { id: 'other', title: t('writing.tabs.other', 'Other'), icon: Inbox, files: novelWorkspaceTree.other.files },
     ]
 
     const createNovelWorkspaceFileActions = (
@@ -3654,7 +3745,9 @@ function AppShellContent({
                     title: t('writing.createFile.nearby', '新建同目录文件'),
                     placeholder: basePath === '正文'
                       ? '07-标题、07-标题.md 或 第一卷/07-标题.txt'
-                      : '脑洞、脑洞.md 或 临时/脑洞.txt',
+                      : basePath === '自由区'
+                        ? '脑洞、脑洞.md 或 临时/脑洞.txt'
+                        : '角色/主角、世界观/城市.md 或 补充设定.txt',
                     initialValue: getNearbyNovelCreateInitialValue(file, basePath),
                   })
                 }}
@@ -3688,7 +3781,9 @@ function AppShellContent({
         ? createNovelWorkspaceFileItemActions(file, 'manuscript')
         : sectionId === 'work'
           ? createNovelWorkspaceFileItemActions(file, 'work')
-          : undefined,
+          : sectionId
+            ? createNovelWorkspaceFileItemActions(file, sectionId)
+            : undefined,
       reviewDot: hasNovelReviewDot(file.path) ? {
         title: t('writing.review.changedFile', 'Changed file'),
         onDismiss: () => handleDismissNovelReviewDot(file.path),
@@ -3722,82 +3817,77 @@ function AppShellContent({
           <StyledDropdownMenuItem
             onClick={(event) => {
               event.stopPropagation()
-              updateNovelWorkspaceCatalogOrder('manuscript-first')
+              updateNovelWorkspaceCatalogOrder(DEFAULT_NOVEL_WORKSPACE_CATALOG_ORDER)
             }}
           >
             <BookOpenText className="h-3.5 w-3.5" />
             {t('writing.catalog.manuscriptFirst', '正文置顶')}
-            {novelWorkspaceCatalogOrder === 'manuscript-first' ? <Check className="ml-auto h-3.5 w-3.5" /> : null}
+            {areNovelWorkspaceCatalogOrdersEqual(novelWorkspaceCatalogOrder, DEFAULT_NOVEL_WORKSPACE_CATALOG_ORDER) ? <Check className="ml-auto h-3.5 w-3.5" /> : null}
           </StyledDropdownMenuItem>
           <StyledDropdownMenuItem
             onClick={(event) => {
               event.stopPropagation()
-              updateNovelWorkspaceCatalogOrder('global-first')
+              updateNovelWorkspaceCatalogOrder(GLOBAL_FIRST_NOVEL_WORKSPACE_CATALOG_ORDER)
             }}
           >
             <Library className="h-3.5 w-3.5" />
             {t('writing.catalog.globalFirst', '全局信息置顶')}
-            {novelWorkspaceCatalogOrder === 'global-first' ? <Check className="ml-auto h-3.5 w-3.5" /> : null}
+            {areNovelWorkspaceCatalogOrdersEqual(novelWorkspaceCatalogOrder, GLOBAL_FIRST_NOVEL_WORKSPACE_CATALOG_ORDER) ? <Check className="ml-auto h-3.5 w-3.5" /> : null}
           </StyledDropdownMenuItem>
         </StyledDropdownMenuContent>
       </DropdownMenu>
     )
 
-    const sectionItem = (section: typeof globalSectionDefinitions[number]): LeftSidebarItem => {
-      const sectionId = `writing:section:${section.id}`
-      const hasSelectedFile = section.files.some(file => file.path === selectedNovelFile?.path)
-
-      return {
-        id: sectionId,
-        title: section.title,
-        label: String(section.files.length),
-        icon: section.icon,
-        variant: hasSelectedFile ? 'default' : 'ghost',
-        expandable: true,
-        expanded: isExpanded(sectionId),
-        onToggle: () => toggleExpanded(sectionId),
-        onClick: () => {
-          const firstFile = section.files[0]
-          if (firstFile) {
-            handleSelectNovelFile(firstFile)
-          }
-        },
-        items: section.files.map(file => fileItem(file)),
-      }
-    }
-
-    const visibleGlobalSectionDefinitions = isShortFormNovelWorkspace
-      ? globalSectionDefinitions.filter(section => section.files.length > 0)
-      : globalSectionDefinitions
-    const visibleGlobalSectionItems = visibleGlobalSectionDefinitions.map(sectionItem)
-    const shortFormGlobalInfoFiles = getShortFormGlobalInfoFiles(novelWorkspaceTree)
-    const globalItems = isShortFormNovelWorkspace
-      ? shortFormGlobalInfoFiles.map(file => fileItem(file))
-      : visibleGlobalSectionItems
-    const globalFileCount = isShortFormNovelWorkspace
-      ? shortFormGlobalInfoFiles.length
-      : visibleGlobalSectionDefinitions.reduce((count, section) => count + section.files.length, 0)
-    const hasSelectedGlobalFile = isShortFormNovelWorkspace
-      ? shortFormGlobalInfoFiles.some(file => file.path === selectedNovelFile?.path)
-      : visibleGlobalSectionDefinitions.some(section =>
-        section.files.some(file => file.path === selectedNovelFile?.path)
-      )
+    const globalGroupId = NOVEL_WORKSPACE_GLOBAL_GROUP_ID
+    const manuscriptGroupId = NOVEL_WORKSPACE_MANUSCRIPT_GROUP_ID
+    const freeAreaGroupId = NOVEL_WORKSPACE_FREE_AREA_GROUP_ID
+    const visibleGlobalSectionDefinitions = globalSectionDefinitions.filter((section) => {
+      if (isShortFormNovelWorkspace) return section.files.length > 0
+      if (section.id === 'analysis' || section.id === 'other') return section.files.length > 0
+      return true
+    })
+    const globalFileEntries = visibleGlobalSectionDefinitions.flatMap(section =>
+      section.files.map(file => ({ file, sectionId: section.id }))
+    )
+    const globalItems = orderSidebarItemsByStoredIds(
+      globalFileEntries.map(({ file, sectionId }) => fileItem(file, sectionId)),
+      novelWorkspaceSidebarItemOrders[globalGroupId]
+    )
+    const globalFileCount = globalFileEntries.length
+    const hasSelectedGlobalFile = globalFileEntries.some(({ file }) => file.path === selectedNovelFile?.path)
     const hasSelectedManuscriptFile = manuscriptSection.files.some(file => file.path === selectedNovelFile?.path)
     const hasSelectedFreeAreaFile = freeAreaSection.files.some(file => file.path === selectedNovelFile?.path)
-    const manuscriptGroupId = 'writing:group:manuscript'
-    const freeAreaGroupId = 'writing:group:free-area'
+    const manuscriptItems = orderSidebarItemsByStoredIds(
+      manuscriptSection.files.map(file => fileItem(file, 'manuscript')),
+      novelWorkspaceSidebarItemOrders[manuscriptGroupId]
+    )
+    const freeAreaItems = orderSidebarItemsByStoredIds(
+      freeAreaSection.files.map(file => fileItem(file, 'work')),
+      novelWorkspaceSidebarItemOrders[freeAreaGroupId]
+    )
 
     const globalGroupItem: LeftSidebarItem = {
-      id: 'writing:group:global',
+      id: globalGroupId,
       title: t('writing.catalog.globalInfo', '全局信息'),
       label: String(globalFileCount),
       icon: Library,
       dataTutorial: 'writing-global-info',
       variant: hasSelectedGlobalFile ? 'default' : 'ghost',
+      afterTitle: createNovelWorkspaceFileActions(
+        '设定',
+        {
+          title: t('writing.createFile.globalInfo', '新建全局信息文件'),
+          placeholder: '角色/主角、世界观/城市.md 或 补充设定.txt',
+          initialValue: '',
+        },
+        t('writing.importFile.globalInfo', '导入全局信息文件')
+      ),
       expandable: true,
-      expanded: isExpanded('writing:group:global'),
-      onToggle: () => toggleExpanded('writing:group:global'),
-      onClick: () => toggleExpanded('writing:group:global'),
+      expanded: isExpanded(globalGroupId),
+      onToggle: () => toggleExpanded(globalGroupId),
+      onClick: () => toggleExpanded(globalGroupId),
+      reorderable: true,
+      onItemsReorder: (orderedIds) => updateNovelWorkspaceSidebarItemOrder(globalGroupId, orderedIds),
       items: globalItems,
     }
 
@@ -3828,7 +3918,9 @@ function AppShellContent({
           toggleExpanded(manuscriptGroupId)
         }
       },
-      items: manuscriptSection.files.map(file => fileItem(file, 'manuscript')),
+      reorderable: true,
+      onItemsReorder: (orderedIds) => updateNovelWorkspaceSidebarItemOrder(manuscriptGroupId, orderedIds),
+      items: manuscriptItems,
     }
 
     const freeAreaGroupItem: LeftSidebarItem = {
@@ -3858,12 +3950,17 @@ function AppShellContent({
           toggleExpanded(freeAreaGroupId)
         }
       },
-      items: freeAreaSection.files.map(file => fileItem(file, 'work')),
+      reorderable: true,
+      onItemsReorder: (orderedIds) => updateNovelWorkspaceSidebarItemOrder(freeAreaGroupId, orderedIds),
+      items: freeAreaItems,
     }
 
-    const orderedNovelCatalogItems = novelWorkspaceCatalogOrder === 'manuscript-first'
-      ? [manuscriptGroupItem, globalGroupItem, freeAreaGroupItem]
-      : [globalGroupItem, manuscriptGroupItem, freeAreaGroupItem]
+    const novelCatalogItemsById: Record<NovelWorkspaceCatalogGroupId, LeftSidebarItem> = {
+      [NOVEL_WORKSPACE_GLOBAL_GROUP_ID]: globalGroupItem,
+      [NOVEL_WORKSPACE_MANUSCRIPT_GROUP_ID]: manuscriptGroupItem,
+      [NOVEL_WORKSPACE_FREE_AREA_GROUP_ID]: freeAreaGroupItem,
+    }
+    const orderedNovelCatalogItems = novelWorkspaceCatalogOrder.map(id => novelCatalogItemsById[id])
 
     return [{
       id: 'nav:writingCatalog',
@@ -3877,6 +3974,8 @@ function AppShellContent({
       expanded: isExpanded('nav:writingCatalog'),
       onToggle: () => toggleExpanded('nav:writingCatalog'),
       onClick: () => toggleExpanded('nav:writingCatalog'),
+      reorderable: true,
+      onItemsReorder: updateNovelWorkspaceCatalogOrder,
       items: orderedNovelCatalogItems,
     }]
   }, [
@@ -3889,6 +3988,7 @@ function AppShellContent({
     isShortFormNovelWorkspace,
     novelWorkspaceCatalogOrder,
     novelWorkspaceFiles,
+    novelWorkspaceSidebarItemOrders,
     novelWorkspaceTree,
     openNovelCreateFileDialog,
     selectedNovelFile?.path,
@@ -3896,6 +3996,7 @@ function AppShellContent({
     t,
     toggleExpanded,
     updateNovelWorkspaceCatalogOrder,
+    updateNovelWorkspaceSidebarItemOrder,
   ])
 
   const primarySidebarLinks = React.useMemo(

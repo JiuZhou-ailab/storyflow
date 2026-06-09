@@ -259,9 +259,10 @@ describe('writing workspace helpers', () => {
     ])
   })
 
-  it('normalizes new manuscript and free-area file paths to supported text files', () => {
+  it('normalizes new manuscript, global information, and free-area file paths to supported text files', () => {
     expect(normalizeNovelCreateFilePath('07-标题', '正文')).toBe('正文/07-标题.md')
     expect(normalizeNovelCreateFilePath('第一卷/07-标题.md', '正文')).toBe('正文/第一卷/07-标题.md')
+    expect(normalizeNovelCreateFilePath('角色/主角', '设定')).toBe('设定/角色/主角.md')
     expect(normalizeNovelCreateFilePath('灵感.txt', '自由区')).toBe('自由区/灵感.txt')
     expect(normalizeNovelCreateFilePath(' 临时\\灵感.TXT ', '自由区')).toBe('自由区/临时/灵感.TXT')
     expect(normalizeNovelCreateFilePath('资料.docx', '自由区')).toBeNull()
@@ -270,6 +271,7 @@ describe('writing workspace helpers', () => {
 
   it('derives import targets for supported local text files only', () => {
     expect(getNovelImportTargetRelativePath('/Users/me/Desktop/第七章.md', '正文')).toBe('正文/第七章.md')
+    expect(getNovelImportTargetRelativePath('/Users/me/Desktop/角色补充.md', '设定')).toBe('设定/角色补充.md')
     expect(getNovelImportTargetRelativePath('C:\\Users\\me\\Desktop\\笔记.TXT', '自由区')).toBe('自由区/笔记.TXT')
     expect(getNovelImportTargetRelativePath('/Users/me/Desktop/资料.docx', '自由区')).toBeNull()
     expect(getNovelImportTargetRelativePath('/Users/me/Desktop/.md', '正文')).toBeNull()

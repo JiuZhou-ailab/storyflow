@@ -64,7 +64,7 @@ export interface NovelWorkspaceRootCandidates {
   sessionWorkingDirectory?: string
 }
 
-export type NovelCreateFileBasePath = '正文' | '自由区'
+export type NovelCreateFileBasePath = '正文' | '设定' | '自由区'
 
 const NOVEL_CREATE_FILE_ALLOWED_EXTENSIONS = new Set(['.md', '.txt'])
 const SHORT_FORM_WORKSPACE_SIGNAL_PATHS = new Set([

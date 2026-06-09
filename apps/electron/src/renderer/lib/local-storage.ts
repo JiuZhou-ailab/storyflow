@@ -1,3 +1,7 @@
+// input: Renderer localStorage key names and optional dynamic suffixes
+// output: Type-safe prefixed localStorage get/set/remove helpers
+// pos: Shared persistence boundary for renderer UI state
+
 /**
  * Centralized localStorage utility for the Electron renderer.
  * Provides type-safe access with consistent key prefixing.
@@ -34,6 +38,7 @@ export const KEYS = {
   novelChangeReviewStatus: 'novel-change-review-status',
   workspaceVersionKnownCommit: 'workspace-version-known-commit',
   novelWorkspaceCatalogOrder: 'novel-workspace-catalog-order',
+  novelWorkspaceSidebarItemOrders: 'novel-workspace-sidebar-item-orders',
 
   // Theme
   theme: 'theme',
