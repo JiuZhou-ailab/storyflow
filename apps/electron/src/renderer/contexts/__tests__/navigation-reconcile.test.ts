@@ -30,19 +30,26 @@ describe('normalizePanelRouteForReconcile', () => {
     expect(normalized).toBe('allSessions/session/s1')
   })
 
-  it('keeps explicit session details unchanged', () => {
+  it('keeps valid explicit session details unchanged when the resolver preserves them', () => {
+    const resolver = (state: NavigationState): NavigationState => state
+
+    const normalized = normalizePanelRouteForReconcile('allSessions/session/s2', resolver)
+    expect(normalized).toBe('allSessions/session/s2')
+  })
+
+  it('normalizes invalid explicit session details through the resolver', () => {
     const resolver = (state: NavigationState): NavigationState => {
-      if (state.navigator === 'sessions' && !state.details) {
+      if (state.navigator === 'sessions' && state.details?.sessionId === 'stale') {
         return {
           ...state,
-          details: { type: 'session', sessionId: 's1' },
+          details: { type: 'session', sessionId: 'fresh' },
         }
       }
       return state
     }
 
-    const normalized = normalizePanelRouteForReconcile('allSessions/session/s2', resolver)
-    expect(normalized).toBe('allSessions/session/s2')
+    const normalized = normalizePanelRouteForReconcile('allSessions/session/stale', resolver)
+    expect(normalized).toBe('allSessions/session/fresh')
   })
 
   it('normalizes each session panel route independently', () => {
@@ -117,7 +124,7 @@ describe('normalizePanelRouteForReconcile', () => {
     expect(normalizePanelRouteForReconcile('sources', resolver)).toBe('sources')
   })
 
-  it('keeps explicit detail route even if resolver tries to rewrite it', () => {
+  it('uses the resolver as the authority for explicit detail routes', () => {
     const resolver = (state: NavigationState): NavigationState => {
       if ('details' in state) {
         if (state.navigator === 'sessions') {
@@ -130,18 +137,12 @@ describe('normalizePanelRouteForReconcile', () => {
       return state
     }
 
-    expect(normalizePanelRouteForReconcile('allSessions/session/s2', resolver)).toBe('allSessions/session/s2')
-    expect(normalizePanelRouteForReconcile('sources/source/github', resolver)).toBe('sources/source/github')
+    expect(normalizePanelRouteForReconcile('allSessions/session/s2', resolver)).toBe('allSessions/session/rewritten')
+    expect(normalizePanelRouteForReconcile('sources/source/github', resolver)).toBe('sources/source/rewritten')
   })
 
   it('keeps explicit detail routes distinct across multiple panels', () => {
-    const resolver = (_state: NavigationState): NavigationState => {
-      return {
-        navigator: 'sessions',
-        filter: { kind: 'allSessions' },
-        details: { type: 'session', sessionId: 'same' },
-      }
-    }
+    const resolver = (state: NavigationState): NavigationState => state
 
     const routes = ['allSessions/session/left', 'allSessions/session/right'] as const
     const normalized = routes.map((route) => normalizePanelRouteForReconcile(route, resolver))

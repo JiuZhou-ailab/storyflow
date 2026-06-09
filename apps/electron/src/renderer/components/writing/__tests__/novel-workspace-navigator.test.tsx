@@ -870,6 +870,22 @@ describe('novel writing workspace layout', () => {
     )
   })
 
+  it('reconciles stale chat panel routes before content rendering observes them', () => {
+    const navigationSource = readFileSync(new URL('../../../contexts/NavigationContext.tsx', import.meta.url), 'utf-8')
+    const staleRouteReconcileSource = navigationSource.slice(
+      navigationSource.indexOf('// STALE SESSION PANEL ROUTE RECONCILIATION'),
+      navigationSource.indexOf('// AUTO-SELECT ON SESSION LOAD')
+    )
+
+    expect(staleRouteReconcileSource).toContain('const navState = parseRouteToNavigationState(entry.route)')
+    expect(staleRouteReconcileSource).toContain('if (!navState || !isSessionsNavigation(navState) || !navState.details)')
+    expect(staleRouteReconcileSource).toContain('const resolved = resolveAutoSelection(navState)')
+    expect(staleRouteReconcileSource).toContain('store.set(reconcilePanelStackAtom')
+    expect(navigationSource.indexOf('// STALE SESSION PANEL ROUTE RECONCILIATION')).toBeLessThan(
+      navigationSource.indexOf('// AUTO-SELECT ON SESSION LOAD')
+    )
+  })
+
   it('reuses cached writing workspace files during project switches before refreshing from disk', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const detectionSource = appShellSource.slice(

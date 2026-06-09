@@ -16,9 +16,10 @@ describe('project default navigation', () => {
     expect(navigationContextSource).not.toContain('navigate(routes.view.allSessions(), { skipAutoSelect: true })')
   })
 
-  it('preserves explicit session routes while restored project landing routes can still skip auto-select', () => {
+  it('lets restored project landing routes skip auto-select without bypassing route validation', () => {
     expect(navigationContextSource).toContain('shouldPreserveProjectLandingRoute(params)')
     expect(navigationContextSource).toContain('resolveAutoSelectionRef.current(state, { skipAutoSelect: true })')
-    expect(navigationContextSource).toContain("if ('details' in navState && navState.details)")
+    expect(navigationContextSource).toContain('normalizePanelRouteForReconcile(')
+    expect(navigationContextSource).not.toContain("if ('details' in navState && navState.details)")
   })
 })

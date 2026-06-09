@@ -469,17 +469,12 @@ export function NavigationProvider({
         focusedIndex = focusedIndexParam != null ? (parseInt(focusedIndexParam, 10) || 0) : 0
       } else if (initialRoute) {
         // Single panel from ?route=
-        const navState = parseRouteToNavigationState(initialRoute)
-        if (navState) {
-          let finalRoute: ViewRoute
-          if ('details' in navState && navState.details) {
-            finalRoute = initialRoute as ViewRoute
-          } else {
-            finalRoute = buildRouteFromNavigationState(resolveForReconcile(
-              navState,
-              shouldSkipAutoSelect ? { skipAutoSelect: true } : undefined
-            )) as ViewRoute
-          }
+        if (parseRouteToNavigationState(initialRoute)) {
+          const finalRoute = normalizePanelRouteForReconcile(
+            initialRoute as ViewRoute,
+            resolveForReconcile,
+            shouldSkipAutoSelect ? { skipAutoSelect: true } : undefined
+          )
           entries = [{ route: finalRoute, proportion: 1 }]
         }
       }
@@ -1250,6 +1245,46 @@ export function NavigationProvider({
         navigate(routes.view.allSessions(sessionId))
     }
   }, [navigationState, navigate])
+
+  // =========================================================================
+  // STALE SESSION PANEL ROUTE RECONCILIATION
+  // =========================================================================
+
+  useEffect(() => {
+    if (!isReady || !isSessionsReady || !workspaceId) return
+    if (panelStack.length === 0) return
+
+    let changed = false
+    const entries = panelStack.map((entry) => {
+      const navState = parseRouteToNavigationState(entry.route)
+      if (!navState || !isSessionsNavigation(navState) || !navState.details) {
+        return { route: entry.route, proportion: entry.proportion }
+      }
+
+      const resolved = resolveAutoSelection(navState)
+      const route = buildRouteFromNavigationState(resolved) as ViewRoute
+      if (route !== entry.route) {
+        changed = true
+      }
+      return { route, proportion: entry.proportion }
+    })
+
+    if (!changed) return
+
+    const focusedIndex = Math.max(
+      0,
+      panelStack.findIndex((entry) => entry.id === store.get(focusedPanelIdAtom))
+    )
+
+    suppressPushRef.current = true
+    store.set(reconcilePanelStackAtom, { entries, focusedIndex })
+    syncUrlRef.current(false)
+    lastSemanticHistoryKeyRef.current = getSemanticHistoryKey()
+    requestAnimationFrame(() => {
+      suppressPushRef.current = false
+      lastSemanticHistoryKeyRef.current = getSemanticHistoryKey()
+    })
+  }, [isReady, isSessionsReady, workspaceId, panelStack, resolveAutoSelection, store, getSemanticHistoryKey])
 
   // =========================================================================
   // AUTO-SELECT ON SESSION LOAD
