@@ -11,6 +11,7 @@ const createdWindows: any[] = []
 let toolbarLoadFailuresRemaining = 0
 const mockShellOpenExternal = mock(async () => {})
 const mockIpcMainHandle = mock(() => {})
+const mockMainLogWarn = mock(() => {})
 
 function createMockWebContents() {
   const listeners: Record<string, Function[]> = {}
@@ -184,7 +185,7 @@ mock.module('electron', () => ({
 }))
 
 mock.module('../logger', () => {
-  const stubLog = { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} }
+  const stubLog = { info: () => {}, error: () => {}, warn: mockMainLogWarn, debug: () => {} }
   return {
     mainLog: stubLog,
     sessionLog: stubLog,
@@ -246,6 +247,7 @@ describe('BrowserPaneManager', () => {
     toolbarLoadFailuresRemaining = 0
     mockShellOpenExternal.mockClear()
     mockIpcMainHandle.mockClear()
+    mockMainLogWarn.mockClear()
     manager = new BrowserPaneManager()
   })
 
@@ -264,6 +266,15 @@ describe('BrowserPaneManager', () => {
     expect(first).toBe('same-id')
     expect(second).toBe('same-id')
     expect(manager.listInstances()).toHaveLength(1)
+  })
+
+  it('logs when browser instances exceed the soft resource budget', () => {
+    for (let index = 0; index < 7; index += 1) {
+      manager.createInstance(`budget-${index}`)
+    }
+
+    expect(manager.listInstances()).toHaveLength(7)
+    expect(mockMainLogWarn).toHaveBeenCalledWith(expect.stringContaining('creating instance above soft limit'))
   })
 
   it('allows http(s) popups with shared browser partition', () => {

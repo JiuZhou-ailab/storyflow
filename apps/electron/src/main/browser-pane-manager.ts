@@ -44,6 +44,15 @@ const THEME_OBSERVER_MIN_INTERVAL_MS = 120
 const EARLY_THEME_EXTRACTION_DELAY_MS = 100
 const BROWSER_EMPTY_STATE_PAGE = 'browser-empty-state.html'
 const CRAFT_DEEPLINK_SCHEME_PREFIX = `${process.env.CRAFT_DEEPLINK_SCHEME || 'craftagents'}://`
+const DEFAULT_BROWSER_INSTANCE_SOFT_LIMIT = 6
+
+function getBrowserInstanceSoftLimit(): number {
+  const raw = process.env.CRAFT_BROWSER_INSTANCE_SOFT_LIMIT
+  if (!raw) return DEFAULT_BROWSER_INSTANCE_SOFT_LIMIT
+
+  const value = Number.parseInt(raw, 10)
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_BROWSER_INSTANCE_SOFT_LIMIT
+}
 
 const THEME_COLOR_EXTRACTOR_FN = String.raw`
 () => {
@@ -312,6 +321,7 @@ let instanceCounter = 0
 export class BrowserPaneManager implements IBrowserPaneManager {
   private instances: Map<string, BrowserInstance> = new Map()
   private destroyingIds: Set<string> = new Set()
+  private readonly instanceSoftLimit = getBrowserInstanceSoftLimit()
   private stateChangeCallback: ((info: BrowserInstanceInfo) => void) | null = null
   private removedCallback: ((id: string) => void) | null = null
   private interactedCallback: ((id: string) => void) | null = null
@@ -353,6 +363,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     if (this.instances.has(instanceId)) {
       mainLog.warn(`[browser-pane] Instance already exists, reusing: ${instanceId}`)
       return instanceId
+    }
+
+    const currentInstanceCount = this.getAliveInstanceCount()
+    if (currentInstanceCount >= this.instanceSoftLimit) {
+      mainLog.warn(`[browser-pane] creating instance above soft limit id=${instanceId} current=${currentInstanceCount} softLimit=${this.instanceSoftLimit} ownerType=${ownerType} ownerSessionId=${ownerSessionId ?? 'none'}`)
     }
 
     const ses = session.fromPartition(SESSION_PARTITION)
@@ -560,6 +575,18 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private cleanupDestroyedInstance(instance: BrowserInstance, reason: string): void {
     this.finalizeDestroyedInstance(instance, 'closed')
     mainLog.info(`[browser-pane] cleaned up stale instance ${instance.id}: ${reason}`)
+  }
+
+  private getAliveInstanceCount(): number {
+    let count = 0
+    for (const instance of this.instances.values()) {
+      if (instance.window.isDestroyed()) {
+        this.cleanupDestroyedInstance(instance, 'alive-count')
+        continue
+      }
+      count += 1
+    }
+    return count
   }
 
   /**

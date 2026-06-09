@@ -5352,13 +5352,34 @@ export class SessionManager implements ISessionManager {
       throw new Error(`Session ${sessionId} not found`)
     }
 
+    const acceptSpan = perf.span('session.sendMessage.accept', {
+      sessionId,
+      queuedAtEntry: managed.isProcessing,
+      attachmentCount: attachments?.length ?? 0,
+      storedAttachmentCount: storedAttachments?.length ?? 0,
+      hiddenUserMessage: options?.hideUserMessage === true,
+      hasOneTimeContext: !!options?.oneTimeContext?.trim(),
+      existingMessage: !!existingMessageId,
+    })
+    let acceptSpanEnded = false
+    const ackAccepted = (messageId: string, status: 'accepted' | 'queued' | 'hidden'): void => {
+      acceptSpan.setMetadata('status', status)
+      acceptSpan.setMetadata('messageCount', managed.messages.length)
+      acceptSpan.mark('ack')
+      acceptSpan.end()
+      acceptSpanEnded = true
+      onAck?.(messageId)
+    }
+
     // Clear any pending plan execution state when a new user message is sent.
     // This acts as a safety valve - if the user moves on, we don't want to
     // auto-execute an old plan later.
     await clearStoredPendingPlanExecution(managed.workspace.rootPath, sessionId)
+    acceptSpan.mark('pendingPlan.cleared')
 
     // Ensure messages are loaded before we try to add new ones
     await this.ensureMessagesLoaded(managed)
+    acceptSpan.mark('messages.loaded')
 
     const hideUserMessage = options?.hideUserMessage === true
     const modelMessage = options?.oneTimeContext?.trim()
@@ -5412,7 +5433,8 @@ export class SessionManager implements ISessionManager {
       // before we tell the renderer "accepted" — `persistSession` only
       // enqueues with a 500ms debounce. (#616 reliability fix.)
       await this.flushSession(managed.id)
-      onAck?.(userMessage?.id ?? generateMessageId())
+      acceptSpan.mark('session.flushed')
+      ackAccepted(userMessage?.id ?? generateMessageId(), 'queued')
       return
     }
 
@@ -5445,7 +5467,8 @@ export class SessionManager implements ISessionManager {
       // `persistSession` is debounced (500ms). #616.
       this.persistSession(managed)
       await this.flushSession(managed.id)
-      onAck?.(userMessage.id)
+      acceptSpan.mark('session.flushed')
+      ackAccepted(userMessage.id, 'accepted')
 
       // Emit user_message event so UI can confirm the optimistic message
       this.sendEvent({
@@ -5489,7 +5512,13 @@ export class SessionManager implements ISessionManager {
         this.generateTitle(managed, message)
       }
     } else {
-      onAck?.(generateMessageId())
+      ackAccepted(generateMessageId(), 'hidden')
+    }
+
+    if (!acceptSpanEnded) {
+      acceptSpan.setMetadata('status', 'continued')
+      acceptSpan.end()
+      acceptSpanEnded = true
     }
 
     // Evaluate auto-label rules against the user message (common path for both
