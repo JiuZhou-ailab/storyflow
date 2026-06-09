@@ -1,3 +1,6 @@
+// input: Mocked Electron browser primitives and BrowserPaneManager.
+// output: Lifecycle, navigation, resource policy, and browser state assertions.
+// pos: Unit coverage for Electron main BrowserPaneManager behavior.
 /**
  * Tests for BrowserPaneManager.
  *
@@ -268,11 +271,61 @@ describe('BrowserPaneManager', () => {
     expect(manager.listInstances()).toHaveLength(1)
   })
 
-  it('logs when browser instances exceed the soft resource budget', () => {
+  it('cleans up hidden blank manual instances before creating above the soft resource budget', () => {
     for (let index = 0; index < 7; index += 1) {
       manager.createInstance(`budget-${index}`)
     }
 
+    const ids = manager.listInstances().map((info) => info.id)
+    expect(ids).not.toContain('budget-0')
+    expect(ids).toContain('budget-6')
+    expect(manager.listInstances()).toHaveLength(6)
+    expect(mockMainLogWarn).not.toHaveBeenCalledWith(expect.stringContaining('creating instance above soft limit'))
+  })
+
+  it('keeps session-owned instances when creating above the soft resource budget', () => {
+    for (let index = 0; index < 6; index += 1) {
+      manager.createInstance(`budget-session-${index}`, {
+        ownerType: 'session',
+        ownerSessionId: `session-${index}`,
+      })
+    }
+
+    manager.createInstance('budget-session-overflow')
+
+    expect(manager.listInstances().map((info) => info.id)).toContain('budget-session-0')
+    expect(manager.listInstances()).toHaveLength(7)
+    expect(mockMainLogWarn).toHaveBeenCalledWith(expect.stringContaining('creating instance above soft limit'))
+  })
+
+  it('keeps visible instances when creating above the soft resource budget', () => {
+    for (let index = 0; index < 6; index += 1) {
+      const id = `budget-visible-${index}`
+      manager.createInstance(id)
+      const instance = (manager as any).instances.get(id)
+      instance.toolbarReady = true
+      manager.focus(id)
+    }
+
+    manager.createInstance('budget-visible-overflow')
+
+    expect(manager.listInstances().map((info) => info.id)).toContain('budget-visible-0')
+    expect(manager.listInstances()).toHaveLength(7)
+    expect(mockMainLogWarn).toHaveBeenCalledWith(expect.stringContaining('creating instance above soft limit'))
+  })
+
+  it('keeps real navigated instances when creating above the soft resource budget', async () => {
+    for (let index = 0; index < 6; index += 1) {
+      const id = `budget-real-url-${index}`
+      manager.createInstance(id)
+      await manager.navigate(id, `https://example.com/${index}`)
+      const instance = (manager as any).instances.get(id)
+      instance.pageView.webContents._emit('did-navigate', `https://example.com/${index}`)
+    }
+
+    manager.createInstance('budget-real-url-overflow')
+
+    expect(manager.listInstances().map((info) => info.id)).toContain('budget-real-url-0')
     expect(manager.listInstances()).toHaveLength(7)
     expect(mockMainLogWarn).toHaveBeenCalledWith(expect.stringContaining('creating instance above soft limit'))
   })

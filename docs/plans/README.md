@@ -13,4 +13,5 @@ Implementation plans for scoped product and architecture changes.
 - `2026-05-28-electron-package-size-optimization.md` - Electron package-size optimization plan.
 - `2026-05-28-performance-build-update-plan.md` - performance, build speed, and update reminder implementation plan.
 - `2026-05-28-simple-edit-write-guard.md` - create-only Pi write contract and review semantics for created files.
+- `2026-06-09-formal-novel-surface-audit.md` - formal novel release-surface audit and cleanup recommendations.
 - `2026-06-09-performance-simplicity-parallel-plan.md` - parallel agent plan for performance and project simplicity work.

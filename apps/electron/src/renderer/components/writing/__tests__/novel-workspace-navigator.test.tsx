@@ -3,7 +3,7 @@
 // pos: Keeps writing catalog navigation in the app shell and document editing in the navigator column
 
 import * as React from 'react'
-import { readFileSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { setupI18n } from '@craft-agent/shared/i18n/setupI18n'
@@ -17,6 +17,10 @@ setupI18n([initReactI18next])
 let NovelDocumentEditorPanel: typeof import('../NovelDocumentEditorPanel').NovelDocumentEditorPanel
 let countMarkdownTextCharacters: typeof import('../NovelDocumentEditorPanel').countMarkdownTextCharacters
 let NovelSectionList: typeof import('../NovelSectionList').NovelSectionList
+
+function readSourceIfExists(url: URL): string {
+  return existsSync(url) ? readFileSync(url, 'utf-8') : ''
+}
 
 beforeAll(async () => {
   const editorModule = await import('../NovelDocumentEditorPanel')
@@ -575,7 +579,7 @@ describe('novel writing workspace layout', () => {
     const zhHansLocale = JSON.parse(readFileSync(new URL('../../../../../../../packages/shared/src/i18n/locales/zh-Hans.json', import.meta.url), 'utf-8'))
     const exportHandlerSource = appShellSource.slice(
       appShellSource.indexOf('const handleExportNovelWorkspace'),
-      appShellSource.indexOf('const [novelChangeReviewStatus')
+      appShellSource.indexOf('const novelReviewUndoStackRef')
     )
 
     expect(appShellSource).toContain('NovelExportDialog')
@@ -756,29 +760,31 @@ describe('novel writing workspace layout', () => {
 
   it('persists novel review decisions by workspace root so accepted changes stay accepted across sessions', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const reviewControllerSource = readSourceIfExists(new URL('../../../hooks/useNovelReviewController.ts', import.meta.url))
     const localStorageSource = readFileSync(new URL('../../../lib/local-storage.ts', import.meta.url), 'utf-8')
-    const statusSource = appShellSource.slice(
-      appShellSource.indexOf('const [novelChangeReviewStatus'),
-      appShellSource.indexOf('const pendingNovelChangedFilePaths')
-    )
 
     expect(localStorageSource).toContain('novelChangeReviewStatus')
     expect(localStorageSource).toContain('workspace-root-scoped via suffix')
-    expect(appShellSource).toContain('parseNovelReviewStatusMap')
+    expect(appShellSource).toContain('useNovelReviewController')
     expect(appShellSource).toContain('persistNovelChangeReviewStatus')
-    expect(appShellSource).toContain('storage.KEYS.novelChangeReviewStatus')
-    expect(statusSource).toContain('storage.get<Record<string, unknown>>(storage.KEYS.novelChangeReviewStatus, {}, novelWorkspaceRoot)')
-    expect(statusSource).toContain('storage.set(storage.KEYS.novelChangeReviewStatus, nextStatus, novelWorkspaceRoot)')
-    expect(statusSource).toContain('storage.set(storage.KEYS.novelChangeReviewStatus, normalizedStatus, novelWorkspaceRoot)')
-    expect(statusSource).not.toContain('effectiveSessionId')
+    expect(reviewControllerSource).toContain('parseNovelReviewStatusMap')
+    expect(reviewControllerSource).toContain('storage.KEYS.novelChangeReviewStatus')
+    expect(reviewControllerSource).toContain('storage.get<Record<string, unknown>>(storage.KEYS.novelChangeReviewStatus, {}, novelWorkspaceRoot)')
+    expect(reviewControllerSource).toContain('storage.set(storage.KEYS.novelChangeReviewStatus, nextStatus, novelWorkspaceRoot)')
+    expect(reviewControllerSource).toContain('storage.set(storage.KEYS.novelChangeReviewStatus, normalizedStatus, novelWorkspaceRoot)')
+    expect(reviewControllerSource).toContain('getAdjacentChangedFilePath(')
+    expect(reviewControllerSource).toContain('handleSelectNextNovelChangeAfterStatus')
+    expect(reviewControllerSource).not.toContain('effectiveSessionId')
   })
 
   it('normalizes agent file-change paths before matching them to selected writing files', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const reviewControllerSource = readSourceIfExists(new URL('../../../hooks/useNovelReviewController.ts', import.meta.url))
 
     expect(appShellSource).toContain('normalizeNovelFileChangePaths(')
     expect(appShellSource).toContain('reviewableNovelFileChanges')
-    expect(appShellSource).toContain('getPendingChangesForFile(reviewableNovelFileChanges')
+    expect(appShellSource).toContain('useNovelReviewController')
+    expect(reviewControllerSource).toContain('getPendingChangesForFile(reviewableNovelFileChanges')
   })
 
   it('keeps the novel catalog sidebar scoped to writing mode while utility views use the navigator column', () => {

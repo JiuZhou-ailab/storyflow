@@ -1,9 +1,20 @@
+// input: SessionManager sendMessage persistence and performance tracking hooks
+// output: Regression coverage for pre-ack disk durability and accept-span evidence
+// pos: Guards sendMessage ack ordering before provider agent initialization
+
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { getSessionFilePath } from '@craft-agent/shared/sessions/storage'
+import { clearMetrics, configurePerfTracking } from '@craft-agent/shared/utils'
 import { SessionManager, createManagedSession } from './SessionManager.ts'
+
+interface CapturedPerfMetric {
+  name: string
+  marks: Array<{ name: string }>
+  metadata?: Record<string, unknown>
+}
 
 // Regression test for the High-severity finding in eb81086e:
 //
@@ -23,11 +34,25 @@ describe('sendMessage durability', () => {
   beforeEach(() => {
     tmpRoot = mkdtempSync(join(tmpdir(), 'sm-durability-'))
     sm = new SessionManager()
+    clearMetrics()
   })
 
   afterEach(() => {
+    configurePerfTracking({ enabled: false, onMetric: undefined })
+    clearMetrics()
     rmSync(tmpRoot, { recursive: true, force: true })
   })
+
+  function capturePerfMetrics(): CapturedPerfMetric[] {
+    const metrics: CapturedPerfMetric[] = []
+    configurePerfTracking({
+      enabled: true,
+      onMetric: metric => {
+        metrics.push(metric)
+      },
+    })
+    return metrics
+  }
 
   function buildSession(id: string) {
     const workspace = {
@@ -53,12 +78,39 @@ describe('sendMessage durability', () => {
     return lines.slice(1).map(l => JSON.parse(l)).map(m => m.id as string)
   }
 
+  function findAcceptMetric(metrics: CapturedPerfMetric[], status: string): CapturedPerfMetric | undefined {
+    return metrics.find(metric =>
+      metric.name === 'session.sendMessage.accept'
+      && metric.metadata?.status === status
+    )
+  }
+
+  function expectAcceptMetric(metric: CapturedPerfMetric | undefined, status: string) {
+    expect(metric).toBeDefined()
+    if (!metric) throw new Error('missing session.sendMessage.accept metric')
+
+    expect(metric.name).toBe('session.sendMessage.accept')
+    expect(metric.metadata).toEqual(expect.objectContaining({ status }))
+
+    const messageCount = metric.metadata?.messageCount
+    expect(typeof messageCount).toBe('number')
+    expect(messageCount as number).toBeGreaterThan(0)
+
+    const markNames = metric.marks.map(mark => mark.name)
+    expect(markNames).toContain('pendingPlan.cleared')
+    expect(markNames).toContain('messages.loaded')
+    expect(markNames).toContain('session.flushed')
+    expect(markNames).toContain('ack')
+  }
+
   it('user message is on disk before onAck fires (normal branch)', async () => {
     const sessionId = 'durability-normal'
     buildSession(sessionId)
+    const metrics = capturePerfMetrics()
 
     let ackedMessageId: string | null = null
     let onDiskAtAck = false
+    let acceptMetricAtAck: CapturedPerfMetric | undefined
 
     // sendMessage continues past the ack into agent-init, which would throw
     // because we haven't called `setSessionPlatform()` in this minimal test
@@ -76,12 +128,14 @@ describe('sendMessage durability', () => {
         (messageId) => {
           ackedMessageId = messageId
           onDiskAtAck = readPersistedMessageIds(sessionId).includes(messageId)
+          acceptMetricAtAck = findAcceptMetric(metrics, 'accepted')
         },
       )
       .catch(() => { /* expected post-ack agent-init failure */ })
 
     expect(ackedMessageId).not.toBeNull()
     expect(onDiskAtAck).toBe(true)
+    expectAcceptMetric(acceptMetricAtAck, 'accepted')
   })
 
   it('user message is on disk before onAck fires (mid-stream / queued branch)', async () => {
@@ -90,9 +144,11 @@ describe('sendMessage durability', () => {
     // Force the mid-stream branch. Agent is null, so redirect() falls back to
     // false and the queue path runs.
     managed.isProcessing = true
+    const metrics = capturePerfMetrics()
 
     let ackedMessageId: string | null = null
     let onDiskAtAck = false
+    let acceptMetricAtAck: CapturedPerfMetric | undefined
 
     await sm.sendMessage(
       sessionId,
@@ -105,11 +161,13 @@ describe('sendMessage durability', () => {
       (messageId) => {
         ackedMessageId = messageId
         onDiskAtAck = readPersistedMessageIds(sessionId).includes(messageId)
+        acceptMetricAtAck = findAcceptMetric(metrics, 'queued')
       },
     )
 
     expect(ackedMessageId).not.toBeNull()
     expect(onDiskAtAck).toBe(true)
+    expectAcceptMetric(acceptMetricAtAck, 'queued')
   })
 })
 

@@ -1,3 +1,6 @@
+// input: Electron BrowserWindow/BrowserView lifecycle, browser session ownership, and renderer toolbar/empty-state pages.
+// output: BrowserPaneManager lifecycle, navigation, resource cleanup, and browser state events.
+// pos: Main-process owner of native browser pane resources and session binding policy.
 /**
  * BrowserPaneManager
  *
@@ -365,7 +368,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       return instanceId
     }
 
-    const currentInstanceCount = this.getAliveInstanceCount()
+    let currentInstanceCount = this.getAliveInstanceCount()
+    if (currentInstanceCount >= this.instanceSoftLimit) {
+      currentInstanceCount = this.cleanupSafeBrowserInstancesForResourceBudget(currentInstanceCount)
+    }
+
     if (currentInstanceCount >= this.instanceSoftLimit) {
       mainLog.warn(`[browser-pane] creating instance above soft limit id=${instanceId} current=${currentInstanceCount} softLimit=${this.instanceSoftLimit} ownerType=${ownerType} ownerSessionId=${ownerSessionId ?? 'none'}`)
     }
@@ -587,6 +594,40 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       count += 1
     }
     return count
+  }
+
+  private isBlankOrEmptyStateUrl(url: string): boolean {
+    return url === 'about:blank' || this.isBrowserEmptyStateUrl(url)
+  }
+
+  private isSafeCleanupCandidate(instance: BrowserInstance): boolean {
+    if (instance.window.isDestroyed()) return false
+    if (instance.ownerType !== 'manual') return false
+    if (instance.boundSessionId !== null) return false
+    if (instance.isVisible || instance.pendingShowOnReady || instance.showOnCreate) return false
+    if (instance.agentControl?.active) return false
+
+    const trackedUrl = instance.currentUrl || ''
+    const actualUrl = typeof instance.pageView.webContents.getURL === 'function'
+      ? instance.pageView.webContents.getURL()
+      : trackedUrl
+
+    return this.isBlankOrEmptyStateUrl(trackedUrl) && this.isBlankOrEmptyStateUrl(actualUrl)
+  }
+
+  private cleanupSafeBrowserInstancesForResourceBudget(currentInstanceCount: number): number {
+    let aliveCount = currentInstanceCount
+
+    for (const instance of Array.from(this.instances.values())) {
+      if (aliveCount < this.instanceSoftLimit) break
+      if (!this.isSafeCleanupCandidate(instance)) continue
+
+      mainLog.info(`[browser-pane] cleaning up hidden blank manual instance before create id=${instance.id} current=${aliveCount} softLimit=${this.instanceSoftLimit}`)
+      this.destroyInstance(instance.id)
+      aliveCount -= 1
+    }
+
+    return aliveCount
   }
 
   /**

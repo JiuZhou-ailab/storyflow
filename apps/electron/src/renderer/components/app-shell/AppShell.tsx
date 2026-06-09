@@ -103,6 +103,7 @@ import { useStatuses } from "@/hooks/useStatuses"
 import { useLabels } from "@/hooks/useLabels"
 import { useViews } from "@/hooks/useViews"
 import { useContainerWidth } from "@/hooks/useContainerWidth"
+import { useNovelReviewController } from "@/hooks/useNovelReviewController"
 import { LabelIcon } from "@/components/ui/label-icon"
 import { filterSessionStatuses as filterLabelMenuStates } from "@/components/ui/label-menu"
 import { createLabelMenuItems, filterItems as filterLabelMenuItems, type LabelMenuItem } from "@/components/ui/label-menu-utils"
@@ -166,12 +167,8 @@ import {
   type NovelExportOptions,
 } from "@/lib/novel-export"
 import {
-  getAdjacentChangedFilePath,
   getNovelReviewChangeKey,
-  getPendingChangedFilePaths,
-  getPendingChangesForFile,
   normalizeNovelFileChangePaths,
-  parseNovelReviewStatusMap,
   type NovelReviewStatusMap,
 } from "@/lib/novel-review-workflow"
 import type { NovelReviewUndoEntry } from "@/lib/novel-review-undo"
@@ -2375,6 +2372,29 @@ function AppShellContent({
     }
   }, [maybeCreateNovelAutoVersion, novelDocumentContent, novelDocumentDirty, selectedNovelDocumentPath, t])
 
+  const handleAllSessionsClick = useCallback(() => {
+    navigate(routes.view.allSessions())
+  }, [])
+
+  const handleSelectNovelFile = React.useCallback(async (file: NovelWorkspaceFile) => {
+    if (file.path !== selectedNovelFile?.path) {
+      const saved = await ensureNovelDocumentSaved()
+      if (!saved) return
+    }
+    setSelectedNovelFilePath(file.path)
+    handleAllSessionsClick()
+  }, [ensureNovelDocumentSaved, handleAllSessionsClick, selectedNovelFile?.path])
+
+  const handleSelectNovelFileByPath = React.useCallback(async (filePath: string | null) => {
+    if (!filePath) return
+    const file = novelWorkspaceFiles.find(item => item.path === filePath)
+    if (!file) {
+      onOpenFile(filePath)
+      return
+    }
+    await handleSelectNovelFile(file)
+  }, [handleSelectNovelFile, novelWorkspaceFiles, onOpenFile])
+
   const prepareNovelWorkspaceBriefForSend = React.useCallback(async (sessionId: string): Promise<NovelWorkspaceBriefPreparation> => {
     if (!novelWorkspaceRoot) return { shouldSend: true }
 
@@ -2625,38 +2645,26 @@ function AppShellContent({
     }
   }, [ensureNovelDocumentSaved, novelWorkspaceFiles, novelWorkspaceRoot, t])
 
-  const [novelChangeReviewStatus, setNovelChangeReviewStatus] = React.useState<NovelReviewStatusMap>({})
   const novelReviewUndoStackRef = React.useRef<NovelReviewUndoEntry[]>([])
 
-  React.useEffect(() => {
-    if (!novelWorkspaceRoot) {
-      setNovelChangeReviewStatus({})
-      novelReviewUndoStackRef.current = []
-      return
-    }
+  const {
+    novelChangeReviewStatus,
+    persistNovelChangeReviewStatus,
+    pendingNovelChangedFilePaths,
+    selectedNovelPendingChanges,
+    selectedNovelReviewFileIndex,
+    handleSelectAdjacentNovelChangeFile,
+    handleSelectNextNovelChangeAfterStatus,
+  } = useNovelReviewController({
+    novelWorkspaceRoot,
+    reviewableNovelFileChanges,
+    selectedNovelFilePath: selectedNovelFile?.path,
+    onSelectNovelFileByPath: handleSelectNovelFileByPath,
+  })
 
-    const saved = storage.get<Record<string, unknown>>(storage.KEYS.novelChangeReviewStatus, {}, novelWorkspaceRoot)
-    setNovelChangeReviewStatus(parseNovelReviewStatusMap(saved))
+  React.useEffect(() => {
     novelReviewUndoStackRef.current = []
   }, [novelWorkspaceRoot])
-
-  React.useEffect(() => {
-    if (!novelWorkspaceRoot || reviewableNovelFileChanges.length === 0) return
-
-    setNovelChangeReviewStatus((current) => {
-      const nextStatus = parseNovelReviewStatusMap(current, reviewableNovelFileChanges)
-      storage.set(storage.KEYS.novelChangeReviewStatus, nextStatus, novelWorkspaceRoot)
-      return nextStatus
-    })
-  }, [novelWorkspaceRoot, reviewableNovelFileChanges])
-
-  const persistNovelChangeReviewStatus = React.useCallback((nextStatus: NovelReviewStatusMap) => {
-    const normalizedStatus = parseNovelReviewStatusMap(nextStatus, reviewableNovelFileChanges)
-    setNovelChangeReviewStatus(normalizedStatus)
-    if (novelWorkspaceRoot) {
-      storage.set(storage.KEYS.novelChangeReviewStatus, normalizedStatus, novelWorkspaceRoot)
-    }
-  }, [novelWorkspaceRoot, reviewableNovelFileChanges])
 
   const pushNovelReviewUndoEntry = React.useCallback((entry: NovelReviewUndoEntry | null | undefined) => {
     if (!entry || (entry.writes.length === 0 && entry.deletes.length === 0 && Object.keys(entry.status).length === 0)) return
@@ -2740,17 +2748,6 @@ function AppShellContent({
     return () => window.removeEventListener('keydown', handleKeyDown, true)
   }, [handleUndoNovelReviewAction])
 
-  const pendingNovelChangedFilePaths = React.useMemo(
-    () => getPendingChangedFilePaths(reviewableNovelFileChanges, novelChangeReviewStatus),
-    [reviewableNovelFileChanges, novelChangeReviewStatus]
-  )
-  const selectedNovelPendingChanges = React.useMemo(
-    () => getPendingChangesForFile(reviewableNovelFileChanges, novelChangeReviewStatus, selectedNovelFile?.path),
-    [reviewableNovelFileChanges, novelChangeReviewStatus, selectedNovelFile?.path]
-  )
-  const selectedNovelReviewFileIndex = selectedNovelFile?.path
-    ? pendingNovelChangedFilePaths.indexOf(selectedNovelFile.path)
-    : -1
   const [dismissedNovelReviewDotKeys, setDismissedNovelReviewDotKeys] = React.useState<Set<string>>(() => new Set())
   const pendingNovelReviewDotKeysByPath = React.useMemo(() => {
     const keysByPath = new Map<string, string[]>()
@@ -3207,56 +3204,6 @@ function AppShellContent({
     if (!activeWorkspaceId) return
     storage.set(storage.KEYS.collapsedSidebarItems, [...collapsedItems], activeWorkspaceId)
   }, [collapsedItems, activeWorkspaceId])
-
-  const handleAllSessionsClick = useCallback(() => {
-    navigate(routes.view.allSessions())
-  }, [])
-
-  const handleSelectNovelFile = React.useCallback(async (file: NovelWorkspaceFile) => {
-    if (file.path !== selectedNovelFile?.path) {
-      const saved = await ensureNovelDocumentSaved()
-      if (!saved) return
-    }
-    setSelectedNovelFilePath(file.path)
-    handleAllSessionsClick()
-  }, [ensureNovelDocumentSaved, handleAllSessionsClick, selectedNovelFile?.path])
-
-  const handleSelectNovelFileByPath = React.useCallback(async (filePath: string | null) => {
-    if (!filePath) return
-    const file = novelWorkspaceFiles.find(item => item.path === filePath)
-    if (!file) {
-      onOpenFile(filePath)
-      return
-    }
-    await handleSelectNovelFile(file)
-  }, [handleSelectNovelFile, novelWorkspaceFiles, onOpenFile])
-
-  const handleSelectAdjacentNovelChangeFile = React.useCallback(async (direction: 'next' | 'previous') => {
-    const targetPath = getAdjacentChangedFilePath(
-      pendingNovelChangedFilePaths,
-      selectedNovelFile?.path,
-      direction
-    )
-    await handleSelectNovelFileByPath(targetPath)
-  }, [handleSelectNovelFileByPath, pendingNovelChangedFilePaths, selectedNovelFile?.path])
-
-  const handleSelectNextNovelChangeAfterStatus = React.useCallback(async (
-    filePath: string,
-    nextStatus: NovelReviewStatusMap
-  ) => {
-    const nextPendingPaths = getPendingChangedFilePaths(reviewableNovelFileChanges, nextStatus)
-    if (nextPendingPaths.length === 0) return
-
-    const currentIndex = pendingNovelChangedFilePaths.indexOf(filePath)
-    const searchOrder = currentIndex >= 0
-      ? [
-          ...pendingNovelChangedFilePaths.slice(currentIndex + 1),
-          ...pendingNovelChangedFilePaths.slice(0, currentIndex + 1),
-        ]
-      : nextPendingPaths
-    const targetPath = searchOrder.find(path => nextPendingPaths.includes(path)) ?? nextPendingPaths[0]
-    await handleSelectNovelFileByPath(targetPath)
-  }, [handleSelectNovelFileByPath, pendingNovelChangedFilePaths, reviewableNovelFileChanges])
 
   const handleAcceptNovelFileChanges = React.useCallback(async (changes: FileChange[]) => {
     const reviewableChanges = changes.filter(change => !change.error)
