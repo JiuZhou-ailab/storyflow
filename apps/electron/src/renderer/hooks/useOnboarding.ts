@@ -21,6 +21,7 @@ import type { ApiKeySubmitData } from '@/components/apisetup'
 import type { CustomEndpointConfig } from '@config/llm-connections'
 import { isMaskedCredential } from '@craft-agent/shared/utils/mask'
 import type { SetupNeeds, LlmConnectionSetup } from '../../shared/types'
+import { JIUZHOU_MANAGED_DEFAULT_SETUP } from '@/components/onboarding/managed-defaults'
 
 interface UseOnboardingOptions {
   /** Called when onboarding is complete */
@@ -129,6 +130,19 @@ export function normalizeCredentialForSetup(credential?: string): string | undef
     return undefined
   }
   return trimmed
+}
+
+export type ProviderChoiceSetupAction =
+  | { mode: 'managed-default'; method: Extract<ApiSetupMethod, 'jiuzhou_api_key'> }
+  | { mode: 'credentials'; method: Extract<ApiSetupMethod, 'pi_api_key'> }
+
+export function providerChoiceToSetupAction(choice: ProviderChoice): ProviderChoiceSetupAction {
+  switch (choice) {
+    case 'jiuzhou':
+      return { mode: 'managed-default', method: 'jiuzhou_api_key' }
+    case 'custom_provider':
+      return { mode: 'credentials', method: 'pi_api_key' }
+  }
 }
 
 // Map ApiSetupMethod to LlmConnectionSetup for the new unified connection system
@@ -352,7 +366,7 @@ export function useOnboarding({
         onComplete()
         break
     }
-  }, [state.step, state.gitBashStatus, state.apiSetupMethod, onComplete])
+  }, [state.step, state.gitBashStatus, onComplete])
 
   // Go back to previous step. If at the initial step, call onDismiss instead.
   const handleBack = useCallback(() => {
@@ -506,7 +520,7 @@ export function useOnboarding({
         errorMessage: error instanceof Error ? error.message : 'Validation failed',
       }))
     }
-  }, [handleSaveConfig, state.apiSetupMethod])
+  }, [handleSaveConfig, state.apiSetupMethod, editingSlug])
 
   // Save config, validate the connection, and update state accordingly.
   // Shared by all OAuth flows after tokens are captured.
@@ -643,23 +657,53 @@ export function useOnboarding({
     }
   }, [state.apiSetupMethod, saveAndValidateConnection, editingSlug, existingSlugs])
 
-  // Map product provider mode → ApiSetupMethod and navigate to the right step
-  const handleSelectProvider = useCallback((choice: ProviderChoice) => {
-    const CHOICE_TO_METHOD: Record<ProviderChoice, ApiSetupMethod> = {
-      jiuzhou: 'jiuzhou_api_key',
-      custom_provider: 'pi_api_key',
+  // Map product provider mode → setup action and navigate to the right step.
+  const handleSelectProvider = useCallback(async (choice: ProviderChoice) => {
+    const action = providerChoiceToSetupAction(choice)
+
+    if (action.mode === 'managed-default') {
+      setState(s => ({
+        ...s,
+        apiSetupMethod: action.method,
+        step: 'complete',
+        credentialStatus: 'validating',
+        completionStatus: 'saving',
+        errorMessage: undefined,
+      }))
+
+      const saved = await handleSaveConfig(
+        undefined,
+        JIUZHOU_MANAGED_DEFAULT_SETUP,
+        action.method,
+      )
+
+      if (saved) {
+        setState(s => ({
+          ...s,
+          credentialStatus: 'success',
+          completionStatus: 'complete',
+          step: 'complete',
+        }))
+      } else {
+        setState(s => ({
+          ...s,
+          credentialStatus: 'error',
+          completionStatus: 'saving',
+          step: 'provider-select',
+        }))
+      }
+      return
     }
 
-    const method = CHOICE_TO_METHOD[choice]
     setState(s => ({
       ...s,
-      apiSetupMethod: method,
+      apiSetupMethod: action.method,
       step: 'credentials',
       credentialStatus: 'idle',
       errorMessage: undefined,
     }))
 
-  }, [])
+  }, [handleSaveConfig])
 
   // Submit authorization code (second step of OAuth flow)
   const handleSubmitAuthCode = useCallback(async (code: string) => {

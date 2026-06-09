@@ -24,6 +24,7 @@ interface ProviderSelectStepProps {
   onSelect: (choice: ProviderChoice) => void
   /** Called when the user chooses to skip setup */
   onSkip?: () => void
+  errorMessage?: string
 }
 
 /**
@@ -32,7 +33,7 @@ interface ProviderSelectStepProps {
  * Welcomes the user and asks them to pick their subscription / auth method.
  * Selecting a card immediately advances to the next step.
  */
-export function ProviderSelectStep({ onSelect, onSkip }: ProviderSelectStepProps) {
+export function ProviderSelectStep({ onSelect, onSkip, errorMessage }: ProviderSelectStepProps) {
   const { t } = useTranslation()
 
   const PROVIDER_OPTIONS = [
@@ -86,6 +87,12 @@ export function ProviderSelectStep({ onSelect, onSkip }: ProviderSelectStepProps
           </button>
         ))}
       </div>
+
+      {errorMessage && (
+        <div className="mt-4 rounded-lg bg-destructive/10 text-destructive text-sm p-3">
+          {errorMessage}
+        </div>
+      )}
 
       {onSkip && (
         <div className="mt-4 text-center">

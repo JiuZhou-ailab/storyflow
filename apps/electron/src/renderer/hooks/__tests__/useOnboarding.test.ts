@@ -4,7 +4,14 @@ import {
   apiSetupMethodToConnectionSetup,
   BASE_SLUG_FOR_METHOD,
   normalizeCredentialForSetup,
+  providerChoiceToSetupAction,
 } from '../useOnboarding'
+import {
+  JIUZHOU_MANAGED_DEFAULT_BASE_URL,
+  JIUZHOU_MANAGED_DEFAULT_MODEL,
+  JIUZHOU_MANAGED_DEFAULT_MODELS,
+  JIUZHOU_MANAGED_DEFAULT_SETUP,
+} from '@/components/onboarding/managed-defaults'
 import type { ApiSetupMethod } from '@/components/onboarding'
 
 // ============================================================
@@ -105,21 +112,15 @@ describe('apiSetupMethodToConnectionSetup', () => {
   it('jiuzhou_api_key reuses the direct managed default slug and includes endpoint config', () => {
     const setup = apiSetupMethodToConnectionSetup(
       'jiuzhou_api_key',
-      {
-        credential: 'author-key',
-        baseUrl: 'https://gateway.ai.cloudflare.com/v1/ec286cbbbae1647af670efd1b3289631/default/custom-wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4',
-        connectionDefaultModel: 'gpt-5.5',
-        models: ['gemini-3.5-flash', 'gpt-5.5', 'deepseek-v4-pro'],
-        customEndpoint: { api: 'openai-completions' },
-      },
+      { credential: 'author-key', ...JIUZHOU_MANAGED_DEFAULT_SETUP },
       null,
       new Set(['wangsu-default']),
     )
     expect(setup.slug).toBe('wangsu-default')
     expect(setup.credential).toBe('author-key')
-    expect(setup.baseUrl).toBe('https://gateway.ai.cloudflare.com/v1/ec286cbbbae1647af670efd1b3289631/default/custom-wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4')
-    expect(setup.defaultModel).toBe('gpt-5.5')
-    expect(setup.models).toEqual(['gemini-3.5-flash', 'gpt-5.5', 'deepseek-v4-pro'])
+    expect(setup.baseUrl).toBe(JIUZHOU_MANAGED_DEFAULT_BASE_URL)
+    expect(setup.defaultModel).toBe(JIUZHOU_MANAGED_DEFAULT_MODEL)
+    expect(setup.models).toEqual([...JIUZHOU_MANAGED_DEFAULT_MODELS])
     expect(setup.customEndpoint).toEqual({ api: 'openai-completions' })
   })
 
@@ -152,6 +153,22 @@ describe('apiSetupMethodToConnectionSetup', () => {
       new Set(['claude-max']),
     )
     expect(setup.slug).toBe('claude-max-2')
+  })
+})
+
+describe('providerChoiceToSetupAction', () => {
+  it('maps JiuZhou to the managed default path instead of a user credential form', () => {
+    expect(providerChoiceToSetupAction('jiuzhou')).toEqual({
+      mode: 'managed-default',
+      method: 'jiuzhou_api_key',
+    })
+  })
+
+  it('keeps custom provider setup on the credential form path', () => {
+    expect(providerChoiceToSetupAction('custom_provider')).toEqual({
+      mode: 'credentials',
+      method: 'pi_api_key',
+    })
   })
 })
 

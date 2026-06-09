@@ -15,14 +15,7 @@ import {
   type OAuthStatus,
 } from "../apisetup"
 import type { CustomEndpointApi } from '@config/llm-connections'
-
-const JIUZHOU_INITIAL_VALUES = {
-  baseUrl: 'https://gateway.ai.cloudflare.com/v1/ec286cbbbae1647af670efd1b3289631/default/custom-wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4',
-  connectionDefaultModel: 'gpt-5.5',
-  activePreset: 'custom',
-  models: ['gemini-3.5-flash', 'gpt-5.5', 'deepseek-v4-pro'],
-  customApi: 'openai-completions' as CustomEndpointApi,
-}
+import { JIUZHOU_MANAGED_DEFAULT_INITIAL_VALUES } from "./managed-defaults"
 
 export type CredentialStatus = ApiKeyStatus | OAuthStatus
 
@@ -280,7 +273,7 @@ export function CredentialsStep({
     : "Enter your API key. Optionally configure a custom endpoint for OpenRouter, Ollama, or compatible APIs."
 
   const effectiveInitialValues = isJiuZhouApiKey
-    ? (editInitialValues ?? JIUZHOU_INITIAL_VALUES)
+    ? (editInitialValues ?? JIUZHOU_MANAGED_DEFAULT_INITIAL_VALUES)
     : editInitialValues
 
   const apiKeyInputKey = [
