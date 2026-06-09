@@ -17,13 +17,16 @@ export interface WhatsNewStartupAction {
 
 export interface WhatsNewAnnouncementCopy {
   title: string
+  versionLabel: string
   summary: string
+  guideItems: string[]
   primaryActionLabel: string
   secondaryActionLabel: string
 }
 
 const DEFAULT_SUMMARY = '这一版优化了写作体验，并修复了近期反馈的问题。'
 const MAX_SUMMARY_LENGTH = 96
+const MAX_GUIDE_ITEM_LENGTH = 72
 
 export function getWhatsNewStartupAction(input: WhatsNewStartupActionInput): WhatsNewStartupAction {
   const hasUnseenReleaseNotes = input.lastSeenDigest
@@ -38,9 +41,11 @@ export function getWhatsNewStartupAction(input: WhatsNewStartupActionInput): Wha
 
 export function buildWhatsNewAnnouncementCopy(manifest: WhatsNewManifest): WhatsNewAnnouncementCopy {
   return {
-    title: `已更新到 v${manifest.version}`,
+    title: '本次更新指南',
+    versionLabel: `Storyflow 已更新到 v${manifest.version}`,
     summary: truncateSummary(normalizeSummary(manifest.summary)),
-    primaryActionLabel: '知道了',
+    guideItems: normalizeGuideItems(manifest.highlights ?? []),
+    primaryActionLabel: '开始使用',
     secondaryActionLabel: '查看完整更新',
   }
 }
@@ -57,4 +62,24 @@ function normalizeSummary(summary: string): string {
 function truncateSummary(summary: string): string {
   if (summary.length <= MAX_SUMMARY_LENGTH) return summary
   return `${summary.slice(0, MAX_SUMMARY_LENGTH - 1).trimEnd()}…`
+}
+
+function normalizeGuideItems(items: string[]): string[] {
+  const seen = new Set<string>()
+  const normalized: string[] = []
+
+  for (const item of items) {
+    const text = item.replace(/\s+/g, ' ').trim()
+    if (!text || seen.has(text)) continue
+    seen.add(text)
+    normalized.push(truncateGuideItem(text))
+    if (normalized.length >= 4) break
+  }
+
+  return normalized
+}
+
+function truncateGuideItem(item: string): string {
+  if (item.length <= MAX_GUIDE_ITEM_LENGTH) return item
+  return `${item.slice(0, MAX_GUIDE_ITEM_LENGTH - 1).trimEnd()}…`
 }

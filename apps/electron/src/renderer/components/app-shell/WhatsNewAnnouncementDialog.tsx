@@ -37,7 +37,7 @@ export function WhatsNewAnnouncementDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[440px]">
+      <DialogContent className="sm:max-w-[480px]">
         <DialogHeader className="gap-3">
           <div
             className="flex h-10 w-10 items-center justify-center rounded-[8px]"
@@ -49,12 +49,25 @@ export function WhatsNewAnnouncementDialog({
             <Megaphone className="h-[18px] w-[18px]" />
           </div>
           <div className="space-y-2">
+            <p className="text-[12px] font-medium text-muted-foreground">
+              {copy.versionLabel}
+            </p>
             <DialogTitle className="text-[18px] leading-6">{copy.title}</DialogTitle>
             <DialogDescription className="text-[14px] leading-6">
               {copy.summary}
             </DialogDescription>
           </div>
         </DialogHeader>
+        {copy.guideItems.length > 0 && (
+          <ul className="space-y-2 rounded-[8px] border border-border/60 bg-muted/30 px-3 py-3 text-[13px] leading-5 text-foreground">
+            {copy.guideItems.map((item) => (
+              <li key={item} className="flex gap-2">
+                <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-55" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        )}
         <DialogFooter>
           <Button variant="outline" onClick={onShowDetails}>
             {copy.secondaryActionLabel}

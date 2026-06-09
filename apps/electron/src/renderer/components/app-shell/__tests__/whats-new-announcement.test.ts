@@ -18,6 +18,11 @@ const manifest: WhatsNewManifest = {
   summary: '这一版优化了写作工作区入口，并修复了更新后首次打开时的提示不清晰问题。',
   accentColor: '#2563eb',
   accentTextColor: '#ffffff',
+  highlights: [
+    '新增更新后公告弹窗',
+    '优化写作工作区入口',
+    '修复更新后首次打开时的提示不清晰问题',
+  ],
   source: {
     commitCount: 3,
     userVisibleCommitCount: 2,
@@ -61,12 +66,18 @@ describe('whats-new startup announcement', () => {
     }).shouldOpenDialog).toBe(false)
   })
 
-  it('uses short Chinese copy that explains what changed', () => {
+  it('uses short Chinese guide copy that explains what changed', () => {
     const copy = buildWhatsNewAnnouncementCopy(manifest)
 
-    expect(copy.title).toBe('已更新到 v0.9.29')
+    expect(copy.title).toBe('本次更新指南')
+    expect(copy.versionLabel).toBe('Storyflow 已更新到 v0.9.29')
     expect(copy.summary).toBe(manifest.summary)
-    expect(copy.primaryActionLabel).toBe('知道了')
+    expect(copy.guideItems).toEqual([
+      '新增更新后公告弹窗',
+      '优化写作工作区入口',
+      '修复更新后首次打开时的提示不清晰问题',
+    ])
+    expect(copy.primaryActionLabel).toBe('开始使用')
     expect(copy.secondaryActionLabel).toBe('查看完整更新')
     expect(copy.summary.length).toBeLessThanOrEqual(96)
   })

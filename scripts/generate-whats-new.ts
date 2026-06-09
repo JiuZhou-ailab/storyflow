@@ -8,6 +8,7 @@ import {
   buildWhatsNewDraft,
   createWhatsNewDigest,
   deriveWhatsNewAccentColor,
+  extractWhatsNewHighlights,
   isUserVisibleCommit,
   type WhatsNewCommit,
   type WhatsNewDraft,
@@ -138,6 +139,7 @@ function buildCuratedWhatsNewDraft(input: {
       generatedAt: input.generatedAt,
       title: `What is new in v${input.version}`,
       summary: extractCuratedSummary(input.markdown),
+      highlights: extractWhatsNewHighlights(input.markdown),
       accentColor: accent.hex,
       accentTextColor: accent.textColor,
       source: {

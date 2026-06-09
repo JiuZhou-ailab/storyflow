@@ -48,6 +48,7 @@ describe('generate-whats-new', () => {
       version: string
       digest: string
       accentColor: string
+      highlights: string[]
     }
 
     expect(markdown).toContain('Guided profile setup')
@@ -55,6 +56,10 @@ describe('generate-whats-new', () => {
     expect(manifest.version).toBe('0.9.26')
     expect(manifest.digest).toMatch(/^[0-9a-f]{64}$/)
     expect(manifest.accentColor).toMatch(/^#[0-9a-f]{6}$/)
+    expect(manifest.highlights).toEqual([
+      'Guided profile setup',
+      'Preserve queued messages after redirect',
+    ])
   })
 
   it('prefers curated release markdown when explicitly provided', () => {
@@ -103,6 +108,7 @@ describe('generate-whats-new', () => {
     const markdown = readFileSync(join(notesDir, '0.9.27.md'), 'utf8')
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
       summary: string
+      highlights: string[]
       source: {
         commitCount: number
         userVisibleCommitCount: number
@@ -111,6 +117,10 @@ describe('generate-whats-new', () => {
 
     expect(markdown).toContain('新增更新公告弹窗')
     expect(manifest.summary).toBe('这一版会在更新后弹出简短公告，告诉你本次更新了什么。')
+    expect(manifest.highlights).toEqual([
+      '新增更新公告弹窗',
+      '修复排队消息跳转后的保留问题',
+    ])
     expect(manifest.source.commitCount).toBe(3)
     expect(manifest.source.userVisibleCommitCount).toBe(2)
   })

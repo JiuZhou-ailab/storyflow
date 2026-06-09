@@ -16,6 +16,7 @@ export interface WhatsNewManifest {
   generatedAt: string
   title: string
   summary: string
+  highlights?: string[]
   accentColor: string
   accentTextColor: '#ffffff'
   source: {
@@ -88,6 +89,7 @@ export function buildWhatsNewDraft(input: BuildWhatsNewDraftInput): WhatsNewDraf
       generatedAt: input.generatedAt,
       title: `What is new in v${input.version}`,
       summary,
+      highlights: extractWhatsNewHighlights(markdown),
       accentColor: accent.hex,
       accentTextColor: accent.textColor,
       source: {
@@ -100,6 +102,25 @@ export function buildWhatsNewDraft(input: BuildWhatsNewDraftInput): WhatsNewDraf
 
 export function createWhatsNewDigest(markdown: string): string {
   return createHash('sha256').update(markdown.trim(), 'utf8').digest('hex')
+}
+
+export function extractWhatsNewHighlights(markdown: string, limit = 4): string[] {
+  const seen = new Set<string>()
+  const highlights: string[] = []
+
+  for (const line of markdown.split('\n')) {
+    const match = line.trim().match(/^[-*]\s+(.+)$/)
+    if (!match?.[1]) continue
+
+    const item = normalizeHighlight(match[1])
+    if (!item || seen.has(item)) continue
+
+    seen.add(item)
+    highlights.push(item)
+    if (highlights.length >= limit) break
+  }
+
+  return highlights
 }
 
 export function deriveWhatsNewAccentColor(seed: string): WhatsNewAccentColor {
@@ -179,6 +200,15 @@ function normalizeSummary(summary: string | undefined): string | undefined {
   const trimmed = summary?.trim()
   if (!trimmed) return undefined
   return trimmed.replace(/\s+/g, ' ')
+}
+
+function normalizeHighlight(markdown: string): string {
+  return markdown
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function summaryFromLines(lines: string[]): string {

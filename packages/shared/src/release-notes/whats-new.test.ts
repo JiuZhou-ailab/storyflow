@@ -8,6 +8,7 @@ import {
   contrastRatio,
   createWhatsNewDigest,
   deriveWhatsNewAccentColor,
+  extractWhatsNewHighlights,
   shouldNotifyWhatsNew,
 } from './whats-new'
 
@@ -29,6 +30,30 @@ describe('buildWhatsNewDraft', () => {
     expect(draft.markdown).not.toContain('release workflow cache key')
     expect(draft.manifest.version).toBe('0.9.26')
     expect(draft.manifest.digest).toBe(createWhatsNewDigest(draft.markdown))
+    expect(draft.manifest.highlights).toEqual([
+      'Project profile setup before opening workspace',
+      'Keep queued message visible after redirect',
+    ])
+  })
+})
+
+describe('extractWhatsNewHighlights', () => {
+  it('returns clean user-facing bullets for the startup update guide', () => {
+    expect(extractWhatsNewHighlights([
+      '# v0.9.30',
+      '',
+      '- **新增更新指南** — 更新后首次启动直接说明重点',
+      '- 修复 `DiffView` 的新增文件展示',
+      '- [优化写作入口](https://example.com)',
+      '- 优化写作入口',
+      '- 第四个唯一要点',
+      '- 第五个唯一要点不会显示',
+    ].join('\n'))).toEqual([
+      '新增更新指南 — 更新后首次启动直接说明重点',
+      '修复 DiffView 的新增文件展示',
+      '优化写作入口',
+      '第四个唯一要点',
+    ])
   })
 })
 

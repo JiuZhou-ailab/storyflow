@@ -15,6 +15,7 @@ import { debug } from '../utils/debug.ts';
 import {
   createWhatsNewDigest,
   deriveWhatsNewAccentColor,
+  extractWhatsNewHighlights,
   type WhatsNewManifest,
 } from './whats-new.ts';
 
@@ -161,6 +162,7 @@ export function getLatestWhatsNewManifest(): WhatsNewManifest | undefined {
     generatedAt: '',
     title: `What is new in v${latest.version}`,
     summary: extractReleaseSummary(content),
+    highlights: extractWhatsNewHighlights(content),
     accentColor: accent.hex,
     accentTextColor: accent.textColor,
     source: {
