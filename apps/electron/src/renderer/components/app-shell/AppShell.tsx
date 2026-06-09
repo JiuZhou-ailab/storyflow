@@ -939,6 +939,8 @@ function AppShellContent({
   const isAutoCompact = shellWidth > 0 && shellWidth < MOBILE_THRESHOLD
 
   const effectiveSidebarAndNavigatorHidden = isSidebarAndNavigatorHidden || isAutoCompact
+  const showActivityRail = !isSidebarAndNavigatorHidden
+  const activityRailOffset = showActivityRail ? ACTIVITY_RAIL_WIDTH : 0
 
   // What's New overlay
   const [showWhatsNew, setShowWhatsNew] = React.useState(false)
@@ -1663,6 +1665,7 @@ function AppShellContent({
     )
     const widths = resolveInitialShellLayoutWidths({
       totalWidth: shellWidth,
+      activityRailWidth: activityRailOffset,
       edgeInset: PANEL_EDGE_INSET,
       panelGap: PANEL_GAP,
       assistantMinWidth: PANEL_MIN_WIDTH,
@@ -1683,7 +1686,7 @@ function AppShellContent({
       latestNovelWorkspaceNavigatorWidthRef.current = widths.workspace
       setNovelWorkspaceNavigatorWidth(widths.workspace)
     }
-  }, [shellWidth])
+  }, [activityRailOffset, shellWidth])
 
   const beginResize = React.useCallback((
     mode: 'sidebar' | 'session-list' | 'novel-workspace-navigator',
@@ -4016,8 +4019,6 @@ function AppShellContent({
   )
   const hasPrimarySidebar = primarySidebarLinks.length > 0
   const showPrimarySidebar = hasPrimarySidebar && isSessionsNavigation(navState)
-  const showActivityRail = !isSidebarAndNavigatorHidden
-  const activityRailOffset = showActivityRail ? ACTIVITY_RAIL_WIDTH : 0
   const activeActivityRailItem = React.useMemo<ActivityRailItemId>(() => {
     if (globalSearchOpen) return 'search'
     if (isSourcesNavigation(navState)) return 'sources'

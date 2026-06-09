@@ -5,10 +5,11 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'bun:test'
 
+import * as layoutDefaults from '../layout-defaults'
 import {
-  DEFAULT_SHELL_LAYOUT_RATIO,
+  DEFAULT_WRITING_WORKSPACE_LAYOUT_RATIO,
   getNavigatorResizeMaxWidth,
-  getDefaultShellLayoutWidths,
+  getDefaultWritingWorkspaceLayoutWidths,
   isUserConfiguredShellLayoutWidth,
   resolveInitialShellLayoutWidths,
   shouldResolveInitialShellLayoutWidths,
@@ -18,21 +19,23 @@ const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url),
 const panelSlotSource = readFileSync(new URL('../PanelSlot.tsx', import.meta.url), 'utf8')
 
 describe('app shell layout defaults', () => {
-  it('uses a 2:5:3 default ratio for sidebar, workspace, and assistant columns', () => {
-    expect(DEFAULT_SHELL_LAYOUT_RATIO).toEqual({
-      sidebar: 2,
-      workspace: 5,
-      assistant: 3,
+  it('uses a 2:5:3 default ratio for catalog, document, and dialog columns', () => {
+    expect(DEFAULT_WRITING_WORKSPACE_LAYOUT_RATIO).toEqual({
+      catalog: 2,
+      document: 5,
+      dialog: 3,
     })
 
-    expect(getDefaultShellLayoutWidths(1000)).toEqual({
-      sidebar: 200,
-      workspace: 500,
-      assistant: 300,
+    expect(getDefaultWritingWorkspaceLayoutWidths(1000)).toEqual({
+      catalog: 200,
+      document: 500,
+      dialog: 300,
     })
+
+    expect(Object.prototype.hasOwnProperty.call(layoutDefaults, 'DEFAULT_SHELL_LAYOUT_RATIO')).toBe(false)
   })
 
-  it('derives first-run writing workspace width from measured viewport space', () => {
+  it('derives first-run writing workspace width from catalog/document/dialog space', () => {
     const widths = resolveInitialShellLayoutWidths({
       totalWidth: 2000,
       edgeInset: 6,
@@ -44,6 +47,21 @@ describe('app shell layout defaults', () => {
     expect(widths.sidebar).toBe(396)
     expect(widths.workspace).toBe(991)
     expect(widths.assistant).toBe(595)
+  })
+
+  it('excludes the activity rail from the catalog/document/dialog ratio denominator', () => {
+    const widths = resolveInitialShellLayoutWidths({
+      totalWidth: 2000,
+      activityRailWidth: 48,
+      edgeInset: 6,
+      panelGap: 6,
+      sidebarPersisted: false,
+      workspacePersisted: false,
+    })
+
+    expect(widths.sidebar).toBe(387)
+    expect(widths.workspace).toBe(967)
+    expect(widths.assistant).toBe(580)
   })
 
   it('keeps persisted user widths instead of overriding them with the ratio', () => {
@@ -138,6 +156,7 @@ describe('app shell layout defaults', () => {
   it('keeps default shell proportions responsive after the first desktop measurement', () => {
     expect(appShellSource).not.toContain('initialShellLayoutResolvedRef')
     expect(appShellSource).toContain('shouldResolveInitialShellLayoutWidths(shellWidth, MOBILE_THRESHOLD)')
+    expect(appShellSource).toContain('activityRailWidth: activityRailOffset')
     expect(appShellSource).toContain('storage.get<number | undefined>(storage.KEYS.sidebarWidth, undefined)')
     expect(appShellSource).toContain('storage.get<number | undefined>(storage.KEYS.novelWorkspaceNavigatorWidth, undefined)')
     expect(appShellSource).not.toContain('if (sidebarPersisted && workspacePersisted) return')

@@ -1,11 +1,11 @@
-// input: app shell viewport-independent layout ratio requirements
-// output: default column widths for the desktop app shell
-// pos: shared source of truth for first-run app shell column sizing
+// input: app shell viewport-independent catalog/document/dialog ratio requirements
+// output: default column widths for the desktop writing workspace shell
+// pos: shared source of truth for first-run catalog, manuscript, and chat sizing
 
-export const DEFAULT_SHELL_LAYOUT_RATIO = {
-  sidebar: 2,
-  workspace: 5,
-  assistant: 3,
+export const DEFAULT_WRITING_WORKSPACE_LAYOUT_RATIO = {
+  catalog: 2,
+  document: 5,
+  dialog: 3,
 } as const
 
 const DEFAULT_SHELL_LAYOUT_BASE_WIDTH = 1000
@@ -14,16 +14,26 @@ const LEGACY_DEFAULT_WORKSPACE_WIDTHS = new Set([500, 560, 860])
 
 type ShellLayoutColumn = 'sidebar' | 'workspace'
 
-export function getDefaultShellLayoutWidths(totalWidth = DEFAULT_SHELL_LAYOUT_BASE_WIDTH) {
-  const totalRatio = DEFAULT_SHELL_LAYOUT_RATIO.sidebar
-    + DEFAULT_SHELL_LAYOUT_RATIO.workspace
-    + DEFAULT_SHELL_LAYOUT_RATIO.assistant
+export function getDefaultWritingWorkspaceLayoutWidths(totalWidth = DEFAULT_SHELL_LAYOUT_BASE_WIDTH) {
+  const totalRatio = DEFAULT_WRITING_WORKSPACE_LAYOUT_RATIO.catalog
+    + DEFAULT_WRITING_WORKSPACE_LAYOUT_RATIO.document
+    + DEFAULT_WRITING_WORKSPACE_LAYOUT_RATIO.dialog
   const unit = totalWidth / totalRatio
 
   return {
-    sidebar: Math.round(unit * DEFAULT_SHELL_LAYOUT_RATIO.sidebar),
-    workspace: Math.round(unit * DEFAULT_SHELL_LAYOUT_RATIO.workspace),
-    assistant: Math.round(unit * DEFAULT_SHELL_LAYOUT_RATIO.assistant),
+    catalog: Math.round(unit * DEFAULT_WRITING_WORKSPACE_LAYOUT_RATIO.catalog),
+    document: Math.round(unit * DEFAULT_WRITING_WORKSPACE_LAYOUT_RATIO.document),
+    dialog: Math.round(unit * DEFAULT_WRITING_WORKSPACE_LAYOUT_RATIO.dialog),
+  }
+}
+
+function getDefaultShellLayoutWidths(totalWidth = DEFAULT_SHELL_LAYOUT_BASE_WIDTH) {
+  const widths = getDefaultWritingWorkspaceLayoutWidths(totalWidth)
+
+  return {
+    sidebar: widths.catalog,
+    workspace: widths.document,
+    assistant: widths.dialog,
   }
 }
 
@@ -43,6 +53,7 @@ export function isUserConfiguredShellLayoutWidth(
 
 export interface ResolveInitialShellLayoutWidthsInput {
   totalWidth: number
+  activityRailWidth?: number
   edgeInset: number
   panelGap: number
   assistantMinWidth?: number
@@ -58,6 +69,7 @@ export function shouldResolveInitialShellLayoutWidths(shellWidth: number, compac
 
 export function resolveInitialShellLayoutWidths({
   totalWidth,
+  activityRailWidth = 0,
   edgeInset,
   panelGap,
   assistantMinWidth = 0,
@@ -66,7 +78,7 @@ export function resolveInitialShellLayoutWidths({
   currentSidebarWidth,
   currentWorkspaceWidth,
 }: ResolveInitialShellLayoutWidthsInput) {
-  const availableWidth = Math.max(0, totalWidth - edgeInset - (panelGap * 2))
+  const availableWidth = Math.max(0, totalWidth - activityRailWidth - edgeInset - (panelGap * 2))
   const ratioWidths = getDefaultShellLayoutWidths(availableWidth)
 
   const clampWorkspaceWidth = (width: number, remaining: number) => {
@@ -77,8 +89,8 @@ export function resolveInitialShellLayoutWidths({
     const sidebar = currentSidebarWidth ?? ratioWidths.sidebar
     const remaining = Math.max(0, availableWidth - sidebar)
     const ratioWorkspace = Math.round(
-      remaining * DEFAULT_SHELL_LAYOUT_RATIO.workspace
-      / (DEFAULT_SHELL_LAYOUT_RATIO.workspace + DEFAULT_SHELL_LAYOUT_RATIO.assistant)
+      remaining * DEFAULT_WRITING_WORKSPACE_LAYOUT_RATIO.document
+      / (DEFAULT_WRITING_WORKSPACE_LAYOUT_RATIO.document + DEFAULT_WRITING_WORKSPACE_LAYOUT_RATIO.dialog)
     )
     const workspace = clampWorkspaceWidth(ratioWorkspace, remaining)
 
