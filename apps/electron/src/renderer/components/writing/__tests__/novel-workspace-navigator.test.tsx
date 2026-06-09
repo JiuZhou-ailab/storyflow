@@ -357,6 +357,8 @@ describe('novel writing workspace layout', () => {
     expect(chatPageSource).toContain('routes.view.allSessions(item.id)')
     expect(historyMenuSource).toContain('<PanelHeaderCenterButton')
     expect(historyMenuSource).toContain("title={t('chat.history')}")
+    expect(historyMenuSource).toContain('icon={<History className="h-4 w-4" />}')
+    expect(chatPageSource).toContain('icon={<SquarePenRounded className="h-4 w-4" />}')
     expect(chatPageSource).toContain('const headerLeadingAction = React.useMemo(() => leadingAction')
     expect(chatPageSource).toContain('{newSessionButton}')
     expect(chatPageSource.indexOf('{newSessionButton}')).toBeGreaterThan(chatPageSource.indexOf('const headerActions = React.useMemo'))

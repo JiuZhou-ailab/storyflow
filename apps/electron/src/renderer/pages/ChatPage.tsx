@@ -24,10 +24,7 @@ import { toast } from 'sonner'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { StyledDropdownMenuContent, StyledDropdownMenuItem, StyledDropdownMenuSeparator } from '@/components/ui/styled-dropdown'
-import { ContextMenu, ContextMenuTrigger, StyledContextMenuContent } from '@/components/ui/styled-context-menu'
-import { ContextMenuProvider } from '@/components/ui/menu-context'
 import { useAppShellContext, usePendingPermission, usePendingCredential, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
-import { SidebarMenu } from '@/components/app-shell/SidebarMenu'
 import { SquarePenRounded } from '@/components/icons/SquarePenRounded'
 import { rendererPerf } from '@/lib/perf'
 import { navigate, routes } from '@/lib/navigate'
@@ -60,12 +57,7 @@ function ConversationHistoryMenu({
           aria-label={t('chat.history')}
           title={t('chat.history')}
           data-tutorial="chat-history"
-          icon={(
-            <span className="flex items-center gap-1.5">
-              <History className="h-4 w-4" />
-              <span className="text-[11px] font-medium leading-none">{t('chat.history')}</span>
-            </span>
-          )}
+          icon={<History className="h-4 w-4" />}
           className={open ? 'opacity-100 bg-foreground/[0.05]' : undefined}
         />
       </DropdownMenuTrigger>
@@ -713,36 +705,19 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     />
   ), [sessionId, workspaceSessionMetas])
 
-  const handleNewSession = React.useCallback((newPanel: boolean = false) => {
-    navigate(
-      routes.action.newSession(),
-      newPanel ? { newPanel: true, targetLaneId: 'main' } : undefined
-    )
+  const handleNewSession = React.useCallback(() => {
+    navigate(routes.action.newSession())
   }, [])
 
   const newSessionButton = React.useMemo(() => (
-    <ContextMenu modal={true}>
-      <ContextMenuTrigger asChild>
-        <PanelHeaderCenterButton
-          data-tutorial="new-session-button"
-          icon={(
-            <span className="flex items-center gap-1.5">
-              <SquarePenRounded className="h-4 w-4" />
-              <span className="text-[11px] font-medium leading-none">{t("session.newSession")}</span>
-            </span>
-          )}
-          onClick={(event) => handleNewSession(event.metaKey || event.ctrlKey)}
-          tooltip={t("session.newSession")}
-          aria-label={t("session.newSession")}
-          className="bg-background shadow-minimal"
-        />
-      </ContextMenuTrigger>
-      <StyledContextMenuContent>
-        <ContextMenuProvider>
-          <SidebarMenu type="newSession" />
-        </ContextMenuProvider>
-      </StyledContextMenuContent>
-    </ContextMenu>
+    <PanelHeaderCenterButton
+      data-tutorial="new-session-button"
+      icon={<SquarePenRounded className="h-4 w-4" />}
+      onClick={handleNewSession}
+      tooltip={t("session.newSession")}
+      aria-label={t("session.newSession")}
+      className="bg-background shadow-minimal"
+    />
   ), [handleNewSession, t])
 
   const headerLeadingAction = React.useMemo(() => leadingAction, [leadingAction])

@@ -1,3 +1,7 @@
+// input: Panel title metadata, optional title menus, leading controls, and right-side actions
+// output: Centered panel header chrome shared by app shell panels
+// pos: Common header layout primitive for renderer panels
+
 /**
  * PanelHeader - Standardized header component for panels
  *
@@ -114,14 +118,12 @@ export function PanelHeader({
   )
 
   const content = (
-    <>
-      {leadingAction && (
-        <div className="titlebar-no-drag shrink-0">
-          {leadingAction}
-        </div>
-      )}
-      <div className="flex-1 min-w-0 flex items-center select-none">
-        <div className={cn("max-w-full overflow-hidden", !leadingAction && "mx-auto")}>
+    <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,auto)_minmax(0,1fr)] items-center gap-1.5">
+      <div className="titlebar-no-drag min-w-0 flex items-center justify-start">
+        {leadingAction}
+      </div>
+      <div className="min-w-0 flex items-center justify-center select-none">
+        <div className="max-w-full overflow-hidden">
           {titleMenu ? (
             <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
               {/* Wrapper button for the whole clickable area */}
@@ -152,22 +154,12 @@ export function PanelHeader({
           )}
         </div>
       </div>
-      {centerButton && (
-        <div className="titlebar-no-drag shrink-0">
-          {centerButton}
-        </div>
-      )}
-      {actions && (
-        <div className="titlebar-no-drag shrink-0">
-          {actions}
-        </div>
-      )}
-      {rightSidebarButton && (
-        <div className="titlebar-no-drag shrink-0">
-          {rightSidebarButton}
-        </div>
-      )}
-    </>
+      <div className="titlebar-no-drag min-w-0 flex items-center justify-end gap-1">
+        {centerButton}
+        {actions}
+        {rightSidebarButton}
+      </div>
+    </div>
   )
 
   // Base padding (16px = pl-4, matches pr-2 when leading action present for symmetry)

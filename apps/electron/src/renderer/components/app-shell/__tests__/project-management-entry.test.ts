@@ -49,9 +49,11 @@ describe('project management entry', () => {
   })
 
   it('keeps panel title dropdowns visually centered and subdued like editor tabs', () => {
+    expect(panelHeaderSource).toContain('grid-cols-[minmax(0,1fr)_minmax(0,auto)_minmax(0,1fr)]')
     expect(panelHeaderSource).toContain('h-7 max-w-full items-center justify-center')
     expect(panelHeaderSource).toContain('text-[13px] font-medium')
     expect(panelHeaderSource).toContain('leading-none')
+    expect(panelHeaderSource).not.toContain('flex-1 min-w-0 flex items-center select-none')
     expect(panelHeaderSource).not.toContain('text-sm font-semibold truncate font-sans leading-tight')
     expect(panelHeaderSource).not.toContain('translate-y-[1px]')
   })
