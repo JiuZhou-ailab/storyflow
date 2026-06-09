@@ -348,6 +348,9 @@ export function createClientAuthService(
       }
 
       const user = toClientAuthUser(await neonAuth.verifyToken(authResult.token))
+      if (user.emailVerified === false) {
+        return { status: 'verification-required', user }
+      }
       await saveCurrentSession({ user, appSessionToken: authResult.token })
       return { status: 'authenticated', user }
     },

@@ -202,6 +202,10 @@ function ClientSignInForm({
 
     try {
       if (authMode === 'sign-up') {
+        if (!identifier.trim().includes('@')) {
+          setError('创建账号需要输入完整邮箱。')
+          return
+        }
         const result = await window.electronAPI.signUpClient({
           identifier,
           password,
@@ -219,7 +223,7 @@ function ClientSignInForm({
 
       await onSignedIn()
     } catch (err) {
-      setError(getErrorMessage(err))
+      setError(formatClientAuthErrorMessage(err))
     } finally {
       setSubmitting(false)
     }
@@ -242,7 +246,7 @@ function ClientSignInForm({
       await window.electronAPI.signInWithFeishuClient()
       await onSignedIn()
     } catch (err) {
-      setError(getErrorMessage(err))
+      setError(formatClientAuthErrorMessage(err))
     } finally {
       setFeishuSubmitting(false)
     }
@@ -252,7 +256,7 @@ function ClientSignInForm({
     try {
       await window.electronAPI.cancelFeishuSignInClient()
     } catch (err) {
-      setError(getErrorMessage(err))
+      setError(formatClientAuthErrorMessage(err))
     }
   }
 
@@ -261,7 +265,12 @@ function ClientSignInForm({
     feishuLoginEnabled ? '飞书' : null,
   ].filter(Boolean).join(' · ')
   const formTitle = authMode === 'sign-up' && emailSignUpEnabled ? '创建账号' : '登录账号'
-  const identifierLabel = usernameLoginEnabled ? '用户名或邮箱' : '邮箱'
+  const identifierLabel = authMode === 'sign-up'
+    ? '邮箱'
+    : usernameLoginEnabled ? '用户名或邮箱' : '邮箱'
+  const identifierPlaceholder = authMode === 'sign-up'
+    ? 'email@example.com'
+    : usernameLoginEnabled ? 'zjding 或 email@example.com' : 'email@example.com'
 
   return (
     <motion.section className="w-full max-w-[760px]" {...authPanelMotion}>
@@ -337,12 +346,13 @@ function ClientSignInForm({
                       </Label>
                       <Input
                         id="client-auth-identifier"
-                        autoComplete="username"
+                        type={authMode === 'sign-up' ? 'email' : 'text'}
+                        autoComplete={authMode === 'sign-up' ? 'email' : 'username'}
                         autoFocus
                         required
                         value={identifier}
                         onChange={(event) => setIdentifier(event.target.value)}
-                        placeholder={usernameLoginEnabled ? 'zjding 或 email@example.com' : 'email@example.com'}
+                        placeholder={identifierPlaceholder}
                       />
                     </div>
 
@@ -606,4 +616,18 @@ function getErrorMessage(error: unknown): string {
   return message
     .replace(/^Error invoking remote method '[^']+':\s*/u, '')
     .replace(/^Error:\s*/u, '')
+}
+
+function formatClientAuthErrorMessage(error: unknown): string {
+  const message = getErrorMessage(error)
+  if (message === 'Invalid email or password') {
+    return '账号或密码不正确。没有账号请先创建账号。'
+  }
+  if (message === 'Email sign-up is disabled') {
+    return '当前未开放邮箱注册。'
+  }
+  if (message === 'A full email address is required to create an account') {
+    return '创建账号需要输入完整邮箱。'
+  }
+  return message
 }

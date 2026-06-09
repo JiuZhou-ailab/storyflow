@@ -44,4 +44,10 @@ describe('ClientAuthGate layout', () => {
     expect(source).toContain('已有账号')
     expect(source).toContain('registrationNotice')
   })
+
+  it('normalizes provider auth errors into product-facing messages', () => {
+    expect(source).toContain('formatClientAuthErrorMessage')
+    expect(source).toContain('账号或密码不正确')
+    expect(source).not.toContain('setError(getErrorMessage(err))')
+  })
 })

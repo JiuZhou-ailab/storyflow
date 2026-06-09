@@ -1,3 +1,7 @@
+// input: Electron client auth config, mocked Neon Auth service, and broker callbacks.
+// output: Contract tests for desktop auth state, registration, persistence, and broker login.
+// pos: Main-process regression coverage for the desktop auth gate boundary.
+
 import { describe, expect, it } from 'bun:test'
 import {
   createClientAuthConfigFromEnv,
@@ -373,6 +377,47 @@ describe('client auth', () => {
       }),
       verifyToken: async () => {
         throw new Error('verifyToken should not be called')
+      },
+    }
+    const service = createClientAuthService(
+      { required: true, neonAuth: { baseUrl: 'https://auth.example.com', emailSignUpEnabled: true } },
+      { createNeonAuthService: () => fakeNeonAuth },
+    )
+
+    const result = await service.signUp({
+      identifier: 'pending@example.com',
+      password: 'secret',
+      name: 'Pending User',
+    })
+
+    expect(result).toEqual({
+      status: 'verification-required',
+      user: {
+        provider: 'neon',
+        userId: 'pending-user',
+        email: 'pending@example.com',
+        emailVerified: false,
+        name: 'Pending User',
+      },
+    })
+    expect(service.getState().authenticated).toBe(false)
+  })
+
+  it('keeps the client unauthenticated when sign-up returns an unverified token identity', async () => {
+    const fakeNeonAuth: ClientAuthNeonService = {
+      isConfigured: () => true,
+      getClientConfig: () => ({ enabled: true, emailSignUpEnabled: true }),
+      authenticateWithEmailPassword: async () => ({ status: 'authenticated', token: 'signup-jwt-token' }),
+      verifyToken: async (token) => {
+        expect(token).toBe('signup-jwt-token')
+        return {
+          provider: 'neon',
+          userId: 'pending-user',
+          subject: 'neon:pending-user',
+          email: 'pending@example.com',
+          emailVerified: false,
+          name: 'Pending User',
+        }
       },
     }
     const service = createClientAuthService(
