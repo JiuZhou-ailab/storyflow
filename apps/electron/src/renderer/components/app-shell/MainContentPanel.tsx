@@ -1,6 +1,10 @@
 /**
  * MainContentPanel - Right panel component for displaying content
  *
+ * input: Navigation state, AppShell context, and entity selection atoms
+ * output: Active content panel for chats, sources, skills, settings, and automations
+ * pos: Renderer content router inside the app-shell panel stack
+ *
  * Renders content based on the unified NavigationState:
  * - Chats navigator: ChatPage for selected session, or empty state
  * - Sources navigator: SourceInfoPage for selected source, or empty state
@@ -45,7 +49,7 @@ import { automationsAtom } from '@/atoms/automations'
 import { SendResourceToWorkspaceDialog, type SendResourceType } from './SendResourceToWorkspaceDialog'
 
 export interface MainContentPanelProps {
-  /** Whether both sidebar and navigator are hidden (focus mode / CMD+.) */
+  /** Whether both sidebar and navigator are hidden by responsive compaction. */
   isSidebarAndNavigatorHidden?: boolean
   /** Optional className for the container */
   className?: string

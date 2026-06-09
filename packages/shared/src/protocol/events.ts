@@ -1,5 +1,10 @@
 /**
  * Typed event map for server → client push channels.
+ *
+ * input: Shared RPC channel constants and event payload DTOs
+ * output: TypeScript tuple map for server-to-client push events
+ * pos: Compile-time event contract for protocol broadcast channels
+ *
  * Keys are channel string literals, values are argument tuples.
  */
 
@@ -64,7 +69,6 @@ export interface BroadcastEventMap {
   [RPC_CHANNELS.menu.NEW_CHAT]: []
   [RPC_CHANNELS.menu.OPEN_SETTINGS]: []
   [RPC_CHANNELS.menu.KEYBOARD_SHORTCUTS]: []
-  [RPC_CHANNELS.menu.TOGGLE_FOCUS_MODE]: []
   [RPC_CHANNELS.menu.TOGGLE_SIDEBAR]: []
 
   // Messaging gateway broadcasts

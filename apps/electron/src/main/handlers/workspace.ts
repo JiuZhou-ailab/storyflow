@@ -1,3 +1,7 @@
+// input: Workspace RPC requests from renderer clients
+// output: GUI workspace/window handlers registered on the local RPC server
+// pos: Main-process handler slice for workspace and new-window actions
+
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from './handler-deps'
@@ -105,7 +109,6 @@ export function registerWorkspaceGuiHandlers(server: RpcServer, deps: HandlerDep
     const deepLink = `craftagents://allSessions/session/${sessionId}`
     windowManager.createWindow({
       workspaceId,
-      focused: true,
       initialDeepLink: deepLink,
     })
   })

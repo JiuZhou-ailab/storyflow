@@ -312,7 +312,6 @@ export function FreeFormInput({
     t("chatInput.placeholder.labels"),
     t("chatInput.placeholder.newLine"),
     t("chatInput.placeholder.sidebar", { key: cmdKey }),
-    t("chatInput.placeholder.focusMode", { key: cmdKey }),
   ], [t])
 
   const effectivePlaceholderProp = placeholder ?? defaultPlaceholders
@@ -456,7 +455,6 @@ export function FreeFormInput({
       return !lower.includes('shift + tab')
         && !lower.includes('shift + return')
         && !lower.includes('toggle the sidebar')
-        && !lower.includes('focus mode')
         && !lower.includes('⌘')
         && !lower.includes('ctrl')
     })

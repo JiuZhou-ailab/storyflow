@@ -1,6 +1,10 @@
 /**
  * Deep Link Handler
  *
+ * input: craftagents:// URLs, active windows, and workspace routing state
+ * output: Parsed deep-link targets and window/navigation side effects
+ * pos: Main-process bridge from external URLs to renderer navigation
+ *
  * Parses craftagents:// URLs and routes to appropriate actions.
  *
  * URL Formats (workspace is optional - uses active window if omitted):
@@ -284,7 +288,6 @@ export async function handleDeepLink(
 
     const window = windowManager.createWindow({
       workspaceId: wsId,
-      focused: target.windowMode === 'focused',
       initialDeepLink: navUrl,
     })
     mainLog.info('[DeepLink] Window created:', window.webContents.id)

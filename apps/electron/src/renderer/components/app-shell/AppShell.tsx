@@ -213,8 +213,6 @@ interface AppShellProps {
   defaultLayout?: number[]
   defaultCollapsed?: boolean
   menuNewChatTrigger?: number
-  /** Focused mode - hides sidebars, shows only the chat content */
-  isFocusedMode?: boolean
   /** Monotonic signal for opening global search after entering the ready shell */
   openGlobalSearchSignal?: number
   /** Open the global project management hub */
@@ -801,7 +799,6 @@ function AppShellContent({
   defaultLayout = [20, 32, 48],
   defaultCollapsed = false,
   menuNewChatTrigger,
-  isFocusedMode = false,
   openGlobalSearchSignal = 0,
   onOpenProjectHub,
   onOpenAccount,
@@ -862,11 +859,7 @@ function AppShellContent({
     storage.set(storage.KEYS.novelWorkspaceCatalogOrder, order)
   }, [])
 
-  // Hides both sidebar and navigator (CMD+. toggle)
-  // Seed from either focused window param or persisted preference, then keep it toggleable.
-  const [isSidebarAndNavigatorHidden, setIsSidebarAndNavigatorHidden] = React.useState(() => {
-    return isFocusedMode || storage.get(storage.KEYS.focusModeEnabled, false)
-  })
+  const isSidebarAndNavigatorHidden = false
 
   // Auto-compact mode: shell width below mobile threshold hides sidebar/navigator
   // and switches to single-panel mode. Works in both webui (narrow viewport) and
@@ -1459,18 +1452,11 @@ function AppShellContent({
   })
 
   const handleToggleSidebar = useCallback(() => {
-    if (isSidebarAndNavigatorHidden) {
-      setIsSidebarAndNavigatorHidden(false)
-      return
-    }
     setIsSidebarVisible(v => !v)
-  }, [isSidebarAndNavigatorHidden])
+  }, [])
 
   // Sidebar toggle (CMD+B)
   useAction('view.toggleSidebar', handleToggleSidebar)
-
-  // Focus mode toggle (CMD+.) - hides both sidebars
-  useAction('view.toggleFocusMode', () => setIsSidebarAndNavigatorHidden(v => !v))
 
   // Panel focus navigation (CMD+SHIFT+[ / ])
   const focusNextPanel = useSetAtom(focusNextPanelAtom)
@@ -3104,19 +3090,6 @@ function AppShellContent({
   React.useEffect(() => {
     storage.set(storage.KEYS.sidebarVisible, isSidebarVisible)
   }, [isSidebarVisible])
-
-  // Persist focus mode state to localStorage
-  React.useEffect(() => {
-    storage.set(storage.KEYS.focusModeEnabled, isSidebarAndNavigatorHidden)
-  }, [isSidebarAndNavigatorHidden])
-
-  // Listen for focus mode toggle from menu (View → Focus Mode)
-  React.useEffect(() => {
-    const cleanup = window.electronAPI.onMenuToggleFocusMode?.(() => {
-      setIsSidebarAndNavigatorHidden(v => !v)
-    })
-    return cleanup
-  }, [])
 
   // Listen for sidebar toggle from menu (View → Toggle Sidebar)
   React.useEffect(() => {
@@ -5049,7 +5022,7 @@ function AppShellContent({
           hidePanelCloseButton={showPrimarySidebar}
         />
 
-        {/* Sidebar Resize Handle (absolute, hidden in focused mode) */}
+        {/* Sidebar Resize Handle (absolute, hidden when auto-compacted) */}
         {!effectiveSidebarAndNavigatorHidden && showPrimarySidebar && (
         <div
           ref={resizeHandleRef}

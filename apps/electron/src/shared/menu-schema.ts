@@ -1,6 +1,10 @@
 /**
  * Shared Menu Schema
  *
+ * input: Shared RPC channels and feature flags
+ * output: Declarative menu sections consumed by main and renderer menus
+ * pos: Single source of truth for desktop menu labels, shortcuts, and IPC wiring
+ *
  * Defines menu structure consumed by both:
  * - Main process: transforms to Electron MenuItemConstructorOptions
  * - Renderer: transforms to React dropdown components
@@ -157,17 +161,6 @@ export const VIEW_MENU: MenuSection = {
       ipcChannel: RPC_CHANNELS.menu.ZOOM_RESET,
     },
     { type: 'separator' },
-    {
-      type: 'action',
-      id: 'toggleFocusMode',
-      actionId: 'view.toggleFocusMode',
-      labelKey: 'menu.toggleFocusMode',
-      shortcut: 'CmdOrCtrl+.',
-      shortcutDisplayMac: '⌘.',
-      shortcutDisplayOther: 'Ctrl+.',
-      ipcChannel: RPC_CHANNELS.menu.TOGGLE_FOCUS_MODE,
-      icon: 'Focus',
-    },
     {
       type: 'action',
       id: 'toggleSidebar',

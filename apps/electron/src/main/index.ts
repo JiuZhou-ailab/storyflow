@@ -344,11 +344,9 @@ async function createInitialWindows(): Promise<void> {
       // Skip invalid workspaces
       if (!validWorkspaceIds.includes(saved.workspaceId)) continue
 
-      // Restore main window with focused mode if it was saved
-      mainLog.info(`Restoring window: workspaceId=${saved.workspaceId}, focused=${saved.focused ?? false}, url=${saved.url ?? 'none'}`)
+      mainLog.info(`Restoring window: workspaceId=${saved.workspaceId}, url=${saved.url ?? 'none'}`)
       const win = windowManager.createWindow({
         workspaceId: saved.workspaceId,
-        focused: saved.focused,
         restoreUrl: saved.url,
       })
       win.setBounds(saved.bounds)

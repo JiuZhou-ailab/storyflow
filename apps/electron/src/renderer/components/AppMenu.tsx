@@ -1,3 +1,7 @@
+// input: Shared menu schema, renderer action labels, update state, and menu callbacks
+// output: Craft logo dropdown menu with native-equivalent app actions
+// pos: Renderer menu surface for non-native and mirrored desktop commands
+
 import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { isMac } from "@/lib/platform"
@@ -31,7 +35,6 @@ import { useUpdateChecker } from "@/hooks/useUpdateChecker"
 
 // Map of action handlers for menu items that need custom behavior
 type MenuActionHandlers = {
-  toggleFocusMode?: () => void
   toggleSidebar?: () => void
 }
 
@@ -91,11 +94,9 @@ function renderMenuItem(
 
   if (item.type === 'action') {
     // Map action IDs to handlers
-    const handler = item.id === 'toggleFocusMode'
-      ? actionHandlers.toggleFocusMode
-      : item.id === 'toggleSidebar'
-        ? actionHandlers.toggleSidebar
-        : undefined
+    const handler = item.id === 'toggleSidebar'
+      ? actionHandlers.toggleSidebar
+      : undefined
     return (
       <StyledDropdownMenuItem key={item.id} onClick={handler}>
         {Icon && <Icon className="h-3.5 w-3.5" />}
@@ -143,7 +144,6 @@ interface AppMenuProps {
   canGoBack?: boolean
   canGoForward?: boolean
   onToggleSidebar?: () => void
-  onToggleFocusMode?: () => void
 }
 
 /**
@@ -174,7 +174,6 @@ export function AppMenu({
   canGoBack = true,
   canGoForward = true,
   onToggleSidebar,
-  onToggleFocusMode,
 }: AppMenuProps) {
   const { t } = useTranslation()
   const [isDebugMode, setIsDebugMode] = useState(false)
@@ -195,7 +194,6 @@ export function AppMenu({
 
   // Action handlers for schema-driven menu items
   const actionHandlers: MenuActionHandlers = {
-    toggleFocusMode: onToggleFocusMode,
     toggleSidebar: onToggleSidebar,
   }
 

@@ -1,3 +1,7 @@
+// input: Shared RPC channel registry and broadcast event map
+// output: Contract tests that keep broadcast channels declared and routed
+// pos: Protocol safety net for Electron IPC channel coverage
+
 import { describe, it, expect } from 'bun:test'
 import { RPC_CHANNELS, type BroadcastEventMap } from '../types'
 
@@ -130,7 +134,6 @@ const EXPECTED_CHANNELS: string[] = [
   'menu:redo',
   'menu:selectAll',
   'menu:toggleDevTools',
-  'menu:toggleFocusMode',
   'menu:toggleSidebar',
   'menu:undo',
   'menu:zoomIn',

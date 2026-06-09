@@ -124,7 +124,6 @@ export const CHANNEL_MAP = {
   onMenuNewChat: listener(RPC_CHANNELS.menu.NEW_CHAT),
   onMenuOpenSettings: listener(RPC_CHANNELS.menu.OPEN_SETTINGS),
   onMenuKeyboardShortcuts: listener(RPC_CHANNELS.menu.KEYBOARD_SHORTCUTS),
-  onMenuToggleFocusMode: listener(RPC_CHANNELS.menu.TOGGLE_FOCUS_MODE),
   onMenuToggleSidebar: listener(RPC_CHANNELS.menu.TOGGLE_SIDEBAR),
 
   // Deep link

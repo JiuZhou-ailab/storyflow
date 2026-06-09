@@ -145,7 +145,6 @@ export const RPC_CHANNELS = {
     NEW_WINDOW: 'menu:newWindow',
     OPEN_SETTINGS: 'menu:openSettings',
     KEYBOARD_SHORTCUTS: 'menu:keyboardShortcuts',
-    TOGGLE_FOCUS_MODE: 'menu:toggleFocusMode',
     TOGGLE_SIDEBAR: 'menu:toggleSidebar',
     QUIT: 'menu:quit',
     MINIMIZE: 'menu:minimize',

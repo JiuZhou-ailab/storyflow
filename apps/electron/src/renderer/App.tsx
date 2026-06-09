@@ -313,13 +313,10 @@ export default function App() {
     return workspace?.slug ?? windowWorkspaceId
   }, [windowWorkspaceId, workspaces])
 
-  // Get initial sessionId and focused mode from URL params (for "Open in New Window" feature)
-  const { initialSessionId, isFocusedMode } = useMemo(() => {
+  // Get initial sessionId from URL params (for "Open in New Window" feature)
+  const initialSessionId = useMemo(() => {
     const params = new URLSearchParams(window.location.search)
-    return {
-      initialSessionId: params.get('sessionId'),
-      isFocusedMode: params.get('focused') === 'true',
-    }
+    return params.get('sessionId')
   }, [])
 
   // Derive remote workspace ID for session matching in NavigationContext
@@ -2417,7 +2414,6 @@ export default function App() {
                   contextValue={appShellContextValue}
                   defaultLayout={[20, 32, 48]}
                   menuNewChatTrigger={menuNewChatTrigger}
-                  isFocusedMode={isFocusedMode}
                   openGlobalSearchSignal={openGlobalSearchSignal}
                   onOpenProjectHub={handleOpenProjectHub}
                   onOpenAccount={() => handleOpenAccountCenter('ready')}
