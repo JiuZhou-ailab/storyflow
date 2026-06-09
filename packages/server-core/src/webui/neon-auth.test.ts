@@ -194,6 +194,26 @@ describe('NeonAuthService', () => {
     })
   })
 
+  it('requires a full email address for sign-up even when username sign-in is enabled', async () => {
+    const requests: Array<{ url: string, init?: RequestInit }> = []
+    const service = new NeonAuthService({
+      baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+      usernameEmailDomain: 'users.craft.invalid',
+      emailSignUpEnabled: true,
+      fetch: async (input, init) => {
+        requests.push({ url: String(input), init })
+        return Response.json({ ok: true })
+      },
+    })
+
+    await expect(service.authenticateWithEmailPassword({
+      mode: 'sign-up',
+      email: 'zjding',
+      password: 'secret-password',
+    })).rejects.toThrow('A full email address is required to create an account')
+    expect(requests).toEqual([])
+  })
+
   it('exchanges a Neon Auth session cookie for a JWT when email sign-in returns an opaque token', async () => {
     const requests: Array<{ url: string, init?: RequestInit }> = []
     const service = new NeonAuthService({
@@ -261,6 +281,36 @@ describe('NeonAuthService', () => {
       password: 'secret-password',
       name: 'Signup User',
       callbackURL: 'https://craft.example.com/login',
+    })).resolves.toEqual({
+      status: 'verification-required',
+      user: {
+        id: 'user_from_signup',
+        email: 'signup@example.com',
+        emailVerified: false,
+      },
+    })
+  })
+
+  it('keeps sign-up verification-required when Neon Auth returns a token for an unverified email', async () => {
+    const service = new NeonAuthService({
+      baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+      emailSignUpEnabled: true,
+      fetch: async () => Response.json({
+        data: {
+          session: { access_token: 'signup-access-token' },
+          user: {
+            id: 'user_from_signup',
+            email: 'signup@example.com',
+            emailVerified: false,
+          },
+        },
+      }),
+    })
+
+    await expect(service.authenticateWithEmailPassword({
+      mode: 'sign-up',
+      email: 'signup@example.com',
+      password: 'secret-password',
     })).resolves.toEqual({
       status: 'verification-required',
       user: {

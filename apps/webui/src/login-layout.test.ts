@@ -24,4 +24,10 @@ describe('webui login layout', () => {
     expect(loginHtml).toContain('emailSignupTab.hidden = !authState.emailSignUpEnabled')
     expect(loginHtml).toContain("if (mode === 'sign-up' && !authState.emailSignUpEnabled)")
   })
+
+  it('normalizes provider auth errors before rendering them', () => {
+    expect(loginHtml).toContain('formatEmailAuthErrorMessage')
+    expect(loginHtml).toContain('Account or password is incorrect')
+    expect(loginHtml).not.toContain("showMessage(data.error || 'Email authentication failed')")
+  })
 })

@@ -388,6 +388,13 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
         }
 
         const identity = await neonAuth.verifyToken(result.token)
+        if (emailRequest.mode === 'sign-up' && identity.emailVerified === false) {
+          return Response.json({
+            ok: false,
+            status: 'verification-required',
+            user: toPublicNeonIdentity(identity),
+          }, { status: 202 })
+        }
         const jwt = await createSessionToken(secret, identity.subject)
         logger.info(`[webui] Successful Neon Auth email ${emailRequest.mode} for ${formatNeonIdentity(identity)}`)
 

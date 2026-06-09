@@ -136,10 +136,15 @@ export class NeonAuthService {
       throw new Error('Neon Auth is not configured')
     }
 
-    const identifier = normalizeEmailIdentifier(readString(input.email), this.config.usernameEmailDomain)
+    const rawIdentifier = readString(input.email)
+    const identifier = input.mode === 'sign-up'
+      ? normalizeSignUpEmailIdentifier(rawIdentifier)
+      : normalizeEmailIdentifier(rawIdentifier, this.config.usernameEmailDomain)
     const password = input.password
     if (!identifier) {
-      throw new Error(this.config.usernameEmailDomain ? 'Email or username is required' : 'Email is required')
+      throw new Error(input.mode === 'sign-up'
+        ? 'A full email address is required to create an account'
+        : this.config.usernameEmailDomain ? 'Email or username is required' : 'Email is required')
     }
     if (!password) throw new Error('Password is required')
     if (input.mode === 'sign-up' && !this.config.emailSignUpEnabled) {
@@ -153,7 +158,7 @@ export class NeonAuthService {
     }
 
     if (input.mode === 'sign-up') {
-      body.name = readString(input.name) ?? identifier.username ?? identifier.email.split('@')[0] ?? 'User'
+      body.name = readString(input.name) ?? identifier.email.split('@')[0] ?? 'User'
       if (input.callbackURL) body.callbackURL = input.callbackURL
     }
 
@@ -178,6 +183,12 @@ export class NeonAuthService {
     const token = readAuthAccessToken(responseBody, res.headers)
       ?? await this.fetchJsonWebToken(readSessionCookieHeader(res.headers), origin)
     const user = readEmailPasswordUser(responseBody)
+    if (input.mode === 'sign-up' && user?.emailVerified === false) {
+      return {
+        status: 'verification-required',
+        user,
+      }
+    }
     if (token) {
       return {
         status: 'authenticated',
@@ -327,6 +338,13 @@ function normalizeEmailIdentifier(
     email: `${username}@${usernameEmailDomain}`,
     username,
   }
+}
+
+function normalizeSignUpEmailIdentifier(value: string | undefined): { email: string } | undefined {
+  const trimmed = value?.trim()
+  if (!trimmed || !trimmed.includes('@')) return undefined
+
+  return { email: trimmed.toLowerCase() }
 }
 
 async function parseJsonObject(res: Response): Promise<Record<string, unknown>> {

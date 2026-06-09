@@ -439,6 +439,7 @@
       emailSignUpEnabled: false,
       passwordAuthEnabled: true,
       feishuEnabled: false,
+      usernameLoginEnabled: false,
     };
 
     function renderAuthLayout() {
@@ -464,6 +465,7 @@
         subtitle.textContent = hasPassword || hasFeishu
           ? 'Choose a sign-in method to continue.'
           : 'Sign in with your account to continue.';
+        updateEmailIdentifierInput();
         document.getElementById('email').required = true;
         document.getElementById('email-password').required = true;
         document.getElementById('password').removeAttribute('autofocus');
@@ -503,6 +505,31 @@
       nameField.classList.toggle('hidden', !isSignUp);
       emailSubmitBtn.textContent = isSignUp ? 'Create Account' : 'Sign In';
       document.getElementById('email-password').autocomplete = isSignUp ? 'new-password' : 'current-password';
+      updateEmailIdentifierInput();
+    }
+
+    function updateEmailIdentifierInput() {
+      const emailInput = document.getElementById('email');
+      const emailLabel = document.getElementById('email-label');
+      const allowUsername = authState.usernameLoginEnabled && emailMode !== 'sign-up';
+
+      emailLabel.textContent = allowUsername ? 'Email or username' : 'Email';
+      emailInput.type = allowUsername ? 'text' : 'email';
+      emailInput.placeholder = allowUsername ? 'zjding or you@example.com' : 'you@example.com';
+      emailInput.autocomplete = allowUsername ? 'username' : 'email';
+    }
+
+    function formatEmailAuthErrorMessage(message) {
+      if (message === 'Invalid email or password') {
+        return 'Account or password is incorrect. Create an account first if you do not have one.';
+      }
+      if (message === 'Email sign-up is disabled') {
+        return 'Email sign-up is not open.';
+      }
+      if (message === 'A full email address is required to create an account') {
+        return 'Enter a full email address to create an account.';
+      }
+      return message || 'Email authentication failed';
     }
 
     async function loadNeonAuthConfig() {
@@ -515,16 +542,7 @@
         authState.neonEnabled = Boolean(data.enabled);
         authState.emailSignUpEnabled = Boolean(data.emailSignUpEnabled);
         authState.passwordAuthEnabled = passwordAuthEnabled;
-
-        if (data.enabled) {
-          const emailInput = document.getElementById('email');
-          if (data.usernameLoginEnabled) {
-            document.getElementById('email-label').textContent = 'Email or username';
-            emailInput.type = 'text';
-            emailInput.placeholder = 'zjding or you@example.com';
-            emailInput.autocomplete = 'username';
-          }
-        }
+        authState.usernameLoginEnabled = Boolean(data.usernameLoginEnabled);
 
         renderAuthLayout();
       } catch {
@@ -558,7 +576,7 @@
       e.preventDefault();
       clearMessage();
       if (emailMode === 'sign-up' && !authState.emailSignUpEnabled) {
-        showMessage('Email sign-up is disabled');
+        showMessage(formatEmailAuthErrorMessage('Email sign-up is disabled'));
         return;
       }
       emailSubmitBtn.disabled = true;
@@ -573,6 +591,10 @@
         };
         const name = document.getElementById('email-name').value.trim();
         if (emailMode === 'sign-up' && name) body.name = name;
+        if (emailMode === 'sign-up' && !body.email.trim().includes('@')) {
+          showMessage(formatEmailAuthErrorMessage('A full email address is required to create an account'));
+          return;
+        }
 
         const res = await fetch('/api/auth/neon/email', {
           method: 'POST',
@@ -592,7 +614,7 @@
           return;
         }
 
-        showMessage(data.error || 'Email authentication failed');
+        showMessage(formatEmailAuthErrorMessage(data.error));
       } catch {
         showMessage('Network error - is the server running?');
       } finally {

@@ -1,3 +1,7 @@
+// input: Web UI HTTP server config, temporary static files, and mocked auth providers.
+// output: End-to-end HTTP contract tests for login, cookies, auth brokers, and Neon registration.
+// pos: Server-side regression coverage for browser-facing auth and session boundaries.
+
 import { afterEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -445,6 +449,54 @@ describe('startWebuiHttpServer', () => {
             },
           },
         }),
+      }),
+    })
+
+    const res = await fetch(`${baseUrl}/api/auth/neon/email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'sign-up',
+        email: 'pending@example.com',
+        password: 'secret-password',
+      }),
+    })
+
+    expect(res.status).toBe(202)
+    expect(await res.json()).toEqual({
+      ok: false,
+      status: 'verification-required',
+      user: {
+        id: 'neon_pending_user',
+        email: 'pending@example.com',
+        emailVerified: false,
+      },
+    })
+    expect(res.headers.get('set-cookie')).toBeNull()
+  })
+
+  it('does not set a session cookie when sign-up returns an unverified token identity', async () => {
+    const { baseUrl } = await createServer({
+      neonAuth: createNeonAuthConfig({
+        emailSignUpEnabled: true,
+        fetch: async () => Response.json({
+          data: {
+            session: { access_token: 'unverified-signup-token' },
+            user: {
+              id: 'neon_pending_user',
+              email: 'pending@example.com',
+              emailVerified: false,
+            },
+          },
+        }),
+        tokenVerifier: async (token) => {
+          if (token !== 'unverified-signup-token') return null
+          return {
+            sub: 'neon_pending_user',
+            email: 'pending@example.com',
+            emailVerified: false,
+          }
+        },
       }),
     })
 
