@@ -36,9 +36,23 @@ interface TextDeltaPerfEvent {
   delta: string
 }
 
+interface NovelDocumentPerfEvent {
+  filePath: string
+  phase: string
+  durationMs: number
+  contentLength?: number
+}
+
 interface TextDeltaPerfSummary {
   sessionId: string
   deltaLength: number
+}
+
+interface NovelDocumentPerfSummary {
+  fileName: string
+  phase: string
+  durationMs: number
+  contentLength?: number
 }
 
 interface TextDeltaWindow {
@@ -83,6 +97,27 @@ export function summarizeTextDeltaPerfEvent(event: TextDeltaPerfEvent): TextDelt
     sessionId: event.sessionId,
     deltaLength: event.delta.length,
   }
+}
+
+export function summarizeNovelDocumentPerfEvent(event: NovelDocumentPerfEvent): NovelDocumentPerfSummary {
+  const normalizedPath = event.filePath.replace(/\\/g, '/')
+  return {
+    fileName: normalizedPath.slice(normalizedPath.lastIndexOf('/') + 1) || normalizedPath,
+    phase: event.phase,
+    durationMs: Math.round(event.durationMs),
+    contentLength: event.contentLength,
+  }
+}
+
+export function recordNovelDocumentEvent(event: NovelDocumentPerfEvent): void {
+  if (!debugMode) return
+
+  const summary = summarizeNovelDocumentPerfEvent(event)
+  perfLog.info(
+    `writing.document.${summary.phase}: ${summary.durationMs}ms` +
+      (summary.contentLength == null ? '' : `, chars=${summary.contentLength}`) +
+      (summary.fileName ? `, file=${summary.fileName}` : '')
+  )
 }
 
 export function recordTextDeltaEvent(sessionId: string, delta: string, turnId?: string): void {
@@ -250,6 +285,7 @@ export const rendererPerf = {
   markSessionSwitch,
   endSessionSwitch,
   recordTextDeltaEvent,
+  recordNovelDocumentEvent,
   getRecentMetrics,
   getStats: getSessionSwitchStats,
   clear: clearMetrics,

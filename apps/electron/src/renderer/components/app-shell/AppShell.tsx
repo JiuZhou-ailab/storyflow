@@ -157,6 +157,7 @@ import {
 import { getPrimarySidebarLinks } from "./primary-sidebar-links"
 import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
+import { rendererPerf } from "@/lib/perf"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
 import { collectFileChangesFromActivities } from "@/lib/file-changes"
 import { buildRejectFileChangesOperation } from "@/lib/file-change-review"
@@ -178,6 +179,7 @@ import {
   getNovelImportTargetRelativePath,
   getNovelWorkspaceRelativePath,
   getNovelWorkspaceCandidateRoots,
+  isNovelWorkspaceFilePathInRoot,
   isShortFormNovelWorkspaceFiles,
   mapSearchResultsToNovelWorkspaceFiles,
   NOVEL_WORKSPACE_CATALOG_DIRECTORY_QUERIES,
@@ -2123,21 +2125,45 @@ function AppShellContent({
   const [selectedNovelFilePath, setSelectedNovelFilePath] = React.useState<string | null>(null)
   const selectedNovelFile = React.useMemo(() => {
     if (!showNovelWorkspaceSidebar) return undefined
-    return novelWorkspaceFiles.find(file => file.path === selectedNovelFilePath) ?? defaultNovelFile
-  }, [defaultNovelFile, novelWorkspaceFiles, selectedNovelFilePath, showNovelWorkspaceSidebar])
+    if (!selectedNovelFilePath) return defaultNovelFile
+
+    const listedFile = novelWorkspaceFiles.find(file => file.path === selectedNovelFilePath)
+    if (listedFile) return listedFile
+
+    if (novelWorkspaceRoot && isNovelWorkspaceFilePathInRoot(selectedNovelFilePath, novelWorkspaceRoot)) {
+      return {
+        path: selectedNovelFilePath,
+        relativePath: getNovelWorkspaceRelativePath(selectedNovelFilePath, novelWorkspaceRoot),
+      }
+    }
+
+    return undefined
+  }, [defaultNovelFile, novelWorkspaceFiles, novelWorkspaceRoot, selectedNovelFilePath, showNovelWorkspaceSidebar])
 
   React.useEffect(() => {
     if (!showNovelWorkspaceSidebar) {
-      setSelectedNovelFilePath(null)
+      if (novelWorkspaceCandidateRoots.length === 0) {
+        setSelectedNovelFilePath(null)
+      }
       return
     }
 
-    if (selectedNovelFilePath && novelWorkspaceFiles.some(file => file.path === selectedNovelFilePath)) {
+    if (
+      selectedNovelFilePath
+      && novelWorkspaceRoot
+      && isNovelWorkspaceFilePathInRoot(selectedNovelFilePath, novelWorkspaceRoot)
+    ) {
       return
     }
 
     setSelectedNovelFilePath(defaultNovelFile?.path ?? null)
-  }, [defaultNovelFile?.path, novelWorkspaceFiles, selectedNovelFilePath, showNovelWorkspaceSidebar])
+  }, [
+    defaultNovelFile?.path,
+    novelWorkspaceCandidateRoots.length,
+    novelWorkspaceRoot,
+    selectedNovelFilePath,
+    showNovelWorkspaceSidebar,
+  ])
 
   const [novelDocumentContent, setNovelDocumentContent] = React.useState('')
   const [savedNovelDocumentContent, setSavedNovelDocumentContent] = React.useState('')
@@ -2153,6 +2179,7 @@ function AppShellContent({
   const [novelVersionRestoringHash, setNovelVersionRestoringHash] = React.useState<string | null>(null)
   const selectedNovelDocumentPath = selectedNovelFile?.path ?? null
   const latestNovelDocumentPathRef = React.useRef<string | null>(null)
+  const novelDocumentSwitchStartRef = React.useRef<{ filePath: string; startedAt: number } | null>(null)
   const novelDocumentSaveSeqRef = React.useRef(0)
   const novelVersionBaselinesRef = React.useRef<Record<string, { content: string; timestamp: number }>>({})
   const novelAutoVersionInFlightRef = React.useRef(false)
@@ -2184,12 +2211,19 @@ function AppShellContent({
     }
 
     let cancelled = false
+    const readStartedAt = performance.now()
     setNovelDocumentLoading(true)
     setNovelDocumentError(null)
 
     window.electronAPI.readFile(selectedNovelDocumentPath)
       .then((content) => {
         if (cancelled) return
+        rendererPerf.recordNovelDocumentEvent({
+          filePath: selectedNovelDocumentPath,
+          phase: 'readFile',
+          durationMs: performance.now() - readStartedAt,
+          contentLength: content.length,
+        })
         setNovelDocumentContent(content)
         setSavedNovelDocumentContent(content)
         novelVersionBaselinesRef.current[selectedNovelDocumentPath] ??= {
@@ -2199,12 +2233,37 @@ function AppShellContent({
       })
       .catch((error) => {
         if (cancelled) return
+        rendererPerf.recordNovelDocumentEvent({
+          filePath: selectedNovelDocumentPath,
+          phase: 'readFile.error',
+          durationMs: performance.now() - readStartedAt,
+        })
         setNovelDocumentContent('')
         setSavedNovelDocumentContent('')
         setNovelDocumentError(error instanceof Error ? error.message : 'Failed to load document')
       })
       .finally(() => {
-        if (!cancelled) setNovelDocumentLoading(false)
+        if (!cancelled) {
+          setNovelDocumentLoading(false)
+
+          const switchStart = novelDocumentSwitchStartRef.current
+          if (switchStart?.filePath === selectedNovelDocumentPath) {
+            rendererPerf.recordNovelDocumentEvent({
+              filePath: selectedNovelDocumentPath,
+              phase: 'readyAfterRead',
+              durationMs: performance.now() - switchStart.startedAt,
+            })
+            window.requestAnimationFrame(() => {
+              if (latestNovelDocumentPathRef.current !== selectedNovelDocumentPath) return
+              rendererPerf.recordNovelDocumentEvent({
+                filePath: selectedNovelDocumentPath,
+                phase: 'paintAfterRead',
+                durationMs: performance.now() - switchStart.startedAt,
+              })
+            })
+            novelDocumentSwitchStartRef.current = null
+          }
+        }
       })
 
     return () => {
@@ -2377,13 +2436,33 @@ function AppShellContent({
   }, [])
 
   const handleSelectNovelFile = React.useCallback(async (file: NovelWorkspaceFile) => {
-    if (file.path !== selectedNovelFile?.path) {
-      const saved = await ensureNovelDocumentSaved()
-      if (!saved) return
+    if (file.path === selectedNovelFilePath) {
+      handleAllSessionsClick()
+      return
+    }
+
+    const switchStartedAt = performance.now()
+    const saveStartedAt = performance.now()
+    const saved = await ensureNovelDocumentSaved()
+    rendererPerf.recordNovelDocumentEvent({
+      filePath: selectedNovelFilePath ?? file.path,
+      phase: 'saveBeforeSwitch',
+      durationMs: performance.now() - saveStartedAt,
+    })
+    if (!saved) return
+
+    novelDocumentSwitchStartRef.current = {
+      filePath: file.path,
+      startedAt: switchStartedAt,
     }
     setSelectedNovelFilePath(file.path)
+    rendererPerf.recordNovelDocumentEvent({
+      filePath: file.path,
+      phase: 'select',
+      durationMs: performance.now() - switchStartedAt,
+    })
     handleAllSessionsClick()
-  }, [ensureNovelDocumentSaved, handleAllSessionsClick, selectedNovelFile?.path])
+  }, [ensureNovelDocumentSaved, handleAllSessionsClick, selectedNovelFilePath])
 
   const handleSelectNovelFileByPath = React.useCallback(async (filePath: string | null) => {
     if (!filePath) return

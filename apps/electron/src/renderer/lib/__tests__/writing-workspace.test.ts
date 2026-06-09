@@ -16,6 +16,7 @@ import {
   getShortFormGlobalInfoFiles,
   getNovelImportTargetRelativePath,
   normalizeNovelCreateFilePath,
+  isNovelWorkspaceFilePathInRoot,
   isShortFormNovelWorkspaceFiles,
   NOVEL_WORKSPACE_CATALOG_DIRECTORY_QUERIES,
   NOVEL_WORKSPACE_DETECTION_QUERIES,
@@ -182,6 +183,13 @@ describe('writing workspace helpers', () => {
   it('strips the novel workspace root before deriving display paths', () => {
     expect(getNovelWorkspaceRelativePath('/novel/bible/structure.md', '/novel')).toBe('bible/structure.md')
     expect(getNovelWorkspaceRelativePath('/other/bible/structure.md', '/novel')).toBe('/other/bible/structure.md')
+  })
+
+  it('recognizes selected files that still belong to the current writing workspace root', () => {
+    expect(isNovelWorkspaceFilePathInRoot('/novel/正文/01.md', '/novel')).toBe(true)
+    expect(isNovelWorkspaceFilePathInRoot('/novel', '/novel')).toBe(true)
+    expect(isNovelWorkspaceFilePathInRoot('/novel-other/正文/01.md', '/novel')).toBe(false)
+    expect(isNovelWorkspaceFilePathInRoot('/other/正文/01.md', '/novel')).toBe(false)
   })
 
   it('maps file search results to novel workspace files and drops unknown files', () => {

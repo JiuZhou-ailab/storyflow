@@ -930,6 +930,37 @@ describe('novel writing workspace layout', () => {
     )
   })
 
+  it('preserves the selected writing file when catalog refreshes temporarily omit it', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const selectionSource = appShellSource.slice(
+      appShellSource.indexOf('const selectedNovelFile = React.useMemo'),
+      appShellSource.indexOf('const [novelDocumentContent')
+    )
+
+    expect(selectionSource).toContain('if (!selectedNovelFilePath) return defaultNovelFile')
+    expect(selectionSource).toContain('const listedFile = novelWorkspaceFiles.find(file => file.path === selectedNovelFilePath)')
+    expect(selectionSource).toContain('isNovelWorkspaceFilePathInRoot(selectedNovelFilePath, novelWorkspaceRoot)')
+    expect(selectionSource).toContain('relativePath: getNovelWorkspaceRelativePath(selectedNovelFilePath, novelWorkspaceRoot)')
+    expect(selectionSource).not.toContain('?? defaultNovelFile')
+    expect(selectionSource).not.toContain('if (!showNovelWorkspaceSidebar) {\n      setSelectedNovelFilePath(null)\n      return\n    }')
+  })
+
+  it('uses the stable selected writing file path for click-switch save decisions', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const selectHandlerSource = appShellSource.slice(
+      appShellSource.indexOf('const handleSelectNovelFile = React.useCallback'),
+      appShellSource.indexOf('const handleSelectNovelFileByPath')
+    )
+
+    expect(selectHandlerSource).toContain('if (file.path === selectedNovelFilePath)')
+    expect(selectHandlerSource.indexOf('if (file.path === selectedNovelFilePath)')).toBeLessThan(
+      selectHandlerSource.indexOf('const saveStartedAt = performance.now()')
+    )
+    expect(selectHandlerSource).toContain("phase: 'saveBeforeSwitch'")
+    expect(selectHandlerSource).toContain('novelDocumentSwitchStartRef.current =')
+    expect(selectHandlerSource).not.toContain('file.path !== selectedNovelFile?.path')
+  })
+
   it('falls back to single search calls when batch file search is unavailable or stalls', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const searchHelperSource = appShellSource.slice(

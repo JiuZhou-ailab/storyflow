@@ -194,6 +194,10 @@ export function getNovelWorkspaceRelativePath(path: string, rootPath: string): s
   return stripRootPath(path, rootPath)
 }
 
+export function isNovelWorkspaceFilePathInRoot(path: string, rootPath: string): boolean {
+  return isSameOrChildPath(normalizeRootPath(path), normalizeRootPath(rootPath))
+}
+
 function normalizeRootPath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '')
 }
