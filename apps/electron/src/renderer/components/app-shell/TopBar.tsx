@@ -113,7 +113,24 @@ export function TopBar({
           </TooltipContent>
         </Tooltip>
       ) : (
-        <div className="absolute right-3 top-1/2 h-6 w-6 -translate-y-1/2" aria-hidden="true" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={t('settings.about.checkForUpdates')}
+              onClick={() => void updateChecker.checkForUpdates()}
+              className={cn(
+                'titlebar-no-drag absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md outline-none transition-colors',
+                'bg-foreground/5 text-foreground/60 hover:bg-foreground/10 hover:text-foreground/80 focus-visible:ring-1 focus-visible:ring-ring'
+              )}
+            >
+              <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.7} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {t('settings.about.checkForUpdates')}
+          </TooltipContent>
+        </Tooltip>
       )}
     </header>
   )

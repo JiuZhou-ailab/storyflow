@@ -712,11 +712,16 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const newSessionButton = React.useMemo(() => (
     <PanelHeaderCenterButton
       data-tutorial="new-session-button"
-      icon={<SquarePenRounded className="h-4 w-4" />}
+      icon={(
+        <>
+          <SquarePenRounded className="h-4 w-4" />
+          <span className="text-[11px] font-medium leading-none">{t("session.newSession")}</span>
+        </>
+      )}
       onClick={handleNewSession}
       tooltip={t("session.newSession")}
       aria-label={t("session.newSession")}
-      className="bg-background shadow-minimal"
+      className="gap-1.5 px-2 bg-background shadow-minimal"
     />
   ), [handleNewSession, t])
 
