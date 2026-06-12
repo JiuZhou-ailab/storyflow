@@ -124,4 +124,40 @@ describe('generate-whats-new', () => {
     expect(manifest.source.commitCount).toBe(3)
     expect(manifest.source.userVisibleCommitCount).toBe(2)
   })
+
+  it('writes the manifest next to release markdown by default', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'storyflow-whats-new-'))
+    const commitsJson = join(tmp, 'commits.json')
+    const notesDir = join(tmp, 'release-notes')
+
+    writeFileSync(commitsJson, JSON.stringify([
+      { hash: 'a'.repeat(40), subject: 'feat: add structured update announcement' },
+    ]))
+
+    const result = spawnSync('bun', [
+      'run',
+      scriptPath,
+      '--version=0.9.28',
+      `--commits-json=${commitsJson}`,
+      `--out-dir=${notesDir}`,
+    ], {
+      cwd: rootDir,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        STORYFLOW_WHATS_NEW_DISABLE_AI: '1',
+      },
+    })
+
+    expect(result.status).toBe(0)
+    expect(existsSync(join(notesDir, '0.9.28.md'))).toBe(true)
+    expect(existsSync(join(notesDir, 'whats-new.json'))).toBe(true)
+
+    const manifest = JSON.parse(readFileSync(join(notesDir, 'whats-new.json'), 'utf8')) as {
+      version: string
+      highlights: string[]
+    }
+    expect(manifest.version).toBe('0.9.28')
+    expect(manifest.highlights).toEqual(['Structured update announcement'])
+  })
 })

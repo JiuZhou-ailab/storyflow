@@ -35,7 +35,7 @@ function usage(): string {
     'Options:',
     '  --commits-json=/path/to/commits.json  Read commit metadata instead of git log',
     '  --out-dir=apps/electron/resources/release-notes',
-    '  --out-json=/path/to/whats-new.json',
+    '  --out-json=/path/to/whats-new.json       Defaults to <out-dir>/whats-new.json',
     '  --from=<git-ref>                       Base ref; defaults to previous release tag',
     '  --to=<git-ref>                         Head ref; defaults to HEAD',
     '  --limit=30                             Fallback commit count when no base tag exists',
@@ -103,6 +103,7 @@ function parseArgs(argv: string[]): CliOptions {
   if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(options.version)) {
     throw new Error(`Invalid --version value: ${options.version || '(missing)'}`)
   }
+  options.outJson ??= join(options.outDir, 'whats-new.json')
 
   return options
 }

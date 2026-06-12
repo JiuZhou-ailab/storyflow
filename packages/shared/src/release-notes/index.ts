@@ -23,6 +23,7 @@ export * from './whats-new.ts';
 
 const CONFIG_DIR = join(homedir(), '.craft-agent');
 const RELEASE_NOTES_DIR = join(CONFIG_DIR, 'release-notes');
+const WHATS_NEW_MANIFEST_FILE = 'whats-new.json';
 
 let releaseNotesInitialized = false;
 
@@ -68,12 +69,42 @@ function loadBundledReleaseNotes(): Record<string, string> {
 }
 
 let _bundledNotes: Record<string, string> | null = null;
+let _bundledWhatsNewManifest: WhatsNewManifest | undefined | null = null;
 
 function getBundledReleaseNotes(): Record<string, string> {
   if (_bundledNotes === null) {
     _bundledNotes = loadBundledReleaseNotes();
   }
   return _bundledNotes;
+}
+
+function loadBundledWhatsNewManifest(): WhatsNewManifest | undefined {
+  const candidates = [
+    join(getAssetsDir(), WHATS_NEW_MANIFEST_FILE),
+    join(RELEASE_NOTES_DIR, WHATS_NEW_MANIFEST_FILE),
+  ];
+
+  for (const filePath of candidates) {
+    if (!existsSync(filePath)) continue;
+
+    try {
+      const parsed = JSON.parse(readFileSync(filePath, 'utf-8')) as unknown;
+      const manifest = normalizeWhatsNewManifest(parsed);
+      if (manifest) return manifest;
+      console.warn(`[release-notes] Ignoring invalid ${WHATS_NEW_MANIFEST_FILE}: ${filePath}`);
+    } catch (error) {
+      console.warn(`[release-notes] Could not read ${WHATS_NEW_MANIFEST_FILE}: ${filePath}`, error);
+    }
+  }
+
+  return undefined;
+}
+
+function getBundledWhatsNewManifest(): WhatsNewManifest | undefined {
+  if (_bundledWhatsNewManifest === null) {
+    _bundledWhatsNewManifest = loadBundledWhatsNewManifest();
+  }
+  return _bundledWhatsNewManifest;
 }
 
 /**
@@ -92,6 +123,15 @@ export function initializeReleaseNotes(): void {
   for (const [filename, content] of Object.entries(bundledNotes)) {
     const notePath = join(RELEASE_NOTES_DIR, filename);
     writeFileSync(notePath, content, 'utf-8');
+  }
+
+  const manifest = getBundledWhatsNewManifest();
+  if (manifest) {
+    writeFileSync(
+      join(RELEASE_NOTES_DIR, WHATS_NEW_MANIFEST_FILE),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      'utf-8',
+    );
   }
 
   debug(`[release-notes] Synced ${Object.keys(bundledNotes).length} release notes`);
@@ -147,6 +187,9 @@ export function getLatestReleaseVersion(): string | undefined {
 }
 
 export function getLatestWhatsNewManifest(): WhatsNewManifest | undefined {
+  const bundledManifest = getBundledWhatsNewManifest();
+  if (bundledManifest) return bundledManifest;
+
   const latest = getReleaseNotesList()[0];
   if (!latest) return undefined;
 
@@ -168,6 +211,42 @@ export function getLatestWhatsNewManifest(): WhatsNewManifest | undefined {
     source: {
       commitCount: 0,
       userVisibleCommitCount: 0,
+    },
+  };
+}
+
+function normalizeWhatsNewManifest(value: unknown): WhatsNewManifest | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const manifest = value as Partial<WhatsNewManifest>;
+  if (
+    typeof manifest.version !== 'string' ||
+    typeof manifest.digest !== 'string' ||
+    typeof manifest.generatedAt !== 'string' ||
+    typeof manifest.title !== 'string' ||
+    typeof manifest.summary !== 'string' ||
+    typeof manifest.accentColor !== 'string' ||
+    manifest.accentTextColor !== '#ffffff' ||
+    !manifest.source ||
+    typeof manifest.source.commitCount !== 'number' ||
+    typeof manifest.source.userVisibleCommitCount !== 'number'
+  ) {
+    return undefined;
+  }
+
+  return {
+    version: manifest.version,
+    digest: manifest.digest,
+    generatedAt: manifest.generatedAt,
+    title: manifest.title,
+    summary: manifest.summary,
+    highlights: Array.isArray(manifest.highlights)
+      ? manifest.highlights.filter((item): item is string => typeof item === 'string')
+      : undefined,
+    accentColor: manifest.accentColor,
+    accentTextColor: manifest.accentTextColor,
+    source: {
+      commitCount: manifest.source.commitCount,
+      userVisibleCommitCount: manifest.source.userVisibleCommitCount,
     },
   };
 }
