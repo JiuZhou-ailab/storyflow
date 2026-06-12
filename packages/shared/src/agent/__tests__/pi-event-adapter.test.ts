@@ -980,6 +980,7 @@ describe('PiEventAdapter', () => {
       expect(events[0]).toMatchObject({
         type: 'status',
         message: 'Compacting context...',
+        statusType: 'compacting',
       });
     });
 
@@ -994,6 +995,7 @@ describe('PiEventAdapter', () => {
       expect(events[0]).toMatchObject({
         type: 'info',
         message: 'Compacted context to fit within limits',
+        statusType: 'compaction_complete',
       });
     });
 
@@ -1175,7 +1177,7 @@ describe('PiEventAdapter', () => {
 
       // 3. compaction_start — status surfaces.
       const startEvents = collect(adapter.adaptEvent({ type: 'compaction_start' } as any));
-      expect(startEvents).toMatchObject([{ type: 'status', message: 'Compacting context...' }]);
+      expect(startEvents).toMatchObject([{ type: 'status', message: 'Compacting context...', statusType: 'compacting' }]);
 
       // 4. compaction_end success — info surfaces, still no complete.
       const endEvents = collect(adapter.adaptEvent({
@@ -1183,7 +1185,11 @@ describe('PiEventAdapter', () => {
         result: { /* compaction result */ },
         aborted: false,
       } as any));
-      expect(endEvents).toMatchObject([{ type: 'info', message: 'Compacted context to fit within limits' }]);
+      expect(endEvents).toMatchObject([{
+        type: 'info',
+        message: 'Compacted context to fit within limits',
+        statusType: 'compaction_complete',
+      }]);
       expect(adapter.shouldCompleteQueue(false)).toBe(false);
 
       // 5. Recovered text + final agent_end — text_complete + complete arrive.

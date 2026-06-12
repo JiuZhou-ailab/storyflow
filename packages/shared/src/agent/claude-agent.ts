@@ -1525,7 +1525,10 @@ This is a branched conversation. All prior messages in this conversation are par
             }
 
             // Reset prerequisite state on compaction (LLM loses guide content)
-            if (event.type === 'info' && event.message === 'Compacted Conversation') {
+            if (
+              event.type === 'info' &&
+              (event.statusType === 'compaction_complete' || event.message === 'Compacted Conversation')
+            ) {
               this.resetPrerequisiteState();
             }
 
@@ -2434,6 +2437,23 @@ This is a branched conversation. All prior messages in this conversation are par
     this.pinnedPreferencesPrompt = null;
     this.pinnedIncludeCoAuthoredBy = null;
     this.preferencesDriftNotified = false;
+  }
+
+  async compactContext(customInstructions?: string): Promise<{ summary?: string; tokensBefore?: number } | null> {
+    if (!this.sessionId) return null;
+
+    const prompt = customInstructions?.trim()
+      ? `/compact ${customInstructions.trim()}`
+      : '/compact';
+
+    for await (const event of this.chat(prompt)) {
+      if (event.type === 'error') {
+        const message = typeof event.message === 'string' ? event.message : 'Claude context compaction failed';
+        throw new Error(message);
+      }
+    }
+
+    return {};
   }
 
   /**

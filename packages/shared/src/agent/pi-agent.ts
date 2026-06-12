@@ -1073,7 +1073,10 @@ export class PiAgent extends BaseAgent {
         this.prerequisiteManager.trackReadTool(agentEvent.input as Record<string, unknown>);
       }
       // Reset prerequisite state on compaction (LLM loses guide content)
-      if (agentEvent.type === 'info' && typeof agentEvent.message === 'string' && agentEvent.message.startsWith('Compacted')) {
+      if (
+        agentEvent.type === 'info' &&
+        (agentEvent.statusType === 'compaction_complete' || agentEvent.message.startsWith('Compacted'))
+      ) {
         this.resetPrerequisiteState();
       }
 
@@ -1927,9 +1930,14 @@ export class PiAgent extends BaseAgent {
           yield {
             type: 'info',
             message: `Compacted context to fit within limits (from ~${compactResult.tokensBefore.toLocaleString()} tokens)`,
+            statusType: 'compaction_complete',
           };
         } else {
-          yield { type: 'info', message: 'Compacted context to fit within limits' };
+          yield {
+            type: 'info',
+            message: 'Compacted context to fit within limits',
+            statusType: 'compaction_complete',
+          };
         }
         yield { type: 'complete' };
         return;
@@ -2255,6 +2263,19 @@ export class PiAgent extends BaseAgent {
     this.killSubprocess();
     super.clearHistory();
     this.debug('History cleared - next chat will start new subprocess');
+  }
+
+  async compactContext(customInstructions?: string): Promise<{ summary?: string; tokensBefore?: number } | null> {
+    if (!this.piSessionId) return null;
+
+    const result = await this.requestCompact(customInstructions);
+    if (!result) return null;
+
+    this.resetPrerequisiteState();
+    return {
+      summary: result.summary,
+      tokensBefore: result.tokensBefore,
+    };
   }
 
   destroy(): void {

@@ -103,6 +103,7 @@ import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAtta
 import { captureWriteOriginalContent } from './write-original-content'
 import { SESSION_TURN_HARD_TIMEOUT_MS, SESSION_TURN_IDLE_TIMEOUT_MS, TurnWatchdog, type TurnWatchdogTimeout } from './turn-watchdog'
 import { isManagedDefaultGatewayConnection, normalizeManagedDefaultGatewayAuthError } from './managed-gateway-auth-error'
+import { runAutoCompactBeforeTurn } from './auto-compact-lifecycle'
 
 // Import from server-core domain utilities
 import { sanitizeForTitle, shouldActivateBrowserOverlay, normalizeBrowserToolName, rollbackFailedBranchCreation, releaseBrowserOwnershipOnForcedStop } from '@craft-agent/server-core/domain'
@@ -915,6 +916,8 @@ interface ManagedSession {
   // Whether the previous turn was interrupted (for context injection on next message).
   // Ephemeral — not persisted to disk. Cleared after one-shot injection.
   wasInterrupted?: boolean
+  // Runtime-only proactive compaction marker. Persisted JSONL remains lossless.
+  lastAutoCompactedUserIteration?: number
 }
 
 /**
@@ -5751,6 +5754,19 @@ export class SessionManager implements ISessionManager {
 
       sendSpan.mark('chat.starting')
       const userIteration = managed.messages.filter(message => message.role === 'user').length
+      const autoCompactResult = await runAutoCompactBeforeTurn({
+        sessionId,
+        userIteration,
+        lastCompactedUserIteration: managed.lastAutoCompactedUserIteration,
+        agent,
+        isRetry: _isAuthRetry === true,
+        isHiddenUserMessage: hideUserMessage,
+        log: sessionLog,
+        span: sendSpan,
+      })
+      if (autoCompactResult.nextLastCompactedUserIteration !== undefined) {
+        managed.lastAutoCompactedUserIteration = autoCompactResult.nextLastCompactedUserIteration
+      }
       const chatIterator = agent.chat(effectiveMessage, modelInputAttachments.attachments, {
         ...options,
         userIteration,
@@ -7125,12 +7141,12 @@ export class SessionManager implements ISessionManager {
           type: 'status',
           sessionId,
           message: event.message,
-          statusType: event.message.includes('Compacting') ? 'compacting' : undefined
+          statusType: event.statusType ?? (event.message.includes('Compacting') ? 'compacting' : undefined)
         }, workspaceId)
         break
 
       case 'info': {
-        const isCompactionComplete = event.message.startsWith('Compacted')
+        const isCompactionComplete = event.statusType === 'compaction_complete' || event.message.startsWith('Compacted')
         const infoTimestamp = this.monotonic()
 
         // Persist compaction messages so they survive reload

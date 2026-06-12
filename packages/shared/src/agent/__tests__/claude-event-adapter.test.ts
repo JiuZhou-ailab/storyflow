@@ -417,6 +417,7 @@ describe('ClaudeEventAdapter', () => {
       expect(events[0]).toMatchObject({
         type: 'info',
         message: 'Compacted Conversation',
+        statusType: 'compaction_complete',
       });
     });
 
@@ -432,6 +433,7 @@ describe('ClaudeEventAdapter', () => {
       expect(events[0]).toMatchObject({
         type: 'status',
         message: 'Compacting conversation...',
+        statusType: 'compacting',
       });
     });
 

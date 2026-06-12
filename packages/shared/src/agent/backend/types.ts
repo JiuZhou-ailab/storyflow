@@ -414,6 +414,13 @@ export interface AgentBackend {
   queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult>;
 
   /**
+   * Compact provider-side conversation context without adding a visible user message.
+   * The local persisted transcript remains lossless; only the backend resume context
+   * is summarized so long-running sessions do not wait for an overflow failure.
+   */
+  compactContext?(customInstructions?: string): Promise<{ summary?: string; tokensBefore?: number } | null>;
+
+  /**
    * Clean up resources (MCP connections, watchers, etc.)
    */
   destroy(): void;

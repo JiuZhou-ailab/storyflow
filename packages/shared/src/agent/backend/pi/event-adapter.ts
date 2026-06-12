@@ -55,7 +55,7 @@ type PiEvent = PiAgentEvent | AgentSessionEvent;
  * - tool_execution_start → tool_start
  * - tool_execution_end → tool_result
  * - agent_end → complete
- * - compaction_start → status (with "Compacting" keyword)
+ * - compaction_start → status
  * - compaction_end → info/error
  * - auto_retry_start → status
  * - auto_retry_end → status
@@ -525,8 +525,7 @@ export class PiEventAdapter extends BaseEventAdapter {
           this.cancelOverflowFallbackTimer();
           this.overflowState = 'compacting';
         }
-        // Use "Compacting" keyword so session handler detects statusType: 'compacting'
-        yield { type: 'status', message: 'Compacting context...' };
+        yield { type: 'status', message: 'Compacting context...', statusType: 'compacting' };
         break;
 
       case 'compaction_end': {
@@ -539,8 +538,11 @@ export class PiEventAdapter extends BaseEventAdapter {
             this.overflowState = 'recovering';
             this.heldOverflowError = null;
           }
-          // Use "Compacted" keyword so session handler detects statusType: 'compaction_complete'
-          yield { type: 'info', message: 'Compacted context to fit within limits' };
+          yield {
+            type: 'info',
+            message: 'Compacted context to fit within limits',
+            statusType: 'compaction_complete',
+          };
         } else if (compactionEvent.errorMessage) {
           // Defensive handler for the Pi SDK auto-compaction race (cause A
           // in plans/fix-pi-gpt-compaction.md). The raw stack

@@ -529,9 +529,10 @@ export class ClaudeEventAdapter extends BaseEventAdapter {
       events.push({
         type: 'info',
         message: 'Compacted Conversation',
+        statusType: 'compaction_complete',
       });
     } else if (msg.subtype === 'status' && msg.status === 'compacting') {
-      events.push({ type: 'status', message: 'Compacting conversation...' });
+      events.push({ type: 'status', message: 'Compacting conversation...', statusType: 'compacting' });
     } else if (msg.subtype === 'task_notification') {
       const notification = msg as TaskNotificationMessage;
       if (!notification.task_id) {
