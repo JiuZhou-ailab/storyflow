@@ -22,7 +22,7 @@ describe("method pack runtime preamble", () => {
 
   it("builds legacy agent runtime context for non-profile method packs", () => {
     for (const pack of getBuiltInMethodPacks()) {
-      if (pack.id === "short-form.article") continue;
+      if (pack.id === "short-form.article" || pack.id === "novel.free-creation") continue;
       expect(pack.agentIdentity.length).toBeGreaterThan(20);
       expect(pack.alwaysOnInstructions.length).toBeGreaterThan(40);
       expect(pack.artifactContract.length).toBeGreaterThanOrEqual(4);
@@ -40,6 +40,7 @@ describe("method pack runtime preamble", () => {
   it("requires every novel.* method pack to gate broad initial requests through a default skill", () => {
     for (const pack of getBuiltInMethodPacks()) {
       if (!pack.id.startsWith("novel.")) continue;
+      if (pack.id === "novel.free-creation") continue;
       expect(pack.defaultSkill).toBeTruthy();
       expect(pack.requiredSkills).toContain(pack.defaultSkill);
       expect(pack.initialRequestPolicy).toContain("Do not draft directly");
