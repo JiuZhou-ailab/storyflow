@@ -1434,7 +1434,7 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
     debugLog(`Prompt failed: ${errorMsg}`);
     send({ type: 'error', message: errorMsg, code: 'prompt_error' });
     // Send synthetic agent_end so the main process event queue unblocks
-    send({ type: 'event', event: { type: 'agent_end', messages: [] } });
+    send({ type: 'event', event: { type: 'agent_end', messages: [], willRetry: false } });
   } finally {
     if (currentPromptAttemptState === promptAttemptState) {
       currentPromptAttemptState = null;

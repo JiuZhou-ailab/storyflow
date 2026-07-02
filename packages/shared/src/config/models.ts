@@ -14,34 +14,70 @@
 // Must stay in sync with BEDROCK_MODEL_MAP in llm-connections.ts.
 const BEDROCK_TO_BARE: Record<string, string> = {
   // US inference profile IDs (primary)
+  'us.anthropic.claude-opus-4-8': 'claude-opus-4-8',
+  'us.anthropic.claude-fable-5': 'claude-fable-5',
+  'us.anthropic.claude-opus-4-7': 'claude-opus-4-7',
   'us.anthropic.claude-opus-4-7-v1': 'claude-opus-4-7',
+  'us.anthropic.claude-sonnet-5': 'claude-sonnet-5',
   'us.anthropic.claude-sonnet-4-6': 'claude-sonnet-4-6',
   'us.anthropic.claude-haiku-4-5-20251001-v1:0': 'claude-haiku-4-5-20251001',
-  'us.anthropic.claude-opus-4-6-v1': 'claude-opus-4-6',
   'us.anthropic.claude-opus-4-5-20251101-v1:0': 'claude-opus-4-5-20251101',
   'us.anthropic.claude-sonnet-4-5-20250929-v1:0': 'claude-sonnet-4-5-20250929',
   // EU inference profile IDs
+  'eu.anthropic.claude-opus-4-8': 'claude-opus-4-8',
+  'eu.anthropic.claude-fable-5': 'claude-fable-5',
+  'eu.anthropic.claude-opus-4-7': 'claude-opus-4-7',
   'eu.anthropic.claude-opus-4-7-v1': 'claude-opus-4-7',
+  'eu.anthropic.claude-sonnet-5': 'claude-sonnet-5',
   'eu.anthropic.claude-sonnet-4-6': 'claude-sonnet-4-6',
   'eu.anthropic.claude-haiku-4-5-20251001-v1:0': 'claude-haiku-4-5-20251001',
-  'eu.anthropic.claude-opus-4-6-v1': 'claude-opus-4-6',
   'eu.anthropic.claude-opus-4-5-20251101-v1:0': 'claude-opus-4-5-20251101',
   'eu.anthropic.claude-sonnet-4-5-20250929-v1:0': 'claude-sonnet-4-5-20250929',
   // Global inference profile IDs
+  'global.anthropic.claude-opus-4-8': 'claude-opus-4-8',
+  'global.anthropic.claude-fable-5': 'claude-fable-5',
+  'global.anthropic.claude-opus-4-7': 'claude-opus-4-7',
   'global.anthropic.claude-opus-4-7-v1': 'claude-opus-4-7',
+  'global.anthropic.claude-sonnet-5': 'claude-sonnet-5',
   'global.anthropic.claude-sonnet-4-6': 'claude-sonnet-4-6',
   'global.anthropic.claude-haiku-4-5-20251001-v1:0': 'claude-haiku-4-5-20251001',
-  'global.anthropic.claude-opus-4-6-v1': 'claude-opus-4-6',
   // Base IDs (no region prefix)
+  'anthropic.claude-opus-4-8': 'claude-opus-4-8',
+  'anthropic.claude-fable-5': 'claude-fable-5',
+  'anthropic.claude-opus-4-7': 'claude-opus-4-7',
   'anthropic.claude-opus-4-7-v1': 'claude-opus-4-7',
+  'anthropic.claude-sonnet-5': 'claude-sonnet-5',
   'anthropic.claude-sonnet-4-6': 'claude-sonnet-4-6',
   'anthropic.claude-haiku-4-5-20251001-v1:0': 'claude-haiku-4-5-20251001',
-  'anthropic.claude-opus-4-6-v1': 'claude-opus-4-6',
   'anthropic.claude-opus-4-5-20251101-v1:0': 'claude-opus-4-5-20251101',
   'anthropic.claude-sonnet-4-5-20250929-v1:0': 'claude-sonnet-4-5-20250929',
 };
-function bedrockToBarId(modelId: string): string {
+function bedrockToBareId(modelId: string): string {
   return BEDROCK_TO_BARE[modelId] ?? modelId;
+}
+
+const DEPRECATED_MODEL_REPLACEMENTS: Record<string, string> = {
+  'claude-opus-4-5-20251101': 'claude-opus-4-8',
+  'claude-opus-4-6': 'claude-opus-4-8',
+  'anthropic.claude-opus-4-5-20251101-v1:0': 'anthropic.claude-opus-4-8',
+  'anthropic.claude-opus-4-6-v1': 'anthropic.claude-opus-4-8',
+  'anthropic.claude-opus-4-7-v1': 'anthropic.claude-opus-4-7',
+  'us.anthropic.claude-opus-4-5-20251101-v1:0': 'us.anthropic.claude-opus-4-8',
+  'us.anthropic.claude-opus-4-6-v1': 'us.anthropic.claude-opus-4-8',
+  'us.anthropic.claude-opus-4-7-v1': 'us.anthropic.claude-opus-4-7',
+  'eu.anthropic.claude-opus-4-5-20251101-v1:0': 'eu.anthropic.claude-opus-4-8',
+  'eu.anthropic.claude-opus-4-6-v1': 'eu.anthropic.claude-opus-4-8',
+  'eu.anthropic.claude-opus-4-7-v1': 'eu.anthropic.claude-opus-4-7',
+  'global.anthropic.claude-opus-4-6-v1': 'global.anthropic.claude-opus-4-8',
+  'global.anthropic.claude-opus-4-7-v1': 'global.anthropic.claude-opus-4-7',
+};
+
+export function normalizeDeprecatedModelId(modelId: string): string {
+  if (modelId.startsWith('pi/')) {
+    const normalized = normalizeDeprecatedModelId(modelId.slice(3));
+    return normalized === modelId.slice(3) ? modelId : `pi/${normalized}`;
+  }
+  return DEPRECATED_MODEL_REPLACEMENTS[modelId] ?? modelId;
 }
 
 // ============================================
@@ -92,35 +128,37 @@ export const MODEL_REGISTRY: ModelDefinition[] = [
   // Anthropic Claude Models
   // ----------------------------------------
   {
-    id: 'claude-opus-4-7',
-    name: 'Opus 4.7',
+    id: 'claude-opus-4-8',
+    name: 'Opus 4.8',
     shortName: 'Opus',
     description: 'Most capable for complex work',
     descriptionKey: 'model.opusDesc',
     provider: 'anthropic',
     contextWindow: 1_000_000,
   },
-  // TODO(opus-4.6-sunset): remove this entry when Opus 4.6 is deprecated by
-  // Anthropic or we stop offering it. Also drop the related 4.6 pieces in
-  // llm-connections.ts PI_PREFERRED_DEFAULTS and the restoreOpus46ToAnthropicConnections
-  // migration in storage.ts (grep for TODO(opus-4.6-sunset) to find them all).
   {
-    id: 'claude-opus-4-6',
-    name: 'Opus 4.6',
-    // shortName intentionally collides with 4.7. 4.7 is listed first, so
-    // findModelIdByShortName('Opus') keeps returning 4.7 — zero behavior
-    // change for callers that reference "Opus" abstractly.
+    id: 'claude-opus-4-7',
+    name: 'Opus 4.7',
     shortName: 'Opus',
-    description: 'Previous Opus release',
+    description: 'Previous Opus generation',
     descriptionKey: 'model.opusDesc',
     provider: 'anthropic',
-    contextWindow: 200_000,
+    contextWindow: 1_000_000,
+  },
+  {
+    id: 'claude-sonnet-5',
+    name: 'Sonnet 5',
+    shortName: 'Sonnet',
+    description: 'Best combination of speed and intelligence',
+    descriptionKey: 'model.sonnetDesc',
+    provider: 'anthropic',
+    contextWindow: 1_000_000,
   },
   {
     id: 'claude-sonnet-4-6',
     name: 'Sonnet 4.6',
     shortName: 'Sonnet',
-    description: 'Best for everyday tasks',
+    description: 'Previous Sonnet generation',
     descriptionKey: 'model.sonnetDesc',
     provider: 'anthropic',
     contextWindow: 200_000,
@@ -133,6 +171,15 @@ export const MODEL_REGISTRY: ModelDefinition[] = [
     descriptionKey: 'model.haikuDesc',
     provider: 'anthropic',
     contextWindow: 200_000,
+  },
+  {
+    id: 'claude-fable-5',
+    name: 'Fable 5',
+    shortName: 'Fable',
+    description: 'Next-generation model for complex work',
+    descriptionKey: 'model.fableDesc',
+    provider: 'anthropic',
+    contextWindow: 1_000_000,
   },
 
   // ----------------------------------------
@@ -216,8 +263,9 @@ export function getDefaultSummarizationModel(): string {
  * by reverse-mapping to the bare Anthropic ID for lookup.
  */
 export function getModelById(modelId: string): ModelDefinition | undefined {
-  return MODEL_REGISTRY.find(m => m.id === modelId)
-    ?? MODEL_REGISTRY.find(m => m.id === bedrockToBarId(modelId));
+  const normalized = normalizeDeprecatedModelId(modelId);
+  return MODEL_REGISTRY.find(m => m.id === normalized)
+    ?? MODEL_REGISTRY.find(m => m.id === bedrockToBareId(normalized));
 }
 
 /**
@@ -228,7 +276,7 @@ export function getModelDisplayName(modelId: string): string {
   if (model) return model.name;
   // Fallback: normalize Bedrock-native IDs, then strip prefix and date suffix
   // e.g., "claude-opus-4-5-20251101" → "Opus 4.5"
-  const normalized = bedrockToBarId(modelId);
+  const normalized = bedrockToBareId(normalizeDeprecatedModelId(modelId));
   const stripped = normalized
     .replace('claude-', '')
     .replace(/-\d{8}$/, '');  // Remove date suffix
@@ -252,7 +300,7 @@ export function getModelShortName(modelId: string): string {
     return modelId.split('/').pop() || modelId;
   }
   // Fallback: normalize Bedrock-native IDs, then humanize (same logic as getModelDisplayName)
-  const normalized = bedrockToBarId(modelId);
+  const normalized = bedrockToBareId(normalizeDeprecatedModelId(modelId));
   const stripped = normalized.replace('claude-', '').replace(/-\d{8}$/, '');
   const parts = stripped.split('-');
   const first = parts[0];
