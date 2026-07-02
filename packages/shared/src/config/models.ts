@@ -335,6 +335,10 @@ export function isClaudeModel(modelId: string): boolean {
   return lower.startsWith('claude-') || lower.includes('/claude') || lower.includes('.claude');
 }
 
+export function isAdaptiveThinkingAlwaysOnModel(modelId: string): boolean {
+  return /claude-(fable|mythos)/i.test(modelId);
+}
+
 
 /**
  * Get the provider for a model ID.

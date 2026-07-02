@@ -95,6 +95,61 @@ describe('resolveClaudeThinkingOptions', () => {
       maxThinkingTokens: 7_000,
     })
   })
+
+  it('uses adaptive thinking + effort for Fable 5', () => {
+    const result = resolveClaudeThinkingOptions({
+      thinkingLevel: 'high',
+      model: 'claude-fable-5',
+      providerType: 'anthropic',
+      minimizeThinking: false,
+    })
+
+    expect(result).toEqual({
+      thinking: { type: 'adaptive' },
+      effort: 'high',
+    })
+  })
+
+  it('never disables thinking on Fable 5 when level is off', () => {
+    const result = resolveClaudeThinkingOptions({
+      thinkingLevel: 'off',
+      model: 'claude-fable-5',
+      providerType: 'anthropic',
+      minimizeThinking: false,
+    })
+
+    expect(result).toEqual({
+      thinking: { type: 'adaptive' },
+      effort: 'low',
+    })
+  })
+
+  it('never disables thinking on Fable 5 when minimizeThinking is set', () => {
+    const result = resolveClaudeThinkingOptions({
+      thinkingLevel: 'medium',
+      model: 'claude-fable-5',
+      providerType: 'anthropic',
+      minimizeThinking: true,
+    })
+
+    expect(result).toEqual({
+      thinking: { type: 'adaptive' },
+      effort: 'low',
+    })
+  })
+
+  it('still disables thinking on Opus 4.8 when level is off', () => {
+    const result = resolveClaudeThinkingOptions({
+      thinkingLevel: 'off',
+      model: 'claude-opus-4-8',
+      providerType: 'anthropic',
+      minimizeThinking: false,
+    })
+
+    expect(result).toEqual({
+      thinking: { type: 'disabled' },
+    })
+  })
 })
 
 describe('getThinkingTokens', () => {
