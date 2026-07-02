@@ -15,6 +15,12 @@ export { CollapsibleMarkdownProvider, useCollapsibleMarkdown } from './Collapsib
 export { MarkdownDatatableBlock, type MarkdownDatatableBlockProps } from './MarkdownDatatableBlock'
 export { MarkdownSpreadsheetBlock, type MarkdownSpreadsheetBlockProps } from './MarkdownSpreadsheetBlock'
 export { MarkdownImageBlock, type MarkdownImageBlockProps } from './MarkdownImageBlock'
+export {
+  parseMarkdownPreviewSpec,
+  normalizePreviewItems,
+  type MarkdownPreviewItem,
+  type MarkdownPreviewSpec,
+} from './markdown-preview-helpers'
 export { ImageCardStack, type ImageCardStackProps, type ImageCardStackItem } from './ImageCardStack'
 export { TiptapMarkdownEditor, type TiptapMarkdownEditorProps, type MarkdownEngine } from './TiptapMarkdownEditor'
 export type { TiptapSelectionAiRequest, TiptapSelectionChatRequest } from './TiptapBubbleMenus'
