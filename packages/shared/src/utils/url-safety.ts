@@ -5,20 +5,21 @@
  * schemes that have a registered handler, so passing through
  * `obsidian://`, `vscode://`, etc. is safe in practice. Known-dangerous
  * schemes (XSS primitives and `file:` as an RCE vector on Windows) stay
- * explicitly blocked.
+ * explicitly blocked, with a per-scheme reason so blocked attempts produce a
+ * useful error message instead of a generic "Invalid URL".
  */
 
 export type UrlClassification =
-  | { kind: 'dangerous'; reason: string }
+  | { kind: 'dangerous'; scheme?: string; reason: string }
   | { kind: 'internal-deeplink' }
   | { kind: 'safe-external' }
 
-const DANGEROUS_SCHEMES: ReadonlySet<string> = new Set([
-  'javascript:',
-  'data:',
-  'vbscript:',
-  'blob:',
-  'file:',
+const DANGEROUS_SCHEMES: ReadonlyMap<string, string> = new Map([
+  ['javascript:', 'JavaScript URLs can execute arbitrary code in the renderer (XSS vector).'],
+  ['data:', 'data: URLs can embed executable content and bypass scheme restrictions.'],
+  ['vbscript:', 'VBScript URLs are a legacy script-execution vector.'],
+  ['blob:', 'blob: URLs are renderer-scoped and do not resolve outside this window.'],
+  ['file:', 'file: URLs are blocked because shell.openExternal can launch local executables on Windows (Electron RCE class). Use an in-app preview block or open the file from your OS file manager.'],
 ])
 
 const INTERNAL_DEEPLINK_SCHEME = 'craftagents:'
@@ -37,8 +38,9 @@ export function classifyExternalUrl(rawUrl: string): UrlClassification {
 
   const protocol = parsed.protocol.toLowerCase()
 
-  if (DANGEROUS_SCHEMES.has(protocol)) {
-    return { kind: 'dangerous', reason: `blocked scheme "${protocol}"` }
+  const blockedReason = DANGEROUS_SCHEMES.get(protocol)
+  if (blockedReason) {
+    return { kind: 'dangerous', scheme: protocol, reason: blockedReason }
   }
 
   if (protocol === INTERNAL_DEEPLINK_SCHEME) {
@@ -50,4 +52,10 @@ export function classifyExternalUrl(rawUrl: string): UrlClassification {
 
 export function isSafeExternalUrl(rawUrl: string): boolean {
   return classifyExternalUrl(rawUrl).kind === 'safe-external'
+}
+
+export function formatBlockedUrlError(classification: UrlClassification): string {
+  if (classification.kind !== 'dangerous') return ''
+  const suffix = classification.scheme ? ` (${classification.scheme})` : ''
+  return `URL blocked${suffix}. ${classification.reason}`
 }

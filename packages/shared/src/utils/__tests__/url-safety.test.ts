@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { classifyExternalUrl, isSafeExternalUrl } from '../url-safety.ts'
+import { classifyExternalUrl, isSafeExternalUrl, formatBlockedUrlError } from '../url-safety.ts'
 
 describe('classifyExternalUrl — safe external (standard web schemes)', () => {
   it('classifies http:// as safe-external', () => {
@@ -65,6 +65,21 @@ describe('classifyExternalUrl — dangerous schemes', () => {
     if (result.kind === 'dangerous') {
       expect(result.reason).toBeTruthy()
     }
+  })
+
+  it('attaches the blocked scheme and a specific reason for javascript: URLs', () => {
+    const result = classifyExternalUrl('javascript:alert(1)')
+    expect(result.kind).toBe('dangerous')
+    if (result.kind === 'dangerous') {
+      expect(result.scheme).toBe('javascript:')
+      expect(result.reason).toMatch(/JavaScript/)
+    }
+  })
+
+  it('formats blocked URL errors with the blocked scheme', () => {
+    expect(formatBlockedUrlError(classifyExternalUrl('file:///tmp/test.md'))).toMatch(
+      /^URL blocked \(file:\)\. /,
+    )
   })
 })
 
