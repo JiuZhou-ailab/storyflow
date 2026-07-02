@@ -787,7 +787,8 @@ async function testMcpConnection(
       try {
         // Merge static headers with credential-store headers (if headerNames configured)
         let headers = source.mcp.headers ? { ...source.mcp.headers } : undefined;
-        if (source.mcp.headerNames?.length && ctx.credentialManager) {
+        let accessToken: string | undefined;
+        if (ctx.credentialManager) {
           const workspaceId = basename(ctx.workspacePath) || '';
           const loadedSource = {
             config: source,
@@ -795,14 +796,26 @@ async function testMcpConnection(
             workspaceRootPath: ctx.workspacePath,
             workspaceId,
           };
-          try {
-            const rawCred = await ctx.credentialManager.getToken(loadedSource);
-            if (rawCred) {
-              const parsed = JSON.parse(rawCred) as Record<string, string>;
-              headers = { ...headers, ...parsed };
+
+          if (source.mcp.headerNames?.length) {
+            try {
+              const rawCred = await ctx.credentialManager.getToken(loadedSource);
+              if (rawCred) {
+                const parsed = JSON.parse(rawCred) as Record<string, string>;
+                headers = { ...headers, ...parsed };
+              }
+            } catch {
+              // Not JSON or no credential — continue without credential headers
             }
-          } catch {
-            // Not JSON or no credential — continue without credential headers
+          } else if (source.mcp.authType === 'oauth' || source.mcp.authType === 'bearer') {
+            try {
+              accessToken =
+                (await ctx.credentialManager.getToken(loadedSource)) ??
+                (await ctx.credentialManager.refresh(loadedSource)) ??
+                undefined;
+            } catch {
+              // Token resolution failed — let the probe surface auth state.
+            }
           }
         }
         const result = await ctx.validateMcpConnection({
@@ -810,6 +823,7 @@ async function testMcpConnection(
           transport: source.mcp.transport,
           authType: source.mcp.authType,
           headers,
+          accessToken,
         });
         if (result.success) {
           success = true;

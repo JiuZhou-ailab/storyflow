@@ -22,6 +22,7 @@ type ActivateResult = Awaited<
 interface CtxOverrides {
   activateSourceInSession?: (slug: string) => Promise<ActivateResult>;
   validateStdioMcpConnection?: SessionToolContext['validateStdioMcpConnection'];
+  validateMcpConnection?: SessionToolContext['validateMcpConnection'];
   credentialManager?: SessionToolContext['credentialManager'];
 }
 
@@ -65,6 +66,7 @@ function createCtx(workspacePath: string, overrides: CtxOverrides = {}): Session
     },
     // Stub the MCP validator so connection tests don't hit the network.
     validateStdioMcpConnection: overrides.validateStdioMcpConnection,
+    validateMcpConnection: overrides.validateMcpConnection,
     credentialManager: overrides.credentialManager,
     activateSourceInSession: overrides.activateSourceInSession,
   } as unknown as SessionToolContext;
@@ -543,6 +545,92 @@ describe('source_test API connection branches', () => {
     expect(stub.calls[0]?.init?.headers).toMatchObject({
       Authorization: 'Basic legacy-token',
     });
+  });
+});
+
+type ValidateMcpCall = Parameters<NonNullable<SessionToolContext['validateMcpConnection']>>[0];
+
+function writeHttpMcpSource(
+  workspacePath: string,
+  slug: string,
+  overrides: Partial<SourceConfig> = {},
+): void {
+  writeSource(workspacePath, slug, {
+    type: 'mcp',
+    mcp: {
+      transport: 'http',
+      url: 'https://mcp.example.test',
+      authType: 'oauth',
+    },
+    ...overrides,
+  });
+}
+
+function credentialManagerStub(cachedToken?: string | null, refreshedToken?: string | null) {
+  let getTokenCalls = 0;
+  let refreshCalls = 0;
+  return {
+    manager: {
+      hasValidCredentials: async () => true,
+      getToken: async () => {
+        getTokenCalls += 1;
+        return cachedToken ?? null;
+      },
+      refresh: async () => {
+        refreshCalls += 1;
+        return refreshedToken ?? null;
+      },
+    } satisfies NonNullable<SessionToolContext['credentialManager']>,
+    getTokenCalls: () => getTokenCalls,
+    refreshCalls: () => refreshCalls,
+  };
+}
+
+describe('source_test HTTP MCP credential forwarding', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'source-test-http-mcp-'));
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('forwards cached OAuth token to the MCP probe without refresh', async () => {
+    writeHttpMcpSource(tempDir, 'oauth-cached');
+    const cred = credentialManagerStub('cached-tok');
+    const calls: ValidateMcpCall[] = [];
+
+    await handleSourceTest(createCtx(tempDir, {
+      credentialManager: cred.manager,
+      validateMcpConnection: async (config) => {
+        calls.push(config);
+        return { success: true };
+      },
+    }), { sourceSlug: 'oauth-cached', autoEnable: false });
+
+    expect(calls[0]?.accessToken).toBe('cached-tok');
+    expect(cred.getTokenCalls()).toBe(1);
+    expect(cred.refreshCalls()).toBe(0);
+  });
+
+  it('refreshes OAuth token on cache miss before probing MCP', async () => {
+    writeHttpMcpSource(tempDir, 'oauth-refresh');
+    const cred = credentialManagerStub(null, 'fresh-tok');
+    const calls: ValidateMcpCall[] = [];
+
+    await handleSourceTest(createCtx(tempDir, {
+      credentialManager: cred.manager,
+      validateMcpConnection: async (config) => {
+        calls.push(config);
+        return { success: true };
+      },
+    }), { sourceSlug: 'oauth-refresh', autoEnable: false });
+
+    expect(calls[0]?.accessToken).toBe('fresh-tok');
+    expect(cred.getTokenCalls()).toBe(1);
+    expect(cred.refreshCalls()).toBe(1);
   });
 });
 
