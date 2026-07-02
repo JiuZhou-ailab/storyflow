@@ -14,19 +14,19 @@ const POLICIES: Record<CliDomainNamespace, CliDomainPolicy> = {
   label: {
     namespace: 'label',
     helpCommand: 'craft-agent label --help',
-    workspacePathScopes: ['labels/**'],
+    workspacePathScopes: ['.craft-agent/labels/**', 'labels/**'],
     readActions: ['list', 'get', 'auto-rule-list', 'auto-rule-validate'],
     quickExamples: [
       'craft-agent label list',
       'craft-agent label create --name "Bug" --color "accent"',
       'craft-agent label update bug --json \'{"name":"Bug Report"}\'',
     ],
-    bashGuardPaths: ['labels/**'],
+    bashGuardPaths: ['.craft-agent/labels/**', 'labels/**'],
   },
   source: {
     namespace: 'source',
     helpCommand: 'craft-agent source --help',
-    workspacePathScopes: ['sources/**'],
+    workspacePathScopes: ['.craft-agent/sources/**', 'sources/**'],
     readActions: ['list', 'get', 'validate', 'test', 'auth-help'],
     quickExamples: [
       'craft-agent source list',
@@ -38,7 +38,7 @@ const POLICIES: Record<CliDomainNamespace, CliDomainPolicy> = {
   skill: {
     namespace: 'skill',
     helpCommand: 'craft-agent skill --help',
-    workspacePathScopes: ['skills/**'],
+    workspacePathScopes: ['.craft-agent/skills/**', 'skills/**'],
     readActions: ['list', 'get', 'validate', 'where'],
     quickExamples: [
       'craft-agent skill list',
@@ -64,7 +64,7 @@ const POLICIES: Record<CliDomainNamespace, CliDomainPolicy> = {
   permission: {
     namespace: 'permission',
     helpCommand: 'craft-agent permission --help',
-    workspacePathScopes: ['permissions.json', 'sources/*/permissions.json'],
+    workspacePathScopes: ['permissions.json', '.craft-agent/sources/*/permissions.json', 'sources/*/permissions.json'],
     readActions: ['list', 'get', 'validate'],
     quickExamples: [
       'craft-agent permission list',
@@ -72,12 +72,12 @@ const POLICIES: Record<CliDomainNamespace, CliDomainPolicy> = {
       'craft-agent permission add-mcp-pattern "list" --comment "All list ops" --source linear',
       'craft-agent permission validate',
     ],
-    bashGuardPaths: ['permissions.json', 'sources/*/permissions.json'],
+    bashGuardPaths: ['permissions.json', '.craft-agent/sources/*/permissions.json', 'sources/*/permissions.json'],
   },
   theme: {
     namespace: 'theme',
     helpCommand: 'craft-agent theme --help',
-    workspacePathScopes: ['config.json', 'theme.json', 'themes/*.json'],
+    workspacePathScopes: ['.craft-agent/config.json', '.craft-agent/theme.json', '.craft-agent/themes/*.json', 'config.json', 'theme.json', 'themes/*.json'],
     readActions: ['get', 'validate', 'list-presets', 'get-preset'],
     quickExamples: [
       'craft-agent theme get',
@@ -86,7 +86,7 @@ const POLICIES: Record<CliDomainNamespace, CliDomainPolicy> = {
       'craft-agent theme set-workspace-color-theme default',
       'craft-agent theme set-override --json "{\"accent\":\"#3b82f6\"}"',
     ],
-    bashGuardPaths: ['config.json', 'theme.json', 'themes/*.json'],
+    bashGuardPaths: ['.craft-agent/config.json', '.craft-agent/theme.json', '.craft-agent/themes/*.json', 'config.json', 'theme.json', 'themes/*.json'],
   },
 }
 

@@ -12,6 +12,10 @@ function createTempProject(): string {
   return mkdtempSync(join(tmpdir(), "craft-novel-template-"));
 }
 
+function statePath(rootPath: string, relativePath = ""): string {
+  return join(rootPath, ".craft-agent", relativePath);
+}
+
 describe("createNovelProjectScaffold", () => {
   it("creates the novel project file contract", () => {
     const rootPath = createTempProject();
@@ -22,7 +26,6 @@ describe("createNovelProjectScaffold", () => {
     });
 
     for (const relativePath of [
-      "craft-writing.json",
       "bible/style.md",
       "bible/structure.md",
       "bible/characters/_template.md",
@@ -42,16 +45,22 @@ describe("createNovelProjectScaffold", () => {
       ".work/.gitkeep",
       ".work/analysis/src",
       ".work/analysis/output",
+    ]) {
+      expect(existsSync(join(rootPath, relativePath))).toBe(true);
+    }
+    for (const relativePath of [
+      "craft-writing.json",
       "AGENTS.md",
       "CLAUDE.md",
       "craft-pack-lock.json",
       "NOTICE-Claude-Book.md",
     ]) {
-      expect(existsSync(join(rootPath, relativePath))).toBe(true);
+      expect(existsSync(statePath(rootPath, relativePath))).toBe(true);
+      expect(existsSync(join(rootPath, relativePath))).toBe(false);
     }
     expect(existsSync(join(rootPath, "analysis"))).toBe(false);
 
-    const manifest = JSON.parse(readFileSync(join(rootPath, "craft-writing.json"), "utf-8"));
+    const manifest = JSON.parse(readFileSync(statePath(rootPath, "craft-writing.json"), "utf-8"));
     expect(manifest).toMatchObject({
       schemaVersion: 1,
       type: "novel",
@@ -63,14 +72,14 @@ describe("createNovelProjectScaffold", () => {
       },
       storageProfile: "claude-book-compatible",
     });
-    const lock = JSON.parse(readFileSync(join(rootPath, "craft-pack-lock.json"), "utf-8"));
+    const lock = JSON.parse(readFileSync(statePath(rootPath, "craft-pack-lock.json"), "utf-8"));
     expect(lock.methodPack).toEqual({
       id: "novel.claude-book",
       version: 1,
     });
     expect(lock.installedSkills).toContain("chapter-workflow");
     expect(lock.installedPaths).toContain("state/current/situation.md");
-    const agentInstructions = readFileSync(join(rootPath, "AGENTS.md"), "utf-8");
+    const agentInstructions = readFileSync(statePath(rootPath, "AGENTS.md"), "utf-8");
     expect(agentInstructions).toContain("## 工作流硬门禁");
     expect(agentInstructions).toContain("在 story/synopsis.md 和 story/plan.md 仍为空模板前，不要写入或更新 story/chapters/。");
     expect(agentInstructions).toContain("正文章节数量与顺序必须来自 story/plan.md。");
@@ -107,7 +116,7 @@ describe("createNovelProjectScaffold", () => {
 
     createNovelProjectScaffold(rootPath, { title: "The Test Novel" });
 
-    const notice = readFileSync(join(rootPath, "NOTICE-Claude-Book.md"), "utf-8");
+    const notice = readFileSync(statePath(rootPath, "NOTICE-Claude-Book.md"), "utf-8");
     expect(notice).toContain("https://github.com/ThomasHoussin/Claude-Book");
     expect(notice).toContain("MIT");
     expect(notice).toContain("3fdebbb576b1be6d123b48258d2310c5dff013c4");
@@ -131,13 +140,15 @@ describe("createNovelProjectScaffold", () => {
       "逻辑/因果链.md",
       "逻辑/冲突升级.md",
       "自由区",
-      "skills/script-logic-planner/SKILL.md",
-      "NOTICE-Screenplay-Logic.md",
     ]) {
       expect(existsSync(join(rootPath, relativePath))).toBe(true);
     }
+    expect(existsSync(statePath(rootPath, "skills/script-logic-planner/SKILL.md"))).toBe(true);
+    expect(existsSync(statePath(rootPath, "NOTICE-Screenplay-Logic.md"))).toBe(true);
+    expect(existsSync(join(rootPath, "skills"))).toBe(false);
+    expect(existsSync(join(rootPath, "NOTICE-Screenplay-Logic.md"))).toBe(false);
 
-    const manifest = JSON.parse(readFileSync(join(rootPath, "craft-writing.json"), "utf-8"));
+    const manifest = JSON.parse(readFileSync(statePath(rootPath, "craft-writing.json"), "utf-8"));
     expect(manifest).toMatchObject({
       type: "screenplay",
       profile: "screenplay",
@@ -145,7 +156,7 @@ describe("createNovelProjectScaffold", () => {
       storageProfile: "screenplay-logic-compatible",
     });
 
-    const agents = readFileSync(join(rootPath, "AGENTS.md"), "utf-8");
+    const agents = readFileSync(statePath(rootPath, "AGENTS.md"), "utf-8");
     expect(agents).toContain("screenplay.logic");
     expect(agents).toContain("分场");
     expect(agents).toContain("对白");
@@ -161,25 +172,29 @@ describe("createNovelProjectScaffold", () => {
     });
 
     for (const relativePath of [
-      "项目说明.md",
-      "创作要求.md",
-      "正文",
-      "自由区",
-      "参考资料",
-      "NOTICE-Free-Creation.md",
+      "全局",
+      "全局/项目说明.md",
+      "全局/创作要求.md",
     ]) {
       expect(existsSync(join(rootPath, relativePath))).toBe(true);
     }
 
+    expect(existsSync(statePath(rootPath, "NOTICE-Free-Creation.md"))).toBe(true);
+    expect(existsSync(join(rootPath, "NOTICE-Free-Creation.md"))).toBe(false);
+    expect(existsSync(join(rootPath, "正文"))).toBe(false);
+    expect(existsSync(join(rootPath, "自由区"))).toBe(false);
+    expect(existsSync(join(rootPath, "参考资料"))).toBe(false);
+    expect(existsSync(join(rootPath, "项目说明.md"))).toBe(false);
+    expect(existsSync(join(rootPath, "创作要求.md"))).toBe(false);
     expect(existsSync(join(rootPath, "skills"))).toBe(false);
     expect(existsSync(join(rootPath, "kb"))).toBe(false);
     expect(existsSync(join(rootPath, "work"))).toBe(false);
 
-    const manifest = JSON.parse(readFileSync(join(rootPath, "craft-writing.json"), "utf-8"));
+    const manifest = JSON.parse(readFileSync(statePath(rootPath, "craft-writing.json"), "utf-8"));
     expect(manifest.methodPack).toEqual({ id: "novel.free-creation", version: 1 });
     expect(manifest.storageProfile).toBe("free-creation-compatible");
 
-    const agents = readFileSync(join(rootPath, "AGENTS.md"), "utf-8");
+    const agents = readFileSync(statePath(rootPath, "AGENTS.md"), "utf-8");
     expect(agents).toContain("novel.free-creation");
     expect(agents).toContain("不强塞结构");
     expect(agents).not.toContain("Creative Writing");
@@ -194,17 +209,25 @@ describe("createNovelProjectScaffold", () => {
     });
 
     for (const relativePath of [
-      "创作要求.md",
-      "简报.md",
-      "大纲.md",
-      "人物.md",
       "正文",
+      "全局",
+      "全局/创作要求.md",
+      "全局/简报.md",
+      "全局/大纲.md",
+      "全局/人物.md",
       "自由区",
-      "NOTICE-Short-Form-Writing.md",
     ]) {
       expect(existsSync(join(rootPath, relativePath))).toBe(true);
     }
 
+    expect(existsSync(statePath(rootPath, "README.md"))).toBe(true);
+    expect(existsSync(statePath(rootPath, "NOTICE-Short-Form-Writing.md"))).toBe(true);
+    expect(existsSync(join(rootPath, "README.md"))).toBe(false);
+    expect(existsSync(join(rootPath, "NOTICE-Short-Form-Writing.md"))).toBe(false);
+    expect(existsSync(join(rootPath, "创作要求.md"))).toBe(false);
+    expect(existsSync(join(rootPath, "简报.md"))).toBe(false);
+    expect(existsSync(join(rootPath, "大纲.md"))).toBe(false);
+    expect(existsSync(join(rootPath, "人物.md"))).toBe(false);
     expect(existsSync(join(rootPath, "目录说明.md"))).toBe(false);
     expect(existsSync(join(rootPath, ".work"))).toBe(false);
     expect(existsSync(join(rootPath, "草稿"))).toBe(false);
@@ -213,10 +236,11 @@ describe("createNovelProjectScaffold", () => {
     expect(existsSync(join(rootPath, "素材.md"))).toBe(false);
     expect(existsSync(join(rootPath, "素材卡.md"))).toBe(false);
     expect(existsSync(join(rootPath, "黄金三章.md"))).toBe(false);
+    expect(existsSync(join(rootPath, "skills"))).toBe(false);
     expect(existsSync(join(rootPath, "skills", "short-brief", "SKILL.md"))).toBe(false);
     expect(existsSync(join(rootPath, "skills", "short-drafter", "SKILL.md"))).toBe(false);
 
-    const manifest = JSON.parse(readFileSync(join(rootPath, "craft-writing.json"), "utf-8"));
+    const manifest = JSON.parse(readFileSync(statePath(rootPath, "craft-writing.json"), "utf-8"));
     expect(manifest).toMatchObject({
       type: "short-form",
       profile: "short-form",
@@ -224,7 +248,7 @@ describe("createNovelProjectScaffold", () => {
       storageProfile: "short-form-compatible",
     });
 
-    const brief = readFileSync(join(rootPath, "简报.md"), "utf-8");
+    const brief = readFileSync(join(rootPath, "全局", "简报.md"), "utf-8");
     expect(brief).toContain("## 题材定位");
     expect(brief).toContain("## 核心钩子");
     expect(brief).toContain("## 篇幅与生产约束");
@@ -235,7 +259,7 @@ describe("createNovelProjectScaffold", () => {
     expect(brief).not.toContain("高压开场");
     expect(brief).not.toContain("情绪账本");
 
-    const outline = readFileSync(join(rootPath, "大纲.md"), "utf-8");
+    const outline = readFileSync(join(rootPath, "全局", "大纲.md"), "utf-8");
     expect(outline).toContain("## 全书弧线");
     expect(outline).toContain("### 第 01 章");
     expect(outline).toContain("章节目标");
@@ -243,10 +267,10 @@ describe("createNovelProjectScaffold", () => {
     expect(outline).not.toContain("章首题记");
     expect(outline).not.toContain("前三段");
 
-    const characters = readFileSync(join(rootPath, "人物.md"), "utf-8");
+    const characters = readFileSync(join(rootPath, "全局", "人物.md"), "utf-8");
     expect(characters).toContain("## 主角");
 
-    const requirements = readFileSync(join(rootPath, "创作要求.md"), "utf-8");
+    const requirements = readFileSync(join(rootPath, "全局", "创作要求.md"), "utf-8");
     expect(requirements).toContain("# 创作要求");
     expect(requirements).toContain("## 读者与题材偏好");
     expect(requirements).toContain("## 叙事风格偏好");
@@ -256,7 +280,7 @@ describe("createNovelProjectScaffold", () => {
     expect(requirements).not.toContain("题记 / 引文");
     expect(requirements).not.toContain("情绪账本");
 
-    const agents = readFileSync(join(rootPath, "AGENTS.md"), "utf-8");
+    const agents = readFileSync(statePath(rootPath, "AGENTS.md"), "utf-8");
     expect(agents).toContain("short-form.article");
     expect(agents).toContain("## 文件角色");
     expect(agents).toContain("## 写入边界");
@@ -266,6 +290,7 @@ describe("createNovelProjectScaffold", () => {
     expect(agents).not.toContain("素材.md");
     expect(agents).toContain("大纲.md");
     expect(agents).toContain("正文/");
+    expect(agents).toContain("全局/");
     expect(agents).toContain("自由区/");
     expect(agents).toContain("skill description");
     expect(agents).toContain("5,000-30,000");
@@ -274,6 +299,7 @@ describe("createNovelProjectScaffold", () => {
     expect(agents).toContain("默认一次只写一章");
     expect(agents).toContain("用户明确要求批量生成");
     expect(agents).toContain("正文/ 可以按卷、篇或阶段建立子目录");
+    expect(agents).toContain("全局/ 放简报、大纲、人物和长期设定");
     expect(agents).toContain("自由区/ 可以自由创建文件和文件夹");
     expect(agents).not.toContain("原创题记");
     expect(agents).not.toContain("前三段");

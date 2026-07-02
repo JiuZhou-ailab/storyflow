@@ -6,6 +6,11 @@ import { existsSync, statSync } from "fs";
 import { join } from "path";
 import { createNovelProjectScaffold } from "../novel-template.ts";
 import type { MethodPack } from "./types.ts";
+import {
+  getExistingWorkspaceWritingManifestPath,
+  getLegacyWorkspaceSkillsPath,
+  getWorkspaceSkillsPath,
+} from "../../workspaces/paths.ts";
 
 export interface MethodPackValidationFinding {
   severity: "error" | "warning";
@@ -14,7 +19,9 @@ export interface MethodPackValidationFinding {
 }
 
 function pathExists(rootPath: string, relativePath: string, kind: "file" | "directory"): boolean {
-  const path = join(rootPath, relativePath);
+  const path = relativePath === "craft-writing.json"
+    ? getExistingWorkspaceWritingManifestPath(rootPath)
+    : join(rootPath, relativePath);
   try {
     if (!existsSync(path)) return false;
     const stat = statSync(path);
@@ -22,6 +29,11 @@ function pathExists(rootPath: string, relativePath: string, kind: "file" | "dire
   } catch {
     return false;
   }
+}
+
+function skillExists(rootPath: string, skillSlug: string): boolean {
+  return pathExists(getWorkspaceSkillsPath(rootPath), `${skillSlug}/SKILL.md`, "file")
+    || pathExists(getLegacyWorkspaceSkillsPath(rootPath), `${skillSlug}/SKILL.md`, "file");
 }
 
 export function validateMethodPackInstall(
@@ -42,7 +54,7 @@ export function validateMethodPackInstall(
 
   for (const skillSlug of pack.requiredSkills) {
     const skillPath = `skills/${skillSlug}/SKILL.md`;
-    if (!pathExists(rootPath, skillPath, "file")) {
+    if (!skillExists(rootPath, skillSlug)) {
       findings.push({
         severity: "error",
         code: "missing_skill",

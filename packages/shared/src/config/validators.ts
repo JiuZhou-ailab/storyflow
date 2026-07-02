@@ -366,7 +366,10 @@ export function validateAll(workspaceId?: string, workspaceRoot?: string): Valid
 // Source & Agent Validators (Folder-Based Architecture)
 // ============================================================
 
-import { getWorkspaceSourcesPath } from '../workspaces/storage.ts';
+import {
+  getLegacyWorkspaceSourcesPath,
+  getWorkspaceSourcesPath,
+} from '../workspaces/storage.ts';
 
 // --- sources/{slug}/config.json ---
 
@@ -1489,8 +1492,11 @@ export function validateAllPermissions(workspaceRoot: string): ValidationResult 
   warnings.push(...wsResult.warnings);
 
   // Validate all source-level permissions
-  const sourcesDir = join(workspaceRoot, 'sources');
-  if (existsSync(sourcesDir)) {
+  for (const sourcesDir of [
+    getLegacyWorkspaceSourcesPath(workspaceRoot),
+    getWorkspaceSourcesPath(workspaceRoot),
+  ]) {
+    if (!existsSync(sourcesDir)) continue;
     const entries = readdirSync(sourcesDir);
     for (const entry of entries) {
       const entryPath = join(sourcesDir, entry);
@@ -1970,10 +1976,10 @@ export interface ConfigFileDetection {
  * Returns null if the path is not a recognized config file.
  *
  * Matches patterns:
- * - .../sources/{slug}/config.json → source config
- * - .../skills/{slug}/SKILL.md → skill definition
- * - .../statuses/config.json → status workflow config
- * - .../labels/config.json → label config
+ * - .../.craft-agent/sources/{slug}/config.json → source config
+ * - .../.craft-agent/skills/{slug}/SKILL.md → skill definition
+ * - .../.craft-agent/statuses/config.json → status workflow config
+ * - .../.craft-agent/labels/config.json → label config
  * - .../permissions.json (workspace or source-level) → permission rules
  */
 export function detectConfigFileType(filePath: string, workspaceRootPath: string): ConfigFileDetection | null {
@@ -1988,7 +1994,10 @@ export function detectConfigFileType(filePath: string, workspaceRootPath: string
   }
 
   // Get the relative path from workspace root (no leading slash since root ends with /)
-  const relativePath = normalizedPath.slice(normalizedRoot.length);
+  const rawRelativePath = normalizedPath.slice(normalizedRoot.length);
+  const relativePath = rawRelativePath.startsWith('.craft-agent/')
+    ? rawRelativePath.slice('.craft-agent/'.length)
+    : rawRelativePath;
 
   // Match: sources/{slug}/config.json
   const sourceMatch = relativePath.match(/^sources\/([^/]+)\/config\.json$/);

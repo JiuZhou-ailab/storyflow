@@ -124,7 +124,7 @@ describe('workspace create RPC registration', () => {
     try {
       await createWorkspace(ctx, rootPath, 'Book', { projectType: 'novel', methodPackId: 'novel.claude-book' })
 
-      const manifest = JSON.parse(readFileSync(join(rootPath, 'craft-writing.json'), 'utf-8')) as {
+      const manifest = JSON.parse(readFileSync(join(rootPath, '.craft-agent', 'craft-writing.json'), 'utf-8')) as {
         methodPack?: { id?: string }
       }
       expect(manifest.methodPack?.id).toBe('novel.claude-book')
@@ -144,11 +144,11 @@ describe('workspace create RPC registration', () => {
     try {
       await createWorkspace(ctx, rootPath, 'Book', { projectType: 'novel', methodPackId: 'novel.claude-book' })
 
-      const manifest = JSON.parse(readFileSync(join(rootPath, 'craft-writing.json'), 'utf-8')) as {
+      const manifest = JSON.parse(readFileSync(join(rootPath, '.craft-agent', 'craft-writing.json'), 'utf-8')) as {
         methodPack?: { id?: string }
       }
       expect(manifest.methodPack?.id).toBe('novel.free-creation')
-      expect(existsSync(join(rootPath, '项目说明.md'))).toBe(true)
+      expect(existsSync(join(rootPath, '全局', '项目说明.md'))).toBe(true)
     } finally {
       rmSync(rootPath, { recursive: true, force: true })
     }

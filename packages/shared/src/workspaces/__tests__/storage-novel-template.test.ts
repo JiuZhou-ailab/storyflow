@@ -3,12 +3,16 @@
 // pos: Shared storage guard for Method Pack-backed workspace creation
 
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createNovelProjectScaffold } from "../../writing/novel-template.ts";
 import { getBuiltInMethodPacks } from "../../writing/method-packs/index.ts";
 import { createDefaultWorkspaceAtPath, createNovelWorkspaceAtPath, createWorkspaceAtPath, generateSlug, loadWorkspaceConfig, saveWorkspaceConfig } from "../storage.ts";
+
+function statePath(rootPath: string, relativePath = ""): string {
+  return join(rootPath, ".craft-agent", relativePath);
+}
 
 describe("createNovelWorkspaceAtPath", () => {
   it("creates the product default workspace as a short-form novel workspace", () => {
@@ -18,10 +22,13 @@ describe("createNovelWorkspaceAtPath", () => {
 
     expect(config.name).toBe("短篇/中篇小说");
     expect(config.defaults?.workingDirectory).toBe(rootPath);
-    expect(existsSync(join(rootPath, "简报.md"))).toBe(true);
     expect(existsSync(join(rootPath, "正文"))).toBe(true);
+    expect(existsSync(join(rootPath, "全局", "简报.md"))).toBe(true);
+    expect(existsSync(join(rootPath, "自由区"))).toBe(true);
+    expect(existsSync(join(rootPath, "README.md"))).toBe(false);
+    expect(existsSync(statePath(rootPath, "README.md"))).toBe(true);
 
-    const manifest = JSON.parse(readFileSync(join(rootPath, "craft-writing.json"), "utf-8"));
+    const manifest = JSON.parse(readFileSync(statePath(rootPath, "craft-writing.json"), "utf-8"));
     expect(manifest.type).toBe("short-form");
     expect(manifest.methodPack.id).toBe("short-form.article");
   });
@@ -37,18 +44,85 @@ describe("createNovelWorkspaceAtPath", () => {
 
     expect(config.name).toBe("Novel Workspace");
     expect(config.defaults?.workingDirectory).toBe(rootPath);
-    expect(existsSync(join(rootPath, "config.json"))).toBe(true);
-    expect(existsSync(join(rootPath, "sources"))).toBe(true);
-    expect(existsSync(join(rootPath, "sessions"))).toBe(true);
-    expect(existsSync(join(rootPath, "skills"))).toBe(true);
-    expect(existsSync(join(rootPath, "craft-writing.json"))).toBe(true);
-    expect(existsSync(join(rootPath, "简报.md"))).toBe(true);
+    expect(existsSync(join(rootPath, "config.json"))).toBe(false);
+    expect(existsSync(join(rootPath, "sources"))).toBe(false);
+    expect(existsSync(join(rootPath, "sessions"))).toBe(false);
+    expect(existsSync(join(rootPath, "skills"))).toBe(false);
+    expect(existsSync(join(rootPath, "craft-writing.json"))).toBe(false);
+    expect(existsSync(statePath(rootPath, "config.json"))).toBe(true);
+    expect(existsSync(statePath(rootPath, "sources"))).toBe(true);
+    expect(existsSync(statePath(rootPath, "sessions"))).toBe(true);
+    expect(existsSync(statePath(rootPath, "skills"))).toBe(true);
+    expect(existsSync(statePath(rootPath, "craft-writing.json"))).toBe(true);
     expect(existsSync(join(rootPath, "正文"))).toBe(true);
+    expect(existsSync(join(rootPath, "全局", "简报.md"))).toBe(true);
+    expect(existsSync(join(rootPath, "自由区"))).toBe(true);
 
-    const manifest = JSON.parse(readFileSync(join(rootPath, "craft-writing.json"), "utf-8"));
+    const manifest = JSON.parse(readFileSync(statePath(rootPath, "craft-writing.json"), "utf-8"));
     expect(manifest.type).toBe("short-form");
     expect(manifest.title).toBe("Novel Workspace");
     expect(manifest.methodPack.id).toBe("short-form.article");
+  });
+
+  it("migrates legacy generated workspace state under .craft-agent without moving project content", () => {
+    const rootPath = mkdtempSync(join(tmpdir(), "craft-legacy-state-workspace-"));
+    const now = Date.now();
+
+    mkdirSync(join(rootPath, "sessions", "260703-legacy"), { recursive: true });
+    mkdirSync(join(rootPath, "skills", "short-reviser"), { recursive: true });
+    mkdirSync(join(rootPath, "labels"), { recursive: true });
+    mkdirSync(join(rootPath, "statuses", "icons"), { recursive: true });
+    mkdirSync(join(rootPath, ".claude-plugin"), { recursive: true });
+    mkdirSync(join(rootPath, "全局"), { recursive: true });
+    mkdirSync(statePath(rootPath, "sessions/260703-current"), { recursive: true });
+
+    writeFileSync(join(rootPath, "config.json"), JSON.stringify({
+      id: "ws_legacy",
+      name: "Legacy Short",
+      slug: "legacy-short",
+      defaults: {},
+      createdAt: now,
+      updatedAt: now,
+    }, null, 2));
+    writeFileSync(join(rootPath, "craft-writing.json"), JSON.stringify({
+      schemaVersion: 1,
+      type: "short-form",
+      title: "Legacy Short",
+      methodPack: { id: "short-form.article", version: 1 },
+    }, null, 2));
+    writeFileSync(join(rootPath, "craft-pack-lock.json"), "{}\n");
+    writeFileSync(join(rootPath, "AGENTS.md"), "# Agent\n");
+    writeFileSync(join(rootPath, "CLAUDE.md"), "# Claude\n");
+    writeFileSync(join(rootPath, "NOTICE-Short-Form-Writing.md"), "# Notice\n");
+    writeFileSync(join(rootPath, "README.md"), "# Root readme\n");
+    writeFileSync(join(rootPath, "views.json"), "{\"version\":1,\"views\":[]}\n");
+    writeFileSync(join(rootPath, "labels", "config.json"), "{\"version\":1,\"labels\":[]}\n");
+    writeFileSync(join(rootPath, "statuses", "config.json"), "{\"version\":1,\"statuses\":[],\"defaultStatusId\":\"todo\"}\n");
+    writeFileSync(join(rootPath, "statuses", "icons", "todo.svg"), "<svg />\n");
+    writeFileSync(join(rootPath, "sessions", "260703-legacy", "session.jsonl"), "{}\n");
+    writeFileSync(statePath(rootPath, "sessions/260703-current/session.jsonl"), "{}\n");
+    writeFileSync(join(rootPath, "skills", "short-reviser", "SKILL.md"), "# Skill\n");
+    writeFileSync(join(rootPath, ".claude-plugin", "plugin.json"), "{\"name\":\"craft-workspace-legacy\"}\n");
+    writeFileSync(join(rootPath, "全局", "简报.md"), "# 简报\n");
+
+    const config = loadWorkspaceConfig(rootPath);
+
+    expect(config?.name).toBe("Legacy Short");
+    expect(existsSync(join(rootPath, "config.json"))).toBe(false);
+    expect(existsSync(join(rootPath, "craft-writing.json"))).toBe(false);
+    expect(existsSync(join(rootPath, "AGENTS.md"))).toBe(false);
+    expect(existsSync(join(rootPath, "sessions"))).toBe(false);
+    expect(existsSync(join(rootPath, "skills"))).toBe(false);
+    expect(existsSync(join(rootPath, ".claude-plugin"))).toBe(false);
+    expect(existsSync(statePath(rootPath, "config.json"))).toBe(true);
+    expect(existsSync(statePath(rootPath, "craft-writing.json"))).toBe(true);
+    expect(existsSync(statePath(rootPath, "AGENTS.md"))).toBe(true);
+    expect(existsSync(statePath(rootPath, "sessions/260703-legacy/session.jsonl"))).toBe(true);
+    expect(existsSync(statePath(rootPath, "sessions/260703-current/session.jsonl"))).toBe(true);
+    expect(existsSync(statePath(rootPath, "legacy-root/sessions"))).toBe(false);
+    expect(existsSync(statePath(rootPath, "skills/short-reviser/SKILL.md"))).toBe(true);
+    expect(existsSync(statePath(rootPath, "claude-plugin/plugin.json"))).toBe(true);
+    expect(existsSync(join(rootPath, "全局", "简报.md"))).toBe(true);
   });
 
   it("migrates existing novel workspace configs to use the workspace root as the default working directory", () => {
@@ -97,10 +171,10 @@ describe("createNovelWorkspaceAtPath", () => {
 
     createNovelWorkspaceAtPath(rootPath, "Starter Novel");
 
-    const sessionIds = readdirSync(join(rootPath, "sessions"));
+    const sessionIds = readdirSync(statePath(rootPath, "sessions"));
     expect(sessionIds).toHaveLength(1);
 
-    const sessionContent = readFileSync(join(rootPath, "sessions", sessionIds[0]!, "session.jsonl"), "utf-8");
+    const sessionContent = readFileSync(statePath(rootPath, join("sessions", sessionIds[0]!, "session.jsonl")), "utf-8");
     expect(sessionContent).toContain('"name":"Start writing"');
     expect(sessionContent).toContain('"type":"assistant"');
     expect(sessionContent).toContain("Method Pack: short-form.article");
@@ -113,8 +187,8 @@ describe("createNovelWorkspaceAtPath", () => {
 
       createNovelWorkspaceAtPath(rootPath, methodPack.displayName, undefined, methodPack.id);
 
-      const sessionIds = readdirSync(join(rootPath, "sessions"));
-      const sessionContent = readFileSync(join(rootPath, "sessions", sessionIds[0]!, "session.jsonl"), "utf-8");
+      const sessionIds = readdirSync(statePath(rootPath, "sessions"));
+      const sessionContent = readFileSync(statePath(rootPath, join("sessions", sessionIds[0]!, "session.jsonl")), "utf-8");
       const starterMessage = JSON.parse(sessionContent.trim().split(/\r?\n/)[1] ?? "{}") as { content?: string };
       expect(sessionContent).toContain(methodPack.id);
       expect(starterMessage.content).toContain(methodPack.starterMessage);
@@ -126,8 +200,8 @@ describe("createNovelWorkspaceAtPath", () => {
 
     createNovelWorkspaceAtPath(rootPath, "Short Starter", undefined, "short-form.article");
 
-    const sessionIds = readdirSync(join(rootPath, "sessions"));
-    const sessionContent = readFileSync(join(rootPath, "sessions", sessionIds[0]!, "session.jsonl"), "utf-8");
+    const sessionIds = readdirSync(statePath(rootPath, "sessions"));
+    const sessionContent = readFileSync(statePath(rootPath, join("sessions", sessionIds[0]!, "session.jsonl")), "utf-8");
     expect(sessionContent).toContain("## 这是什么");
     expect(sessionContent).toContain("## 我会怎么做");
     expect(sessionContent).toContain("## 流程");
@@ -144,8 +218,8 @@ describe("createNovelWorkspaceAtPath", () => {
 
       createNovelWorkspaceAtPath(rootPath, methodPack.displayName, undefined, methodPack.id);
 
-      const sessionIds = readdirSync(join(rootPath, "sessions"));
-      const sessionPath = join(rootPath, "sessions", sessionIds[0]!, "session.jsonl");
+      const sessionIds = readdirSync(statePath(rootPath, "sessions"));
+      const sessionPath = statePath(rootPath, join("sessions", sessionIds[0]!, "session.jsonl"));
       const lines = readFileSync(sessionPath, "utf-8").trim().split(/\r?\n/);
       const staleMessage = {
         ...JSON.parse(lines[1] ?? "{}"),

@@ -69,12 +69,13 @@ describe("method pack runtime preamble", () => {
     const serialized = JSON.stringify(pack);
 
     expect(pack?.requiredPaths).not.toContainEqual({ path: "目录说明.md", kind: "file" });
-    expect(pack?.requiredPaths).toContainEqual({ path: "简报.md", kind: "file" });
+    expect(pack?.requiredPaths).toContainEqual({ path: "全局/简报.md", kind: "file" });
     expect(pack?.requiredPaths).not.toContainEqual({ path: "黄金三章.md", kind: "file" });
-    expect(pack?.requiredPaths).toContainEqual({ path: "大纲.md", kind: "file" });
-    expect(pack?.requiredPaths).toContainEqual({ path: "人物.md", kind: "file" });
+    expect(pack?.requiredPaths).toContainEqual({ path: "全局/大纲.md", kind: "file" });
+    expect(pack?.requiredPaths).toContainEqual({ path: "全局/人物.md", kind: "file" });
     expect(pack?.requiredPaths).not.toContainEqual({ path: "素材.md", kind: "file" });
     expect(pack?.requiredPaths).toContainEqual({ path: "正文", kind: "directory" });
+    expect(pack?.requiredPaths).toContainEqual({ path: "全局", kind: "directory" });
     expect(pack?.requiredPaths).toContainEqual({ path: "自由区", kind: "directory" });
     expect(pack?.requiredPaths).not.toContainEqual({ path: ".work", kind: "directory" });
     expect(serialized).not.toContain("素材.md");

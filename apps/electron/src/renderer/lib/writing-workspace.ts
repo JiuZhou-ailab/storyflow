@@ -64,27 +64,47 @@ export interface NovelWorkspaceRootCandidates {
   sessionWorkingDirectory?: string
 }
 
-export type NovelCreateFileBasePath = '正文' | '设定' | '自由区'
+export type NovelCreateFileBasePath = '正文' | '全局' | '自由区'
 
 const NOVEL_CREATE_FILE_ALLOWED_EXTENSIONS = new Set(['.md', '.txt'])
 const SHORT_FORM_WORKSPACE_SIGNAL_PATHS = new Set([
-  '创作要求.md',
-  '简报.md',
-  '大纲.md',
-  '人物.md',
+  '全局/简报.md',
+  '全局/大纲.md',
+  '全局/人物.md',
 ])
+const SHORT_FORM_VISIBLE_ROOT_DIRECTORIES = ['正文', '全局', '自由区'] as const
 const SHORT_FORM_GLOBAL_INFO_FILE_ORDER = [
-  '创作要求.md',
-  '简报.md',
-  '大纲.md',
-  '人物.md',
+  '全局/创作要求.md',
+  '全局/简报.md',
+  '全局/大纲.md',
+  '全局/人物.md',
 ] as const
 const SHORT_FORM_GLOBAL_INFO_FILE_INDEX = new Map<string, number>(
   SHORT_FORM_GLOBAL_INFO_FILE_ORDER.map((path, index) => [path, index])
 )
 
+const VISIBLE_NOVEL_WORKSPACE_ROOTS = new Set([
+  '正文',
+  '全局',
+  '自由区',
+  'story',
+  'bible',
+  'state',
+  'timeline',
+  '大纲',
+  '追踪',
+  '参考资料',
+  '拆文库',
+  '对标',
+  '剧本',
+  '角色',
+  '场景',
+  '逻辑',
+])
+
 export const NOVEL_WORKSPACE_DETECTION_QUERIES = [
   'craft-writing.json',
+  '.craft-agent/craft-writing.json',
   'story/chapters',
   'story/plan.md',
   'story/synopsis.md',
@@ -94,30 +114,16 @@ export const NOVEL_WORKSPACE_DETECTION_QUERIES = [
   'state',
   'timeline',
   '正文',
-  '创作要求.md',
-  '简报.md',
-  '大纲.md',
-  '人物.md',
-] as const
-
-export const NOVEL_WORKSPACE_CATALOG_DIRECTORY_QUERIES = [
-  'story/chapters',
-  'bible/characters',
-  'bible/universe',
-  'state',
-  'timeline',
-  '设定',
-  '大纲',
-  '正文',
-  '追踪',
-  '参考资料',
-  '拆文库',
-  '对标',
-  '自由区',
+  '全局',
+  '全局/创作要求.md',
+  '全局/简报.md',
+  '全局/大纲.md',
+  '全局/人物.md',
 ] as const
 
 export const NOVEL_WORKSPACE_FILE_SEARCH_QUERIES = [
   'craft-writing.json',
+  '.craft-agent/craft-writing.json',
   'story/chapters',
   'story/plan.md',
   'story/synopsis.md',
@@ -126,7 +132,7 @@ export const NOVEL_WORKSPACE_FILE_SEARCH_QUERIES = [
   'bible/universe',
   'state',
   'timeline',
-  '设定',
+  '全局',
   '大纲',
   '正文',
   '追踪',
@@ -134,11 +140,30 @@ export const NOVEL_WORKSPACE_FILE_SEARCH_QUERIES = [
   '拆文库',
   '对标',
   '自由区',
-  '创作要求.md',
-  '简报.md',
-  '大纲.md',
-  '人物.md',
+  '全局/创作要求.md',
+  '全局/简报.md',
+  '全局/大纲.md',
+  '全局/人物.md',
 ] as const
+
+export function getNovelFileChangeActivityKey(session: { messages?: readonly {
+  role?: string
+  id?: string
+  toolName?: string
+  toolStatus?: string
+  error?: string
+}[] } | null | undefined): string {
+  const messages = session?.messages
+  if (!messages?.length) return ''
+
+  const parts: string[] = []
+  for (const message of messages) {
+    if (message.role !== 'tool') continue
+    if (message.toolName !== 'Edit' && message.toolName !== 'Write') continue
+    parts.push(`${message.id ?? ''}:${message.toolName}:${message.toolStatus ?? ''}:${message.error ?? ''}`)
+  }
+  return parts.join('\n')
+}
 
 function createEmptyTree(): NovelWorkspaceTree {
   return {
@@ -208,6 +233,13 @@ function isSameOrChildPath(path: string, rootPath: string): boolean {
 
 function normalizeRelativePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/^\/+/, '')
+}
+
+export function isVisibleNovelWorkspaceAssetPath(path: string): boolean {
+  const normalized = normalizeRelativePath(path).replace(/\/+$/, '')
+  if (!normalized) return false
+  const [root] = normalized.split('/')
+  return VISIBLE_NOVEL_WORKSPACE_ROOTS.has(root)
 }
 
 function basename(path: string): string {
@@ -297,10 +329,10 @@ const FIXED_NOVEL_FILE_DESCRIPTORS: Record<string, NovelWorkspaceFileDisplayDesc
   'state/template/characters.md': descriptor('Character state', 'writing.fileLabels.characterState'),
   'state/template/knowledge.md': descriptor('Knowledge state', 'writing.fileLabels.knowledgeState'),
   'state/template/situation.md': descriptor('Situation state', 'writing.fileLabels.situationState'),
-  '创作要求.md': descriptor('创作要求'),
-  '简报.md': descriptor('简报'),
-  '大纲.md': descriptor('大纲'),
-  '人物.md': descriptor('人物'),
+  '全局/创作要求.md': descriptor('创作要求'),
+  '全局/简报.md': descriptor('简报'),
+  '全局/大纲.md': descriptor('大纲'),
+  '全局/人物.md': descriptor('人物'),
 }
 
 export function describeNovelWorkspaceFile(fileOrPath: NovelWorkspaceFile | string): NovelWorkspaceFileDisplayDescriptor {
@@ -359,7 +391,12 @@ export function isShortFormNovelWorkspaceFiles(files: NovelWorkspaceFile[]): boo
   return files.some((file) => {
     const relativePath = normalizeRelativePath(file.relativePath)
     return SHORT_FORM_WORKSPACE_SIGNAL_PATHS.has(relativePath) || relativePath.startsWith('自由区/')
+      || relativePath.startsWith('正文/')
   })
+}
+
+export function getNovelWorkspaceVisibleRootDirectories(files: NovelWorkspaceFile[]): readonly string[] {
+  return isShortFormNovelWorkspaceFiles(files) ? SHORT_FORM_VISIBLE_ROOT_DIRECTORIES : []
 }
 
 export function getShortFormGlobalInfoFiles(tree: NovelWorkspaceTree): NovelWorkspaceFile[] {
@@ -461,7 +498,10 @@ export function mapSearchResultsToNovelWorkspaceFiles(results: FileSearchResult[
 }
 
 export function detectNovelProjectFromSearchResults(results: FileSearchResult[]): boolean {
-  if (results.some((result) => result.relativePath === 'craft-writing.json' && result.type === 'file')) {
+  if (results.some((result) => (
+    result.relativePath === 'craft-writing.json'
+    || result.relativePath === '.craft-agent/craft-writing.json'
+  ) && result.type === 'file')) {
     return true
   }
 
@@ -481,11 +521,15 @@ export function detectNovelProjectFromSearchResults(results: FileSearchResult[])
       .map((result) => result.relativePath)
   )
   const hasShortFormAnchor = [
-    '创作要求.md',
-    '简报.md',
-    '大纲.md',
-    '人物.md',
+    '全局/创作要求.md',
+    '全局/简报.md',
+    '全局/大纲.md',
+    '全局/人物.md',
   ].some((path) => relativeFiles.has(path))
 
-  return rootDirectories.has('正文') && hasShortFormAnchor
+  const hasFreeCreationAnchor = rootDirectories.has('全局')
+    && relativeFiles.has('全局/项目说明.md')
+    && relativeFiles.has('全局/创作要求.md')
+
+  return (rootDirectories.has('正文') && hasShortFormAnchor) || hasFreeCreationAnchor
 }

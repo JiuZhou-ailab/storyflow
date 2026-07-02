@@ -10,6 +10,10 @@ function createTempProject(): string {
   return mkdtempSync(join(tmpdir(), "craft-method-pack-"));
 }
 
+function statePath(rootPath: string, relativePath = ""): string {
+  return join(rootPath, ".craft-agent", relativePath);
+}
+
 describe("method pack validation", () => {
   it("accepts a freshly scaffolded Claude-Book project", () => {
     const rootPath = createTempProject();
@@ -34,7 +38,7 @@ describe("method pack validation", () => {
   it("reports missing required skills", () => {
     const rootPath = createTempProject();
     createNovelProjectScaffold(rootPath, { title: "The Test Novel" });
-    rmSync(join(rootPath, "skills", "chapter-workflow", "SKILL.md"));
+    rmSync(statePath(rootPath, "skills/chapter-workflow/SKILL.md"));
 
     expect(validateMethodPackInstall(rootPath, CLAUDE_BOOK_METHOD_PACK)).toContainEqual({
       severity: "error",
@@ -49,13 +53,13 @@ describe("method pack validation", () => {
     const stylePath = join(rootPath, "bible", "style.md");
     writeFileSync(stylePath, "custom style");
     rmSync(join(rootPath, "state", "current", "situation.md"));
-    rmSync(join(rootPath, "skills", "chapter-workflow", "SKILL.md"));
+    rmSync(statePath(rootPath, "skills/chapter-workflow/SKILL.md"));
 
     const findings = repairMethodPackInstall(rootPath, CLAUDE_BOOK_METHOD_PACK);
 
     expect(findings).toEqual([]);
     expect(existsSync(join(rootPath, "state", "current", "situation.md"))).toBe(true);
-    expect(existsSync(join(rootPath, "skills", "chapter-workflow", "SKILL.md"))).toBe(true);
+    expect(existsSync(statePath(rootPath, "skills/chapter-workflow/SKILL.md"))).toBe(true);
     expect(readFileSync(stylePath, "utf-8")).toBe("custom style");
   });
 });

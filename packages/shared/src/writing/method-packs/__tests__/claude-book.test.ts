@@ -79,18 +79,14 @@ describe("built-in method packs", () => {
     expect(pack?.displayName).toBe("自由创作");
     expect(pack?.projectType).toBe("novel");
     expect(pack?.storageProfile).toBe("free-creation-compatible");
+    expect(pack?.requiredPaths).toContainEqual({ path: "全局", kind: "directory" });
     expect(pack?.requiredPaths).toContainEqual({
-      path: "自由区",
-      kind: "directory",
-    });
-    expect(pack?.requiredPaths).toContainEqual({
-      path: "正文",
-      kind: "directory",
-    });
-    expect(pack?.requiredPaths).toContainEqual({
-      path: "项目说明.md",
+      path: "全局/项目说明.md",
       kind: "file",
     });
+    expect(pack?.requiredPaths).not.toContainEqual({ path: "正文", kind: "directory" });
+    expect(pack?.requiredPaths).not.toContainEqual({ path: "自由区", kind: "directory" });
+    expect(pack?.requiredPaths).not.toContainEqual({ path: "参考资料", kind: "directory" });
     expect(pack?.requiredSkills).toEqual([]);
     expect(pack?.starterMessage).toContain("不强塞结构");
   });
@@ -105,15 +101,15 @@ describe("built-in method packs", () => {
       kind: "file",
     });
     expect(pack?.requiredPaths).toContainEqual({
-      path: "简报.md",
+      path: "全局/简报.md",
       kind: "file",
     });
     expect(pack?.requiredPaths).toContainEqual({
-      path: "大纲.md",
+      path: "全局/大纲.md",
       kind: "file",
     });
     expect(pack?.requiredPaths).toContainEqual({
-      path: "人物.md",
+      path: "全局/人物.md",
       kind: "file",
     });
     expect(pack?.requiredPaths).not.toContainEqual({
@@ -122,6 +118,10 @@ describe("built-in method packs", () => {
     });
     expect(pack?.requiredPaths).toContainEqual({
       path: "正文",
+      kind: "directory",
+    });
+    expect(pack?.requiredPaths).toContainEqual({
+      path: "全局",
       kind: "directory",
     });
     expect(pack?.requiredPaths).toContainEqual({
@@ -168,7 +168,7 @@ describe("built-in method packs", () => {
       "short-form.article": ["网文", "技能", "## 文件"],
       "novel.claude-book": ["项目圣经", "梗概", "章节计划"],
       "screenplay.logic": ["剧本", "分场", "对白"],
-      "novel.free-creation": ["自由区", "正文", "不强塞结构"],
+      "novel.free-creation": ["全局", "事实", "不强塞结构"],
     };
 
     for (const pack of getBuiltInMethodPacks()) {

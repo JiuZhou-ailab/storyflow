@@ -3,7 +3,7 @@
 // pos: regression tests for automatic novel prompt profile selection
 
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent } from "@craft-agent/core/types";
@@ -20,7 +20,8 @@ function createTempDir(): string {
 
 function createNovelProject(): string {
   const rootPath = createTempDir();
-  writeFileSync(join(rootPath, "craft-writing.json"), JSON.stringify({
+  mkdirSync(join(rootPath, ".craft-agent"), { recursive: true });
+  writeFileSync(join(rootPath, ".craft-agent", "craft-writing.json"), JSON.stringify({
     schemaVersion: 1,
     type: "novel",
   }));

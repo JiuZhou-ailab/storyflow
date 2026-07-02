@@ -1,9 +1,14 @@
+// input: File RPC handler registrations, temporary filesystem fixtures, and captured perf metrics
+// output: Regression coverage for text file operations, filesystem search, and handler latency spans
+// pos: Guards server-core filesystem RPC behavior at the transport boundary
+
 import { existsSync, rmSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
-import { describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it } from 'bun:test'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { clearMetrics, configurePerfTracking } from '@craft-agent/shared/utils'
 import type { HandlerFn, RequestContext, RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import {
@@ -12,6 +17,12 @@ import {
   registerFilesHandlers,
   summarizeFileSearchBatch,
 } from './files'
+
+interface CapturedPerfMetric {
+  name: string
+  marks: Array<{ name: string }>
+  metadata?: Record<string, unknown>
+}
 
 function createFileHarness() {
   const handlers = new Map<string, HandlerFn>()
@@ -50,12 +61,13 @@ function createFileHarness() {
 
   registerFilesHandlers(server, deps)
 
+  const readTextFile = handlers.get(RPC_CHANNELS.file.READ)
   const writeFile = handlers.get(RPC_CHANNELS.file.WRITE)
   const deleteFile = handlers.get(RPC_CHANNELS.file.DELETE)
   const createDirectory = handlers.get(RPC_CHANNELS.file.CREATE_DIRECTORY)
   const searchFiles = handlers.get(RPC_CHANNELS.fs.SEARCH)
   const searchFilesBatch = handlers.get(RPC_CHANNELS.fs.SEARCH_BATCH)
-  if (!writeFile || !deleteFile || !createDirectory || !searchFiles || !searchFilesBatch) {
+  if (!readTextFile || !writeFile || !deleteFile || !createDirectory || !searchFiles || !searchFilesBatch) {
     throw new Error('file handlers not registered')
   }
 
@@ -65,10 +77,26 @@ function createFileHarness() {
     webContentsId: 1,
   }
 
-  return { writeFile, deleteFile, createDirectory, searchFiles, searchFilesBatch, ctx }
+  return { readTextFile, writeFile, deleteFile, createDirectory, searchFiles, searchFilesBatch, ctx }
+}
+
+function capturePerfMetrics(): CapturedPerfMetric[] {
+  const metrics: CapturedPerfMetric[] = []
+  configurePerfTracking({
+    enabled: true,
+    onMetric: metric => {
+      metrics.push(metric)
+    },
+  })
+  return metrics
 }
 
 describe('file write RPC registration', () => {
+  afterEach(() => {
+    configurePerfTracking({ enabled: false, onMetric: undefined })
+    clearMetrics()
+  })
+
   it('registers the workspace-scoped text write channel', () => {
     expect(HANDLED_CHANNELS).toContain('file:write')
   })
@@ -85,12 +113,40 @@ describe('file write RPC registration', () => {
     expect(HANDLED_CHANNELS).toContain('fs:searchBatch')
   })
 
+  it('records text read latency marks inside the file RPC handler', async () => {
+    const { readTextFile, ctx } = createFileHarness()
+    const root = await mkdtemp(join(homedir(), '.craft-file-read-'))
+    const targetPath = join(root, 'story', 'outline.md')
+    const metrics = capturePerfMetrics()
+
+    try {
+      await mkdir(join(root, 'story'), { recursive: true })
+      await writeFile(targetPath, 'outline')
+
+      const content = await readTextFile(ctx, targetPath) as string
+
+      expect(content).toBe('outline')
+      const metric = metrics.find(item => item.name === 'rpc.file.read')
+      expect(metric).toBeDefined()
+      expect(metric?.marks.map(mark => mark.name)).toEqual(['path.validated', 'file.read'])
+      expect(metric?.metadata).toEqual(expect.objectContaining({
+        bytes: Buffer.byteLength('outline', 'utf-8'),
+        extension: '.md',
+        file: 'outline.md',
+        status: 'ok',
+      }))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('summarizes batch filesystem search profiling metadata without scanning', () => {
     expect(summarizeFileSearchBatch('/tmp/workspace', [
       { query: '正文', options: { mode: 'path' } },
       { query: '大纲.md', options: { mode: 'path' } },
+      { query: 'chapter' },
     ])).toEqual({
-      requestCount: 2,
+      requestCount: 3,
       uniqueRootCount: 1,
     })
 
@@ -215,9 +271,28 @@ describe('file write RPC registration', () => {
     }
   })
 
+  it('lets callers raise the fuzzy search result cap for native workspace trees', async () => {
+    const { searchFiles, ctx } = createFileHarness()
+    const root = await mkdtemp(join(tmpdir(), 'craft-file-search-cap-'))
+
+    try {
+      for (let index = 0; index < 60; index += 1) {
+        await writeFile(join(root, `file-${String(index).padStart(2, '0')}.md`), 'content')
+      }
+
+      const results = await searchFiles(ctx, root, '', { maxResults: 80 }) as Array<{ relativePath: string }>
+
+      expect(results).toHaveLength(60)
+      expect(results.map(result => result.relativePath)).toContain('file-59.md')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('batches path probes through one filesystem search handler call', async () => {
     const { searchFilesBatch, ctx } = createFileHarness()
     const root = await mkdtemp(join(tmpdir(), 'craft-file-search-batch-'))
+    const metrics = capturePerfMetrics()
 
     try {
       await mkdir(join(root, '正文'), { recursive: true })
@@ -230,6 +305,13 @@ describe('file write RPC registration', () => {
 
       expect(results.map(result => result.query)).toEqual(['正文', '大纲.md'])
       expect(results.flatMap(result => result.results.map(item => item.relativePath))).toEqual(['正文', '大纲.md'])
+      const metric = metrics.find(item => item.name === 'fs.searchBatch')
+      expect(metric?.metadata).toEqual(expect.objectContaining({
+        requestCount: 2,
+        resultCount: 2,
+        snapshotEntryCount: 0,
+        uniqueRootCount: 1,
+      }))
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

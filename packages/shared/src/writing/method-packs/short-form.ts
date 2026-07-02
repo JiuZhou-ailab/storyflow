@@ -18,11 +18,12 @@ export const SHORT_FORM_METHOD_PACK: MethodPack = {
   },
   requiredPaths: [
     { path: "craft-writing.json", kind: "file" },
-    { path: "创作要求.md", kind: "file" },
-    { path: "简报.md", kind: "file" },
-    { path: "大纲.md", kind: "file" },
-    { path: "人物.md", kind: "file" },
     { path: "正文", kind: "directory" },
+    { path: "全局", kind: "directory" },
+    { path: "全局/创作要求.md", kind: "file" },
+    { path: "全局/简报.md", kind: "file" },
+    { path: "全局/大纲.md", kind: "file" },
+    { path: "全局/人物.md", kind: "file" },
     { path: "自由区", kind: "directory" },
   ],
   requiredSkills: [
@@ -37,10 +38,10 @@ export const SHORT_FORM_METHOD_PACK: MethodPack = {
   alwaysOnInstructions: "",
   initialRequestPolicy: "",
   artifactContract: [
-    { path: "创作要求.md", role: "长期偏好与禁区。", lifecycle: "canon" },
-    { path: "简报.md", role: "当前作品 intake。", lifecycle: "intake" },
-    { path: "大纲.md", role: "章节 outline。", lifecycle: "outline" },
-    { path: "人物.md", role: "角色 reference。", lifecycle: "reference" },
+    { path: "全局/创作要求.md", role: "长期偏好与禁区。", lifecycle: "canon" },
+    { path: "全局/简报.md", role: "当前作品 intake。", lifecycle: "intake" },
+    { path: "全局/大纲.md", role: "章节 outline。", lifecycle: "outline" },
+    { path: "全局/人物.md", role: "角色 reference。", lifecycle: "reference" },
     { path: "正文/", role: "Accepted prose。", lifecycle: "final" },
     { path: "自由区/", role: "Scratch。", lifecycle: "draft" },
   ],
@@ -52,15 +53,12 @@ export const SHORT_FORM_METHOD_PACK: MethodPack = {
   skillRouting: [],
   starterMessage: `## 这是什么
 
-这是一个面向 5,000-30,000 字中文短篇/中篇网文的写作工作区。系统会创建简报、大纲、人物、正文和自由区，并安装短篇写作技能。
+这是一个面向 5,000-30,000 字中文短篇/中篇网文的写作工作区。系统会创建正文、全局和自由区，并安装短篇写作技能。
 
 ## 文件
 
-- 创作要求.md：长期偏好与禁区。
-- 简报.md：当前作品 intake。
-- 大纲.md：章节 outline。
-- 人物.md：reference。
 - 正文/：accepted prose。
+- 全局/：简报、大纲、人物和长期设定。
 - 自由区/：scratch。
 
 ## 我会怎么做

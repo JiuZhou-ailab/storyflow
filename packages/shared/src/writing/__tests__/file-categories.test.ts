@@ -36,9 +36,9 @@ describe("categorizeNovelPath", () => {
   it("categorizes Oh Story web-fiction files", () => {
     expect(categorizeNovelPath("正文/第001章_开局.md")).toBe("manuscript");
     expect(categorizeNovelPath("大纲/大纲.md")).toBe("outline");
-    expect(categorizeNovelPath("设定/角色/沈栀.md")).toBe("characters");
-    expect(categorizeNovelPath("设定/世界观/修真界.md")).toBe("locations");
-    expect(categorizeNovelPath("设定/题材定位.md")).toBe("outline");
+    expect(categorizeNovelPath("全局/角色/沈栀.md")).toBe("characters");
+    expect(categorizeNovelPath("全局/世界观/修真界.md")).toBe("locations");
+    expect(categorizeNovelPath("全局/题材定位.md")).toBe("outline");
     expect(categorizeNovelPath("追踪/伏笔.md")).toBe("timeline");
     expect(categorizeNovelPath("参考资料/剑修.md")).toBe("analysis");
     expect(categorizeNovelPath("拆文库/对标书/拆文报告.md")).toBe("analysis");
@@ -70,6 +70,10 @@ describe("categorizeNovelPath", () => {
     expect(categorizeNovelPath("大纲.md")).toBe("outline");
     expect(categorizeNovelPath("人物.md")).toBe("characters");
     expect(categorizeNovelPath("素材.md")).toBe("other");
+    expect(categorizeNovelPath("全局/创作要求.md")).toBe("style");
+    expect(categorizeNovelPath("全局/简报.md")).toBe("outline");
+    expect(categorizeNovelPath("全局/大纲.md")).toBe("outline");
+    expect(categorizeNovelPath("全局/人物.md")).toBe("characters");
     expect(categorizeNovelPath("正文/01-未婚夫和闺蜜在我葬礼上接吻.md")).toBe("manuscript");
     expect(categorizeNovelPath("正文/第一卷/01-未婚夫和闺蜜在我葬礼上接吻.md")).toBe("manuscript");
     expect(categorizeNovelPath("自由区/脑洞/反派试稿.md")).toBe("work");

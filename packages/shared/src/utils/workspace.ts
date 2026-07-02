@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { getWorkspacePluginManifestPath } from '../workspaces/paths.ts';
 
 /**
  * Read the SDK plugin name from .claude-plugin/plugin.json.
@@ -12,8 +13,11 @@ import { join } from 'node:path';
  */
 export function readPluginName(workspaceRootPath: string): string | null {
   try {
-    const manifestPath = join(workspaceRootPath, '.claude-plugin', 'plugin.json');
-    if (!existsSync(manifestPath)) return null;
+    const manifestPath = [
+      getWorkspacePluginManifestPath(workspaceRootPath),
+      join(workspaceRootPath, '.claude-plugin', 'plugin.json'),
+    ].find((path) => existsSync(path));
+    if (!manifestPath) return null;
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
     return manifest.name || null;
   } catch {

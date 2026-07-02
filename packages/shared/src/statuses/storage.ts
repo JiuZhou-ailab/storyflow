@@ -2,15 +2,15 @@
  * Status Storage
  *
  * Filesystem-based storage for workspace status configurations.
- * Statuses are stored at {workspaceRootPath}/statuses/config.json
+ * Statuses are stored at {workspaceRootPath}/.craft-agent/statuses/config.json
  *
  * Icon handling:
- * - Local files: statuses/icons/{id}.svg (auto-discovered)
+ * - Local files: .craft-agent/statuses/icons/{id}.svg (auto-discovered)
  * - Emoji: Rendered as text in UI
  * - URL: Auto-downloaded to statuses/icons/{id}.{ext}
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import type { WorkspaceStatusConfig, StatusConfig, StatusCategory } from './types.ts';
 import { readJsonFileSync } from '../utils/files.ts';
@@ -24,10 +24,13 @@ import {
 } from '../utils/icon.ts';
 import { migrateStatusColors } from '../colors/migrate.ts';
 import { debug } from '../utils/debug.ts';
-
-const STATUS_CONFIG_DIR = 'statuses';
-const STATUS_CONFIG_FILE = 'statuses/config.json';
-const STATUS_ICONS_DIR = 'statuses/icons';
+import {
+  getExistingWorkspaceStatusConfigPath,
+  getExistingWorkspaceStatusIconsPath,
+  getWorkspaceStatusConfigPath,
+  getWorkspaceStatusIconsPath,
+  getWorkspaceStatusesPath,
+} from '../workspaces/paths.ts';
 
 /**
  * Get default status configuration (matches current hardcoded behavior)
@@ -95,7 +98,7 @@ export function getDefaultStatusConfig(): WorkspaceStatusConfig {
  * Creates missing icon files from embedded SVG strings
  */
 export function ensureDefaultIconFiles(workspaceRootPath: string): void {
-  const iconsDir = join(workspaceRootPath, STATUS_ICONS_DIR);
+  const iconsDir = getWorkspaceStatusIconsPath(workspaceRootPath);
 
   // Create icons directory if missing
   if (!existsSync(iconsDir)) {
@@ -137,7 +140,7 @@ export function loadStatusConfig(workspaceRootPath: string): WorkspaceStatusConf
   // Ensure default icon files exist (self-healing)
   ensureDefaultIconFiles(workspaceRootPath);
 
-  const configPath = join(workspaceRootPath, STATUS_CONFIG_FILE);
+  const configPath = getExistingWorkspaceStatusConfigPath(workspaceRootPath);
 
   // Return defaults if config doesn't exist
   if (!existsSync(configPath)) {
@@ -175,8 +178,8 @@ export function saveStatusConfig(
   workspaceRootPath: string,
   config: WorkspaceStatusConfig
 ): void {
-  const statusDir = join(workspaceRootPath, STATUS_CONFIG_DIR);
-  const configPath = join(workspaceRootPath, STATUS_CONFIG_FILE);
+  const statusDir = getWorkspaceStatusesPath(workspaceRootPath);
+  const configPath = getWorkspaceStatusConfigPath(workspaceRootPath);
 
   // Create status directory if missing
   if (!existsSync(statusDir)) {
@@ -248,12 +251,15 @@ export function findStatusIcon(
   workspaceRootPath: string,
   statusId: string
 ): string | undefined {
-  const iconsDir = join(workspaceRootPath, STATUS_ICONS_DIR);
-
-  for (const ext of ICON_EXTENSIONS) {
-    const iconPath = join(iconsDir, `${statusId}${ext}`);
-    if (existsSync(iconPath)) {
-      return iconPath;
+  for (const iconsDir of [
+    getWorkspaceStatusIconsPath(workspaceRootPath),
+    getExistingWorkspaceStatusIconsPath(workspaceRootPath),
+  ]) {
+    for (const ext of ICON_EXTENSIONS) {
+      const iconPath = join(iconsDir, `${statusId}${ext}`);
+      if (existsSync(iconPath)) {
+        return iconPath;
+      }
     }
   }
   return undefined;
@@ -269,7 +275,7 @@ export async function downloadStatusIcon(
   statusId: string,
   iconUrl: string
 ): Promise<string | null> {
-  const iconsDir = join(workspaceRootPath, STATUS_ICONS_DIR);
+  const iconsDir = getWorkspaceStatusIconsPath(workspaceRootPath);
 
   // Ensure icons directory exists
   if (!existsSync(iconsDir)) {

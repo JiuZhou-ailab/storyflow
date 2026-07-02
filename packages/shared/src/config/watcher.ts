@@ -16,9 +16,9 @@
  * - ~/.agents/sources/{slug}/config.json, guide.md, icon.* - Global agent sources
  * - ~/.agents/skills/{slug}/SKILL.md, icon.* - Global agent skills
  * - ~/.craft-agent/workspaces/{slug}/ - Workspace directory (recursive)
- *   - sources/{slug}/config.json, guide.md, permissions.json
- *   - skills/{slug}/SKILL.md, icon.*
- *   - sessions/{id}/session.jsonl (header metadata only)
+ *   - .craft-agent/sources/{slug}/config.json, guide.md, permissions.json
+ *   - .craft-agent/skills/{slug}/SKILL.md, icon.*
+ *   - .craft-agent/sessions/{id}/session.jsonl (header metadata only)
  *   - permissions.json
  */
 
@@ -49,6 +49,7 @@ import {
 } from '../sources/storage.ts';
 import { permissionsConfigCache, getAppPermissionsDir } from '../agent/permissions-config.ts';
 import { getWorkspacePath, getWorkspaceSourcesPath, getWorkspaceSkillsPath } from '../workspaces/storage.ts';
+import { WORKSPACE_STATE_DIR } from '../workspaces/paths.ts';
 import type { LoadedSkill } from '../skills/types.ts';
 import { GLOBAL_AGENT_SKILLS_DIR, loadSkill, loadAllSkills, invalidateSkillsCache, skillNeedsIconDownload, downloadSkillIcon } from '../skills/storage.ts';
 import {
@@ -57,6 +58,7 @@ import {
   downloadStatusIcon,
 } from '../statuses/storage.ts';
 import { readSessionHeader } from '../sessions/jsonl.ts';
+import { getSessionFilePath } from '../sessions/storage.ts';
 import type { SessionHeader } from '../sessions/types.ts';
 import { AUTOMATIONS_CONFIG_FILE } from '../automations/constants.ts';
 import { loadAppTheme, loadPresetThemes, loadPresetTheme, getAppThemesDir } from './storage.ts';
@@ -721,17 +723,21 @@ export class ConfigWatcher {
    * Handle a file change within the workspace directory
    */
   private handleWorkspaceFileChange(relativePath: string, eventType: string): void {
-    const parts = relativePath.split('/');
+    const statePrefix = `${WORKSPACE_STATE_DIR}/`;
+    const normalizedRelativePath = relativePath.startsWith(statePrefix)
+      ? relativePath.slice(statePrefix.length)
+      : relativePath;
+    const parts = normalizedRelativePath.split('/');
 
     // Workspace-level permissions.json
-    if (relativePath === 'permissions.json') {
+    if (normalizedRelativePath === 'permissions.json') {
       this.debounce('workspace-permissions', () => this.handleWorkspacePermissionsChange());
       return;
     }
 
     // Workspace-level automations config file
-    if (relativePath === AUTOMATIONS_CONFIG_FILE) {
-      debug('[ConfigWatcher] automations config change detected:', relativePath);
+    if (normalizedRelativePath === AUTOMATIONS_CONFIG_FILE) {
+      debug('[ConfigWatcher] automations config change detected:', normalizedRelativePath);
       this.debounce('automations-config', () => this.handleAutomationsConfigChange());
       return;
     }
@@ -1265,7 +1271,7 @@ export class ConfigWatcher {
    * made by other instances, scripts, or manual edits.
    */
   private handleSessionMetadataChange(sessionId: string): void {
-    const sessionFile = join(this.workspaceDir, 'sessions', sessionId, 'session.jsonl');
+    const sessionFile = getSessionFilePath(this.workspaceDir, sessionId);
 
     if (!existsSync(sessionFile)) {
       return;

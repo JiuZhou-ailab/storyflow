@@ -16,10 +16,11 @@ import {
   readFileSync,
   writeFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
 } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { homedir } from 'os';
 import { randomUUID } from 'crypto';
 import { expandPath, toPortablePath } from '../utils/paths.ts';
@@ -41,6 +42,69 @@ import type {
   LoadedWorkspace,
   WorkspaceSummary,
 } from './types.ts';
+import {
+  getExistingWorkspaceConfigPath,
+  getExistingWorkspaceSessionsPath,
+  getExistingWorkspaceSourcesPath,
+  getLegacyWorkspaceConfigPath,
+  getWorkspaceConfigPath,
+  getWorkspaceAgentsPath,
+  getWorkspaceClaudePath,
+  getWorkspaceLabelsPath,
+  getWorkspaceNoticePath,
+  getWorkspacePackLockPath,
+  getWorkspacePluginManifestPath,
+  getWorkspaceReadmePath,
+  getWorkspaceSessionsPath,
+  getWorkspaceSkillsPath,
+  getWorkspaceSourcesPath,
+  getWorkspaceStatePath,
+  getWorkspaceStatusConfigPath,
+  getWorkspaceStatusIconsPath,
+  getWorkspaceViewsPath,
+  getWorkspaceWritingManifestPath,
+} from './paths.ts';
+
+export {
+  WORKSPACE_STATE_DIR,
+  getExistingWorkspaceConfigPath,
+  getExistingWorkspaceLabelConfigPath,
+  getExistingWorkspaceSessionsPath,
+  getExistingWorkspaceSkillsPath,
+  getExistingWorkspaceSourcesPath,
+  getExistingWorkspaceStatusConfigPath,
+  getExistingWorkspaceStatusIconsPath,
+  getExistingWorkspaceViewsPath,
+  getExistingWorkspaceWritingManifestPath,
+  getLegacyWorkspaceConfigPath,
+  getLegacyWorkspaceLabelConfigPath,
+  getLegacyWorkspaceSessionsPath,
+  getLegacyWorkspaceSkillsPath,
+  getLegacyWorkspaceSourcesPath,
+  getLegacyWorkspaceStatusConfigPath,
+  getLegacyWorkspaceStatusIconsPath,
+  getLegacyWorkspaceViewsPath,
+  getLegacyWorkspaceWritingManifestPath,
+  getWorkspaceAgentsPath,
+  getWorkspaceClaudePath,
+  getWorkspaceConfigPath,
+  getWorkspaceLabelConfigPath,
+  getWorkspaceLabelsPath,
+  getWorkspaceNoticePath,
+  getWorkspacePackLockPath,
+  getWorkspacePluginManifestPath,
+  getWorkspaceReadmePath,
+  getWorkspaceSessionsPath,
+  getWorkspaceSkillsPath,
+  getWorkspaceSourcesPath,
+  getWorkspaceStatePath,
+  getWorkspaceStateRelativePath,
+  getWorkspaceStatusConfigPath,
+  getWorkspaceStatusIconsPath,
+  getWorkspaceStatusesPath,
+  getWorkspaceViewsPath,
+  getWorkspaceWritingManifestPath,
+} from './paths.ts';
 
 export const DEFAULT_STARTER_WORKSPACE_NAME = '短篇/中篇小说';
 export const DEFAULT_STARTER_WORKSPACE_METHOD_PACK_ID = 'short-form.article' satisfies MethodPackId;
@@ -77,40 +141,223 @@ export function getWorkspacePath(workspaceId: string): string {
   return join(DEFAULT_WORKSPACES_DIR, workspaceId);
 }
 
-/**
- * Get path to workspace sources directory
- * @param rootPath - Absolute path to workspace root folder
- */
-export function getWorkspaceSourcesPath(rootPath: string): string {
-  return join(rootPath, 'sources');
-}
-
-/**
- * Get path to workspace sessions directory
- * @param rootPath - Absolute path to workspace root folder
- */
-export function getWorkspaceSessionsPath(rootPath: string): string {
-  return join(rootPath, 'sessions');
-}
-
-/**
- * Get path to workspace skills directory
- * @param rootPath - Absolute path to workspace root folder
- */
-export function getWorkspaceSkillsPath(rootPath: string): string {
-  return join(rootPath, 'skills');
-}
-
 // ============================================================
 // Config Operations
 // ============================================================
+
+function isWorkspaceConfigLike(value: unknown): value is WorkspaceConfig {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<WorkspaceConfig>;
+  return (
+    typeof candidate.id === 'string'
+    && typeof candidate.name === 'string'
+    && typeof candidate.slug === 'string'
+    && typeof candidate.createdAt === 'number'
+  );
+}
+
+function hasLegacyWorkspaceConfig(rootPath: string): boolean {
+  const legacyConfigPath = getLegacyWorkspaceConfigPath(rootPath);
+  if (!existsSync(legacyConfigPath)) return false;
+
+  try {
+    return isWorkspaceConfigLike(JSON.parse(readFileSync(legacyConfigPath, 'utf-8')));
+  } catch {
+    return false;
+  }
+}
+
+function hasLegacyWritingManifest(rootPath: string): boolean {
+  const manifestPath = join(rootPath, 'craft-writing.json');
+  if (!existsSync(manifestPath)) return false;
+
+  try {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as Record<string, unknown>;
+    return manifest.schemaVersion === 1 && typeof manifest.type === 'string';
+  } catch {
+    return false;
+  }
+}
+
+function filesMatch(leftPath: string, rightPath: string): boolean {
+  try {
+    const left = statSync(leftPath);
+    const right = statSync(rightPath);
+    return left.isFile() && right.isFile() && readFileSync(leftPath).equals(readFileSync(rightPath));
+  } catch {
+    return false;
+  }
+}
+
+function isDirectoryPath(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function uniqueLegacyStatePath(rootPath: string, name: string): string {
+  const parsed = name.match(/^(.*?)(\.[^.]*)?$/);
+  const stem = parsed?.[1] || name;
+  const ext = parsed?.[2] || '';
+  let candidate = join(getWorkspaceStatePath(rootPath), 'legacy-root', name);
+  let counter = 2;
+
+  while (existsSync(candidate)) {
+    candidate = join(getWorkspaceStatePath(rootPath), 'legacy-root', `${stem}-${counter++}${ext}`);
+  }
+  return candidate;
+}
+
+function moveLegacyWorkspaceConflict(rootPath: string, sourcePath: string): void {
+  const relativePath = sourcePath.startsWith(`${rootPath}/`)
+    ? sourcePath.slice(rootPath.length + 1)
+    : sourcePath;
+  const fallbackPath = uniqueLegacyStatePath(rootPath, relativePath);
+  mkdirSync(dirname(fallbackPath), { recursive: true });
+  renameSync(sourcePath, fallbackPath);
+}
+
+function mergeLegacyDirectory(rootPath: string, sourceDir: string, targetDir: string): void {
+  mkdirSync(targetDir, { recursive: true });
+
+  for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
+    const sourcePath = join(sourceDir, entry.name);
+    const targetPath = join(targetDir, entry.name);
+
+    if (!existsSync(targetPath)) {
+      renameSync(sourcePath, targetPath);
+      continue;
+    }
+
+    if (entry.isDirectory() && isDirectoryPath(targetPath)) {
+      mergeLegacyDirectory(rootPath, sourcePath, targetPath);
+      rmSync(sourcePath, { recursive: true, force: true });
+      continue;
+    }
+
+    if (entry.isFile() && filesMatch(sourcePath, targetPath)) {
+      rmSync(sourcePath, { recursive: true, force: true });
+      continue;
+    }
+
+    moveLegacyWorkspaceConflict(rootPath, sourcePath);
+  }
+}
+
+function moveLegacyWorkspaceStatePath(rootPath: string, sourcePath: string, targetPath: string): void {
+  if (!existsSync(sourcePath)) return;
+
+  if (existsSync(targetPath)) {
+    if (isDirectoryPath(sourcePath) && isDirectoryPath(targetPath)) {
+      mergeLegacyDirectory(rootPath, sourcePath, targetPath);
+      rmSync(sourcePath, { recursive: true, force: true });
+      return;
+    }
+    if (filesMatch(sourcePath, targetPath)) {
+      rmSync(sourcePath, { recursive: true, force: true });
+      return;
+    }
+    moveLegacyWorkspaceConflict(rootPath, sourcePath);
+    return;
+  }
+
+  mkdirSync(dirname(targetPath), { recursive: true });
+  renameSync(sourcePath, targetPath);
+}
+
+function restoreMergeableLegacyRootState(rootPath: string): void {
+  const legacyRoot = join(getWorkspaceStatePath(rootPath), 'legacy-root');
+  if (!existsSync(legacyRoot)) return;
+
+  for (const [source, target] of [
+    ['sessions', getWorkspaceSessionsPath(rootPath)],
+    ['skills', getWorkspaceSkillsPath(rootPath)],
+    ['sources', getWorkspaceSourcesPath(rootPath)],
+  ] as const) {
+    const sourcePath = join(legacyRoot, source);
+    if (!existsSync(sourcePath)) continue;
+    mergeLegacyDirectory(rootPath, sourcePath, target);
+    rmSync(sourcePath, { recursive: true, force: true });
+  }
+
+  try {
+    if (readdirSync(legacyRoot).length === 0) {
+      rmSync(legacyRoot, { recursive: true, force: true });
+    }
+  } catch {
+    // ignore best-effort cleanup
+  }
+}
+
+function migrateLegacyWorkspaceState(rootPath: string): void {
+  const hasLegacyConfig = hasLegacyWorkspaceConfig(rootPath);
+  const hasWritingManifest = hasLegacyWritingManifest(rootPath);
+  if (!hasLegacyConfig && !hasWritingManifest) {
+    restoreMergeableLegacyRootState(rootPath);
+    return;
+  }
+
+  mkdirSync(getWorkspaceStatePath(rootPath), { recursive: true });
+
+  if (hasLegacyConfig) {
+    for (const [source, target] of [
+      ['config.json', getWorkspaceConfigPath(rootPath)],
+      ['sources', getWorkspaceSourcesPath(rootPath)],
+      ['sessions', getWorkspaceSessionsPath(rootPath)],
+      ['skills', getWorkspaceSkillsPath(rootPath)],
+      ['labels', getWorkspaceLabelsPath(rootPath)],
+      ['statuses/config.json', getWorkspaceStatusConfigPath(rootPath)],
+      ['statuses/icons', getWorkspaceStatusIconsPath(rootPath)],
+      ['views.json', getWorkspaceViewsPath(rootPath)],
+      ['.claude-plugin/plugin.json', getWorkspacePluginManifestPath(rootPath)],
+    ] as const) {
+      moveLegacyWorkspaceStatePath(rootPath, join(rootPath, source), target);
+    }
+
+    rmSync(join(rootPath, '.claude-plugin'), { recursive: true, force: true });
+    try {
+      if (existsSync(join(rootPath, 'statuses')) && readdirSync(join(rootPath, 'statuses')).length === 0) {
+        rmSync(join(rootPath, 'statuses'), { recursive: true, force: true });
+      }
+    } catch {
+      // ignore best-effort cleanup
+    }
+  }
+
+  if (!hasWritingManifest) {
+    restoreMergeableLegacyRootState(rootPath);
+    return;
+  }
+
+  for (const [source, target] of [
+    ['craft-writing.json', getWorkspaceWritingManifestPath(rootPath)],
+    ['craft-pack-lock.json', getWorkspacePackLockPath(rootPath)],
+    ['AGENTS.md', getWorkspaceAgentsPath(rootPath)],
+    ['CLAUDE.md', getWorkspaceClaudePath(rootPath)],
+    ['README.md', getWorkspaceReadmePath(rootPath)],
+  ] as const) {
+    moveLegacyWorkspaceStatePath(rootPath, join(rootPath, source), target);
+  }
+
+  for (const entry of readdirSync(rootPath, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    if (!/^NOTICE-.+\.md$/.test(entry.name)) continue;
+    moveLegacyWorkspaceStatePath(rootPath, join(rootPath, entry.name), getWorkspaceNoticePath(rootPath, entry.name));
+  }
+
+  restoreMergeableLegacyRootState(rootPath);
+}
 
 /**
  * Load workspace config.json from a workspace folder
  * @param rootPath - Absolute path to workspace root folder
  */
 export function loadWorkspaceConfig(rootPath: string): WorkspaceConfig | null {
-  const configPath = join(rootPath, 'config.json');
+  migrateLegacyWorkspaceState(rootPath);
+
+  const configPath = getExistingWorkspaceConfigPath(rootPath);
   if (!existsSync(configPath)) return null;
 
   try {
@@ -203,7 +450,9 @@ export function saveWorkspaceConfig(rootPath: string, config: WorkspaceConfig): 
   }
 
   // Use atomic write to prevent corruption on crash/interrupt
-  atomicWriteFileSync(join(rootPath, 'config.json'), JSON.stringify(storageConfig, null, 2));
+  const configPath = getWorkspaceConfigPath(rootPath);
+  mkdirSync(dirname(configPath), { recursive: true });
+  atomicWriteFileSync(configPath, JSON.stringify(storageConfig, null, 2));
 }
 
 // ============================================================
@@ -255,8 +504,8 @@ export function loadWorkspace(rootPath: string): LoadedWorkspace | null {
 
   return {
     config,
-    sourceSlugs: listSubdirNames(getWorkspaceSourcesPath(rootPath)),
-    sessionCount: countSubdirs(getWorkspaceSessionsPath(rootPath)),
+    sourceSlugs: listSubdirNames(getExistingWorkspaceSourcesPath(rootPath)),
+    sessionCount: countSubdirs(getExistingWorkspaceSessionsPath(rootPath)),
   };
 }
 
@@ -271,8 +520,8 @@ export function getWorkspaceSummary(rootPath: string): WorkspaceSummary | null {
   return {
     slug: config.slug,
     name: config.name,
-    sourceCount: countSubdirs(getWorkspaceSourcesPath(rootPath)),
-    sessionCount: countSubdirs(getWorkspaceSessionsPath(rootPath)),
+    sourceCount: countSubdirs(getExistingWorkspaceSourcesPath(rootPath)),
+    sessionCount: countSubdirs(getExistingWorkspaceSessionsPath(rootPath)),
     createdAt: config.createdAt,
     updatedAt: config.updatedAt,
   };
@@ -375,6 +624,7 @@ export function createWorkspaceAtPath(
 
   // Create workspace directory structure
   mkdirSync(rootPath, { recursive: true });
+  mkdirSync(getWorkspaceStatePath(rootPath), { recursive: true });
   mkdirSync(getWorkspaceSourcesPath(rootPath), { recursive: true });
   mkdirSync(getWorkspaceSessionsPath(rootPath), { recursive: true });
   mkdirSync(getWorkspaceSkillsPath(rootPath), { recursive: true });
@@ -550,7 +800,7 @@ export function deleteWorkspaceFolder(rootPath: string): boolean {
  * @param rootPath - Absolute path to check
  */
 export function isValidWorkspace(rootPath: string): boolean {
-  return existsSync(join(rootPath, 'config.json'));
+  return existsSync(getExistingWorkspaceConfigPath(rootPath));
 }
 
 /**
@@ -694,8 +944,8 @@ export function isLocalMcpEnabled(rootPath: string): boolean {
  * @param workspaceName - Display name for the workspace (used in plugin name)
  */
 export function ensurePluginManifest(rootPath: string, workspaceName: string): void {
-  const pluginDir = join(rootPath, '.claude-plugin');
-  const manifestPath = join(pluginDir, 'plugin.json');
+  const manifestPath = getWorkspacePluginManifestPath(rootPath);
+  const pluginDir = dirname(manifestPath);
 
   if (existsSync(manifestPath)) return;
 

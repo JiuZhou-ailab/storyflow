@@ -18,29 +18,21 @@ export const FREE_CREATION_METHOD_PACK: MethodPack = {
   },
   requiredPaths: [
     { path: "craft-writing.json", kind: "file" },
-    { path: "项目说明.md", kind: "file" },
-    { path: "创作要求.md", kind: "file" },
-    { path: "正文", kind: "directory" },
-    { path: "自由区", kind: "directory" },
-    { path: "参考资料", kind: "directory" },
+    { path: "全局", kind: "directory" },
+    { path: "全局/项目说明.md", kind: "file" },
+    { path: "全局/创作要求.md", kind: "file" },
   ],
   requiredSkills: [],
   runtimePreamble: "",
   agentIdentity: "",
   defaultSkill: "",
-  alwaysOnInstructions: "This is a free creation workspace. Do not impose a fixed planning taxonomy. Keep accepted prose under 正文/, temporary exploration under 自由区/, and source material under 参考资料/.",
+  alwaysOnInstructions: "This is a free creation workspace. Do not impose a fixed planning taxonomy. Keep durable project facts and user-approved constraints under 全局/. Do not create prose, scratch, or reference roots unless the user explicitly asks for them.",
   initialRequestPolicy: "Respect the user's chosen workflow. If the request is broad, extract known intent and offer a small next artifact instead of forcing a large template.",
   artifactContract: [
-    { path: "项目说明.md", role: "Current project purpose, user intent, and lightweight notes.", lifecycle: "intake" },
-    { path: "创作要求.md", role: "Durable writing preferences and boundaries.", lifecycle: "canon" },
-    { path: "正文/", role: "Accepted prose or final creative output.", lifecycle: "final" },
-    { path: "自由区/", role: "Scratch ideas, experiments, outlines, and discarded versions.", lifecycle: "draft" },
-    { path: "参考资料/", role: "Source material, examples, and research.", lifecycle: "reference" },
+    { path: "全局/项目说明.md", role: "Current project purpose, user intent, and lightweight notes.", lifecycle: "intake" },
+    { path: "全局/创作要求.md", role: "Durable writing preferences and boundaries.", lifecycle: "canon" },
   ],
-  namingConventions: [
-    { path: "正文/", pattern: "按用户自己的项目习惯命名；没有习惯时使用 NN-标题.md。", example: "01-开场.md" },
-    { path: "自由区/", pattern: "YYYYMMDD-目的.md，用于临时方案、试写和审校笔记。", example: "20260531-人物关系试写.md" },
-  ],
+  namingConventions: [],
   operatingRules: undefined,
   skillRouting: [],
   starterMessage: `## 这是什么
@@ -49,20 +41,16 @@ export const FREE_CREATION_METHOD_PACK: MethodPack = {
 
 ## 文件
 
-- 项目说明.md：当前项目目的、范围和临时约定。
-- 创作要求.md：长期写作偏好与禁区。
-- 正文/：accepted prose。
-- 自由区/：scratch。
-- 参考资料/：source material。
+- 全局/：项目事实、项目说明、创作要求和长期设定。
 
 ## 我会怎么做
 
-我不强塞结构。会先尊重你的输入和现有文件，只在需要时把内容归位到正文、自由区或参考资料，并用最小必要的简报、提纲或修订建议推进。
+我不强塞结构。会先尊重你的输入和现有文件，只在需要时把稳定事实写入全局，并用最小必要的简报、提纲或修订建议推进。
 
 ## 流程
 
 1. 先接收你已有的想法、片段、素材或旧稿。
-2. 判断当前只需要正文、自由区记录、参考资料整理，还是轻量项目说明。
+2. 判断当前只需要记录事实，还是需要补一个轻量项目说明。
 3. 用最小必要产物推进，不预设复杂分类。
 4. 只有当你认可某个稳定约定时，才写入项目说明或创作要求。
 

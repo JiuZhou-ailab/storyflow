@@ -14,6 +14,7 @@ import { APP_VERSION } from '../version/index.ts';
 import { readPluginName } from '../utils/workspace.ts';
 import { globSync } from 'glob';
 import os from 'os';
+import { WORKSPACE_STATE_DIR } from '../workspaces/paths.ts';
 
 /** Maximum size of CLAUDE.md file to include (10KB) */
 const MAX_CONTEXT_FILE_SIZE = 10 * 1024;
@@ -57,6 +58,18 @@ function findFileCaseInsensitive(directory: string, pattern: string): string | n
   } catch {
     return null;
   }
+}
+
+function findStateContextFiles(directory: string): string[] {
+  const stateDir = join(directory, WORKSPACE_STATE_DIR);
+  const files: string[] = [];
+  for (const pattern of CONTEXT_FILE_PATTERNS) {
+    const actualFilename = findFileCaseInsensitive(stateDir, pattern);
+    if (actualFilename) {
+      files.push(join(WORKSPACE_STATE_DIR, actualFilename));
+    }
+  }
+  return files;
 }
 
 /**
@@ -124,15 +137,17 @@ export function findAllProjectContextFiles(directory: string): string[] {
       ignore: ignorePatterns,
       absolute: false,
     });
+    const stateMatches = findStateContextFiles(directory);
+    const allMatches = Array.from(new Set([...stateMatches, ...matches]));
 
-    if (matches.length === 0) {
+    if (allMatches.length === 0) {
       contextFileCache.set(directory, { files: [], ts: now });
       return [];
     }
 
     // Sort by depth (fewer slashes = shallower = higher priority), then alphabetically
     // Root files come first, then nested packages
-    const sorted = matches.sort((a, b) => {
+    const sorted = allMatches.sort((a, b) => {
       const depthA = (a.match(/\//g) || []).length;
       const depthB = (b.match(/\//g) || []).length;
       if (depthA !== depthB) return depthA - depthB;
@@ -142,7 +157,7 @@ export function findAllProjectContextFiles(directory: string): string[] {
     // Cap at max files to avoid overwhelming the prompt
     const capped = sorted.slice(0, MAX_CONTEXT_FILES);
 
-    debug(`[findAllProjectContextFiles] Found ${matches.length} files, returning ${capped.length}`);
+    debug(`[findAllProjectContextFiles] Found ${allMatches.length} files, returning ${capped.length}`);
     contextFileCache.set(directory, { files: capped, ts: now });
     return capped;
   } catch (error) {
@@ -178,6 +193,28 @@ export function readProjectContextFile(directory: string): { filename: string; c
     } catch (error) {
       debug(`[readProjectContextFile] Error reading ${actualFilename}:`, error);
       // Continue to next pattern
+    }
+  }
+  const stateDir = join(directory, WORKSPACE_STATE_DIR);
+  for (const pattern of CONTEXT_FILE_PATTERNS) {
+    const actualFilename = findFileCaseInsensitive(stateDir, pattern);
+    if (!actualFilename) continue;
+
+    const filePath = join(stateDir, actualFilename);
+    try {
+      const content = readFileSync(filePath, 'utf-8');
+      const filename = join(WORKSPACE_STATE_DIR, actualFilename);
+      if (content.length > MAX_CONTEXT_FILE_SIZE) {
+        debug(`[readProjectContextFile] ${filename} exceeds max size, truncating`);
+        return {
+          filename,
+          content: content.slice(0, MAX_CONTEXT_FILE_SIZE) + '\n\n... (truncated)',
+        };
+      }
+      debug(`[readProjectContextFile] Found ${filename} (${content.length} chars)`);
+      return { filename, content };
+    } catch (error) {
+      debug(`[readProjectContextFile] Error reading ${actualFilename}:`, error);
     }
   }
   return null;
@@ -336,7 +373,7 @@ export type SystemPromptPreset = 'default' | 'mini' | 'novel';
  */
 export function getMiniAgentSystemPrompt(workspaceRootPath?: string): string {
   const workspaceContext = workspaceRootPath
-    ? `\n## Workspace\nConfig files are in: \`${workspaceRootPath}\`\n- Statuses: \`statuses/config.json\`\n- Labels: \`labels/config.json\`\n- Permissions: \`permissions.json\`\n`
+    ? `\n## Workspace\nConfig files are in: \`${workspaceRootPath}/.craft-agent\`\n- Statuses: \`.craft-agent/statuses/config.json\`\n- Labels: \`.craft-agent/labels/config.json\`\n- Permissions: \`permissions.json\`\n`
     : '';
 
   return `You are a focused assistant for quick configuration edits in Storyflow.
@@ -505,7 +542,7 @@ function getCraftAssistantPrompt(workspaceRootPath?: string, backendName: string
   // Default to ${APP_ROOT}/workspaces/{id} if no path provided
   const workspacePath = workspaceRootPath || `${APP_ROOT}/workspaces/{id}`;
 
-  // Read the SDK plugin name from .claude-plugin/plugin.json — this is what the SDK
+  // Read the SDK plugin name from .craft-agent/claude-plugin/plugin.json — this is what the SDK
   // uses to resolve skills. Falls back to basename for backwards compatibility.
   const workspaceId = (workspaceRootPath && readPluginName(workspaceRootPath))
     || basename(workspacePath)
@@ -584,7 +621,7 @@ Sources are external data connections. Each source has:
 - \`guide.md\` - Usage guidelines (read before first use!)
 
 **Using an existing source** (it already appears in \`<sources>\` above):
-1. Read its \`config.json\` and \`guide.md\` at \`${workspacePath}/sources/{slug}/\`
+1. Read its \`config.json\` and \`guide.md\` at \`${workspacePath}/.craft-agent/sources/{slug}/\`
 2. If it needs auth, trigger the appropriate auth tool
 3. Call its tools directly — do not search the workspace for how to use it
 
@@ -594,9 +631,9 @@ Sources are external data connections. Each source has:
 3. Before full setup, confirm whether in-app browser is a better fit for one-off or UI-only tasks
 
 **Workspace structure:**
-- Sources: \`${workspacePath}/sources/{slug}/\`
-- Skills: \`${workspacePath}/skills/{slug}/\`
-- Theme: \`${workspacePath}/theme.json\`
+- Sources: \`${workspacePath}/.craft-agent/sources/{slug}/\`
+- Skills: \`${workspacePath}/.craft-agent/skills/{slug}/\`
+- Theme: \`${workspacePath}/.craft-agent/theme.json\`
 
 ## Skills
 
@@ -609,7 +646,7 @@ Skills are reusable instruction sets that teach you specialized behaviors. Each 
 
 Skills are stored at three levels (checked in order):
 - Global: \`~/.agents/skills/{slug}/SKILL.md\`
-- Workspace: \`${workspacePath}/skills/{slug}/SKILL.md\`
+- Workspace: \`${workspacePath}/.craft-agent/skills/{slug}/SKILL.md\`
 - Project: \`{projectRoot}/.agents/skills/{slug}/SKILL.md\`
 
 ## Project Context
@@ -754,8 +791,8 @@ The \`session\` MCP server provides tools for managing external sources:
 **Source creation workflow:**
 1. Read \`${DOC_REFS.sources}\` for the full setup guide
 2. Search \`craft-agents-docs\` for service-specific guides
-3. Create \`config.json\` in \`sources/{slug}/\`
-4. Create \`permissions.json\` for Explore mode
+3. Create \`config.json\` in \`.craft-agent/sources/{slug}/\`
+4. Create \`permissions.json\` in \`.craft-agent/sources/{slug}/\` for Explore mode
 5. Write \`guide.md\` with usage instructions
 6. Run \`source_test\` to validate — **once only, before auth**
 7. Trigger the appropriate auth tool

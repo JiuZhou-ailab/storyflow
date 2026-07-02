@@ -23,7 +23,13 @@ import {
   restoreFiles,
   validateBundleFile,
 } from '../utils/bundle-files.ts'
-import { getWorkspaceSourcesPath, getWorkspaceSkillsPath } from '../workspaces/storage.ts'
+import {
+  getLegacyWorkspaceSkillsPath,
+  getLegacyWorkspaceSourcesPath,
+  getExistingWorkspaceConfigPath,
+  getWorkspaceSkillsPath,
+  getWorkspaceSourcesPath,
+} from '../workspaces/storage.ts'
 import { loadSourceConfig, getSourcePath } from '../sources/storage.ts'
 import { isBuiltinSource } from '../sources/builtin-sources.ts'
 import { validateSourceConfig } from '../config/validators.ts'
@@ -47,6 +53,13 @@ import type {
   ImportBucketResult,
   ResourceImportDeps,
 } from './types.ts'
+
+function listResourceSlugs(dir: string): string[] {
+  if (!existsSync(dir)) return []
+  return readdirSync(dir, { withFileTypes: true })
+    .filter(d => d.isDirectory() && !d.name.startsWith('.'))
+    .map(d => d.name)
+}
 
 // ============================================================
 // Source Config Sanitization
@@ -129,7 +142,7 @@ export function exportResources(
 
   // Try to read workspace name for informational purposes
   try {
-    const wsConfigPath = join(workspaceRootPath, 'config.json')
+    const wsConfigPath = getExistingWorkspaceConfigPath(workspaceRootPath)
     if (existsSync(wsConfigPath)) {
       const wsConfig = JSON.parse(readFileSync(wsConfigPath, 'utf-8'))
       if (wsConfig.name) {
@@ -174,14 +187,13 @@ function exportSources(
   const entries: SourceBundleEntry[] = []
   const sourcesDir = getWorkspaceSourcesPath(workspaceRootPath)
 
-  if (!existsSync(sourcesDir)) return entries
-
   // Determine which slugs to export
   let slugs: string[]
   if (selection === 'all') {
-    slugs = readdirSync(sourcesDir, { withFileTypes: true })
-      .filter(d => d.isDirectory() && !d.name.startsWith('.'))
-      .map(d => d.name)
+    slugs = Array.from(new Set([
+      ...listResourceSlugs(getLegacyWorkspaceSourcesPath(workspaceRootPath)),
+      ...listResourceSlugs(sourcesDir),
+    ]))
   } else {
     slugs = selection
   }
@@ -226,14 +238,13 @@ function exportSkills(
   const entries: SkillBundleEntry[] = []
   const skillsDir = getWorkspaceSkillsPath(workspaceRootPath)
 
-  if (!existsSync(skillsDir)) return entries
-
   // Determine which slugs to export
   let slugs: string[]
   if (selection === 'all') {
-    slugs = readdirSync(skillsDir, { withFileTypes: true })
-      .filter(d => d.isDirectory() && !d.name.startsWith('.'))
-      .map(d => d.name)
+    slugs = Array.from(new Set([
+      ...listResourceSlugs(getLegacyWorkspaceSkillsPath(workspaceRootPath)),
+      ...listResourceSlugs(skillsDir),
+    ]))
   } else {
     slugs = selection
   }
@@ -694,8 +705,9 @@ async function importSources(
         continue
       }
 
-      const targetDir = getSourcePath(workspaceRootPath, entry.slug)
-      const exists = existsSync(targetDir)
+      const targetDir = join(sourcesDir, entry.slug)
+      const legacyTargetDir = join(getLegacyWorkspaceSourcesPath(workspaceRootPath), entry.slug)
+      const exists = existsSync(targetDir) || existsSync(legacyTargetDir)
 
       if (exists && mode === 'skip') {
         result.skipped.push(entry.slug)
@@ -730,7 +742,8 @@ async function importSources(
           } catch (err) {
             result.warnings.push(`Source '${entry.slug}': failed to clear credentials: ${err}`)
           }
-          rmSync(targetDir, { recursive: true })
+          rmSync(targetDir, { recursive: true, force: true })
+          rmSync(legacyTargetDir, { recursive: true, force: true })
         }
 
         // Atomic replace: rename temp → target
@@ -771,7 +784,8 @@ function importSkills(
   for (const entry of entries) {
     try {
       const targetDir = join(skillsDir, entry.slug)
-      const exists = existsSync(targetDir)
+      const legacyTargetDir = join(getLegacyWorkspaceSkillsPath(workspaceRootPath), entry.slug)
+      const exists = existsSync(targetDir) || existsSync(legacyTargetDir)
 
       if (exists && mode === 'skip') {
         result.skipped.push(entry.slug)
@@ -795,7 +809,8 @@ function importSkills(
 
         // On overwrite: remove old dir
         if (exists) {
-          rmSync(targetDir, { recursive: true })
+          rmSync(targetDir, { recursive: true, force: true })
+          rmSync(legacyTargetDir, { recursive: true, force: true })
         }
 
         // Atomic replace: rename temp → target

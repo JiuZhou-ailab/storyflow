@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from "fs";
 import { join } from "path";
+import { getExistingWorkspaceWritingManifestPath } from "../workspaces/paths.ts";
 import type {
   DetectedWritingProject,
   WritingProjectDirectories,
@@ -7,7 +8,6 @@ import type {
   WritingProjectType,
 } from "./types.ts";
 
-const WRITING_MANIFEST_FILENAME = "craft-writing.json";
 const SUPPORTED_PROJECT_TYPES = new Set<WritingProjectType>(["novel", "screenplay", "short-form"]);
 const CLAUDE_BOOK_NOVEL_DIRECTORIES = ["bible", "story", "state", "timeline"] as const;
 
@@ -24,7 +24,7 @@ function isSupportedProjectType(value: unknown): value is WritingProjectType {
 }
 
 function parseManifest(rootPath: string): WritingProjectManifest | null {
-  const manifestPath = join(rootPath, WRITING_MANIFEST_FILENAME);
+  const manifestPath = getExistingWorkspaceWritingManifestPath(rootPath);
   if (!existsSync(manifestPath)) return null;
 
   try {

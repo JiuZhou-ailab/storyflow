@@ -257,23 +257,35 @@ export async function loadSourceIcon(
  * Helper to load a workspace image via IPC.
  * Handles SVG theming and returns data URL or null on failure.
  */
+function getWorkspaceImagePathCandidates(relativePath: string): string[] {
+  const statePathPattern = /^(sources|skills|statuses)\//
+  return relativePath.startsWith('.craft-agent/')
+    ? [relativePath, relativePath.slice('.craft-agent/'.length)]
+    : statePathPattern.test(relativePath)
+      ? [`.craft-agent/${relativePath}`, relativePath]
+      : [relativePath]
+}
+
 async function loadWorkspaceIcon(workspaceId: string, relativePath: string): Promise<string | null> {
-  try {
-    const result = await window.electronAPI.readWorkspaceImage(workspaceId, relativePath)
-    // IPC returns null for missing files (silent fallback)
-    if (!result) {
-      return null
+  for (const candidate of getWorkspaceImagePathCandidates(relativePath)) {
+    try {
+      const result = await window.electronAPI.readWorkspaceImage(workspaceId, candidate)
+      // IPC returns null for missing files (silent fallback)
+      if (!result) {
+        continue
+      }
+      // For SVG, theme and convert to data URL
+      // This injects foreground color since currentColor doesn't work in background-image
+      if (candidate.endsWith('.svg')) {
+        return svgToThemedDataUrl(result)
+      }
+      return result
+    } catch {
+      // Security errors or I/O failures still throw - handle them gracefully
     }
-    // For SVG, theme and convert to data URL
-    // This injects foreground color since currentColor doesn't work in background-image
-    if (relativePath.endsWith('.svg')) {
-      return svgToThemedDataUrl(result)
-    }
-    return result
-  } catch {
-    // Security errors or I/O failures still throw - handle them gracefully
-    return null
   }
+
+  return null
 }
 
 /**
@@ -671,34 +683,36 @@ async function loadIconFile(
   workspaceId: string,
   relativePath: string
 ): Promise<{ dataUrl: string; colorable: boolean; rawSvg?: string } | null> {
-  try {
-    const content = await window.electronAPI.readWorkspaceImage(workspaceId, relativePath)
-    // IPC returns null for missing files (silent fallback)
-    if (!content) {
-      return null
-    }
-
-    if (relativePath.endsWith('.svg')) {
-      // Detect if SVG uses currentColor (colorable)
-      const colorable = content.includes('currentColor')
-      // Theme SVG: inject foreground color for data URL usage
-      const dataUrl = svgToThemedDataUrl(content)
-
-      if (colorable) {
-        // Sanitize SVG for inline rendering (XSS prevention)
-        const rawSvg = sanitizeSvgForInline(content)
-        return { dataUrl, colorable, rawSvg }
+  for (const candidate of getWorkspaceImagePathCandidates(relativePath)) {
+    try {
+      const content = await window.electronAPI.readWorkspaceImage(workspaceId, candidate)
+      // IPC returns null for missing files (silent fallback)
+      if (!content) {
+        continue
       }
 
-      return { dataUrl, colorable }
-    }
+      if (candidate.endsWith('.svg')) {
+        // Detect if SVG uses currentColor (colorable)
+        const colorable = content.includes('currentColor')
+        // Theme SVG: inject foreground color for data URL usage
+        const dataUrl = svgToThemedDataUrl(content)
 
-    // Raster image (PNG, JPG) - not colorable
-    return { dataUrl: content, colorable: false }
-  } catch {
-    // File doesn't exist or failed to load
-    return null
+        if (colorable) {
+          // Sanitize SVG for inline rendering (XSS prevention)
+          const rawSvg = sanitizeSvgForInline(content)
+          return { dataUrl, colorable, rawSvg }
+        }
+
+        return { dataUrl, colorable }
+      }
+
+      // Raster image (PNG, JPG) - not colorable
+      return { dataUrl: content, colorable: false }
+    } catch {
+      // File doesn't exist or failed to load
+    }
   }
+  return null
 }
 
 /**

@@ -31,6 +31,10 @@ function createTempProject(): string {
   return mkdtempSync(join(tmpdir(), "craft-novel-skills-"));
 }
 
+function statePath(rootPath: string, relativePath = ""): string {
+  return join(rootPath, ".craft-agent", relativePath);
+}
+
 describe("bundled writing skills", () => {
   it("defines Craft-compatible skill files with attribution", () => {
     const files = getBundledNovelSkillFiles();
@@ -85,10 +89,11 @@ describe("bundled writing skills", () => {
     createNovelProjectScaffold(rootPath, { title: "Novel Workspace" });
 
     for (const slug of EXPECTED_SKILLS) {
-      expect(existsSync(join(rootPath, "skills", slug, "SKILL.md"))).toBe(true);
+      expect(existsSync(statePath(rootPath, join("skills", slug, "SKILL.md")))).toBe(true);
     }
+    expect(existsSync(join(rootPath, "skills"))).toBe(false);
 
-    const notice = readFileSync(join(rootPath, "skills", "NOTICE-Claude-Book.md"), "utf-8");
+    const notice = readFileSync(statePath(rootPath, "skills/NOTICE-Claude-Book.md"), "utf-8");
     expect(notice).toContain("Claude-Book");
     expect(notice).toContain("MIT");
   });
@@ -108,7 +113,7 @@ describe("bundled writing skills", () => {
     });
 
     for (const [slug, name] of Object.entries(expectedSkillNames)) {
-      const skillPath = join(rootPath, "skills", slug, "SKILL.md");
+      const skillPath = statePath(rootPath, join("skills", slug, "SKILL.md"));
       const content = readFileSync(skillPath, "utf-8");
       expect(existsSync(skillPath)).toBe(true);
       expect(content).toContain(`name: ${name}`);
@@ -124,14 +129,14 @@ describe("bundled writing skills", () => {
       methodPackId: "screenplay.logic",
     });
 
-    const planner = readFileSync(join(rootPath, "skills", "script-logic-planner", "SKILL.md"), "utf-8");
+    const planner = readFileSync(statePath(rootPath, "skills/script-logic-planner/SKILL.md"), "utf-8");
     expect(planner).toContain("分场大纲");
     expect(planner).toContain("人物行动线");
     expect(planner).toContain("因果链");
     expect(planner).toContain("冲突升级");
     expect(planner).toContain("写对白或剧本正文前");
 
-    const agents = readFileSync(join(rootPath, "AGENTS.md"), "utf-8");
+    const agents = readFileSync(statePath(rootPath, "AGENTS.md"), "utf-8");
     expect(agents).toContain("screenplay.logic");
     expect(agents).toContain("对白请求缺少场景目的");
   });

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { loadWorkspaceConfig } from '../storage.ts';
+import { loadWorkspaceConfig, saveWorkspaceConfig } from '../storage.ts';
 
 const tempDirs: string[] = [];
 
@@ -17,6 +17,31 @@ afterEach(() => {
 });
 
 describe('workspace storage: config normalization', () => {
+  it('writes workspace config under .craft-agent while keeping legacy root reads', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'ws-hidden-config-'));
+    tempDirs.push(workspaceRoot);
+
+    const config = {
+      id: 'ws_hidden',
+      name: 'Hidden Config',
+      slug: 'hidden-config',
+      defaults: {},
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    saveWorkspaceConfig(workspaceRoot, config);
+
+    expect(existsSync(join(workspaceRoot, 'config.json'))).toBe(false);
+    expect(existsSync(join(workspaceRoot, '.craft-agent', 'config.json'))).toBe(true);
+    expect(JSON.parse(readFileSync(join(workspaceRoot, '.craft-agent', 'config.json'), 'utf-8')).name).toBe('Hidden Config');
+
+    const legacyRoot = mkdtempSync(join(tmpdir(), 'ws-legacy-config-'));
+    tempDirs.push(legacyRoot);
+    writeFileSync(join(legacyRoot, 'config.json'), JSON.stringify(config, null, 2), 'utf-8');
+    expect(loadWorkspaceConfig(legacyRoot)?.name).toBe('Hidden Config');
+  });
+
   it('maps canonical defaults.permissionMode and cyclablePermissionModes on read', () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), 'ws-mode-map-'));
     tempDirs.push(workspaceRoot);

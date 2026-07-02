@@ -18,11 +18,11 @@ export const OH_STORY_METHOD_PACK: MethodPack = {
   },
   requiredPaths: [
     { path: "craft-writing.json", kind: "file" },
-    { path: "设定/世界观", kind: "directory" },
-    { path: "设定/角色", kind: "directory" },
-    { path: "设定/势力", kind: "directory" },
-    { path: "设定/关系.md", kind: "file" },
-    { path: "设定/题材定位.md", kind: "file" },
+    { path: "全局/世界观", kind: "directory" },
+    { path: "全局/角色", kind: "directory" },
+    { path: "全局/势力", kind: "directory" },
+    { path: "全局/关系.md", kind: "file" },
+    { path: "全局/题材定位.md", kind: "file" },
     { path: "大纲/大纲.md", kind: "file" },
     { path: "正文", kind: "directory" },
     { path: "对标", kind: "directory" },
@@ -46,14 +46,14 @@ export const OH_STORY_METHOD_PACK: MethodPack = {
     "story-review",
     "story-cover",
   ],
-  runtimePreamble: "This project uses the novel.oh-story method pack. Use 设定/ for canon, 大纲/ for book and chapter planning, 正文/ for manuscript, 追踪/ for continuity and foreshadowing, 拆文库/ and 对标/ for benchmark analysis, and 参考资料/ for research.",
+  runtimePreamble: "This project uses the novel.oh-story method pack. Use 全局/ for canon, 大纲/ for book and chapter planning, 正文/ for manuscript, 追踪/ for continuity and foreshadowing, 拆文库/ and 对标/ for benchmark analysis, and 参考资料/ for research.",
   agentIdentity: "You are an Oh Story web-fiction planning editor who optimizes genre promise, platform rhythm, emotional payoff, benchmark learning, and serial-reader momentum before drafting.",
   defaultSkill: "story",
-  alwaysOnInstructions: "Treat 设定/ as durable canon, 设定/题材定位.md as the market and reader-promise contract, 大纲/大纲.md as the plot contract, 正文/ as accepted prose, 追踪/ as continuity and foreshadowing state, 拆文库/ and 对标/ as benchmark evidence, 参考资料/ as source material, and .work/ as temporary exploration.",
+  alwaysOnInstructions: "Treat 全局/ as durable canon, 全局/题材定位.md as the market and reader-promise contract, 大纲/大纲.md as the plot contract, 正文/ as accepted prose, 追踪/ as continuity and foreshadowing state, 拆文库/ and 对标/ as benchmark evidence, 参考资料/ as source material, and .work/ as temporary exploration.",
   initialRequestPolicy: "Do not draft directly from a broad first writing request. First use story to classify the request lane and clarify method-defining dimensions such as 男频/女频/双男主, genre promise, protagonist setup, emotional engine, reversal rhythm, payoff, length, and whether the next artifact should be positioning, outline, golden opening chapters, or prose.",
   artifactContract: [
-    { path: "设定/", role: "Durable canon for world, characters, factions, relationships, terminology, and story constraints.", lifecycle: "canon" },
-    { path: "设定/题材定位.md", role: "Reader lane, platform promise, genre expectation, tone, and differentiating hook.", lifecycle: "intake" },
+    { path: "全局/", role: "Durable canon for world, characters, factions, relationships, terminology, and story constraints.", lifecycle: "canon" },
+    { path: "全局/题材定位.md", role: "Reader lane, platform promise, genre expectation, tone, and differentiating hook.", lifecycle: "intake" },
     { path: "大纲/大纲.md", role: "Accepted story structure, arcs, reversals, payoffs, and chapter/section plan.", lifecycle: "outline" },
     { path: "正文/", role: "Accepted manuscript prose only after positioning and outline are clear.", lifecycle: "final" },
     { path: "追踪/", role: "Continuity, context, foreshadowing, timeline, and serialized-state records.", lifecycle: "state" },
@@ -81,7 +81,7 @@ export const OH_STORY_METHOD_PACK: MethodPack = {
 
 ## 我会怎么做
 
-我会先明确目标平台、题材赛道和读者承诺，再拆解对标作品的钩子、爽点、节奏和更新策略。之后把定位落到设定、大纲、章节计划和连载追踪里。
+我会先明确目标平台、题材赛道和读者承诺，再拆解对标作品的钩子、爽点、节奏和更新策略。之后把定位落到全局、大纲、章节计划和连载追踪里。
 
 ## 流程
 

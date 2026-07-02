@@ -2,7 +2,7 @@
  * Session Storage
  *
  * Workspace-scoped session CRUD operations.
- * Sessions are stored at {workspaceRootPath}/sessions/{id}/session.jsonl
+ * Sessions are stored at {workspaceRootPath}/.craft-agent/sessions/{id}/session.jsonl
  * Each session folder contains:
  * - session.jsonl (main data in JSONL format: line 1 = header, lines 2+ = messages)
  * - attachments/ (file attachments)
@@ -23,7 +23,10 @@ import {
   unlinkSync,
 } from 'fs';
 import { join, basename } from 'path';
-import { getWorkspaceSessionsPath } from '../workspaces/storage.ts';
+import {
+  getLegacyWorkspaceSessionsPath,
+  getWorkspaceSessionsPath,
+} from '../workspaces/paths.ts';
 import { generateUniqueSessionId } from './slug-generator.ts';
 import { toPortablePath, expandPath } from '../utils/paths.ts';
 import { sanitizeSessionId } from './validation.ts';
@@ -70,7 +73,13 @@ export function ensureSessionsDir(workspaceRootPath: string): string {
 export function getSessionPath(workspaceRootPath: string, sessionId: string): string {
   // Defense-in-depth: strip any path components from sessionId
   const safeSessionId = sanitizeSessionId(sessionId);
-  return join(getWorkspaceSessionsPath(workspaceRootPath), safeSessionId);
+  const sessionPath = join(getWorkspaceSessionsPath(workspaceRootPath), safeSessionId);
+  if (existsSync(sessionPath)) return sessionPath;
+
+  const legacySessionPath = join(getLegacyWorkspaceSessionsPath(workspaceRootPath), safeSessionId);
+  if (existsSync(legacySessionPath)) return legacySessionPath;
+
+  return sessionPath;
 }
 
 /**
@@ -150,12 +159,20 @@ export function getSessionDownloadsPath(workspaceRootPath: string, sessionId: st
  * Get existing session IDs for collision detection
  */
 function getExistingSessionIds(workspaceRootPath: string): Set<string> {
-  const sessionsDir = getWorkspaceSessionsPath(workspaceRootPath);
-  if (!existsSync(sessionsDir)) {
-    return new Set();
+  const existingIds = new Set<string>();
+  for (const sessionsDir of [
+    getLegacyWorkspaceSessionsPath(workspaceRootPath),
+    getWorkspaceSessionsPath(workspaceRootPath),
+  ]) {
+    if (!existsSync(sessionsDir)) continue;
+    const entries = readdirSync(sessionsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        existingIds.add(entry.name);
+      }
+    }
   }
-  const entries = readdirSync(sessionsDir, { withFileTypes: true });
-  return new Set(entries.filter(e => e.isDirectory()).map(e => e.name));
+  return existingIds;
 }
 
 /**
@@ -342,39 +359,40 @@ export function loadSession(workspaceRootPath: string, sessionId: string): Store
  */
 export function listSessions(workspaceRootPath: string): SessionMetadata[] {
   const span = perf.span('session.listSessions');
-  const sessionsDir = getWorkspaceSessionsPath(workspaceRootPath);
-  if (!existsSync(sessionsDir)) {
-    span.end();
-    return [];
-  }
-
-  const entries = readdirSync(sessionsDir, { withFileTypes: true });
+  const sessionDirs = [
+    getLegacyWorkspaceSessionsPath(workspaceRootPath),
+    getWorkspaceSessionsPath(workspaceRootPath),
+  ].filter((sessionsDir, index, dirs) => existsSync(sessionsDir) && dirs.indexOf(sessionsDir) === index);
   span.mark('readdir');
-  const sessions: SessionMetadata[] = [];
+  const sessionsById = new Map<string, SessionMetadata>();
 
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      const sessionId = entry.name;
-      const sessionDir = join(sessionsDir, sessionId);
-      const jsonlFile = join(sessionDir, 'session.jsonl');
+  for (const sessionsDir of sessionDirs) {
+    const entries = readdirSync(sessionsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const sessionId = entry.name;
+        const sessionDir = join(sessionsDir, sessionId);
+        const jsonlFile = join(sessionDir, 'session.jsonl');
 
-      // Clean up orphaned .tmp files from crashed atomic writes.
-      // These are harmless but waste disk space.
-      const tmpFile = jsonlFile + '.tmp';
-      if (existsSync(tmpFile)) {
-        try { unlinkSync(tmpFile); } catch { /* ignore */ }
-      }
+        // Clean up orphaned .tmp files from crashed atomic writes.
+        // These are harmless but waste disk space.
+        const tmpFile = jsonlFile + '.tmp';
+        if (existsSync(tmpFile)) {
+          try { unlinkSync(tmpFile); } catch { /* ignore */ }
+        }
 
-      if (existsSync(jsonlFile)) {
-        const header = readSessionHeader(jsonlFile);
-        if (header) {
-          const metadata = headerToMetadata(header, workspaceRootPath);
-          if (metadata) sessions.push(metadata);
+        if (existsSync(jsonlFile)) {
+          const header = readSessionHeader(jsonlFile);
+          if (header) {
+            const metadata = headerToMetadata(header, workspaceRootPath);
+            if (metadata) sessionsById.set(metadata.id, metadata);
+          }
         }
       }
     }
   }
   span.mark('parsed');
+  const sessions = Array.from(sessionsById.values());
   span.setMetadata('count', sessions.length);
 
   // Sort by lastUsedAt descending (most recent first)
@@ -429,9 +447,14 @@ function headerToMetadata(header: SessionHeader, workspaceRootPath: string): Ses
 export function deleteSession(workspaceRootPath: string, sessionId: string): boolean {
   try {
     // Delete session directory (includes session.json, attachments, plans)
-    const sessionDir = getSessionPath(workspaceRootPath, sessionId);
-    if (existsSync(sessionDir)) {
-      rmSync(sessionDir, { recursive: true });
+    const safeSessionId = sanitizeSessionId(sessionId);
+    for (const sessionDir of [
+      join(getWorkspaceSessionsPath(workspaceRootPath), safeSessionId),
+      join(getLegacyWorkspaceSessionsPath(workspaceRootPath), safeSessionId),
+    ]) {
+      if (existsSync(sessionDir)) {
+        rmSync(sessionDir, { recursive: true });
+      }
     }
 
     return true;

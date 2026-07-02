@@ -141,13 +141,13 @@ describe('workspace creation method options', () => {
     ])
     expect(previewAssets).toContain('timeline/')
     expect(previewAssets).toContain('剧本/')
-    expect(previewAssets).toContain('项目说明.md')
-    expect(previewAssets).toContain('简报.md')
+    expect(previewAssets).toContain('全局/项目说明.md')
+    expect(previewAssets).toContain('全局/简报.md')
     expect(previewAssets).not.toContain('黄金三章.md')
     expect(previews.some(preview => preview.structure.some(group => group.label === 'Canon 层'))).toBe(true)
     expect(previews.some(preview => preview.structure.some(group => group.label === '剧本层'))).toBe(true)
-    expect(previews.some(preview => preview.structure.some(group => group.label === '自由层'))).toBe(true)
-    expect(previews.some(preview => preview.structure.some(group => group.label === '长期约定'))).toBe(true)
+    expect(previews.some(preview => preview.structure.some(group => group.label === '项目事实'))).toBe(true)
+    expect(previews.some(preview => preview.structure.some(group => group.label === '全局'))).toBe(true)
   })
 
   it('builds a default workspace folder path for Chinese names on Windows', () => {

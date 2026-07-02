@@ -20,11 +20,16 @@ import { readFileAttachment, validateImageForClaudeAPI, IMAGE_LIMITS, perf } fro
 import { getSessionAttachmentsPath, validateSessionId } from '@craft-agent/shared/sessions'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { resizeImageForAPI, inspectImageBuffer } from '@craft-agent/server-core/services'
-import { sanitizeFilename, validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
+import { sanitizeFilename } from '@craft-agent/server-core/handlers'
 import { MarkItDown } from 'markitdown-js'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { requestClientOpenFileDialog } from '@craft-agent/server-core/transport'
+import {
+  resolveContextWorkspaceId,
+  validateWorkspaceFilePath,
+  validateWorkspaceSearchBasePath,
+} from './file-workspace-scope'
 
 export const HANDLED_CHANNELS = [
   RPC_CHANNELS.file.READ,
@@ -95,6 +100,13 @@ export function filterFileSearchSnapshot(
   return results
 }
 
+function resolveFileSearchMaxResults(options?: FileSearchOptions): number {
+  const requested = options?.maxResults
+  if (typeof requested !== 'number' || !Number.isFinite(requested)) return FILE_SEARCH_MAX_RESULTS
+
+  return Math.min(Math.max(1, Math.floor(requested)), FILE_SEARCH_BATCH_MAX_ENTRIES)
+}
+
 function notifyConfigWatcherForWrite(deps: HandlerDeps, workspaceId: string | null | undefined, safePath: string): void {
   if (!workspaceId) return
 
@@ -109,6 +121,10 @@ function notifyConfigWatcherForWrite(deps: HandlerDeps, workspaceId: string | nu
 
 function isPathInsideRoot(path: string, rootPath: string): boolean {
   return path === rootPath || path.startsWith(`${rootPath}/`)
+}
+
+function isWorkspaceAccessError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('outside current workspace')
 }
 
 function normalizeSearchPathQuery(query: string): string | null {
@@ -212,11 +228,12 @@ async function searchFilesInBase(
 ): Promise<FileSearchEntry[]> {
   const lowerQuery = query.toLowerCase()
   const results: FileSearchEntry[] = []
+  const maxResults = resolveFileSearchMaxResults(options)
 
   const directPathResults = await collectDirectPathSearchResults(
     basePath,
     query,
-    FILE_SEARCH_MAX_RESULTS,
+    maxResults,
     FILE_SEARCH_SKIP_DIRS,
     options?.includeDescendants !== false
   )
@@ -225,7 +242,7 @@ async function searchFilesInBase(
 
   let queue = ['']
 
-  while (queue.length > 0 && results.length < FILE_SEARCH_MAX_RESULTS) {
+  while (queue.length > 0 && results.length < maxResults) {
     const nextQueue: string[] = []
 
     const dirResults = await Promise.all(
@@ -240,10 +257,10 @@ async function searchFilesInBase(
     )
 
     for (const { relDir, entries } of dirResults) {
-      if (results.length >= FILE_SEARCH_MAX_RESULTS) break
+      if (results.length >= maxResults) break
 
       for (const entry of entries) {
-        if (results.length >= FILE_SEARCH_MAX_RESULTS) break
+        if (results.length >= maxResults) break
 
         const name = entry.name
         if (name.startsWith('.') || FILE_SEARCH_SKIP_DIRS.has(name)) continue
@@ -335,13 +352,26 @@ async function collectFileSearchSnapshot(
 export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): void {
   // Read a file (with path validation to prevent traversal attacks)
   server.handle(RPC_CHANNELS.file.READ, async (ctx, path: string) => {
+    const workspaceId = resolveContextWorkspaceId(ctx, deps)
+    const readSpan = perf.span('rpc.file.read', { workspaceId: workspaceId ?? null })
+
     try {
-      const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
-      const safePath = await validateFilePath(path, getWorkspaceAllowedDirs(workspaceId))
+      const safePath = await validateWorkspaceFilePath(ctx, deps, path)
+      const parsedPath = parsePath(safePath)
+      readSpan.setMetadata('file', parsedPath.base)
+      readSpan.setMetadata('extension', parsedPath.ext || null)
+      readSpan.mark('path.validated')
       const content = await readFile(safePath, 'utf-8')
+      readSpan.mark('file.read')
+      readSpan.setMetadata('status', 'ok')
+      readSpan.setMetadata('bytes', Buffer.byteLength(content, 'utf-8'))
       return content
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
+      readSpan.setMetadata('status', 'error')
+      readSpan.setMetadata('errorCode', error instanceof Error && 'code' in error
+        ? (error as NodeJS.ErrnoException).code
+        : null)
       // ENOENT is expected for optional config files (e.g. automations.json)
       if (error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
         deps.platform.logger.debug('readFile: file not found:', path)
@@ -349,6 +379,8 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
         deps.platform.logger.error('readFile error:', path, message)
       }
       throw new Error(`Failed to read file: ${message}`)
+    } finally {
+      readSpan.end()
     }
   })
 
@@ -358,8 +390,8 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
         throw new Error('File content must be a string')
       }
 
-      const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
-      const safePath = await validateFilePath(path, getWorkspaceAllowedDirs(workspaceId))
+      const workspaceId = resolveContextWorkspaceId(ctx, deps)
+      const safePath = await validateWorkspaceFilePath(ctx, deps, path)
       await mkdir(dirname(safePath), { recursive: true })
       await writeFile(safePath, content, 'utf-8')
       notifyConfigWatcherForWrite(deps, workspaceId, safePath)
@@ -372,8 +404,8 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
 
   server.handle(RPC_CHANNELS.file.DELETE, async (ctx, path: string) => {
     try {
-      const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
-      const safePath = await validateFilePath(path, getWorkspaceAllowedDirs(workspaceId))
+      const workspaceId = resolveContextWorkspaceId(ctx, deps)
+      const safePath = await validateWorkspaceFilePath(ctx, deps, path)
       await unlink(safePath)
       notifyConfigWatcherForWrite(deps, workspaceId, safePath)
     } catch (error) {
@@ -385,8 +417,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
 
   server.handle(RPC_CHANNELS.file.CREATE_DIRECTORY, async (ctx, path: string) => {
     try {
-      const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
-      const safePath = await validateFilePath(path, getWorkspaceAllowedDirs(workspaceId))
+      const safePath = await validateWorkspaceFilePath(ctx, deps, path)
       await mkdir(safePath, { recursive: true })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
@@ -399,8 +430,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
   // Returns data:{mime};base64,{content} — used by ImagePreviewOverlay and markdown image blocks.
   server.handle(RPC_CHANNELS.file.READ_DATA_URL, async (ctx, path: string) => {
     try {
-      const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
-      const safePath = await validateFilePath(path, getWorkspaceAllowedDirs(workspaceId))
+      const safePath = await validateWorkspaceFilePath(ctx, deps, path)
       const buffer = await readFile(safePath)
       const ext = safePath.split('.').pop()?.toLowerCase() ?? ''
 
@@ -431,8 +461,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
   // Returns a PNG data URL resized to fit within maxSize×maxSize.
   server.handle(RPC_CHANNELS.file.READ_PREVIEW_DATA_URL, async (ctx, path: string, maxSize = 64) => {
     try {
-      const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
-      const safePath = await validateFilePath(path, getWorkspaceAllowedDirs(workspaceId))
+      const safePath = await validateWorkspaceFilePath(ctx, deps, path)
       const size = Number.isFinite(maxSize) ? Math.max(16, Math.min(256, Math.floor(maxSize))) : 64
       const preview = await deps.platform.imageProcessor.process(safePath, {
         resize: { width: size, height: size },
@@ -451,8 +480,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
   // The WS transport codec preserves Uint8Array payloads over JSON envelopes.
   server.handle(RPC_CHANNELS.file.READ_BINARY, async (ctx, path: string) => {
     try {
-      const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
-      const safePath = await validateFilePath(path, getWorkspaceAllowedDirs(workspaceId))
+      const safePath = await validateWorkspaceFilePath(ctx, deps, path)
       const buffer = await readFile(safePath)
       // Return as Uint8Array (serializes to ArrayBuffer over IPC)
       return new Uint8Array(buffer)
@@ -481,8 +509,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
   // Read file and return as FileAttachment with Quick Look thumbnail
   server.handle(RPC_CHANNELS.file.READ_ATTACHMENT, async (ctx, path: string) => {
     try {
-      const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
-      const safePath = await validateFilePath(path, getWorkspaceAllowedDirs(workspaceId))
+      const safePath = await validateWorkspaceFilePath(ctx, deps, path)
       // Use shared utility that handles file type detection, encoding, etc.
       const attachment = await readFileAttachment(safePath)
       if (!attachment) return null
@@ -787,20 +814,22 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
   // Parallel BFS walk that skips ignored directories BEFORE entering them,
   // avoiding reading node_modules/etc. contents entirely. Uses withFileTypes
   // to get entry types without separate stat calls.
-  server.handle(RPC_CHANNELS.fs.SEARCH, async (_ctx, basePath: string, query: string, options?: FileSearchOptions) => {
+  server.handle(RPC_CHANNELS.fs.SEARCH, async (ctx, basePath: string, query: string, options?: FileSearchOptions) => {
     deps.platform.logger.info('[FS_SEARCH] called:', basePath, query)
 
     try {
-      const results = await searchFilesInBase(basePath, query, options)
+      const safeBasePath = await validateWorkspaceSearchBasePath(ctx, deps, basePath)
+      const results = await searchFilesInBase(safeBasePath, query, options)
       deps.platform.logger.info('[FS_SEARCH] returning', results.length, 'results')
       return results
     } catch (err) {
       deps.platform.logger.error('[FS_SEARCH] error:', err)
+      if (isWorkspaceAccessError(err)) throw err
       return []
     }
   })
 
-  server.handle(RPC_CHANNELS.fs.SEARCH_BATCH, async (_ctx, basePath: string, requests: FileSearchBatchRequest[]): Promise<FileSearchBatchResult[]> => {
+  server.handle(RPC_CHANNELS.fs.SEARCH_BATCH, async (ctx, basePath: string, requests: FileSearchBatchRequest[]): Promise<FileSearchBatchResult[]> => {
     const safeRequests = Array.isArray(requests) ? requests.slice(0, 100) : []
     const fuzzyRequests = safeRequests.filter((request) => request.options?.mode !== 'path')
     const searchSummary = summarizeFileSearchBatch(basePath, safeRequests)
@@ -812,18 +841,22 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
     deps.platform.logger.debug('[FS_SEARCH_BATCH] called:', basePath, safeRequests.length)
 
     try {
+      const safeBasePath = await validateWorkspaceSearchBasePath(ctx, deps, basePath)
       const snapshot = fuzzyRequests.length > 0
-        ? await collectFileSearchSnapshot(basePath, FILE_SEARCH_BATCH_MAX_ENTRIES, FILE_SEARCH_SKIP_DIRS)
+        ? await collectFileSearchSnapshot(safeBasePath, FILE_SEARCH_BATCH_MAX_ENTRIES, FILE_SEARCH_SKIP_DIRS)
         : []
+      if (fuzzyRequests.length > 0) {
+        searchSpan.mark('snapshot.collected')
+      }
       searchSpan.setMetadata('snapshotEntryCount', snapshot.length)
 
       const resultSets = await Promise.all(
         safeRequests.map(async (request) => {
           try {
             const directPathResults = await collectDirectPathSearchResults(
-              basePath,
+              safeBasePath,
               request.query,
-              FILE_SEARCH_MAX_RESULTS,
+              resolveFileSearchMaxResults(request.options),
               FILE_SEARCH_SKIP_DIRS,
               request.options?.includeDescendants !== false
             )
@@ -841,7 +874,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
             }
             return {
               query: request.query,
-              results: filterFileSearchSnapshot(snapshot, request.query),
+              results: filterFileSearchSnapshot(snapshot, request.query, resolveFileSearchMaxResults(request.options)),
             }
           } catch (err) {
             deps.platform.logger.error('[FS_SEARCH_BATCH] query error:', request.query, err)

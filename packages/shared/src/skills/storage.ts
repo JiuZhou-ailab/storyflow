@@ -2,7 +2,7 @@
  * Skills Storage
  *
  * CRUD operations for workspace skills.
- * Skills are stored in {workspace}/skills/{slug}/ directories.
+ * Skills are stored in {workspace}/.craft-agent/skills/{slug}/ directories.
  */
 
 import {
@@ -16,7 +16,10 @@ import { homedir } from 'os';
 import { join } from 'path';
 import matter from 'gray-matter';
 import type { LoadedSkill, SkillMetadata, SkillSource } from './types.ts';
-import { getWorkspaceSkillsPath } from '../workspaces/storage.ts';
+import {
+  getLegacyWorkspaceSkillsPath,
+  getWorkspaceSkillsPath,
+} from '../workspaces/paths.ts';
 import {
   validateIconValue,
   findIconFile,
@@ -176,8 +179,8 @@ function loadSkillsFromDir(skillsDir: string, source: SkillSource): LoadedSkill[
  * @param slug - Skill directory name
  */
 export function loadSkill(workspaceRoot: string, slug: string): LoadedSkill | null {
-  const skillsDir = getWorkspaceSkillsPath(workspaceRoot);
-  return loadSkillFromDir(skillsDir, slug, 'workspace');
+  return loadSkillFromDir(getWorkspaceSkillsPath(workspaceRoot), slug, 'workspace')
+    ?? loadSkillFromDir(getLegacyWorkspaceSkillsPath(workspaceRoot), slug, 'workspace');
 }
 
 /**
@@ -185,8 +188,14 @@ export function loadSkill(workspaceRoot: string, slug: string): LoadedSkill | nu
  * @param workspaceRoot - Absolute path to workspace root
  */
 export function loadWorkspaceSkills(workspaceRoot: string): LoadedSkill[] {
-  const skillsDir = getWorkspaceSkillsPath(workspaceRoot);
-  return loadSkillsFromDir(skillsDir, 'workspace');
+  const skillsBySlug = new Map<string, LoadedSkill>();
+  for (const skill of loadSkillsFromDir(getLegacyWorkspaceSkillsPath(workspaceRoot), 'workspace')) {
+    skillsBySlug.set(skill.slug, skill);
+  }
+  for (const skill of loadSkillsFromDir(getWorkspaceSkillsPath(workspaceRoot), 'workspace')) {
+    skillsBySlug.set(skill.slug, skill);
+  }
+  return Array.from(skillsBySlug.values());
 }
 
 // ── Skills cache ────────────────────────────────────────────────────────
@@ -263,7 +272,7 @@ export function loadSkillBySlug(workspaceRoot: string, slug: string, projectRoot
   }
 
   // Medium priority: workspace
-  const workspaceSkill = loadSkillFromDir(getWorkspaceSkillsPath(workspaceRoot), slug, 'workspace');
+  const workspaceSkill = loadSkill(workspaceRoot, slug);
   if (workspaceSkill) return workspaceSkill;
 
   // Lowest priority: global
@@ -276,10 +285,9 @@ export function loadSkillBySlug(workspaceRoot: string, slug: string, projectRoot
  * @param slug - Skill directory name
  */
 export function getSkillIconPath(workspaceRoot: string, slug: string): string | null {
-  const skillsDir = getWorkspaceSkillsPath(workspaceRoot);
-  const skillDir = join(skillsDir, slug);
+  const skillDir = loadSkill(workspaceRoot, slug)?.path;
 
-  if (!existsSync(skillDir)) {
+  if (!skillDir || !existsSync(skillDir)) {
     return null;
   }
 
@@ -296,10 +304,9 @@ export function getSkillIconPath(workspaceRoot: string, slug: string): string | 
  * @param slug - Skill directory name
  */
 export function deleteSkill(workspaceRoot: string, slug: string): boolean {
-  const skillsDir = getWorkspaceSkillsPath(workspaceRoot);
-  const skillDir = join(skillsDir, slug);
+  const skillDir = loadSkill(workspaceRoot, slug)?.path;
 
-  if (!existsSync(skillDir)) {
+  if (!skillDir || !existsSync(skillDir)) {
     return false;
   }
 
@@ -321,11 +328,7 @@ export function deleteSkill(workspaceRoot: string, slug: string): boolean {
  * @param slug - Skill directory name
  */
 export function skillExists(workspaceRoot: string, slug: string): boolean {
-  const skillsDir = getWorkspaceSkillsPath(workspaceRoot);
-  const skillDir = join(skillsDir, slug);
-  const skillFile = join(skillDir, 'SKILL.md');
-
-  return existsSync(skillDir) && existsSync(skillFile);
+  return !!loadSkill(workspaceRoot, slug);
 }
 
 /**
@@ -333,23 +336,7 @@ export function skillExists(workspaceRoot: string, slug: string): boolean {
  * @param workspaceRoot - Absolute path to workspace root
  */
 export function listSkillSlugs(workspaceRoot: string): string[] {
-  const skillsDir = getWorkspaceSkillsPath(workspaceRoot);
-
-  if (!existsSync(skillsDir)) {
-    return [];
-  }
-
-  try {
-    return readdirSync(skillsDir, { withFileTypes: true })
-      .filter((entry) => {
-        if (!entry.isDirectory()) return false;
-        const skillFile = join(skillsDir, entry.name, 'SKILL.md');
-        return existsSync(skillFile);
-      })
-      .map((entry) => entry.name);
-  } catch {
-    return [];
-  }
+  return loadWorkspaceSkills(workspaceRoot).map((skill) => skill.slug);
 }
 
 // ============================================================

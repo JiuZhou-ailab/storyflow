@@ -11,6 +11,10 @@
 import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, mkdirSync } from 'fs';
 import { join, basename } from 'path';
 import { CONFIG_DIR } from '../config/paths.ts';
+import {
+  getWorkspaceSkillsPath,
+  getWorkspaceSourcesPath,
+} from '../workspaces/paths.ts';
 import type {
   SessionToolContext,
   SessionToolCallbacks,
@@ -214,8 +218,8 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
   const context: SessionToolContext = {
     sessionId,
     workspacePath,
-    get sourcesPath() { return join(workspacePath, 'sources'); },
-    get skillsPath() { return join(workspacePath, 'skills'); },
+    get sourcesPath() { return getWorkspaceSourcesPath(workspacePath); },
+    get skillsPath() { return getWorkspaceSkillsPath(workspacePath); },
     plansFolderPath: getSessionPlansPath(workspacePath, sessionId),
     sessionPath: getSessionPath(workspacePath, sessionId),
     dataPath: getSessionDataPath(workspacePath, sessionId),

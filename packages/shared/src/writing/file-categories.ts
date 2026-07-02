@@ -78,7 +78,10 @@ export function categorizeNovelPath(relativePath: string): WritingFileCategory {
     if (second === "structure.md") return "outline";
   }
 
-  if (first === "设定") {
+  if (first === "全局" || first === "设定") {
+    if (second === "创作要求.md") return "style";
+    if (second === "简报.md" || second === "大纲.md" || second === "题材定位.md") return "outline";
+    if (second === "人物.md") return "characters";
     if (second === "角色") return "characters";
     if (second === "世界观" || second === "势力") return "locations";
     if (third || second?.endsWith(".md")) return "outline";

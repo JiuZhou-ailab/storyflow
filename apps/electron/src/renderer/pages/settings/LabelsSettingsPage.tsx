@@ -51,7 +51,7 @@ export default function LabelsSettingsPage() {
   // Secondary action: open the labels config file directly in system editor
   const editFileAction = rootPath ? {
     label: t("common.editFile"),
-    filePath: `${rootPath}/labels/config.json`,
+    filePath: `${rootPath}/.craft-agent/labels/config.json`,
   } : undefined
 
   return (

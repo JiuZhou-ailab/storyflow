@@ -407,31 +407,26 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).not.toContain('[...novelWorkspaceUtilitySidebarLinks, ...novelWorkspaceSidebarLinks]')
   })
 
-  it('splits the writing catalog into global information and manuscript groups', () => {
+  it('roots the writing catalog at the current project and folds real paths into folders', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const sidebarSource = appShellSource.slice(
       appShellSource.indexOf('const novelWorkspaceSidebarLinks'),
       appShellSource.indexOf('const primarySidebarLinks')
     )
+    const treeBuilderSource = appShellSource.slice(
+      appShellSource.indexOf('function buildNovelWorkspaceFileTreeItems'),
+      appShellSource.indexOf('function getContentChangeSize')
+    )
 
-    expect(appShellSource).toContain("const NOVEL_WORKSPACE_GLOBAL_GROUP_ID = 'writing:group:global'")
-    expect(sidebarSource).toContain('const globalGroupId = NOVEL_WORKSPACE_GLOBAL_GROUP_ID')
-    expect(sidebarSource).toContain('id: globalGroupId')
-    expect(sidebarSource).toContain("t('writing.catalog.globalInfo', '全局信息')")
-    expect(sidebarSource).toContain('const manuscriptGroupId = NOVEL_WORKSPACE_MANUSCRIPT_GROUP_ID')
-    expect(sidebarSource).toContain('const freeAreaGroupId = NOVEL_WORKSPACE_FREE_AREA_GROUP_ID')
-    expect(sidebarSource).toContain("t('writing.catalog.freeArea', '自由区')")
-    expect(sidebarSource).toContain('globalSectionDefinitions')
-    expect(sidebarSource).toContain('manuscriptSection')
-    expect(sidebarSource).toContain('freeAreaSection')
-    expect(sidebarSource).toContain('const globalFileEntries = visibleGlobalSectionDefinitions.flatMap')
-    expect(sidebarSource).toContain("section.files.length > 0")
-    expect(sidebarSource).toContain("{ id: 'other'")
-    expect(sidebarSource).toContain('files: novelWorkspaceTree.other.files')
-    expect(sidebarSource).toContain('globalFileEntries.map(({ file, sectionId }) => fileItem(file, sectionId))')
-    expect(sidebarSource).toContain('const globalFileCount = globalFileEntries.length')
-    expect(sidebarSource).not.toContain('visibleGlobalSectionItems')
-    expect(sidebarSource).not.toContain("sectionDefinitions.map((section)")
+    expect(sidebarSource).toContain('const projectSidebarId = `writing:project:${activeWorkspaceId ?? novelWorkspaceRoot}`')
+    expect(sidebarSource).toContain("title: activeWorkspace?.name ?? t('writing.workspace')")
+    expect(sidebarSource).toContain('tooltip: novelWorkspaceRoot')
+    expect(sidebarSource).toContain('items: fileTreeItems')
+    expect(treeBuilderSource).toContain("id = `writing:folder:${node.relativePath}`")
+    expect(treeBuilderSource).toContain('title: getNovelWorkspaceFileName(file)')
+    expect(treeBuilderSource).toContain('icon: Folder')
+    expect(treeBuilderSource).toContain('countNovelWorkspaceTreeFiles(node)')
+    expect(treeBuilderSource).not.toContain('categorizeNovelPath')
   })
 
   it('renders compact writing file titles with a softer two-line clamp', () => {
@@ -458,18 +453,18 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('handleImportNovelFiles')
     expect(appShellSource).toContain('window.electronAPI.openFileDialog()')
     expect(appShellSource).toContain('getNovelImportTargetRelativePath')
-    expect(sidebarSource).toContain("afterTitle: createNovelWorkspaceFileActions(\n        '设定'")
-    expect(sidebarSource).toContain("afterTitle: createNovelWorkspaceFileActions(\n        '正文'")
-    expect(sidebarSource).toContain("afterTitle: createNovelWorkspaceFileActions(\n        '自由区'")
+    expect(sidebarSource).toContain('const createNovelWorkspaceRootActions = () =>')
+    expect(sidebarSource).toContain("void handleImportNovelFiles('正文')")
+    expect(sidebarSource).toContain("void handleImportNovelFiles('全局')")
+    expect(sidebarSource).toContain("void handleImportNovelFiles('自由区')")
     expect(sidebarSource).toContain("t('writing.createFile.globalInfo', '新建全局信息文件')")
     expect(sidebarSource).toContain("t('writing.importFile.globalInfo', '导入全局信息文件')")
-    expect(sidebarSource).toContain('const createNovelWorkspaceFileActions = (')
+    expect(sidebarSource).toContain('const createMenuTrigger = (menuTitle: string) =>')
     expect(sidebarSource).toContain('<DropdownMenu>')
     expect(sidebarSource).toContain('<DropdownMenuTrigger asChild>')
     expect(sidebarSource).toContain('<MoreHorizontal className="h-3 w-3" />')
     expect(sidebarSource).toContain('<StyledDropdownMenuItem')
-    expect(sidebarSource).toContain('void handleImportNovelFiles(basePath)')
-    expect(sidebarSource).toContain('openNovelCreateFileDialog({ basePath, ...target })')
+    expect(sidebarSource).toContain('afterTitle: createNovelWorkspaceRootActions()')
     expect(sidebarSource).not.toContain('const createNovelWorkspaceAddAction =')
     expect(sidebarSource).not.toContain('const createNovelWorkspaceImportAction =')
     expect(appShellSource).toContain('placeholder={novelCreateFileTarget?.placeholder}')
@@ -480,42 +475,25 @@ describe('novel writing workspace layout', () => {
     expect(sidebarSource).toContain("placeholder: '脑洞、脑洞.md 或 临时/脑洞.txt'")
   })
 
-  it('lets writers reorder the writing catalog groups and their files', () => {
+  it('keeps the native writing file tree ordered by filesystem path instead of custom catalog order', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const leftSidebarSource = readFileSync(new URL('../../app-shell/LeftSidebar.tsx', import.meta.url), 'utf-8')
-    const localStorageSource = readFileSync(new URL('../../../lib/local-storage.ts', import.meta.url), 'utf-8')
     const sidebarSource = appShellSource.slice(
       appShellSource.indexOf('const novelWorkspaceSidebarLinks'),
       appShellSource.indexOf('const primarySidebarLinks')
     )
 
-    expect(localStorageSource).toContain("novelWorkspaceCatalogOrder: 'novel-workspace-catalog-order'")
-    expect(localStorageSource).toContain("novelWorkspaceSidebarItemOrders: 'novel-workspace-sidebar-item-orders'")
-    expect(appShellSource).toContain('type NovelWorkspaceCatalogOrder = NovelWorkspaceCatalogGroupId[]')
-    expect(appShellSource).toContain('type NovelWorkspaceSidebarItemOrders = Record<string, string[]>')
-    expect(appShellSource).toContain('normalizeNovelWorkspaceCatalogOrder')
-    expect(appShellSource).toContain('orderSidebarItemsByStoredIds')
-    expect(appShellSource).toContain("value === 'global-first'")
-    expect(appShellSource).toContain("value === 'manuscript-first'")
-    expect(appShellSource).toContain('const [novelWorkspaceCatalogOrder, setNovelWorkspaceCatalogOrder]')
-    expect(appShellSource).toContain('const [novelWorkspaceSidebarItemOrders, setNovelWorkspaceSidebarItemOrders]')
-    expect(appShellSource).toContain('storage.KEYS.novelWorkspaceCatalogOrder')
-    expect(appShellSource).toContain('storage.KEYS.novelWorkspaceSidebarItemOrders')
-    expect(sidebarSource).toContain('const novelCatalogItemsById: Record<NovelWorkspaceCatalogGroupId, LeftSidebarItem>')
-    expect(sidebarSource).toContain('const orderedNovelCatalogItems = novelWorkspaceCatalogOrder.map')
-    expect(sidebarSource).toContain('const manuscriptItems = orderSidebarItemsByStoredIds')
-    expect(sidebarSource).toContain('const freeAreaItems = orderSidebarItemsByStoredIds')
-    expect(sidebarSource).toContain('const globalItems = orderSidebarItemsByStoredIds')
-    expect(sidebarSource).toContain('reorderable: true')
-    expect(sidebarSource).toContain('onItemsReorder: updateNovelWorkspaceCatalogOrder')
-    expect(sidebarSource).toContain('onItemsReorder: (orderedIds) => updateNovelWorkspaceSidebarItemOrder(globalGroupId, orderedIds)')
-    expect(sidebarSource).toContain('onItemsReorder: (orderedIds) => updateNovelWorkspaceSidebarItemOrder(manuscriptGroupId, orderedIds)')
-    expect(sidebarSource).toContain('onItemsReorder: (orderedIds) => updateNovelWorkspaceSidebarItemOrder(freeAreaGroupId, orderedIds)')
+    expect(appShellSource).not.toContain('NovelWorkspaceCatalogOrder')
+    expect(appShellSource).not.toContain('novelWorkspaceCatalogOrder')
+    expect(appShellSource).not.toContain('novelWorkspaceSidebarItemOrders')
+    expect(appShellSource).not.toContain('orderSidebarItemsByStoredIds')
+    expect(sidebarSource).not.toContain('reorderable: true')
+    expect(sidebarSource).not.toContain('onItemsReorder')
     expect(leftSidebarSource).toContain('import { SortableList }')
     expect(leftSidebarSource).toContain('onLinksReorder={link.reorderable ? link.onItemsReorder : undefined}')
     expect(leftSidebarSource).toContain('<SortableList')
-    expect(sidebarSource).toContain("t('writing.catalog.manuscriptFirst', '正文置顶')")
-    expect(sidebarSource).toContain("t('writing.catalog.globalFirst', '全局信息置顶')")
+    expect(sidebarSource).not.toContain("t('writing.catalog.manuscriptFirst', '正文置顶')")
+    expect(sidebarSource).not.toContain("t('writing.catalog.globalFirst', '全局信息置顶')")
   })
 
   it('exposes file-level add and delete controls for writable novel files', () => {
@@ -533,9 +511,9 @@ describe('novel writing workspace layout', () => {
     expect(sidebarSource).toContain('openNovelCreateFileDialog({')
     expect(sidebarSource).toContain("title: t('writing.createFile.nearby', '新建同目录文件')")
     expect(sidebarSource).toContain("t('writing.deleteFile.title', '删除文件')")
-    expect(sidebarSource).toContain("? createNovelWorkspaceFileItemActions(file, 'manuscript')")
-    expect(sidebarSource).toContain("? createNovelWorkspaceFileItemActions(file, 'work')")
-    expect(sidebarSource).toContain('? createNovelWorkspaceFileItemActions(file, sectionId)')
+    expect(sidebarSource).toContain('renderFileActions: createNovelWorkspaceFileItemActions')
+    expect(appShellSource).toContain('const basePath = getNovelFileCreateBasePath(file)')
+    expect(appShellSource).not.toContain('createNovelWorkspaceFileItemActions(file, sectionId)')
   })
 
   it('uses current novel project history instead of global release notes in novel utility navigation', () => {
@@ -558,17 +536,19 @@ describe('novel writing workspace layout', () => {
     expect(novelWorkspaceActionsSource).toContain('setNovelVersionDialogOpen(true)')
   })
 
-  it('exposes every selectable writing file section in the left catalog', () => {
+  it('renders the writing catalog as a native project file tree instead of classified sections', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const sidebarSource = appShellSource.slice(
+      appShellSource.indexOf('const novelWorkspaceSidebarLinks'),
+      appShellSource.indexOf('const primarySidebarLinks')
+    )
 
-    expect(appShellSource).toContain("{ id: 'style'")
-    expect(appShellSource).toContain('files: novelWorkspaceTree.style.files')
-    expect(appShellSource).toContain("{ id: 'analysis'")
-    expect(appShellSource).toContain('files: novelWorkspaceTree.analysis.files')
-    expect(appShellSource).toContain("{ id: 'work'")
-    expect(appShellSource).toContain('files: novelWorkspaceTree.work.files')
-    expect(appShellSource).toContain("{ id: 'other'")
-    expect(appShellSource).toContain('files: novelWorkspaceTree.other.files')
+    expect(sidebarSource).toContain('const projectSidebarId = `writing:project:${activeWorkspaceId ?? novelWorkspaceRoot}`')
+    expect(sidebarSource).toContain('buildNovelWorkspaceFileTreeItems(novelWorkspaceFiles')
+    expect(sidebarSource).toContain('title: activeWorkspace?.name ?? t(\'writing.workspace\')')
+    expect(sidebarSource).not.toContain('globalSectionDefinitions')
+    expect(sidebarSource).not.toContain('NOVEL_WORKSPACE_GLOBAL_GROUP_ID')
+    expect(sidebarSource).not.toContain('formatNovelWorkspaceFileTitle(file, t)')
   })
 
   it('exposes selectable writing workspace export controls', () => {
@@ -628,8 +608,8 @@ describe('novel writing workspace layout', () => {
   it('auto-saves before file switching and selection Ask AI when the current document has unsaved edits', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const fileItemSource = appShellSource.slice(
-      appShellSource.indexOf('const fileItem ='),
-      appShellSource.indexOf('const sectionItems:')
+      appShellSource.indexOf('const fileItem = (file: NovelWorkspaceFile): LeftSidebarItem => ({'),
+      appShellSource.indexOf('const folderItem =')
     )
     const askAiSource = appShellSource.slice(
       appShellSource.indexOf('const handleAskAiForNovelSelection'),
@@ -640,7 +620,7 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('ensureNovelDocumentSaved')
     expect(appShellSource).toContain('window.setTimeout')
     expect(appShellSource).toContain('window.clearTimeout')
-    expect(fileItemSource).toContain('handleSelectNovelFile(file)')
+    expect(fileItemSource).toContain('options.onSelectFile(file)')
     expect(fileItemSource).not.toContain('setSelectedNovelFilePath(file.path)')
     expect(askAiSource).toContain('const saved = await ensureNovelDocumentSaved()')
     expect(askAiSource).not.toContain('writing.askAiBlockedByUnsavedEdits')
@@ -731,7 +711,9 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('dismissedNovelReviewDotKeys')
     expect(appShellSource).toContain('pendingNovelReviewDotKeysByPath')
     expect(appShellSource).toContain('handleDismissNovelReviewDot')
-    expect(appShellSource).toContain('reviewDot: hasNovelReviewDot(file.path) ?')
+    expect(appShellSource).toContain('reviewDot: options.hasReviewDot(file.path) ?')
+    expect(appShellSource).toContain('hasReviewDot: hasNovelReviewDot')
+    expect(appShellSource).toContain('onDismissReviewDot: handleDismissNovelReviewDot')
     expect(leftSidebarSource).toContain('reviewDot?:')
     expect(leftSidebarSource).toContain('link.reviewDot?.onDismiss()')
     expect(leftSidebarSource).toContain('bg-emerald-500')
@@ -903,32 +885,54 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('novelWorkspaceFilesCacheRef.current.set(rootPath, files)')
     expect(detectionSource).toContain('const cachedNovelWorkspaceFiles = novelWorkspaceFilesCacheRef.current.get(rootPath)')
     expect(detectionSource.indexOf('setNovelWorkspaceFiles(cachedNovelWorkspaceFiles)')).toBeLessThan(
-      detectionSource.indexOf('loadNovelWorkspaceFiles(rootPath')
+      detectionSource.indexOf('loadNovelWorkspaceFiles(')
     )
   })
 
-  it('loads writing workspace files from targeted catalog searches without an empty root search', () => {
+  it('loads known writing workspace roots from the native workspace file tree', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const loadSource = appShellSource.slice(
       appShellSource.indexOf('const loadNovelWorkspaceFiles ='),
       appShellSource.indexOf('const refreshNovelWorkspaceFiles')
     )
+    const unknownRootLoadSource = loadSource.slice(loadSource.indexOf('const probeResultSets ='))
 
-    expect(loadSource).not.toContain("searchFiles(rootPath, '')")
-    expect(loadSource).toContain('searchNovelWorkspaceFiles(rootPath')
-    expect(loadSource).toContain('NOVEL_WORKSPACE_DETECTION_QUERIES.map')
-    expect(loadSource).toContain('NOVEL_WORKSPACE_CATALOG_DIRECTORY_QUERIES.map')
-    expect(loadSource).toContain("includeDescendants: false")
-    expect(loadSource.indexOf('detectNovelProjectFromSearchResults(probeResults)')).toBeLessThan(
-      loadSource.indexOf('NOVEL_WORKSPACE_CATALOG_DIRECTORY_QUERIES.map')
+    expect(loadSource).toContain("loadNovelWorkspaceFileTree(rootPath)")
+    expect(unknownRootLoadSource).toContain('searchNovelWorkspaceFiles(rootPath')
+    expect(unknownRootLoadSource).toContain('NOVEL_WORKSPACE_DETECTION_QUERIES.map')
+    expect(unknownRootLoadSource).toContain("includeDescendants: false")
+    expect(unknownRootLoadSource.indexOf('detectNovelProjectFromSearchResults(probeResults)')).toBeLessThan(
+      unknownRootLoadSource.indexOf('loadNovelWorkspaceFileTree(rootPath)')
     )
-    expect(loadSource).toContain('onDetected?.(probeFiles)')
-    expect(loadSource.indexOf('onDetected?.(probeFiles)')).toBeLessThan(
-      loadSource.indexOf('NOVEL_WORKSPACE_CATALOG_DIRECTORY_QUERIES.map')
+    expect(unknownRootLoadSource).toContain('onDetected?.(probeFiles)')
+    expect(unknownRootLoadSource.indexOf('onDetected?.(probeFiles)')).toBeLessThan(
+      unknownRootLoadSource.indexOf('loadNovelWorkspaceFileTree(rootPath)')
     )
-    expect(loadSource.indexOf('const results = [...probeResults, ...catalogResults]')).toBeLessThan(
-      loadSource.indexOf('mapSearchResultsToNovelWorkspaceFiles(results)')
+  })
+
+  it('refreshes known writing workspace roots with one combined targeted search', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const loadSource = appShellSource.slice(
+      appShellSource.indexOf('const loadNovelWorkspaceFiles ='),
+      appShellSource.indexOf('const refreshNovelWorkspaceFiles')
     )
+    const refreshSource = appShellSource.slice(
+      appShellSource.indexOf('const refreshNovelWorkspaceFiles ='),
+      appShellSource.indexOf('const openNovelCreateFileDialog')
+    )
+    const detectionSource = appShellSource.slice(
+      appShellSource.indexOf('async function detectNovelWorkspace'),
+      appShellSource.indexOf('void detectNovelWorkspace()')
+    )
+
+    expect(loadSource).toContain('knownNovelWorkspace = false')
+    expect(loadSource).toContain('if (knownNovelWorkspace)')
+    expect(loadSource).toContain('loadNovelWorkspaceFileTree(rootPath)')
+    expect(loadSource.indexOf('loadNovelWorkspaceFileTree(rootPath)')).toBeLessThan(
+      loadSource.indexOf('NOVEL_WORKSPACE_DETECTION_QUERIES.map')
+    )
+    expect(refreshSource).toContain('rootPath === novelWorkspaceRootRef.current || novelWorkspaceFilesCacheRef.current.has(rootPath)')
+    expect(detectionSource).toContain('Boolean(cachedNovelWorkspaceFiles)')
   })
 
   it('preserves the selected writing file when catalog refreshes temporarily omit it', () => {
@@ -962,7 +966,7 @@ describe('novel writing workspace layout', () => {
     expect(selectHandlerSource).not.toContain('file.path !== selectedNovelFile?.path')
   })
 
-  it('falls back to single search calls when batch file search is unavailable or stalls', () => {
+  it('falls back to single search calls when batch file search is unavailable or fails', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const searchHelperSource = appShellSource.slice(
       appShellSource.indexOf('async function searchNovelWorkspaceFiles'),
@@ -970,8 +974,10 @@ describe('novel writing workspace layout', () => {
     )
 
     expect(searchHelperSource).toContain('window.electronAPI.isChannelAvailable(RPC_CHANNELS.fs.SEARCH_BATCH)')
-    expect(searchHelperSource).toContain('withTimeout(')
     expect(searchHelperSource).toContain('window.electronAPI.searchFilesBatch(rootPath, requests)')
+    expect(searchHelperSource).toContain('return await window.electronAPI.searchFilesBatch(rootPath, requests)')
+    expect(searchHelperSource).toContain('Promise.all(')
+    expect(searchHelperSource).toContain('requests.map(async (request)')
     expect(searchHelperSource).toContain('window.electronAPI.searchFiles(rootPath, request.query, request.options)')
     expect(searchHelperSource).toContain('1000')
   })

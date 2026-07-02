@@ -410,12 +410,12 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
   'edit-statuses': (location) => ({
     context: {
       label: 'Status Configuration',
-      filePath: `${location}/statuses/config.json`,
+      filePath: `${location}/.craft-agent/statuses/config.json`,
       context:
         'The user wants to customize session statuses (workflow states). ' +
-        'Statuses are stored in statuses/config.json with fields: id, label, icon, category (open/closed), order, isFixed, isDefault. ' +
+        'Statuses are stored in .craft-agent/statuses/config.json with fields: id, label, icon, category (open/closed), order, isFixed, isDefault. ' +
         'Fixed statuses (todo, done, cancelled) cannot be deleted but can be reordered or have their label changed. ' +
-        'Icon can be an emoji, an https URL, or a local filename like "name.svg" that maps to statuses/icons/name.svg. ' +
+        'Icon can be an emoji, an https URL, or a local filename like "name.svg" that maps to .craft-agent/statuses/icons/name.svg. ' +
         'Category "open" shows in inbox, "closed" shows in archive. ' +
         'After editing, call config_validate with target "statuses" to verify the changes. ' +
         'Confirm clearly when done.',
@@ -432,10 +432,10 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
   'edit-labels': (location) => ({
     context: {
       label: 'Label Configuration',
-      filePath: `${location}/labels/config.json`,
+      filePath: `${location}/.craft-agent/labels/config.json`,
       context:
         'The user wants to customize session labels (tagging/categorization). ' +
-        'Labels are stored in labels/config.json as a hierarchical tree. ' +
+        'Labels are stored in .craft-agent/labels/config.json as a hierarchical tree. ' +
         'Each label has: id (slug, globally unique), name (display), color (optional EntityColor), children (sub-labels array). ' +
         'Colors use EntityColor format: string shorthand (e.g. "blue") or { light, dark } object for theme-aware colors. ' +
         'Labels are color-only (no icons) — rendered as colored circles in the UI. ' +
