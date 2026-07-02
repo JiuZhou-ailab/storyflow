@@ -422,6 +422,7 @@ export interface FileSearchResult {
 export interface FileSearchOptions {
   mode?: 'fuzzy' | 'path'
   includeDescendants?: boolean
+  maxResults?: number
 }
 
 export interface FileSearchBatchRequest {
