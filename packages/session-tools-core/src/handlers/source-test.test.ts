@@ -22,6 +22,7 @@ type ActivateResult = Awaited<
 interface CtxOverrides {
   activateSourceInSession?: (slug: string) => Promise<ActivateResult>;
   validateStdioMcpConnection?: SessionToolContext['validateStdioMcpConnection'];
+  credentialManager?: SessionToolContext['credentialManager'];
 }
 
 function createCtx(workspacePath: string, overrides: CtxOverrides = {}): SessionToolContext {
@@ -64,6 +65,7 @@ function createCtx(workspacePath: string, overrides: CtxOverrides = {}): Session
     },
     // Stub the MCP validator so connection tests don't hit the network.
     validateStdioMcpConnection: overrides.validateStdioMcpConnection,
+    credentialManager: overrides.credentialManager,
     activateSourceInSession: overrides.activateSourceInSession,
   } as unknown as SessionToolContext;
   // Expose saved for assertions (test-only — not on real ctx).
@@ -483,6 +485,64 @@ describe('source_test API connection branches', () => {
     expect(stub.calls.length).toBe(1);
     expect(stub.calls[0]?.init?.method).toBe('POST');
     expect(stub.calls[0]?.url).toBe('https://api.example.test/v1/things');
+  });
+
+  it('basic auth JSON credential is base64 encoded for authenticated probe', async () => {
+    writeApiSource(tempDir, 'basic-auth-api', {
+      isAuthenticated: true,
+      api: {
+        baseUrl: 'https://api.example.test',
+        authType: 'basic',
+        testEndpoint: { method: 'GET', path: '/ping' },
+      },
+    });
+
+    let stub: ReturnType<typeof installFetchStub>;
+    stub = installFetchStub(() => new Response(null, { status: 200 }));
+    restoreFetch = stub.restore;
+
+    const ctx = createCtx(tempDir, {
+      credentialManager: {
+        getToken: async () => JSON.stringify({ username: 'u', password: 'p' }),
+        refresh: async () => null,
+        hasValidCredentials: async () => true,
+      },
+    });
+
+    await handleSourceTest(ctx, { sourceSlug: 'basic-auth-api', autoEnable: false });
+
+    expect(stub.calls[0]?.init?.headers).toMatchObject({
+      Authorization: `Basic ${Buffer.from('u:p').toString('base64')}`,
+    });
+  });
+
+  it('basic auth legacy string credential is passed through unchanged', async () => {
+    writeApiSource(tempDir, 'legacy-basic-auth-api', {
+      isAuthenticated: true,
+      api: {
+        baseUrl: 'https://api.example.test',
+        authType: 'basic',
+        testEndpoint: { method: 'GET', path: '/ping' },
+      },
+    });
+
+    let stub: ReturnType<typeof installFetchStub>;
+    stub = installFetchStub(() => new Response(null, { status: 200 }));
+    restoreFetch = stub.restore;
+
+    const ctx = createCtx(tempDir, {
+      credentialManager: {
+        getToken: async () => 'legacy-token',
+        refresh: async () => null,
+        hasValidCredentials: async () => true,
+      },
+    });
+
+    await handleSourceTest(ctx, { sourceSlug: 'legacy-basic-auth-api', autoEnable: false });
+
+    expect(stub.calls[0]?.init?.headers).toMatchObject({
+      Authorization: 'Basic legacy-token',
+    });
   });
 });
 
