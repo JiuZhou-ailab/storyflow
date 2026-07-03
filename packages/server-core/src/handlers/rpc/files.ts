@@ -247,15 +247,16 @@ async function collectWorkspaceFileList(
 ): Promise<FileSearchEntry[]> {
   const entries: FileSearchEntry[] = []
   const seenPaths = new Set<string>()
-  const seenRoots = new Set<string>()
+  const coveredRoots: string[] = []
   const resolvedBasePath = resolve(basePath).replace(/\\/g, '/').replace(/\/+$/, '')
 
   for (const rawRootPath of rootPaths.slice(0, FILE_LIST_MAX_ROOTS)) {
     if (entries.length >= maxEntries) break
 
     const normalizedRoot = normalizeSearchPathQuery(rawRootPath)
-    if (!normalizedRoot || seenRoots.has(normalizedRoot)) continue
-    seenRoots.add(normalizedRoot)
+    if (!normalizedRoot) continue
+    if (coveredRoots.some(root => normalizedRoot === root || normalizedRoot.startsWith(`${root}/`))) continue
+    coveredRoots.push(normalizedRoot)
 
     const rootPath = resolve(basePath, normalizedRoot).replace(/\\/g, '/')
     if (!isPathInsideRoot(rootPath, resolvedBasePath)) continue

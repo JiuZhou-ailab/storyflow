@@ -17,6 +17,8 @@ const realFsPromises = require('node:fs/promises') as typeof import('node:fs/pro
 
 let workspaceRootPath = ''
 let workspaceRootRealpathCalls = 0
+let trackedReaddirPath = ''
+let trackedReaddirCalls = 0
 
 mock.module('fs/promises', () => ({
   ...realFsPromises,
@@ -25,6 +27,12 @@ mock.module('fs/promises', () => ({
       workspaceRootRealpathCalls += 1
     }
     return realFsPromises.realpath(...args)
+  },
+  readdir: async (...args: Parameters<typeof realFsPromises.readdir>) => {
+    if (String(args[0]) === trackedReaddirPath) {
+      trackedReaddirCalls += 1
+    }
+    return realFsPromises.readdir(...args)
   },
 }))
 
@@ -140,6 +148,29 @@ describe('workspace-scoped file RPCs', () => {
       rmSync(workspaceRootPath, { recursive: true, force: true })
       workspaceRootPath = ''
       workspaceRootRealpathCalls = 0
+    }
+  })
+
+  it('does not scan a child root twice when a parent root already covers it', async () => {
+    workspaceRootPath = await mkdtemp(join(tmpdir(), 'craft-workspace-root-list-'))
+    const { listWorkspaceFiles, ctx } = createFileHarness()
+
+    try {
+      const chaptersDir = join(workspaceRootPath, 'story', 'chapters')
+      await mkdir(chaptersDir, { recursive: true })
+      await writeFile(join(chaptersDir, '01.md'), 'chapter')
+      trackedReaddirPath = chaptersDir
+      trackedReaddirCalls = 0
+
+      const results = await listWorkspaceFiles(ctx, workspaceRootPath, ['story', 'story/chapters']) as Array<{ relativePath: string }>
+
+      expect(results.map(result => result.relativePath)).toEqual(['story/chapters/01.md'])
+      expect(trackedReaddirCalls).toBe(1)
+    } finally {
+      rmSync(workspaceRootPath, { recursive: true, force: true })
+      workspaceRootPath = ''
+      trackedReaddirPath = ''
+      trackedReaddirCalls = 0
     }
   })
 })
