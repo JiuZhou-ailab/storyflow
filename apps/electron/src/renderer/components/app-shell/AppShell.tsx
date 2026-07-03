@@ -1937,6 +1937,9 @@ function AppShellContent({
   )
   const [novelWorkspaceRoot, setNovelWorkspaceRoot] = React.useState<string | null>(null)
   const [novelWorkspaceFiles, setNovelWorkspaceFiles] = React.useState<NovelWorkspaceFile[]>([])
+  const setNovelWorkspaceFilesIfChanged = React.useCallback((files: NovelWorkspaceFile[]) => {
+    setNovelWorkspaceFiles((previous) => areNovelWorkspaceFilesEqual(previous, files) ? previous : files)
+  }, [])
   const [novelWorkspaceDetecting, setNovelWorkspaceDetecting] = React.useState(false)
   const [novelWorkspaceDetectionSettledKey, setNovelWorkspaceDetectionSettledKey] = React.useState<string | null>(null)
   const novelWorkspaceRootRef = React.useRef<string | null>(null)
@@ -2156,7 +2159,7 @@ function AppShellContent({
         const knownWritingWorkspaceRoot = rootPath === activeWritingWorkspaceRoot
         if (cachedNovelWorkspaceFiles) {
           setNovelWorkspaceRoot(rootPath)
-          setNovelWorkspaceFiles(cachedNovelWorkspaceFiles)
+          setNovelWorkspaceFilesIfChanged(cachedNovelWorkspaceFiles)
           setNovelWorkspaceDetectionSettledKey(novelWorkspaceCandidateKey)
           setNovelWorkspaceDetecting(false)
           markNovelWorkspaceFileChangesCovered(rootPath)
@@ -2170,7 +2173,7 @@ function AppShellContent({
               : (probeFiles) => {
                   if (cancelled) return
                   setNovelWorkspaceRoot(rootPath)
-                  setNovelWorkspaceFiles(probeFiles)
+                  setNovelWorkspaceFilesIfChanged(probeFiles)
                   setNovelWorkspaceDetectionSettledKey(novelWorkspaceCandidateKey)
                   setNovelWorkspaceDetecting(false)
                 },
@@ -2180,7 +2183,7 @@ function AppShellContent({
 
           if (files) {
             setNovelWorkspaceRoot(rootPath)
-            setNovelWorkspaceFiles(files)
+            setNovelWorkspaceFilesIfChanged(files)
             setNovelWorkspaceDetectionSettledKey(novelWorkspaceCandidateKey)
             setNovelWorkspaceDetecting(false)
             markNovelWorkspaceFileChangesCovered(rootPath)
@@ -2202,7 +2205,7 @@ function AppShellContent({
     return () => {
       cancelled = true
     }
-  }, [activeWritingWorkspaceRoot, loadNovelWorkspaceFiles, markNovelWorkspaceFileChangesCovered, novelWorkspaceCandidateKey, novelWorkspaceCandidateRoots])
+  }, [activeWritingWorkspaceRoot, loadNovelWorkspaceFiles, markNovelWorkspaceFileChangesCovered, novelWorkspaceCandidateKey, novelWorkspaceCandidateRoots, setNovelWorkspaceFilesIfChanged])
 
   React.useEffect(() => {
     if (!novelWorkspaceRoot || !latestNovelFileChangesSignature) return

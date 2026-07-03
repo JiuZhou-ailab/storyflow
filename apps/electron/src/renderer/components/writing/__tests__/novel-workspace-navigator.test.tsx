@@ -934,7 +934,7 @@ describe('novel writing workspace layout', () => {
 
     expect(appShellSource).toContain('novelWorkspaceFilesCacheRef.current.set(rootPath, files)')
     expect(detectionSource).toContain('const cachedNovelWorkspaceFiles = novelWorkspaceFilesCacheRef.current.get(rootPath)')
-    expect(detectionSource.indexOf('setNovelWorkspaceFiles(cachedNovelWorkspaceFiles)')).toBeLessThan(
+    expect(detectionSource.indexOf('setNovelWorkspaceFilesIfChanged(cachedNovelWorkspaceFiles)')).toBeLessThan(
       detectionSource.indexOf('loadNovelWorkspaceFiles(')
     )
   })
@@ -1025,6 +1025,19 @@ describe('novel writing workspace layout', () => {
       refreshSource.indexOf('loadNovelWorkspaceFiles(')
     )
     expect(refreshSource).toContain('areNovelWorkspaceFilesEqual(previous, files) ? previous : files')
+  })
+
+  it('uses equality guarded writing workspace file updates during detection', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const detectionSource = appShellSource.slice(
+      appShellSource.indexOf('async function detectNovelWorkspace'),
+      appShellSource.indexOf('void detectNovelWorkspace()')
+    )
+
+    expect(appShellSource).toContain('const setNovelWorkspaceFilesIfChanged = React.useCallback')
+    expect(detectionSource).toContain('setNovelWorkspaceFilesIfChanged(cachedNovelWorkspaceFiles)')
+    expect(detectionSource).toContain('setNovelWorkspaceFilesIfChanged(probeFiles)')
+    expect(detectionSource).toContain('setNovelWorkspaceFilesIfChanged(files)')
   })
 
   it('preserves the selected writing file when catalog refreshes temporarily omit it', () => {
