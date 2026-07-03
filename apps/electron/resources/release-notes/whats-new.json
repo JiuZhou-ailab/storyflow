@@ -1,0 +1,19 @@
+{
+  "version": "0.9.36",
+  "digest": "666108a4281b5b9f6de3426f971d3d8f2cb346e407faf8527d3d5f9e3712b118",
+  "generatedAt": "2026-07-03T02:22:45.416Z",
+  "title": "What is new in v0.9.36",
+  "summary": "这一版把项目管理和桌面性能排查补齐到更可用的状态：项目卡片现在可以直接重命名或移除，长会话和大文件树也减少了不必要的刷新压力。",
+  "highlights": [
+    "项目卡片支持管理菜单 — Project Hub 中每个项目都可以通过菜单重命名、移除，常用管理动作不再需要绕到工作区切换器。",
+    "移除项目会清理本地状态 — 移除项目会同步删除本地工作区配置、项目凭据和该项目的系统数据目录，减少残留状态。",
+    "流式输出减少列表重算 — text_delta 只更新当前会话正文，不再为每个流式片段重建会话元数据。",
+    "会话打开更轻量 — 已持久化的分支状态会直接复用，避免每次打开会话都读取 provider sidecar。"
+  ],
+  "accentColor": "#af1d26",
+  "accentTextColor": "#ffffff",
+  "source": {
+    "commitCount": 5,
+    "userVisibleCommitCount": 2
+  }
+}
