@@ -31,6 +31,7 @@ import { navigate, routes } from '@/lib/navigate'
 import { coerceInputText } from '@/lib/input-text'
 import { deriveSessionMessagesLoadState, formatSessionLoadFailure } from '@/lib/session-load'
 import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, sessionMessagesLoadedAtomFamily, sessionMetaAtomFamily, sessionMetaMapAtom } from '@/atoms/sessions'
+import { activeSessionListSearchQueryAtom, sessionListSearchActiveAtom } from '@/atoms/session-list-search'
 import { getSessionPreviewText, getSessionTitle, shortTimeLocale } from '@/utils/session'
 // Model resolution: connection.defaultModel (no hardcoded defaults)
 import { resolveEffectiveConnectionSlug, isSessionConnectionUnavailable } from '@config/llm-connections'
@@ -198,8 +199,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     rightSidebarButton,
     leadingAction,
     isCompactMode,
-    sessionListSearchQuery,
-    isSearchModeActive,
     chatDisplayRef,
     onChatMatchInfoChange,
     isFocusedPanel,
@@ -214,6 +213,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
   // Use per-session atom for isolated updates
   const session = useSessionData(sessionId)
+  const sessionListSearchQuery = useAtomValue(activeSessionListSearchQueryAtom)
+  const isSearchModeActive = useAtomValue(sessionListSearchActiveAtom)
 
   // Track if messages are loaded for this session (for lazy loading)
   const messagesLoaded = useAtomValue(sessionMessagesLoadedAtomFamily(sessionId))

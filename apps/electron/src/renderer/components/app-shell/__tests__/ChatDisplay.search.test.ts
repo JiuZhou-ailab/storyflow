@@ -9,6 +9,9 @@ import type { Turn } from '@craft-agent/ui'
 import { collectTurnSearchOccurrences } from '../ChatDisplay.search'
 
 const chatDisplaySource = readFileSync(new URL('../ChatDisplay.tsx', import.meta.url), 'utf-8')
+const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf-8')
+const appShellContextSource = readFileSync(new URL('../../../context/AppShellContext.tsx', import.meta.url), 'utf-8')
+const chatPageSource = readFileSync(new URL('../../../pages/ChatPage.tsx', import.meta.url), 'utf-8')
 
 function message(overrides: Partial<Omit<Message, 'content'>> & { content?: unknown }): Message {
   return {
@@ -131,5 +134,17 @@ describe('ChatDisplay search performance contract', () => {
     expect(chatDisplaySource).toContain('pendingFollowUpAnnotations.sort((a, b) => a.createdAt - b.createdAt)')
     expect(chatDisplaySource).toContain('const pendingFollowUpAnnotations = partitionedMessages.pendingFollowUpAnnotations')
     expect(chatDisplaySource).not.toContain('const pendingFollowUpAnnotations = useMemo<PendingFollowUpAnnotation[]>')
+  })
+
+  test('keeps session-list search query out of AppShellContext value', () => {
+    expect(appShellSource).toContain('useAtom(sessionListSearchActiveAtom)')
+    expect(appShellSource).toContain('useAtom(sessionListSearchQueryAtom)')
+    expect(appShellSource).not.toContain('sessionListSearchQuery: searchActive ? searchQuery : undefined')
+    expect(appShellSource).not.toContain('isSearchModeActive: searchActive')
+    expect(appShellContextSource).not.toContain('sessionListSearchQuery?:')
+    expect(appShellContextSource).not.toContain('isSearchModeActive?:')
+    expect(appShellContextSource).not.toContain('setSessionListSearchQuery?:')
+    expect(chatPageSource).toContain('activeSessionListSearchQueryAtom')
+    expect(chatPageSource).toContain('sessionListSearchActiveAtom')
   })
 })

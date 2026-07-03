@@ -155,13 +155,7 @@ export interface AppShellContextType {
   /** Whether the shell is currently in compact/narrow mode */
   isCompactMode?: boolean
 
-  // Session list search state (for ChatDisplay highlighting)
-  /** Current search query from session list - used to highlight matches in ChatDisplay */
-  sessionListSearchQuery?: string
-  /** Whether search mode is active (prevents focus stealing to chat input even with empty query) */
-  isSearchModeActive?: boolean
-  /** Callback to update session list search query */
-  setSessionListSearchQuery?: (query: string) => void
+  // Session list search navigation bridge
   /** Ref to ChatDisplay for navigation between matches */
   chatDisplayRef?: React.RefObject<ChatDisplayHandle>
   /** Callback when ChatDisplay match info changes (for immediate UI updates) */
