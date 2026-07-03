@@ -86,7 +86,7 @@ import type { HandlerDeps } from './handlers/handler-deps'
 import { bootstrapServer, releaseServerLock } from '@craft-agent/server-core/bootstrap'
 import { createMessagingBootstrap, type MessagingBootstrapHandle } from '@craft-agent/messaging-gateway'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
-import { initModelRefreshService, getModelRefreshService, setFetcherPlatform } from '@craft-agent/server-core/model-fetchers'
+import { initModelRefreshService, getModelRefreshService, resolveModelRefreshCredentials, setFetcherPlatform } from '@craft-agent/server-core/model-fetchers'
 import { setSearchPlatform, setImageProcessor } from '@craft-agent/server-core/services'
 import { createApplicationMenu } from './menu'
 import { WindowManager } from './window-manager'
@@ -768,19 +768,9 @@ app.whenReady().then(async () => {
           : registerAllRpcHandlers,
         setSessionEventSink: (sm, sink) => sm.setEventSink(sink),
         initializeSessionManager: (sm) => sm.initialize(),
-        initModelRefreshService: () => initModelRefreshService(async (slug: string) => {
+        initModelRefreshService: () => initModelRefreshService(async (connection) => {
           const { getCredentialManager } = await import('@craft-agent/shared/credentials')
-          const manager = getCredentialManager()
-          const [apiKey, oauth] = await Promise.all([
-            manager.getLlmApiKey(slug).catch(() => null),
-            manager.getLlmOAuth(slug).catch(() => null),
-          ])
-          return {
-            apiKey: apiKey ?? undefined,
-            oauthAccessToken: oauth?.accessToken,
-            oauthRefreshToken: oauth?.refreshToken,
-            oauthIdToken: oauth?.idToken,
-          }
+          return resolveModelRefreshCredentials(connection, getCredentialManager())
         }),
         onClientConnected: ({ clientId, webContentsId }) => {
           if (webContentsId != null) clientMap.set(webContentsId, clientId)

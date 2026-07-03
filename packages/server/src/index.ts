@@ -66,7 +66,7 @@ if (process.argv.includes('--generate-token')) {
 import type { WsRpcTlsOptions } from '@craft-agent/server-core/transport'
 import { registerCoreRpcHandlers, cleanupSessionFileWatchForClient } from '@craft-agent/server-core/handlers/rpc'
 import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@craft-agent/server-core/sessions'
-import { initModelRefreshService, setFetcherPlatform } from '@craft-agent/server-core/model-fetchers'
+import { initModelRefreshService, resolveModelRefreshCredentials, setFetcherPlatform } from '@craft-agent/server-core/model-fetchers'
 import { setSearchPlatform, setImageProcessor } from '@craft-agent/server-core/services'
 import type { HandlerDeps } from '@craft-agent/server-core/handlers'
 
@@ -270,18 +270,9 @@ const instance = await (async () => {
         setSearchPlatform(platform)
         setImageProcessor(platform.imageProcessor)
       },
-      initModelRefreshService: () => initModelRefreshService(async (slug: string) => {
+      initModelRefreshService: () => initModelRefreshService(async (connection) => {
         const manager = getCredentialManager()
-        const [apiKey, oauth] = await Promise.all([
-          manager.getLlmApiKey(slug).catch(() => null),
-          manager.getLlmOAuth(slug).catch(() => null),
-        ])
-        return {
-          apiKey: apiKey ?? undefined,
-          oauthAccessToken: oauth?.accessToken,
-          oauthRefreshToken: oauth?.refreshToken,
-          oauthIdToken: oauth?.idToken,
-        }
+        return resolveModelRefreshCredentials(connection, manager)
       }),
       createSessionManager: () => new SessionManager(),
       createHandlerDeps: ({ sessionManager, platform, oauthFlowStore }) => {

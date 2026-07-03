@@ -11,7 +11,8 @@
  */
 
 import type { ModelFetcherMap, ModelFetcherCredentials, FetchableProvider } from '@craft-agent/shared/config'
-import type { ModelDefinition } from '@craft-agent/shared/config'
+import type { LlmConnection, ModelDefinition } from '@craft-agent/shared/config'
+import type { CredentialManager } from '@craft-agent/shared/credentials'
 import {
   getLlmConnections,
   getLlmConnection,
@@ -29,7 +30,33 @@ const COPILOT_REFRESH_INTERVAL_MS = 10 * 60 * 1000
 // Types
 // ============================================================
 
-type CredentialResolver = (slug: string) => Promise<ModelFetcherCredentials>
+type CredentialReader = Pick<CredentialManager, 'getLlmApiKey' | 'getLlmOAuth'>
+type CredentialResolver = (connection: LlmConnection) => Promise<ModelFetcherCredentials>
+
+export async function resolveModelRefreshCredentials(
+  connection: LlmConnection,
+  manager: CredentialReader,
+): Promise<ModelFetcherCredentials> {
+  if (
+    connection.authType === 'api_key'
+    || connection.authType === 'api_key_with_endpoint'
+    || connection.authType === 'bearer_token'
+  ) {
+    const apiKey = await manager.getLlmApiKey(connection.slug).catch(() => null)
+    return { apiKey: apiKey ?? undefined }
+  }
+
+  if (connection.authType === 'oauth') {
+    const oauth = await manager.getLlmOAuth(connection.slug).catch(() => null)
+    return {
+      oauthAccessToken: oauth?.accessToken,
+      oauthRefreshToken: oauth?.refreshToken,
+      oauthIdToken: oauth?.idToken,
+    }
+  }
+
+  return {}
+}
 
 // ============================================================
 // ModelRefreshService
@@ -90,7 +117,7 @@ class ModelRefreshService {
 
     // Layer 1: Provider API/SDK
     try {
-      const credentials = await this.getCredentials(slug)
+      const credentials = await this.getCredentials(connection)
       handlerLog.info(`Model refresh [${slug}]: fetching (provider=${connection.providerType}, piAuth=${connection.piAuthProvider}, hasOAuthRefresh=${!!credentials.oauthRefreshToken}, hasOAuthAccess=${!!credentials.oauthAccessToken})`)
       const result = await fetcher.fetchModels(connection, credentials)
       newModels = result.models
