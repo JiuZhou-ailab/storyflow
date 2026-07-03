@@ -233,7 +233,7 @@ export function handleStatus(
     statusType: event.statusType,
   }
 
-  const updatedSession = appendMessage(session, statusMessage)
+  const updatedSession = appendMessage(session, statusMessage, false, false)
 
   return {
     state: {
@@ -302,7 +302,7 @@ export function handleInfo(
 
   return {
     state: {
-      session: appendMessage(session, infoMessage),
+      session: appendMessage(session, infoMessage, false, false),
       streaming,
     },
     effects: [],

@@ -31,6 +31,10 @@ describe('handleTextDelta streaming hot path', () => {
     expect(textHandlerSource).toContain('findStreamingMessage(session.messages, event.turnId)')
   })
 
+  it('skips append duplicate scans for renderer-generated streaming message ids', () => {
+    expect(textHandlerSource).toContain('appendMessage(session, newMessage, false, false)')
+  })
+
   it('appends deltas to the last matching streaming assistant message', () => {
     const state = makeState([
       {

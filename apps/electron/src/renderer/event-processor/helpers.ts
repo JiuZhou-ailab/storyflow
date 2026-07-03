@@ -135,10 +135,11 @@ export function updateMessageAt(
 export function appendMessage(
   session: Session,
   message: Message,
-  updateTimestamp = false
+  updateTimestamp = false,
+  dedupeById = true
 ): Session {
   // Guard: skip if message with same ID already exists (prevents duplicate events on Windows)
-  if (message.id && session.messages.some(m => m.id === message.id)) {
+  if (dedupeById && message.id && session.messages.some(m => m.id === message.id)) {
     return session
   }
 

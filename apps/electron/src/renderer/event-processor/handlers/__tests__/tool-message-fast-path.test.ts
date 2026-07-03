@@ -52,6 +52,10 @@ describe('tool message hot path', () => {
     expect(toolHandlerSource).not.toContain('for (let i = 0; i < childMessages.length; i++)')
   })
 
+  it('skips append duplicate scans for renderer-generated tool message ids', () => {
+    expect(toolHandlerSource).toContain('appendMessage(session, toolMessage, false, false)')
+  })
+
   it('updates the latest matching tool message with result data', () => {
     const state = makeState([
       {

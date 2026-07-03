@@ -9,6 +9,7 @@ import {
   findMessageByTurnId,
   findStreamingMessage,
   findToolMessage,
+  appendMessage,
   updateMessageAt,
 } from '../../helpers'
 
@@ -59,5 +60,17 @@ describe('message lookup helpers', () => {
 
     expect(updateMessageAt(session, 0, { content: 'same' })).toBe(session)
     expect(updateMessageAt(session, 0, { content: 'same' }, true)).not.toBe(session)
+  })
+
+  it('keeps append dedupe on by default and lets generated-id callers skip the scan', () => {
+    const existing = message({ id: 'generated-1', content: 'first' })
+    const session = {
+      id: 'session-1',
+      messages: [existing],
+      lastMessageAt: 1,
+    } as any
+
+    expect(appendMessage(session, existing)).toBe(session)
+    expect(appendMessage(session, existing, false, false).messages).toHaveLength(2)
   })
 })

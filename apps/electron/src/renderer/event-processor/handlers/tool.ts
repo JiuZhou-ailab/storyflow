@@ -113,7 +113,7 @@ export function handleToolStart(
   }
 
   return {
-    session: appendMessage(session, toolMessage),
+    session: appendMessage(session, toolMessage, false, false),
     streaming,
   }
 }
@@ -197,7 +197,7 @@ export function handleToolResult(
   }
 
   return {
-    session: appendMessage(session, toolMessage),
+    session: appendMessage(session, toolMessage, false, false),
     streaming,
   }
 }

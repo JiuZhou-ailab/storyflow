@@ -101,7 +101,7 @@ export function handleTextDelta(
   }
 
   return {
-    session: appendMessage(session, newMessage, false),
+    session: appendMessage(session, newMessage, false, false),
     streaming: newStreaming,
   }
 }
