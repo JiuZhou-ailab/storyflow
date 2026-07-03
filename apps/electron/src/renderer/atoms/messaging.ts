@@ -6,6 +6,8 @@
  */
 
 import { atom } from 'jotai'
+import { selectAtom } from 'jotai/utils'
+import { atomFamily } from 'jotai-family'
 
 export interface MessagingBinding {
   id: string
@@ -42,6 +44,33 @@ export const messagingBindingsBySessionAtom = atom((get) => {
   }
   return map
 })
+
+function messagingBindingsEqual(a: MessagingBinding[], b: MessagingBinding[]): boolean {
+  if (a.length !== b.length) return false
+  return a.every((binding, index) => {
+    const other = b[index]
+    return !!other
+      && binding.id === other.id
+      && binding.workspaceId === other.workspaceId
+      && binding.sessionId === other.sessionId
+      && binding.platform === other.platform
+      && binding.channelId === other.channelId
+      && binding.threadId === other.threadId
+      && binding.channelName === other.channelName
+      && binding.enabled === other.enabled
+      && binding.accessMode === other.accessMode
+      && binding.allowedSenderIds?.join('\0') === other.allowedSenderIds?.join('\0')
+  })
+}
+
+export const messagingBindingsForSessionAtomFamily = atomFamily(
+  (sessionId: string) => selectAtom(
+    messagingBindingsAtom,
+    (bindings) => bindings.filter((binding) => binding.enabled && binding.sessionId === sessionId),
+    messagingBindingsEqual,
+  ),
+  (a, b) => a === b,
+)
 
 export const setMessagingBindingsAtom = atom(
   null,
