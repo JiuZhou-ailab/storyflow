@@ -4,8 +4,8 @@
 
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { handleTaskProgress, handleToolResult } from '../tool'
-import type { SessionState, TaskProgressEvent, ToolResultEvent } from '../../types'
+import { handleTaskProgress, handleToolResult, handleToolStart } from '../tool'
+import type { SessionState, TaskProgressEvent, ToolResultEvent, ToolStartEvent } from '../../types'
 
 const toolHandlerSource = readFileSync(new URL('../tool.ts', import.meta.url), 'utf-8')
 
@@ -52,6 +52,32 @@ describe('tool message hot path', () => {
     expect(next.session.messages).toHaveLength(1)
     expect((next.session.messages[0] as any).toolResult).toBe('ok')
     expect((next.session.messages[0] as any).toolStatus).toBe('completed')
+  })
+
+  it('keeps the original state for duplicate tool start data', () => {
+    const state = makeState([
+      {
+        id: 'tool-1',
+        role: 'tool',
+        content: '',
+        timestamp: 1,
+        toolUseId: 'tool-1',
+        toolName: 'Bash',
+        toolInput: { command: 'pwd' },
+        toolStatus: 'executing',
+        turnId: 'turn-1',
+      },
+    ])
+    const event: ToolStartEvent = {
+      type: 'tool_start',
+      sessionId: 'session-1',
+      toolUseId: 'tool-1',
+      toolName: 'Bash',
+      toolInput: state.session.messages[0].toolInput,
+      turnId: 'turn-1',
+    }
+
+    expect(handleToolStart(state, event)).toBe(state)
   })
 
   it('keeps the original state for duplicate task progress seconds', () => {

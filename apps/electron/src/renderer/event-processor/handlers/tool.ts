@@ -54,6 +54,7 @@ export function handleToolStart(
       turnId: event.turnId,
       parentToolUseId: event.parentToolUseId,
     })
+    if (updatedSession === session) return state
     return { session: updatedSession, streaming }
   }
 
