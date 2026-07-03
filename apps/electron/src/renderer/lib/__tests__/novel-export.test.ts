@@ -65,6 +65,28 @@ describe('novel export helpers', () => {
     expect(plan.sourceFileCount).toBe(4)
   })
 
+  it('exports files according to the workspace Method Pack contract', () => {
+    const plan = buildNovelExportPlan([
+      { path: '/script/剧本/分场大纲.md', relativePath: '剧本/分场大纲.md' },
+      { path: '/script/剧本/对白草稿/01-开场.md', relativePath: '剧本/对白草稿/01-开场.md' },
+      { path: '/script/角色/人物表.md', relativePath: '角色/人物表.md' },
+      { path: '/script/场景/场景表.md', relativePath: '场景/场景表.md' },
+      { path: '/script/逻辑/因果链.md', relativePath: '逻辑/因果链.md' },
+    ], {
+      sections: ['outline', 'characters', 'locations', 'state', 'work'],
+      mergeManuscript: false,
+    }, 'screenplay.logic')
+
+    expect(plan.entries).toEqual([
+      { kind: 'copy', sourcePath: '/script/剧本/分场大纲.md', targetRelativePath: '剧本/分场大纲.md' },
+      { kind: 'copy', sourcePath: '/script/剧本/对白草稿/01-开场.md', targetRelativePath: '剧本/对白草稿/01-开场.md' },
+      { kind: 'copy', sourcePath: '/script/角色/人物表.md', targetRelativePath: '角色/人物表.md' },
+      { kind: 'copy', sourcePath: '/script/场景/场景表.md', targetRelativePath: '场景/场景表.md' },
+      { kind: 'copy', sourcePath: '/script/逻辑/因果链.md', targetRelativePath: '逻辑/因果链.md' },
+    ])
+    expect(plan.sourceFileCount).toBe(5)
+  })
+
   it('joins manuscript parts without adding headings or changing body text', () => {
     expect(buildMergedManuscriptContent([
       { sourcePath: '/novel/chapter-01.md', content: '# Chapter 1\n\nAlpha\n' },

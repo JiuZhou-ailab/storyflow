@@ -667,6 +667,7 @@ describe('novel writing workspace layout', () => {
     expect(editorPanelSource).toContain('getMarkdownSnapshot(): string')
     expect(editorPanelSource).toContain('onDocumentChanged?: () => void')
     expect(editorPanelSource).toContain('ref={editorRef}')
+    expect(editorPanelSource).toContain('key={file.path}')
     expect(editorPanelSource).toContain('onDocumentChanged={onDocumentChanged}')
     expect(editorPanelSource).not.toContain('onUpdate={onChange}')
     expect(appShellSource).toContain('novelDocumentEditorRef')
@@ -930,29 +931,29 @@ describe('novel writing workspace layout', () => {
     )
   })
 
-  it('loads known writing workspace roots from the native workspace file tree', () => {
+  it('loads metadata-known writing workspace roots without hot-path structure probing', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const loadSource = appShellSource.slice(
       appShellSource.indexOf('const loadNovelWorkspaceFiles ='),
       appShellSource.indexOf('const refreshNovelWorkspaceFiles')
     )
-    const unknownRootLoadSource = loadSource.slice(loadSource.indexOf('const probeResultSets ='))
+    const detectionSource = appShellSource.slice(
+      appShellSource.indexOf('async function detectNovelWorkspace'),
+      appShellSource.indexOf('void detectNovelWorkspace()')
+    )
 
-    expect(loadSource).toContain("loadNovelWorkspaceFileTree(rootPath)")
-    expect(unknownRootLoadSource).toContain('searchNovelWorkspaceFiles(rootPath')
-    expect(unknownRootLoadSource).toContain('NOVEL_WORKSPACE_DETECTION_QUERIES.map')
-    expect(unknownRootLoadSource).toContain("includeDescendants: false")
-    expect(unknownRootLoadSource.indexOf('detectNovelProjectFromSearchResults(probeResults)')).toBeLessThan(
-      unknownRootLoadSource.indexOf('loadNovelWorkspaceFileTree(rootPath)')
-    )
-    expect(unknownRootLoadSource).toContain('onDetected?.(probeFiles)')
-    expect(unknownRootLoadSource.indexOf('onDetected?.(probeFiles)')).toBeLessThan(
-      unknownRootLoadSource.indexOf('loadNovelWorkspaceFileTree(rootPath)')
-    )
+    expect(loadSource).toContain("loadNovelWorkspaceFileTree(rootPath, activeWorkspaceMethodPackId)")
+    expect(detectionSource).toContain('const knownWritingWorkspaceRoot = rootPath === activeWritingWorkspaceRoot')
+    expect(detectionSource).toContain('knownWritingWorkspaceRoot || Boolean(cachedNovelWorkspaceFiles)')
+    expect(detectionSource).not.toContain('NOVEL_WORKSPACE_DETECTION_QUERIES.map')
   })
 
-  it('refreshes known writing workspace roots with one combined targeted search', () => {
+  it('loads known writing workspace roots through purpose-built file listing before search fallback', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const fileTreeSource = appShellSource.slice(
+      appShellSource.indexOf('async function loadNovelWorkspaceFileTree'),
+      appShellSource.indexOf('function mapFileSearchResultsToNativeNovelWorkspaceFiles')
+    )
     const loadSource = appShellSource.slice(
       appShellSource.indexOf('const loadNovelWorkspaceFiles ='),
       appShellSource.indexOf('const refreshNovelWorkspaceFiles')
@@ -968,12 +969,14 @@ describe('novel writing workspace layout', () => {
 
     expect(loadSource).toContain('knownNovelWorkspace = false')
     expect(loadSource).toContain('if (knownNovelWorkspace)')
-    expect(loadSource).toContain('loadNovelWorkspaceFileTree(rootPath)')
-    expect(loadSource.indexOf('loadNovelWorkspaceFileTree(rootPath)')).toBeLessThan(
-      loadSource.indexOf('NOVEL_WORKSPACE_DETECTION_QUERIES.map')
+    expect(loadSource).toContain('loadNovelWorkspaceFileTree(rootPath, activeWorkspaceMethodPackId)')
+    expect(fileTreeSource).toContain('RPC_CHANNELS.fs.LIST_FILES')
+    expect(fileTreeSource).toContain('window.electronAPI.listWorkspaceFiles(rootPath, [...rootQueries])')
+    expect(fileTreeSource.indexOf('window.electronAPI.listWorkspaceFiles')).toBeLessThan(
+      fileTreeSource.indexOf('searchNovelWorkspaceFiles(rootPath')
     )
     expect(refreshSource).toContain('rootPath === novelWorkspaceRootRef.current || novelWorkspaceFilesCacheRef.current.has(rootPath)')
-    expect(detectionSource).toContain('Boolean(cachedNovelWorkspaceFiles)')
+    expect(detectionSource).toContain('knownWritingWorkspaceRoot || Boolean(cachedNovelWorkspaceFiles)')
   })
 
   it('coalesces writing workspace file loads before refresh state updates', () => {

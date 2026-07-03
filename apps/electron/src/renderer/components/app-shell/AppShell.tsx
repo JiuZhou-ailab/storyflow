@@ -176,13 +176,13 @@ import {
   getNovelImportTargetRelativePath,
   getNovelWorkspaceRelativePath,
   getNovelWorkspaceCandidateRoots,
+  getNovelWorkspaceFileSearchQueries,
   getNovelWorkspaceVisibleRootDirectories,
   isNovelWorkspaceFilePathInRoot,
   isVisibleNovelWorkspaceAssetPath,
   isShortFormNovelWorkspaceFiles,
   mapSearchResultsToNovelWorkspaceFiles,
   NOVEL_WORKSPACE_DETECTION_QUERIES,
-  NOVEL_WORKSPACE_FILE_SEARCH_QUERIES,
   normalizeNovelCreateFilePath,
   selectDefaultNovelFile,
   type NovelCreateFileBasePath,
@@ -190,6 +190,9 @@ import {
 } from "@/lib/writing-workspace"
 import { groupMessagesByTurn, type FileChange } from "@craft-agent/ui"
 import { RPC_CHANNELS, type FileSearchBatchRequest, type FileSearchBatchResult, type FileSearchResult } from "@craft-agent/shared/protocol"
+
+// ponytail: process-local replay guard for passive file-change refreshes; explicit file operations refresh directly.
+const completedNovelFileChangeRefreshKeys = new Set<string>()
 
 /**
  * AppShellProps - Minimal props interface for AppShell component
@@ -405,9 +408,22 @@ async function searchNovelWorkspaceFiles(
   )
 }
 
-async function loadNovelWorkspaceFileTree(rootPath: string): Promise<NovelWorkspaceFile[]> {
+async function loadNovelWorkspaceFileTree(rootPath: string, methodPackId?: string): Promise<NovelWorkspaceFile[]> {
+  const rootQueries = getNovelWorkspaceFileSearchQueries(methodPackId)
+  const canUseWorkspaceFileList = typeof window.electronAPI.listWorkspaceFiles === 'function'
+    && window.electronAPI.isChannelAvailable(RPC_CHANNELS.fs.LIST_FILES)
+
+  if (canUseWorkspaceFileList) {
+    try {
+      const results = await window.electronAPI.listWorkspaceFiles(rootPath, [...rootQueries])
+      return mapFileSearchResultsToNativeNovelWorkspaceFiles(results)
+    } catch (error) {
+      console.warn('[AppShell] Falling back to writing workspace file search:', error)
+    }
+  }
+
   const resultSets = await searchNovelWorkspaceFiles(rootPath,
-    NOVEL_WORKSPACE_FILE_SEARCH_QUERIES.map((query) => ({
+    rootQueries.map((query) => ({
       query,
       options: { mode: 'path' as const },
     }))
@@ -609,6 +625,16 @@ function getContentChangeSize(previous: string, next: string): number {
   const previousChanged = previous.length - prefixLength - suffixLength
   const nextChanged = next.length - prefixLength - suffixLength
   return Math.max(previousChanged, nextChanged)
+}
+
+function isSuspiciousEmptyNovelSnapshot(
+  contentToSave: string,
+  savedContent: string,
+  lastLoadedContent: string,
+): boolean {
+  return contentToSave.length === 0
+    && savedContent.length > 0
+    && lastLoadedContent === savedContent
 }
 
 /** Wraps children in a Tooltip that shows instantly on hover — only rendered when `show` is true. */
@@ -1842,6 +1868,15 @@ function AppShellContent({
   const activeSessionWorkingDirectory = activeSessionBelongsToWorkspace
     ? activeSessionMeta?.workingDirectory
     : undefined
+  const activeWorkspaceMetadata = activeWorkspace as (Workspace & WorkspaceOpeningMetadata) | undefined
+  const activeWorkspaceProjectType = activeWorkspaceMetadata?.projectType
+  const activeWorkspaceMethodPackId = typeof activeWorkspaceMetadata?.methodPackId === 'string'
+    ? activeWorkspaceMetadata.methodPackId
+    : undefined
+  const activeWritingWorkspaceRoot = activeWorkspace?.rootPath
+    && (activeWorkspaceProjectType === 'novel' || activeWorkspaceProjectType === 'short-form' || activeWorkspaceProjectType === 'screenplay')
+    ? activeWorkspace.rootPath
+    : null
 
   const novelFileChangeActivityKey = React.useMemo(
     () => getNovelFileChangeActivityKey(effectiveSession),
@@ -1869,10 +1904,10 @@ function AppShellContent({
 
   const novelWorkspaceCandidateRoots = React.useMemo(
     () => getNovelWorkspaceCandidateRoots({
-      activeWorkspaceRootPath: activeWorkspace?.rootPath,
-      sessionWorkingDirectory: activeSessionWorkingDirectory,
+      activeWorkspaceRootPath: activeWritingWorkspaceRoot ?? undefined,
+      sessionWorkingDirectory: undefined,
     }),
-    [activeWorkspace?.rootPath, activeSessionWorkingDirectory]
+    [activeWritingWorkspaceRoot]
   )
   const novelWorkspaceCandidateKey = React.useMemo(
     () => novelWorkspaceCandidateRoots.join('\0'),
@@ -1887,6 +1922,8 @@ function AppShellContent({
   const novelWorkspaceLoadInFlightRef = React.useRef<Map<string, Promise<NovelWorkspaceFile[] | null>>>(new Map())
   const novelWorkspaceRefreshInFlightRef = React.useRef<Map<string, Promise<boolean>>>(new Map())
   const novelWorkspaceLastRefreshKeyRef = React.useRef<string | null>(null)
+  const latestNovelFileChangesSignatureRef = React.useRef('')
+  latestNovelFileChangesSignatureRef.current = latestNovelFileChangesSignature
   const [novelCreateFileTarget, setNovelCreateFileTarget] = React.useState<NovelCreateFileTarget | null>(null)
   const [novelCreateFileValue, setNovelCreateFileValue] = React.useState('')
   const [novelCreatingFile, setNovelCreatingFile] = React.useState(false)
@@ -1894,6 +1931,13 @@ function AppShellContent({
   React.useEffect(() => {
     novelWorkspaceRootRef.current = novelWorkspaceRoot
   }, [novelWorkspaceRoot])
+
+  const markNovelWorkspaceFileChangesCovered = React.useCallback((rootPath: string, signature = latestNovelFileChangesSignatureRef.current) => {
+    if (!signature) return
+    const refreshKey = `${rootPath}\n${signature}`
+    novelWorkspaceLastRefreshKeyRef.current = refreshKey
+    completedNovelFileChangeRefreshKeys.add(refreshKey)
+  }, [])
 
   const loadNovelWorkspaceFiles = React.useCallback(async (
     rootPath: string,
@@ -1906,7 +1950,7 @@ function AppShellContent({
 
     const loadPromise = (async (): Promise<NovelWorkspaceFile[] | null> => {
       if (knownNovelWorkspace) {
-        const files = await loadNovelWorkspaceFileTree(rootPath)
+        const files = await loadNovelWorkspaceFileTree(rootPath, activeWorkspaceMethodPackId)
         novelWorkspaceFilesCacheRef.current.set(rootPath, files)
         return files
       }
@@ -1922,7 +1966,7 @@ function AppShellContent({
       const probeFiles = mapSearchResultsToNovelWorkspaceFiles(probeResults)
       onDetected?.(probeFiles)
 
-      const files = await loadNovelWorkspaceFileTree(rootPath)
+      const files = await loadNovelWorkspaceFileTree(rootPath, activeWorkspaceMethodPackId)
       novelWorkspaceFilesCacheRef.current.set(rootPath, files)
       return files
     })()
@@ -1934,7 +1978,7 @@ function AppShellContent({
       }
     })
     return loadPromise
-  }, [])
+  }, [activeWorkspaceMethodPackId])
 
   const refreshNovelWorkspaceFiles = React.useCallback(async (rootPath: string): Promise<boolean> => {
     const inFlight = novelWorkspaceRefreshInFlightRef.current.get(rootPath)
@@ -2087,11 +2131,13 @@ function AppShellContent({
     async function detectNovelWorkspace(): Promise<void> {
       for (const rootPath of novelWorkspaceCandidateRoots) {
         const cachedNovelWorkspaceFiles = novelWorkspaceFilesCacheRef.current.get(rootPath)
+        const knownWritingWorkspaceRoot = rootPath === activeWritingWorkspaceRoot
         if (cachedNovelWorkspaceFiles) {
           setNovelWorkspaceRoot(rootPath)
           setNovelWorkspaceFiles(cachedNovelWorkspaceFiles)
           setNovelWorkspaceDetectionSettledKey(novelWorkspaceCandidateKey)
           setNovelWorkspaceDetecting(false)
+          markNovelWorkspaceFileChangesCovered(rootPath)
         }
 
         try {
@@ -2106,7 +2152,7 @@ function AppShellContent({
                   setNovelWorkspaceDetectionSettledKey(novelWorkspaceCandidateKey)
                   setNovelWorkspaceDetecting(false)
                 },
-            Boolean(cachedNovelWorkspaceFiles)
+            knownWritingWorkspaceRoot || Boolean(cachedNovelWorkspaceFiles)
           )
           if (cancelled) return
 
@@ -2115,6 +2161,7 @@ function AppShellContent({
             setNovelWorkspaceFiles(files)
             setNovelWorkspaceDetectionSettledKey(novelWorkspaceCandidateKey)
             setNovelWorkspaceDetecting(false)
+            markNovelWorkspaceFileChangesCovered(rootPath)
             return
           }
         } catch {
@@ -2133,24 +2180,43 @@ function AppShellContent({
     return () => {
       cancelled = true
     }
-  }, [loadNovelWorkspaceFiles, novelWorkspaceCandidateKey, novelWorkspaceCandidateRoots])
+  }, [activeWritingWorkspaceRoot, loadNovelWorkspaceFiles, markNovelWorkspaceFileChangesCovered, novelWorkspaceCandidateKey, novelWorkspaceCandidateRoots])
 
   React.useEffect(() => {
     if (!novelWorkspaceRoot || !latestNovelFileChangesSignature) return
+    if (effectiveSession?.isProcessing === true) return
 
     const refreshKey = `${novelWorkspaceRoot}\n${latestNovelFileChangesSignature}`
     if (novelWorkspaceLastRefreshKeyRef.current === refreshKey) return
+    if (completedNovelFileChangeRefreshKeys.has(refreshKey)) return
+
+    const sessionWasProcessing = effectiveSessionId
+      ? novelSessionProcessingRef.current[effectiveSessionId] === true
+      : false
+    if (!sessionWasProcessing && novelWorkspaceFilesCacheRef.current.has(novelWorkspaceRoot)) {
+      markNovelWorkspaceFileChangesCovered(novelWorkspaceRoot, latestNovelFileChangesSignature)
+      return
+    }
 
     const timeoutId = window.setTimeout(() => {
       void refreshNovelWorkspaceFiles(novelWorkspaceRoot).then((refreshed) => {
-        if (refreshed) novelWorkspaceLastRefreshKeyRef.current = refreshKey
+        if (refreshed) {
+          markNovelWorkspaceFileChangesCovered(novelWorkspaceRoot, latestNovelFileChangesSignature)
+        }
       })
     }, 250)
 
     return () => {
       window.clearTimeout(timeoutId)
     }
-  }, [latestNovelFileChangesSignature, novelWorkspaceRoot, refreshNovelWorkspaceFiles])
+  }, [
+    effectiveSession?.isProcessing,
+    effectiveSessionId,
+    latestNovelFileChangesSignature,
+    markNovelWorkspaceFileChangesCovered,
+    novelWorkspaceRoot,
+    refreshNovelWorkspaceFiles,
+  ])
 
   const novelWorkspaceCandidateRootSet = React.useMemo(
     () => new Set(novelWorkspaceCandidateRoots),
@@ -2175,16 +2241,16 @@ function AppShellContent({
     [latestNovelFileChanges, novelWorkspaceFiles, novelWorkspaceRoot]
   )
   const novelWorkspaceTree = React.useMemo(
-    () => buildNovelWorkspaceTree(novelWorkspaceFiles),
-    [novelWorkspaceFiles]
+    () => buildNovelWorkspaceTree(novelWorkspaceFiles, activeWorkspaceMethodPackId),
+    [activeWorkspaceMethodPackId, novelWorkspaceFiles]
   )
   const isShortFormNovelWorkspace = React.useMemo(
     () => isShortFormNovelWorkspaceFiles(novelWorkspaceFiles),
     [novelWorkspaceFiles]
   )
   const defaultNovelFile = React.useMemo(
-    () => selectDefaultNovelFile(novelWorkspaceFiles),
-    [novelWorkspaceFiles]
+    () => selectDefaultNovelFile(novelWorkspaceFiles, activeWorkspaceMethodPackId),
+    [activeWorkspaceMethodPackId, novelWorkspaceFiles]
   )
   const [selectedNovelFilePath, setSelectedNovelFilePath] = React.useState<string | null>(null)
   const selectedNovelFile = React.useMemo(() => {
@@ -2382,7 +2448,7 @@ function AppShellContent({
       novelWorkspaceFilesCacheRef.current.delete(novelWorkspaceRoot)
       setNovelWorkspaceFiles(remainingFiles)
       if (selectedNovelFilePath === file.path) {
-        setSelectedNovelFilePath(selectDefaultNovelFile(remainingFiles)?.path ?? null)
+        setSelectedNovelFilePath(selectDefaultNovelFile(remainingFiles, activeWorkspaceMethodPackId)?.path ?? null)
       }
       await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
       toast.success(t('writing.deleteFile.success', '已删除文件'))
@@ -2393,6 +2459,7 @@ function AppShellContent({
       })
     }
   }, [
+    activeWorkspaceMethodPackId,
     novelDocumentDirty,
     novelWorkspaceFiles,
     novelWorkspaceRoot,
@@ -2468,6 +2535,20 @@ function AppShellContent({
     const versionToSave = novelDocumentChangeVersion
     const timeoutId = window.setTimeout(() => {
       const contentToSave = getCurrentNovelDocumentContent()
+      if (contentToSave === savedNovelDocumentContent) {
+        setNovelDocumentContent(contentToSave)
+        setSavedNovelDocumentChangeVersion(versionToSave)
+        return
+      }
+      if (isSuspiciousEmptyNovelSnapshot(contentToSave, savedNovelDocumentContent, novelDocumentContent)) {
+        setNovelDocumentError(t(
+          'writing.emptySnapshotSaveBlocked',
+          '已阻止一次空内容覆盖。请重新打开该文件后再保存。'
+        ))
+        setSavedNovelDocumentChangeVersion(versionToSave)
+        return
+      }
+
       const saveSeq = ++novelDocumentSaveSeqRef.current
       setNovelDocumentSaving(true)
       setNovelDocumentError(null)
@@ -2499,13 +2580,29 @@ function AppShellContent({
     return () => {
       window.clearTimeout(timeoutId)
     }
-  }, [getCurrentNovelDocumentContent, maybeCreateNovelAutoVersion, novelDocumentChangeVersion, novelDocumentDirty, novelDocumentLoading, selectedNovelDocumentPath])
+  }, [getCurrentNovelDocumentContent, maybeCreateNovelAutoVersion, novelDocumentChangeVersion, novelDocumentContent, novelDocumentDirty, novelDocumentLoading, savedNovelDocumentContent, selectedNovelDocumentPath, t])
 
   const ensureNovelDocumentSaved = React.useCallback(async (): Promise<boolean> => {
     if (!selectedNovelDocumentPath || !novelDocumentDirty) return true
 
     const contentToSave = getCurrentNovelDocumentContent()
     const versionToSave = novelDocumentChangeVersion
+    if (contentToSave === savedNovelDocumentContent) {
+      setNovelDocumentContent(contentToSave)
+      setSavedNovelDocumentChangeVersion(versionToSave)
+      return true
+    }
+    if (isSuspiciousEmptyNovelSnapshot(contentToSave, savedNovelDocumentContent, novelDocumentContent)) {
+      const message = t(
+        'writing.emptySnapshotSaveBlocked',
+        '已阻止一次空内容覆盖。请重新打开该文件后再保存。'
+      )
+      setNovelDocumentError(message)
+      setSavedNovelDocumentChangeVersion(versionToSave)
+      toast.error(message)
+      return false
+    }
+
     const saveSeq = ++novelDocumentSaveSeqRef.current
     setNovelDocumentSaving(true)
     setNovelDocumentError(null)
@@ -2532,7 +2629,7 @@ function AppShellContent({
         setNovelDocumentSaving(false)
       }
     }
-  }, [getCurrentNovelDocumentContent, maybeCreateNovelAutoVersion, novelDocumentChangeVersion, novelDocumentDirty, selectedNovelDocumentPath, t])
+  }, [getCurrentNovelDocumentContent, maybeCreateNovelAutoVersion, novelDocumentChangeVersion, novelDocumentContent, novelDocumentDirty, savedNovelDocumentContent, selectedNovelDocumentPath, t])
 
   const handleAllSessionsClick = useCallback(() => {
     navigate(routes.view.allSessions())
@@ -2635,6 +2732,7 @@ function AppShellContent({
           novelWorkspaceFiles,
         )
         setKnownWorkspaceCommit(novelWorkspaceRoot, sessionId, headCommit)
+        void refreshNovelWorkspaceFiles(novelWorkspaceRoot)
       }
       if (novelVersionDialogOpen) {
         await refreshNovelVersions()
@@ -2644,7 +2742,7 @@ function AppShellContent({
     } finally {
       novelAgentTurnCheckpointInFlightRef.current = false
     }
-  }, [novelVersionDialogOpen, novelWorkspaceFiles, novelWorkspaceRoot, refreshNovelVersions, reviewableNovelFileChanges])
+  }, [novelVersionDialogOpen, novelWorkspaceFiles, novelWorkspaceRoot, refreshNovelVersions, refreshNovelWorkspaceFiles, reviewableNovelFileChanges])
 
   React.useEffect(() => {
     if (!effectiveSessionId || !novelWorkspaceRoot) return
@@ -2778,7 +2876,7 @@ function AppShellContent({
     const saved = await ensureNovelDocumentSaved()
     if (!saved) return
 
-    const plan = buildNovelExportPlan(novelWorkspaceFiles, options)
+    const plan = buildNovelExportPlan(novelWorkspaceFiles, options, activeWorkspaceMethodPackId)
     if (plan.entries.length === 0) {
       toast.error(t('writing.export.empty', '没有可导出的内容'))
       return
@@ -2824,7 +2922,7 @@ function AppShellContent({
     } finally {
       setNovelExporting(false)
     }
-  }, [ensureNovelDocumentSaved, novelWorkspaceFiles, novelWorkspaceRoot, t])
+  }, [activeWorkspaceMethodPackId, ensureNovelDocumentSaved, novelWorkspaceFiles, novelWorkspaceRoot, t])
 
   const novelReviewUndoStackRef = React.useRef<NovelReviewUndoEntry[]>([])
 
@@ -5232,6 +5330,7 @@ function AppShellContent({
       <NovelExportDialog
         open={novelExportDialogOpen}
         files={novelWorkspaceFiles}
+        methodPackId={activeWorkspaceMethodPackId}
         exporting={novelExporting}
         onOpenChange={(open) => {
           if (!novelExporting) setNovelExportDialogOpen(open)

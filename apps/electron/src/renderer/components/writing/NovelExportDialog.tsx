@@ -39,6 +39,7 @@ const SECTION_LABEL_KEYS: Record<NovelExportSection, `writing.export.sections.${
 export interface NovelExportDialogProps {
   open: boolean
   files: NovelWorkspaceFile[]
+  methodPackId?: string
   exporting?: boolean
   onOpenChange: (open: boolean) => void
   onExport: (options: NovelExportOptions) => void
@@ -47,12 +48,13 @@ export interface NovelExportDialogProps {
 export function NovelExportDialog({
   open,
   files,
+  methodPackId,
   exporting = false,
   onOpenChange,
   onExport,
 }: NovelExportDialogProps) {
   const { t } = useTranslation()
-  const tree = React.useMemo(() => buildNovelWorkspaceTree(files), [files])
+  const tree = React.useMemo(() => buildNovelWorkspaceTree(files, methodPackId), [files, methodPackId])
   const sectionCounts = React.useMemo(() => {
     return Object.fromEntries(
       NOVEL_EXPORT_SECTIONS.map((section) => [section, summarizeNovelSection(tree[section].files).count])

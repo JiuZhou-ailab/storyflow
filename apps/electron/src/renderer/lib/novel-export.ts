@@ -2,7 +2,7 @@
 // output: Export plans and merged manuscript content for writing workspace exports
 // pos: Pure planning layer between writing workspace UI and filesystem writes
 
-import { categorizeNovelPath } from '@craft-agent/shared/writing/file-categories'
+import { categorizeNovelPathForMethodPack } from '@craft-agent/shared/writing/file-categories'
 import {
   buildNovelWorkspaceTree,
   type NovelWorkspaceFile,
@@ -54,10 +54,11 @@ export interface ManuscriptContentPart {
 
 export function buildNovelExportPlan(
   files: NovelWorkspaceFile[],
-  options: NovelExportOptions
+  options: NovelExportOptions,
+  methodPackId?: string
 ): NovelExportPlan {
   const selectedSections = new Set(options.sections)
-  const tree = buildNovelWorkspaceTree(files)
+  const tree = buildNovelWorkspaceTree(files, methodPackId)
   const entries: NovelExportEntry[] = []
   let sourceFileCount = 0
 
@@ -74,7 +75,7 @@ export function buildNovelExportPlan(
   }
 
   for (const file of files) {
-    const section = categorizeNovelPath(file.relativePath)
+    const section = categorizeNovelPathForMethodPack(file.relativePath, methodPackId)
     if (section === 'other') continue
     if (!selectedSections.has(section)) continue
     if (section === 'manuscript' && options.mergeManuscript) continue

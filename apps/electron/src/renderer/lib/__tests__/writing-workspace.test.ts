@@ -13,6 +13,7 @@ import {
   getNovelWorkspaceCandidateRoots,
   getNovelWorkspaceRelativePath,
   getNovelWorkspaceVisibleRootDirectories,
+  getNovelWorkspaceFileSearchQueries,
   mapSearchResultsToNovelWorkspaceFiles,
   groupNovelFileChanges,
   getShortFormGlobalInfoFiles,
@@ -56,6 +57,22 @@ describe('writing workspace helpers', () => {
     expect(tree.state.files.map(file => file.relativePath)).toEqual(['state/current/situation.md'])
     expect(tree.timeline.files.map(file => file.relativePath)).toEqual(['timeline/history.md'])
     expect(tree.work.files.map(file => file.relativePath)).toEqual(['.work/chapter-01-plan.md'])
+  })
+
+  it('uses Method Pack artifact contracts for workspace section projection', () => {
+    const tree = buildNovelWorkspaceTree([
+      { path: '/script/剧本/分场大纲.md', relativePath: '剧本/分场大纲.md' },
+      { path: '/script/剧本/对白草稿/01-开场.md', relativePath: '剧本/对白草稿/01-开场.md' },
+      { path: '/script/角色/人物表.md', relativePath: '角色/人物表.md' },
+      { path: '/script/场景/场景表.md', relativePath: '场景/场景表.md' },
+      { path: '/script/逻辑/因果链.md', relativePath: '逻辑/因果链.md' },
+    ], 'screenplay.logic')
+
+    expect(tree.outline.files.map(file => file.relativePath)).toEqual(['剧本/分场大纲.md'])
+    expect(tree.work.files.map(file => file.relativePath)).toEqual(['剧本/对白草稿/01-开场.md'])
+    expect(tree.characters.files.map(file => file.relativePath)).toEqual(['角色/人物表.md'])
+    expect(tree.locations.files.map(file => file.relativePath)).toEqual(['场景/场景表.md'])
+    expect(tree.state.files.map(file => file.relativePath)).toEqual(['逻辑/因果链.md'])
   })
 
   it('selects manuscript as default when chapters exist', () => {
@@ -297,48 +314,41 @@ describe('writing workspace helpers', () => {
     expect(getNovelImportTargetRelativePath('/Users/me/Desktop/.md', '正文')).toBeNull()
   })
 
-  it('defines targeted searches for the fixed novel workspace catalog', () => {
+  it('keeps hot-path writing workspace detection manifest-only', () => {
     expect(NOVEL_WORKSPACE_DETECTION_QUERIES).toEqual([
       'craft-writing.json',
       '.craft-agent/craft-writing.json',
-      'story/chapters',
-      'story/plan.md',
-      'story/synopsis.md',
-      'bible/structure.md',
-      'bible/characters',
-      'bible/universe',
-      'state',
-      'timeline',
-      '正文',
-      '全局',
-      '全局/创作要求.md',
-      '全局/简报.md',
-      '全局/大纲.md',
-      '全局/人物.md',
     ])
+  })
+
+  it('derives writing workspace file searches from Method Pack root directories', () => {
+    expect(getNovelWorkspaceFileSearchQueries('short-form.article')).toEqual(['正文', '全局', '自由区'])
+    expect(getNovelWorkspaceFileSearchQueries('novel.claude-book')).toEqual(['bible', 'story', 'state', 'timeline'])
     expect(NOVEL_WORKSPACE_FILE_SEARCH_QUERIES).toEqual([
-      'craft-writing.json',
-      '.craft-agent/craft-writing.json',
-      'story/chapters',
-      'story/plan.md',
-      'story/synopsis.md',
-      'bible/structure.md',
-      'bible/characters',
-      'bible/universe',
+      'story',
+      'bible',
       'state',
       'timeline',
-      '全局',
-      '大纲',
+      'analysis',
+      'work',
+      'notes',
+      'style',
+      'drafts',
+      'revisions',
+      'published',
+      'reviews',
       '正文',
+      '全局',
+      '自由区',
+      '大纲',
       '追踪',
       '参考资料',
       '拆文库',
       '对标',
-      '自由区',
-      '全局/创作要求.md',
-      '全局/简报.md',
-      '全局/大纲.md',
-      '全局/人物.md',
+      '剧本',
+      '角色',
+      '场景',
+      '逻辑',
     ])
   })
 
@@ -351,22 +361,19 @@ describe('writing workspace helpers', () => {
     ])).toBe(true)
   })
 
-  it('detects a Claude-Book-compatible novel directory structure from search results', () => {
+  it('does not infer writing projects from directory structure on the hot path', () => {
     expect(detectNovelProjectFromSearchResults([
       { name: 'bible', path: '/novel/bible', relativePath: 'bible', type: 'directory' },
       { name: 'story', path: '/novel/story', relativePath: 'story', type: 'directory' },
       { name: 'state', path: '/novel/state', relativePath: 'state', type: 'directory' },
       { name: 'timeline', path: '/novel/timeline', relativePath: 'timeline', type: 'directory' },
-    ])).toBe(true)
-  })
-
-  it('detects a fixed short-form writing workspace from targeted catalog results', () => {
+    ])).toBe(false)
     expect(detectNovelProjectFromSearchResults([
       { name: '正文', path: '/short/正文', relativePath: '正文', type: 'directory' },
       { name: '创作要求.md', path: '/short/全局/创作要求.md', relativePath: '全局/创作要求.md', type: 'file' },
       { name: '大纲.md', path: '/short/全局/大纲.md', relativePath: '全局/大纲.md', type: 'file' },
       { name: '人物.md', path: '/short/全局/人物.md', relativePath: '全局/人物.md', type: 'file' },
-    ])).toBe(true)
+    ])).toBe(false)
   })
 
   it('detects a free-creation writing workspace from the global facts folder', () => {
@@ -380,7 +387,7 @@ describe('writing workspace helpers', () => {
       { name: '全局', path: '/free/全局', relativePath: '全局', type: 'directory' },
       { name: '项目说明.md', path: '/free/全局/项目说明.md', relativePath: '全局/项目说明.md', type: 'file' },
       { name: '创作要求.md', path: '/free/全局/创作要求.md', relativePath: '全局/创作要求.md', type: 'file' },
-    ])).toBe(true)
+    ])).toBe(false)
     expect(isShortFormNovelWorkspaceFiles(freeCreationFiles)).toBe(false)
     expect(getNovelWorkspaceVisibleRootDirectories(freeCreationFiles)).toEqual([])
   })

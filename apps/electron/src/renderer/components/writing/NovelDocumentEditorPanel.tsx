@@ -187,6 +187,7 @@ export const NovelDocumentEditorPanel = React.forwardRef<NovelDocumentEditorPane
         ) : (
           <div className="flex h-full min-h-0 flex-col">
             <TiptapMarkdownEditor
+              key={file.path}
               ref={editorRef}
               content={content}
               onDocumentChanged={onDocumentChanged}

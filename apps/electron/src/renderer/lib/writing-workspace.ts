@@ -5,8 +5,10 @@
 import type { FileChange } from '@craft-agent/ui'
 import {
   categorizeNovelPath,
+  categorizeNovelPathForMethodPack,
   type WritingFileCategory,
 } from '@craft-agent/shared/writing/file-categories'
+import { getBuiltInMethodPack } from '@craft-agent/shared/writing/method-packs'
 import type { FileSearchResult } from '@craft-agent/shared/protocol'
 
 export type NovelWorkspaceTab =
@@ -105,46 +107,52 @@ const VISIBLE_NOVEL_WORKSPACE_ROOTS = new Set([
 export const NOVEL_WORKSPACE_DETECTION_QUERIES = [
   'craft-writing.json',
   '.craft-agent/craft-writing.json',
-  'story/chapters',
-  'story/plan.md',
-  'story/synopsis.md',
-  'bible/structure.md',
-  'bible/characters',
-  'bible/universe',
-  'state',
-  'timeline',
-  '正文',
-  '全局',
-  '全局/创作要求.md',
-  '全局/简报.md',
-  '全局/大纲.md',
-  '全局/人物.md',
 ] as const
 
 export const NOVEL_WORKSPACE_FILE_SEARCH_QUERIES = [
-  'craft-writing.json',
-  '.craft-agent/craft-writing.json',
-  'story/chapters',
-  'story/plan.md',
-  'story/synopsis.md',
-  'bible/structure.md',
-  'bible/characters',
-  'bible/universe',
+  'story',
+  'bible',
   'state',
   'timeline',
-  '全局',
-  '大纲',
+  'analysis',
+  'work',
+  'notes',
+  'style',
+  'drafts',
+  'revisions',
+  'published',
+  'reviews',
   '正文',
+  '全局',
+  '自由区',
+  '大纲',
   '追踪',
   '参考资料',
   '拆文库',
   '对标',
-  '自由区',
-  '全局/创作要求.md',
-  '全局/简报.md',
-  '全局/大纲.md',
-  '全局/人物.md',
+  '剧本',
+  '角色',
+  '场景',
+  '逻辑',
 ] as const
+
+function getSearchRootFromRequiredPath(path: string): string | null {
+  const normalized = normalizeRelativePath(path).replace(/\/+$/, '')
+  if (!normalized || normalized === 'craft-writing.json' || normalized === '.craft-agent/craft-writing.json') return null
+  const [root] = normalized.split('/')
+  if (!root) return null
+  return isVisibleNovelWorkspaceAssetPath(`${root}/__probe__.md`) ? root : null
+}
+
+export function getNovelWorkspaceFileSearchQueries(methodPackId?: string): readonly string[] {
+  const methodPack = methodPackId ? getBuiltInMethodPack(methodPackId) : null
+  if (!methodPack) return NOVEL_WORKSPACE_FILE_SEARCH_QUERIES
+
+  const roots = methodPack.requiredPaths
+    .map(requiredPath => getSearchRootFromRequiredPath(requiredPath.path))
+    .filter((root): root is string => !!root)
+  return roots.length > 0 ? [...new Set(roots)] : NOVEL_WORKSPACE_FILE_SEARCH_QUERIES
+}
 
 export function getNovelFileChangeActivityKey(session: { messages?: readonly {
   role?: string
@@ -372,11 +380,11 @@ export function getNovelWorkspaceCandidateRoots({
   return [...new Set(roots)]
 }
 
-export function buildNovelWorkspaceTree(files: NovelWorkspaceFile[]): NovelWorkspaceTree {
+export function buildNovelWorkspaceTree(files: NovelWorkspaceFile[], methodPackId?: string): NovelWorkspaceTree {
   const tree = createEmptyTree()
 
   for (const file of files) {
-    const category = categorizeNovelPath(file.relativePath)
+    const category = categorizeNovelPathForMethodPack(file.relativePath, methodPackId)
     tree[category].files.push(file)
   }
 
@@ -423,8 +431,8 @@ export function selectDefaultNovelTab(tree: NovelWorkspaceTree): NovelWorkspaceT
   return 'outline'
 }
 
-export function selectDefaultNovelFile(files: NovelWorkspaceFile[]): NovelWorkspaceFile | undefined {
-  const tree = buildNovelWorkspaceTree(files)
+export function selectDefaultNovelFile(files: NovelWorkspaceFile[], methodPackId?: string): NovelWorkspaceFile | undefined {
+  const tree = buildNovelWorkspaceTree(files, methodPackId)
   const orderedSections: NovelWorkspaceFileSectionId[] = [
     'manuscript',
     'outline',
@@ -456,35 +464,35 @@ export function summarizeNovelSection(files: NovelWorkspaceFile[]): NovelSection
   }
 }
 
-export function groupNovelFileChanges(changes: FileChange[], rootPath = ''): NovelFileChangeGroups {
+export function groupNovelFileChanges(changes: FileChange[], rootPath = '', methodPackId?: string): NovelFileChangeGroups {
   const groups = createEmptyChangeGroups()
 
   for (const change of changes) {
-    const category = categorizeNovelFileChange(change, rootPath)
+    const category = categorizeNovelFileChange(change, rootPath, methodPackId)
     groups[category].push(change)
   }
 
   return groups
 }
 
-export function filterReviewableNovelFileChanges(changes: FileChange[], rootPath = ''): FileChange[] {
-  return changes.filter(change => categorizeNovelFileChange(change, rootPath) !== 'other')
+export function filterReviewableNovelFileChanges(changes: FileChange[], rootPath = '', methodPackId?: string): FileChange[] {
+  return changes.filter(change => categorizeNovelFileChange(change, rootPath, methodPackId) !== 'other')
 }
 
-function categorizeNovelFileChange(change: FileChange, rootPath: string): WritingFileCategory {
+function categorizeNovelFileChange(change: FileChange, rootPath: string, methodPackId?: string): WritingFileCategory {
   const relativePath = rootPath
     ? stripRootPath(change.filePath, rootPath)
     : change.filePath
-  return categorizeNovelPath(relativePath)
+  return categorizeNovelPathForMethodPack(relativePath, methodPackId)
 }
 
-export function mapSearchResultsToNovelWorkspaceFiles(results: FileSearchResult[]): NovelWorkspaceFile[] {
+export function mapSearchResultsToNovelWorkspaceFiles(results: FileSearchResult[], methodPackId?: string): NovelWorkspaceFile[] {
   const files: NovelWorkspaceFile[] = []
   const seen = new Set<string>()
 
   for (const result of results) {
     if (result.type !== 'file') continue
-    if (categorizeNovelPath(result.relativePath) === 'other') continue
+    if (categorizeNovelPathForMethodPack(result.relativePath, methodPackId) === 'other') continue
     if (seen.has(result.path)) continue
 
     seen.add(result.path)
@@ -498,38 +506,8 @@ export function mapSearchResultsToNovelWorkspaceFiles(results: FileSearchResult[
 }
 
 export function detectNovelProjectFromSearchResults(results: FileSearchResult[]): boolean {
-  if (results.some((result) => (
+  return results.some((result) => (
     result.relativePath === 'craft-writing.json'
     || result.relativePath === '.craft-agent/craft-writing.json'
-  ) && result.type === 'file')) {
-    return true
-  }
-
-  const rootDirectories = new Set(
-    results
-      .filter((result) => result.type === 'directory')
-      .map((result) => result.relativePath.split('/')[0])
-  )
-
-  if (['bible', 'story', 'state', 'timeline'].every((dir) => rootDirectories.has(dir))) {
-    return true
-  }
-
-  const relativeFiles = new Set(
-    results
-      .filter((result) => result.type === 'file')
-      .map((result) => result.relativePath)
-  )
-  const hasShortFormAnchor = [
-    '全局/创作要求.md',
-    '全局/简报.md',
-    '全局/大纲.md',
-    '全局/人物.md',
-  ].some((path) => relativeFiles.has(path))
-
-  const hasFreeCreationAnchor = rootDirectories.has('全局')
-    && relativeFiles.has('全局/项目说明.md')
-    && relativeFiles.has('全局/创作要求.md')
-
-  return (rootDirectories.has('正文') && hasShortFormAnchor) || hasFreeCreationAnchor
+  ) && result.type === 'file')
 }

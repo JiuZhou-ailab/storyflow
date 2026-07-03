@@ -32,6 +32,7 @@ import { formatNovelWorkspacePathTitle } from './novel-file-display'
 export interface NovelWorkspaceNavigatorPanelProps {
   rootPath: string
   files: NovelWorkspaceFile[]
+  methodPackId?: string
   changes?: FileChange[]
   onOpenFile?: (path: string) => void
   className?: string
@@ -52,14 +53,15 @@ const TAB_TO_SECTION: Partial<Record<NovelWorkspaceTab, keyof ReturnType<typeof 
 export function NovelWorkspaceNavigatorPanel({
   rootPath,
   files,
+  methodPackId,
   changes = [],
   onOpenFile,
   className,
 }: NovelWorkspaceNavigatorPanelProps) {
   const { t } = useTranslation()
-  const tree = React.useMemo(() => buildNovelWorkspaceTree(files), [files])
-  const reviewableChanges = React.useMemo(() => filterReviewableNovelFileChanges(changes, rootPath), [changes, rootPath])
-  const changeGroups = React.useMemo(() => groupNovelFileChanges(reviewableChanges, rootPath), [reviewableChanges, rootPath])
+  const tree = React.useMemo(() => buildNovelWorkspaceTree(files, methodPackId), [files, methodPackId])
+  const reviewableChanges = React.useMemo(() => filterReviewableNovelFileChanges(changes, rootPath, methodPackId), [changes, methodPackId, rootPath])
+  const changeGroups = React.useMemo(() => groupNovelFileChanges(reviewableChanges, rootPath, methodPackId), [methodPackId, reviewableChanges, rootPath])
   const isShortFormWorkspace = React.useMemo(() => isShortFormNovelWorkspaceFiles(files), [files])
   const visibleTabs = React.useMemo(
     () => getVisibleNovelWorkspaceTabs({
