@@ -1261,7 +1261,7 @@ function AppShellContent({
   // Memo guard prevents render feedback loops from identical updates
   const handleChatMatchInfoChange = React.useCallback((info: { sessionId: string | null; count: number; index: number; isHighlighting: boolean }) => {
     setChatMatchInfo(prev => {
-      if (prev.sessionId === info.sessionId && prev.count === info.count && prev.index === info.index && prev.isHighlighting === info.isHighlighting) {
+      if (prev.sessionId === info.sessionId && prev.count === info.count && prev.isHighlighting === info.isHighlighting) {
         return prev
       }
       return info

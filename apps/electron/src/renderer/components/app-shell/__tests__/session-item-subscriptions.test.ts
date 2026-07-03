@@ -8,6 +8,7 @@ import { describe, expect, it } from 'bun:test'
 const sessionItemSource = readFileSync(new URL('../SessionItem.tsx', import.meta.url), 'utf-8')
 const sessionBadgesSource = readFileSync(new URL('../SessionBadges.tsx', import.meta.url), 'utf-8')
 const sessionListSource = readFileSync(new URL('../SessionList.tsx', import.meta.url), 'utf-8')
+const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf-8')
 
 describe('session item subscriptions', () => {
   it('reads messaging bindings through a per-session atom', () => {
@@ -54,5 +55,16 @@ describe('session item subscriptions', () => {
   it('keeps selected session state out of the shared list context', () => {
     expect(sessionListSource).not.toContain('selectedSessionId:')
     expect(sessionListSource).not.toContain('focusedSessionId, selectionStore.state.selected, isMultiSelectActive')
+  })
+
+  it('does not rebroadcast chat search row context for match index changes', () => {
+    const matchInfoGuardSource = appShellSource.slice(
+      appShellSource.indexOf('const handleChatMatchInfoChange = React.useCallback'),
+      appShellSource.indexOf('// Reset match info when search is deactivated')
+    )
+
+    expect(matchInfoGuardSource).toContain('prev.sessionId === info.sessionId && prev.count === info.count && prev.isHighlighting === info.isHighlighting')
+    expect(matchInfoGuardSource).not.toContain('prev.index === info.index')
+    expect(sessionItemSource).not.toContain('activeMatch!.index')
   })
 })
