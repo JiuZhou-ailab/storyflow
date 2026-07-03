@@ -6,6 +6,7 @@ import * as React from "react"
 import { useTranslation, Trans } from "react-i18next"
 import { useRef, useState, useEffect, useCallback, useMemo } from "react"
 import { useAtomValue, useStore } from "jotai"
+import { selectAtom } from "jotai/utils"
 import { motion, AnimatePresence } from "motion/react"
 import {
   ChevronRight,
@@ -170,7 +171,6 @@ import {
 } from "@/lib/novel-review-workflow"
 import type { NovelReviewUndoEntry } from "@/lib/novel-review-undo"
 import {
-  buildNovelWorkspaceTree,
   detectNovelProjectFromSearchResults,
   getNovelFileChangeActivityKey,
   getNovelImportTargetRelativePath,
@@ -1848,7 +1848,25 @@ function AppShellContent({
     damping: 49,
   }
 
-  const effectiveSession = useAtomValue(sessionAtomFamily(effectiveSessionId ?? '__missing__'))
+  const effectiveSessionAtom = React.useMemo(
+    () => sessionAtomFamily(effectiveSessionId ?? '__missing__'),
+    [effectiveSessionId]
+  )
+  const effectiveSessionProcessingAtom = React.useMemo(
+    () => selectAtom(effectiveSessionAtom, session => session?.isProcessing === true, Object.is),
+    [effectiveSessionAtom]
+  )
+  const effectiveSessionFolderPathAtom = React.useMemo(
+    () => selectAtom(effectiveSessionAtom, session => session?.sessionFolderPath, Object.is),
+    [effectiveSessionAtom]
+  )
+  const effectiveSessionFileChangeKeyAtom = React.useMemo(
+    () => selectAtom(effectiveSessionAtom, getNovelFileChangeActivityKey, Object.is),
+    [effectiveSessionAtom]
+  )
+  const effectiveSessionIsProcessing = useAtomValue(effectiveSessionProcessingAtom)
+  const effectiveSessionFolderPath = useAtomValue(effectiveSessionFolderPathAtom)
+  const novelFileChangeActivityKey = useAtomValue(effectiveSessionFileChangeKeyAtom)
   const [snapshotNovelFileChanges, setSnapshotNovelFileChanges] = React.useState<FileChange[]>([])
 
   const hasPendingPrompt = React.useCallback((sessionId: string) => {
@@ -1878,23 +1896,20 @@ function AppShellContent({
     ? activeWorkspace.rootPath
     : null
 
-  const novelFileChangeActivityKey = React.useMemo(
-    () => getNovelFileChangeActivityKey(effectiveSession),
-    [effectiveSession?.messages]
-  )
   const latestNovelFileChanges = React.useMemo<FileChange[]>(() => {
+    const effectiveSession = store.get(effectiveSessionAtom)
     if (!effectiveSession?.messages?.length) return []
 
     const turns = groupMessagesByTurn(effectiveSession.messages)
     for (const turn of [...turns].reverse()) {
       if (turn.type !== 'assistant') continue
       const changes = collectFileChangesFromActivities(turn.activities, {
-        basePath: activeSessionWorkingDirectory || effectiveSession.sessionFolderPath,
+        basePath: activeSessionWorkingDirectory || effectiveSessionFolderPath,
       })
       if (changes.length > 0) return changes
     }
     return snapshotNovelFileChanges
-  }, [activeSessionWorkingDirectory, effectiveSession?.id, effectiveSession?.sessionFolderPath, novelFileChangeActivityKey, snapshotNovelFileChanges])
+  }, [activeSessionWorkingDirectory, effectiveSessionAtom, effectiveSessionFolderPath, novelFileChangeActivityKey, snapshotNovelFileChanges, store])
   const latestNovelFileChangesSignature = React.useMemo(
     () => latestNovelFileChanges
       .map(change => `${change.id}:${change.filePath}:${change.changeKind}:${change.error ?? ''}`)
@@ -2184,7 +2199,7 @@ function AppShellContent({
 
   React.useEffect(() => {
     if (!novelWorkspaceRoot || !latestNovelFileChangesSignature) return
-    if (effectiveSession?.isProcessing === true) return
+    if (effectiveSessionIsProcessing) return
 
     const refreshKey = `${novelWorkspaceRoot}\n${latestNovelFileChangesSignature}`
     if (novelWorkspaceLastRefreshKeyRef.current === refreshKey) return
@@ -2210,7 +2225,7 @@ function AppShellContent({
       window.clearTimeout(timeoutId)
     }
   }, [
-    effectiveSession?.isProcessing,
+    effectiveSessionIsProcessing,
     effectiveSessionId,
     latestNovelFileChangesSignature,
     markNovelWorkspaceFileChangesCovered,
@@ -2239,10 +2254,6 @@ function AppShellContent({
   const reviewableNovelFileChanges = React.useMemo(
     () => normalizeNovelFileChangePaths(latestNovelFileChanges, novelWorkspaceRoot, novelWorkspaceFiles),
     [latestNovelFileChanges, novelWorkspaceFiles, novelWorkspaceRoot]
-  )
-  const novelWorkspaceTree = React.useMemo(
-    () => buildNovelWorkspaceTree(novelWorkspaceFiles, activeWorkspaceMethodPackId),
-    [activeWorkspaceMethodPackId, novelWorkspaceFiles]
   )
   const isShortFormNovelWorkspace = React.useMemo(
     () => isShortFormNovelWorkspaceFiles(novelWorkspaceFiles),
@@ -2747,7 +2758,7 @@ function AppShellContent({
   React.useEffect(() => {
     if (!effectiveSessionId || !novelWorkspaceRoot) return
 
-    const isProcessing = effectiveSession?.isProcessing === true
+    const isProcessing = effectiveSessionIsProcessing
     const wasProcessing = novelSessionProcessingRef.current[effectiveSessionId] === true
     novelSessionProcessingRef.current[effectiveSessionId] = isProcessing
 
@@ -2758,7 +2769,7 @@ function AppShellContent({
     if (wasProcessing && !isProcessing) {
       void checkpointNovelWorkspaceAgentTurn(effectiveSessionId)
     }
-  }, [checkpointNovelWorkspaceAgentTurn, effectiveSession?.isProcessing, effectiveSessionId, novelWorkspaceRoot])
+  }, [checkpointNovelWorkspaceAgentTurn, effectiveSessionIsProcessing, effectiveSessionId, novelWorkspaceRoot])
 
   const syncSelectedNovelDocumentFromDisk = React.useCallback(async (filePath: string): Promise<boolean> => {
     if (selectedNovelFile?.path !== filePath) return true

@@ -939,6 +939,21 @@ describe('novel writing workspace layout', () => {
     )
   })
 
+  it('keeps AppShell off the full active session atom during streaming updates', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const effectiveSessionSource = appShellSource.slice(
+      appShellSource.indexOf('const effectiveSessionAtom = React.useMemo'),
+      appShellSource.indexOf('const latestNovelFileChangesSignature')
+    )
+
+    expect(effectiveSessionSource).toContain('selectAtom(effectiveSessionAtom, session => session?.isProcessing === true, Object.is)')
+    expect(effectiveSessionSource).toContain('selectAtom(effectiveSessionAtom, session => session?.sessionFolderPath, Object.is)')
+    expect(effectiveSessionSource).toContain('selectAtom(effectiveSessionAtom, getNovelFileChangeActivityKey, Object.is)')
+    expect(effectiveSessionSource).toContain('const effectiveSession = store.get(effectiveSessionAtom)')
+    expect(appShellSource).not.toContain('useAtomValue(sessionAtomFamily(effectiveSessionId')
+    expect(appShellSource).not.toContain('buildNovelWorkspaceTree')
+  })
+
   it('loads metadata-known writing workspace roots without hot-path structure probing', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const loadSource = appShellSource.slice(
