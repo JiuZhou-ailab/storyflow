@@ -27,7 +27,6 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useEscapeInterrupt } from "@/context/EscapeInterruptContext"
 import { useNavigation, useNavigationState, routes, isSessionsNavigation } from "@/contexts/NavigationContext"
 import { useFocusContext } from "@/context/FocusContext"
-import { useAppShellContext } from "@/context/AppShellContext"
 import { sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import type { ViewConfig } from "@craft-agent/shared/views"
 import type { SessionStatusId, SessionStatus } from "@/config/session-status-config"
@@ -92,6 +91,10 @@ interface SessionListProps {
   hasPendingPrompt?: (sessionId: string) => boolean
   /** DOM-verified match info for the active session (from ChatDisplay) */
   activeChatMatchInfo?: { sessionId: string | null; count: number; isHighlighting?: boolean }
+  /** Whether any workspace can receive a send-to-workspace action. */
+  hasRemoteWorkspaces?: boolean
+  /** Whether the shell is in compact mode. */
+  isCompactMode?: boolean
 }
 
 // Re-export SessionStatusId for use by parent components
@@ -142,11 +145,11 @@ export function SessionList({
   onNavigateToSession,
   hasPendingPrompt,
   activeChatMatchInfo,
+  hasRemoteWorkspaces = false,
+  isCompactMode = false,
 }: SessionListProps) {
   const { t, i18n } = useTranslation()
   const setSendToWorkspace = useSetAtom(sendToWorkspaceAtom)
-  const { workspaces, isCompactMode } = useAppShellContext()
-  const hasRemoteWorkspaces = workspaces?.some(w => w.remoteServer) ?? false
   const { hotkey: nextSearchMatchHotkey } = useActionLabel('chat.nextSearchMatch')
   const { hotkey: prevSearchMatchHotkey } = useActionLabel('chat.prevSearchMatch')
 

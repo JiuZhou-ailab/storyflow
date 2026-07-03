@@ -5187,6 +5187,8 @@ function AppShellContent({
                   onNavigateToSession={panelCount > 1 ? navigateToSessionInPanel : undefined}
                   hasPendingPrompt={hasPendingPrompt}
                   activeChatMatchInfo={chatMatchInfo}
+                  hasRemoteWorkspaces={workspaces.some(workspace => workspace.remoteServer)}
+                  isCompactMode={isAutoCompact}
                 />
               </>
             )}

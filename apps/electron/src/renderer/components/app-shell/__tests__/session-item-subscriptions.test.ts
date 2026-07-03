@@ -25,6 +25,7 @@ describe('session item subscriptions', () => {
     expect(sessionListSource).toContain('isCompactMode,')
     expect(sessionItemSource).toContain('ctx.nextSearchMatchHotkey')
     expect(sessionItemSource).toContain('ctx.prevSearchMatchHotkey')
+    expect(sessionListSource).not.toContain('useAppShellContext')
     expect(sessionItemSource).not.toContain('useAppShellContext')
     expect(sessionItemSource).not.toContain('useActionLabel')
   })
