@@ -61,6 +61,7 @@ const FILE_SEARCH_MAX_RESULTS = 50
 const FILE_SEARCH_BATCH_MAX_ENTRIES = 5000
 const FILE_LIST_MAX_ROOTS = 64
 const FILE_LIST_MAX_ENTRIES = 5000
+const inFlightFileSearches = new Map<string, Promise<FileSearchEntry[]>>()
 const inFlightFileSearchBatches = new Map<string, Promise<FileSearchBatchResult[]>>()
 
 const FILE_SEARCH_SKIP_DIRS = new Set([
@@ -91,6 +92,17 @@ function getFileSearchBatchKey(scope: string, basePath: string, requests: FileSe
     options?.includeDescendants ?? null,
     options?.maxResults ?? null,
   ])])
+}
+
+function getFileSearchKey(scope: string, basePath: string, query: string, options?: FileSearchOptions): string {
+  return JSON.stringify([
+    scope,
+    basePath,
+    query,
+    options?.mode ?? null,
+    options?.includeDescendants ?? null,
+    options?.maxResults ?? null,
+  ])
 }
 
 export function filterFileSearchSnapshot(
@@ -938,7 +950,17 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
 
     try {
       const safeBasePath = await validateWorkspaceSearchBasePath(ctx, deps, basePath)
-      const results = await searchFilesInBase(safeBasePath, query, options)
+      const searchScope = resolveContextWorkspaceId(ctx, deps) ?? `client:${ctx.clientId}`
+      const searchKey = getFileSearchKey(searchScope, safeBasePath, query, options)
+      const inFlight = inFlightFileSearches.get(searchKey)
+      if (inFlight) return await inFlight
+
+      const searchPromise = searchFilesInBase(safeBasePath, query, options)
+        .finally(() => {
+          inFlightFileSearches.delete(searchKey)
+        })
+      inFlightFileSearches.set(searchKey, searchPromise)
+      const results = await searchPromise
       deps.platform.logger.info('[FS_SEARCH] returning', results.length, 'results')
       return results
     } catch (err) {

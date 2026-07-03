@@ -19,6 +19,7 @@ let workspaceRootPath = ''
 let workspaceRootRealpathCalls = 0
 let trackedReaddirPath = ''
 let trackedReaddirCalls = 0
+let trackedReaddirDelay: Promise<void> | null = null
 
 mock.module('fs/promises', () => ({
   ...realFsPromises,
@@ -31,6 +32,7 @@ mock.module('fs/promises', () => ({
   readdir: async (...args: Parameters<typeof realFsPromises.readdir>) => {
     if (String(args[0]) === trackedReaddirPath) {
       trackedReaddirCalls += 1
+      await trackedReaddirDelay
     }
     return realFsPromises.readdir(...args)
   },
@@ -171,6 +173,42 @@ describe('workspace-scoped file RPCs', () => {
       workspaceRootPath = ''
       trackedReaddirPath = ''
       trackedReaddirCalls = 0
+    }
+  })
+
+  it('coalesces identical concurrent filesystem searches', async () => {
+    workspaceRootPath = await mkdtemp(join(tmpdir(), 'craft-workspace-root-search-coalesce-'))
+    const { searchFiles, ctx } = createFileHarness()
+    let releaseReaddir = () => {}
+
+    try {
+      await mkdir(join(workspaceRootPath, '正文'), { recursive: true })
+      await writeFile(join(workspaceRootPath, '正文', '01.md'), 'chapter')
+      trackedReaddirPath = workspaceRootPath
+      trackedReaddirCalls = 0
+      trackedReaddirDelay = new Promise<void>(resolve => {
+        releaseReaddir = resolve
+      })
+
+      const searchPromise = Promise.all([
+        searchFiles(ctx, workspaceRootPath, '01', { maxResults: 10 }),
+        searchFiles(ctx, workspaceRootPath, '01', { maxResults: 10 }),
+      ]) as Promise<Array<Array<{ relativePath: string }>>>
+
+      await Promise.resolve()
+      releaseReaddir()
+      const [first, second] = await searchPromise
+
+      expect(second).toEqual(first)
+      expect(first.map(result => result.relativePath)).toContain('正文/01.md')
+      expect(trackedReaddirCalls).toBe(1)
+    } finally {
+      releaseReaddir()
+      rmSync(workspaceRootPath, { recursive: true, force: true })
+      workspaceRootPath = ''
+      trackedReaddirPath = ''
+      trackedReaddirCalls = 0
+      trackedReaddirDelay = null
     }
   })
 })
