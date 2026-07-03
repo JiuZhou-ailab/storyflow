@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useRef } from 'react'
-import { useSetAtom, useAtomValue } from 'jotai'
+import { useSetAtom, useStore } from 'jotai'
 import { panelStackAtom, resizePanelsAtom } from '@/atoms/panel-stack'
 import { useResizeGradient } from '@/hooks/useResizeGradient'
 import {
@@ -37,7 +37,7 @@ export function PanelResizeSash({
   rightIndex,
 }: PanelResizeSashProps) {
   const resizePanels = useSetAtom(resizePanelsAtom)
-  const panelStack = useAtomValue(panelStackAtom)
+  const store = useStore()
   const { ref, handlers, gradientStyle } = useResizeGradient()
   const startXRef = useRef(0)
   const startLeftWidthRef = useRef(0)
@@ -62,6 +62,7 @@ export function PanelResizeSash({
     startLeftWidthRef.current = leftPanel.getBoundingClientRect().width
     startRightWidthRef.current = rightPanel.getBoundingClientRect().width
 
+    const panelStack = store.get(panelStackAtom)
     const leftProp = panelStack[leftIndex]?.proportion ?? 0.5
     const rightProp = panelStack[rightIndex]?.proportion ?? 0.5
     combinedProportionRef.current = leftProp + rightProp
@@ -103,10 +104,11 @@ export function PanelResizeSash({
     document.body.style.cursor = 'col-resize'
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleMouseUp)
-  }, [leftIndex, rightIndex, panelStack, resizePanels, handlers, ref])
+  }, [leftIndex, rightIndex, store, resizePanels, handlers, ref])
 
   const handleDoubleClick = useCallback(() => {
     // Reset the two adjacent panels to equal share of their combined proportion
+    const panelStack = store.get(panelStackAtom)
     const left = panelStack[leftIndex]
     const right = panelStack[rightIndex]
     if (!left || !right) return
@@ -118,7 +120,7 @@ export function PanelResizeSash({
       leftProportion: half,
       rightProportion: half,
     })
-  }, [leftIndex, rightIndex, panelStack, resizePanels])
+  }, [leftIndex, rightIndex, store, resizePanels])
 
   return (
     <div
