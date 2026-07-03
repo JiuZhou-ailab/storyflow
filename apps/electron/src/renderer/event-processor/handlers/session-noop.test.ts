@@ -4,9 +4,11 @@ import {
   handleConnectionChanged,
   handleLabelsChanged,
   handleNameChanged,
+  handleSessionArchived,
   handleSessionFlagged,
   handleSessionModelChanged,
   handleSessionStatusChanged,
+  handleSessionUnarchived,
   handleSessionUnflagged,
   handleSourcesChanged,
   handleTitleRegenerating,
@@ -17,10 +19,12 @@ import type {
   LabelsChangedEvent,
   LLMConnectionChangedEvent,
   NameChangedEvent,
+  SessionArchivedEvent,
   SessionFlaggedEvent,
   SessionModelChangedEvent,
   SessionStatusChangedEvent,
   SessionState,
+  SessionUnarchivedEvent,
   SessionUnflaggedEvent,
   SourcesChangedEvent,
   TitleRegeneratingEvent,
@@ -157,5 +161,25 @@ describe('session event no-op guards', () => {
     }
 
     expect(handleSessionUnflagged(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state for duplicate archived status', () => {
+    const state = makeState({ isArchived: true, archivedAt: 123 })
+    const event: SessionArchivedEvent = {
+      type: 'session_archived',
+      sessionId: 'session-1',
+    }
+
+    expect(handleSessionArchived(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state for duplicate unarchived status', () => {
+    const state = makeState({ isArchived: false, archivedAt: undefined })
+    const event: SessionUnarchivedEvent = {
+      type: 'session_unarchived',
+      sessionId: 'session-1',
+    }
+
+    expect(handleSessionUnarchived(state, event).state).toBe(state)
   })
 })

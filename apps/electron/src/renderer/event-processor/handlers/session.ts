@@ -772,6 +772,10 @@ export function handleSessionArchived(
   _event: SessionArchivedEvent
 ): ProcessResult {
   const { session, streaming } = state
+  if (session.isArchived === true && session.archivedAt !== undefined) {
+    return { state, effects: [] }
+  }
+
   return {
     state: {
       session: { ...session, isArchived: true, archivedAt: Date.now() },
@@ -789,6 +793,10 @@ export function handleSessionUnarchived(
   _event: SessionUnarchivedEvent
 ): ProcessResult {
   const { session, streaming } = state
+  if (session.isArchived !== true && session.archivedAt === undefined) {
+    return { state, effects: [] }
+  }
+
   return {
     state: {
       session: { ...session, isArchived: false, archivedAt: undefined },
