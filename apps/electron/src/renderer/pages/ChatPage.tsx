@@ -30,10 +30,11 @@ import { rendererPerf } from '@/lib/perf'
 import { navigate, routes } from '@/lib/navigate'
 import { coerceInputText } from '@/lib/input-text'
 import { deriveSessionMessagesLoadState, formatSessionLoadFailure } from '@/lib/session-load'
-import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, sessionMessagesLoadedAtomFamily, sessionMetaAtomFamily, sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
+import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, sessionMessagesLoadedAtomFamily, sessionMetaAtomFamily, sessionMetaMapAtom } from '@/atoms/sessions'
 import { getSessionPreviewText, getSessionTitle, shortTimeLocale } from '@/utils/session'
 // Model resolution: connection.defaultModel (no hardcoded defaults)
 import { resolveEffectiveConnectionSlug, isSessionConnectionUnavailable } from '@config/llm-connections'
+import { selectConversationHistoryItems } from './chat-history-items'
 
 export interface ChatPageProps {
   sessionId: string
@@ -93,11 +94,10 @@ function ConversationHistoryMenuItems({
   const { t, i18n } = useTranslation()
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
   const visibleItems = React.useMemo(() => {
-    return Array.from(sessionMetaMap.values())
-      .filter((item) => item.workspaceId === activeWorkspaceId || (!!remoteWorkspaceId && item.workspaceId === remoteWorkspaceId))
-      .filter((item) => !item.hidden && !item.isArchived)
-      .sort((a, b) => (b.lastMessageAt || b.createdAt || 0) - (a.lastMessageAt || a.createdAt || 0))
-      .slice(0, 24)
+    return selectConversationHistoryItems(sessionMetaMap.values(), {
+      activeWorkspaceId,
+      remoteWorkspaceId,
+    })
   }, [activeWorkspaceId, remoteWorkspaceId, sessionMetaMap])
 
   if (visibleItems.length === 0) {
