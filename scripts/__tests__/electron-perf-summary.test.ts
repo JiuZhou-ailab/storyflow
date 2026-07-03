@@ -202,6 +202,21 @@ describe("electron perf summary", () => {
     expect(getElectronInstrumentationGaps(currentSummary)).toEqual([]);
   });
 
+  test("can require workspace list-file activity for known-root QA runs", () => {
+    const summary = summarizeElectronPerfMetrics(
+      parseElectronPerfMetrics('2026-06-12T10:00:01.000Z [PERF] fs.searchBatch: 8.1ms {"requestCount":14}'),
+      {
+        searchActivity: summarizeElectronSearchActivity(
+          '{"timestamp":"2026-06-12T10:00:00.000Z","level":"debug","message":["[FS_SEARCH_BATCH] called:","/workspace/a",14]}'
+        ),
+      }
+    );
+
+    expect(getElectronInstrumentationGaps(summary, { expectListFiles: true })).toEqual([
+      "Expected at least one `fs.listFiles` / `[FS_LIST_FILES]` event for known-root writing workspace QA, but none were found.",
+    ]);
+  });
+
   test("keeps throughput windows out of latency summaries", () => {
     const summary = summarizeElectronPerfMetrics(parseElectronPerfMetrics(log), {
       slowThresholdMs: 250,

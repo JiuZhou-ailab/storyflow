@@ -51,6 +51,7 @@ export interface ElectronPerfSummary {
 interface CliOptions {
   logPath: string;
   json: boolean;
+  expectListFiles: boolean;
   limit: number;
   requireMainSpans: boolean;
   since?: Date;
@@ -349,7 +350,10 @@ function formatMs(value: number): string {
   return `${value.toFixed(1)}ms`;
 }
 
-export function getElectronInstrumentationGaps(summary: ElectronPerfSummary): string[] {
+export function getElectronInstrumentationGaps(
+  summary: ElectronPerfSummary,
+  options: { expectListFiles?: boolean } = {}
+): string[] {
   const operationNames = new Set(summary.operations.map(operation => operation.name));
   const hasRendererReadMetrics = operationNames.has("writing.document.readFile")
     || operationNames.has("writing.document.readFile.error");
@@ -369,6 +373,9 @@ export function getElectronInstrumentationGaps(summary: ElectronPerfSummary): st
   if (hasRawListFilesLogs && !hasListFilesPerfMetrics) {
     gaps.push("Raw `[FS_LIST_FILES]` logs are present but `fs.listFiles` spans are absent; restart Electron to load workspace-list perf metadata.");
   }
+  if (options.expectListFiles && !hasRawListFilesLogs && !hasListFilesPerfMetrics) {
+    gaps.push("Expected at least one `fs.listFiles` / `[FS_LIST_FILES]` event for known-root writing workspace QA, but none were found.");
+  }
 
   return gaps;
 }
@@ -376,7 +383,7 @@ export function getElectronInstrumentationGaps(summary: ElectronPerfSummary): st
 export function formatElectronPerfSummary(
   summary: ElectronPerfSummary,
   logPath: string,
-  options: { since?: Date } = {}
+  options: { expectListFiles?: boolean; since?: Date } = {}
 ): string {
   const lines: string[] = [];
   lines.push("Electron Performance Summary");
@@ -386,7 +393,9 @@ export function formatElectronPerfSummary(
   }
   lines.push(`Metrics: ${summary.metrics.length} (${summary.latencyMetrics.length} latency, ${summary.throughputWindows.length} throughput windows)`);
 
-  const instrumentationGaps = getElectronInstrumentationGaps(summary);
+  const instrumentationGaps = getElectronInstrumentationGaps(summary, {
+    expectListFiles: options.expectListFiles,
+  });
   if (instrumentationGaps.length > 0) {
     lines.push("");
     lines.push("Instrumentation Notes");
@@ -466,6 +475,7 @@ function parseArgs(argv: string[]): CliOptions {
       json: { type: "boolean" },
       limit: { type: "string" },
       log: { type: "string" },
+      "expect-list-files": { type: "boolean" },
       "last-minutes": { type: "string" },
       "require-main-spans": { type: "boolean" },
       since: { type: "string" },
@@ -484,6 +494,7 @@ function parseArgs(argv: string[]): CliOptions {
       "  --since <iso>   Only include log lines at or after this timestamp",
       "  --last-minutes <n>  Only include log lines from the last n minutes",
       "  --require-main-spans  Exit non-zero when paired main-process spans are missing",
+      "  --expect-list-files   Expect known-root writing workspace QA to emit fs.listFiles",
       "  --json          Emit JSON",
     ].join("\n"));
     process.exit(0);
@@ -492,6 +503,7 @@ function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     logPath: defaultElectronLogPath(),
     json: parsed.values.json ?? false,
+    expectListFiles: parsed.values["expect-list-files"] ?? false,
     limit: DEFAULT_SLOW_LIMIT,
     requireMainSpans: parsed.values["require-main-spans"] ?? false,
     slowThresholdMs: DEFAULT_SLOW_THRESHOLD_MS,
@@ -543,7 +555,9 @@ if (import.meta.main) {
       searchActivity,
       slowThresholdMs: options.slowThresholdMs,
     });
-    const instrumentationGaps = getElectronInstrumentationGaps(summary);
+    const instrumentationGaps = getElectronInstrumentationGaps(summary, {
+      expectListFiles: options.expectListFiles,
+    });
 
     if (options.json) {
       console.log(JSON.stringify({
@@ -551,7 +565,10 @@ if (import.meta.main) {
         instrumentationGaps,
       }, null, 2));
     } else {
-      console.log(formatElectronPerfSummary(summary, options.logPath, { since: options.since }));
+      console.log(formatElectronPerfSummary(summary, options.logPath, {
+        expectListFiles: options.expectListFiles,
+        since: options.since,
+      }));
     }
 
     if (options.requireMainSpans && instrumentationGaps.length > 0) {
