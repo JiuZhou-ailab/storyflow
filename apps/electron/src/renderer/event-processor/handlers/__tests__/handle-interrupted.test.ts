@@ -163,6 +163,32 @@ describe('queued message preview events', () => {
 })
 
 describe('handleUserMessage queued state', () => {
+  it('ignores duplicate accepted confirmations for an already confirmed user message', () => {
+    const state = makeState([
+      { id: 'msg-1', role: 'user', content: 'already accepted', timestamp: 1000, isPending: false, isQueued: false },
+    ])
+    state.session.lastMessageAt = 1234
+    state.session.lastMessageRole = 'user'
+
+    const event: UserMessageEvent = {
+      type: 'user_message',
+      sessionId: 'session-1',
+      status: 'accepted',
+      message: {
+        id: 'msg-1',
+        role: 'user',
+        content: 'already accepted',
+        timestamp: 1001,
+      } as any,
+    }
+
+    const next = handleUserMessage(state, event)
+
+    expect(next.state).toBe(state)
+    expect(next.state.session.messages).toBe(state.session.messages)
+    expect(next.state.session.lastMessageAt).toBe(1234)
+  })
+
   it('moves a pending optimistic user message into the queue preview when the backend confirms queued', () => {
     const state = makeState([
       { id: 'optimistic-1', role: 'user', content: 'queued next', timestamp: 1000, isPending: true, isQueued: false },

@@ -546,6 +546,10 @@ export function handleUserMessage(
 ): ProcessResult {
   const { session, streaming } = state
   const { message, status } = event
+  const nextIsQueued = status === 'queued'
+  const nextIsProcessing = nextIsQueued
+    ? session.isProcessing
+    : status === 'accepted' || status === 'processing'
 
   // Find existing message by ID match (backend ID, optimistic ID, or content+timestamp fallback)
   const existingIndex = session.messages.findIndex(m =>
@@ -568,6 +572,15 @@ export function handleUserMessage(
       return { state, effects: [] }
     }
 
+    if (
+      existingMessage.isPending === false &&
+      existingMessage.isQueued === nextIsQueued &&
+      session.isProcessing === nextIsProcessing &&
+      session.lastMessageRole === 'user'
+    ) {
+      return { state, effects: [] }
+    }
+
     // Update existing message — clear isPending, set isQueued based on status.
     //
     // - 'queued'     → isQueued = true  (backend queued for re-send)
@@ -585,7 +598,7 @@ export function handleUserMessage(
         return {
           ...m,
           isPending: false,
-          isQueued: status === 'queued',
+          isQueued: nextIsQueued,
         }
       }
       return m
@@ -595,7 +608,7 @@ export function handleUserMessage(
     const newMessage: Message = {
       ...message,
       isPending: false,
-      isQueued: status === 'queued',
+      isQueued: nextIsQueued,
     }
     updatedMessages = [...session.messages, newMessage]
   }
@@ -608,9 +621,7 @@ export function handleUserMessage(
         lastMessageAt: Date.now(),
         lastMessageRole: 'user',  // Clear plan badge when user responds
         // Queued messages wait behind the active turn; do not mark the session idle.
-        isProcessing: status === 'queued'
-          ? session.isProcessing
-          : status === 'accepted' || status === 'processing',
+        isProcessing: nextIsProcessing,
       },
       streaming,
     },
