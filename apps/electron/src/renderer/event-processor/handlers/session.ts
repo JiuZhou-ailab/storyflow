@@ -410,6 +410,9 @@ export function handleAsyncOperation(
   event: AsyncOperationEvent
 ): ProcessResult {
   const { session, streaming } = state
+  if (session.isAsyncOperationOngoing === event.isOngoing) {
+    return { state, effects: [] }
+  }
 
   return {
     state: {
