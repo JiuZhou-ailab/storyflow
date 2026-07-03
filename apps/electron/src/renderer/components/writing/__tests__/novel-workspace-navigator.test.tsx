@@ -1027,6 +1027,17 @@ describe('novel writing workspace layout', () => {
     expect(refreshSource).toContain('areNovelWorkspaceFilesEqual(previous, files) ? previous : files')
   })
 
+  it('rechecks completed file-change refresh keys inside delayed refresh callbacks', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const effectStart = appShellSource.indexOf('const sessionWasProcessing = effectiveSessionId')
+    const delayedRefreshSource = appShellSource.slice(
+      appShellSource.indexOf('const timeoutId = window.setTimeout(() => {', effectStart),
+      appShellSource.indexOf('}, 250)', effectStart)
+    )
+
+    expect(delayedRefreshSource).toContain('window.setTimeout(() => {\n      if (completedNovelFileChangeRefreshKeys.has(refreshKey)) return')
+  })
+
   it('uses equality guarded writing workspace file updates during detection', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const detectionSource = appShellSource.slice(

@@ -2221,6 +2221,7 @@ function AppShellContent({
     }
 
     const timeoutId = window.setTimeout(() => {
+      if (completedNovelFileChangeRefreshKeys.has(refreshKey)) return
       void refreshNovelWorkspaceFiles(novelWorkspaceRoot).then((refreshed) => {
         if (refreshed) {
           markNovelWorkspaceFileChangesCovered(novelWorkspaceRoot, latestNovelFileChangesSignature)
