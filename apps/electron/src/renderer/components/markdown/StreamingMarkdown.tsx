@@ -15,18 +15,6 @@ interface Block {
 }
 
 /**
- * Simple hash function for cache keys
- * Uses djb2 algorithm - fast and produces good distribution
- */
-function simpleHash(str: string): string {
-  let hash = 5381
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) + hash) ^ str.charCodeAt(i)
-  }
-  return (hash >>> 0).toString(36)
-}
-
-/**
  * Split content into blocks (paragraphs and code blocks)
  *
  * Block boundaries:
@@ -95,8 +83,6 @@ function splitIntoBlocks(content: string): Block[] {
  * Memoized block component
  *
  * Only re-renders if content or mode changes.
- * The key is assigned by the parent based on content hash,
- * so identical content won't even attempt to render.
  */
 const MemoizedBlock = React.memo(function Block({
   content,
@@ -126,14 +112,14 @@ MemoizedBlock.displayName = 'MemoizedBlock'
  * Splits content into blocks (paragraphs, code blocks) and memoizes each block
  * independently. Only the last (active) block re-renders during streaming.
  *
- * Key insight: Completed blocks get a content-hash as their React key.
- * Same content = same key = React skips re-render entirely.
+ * Key insight: Completed blocks keep position-based keys while MemoizedBlock
+ * skips unchanged content; only the active tail block keeps changing.
  *
  * @example
  * Content: "Hello\n\n```js\ncode\n```\n\nMore..."
  *
- * Block 1: "Hello"           → key="block-abc123" → memoized ✓
- * Block 2: "```js\ncode\n```" → key="block-xyz789" → memoized ✓
+ * Block 1: "Hello"           → key="block-0" → memoized ✓
+ * Block 2: "```js\ncode\n```" → key="block-1" → memoized ✓
  * Block 3: "More..."         → key="active-2"     → re-renders
  */
 export function StreamingMarkdown({
@@ -164,11 +150,11 @@ export function StreamingMarkdown({
       {blocks.map((block, i) => {
         const isLastBlock = i === blocks.length - 1
 
-        // Complete blocks use content hash as key → stable identity → memoized
+        // Complete blocks use position keys and MemoizedBlock compares content.
         // Last block uses "active" prefix → always re-renders on content change
         const key = isLastBlock
           ? `active-${i}`
-          : `block-${simpleHash(block.content)}`
+          : `block-${i}`
 
         return (
           <MemoizedBlock
