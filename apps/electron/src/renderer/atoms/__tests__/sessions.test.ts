@@ -3,6 +3,7 @@ import { createStore } from 'jotai'
 import type { Message, Session } from '../../../shared/types'
 import {
   sessionAtomFamily,
+  sessionMetaAtomFamily,
   sessionMetaMapAtom,
   sessionIdsAtom,
   loadedSessionsAtom,
@@ -81,6 +82,44 @@ describe('session message loading atoms', () => {
 
     store.set(loadedSessionsAtom, new Set(['s1', 's3']))
     expect(store.get(currentLoadedAtom)).toBe(true)
+    expect(notifications).toBe(1)
+
+    unsubscribe()
+  })
+
+  it('exposes per-session metadata without notifying on unrelated sessions', () => {
+    const store = createStore()
+    const currentMetaAtom = sessionMetaAtomFamily('s1')
+    const currentMeta = {
+      id: 's1',
+      workspaceId: 'workspace-1',
+      name: 'Current',
+    }
+    let notifications = 0
+
+    store.set(sessionMetaMapAtom, new Map([
+      ['s1', currentMeta],
+      ['s2', { id: 's2', workspaceId: 'workspace-1', name: 'Other' }],
+    ]))
+
+    const unsubscribe = store.sub(currentMetaAtom, () => {
+      notifications += 1
+    })
+
+    expect(store.get(currentMetaAtom)?.name).toBe('Current')
+
+    store.set(sessionMetaMapAtom, new Map([
+      ['s1', currentMeta],
+      ['s2', { id: 's2', workspaceId: 'workspace-1', name: 'Other renamed' }],
+    ]))
+    expect(store.get(currentMetaAtom)?.name).toBe('Current')
+    expect(notifications).toBe(0)
+
+    store.set(sessionMetaMapAtom, new Map([
+      ['s1', { ...currentMeta, name: 'Current renamed' }],
+      ['s2', { id: 's2', workspaceId: 'workspace-1', name: 'Other renamed' }],
+    ]))
+    expect(store.get(currentMetaAtom)?.name).toBe('Current renamed')
     expect(notifications).toBe(1)
 
     unsubscribe()

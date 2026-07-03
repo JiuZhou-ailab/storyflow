@@ -31,4 +31,17 @@ describe('chat page header actions', () => {
     expect(chatPageComponentSource).toContain('useAtomValue(sessionMessagesLoadedAtomFamily(sessionId))')
     expect(chatPageComponentSource).not.toContain('useAtomValue(loadedSessionsAtom)')
   })
+
+  it('uses per-session metadata in the root chat page instead of the whole metadata map', () => {
+    const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
+    const chatPageComponentSource = chatPageSource.slice(
+      chatPageSource.indexOf('const ChatPage = React.memo'),
+      chatPageSource.indexOf('export default ChatPage')
+    )
+
+    expect(chatPageSource).toContain('sessionMetaAtomFamily')
+    expect(chatPageComponentSource).toContain('useAtomValue(sessionMetaAtomFamily(sessionId))')
+    expect(chatPageComponentSource).not.toContain('useAtomValue(sessionMetaMapAtom)')
+    expect(chatPageComponentSource).not.toContain('sessionMetaMap.get(sessionId)')
+  })
 })

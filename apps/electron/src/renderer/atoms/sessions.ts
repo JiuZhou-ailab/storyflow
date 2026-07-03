@@ -130,6 +130,11 @@ export const sessionAtomFamily = atomFamily(
  */
 export const sessionMetaMapAtom = atom<Map<string, SessionMeta>>(new Map())
 
+export const sessionMetaAtomFamily = atomFamily(
+  (sessionId: string) => atom((get) => get(sessionMetaMapAtom).get(sessionId)),
+  (a, b) => a === b
+)
+
 /**
  * Derived atom: ordered list of session IDs (for list ordering)
  */

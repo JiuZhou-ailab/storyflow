@@ -30,7 +30,7 @@ import { rendererPerf } from '@/lib/perf'
 import { navigate, routes } from '@/lib/navigate'
 import { coerceInputText } from '@/lib/input-text'
 import { deriveSessionMessagesLoadState, formatSessionLoadFailure } from '@/lib/session-load'
-import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, sessionMessagesLoadedAtomFamily, sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
+import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, sessionMessagesLoadedAtomFamily, sessionMetaAtomFamily, sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
 import { getSessionPreviewText, getSessionTitle, shortTimeLocale } from '@/utils/session'
 // Model resolution: connection.defaultModel (no hardcoded defaults)
 import { resolveEffectiveConnectionSlug, isSessionConnectionUnavailable } from '@config/llm-connections'
@@ -41,14 +41,15 @@ export interface ChatPageProps {
 
 function ConversationHistoryMenu({
   activeSessionId,
-  items,
+  activeWorkspaceId,
+  remoteWorkspaceId,
 }: {
   activeSessionId: string
-  items: SessionMeta[]
+  activeWorkspaceId?: string | null
+  remoteWorkspaceId?: string | null
 }) {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
-  const visibleItems = items.slice(0, 24)
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -65,58 +66,93 @@ function ConversationHistoryMenu({
         <div className="px-2 pb-1 pt-0.5 text-[11px] font-medium text-muted-foreground">
           {t('chat.history')}
         </div>
-        {visibleItems.length === 0 ? (
-          <div className="px-2 py-6 text-center text-xs text-muted-foreground">
-            {t('chat.historyEmpty')}
-          </div>
-        ) : (
-          <div className="max-h-[360px] overflow-y-auto">
-            {visibleItems.map((item) => {
-              const isActive = item.id === activeSessionId
-              const title = getSessionTitle(item)
-              const preview = getSessionPreviewText(item, 72)
-              const time = item.lastMessageAt || item.createdAt
-                ? formatDistanceToNowStrict(new Date(item.lastMessageAt || item.createdAt || Date.now()), {
-                    addSuffix: true,
-                    locale: {
-                      ...getDateLocale(i18n.language),
-                      formatDistance: shortTimeLocale.formatDistance,
-                    },
-                  })
-                : ''
-
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  className="flex w-full min-w-0 items-start gap-2 rounded-[6px] px-2 py-2 text-left transition-colors hover:bg-foreground/[0.04]"
-                  onClick={() => {
-                    setOpen(false)
-                    navigate(routes.view.allSessions(item.id))
-                  }}
-                >
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] bg-foreground/[0.05] text-muted-foreground">
-                    {isActive ? <Check className="h-3.5 w-3.5" /> : <MessageSquareText className="h-3.5 w-3.5" />}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-xs font-medium text-foreground">{title}</span>
-                    {preview ? (
-                      <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{preview}</span>
-                    ) : null}
-                  </span>
-                  {time ? (
-                    <span className="ml-1 flex shrink-0 items-center gap-1 pt-0.5 text-[10px] text-muted-foreground/70">
-                      <Clock3 className="h-3 w-3" />
-                      {time}
-                    </span>
-                  ) : null}
-                </button>
-              )
-            })}
-          </div>
-        )}
+        {open ? (
+          <ConversationHistoryMenuItems
+            activeSessionId={activeSessionId}
+            activeWorkspaceId={activeWorkspaceId}
+            remoteWorkspaceId={remoteWorkspaceId}
+            onSelect={() => setOpen(false)}
+          />
+        ) : null}
       </StyledDropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+function ConversationHistoryMenuItems({
+  activeSessionId,
+  activeWorkspaceId,
+  remoteWorkspaceId,
+  onSelect,
+}: {
+  activeSessionId: string
+  activeWorkspaceId?: string | null
+  remoteWorkspaceId?: string | null
+  onSelect: () => void
+}) {
+  const { t, i18n } = useTranslation()
+  const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
+  const visibleItems = React.useMemo(() => {
+    return Array.from(sessionMetaMap.values())
+      .filter((item) => item.workspaceId === activeWorkspaceId || (!!remoteWorkspaceId && item.workspaceId === remoteWorkspaceId))
+      .filter((item) => !item.hidden && !item.isArchived)
+      .sort((a, b) => (b.lastMessageAt || b.createdAt || 0) - (a.lastMessageAt || a.createdAt || 0))
+      .slice(0, 24)
+  }, [activeWorkspaceId, remoteWorkspaceId, sessionMetaMap])
+
+  if (visibleItems.length === 0) {
+    return (
+      <div className="px-2 py-6 text-center text-xs text-muted-foreground">
+        {t('chat.historyEmpty')}
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-h-[360px] overflow-y-auto">
+      {visibleItems.map((item) => {
+        const isActive = item.id === activeSessionId
+        const title = getSessionTitle(item)
+        const preview = getSessionPreviewText(item, 72)
+        const time = item.lastMessageAt || item.createdAt
+          ? formatDistanceToNowStrict(new Date(item.lastMessageAt || item.createdAt || Date.now()), {
+              addSuffix: true,
+              locale: {
+                ...getDateLocale(i18n.language),
+                formatDistance: shortTimeLocale.formatDistance,
+              },
+            })
+          : ''
+
+        return (
+          <button
+            key={item.id}
+            type="button"
+            className="flex w-full min-w-0 items-start gap-2 rounded-[6px] px-2 py-2 text-left transition-colors hover:bg-foreground/[0.04]"
+            onClick={() => {
+              onSelect()
+              navigate(routes.view.allSessions(item.id))
+            }}
+          >
+            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] bg-foreground/[0.05] text-muted-foreground">
+              {isActive ? <Check className="h-3.5 w-3.5" /> : <MessageSquareText className="h-3.5 w-3.5" />}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs font-medium text-foreground">{title}</span>
+              {preview ? (
+                <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{preview}</span>
+              ) : null}
+            </span>
+            {time ? (
+              <span className="ml-1 flex shrink-0 items-center gap-1 pt-0.5 text-[10px] text-muted-foreground/70">
+                <Clock3 className="h-3 w-3" />
+                {time}
+              </span>
+            ) : null}
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
@@ -183,8 +219,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const messagesLoaded = useAtomValue(sessionMessagesLoadedAtomFamily(sessionId))
 
   // Check if session exists in metadata (for loading state detection)
-  const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
-  const sessionMeta = sessionMetaMap.get(sessionId)
+  const sessionMeta = useAtomValue(sessionMetaAtomFamily(sessionId))
 
   // Fallback: ensure messages are loaded when session is viewed
   const ensureMessagesLoaded = useSetAtom(ensureSessionMessagesLoadedAtom)
@@ -409,14 +444,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     () => workspaces.find((w) => w.id === activeWorkspaceId) || null,
     [workspaces, activeWorkspaceId]
   )
-  const workspaceSessionMetas = React.useMemo(() => {
-    const remoteWorkspaceId = activeWorkspace?.remoteServer?.remoteWorkspaceId
-
-    return Array.from(sessionMetaMap.values())
-      .filter((item) => item.workspaceId === activeWorkspaceId || (!!remoteWorkspaceId && item.workspaceId === remoteWorkspaceId))
-      .filter((item) => !item.hidden && !item.isArchived)
-      .sort((a, b) => (b.lastMessageAt || b.createdAt || 0) - (a.lastMessageAt || a.createdAt || 0))
-  }, [activeWorkspace?.remoteServer?.remoteWorkspaceId, activeWorkspaceId, sessionMetaMap])
+  const remoteWorkspaceId = activeWorkspace?.remoteServer?.remoteWorkspaceId
 
   // Working directory for this session
   const workingDirectory = session?.workingDirectory
@@ -700,9 +728,10 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const conversationHistoryMenu = React.useMemo(() => (
     <ConversationHistoryMenu
       activeSessionId={sessionId}
-      items={workspaceSessionMetas}
+      activeWorkspaceId={activeWorkspaceId}
+      remoteWorkspaceId={remoteWorkspaceId}
     />
-  ), [sessionId, workspaceSessionMetas])
+  ), [activeWorkspaceId, remoteWorkspaceId, sessionId])
 
   const handleNewSession = React.useCallback(() => {
     navigate(routes.action.newSession())

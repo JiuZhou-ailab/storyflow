@@ -357,7 +357,9 @@ describe('novel writing workspace layout', () => {
 
     expect(chatPageSource).toContain('ConversationHistoryMenu')
     expect(chatPageSource).toContain("t('chat.history')")
-    expect(chatPageSource).toContain('workspaceSessionMetas')
+    expect(chatPageSource).toContain('ConversationHistoryMenuItems')
+    expect(chatPageSource).toContain('{open ? (')
+    expect(chatPageSource).toContain('useAtomValue(sessionMetaMapAtom)')
     expect(chatPageSource).toContain('routes.view.allSessions(item.id)')
     expect(historyMenuSource).toContain('<PanelHeaderCenterButton')
     expect(historyMenuSource).toContain("title={t('chat.history')}")
