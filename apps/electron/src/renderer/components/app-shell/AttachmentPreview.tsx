@@ -64,11 +64,10 @@ function AttachmentBubble({ attachment, onRemove, disabled }: AttachmentBubblePr
   const hasThumbnail = !!attachment.thumbnailBase64
   const hasImageBase64 = isImage && attachment.base64
 
-  // For images, use full base64; for docs, use Quick Look thumbnail
-  const imageSrc = hasImageBase64
-    ? `data:${attachment.mimeType};base64,${attachment.base64}`
-    : hasThumbnail
-      ? `data:image/png;base64,${attachment.thumbnailBase64}`
+  const imageSrc = hasThumbnail
+    ? `data:image/png;base64,${attachment.thumbnailBase64}`
+    : hasImageBase64
+      ? `data:${attachment.mimeType};base64,${attachment.base64}`
       : null
 
   return (
