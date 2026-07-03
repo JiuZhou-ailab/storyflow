@@ -60,8 +60,6 @@ export function NovelWorkspaceNavigatorPanel({
 }: NovelWorkspaceNavigatorPanelProps) {
   const { t } = useTranslation()
   const tree = React.useMemo(() => buildNovelWorkspaceTree(files, methodPackId), [files, methodPackId])
-  const reviewableChanges = React.useMemo(() => filterReviewableNovelFileChanges(changes, rootPath, methodPackId), [changes, methodPackId, rootPath])
-  const changeGroups = React.useMemo(() => groupNovelFileChanges(reviewableChanges, rootPath, methodPackId), [methodPackId, reviewableChanges, rootPath])
   const isShortFormWorkspace = React.useMemo(() => isShortFormNovelWorkspaceFiles(files), [files])
   const visibleTabs = React.useMemo(
     () => getVisibleNovelWorkspaceTabs({
@@ -72,6 +70,16 @@ export function NovelWorkspaceNavigatorPanel({
   )
   const [activeTab, setActiveTab] = React.useState<NovelWorkspaceTab>(() => selectDefaultNovelTab(tree))
   const [activePath, setActivePath] = React.useState<string | undefined>(undefined)
+  const reviewableChanges = React.useMemo(
+    () => activeTab === 'changes' ? filterReviewableNovelFileChanges(changes, rootPath, methodPackId) : [],
+    [activeTab, changes, methodPackId, rootPath]
+  )
+  const changeGroups = React.useMemo(
+    () => activeTab === 'changes' && reviewableChanges.length > 0
+      ? groupNovelFileChanges(reviewableChanges, rootPath, methodPackId)
+      : null,
+    [activeTab, methodPackId, reviewableChanges, rootPath]
+  )
 
   React.useEffect(() => {
     const nextDefaultTab = selectDefaultNovelTab(tree)
@@ -170,7 +178,7 @@ function ChangesList({
   onOpenFile,
 }: {
   rootPath: string
-  changeGroups: ReturnType<typeof groupNovelFileChanges>
+  changeGroups: ReturnType<typeof groupNovelFileChanges> | null
   changes: FileChange[]
   onOpenFile?: (path: string) => void
 }) {
@@ -187,7 +195,7 @@ function ChangesList({
   return (
     <ScrollArea className="min-h-0 flex-1">
       <div className="divide-y divide-border/50">
-        {Object.entries(changeGroups)
+        {Object.entries(changeGroups ?? {})
           .filter(([, group]) => group.length > 0)
           .map(([category, group]) => (
             <div key={category} className="py-2">

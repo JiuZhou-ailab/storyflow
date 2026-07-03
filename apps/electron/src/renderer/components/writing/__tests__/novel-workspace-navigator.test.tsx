@@ -761,6 +761,15 @@ describe('novel writing workspace layout', () => {
     expect(leftSidebarSource).toContain('bg-emerald-500')
   })
 
+  it('defers review change grouping until the changes tab is active', () => {
+    const navigatorSource = readSourceIfExists(new URL('../NovelWorkspaceNavigatorPanel.tsx', import.meta.url))
+
+    expect(navigatorSource).toContain("activeTab === 'changes' ? filterReviewableNovelFileChanges")
+    expect(navigatorSource).toContain("activeTab === 'changes' && reviewableChanges.length > 0")
+    expect(navigatorSource).not.toContain('const reviewableChanges = React.useMemo(() => filterReviewableNovelFileChanges')
+    expect(navigatorSource).not.toContain('const changeGroups = React.useMemo(() => groupNovelFileChanges')
+  })
+
   it('saves the selected writing document before accepting file-level review changes', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const acceptSource = appShellSource.slice(
