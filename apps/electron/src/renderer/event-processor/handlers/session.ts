@@ -338,22 +338,24 @@ export function handleInterrupted(
   // Clear transient streaming state (isPending, isStreaming) and mark running tools as interrupted
   // These fields are not persisted, so this matches the state after a reload
   // Also filter out status messages - they are transient UI state that shouldn't persist after interruption
-  const updatedMessages = session.messages
-    .filter(m => m.role !== 'status')  // Remove transient status messages
+  const updatedMessages: Message[] = []
+  for (const message of session.messages) {
+    if (message.role === 'status') continue
     // Only drop queued bubbles when the user explicitly stopped — silent
     // redirects auto-replay them so they must remain visible (#616).
-    .filter(m => !(isUserInitiated && m.isQueued))
-    .map(m => {
-      // Mark running tools as interrupted
-      if (m.role === 'tool' && m.toolResult === undefined && m.toolStatus !== 'completed' && m.toolStatus !== 'error') {
-        return { ...m, toolStatus: 'error' as const, toolResult: 'Interrupted', isError: true }
-      }
-      // Clear pending state on assistant messages (transient streaming state)
-      if (m.role === 'assistant' && m.isPending) {
-        return { ...m, isPending: false, isStreaming: false }
-      }
-      return m
-    })
+    if (isUserInitiated && message.isQueued) continue
+    // Mark running tools as interrupted
+    if (isRunningToolMessage(message)) {
+      updatedMessages.push({ ...message, toolStatus: 'error' as const, toolResult: 'Interrupted', isError: true })
+      continue
+    }
+    // Clear pending state on assistant messages (transient streaming state)
+    if (message.role === 'assistant' && message.isPending) {
+      updatedMessages.push({ ...message, isPending: false, isStreaming: false })
+      continue
+    }
+    updatedMessages.push(message)
+  }
 
   // Only add the "Response interrupted" message if provided (not a silent redirect)
   const messages = event.message

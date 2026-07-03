@@ -141,6 +141,36 @@ describe('handleInterrupted (#616)', () => {
     expect(ids).not.toContain('status-1')
     expect(ids).toContain('msg-1')
   })
+
+  it('normalizes interrupted messages without filter/map passes', () => {
+    const messages = new Proxy([
+      { id: 'msg-1', role: 'user', content: 'first' },
+      { id: 'status-1', role: 'status', content: 'thinking' },
+      { id: 'queued-1', role: 'user', content: 'queued', isQueued: true },
+      { id: 'tool-1', role: 'tool', toolStatus: 'executing', toolResult: undefined },
+      { id: 'assistant-1', role: 'assistant', content: 'partial', isPending: true, isStreaming: true },
+    ] as any[], {
+      get(target, prop, receiver) {
+        if (prop === 'filter' || prop === 'map') {
+          throw new Error('interrupted handler should normalize transcript in one pass')
+        }
+        return Reflect.get(target, prop, receiver)
+      },
+    })
+    const state = makeState(messages)
+    const event: InterruptedEvent = {
+      type: 'interrupted',
+      sessionId: 'session-1',
+      message: { id: 'info-1', role: 'info', content: 'Response interrupted', timestamp: 0 } as any,
+      queuedMessages: ['queued'],
+    }
+
+    const next = handleInterrupted(state, event)
+
+    expect(next.state.session.messages.map(m => m.id)).toEqual(['msg-1', 'tool-1', 'assistant-1', 'info-1'])
+    expect(next.state.session.messages[1]).toMatchObject({ toolStatus: 'error', toolResult: 'Interrupted', isError: true })
+    expect(next.state.session.messages[2]).toMatchObject({ isPending: false, isStreaming: false })
+  })
 })
 
 describe('queued message preview events', () => {
