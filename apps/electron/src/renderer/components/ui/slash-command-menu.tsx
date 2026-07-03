@@ -403,8 +403,14 @@ export function InlineSlashCommand({
   const menuRef = React.useRef<HTMLDivElement>(null)
   const listRef = React.useRef<HTMLDivElement>(null)
   const [selectedIndex, setSelectedIndex] = React.useState(0)
-  const filteredSections = filterSections(sections, filter)
-  const flatItems = flattenSections(filteredSections)
+  const filteredSections = React.useMemo(
+    () => filterSections(sections, filter),
+    [sections, filter]
+  )
+  const flatItems = React.useMemo(
+    () => flattenSections(filteredSections),
+    [filteredSections]
+  )
 
   // Reset selection when filter changes
   React.useEffect(() => {

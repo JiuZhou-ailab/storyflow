@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import type { LoadedSkill } from '../../../../shared/types'
 import type { SlashSection } from '../slash-command-menu'
 
@@ -110,5 +111,18 @@ describe('slash skill commands', () => {
     expect(hasMatchingSlashItems(sections, 'alp')).toBe(true)
     expect(hasMatchingSlashItems(sections, '~/work')).toBe(true)
     expect(hasMatchingSlashItems(sections, 'missing')).toBe(false)
+  })
+
+  it('memoizes inline slash filtering and flattening in the menu render path', () => {
+    const source = readFileSync(new URL('../slash-command-menu.tsx', import.meta.url), 'utf-8')
+
+    expect(source).toContain('const filteredSections = React.useMemo(')
+    expect(source).toContain('() => filterSections(sections, filter)')
+    expect(source).toContain('[sections, filter]')
+    expect(source).toContain('const flatItems = React.useMemo(')
+    expect(source).toContain('() => flattenSections(filteredSections)')
+    expect(source).toContain('[filteredSections]')
+    expect(source).not.toContain('const filteredSections = filterSections(sections, filter)')
+    expect(source).not.toContain('const flatItems = flattenSections(filteredSections)')
   })
 })
