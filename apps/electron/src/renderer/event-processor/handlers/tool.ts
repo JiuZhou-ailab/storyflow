@@ -258,6 +258,7 @@ export function handleTaskProgress(
     const updatedSession = updateMessageAt(session, toolIndex, {
       elapsedSeconds: event.elapsedSeconds,
     })
+    if (updatedSession === session) return state
     return { session: updatedSession, streaming }
   }
 
