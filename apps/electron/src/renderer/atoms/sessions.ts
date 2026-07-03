@@ -579,10 +579,27 @@ export const syncSessionsToAtomsAtom = atom(
       }
       metaMap.set(session.id, meta)
     }
-    set(sessionMetaMapAtom, metaMap)
+    const currentMetaMap = get(sessionMetaMapAtom)
+    let metadataChanged = currentMetaMap.size !== metaMap.size
+    if (!metadataChanged) {
+      for (const [id, nextMeta] of metaMap) {
+        const currentMeta = currentMetaMap.get(id)
+        if (!currentMeta || !shallowEqualSessionMeta(currentMeta, nextMeta)) {
+          metadataChanged = true
+          break
+        }
+      }
+    }
+    if (metadataChanged) {
+      set(sessionMetaMapAtom, metaMap)
+    }
 
     // Update ordered IDs (preserve order from React state)
-    set(sessionIdsAtom, sessions.map(s => s.id))
+    const ids = get(sessionIdsAtom)
+    const nextIds = sessions.map(s => s.id)
+    if (ids.length !== nextIds.length || ids.some((id, index) => id !== nextIds[index])) {
+      set(sessionIdsAtom, nextIds)
+    }
   }
 )
 
