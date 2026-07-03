@@ -451,7 +451,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
     })
 
     // Filter out hidden sessions (e.g., mini edit sessions)
-    const allSessions = await sessionManager.getSessions()
+    const allSessions = await sessionManager.getSessions(workspace.id)
     const hiddenSessionIds = new Set(
       allSessions.filter(s => s.hidden).map(s => s.id)
     )
