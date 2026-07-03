@@ -3,6 +3,20 @@ export function appendUniqueRequestById<T extends { requestId: string }>(queue: 
   return [...queue, request]
 }
 
+export function appendUniqueRequestForSession<T extends { requestId: string }>(
+  queues: Map<string, T[]>,
+  sessionId: string,
+  request: T
+): Map<string, T[]> {
+  const queue = queues.get(sessionId) ?? []
+  const nextQueue = appendUniqueRequestById(queue, request)
+  if (nextQueue === queue) return queues
+
+  const next = new Map(queues)
+  next.set(sessionId, nextQueue)
+  return next
+}
+
 export function removeFirstRequestForSession<T>(queues: Map<string, T[]>, sessionId: string): Map<string, T[]> {
   const queue = queues.get(sessionId) ?? []
   if (queue.length === 0) return queues

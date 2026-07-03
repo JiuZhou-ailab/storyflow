@@ -42,7 +42,7 @@ import { formatSessionLoadFailure, shouldTreatSessionLoadFailureAsTransportFallb
 import { resolvePostSetupAppState } from './lib/startup-flow'
 import { buildProjectSummaries } from './lib/project-summary'
 import { isAppFullyReady } from './lib/app-readiness'
-import { appendUniqueRequestById, removeFirstRequestForSession } from './lib/request-queue'
+import { appendUniqueRequestForSession, removeFirstRequestForSession } from './lib/request-queue'
 import { extractWorkspaceSlugFromPath } from '@craft-agent/shared/utils/workspace-slug'
 import { DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels'
 import { initRendererPerf } from './lib/perf'
@@ -912,12 +912,7 @@ export default function App() {
       for (const effect of effects) {
         switch (effect.type) {
           case 'permission_request': {
-            setPendingPermissions(prevPerms => {
-              const next = new Map(prevPerms)
-              const existingQueue = next.get(sessionId) || []
-              next.set(sessionId, appendUniqueRequestById(existingQueue, effect.request))
-              return next
-            })
+            setPendingPermissions(prevPerms => appendUniqueRequestForSession(prevPerms, sessionId, effect.request))
 
             // Native notification for approval-required pauses (same gating as completion notifications)
             const notifySession = store.get(sessionAtomFamily(sessionId))
@@ -948,12 +943,7 @@ export default function App() {
             break
           }
           case 'credential_request': {
-            setPendingCredentials(prevCreds => {
-              const next = new Map(prevCreds)
-              const existingQueue = next.get(sessionId) || []
-              next.set(sessionId, appendUniqueRequestById(existingQueue, effect.request))
-              return next
-            })
+            setPendingCredentials(prevCreds => appendUniqueRequestForSession(prevCreds, sessionId, effect.request))
             break
           }
           case 'auto_retry': {

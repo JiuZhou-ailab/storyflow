@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { appendUniqueRequestById, removeFirstRequestForSession } from '../request-queue'
+import { appendUniqueRequestById, appendUniqueRequestForSession, removeFirstRequestForSession } from '../request-queue'
 
 describe('appendUniqueRequestById', () => {
   it('appends requests to an empty queue', () => {
@@ -64,5 +64,27 @@ describe('removeFirstRequestForSession', () => {
     const next = removeFirstRequestForSession(queues, 's1')
 
     expect(next.has('s1')).toBe(false)
+  })
+})
+
+describe('appendUniqueRequestForSession', () => {
+  it('keeps the original map when the request already exists for the session', () => {
+    const request = { requestId: 'req-1', label: 'first' }
+    const queues = new Map([
+      ['s1', [request]],
+    ])
+
+    expect(appendUniqueRequestForSession(queues, 's1', { requestId: 'req-1', label: 'duplicate' })).toBe(queues)
+  })
+
+  it('appends a new request for the session', () => {
+    const queues = new Map([
+      ['s1', [{ requestId: 'req-1', label: 'first' }]],
+    ])
+
+    const next = appendUniqueRequestForSession(queues, 's1', { requestId: 'req-2', label: 'second' })
+
+    expect(next).not.toBe(queues)
+    expect(next.get('s1')?.map(request => request.requestId)).toEqual(['req-1', 'req-2'])
   })
 })
