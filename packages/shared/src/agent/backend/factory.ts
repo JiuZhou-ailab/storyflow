@@ -59,6 +59,7 @@ import {
 } from './internal/runtime-resolver.ts';
 import { anthropicDriver } from './internal/drivers/anthropic.ts';
 import { piDriver } from './internal/drivers/pi.ts';
+import { getSourcePath } from '../../sources/storage.ts';
 
 const DRIVER_REGISTRY: Record<AgentProvider, ProviderDriver> = {
   anthropic: anthropicDriver,
@@ -659,7 +660,7 @@ export async function cleanupSourceRuntimeArtifacts(
   disabledSourceSlugs: string[],
 ): Promise<void> {
   for (const sourceSlug of disabledSourceSlugs) {
-    const cachePath = join(workspaceRootPath, 'sources', sourceSlug, '.credential-cache.json');
+    const cachePath = join(getSourcePath(workspaceRootPath, sourceSlug), '.credential-cache.json');
     await rm(cachePath, { force: true });
   }
 }

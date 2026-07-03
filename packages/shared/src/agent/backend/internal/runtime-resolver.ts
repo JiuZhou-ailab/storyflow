@@ -1,3 +1,7 @@
+// input: Electron host runtime paths, packaged resources, and local dev filesystem
+// output: Resolved backend executable, server, and tooling paths
+// pos: Backend runtime path resolver shared by desktop and server startup
+
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
@@ -28,7 +32,6 @@ export interface ResolvedBackendRuntimePaths {
   interceptorBundlePath?: string;
   copilotCliPath?: string;
   sessionServerPath?: string;
-  bridgeServerPath?: string;
   piServerPath?: string;
   nodeRuntimePath?: string;
   bundledRuntimePath?: string;
@@ -245,7 +248,6 @@ export function resolveBackendRuntimePaths(hostRuntime: BackendHostRuntimeContex
     interceptorBundlePath: resolveInterceptorBundlePath(hostRuntime),
     copilotCliPath: resolveCopilotCliPath(hostRuntime),
     sessionServerPath: resolveServerPath(hostRuntime, 'session-mcp-server'),
-    bridgeServerPath: resolveServerPath(hostRuntime, 'bridge-mcp-server'),
     piServerPath: resolveServerPath(hostRuntime, 'pi-agent-server'),
     nodeRuntimePath: hostRuntime.nodeRuntimePath || bundledRuntimePath || process.execPath,
     bundledRuntimePath,

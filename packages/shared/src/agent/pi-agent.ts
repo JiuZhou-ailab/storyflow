@@ -298,7 +298,7 @@ export class PiAgent extends BaseAgent {
 
     // Set session dir on adapter for concurrent-safe toolMetadataStore lookups
     if (config.session?.id && config.workspace.rootPath) {
-      this.adapter.setSessionDir(join(config.workspace.rootPath, 'sessions', config.session.id));
+      this.adapter.setSessionDir(getSessionPath(config.workspace.rootPath, config.session.id));
     }
 
     // Wire the adapter's async overflow fallback into the event queue. The
@@ -374,7 +374,7 @@ export class PiAgent extends BaseAgent {
     // Build session ID and session dir path upfront (used for spawn env + init command)
     const sessionId = this.config.session?.id || `agent-${Date.now()}`;
     const sessionDir = this.config.session
-      ? join(this.config.workspace.rootPath, 'sessions', sessionId)
+      ? getSessionPath(this.config.workspace.rootPath, sessionId)
       : undefined;
 
     // Build spawn args — optionally preload the network interceptor

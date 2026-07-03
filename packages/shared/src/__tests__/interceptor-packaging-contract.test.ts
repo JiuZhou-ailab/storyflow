@@ -15,15 +15,11 @@ function readRepoFile(relativePath: string): string {
 describe('interceptor packaging contract', () => {
   it('stages interceptor-request-utils.ts through build scripts without adding source files to electron-builder', () => {
     const builderYml = readRepoFile('apps/electron/electron-builder.yml');
-    const dmgScript = readRepoFile('apps/electron/scripts/build-dmg.sh');
-    const linuxScript = readRepoFile('apps/electron/scripts/build-linux.sh');
-    const winScript = readRepoFile('apps/electron/scripts/build-win.ps1');
+    const rootBuild = readRepoFile('scripts/build.ts');
     const commonBuild = readRepoFile('scripts/build/common.ts');
 
     expect(builderYml).not.toContain('packages/shared/src/interceptor-request-utils.ts');
+    expect(rootBuild).toContain('copyInterceptor(config)');
     expect(commonBuild).toContain("join(sourceDir, 'interceptor-request-utils.ts')");
-    expect(dmgScript).toContain('interceptor-request-utils.ts');
-    expect(linuxScript).toContain('interceptor-request-utils.ts');
-    expect(winScript).toContain('interceptor-request-utils.ts');
   });
 });

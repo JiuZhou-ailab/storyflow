@@ -7,13 +7,16 @@ import { execSync } from 'child_process';
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
   rmSync,
   copyFileSync,
   cpSync,
   lstatSync,
   readdirSync,
+  readFileSync,
 } from 'fs';
 import { join, dirname } from 'path';
+import { tmpdir } from 'os';
 import { createHash } from 'crypto';
 import { loadEnvFiles } from '../env-loader';
 
@@ -298,16 +301,21 @@ export function cleanBuildArtifacts(config: BuildConfig): void {
 export async function installDependencies(config: BuildConfig): Promise<void> {
   const { rootDir, platform } = config;
 
+  if (process.env.CRAFT_SKIP_INSTALL === '1') {
+    console.log('Skipping dependency install because CRAFT_SKIP_INSTALL=1');
+    return;
+  }
+
   if (platform === 'win32') {
     // Use hoisted linker on Windows - Bun's default isolated mode creates
     // node_modules/.bun/ with symlinks that esbuild can't traverse on Windows
     // ("Access is denied" errors with junction points)
     // Hoisted mode creates flat npm-style node_modules without .bun
     console.log('Installing dependencies (Windows hoisted mode)...');
-    await $`cd ${rootDir} && bun install --linker=hoisted`.quiet();
+    await $`cd ${rootDir} && bun install --frozen-lockfile --linker=hoisted`.quiet();
   } else {
     console.log('Installing dependencies...');
-    await $`cd ${rootDir} && bun install`.quiet();
+    await $`cd ${rootDir} && bun install --frozen-lockfile`.quiet();
   }
 }
 
@@ -326,6 +334,36 @@ function platformBinaryPkg(config: BuildConfig): string {
 
 function nativeBinaryName(config: BuildConfig): string {
   return config.platform === 'win32' ? 'claude.exe' : 'claude';
+}
+
+function fetchNativeSdkPackage(config: BuildConfig, pkg: string, destination: string): void {
+  const { rootDir } = config;
+  const packageJson = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8'));
+  const sdkVersion = packageJson.dependencies?.['@anthropic-ai/claude-agent-sdk'];
+  if (!sdkVersion) {
+    throw new Error('Unable to determine @anthropic-ai/claude-agent-sdk version from package.json.');
+  }
+
+  const tempDir = mkdtempSync(join(tmpdir(), 'storyflow-claude-sdk-'));
+  try {
+    console.log(`Cross-arch build: @anthropic-ai/${pkg} not in node_modules; fetching from npm...`);
+    execSync(`npm pack @anthropic-ai/${pkg}@${sdkVersion}`, {
+      cwd: tempDir,
+      stdio: 'inherit',
+      shell: true,
+    });
+
+    const tarball = readdirSync(tempDir).find((entry) => entry.endsWith('.tgz'));
+    if (!tarball) {
+      throw new Error(`npm pack did not produce a tarball for @anthropic-ai/${pkg}@${sdkVersion}`);
+    }
+
+    execSync(`tar -xzf ${tarball}`, { cwd: tempDir, stdio: 'inherit', shell: true });
+    mkdirSync(destination, { recursive: true });
+    cpSync(join(tempDir, 'package'), destination, { recursive: true, force: true });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -356,12 +394,7 @@ export function copySDK(config: BuildConfig): void {
   const pkg = platformBinaryPkg(config);
   const binSource = join(rootDir, 'node_modules', '@anthropic-ai', pkg);
   if (!existsSync(binSource)) {
-    throw new Error(
-      `SDK native binary package not found at ${binSource}. ` +
-      `For cross-arch builds run \`npm pack @anthropic-ai/${pkg}@<sdk-version>\` ` +
-      `to fetch it, or use the platform build script (build-dmg.sh / build-linux.sh / build-win.ps1) ` +
-      `which handles the cross-fetch automatically.`,
-    );
+    fetchNativeSdkPackage(config, pkg, binSource);
   }
 
   const aliasDest = join(sdkScope, 'claude-agent-sdk-binary');

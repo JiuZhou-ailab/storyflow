@@ -77,7 +77,7 @@ mac:
     - from: node_modules/@anthropic-ai/claude-agent-sdk
       to: app/node_modules/@anthropic-ai/claude-agent-sdk
     # Stable alias pointing at the target-arch native binary package.
-    # Populated by build-dmg.sh / build-linux.sh / build-win.ps1 before
+    # Populated by scripts/build.ts before
     # electron-builder runs (`apps/electron/node_modules/@anthropic-ai/claude-agent-sdk-binary/`).
     # The runtime resolver (runtime-resolver.ts) looks here first.
     - from: node_modules/@anthropic-ai/claude-agent-sdk-binary

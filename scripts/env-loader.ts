@@ -3,7 +3,7 @@
 // pos: Shared dotenv loader for local development and build scripts
 
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 
 export interface EnvLoadOptions {
   rootDir: string;
@@ -43,6 +43,28 @@ export function parseDotenv(content: string): Record<string, string> {
   return values;
 }
 
+function catTarget(value: string): string | null {
+  const match = value.match(/^\$?\(cat\s+(.+)\)$/);
+  if (!match) return null;
+
+  let target = match[1].trim();
+  if (
+    (target.startsWith('"') && target.endsWith('"'))
+    || (target.startsWith("'") && target.endsWith("'"))
+  ) {
+    target = target.slice(1, -1);
+  }
+  return target;
+}
+
+function resolveEnvValue(value: string, rootDir: string): string {
+  const target = catTarget(value);
+  if (!target) return value;
+
+  const path = isAbsolute(target) ? target : join(rootDir, target);
+  return readFileSync(path, 'utf8').trimEnd();
+}
+
 export function loadEnvFiles(options: EnvLoadOptions): EnvLoadResult {
   const env = options.env ?? process.env;
   const candidates = options.mode === 'dev'
@@ -58,9 +80,16 @@ export function loadEnvFiles(options: EnvLoadOptions): EnvLoadResult {
     loadedFiles.push(fileName);
     const values = parseDotenv(readFileSync(filePath, 'utf8'));
     for (const [key, value] of Object.entries(values)) {
-      if (env[key] !== undefined) continue;
-      env[key] = value;
-      appliedKeys.push(key);
+      if (env[key] === undefined) {
+        env[key] = resolveEnvValue(value, options.rootDir);
+        appliedKeys.push(key);
+        continue;
+      }
+
+      const currentValue = env[key];
+      if (currentValue !== undefined && catTarget(currentValue)) {
+        env[key] = resolveEnvValue(currentValue, options.rootDir);
+      }
     }
   }
 

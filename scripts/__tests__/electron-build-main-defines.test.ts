@@ -14,6 +14,7 @@ describe('electron build defines', () => {
     expect(source).toContain('"CRAFT_CLIENT_FEISHU_AUTH_BROKER_URL"')
     expect(source).toContain('"CRAFT_CLIENT_FEISHU_APP_ID"')
     expect(source).toContain('"CRAFT_CLIENT_FEISHU_SCOPE"')
+    expect(source).toContain('"CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED"')
     expect(source).toContain('"CRAFT_CLIENT_GATEWAY_TOKEN"')
     expect(source).toContain('"STORYFLOW_FEEDBACK_ENDPOINT"')
     expect(source).not.toContain('"CRAFT_CLIENT_FEISHU_APP_SECRET"')
@@ -50,6 +51,7 @@ describe('electron build defines', () => {
       'CRAFT_CLIENT_NEON_AUTH_ISSUER',
       'CRAFT_CLIENT_NEON_AUTH_AUDIENCE',
       'CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN',
+      'CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED',
       'CRAFT_CLIENT_NEON_AUTH_ORIGIN',
     ]
 

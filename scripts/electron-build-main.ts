@@ -63,6 +63,7 @@ function getBuildDefines(): string[] {
     "CRAFT_CLIENT_NEON_AUTH_ISSUER",
     "CRAFT_CLIENT_NEON_AUTH_AUDIENCE",
     "CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN",
+    "CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED",
     "CRAFT_CLIENT_NEON_AUTH_ORIGIN",
     "CRAFT_CLIENT_GATEWAY_TOKEN",
     "STORYFLOW_FEEDBACK_ENDPOINT",
@@ -359,6 +360,10 @@ async function main(): Promise<void> {
       "--format=cjs",
       "--outfile=apps/electron/dist/main.cjs",
       "--external:electron",
+      // unzipper exposes an unused S3 helper that lazily requires AWS SDK v3.
+      // Keep it external so local filesystem zip support can bundle without
+      // shipping the AWS client.
+      "--external:@aws-sdk/client-s3",
       // Claude Agent SDK uses top-level import.meta.url to initialize
       // createRequire(). Keep it external so Electron loads the real ESM file
       // instead of an inlined CJS bundle where import.meta.url is undefined.

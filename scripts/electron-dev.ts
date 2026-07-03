@@ -27,6 +27,10 @@ const MAIN_PROCESS_ALIAS: Record<string, string> = {
 
 const MAIN_PROCESS_EXTERNAL = [
   "electron",
+  // unzipper exposes an unused S3 helper that lazily requires AWS SDK v3.
+  // Keep it external so electron-updater zip support can bundle in dev
+  // without requiring the unused AWS client.
+  "@aws-sdk/client-s3",
   // Claude Agent SDK uses top-level import.meta.url to initialize
   // createRequire(). Keep it external so Electron loads the real ESM file
   // instead of an inlined CJS bundle where import.meta.url is undefined.

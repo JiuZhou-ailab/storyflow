@@ -2,10 +2,29 @@
 // output: A packaged Electron artifact for the requested platform and architecture
 // pos: Root build dispatcher that keeps package.json from bypassing runtime staging
 
-import { spawnSync } from "child_process";
 import { existsSync } from "fs";
 import { join } from "path";
-import { downloadUv, type BuildConfig } from "./build/common.ts";
+import {
+  buildElectronApp,
+  buildMcpServers,
+  cleanBuildArtifacts,
+  copyInterceptor,
+  copyRipgrep,
+  copySDK,
+  createManifest,
+  downloadBun,
+  downloadUv,
+  installDependencies,
+  loadEnvFile,
+  uploadToS3,
+  verifyMcpServersExist,
+  verifySDKCopy,
+  type BuildConfig,
+} from "./build/common.ts";
+import { packageDarwin } from "./build/darwin.ts";
+import { packageLinux } from "./build/linux.ts";
+import { stageSubprocessResources } from "./build/resource-staging.ts";
+import { buildElectronAppWindows, packageWindows } from "./build/win32.ts";
 
 type BuildPlatform = "darwin" | "linux" | "win32";
 type BuildArch = "arm64" | "x64";
@@ -29,8 +48,7 @@ function usage(): string {
     "  --platform uses the current host platform.",
     "  --arch uses arm64 on darwin, x64 on linux/win32.",
     "",
-    "The dispatcher calls the platform packaging scripts under apps/electron/scripts",
-    "so required runtime assets are staged before electron-builder runs.",
+    "The dispatcher stages runtime assets before electron-builder runs.",
   ].join("\n");
 }
 
@@ -93,7 +111,7 @@ function parseOptions(args: string[]): BuildOptions {
   }
 
   if (options.platform === "win32" && options.upload) {
-    throw new Error("Windows upload is not wired in build-win.ps1. Build locally without --upload.");
+    throw new Error("Windows upload is not wired. Build locally without --upload.");
   }
 
   if (options.upload && !existsSync(join(rootDir, "scripts", "upload.ts"))) {
@@ -103,32 +121,8 @@ function parseOptions(args: string[]): BuildOptions {
   return options;
 }
 
-function run(command: string, args: string[]): void {
-  const result = spawnSync(command, args, {
-    cwd: electronDir,
-    env: process.env,
-    stdio: "inherit",
-    shell: false,
-  });
-
-  if (result.error) {
-    throw result.error;
-  }
-  if (result.status !== 0) {
-    throw new Error(`${command} ${args.join(" ")} exited with code ${result.status ?? "unknown"}`);
-  }
-}
-
-function buildArgs(options: BuildOptions): string[] {
-  const args = [options.arch!];
-  if (options.upload) args.push("--upload");
-  if (options.latest) args.push("--latest");
-  if (options.script) args.push("--script");
-  return args;
-}
-
-async function ensureBundledUv(options: BuildOptions): Promise<void> {
-  const config: BuildConfig = {
+function createBuildConfig(options: BuildOptions): BuildConfig {
+  return {
     platform: options.platform,
     arch: options.arch!,
     upload: options.upload,
@@ -137,27 +131,45 @@ async function ensureBundledUv(options: BuildOptions): Promise<void> {
     rootDir,
     electronDir,
   };
+}
 
+async function prepareRuntime(config: BuildConfig): Promise<void> {
+  await loadEnvFile(config);
+  cleanBuildArtifacts(config);
+  await installDependencies(config);
+  await downloadBun(config);
   await downloadUv(config);
+  copySDK(config);
+  verifySDKCopy(config);
+  copyRipgrep(config);
+  copyInterceptor(config);
+  buildMcpServers(config);
+}
+
+async function buildPackage(config: BuildConfig): Promise<void> {
+  process.env.CRAFT_BUILD_PLATFORM = config.platform;
+  process.env.CRAFT_BUILD_ARCH = config.arch;
+
+  if (config.platform === "win32") {
+    stageSubprocessResources(config);
+    await buildElectronAppWindows(config);
+    await packageWindows(config);
+  } else {
+    await buildElectronApp(config);
+    verifyMcpServersExist(config);
+    if (config.platform === "darwin") {
+      await packageDarwin(config);
+    } else {
+      await packageLinux(config);
+    }
+  }
+
+  await createManifest(config);
+  await uploadToS3(config);
 }
 
 const options = parseOptions(Bun.argv.slice(2));
+const config = createBuildConfig(options);
 
-await ensureBundledUv(options);
-
-switch (options.platform) {
-  case "darwin":
-    run("bash", [join(electronDir, "scripts", "build-dmg.sh"), ...buildArgs(options)]);
-    break;
-  case "linux":
-    run("bash", [join(electronDir, "scripts", "build-linux.sh"), ...buildArgs(options)]);
-    break;
-  case "win32":
-    run("powershell", [
-      "-ExecutionPolicy",
-      "Bypass",
-      "-File",
-      join(electronDir, "scripts", "build-win.ps1"),
-    ]);
-    break;
-}
+await prepareRuntime(config);
+await buildPackage(config);

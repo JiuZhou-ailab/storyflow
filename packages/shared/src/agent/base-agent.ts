@@ -1,3 +1,7 @@
+// input: Backend config, source/tool managers, permissions, and session messages
+// output: Common agent behavior for provider-specific backend subclasses
+// pos: Shared base layer beneath concrete agent backend implementations
+
 /**
  * BaseAgent Abstract Class
  *
@@ -846,7 +850,7 @@ ${formattedMessages}
   }
 
   // ============================================================
-  // Lifecycle (postInit, applyBridgeUpdates)
+  // Lifecycle (postInit, source runtime updates)
   // ============================================================
 
   /**
@@ -859,9 +863,8 @@ ${formattedMessages}
   }
 
   /**
-   * Apply bridge/config updates mid-session.
-   * Default: no-op for backends that don't use bridge-mcp-server (Claude, Pi).
-   * Override in Codex/Copilot to regenerate config or write bridge files.
+   * Apply source runtime updates mid-session.
+   * Default: no-op for backends that do not keep external source runtime state.
    */
   async applyBridgeUpdates(_context: BridgeUpdateContext): Promise<void> {
     // No-op by default

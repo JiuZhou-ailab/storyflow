@@ -71,4 +71,15 @@ describe('loadEnvFiles', () => {
     expect(env.BASE_ONLY).toBe('base');
     expect(env.DEV_ONLY).toBeUndefined();
   });
+
+  test('resolves cat expressions for file-backed secrets', () => {
+    const rootDir = tempDir();
+    writeFileSync(join(rootDir, 'secret.txt'), 'from-file\n');
+    writeFileSync(join(rootDir, '.env'), 'SECRET="$(cat secret.txt)"\n');
+    const env: NodeJS.ProcessEnv = {};
+
+    loadEnvFiles({ rootDir, mode: 'build', env });
+
+    expect(env.SECRET).toBe('from-file');
+  });
 });

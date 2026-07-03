@@ -124,20 +124,21 @@ describe('macOS release configuration', () => {
   });
 
   test('macOS release build can skip duplicate dependency install after CI install', () => {
-    const buildScript = readRepoFile('apps/electron/scripts/build-dmg.sh');
+    const commonBuild = readRepoFile('scripts/build/common.ts');
     const workflow = readRepoFile('.github/workflows/release.yml');
 
-    expect(buildScript).toContain('CRAFT_SKIP_INSTALL');
-    expect(buildScript).toContain('bun install --frozen-lockfile');
+    expect(commonBuild).toContain('CRAFT_SKIP_INSTALL');
+    expect(commonBuild).toContain('bun install --frozen-lockfile');
     expect(workflow).toContain('CRAFT_SKIP_INSTALL: "1"');
   });
 
   test('local unsigned macOS builds disable app and DMG signing explicitly', () => {
-    const buildScript = readRepoFile('apps/electron/scripts/build-dmg.sh');
+    const darwinBuild = readRepoFile('scripts/build/darwin.ts');
 
-    expect(buildScript).toContain('-c.mac.forceCodeSigning=false -c.mac.notarize=false');
-    expect(buildScript).toContain('-c.mac.identity=null');
-    expect(buildScript).toContain('-c.dmg.sign=false');
+    expect(darwinBuild).toContain('-c.mac.forceCodeSigning=false');
+    expect(darwinBuild).toContain('-c.mac.notarize=false');
+    expect(darwinBuild).toContain('-c.mac.identity=null');
+    expect(darwinBuild).toContain('-c.dmg.sign=false');
   });
 
   test('publishes updater manifests from the public R2 endpoint', () => {
@@ -158,35 +159,29 @@ describe('macOS release configuration', () => {
   });
 
   test('fails the official macOS release build before upload if Gatekeeper verification fails', () => {
-    const buildScript = readRepoFile('apps/electron/scripts/build-dmg.sh');
+    const darwinBuild = readRepoFile('scripts/build/darwin.ts');
     const workflow = readRepoFile('.github/workflows/release.yml');
 
-    expect(buildScript).toContain('validate_macos_release_credentials');
-    expect(buildScript).toContain('normalize_csc_link_for_macos_security');
-    expect(buildScript).toContain('Normalized CSC_LINK for macOS keychain import.');
-    expect(buildScript).toContain('pkcs12 -legacy');
-    expect(buildScript).toContain('local export_openssl="/usr/bin/openssl"');
-    expect(buildScript).toContain('notarize_macos_dmg_artifact');
-    expect(buildScript).toContain('verify_macos_release_artifacts');
-    expect(buildScript).toContain('run_electron_builder_with_retries');
-    expect(buildScript).toContain('Apple notarization can return transient timeouts');
-    expect(buildScript).toContain('npx electron-builder $BUILDER_ARGS');
-    expect(buildScript).toContain('status=$?');
-    expect(buildScript).not.toContain('if npx electron-builder $BUILDER_ARGS; then');
-    expect(buildScript).toContain('-c.mac.forceCodeSigning=true -c.mac.notarize=true');
-    expect(buildScript).toContain('select_notarization_credentials');
-    expect(buildScript).toContain('APPLE_API_ISSUER is optional and must be omitted for Individual API keys');
-    expect(buildScript).toContain('[ -n "${APPLE_API_KEY_BASE64:-}" ] || [ -n "${APPLE_API_KEY:-}" ]');
-    expect(buildScript).toContain('unset APPLE_ID');
-    expect(buildScript).toContain('codesign --verify --deep --strict');
-    expect(buildScript).toContain('spctl --assess');
-    expect(buildScript).toContain('xcrun notarytool submit "$dmg_path" --wait');
-    expect(buildScript).toContain('xcrun stapler staple "$dmg_path"');
-    expect(buildScript).toContain('spctl --assess --type open --context context:primary-signature');
-    expect(buildScript).toContain('xcrun stapler validate');
-    expect(buildScript).toContain('DMG artifact present');
-    expect(buildScript).toContain('ZIP artifact present');
-    expect(buildScript).toContain('Storyflow.app');
+    expect(darwinBuild).toContain('validateMacReleaseCredentials');
+    expect(darwinBuild).toContain('notarizeDmg');
+    expect(darwinBuild).toContain('verifyMacReleaseArtifacts');
+    expect(darwinBuild).toContain('runElectronBuilderWithRetries');
+    expect(darwinBuild).toContain('retrying after');
+    expect(darwinBuild).toContain('npx electron-builder');
+    expect(darwinBuild).toContain('-c.mac.forceCodeSigning=true');
+    expect(darwinBuild).toContain('-c.mac.notarize=true');
+    expect(darwinBuild).toContain('selectNotarizationCredentials');
+    expect(darwinBuild).toContain('APPLE_API_ISSUER');
+    expect(darwinBuild).toContain('delete process.env.APPLE_ID');
+    expect(darwinBuild).toContain('codesign --verify --deep --strict');
+    expect(darwinBuild).toContain('spctl --assess');
+    expect(darwinBuild).toContain('notarytool submit');
+    expect(darwinBuild).toContain('xcrun stapler staple');
+    expect(darwinBuild).toContain('spctl --assess --type open --context context:primary-signature');
+    expect(darwinBuild).toContain('xcrun stapler validate');
+    expect(darwinBuild).toContain('DMG artifact present');
+    expect(darwinBuild).toContain('ZIP artifact present');
+    expect(darwinBuild).toContain('Storyflow.app');
     expect(workflow).toContain('Verify macOS signing and notarization');
   });
 
@@ -212,18 +207,15 @@ describe('macOS release configuration', () => {
   });
 
   test('macOS build keeps explicit environment values ahead of local dotenv values', () => {
-    const buildScript = readRepoFile('apps/electron/scripts/build-dmg.sh');
+    const commonBuild = readRepoFile('scripts/build/common.ts');
+    const envLoader = readRepoFile('scripts/env-loader.ts');
 
-    expect(buildScript).toContain('load_dotenv_file "$ROOT_DIR/.env.local"');
-    expect(buildScript).toContain('load_dotenv_file "$ROOT_DIR/.env"');
-    expect(buildScript).not.toContain('load_dotenv_file "$ROOT_DIR/.env.dev"');
-    expect(buildScript).toContain('[ -z "${!key+x}" ]');
-    expect(buildScript).toContain('current_value="${!key}"');
-    expect(buildScript).toContain('resolve_dotenv_value "$value"');
-    expect(buildScript).toContain('resolve_dotenv_value "$current_value"');
-    expect(buildScript).toContain('[ "${value:0:5}" = \'(cat \' ]');
-    expect(buildScript).toContain('[ "${current_value:0:5}" = \'(cat \' ]');
-    expect(buildScript).toContain('CSC_KEY_PASSWORD="$(cat /path/to/password)"');
+    expect(commonBuild).toContain("loadEnvFiles({ rootDir: config.rootDir, mode: 'build' })");
+    expect(envLoader).toContain("['.env.local', '.env']");
+    expect(envLoader).toContain("['.env.local', '.env.dev', '.env']");
+    expect(envLoader).toContain('if (env[key] === undefined)');
+    expect(envLoader).toContain('resolveEnvValue');
+    expect(envLoader).toContain('cat\\s+');
   });
 
   test('macOS manifest helper annotates a single architecture manifest', () => {

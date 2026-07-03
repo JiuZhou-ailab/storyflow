@@ -165,7 +165,7 @@ function assembleResources(config: ServerBuildConfig): void {
 
   // MCP servers
   console.log('  Copying MCP servers...');
-  for (const server of ['session-mcp-server', 'bridge-mcp-server']) {
+  for (const server of ['session-mcp-server']) {
     const src = join(srcResources, server);
     if (existsSync(src)) {
       cpSync(src, join(destResources, server), { recursive: true });

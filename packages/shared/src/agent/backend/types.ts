@@ -1,3 +1,7 @@
+// input: Shared backend providers, source configs, session context, and workspace state
+// output: Type contracts for agent backend implementations and runtime updates
+// pos: Provider-agnostic backend boundary for shared agent orchestration
+
 /**
  * Backend Abstraction Types
  *
@@ -126,7 +130,7 @@ export interface PostInitResult {
 }
 
 /**
- * Context for applying bridge/config updates mid-session.
+ * Context for applying source runtime updates mid-session.
  * Used when sources change, tokens refresh, or auth completes.
  */
 export interface BridgeUpdateContext {
@@ -438,12 +442,11 @@ export interface AgentBackend {
   postInit(): Promise<PostInitResult>;
 
   /**
-   * Apply bridge/config updates mid-session.
+   * Apply source runtime updates mid-session.
    * Called when sources change, tokens refresh, or auth completes.
    * Each backend implements its own strategy:
-   * - Codex: regenerates config.toml and queues reconnect
-   * - Copilot: writes bridge-config.json and credential cache
-   * - Claude/Pi: no-op (they don't use bridge-mcp-server)
+   * - Backends with external source state refresh their runtime config
+   * - Claude/Pi: no-op
    */
   applyBridgeUpdates(context: BridgeUpdateContext): Promise<void>;
 
@@ -654,8 +657,6 @@ export interface BackendConfig extends CoreBackendConfig {
    * Provider/SDK to use for this backend.
    * Determines which agent class is instantiated:
    * - 'anthropic' → ClaudeAgent (Anthropic SDK)
-   * - 'openai' → CodexAgent (OpenAI via app-server)
-   * - 'copilot' → CopilotAgent (GitHub Copilot via @github/copilot-sdk)
    * - 'pi' → PiAgent (Pi via @earendil-works/pi-coding-agent)
    */
   provider: AgentProvider;
