@@ -645,6 +645,37 @@ describe('novel writing workspace layout', () => {
     expect(editorPanelSource).toContain('editable')
   })
 
+  it('keeps long manuscript edits in TipTap until save boundaries pull a snapshot', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const editorPanelSource = readFileSync(new URL('../NovelDocumentEditorPanel.tsx', import.meta.url), 'utf-8')
+    const autosaveSource = appShellSource.slice(
+      appShellSource.indexOf('React.useEffect(() => {\n    if (!selectedNovelDocumentPath || !novelDocumentDirty || novelDocumentLoading) return'),
+      appShellSource.indexOf('const ensureNovelDocumentSaved =')
+    )
+    const ensureSaveSource = appShellSource.slice(
+      appShellSource.indexOf('const ensureNovelDocumentSaved ='),
+      appShellSource.indexOf('const handleAllSessionsClick')
+    )
+    const renderSource = appShellSource.slice(
+      appShellSource.indexOf('<NovelDocumentEditorPanel'),
+      appShellSource.indexOf('reviewChanges={selectedNovelPendingChanges}')
+    )
+
+    expect(editorPanelSource).toContain('export interface NovelDocumentEditorPanelHandle')
+    expect(editorPanelSource).toContain('getMarkdownSnapshot(): string')
+    expect(editorPanelSource).toContain('onDocumentChanged?: () => void')
+    expect(editorPanelSource).toContain('ref={editorRef}')
+    expect(editorPanelSource).toContain('onDocumentChanged={onDocumentChanged}')
+    expect(editorPanelSource).not.toContain('onUpdate={onChange}')
+    expect(appShellSource).toContain('novelDocumentEditorRef')
+    expect(appShellSource).toContain('handleNovelDocumentChanged')
+    expect(appShellSource).toContain('getCurrentNovelDocumentContent')
+    expect(autosaveSource).toContain('const contentToSave = getCurrentNovelDocumentContent()')
+    expect(ensureSaveSource).toContain('const contentToSave = getCurrentNovelDocumentContent()')
+    expect(renderSource).toContain('ref={novelDocumentEditorRef}')
+    expect(renderSource).toContain('onDocumentChanged={handleNovelDocumentChanged}')
+  })
+
   it('clears stale writing workspace state before probing a different root', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
 

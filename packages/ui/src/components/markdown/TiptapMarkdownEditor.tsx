@@ -105,6 +105,10 @@ function ToolbarButton({
 
 export type IncomingContentSyncAction = 'ignore' | 'record' | 'sync'
 
+export interface TiptapMarkdownEditorHandle {
+  getMarkdownSnapshot(): string
+}
+
 export function getIncomingContentSyncAction({
   previousContent,
   incomingContent,
@@ -368,6 +372,8 @@ export interface TiptapMarkdownEditorProps {
   content: string
   /** Called when content changes */
   onUpdate?: (markdown: string) => void
+  /** Called when the document changes without forcing a Markdown snapshot. */
+  onDocumentChanged?: () => void
   /** Placeholder text when empty */
   placeholder?: string
   className?: string
@@ -395,9 +401,10 @@ export interface TiptapMarkdownEditorProps {
   onAddSelectionToChat?: (request: TiptapSelectionChatRequest) => void
 }
 
-export function TiptapMarkdownEditor({
+export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle, TiptapMarkdownEditorProps>(function TiptapMarkdownEditor({
   content,
   onUpdate,
+  onDocumentChanged,
   placeholder = 'Write something...',
   className,
   editable = true,
@@ -409,10 +416,13 @@ export function TiptapMarkdownEditor({
   reviewDiffOriginalContent = null,
   onAskAiForSelection,
   onAddSelectionToChat,
-}: TiptapMarkdownEditorProps) {
+}, ref) {
   const onUpdateRef = React.useRef(onUpdate)
   onUpdateRef.current = onUpdate
+  const onDocumentChangedRef = React.useRef(onDocumentChanged)
+  onDocumentChangedRef.current = onDocumentChanged
   const lastEmittedMarkdownRef = React.useRef<string | null>(null)
+  const isApplyingExternalContentRef = React.useRef(false)
   const [bubbleMenuAppendTo, setBubbleMenuAppendTo] = React.useState<HTMLElement | null>(null)
   const [bubbleMenuScrollTarget, setBubbleMenuScrollTarget] = React.useState<HTMLElement | null>(null)
 
@@ -498,6 +508,18 @@ export function TiptapMarkdownEditor({
     ? preprocessMarkdownForOfficial(content)
     : content
 
+  const getMarkdownSnapshot = React.useCallback((): string => {
+    const activeEditor = editorRef.current
+    if (!activeEditor) return content
+    return useOfficialMarkdown
+      ? postprocessMarkdownFromOfficial(getOfficialMarkdown(activeEditor as { getMarkdown?: () => string }))
+      : getLegacyMarkdown(activeEditor as { storage: { markdown?: { getMarkdown?: () => string } } })
+  }, [content, useOfficialMarkdown])
+
+  React.useImperativeHandle(ref, () => ({
+    getMarkdownSnapshot,
+  }), [getMarkdownSnapshot])
+
   const editor = useEditor({
     extensions,
     content: initialContent,
@@ -542,11 +564,17 @@ export function TiptapMarkdownEditor({
       })
     },
     onUpdate: ({ editor }) => {
+      if (isApplyingExternalContentRef.current) return
+      if (!onUpdateRef.current) {
+        onDocumentChangedRef.current?.()
+        return
+      }
       const md = useOfficialMarkdown
         ? postprocessMarkdownFromOfficial(getOfficialMarkdown(editor as { getMarkdown?: () => string }))
         : getLegacyMarkdown(editor as { storage: { markdown?: { getMarkdown?: () => string } } })
       lastEmittedMarkdownRef.current = md
       onUpdateRef.current?.(md)
+      onDocumentChangedRef.current?.()
     },
   }, [useOfficialMarkdown, extensions])
 
@@ -611,11 +639,16 @@ export function TiptapMarkdownEditor({
       prevContentRef.current = content
       if (syncAction === 'record') return
 
-      if (useOfficialMarkdown) {
-        const normalized = preprocessMarkdownForOfficial(content)
-        editor.commands.setContent(normalized, { contentType: 'markdown' } as never)
-      } else {
-        editor.commands.setContent(content)
+      try {
+        isApplyingExternalContentRef.current = true
+        if (useOfficialMarkdown) {
+          const normalized = preprocessMarkdownForOfficial(content)
+          editor.commands.setContent(normalized, { contentType: 'markdown' } as never)
+        } else {
+          editor.commands.setContent(content)
+        }
+      } finally {
+        isApplyingExternalContentRef.current = false
       }
 
       queueMicrotask(() => {
@@ -657,4 +690,4 @@ export function TiptapMarkdownEditor({
       ) : null}
     </div>
   )
-}
+})

@@ -73,7 +73,7 @@ import { SessionList, type ChatGroupingMode } from "./SessionList"
 import { MainContentPanel } from "./MainContentPanel"
 import { PanelStackContainer } from "./PanelStackContainer"
 import type { ChatDisplayHandle } from "./ChatDisplay"
-import { NovelDocumentEditorPanel, type NovelSelectionAiRequest } from "@/components/writing/NovelDocumentEditorPanel"
+import { NovelDocumentEditorPanel, type NovelDocumentEditorPanelHandle, type NovelSelectionAiRequest } from "@/components/writing/NovelDocumentEditorPanel"
 import { NovelExportDialog } from "@/components/writing/NovelExportDialog"
 import { NovelVersionHistoryDialog } from "@/components/writing/NovelVersionHistoryDialog"
 import { formatNovelWorkspaceFileTitle } from "@/components/writing/novel-file-display"
@@ -2231,6 +2231,9 @@ function AppShellContent({
 
   const [novelDocumentContent, setNovelDocumentContent] = React.useState('')
   const [savedNovelDocumentContent, setSavedNovelDocumentContent] = React.useState('')
+  const [novelDocumentChangeVersion, setNovelDocumentChangeVersion] = React.useState(0)
+  const [savedNovelDocumentChangeVersion, setSavedNovelDocumentChangeVersion] = React.useState(0)
+  const novelDocumentChangeVersionRef = React.useRef(0)
   const [novelDocumentLoading, setNovelDocumentLoading] = React.useState(false)
   const [novelDocumentSaving, setNovelDocumentSaving] = React.useState(false)
   const [novelDocumentError, setNovelDocumentError] = React.useState<string | null>(null)
@@ -2242,6 +2245,7 @@ function AppShellContent({
   const [novelVersionSaving, setNovelVersionSaving] = React.useState(false)
   const [novelVersionRestoringHash, setNovelVersionRestoringHash] = React.useState<string | null>(null)
   const selectedNovelDocumentPath = selectedNovelFile?.path ?? null
+  const novelDocumentEditorRef = React.useRef<NovelDocumentEditorPanelHandle>(null)
   const latestNovelDocumentPathRef = React.useRef<string | null>(null)
   const novelDocumentSwitchStartRef = React.useRef<{ filePath: string; startedAt: number } | null>(null)
   const novelDocumentSaveSeqRef = React.useRef(0)
@@ -2256,6 +2260,26 @@ function AppShellContent({
     latestNovelDocumentPathRef.current = selectedNovelDocumentPath
   }, [selectedNovelDocumentPath])
 
+  const replaceNovelDocumentContent = React.useCallback((content: string) => {
+    setNovelDocumentContent(content)
+    setSavedNovelDocumentContent(content)
+    novelDocumentChangeVersionRef.current = 0
+    setNovelDocumentChangeVersion(0)
+    setSavedNovelDocumentChangeVersion(0)
+  }, [])
+
+  const handleNovelDocumentChanged = React.useCallback(() => {
+    setNovelDocumentChangeVersion((version) => {
+      const nextVersion = version + 1
+      novelDocumentChangeVersionRef.current = nextVersion
+      return nextVersion
+    })
+  }, [])
+
+  const getCurrentNovelDocumentContent = React.useCallback(() => (
+    novelDocumentEditorRef.current?.getMarkdownSnapshot() ?? novelDocumentContent
+  ), [novelDocumentContent])
+
   React.useEffect(() => {
     novelVersionBaselinesRef.current = {}
     setNovelVersions([])
@@ -2267,8 +2291,7 @@ function AppShellContent({
 
   React.useEffect(() => {
     if (!selectedNovelDocumentPath) {
-      setNovelDocumentContent('')
-      setSavedNovelDocumentContent('')
+      replaceNovelDocumentContent('')
       setNovelDocumentLoading(false)
       setNovelDocumentError(null)
       return
@@ -2288,8 +2311,7 @@ function AppShellContent({
           durationMs: performance.now() - readStartedAt,
           contentLength: content.length,
         })
-        setNovelDocumentContent(content)
-        setSavedNovelDocumentContent(content)
+        replaceNovelDocumentContent(content)
         novelVersionBaselinesRef.current[selectedNovelDocumentPath] ??= {
           content,
           timestamp: Date.now(),
@@ -2302,8 +2324,7 @@ function AppShellContent({
           phase: 'readFile.error',
           durationMs: performance.now() - readStartedAt,
         })
-        setNovelDocumentContent('')
-        setSavedNovelDocumentContent('')
+        replaceNovelDocumentContent('')
         setNovelDocumentError(error instanceof Error ? error.message : 'Failed to load document')
       })
       .finally(() => {
@@ -2333,9 +2354,12 @@ function AppShellContent({
     return () => {
       cancelled = true
     }
-  }, [selectedNovelDocumentPath])
+  }, [replaceNovelDocumentContent, selectedNovelDocumentPath])
 
-  const novelDocumentDirty = !!selectedNovelFile && novelDocumentContent !== savedNovelDocumentContent
+  const novelDocumentDirty = !!selectedNovelFile && (
+    novelDocumentContent !== savedNovelDocumentContent
+    || novelDocumentChangeVersion !== savedNovelDocumentChangeVersion
+  )
 
   const handleDeleteNovelWorkspaceFile = React.useCallback(async (file: NovelWorkspaceFile) => {
     if (!novelWorkspaceRoot) return
@@ -2441,16 +2465,23 @@ function AppShellContent({
     if (!selectedNovelDocumentPath || !novelDocumentDirty || novelDocumentLoading) return
 
     const pathToSave = selectedNovelDocumentPath
-    const contentToSave = novelDocumentContent
+    const versionToSave = novelDocumentChangeVersion
     const timeoutId = window.setTimeout(() => {
+      const contentToSave = getCurrentNovelDocumentContent()
       const saveSeq = ++novelDocumentSaveSeqRef.current
       setNovelDocumentSaving(true)
       setNovelDocumentError(null)
 
       window.electronAPI.writeFile(pathToSave, contentToSave)
         .then(() => {
-          if (novelDocumentSaveSeqRef.current === saveSeq && latestNovelDocumentPathRef.current === pathToSave) {
+          if (
+            novelDocumentSaveSeqRef.current === saveSeq
+            && latestNovelDocumentPathRef.current === pathToSave
+            && novelDocumentChangeVersionRef.current === versionToSave
+          ) {
+            setNovelDocumentContent(contentToSave)
             setSavedNovelDocumentContent(contentToSave)
+            setSavedNovelDocumentChangeVersion(versionToSave)
           }
           void maybeCreateNovelAutoVersion(pathToSave, contentToSave)
         })
@@ -2468,20 +2499,28 @@ function AppShellContent({
     return () => {
       window.clearTimeout(timeoutId)
     }
-  }, [maybeCreateNovelAutoVersion, novelDocumentContent, novelDocumentDirty, novelDocumentLoading, selectedNovelDocumentPath])
+  }, [getCurrentNovelDocumentContent, maybeCreateNovelAutoVersion, novelDocumentChangeVersion, novelDocumentDirty, novelDocumentLoading, selectedNovelDocumentPath])
 
   const ensureNovelDocumentSaved = React.useCallback(async (): Promise<boolean> => {
     if (!selectedNovelDocumentPath || !novelDocumentDirty) return true
 
+    const contentToSave = getCurrentNovelDocumentContent()
+    const versionToSave = novelDocumentChangeVersion
     const saveSeq = ++novelDocumentSaveSeqRef.current
     setNovelDocumentSaving(true)
     setNovelDocumentError(null)
     try {
-      await window.electronAPI.writeFile(selectedNovelDocumentPath, novelDocumentContent)
-      if (novelDocumentSaveSeqRef.current === saveSeq && latestNovelDocumentPathRef.current === selectedNovelDocumentPath) {
-        setSavedNovelDocumentContent(novelDocumentContent)
+      await window.electronAPI.writeFile(selectedNovelDocumentPath, contentToSave)
+      if (
+        novelDocumentSaveSeqRef.current === saveSeq
+        && latestNovelDocumentPathRef.current === selectedNovelDocumentPath
+        && novelDocumentChangeVersionRef.current === versionToSave
+      ) {
+        setNovelDocumentContent(contentToSave)
+        setSavedNovelDocumentContent(contentToSave)
+        setSavedNovelDocumentChangeVersion(versionToSave)
       }
-      void maybeCreateNovelAutoVersion(selectedNovelDocumentPath, novelDocumentContent)
+      void maybeCreateNovelAutoVersion(selectedNovelDocumentPath, contentToSave)
       return true
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save document'
@@ -2493,7 +2532,7 @@ function AppShellContent({
         setNovelDocumentSaving(false)
       }
     }
-  }, [maybeCreateNovelAutoVersion, novelDocumentContent, novelDocumentDirty, selectedNovelDocumentPath, t])
+  }, [getCurrentNovelDocumentContent, maybeCreateNovelAutoVersion, novelDocumentChangeVersion, novelDocumentDirty, selectedNovelDocumentPath, t])
 
   const handleAllSessionsClick = useCallback(() => {
     navigate(routes.view.allSessions())
@@ -2638,8 +2677,7 @@ function AppShellContent({
       const content = await window.electronAPI.readFile(filePath)
       if (latestNovelDocumentPathRef.current !== filePath) return true
 
-      setNovelDocumentContent(content)
-      setSavedNovelDocumentContent(content)
+      replaceNovelDocumentContent(content)
       novelVersionBaselinesRef.current[filePath] ??= {
         content,
         timestamp: Date.now(),
@@ -2651,7 +2689,7 @@ function AppShellContent({
       })
       return false
     }
-  }, [novelDocumentDirty, selectedNovelFile?.path, t])
+  }, [novelDocumentDirty, replaceNovelDocumentContent, selectedNovelFile?.path, t])
 
   React.useEffect(() => {
     if (!selectedNovelDocumentPath || novelDocumentDirty || latestNovelFileChanges.length === 0) return
@@ -2685,8 +2723,9 @@ function AppShellContent({
     try {
       const result = await window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'manual' })
       if (selectedNovelDocumentPath) {
+        const content = getCurrentNovelDocumentContent()
         novelVersionBaselinesRef.current[selectedNovelDocumentPath] = {
-          content: novelDocumentContent,
+          content,
           timestamp: Date.now(),
         }
       }
@@ -2703,7 +2742,7 @@ function AppShellContent({
     } finally {
       setNovelVersionSaving(false)
     }
-  }, [ensureNovelDocumentSaved, novelDocumentContent, novelWorkspaceRoot, refreshNovelVersions, selectedNovelDocumentPath, t])
+  }, [ensureNovelDocumentSaved, getCurrentNovelDocumentContent, novelWorkspaceRoot, refreshNovelVersions, selectedNovelDocumentPath, t])
 
   const handleRestoreNovelVersion = React.useCallback(async (commitHash: string) => {
     if (!novelWorkspaceRoot) return
@@ -2716,8 +2755,7 @@ function AppShellContent({
       novelVersionBaselinesRef.current = {}
       if (selectedNovelDocumentPath) {
         const content = await window.electronAPI.readFile(selectedNovelDocumentPath)
-        setNovelDocumentContent(content)
-        setSavedNovelDocumentContent(content)
+        replaceNovelDocumentContent(content)
         novelVersionBaselinesRef.current[selectedNovelDocumentPath] = {
           content,
           timestamp: Date.now(),
@@ -2732,7 +2770,7 @@ function AppShellContent({
     } finally {
       setNovelVersionRestoringHash(null)
     }
-  }, [ensureNovelDocumentSaved, novelWorkspaceRoot, refreshNovelVersions, selectedNovelDocumentPath, t])
+  }, [ensureNovelDocumentSaved, novelWorkspaceRoot, refreshNovelVersions, replaceNovelDocumentContent, selectedNovelDocumentPath, t])
 
   const handleExportNovelWorkspace = React.useCallback(async (options: NovelExportOptions) => {
     if (!novelWorkspaceRoot) return
@@ -2846,12 +2884,10 @@ function AppShellContent({
         ? entry.writes.find(write => write.filePath === selectedNovelFile.path)
         : undefined
       if (selectedWrite) {
-        setNovelDocumentContent(selectedWrite.content)
-        setSavedNovelDocumentContent(selectedWrite.content)
+        replaceNovelDocumentContent(selectedWrite.content)
       }
       if (selectedNovelFile?.path && entry.deletes.some(deleted => deleted.filePath === selectedNovelFile.path)) {
-        setNovelDocumentContent('')
-        setSavedNovelDocumentContent('')
+        replaceNovelDocumentContent('')
       }
       if (novelWorkspaceRoot) {
         void refreshNovelWorkspaceFiles(novelWorkspaceRoot)
@@ -2871,6 +2907,7 @@ function AppShellContent({
     novelWorkspaceRoot,
     persistNovelChangeReviewStatus,
     refreshNovelWorkspaceFiles,
+    replaceNovelDocumentContent,
     selectedNovelFile?.path,
     t,
   ])
@@ -3587,8 +3624,7 @@ function AppShellContent({
 
       if (selectedNovelFile?.path === filePath) {
         const nextContent = rejected.operation === 'write' ? rejected.content : ''
-        setNovelDocumentContent(nextContent)
-        setSavedNovelDocumentContent(nextContent)
+        replaceNovelDocumentContent(nextContent)
       }
       if (novelWorkspaceRoot) {
         void refreshNovelWorkspaceFiles(novelWorkspaceRoot)
@@ -3613,6 +3649,7 @@ function AppShellContent({
     novelChangeReviewStatus,
     novelWorkspaceRoot,
     persistNovelChangeReviewStatus,
+    replaceNovelDocumentContent,
     pushNovelReviewUndoEntry,
     refreshNovelWorkspaceFiles,
     selectedNovelFile?.path,
@@ -4252,12 +4289,13 @@ function AppShellContent({
             >
             {showNovelDocumentNavigator && novelWorkspaceRoot ? (
               <NovelDocumentEditorPanel
+                ref={novelDocumentEditorRef}
                 file={selectedNovelFile}
                 content={novelDocumentContent}
                 loading={novelDocumentLoading}
                 saving={novelDocumentSaving}
                 error={novelDocumentError}
-                onChange={setNovelDocumentContent}
+                onDocumentChanged={handleNovelDocumentChanged}
                 onAskAiForSelection={handleAskAiForNovelSelection}
                 onAddSelectionToChat={handleAddNovelSelectionToChat}
                 onSendSelectionToChat={handleSendNovelSelectionToChat}

@@ -11,7 +11,7 @@ import {
   formatNovelSelectionChatMessage,
   formatNovelSelectionContextForChat,
 } from '@craft-agent/shared/writing/selection-context'
-import { TiptapMarkdownEditor } from '@/components/markdown'
+import { TiptapMarkdownEditor, type TiptapMarkdownEditorHandle } from '@/components/markdown'
 import { Button } from '@/components/ui/button'
 import { resolveReviewFileChangeSnapshot, type ReviewFileChangeSnapshot } from '@/lib/file-change-review'
 import { cn } from '@/lib/utils'
@@ -49,7 +49,8 @@ export interface NovelDocumentEditorPanelProps {
   loading: boolean
   saving: boolean
   error?: string | null
-  onChange: (content: string) => void
+  onChange?: (content: string) => void
+  onDocumentChanged?: () => void
   onAskAiForSelection?: (request: NovelSelectionAiRequest) => Promise<string>
   onAddSelectionToChat?: (message: string) => void
   onSendSelectionToChat?: (message: string) => Promise<void> | void
@@ -65,13 +66,17 @@ export interface NovelDocumentEditorPanelProps {
   className?: string
 }
 
-export function NovelDocumentEditorPanel({
+export interface NovelDocumentEditorPanelHandle {
+  getMarkdownSnapshot(): string
+}
+
+export const NovelDocumentEditorPanel = React.forwardRef<NovelDocumentEditorPanelHandle, NovelDocumentEditorPanelProps>(function NovelDocumentEditorPanel({
   file,
   content,
   loading,
   saving,
   error,
-  onChange,
+  onDocumentChanged,
   onAskAiForSelection,
   onAddSelectionToChat,
   onSendSelectionToChat,
@@ -85,8 +90,16 @@ export function NovelDocumentEditorPanel({
   onNextReviewFile,
   workspaceActions,
   className,
-}: NovelDocumentEditorPanelProps) {
+}, ref) {
   const { t } = useTranslation()
+  const editorRef = React.useRef<TiptapMarkdownEditorHandle>(null)
+  const getMarkdownSnapshot = React.useCallback(
+    () => editorRef.current?.getMarkdownSnapshot() ?? content,
+    [content]
+  )
+  React.useImperativeHandle(ref, () => ({
+    getMarkdownSnapshot,
+  }), [getMarkdownSnapshot])
   const characterCount = React.useMemo(() => countMarkdownTextCharacters(content), [content])
   const reviewChangesForFile = React.useMemo(
     () => (reviewChanges ?? []).filter(change => !change.error),
@@ -109,18 +122,20 @@ export function NovelDocumentEditorPanel({
   const handleAddSelectionToChat = React.useCallback(({ selectedText }: NovelSelectionChatRequest) => {
     if (!file || !onAddSelectionToChat) return
 
+    const currentContent = getMarkdownSnapshot()
     const context = buildNovelSelectionContext({
-      content,
+      content: currentContent,
       selectedText,
       filePath: file.path,
       relativePath: file.relativePath,
     })
     onAddSelectionToChat(formatNovelSelectionContextForChat(context))
-  }, [content, file, onAddSelectionToChat])
+  }, [file, getMarkdownSnapshot, onAddSelectionToChat])
   const handleAskAiForSelection = React.useCallback(async ({ selectedText, instruction }: NovelSelectionAiRequest) => {
     if (file && onSendSelectionToChat) {
+      const currentContent = getMarkdownSnapshot()
       const context = buildNovelSelectionContext({
-        content,
+        content: currentContent,
         selectedText,
         filePath: file.path,
         relativePath: file.relativePath,
@@ -131,7 +146,7 @@ export function NovelDocumentEditorPanel({
 
     if (!onAskAiForSelection) return selectedText
     return onAskAiForSelection({ selectedText, instruction })
-  }, [content, file, onAskAiForSelection, onSendSelectionToChat])
+  }, [file, getMarkdownSnapshot, onAskAiForSelection, onSendSelectionToChat])
 
   if (!file) {
     return (
@@ -172,8 +187,9 @@ export function NovelDocumentEditorPanel({
         ) : (
           <div className="flex h-full min-h-0 flex-col">
             <TiptapMarkdownEditor
+              ref={editorRef}
               content={content}
-              onUpdate={onChange}
+              onDocumentChanged={onDocumentChanged}
               placeholder={t('writing.emptySection')}
               editable
               markdownEngine="official"
@@ -263,4 +279,4 @@ export function NovelDocumentEditorPanel({
       ) : null}
     </div>
   )
-}
+})

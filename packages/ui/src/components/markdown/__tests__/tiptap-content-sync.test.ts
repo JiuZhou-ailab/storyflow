@@ -47,4 +47,14 @@ describe('getIncomingContentSyncAction', () => {
     )
     expect(source).toContain('lastEmittedMarkdownRef')
   })
+
+  it('exposes a dirty signal and explicit markdown snapshot for long documents', () => {
+    const source = readFileSync(new URL('../TiptapMarkdownEditor.tsx', import.meta.url), 'utf-8')
+
+    expect(source).toContain('export interface TiptapMarkdownEditorHandle')
+    expect(source).toContain('getMarkdownSnapshot(): string')
+    expect(source).toContain('onDocumentChanged?: () => void')
+    expect(source).toContain('React.useImperativeHandle')
+    expect(source).toContain('onDocumentChangedRef.current?.()')
+  })
 })

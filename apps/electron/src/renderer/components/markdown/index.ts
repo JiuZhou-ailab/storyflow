@@ -8,6 +8,7 @@ export {
   TiptapMarkdownEditor,
   type MarkdownProps,
   type RenderMode,
+  type TiptapMarkdownEditorHandle,
   type TiptapMarkdownEditorProps,
   type MarkdownEngine,
 } from '@craft-agent/ui'
