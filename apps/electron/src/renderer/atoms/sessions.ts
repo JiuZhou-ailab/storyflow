@@ -404,21 +404,36 @@ export const refreshSessionsMetadataAtom = atom(
     // Build and set metadata map. Non-destructive refresh starts from the
     // existing map so sessions omitted by a transient partial response remain
     // visible. Returned sessions are still authoritative for their own fields.
+    const currentMetaMap = get(sessionMetaMapAtom)
     const nextMetaMap = removeMissing
       ? new Map<string, SessionMeta>()
-      : new Map(get(sessionMetaMapAtom))
+      : new Map(currentMetaMap)
     for (const session of sessions) {
       nextMetaMap.set(session.id, extractSessionMeta(session))
     }
-    set(sessionMetaMapAtom, nextMetaMap)
+    let metadataChanged = currentMetaMap.size !== nextMetaMap.size
+    if (!metadataChanged) {
+      for (const [id, nextMeta] of nextMetaMap) {
+        const currentMeta = currentMetaMap.get(id)
+        if (!currentMeta || !shallowEqualSessionMeta(currentMeta, nextMeta)) {
+          metadataChanged = true
+          break
+        }
+      }
+    }
+    if (metadataChanged) {
+      set(sessionMetaMapAtom, nextMetaMap)
+    }
 
     // Set ordered IDs from the metadata map we actually exposed to the UI.
     const nextIds = Array.from(nextMetaMap.values())
       .sort((a, b) => (b.lastMessageAt || 0) - (a.lastMessageAt || 0))
       .map(s => s.id)
-    set(sessionIdsAtom, nextIds)
+    if (currentIds.length !== nextIds.length || currentIds.some((id, index) => id !== nextIds[index])) {
+      set(sessionIdsAtom, nextIds)
+    }
 
-    return nextMetaMap
+    return metadataChanged ? nextMetaMap : currentMetaMap
   }
 )
 

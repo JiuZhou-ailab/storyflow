@@ -393,4 +393,43 @@ describe('refreshSessionsMetadataAtom', () => {
     // IDs are set
     expect(store.get(sessionIdsAtom)).toHaveLength(2)
   })
+
+  it('does not notify metadata or id subscribers when refresh metadata is unchanged', () => {
+    const store = createStore()
+    const sessions = [
+      makeSession({ id: 's1', name: 'First', lastMessageAt: 200 }),
+      makeSession({ id: 's2', name: 'Second', lastMessageAt: 100 }),
+    ]
+
+    store.set(refreshSessionsMetadataAtom, {
+      sessions,
+      loadedSessionIds: new Set<string>(),
+    })
+    const beforeMetaMap = store.get(sessionMetaMapAtom)
+    const beforeIds = store.get(sessionIdsAtom)
+    let metaNotifications = 0
+    let idNotifications = 0
+    const unsubscribeMeta = store.sub(sessionMetaMapAtom, () => {
+      metaNotifications += 1
+    })
+    const unsubscribeIds = store.sub(sessionIdsAtom, () => {
+      idNotifications += 1
+    })
+
+    store.set(refreshSessionsMetadataAtom, {
+      sessions: [
+        makeSession({ id: 's1', name: 'First', lastMessageAt: 200 }),
+        makeSession({ id: 's2', name: 'Second', lastMessageAt: 100 }),
+      ],
+      loadedSessionIds: new Set<string>(),
+    })
+
+    expect(store.get(sessionMetaMapAtom)).toBe(beforeMetaMap)
+    expect(store.get(sessionIdsAtom)).toBe(beforeIds)
+    expect(metaNotifications).toBe(0)
+    expect(idNotifications).toBe(0)
+
+    unsubscribeMeta()
+    unsubscribeIds()
+  })
 })
