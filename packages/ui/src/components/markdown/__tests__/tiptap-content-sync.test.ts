@@ -2,6 +2,7 @@
 // output: Regression coverage for TipTap content sync decisions
 // pos: Keeps focused document switches from losing externally loaded content
 
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'bun:test'
 import { getIncomingContentSyncAction } from '../TiptapMarkdownEditor'
 
@@ -22,11 +23,28 @@ describe('getIncomingContentSyncAction', () => {
     })).toBe('record')
   })
 
+  it('records editor-originated controlled echoes without reading current markdown', () => {
+    expect(getIncomingContentSyncAction({
+      previousContent: '# One',
+      incomingContent: '# Two',
+      lastEmittedMarkdown: '# Two',
+    })).toBe('record')
+  })
+
   it('syncs externally changed content even when it differs from the focused editor markdown', () => {
     expect(getIncomingContentSyncAction({
       previousContent: '# One',
       incomingContent: '# Other file',
       currentMarkdown: '# Unsaved local buffer',
     })).toBe('sync')
+  })
+
+  it('checks editor-originated content before serializing current markdown', () => {
+    const source = readFileSync(new URL('../TiptapMarkdownEditor.tsx', import.meta.url), 'utf-8')
+
+    expect(source.indexOf('const fastSyncAction = getIncomingContentSyncAction')).toBeLessThan(
+      source.indexOf('const currentMd =')
+    )
+    expect(source).toContain('lastEmittedMarkdownRef')
   })
 })

@@ -109,12 +109,15 @@ export function getIncomingContentSyncAction({
   previousContent,
   incomingContent,
   currentMarkdown,
+  lastEmittedMarkdown,
 }: {
   previousContent: string
   incomingContent: string
-  currentMarkdown: string
+  currentMarkdown?: string
+  lastEmittedMarkdown?: string | null
 }): IncomingContentSyncAction {
   if (incomingContent === previousContent) return 'ignore'
+  if (lastEmittedMarkdown === incomingContent) return 'record'
   if (currentMarkdown === incomingContent) return 'record'
   return 'sync'
 }
@@ -409,6 +412,7 @@ export function TiptapMarkdownEditor({
 }: TiptapMarkdownEditorProps) {
   const onUpdateRef = React.useRef(onUpdate)
   onUpdateRef.current = onUpdate
+  const lastEmittedMarkdownRef = React.useRef<string | null>(null)
   const [bubbleMenuAppendTo, setBubbleMenuAppendTo] = React.useState<HTMLElement | null>(null)
   const [bubbleMenuScrollTarget, setBubbleMenuScrollTarget] = React.useState<HTMLElement | null>(null)
 
@@ -541,6 +545,7 @@ export function TiptapMarkdownEditor({
       const md = useOfficialMarkdown
         ? postprocessMarkdownFromOfficial(getOfficialMarkdown(editor as { getMarkdown?: () => string }))
         : getLegacyMarkdown(editor as { storage: { markdown?: { getMarkdown?: () => string } } })
+      lastEmittedMarkdownRef.current = md
       onUpdateRef.current?.(md)
     },
   }, [useOfficialMarkdown, extensions])
@@ -580,6 +585,18 @@ export function TiptapMarkdownEditor({
   const prevContentRef = React.useRef(content)
   React.useEffect(() => {
     if (editor) {
+      const fastSyncAction = getIncomingContentSyncAction({
+        previousContent: prevContentRef.current,
+        incomingContent: content,
+        lastEmittedMarkdown: lastEmittedMarkdownRef.current,
+      })
+      if (fastSyncAction !== 'sync') {
+        if (fastSyncAction === 'record') {
+          prevContentRef.current = content
+        }
+        return
+      }
+
       const currentMd = useOfficialMarkdown
         ? postprocessMarkdownFromOfficial(getOfficialMarkdown(editor as { getMarkdown?: () => string }))
         : getLegacyMarkdown(editor as { storage: { markdown?: { getMarkdown?: () => string } } })
