@@ -1,3 +1,7 @@
+// input: Active workspace ID and Electron automation IPC APIs
+// output: Workspace automation UI state and mutation handlers
+// pos: Renderer hook boundary between AppShell automation UI and backend automation config
+
 /**
  * useAutomations
  *
@@ -16,10 +20,52 @@ import { toast } from 'sonner'
 import { automationsAtom } from '@/atoms/automations'
 import { parseAutomationsConfig, type AutomationListItem, type TestResult, type ExecutionEntry } from '@/components/automations/types'
 
-async function loadAutomationsFromServer(workspaceId: string): Promise<AutomationListItem[]> {
-  const json = await window.electronAPI.getAutomations(workspaceId)
+type AutomationsLoadApi = Pick<typeof window.electronAPI, 'getAutomations' | 'getAutomationLastExecuted'>
+
+const automationsLoadCache = new Map<string, Promise<AutomationListItem[]>>()
+
+export function __resetAutomationsLoadCacheForTests(): void {
+  automationsLoadCache.clear()
+}
+
+async function loadAutomationsFromServer(
+  workspaceId: string,
+  api: AutomationsLoadApi,
+): Promise<AutomationListItem[]> {
+  const json = await api.getAutomations(workspaceId)
   if (!json) return [] // No automations configured yet
   return parseAutomationsConfig(json)
+}
+
+export function loadAutomationsForWorkspace(
+  workspaceId: string,
+  api: AutomationsLoadApi = window.electronAPI,
+): Promise<AutomationListItem[]> {
+  const existing = automationsLoadCache.get(workspaceId)
+  if (existing) return existing
+
+  const promise = (async () => {
+    const items = await loadAutomationsFromServer(workspaceId, api)
+    try {
+      const map = await api.getAutomationLastExecuted(workspaceId)
+      return items.map((item) => ({
+        ...item,
+        lastExecutedAt: map[item.id] ?? item.lastExecutedAt,
+      }))
+    } catch {
+      return items
+    }
+  })()
+
+  automationsLoadCache.set(workspaceId, promise)
+  const clearIfCurrent = () => {
+    if (automationsLoadCache.get(workspaceId) === promise) {
+      automationsLoadCache.delete(workspaceId)
+    }
+  }
+  promise.then(clearIfCurrent, clearIfCurrent)
+
+  return promise
 }
 
 export interface UseAutomationsResult {
@@ -57,13 +103,7 @@ export function useAutomations(
   const loadAndHydrate = useCallback(async () => {
     if (!activeWorkspaceId) return
     try {
-      const items = await loadAutomationsFromServer(activeWorkspaceId)
-      try {
-        const map = await window.electronAPI.getAutomationLastExecuted(activeWorkspaceId)
-        for (const item of items) {
-          item.lastExecutedAt = map[item.id] ?? item.lastExecutedAt
-        }
-      } catch { /* history unavailable — timestamps stay undefined */ }
+      const items = await loadAutomationsForWorkspace(activeWorkspaceId)
       setAutomations(items)
     } catch {
       setAutomations([])
