@@ -43,7 +43,7 @@ import type {
   Effect,
 } from '../types'
 import type { Message } from '../../../shared/types'
-import { generateMessageId, appendMessage } from '../helpers'
+import { generateMessageId, appendMessage, updateMessageAt } from '../helpers'
 
 function sameStringList(a: readonly string[] | undefined, b: readonly string[]): boolean {
   return (a?.length ?? 0) === b.length && b.every((value, index) => a?.[index] === value)
@@ -655,20 +655,21 @@ export function handleMessageAnnotationsUpdated(
   event: MessageAnnotationsUpdatedEvent
 ): ProcessResult {
   const { session, streaming } = state
-  if (!session.messages.some(message => message.id === event.messageId)) {
+  const messageIndex = session.messages.findIndex(message => message.id === event.messageId)
+  if (messageIndex === -1) {
+    return { state, effects: [] }
+  }
+
+  const updatedSession = updateMessageAt(session, messageIndex, {
+    annotations: event.annotations,
+  })
+  if (updatedSession === session) {
     return { state, effects: [] }
   }
 
   return {
     state: {
-      session: {
-        ...session,
-        messages: session.messages.map(m =>
-          m.id === event.messageId
-            ? { ...m, annotations: event.annotations }
-            : m
-        ),
-      },
+      session: updatedSession,
       streaming,
     },
     effects: [],

@@ -48,4 +48,34 @@ describe('handleMessageAnnotationsUpdated', () => {
     expect((next.state.session.messages[0] as any).annotations).toEqual([])
     expect((next.state.session.messages[1] as any).annotations).toEqual(annotations)
   })
+
+  it('keeps the original state when annotations are already current', () => {
+    const annotations = [
+      {
+        id: 'ann-1',
+        schemaVersion: 1 as const,
+        createdAt: 1700000000000,
+        motivation: 'highlighting' as const,
+        body: [{ type: 'highlight' as const }],
+        target: {
+          source: { sessionId: 'session-1', messageId: 'msg-a' },
+          selectors: [
+            { type: 'text-position' as const, start: 0, end: 5 },
+            { type: 'text-quote' as const, exact: 'alpha' },
+          ],
+        },
+      },
+    ]
+    const state = makeState([
+      { id: 'msg-a', role: 'assistant', content: 'alpha', annotations },
+    ])
+    const event: MessageAnnotationsUpdatedEvent = {
+      type: 'message_annotations_updated',
+      sessionId: 'session-1',
+      messageId: 'msg-a',
+      annotations,
+    }
+
+    expect(handleMessageAnnotationsUpdated(state, event).state).toBe(state)
+  })
 })
