@@ -59,6 +59,12 @@ describe('session item subscriptions', () => {
     expect(sessionListSource).not.toContain('focusedSessionId, selectionStore.state.selected, isMultiSelectActive')
   })
 
+  it('reuses the row index map when syncing external selection into keyboard focus', () => {
+    expect(sessionListSource).toContain('const selectedSessionId = selectionStore.state.selected')
+    expect(sessionListSource).toContain('const selectedRowIndex = rowIndexMap.get(selectedSessionId)')
+    expect(sessionListSource).not.toContain('flatRows.findIndex(row => row.item.id === selectionStore.state.selected)')
+  })
+
   it('does not rebroadcast chat search row context for match index changes', () => {
     const matchInfoGuardSource = appShellSource.slice(
       appShellSource.indexOf('const handleChatMatchInfoChange = React.useCallback'),

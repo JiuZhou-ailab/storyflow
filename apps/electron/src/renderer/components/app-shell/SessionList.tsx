@@ -504,14 +504,17 @@ export function SessionList({
     selectionStore,
     selectedIdOverride: focusedSessionId,
   })
+  const { activeIndex, setActiveIndex } = interactions.keyboard
 
   // Sync activeIndex when selection changes externally (e.g. from ChatDisplay)
   useEffect(() => {
-    const newIndex = flatRows.findIndex(row => row.item.id === selectionStore.state.selected)
-    if (newIndex >= 0 && newIndex !== interactions.keyboard.activeIndex) {
-      interactions.keyboard.setActiveIndex(newIndex)
+    const selectedSessionId = selectionStore.state.selected
+    if (!selectedSessionId) return
+    const selectedRowIndex = rowIndexMap.get(selectedSessionId)
+    if (selectedRowIndex !== undefined && selectedRowIndex !== activeIndex) {
+      setActiveIndex(selectedRowIndex)
     }
-  }, [selectionStore.state.selected, flatRows, interactions.keyboard])
+  }, [selectionStore.state.selected, rowIndexMap, activeIndex, setActiveIndex])
 
   // Focus active item when zone gains keyboard focus
   useEffect(() => {
