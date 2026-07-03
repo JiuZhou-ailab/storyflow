@@ -43,6 +43,7 @@ import { resolvePostSetupAppState } from './lib/startup-flow'
 import { buildProjectSummaries } from './lib/project-summary'
 import { isAppFullyReady } from './lib/app-readiness'
 import { appendUniqueRequestForSession, removeFirstRequestForSession } from './lib/request-queue'
+import { isBackgroundingToolResult } from './lib/background-task-result'
 import { extractWorkspaceSlugFromPath } from '@craft-agent/shared/utils/workspace-slug'
 import { DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels'
 import { initRendererPerf } from './lib/perf'
@@ -213,13 +214,7 @@ function handleBackgroundTaskEvent(
     // Remove task when it completes - but NOT if this is the initial backgrounding result
     // Background tasks return immediately with agentId/shell_id/backgroundTaskId,
     // we should only remove when the task actually completes
-    const result = typeof evt.result === 'string' ? evt.result : JSON.stringify(evt.result)
-    const isBackgroundingResult = result && (
-      /agentId:\s*[a-zA-Z0-9_-]+/.test(result) ||
-      /shell_id:\s*[a-zA-Z0-9_-]+/.test(result) ||
-      /"backgroundTaskId":\s*"[a-zA-Z0-9_-]+"/.test(result)
-    )
-    if (!isBackgroundingResult) {
+    if (!isBackgroundingToolResult(evt.result)) {
       const currentTasks = store.get(backgroundTasksAtom)
       store.set(backgroundTasksAtom, currentTasks.filter(t => t.toolUseId !== evt.toolUseId))
     }
