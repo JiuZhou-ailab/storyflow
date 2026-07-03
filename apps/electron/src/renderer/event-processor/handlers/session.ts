@@ -496,6 +496,11 @@ export function handleConnectionChanged(
   event: LLMConnectionChangedEvent
 ): ProcessResult {
   const { session, streaming } = state
+  const supportsBranchingChanged = event.supportsBranching !== undefined
+    && session.supportsBranching !== event.supportsBranching
+  if (session.llmConnection === event.connectionSlug && !supportsBranchingChanged) {
+    return { state, effects: [] }
+  }
 
   return {
     state: {

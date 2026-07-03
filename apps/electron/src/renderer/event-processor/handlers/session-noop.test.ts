@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'bun:test'
-import { handleAsyncOperation, handleSessionModelChanged } from './session'
-import type { AsyncOperationEvent, SessionModelChangedEvent, SessionState } from '../types'
+import { handleAsyncOperation, handleConnectionChanged, handleSessionModelChanged } from './session'
+import type {
+  AsyncOperationEvent,
+  LLMConnectionChangedEvent,
+  SessionModelChangedEvent,
+  SessionState,
+} from '../types'
 
 function makeState(sessionFields: Record<string, unknown>): SessionState {
   return {
@@ -34,5 +39,17 @@ describe('session event no-op guards', () => {
     }
 
     expect(handleSessionModelChanged(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state for duplicate connection capabilities', () => {
+    const state = makeState({ llmConnection: 'codex', supportsBranching: true })
+    const event: LLMConnectionChangedEvent = {
+      type: 'connection_changed',
+      sessionId: 'session-1',
+      connectionSlug: 'codex',
+      supportsBranching: true,
+    }
+
+    expect(handleConnectionChanged(state, event).state).toBe(state)
   })
 })
