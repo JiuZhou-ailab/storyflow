@@ -4,11 +4,13 @@
 
 import { describe, expect, it } from 'bun:test'
 import type { FileChange } from '@craft-agent/ui'
+import type { Message } from '@craft-agent/core'
 import {
   buildNovelWorkspaceTree,
   detectNovelProjectFromSearchResults,
   describeNovelWorkspaceFile,
   filterReviewableNovelFileChanges,
+  getLatestNovelFileChangesFromMessages,
   getNovelFileChangeActivityKey,
   getNovelWorkspaceCandidateRoots,
   getNovelWorkspaceRelativePath,
@@ -30,6 +32,41 @@ import {
   summarizeNovelSection,
 } from '../writing-workspace'
 
+function testUserMessage(id: string, timestamp: number): Message {
+  return { id, role: 'user', content: id, timestamp }
+}
+
+function testAssistantMessage(id: string, timestamp: number): Message {
+  return { id, role: 'assistant', content: id, timestamp }
+}
+
+function testToolMessage(
+  id: string,
+  timestamp: number,
+  toolName: string,
+  toolInput: Record<string, unknown> = {},
+): Message {
+  return {
+    id,
+    role: 'tool',
+    content: '',
+    timestamp,
+    toolName,
+    toolInput,
+    toolStatus: 'completed',
+    toolResult: '',
+  }
+}
+
+const fallbackChange: FileChange = {
+  id: 'snapshot',
+  filePath: '/novel/snapshot.md',
+  toolType: 'Write',
+  changeKind: 'modify',
+  original: 'old',
+  modified: 'new',
+}
+
 describe('writing workspace helpers', () => {
   it('keeps the file-change activity key stable for assistant text deltas', () => {
     expect(getNovelFileChangeActivityKey({
@@ -38,6 +75,62 @@ describe('writing workspace helpers', () => {
         { role: 'assistant', id: 'assistant-1' },
       ],
     })).toBe('edit-1:Edit:completed:')
+  })
+
+  it('returns all file changes from the latest assistant turn with file changes', () => {
+    const changes = getLatestNovelFileChangesFromMessages({
+      messages: [
+        testUserMessage('user-1', 1),
+        testToolMessage('edit-1', 2, 'Edit', {
+          file_path: 'story/chapter-01.md',
+          old_string: 'old chapter',
+          new_string: 'new chapter',
+        }),
+        testToolMessage('write-1', 3, 'Write', {
+          file_path: 'work/notes.md',
+          content: 'notes',
+        }),
+        testAssistantMessage('assistant-1', 4),
+        testUserMessage('user-2', 5),
+        testToolMessage('read-1', 6, 'Read', { file_path: 'story/chapter-02.md' }),
+        testAssistantMessage('assistant-2', 7),
+      ],
+      basePath: '/novel',
+      fallbackChanges: [fallbackChange],
+    })
+
+    expect(changes.map(change => `${change.toolType}:${change.filePath}`)).toEqual([
+      'Edit:/novel/story/chapter-01.md',
+      'Write:/novel/work/notes.md',
+    ])
+  })
+
+  it('returns fallback file changes when session messages have no file changes', () => {
+    expect(getLatestNovelFileChangesFromMessages({
+      messages: [
+        testUserMessage('user-1', 1),
+        testToolMessage('read-1', 2, 'Read', { file_path: 'story/chapter-01.md' }),
+        testAssistantMessage('assistant-1', 3),
+      ],
+      fallbackChanges: [fallbackChange],
+    })).toEqual([fallbackChange])
+  })
+
+  it('preserves file-change detection for timestamp-unordered fallback grouping', () => {
+    const changes = getLatestNovelFileChangesFromMessages({
+      messages: [
+        testAssistantMessage('assistant-1', 3),
+        testToolMessage('edit-1', 2, 'Edit', {
+          file_path: 'story/chapter-01.md',
+          old_string: 'old',
+          new_string: 'new',
+        }),
+        testUserMessage('user-1', 1),
+      ],
+      basePath: '/novel',
+    })
+
+    expect(changes.map(change => change.filePath)).toEqual(['/novel/story/chapter-01.md'])
   })
 
   it('groups novel files into workspace sections', () => {

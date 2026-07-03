@@ -2,7 +2,9 @@
 // output: Browser-safe novel workspace projection helpers
 // pos: Renderer adapter between workspace files and writing workspace UI
 
+import type { Message } from '@craft-agent/core'
 import type { FileChange } from '@craft-agent/ui'
+import { groupMessagesByTurn } from '@craft-agent/ui/chat/turn-utils'
 import {
   categorizeNovelPath,
   categorizeNovelPathForMethodPack,
@@ -10,6 +12,7 @@ import {
 } from '@craft-agent/shared/writing/file-categories'
 import { getBuiltInMethodPack } from '@craft-agent/shared/writing/method-packs'
 import type { FileSearchResult } from '@craft-agent/shared/protocol'
+import { collectFileChangesFromActivities } from './file-changes'
 
 export type NovelWorkspaceTab =
   | 'manuscript'
@@ -183,6 +186,98 @@ export function getNovelFileChangeActivityKey(session: { messages?: readonly {
     parts.push(`${message.id ?? ''}:${message.toolName}:${message.toolStatus ?? ''}:${message.error ?? ''}`)
   }
   return parts.join('\n')
+}
+
+export interface LatestNovelFileChangesOptions {
+  messages?: readonly Message[] | null
+  basePath?: string
+  fallbackChanges?: FileChange[]
+}
+
+function isTimestampOrdered(messages: readonly Message[]): boolean {
+  for (let i = 1; i < messages.length; i += 1) {
+    if (messages[i - 1]!.timestamp > messages[i]!.timestamp) return false
+  }
+  return true
+}
+
+function isFileChangeToolMessage(message: Message): boolean {
+  return message.role === 'tool' && (message.toolName === 'Edit' || message.toolName === 'Write')
+}
+
+function isFinalAssistantMessage(message: Message): boolean {
+  return message.role === 'assistant' && !message.isIntermediate && !message.isPending && !message.isStreaming
+}
+
+function isStandaloneTurnBoundary(message: Message): boolean {
+  if (message.role === 'user' || message.role === 'auth-request' || message.role === 'error' || message.role === 'warning') {
+    return true
+  }
+  if (message.role === 'info') return message.statusType !== 'compaction_complete'
+  return message.role === 'plan' || isFinalAssistantMessage(message)
+}
+
+function findAssistantTurnSliceStart(messages: readonly Message[], toolIndex: number): number {
+  for (let i = toolIndex - 1; i >= 0; i -= 1) {
+    if (isStandaloneTurnBoundary(messages[i]!)) return i + 1
+  }
+  return 0
+}
+
+function findAssistantTurnSliceEnd(messages: readonly Message[], toolIndex: number): number {
+  for (let i = toolIndex + 1; i < messages.length; i += 1) {
+    const message = messages[i]!
+    if (message.role === 'user' || message.role === 'auth-request' || message.role === 'error' || message.role === 'warning') {
+      return i
+    }
+    if (message.role === 'info' && message.statusType !== 'compaction_complete') return i
+    if (message.role === 'plan' || isFinalAssistantMessage(message)) return i + 1
+  }
+  return messages.length
+}
+
+function collectLatestNovelFileChangesFromGroupedMessages(messages: Message[], basePath: string | undefined): FileChange[] {
+  const turns = groupMessagesByTurn(messages)
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    const turn = turns[i]
+    if (turn?.type !== 'assistant') continue
+    const changes = collectFileChangesFromActivities(turn.activities, { basePath })
+    if (changes.length > 0) return changes
+  }
+  return []
+}
+
+export function getLatestNovelFileChangesFromMessages({
+  messages,
+  basePath,
+  fallbackChanges = [],
+}: LatestNovelFileChangesOptions): FileChange[] {
+  if (!messages?.length) return []
+
+  if (!isTimestampOrdered(messages)) {
+    const changes = collectLatestNovelFileChangesFromGroupedMessages([...messages], basePath)
+    return changes.length > 0 ? changes : fallbackChanges
+  }
+
+  let cursor = messages.length - 1
+  while (cursor >= 0) {
+    let toolIndex = -1
+    for (let i = cursor; i >= 0; i -= 1) {
+      if (isFileChangeToolMessage(messages[i]!)) {
+        toolIndex = i
+        break
+      }
+    }
+    if (toolIndex === -1) return fallbackChanges
+
+    const start = findAssistantTurnSliceStart(messages, toolIndex)
+    const end = findAssistantTurnSliceEnd(messages, toolIndex)
+    const changes = collectLatestNovelFileChangesFromGroupedMessages(messages.slice(start, end), basePath)
+    if (changes.length > 0) return changes
+    cursor = start - 1
+  }
+
+  return fallbackChanges
 }
 
 function createEmptyTree(): NovelWorkspaceTree {

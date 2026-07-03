@@ -157,7 +157,6 @@ import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { rendererPerf } from "@/lib/perf"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
-import { collectFileChangesFromActivities } from "@/lib/file-changes"
 import { buildRejectFileChangesOperation } from "@/lib/file-change-review"
 import {
   buildMergedManuscriptContent,
@@ -173,6 +172,7 @@ import {
 import type { NovelReviewUndoEntry } from "@/lib/novel-review-undo"
 import {
   detectNovelProjectFromSearchResults,
+  getLatestNovelFileChangesFromMessages,
   getNovelFileChangeActivityKey,
   getNovelImportTargetRelativePath,
   getNovelWorkspaceRelativePath,
@@ -190,7 +190,7 @@ import {
   type NovelCreateFileBasePath,
   type NovelWorkspaceFile,
 } from "@/lib/writing-workspace"
-import { groupMessagesByTurn, type FileChange } from "@craft-agent/ui"
+import type { FileChange } from "@craft-agent/ui"
 import { RPC_CHANNELS, type FileSearchBatchRequest, type FileSearchBatchResult, type FileSearchResult } from "@craft-agent/shared/protocol"
 
 // ponytail: process-local replay guard for passive file-change refreshes; explicit file operations refresh directly.
@@ -1902,15 +1902,11 @@ function AppShellContent({
     const effectiveSession = store.get(effectiveSessionAtom)
     if (!effectiveSession?.messages?.length) return []
 
-    const turns = groupMessagesByTurn(effectiveSession.messages)
-    for (const turn of [...turns].reverse()) {
-      if (turn.type !== 'assistant') continue
-      const changes = collectFileChangesFromActivities(turn.activities, {
-        basePath: activeSessionWorkingDirectory || effectiveSessionFolderPath,
-      })
-      if (changes.length > 0) return changes
-    }
-    return snapshotNovelFileChanges
+    return getLatestNovelFileChangesFromMessages({
+      messages: effectiveSession.messages,
+      basePath: activeSessionWorkingDirectory || effectiveSessionFolderPath,
+      fallbackChanges: snapshotNovelFileChanges,
+    })
   }, [activeSessionWorkingDirectory, effectiveSessionAtom, effectiveSessionFolderPath, novelFileChangeActivityKey, snapshotNovelFileChanges, store])
   const latestNovelFileChangesSignature = React.useMemo(
     () => latestNovelFileChanges
