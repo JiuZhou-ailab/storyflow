@@ -15,6 +15,7 @@ import {
   handleSourcesChanged,
   handleTitleGenerated,
   handleTitleRegenerating,
+  handleUsageUpdate,
   handleWorkingDirectoryChanged,
 } from './session'
 import type {
@@ -34,6 +35,7 @@ import type {
   SourcesChangedEvent,
   TitleGeneratedEvent,
   TitleRegeneratingEvent,
+  UsageUpdateEvent,
   WorkingDirectoryChangedEvent,
 } from '../types'
 
@@ -219,5 +221,28 @@ describe('session event no-op guards', () => {
     }
 
     expect(handleSessionUnshared(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state for duplicate usage update', () => {
+    const state = makeState({
+      tokenUsage: {
+        inputTokens: 1200,
+        outputTokens: 80,
+        totalTokens: 1280,
+        contextTokens: 1200,
+        costUsd: 0.01,
+        contextWindow: 200000,
+      },
+    })
+    const event: UsageUpdateEvent = {
+      type: 'usage_update',
+      sessionId: 'session-1',
+      tokenUsage: {
+        inputTokens: 1200,
+        contextWindow: 200000,
+      },
+    }
+
+    expect(handleUsageUpdate(state, event).state).toBe(state)
   })
 })

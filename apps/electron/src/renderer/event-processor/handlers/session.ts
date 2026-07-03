@@ -1003,6 +1003,14 @@ export function handleUsageUpdate(
   event: UsageUpdateEvent
 ): ProcessResult {
   const { session, streaming } = state
+  const currentTokenUsage = session.tokenUsage
+  if (
+    currentTokenUsage !== undefined
+    && currentTokenUsage.inputTokens === event.tokenUsage.inputTokens
+    && currentTokenUsage.contextWindow === event.tokenUsage.contextWindow
+  ) {
+    return { state, effects: [] }
+  }
 
   // Merge usage update into existing tokenUsage, providing defaults for required fields
   const updatedTokenUsage = {
