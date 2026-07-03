@@ -943,6 +943,30 @@ describe('novel writing workspace layout', () => {
     expect(detectionSource).toContain('Boolean(cachedNovelWorkspaceFiles)')
   })
 
+  it('coalesces writing workspace file loads before refresh state updates', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const loadSource = appShellSource.slice(
+      appShellSource.indexOf('const loadNovelWorkspaceFiles ='),
+      appShellSource.indexOf('const refreshNovelWorkspaceFiles')
+    )
+    const refreshSource = appShellSource.slice(
+      appShellSource.indexOf('const refreshNovelWorkspaceFiles ='),
+      appShellSource.indexOf('const openNovelCreateFileDialog')
+    )
+
+    expect(appShellSource).toContain('novelWorkspaceLoadInFlightRef')
+    expect(loadSource).toContain('const loadKey =')
+    expect(loadSource).toContain('const inFlight = novelWorkspaceLoadInFlightRef.current.get(loadKey)')
+    expect(loadSource).toContain('if (inFlight) return inFlight')
+    expect(loadSource).toContain('novelWorkspaceLoadInFlightRef.current.set(loadKey, loadPromise)')
+    expect(loadSource).toContain('novelWorkspaceLoadInFlightRef.current.delete(loadKey)')
+    expect(refreshSource).toContain('const detectLoadKey = `${rootPath}\\ndetect`')
+    expect(refreshSource).toContain('const detectInFlight = novelWorkspaceLoadInFlightRef.current.get(detectLoadKey)')
+    expect(refreshSource.indexOf('const detectInFlight =')).toBeLessThan(
+      refreshSource.indexOf('loadNovelWorkspaceFiles(')
+    )
+  })
+
   it('preserves the selected writing file when catalog refreshes temporarily omit it', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const selectionSource = appShellSource.slice(

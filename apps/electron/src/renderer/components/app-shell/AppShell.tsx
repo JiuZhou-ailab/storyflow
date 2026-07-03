@@ -1884,6 +1884,7 @@ function AppShellContent({
   const [novelWorkspaceDetectionSettledKey, setNovelWorkspaceDetectionSettledKey] = React.useState<string | null>(null)
   const novelWorkspaceRootRef = React.useRef<string | null>(null)
   const novelWorkspaceFilesCacheRef = React.useRef<Map<string, NovelWorkspaceFile[]>>(new Map())
+  const novelWorkspaceLoadInFlightRef = React.useRef<Map<string, Promise<NovelWorkspaceFile[] | null>>>(new Map())
   const novelWorkspaceRefreshInFlightRef = React.useRef<Map<string, Promise<boolean>>>(new Map())
   const novelWorkspaceLastRefreshKeyRef = React.useRef<string | null>(null)
   const [novelCreateFileTarget, setNovelCreateFileTarget] = React.useState<NovelCreateFileTarget | null>(null)
@@ -1899,26 +1900,40 @@ function AppShellContent({
     onDetected?: (files: NovelWorkspaceFile[]) => void,
     knownNovelWorkspace = false
   ): Promise<NovelWorkspaceFile[] | null> => {
-    if (knownNovelWorkspace) {
+    const loadKey = `${rootPath}\n${knownNovelWorkspace ? 'known' : 'detect'}`
+    const inFlight = novelWorkspaceLoadInFlightRef.current.get(loadKey)
+    if (inFlight) return inFlight
+
+    const loadPromise = (async (): Promise<NovelWorkspaceFile[] | null> => {
+      if (knownNovelWorkspace) {
+        const files = await loadNovelWorkspaceFileTree(rootPath)
+        novelWorkspaceFilesCacheRef.current.set(rootPath, files)
+        return files
+      }
+
+      const probeResultSets = await searchNovelWorkspaceFiles(rootPath,
+        NOVEL_WORKSPACE_DETECTION_QUERIES.map((query) => ({
+          query,
+          options: { mode: 'path' as const, includeDescendants: false },
+        }))
+      )
+      const probeResults = probeResultSets.flatMap(resultSet => resultSet.results)
+      if (!detectNovelProjectFromSearchResults(probeResults)) return null
+      const probeFiles = mapSearchResultsToNovelWorkspaceFiles(probeResults)
+      onDetected?.(probeFiles)
+
       const files = await loadNovelWorkspaceFileTree(rootPath)
       novelWorkspaceFilesCacheRef.current.set(rootPath, files)
       return files
-    }
+    })()
 
-    const probeResultSets = await searchNovelWorkspaceFiles(rootPath,
-      NOVEL_WORKSPACE_DETECTION_QUERIES.map((query) => ({
-        query,
-        options: { mode: 'path' as const, includeDescendants: false },
-      }))
-    )
-    const probeResults = probeResultSets.flatMap(resultSet => resultSet.results)
-    if (!detectNovelProjectFromSearchResults(probeResults)) return null
-    const probeFiles = mapSearchResultsToNovelWorkspaceFiles(probeResults)
-    onDetected?.(probeFiles)
-
-    const files = await loadNovelWorkspaceFileTree(rootPath)
-    novelWorkspaceFilesCacheRef.current.set(rootPath, files)
-    return files
+    novelWorkspaceLoadInFlightRef.current.set(loadKey, loadPromise)
+    loadPromise.finally(() => {
+      if (novelWorkspaceLoadInFlightRef.current.get(loadKey) === loadPromise) {
+        novelWorkspaceLoadInFlightRef.current.delete(loadKey)
+      }
+    })
+    return loadPromise
   }, [])
 
   const refreshNovelWorkspaceFiles = React.useCallback(async (rootPath: string): Promise<boolean> => {
@@ -1926,11 +1941,18 @@ function AppShellContent({
     if (inFlight) return inFlight
 
     const refreshPromise = (async (): Promise<boolean> => {
-      const files = await loadNovelWorkspaceFiles(
-        rootPath,
-        undefined,
-        rootPath === novelWorkspaceRootRef.current || novelWorkspaceFilesCacheRef.current.has(rootPath)
-      )
+      const detectLoadKey = `${rootPath}\ndetect`
+      const detectInFlight = novelWorkspaceLoadInFlightRef.current.get(detectLoadKey)
+      let files = detectInFlight
+        ? await detectInFlight
+        : await loadNovelWorkspaceFiles(
+            rootPath,
+            undefined,
+            rootPath === novelWorkspaceRootRef.current || novelWorkspaceFilesCacheRef.current.has(rootPath)
+          )
+      if (!files && detectInFlight) {
+        files = await loadNovelWorkspaceFiles(rootPath, undefined, true)
+      }
       if (!files) return false
 
       setNovelWorkspaceRoot(rootPath)
