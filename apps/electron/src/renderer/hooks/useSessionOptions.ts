@@ -47,3 +47,36 @@ export function mergeSessionOptions(
   }
 }
 
+function isDefaultStoredSessionOptions(options: SessionOptions): boolean {
+  return options.permissionMode === defaultSessionOptions.permissionMode
+    && options.thinkingLevel === defaultSessionOptions.thinkingLevel
+    && options.permissionModeVersion == null
+}
+
+function areSessionOptionsEqual(a: SessionOptions, b: SessionOptions): boolean {
+  return a.permissionMode === b.permissionMode
+    && a.thinkingLevel === b.thinkingLevel
+    && a.permissionModeVersion === b.permissionModeVersion
+}
+
+export function updateSessionOptionsMap(
+  options: Map<string, SessionOptions>,
+  sessionId: string,
+  updates: SessionOptionUpdates
+): Map<string, SessionOptions> {
+  const current = options.get(sessionId)
+  const nextOptions = mergeSessionOptions(current, updates)
+
+  if (isDefaultStoredSessionOptions(nextOptions)) {
+    if (!current) return options
+    const next = new Map(options)
+    next.delete(sessionId)
+    return next
+  }
+
+  if (current && areSessionOptionsEqual(current, nextOptions)) return options
+
+  const next = new Map(options)
+  next.set(sessionId, nextOptions)
+  return next
+}

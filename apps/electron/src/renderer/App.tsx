@@ -10,7 +10,7 @@ import { useSetAtom, useStore, useAtomValue, useAtom } from 'jotai'
 import type { Session, Workspace, SessionEvent, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, SetupNeeds, SessionStatus, NewChatActionParams, ContentBadge, LlmConnectionWithStatus, PermissionModeState, SendMessageOptions, ClientAuthState } from '../shared/types'
 import type { SessionDraft, DraftAttachmentRef } from '@craft-agent/shared/config'
 import type { SessionOptions, SessionOptionUpdates } from './hooks/useSessionOptions'
-import { defaultSessionOptions, mergeSessionOptions } from './hooks/useSessionOptions'
+import { defaultSessionOptions, updateSessionOptionsMap } from './hooks/useSessionOptions'
 import { generateMessageId } from '../shared/types'
 import { useEventProcessor } from './event-processor'
 import type { AgentEvent, Effect } from './event-processor'
@@ -413,8 +413,7 @@ export default function App() {
 
   const applyPermissionModeState = useCallback((sessionId: string, state: PermissionModeState, source: 'event' | 'reconcile') => {
     setSessionOptions(prev => {
-      const next = new Map(prev)
-      const current = next.get(sessionId) ?? defaultSessionOptions
+      const current = prev.get(sessionId) ?? defaultSessionOptions
       const currentVersion = current.permissionModeVersion ?? -1
 
       if (state.modeVersion < currentVersion) {
@@ -441,12 +440,10 @@ export default function App() {
         )
       }
 
-      next.set(sessionId, {
-        ...current,
+      return updateSessionOptionsMap(prev, sessionId, {
         permissionMode: state.permissionMode,
         permissionModeVersion: state.modeVersion,
       })
-      return next
     })
   }, [])
 
@@ -467,27 +464,12 @@ export default function App() {
   const { processAgentEvent, clearStreamingState } = useEventProcessor()
 
   const syncSessionOptionsFromSession = useCallback((session: Session) => {
-    setSessionOptions(prev => {
-      const next = new Map(prev)
-      const current = next.get(session.id)
-      const merged = {
-        ...defaultSessionOptions,
-        ...current,
+    setSessionOptions(prev => (
+      updateSessionOptionsMap(prev, session.id, {
         permissionMode: session.permissionMode ?? defaultSessionOptions.permissionMode,
         thinkingLevel: session.thinkingLevel ?? DEFAULT_THINKING_LEVEL,
-      }
-
-      const hasNonDefaultMode = merged.permissionMode !== defaultSessionOptions.permissionMode
-      const hasNonDefaultThinking = merged.thinkingLevel !== DEFAULT_THINKING_LEVEL
-
-      if (!hasNonDefaultMode && !hasNonDefaultThinking && merged.permissionModeVersion == null) {
-        next.delete(session.id)
-      } else {
-        next.set(session.id, merged)
-      }
-
-      return next
-    })
+      })
+    ))
   }, [])
 
   const refreshSessionFromServer = useCallback(async (sessionId: string): Promise<SessionRefreshResult> => {
@@ -958,12 +940,9 @@ export default function App() {
               }, 'event')
             } else {
               // Backward compatibility: apply mode optimistically then reconcile authoritative state.
-              setSessionOptions(prevOpts => {
-                const next = new Map(prevOpts)
-                const current = next.get(effect.sessionId) ?? defaultSessionOptions
-                next.set(effect.sessionId, { ...current, permissionMode: effect.permissionMode })
-                return next
-              })
+              setSessionOptions(prevOpts => updateSessionOptionsMap(prevOpts, effect.sessionId, {
+                permissionMode: effect.permissionMode,
+              }))
               void reconcilePermissionModeState(effect.sessionId)
             }
             break
@@ -1565,12 +1544,7 @@ export default function App() {
    * Handles persistence and backend sync for each option type.
    */
   const handleSessionOptionsChange = useCallback((sessionId: string, updates: SessionOptionUpdates) => {
-    setSessionOptions(prev => {
-      const next = new Map(prev)
-      const current = next.get(sessionId) ?? defaultSessionOptions
-      next.set(sessionId, mergeSessionOptions(current, updates))
-      return next
-    })
+    setSessionOptions(prev => updateSessionOptionsMap(prev, sessionId, updates))
 
     // Handle persistence/backend for specific options
     if (updates.permissionMode !== undefined) {
@@ -1581,7 +1555,7 @@ export default function App() {
       // Sync thinking level change with backend (session-level, persisted)
       window.electronAPI.sessionCommand(sessionId, { type: 'setThinkingLevel', level: updates.thinkingLevel })
     }
-  }, [sessionOptions])
+  }, [])
 
   // Handle input draft changes per session with debounced persistence
   const draftSaveTimeoutRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
