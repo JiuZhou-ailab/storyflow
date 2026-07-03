@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { useSetAtom } from "jotai"
-import { isToday, isYesterday, format, startOfDay } from "date-fns"
+import { isToday, isYesterday, format } from "date-fns"
 import { getDateLocale } from "@craft-agent/shared/i18n"
 import { useAction, useActionLabel } from "@/actions"
 import { Inbox, Archive } from "lucide-react"
@@ -20,7 +20,7 @@ import { SessionSearchHeader } from "./SessionSearchHeader"
 import { SessionItem } from "./SessionItem"
 import { SessionListProvider, type SessionListContextValue } from "@/context/SessionListContext"
 import { useSessionSelection, useSessionSelectionStore } from "@/hooks/useSession"
-import { useSessionSearch, type FilterMode } from "@/hooks/useSessionSearch"
+import { getSessionDateGroupKey, useSessionSearch, type FilterMode } from "@/hooks/useSessionSearch"
 import { useSessionActions } from "@/hooks/useSessionActions"
 import { useEntityListInteractions } from "@/hooks/useEntityListInteractions"
 import { useFocusZone } from "@/hooks/keyboard"
@@ -389,10 +389,10 @@ export function SessionList({
     const groupDates = new Map<string, Date>()
 
     for (const row of rows) {
-      const day = startOfDay(new Date(row.item.lastMessageAt || 0))
-      const groupKey = day.toISOString()
+      const groupKey = getSessionDateGroupKey(row.item)
 
       if (!groupsByKey.has(groupKey)) {
+        const day = new Date(groupKey)
         groupsByKey.set(groupKey, {
           key: groupKey,
           label: formatDateGroupLabel(day, t, i18n.resolvedLanguage ?? 'en'),
@@ -447,9 +447,7 @@ export function SessionList({
       const allKeys = new Set(items.map(item => item.hasUnread ? 'unread-yes' : 'unread-no'))
       setCollapsedGroups(allKeys)
     } else {
-      const allKeys = new Set(items.map(item =>
-        startOfDay(new Date(item.lastMessageAt || 0)).toISOString()
-      ))
+      const allKeys = new Set(items.map(getSessionDateGroupKey))
       setCollapsedGroups(allKeys)
     }
   }, [items, groupingMode])

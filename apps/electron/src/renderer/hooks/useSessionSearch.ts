@@ -83,10 +83,14 @@ export interface UseSessionSearchResult {
 // Pure helpers
 // ---------------------------------------------------------------------------
 
+export function getSessionDateGroupKey(item: SessionMeta): string {
+  return startOfDay(new Date(item.lastMessageAt || 0)).toISOString()
+}
+
 function getCollapseGroupKey(item: SessionMeta, groupingMode?: 'date' | 'status' | 'unread'): string {
   if (groupingMode === 'status') return `status-${getSessionStatus(item)}`
   if (groupingMode === 'unread') return item.hasUnread ? 'unread-yes' : 'unread-no'
-  return startOfDay(new Date(item.lastMessageAt || 0)).toISOString()
+  return getSessionDateGroupKey(item)
 }
 
 export interface CollapsedPaginationResult {

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'bun:test'
-import { computeCollapsedPagination } from '../useSessionSearch'
+import { computeCollapsedPagination, getSessionDateGroupKey } from '../useSessionSearch'
 import type { SessionMeta } from '@/atoms/sessions'
 
 const useSessionSearchSource = readFileSync(
@@ -20,6 +20,11 @@ function makeSession(id: string, opts: Partial<SessionMeta> = {}): SessionMeta {
 }
 
 describe('computeCollapsedPagination', () => {
+  it('builds stable date group keys from session activity time', () => {
+    expect(getSessionDateGroupKey(makeSession('s1'))).toBe('2026-03-05T00:00:00.000Z')
+    expect(getSessionDateGroupKey(makeSession('missing-date', { lastMessageAt: undefined }))).toBe('1970-01-01T00:00:00.000Z')
+  })
+
   it('does not hide items when current view has only one group and that group is collapsed', () => {
     const sessions = [
       makeSession('s1'),

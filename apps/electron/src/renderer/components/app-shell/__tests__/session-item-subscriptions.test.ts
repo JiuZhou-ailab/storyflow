@@ -45,6 +45,12 @@ describe('session item subscriptions', () => {
     expect(sessionListSource).not.toContain('groupRows.sort((a, b) =>')
   })
 
+  it('uses the shared date group key helper for date grouping', () => {
+    expect(sessionListSource).toContain('getSessionDateGroupKey')
+    expect(sessionListSource).not.toContain('startOfDay(new Date(row.item.lastMessageAt || 0)).toISOString()')
+    expect(sessionListSource).not.toContain('startOfDay(new Date(item.lastMessageAt || 0)).toISOString()')
+  })
+
   it('keeps selected session state out of the shared list context', () => {
     expect(sessionListSource).not.toContain('selectedSessionId:')
     expect(sessionListSource).not.toContain('focusedSessionId, selectionStore.state.selected, isMultiSelectActive')
