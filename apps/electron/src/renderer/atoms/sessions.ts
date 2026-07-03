@@ -711,6 +711,19 @@ export interface BackgroundTask {
   intent?: string
 }
 
+export function updateBackgroundTaskProgress(
+  tasks: readonly BackgroundTask[],
+  toolUseId: string,
+  elapsedSeconds: number,
+): BackgroundTask[] {
+  const index = tasks.findIndex(task => task.toolUseId === toolUseId)
+  const task = tasks[index]
+  if (!task || task.elapsedSeconds === elapsedSeconds) return tasks as BackgroundTask[]
+  const next = [...tasks]
+  next[index] = { ...task, elapsedSeconds }
+  return next
+}
+
 /**
  * Atom family for tracking active background tasks per session
  * Updated on task_backgrounded, shell_backgrounded, task_progress events

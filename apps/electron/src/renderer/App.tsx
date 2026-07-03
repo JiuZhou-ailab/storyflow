@@ -58,6 +58,7 @@ import {
   loadedSessionsAtom,
   forceSessionMessagesReloadAtom,
   backgroundTasksAtomFamily,
+  updateBackgroundTaskProgress,
   windowWorkspaceIdAtom,
   type SessionMeta,
 } from '@/atoms/sessions'
@@ -187,11 +188,7 @@ function handleBackgroundTaskEvent(
     }
   } else if (event.type === 'task_progress' && 'toolUseId' in evt && 'elapsedSeconds' in evt) {
     const currentTasks = store.get(backgroundTasksAtom)
-    store.set(backgroundTasksAtom, currentTasks.map(t =>
-      t.toolUseId === evt.toolUseId
-        ? { ...t, elapsedSeconds: evt.elapsedSeconds as number }
-        : t
-    ))
+    store.set(backgroundTasksAtom, updateBackgroundTaskProgress(currentTasks, evt.toolUseId as string, evt.elapsedSeconds as number))
   } else if (event.type === 'task_completed' && 'taskId' in evt) {
     // Remove task when background task completes
     const currentTasks = store.get(backgroundTasksAtom)

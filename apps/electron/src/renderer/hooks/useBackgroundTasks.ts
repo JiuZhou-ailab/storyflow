@@ -7,7 +7,7 @@
 
 import { useAtom } from 'jotai'
 import { useCallback } from 'react'
-import { backgroundTasksAtomFamily, type BackgroundTask } from '@/atoms/sessions'
+import { backgroundTasksAtomFamily, updateBackgroundTaskProgress, type BackgroundTask } from '@/atoms/sessions'
 
 export interface UseBackgroundTasksOptions {
   /** Session ID to track tasks for */
@@ -45,11 +45,7 @@ export function useBackgroundTasks({ sessionId }: UseBackgroundTasksOptions): Us
   }, [setTasks])
 
   const updateTaskProgress = useCallback((toolUseId: string, elapsedSeconds: number) => {
-    setTasks(prev => prev.map(t =>
-      t.toolUseId === toolUseId
-        ? { ...t, elapsedSeconds }
-        : t
-    ))
+    setTasks(prev => updateBackgroundTaskProgress(prev, toolUseId, elapsedSeconds))
   }, [setTasks])
 
   const removeTask = useCallback((toolUseId: string) => {

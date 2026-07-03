@@ -14,6 +14,7 @@ import {
   initializeSessionsAtom,
   replaceLoadedSessionAtom,
   updateSessionAtom,
+  updateBackgroundTaskProgress,
 } from '../sessions'
 
 function msg(id: string, role: Message['role'] = 'user'): Message {
@@ -216,6 +217,23 @@ describe('session message loading atoms', () => {
     expect(calls).toEqual([sessionId, sessionId])
     expect(secondResult?.messages.map((message) => message.id)).toEqual(['m1', 'm2'])
     expect(store.get(loadedSessionsAtom).has(sessionId)).toBe(true)
+  })
+})
+
+describe('background task atoms', () => {
+  it('keeps the original task list when progress seconds do not change', () => {
+    const tasks = [{
+      id: 'task-1',
+      type: 'agent' as const,
+      toolUseId: 'tool-1',
+      startTime: 1,
+      elapsedSeconds: 12,
+    }]
+
+    expect(updateBackgroundTaskProgress(tasks, 'tool-1', 12)).toBe(tasks)
+    expect(updateBackgroundTaskProgress(tasks, 'tool-1', 13)).toEqual([
+      { ...tasks[0], elapsedSeconds: 13 },
+    ])
   })
 })
 
