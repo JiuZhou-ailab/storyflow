@@ -332,6 +332,81 @@ describe('turn lifecycle scenarios', () => {
       expect(assistantTurn.response?.text).toBe('Response text')
       expect(assistantTurn.response?.messageId).toBeUndefined()
     })
+
+    it('promotes the latest intermediate text without reversing activities', () => {
+      resetCounters()
+      turnIdCounter++
+
+      const messages: Message[] = [
+        createUserMessage(),
+        createToolMessage('completed', 'Read', 'turn-1'),
+        { ...createAssistantMessage(false, true, 'turn-1'), content: 'First thought' },
+        { ...createAssistantMessage(false, true, 'turn-1'), content: 'Latest thought' },
+        createUserMessage('Next turn'),
+      ]
+      const originalReverse = Array.prototype.reverse
+      let turns: ReturnType<typeof groupMessagesByTurn> | undefined
+
+      try {
+        Array.prototype.reverse = function reverseShouldNotRun() {
+          throw new Error('groupMessagesByTurn should not copy and reverse activities')
+        }
+        turns = groupMessagesByTurn(messages)
+      } finally {
+        Array.prototype.reverse = originalReverse
+      }
+
+      const assistantTurn = getLastAssistantTurn(turns!)!
+      expect(assistantTurn.response?.text).toBe('Latest thought')
+    })
+
+    it('extracts the latest completed todo activity without filtering activities', () => {
+      resetCounters()
+
+      const messages: Message[] = [
+        createUserMessage(),
+        {
+          id: 'todo-old',
+          role: 'tool',
+          content: 'Todo list updated',
+          timestamp: Date.now() + 200,
+          toolName: 'TodoWrite',
+          toolUseId: 'todo-old-use',
+          toolStatus: 'completed',
+          toolResult: 'Todo list updated',
+          toolInput: { todos: [{ content: 'old task', status: 'pending' }] },
+          turnId: 'turn-1',
+        },
+        createToolMessage('completed', 'Read', 'turn-1'),
+        {
+          id: 'todo-new',
+          role: 'tool',
+          content: 'Todo list updated',
+          timestamp: Date.now() + 400,
+          toolName: 'TodoWrite',
+          toolUseId: 'todo-new-use',
+          toolStatus: 'completed',
+          toolResult: 'Todo list updated',
+          toolInput: { todos: [{ content: 'new task', status: 'in_progress' }] },
+          turnId: 'turn-1',
+        },
+        createUserMessage('Next turn'),
+      ]
+      const originalFilter = Array.prototype.filter
+      let turns: ReturnType<typeof groupMessagesByTurn> | undefined
+
+      try {
+        Array.prototype.filter = function filterShouldNotRun() {
+          throw new Error('groupMessagesByTurn should scan activities without filtering')
+        }
+        turns = groupMessagesByTurn(messages)
+      } finally {
+        Array.prototype.filter = originalFilter
+      }
+
+      const assistantTurn = getLastAssistantTurn(turns!)!
+      expect(assistantTurn.todos).toEqual([{ content: 'new task', status: 'in_progress' }])
+    })
   })
 })
 

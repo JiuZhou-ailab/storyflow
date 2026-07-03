@@ -292,11 +292,14 @@ function calculateActivityDepths(activities: ActivityItem[]): void {
  * Returns the latest complete task state available in the turn.
  */
 function extractTodosFromActivities(activities: ActivityItem[]): TodoItem[] | undefined {
-  const trackingActivities = activities
-    .filter(a => a.toolName && isTodoMutationTool(a.toolName) && a.status === 'completed')
-    .sort((a, b) => b.timestamp - a.timestamp) // Most recent first
-
-  const latestActivity = trackingActivities[0]
+  let latestActivity: ActivityItem | undefined
+  for (let i = activities.length - 1; i >= 0; i--) {
+    const activity = activities[i]
+    if (activity?.toolName && isTodoMutationTool(activity.toolName) && activity.status === 'completed') {
+      latestActivity = activity
+      break
+    }
+  }
   if (!latestActivity) return undefined
 
   try {
@@ -410,10 +413,15 @@ export function groupMessagesByTurn(messages: Message[]): Turn[] {
       // Only promote when turn is complete (processing indicator hidden)
       const hasPlan = currentTurn.activities.some(a => a.type === 'plan')
       if (!interrupted && !hasPlan && !currentTurn.response && currentTurn.isComplete && currentTurn.activities.length > 0) {
-        // Find the last intermediate text activity (reverse to get most recent)
-        const lastTextActivity = [...currentTurn.activities]
-          .reverse()
-          .find(a => a.type === 'intermediate' && a.content)
+        // Find the last intermediate text activity.
+        let lastTextActivity: ActivityItem | undefined
+        for (let i = currentTurn.activities.length - 1; i >= 0; i--) {
+          const activity = currentTurn.activities[i]
+          if (activity?.type === 'intermediate' && activity.content) {
+            lastTextActivity = activity
+            break
+          }
+        }
 
         if (lastTextActivity?.content) {
           currentTurn.response = {
