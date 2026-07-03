@@ -299,6 +299,33 @@ describe('session message loading atoms', () => {
     unsubscribe()
   })
 
+  it('does not copy messages when streaming delta targets a different turn', () => {
+    const store = createStore()
+    const sessionId = 's1'
+    const messages = new Proxy([
+      { ...msg('m1', 'user'), turnId: 'turn-0' },
+      {
+        ...msg('m2', 'assistant'),
+        isStreaming: true,
+        turnId: 'turn-1',
+      },
+    ] as Message[], {
+      get(target, prop, receiver) {
+        if (prop === Symbol.iterator) {
+          throw new Error('no-op streaming update should not copy messages')
+        }
+        return Reflect.get(target, prop, receiver)
+      },
+    })
+    const session = makeSession({ id: sessionId, messages })
+    store.set(sessionAtomFamily(sessionId), session)
+    const before = store.get(sessionAtomFamily(sessionId))
+
+    store.set(updateStreamingContentAtom, sessionId, ' ignored', 'turn-2')
+
+    expect(store.get(sessionAtomFamily(sessionId))).toBe(before)
+  })
+
   it('does not notify metadata subscribers when a metadata patch leaves values unchanged', () => {
     const store = createStore()
     const sessionId = 's1'

@@ -315,13 +315,14 @@ export const updateStreamingContentAtom = atom(
     const session = get(sessionAtom)
     if (!session) return
 
-    const messages = [...session.messages]
-    const lastMsg = messages[messages.length - 1]
+    const lastIndex = session.messages.length - 1
+    const lastMsg = session.messages[lastIndex]
 
     // Append to existing streaming message
     if (lastMsg?.role === 'assistant' && lastMsg.isStreaming &&
         (!turnId || lastMsg.turnId === turnId)) {
-      messages[messages.length - 1] = {
+      const messages = [...session.messages]
+      messages[lastIndex] = {
         ...lastMsg,
         content: lastMsg.content + content,
       }
