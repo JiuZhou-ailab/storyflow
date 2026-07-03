@@ -1881,6 +1881,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
                     // Check if this is the last response (for Accept Plan button visibility)
                     const isLastResponse = index === turns.length - 1 || !hasUserTurnAfterIndex[index]
+                    const hasPlanFollowUpAnnotations = pendingFollowUpAnnotations.length > 0
+                      && (turn.response?.isPlan === true || turn.activities.some(activity => activity.type === 'plan'))
 
                     // Assistant turns - render with TurnCard (buffered streaming)
                     const assistantUiKey = getAssistantTurnUiKey(turn, index)
@@ -1898,7 +1900,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                       <TurnCard
                         sessionId={session.id}
                         sessionFolderPath={session.sessionFolderPath}
-                        hasActiveFollowUpAnnotations={pendingFollowUpAnnotations.length > 0}
+                        hasActiveFollowUpAnnotations={hasPlanFollowUpAnnotations}
                         turnId={turn.turnId}
                         activities={turn.activities}
                         response={turn.response}

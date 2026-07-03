@@ -138,6 +138,12 @@ describe('ChatDisplay search performance contract', () => {
     expect(chatDisplaySource).not.toContain('const pendingFollowUpAnnotations = useMemo<PendingFollowUpAnnotation[]>')
   })
 
+  test('does not broadcast pending follow-up state to every TurnCard', () => {
+    expect(chatDisplaySource).toContain('const hasPlanFollowUpAnnotations =')
+    expect(chatDisplaySource).toContain('hasActiveFollowUpAnnotations={hasPlanFollowUpAnnotations}')
+    expect(chatDisplaySource).not.toContain('hasActiveFollowUpAnnotations={pendingFollowUpAnnotations.length > 0}')
+  })
+
   test('skips assistant turn indexing when no follow-ups are pending', () => {
     const indexStart = chatDisplaySource.indexOf('const assistantTurnIndexByMessageId = useMemo(() => {')
     const indexEnd = chatDisplaySource.indexOf('const scrollToFollowUpTurn = useCallback', indexStart)
