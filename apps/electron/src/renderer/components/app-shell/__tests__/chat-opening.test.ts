@@ -9,6 +9,7 @@ import { resolveChatOpeningPrompt } from '../chat-opening'
 
 const chatDisplaySource = readFileSync(new URL('../ChatDisplay.tsx', import.meta.url), 'utf8')
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf8')
+const chatPageSource = readFileSync(new URL('../../../pages/ChatPage.tsx', import.meta.url), 'utf8')
 const zhHansLocale = JSON.parse(readFileSync(new URL('../../../../../../../packages/shared/src/i18n/locales/zh-Hans.json', import.meta.url), 'utf8'))
 
 describe('resolveChatOpeningPrompt', () => {
@@ -150,9 +151,10 @@ describe('resolveChatOpeningPrompt', () => {
   })
 
   it('uses normalized AppShell opening metadata before raw workspace metadata', () => {
-    expect(chatDisplaySource).toContain('const openingProjectMetadata = appShellContext.openingProjectMetadata')
-    expect(chatDisplaySource).toContain('projectType: openingProjectMetadata?.projectType ?? activeWorkspaceMetadata?.projectType')
-    expect(chatDisplaySource).toContain('methodPackId: openingProjectMetadata?.methodPackId ?? activeWorkspaceMetadata?.methodPackId')
+    expect(chatPageSource).toContain('projectType: openingProjectMetadata?.projectType ?? activeWorkspace?.projectType')
+    expect(chatPageSource).toContain('methodPackId: openingProjectMetadata?.methodPackId ?? activeWorkspace?.methodPackId')
+    expect(chatPageSource).toContain('chatOpening={chatOpening}')
+    expect(chatDisplaySource).not.toContain('openingProjectMetadata')
   })
 
   it('derives short-form opening metadata from detected writing workspace files', () => {
