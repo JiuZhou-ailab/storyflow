@@ -560,6 +560,15 @@ function getToolDisplayName(name: string): string {
   return displayNames[stripped] || stripped
 }
 
+function getTimestampOrderedActivities(activities: ActivityItem[]): ActivityItem[] {
+  for (let i = 1; i < activities.length; i += 1) {
+    if (activities[i - 1]!.timestamp > activities[i]!.timestamp) {
+      return [...activities].sort((a, b) => a.timestamp - b.timestamp)
+    }
+  }
+  return activities
+}
+
 /**
  * Strip session/workspace folder paths from file paths for cleaner display.
  * Only strips paths that match the current session folder path.
@@ -2876,7 +2885,7 @@ export const TurnCard = React.memo(function TurnCard({
   // Sort activities by timestamp for correct chronological order
   // This handles the live streaming case (turn-utils sorts on flush for completed turns)
   const allSortedActivities = useMemo(
-    () => [...activities].sort((a, b) => a.timestamp - b.timestamp),
+    () => getTimestampOrderedActivities(activities),
     [activities]
   )
 

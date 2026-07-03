@@ -34,4 +34,10 @@ describe('TurnCard performance contracts', () => {
     expect(previewSource).not.toContain('[...activities]')
     expect(previewSource).not.toContain('.reverse()')
   })
+
+  it('reuses timestamp-ordered activities instead of always cloning and sorting', () => {
+    expect(turnCardSource).toContain('function getTimestampOrderedActivities(')
+    expect(turnCardSource).toContain('getTimestampOrderedActivities(activities)')
+    expect(turnCardSource).not.toContain('() => [...activities].sort')
+  })
 })
