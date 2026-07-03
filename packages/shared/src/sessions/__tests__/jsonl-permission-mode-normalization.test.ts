@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { readSessionHeader, readSessionJsonl } from '../jsonl.ts';
+import { makeSessionPathPortable, readSessionHeader, readSessionJsonl } from '../jsonl.ts';
 
 const tempDirs: string[] = [];
 
@@ -80,5 +80,53 @@ describe('session jsonl: permission mode normalization', () => {
     const loaded = readSessionJsonl(sessionFile);
     expect(loaded?.permissionMode).toBe('safe');
     expect(loaded?.previousPermissionMode).toBe('allow-all');
+  });
+
+  it('loads full sessions while expanding portable paths and skipping corrupt message lines', () => {
+    const sessionDir = mkdtempSync(join(tmpdir(), 'session-jsonl-contract-'));
+    tempDirs.push(sessionDir);
+
+    const sessionFile = join(sessionDir, 'session.jsonl');
+    const tokenUsage = {
+      inputTokens: 10,
+      outputTokens: 20,
+      totalTokens: 30,
+      contextTokens: 5,
+      costUsd: 0.01,
+    };
+    const header = {
+      id: 's3',
+      workspaceRootPath: join(sessionDir, 'workspace'),
+      workingDirectory: join(sessionDir, 'work'),
+      createdAt: Date.now(),
+      lastUsedAt: Date.now(),
+      messageCount: 2,
+      tokenUsage,
+    };
+    const message = {
+      id: 'm1',
+      type: 'tool',
+      content: 'result',
+      timestamp: Date.now(),
+      artifactPath: join(sessionDir, 'artifact.json'),
+    };
+
+    writeFileSync(sessionFile, [
+      makeSessionPathPortable(JSON.stringify(header), sessionDir),
+      makeSessionPathPortable(JSON.stringify(message), sessionDir),
+      '{"id":"broken"',
+      '',
+    ].join('\n'), 'utf-8');
+
+    const loaded = readSessionJsonl(sessionFile);
+    expect(loaded?.workspaceRootPath).toBe(join(sessionDir, 'workspace'));
+    expect(loaded?.workingDirectory).toBe(join(sessionDir, 'work'));
+    expect(loaded?.sdkCwd).toBe(join(sessionDir, 'work'));
+    expect(loaded?.tokenUsage).toEqual(tokenUsage);
+    expect(loaded?.messages).toHaveLength(1);
+    expect(loaded?.messages[0]).toEqual(expect.objectContaining({
+      id: 'm1',
+      artifactPath: join(sessionDir, 'artifact.json'),
+    }));
   });
 });
