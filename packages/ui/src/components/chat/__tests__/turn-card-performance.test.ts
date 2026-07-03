@@ -6,11 +6,20 @@ import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
 
 const turnCardSource = readFileSync(new URL('../TurnCard.tsx', import.meta.url), 'utf8')
+const sessionViewerSource = readFileSync(new URL('../SessionViewer.tsx', import.meta.url), 'utf8')
+const chatDisplaySource = readFileSync(new URL('../../../../../../apps/electron/src/renderer/components/app-shell/ChatDisplay.tsx', import.meta.url), 'utf8')
 
 describe('TurnCard performance contracts', () => {
   it('does not re-render completed turns for unrelated activity group expansion changes', () => {
     expect(turnCardSource).toContain('function hasRelevantActivityGroupExpansionChanged')
     expect(turnCardSource).toContain('hasRelevantActivityGroupExpansionChanged(prev.activities, prev.expandedActivityGroups, next.expandedActivityGroups)')
     expect(turnCardSource).not.toContain('prev.expandedActivityGroups !== next.expandedActivityGroups')
+  })
+
+  it('derives edit/write activity availability inside TurnCard', () => {
+    expect(turnCardSource).toContain('const effectiveHasEditOrWriteActivities = React.useMemo')
+    expect(turnCardSource).toContain('hasEditOrWriteActivities={effectiveHasEditOrWriteActivities}')
+    expect(chatDisplaySource).not.toContain('hasEditOrWriteActivities={turn.activities.some')
+    expect(sessionViewerSource).not.toContain('hasEditOrWriteActivities={turn.activities.some')
   })
 })

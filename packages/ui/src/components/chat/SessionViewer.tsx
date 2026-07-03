@@ -207,9 +207,6 @@ export function SessionViewer({
                     todos={turn.todos}
                     expandedActivityGroups={expandedActivityGroups}
                     onExpandedActivityGroupsChange={handleExpandedActivityGroupsChange}
-                    hasEditOrWriteActivities={turn.activities.some(a =>
-                      a.toolName === 'Edit' || a.toolName === 'Write'
-                    )}
                     onOpenMultiFileDiff={platformActions.onOpenMultiFileDiff
                       ? () => platformActions.onOpenMultiFileDiff!(session.id, turn.turnId)
                       : undefined

@@ -2074,9 +2074,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                             setOverlayState({ type: 'activity', activity })
                           }
                         }}
-                        hasEditOrWriteActivities={turn.activities.some(a =>
-                          a.toolName === 'Edit' || a.toolName === 'Write'
-                        )}
                         onOpenMultiFileDiff={() => {
                           const changes = collectTurnFileChanges(turn.activities)
                           if (changes.length > 0) {

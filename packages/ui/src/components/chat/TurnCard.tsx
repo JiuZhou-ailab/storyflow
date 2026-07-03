@@ -2851,6 +2851,12 @@ export const TurnCard = React.memo(function TurnCard({
     () => getPreviewText(activities, intent, isStreaming, !!response, isComplete),
     [activities, intent, isStreaming, response, isComplete]
   )
+  const effectiveHasEditOrWriteActivities = React.useMemo(
+    () => hasEditOrWriteActivities ?? activities.some(activity =>
+      activity.toolName === 'Edit' || activity.toolName === 'Write'
+    ),
+    [activities, hasEditOrWriteActivities]
+  )
 
   // Sort activities by timestamp for correct chronological order
   // This handles the live streaming case (turn-utils sorts on flush for completed turns)
@@ -2978,7 +2984,7 @@ export const TurnCard = React.memo(function TurnCard({
               <TurnCardActionsMenu
                 onOpenDetails={onOpenDetails}
                 onOpenMultiFileDiff={onOpenMultiFileDiff}
-                hasEditOrWriteActivities={hasEditOrWriteActivities}
+                hasEditOrWriteActivities={effectiveHasEditOrWriteActivities}
               />
             )}
           </button>
