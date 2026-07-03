@@ -1,3 +1,7 @@
+// input: Runtime operation names, timing marks, and optional metric metadata
+// output: Debug-gated performance metrics, summaries, and formatted log lines
+// pos: Shared performance instrumentation primitive used by CLI, Electron, and server-core
+
 /**
  * Performance Instrumentation
  *
@@ -28,7 +32,7 @@
 import { isDebugEnabled } from './debug.ts';
 
 // Performance metrics storage
-interface PerfMetric {
+export interface PerfMetric {
   name: string;
   startTime: number;
   endTime?: number;
@@ -37,7 +41,7 @@ interface PerfMetric {
   metadata?: Record<string, unknown>;
 }
 
-interface PerfConfig {
+export interface PerfConfig {
   enabled: boolean;
   logToFile: boolean;
   logFilePath: string;
@@ -96,7 +100,7 @@ export function isPerfEnabled(): boolean {
 /**
  * Format a metric for logging
  */
-function formatMetric(metric: PerfMetric): string {
+export function formatPerfMetric(metric: PerfMetric): string {
   const timestamp = new Date().toISOString();
   const duration = metric.duration?.toFixed(2) ?? 'N/A';
 
@@ -142,7 +146,7 @@ function logMetric(metric: PerfMetric): void {
 
   // Log to stderr (avoids interfering with stdout)
   if (metric.duration !== undefined) {
-    const line = formatMetric(metric);
+    const line = formatPerfMetric(metric);
     process.stderr.write(line + '\n');
   }
 }

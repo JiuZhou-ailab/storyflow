@@ -20,6 +20,7 @@ Build, validation, packaging, install, and local development entry scripts for t
 - `electron-build-resources.ts` - Electron resources copy step.
 - `electron-clean.ts` - Electron build artifact cleaner.
 - `electron-dev.ts` - local Electron development runner.
+- `electron-perf-summary.ts` - summarize Electron debug performance logs into operation latency evidence.
 - `generate-dev-cert.sh` - local certificate generator.
 - `install-app.ps1` - Windows app installer.
 - `install-app.sh` - Unix app installer.

@@ -105,7 +105,7 @@ import { BrowserPaneManager } from './browser-pane-manager'
 import { OAuthFlowStore } from '@craft-agent/shared/auth'
 import { registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath, getMessagingGatewayLogFilePath, messagingGatewayLog } from './logger'
-import { setPerfEnabled, enableDebug } from '@craft-agent/shared/utils'
+import { configurePerfTracking, enableDebug, formatPerfMetric } from '@craft-agent/shared/utils'
 import {
   resolveActivateWindowWorkspaceId,
   resolveStartupWindowWorkspaceId,
@@ -133,7 +133,12 @@ log.initialize()
 if (isDebugMode) {
   process.env.CRAFT_DEBUG = '1'
   enableDebug()
-  setPerfEnabled(true)
+  configurePerfTracking({
+    enabled: true,
+    onMetric: metric => {
+      mainLog.info(formatPerfMetric(metric))
+    },
+  })
 }
 
 // Bundle CLI tools: resolve platform-specific uv binary and wrapper scripts.
