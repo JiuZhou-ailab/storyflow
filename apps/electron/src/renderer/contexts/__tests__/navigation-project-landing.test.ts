@@ -28,4 +28,12 @@ describe('project default navigation', () => {
     expect(navigationContextSource).toContain('<NavigationContext.Provider value={contextValue}>')
     expect(navigationContextSource).not.toContain('<NavigationContext.Provider\n      value={{')
   })
+
+  it('guards right sidebar state against semantic no-op writes', () => {
+    expect(navigationContextSource).toContain('function areRightSidebarPanelsEqual')
+    expect(navigationContextSource).toContain('const setRightSidebarIfChanged = useCallback')
+    expect(navigationContextSource).toContain('setRightSidebar(previous => areRightSidebarPanelsEqual(previous, panel) ? previous : panel)')
+    expect(navigationContextSource).toContain('setRightSidebarIfChanged(parsed.rightSidebar)')
+    expect(navigationContextSource).toContain('setRightSidebarIfChanged(panel)')
+  })
 })

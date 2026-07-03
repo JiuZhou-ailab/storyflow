@@ -124,6 +124,17 @@ interface NavigationContextValue {
 
 export const NavigationContext = createContext<NavigationContextValue | null>(null)
 
+function areRightSidebarPanelsEqual(
+  a: RightSidebarPanel | undefined,
+  b: RightSidebarPanel | undefined
+): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  if (a.type !== b.type) return false
+  if (a.type !== 'files' || b.type !== 'files') return true
+  return a.path === b.path
+}
+
 interface NavigationProviderProps {
   children: ReactNode
   /** Current workspace ID */
@@ -190,6 +201,9 @@ export function NavigationProvider({
   const [rightSidebar, setRightSidebar] = useState<RightSidebarPanel | undefined>()
   const rightSidebarRef = useRef<RightSidebarPanel | undefined>(rightSidebar)
   useEffect(() => { rightSidebarRef.current = rightSidebar }, [rightSidebar])
+  const setRightSidebarIfChanged = useCallback((panel: RightSidebarPanel | undefined) => {
+    setRightSidebar(previous => areRightSidebarPanelsEqual(previous, panel) ? previous : panel)
+  }, [])
 
   // NavigationState derived from the focused panel's route
   const navigationState: NavigationState = useMemo(() => {
@@ -417,12 +431,12 @@ export function NavigationProvider({
       if (sidebarParam) {
         const parsed = parseRouteToNavigationState('allSessions', sidebarParam)
         if (parsed?.rightSidebar) {
-          setRightSidebar(parsed.rightSidebar)
+          setRightSidebarIfChanged(parsed.rightSidebar)
         } else {
-          setRightSidebar(undefined)
+          setRightSidebarIfChanged(undefined)
         }
       } else {
-        setRightSidebar(undefined)
+        setRightSidebarIfChanged(undefined)
       }
 
       // Parse panel entries from URL
@@ -483,7 +497,7 @@ export function NavigationProvider({
         store.set(reconcilePanelStackAtom, { entries, focusedIndex })
       }
     },
-    [store]
+    [store, setRightSidebarIfChanged]
   )
 
   // Keep ref fresh for use in event handlers / effects that capture stale closures
@@ -1182,9 +1196,9 @@ export function NavigationProvider({
   // =========================================================================
 
   const updateRightSidebar = useCallback((panel: RightSidebarPanel | undefined) => {
-    setRightSidebar(panel)
+    setRightSidebarIfChanged(panel)
     // pushState handled by the rightSidebar change effect
-  }, [])
+  }, [setRightSidebarIfChanged])
 
   const toggleRightSidebar = useCallback((panel?: RightSidebarPanel) => {
     const currentSidebar = rightSidebarRef.current
