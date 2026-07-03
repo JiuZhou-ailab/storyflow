@@ -91,6 +91,43 @@ describe('handleTextComplete messageId synchronization', () => {
     expect((next.session.messages[0] as any).canBranch).toBe(false)
   })
 
+  it('uses existing streaming message content before stale streaming state for empty text_complete', () => {
+    const state: SessionState = {
+      session: {
+        id: 'session-1',
+        messages: [
+          {
+            id: 'msg-local-temp-1',
+            role: 'assistant',
+            content: 'hello world',
+            isStreaming: true,
+            isPending: true,
+            turnId: 'turn-1',
+            timestamp: 100,
+          },
+        ],
+        lastMessageAt: Date.now(),
+      } as any,
+      streaming: {
+        content: 'hello',
+        turnId: 'turn-1',
+      },
+    }
+
+    const event: TextCompleteEvent = {
+      type: 'text_complete',
+      sessionId: 'session-1',
+      text: '',
+      turnId: 'turn-1',
+      messageId: 'msg-main-1',
+      timestamp: 200,
+    }
+
+    const next = handleTextComplete(state, event)
+
+    expect((next.session.messages[0] as any).content).toBe('hello world')
+  })
+
   it('keeps the original state for duplicate intermediate text_complete data', () => {
     const state = makeState([
       {

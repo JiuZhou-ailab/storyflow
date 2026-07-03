@@ -60,7 +60,7 @@ describe('handleTextDelta streaming hot path', () => {
 
     expect(next.session.messages).toHaveLength(2)
     expect((next.session.messages[1] as any).content).toBe('hello world')
-    expect(next.streaming?.content).toBe('hello world')
+    expect(next.streaming).toBe(state.streaming)
   })
 
   it('keeps the original state for empty text_delta data', () => {

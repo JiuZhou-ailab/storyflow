@@ -37,7 +37,26 @@ export function handleTextDelta(
 
   const { session, streaming } = state
 
-  // Accumulate in streaming state
+  const lastStreamingIndex = getLastStreamingMessageIndex(session.messages, event.turnId)
+  const streamingIndex = lastStreamingIndex === -1
+    ? findStreamingMessage(session.messages, event.turnId)
+    : lastStreamingIndex
+
+  if (streamingIndex !== -1) {
+    const nextStreaming = streaming && event.turnId === streaming.turnId
+      ? streaming
+      : streaming
+        ? { ...streaming, turnId: event.turnId ?? streaming.turnId }
+        : null
+    // Message exists - update its content
+    const currentMsg = session.messages[streamingIndex]
+    const updatedSession = updateMessageAt(session, streamingIndex, {
+      content: currentMsg.content + event.delta,
+    })
+    return { session: updatedSession, streaming: nextStreaming }
+  }
+
+  // Accumulate in streaming state only for the race path without a message.
   const newStreaming: StreamingState = streaming
     ? {
         ...streaming,
@@ -48,20 +67,6 @@ export function handleTextDelta(
         content: event.delta,
         turnId: event.turnId
       }
-
-  const lastStreamingIndex = getLastStreamingMessageIndex(session.messages, event.turnId)
-  const streamingIndex = lastStreamingIndex === -1
-    ? findStreamingMessage(session.messages, event.turnId)
-    : lastStreamingIndex
-
-  if (streamingIndex !== -1) {
-    // Message exists - update its content
-    const currentMsg = session.messages[streamingIndex]
-    const updatedSession = updateMessageAt(session, streamingIndex, {
-      content: currentMsg.content + event.delta,
-    })
-    return { session: updatedSession, streaming: newStreaming }
-  }
 
   // No streaming message found - create new one
   // Don't update lastMessageAt for streaming messages (they're intermediate)
@@ -120,9 +125,9 @@ export function handleTextComplete(
     // Only update lastMessageAt for final (non-intermediate) messages
     const shouldUpdateTimestamp = !event.isIntermediate
     const existingMsg = session.messages[msgIndex]
-    // Fallback chain: SDK event text → accumulated streaming content → existing message content.
+    // Fallback chain: SDK event text → existing message content → accumulated streaming content.
     // Guards against SDK quirks or race conditions where event.text arrives empty.
-    const resolvedContent = event.text || streaming?.content || existingMsg?.content || ''
+    const resolvedContent = event.text || existingMsg?.content || streaming?.content || ''
     const updatedSession = updateMessageAt(session, msgIndex, {
       // Replace temporary renderer-generated ID with authoritative main-process ID
       // so branchFromMessageId always resolves against persisted session.jsonl.
