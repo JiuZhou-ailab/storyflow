@@ -1,3 +1,4 @@
+import { readFileSync } from 'fs'
 import { describe, it, expect } from 'bun:test'
 import {
   exceedsLongTextLineThreshold,
@@ -35,5 +36,28 @@ describe('exceedsLongTextLineThreshold', () => {
   it('detects long pasted text without requiring exact full line count', () => {
     expect(exceedsLongTextLineThreshold(Array.from({ length: 100 }, () => 'x').join('\n'))).toBe(false)
     expect(exceedsLongTextLineThreshold(Array.from({ length: 101 }, () => 'x').join('\n'))).toBe(true)
+  })
+})
+
+describe('RichTextInput mention hot paths', () => {
+  it('skips mention signature work for ordinary input without bracket tokens', () => {
+    const source = readFileSync(new URL('../rich-text-input.tsx', import.meta.url), 'utf-8')
+    const handlerStart = source.indexOf('const handleInput = React.useCallback')
+    const handlerEnd = source.indexOf('// Handle composition events', handlerStart)
+    const handlerSource = source.slice(handlerStart, handlerEnd)
+
+    expect(handlerSource).toContain("const mayHaveMentions = newText.includes('[') || !!lastMentionSignatureRef.current")
+    expect(handlerSource).toContain('if (mayHaveMentions) {')
+    expect(handlerSource).toContain('const newSignature = getMentionSignature(newText, skillSlugs, sourceSlugs)')
+  })
+
+  it('skips parsing mentions for render layout when value has no bracket tokens', () => {
+    const source = readFileSync(new URL('../rich-text-input.tsx', import.meta.url), 'utf-8')
+    const hasMentionsStart = source.indexOf('const hasMentions = React.useMemo')
+    const hasMentionsEnd = source.indexOf('return (', hasMentionsStart)
+    const hasMentionsSource = source.slice(hasMentionsStart, hasMentionsEnd)
+
+    expect(hasMentionsSource).toContain("if (!safeValue.includes('[')) return false")
+    expect(hasMentionsSource).toContain('const mentions = parseMentions(safeValue, skillSlugs, sourceSlugs)')
   })
 })

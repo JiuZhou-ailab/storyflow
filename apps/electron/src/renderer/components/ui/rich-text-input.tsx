@@ -638,16 +638,19 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       cursorPositionRef.current = cursorPos
 
       // Check if mentions changed - if so, we need to re-render HTML
-      const newSignature = getMentionSignature(newText, skillSlugs, sourceSlugs)
-      if (newSignature !== lastMentionSignatureRef.current) {
-        lastMentionSignatureRef.current = newSignature
-        // Re-render with badges
-        isInternalUpdate.current = true
-        const html = textToHTML(newText, skills, sources, workspaceId, fileLabelByRelativePath)
-        divRef.current.innerHTML = html || '<br>' // Empty contenteditable needs a BR
-        // Restore cursor
-        setCursorPosition(divRef.current, cursorPos)
-        isInternalUpdate.current = false
+      const mayHaveMentions = newText.includes('[') || !!lastMentionSignatureRef.current
+      if (mayHaveMentions) {
+        const newSignature = getMentionSignature(newText, skillSlugs, sourceSlugs)
+        if (newSignature !== lastMentionSignatureRef.current) {
+          lastMentionSignatureRef.current = newSignature
+          // Re-render with badges
+          isInternalUpdate.current = true
+          const html = textToHTML(newText, skills, sources, workspaceId, fileLabelByRelativePath)
+          divRef.current.innerHTML = html || '<br>' // Empty contenteditable needs a BR
+          // Restore cursor
+          setCursorPosition(divRef.current, cursorPos)
+          isInternalUpdate.current = false
+        }
       }
 
       onChange(newText)
@@ -808,6 +811,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
 
     // Check if value contains any mentions (badges) to adjust line height
     const hasMentions = React.useMemo(() => {
+      if (!safeValue.includes('[')) return false
       const mentions = parseMentions(safeValue, skillSlugs, sourceSlugs)
       return mentions.skills.length > 0 || mentions.sources.length > 0 || mentions.files.length > 0 || mentions.folders.length > 0
     }, [safeValue, skillSlugs, sourceSlugs])
