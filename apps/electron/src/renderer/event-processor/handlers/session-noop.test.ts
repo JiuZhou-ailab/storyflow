@@ -7,6 +7,7 @@ import {
   handleSessionModelChanged,
   handleSessionStatusChanged,
   handleSourcesChanged,
+  handleTitleRegenerating,
 } from './session'
 import type {
   AsyncOperationEvent,
@@ -17,6 +18,7 @@ import type {
   SessionStatusChangedEvent,
   SessionState,
   SourcesChangedEvent,
+  TitleRegeneratingEvent,
 } from '../types'
 
 function makeState(sessionFields: Record<string, unknown>): SessionState {
@@ -107,5 +109,16 @@ describe('session event no-op guards', () => {
     }
 
     expect(handleNameChanged(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state for duplicate title regeneration status', () => {
+    const state = makeState({ isRegeneratingTitle: true })
+    const event: TitleRegeneratingEvent = {
+      type: 'title_regenerating',
+      sessionId: 'session-1',
+      isRegenerating: true,
+    }
+
+    expect(handleTitleRegenerating(state, event).state).toBe(state)
   })
 })
