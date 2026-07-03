@@ -194,6 +194,18 @@ describe('useInlineMention hot path', () => {
     expect(hookSource).not.toContain('debugLog')
   })
 
+  it('uses indexed file mentions before falling back to filesystem search', () => {
+    const source = readFileSync(new URL('../mention-menu.tsx', import.meta.url), 'utf-8')
+    const hookStart = source.indexOf('export function useInlineMention')
+    const hookEnd = source.indexOf('function MentionMenuContent', hookStart)
+    const hookSource = source.slice(hookStart, hookEnd)
+
+    expect(hookSource).toContain('const hasIndexedFileMatch = files.length > 0 && files.some(')
+    expect(hookSource.indexOf('if (hasIndexedFileMatch)')).toBeLessThan(
+      hookSource.indexOf('window.electronAPI.searchFiles(basePath, filterText)')
+    )
+  })
+
   it('precomputes mention filter ranking keys before sorting results', () => {
     const source = readFileSync(new URL('../mention-menu.tsx', import.meta.url), 'utf-8')
 

@@ -736,7 +736,19 @@ export function useInlineMention({
       // filter client-side instantly (no IPC, no debounce). Otherwise fire a
       // debounced IPC to populate the cache. Cache clears when menu closes.
       if (basePath && filterText.length >= 1) {
-        if (fileCache.current.length > 0) {
+        const lowerFileFilter = filterText.trimEnd().toLowerCase()
+        const hasIndexedFileMatch = files.length > 0 && files.some(
+          file => scoreMentionFileReference(file, lowerFileFilter) > 0
+        )
+
+        if (hasIndexedFileMatch) {
+          if (fileSearchTimeout.current) {
+            clearTimeout(fileSearchTimeout.current)
+            fileSearchTimeout.current = null
+          }
+          clearFileResults()
+          setCommittedFilter(filterText)
+        } else if (fileCache.current.length > 0) {
           // Cache exists — filter client-side instantly, no IPC needed
           if (fileSearchTimeout.current) {
             clearTimeout(fileSearchTimeout.current)
@@ -806,7 +818,7 @@ export function useInlineMention({
       clearFileResults()
       fileCache.current = []
     }
-  }, [inputRef, basePath, files.length, clearFileResults])
+  }, [inputRef, basePath, files, clearFileResults])
 
   const handleSelect = React.useCallback((item: MentionItem): { value: string; cursorPosition: number } => {
     let result = ''
