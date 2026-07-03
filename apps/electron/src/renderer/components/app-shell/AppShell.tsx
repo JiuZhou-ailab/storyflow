@@ -1880,9 +1880,6 @@ function AppShellContent({
     return (pendingPermissions.get(sessionId)?.length ?? 0) > 0
   }, [pendingPermissions])
 
-  // Workspace-level unread indicators are still kept fresh for legacy workspace selector surfaces.
-  const [, setWorkspaceUnreadMap] = useState<Record<string, boolean>>({})
-
   // Reload skills when active session's workingDirectory changes (for project-level skills)
   // Skills are loaded from: global (~/.agents/skills/), workspace, and project ({workingDirectory}/.agents/skills/)
   const activeSessionMeta = effectiveSessionId ? sessionMetaMap.get(effectiveSessionId) : undefined
@@ -3288,46 +3285,6 @@ function AppShellContent({
   const activeSessionMetas = useMemo(() => {
     return workspaceSessionMetas.filter(s => !s.isArchived)
   }, [workspaceSessionMetas])
-
-  const refreshWorkspaceUnreadMap = useCallback(async () => {
-    try {
-      const summary = await window.electronAPI.getUnreadSummary()
-      const next: Record<string, boolean> = {}
-
-      for (const workspace of workspaces) {
-        next[workspace.id] = !!summary.hasUnreadByWorkspace[workspace.id]
-      }
-
-      setWorkspaceUnreadMap(next)
-    } catch (error) {
-      console.error('[AppShell] Failed to refresh workspace unread indicators:', error)
-    }
-  }, [workspaces])
-
-  // Initial + workspace-list refresh
-  useEffect(() => {
-    void refreshWorkspaceUnreadMap()
-  }, [refreshWorkspaceUnreadMap])
-
-  // Keep active workspace unread indicator in sync with live metadata updates
-  useEffect(() => {
-    if (!activeWorkspaceId) return
-    const activeHasUnread = activeSessionMetas.some((session) => !!session.hasUnread)
-    setWorkspaceUnreadMap((prev) => ({ ...prev, [activeWorkspaceId]: activeHasUnread }))
-  }, [activeWorkspaceId, activeSessionMetas])
-
-  // Keep cross-workspace indicators in sync with global unread updates from main process
-  useEffect(() => {
-    const cleanup = window.electronAPI.onUnreadSummaryChanged((summary) => {
-      const next: Record<string, boolean> = {}
-      for (const workspace of workspaces) {
-        next[workspace.id] = !!summary.hasUnreadByWorkspace[workspace.id]
-      }
-      setWorkspaceUnreadMap(next)
-    })
-
-    return cleanup
-  }, [workspaces])
 
   // Filter session metadata based on sidebar mode and chat filter
   const filteredSessionMetas = useMemo(() => {
