@@ -5,12 +5,14 @@ mock.module('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '' }))
 mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDocument: () => ({}) }))
 
 let createSlashSkillItems: typeof import('../slash-command-menu').createSlashSkillItems
+let createSlashFolderItems: typeof import('../slash-command-menu').createSlashFolderItems
 let getSlashSkillInsertionText: typeof import('../slash-command-menu').getSlashSkillInsertionText
 let parseInlineSlashCommandQuery: typeof import('../slash-command-menu').parseInlineSlashCommandQuery
 
 beforeAll(async () => {
   const mod = await import('../slash-command-menu')
   createSlashSkillItems = mod.createSlashSkillItems
+  createSlashFolderItems = mod.createSlashFolderItems
   getSlashSkillInsertionText = mod.getSlashSkillInsertionText
   parseInlineSlashCommandQuery = mod.parseInlineSlashCommandQuery
 })
@@ -63,5 +65,20 @@ describe('slash skill commands', () => {
   it('keeps hyphenated skill names in the slash query', () => {
     expect(parseInlineSlashCommandQuery('/review-pr')).toEqual({ start: 0, filter: 'review-pr' })
     expect(parseInlineSlashCommandQuery('please /review-pr')).toEqual({ start: 7, filter: 'review-pr' })
+  })
+
+  it('builds sorted folder items from precomputed folder display data', () => {
+    const items = createSlashFolderItems([
+      '/Users/zjding/work/beta',
+      '/Users/zjding/work/Alpha',
+      '/tmp/zeta',
+    ], '/Users/zjding')
+
+    expect(items.map(item => item.label)).toEqual(['Alpha', 'beta', 'zeta'])
+    expect(items.map(item => item.description)).toEqual([
+      '~/work/Alpha',
+      '~/work/beta',
+      '/tmp/zeta',
+    ])
   })
 })

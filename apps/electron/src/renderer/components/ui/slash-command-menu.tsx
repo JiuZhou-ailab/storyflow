@@ -596,6 +596,25 @@ function getFolderName(path: string): string {
   return path.split('/').pop() || path
 }
 
+export function createSlashFolderItems(recentFolders: string[], homeDir?: string): SlashFolderItem[] {
+  return recentFolders
+    .map(path => {
+      const label = getFolderName(path)
+      return {
+        item: {
+          id: path,
+          type: 'folder' as const,
+          label,
+          description: formatPathForDisplay(path, homeDir),
+          path,
+        },
+        sortLabel: label.toLowerCase(),
+      }
+    })
+    .sort((a, b) => a.sortLabel.localeCompare(b.sortLabel))
+    .map(({ item }) => item)
+}
+
 export function parseInlineSlashCommandQuery(textBeforeCursor: string): { start: number; filter: string } | null {
   const slashMatch = textBeforeCursor.match(/(?:^|\s)\/([\p{L}\p{N}\p{M}_\-.]{0,100})$/u)
   if (!slashMatch) return null
@@ -679,23 +698,10 @@ export function useInlineSlashCommand({
 
     // Recent folders section - sorted alphabetically by folder name, show all
     if (recentFolders.length > 0) {
-      const sortedFolders = [...recentFolders]
-        .sort((a, b) => {
-          const nameA = getFolderName(a).toLowerCase()
-          const nameB = getFolderName(b).toLowerCase()
-          return nameA.localeCompare(nameB)
-        })
-
       result.push({
         id: 'folders',
         label: 'Recent Working Directories',
-        items: sortedFolders.map(path => ({
-          id: path,
-          type: 'folder' as const,
-          label: getFolderName(path),
-          description: formatPathForDisplay(path, homeDir),
-          path,
-        })),
+        items: createSlashFolderItems(recentFolders, homeDir),
       })
     }
 
