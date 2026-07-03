@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import type { LabelConfig } from '@craft-agent/shared/labels';
 import { createLabelMenuItems, filterItems } from '../label-menu-utils';
 
@@ -84,5 +85,20 @@ describe('filterItems', () => {
     ];
 
     expect(filterItems(items, 'pri/al').map(item => item.id)).toEqual(['alpha']);
+  });
+});
+
+describe('InlineLabelMenu render path', () => {
+  it('memoizes filtered labels and states while keyboard highlight changes', () => {
+    const source = readFileSync(new URL('../label-menu.tsx', import.meta.url), 'utf-8');
+
+    expect(source).toContain('const filteredItems = React.useMemo(');
+    expect(source).toContain('() => filterItems(items, filter)');
+    expect(source).toContain('[items, filter]');
+    expect(source).toContain('const filteredStates_ = React.useMemo(');
+    expect(source).toContain('() => filterSessionStatuses(states, filter)');
+    expect(source).toContain('[states, filter]');
+    expect(source).not.toContain('const filteredItems = filterItems(items, filter)');
+    expect(source).not.toContain('const filteredStates_ = filterSessionStatuses(states, filter)');
   });
 });

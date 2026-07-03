@@ -94,8 +94,14 @@ export function InlineLabelMenu({
   const menuRef = React.useRef<HTMLDivElement>(null)
   const listRef = React.useRef<HTMLDivElement>(null)
   const [selectedIndex, setSelectedIndex] = React.useState(0)
-  const filteredItems = filterItems(items, filter)
-  const filteredStates_ = filterSessionStatuses(states, filter)
+  const filteredItems = React.useMemo(
+    () => filterItems(items, filter),
+    [items, filter],
+  )
+  const filteredStates_ = React.useMemo(
+    () => filterSessionStatuses(states, filter),
+    [states, filter],
+  )
 
   // Build a unified flat index for keyboard navigation:
   // [0..filteredStates_.length-1] = states, [filteredStates_.length..] = labels
