@@ -108,8 +108,16 @@ export function updateMessageAt(
   if (index < 0 || index >= session.messages.length) {
     return session
   }
+  const currentMessage = session.messages[index]
+  if (!updateTimestamp) {
+    const hasChanges = (Object.keys(updates) as Array<keyof Message>).some(
+      key => !Object.is(currentMessage[key], updates[key])
+    )
+    if (!hasChanges) return session
+  }
+
   const messages = [...session.messages]
-  messages[index] = { ...messages[index], ...updates }
+  messages[index] = { ...currentMessage, ...updates }
   return {
     ...session,
     messages,

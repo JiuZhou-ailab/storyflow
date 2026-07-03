@@ -8,6 +8,7 @@ import {
   findAssistantMessage,
   findMessageByTurnId,
   findStreamingMessage,
+  updateMessageAt,
 } from '../../helpers'
 
 function message(overrides: Partial<Message>): Message {
@@ -31,5 +32,21 @@ describe('message lookup helpers', () => {
     expect(findStreamingMessage(messages, 'turn-1')).toBe(2)
     expect(findAssistantMessage(messages, 'turn-1')).toBe(2)
     expect(findMessageByTurnId(messages, 'turn-1', 'assistant')).toBe(2)
+  })
+
+  it('keeps the original session reference for no-op message patches', () => {
+    const existing = message({
+      id: 'assistant-1',
+      content: 'same',
+      isStreaming: true,
+    })
+    const session = {
+      id: 'session-1',
+      messages: [existing],
+      lastMessageAt: 1,
+    } as any
+
+    expect(updateMessageAt(session, 0, { content: 'same' })).toBe(session)
+    expect(updateMessageAt(session, 0, { content: 'same' }, true)).not.toBe(session)
   })
 })
