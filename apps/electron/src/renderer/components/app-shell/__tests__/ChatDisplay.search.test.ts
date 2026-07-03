@@ -158,6 +158,18 @@ describe('ChatDisplay search performance contract', () => {
     expect(effectSource).not.toContain("textNodes.map(n => n.textContent || '').join('')")
   })
 
+  test('updates only the active custom highlight during match navigation', () => {
+    const effectStart = chatDisplaySource.indexOf('// Effect 2: Update active/passive highlight split')
+    const effectEnd = chatDisplaySource.indexOf('// Navigate to next match', effectStart)
+    const effectSource = chatDisplaySource.slice(effectStart, effectEnd)
+
+    expect(chatDisplaySource).toContain('passiveHighlight.priority = 0')
+    expect(chatDisplaySource).toContain('activeHighlight.priority = 1')
+    expect(effectSource).toContain("cssHighlights.set('search-active', activeHighlight)")
+    expect(effectSource).not.toContain('allRanges.filter')
+    expect(effectSource).not.toContain("cssHighlights.set('search-passive'")
+  })
+
   test('keeps session-list search query out of AppShellContext value', () => {
     expect(appShellSource).toContain('useAtom(sessionListSearchActiveAtom)')
     expect(appShellSource).toContain('useAtom(sessionListSearchQueryAtom)')

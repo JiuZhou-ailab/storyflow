@@ -737,6 +737,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // ============================================================================
   // Current match index for navigation (internal state, exposed via ref)
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0)
+  const currentMatchIndexRef = React.useRef(currentMatchIndex)
+  currentMatchIndexRef.current = currentMatchIndex
   const turnRefs = React.useRef<Map<string, HTMLDivElement>>(new Map())
   // Inject ::highlight() styles at runtime to avoid LightningCSS build warnings
   // (the optimizer doesn't recognize ::highlight as a valid pseudo-element yet)
@@ -1004,7 +1006,16 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
       try {
         // Apply all ranges as passive initially — the active-match effect will restyle
-        cssHighlights.set('search-passive', new Highlight(...allRanges))
+        const passiveHighlight = new Highlight(...allRanges)
+        passiveHighlight.priority = 0
+        cssHighlights.set('search-passive', passiveHighlight)
+
+        const activeRange = allRanges[currentMatchIndexRef.current]
+        if (activeRange) {
+          const activeHighlight = new Highlight(activeRange)
+          activeHighlight.priority = 1
+          cssHighlights.set('search-active', activeHighlight)
+        }
       } catch {
         // Highlight API call failed — degrade gracefully
       }
@@ -1023,11 +1034,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     try {
       const activeRange = allRanges[currentMatchIndex]
       if (activeRange) {
-        const passiveRanges = allRanges.filter((_, i) => i !== currentMatchIndex)
-        cssHighlights.set('search-passive', new Highlight(...passiveRanges))
-        cssHighlights.set('search-active', new Highlight(activeRange))
+        const activeHighlight = new Highlight(activeRange)
+        activeHighlight.priority = 1
+        cssHighlights.set('search-active', activeHighlight)
       } else {
-        cssHighlights.set('search-passive', new Highlight(...allRanges))
         cssHighlights.delete('search-active')
       }
     } catch { /* graceful degradation */ }
