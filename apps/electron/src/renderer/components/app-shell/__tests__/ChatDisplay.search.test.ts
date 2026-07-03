@@ -10,6 +10,7 @@ import { collectTurnSearchOccurrences } from '../ChatDisplay.search'
 
 const chatDisplaySource = readFileSync(new URL('../ChatDisplay.tsx', import.meta.url), 'utf-8')
 const inputContainerSource = readFileSync(new URL('../input/InputContainer.tsx', import.meta.url), 'utf-8')
+const freeFormInputSource = readFileSync(new URL('../input/FreeFormInput.tsx', import.meta.url), 'utf-8')
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf-8')
 const appShellContextSource = readFileSync(new URL('../../../context/AppShellContext.tsx', import.meta.url), 'utf-8')
 const chatPageSource = readFileSync(new URL('../../../pages/ChatPage.tsx', import.meta.url), 'utf-8')
@@ -158,5 +159,15 @@ describe('ChatDisplay search performance contract', () => {
     expect(chatPageSource).toContain('resolveChatOpeningPrompt')
     expect(chatPageSource).toContain('chatOpening={chatOpening}')
     expect(chatPageSource).toContain('isFocusedPanel={isFocusedPanel ?? true}')
+  })
+
+  test('keeps freeform input off AppShellContext subscriptions', () => {
+    expect(freeFormInputSource).not.toContain('useOptionalAppShellContext')
+    expect(freeFormInputSource).toContain('llmConnections = []')
+    expect(freeFormInputSource).toContain('workspaceDefaultConnection')
+    expect(freeFormInputSource).toContain('workspaceRootPath')
+    expect(freeFormInputSource).toContain('workspaceSlug')
+    expect(inputContainerSource).toContain('...freeFormProps')
+    expect(chatDisplaySource).toContain('refreshLlmConnections,')
   })
 })

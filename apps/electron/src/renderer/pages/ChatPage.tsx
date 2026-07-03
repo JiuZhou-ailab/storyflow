@@ -169,6 +169,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     activeWorkspaceId,
     llmConnections,
     workspaceDefaultLlmConnection,
+    refreshLlmConnections,
     onCreateSession,
     onSendMessage,
     onOpenFile,
@@ -844,6 +845,9 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
                 onModelChange={handleModelChange}
                 llmConnections={llmConnections}
                 workspaceDefaultLlmConnection={workspaceDefaultLlmConnection}
+                refreshLlmConnections={refreshLlmConnections}
+                workspaceRootPath={activeWorkspace?.rootPath ?? null}
+                workspaceSlug={activeWorkspace?.slug}
                 onCreateSession={onCreateSession}
                 onDraftInputChange={onInputChange}
                 onConnectionChange={handleConnectionChange}
@@ -934,6 +938,9 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
             onModelChange={handleModelChange}
             llmConnections={llmConnections}
             workspaceDefaultLlmConnection={workspaceDefaultLlmConnection}
+            refreshLlmConnections={refreshLlmConnections}
+            workspaceRootPath={activeWorkspace?.rootPath ?? null}
+            workspaceSlug={activeWorkspace?.slug}
             onCreateSession={onCreateSession}
             onDraftInputChange={onInputChange}
             onConnectionChange={handleConnectionChange}

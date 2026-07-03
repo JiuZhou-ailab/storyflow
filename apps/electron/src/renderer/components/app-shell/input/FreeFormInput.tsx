@@ -74,13 +74,13 @@ import {
   setModelSupportsImages,
   type LlmConnection,
 } from '@config/llm-connections'
-import { useOptionalAppShellContext } from '@/context/AppShellContext'
 import { EditPopover, getEditConfig } from '@/components/ui/EditPopover'
 import { SourceAvatar } from '@/components/ui/source-avatar'
 import { SourceSelectorPopover } from '@/components/ui/SourceSelectorPopover'
 import { ConnectionIcon } from '@/components/icons/ConnectionIcon'
 import { FreeFormInputContextBadge } from './FreeFormInputContextBadge'
-import type { FileAttachment, LoadedSource, LoadedSkill } from '../../../../shared/types'
+import type { FileAttachment, LoadedSource, LoadedSkill, LlmConnectionWithStatus } from '../../../../shared/types'
+import type { SessionStatus } from '@/config/session-status-config'
 import type { PermissionMode } from '@craft-agent/shared/agent/modes'
 import { type ThinkingLevel, THINKING_LEVELS, getThinkingLevelNameKey } from '@craft-agent/shared/agent/thinking-levels'
 import { useEscapeInterrupt } from '@/context/EscapeInterruptContext'
@@ -247,6 +247,22 @@ export interface FreeFormInputProps {
   onConnectionChange?: (connectionSlug: string) => void
   /** When true, the session's locked connection has been removed */
   connectionUnavailable?: boolean
+  /** All available LLM connections for model and connection controls. */
+  llmConnections?: LlmConnectionWithStatus[]
+  /** Default LLM connection slug for the current workspace. */
+  workspaceDefaultConnection?: string
+  /** Refresh connections after editing model capabilities. */
+  refreshLlmConnections?: () => Promise<void>
+  /** Workflow states available in the # menu. */
+  sessionStatuses?: SessionStatus[]
+  /** Callback when a state is selected from the # menu. */
+  onSessionStatusChange?: (stateId: string) => void
+  /** Workspace root path for label-edit actions. */
+  workspaceRootPath?: string | null
+  /** Workspace slug for SDK skill qualification. */
+  workspaceSlug?: string
+  /** Whether this input belongs to the focused panel. */
+  isFocusedPanel?: boolean
 }
 
 /**
@@ -304,6 +320,14 @@ export function FreeFormInput({
   currentConnection,
   onConnectionChange,
   connectionUnavailable = false,
+  llmConnections = [],
+  workspaceDefaultConnection,
+  refreshLlmConnections,
+  sessionStatuses = [],
+  onSessionStatusChange,
+  workspaceRootPath = null,
+  workspaceSlug,
+  isFocusedPanel = true,
 }: FreeFormInputProps) {
   const { t } = useTranslation()
 
@@ -318,12 +342,6 @@ export function FreeFormInput({
   ], [t])
 
   const effectivePlaceholderProp = placeholder ?? defaultPlaceholders
-
-  // Read connection default model, connections, and workspace info from context.
-  // Uses optional variant so playground (no provider) doesn't crash.
-  const appShellCtx = useOptionalAppShellContext()
-  const llmConnections = appShellCtx?.llmConnections ?? []
-  const workspaceDefaultConnection = appShellCtx?.workspaceDefaultLlmConnection
 
   // Derive connectionDefaultModel per-session from the effective connection.
   // Only non-null for compat providers (custom endpoints with fixed models).
@@ -426,26 +444,8 @@ export function FreeFormInput({
     return llmConnections.find(c => c.slug === effectiveConnection) ?? null
   }, [llmConnections, effectiveConnection])
 
-
-  // Access sessionStatuses and onSessionStatusChange from context for the # menu state picker
-  const sessionStatuses = appShellCtx?.sessionStatuses ?? []
-  const onSessionStatusChange = appShellCtx?.onSessionStatusChange
-  // Resolve workspace rootPath for "Add New Label" deep link
-  const workspaceRootPath = React.useMemo(() => {
-    if (!appShellCtx || !workspaceId) return null
-    return appShellCtx.workspaces.find(w => w.id === workspaceId)?.rootPath ?? null
-  }, [appShellCtx, workspaceId])
-
-  // Workspace slug for SDK skill qualification (server-computed)
-  // SDK expects "workspaceSlug:skillSlug" format, NOT UUID
-  const workspaceSlug = React.useMemo(() => {
-    if (!appShellCtx || !workspaceId) return workspaceId
-    return appShellCtx.workspaces.find(w => w.id === workspaceId)?.slug ?? workspaceId
-  }, [appShellCtx, workspaceId])
-
-  // Read panel focus state from context (for multi-panel unfocused styling)
-  const appShellContext = useOptionalAppShellContext()
-  const isFocusedPanel = appShellContext?.isFocusedPanel ?? true
+  // SDK expects "workspaceSlug:skillSlug" format, NOT UUID.
+  const resolvedWorkspaceSlug = workspaceSlug ?? workspaceId
 
   // Shuffle placeholder order once per mount so each session feels fresh.
   // In compact mode, suppress desktop-keyboard guidance that is noisy or misleading
@@ -664,7 +664,6 @@ export function FreeFormInput({
     prevInputValueRef.current = ''
   }, [onInputChange])
 
-  const refreshLlmConnections = appShellCtx?.refreshLlmConnections
   const handleToggleModelVision = React.useCallback(async (
     connectionSlug: string,
     modelId: string,
@@ -996,7 +995,7 @@ export function FreeFormInput({
     recentFolders,
     homeDir,
     // Use workspace slug (not UUID) for SDK skill qualification
-    workspaceId: workspaceSlug,
+    workspaceId: resolvedWorkspaceSlug,
   })
 
   // Handle mention selection (sources, skills, files)
@@ -1023,7 +1022,7 @@ export function FreeFormInput({
     basePath: workingDirectory,
     onSelect: handleMentionSelect,
     // Use workspace slug (not UUID) for SDK skill qualification
-    workspaceId: workspaceSlug,
+    workspaceId: resolvedWorkspaceSlug,
   })
 
   // Inline label menu hook (for #labels)
@@ -1538,11 +1537,9 @@ export function FreeFormInput({
     const newValue = inlineLabel.handleSelect('')
     setInput(newValue)
     syncToParent(newValue)
-    if (sessionId) {
-      onSessionStatusChange?.(sessionId, stateId)
-    }
+    onSessionStatusChange?.(stateId)
     richInputRef.current?.focus()
-  }, [inlineLabel, syncToParent, sessionId, onSessionStatusChange])
+  }, [inlineLabel, syncToParent, onSessionStatusChange])
 
   const followUpLayoutKey = React.useMemo(
     () => followUpItems.map(item => [
@@ -1795,7 +1792,7 @@ export function FreeFormInput({
           skills={skills}
           sources={sources}
           mentionFiles={mentionFiles}
-          workspaceId={workspaceSlug}
+          workspaceId={resolvedWorkspaceSlug}
           className="pl-5 pr-4 pt-4 pb-3 overflow-y-auto min-h-[88px]"
           style={{ maxHeight: inputMaxHeight }}
           data-tutorial="chat-input"

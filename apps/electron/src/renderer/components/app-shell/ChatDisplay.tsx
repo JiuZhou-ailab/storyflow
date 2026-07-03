@@ -260,6 +260,12 @@ interface ChatDisplayProps {
   llmConnections?: LlmConnectionWithStatus[]
   /** Default connection slug for the current workspace. */
   workspaceDefaultLlmConnection?: string
+  /** Refresh connection list after model capability edits. */
+  refreshLlmConnections?: () => Promise<void>
+  /** Workspace root path for label-edit actions. */
+  workspaceRootPath?: string | null
+  /** Workspace slug for SDK skill qualification. */
+  workspaceSlug?: string
   /** Create a child session for branch/rewind actions. */
   onCreateSession?: (workspaceId: string, options?: CreateSessionOptions) => Promise<Session>
   /** Seed draft input for a newly-created session. */
@@ -585,6 +591,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   connectionUnavailable = false,
   llmConnections = [],
   workspaceDefaultLlmConnection,
+  refreshLlmConnections,
+  workspaceRootPath,
+  workspaceSlug,
   onCreateSession,
   onDraftInputChange,
   chatOpening = resolveChatOpeningPrompt({}),
@@ -2108,6 +2117,11 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
               textareaRef,
               currentModel,
               onModelChange,
+              llmConnections,
+              workspaceDefaultConnection: workspaceDefaultLlmConnection,
+              refreshLlmConnections,
+              workspaceRootPath,
+              workspaceSlug,
               thinkingLevel,
               onThinkingLevelChange,
               enabledModes,
@@ -2130,6 +2144,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
               isEmptySession: session.messages.length === 0,
               currentConnection: session.llmConnection,
               onConnectionChange,
+              sessionStatuses,
+              onSessionStatusChange,
               contextStatus: {
                 isCompacting: session.currentStatus?.statusType === 'compacting',
                 inputTokens: session.tokenUsage?.inputTokens,

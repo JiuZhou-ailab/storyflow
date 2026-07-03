@@ -206,6 +206,7 @@ export function InputContainer({
           {...freeFormProps}
           compactMode={compactMode}
           isProcessing={isProcessing}
+          isFocusedPanel={isFocusedPanel}
           inputRef={forMeasuring ? undefined : textareaRef}
           onHeightChange={forMeasuring ? undefined : handleFreeformHeightChange}
           onFocusChange={forMeasuring ? undefined : handleFocusChange}
