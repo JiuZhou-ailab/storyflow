@@ -1,11 +1,13 @@
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
 import type { LoadedSkill } from '../../../../shared/types'
+import type { SlashSection } from '../slash-command-menu'
 
 mock.module('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '' }))
 mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDocument: () => ({}) }))
 
 let createSlashSkillItems: typeof import('../slash-command-menu').createSlashSkillItems
 let createSlashFolderItems: typeof import('../slash-command-menu').createSlashFolderItems
+let hasMatchingSlashItems: typeof import('../slash-command-menu').hasMatchingSlashItems
 let getSlashSkillInsertionText: typeof import('../slash-command-menu').getSlashSkillInsertionText
 let parseInlineSlashCommandQuery: typeof import('../slash-command-menu').parseInlineSlashCommandQuery
 
@@ -13,6 +15,7 @@ beforeAll(async () => {
   const mod = await import('../slash-command-menu')
   createSlashSkillItems = mod.createSlashSkillItems
   createSlashFolderItems = mod.createSlashFolderItems
+  hasMatchingSlashItems = mod.hasMatchingSlashItems
   getSlashSkillInsertionText = mod.getSlashSkillInsertionText
   parseInlineSlashCommandQuery = mod.parseInlineSlashCommandQuery
 })
@@ -80,5 +83,32 @@ describe('slash skill commands', () => {
       '~/work/beta',
       '/tmp/zeta',
     ])
+  })
+
+  it('checks whether slash sections contain a filter match without rebuilding sections', () => {
+    const sections: SlashSection[] = [
+      {
+        id: 'commands',
+        label: 'Commands',
+        items: [
+          {
+            id: 'compact',
+            label: 'Compact Context',
+            description: 'Summarize conversation context',
+            icon: null,
+          },
+        ],
+      },
+      {
+        id: 'folders',
+        label: 'Folders',
+        items: createSlashFolderItems(['/Users/zjding/work/Alpha'], '/Users/zjding'),
+      },
+    ]
+
+    expect(hasMatchingSlashItems(sections, '')).toBe(true)
+    expect(hasMatchingSlashItems(sections, 'alp')).toBe(true)
+    expect(hasMatchingSlashItems(sections, '~/work')).toBe(true)
+    expect(hasMatchingSlashItems(sections, 'missing')).toBe(false)
   })
 })

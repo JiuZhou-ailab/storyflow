@@ -172,6 +172,22 @@ function isSkill(item: SlashItem): item is SlashSkillItem {
   return 'type' in item && item.type === 'skill'
 }
 
+function slashItemMatchesFilter(item: SlashItem, lowerFilter: string): boolean {
+  return (
+    item.label.toLowerCase().includes(lowerFilter) ||
+    item.id.toLowerCase().includes(lowerFilter) ||
+    item.description?.toLowerCase().includes(lowerFilter) === true
+  )
+}
+
+export function hasMatchingSlashItems(sections: SlashSection[], filter: string): boolean {
+  if (!filter) return sections.some(section => section.items.length > 0)
+  const lowerFilter = filter.toLowerCase()
+  return sections.some(section =>
+    section.items.some(item => slashItemMatchesFilter(item, lowerFilter))
+  )
+}
+
 /** Filter sections by label/id, keeping sections grouped */
 function filterSections(sections: SlashSection[], filter: string): SlashSection[] {
   if (!filter) return sections
@@ -181,11 +197,7 @@ function filterSections(sections: SlashSection[], filter: string): SlashSection[
   return sections
     .map(section => ({
       ...section,
-      items: section.items.filter(item =>
-        item.label.toLowerCase().includes(lowerFilter) ||
-        item.id.toLowerCase().includes(lowerFilter) ||
-        item.description?.toLowerCase().includes(lowerFilter)
-      ),
+      items: section.items.filter(item => slashItemMatchesFilter(item, lowerFilter)),
     }))
     .filter(section => section.items.length > 0)
 }
@@ -715,17 +727,11 @@ export function useInlineSlashCommand({
     const textBeforeCursor = value.slice(0, cursorPosition)
     const slashQuery = parseInlineSlashCommandQuery(textBeforeCursor)
 
-    // Only show menu if we have sections with items
-    const hasItems = sections.some(s => s.items.length > 0)
-
-    if (slashQuery && hasItems) {
+    if (slashQuery) {
       const filterText = slashQuery.filter
       // Check if there are any filtered results before opening menu
       // This ensures Enter key works normally when no matches exist
-      const filteredSections = filterSections(sections, filterText)
-      const hasFilteredItems = filteredSections.some(s => s.items.length > 0)
-
-      if (!hasFilteredItems) {
+      if (!hasMatchingSlashItems(sections, filterText)) {
         // No results after filtering - close menu to allow normal Enter handling
         setIsOpen(false)
         setFilter('')
