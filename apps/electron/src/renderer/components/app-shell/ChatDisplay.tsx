@@ -642,21 +642,29 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     nonce: number
   } | null>(null)
   const followUpOpenNonceRef = React.useRef(0)
-  const queuedUserMessages = React.useMemo<QueuedInputMessage[]>(() => {
-    if (!session?.messages?.length) return []
+  const partitionedMessages = React.useMemo(() => {
+    const queuedUserMessages: QueuedInputMessage[] = []
+    const transcriptMessages: Message[] = []
+    if (!session?.messages?.length) {
+      return { queuedUserMessages, transcriptMessages }
+    }
 
-    return session.messages
-      .filter(message => message.role === 'user' && message.isQueued)
-      .map(message => ({
-        id: message.id,
-        content: message.content,
-        attachments: message.attachments,
-      }))
+    for (const message of session.messages) {
+      if (message.role === 'user' && message.isQueued) {
+        queuedUserMessages.push({
+          id: message.id,
+          content: message.content,
+          attachments: message.attachments,
+        })
+      } else {
+        transcriptMessages.push(message)
+      }
+    }
+
+    return { queuedUserMessages, transcriptMessages }
   }, [session?.messages])
-  const transcriptMessages = React.useMemo(() => {
-    if (!session?.messages?.length) return []
-    return session.messages.filter(message => !(message.role === 'user' && message.isQueued))
-  }, [session?.messages])
+  const queuedUserMessages = partitionedMessages.queuedUserMessages
+  const transcriptMessages = partitionedMessages.transcriptMessages
   // Memoize turn grouping - avoids O(n) iteration on every render/keystroke
   const allTurns = React.useMemo(() => {
     if (!session) return []

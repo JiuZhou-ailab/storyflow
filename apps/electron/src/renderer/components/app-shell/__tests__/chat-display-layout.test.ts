@@ -19,10 +19,12 @@ describe('ChatDisplay scroll layout', () => {
   })
 
   it('renders queued user messages above the input instead of inside the transcript', () => {
-    expect(chatDisplaySource).toContain('const queuedUserMessages = React.useMemo')
+    expect(chatDisplaySource).toContain('const partitionedMessages = React.useMemo')
+    expect(chatDisplaySource).toContain('const queuedUserMessages = partitionedMessages.queuedUserMessages')
+    expect(chatDisplaySource).toContain('const transcriptMessages = partitionedMessages.transcriptMessages')
     expect(chatDisplaySource).toContain("message.role === 'user' && message.isQueued")
-    expect(chatDisplaySource).toContain('const transcriptMessages = React.useMemo')
-    expect(chatDisplaySource).toContain("!(message.role === 'user' && message.isQueued)")
+    expect(chatDisplaySource).not.toContain('const queuedUserMessages = React.useMemo')
+    expect(chatDisplaySource).not.toContain('const transcriptMessages = React.useMemo')
     expect(chatDisplaySource).toContain('groupMessagesByTurn(transcriptMessages)')
     expect(chatDisplaySource).toContain('queuedMessages={queuedUserMessages}')
     expect(chatDisplaySource).toContain('forceQueuePreview: session?.isProcessing === true')
