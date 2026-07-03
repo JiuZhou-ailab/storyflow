@@ -45,6 +45,16 @@ export function createTurnExpansionEntry(
   }
 }
 
+export function createTurnExpansionState(entry: ExpansionEntry | undefined): {
+  collapsedTurns: Set<string>
+  expandedActivityGroups: Set<string>
+} {
+  return {
+    collapsedTurns: readCollapsedTurns(entry),
+    expandedActivityGroups: entry ? new Set(entry.groups) : new Set(),
+  }
+}
+
 /**
  * Read the full expansion map from localStorage.
  * Returns empty object on parse failure.
@@ -79,19 +89,12 @@ function writeMap(map: ExpansionMap): void {
  */
 export function useTurnCardExpansion(sessionId: string | undefined) {
   // Initialize state from localStorage for this session
-  const [collapsedTurns, setCollapsedTurns] = useState<Set<string>>(() => {
-    if (!sessionId) return new Set()
+  const [expansionState, setExpansionState] = useState(() => {
+    if (!sessionId) return createTurnExpansionState(undefined)
     const map = readMap()
-    const entry = map[sessionId]
-    return readCollapsedTurns(entry)
+    return createTurnExpansionState(map[sessionId])
   })
-
-  const [expandedActivityGroups, setExpandedActivityGroups] = useState<Set<string>>(() => {
-    if (!sessionId) return new Set()
-    const map = readMap()
-    const entry = map[sessionId]
-    return entry ? new Set(entry.groups) : new Set()
-  })
+  const { collapsedTurns, expandedActivityGroups } = expansionState
 
   // Track sessionId so we can save/restore on session switch
   const prevSessionIdRef = useRef(sessionId)
@@ -103,12 +106,9 @@ export function useTurnCardExpansion(sessionId: string | undefined) {
     // Load the new session's expansion state from localStorage
     if (sessionId) {
       const map = readMap()
-      const entry = map[sessionId]
-      setCollapsedTurns(readCollapsedTurns(entry))
-      setExpandedActivityGroups(entry ? new Set(entry.groups) : new Set())
+      setExpansionState(createTurnExpansionState(map[sessionId]))
     } else {
-      setCollapsedTurns(new Set())
-      setExpandedActivityGroups(new Set())
+      setExpansionState(createTurnExpansionState(undefined))
     }
 
     prevSessionIdRef.current = sessionId
@@ -146,15 +146,19 @@ export function useTurnCardExpansion(sessionId: string | undefined) {
 
   // Toggle a single turn's expansion state
   const toggleTurn = useCallback((turnId: string, expanded: boolean) => {
-    setCollapsedTurns(prev => {
-      const next = new Set(prev)
+    setExpansionState(prev => {
+      const next = new Set(prev.collapsedTurns)
       if (expanded) {
         next.delete(turnId)
       } else {
         next.add(turnId)
       }
-      return next
+      return { ...prev, collapsedTurns: next }
     })
+  }, [])
+
+  const setExpandedActivityGroups = useCallback((groups: Set<string>) => {
+    setExpansionState(prev => ({ ...prev, expandedActivityGroups: groups }))
   }, [])
 
   return {
