@@ -460,13 +460,15 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
     const readSpan = perf.span('rpc.file.read', { workspaceId: workspaceId ?? null })
 
     try {
+      readSpan.mark('validate.start')
       const safePath = await validateWorkspaceFilePath(ctx, deps, path)
+      readSpan.mark('validate.done')
       const parsedPath = parsePath(safePath)
       readSpan.setMetadata('file', parsedPath.base)
       readSpan.setMetadata('extension', parsedPath.ext || null)
-      readSpan.mark('path.validated')
+      readSpan.mark('fs.read.start')
       const content = await readFile(safePath, 'utf-8')
-      readSpan.mark('file.read')
+      readSpan.mark('fs.read.done')
       readSpan.setMetadata('status', 'ok')
       readSpan.setMetadata('bytes', Buffer.byteLength(content, 'utf-8'))
       return content

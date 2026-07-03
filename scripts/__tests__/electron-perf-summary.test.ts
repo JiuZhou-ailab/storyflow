@@ -36,6 +36,10 @@ describe("electron perf summary", () => {
       source: "shared-perf",
       kind: "latency",
       metadata: { status: "accepted", messageCount: 4 },
+      marks: [
+        { name: "pendingPlan.cleared", elapsedMs: 1 },
+        { name: "ack", elapsedMs: 12.3 },
+      ],
     }));
     expect(metrics[1]).toEqual(expect.objectContaining({
       durationMs: 42,
@@ -135,13 +139,13 @@ describe("electron perf summary", () => {
 
   test("formats a readable markdown summary", () => {
     const summary = summarizeElectronPerfMetrics(parseElectronPerfMetrics(log), {
-      slowThresholdMs: 250,
+      slowThresholdMs: 10,
       searchActivity: summarizeElectronSearchActivity([
         '{"timestamp":"2026-06-12T10:00:00.000Z","level":"debug","message":["[FS_SEARCH_BATCH] called:","/workspace/a",14]}',
         '{"timestamp":"2026-06-12T10:00:00.500Z","level":"debug","message":["[FS_LIST_FILES] called:","/workspace/a",3]}',
         '{"timestamp":"2026-06-12T10:00:01.000Z","level":"info","message":["[FS_SEARCH] called:","/workspace/a","正文"]}',
       ].join("\n")),
-      limit: 3,
+      limit: 5,
     });
     const output = formatElectronPerfSummary(summary, "/tmp/main.log", {
       since: new Date("2026-06-12T10:00:00.000Z"),
@@ -155,6 +159,7 @@ describe("electron perf summary", () => {
     expect(output).toContain("Raw `[FS_SEARCH_BATCH]` logs are present but `fs.searchBatch` spans are absent");
     expect(output).toContain("| Operation | Count | Avg | P50 | P95 | Max | Total |");
     expect(output).toContain("writing.document.paintAfterRead");
+    expect(output).toContain("marks=pendingPlan.cleared:1.0ms -> ack:12.3ms");
     expect(output).toContain("Throughput Windows");
     expect(output).toContain("renderer.textDeltaWindow");
     expect(output).toContain("Filesystem Search Activity");

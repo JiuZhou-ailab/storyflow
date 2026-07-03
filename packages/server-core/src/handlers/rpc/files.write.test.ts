@@ -133,7 +133,12 @@ describe('file write RPC registration', () => {
       expect(content).toBe('outline')
       const metric = metrics.find(item => item.name === 'rpc.file.read')
       expect(metric).toBeDefined()
-      expect(metric?.marks.map(mark => mark.name)).toEqual(['path.validated', 'file.read'])
+      expect(metric?.marks.map(mark => mark.name)).toEqual([
+        'validate.start',
+        'validate.done',
+        'fs.read.start',
+        'fs.read.done',
+      ])
       expect(metric?.metadata).toEqual(expect.objectContaining({
         bytes: Buffer.byteLength('outline', 'utf-8'),
         extension: '.md',

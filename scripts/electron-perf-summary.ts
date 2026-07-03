@@ -13,6 +13,7 @@ export interface ElectronPerfMetric {
   lineNumber: number;
   source: "shared-perf" | "renderer-writing" | "renderer-session" | "renderer-text-delta";
   kind: "latency" | "throughput-window";
+  marks?: Array<{ name: string; elapsedMs: number }>;
   metadata?: Record<string, unknown>;
 }
 
@@ -83,6 +84,21 @@ function parseMetadata(raw: string | undefined): Record<string, unknown> | undef
   } catch {
     return undefined;
   }
+}
+
+function parseSharedPerfMarks(raw: string | undefined): Array<{ name: string; elapsedMs: number }> | undefined {
+  if (!raw) return undefined;
+
+  const marks = raw
+    .split(/\s*(?:→|->)\s*/)
+    .map((part) => {
+      const match = part.match(/^(.+):([0-9]+(?:\.[0-9]+)?)ms$/);
+      if (!match) return null;
+      return { name: match[1].trim(), elapsedMs: Number(match[2]) };
+    })
+    .filter((mark): mark is { name: string; elapsedMs: number } => mark != null);
+
+  return marks.length > 0 ? marks : undefined;
 }
 
 function extractLogMessage(line: string): string {
@@ -160,7 +176,7 @@ export function parseElectronPerfMetrics(logText: string): ElectronPerfMetric[] 
     const line = extractLogMessage(lines[index] ?? "");
     const lineNumber = index + 1;
 
-    const sharedPerf = line.match(/\[PERF\]\s+([^:]+):\s+([0-9]+(?:\.[0-9]+)?)ms(?:\s+\([^)]*\))?(?:\s+(\{.*\}))?/);
+    const sharedPerf = line.match(/\[PERF\]\s+([^:]+):\s+([0-9]+(?:\.[0-9]+)?)ms(?:\s+\(([^)]*)\))?(?:\s+(\{.*\}))?/);
     if (sharedPerf) {
       metrics.push({
         name: sharedPerf[1].trim(),
@@ -168,7 +184,8 @@ export function parseElectronPerfMetrics(logText: string): ElectronPerfMetric[] 
         lineNumber,
         source: "shared-perf",
         kind: "latency",
-        metadata: parseMetadata(sharedPerf[3]),
+        marks: parseSharedPerfMarks(sharedPerf[3]),
+        metadata: parseMetadata(sharedPerf[4]),
       });
       continue;
     }
@@ -350,6 +367,11 @@ function formatMs(value: number): string {
   return `${value.toFixed(1)}ms`;
 }
 
+function formatMarks(marks: Array<{ name: string; elapsedMs: number }> | undefined): string {
+  if (!marks?.length) return "";
+  return ` marks=${marks.map(mark => `${mark.name}:${formatMs(mark.elapsedMs)}`).join(" -> ")}`;
+}
+
 export function getElectronInstrumentationGaps(
   summary: ElectronPerfSummary,
   options: { expectListFiles?: boolean } = {}
@@ -431,7 +453,7 @@ export function formatElectronPerfSummary(
   } else {
     for (const metric of summary.slowest) {
       const meta = metric.metadata ? ` ${JSON.stringify(metric.metadata)}` : "";
-      lines.push(`- ${formatMs(metric.durationMs)} ${metric.name} line=${metric.lineNumber}${meta}`);
+      lines.push(`- ${formatMs(metric.durationMs)} ${metric.name} line=${metric.lineNumber}${formatMarks(metric.marks)}${meta}`);
     }
   }
 
