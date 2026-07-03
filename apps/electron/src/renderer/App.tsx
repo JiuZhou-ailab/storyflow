@@ -284,6 +284,7 @@ export default function App() {
   const updateSessionDirect = useSetAtom(updateSessionAtom)
   const replaceLoadedSession = useSetAtom(replaceLoadedSessionAtom)
   const store = useStore()
+  const activeViewingSessionIdRef = useRef<string | null>(null)
 
   // Helper to update a session by ID with partial fields
   // Uses per-session atom directly instead of updating an array
@@ -1314,11 +1315,18 @@ export default function App() {
    * whether to mark new assistant messages as unread.
    */
   const handleSetActiveViewingSession = useCallback((sessionId: string) => {
+    const currentSession = store.get(sessionAtomFamily(sessionId))
+    const alreadyViewing = activeViewingSessionIdRef.current === sessionId
+    if (alreadyViewing && currentSession?.hasUnread !== true) return
+
+    activeViewingSessionIdRef.current = sessionId
     // Optimistic UI update: clear hasUnread immediately
-    updateSessionById(sessionId, { hasUnread: false })
+    if (currentSession?.hasUnread === true) {
+      updateSessionById(sessionId, { hasUnread: false })
+    }
     // Tell main process user is viewing this session
     window.electronAPI.sessionCommand(sessionId, { type: 'setActiveViewing', workspaceId: windowWorkspaceId ?? '' })
-  }, [updateSessionById, windowWorkspaceId])
+  }, [store, updateSessionById, windowWorkspaceId])
 
   const handleMarkSessionRead = useCallback((sessionId: string) => {
     // Update hasUnread flag (primary source of truth for NEW badge)
