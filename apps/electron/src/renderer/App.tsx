@@ -140,6 +140,15 @@ function workspaceDistribution(sessions: Iterable<{ workspaceId?: string }>): Re
   return distribution
 }
 
+const BACKGROUND_TASK_EVENT_TYPES = new Set([
+  'task_backgrounded',
+  'shell_backgrounded',
+  'task_progress',
+  'task_completed',
+  'shell_killed',
+  'tool_result',
+])
+
 /**
  * Helper to handle background task events from the agent.
  * Updates the backgroundTasksAtomFamily based on event type.
@@ -151,6 +160,8 @@ function handleBackgroundTaskEvent(
   event: { type: string },
   agentEvent: unknown
 ): void {
+  if (!BACKGROUND_TASK_EVENT_TYPES.has(event.type)) return
+
   // Type guard for accessing properties
   const evt = agentEvent as Record<string, unknown>
   const backgroundTasksAtom = backgroundTasksAtomFamily(sessionId)
