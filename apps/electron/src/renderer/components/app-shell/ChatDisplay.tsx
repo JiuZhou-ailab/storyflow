@@ -1883,6 +1883,16 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                     const isLastResponse = index === turns.length - 1 || !hasUserTurnAfterIndex[index]
                     const hasPlanFollowUpAnnotations = pendingFollowUpAnnotations.length > 0
                       && (turn.response?.isPlan === true || turn.activities.some(activity => activity.type === 'plan'))
+                    const turnOpenAnnotationRequest = openAnnotationRequest
+                      && (
+                        turn.response?.messageId === openAnnotationRequest.messageId
+                        || turn.activities.some(activity =>
+                          activity.type === 'plan'
+                          && (activity.messageId ?? activity.id) === openAnnotationRequest.messageId
+                        )
+                      )
+                        ? openAnnotationRequest
+                        : null
 
                     // Assistant turns - render with TurnCard (buffered streaming)
                     const assistantUiKey = getAssistantTurnUiKey(turn, index)
@@ -1917,7 +1927,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                         isLastResponse={isLastResponse}
                         compactMode={compactMode}
                         sendMessageKey={sendMessageKey}
-                        openAnnotationRequest={openAnnotationRequest}
+                        openAnnotationRequest={turnOpenAnnotationRequest}
                         onBranch={session?.supportsBranching && onCreateSession ? async (messageId: string, options?: { newPanel?: boolean }) => {
                           if (!session) return
                           try {

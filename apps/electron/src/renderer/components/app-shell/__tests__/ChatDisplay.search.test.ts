@@ -144,6 +144,12 @@ describe('ChatDisplay search performance contract', () => {
     expect(chatDisplaySource).not.toContain('hasActiveFollowUpAnnotations={pendingFollowUpAnnotations.length > 0}')
   })
 
+  test('passes annotation open requests only to the matching TurnCard', () => {
+    expect(chatDisplaySource).toContain('const turnOpenAnnotationRequest = openAnnotationRequest')
+    expect(chatDisplaySource).toContain('openAnnotationRequest={turnOpenAnnotationRequest}')
+    expect(chatDisplaySource).not.toContain('openAnnotationRequest={openAnnotationRequest}')
+  })
+
   test('skips assistant turn indexing when no follow-ups are pending', () => {
     const indexStart = chatDisplaySource.indexOf('const assistantTurnIndexByMessageId = useMemo(() => {')
     const indexEnd = chatDisplaySource.indexOf('const scrollToFollowUpTurn = useCallback', indexStart)
