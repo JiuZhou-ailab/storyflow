@@ -119,9 +119,16 @@ describe('ChatDisplay search performance contract', () => {
   test('reuses message partitioning to find the latest user message', () => {
     expect(chatDisplaySource).toContain('let latestUserMessage: Message | undefined')
     expect(chatDisplaySource).toContain('latestUserMessage = message')
-    expect(chatDisplaySource).toContain('return { queuedUserMessages, transcriptMessages, latestUserMessage }')
+    expect(chatDisplaySource).toContain('return { queuedUserMessages, transcriptMessages, latestUserMessage, pendingFollowUpAnnotations }')
     expect(chatDisplaySource).toContain('const latestUserMessage = partitionedMessages.latestUserMessage')
     expect(chatDisplaySource).not.toContain('const latestUserMessage = React.useMemo')
     expect(chatDisplaySource).not.toContain('[...transcriptMessages].reverse()')
+  })
+
+  test('reuses message partitioning to collect pending follow-up annotations', () => {
+    expect(chatDisplaySource).toContain('const pendingFollowUpAnnotations: PendingFollowUpAnnotation[] = []')
+    expect(chatDisplaySource).toContain('pendingFollowUpAnnotations.sort((a, b) => a.createdAt - b.createdAt)')
+    expect(chatDisplaySource).toContain('const pendingFollowUpAnnotations = partitionedMessages.pendingFollowUpAnnotations')
+    expect(chatDisplaySource).not.toContain('const pendingFollowUpAnnotations = useMemo<PendingFollowUpAnnotation[]>')
   })
 })

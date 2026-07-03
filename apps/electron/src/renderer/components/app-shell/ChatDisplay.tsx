@@ -645,9 +645,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const partitionedMessages = React.useMemo(() => {
     const queuedUserMessages: QueuedInputMessage[] = []
     const transcriptMessages: Message[] = []
+    const pendingFollowUpAnnotations: PendingFollowUpAnnotation[] = []
     let latestUserMessage: Message | undefined
     if (!session?.messages?.length) {
-      return { queuedUserMessages, transcriptMessages, latestUserMessage }
+      return { queuedUserMessages, transcriptMessages, latestUserMessage, pendingFollowUpAnnotations }
     }
 
     for (const message of session.messages) {
@@ -661,13 +662,34 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
         transcriptMessages.push(message)
         if (message.role === 'user') latestUserMessage = message
       }
+
+      if (message.role !== 'assistant' && message.role !== 'plan') continue
+      if (!message.annotations?.length) continue
+
+      for (const annotation of message.annotations) {
+        const note = getAnnotationNoteText(annotation)
+        if (!note) continue
+        if (isAnnotationFollowUpSent(annotation)) continue
+
+        pendingFollowUpAnnotations.push({
+          messageId: message.id,
+          annotationId: annotation.id,
+          note,
+          selectedText: extractAnnotationSelectedText(annotation, message.content),
+          createdAt: annotation.updatedAt ?? annotation.createdAt,
+          color: annotation.style?.color,
+          meta: asRecord(annotation.meta) ?? undefined,
+        })
+      }
     }
 
-    return { queuedUserMessages, transcriptMessages, latestUserMessage }
+    pendingFollowUpAnnotations.sort((a, b) => a.createdAt - b.createdAt)
+    return { queuedUserMessages, transcriptMessages, latestUserMessage, pendingFollowUpAnnotations }
   }, [session?.messages])
   const queuedUserMessages = partitionedMessages.queuedUserMessages
   const transcriptMessages = partitionedMessages.transcriptMessages
   const latestUserMessage = partitionedMessages.latestUserMessage
+  const pendingFollowUpAnnotations = partitionedMessages.pendingFollowUpAnnotations
   // Memoize turn grouping - avoids O(n) iteration on every render/keystroke
   const allTurns = React.useMemo(() => {
     if (!session) return []
@@ -1140,35 +1162,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const lastMessage = messageCount > 0 ? transcriptMessages[messageCount - 1] : undefined
   const lastMessageId = lastMessage?.id
   const lastMessageRole = lastMessage?.role
-
-  const pendingFollowUpAnnotations = useMemo<PendingFollowUpAnnotation[]>(() => {
-    if (!session?.messages?.length) return []
-
-    const pending: PendingFollowUpAnnotation[] = []
-
-    for (const message of session.messages) {
-      if (message.role !== 'assistant' && message.role !== 'plan') continue
-      if (!message.annotations?.length) continue
-
-      for (const annotation of message.annotations) {
-        const note = getAnnotationNoteText(annotation)
-        if (!note) continue
-        if (isAnnotationFollowUpSent(annotation)) continue
-
-        pending.push({
-          messageId: message.id,
-          annotationId: annotation.id,
-          note,
-          selectedText: extractAnnotationSelectedText(annotation, message.content),
-          createdAt: annotation.updatedAt ?? annotation.createdAt,
-          color: annotation.style?.color,
-          meta: asRecord(annotation.meta) ?? undefined,
-        })
-      }
-    }
-
-    return pending.sort((a, b) => a.createdAt - b.createdAt)
-  }, [session?.messages])
 
   const followUpInputItems = useMemo(() => {
     return pendingFollowUpAnnotations.map((followUp, idx) => ({
