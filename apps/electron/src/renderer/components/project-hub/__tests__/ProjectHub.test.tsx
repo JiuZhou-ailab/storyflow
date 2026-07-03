@@ -13,12 +13,14 @@ mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDo
 let ProjectHub: typeof import('../ProjectHub').ProjectHub
 let createProjectHubActions: typeof import('../ProjectHub').createProjectHubActions
 let filterProjectHubProjects: typeof import('../ProjectHub').filterProjectHubProjects
+let projectMatchesQuery: typeof import('../ProjectHub').projectMatchesQuery
 
 beforeAll(async () => {
   const module = await import('../ProjectHub')
   ProjectHub = module.ProjectHub
   createProjectHubActions = module.createProjectHubActions
   filterProjectHubProjects = module.filterProjectHubProjects
+  projectMatchesQuery = module.projectMatchesQuery
 })
 
 const projects: ProjectHubProject[] = [
@@ -119,7 +121,15 @@ describe('ProjectHub', () => {
     expect(filterProjectHubProjects(projects, '黎明').map((project) => project.id)).toEqual(['local-dawn'])
     expect(filterProjectHubProjects(projects, 'remote/river').map((project) => project.id)).toEqual(['remote-river'])
     expect(filterProjectHubProjects(projects, 'screenplay').map((project) => project.id)).toEqual(['remote-river'])
-    expect(filterProjectHubProjects(projects, '   ').map((project) => project.id)).toEqual(['local-dawn', 'remote-river'])
+    expect(filterProjectHubProjects(projects, '剧本逻辑').map((project) => project.id)).toEqual(['remote-river'])
+    expect(filterProjectHubProjects(projects, '远端').map((project) => project.id)).toEqual(['remote-river'])
+    expect(filterProjectHubProjects(projects, '   ')).toBe(projects)
+  })
+
+  it('matches a project through fixed searchable fields without requiring caller-side labels', () => {
+    expect(projectMatchesQuery(projects[0], '长篇写作')).toBe(true)
+    expect(projectMatchesQuery(projects[0], '小说')).toBe(true)
+    expect(projectMatchesQuery(projects[0], 'missing')).toBe(false)
   })
 
   it('routes project card actions through workspace id callbacks without touching Electron APIs', () => {

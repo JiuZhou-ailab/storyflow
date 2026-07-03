@@ -207,20 +207,22 @@ export function filterProjectHubProjects(projects: ProjectHubProject[], query: s
     return projects
   }
 
-  return projects.filter((project) => {
-    const searchableText = [
-      project.name,
-      project.rootPath,
-      project.methodPackId,
-      getMethodPackLabel(project.methodPackId),
-      getProjectKindLabel(project.kind),
-      getProjectStatusLabel(project.status),
-    ]
-      .filter((value): value is string => Boolean(value))
-      .map((value) => value.toLocaleLowerCase())
+  return projects.filter((project) => projectMatchesQuery(project, normalizedQuery))
+}
 
-    return searchableText.some((value) => value.includes(normalizedQuery))
-  })
+export function projectMatchesQuery(project: ProjectHubProject, normalizedQuery: string): boolean {
+  return (
+    fieldIncludesQuery(project.name, normalizedQuery) ||
+    fieldIncludesQuery(project.rootPath, normalizedQuery) ||
+    fieldIncludesQuery(project.methodPackId, normalizedQuery) ||
+    fieldIncludesQuery(getMethodPackLabel(project.methodPackId), normalizedQuery) ||
+    fieldIncludesQuery(getProjectKindLabel(project.kind), normalizedQuery) ||
+    fieldIncludesQuery(getProjectStatusLabel(project.status), normalizedQuery)
+  )
+}
+
+function fieldIncludesQuery(value: string | undefined, normalizedQuery: string): boolean {
+  return Boolean(value && value.toLocaleLowerCase().includes(normalizedQuery))
 }
 
 export function createProjectHubActions(project: ProjectHubProject, callbacks: ProjectHubCallbacks) {
