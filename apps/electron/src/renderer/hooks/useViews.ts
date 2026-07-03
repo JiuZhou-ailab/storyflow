@@ -30,6 +30,26 @@ export interface UseViewsResult {
   refresh: () => Promise<void>
 }
 
+function sameColor(a: ViewConfig['color'], b: ViewConfig['color']): boolean {
+  if (a === b) return true
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false
+  return a.light === b.light && a.dark === b.dark
+}
+
+export function areViewConfigsEqual(a: ViewConfig[], b: ViewConfig[]): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  return a.every((view, index) => {
+    const next = b[index]
+    return !!next
+      && view.id === next.id
+      && view.name === next.name
+      && view.description === next.description
+      && view.expression === next.expression
+      && sameColor(view.color, next.color)
+  })
+}
+
 /**
  * Load and compile views for a workspace.
  * Expressions are compiled once on load, then evaluated per-session per-render.
@@ -41,7 +61,7 @@ export function useViews(workspaceId: string | null): UseViewsResult {
 
   const refresh = useCallback(async () => {
     if (!workspaceId) {
-      setConfigs([])
+      setConfigs(prev => prev.length === 0 ? prev : [])
       setIsLoading(false)
       return
     }
@@ -49,7 +69,7 @@ export function useViews(workspaceId: string | null): UseViewsResult {
     try {
       setIsLoading(true)
       const views = await window.electronAPI.listViews(workspaceId)
-      setConfigs(views)
+      setConfigs(prev => areViewConfigsEqual(prev, views) ? prev : views)
     } catch (err) {
       console.error('[useViews] Failed to load views:', err)
     } finally {
