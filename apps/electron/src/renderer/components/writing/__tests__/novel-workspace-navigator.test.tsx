@@ -1038,6 +1038,17 @@ describe('novel writing workspace layout', () => {
     expect(delayedRefreshSource).toContain('window.setTimeout(() => {\n      if (completedNovelFileChangeRefreshKeys.has(refreshKey)) return')
   })
 
+  it('marks checkpoint-driven writing workspace refreshes as covered before delayed refresh', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const checkpointSource = appShellSource.slice(
+      appShellSource.indexOf('const checkpointNovelWorkspaceAgentTurn ='),
+      appShellSource.indexOf('React.useEffect(() => {\n    if (!effectiveSessionId || !novelWorkspaceRoot) return')
+    )
+
+    expect(checkpointSource).toContain('refreshNovelWorkspaceFiles(novelWorkspaceRoot).then((refreshed) => {')
+    expect(checkpointSource).toContain('if (refreshed) markNovelWorkspaceFileChangesCovered(novelWorkspaceRoot)')
+  })
+
   it('uses equality guarded writing workspace file updates during detection', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const detectionSource = appShellSource.slice(

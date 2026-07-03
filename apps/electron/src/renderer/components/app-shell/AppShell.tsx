@@ -2750,7 +2750,9 @@ function AppShellContent({
           novelWorkspaceFiles,
         )
         setKnownWorkspaceCommit(novelWorkspaceRoot, sessionId, headCommit)
-        void refreshNovelWorkspaceFiles(novelWorkspaceRoot)
+        void refreshNovelWorkspaceFiles(novelWorkspaceRoot).then((refreshed) => {
+          if (refreshed) markNovelWorkspaceFileChangesCovered(novelWorkspaceRoot)
+        })
       }
       if (novelVersionDialogOpen) {
         await refreshNovelVersions()
@@ -2760,7 +2762,7 @@ function AppShellContent({
     } finally {
       novelAgentTurnCheckpointInFlightRef.current = false
     }
-  }, [novelVersionDialogOpen, novelWorkspaceFiles, novelWorkspaceRoot, refreshNovelVersions, refreshNovelWorkspaceFiles, reviewableNovelFileChanges])
+  }, [markNovelWorkspaceFileChangesCovered, novelVersionDialogOpen, novelWorkspaceFiles, novelWorkspaceRoot, refreshNovelVersions, refreshNovelWorkspaceFiles, reviewableNovelFileChanges])
 
   React.useEffect(() => {
     if (!effectiveSessionId || !novelWorkspaceRoot) return
