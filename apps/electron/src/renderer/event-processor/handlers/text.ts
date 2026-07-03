@@ -103,7 +103,12 @@ export function handleTextComplete(
 
     // Don't overwrite a completed intermediate message with another intermediate —
     // each thinking block (e.g. Codex reasoning between tool calls) should be distinct
-    if (!existingMsg.isStreaming && existingMsg.isIntermediate && event.isIntermediate) {
+    if (
+      !existingMsg.isStreaming
+      && existingMsg.isIntermediate
+      && event.isIntermediate
+      && (!event.messageId || existingMsg.id !== event.messageId)
+    ) {
       msgIndex = -1
     }
   }
@@ -131,6 +136,7 @@ export function handleTextComplete(
       // This ensures reload order matches live order
       ...(event.timestamp ? { timestamp: event.timestamp } : {}),
     }, shouldUpdateTimestamp)
+    if (updatedSession === session && streaming === null) return state
     return { session: updatedSession, streaming: null }
   }
 

@@ -91,6 +91,33 @@ describe('handleTextComplete messageId synchronization', () => {
     expect((next.session.messages[0] as any).canBranch).toBe(false)
   })
 
+  it('keeps the original state for duplicate intermediate text_complete data', () => {
+    const state = makeState([
+      {
+        id: 'msg-main-1',
+        role: 'assistant',
+        content: 'already complete',
+        isStreaming: false,
+        isPending: false,
+        isIntermediate: true,
+        turnId: 'turn-1',
+        timestamp: 200,
+      },
+    ])
+
+    const event: TextCompleteEvent = {
+      type: 'text_complete',
+      sessionId: 'session-1',
+      text: 'already complete',
+      turnId: 'turn-1',
+      messageId: 'msg-main-1',
+      timestamp: 200,
+      isIntermediate: true,
+    }
+
+    expect(handleTextComplete(state, event)).toBe(state)
+  })
+
   it('keeps backward compatibility when messageId is missing', () => {
     const state = makeState([])
 
