@@ -514,6 +514,14 @@ export function FreeFormInput({
   // Optimistic state for source selection - updates UI immediately before IPC round-trip completes
   const [optimisticSourceSlugs, setOptimisticSourceSlugs] = React.useState(enabledSourceSlugs)
 
+  const skillSlugs = React.useMemo(() => skills.map(s => s.slug), [skills])
+  const sourceSlugs = React.useMemo(() => sources.map(s => s.config.slug), [sources])
+  const selectedSourceSlugSet = React.useMemo(() => new Set(optimisticSourceSlugs), [optimisticSourceSlugs])
+  const selectedSourcesForBadge = React.useMemo(
+    () => sources.filter(s => selectedSourceSlugSet.has(s.config.slug)),
+    [sources, selectedSourceSlugSet]
+  )
+
   // Sync from prop when server state changes (reconciles after IPC or on external updates)
   // Use content comparison (not reference) to avoid infinite loops with empty arrays
   const prevEnabledSourceSlugsRef = React.useRef(enabledSourceSlugs)
@@ -1274,8 +1282,6 @@ export function FreeFormInput({
     if (disableSend) return false
 
     // Parse all bracket mentions (skills from /, sources and files from @)
-    const skillSlugs = skills.map(s => s.slug)
-    const sourceSlugs = sources.map(s => s.config.slug)
     const mentions = parseMentions(input, skillSlugs, sourceSlugs)
 
     // Enable any mentioned sources that aren't already enabled
@@ -1308,7 +1314,7 @@ export function FreeFormInput({
     })
 
     return true
-  }, [input, attachments, followUpItems, disabled, disableSend, onInputChange, onAttachmentsChange, onSubmit, skills, sources, optimisticSourceSlugs, onSourcesChange, onWorkingDirectoryChange, homeDir])
+  }, [input, attachments, followUpItems, disabled, disableSend, onInputChange, onAttachmentsChange, onSubmit, skillSlugs, sourceSlugs, optimisticSourceSlugs, onSourcesChange, onWorkingDirectoryChange, homeDir])
 
   // Listen for craft:submit-input events (simulate pressing the Send button)
   React.useEffect(() => {
@@ -1422,8 +1428,6 @@ export function FreeFormInput({
 
     // Sync source selection when mentions are removed from input
     if (onSourcesChange) {
-      const sourceSlugs = sources.map(s => s.config.slug)
-
       // Parse mentions from previous and current input
       const prevMentions = parseMentions(prevValue, [], sourceSlugs)
       const currMentions = parseMentions(nextValue, [], sourceSlugs)
@@ -1436,7 +1440,7 @@ export function FreeFormInput({
         onSourcesChange(newSlugs)
       }
     }
-  }, [syncToParent, sources, optimisticSourceSlugs, onSourcesChange])
+  }, [syncToParent, sourceSlugs, optimisticSourceSlugs, onSourcesChange])
 
   // Handle input with cursor position (for menu detection)
   const handleRichInput = React.useCallback((value: string, cursorPosition: number, meta?: RichTextInputChangeMeta) => {
@@ -1846,9 +1850,8 @@ export function FreeFormInput({
                   ) : (
                     <div className="flex items-center -ml-0.5">
                       {(() => {
-                        const enabledSources = sources.filter(s => optimisticSourceSlugs.includes(s.config.slug))
-                        const displaySources = enabledSources.slice(0, 3)
-                        const remainingCount = enabledSources.length - 3
+                        const displaySources = selectedSourcesForBadge.slice(0, 3)
+                        const remainingCount = selectedSourcesForBadge.length - 3
                         return (
                           <>
                             {displaySources.map((source, index) => (
@@ -1878,9 +1881,8 @@ export function FreeFormInput({
                   optimisticSourceSlugs.length === 0
                     ? t("chat.sourcesTooltip")
                     : (() => {
-                        const enabledSources = sources.filter(s => optimisticSourceSlugs.includes(s.config.slug))
-                        if (enabledSources.length === 1) return enabledSources[0].config.name
-                        return t("chat.sourcesCount", { count: enabledSources.length })
+                        if (selectedSourcesForBadge.length === 1) return selectedSourcesForBadge[0].config.name
+                        return t("chat.sourcesCount", { count: selectedSourcesForBadge.length })
                       })()
                 }
                 isExpanded={false}
@@ -1949,9 +1951,8 @@ export function FreeFormInput({
                   ) : (
                     <div className="flex items-center -ml-0.5">
                       {(() => {
-                        const enabledSources = sources.filter(s => optimisticSourceSlugs.includes(s.config.slug))
-                        const displaySources = enabledSources.slice(0, 3)
-                        const remainingCount = enabledSources.length - 3
+                        const displaySources = selectedSourcesForBadge.slice(0, 3)
+                        const remainingCount = selectedSourcesForBadge.length - 3
                         return (
                           <>
                             {displaySources.map((source, index) => (
@@ -1981,10 +1982,9 @@ export function FreeFormInput({
                   optimisticSourceSlugs.length === 0
                     ? t("chat.chooseSources")
                     : (() => {
-                        const enabledSources = sources.filter(s => optimisticSourceSlugs.includes(s.config.slug))
-                        if (enabledSources.length === 1) return enabledSources[0].config.name
-                        if (enabledSources.length === 2) return enabledSources.map(s => s.config.name).join(', ')
-                        return t("chat.sourcesCount", { count: enabledSources.length })
+                        if (selectedSourcesForBadge.length === 1) return selectedSourcesForBadge[0].config.name
+                        if (selectedSourcesForBadge.length === 2) return selectedSourcesForBadge.map(s => s.config.name).join(', ')
+                        return t("chat.sourcesCount", { count: selectedSourcesForBadge.length })
                       })()
                 }
                 isExpanded={isEmptySession}

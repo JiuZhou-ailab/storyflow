@@ -163,3 +163,16 @@ describe('FreeFormInput attachment read path', () => {
     )
   })
 })
+
+describe('FreeFormInput render hot paths', () => {
+  it('memoizes source and skill lookups used while typing', () => {
+    const source = readFileSync(new URL('../FreeFormInput.tsx', import.meta.url), 'utf-8')
+
+    expect(source).toContain('const skillSlugs = React.useMemo')
+    expect(source).toContain('const sourceSlugs = React.useMemo')
+    expect(source).toContain('const selectedSourcesForBadge = React.useMemo')
+    expect(source).not.toContain('const skillSlugs = skills.map')
+    expect(source).not.toContain('const sourceSlugs = sources.map')
+    expect(source.match(/sources\.filter\(s => optimisticSourceSlugs\.includes\(s\.config\.slug\)\)/g) ?? []).toHaveLength(0)
+  })
+})
