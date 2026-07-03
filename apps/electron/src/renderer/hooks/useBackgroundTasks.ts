@@ -7,7 +7,13 @@
 
 import { useAtom } from 'jotai'
 import { useCallback } from 'react'
-import { backgroundTasksAtomFamily, updateBackgroundTaskProgress, type BackgroundTask } from '@/atoms/sessions'
+import {
+  backgroundTasksAtomFamily,
+  removeBackgroundTaskById,
+  removeBackgroundTaskByToolUseId,
+  updateBackgroundTaskProgress,
+  type BackgroundTask,
+} from '@/atoms/sessions'
 
 export interface UseBackgroundTasksOptions {
   /** Session ID to track tasks for */
@@ -49,7 +55,7 @@ export function useBackgroundTasks({ sessionId }: UseBackgroundTasksOptions): Us
   }, [setTasks])
 
   const removeTask = useCallback((toolUseId: string) => {
-    setTasks(prev => prev.filter(t => t.toolUseId !== toolUseId))
+    setTasks(prev => removeBackgroundTaskByToolUseId(prev, toolUseId))
   }, [setTasks])
 
   const killTask = useCallback(async (taskId: string, type: 'agent' | 'shell') => {
@@ -71,7 +77,7 @@ export function useBackgroundTasks({ sessionId }: UseBackgroundTasksOptions): Us
 
     // Always remove from UI after kill attempt
     if (task) {
-      setTasks(prev => prev.filter(t => t.id !== taskId))
+      setTasks(prev => removeBackgroundTaskById(prev, taskId))
     }
   }, [sessionId, tasks, setTasks])
 

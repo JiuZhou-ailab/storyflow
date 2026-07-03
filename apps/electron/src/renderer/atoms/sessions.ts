@@ -788,6 +788,24 @@ export function updateBackgroundTaskProgress(
   return next
 }
 
+export function removeBackgroundTaskById(
+  tasks: readonly BackgroundTask[],
+  taskId: string,
+): BackgroundTask[] {
+  return tasks.some(task => task.id === taskId)
+    ? tasks.filter(task => task.id !== taskId)
+    : tasks as BackgroundTask[]
+}
+
+export function removeBackgroundTaskByToolUseId(
+  tasks: readonly BackgroundTask[],
+  toolUseId: string,
+): BackgroundTask[] {
+  return tasks.some(task => task.toolUseId === toolUseId)
+    ? tasks.filter(task => task.toolUseId !== toolUseId)
+    : tasks as BackgroundTask[]
+}
+
 /**
  * Atom family for tracking active background tasks per session
  * Updated on task_backgrounded, shell_backgrounded, task_progress events

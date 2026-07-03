@@ -61,6 +61,8 @@ import {
   forceSessionMessagesReloadAtom,
   backgroundTasksAtomFamily,
   updateBackgroundTaskProgress,
+  removeBackgroundTaskById,
+  removeBackgroundTaskByToolUseId,
   windowWorkspaceIdAtom,
   type SessionMeta,
 } from '@/atoms/sessions'
@@ -205,18 +207,18 @@ function handleBackgroundTaskEvent(
   } else if (event.type === 'task_completed' && 'taskId' in evt) {
     // Remove task when background task completes
     const currentTasks = store.get(backgroundTasksAtom)
-    store.set(backgroundTasksAtom, currentTasks.filter(t => t.id !== evt.taskId))
+    store.set(backgroundTasksAtom, removeBackgroundTaskById(currentTasks, evt.taskId as string))
   } else if (event.type === 'shell_killed' && 'shellId' in evt) {
     // Remove shell task when KillShell succeeds
     const currentTasks = store.get(backgroundTasksAtom)
-    store.set(backgroundTasksAtom, currentTasks.filter(t => t.id !== evt.shellId))
+    store.set(backgroundTasksAtom, removeBackgroundTaskById(currentTasks, evt.shellId as string))
   } else if (event.type === 'tool_result' && 'toolUseId' in evt) {
     // Remove task when it completes - but NOT if this is the initial backgrounding result
     // Background tasks return immediately with agentId/shell_id/backgroundTaskId,
     // we should only remove when the task actually completes
     if (!isBackgroundingToolResult(evt.result)) {
       const currentTasks = store.get(backgroundTasksAtom)
-      store.set(backgroundTasksAtom, currentTasks.filter(t => t.toolUseId !== evt.toolUseId))
+      store.set(backgroundTasksAtom, removeBackgroundTaskByToolUseId(currentTasks, evt.toolUseId as string))
     }
   }
   // Note: We do NOT clear background tasks on complete/error/interrupted
