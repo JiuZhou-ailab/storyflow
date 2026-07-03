@@ -2,3 +2,17 @@ export function appendUniqueRequestById<T extends { requestId: string }>(queue: 
   if (queue.some(item => item.requestId === request.requestId)) return queue
   return [...queue, request]
 }
+
+export function removeFirstRequestForSession<T>(queues: Map<string, T[]>, sessionId: string): Map<string, T[]> {
+  const queue = queues.get(sessionId) ?? []
+  if (queue.length === 0) return queues
+
+  const next = new Map(queues)
+  const remainingQueue = queue.slice(1)
+  if (remainingQueue.length === 0) {
+    next.delete(sessionId)
+  } else {
+    next.set(sessionId, remainingQueue)
+  }
+  return next
+}

@@ -42,7 +42,7 @@ import { formatSessionLoadFailure, shouldTreatSessionLoadFailureAsTransportFallb
 import { resolvePostSetupAppState } from './lib/startup-flow'
 import { buildProjectSummaries } from './lib/project-summary'
 import { isAppFullyReady } from './lib/app-readiness'
-import { appendUniqueRequestById } from './lib/request-queue'
+import { appendUniqueRequestById, removeFirstRequestForSession } from './lib/request-queue'
 import { extractWorkspaceSlugFromPath } from '@craft-agent/shared/utils/workspace-slug'
 import { DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels'
 import { initRendererPerf } from './lib/perf'
@@ -1727,71 +1727,13 @@ export default function App() {
     alwaysAllow: boolean,
     options?: import('../shared/types').PermissionResponseOptions,
   ) => {
-    const success = await window.electronAPI.respondToPermission(sessionId, requestId, allowed, alwaysAllow, options)
-
-    if (success) {
-      // Remove only the first permission from the queue (the one we just responded to)
-      setPendingPermissions(prev => {
-        const next = new Map(prev)
-        const queue = next.get(sessionId) || []
-        const remainingQueue = queue.slice(1) // Remove first item
-        if (remainingQueue.length === 0) {
-          next.delete(sessionId)
-        } else {
-          next.set(sessionId, remainingQueue)
-        }
-        return next
-      })
-      // Note: No need to force session refresh - per-session atoms update automatically
-    } else {
-      // Response failed (agent/session gone) - clear the permission anyway
-      // to avoid UI being stuck with stale permission
-      setPendingPermissions(prev => {
-        const next = new Map(prev)
-        const queue = next.get(sessionId) || []
-        const remainingQueue = queue.slice(1)
-        if (remainingQueue.length === 0) {
-          next.delete(sessionId)
-        } else {
-          next.set(sessionId, remainingQueue)
-        }
-        return next
-      })
-    }
+    await window.electronAPI.respondToPermission(sessionId, requestId, allowed, alwaysAllow, options)
+    setPendingPermissions(prev => removeFirstRequestForSession(prev, sessionId))
   }, [])
 
   const handleRespondToCredential = useCallback(async (sessionId: string, requestId: string, response: CredentialResponse) => {
-    const success = await window.electronAPI.respondToCredential(sessionId, requestId, response)
-
-    if (success) {
-      // Remove only the first credential from the queue (the one we just responded to)
-      setPendingCredentials(prev => {
-        const next = new Map(prev)
-        const queue = next.get(sessionId) || []
-        const remainingQueue = queue.slice(1) // Remove first item
-        if (remainingQueue.length === 0) {
-          next.delete(sessionId)
-        } else {
-          next.set(sessionId, remainingQueue)
-        }
-        return next
-      })
-      // Note: No need to force session refresh - per-session atoms update automatically
-    } else {
-      // Response failed (agent/session gone) - clear the credential anyway
-      // to avoid UI being stuck with stale credential request
-      setPendingCredentials(prev => {
-        const next = new Map(prev)
-        const queue = next.get(sessionId) || []
-        const remainingQueue = queue.slice(1)
-        if (remainingQueue.length === 0) {
-          next.delete(sessionId)
-        } else {
-          next.set(sessionId, remainingQueue)
-        }
-        return next
-      })
-    }
+    await window.electronAPI.respondToCredential(sessionId, requestId, response)
+    setPendingCredentials(prev => removeFirstRequestForSession(prev, sessionId))
   }, [])
 
   // Centralized link interceptor: classifies file types and decides whether to
