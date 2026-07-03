@@ -3,7 +3,8 @@
 // pos: Pure derivation layer for AiSettingsPage connection selectors
 
 import type { SettingsMenuSelectOption } from '@/components/settings'
-import type { LlmConnectionWithStatus } from '@config/llm-connections'
+import { getModelShortName, type ModelDefinition } from '@config/models'
+import { getModelsForProviderType, type LlmConnectionWithStatus } from '@config/llm-connections'
 
 export interface ProviderDescriptionLabels {
   anthropic?: string
@@ -16,6 +17,18 @@ export interface WorkspaceConnectionOptionsConfig {
   globalLabel: string
   globalDescription: string
   providerLabels: ProviderDescriptionLabels
+}
+
+export interface WorkspaceModelOptionsConfig {
+  globalLabel: string
+  globalDescription: string
+  translateDescription: (key: string) => string
+}
+
+export interface ThinkingOptionConfig {
+  id: string
+  nameKey: string
+  descriptionKey: string
 }
 
 export function sortLlmConnectionsForDisplay(connections: LlmConnectionWithStatus[]): LlmConnectionWithStatus[] {
@@ -45,6 +58,50 @@ export function createWorkspaceLlmConnectionOptions(
     { value: 'global', label: config.globalLabel, description: config.globalDescription },
     ...createLlmConnectionOptions(connections, config.providerLabels),
   ]
+}
+
+export function createModelOptionsForConnection(
+  connection: LlmConnectionWithStatus | undefined,
+  translateDescription: (key: string) => string,
+): SettingsMenuSelectOption[] {
+  if (!connection) return []
+
+  const models = connection.models && connection.models.length > 0
+    ? connection.models
+    : getModelsForProviderType(connection.providerType, connection.piAuthProvider)
+
+  return models.map((model) => {
+    if (typeof model === 'string') {
+      return { value: model, label: getModelShortName(model), description: '' }
+    }
+    const definition = model as ModelDefinition
+    return {
+      value: definition.id,
+      label: definition.name,
+      description: definition.descriptionKey ? translateDescription(definition.descriptionKey) : definition.description,
+    }
+  })
+}
+
+export function createWorkspaceModelOptions(
+  connection: LlmConnectionWithStatus | undefined,
+  config: WorkspaceModelOptionsConfig,
+): SettingsMenuSelectOption[] {
+  return [
+    { value: 'global', label: config.globalLabel, description: config.globalDescription },
+    ...createModelOptionsForConnection(connection, config.translateDescription),
+  ]
+}
+
+export function createThinkingOptions(
+  levels: readonly ThinkingOptionConfig[],
+  translate: (key: string) => string,
+): SettingsMenuSelectOption[] {
+  return levels.map(({ id, nameKey, descriptionKey }) => ({
+    value: id,
+    label: translate(nameKey),
+    description: translate(descriptionKey),
+  }))
 }
 
 function getProviderDescription(

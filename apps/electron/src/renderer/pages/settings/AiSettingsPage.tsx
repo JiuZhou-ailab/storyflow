@@ -53,44 +53,16 @@ import { OnboardingWizard, type ApiSetupMethod } from '@/components/onboarding'
 import { RenameDialog } from '@/components/ui/rename-dialog'
 import { useAppShellContext } from '@/context/AppShellContext'
 import { getModelShortName, type ModelDefinition } from '@config/models'
-import { getModelsForProviderType, resolveMidStreamBehavior, type CustomEndpointApi, type MidStreamBehavior } from '@config/llm-connections'
+import { resolveMidStreamBehavior, type CustomEndpointApi, type MidStreamBehavior } from '@config/llm-connections'
 import { toast } from 'sonner'
 import {
   createLlmConnectionOptions,
+  createModelOptionsForConnection,
+  createThinkingOptions,
+  createWorkspaceModelOptions,
   createWorkspaceLlmConnectionOptions,
   sortLlmConnectionsForDisplay,
 } from './ai-settings-options'
-
-/**
- * Derive model dropdown options from a connection's models array,
- * falling back to registry models for the connection's provider type.
- */
-function getModelOptionsForConnection(
-  connection: LlmConnectionWithStatus | undefined,
-): Array<{ value: string; label: string; description: string; descriptionKey?: string }> {
-  if (!connection) return []
-
-  // If connection has explicit models, use those
-  if (connection.models && connection.models.length > 0) {
-    return connection.models.map((m) => {
-      if (typeof m === 'string') {
-        return { value: m, label: getModelShortName(m), description: '' }
-      }
-      // ModelDefinition object
-      const def = m as ModelDefinition
-      return { value: def.id, label: def.name, description: def.description, descriptionKey: def.descriptionKey }
-    })
-  }
-
-  // Fall back to registry models for this provider type
-  const registryModels = getModelsForProviderType(connection.providerType, connection.piAuthProvider)
-  return registryModels.map((m) => ({
-    value: m.id,
-    label: m.name,
-    description: m.description,
-    descriptionKey: m.descriptionKey,
-  }))
-}
 
 export const meta: DetailsPageMeta = {
   navigator: 'settings',
@@ -368,6 +340,7 @@ interface WorkspaceOverrideCardProps {
   workspace: Workspace
   llmConnections: LlmConnectionWithStatus[]
   connectionOptions: ReturnType<typeof createWorkspaceLlmConnectionOptions>
+  thinkingOptions: ReturnType<typeof createThinkingOptions>
   onSettingsChange: () => void
 }
 
@@ -377,7 +350,7 @@ const WORKSPACE_SETTING_LABELS: Partial<Record<keyof WorkspaceSettings, string>>
   thinkingLevel: 'workspace thinking override',
 }
 
-function WorkspaceOverrideCard({ workspace, llmConnections, connectionOptions, onSettingsChange }: WorkspaceOverrideCardProps) {
+function WorkspaceOverrideCard({ workspace, llmConnections, connectionOptions, thinkingOptions, onSettingsChange }: WorkspaceOverrideCardProps) {
   const { t } = useTranslation()
   const [isExpanded, setIsExpanded] = useState(false)
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null)
@@ -460,6 +433,14 @@ function WorkspaceOverrideCard({ workspace, llmConnections, connectionOptions, o
     const connSlug = settings?.defaultLlmConnection
     return connSlug ? llmConnections.find(c => c.slug === connSlug) : llmConnections.find(c => c.isDefault)
   }, [settings?.defaultLlmConnection, llmConnections])
+  const workspaceModelOptions = useMemo(
+    () => createWorkspaceModelOptions(workspaceEffectiveConnection, {
+      globalLabel: t("settings.ai.useDefault"),
+      globalDescription: t("settings.ai.inheritFromApp"),
+      translateDescription: t,
+    }),
+    [workspaceEffectiveConnection, t],
+  )
 
   // Get summary text for collapsed state
   const getSummary = () => {
@@ -537,26 +518,14 @@ function WorkspaceOverrideCard({ workspace, llmConnections, connectionOptions, o
                 description={t("settings.ai.modelDesc")}
                 value={currentModel}
                 onValueChange={handleModelChange}
-                options={[
-                  { value: 'global', label: t("settings.ai.useDefault"), description: t("settings.ai.inheritFromApp") },
-                  ...getModelOptionsForConnection(workspaceEffectiveConnection).map(o => ({
-                    ...o, description: o.descriptionKey ? t(o.descriptionKey) : o.description,
-                  })),
-                ]}
+                options={workspaceModelOptions}
               />
               <SettingsMenuSelectRow
                 label={t("settings.ai.thinking")}
                 description={t("settings.ai.thinkingDesc")}
                 value={currentThinking}
                 onValueChange={handleThinkingChange}
-                options={[
-                  { value: 'global', label: t("settings.ai.useDefault"), description: t("settings.ai.inheritFromApp") },
-                  ...THINKING_LEVELS.map(({ id, nameKey, descriptionKey }) => ({
-                    value: id,
-                    label: t(nameKey),
-                    description: t(descriptionKey),
-                  })),
-                ]}
+                options={thinkingOptions}
               />
             </div>
           </motion.div>
@@ -924,6 +893,21 @@ export default function AiSettingsPage() {
   }, [visibleLlmConnections])
 
   const defaultModel = defaultConnection?.defaultModel ?? ''
+  const defaultModelOptions = useMemo(
+    () => createModelOptionsForConnection(defaultConnection, t),
+    [defaultConnection, t],
+  )
+  const thinkingOptions = useMemo(
+    () => createThinkingOptions(THINKING_LEVELS, t),
+    [t],
+  )
+  const workspaceThinkingOptions = useMemo(
+    () => [
+      { value: 'global', label: t("settings.ai.useDefault"), description: t("settings.ai.inheritFromApp") },
+      ...thinkingOptions,
+    ],
+    [thinkingOptions, t],
+  )
 
   // App-level default handlers
   const handleDefaultModelChange = useCallback(async (model: string) => {
@@ -999,20 +983,14 @@ export default function AiSettingsPage() {
                     description={t("settings.ai.modelDesc")}
                     value={defaultModel}
                     onValueChange={handleDefaultModelChange}
-                    options={getModelOptionsForConnection(defaultConnection).map(o => ({
-                      ...o, description: o.descriptionKey ? t(o.descriptionKey) : o.description,
-                    }))}
+                    options={defaultModelOptions}
                   />
                   <SettingsMenuSelectRow
                     label={t("settings.ai.thinking")}
                     description={t("settings.ai.thinkingDesc")}
                     value={defaultThinking}
                     onValueChange={(v) => handleDefaultThinkingChange(v as ThinkingLevel)}
-                    options={THINKING_LEVELS.map(({ id, nameKey, descriptionKey }) => ({
-                      value: id,
-                      label: t(nameKey),
-                      description: t(descriptionKey),
-                    }))}
+                    options={thinkingOptions}
                   />
                 </SettingsCard>
               </SettingsSection>
@@ -1028,6 +1006,7 @@ export default function AiSettingsPage() {
                         workspace={workspace}
                         llmConnections={visibleLlmConnections}
                         connectionOptions={workspaceConnectionOptions}
+                        thinkingOptions={workspaceThinkingOptions}
                         onSettingsChange={handleWorkspaceSettingsChange}
                       />
                     ))}

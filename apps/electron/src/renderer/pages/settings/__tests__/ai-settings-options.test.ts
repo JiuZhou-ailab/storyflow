@@ -6,6 +6,9 @@ import { describe, expect, it } from 'bun:test'
 import type { LlmConnectionWithStatus } from '@config/llm-connections'
 import {
   createLlmConnectionOptions,
+  createModelOptionsForConnection,
+  createThinkingOptions,
+  createWorkspaceModelOptions,
   createWorkspaceLlmConnectionOptions,
   sortLlmConnectionsForDisplay,
 } from '../ai-settings-options'
@@ -64,6 +67,42 @@ describe('AI settings options', () => {
       { value: 'anthropic', label: 'Anthropic', description: 'Anthropic' },
       { value: 'pi', label: 'Storyflow', description: 'Storyflow Backend' },
       { value: 'compat', label: 'Compat', description: 'pi_compat' },
+    ])
+  })
+
+  it('derives model options from explicit connection models and localizes descriptions', () => {
+    const conn = connection({
+      models: [
+        'claude-opus-4-20250514',
+        {
+          id: 'custom-balanced',
+          name: 'Balanced',
+          shortName: 'Balanced',
+          provider: 'pi',
+          contextWindow: 128000,
+          description: 'Balanced model',
+          descriptionKey: 'model.balanced',
+        },
+      ],
+    })
+    const translate = (key: string) => `translated:${key}`
+
+    expect(createModelOptionsForConnection(conn, translate)).toEqual([
+      { value: 'claude-opus-4-20250514', label: 'Opus 4', description: '' },
+      { value: 'custom-balanced', label: 'Balanced', description: 'translated:model.balanced' },
+    ])
+    expect(createWorkspaceModelOptions(conn, {
+      globalLabel: 'Use Default',
+      globalDescription: 'Inherit from app',
+      translateDescription: translate,
+    })[0]).toEqual({ value: 'global', label: 'Use Default', description: 'Inherit from app' })
+  })
+
+  it('derives thinking options with translated labels and descriptions', () => {
+    expect(createThinkingOptions([
+      { id: 'medium', nameKey: 'thinking.medium', descriptionKey: 'thinking.medium.desc' },
+    ], (key) => `translated:${key}`)).toEqual([
+      { value: 'medium', label: 'translated:thinking.medium', description: 'translated:thinking.medium.desc' },
     ])
   })
 })
