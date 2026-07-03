@@ -88,9 +88,12 @@ describe('computeCollapsedPagination', () => {
   })
 
   it('precomputes session search ranking keys before sorting results', () => {
-    expect(useSessionSearchSource).toContain('const rankedSearchItems = sortedItems')
+    expect(useSessionSearchSource).toContain('const rankedSearchItems: { item: SessionMeta; score: number; matchCount: number }[] = []')
+    expect(useSessionSearchSource).toContain('for (const item of sortedItems)')
+    expect(useSessionSearchSource).toContain('const searchResult = contentSearchResults.get(item.id)')
     expect(useSessionSearchSource).toContain('score: fuzzyScore(getSessionTitle(item), searchQuery)')
-    expect(useSessionSearchSource).toContain('matchCount: contentSearchResults.get(item.id)?.matchCount || 0')
+    expect(useSessionSearchSource).toContain('matchCount: searchResult.matchCount')
+    expect(useSessionSearchSource).not.toContain('.filter(item => contentSearchResults.has(item.id))')
     expect(useSessionSearchSource).not.toContain('const aScore = fuzzyScore(getSessionTitle(a), searchQuery)')
     expect(useSessionSearchSource).not.toContain('const countA = contentSearchResults.get(a.id)?.matchCount || 0')
   })
