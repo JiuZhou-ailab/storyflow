@@ -11,6 +11,7 @@ import {
   getNavigatorResizeMaxWidth,
   getDefaultWritingWorkspaceLayoutWidths,
   isUserConfiguredShellLayoutWidth,
+  preserveAssistantWidthOnShellResize,
   resolveInitialShellLayoutWidths,
   shouldResolveInitialShellLayoutWidths,
 } from '../layout-defaults'
@@ -153,16 +154,42 @@ describe('app shell layout defaults', () => {
     expect(shouldResolveInitialShellLayoutWidths(768, 768)).toBe(true)
   })
 
-  it('keeps default shell proportions responsive after the first desktop measurement', () => {
-    expect(appShellSource).not.toContain('initialShellLayoutResolvedRef')
+  it('keeps the writing assistant width stable after the first desktop measurement', () => {
     expect(appShellSource).toContain('shouldResolveInitialShellLayoutWidths(shellWidth, MOBILE_THRESHOLD)')
     expect(appShellSource).toContain('activityRailWidth: activityRailOffset')
     expect(appShellSource).toContain('storage.get<number | undefined>(storage.KEYS.sidebarWidth, undefined)')
     expect(appShellSource).toContain('storage.get<number | undefined>(storage.KEYS.novelWorkspaceNavigatorWidth, undefined)')
     expect(appShellSource).not.toContain('if (sidebarPersisted && workspacePersisted) return')
+    expect(appShellSource).toContain('previousNovelWorkspaceShellWidthRef')
+    expect(appShellSource).toContain('preservingNovelWorkspaceAssistant')
+    expect(appShellSource).toContain('preserveAssistantWidthOnShellResize')
     expect(appShellSource).toContain('latestSidebarWidthRef.current !== widths.sidebar')
     expect(appShellSource).toContain('latestNovelWorkspaceNavigatorWidthRef.current !== widths.workspace')
     expect(appShellSource).toContain('(!workspacePersisted || latestNovelWorkspaceNavigatorWidthRef.current > widths.workspace)')
+  })
+
+  it('moves shell resize delta into the writing workspace instead of the assistant panel', () => {
+    expect(preserveAssistantWidthOnShellResize({
+      shellWidth: 1700,
+      previousShellWidth: 1600,
+      currentWorkspaceWidth: 800,
+      workspaceMinWidth: 420,
+      navigatorStartX: 300,
+      edgeInset: 6,
+      panelGap: 6,
+      assistantMinWidth: 440,
+    })).toBe(900)
+
+    expect(preserveAssistantWidthOnShellResize({
+      shellWidth: 1200,
+      previousShellWidth: 1600,
+      currentWorkspaceWidth: 800,
+      workspaceMinWidth: 420,
+      navigatorStartX: 300,
+      edgeInset: 6,
+      panelGap: 6,
+      assistantMinWidth: 440,
+    })).toBe(420)
   })
 
   it('keeps the desktop assistant panel from shrinking below the shared panel minimum', () => {

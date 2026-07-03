@@ -1033,7 +1033,7 @@ describe('novel writing workspace layout', () => {
     )
     const navigatorSizingSource = appShellSource.slice(
       appShellSource.indexOf('const navigatorPanelWidth ='),
-      appShellSource.indexOf('const handleNavigatorResizeBoundaryMouseDownCapture')
+      appShellSource.indexOf('React.useEffect(() => {', appShellSource.indexOf('const navigatorPanelWidth ='))
     )
     const primarySidebarSource = appShellSource.slice(
       appShellSource.indexOf('const primarySidebarLinks ='),
@@ -1144,13 +1144,13 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).not.toContain('/* Navigator Resize Handle (absolute, hidden in focused mode) */')
   })
 
-  it('starts navigator resizing from the shell capture zone around the boundary', () => {
+  it('starts navigator resizing only from the real separator instead of a shell capture zone', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
 
-    expect(appShellSource).toContain('NAVIGATOR_SASH_CAPTURE_HALF_WIDTH')
-    expect(appShellSource).toContain('handleNavigatorResizeBoundaryMouseDownCapture')
-    expect(appShellSource).toContain('onMouseDownCapture={handleNavigatorResizeBoundaryMouseDownCapture}')
-    expect(appShellSource).toContain('navigatorPanelRect.right + (PANEL_GAP / 2)')
+    expect(appShellSource).not.toContain('NAVIGATOR_SASH_CAPTURE_HALF_WIDTH')
+    expect(appShellSource).not.toContain('handleNavigatorResizeBoundaryMouseDownCapture')
+    expect(appShellSource).not.toContain('onMouseDownCapture={handleNavigatorResizeBoundaryMouseDownCapture}')
+    expect(appShellSource).not.toContain('navigatorPanelRect.right + (PANEL_GAP / 2)')
     expect(appShellSource).toContain("beginResize(isNovelWorkspaceNavigatorActive ? 'novel-workspace-navigator' : 'session-list', e)")
   })
 })

@@ -146,6 +146,7 @@ import {
   DEFAULT_WORKSPACE_WIDTH,
   getNavigatorResizeMaxWidth,
   isUserConfiguredShellLayoutWidth,
+  preserveAssistantWidthOnShellResize,
   resolveInitialShellLayoutWidths,
   shouldResolveInitialShellLayoutWidths,
 } from "./layout-defaults"
@@ -255,7 +256,6 @@ const NOVEL_WORKSPACE_NAVIGATOR_MIN_WIDTH = 420
 const NOVEL_WORKSPACE_NAVIGATOR_DEFAULT_WIDTH = DEFAULT_WORKSPACE_WIDTH
 const NAVIGATOR_SASH_HIT_WIDTH = 14
 const NAVIGATOR_SASH_FLEX_MARGIN = -(PANEL_GAP / 2)
-const NAVIGATOR_SASH_CAPTURE_HALF_WIDTH = 18
 const NOVEL_AUTO_VERSION_CHAR_THRESHOLD = 100
 const NOVEL_AUTO_VERSION_INTERVAL_MS = 5 * 60 * 1000
 const NOVEL_WORKSPACE_BRIEF_CHANGE_LIMIT = 20
@@ -1055,6 +1055,7 @@ function AppShellContent({
   const latestSidebarWidthRef = React.useRef(sidebarWidth)
   const latestSessionListWidthRef = React.useRef(sessionListWidth)
   const latestNovelWorkspaceNavigatorWidthRef = React.useRef(novelWorkspaceNavigatorWidth)
+  const previousNovelWorkspaceShellWidthRef = React.useRef<number | null>(null)
   const [session, setSession] = useSession()
   const { resolvedMode, isDark, setMode } = useTheme()
   const { goBack, goForward, navigateToSource, navigateToSession } = useNavigation()
@@ -1714,46 +1715,6 @@ function AppShellContent({
   React.useEffect(() => {
     latestNovelWorkspaceNavigatorWidthRef.current = novelWorkspaceNavigatorWidth
   }, [novelWorkspaceNavigatorWidth])
-
-  React.useEffect(() => {
-    if (!shouldResolveInitialShellLayoutWidths(shellWidth, MOBILE_THRESHOLD)) return
-
-    const persistedSidebarWidth = storage.get<number | undefined>(storage.KEYS.sidebarWidth, undefined)
-    const persistedWorkspaceWidth = storage.get<number | undefined>(storage.KEYS.novelWorkspaceNavigatorWidth, undefined)
-    const sidebarPersisted = isUserConfiguredShellLayoutWidth(
-      'sidebar',
-      persistedSidebarWidth,
-      storage.getRaw(storage.KEYS.sidebarWidth) !== null
-    )
-    const workspacePersisted = isUserConfiguredShellLayoutWidth(
-      'workspace',
-      persistedWorkspaceWidth,
-      storage.getRaw(storage.KEYS.novelWorkspaceNavigatorWidth) !== null
-    )
-    const widths = resolveInitialShellLayoutWidths({
-      totalWidth: shellWidth,
-      activityRailWidth: activityRailOffset,
-      edgeInset: PANEL_EDGE_INSET,
-      panelGap: PANEL_GAP,
-      assistantMinWidth: PANEL_MIN_WIDTH,
-      sidebarPersisted,
-      workspacePersisted,
-      currentSidebarWidth: latestSidebarWidthRef.current,
-      currentWorkspaceWidth: latestNovelWorkspaceNavigatorWidthRef.current,
-    })
-
-    if (!sidebarPersisted && latestSidebarWidthRef.current !== widths.sidebar) {
-      latestSidebarWidthRef.current = widths.sidebar
-      setSidebarWidth(widths.sidebar)
-    }
-    if (
-      latestNovelWorkspaceNavigatorWidthRef.current !== widths.workspace
-      && (!workspacePersisted || latestNovelWorkspaceNavigatorWidthRef.current > widths.workspace)
-    ) {
-      latestNovelWorkspaceNavigatorWidthRef.current = widths.workspace
-      setNovelWorkspaceNavigatorWidth(widths.workspace)
-    }
-  }, [activityRailOffset, shellWidth])
 
   const beginResize = React.useCallback((
     mode: 'sidebar' | 'session-list' | 'novel-workspace-navigator',
@@ -3045,23 +3006,83 @@ function AppShellContent({
     : (showNovelWorkspacePending || showNovelWorkspaceUnavailable) ? novelWorkspaceNavigatorWidth : sessionListWidth
   const isNovelWorkspaceNavigatorActive = showNovelDocumentNavigator || showNovelWorkspacePending || showNovelWorkspaceUnavailable
 
-  const handleNavigatorResizeBoundaryMouseDownCapture = React.useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (effectiveSidebarAndNavigatorHidden || isAutoCompact || isResizing || e.button !== 0) return
+  React.useEffect(() => {
+    if (!shouldResolveInitialShellLayoutWidths(shellWidth, MOBILE_THRESHOLD)) return
 
-    const navigatorPanelRect = navigatorPanelRef.current?.getBoundingClientRect()
-    if (!navigatorPanelRect) return
+    const preservingNovelWorkspaceAssistant = isNovelWorkspaceNavigatorActive
+      && previousNovelWorkspaceShellWidthRef.current !== null
+    const persistedSidebarWidth = storage.get<number | undefined>(storage.KEYS.sidebarWidth, undefined)
+    const persistedWorkspaceWidth = storage.get<number | undefined>(storage.KEYS.novelWorkspaceNavigatorWidth, undefined)
+    const sidebarPersisted = isUserConfiguredShellLayoutWidth(
+      'sidebar',
+      persistedSidebarWidth,
+      storage.getRaw(storage.KEYS.sidebarWidth) !== null
+    )
+    const workspacePersisted = isUserConfiguredShellLayoutWidth(
+      'workspace',
+      persistedWorkspaceWidth,
+      storage.getRaw(storage.KEYS.novelWorkspaceNavigatorWidth) !== null
+    )
+    const widths = resolveInitialShellLayoutWidths({
+      totalWidth: shellWidth,
+      activityRailWidth: activityRailOffset,
+      edgeInset: PANEL_EDGE_INSET,
+      panelGap: PANEL_GAP,
+      assistantMinWidth: PANEL_MIN_WIDTH,
+      sidebarPersisted,
+      workspacePersisted,
+      currentSidebarWidth: latestSidebarWidthRef.current,
+      currentWorkspaceWidth: latestNovelWorkspaceNavigatorWidthRef.current,
+    })
 
-    const boundaryCenter = navigatorPanelRect.right + (PANEL_GAP / 2)
-    if (Math.abs(e.clientX - boundaryCenter) > NAVIGATOR_SASH_CAPTURE_HALF_WIDTH) return
+    if (!preservingNovelWorkspaceAssistant && !sidebarPersisted && latestSidebarWidthRef.current !== widths.sidebar) {
+      latestSidebarWidthRef.current = widths.sidebar
+      setSidebarWidth(widths.sidebar)
+    }
+    if (
+      !preservingNovelWorkspaceAssistant
+      && latestNovelWorkspaceNavigatorWidthRef.current !== widths.workspace
+      && (!workspacePersisted || latestNovelWorkspaceNavigatorWidthRef.current > widths.workspace)
+    ) {
+      latestNovelWorkspaceNavigatorWidthRef.current = widths.workspace
+      setNovelWorkspaceNavigatorWidth(widths.workspace)
+    }
+  }, [activityRailOffset, isNovelWorkspaceNavigatorActive, shellWidth])
 
-    beginResize(isNovelWorkspaceNavigatorActive ? 'novel-workspace-navigator' : 'session-list', e)
-  }, [
-    beginResize,
-    effectiveSidebarAndNavigatorHidden,
-    isAutoCompact,
-    isResizing,
-    isNovelWorkspaceNavigatorActive,
-  ])
+  React.useEffect(() => {
+    if (!shouldResolveInitialShellLayoutWidths(shellWidth, MOBILE_THRESHOLD)) {
+      previousNovelWorkspaceShellWidthRef.current = null
+      return
+    }
+
+    if (!isNovelWorkspaceNavigatorActive || effectiveSidebarAndNavigatorHidden) {
+      previousNovelWorkspaceShellWidthRef.current = shellWidth
+      return
+    }
+
+    const previousShellWidth = previousNovelWorkspaceShellWidthRef.current
+    previousNovelWorkspaceShellWidthRef.current = shellWidth
+    if (previousShellWidth === null || previousShellWidth === shellWidth) return
+
+    const fallbackNavigatorStartX = isSidebarVisible
+      ? latestSidebarWidthRef.current + PANEL_GAP
+      : PANEL_EDGE_INSET
+    const navigatorStartX = navigatorPanelRef.current?.getBoundingClientRect().left ?? fallbackNavigatorStartX
+    const nextWidth = preserveAssistantWidthOnShellResize({
+      shellWidth,
+      previousShellWidth,
+      currentWorkspaceWidth: latestNovelWorkspaceNavigatorWidthRef.current,
+      workspaceMinWidth: NOVEL_WORKSPACE_NAVIGATOR_MIN_WIDTH,
+      navigatorStartX,
+      edgeInset: PANEL_EDGE_INSET,
+      panelGap: PANEL_GAP,
+      assistantMinWidth: PANEL_MIN_WIDTH,
+    })
+
+    if (nextWidth === latestNovelWorkspaceNavigatorWidthRef.current) return
+    latestNovelWorkspaceNavigatorWidthRef.current = nextWidth
+    setNovelWorkspaceNavigatorWidth(nextWidth)
+  }, [effectiveSidebarAndNavigatorHidden, isNovelWorkspaceNavigatorActive, isSidebarVisible, shellWidth])
 
   React.useEffect(() => {
     if (!activeWorkspaceId) return
@@ -4148,7 +4169,6 @@ function AppShellContent({
       {/* === OUTER LAYOUT: Unified Panel Stack | Right Sidebar === */}
       <div
         ref={shellRef}
-        onMouseDownCapture={handleNavigatorResizeBoundaryMouseDownCapture}
         className="flex items-stretch relative"
         style={{ height: '100%', paddingRight: PANEL_EDGE_INSET, paddingBottom: PANEL_EDGE_INSET, paddingLeft: 0, gap: showActivityRail ? 0 : PANEL_GAP }}
       >
