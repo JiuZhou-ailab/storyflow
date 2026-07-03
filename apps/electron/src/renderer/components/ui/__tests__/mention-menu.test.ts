@@ -17,6 +17,7 @@ let isValidMentionTrigger: (text: string, position: number) => boolean;
 let parseInlineMentionQuery: typeof import('../mention-menu').parseInlineMentionQuery;
 let filterMentionFileReferences: typeof import('../mention-menu').filterMentionFileReferences;
 let getMentionInsertionText: typeof import('../mention-menu').getMentionInsertionText;
+let reuseMentionItemsIfEqual: typeof import('../mention-menu').reuseMentionItemsIfEqual;
 
 beforeAll(async () => {
   const mod = await import('../mention-menu');
@@ -24,6 +25,7 @@ beforeAll(async () => {
   parseInlineMentionQuery = mod.parseInlineMentionQuery;
   filterMentionFileReferences = mod.filterMentionFileReferences;
   getMentionInsertionText = mod.getMentionInsertionText;
+  reuseMentionItemsIfEqual = mod.reuseMentionItemsIfEqual;
 });
 
 describe('isValidMentionTrigger', () => {
@@ -160,6 +162,29 @@ describe('writing file mention references', () => {
 })
 
 describe('useInlineMention hot path', () => {
+  it('reuses file result arrays when mention items are unchanged', () => {
+    const previous = filterMentionFileReferences([
+      {
+        path: '/repo/src/App.tsx',
+        relativePath: 'src/App.tsx',
+        label: 'App.tsx',
+        type: 'file',
+      },
+    ], 'app')
+    const next = filterMentionFileReferences([
+      {
+        path: '/repo/src/App.tsx',
+        relativePath: 'src/App.tsx',
+        label: 'App.tsx',
+        type: 'file',
+      },
+    ], 'app')
+
+    expect(next).not.toBe(previous)
+    expect(reuseMentionItemsIfEqual(previous, next)).toBe(previous)
+    expect(reuseMentionItemsIfEqual(previous, [{ ...next[0], label: 'Other.tsx' }])).not.toBe(previous)
+  })
+
   it('does not send debug IPC while filtering mentions', () => {
     const source = readFileSync(new URL('../mention-menu.tsx', import.meta.url), 'utf-8')
     const hookStart = source.indexOf('export function useInlineMention')

@@ -177,6 +177,22 @@ function dedupeMentionItems(items: MentionItem[]): MentionItem[] {
   return deduped
 }
 
+function mentionItemsEqual(left: MentionItem, right: MentionItem): boolean {
+  return left.id === right.id
+    && left.type === right.type
+    && left.label === right.label
+    && left.description === right.description
+    && left.file?.path === right.file?.path
+    && left.file?.type === right.file?.type
+    && left.file?.relativePath === right.file?.relativePath
+}
+
+export function reuseMentionItemsIfEqual(previous: MentionItem[], next: MentionItem[]): MentionItem[] {
+  return previous.length === next.length && previous.every((item, index) => mentionItemsEqual(item, next[index]))
+    ? previous
+    : next
+}
+
 export function getMentionInsertionText(item: MentionItem, workspaceId?: string): string {
   const buildMentionText = (kind: 'skill' | 'source' | 'file' | 'folder', value: string): string =>
     '[' + kind + ':' + value + '] '
@@ -727,7 +743,7 @@ export function useInlineMention({
             fileSearchTimeout.current = null
           }
           const filtered = filterCacheResults(fileCache.current, filterText)
-          setFileResults(filtered)
+          setFileResults(prev => reuseMentionItemsIfEqual(prev, filtered))
           setCommittedFilter(filterText)
         } else {
           // First search — fire debounced IPC to populate cache
@@ -738,7 +754,7 @@ export function useInlineMention({
               const results = await window.electronAPI.searchFiles(basePath, filterText)
               fileCache.current = results
               const filtered = filterCacheResults(fileCache.current, filterText)
-              setFileResults(filtered)
+              setFileResults(prev => reuseMentionItemsIfEqual(prev, filtered))
               setCommittedFilter(filterText)
             } catch (err) {
               console.error('[mention] IPC searchFiles error:', err)
