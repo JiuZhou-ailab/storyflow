@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { existsSync, mkdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { StoredSession } from '../types.ts'
 import {
   getPendingPlanExecution,
+  countPlanFiles,
   markCompactionComplete,
   markPendingPlanExecutionDispatched,
   saveSession,
@@ -67,5 +68,15 @@ describe('pending plan execution persistence', () => {
       awaitingCompaction: false,
       executionDispatched: true,
     })
+  })
+
+  it('counts markdown plan files without loading plan metadata', () => {
+    const plansDir = join(workspaceRoot, '.craft-agent', 'sessions', 'session-1', 'plans')
+    mkdirSync(plansDir, { recursive: true })
+    writeFileSync(join(plansDir, 'first.md'), '# First')
+    writeFileSync(join(plansDir, 'second.md'), '# Second')
+    writeFileSync(join(plansDir, 'notes.txt'), 'not a plan')
+
+    expect(countPlanFiles(workspaceRoot, 'session-1')).toBe(2)
   })
 })

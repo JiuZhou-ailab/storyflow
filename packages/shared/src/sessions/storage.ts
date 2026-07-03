@@ -413,7 +413,7 @@ function headerToMetadata(header: SessionHeader, workspaceRootPath: string): Ses
     const validatedStatus = validateSessionStatus(workspaceRootPath, rawStatus);
 
     // Count plan files for this session
-    const planCount = listPlanFiles(workspaceRootPath, header.id).length;
+    const planCount = countPlanFiles(workspaceRootPath, header.id);
 
     // Migration: For sessions created before sdkCwd was added, use workingDirectory as fallback.
     const workingDir = header.workingDirectory ? expandPath(header.workingDirectory) : undefined;
@@ -1030,6 +1030,22 @@ export function loadPlanFromPath(filePath: string): Plan | null {
 /**
  * List all plan files in a session
  */
+export function countPlanFiles(
+  workspaceRootPath: string,
+  sessionId: string
+): number {
+  const plansDir = getSessionPlansPath(workspaceRootPath, sessionId);
+  if (!existsSync(plansDir)) {
+    return 0;
+  }
+
+  try {
+    return readdirSync(plansDir).filter(f => f.endsWith('.md')).length;
+  } catch {
+    return 0;
+  }
+}
+
 export function listPlanFiles(
   workspaceRootPath: string,
   sessionId: string
