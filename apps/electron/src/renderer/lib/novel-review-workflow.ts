@@ -73,6 +73,8 @@ export function normalizeNovelFileChangePaths(
   rootPath: string | null | undefined,
   files: Pick<NovelWorkspaceFile, 'path' | 'relativePath'>[],
 ): FileChange[] {
+  if (changes.length === 0) return []
+
   const normalizedRoot = rootPath ? normalizeReviewPath(rootPath) : ''
   const fileByPath = new Map(files.map(file => [normalizeReviewPath(file.path), file.path]))
   const fileByRelativePath = new Map(

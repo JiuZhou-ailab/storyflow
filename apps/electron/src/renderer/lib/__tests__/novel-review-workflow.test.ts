@@ -3,6 +3,7 @@
 // pos: Guards Cursor-style changed-file review workflow
 
 import { describe, expect, it } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import type { FileChange } from '@craft-agent/ui'
 import {
   getAdjacentChangedFilePath,
@@ -12,6 +13,8 @@ import {
   normalizeNovelFileChangePaths,
   parseNovelReviewStatusMap,
 } from '../novel-review-workflow'
+
+const novelReviewWorkflowSource = readFileSync(new URL('../novel-review-workflow.ts', import.meta.url), 'utf8')
 
 function change(id: string, filePath: string): FileChange {
   return {
@@ -24,6 +27,15 @@ function change(id: string, filePath: string): FileChange {
 }
 
 describe('novel review workflow', () => {
+  it('returns early before building workspace file maps when there are no changes', () => {
+    const functionStart = novelReviewWorkflowSource.indexOf('export function normalizeNovelFileChangePaths(')
+    const functionEnd = novelReviewWorkflowSource.indexOf('export function getPendingChangesForFile(', functionStart)
+    const functionSource = novelReviewWorkflowSource.slice(functionStart, functionEnd)
+
+    expect(functionSource.indexOf('if (changes.length === 0) return []')).toBeGreaterThan(-1)
+    expect(functionSource.indexOf('if (changes.length === 0) return []')).toBeLessThan(functionSource.indexOf('const fileByPath = new Map'))
+  })
+
   it('deduplicates pending changed file paths in change order', () => {
     const changes = [
       change('a', '/novel/chapter-1.md'),
