@@ -202,4 +202,19 @@ describe('useInlineMention hot path', () => {
     expect(source).toContain('setFileResults(prev => prev.length === 0 ? prev : [])')
     expect(source).not.toContain('setFileResults([])')
   })
+
+  it('normalizes file mention queries once before scoring files', () => {
+    const source = readFileSync(new URL('../mention-menu.tsx', import.meta.url), 'utf-8')
+    const scorerStart = source.indexOf('function scoreMentionFileReference')
+    const scorerEnd = source.indexOf('export function filterMentionFileReferences', scorerStart)
+    const scorerSource = source.slice(scorerStart, scorerEnd)
+
+    expect(source).toContain('function scoreMentionFileReference(file: MentionFileReference, lowerQuery: string): number')
+    expect(source).toContain('const lowerQuery = query.trimEnd().toLowerCase()')
+    expect(source).toContain('score: scoreMentionFileReference(file, lowerQuery)')
+    expect(scorerSource).toContain('const lowerLabel = file.label.toLowerCase()')
+    expect(scorerSource).toContain('const lowerRelativePath = file.relativePath.toLowerCase()')
+    expect(scorerSource).not.toContain('query.trimEnd().toLowerCase()')
+    expect(scorerSource).not.toContain('const candidates = [')
+  })
 })

@@ -123,24 +123,30 @@ function filterCacheResults(cache: FileSearchResult[], query: string): MentionIt
   }))
 }
 
-function scoreMentionFileReference(file: MentionFileReference, query: string): number {
-  const lowerQuery = query.trimEnd().toLowerCase()
+function scoreMentionFileReference(file: MentionFileReference, lowerQuery: string): number {
   if (!lowerQuery) return 1
 
-  const candidates = [
-    file.label,
-    file.relativePath,
-    file.description ?? '',
-  ].map(value => value.toLowerCase())
+  const lowerLabel = file.label.toLowerCase()
+  const lowerRelativePath = file.relativePath.toLowerCase()
+  const lowerDescription = file.description?.toLowerCase() ?? ''
 
-  if (candidates.some(candidate => candidate.includes(lowerQuery))) return 2
-  if (candidates.some(candidate => subsequenceMatch(candidate, lowerQuery))) return 1
+  if (
+    lowerLabel.includes(lowerQuery) ||
+    lowerRelativePath.includes(lowerQuery) ||
+    lowerDescription.includes(lowerQuery)
+  ) return 2
+  if (
+    subsequenceMatch(lowerLabel, lowerQuery) ||
+    subsequenceMatch(lowerRelativePath, lowerQuery) ||
+    subsequenceMatch(lowerDescription, lowerQuery)
+  ) return 1
   return 0
 }
 
 export function filterMentionFileReferences(files: MentionFileReference[], query: string): MentionItem[] {
+  const lowerQuery = query.trimEnd().toLowerCase()
   const scored = files
-    .map(file => ({ file, score: scoreMentionFileReference(file, query) }))
+    .map(file => ({ file, score: scoreMentionFileReference(file, lowerQuery) }))
     .filter(({ score }) => score > 0)
     .sort((a, b) => {
       if (a.score !== b.score) return b.score - a.score
