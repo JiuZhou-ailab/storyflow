@@ -36,6 +36,7 @@ import { getSessionPreviewText, getSessionTitle, shortTimeLocale } from '@/utils
 // Model resolution: connection.defaultModel (no hardcoded defaults)
 import { resolveEffectiveConnectionSlug, isSessionConnectionUnavailable } from '@config/llm-connections'
 import { selectConversationHistoryItems } from './chat-history-items'
+import { resolveChatOpeningPrompt } from '@/components/app-shell/chat-opening'
 
 export interface ChatPageProps {
   sessionId: string
@@ -168,6 +169,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     activeWorkspaceId,
     llmConnections,
     workspaceDefaultLlmConnection,
+    onCreateSession,
     onSendMessage,
     onOpenFile,
     onOpenUrl,
@@ -184,6 +186,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     enabledSources,
     skills,
     mentionFiles,
+    openingProjectMetadata,
     labels,
     onSessionLabelsChange,
     enabledModes,
@@ -446,6 +449,17 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     [workspaces, activeWorkspaceId]
   )
   const remoteWorkspaceId = activeWorkspace?.remoteServer?.remoteWorkspaceId
+  const chatOpening = React.useMemo(() => resolveChatOpeningPrompt({
+    workspaceName: activeWorkspace?.name,
+    projectType: openingProjectMetadata?.projectType ?? activeWorkspace?.projectType,
+    methodPackId: openingProjectMetadata?.methodPackId ?? activeWorkspace?.methodPackId,
+  }), [
+    activeWorkspace?.methodPackId,
+    activeWorkspace?.name,
+    activeWorkspace?.projectType,
+    openingProjectMetadata?.methodPackId,
+    openingProjectMetadata?.projectType,
+  ])
 
   // Working directory for this session
   const workingDirectory = session?.workingDirectory
@@ -828,6 +842,10 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
                 onOpenUrl={handleOpenUrl}
                 currentModel={effectiveModel}
                 onModelChange={handleModelChange}
+                llmConnections={llmConnections}
+                workspaceDefaultLlmConnection={workspaceDefaultLlmConnection}
+                onCreateSession={onCreateSession}
+                onDraftInputChange={onInputChange}
                 onConnectionChange={handleConnectionChange}
                 pendingPermission={undefined}
                 onRespondToPermission={onRespondToPermission}
@@ -860,6 +878,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
                 onMatchInfoChange={onChatMatchInfoChange}
                 connectionUnavailable={connectionUnavailable}
                 compactMode={!!isCompactMode}
+                chatOpening={chatOpening}
+                isFocusedPanel={isFocusedPanel ?? true}
               />
             </div>
           </div>
@@ -912,6 +932,10 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
             onOpenUrl={handleOpenUrl}
             currentModel={effectiveModel}
             onModelChange={handleModelChange}
+            llmConnections={llmConnections}
+            workspaceDefaultLlmConnection={workspaceDefaultLlmConnection}
+            onCreateSession={onCreateSession}
+            onDraftInputChange={onInputChange}
             onConnectionChange={handleConnectionChange}
             pendingPermission={pendingPermission}
             onRespondToPermission={onRespondToPermission}
@@ -947,6 +971,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
             onMatchInfoChange={onChatMatchInfoChange}
             connectionUnavailable={connectionUnavailable}
             compactMode={!!isCompactMode}
+            chatOpening={chatOpening}
+            isFocusedPanel={isFocusedPanel ?? true}
           />
         </div>
       </div>

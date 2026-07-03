@@ -1,10 +1,13 @@
+// input: Chat composer props, optional structured prompt state, and panel focus state.
+// output: Animated freeform or structured chat input container.
+// pos: Presentation shell around the active chat input mode.
+
 import * as React from 'react'
 import { motion, AnimatePresence, useMotionValue, useMotionValueEvent, animate } from 'motion/react'
 import { cn } from '@/lib/utils'
 import { FreeFormInput, type FreeFormInputProps } from './FreeFormInput'
 import { StructuredInput } from './StructuredInput'
 import type { RichTextInputHandle } from '@/components/ui/rich-text-input'
-import { useOptionalAppShellContext } from '@/context/AppShellContext'
 import type { StructuredInputState, StructuredResponse, InputMode } from './structured/types'
 import { getStructuredInputMaxHeight } from './structured-height'
 
@@ -17,6 +20,8 @@ interface InputContainerProps extends Omit<FreeFormInputProps, 'inputRef'> {
   textareaRef?: React.RefObject<RichTextInputHandle>
   /** Per-frame callback during height animation (for scroll sync) */
   onAnimatedHeightChange?: (delta: number) => void
+  /** Whether this input belongs to the currently focused panel. */
+  isFocusedPanel?: boolean
 }
 
 // Animation timing - synced across height and opacity
@@ -48,10 +53,9 @@ export function InputContainer({
   compactMode,
   isProcessing,
   onAnimatedHeightChange,
+  isFocusedPanel = true,
   ...freeFormProps
 }: InputContainerProps) {
-  const appShellContext = useOptionalAppShellContext()
-  const isFocusedPanel = appShellContext?.isFocusedPanel ?? true
   const mode: InputMode = structuredInput ? 'structured' : 'freeform'
   const measureRef = React.useRef<HTMLDivElement>(null)
   // Separate height states: freeform uses callback, structured uses measuring div

@@ -46,7 +46,7 @@ import {
 } from "@craft-agent/ui"
 import { useFocusZone } from "@/hooks/keyboard"
 import { useTheme } from "@/hooks/useTheme"
-import type { Session, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, LoadedSource, LoadedSkill, WorkspaceProjectType } from "../../../shared/types"
+import type { Session, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, LoadedSource, LoadedSkill, CreateSessionOptions, LlmConnectionWithStatus } from "../../../shared/types"
 import type { PermissionMode } from "@craft-agent/shared/agent/modes"
 import type { ThinkingLevel } from "@craft-agent/shared/agent/thinking-levels"
 import {
@@ -73,7 +73,6 @@ import type { RichTextInputHandle } from "@/components/ui/rich-text-input"
 import { useBackgroundTasks } from "@/hooks/useBackgroundTasks"
 import { useTurnCardExpansion } from "@/hooks/useTurnCardExpansion"
 import { useNavigation } from "@/contexts/NavigationContext"
-import { useAppShellContext } from "@/context/AppShellContext"
 import { navigate, routes } from "@/lib/navigate"
 import { loadSendMessageKeySetting } from "@/lib/input-settings"
 import { CHAT_LAYOUT } from "@/config/layout"
@@ -92,12 +91,6 @@ import {
   resolveRewindBranchMessageId,
 } from "./chat-rewind"
 import { handleErrorMessageAction } from "./error-message-actions"
-
-type WorkspaceWithOpeningMetadata = {
-  name?: string
-  projectType?: WorkspaceProjectType
-  methodPackId?: string
-}
 
 // ============================================================================
 // CSS Custom Highlight API helper
@@ -263,6 +256,18 @@ interface ChatDisplayProps {
   emptyStateLabel?: string
   /** When true, the session's locked connection has been removed - disables send and shows unavailable state */
   connectionUnavailable?: boolean
+  /** Connections used to choose the default model backend for rewind checks. */
+  llmConnections?: LlmConnectionWithStatus[]
+  /** Default connection slug for the current workspace. */
+  workspaceDefaultLlmConnection?: string
+  /** Create a child session for branch/rewind actions. */
+  onCreateSession?: (workspaceId: string, options?: CreateSessionOptions) => Promise<Session>
+  /** Seed draft input for a newly-created session. */
+  onDraftInputChange?: (sessionId: string, value: string) => void
+  /** Empty-chat opening prompt, resolved by the parent context boundary. */
+  chatOpening?: ChatOpeningPrompt
+  /** Whether this ChatDisplay belongs to the currently focused panel. */
+  isFocusedPanel?: boolean
 }
 
 import {
@@ -578,12 +583,14 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   emptyStateLabel,
   // Connection unavailable
   connectionUnavailable = false,
+  llmConnections = [],
+  workspaceDefaultLlmConnection,
+  onCreateSession,
+  onDraftInputChange,
+  chatOpening = resolveChatOpeningPrompt({}),
+  isFocusedPanel = true,
 }, ref) {
   const { t } = useTranslation()
-
-  // Panel focus state (for multi-panel auto-scroll behavior)
-  const appShellContext = useAppShellContext()
-  const isFocusedPanel = appShellContext?.isFocusedPanel ?? true
 
   // Input is only disabled when explicitly disabled (e.g., agent needs activation)
   // User can type during streaming - submitting will stop the stream and send
@@ -608,23 +615,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const prevSessionIdForCommitScrollRef = React.useRef<string | null>(null)
   const internalTextareaRef = React.useRef<RichTextInputHandle>(null)
   const textareaRef = externalTextareaRef || internalTextareaRef
-  const activeWorkspace = React.useMemo(
-    () => appShellContext.workspaces.find((workspace) => workspace.id === appShellContext.activeWorkspaceId),
-    [appShellContext.activeWorkspaceId, appShellContext.workspaces]
-  )
-  const activeWorkspaceMetadata = activeWorkspace as WorkspaceWithOpeningMetadata | undefined
-  const openingProjectMetadata = appShellContext.openingProjectMetadata
-  const chatOpening = React.useMemo(() => resolveChatOpeningPrompt({
-    workspaceName: activeWorkspaceMetadata?.name,
-    projectType: openingProjectMetadata?.projectType ?? activeWorkspaceMetadata?.projectType,
-    methodPackId: openingProjectMetadata?.methodPackId ?? activeWorkspaceMetadata?.methodPackId,
-  }), [
-    openingProjectMetadata?.methodPackId,
-    openingProjectMetadata?.projectType,
-    activeWorkspaceMetadata?.methodPackId,
-    activeWorkspaceMetadata?.name,
-    activeWorkspaceMetadata?.projectType,
-  ])
   const handleOpeningAction = React.useCallback((action: ChatOpeningAction) => {
     const prompt = t(action.promptKey)
     onInputChange?.(prompt)
@@ -1509,10 +1499,14 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
     const originalContent = typeof message.content === 'string' ? message.content : ''
     const branchFromMessageId = resolveRewindBranchMessageId(session.messages, message.id)
-    const defaultConnectionSlug = appShellContext.workspaceDefaultLlmConnection
-      ?? appShellContext.llmConnections.find(connection => connection.isDefault)?.slug
+    const defaultConnectionSlug = workspaceDefaultLlmConnection
+      ?? llmConnections.find(connection => connection.isDefault)?.slug
       ?? MANAGED_DEFAULT_CONNECTION_SLUG
 
+    if (!onCreateSession || !onDraftInputChange) {
+      toast.error(t('chat.rewindUnavailable', 'This message cannot be safely rewound.'))
+      return
+    }
     if (!canRewindWithoutDroppingHistory(session, branchFromMessageId)) {
       toast.error(t('chat.rewindUnavailable', 'This message cannot be safely rewound.'))
       return
@@ -1527,11 +1521,11 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     }
 
     try {
-      const child = await appShellContext.onCreateSession(
+      const child = await onCreateSession(
         session.workspaceId,
         buildRewindSessionOptions(session, branchFromMessageId)
       )
-      appShellContext.onInputChange(child.id, originalContent)
+      onDraftInputChange(child.id, originalContent)
       navigate(routes.view.allSessions(child.id))
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent('craft:focus-input', {
@@ -1543,7 +1537,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       const messageText = error instanceof Error ? error.message : 'Failed to create rewind branch'
       toast.error(t('chat.rewindFailed', 'Could not rewind conversation'), { description: messageText })
     }
-  }, [appShellContext, navigate, session, t])
+  }, [llmConnections, navigate, onCreateSession, onDraftInputChange, session, t, workspaceDefaultLlmConnection])
 
   // Reverse pagination: only render last N turns for fast initial render
   const startIndex = Math.max(0, allTurns.length - visibleTurnCount)
@@ -1903,10 +1897,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                         compactMode={compactMode}
                         sendMessageKey={sendMessageKey}
                         openAnnotationRequest={openAnnotationRequest}
-                        onBranch={session?.supportsBranching ? async (messageId: string, options?: { newPanel?: boolean }) => {
+                        onBranch={session?.supportsBranching && onCreateSession ? async (messageId: string, options?: { newPanel?: boolean }) => {
                           if (!session) return
                           try {
-                            const child = await appShellContext.onCreateSession(
+                            const child = await onCreateSession(
                               session.workspaceId,
                               {
                                 branchFromMessageId: messageId,
@@ -2107,6 +2101,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
               placeholder,
               disabled: isInputDisabled,
               isProcessing: session.isProcessing,
+              isFocusedPanel,
               onAnimatedHeightChange: handleAnimatedHeightChange,
               onSubmit: handleSubmit,
               onStop: handleStop,

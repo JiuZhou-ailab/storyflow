@@ -9,6 +9,7 @@ import type { Turn } from '@craft-agent/ui'
 import { collectTurnSearchOccurrences } from '../ChatDisplay.search'
 
 const chatDisplaySource = readFileSync(new URL('../ChatDisplay.tsx', import.meta.url), 'utf-8')
+const inputContainerSource = readFileSync(new URL('../input/InputContainer.tsx', import.meta.url), 'utf-8')
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf-8')
 const appShellContextSource = readFileSync(new URL('../../../context/AppShellContext.tsx', import.meta.url), 'utf-8')
 const chatPageSource = readFileSync(new URL('../../../pages/ChatPage.tsx', import.meta.url), 'utf-8')
@@ -146,5 +147,16 @@ describe('ChatDisplay search performance contract', () => {
     expect(appShellContextSource).not.toContain('setSessionListSearchQuery?:')
     expect(chatPageSource).toContain('activeSessionListSearchQueryAtom')
     expect(chatPageSource).toContain('sessionListSearchActiveAtom')
+  })
+
+  test('keeps ChatDisplay and input chrome off AppShellContext subscriptions', () => {
+    expect(chatDisplaySource).not.toContain('useAppShellContext')
+    expect(inputContainerSource).not.toContain('useOptionalAppShellContext')
+    expect(chatDisplaySource).toContain('chatOpening = resolveChatOpeningPrompt({})')
+    expect(chatDisplaySource).toContain('isFocusedPanel = true')
+    expect(inputContainerSource).toContain('isFocusedPanel = true')
+    expect(chatPageSource).toContain('resolveChatOpeningPrompt')
+    expect(chatPageSource).toContain('chatOpening={chatOpening}')
+    expect(chatPageSource).toContain('isFocusedPanel={isFocusedPanel ?? true}')
   })
 })
