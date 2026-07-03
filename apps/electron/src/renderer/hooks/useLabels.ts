@@ -21,6 +21,40 @@ export interface UseLabelsResult {
   refresh: () => Promise<void>
 }
 
+function sameColor(a: LabelConfig['color'], b: LabelConfig['color']): boolean {
+  if (a === b) return true
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false
+  return a.light === b.light && a.dark === b.dark
+}
+
+function sameAutoRules(a: LabelConfig['autoRules'], b: LabelConfig['autoRules']): boolean {
+  if (a === b) return true
+  if (!a || !b || a.length !== b.length) return false
+  return a.every((rule, index) => {
+    const next = b[index]
+    return !!next
+      && rule.pattern === next.pattern
+      && rule.flags === next.flags
+      && rule.valueTemplate === next.valueTemplate
+      && rule.description === next.description
+  })
+}
+
+export function areLabelTreesEqual(a: LabelConfig[], b: LabelConfig[]): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  return a.every((label, index) => {
+    const next = b[index]
+    return !!next
+      && label.id === next.id
+      && label.name === next.name
+      && label.valueType === next.valueType
+      && sameColor(label.color, next.color)
+      && sameAutoRules(label.autoRules, next.autoRules)
+      && areLabelTreesEqual(label.children ?? [], next.children ?? [])
+  })
+}
+
 /**
  * Load labels for a workspace via IPC.
  * Returns the tree structure (labels with nested children).
@@ -37,7 +71,7 @@ export function useLabels(workspaceId: string | null): UseLabelsResult {
 
   const refresh = useCallback(async () => {
     if (!workspaceId) {
-      setLabels([])
+      setLabels(prev => prev.length === 0 ? prev : [])
       setIsLoading(false)
       return
     }
@@ -45,7 +79,7 @@ export function useLabels(workspaceId: string | null): UseLabelsResult {
     try {
       setIsLoading(true)
       const configs = await window.electronAPI.listLabels(workspaceId)
-      setLabels(configs)
+      setLabels(prev => areLabelTreesEqual(prev, configs) ? prev : configs)
       setError(null)
     } catch (err) {
       console.error('[useLabels] Failed to load labels:', err)
