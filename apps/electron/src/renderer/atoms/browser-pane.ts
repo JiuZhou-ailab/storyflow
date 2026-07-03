@@ -6,6 +6,8 @@
  */
 
 import { atom } from 'jotai'
+import { selectAtom } from 'jotai/utils'
+import { atomFamily } from 'jotai-family'
 import type { BrowserInstanceInfo } from '../../shared/types'
 
 /** Map of all browser instances by ID */
@@ -14,6 +16,24 @@ export const browserInstancesMapAtom = atom<Map<string, BrowserInstanceInfo>>(ne
 /** Derived: array of all browser instances (for iteration) */
 export const browserInstancesAtom = atom<BrowserInstanceInfo[]>(
   (get) => Array.from(get(browserInstancesMapAtom).values())
+)
+
+export const browserInstanceForSessionAtomFamily = atomFamily(
+  (sessionId: string | undefined) => selectAtom(
+    browserInstancesMapAtom,
+    (map) => {
+      if (!sessionId) return null
+      let match: BrowserInstanceInfo | null = null
+      for (const instance of map.values()) {
+        if (instance.boundSessionId === sessionId && instance.agentControlActive && instance.isVisible) {
+          match = instance
+        }
+      }
+      return match
+    },
+    Object.is,
+  ),
+  (a, b) => a === b,
 )
 
 /** Derived: count of active browser instances */

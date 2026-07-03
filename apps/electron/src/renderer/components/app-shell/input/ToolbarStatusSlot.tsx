@@ -21,7 +21,7 @@ import { Spinner } from '@craft-agent/ui'
 import { cn } from '@/lib/utils'
 import { Kbd } from '@/components/ui/kbd'
 import { getHostname, getThemeLuminance } from '@/components/browser/utils'
-import { browserInstancesAtom } from '@/atoms/browser-pane'
+import { browserInstanceForSessionAtomFamily } from '@/atoms/browser-pane'
 import type { BrowserInstanceInfo } from '../../../../shared/types'
 
 interface ToolbarStatusSlotProps {
@@ -35,20 +35,7 @@ export function ToolbarStatusSlot({
   showEscapeOverlay,
   sessionId,
 }: ToolbarStatusSlotProps) {
-  const browserInstances = useAtomValue(browserInstancesAtom)
-
-  // Find the visible browser instance bound to this session with active agent control.
-  // Hidden instances are intentionally excluded so the status slot mirrors actual visibility.
-  const browserInstance = React.useMemo(() => {
-    if (!sessionId) return null
-
-    const visibleCandidates = browserInstances.filter(
-      i => i.boundSessionId === sessionId && i.agentControlActive && i.isVisible
-    )
-    if (visibleCandidates.length === 0) return null
-
-    return visibleCandidates.at(-1) ?? null
-  }, [browserInstances, sessionId])
+  const browserInstance = useAtomValue(browserInstanceForSessionAtomFamily(sessionId))
 
   // Priority resolution: escape interrupt > browser status
   const showBrowser = !showEscapeOverlay && browserInstance !== null
