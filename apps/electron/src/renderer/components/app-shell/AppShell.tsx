@@ -1271,7 +1271,12 @@ function AppShellContent({
   // Reset match info when search is deactivated
   React.useEffect(() => {
     if (!searchActive || !searchQuery) {
-      setChatMatchInfo({ sessionId: null, count: 0, index: 0 })
+      setChatMatchInfo(prev => {
+        if (prev.sessionId === null && prev.count === 0 && prev.index === 0) {
+          return prev
+        }
+        return { sessionId: null, count: 0, index: 0 }
+      })
     }
   }, [searchActive, searchQuery])
 

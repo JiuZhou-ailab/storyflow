@@ -67,4 +67,15 @@ describe('session item subscriptions', () => {
     expect(matchInfoGuardSource).not.toContain('prev.index === info.index')
     expect(sessionItemSource).not.toContain('activeMatch!.index')
   })
+
+  it('does not reset empty chat match info to a new object', () => {
+    const matchInfoResetSource = appShellSource.slice(
+      appShellSource.indexOf('// Reset match info when search is deactivated'),
+      appShellSource.indexOf('// Filter dropdown')
+    )
+
+    expect(matchInfoResetSource).toContain('prev.sessionId === null && prev.count === 0 && prev.index === 0')
+    expect(matchInfoResetSource).toContain('return prev')
+    expect(matchInfoResetSource).not.toContain('setChatMatchInfo({ sessionId: null, count: 0, index: 0 })')
+  })
 })
