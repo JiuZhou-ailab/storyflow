@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useSetAtom, useStore } from 'jotai'
 import { useModalRegistry } from '@/context/ModalContext'
 import { useDismissibleLayerRegistry } from '@/context/DismissibleLayerContext'
 import { panelStackAtom, closePanelAtom, focusedPanelIdAtom } from '@/atoms/panel-stack'
@@ -24,8 +24,7 @@ import type { WindowCloseRequest } from '../../shared/types'
 export function useWindowCloseHandler() {
   const { hasOpenLayers, closeTop } = useDismissibleLayerRegistry()
   const { hasOpenModals, closeTopModal } = useModalRegistry()
-  const panelStack = useAtomValue(panelStackAtom)
-  const focusedPanelId = useAtomValue(focusedPanelIdAtom)
+  const store = useStore()
   const closePanel = useSetAtom(closePanelAtom)
 
   useEffect(() => {
@@ -49,6 +48,8 @@ export function useWindowCloseHandler() {
       }
 
       // Close the focused panel (or last if no focus tracked)
+      const panelStack = store.get(panelStackAtom)
+      const focusedPanelId = store.get(focusedPanelIdAtom)
       const target = focusedPanelId
         ? panelStack.find(p => p.id === focusedPanelId)
         : panelStack[panelStack.length - 1]
@@ -62,5 +63,5 @@ export function useWindowCloseHandler() {
     })
 
     return cleanup
-  }, [hasOpenLayers, closeTop, hasOpenModals, closeTopModal, panelStack, focusedPanelId, closePanel])
+  }, [hasOpenLayers, closeTop, hasOpenModals, closeTopModal, store, closePanel])
 }
