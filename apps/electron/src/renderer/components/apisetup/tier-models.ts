@@ -1,3 +1,7 @@
+// input: Pi model metadata and saved tier model ids
+// output: Tier defaults, hydrated tier selections, and model search helpers
+// pos: Pure helper layer for ApiKeyInput's Pi model tier selector
+
 export interface PiModelInfo {
   id: string
   name: string
@@ -17,6 +21,12 @@ export function pickTierDefaults(models: PiModelInfo[]): { best: string; default
   const defaultIdx = Math.min(Math.floor(models.length * 0.4), models.length - 2)
   const default_ = models[defaultIdx].id
   return { best, default_, cheap }
+}
+
+export function filterPiModels(models: PiModelInfo[], filter: string): PiModelInfo[] {
+  const query = filter.trim().toLowerCase()
+  if (!query) return models
+  return models.filter(model => model.name.toLowerCase().includes(query))
 }
 
 export function resolveTierModels(models: PiModelInfo[], savedModels?: string[]): { best: string; default_: string; cheap: string } {

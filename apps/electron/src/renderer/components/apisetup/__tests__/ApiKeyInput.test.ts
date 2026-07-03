@@ -3,7 +3,7 @@ import {
   resolvePiAuthProviderForSubmit,
   resolvePresetStateForBaseUrlChange,
 } from '../submit-helpers'
-import { pickTierDefaults, resolveTierModels } from '../tier-models'
+import { filterPiModels, pickTierDefaults, resolveTierModels } from '../tier-models'
 
 const MODELS = [
   { id: 'pi/zai-best', name: 'Best', costInput: 10, costOutput: 20, contextWindow: 200000, reasoning: true },
@@ -12,6 +12,14 @@ const MODELS = [
 ]
 
 describe('ApiKeyInput tier hydration helpers', () => {
+  it('filters Pi tier models by case-insensitive trimmed model name', () => {
+    expect(filterPiModels(MODELS, ' BAL ').map(model => model.id)).toEqual(['pi/zai-balanced'])
+  })
+
+  it('returns the original Pi model list for blank filters', () => {
+    expect(filterPiModels(MODELS, '   ')).toBe(MODELS)
+  })
+
   it('resolveTierModels keeps saved tier selections when all are valid', () => {
     const saved = ['pi/zai-fast', 'pi/zai-balanced', 'pi/zai-best']
     const resolved = resolveTierModels(MODELS, saved)

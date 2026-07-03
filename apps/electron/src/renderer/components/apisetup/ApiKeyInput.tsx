@@ -10,7 +10,7 @@
  * Used in: Onboarding CredentialsStep, Settings API dialog
  */
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { Command as CommandPrimitive } from "cmdk"
 import { Input } from "@/components/ui/input"
@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/styled-dropdown"
 import { cn } from "@/lib/utils"
 import { Check, ChevronDown, Eye, EyeOff, Loader2 } from "lucide-react"
-import { pickTierDefaults, resolveTierModels, type PiModelInfo } from "./tier-models"
+import { filterPiModels, pickTierDefaults, resolveTierModels, type PiModelInfo } from "./tier-models"
 import {
   resolvePiAuthProviderForSubmit,
   resolvePresetStateForBaseUrlChange,
@@ -410,6 +410,8 @@ export function ApiKeyInput({
     { label: 'Fast', desc: 'summarization & utility', value: cheapModel, onChange: setCheapModel },
   ]
   const activeTierConfig = openTier ? tierConfigs.find(t => t.label === openTier) : null
+  const piModelNameById = useMemo(() => new Map(piModels.map(model => [model.id, model.name])), [piModels])
+  const filteredPiModels = useMemo(() => filterPiModels(piModels, tierFilter), [piModels, tierFilter])
 
   return (
     <form id={formId} onSubmit={handleSubmit} className="space-y-6">
@@ -694,7 +696,7 @@ export function ApiKeyInput({
                     )}
                   >
                     <span className="truncate text-foreground">
-                      {piModels.find(m => m.id === value)?.name ?? 'Select model...'}
+                      {piModelNameById.get(value) ?? 'Select model...'}
                     </span>
                     <ChevronDown className="size-3 opacity-50 shrink-0" />
                   </button>
@@ -729,9 +731,7 @@ export function ApiKeyInput({
                         />
                       </div>
                       <CommandPrimitive.List className="max-h-[240px] overflow-y-auto p-1">
-                        {piModels
-                          .filter(m => m.name.toLowerCase().includes(tierFilter.toLowerCase()))
-                          .map((model) => (
+                        {filteredPiModels.map((model) => (
                             <CommandPrimitive.Item
                               key={model.id}
                               value={model.id}
