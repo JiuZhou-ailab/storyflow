@@ -24,6 +24,19 @@ import type { MentionFileReference, MentionItemType } from './mention-menu'
 /** Line count threshold for auto-converting pasted text to file attachment */
 const LONG_TEXT_LINE_THRESHOLD = 100
 
+export function exceedsLongTextLineThreshold(
+  text: string,
+  threshold = LONG_TEXT_LINE_THRESHOLD,
+): boolean {
+  let lines = 1
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) !== 10) continue
+    lines++
+    if (lines > threshold) return true
+  }
+  return false
+}
+
 export interface EscapeCompositionEventLike {
   key?: string
   isComposing?: boolean
@@ -681,8 +694,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       if (!text) return
 
       // Check if text is too long - convert to file attachment instead
-      const lineCount = text.split('\n').length
-      if (lineCount > LONG_TEXT_LINE_THRESHOLD && onLongTextPaste) {
+      if (exceedsLongTextLineThreshold(text) && onLongTextPaste) {
         onLongTextPaste(text)
         return
       }

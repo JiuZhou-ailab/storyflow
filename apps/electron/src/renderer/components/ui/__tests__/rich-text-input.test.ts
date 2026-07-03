@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'bun:test'
-import { isEscapeDuringComposition } from '../rich-text-input'
+import {
+  exceedsLongTextLineThreshold,
+  isEscapeDuringComposition,
+} from '../rich-text-input'
 
 describe('isEscapeDuringComposition', () => {
   it('returns true for Escape when local composition ref is active', () => {
@@ -25,5 +28,12 @@ describe('isEscapeDuringComposition', () => {
 
   it('returns false for non-Escape keys even if composing', () => {
     expect(isEscapeDuringComposition({ key: 'Enter', isComposing: true }, true)).toBe(false)
+  })
+})
+
+describe('exceedsLongTextLineThreshold', () => {
+  it('detects long pasted text without requiring exact full line count', () => {
+    expect(exceedsLongTextLineThreshold(Array.from({ length: 100 }, () => 'x').join('\n'))).toBe(false)
+    expect(exceedsLongTextLineThreshold(Array.from({ length: 101 }, () => 'x').join('\n'))).toBe(true)
   })
 })
