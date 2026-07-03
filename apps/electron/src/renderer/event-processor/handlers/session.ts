@@ -99,6 +99,19 @@ export function handleComplete(
     )
   }
 
+  const nextTokenUsage = event.tokenUsage ?? session.tokenUsage
+  const nextHasUnread = event.hasUnread ?? session.hasUnread
+  if (
+    updatedMessages === session.messages &&
+    session.isProcessing === false &&
+    session.currentStatus === undefined &&
+    state.streaming === null &&
+    Object.is(session.tokenUsage, nextTokenUsage) &&
+    Object.is(session.hasUnread, nextHasUnread)
+  ) {
+    return { state, effects: [] }
+  }
+
   return {
     state: {
       session: {
@@ -107,7 +120,7 @@ export function handleComplete(
         isProcessing: false,
         currentStatus: undefined,  // Clear any lingering status
         // Update tokenUsage from complete event (for real-time context counter updates)
-        tokenUsage: event.tokenUsage ?? session.tokenUsage,
+        tokenUsage: nextTokenUsage,
         // Update hasUnread flag from main process (state machine for NEW badge)
         // Only update if explicitly provided - undefined means "don't change"
         ...(event.hasUnread !== undefined && { hasUnread: event.hasUnread }),

@@ -6,6 +6,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   handleAsyncOperation,
   handleAuthCompleted,
+  handleComplete,
   handleConnectionChanged,
   handleInfo,
   handleLabelsChanged,
@@ -29,6 +30,7 @@ import {
 import type {
   AsyncOperationEvent,
   AuthCompletedEvent,
+  CompleteEvent,
   InfoEvent,
   LabelsChangedEvent,
   LLMConnectionChangedEvent,
@@ -63,6 +65,22 @@ function makeState(sessionFields: Record<string, unknown>): SessionState {
 }
 
 describe('session event no-op guards', () => {
+  it('keeps the original state for duplicate complete events with no session changes', () => {
+    const state = makeState({
+      isProcessing: false,
+      currentStatus: undefined,
+      messages: [
+        { id: 'msg-1', role: 'assistant', content: 'done', toolStatus: 'completed' },
+      ],
+    })
+    const event: CompleteEvent = {
+      type: 'complete',
+      sessionId: 'session-1',
+    }
+
+    expect(handleComplete(state, event).state).toBe(state)
+  })
+
   it('keeps the original state for duplicate async operation status', () => {
     const state = makeState({ isAsyncOperationOngoing: true })
     const event: AsyncOperationEvent = {
