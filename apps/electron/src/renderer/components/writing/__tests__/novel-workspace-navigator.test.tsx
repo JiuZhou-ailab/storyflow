@@ -387,6 +387,7 @@ describe('novel writing workspace layout', () => {
   it('moves primary workspace navigation into the left activity rail', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const activityRailSource = readFileSync(new URL('../../app-shell/ActivityRail.tsx', import.meta.url), 'utf-8')
+    const panelStackSource = readFileSync(new URL('../../app-shell/PanelStackContainer.tsx', import.meta.url), 'utf-8')
 
     expect(appShellSource).toContain('<ActivityRail')
     expect(appShellSource).toContain('activeItem={activeActivityRailItem}')
@@ -405,6 +406,13 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).not.toContain('rightTools={showNovelWorkspaceSidebar ? (')
     expect(appShellSource).not.toContain('links={showNovelWorkspaceSidebar ? novelWorkspaceSidebarLinks : [')
     expect(appShellSource).not.toContain('[...novelWorkspaceUtilitySidebarLinks, ...novelWorkspaceSidebarLinks]')
+    expect(panelStackSource).toContain('data-panel-role="content-scroll"')
+    expect(panelStackSource.indexOf('data-panel-role="navigator"')).toBeLessThan(
+      panelStackSource.indexOf('data-panel-role="content-scroll"')
+    )
+    expect(panelStackSource.indexOf('ref={scrollRef}')).toBeGreaterThan(
+      panelStackSource.indexOf('data-panel-role="content-scroll"')
+    )
   })
 
   it('roots the writing catalog at the current project and folds real paths into folders', () => {

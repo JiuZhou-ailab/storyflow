@@ -1,17 +1,17 @@
 /**
  * PanelStackContainer
  *
- * Horizontal layout container for ALL panels:
- * Sidebar → Navigator → Content Panel(s) with resize sashes.
+ * Horizontal layout container for shell columns and content panels:
+ * Sidebar → Navigator → horizontally scrollable Content Panel(s).
  *
  * Content panels use CSS flex-grow with their proportions as weights:
  * - Each panel gets `flex: <proportion> 1 0px` with `min-width: PANEL_MIN_WIDTH`
  * - Flex distributes available space proportionally — panels fill the viewport
  * - When panels hit min-width, overflow-x: auto kicks in naturally
  *
- * Sidebar and Navigator are NOT part of the proportional layout —
- * they have their own fixed/user-resizable widths managed by AppShell.
- * They just reduce the available width for content panels and scroll with everything else.
+ * Sidebar and Navigator are NOT part of the proportional or horizontal-scroll layout.
+ * They have fixed/user-resizable widths managed by AppShell and stay pinned while
+ * the content panel lane scrolls.
  *
  * The right sidebar stays OUTSIDE this container.
  */
@@ -102,27 +102,18 @@ export function PanelStackContainer({
 
   return (
     <div
-      ref={scrollRef}
-      className="flex-1 min-w-0 flex relative z-panel panel-scroll @container/shell"
+      className="flex-1 min-w-0 flex relative z-panel @container/shell"
       style={{
-        overflowX: 'auto',
+        overflowX: 'hidden',
         overflowY: 'hidden',
         // Extra vertical space for box-shadows (collapsed back with negative margin)
         paddingBlock: PANEL_STACK_VERTICAL_OVERFLOW,
         marginBlock: -PANEL_STACK_VERTICAL_OVERFLOW,
-        // Extend to window bottom so scrollbar sits at the very edge
-        marginBottom: -6,
-        paddingBottom: 6,
-        // Extra horizontal space for last panel's box-shadow
-        paddingRight: 8,
-        marginRight: -8,
       }}
     >
-      {/* Inner flex container — flex-grow: 1 fills viewport, content can overflow for scroll.
-           Animated paddingLeft provides window-edge spacing when sidebar/navigator are hidden.
-           Hidden slots use marginRight: -PANEL_GAP to cancel their trailing flex gap. */}
+      {/* Inner flex container keeps shell columns pinned. Only the content lane scrolls. */}
       <motion.div
-        className="flex h-full"
+        className="flex h-full min-w-0 flex-1"
         initial={false}
         animate={{ paddingLeft: !hasSidebar ? PANEL_EDGE_INSET : 0 }}
         transition={transition}
@@ -176,32 +167,50 @@ export function PanelStackContainer({
 
         {hasNavigator ? navigatorResizeSash : null}
 
-        {/* === CONTENT PANELS WITH SASHES === */}
-        {visiblePanels.length === 0 ? (
-          // Only show empty placeholder when not in compact mode (compact shows navigator instead)
-          isCompact ? null : <div className="flex-1 flex items-center justify-center" />
-        ) : (
-          visiblePanels.map((entry, index) => (
-            <PanelSlot
-              key={entry.id}
-              entry={entry}
-              isOnly={visiblePanels.length === 1}
-              isFocusedPanel={isMultiPanel ? entry.id === focusedPanelId : true}
-              isSidebarAndNavigatorHidden={isSidebarAndNavigatorHidden}
-              isAtLeftEdge={index === 0 && isLeftEdge}
-              isAtRightEdge={index === visiblePanels.length - 1 && !isRightSidebarVisible}
-              proportion={entry.proportion}
-              isCompact={isCompact}
-              hideCloseButton={hidePanelCloseButton}
-              sash={index > 0 ? (
-                <PanelResizeSash
-                  leftIndex={index - 1}
-                  rightIndex={index}
+        <div
+          data-panel-role="content-scroll"
+          ref={scrollRef}
+          className="min-w-0 flex-1 flex panel-scroll"
+          style={{
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            // Extend to window bottom so scrollbar sits at the very edge.
+            marginBottom: -6,
+            paddingBottom: 6,
+            // Extra horizontal space for last panel's box-shadow.
+            paddingRight: 8,
+            marginRight: -8,
+          }}
+        >
+          <div className="flex h-full min-w-full" style={{ gap: PANEL_GAP, flexGrow: 1, minWidth: 0 }}>
+            {/* === CONTENT PANELS WITH SASHES === */}
+            {visiblePanels.length === 0 ? (
+              // Only show empty placeholder when not in compact mode (compact shows navigator instead)
+              isCompact ? null : <div className="flex-1 flex items-center justify-center" />
+            ) : (
+              visiblePanels.map((entry, index) => (
+                <PanelSlot
+                  key={entry.id}
+                  entry={entry}
+                  isOnly={visiblePanels.length === 1}
+                  isFocusedPanel={isMultiPanel ? entry.id === focusedPanelId : true}
+                  isSidebarAndNavigatorHidden={isSidebarAndNavigatorHidden}
+                  isAtLeftEdge={index === 0 && isLeftEdge}
+                  isAtRightEdge={index === visiblePanels.length - 1 && !isRightSidebarVisible}
+                  proportion={entry.proportion}
+                  isCompact={isCompact}
+                  hideCloseButton={hidePanelCloseButton}
+                  sash={index > 0 ? (
+                    <PanelResizeSash
+                      leftIndex={index - 1}
+                      rightIndex={index}
+                    />
+                  ) : undefined}
                 />
-              ) : undefined}
-            />
-          ))
-        )}
+              ))
+            )}
+          </div>
+        </div>
       </motion.div>
     </div>
   )
