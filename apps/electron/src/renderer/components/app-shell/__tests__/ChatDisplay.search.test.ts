@@ -147,6 +147,17 @@ describe('ChatDisplay search performance contract', () => {
     expect(indexSource).toContain('}, [allTurns, pendingFollowUpAnnotations.length])')
   })
 
+  test('builds search highlight text while walking text nodes once', () => {
+    const effectStart = chatDisplaySource.indexOf('// Effect 1: Walk DOM and collect highlight ranges')
+    const effectEnd = chatDisplaySource.indexOf('// Effect 2: Update active/passive highlight split', effectStart)
+    const effectSource = chatDisplaySource.slice(effectStart, effectEnd)
+
+    expect(effectSource).toContain('const textChunks: string[] = []')
+    expect(effectSource).toContain('textChunks.push(text)')
+    expect(effectSource).toContain("const concatenated = textChunks.join('')")
+    expect(effectSource).not.toContain("textNodes.map(n => n.textContent || '').join('')")
+  })
+
   test('keeps session-list search query out of AppShellContext value', () => {
     expect(appShellSource).toContain('useAtom(sessionListSearchActiveAtom)')
     expect(appShellSource).toContain('useAtom(sessionListSearchQueryAtom)')

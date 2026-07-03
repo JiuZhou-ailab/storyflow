@@ -943,21 +943,20 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
         )
 
         // Build concatenated string with node offset mapping for cross-node matching
-        const textNodes: Text[] = []
+        const nodeOffsets: { node: Text; start: number; end: number }[] = []
+        const textChunks: string[] = []
+        let totalLength = 0
         let currentNode: Node | null
         while ((currentNode = walker.nextNode())) {
-          textNodes.push(currentNode as Text)
-        }
-        if (textNodes.length === 0) return
-
-        const nodeOffsets: { node: Text; start: number; end: number }[] = []
-        let totalLength = 0
-        for (const node of textNodes) {
+          const node = currentNode as Text
           const text = node.textContent || ''
           nodeOffsets.push({ node, start: totalLength, end: totalLength + text.length })
+          textChunks.push(text)
           totalLength += text.length
         }
-        const concatenated = textNodes.map(n => n.textContent || '').join('')
+        if (textChunks.length === 0) return
+
+        const concatenated = textChunks.join('')
         const lowerConcatenated = concatenated.toLowerCase()
 
         // Find all matches in the concatenated string
