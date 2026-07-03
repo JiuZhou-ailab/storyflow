@@ -44,4 +44,9 @@ describe('session item subscriptions', () => {
     expect(sessionListSource).not.toContain('readRows.sort((a, b) =>')
     expect(sessionListSource).not.toContain('groupRows.sort((a, b) =>')
   })
+
+  it('keeps selected session state out of the shared list context', () => {
+    expect(sessionListSource).not.toContain('selectedSessionId:')
+    expect(sessionListSource).not.toContain('focusedSessionId, selectionStore.state.selected, isMultiSelectActive')
+  })
 })

@@ -151,7 +151,6 @@ function SessionListSearchPreview({
 
   const ctx = createMockContext({
     searchQuery,
-    selectedSessionId,
     contentSearchResults,
   })
 
@@ -251,7 +250,6 @@ function SessionItemPreview({
 
   const ctx = createMockContext({
     searchQuery,
-    selectedSessionId: isSelected ? resolvedItem.id : null,
     contentSearchResults,
   })
 

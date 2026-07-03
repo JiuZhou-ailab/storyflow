@@ -636,7 +636,6 @@ export function SessionList({
     labelById,
     labels,
     searchQuery: resolvedSearchQuery,
-    selectedSessionId: focusedSessionId !== undefined ? focusedSessionId : selectionStore.state.selected,
     isMultiSelectActive,
     isCompactMode,
     hasRemoteWorkspaces,
@@ -653,7 +652,7 @@ export function SessionList({
     onMarkUnread, handleDeleteWithToast, onLabelsChange,
     handleSelectSessionById, handleOpenInNewWindow, setSendToWorkspace, handleFocusZone, handleKeyDown,
     sessionStatuses, flatLabels, labelById, labels, resolvedSearchQuery,
-    focusedSessionId, selectionStore.state.selected, isMultiSelectActive,
+    isMultiSelectActive,
     isCompactMode, hasRemoteWorkspaces, nextSearchMatchHotkey, prevSearchMatchHotkey,
     sessionOptions, contentSearchResults, activeChatMatchInfo, hasPendingPrompt,
   ])

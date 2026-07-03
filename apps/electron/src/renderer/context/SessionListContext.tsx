@@ -28,7 +28,6 @@ export interface SessionListContextValue {
   labelById: Map<string, LabelConfig>
   labels: LabelConfig[]
   searchQuery?: string
-  selectedSessionId?: string | null
   isMultiSelectActive: boolean
   isCompactMode?: boolean
   hasRemoteWorkspaces?: boolean
