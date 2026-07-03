@@ -124,23 +124,20 @@ export function handleToolResult(
     // This handles the case where child tool_result events never arrive.
     const completedTool = updatedSession.messages[toolIndex]
     if (completedTool && (isParentTaskTool(completedTool.toolName || '') || completedTool.toolName === 'TaskOutput')) {
-      const hasOrphanedChildren = updatedSession.messages.some(
-        m => m.parentToolUseId === event.toolUseId
-          && m.toolStatus !== 'completed'
-          && m.toolStatus !== 'error'
-      )
-      if (hasOrphanedChildren) {
-        const updatedMessages = updatedSession.messages.map(m => {
-          if (
-            m.parentToolUseId === event.toolUseId
-            && m.toolStatus !== 'completed'
-            && m.toolStatus !== 'error'
-          ) {
-            return { ...m, toolStatus: 'completed' as const, toolResult: m.toolResult || '' }
+      let childMessages = updatedSession.messages
+      for (let i = 0; i < childMessages.length; i++) {
+        const message = childMessages[i]
+        if (
+          message.parentToolUseId === event.toolUseId
+          && message.toolStatus !== 'completed'
+          && message.toolStatus !== 'error'
+        ) {
+          if (childMessages === session.messages) {
+            childMessages = [...session.messages]
+            updatedSession = { ...updatedSession, messages: childMessages }
           }
-          return m
-        })
-        updatedSession = { ...updatedSession, messages: updatedMessages }
+          childMessages[i] = { ...message, toolStatus: 'completed' as const, toolResult: message.toolResult || '' }
+        }
       }
     }
 

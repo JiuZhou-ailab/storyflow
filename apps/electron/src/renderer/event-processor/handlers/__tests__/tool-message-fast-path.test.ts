@@ -43,6 +43,10 @@ describe('tool message hot path', () => {
     expect(toolHandlerSource).toContain('findToolMessage(messages, toolUseId)')
   })
 
+  it('does not allocate a second message array when completing orphaned child tools', () => {
+    expect(toolHandlerSource).not.toContain('const updatedMessages = updatedSession.messages.map')
+  })
+
   it('updates the latest matching tool message with result data', () => {
     const state = makeState([
       {
