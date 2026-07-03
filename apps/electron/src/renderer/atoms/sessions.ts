@@ -400,11 +400,16 @@ export const refreshSessionsMetadataAtom = atom(
     for (const session of sessions) {
       const currentSession = get(sessionAtomFamily(session.id))
       const shouldPreserveMessages = !!currentSession && loadedSessionIds.has(session.id)
-      const nextSession = shouldPreserveMessages && currentSession
+      let nextSession = shouldPreserveMessages && currentSession
         ? { ...session, messages: currentSession.messages }
         : session
+      if (currentSession && currentSession.messages.length === 0 && nextSession.messages.length === 0) {
+        nextSession = { ...nextSession, messages: currentSession.messages }
+      }
 
-      set(sessionAtomFamily(session.id), nextSession)
+      if (!currentSession || !shallowEqualSession(currentSession, nextSession)) {
+        set(sessionAtomFamily(session.id), nextSession)
+      }
 
       // Track sessions that lost their messages so lazy-loading re-fetches them
       if (!shouldPreserveMessages && loadedSessionIds.has(session.id)) {

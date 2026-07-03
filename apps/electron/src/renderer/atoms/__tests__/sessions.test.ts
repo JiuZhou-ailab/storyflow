@@ -548,13 +548,18 @@ describe('refreshSessionsMetadataAtom', () => {
     })
     const beforeMetaMap = store.get(sessionMetaMapAtom)
     const beforeIds = store.get(sessionIdsAtom)
+    const beforeSession = store.get(sessionAtomFamily('s1'))
     let metaNotifications = 0
     let idNotifications = 0
+    let sessionNotifications = 0
     const unsubscribeMeta = store.sub(sessionMetaMapAtom, () => {
       metaNotifications += 1
     })
     const unsubscribeIds = store.sub(sessionIdsAtom, () => {
       idNotifications += 1
+    })
+    const unsubscribeSession = store.sub(sessionAtomFamily('s1'), () => {
+      sessionNotifications += 1
     })
 
     store.set(refreshSessionsMetadataAtom, {
@@ -567,11 +572,14 @@ describe('refreshSessionsMetadataAtom', () => {
 
     expect(store.get(sessionMetaMapAtom)).toBe(beforeMetaMap)
     expect(store.get(sessionIdsAtom)).toBe(beforeIds)
+    expect(store.get(sessionAtomFamily('s1'))).toBe(beforeSession)
     expect(metaNotifications).toBe(0)
     expect(idNotifications).toBe(0)
+    expect(sessionNotifications).toBe(0)
 
     unsubscribeMeta()
     unsubscribeIds()
+    unsubscribeSession()
   })
 })
 
