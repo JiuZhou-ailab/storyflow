@@ -577,10 +577,13 @@ export const syncSessionsToAtomsAtom = atom(
         }
       }
 
-      // Only update if the session object is different (referential check)
-      // This prevents unnecessary re-renders when the session hasn't changed
-      if (atomSession !== session) {
-        set(sessionAtom, session)
+      let nextSession = session
+      if (atomSession && atomSession.messages.length === 0 && nextSession.messages.length === 0) {
+        nextSession = { ...nextSession, messages: atomSession.messages }
+      }
+
+      if (!atomSession || !shallowEqualSession(atomSession, nextSession)) {
+        set(sessionAtom, nextSession)
       }
     }
 
