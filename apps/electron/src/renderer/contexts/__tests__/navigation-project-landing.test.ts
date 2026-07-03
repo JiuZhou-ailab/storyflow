@@ -22,4 +22,10 @@ describe('project default navigation', () => {
     expect(navigationContextSource).toContain('normalizePanelRouteForReconcile(')
     expect(navigationContextSource).not.toContain("if ('details' in navState && navState.details)")
   })
+
+  it('memoizes the provider value so unrelated provider renders do not notify consumers', () => {
+    expect(navigationContextSource).toContain('const contextValue = useMemo<NavigationContextValue>(() => ({')
+    expect(navigationContextSource).toContain('<NavigationContext.Provider value={contextValue}>')
+    expect(navigationContextSource).not.toContain('<NavigationContext.Provider\n      value={{')
+  })
 })

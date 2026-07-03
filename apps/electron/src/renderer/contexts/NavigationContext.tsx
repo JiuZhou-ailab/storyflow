@@ -1315,22 +1315,34 @@ export function NavigationProvider({
   // CONTEXT VALUE
   // =========================================================================
 
+  const contextValue = useMemo<NavigationContextValue>(() => ({
+    navigate,
+    isReady,
+    navigationState,
+    canGoBack,
+    canGoForward,
+    goBack,
+    goForward,
+    updateRightSidebar,
+    toggleRightSidebar,
+    navigateToSource,
+    navigateToSession,
+  }), [
+    navigate,
+    isReady,
+    navigationState,
+    canGoBack,
+    canGoForward,
+    goBack,
+    goForward,
+    updateRightSidebar,
+    toggleRightSidebar,
+    navigateToSource,
+    navigateToSession,
+  ])
+
   return (
-    <NavigationContext.Provider
-      value={{
-        navigate,
-        isReady,
-        navigationState,
-        canGoBack,
-        canGoForward,
-        goBack,
-        goForward,
-        updateRightSidebar,
-        toggleRightSidebar,
-        navigateToSource,
-        navigateToSession,
-      }}
-    >
+    <NavigationContext.Provider value={contextValue}>
       {children}
     </NavigationContext.Provider>
   )
