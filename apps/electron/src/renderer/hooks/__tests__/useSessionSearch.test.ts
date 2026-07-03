@@ -80,4 +80,10 @@ describe('computeCollapsedPagination', () => {
     expect(useSessionSearchSource).not.toContain('dateGroups.flatMap')
     expect(useSessionSearchSource).not.toContain('sessionIndexMap')
   })
+
+  it('reuses computed collapse group keys while paginating', () => {
+    expect(useSessionSearchSource).toContain('const itemGroupKeys: string[] = []')
+    expect(useSessionSearchSource).toContain('const groupKey = itemGroupKeys[index]')
+    expect(useSessionSearchSource).not.toContain('new Set(items.map(item => getCollapseGroupKey(item, groupingMode)))')
+  })
 })

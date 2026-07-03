@@ -110,7 +110,13 @@ export function computeCollapsedPagination(
     }
   }
 
-  const groupKeysInView = new Set(items.map(item => getCollapseGroupKey(item, groupingMode)))
+  const itemGroupKeys: string[] = []
+  const groupKeysInView = new Set<string>()
+  for (const item of items) {
+    const groupKey = getCollapseGroupKey(item, groupingMode)
+    itemGroupKeys.push(groupKey)
+    groupKeysInView.add(groupKey)
+  }
 
   // Safety guard: don't allow collapse state to hide the entire list when only one
   // group exists in the current filtered view (there would be no meaningful collapse UX).
@@ -137,8 +143,8 @@ export function computeCollapsedPagination(
   const expandedItems: SessionMeta[] = []
   const collapsedCounts = new Map<string, number>()
 
-  for (const item of items) {
-    const groupKey = getCollapseGroupKey(item, groupingMode)
+  for (const [index, item] of items.entries()) {
+    const groupKey = itemGroupKeys[index]
 
     if (effectiveCollapsedKeys.has(groupKey)) {
       collapsedCounts.set(groupKey, (collapsedCounts.get(groupKey) || 0) + 1)
