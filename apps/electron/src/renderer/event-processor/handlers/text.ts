@@ -33,6 +33,8 @@ export function handleTextDelta(
   state: SessionState,
   event: TextDeltaEvent
 ): SessionState {
+  if (event.delta === '') return state
+
   const { session, streaming } = state
 
   // Accumulate in streaming state

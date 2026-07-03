@@ -62,4 +62,26 @@ describe('handleTextDelta streaming hot path', () => {
     expect((next.session.messages[1] as any).content).toBe('hello world')
     expect(next.streaming?.content).toBe('hello world')
   })
+
+  it('keeps the original state for empty text_delta data', () => {
+    const state = makeState([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'hello',
+        timestamp: 2,
+        isStreaming: true,
+        isPending: true,
+        turnId: 'turn-1',
+      },
+    ])
+    const event: TextDeltaEvent = {
+      type: 'text_delta',
+      sessionId: 'session-1',
+      delta: '',
+      turnId: 'turn-1',
+    }
+
+    expect(handleTextDelta(state, event)).toBe(state)
+  })
 })
