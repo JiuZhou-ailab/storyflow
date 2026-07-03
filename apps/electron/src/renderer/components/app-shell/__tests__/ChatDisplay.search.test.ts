@@ -116,8 +116,12 @@ describe('ChatDisplay search performance contract', () => {
     expect(chatDisplaySource).not.toContain('turns.slice(index + 1).some')
   })
 
-  test('finds the latest user message without cloning and reversing the transcript', () => {
-    expect(chatDisplaySource).toContain('const latestUserMessage = React.useMemo')
+  test('reuses message partitioning to find the latest user message', () => {
+    expect(chatDisplaySource).toContain('let latestUserMessage: Message | undefined')
+    expect(chatDisplaySource).toContain('latestUserMessage = message')
+    expect(chatDisplaySource).toContain('return { queuedUserMessages, transcriptMessages, latestUserMessage }')
+    expect(chatDisplaySource).toContain('const latestUserMessage = partitionedMessages.latestUserMessage')
+    expect(chatDisplaySource).not.toContain('const latestUserMessage = React.useMemo')
     expect(chatDisplaySource).not.toContain('[...transcriptMessages].reverse()')
   })
 })

@@ -645,8 +645,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const partitionedMessages = React.useMemo(() => {
     const queuedUserMessages: QueuedInputMessage[] = []
     const transcriptMessages: Message[] = []
+    let latestUserMessage: Message | undefined
     if (!session?.messages?.length) {
-      return { queuedUserMessages, transcriptMessages }
+      return { queuedUserMessages, transcriptMessages, latestUserMessage }
     }
 
     for (const message of session.messages) {
@@ -658,13 +659,15 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
         })
       } else {
         transcriptMessages.push(message)
+        if (message.role === 'user') latestUserMessage = message
       }
     }
 
-    return { queuedUserMessages, transcriptMessages }
+    return { queuedUserMessages, transcriptMessages, latestUserMessage }
   }, [session?.messages])
   const queuedUserMessages = partitionedMessages.queuedUserMessages
   const transcriptMessages = partitionedMessages.transcriptMessages
+  const latestUserMessage = partitionedMessages.latestUserMessage
   // Memoize turn grouping - avoids O(n) iteration on every render/keystroke
   const allTurns = React.useMemo(() => {
     if (!session) return []
@@ -1560,14 +1563,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     }
     return result
   }, [turns])
-  const latestUserMessage = React.useMemo(() => {
-    for (let i = transcriptMessages.length - 1; i >= 0; i--) {
-      const message = transcriptMessages[i]
-      if (message?.role === 'user') return message
-    }
-    return undefined
-  }, [transcriptMessages])
-
   const assistantTurnIndexByMessageId = useMemo(() => {
     const map = new Map<string, number>()
     allTurns.forEach((turn, index) => {
