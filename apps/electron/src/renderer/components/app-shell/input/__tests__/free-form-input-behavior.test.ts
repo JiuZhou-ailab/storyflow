@@ -3,6 +3,7 @@
 // pos: Guards chat composer behavior without importing heavyweight UI dependencies
 
 import { describe, expect, it } from 'bun:test'
+import { readFileSync } from 'fs'
 import {
   getPrimaryInputAction,
   isCompositionInput,
@@ -146,5 +147,19 @@ describe('FreeFormInput behavior helpers', () => {
         },
       ])
     })
+  })
+})
+
+describe('FreeFormInput attachment read path', () => {
+  it('uses main-side user attachment reads before renderer FileReader for path-backed files', () => {
+    const source = readFileSync(new URL('../FreeFormInput.tsx', import.meta.url), 'utf-8')
+    const helperStart = source.indexOf('const readFileAsAttachment = async')
+    const helperEnd = source.indexOf('const processFileAttachments = async', helperStart)
+    const helperSource = source.slice(helperStart, helperEnd)
+
+    expect(helperSource).toContain('window.electronAPI.readUserAttachment(realPath)')
+    expect(helperSource.indexOf('window.electronAPI.readUserAttachment(realPath)')).toBeLessThan(
+      helperSource.indexOf('new FileReader()'),
+    )
   })
 })

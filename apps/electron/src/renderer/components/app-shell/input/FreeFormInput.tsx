@@ -1092,6 +1092,10 @@ export function FreeFormInput({
     // When null, the draft layer falls back to persisting content inline (Track C).
     const realPath = hasElectronAPI ? window.electronAPI.getFilePath?.(file) ?? null : null
 
+    if (realPath) {
+      return window.electronAPI.readUserAttachment(realPath)
+    }
+
     return new Promise((resolve) => {
       const reader = new FileReader()
       reader.onload = async () => {
