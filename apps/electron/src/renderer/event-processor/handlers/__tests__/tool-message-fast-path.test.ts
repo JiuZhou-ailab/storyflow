@@ -4,8 +4,23 @@
 
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { handleTaskProgress, handleToolResult, handleToolStart } from '../tool'
-import type { SessionState, TaskProgressEvent, ToolResultEvent, ToolStartEvent } from '../../types'
+import {
+  handleShellBackgrounded,
+  handleTaskBackgrounded,
+  handleTaskCompleted,
+  handleTaskProgress,
+  handleToolResult,
+  handleToolStart,
+} from '../tool'
+import type {
+  SessionState,
+  ShellBackgroundedEvent,
+  TaskBackgroundedEvent,
+  TaskCompletedEvent,
+  TaskProgressEvent,
+  ToolResultEvent,
+  ToolStartEvent,
+} from '../../types'
 
 const toolHandlerSource = readFileSync(new URL('../tool.ts', import.meta.url), 'utf-8')
 
@@ -101,5 +116,102 @@ describe('tool message hot path', () => {
     }
 
     expect(handleTaskProgress(state, event)).toBe(state)
+  })
+
+  it('keeps the original state for duplicate tool result data', () => {
+    const state = makeState([
+      {
+        id: 'tool-1',
+        role: 'tool',
+        content: '',
+        timestamp: 1,
+        toolUseId: 'tool-1',
+        toolName: 'Bash',
+        toolStatus: 'completed',
+        toolResult: 'ok',
+        isError: false,
+      },
+    ])
+    const event: ToolResultEvent = {
+      type: 'tool_result',
+      sessionId: 'session-1',
+      toolUseId: 'tool-1',
+      result: 'ok',
+    }
+
+    expect(handleToolResult(state, event)).toBe(state)
+  })
+
+  it('keeps the original state for duplicate task backgrounding data', () => {
+    const state = makeState([
+      {
+        id: 'tool-1',
+        role: 'tool',
+        content: '',
+        timestamp: 1,
+        toolUseId: 'tool-1',
+        toolName: 'Task',
+        toolStatus: 'backgrounded',
+        taskId: 'task-1',
+        isBackground: true,
+      },
+    ])
+    const event: TaskBackgroundedEvent = {
+      type: 'task_backgrounded',
+      sessionId: 'session-1',
+      toolUseId: 'tool-1',
+      taskId: 'task-1',
+    }
+
+    expect(handleTaskBackgrounded(state, event)).toBe(state)
+  })
+
+  it('keeps the original state for duplicate shell backgrounding data', () => {
+    const state = makeState([
+      {
+        id: 'tool-1',
+        role: 'tool',
+        content: '',
+        timestamp: 1,
+        toolUseId: 'tool-1',
+        toolName: 'Bash',
+        toolStatus: 'backgrounded',
+        shellId: 'shell-1',
+        isBackground: true,
+      },
+    ])
+    const event: ShellBackgroundedEvent = {
+      type: 'shell_backgrounded',
+      sessionId: 'session-1',
+      toolUseId: 'tool-1',
+      shellId: 'shell-1',
+    }
+
+    expect(handleShellBackgrounded(state, event)).toBe(state)
+  })
+
+  it('keeps the original state for duplicate task completion data', () => {
+    const state = makeState([
+      {
+        id: 'tool-1',
+        role: 'tool',
+        content: '',
+        timestamp: 1,
+        toolUseId: 'tool-1',
+        toolName: 'Task',
+        toolStatus: 'completed',
+        taskId: 'task-1',
+        toolResult: 'done',
+      },
+    ])
+    const event: TaskCompletedEvent = {
+      type: 'task_completed',
+      sessionId: 'session-1',
+      taskId: 'task-1',
+      status: 'completed',
+      summary: 'done',
+    }
+
+    expect(handleTaskCompleted(state, event)).toBe(state)
   })
 })

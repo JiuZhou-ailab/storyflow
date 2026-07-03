@@ -144,6 +144,7 @@ export function handleToolResult(
       }
     }
 
+    if (updatedSession === session) return state
     return { session: updatedSession, streaming }
   }
 
@@ -203,6 +204,7 @@ export function handleTaskBackgrounded(
       taskId: event.taskId,
       isBackground: true,
     })
+    if (updatedSession === session) return state
     return { session: updatedSession, streaming }
   }
 
@@ -232,6 +234,7 @@ export function handleShellBackgrounded(
       shellId: event.shellId,
       isBackground: true,
     })
+    if (updatedSession === session) return state
     return { session: updatedSession, streaming }
   }
 
@@ -288,6 +291,7 @@ export function handleTaskCompleted(
       toolStatus: event.status === 'failed' ? 'error' : 'completed',
       toolResult: event.summary || `Background task ${event.status}`,
     })
+    if (updatedSession === session) return state
     return { session: updatedSession, streaming }
   }
 
