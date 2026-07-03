@@ -47,6 +47,11 @@ describe('tool message hot path', () => {
     expect(toolHandlerSource).not.toContain('const updatedMessages = updatedSession.messages.map')
   })
 
+  it('starts parent child completion scan after the parent tool message', () => {
+    expect(toolHandlerSource).toContain('completeChildTools(updatedSession, session, event.toolUseId, toolIndex + 1)')
+    expect(toolHandlerSource).not.toContain('for (let i = 0; i < childMessages.length; i++)')
+  })
+
   it('updates the latest matching tool message with result data', () => {
     const state = makeState([
       {
@@ -71,6 +76,47 @@ describe('tool message hot path', () => {
     expect(next.session.messages).toHaveLength(1)
     expect((next.session.messages[0] as any).toolResult).toBe('ok')
     expect((next.session.messages[0] as any).toolStatus).toBe('completed')
+  })
+
+  it('completes pending child tools after a completed parent task', () => {
+    const state = makeState([
+      ...Array.from({ length: 3 }, (_, index) => ({
+        id: `unrelated-${index}`,
+        role: 'assistant',
+        content: `old ${index}`,
+        timestamp: index,
+      })),
+      {
+        id: 'parent-task',
+        role: 'tool',
+        content: '',
+        timestamp: 10,
+        toolUseId: 'task-1',
+        toolName: 'Task',
+        toolStatus: 'executing',
+      },
+      {
+        id: 'child-tool',
+        role: 'tool',
+        content: '',
+        timestamp: 11,
+        toolUseId: 'child-1',
+        toolName: 'Read',
+        parentToolUseId: 'task-1',
+        toolStatus: 'executing',
+      },
+    ])
+    const event: ToolResultEvent = {
+      type: 'tool_result',
+      sessionId: 'session-1',
+      toolUseId: 'task-1',
+      result: 'done',
+    }
+
+    const next = handleToolResult(state, event)
+
+    expect((next.session.messages[4] as any).toolStatus).toBe('completed')
+    expect((next.session.messages[4] as any).toolResult).toBe('')
   })
 
   it('keeps the original state for duplicate tool start data', () => {

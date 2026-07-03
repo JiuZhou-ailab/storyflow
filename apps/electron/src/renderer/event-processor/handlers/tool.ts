@@ -6,7 +6,7 @@
  */
 
 import type { SessionState, ToolStartEvent, ToolResultEvent, TaskBackgroundedEvent, ShellBackgroundedEvent, TaskProgressEvent, TaskCompletedEvent } from '../types'
-import type { Message } from '../../../shared/types'
+import type { Message, Session } from '../../../shared/types'
 import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
 import {
   findToolMessage,
@@ -27,6 +27,43 @@ function findToolMessageIndex(messages: Message[], toolUseId: string): number {
   return lastToolIndex === -1
     ? findToolMessage(messages, toolUseId)
     : lastToolIndex
+}
+
+function completeChildTools(
+  updatedSession: Session,
+  baseSession: Session,
+  parentToolUseId: string,
+  startIndex: number
+): Session {
+  let nextSession = updatedSession
+  let childMessages = nextSession.messages
+
+  const completeRange = (from: number, to: number): boolean => {
+    let completedAny = false
+    for (let i = from; i < to; i++) {
+      const message = childMessages[i]
+      if (
+        message.parentToolUseId === parentToolUseId
+        && message.toolStatus !== 'completed'
+        && message.toolStatus !== 'error'
+      ) {
+        if (childMessages === baseSession.messages) {
+          childMessages = [...baseSession.messages]
+          nextSession = { ...nextSession, messages: childMessages }
+        }
+        childMessages[i] = { ...message, toolStatus: 'completed', toolResult: message.toolResult || '' }
+        completedAny = true
+      }
+    }
+    return completedAny
+  }
+
+  const completedAfterParent = completeRange(startIndex, childMessages.length)
+  if (!completedAfterParent && startIndex > 0) {
+    completeRange(0, startIndex)
+  }
+
+  return nextSession
 }
 
 /**
@@ -124,21 +161,7 @@ export function handleToolResult(
     // This handles the case where child tool_result events never arrive.
     const completedTool = updatedSession.messages[toolIndex]
     if (completedTool && (isParentTaskTool(completedTool.toolName || '') || completedTool.toolName === 'TaskOutput')) {
-      let childMessages = updatedSession.messages
-      for (let i = 0; i < childMessages.length; i++) {
-        const message = childMessages[i]
-        if (
-          message.parentToolUseId === event.toolUseId
-          && message.toolStatus !== 'completed'
-          && message.toolStatus !== 'error'
-        ) {
-          if (childMessages === session.messages) {
-            childMessages = [...session.messages]
-            updatedSession = { ...updatedSession, messages: childMessages }
-          }
-          childMessages[i] = { ...message, toolStatus: 'completed' as const, toolResult: message.toolResult || '' }
-        }
-      }
+      updatedSession = completeChildTools(updatedSession, session, event.toolUseId, toolIndex + 1)
     }
 
     if (updatedSession === session) return state
