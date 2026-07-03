@@ -168,4 +168,15 @@ describe('useInlineMention hot path', () => {
 
     expect(hookSource).not.toContain('debugLog')
   })
+
+  it('precomputes mention filter ranking keys before sorting results', () => {
+    const source = readFileSync(new URL('../mention-menu.tsx', import.meta.url), 'utf-8')
+
+    expect(source).toContain('const scoredItems = allItems')
+    expect(source).toContain('lowerLabel: item.label.toLowerCase()')
+    expect(source).toContain('lowerId: item.id.toLowerCase()')
+    expect(source).toContain('score: Math.max(')
+    expect(source).not.toContain('const aLabelScore = getMatchScore(a.label, lowerFilter)')
+    expect(source).not.toContain('const aIdScore = getMatchScore(a.id, lowerFilter)')
+  })
 })

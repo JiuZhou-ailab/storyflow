@@ -252,13 +252,10 @@ export function createMentionSections({
  * 1 = contains filter (mid-word)
  * 0 = no match
  */
-function getMatchScore(text: string, filter: string): number {
-  const lowerText = text.toLowerCase()
+function getMatchScore(lowerText: string, filter: string, wordBoundaryPattern: RegExp): number {
   // Best: starts with filter (first word)
   if (lowerText.startsWith(filter)) return 3
   // Good: word boundary match (after space/hyphen/underscore)
-  const escapedFilter = filter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const wordBoundaryPattern = new RegExp(`[\\s\\-_]${escapedFilter}`)
   if (wordBoundaryPattern.test(lowerText)) return 2
   // OK: contains filter anywhere
   if (lowerText.includes(filter)) return 1
@@ -272,31 +269,36 @@ function filterSections(sections: MentionSection[], filter: string): MentionSect
 
   // Collect all matching items across sections
   const allItems = sections.flatMap(section => section.items)
-  const matchingItems = allItems.filter(item =>
-    item.label?.toLowerCase().includes(lowerFilter) ||
-    item.id?.toLowerCase().includes(lowerFilter) ||
-    item.description?.toLowerCase().includes(lowerFilter)
-  )
+  const escapedFilter = lowerFilter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const wordBoundaryPattern = new RegExp(`[\\s\\-_]${escapedFilter}`)
+  const scoredItems = allItems
+    .map(item => ({
+      item,
+      lowerLabel: item.label.toLowerCase(),
+      lowerId: item.id.toLowerCase(),
+      lowerDescription: item.description?.toLowerCase() ?? '',
+    }))
+    .map(({ item, lowerLabel, lowerId, lowerDescription }) => ({
+      item,
+      score: Math.max(
+        getMatchScore(lowerLabel, lowerFilter, wordBoundaryPattern),
+        getMatchScore(lowerId, lowerFilter, wordBoundaryPattern)
+      ),
+      matchesDescription: lowerDescription.includes(lowerFilter),
+    }))
+    .filter(({ score, matchesDescription }) => score > 0 || matchesDescription)
 
   // Sort by match priority: first word > later word > contains
-  matchingItems.sort((a, b) => {
-    const aLabelScore = getMatchScore(a.label, lowerFilter)
-    const bLabelScore = getMatchScore(b.label, lowerFilter)
-    const aIdScore = getMatchScore(a.id, lowerFilter)
-    const bIdScore = getMatchScore(b.id, lowerFilter)
-
-    // Compare by best score (label or id)
-    const aScore = Math.max(aLabelScore, aIdScore)
-    const bScore = Math.max(bLabelScore, bIdScore)
-    if (aScore !== bScore) return bScore - aScore
+  scoredItems.sort((a, b) => {
+    if (a.score !== b.score) return b.score - a.score
 
     // Same score tier: alphabetical by label
-    return a.label.localeCompare(b.label)
+    return a.item.label.localeCompare(b.item.label)
   })
 
   // Return as flat list in a single virtual section (headers hidden when filtering)
-  if (matchingItems.length === 0) return []
-  return [{ id: 'results', label: 'Results', items: matchingItems }]
+  if (scoredItems.length === 0) return []
+  return [{ id: 'results', label: 'Results', items: scoredItems.map(({ item }) => item) }]
 }
 
 function flattenItems(sections: MentionSection[]): MentionItem[] {
