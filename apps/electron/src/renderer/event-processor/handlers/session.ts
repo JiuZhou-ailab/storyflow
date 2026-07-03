@@ -677,15 +677,18 @@ export function handleQueuedMessageRemoved(
   event: QueuedMessageRemovedEvent
 ): ProcessResult {
   const { session, streaming } = state
-  if (!session.messages.some(message => message.id === event.messageId)) {
+  const messageIndex = session.messages.findIndex(message => message.id === event.messageId)
+  if (messageIndex === -1) {
     return { state, effects: [] }
   }
+  const messages = [...session.messages]
+  messages.splice(messageIndex, 1)
 
   return {
     state: {
       session: {
         ...session,
-        messages: session.messages.filter(message => message.id !== event.messageId),
+        messages,
       },
       streaming,
     },
