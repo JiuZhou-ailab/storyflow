@@ -696,7 +696,6 @@ export function useInlineMention({
       // Cache-first file search: if cache has entries from a previous IPC call,
       // filter client-side instantly (no IPC, no debounce). Otherwise fire a
       // debounced IPC to populate the cache. Cache clears when menu closes.
-      window.electronAPI.debugLog('[mention] filterText:', filterText, 'basePath:', basePath, 'cacheSize:', fileCache.current.length)
       if (basePath && filterText.length >= 1) {
         if (fileCache.current.length > 0) {
           // Cache exists — filter client-side instantly, no IPC needed
@@ -705,7 +704,6 @@ export function useInlineMention({
             fileSearchTimeout.current = null
           }
           const filtered = filterCacheResults(fileCache.current, filterText)
-          window.electronAPI.debugLog('[mention] cache hit:', filtered.length, 'items')
           setFileResults(filtered)
           setCommittedFilter(filterText)
         } else {
@@ -714,21 +712,17 @@ export function useInlineMention({
 
           fileSearchTimeout.current = setTimeout(async () => {
             try {
-              window.electronAPI.debugLog('[mention] calling IPC searchFiles:', basePath, filterText)
               const results = await window.electronAPI.searchFiles(basePath, filterText)
-              window.electronAPI.debugLog('[mention] IPC returned:', results?.length, 'results')
               fileCache.current = results
               const filtered = filterCacheResults(fileCache.current, filterText)
-              window.electronAPI.debugLog('[mention] after cache filter:', filtered.length, 'items')
               setFileResults(filtered)
               setCommittedFilter(filterText)
             } catch (err) {
-              window.electronAPI.debugLog('[mention] IPC searchFiles error:', String(err))
+              console.error('[mention] IPC searchFiles error:', err)
             }
           }, 150)
         }
       } else {
-        window.electronAPI.debugLog('[mention] skipping file search (no basePath or empty filter)')
         if (fileSearchTimeout.current) {
           clearTimeout(fileSearchTimeout.current)
           fileSearchTimeout.current = null

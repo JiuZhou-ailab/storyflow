@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, mock, beforeAll } from 'bun:test';
+import { readFileSync } from 'fs';
 
 // mention-menu.tsx transitively imports pdfjs-dist via renderer component chain.
 // Vite's ?url suffix isn't supported by bun — mock before dynamic import.
@@ -155,5 +156,16 @@ describe('writing file mention references', () => {
     expect(item?.label).toBe('第4章 零点一秒的生死线')
     expect(item?.file?.relativePath).toBe('正文/第4章-零点一秒的生死线.md')
     expect(getMentionInsertionText(item!)).toBe('[file:' + '正文/第4章-零点一秒的生死线.md' + '] ')
+  })
+})
+
+describe('useInlineMention hot path', () => {
+  it('does not send debug IPC while filtering mentions', () => {
+    const source = readFileSync(new URL('../mention-menu.tsx', import.meta.url), 'utf-8')
+    const hookStart = source.indexOf('export function useInlineMention')
+    const hookEnd = source.indexOf('function MentionMenuContent', hookStart)
+    const hookSource = source.slice(hookStart, hookEnd)
+
+    expect(hookSource).not.toContain('debugLog')
   })
 })
