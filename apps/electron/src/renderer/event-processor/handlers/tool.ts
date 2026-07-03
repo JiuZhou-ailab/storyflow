@@ -15,6 +15,20 @@ import {
   generateMessageId
 } from '../helpers'
 
+function getLastToolMessageIndex(messages: Message[], toolUseId: string): number {
+  const lastIndex = messages.length - 1
+  const lastMessage = messages[lastIndex]
+  if (!lastMessage || lastMessage.role !== 'tool' || lastMessage.toolUseId !== toolUseId) return -1
+  return lastIndex
+}
+
+function findToolMessageIndex(messages: Message[], toolUseId: string): number {
+  const lastToolIndex = getLastToolMessageIndex(messages, toolUseId)
+  return lastToolIndex === -1
+    ? findToolMessage(messages, toolUseId)
+    : lastToolIndex
+}
+
 /**
  * Handle tool_start - create or update tool message
  *
@@ -28,7 +42,7 @@ export function handleToolStart(
   const { session, streaming } = state
 
   // Check if tool message already exists (SDK sends two events)
-  const existingIndex = findToolMessage(session.messages, event.toolUseId)
+  const existingIndex = findToolMessageIndex(session.messages, event.toolUseId)
 
   if (existingIndex !== -1) {
     // Update with complete input (second event has full input)
@@ -78,7 +92,7 @@ export function handleToolResult(
 ): SessionState {
   const { session, streaming } = state
 
-  const toolIndex = findToolMessage(session.messages, event.toolUseId)
+  const toolIndex = findToolMessageIndex(session.messages, event.toolUseId)
 
   const inferredError = event.isError === true || /^\s*(\[ERROR\]|Error:|error:)/.test(event.result || '')
 
@@ -179,7 +193,7 @@ export function handleTaskBackgrounded(
 ): SessionState {
   const { session, streaming } = state
 
-  const toolIndex = findToolMessage(session.messages, event.toolUseId)
+  const toolIndex = findToolMessageIndex(session.messages, event.toolUseId)
 
   if (toolIndex !== -1) {
     // Update tool status to backgrounded and add task ID
@@ -208,7 +222,7 @@ export function handleShellBackgrounded(
 ): SessionState {
   const { session, streaming } = state
 
-  const toolIndex = findToolMessage(session.messages, event.toolUseId)
+  const toolIndex = findToolMessageIndex(session.messages, event.toolUseId)
 
   if (toolIndex !== -1) {
     // Update tool status to backgrounded and add shell ID
@@ -237,7 +251,7 @@ export function handleTaskProgress(
 ): SessionState {
   const { session, streaming } = state
 
-  const toolIndex = findToolMessage(session.messages, event.toolUseId)
+  const toolIndex = findToolMessageIndex(session.messages, event.toolUseId)
 
   if (toolIndex !== -1) {
     // Update elapsed time for live progress display
