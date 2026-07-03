@@ -75,6 +75,7 @@ import { useTurnCardExpansion } from "@/hooks/useTurnCardExpansion"
 import { useNavigation } from "@/contexts/NavigationContext"
 import { useAppShellContext } from "@/context/AppShellContext"
 import { navigate, routes } from "@/lib/navigate"
+import { loadSendMessageKeySetting } from "@/lib/input-settings"
 import { CHAT_LAYOUT } from "@/config/layout"
 import { collectFileChangesFromActivities, getFirstFileChangeIdForActivity } from "@/lib/file-changes"
 import { resolveBranchNewPanelOption } from "./branching"
@@ -780,9 +781,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       if (!window.electronAPI) return
 
       try {
-        const key = await window.electronAPI.getSendMessageKey()
+        const key = await loadSendMessageKeySetting()
         if (!isMounted) return
-        setSendMessageKey(key ?? 'enter')
+        setSendMessageKey(key)
       } catch (error) {
         console.error('Failed to load send message key for follow-up view:', error)
       }

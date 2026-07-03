@@ -60,6 +60,7 @@ import {
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { coerceInputText } from '@/lib/input-text'
+import { loadSendMessageKeySetting } from '@/lib/input-settings'
 import { isMac, PATH_SEP, getPathBasename } from '@/lib/platform'
 import { applySmartTypography } from '@/lib/smart-typography'
 import { AttachmentPreview } from '../AttachmentPreview'
@@ -594,7 +595,7 @@ export function FreeFormInput({
       try {
         const [autoCapEnabled, sendKey, spellCheckEnabled] = await Promise.all([
           window.electronAPI.getAutoCapitalisation(),
-          window.electronAPI.getSendMessageKey(),
+          loadSendMessageKeySetting(),
           window.electronAPI.getSpellCheck(),
         ])
         setAutoCapitalisation(autoCapEnabled)
