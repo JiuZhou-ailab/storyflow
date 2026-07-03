@@ -2270,7 +2270,8 @@ function AppShellContent({
   )
   const [selectedNovelFilePath, setSelectedNovelFilePath] = React.useState<string | null>(null)
   const selectedNovelFile = React.useMemo(() => {
-    if (!showNovelWorkspaceSidebar) return undefined
+    const canResolveSelectedNovelFile = showNovelWorkspaceSidebar || showNovelWorkspacePending
+    if (!canResolveSelectedNovelFile) return undefined
     if (!selectedNovelFilePath) return defaultNovelFile
 
     const listedFile = novelWorkspaceFiles.find(file => file.path === selectedNovelFilePath)
@@ -2284,7 +2285,7 @@ function AppShellContent({
     }
 
     return undefined
-  }, [defaultNovelFile, novelWorkspaceFiles, novelWorkspaceRoot, selectedNovelFilePath, showNovelWorkspaceSidebar])
+  }, [defaultNovelFile, novelWorkspaceFiles, novelWorkspaceRoot, selectedNovelFilePath, showNovelWorkspacePending, showNovelWorkspaceSidebar])
 
   React.useEffect(() => {
     if (!showNovelWorkspaceSidebar) {

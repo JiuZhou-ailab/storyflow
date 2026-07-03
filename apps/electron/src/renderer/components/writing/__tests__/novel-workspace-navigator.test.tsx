@@ -1041,6 +1041,21 @@ describe('novel writing workspace layout', () => {
     expect(selectionSource).not.toContain('if (!showNovelWorkspaceSidebar) {\n      setSelectedNovelFilePath(null)\n      return\n    }')
   })
 
+  it('keeps the selected writing document stable while workspace detection is pending', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const selectionSource = appShellSource.slice(
+      appShellSource.indexOf('const selectedNovelFile = React.useMemo'),
+      appShellSource.indexOf('const [novelDocumentContent')
+    )
+
+    expect(selectionSource).toContain('const canResolveSelectedNovelFile = showNovelWorkspaceSidebar || showNovelWorkspacePending')
+    expect(selectionSource).toContain('if (!canResolveSelectedNovelFile) return undefined')
+    expect(selectionSource.indexOf('if (!canResolveSelectedNovelFile) return undefined')).toBeLessThan(
+      selectionSource.indexOf('if (!selectedNovelFilePath) return defaultNovelFile')
+    )
+    expect(selectionSource).toContain('showNovelWorkspacePending')
+  })
+
   it('uses the stable selected writing file path for click-switch save decisions', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const selectHandlerSource = appShellSource.slice(
