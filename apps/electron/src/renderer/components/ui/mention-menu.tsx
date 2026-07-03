@@ -42,6 +42,8 @@ export interface MentionSection {
   items: MentionItem[]
 }
 
+const EMPTY_MENTION_SECTIONS: MentionSection[] = []
+
 export interface InlineMentionMenuProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -648,6 +650,9 @@ export function useInlineMention({
   const fileCache = React.useRef<FileSearchResult[]>([])
   // Store current input state for handleSelect
   const currentInputRef = React.useRef({ value: '', cursorPosition: 0 })
+  const clearFileResults = React.useCallback(() => {
+    setFileResults(prev => prev.length === 0 ? prev : [])
+  }, [])
 
   // Cleanup pending timeout on unmount
   React.useEffect(() => {
@@ -660,8 +665,11 @@ export function useInlineMention({
 
   // Build sections from available context data (sources and file search results)
   const sections = React.useMemo((): MentionSection[] => {
+    if (!isOpen && !filter && fileResults.length === 0) {
+      return EMPTY_MENTION_SECTIONS
+    }
     return createMentionSections({ skills, sources, files, filter, fileResults })
-  }, [skills, sources, files, filter, fileResults])
+  }, [skills, sources, files, filter, fileResults, isOpen])
 
   const handleInputChange = React.useCallback((value: string, cursorPosition: number) => {
     // Store current state for handleSelect
@@ -689,7 +697,7 @@ export function useInlineMention({
             clearTimeout(fileSearchTimeout.current)
             fileSearchTimeout.current = null
           }
-          setFileResults([])
+          clearFileResults()
           fileCache.current = []
           return
         }
@@ -735,7 +743,7 @@ export function useInlineMention({
           clearTimeout(fileSearchTimeout.current)
           fileSearchTimeout.current = null
         }
-        setFileResults([])
+        clearFileResults()
         setCommittedFilter(filterText)
       }
 
@@ -772,10 +780,10 @@ export function useInlineMention({
         clearTimeout(fileSearchTimeout.current)
         fileSearchTimeout.current = null
       }
-      setFileResults([])
+      clearFileResults()
       fileCache.current = []
     }
-  }, [inputRef, basePath, files.length])
+  }, [inputRef, basePath, files.length, clearFileResults])
 
   const handleSelect = React.useCallback((item: MentionItem): { value: string; cursorPosition: number } => {
     let result = ''
@@ -800,11 +808,11 @@ export function useInlineMention({
       clearTimeout(fileSearchTimeout.current)
       fileSearchTimeout.current = null
     }
-    setFileResults([])
+    clearFileResults()
     fileCache.current = []
 
     return { value: result, cursorPosition: newCursorPosition }
-  }, [onSelect, atStart, workspaceId])
+  }, [onSelect, atStart, workspaceId, clearFileResults])
 
   const close = React.useCallback(() => {
     setIsOpen(false)
@@ -816,9 +824,9 @@ export function useInlineMention({
       clearTimeout(fileSearchTimeout.current)
       fileSearchTimeout.current = null
     }
-    setFileResults([])
+    clearFileResults()
     fileCache.current = []
-  }, [])
+  }, [clearFileResults])
 
   return {
     isOpen,

@@ -192,4 +192,14 @@ describe('useInlineMention hot path', () => {
     expect(source).not.toContain('const filteredSections = filterSections(sections, filter)')
     expect(source).not.toContain('const flatItems = flattenItems(filteredSections)')
   })
+
+  it('keeps closed mention menus from rebuilding file sections on ordinary input', () => {
+    const source = readFileSync(new URL('../mention-menu.tsx', import.meta.url), 'utf-8')
+
+    expect(source).toContain('const EMPTY_MENTION_SECTIONS: MentionSection[] = []')
+    expect(source).toContain('if (!isOpen && !filter && fileResults.length === 0)')
+    expect(source).toContain('return EMPTY_MENTION_SECTIONS')
+    expect(source).toContain('setFileResults(prev => prev.length === 0 ? prev : [])')
+    expect(source).not.toContain('setFileResults([])')
+  })
 })
