@@ -183,7 +183,14 @@ export const updateSessionAtom = atom(
     const sessionAtom = sessionAtomFamily(sessionId)
     const currentSession = get(sessionAtom)
     const newSession = updater(currentSession)
-    set(sessionAtom, newSession)
+    const sessionUnchanged = currentSession === newSession || (
+      currentSession !== null &&
+      newSession !== null &&
+      shallowEqualSession(currentSession, newSession)
+    )
+    if (!sessionUnchanged) {
+      set(sessionAtom, newSession)
+    }
 
     // Also update metadata if session exists
     if (newSession) {
@@ -197,6 +204,13 @@ export const updateSessionAtom = atom(
     }
   }
 )
+
+function shallowEqualSession(a: Session, b: Session): boolean {
+  const aKeys = Object.keys(a) as Array<keyof Session>
+  const bKeys = Object.keys(b) as Array<keyof Session>
+  if (aKeys.length !== bKeys.length) return false
+  return aKeys.every(key => a[key] === b[key])
+}
 
 function shallowEqualSessionMeta(a: SessionMeta, b: SessionMeta): boolean {
   const aKeys = Object.keys(a) as Array<keyof SessionMeta>

@@ -186,6 +186,29 @@ describe('session message loading atoms', () => {
     unsubscribe()
   })
 
+  it('does not notify session subscribers when a session update leaves values unchanged', () => {
+    const store = createStore()
+    const sessionId = 's1'
+    const session = makeSession({
+      id: sessionId,
+      messages: [msg('m1', 'assistant')],
+      lastMessageAt: 100,
+    })
+    store.set(replaceLoadedSessionAtom, session)
+    const before = store.get(sessionAtomFamily(sessionId))
+
+    let notifications = 0
+    const unsubscribe = store.sub(sessionAtomFamily(sessionId), () => {
+      notifications += 1
+    })
+
+    store.set(updateSessionAtom, sessionId, (prev) => prev && { ...prev })
+
+    expect(store.get(sessionAtomFamily(sessionId))).toBe(before)
+    expect(notifications).toBe(0)
+    unsubscribe()
+  })
+
   it('does not notify metadata subscribers when a metadata patch leaves values unchanged', () => {
     const store = createStore()
     const sessionId = 's1'
