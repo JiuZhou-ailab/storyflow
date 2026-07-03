@@ -33,6 +33,7 @@ import { useWorkspaceIcons } from '@/hooks/useWorkspaceIcon'
 import { Info_DataTable, SortableHeader } from '@/components/info/Info_DataTable'
 import { Info_Badge } from '@/components/info/Info_Badge'
 import type { PresetTheme } from '@config/theme'
+import { createPresetThemeOptions, createThemeOptions } from './appearance-theme-options'
 
 export const meta: DetailsPageMeta = {
   navigator: 'settings',
@@ -220,16 +221,12 @@ export default function AppearanceSettingsPage() {
     [activeWorkspaceId, setWorkspaceColorTheme]
   )
 
-  // Theme options for dropdowns
-  const themeOptions = useMemo(() => [
-    { value: 'default', label: t("settings.appearance.useDefault") },
-    ...presetThemes
-      .filter(t => t.id !== 'default')
-      .map(t => ({
-        value: t.id,
-        label: t.theme.name || t.id,
-      })),
-  ], [presetThemes, t])
+  const presetThemeOptions = useMemo(() => createPresetThemeOptions(presetThemes), [presetThemes])
+  const defaultThemeLabel = t("settings.appearance.useDefault")
+  const themeOptions = useMemo(
+    () => createThemeOptions(defaultThemeLabel, presetThemeOptions),
+    [defaultThemeLabel, presetThemeOptions],
+  )
 
   // Get current app default theme label for display (null when using 'default' to avoid redundant "Use Default (Default)")
   const appDefaultLabel = useMemo(() => {
@@ -237,6 +234,13 @@ export default function AppearanceSettingsPage() {
     const preset = presetThemes.find(t => t.id === colorTheme)
     return preset?.theme.name || colorTheme
   }, [colorTheme, presetThemes])
+  const workspaceDefaultThemeLabel = appDefaultLabel
+    ? t("settings.appearance.useDefaultWithTheme", { theme: appDefaultLabel })
+    : defaultThemeLabel
+  const workspaceThemeOptions = useMemo(
+    () => createThemeOptions(workspaceDefaultThemeLabel, presetThemeOptions),
+    [workspaceDefaultThemeLabel, presetThemeOptions],
+  )
 
   return (
     <div className="h-full flex flex-col">
@@ -332,15 +336,7 @@ export default function AppearanceSettingsPage() {
                           <SettingsMenuSelect
                             value={hasCustomTheme ? wsTheme : 'default'}
                             onValueChange={(value) => handleWorkspaceThemeChange(workspace.id, value)}
-                            options={[
-                              { value: 'default', label: appDefaultLabel ? t("settings.appearance.useDefaultWithTheme", { theme: appDefaultLabel }) : t("settings.appearance.useDefault") },
-                              ...presetThemes
-                                .filter(t => t.id !== 'default')
-                                .map(t => ({
-                                  value: t.id,
-                                  label: t.theme.name || t.id,
-                                })),
-                            ]}
+                            options={workspaceThemeOptions}
                           />
                         </SettingsRow>
                       )
