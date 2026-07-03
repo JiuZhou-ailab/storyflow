@@ -30,6 +30,10 @@ export interface SessionListContextValue {
   searchQuery?: string
   selectedSessionId?: string | null
   isMultiSelectActive: boolean
+  isCompactMode?: boolean
+  hasRemoteWorkspaces?: boolean
+  nextSearchMatchHotkey?: string | null
+  prevSearchMatchHotkey?: string | null
 
   // Per-session lookup maps
   sessionOptions?: Map<string, SessionOptions>

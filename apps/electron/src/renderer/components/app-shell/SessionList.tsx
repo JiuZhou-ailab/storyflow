@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { useSetAtom } from "jotai"
 import { isToday, isYesterday, format, startOfDay } from "date-fns"
 import { getDateLocale } from "@craft-agent/shared/i18n"
-import { useAction } from "@/actions"
+import { useAction, useActionLabel } from "@/actions"
 import { Inbox, Archive } from "lucide-react"
 
 import { getSessionStatus } from "@/utils/session"
@@ -27,6 +27,7 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useEscapeInterrupt } from "@/context/EscapeInterruptContext"
 import { useNavigation, useNavigationState, routes, isSessionsNavigation } from "@/contexts/NavigationContext"
 import { useFocusContext } from "@/context/FocusContext"
+import { useAppShellContext } from "@/context/AppShellContext"
 import { sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import type { ViewConfig } from "@craft-agent/shared/views"
 import type { SessionStatusId, SessionStatus } from "@/config/session-status-config"
@@ -144,6 +145,10 @@ export function SessionList({
 }: SessionListProps) {
   const { t, i18n } = useTranslation()
   const setSendToWorkspace = useSetAtom(sendToWorkspaceAtom)
+  const { workspaces, isCompactMode } = useAppShellContext()
+  const hasRemoteWorkspaces = workspaces?.some(w => w.remoteServer) ?? false
+  const { hotkey: nextSearchMatchHotkey } = useActionLabel('chat.nextSearchMatch')
+  const { hotkey: prevSearchMatchHotkey } = useActionLabel('chat.prevSearchMatch')
 
   // --- Selection (atom-backed, shared with ChatDisplay + BatchActionPanel) ---
   const {
@@ -636,6 +641,10 @@ export function SessionList({
     searchQuery: resolvedSearchQuery,
     selectedSessionId: focusedSessionId !== undefined ? focusedSessionId : selectionStore.state.selected,
     isMultiSelectActive,
+    isCompactMode,
+    hasRemoteWorkspaces,
+    nextSearchMatchHotkey,
+    prevSearchMatchHotkey,
     sessionOptions,
     contentSearchResults,
     activeChatMatchInfo,
@@ -648,6 +657,7 @@ export function SessionList({
     handleSelectSessionById, handleOpenInNewWindow, setSendToWorkspace, handleFocusZone, handleKeyDown,
     sessionStatuses, flatLabels, labelById, labels, resolvedSearchQuery,
     focusedSessionId, selectionStore.state.selected, isMultiSelectActive,
+    isCompactMode, hasRemoteWorkspaces, nextSearchMatchHotkey, prevSearchMatchHotkey,
     sessionOptions, contentSearchResults, activeChatMatchInfo, hasPendingPrompt,
   ])
 

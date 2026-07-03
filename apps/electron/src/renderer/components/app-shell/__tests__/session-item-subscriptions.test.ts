@@ -17,6 +17,17 @@ describe('session item subscriptions', () => {
     expect(sessionItemSource).not.toContain('messagingBindingsBySession.get(item.id)')
   })
 
+  it('keeps list-level app shell and action subscriptions out of each row', () => {
+    expect(sessionListSource).toContain("useActionLabel('chat.nextSearchMatch')")
+    expect(sessionListSource).toContain("useActionLabel('chat.prevSearchMatch')")
+    expect(sessionListSource).toContain('hasRemoteWorkspaces,')
+    expect(sessionListSource).toContain('isCompactMode,')
+    expect(sessionItemSource).toContain('ctx.nextSearchMatchHotkey')
+    expect(sessionItemSource).toContain('ctx.prevSearchMatchHotkey')
+    expect(sessionItemSource).not.toContain('useAppShellContext')
+    expect(sessionItemSource).not.toContain('useActionLabel')
+  })
+
   it('reuses a label lookup map instead of scanning labels per row badge', () => {
     expect(sessionListSource).toContain('const labelById = useMemo')
     expect(sessionListSource).toContain('labelById,')

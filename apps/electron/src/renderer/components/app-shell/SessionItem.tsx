@@ -1,7 +1,6 @@
 import { formatDistanceToNowStrict } from "date-fns"
 import type { Locale } from "date-fns"
 import { Flag, ShieldAlert } from "lucide-react"
-import { useActionLabel } from "@/actions"
 import { cn } from "@/lib/utils"
 import { rendererPerf } from "@/lib/perf"
 import { Spinner } from "@craft-agent/ui"
@@ -13,7 +12,6 @@ import { SessionStatusIcon } from "./SessionStatusIcon"
 import { SessionBadges } from "./SessionBadges"
 import { getSessionTitle, getSessionPreviewText, highlightMatch, hasUnreadMeta, shortTimeLocale } from "@/utils/session"
 import { useSessionListContext } from "@/context/SessionListContext"
-import { useAppShellContext } from "@/context/AppShellContext"
 import { navigate, routes } from "@/lib/navigate"
 import type { SessionMeta } from "@/atoms/sessions"
 import { messagingBindingsForSessionAtomFamily } from "@/atoms/messaging"
@@ -54,10 +52,6 @@ export function SessionItem({
   onRangeSelect,
 }: SessionItemProps) {
   const ctx = useSessionListContext()
-  const { workspaces, isCompactMode } = useAppShellContext()
-  const hasRemoteWorkspaces = workspaces?.some(w => w.remoteServer) ?? false
-  const { hotkey: nextHotkey } = useActionLabel('chat.nextSearchMatch')
-  const { hotkey: prevHotkey } = useActionLabel('chat.prevSearchMatch')
   const title = getSessionTitle(item)
   // For the active session, prefer logical match count over ripgrep count
   const activeMatch = ctx.activeChatMatchInfo
@@ -70,7 +64,7 @@ export function SessionItem({
     return ctx.labelById.has(labelId)
   }))
   const hasPendingPrompt = ctx.hasPendingPrompt?.(item.id) ?? false
-  const previewText = isCompactMode ? getSessionPreviewText(item) : null
+  const previewText = ctx.isCompactMode ? getSessionPreviewText(item) : null
   const sessionBindings = useAtomValue(messagingBindingsForSessionAtomFamily(item.id))
   const hasMessagingBinding = sessionBindings.length > 0
 
@@ -132,7 +126,7 @@ export function SessionItem({
           onSessionStatusChange={(s) => ctx.onSessionStatusChange(item.id, s)}
           onOpenInNewWindow={() => ctx.onOpenInNewWindow(item)}
           onSendToWorkspace={ctx.onSendToWorkspace ? () => ctx.onSendToWorkspace!([item.id]) : undefined}
-          hasRemoteWorkspaces={hasRemoteWorkspaces}
+          hasRemoteWorkspaces={ctx.hasRemoteWorkspaces ?? false}
           onDelete={() => ctx.onDelete(item.id)}
         />
       }
@@ -198,7 +192,7 @@ export function SessionItem({
           style={{
             '--shadow-color': isSelected ? '234, 179, 8' : '133, 77, 14',
           } as React.CSSProperties}
-          title={`Matches found (${nextHotkey} next, ${prevHotkey} prev)`}
+          title={`Matches found (${ctx.nextSearchMatchHotkey} next, ${ctx.prevSearchMatchHotkey} prev)`}
         >
           {chatMatchCount}
         </span>
