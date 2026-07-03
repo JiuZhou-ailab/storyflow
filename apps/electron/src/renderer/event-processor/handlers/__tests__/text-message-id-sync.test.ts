@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { handleTextComplete } from '../text'
 import type { SessionState, TextCompleteEvent } from '../../types'
+
+const textHandlerSource = readFileSync(new URL('../text.ts', import.meta.url), 'utf8')
 
 function makeState(messages: any[]): SessionState {
   return {
@@ -14,6 +17,16 @@ function makeState(messages: any[]): SessionState {
 }
 
 describe('handleTextComplete messageId synchronization', () => {
+  it('locates text_complete target with a single reverse scan', () => {
+    const functionStart = textHandlerSource.indexOf('export function handleTextComplete(')
+    const functionEnd = textHandlerSource.indexOf('// Message not found - CREATE IT', functionStart)
+    const completeSource = textHandlerSource.slice(functionStart, functionEnd)
+
+    expect(textHandlerSource).toContain('function findTextCompleteMessage')
+    expect(completeSource).not.toContain('findStreamingMessage(session.messages, event.turnId)')
+    expect(completeSource).not.toContain('findAssistantMessage(session.messages, event.turnId)')
+  })
+
   it('overwrites existing streaming message id with authoritative messageId', () => {
     const state = makeState([
       {
@@ -126,6 +139,44 @@ describe('handleTextComplete messageId synchronization', () => {
     const next = handleTextComplete(state, event)
 
     expect((next.session.messages[0] as any).content).toBe('hello world')
+  })
+
+  it('prefers matching streaming turn before newer unrelated streaming fallback', () => {
+    const state = makeState([
+      {
+        id: 'msg-turn-1',
+        role: 'assistant',
+        content: 'target partial',
+        isStreaming: true,
+        isPending: true,
+        turnId: 'turn-1',
+        timestamp: 100,
+      },
+      {
+        id: 'msg-turn-2',
+        role: 'assistant',
+        content: 'other partial',
+        isStreaming: true,
+        isPending: true,
+        turnId: 'turn-2',
+        timestamp: 200,
+      },
+    ])
+    const event: TextCompleteEvent = {
+      type: 'text_complete',
+      sessionId: 'session-1',
+      text: 'target final',
+      turnId: 'turn-1',
+      messageId: 'msg-main-1',
+      timestamp: 300,
+    }
+
+    const next = handleTextComplete(state, event)
+
+    expect((next.session.messages[0] as any).id).toBe('msg-main-1')
+    expect((next.session.messages[0] as any).content).toBe('target final')
+    expect((next.session.messages[1] as any).id).toBe('msg-turn-2')
+    expect((next.session.messages[1] as any).isStreaming).toBe(true)
   })
 
   it('keeps the original state for duplicate intermediate text_complete data', () => {

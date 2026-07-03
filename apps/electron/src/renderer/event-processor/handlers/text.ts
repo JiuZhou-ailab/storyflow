@@ -9,7 +9,6 @@ import type { SessionState, StreamingState, TextDeltaEvent, TextCompleteEvent } 
 import type { Message } from '../../../shared/types'
 import {
   findStreamingMessage,
-  findAssistantMessage,
   updateMessageAt,
   appendMessage,
   generateMessageId
@@ -21,6 +20,27 @@ function getLastStreamingMessageIndex(messages: Message[], turnId?: string): num
   if (!lastMessage || lastMessage.role !== 'assistant' || !lastMessage.isStreaming) return -1
   if (turnId && lastMessage.turnId !== turnId) return -1
   return lastIndex
+}
+
+function findTextCompleteMessage(messages: Message[], turnId?: string): number {
+  let lastStreamingIndex = -1
+  let matchingAssistantIndex = -1
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (message.role !== 'assistant') continue
+
+    if (message.isStreaming) {
+      if (!turnId || message.turnId === turnId) return i
+      if (lastStreamingIndex === -1) lastStreamingIndex = i
+    }
+
+    if (turnId && message.turnId === turnId && matchingAssistantIndex === -1) {
+      matchingAssistantIndex = i
+    }
+  }
+
+  return lastStreamingIndex !== -1 ? lastStreamingIndex : matchingAssistantIndex
 }
 
 /**
@@ -100,10 +120,7 @@ export function handleTextComplete(
   const { session, streaming } = state
 
   // Find message by turnId (try streaming first, then any assistant)
-  let msgIndex = findStreamingMessage(session.messages, event.turnId)
-  if (msgIndex === -1) {
-    msgIndex = findAssistantMessage(session.messages, event.turnId)
-  }
+  let msgIndex = findTextCompleteMessage(session.messages, event.turnId)
 
   if (msgIndex !== -1) {
     const existingMsg = session.messages[msgIndex]
