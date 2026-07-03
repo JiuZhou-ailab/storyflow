@@ -99,6 +99,7 @@ const EXPECTED_CHANNELS: string[] = [
   'file:storeAttachment',
   'file:write',
   'fs:listDirectory',
+  'fs:listFiles',
   'fs:search',
   'fs:searchBatch',
   'git:compareVersions',

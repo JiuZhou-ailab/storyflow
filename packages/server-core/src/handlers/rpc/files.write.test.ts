@@ -67,7 +67,8 @@ function createFileHarness() {
   const createDirectory = handlers.get(RPC_CHANNELS.file.CREATE_DIRECTORY)
   const searchFiles = handlers.get(RPC_CHANNELS.fs.SEARCH)
   const searchFilesBatch = handlers.get(RPC_CHANNELS.fs.SEARCH_BATCH)
-  if (!readTextFile || !writeFile || !deleteFile || !createDirectory || !searchFiles || !searchFilesBatch) {
+  const listWorkspaceFiles = handlers.get(RPC_CHANNELS.fs.LIST_FILES)
+  if (!readTextFile || !writeFile || !deleteFile || !createDirectory || !searchFiles || !searchFilesBatch || !listWorkspaceFiles) {
     throw new Error('file handlers not registered')
   }
 
@@ -77,7 +78,7 @@ function createFileHarness() {
     webContentsId: 1,
   }
 
-  return { readTextFile, writeFile, deleteFile, createDirectory, searchFiles, searchFilesBatch, ctx }
+  return { readTextFile, writeFile, deleteFile, createDirectory, searchFiles, searchFilesBatch, listWorkspaceFiles, ctx }
 }
 
 function capturePerfMetrics(): CapturedPerfMetric[] {
@@ -113,6 +114,10 @@ describe('file write RPC registration', () => {
     expect(HANDLED_CHANNELS).toContain('fs:searchBatch')
   })
 
+  it('registers the workspace file listing channel', () => {
+    expect(HANDLED_CHANNELS).toContain('fs:listFiles')
+  })
+
   it('records text read latency marks inside the file RPC handler', async () => {
     const { readTextFile, ctx } = createFileHarness()
     const root = await mkdtemp(join(homedir(), '.craft-file-read-'))
@@ -129,6 +134,29 @@ describe('file write RPC registration', () => {
       const metric = metrics.find(item => item.name === 'rpc.file.read')
       expect(metric).toBeDefined()
       expect(metric?.marks.map(mark => mark.name)).toEqual(['path.validated', 'file.read'])
+      expect(metric?.metadata).toEqual(expect.objectContaining({
+        bytes: Buffer.byteLength('outline', 'utf-8'),
+        extension: '.md',
+        file: 'outline.md',
+        status: 'ok',
+      }))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('records text write latency marks inside the file RPC handler', async () => {
+    const { writeFile, ctx } = createFileHarness()
+    const root = await mkdtemp(join(tmpdir(), 'craft-file-write-perf-'))
+    const targetPath = join(root, 'story', 'outline.md')
+    const metrics = capturePerfMetrics()
+
+    try {
+      await writeFile(ctx, targetPath, 'outline')
+
+      const metric = metrics.find(item => item.name === 'rpc.file.write')
+      expect(metric).toBeDefined()
+      expect(metric?.marks.map(mark => mark.name)).toEqual(['path.validated', 'file.written'])
       expect(metric?.metadata).toEqual(expect.objectContaining({
         bytes: Buffer.byteLength('outline', 'utf-8'),
         extension: '.md',
@@ -170,6 +198,30 @@ describe('file write RPC registration', () => {
     expect(filterFileSearchSnapshot(snapshot, '大纲').map(result => result.relativePath)).toEqual([
       '大纲.md',
     ])
+  })
+
+  it('lists known workspace roots without fuzzy search snapshots', async () => {
+    const { listWorkspaceFiles, ctx } = createFileHarness()
+    const root = await mkdtemp(join(tmpdir(), 'craft-file-list-'))
+
+    try {
+      await mkdir(join(root, '正文'), { recursive: true })
+      await mkdir(join(root, '全局'), { recursive: true })
+      await mkdir(join(root, '.craft-agent'), { recursive: true })
+      await writeFile(join(root, '正文', '01.md'), 'body')
+      await writeFile(join(root, '正文', '.gitkeep'), '')
+      await writeFile(join(root, '全局', '大纲.md'), 'outline')
+      await writeFile(join(root, '.craft-agent', 'config.json'), '{}')
+
+      const results = await listWorkspaceFiles(ctx, root, ['正文', '全局']) as Array<{ relativePath: string; type: string }>
+
+      const relativePaths = results.map(result => result.relativePath)
+      expect(relativePaths).toEqual(['全局/大纲.md', '正文/01.md'])
+      expect(results.some(result => result.relativePath.startsWith('.craft-agent/'))).toBe(false)
+      expect(results.some(result => result.relativePath.endsWith('.gitkeep'))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('creates missing parent directories before writing text files', async () => {

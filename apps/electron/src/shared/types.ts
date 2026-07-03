@@ -413,6 +413,7 @@ export interface ElectronAPI {
   // Filesystem search (for @ mention file selection)
   searchFiles(basePath: string, query: string, options?: FileSearchOptions): Promise<FileSearchResult[]>
   searchFilesBatch(basePath: string, requests: FileSearchBatchRequest[]): Promise<FileSearchBatchResult[]>
+  listWorkspaceFiles(basePath: string, rootPaths: string[]): Promise<FileSearchResult[]>
 
   // Server filesystem browsing (remote mode)
   listServerDirectory(dirPath: string): Promise<DirectoryListingResult>

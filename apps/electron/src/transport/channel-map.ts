@@ -193,6 +193,7 @@ export const CHANNEL_MAP = {
   // Filesystem search
   searchFiles: invoke(RPC_CHANNELS.fs.SEARCH),
   searchFilesBatch: invoke(RPC_CHANNELS.fs.SEARCH_BATCH),
+  listWorkspaceFiles: invoke(RPC_CHANNELS.fs.LIST_FILES),
 
   // Server filesystem browsing (remote mode)
   listServerDirectory: invoke(RPC_CHANNELS.fs.LIST_DIRECTORY),

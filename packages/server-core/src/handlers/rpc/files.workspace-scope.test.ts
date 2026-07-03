@@ -79,7 +79,8 @@ function createFileHarness() {
   const writeTextFile = handlers.get(RPC_CHANNELS.file.WRITE)
   const searchFiles = handlers.get(RPC_CHANNELS.fs.SEARCH)
   const searchFilesBatch = handlers.get(RPC_CHANNELS.fs.SEARCH_BATCH)
-  if (!writeTextFile || !searchFiles || !searchFilesBatch) {
+  const listWorkspaceFiles = handlers.get(RPC_CHANNELS.fs.LIST_FILES)
+  if (!writeTextFile || !searchFiles || !searchFilesBatch || !listWorkspaceFiles) {
     throw new Error('file handlers not registered')
   }
 
@@ -89,14 +90,14 @@ function createFileHarness() {
     webContentsId: 1,
   }
 
-  return { writeTextFile, searchFiles, searchFilesBatch, ctx }
+  return { writeTextFile, searchFiles, searchFilesBatch, listWorkspaceFiles, ctx }
 }
 
 describe('workspace-scoped file RPCs', () => {
   it('keeps write and search operations inside the active workspace root', async () => {
     workspaceRootPath = await mkdtemp(join(tmpdir(), 'craft-workspace-root-'))
     const outsideRoot = await mkdtemp(join(tmpdir(), 'craft-workspace-outside-'))
-    const { writeTextFile, searchFiles, searchFilesBatch, ctx } = createFileHarness()
+    const { writeTextFile, searchFiles, searchFilesBatch, listWorkspaceFiles, ctx } = createFileHarness()
 
     try {
       await mkdir(join(workspaceRootPath, '正文'), { recursive: true })
@@ -111,6 +112,7 @@ describe('workspace-scoped file RPCs', () => {
 
       await expect(searchFiles(ctx, outsideRoot, '', { maxResults: 10 })).rejects.toThrow('outside current workspace')
       await expect(searchFilesBatch(ctx, outsideRoot, [{ query: '' }])).rejects.toThrow('outside current workspace')
+      await expect(listWorkspaceFiles(ctx, outsideRoot, ['正文'])).rejects.toThrow('outside current workspace')
     } finally {
       rmSync(workspaceRootPath, { recursive: true, force: true })
       rmSync(outsideRoot, { recursive: true, force: true })
@@ -121,7 +123,7 @@ describe('workspace-scoped file RPCs', () => {
   it('reuses workspace root realpath across scoped operations', async () => {
     workspaceRootPath = await mkdtemp(join(tmpdir(), 'craft-workspace-root-cache-'))
     workspaceRootRealpathCalls = 0
-    const { writeTextFile, searchFiles, searchFilesBatch, ctx } = createFileHarness()
+    const { writeTextFile, searchFiles, searchFilesBatch, listWorkspaceFiles, ctx } = createFileHarness()
 
     try {
       const manuscriptDir = join(workspaceRootPath, '正文')
@@ -130,6 +132,7 @@ describe('workspace-scoped file RPCs', () => {
 
       await searchFiles(ctx, manuscriptDir, '01.md', { maxResults: 10 })
       await searchFilesBatch(ctx, manuscriptDir, [{ query: '01.md', options: { mode: 'path' } }])
+      await listWorkspaceFiles(ctx, workspaceRootPath, ['正文'])
       await writeTextFile(ctx, join(manuscriptDir, '02.md'), 'new')
 
       expect(workspaceRootRealpathCalls).toBe(1)

@@ -3,7 +3,7 @@
 // pos: Shared guard for file CRUD/search handlers that must stay inside the active project
 
 import { realpath } from 'fs/promises'
-import { resolve } from 'path'
+import { isAbsolute, resolve } from 'path'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { validateFilePath } from '@craft-agent/server-core/handlers'
 import type { RequestContext } from '@craft-agent/server-core/transport'
@@ -69,6 +69,14 @@ export async function validateWorkspaceFilePath(ctx: RequestContext, deps: Handl
 }
 
 export async function validateWorkspaceSearchBasePath(ctx: RequestContext, deps: HandlerDeps, path: string): Promise<string> {
-  if (!resolveContextWorkspaceId(ctx, deps)) return path
+  const workspaceId = resolveContextWorkspaceId(ctx, deps)
+  if (!workspaceId) return path
+  const workspace = getWorkspaceByNameOrId(workspaceId)
+  if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
+
+  const rootPaths = await getRootComparablePaths(workspace.rootPath)
+  const comparablePath = normalizeRootComparablePath(path)
+  if (isAbsolute(path) && rootPaths.includes(comparablePath)) return path
+
   return validateWorkspaceFilePath(ctx, deps, path)
 }

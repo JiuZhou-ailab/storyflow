@@ -46,6 +46,7 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.file.GENERATE_THUMBNAIL,
   RPC_CHANNELS.fs.SEARCH,
   RPC_CHANNELS.fs.SEARCH_BATCH,
+  RPC_CHANNELS.fs.LIST_FILES,
   RPC_CHANNELS.fs.LIST_DIRECTORY,
 ] as const
 
@@ -58,6 +59,8 @@ type FileSearchEntry = {
 
 const FILE_SEARCH_MAX_RESULTS = 50
 const FILE_SEARCH_BATCH_MAX_ENTRIES = 5000
+const FILE_LIST_MAX_ROOTS = 64
+const FILE_LIST_MAX_ENTRIES = 5000
 const inFlightFileSearchBatches = new Map<string, Promise<FileSearchBatchResult[]>>()
 
 const FILE_SEARCH_SKIP_DIRS = new Set([
@@ -231,6 +234,97 @@ async function collectDirectPathSearchResults(
   return results
 }
 
+function pushFileListEntry(entries: FileSearchEntry[], seenPaths: Set<string>, entry: FileSearchEntry): void {
+  if (seenPaths.has(entry.path)) return
+  seenPaths.add(entry.path)
+  entries.push(entry)
+}
+
+async function collectWorkspaceFileList(
+  basePath: string,
+  rootPaths: readonly string[],
+  maxEntries = FILE_LIST_MAX_ENTRIES,
+): Promise<FileSearchEntry[]> {
+  const entries: FileSearchEntry[] = []
+  const seenPaths = new Set<string>()
+  const seenRoots = new Set<string>()
+  const resolvedBasePath = resolve(basePath).replace(/\\/g, '/').replace(/\/+$/, '')
+
+  for (const rawRootPath of rootPaths.slice(0, FILE_LIST_MAX_ROOTS)) {
+    if (entries.length >= maxEntries) break
+
+    const normalizedRoot = normalizeSearchPathQuery(rawRootPath)
+    if (!normalizedRoot || seenRoots.has(normalizedRoot)) continue
+    seenRoots.add(normalizedRoot)
+
+    const rootPath = resolve(basePath, normalizedRoot).replace(/\\/g, '/')
+    if (!isPathInsideRoot(rootPath, resolvedBasePath)) continue
+
+    let rootStat: Awaited<ReturnType<typeof stat>>
+    try {
+      rootStat = await stat(rootPath)
+    } catch {
+      continue
+    }
+
+    const rootName = parsePath(rootPath).base
+    if (!rootStat.isDirectory()) {
+      pushFileListEntry(entries, seenPaths, {
+        name: rootName,
+        path: rootPath,
+        type: 'file',
+        relativePath: normalizedRoot,
+      })
+      continue
+    }
+
+    let queue = ['']
+    while (queue.length > 0 && entries.length < maxEntries) {
+      const nextQueue: string[] = []
+
+      for (const relDir of queue) {
+        if (entries.length >= maxEntries) break
+
+        const absDir = relDir ? join(rootPath, relDir) : rootPath
+        let dirEntries: import('fs').Dirent[]
+        try {
+          dirEntries = await readdir(absDir, { withFileTypes: true })
+        } catch {
+          dirEntries = []
+        }
+
+        for (const entry of dirEntries) {
+          if (entries.length >= maxEntries) break
+
+          const name = entry.name
+          if (name.startsWith('.') || FILE_SEARCH_SKIP_DIRS.has(name)) continue
+
+          const childRelativeToRoot = relDir ? `${relDir}/${name}` : name
+          const relativePath = `${normalizedRoot}/${childRelativeToRoot}`
+          const isDir = entry.isDirectory()
+
+          if (isDir) {
+            nextQueue.push(childRelativeToRoot)
+            continue
+          }
+
+          pushFileListEntry(entries, seenPaths, {
+            name,
+            path: join(rootPath, childRelativeToRoot),
+            type: 'file',
+            relativePath,
+          })
+        }
+      }
+
+      queue = nextQueue
+    }
+  }
+
+  entries.sort((a, b) => a.relativePath.localeCompare(b.relativePath, undefined, { numeric: true, sensitivity: 'base' }))
+  return entries
+}
+
 async function searchFilesInBase(
   basePath: string,
   query: string,
@@ -395,20 +489,32 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
   })
 
   server.handle(RPC_CHANNELS.file.WRITE, async (ctx, path: string, content: string) => {
+    const workspaceId = resolveContextWorkspaceId(ctx, deps)
+    const writeSpan = perf.span('rpc.file.write', { workspaceId: workspaceId ?? null })
+
     try {
       if (typeof content !== 'string') {
         throw new Error('File content must be a string')
       }
 
-      const workspaceId = resolveContextWorkspaceId(ctx, deps)
       const safePath = await validateWorkspaceFilePath(ctx, deps, path)
+      const parsedPath = parsePath(safePath)
+      writeSpan.setMetadata('file', parsedPath.base)
+      writeSpan.setMetadata('extension', parsedPath.ext || null)
+      writeSpan.mark('path.validated')
       await mkdir(dirname(safePath), { recursive: true })
       await writeFile(safePath, content, 'utf-8')
+      writeSpan.mark('file.written')
+      writeSpan.setMetadata('status', 'ok')
+      writeSpan.setMetadata('bytes', Buffer.byteLength(content, 'utf-8'))
       notifyConfigWatcherForWrite(deps, workspaceId, safePath)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
+      writeSpan.setMetadata('status', 'error')
       deps.platform.logger.error('writeFile error:', path, message)
       throw new Error(`Failed to write file: ${message}`)
+    } finally {
+      writeSpan.end()
     }
   })
 
@@ -914,6 +1020,27 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
       return await searchPromise
     } finally {
       inFlightFileSearchBatches.delete(batchKey)
+    }
+  })
+
+  // Purpose-built workspace file listing for known project roots. Unlike search,
+  // this does not build fuzzy snapshots or query-match unknown directories.
+  server.handle(RPC_CHANNELS.fs.LIST_FILES, async (ctx, basePath: string, rootPaths: string[]): Promise<FileSearchEntry[]> => {
+    const safeRootPaths = Array.isArray(rootPaths) ? rootPaths.slice(0, FILE_LIST_MAX_ROOTS) : []
+    deps.platform.logger.debug('[FS_LIST_FILES] called:', basePath, safeRootPaths.length)
+
+    const safeBasePath = await validateWorkspaceSearchBasePath(ctx, deps, basePath)
+    const listSpan = perf.span('fs.listFiles', {
+      basePath: safeBasePath,
+      rootCount: safeRootPaths.length,
+    })
+
+    try {
+      const results = await collectWorkspaceFileList(safeBasePath, safeRootPaths)
+      listSpan.setMetadata('resultCount', results.length)
+      return results
+    } finally {
+      listSpan.end()
     }
   })
 
