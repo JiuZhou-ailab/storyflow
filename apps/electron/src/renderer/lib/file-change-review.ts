@@ -100,7 +100,8 @@ export function buildRejectFileChangesOperation(
   }
 
   let content = currentContent
-  for (const change of [...reviewableChanges].reverse()) {
+  for (let i = reviewableChanges.length - 1; i >= 0; i -= 1) {
+    const change = reviewableChanges[i]!
     const rejected = buildRejectFileChangeOperation(change, content)
     if (!rejected.ok) return rejected
     if (rejected.operation === 'delete') return rejected

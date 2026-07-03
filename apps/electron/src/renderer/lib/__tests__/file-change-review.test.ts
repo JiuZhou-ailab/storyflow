@@ -3,6 +3,7 @@
 // pos: Guards novel review actions against unsafe filesystem rollback
 
 import { describe, expect, it } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import type { FileChange } from '@craft-agent/ui'
 import {
   buildRejectFileChangeOperation,
@@ -10,6 +11,8 @@ import {
   buildReviewFileChange,
   resolveReviewFileChangeSnapshot,
 } from '../file-change-review'
+
+const fileChangeReviewSource = readFileSync(new URL('../file-change-review.ts', import.meta.url), 'utf8')
 
 function change(overrides: Partial<FileChange> = {}): FileChange {
   return {
@@ -25,6 +28,11 @@ function change(overrides: Partial<FileChange> = {}): FileChange {
 }
 
 describe('buildRejectFileChangeOperation', () => {
+  it('applies batch rejections in reverse order without cloning the reviewable changes', () => {
+    expect(fileChangeReviewSource).not.toContain('[...reviewableChanges].reverse()')
+    expect(fileChangeReviewSource).toContain('for (let i = reviewableChanges.length - 1; i >= 0; i -= 1)')
+  })
+
   it('replaces a uniquely matched modified snippet with the original snippet', () => {
     const result = buildRejectFileChangeOperation(
       change({ changeKind: 'modify', original: 'quiet room', modified: 'crowded room' }),
