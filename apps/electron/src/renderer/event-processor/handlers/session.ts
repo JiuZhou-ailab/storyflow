@@ -45,6 +45,10 @@ import type {
 import type { Message } from '../../../shared/types'
 import { generateMessageId, appendMessage } from '../helpers'
 
+function sameStringList(a: readonly string[] | undefined, b: readonly string[]): boolean {
+  return (a?.length ?? 0) === b.length && b.every((value, index) => a?.[index] === value)
+}
+
 /**
  * Handle complete - agent loop finished
  *
@@ -652,6 +656,9 @@ export function handleSourcesChanged(
   event: SourcesChangedEvent
 ): ProcessResult {
   const { session, streaming } = state
+  if (sameStringList(session.enabledSourceSlugs, event.enabledSourceSlugs)) {
+    return { state, effects: [] }
+  }
 
   return {
     state: {
@@ -673,6 +680,9 @@ export function handleLabelsChanged(
   event: LabelsChangedEvent
 ): ProcessResult {
   const { session, streaming } = state
+  if (sameStringList(session.labels, event.labels)) {
+    return { state, effects: [] }
+  }
 
   return {
     state: {

@@ -2,15 +2,19 @@ import { describe, expect, it } from 'bun:test'
 import {
   handleAsyncOperation,
   handleConnectionChanged,
+  handleLabelsChanged,
   handleSessionModelChanged,
   handleSessionStatusChanged,
+  handleSourcesChanged,
 } from './session'
 import type {
   AsyncOperationEvent,
+  LabelsChangedEvent,
   LLMConnectionChangedEvent,
   SessionModelChangedEvent,
   SessionStatusChangedEvent,
   SessionState,
+  SourcesChangedEvent,
 } from '../types'
 
 function makeState(sessionFields: Record<string, unknown>): SessionState {
@@ -68,5 +72,27 @@ describe('session event no-op guards', () => {
     }
 
     expect(handleSessionStatusChanged(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state for duplicate labels', () => {
+    const state = makeState({ labels: ['draft', 'urgent'] })
+    const event: LabelsChangedEvent = {
+      type: 'labels_changed',
+      sessionId: 'session-1',
+      labels: ['draft', 'urgent'],
+    }
+
+    expect(handleLabelsChanged(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state for duplicate enabled sources', () => {
+    const state = makeState({ enabledSourceSlugs: ['github', 'docs'] })
+    const event: SourcesChangedEvent = {
+      type: 'sources_changed',
+      sessionId: 'session-1',
+      enabledSourceSlugs: ['github', 'docs'],
+    }
+
+    expect(handleSourcesChanged(state, event).state).toBe(state)
   })
 })
