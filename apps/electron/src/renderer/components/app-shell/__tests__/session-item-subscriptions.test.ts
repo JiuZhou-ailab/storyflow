@@ -8,6 +8,7 @@ import { describe, expect, it } from 'bun:test'
 const sessionItemSource = readFileSync(new URL('../SessionItem.tsx', import.meta.url), 'utf-8')
 const sessionBadgesSource = readFileSync(new URL('../SessionBadges.tsx', import.meta.url), 'utf-8')
 const sessionListSource = readFileSync(new URL('../SessionList.tsx', import.meta.url), 'utf-8')
+const sessionInfoPopoverSource = readFileSync(new URL('../SessionInfoPopover.tsx', import.meta.url), 'utf-8')
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf-8')
 
 describe('session item subscriptions', () => {
@@ -78,5 +79,16 @@ describe('session item subscriptions', () => {
     expect(matchInfoResetSource).toContain('prev.sessionId === null && prev.count === 0 && prev.index === 0')
     expect(matchInfoResetSource).toContain('return prev')
     expect(matchInfoResetSource).not.toContain('setChatMatchInfo({ sessionId: null, count: 0, index: 0 })')
+  })
+
+  it('keeps session info popover on metadata instead of full session updates', () => {
+    const contentSource = sessionInfoPopoverSource.slice(
+      sessionInfoPopoverSource.indexOf('function SessionInfoPopoverContent'),
+      sessionInfoPopoverSource.indexOf('React.useEffect(() => {', sessionInfoPopoverSource.indexOf('function SessionInfoPopoverContent'))
+    )
+
+    expect(sessionInfoPopoverSource).toContain('sessionMetaAtomFamily')
+    expect(contentSource).toContain('useAtomValue(sessionMetaAtomFamily(sessionId))')
+    expect(contentSource).not.toContain('useSession(sessionId)')
   })
 })

@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer'
 import { Input } from '@/components/ui/input'
-import { useAppShellContext, useSession } from '@/context/AppShellContext'
+import { useAtomValue } from 'jotai'
+import { sessionMetaAtomFamily } from '@/atoms/sessions'
+import { useAppShellContext } from '@/context/AppShellContext'
 import { cn } from '@/lib/utils'
 import { SessionFilesSection } from '../right-sidebar/SessionFilesSection'
 
@@ -99,14 +101,14 @@ export function SessionInfoPopover({
 
 function SessionInfoPopoverContent({ sessionId, sessionFolderPath }: { sessionId: string; sessionFolderPath?: string }) {
   const { t } = useTranslation()
-  const session = useSession(sessionId)
+  const sessionMeta = useAtomValue(sessionMetaAtomFamily(sessionId))
   const { onRenameSession } = useAppShellContext()
   const [name, setName] = React.useState('')
   const renameTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   React.useEffect(() => {
-    setName(session?.name || '')
-  }, [session?.name])
+    setName(sessionMeta?.name || '')
+  }, [sessionMeta?.name])
 
   React.useEffect(() => {
     return () => {
