@@ -59,9 +59,6 @@ export function useBackgroundTasks({ sessionId }: UseBackgroundTasksOptions): Us
   }, [setTasks])
 
   const killTask = useCallback(async (taskId: string, type: 'agent' | 'shell') => {
-    // Find the task to get its toolUseId
-    const task = tasks.find(t => t.id === taskId)
-
     if (type === 'shell') {
       // Use KillShell IPC for shells
       try {
@@ -76,10 +73,8 @@ export function useBackgroundTasks({ sessionId }: UseBackgroundTasksOptions): Us
     }
 
     // Always remove from UI after kill attempt
-    if (task) {
-      setTasks(prev => removeBackgroundTaskById(prev, taskId))
-    }
-  }, [sessionId, tasks, setTasks])
+    setTasks(prev => removeBackgroundTaskById(prev, taskId))
+  }, [sessionId, setTasks])
 
   return {
     tasks,
