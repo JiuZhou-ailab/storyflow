@@ -253,6 +253,10 @@ export function handleInfo(
 
   // If this is a compaction complete, update the existing compacting message and clear currentStatus
   if (event.statusType === 'compaction_complete') {
+    if (!session.messages.some(m => m.role === 'status' && m.statusType === 'compacting')) {
+      return { state, effects: [] }
+    }
+
     const updatedMessages = session.messages.map(m =>
       m.role === 'status' && m.statusType === 'compacting'
         ? { ...m, role: 'info' as const, content: event.message, statusType: 'compaction_complete' as const, infoLevel: event.level }

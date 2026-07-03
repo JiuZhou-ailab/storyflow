@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   handleAsyncOperation,
   handleConnectionChanged,
+  handleInfo,
   handleLabelsChanged,
   handleMessageAnnotationsUpdated,
   handleNameChanged,
@@ -22,6 +23,7 @@ import {
 } from './session'
 import type {
   AsyncOperationEvent,
+  InfoEvent,
   LabelsChangedEvent,
   LLMConnectionChangedEvent,
   MessageAnnotationsUpdatedEvent,
@@ -281,5 +283,24 @@ describe('session event no-op guards', () => {
     }
 
     expect(handleMessageAnnotationsUpdated(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state when compaction completion has no compacting message', () => {
+    const state = makeState({
+      messages: [
+        { id: 'msg-1', role: 'user', content: 'hello' },
+        { id: 'info-1', role: 'info', content: 'done' },
+      ],
+      currentStatus: undefined,
+    })
+    const event: InfoEvent = {
+      type: 'info',
+      sessionId: 'session-1',
+      message: 'Compaction complete',
+      statusType: 'compaction_complete',
+      level: 'success',
+    }
+
+    expect(handleInfo(state, event).state).toBe(state)
   })
 })
