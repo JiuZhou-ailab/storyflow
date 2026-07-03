@@ -2,6 +2,7 @@ import { describe, it, expect } from 'bun:test'
 import {
   MAX_RECENT_WORKING_DIRS,
   addPathToRecentWorkingDirs,
+  createRecentWorkingDirItems,
   removePathFromRecentWorkingDirs,
   normalizeRecentWorkingDirs,
 } from '../working-directory-history'
@@ -58,6 +59,21 @@ describe('working-directory-history', () => {
       expect(result.length).toBe(MAX_RECENT_WORKING_DIRS)
       expect(result[0]).toBe('/dir-0')
       expect(result[MAX_RECENT_WORKING_DIRS - 1]).toBe(`/dir-${MAX_RECENT_WORKING_DIRS - 1}`)
+    })
+  })
+
+  describe('createRecentWorkingDirItems', () => {
+    it('excludes the current directory and sorts by precomputed folder name', () => {
+      const items = createRecentWorkingDirItems([
+        '/workspace/beta',
+        '/workspace/Alpha',
+        '/workspace/current',
+      ], '/workspace/current')
+
+      expect(items).toEqual([
+        { path: '/workspace/Alpha', name: 'Alpha' },
+        { path: '/workspace/beta', name: 'beta' },
+      ])
     })
   })
 })

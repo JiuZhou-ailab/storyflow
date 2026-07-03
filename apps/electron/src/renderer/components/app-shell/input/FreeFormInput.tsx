@@ -93,6 +93,7 @@ import {
   getRecentWorkingDirs,
   addRecentWorkingDir,
   removeRecentWorkingDir,
+  createRecentWorkingDirItems,
 } from './working-directory-history'
 import { CompactPermissionModeSelector } from './CompactPermissionModeSelector'
 import { formatTokenCount, resolveContextUsage } from './context-usage'
@@ -2554,14 +2555,10 @@ function WorkingDirectoryBadge({
     setRecentDirs(removeRecentWorkingDir(path, workspaceId))
   }
 
-  // Filter out current directory from recent list and sort alphabetically by folder name
-  const filteredRecent = recentDirs
-    .filter(p => p !== workingDirectory)
-    .sort((a, b) => {
-      const nameA = getPathBasename(a).toLowerCase()
-      const nameB = getPathBasename(b).toLowerCase()
-      return nameA.localeCompare(nameB)
-    })
+  const filteredRecent = React.useMemo(
+    () => createRecentWorkingDirItems(recentDirs, workingDirectory),
+    [recentDirs, workingDirectory],
+  )
   // Show filter input only when more than 5 recent folders
   const showFilter = filteredRecent.length > 5
 
@@ -2639,8 +2636,7 @@ function WorkingDirectoryBadge({
             )}
 
             {/* Recent Directories - filterable (current directory already filtered out via filteredRecent) */}
-            {filteredRecent.map((path) => {
-              const recentFolderName = getPathBasename(path) || 'Folder'
+            {filteredRecent.map(({ path, name: recentFolderName }) => {
               return (
                 <CommandPrimitive.Item
                   key={path}

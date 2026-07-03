@@ -1,6 +1,15 @@
+// input: Recent working directory paths and workspace-scoped local storage
+// output: Normalized recent working directory history and display-ready folder items
+// pos: Shared helper layer for chat composer working-directory history
 import * as storage from '@/lib/local-storage'
+import { getPathBasename } from '@/lib/platform'
 
 export const MAX_RECENT_WORKING_DIRS = 25
+
+export interface RecentWorkingDirItem {
+  path: string
+  name: string
+}
 
 /**
  * Add a directory path to recent history.
@@ -50,6 +59,17 @@ export function normalizeRecentWorkingDirs(
   }
 
   return unique
+}
+
+export function createRecentWorkingDirItems(paths: string[], currentPath?: string): RecentWorkingDirItem[] {
+  return paths
+    .filter(path => path !== currentPath)
+    .map(path => {
+      const name = getPathBasename(path) || 'Folder'
+      return { path, name, sortName: name.toLowerCase() }
+    })
+    .sort((a, b) => a.sortName.localeCompare(b.sortName))
+    .map(({ path, name }) => ({ path, name }))
 }
 
 /** Read recent working directories from local storage (workspace-scoped when workspaceId provided). */
