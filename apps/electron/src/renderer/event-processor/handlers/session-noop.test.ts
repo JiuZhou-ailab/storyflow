@@ -11,6 +11,7 @@ import {
   handleSessionUnarchived,
   handleSessionUnflagged,
   handleSourcesChanged,
+  handleTitleGenerated,
   handleTitleRegenerating,
   handleWorkingDirectoryChanged,
 } from './session'
@@ -27,6 +28,7 @@ import type {
   SessionUnarchivedEvent,
   SessionUnflaggedEvent,
   SourcesChangedEvent,
+  TitleGeneratedEvent,
   TitleRegeneratingEvent,
   WorkingDirectoryChangedEvent,
 } from '../types'
@@ -130,6 +132,17 @@ describe('session event no-op guards', () => {
     }
 
     expect(handleTitleRegenerating(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state for duplicate generated title when not regenerating', () => {
+    const state = makeState({ name: 'Draft title', isRegeneratingTitle: false })
+    const event: TitleGeneratedEvent = {
+      type: 'title_generated',
+      sessionId: 'session-1',
+      title: 'Draft title',
+    }
+
+    expect(handleTitleGenerated(state, event).state).toBe(state)
   })
 
   it('keeps the original state for duplicate working directory', () => {

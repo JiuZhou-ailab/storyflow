@@ -368,6 +368,9 @@ export function handleTitleGenerated(
   event: TitleGeneratedEvent
 ): ProcessResult {
   const { session, streaming } = state
+  if (session.name === event.title && session.isRegeneratingTitle === false) {
+    return { state, effects: [] }
+  }
 
   return {
     state: {
