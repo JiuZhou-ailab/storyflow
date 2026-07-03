@@ -474,10 +474,14 @@ export function handleSessionModelChanged(
   event: SessionModelChangedEvent
 ): ProcessResult {
   const { session, streaming } = state
+  const model = event.model ?? undefined
+  if (session.model === model) {
+    return { state, effects: [] }
+  }
 
   return {
     state: {
-      session: { ...session, model: event.model ?? undefined },
+      session: { ...session, model },
       streaming,
     },
     effects: [],

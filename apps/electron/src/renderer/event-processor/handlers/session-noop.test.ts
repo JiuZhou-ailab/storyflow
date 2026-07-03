@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'bun:test'
-import { handleAsyncOperation } from './session'
-import type { AsyncOperationEvent, SessionState } from '../types'
+import { handleAsyncOperation, handleSessionModelChanged } from './session'
+import type { AsyncOperationEvent, SessionModelChangedEvent, SessionState } from '../types'
 
-function makeState(isAsyncOperationOngoing: boolean): SessionState {
+function makeState(sessionFields: Record<string, unknown>): SessionState {
   return {
     session: {
       id: 'session-1',
       messages: [],
-      isAsyncOperationOngoing,
+      ...sessionFields,
     } as any,
     streaming: null,
   }
@@ -15,7 +15,7 @@ function makeState(isAsyncOperationOngoing: boolean): SessionState {
 
 describe('session event no-op guards', () => {
   it('keeps the original state for duplicate async operation status', () => {
-    const state = makeState(true)
+    const state = makeState({ isAsyncOperationOngoing: true })
     const event: AsyncOperationEvent = {
       type: 'async_operation',
       sessionId: 'session-1',
@@ -23,5 +23,16 @@ describe('session event no-op guards', () => {
     }
 
     expect(handleAsyncOperation(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state for duplicate session model', () => {
+    const state = makeState({ model: 'gpt-5' })
+    const event: SessionModelChangedEvent = {
+      type: 'session_model_changed',
+      sessionId: 'session-1',
+      model: 'gpt-5',
+    }
+
+    expect(handleSessionModelChanged(state, event).state).toBe(state)
   })
 })
