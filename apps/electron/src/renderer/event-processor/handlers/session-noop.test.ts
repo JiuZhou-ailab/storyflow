@@ -4,6 +4,7 @@ import {
   handleConnectionChanged,
   handleLabelsChanged,
   handleNameChanged,
+  handleQueuedMessageRemoved,
   handleSessionArchived,
   handleSessionFlagged,
   handleSessionModelChanged,
@@ -23,6 +24,7 @@ import type {
   LabelsChangedEvent,
   LLMConnectionChangedEvent,
   NameChangedEvent,
+  QueuedMessageRemovedEvent,
   SessionArchivedEvent,
   SessionFlaggedEvent,
   SessionModelChangedEvent,
@@ -244,5 +246,21 @@ describe('session event no-op guards', () => {
     }
 
     expect(handleUsageUpdate(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state when queued removal target is missing', () => {
+    const state = makeState({
+      messages: [
+        { id: 'msg-1', role: 'user', content: 'first' },
+        { id: 'msg-3', role: 'user', content: 'queued two', isQueued: true },
+      ],
+    })
+    const event: QueuedMessageRemovedEvent = {
+      type: 'queued_message_removed',
+      sessionId: 'session-1',
+      messageId: 'msg-2',
+    }
+
+    expect(handleQueuedMessageRemoved(state, event).state).toBe(state)
   })
 })
