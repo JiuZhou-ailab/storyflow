@@ -316,4 +316,75 @@ describe('file write RPC registration', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  it('coalesces identical concurrent batch filesystem searches', async () => {
+    const { searchFilesBatch, ctx } = createFileHarness()
+    const root = await mkdtemp(join(tmpdir(), 'craft-file-search-coalesce-'))
+    const metrics = capturePerfMetrics()
+    const requests = [
+      { query: '正文', options: { mode: 'path', includeDescendants: false } },
+      { query: '大纲.md', options: { mode: 'path', includeDescendants: false } },
+    ]
+
+    try {
+      await mkdir(join(root, '正文'), { recursive: true })
+      await writeFile(join(root, '大纲.md'), 'outline')
+
+      const [first, second] = await Promise.all([
+        searchFilesBatch(ctx, root, requests),
+        searchFilesBatch(ctx, root, requests),
+      ]) as Array<Array<{ query: string; results: Array<{ relativePath: string }> }>>
+
+      expect(second).toEqual(first)
+      expect(metrics.filter(item => item.name === 'fs.searchBatch')).toHaveLength(1)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps global batch search coalescing scoped to one client', async () => {
+    const { searchFilesBatch, ctx } = createFileHarness()
+    const root = await mkdtemp(join(tmpdir(), 'craft-file-search-client-scope-'))
+    const metrics = capturePerfMetrics()
+    const requests = [
+      { query: '正文', options: { mode: 'path', includeDescendants: false } },
+    ]
+
+    try {
+      await mkdir(join(root, '正文'), { recursive: true })
+
+      await Promise.all([
+        searchFilesBatch(ctx, root, requests),
+        searchFilesBatch({ ...ctx, clientId: 'client-2' }, root, requests),
+      ])
+
+      expect(metrics.filter(item => item.name === 'fs.searchBatch')).toHaveLength(2)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not coalesce different batch filesystem search signatures', async () => {
+    const { searchFilesBatch, ctx } = createFileHarness()
+    const root = await mkdtemp(join(tmpdir(), 'craft-file-search-signature-'))
+    const metrics = capturePerfMetrics()
+
+    try {
+      await mkdir(join(root, '正文', '第一卷'), { recursive: true })
+      await writeFile(join(root, '正文', '第一卷', '01.md'), 'chapter')
+
+      await Promise.all([
+        searchFilesBatch(ctx, root, [
+          { query: '正文', options: { mode: 'path', includeDescendants: false } },
+        ]),
+        searchFilesBatch(ctx, root, [
+          { query: '正文', options: { mode: 'path', includeDescendants: true } },
+        ]),
+      ])
+
+      expect(metrics.filter(item => item.name === 'fs.searchBatch')).toHaveLength(2)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })

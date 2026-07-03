@@ -58,6 +58,7 @@ type FileSearchEntry = {
 
 const FILE_SEARCH_MAX_RESULTS = 50
 const FILE_SEARCH_BATCH_MAX_ENTRIES = 5000
+const inFlightFileSearchBatches = new Map<string, Promise<FileSearchBatchResult[]>>()
 
 const FILE_SEARCH_SKIP_DIRS = new Set([
   'node_modules', '.git', '.svn', '.hg', 'dist', 'build',
@@ -78,6 +79,15 @@ export function summarizeFileSearchBatch(
     requestCount: requests.length,
     uniqueRootCount: requests.length > 0 && basePath.trim() ? 1 : 0,
   }
+}
+
+function getFileSearchBatchKey(scope: string, basePath: string, requests: FileSearchBatchRequest[]): string {
+  return JSON.stringify([scope, basePath, requests.map(({ query, options }) => [
+    query,
+    options?.mode ?? null,
+    options?.includeDescendants ?? null,
+    options?.maxResults ?? null,
+  ])])
 }
 
 export function filterFileSearchSnapshot(
@@ -832,64 +842,78 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
   server.handle(RPC_CHANNELS.fs.SEARCH_BATCH, async (ctx, basePath: string, requests: FileSearchBatchRequest[]): Promise<FileSearchBatchResult[]> => {
     const safeRequests = Array.isArray(requests) ? requests.slice(0, 100) : []
     const fuzzyRequests = safeRequests.filter((request) => request.options?.mode !== 'path')
-    const searchSummary = summarizeFileSearchBatch(basePath, safeRequests)
-    const searchSpan = perf.span('fs.searchBatch', {
-      basePath,
-      requestCount: searchSummary.requestCount,
-      uniqueRootCount: searchSummary.uniqueRootCount,
-    })
     deps.platform.logger.debug('[FS_SEARCH_BATCH] called:', basePath, safeRequests.length)
 
-    try {
-      const safeBasePath = await validateWorkspaceSearchBasePath(ctx, deps, basePath)
-      const snapshot = fuzzyRequests.length > 0
-        ? await collectFileSearchSnapshot(safeBasePath, FILE_SEARCH_BATCH_MAX_ENTRIES, FILE_SEARCH_SKIP_DIRS)
-        : []
-      if (fuzzyRequests.length > 0) {
-        searchSpan.mark('snapshot.collected')
-      }
-      searchSpan.setMetadata('snapshotEntryCount', snapshot.length)
+    const safeBasePath = await validateWorkspaceSearchBasePath(ctx, deps, basePath)
+    const batchScope = resolveContextWorkspaceId(ctx, deps) ?? `client:${ctx.clientId}`
+    const batchKey = getFileSearchBatchKey(batchScope, safeBasePath, safeRequests)
+    const inFlight = inFlightFileSearchBatches.get(batchKey)
+    if (inFlight) return inFlight
 
-      const resultSets = await Promise.all(
-        safeRequests.map(async (request) => {
-          try {
-            const directPathResults = await collectDirectPathSearchResults(
-              safeBasePath,
-              request.query,
-              resolveFileSearchMaxResults(request.options),
-              FILE_SEARCH_SKIP_DIRS,
-              request.options?.includeDescendants !== false
-            )
-            if (directPathResults) {
+    const searchPromise = (async () => {
+      const searchSummary = summarizeFileSearchBatch(safeBasePath, safeRequests)
+      const searchSpan = perf.span('fs.searchBatch', {
+        basePath: safeBasePath,
+        requestCount: searchSummary.requestCount,
+        uniqueRootCount: searchSummary.uniqueRootCount,
+      })
+      try {
+        const snapshot = fuzzyRequests.length > 0
+          ? await collectFileSearchSnapshot(safeBasePath, FILE_SEARCH_BATCH_MAX_ENTRIES, FILE_SEARCH_SKIP_DIRS)
+          : []
+        if (fuzzyRequests.length > 0) {
+          searchSpan.mark('snapshot.collected')
+        }
+        searchSpan.setMetadata('snapshotEntryCount', snapshot.length)
+
+        const resultSets = await Promise.all(
+          safeRequests.map(async (request) => {
+            try {
+              const directPathResults = await collectDirectPathSearchResults(
+                safeBasePath,
+                request.query,
+                resolveFileSearchMaxResults(request.options),
+                FILE_SEARCH_SKIP_DIRS,
+                request.options?.includeDescendants !== false
+              )
+              if (directPathResults) {
+                return {
+                  query: request.query,
+                  results: directPathResults,
+                }
+              }
+              if (request.options?.mode === 'path') {
+                return {
+                  query: request.query,
+                  results: [],
+                }
+              }
               return {
                 query: request.query,
-                results: directPathResults,
+                results: filterFileSearchSnapshot(snapshot, request.query, resolveFileSearchMaxResults(request.options)),
               }
-            }
-            if (request.options?.mode === 'path') {
+            } catch (err) {
+              deps.platform.logger.error('[FS_SEARCH_BATCH] query error:', request.query, err)
               return {
                 query: request.query,
                 results: [],
               }
             }
-            return {
-              query: request.query,
-              results: filterFileSearchSnapshot(snapshot, request.query, resolveFileSearchMaxResults(request.options)),
-            }
-          } catch (err) {
-            deps.platform.logger.error('[FS_SEARCH_BATCH] query error:', request.query, err)
-            return {
-              query: request.query,
-              results: [],
-            }
-          }
-        })
-      )
+          })
+        )
 
-      searchSpan.setMetadata('resultCount', resultSets.reduce((count, resultSet) => count + resultSet.results.length, 0))
-      return resultSets
+        searchSpan.setMetadata('resultCount', resultSets.reduce((count, resultSet) => count + resultSet.results.length, 0))
+        return resultSets
+      } finally {
+        searchSpan.end()
+      }
+    })()
+
+    inFlightFileSearchBatches.set(batchKey, searchPromise)
+    try {
+      return await searchPromise
     } finally {
-      searchSpan.end()
+      inFlightFileSearchBatches.delete(batchKey)
     }
   })
 
