@@ -86,26 +86,7 @@ export function handleComplete(
   // Catches 'executing' (normal) and 'backgrounded' (spurious — e.g. foreground Agent
   // whose result contained agentId:). Genuinely backgrounded tasks have isBackground=true
   // AND a taskId, so they're excluded — task_completed will finalize them.
-  const TERMINAL_TOOL_STATUSES = new Set(['completed', 'error'])
   let updatedMessages = session.messages
-  const hasRunningTools = session.messages.some(
-    m => m.role === 'tool'
-      && !TERMINAL_TOOL_STATUSES.has(m.toolStatus ?? '')
-      && !(m.isBackground && m.taskId)  // Don't force-complete genuine background tasks
-  )
-
-  if (hasRunningTools) {
-    updatedMessages = session.messages.map(m => {
-      if (
-        m.role === 'tool'
-        && !TERMINAL_TOOL_STATUSES.has(m.toolStatus ?? '')
-        && !(m.isBackground && m.taskId)
-      ) {
-        return { ...m, toolStatus: 'completed' as const, toolResult: m.toolResult ?? '' }
-      }
-      return m
-    })
-  }
 
   // Clear isQueued from any user messages once the turn completes. Pi's steer
   // path never emits a 'processing' status update to clear it (the message is
@@ -113,11 +94,19 @@ export function handleComplete(
   // the natural place to drop the indicator. Claude's queued path has already
   // cleared via the 'processing' status update before this fires; this is
   // a safe no-op for that case.
-  const hasQueuedUserBubbles = updatedMessages.some(m => m.role === 'user' && m.isQueued)
-  if (hasQueuedUserBubbles) {
-    updatedMessages = updatedMessages.map(m =>
-      m.role === 'user' && m.isQueued ? { ...m, isQueued: false } : m
-    )
+  for (let index = 0; index < session.messages.length; index++) {
+    const message = session.messages[index]
+    const shouldCompleteTool = message.role === 'tool'
+      && message.toolStatus !== 'completed'
+      && message.toolStatus !== 'error'
+      && !(message.isBackground && message.taskId)  // Don't force-complete genuine background tasks
+    const shouldClearQueuedUser = message.role === 'user' && message.isQueued
+
+    if (!shouldCompleteTool && !shouldClearQueuedUser) continue
+    if (updatedMessages === session.messages) updatedMessages = [...session.messages]
+    updatedMessages[index] = shouldCompleteTool
+      ? { ...message, toolStatus: 'completed', toolResult: message.toolResult ?? '' }
+      : { ...message, isQueued: false }
   }
 
   const nextTokenUsage = event.tokenUsage ?? session.tokenUsage
