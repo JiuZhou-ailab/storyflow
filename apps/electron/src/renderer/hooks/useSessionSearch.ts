@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react"
-import { isToday, isYesterday, format, startOfDay } from "date-fns"
+import { startOfDay } from "date-fns"
 
 import { searchLog } from "@/lib/logger"
 import { parseLabelEntry } from "@craft-agent/shared/labels"
@@ -23,12 +23,6 @@ const MAX_SEARCH_RESULTS = 100
 
 /** Filter mode for tri-state filtering: include shows only matching, exclude hides matching */
 export type FilterMode = 'include' | 'exclude'
-
-export interface DateGroup {
-  date: Date
-  label: string
-  sessions: SessionMeta[]
-}
 
 export interface ContentSearchResult {
   matchCount: number
@@ -75,8 +69,6 @@ export interface UseSessionSearchResult {
 
   // Render-ready outputs
   flatItems: SessionMeta[]
-  dateGroups: DateGroup[]
-  sessionIndexMap: Map<string, number>
 
   // Pagination
   hasMore: boolean
@@ -88,36 +80,8 @@ export interface UseSessionSearchResult {
 }
 
 // ---------------------------------------------------------------------------
-// Pure helpers (moved from SessionList)
+// Pure helpers
 // ---------------------------------------------------------------------------
-
-function formatDateHeader(date: Date): string {
-  if (isToday(date)) return "Today"
-  if (isYesterday(date)) return "Yesterday"
-  return format(date, "MMM d")
-}
-
-function groupSessionsByDate(sessions: SessionMeta[]): DateGroup[] {
-  const groups = new Map<string, { date: Date; sessions: SessionMeta[] }>()
-
-  for (const session of sessions) {
-    const timestamp = session.lastMessageAt || 0
-    const date = startOfDay(new Date(timestamp))
-    const key = date.toISOString()
-
-    if (!groups.has(key)) {
-      groups.set(key, { date, sessions: [] })
-    }
-    groups.get(key)!.sessions.push(session)
-  }
-
-  return Array.from(groups.values())
-    .sort((a, b) => b.date.getTime() - a.date.getTime())
-    .map(group => ({
-      ...group,
-      label: formatDateHeader(group.date),
-    }))
-}
 
 function getCollapseGroupKey(item: SessionMeta, groupingMode?: 'date' | 'status' | 'unread'): string {
   if (groupingMode === 'status') return `status-${getSessionStatus(item)}`
@@ -505,20 +469,12 @@ export function useSessionSearch({
 
   // --- Derived render data ---
 
-  const dateGroups = useMemo(() => groupSessionsByDate(paginatedItems), [paginatedItems])
-
   const flatItems = useMemo(() => {
     if (isSearchMode) {
       return [...matchingFilterItems, ...otherResultItems]
     }
-    return dateGroups.flatMap(group => group.sessions)
-  }, [isSearchMode, matchingFilterItems, otherResultItems, dateGroups])
-
-  const sessionIndexMap = useMemo(() => {
-    const map = new Map<string, number>()
-    flatItems.forEach((item, index) => map.set(item.id, index))
-    return map
-  }, [flatItems])
+    return paginatedItems
+  }, [isSearchMode, matchingFilterItems, otherResultItems, paginatedItems])
 
   return {
     isSearchMode,
@@ -530,8 +486,6 @@ export function useSessionSearch({
     otherResultItems,
     exceededSearchLimit,
     flatItems,
-    dateGroups,
-    sessionIndexMap,
     hasMore,
     collapsedGroupsMeta,
     searchInputRef,

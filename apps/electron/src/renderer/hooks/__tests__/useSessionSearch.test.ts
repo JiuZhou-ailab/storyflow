@@ -1,6 +1,13 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'bun:test'
 import { computeCollapsedPagination } from '../useSessionSearch'
 import type { SessionMeta } from '@/atoms/sessions'
+
+const useSessionSearchSource = readFileSync(
+  fileURLToPath(new URL('../useSessionSearch.ts', import.meta.url)),
+  'utf-8'
+)
 
 function makeSession(id: string, opts: Partial<SessionMeta> = {}): SessionMeta {
   return {
@@ -65,5 +72,12 @@ describe('computeCollapsedPagination', () => {
 
     expect(result.paginatedItems.map(s => s.id)).toEqual(['a', 'b'])
     expect(result.collapsedGroupsMeta).toEqual([])
+  })
+
+  it('does not regroup paginated results only to flatten them again', () => {
+    expect(useSessionSearchSource).toContain('return paginatedItems')
+    expect(useSessionSearchSource).not.toContain('groupSessionsByDate')
+    expect(useSessionSearchSource).not.toContain('dateGroups.flatMap')
+    expect(useSessionSearchSource).not.toContain('sessionIndexMap')
   })
 })
