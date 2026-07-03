@@ -99,6 +99,29 @@ function runEnsureConfigDir(configDir: string) {
   }
 }
 
+function runGetWorkspaces(configDir: string): any[] {
+  const run = Bun.spawnSync([
+    process.execPath,
+    '--eval',
+    `import { getWorkspaces } from '${STORAGE_MODULE_PATH}'; console.log(JSON.stringify(getWorkspaces()));`,
+  ], {
+    env: {
+      ...process.env,
+      CRAFT_CONFIG_DIR: configDir,
+    },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+
+  if (run.exitCode !== 0) {
+    throw new Error(
+      `getWorkspaces subprocess failed (exit ${run.exitCode})\nstdout:\n${run.stdout.toString()}\nstderr:\n${run.stderr.toString()}`,
+    )
+  }
+
+  return JSON.parse(run.stdout.toString())
+}
+
 function readPiApiKeyConnection(configPath: string): any {
   const migrated = JSON.parse(readFileSync(configPath, 'utf-8'))
   return migrated.llmConnections.find((c: any) => c.slug === 'pi-api-key')
@@ -109,6 +132,26 @@ function getModelIds(connection: any): string[] {
 }
 
 describe('startup migration (integration)', () => {
+  it('attaches writing project metadata to workspace DTOs from the manifest', () => {
+    const { configDir, workspaceRoot, configPath } = setupWorkspaceConfigDir()
+    writeRootConfig(configPath, workspaceRoot, [])
+    mkdirSync(join(workspaceRoot, '.craft-agent'), { recursive: true })
+    writeFileSync(
+      join(workspaceRoot, '.craft-agent', 'craft-writing.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        type: 'short-form',
+        methodPack: { id: 'short-form.article', version: 1 },
+      }),
+      'utf-8',
+    )
+
+    const [workspace] = runGetWorkspaces(configDir)
+
+    expect(workspace.projectType).toBe('short-form')
+    expect(workspace.methodPackId).toBe('short-form.article')
+  })
+
   it('backs up config.json once per day before startup mutations', () => {
     const { configDir, configPath } = setupWorkspaceConfigDir()
     const initial = { workspaces: [], activeWorkspaceId: null, activeSessionId: null, marker: 'first' }

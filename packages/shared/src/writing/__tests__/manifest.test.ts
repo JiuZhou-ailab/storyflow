@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { detectWritingProject } from "../manifest.ts";
+import { detectManifestWritingProject, detectWritingProject } from "../manifest.ts";
 
 function createTempProject(): string {
   return mkdtempSync(join(tmpdir(), "craft-writing-"));
@@ -74,6 +74,15 @@ describe("detectWritingProject", () => {
     expect(project?.type).toBe("novel");
     expect(project?.source).toBe("structure");
     expect(project?.manifest.schemaVersion).toBe(1);
+  });
+
+  it("keeps manifest-only detection from accepting directory structure", () => {
+    const rootPath = createTempProject();
+    for (const dir of ["bible", "story", "state", "timeline"]) {
+      mkdirSync(join(rootPath, dir), { recursive: true });
+    }
+
+    expect(detectManifestWritingProject(rootPath)).toBeNull();
   });
 
   it("returns null for an unsupported manifest type", () => {

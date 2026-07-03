@@ -79,16 +79,8 @@ function hasClaudeBookNovelStructure(rootPath: string): boolean {
 }
 
 export function detectWritingProject(rootPath: string): DetectedWritingProject | null {
-  const manifest = parseManifest(rootPath);
-  if (manifest) {
-    return {
-      type: manifest.type,
-      source: "manifest",
-      rootPath,
-      manifest,
-      directories: getDefaultDirectories(rootPath),
-    };
-  }
+  const manifestProject = detectManifestWritingProject(rootPath);
+  if (manifestProject) return manifestProject;
 
   if (hasClaudeBookNovelStructure(rootPath)) {
     const inferredManifest: WritingProjectManifest = {
@@ -101,6 +93,21 @@ export function detectWritingProject(rootPath: string): DetectedWritingProject |
       source: "structure",
       rootPath,
       manifest: inferredManifest,
+      directories: getDefaultDirectories(rootPath),
+    };
+  }
+
+  return null;
+}
+
+export function detectManifestWritingProject(rootPath: string): DetectedWritingProject | null {
+  const manifest = parseManifest(rootPath);
+  if (manifest) {
+    return {
+      type: manifest.type,
+      source: "manifest",
+      rootPath,
+      manifest,
       directories: getDefaultDirectories(rootPath),
     };
   }

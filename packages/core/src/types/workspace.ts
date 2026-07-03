@@ -7,6 +7,7 @@
  * Note: Different from SourceMcpAuthType which uses 'oauth' | 'bearer' | 'none' for individual sources
  */
 export type McpAuthType = 'workspace_oauth' | 'workspace_bearer' | 'public';
+export type WorkspaceProjectType = 'general' | 'novel' | 'screenplay' | 'short-form';
 
 /**
  * Configuration for a remote Craft Agent Server.
@@ -31,6 +32,8 @@ export interface WorkspaceInfo {
   mcpUrl?: string;
   mcpAuthType?: McpAuthType;
   remoteServer?: RemoteServerConfig;
+  projectType?: WorkspaceProjectType;
+  methodPackId?: string;
 }
 
 /**
@@ -71,4 +74,3 @@ export interface StoredConfig {
   activeSessionId: string | null;  // Currently active session (primary scope)
   model?: string;
 }
-

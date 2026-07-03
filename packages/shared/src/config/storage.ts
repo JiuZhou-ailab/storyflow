@@ -26,6 +26,7 @@ import type { PermissionMode } from '../agent/mode-manager.ts';
 import type { ThinkingLevel } from '../agent/thinking-levels.ts';
 import { isValidThinkingLevel, normalizeThinkingLevel } from '../agent/thinking-levels.ts';
 import { parsePermissionMode, PERMISSION_MODE_ORDER } from '../agent/mode-types.ts';
+import { detectManifestWritingProject } from '../writing/manifest.ts';
 import { type BuiltinLlmConnectionDefaults, type ConfigDefaults } from './config-defaults-schema.ts';
 import { isValidThemeFile } from './validators.ts';
 
@@ -872,7 +873,16 @@ export function getWorkspaces(): Workspace[] {
     }
 
     const slug = extractWorkspaceSlugFromPath(w.rootPath, w.id);
-    return { ...w, name, slug, iconUrl };
+    const writingProject = detectManifestWritingProject(w.rootPath);
+    const methodPackId = writingProject?.manifest.methodPack?.id;
+    return {
+      ...w,
+      name,
+      slug,
+      iconUrl,
+      ...(writingProject ? { projectType: writingProject.type } : {}),
+      ...(methodPackId ? { methodPackId } : {}),
+    };
   });
 }
 
