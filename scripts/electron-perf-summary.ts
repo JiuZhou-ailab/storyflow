@@ -29,9 +29,11 @@ export interface PerfOperationSummary {
 export interface ElectronSearchActivitySummary {
   batchCallCount: number;
   batchQueryErrorCount: number;
+  listFileCallCount: number;
   singleCallCount: number;
   singleReturnCount: number;
   totalBatchRequestCount: number;
+  totalListRootCount: number;
   totalSingleResultCount: number;
   basePathCount: number;
   busiestBasePaths: Array<{ basePath: string; count: number }>;
@@ -221,9 +223,11 @@ export function parseElectronPerfMetrics(logText: string): ElectronPerfMetric[] 
 export function summarizeElectronSearchActivity(logText: string): ElectronSearchActivitySummary {
   let batchCallCount = 0;
   let batchQueryErrorCount = 0;
+  let listFileCallCount = 0;
   let singleCallCount = 0;
   let singleReturnCount = 0;
   let totalBatchRequestCount = 0;
+  let totalListRootCount = 0;
   let totalSingleResultCount = 0;
   const basePathCounts = new Map<string, number>();
 
@@ -235,6 +239,15 @@ export function summarizeElectronSearchActivity(logText: string): ElectronSearch
     if (event === "[FS_SEARCH_BATCH] called:") {
       batchCallCount += 1;
       if (typeof maybeCount === "number") totalBatchRequestCount += maybeCount;
+      if (typeof basePathOrCount === "string") {
+        basePathCounts.set(basePathOrCount, (basePathCounts.get(basePathOrCount) ?? 0) + 1);
+      }
+      continue;
+    }
+
+    if (event === "[FS_LIST_FILES] called:") {
+      listFileCallCount += 1;
+      if (typeof maybeCount === "number") totalListRootCount += maybeCount;
       if (typeof basePathOrCount === "string") {
         basePathCounts.set(basePathOrCount, (basePathCounts.get(basePathOrCount) ?? 0) + 1);
       }
@@ -267,9 +280,11 @@ export function summarizeElectronSearchActivity(logText: string): ElectronSearch
   return {
     batchCallCount,
     batchQueryErrorCount,
+    listFileCallCount,
     singleCallCount,
     singleReturnCount,
     totalBatchRequestCount,
+    totalListRootCount,
     totalSingleResultCount,
     basePathCount: basePathCounts.size,
     busiestBasePaths,
@@ -340,7 +355,9 @@ export function getElectronInstrumentationGaps(summary: ElectronPerfSummary): st
     || operationNames.has("writing.document.readFile.error");
   const hasFileReadRpcMetrics = operationNames.has("rpc.file.read");
   const hasSearchBatchPerfMetrics = operationNames.has("fs.searchBatch");
+  const hasListFilesPerfMetrics = operationNames.has("fs.listFiles");
   const hasRawSearchBatchLogs = summary.searchActivity.batchCallCount > 0;
+  const hasRawListFilesLogs = summary.searchActivity.listFileCallCount > 0;
   const gaps: string[] = [];
 
   if (hasRendererReadMetrics && !hasFileReadRpcMetrics) {
@@ -348,6 +365,9 @@ export function getElectronInstrumentationGaps(summary: ElectronPerfSummary): st
   }
   if (hasRawSearchBatchLogs && !hasSearchBatchPerfMetrics) {
     gaps.push("Raw `[FS_SEARCH_BATCH]` logs are present but `fs.searchBatch` spans are absent; restart Electron to load batch-search perf metadata.");
+  }
+  if (hasRawListFilesLogs && !hasListFilesPerfMetrics) {
+    gaps.push("Raw `[FS_LIST_FILES]` logs are present but `fs.listFiles` spans are absent; restart Electron to load workspace-list perf metadata.");
   }
 
   return gaps;
@@ -420,10 +440,11 @@ export function formatElectronPerfSummary(
   }
 
   const search = summary.searchActivity;
-  if (search.batchCallCount > 0 || search.singleCallCount > 0) {
+  if (search.batchCallCount > 0 || search.listFileCallCount > 0 || search.singleCallCount > 0) {
     lines.push("");
     lines.push("Filesystem Search Activity");
     lines.push(`- batch calls: ${search.batchCallCount}, total batch requests: ${search.totalBatchRequestCount}, query errors: ${search.batchQueryErrorCount}`);
+    lines.push(`- list calls: ${search.listFileCallCount}, total listed roots: ${search.totalListRootCount}`);
     lines.push(`- single calls: ${search.singleCallCount}, returns: ${search.singleReturnCount}, total returned results: ${search.totalSingleResultCount}`);
     if (search.busiestBasePaths.length > 0) {
       lines.push("- busiest roots:");

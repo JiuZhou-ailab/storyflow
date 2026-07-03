@@ -50,14 +50,15 @@ For quick local triage without a saved start timestamp, use `--last-minutes <n>`
 - `writing.document.readFile`: renderer-observed end-to-end `window.electronAPI.readFile` latency.
 - `rpc.file.read`: server-side file read handler latency, including path validation and disk read marks.
 - `fs.searchBatch`: server-side workspace search latency, including request count, snapshot size, and total results.
+- `fs.listFiles`: server-side known-root workspace listing latency, including root count and result count.
 - `writing.document.readyAfterRead`: time until React state is updated after selecting a document.
 - `writing.document.paintAfterRead`: time until the next paint after document selection.
 
 If `writing.document.readFile` is high and `rpc.file.read` is low, investigate transport queuing, main-process event-loop pressure, or renderer-side waiting. If both are high, inspect path validation, disk I/O, and concurrent filesystem scans. If paint dominates, inspect renderer tree size and editor updates.
 
-Use `fs.searchBatch` metadata to separate unavoidable catalog work from search storms. A healthy writing-workspace switch should not repeatedly emit identical high-request batch searches.
+Use `fs.listFiles` for known-root writing workspace switches and `fs.searchBatch` metadata for fallback discovery/catalog work. A healthy writing-workspace switch should not repeatedly emit identical list roots or high-request batch searches.
 
-The summary also reports raw filesystem search activity from `[FS_SEARCH_BATCH]` and `[FS_SEARCH]` log lines. Batch calls show the intended path; single calls show fallback or legacy paths. If the summary has many single calls and no `fs.searchBatch` perf span, restart Electron after main-process changes before judging the new code.
+The summary also reports raw filesystem activity from `[FS_LIST_FILES]`, `[FS_SEARCH_BATCH]`, and `[FS_SEARCH]` log lines. List calls show the intended known-root path, batch calls show fallback catalog search, and single calls show fallback or legacy paths. If the summary has raw calls but no matching `fs.listFiles` or `fs.searchBatch` perf span, restart Electron after main-process changes before judging the new code.
 
 Pay attention to the `Instrumentation Notes` section. It is emitted when renderer-side symptoms are present but the paired main-process spans are missing, which usually means the Electron main process has not been restarted after instrumentation changes.
 

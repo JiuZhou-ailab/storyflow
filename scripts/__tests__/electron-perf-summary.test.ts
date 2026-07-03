@@ -84,6 +84,7 @@ describe("electron perf summary", () => {
       '{"timestamp":"2026-06-12T10:00:00.000Z","level":"debug","message":["[FS_SEARCH_BATCH] called:","/workspace/a",14]}',
       '{"timestamp":"2026-06-12T10:00:01.000Z","level":"debug","message":["[FS_SEARCH_BATCH] called:","/workspace/a",13]}',
       '{"timestamp":"2026-06-12T10:00:02.000Z","level":"error","message":["[FS_SEARCH_BATCH] query error:","正文",{}]}',
+      '{"timestamp":"2026-06-12T10:00:02.500Z","level":"debug","message":["[FS_LIST_FILES] called:","/workspace/a",3]}',
       '{"timestamp":"2026-06-12T10:00:03.000Z","level":"info","message":["[FS_SEARCH] called:","/workspace/a","正文"]}',
       '{"timestamp":"2026-06-12T10:00:04.000Z","level":"info","message":["[FS_SEARCH] called:","/workspace/b","大纲"]}',
       '{"timestamp":"2026-06-12T10:00:05.000Z","level":"info","message":["[FS_SEARCH] returning",4,"results"]}',
@@ -95,12 +96,14 @@ describe("electron perf summary", () => {
       batchQueryErrorCount: 1,
       basePathCount: 2,
       busiestBasePaths: [
-        { basePath: "/workspace/a", count: 3 },
+        { basePath: "/workspace/a", count: 4 },
         { basePath: "/workspace/b", count: 1 },
       ],
+      listFileCallCount: 1,
       singleCallCount: 2,
       singleReturnCount: 2,
       totalBatchRequestCount: 27,
+      totalListRootCount: 3,
       totalSingleResultCount: 5,
     });
   });
@@ -135,6 +138,7 @@ describe("electron perf summary", () => {
       slowThresholdMs: 250,
       searchActivity: summarizeElectronSearchActivity([
         '{"timestamp":"2026-06-12T10:00:00.000Z","level":"debug","message":["[FS_SEARCH_BATCH] called:","/workspace/a",14]}',
+        '{"timestamp":"2026-06-12T10:00:00.500Z","level":"debug","message":["[FS_LIST_FILES] called:","/workspace/a",3]}',
         '{"timestamp":"2026-06-12T10:00:01.000Z","level":"info","message":["[FS_SEARCH] called:","/workspace/a","正文"]}',
       ].join("\n")),
       limit: 3,
@@ -155,6 +159,7 @@ describe("electron perf summary", () => {
     expect(output).toContain("renderer.textDeltaWindow");
     expect(output).toContain("Filesystem Search Activity");
     expect(output).toContain("batch calls: 1");
+    expect(output).toContain("list calls: 1");
     expect(output).toContain("single calls: 1");
   });
 
@@ -163,7 +168,10 @@ describe("electron perf summary", () => {
       parseElectronPerfMetrics("writing.document.readFile: 42ms"),
       {
         searchActivity: summarizeElectronSearchActivity(
-          '{"timestamp":"2026-06-12T10:00:00.000Z","level":"debug","message":["[FS_SEARCH_BATCH] called:","/workspace/a",14]}'
+          [
+            '{"timestamp":"2026-06-12T10:00:00.000Z","level":"debug","message":["[FS_SEARCH_BATCH] called:","/workspace/a",14]}',
+            '{"timestamp":"2026-06-12T10:00:01.000Z","level":"debug","message":["[FS_LIST_FILES] called:","/workspace/a",3]}',
+          ].join("\n")
         ),
       }
     );
@@ -171,6 +179,7 @@ describe("electron perf summary", () => {
     expect(getElectronInstrumentationGaps(staleSummary)).toEqual([
       "`writing.document.readFile` is present but `rpc.file.read` is absent; restart Electron after main-process changes before judging server-side read latency.",
       "Raw `[FS_SEARCH_BATCH]` logs are present but `fs.searchBatch` spans are absent; restart Electron to load batch-search perf metadata.",
+      "Raw `[FS_LIST_FILES]` logs are present but `fs.listFiles` spans are absent; restart Electron to load workspace-list perf metadata.",
     ]);
 
     const currentSummary = summarizeElectronPerfMetrics(
@@ -178,10 +187,14 @@ describe("electron perf summary", () => {
         "writing.document.readFile: 42ms",
         '2026-06-12T10:00:00.000Z [PERF] rpc.file.read: 4.2ms {"file":"new.md"}',
         '2026-06-12T10:00:01.000Z [PERF] fs.searchBatch: 8.1ms {"requestCount":14}',
+        '2026-06-12T10:00:02.000Z [PERF] fs.listFiles: 3.1ms {"rootCount":3}',
       ].join("\n")),
       {
         searchActivity: summarizeElectronSearchActivity(
-          '{"timestamp":"2026-06-12T10:00:00.000Z","level":"debug","message":["[FS_SEARCH_BATCH] called:","/workspace/a",14]}'
+          [
+            '{"timestamp":"2026-06-12T10:00:00.000Z","level":"debug","message":["[FS_SEARCH_BATCH] called:","/workspace/a",14]}',
+            '{"timestamp":"2026-06-12T10:00:01.000Z","level":"debug","message":["[FS_LIST_FILES] called:","/workspace/a",3]}',
+          ].join("\n")
         ),
       }
     );
