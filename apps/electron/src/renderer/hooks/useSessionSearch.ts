@@ -168,6 +168,24 @@ export function computeCollapsedPagination(
   }
 }
 
+export function reuseContentSearchResultsIfEqual(
+  previous: Map<string, ContentSearchResult>,
+  next: Map<string, ContentSearchResult>
+): Map<string, ContentSearchResult> {
+  if (previous.size !== next.size) return next
+  for (const [sessionId, previousResult] of previous) {
+    const nextResult = next.get(sessionId)
+    if (
+      !nextResult ||
+      previousResult.matchCount !== nextResult.matchCount ||
+      previousResult.snippet !== nextResult.snippet
+    ) {
+      return next
+    }
+  }
+  return previous
+}
+
 interface FilterMatchOptions {
   evaluateViews?: (meta: SessionMeta) => ViewConfig[]
   statusFilter?: Map<string, 'include' | 'exclude'>
@@ -326,7 +344,7 @@ export function useSessionSearch({
             snippet: result.matches[0]?.snippet || '',
           })
         }
-        setContentSearchResults(resultMap)
+        setContentSearchResults(prev => reuseContentSearchResultsIfEqual(prev, resultMap))
 
         requestAnimationFrame(() => {
           searchLog.info('render:complete', { searchId, sessionsDisplayed: resultMap.size })

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'bun:test'
-import { computeCollapsedPagination, getSessionDateGroupKey } from '../useSessionSearch'
+import { computeCollapsedPagination, getSessionDateGroupKey, reuseContentSearchResultsIfEqual } from '../useSessionSearch'
 import type { SessionMeta } from '@/atoms/sessions'
 
 const useSessionSearchSource = readFileSync(
@@ -108,6 +108,23 @@ describe('computeCollapsedPagination', () => {
     expect(useSessionSearchSource).toContain('setContentSearchResults(prev => prev.size === 0 ? prev : new Map())')
     expect(useSessionSearchSource).toContain('clearContentSearchResults()')
     expect(useSessionSearchSource).not.toContain('setContentSearchResults(new Map())')
+  })
+
+  it('reuses unchanged content search result maps after repeated IPC results', () => {
+    const previous = new Map([
+      ['s1', { matchCount: 2, snippet: 'same' }],
+      ['s2', { matchCount: 1, snippet: 'also same' }],
+    ])
+    const sameResults = new Map([
+      ['s1', { matchCount: 2, snippet: 'same' }],
+      ['s2', { matchCount: 1, snippet: 'also same' }],
+    ])
+    const changedResults = new Map([
+      ['s1', { matchCount: 3, snippet: 'same' }],
+    ])
+
+    expect(reuseContentSearchResultsIfEqual(previous, sameResults)).toBe(previous)
+    expect(reuseContentSearchResultsIfEqual(previous, changedResults)).toBe(changedResults)
   })
 
   it('parses session label ids once when matching label filters', () => {
