@@ -36,4 +36,12 @@ describe('session item subscriptions', () => {
     expect(sessionItemSource).not.toContain('ctx.flatLabels.some')
     expect(sessionBadgesSource).not.toContain('ctx.flatLabels.find')
   })
+
+  it('keeps session list bucket order without re-sorting rows inside each group', () => {
+    expect(sessionListSource).toContain('const unreadRows: SessionListRow[] = []')
+    expect(sessionListSource).toContain('const groupsByKey = new Map<string, { rows: SessionListRow[], statusId: string }>()')
+    expect(sessionListSource).not.toContain('unreadRows.sort((a, b) =>')
+    expect(sessionListSource).not.toContain('readRows.sort((a, b) =>')
+    expect(sessionListSource).not.toContain('groupRows.sort((a, b) =>')
+  })
 })

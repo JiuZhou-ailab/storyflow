@@ -300,8 +300,6 @@ export function SessionList({
         if (row.item.hasUnread) unreadRows.push(row)
         else readRows.push(row)
       }
-      unreadRows.sort((a, b) => (b.item.lastMessageAt || 0) - (a.item.lastMessageAt || 0))
-      readRows.sort((a, b) => (b.item.lastMessageAt || 0) - (a.item.lastMessageAt || 0))
 
       const collapsedUnread = collapsedGroupsMeta.find(m => m.key === 'unread-yes')
       const collapsedRead = collapsedGroupsMeta.find(m => m.key === 'unread-no')
@@ -360,7 +358,6 @@ export function SessionList({
       for (const [key, { rows: groupRows, statusId }] of groupsByKey) {
         const state = sessionStatuses.find(s => s.id === statusId)
         if (!state) continue
-        groupRows.sort((a, b) => (b.item.lastMessageAt || 0) - (a.item.lastMessageAt || 0))
         const collapsedMeta = collapsedGroupsMeta.find(m => m.key === key)
         orderedGroups.push({
           key,
