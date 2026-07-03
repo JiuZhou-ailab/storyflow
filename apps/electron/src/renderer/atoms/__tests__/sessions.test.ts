@@ -17,6 +17,7 @@ import {
   syncSessionsToAtomsAtom,
   replaceLoadedSessionAtom,
   updateSessionAtom,
+  updateStreamingContentAtom,
   updateSessionMetaAtom,
   removeBackgroundTaskById,
   removeBackgroundTaskByToolUseId,
@@ -205,6 +206,32 @@ describe('session message loading atoms', () => {
     })
 
     store.set(updateSessionAtom, sessionId, (prev) => prev && { ...prev })
+
+    expect(store.get(sessionAtomFamily(sessionId))).toBe(before)
+    expect(notifications).toBe(0)
+    unsubscribe()
+  })
+
+  it('does not notify session subscribers for empty streaming deltas', () => {
+    const store = createStore()
+    const sessionId = 's1'
+    const session = makeSession({
+      id: sessionId,
+      messages: [{
+        ...msg('m1', 'assistant'),
+        isStreaming: true,
+        turnId: 'turn-1',
+      }],
+    })
+    store.set(replaceLoadedSessionAtom, session)
+    const before = store.get(sessionAtomFamily(sessionId))
+
+    let notifications = 0
+    const unsubscribe = store.sub(sessionAtomFamily(sessionId), () => {
+      notifications += 1
+    })
+
+    store.set(updateStreamingContentAtom, sessionId, '', 'turn-1')
 
     expect(store.get(sessionAtomFamily(sessionId))).toBe(before)
     expect(notifications).toBe(0)

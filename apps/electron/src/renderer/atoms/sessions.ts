@@ -297,6 +297,8 @@ export const appendMessageAtom = atom(
 export const updateStreamingContentAtom = atom(
   null,
   (get, set, sessionId: string, content: string, turnId?: string) => {
+    if (content.length === 0) return
+
     const sessionAtom = sessionAtomFamily(sessionId)
     const session = get(sessionAtom)
     if (!session) return
