@@ -106,8 +106,10 @@ export const messagingBindingsForPlatformAtomFamily = atomFamily(
 
 export const setMessagingBindingsAtom = atom(
   null,
-  (_get, set, bindings: MessagingBinding[]) => {
-    set(messagingBindingsAtom, bindings.filter((binding) => binding.enabled))
+  (get, set, bindings: MessagingBinding[]) => {
+    const next = bindings.filter((binding) => binding.enabled)
+    if (messagingBindingsEqual(get(messagingBindingsAtom), next)) return
+    set(messagingBindingsAtom, next)
   },
 )
 

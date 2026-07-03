@@ -7,6 +7,7 @@ import {
   messagingBindingsAtom,
   messagingBindingsForPlatformAtomFamily,
   messagingBindingsForSessionAtomFamily,
+  setMessagingBindingsAtom,
   type MessagingBinding,
 } from '../messaging'
 
@@ -143,6 +144,30 @@ describe('messaging binding atoms', () => {
     ])
     expect(store.get(telegramBindingsAtom).map((item) => item.id)).toEqual(['telegram-old', 'telegram-new'])
     expect(notifications).toBe(2)
+
+    unsubscribe()
+  })
+
+  it('does not notify binding subscribers when filtered bindings are unchanged', () => {
+    const store = createStore()
+
+    store.set(setMessagingBindingsAtom, [
+      binding({ id: 'binding-1' }),
+      binding({ id: 'binding-disabled', enabled: false }),
+    ])
+    const before = store.get(messagingBindingsAtom)
+    let notifications = 0
+    const unsubscribe = store.sub(messagingBindingsAtom, () => {
+      notifications += 1
+    })
+
+    store.set(setMessagingBindingsAtom, [
+      binding({ id: 'binding-1' }),
+      binding({ id: 'binding-disabled', enabled: false }),
+    ])
+
+    expect(store.get(messagingBindingsAtom)).toBe(before)
+    expect(notifications).toBe(0)
 
     unsubscribe()
   })
