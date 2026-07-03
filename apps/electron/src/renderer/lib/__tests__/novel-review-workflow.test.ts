@@ -116,4 +116,24 @@ describe('novel review workflow', () => {
     ])
     expect(getPendingChangesForFile(normalized, {}, '/novel/story/chapters/chapter-1.md').map(c => c.id)).toEqual(['a'])
   })
+
+  it('keeps review changes scoped to the current project root', () => {
+    const normalized = normalizeNovelFileChangePaths(
+      [
+        change('inside', '/workspace/project-id/story/chapters/chapter-1.md'),
+        change('relative', 'bible/characters/alice.md'),
+        change('outside', '/workspace/other-project/story/chapters/chapter-2.md'),
+      ],
+      '/workspace/project-id',
+      [
+        { path: '/workspace/project-id/story/chapters/chapter-1.md', relativePath: 'story/chapters/chapter-1.md' },
+        { path: '/workspace/project-id/bible/characters/alice.md', relativePath: 'bible/characters/alice.md' },
+      ]
+    )
+
+    expect(getPendingChangedFilePaths(normalized, {})).toEqual([
+      '/workspace/project-id/story/chapters/chapter-1.md',
+      '/workspace/project-id/bible/characters/alice.md',
+    ])
+  })
 })

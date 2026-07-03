@@ -42,6 +42,12 @@ function stripRootPath(path: string, rootPath: string): string {
   return normalizedPath
 }
 
+function isWithinRootPath(path: string, rootPath: string): boolean {
+  const normalizedPath = normalizeReviewPath(path)
+  const normalizedRoot = normalizeReviewPath(rootPath)
+  return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`)
+}
+
 function stripDiffSidePrefix(path: string): string {
   return path.replace(/^(?:a|b)\//, '')
 }
@@ -73,11 +79,15 @@ export function normalizeNovelFileChangePaths(
     files.map(file => [normalizeReviewPath(file.relativePath), file.path])
   )
 
-  return changes.map((change) => {
+  return changes.flatMap((change) => {
     const normalizedPath = normalizeReviewPath(change.filePath)
+    if (normalizedRoot && isAbsoluteReviewPath(normalizedPath) && !isWithinRootPath(normalizedPath, normalizedRoot)) {
+      return []
+    }
+
     const exactFilePath = fileByPath.get(normalizedPath)
     if (exactFilePath) {
-      return exactFilePath === change.filePath ? change : { ...change, filePath: exactFilePath }
+      return [exactFilePath === change.filePath ? change : { ...change, filePath: exactFilePath }]
     }
 
     const rootRelativePath = normalizedRoot
@@ -92,15 +102,15 @@ export function normalizeNovelFileChangePaths(
     for (const candidate of relativeCandidates) {
       const matchedFilePath = fileByRelativePath.get(normalizeReviewPath(candidate))
       if (matchedFilePath) {
-        return { ...change, filePath: matchedFilePath }
+        return [{ ...change, filePath: matchedFilePath }]
       }
     }
 
     if (normalizedRoot && !isAbsoluteReviewPath(normalizedPath)) {
-      return { ...change, filePath: joinRootPath(normalizedRoot, stripDiffSidePrefix(normalizedPath)) }
+      return [{ ...change, filePath: joinRootPath(normalizedRoot, stripDiffSidePrefix(normalizedPath)) }]
     }
 
-    return normalizedPath === change.filePath ? change : { ...change, filePath: normalizedPath }
+    return [normalizedPath === change.filePath ? change : { ...change, filePath: normalizedPath }]
   })
 }
 
