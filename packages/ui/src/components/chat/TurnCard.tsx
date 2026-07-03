@@ -739,49 +739,64 @@ function getPreviewText(
   // If we have an explicit intent, use it
   if (intent) return intent
 
+  let activityIntent: string | undefined
+  let runningTaskDescription: string | undefined
+  let latestIntermediateContent: string | undefined
+  let firstTaskDescription: string | undefined
+  let errorCount = 0
+  const runningToolNames: string[] = []
+
+  for (const activity of activities) {
+    activityIntent ??= activity.intent
+    if (activity.status === 'error') errorCount++
+
+    if (activity.toolName === 'Task') {
+      const description = activity.toolInput?.description
+      if (!firstTaskDescription && typeof description === 'string') {
+        firstTaskDescription = description
+      }
+      if (!runningTaskDescription && activity.status === 'running' && typeof description === 'string') {
+        runningTaskDescription = description
+      }
+    }
+
+    if (isStreaming && !isComplete && activity.type === 'intermediate' && activity.content) {
+      latestIntermediateContent = activity.content
+    }
+
+    if (activity.status === 'running' && activity.toolName && runningToolNames.length < 3) {
+      runningToolNames.push(getToolDisplayName(activity.toolName))
+    }
+  }
+
   // Find the most relevant activity intent
-  const activityWithIntent = activities.find(a => a.intent)
-  if (activityWithIntent?.intent) return activityWithIntent.intent
+  if (activityIntent) return activityIntent
 
   // Check if we're in responding state
   if (isStreaming && hasResponse) return i18n.t('turnCard.responding')
 
   // Find running Task tools and show their description
-  const runningTask = activities.find(a => a.toolName === 'Task' && a.status === 'running')
-  if (runningTask?.toolInput?.description) {
-    return runningTask.toolInput.description as string
+  if (runningTaskDescription) {
+    return runningTaskDescription
   }
 
   // While still streaming, show the latest intermediate message content
   // This gives visibility into what the LLM is "thinking"
-  if (isStreaming && !isComplete) {
-    const latestIntermediate = [...activities]
-      .reverse()
-      .find(a => a.type === 'intermediate' && a.content)
-    if (latestIntermediate?.content) {
-      return latestIntermediate.content
-    }
+  if (isStreaming && !isComplete && latestIntermediateContent) {
+    return latestIntermediateContent
   }
 
-  // Get running and completed tools (not intermediate messages)
-  const runningTools = activities.filter(a => a.status === 'running' && a.toolName)
-  const errorCount = activities.filter(a => a.status === 'error').length
-
   // Show running tool names
-  if (runningTools.length > 0) {
-    const toolNames = runningTools
-      .map(a => getToolDisplayName(a.toolName!))
-      .slice(0, 3) // Max 3 names
-    return `${toolNames.join(', ')}...`
+  if (runningToolNames.length > 0) {
+    return `${runningToolNames.join(', ')}...`
   }
 
   // When complete, show first Task's description if available
-  const firstTask = activities.find(a => a.toolName === 'Task')
-  if (firstTask?.toolInput?.description) {
+  if (firstTaskDescription) {
     const errorSuffix = errorCount > 0
       ? i18n.t('turnCard.errorCount', { count: errorCount })
       : ''
-    return `${firstTask.toolInput.description as string}${errorSuffix}`
+    return `${firstTaskDescription}${errorSuffix}`
   }
 
   // When complete, show summary (badge already shows count)

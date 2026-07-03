@@ -22,4 +22,16 @@ describe('TurnCard performance contracts', () => {
     expect(chatDisplaySource).not.toContain('hasEditOrWriteActivities={turn.activities.some')
     expect(sessionViewerSource).not.toContain('hasEditOrWriteActivities={turn.activities.some')
   })
+
+  it('computes collapsed preview metadata without repeated activity scans', () => {
+    const functionStart = turnCardSource.indexOf('function getPreviewText(')
+    const functionEnd = turnCardSource.indexOf('// ============================================================================\n// Sub-Components', functionStart)
+    const previewSource = turnCardSource.slice(functionStart, functionEnd)
+
+    expect(previewSource).toContain('const runningToolNames: string[] = []')
+    expect(previewSource).not.toContain('activities.find(')
+    expect(previewSource).not.toContain('activities.filter(')
+    expect(previewSource).not.toContain('[...activities]')
+    expect(previewSource).not.toContain('.reverse()')
+  })
 })
