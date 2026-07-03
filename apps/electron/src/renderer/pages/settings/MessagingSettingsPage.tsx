@@ -64,7 +64,7 @@ import {
 import { useActiveWorkspace } from '@/context/AppShellContext'
 import { useNavigation } from '@/contexts/NavigationContext'
 import {
-  messagingBindingsAtom,
+  messagingBindingsForPlatformAtomFamily,
   setMessagingBindingsAtom,
   type MessagingBinding,
 } from '@/atoms/messaging'
@@ -189,7 +189,7 @@ function CardSeparator() {
 
 function PlatformRow({ platform, workspaceId }: { platform: Platform; workspaceId: string }) {
   const { t } = useTranslation()
-  const allBindings = useAtomValue(messagingBindingsAtom)
+  const platformBindings = useAtomValue(messagingBindingsForPlatformAtomFamily(platform))
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
   const { navigateToSession } = useNavigation()
   const [runtime, setRuntime] = React.useState<MessagingPlatformRuntimeInfo>(() =>
@@ -246,14 +246,6 @@ function PlatformRow({ platform, workspaceId }: { platform: Platform; workspaceI
     })
     return () => off()
   }, [platform, workspaceId, refreshTelegramAccessMode])
-
-  const platformBindings = React.useMemo(
-    () =>
-      allBindings
-        .filter((b) => b.platform === platform)
-        .sort((a, b) => b.createdAt - a.createdAt),
-    [allBindings, platform],
-  )
 
   React.useEffect(() => {
     let cancelled = false
@@ -542,8 +534,18 @@ function TelegramBindingsBody({
   // Telegram bindings split cleanly on `threadId`:
   //   - undefined: DM ("direct session") — at most one per workspace
   //   - number:    topic in the paired supergroup
-  const directBindings = React.useMemo(() => bindings.filter((b) => b.threadId === undefined), [bindings])
-  const topicBindings = React.useMemo(() => bindings.filter((b) => b.threadId !== undefined), [bindings])
+  const { directBindings, topicBindings } = React.useMemo(() => {
+    const direct: MessagingBinding[] = []
+    const topic: MessagingBinding[] = []
+    for (const binding of bindings) {
+      if (binding.threadId === undefined) {
+        direct.push(binding)
+      } else {
+        topic.push(binding)
+      }
+    }
+    return { directBindings: direct, topicBindings: topic }
+  }, [bindings])
 
   return (
     <>

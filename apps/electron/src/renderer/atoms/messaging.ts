@@ -45,6 +45,22 @@ export const messagingBindingsBySessionAtom = atom((get) => {
   return map
 })
 
+export const messagingBindingsByPlatformAtom = atom((get) => {
+  const map = new Map<string, MessagingBinding[]>()
+  for (const binding of get(messagingBindingsAtom)) {
+    const list = map.get(binding.platform)
+    if (list) {
+      list.push(binding)
+    } else {
+      map.set(binding.platform, [binding])
+    }
+  }
+  for (const list of map.values()) {
+    list.sort((a, b) => b.createdAt - a.createdAt)
+  }
+  return map
+})
+
 export const hasOpenTelegramBindingAtom = selectAtom(
   messagingBindingsAtom,
   (bindings) => bindings.some((binding) => binding.platform === 'telegram' && binding.accessMode === 'open'),
@@ -64,6 +80,7 @@ function messagingBindingsEqual(a: MessagingBinding[], b: MessagingBinding[]): b
       && binding.threadId === other.threadId
       && binding.channelName === other.channelName
       && binding.enabled === other.enabled
+      && binding.createdAt === other.createdAt
       && binding.accessMode === other.accessMode
       && binding.allowedSenderIds?.join('\0') === other.allowedSenderIds?.join('\0')
   })
@@ -73,6 +90,15 @@ export const messagingBindingsForSessionAtomFamily = atomFamily(
   (sessionId: string) => selectAtom(
     messagingBindingsBySessionAtom,
     (bindingsBySession) => bindingsBySession.get(sessionId) ?? [],
+    messagingBindingsEqual,
+  ),
+  (a, b) => a === b,
+)
+
+export const messagingBindingsForPlatformAtomFamily = atomFamily(
+  (platform: string) => selectAtom(
+    messagingBindingsByPlatformAtom,
+    (bindingsByPlatform) => bindingsByPlatform.get(platform) ?? [],
     messagingBindingsEqual,
   ),
   (a, b) => a === b,

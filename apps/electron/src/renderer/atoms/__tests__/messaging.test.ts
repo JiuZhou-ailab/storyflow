@@ -5,6 +5,7 @@ import { createStore } from 'jotai'
 import {
   hasOpenTelegramBindingAtom,
   messagingBindingsAtom,
+  messagingBindingsForPlatformAtomFamily,
   messagingBindingsForSessionAtomFamily,
   type MessagingBinding,
 } from '../messaging'
@@ -100,5 +101,49 @@ describe('messaging binding atoms', () => {
     expect(messagingSource).toContain('selectAtom(\n    messagingBindingsBySessionAtom')
     expect(messagingSource).toContain('bindingsBySession.get(sessionId)')
     expect(messagingSource).not.toContain('bindings.filter((binding) => binding.enabled && binding.sessionId === sessionId)')
+  })
+
+  it('exposes newest-first per-platform bindings without notifying on unrelated platforms', () => {
+    const store = createStore()
+    const telegramBindingsAtom = messagingBindingsForPlatformAtomFamily('telegram')
+    let notifications = 0
+
+    store.set(messagingBindingsAtom, [
+      binding({ id: 'telegram-old', platform: 'telegram', createdAt: 10 }),
+      binding({ id: 'whatsapp-1', platform: 'whatsapp', createdAt: 30 }),
+      binding({ id: 'telegram-new', platform: 'telegram', createdAt: 20 }),
+    ])
+
+    const unsubscribe = store.sub(telegramBindingsAtom, () => {
+      notifications += 1
+    })
+
+    expect(store.get(telegramBindingsAtom).map((item) => item.id)).toEqual(['telegram-new', 'telegram-old'])
+
+    store.set(messagingBindingsAtom, [
+      binding({ id: 'telegram-old', platform: 'telegram', createdAt: 10 }),
+      binding({ id: 'whatsapp-1', platform: 'whatsapp', createdAt: 35 }),
+      binding({ id: 'telegram-new', platform: 'telegram', createdAt: 20 }),
+    ])
+    expect(store.get(telegramBindingsAtom).map((item) => item.id)).toEqual(['telegram-new', 'telegram-old'])
+    expect(notifications).toBe(0)
+
+    store.set(messagingBindingsAtom, [
+      binding({ id: 'telegram-old', platform: 'telegram', createdAt: 10 }),
+      binding({ id: 'whatsapp-1', platform: 'whatsapp', createdAt: 35 }),
+      binding({ id: 'telegram-new', platform: 'telegram', createdAt: 21 }),
+    ])
+    expect(store.get(telegramBindingsAtom).map((item) => item.createdAt)).toEqual([21, 10])
+    expect(notifications).toBe(1)
+
+    store.set(messagingBindingsAtom, [
+      binding({ id: 'telegram-old', platform: 'telegram', createdAt: 25 }),
+      binding({ id: 'whatsapp-1', platform: 'whatsapp', createdAt: 35 }),
+      binding({ id: 'telegram-new', platform: 'telegram', createdAt: 20 }),
+    ])
+    expect(store.get(telegramBindingsAtom).map((item) => item.id)).toEqual(['telegram-old', 'telegram-new'])
+    expect(notifications).toBe(2)
+
+    unsubscribe()
   })
 })
