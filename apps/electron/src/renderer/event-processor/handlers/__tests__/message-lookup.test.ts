@@ -8,6 +8,7 @@ import {
   findAssistantMessage,
   findMessageByTurnId,
   findStreamingMessage,
+  findToolMessage,
   updateMessageAt,
 } from '../../helpers'
 
@@ -32,6 +33,16 @@ describe('message lookup helpers', () => {
     expect(findStreamingMessage(messages, 'turn-1')).toBe(2)
     expect(findAssistantMessage(messages, 'turn-1')).toBe(2)
     expect(findMessageByTurnId(messages, 'turn-1', 'assistant')).toBe(2)
+  })
+
+  it('prefers the latest matching toolUseId for tool hot-path lookups', () => {
+    const messages = [
+      message({ id: 'old', role: 'tool', toolUseId: 'tool-1' }),
+      message({ id: 'middle', role: 'tool', toolUseId: 'tool-2' }),
+      message({ id: 'latest', role: 'tool', toolUseId: 'tool-1' }),
+    ]
+
+    expect(findToolMessage(messages, 'tool-1')).toBe(2)
   })
 
   it('keeps the original session reference for no-op message patches', () => {

@@ -91,7 +91,10 @@ export function findToolMessage(
   messages: Message[],
   toolUseId: string
 ): number {
-  return messages.findIndex(m => m.toolUseId === toolUseId)
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]?.toolUseId === toolUseId) return i
+  }
+  return -1
 }
 
 /**
