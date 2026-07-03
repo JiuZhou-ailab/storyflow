@@ -94,6 +94,7 @@ type SessionListRefreshOptions = {
   reason?: string
   selectedSessionId?: string | null
 }
+type SessionRefreshResult = 'refreshed' | 'preserved_stale_messages' | 'failed'
 
 const SESSION_REFRESH_LOG_ID_LIMIT = 25
 const STARTUP_RPC_TIMEOUT_MS = 5000
@@ -285,6 +286,7 @@ export default function App() {
   const replaceLoadedSession = useSetAtom(replaceLoadedSessionAtom)
   const store = useStore()
   const activeViewingSessionIdRef = useRef<string | null>(null)
+  const sessionRefreshInFlightRef = useRef<Map<string, Promise<SessionRefreshResult>>>(new Map())
 
   // Helper to update a session by ID with partial fields
   // Uses per-session atom directly instead of updating an array
@@ -490,25 +492,37 @@ export default function App() {
     })
   }, [])
 
-  const refreshSessionFromServer = useCallback(async (sessionId: string): Promise<'refreshed' | 'preserved_stale_messages' | 'failed'> => {
+  const refreshSessionFromServer = useCallback(async (sessionId: string): Promise<SessionRefreshResult> => {
+    const inFlight = sessionRefreshInFlightRef.current.get(sessionId)
+    if (inFlight) return inFlight
+
+    const refreshPromise = (async (): Promise<SessionRefreshResult> => {
+      try {
+        const fresh = await window.electronAPI.getSessionMessages(sessionId)
+        if (!fresh) return 'failed'
+
+        const prevSession = store.get(sessionAtomFamily(sessionId))
+        const preservedStaleMessages = !!prevSession && prevSession.messages.length > 0 && (!fresh.messages || fresh.messages.length === 0)
+        const nextSession = preservedStaleMessages
+          ? { ...fresh, messages: prevSession.messages }
+          : fresh
+
+        clearStreamingState(sessionId)
+        replaceLoadedSession(nextSession)
+        syncSessionOptionsFromSession(nextSession)
+        void reconcilePermissionModeState(sessionId)
+        return preservedStaleMessages ? 'preserved_stale_messages' : 'refreshed'
+      } catch (err) {
+        console.error(`[App] Failed to refresh session ${sessionId}:`, err)
+        return 'failed'
+      }
+    })()
+
+    sessionRefreshInFlightRef.current.set(sessionId, refreshPromise)
     try {
-      const fresh = await window.electronAPI.getSessionMessages(sessionId)
-      if (!fresh) return 'failed'
-
-      const prevSession = store.get(sessionAtomFamily(sessionId))
-      const preservedStaleMessages = !!prevSession && prevSession.messages.length > 0 && (!fresh.messages || fresh.messages.length === 0)
-      const nextSession = preservedStaleMessages
-        ? { ...fresh, messages: prevSession.messages }
-        : fresh
-
-      clearStreamingState(sessionId)
-      replaceLoadedSession(nextSession)
-      syncSessionOptionsFromSession(nextSession)
-      void reconcilePermissionModeState(sessionId)
-      return preservedStaleMessages ? 'preserved_stale_messages' : 'refreshed'
-    } catch (err) {
-      console.error(`[App] Failed to refresh session ${sessionId}:`, err)
-      return 'failed'
+      return await refreshPromise
+    } finally {
+      sessionRefreshInFlightRef.current.delete(sessionId)
     }
   }, [clearStreamingState, replaceLoadedSession, syncSessionOptionsFromSession, reconcilePermissionModeState, store])
 
@@ -1187,7 +1201,20 @@ export default function App() {
         selectedSessionId: sessionSelection.selected,
       })
       const metaMap = refreshedMetaMap ?? store.get(sessionMetaMapAtom)
-      const refreshIds = getSessionsToRefreshAfterStaleReconnect(metaMap, sessionSelection.selected)
+      const activeSession = sessionSelection.selected
+        ? store.get(sessionAtomFamily(sessionSelection.selected))
+        : null
+      const loadedSessionIds = store.get(loadedSessionsAtom)
+      const refreshIds = getSessionsToRefreshAfterStaleReconnect(
+        metaMap,
+        sessionSelection.selected,
+        sessionSelection.selected
+          ? {
+              loaded: loadedSessionIds.has(sessionSelection.selected),
+              messageCount: activeSession?.messages?.length ?? 0,
+            }
+          : undefined
+      )
 
       console.info(`[App] Stale reconnect — refreshing ${refreshIds.length} session(s):`, refreshIds)
 
