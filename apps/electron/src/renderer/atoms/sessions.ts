@@ -215,8 +215,10 @@ export const updateSessionMetaAtom = atom(
     const metaMap = get(sessionMetaMapAtom)
     const existing = metaMap.get(sessionId)
     if (existing) {
+      const nextMeta = { ...existing, ...updates }
+      if (shallowEqualSessionMeta(existing, nextMeta)) return
       const newMetaMap = new Map(metaMap)
-      newMetaMap.set(sessionId, { ...existing, ...updates })
+      newMetaMap.set(sessionId, nextMeta)
       set(sessionMetaMapAtom, newMetaMap)
     }
   }

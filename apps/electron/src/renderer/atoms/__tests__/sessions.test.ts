@@ -14,6 +14,7 @@ import {
   initializeSessionsAtom,
   replaceLoadedSessionAtom,
   updateSessionAtom,
+  updateSessionMetaAtom,
   updateBackgroundTaskProgress,
 } from '../sessions'
 
@@ -149,6 +150,25 @@ describe('session message loading atoms', () => {
       )),
     })
 
+    expect(notifications).toBe(0)
+    unsubscribe()
+  })
+
+  it('does not notify metadata subscribers when a metadata patch leaves values unchanged', () => {
+    const store = createStore()
+    const sessionId = 's1'
+
+    store.set(initializeSessionsAtom, [makeSession({ id: sessionId, name: 'Same name' })])
+    const before = store.get(sessionMetaMapAtom)
+
+    let notifications = 0
+    const unsubscribe = store.sub(sessionMetaMapAtom, () => {
+      notifications += 1
+    })
+
+    store.set(updateSessionMetaAtom, sessionId, { name: 'Same name' })
+
+    expect(store.get(sessionMetaMapAtom)).toBe(before)
     expect(notifications).toBe(0)
     unsubscribe()
   })
