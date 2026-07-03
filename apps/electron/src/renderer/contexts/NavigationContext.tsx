@@ -177,7 +177,6 @@ export function NavigationProvider({
 
   // Read session metadata directly from atom (reactive to session changes)
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
-  const sessionMetas = useMemo(() => Array.from(sessionMetaMap.values()), [sessionMetaMap])
   const updateSessionMeta = useSetAtom(updateSessionMetaAtom)
 
   const pushPanel = useSetAtom(pushPanelAtom)
@@ -565,48 +564,49 @@ export function NavigationProvider({
   // HELPERS
   // =========================================================================
 
-  // Helper: Filter sessions by SessionFilter
-  // Always excludes hidden sessions - they should never appear in navigation
-  const filterSessionsByFilter = useCallback(
-    (filter: SessionFilter): SessionMeta[] => {
-      // First filter out hidden sessions - they should never appear in any view
-      const visibleSessions = sessionMetas.filter(
-        s => !s.hidden && (!workspaceId || s.workspaceId === workspaceId)
-      )
+  // Helper: Match sessions by SessionFilter without materializing filtered arrays.
+  // Always excludes hidden sessions - they should never appear in navigation.
+  const doesSessionMatchFilter = useCallback(
+    (session: SessionMeta | undefined, filter: SessionFilter): session is SessionMeta => {
+      if (!session) return false
+      if (session.hidden) return false
+      if (workspaceId && session.workspaceId !== workspaceId) return false
 
-      return visibleSessions.filter((session) => {
-        switch (filter.kind) {
-          case 'allSessions':
-            return session.isArchived !== true
-          case 'flagged':
-            return session.isFlagged === true && session.isArchived !== true
-          case 'archived':
-            return session.isArchived === true
-          case 'state':
-            return session.sessionStatus === filter.stateId && session.isArchived !== true
-          case 'label': {
-            if (session.isArchived === true) return false
-            if (!session.labels?.length) return false
-            if (filter.labelId === '__all__') return true
-            return session.labels.some(l => l === filter.labelId || l.startsWith(`${filter.labelId}::`))
-          }
-          case 'view':
-            if (session.isArchived === true) return false
-            return true
-          default:
-            return false
+      switch (filter.kind) {
+        case 'allSessions':
+          return session.isArchived !== true
+        case 'flagged':
+          return session.isFlagged === true && session.isArchived !== true
+        case 'archived':
+          return session.isArchived === true
+        case 'state':
+          return session.sessionStatus === filter.stateId && session.isArchived !== true
+        case 'label': {
+          if (session.isArchived === true) return false
+          if (!session.labels?.length) return false
+          if (filter.labelId === '__all__') return true
+          return session.labels.some(l => l === filter.labelId || l.startsWith(`${filter.labelId}::`))
         }
-      })
+        case 'view':
+          if (session.isArchived === true) return false
+          return true
+        default:
+          return false
+      }
     },
-    [sessionMetas, workspaceId]
+    [workspaceId]
   )
 
   const getFirstSessionId = useCallback(
     (filter: SessionFilter): string | null => {
-      const filtered = filterSessionsByFilter(filter)
-      return filtered[0]?.id ?? null
+      for (const session of sessionMetaMap.values()) {
+        if (doesSessionMatchFilter(session, filter)) {
+          return session.id
+        }
+      }
+      return null
     },
-    [filterSessionsByFilter]
+    [doesSessionMatchFilter, sessionMetaMap]
   )
 
   const getLastSelectedSessionId = useCallback(
@@ -618,10 +618,10 @@ export function NavigationProvider({
         workspaceId
       )
       if (!storedId) return null
-      const filtered = filterSessionsByFilter(filter)
-      return filtered.some(session => session.id === storedId) ? storedId : null
+      const session = sessionMetaMap.get(storedId)
+      return doesSessionMatchFilter(session, filter) ? storedId : null
     },
-    [workspaceId, filterSessionsByFilter]
+    [doesSessionMatchFilter, sessionMetaMap, workspaceId]
   )
 
   const getFirstSourceSlug = useCallback(

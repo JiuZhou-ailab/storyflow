@@ -36,4 +36,12 @@ describe('project default navigation', () => {
     expect(navigationContextSource).toContain('setRightSidebarIfChanged(parsed.rightSidebar)')
     expect(navigationContextSource).toContain('setRightSidebarIfChanged(panel)')
   })
+
+  it('checks session filter matches directly from the metadata map during auto-select', () => {
+    expect(navigationContextSource).toContain('const doesSessionMatchFilter = useCallback')
+    expect(navigationContextSource).toContain('for (const session of sessionMetaMap.values())')
+    expect(navigationContextSource).toContain('const session = sessionMetaMap.get(storedId)')
+    expect(navigationContextSource).not.toContain('const sessionMetas = useMemo(() => Array.from(sessionMetaMap.values())')
+    expect(navigationContextSource).not.toContain('const filtered = filterSessionsByFilter(filter)')
+  })
 })
