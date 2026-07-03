@@ -810,15 +810,17 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     }
   }, [allTurns.length, isSearchActive, matchingOccurrences, visibleTurnCount])
 
-  // Extract unique turn IDs that have matches (for highlighting)
-  const matchingTurnIds = useMemo(() => {
-    const uniqueTurnIds = new Set(matchingOccurrences.map(m => m.turnId))
-    return Array.from(uniqueTurnIds)
+  const matchingTurnIdSet = useMemo(() => {
+    const uniqueTurnIds = new Set<string>()
+    for (const occurrence of matchingOccurrences) {
+      uniqueTurnIds.add(occurrence.turnId)
+    }
+    return uniqueTurnIds
   }, [matchingOccurrences])
-  const matchingTurnIdSet = useMemo(() => new Set(matchingTurnIds), [matchingTurnIds])
 
   // With CSS Custom Highlight API, navigation is driven by logical matches — no DOM verification needed.
   const validMatches = matchingOccurrences
+  const currentMatchTurnId = validMatches[currentMatchIndex]?.turnId ?? null
 
   // Auto-scroll to match ONLY when there's exactly one match
   // Multiple matches: user navigates with chevrons to avoid jarring scroll
@@ -1787,7 +1789,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                   {turns.map((turn, index) => {
                     // Compute turn key and check if it's a search match
                     const turnKey = getTurnKey(turn)
-                    const isCurrentMatch = isSearchActive && matchingTurnIds[currentMatchIndex] === turnKey
+                    const isCurrentMatch = isSearchActive && currentMatchTurnId === turnKey
                     const isAnyMatch = isSearchActive && matchingTurnIdSet.has(turnKey)
 
                     // User turns - render with MemoizedMessageBubble

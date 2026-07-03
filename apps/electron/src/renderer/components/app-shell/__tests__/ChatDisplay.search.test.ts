@@ -100,8 +100,13 @@ describe('ChatDisplay search performance contract', () => {
 
     expect(fullTranscriptGroupingCalls).toBe(1)
     expect(chatDisplaySource).toContain('collectTurnSearchOccurrences(allTurns, searchQuery, getTurnKey)')
-    expect(chatDisplaySource).toContain('const matchingTurnIdSet = useMemo(() => new Set(matchingTurnIds), [matchingTurnIds])')
+    expect(chatDisplaySource).toContain('const matchingTurnIdSet = useMemo(() => {')
+    expect(chatDisplaySource).toContain('for (const occurrence of matchingOccurrences)')
+    expect(chatDisplaySource).toContain('const currentMatchTurnId = validMatches[currentMatchIndex]?.turnId ?? null')
     expect(chatDisplaySource).toContain('matchingTurnIdSet.has(turnKey)')
+    expect(chatDisplaySource).toContain('currentMatchTurnId === turnKey')
+    expect(chatDisplaySource).not.toContain('const matchingTurnIds = useMemo')
+    expect(chatDisplaySource).not.toContain('matchingOccurrences.map(m => m.turnId)')
     expect(chatDisplaySource).not.toContain('matchingTurnIds.includes(')
   })
 
