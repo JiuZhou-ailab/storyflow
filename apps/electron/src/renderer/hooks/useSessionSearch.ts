@@ -176,6 +176,14 @@ export function sessionMatchesCurrentFilter(
   options: FilterMatchOptions = {}
 ): boolean {
   const { evaluateViews, statusFilter, labelFilterMap } = options
+  let sessionLabelIds: Set<string> | undefined
+
+  const getSessionLabelIds = (): Set<string> => {
+    if (!sessionLabelIds) {
+      sessionLabelIds = new Set((session.labels ?? []).map(label => parseLabelEntry(label).id))
+    }
+    return sessionLabelIds
+  }
 
   const passesStatusFilter = (): boolean => {
     if (!statusFilter || statusFilter.size === 0) return true
@@ -195,15 +203,15 @@ export function sessionMatchesCurrentFilter(
 
   const passesLabelFilter = (): boolean => {
     if (!labelFilterMap || labelFilterMap.size === 0) return true
-    const sessionLabelIds = session.labels?.map(l => parseLabelEntry(l).id) || []
+    const labelIds = getSessionLabelIds()
 
     let hasIncludes = false
     let matchesInclude = false
     for (const [labelId, mode] of labelFilterMap) {
-      if (mode === 'exclude' && sessionLabelIds.includes(labelId)) return false
+      if (mode === 'exclude' && labelIds.has(labelId)) return false
       if (mode === 'include') {
         hasIncludes = true
-        if (sessionLabelIds.includes(labelId)) matchesInclude = true
+        if (labelIds.has(labelId)) matchesInclude = true
       }
     }
     return !hasIncludes || matchesInclude
@@ -230,8 +238,7 @@ export function sessionMatchesCurrentFilter(
       if (!session.labels?.length) return false
       if (session.isArchived === true) return false
       if (currentFilter.labelId === '__all__') return true
-      const labelIds = session.labels.map(l => parseLabelEntry(l).id)
-      return labelIds.includes(currentFilter.labelId)
+      return getSessionLabelIds().has(currentFilter.labelId)
     }
 
     case 'view':

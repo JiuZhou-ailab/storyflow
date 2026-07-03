@@ -97,4 +97,13 @@ describe('computeCollapsedPagination', () => {
     expect(useSessionSearchSource).not.toContain('const aScore = fuzzyScore(getSessionTitle(a), searchQuery)')
     expect(useSessionSearchSource).not.toContain('const countA = contentSearchResults.get(a.id)?.matchCount || 0')
   })
+
+  it('parses session label ids once when matching label filters', () => {
+    expect(useSessionSearchSource).toContain('const getSessionLabelIds = (): Set<string>')
+    expect(useSessionSearchSource).toContain('const labelIds = getSessionLabelIds()')
+    expect(useSessionSearchSource).toContain('labelIds.has(labelId)')
+    expect(useSessionSearchSource).toContain('return getSessionLabelIds().has(currentFilter.labelId)')
+    expect(useSessionSearchSource).not.toContain('session.labels?.map(l => parseLabelEntry(l).id)')
+    expect(useSessionSearchSource).not.toContain('const labelIds = session.labels.map(l => parseLabelEntry(l).id)')
+  })
 })
