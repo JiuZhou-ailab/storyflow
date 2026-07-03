@@ -3,6 +3,7 @@ import { createStore } from 'jotai'
 import type { BrowserInstanceInfo } from '../../../shared/types'
 import {
   browserInstanceForSessionAtomFamily,
+  browserInstancesMapAtom,
   browserInstancesAtom,
   removeBrowserInstanceAtom,
   setBrowserInstancesAtom,
@@ -97,6 +98,49 @@ describe('browser pane atoms', () => {
     }))
     expect(store.get(currentBrowserAtom)?.url).toBe('https://current.example')
     expect(notifications).toBe(1)
+
+    unsubscribe()
+  })
+
+  it('does not notify browser instance subscribers for duplicate single-instance updates', () => {
+    const store = createStore()
+
+    store.set(updateBrowserInstanceAtom, makeInstance('browser-1'))
+    const beforeMap = store.get(browserInstancesMapAtom)
+    let notifications = 0
+    const unsubscribe = store.sub(browserInstancesMapAtom, () => {
+      notifications += 1
+    })
+
+    store.set(updateBrowserInstanceAtom, makeInstance('browser-1'))
+
+    expect(store.get(browserInstancesMapAtom)).toBe(beforeMap)
+    expect(notifications).toBe(0)
+
+    unsubscribe()
+  })
+
+  it('does not notify browser instance subscribers for duplicate list refreshes', () => {
+    const store = createStore()
+    const instances = [
+      makeInstance('browser-1'),
+      makeInstance('browser-2', { url: 'https://second.example' }),
+    ]
+
+    store.set(setBrowserInstancesAtom, instances)
+    const beforeMap = store.get(browserInstancesMapAtom)
+    let notifications = 0
+    const unsubscribe = store.sub(browserInstancesMapAtom, () => {
+      notifications += 1
+    })
+
+    store.set(setBrowserInstancesAtom, [
+      makeInstance('browser-1'),
+      makeInstance('browser-2', { url: 'https://second.example' }),
+    ])
+
+    expect(store.get(browserInstancesMapAtom)).toBe(beforeMap)
+    expect(notifications).toBe(0)
 
     unsubscribe()
   })
