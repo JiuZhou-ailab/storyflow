@@ -1428,13 +1428,15 @@ export function FreeFormInput({
     syncToParent(nextValue) // Debounced sync to parent for draft persistence
 
     // Sync source selection when mentions are removed from input
-    if (onSourcesChange) {
+    const mayHaveSourceMentions = prevValue.includes('[source:') || nextValue.includes('[source:')
+    if (onSourcesChange && mayHaveSourceMentions) {
       // Parse mentions from previous and current input
       const prevMentions = parseMentions(prevValue, [], sourceSlugs)
       const currMentions = parseMentions(nextValue, [], sourceSlugs)
+      const currentSourceSet = new Set(currMentions.sources)
 
       // Remove sources that were mentioned before but not anymore
-      const removedSources = prevMentions.sources.filter(slug => !currMentions.sources.includes(slug))
+      const removedSources = prevMentions.sources.filter(slug => !currentSourceSet.has(slug))
       if (removedSources.length > 0) {
         const newSlugs = optimisticSourceSlugs.filter(slug => !removedSources.includes(slug))
         setOptimisticSourceSlugs(newSlugs)

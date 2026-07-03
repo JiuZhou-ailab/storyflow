@@ -175,4 +175,16 @@ describe('FreeFormInput render hot paths', () => {
     expect(source).not.toContain('const sourceSlugs = sources.map')
     expect(source.match(/sources\.filter\(s => optimisticSourceSlugs\.includes\(s\.config\.slug\)\)/g) ?? []).toHaveLength(0)
   })
+
+  it('skips source mention parsing for ordinary input changes without source tokens', () => {
+    const source = readFileSync(new URL('../FreeFormInput.tsx', import.meta.url), 'utf-8')
+    const handlerStart = source.indexOf('const handleInputChange = React.useCallback')
+    const handlerEnd = source.indexOf('const handleRichInput = React.useCallback', handlerStart)
+    const handlerSource = source.slice(handlerStart, handlerEnd)
+
+    expect(handlerSource).toContain("const mayHaveSourceMentions = prevValue.includes('[source:') || nextValue.includes('[source:')")
+    expect(handlerSource).toContain('if (onSourcesChange && mayHaveSourceMentions)')
+    expect(handlerSource).toContain('const currentSourceSet = new Set(currMentions.sources)')
+    expect(handlerSource).not.toContain('!currMentions.sources.includes(slug)')
+  })
 })
