@@ -728,7 +728,7 @@ async function loadSessionMessages(
     // Update only lastFinalMessageId in metadata (now computable from loaded messages).
     // Don't replace the full meta entry — other fields are maintained through
     // optimistic updates and IPC events, and may be ahead of disk state.
-    const lastFinalMessageId = findLastFinalMessageId(loadedSession.messages)
+    const lastFinalMessageId = loadedSession.lastFinalMessageId ?? findLastFinalMessageId(loadedSession.messages)
     if (lastFinalMessageId) {
       const metaMap = get(sessionMetaMapAtom)
       const existingMeta = metaMap.get(sessionId)

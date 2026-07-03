@@ -445,6 +445,38 @@ describe('session message loading atoms', () => {
     expect(store.get(loadedSessionsAtom).has(sessionId)).toBe(true)
   })
 
+  it('uses loaded lastFinalMessageId without scanning loaded messages', async () => {
+    const store = createStore()
+    const sessionId = 'session-1'
+    const messages = new Proxy([msg('m1', 'assistant')] as Message[], {
+      get(target, prop, receiver) {
+        if (prop === '0') {
+          throw new Error('lastFinalMessageId payload should avoid scanning messages')
+        }
+        return Reflect.get(target, prop, receiver)
+      },
+    })
+
+    globalThis.window = {
+      electronAPI: {
+        getSessionMessages: async (id: string) => makeSession({
+          id,
+          messages,
+          lastFinalMessageId: 'm1',
+        }),
+      },
+    } as unknown as typeof window
+
+    store.set(sessionAtomFamily(sessionId), makeSession({ id: sessionId, messages: [] }))
+    store.set(sessionMetaMapAtom, new Map([
+      [sessionId, { id: sessionId, workspaceId: 'workspace-1', messageCount: 1 }],
+    ]))
+
+    await store.set(ensureSessionMessagesLoadedAtom, sessionId)
+
+    expect(store.get(sessionMetaMapAtom).get(sessionId)?.lastFinalMessageId).toBe('m1')
+  })
+
   it('does not mark stale empty-response fallback as loaded', async () => {
     const store = createStore()
     const sessionId = 'session-1'
