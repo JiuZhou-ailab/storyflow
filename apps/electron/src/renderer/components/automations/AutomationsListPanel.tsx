@@ -26,7 +26,8 @@ import { SendResourceToWorkspaceDialog } from '@/components/app-shell/SendResour
 import { useAppShellContext } from '@/context/AppShellContext'
 import { cn } from '@/lib/utils'
 import { automationSelection } from '@/hooks/useEntitySelection'
-import { APP_EVENTS, AGENT_EVENTS, getEventDisplayName, type AutomationListItem, type AutomationListFilter } from './types'
+import { getEventDisplayName, type AutomationListItem, type AutomationListFilter } from './types'
+import { selectAutomationsForList } from './list-filtering'
 import { formatShortRelativeTime } from './utils'
 
 const {
@@ -206,36 +207,13 @@ export function AutomationsListPanel({
 
   const isSearchMode = searchActive && searchQuery.length >= 2
 
-  // Filter automations based on sidebar-driven filter (from route)
-  const categoryFiltered = React.useMemo(() => {
-    const kind = automationFilter?.kind ?? 'all'
-    if (kind === 'all') return automations
-    if (kind === 'scheduled') return automations.filter(a => a.event === 'SchedulerTick')
-    if (kind === 'app') return automations.filter(a => (APP_EVENTS as string[]).includes(a.event) && a.event !== 'SchedulerTick')
-    if (kind === 'agent') return automations.filter(a => (AGENT_EVENTS as string[]).includes(a.event))
-    return automations
-  }, [automations, automationFilter?.kind])
-
-  // Further filter by search query (name, summary, event display name)
-  const searchFiltered = React.useMemo(() => {
-    if (!isSearchMode) return categoryFiltered
-    const q = searchQuery.toLowerCase()
-    return categoryFiltered.filter(a =>
-      a.name.toLowerCase().includes(q) ||
-      a.summary.toLowerCase().includes(q) ||
-      getEventDisplayName(a.event).toLowerCase().includes(q)
-    )
-  }, [categoryFiltered, isSearchMode, searchQuery])
-
-  // Sort: most recently executed first, never-run at the bottom
   const filteredAutomations = React.useMemo(() => {
-    return [...searchFiltered].sort((a, b) => {
-      if (!a.lastExecutedAt && !b.lastExecutedAt) return 0
-      if (!a.lastExecutedAt) return 1
-      if (!b.lastExecutedAt) return -1
-      return new Date(b.lastExecutedAt).getTime() - new Date(a.lastExecutedAt).getTime()
-    })
-  }, [searchFiltered])
+    return selectAutomationsForList(
+      automations,
+      automationFilter?.kind ?? 'all',
+      isSearchMode ? searchQuery : '',
+    )
+  }, [automations, automationFilter?.kind, isSearchMode, searchQuery])
 
   const handleItemClick = useCallback((automationId: string, index: number) => {
     selectAutomation(automationId, index)
