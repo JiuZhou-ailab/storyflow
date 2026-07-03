@@ -694,6 +694,9 @@ export function handleSessionStatusChanged(
   event: SessionStatusChangedEvent
 ): ProcessResult {
   const { session, streaming } = state
+  if (session.sessionStatus === event.sessionStatus) {
+    return { state, effects: [] }
+  }
   return {
     state: {
       session: { ...session, sessionStatus: event.sessionStatus },
