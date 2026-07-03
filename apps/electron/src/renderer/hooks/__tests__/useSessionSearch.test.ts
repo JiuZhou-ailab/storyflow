@@ -103,6 +103,13 @@ describe('computeCollapsedPagination', () => {
     expect(useSessionSearchSource).not.toContain('const countA = contentSearchResults.get(a.id)?.matchCount || 0')
   })
 
+  it('does not replace empty content search results while search is below the active threshold', () => {
+    expect(useSessionSearchSource).toContain('const clearContentSearchResults = useCallback')
+    expect(useSessionSearchSource).toContain('setContentSearchResults(prev => prev.size === 0 ? prev : new Map())')
+    expect(useSessionSearchSource).toContain('clearContentSearchResults()')
+    expect(useSessionSearchSource).not.toContain('setContentSearchResults(new Map())')
+  })
+
   it('parses session label ids once when matching label filters', () => {
     expect(useSessionSearchSource).toContain('const getSessionLabelIds = (): Set<string>')
     expect(useSessionSearchSource).toContain('const labelIds = getSessionLabelIds()')

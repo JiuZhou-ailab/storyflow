@@ -281,6 +281,9 @@ export function useSessionSearch({
   const [isSearchUnavailable, setIsSearchUnavailable] = useState(false)
   const [displayLimit, setDisplayLimit] = useState(INITIAL_DISPLAY_LIMIT)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const clearContentSearchResults = useCallback(() => {
+    setContentSearchResults(prev => prev.size === 0 ? prev : new Map())
+  }, [])
 
   // Search mode is active when search is open AND query has 2+ characters
   const isSearchMode = searchActive && searchQuery.length >= 2
@@ -290,7 +293,7 @@ export function useSessionSearch({
 
   useEffect(() => {
     if (!workspaceId || !isSearchMode) {
-      setContentSearchResults(new Map())
+      clearContentSearchResults()
       return
     }
 
@@ -338,7 +341,7 @@ export function useSessionSearch({
         } else {
           console.error('[useSessionSearch] Content search error:', error)
         }
-        setContentSearchResults(new Map())
+        clearContentSearchResults()
       } finally {
         if (!cancelled) {
           setIsSearchingContent(false)
@@ -351,7 +354,7 @@ export function useSessionSearch({
       clearTimeout(timer)
       setIsSearchingContent(false)
     }
-  }, [workspaceId, isSearchMode, searchQuery])
+  }, [workspaceId, isSearchMode, searchQuery, clearContentSearchResults])
 
   // --- Focus search input when search activates ---
 
