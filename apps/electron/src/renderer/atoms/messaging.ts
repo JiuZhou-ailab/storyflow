@@ -45,6 +45,12 @@ export const messagingBindingsBySessionAtom = atom((get) => {
   return map
 })
 
+export const hasOpenTelegramBindingAtom = selectAtom(
+  messagingBindingsAtom,
+  (bindings) => bindings.some((binding) => binding.platform === 'telegram' && binding.accessMode === 'open'),
+  Object.is,
+)
+
 function messagingBindingsEqual(a: MessagingBinding[], b: MessagingBinding[]): boolean {
   if (a.length !== b.length) return false
   return a.every((binding, index) => {

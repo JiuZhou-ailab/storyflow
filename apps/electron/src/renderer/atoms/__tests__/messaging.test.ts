@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { createStore } from 'jotai'
 import {
+  hasOpenTelegramBindingAtom,
   messagingBindingsAtom,
   messagingBindingsForSessionAtomFamily,
   type MessagingBinding,
@@ -23,6 +24,38 @@ function binding(overrides: Partial<MessagingBinding> = {}): MessagingBinding {
 }
 
 describe('messaging binding atoms', () => {
+  it('exposes open Telegram binding state without notifying on unrelated binding updates', () => {
+    const store = createStore()
+    let notifications = 0
+
+    store.set(messagingBindingsAtom, [
+      binding({ id: 'binding-1', platform: 'telegram', accessMode: 'open' }),
+      binding({ id: 'binding-2', platform: 'whatsapp', accessMode: 'allow-list' }),
+    ])
+
+    const unsubscribe = store.sub(hasOpenTelegramBindingAtom, () => {
+      notifications += 1
+    })
+
+    expect(store.get(hasOpenTelegramBindingAtom)).toBe(true)
+
+    store.set(messagingBindingsAtom, [
+      binding({ id: 'binding-1', platform: 'telegram', accessMode: 'open' }),
+      binding({ id: 'binding-2', platform: 'whatsapp', accessMode: 'open' }),
+    ])
+    expect(store.get(hasOpenTelegramBindingAtom)).toBe(true)
+    expect(notifications).toBe(0)
+
+    store.set(messagingBindingsAtom, [
+      binding({ id: 'binding-1', platform: 'telegram', accessMode: 'allow-list' }),
+      binding({ id: 'binding-2', platform: 'whatsapp', accessMode: 'open' }),
+    ])
+    expect(store.get(hasOpenTelegramBindingAtom)).toBe(false)
+    expect(notifications).toBe(1)
+
+    unsubscribe()
+  })
+
   it('exposes per-session bindings without notifying on unrelated sessions', () => {
     const store = createStore()
     const currentBindingsAtom = messagingBindingsForSessionAtomFamily('session-1')

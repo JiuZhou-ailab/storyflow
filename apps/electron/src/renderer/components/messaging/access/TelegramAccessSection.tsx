@@ -18,7 +18,7 @@ import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'motion/react'
 import { toast } from 'sonner'
 import { ChevronDown, ChevronRight, MessageSquare, Users } from 'lucide-react'
-import { messagingBindingsAtom } from '@/atoms/messaging'
+import { hasOpenTelegramBindingAtom } from '@/atoms/messaging'
 import {
   AccessModeBanner,
   OwnersListEditor,
@@ -57,7 +57,7 @@ interface Props {
 
 export function TelegramAccessSection({ workspaceId, accessMode, onAccessModeChange }: Props) {
   const { t } = useTranslation()
-  const allBindings = useAtomValue(messagingBindingsAtom)
+  const hasOpenBinding = useAtomValue(hasOpenTelegramBindingAtom)
   const [owners, setOwners] = React.useState<PlatformOwner[]>([])
   const [pending, setPending] = React.useState<PendingSender[]>([])
 
@@ -66,10 +66,6 @@ export function TelegramAccessSection({ workspaceId, accessMode, onAccessModeCha
   // legacy binding still in `'open'` mode. Without the second check, the
   // operator would see the banner disappear after clicking "Lock down"
   // even though concrete bindings are still letting strangers in.
-  const hasOpenBinding = React.useMemo(
-    () => allBindings.some((b) => b.platform === 'telegram' && b.accessMode === 'open'),
-    [allBindings],
-  )
   const showBanner = accessMode === 'open' || hasOpenBinding
 
   const loadAll = React.useCallback(async () => {
