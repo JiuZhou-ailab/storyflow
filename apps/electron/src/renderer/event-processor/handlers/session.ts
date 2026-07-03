@@ -984,24 +984,23 @@ export function handleAuthCompleted(
   const { session, streaming } = state
 
   // Update the auth-request message status
-  const updatedMessages = session.messages.map(m => {
-    if (
-      m.role === 'auth-request' &&
-      m.authRequestId === event.requestId &&
-      m.authStatus === 'pending'
-    ) {
-      return {
-        ...m,
-        authStatus: event.success
-          ? ('completed' as const)
-          : event.cancelled
-            ? ('cancelled' as const)
-            : ('failed' as const),
-        authError: event.error,
-      }
-    }
-    return m
-  })
+  const messageIndex = session.messages.findIndex(m => (
+    m.role === 'auth-request' &&
+    m.authRequestId === event.requestId &&
+    m.authStatus === 'pending'
+  ))
+  if (messageIndex === -1) return { state, effects: [] }
+
+  const updatedMessages = [...session.messages]
+  updatedMessages[messageIndex] = {
+    ...updatedMessages[messageIndex],
+    authStatus: event.success
+      ? ('completed' as const)
+      : event.cancelled
+        ? ('cancelled' as const)
+        : ('failed' as const),
+    authError: event.error,
+  }
 
   return {
     state: {

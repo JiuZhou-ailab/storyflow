@@ -1,6 +1,11 @@
+// input: Synthetic session events that may repeat or miss their targets
+// output: Regression coverage for session handler no-op state preservation
+// pos: Guards renderer event handlers against unnecessary session reference churn
+
 import { describe, expect, it } from 'bun:test'
 import {
   handleAsyncOperation,
+  handleAuthCompleted,
   handleConnectionChanged,
   handleInfo,
   handleLabelsChanged,
@@ -23,6 +28,7 @@ import {
 } from './session'
 import type {
   AsyncOperationEvent,
+  AuthCompletedEvent,
   InfoEvent,
   LabelsChangedEvent,
   LLMConnectionChangedEvent,
@@ -227,6 +233,44 @@ describe('session event no-op guards', () => {
     }
 
     expect(handleSessionUnshared(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state when auth completion target is missing', () => {
+    const state = makeState({
+      messages: [
+        { id: 'msg-1', role: 'assistant', content: 'hello' },
+      ],
+    })
+    const event: AuthCompletedEvent = {
+      type: 'auth_completed',
+      sessionId: 'session-1',
+      requestId: 'missing',
+      success: true,
+    }
+
+    expect(handleAuthCompleted(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state for duplicate auth completion status', () => {
+    const state = makeState({
+      messages: [
+        {
+          id: 'auth-1',
+          role: 'auth-request',
+          content: 'Authorize',
+          authRequestId: 'auth-1',
+          authStatus: 'completed',
+        },
+      ],
+    })
+    const event: AuthCompletedEvent = {
+      type: 'auth_completed',
+      sessionId: 'session-1',
+      requestId: 'auth-1',
+      success: true,
+    }
+
+    expect(handleAuthCompleted(state, event).state).toBe(state)
   })
 
   it('keeps the original state for duplicate usage update', () => {
