@@ -1,3 +1,7 @@
+// input: Synthetic session atom state and mocked renderer session loading APIs
+// output: Regression coverage for isolated session atoms and metadata update behavior
+// pos: Guards renderer session atom performance contracts and loading correctness
+
 import { afterEach, describe, expect, it } from 'bun:test'
 import { createStore } from 'jotai'
 import type { Message, Session } from '../../../shared/types'
@@ -94,6 +98,32 @@ describe('session message loading atoms', () => {
     }))
 
     expect(store.get(sessionMetaMapAtom)).toBe(beforeMetaMap)
+    expect(notifications).toBe(0)
+
+    unsubscribe()
+  })
+
+  it('replaceLoadedSessionAtom does not notify session subscribers when session values are unchanged', () => {
+    const store = createStore()
+    const sessionId = 'session-1'
+    const messages = [msg('m1'), msg('m2', 'assistant')]
+    const session = makeSession({
+      id: sessionId,
+      name: 'Same',
+      messages,
+      lastMessageAt: 100,
+    })
+
+    store.set(replaceLoadedSessionAtom, session)
+    const before = store.get(sessionAtomFamily(sessionId))
+    let notifications = 0
+    const unsubscribe = store.sub(sessionAtomFamily(sessionId), () => {
+      notifications += 1
+    })
+
+    store.set(replaceLoadedSessionAtom, { ...session, messages })
+
+    expect(store.get(sessionAtomFamily(sessionId))).toBe(before)
     expect(notifications).toBe(0)
 
     unsubscribe()
@@ -210,6 +240,37 @@ describe('session message loading atoms', () => {
     expect(store.get(sessionAtomFamily(sessionId))).toBe(before)
     expect(notifications).toBe(0)
     unsubscribe()
+  })
+
+  it('does not inspect messages for no-op session updates with existing metadata', () => {
+    const store = createStore()
+    const sessionId = 's1'
+    const messages = new Proxy([] as Message[], {
+      get(target, prop, receiver) {
+        if (prop === 'length') {
+          throw new Error('no-op update should not read messages')
+        }
+        return Reflect.get(target, prop, receiver)
+      },
+    })
+    const session = makeSession({
+      id: sessionId,
+      messages,
+      lastMessageAt: 100,
+    })
+    store.set(sessionAtomFamily(sessionId), session)
+    store.set(sessionMetaMapAtom, new Map([
+      [sessionId, {
+        id: sessionId,
+        workspaceId: session.workspaceId,
+        lastMessageAt: 100,
+        messageCount: 0,
+      }],
+    ]))
+
+    store.set(updateSessionAtom, sessionId, (prev) => prev)
+
+    expect(store.get(sessionAtomFamily(sessionId))).toBe(session)
   })
 
   it('does not notify session subscribers for empty streaming deltas', () => {

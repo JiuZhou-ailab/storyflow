@@ -1,3 +1,7 @@
+// input: Session payloads, transcript messages, and renderer-side session mutations
+// output: Per-session atoms, lightweight metadata atoms, and session loading actions
+// pos: Renderer session state boundary that keeps chat updates isolated by session
+
 /**
  * Per-Session State Management with Jotai
  *
@@ -183,6 +187,10 @@ export const updateSessionAtom = atom(
     const sessionAtom = sessionAtomFamily(sessionId)
     const currentSession = get(sessionAtom)
     const newSession = updater(currentSession)
+    if (currentSession === newSession) {
+      const metaMap = get(sessionMetaMapAtom)
+      if (!newSession || metaMap.has(sessionId)) return
+    }
     const sessionUnchanged = currentSession === newSession || (
       currentSession !== null &&
       newSession !== null &&
@@ -249,7 +257,11 @@ export const updateSessionMetaAtom = atom(
 export const replaceLoadedSessionAtom = atom(
   null,
   (get, set, session: Session) => {
-    set(sessionAtomFamily(session.id), session)
+    const sessionAtom = sessionAtomFamily(session.id)
+    const currentSession = get(sessionAtom)
+    if (!currentSession || !shallowEqualSession(currentSession, session)) {
+      set(sessionAtom, session)
+    }
 
     const metaMap = get(sessionMetaMapAtom)
     const newMeta = extractSessionMeta(session)
