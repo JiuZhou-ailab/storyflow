@@ -13,6 +13,7 @@ import {
   refreshSessionsMetadataAtom,
   initializeSessionsAtom,
   replaceLoadedSessionAtom,
+  updateSessionAtom,
 } from '../sessions'
 
 function msg(id: string, role: Message['role'] = 'user'): Message {
@@ -122,6 +123,32 @@ describe('session message loading atoms', () => {
     expect(store.get(currentMetaAtom)?.name).toBe('Current renamed')
     expect(notifications).toBe(1)
 
+    unsubscribe()
+  })
+
+  it('does not notify metadata subscribers when a session update leaves metadata unchanged', () => {
+    const store = createStore()
+    const sessionId = 's1'
+    const session = makeSession({
+      id: sessionId,
+      messages: [msg('m1', 'assistant')],
+      lastMessageAt: 100,
+    })
+    store.set(replaceLoadedSessionAtom, session)
+
+    let notifications = 0
+    const unsubscribe = store.sub(sessionMetaAtomFamily(sessionId), () => {
+      notifications += 1
+    })
+
+    store.set(updateSessionAtom, sessionId, (prev) => prev && {
+      ...prev,
+      messages: prev.messages.map((message) => (
+        message.id === 'm1' ? { ...message, content: `${message.content}:stream` } : message
+      )),
+    })
+
+    expect(notifications).toBe(0)
     unsubscribe()
   })
 

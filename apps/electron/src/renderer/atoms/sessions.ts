@@ -187,13 +187,23 @@ export const updateSessionAtom = atom(
 
     // Also update metadata if session exists
     if (newSession) {
+      const newMeta = extractSessionMeta(newSession)
       const metaMap = get(sessionMetaMapAtom)
+      const currentMeta = metaMap.get(sessionId)
+      if (currentMeta && shallowEqualSessionMeta(currentMeta, newMeta)) return
       const newMetaMap = new Map(metaMap)
-      newMetaMap.set(sessionId, extractSessionMeta(newSession))
+      newMetaMap.set(sessionId, newMeta)
       set(sessionMetaMapAtom, newMetaMap)
     }
   }
 )
+
+function shallowEqualSessionMeta(a: SessionMeta, b: SessionMeta): boolean {
+  const aKeys = Object.keys(a) as Array<keyof SessionMeta>
+  const bKeys = Object.keys(b) as Array<keyof SessionMeta>
+  if (aKeys.length !== bKeys.length) return false
+  return aKeys.every(key => a[key] === b[key])
+}
 
 /**
  * Action atom: update only session metadata (for list display updates)
