@@ -3,6 +3,7 @@ import {
   handleAsyncOperation,
   handleConnectionChanged,
   handleLabelsChanged,
+  handleMessageAnnotationsUpdated,
   handleNameChanged,
   handleQueuedMessageRemoved,
   handleSessionArchived,
@@ -23,6 +24,7 @@ import type {
   AsyncOperationEvent,
   LabelsChangedEvent,
   LLMConnectionChangedEvent,
+  MessageAnnotationsUpdatedEvent,
   NameChangedEvent,
   QueuedMessageRemovedEvent,
   SessionArchivedEvent,
@@ -262,5 +264,22 @@ describe('session event no-op guards', () => {
     }
 
     expect(handleQueuedMessageRemoved(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state when annotation update target is missing', () => {
+    const state = makeState({
+      messages: [
+        { id: 'msg-1', role: 'assistant', content: 'alpha' },
+        { id: 'msg-2', role: 'assistant', content: 'beta' },
+      ],
+    })
+    const event: MessageAnnotationsUpdatedEvent = {
+      type: 'message_annotations_updated',
+      sessionId: 'session-1',
+      messageId: 'missing',
+      annotations: [],
+    }
+
+    expect(handleMessageAnnotationsUpdated(state, event).state).toBe(state)
   })
 })

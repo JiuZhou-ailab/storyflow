@@ -622,6 +622,9 @@ export function handleMessageAnnotationsUpdated(
   event: MessageAnnotationsUpdatedEvent
 ): ProcessResult {
   const { session, streaming } = state
+  if (!session.messages.some(message => message.id === event.messageId)) {
+    return { state, effects: [] }
+  }
 
   return {
     state: {
