@@ -138,6 +138,15 @@ describe('ChatDisplay search performance contract', () => {
     expect(chatDisplaySource).not.toContain('const pendingFollowUpAnnotations = useMemo<PendingFollowUpAnnotation[]>')
   })
 
+  test('skips assistant turn indexing when no follow-ups are pending', () => {
+    const indexStart = chatDisplaySource.indexOf('const assistantTurnIndexByMessageId = useMemo(() => {')
+    const indexEnd = chatDisplaySource.indexOf('const scrollToFollowUpTurn = useCallback', indexStart)
+    const indexSource = chatDisplaySource.slice(indexStart, indexEnd)
+
+    expect(indexSource).toContain('if (pendingFollowUpAnnotations.length === 0) return new Map<string, number>()')
+    expect(indexSource).toContain('}, [allTurns, pendingFollowUpAnnotations.length])')
+  })
+
   test('keeps session-list search query out of AppShellContext value', () => {
     expect(appShellSource).toContain('useAtom(sessionListSearchActiveAtom)')
     expect(appShellSource).toContain('useAtom(sessionListSearchQueryAtom)')

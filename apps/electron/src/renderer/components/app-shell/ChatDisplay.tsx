@@ -1562,6 +1562,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     return result
   }, [turns])
   const assistantTurnIndexByMessageId = useMemo(() => {
+    if (pendingFollowUpAnnotations.length === 0) return new Map<string, number>()
     const map = new Map<string, number>()
     allTurns.forEach((turn, index) => {
       if (turn.type !== 'assistant') return
@@ -1569,7 +1570,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       if (messageId) map.set(messageId, index)
     })
     return map
-  }, [allTurns])
+  }, [allTurns, pendingFollowUpAnnotations.length])
 
   const scrollToFollowUpTurn = useCallback((item: {
     messageId: string
