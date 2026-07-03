@@ -6,7 +6,7 @@
  */
 
 import type { CredentialBackend } from './backends/types.ts';
-import type { CredentialId, CredentialType, StoredCredential, CredentialHealthStatus, CredentialHealthIssue } from './types.ts';
+import { credentialIdToAccount, type CredentialId, type CredentialType, type StoredCredential, type CredentialHealthStatus, type CredentialHealthIssue } from './types.ts';
 import type { LlmAuthType, LlmProviderType } from '../config/llm-connections.ts';
 import { SecureStorageBackend } from './backends/secure-storage.ts';
 import { debug } from '../utils/debug.ts';
@@ -16,6 +16,7 @@ export class CredentialManager {
   private writeBackend: CredentialBackend | null = null;
   private initialized = false;
   private initPromise: Promise<void> | null = null;
+  private pendingReads = new Map<string, Promise<StoredCredential | null>>();
 
   /**
    * Explicitly initialize the credential manager.
@@ -87,6 +88,23 @@ export class CredentialManager {
   async get(id: CredentialId): Promise<StoredCredential | null> {
     await this.ensureInitialized();
 
+    const key = credentialIdToAccount(id);
+    const pending = this.pendingReads.get(key);
+    if (pending) return pending;
+
+    const readPromise = this.readFromBackends(id);
+    this.pendingReads.set(key, readPromise);
+    const clearIfCurrent = () => {
+      if (this.pendingReads.get(key) === readPromise) {
+        this.pendingReads.delete(key);
+      }
+    };
+    readPromise.then(clearIfCurrent, clearIfCurrent);
+
+    return readPromise;
+  }
+
+  private async readFromBackends(id: CredentialId): Promise<StoredCredential | null> {
     for (const backend of this.backends) {
       try {
         const cred = await backend.get(id);
@@ -108,6 +126,7 @@ export class CredentialManager {
    */
   async set(id: CredentialId, credential: StoredCredential): Promise<void> {
     await this.ensureInitialized();
+    this.pendingReads.delete(credentialIdToAccount(id));
 
     if (!this.writeBackend) {
       throw new Error('No writable credential backend available');
@@ -123,6 +142,7 @@ export class CredentialManager {
    */
   async delete(id: CredentialId): Promise<boolean> {
     await this.ensureInitialized();
+    this.pendingReads.delete(credentialIdToAccount(id));
 
     let deleted = false;
     for (const backend of this.backends) {
