@@ -215,6 +215,40 @@ describe('handleUserMessage queued state', () => {
     expect(next.state.session.isProcessing).toBe(true)
   })
 
+  it('updates the matched optimistic user message without mapping the full transcript', () => {
+    const messages = new Proxy([
+      { id: 'optimistic-1', role: 'user', content: 'queued next', timestamp: 1000, isPending: true, isQueued: false },
+      { id: 'assistant-1', role: 'assistant', content: 'working', timestamp: 1001 },
+    ] as any[], {
+      get(target, prop, receiver) {
+        if (prop === 'map') {
+          throw new Error('matched user_message update should not map the full transcript')
+        }
+        return Reflect.get(target, prop, receiver)
+      },
+    })
+    const state = makeState(messages)
+
+    const event: UserMessageEvent = {
+      type: 'user_message',
+      sessionId: 'session-1',
+      status: 'queued',
+      optimisticMessageId: 'optimistic-1',
+      message: {
+        id: 'optimistic-1',
+        role: 'user',
+        content: 'queued next',
+        timestamp: 1001,
+      } as any,
+    }
+
+    const next = handleUserMessage(state, event)
+
+    expect(next.state.session.messages[0]?.isPending).toBe(false)
+    expect(next.state.session.messages[0]?.isQueued).toBe(true)
+    expect(next.state.session.messages[1]).toBe(messages[1])
+  })
+
   it('keeps the active turn processing when a mid-stream message is queued', () => {
     const state = makeState([
       { id: 'msg-1', role: 'user', content: 'first' },

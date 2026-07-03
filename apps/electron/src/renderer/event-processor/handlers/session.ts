@@ -606,16 +606,12 @@ export function handleUserMessage(
     // state and dropping the queued chip mid-flight. The canonical backend
     // id is irrelevant to subsequent events: they all use
     // `event.optimisticMessageId` for routing (see the findIndex above).
-    updatedMessages = session.messages.map((m, i) => {
-      if (i === existingIndex) {
-        return {
-          ...m,
-          isPending: false,
-          isQueued: nextIsQueued,
-        }
-      }
-      return m
-    })
+    updatedMessages = [...session.messages]
+    updatedMessages[existingIndex] = {
+      ...existingMessage,
+      isPending: false,
+      isQueued: nextIsQueued,
+    }
   } else {
     // Message not found (e.g., queued message from backend) - add it
     const newMessage: Message = {
