@@ -29,6 +29,18 @@ export interface NovelWorkspaceFile {
   modifiedAt?: number
 }
 
+export function areNovelWorkspaceFilesEqual(left: readonly NovelWorkspaceFile[], right: readonly NovelWorkspaceFile[]): boolean {
+  if (left === right) return true
+  if (left.length !== right.length) return false
+  for (let i = 0; i < left.length; i += 1) {
+    const a = left[i]
+    const b = right[i]
+    if (!a || !b) return false
+    if (a.path !== b.path || a.relativePath !== b.relativePath || a.modifiedAt !== b.modifiedAt) return false
+  }
+  return true
+}
+
 export type NovelWorkspaceFileSectionId =
   | 'manuscript'
   | 'outline'

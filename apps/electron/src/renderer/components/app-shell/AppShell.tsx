@@ -179,6 +179,7 @@ import {
   getNovelWorkspaceCandidateRoots,
   getNovelWorkspaceFileSearchQueries,
   getNovelWorkspaceVisibleRootDirectories,
+  areNovelWorkspaceFilesEqual,
   isNovelWorkspaceFilePathInRoot,
   isVisibleNovelWorkspaceAssetPath,
   isShortFormNovelWorkspaceFiles,
@@ -2021,7 +2022,7 @@ function AppShellContent({
       if (!files) return false
 
       setNovelWorkspaceRoot(rootPath)
-      setNovelWorkspaceFiles(files)
+      setNovelWorkspaceFiles((previous) => areNovelWorkspaceFilesEqual(previous, files) ? previous : files)
       return true
     })()
 

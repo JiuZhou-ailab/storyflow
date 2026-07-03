@@ -22,6 +22,7 @@ import {
   isNovelWorkspaceFilePathInRoot,
   isVisibleNovelWorkspaceAssetPath,
   isShortFormNovelWorkspaceFiles,
+  areNovelWorkspaceFilesEqual,
   NOVEL_WORKSPACE_DETECTION_QUERIES,
   NOVEL_WORKSPACE_FILE_SEARCH_QUERIES,
   selectDefaultNovelFile,
@@ -174,6 +175,23 @@ describe('writing workspace helpers', () => {
     ])
 
     expect(summary).toEqual({ count: 2, latestModifiedAt: 20 })
+  })
+
+  it('detects unchanged writing workspace file lists', () => {
+    const files = [
+      { path: '/novel/正文/01.md', relativePath: '正文/01.md', modifiedAt: 10 },
+      { path: '/novel/全局/大纲.md', relativePath: '全局/大纲.md' },
+    ]
+
+    expect(areNovelWorkspaceFilesEqual(files, [
+      { path: '/novel/正文/01.md', relativePath: '正文/01.md', modifiedAt: 10 },
+      { path: '/novel/全局/大纲.md', relativePath: '全局/大纲.md' },
+    ])).toBe(true)
+    expect(areNovelWorkspaceFilesEqual(files, [
+      { path: '/novel/正文/01.md', relativePath: '正文/01.md', modifiedAt: 11 },
+      { path: '/novel/全局/大纲.md', relativePath: '全局/大纲.md' },
+    ])).toBe(false)
+    expect(areNovelWorkspaceFilesEqual(files, [...files].reverse())).toBe(false)
   })
 
   it('groups raw file changes by novel section', () => {

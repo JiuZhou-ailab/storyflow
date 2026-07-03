@@ -1024,6 +1024,7 @@ describe('novel writing workspace layout', () => {
     expect(refreshSource.indexOf('const detectInFlight =')).toBeLessThan(
       refreshSource.indexOf('loadNovelWorkspaceFiles(')
     )
+    expect(refreshSource).toContain('areNovelWorkspaceFilesEqual(previous, files) ? previous : files')
   })
 
   it('preserves the selected writing file when catalog refreshes temporarily omit it', () => {
