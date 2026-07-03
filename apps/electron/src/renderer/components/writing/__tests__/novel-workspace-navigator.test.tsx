@@ -799,6 +799,9 @@ describe('novel writing workspace layout', () => {
     expect(reviewControllerSource).toContain('storage.set(storage.KEYS.novelChangeReviewStatus, normalizedStatus, novelWorkspaceRoot)')
     expect(reviewControllerSource).toContain('getAdjacentChangedFilePath(')
     expect(reviewControllerSource).toContain('handleSelectNextNovelChangeAfterStatus')
+    expect(reviewControllerSource).toContain('const nextPendingPathSet = new Set(nextPendingPaths)')
+    expect(reviewControllerSource).toContain('nextPendingPathSet.has(path)')
+    expect(reviewControllerSource).not.toContain('nextPendingPaths.includes(path)')
     expect(reviewControllerSource).not.toContain('effectiveSessionId')
   })
 

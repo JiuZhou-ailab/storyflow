@@ -106,7 +106,8 @@ export function useNovelReviewController({
           ...pendingNovelChangedFilePaths.slice(0, currentIndex + 1),
         ]
       : nextPendingPaths
-    const targetPath = searchOrder.find(path => nextPendingPaths.includes(path)) ?? nextPendingPaths[0]
+    const nextPendingPathSet = new Set(nextPendingPaths)
+    const targetPath = searchOrder.find(path => nextPendingPathSet.has(path)) ?? nextPendingPaths[0]
     await onSelectNovelFileByPath(targetPath)
   }, [onSelectNovelFileByPath, pendingNovelChangedFilePaths, reviewableNovelFileChanges])
 
