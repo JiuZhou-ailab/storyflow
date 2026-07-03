@@ -371,7 +371,16 @@ function extractTodosFromActivities(activities: ActivityItem[]): TodoItem[] | un
 export function groupMessagesByTurn(messages: Message[]): Turn[] {
   // Sort by timestamp for correct chronological order
   // This ensures correct turn grouping even if messages are added out of order during streaming
-  const sortedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp)
+  let isTimestampOrdered = true
+  for (let i = 1; i < messages.length; i++) {
+    if (messages[i - 1]!.timestamp > messages[i]!.timestamp) {
+      isTimestampOrdered = false
+      break
+    }
+  }
+  const sortedMessages = isTimestampOrdered
+    ? messages
+    : [...messages].sort((a, b) => a.timestamp - b.timestamp)
 
   const turns: Turn[] = []
   let currentTurn: AssistantTurn | null = null
