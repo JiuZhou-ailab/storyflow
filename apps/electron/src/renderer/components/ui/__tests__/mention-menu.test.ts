@@ -179,4 +179,17 @@ describe('useInlineMention hot path', () => {
     expect(source).not.toContain('const aLabelScore = getMatchScore(a.label, lowerFilter)')
     expect(source).not.toContain('const aIdScore = getMatchScore(a.id, lowerFilter)')
   })
+
+  it('memoizes filtered mention sections and flattened items in the menu render path', () => {
+    const source = readFileSync(new URL('../mention-menu.tsx', import.meta.url), 'utf-8')
+
+    expect(source).toContain('const filteredSections = React.useMemo(')
+    expect(source).toContain('() => filterSections(sections, filter)')
+    expect(source).toContain('[sections, filter]')
+    expect(source).toContain('const flatItems = React.useMemo(')
+    expect(source).toContain('() => flattenItems(filteredSections)')
+    expect(source).toContain('[filteredSections]')
+    expect(source).not.toContain('const filteredSections = filterSections(sections, filter)')
+    expect(source).not.toContain('const flatItems = flattenItems(filteredSections)')
+  })
 })

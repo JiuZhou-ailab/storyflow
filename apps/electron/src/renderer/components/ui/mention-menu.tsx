@@ -360,8 +360,14 @@ export function InlineMentionMenu({
   const menuRef = React.useRef<HTMLDivElement>(null)
   const listRef = React.useRef<HTMLDivElement>(null)
   const [selectedIndex, setSelectedIndex] = React.useState(0)
-  const filteredSections = filterSections(sections, filter)
-  const flatItems = flattenItems(filteredSections)
+  const filteredSections = React.useMemo(
+    () => filterSections(sections, filter),
+    [sections, filter]
+  )
+  const flatItems = React.useMemo(
+    () => flattenItems(filteredSections),
+    [filteredSections]
+  )
 
   // Reset selection when filter changes
   React.useEffect(() => {
