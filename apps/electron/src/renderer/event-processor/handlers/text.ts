@@ -15,6 +15,14 @@ import {
   generateMessageId
 } from '../helpers'
 
+function getLastStreamingMessageIndex(messages: Message[], turnId?: string): number {
+  const lastIndex = messages.length - 1
+  const lastMessage = messages[lastIndex]
+  if (!lastMessage || lastMessage.role !== 'assistant' || !lastMessage.isStreaming) return -1
+  if (turnId && lastMessage.turnId !== turnId) return -1
+  return lastIndex
+}
+
 /**
  * Handle text_delta - accumulate streaming content
  *
@@ -39,8 +47,10 @@ export function handleTextDelta(
         turnId: event.turnId
       }
 
-  // Find existing streaming message by turnId
-  const streamingIndex = findStreamingMessage(session.messages, event.turnId)
+  const lastStreamingIndex = getLastStreamingMessageIndex(session.messages, event.turnId)
+  const streamingIndex = lastStreamingIndex === -1
+    ? findStreamingMessage(session.messages, event.turnId)
+    : lastStreamingIndex
 
   if (streamingIndex !== -1) {
     // Message exists - update its content
