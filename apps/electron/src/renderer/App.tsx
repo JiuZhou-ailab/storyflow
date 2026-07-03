@@ -42,6 +42,7 @@ import { formatSessionLoadFailure, shouldTreatSessionLoadFailureAsTransportFallb
 import { resolvePostSetupAppState } from './lib/startup-flow'
 import { buildProjectSummaries } from './lib/project-summary'
 import { isAppFullyReady } from './lib/app-readiness'
+import { appendUniqueRequestById } from './lib/request-queue'
 import { extractWorkspaceSlugFromPath } from '@craft-agent/shared/utils/workspace-slug'
 import { DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels'
 import { initRendererPerf } from './lib/perf'
@@ -932,7 +933,7 @@ export default function App() {
             setPendingPermissions(prevPerms => {
               const next = new Map(prevPerms)
               const existingQueue = next.get(sessionId) || []
-              next.set(sessionId, [...existingQueue, effect.request])
+              next.set(sessionId, appendUniqueRequestById(existingQueue, effect.request))
               return next
             })
 
@@ -971,7 +972,7 @@ export default function App() {
             setPendingCredentials(prevCreds => {
               const next = new Map(prevCreds)
               const existingQueue = next.get(sessionId) || []
-              next.set(sessionId, [...existingQueue, effect.request])
+              next.set(sessionId, appendUniqueRequestById(existingQueue, effect.request))
               return next
             })
             break
