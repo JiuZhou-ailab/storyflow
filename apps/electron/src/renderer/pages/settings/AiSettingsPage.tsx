@@ -55,6 +55,11 @@ import { useAppShellContext } from '@/context/AppShellContext'
 import { getModelShortName, type ModelDefinition } from '@config/models'
 import { getModelsForProviderType, resolveMidStreamBehavior, type CustomEndpointApi, type MidStreamBehavior } from '@config/llm-connections'
 import { toast } from 'sonner'
+import {
+  createLlmConnectionOptions,
+  createWorkspaceLlmConnectionOptions,
+  sortLlmConnectionsForDisplay,
+} from './ai-settings-options'
 
 /**
  * Derive model dropdown options from a connection's models array,
@@ -362,6 +367,7 @@ function ConnectionRow({ connection, isLastConnection, onRenameClick, onDelete, 
 interface WorkspaceOverrideCardProps {
   workspace: Workspace
   llmConnections: LlmConnectionWithStatus[]
+  connectionOptions: ReturnType<typeof createWorkspaceLlmConnectionOptions>
   onSettingsChange: () => void
 }
 
@@ -371,7 +377,7 @@ const WORKSPACE_SETTING_LABELS: Partial<Record<keyof WorkspaceSettings, string>>
   thinkingLevel: 'workspace thinking override',
 }
 
-function WorkspaceOverrideCard({ workspace, llmConnections, onSettingsChange }: WorkspaceOverrideCardProps) {
+function WorkspaceOverrideCard({ workspace, llmConnections, connectionOptions, onSettingsChange }: WorkspaceOverrideCardProps) {
   const { t } = useTranslation()
   const [isExpanded, setIsExpanded] = useState(false)
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null)
@@ -524,16 +530,7 @@ function WorkspaceOverrideCard({ workspace, llmConnections, onSettingsChange }: 
                 description={t("settings.ai.connectionDesc")}
                 value={currentConnection}
                 onValueChange={handleConnectionChange}
-                options={[
-                  { value: 'global', label: t("settings.ai.useDefault"), description: t("settings.ai.inheritFromApp") },
-                  ...llmConnections.map((conn) => ({
-                    value: conn.slug,
-                    label: conn.name,
-                    description: conn.providerType === 'anthropic' ? 'Anthropic' :
-                                 conn.providerType === 'pi' ? 'Storyflow Backend' :
-                                 conn.providerType || 'Unknown',
-                  })),
-                ]}
+                options={connectionOptions}
               />
               <SettingsMenuSelectRow
                 label={t("settings.ai.model")}
@@ -591,6 +588,31 @@ export default function AiSettingsPage() {
   const visibleLlmConnections = useMemo(
     () => llmConnections.filter(conn => !conn.hidden),
     [llmConnections],
+  )
+  const defaultConnectionOptions = useMemo(
+    () => createLlmConnectionOptions(visibleLlmConnections, {
+      anthropic: 'Anthropic API',
+      pi: 'Storyflow Backend',
+      piCompat: 'Storyflow Backend Compatible',
+      unknown: 'Unknown',
+    }),
+    [visibleLlmConnections],
+  )
+  const workspaceConnectionOptions = useMemo(
+    () => createWorkspaceLlmConnectionOptions(visibleLlmConnections, {
+      globalLabel: t("settings.ai.useDefault"),
+      globalDescription: t("settings.ai.inheritFromApp"),
+      providerLabels: {
+        anthropic: 'Anthropic',
+        pi: 'Storyflow Backend',
+        unknown: 'Unknown',
+      },
+    }),
+    [visibleLlmConnections, t],
+  )
+  const sortedVisibleLlmConnections = useMemo(
+    () => sortLlmConnectionsForDisplay(visibleLlmConnections),
+    [visibleLlmConnections],
   )
 
   // API Setup overlay state
@@ -970,14 +992,7 @@ export default function AiSettingsPage() {
                     description={t("settings.ai.connectionDesc")}
                     value={defaultConnection?.slug || ''}
                     onValueChange={handleSetDefaultConnection}
-                    options={visibleLlmConnections.map((conn) => ({
-                      value: conn.slug,
-                      label: conn.name,
-                      description: conn.providerType === 'anthropic' ? 'Anthropic API' :
-                                   conn.providerType === 'pi' ? 'Storyflow Backend' :
-                                   conn.providerType === 'pi_compat' ? 'Storyflow Backend Compatible' :
-                                   conn.providerType || 'Unknown',
-                    }))}
+                    options={defaultConnectionOptions}
                   />
                   <SettingsMenuSelectRow
                     label={t("settings.ai.model")}
@@ -1012,6 +1027,7 @@ export default function AiSettingsPage() {
                         key={workspace.id}
                         workspace={workspace}
                         llmConnections={visibleLlmConnections}
+                        connectionOptions={workspaceConnectionOptions}
                         onSettingsChange={handleWorkspaceSettingsChange}
                       />
                     ))}
@@ -1027,13 +1043,7 @@ export default function AiSettingsPage() {
                       {t("settings.ai.noConnections")}
                     </div>
                   ) : (
-                    [...visibleLlmConnections]
-                      .sort((a, b) => {
-                        if (a.isDefault && !b.isDefault) return -1
-                        if (!a.isDefault && b.isDefault) return 1
-                        return a.name.localeCompare(b.name)
-                      })
-                      .map((conn) => (
+                    sortedVisibleLlmConnections.map((conn) => (
                       <ConnectionRow
                         key={conn.slug}
                         connection={conn}
