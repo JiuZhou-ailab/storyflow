@@ -16,4 +16,14 @@ describe('MainContentPanel sessions empty state', () => {
     expect(mainContentPanelSource).not.toContain('projectLanding.title')
     expect(mainContentPanelSource).toContain('session.selectConversation')
   })
+
+  it('keeps ordinary chat rendering off the whole session metadata map subscription', () => {
+    const mainComponentSource = mainContentPanelSource.slice(
+      mainContentPanelSource.indexOf('export function MainContentPanel'),
+      mainContentPanelSource.indexOf('function SessionBatchActionsPanel')
+    )
+
+    expect(mainContentPanelSource).toContain('sessionMetaAtomFamily(sessionId)')
+    expect(mainComponentSource).not.toContain('useAtomValue(sessionMetaMapAtom)')
+  })
 })

@@ -892,12 +892,20 @@ describe('novel writing workspace layout', () => {
       mainContentSource.indexOf('// Chats navigator - show chat, multi-select panel, or empty state'),
       mainContentSource.indexOf('// Fallback')
     )
+    const sessionRouteContentSource = mainContentSource.slice(
+      mainContentSource.indexOf('function SessionRouteContent'),
+      mainContentSource.length
+    )
 
-    expect(sessionsContentSource).toContain('const selectedSessionMeta = sessionMetaMap.get(navState.details.sessionId)')
-    expect(sessionsContentSource).toContain('selectedSessionMeta?.workspaceId === activeWorkspaceId')
-    expect(sessionsContentSource).toContain('selectedSessionMeta?.workspaceId === remoteWorkspaceId')
-    expect(sessionsContentSource.indexOf('if (!selectedSessionMatchesWorkspace)')).toBeLessThan(
-      sessionsContentSource.indexOf('<ChatPage sessionId={navState.details.sessionId} />')
+    expect(sessionsContentSource).toContain('<SessionRouteContent')
+    expect(sessionsContentSource).toContain('sessionId={navState.details.sessionId}')
+    expect(sessionsContentSource).toContain('activeWorkspaceId={activeWorkspaceId}')
+    expect(sessionsContentSource).toContain('remoteWorkspaceId={remoteWorkspaceId}')
+    expect(mainContentSource).toContain('const selectedSessionMeta = useAtomValue(sessionMetaAtomFamily(sessionId))')
+    expect(sessionRouteContentSource).toContain('selectedSessionMeta?.workspaceId === activeWorkspaceId')
+    expect(sessionRouteContentSource).toContain('selectedSessionMeta?.workspaceId === remoteWorkspaceId')
+    expect(sessionRouteContentSource.indexOf('if (!selectedSessionMatchesWorkspace)')).toBeLessThan(
+      sessionRouteContentSource.indexOf('<ChatPage sessionId={sessionId} />')
     )
   })
 

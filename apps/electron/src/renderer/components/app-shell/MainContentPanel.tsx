@@ -26,7 +26,7 @@ import { useTranslation } from 'react-i18next'
 import { Panel } from './Panel'
 import { MultiSelectPanel } from './MultiSelectPanel'
 import { useAppShellContext } from '@/context/AppShellContext'
-import { sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
+import { sessionMetaAtomFamily, sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
 import { StoplightProvider } from '@/context/StoplightContext'
 import {
   useNavigationState,
@@ -72,11 +72,6 @@ export function MainContentPanel({
   const {
     activeWorkspaceId,
     workspaces,
-    onSessionStatusChange,
-    onArchiveSession,
-    onSessionLabelsChange,
-    sessionStatuses,
-    labels,
     onTestAutomation,
     onToggleAutomation,
     onDuplicateAutomation,
@@ -87,12 +82,7 @@ export function MainContentPanel({
     activeSessionWorkingDirectory,
   } = useAppShellContext()
 
-  // Session multi-select state
   const isMultiSelectActive = useIsMultiSelectActive()
-  const selectedIds = useSelectedIds()
-  const selectionCount = useSelectionCount()
-  const { clearMultiSelect } = useSessionSelection()
-  const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
   const automations = useAtomValue(automationsAtom)
 
   // Execution history for the selected automation
@@ -157,67 +147,6 @@ export function MainContentPanel({
     setSendResourceLabel(`${count} ${type}${count !== 1 ? 's' : ''}`)
     setSendDialogOpen(true)
   }, [])
-
-  const selectedMetas = useMemo(() => {
-    const metas: SessionMeta[] = []
-    selectedIds.forEach((id) => {
-      const meta = sessionMetaMap.get(id)
-      if (meta) metas.push(meta)
-    })
-    return metas
-  }, [selectedIds, sessionMetaMap])
-
-  const activeStatusId = useMemo((): SessionStatusId | null => {
-    if (selectedMetas.length === 0) return null
-    const first = (selectedMetas[0].sessionStatus || 'todo') as SessionStatusId
-    const allSame = selectedMetas.every(meta => (meta.sessionStatus || 'todo') === first)
-    return allSame ? first : null
-  }, [selectedMetas])
-
-  const appliedLabelIds = useMemo(() => {
-    if (selectedMetas.length === 0) return new Set<string>()
-    const toLabelSet = (meta: SessionMeta) =>
-      new Set((meta.labels || []).map(entry => extractLabelId(entry)))
-    const [first, ...rest] = selectedMetas.map(toLabelSet)
-    const intersection = new Set(first)
-    for (const labelSet of rest) {
-      for (const id of [...intersection]) {
-        if (!labelSet.has(id)) intersection.delete(id)
-      }
-    }
-    return intersection
-  }, [selectedMetas])
-
-  // Batch operations for multi-select
-  const handleBatchSetStatus = useCallback((status: SessionStatusId) => {
-    selectedIds.forEach(sessionId => {
-      onSessionStatusChange(sessionId, status)
-    })
-  }, [selectedIds, onSessionStatusChange])
-
-  const handleBatchArchive = useCallback(() => {
-    selectedIds.forEach(sessionId => {
-      onArchiveSession(sessionId)
-    })
-    clearMultiSelect()
-  }, [selectedIds, onArchiveSession, clearMultiSelect])
-
-  const handleBatchToggleLabel = useCallback((labelId: string) => {
-    if (!onSessionLabelsChange) return
-    const allHaveLabel = selectedMetas.every(meta =>
-      (meta.labels || []).some(entry => extractLabelId(entry) === labelId)
-    )
-
-    selectedMetas.forEach(meta => {
-      const labels = meta.labels || []
-      const hasLabel = labels.some(entry => extractLabelId(entry) === labelId)
-      const filtered = labels.filter(entry => extractLabelId(entry) !== labelId)
-      const nextLabels = allHaveLabel
-        ? filtered
-        : (hasLabel ? labels : [...labels, labelId])
-      onSessionLabelsChange(meta.id, nextLabels)
-    })
-  }, [selectedMetas, onSessionLabelsChange])
 
   // Wrap content with StoplightProvider so PanelHeaders auto-compensate in focused mode.
   // Also renders the Send to Workspace dialog (portal-based, so it overlays regardless of position).
@@ -362,40 +291,19 @@ export function MainContentPanel({
     if (isMultiSelectActive) {
       return wrapWithStoplight(
         <Panel variant="grow" className={className}>
-          <MultiSelectPanel
-            count={selectionCount}
-            sessionStatuses={sessionStatuses}
-            activeStatusId={activeStatusId}
-            onSetStatus={handleBatchSetStatus}
-            labels={labels}
-            appliedLabelIds={appliedLabelIds}
-            onToggleLabel={handleBatchToggleLabel}
-            onArchive={handleBatchArchive}
-            onClearSelection={clearMultiSelect}
-          />
+          <SessionBatchActionsPanel />
         </Panel>
       )
     }
 
     if (navState.details) {
-      const selectedSessionMeta = sessionMetaMap.get(navState.details.sessionId)
-      const selectedSessionMatchesWorkspace = !activeWorkspaceId || (
-        selectedSessionMeta?.workspaceId === activeWorkspaceId
-        || (!!remoteWorkspaceId && selectedSessionMeta?.workspaceId === remoteWorkspaceId)
-      )
-      if (!selectedSessionMatchesWorkspace) {
-        return wrapWithStoplight(
-          <Panel variant="grow" className={className}>
-            <div className="flex items-center justify-center h-full text-muted-foreground">
-              <p className="text-sm">{t("session.noSessionSelected")}</p>
-            </div>
-          </Panel>
-        )
-      }
-
       return wrapWithStoplight(
         <Panel variant="grow" className={className}>
-          <ChatPage sessionId={navState.details.sessionId} />
+          <SessionRouteContent
+            sessionId={navState.details.sessionId}
+            activeWorkspaceId={activeWorkspaceId}
+            remoteWorkspaceId={remoteWorkspaceId}
+          />
         </Panel>
       )
     }
@@ -416,4 +324,119 @@ export function MainContentPanel({
       </div>
     </Panel>
   )
+}
+
+function SessionBatchActionsPanel() {
+  const {
+    onSessionStatusChange,
+    onArchiveSession,
+    onSessionLabelsChange,
+    sessionStatuses,
+    labels,
+  } = useAppShellContext()
+  const selectedIds = useSelectedIds()
+  const selectionCount = useSelectionCount()
+  const { clearMultiSelect } = useSessionSelection()
+  const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
+
+  const selectedMetas = useMemo(() => {
+    const metas: SessionMeta[] = []
+    selectedIds.forEach((id) => {
+      const meta = sessionMetaMap.get(id)
+      if (meta) metas.push(meta)
+    })
+    return metas
+  }, [selectedIds, sessionMetaMap])
+
+  const activeStatusId = useMemo((): SessionStatusId | null => {
+    if (selectedMetas.length === 0) return null
+    const first = (selectedMetas[0].sessionStatus || 'todo') as SessionStatusId
+    const allSame = selectedMetas.every(meta => (meta.sessionStatus || 'todo') === first)
+    return allSame ? first : null
+  }, [selectedMetas])
+
+  const appliedLabelIds = useMemo(() => {
+    if (selectedMetas.length === 0) return new Set<string>()
+    const toLabelSet = (meta: SessionMeta) =>
+      new Set((meta.labels || []).map(entry => extractLabelId(entry)))
+    const [first, ...rest] = selectedMetas.map(toLabelSet)
+    const intersection = new Set(first)
+    for (const labelSet of rest) {
+      for (const id of [...intersection]) {
+        if (!labelSet.has(id)) intersection.delete(id)
+      }
+    }
+    return intersection
+  }, [selectedMetas])
+
+  const handleBatchSetStatus = useCallback((status: SessionStatusId) => {
+    selectedIds.forEach(sessionId => {
+      onSessionStatusChange(sessionId, status)
+    })
+  }, [selectedIds, onSessionStatusChange])
+
+  const handleBatchArchive = useCallback(() => {
+    selectedIds.forEach(sessionId => {
+      onArchiveSession(sessionId)
+    })
+    clearMultiSelect()
+  }, [selectedIds, onArchiveSession, clearMultiSelect])
+
+  const handleBatchToggleLabel = useCallback((labelId: string) => {
+    if (!onSessionLabelsChange) return
+    const allHaveLabel = selectedMetas.every(meta =>
+      (meta.labels || []).some(entry => extractLabelId(entry) === labelId)
+    )
+
+    selectedMetas.forEach(meta => {
+      const labels = meta.labels || []
+      const hasLabel = labels.some(entry => extractLabelId(entry) === labelId)
+      const filtered = labels.filter(entry => extractLabelId(entry) !== labelId)
+      const nextLabels = allHaveLabel
+        ? filtered
+        : (hasLabel ? labels : [...labels, labelId])
+      onSessionLabelsChange(meta.id, nextLabels)
+    })
+  }, [selectedMetas, onSessionLabelsChange])
+
+  return (
+    <MultiSelectPanel
+      count={selectionCount}
+      sessionStatuses={sessionStatuses}
+      activeStatusId={activeStatusId}
+      onSetStatus={handleBatchSetStatus}
+      labels={labels}
+      appliedLabelIds={appliedLabelIds}
+      onToggleLabel={handleBatchToggleLabel}
+      onArchive={handleBatchArchive}
+      onClearSelection={clearMultiSelect}
+    />
+  )
+}
+
+function SessionRouteContent({
+  sessionId,
+  activeWorkspaceId,
+  remoteWorkspaceId,
+}: {
+  sessionId: string
+  activeWorkspaceId?: string | null
+  remoteWorkspaceId?: string | null
+}) {
+  const { t } = useTranslation()
+  const selectedSessionMeta = useAtomValue(sessionMetaAtomFamily(sessionId))
+  const selectedSessionMatchesWorkspace = !activeWorkspaceId || (
+    selectedSessionMeta?.workspaceId === activeWorkspaceId
+    || (!!remoteWorkspaceId && selectedSessionMeta?.workspaceId === remoteWorkspaceId)
+  )
+
+  if (!selectedSessionMatchesWorkspace) {
+    return (
+      <div className="flex items-center justify-center h-full text-muted-foreground">
+        <p className="text-sm">{t("session.noSessionSelected")}</p>
+      </div>
+    )
+  }
+
+  return <ChatPage sessionId={sessionId} />
 }
