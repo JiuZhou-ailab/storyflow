@@ -1539,8 +1539,24 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
   // Reverse pagination: only render last N turns for fast initial render
   const startIndex = Math.max(0, allTurns.length - visibleTurnCount)
-  const turns = allTurns.slice(startIndex)
+  const turns = React.useMemo(() => allTurns.slice(startIndex), [allTurns, startIndex])
   const hasMoreAbove = startIndex > 0
+  const hasUserTurnAfterIndex = React.useMemo(() => {
+    const result = new Array<boolean>(turns.length)
+    let hasUserAfter = false
+    for (let i = turns.length - 1; i >= 0; i--) {
+      result[i] = hasUserAfter
+      if (turns[i]?.type === 'user') hasUserAfter = true
+    }
+    return result
+  }, [turns])
+  const latestUserMessage = React.useMemo(() => {
+    for (let i = transcriptMessages.length - 1; i >= 0; i--) {
+      const message = transcriptMessages[i]
+      if (message?.role === 'user') return message
+    }
+    return undefined
+  }, [transcriptMessages])
 
   const assistantTurnIndexByMessageId = useMemo(() => {
     const map = new Map<string, number>()
@@ -1829,7 +1845,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                     // mt-2 matches ResponseCard spacing for visual consistency
                     if (turn.type === 'auth-request') {
                       // Interactive only if no user message follows
-                      const isAuthInteractive = !turns.slice(index + 1).some(t => t.type === 'user')
+                      const isAuthInteractive = !hasUserTurnAfterIndex[index]
                       return (
                         <div
                           key={turnKey}
@@ -1851,7 +1867,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                     }
 
                     // Check if this is the last response (for Accept Plan button visibility)
-                    const isLastResponse = index === turns.length - 1 || !turns.slice(index + 1).some(t => t.type === 'user')
+                    const isLastResponse = index === turns.length - 1 || !hasUserTurnAfterIndex[index]
 
                     // Assistant turns - render with TurnCard (buffered streaming)
                     const assistantUiKey = getAssistantTurnUiKey(turn, index)
@@ -2054,16 +2070,12 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                   </motion.div>
                 </AnimatePresence>
                 {/* Processing Indicator - always visible while processing */}
-                {session.isProcessing && (() => {
-                  // Find the last user message timestamp for accurate elapsed time
-                  const lastUserMsg = [...transcriptMessages].reverse().find(m => m.role === 'user')
-                  return (
-                    <ProcessingIndicator
-                      startTime={lastUserMsg?.timestamp}
-                      statusMessage={session.currentStatus?.message}
-                    />
-                  )
-                })()}
+                {session.isProcessing && (
+                  <ProcessingIndicator
+                    startTime={latestUserMessage?.timestamp}
+                    statusMessage={session.currentStatus?.message}
+                  />
+                )}
                 {/* Scroll Anchor: For auto-scroll to bottom */}
                 <div ref={messagesEndRef} />
               </div>

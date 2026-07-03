@@ -104,4 +104,15 @@ describe('ChatDisplay search performance contract', () => {
     expect(chatDisplaySource).toContain('matchingTurnIdSet.has(turnKey)')
     expect(chatDisplaySource).not.toContain('matchingTurnIds.includes(')
   })
+
+  test('precomputes suffix user-turn state instead of scanning visible turns during render', () => {
+    expect(chatDisplaySource).toContain('const hasUserTurnAfterIndex = React.useMemo')
+    expect(chatDisplaySource).toContain('hasUserTurnAfterIndex[index]')
+    expect(chatDisplaySource).not.toContain('turns.slice(index + 1).some')
+  })
+
+  test('finds the latest user message without cloning and reversing the transcript', () => {
+    expect(chatDisplaySource).toContain('const latestUserMessage = React.useMemo')
+    expect(chatDisplaySource).not.toContain('[...transcriptMessages].reverse()')
+  })
 })
