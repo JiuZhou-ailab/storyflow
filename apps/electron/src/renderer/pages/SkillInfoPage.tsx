@@ -1,10 +1,11 @@
-// input: Workspace skill slug, workspace id, and optional working directory
+// input: Workspace skill slug, workspace id, and AppShell-populated skills atom
 // output: Skill metadata, instructions, permissions, and explicit edit actions
 // pos: Detail page for inspecting and maintaining reusable agent skills
 
 import * as React from 'react'
+import { useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
-import { useEffect, useState, useCallback } from 'react'
+import { useCallback } from 'react'
 import { Check, X, Minus } from 'lucide-react'
 import { getEditConfig } from '@/components/ui/EditPopover'
 import { ResourceEditActions } from '@/components/ui/resource-edit-actions'
@@ -13,71 +14,25 @@ import { SkillMenu } from '@/components/app-shell/SkillMenu'
 import { SkillAvatar } from '@/components/ui/skill-avatar'
 import { routes, navigate } from '@/lib/navigate'
 import { useActiveWorkspace } from '@/context/AppShellContext'
+import { skillsAtom } from '@/atoms/skills'
 import {
   Info_Page,
   Info_Section,
   Info_Table,
   Info_Markdown,
 } from '@/components/info'
-import type { LoadedSkill } from '../../shared/types'
 
 interface SkillInfoPageProps {
   skillSlug: string
   workspaceId: string
-  workingDirectory?: string
 }
 
-export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory }: SkillInfoPageProps) {
+export default function SkillInfoPage({ skillSlug, workspaceId }: SkillInfoPageProps) {
   const { t } = useTranslation()
-  const [skill, setSkill] = useState<LoadedSkill | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const skills = useAtomValue(skillsAtom)
+  const skill = skills.find((s) => s.slug === skillSlug) ?? null
   const activeWorkspace = useActiveWorkspace()
   const canRevealLocally = !activeWorkspace?.remoteServer
-
-  // Load skill data
-  useEffect(() => {
-    let isMounted = true
-    setLoading(true)
-    setError(null)
-
-    const loadSkill = async () => {
-      try {
-        const skills = await window.electronAPI.getSkills(workspaceId, workingDirectory)
-
-        if (!isMounted) return
-
-        // Find the skill by slug
-        const found = skills.find((s) => s.slug === skillSlug)
-        if (found) {
-          setSkill(found)
-        } else {
-          setError(t('skillInfo.notFound'))
-        }
-      } catch (err) {
-        if (!isMounted) return
-        setError(err instanceof Error ? err.message : t('skillInfo.failedToLoad'))
-      } finally {
-        if (isMounted) setLoading(false)
-      }
-    }
-
-    loadSkill()
-
-    // Subscribe to skill changes
-    const unsubscribe = window.electronAPI.onSkillsChanged?.((changedWorkspaceId, skills) => {
-      if (changedWorkspaceId !== workspaceId) return
-      const updated = skills.find((s) => s.slug === skillSlug)
-      if (updated) {
-        setSkill(updated)
-      }
-    })
-
-    return () => {
-      isMounted = false
-      unsubscribe?.()
-    }
-  }, [workspaceId, skillSlug, workingDirectory])
 
   // Handle open in finder
   const handleOpenInFinder = useCallback(async () => {
@@ -147,9 +102,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory
 
   return (
     <Info_Page
-      loading={loading}
-      error={error ?? undefined}
-      empty={!skill && !loading && !error ? t('skillInfo.notFound') : undefined}
+      empty={!skill && skills.length > 0 ? t('skillInfo.notFound') : undefined}
     >
       <Info_Page.Header
         title={skillName}

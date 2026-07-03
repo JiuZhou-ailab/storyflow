@@ -300,7 +300,6 @@ export function MainContentPanel({
           <SkillInfoPage
             skillSlug={navState.details.skillSlug}
             workspaceId={activeWorkspaceId || ''}
-            workingDirectory={activeSessionWorkingDirectory}
           />
         </Panel>
       )
