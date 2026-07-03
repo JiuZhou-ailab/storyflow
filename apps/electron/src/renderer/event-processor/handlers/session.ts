@@ -49,6 +49,27 @@ function sameStringList(a: readonly string[] | undefined, b: readonly string[]):
   return (a?.length ?? 0) === b.length && b.every((value, index) => a?.[index] === value)
 }
 
+function isRunningToolMessage(message: Message): boolean {
+  return message.role === 'tool'
+    && message.toolResult === undefined
+    && message.toolStatus !== 'completed'
+    && message.toolStatus !== 'error'
+}
+
+function appendErrorMessage(messages: Message[], errorMessage: Message): Message[] {
+  if (!messages.some(isRunningToolMessage)) {
+    return [...messages, errorMessage]
+  }
+
+  const nextMessages = messages.map(message =>
+    isRunningToolMessage(message)
+      ? { ...message, toolStatus: 'error' as const, toolResult: 'Error occurred', isError: true }
+      : message
+  )
+  nextMessages.push(errorMessage)
+  return nextMessages
+}
+
 /**
  * Handle complete - agent loop finished
  *
@@ -140,13 +161,6 @@ export function handleError(
 ): ProcessResult {
   const { session } = state
 
-  // Fail-safe: Mark any running tools as failed
-  const messagesWithFailedTools = session.messages.map(m =>
-    m.role === 'tool' && m.toolResult === undefined && m.toolStatus !== 'completed' && m.toolStatus !== 'error'
-      ? { ...m, toolStatus: 'error' as const, toolResult: 'Error occurred', isError: true }
-      : m
-  )
-
   const errorMessage: Message = {
     id: generateMessageId(),
     role: 'error',
@@ -158,7 +172,7 @@ export function handleError(
     state: {
       session: {
         ...session,
-        messages: [...messagesWithFailedTools, errorMessage],
+        messages: appendErrorMessage(session.messages, errorMessage),
         isProcessing: false,
         currentStatus: undefined,  // Clear any lingering status
       },
@@ -176,13 +190,6 @@ export function handleTypedError(
   event: TypedErrorEvent
 ): ProcessResult {
   const { session } = state
-
-  // Fail-safe: Mark any running tools as failed
-  const messagesWithFailedTools = session.messages.map(m =>
-    m.role === 'tool' && m.toolResult === undefined && m.toolStatus !== 'completed' && m.toolStatus !== 'error'
-      ? { ...m, toolStatus: 'error' as const, toolResult: 'Error occurred', isError: true }
-      : m
-  )
 
   const errorMessage: Message = {
     id: generateMessageId(),
@@ -209,7 +216,7 @@ export function handleTypedError(
     state: {
       session: {
         ...session,
-        messages: [...messagesWithFailedTools, errorMessage],
+        messages: appendErrorMessage(session.messages, errorMessage),
         isProcessing: false,
         currentStatus: undefined,  // Clear any lingering status
       },
