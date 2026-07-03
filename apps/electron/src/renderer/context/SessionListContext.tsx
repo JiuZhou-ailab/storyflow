@@ -25,6 +25,7 @@ export interface SessionListContextValue {
   // Shared config
   sessionStatuses: SessionStatus[]
   flatLabels: LabelConfig[]
+  labelById: Map<string, LabelConfig>
   labels: LabelConfig[]
   searchQuery?: string
   selectedSessionId?: string | null

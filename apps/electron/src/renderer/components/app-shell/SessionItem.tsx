@@ -65,9 +65,9 @@ export function SessionItem({
   const ripgrepMatchCount = ctx.contentSearchResults.get(item.id)?.matchCount
   const chatMatchCount = isActiveSession ? activeMatch!.count : ripgrepMatchCount
   const hasMatch = chatMatchCount != null && chatMatchCount > 0
-  const hasLabels = !!(item.labels && item.labels.length > 0 && ctx.flatLabels.length > 0 && item.labels.some(entry => {
+  const hasLabels = !!(item.labels && item.labels.length > 0 && ctx.labelById.size > 0 && item.labels.some(entry => {
     const labelId = extractLabelId(entry)
-    return ctx.flatLabels.some(l => l.id === labelId)
+    return ctx.labelById.has(labelId)
   }))
   const hasPendingPrompt = ctx.hasPendingPrompt?.(item.id) ?? false
   const previewText = isCompactMode ? getSessionPreviewText(item) : null

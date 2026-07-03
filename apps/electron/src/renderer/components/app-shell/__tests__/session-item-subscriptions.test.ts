@@ -6,6 +6,8 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'bun:test'
 
 const sessionItemSource = readFileSync(new URL('../SessionItem.tsx', import.meta.url), 'utf-8')
+const sessionBadgesSource = readFileSync(new URL('../SessionBadges.tsx', import.meta.url), 'utf-8')
+const sessionListSource = readFileSync(new URL('../SessionList.tsx', import.meta.url), 'utf-8')
 
 describe('session item subscriptions', () => {
   it('reads messaging bindings through a per-session atom', () => {
@@ -13,5 +15,14 @@ describe('session item subscriptions', () => {
     expect(sessionItemSource).toContain('useAtomValue(messagingBindingsForSessionAtomFamily(item.id))')
     expect(sessionItemSource).not.toContain('useAtomValue(messagingBindingsBySessionAtom)')
     expect(sessionItemSource).not.toContain('messagingBindingsBySession.get(item.id)')
+  })
+
+  it('reuses a label lookup map instead of scanning labels per row badge', () => {
+    expect(sessionListSource).toContain('const labelById = useMemo')
+    expect(sessionListSource).toContain('labelById,')
+    expect(sessionItemSource).toContain('ctx.labelById.has(labelId)')
+    expect(sessionBadgesSource).toContain('ctx.labelById.get(parsed.id)')
+    expect(sessionItemSource).not.toContain('ctx.flatLabels.some')
+    expect(sessionBadgesSource).not.toContain('ctx.flatLabels.find')
   })
 })

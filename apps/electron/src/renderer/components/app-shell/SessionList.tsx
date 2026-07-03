@@ -161,6 +161,7 @@ export function SessionList({
 
   // Pre-flatten label tree once for efficient ID lookups in each SessionItem
   const flatLabels = useMemo(() => flattenLabels(labels), [labels])
+  const labelById = useMemo(() => new Map(flatLabels.map(label => [label.id, label])), [flatLabels])
 
   // Get current filter from navigation state (for preserving context in tab routes)
   const currentFilter = isSessionsNavigation(navState) ? navState.filter : undefined
@@ -630,6 +631,7 @@ export function SessionList({
     onKeyDown: handleKeyDown,
     sessionStatuses,
     flatLabels,
+    labelById,
     labels,
     searchQuery: resolvedSearchQuery,
     selectedSessionId: focusedSessionId !== undefined ? focusedSessionId : selectionStore.state.selected,
@@ -644,7 +646,7 @@ export function SessionList({
     onArchive, handleArchiveWithToast, onUnarchive, handleUnarchiveWithToast,
     onMarkUnread, handleDeleteWithToast, onLabelsChange,
     handleSelectSessionById, handleOpenInNewWindow, setSendToWorkspace, handleFocusZone, handleKeyDown,
-    sessionStatuses, flatLabels, labels, resolvedSearchQuery,
+    sessionStatuses, flatLabels, labelById, labels, resolvedSearchQuery,
     focusedSessionId, selectionStore.state.selected, isMultiSelectActive,
     sessionOptions, contentSearchResults, activeChatMatchInfo, hasPendingPrompt,
   ])

@@ -13,16 +13,16 @@ export function SessionBadges({ item }: SessionBadgesProps) {
   const ctx = useSessionListContext()
 
   const resolvedLabels = useMemo(() => {
-    if (!item.labels || item.labels.length === 0 || ctx.flatLabels.length === 0) return []
+    if (!item.labels || item.labels.length === 0 || ctx.labelById.size === 0) return []
     return item.labels
       .map(entry => {
         const parsed = parseLabelEntry(entry)
-        const config = ctx.flatLabels.find(l => l.id === parsed.id)
+        const config = ctx.labelById.get(parsed.id)
         if (!config) return null
         return { config, rawValue: parsed.rawValue }
       })
       .filter((l): l is { config: LabelConfig; rawValue: string | undefined } => l != null)
-  }, [item.labels, ctx.flatLabels])
+  }, [item.labels, ctx.labelById])
 
   if (resolvedLabels.length === 0) return null
 
