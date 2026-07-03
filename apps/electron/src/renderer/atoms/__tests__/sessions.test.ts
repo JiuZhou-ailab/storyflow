@@ -11,6 +11,7 @@ import {
   ensureSessionMessagesLoadedAtom,
   forceSessionMessagesReloadAtom,
   addSessionAtom,
+  removeSessionAtom,
   refreshSessionsMetadataAtom,
   initializeSessionsAtom,
   replaceLoadedSessionAtom,
@@ -228,6 +229,39 @@ describe('session message loading atoms', () => {
 
     expect(store.get(sessionIdsAtom)).toBe(beforeIds)
     expect(store.get(sessionIdsAtom)).toEqual(['s1'])
+    expect(store.get(sessionMetaMapAtom)).toBe(beforeMetaMap)
+    expect(store.get(loadedSessionsAtom)).toBe(beforeLoaded)
+    expect(idNotifications).toBe(0)
+    expect(metaNotifications).toBe(0)
+    expect(loadedNotifications).toBe(0)
+
+    unsubscribeIds()
+    unsubscribeMeta()
+    unsubscribeLoaded()
+  })
+
+  it('removeSessionAtom does not notify global atoms when the session is missing', () => {
+    const store = createStore()
+    store.set(addSessionAtom, makeSession({ id: 's1', name: 'Only session' }))
+    const beforeIds = store.get(sessionIdsAtom)
+    const beforeMetaMap = store.get(sessionMetaMapAtom)
+    const beforeLoaded = store.get(loadedSessionsAtom)
+    let idNotifications = 0
+    let metaNotifications = 0
+    let loadedNotifications = 0
+    const unsubscribeIds = store.sub(sessionIdsAtom, () => {
+      idNotifications += 1
+    })
+    const unsubscribeMeta = store.sub(sessionMetaMapAtom, () => {
+      metaNotifications += 1
+    })
+    const unsubscribeLoaded = store.sub(loadedSessionsAtom, () => {
+      loadedNotifications += 1
+    })
+
+    store.set(removeSessionAtom, 'missing')
+
+    expect(store.get(sessionIdsAtom)).toBe(beforeIds)
     expect(store.get(sessionMetaMapAtom)).toBe(beforeMetaMap)
     expect(store.get(loadedSessionsAtom)).toBe(beforeLoaded)
     expect(idNotifications).toBe(0)

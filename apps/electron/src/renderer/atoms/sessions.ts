@@ -482,23 +482,27 @@ export const addSessionAtom = atom(
 export const removeSessionAtom = atom(
   null,
   (get, set, sessionId: string) => {
+    const metaMap = get(sessionMetaMapAtom)
+    const ids = get(sessionIdsAtom)
+    const loadedSessions = get(loadedSessionsAtom)
+    if (!metaMap.has(sessionId) && !ids.includes(sessionId) && !loadedSessions.has(sessionId)) {
+      return
+    }
+
     // Clear session atom value first
     set(sessionAtomFamily(sessionId), null)
     // Remove atom from family cache to allow GC of the atom and its stored value
     sessionAtomFamily.remove(sessionId)
 
     // Remove from metadata map
-    const metaMap = get(sessionMetaMapAtom)
     const newMetaMap = new Map(metaMap)
     newMetaMap.delete(sessionId)
     set(sessionMetaMapAtom, newMetaMap)
 
     // Remove from IDs list
-    const ids = get(sessionIdsAtom)
     set(sessionIdsAtom, ids.filter(id => id !== sessionId))
 
     // Remove from loaded sessions tracking
-    const loadedSessions = get(loadedSessionsAtom)
     const newLoadedSessions = new Set(loadedSessions)
     newLoadedSessions.delete(sessionId)
     set(loadedSessionsAtom, newLoadedSessions)
