@@ -150,6 +150,14 @@ describe('ChatDisplay search performance contract', () => {
     expect(chatDisplaySource).not.toContain('openAnnotationRequest={openAnnotationRequest}')
   })
 
+  test('keeps user message memoization independent from edit callback identity', () => {
+    expect(chatDisplaySource).toContain('const handleRewindUserMessageRef = React.useRef(handleRewindUserMessage)')
+    expect(chatDisplaySource).toContain('handleRewindUserMessageRef.current = handleRewindUserMessage')
+    expect(chatDisplaySource).toContain('void handleRewindUserMessageRef.current(turn.message)')
+    expect(chatDisplaySource).toContain('Boolean(prev.onEdit) === Boolean(next.onEdit)')
+    expect(chatDisplaySource).not.toContain('prev.onEdit === next.onEdit')
+  })
+
   test('skips assistant turn indexing when no follow-ups are pending', () => {
     const indexStart = chatDisplaySource.indexOf('const assistantTurnIndexByMessageId = useMemo(() => {')
     const indexEnd = chatDisplaySource.indexOf('const scrollToFollowUpTurn = useCallback', indexStart)

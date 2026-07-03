@@ -1556,6 +1556,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       toast.error(t('chat.rewindFailed', 'Could not rewind conversation'), { description: messageText })
     }
   }, [llmConnections, navigate, onCreateSession, onDraftInputChange, session, t, workspaceDefaultLlmConnection])
+  const handleRewindUserMessageRef = React.useRef(handleRewindUserMessage)
+  handleRewindUserMessageRef.current = handleRewindUserMessage
 
   // Reverse pagination: only render last N turns for fast initial render
   const startIndex = Math.max(0, allTurns.length - visibleTurnCount)
@@ -1816,7 +1818,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                             sessionId={session?.id}
                             compactMode={compactMode}
                             onEdit={session.isProcessing ? undefined : () => {
-                              void handleRewindUserMessage(turn.message)
+                              void handleRewindUserMessageRef.current(turn.message)
                             }}
                           />
                         </div>
@@ -2591,6 +2593,6 @@ const MemoizedMessageBubble = React.memo(MessageBubble, (prev, next) => {
     prev.message.role === next.message.role &&
     prev.sessionId === next.sessionId &&
     prev.compactMode === next.compactMode &&
-    prev.onEdit === next.onEdit
+    Boolean(prev.onEdit) === Boolean(next.onEdit)
   )
 })
