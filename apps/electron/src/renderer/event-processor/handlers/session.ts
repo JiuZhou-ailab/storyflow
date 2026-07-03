@@ -441,6 +441,9 @@ export function handleWorkingDirectoryChanged(
   event: WorkingDirectoryChangedEvent
 ): ProcessResult {
   const { session, streaming } = state
+  if (session.workingDirectory === event.workingDirectory) {
+    return { state, effects: [] }
+  }
 
   return {
     state: {

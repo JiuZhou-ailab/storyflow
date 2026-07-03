@@ -8,6 +8,7 @@ import {
   handleSessionStatusChanged,
   handleSourcesChanged,
   handleTitleRegenerating,
+  handleWorkingDirectoryChanged,
 } from './session'
 import type {
   AsyncOperationEvent,
@@ -19,6 +20,7 @@ import type {
   SessionState,
   SourcesChangedEvent,
   TitleRegeneratingEvent,
+  WorkingDirectoryChangedEvent,
 } from '../types'
 
 function makeState(sessionFields: Record<string, unknown>): SessionState {
@@ -120,5 +122,16 @@ describe('session event no-op guards', () => {
     }
 
     expect(handleTitleRegenerating(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state for duplicate working directory', () => {
+    const state = makeState({ workingDirectory: '/repo/project' })
+    const event: WorkingDirectoryChangedEvent = {
+      type: 'working_directory_changed',
+      sessionId: 'session-1',
+      workingDirectory: '/repo/project',
+    }
+
+    expect(handleWorkingDirectoryChanged(state, event).state).toBe(state)
   })
 })
