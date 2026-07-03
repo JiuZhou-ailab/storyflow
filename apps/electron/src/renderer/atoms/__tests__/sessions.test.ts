@@ -10,6 +10,7 @@ import {
   sessionMessagesLoadedAtomFamily,
   ensureSessionMessagesLoadedAtom,
   forceSessionMessagesReloadAtom,
+  addSessionAtom,
   refreshSessionsMetadataAtom,
   initializeSessionsAtom,
   replaceLoadedSessionAtom,
@@ -200,6 +201,42 @@ describe('session message loading atoms', () => {
     expect(store.get(sessionMetaMapAtom)).toBe(before)
     expect(notifications).toBe(0)
     unsubscribe()
+  })
+
+  it('addSessionAtom does not duplicate ids or notify global atoms for the same session', () => {
+    const store = createStore()
+    const session = makeSession({ id: 's1', name: 'Same', lastMessageAt: 100 })
+
+    store.set(addSessionAtom, session)
+    const beforeIds = store.get(sessionIdsAtom)
+    const beforeMetaMap = store.get(sessionMetaMapAtom)
+    const beforeLoaded = store.get(loadedSessionsAtom)
+    let idNotifications = 0
+    let metaNotifications = 0
+    let loadedNotifications = 0
+    const unsubscribeIds = store.sub(sessionIdsAtom, () => {
+      idNotifications += 1
+    })
+    const unsubscribeMeta = store.sub(sessionMetaMapAtom, () => {
+      metaNotifications += 1
+    })
+    const unsubscribeLoaded = store.sub(loadedSessionsAtom, () => {
+      loadedNotifications += 1
+    })
+
+    store.set(addSessionAtom, makeSession({ id: 's1', name: 'Same', lastMessageAt: 100 }))
+
+    expect(store.get(sessionIdsAtom)).toBe(beforeIds)
+    expect(store.get(sessionIdsAtom)).toEqual(['s1'])
+    expect(store.get(sessionMetaMapAtom)).toBe(beforeMetaMap)
+    expect(store.get(loadedSessionsAtom)).toBe(beforeLoaded)
+    expect(idNotifications).toBe(0)
+    expect(metaNotifications).toBe(0)
+    expect(loadedNotifications).toBe(0)
+
+    unsubscribeIds()
+    unsubscribeMeta()
+    unsubscribeLoaded()
   })
 
   it('forceSessionMessagesReloadAtom reloads an empty-but-loaded session', async () => {

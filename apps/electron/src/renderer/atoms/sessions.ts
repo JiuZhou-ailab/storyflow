@@ -452,19 +452,27 @@ export const addSessionAtom = atom(
 
     // Add to metadata map
     const metaMap = get(sessionMetaMapAtom)
-    const newMetaMap = new Map(metaMap)
-    newMetaMap.set(session.id, extractSessionMeta(session))
-    set(sessionMetaMapAtom, newMetaMap)
+    const newMeta = extractSessionMeta(session)
+    const currentMeta = metaMap.get(session.id)
+    if (!currentMeta || !shallowEqualSessionMeta(currentMeta, newMeta)) {
+      const newMetaMap = new Map(metaMap)
+      newMetaMap.set(session.id, newMeta)
+      set(sessionMetaMapAtom, newMetaMap)
+    }
 
     // Add to beginning of IDs list
     const ids = get(sessionIdsAtom)
-    set(sessionIdsAtom, [session.id, ...ids])
+    if (!ids.includes(session.id)) {
+      set(sessionIdsAtom, [session.id, ...ids])
+    }
 
     // Mark as loaded (new sessions are complete - no lazy loading needed)
     const loadedSessions = get(loadedSessionsAtom)
-    const newLoadedSessions = new Set(loadedSessions)
-    newLoadedSessions.add(session.id)
-    set(loadedSessionsAtom, newLoadedSessions)
+    if (!loadedSessions.has(session.id)) {
+      const newLoadedSessions = new Set(loadedSessions)
+      newLoadedSessions.add(session.id)
+      set(loadedSessionsAtom, newLoadedSessions)
+    }
   }
 )
 
