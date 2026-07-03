@@ -369,20 +369,21 @@ export function useSessionSearch({
       )
     }
 
-    return sortedItems
+    const rankedSearchItems = sortedItems
       .filter(item => contentSearchResults.has(item.id))
+      .map(item => ({
+        item,
+        score: fuzzyScore(getSessionTitle(item), searchQuery),
+        matchCount: contentSearchResults.get(item.id)?.matchCount || 0,
+      }))
       .sort((a, b) => {
-        const aScore = fuzzyScore(getSessionTitle(a), searchQuery)
-        const bScore = fuzzyScore(getSessionTitle(b), searchQuery)
-
-        if (aScore > 0 && bScore === 0) return -1
-        if (aScore === 0 && bScore > 0) return 1
-        if (aScore !== bScore) return bScore - aScore
-
-        const countA = contentSearchResults.get(a.id)?.matchCount || 0
-        const countB = contentSearchResults.get(b.id)?.matchCount || 0
-        return countB - countA
+        if (a.score > 0 && b.score === 0) return -1
+        if (a.score === 0 && b.score > 0) return 1
+        if (a.score !== b.score) return b.score - a.score
+        return b.matchCount - a.matchCount
       })
+
+    return rankedSearchItems.map(({ item }) => item)
   }, [sortedItems, isSearchMode, searchQuery, contentSearchResults, currentFilter, evaluateViews, statusFilter, labelFilterMap])
 
   // Split search results: matching current filter vs others

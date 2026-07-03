@@ -86,4 +86,12 @@ describe('computeCollapsedPagination', () => {
     expect(useSessionSearchSource).toContain('const groupKey = itemGroupKeys[index]')
     expect(useSessionSearchSource).not.toContain('new Set(items.map(item => getCollapseGroupKey(item, groupingMode)))')
   })
+
+  it('precomputes session search ranking keys before sorting results', () => {
+    expect(useSessionSearchSource).toContain('const rankedSearchItems = sortedItems')
+    expect(useSessionSearchSource).toContain('score: fuzzyScore(getSessionTitle(item), searchQuery)')
+    expect(useSessionSearchSource).toContain('matchCount: contentSearchResults.get(item.id)?.matchCount || 0')
+    expect(useSessionSearchSource).not.toContain('const aScore = fuzzyScore(getSessionTitle(a), searchQuery)')
+    expect(useSessionSearchSource).not.toContain('const countA = contentSearchResults.get(a.id)?.matchCount || 0')
+  })
 })
