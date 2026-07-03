@@ -217,4 +217,16 @@ describe('useInlineMention hot path', () => {
     expect(scorerSource).not.toContain('query.trimEnd().toLowerCase()')
     expect(scorerSource).not.toContain('const candidates = [')
   })
+
+  it('computes file parent directory once per rendered mention row', () => {
+    const source = readFileSync(new URL('../mention-menu.tsx', import.meta.url), 'utf-8')
+    const rowStart = source.indexOf('flatItems.map((item, itemIndex) => {')
+    const rowEnd = source.indexOf('{/* Label and optional path/badge */}', rowStart)
+    const rowSource = source.slice(rowStart, rowEnd)
+
+    expect(rowSource).toContain("const parentDir = item.file?.relativePath ? getParentDir(item.file.relativePath) : ''")
+    expect(source).toContain('{parentDir && (')
+    expect(source).toContain('{parentDir}')
+    expect(source.match(/getParentDir\(item\.file\.relativePath\)/g) ?? []).toHaveLength(1)
+  })
 })

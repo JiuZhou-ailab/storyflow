@@ -469,6 +469,7 @@ export function InlineMentionMenu({
         )}
         {flatItems.map((item, itemIndex) => {
           const isSelected = itemIndex === selectedIndex
+          const parentDir = item.file?.relativePath ? getParentDir(item.file.relativePath) : ''
 
           return (
             <div
@@ -507,9 +508,9 @@ export function InlineMentionMenu({
                 <>
                   {/* File/folder: filename then parent path fading out on overflow */}
                   <span className="shrink-0">{item.label}</span>
-                  {item.file?.relativePath && getParentDir(item.file.relativePath) && (
+                  {parentDir && (
                     <FadingText className="text-[11px] text-muted-foreground min-w-0 opacity-50" fadeWidth={20}>
-                      {getParentDir(item.file.relativePath)}
+                      {parentDir}
                     </FadingText>
                   )}
                 </>
