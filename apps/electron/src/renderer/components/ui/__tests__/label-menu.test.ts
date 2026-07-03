@@ -33,6 +33,22 @@ describe('createLabelMenuItems', () => {
 
     expect(items.map(item => item.id)).toEqual(['feature']);
   });
+
+  it('precomputes lower-cased hierarchical search parts', () => {
+    const labels: LabelConfig[] = [
+      {
+        id: 'priority',
+        name: 'Priority',
+        children: [
+          { id: 'alpha', name: 'Alpha' },
+        ],
+      },
+    ];
+
+    const items = createLabelMenuItems(labels);
+
+    expect(items.find(item => item.id === 'alpha')?.searchParts).toEqual(['priority', 'alpha']);
+  });
 });
 
 describe('filterItems', () => {
@@ -44,5 +60,29 @@ describe('filterItems', () => {
     ];
 
     expect(filterItems(items, '').map(item => item.label)).toEqual(['Alpha', 'Bug', 'Priority']);
+  });
+
+  it('matches hierarchical queries using precomputed search parts', () => {
+    const labels: LabelConfig[] = [
+      {
+        id: 'priority',
+        name: 'Priority',
+        children: [
+          { id: 'alpha', name: 'Alpha' },
+        ],
+      },
+      { id: 'archive', name: 'Archive' },
+    ];
+    const items = createLabelMenuItems(labels);
+
+    expect(filterItems(items, 'pri/al').map(item => item.id)).toEqual(['alpha']);
+  });
+
+  it('falls back to parentPath when filtering hand-built items', () => {
+    const items = [
+      { id: 'alpha', label: 'Alpha', parentPath: 'Priority / ', config: { id: 'alpha', name: 'Alpha' } as LabelConfig },
+    ];
+
+    expect(filterItems(items, 'pri/al').map(item => item.id)).toEqual(['alpha']);
   });
 });

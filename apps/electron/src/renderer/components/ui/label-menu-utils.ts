@@ -1,3 +1,7 @@
+// input: Label tree configs, excluded label ids, and user-entered label filters
+// output: Flat label menu items plus hierarchical filtering and scoring helpers
+// pos: Shared search/index utility layer for inline label menus and label filters
+
 import type { LabelConfig } from '@craft-agent/shared/labels'
 import { flattenLabelsWithParentPath } from '@craft-agent/shared/labels'
 
@@ -7,6 +11,8 @@ export interface LabelMenuItem {
   config: LabelConfig
   /** Breadcrumb path for nested labels (e.g. "Priority / ") */
   parentPath?: string
+  /** Lower-cased path parts for hot-path filtering. Falls back to parentPath for hand-built items. */
+  searchParts?: readonly string[]
 }
 
 const labelMenuCollator = new Intl.Collator(undefined, { sensitivity: 'base' })
@@ -27,11 +33,12 @@ export function createLabelMenuItems(labels: LabelConfig[], excludedLabelIds: It
 
   return flattenLabelsWithParentPath(labels)
     .filter(({ label }) => !excluded.has(label.id))
-    .map(({ label, parentPath }) => ({
+    .map(({ label, parentNames, parentPath }) => ({
       id: label.id,
       label: label.name,
       config: label,
       parentPath,
+      searchParts: [...parentNames, label.name].map(part => part.toLowerCase()),
     }))
     .sort(compareLabelMenuItems)
 }
@@ -45,9 +52,13 @@ export function createLabelMenuItems(labels: LabelConfig[], excludedLabelIds: It
  */
 export function segmentScore(part: string, segment: string): number {
   const lower = part.toLowerCase()
-  if (lower.startsWith(segment)) return 3
-  if (new RegExp(`[\\s\\-_]${segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(lower)) return 2
-  if (lower.includes(segment)) return 1
+  return segmentScoreLowerPart(lower, segment)
+}
+
+function segmentScoreLowerPart(lowerPart: string, segment: string): number {
+  if (lowerPart.startsWith(segment)) return 3
+  if (new RegExp(`[\\s\\-_]${segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(lowerPart)) return 2
+  if (lowerPart.includes(segment)) return 1
   return 0
 }
 
@@ -66,10 +77,10 @@ export function filterItems(items: LabelMenuItem[], filter: string): LabelMenuIt
   const scored: { item: LabelMenuItem; score: number }[] = []
 
   for (const item of items) {
-    const parentParts = item.parentPath
-      ? item.parentPath.split(' / ').filter(Boolean)
-      : []
-    const fullParts = [...parentParts, item.label]
+    const fullParts = item.searchParts ?? [
+      ...(item.parentPath ? item.parentPath.split(' / ').filter(Boolean).map(part => part.toLowerCase()) : []),
+      item.label.toLowerCase(),
+    ]
 
     let totalScore = 0
     let partIndex = 0
@@ -79,7 +90,7 @@ export function filterItems(items: LabelMenuItem[], filter: string): LabelMenuIt
       let bestScore = 0
       let found = false
       while (partIndex < fullParts.length) {
-        const score = segmentScore(fullParts[partIndex], seg)
+        const score = segmentScoreLowerPart(fullParts[partIndex], seg)
         if (score > 0) {
           bestScore = score
           found = true
