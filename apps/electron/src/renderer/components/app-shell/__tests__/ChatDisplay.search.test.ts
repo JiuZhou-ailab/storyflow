@@ -99,6 +99,7 @@ describe('ChatDisplay search performance contract', () => {
     const fullTranscriptGroupingCalls = chatDisplaySource.match(/groupMessagesByTurn\(transcriptMessages\)/g)?.length ?? 0
 
     expect(fullTranscriptGroupingCalls).toBe(1)
+    expect(chatDisplaySource).toContain('if (!isSearchActive) return []')
     expect(chatDisplaySource).toContain('collectTurnSearchOccurrences(allTurns, searchQuery, getTurnKey)')
     expect(chatDisplaySource).toContain('const matchingTurnIdSet = useMemo(() => {')
     expect(chatDisplaySource).toContain('for (const occurrence of matchingOccurrences)')

@@ -812,8 +812,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // Find ALL individual match occurrences (not just turns)
   // Returns array with unique matchId for each occurrence
   const matchingOccurrences = useMemo(() => {
+    if (!isSearchActive) return []
     return collectTurnSearchOccurrences(allTurns, searchQuery, getTurnKey)
-  }, [allTurns, searchQuery])
+  }, [allTurns, isSearchActive, searchQuery])
 
   // Auto-expand pagination when search is active to show all matching turns
   // This ensures match count is stable and all matches are highlightable from the start
