@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'bun:test'
 import { createStore } from 'jotai'
 import {
@@ -6,6 +8,11 @@ import {
   messagingBindingsForSessionAtomFamily,
   type MessagingBinding,
 } from '../messaging'
+
+const messagingSource = readFileSync(
+  fileURLToPath(new URL('../messaging.ts', import.meta.url)),
+  'utf-8'
+)
 
 function binding(overrides: Partial<MessagingBinding> = {}): MessagingBinding {
   return {
@@ -87,5 +94,11 @@ describe('messaging binding atoms', () => {
     expect(notifications).toBe(1)
 
     unsubscribe()
+  })
+
+  it('derives per-session bindings from the session-indexed map', () => {
+    expect(messagingSource).toContain('selectAtom(\n    messagingBindingsBySessionAtom')
+    expect(messagingSource).toContain('bindingsBySession.get(sessionId)')
+    expect(messagingSource).not.toContain('bindings.filter((binding) => binding.enabled && binding.sessionId === sessionId)')
   })
 })

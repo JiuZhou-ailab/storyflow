@@ -71,8 +71,8 @@ function messagingBindingsEqual(a: MessagingBinding[], b: MessagingBinding[]): b
 
 export const messagingBindingsForSessionAtomFamily = atomFamily(
   (sessionId: string) => selectAtom(
-    messagingBindingsAtom,
-    (bindings) => bindings.filter((binding) => binding.enabled && binding.sessionId === sessionId),
+    messagingBindingsBySessionAtom,
+    (bindingsBySession) => bindingsBySession.get(sessionId) ?? [],
     messagingBindingsEqual,
   ),
   (a, b) => a === b,
