@@ -58,7 +58,6 @@ import {
   loadedSessionsAtom,
   forceSessionMessagesReloadAtom,
   backgroundTasksAtomFamily,
-  extractSessionMeta,
   windowWorkspaceIdAtom,
   type SessionMeta,
 } from '@/atoms/sessions'
@@ -1085,8 +1084,13 @@ export default function App() {
           workspaceId
         )
 
-        // Update atom directly (UI sees update immediately)
-        updateSessionDirect(sessionId, () => updatedSession)
+        // text_delta changes only the active session body; avoid rebuilding session metadata
+        // for every streaming chunk.
+        if (event.type === 'text_delta') {
+          store.set(sessionAtomFamily(sessionId), updatedSession)
+        } else {
+          updateSessionDirect(sessionId, () => updatedSession)
+        }
 
         // Handle side effects
         handleEffects(effects, sessionId, event.type)
@@ -1097,12 +1101,6 @@ export default function App() {
         // For handoff events, update metadata map for list display
         // NOTE: No sessionsAtom to sync - atom and metadata are the source of truth
         if (isHandoff) {
-          // Update metadata map
-          const metaMap = store.get(sessionMetaMapAtom)
-          const newMetaMap = new Map(metaMap)
-          newMetaMap.set(sessionId, extractSessionMeta(updatedSession))
-          store.set(sessionMetaMapAtom, newMetaMap)
-
           // Show notification on complete (when window is not focused)
           // Skip hidden sessions (mini-agent sessions) - they shouldn't trigger notifications
           if (event.type === 'complete' && !updatedSession.hidden) {
@@ -1137,12 +1135,6 @@ export default function App() {
 
       // Update per-session atom
       updateSessionDirect(sessionId, () => updatedSession)
-
-      // Update metadata map
-      const metaMap = store.get(sessionMetaMapAtom)
-      const newMetaMap = new Map(metaMap)
-      newMetaMap.set(sessionId, extractSessionMeta(updatedSession))
-      store.set(sessionMetaMapAtom, newMetaMap)
     })
 
     return () => {
@@ -1957,6 +1949,51 @@ export default function App() {
     window.electronAPI.getWorkspaces().then(setWorkspaces)
   }, [])
 
+  const handleRenameProjectFromHub = useCallback(async (workspaceId: string, name: string) => {
+    const nextName = name.trim()
+    if (!nextName) return
+
+    setWorkspaces(prev => prev.map(workspace =>
+      workspace.id === workspaceId ? { ...workspace, name: nextName } : workspace
+    ))
+
+    try {
+      await window.electronAPI.updateWorkspaceSetting(workspaceId, 'name', nextName)
+      const refreshed = await window.electronAPI.getWorkspaces()
+      setWorkspaces(refreshed)
+      toast.success(`已重命名为 ${nextName}`)
+    } catch (error) {
+      console.error('[App] Failed to rename project:', error)
+      toast.error('重命名项目失败')
+      handleRefreshWorkspaces()
+    }
+  }, [handleRefreshWorkspaces])
+
+  const handleRemoveProjectFromHub = useCallback(async (workspaceId: string) => {
+    const project = workspaces.find(workspace => workspace.id === workspaceId)
+
+    try {
+      const removed = await window.electronAPI.removeWorkspace(workspaceId)
+      if (!removed) {
+        toast.error('移除项目失败')
+        return
+      }
+
+      setWorkspaces(prev => prev.filter(workspace => workspace.id !== workspaceId))
+      if (workspaceId === windowWorkspaceId) {
+        setWindowWorkspaceId(null)
+      }
+
+      const refreshed = await window.electronAPI.getWorkspaces()
+      setWorkspaces(refreshed)
+      toast.success(`已移除${project ? `：${project.name}` : '项目'}`)
+    } catch (error) {
+      console.error('[App] Failed to remove project:', error)
+      toast.error('移除项目失败')
+      handleRefreshWorkspaces()
+    }
+  }, [handleRefreshWorkspaces, setWindowWorkspaceId, windowWorkspaceId, workspaces])
+
   const handleWorkspaceCreated = useCallback(async (workspace: Workspace) => {
     pendingCreatedWorkspaceRef.current = workspace
 
@@ -2315,6 +2352,12 @@ export default function App() {
               onOpenAccount={() => handleOpenAccountCenter('project-hub')}
               onOpenProjectInNewWindow={(workspaceId) => {
                 void window.electronAPI.openWorkspace(workspaceId)
+              }}
+              onRenameProject={(workspaceId, name) => {
+                void handleRenameProjectFromHub(workspaceId, name)
+              }}
+              onRemoveProject={(workspaceId) => {
+                void handleRemoveProjectFromHub(workspaceId)
               }}
             />
           </ActivityRailFrame>

@@ -70,6 +70,8 @@ export const projectHubComponents: ComponentEntry[] = [
       onOpenAccount: noop,
       onReturnToActiveProject: noop,
       onOpenProjectInNewWindow: noop,
+      onRenameProject: noop,
+      onRemoveProject: noop,
     }),
     layout: 'full',
     previewOverflow: 'hidden',

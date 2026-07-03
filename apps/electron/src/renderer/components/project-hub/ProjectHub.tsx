@@ -14,14 +14,25 @@ import {
   HardDrive,
   Import,
   Layers3,
+  MoreHorizontal,
+  Pencil,
   Plus,
   Search,
   TriangleAlert,
+  Trash2,
   UserCircle,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { RenameDialog } from '@/components/ui/rename-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  StyledDropdownMenuContent,
+  StyledDropdownMenuItem,
+  StyledDropdownMenuSeparator,
+} from '@/components/ui/styled-dropdown'
 import { cn } from '@/lib/utils'
 import type { ProjectKind, ProjectStatus, ProjectSummary } from '@/lib/project-summary'
 
@@ -45,6 +56,8 @@ export interface ProjectHubCallbacks {
   onConnectRemoteProject: () => void
   onOpenAccount?: () => void
   onOpenProjectInNewWindow?: (workspaceId: string) => void
+  onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
+  onRemoveProject?: (workspaceId: string) => void | Promise<void>
 }
 
 export function ProjectHub({
@@ -57,8 +70,12 @@ export function ProjectHub({
   onConnectRemoteProject,
   onOpenAccount,
   onOpenProjectInNewWindow,
+  onRenameProject,
+  onRemoveProject,
 }: ProjectHubProps) {
   const [query, setQuery] = useState('')
+  const [renameProject, setRenameProject] = useState<ProjectHubProject | null>(null)
+  const [renameValue, setRenameValue] = useState('')
   const visibleProjects = useMemo(() => filterProjectHubProjects(projects, query), [projects, query])
   const activeProject = useMemo(
     () => projects.find((project) => activeWorkspaceId && getProjectWorkspaceId(project) === activeWorkspaceId),
@@ -71,6 +88,15 @@ export function ProjectHub({
     onImportProject,
     onConnectRemoteProject,
     onOpenProjectInNewWindow,
+    onRenameProject: onRenameProject
+      ? (workspaceId: string, name: string) => {
+          const project = projects.find((item) => getProjectWorkspaceId(item) === workspaceId)
+          if (!project) return
+          setRenameProject(project)
+          setRenameValue(name)
+        }
+      : undefined,
+    onRemoveProject,
   }
 
   return (
@@ -151,6 +177,26 @@ export function ProjectHub({
           )}
         </main>
       </div>
+      {renameProject && (
+        <RenameDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setRenameProject(null)
+          }}
+          title="重命名项目"
+          value={renameValue}
+          onValueChange={setRenameValue}
+          onSubmit={() => {
+            const project = renameProject
+            const nextName = renameValue.trim()
+            if (nextName && nextName !== project.name) {
+              void onRenameProject?.(getProjectWorkspaceId(project), nextName)
+            }
+            setRenameProject(null)
+          }}
+          placeholder="输入项目名称"
+        />
+      )}
     </section>
   )
 }
@@ -184,6 +230,12 @@ export function createProjectHubActions(project: ProjectHubProject, callbacks: P
     openProject: () => callbacks.onOpenProject(workspaceId),
     openProjectInNewWindow: callbacks.onOpenProjectInNewWindow
       ? () => callbacks.onOpenProjectInNewWindow?.(workspaceId)
+      : undefined,
+    renameProject: callbacks.onRenameProject
+      ? () => callbacks.onRenameProject?.(workspaceId, project.name)
+      : undefined,
+    removeProject: callbacks.onRemoveProject
+      ? () => callbacks.onRemoveProject?.(workspaceId)
       : undefined,
   }
 }
@@ -322,6 +374,7 @@ function ProjectHubCard({
       </button>
 
       <div className="flex items-center justify-end gap-1.5 border-t border-border/50 px-3 py-2.5">
+        <ProjectHubCardMenu project={project} actions={actions} />
         {actions.openProjectInNewWindow && (
           <Button
             type="button"
@@ -341,6 +394,48 @@ function ProjectHubCard({
         </Button>
       </div>
     </article>
+  )
+}
+
+function ProjectHubCardMenu({
+  project,
+  actions,
+}: {
+  project: ProjectHubProject
+  actions: ReturnType<typeof createProjectHubActions>
+}) {
+  if (!actions.renameProject && !actions.removeProject) return null
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-9 rounded-lg text-muted-foreground hover:text-foreground"
+          aria-label={`管理项目 ${project.name}`}
+          title="管理项目"
+        >
+          <MoreHorizontal className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <StyledDropdownMenuContent align="end">
+        {actions.renameProject && (
+          <StyledDropdownMenuItem onClick={actions.renameProject}>
+            <Pencil className="size-3.5" />
+            <span>重命名</span>
+          </StyledDropdownMenuItem>
+        )}
+        {actions.renameProject && actions.removeProject && <StyledDropdownMenuSeparator />}
+        {actions.removeProject && (
+          <StyledDropdownMenuItem onClick={actions.removeProject} variant="destructive">
+            <Trash2 className="size-3.5" />
+            <span>移除项目</span>
+          </StyledDropdownMenuItem>
+        )}
+      </StyledDropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

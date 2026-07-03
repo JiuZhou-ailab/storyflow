@@ -3,14 +3,23 @@
 // pos: Keeps project selection UI independent from Electron and workspace protocols
 
 import * as React from 'react'
-import { describe, expect, it } from 'bun:test'
+import { beforeAll, describe, expect, it, mock } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import {
-  ProjectHub,
-  createProjectHubActions,
-  filterProjectHubProjects,
-  type ProjectHubProject,
-} from '../ProjectHub'
+import type { ProjectHubProject } from '../ProjectHub'
+
+mock.module('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '' }))
+mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDocument: () => ({}) }))
+
+let ProjectHub: typeof import('../ProjectHub').ProjectHub
+let createProjectHubActions: typeof import('../ProjectHub').createProjectHubActions
+let filterProjectHubProjects: typeof import('../ProjectHub').filterProjectHubProjects
+
+beforeAll(async () => {
+  const module = await import('../ProjectHub')
+  ProjectHub = module.ProjectHub
+  createProjectHubActions = module.createProjectHubActions
+  filterProjectHubProjects = module.filterProjectHubProjects
+})
 
 const projects: ProjectHubProject[] = [
   {
@@ -68,6 +77,8 @@ describe('ProjectHub', () => {
         projects={projects}
         activeWorkspaceId="local-dawn"
         onReturnToActiveProject={() => {}}
+        onRenameProject={() => {}}
+        onRemoveProject={() => {}}
         {...requiredProps}
       />
     )
@@ -86,6 +97,7 @@ describe('ProjectHub', () => {
     expect(html).toContain('剧本')
     expect(html).toContain('打开')
     expect(html).toContain('继续：黎明手稿')
+    expect(html).toContain('管理项目 黎明手稿')
     expect(html).not.toContain('novel.claude-book')
     expect(html).not.toContain('删除项目')
   })
@@ -110,17 +122,29 @@ describe('ProjectHub', () => {
     expect(filterProjectHubProjects(projects, '   ').map((project) => project.id)).toEqual(['local-dawn', 'remote-river'])
   })
 
-  it('opens projects through the workspace id callback without touching Electron APIs', () => {
+  it('routes project card actions through workspace id callbacks without touching Electron APIs', () => {
     const openedWorkspaceIds: string[] = []
+    const renamedProjects: Array<[string, string]> = []
+    const removedWorkspaceIds: string[] = []
     const actions = createProjectHubActions(projects[0], {
       ...requiredProps,
       onOpenProject: (workspaceId) => {
         openedWorkspaceIds.push(workspaceId)
       },
+      onRenameProject: (workspaceId, name) => {
+        renamedProjects.push([workspaceId, name])
+      },
+      onRemoveProject: (workspaceId) => {
+        removedWorkspaceIds.push(workspaceId)
+      },
     })
 
     actions.openProject()
+    actions.renameProject?.()
+    actions.removeProject?.()
 
     expect(openedWorkspaceIds).toEqual(['local-dawn'])
+    expect(renamedProjects).toEqual([['local-dawn', '黎明手稿']])
+    expect(removedWorkspaceIds).toEqual(['local-dawn'])
   })
 })
