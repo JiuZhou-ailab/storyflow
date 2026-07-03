@@ -1472,16 +1472,14 @@ function AppShellContent({
 
   // Load dynamic statuses from workspace config
   const { statuses: statusConfigs, isLoading: isLoadingStatuses } = useStatuses(activeWorkspace?.id || null)
-  const [sessionStatuses, setSessionStatuses] = React.useState<SessionStatus[]>([])
 
   // Convert StatusConfig to SessionStatus with resolved icons
-  React.useEffect(() => {
+  const sessionStatuses = React.useMemo(() => {
     if (!activeWorkspace?.id || statusConfigs.length === 0) {
-      setSessionStatuses([])
-      return
+      return []
     }
 
-    setSessionStatuses(statusConfigsToSessionStatuses(statusConfigs, activeWorkspace.id, isDark))
+    return statusConfigsToSessionStatuses(statusConfigs, activeWorkspace.id, isDark)
   }, [statusConfigs, activeWorkspace?.id, isDark])
 
   // Optimistic status order: immediately reflects drag-drop order while IPC propagates.
