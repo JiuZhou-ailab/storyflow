@@ -730,6 +730,10 @@ export function handleSessionFlagged(
   _event: SessionFlaggedEvent
 ): ProcessResult {
   const { session, streaming } = state
+  if (session.isFlagged === true) {
+    return { state, effects: [] }
+  }
+
   return {
     state: {
       session: { ...session, isFlagged: true },
@@ -747,6 +751,10 @@ export function handleSessionUnflagged(
   _event: SessionUnflaggedEvent
 ): ProcessResult {
   const { session, streaming } = state
+  if (session.isFlagged === false) {
+    return { state, effects: [] }
+  }
+
   return {
     state: {
       session: { ...session, isFlagged: false },

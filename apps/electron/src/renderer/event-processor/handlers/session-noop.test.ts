@@ -4,8 +4,10 @@ import {
   handleConnectionChanged,
   handleLabelsChanged,
   handleNameChanged,
+  handleSessionFlagged,
   handleSessionModelChanged,
   handleSessionStatusChanged,
+  handleSessionUnflagged,
   handleSourcesChanged,
   handleTitleRegenerating,
   handleWorkingDirectoryChanged,
@@ -15,9 +17,11 @@ import type {
   LabelsChangedEvent,
   LLMConnectionChangedEvent,
   NameChangedEvent,
+  SessionFlaggedEvent,
   SessionModelChangedEvent,
   SessionStatusChangedEvent,
   SessionState,
+  SessionUnflaggedEvent,
   SourcesChangedEvent,
   TitleRegeneratingEvent,
   WorkingDirectoryChangedEvent,
@@ -133,5 +137,25 @@ describe('session event no-op guards', () => {
     }
 
     expect(handleWorkingDirectoryChanged(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state for duplicate flagged status', () => {
+    const state = makeState({ isFlagged: true })
+    const event: SessionFlaggedEvent = {
+      type: 'session_flagged',
+      sessionId: 'session-1',
+    }
+
+    expect(handleSessionFlagged(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state for duplicate unflagged status', () => {
+    const state = makeState({ isFlagged: false })
+    const event: SessionUnflaggedEvent = {
+      type: 'session_unflagged',
+      sessionId: 'session-1',
+    }
+
+    expect(handleSessionUnflagged(state, event).state).toBe(state)
   })
 })
