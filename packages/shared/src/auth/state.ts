@@ -288,12 +288,9 @@ export async function getAuthState(): Promise<AuthState> {
   let migrationRequired: MigrationInfo | undefined;
 
   if (connection && defaultConnectionSlug) {
-    // Use LLM connection credentials
-    // Pass providerType for OAuth routing (OpenAI OAuth needs idToken)
-    hasCredentials = await manager.hasLlmCredentials(defaultConnectionSlug, connection.authType, connection.providerType);
-
     if (connection.authType === 'api_key' || connection.authType === 'api_key_with_endpoint' || connection.authType === 'bearer_token') {
       apiKey = await manager.getLlmApiKey(defaultConnectionSlug);
+      hasCredentials = !!apiKey;
       const isManagedBuiltinGateway = connection.managed === true && connection.source === 'builtin';
       // Local loopback runtimes are keyless. Managed bundled gateways are also
       // hidden app infrastructure: their credentials come from bundled secrets
@@ -302,10 +299,14 @@ export async function getAuthState(): Promise<AuthState> {
         hasCredentials = true;
       }
     } else if (connection.authType === 'oauth') {
+      // Pass providerType for OAuth routing (OpenAI OAuth needs idToken)
+      hasCredentials = await manager.hasLlmCredentials(defaultConnectionSlug, connection.authType, connection.providerType);
       const llmOAuth = await manager.getLlmOAuth(defaultConnectionSlug);
       if (llmOAuth?.accessToken) {
         claudeOAuthToken = llmOAuth.accessToken;
       }
+    } else {
+      hasCredentials = await manager.hasLlmCredentials(defaultConnectionSlug, connection.authType, connection.providerType);
     }
     // Other auth types (iam_credentials, service_account_file, environment, none) are handled by hasLlmCredentials
     // OpenAI OAuth credentials are handled separately by CodexAgent

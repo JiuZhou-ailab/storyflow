@@ -7,6 +7,10 @@
  * - Migration detection for legacy CLI tokens
  */
 import { describe, it, expect, beforeEach, mock } from 'bun:test';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { pathToFileURL } from 'url';
 import {
   getSetupNeeds,
   performTokenRefresh,
@@ -15,6 +19,53 @@ import {
   type TokenResult,
   type MigrationInfo,
 } from '../state.ts';
+
+const AUTH_STATE_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', 'state.ts')).href;
+const CREDENTIALS_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', '..', 'credentials', 'index.ts')).href;
+
+function setupAuthStateConfigDir() {
+  const configDir = mkdtempSync(join(tmpdir(), 'craft-agent-auth-state-'));
+  const workspaceRoot = join(configDir, 'workspaces', 'workspace');
+  mkdirSync(workspaceRoot, { recursive: true });
+
+  writeFileSync(
+    join(configDir, 'config.json'),
+    JSON.stringify({
+      workspaces: [{ id: 'ws-1', name: 'Workspace', rootPath: workspaceRoot, createdAt: Date.now() }],
+      activeWorkspaceId: 'ws-1',
+      activeSessionId: null,
+      defaultLlmConnection: 'anthropic-api',
+      llmConnections: [{
+        slug: 'anthropic-api',
+        name: 'Anthropic API',
+        providerType: 'anthropic',
+        authType: 'api_key',
+        createdAt: Date.now(),
+      }],
+    }, null, 2),
+    'utf-8',
+  );
+
+  return configDir;
+}
+
+function runAuthStateEval(configDir: string, code: string): string {
+  const run = Bun.spawnSync([
+    process.execPath,
+    '--eval',
+    `const [{ getAuthState }, { getCredentialManager }] = await Promise.all([import('${AUTH_STATE_MODULE_PATH}'), import('${CREDENTIALS_MODULE_PATH}')]); ${code}`,
+  ], {
+    env: { ...process.env, CRAFT_CONFIG_DIR: configDir },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+
+  if (run.exitCode !== 0) {
+    throw new Error(`subprocess failed (exit ${run.exitCode})\nstderr:\n${run.stderr.toString()}`);
+  }
+
+  return run.stdout.toString().trim();
+}
 
 // ============================================
 // Mock credential manager
@@ -41,6 +92,37 @@ function createMockCredentialManager(initialCreds?: {
     getApiKey: async () => null,
   };
 }
+
+// ============================================
+// getAuthState tests
+// ============================================
+
+describe('getAuthState', () => {
+  it('reads api-key credentials once for the default connection', () => {
+    const configDir = setupAuthStateConfigDir();
+
+    const output = runAuthStateEval(configDir, `
+      const manager = getCredentialManager();
+      let apiKeyReads = 0;
+      manager.getLlmApiKey = async (slug) => {
+        apiKeyReads += 1;
+        return slug === 'anthropic-api' ? 'sk-test' : null;
+      };
+      const authState = await getAuthState();
+      console.log(JSON.stringify({
+        apiKeyReads,
+        hasCredentials: authState.billing.hasCredentials,
+        apiKey: authState.billing.apiKey,
+      }));
+    `);
+
+    expect(JSON.parse(output)).toEqual({
+      apiKeyReads: 1,
+      hasCredentials: true,
+      apiKey: 'sk-test',
+    });
+  });
+});
 
 // ============================================
 // getSetupNeeds tests (pure function)
