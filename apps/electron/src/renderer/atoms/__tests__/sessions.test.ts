@@ -64,6 +64,35 @@ describe('session message loading atoms', () => {
     expect(store.get(sessionMetaMapAtom).get(sessionId)?.messageCount).toBe(2)
   })
 
+  it('replaceLoadedSessionAtom does not notify metadata subscribers when metadata is unchanged', () => {
+    const store = createStore()
+    const sessionId = 'session-1'
+
+    store.set(replaceLoadedSessionAtom, makeSession({
+      id: sessionId,
+      name: 'Same',
+      messages: [msg('m1'), msg('m2', 'assistant')],
+      lastMessageAt: 100,
+    }))
+    const beforeMetaMap = store.get(sessionMetaMapAtom)
+    let notifications = 0
+    const unsubscribe = store.sub(sessionMetaMapAtom, () => {
+      notifications += 1
+    })
+
+    store.set(replaceLoadedSessionAtom, makeSession({
+      id: sessionId,
+      name: 'Same',
+      messages: [msg('m1'), msg('m2', 'assistant')],
+      lastMessageAt: 100,
+    }))
+
+    expect(store.get(sessionMetaMapAtom)).toBe(beforeMetaMap)
+    expect(notifications).toBe(0)
+
+    unsubscribe()
+  })
+
   it('exposes per-session loaded state without notifying on unrelated sessions', () => {
     const store = createStore()
     const currentLoadedAtom = sessionMessagesLoadedAtomFamily('s1')

@@ -238,9 +238,13 @@ export const replaceLoadedSessionAtom = atom(
     set(sessionAtomFamily(session.id), session)
 
     const metaMap = get(sessionMetaMapAtom)
-    const newMetaMap = new Map(metaMap)
-    newMetaMap.set(session.id, extractSessionMeta(session))
-    set(sessionMetaMapAtom, newMetaMap)
+    const newMeta = extractSessionMeta(session)
+    const currentMeta = metaMap.get(session.id)
+    if (!currentMeta || !shallowEqualSessionMeta(currentMeta, newMeta)) {
+      const newMetaMap = new Map(metaMap)
+      newMetaMap.set(session.id, newMeta)
+      set(sessionMetaMapAtom, newMetaMap)
+    }
 
     const loadedSessions = get(loadedSessionsAtom)
     if (!loadedSessions.has(session.id)) {
