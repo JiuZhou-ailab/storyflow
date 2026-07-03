@@ -7,9 +7,11 @@ import {
   handleSessionArchived,
   handleSessionFlagged,
   handleSessionModelChanged,
+  handleSessionShared,
   handleSessionStatusChanged,
   handleSessionUnarchived,
   handleSessionUnflagged,
+  handleSessionUnshared,
   handleSourcesChanged,
   handleTitleGenerated,
   handleTitleRegenerating,
@@ -23,10 +25,12 @@ import type {
   SessionArchivedEvent,
   SessionFlaggedEvent,
   SessionModelChangedEvent,
+  SessionSharedEvent,
   SessionStatusChangedEvent,
   SessionState,
   SessionUnarchivedEvent,
   SessionUnflaggedEvent,
+  SessionUnsharedEvent,
   SourcesChangedEvent,
   TitleGeneratedEvent,
   TitleRegeneratingEvent,
@@ -194,5 +198,26 @@ describe('session event no-op guards', () => {
     }
 
     expect(handleSessionUnarchived(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state for duplicate shared URL', () => {
+    const state = makeState({ sharedUrl: 'https://viewer.example/s/session-1' })
+    const event: SessionSharedEvent = {
+      type: 'session_shared',
+      sessionId: 'session-1',
+      sharedUrl: 'https://viewer.example/s/session-1',
+    }
+
+    expect(handleSessionShared(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state for duplicate unshared status', () => {
+    const state = makeState({ sharedUrl: undefined, sharedId: undefined })
+    const event: SessionUnsharedEvent = {
+      type: 'session_unshared',
+      sessionId: 'session-1',
+    }
+
+    expect(handleSessionUnshared(state, event).state).toBe(state)
   })
 })

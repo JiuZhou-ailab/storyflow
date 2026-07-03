@@ -888,6 +888,9 @@ export function handleSessionShared(
   event: SessionSharedEvent
 ): ProcessResult {
   const { session, streaming } = state
+  if (session.sharedUrl === event.sharedUrl) {
+    return { state, effects: [] }
+  }
 
   return {
     state: {
@@ -909,6 +912,9 @@ export function handleSessionUnshared(
   _event: SessionUnsharedEvent
 ): ProcessResult {
   const { session, streaming } = state
+  if (session.sharedUrl === undefined && session.sharedId === undefined) {
+    return { state, effects: [] }
+  }
 
   return {
     state: {
