@@ -6,6 +6,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   getPrimaryInputAction,
   isCompositionInput,
+  readAttachmentBatch,
   resolveAutoCapitalisedInput,
   shouldShowTextInput,
 } from '../free-form-input-behavior'
@@ -84,6 +85,66 @@ describe('FreeFormInput behavior helpers', () => {
         compactMode: true,
         isProcessing: true,
       })).toBe(true)
+    })
+  })
+
+  describe('readAttachmentBatch', () => {
+    it('limits concurrent file reads and keeps successful attachments ordered', async () => {
+      let started = 0
+      let releaseFirst: () => void = () => {
+        throw new Error('first read was not started')
+      }
+      let releaseSecond: () => void = () => {
+        throw new Error('second read was not started')
+      }
+
+      const resultPromise = readAttachmentBatch(['first', 'second', 'third'], async (file, index) => {
+        started++
+        if (file === 'first') {
+          await new Promise<void>((resolve) => {
+            releaseFirst = resolve
+          })
+        }
+        if (file === 'second') {
+          await new Promise<void>((resolve) => {
+            releaseSecond = resolve
+          })
+          return null
+        }
+        return {
+          type: 'text',
+          path: file,
+          name: `${index}:${file}`,
+          mimeType: 'text/plain',
+          size: 1,
+        }
+      }, 2)
+
+      await Promise.resolve()
+      expect(started).toBe(2)
+
+      releaseFirst()
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(started).toBe(3)
+
+      releaseSecond()
+      await expect(resultPromise).resolves.toEqual([
+        {
+          type: 'text',
+          path: 'first',
+          name: '0:first',
+          mimeType: 'text/plain',
+          size: 1,
+        },
+        {
+          type: 'text',
+          path: 'third',
+          name: '2:third',
+          mimeType: 'text/plain',
+          size: 1,
+        },
+      ])
     })
   })
 })

@@ -2,6 +2,8 @@
 // output: Pure decisions for input transforms, visibility, and primary action selection
 // pos: Keeps IME-sensitive chat input behavior testable without rendering the composer
 
+import type { FileAttachment } from '../../../../shared/types'
+
 export interface InputCompositionMeta {
   isComposing?: boolean
   nativeIsComposing?: boolean
@@ -19,6 +21,27 @@ export interface AutoCapitalisationResult {
 }
 
 export type PrimaryInputAction = 'send' | 'stop'
+
+export async function readAttachmentBatch<TFile>(
+  files: readonly TFile[],
+  readAttachment: (file: TFile, index: number) => Promise<FileAttachment | null>,
+  maxConcurrent = 2,
+): Promise<FileAttachment[]> {
+  if (files.length === 0) return []
+
+  const attachments: Array<FileAttachment | null> = new Array(files.length).fill(null)
+  const workerCount = Math.max(1, Math.min(files.length, Math.floor(maxConcurrent)))
+  let nextIndex = 0
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < files.length) {
+      const index = nextIndex++
+      attachments[index] = await readAttachment(files[index] as TFile, index)
+    }
+  }))
+
+  return attachments.filter((attachment): attachment is FileAttachment => attachment !== null)
+}
 
 export function isCompositionInput(meta?: InputCompositionMeta): boolean {
   if (!meta) return false

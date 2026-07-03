@@ -98,6 +98,7 @@ import { formatTokenCount, resolveContextUsage } from './context-usage'
 import {
   getPrimaryInputAction,
   isCompositionInput,
+  readAttachmentBatch,
   resolveAutoCapitalisedInput,
   shouldShowTextInput,
 } from './free-form-input-behavior'
@@ -918,8 +919,6 @@ export function FreeFormInput({
       const { files } = e.detail
       if (!files || files.length === 0) return
 
-      setLoadingCount(prev => prev + files.length)
-
       // Pre-assign sequential names using ref to avoid race conditions
       let nextImageNum = getNextPastedNumber('image', attachmentsRef.current)
       const fileNames: string[] = files.map(file => {
@@ -930,17 +929,7 @@ export function FreeFormInput({
         return file.name
       })
 
-      for (let i = 0; i < files.length; i++) {
-        try {
-          const attachment = await readFileAsAttachment(files[i], fileNames[i])
-          if (attachment) {
-            setAttachments(prev => [...prev, attachment])
-          }
-        } catch (error) {
-          console.error('[FreeFormInput] Failed to process pasted file:', error)
-        }
-        setLoadingCount(prev => prev - 1)
-      }
+      await processFileAttachments(files, fileNames)
 
       // Focus the input after adding attachments
       richInputRef.current?.focus()
@@ -1096,68 +1085,6 @@ export function FreeFormInput({
   // Check if running in Electron environment (has electronAPI)
   const hasElectronAPI = typeof window !== 'undefined' && !!window.electronAPI
 
-  // Shared helper: read a File, add as attachment, decrement loading count
-  const processFileAttachment = async (file: File, overrideName?: string) => {
-    try {
-      const attachment = await readFileAsAttachment(file, overrideName)
-      if (attachment) {
-        setAttachments(prev => [...prev, attachment])
-      }
-    } catch (error) {
-      console.error('[FreeFormInput] Failed to read file:', error)
-    }
-    setLoadingCount(prev => prev - 1)
-  }
-
-  // File attachment handlers
-  const handleAttachClick = () => {
-    if (disabled) return
-    fileInputRef.current?.click()
-  }
-
-  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
-
-    const fileList = Array.from(files)
-    setLoadingCount(prev => prev + fileList.length)
-
-    for (const file of fileList) {
-      await processFileAttachment(file)
-    }
-
-    // Reset input so re-selecting the same file triggers onChange again
-    e.target.value = ''
-  }
-
-  const handleRemoveAttachment = (index: number) => {
-    setAttachments(prev => prev.filter((_, i) => i !== index))
-  }
-
-  // Drag and drop handlers
-  const handleDragEnter = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    dragCounterRef.current++
-    if (e.dataTransfer.types.includes('Files')) {
-      setIsDraggingOver(true)
-    }
-  }
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    dragCounterRef.current--
-    if (dragCounterRef.current === 0) {
-      setIsDraggingOver(false)
-    }
-  }
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-  }
-
   // Helper to read a File using FileReader API
   const readFileAsAttachment = async (file: File, overrideName?: string): Promise<FileAttachment | null> => {
     // Capture the absolute OS path at attach time. Works for <input type="file"> and
@@ -1220,6 +1147,68 @@ export function FreeFormInput({
     })
   }
 
+  const processFileAttachments = async (files: File[], overrideNames?: string[]) => {
+    if (files.length === 0) return
+
+    setLoadingCount(prev => prev + files.length)
+    const loadedAttachments = await readAttachmentBatch(files, async (file, index) => {
+      try {
+        return await readFileAsAttachment(file, overrideNames?.[index])
+      } catch (error) {
+        console.error('[FreeFormInput] Failed to read file:', error)
+        return null
+      }
+    })
+    if (loadedAttachments.length > 0) {
+      setAttachments(prev => [...prev, ...loadedAttachments])
+    }
+    setLoadingCount(prev => prev - files.length)
+  }
+
+  // File attachment handlers
+  const handleAttachClick = () => {
+    if (disabled) return
+    fileInputRef.current?.click()
+  }
+
+  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    await processFileAttachments(Array.from(files))
+
+    // Reset input so re-selecting the same file triggers onChange again
+    e.target.value = ''
+  }
+
+  const handleRemoveAttachment = (index: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index))
+  }
+
+  // Drag and drop handlers
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCounterRef.current++
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDraggingOver(true)
+    }
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCounterRef.current--
+    if (dragCounterRef.current === 0) {
+      setIsDraggingOver(false)
+    }
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
   // Clipboard paste handler for files/images
   const handlePaste = async (e: React.ClipboardEvent) => {
     if (disabled) return
@@ -1231,8 +1220,6 @@ export function FreeFormInput({
     e.preventDefault()
 
     const files = Array.from(clipboardItems)
-    setLoadingCount(prev => prev + files.length)
-
     // Pre-assign sequential names using ref to avoid race conditions
     let nextImageNum = getNextPastedNumber('image', attachmentsRef.current)
     const fileNames: string[] = files.map(file => {
@@ -1243,9 +1230,7 @@ export function FreeFormInput({
       return file.name
     })
 
-    for (let i = 0; i < files.length; i++) {
-      await processFileAttachment(files[i], fileNames[i])
-    }
+    await processFileAttachments(files, fileNames)
   }
 
   // Handle long text paste - convert to file attachment
@@ -1273,11 +1258,7 @@ export function FreeFormInput({
     if (disabled) return
 
     const files = Array.from(e.dataTransfer.files)
-    setLoadingCount(files.length)
-
-    for (const file of files) {
-      await processFileAttachment(file)
-    }
+    await processFileAttachments(files)
   }
 
   // Submit message - backend handles queueing and interruption
