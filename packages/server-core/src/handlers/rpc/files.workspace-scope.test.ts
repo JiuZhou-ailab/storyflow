@@ -4,6 +4,7 @@
 
 import { existsSync, rmSync } from 'node:fs'
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, mock } from 'bun:test'
@@ -11,7 +12,21 @@ import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import type { HandlerFn, RequestContext, RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
+const require = createRequire(import.meta.url)
+const realFsPromises = require('node:fs/promises') as typeof import('node:fs/promises')
+
 let workspaceRootPath = ''
+let workspaceRootRealpathCalls = 0
+
+mock.module('fs/promises', () => ({
+  ...realFsPromises,
+  realpath: async (...args: Parameters<typeof realFsPromises.realpath>) => {
+    if (String(args[0]) === workspaceRootPath) {
+      workspaceRootRealpathCalls += 1
+    }
+    return realFsPromises.realpath(...args)
+  },
+}))
 
 mock.module('@craft-agent/shared/config', () => ({
   getWorkspaceByNameOrId: (id: string) => id === 'workspace-1'
@@ -100,6 +115,28 @@ describe('workspace-scoped file RPCs', () => {
       rmSync(workspaceRootPath, { recursive: true, force: true })
       rmSync(outsideRoot, { recursive: true, force: true })
       workspaceRootPath = ''
+    }
+  })
+
+  it('reuses workspace root realpath across scoped operations', async () => {
+    workspaceRootPath = await mkdtemp(join(tmpdir(), 'craft-workspace-root-cache-'))
+    workspaceRootRealpathCalls = 0
+    const { writeTextFile, searchFiles, searchFilesBatch, ctx } = createFileHarness()
+
+    try {
+      const manuscriptDir = join(workspaceRootPath, '正文')
+      await mkdir(manuscriptDir, { recursive: true })
+      await writeFile(join(manuscriptDir, '01.md'), 'inside')
+
+      await searchFiles(ctx, manuscriptDir, '01.md', { maxResults: 10 })
+      await searchFilesBatch(ctx, manuscriptDir, [{ query: '01.md', options: { mode: 'path' } }])
+      await writeTextFile(ctx, join(manuscriptDir, '02.md'), 'new')
+
+      expect(workspaceRootRealpathCalls).toBe(1)
+    } finally {
+      rmSync(workspaceRootPath, { recursive: true, force: true })
+      workspaceRootPath = ''
+      workspaceRootRealpathCalls = 0
     }
   })
 })

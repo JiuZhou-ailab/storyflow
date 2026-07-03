@@ -17,14 +17,26 @@ function normalizeRootComparablePath(path: string): string {
   return resolve(path).replace(/\\/g, '/').replace(/\/+$/, '')
 }
 
-async function getRootComparablePaths(rootPath: string): Promise<string[]> {
-  const rawRootPath = normalizeRootComparablePath(rootPath)
+// ponytail: process-local root cache; add config-triggered invalidation if roots retarget live.
+const rootComparablePathCache = new Map<string, Promise<string[]>>()
+
+async function resolveRootComparablePaths(rootPath: string, rawRootPath: string): Promise<string[]> {
   try {
     const realRootPath = normalizeRootComparablePath(await realpath(rootPath))
     return realRootPath === rawRootPath ? [rawRootPath] : [rawRootPath, realRootPath]
   } catch {
     return [rawRootPath]
   }
+}
+
+async function getRootComparablePaths(rootPath: string): Promise<string[]> {
+  const rawRootPath = normalizeRootComparablePath(rootPath)
+  let cached = rootComparablePathCache.get(rawRootPath)
+  if (!cached) {
+    cached = resolveRootComparablePaths(rootPath, rawRootPath)
+    rootComparablePathCache.set(rawRootPath, cached)
+  }
+  return cached
 }
 
 export function resolveContextWorkspaceId(ctx: RequestContext, deps: HandlerDeps): string | null | undefined {
