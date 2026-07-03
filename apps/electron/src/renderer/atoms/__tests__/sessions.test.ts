@@ -6,6 +6,7 @@ import {
   sessionMetaMapAtom,
   sessionIdsAtom,
   loadedSessionsAtom,
+  sessionMessagesLoadedAtomFamily,
   ensureSessionMessagesLoadedAtom,
   forceSessionMessagesReloadAtom,
   refreshSessionsMetadataAtom,
@@ -57,6 +58,32 @@ describe('session message loading atoms', () => {
     expect(store.get(loadedSessionsAtom).has(sessionId)).toBe(true)
     expect(store.get(sessionAtomFamily(sessionId))?.messages.map((message) => message.id)).toEqual(['m1', 'm2'])
     expect(store.get(sessionMetaMapAtom).get(sessionId)?.messageCount).toBe(2)
+  })
+
+  it('exposes per-session loaded state without notifying on unrelated sessions', () => {
+    const store = createStore()
+    const currentLoadedAtom = sessionMessagesLoadedAtomFamily('s1')
+    let notifications = 0
+
+    const unsubscribe = store.sub(currentLoadedAtom, () => {
+      notifications += 1
+    })
+
+    expect(store.get(currentLoadedAtom)).toBe(false)
+
+    store.set(loadedSessionsAtom, new Set(['s2']))
+    expect(store.get(currentLoadedAtom)).toBe(false)
+    expect(notifications).toBe(0)
+
+    store.set(loadedSessionsAtom, new Set(['s1', 's2']))
+    expect(store.get(currentLoadedAtom)).toBe(true)
+    expect(notifications).toBe(1)
+
+    store.set(loadedSessionsAtom, new Set(['s1', 's3']))
+    expect(store.get(currentLoadedAtom)).toBe(true)
+    expect(notifications).toBe(1)
+
+    unsubscribe()
   })
 
   it('forceSessionMessagesReloadAtom reloads an empty-but-loaded session', async () => {

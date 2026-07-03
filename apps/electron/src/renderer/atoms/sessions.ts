@@ -141,6 +141,11 @@ export const sessionIdsAtom = atom<string[]>([])
  */
 export const loadedSessionsAtom = atom<Set<string>>(new Set<string>())
 
+export const sessionMessagesLoadedAtomFamily = atomFamily(
+  (sessionId: string) => atom((get) => get(loadedSessionsAtom).has(sessionId)),
+  (a, b) => a === b
+)
+
 /**
  * Promise cache for deduplicating concurrent session load requests.
  * Prevents race condition where multiple calls (e.g., from React re-renders)

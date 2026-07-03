@@ -19,4 +19,16 @@ describe('chat page header actions', () => {
       '<span className="text-[11px] font-medium leading-none">{t("session.newSession")}</span>'
     )
   })
+
+  it('uses per-session loaded state instead of subscribing to the whole loaded set', () => {
+    const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
+    const chatPageComponentSource = chatPageSource.slice(
+      chatPageSource.indexOf('const ChatPage = React.memo'),
+      chatPageSource.indexOf('export default ChatPage')
+    )
+
+    expect(chatPageSource).toContain('sessionMessagesLoadedAtomFamily')
+    expect(chatPageComponentSource).toContain('useAtomValue(sessionMessagesLoadedAtomFamily(sessionId))')
+    expect(chatPageComponentSource).not.toContain('useAtomValue(loadedSessionsAtom)')
+  })
 })

@@ -30,7 +30,7 @@ import { rendererPerf } from '@/lib/perf'
 import { navigate, routes } from '@/lib/navigate'
 import { coerceInputText } from '@/lib/input-text'
 import { deriveSessionMessagesLoadState, formatSessionLoadFailure } from '@/lib/session-load'
-import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, loadedSessionsAtom, sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
+import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, sessionMessagesLoadedAtomFamily, sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
 import { getSessionPreviewText, getSessionTitle, shortTimeLocale } from '@/utils/session'
 // Model resolution: connection.defaultModel (no hardcoded defaults)
 import { resolveEffectiveConnectionSlug, isSessionConnectionUnavailable } from '@config/llm-connections'
@@ -180,8 +180,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const session = useSessionData(sessionId)
 
   // Track if messages are loaded for this session (for lazy loading)
-  const loadedSessions = useAtomValue(loadedSessionsAtom)
-  const messagesLoaded = loadedSessions.has(sessionId)
+  const messagesLoaded = useAtomValue(sessionMessagesLoadedAtomFamily(sessionId))
 
   // Check if session exists in metadata (for loading state detection)
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
