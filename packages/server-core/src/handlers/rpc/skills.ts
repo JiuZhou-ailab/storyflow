@@ -41,10 +41,9 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
       return []
     }
 
-    const { getWorkspaceSkillsPath } = await import('@craft-agent/shared/workspaces')
-
-    const skillsDir = getWorkspaceSkillsPath(workspace.rootPath)
-    const skillDir = join(skillsDir, skillSlug)
+    const { loadSkill } = await import('@craft-agent/shared/skills')
+    const skillDir = loadSkill(workspace.rootPath, skillSlug)?.path
+    if (!skillDir) return []
 
     function scanDirectory(dirPath: string): SkillFile[] {
       try {
@@ -98,10 +97,10 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
     if (!workspace) throw new Error('Workspace not found')
     if (workspace.remoteServer) throw new Error('Open in editor is not available for remote workspaces')
 
-    const { getWorkspaceSkillsPath } = await import('@craft-agent/shared/workspaces')
-
-    const skillsDir = getWorkspaceSkillsPath(workspace.rootPath)
-    const skillFile = join(skillsDir, skillSlug, 'SKILL.md')
+    const { loadSkill } = await import('@craft-agent/shared/skills')
+    const skill = loadSkill(workspace.rootPath, skillSlug)
+    if (!skill) throw new Error('Skill not found')
+    const skillFile = join(skill.path, 'SKILL.md')
     await deps.platform.openPath?.(skillFile)
   })
 
@@ -111,10 +110,9 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
     if (!workspace) throw new Error('Workspace not found')
     if (workspace.remoteServer) throw new Error('Show in Finder is not available for remote workspaces')
 
-    const { getWorkspaceSkillsPath } = await import('@craft-agent/shared/workspaces')
-
-    const skillsDir = getWorkspaceSkillsPath(workspace.rootPath)
-    const skillDir = join(skillsDir, skillSlug)
-    await deps.platform.showItemInFolder?.(skillDir)
+    const { loadSkill } = await import('@craft-agent/shared/skills')
+    const skill = loadSkill(workspace.rootPath, skillSlug)
+    if (!skill) throw new Error('Skill not found')
+    await deps.platform.showItemInFolder?.(skill.path)
   })
 }

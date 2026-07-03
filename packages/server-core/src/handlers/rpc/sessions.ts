@@ -1,6 +1,10 @@
+// input: Session RPC requests, session manager state, filesystem session folders, and transport clients
+// output: Registered session lifecycle, message, file tree, notes, and watcher RPC handlers
+// pos: Server-side session RPC boundary shared by Electron and server runtimes
+
 import { readFile, writeFile, stat } from 'fs/promises'
 import { join } from 'path'
-import { RPC_CHANNELS, type FileAttachment, type NovelSelectionRewriteRequest, type SendMessageOptions, type SessionEvent } from '@craft-agent/shared/protocol'
+import { RPC_CHANNELS, type FileAttachment, type NovelSelectionRewriteRequest, type SendMessageOptions, type SessionEvent, type SessionFile } from '@craft-agent/shared/protocol'
 import type { StoredAttachment } from '@craft-agent/core/types'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { perf } from '@craft-agent/shared/utils'
@@ -21,6 +25,8 @@ interface ClientSessionWatchState {
 const clientSessionWatches = new Map<string, ClientSessionWatchState>()
 
 const SESSION_GET_LOG_ID_LIMIT = 25
+const SESSION_FILE_TREE_MAX_ENTRIES = 500
+const SESSION_FILE_WATCH_DEBOUNCE_MS = 500
 
 function summarizeIds(ids: Iterable<string>, limit = SESSION_GET_LOG_ID_LIMIT) {
   const all = Array.from(ids)
@@ -57,23 +63,32 @@ export function cleanupSessionFileWatchForClient(clientId: string): void {
   clientSessionWatches.delete(clientId)
 }
 
-// Recursive directory scanner for session files
-// Filters out internal files (session.jsonl) and hidden files (. prefix)
-// Returns only non-empty directories
-async function scanSessionDirectory(dirPath: string): Promise<import('@craft-agent/shared/protocol').SessionFile[]> {
+// Recursive directory scanner for session files.
+// ponytail: capped eager tree; switch to lazy child loading if users need huge session trees.
+async function scanSessionDirectory(
+  dirPath: string,
+  budget = { remaining: SESSION_FILE_TREE_MAX_ENTRIES },
+): Promise<SessionFile[]> {
   const { readdir, stat } = await import('fs/promises')
   const entries = await readdir(dirPath, { withFileTypes: true })
-  const files: import('@craft-agent/shared/protocol').SessionFile[] = []
+  const files: SessionFile[] = []
+
+  entries.sort((a, b) => {
+    if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1
+    return a.name.localeCompare(b.name)
+  })
 
   for (const entry of entries) {
     // Skip internal and hidden files
     if (entry.name === 'session.jsonl' || entry.name.startsWith('.')) continue
+    if (budget.remaining <= 0) break
 
     const fullPath = join(dirPath, entry.name)
+    budget.remaining -= 1
 
     if (entry.isDirectory()) {
       // Recursively scan subdirectory
-      const children = await scanSessionDirectory(fullPath)
+      const children = await scanSessionDirectory(fullPath, budget)
       // Only include non-empty directories
       if (children.length > 0) {
         files.push({
@@ -486,14 +501,14 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
           return
         }
 
-        // Debounce: wait 100ms before notifying to batch rapid changes
+        // Debounce before notifying to batch rapid changes in large output folders.
         if (state.debounceTimer) {
           clearTimeout(state.debounceTimer)
         }
 
         state.debounceTimer = setTimeout(() => {
           pushTyped(server, RPC_CHANNELS.sessions.FILES_CHANGED, { to: 'client', clientId }, state.sessionId)
-        }, 100)
+        }, SESSION_FILE_WATCH_DEBOUNCE_MS)
       })
 
       clientSessionWatches.set(clientId, state)

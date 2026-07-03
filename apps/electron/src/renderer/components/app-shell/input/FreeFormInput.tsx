@@ -1671,7 +1671,7 @@ export function FreeFormInput({
             defaultValue={addLabelPrefill}
             secondaryAction={workspaceRootPath ? {
               label: 'Edit File',
-              filePath: `${workspaceRootPath}/labels/config.json`,
+              filePath: `${workspaceRootPath}/.craft-agent/labels/config.json`,
             } : undefined}
             side="top"
             align="start"

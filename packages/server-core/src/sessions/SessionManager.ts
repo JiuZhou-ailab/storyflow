@@ -492,7 +492,7 @@ async function refreshExpiredCredentials(
 }
 
 /**
- * Apply bridge-mcp-server updates for backends that use it.
+ * Apply source runtime updates for backends that need them.
  * Delegates to the backend's own applyBridgeUpdates() method.
  * Each backend handles its own strategy via applyBridgeUpdates().
  */
@@ -1020,6 +1020,14 @@ function resolveLiveAssistantBranchability(
   }
   if (provider === 'anthropic') {
     return !!managed.sdkSessionId && isClaudeMessageUuid(event.turnId)
+  }
+  return true
+}
+
+function hasPersistedAssistantBranchability(messages: Message[]): boolean {
+  for (const message of messages) {
+    if (message.role !== 'assistant' || message.isIntermediate) continue
+    if (typeof message.canBranch !== 'boolean') return false
   }
   return true
 }
@@ -1630,7 +1638,7 @@ export class SessionManager implements ISessionManager {
     const { mcpServers, apiServers } = await buildServersFromSources(enabledSources, sessionPath, managed.tokenRefreshManager, managed.agent?.getSummarizeCallback())
     const intendedSlugs = enabledSources.map(s => s.config.slug)
 
-    // Update bridge-mcp-server config/credentials for backends that need it
+    // Update source runtime config/credentials for backends that need it
     await applyBridgeUpdates(managed.agent, sessionPath, enabledSources, mcpServers, managed.id, workspaceRootPath, 'source reload', managed.poolServer?.url)
 
     await managed.agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
@@ -2059,7 +2067,7 @@ export class SessionManager implements ISessionManager {
     // Persist session with updated auth message and enabled sources
     this.persistSession(managed)
 
-    // Update bridge-mcp-server config/credentials for backends that need it
+    // Update source runtime config/credentials for backends that need it
     if (result.success && result.sourceSlug && managed.agent) {
       const workspaceRootPath = managed.workspace.rootPath
       const sessionPath = getSessionStoragePath(workspaceRootPath, managed.id)
@@ -2314,14 +2322,30 @@ export class SessionManager implements ISessionManager {
    * Messages are loaded from disk on first access to reduce memory usage.
    */
   async getSession(sessionId: string): Promise<Session | null> {
+    const getSessionSpan = perf.span('session.getSession', { sessionId })
     const m = this.sessions.get(sessionId)
-    if (!m) return null
+    if (!m) {
+      getSessionSpan.setMetadata('status', 'not_found')
+      getSessionSpan.end()
+      return null
+    }
 
-    // Lazy-load messages from disk if not yet loaded
-    await this.ensureMessagesLoaded(m)
-    await this.applyMessageBranchabilityMetadata(m)
+    try {
+      // Lazy-load messages from disk if not yet loaded
+      await this.ensureMessagesLoaded(m)
+      getSessionSpan.mark('messages.loaded')
+      getSessionSpan.setMetadata('messageCount', m.messages.length)
 
-    return managedToSession(m, { messages: m.messages })
+      await this.applyMessageBranchabilityMetadata(m)
+      getSessionSpan.mark('branchability.applied')
+
+      const session = managedToSession(m, { messages: m.messages })
+      getSessionSpan.mark('session.serialized')
+      getSessionSpan.setMetadata('status', 'ok')
+      return session
+    } finally {
+      getSessionSpan.end()
+    }
   }
 
   /**
@@ -2355,8 +2379,27 @@ export class SessionManager implements ISessionManager {
    * the source of truth for provider-native fork anchors.
    */
   private async applyMessageBranchabilityMetadata(managed: ManagedSession): Promise<void> {
-    const provider = resolveManagedBackendProvider(managed)
     const supportsBranching = resolveSupportsBranching(managed)
+
+    if (!supportsBranching) {
+      for (const message of managed.messages) {
+        if (message.role !== 'assistant' || message.isIntermediate) {
+          delete message.canBranch
+          continue
+        }
+        message.canBranch = false
+      }
+      return
+    }
+
+    // canBranch is persisted as a UI hint when assistant turns complete. Use it
+    // for the read path so opening a session does not block on provider sidecars;
+    // branch creation still validates sidecar anchors before forking.
+    if (hasPersistedAssistantBranchability(managed.messages)) {
+      return
+    }
+
+    const provider = resolveManagedBackendProvider(managed)
     const sessionPath = getSessionStoragePath(managed.workspace.rootPath, managed.id)
 
     const piAnchors = provider === 'pi'
@@ -2372,7 +2415,7 @@ export class SessionManager implements ISessionManager {
         continue
       }
 
-      if (!message.turnId || !supportsBranching) {
+      if (!message.turnId) {
         message.canBranch = false
         continue
       }
@@ -3348,7 +3391,7 @@ export class SessionManager implements ISessionManager {
             return null
           }
         },
-        // Source configs for postInit() — backends set up their own bridge/config
+        // Source configs for postInit() — backends set up their own runtime state
         initialSources: {
           enabledSources,
           mcpServers,
@@ -4157,7 +4200,7 @@ export class SessionManager implements ISessionManager {
           .filter(isSourceUsable)
           .map(s => s.config.slug)
 
-        // Update bridge-mcp-server config/credentials for backends that need it
+        // Update source runtime config/credentials for backends that need it
         await applyBridgeUpdates(managed.agent!, sessionPath, allEnabledSources, mcpServers, managed.id, workspaceRootPath, 'source enable', managed.poolServer?.url)
 
         await managed.agent!.setSourceServers(mcpServers, apiServers, intendedSlugs)
@@ -4632,7 +4675,7 @@ export class SessionManager implements ISessionManager {
       // Set active source servers (tools are only available from these)
       const intendedSlugs = sources.filter(isSourceUsable).map(s => s.config.slug)
 
-      // Update bridge-mcp-server config/credentials for backends that need it
+      // Update source runtime config/credentials for backends that need it
       const usableSources = sources.filter(isSourceUsable)
       await applyBridgeUpdates(managed.agent, sessionPath, usableSources, mcpServers, managed.id, workspaceRootPath, 'source config change', managed.poolServer?.url)
 

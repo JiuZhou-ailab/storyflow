@@ -1,3 +1,7 @@
+// input: Current session id, session folder path, persisted expanded folder state, and session file RPCs
+// output: Bounded session file tree UI with preview/open/reveal interactions
+// pos: Renderer-side session info file browser in the right sidebar and info popover
+
 /**
  * SessionFilesSection - Displays files in the session directory as a tree view
  *
@@ -87,23 +91,6 @@ function formatFileSize(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-/** Collect all directory paths recursively so the tree can start fully expanded. */
-function collectDirectoryPaths(entries: SessionFile[]): string[] {
-  const directories: string[] = []
-  const visit = (items: SessionFile[]) => {
-    for (const item of items) {
-      if (item.type === 'directory') {
-        directories.push(item.path)
-        if (item.children && item.children.length > 0) {
-          visit(item.children)
-        }
-      }
-    }
-  }
-  visit(entries)
-  return directories
-}
-
 /**
  * Get icon for file based on name/type (14x14px matching sidebar)
  */
@@ -149,6 +136,8 @@ const PREVIEWABLE_EXTENSIONS = new Set([
 const WEB_PREVIEWABLE_EXTENSIONS = new Set([
   'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico',
 ])
+
+const MAX_RESTORED_EXPANDED_FOLDERS = 100
 
 /** True when running in web UI (browser) rather than Electron. */
 const isWebMode = window.electronAPI.getRuntimeEnvironment() === 'web'
@@ -425,25 +414,20 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
   const [files, setFiles] = useState<SessionFile[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
-  const [hasSavedExpandedState, setHasSavedExpandedState] = useState(false)
   const mountedRef = useRef(true)
 
   // Load expanded paths from storage when session changes.
-  // If no value exists yet, we default to "expand all" after files load.
   useEffect(() => {
     if (sessionId) {
       const raw = storage.getRaw(storage.KEYS.sessionFilesExpandedFolders, sessionId)
       if (raw !== null) {
         const saved = storage.get<string[]>(storage.KEYS.sessionFilesExpandedFolders, [], sessionId)
-        setExpandedPaths(new Set(saved))
-        setHasSavedExpandedState(true)
+        setExpandedPaths(new Set(saved.slice(0, MAX_RESTORED_EXPANDED_FOLDERS)))
       } else {
         setExpandedPaths(new Set())
-        setHasSavedExpandedState(false)
       }
     } else {
       setExpandedPaths(new Set())
-      setHasSavedExpandedState(false)
     }
   }, [sessionId])
 
@@ -466,16 +450,6 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
       const sessionFiles = await window.electronAPI.getSessionFiles(sessionId)
       if (mountedRef.current) {
         setFiles(sessionFiles)
-
-        // Default behavior: expand the entire folder tree when there's no saved state yet.
-        if (!hasSavedExpandedState) {
-          const allDirectoryPaths = new Set(collectDirectoryPaths(sessionFiles))
-          if (allDirectoryPaths.size > 0) {
-            setExpandedPaths(allDirectoryPaths)
-            saveExpandedPaths(allDirectoryPaths)
-            setHasSavedExpandedState(true)
-          }
-        }
       }
     } catch (error) {
       console.error('Failed to load session files:', error)
@@ -487,7 +461,7 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
         setIsLoading(false)
       }
     }
-  }, [sessionId, hasSavedExpandedState, saveExpandedPaths])
+  }, [sessionId])
 
   // Initial load and file watcher setup
   useEffect(() => {
