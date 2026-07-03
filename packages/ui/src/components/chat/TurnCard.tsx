@@ -520,6 +520,22 @@ function isResponseBuffering(response: ResponseContent | undefined): boolean {
   return !decision.shouldShow
 }
 
+function hasRelevantActivityGroupExpansionChanged(
+  activities: ActivityItem[],
+  previousGroups?: Set<string>,
+  nextGroups?: Set<string>
+): boolean {
+  if (previousGroups === nextGroups) return false
+
+  for (const activity of activities) {
+    if (previousGroups?.has(activity.id) !== nextGroups?.has(activity.id)) {
+      return true
+    }
+  }
+
+  return false
+}
+
 // ============================================================================
 // Helper Functions
 // ============================================================================
@@ -3204,7 +3220,7 @@ export const TurnCard = React.memo(function TurnCard({
 
   // Re-render if expansion state changed
   if (prev.isExpanded !== next.isExpanded) return false
-  if (prev.expandedActivityGroups !== next.expandedActivityGroups) return false
+  if (hasRelevantActivityGroupExpansionChanged(prev.activities, prev.expandedActivityGroups, next.expandedActivityGroups)) return false
 
   // Re-render if isLastResponse changed (for Accept Plan button visibility)
   if (prev.isLastResponse !== next.isLastResponse) return false
