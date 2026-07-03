@@ -792,6 +792,10 @@ export function handleNameChanged(
   event: NameChangedEvent
 ): ProcessResult {
   const { session, streaming } = state
+  if (session.name === event.name) {
+    return { state, effects: [] }
+  }
+
   return {
     state: {
       session: { ...session, name: event.name },

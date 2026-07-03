@@ -3,6 +3,7 @@ import {
   handleAsyncOperation,
   handleConnectionChanged,
   handleLabelsChanged,
+  handleNameChanged,
   handleSessionModelChanged,
   handleSessionStatusChanged,
   handleSourcesChanged,
@@ -11,6 +12,7 @@ import type {
   AsyncOperationEvent,
   LabelsChangedEvent,
   LLMConnectionChangedEvent,
+  NameChangedEvent,
   SessionModelChangedEvent,
   SessionStatusChangedEvent,
   SessionState,
@@ -94,5 +96,16 @@ describe('session event no-op guards', () => {
     }
 
     expect(handleSourcesChanged(state, event).state).toBe(state)
+  })
+
+  it('keeps the original state for duplicate session name', () => {
+    const state = makeState({ name: 'Draft title' })
+    const event: NameChangedEvent = {
+      type: 'name_changed',
+      sessionId: 'session-1',
+      name: 'Draft title',
+    }
+
+    expect(handleNameChanged(state, event).state).toBe(state)
   })
 })
