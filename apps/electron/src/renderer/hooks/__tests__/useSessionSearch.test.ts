@@ -98,14 +98,22 @@ describe('computeCollapsedPagination', () => {
   })
 
   it('precomputes session search ranking keys before sorting results', () => {
-    expect(useSessionSearchSource).toContain('const rankedSearchItems: { item: SessionMeta; score: number; matchCount: number }[] = []')
+    expect(useSessionSearchSource).toContain('const rankedSearchItems: RankedSearchItem[] = []')
     expect(useSessionSearchSource).toContain('for (const item of sortedItems)')
     expect(useSessionSearchSource).toContain('const searchResult = contentSearchResults.get(item.id)')
     expect(useSessionSearchSource).toContain('score: fuzzyScore(getSessionTitle(item), searchQuery)')
     expect(useSessionSearchSource).toContain('matchCount: searchResult.matchCount')
+    expect(useSessionSearchSource).toContain('insertBoundedSearchItem(rankedSearchItems, {')
     expect(useSessionSearchSource).not.toContain('.filter(item => contentSearchResults.has(item.id))')
     expect(useSessionSearchSource).not.toContain('const aScore = fuzzyScore(getSessionTitle(a), searchQuery)')
     expect(useSessionSearchSource).not.toContain('const countA = contentSearchResults.get(a.id)?.matchCount || 0')
+  })
+
+  it('bounds search ranking before sorting every content match', () => {
+    expect(useSessionSearchSource).toContain('let searchMatchCount = 0')
+    expect(useSessionSearchSource).toContain('searchMatchCount++')
+    expect(useSessionSearchSource).toContain('exceeded = searchMatchCount > MAX_SEARCH_RESULTS')
+    expect(useSessionSearchSource).not.toContain('rankedSearchItems.sort((a, b) => {')
   })
 
   it('does not replace empty content search results while search is below the active threshold', () => {

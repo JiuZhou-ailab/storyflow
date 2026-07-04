@@ -187,6 +187,35 @@ export function reuseContentSearchResultsIfEqual(
   return previous
 }
 
+interface RankedSearchItem {
+  item: SessionMeta
+  score: number
+  matchCount: number
+}
+
+function compareRankedSearchItems(a: RankedSearchItem, b: RankedSearchItem): number {
+  if (a.score > 0 && b.score === 0) return -1
+  if (a.score === 0 && b.score > 0) return 1
+  if (a.score !== b.score) return b.score - a.score
+  return b.matchCount - a.matchCount
+}
+
+function insertBoundedSearchItem(results: RankedSearchItem[], result: RankedSearchItem): void {
+  const insertIndex = results.findIndex(existing => compareRankedSearchItems(result, existing) < 0)
+
+  if (insertIndex === -1) {
+    if (results.length < MAX_SEARCH_RESULTS) {
+      results.push(result)
+    }
+    return
+  }
+
+  results.splice(insertIndex, 0, result)
+  if (results.length > MAX_SEARCH_RESULTS) {
+    results.pop()
+  }
+}
+
 interface FilterMatchOptions {
   evaluateViews?: (meta: SessionMeta) => ViewConfig[]
   statusFilter?: Map<string, 'include' | 'exclude'>
@@ -402,9 +431,9 @@ export function useSessionSearch({
   )
 
   // Filter items by search query or current filter
-  const searchFilteredItems = useMemo(() => {
+  const { searchFilteredItems, searchMatchCount } = useMemo(() => {
     if (!isSearchMode) {
-      return sortedItems.filter(item =>
+      const filteredItems = sortedItems.filter(item =>
         sessionMatchesCurrentFilter(item, currentFilter, {
           evaluateViews,
           statusFilter,
@@ -412,27 +441,26 @@ export function useSessionSearch({
           getDescendantLabelIds,
         })
       )
+      return { searchFilteredItems: filteredItems, searchMatchCount: filteredItems.length }
     }
 
-    const rankedSearchItems: { item: SessionMeta; score: number; matchCount: number }[] = []
+    const rankedSearchItems: RankedSearchItem[] = []
+    let searchMatchCount = 0
     for (const item of sortedItems) {
       const searchResult = contentSearchResults.get(item.id)
       if (!searchResult) continue
-      rankedSearchItems.push({
+      searchMatchCount++
+      insertBoundedSearchItem(rankedSearchItems, {
         item,
         score: fuzzyScore(getSessionTitle(item), searchQuery),
         matchCount: searchResult.matchCount,
       })
     }
 
-    rankedSearchItems.sort((a, b) => {
-      if (a.score > 0 && b.score === 0) return -1
-      if (a.score === 0 && b.score > 0) return 1
-      if (a.score !== b.score) return b.score - a.score
-      return b.matchCount - a.matchCount
-    })
-
-    return rankedSearchItems.map(({ item }) => item)
+    return {
+      searchFilteredItems: rankedSearchItems.map(({ item }) => item),
+      searchMatchCount,
+    }
   }, [sortedItems, isSearchMode, searchQuery, contentSearchResults, currentFilter, evaluateViews, statusFilter, labelFilterMap, getDescendantLabelIds])
 
   // Split search results: matching current filter vs others
@@ -450,12 +478,11 @@ export function useSessionSearch({
         hasActiveFilters,
         statusFilterSize: statusFilter?.size ?? 0,
         labelFilterSize: labelFilterMap?.size ?? 0,
-        itemCount: searchFilteredItems.length,
+        itemCount: searchMatchCount,
       })
     }
 
-    const totalCount = searchFilteredItems.length
-    const exceeded = totalCount > MAX_SEARCH_RESULTS
+    const exceeded = searchMatchCount > MAX_SEARCH_RESULTS
 
     if (!isSearchMode || !hasActiveFilters) {
       const limitedItems = searchFilteredItems.slice(0, MAX_SEARCH_RESULTS)
@@ -490,7 +517,7 @@ export function useSessionSearch({
     }
 
     return { matchingFilterItems: matching, otherResultItems: others, exceededSearchLimit: exceeded }
-  }, [searchFilteredItems, currentFilter, evaluateViews, isSearchMode, statusFilter, labelFilterMap, searchQuery, getDescendantLabelIds])
+  }, [searchFilteredItems, currentFilter, evaluateViews, isSearchMode, statusFilter, labelFilterMap, searchQuery, searchMatchCount, getDescendantLabelIds])
 
   // --- Pagination ---
 
