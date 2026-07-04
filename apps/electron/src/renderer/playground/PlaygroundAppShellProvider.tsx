@@ -9,7 +9,9 @@
  */
 
 import * as React from 'react'
+import { useSetAtom } from 'jotai'
 import { AppShellProvider, type AppShellContextType } from '../context/AppShellContext'
+import { windowWorkspaceIdAtom, windowWorkspacesAtom } from '../atoms/sessions'
 import type { Workspace } from '../../shared/types'
 
 const PLAYGROUND_WORKSPACE: Workspace = {
@@ -27,8 +29,7 @@ function logCall(method: string) {
 }
 
 // Build a minimal value that satisfies the type. Most callbacks are no-ops;
-// only `workspaces` and `activeWorkspaceId` carry real data so
-// `useActiveWorkspace()` resolves to the playground workspace.
+// workspace atoms below let `useActiveWorkspace()` resolve in playground.
 const playgroundValue: AppShellContextType = {
   workspaces: [PLAYGROUND_WORKSPACE],
   activeWorkspaceId: PLAYGROUND_WORKSPACE.id,
@@ -68,5 +69,17 @@ const playgroundValue: AppShellContextType = {
 }
 
 export function PlaygroundAppShellProvider({ children }: { children: React.ReactNode }) {
+  const setWindowWorkspaceId = useSetAtom(windowWorkspaceIdAtom)
+  const setWindowWorkspaces = useSetAtom(windowWorkspacesAtom)
+
+  React.useEffect(() => {
+    setWindowWorkspaceId(PLAYGROUND_WORKSPACE.id)
+    setWindowWorkspaces([PLAYGROUND_WORKSPACE])
+    return () => {
+      setWindowWorkspaceId(null)
+      setWindowWorkspaces([])
+    }
+  }, [setWindowWorkspaceId, setWindowWorkspaces])
+
   return <AppShellProvider value={playgroundValue}>{children}</AppShellProvider>
 }

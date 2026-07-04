@@ -64,6 +64,7 @@ import {
   removeBackgroundTaskById,
   removeBackgroundTaskByToolUseId,
   windowWorkspaceIdAtom,
+  windowWorkspacesAtom,
   type SessionMeta,
 } from '@/atoms/sessions'
 import { pendingCredentialsAtom, pendingPermissionsAtom } from '@/atoms/pending-requests'
@@ -311,7 +312,7 @@ export default function App() {
     })
   }, [updateSessionDirect])
 
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [workspaces, setWorkspaces] = useAtom(windowWorkspacesAtom)
   const projectSummaries = useMemo(() => buildProjectSummaries(workspaces), [workspaces])
   // Window's workspace ID — shared atom so Root/ThemeProvider stays in sync on switch
   const [windowWorkspaceId, setWindowWorkspaceId] = useAtom(windowWorkspaceIdAtom)

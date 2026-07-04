@@ -15,7 +15,7 @@
 import { atom } from 'jotai'
 import type { Getter, Setter } from 'jotai/vanilla'
 import { atomFamily } from 'jotai-family'
-import type { Session, Message } from '../../shared/types'
+import type { Session, Message, Workspace } from '../../shared/types'
 
 /**
  * Session metadata for list display (lightweight, no messages)
@@ -882,6 +882,12 @@ export const backgroundTasksAtomFamily = atomFamily(
  * Written by App on workspace switch, read by Root to keep the theme in sync.
  */
 export const windowWorkspaceIdAtom = atom<string | null>(null)
+
+/**
+ * Window's workspace list — paired with windowWorkspaceIdAtom for active-workspace lookups.
+ * Written by App when workspace state changes, read by focused workspace consumers.
+ */
+export const windowWorkspacesAtom = atom<Workspace[]>([])
 
 /**
  * State for "Send to Workspace" dialog.

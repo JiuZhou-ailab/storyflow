@@ -31,7 +31,7 @@ import type {
 import type { SessionStatus as SessionStatusConfig } from '@/config/session-status-config'
 import type { SessionOptions, SessionOptionUpdates } from '../hooks/useSessionOptions'
 import { sessionOptionsAtomFamily } from '../hooks/useSessionOptions'
-import { sessionAtomFamily } from '../atoms/sessions'
+import { sessionAtomFamily, windowWorkspaceIdAtom, windowWorkspacesAtom } from '../atoms/sessions'
 import { pendingCredentialAtomFamily, pendingPermissionAtomFamily } from '../atoms/pending-requests'
 
 export interface AppShellContextType {
@@ -212,7 +212,8 @@ export function useSession(sessionId: string): Session | null {
  * Get the active workspace
  */
 export function useActiveWorkspace(): Workspace | null {
-  const { workspaces, activeWorkspaceId } = useAppShellContext()
+  const workspaces = useAtomValue(windowWorkspacesAtom)
+  const activeWorkspaceId = useAtomValue(windowWorkspaceIdAtom)
   if (!activeWorkspaceId) return null
   return workspaces.find((w) => w.id === activeWorkspaceId) || null
 }
