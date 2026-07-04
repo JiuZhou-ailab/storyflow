@@ -95,6 +95,10 @@ function ConversationHistoryMenuItems({
 }) {
   const { t, i18n } = useTranslation()
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
+  const relativeTimeLocale = React.useMemo(() => ({
+    ...getDateLocale(i18n.language),
+    formatDistance: shortTimeLocale.formatDistance,
+  }), [i18n.language])
   const visibleItems = React.useMemo(() => {
     return selectConversationHistoryItems(sessionMetaMap.values(), {
       activeWorkspaceId,
@@ -119,10 +123,7 @@ function ConversationHistoryMenuItems({
         const time = item.lastMessageAt || item.createdAt
           ? formatDistanceToNowStrict(new Date(item.lastMessageAt || item.createdAt || Date.now()), {
               addSuffix: true,
-              locale: {
-                ...getDateLocale(i18n.language),
-                formatDistance: shortTimeLocale.formatDistance,
-              },
+              locale: relativeTimeLocale,
             })
           : ''
 

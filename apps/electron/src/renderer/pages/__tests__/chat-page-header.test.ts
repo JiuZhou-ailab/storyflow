@@ -44,4 +44,16 @@ describe('chat page header actions', () => {
     expect(chatPageComponentSource).not.toContain('useAtomValue(sessionMetaMapAtom)')
     expect(chatPageComponentSource).not.toContain('sessionMetaMap.get(sessionId)')
   })
+
+  it('reuses the relative time locale across conversation history rows', () => {
+    const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
+    const historySource = chatPageSource.slice(
+      chatPageSource.indexOf('function ConversationHistoryMenuItems'),
+      chatPageSource.indexOf('const ChatPage = React.memo')
+    )
+
+    expect(historySource).toContain('const relativeTimeLocale = React.useMemo')
+    expect(historySource).toContain('locale: relativeTimeLocale')
+    expect(historySource).not.toContain('locale: {\n                ...getDateLocale')
+  })
 })
