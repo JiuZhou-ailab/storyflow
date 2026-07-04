@@ -24,7 +24,7 @@ import { cn } from '@/lib/utils'
 import { usePlatform } from '@craft-agent/ui'
 import type { ContentBadge, Session, CreateSessionOptions } from '../../../shared/types'
 import { useSessionInteractionActions, useSession, usePendingPermission, usePendingCredential } from '@/context/AppShellContext'
-import { useEscapeInterrupt } from '@/context/EscapeInterruptContext'
+import { useEscapeInterruptActions } from '@/context/EscapeInterruptContext'
 import { ChatDisplay } from '../app-shell/ChatDisplay'
 import { windowWorkspaceIdAtom, workspacePanelFieldsAtomFamily } from '@/atoms/sessions'
 
@@ -806,7 +806,7 @@ export function EditPopover({
 
   // Use existing escape interrupt context for double-ESC flow
   // This shows the "Press Esc again to interrupt" overlay in the input field
-  const { handleEscapePress } = useEscapeInterrupt()
+  const { handleEscapePress } = useEscapeInterruptActions()
 
   // Reset inline session when popover closes
   const resetInlineSession = useCallback(() => {

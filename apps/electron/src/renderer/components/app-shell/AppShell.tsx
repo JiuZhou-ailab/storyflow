@@ -82,7 +82,7 @@ import { LeftSidebar, type LinkItem as LeftSidebarLinkItem, type SidebarItem as 
 import { useSession } from "@/hooks/useSession"
 import { AppShellProvider, type AppShellContextType } from "@/context/AppShellContext"
 import { sessionOptionsAtomFamily } from "@/hooks/useSessionOptions"
-import { EscapeInterruptProvider, useEscapeInterrupt } from "@/context/EscapeInterruptContext"
+import { EscapeInterruptProvider, useEscapeInterruptActions } from "@/context/EscapeInterruptContext"
 import { useTheme } from "@/context/ThemeContext"
 import { getResizeGradientStyle } from "@/hooks/useResizeGradient"
 import { useAction } from "@/actions"
@@ -1098,7 +1098,7 @@ function AppShellContent({
   const { goBack, goForward, navigateToSource, navigateToSession } = useNavigationActions()
 
   // Double-Esc interrupt feature: first Esc shows warning, second Esc interrupts
-  const { handleEscapePress } = useEscapeInterrupt()
+  const { handleEscapePress } = useEscapeInterruptActions()
 
   // UNIFIED NAVIGATION STATE - single source of truth from NavigationContext
   // Derived from focused panel's route — all panels are peers

@@ -7,6 +7,7 @@ import { describe, expect, it } from 'bun:test'
 
 const editPopoverSource = readFileSync(new URL('../EditPopover.tsx', import.meta.url), 'utf-8')
 const appShellContextSource = readFileSync(new URL('../../../context/AppShellContext.tsx', import.meta.url), 'utf-8')
+const escapeInterruptContextSource = readFileSync(new URL('../../../context/EscapeInterruptContext.tsx', import.meta.url), 'utf-8')
 
 describe('EditPopover subscriptions', () => {
   it('uses a narrow session interaction action context', () => {
@@ -19,5 +20,13 @@ describe('EditPopover subscriptions', () => {
     expect(editPopoverSource).toContain('usePendingPermission')
     expect(editPopoverSource).toContain('usePendingCredential')
     expect(appShellContextSource).toContain('SessionInteractionActionsContext')
+  })
+
+  it('uses escape interrupt actions without subscribing to overlay state', () => {
+    expect(editPopoverSource).toContain('useEscapeInterruptActions')
+    expect(editPopoverSource).not.toContain('useEscapeInterrupt()')
+    expect(escapeInterruptContextSource).toContain('const EscapeInterruptActionsContext = createContext<EscapeInterruptActionsContextType | null>(null)')
+    expect(escapeInterruptContextSource).toContain('const showEscapeOverlayRef = useRef(showEscapeOverlay)')
+    expect(escapeInterruptContextSource).toContain('if (showEscapeOverlayRef.current)')
   })
 })

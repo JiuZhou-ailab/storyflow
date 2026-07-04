@@ -20,13 +20,23 @@ interface EscapeInterruptContextType {
   dismissOverlay: () => void
 }
 
+interface EscapeInterruptActionsContextType {
+  /** Trigger the first escape press - shows overlay and returns false. If already showing, returns true (proceed with interrupt) */
+  handleEscapePress: () => boolean
+  /** Dismiss the overlay (called after timeout or after interrupt) */
+  dismissOverlay: () => void
+}
+
 const EscapeInterruptContext = createContext<EscapeInterruptContextType | null>(null)
+const EscapeInterruptActionsContext = createContext<EscapeInterruptActionsContextType | null>(null)
 
 // Time window (ms) for second Esc press to trigger interrupt
 const ESC_TIMEOUT_MS = 2000
 
 export function EscapeInterruptProvider({ children }: { children: React.ReactNode }) {
   const [showEscapeOverlay, setShowEscapeOverlay] = useState(false)
+  const showEscapeOverlayRef = useRef(showEscapeOverlay)
+  showEscapeOverlayRef.current = showEscapeOverlay
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Clear timeout on unmount
@@ -52,7 +62,7 @@ export function EscapeInterruptProvider({ children }: { children: React.ReactNod
    * Returns false if this was the first press (overlay shown, waiting for second press).
    */
   const handleEscapePress = useCallback((): boolean => {
-    if (showEscapeOverlay) {
+    if (showEscapeOverlayRef.current) {
       // Second press within timeout - proceed with interrupt
       dismissOverlay()
       return true
@@ -73,7 +83,12 @@ export function EscapeInterruptProvider({ children }: { children: React.ReactNod
     }, ESC_TIMEOUT_MS)
 
     return false
-  }, [showEscapeOverlay, dismissOverlay])
+  }, [dismissOverlay])
+
+  const actionsValue = React.useMemo(
+    () => ({ handleEscapePress, dismissOverlay }),
+    [handleEscapePress, dismissOverlay]
+  )
 
   const value = React.useMemo(
     () => ({ showEscapeOverlay, handleEscapePress, dismissOverlay }),
@@ -81,9 +96,11 @@ export function EscapeInterruptProvider({ children }: { children: React.ReactNod
   )
 
   return (
-    <EscapeInterruptContext.Provider value={value}>
-      {children}
-    </EscapeInterruptContext.Provider>
+    <EscapeInterruptActionsContext.Provider value={actionsValue}>
+      <EscapeInterruptContext.Provider value={value}>
+        {children}
+      </EscapeInterruptContext.Provider>
+    </EscapeInterruptActionsContext.Provider>
   )
 }
 
@@ -91,6 +108,14 @@ export function useEscapeInterrupt(): EscapeInterruptContextType {
   const context = useContext(EscapeInterruptContext)
   if (!context) {
     throw new Error('useEscapeInterrupt must be used within an EscapeInterruptProvider')
+  }
+  return context
+}
+
+export function useEscapeInterruptActions(): EscapeInterruptActionsContextType {
+  const context = useContext(EscapeInterruptActionsContext)
+  if (!context) {
+    throw new Error('useEscapeInterruptActions must be used within an EscapeInterruptProvider')
   }
   return context
 }

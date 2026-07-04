@@ -19,6 +19,7 @@ const sessionFilesSectionSource = readFileSync(new URL('../../right-sidebar/Sess
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf-8')
 const sessionListContextSource = readFileSync(new URL('../../../context/SessionListContext.tsx', import.meta.url), 'utf-8')
 const focusContextSource = readFileSync(new URL('../../../context/FocusContext.tsx', import.meta.url), 'utf-8')
+const escapeInterruptContextSource = readFileSync(new URL('../../../context/EscapeInterruptContext.tsx', import.meta.url), 'utf-8')
 const skillsListPanelSource = readFileSync(new URL('../SkillsListPanel.tsx', import.meta.url), 'utf-8')
 const sourcesListPanelSource = readFileSync(new URL('../SourcesListPanel.tsx', import.meta.url), 'utf-8')
 
@@ -51,6 +52,13 @@ describe('session item subscriptions', () => {
     expect(focusContextSource).toContain('const focusStateRef = useRef(focusState)')
     expect(focusContextSource).toContain('const currentZone = focusStateRef.current.zone')
     expect(focusContextSource).toContain('<FocusActionsContext.Provider value={actionsValue}>')
+  })
+
+  it('keeps app-shell escape handling off overlay-state context updates', () => {
+    expect(appShellSource).toContain('useEscapeInterruptActions')
+    expect(appShellSource).not.toContain('const { handleEscapePress } = useEscapeInterrupt()')
+    expect(escapeInterruptContextSource).toContain('const EscapeInterruptActionsContext = createContext<EscapeInterruptActionsContextType | null>(null)')
+    expect(escapeInterruptContextSource).toContain('const showEscapeOverlayRef = useRef(showEscapeOverlay)')
   })
 
   it('does not pass unused session selection callbacks into SessionList', () => {
