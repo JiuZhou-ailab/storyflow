@@ -22,4 +22,14 @@ describe('MainContentPanel subscriptions', () => {
     expect(panelSlotSource).toContain('SessionPanelChromeProvider')
     expect(appShellContextSource).toContain('SessionPanelChromeProvider')
   })
+
+  it('keeps full workspace-list reads out of the main content router', () => {
+    const mainContentPanelBody = mainContentPanelSource.slice(
+      mainContentPanelSource.indexOf('export function MainContentPanel'),
+      mainContentPanelSource.indexOf('function SendResourceWorkspaceDialogHost')
+    )
+
+    expect(mainContentPanelBody).not.toContain('useAtomValue(windowWorkspacesAtom)')
+    expect(mainContentPanelSource).toContain('SendResourceWorkspaceDialogHost')
+  })
 })

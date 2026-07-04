@@ -58,8 +58,8 @@ describe('chat page header actions', () => {
       chatPageSource.indexOf('export default ChatPage')
     )
 
-    expect(chatPageSource).toContain('chatWorkspaceFieldsAtomFamily')
-    expect(chatPageComponentSource).toContain('useAtomValue(chatWorkspaceFieldsAtomFamily(activeWorkspaceId ?? null))')
+    expect(chatPageSource).toContain('workspacePanelFieldsAtomFamily')
+    expect(chatPageComponentSource).toContain('useAtomValue(workspacePanelFieldsAtomFamily(activeWorkspaceId ?? null))')
     expect(chatPageComponentSource).not.toContain('useActiveWorkspace()')
   })
 
@@ -115,7 +115,7 @@ describe('chat page header actions', () => {
     const appShellDestructure = appShellDestructureFrom(chatPageSource)
 
     expect(chatPageSource).toContain('windowWorkspaceIdAtom')
-    expect(chatPageSource).toContain('chatWorkspaceFieldsAtomFamily')
+    expect(chatPageSource).toContain('workspacePanelFieldsAtomFamily')
     expect(chatPageSource).not.toContain('useActiveWorkspace')
     expect(appShellDestructure).not.toContain('activeWorkspaceId')
     expect(appShellDestructure).not.toContain('workspaces')

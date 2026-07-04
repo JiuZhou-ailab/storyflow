@@ -31,7 +31,7 @@ import { rendererPerf } from '@/lib/perf'
 import { navigate, routes } from '@/lib/navigate'
 import { coerceInputText } from '@/lib/input-text'
 import { deriveSessionMessagesLoadState, formatSessionLoadFailure } from '@/lib/session-load'
-import { chatWorkspaceFieldsAtomFamily, ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, sessionMessagesLoadedAtomFamily, sessionMetaAtomFamily, sessionMetaMapAtom, windowWorkspaceIdAtom } from '@/atoms/sessions'
+import { workspacePanelFieldsAtomFamily, ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, sessionMessagesLoadedAtomFamily, sessionMetaAtomFamily, sessionMetaMapAtom, windowWorkspaceIdAtom } from '@/atoms/sessions'
 import { activeSessionListSearchQueryAtom, sessionListSearchActiveAtom } from '@/atoms/session-list-search'
 import { llmConnectionsAtom, refreshLlmConnectionsAtom, workspaceDefaultLlmConnectionAtom } from '@/atoms/llm-connections'
 import { getSessionPreviewText, getSessionTitle, shortTimeLocale } from '@/utils/session'
@@ -231,7 +231,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   // Use per-session atom for isolated updates
   const session = useSessionData(sessionId)
   const activeWorkspaceId = useAtomValue(windowWorkspaceIdAtom)
-  const chatWorkspace = useAtomValue(chatWorkspaceFieldsAtomFamily(activeWorkspaceId ?? null))
+  const chatWorkspace = useAtomValue(workspacePanelFieldsAtomFamily(activeWorkspaceId ?? null))
   const llmConnections = useAtomValue(llmConnectionsAtom)
   const workspaceDefaultLlmConnection = useAtomValue(workspaceDefaultLlmConnectionAtom)
   const refreshLlmConnections = useSetAtom(refreshLlmConnectionsAtom)

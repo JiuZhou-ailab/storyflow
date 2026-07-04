@@ -28,7 +28,7 @@ import { MultiSelectPanel } from './MultiSelectPanel'
 import { useSessionBatchActions } from '@/context/AppShellContext'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
-import { sessionMetaAtomFamily, sessionMetaMapAtom, windowWorkspaceIdAtom, windowWorkspacesAtom, type SessionMeta } from '@/atoms/sessions'
+import { workspacePanelFieldsAtomFamily, hasOtherWorkspacesAtom, sessionMetaAtomFamily, sessionMetaMapAtom, windowWorkspaceIdAtom, windowWorkspacesAtom, type SessionMeta } from '@/atoms/sessions'
 import { StoplightProvider } from '@/context/StoplightContext'
 import {
   useNavigationState,
@@ -74,7 +74,8 @@ export function MainContentPanel({
   const navState = navStateOverride ?? globalNavState
   const isMultiSelectActive = useIsMultiSelectActive()
   const activeWorkspaceId = useAtomValue(windowWorkspaceIdAtom)
-  const workspaces = useAtomValue(windowWorkspacesAtom)
+  const hasOtherWorkspaces = useAtomValue(hasOtherWorkspacesAtom)
+  const activeWorkspace = useAtomValue(workspacePanelFieldsAtomFamily(activeWorkspaceId ?? null))
   const automations = useAtomValue(automationsAtom)
   const {
     automationTestResults,
@@ -141,9 +142,7 @@ export function MainContentPanel({
   const [sendResourceType, setSendResourceType] = useState<SendResourceType>('source')
   const [sendResourceIds, setSendResourceIds] = useState<string[]>([])
   const [sendResourceLabel, setSendResourceLabel] = useState('')
-  const hasOtherWorkspaces = workspaces.length > 1
-  const activeWorkspace = workspaces.find(workspace => workspace.id === activeWorkspaceId)
-  const remoteWorkspaceId = activeWorkspace?.remoteServer?.remoteWorkspaceId
+  const remoteWorkspaceId = activeWorkspace?.remoteWorkspaceId
 
   const openSendDialog = useCallback((type: SendResourceType, ids: Set<string>) => {
     const count = ids.size
@@ -158,15 +157,16 @@ export function MainContentPanel({
   const wrapWithStoplight = (content: React.ReactNode) => (
     <StoplightProvider value={isSidebarAndNavigatorHidden}>
       {content}
-      <SendResourceToWorkspaceDialog
-        open={sendDialogOpen}
-        onOpenChange={setSendDialogOpen}
-        resourceType={sendResourceType}
-        resourceIds={sendResourceIds}
-        resourceLabel={sendResourceLabel}
-        workspaces={workspaces}
-        activeWorkspaceId={activeWorkspaceId || ''}
-      />
+      {sendDialogOpen ? (
+        <SendResourceWorkspaceDialogHost
+          open={sendDialogOpen}
+          onOpenChange={setSendDialogOpen}
+          resourceType={sendResourceType}
+          resourceIds={sendResourceIds}
+          resourceLabel={sendResourceLabel}
+          activeWorkspaceId={activeWorkspaceId || ''}
+        />
+      ) : null}
       <Dialog open={!!automationPendingDelete} onOpenChange={(open) => { if (!open) setAutomationPendingDelete(null) }}>
         <DialogContent showCloseButton={false}>
           <DialogHeader>
@@ -252,7 +252,7 @@ export function MainContentPanel({
           <SkillInfoPage
             skillSlug={navState.details.skillSlug}
             workspaceId={activeWorkspaceId || ''}
-            canRevealLocally={!activeWorkspace?.remoteServer}
+            canRevealLocally={!activeWorkspace?.remoteWorkspaceId}
           />
         </Panel>
       )
@@ -348,6 +348,36 @@ export function MainContentPanel({
         <p className="text-sm">{t("session.selectConversation")}</p>
       </div>
     </Panel>
+  )
+}
+
+function SendResourceWorkspaceDialogHost({
+  open,
+  onOpenChange,
+  resourceType,
+  resourceIds,
+  resourceLabel,
+  activeWorkspaceId,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  resourceType: SendResourceType
+  resourceIds: string[]
+  resourceLabel: string
+  activeWorkspaceId: string
+}) {
+  const workspaces = useAtomValue(windowWorkspacesAtom)
+
+  return (
+    <SendResourceToWorkspaceDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      resourceType={resourceType}
+      resourceIds={resourceIds}
+      resourceLabel={resourceLabel}
+      workspaces={workspaces}
+      activeWorkspaceId={activeWorkspaceId}
+    />
   )
 }
 

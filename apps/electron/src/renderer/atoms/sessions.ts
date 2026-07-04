@@ -890,7 +890,13 @@ export const windowWorkspaceIdAtom = atom<string | null>(null)
  */
 export const windowWorkspacesAtom = atom<Workspace[]>([])
 
-export interface ChatWorkspaceFields {
+export const hasOtherWorkspacesAtom = selectAtom(
+  windowWorkspacesAtom,
+  (workspaces) => workspaces.length > 1,
+  Object.is,
+)
+
+export interface WorkspacePanelFields {
   name: string
   slug: string
   rootPath: string
@@ -899,9 +905,9 @@ export interface ChatWorkspaceFields {
   methodPackId?: Workspace['methodPackId']
 }
 
-function chatWorkspaceFieldsEqual(
-  a: ChatWorkspaceFields | null,
-  b: ChatWorkspaceFields | null,
+function workspacePanelFieldsEqual(
+  a: WorkspacePanelFields | null,
+  b: WorkspacePanelFields | null,
 ): boolean {
   if (a === b) return true
   if (!a || !b) return false
@@ -913,10 +919,10 @@ function chatWorkspaceFieldsEqual(
     && a.methodPackId === b.methodPackId
 }
 
-export const chatWorkspaceFieldsAtomFamily = atomFamily(
+export const workspacePanelFieldsAtomFamily = atomFamily(
   (workspaceId: string | null) => selectAtom(
     windowWorkspacesAtom,
-    (workspaces): ChatWorkspaceFields | null => {
+    (workspaces): WorkspacePanelFields | null => {
       if (!workspaceId) return null
       const workspace = workspaces.find((entry) => entry.id === workspaceId)
       if (!workspace) return null
@@ -929,7 +935,7 @@ export const chatWorkspaceFieldsAtomFamily = atomFamily(
         methodPackId: workspace.methodPackId,
       }
     },
-    chatWorkspaceFieldsEqual,
+    workspacePanelFieldsEqual,
   ),
   (a, b) => a === b,
 )
