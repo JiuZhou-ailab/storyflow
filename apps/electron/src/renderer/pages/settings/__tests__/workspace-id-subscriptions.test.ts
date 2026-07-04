@@ -9,6 +9,7 @@ const labelsPageSource = readFileSync(new URL('../LabelsSettingsPage.tsx', impor
 const permissionsPageSource = readFileSync(new URL('../PermissionsSettingsPage.tsx', import.meta.url), 'utf-8')
 const appearancePageSource = readFileSync(new URL('../AppearanceSettingsPage.tsx', import.meta.url), 'utf-8')
 const workspacePageSource = readFileSync(new URL('../WorkspaceSettingsPage.tsx', import.meta.url), 'utf-8')
+const automationsPageSource = readFileSync(new URL('../AutomationsSettingsPage.tsx', import.meta.url), 'utf-8')
 
 describe('workspace id settings subscriptions', () => {
   it('keeps labels settings off the broad app shell context', () => {
@@ -35,5 +36,14 @@ describe('workspace id settings subscriptions', () => {
     expect(workspacePageSource).toContain('useAtomValue(windowWorkspaceIdAtom)')
     expect(workspacePageSource).toContain('windowWorkspacesAtom')
     expect(workspacePageSource).toContain('useSetAtom(windowWorkspacesAtom)')
+  })
+
+  it('keeps automations settings off the broad app shell context', () => {
+    expect(automationsPageSource).not.toContain('useAppShellContext')
+    expect(automationsPageSource).toContain('windowWorkspaceIdAtom')
+    expect(automationsPageSource).toContain('useAtomValue(windowWorkspaceIdAtom)')
+    expect(automationsPageSource).toContain('windowWorkspacesAtom')
+    expect(automationsPageSource).toContain('useAtomValue(windowWorkspacesAtom)')
+    expect(automationsPageSource).toContain('useAutomationActions(')
   })
 })

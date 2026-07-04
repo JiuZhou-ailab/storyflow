@@ -4,11 +4,12 @@
 
 import * as React from 'react'
 import { useAtomValue } from 'jotai'
-import { useTranslation } from 'react-i18next'
+import { useTranslation, Trans } from 'react-i18next'
 import { ExternalLink } from 'lucide-react'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { EditPopover, getEditConfig } from '@/components/ui/EditPopover'
 import { AutomationInfoPage } from '@/components/automations/AutomationInfoPage'
@@ -16,7 +17,9 @@ import { AutomationsListPanel } from '@/components/automations/AutomationsListPa
 import type { ExecutionEntry } from '@/components/automations/types'
 import { SettingsCard, SettingsCardContent, SettingsRow, SettingsSection } from '@/components/settings'
 import { automationsAtom } from '@/atoms/automations'
-import { useActiveWorkspace, useAppShellContext } from '@/context/AppShellContext'
+import { windowWorkspaceIdAtom, windowWorkspacesAtom } from '@/atoms/sessions'
+import { useActiveWorkspace } from '@/context/AppShellContext'
+import { useAutomationActions } from '@/hooks/useAutomations'
 import { routes } from '@/lib/navigate'
 import { cn } from '@/lib/utils'
 import { getDocUrl } from '@craft-agent/shared/docs/doc-links'
@@ -30,18 +33,22 @@ export const meta: DetailsPageMeta = {
 export default function AutomationsSettingsPage() {
   const { t } = useTranslation()
   const workspace = useActiveWorkspace()
-  const {
-    activeWorkspaceId,
-    automationTestResults,
-    getAutomationHistory,
-    onDeleteAutomation,
-    onDuplicateAutomation,
-    onReplayAutomation,
-    onTestAutomation,
-    onToggleAutomation,
-    workspaces,
-  } = useAppShellContext()
+  const activeWorkspaceId = useAtomValue(windowWorkspaceIdAtom)
+  const workspaces = useAtomValue(windowWorkspacesAtom)
   const automations = useAtomValue(automationsAtom)
+  const {
+    automationTestResults,
+    automationPendingDelete,
+    getAutomationHistory,
+    handleDeleteAutomation,
+    handleDuplicateAutomation,
+    handleReplayAutomation,
+    handleTestAutomation,
+    handleToggleAutomation,
+    confirmDeleteAutomation,
+    pendingDeleteAutomation,
+    setAutomationPendingDelete,
+  } = useAutomationActions(activeWorkspaceId, automations)
   const [selectedAutomationId, setSelectedAutomationId] = React.useState<string | null>(null)
   const [executions, setExecutions] = React.useState<ExecutionEntry[]>([])
   const [executionsLoading, setExecutionsLoading] = React.useState(false)
@@ -58,7 +65,7 @@ export default function AutomationsSettingsPage() {
   }, [selectedAutomation, selectedAutomationId])
 
   React.useEffect(() => {
-    if (!selectedAutomationId || !getAutomationHistory) {
+    if (!selectedAutomationId) {
       setExecutions([])
       setExecutionsLoading(false)
       return
@@ -135,10 +142,10 @@ export default function AutomationsSettingsPage() {
                         <AutomationsListPanel
                           automations={automations}
                           onAutomationClick={setSelectedAutomationId}
-                          onTestAutomation={onTestAutomation}
-                          onToggleAutomation={onToggleAutomation}
-                          onDuplicateAutomation={onDuplicateAutomation}
-                          onDeleteAutomation={onDeleteAutomation}
+                          onTestAutomation={handleTestAutomation}
+                          onToggleAutomation={handleToggleAutomation}
+                          onDuplicateAutomation={handleDuplicateAutomation}
+                          onDeleteAutomation={handleDeleteAutomation}
                           selectedAutomationId={selectedAutomationId}
                           workspaceRootPath={workspace.rootPath}
                           activeWorkspaceId={activeWorkspaceId}
@@ -152,11 +159,11 @@ export default function AutomationsSettingsPage() {
                             automation={selectedAutomation}
                             executions={executionsLoading ? [] : executions}
                             testResult={automationTestResults?.[selectedAutomation.id]}
-                            onTest={() => onTestAutomation?.(selectedAutomation.id)}
-                            onToggleEnabled={() => onToggleAutomation?.(selectedAutomation.id)}
-                            onDuplicate={() => onDuplicateAutomation?.(selectedAutomation.id)}
-                            onDelete={() => onDeleteAutomation?.(selectedAutomation.id)}
-                            onReplay={onReplayAutomation}
+                            onTest={() => handleTestAutomation(selectedAutomation.id)}
+                            onToggleEnabled={() => handleToggleAutomation(selectedAutomation.id)}
+                            onDuplicate={() => handleDuplicateAutomation(selectedAutomation.id)}
+                            onDelete={() => handleDeleteAutomation(selectedAutomation.id)}
+                            onReplay={handleReplayAutomation}
                             workspaceRootPath={workspace.rootPath}
                             className="h-full"
                           />
@@ -190,6 +197,24 @@ export default function AutomationsSettingsPage() {
           </div>
         </ScrollArea>
       </div>
+      <Dialog open={!!automationPendingDelete} onOpenChange={(open) => { if (!open) setAutomationPendingDelete(null) }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>{t('dialog.deleteAutomation.title')}</DialogTitle>
+            <DialogDescription>
+              <Trans
+                i18nKey="dialog.deleteAutomation.description"
+                values={{ name: pendingDeleteAutomation?.name }}
+                components={{ strong: <strong /> }}
+              />
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAutomationPendingDelete(null)}>{t('common.cancel')}</Button>
+            <Button variant="destructive" onClick={confirmDeleteAutomation}>{t('common.delete')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

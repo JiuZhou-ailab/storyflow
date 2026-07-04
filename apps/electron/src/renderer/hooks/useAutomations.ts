@@ -68,8 +68,11 @@ export function loadAutomationsForWorkspace(
   return promise
 }
 
-export interface UseAutomationsResult {
+export interface UseAutomationsResult extends UseAutomationActionsResult {
   automations: AutomationListItem[]
+}
+
+export interface UseAutomationActionsResult {
   automationTestResults: Record<string, TestResult>
   automationPendingDelete: string | null
   pendingDeleteAutomation: AutomationListItem | undefined
@@ -83,44 +86,13 @@ export interface UseAutomationsResult {
   handleReplayAutomation: (automationId: string, event: string) => void
 }
 
-export function useAutomations(
+export function useAutomationActions(
   activeWorkspaceId: string | null | undefined,
-): UseAutomationsResult {
+  automations: AutomationListItem[],
+): UseAutomationActionsResult {
   const { t } = useTranslation()
-  const [automations, setAutomations] = useState<AutomationListItem[]>([])
   const [automationTestResults, setAutomationTestResults] = useState<Record<string, TestResult>>({})
   const [automationPendingDelete, setAutomationPendingDelete] = useState<string | null>(null)
-
-  // Sync automations to Jotai atom for cross-component access (MainContentPanel)
-  const setAutomationsAtom = useSetAtom(automationsAtom)
-  useEffect(() => {
-    setAutomationsAtom(automations)
-  }, [automations, setAutomationsAtom])
-
-  // Load automations from server and hydrate lastExecutedAt from history in one step.
-  // This avoids the race where a config reload wipes timestamps before the
-  // history effect can re-merge them.
-  const loadAndHydrate = useCallback(async () => {
-    if (!activeWorkspaceId) return
-    try {
-      const items = await loadAutomationsForWorkspace(activeWorkspaceId)
-      setAutomations(items)
-    } catch {
-      setAutomations([])
-    }
-  }, [activeWorkspaceId])
-
-  // Initial load
-  useEffect(() => {
-    loadAndHydrate()
-  }, [loadAndHydrate])
-
-  // Subscribe to live automations updates (when automations.json changes on disk)
-  useEffect(() => {
-    if (!activeWorkspaceId) return
-    const cleanup = window.electronAPI.onAutomationsChanged(() => { loadAndHydrate() })
-    return () => { cleanup() }
-  }, [activeWorkspaceId, loadAndHydrate])
 
   // Shared lookup — avoids repeating automations.find() in every callback
   const findAutomation = useCallback((id: string) => automations.find(h => h.id === id), [automations])
@@ -243,7 +215,6 @@ export function useAutomations(
   }, [activeWorkspaceId])
 
   return {
-    automations,
     automationTestResults,
     automationPendingDelete,
     pendingDeleteAutomation,
@@ -255,5 +226,49 @@ export function useAutomations(
     confirmDeleteAutomation,
     getAutomationHistory,
     handleReplayAutomation,
+  }
+}
+
+export function useAutomations(
+  activeWorkspaceId: string | null | undefined,
+): UseAutomationsResult {
+  const [automations, setAutomations] = useState<AutomationListItem[]>([])
+
+  // Sync automations to Jotai atom for cross-component access (MainContentPanel)
+  const setAutomationsAtom = useSetAtom(automationsAtom)
+  useEffect(() => {
+    setAutomationsAtom(automations)
+  }, [automations, setAutomationsAtom])
+
+  // Load automations from server and hydrate lastExecutedAt from history in one step.
+  // This avoids the race where a config reload wipes timestamps before the
+  // history effect can re-merge them.
+  const loadAndHydrate = useCallback(async () => {
+    if (!activeWorkspaceId) return
+    try {
+      const items = await loadAutomationsForWorkspace(activeWorkspaceId)
+      setAutomations(items)
+    } catch {
+      setAutomations([])
+    }
+  }, [activeWorkspaceId])
+
+  // Initial load
+  useEffect(() => {
+    loadAndHydrate()
+  }, [loadAndHydrate])
+
+  // Subscribe to live automations updates (when automations.json changes on disk)
+  useEffect(() => {
+    if (!activeWorkspaceId) return
+    const cleanup = window.electronAPI.onAutomationsChanged(() => { loadAndHydrate() })
+    return () => { cleanup() }
+  }, [activeWorkspaceId, loadAndHydrate])
+
+  const actions = useAutomationActions(activeWorkspaceId, automations)
+
+  return {
+    automations,
+    ...actions,
   }
 }
