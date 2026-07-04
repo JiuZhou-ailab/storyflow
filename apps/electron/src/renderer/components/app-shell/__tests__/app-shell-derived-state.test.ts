@@ -21,4 +21,10 @@ describe('AppShell derived state', () => {
     expect(appShellSource).not.toContain('Array.from(sessionMetaMap.values())')
     expect(appShellSource).not.toContain('workspaceSessionMetas.filter(s => s.isArchived)')
   })
+
+  it('keeps global search file title formatting callback stable across shell renders', () => {
+    expect(appShellSource).toContain('const formatGlobalSearchNovelFileTitle = useCallback(')
+    expect(appShellSource).toContain('formatNovelFileTitle={formatGlobalSearchNovelFileTitle}')
+    expect(appShellSource).not.toContain('formatNovelFileTitle={(file) => formatNovelWorkspaceFileTitle(file, t)}')
+  })
 })

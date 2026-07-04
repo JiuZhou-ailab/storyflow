@@ -3416,6 +3416,11 @@ function AppShellContent({
     }
   }, [sessionFilter])
 
+  const formatGlobalSearchNovelFileTitle = useCallback(
+    (file: NovelWorkspaceFile) => formatNovelWorkspaceFileTitle(file, t),
+    [t],
+  )
+
   // Ensure session messages are loaded when selected
   React.useEffect(() => {
     if (session.selected) {
@@ -5279,7 +5284,7 @@ function AppShellContent({
         workspaceId={activeWorkspaceId ?? undefined}
         sessions={workspaceSessionMetas}
         novelFiles={novelWorkspaceFiles}
-        formatNovelFileTitle={(file) => formatNovelWorkspaceFileTitle(file, t)}
+        formatNovelFileTitle={formatGlobalSearchNovelFileTitle}
         onOpenSession={navigateToSession}
         onOpenNovelFile={(file) => {
           void handleSelectNovelFile(file)
