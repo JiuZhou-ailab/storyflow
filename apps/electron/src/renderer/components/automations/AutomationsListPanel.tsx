@@ -23,12 +23,12 @@ import { AutomationMenu } from './AutomationMenu'
 import { BatchAutomationMenu } from './BatchAutomationMenu'
 import { AutomationAvatar } from './AutomationAvatar'
 import { SendResourceToWorkspaceDialog } from '@/components/app-shell/SendResourceToWorkspaceDialog'
-import { useAppShellContext } from '@/context/AppShellContext'
 import { cn } from '@/lib/utils'
 import { automationSelection } from '@/hooks/useEntitySelection'
 import { getEventDisplayName, type AutomationListItem, type AutomationListFilter } from './types'
 import { selectAutomationsForList } from './list-filtering'
 import { formatShortRelativeTime } from './utils'
+import type { Workspace } from '../../../shared/types'
 
 const {
   useSelection: useAutomationSelection,
@@ -171,6 +171,8 @@ export interface AutomationsListPanelProps {
   onDuplicateAutomation?: (automationId: string) => void
   selectedAutomationId?: string | null
   workspaceRootPath?: string
+  activeWorkspaceId?: string | null
+  workspaces?: Workspace[]
   className?: string
 }
 
@@ -184,12 +186,13 @@ export function AutomationsListPanel({
   onDuplicateAutomation,
   selectedAutomationId,
   workspaceRootPath,
+  activeWorkspaceId = null,
+  workspaces = [],
   className,
 }: AutomationsListPanelProps) {
   const { t } = useTranslation()
   const [searchQuery, setSearchQuery] = useState('')
   const [searchActive, setSearchActive] = useState(false)
-  const { workspaces, activeWorkspaceId } = useAppShellContext()
   const hasOtherWorkspaces = workspaces.length > 1
 
   // Send to Workspace dialog state

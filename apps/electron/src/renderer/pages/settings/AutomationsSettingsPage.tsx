@@ -31,6 +31,7 @@ export default function AutomationsSettingsPage() {
   const { t } = useTranslation()
   const workspace = useActiveWorkspace()
   const {
+    activeWorkspaceId,
     automationTestResults,
     getAutomationHistory,
     onDeleteAutomation,
@@ -38,6 +39,7 @@ export default function AutomationsSettingsPage() {
     onReplayAutomation,
     onTestAutomation,
     onToggleAutomation,
+    workspaces,
   } = useAppShellContext()
   const automations = useAtomValue(automationsAtom)
   const [selectedAutomationId, setSelectedAutomationId] = React.useState<string | null>(null)
@@ -139,6 +141,8 @@ export default function AutomationsSettingsPage() {
                           onDeleteAutomation={onDeleteAutomation}
                           selectedAutomationId={selectedAutomationId}
                           workspaceRootPath={workspace.rootPath}
+                          activeWorkspaceId={activeWorkspaceId}
+                          workspaces={workspaces}
                           className="h-[360px] lg:h-[520px]"
                         />
                       </div>

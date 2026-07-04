@@ -5042,6 +5042,8 @@ function AppShellContent({
                 onDeleteAutomation={handleDeleteAutomation}
                 selectedAutomationId={isAutomationsNavigation(navState) && navState.details ? navState.details.automationId : null}
                 workspaceRootPath={activeWorkspace?.rootPath}
+                activeWorkspaceId={activeWorkspaceId}
+                workspaces={workspaces}
               />
             )}
             {isSettingsNavigation(navState) && (
