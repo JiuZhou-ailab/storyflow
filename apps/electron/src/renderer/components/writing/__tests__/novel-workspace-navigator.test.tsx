@@ -601,6 +601,8 @@ describe('novel writing workspace layout', () => {
     expect(topBarSource).not.toContain('w-[clamp(220px,42vw,640px)]')
     expect(topBarSource).not.toContain('titlebar-no-drag min-w-0 shrink-0')
     expect(exportDialogSource).toContain('NOVEL_EXPORT_SECTIONS')
+    expect(exportDialogSource).toContain('tree[section].files.length')
+    expect(exportDialogSource).not.toContain('summarizeNovelSection')
     expect(exportDialogSource).toContain('mergeManuscript')
     expect(exportDialogSource).toContain("'writing.export.sections.manuscript'")
     expect(exportDialogSource).toContain("t('writing.export.title', '导出写作工作区')")

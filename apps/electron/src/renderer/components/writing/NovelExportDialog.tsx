@@ -22,7 +22,7 @@ import {
   type NovelExportOptions,
   type NovelExportSection,
 } from '@/lib/novel-export'
-import { buildNovelWorkspaceTree, summarizeNovelSection, type NovelWorkspaceFile } from '@/lib/writing-workspace'
+import { buildNovelWorkspaceTree, type NovelWorkspaceFile } from '@/lib/writing-workspace'
 
 const SECTION_LABEL_KEYS: Record<NovelExportSection, `writing.export.sections.${NovelExportSection}`> = {
   manuscript: 'writing.export.sections.manuscript',
@@ -57,7 +57,7 @@ export function NovelExportDialog({
   const tree = React.useMemo(() => buildNovelWorkspaceTree(files, methodPackId), [files, methodPackId])
   const sectionCounts = React.useMemo(() => {
     return Object.fromEntries(
-      NOVEL_EXPORT_SECTIONS.map((section) => [section, summarizeNovelSection(tree[section].files).count])
+      NOVEL_EXPORT_SECTIONS.map((section) => [section, tree[section].files.length])
     ) as Record<NovelExportSection, number>
   }, [tree])
   const availableSections = React.useMemo(
