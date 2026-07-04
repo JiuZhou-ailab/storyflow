@@ -446,8 +446,7 @@ function WorkspaceOverrideCard({ workspace, llmConnections, connectionOptions, t
     if (!hasOverrides) return t("settings.ai.usingDefaults")
     const parts: string[] = []
     if (settings?.defaultLlmConnection) {
-      const conn = llmConnections.find(c => c.slug === settings.defaultLlmConnection)
-      parts.push(conn?.name || settings.defaultLlmConnection)
+      parts.push(workspaceEffectiveConnection?.name || settings.defaultLlmConnection)
     }
     if (settings?.model) {
       parts.push(getModelShortName(settings.model))
@@ -457,7 +456,7 @@ function WorkspaceOverrideCard({ workspace, llmConnections, connectionOptions, t
       parts.push(level ? t(level.nameKey) : settings.thinkingLevel)
     }
     return parts.join(' · ')
-  }, [hasOverrides, llmConnections, settings?.defaultLlmConnection, settings?.model, settings?.thinkingLevel, t])
+  }, [hasOverrides, settings?.defaultLlmConnection, settings?.model, settings?.thinkingLevel, t, workspaceEffectiveConnection])
 
   return (
     <SettingsCard>
