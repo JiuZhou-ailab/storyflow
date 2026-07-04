@@ -460,7 +460,7 @@ function PlatformRow({ platform, workspaceId }: { platform: Platform; workspaceI
         </>
       )}
       {platform === 'whatsapp' && (
-        <WhatsAppConnectDialog open={connectOpen} onOpenChange={setConnectOpen} />
+        <WhatsAppConnectDialog open={connectOpen} onOpenChange={setConnectOpen} workspaceId={workspaceId} />
       )}
       {platform === 'lark' && (
         <LarkConnectDialog open={connectOpen} onOpenChange={setConnectOpen} reconfigure={reconfigure} />

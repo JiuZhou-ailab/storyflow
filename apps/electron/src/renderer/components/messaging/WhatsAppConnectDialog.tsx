@@ -14,13 +14,13 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { Spinner } from '@craft-agent/ui'
-import { useActiveWorkspace } from '@/context/AppShellContext'
 import type { WhatsAppUiEvent } from '../../../shared/types'
 
 interface WhatsAppConnectDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onConnected?: () => void
+  workspaceId?: string | null
 }
 
 type Phase =
@@ -30,25 +30,24 @@ type Phase =
   | { kind: 'connected'; name?: string }
   | { kind: 'error'; message: string }
 
-export function WhatsAppConnectDialog({ open, onOpenChange, onConnected }: WhatsAppConnectDialogProps) {
+export function WhatsAppConnectDialog({ open, onOpenChange, onConnected, workspaceId }: WhatsAppConnectDialogProps) {
   const { t } = useTranslation()
-  const activeWorkspace = useActiveWorkspace()
-  const activeWorkspaceId = activeWorkspace?.id
   const [phase, setPhase] = React.useState<Phase>({ kind: 'idle' })
 
   React.useEffect(() => {
-    if (!open || !activeWorkspaceId) return
+    if (!open || !workspaceId) return
     // The main process broadcasts WhatsApp UI events to every renderer. If
     // multiple workspaces are open and another one starts a QR flow, we'd
     // receive its `qr`/`connected` frames and paint them here. Filter by
     // workspaceId at the dialog boundary.
-    const off = window.electronAPI.onWhatsAppEvent(({ workspaceId, event }) => {
-      if (workspaceId !== activeWorkspaceId) return
+    const off = window.electronAPI.onWhatsAppEvent((payload) => {
+      if (payload.workspaceId !== workspaceId) return
+      const { event } = payload
       handleEvent(event)
     })
     return off
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, activeWorkspaceId])
+  }, [open, workspaceId])
 
   React.useEffect(() => {
     if (!open || phase.kind !== 'idle') return

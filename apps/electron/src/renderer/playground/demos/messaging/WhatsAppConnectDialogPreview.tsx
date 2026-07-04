@@ -73,6 +73,7 @@ export function WhatsAppConnectDialogPreview({
         key={phase}
         open={open}
         onOpenChange={setOpen}
+        workspaceId="playground-workspace"
       />
       {!open && (
         <div className="p-6 text-sm text-foreground/60">

@@ -12,15 +12,17 @@
  */
 
 import * as React from 'react'
-import { useAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { messagingDialogAtom } from '@/atoms/messaging'
+import { windowWorkspaceIdAtom } from '@/atoms/sessions'
 import { PairingCodeDialog } from './PairingCodeDialog'
 import { WhatsAppConnectDialog } from './WhatsAppConnectDialog'
 
 export function MessagingDialogHost() {
   const [state, setState] = useAtom(messagingDialogAtom)
+  const workspaceId = useAtomValue(windowWorkspaceIdAtom)
   const { t } = useTranslation()
 
   const close = () => setState({ kind: 'closed' })
@@ -109,6 +111,7 @@ export function MessagingDialogHost() {
         open={state.kind === 'wa_connect'}
         onOpenChange={(o) => { if (!o) close() }}
         onConnected={handleWhatsAppConnected}
+        workspaceId={workspaceId}
       />
     </>
   )
