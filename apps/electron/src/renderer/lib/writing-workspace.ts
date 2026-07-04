@@ -590,6 +590,18 @@ export function groupNovelFileChanges(changes: FileChange[], rootPath = '', meth
   return groups
 }
 
+export function groupReviewableNovelFileChanges(changes: FileChange[], rootPath = '', methodPackId?: string): NovelFileChangeGroups {
+  const groups = createEmptyChangeGroups()
+
+  for (const change of changes) {
+    const category = categorizeNovelFileChange(change, rootPath, methodPackId)
+    if (category === 'other') continue
+    groups[category].push(change)
+  }
+
+  return groups
+}
+
 export function filterReviewableNovelFileChanges(changes: FileChange[], rootPath = '', methodPackId?: string): FileChange[] {
   return changes.filter(change => categorizeNovelFileChange(change, rootPath, methodPackId) !== 'other')
 }

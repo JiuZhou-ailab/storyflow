@@ -16,8 +16,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import {
   buildNovelWorkspaceTree,
-  filterReviewableNovelFileChanges,
-  groupNovelFileChanges,
+  groupReviewableNovelFileChanges,
   isShortFormNovelWorkspaceFiles,
   selectDefaultNovelTab,
   summarizeNovelSection,
@@ -70,16 +69,13 @@ export function NovelWorkspaceNavigatorPanel({
   )
   const [activeTab, setActiveTab] = React.useState<NovelWorkspaceTab>(() => selectDefaultNovelTab(tree))
   const [activePath, setActivePath] = React.useState<string | undefined>(undefined)
-  const reviewableChanges = React.useMemo(
-    () => activeTab === 'changes' ? filterReviewableNovelFileChanges(changes, rootPath, methodPackId) : [],
+  const changeGroups = React.useMemo(
+    () => activeTab === 'changes' ? groupReviewableNovelFileChanges(changes, rootPath, methodPackId) : null,
     [activeTab, changes, methodPackId, rootPath]
   )
-  const changeGroups = React.useMemo(
-    () => activeTab === 'changes' && reviewableChanges.length > 0
-      ? groupNovelFileChanges(reviewableChanges, rootPath, methodPackId)
-      : null,
-    [activeTab, methodPackId, reviewableChanges, rootPath]
-  )
+  const reviewableChangeCount = changeGroups
+    ? Object.values(changeGroups).reduce((count, group) => count + group.length, 0)
+    : 0
 
   React.useEffect(() => {
     const nextDefaultTab = selectDefaultNovelTab(tree)
@@ -89,7 +85,7 @@ export function NovelWorkspaceNavigatorPanel({
 
   const sectionId = TAB_TO_SECTION[activeTab]
   const section = sectionId ? tree[sectionId] : null
-  const summary = section ? summarizeNovelSection(section.files) : { count: reviewableChanges.length }
+  const summary = section ? summarizeNovelSection(section.files) : { count: reviewableChangeCount }
   const activeTabConfig = visibleTabs.find(tab => tab.id === activeTab) ?? visibleTabs[0] ?? {
     id: 'manuscript' as const,
     labelKey: 'writing.tabs.manuscript' as const,
@@ -127,7 +123,7 @@ export function NovelWorkspaceNavigatorPanel({
         <ChangesList
           rootPath={rootPath}
           changeGroups={changeGroups}
-          changes={reviewableChanges}
+          changeCount={reviewableChangeCount}
           onOpenFile={onOpenFile}
         />
       ) : section ? (
@@ -174,17 +170,17 @@ function SectionHeader({
 function ChangesList({
   rootPath,
   changeGroups,
-  changes,
+  changeCount,
   onOpenFile,
 }: {
   rootPath: string
-  changeGroups: ReturnType<typeof groupNovelFileChanges> | null
-  changes: FileChange[]
+  changeGroups: ReturnType<typeof groupReviewableNovelFileChanges> | null
+  changeCount: number
   onOpenFile?: (path: string) => void
 }) {
   const { t } = useTranslation()
 
-  if (changes.length === 0) {
+  if (changeCount === 0) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center px-4 text-center text-xs text-muted-foreground">
         {t('writing.emptySection')}

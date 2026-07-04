@@ -764,10 +764,10 @@ describe('novel writing workspace layout', () => {
   it('defers review change grouping until the changes tab is active', () => {
     const navigatorSource = readSourceIfExists(new URL('../NovelWorkspaceNavigatorPanel.tsx', import.meta.url))
 
-    expect(navigatorSource).toContain("activeTab === 'changes' ? filterReviewableNovelFileChanges")
-    expect(navigatorSource).toContain("activeTab === 'changes' && reviewableChanges.length > 0")
-    expect(navigatorSource).not.toContain('const reviewableChanges = React.useMemo(() => filterReviewableNovelFileChanges')
-    expect(navigatorSource).not.toContain('const changeGroups = React.useMemo(() => groupNovelFileChanges')
+    expect(navigatorSource).toContain("activeTab === 'changes' ? groupReviewableNovelFileChanges")
+    expect(navigatorSource).toContain('reviewableChangeCount')
+    expect(navigatorSource).not.toContain('filterReviewableNovelFileChanges')
+    expect(navigatorSource).not.toContain('groupNovelFileChanges(reviewableChanges')
   })
 
   it('saves the selected writing document before accepting file-level review changes', () => {

@@ -19,6 +19,7 @@ import {
   getNovelWorkspaceFileSearchQueries,
   mapSearchResultsToNovelWorkspaceFiles,
   groupNovelFileChanges,
+  groupReviewableNovelFileChanges,
   getShortFormGlobalInfoFiles,
   getNovelImportTargetRelativePath,
   normalizeNovelCreateFilePath,
@@ -329,6 +330,18 @@ describe('writing workspace helpers', () => {
       '/novel/story/chapters/chapter-02.md',
       '/novel/自由区/灵感.md',
     ])
+  })
+
+  it('groups reviewable file changes without keeping other files', () => {
+    const grouped = groupReviewableNovelFileChanges([
+      change('/novel/story/chapters/chapter-02.md'),
+      change('/novel/自由区/灵感.md'),
+      change('/novel/README.md'),
+    ], '/novel')
+
+    expect(grouped.manuscript.map(item => item.filePath)).toEqual(['/novel/story/chapters/chapter-02.md'])
+    expect(grouped.work.map(item => item.filePath)).toEqual(['/novel/自由区/灵感.md'])
+    expect(grouped.other).toEqual([])
   })
 
   it('strips the novel workspace root before deriving display paths', () => {
