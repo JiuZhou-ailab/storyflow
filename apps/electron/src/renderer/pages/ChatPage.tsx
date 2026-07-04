@@ -24,7 +24,7 @@ import { toast } from 'sonner'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { StyledDropdownMenuContent, StyledDropdownMenuItem, StyledDropdownMenuSeparator } from '@/components/ui/styled-dropdown'
-import { useAppShellContext, usePendingPermission, usePendingCredential, useSessionInteractionActions, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
+import { useAppShellContext, usePendingPermission, usePendingCredential, useSessionBatchActions, useSessionInteractionActions, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
 import { SquarePenRounded } from '@/components/icons/SquarePenRounded'
 import { rendererPerf } from '@/lib/perf'
 import { navigate, routes } from '@/lib/navigate'
@@ -185,17 +185,12 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     skills,
     mentionFiles,
     openingProjectMetadata,
-    labels,
-    onSessionLabelsChange,
     enabledModes,
-    sessionStatuses,
     onSessionSourcesChange,
     onRenameSession,
     onFlagSession,
     onUnflagSession,
-    onArchiveSession,
     onUnarchiveSession,
-    onSessionStatusChange,
     onDeleteSession,
     rightSidebarButton,
     leadingAction,
@@ -210,6 +205,13 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onRespondToPermission,
     onRespondToCredential,
   } = useSessionInteractionActions()
+  const {
+    labels,
+    onSessionLabelsChange,
+    sessionStatuses,
+    onArchiveSession,
+    onSessionStatusChange,
+  } = useSessionBatchActions()
 
   // Use the unified session options hook for clean access
   const {

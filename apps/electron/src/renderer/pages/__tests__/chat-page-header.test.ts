@@ -70,4 +70,19 @@ describe('chat page header actions', () => {
     expect(appShellDestructure).not.toContain('onRespondToPermission')
     expect(appShellDestructure).not.toContain('onRespondToCredential')
   })
+
+  it('uses the narrow session batch action context', () => {
+    const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
+    const appShellDestructure = chatPageSource.slice(
+      chatPageSource.indexOf('const {'),
+      chatPageSource.indexOf('} = useAppShellContext()')
+    )
+
+    expect(chatPageSource).toContain('useSessionBatchActions')
+    expect(appShellDestructure).not.toContain('labels')
+    expect(appShellDestructure).not.toContain('sessionStatuses')
+    expect(appShellDestructure).not.toContain('onSessionLabelsChange')
+    expect(appShellDestructure).not.toContain('onArchiveSession')
+    expect(appShellDestructure).not.toContain('onSessionStatusChange')
+  })
 })
