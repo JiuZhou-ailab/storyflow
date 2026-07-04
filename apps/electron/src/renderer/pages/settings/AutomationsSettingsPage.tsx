@@ -17,8 +17,7 @@ import { AutomationsListPanel } from '@/components/automations/AutomationsListPa
 import type { ExecutionEntry } from '@/components/automations/types'
 import { SettingsCard, SettingsCardContent, SettingsRow, SettingsSection } from '@/components/settings'
 import { automationsAtom } from '@/atoms/automations'
-import { windowWorkspaceIdAtom, windowWorkspacesAtom } from '@/atoms/sessions'
-import { useActiveWorkspace } from '@/context/AppShellContext'
+import { windowWorkspaceIdAtom, windowWorkspacesAtom, workspacePanelFieldsAtomFamily } from '@/atoms/sessions'
 import { useAutomationActions } from '@/hooks/useAutomations'
 import { routes } from '@/lib/navigate'
 import { cn } from '@/lib/utils'
@@ -32,8 +31,8 @@ export const meta: DetailsPageMeta = {
 
 export default function AutomationsSettingsPage() {
   const { t } = useTranslation()
-  const workspace = useActiveWorkspace()
   const activeWorkspaceId = useAtomValue(windowWorkspaceIdAtom)
+  const workspace = useAtomValue(workspacePanelFieldsAtomFamily(activeWorkspaceId ?? null))
   const workspaces = useAtomValue(windowWorkspacesAtom)
   const automations = useAtomValue(automationsAtom)
   const {

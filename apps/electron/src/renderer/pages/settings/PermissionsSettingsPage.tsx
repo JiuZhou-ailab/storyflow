@@ -17,8 +17,7 @@ import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { Loader2 } from 'lucide-react'
-import { useActiveWorkspace } from '@/context/AppShellContext'
-import { windowWorkspaceIdAtom } from '@/atoms/sessions'
+import { windowWorkspaceIdAtom, workspacePanelFieldsAtomFamily } from '@/atoms/sessions'
 import { type PermissionsConfigFile } from '@craft-agent/shared/agent/modes'
 import {
   PermissionsDataTable,
@@ -135,7 +134,7 @@ function buildCustomPermissionsData(config: PermissionsConfigFile, fallbackLabel
 export default function PermissionsSettingsPage() {
   const { t } = useTranslation()
   const activeWorkspaceId = useAtomValue(windowWorkspaceIdAtom)
-  const activeWorkspace = useActiveWorkspace()
+  const activeWorkspace = useAtomValue(workspacePanelFieldsAtomFamily(activeWorkspaceId ?? null))
 
   // Loading and data state
   const [isLoading, setIsLoading] = useState(true)

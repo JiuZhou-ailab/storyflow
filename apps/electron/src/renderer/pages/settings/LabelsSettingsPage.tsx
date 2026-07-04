@@ -20,8 +20,7 @@ import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { EditPopover, EditButton, getEditConfig } from '@/components/ui/EditPopover'
 import { getDocUrl } from '@craft-agent/shared/docs/doc-links'
 import { Loader2 } from 'lucide-react'
-import { useActiveWorkspace } from '@/context/AppShellContext'
-import { windowWorkspaceIdAtom } from '@/atoms/sessions'
+import { windowWorkspaceIdAtom, workspacePanelFieldsAtomFamily } from '@/atoms/sessions'
 import { useLabels } from '@/hooks/useLabels'
 import {
   LabelsDataTable,
@@ -42,7 +41,7 @@ export const meta: DetailsPageMeta = {
 export default function LabelsSettingsPage() {
   const { t } = useTranslation()
   const activeWorkspaceId = useAtomValue(windowWorkspaceIdAtom)
-  const activeWorkspace = useActiveWorkspace()
+  const activeWorkspace = useAtomValue(workspacePanelFieldsAtomFamily(activeWorkspaceId ?? null))
   const { labels, isLoading } = useLabels(activeWorkspaceId)
 
   // Resolve edit configs using the workspace root path
