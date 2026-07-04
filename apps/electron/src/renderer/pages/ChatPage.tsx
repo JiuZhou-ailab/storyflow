@@ -732,6 +732,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
         sessionId={sessionId}
         sessionFolderPath={session?.sessionFolderPath}
         presentation="drawer"
+        onRenameSession={onRenameSession}
+        onOpenFile={handleOpenFile}
         trigger={(
           <PanelHeaderCenterButton
             icon={<Info className="h-4 w-4" />}
@@ -740,7 +742,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
         )}
       />
     )
-  }, [isCompactMode, sessionId, session?.sessionFolderPath, sessionMeta])
+  }, [handleOpenFile, isCompactMode, onRenameSession, sessionId, session?.sessionFolderPath, sessionMeta])
 
   const conversationHistoryMenu = React.useMemo(() => (
     <ConversationHistoryMenu
@@ -842,6 +844,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
                 onSendMessage={() => {}}
                 onOpenFile={handleOpenFile}
                 onOpenUrl={handleOpenUrl}
+                onRenameSession={onRenameSession}
                 currentModel={effectiveModel}
                 onModelChange={handleModelChange}
                 llmConnections={llmConnections}
@@ -935,6 +938,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
             }}
             onOpenFile={handleOpenFile}
             onOpenUrl={handleOpenUrl}
+            onRenameSession={onRenameSession}
             currentModel={effectiveModel}
             onModelChange={handleModelChange}
             llmConnections={llmConnections}

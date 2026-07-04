@@ -12,6 +12,10 @@ const sessionInfoPopoverSource = readFileSync(new URL('../SessionInfoPopover.tsx
 const globalSearchDialogSource = readFileSync(new URL('../GlobalSearchDialog.tsx', import.meta.url), 'utf-8')
 const sessionStatusIconSource = readFileSync(new URL('../SessionStatusIcon.tsx', import.meta.url), 'utf-8')
 const batchSessionMenuSource = readFileSync(new URL('../BatchSessionMenu.tsx', import.meta.url), 'utf-8')
+const chatDisplaySource = readFileSync(new URL('../ChatDisplay.tsx', import.meta.url), 'utf-8')
+const chatInputZoneSource = readFileSync(new URL('../input/ChatInputZone.tsx', import.meta.url), 'utf-8')
+const activeOptionBadgesSource = readFileSync(new URL('../ActiveOptionBadges.tsx', import.meta.url), 'utf-8')
+const sessionFilesSectionSource = readFileSync(new URL('../../right-sidebar/SessionFilesSection.tsx', import.meta.url), 'utf-8')
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf-8')
 const sessionListContextSource = readFileSync(new URL('../../../context/SessionListContext.tsx', import.meta.url), 'utf-8')
 const skillsListPanelSource = readFileSync(new URL('../SkillsListPanel.tsx', import.meta.url), 'utf-8')
@@ -193,6 +197,19 @@ describe('session item subscriptions', () => {
     expect(sessionInfoPopoverSource).toContain('sessionMetaAtomFamily')
     expect(contentSource).toContain('useAtomValue(sessionMetaAtomFamily(sessionId))')
     expect(contentSource).not.toContain('useSession(sessionId)')
+  })
+
+  it('keeps session info and file popovers off broad app shell context subscriptions', () => {
+    expect(sessionInfoPopoverSource).not.toContain('useAppShellContext')
+    expect(sessionFilesSectionSource).not.toContain('useAppShellContext')
+    expect(sessionInfoPopoverSource).toContain('onRenameSession: (sessionId: string, name: string) => void')
+    expect(sessionFilesSectionSource).toContain('onOpenFile: (path: string) => void')
+    expect(chatDisplaySource).toContain('onRenameSession?: (sessionId: string, name: string) => void')
+    expect(chatInputZoneSource).toContain('onRenameSession?: (sessionId: string, name: string) => void')
+    expect(activeOptionBadgesSource).toContain('onRenameSession?: (sessionId: string, name: string) => void')
+    expect(chatDisplaySource).toContain('onOpenFile={onOpenFile}')
+    expect(chatInputZoneSource).toContain('onOpenFile={onOpenFile}')
+    expect(activeOptionBadgesSource).toContain('onOpenFile={onOpenFile}')
   })
 
   it('keeps whole-session metadata subscriptions out of the app shell', () => {

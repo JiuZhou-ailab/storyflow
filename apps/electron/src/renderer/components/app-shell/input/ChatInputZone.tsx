@@ -22,6 +22,8 @@ interface ChatInputZoneProps {
   tasks?: BackgroundTask[]
   sessionId: string
   sessionFolderPath?: string
+  onRenameSession?: (sessionId: string, name: string) => void
+  onOpenFile?: (path: string) => void
   onKillTask?: (taskId: string) => void
   onInsertMessage?: (text: string) => void
   sessionLabels?: string[]
@@ -46,6 +48,8 @@ export function ChatInputZone({
   tasks = [],
   sessionId,
   sessionFolderPath,
+  onRenameSession,
+  onOpenFile,
   onKillTask,
   onInsertMessage,
   sessionLabels = [],
@@ -102,6 +106,8 @@ export function ChatInputZone({
           tasks={tasks}
           sessionId={sessionId}
           sessionFolderPath={sessionFolderPath}
+          onRenameSession={onRenameSession}
+          onOpenFile={onOpenFile}
           onKillTask={onKillTask}
           onInsertMessage={onInsertMessage ?? inputProps.onInputChange}
           sessionLabels={sessionLabels}

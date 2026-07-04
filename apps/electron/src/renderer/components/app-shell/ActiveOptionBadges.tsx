@@ -51,6 +51,8 @@ export interface ActiveOptionBadgesProps {
   sessionId?: string
   /** Absolute path to the session folder (for Files header actions) */
   sessionFolderPath?: string
+  onRenameSession?: (sessionId: string, name: string) => void
+  onOpenFile?: (path: string) => void
   /** Callback when kill button is clicked on a task */
   onKillTask?: (taskId: string) => void
   /** Callback to insert message into input field */
@@ -91,6 +93,8 @@ export function ActiveOptionBadges({
   tasks = [],
   sessionId,
   sessionFolderPath,
+  onRenameSession,
+  onOpenFile,
   onKillTask,
   onInsertMessage,
   sessionLabels = [],
@@ -224,7 +228,12 @@ export function ActiveOptionBadges({
 
       {/* Right side: Files popover button */}
       <div className="shrink-0">
-        <FilesPopoverButton sessionId={sessionId} sessionFolderPath={sessionFolderPath} />
+        <FilesPopoverButton
+          sessionId={sessionId}
+          sessionFolderPath={sessionFolderPath}
+          onRenameSession={onRenameSession}
+          onOpenFile={onOpenFile}
+        />
       </div>
     </div>
   )
@@ -394,16 +403,28 @@ function StateBadge({
   )
 }
 
-function FilesPopoverButton({ sessionId, sessionFolderPath }: { sessionId?: string; sessionFolderPath?: string }) {
+function FilesPopoverButton({
+  sessionId,
+  sessionFolderPath,
+  onRenameSession,
+  onOpenFile,
+}: {
+  sessionId?: string
+  sessionFolderPath?: string
+  onRenameSession?: (sessionId: string, name: string) => void
+  onOpenFile?: (path: string) => void
+}) {
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
 
-  if (!sessionId) return null
+  if (!sessionId || !onRenameSession || !onOpenFile) return null
 
   return (
     <SessionInfoPopover
       sessionId={sessionId}
       sessionFolderPath={sessionFolderPath}
+      onRenameSession={onRenameSession}
+      onOpenFile={onOpenFile}
       trigger={(
         <button
           type="button"

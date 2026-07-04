@@ -5,7 +5,6 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from 
 import { Input } from '@/components/ui/input'
 import { useAtomValue } from 'jotai'
 import { sessionMetaAtomFamily } from '@/atoms/sessions'
-import { useAppShellContext } from '@/context/AppShellContext'
 import { cn } from '@/lib/utils'
 import { SessionFilesSection } from '../right-sidebar/SessionFilesSection'
 
@@ -18,6 +17,8 @@ interface SessionInfoPopoverProps {
   sideOffset?: number
   contentClassName?: string
   presentation?: 'popover' | 'drawer'
+  onRenameSession: (sessionId: string, name: string) => void
+  onOpenFile: (path: string) => void
 }
 
 const DEFAULT_POPOVER_CONTENT_CLASS = 'w-[360px] h-[460px] min-w-[200px] max-w-[420px] overflow-hidden rounded-[8px] bg-background text-foreground shadow-modal-small p-0'
@@ -38,6 +39,8 @@ export function SessionInfoPopover({
   sideOffset = 6,
   contentClassName,
   presentation = 'popover',
+  onRenameSession,
+  onOpenFile,
 }: SessionInfoPopoverProps) {
   const [open, setOpen] = React.useState(false)
 
@@ -69,7 +72,12 @@ export function SessionInfoPopover({
             <DrawerTitle className="text-sm font-medium">Session info</DrawerTitle>
           </DrawerHeader>
           <div className="flex-1 min-h-0 overflow-hidden">
-            <SessionInfoPopoverContent sessionId={sessionId} sessionFolderPath={sessionFolderPath} />
+            <SessionInfoPopoverContent
+              sessionId={sessionId}
+              sessionFolderPath={sessionFolderPath}
+              onRenameSession={onRenameSession}
+              onOpenFile={onOpenFile}
+            />
           </div>
         </DrawerContent>
       </Drawer>
@@ -93,16 +101,30 @@ export function SessionInfoPopover({
           e.preventDefault()
         }}
       >
-        <SessionInfoPopoverContent sessionId={sessionId} sessionFolderPath={sessionFolderPath} />
+        <SessionInfoPopoverContent
+          sessionId={sessionId}
+          sessionFolderPath={sessionFolderPath}
+          onRenameSession={onRenameSession}
+          onOpenFile={onOpenFile}
+        />
       </PopoverContent>
     </Popover>
   )
 }
 
-function SessionInfoPopoverContent({ sessionId, sessionFolderPath }: { sessionId: string; sessionFolderPath?: string }) {
+function SessionInfoPopoverContent({
+  sessionId,
+  sessionFolderPath,
+  onRenameSession,
+  onOpenFile,
+}: {
+  sessionId: string
+  sessionFolderPath?: string
+  onRenameSession: (sessionId: string, name: string) => void
+  onOpenFile: (path: string) => void
+}) {
   const { t } = useTranslation()
   const sessionMeta = useAtomValue(sessionMetaAtomFamily(sessionId))
-  const { onRenameSession } = useAppShellContext()
   const [name, setName] = React.useState('')
   const renameTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -153,6 +175,7 @@ function SessionInfoPopoverContent({ sessionId, sessionFolderPath }: { sessionId
         <SessionFilesSection
           sessionId={sessionId}
           sessionFolderPath={sessionFolderPath}
+          onOpenFile={onOpenFile}
           hideHeader={false}
           className="h-full min-h-0"
         />

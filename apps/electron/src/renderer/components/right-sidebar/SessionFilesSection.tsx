@@ -32,7 +32,6 @@ import {
 import type { SessionFile } from '../../../shared/types'
 import { cn } from '@/lib/utils'
 import * as storage from '@/lib/local-storage'
-import { useAppShellContext } from '@/context/AppShellContext'
 import { getFileManagerName } from '@/lib/platform'
 import { restoreSessionFileWatch } from './session-files-watch'
 
@@ -77,6 +76,7 @@ export interface SessionFilesSectionProps {
   className?: string
   /** Absolute session folder path for header actions (e.g. View in Finder) */
   sessionFolderPath?: string
+  onOpenFile: (path: string) => void
   /** Hide section header when embedded inside compact containers (e.g. popovers) */
   hideHeader?: boolean
 }
@@ -409,7 +409,7 @@ function FileTreeItem({
 /**
  * Section displaying session files as a tree
  */
-export function SessionFilesSection({ sessionId, className, sessionFolderPath, hideHeader = false }: SessionFilesSectionProps) {
+export function SessionFilesSection({ sessionId, className, sessionFolderPath, onOpenFile, hideHeader = false }: SessionFilesSectionProps) {
   const { t } = useTranslation()
   const [files, setFiles] = useState<SessionFile[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -497,9 +497,6 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
     }
   }, [sessionId, loadFiles])
 
-  // Use the link interceptor (via context) so file clicks show in-app previews
-  // instead of always opening in the file manager / default app.
-  const { onOpenFile } = useAppShellContext()
   const fileManagerName = getFileManagerName()
 
   // Reveal a file/folder in the system file manager

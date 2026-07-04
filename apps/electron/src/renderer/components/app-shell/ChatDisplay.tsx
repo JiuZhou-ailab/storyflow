@@ -155,6 +155,7 @@ interface ChatDisplayProps {
   ) => void
   onOpenFile: (path: string) => void
   onOpenUrl: (url: string) => void
+  onRenameSession?: (sessionId: string, name: string) => void
   // Model selection
   currentModel: string
   onModelChange: (model: string, connection?: string) => void
@@ -567,6 +568,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // States (for # menu and badge)
   sessionStatuses,
   onSessionStatusChange,
+  onRenameSession,
   workspaceId,
   // Working directory
   workingDirectory,
@@ -2138,6 +2140,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
             tasks={backgroundTasks}
             sessionId={session.id}
             sessionFolderPath={sessionFolderPath}
+            onRenameSession={onRenameSession}
+            onOpenFile={onOpenFile}
             onKillTask={(taskId) => killTask(taskId, backgroundTasks.find(t => t.id === taskId)?.type ?? 'shell')}
             onInsertMessage={onInputChange}
             sessionLabels={session.labels}
