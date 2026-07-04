@@ -28,7 +28,7 @@ import { MultiSelectPanel } from './MultiSelectPanel'
 import { useSessionBatchActions } from '@/context/AppShellContext'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
-import { workspacePanelFieldsAtomFamily, hasOtherWorkspacesAtom, sessionMetaAtomFamily, sessionMetaMapAtom, windowWorkspaceIdAtom, windowWorkspacesAtom, type SessionMeta } from '@/atoms/sessions'
+import { workspacePanelFieldsAtomFamily, hasOtherWorkspacesAtom, sessionMetaAtomFamily, windowWorkspaceIdAtom, windowWorkspacesAtom, type SessionMeta } from '@/atoms/sessions'
 import { StoplightProvider } from '@/context/StoplightContext'
 import {
   useNavigationState,
@@ -38,7 +38,7 @@ import {
   isSkillsNavigation,
   isAutomationsNavigation,
 } from '@/contexts/NavigationContext'
-import { useSessionSelection, useIsMultiSelectActive, useSelectedIds, useSelectionCount } from '@/hooks/useSession'
+import { useSessionSelection, useIsMultiSelectActive, useSelectedIds, useSelectedSessionMetas, useSelectionCount } from '@/hooks/useSession'
 import { sourceSelection, skillSelection, automationSelection } from '@/hooks/useEntitySelection'
 import { extractLabelId } from '@craft-agent/shared/labels'
 import type { SessionStatusId } from '@/config/session-status-config'
@@ -390,18 +390,9 @@ function SessionBatchActionsPanel() {
     labels,
   } = useSessionBatchActions()
   const selectedIds = useSelectedIds()
+  const selectedMetas = useSelectedSessionMetas()
   const selectionCount = useSelectionCount()
   const { clearMultiSelect } = useSessionSelection()
-  const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
-
-  const selectedMetas = useMemo(() => {
-    const metas: SessionMeta[] = []
-    selectedIds.forEach((id) => {
-      const meta = sessionMetaMap.get(id)
-      if (meta) metas.push(meta)
-    })
-    return metas
-  }, [selectedIds, sessionMetaMap])
 
   const activeStatusId = useMemo((): SessionStatusId | null => {
     if (selectedMetas.length === 0) return null

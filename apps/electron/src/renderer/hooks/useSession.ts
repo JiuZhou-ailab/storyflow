@@ -1,13 +1,17 @@
-/**
- * Session selection hooks.
- *
- * Re-exports from the generic useEntitySelection factory.
- * The legacy useSession() hook is preserved for backward compatibility.
- */
+// input: Session selection atoms and renderer session metadata atoms
+// output: Session selection hooks and selected-session metadata selectors
+// pos: Narrow selection boundary for session list and batch action surfaces
 
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
+import { useAtomValue } from 'jotai'
+import { selectAtom } from 'jotai/utils'
+import { sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
 import { createInitialState, singleSelect } from './useMultiSelect'
 import { sessionSelection } from './useEntitySelection'
+
+function sameSessionMetas(a: SessionMeta[], b: SessionMeta[]): boolean {
+  return a.length === b.length && a.every((meta, index) => meta === b[index])
+}
 
 /**
  * Legacy type alias for backward compatibility
@@ -42,3 +46,23 @@ export const useSessionSelectionStore = sessionSelection.useSelectionStore
 export const useIsMultiSelectActive = sessionSelection.useIsMultiSelectActive
 export const useSelectedIds = sessionSelection.useSelectedIds
 export const useSelectionCount = sessionSelection.useSelectionCount
+
+export function useSelectedSessionMetas(): SessionMeta[] {
+  const selectedIds = useSelectedIds()
+  const selectedMetasAtom = useMemo(
+    () => selectAtom(
+      sessionMetaMapAtom,
+      (metaMap) => {
+        const metas: SessionMeta[] = []
+        selectedIds.forEach((id) => {
+          const meta = metaMap.get(id)
+          if (meta) metas.push(meta)
+        })
+        return metas
+      },
+      sameSessionMetas,
+    ),
+    [selectedIds],
+  )
+  return useAtomValue(selectedMetasAtom)
+}

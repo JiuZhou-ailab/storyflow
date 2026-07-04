@@ -20,6 +20,7 @@ const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url),
 const sessionListContextSource = readFileSync(new URL('../../../context/SessionListContext.tsx', import.meta.url), 'utf-8')
 const focusContextSource = readFileSync(new URL('../../../context/FocusContext.tsx', import.meta.url), 'utf-8')
 const escapeInterruptContextSource = readFileSync(new URL('../../../context/EscapeInterruptContext.tsx', import.meta.url), 'utf-8')
+const useSessionSource = readFileSync(new URL('../../../hooks/useSession.ts', import.meta.url), 'utf-8')
 const skillsListPanelSource = readFileSync(new URL('../SkillsListPanel.tsx', import.meta.url), 'utf-8')
 const sourcesListPanelSource = readFileSync(new URL('../SourcesListPanel.tsx', import.meta.url), 'utf-8')
 
@@ -172,6 +173,14 @@ describe('session item subscriptions', () => {
   it('keeps selected session state out of the shared list context', () => {
     expect(sessionListSource).not.toContain('selectedSessionId:')
     expect(sessionListSource).not.toContain('focusedSessionId, selectionStore.state.selected, isMultiSelectActive')
+  })
+
+  it('keeps batch session metadata reads scoped to selected sessions', () => {
+    expect(batchSessionMenuSource).toContain('useSelectedSessionMetas')
+    expect(batchSessionMenuSource).not.toContain('useAtomValue(sessionMetaMapAtom)')
+    expect(useSessionSource).toContain('export function useSelectedSessionMetas()')
+    expect(useSessionSource).toContain('selectAtom(')
+    expect(useSessionSource).toContain('sameSessionMetas')
   })
 
   it('reuses the row index map when syncing external selection into keyboard focus', () => {

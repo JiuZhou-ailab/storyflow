@@ -32,4 +32,14 @@ describe('MainContentPanel subscriptions', () => {
     expect(mainContentPanelBody).not.toContain('useAtomValue(windowWorkspacesAtom)')
     expect(mainContentPanelSource).toContain('SendResourceWorkspaceDialogHost')
   })
+
+  it('keeps batch session actions off whole metadata-map updates', () => {
+    const batchPanelSource = mainContentPanelSource.slice(
+      mainContentPanelSource.indexOf('function SessionBatchActionsPanel'),
+      mainContentPanelSource.indexOf('function SessionRouteContent')
+    )
+
+    expect(batchPanelSource).toContain('useSelectedSessionMetas')
+    expect(batchPanelSource).not.toContain('useAtomValue(sessionMetaMapAtom)')
+  })
 })

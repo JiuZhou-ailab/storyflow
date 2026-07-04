@@ -12,13 +12,13 @@
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useCallback, useMemo } from 'react'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useSetAtom } from 'jotai'
 import { Archive, Flag, FlagOff, Trash2, Tag, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import { useMenuComponents } from '@/components/ui/menu-context'
-import { useSelectedIds } from '@/hooks/useSession'
+import { useSelectedIds, useSelectedSessionMetas } from '@/hooks/useSession'
 import { useSessionSelection } from '@/hooks/useSession'
-import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from '@/atoms/sessions'
+import { sendToWorkspaceAtom, type SessionMeta } from '@/atoms/sessions'
 import { useSessionListContext } from '@/context/SessionListContext'
 import { getStateColor, getStateIcon, type SessionStatusId } from '@/config/session-status-config'
 import { extractLabelId } from '@craft-agent/shared/labels'
@@ -34,21 +34,11 @@ export function BatchSessionMenu({ onSendToWorkspace }: BatchSessionMenuProps = 
   const { MenuItem, Separator, Sub, SubTrigger, SubContent } = useMenuComponents()
 
   const selectedIds = useSelectedIds()
+  const selectedMetas = useSelectedSessionMetas()
   const setSendToWorkspace = useSetAtom(sendToWorkspaceAtom)
   const { clearMultiSelect } = useSessionSelection()
-  const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
   const ctx = useSessionListContext()
   const { sessionStatuses = [], labels = [] } = ctx
-
-  // Hydrate selected session metadata
-  const selectedMetas = useMemo(() => {
-    const metas: SessionMeta[] = []
-    selectedIds.forEach((id) => {
-      const meta = sessionMetaMap.get(id)
-      if (meta) metas.push(meta)
-    })
-    return metas
-  }, [selectedIds, sessionMetaMap])
 
   // Compute shared status (if all selected have the same status)
   const activeStatusId = useMemo((): SessionStatusId | null => {
