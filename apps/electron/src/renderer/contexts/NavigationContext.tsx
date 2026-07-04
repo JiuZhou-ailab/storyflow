@@ -123,6 +123,7 @@ interface NavigationContextValue {
 }
 
 export const NavigationContext = createContext<NavigationContextValue | null>(null)
+const NavigationStateContext = createContext<NavigationState | null>(null)
 
 function areRightSidebarPanelsEqual(
   a: RightSidebarPanel | undefined,
@@ -1357,7 +1358,9 @@ export function NavigationProvider({
 
   return (
     <NavigationContext.Provider value={contextValue}>
-      {children}
+      <NavigationStateContext.Provider value={navigationState}>
+        {children}
+      </NavigationStateContext.Provider>
     </NavigationContext.Provider>
   )
 }
@@ -1377,6 +1380,9 @@ export function useNavigation() {
  * Hook to access just the navigation state
  */
 export function useNavigationState(): NavigationState {
-  const { navigationState } = useNavigation()
+  const navigationState = useContext(NavigationStateContext)
+  if (!navigationState) {
+    throw new Error('useNavigationState must be used within NavigationProvider')
+  }
   return navigationState
 }

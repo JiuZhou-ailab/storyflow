@@ -49,4 +49,10 @@ describe('project default navigation', () => {
     expect(navigationContextSource).not.toContain('useAtomValue(sessionMetaMapAtom)')
     expect(navigationContextSource).toContain('const sessionMetaMap = store.get(sessionMetaMapAtom)')
   })
+
+  it('keeps navigation-state-only consumers off navigation action context updates', () => {
+    expect(navigationContextSource).toContain('const NavigationStateContext = createContext<NavigationState | null>(null)')
+    expect(navigationContextSource).toContain('<NavigationStateContext.Provider value={navigationState}>')
+    expect(navigationContextSource).not.toContain('const { navigationState } = useNavigation()')
+  })
 })
