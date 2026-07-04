@@ -417,10 +417,10 @@ function WorkspaceOverrideCard({ workspace, llmConnections, connectionOptions, t
   }, [updateSetting])
 
   // Determine if workspace has any overrides
-  const hasOverrides = settings && (
-    settings.defaultLlmConnection ||
-    settings.model ||
-    settings.thinkingLevel
+  const hasOverrides = Boolean(
+    settings?.defaultLlmConnection ||
+    settings?.model ||
+    settings?.thinkingLevel
   )
 
   // Get display values
@@ -442,8 +442,7 @@ function WorkspaceOverrideCard({ workspace, llmConnections, connectionOptions, t
     [workspaceEffectiveConnection, t],
   )
 
-  // Get summary text for collapsed state
-  const getSummary = () => {
+  const summary = useMemo(() => {
     if (!hasOverrides) return t("settings.ai.usingDefaults")
     const parts: string[] = []
     if (settings?.defaultLlmConnection) {
@@ -458,7 +457,7 @@ function WorkspaceOverrideCard({ workspace, llmConnections, connectionOptions, t
       parts.push(level ? t(level.nameKey) : settings.thinkingLevel)
     }
     return parts.join(' · ')
-  }
+  }, [hasOverrides, llmConnections, settings?.defaultLlmConnection, settings?.model, settings?.thinkingLevel, t])
 
   return (
     <SettingsCard>
@@ -485,7 +484,7 @@ function WorkspaceOverrideCard({ workspace, llmConnections, connectionOptions, t
           <div className="text-left">
             <div className="text-sm font-medium">{workspace.name}</div>
             <div className="text-xs text-muted-foreground">
-              {isLoading ? t("common.loading") : getSummary()}
+              {isLoading ? t("common.loading") : summary}
             </div>
           </div>
         </div>
