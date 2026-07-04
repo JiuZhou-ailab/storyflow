@@ -16,10 +16,10 @@
  * (and thus scroll position, streaming state, etc.).
  *
  * Usage:
- *   import { useNavigation, useNavigationState } from '@/contexts/NavigationContext'
+ *   import { useNavigationActions, useNavigationState } from '@/contexts/NavigationContext'
  *   import { routes } from '@/shared/routes'
  *
- *   const { navigate } = useNavigation()
+ *   const { navigate } = useNavigationActions()
  *   const navState = useNavigationState()
  *
  *   navigate(routes.view.allSessions())
@@ -97,17 +97,9 @@ export { isSessionsNavigation, isSourcesNavigation, isSettingsNavigation, isSkil
 // Context
 // =============================================================================
 
-interface NavigationContextValue {
+interface NavigationActionsContextValue {
   /** Navigate to a route */
   navigate: (route: Route, options?: NavigateOptions) => void | Promise<void>
-  /** Check if navigation is ready */
-  isReady: boolean
-  /** Unified navigation state — derived from focused panel + right sidebar */
-  navigationState: NavigationState
-  /** Whether we can go back in history */
-  canGoBack: boolean
-  /** Whether we can go forward in history */
-  canGoForward: boolean
   /** Go back in history */
   goBack: () => void
   /** Go forward in history */
@@ -122,9 +114,6 @@ interface NavigationContextValue {
   navigateToSession: (sessionId: string) => void
 }
 
-type NavigationActionsContextValue = Omit<NavigationContextValue, 'isReady' | 'navigationState' | 'canGoBack' | 'canGoForward'>
-
-export const NavigationContext = createContext<NavigationContextValue | null>(null)
 const NavigationActionsContext = createContext<NavigationActionsContextValue | null>(null)
 const NavigationStateContext = createContext<NavigationState | null>(null)
 
@@ -1333,36 +1322,6 @@ export function NavigationProvider({
     navigateToSession,
   ])
 
-  // =========================================================================
-  // CONTEXT VALUE
-  // =========================================================================
-
-  const contextValue = useMemo<NavigationContextValue>(() => ({
-    navigate,
-    isReady,
-    navigationState,
-    canGoBack,
-    canGoForward,
-    goBack,
-    goForward,
-    updateRightSidebar,
-    toggleRightSidebar,
-    navigateToSource,
-    navigateToSession,
-  }), [
-    navigate,
-    isReady,
-    navigationState,
-    canGoBack,
-    canGoForward,
-    goBack,
-    goForward,
-    updateRightSidebar,
-    toggleRightSidebar,
-    navigateToSource,
-    navigateToSession,
-  ])
-
   const actionsValue = useMemo<NavigationActionsContextValue>(() => ({
     navigate,
     goBack,
@@ -1383,24 +1342,11 @@ export function NavigationProvider({
 
   return (
     <NavigationActionsContext.Provider value={actionsValue}>
-      <NavigationContext.Provider value={contextValue}>
-        <NavigationStateContext.Provider value={navigationState}>
-          {children}
-        </NavigationStateContext.Provider>
-      </NavigationContext.Provider>
+      <NavigationStateContext.Provider value={navigationState}>
+        {children}
+      </NavigationStateContext.Provider>
     </NavigationActionsContext.Provider>
   )
-}
-
-/**
- * Hook to access navigation functions
- */
-export function useNavigation() {
-  const context = useContext(NavigationContext)
-  if (!context) {
-    throw new Error('useNavigation must be used within NavigationProvider')
-  }
-  return context
 }
 
 export function useNavigationActions() {

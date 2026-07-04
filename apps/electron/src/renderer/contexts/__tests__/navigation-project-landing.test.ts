@@ -35,10 +35,12 @@ describe('project default navigation', () => {
     expect(navigationContextSource).not.toContain("if ('details' in navState && navState.details)")
   })
 
-  it('memoizes the provider value so unrelated provider renders do not notify consumers', () => {
-    expect(navigationContextSource).toContain('const contextValue = useMemo<NavigationContextValue>(() => ({')
-    expect(navigationContextSource).toContain('<NavigationContext.Provider value={contextValue}>')
-    expect(navigationContextSource).not.toContain('<NavigationContext.Provider\n      value={{')
+  it('removes the broad navigation provider after splitting actions and state', () => {
+    expect(navigationContextSource).not.toContain('createContext<NavigationContextValue')
+    expect(navigationContextSource).not.toContain('<NavigationContext.Provider')
+    expect(navigationContextSource).not.toContain('export function useNavigation()')
+    expect(navigationContextSource).toContain('const actionsValue = useMemo<NavigationActionsContextValue>(() => ({')
+    expect(navigationContextSource).toContain('<NavigationActionsContext.Provider value={actionsValue}>')
   })
 
   it('guards right sidebar state against semantic no-op writes', () => {
