@@ -32,6 +32,14 @@ describe('buildGlobalSearchResults', () => {
     expect(source).not.toContain('.sort(compareFileResults)\n    .slice(0, MAX_RESULTS_PER_GROUP)')
   })
 
+  it('reuses one collator for file result ordering', () => {
+    const source = readFileSync(new URL('../global-search.ts', import.meta.url), 'utf8')
+
+    expect(source).toContain('const globalSearchFileCollator = new Intl.Collator')
+    expect(source).toContain('globalSearchFileCollator.compare(a.file.relativePath, b.file.relativePath)')
+    expect(source).not.toContain("a.file.relativePath.localeCompare(b.file.relativePath, undefined, { numeric: true, sensitivity: 'base' })")
+  })
+
   it('returns no results until the query has at least two visible characters', () => {
     const results = buildGlobalSearchResults({
       query: ' a ',

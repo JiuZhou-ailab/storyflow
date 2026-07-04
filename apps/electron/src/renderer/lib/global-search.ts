@@ -9,6 +9,7 @@ import type { NovelWorkspaceFile } from './writing-workspace'
 
 const MIN_QUERY_LENGTH = 2
 const MAX_RESULTS_PER_GROUP = 8
+const globalSearchFileCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
 export interface GlobalSearchSessionResult {
   session: SessionMeta
@@ -60,7 +61,7 @@ function compareByScoreThenRecent(
 
 function compareFileResults(a: GlobalSearchFileResult, b: GlobalSearchFileResult): number {
   if (a.score !== b.score) return b.score - a.score
-  return a.file.relativePath.localeCompare(b.file.relativePath, undefined, { numeric: true, sensitivity: 'base' })
+  return globalSearchFileCollator.compare(a.file.relativePath, b.file.relativePath)
 }
 
 function insertBoundedResult<T>(results: T[], result: T, compare: (a: T, b: T) => number): void {
