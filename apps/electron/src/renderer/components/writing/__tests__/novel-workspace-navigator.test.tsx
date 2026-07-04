@@ -427,6 +427,10 @@ describe('novel writing workspace layout', () => {
       appShellSource.indexOf('function buildNovelWorkspaceFileTreeItems'),
       appShellSource.indexOf('function getContentChangeSize')
     )
+    const treeStructureSource = appShellSource.slice(
+      appShellSource.indexOf('const visibleNovelRootDirectories = React.useMemo'),
+      appShellSource.indexOf('const novelWorkspaceSidebarLinks')
+    )
 
     expect(sidebarSource).toContain('const projectSidebarId = `writing:project:${activeWorkspaceId ?? novelWorkspaceRoot}`')
     expect(sidebarSource).toContain("title: activeWorkspace?.name ?? t('writing.workspace')")
@@ -438,6 +442,11 @@ describe('novel writing workspace layout', () => {
     expect(treeBuilderSource).toContain('label: String(node.fileCount)')
     expect(appShellSource).not.toContain('function countNovelWorkspaceTreeFiles')
     expect(treeBuilderSource).not.toContain('countNovelWorkspaceTreeFiles(')
+    expect(treeStructureSource).toContain('const novelWorkspaceFileTree = React.useMemo(')
+    expect(treeStructureSource).toContain('buildNovelWorkspaceFileTree(novelWorkspaceFiles, visibleNovelRootDirectories)')
+    expect(treeStructureSource).not.toContain('selectedNovelFile?.path')
+    expect(treeBuilderSource).not.toContain('[...node.dirs.values()].sort')
+    expect(treeBuilderSource).not.toContain('[...node.files].sort')
     expect(treeBuilderSource).not.toContain('categorizeNovelPath')
   })
 
@@ -556,7 +565,7 @@ describe('novel writing workspace layout', () => {
     )
 
     expect(sidebarSource).toContain('const projectSidebarId = `writing:project:${activeWorkspaceId ?? novelWorkspaceRoot}`')
-    expect(sidebarSource).toContain('buildNovelWorkspaceFileTreeItems(novelWorkspaceFiles')
+    expect(sidebarSource).toContain('buildNovelWorkspaceFileTreeItems(novelWorkspaceFileTree')
     expect(sidebarSource).toContain('title: activeWorkspace?.name ?? t(\'writing.workspace\')')
     expect(sidebarSource).not.toContain('globalSectionDefinitions')
     expect(sidebarSource).not.toContain('NOVEL_WORKSPACE_GLOBAL_GROUP_ID')

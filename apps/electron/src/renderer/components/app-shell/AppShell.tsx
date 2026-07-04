@@ -491,12 +491,13 @@ interface NovelWorkspaceFileTreeNode {
   relativePath: string
   dirs: Map<string, NovelWorkspaceFileTreeNode>
   files: NovelWorkspaceFile[]
+  sortedDirs: NovelWorkspaceFileTreeNode[]
+  sortedFiles: NovelWorkspaceFile[]
   fileCount: number
 }
 
 interface NovelWorkspaceFileTreeOptions {
   selectedPath?: string
-  rootDirectories?: readonly string[]
   isExpanded: (id: string) => boolean
   toggleExpanded: (id: string) => void
   onSelectFile: (file: NovelWorkspaceFile) => void
@@ -517,6 +518,8 @@ function createNovelWorkspaceFileTreeNode(name: string, relativePath: string): N
     relativePath,
     dirs: new Map(),
     files: [],
+    sortedDirs: [],
+    sortedFiles: [],
     fileCount: 0,
   }
 }
@@ -526,12 +529,20 @@ function getNovelWorkspaceFileName(file: NovelWorkspaceFile): string {
   return normalized.slice(normalized.lastIndexOf('/') + 1) || normalized
 }
 
-function buildNovelWorkspaceFileTreeItems(
+function sortNovelWorkspaceFileTreeNode(node: NovelWorkspaceFileTreeNode): void {
+  node.sortedDirs = [...node.dirs.values()].sort((a, b) => workspaceFileTreeCollator.compare(a.name, b.name))
+  node.sortedFiles = [...node.files].sort((a, b) => workspaceFileTreeCollator.compare(getNovelWorkspaceFileName(a), getNovelWorkspaceFileName(b)))
+  for (const child of node.sortedDirs) {
+    sortNovelWorkspaceFileTreeNode(child)
+  }
+}
+
+function buildNovelWorkspaceFileTree(
   files: NovelWorkspaceFile[],
-  options: NovelWorkspaceFileTreeOptions
-): LeftSidebarItem[] {
+  rootDirectories: readonly string[] = []
+): NovelWorkspaceFileTreeNode {
   const root = createNovelWorkspaceFileTreeNode('', '')
-  for (const dir of options.rootDirectories ?? []) {
+  for (const dir of rootDirectories) {
     root.dirs.set(dir, createNovelWorkspaceFileTreeNode(dir, dir))
   }
 
@@ -554,11 +565,14 @@ function buildNovelWorkspaceFileTreeItems(
     current.files.push(file)
   }
 
-  const sortedDirs = (node: NovelWorkspaceFileTreeNode) =>
-    [...node.dirs.values()].sort((a, b) => workspaceFileTreeCollator.compare(a.name, b.name))
-  const sortedFiles = (node: NovelWorkspaceFileTreeNode) =>
-    [...node.files].sort((a, b) => workspaceFileTreeCollator.compare(getNovelWorkspaceFileName(a), getNovelWorkspaceFileName(b)))
+  sortNovelWorkspaceFileTreeNode(root)
+  return root
+}
 
+function buildNovelWorkspaceFileTreeItems(
+  root: NovelWorkspaceFileTreeNode,
+  options: NovelWorkspaceFileTreeOptions
+): LeftSidebarItem[] {
   const fileItem = (file: NovelWorkspaceFile): LeftSidebarItem => ({
     id: `writing:file:${file.path}`,
     title: getNovelWorkspaceFileName(file),
@@ -577,8 +591,8 @@ function buildNovelWorkspaceFileTreeItems(
   const folderItem = (node: NovelWorkspaceFileTreeNode): LeftSidebarItem => {
     const id = `writing:folder:${node.relativePath}`
     const childItems = [
-      ...sortedDirs(node).map(folderItem),
-      ...sortedFiles(node).map(fileItem),
+      ...node.sortedDirs.map(folderItem),
+      ...node.sortedFiles.map(fileItem),
     ]
 
     return {
@@ -598,8 +612,8 @@ function buildNovelWorkspaceFileTreeItems(
   }
 
   return [
-    ...sortedDirs(root).map(folderItem),
-    ...sortedFiles(root).map(fileItem),
+    ...root.sortedDirs.map(folderItem),
+    ...root.sortedFiles.map(fileItem),
   ]
 }
 
@@ -3934,6 +3948,15 @@ function AppShellContent({
     handleNewChat()
   }, [menuNewChatTrigger, handleNewChat])
 
+  const visibleNovelRootDirectories = React.useMemo(
+    () => getNovelWorkspaceVisibleRootDirectories(novelWorkspaceFiles),
+    [novelWorkspaceFiles],
+  )
+  const novelWorkspaceFileTree = React.useMemo(
+    () => buildNovelWorkspaceFileTree(novelWorkspaceFiles, visibleNovelRootDirectories),
+    [novelWorkspaceFiles, visibleNovelRootDirectories],
+  )
+
   const novelWorkspaceSidebarLinks = React.useMemo((): LeftSidebarItem[] => {
     if (!showNovelWorkspaceSidebar) return []
 
@@ -4084,9 +4107,8 @@ function AppShellContent({
     }
 
     const projectSidebarId = `writing:project:${activeWorkspaceId ?? novelWorkspaceRoot}`
-    const fileTreeItems = buildNovelWorkspaceFileTreeItems(novelWorkspaceFiles, {
+    const fileTreeItems = buildNovelWorkspaceFileTreeItems(novelWorkspaceFileTree, {
       selectedPath: selectedNovelFile?.path,
-      rootDirectories: getNovelWorkspaceVisibleRootDirectories(novelWorkspaceFiles),
       isExpanded,
       toggleExpanded,
       onSelectFile: handleSelectNovelFile,
@@ -4120,6 +4142,7 @@ function AppShellContent({
     hasNovelReviewDot,
     handleImportNovelFiles,
     isExpanded,
+    novelWorkspaceFileTree,
     novelWorkspaceFiles,
     novelWorkspaceRoot,
     openNovelCreateFileDialog,
