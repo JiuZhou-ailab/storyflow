@@ -70,6 +70,7 @@ export default function WorkspaceSettingsPage() {
   // Default sources state
   const [availableSources, setAvailableSources] = useState<LoadedSource[]>([])
   const [enabledSourceSlugs, setEnabledSourceSlugs] = useState<string[]>([])
+  const enabledSourceSlugSet = React.useMemo(() => new Set(enabledSourceSlugs), [enabledSourceSlugs])
 
   // Mode cycling state
   const [enabledModes, setEnabledModes] = useState<PermissionMode[]>(['safe', 'ask', 'allow-all'])
@@ -502,7 +503,7 @@ export default function WorkspaceSettingsPage() {
                         </span>
                       }
                       description={source.config.tagline}
-                      checked={enabledSourceSlugs.includes(source.config.slug)}
+                      checked={enabledSourceSlugSet.has(source.config.slug)}
                       onCheckedChange={(checked) => handleSourceToggle(source.config.slug, checked)}
                     />
                   ))}
