@@ -156,6 +156,19 @@ describe('computeCollapsedPagination', () => {
     expect(useSessionSearchSource).not.toContain('setContentSearchResults(new Map())')
   })
 
+  it('trusts caller-filtered items when search is closed', () => {
+    const nonSearchBranch = useSessionSearchSource.slice(
+      useSessionSearchSource.indexOf('if (!isSearchMode) {'),
+      useSessionSearchSource.indexOf('const rankedSearchItems: RankedSearchItem[]')
+    )
+
+    expect(nonSearchBranch).toContain('if (!searchActive) {')
+    expect(nonSearchBranch).toContain('searchFilteredItems: sortedItems')
+    expect(nonSearchBranch.indexOf('if (!searchActive) {')).toBeLessThan(
+      nonSearchBranch.indexOf('sessionMatchesCurrentFilter')
+    )
+  })
+
   it('reuses unchanged content search result maps after repeated IPC results', () => {
     const previous = new Map([
       ['s1', { matchCount: 2, snippet: 'same' }],

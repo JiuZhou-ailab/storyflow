@@ -440,6 +440,10 @@ export function useSessionSearch({
   // Filter items by search query or current filter
   const { searchFilteredItems, searchMatchCount } = useMemo(() => {
     if (!isSearchMode) {
+      if (!searchActive) {
+        return { searchFilteredItems: sortedItems, searchMatchCount: sortedItems.length }
+      }
+
       const filteredItems = sortedItems.filter(item =>
         sessionMatchesCurrentFilter(item, currentFilter, {
           evaluateViews,
@@ -468,7 +472,7 @@ export function useSessionSearch({
       searchFilteredItems: rankedSearchItems.map(({ item }) => item),
       searchMatchCount,
     }
-  }, [sortedItems, isSearchMode, searchQuery, contentSearchResults, currentFilter, evaluateViews, statusFilter, labelFilterMap, getDescendantLabelIds])
+  }, [sortedItems, isSearchMode, searchActive, searchQuery, contentSearchResults, currentFilter, evaluateViews, statusFilter, labelFilterMap, getDescendantLabelIds])
 
   // Split search results: matching current filter vs others
   const { matchingFilterItems, otherResultItems, exceededSearchLimit } = useMemo(() => {
