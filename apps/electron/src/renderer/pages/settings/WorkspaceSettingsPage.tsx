@@ -13,12 +13,13 @@
 
 import * as React from 'react'
 import { useState, useEffect, useCallback } from 'react'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'motion/react'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
-import { useAppShellContext } from '@/context/AppShellContext'
+import { windowWorkspaceIdAtom, windowWorkspacesAtom } from '@/atoms/sessions'
 import { cn } from '@/lib/utils'
 import { routes } from '@/lib/navigate'
 import { Spinner } from '@craft-agent/ui'
@@ -50,11 +51,12 @@ export const meta: DetailsPageMeta = {
 
 export default function WorkspaceSettingsPage() {
   const { t } = useTranslation()
-
-  // Get active workspace from context
-  const appShellContext = useAppShellContext()
-  const activeWorkspaceId = appShellContext.activeWorkspaceId
-  const onRefreshWorkspaces = appShellContext.onRefreshWorkspaces
+  const activeWorkspaceId = useAtomValue(windowWorkspaceIdAtom)
+  const setWorkspaces = useSetAtom(windowWorkspacesAtom)
+  const refreshWorkspaces = useCallback(() => {
+    if (!window.electronAPI) return
+    window.electronAPI.getWorkspaces().then(setWorkspaces)
+  }, [setWorkspaces])
 
   // Workspace settings state
   const [wsName, setWsName] = useState('')
@@ -232,7 +234,7 @@ export default function WorkspaceSettingsPage() {
       }
 
       // Refresh workspaces to update sidebar icon
-      onRefreshWorkspaces?.()
+      refreshWorkspaces()
     } catch (error) {
       console.error('Failed to upload icon:', error)
     } finally {
@@ -240,7 +242,7 @@ export default function WorkspaceSettingsPage() {
       // Reset the input so the same file can be selected again
       e.target.value = ''
     }
-  }, [activeWorkspaceId, onRefreshWorkspaces])
+  }, [activeWorkspaceId, refreshWorkspaces])
 
   // Workspace settings handlers
   const handlePermissionModeChange = useCallback(
@@ -422,7 +424,7 @@ export default function WorkspaceSettingsPage() {
                   if (newName && newName !== wsName) {
                     setWsName(newName)
                     updateWorkspaceSetting('name', newName)
-                    onRefreshWorkspaces?.()
+                    refreshWorkspaces()
                   }
                   setRenameDialogOpen(false)
                 }}

@@ -8,6 +8,7 @@ import { describe, expect, it } from 'bun:test'
 const labelsPageSource = readFileSync(new URL('../LabelsSettingsPage.tsx', import.meta.url), 'utf-8')
 const permissionsPageSource = readFileSync(new URL('../PermissionsSettingsPage.tsx', import.meta.url), 'utf-8')
 const appearancePageSource = readFileSync(new URL('../AppearanceSettingsPage.tsx', import.meta.url), 'utf-8')
+const workspacePageSource = readFileSync(new URL('../WorkspaceSettingsPage.tsx', import.meta.url), 'utf-8')
 
 describe('workspace id settings subscriptions', () => {
   it('keeps labels settings off the broad app shell context', () => {
@@ -26,5 +27,13 @@ describe('workspace id settings subscriptions', () => {
     expect(appearancePageSource).not.toContain('useAppShellContext')
     expect(appearancePageSource).toContain('windowWorkspacesAtom')
     expect(appearancePageSource).toContain('useAtomValue(windowWorkspacesAtom)')
+  })
+
+  it('keeps workspace settings off the broad app shell context', () => {
+    expect(workspacePageSource).not.toContain('useAppShellContext')
+    expect(workspacePageSource).toContain('windowWorkspaceIdAtom')
+    expect(workspacePageSource).toContain('useAtomValue(windowWorkspaceIdAtom)')
+    expect(workspacePageSource).toContain('windowWorkspacesAtom')
+    expect(workspacePageSource).toContain('useSetAtom(windowWorkspacesAtom)')
   })
 })
