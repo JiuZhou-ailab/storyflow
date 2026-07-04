@@ -18,6 +18,8 @@ import { buildGlobalSearchResults } from '@/lib/global-search'
 import type { NovelWorkspaceFile } from '@/lib/writing-workspace'
 import { cn } from '@/lib/utils'
 
+type GlobalSearchContentResult = { matchCount: number; snippet: string }
+
 export interface GlobalSearchDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -27,6 +29,24 @@ export interface GlobalSearchDialogProps {
   formatNovelFileTitle: (file: NovelWorkspaceFile) => string
   onOpenSession: (sessionId: string) => void
   onOpenNovelFile: (file: NovelWorkspaceFile) => void
+}
+
+function reuseGlobalSearchContentResults(
+  previous: Map<string, GlobalSearchContentResult>,
+  next: Map<string, GlobalSearchContentResult>,
+): Map<string, GlobalSearchContentResult> {
+  if (previous.size !== next.size) return next
+  for (const [sessionId, previousResult] of previous) {
+    const nextResult = next.get(sessionId)
+    if (
+      !nextResult ||
+      previousResult.matchCount !== nextResult.matchCount ||
+      previousResult.snippet !== nextResult.snippet
+    ) {
+      return next
+    }
+  }
+  return previous
 }
 
 export function GlobalSearchDialog({
@@ -41,21 +61,24 @@ export function GlobalSearchDialog({
 }: GlobalSearchDialogProps) {
   const { t } = useTranslation()
   const [query, setQuery] = React.useState('')
-  const [contentResults, setContentResults] = React.useState<Map<string, { matchCount: number; snippet: string }>>(new Map())
+  const [contentResults, setContentResults] = React.useState<Map<string, GlobalSearchContentResult>>(new Map())
   const [searchingContent, setSearchingContent] = React.useState(false)
+  const clearContentResults = React.useCallback(() => {
+    setContentResults(prev => prev.size === 0 ? prev : new Map())
+  }, [])
 
   React.useEffect(() => {
     if (!open) {
       setQuery('')
-      setContentResults(new Map())
+      clearContentResults()
       setSearchingContent(false)
     }
-  }, [open])
+  }, [open, clearContentResults])
 
   React.useEffect(() => {
     const trimmedQuery = query.trim()
     if (!open || !workspaceId || trimmedQuery.length < 2) {
-      setContentResults(new Map())
+      clearContentResults()
       setSearchingContent(false)
       return
     }
@@ -69,15 +92,16 @@ export function GlobalSearchDialog({
         const results = await window.electronAPI.searchSessionContent(workspaceId, trimmedQuery, searchId)
         if (cancelled) return
 
-        setContentResults(new Map(results.map(result => [
-          result.sessionId,
-          {
+        const resultMap = new Map<string, GlobalSearchContentResult>()
+        for (const result of results) {
+          resultMap.set(result.sessionId, {
             matchCount: result.matchCount,
             snippet: result.matches[0]?.snippet || '',
-          },
-        ])))
+          })
+        }
+        setContentResults(prev => reuseGlobalSearchContentResults(prev, resultMap))
       } catch {
-        if (!cancelled) setContentResults(new Map())
+        if (!cancelled) clearContentResults()
       } finally {
         if (!cancelled) setSearchingContent(false)
       }
@@ -88,7 +112,7 @@ export function GlobalSearchDialog({
       window.clearTimeout(timer)
       setSearchingContent(false)
     }
-  }, [open, query, workspaceId])
+  }, [open, query, workspaceId, clearContentResults])
 
   const results = React.useMemo(
     () => buildGlobalSearchResults({
