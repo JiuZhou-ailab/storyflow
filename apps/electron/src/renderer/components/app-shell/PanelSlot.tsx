@@ -7,7 +7,7 @@
  * When multiple panels exist, each uses flex-grow with its proportion as the weight,
  * combined with min-width to prevent shrinking below PANEL_MIN_WIDTH.
  *
- * Each PanelSlot overrides AppShellContext to inject a per-panel close button
+ * Each PanelSlot overrides panel chrome to inject a per-panel close button
  * into PanelHeader's rightSidebarButton slot. All panels are equal — closing
  * any panel removes it from the stack. A reactive effect handles window close
  * when the stack becomes empty.
@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils'
 import { X, ChevronLeft } from 'lucide-react'
 import { parseRouteToNavigationState } from '../../../shared/route-parser'
 import { closePanelAtom, focusedPanelIdAtom, type PanelStackEntry } from '@/atoms/panel-stack'
-import { useAppShellContext, AppShellProvider } from '@/context/AppShellContext'
+import { SessionPanelChromeProvider } from '@/context/AppShellContext'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
 import { MainContentPanel } from './MainContentPanel'
 import { PANEL_MIN_WIDTH, RADIUS_EDGE, RADIUS_INNER } from './panel-constants'
@@ -60,7 +60,6 @@ export function PanelSlot({
   const { t } = useTranslation()
   const closePanel = useSetAtom(closePanelAtom)
   const setFocusedPanel = useSetAtom(focusedPanelIdAtom)
-  const parentContext = useAppShellContext()
   const navState = parseRouteToNavigationState(entry.route)
 
   const handleClose = useCallback(() => {
@@ -92,14 +91,13 @@ export function PanelSlot({
     )
   }, [isCompact, handleClose])
 
-  // Override AppShellContext so ChatPage/PanelHeader gets our per-panel close button,
+  // Override panel chrome so ChatPage/PanelHeader gets our per-panel close button,
   // back button (compact mode), and isFocusedPanel for input field appearance
-  const contextOverride = useMemo(() => ({
-    ...parentContext,
+  const panelChrome = useMemo(() => ({
     rightSidebarButton: closeButton,
     leadingAction: backButton,
     isFocusedPanel,
-  }), [parentContext, closeButton, backButton, isFocusedPanel])
+  }), [closeButton, backButton, isFocusedPanel])
 
   const handlePointerDown = useCallback(() => {
     if (!isFocusedPanel) {
@@ -142,12 +140,12 @@ export function PanelSlot({
         }}
       >
         <div className="h-full flex flex-col">
-          <AppShellProvider value={contextOverride}>
+          <SessionPanelChromeProvider value={panelChrome}>
             <MainContentPanel
               navStateOverride={navState}
               isSidebarAndNavigatorHidden={isSidebarAndNavigatorHidden}
             />
-          </AppShellProvider>
+          </SessionPanelChromeProvider>
         </div>
       </div>
     </>

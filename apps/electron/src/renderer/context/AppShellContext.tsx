@@ -223,6 +223,20 @@ interface SessionPanelChromeContextType {
 
 const SessionPanelChromeContext = createContext<SessionPanelChromeContextType | null>(null)
 
+export function SessionPanelChromeProvider({
+  children,
+  value,
+}: {
+  children: React.ReactNode
+  value: SessionPanelChromeContextType
+}) {
+  return (
+    <SessionPanelChromeContext.Provider value={value}>
+      {children}
+    </SessionPanelChromeContext.Provider>
+  )
+}
+
 interface SessionBatchActionsContextType {
   onSessionStatusChange: AppShellContextType['onSessionStatusChange']
   onArchiveSession: AppShellContextType['onArchiveSession']

@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'bun:test'
 
 const mainContentPanelSource = readFileSync(new URL('../MainContentPanel.tsx', import.meta.url), 'utf-8')
+const panelSlotSource = readFileSync(new URL('../PanelSlot.tsx', import.meta.url), 'utf-8')
 const appShellContextSource = readFileSync(new URL('../../../context/AppShellContext.tsx', import.meta.url), 'utf-8')
 
 describe('MainContentPanel subscriptions', () => {
@@ -13,5 +14,12 @@ describe('MainContentPanel subscriptions', () => {
     expect(mainContentPanelSource).not.toContain('useAppShellContext')
     expect(mainContentPanelSource).toContain('useSessionBatchActions')
     expect(appShellContextSource).toContain('SessionBatchActionsContext')
+  })
+
+  it('keeps panel chrome overrides off the broad app shell context', () => {
+    expect(panelSlotSource).not.toContain('useAppShellContext')
+    expect(panelSlotSource).not.toContain('AppShellProvider')
+    expect(panelSlotSource).toContain('SessionPanelChromeProvider')
+    expect(appShellContextSource).toContain('SessionPanelChromeProvider')
   })
 })
