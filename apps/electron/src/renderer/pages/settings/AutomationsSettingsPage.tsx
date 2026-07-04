@@ -157,6 +157,7 @@ export default function AutomationsSettingsPage() {
                             onDuplicate={() => onDuplicateAutomation?.(selectedAutomation.id)}
                             onDelete={() => onDeleteAutomation?.(selectedAutomation.id)}
                             onReplay={onReplayAutomation}
+                            workspaceRootPath={workspace.rootPath}
                             className="h-full"
                           />
                         ) : (

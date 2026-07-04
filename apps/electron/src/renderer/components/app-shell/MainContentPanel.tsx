@@ -272,6 +272,7 @@ export function MainContentPanel({
               onDuplicate={onDuplicateAutomation ? () => onDuplicateAutomation(automation.id) : undefined}
               onDelete={onDeleteAutomation ? () => onDeleteAutomation(automation.id) : undefined}
               onReplay={onReplayAutomation}
+              workspaceRootPath={activeWorkspace?.rootPath}
             />
           </Panel>
         )

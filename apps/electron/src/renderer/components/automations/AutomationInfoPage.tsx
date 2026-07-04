@@ -7,7 +7,7 @@
 
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
-import { PauseCircle, AlertCircle, Hash } from 'lucide-react'
+import { PauseCircle, Hash } from 'lucide-react'
 import {
   Info_Page,
   Info_Section,
@@ -17,7 +17,6 @@ import {
   Info_Markdown,
 } from '@/components/info'
 import { EditPopover, EditButton, getEditConfig } from '@/components/ui/EditPopover'
-import { useActiveWorkspace } from '@/context/AppShellContext'
 import { AutomationAvatar } from './AutomationAvatar'
 import { AutomationMenu } from './AutomationMenu'
 import { AutomationActionRow } from './AutomationActionRow'
@@ -40,6 +39,7 @@ export interface AutomationInfoPageProps {
   onDuplicate?: () => void
   onDelete?: () => void
   onReplay?: (automationId: string, event: string) => void
+  workspaceRootPath?: string
   className?: string
 }
 
@@ -52,10 +52,10 @@ export function AutomationInfoPage({
   onDuplicate,
   onDelete,
   onReplay,
+  workspaceRootPath,
   className,
 }: AutomationInfoPageProps) {
   const { t } = useTranslation()
-  const workspace = useActiveWorkspace()
   const nextRuns = automation.cron ? computeNextRuns(automation.cron) : []
 
   // Lightweight per-mount fetch — mirrors the pattern used in MessagingSettingsPage.
@@ -77,11 +77,11 @@ export function AutomationInfoPage({
     }
   }, [automation.telegramTopic])
 
-  const editActions = workspace?.rootPath ? (
+  const editActions = workspaceRootPath ? (
     <EditPopover
       trigger={<EditButton />}
-      {...getEditConfig('automation-config', workspace.rootPath)}
-      secondaryAction={{ label: t('automations.editFile'), filePath: `${workspace.rootPath}/automations.json` }}
+      {...getEditConfig('automation-config', workspaceRootPath)}
+      secondaryAction={{ label: t('automations.editFile'), filePath: `${workspaceRootPath}/automations.json` }}
     />
   ) : undefined
 
