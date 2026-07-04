@@ -175,6 +175,15 @@ export interface AppShellContextType {
 
 const AppShellContext = createContext<AppShellContextType | null>(null)
 
+interface SessionInteractionActionsContextType {
+  onCreateSession: AppShellContextType['onCreateSession']
+  onSendMessage: AppShellContextType['onSendMessage']
+  onRespondToPermission?: AppShellContextType['onRespondToPermission']
+  onRespondToCredential?: AppShellContextType['onRespondToCredential']
+}
+
+const SessionInteractionActionsContext = createContext<SessionInteractionActionsContextType | null>(null)
+
 export function AppShellProvider({
   children,
   value,
@@ -182,7 +191,25 @@ export function AppShellProvider({
   children: React.ReactNode
   value: AppShellContextType
 }) {
-  return <AppShellContext.Provider value={value}>{children}</AppShellContext.Provider>
+  const sessionInteractionActions = React.useMemo<SessionInteractionActionsContextType>(() => ({
+    onCreateSession: value.onCreateSession,
+    onSendMessage: value.onSendMessage,
+    onRespondToPermission: value.onRespondToPermission,
+    onRespondToCredential: value.onRespondToCredential,
+  }), [
+    value.onCreateSession,
+    value.onSendMessage,
+    value.onRespondToPermission,
+    value.onRespondToCredential,
+  ])
+
+  return (
+    <AppShellContext.Provider value={value}>
+      <SessionInteractionActionsContext.Provider value={sessionInteractionActions}>
+        {children}
+      </SessionInteractionActionsContext.Provider>
+    </AppShellContext.Provider>
+  )
 }
 
 /** Returns context or null if outside provider (safe for optional consumers like playground) */
@@ -194,6 +221,14 @@ export function useAppShellContext(): AppShellContextType {
   const context = useContext(AppShellContext)
   if (!context) {
     throw new Error('useAppShellContext must be used within an AppShellProvider')
+  }
+  return context
+}
+
+export function useSessionInteractionActions(): SessionInteractionActionsContextType {
+  const context = useContext(SessionInteractionActionsContext)
+  if (!context) {
+    throw new Error('useSessionInteractionActions must be used within an AppShellProvider')
   }
   return context
 }
