@@ -11,7 +11,7 @@ import * as React from 'react'
 import { useSetAtom } from 'jotai'
 import MessagingSettingsPage from '../../../pages/settings/MessagingSettingsPage'
 import { setMessagingBindingsAtom, type MessagingBinding } from '../../../atoms/messaging'
-import { sessionMetaMapAtom, type SessionMeta } from '../../../atoms/sessions'
+import { sessionMetaMapAtom, windowWorkspaceIdAtom, type SessionMeta } from '../../../atoms/sessions'
 import { playgroundMessagingHandle } from '../../mock-utils'
 
 type BindingsPreset = 'none' | 'one' | 'many'
@@ -106,24 +106,27 @@ export function MessagingSettingsPagePreview({
 }: MessagingSettingsPagePreviewProps) {
   const setBindingsAtom = useSetAtom(setMessagingBindingsAtom)
   const setSessionMetaMap = useSetAtom(sessionMetaMapAtom)
+  const setWindowWorkspaceId = useSetAtom(windowWorkspaceIdAtom)
 
   // Seed session metadata once so `getSessionTitle` resolves to a real name
   // for the mock bindings. Runs on mount; cleared on unmount to avoid leaking
   // fake sessions into other playground demos.
   React.useEffect(() => {
+    setWindowWorkspaceId(PLAYGROUND_WORKSPACE_ID)
     setSessionMetaMap((prev) => {
       const next = new Map(prev)
       for (const meta of Object.values(MOCK_SESSION_META)) next.set(meta.id, meta)
       return next
     })
     return () => {
+      setWindowWorkspaceId(null)
       setSessionMetaMap((prev) => {
         const next = new Map(prev)
         for (const id of Object.keys(MOCK_SESSION_META)) next.delete(id)
         return next
       })
     }
-  }, [setSessionMetaMap])
+  }, [setSessionMetaMap, setWindowWorkspaceId])
 
   React.useEffect(() => {
     playgroundMessagingHandle.setTelegramConnected(

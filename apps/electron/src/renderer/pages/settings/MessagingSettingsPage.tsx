@@ -61,14 +61,13 @@ import {
   type PlatformAccessMode,
   type PlatformOwner,
 } from '@/components/messaging/access'
-import { useActiveWorkspace } from '@/context/AppShellContext'
 import { useNavigation } from '@/contexts/NavigationContext'
 import {
   messagingBindingsForPlatformAtomFamily,
   setMessagingBindingsAtom,
   type MessagingBinding,
 } from '@/atoms/messaging'
-import { sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
+import { sessionMetaMapAtom, windowWorkspaceIdAtom, type SessionMeta } from '@/atoms/sessions'
 import { getSessionTitle } from '@/utils/session'
 import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import type { MessagingPlatformRuntimeInfo } from '../../../shared/types'
@@ -80,9 +79,8 @@ export const meta: DetailsPageMeta = {
 
 export default function MessagingSettingsPage() {
   const { t } = useTranslation()
-  const activeWorkspace = useActiveWorkspace()
+  const workspaceId = useAtomValue(windowWorkspaceIdAtom)
   const setBindings = useSetAtom(setMessagingBindingsAtom)
-  const workspaceId = activeWorkspace?.id
 
   // Single fetch + subscription at the page level so both PlatformRows read
   // from the already-populated atom instead of subscribing twice.
@@ -107,7 +105,7 @@ export default function MessagingSettingsPage() {
     }
   }, [workspaceId, setBindings])
 
-  if (!activeWorkspace) return null
+  if (!workspaceId) return null
 
   return (
     <div className="flex h-full flex-col">
@@ -116,13 +114,13 @@ export default function MessagingSettingsPage() {
         <div className="space-y-6 p-6">
           <SettingsSection title={t('settings.messaging.title')}>
             <SettingsCard>
-              <PlatformRow platform="telegram" workspaceId={activeWorkspace.id} />
+              <PlatformRow platform="telegram" workspaceId={workspaceId} />
             </SettingsCard>
             <SettingsCard>
-              <PlatformRow platform="whatsapp" workspaceId={activeWorkspace.id} />
+              <PlatformRow platform="whatsapp" workspaceId={workspaceId} />
             </SettingsCard>
             <SettingsCard>
-              <PlatformRow platform="lark" workspaceId={activeWorkspace.id} />
+              <PlatformRow platform="lark" workspaceId={workspaceId} />
             </SettingsCard>
           </SettingsSection>
         </div>
