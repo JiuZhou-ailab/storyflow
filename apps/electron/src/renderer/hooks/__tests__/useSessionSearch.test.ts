@@ -117,6 +117,19 @@ describe('computeCollapsedPagination', () => {
     expect(useSessionSearchSource).not.toContain('rankedSearchItems.sort((a, b) => {')
   })
 
+  it('skips collapse pagination while search mode renders split search results', () => {
+    const paginationSource = useSessionSearchSource.slice(
+      useSessionSearchSource.indexOf('const { paginatedItems, hasMore, collapsedGroupsMeta } = useMemo'),
+      useSessionSearchSource.indexOf('const loadMore = useCallback')
+    )
+
+    expect(useSessionSearchSource).toContain('hasMore: false')
+    expect(paginationSource).toContain('if (isSearchMode) {')
+    expect(paginationSource.indexOf('return EMPTY_SEARCH_PAGINATION')).toBeLessThan(
+      paginationSource.indexOf('return computeCollapsedPagination')
+    )
+  })
+
   it('reuses bounded search result arrays when no secondary filters split results', () => {
     expect(useSessionSearchSource).toContain('if (!isSearchMode) {')
     expect(useSessionSearchSource).toContain('if (!hasActiveFilters) {')

@@ -100,6 +100,12 @@ export interface CollapsedPaginationResult {
   collapsedGroupsMeta: CollapsedGroupMeta[]
 }
 
+const EMPTY_SEARCH_PAGINATION: CollapsedPaginationResult = {
+  paginatedItems: [],
+  hasMore: false,
+  collapsedGroupsMeta: [],
+}
+
 export function computeCollapsedPagination(
   items: SessionMeta[],
   displayLimit: number,
@@ -534,8 +540,11 @@ export function useSessionSearch({
   // paginatedItems (and therefore flatItems / keyboard nav). Their counts are
   // returned as collapsedGroupsMeta so the renderer can show header-only groups.
   const { paginatedItems, hasMore, collapsedGroupsMeta } = useMemo(() => {
+    if (isSearchMode) {
+      return EMPTY_SEARCH_PAGINATION
+    }
     return computeCollapsedPagination(searchFilteredItems, displayLimit, collapsedGroups, groupingMode)
-  }, [searchFilteredItems, displayLimit, collapsedGroups, groupingMode])
+  }, [isSearchMode, searchFilteredItems, displayLimit, collapsedGroups, groupingMode])
 
   const loadMore = useCallback(() => {
     setDisplayLimit(prev => Math.min(prev + BATCH_SIZE, searchFilteredItems.length))
