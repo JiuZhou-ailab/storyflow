@@ -90,6 +90,12 @@ describe('session item subscriptions', () => {
     expect(sessionListSource).not.toContain('flatRows.findIndex(row => row.item.id === selectionStore.state.selected)')
   })
 
+  it('keeps the entity list row id selector stable across renders', () => {
+    expect(sessionListSource).toContain('const getSessionRowId = useCallback((row: SessionListRow) => row.item.id, [])')
+    expect(sessionListSource).toContain('getId: getSessionRowId')
+    expect(sessionListSource).not.toContain('getId: (row) => row.item.id')
+  })
+
   it('does not rebroadcast chat search row context for match index changes', () => {
     const matchInfoGuardSource = appShellSource.slice(
       appShellSource.indexOf('const handleChatMatchInfoChange = React.useCallback'),

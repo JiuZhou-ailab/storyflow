@@ -490,11 +490,12 @@ export function SessionList({
 
   // Keyboard eligibility: zone-focused OR search input focused (for arrow navigation)
   const isKeyboardEligible = isFocused || (searchActive && isSearchInputFocused)
+  const getSessionRowId = useCallback((row: SessionListRow) => row.item.id, [])
 
   // --- Interactions (keyboard navigation + selection via shared atom) ---
   const interactions = useEntityListInteractions<SessionListRow>({
     items: flatRows,
-    getId: (row) => row.item.id,
+    getId: getSessionRowId,
     keyboard: {
       onNavigate: useCallback((row: SessionListRow) => {
         navigateToSession(row.item.id)
