@@ -19,4 +19,17 @@ describe('session refresh recovery', () => {
     expect(refreshSource).toContain('sessionRefreshInFlightRef.current.set(sessionId, refreshPromise)')
     expect(refreshSource).toContain('sessionRefreshInFlightRef.current.delete(sessionId)')
   })
+
+  it('deduplicates concurrent session metadata refreshes by refresh key', () => {
+    const refreshStart = appSource.indexOf('const refreshSessionListMetadataFromServer = useCallback')
+    const refreshEnd = appSource.indexOf('const { trackSessionActivity } = useStaleSessionRecovery', refreshStart)
+    const refreshSource = appSource.slice(refreshStart, refreshEnd)
+
+    expect(appSource).toContain('const sessionListMetadataRefreshInFlightRef = useRef<Map<string, Promise<SessionListMetadataRefreshResult>>>(new Map())')
+    expect(refreshSource).toContain('const refreshKey = `${windowWorkspaceId ??')
+    expect(refreshSource).toContain('const inFlight = sessionListMetadataRefreshInFlightRef.current.get(refreshKey)')
+    expect(refreshSource).toContain('if (inFlight) return inFlight')
+    expect(refreshSource).toContain('sessionListMetadataRefreshInFlightRef.current.set(refreshKey, refreshPromise)')
+    expect(refreshSource).toContain('sessionListMetadataRefreshInFlightRef.current.delete(refreshKey)')
+  })
 })
