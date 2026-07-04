@@ -539,7 +539,6 @@ export function selectDefaultNovelTab(tree: NovelWorkspaceTree): NovelWorkspaceT
 }
 
 export function selectDefaultNovelFile(files: NovelWorkspaceFile[], methodPackId?: string): NovelWorkspaceFile | undefined {
-  const tree = buildNovelWorkspaceTree(files, methodPackId)
   const orderedSections: NovelWorkspaceFileSectionId[] = [
     'manuscript',
     'outline',
@@ -551,9 +550,18 @@ export function selectDefaultNovelFile(files: NovelWorkspaceFile[], methodPackId
     'analysis',
     'work',
   ]
+  const bestBySection = new Map<NovelWorkspaceFileSectionId, NovelWorkspaceFile>()
+
+  for (const file of files) {
+    const sectionId = categorizeNovelPathForMethodPack(file.relativePath, methodPackId)
+    const current = bestBySection.get(sectionId)
+    if (!current || sortByRelativePath(file, current) < 0) {
+      bestBySection.set(sectionId, file)
+    }
+  }
 
   for (const sectionId of orderedSections) {
-    const file = tree[sectionId].files[0]
+    const file = bestBySection.get(sectionId)
     if (file) return file
   }
 

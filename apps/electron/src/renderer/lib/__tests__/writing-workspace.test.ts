@@ -3,6 +3,7 @@
 // pos: Protects the renderer projection of writing workspaces
 
 import { describe, expect, it } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import type { FileChange } from '@craft-agent/ui'
 import type { Message } from '@craft-agent/core'
 import {
@@ -66,6 +67,8 @@ const fallbackChange: FileChange = {
   original: 'old',
   modified: 'new',
 }
+
+const writingWorkspaceSource = readFileSync(new URL('../writing-workspace.ts', import.meta.url), 'utf8')
 
 describe('writing workspace helpers', () => {
   it('keeps the file-change activity key stable for assistant text deltas', () => {
@@ -187,6 +190,15 @@ describe('writing workspace helpers', () => {
       path: '/novel/story/chapters/chapter-01.md',
       relativePath: 'story/chapters/chapter-01.md',
     })
+  })
+
+  it('selects default files without building and sorting the whole workspace tree', () => {
+    const functionStart = writingWorkspaceSource.indexOf('export function selectDefaultNovelFile')
+    const functionEnd = writingWorkspaceSource.indexOf('export function summarizeNovelSection', functionStart)
+    const functionSource = writingWorkspaceSource.slice(functionStart, functionEnd)
+
+    expect(functionSource).toContain('const bestBySection = new Map<NovelWorkspaceFileSectionId, NovelWorkspaceFile>()')
+    expect(functionSource).not.toContain('buildNovelWorkspaceTree(files, methodPackId)')
   })
 
   it('sorts manuscript chapters by numeric chapter order', () => {
