@@ -1,24 +1,34 @@
-import { useState } from "react"
+import { memo, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { SessionStatusMenu } from "@/components/ui/session-status-menu"
 import { getStateIcon, getStateIconStyle } from "@/config/session-status-config"
-import { useSessionListContext } from "@/context/SessionListContext"
-import type { SessionMeta } from "@/atoms/sessions"
-import { getSessionStatus } from "@/utils/session"
+import type { SessionStatus, SessionStatusId } from "@/config/session-status-config"
 
 interface SessionStatusIconProps {
-  item: SessionMeta
+  sessionId: string
+  status: SessionStatusId
+  isArchived?: boolean
+  sessionStatuses: SessionStatus[]
+  onSessionStatusChange: (sessionId: string, state: SessionStatusId) => void
+  onArchive?: (sessionId: string) => void
+  onUnarchive?: (sessionId: string) => void
 }
 
-export function SessionStatusIcon({ item }: SessionStatusIconProps) {
-  const ctx = useSessionListContext()
+export const SessionStatusIcon = memo(function SessionStatusIcon({
+  sessionId,
+  status,
+  isArchived,
+  sessionStatuses,
+  onSessionStatusChange,
+  onArchive,
+  onUnarchive,
+}: SessionStatusIconProps) {
   const [open, setOpen] = useState(false)
-  const status = getSessionStatus(item)
 
-  const handleSelect = (state: import("@/config/session-status-config").SessionStatusId) => {
+  const handleSelect = (state: SessionStatusId) => {
     setOpen(false)
-    ctx.onSessionStatusChange(item.id, state)
+    onSessionStatusChange(sessionId, state)
   }
 
   return (
@@ -31,7 +41,7 @@ export function SessionStatusIcon({ item }: SessionStatusIconProps) {
             "hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             "[&>svg]:w-full [&>svg]:h-full [&>img]:w-full [&>img]:h-full [&>span]:text-base",
           )}
-          style={getStateIconStyle(status, ctx.sessionStatuses)}
+          style={getStateIconStyle(status, sessionStatuses)}
           aria-haspopup="menu"
           aria-expanded={open}
           aria-label="Change todo state"
@@ -40,7 +50,7 @@ export function SessionStatusIcon({ item }: SessionStatusIconProps) {
             e.stopPropagation()
           }}
         >
-          {getStateIcon(status, ctx.sessionStatuses)}
+          {getStateIcon(status, sessionStatuses)}
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -56,12 +66,12 @@ export function SessionStatusIcon({ item }: SessionStatusIconProps) {
         <SessionStatusMenu
           activeState={status}
           onSelect={handleSelect}
-          states={ctx.sessionStatuses}
-          isArchived={item.isArchived}
-          onArchive={ctx.onArchive ? () => { setOpen(false); ctx.onArchive!(item.id) } : undefined}
-          onUnarchive={ctx.onUnarchive ? () => { setOpen(false); ctx.onUnarchive!(item.id) } : undefined}
+          states={sessionStatuses}
+          isArchived={isArchived}
+          onArchive={onArchive ? () => { setOpen(false); onArchive(sessionId) } : undefined}
+          onUnarchive={onUnarchive ? () => { setOpen(false); onUnarchive(sessionId) } : undefined}
         />
       </PopoverContent>
     </Popover>
   )
-}
+})

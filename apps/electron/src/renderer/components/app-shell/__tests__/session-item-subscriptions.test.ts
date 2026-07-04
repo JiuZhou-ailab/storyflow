@@ -10,6 +10,7 @@ const sessionBadgesSource = readFileSync(new URL('../SessionBadges.tsx', import.
 const sessionListSource = readFileSync(new URL('../SessionList.tsx', import.meta.url), 'utf-8')
 const sessionInfoPopoverSource = readFileSync(new URL('../SessionInfoPopover.tsx', import.meta.url), 'utf-8')
 const globalSearchDialogSource = readFileSync(new URL('../GlobalSearchDialog.tsx', import.meta.url), 'utf-8')
+const sessionStatusIconSource = readFileSync(new URL('../SessionStatusIcon.tsx', import.meta.url), 'utf-8')
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf-8')
 const sessionListContextSource = readFileSync(new URL('../../../context/SessionListContext.tsx', import.meta.url), 'utf-8')
 
@@ -52,6 +53,20 @@ describe('session item subscriptions', () => {
     expect(sessionListCall).not.toContain('sessionOptions=')
     expect(sessionListSource).not.toContain('sessionOptions?:')
     expect(sessionListContextSource).not.toContain('sessionOptions')
+  })
+
+  it('keeps the per-row status icon off the shared list context', () => {
+    const statusIconCall = sessionItemSource.slice(
+      sessionItemSource.indexOf('<SessionStatusIcon'),
+      sessionItemSource.indexOf('/>', sessionItemSource.indexOf('<SessionStatusIcon'))
+    )
+
+    expect(sessionStatusIconSource).not.toContain('useSessionListContext')
+    expect(sessionStatusIconSource).toContain('memo(function SessionStatusIcon')
+    expect(statusIconCall).toContain('sessionId={item.id}')
+    expect(statusIconCall).toContain('status={getSessionStatus(item)}')
+    expect(statusIconCall).toContain('sessionStatuses={ctx.sessionStatuses}')
+    expect(statusIconCall).toContain('onSessionStatusChange={ctx.onSessionStatusChange}')
   })
 
   it('reuses a label lookup map instead of scanning labels per row badge', () => {

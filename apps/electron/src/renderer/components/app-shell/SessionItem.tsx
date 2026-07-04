@@ -10,7 +10,7 @@ import { SessionMenu } from "./SessionMenu"
 import { BatchSessionMenu } from "./BatchSessionMenu"
 import { SessionStatusIcon } from "./SessionStatusIcon"
 import { resolveSessionLabelBadges, SessionBadges } from "./SessionBadges"
-import { getSessionTitle, getSessionPreviewText, highlightMatch, hasUnreadMeta, shortTimeLocale } from "@/utils/session"
+import { getSessionTitle, getSessionPreviewText, getSessionStatus, highlightMatch, hasUnreadMeta, shortTimeLocale } from "@/utils/session"
 import { useSessionListContext } from "@/context/SessionListContext"
 import { navigate, routes } from "@/lib/navigate"
 import type { SessionMeta } from "@/atoms/sessions"
@@ -129,7 +129,15 @@ export function SessionItem({
       contextMenuContent={ctx.isMultiSelectActive && isInMultiSelect ? <BatchSessionMenu /> : undefined}
       icon={
         <>
-          <SessionStatusIcon item={item} />
+          <SessionStatusIcon
+            sessionId={item.id}
+            status={getSessionStatus(item)}
+            isArchived={item.isArchived}
+            sessionStatuses={ctx.sessionStatuses}
+            onSessionStatusChange={ctx.onSessionStatusChange}
+            onArchive={ctx.onArchive}
+            onUnarchive={ctx.onUnarchive}
+          />
           <div className={cn(
             "flex items-center justify-center overflow-hidden gap-1",
             "transition-all duration-200 ease-out",
