@@ -194,6 +194,12 @@ interface SessionBatchActionsContextType {
 
 const SessionBatchActionsContext = createContext<SessionBatchActionsContextType | null>(null)
 
+interface SessionOptionsActionsContextType {
+  onSessionOptionsChange: AppShellContextType['onSessionOptionsChange']
+}
+
+const SessionOptionsActionsContext = createContext<SessionOptionsActionsContextType | null>(null)
+
 export function AppShellProvider({
   children,
   value,
@@ -227,11 +233,17 @@ export function AppShellProvider({
     value.labels,
   ])
 
+  const sessionOptionsActions = React.useMemo<SessionOptionsActionsContextType>(() => ({
+    onSessionOptionsChange: value.onSessionOptionsChange,
+  }), [value.onSessionOptionsChange])
+
   return (
     <AppShellContext.Provider value={value}>
       <SessionInteractionActionsContext.Provider value={sessionInteractionActions}>
         <SessionBatchActionsContext.Provider value={sessionBatchActions}>
-          {children}
+          <SessionOptionsActionsContext.Provider value={sessionOptionsActions}>
+            {children}
+          </SessionOptionsActionsContext.Provider>
         </SessionBatchActionsContext.Provider>
       </SessionInteractionActionsContext.Provider>
     </AppShellContext.Provider>
@@ -263,6 +275,14 @@ export function useSessionBatchActions(): SessionBatchActionsContextType {
   const context = useContext(SessionBatchActionsContext)
   if (!context) {
     throw new Error('useSessionBatchActions must be used within an AppShellProvider')
+  }
+  return context
+}
+
+export function useSessionOptionsActions(): SessionOptionsActionsContextType {
+  const context = useContext(SessionOptionsActionsContext)
+  if (!context) {
+    throw new Error('useSessionOptionsActions must be used within an AppShellProvider')
   }
   return context
 }
@@ -316,7 +336,7 @@ export function useSessionOptionsFor(sessionId: string): {
   setPermissionMode: (mode: PermissionMode) => void
   isSafeModeActive: () => boolean
 } {
-  const { onSessionOptionsChange } = useAppShellContext()
+  const { onSessionOptionsChange } = useSessionOptionsActions()
   const options = useAtomValue(sessionOptionsAtomFamily(sessionId))
 
   const setOption = useCallback(<K extends keyof SessionOptions>(
