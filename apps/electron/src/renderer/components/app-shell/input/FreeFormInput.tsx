@@ -1449,15 +1449,22 @@ export function FreeFormInput({
   const handleRichInput = React.useCallback((value: string, cursorPosition: number, meta?: RichTextInputChangeMeta) => {
     const nextValue = coerceInputText(value)
     const compositionInput = isCompositionInput(meta)
+    const textBeforeCursor = nextValue.slice(0, cursorPosition)
 
     // Update inline slash command state
-    inlineSlash.handleInputChange(nextValue, cursorPosition)
+    if (inlineSlash.isOpen || textBeforeCursor.includes('/')) {
+      inlineSlash.handleInputChange(nextValue, cursorPosition)
+    }
 
     // Update inline mention state (for @mentions - sources, files, folders)
-    inlineMention.handleInputChange(nextValue, cursorPosition)
+    if (inlineMention.isOpen || textBeforeCursor.includes('@')) {
+      inlineMention.handleInputChange(nextValue, cursorPosition)
+    }
 
     // Update inline label state (for #labels)
-    inlineLabel.handleInputChange(nextValue, cursorPosition)
+    if (inlineLabel.isOpen || textBeforeCursor.includes('#')) {
+      inlineLabel.handleInputChange(nextValue, cursorPosition)
+    }
 
     // Auto-capitalize first letter (but not for slash commands, @mentions, #labels, or IME text)
     let newValue = nextValue

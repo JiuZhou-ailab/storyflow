@@ -187,4 +187,17 @@ describe('FreeFormInput render hot paths', () => {
     expect(handlerSource).toContain('const currentSourceSet = new Set(currMentions.sources)')
     expect(handlerSource).not.toContain('!currMentions.sources.includes(slug)')
   })
+
+  it('skips inline menu detectors for ordinary rich text input without triggers', () => {
+    const source = readFileSync(new URL('../FreeFormInput.tsx', import.meta.url), 'utf-8')
+    const handlerStart = source.indexOf('const handleRichInput = React.useCallback')
+    const handlerEnd = source.indexOf('// Handle inline slash command selection', handlerStart)
+    const handlerSource = source.slice(handlerStart, handlerEnd)
+
+    expect(handlerSource).toContain('const textBeforeCursor = nextValue.slice(0, cursorPosition)')
+    expect(handlerSource).toContain("if (inlineSlash.isOpen || textBeforeCursor.includes('/'))")
+    expect(handlerSource).toContain("if (inlineMention.isOpen || textBeforeCursor.includes('@'))")
+    expect(handlerSource).toContain("if (inlineLabel.isOpen || textBeforeCursor.includes('#'))")
+    expect(handlerSource).not.toContain('// Update inline slash command state\n    inlineSlash.handleInputChange(nextValue, cursorPosition)')
+  })
 })
