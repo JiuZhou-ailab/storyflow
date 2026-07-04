@@ -546,6 +546,19 @@ describe('background task atoms', () => {
 })
 
 describe('refreshSessionsMetadataAtom', () => {
+  it('initializes sorted ids without mutating the caller session array', () => {
+    const store = createStore()
+    const sessions = [
+      makeSession({ id: 'older', lastMessageAt: 100 }),
+      makeSession({ id: 'newer', lastMessageAt: 200 }),
+    ]
+
+    store.set(initializeSessionsAtom, sessions)
+
+    expect(sessions.map(session => session.id)).toEqual(['older', 'newer'])
+    expect(store.get(sessionIdsAtom)).toEqual(['newer', 'older'])
+  })
+
   it('preserves messages for already-loaded sessions', () => {
     const store = createStore()
     const existingMessages = [msg('m1'), msg('m2', 'assistant')]
@@ -727,6 +740,38 @@ describe('refreshSessionsMetadataAtom', () => {
     unsubscribeMeta()
     unsubscribeIds()
     unsubscribeSession()
+  })
+
+  it('still repairs id ordering when unchanged metadata is currently out of order', () => {
+    const store = createStore()
+
+    store.set(sessionMetaMapAtom, new Map([
+      ['older', {
+        id: 'older',
+        workspaceId: 'workspace-1',
+        name: 'Older',
+        lastMessageAt: 100,
+        messageCount: 0,
+      }],
+      ['newer', {
+        id: 'newer',
+        workspaceId: 'workspace-1',
+        name: 'Newer',
+        lastMessageAt: 200,
+        messageCount: 0,
+      }],
+    ]))
+    store.set(sessionIdsAtom, ['older', 'newer'])
+
+    store.set(refreshSessionsMetadataAtom, {
+      sessions: [
+        makeSession({ id: 'older', name: 'Older', lastMessageAt: 100 }),
+        makeSession({ id: 'newer', name: 'Newer', lastMessageAt: 200 }),
+      ],
+      loadedSessionIds: new Set<string>(),
+    })
+
+    expect(store.get(sessionIdsAtom)).toEqual(['newer', 'older'])
   })
 })
 

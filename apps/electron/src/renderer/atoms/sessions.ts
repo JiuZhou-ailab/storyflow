@@ -227,6 +227,20 @@ function shallowEqualSessionMeta(a: SessionMeta, b: SessionMeta): boolean {
   return aKeys.every(key => a[key] === b[key])
 }
 
+function areSessionIdsSortedByMetaTime(ids: string[], metaMap: Map<string, SessionMeta>): boolean {
+  if (ids.length !== metaMap.size) return false
+
+  let previousTime = Number.POSITIVE_INFINITY
+  for (const id of ids) {
+    const meta = metaMap.get(id)
+    if (!meta) return false
+    const time = meta.lastMessageAt || 0
+    if (time > previousTime) return false
+    previousTime = time
+  }
+  return true
+}
+
 /**
  * Action atom: update only session metadata (for list display updates)
  * Doesn't affect the full session atom
@@ -364,7 +378,7 @@ export const initializeSessionsAtom = atom(
     set(sessionMetaMapAtom, metaMap)
 
     // Set ordered IDs (sorted by lastMessageAt desc)
-    const ids = sessions
+    const ids = [...sessions]
       .sort((a, b) => (b.lastMessageAt || 0) - (a.lastMessageAt || 0))
       .map(s => s.id)
     set(sessionIdsAtom, ids)
@@ -461,6 +475,10 @@ export const refreshSessionsMetadataAtom = atom(
     }
     if (metadataChanged) {
       set(sessionMetaMapAtom, nextMetaMap)
+    }
+
+    if (!metadataChanged && areSessionIdsSortedByMetaTime(currentIds, nextMetaMap)) {
+      return currentMetaMap
     }
 
     // Set ordered IDs from the metadata map we actually exposed to the UI.
