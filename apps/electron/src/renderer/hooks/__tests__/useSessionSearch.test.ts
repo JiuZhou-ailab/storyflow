@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'bun:test'
-import { computeCollapsedPagination, getSessionDateGroupKey, reuseContentSearchResultsIfEqual } from '../useSessionSearch'
+import {
+  computeCollapsedPagination,
+  getSessionDateGroupKey,
+  reuseContentSearchResultsIfEqual,
+  sessionMatchesCurrentFilter,
+} from '../useSessionSearch'
 import type { SessionMeta } from '@/atoms/sessions'
 
 const useSessionSearchSource = readFileSync(
@@ -129,10 +134,40 @@ describe('computeCollapsedPagination', () => {
 
   it('parses session label ids once when matching label filters', () => {
     expect(useSessionSearchSource).toContain('const getSessionLabelIds = (): Set<string>')
+    expect(useSessionSearchSource).toContain('const sessionHasLabel = (labelId: string): boolean')
     expect(useSessionSearchSource).toContain('const labelIds = getSessionLabelIds()')
     expect(useSessionSearchSource).toContain('labelIds.has(labelId)')
-    expect(useSessionSearchSource).toContain('return getSessionLabelIds().has(currentFilter.labelId)')
+    expect(useSessionSearchSource).toContain('return sessionHasLabel(currentFilter.labelId)')
     expect(useSessionSearchSource).not.toContain('session.labels?.map(l => parseLabelEntry(l).id)')
     expect(useSessionSearchSource).not.toContain('const labelIds = session.labels.map(l => parseLabelEntry(l).id)')
+  })
+
+  it('matches hierarchical label filters through descendant labels', () => {
+    const session = makeSession('child-session', { labels: ['child'] })
+    const getDescendantLabelIds = (labelId: string) => labelId === 'parent' ? ['child'] : []
+
+    expect(sessionMatchesCurrentFilter(
+      session,
+      { kind: 'label', labelId: 'parent' },
+      { getDescendantLabelIds }
+    )).toBe(true)
+
+    expect(sessionMatchesCurrentFilter(
+      session,
+      { kind: 'allSessions' },
+      {
+        labelFilterMap: new Map([['parent', 'include']]),
+        getDescendantLabelIds,
+      }
+    )).toBe(true)
+
+    expect(sessionMatchesCurrentFilter(
+      session,
+      { kind: 'allSessions' },
+      {
+        labelFilterMap: new Map([['parent', 'exclude']]),
+        getDescendantLabelIds,
+      }
+    )).toBe(false)
   })
 })

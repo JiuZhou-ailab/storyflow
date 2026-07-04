@@ -44,6 +44,7 @@ export interface UseSessionSearchOptions {
   evaluateViews?: (meta: SessionMeta) => ViewConfig[]
   statusFilter?: Map<string, FilterMode>
   labelFilterMap?: Map<string, FilterMode>
+  getDescendantLabelIds?: (labelId: string) => readonly string[]
   /** Collapsed group keys — collapsed items are excluded from pagination and flatItems */
   collapsedGroups?: Set<string>
   /** Grouping mode — needed to compute group keys for collapse-aware pagination */
@@ -190,6 +191,7 @@ interface FilterMatchOptions {
   evaluateViews?: (meta: SessionMeta) => ViewConfig[]
   statusFilter?: Map<string, 'include' | 'exclude'>
   labelFilterMap?: Map<string, 'include' | 'exclude'>
+  getDescendantLabelIds?: (labelId: string) => readonly string[]
 }
 
 export function sessionMatchesCurrentFilter(
@@ -197,7 +199,7 @@ export function sessionMatchesCurrentFilter(
   currentFilter: SessionFilter | undefined,
   options: FilterMatchOptions = {}
 ): boolean {
-  const { evaluateViews, statusFilter, labelFilterMap } = options
+  const { evaluateViews, statusFilter, labelFilterMap, getDescendantLabelIds } = options
   let sessionLabelIds: Set<string> | undefined
 
   const getSessionLabelIds = (): Set<string> => {
@@ -205,6 +207,12 @@ export function sessionMatchesCurrentFilter(
       sessionLabelIds = new Set((session.labels ?? []).map(label => parseLabelEntry(label).id))
     }
     return sessionLabelIds
+  }
+
+  const sessionHasLabel = (labelId: string): boolean => {
+    const labelIds = getSessionLabelIds()
+    if (labelIds.has(labelId)) return true
+    return getDescendantLabelIds?.(labelId).some(descendantId => labelIds.has(descendantId)) ?? false
   }
 
   const passesStatusFilter = (): boolean => {
@@ -225,15 +233,14 @@ export function sessionMatchesCurrentFilter(
 
   const passesLabelFilter = (): boolean => {
     if (!labelFilterMap || labelFilterMap.size === 0) return true
-    const labelIds = getSessionLabelIds()
 
     let hasIncludes = false
     let matchesInclude = false
     for (const [labelId, mode] of labelFilterMap) {
-      if (mode === 'exclude' && labelIds.has(labelId)) return false
+      if (mode === 'exclude' && sessionHasLabel(labelId)) return false
       if (mode === 'include') {
         hasIncludes = true
-        if (labelIds.has(labelId)) matchesInclude = true
+        if (sessionHasLabel(labelId)) matchesInclude = true
       }
     }
     return !hasIncludes || matchesInclude
@@ -260,7 +267,7 @@ export function sessionMatchesCurrentFilter(
       if (!session.labels?.length) return false
       if (session.isArchived === true) return false
       if (currentFilter.labelId === '__all__') return true
-      return getSessionLabelIds().has(currentFilter.labelId)
+      return sessionHasLabel(currentFilter.labelId)
     }
 
     case 'view':
@@ -289,6 +296,7 @@ export function useSessionSearch({
   evaluateViews,
   statusFilter,
   labelFilterMap,
+  getDescendantLabelIds,
   collapsedGroups,
   groupingMode,
   scrollViewportRef,
@@ -397,7 +405,12 @@ export function useSessionSearch({
   const searchFilteredItems = useMemo(() => {
     if (!isSearchMode) {
       return sortedItems.filter(item =>
-        sessionMatchesCurrentFilter(item, currentFilter, { evaluateViews, statusFilter, labelFilterMap })
+        sessionMatchesCurrentFilter(item, currentFilter, {
+          evaluateViews,
+          statusFilter,
+          labelFilterMap,
+          getDescendantLabelIds,
+        })
       )
     }
 
@@ -420,7 +433,7 @@ export function useSessionSearch({
     })
 
     return rankedSearchItems.map(({ item }) => item)
-  }, [sortedItems, isSearchMode, searchQuery, contentSearchResults, currentFilter, evaluateViews, statusFilter, labelFilterMap])
+  }, [sortedItems, isSearchMode, searchQuery, contentSearchResults, currentFilter, evaluateViews, statusFilter, labelFilterMap, getDescendantLabelIds])
 
   // Split search results: matching current filter vs others
   const { matchingFilterItems, otherResultItems, exceededSearchLimit } = useMemo(() => {
@@ -455,7 +468,12 @@ export function useSessionSearch({
     for (const item of searchFilteredItems) {
       if (matching.length + others.length >= MAX_SEARCH_RESULTS) break
 
-      const matches = sessionMatchesCurrentFilter(item, currentFilter, { evaluateViews, statusFilter, labelFilterMap })
+      const matches = sessionMatchesCurrentFilter(item, currentFilter, {
+        evaluateViews,
+        statusFilter,
+        labelFilterMap,
+        getDescendantLabelIds,
+      })
       if (matches) {
         matching.push(item)
       } else {
@@ -472,7 +490,7 @@ export function useSessionSearch({
     }
 
     return { matchingFilterItems: matching, otherResultItems: others, exceededSearchLimit: exceeded }
-  }, [searchFilteredItems, currentFilter, evaluateViews, isSearchMode, statusFilter, labelFilterMap, searchQuery])
+  }, [searchFilteredItems, currentFilter, evaluateViews, isSearchMode, statusFilter, labelFilterMap, searchQuery, getDescendantLabelIds])
 
   // --- Pagination ---
 

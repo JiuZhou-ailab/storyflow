@@ -10,7 +10,7 @@ import { getSessionStatus } from "@/utils/session"
 import * as storage from "@/lib/local-storage"
 import { KEYS } from "@/lib/local-storage"
 import type { LabelConfig } from "@craft-agent/shared/labels"
-import { flattenLabels } from "@craft-agent/shared/labels"
+import { flattenLabels, getDescendantIds } from "@craft-agent/shared/labels"
 import * as MultiSelect from "@/hooks/useMultiSelect"
 import { Spinner } from "@craft-agent/ui"
 import { EntityListEmptyScreen } from "@/components/ui/entity-list-empty"
@@ -170,6 +170,14 @@ export function SessionList({
   // Pre-flatten label tree once for efficient ID lookups in each SessionItem
   const flatLabels = useMemo(() => flattenLabels(labels), [labels])
   const labelById = useMemo(() => new Map(flatLabels.map(label => [label.id, label])), [flatLabels])
+  const descendantLabelIdsById = useMemo(
+    () => new Map(flatLabels.map(label => [label.id, getDescendantIds(labels, label.id)])),
+    [flatLabels, labels]
+  )
+  const getDescendantLabelIds = useCallback(
+    (labelId: string) => descendantLabelIdsById.get(labelId) ?? [],
+    [descendantLabelIdsById]
+  )
 
   // Get current filter from navigation state (for preserving context in tab routes)
   const currentFilter = isSessionsNavigation(navState) ? navState.filter : undefined
@@ -262,6 +270,7 @@ export function SessionList({
     evaluateViews,
     statusFilter,
     labelFilterMap,
+    getDescendantLabelIds,
     collapsedGroups,
     groupingMode,
     scrollViewportRef,
