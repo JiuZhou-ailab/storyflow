@@ -60,4 +60,19 @@ describe('RichTextInput mention hot paths', () => {
     expect(hasMentionsSource).toContain("if (!safeValue.includes('[')) return false")
     expect(hasMentionsSource).toContain('const mentions = parseMentions(safeValue, skillSlugs, sourceSlugs)')
   })
+
+  it('reuses mention lookup data while converting text to html', () => {
+    const source = readFileSync(new URL('../rich-text-input.tsx', import.meta.url), 'utf-8')
+    const textToHTMLStart = source.indexOf('function textToHTML')
+    const textToHTMLEnd = source.indexOf('function getMentionSignature', textToHTMLStart)
+    const textToHTMLSource = source.slice(textToHTMLStart, textToHTMLEnd)
+
+    expect(source).toContain('const skillBySlug = React.useMemo')
+    expect(source).toContain('const sourceBySlug = React.useMemo')
+    expect(source).toContain('textToHTML(newText, skillSlugs, sourceSlugs, skillBySlug, sourceBySlug')
+    expect(textToHTMLSource).not.toContain('skills.map(s => s.slug)')
+    expect(textToHTMLSource).not.toContain('sources.map(s => s.config.slug)')
+    expect(textToHTMLSource).not.toContain('skills.find(s => s.slug === match.id)')
+    expect(textToHTMLSource).not.toContain('sources.find(s => s.config.slug === match.id)')
+  })
 })

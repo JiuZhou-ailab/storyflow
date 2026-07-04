@@ -379,15 +379,15 @@ function setCursorPosition(element: HTMLElement, targetPosition: number): void {
 
 function textToHTML(
   text: string,
-  skills: LoadedSkill[],
-  sources: LoadedSource[],
+  skillSlugs: string[],
+  sourceSlugs: string[],
+  skillBySlug: Map<string, LoadedSkill>,
+  sourceBySlug: Map<string, LoadedSource>,
   workspaceId?: string,
   fileLabelByRelativePath: Map<string, string> = new Map()
 ): string {
   if (!text) return ''
 
-  const skillSlugs = skills.map(s => s.slug)
-  const sourceSlugs = sources.map(s => s.config.slug)
   const matches = findMentionMatches(text, skillSlugs, sourceSlugs)
 
   // Escape HTML in text
@@ -422,10 +422,10 @@ function textToHTML(
     let tooltip: string | undefined
 
     if (match.type === 'skill') {
-      skill = skills.find(s => s.slug === match.id)
+      skill = skillBySlug.get(match.id)
       label = skill?.metadata.name || match.id
     } else if (match.type === 'source') {
-      source = sources.find(s => s.config.slug === match.id)
+      source = sourceBySlug.get(match.id)
       label = source?.config.name || match.id
     } else if (match.type === 'file') {
       // Show filename as badge label, full path as tooltip
@@ -559,6 +559,8 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
 
     const skillSlugs = React.useMemo(() => skills.map(s => s.slug), [skills])
     const sourceSlugs = React.useMemo(() => sources.map(s => s.config.slug), [sources])
+    const skillBySlug = React.useMemo(() => new Map(skills.map(skill => [skill.slug, skill])), [skills])
+    const sourceBySlug = React.useMemo(() => new Map(sources.map(source => [source.config.slug, source])), [sources])
     const fileLabelByRelativePath = React.useMemo(
       () => new Map(mentionFiles.map(file => [file.relativePath, file.label])),
       [mentionFiles]
@@ -645,7 +647,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
           lastMentionSignatureRef.current = newSignature
           // Re-render with badges
           isInternalUpdate.current = true
-          const html = textToHTML(newText, skills, sources, workspaceId, fileLabelByRelativePath)
+          const html = textToHTML(newText, skillSlugs, sourceSlugs, skillBySlug, sourceBySlug, workspaceId, fileLabelByRelativePath)
           divRef.current.innerHTML = html || '<br>' // Empty contenteditable needs a BR
           // Restore cursor
           setCursorPosition(divRef.current, cursorPos)
@@ -659,7 +661,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
         nativeIsComposing,
         inputType: overrideMeta?.inputType ?? nativeEvent?.inputType,
       })
-    }, [onChange, onInput, skills, sources, skillSlugs, sourceSlugs, workspaceId, fileLabelByRelativePath])
+    }, [onChange, onInput, skillSlugs, sourceSlugs, skillBySlug, sourceBySlug, workspaceId, fileLabelByRelativePath])
 
     // Handle composition (IME)
     const handleCompositionStart = React.useCallback(() => {
@@ -733,7 +735,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       lastValueRef.current = safeValue
       lastMentionSignatureRef.current = getMentionSignature(safeValue, skillSlugs, sourceSlugs)
 
-      const html = textToHTML(safeValue, skills, sources, workspaceId, fileLabelByRelativePath)
+      const html = textToHTML(safeValue, skillSlugs, sourceSlugs, skillBySlug, sourceBySlug, workspaceId, fileLabelByRelativePath)
       divRef.current.innerHTML = html || '<br>'
 
       // Restore cursor position after innerHTML update.
@@ -746,13 +748,13 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
         setCursorPosition(divRef.current, cursorPos)
         pendingCursorRef.current = null // Clear after use
       }
-    }, [safeValue, skills, sources, skillSlugs, sourceSlugs, workspaceId, fileLabelByRelativePath])
+    }, [safeValue, skillSlugs, sourceSlugs, skillBySlug, sourceBySlug, workspaceId, fileLabelByRelativePath])
 
     // Initialize content on mount
     React.useEffect(() => {
       if (!divRef.current) return
       lastMentionSignatureRef.current = getMentionSignature(safeValue, skillSlugs, sourceSlugs)
-      const html = textToHTML(safeValue, skills, sources, workspaceId, fileLabelByRelativePath)
+      const html = textToHTML(safeValue, skillSlugs, sourceSlugs, skillBySlug, sourceBySlug, workspaceId, fileLabelByRelativePath)
       divRef.current.innerHTML = html || '<br>'
       lastValueRef.current = safeValue
     }, []) // eslint-disable-line react-hooks/exhaustive-deps
