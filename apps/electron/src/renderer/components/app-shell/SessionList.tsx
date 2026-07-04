@@ -54,8 +54,6 @@ interface SessionListProps {
   onOpenInNewWindow?: (session: SessionMeta) => void
   /** Called to navigate to a specific view (e.g., 'allSessions', 'flagged') */
   onNavigateToView?: (view: 'allSessions' | 'flagged') => void
-  /** Unified session options per session (real-time state) */
-  sessionOptions?: Map<string, import('../../hooks/useSessionOptions').SessionOptions>
   /** Whether search mode is active */
   searchActive?: boolean
   /** Current search query */
@@ -126,7 +124,6 @@ export function SessionList({
   onRename,
   onFocusChatInput,
   onOpenInNewWindow,
-  sessionOptions,
   searchActive,
   searchQuery = '',
   onSearchChange,
@@ -757,7 +754,6 @@ export function SessionList({
     hasRemoteWorkspaces,
     nextSearchMatchHotkey,
     prevSearchMatchHotkey,
-    sessionOptions,
     contentSearchResults,
     activeChatMatchInfo,
     hasPendingPrompt,
@@ -770,7 +766,7 @@ export function SessionList({
     sessionStatuses, flatLabels, labelById, labels, resolvedSearchQuery,
     isMultiSelectActive,
     isCompactMode, hasRemoteWorkspaces, nextSearchMatchHotkey, prevSearchMatchHotkey,
-    sessionOptions, contentSearchResults, activeChatMatchInfo, hasPendingPrompt,
+    contentSearchResults, activeChatMatchInfo, hasPendingPrompt,
   ])
 
   // --- Empty state (non-search) — render before EntityList ---

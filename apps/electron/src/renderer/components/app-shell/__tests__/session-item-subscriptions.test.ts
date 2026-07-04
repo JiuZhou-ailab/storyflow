@@ -11,6 +11,7 @@ const sessionListSource = readFileSync(new URL('../SessionList.tsx', import.meta
 const sessionInfoPopoverSource = readFileSync(new URL('../SessionInfoPopover.tsx', import.meta.url), 'utf-8')
 const globalSearchDialogSource = readFileSync(new URL('../GlobalSearchDialog.tsx', import.meta.url), 'utf-8')
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf-8')
+const sessionListContextSource = readFileSync(new URL('../../../context/SessionListContext.tsx', import.meta.url), 'utf-8')
 
 describe('session item subscriptions', () => {
   it('reads messaging bindings through a per-session atom', () => {
@@ -40,6 +41,17 @@ describe('session item subscriptions', () => {
 
     expect(sessionListCall).not.toContain('onSessionSelect=')
     expect(sessionListSource).not.toContain('onSessionSelect?:')
+  })
+
+  it('does not rebroadcast unused session options through the session list context', () => {
+    const sessionListCall = appShellSource.slice(
+      appShellSource.indexOf('<SessionList'),
+      appShellSource.indexOf('/>', appShellSource.indexOf('<SessionList'))
+    )
+
+    expect(sessionListCall).not.toContain('sessionOptions=')
+    expect(sessionListSource).not.toContain('sessionOptions?:')
+    expect(sessionListContextSource).not.toContain('sessionOptions')
   })
 
   it('reuses a label lookup map instead of scanning labels per row badge', () => {

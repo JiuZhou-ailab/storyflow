@@ -2,7 +2,6 @@ import { createContext, useContext } from "react"
 import type { LabelConfig } from "@craft-agent/shared/labels"
 import type { SessionStatusId, SessionStatus } from "@/config/session-status-config"
 import type { SessionMeta } from "@/atoms/sessions"
-import type { SessionOptions } from "@/hooks/useSessionOptions"
 import type { ContentSearchResult } from "@/hooks/useSessionSearch"
 
 export interface SessionListContextValue {
@@ -35,7 +34,6 @@ export interface SessionListContextValue {
   prevSearchMatchHotkey?: string | null
 
   // Per-session lookup maps
-  sessionOptions?: Map<string, SessionOptions>
   contentSearchResults: Map<string, ContentSearchResult>
   /** DOM-verified match info for the active session (count, highlighting state) */
   activeChatMatchInfo?: { sessionId: string | null; count: number; isHighlighting?: boolean }

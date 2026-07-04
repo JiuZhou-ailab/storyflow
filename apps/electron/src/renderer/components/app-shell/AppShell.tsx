@@ -5082,7 +5082,6 @@ function AppShellContent({
                       navigate(routes.view.flagged())
                     }
                   }}
-                  sessionOptions={sessionOptions}
                   searchActive={searchActive}
                   searchQuery={searchQuery}
                   onSearchChange={setSearchQuery}
