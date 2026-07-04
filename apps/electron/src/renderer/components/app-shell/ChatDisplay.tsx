@@ -1572,6 +1572,38 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     }
     return result
   }, [turns])
+  const visibleTurnRenderMeta = React.useMemo(() => {
+    const result = new Map<string, {
+      hasPlanFollowUpAnnotations: boolean
+      turnOpenAnnotationRequest: typeof openAnnotationRequest | null
+    }>()
+
+    for (const turn of turns) {
+      if (turn.type !== 'assistant') continue
+
+      let hasPlanActivity = false
+      let matchesOpenPlanActivity = false
+      for (const activity of turn.activities) {
+        if (activity.type !== 'plan') continue
+        hasPlanActivity = true
+        if (!openAnnotationRequest) break
+        if (openAnnotationRequest && (activity.messageId ?? activity.id) === openAnnotationRequest.messageId) {
+          matchesOpenPlanActivity = true
+          break
+        }
+      }
+
+      result.set(getTurnKey(turn), {
+        hasPlanFollowUpAnnotations: pendingFollowUpAnnotations.length > 0 && (turn.response?.isPlan === true || hasPlanActivity),
+        turnOpenAnnotationRequest: openAnnotationRequest
+          && (turn.response?.messageId === openAnnotationRequest.messageId || matchesOpenPlanActivity)
+          ? openAnnotationRequest
+          : null,
+      })
+    }
+
+    return result
+  }, [turns, pendingFollowUpAnnotations.length, openAnnotationRequest])
   const assistantTurnIndexByMessageId = useMemo(() => {
     if (pendingFollowUpAnnotations.length === 0) return new Map<string, number>()
     const map = new Map<string, number>()
@@ -1883,18 +1915,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
                     // Check if this is the last response (for Accept Plan button visibility)
                     const isLastResponse = index === turns.length - 1 || !hasUserTurnAfterIndex[index]
-                    const hasPlanFollowUpAnnotations = pendingFollowUpAnnotations.length > 0
-                      && (turn.response?.isPlan === true || turn.activities.some(activity => activity.type === 'plan'))
-                    const turnOpenAnnotationRequest = openAnnotationRequest
-                      && (
-                        turn.response?.messageId === openAnnotationRequest.messageId
-                        || turn.activities.some(activity =>
-                          activity.type === 'plan'
-                          && (activity.messageId ?? activity.id) === openAnnotationRequest.messageId
-                        )
-                      )
-                        ? openAnnotationRequest
-                        : null
+                    const turnRenderMeta = visibleTurnRenderMeta.get(turnKey)
+                    const hasPlanFollowUpAnnotations = turnRenderMeta?.hasPlanFollowUpAnnotations ?? false
+                    const turnOpenAnnotationRequest = turnRenderMeta?.turnOpenAnnotationRequest ?? null
 
                     // Assistant turns - render with TurnCard (buffered streaming)
                     const assistantUiKey = getAssistantTurnUiKey(turn, index)

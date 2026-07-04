@@ -23,6 +23,16 @@ describe('TurnCard performance contracts', () => {
     expect(sessionViewerSource).not.toContain('hasEditOrWriteActivities={turn.activities.some')
   })
 
+  it('precomputes assistant turn plan metadata outside the render map', () => {
+    const mapStart = chatDisplaySource.indexOf('{turns.map((turn, index) => {')
+    const mapEnd = chatDisplaySource.indexOf('const assistantUiKey = getAssistantTurnUiKey(turn, index)', mapStart)
+    const mapSource = chatDisplaySource.slice(mapStart, mapEnd)
+
+    expect(chatDisplaySource).toContain('const visibleTurnRenderMeta = React.useMemo')
+    expect(chatDisplaySource).toContain('visibleTurnRenderMeta.get(turnKey)')
+    expect(mapSource).not.toContain('turn.activities.some')
+  })
+
   it('computes collapsed preview metadata without repeated activity scans', () => {
     const functionStart = turnCardSource.indexOf('function getPreviewText(')
     const functionEnd = turnCardSource.indexOf('// ============================================================================\n// Sub-Components', functionStart)
