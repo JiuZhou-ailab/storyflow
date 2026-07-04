@@ -1084,7 +1084,8 @@ describe('novel writing workspace layout', () => {
     )
 
     expect(selectionSource).toContain('if (!selectedNovelFilePath) return defaultNovelFile')
-    expect(selectionSource).toContain('const listedFile = novelWorkspaceFiles.find(file => file.path === selectedNovelFilePath)')
+    expect(selectionSource).toContain('const listedFile = novelWorkspaceFileByPath.get(selectedNovelFilePath)')
+    expect(selectionSource).not.toContain('novelWorkspaceFiles.find(file => file.path === selectedNovelFilePath)')
     expect(selectionSource).toContain('isNovelWorkspaceFilePathInRoot(selectedNovelFilePath, novelWorkspaceRoot)')
     expect(selectionSource).toContain('relativePath: getNovelWorkspaceRelativePath(selectedNovelFilePath, novelWorkspaceRoot)')
     expect(selectionSource).not.toContain('?? defaultNovelFile')
@@ -1120,6 +1121,18 @@ describe('novel writing workspace layout', () => {
     expect(selectHandlerSource).toContain("phase: 'saveBeforeSwitch'")
     expect(selectHandlerSource).toContain('novelDocumentSwitchStartRef.current =')
     expect(selectHandlerSource).not.toContain('file.path !== selectedNovelFile?.path')
+  })
+
+  it('reuses writing file path lookup when selecting files by path', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const selectByPathSource = appShellSource.slice(
+      appShellSource.indexOf('const handleSelectNovelFileByPath = React.useCallback'),
+      appShellSource.indexOf('const prepareNovelWorkspaceBriefForSend')
+    )
+
+    expect(appShellSource).toContain('const novelWorkspaceFileByPath = React.useMemo(')
+    expect(selectByPathSource).toContain('const file = novelWorkspaceFileByPath.get(filePath)')
+    expect(selectByPathSource).not.toContain('novelWorkspaceFiles.find(item => item.path === filePath)')
   })
 
   it('falls back to single search calls when batch file search is unavailable or fails', () => {

@@ -2290,13 +2290,17 @@ function AppShellContent({
     () => selectDefaultNovelFile(novelWorkspaceFiles, activeWorkspaceMethodPackId),
     [activeWorkspaceMethodPackId, novelWorkspaceFiles]
   )
+  const novelWorkspaceFileByPath = React.useMemo(
+    () => new Map(novelWorkspaceFiles.map(file => [file.path, file])),
+    [novelWorkspaceFiles]
+  )
   const [selectedNovelFilePath, setSelectedNovelFilePath] = React.useState<string | null>(null)
   const selectedNovelFile = React.useMemo(() => {
     const canResolveSelectedNovelFile = showNovelWorkspaceSidebar || showNovelWorkspacePending
     if (!canResolveSelectedNovelFile) return undefined
     if (!selectedNovelFilePath) return defaultNovelFile
 
-    const listedFile = novelWorkspaceFiles.find(file => file.path === selectedNovelFilePath)
+    const listedFile = novelWorkspaceFileByPath.get(selectedNovelFilePath)
     if (listedFile) return listedFile
 
     if (novelWorkspaceRoot && isNovelWorkspaceFilePathInRoot(selectedNovelFilePath, novelWorkspaceRoot)) {
@@ -2307,7 +2311,7 @@ function AppShellContent({
     }
 
     return undefined
-  }, [defaultNovelFile, novelWorkspaceFiles, novelWorkspaceRoot, selectedNovelFilePath, showNovelWorkspacePending, showNovelWorkspaceSidebar])
+  }, [defaultNovelFile, novelWorkspaceFileByPath, novelWorkspaceRoot, selectedNovelFilePath, showNovelWorkspacePending, showNovelWorkspaceSidebar])
 
   React.useEffect(() => {
     if (!showNovelWorkspaceSidebar) {
@@ -2705,13 +2709,13 @@ function AppShellContent({
 
   const handleSelectNovelFileByPath = React.useCallback(async (filePath: string | null) => {
     if (!filePath) return
-    const file = novelWorkspaceFiles.find(item => item.path === filePath)
+    const file = novelWorkspaceFileByPath.get(filePath)
     if (!file) {
       onOpenFile(filePath)
       return
     }
     await handleSelectNovelFile(file)
-  }, [handleSelectNovelFile, novelWorkspaceFiles, onOpenFile])
+  }, [handleSelectNovelFile, novelWorkspaceFileByPath, onOpenFile])
 
   const prepareNovelWorkspaceBriefForSend = React.useCallback(async (sessionId: string): Promise<NovelWorkspaceBriefPreparation> => {
     if (!novelWorkspaceRoot) return { shouldSend: true }
