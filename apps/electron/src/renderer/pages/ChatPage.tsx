@@ -15,6 +15,7 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import { formatDistanceToNowStrict } from 'date-fns'
 import { AlertCircle, Check, Clock3, Globe, Copy, History, RefreshCw, Link2Off, Info, MessageSquareText } from 'lucide-react'
 import { getDateLocale } from '@craft-agent/shared/i18n'
+import { usePlatform } from '@craft-agent/ui'
 import { ChatDisplay, type ChatDisplayHandle } from '@/components/app-shell/ChatDisplay'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { SessionMenu } from '@/components/app-shell/SessionMenu'
@@ -42,6 +43,9 @@ import { resolveChatOpeningPrompt } from '@/components/app-shell/chat-opening'
 export interface ChatPageProps {
   sessionId: string
 }
+
+const noopOpenFile = (_path: string) => {}
+const noopOpenUrl = (_url: string) => {}
 
 function ConversationHistoryMenu({
   activeSessionId,
@@ -168,8 +172,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   }, [sessionId])
 
   const {
-    onOpenFile,
-    onOpenUrl,
     onMarkSessionRead,
     onMarkSessionUnread,
     onSetActiveViewingSession,
@@ -195,6 +197,10 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onChatMatchInfoChange,
     isFocusedPanel,
   } = useAppShellContext()
+  const {
+    onOpenFile = noopOpenFile,
+    onOpenUrl = noopOpenUrl,
+  } = usePlatform()
   const {
     onCreateSession,
     onSendMessage,

@@ -106,4 +106,13 @@ describe('chat page header actions', () => {
     expect(appShellDestructure).not.toContain('workspaceDefaultLlmConnection')
     expect(appShellDestructure).not.toContain('refreshLlmConnections')
   })
+
+  it('uses platform actions instead of app shell file and URL handlers', () => {
+    const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
+    const appShellDestructure = appShellDestructureFrom(chatPageSource)
+
+    expect(chatPageSource).toContain('usePlatform')
+    expect(appShellDestructure).not.toContain('onOpenFile')
+    expect(appShellDestructure).not.toContain('onOpenUrl')
+  })
 })
