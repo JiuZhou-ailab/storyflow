@@ -23,6 +23,8 @@ export function SourceSelectorPopover({
   selectedSlugs,
   onToggleSlug,
 }: SourceSelectorPopoverProps) {
+  const selectedSlugSet = React.useMemo(() => new Set(selectedSlugs), [selectedSlugs])
+
   return (
     <FilterableSelectPopover
       open={open}
@@ -31,7 +33,7 @@ export function SourceSelectorPopover({
       items={sources}
       getKey={(source) => source.config.slug}
       getLabel={(source) => source.config.name}
-      isSelected={(source) => selectedSlugs.includes(source.config.slug)}
+      isSelected={(source) => selectedSlugSet.has(source.config.slug)}
       onToggle={(source) => onToggleSlug(source.config.slug)}
       filterPlaceholder="Search sources..."
       emptyState={(
