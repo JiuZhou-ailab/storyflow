@@ -184,6 +184,16 @@ interface SessionInteractionActionsContextType {
 
 const SessionInteractionActionsContext = createContext<SessionInteractionActionsContextType | null>(null)
 
+interface SessionBatchActionsContextType {
+  onSessionStatusChange: AppShellContextType['onSessionStatusChange']
+  onArchiveSession: AppShellContextType['onArchiveSession']
+  onSessionLabelsChange?: AppShellContextType['onSessionLabelsChange']
+  sessionStatuses?: AppShellContextType['sessionStatuses']
+  labels?: AppShellContextType['labels']
+}
+
+const SessionBatchActionsContext = createContext<SessionBatchActionsContextType | null>(null)
+
 export function AppShellProvider({
   children,
   value,
@@ -203,10 +213,26 @@ export function AppShellProvider({
     value.onRespondToCredential,
   ])
 
+  const sessionBatchActions = React.useMemo<SessionBatchActionsContextType>(() => ({
+    onSessionStatusChange: value.onSessionStatusChange,
+    onArchiveSession: value.onArchiveSession,
+    onSessionLabelsChange: value.onSessionLabelsChange,
+    sessionStatuses: value.sessionStatuses,
+    labels: value.labels,
+  }), [
+    value.onSessionStatusChange,
+    value.onArchiveSession,
+    value.onSessionLabelsChange,
+    value.sessionStatuses,
+    value.labels,
+  ])
+
   return (
     <AppShellContext.Provider value={value}>
       <SessionInteractionActionsContext.Provider value={sessionInteractionActions}>
-        {children}
+        <SessionBatchActionsContext.Provider value={sessionBatchActions}>
+          {children}
+        </SessionBatchActionsContext.Provider>
       </SessionInteractionActionsContext.Provider>
     </AppShellContext.Provider>
   )
@@ -229,6 +255,14 @@ export function useSessionInteractionActions(): SessionInteractionActionsContext
   const context = useContext(SessionInteractionActionsContext)
   if (!context) {
     throw new Error('useSessionInteractionActions must be used within an AppShellProvider')
+  }
+  return context
+}
+
+export function useSessionBatchActions(): SessionBatchActionsContextType {
+  const context = useContext(SessionBatchActionsContext)
+  if (!context) {
+    throw new Error('useSessionBatchActions must be used within an AppShellProvider')
   }
   return context
 }

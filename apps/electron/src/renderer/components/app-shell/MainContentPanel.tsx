@@ -1,7 +1,7 @@
 /**
  * MainContentPanel - Right panel component for displaying content
  *
- * input: Navigation state, AppShell context, and entity selection atoms
+ * input: Navigation state, narrow action contexts, and entity selection atoms
  * output: Active content panel for chats, sources, skills, settings, and automations
  * pos: Renderer content router inside the app-shell panel stack
  *
@@ -25,7 +25,7 @@ import { useAtomValue } from 'jotai'
 import { useTranslation, Trans } from 'react-i18next'
 import { Panel } from './Panel'
 import { MultiSelectPanel } from './MultiSelectPanel'
-import { useAppShellContext } from '@/context/AppShellContext'
+import { useSessionBatchActions } from '@/context/AppShellContext'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { sessionMetaAtomFamily, sessionMetaMapAtom, windowWorkspaceIdAtom, windowWorkspacesAtom, type SessionMeta } from '@/atoms/sessions'
@@ -358,7 +358,7 @@ function SessionBatchActionsPanel() {
     onSessionLabelsChange,
     sessionStatuses,
     labels,
-  } = useAppShellContext()
+  } = useSessionBatchActions()
   const selectedIds = useSelectedIds()
   const selectionCount = useSelectionCount()
   const { clearMultiSelect } = useSessionSelection()
