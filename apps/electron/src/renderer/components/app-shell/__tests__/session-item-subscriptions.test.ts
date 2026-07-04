@@ -31,6 +31,16 @@ describe('session item subscriptions', () => {
     expect(sessionItemSource).not.toContain('useActionLabel')
   })
 
+  it('does not pass unused session selection callbacks into SessionList', () => {
+    const sessionListCall = appShellSource.slice(
+      appShellSource.indexOf('<SessionList'),
+      appShellSource.indexOf('/>', appShellSource.indexOf('<SessionList'))
+    )
+
+    expect(sessionListCall).not.toContain('onSessionSelect=')
+    expect(sessionListSource).not.toContain('onSessionSelect?:')
+  })
+
   it('reuses a label lookup map instead of scanning labels per row badge', () => {
     expect(sessionListSource).toContain('const labelById = useMemo')
     expect(sessionListSource).toContain('labelById,')

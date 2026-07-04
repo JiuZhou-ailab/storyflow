@@ -5135,9 +5135,6 @@ function AppShellContent({
                   onFocusChatInput={(targetSessionId) => {
                     focusChatInputForSession(targetSessionId ?? focusedSessionId ?? session.selected)
                   }}
-                  onSessionSelect={(selectedMeta) => {
-                    navigateToSession(selectedMeta.id)
-                  }}
                   onOpenInNewWindow={(selectedMeta) => {
                     if (activeWorkspaceId) {
                       window.electronAPI.openSessionInNewWindow(activeWorkspaceId, selectedMeta.id)
