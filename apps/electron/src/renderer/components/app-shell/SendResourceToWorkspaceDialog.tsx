@@ -52,7 +52,11 @@ const RESOURCE_TYPE_LABELS: Record<SendResourceType, { singular: string; plural:
   automation: { singular: 'automation', plural: 'automations' },
 }
 
-export function SendResourceToWorkspaceDialog({
+export function SendResourceToWorkspaceDialog(props: SendResourceToWorkspaceDialogProps) {
+  return props.open ? <SendResourceToWorkspaceDialogContent {...props} /> : null
+}
+
+function SendResourceToWorkspaceDialogContent({
   open,
   onOpenChange,
   resourceType,

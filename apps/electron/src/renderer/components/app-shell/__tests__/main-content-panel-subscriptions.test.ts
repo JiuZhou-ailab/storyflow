@@ -7,6 +7,7 @@ import { describe, expect, it } from 'bun:test'
 
 const mainContentPanelSource = readFileSync(new URL('../MainContentPanel.tsx', import.meta.url), 'utf-8')
 const panelSlotSource = readFileSync(new URL('../PanelSlot.tsx', import.meta.url), 'utf-8')
+const sendResourceDialogSource = readFileSync(new URL('../SendResourceToWorkspaceDialog.tsx', import.meta.url), 'utf-8')
 const appShellContextSource = readFileSync(new URL('../../../context/AppShellContext.tsx', import.meta.url), 'utf-8')
 
 describe('MainContentPanel subscriptions', () => {
@@ -41,5 +42,16 @@ describe('MainContentPanel subscriptions', () => {
 
     expect(batchPanelSource).toContain('useSelectedSessionMetas')
     expect(batchPanelSource).not.toContain('useAtomValue(sessionMetaMapAtom)')
+  })
+
+  it('keeps the send-resource dialog workspace icon work out of the closed state', () => {
+    const sendResourceDialogShellSource = sendResourceDialogSource.slice(
+      sendResourceDialogSource.indexOf('export function SendResourceToWorkspaceDialog'),
+      sendResourceDialogSource.indexOf('function SendResourceToWorkspaceDialogContent')
+    )
+
+    expect(sendResourceDialogSource).toContain('function SendResourceToWorkspaceDialogContent')
+    expect(sendResourceDialogShellSource).toContain('return props.open ? <SendResourceToWorkspaceDialogContent {...props} /> : null')
+    expect(sendResourceDialogShellSource).not.toContain('useWorkspaceIcons')
   })
 })
