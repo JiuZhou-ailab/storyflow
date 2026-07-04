@@ -556,6 +556,8 @@ describe('refreshSessionsMetadataAtom', () => {
 
     expect(refreshSource).not.toContain('for (const [id, nextMeta] of nextMetaMap)')
     expect(refreshSource).toContain('metadataChanged = true')
+    expect(refreshSource).toContain('const latestIds = new Set<string>()')
+    expect(refreshSource).not.toContain('new Set(sessions.map')
   })
 
   it('does not resort ids when refreshed metadata leaves lastMessageAt unchanged', () => {

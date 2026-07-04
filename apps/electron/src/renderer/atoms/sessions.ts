@@ -419,7 +419,8 @@ export const refreshSessionsMetadataAtom = atom(
     // and preserve missing metadata until a confirmed delete/workspace reload.
     const currentIds = get(sessionIdsAtom)
     if (removeMissing) {
-      const latestIds = new Set(sessions.map(s => s.id))
+      const latestIds = new Set<string>()
+      for (const session of sessions) latestIds.add(session.id)
       for (const staleId of currentIds) {
         if (!latestIds.has(staleId)) {
           set(removeSessionAtom, staleId)
