@@ -12,6 +12,7 @@
  */
 
 import * as React from 'react'
+import { useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -19,7 +20,8 @@ import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { EditPopover, EditButton, getEditConfig } from '@/components/ui/EditPopover'
 import { getDocUrl } from '@craft-agent/shared/docs/doc-links'
 import { Loader2 } from 'lucide-react'
-import { useAppShellContext, useActiveWorkspace } from '@/context/AppShellContext'
+import { useActiveWorkspace } from '@/context/AppShellContext'
+import { windowWorkspaceIdAtom } from '@/atoms/sessions'
 import { useLabels } from '@/hooks/useLabels'
 import {
   LabelsDataTable,
@@ -39,7 +41,7 @@ export const meta: DetailsPageMeta = {
 
 export default function LabelsSettingsPage() {
   const { t } = useTranslation()
-  const { activeWorkspaceId } = useAppShellContext()
+  const activeWorkspaceId = useAtomValue(windowWorkspaceIdAtom)
   const activeWorkspace = useActiveWorkspace()
   const { labels, isLoading } = useLabels(activeWorkspaceId)
 

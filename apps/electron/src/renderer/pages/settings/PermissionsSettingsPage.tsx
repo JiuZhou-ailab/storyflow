@@ -11,12 +11,14 @@
 
 import * as React from 'react'
 import { useState, useEffect, useMemo } from 'react'
+import { useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { Loader2 } from 'lucide-react'
-import { useAppShellContext, useActiveWorkspace } from '@/context/AppShellContext'
+import { useActiveWorkspace } from '@/context/AppShellContext'
+import { windowWorkspaceIdAtom } from '@/atoms/sessions'
 import { type PermissionsConfigFile } from '@craft-agent/shared/agent/modes'
 import {
   PermissionsDataTable,
@@ -132,7 +134,7 @@ function buildCustomPermissionsData(config: PermissionsConfigFile, fallbackLabel
 
 export default function PermissionsSettingsPage() {
   const { t } = useTranslation()
-  const { activeWorkspaceId } = useAppShellContext()
+  const activeWorkspaceId = useAtomValue(windowWorkspaceIdAtom)
   const activeWorkspace = useActiveWorkspace()
 
   // Loading and data state
