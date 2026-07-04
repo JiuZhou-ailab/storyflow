@@ -32,6 +32,7 @@ import type { SessionStatus as SessionStatusConfig } from '@/config/session-stat
 import type { SessionOptions, SessionOptionUpdates } from '../hooks/useSessionOptions'
 import { sessionOptionsAtomFamily } from '../hooks/useSessionOptions'
 import { sessionAtomFamily } from '../atoms/sessions'
+import { pendingCredentialAtomFamily, pendingPermissionAtomFamily } from '../atoms/pending-requests'
 
 export interface AppShellContextType {
   // Data
@@ -48,8 +49,6 @@ export interface AppShellContextType {
   workspaceDefaultLlmConnection?: string
   /** Refresh LLM connections from config */
   refreshLlmConnections: () => Promise<void>
-  pendingPermissions: Map<string, PermissionRequest[]>
-  pendingCredentials: Map<string, CredentialRequest[]>
   /** Get draft input text for a session - reads from ref without triggering re-renders */
   getDraft: (sessionId: string) => string
   /** Get persisted attachment refs (path + name) for a session's draft - no file IO */
@@ -222,16 +221,14 @@ export function useActiveWorkspace(): Workspace | null {
  * Get pending permission for a session (first in queue)
  */
 export function usePendingPermission(sessionId: string): PermissionRequest | undefined {
-  const { pendingPermissions } = useAppShellContext()
-  return pendingPermissions.get(sessionId)?.[0]
+  return useAtomValue(pendingPermissionAtomFamily(sessionId))
 }
 
 /**
  * Get pending credential request for a session (first in queue)
  */
 export function usePendingCredential(sessionId: string): CredentialRequest | undefined {
-  const { pendingCredentials } = useAppShellContext()
-  return pendingCredentials.get(sessionId)?.[0]
+  return useAtomValue(pendingCredentialAtomFamily(sessionId))
 }
 
 /**

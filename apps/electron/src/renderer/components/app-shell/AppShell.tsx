@@ -1009,7 +1009,6 @@ function AppShellContent({
     onInputChange,
     getDraft,
     openNewChat,
-    pendingPermissions,
   } = contextValue
 
   const { t } = useTranslation()
@@ -1902,10 +1901,6 @@ function AppShellContent({
   const effectiveSessionFolderPath = useAtomValue(effectiveSessionFolderPathAtom)
   const novelFileChangeActivityKey = useAtomValue(effectiveSessionFileChangeKeyAtom)
   const [snapshotNovelFileChanges, setSnapshotNovelFileChanges] = React.useState<FileChange[]>([])
-
-  const hasPendingPrompt = React.useCallback((sessionId: string) => {
-    return (pendingPermissions.get(sessionId)?.length ?? 0) > 0
-  }, [pendingPermissions])
 
   // Reload skills when active session's workingDirectory changes (for project-level skills)
   // Skills are loaded from: global (~/.agents/skills/), workspace, and project ({workingDirectory}/.agents/skills/)
@@ -5100,7 +5095,6 @@ function AppShellContent({
                   labelFilterMap={labelFilter}
                   focusedSessionId={panelCount === 0 ? null : panelCount > 1 ? focusedSessionId : undefined}
                   onNavigateToSession={panelCount > 1 ? navigateToSessionInPanel : undefined}
-                  hasPendingPrompt={hasPendingPrompt}
                   activeChatMatchInfo={chatMatchInfo}
                   hasRemoteWorkspaces={hasRemoteWorkspaces}
                   isCompactMode={isAutoCompact}

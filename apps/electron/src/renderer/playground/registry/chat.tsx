@@ -175,8 +175,6 @@ const playgroundAppShellContext = {
   llmConnections: [],
   workspaceDefaultLlmConnection: undefined,
   refreshLlmConnections: async () => {},
-  pendingPermissions: new Map(),
-  pendingCredentials: new Map(),
   getDraft: () => '',
   onCreateSession: async () => ({
     id: 'playground-session',

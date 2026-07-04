@@ -84,8 +84,6 @@ interface SessionListProps {
   focusedSessionId?: string | null
   /** Override navigation target (for multi-panel: focuses existing panel or navigates focused panel) */
   onNavigateToSession?: (sessionId: string) => void
-  /** Session-level pending prompt marker (permission/admin approval) */
-  hasPendingPrompt?: (sessionId: string) => boolean
   /** DOM-verified match info for the active session (from ChatDisplay) */
   activeChatMatchInfo?: { sessionId: string | null; count: number; isHighlighting?: boolean }
   /** Whether any workspace can receive a send-to-workspace action. */
@@ -139,7 +137,6 @@ export function SessionList({
   labelFilterMap,
   focusedSessionId,
   onNavigateToSession,
-  hasPendingPrompt,
   activeChatMatchInfo,
   hasRemoteWorkspaces = false,
   isCompactMode = false,
@@ -756,7 +753,6 @@ export function SessionList({
     prevSearchMatchHotkey,
     contentSearchResults,
     activeChatMatchInfo,
-    hasPendingPrompt,
   }), [
     handleRenameClick, onSessionStatusChange,
     onFlag, handleFlagWithToast, onUnflag, handleUnflagWithToast,
@@ -766,7 +762,7 @@ export function SessionList({
     sessionStatuses, flatLabels, labelById, labels, resolvedSearchQuery,
     isMultiSelectActive,
     isCompactMode, hasRemoteWorkspaces, nextSearchMatchHotkey, prevSearchMatchHotkey,
-    contentSearchResults, activeChatMatchInfo, hasPendingPrompt,
+    contentSearchResults, activeChatMatchInfo,
   ])
 
   // --- Empty state (non-search) — render before EntityList ---

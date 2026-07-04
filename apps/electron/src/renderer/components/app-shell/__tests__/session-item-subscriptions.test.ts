@@ -55,6 +55,13 @@ describe('session item subscriptions', () => {
     expect(sessionListContextSource).not.toContain('sessionOptions')
   })
 
+  it('keeps pending prompts out of the broad app shell context', () => {
+    expect(appShellSource).not.toContain('pendingPermissions,')
+    expect(sessionListSource).not.toContain('hasPendingPrompt?:')
+    expect(sessionListContextSource).not.toContain('hasPendingPrompt')
+    expect(sessionItemSource).toContain('useAtomValue(hasPendingPromptAtomFamily(item.id))')
+  })
+
   it('keeps the per-row status icon off the shared list context', () => {
     const statusIconCall = sessionItemSource.slice(
       sessionItemSource.indexOf('<SessionStatusIcon'),

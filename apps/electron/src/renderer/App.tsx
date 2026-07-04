@@ -66,6 +66,7 @@ import {
   windowWorkspaceIdAtom,
   type SessionMeta,
 } from '@/atoms/sessions'
+import { pendingCredentialsAtom, pendingPermissionsAtom } from '@/atoms/pending-requests'
 import { sourcesAtom } from '@/atoms/sources'
 import { skillsAtom } from '@/atoms/skills'
 import { extractBadges } from '@/lib/mentions'
@@ -291,6 +292,8 @@ export default function App() {
   const updateSessionDirect = useSetAtom(updateSessionAtom)
   const replaceLoadedSession = useSetAtom(replaceLoadedSessionAtom)
   const setSessionOptions = useSetAtom(sessionOptionsAtom)
+  const setPendingPermissions = useSetAtom(pendingPermissionsAtom)
+  const setPendingCredentials = useSetAtom(pendingCredentialsAtom)
   const store = useStore()
   const activeViewingSessionIdRef = useRef<string | null>(null)
   const sessionRefreshInFlightRef = useRef<Map<string, Promise<SessionRefreshResult>>>(new Map())
@@ -348,10 +351,6 @@ export default function App() {
   }, [llmConnections, defaultLlmConnectionSlug])
 
   const [menuNewChatTrigger, setMenuNewChatTrigger] = useState(0)
-  // Permission requests per session (queue to handle multiple concurrent requests)
-  const [pendingPermissions, setPendingPermissions] = useState<Map<string, PermissionRequest[]>>(new Map())
-  // Credential requests per session (queue to handle multiple concurrent requests)
-  const [pendingCredentials, setPendingCredentials] = useState<Map<string, CredentialRequest[]>>(new Map())
   // Draft composer state per session (text + attachment refs), preserved across mode
   // switches, conversation changes, and app restarts. Using a ref avoids re-renders
   // during typing; attachments are stored as lightweight refs (path + name) and
@@ -2061,8 +2060,6 @@ export default function App() {
     llmConnections,
     workspaceDefaultLlmConnection,
     refreshLlmConnections,
-    pendingPermissions,
-    pendingCredentials,
     getDraft,
     getDraftAttachmentRefs,
     hydrateDraftAttachments,
@@ -2107,8 +2104,6 @@ export default function App() {
     llmConnections,
     workspaceDefaultLlmConnection,
     refreshLlmConnections,
-    pendingPermissions,
-    pendingCredentials,
     getDraft,
     getDraftAttachmentRefs,
     hydrateDraftAttachments,

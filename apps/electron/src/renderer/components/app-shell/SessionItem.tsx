@@ -15,6 +15,7 @@ import { useSessionListContext } from "@/context/SessionListContext"
 import { navigate, routes } from "@/lib/navigate"
 import type { SessionMeta } from "@/atoms/sessions"
 import { messagingBindingsForSessionAtomFamily } from "@/atoms/messaging"
+import { hasPendingPromptAtomFamily } from "@/atoms/pending-requests"
 import { useAtomValue } from "jotai"
 
 const PLATFORM_PILL: Record<'telegram' | 'whatsapp', { label: string; colorClass: string }> = {
@@ -59,7 +60,7 @@ export function SessionItem({
   const chatMatchCount = isActiveSession ? activeMatch!.count : ripgrepMatchCount
   const hasMatch = chatMatchCount != null && chatMatchCount > 0
   const resolvedLabelBadges = resolveSessionLabelBadges(item.labels, ctx.labelById)
-  const hasPendingPrompt = ctx.hasPendingPrompt?.(item.id) ?? false
+  const hasPendingPrompt = useAtomValue(hasPendingPromptAtomFamily(item.id))
   const previewText = ctx.isCompactMode ? getSessionPreviewText(item) : null
   const sessionBindings = useAtomValue(messagingBindingsForSessionAtomFamily(item.id))
   const hasMessagingBinding = sessionBindings.length > 0

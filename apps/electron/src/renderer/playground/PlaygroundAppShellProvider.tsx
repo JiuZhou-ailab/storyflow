@@ -35,8 +35,6 @@ const playgroundValue: AppShellContextType = {
   activeWorkspaceSlug: PLAYGROUND_WORKSPACE.slug,
   llmConnections: [],
   refreshLlmConnections: async () => {},
-  pendingPermissions: new Map(),
-  pendingCredentials: new Map(),
   getDraft: () => '',
   getDraftAttachmentRefs: () => [],
   hydrateDraftAttachments: async () => [],
