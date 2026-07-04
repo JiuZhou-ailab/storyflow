@@ -229,6 +229,7 @@ export function MainContentPanel({
           <SkillInfoPage
             skillSlug={navState.details.skillSlug}
             workspaceId={activeWorkspaceId || ''}
+            canRevealLocally={!activeWorkspace?.remoteServer}
           />
         </Panel>
       )

@@ -14,4 +14,9 @@ describe('SkillInfoPage performance contract', () => {
     expect(skillInfoPageSource).not.toContain('window.electronAPI.getSkills')
     expect(skillInfoPageSource).not.toContain('onSkillsChanged')
   })
+
+  it('does not subscribe to active workspace context for local reveal state', () => {
+    expect(skillInfoPageSource).not.toContain('useActiveWorkspace')
+    expect(skillInfoPageSource).toContain('canRevealLocally')
+  })
 })

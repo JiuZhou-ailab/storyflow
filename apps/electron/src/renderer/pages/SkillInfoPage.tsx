@@ -13,7 +13,6 @@ import { toast } from 'sonner'
 import { SkillMenu } from '@/components/app-shell/SkillMenu'
 import { SkillAvatar } from '@/components/ui/skill-avatar'
 import { routes, navigate } from '@/lib/navigate'
-import { useActiveWorkspace } from '@/context/AppShellContext'
 import { skillsAtom } from '@/atoms/skills'
 import {
   Info_Page,
@@ -25,14 +24,13 @@ import {
 interface SkillInfoPageProps {
   skillSlug: string
   workspaceId: string
+  canRevealLocally?: boolean
 }
 
-export default function SkillInfoPage({ skillSlug, workspaceId }: SkillInfoPageProps) {
+export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally = true }: SkillInfoPageProps) {
   const { t } = useTranslation()
   const skills = useAtomValue(skillsAtom)
   const skill = skills.find((s) => s.slug === skillSlug) ?? null
-  const activeWorkspace = useActiveWorkspace()
-  const canRevealLocally = !activeWorkspace?.remoteServer
 
   // Handle open in finder
   const handleOpenInFinder = useCallback(async () => {
