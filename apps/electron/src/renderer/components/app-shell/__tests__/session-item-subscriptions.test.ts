@@ -13,6 +13,7 @@ const globalSearchDialogSource = readFileSync(new URL('../GlobalSearchDialog.tsx
 const sessionStatusIconSource = readFileSync(new URL('../SessionStatusIcon.tsx', import.meta.url), 'utf-8')
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf-8')
 const sessionListContextSource = readFileSync(new URL('../../../context/SessionListContext.tsx', import.meta.url), 'utf-8')
+const skillsListPanelSource = readFileSync(new URL('../SkillsListPanel.tsx', import.meta.url), 'utf-8')
 
 describe('session item subscriptions', () => {
   it('reads messaging bindings through a per-session atom', () => {
@@ -60,6 +61,18 @@ describe('session item subscriptions', () => {
     expect(sessionListSource).not.toContain('hasPendingPrompt?:')
     expect(sessionListContextSource).not.toContain('hasPendingPrompt')
     expect(sessionItemSource).toContain('useAtomValue(hasPendingPromptAtomFamily(item.id))')
+  })
+
+  it('keeps the skills list off broad app shell context subscriptions', () => {
+    const skillsListCall = appShellSource.slice(
+      appShellSource.indexOf('<SkillsListPanel'),
+      appShellSource.indexOf('/>', appShellSource.indexOf('<SkillsListPanel'))
+    )
+
+    expect(skillsListPanelSource).not.toContain('useAppShellContext')
+    expect(skillsListPanelSource).not.toContain('useActiveWorkspace')
+    expect(skillsListCall).toContain('activeWorkspace={activeWorkspace}')
+    expect(skillsListCall).toContain('workspaces={workspaces}')
   })
 
   it('keeps the per-row status icon off the shared list context', () => {

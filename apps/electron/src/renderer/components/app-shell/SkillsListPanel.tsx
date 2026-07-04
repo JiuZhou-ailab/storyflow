@@ -8,8 +8,7 @@ import { skillSelection } from '@/hooks/useEntitySelection'
 import { SkillMenu } from './SkillMenu'
 import { SendResourceToWorkspaceDialog } from './SendResourceToWorkspaceDialog'
 import { EditPopover, getEditConfig } from '@/components/ui/EditPopover'
-import { useActiveWorkspace, useAppShellContext } from '@/context/AppShellContext'
-import type { LoadedSkill } from '../../../shared/types'
+import type { LoadedSkill, Workspace } from '../../../shared/types'
 
 export interface SkillsListPanelProps {
   skills: LoadedSkill[]
@@ -18,6 +17,8 @@ export interface SkillsListPanelProps {
   selectedSkillSlug?: string | null
   workspaceId?: string
   workspaceRootPath?: string
+  activeWorkspace?: Workspace | null
+  workspaces?: Workspace[]
   className?: string
 }
 
@@ -28,12 +29,12 @@ export function SkillsListPanel({
   selectedSkillSlug,
   workspaceId,
   workspaceRootPath,
+  activeWorkspace,
+  workspaces = [],
   className,
 }: SkillsListPanelProps) {
   const { t } = useTranslation()
-  const activeWorkspace = useActiveWorkspace()
   const canRevealLocally = !activeWorkspace?.remoteServer
-  const { workspaces, activeWorkspaceId } = useAppShellContext()
   const hasOtherWorkspaces = workspaces.length > 1
 
   // Send to Workspace dialog state
@@ -116,7 +117,7 @@ export function SkillsListPanel({
         resourceIds={[sendResourceSlug]}
         resourceLabel={sendResourceLabel}
         workspaces={workspaces}
-        activeWorkspaceId={activeWorkspaceId}
+        activeWorkspaceId={workspaceId ?? null}
       />
     )}
     </>
