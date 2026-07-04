@@ -56,4 +56,18 @@ describe('chat page header actions', () => {
     expect(historySource).toContain('locale: relativeTimeLocale')
     expect(historySource).not.toContain('locale: {\n                ...getDateLocale')
   })
+
+  it('uses the narrow session interaction action context', () => {
+    const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
+    const appShellDestructure = chatPageSource.slice(
+      chatPageSource.indexOf('const {'),
+      chatPageSource.indexOf('} = useAppShellContext()')
+    )
+
+    expect(chatPageSource).toContain('useSessionInteractionActions')
+    expect(appShellDestructure).not.toContain('onCreateSession')
+    expect(appShellDestructure).not.toContain('onSendMessage')
+    expect(appShellDestructure).not.toContain('onRespondToPermission')
+    expect(appShellDestructure).not.toContain('onRespondToCredential')
+  })
 })

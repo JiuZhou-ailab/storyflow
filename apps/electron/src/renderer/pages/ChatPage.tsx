@@ -24,7 +24,7 @@ import { toast } from 'sonner'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { StyledDropdownMenuContent, StyledDropdownMenuItem, StyledDropdownMenuSeparator } from '@/components/ui/styled-dropdown'
-import { useAppShellContext, usePendingPermission, usePendingCredential, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
+import { useAppShellContext, usePendingPermission, usePendingCredential, useSessionInteractionActions, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
 import { SquarePenRounded } from '@/components/icons/SquarePenRounded'
 import { rendererPerf } from '@/lib/perf'
 import { navigate, routes } from '@/lib/navigate'
@@ -171,13 +171,9 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     llmConnections,
     workspaceDefaultLlmConnection,
     refreshLlmConnections,
-    onCreateSession,
-    onSendMessage,
     onOpenFile,
     onOpenUrl,
     workspaces,
-    onRespondToPermission,
-    onRespondToCredential,
     onMarkSessionRead,
     onMarkSessionUnread,
     onSetActiveViewingSession,
@@ -208,6 +204,12 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onChatMatchInfoChange,
     isFocusedPanel,
   } = useAppShellContext()
+  const {
+    onCreateSession,
+    onSendMessage,
+    onRespondToPermission,
+    onRespondToCredential,
+  } = useSessionInteractionActions()
 
   // Use the unified session options hook for clean access
   const {
