@@ -45,7 +45,11 @@ export interface NovelExportDialogProps {
   onExport: (options: NovelExportOptions) => void
 }
 
-export function NovelExportDialog({
+export function NovelExportDialog(props: NovelExportDialogProps) {
+  return props.open || props.exporting ? <NovelExportDialogContent {...props} /> : null
+}
+
+function NovelExportDialogContent({
   open,
   files,
   methodPackId,

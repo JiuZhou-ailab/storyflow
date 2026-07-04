@@ -583,6 +583,10 @@ describe('novel writing workspace layout', () => {
       appShellSource.indexOf('const handleExportNovelWorkspace'),
       appShellSource.indexOf('const novelReviewUndoStackRef')
     )
+    const exportDialogShellSource = exportDialogSource.slice(
+      exportDialogSource.indexOf('export function NovelExportDialog'),
+      exportDialogSource.indexOf('function NovelExportDialogContent')
+    )
 
     expect(appShellSource).toContain('NovelExportDialog')
     expect(appShellSource).toContain('NovelVersionHistoryDialog')
@@ -613,6 +617,8 @@ describe('novel writing workspace layout', () => {
     expect(topBarSource).not.toContain('titlebar-no-drag min-w-0 shrink-0')
     expect(exportDialogSource).toContain('NOVEL_EXPORT_SECTIONS')
     expect(exportDialogSource).toContain('tree[section].files.length')
+    expect(exportDialogSource).toContain('function NovelExportDialogContent')
+    expect(exportDialogShellSource).not.toContain('buildNovelWorkspaceTree')
     expect(exportDialogSource).not.toContain('summarizeNovelSection')
     expect(exportDialogSource).toContain('mergeManuscript')
     expect(exportDialogSource).toContain("'writing.export.sections.manuscript'")
