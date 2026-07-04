@@ -11,6 +11,9 @@ const appShellContextSource = readFileSync(new URL('../../../context/AppShellCon
 describe('EditPopover subscriptions', () => {
   it('uses a narrow session interaction action context', () => {
     expect(editPopoverSource).not.toContain('useAppShellContext')
+    expect(editPopoverSource).not.toContain('useActiveWorkspace')
+    expect(editPopoverSource).toContain('workspacePanelFieldsAtomFamily')
+    expect(editPopoverSource).toContain('windowWorkspaceIdAtom')
     expect(editPopoverSource).toContain('useSessionInteractionActions')
     expect(editPopoverSource).toContain('useSession(')
     expect(editPopoverSource).toContain('usePendingPermission')

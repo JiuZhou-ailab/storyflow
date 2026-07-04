@@ -14,6 +14,7 @@
 import * as React from 'react'
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useAtomValue } from 'jotai'
 import i18n from 'i18next'
 import { GripHorizontal } from 'lucide-react'
 import { motion, AnimatePresence } from 'motion/react' // motion used for backdrop only
@@ -22,9 +23,10 @@ import { Button } from './button'
 import { cn } from '@/lib/utils'
 import { usePlatform } from '@craft-agent/ui'
 import type { ContentBadge, Session, CreateSessionOptions } from '../../../shared/types'
-import { useActiveWorkspace, useSessionInteractionActions, useSession, usePendingPermission, usePendingCredential } from '@/context/AppShellContext'
+import { useSessionInteractionActions, useSession, usePendingPermission, usePendingCredential } from '@/context/AppShellContext'
 import { useEscapeInterrupt } from '@/context/EscapeInterruptContext'
 import { ChatDisplay } from '../app-shell/ChatDisplay'
+import { windowWorkspaceIdAtom, workspacePanelFieldsAtomFamily } from '@/atoms/sessions'
 
 /** Rotating placeholder keys for compact mode input - short, action-oriented */
 const COMPACT_PLACEHOLDER_KEYS = [
@@ -740,7 +742,8 @@ export function EditPopover({
 }: EditPopoverProps) {
   const { t } = useTranslation()
   const { onOpenFile, onOpenUrl } = usePlatform()
-  const workspace = useActiveWorkspace()
+  const workspaceId = useAtomValue(windowWorkspaceIdAtom)
+  const workspace = useAtomValue(workspacePanelFieldsAtomFamily(workspaceId ?? null))
 
   // Build placeholder: for inline execution use rotating array, otherwise build descriptive string
   // overridePlaceholder allows contexts like add-source/add-skill to say "add" instead of "change"
@@ -788,12 +791,12 @@ export function EditPopover({
   // This allows showing the input before the first message is sent
   const stubSession = useMemo((): Session => ({
     id: 'pending',
-    workspaceId: workspace?.id || '',
+    workspaceId: workspaceId || '',
     workspaceName: workspace?.name || '',
     messages: [],
     isProcessing: false,
     lastMessageAt: Date.now(),
-  }), [workspace?.id, workspace?.name])
+  }), [workspaceId, workspace?.name])
 
   // Use real session if available, otherwise stub
   const displaySession = inlineSession || stubSession
@@ -967,7 +970,7 @@ export function EditPopover({
 
     // Create session on first message
     let sessionId = inlineSessionId
-    if (!sessionId && workspace?.id) {
+    if (!sessionId && workspaceId) {
       const createOptions: CreateSessionOptions = {
         model: model || 'fast',
         systemPromptPreset: systemPromptPreset || 'mini',
@@ -975,7 +978,7 @@ export function EditPopover({
         workingDirectory,
         hidden: true, // Hidden sessions use same App code path but don't appear in list
       }
-      const newSession = await onCreateSession(workspace.id, createOptions)
+      const newSession = await onCreateSession(workspaceId, createOptions)
       sessionId = newSession.id
       setInlineSessionId(sessionId)
     }
@@ -985,7 +988,7 @@ export function EditPopover({
     if (sessionId) {
       onSendMessage(sessionId, prompt, undefined, undefined, badges)
     }
-  }, [context, displayLabel, inlineSessionId, workspace?.id, model, systemPromptPreset, permissionMode, workingDirectory, onCreateSession, onSendMessage])
+  }, [context, displayLabel, inlineSessionId, workspaceId, model, systemPromptPreset, permissionMode, workingDirectory, onCreateSession, onSendMessage])
 
   // Legacy mode: navigates to chat in the same window
   const handleLegacySendMessage = useCallback((message: string) => {
