@@ -27,4 +27,10 @@ describe('AppShell derived state', () => {
     expect(appShellSource).toContain('formatNovelFileTitle={formatGlobalSearchNovelFileTitle}')
     expect(appShellSource).not.toContain('formatNovelFileTitle={(file) => formatNovelWorkspaceFileTitle(file, t)}')
   })
+
+  it('derives remote workspace availability outside SessionList render props', () => {
+    expect(appShellSource).toContain('const hasRemoteWorkspaces = useMemo(')
+    expect(appShellSource).toContain('hasRemoteWorkspaces={hasRemoteWorkspaces}')
+    expect(appShellSource).not.toContain('hasRemoteWorkspaces={workspaces.some')
+  })
 })

@@ -3420,6 +3420,10 @@ function AppShellContent({
     (file: NovelWorkspaceFile) => formatNovelWorkspaceFileTitle(file, t),
     [t],
   )
+  const hasRemoteWorkspaces = useMemo(
+    () => workspaces.some(workspace => workspace.remoteServer),
+    [workspaces],
+  )
 
   // Ensure session messages are loaded when selected
   React.useEffect(() => {
@@ -5166,7 +5170,7 @@ function AppShellContent({
                   onNavigateToSession={panelCount > 1 ? navigateToSessionInPanel : undefined}
                   hasPendingPrompt={hasPendingPrompt}
                   activeChatMatchInfo={chatMatchInfo}
-                  hasRemoteWorkspaces={workspaces.some(workspace => workspace.remoteServer)}
+                  hasRemoteWorkspaces={hasRemoteWorkspaces}
                   isCompactMode={isAutoCompact}
                 />
               </>
