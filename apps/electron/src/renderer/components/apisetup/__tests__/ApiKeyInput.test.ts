@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import {
   resolvePiAuthProviderForSubmit,
   resolvePresetStateForBaseUrlChange,
 } from '../submit-helpers'
 import { filterPiModels, pickTierDefaults, resolveTierModels } from '../tier-models'
+
+const apiKeyInputSource = readFileSync(new URL('../ApiKeyInput.tsx', import.meta.url), 'utf8')
 
 const MODELS = [
   { id: 'pi/zai-best', name: 'Best', costInput: 10, costOutput: 20, contextWindow: 200000, reasoning: true },
@@ -12,6 +15,14 @@ const MODELS = [
 ]
 
 describe('ApiKeyInput tier hydration helpers', () => {
+  it('keeps default endpoint providers at module scope instead of rebuilding on render', () => {
+    const componentStart = apiKeyInputSource.indexOf('export function ApiKeyInput')
+    const componentSource = apiKeyInputSource.slice(componentStart)
+
+    expect(apiKeyInputSource.indexOf('const DEFAULT_ENDPOINT_PROVIDERS')).toBeLessThan(componentStart)
+    expect(componentSource).not.toContain('const DEFAULT_ENDPOINT_PROVIDERS = new Set')
+  })
+
   it('filters Pi tier models by case-insensitive trimmed model name', () => {
     expect(filterPiModels(MODELS, ' BAL ').map(model => model.id)).toEqual(['pi/zai-balanced'])
   })

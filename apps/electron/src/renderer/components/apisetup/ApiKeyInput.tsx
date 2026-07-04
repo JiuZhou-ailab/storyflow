@@ -135,6 +135,7 @@ const GOOGLE_PRESETS: Preset[] = [
 
 /** Presets that require the Pi SDK for authentication — hidden in Anthropic API Key mode */
 const PI_ONLY_PRESET_KEYS: ReadonlySet<string> = new Set(['minimax-global', 'minimax-cn'])
+const DEFAULT_ENDPOINT_PROVIDERS = new Set(['anthropic', 'openai', 'pi', 'google'])
 
 const COMPAT_ANTHROPIC_DEFAULTS = 'claude-opus-4-7, claude-sonnet-4-6, claude-haiku-4-5'
 const COMPAT_OPENAI_DEFAULTS = 'openai/gpt-5.2-codex, openai/gpt-5.1-codex-mini'
@@ -219,7 +220,6 @@ export function ApiKeyInput({
   const isPiApiKeyFlow = providerType === 'pi_api_key'
   const isBedrock = activePreset === 'amazon-bedrock'
   // Hide endpoint/model fields for providers with well-known endpoints handled by the SDK
-  const DEFAULT_ENDPOINT_PROVIDERS = new Set(['anthropic', 'openai', 'pi', 'google'])
   const isDefaultProviderPreset = DEFAULT_ENDPOINT_PROVIDERS.has(activePreset)
 
   // Provider-specific placeholders from the active preset
