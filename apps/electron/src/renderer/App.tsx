@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { useTheme } from '@/hooks/useTheme'
 import type { ThemeOverrides } from '@config/theme'
 import { useSetAtom, useStore, useAtomValue, useAtom } from 'jotai'
-import type { Session, Workspace, SessionEvent, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, SetupNeeds, SessionStatus, NewChatActionParams, ContentBadge, LlmConnectionWithStatus, PermissionModeState, SendMessageOptions, ClientAuthState } from '../shared/types'
+import type { Session, Workspace, SessionEvent, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, SetupNeeds, SessionStatus, NewChatActionParams, ContentBadge, PermissionModeState, SendMessageOptions, ClientAuthState } from '../shared/types'
 import type { SessionDraft, DraftAttachmentRef } from '@craft-agent/shared/config'
 import type { SessionOptions, SessionOptionUpdates } from './hooks/useSessionOptions'
 import { defaultSessionOptions, sessionOptionsAtom, updateSessionOptionsMap } from './hooks/useSessionOptions'
@@ -70,6 +70,7 @@ import {
 import { pendingCredentialsAtom, pendingPermissionsAtom } from '@/atoms/pending-requests'
 import { sourcesAtom } from '@/atoms/sources'
 import { skillsAtom } from '@/atoms/skills'
+import { llmConnectionsAtom, refreshLlmConnectionsAtom, workspaceDefaultLlmConnectionAtom } from '@/atoms/llm-connections'
 import { extractBadges } from '@/lib/mentions'
 import { getDefaultStore } from 'jotai'
 import {
@@ -339,17 +340,9 @@ export default function App() {
     return workspace?.remoteServer?.remoteWorkspaceId ?? null
   }, [windowWorkspaceId, workspaces])
 
-  // LLM connections with authentication status (for provider selection)
-  const [llmConnections, setLlmConnections] = useState<LlmConnectionWithStatus[]>([])
-  // Workspace default LLM connection (for new sessions)
-  const [workspaceDefaultLlmConnection, setWorkspaceDefaultLlmConnection] = useState<string | undefined>()
-  // Global default LLM connection slug (from app config)
-  const [defaultLlmConnectionSlug, setDefaultLlmConnectionSlug] = useState<string | undefined>()
-
-  // Derive connection default model override from the default LLM connection
-  const defaultConnection = useMemo(() => {
-    return llmConnections.find(c => c.slug === defaultLlmConnectionSlug) ?? null
-  }, [llmConnections, defaultLlmConnectionSlug])
+  const llmConnections = useAtomValue(llmConnectionsAtom)
+  const workspaceDefaultLlmConnection = useAtomValue(workspaceDefaultLlmConnectionAtom)
+  const refreshLlmConnections = useSetAtom(refreshLlmConnectionsAtom)
 
   const [menuNewChatTrigger, setMenuNewChatTrigger] = useState(0)
   // Draft composer state per session (text + attachment refs), preserved across mode
@@ -643,22 +636,6 @@ export default function App() {
 
   const DRAFT_SAVE_DEBOUNCE_MS = 500
 
-  const resolveDefaultConnectionSlug = useCallback((connections: LlmConnectionWithStatus[]) => {
-    return connections.find(c => c.isDefault)?.slug ?? connections[0]?.slug
-  }, [])
-
-  // Refresh LLM connections from config (called on workspace change and after connection updates)
-  const refreshLlmConnections = useCallback(async () => {
-    const connections = await window.electronAPI.listLlmConnectionsWithStatus()
-    setLlmConnections(connections)
-    setDefaultLlmConnectionSlug(resolveDefaultConnectionSlug(connections))
-    // Also refresh workspace default
-    if (windowWorkspaceId) {
-      const settings = await window.electronAPI.getWorkspaceSettings(windowWorkspaceId)
-      setWorkspaceDefaultLlmConnection(settings?.defaultLlmConnection)
-    }
-  }, [resolveDefaultConnectionSlug, windowWorkspaceId])
-
   const loadClientAuthState = useCallback(async (): Promise<ClientAuthState | null> => {
     if (!window.electronAPI?.getClientAuthState) return null
     try {
@@ -815,13 +792,10 @@ export default function App() {
     }).catch(() => { /* non-fatal startup check */ })
     // Load LLM connections with authentication status
     withTimeout(
-      window.electronAPI.listLlmConnectionsWithStatus(),
+      refreshLlmConnections(),
       STARTUP_RPC_TIMEOUT_MS,
       'listLlmConnectionsWithStatus'
-    ).then((connections) => {
-      setLlmConnections(connections)
-      setDefaultLlmConnectionSlug(resolveDefaultConnectionSlug(connections))
-    }).catch((error) => {
+    ).catch((error) => {
       console.error('[App] Failed to load LLM connections:', error)
     }).finally(() => setLlmConnectionsLoaded(true))
     // Load persisted input drafts into ref (no re-render needed).
@@ -852,7 +826,7 @@ export default function App() {
         console.error('[App] Failed to load app theme:', error)
       })
       .finally(() => setThemeLoaded(true))
-  }, [appState, resolveDefaultConnectionSlug, t])
+  }, [appState, refreshLlmConnections, t])
 
   // Load sessions for the active workspace
   useEffect(() => {

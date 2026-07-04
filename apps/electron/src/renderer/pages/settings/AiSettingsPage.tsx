@@ -19,8 +19,10 @@ import { routes } from '@/lib/navigate'
 import { X, MoreHorizontal, Pencil, Trash2, Star, ChevronDown, ChevronRight, CheckCircle2, AlertTriangle, RefreshCcw, Settings2, MessageSquareMore, Zap, Clock, Check } from 'lucide-react'
 import type { CredentialHealthStatus, CredentialHealthIssue } from '../../../shared/types'
 import { Spinner, FullscreenOverlayBase } from '@craft-agent/ui'
-import { useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { fullscreenOverlayOpenAtom } from '@/atoms/overlay'
+import { llmConnectionsAtom, refreshLlmConnectionsAtom } from '@/atoms/llm-connections'
+import { windowWorkspaceIdAtom } from '@/atoms/sessions'
 import { motion, AnimatePresence } from 'motion/react'
 import type { LlmConnectionWithStatus, ThinkingLevel, WorkspaceSettings, Workspace } from '../../../shared/types'
 import { DEFAULT_THINKING_LEVEL, THINKING_LEVELS } from '@craft-agent/shared/agent/thinking-levels'
@@ -51,7 +53,6 @@ import { useOnboarding } from '@/hooks/useOnboarding'
 import { useWorkspaceIcon } from '@/hooks/useWorkspaceIcon'
 import { OnboardingWizard, type ApiSetupMethod } from '@/components/onboarding'
 import { RenameDialog } from '@/components/ui/rename-dialog'
-import { useAppShellContext } from '@/context/AppShellContext'
 import { getModelShortName, type ModelDefinition } from '@config/models'
 import { resolveMidStreamBehavior, type CustomEndpointApi, type MidStreamBehavior } from '@config/llm-connections'
 import { toast } from 'sonner'
@@ -551,7 +552,9 @@ function getApiKeyMethodForConnection(conn: LlmConnectionWithStatus): ApiSetupMe
 
 export default function AiSettingsPage() {
   const { t } = useTranslation()
-  const { llmConnections, refreshLlmConnections, activeWorkspaceId } = useAppShellContext()
+  const llmConnections = useAtomValue(llmConnectionsAtom)
+  const refreshLlmConnections = useSetAtom(refreshLlmConnectionsAtom)
+  const activeWorkspaceId = useAtomValue(windowWorkspaceIdAtom)
   const visibleLlmConnections = useMemo(
     () => llmConnections.filter(conn => !conn.hidden),
     [llmConnections],
