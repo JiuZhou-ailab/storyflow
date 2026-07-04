@@ -355,7 +355,10 @@ export const initializeSessionsAtom = atom(
     // Without this, switching workspaces leaves orphaned atoms in memory
     // and components subscribed to old session IDs see stale/empty data.
     const oldIds = get(sessionIdsAtom)
-    const newIdSet = new Set(sessions.map(s => s.id))
+    const newIdSet = new Set<string>()
+    for (const session of sessions) {
+      newIdSet.add(session.id)
+    }
     for (const oldId of oldIds) {
       if (!newIdSet.has(oldId)) {
         sessionAtomFamily.remove(oldId)

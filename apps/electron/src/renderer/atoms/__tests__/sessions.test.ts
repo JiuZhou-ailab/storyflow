@@ -590,11 +590,17 @@ describe('refreshSessionsMetadataAtom', () => {
   })
 
   it('initializes sorted ids without mutating the caller session array', () => {
+    const initializeStart = sessionsAtomSource.indexOf('export const initializeSessionsAtom')
+    const initializeEnd = sessionsAtomSource.indexOf('/**\n * Action atom: refresh session metadata', initializeStart)
+    const initializeSource = sessionsAtomSource.slice(initializeStart, initializeEnd)
     const store = createStore()
     const sessions = [
       makeSession({ id: 'older', lastMessageAt: 100 }),
       makeSession({ id: 'newer', lastMessageAt: 200 }),
     ]
+
+    expect(initializeSource).toContain('const newIdSet = new Set<string>()')
+    expect(initializeSource).not.toContain('new Set(sessions.map')
 
     store.set(initializeSessionsAtom, sessions)
 
