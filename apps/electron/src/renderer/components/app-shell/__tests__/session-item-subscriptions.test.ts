@@ -258,6 +258,8 @@ describe('session item subscriptions', () => {
     expect(appShellSource).not.toContain('useAtomValue(sessionMetaMapAtom)')
     expect(appShellSource).toContain('useAtomValue(sessionMetaAtomFamily(rawEffectiveSessionId')
     expect(sessionListSource).toContain('useAtomValue(sessionMetaMapAtom)')
+    expect(globalSearchDialogSource).toContain('function GlobalSearchDialogContent')
+    expect(globalSearchDialogSource).toContain('return props.open ? <GlobalSearchDialogContent {...props} /> : null')
     expect(globalSearchDialogSource).toContain('useAtomValue(sessionMetaMapAtom)')
   })
 })

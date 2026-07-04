@@ -50,7 +50,11 @@ function reuseGlobalSearchContentResults(
   return previous
 }
 
-export function GlobalSearchDialog({
+export function GlobalSearchDialog(props: GlobalSearchDialogProps) {
+  return props.open ? <GlobalSearchDialogContent {...props} /> : null
+}
+
+function GlobalSearchDialogContent({
   open,
   onOpenChange,
   workspaceId,
