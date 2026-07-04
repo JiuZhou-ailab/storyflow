@@ -104,22 +104,26 @@ export function ActiveOptionBadges({
   onSessionStatusChange,
   className,
 }: ActiveOptionBadgesProps) {
+  const labelById = React.useMemo(
+    () => new Map(flattenLabels(labels).map(label => [label.id, label])),
+    [labels]
+  )
+
   // Resolve session label entries to their config objects + parsed values.
   // Entries may be bare IDs ("bug") or valued ("priority::3").
   // Preserves the raw value and original index for editing/removal.
   const resolvedLabels = React.useMemo((): ResolvedLabelEntry[] => {
-    if (sessionLabels.length === 0 || labels.length === 0) return []
-    const flat = flattenLabels(labels)
+    if (sessionLabels.length === 0 || labelById.size === 0) return []
     const result: ResolvedLabelEntry[] = []
     for (let i = 0; i < sessionLabels.length; i++) {
       const parsed = parseLabelEntry(sessionLabels[i])
-      const config = flat.find(l => l.id === parsed.id)
+      const config = labelById.get(parsed.id)
       if (config) {
         result.push({ config, rawValue: parsed.rawValue, index: i })
       }
     }
     return result
-  }, [sessionLabels, labels])
+  }, [sessionLabels, labelById])
 
   const hasLabels = resolvedLabels.length > 0
 
@@ -515,4 +519,3 @@ function PermissionModeDropdown({ permissionMode, onPermissionModeChange, sessio
     </Popover>
   )
 }
-
