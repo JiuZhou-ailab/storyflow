@@ -35,6 +35,16 @@ describe('handleTextDelta streaming hot path', () => {
     expect(textHandlerSource).toContain('appendMessage(session, newMessage, false, false)')
   })
 
+  it('updates existing streaming text without the generic message updater', () => {
+    const deltaUpdateSource = textHandlerSource.slice(
+      textHandlerSource.indexOf('if (streamingIndex !== -1) {'),
+      textHandlerSource.indexOf('// Accumulate in streaming state only for the race path without a message.')
+    )
+
+    expect(deltaUpdateSource).toContain('messages[streamingIndex] = {')
+    expect(deltaUpdateSource).not.toContain('updateMessageAt(session, streamingIndex')
+  })
+
   it('appends deltas to the last matching streaming assistant message', () => {
     const state = makeState([
       {

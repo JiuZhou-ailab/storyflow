@@ -68,12 +68,13 @@ export function handleTextDelta(
       : streaming
         ? { ...streaming, turnId: event.turnId ?? streaming.turnId }
         : null
-    // Message exists - update its content
     const currentMsg = session.messages[streamingIndex]
-    const updatedSession = updateMessageAt(session, streamingIndex, {
+    const messages = [...session.messages]
+    messages[streamingIndex] = {
+      ...currentMsg,
       content: currentMsg.content + event.delta,
-    })
-    return { session: updatedSession, streaming: nextStreaming }
+    }
+    return { session: { ...session, messages }, streaming: nextStreaming }
   }
 
   // Accumulate in streaming state only for the race path without a message.
