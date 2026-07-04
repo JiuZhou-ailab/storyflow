@@ -477,18 +477,6 @@ export function useSessionSearch({
       (statusFilter && statusFilter.size > 0) ||
       (labelFilterMap && labelFilterMap.size > 0)
 
-    if (searchQuery.trim() && searchFilteredItems.length > 0) {
-      searchLog.info('search:grouping', {
-        searchQuery,
-        currentFilterKind: currentFilter?.kind,
-        currentFilterStateId: currentFilter?.kind === 'state' ? currentFilter.stateId : undefined,
-        hasActiveFilters,
-        statusFilterSize: statusFilter?.size ?? 0,
-        labelFilterSize: labelFilterMap?.size ?? 0,
-        itemCount: searchMatchCount,
-      })
-    }
-
     const exceeded = searchMatchCount > MAX_SEARCH_RESULTS
 
     if (!isSearchMode) {
@@ -517,14 +505,6 @@ export function useSessionSearch({
       } else {
         others.push(item)
       }
-    }
-
-    if (searchFilteredItems.length > 0) {
-      searchLog.info('search:grouping:result', {
-        matchingCount: matching.length,
-        othersCount: others.length,
-        exceeded,
-      })
     }
 
     return { matchingFilterItems: matching, otherResultItems: others, exceededSearchLimit: exceeded }

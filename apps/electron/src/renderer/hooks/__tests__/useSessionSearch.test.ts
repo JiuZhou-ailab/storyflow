@@ -139,6 +139,16 @@ describe('computeCollapsedPagination', () => {
     expect(useSessionSearchSource).not.toContain('return [...matchingFilterItems, ...otherResultItems]')
   })
 
+  it('keeps render-phase search grouping free of synchronous logging', () => {
+    const renderPipelineSource = useSessionSearchSource.slice(
+      useSessionSearchSource.indexOf('// Split search results: matching current filter vs others'),
+      useSessionSearchSource.indexOf('// --- Pagination ---')
+    )
+
+    expect(useSessionSearchSource).toContain("searchLog.info('ipc:call'")
+    expect(renderPipelineSource).not.toContain('searchLog.info')
+  })
+
   it('does not replace empty content search results while search is below the active threshold', () => {
     expect(useSessionSearchSource).toContain('const clearContentSearchResults = useCallback')
     expect(useSessionSearchSource).toContain('setContentSearchResults(prev => prev.size === 0 ? prev : new Map())')
