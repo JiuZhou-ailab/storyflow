@@ -2034,6 +2034,7 @@ function AppShellContent({
         files = await loadNovelWorkspaceFiles(rootPath, undefined, true)
       }
       if (!files) return false
+      if (novelWorkspaceRootRef.current && rootPath !== novelWorkspaceRootRef.current) return false
 
       setNovelWorkspaceRoot(rootPath)
       setNovelWorkspaceFiles((previous) => areNovelWorkspaceFilesEqual(previous, files) ? previous : files)
@@ -2941,6 +2942,7 @@ function AppShellContent({
         }
       }
       await refreshNovelVersions()
+      await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
       toast.success(t('writing.version.restored', '已恢复到所选版本'))
     } catch (error) {
       toast.error(t('writing.version.restoreFailed', '恢复版本失败'), {
@@ -2949,7 +2951,7 @@ function AppShellContent({
     } finally {
       setNovelVersionRestoringHash(null)
     }
-  }, [ensureNovelDocumentSaved, novelWorkspaceRoot, refreshNovelVersions, replaceNovelDocumentContent, selectedNovelDocumentPath, t])
+  }, [ensureNovelDocumentSaved, novelWorkspaceRoot, refreshNovelVersions, refreshNovelWorkspaceFiles, replaceNovelDocumentContent, selectedNovelDocumentPath, t])
 
   const handleExportNovelWorkspace = React.useCallback(async (options: NovelExportOptions) => {
     if (!novelWorkspaceRoot) return

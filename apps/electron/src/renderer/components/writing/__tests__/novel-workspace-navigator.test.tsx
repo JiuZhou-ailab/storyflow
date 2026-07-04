@@ -583,6 +583,10 @@ describe('novel writing workspace layout', () => {
       appShellSource.indexOf('const handleExportNovelWorkspace'),
       appShellSource.indexOf('const novelReviewUndoStackRef')
     )
+    const restoreHandlerSource = appShellSource.slice(
+      appShellSource.indexOf('const handleRestoreNovelVersion'),
+      appShellSource.indexOf('const handleExportNovelWorkspace')
+    )
     const exportDialogShellSource = exportDialogSource.slice(
       exportDialogSource.indexOf('export function NovelExportDialog'),
       exportDialogSource.indexOf('function NovelExportDialogContent')
@@ -608,6 +612,7 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain("window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'auto' })")
     expect(appShellSource).toContain('window.electronAPI.listWorkspaceVersions(novelWorkspaceRoot, 30)')
     expect(appShellSource).toContain('window.electronAPI.restoreWorkspaceVersion(novelWorkspaceRoot, commitHash)')
+    expect(restoreHandlerSource).toContain('await refreshNovelWorkspaceFiles(novelWorkspaceRoot)')
     expect(exportHandlerSource.indexOf('await window.electronAPI.createDirectory(exportRootPath)')).toBeLessThan(
       exportHandlerSource.indexOf('await window.electronAPI.writeFile(targetPath')
     )
@@ -1071,6 +1076,7 @@ describe('novel writing workspace layout', () => {
     expect(refreshSource.indexOf('const detectInFlight =')).toBeLessThan(
       refreshSource.indexOf('loadNovelWorkspaceFiles(')
     )
+    expect(refreshSource).toContain('if (novelWorkspaceRootRef.current && rootPath !== novelWorkspaceRootRef.current) return false')
     expect(refreshSource).toContain('areNovelWorkspaceFilesEqual(previous, files) ? previous : files')
   })
 
