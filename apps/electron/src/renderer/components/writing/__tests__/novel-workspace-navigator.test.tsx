@@ -663,6 +663,10 @@ describe('novel writing workspace layout', () => {
   it('keeps long manuscript edits in TipTap until save boundaries pull a snapshot', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const editorPanelSource = readFileSync(new URL('../NovelDocumentEditorPanel.tsx', import.meta.url), 'utf-8')
+    const changeSource = appShellSource.slice(
+      appShellSource.indexOf('const handleNovelDocumentChanged ='),
+      appShellSource.indexOf('const getCurrentNovelDocumentContent')
+    )
     const autosaveSource = appShellSource.slice(
       appShellSource.indexOf('React.useEffect(() => {\n    if (!selectedNovelDocumentPath || !novelDocumentDirty || novelDocumentLoading) return'),
       appShellSource.indexOf('const ensureNovelDocumentSaved =')
@@ -685,8 +689,13 @@ describe('novel writing workspace layout', () => {
     expect(editorPanelSource).not.toContain('onUpdate={onChange}')
     expect(appShellSource).toContain('novelDocumentEditorRef')
     expect(appShellSource).toContain('handleNovelDocumentChanged')
+    expect(appShellSource).toContain('novelDocumentChangeVersionFlushRef')
     expect(appShellSource).toContain('getCurrentNovelDocumentContent')
+    expect(changeSource).toContain('novelDocumentChangeVersionRef.current += 1')
+    expect(changeSource).toContain('window.setTimeout')
+    expect(changeSource).not.toContain('setNovelDocumentChangeVersion((version)')
     expect(autosaveSource).toContain('const contentToSave = getCurrentNovelDocumentContent()')
+    expect(ensureSaveSource).toContain('const versionToSave = novelDocumentChangeVersionRef.current')
     expect(ensureSaveSource).toContain('const contentToSave = getCurrentNovelDocumentContent()')
     expect(renderSource).toContain('ref={novelDocumentEditorRef}')
     expect(renderSource).toContain('onDocumentChanged={handleNovelDocumentChanged}')

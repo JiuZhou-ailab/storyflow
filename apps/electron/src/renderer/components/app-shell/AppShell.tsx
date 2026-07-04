@@ -2353,6 +2353,8 @@ function AppShellContent({
   const [novelDocumentChangeVersion, setNovelDocumentChangeVersion] = React.useState(0)
   const [savedNovelDocumentChangeVersion, setSavedNovelDocumentChangeVersion] = React.useState(0)
   const novelDocumentChangeVersionRef = React.useRef(0)
+  const savedNovelDocumentChangeVersionRef = React.useRef(0)
+  const novelDocumentChangeVersionFlushRef = React.useRef<number | null>(null)
   const [novelDocumentLoading, setNovelDocumentLoading] = React.useState(false)
   const [novelDocumentSaving, setNovelDocumentSaving] = React.useState(false)
   const [novelDocumentError, setNovelDocumentError] = React.useState<string | null>(null)
@@ -2379,25 +2381,56 @@ function AppShellContent({
     latestNovelDocumentPathRef.current = selectedNovelDocumentPath
   }, [selectedNovelDocumentPath])
 
+  const flushNovelDocumentChangeVersion = React.useCallback(() => {
+    if (novelDocumentChangeVersionFlushRef.current != null) {
+      window.clearTimeout(novelDocumentChangeVersionFlushRef.current)
+      novelDocumentChangeVersionFlushRef.current = null
+    }
+    setNovelDocumentChangeVersion(novelDocumentChangeVersionRef.current)
+  }, [])
+
+  const markSavedNovelDocumentChangeVersion = React.useCallback((version: number) => {
+    savedNovelDocumentChangeVersionRef.current = version
+    setSavedNovelDocumentChangeVersion(version)
+  }, [])
+
+  React.useEffect(() => () => {
+    if (novelDocumentChangeVersionFlushRef.current != null) {
+      window.clearTimeout(novelDocumentChangeVersionFlushRef.current)
+      novelDocumentChangeVersionFlushRef.current = null
+    }
+  }, [])
+
   const replaceNovelDocumentContent = React.useCallback((content: string) => {
     setNovelDocumentContent(content)
     setSavedNovelDocumentContent(content)
     novelDocumentChangeVersionRef.current = 0
     setNovelDocumentChangeVersion(0)
-    setSavedNovelDocumentChangeVersion(0)
-  }, [])
+    markSavedNovelDocumentChangeVersion(0)
+  }, [markSavedNovelDocumentChangeVersion])
 
   const handleNovelDocumentChanged = React.useCallback(() => {
-    setNovelDocumentChangeVersion((version) => {
-      const nextVersion = version + 1
-      novelDocumentChangeVersionRef.current = nextVersion
-      return nextVersion
-    })
+    novelDocumentChangeVersionRef.current += 1
+    if (novelDocumentChangeVersionFlushRef.current != null) {
+      window.clearTimeout(novelDocumentChangeVersionFlushRef.current)
+    }
+    novelDocumentChangeVersionFlushRef.current = window.setTimeout(() => {
+      novelDocumentChangeVersionFlushRef.current = null
+      setNovelDocumentChangeVersion(novelDocumentChangeVersionRef.current)
+    }, 200)
   }, [])
 
   const getCurrentNovelDocumentContent = React.useCallback(() => (
     novelDocumentEditorRef.current?.getMarkdownSnapshot() ?? novelDocumentContent
   ), [novelDocumentContent])
+
+  const isCurrentNovelDocumentDirty = React.useCallback(() => (
+    latestNovelDocumentPathRef.current != null
+    && (
+      novelDocumentContent !== savedNovelDocumentContent
+      || novelDocumentChangeVersionRef.current !== savedNovelDocumentChangeVersionRef.current
+    )
+  ), [novelDocumentContent, savedNovelDocumentContent])
 
   React.useEffect(() => {
     novelVersionBaselinesRef.current = {}
@@ -2483,7 +2516,7 @@ function AppShellContent({
   const handleDeleteNovelWorkspaceFile = React.useCallback(async (file: NovelWorkspaceFile) => {
     if (!novelWorkspaceRoot) return
 
-    if (file.path === selectedNovelFilePath && novelDocumentDirty) {
+    if (file.path === selectedNovelFilePath && isCurrentNovelDocumentDirty()) {
       toast.error(t('writing.deleteFile.unsaved', '当前文件有未保存修改，请先保存或切换文件'))
       return
     }
@@ -2513,7 +2546,7 @@ function AppShellContent({
     }
   }, [
     activeWorkspaceMethodPackId,
-    novelDocumentDirty,
+    isCurrentNovelDocumentDirty,
     novelWorkspaceFiles,
     novelWorkspaceRoot,
     refreshNovelWorkspaceFiles,
@@ -2590,7 +2623,7 @@ function AppShellContent({
       const contentToSave = getCurrentNovelDocumentContent()
       if (contentToSave === savedNovelDocumentContent) {
         setNovelDocumentContent(contentToSave)
-        setSavedNovelDocumentChangeVersion(versionToSave)
+        markSavedNovelDocumentChangeVersion(versionToSave)
         return
       }
       if (isSuspiciousEmptyNovelSnapshot(contentToSave, savedNovelDocumentContent, novelDocumentContent)) {
@@ -2598,7 +2631,7 @@ function AppShellContent({
           'writing.emptySnapshotSaveBlocked',
           '已阻止一次空内容覆盖。请重新打开该文件后再保存。'
         ))
-        setSavedNovelDocumentChangeVersion(versionToSave)
+        markSavedNovelDocumentChangeVersion(versionToSave)
         return
       }
 
@@ -2615,7 +2648,7 @@ function AppShellContent({
           ) {
             setNovelDocumentContent(contentToSave)
             setSavedNovelDocumentContent(contentToSave)
-            setSavedNovelDocumentChangeVersion(versionToSave)
+            markSavedNovelDocumentChangeVersion(versionToSave)
           }
           void maybeCreateNovelAutoVersion(pathToSave, contentToSave)
         })
@@ -2633,16 +2666,17 @@ function AppShellContent({
     return () => {
       window.clearTimeout(timeoutId)
     }
-  }, [getCurrentNovelDocumentContent, maybeCreateNovelAutoVersion, novelDocumentChangeVersion, novelDocumentContent, novelDocumentDirty, novelDocumentLoading, savedNovelDocumentContent, selectedNovelDocumentPath, t])
+  }, [getCurrentNovelDocumentContent, markSavedNovelDocumentChangeVersion, maybeCreateNovelAutoVersion, novelDocumentChangeVersion, novelDocumentContent, novelDocumentDirty, novelDocumentLoading, savedNovelDocumentContent, selectedNovelDocumentPath, t])
 
   const ensureNovelDocumentSaved = React.useCallback(async (): Promise<boolean> => {
-    if (!selectedNovelDocumentPath || !novelDocumentDirty) return true
+    if (!selectedNovelDocumentPath || !isCurrentNovelDocumentDirty()) return true
 
+    flushNovelDocumentChangeVersion()
     const contentToSave = getCurrentNovelDocumentContent()
-    const versionToSave = novelDocumentChangeVersion
+    const versionToSave = novelDocumentChangeVersionRef.current
     if (contentToSave === savedNovelDocumentContent) {
       setNovelDocumentContent(contentToSave)
-      setSavedNovelDocumentChangeVersion(versionToSave)
+      markSavedNovelDocumentChangeVersion(versionToSave)
       return true
     }
     if (isSuspiciousEmptyNovelSnapshot(contentToSave, savedNovelDocumentContent, novelDocumentContent)) {
@@ -2651,7 +2685,7 @@ function AppShellContent({
         '已阻止一次空内容覆盖。请重新打开该文件后再保存。'
       )
       setNovelDocumentError(message)
-      setSavedNovelDocumentChangeVersion(versionToSave)
+      markSavedNovelDocumentChangeVersion(versionToSave)
       toast.error(message)
       return false
     }
@@ -2668,7 +2702,7 @@ function AppShellContent({
       ) {
         setNovelDocumentContent(contentToSave)
         setSavedNovelDocumentContent(contentToSave)
-        setSavedNovelDocumentChangeVersion(versionToSave)
+        markSavedNovelDocumentChangeVersion(versionToSave)
       }
       void maybeCreateNovelAutoVersion(selectedNovelDocumentPath, contentToSave)
       return true
@@ -2682,7 +2716,7 @@ function AppShellContent({
         setNovelDocumentSaving(false)
       }
     }
-  }, [getCurrentNovelDocumentContent, maybeCreateNovelAutoVersion, novelDocumentChangeVersion, novelDocumentContent, novelDocumentDirty, savedNovelDocumentContent, selectedNovelDocumentPath, t])
+  }, [flushNovelDocumentChangeVersion, getCurrentNovelDocumentContent, isCurrentNovelDocumentDirty, markSavedNovelDocumentChangeVersion, maybeCreateNovelAutoVersion, novelDocumentContent, savedNovelDocumentContent, selectedNovelDocumentPath, t])
 
   const handleAllSessionsClick = useCallback(() => {
     navigate(routes.view.allSessions())
@@ -2818,7 +2852,7 @@ function AppShellContent({
   const syncSelectedNovelDocumentFromDisk = React.useCallback(async (filePath: string): Promise<boolean> => {
     if (selectedNovelFile?.path !== filePath) return true
 
-    if (novelDocumentDirty) {
+    if (isCurrentNovelDocumentDirty()) {
       toast.error(t(
         'writing.review.acceptBlockedByUnsavedEdits',
         'Save or discard your current edits before accepting this change.'
@@ -2842,7 +2876,7 @@ function AppShellContent({
       })
       return false
     }
-  }, [novelDocumentDirty, replaceNovelDocumentContent, selectedNovelFile?.path, t])
+  }, [isCurrentNovelDocumentDirty, replaceNovelDocumentContent, selectedNovelFile?.path, t])
 
   React.useEffect(() => {
     if (!selectedNovelDocumentPath || novelDocumentDirty || latestNovelFileChanges.length === 0) return
