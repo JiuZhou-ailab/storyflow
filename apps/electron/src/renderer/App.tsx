@@ -1535,7 +1535,7 @@ export default function App() {
         ]
       }))
     }
-  }, [sessionOptions, updateSessionById, skills, sources, windowWorkspaceId])
+  }, [updateSessionById, skills, sources, windowWorkspaceId])
 
   /**
    * Unified handler for all session option changes.
