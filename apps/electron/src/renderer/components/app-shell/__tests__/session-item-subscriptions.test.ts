@@ -34,8 +34,11 @@ describe('session item subscriptions', () => {
   it('reuses a label lookup map instead of scanning labels per row badge', () => {
     expect(sessionListSource).toContain('const labelById = useMemo')
     expect(sessionListSource).toContain('labelById,')
-    expect(sessionItemSource).toContain('ctx.labelById.has(labelId)')
-    expect(sessionBadgesSource).toContain('ctx.labelById.get(parsed.id)')
+    expect(sessionItemSource).toContain('resolveSessionLabelBadges(item.labels, ctx.labelById)')
+    expect(sessionItemSource).not.toContain('extractLabelId')
+    expect(sessionBadgesSource).toContain('export function resolveSessionLabelBadges')
+    expect(sessionBadgesSource).toContain('labelById.get(parsed.id)')
+    expect(sessionBadgesSource).not.toContain('ctx.labelById')
     expect(sessionItemSource).not.toContain('ctx.flatLabels.some')
     expect(sessionBadgesSource).not.toContain('ctx.flatLabels.find')
   })

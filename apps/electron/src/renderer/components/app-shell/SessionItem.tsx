@@ -9,14 +9,13 @@ import { EntityListBadge } from "@/components/ui/entity-list-badge"
 import { SessionMenu } from "./SessionMenu"
 import { BatchSessionMenu } from "./BatchSessionMenu"
 import { SessionStatusIcon } from "./SessionStatusIcon"
-import { SessionBadges } from "./SessionBadges"
+import { resolveSessionLabelBadges, SessionBadges } from "./SessionBadges"
 import { getSessionTitle, getSessionPreviewText, highlightMatch, hasUnreadMeta, shortTimeLocale } from "@/utils/session"
 import { useSessionListContext } from "@/context/SessionListContext"
 import { navigate, routes } from "@/lib/navigate"
 import type { SessionMeta } from "@/atoms/sessions"
 import { messagingBindingsForSessionAtomFamily } from "@/atoms/messaging"
 import { useAtomValue } from "jotai"
-import { extractLabelId } from "@craft-agent/shared/labels"
 
 const PLATFORM_PILL: Record<'telegram' | 'whatsapp', { label: string; colorClass: string }> = {
   telegram: {
@@ -59,10 +58,7 @@ export function SessionItem({
   const ripgrepMatchCount = ctx.contentSearchResults.get(item.id)?.matchCount
   const chatMatchCount = isActiveSession ? activeMatch!.count : ripgrepMatchCount
   const hasMatch = chatMatchCount != null && chatMatchCount > 0
-  const hasLabels = !!(item.labels && item.labels.length > 0 && ctx.labelById.size > 0 && item.labels.some(entry => {
-    const labelId = extractLabelId(entry)
-    return ctx.labelById.has(labelId)
-  }))
+  const resolvedLabelBadges = resolveSessionLabelBadges(item.labels, ctx.labelById)
   const hasPendingPrompt = ctx.hasPendingPrompt?.(item.id) ?? false
   const previewText = ctx.isCompactMode ? getSessionPreviewText(item) : null
   const sessionBindings = useAtomValue(messagingBindingsForSessionAtomFamily(item.id))
@@ -205,7 +201,7 @@ export function SessionItem({
           {formatDistanceToNowStrict(new Date(item.lastMessageAt), { locale: shortTimeLocale as Locale, roundingMethod: 'floor' })}
         </span>
       ) : undefined}
-      badges={hasLabels ? <SessionBadges item={item} /> : undefined}
+      badges={resolvedLabelBadges.length > 0 ? <SessionBadges item={item} resolvedLabels={resolvedLabelBadges} /> : undefined}
     />
   )
 }
