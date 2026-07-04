@@ -85,6 +85,18 @@ describe('chat page header actions', () => {
     expect(appShellDestructure).not.toContain('onSessionStatusChange')
   })
 
+  it('uses the narrow session batch context for menu mutation actions', () => {
+    const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
+    const appShellDestructure = appShellDestructureFrom(chatPageSource)
+
+    expect(chatPageSource).toContain('useSessionBatchActions')
+    expect(appShellDestructure).not.toContain('onRenameSession')
+    expect(appShellDestructure).not.toContain('onFlagSession')
+    expect(appShellDestructure).not.toContain('onUnflagSession')
+    expect(appShellDestructure).not.toContain('onUnarchiveSession')
+    expect(appShellDestructure).not.toContain('onDeleteSession')
+  })
+
   it('uses workspace atoms instead of app shell workspace fields', () => {
     const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
     const appShellDestructure = appShellDestructureFrom(chatPageSource)

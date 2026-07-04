@@ -182,11 +182,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     openingProjectMetadata,
     enabledModes,
     onSessionSourcesChange,
-    onRenameSession,
-    onFlagSession,
-    onUnflagSession,
-    onUnarchiveSession,
-    onDeleteSession,
     rightSidebarButton,
     leadingAction,
     isCompactMode,
@@ -214,6 +209,11 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onSessionLabelsChange,
     sessionStatuses,
     onArchiveSession,
+    onUnarchiveSession,
+    onRenameSession,
+    onFlagSession,
+    onUnflagSession,
+    onDeleteSession,
     onSessionStatusChange,
   } = useSessionBatchActions()
 

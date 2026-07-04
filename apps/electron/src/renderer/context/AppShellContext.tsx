@@ -195,6 +195,11 @@ const SessionReadActionsContext = createContext<SessionReadActionsContextType | 
 interface SessionBatchActionsContextType {
   onSessionStatusChange: AppShellContextType['onSessionStatusChange']
   onArchiveSession: AppShellContextType['onArchiveSession']
+  onUnarchiveSession: AppShellContextType['onUnarchiveSession']
+  onRenameSession: AppShellContextType['onRenameSession']
+  onFlagSession: AppShellContextType['onFlagSession']
+  onUnflagSession: AppShellContextType['onUnflagSession']
+  onDeleteSession: AppShellContextType['onDeleteSession']
   onSessionLabelsChange?: AppShellContextType['onSessionLabelsChange']
   sessionStatuses?: AppShellContextType['sessionStatuses']
   labels?: AppShellContextType['labels']
@@ -240,12 +245,22 @@ export function AppShellProvider({
   const sessionBatchActions = React.useMemo<SessionBatchActionsContextType>(() => ({
     onSessionStatusChange: value.onSessionStatusChange,
     onArchiveSession: value.onArchiveSession,
+    onUnarchiveSession: value.onUnarchiveSession,
+    onRenameSession: value.onRenameSession,
+    onFlagSession: value.onFlagSession,
+    onUnflagSession: value.onUnflagSession,
+    onDeleteSession: value.onDeleteSession,
     onSessionLabelsChange: value.onSessionLabelsChange,
     sessionStatuses: value.sessionStatuses,
     labels: value.labels,
   }), [
     value.onSessionStatusChange,
     value.onArchiveSession,
+    value.onUnarchiveSession,
+    value.onRenameSession,
+    value.onFlagSession,
+    value.onUnflagSession,
+    value.onDeleteSession,
     value.onSessionLabelsChange,
     value.sessionStatuses,
     value.labels,
