@@ -95,6 +95,7 @@ describe('computeCollapsedPagination', () => {
     expect(useSessionSearchSource).toContain('const itemGroupKeys: string[] = []')
     expect(useSessionSearchSource).toContain('const groupKey = itemGroupKeys[index]')
     expect(useSessionSearchSource).not.toContain('new Set(items.map(item => getCollapseGroupKey(item, groupingMode)))')
+    expect(useSessionSearchSource).not.toContain('Array.from(collapsedGroups).filter')
   })
 
   it('precomputes session search ranking keys before sorting results', () => {

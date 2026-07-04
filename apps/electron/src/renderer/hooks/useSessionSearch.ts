@@ -133,9 +133,10 @@ export function computeCollapsedPagination(
     }
   }
 
-  const effectiveCollapsedKeys = new Set(
-    Array.from(collapsedGroups).filter(key => groupKeysInView.has(key))
-  )
+  const effectiveCollapsedKeys = new Set<string>()
+  for (const key of collapsedGroups) {
+    if (groupKeysInView.has(key)) effectiveCollapsedKeys.add(key)
+  }
 
   if (effectiveCollapsedKeys.size === 0) {
     return {
