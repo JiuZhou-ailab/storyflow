@@ -116,6 +116,15 @@ describe('computeCollapsedPagination', () => {
     expect(useSessionSearchSource).not.toContain('rankedSearchItems.sort((a, b) => {')
   })
 
+  it('reuses bounded search result arrays when no secondary filters split results', () => {
+    expect(useSessionSearchSource).toContain('if (!isSearchMode) {')
+    expect(useSessionSearchSource).toContain('if (!hasActiveFilters) {')
+    expect(useSessionSearchSource).toContain('matchingFilterItems: searchFilteredItems')
+    expect(useSessionSearchSource).toContain('otherResultItems.length === 0')
+    expect(useSessionSearchSource).not.toContain('if (!isSearchMode || !hasActiveFilters)')
+    expect(useSessionSearchSource).not.toContain('return [...matchingFilterItems, ...otherResultItems]')
+  })
+
   it('does not replace empty content search results while search is below the active threshold', () => {
     expect(useSessionSearchSource).toContain('const clearContentSearchResults = useCallback')
     expect(useSessionSearchSource).toContain('setContentSearchResults(prev => prev.size === 0 ? prev : new Map())')

@@ -484,9 +484,13 @@ export function useSessionSearch({
 
     const exceeded = searchMatchCount > MAX_SEARCH_RESULTS
 
-    if (!isSearchMode || !hasActiveFilters) {
+    if (!isSearchMode) {
       const limitedItems = searchFilteredItems.slice(0, MAX_SEARCH_RESULTS)
       return { matchingFilterItems: limitedItems, otherResultItems: [] as SessionMeta[], exceededSearchLimit: exceeded }
+    }
+
+    if (!hasActiveFilters) {
+      return { matchingFilterItems: searchFilteredItems, otherResultItems: [] as SessionMeta[], exceededSearchLimit: exceeded }
     }
 
     const matching: SessionMeta[] = []
@@ -559,7 +563,9 @@ export function useSessionSearch({
 
   const flatItems = useMemo(() => {
     if (isSearchMode) {
-      return [...matchingFilterItems, ...otherResultItems]
+      return otherResultItems.length === 0
+        ? matchingFilterItems
+        : [...matchingFilterItems, ...otherResultItems]
     }
     return paginatedItems
   }, [isSearchMode, matchingFilterItems, otherResultItems, paginatedItems])
