@@ -11,6 +11,7 @@ const sessionListSource = readFileSync(new URL('../SessionList.tsx', import.meta
 const sessionInfoPopoverSource = readFileSync(new URL('../SessionInfoPopover.tsx', import.meta.url), 'utf-8')
 const globalSearchDialogSource = readFileSync(new URL('../GlobalSearchDialog.tsx', import.meta.url), 'utf-8')
 const sessionStatusIconSource = readFileSync(new URL('../SessionStatusIcon.tsx', import.meta.url), 'utf-8')
+const batchSessionMenuSource = readFileSync(new URL('../BatchSessionMenu.tsx', import.meta.url), 'utf-8')
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf-8')
 const sessionListContextSource = readFileSync(new URL('../../../context/SessionListContext.tsx', import.meta.url), 'utf-8')
 const skillsListPanelSource = readFileSync(new URL('../SkillsListPanel.tsx', import.meta.url), 'utf-8')
@@ -85,6 +86,11 @@ describe('session item subscriptions', () => {
     expect(sourcesListPanelSource).not.toContain('useAppShellContext')
     expect(sourcesListCall).toContain('activeWorkspaceId={activeWorkspaceId}')
     expect(sourcesListCall).toContain('workspaces={workspaces}')
+  })
+
+  it('keeps the batch session menu on the session list context', () => {
+    expect(batchSessionMenuSource).not.toContain('useAppShellContext')
+    expect(batchSessionMenuSource).toContain('useSessionListContext')
   })
 
   it('keeps the per-row status icon off the shared list context', () => {
