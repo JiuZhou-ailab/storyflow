@@ -196,6 +196,7 @@ import { RPC_CHANNELS, type FileSearchBatchRequest, type FileSearchBatchResult, 
 
 // ponytail: process-local replay guard for passive file-change refreshes; explicit file operations refresh directly.
 const completedNovelFileChangeRefreshKeys = new Set<string>()
+const pendingNovelFileChangeRefreshKeys = new Set<string>()
 
 /**
  * AppShellProps - Minimal props interface for AppShell component
@@ -2224,6 +2225,7 @@ function AppShellContent({
     const refreshKey = `${novelWorkspaceRoot}\n${latestNovelFileChangesSignature}`
     if (novelWorkspaceLastRefreshKeyRef.current === refreshKey) return
     if (completedNovelFileChangeRefreshKeys.has(refreshKey)) return
+    if (pendingNovelFileChangeRefreshKeys.has(refreshKey)) return
 
     const sessionWasProcessing = effectiveSessionId
       ? novelSessionProcessingRef.current[effectiveSessionId] === true
@@ -2235,6 +2237,7 @@ function AppShellContent({
 
     const timeoutId = window.setTimeout(() => {
       if (completedNovelFileChangeRefreshKeys.has(refreshKey)) return
+      if (pendingNovelFileChangeRefreshKeys.has(refreshKey)) return
       void refreshNovelWorkspaceFiles(novelWorkspaceRoot).then((refreshed) => {
         if (refreshed) {
           markNovelWorkspaceFileChangesCovered(novelWorkspaceRoot, latestNovelFileChangesSignature)
@@ -2803,8 +2806,13 @@ function AppShellContent({
           novelWorkspaceFiles,
         )
         setKnownWorkspaceCommit(novelWorkspaceRoot, sessionId, headCommit)
+        const refreshSignature = latestNovelFileChangesSignatureRef.current
+        const refreshKey = refreshSignature ? `${novelWorkspaceRoot}\n${refreshSignature}` : null
+        if (refreshKey) pendingNovelFileChangeRefreshKeys.add(refreshKey)
         void refreshNovelWorkspaceFiles(novelWorkspaceRoot).then((refreshed) => {
           if (refreshed) markNovelWorkspaceFileChangesCovered(novelWorkspaceRoot)
+        }).finally(() => {
+          if (refreshKey) pendingNovelFileChangeRefreshKeys.delete(refreshKey)
         })
       }
       if (novelVersionDialogOpen) {
