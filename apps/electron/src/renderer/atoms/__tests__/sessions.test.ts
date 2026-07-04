@@ -3,6 +3,7 @@
 // pos: Guards renderer session atom performance contracts and loading correctness
 
 import { afterEach, describe, expect, it } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { createStore } from 'jotai'
 import type { Message, Session } from '../../../shared/types'
 import {
@@ -27,6 +28,8 @@ import {
   removeBackgroundTaskByToolUseId,
   updateBackgroundTaskProgress,
 } from '../sessions'
+
+const sessionsAtomSource = readFileSync(new URL('../sessions.ts', import.meta.url), 'utf8')
 
 function msg(id: string, role: Message['role'] = 'user'): Message {
   return {
@@ -546,6 +549,46 @@ describe('background task atoms', () => {
 })
 
 describe('refreshSessionsMetadataAtom', () => {
+  it('detects refreshed metadata changes while upserting instead of scanning the full retained map', () => {
+    const refreshStart = sessionsAtomSource.indexOf('export const refreshSessionsMetadataAtom')
+    const refreshEnd = sessionsAtomSource.indexOf('/**\n * Action atom: add a new session', refreshStart)
+    const refreshSource = sessionsAtomSource.slice(refreshStart, refreshEnd)
+
+    expect(refreshSource).not.toContain('for (const [id, nextMeta] of nextMetaMap)')
+    expect(refreshSource).toContain('metadataChanged = true')
+  })
+
+  it('does not resort ids when refreshed metadata leaves lastMessageAt unchanged', () => {
+    const store = createStore()
+    store.set(initializeSessionsAtom, [
+      makeSession({ id: 's1', name: 'First', lastMessageAt: 200 }),
+      makeSession({ id: 's2', name: 'Second', lastMessageAt: 100 }),
+    ])
+    const beforeIds = store.get(sessionIdsAtom)
+    const originalSort = Array.prototype.sort
+    let sortCalls = 0
+    Array.prototype.sort = function sortWithCount<T>(this: T[], compareFn?: (a: T, b: T) => number) {
+      sortCalls += 1
+      return originalSort.call(this, compareFn)
+    } as typeof Array.prototype.sort
+
+    try {
+      store.set(refreshSessionsMetadataAtom, {
+        sessions: [
+          makeSession({ id: 's1', name: 'First renamed', lastMessageAt: 200 }),
+          makeSession({ id: 's2', name: 'Second', lastMessageAt: 100 }),
+        ],
+        loadedSessionIds: new Set<string>(),
+      })
+    } finally {
+      Array.prototype.sort = originalSort
+    }
+
+    expect(sortCalls).toBe(0)
+    expect(store.get(sessionIdsAtom)).toBe(beforeIds)
+    expect(store.get(sessionMetaMapAtom).get('s1')?.name).toBe('First renamed')
+  })
+
   it('initializes sorted ids without mutating the caller session array', () => {
     const store = createStore()
     const sessions = [

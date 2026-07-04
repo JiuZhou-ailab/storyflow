@@ -415,8 +415,8 @@ export const refreshSessionsMetadataAtom = atom(
     // single active session. In non-destructive mode we upsert returned sessions
     // and preserve missing metadata until a confirmed delete/workspace reload.
     const currentIds = get(sessionIdsAtom)
-    const latestIds = new Set(sessions.map(s => s.id))
     if (removeMissing) {
+      const latestIds = new Set(sessions.map(s => s.id))
       for (const staleId of currentIds) {
         if (!latestIds.has(staleId)) {
           set(removeSessionAtom, staleId)
@@ -460,25 +460,32 @@ export const refreshSessionsMetadataAtom = atom(
     const nextMetaMap = removeMissing
       ? new Map<string, SessionMeta>()
       : new Map(currentMetaMap)
+    let metadataChanged = removeMissing
+      ? currentMetaMap.size !== sessions.length
+      : false
+    let orderMayHaveChanged = metadataChanged
     for (const session of sessions) {
-      nextMetaMap.set(session.id, extractSessionMeta(session))
-    }
-    let metadataChanged = currentMetaMap.size !== nextMetaMap.size
-    if (!metadataChanged) {
-      for (const [id, nextMeta] of nextMetaMap) {
-        const currentMeta = currentMetaMap.get(id)
-        if (!currentMeta || !shallowEqualSessionMeta(currentMeta, nextMeta)) {
+      const nextMeta = extractSessionMeta(session)
+      const currentMeta = currentMetaMap.get(session.id)
+      if (!currentMeta) {
+        metadataChanged = true
+        orderMayHaveChanged = true
+      } else {
+        if (!metadataChanged && !shallowEqualSessionMeta(currentMeta, nextMeta)) {
           metadataChanged = true
-          break
+        }
+        if (currentMeta.lastMessageAt !== nextMeta.lastMessageAt) {
+          orderMayHaveChanged = true
         }
       }
+      nextMetaMap.set(session.id, nextMeta)
     }
     if (metadataChanged) {
       set(sessionMetaMapAtom, nextMetaMap)
     }
 
-    if (!metadataChanged && areSessionIdsSortedByMetaTime(currentIds, nextMetaMap)) {
-      return currentMetaMap
+    if (!orderMayHaveChanged && areSessionIdsSortedByMetaTime(currentIds, nextMetaMap)) {
+      return metadataChanged ? nextMetaMap : currentMetaMap
     }
 
     // Set ordered IDs from the metadata map we actually exposed to the UI.
