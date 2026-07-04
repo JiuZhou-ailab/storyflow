@@ -22,11 +22,13 @@
 import * as React from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAtomValue } from 'jotai'
-import { useTranslation } from 'react-i18next'
+import { useTranslation, Trans } from 'react-i18next'
 import { Panel } from './Panel'
 import { MultiSelectPanel } from './MultiSelectPanel'
 import { useAppShellContext } from '@/context/AppShellContext'
-import { sessionMetaAtomFamily, sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { sessionMetaAtomFamily, sessionMetaMapAtom, windowWorkspaceIdAtom, windowWorkspacesAtom, type SessionMeta } from '@/atoms/sessions'
 import { StoplightProvider } from '@/context/StoplightContext'
 import {
   useNavigationState,
@@ -46,6 +48,7 @@ import { getSettingsPageComponent } from '@/pages/settings/settings-pages'
 import { AutomationInfoPage } from '../automations/AutomationInfoPage'
 import type { ExecutionEntry } from '../automations/types'
 import { automationsAtom } from '@/atoms/automations'
+import { useAutomationActions } from '@/hooks/useAutomations'
 import { SendResourceToWorkspaceDialog, type SendResourceType } from './SendResourceToWorkspaceDialog'
 
 export interface MainContentPanelProps {
@@ -69,28 +72,30 @@ export function MainContentPanel({
   const { t } = useTranslation()
   const globalNavState = useNavigationState()
   const navState = navStateOverride ?? globalNavState
+  const isMultiSelectActive = useIsMultiSelectActive()
+  const activeWorkspaceId = useAtomValue(windowWorkspaceIdAtom)
+  const workspaces = useAtomValue(windowWorkspacesAtom)
+  const automations = useAtomValue(automationsAtom)
   const {
-    activeWorkspaceId,
-    workspaces,
-    onTestAutomation,
-    onToggleAutomation,
-    onDuplicateAutomation,
-    onDeleteAutomation,
-    onReplayAutomation,
     automationTestResults,
     getAutomationHistory,
-    activeSessionWorkingDirectory,
-  } = useAppShellContext()
-
-  const isMultiSelectActive = useIsMultiSelectActive()
-  const automations = useAtomValue(automationsAtom)
+    handleDeleteAutomation,
+    handleDuplicateAutomation,
+    handleReplayAutomation,
+    handleTestAutomation,
+    handleToggleAutomation,
+    automationPendingDelete,
+    confirmDeleteAutomation,
+    pendingDeleteAutomation,
+    setAutomationPendingDelete,
+  } = useAutomationActions(activeWorkspaceId, automations)
 
   // Execution history for the selected automation
   const selectedAutomationId = isAutomationsNavigation(navState) ? navState.details?.automationId : undefined
   const [executions, setExecutions] = useState<ExecutionEntry[]>([])
 
   useEffect(() => {
-    if (!selectedAutomationId || !getAutomationHistory) {
+    if (!selectedAutomationId) {
       setExecutions([])
       return
     }
@@ -162,6 +167,24 @@ export function MainContentPanel({
         workspaces={workspaces}
         activeWorkspaceId={activeWorkspaceId || ''}
       />
+      <Dialog open={!!automationPendingDelete} onOpenChange={(open) => { if (!open) setAutomationPendingDelete(null) }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>{t('dialog.deleteAutomation.title')}</DialogTitle>
+            <DialogDescription>
+              <Trans
+                i18nKey="dialog.deleteAutomation.description"
+                values={{ name: pendingDeleteAutomation?.name }}
+                components={{ strong: <strong /> }}
+              />
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAutomationPendingDelete(null)}>{t('common.cancel')}</Button>
+            <Button variant="destructive" onClick={confirmDeleteAutomation}>{t('common.delete')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </StoplightProvider>
   )
 
@@ -267,11 +290,11 @@ export function MainContentPanel({
               automation={automation}
               executions={executions}
               testResult={automationTestResults?.[automation.id]}
-              onTest={onTestAutomation ? () => onTestAutomation(automation.id) : undefined}
-              onToggleEnabled={onToggleAutomation ? () => onToggleAutomation(automation.id) : undefined}
-              onDuplicate={onDuplicateAutomation ? () => onDuplicateAutomation(automation.id) : undefined}
-              onDelete={onDeleteAutomation ? () => onDeleteAutomation(automation.id) : undefined}
-              onReplay={onReplayAutomation}
+              onTest={() => handleTestAutomation(automation.id)}
+              onToggleEnabled={() => handleToggleAutomation(automation.id)}
+              onDuplicate={() => handleDuplicateAutomation(automation.id)}
+              onDelete={() => handleDeleteAutomation(automation.id)}
+              onReplay={handleReplayAutomation}
               workspaceRootPath={activeWorkspace?.rootPath}
             />
           </Panel>
