@@ -16,9 +16,19 @@ describe('WhatsAppConnectDialog subscriptions', () => {
     expect(dialogSource).toContain('workspaceId?: string | null')
   })
 
-  it('uses the shared workspace atom from the global messaging host', () => {
+  it('reads the shared workspace atom only from the WhatsApp connect host content', () => {
+    const hostShellSource = hostSource.slice(
+      hostSource.indexOf('export function MessagingDialogHost'),
+      hostSource.indexOf('function MessagingWhatsAppConnectDialog')
+    )
+    const whatsappHostSource = hostSource.slice(
+      hostSource.indexOf('function MessagingWhatsAppConnectDialog')
+    )
+
     expect(hostSource).toContain('windowWorkspaceIdAtom')
-    expect(hostSource).toContain('useAtomValue(windowWorkspaceIdAtom)')
+    expect(hostShellSource).not.toContain('useAtomValue(windowWorkspaceIdAtom)')
+    expect(whatsappHostSource).toContain('useAtomValue(windowWorkspaceIdAtom)')
+    expect(hostShellSource).toContain("state.kind === 'wa_connect' ? (")
   })
 
   it('keeps playground WhatsApp events scoped to the preview workspace', () => {

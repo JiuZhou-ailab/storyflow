@@ -22,7 +22,6 @@ import { WhatsAppConnectDialog } from './WhatsAppConnectDialog'
 
 export function MessagingDialogHost() {
   const [state, setState] = useAtom(messagingDialogAtom)
-  const workspaceId = useAtomValue(windowWorkspaceIdAtom)
   const { t } = useTranslation()
 
   const close = () => setState({ kind: 'closed' })
@@ -98,22 +97,43 @@ export function MessagingDialogHost() {
 
   return (
     <>
-      <PairingCodeDialog
-        open={state.kind === 'pairing'}
-        onOpenChange={(o) => { if (!o) close() }}
-        platform={state.kind === 'pairing' ? state.platform : 'telegram'}
-        code={state.kind === 'pairing' ? state.code : null}
-        expiresAt={state.kind === 'pairing' ? state.expiresAt : null}
-        botUsername={state.kind === 'pairing' ? state.botUsername : undefined}
-        error={state.kind === 'pairing' ? state.error : undefined}
-      />
-      <WhatsAppConnectDialog
-        open={state.kind === 'wa_connect'}
-        onOpenChange={(o) => { if (!o) close() }}
-        onConnected={handleWhatsAppConnected}
-        workspaceId={workspaceId}
-      />
+      {state.kind === 'pairing' ? (
+        <PairingCodeDialog
+          open={true}
+          onOpenChange={(o) => { if (!o) close() }}
+          platform={state.platform}
+          code={state.code}
+          expiresAt={state.expiresAt}
+          botUsername={state.botUsername}
+          error={state.error}
+        />
+      ) : null}
+      {state.kind === 'wa_connect' ? (
+        <MessagingWhatsAppConnectDialog
+          onOpenChange={(o) => { if (!o) close() }}
+          onConnected={handleWhatsAppConnected}
+        />
+      ) : null}
     </>
+  )
+}
+
+function MessagingWhatsAppConnectDialog({
+  onOpenChange,
+  onConnected,
+}: {
+  onOpenChange: (open: boolean) => void
+  onConnected: () => void
+}) {
+  const workspaceId = useAtomValue(windowWorkspaceIdAtom)
+
+  return (
+    <WhatsAppConnectDialog
+      open={true}
+      onOpenChange={onOpenChange}
+      onConnected={onConnected}
+      workspaceId={workspaceId}
+    />
   )
 }
 
