@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react"
 import { useTranslation } from "react-i18next"
-import { useSetAtom } from "jotai"
+import { useAtomValue, useSetAtom } from "jotai"
 import { isToday, isYesterday, format } from "date-fns"
 import { getDateLocale } from "@craft-agent/shared/i18n"
 import { useAction, useActionLabel } from "@/actions"
@@ -10,7 +10,7 @@ import { getSessionStatus } from "@/utils/session"
 import * as storage from "@/lib/local-storage"
 import { KEYS } from "@/lib/local-storage"
 import type { LabelConfig } from "@craft-agent/shared/labels"
-import { flattenLabels, getDescendantIds } from "@craft-agent/shared/labels"
+import { extractLabelId, flattenLabels, getDescendantIds } from "@craft-agent/shared/labels"
 import * as MultiSelect from "@/hooks/useMultiSelect"
 import { Spinner } from "@craft-agent/ui"
 import { EntityListEmptyScreen } from "@/components/ui/entity-list-empty"
@@ -27,7 +27,7 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useEscapeInterrupt } from "@/context/EscapeInterruptContext"
 import { useNavigation, useNavigationState, routes, isSessionsNavigation } from "@/contexts/NavigationContext"
 import { useFocusContext } from "@/context/FocusContext"
-import { sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
+import { sendToWorkspaceAtom, sessionMetaMapAtom, type SessionMeta } from "@/atoms/sessions"
 import type { ViewConfig } from "@craft-agent/shared/views"
 import type { SessionStatusId, SessionStatus } from "@/config/session-status-config"
 import { buildCollapsedGroupsScopeSuffix } from "@/utils/session-list-collapse"
@@ -40,7 +40,6 @@ export interface SessionListRow {
 export type ChatGroupingMode = 'date' | 'status' | 'unread'
 
 interface SessionListProps {
-  items: SessionMeta[]
   onDelete: (sessionId: string, skipConfirmation?: boolean) => Promise<boolean>
   onFlag?: (sessionId: string) => void
   onUnflag?: (sessionId: string) => void
@@ -77,6 +76,8 @@ interface SessionListProps {
   groupingMode?: ChatGroupingMode
   /** Workspace ID for content search (optional - if not provided, content search is disabled) */
   workspaceId?: string
+  /** Remote workspace ID for mirrored sessions. */
+  remoteWorkspaceId?: string | null
   /** Secondary status filter (status chips in "All Sessions" view) - for search result grouping */
   statusFilter?: Map<string, FilterMode>
   /** Secondary label filter (label chips) - for search result grouping */
@@ -115,7 +116,6 @@ function formatDateGroupLabel(date: Date, t: (key: string) => string, lang: stri
  * - Home/End: Jump to first/last session
  */
 export function SessionList({
-  items,
   onDelete,
   onFlag,
   onUnflag,
@@ -137,6 +137,7 @@ export function SessionList({
   onLabelsChange,
   groupingMode = 'date',
   workspaceId,
+  remoteWorkspaceId,
   statusFilter,
   labelFilterMap,
   focusedSessionId,
@@ -163,6 +164,7 @@ export function SessionList({
   const { navigate, navigateToSession: navigateToSessionPrimary } = useNavigation()
   const navigateToSession = onNavigateToSession ?? navigateToSessionPrimary
   const navState = useNavigationState()
+  const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
   const { showEscapeOverlay } = useEscapeInterrupt()
 
   // Pre-flatten label tree once for efficient ID lookups in each SessionItem
@@ -179,6 +181,106 @@ export function SessionList({
 
   // Get current filter from navigation state (for preserving context in tab routes)
   const currentFilter = isSessionsNavigation(navState) ? navState.filter : undefined
+
+  const workspaceItems = useMemo(() => {
+    const result: SessionMeta[] = []
+    for (const meta of sessionMetaMap.values()) {
+      if (meta.hidden) continue
+      if (
+        workspaceId &&
+        meta.workspaceId !== workspaceId &&
+        (!remoteWorkspaceId || meta.workspaceId !== remoteWorkspaceId)
+      ) {
+        continue
+      }
+      result.push(meta)
+    }
+    return result
+  }, [remoteWorkspaceId, sessionMetaMap, workspaceId])
+
+  const filteredItems = useMemo(() => {
+    const sessionFilter = currentFilter ?? null
+    if (!sessionFilter) return []
+
+    const activeItems: SessionMeta[] = []
+    const archivedItems: SessionMeta[] = []
+    for (const item of workspaceItems) {
+      if (item.isArchived) archivedItems.push(item)
+      else activeItems.push(item)
+    }
+
+    let result: SessionMeta[]
+    switch (sessionFilter.kind) {
+      case 'allSessions':
+        result = activeItems
+        break
+      case 'flagged':
+        result = activeItems.filter(item => item.isFlagged)
+        break
+      case 'archived':
+        result = archivedItems
+        break
+      case 'state':
+        result = activeItems.filter(item => (item.sessionStatus || 'todo') === sessionFilter.stateId)
+        break
+      case 'label': {
+        if (sessionFilter.labelId === '__all__') {
+          result = activeItems.filter(item => item.labels && item.labels.length > 0)
+        } else {
+          const matchIds = new Set([sessionFilter.labelId, ...getDescendantIds(labels, sessionFilter.labelId)])
+          result = activeItems.filter(item => item.labels?.some(label => matchIds.has(extractLabelId(label))))
+        }
+        break
+      }
+      case 'view': {
+        result = activeItems.filter(item => {
+          const matched = evaluateViews?.(item) ?? []
+          if (sessionFilter.viewId === '__all__') return matched.length > 0
+          return matched.some(view => view.id === sessionFilter.viewId)
+        })
+        break
+      }
+      default:
+        result = activeItems
+    }
+
+    if (statusFilter && statusFilter.size > 0) {
+      const includes = new Set<SessionStatusId>()
+      const excludes = new Set<SessionStatusId>()
+      for (const [id, mode] of statusFilter) {
+        if (mode === 'include') includes.add(id)
+        else excludes.add(id)
+      }
+      if (includes.size > 0) {
+        result = result.filter(item => includes.has((item.sessionStatus || 'todo') as SessionStatusId))
+      }
+      if (excludes.size > 0) {
+        result = result.filter(item => !excludes.has((item.sessionStatus || 'todo') as SessionStatusId))
+      }
+    }
+
+    if (labelFilterMap && labelFilterMap.size > 0) {
+      const includes = new Set<string>()
+      const excludes = new Set<string>()
+      for (const [id, mode] of labelFilterMap) {
+        const ids = [id, ...getDescendantIds(labels, id)]
+        for (const expandedId of ids) {
+          if (mode === 'include') includes.add(expandedId)
+          else excludes.add(expandedId)
+        }
+      }
+      if (includes.size > 0) {
+        result = result.filter(item => item.labels?.some(label => includes.has(extractLabelId(label))))
+      }
+      if (excludes.size > 0) {
+        result = result.filter(item => !item.labels?.some(label => excludes.has(extractLabelId(label))))
+      }
+    }
+
+    return result
+  }, [currentFilter, evaluateViews, labelFilterMap, labels, statusFilter, workspaceItems])
+
+  const items = searchActive ? workspaceItems : filteredItems
 
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
   const [renameSessionId, setRenameSessionId] = useState<string | null>(null)

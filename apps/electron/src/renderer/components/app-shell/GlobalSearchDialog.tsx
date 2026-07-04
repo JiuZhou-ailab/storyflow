@@ -5,7 +5,8 @@
 import * as React from 'react'
 import { FileText, MessageSquareText } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { SessionMeta } from '@/atoms/sessions'
+import { useAtomValue } from 'jotai'
+import { sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
 import {
   CommandDialog,
   CommandEmpty,
@@ -24,7 +25,7 @@ export interface GlobalSearchDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   workspaceId?: string
-  sessions: SessionMeta[]
+  remoteWorkspaceId?: string | null
   novelFiles: NovelWorkspaceFile[]
   formatNovelFileTitle: (file: NovelWorkspaceFile) => string
   onOpenSession: (sessionId: string) => void
@@ -53,7 +54,7 @@ export function GlobalSearchDialog({
   open,
   onOpenChange,
   workspaceId,
-  sessions,
+  remoteWorkspaceId,
   novelFiles,
   formatNovelFileTitle,
   onOpenSession,
@@ -61,6 +62,7 @@ export function GlobalSearchDialog({
 }: GlobalSearchDialogProps) {
   const { t } = useTranslation()
   const [query, setQuery] = React.useState('')
+  const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
   const [contentResults, setContentResults] = React.useState<Map<string, GlobalSearchContentResult>>(new Map())
   const [searchingContent, setSearchingContent] = React.useState(false)
   const clearContentResults = React.useCallback(() => {
@@ -74,6 +76,22 @@ export function GlobalSearchDialog({
       setSearchingContent(false)
     }
   }, [open, clearContentResults])
+
+  const sessions = React.useMemo(() => {
+    const result: SessionMeta[] = []
+    for (const meta of sessionMetaMap.values()) {
+      if (meta.hidden) continue
+      if (
+        workspaceId &&
+        meta.workspaceId !== workspaceId &&
+        (!remoteWorkspaceId || meta.workspaceId !== remoteWorkspaceId)
+      ) {
+        continue
+      }
+      result.push(meta)
+    }
+    return result
+  }, [remoteWorkspaceId, sessionMetaMap, workspaceId])
 
   React.useEffect(() => {
     const trimmedQuery = query.trim()

@@ -881,14 +881,15 @@ describe('novel writing workspace layout', () => {
   it('does not derive writing workspace roots from a stale session outside the active workspace', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const workingDirectorySource = appShellSource.slice(
-      appShellSource.indexOf('const activeSessionMeta ='),
+      appShellSource.indexOf('const rawEffectiveSessionId ='),
       appShellSource.indexOf('const latestNovelFileChanges')
     )
 
-    expect(workingDirectorySource).toContain('activeSessionMeta?.workspaceId === activeWorkspaceId')
-    expect(workingDirectorySource).toContain('activeSessionMeta?.workspaceId === remoteWorkspaceId')
-    expect(workingDirectorySource).toContain('? activeSessionMeta?.workingDirectory')
-    expect(workingDirectorySource).not.toContain('? sessionMetaMap.get(effectiveSessionId)?.workingDirectory')
+    expect(workingDirectorySource).toContain('useAtomValue(sessionMetaAtomFamily(rawEffectiveSessionId')
+    expect(workingDirectorySource).toContain('rawEffectiveSessionMeta?.workspaceId === activeWorkspaceId')
+    expect(workingDirectorySource).toContain('rawEffectiveSessionMeta?.workspaceId === remoteWorkspaceId')
+    expect(workingDirectorySource).toContain('? rawEffectiveSessionMeta?.workingDirectory')
+    expect(workingDirectorySource).not.toContain('sessionMetaMap.get(effectiveSessionId)')
   })
 
   it('does not sync a stale focused-panel session into the selected session during workspace switches', () => {
@@ -914,7 +915,7 @@ describe('novel writing workspace layout', () => {
     )
 
     expect(effectiveSessionSource).toContain('const rawEffectiveSessionId = focusedSessionId ?? session.selected')
-    expect(effectiveSessionSource).toContain('const rawEffectiveSessionMeta = rawEffectiveSessionId ? sessionMetaMap.get(rawEffectiveSessionId) : undefined')
+    expect(effectiveSessionSource).toContain('const rawEffectiveSessionMeta = useAtomValue(sessionMetaAtomFamily(rawEffectiveSessionId')
     expect(effectiveSessionSource).toContain('rawEffectiveSessionMeta?.workspaceId === activeWorkspaceId')
     expect(effectiveSessionSource).toContain('rawEffectiveSessionMeta?.workspaceId === remoteWorkspaceId')
     expect(effectiveSessionSource).toContain('const effectiveSessionId = rawEffectiveSessionBelongsToWorkspace ? rawEffectiveSessionId : null')

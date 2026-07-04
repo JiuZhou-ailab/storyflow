@@ -89,7 +89,7 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import type { Session, Workspace, WorkspaceProjectType, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange, WhatsNewManifest } from "../../../shared/types"
-import { ensureSessionMessagesLoadedAtom, sessionAtomFamily, sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
+import { ensureSessionMessagesLoadedAtom, sessionAtomFamily, sessionMetaAtomFamily, sendToWorkspaceAtom } from "@/atoms/sessions"
 import { sessionListSearchActiveAtom, sessionListSearchQueryAtom } from "@/atoms/session-list-search"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
@@ -983,7 +983,7 @@ function AppShellContent({
   onOpenAccount,
 }: AppShellProps) {
   // Destructure commonly used values from context
-  // Note: sessions is NOT destructured here - we use sessionMetaMapAtom instead
+  // Note: sessions is NOT destructured here - shell leaves metadata list subscriptions to leaf views.
   // to prevent closures from retaining the full messages array
   const {
     workspaces,
@@ -1359,8 +1359,6 @@ function AppShellContent({
   // Automations — state, handlers, loading, subscriptions
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
   const remoteWorkspaceId = activeWorkspace?.remoteServer?.remoteWorkspaceId
-  const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
-
   // Send to Workspace dialog state (driven by sendToWorkspaceAtom set from SessionMenu/BatchSessionMenu)
   const sendToWorkspaceIds = useAtomValue(sendToWorkspaceAtom)
   const setSendToWorkspaceIds = useSetAtom(sendToWorkspaceAtom)
@@ -1629,7 +1627,7 @@ function AppShellContent({
   // Shift+Tab cycles permission mode through enabled modes (textarea handles its own, this handles when focus is elsewhere)
   // In multi-panel, targets the focused panel's session
   const rawEffectiveSessionId = focusedSessionId ?? session.selected
-  const rawEffectiveSessionMeta = rawEffectiveSessionId ? sessionMetaMap.get(rawEffectiveSessionId) : undefined
+  const rawEffectiveSessionMeta = useAtomValue(sessionMetaAtomFamily(rawEffectiveSessionId ?? '__missing__'))
   const rawEffectiveSessionBelongsToWorkspace = !!rawEffectiveSessionMeta && (
     rawEffectiveSessionMeta?.workspaceId === activeWorkspaceId
     || (!!remoteWorkspaceId && rawEffectiveSessionMeta?.workspaceId === remoteWorkspaceId)
@@ -1705,16 +1703,13 @@ function AppShellContent({
   // First press shows warning overlay, second press interrupts
   // In multi-panel, targets the focused panel's session
   useAction('chat.stopProcessing', () => {
-    if (effectiveSessionId) {
-      const meta = sessionMetaMap.get(effectiveSessionId)
-      if (meta?.isProcessing) {
-        // handleEscapePress returns true on second press (within timeout)
-        const shouldInterrupt = handleEscapePress()
-        if (shouldInterrupt) {
-          window.electronAPI.cancelProcessing(effectiveSessionId, false).catch(err => {
-            console.error('[AppShell] Failed to cancel processing:', err)
-          })
-        }
+    if (effectiveSessionId && rawEffectiveSessionMeta?.isProcessing) {
+      // handleEscapePress returns true on second press (within timeout)
+      const shouldInterrupt = handleEscapePress()
+      if (shouldInterrupt) {
+        window.electronAPI.cancelProcessing(effectiveSessionId, false).catch(err => {
+          console.error('[AppShell] Failed to cancel processing:', err)
+        })
       }
     }
   }, {
@@ -1723,10 +1718,9 @@ function AppShellContent({
     enabled: () => {
       if (hasOpenOverlay()) return false
       if (!effectiveSessionId) return false
-      const meta = sessionMetaMap.get(effectiveSessionId)
-      return meta?.isProcessing ?? false
+      return rawEffectiveSessionMeta?.isProcessing ?? false
     }
-  }, [effectiveSessionId, handleEscapePress])
+  }, [effectiveSessionId, handleEscapePress, rawEffectiveSessionMeta?.isProcessing])
 
   // Theme toggle (CMD+SHIFT+A)
   useAction('app.toggleTheme', () => setMode(resolvedMode === 'dark' ? 'light' : 'dark'))
@@ -1915,13 +1909,8 @@ function AppShellContent({
 
   // Reload skills when active session's workingDirectory changes (for project-level skills)
   // Skills are loaded from: global (~/.agents/skills/), workspace, and project ({workingDirectory}/.agents/skills/)
-  const activeSessionMeta = effectiveSessionId ? sessionMetaMap.get(effectiveSessionId) : undefined
-  const activeSessionBelongsToWorkspace = !!activeSessionMeta && (
-    activeSessionMeta?.workspaceId === activeWorkspaceId
-    || (!!remoteWorkspaceId && activeSessionMeta?.workspaceId === remoteWorkspaceId)
-  )
-  const activeSessionWorkingDirectory = activeSessionBelongsToWorkspace
-    ? activeSessionMeta?.workingDirectory
+  const activeSessionWorkingDirectory = effectiveSessionId
+    ? rawEffectiveSessionMeta?.workingDirectory
     : undefined
   const activeWorkspaceMetadata = activeWorkspace as (Workspace & WorkspaceOpeningMetadata) | undefined
   const activeWorkspaceProjectType = activeWorkspaceMetadata?.projectType
@@ -3338,138 +3327,6 @@ function AppShellContent({
       console.error('[Chat] Failed to load skills:', err)
     })
   }, [activeWorkspaceId, activeSessionWorkingDirectory])
-
-  // Filter session metadata by active workspace
-  // Also exclude hidden sessions (mini-agent sessions) from all counts and lists
-  // For remote workspaces, sessions have the remote workspace ID (not the local one),
-  // so we match against both the local and remote workspace IDs.
-  const sessionMetaBuckets = useMemo(() => {
-    const workspaceSessionMetas: SessionMeta[] = []
-    const activeSessionMetas: SessionMeta[] = []
-    const archivedSessionMetas: SessionMeta[] = []
-
-    for (const meta of sessionMetaMap.values()) {
-      if (meta.hidden) continue
-      if (
-        activeWorkspaceId &&
-        meta.workspaceId !== activeWorkspaceId &&
-        (!remoteWorkspaceId || meta.workspaceId !== remoteWorkspaceId)
-      ) {
-        continue
-      }
-
-      workspaceSessionMetas.push(meta)
-      if (meta.isArchived) {
-        archivedSessionMetas.push(meta)
-      } else {
-        activeSessionMetas.push(meta)
-      }
-    }
-
-    return { workspaceSessionMetas, activeSessionMetas, archivedSessionMetas }
-  }, [sessionMetaMap, activeWorkspaceId, remoteWorkspaceId])
-  const { workspaceSessionMetas, activeSessionMetas, archivedSessionMetas } = sessionMetaBuckets
-
-  // Filter session metadata based on sidebar mode and chat filter
-  const filteredSessionMetas = useMemo(() => {
-    // When in sources mode, return empty (no sessions to show)
-    if (!sessionFilter) {
-      return []
-    }
-
-    let result: SessionMeta[]
-
-    switch (sessionFilter.kind) {
-      case 'allSessions':
-        // "All Sessions" - shows active (non-archived) sessions
-        result = activeSessionMetas
-        break
-      case 'flagged':
-        result = activeSessionMetas.filter(s => s.isFlagged)
-        break
-      case 'archived':
-        // Archived view shows only archived sessions
-        result = archivedSessionMetas
-        break
-      case 'state':
-        // Filter by specific todo state (excludes archived)
-        result = activeSessionMetas.filter(s => (s.sessionStatus || 'todo') === sessionFilter.stateId)
-        break
-      case 'label': {
-        if (sessionFilter.labelId === '__all__') {
-          // "Labels" header: show all active sessions that have at least one label
-          result = activeSessionMetas.filter(s => s.labels && s.labels.length > 0)
-        } else {
-          // Specific label: includes sessions tagged with this label or any descendant
-          const descendants = getDescendantIds(labelConfigs, sessionFilter.labelId)
-          const matchIds = new Set([sessionFilter.labelId, ...descendants])
-          result = activeSessionMetas.filter(
-            s => s.labels?.some(l => matchIds.has(extractLabelId(l)))
-          )
-        }
-        break
-      }
-      case 'view': {
-        // Filter by view: __all__ shows any session matched by any view,
-        // otherwise filter to the specific view (excludes archived)
-        result = activeSessionMetas.filter(s => {
-          const matched = evaluateViews(s)
-          if (sessionFilter.viewId === '__all__') {
-            return matched.length > 0
-          }
-          return matched.some(v => v.id === sessionFilter.viewId)
-        })
-        break
-      }
-      default:
-        result = activeSessionMetas
-    }
-
-    // Apply secondary filters (status + labels, AND-ed together) in ALL views.
-    // These layer on top of the primary sessionFilter to allow further narrowing.
-    // Each filter supports include/exclude modes:
-    //   - Includes: if any exist, only matching items pass
-    //   - Excludes: matching items are removed (applied after includes)
-    if (listFilter.size > 0) {
-      const statusIncludes = new Set<SessionStatusId>()
-      const statusExcludes = new Set<SessionStatusId>()
-      for (const [id, mode] of listFilter) {
-        if (mode === 'include') statusIncludes.add(id)
-        else statusExcludes.add(id)
-      }
-      if (statusIncludes.size > 0) {
-        result = result.filter(s => statusIncludes.has((s.sessionStatus || 'todo') as SessionStatusId))
-      }
-      if (statusExcludes.size > 0) {
-        result = result.filter(s => !statusExcludes.has((s.sessionStatus || 'todo') as SessionStatusId))
-      }
-    }
-    // Filter by labels — supports include/exclude with descendant expansion
-    if (labelFilter.size > 0) {
-      const labelIncludes = new Set<string>()
-      const labelExcludes = new Set<string>()
-      for (const [id, mode] of labelFilter) {
-        // Expand to include descendant label IDs
-        const ids = [id, ...getDescendantIds(labelConfigs, id)]
-        for (const expandedId of ids) {
-          if (mode === 'include') labelIncludes.add(expandedId)
-          else labelExcludes.add(expandedId)
-        }
-      }
-      if (labelIncludes.size > 0) {
-        result = result.filter(s =>
-          s.labels?.some(l => labelIncludes.has(extractLabelId(l)))
-        )
-      }
-      if (labelExcludes.size > 0) {
-        result = result.filter(s =>
-          !s.labels?.some(l => labelExcludes.has(extractLabelId(l)))
-        )
-      }
-    }
-
-    return result
-  }, [workspaceSessionMetas, activeSessionMetas, archivedSessionMetas, sessionFilter, listFilter, labelFilter, labelConfigs])
 
   // Derive "pinned" (non-removable) filters from the current sessionFilter path.
   // These represent filters that are implicit in the current deeplink/route and
@@ -5202,7 +5059,6 @@ function AppShellContent({
                 {/* Key on sidebarMode forces full remount when switching views, skipping animations */}
                 <SessionList
                   key={sessionFilter?.kind}
-                  items={searchActive ? workspaceSessionMetas : filteredSessionMetas}
                   onDelete={handleDeleteSession}
                   onFlag={onFlagSession}
                   onUnflag={onUnflagSession}
@@ -5240,6 +5096,7 @@ function AppShellContent({
                   onLabelsChange={handleSessionLabelsChange}
                   groupingMode={chatGroupingMode}
                   workspaceId={activeWorkspaceId ?? undefined}
+                  remoteWorkspaceId={remoteWorkspaceId}
                   statusFilter={listFilter}
                   labelFilterMap={labelFilter}
                   focusedSessionId={panelCount === 0 ? null : panelCount > 1 ? focusedSessionId : undefined}
@@ -5362,7 +5219,7 @@ function AppShellContent({
         open={globalSearchOpen}
         onOpenChange={setGlobalSearchOpen}
         workspaceId={activeWorkspaceId ?? undefined}
-        sessions={workspaceSessionMetas}
+        remoteWorkspaceId={remoteWorkspaceId}
         novelFiles={novelWorkspaceFiles}
         formatNovelFileTitle={formatGlobalSearchNovelFileTitle}
         onOpenSession={navigateToSession}

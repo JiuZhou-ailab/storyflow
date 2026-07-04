@@ -9,6 +9,7 @@ const sessionItemSource = readFileSync(new URL('../SessionItem.tsx', import.meta
 const sessionBadgesSource = readFileSync(new URL('../SessionBadges.tsx', import.meta.url), 'utf-8')
 const sessionListSource = readFileSync(new URL('../SessionList.tsx', import.meta.url), 'utf-8')
 const sessionInfoPopoverSource = readFileSync(new URL('../SessionInfoPopover.tsx', import.meta.url), 'utf-8')
+const globalSearchDialogSource = readFileSync(new URL('../GlobalSearchDialog.tsx', import.meta.url), 'utf-8')
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf-8')
 
 describe('session item subscriptions', () => {
@@ -127,5 +128,12 @@ describe('session item subscriptions', () => {
     expect(sessionInfoPopoverSource).toContain('sessionMetaAtomFamily')
     expect(contentSource).toContain('useAtomValue(sessionMetaAtomFamily(sessionId))')
     expect(contentSource).not.toContain('useSession(sessionId)')
+  })
+
+  it('keeps whole-session metadata subscriptions out of the app shell', () => {
+    expect(appShellSource).not.toContain('useAtomValue(sessionMetaMapAtom)')
+    expect(appShellSource).toContain('useAtomValue(sessionMetaAtomFamily(rawEffectiveSessionId')
+    expect(sessionListSource).toContain('useAtomValue(sessionMetaMapAtom)')
+    expect(globalSearchDialogSource).toContain('useAtomValue(sessionMetaMapAtom)')
   })
 })
