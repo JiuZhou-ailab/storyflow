@@ -81,6 +81,7 @@ import { formatNovelWorkspaceFileTitle } from "@/components/writing/novel-file-d
 import { LeftSidebar, type LinkItem as LeftSidebarLinkItem, type SidebarItem as LeftSidebarItem } from "./LeftSidebar"
 import { useSession } from "@/hooks/useSession"
 import { AppShellProvider, type AppShellContextType } from "@/context/AppShellContext"
+import { sessionOptionsAtomFamily } from "@/hooks/useSessionOptions"
 import { EscapeInterruptProvider, useEscapeInterrupt } from "@/context/EscapeInterruptContext"
 import { useTheme } from "@/context/ThemeContext"
 import { getResizeGradientStyle } from "@/hooks/useResizeGradient"
@@ -988,7 +989,6 @@ function AppShellContent({
   const {
     workspaces,
     activeWorkspaceId,
-    sessionOptions,
     onSelectWorkspace,
     onWorkspaceCreated,
     onRefreshWorkspaces,
@@ -1642,8 +1642,8 @@ function AppShellContent({
 
   useAction('chat.cyclePermissionMode', () => {
     if (effectiveSessionId) {
-      const currentOptions = contextValue.sessionOptions.get(effectiveSessionId)
-      const currentMode = currentOptions?.permissionMode ?? 'ask'
+      const currentOptions = store.get(sessionOptionsAtomFamily(effectiveSessionId))
+      const currentMode = currentOptions.permissionMode
       // Cycle through enabled permission modes
       const modes = enabledModes.length >= 2 ? enabledModes : ['safe', 'ask', 'allow-all'] as PermissionMode[]
       const currentIndex = modes.indexOf(currentMode)

@@ -4,13 +4,18 @@
 
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'bun:test'
+import { createStore } from 'jotai'
 import {
   defaultSessionOptions,
+  sessionOptionsAtom,
+  sessionOptionsAtomFamily,
   updateSessionOptionsMap,
   type SessionOptions,
 } from '../useSessionOptions'
 
 const appSource = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf-8')
+const appShellContextSource = readFileSync(new URL('../../context/AppShellContext.tsx', import.meta.url), 'utf-8')
+const appShellSource = readFileSync(new URL('../../components/app-shell/AppShell.tsx', import.meta.url), 'utf-8')
 
 describe('updateSessionOptionsMap', () => {
   it('keeps the original map when default options are not stored', () => {
@@ -52,5 +57,32 @@ describe('updateSessionOptionsMap', () => {
 
     expect(sendMessageSource).toContain('}, [updateSessionById, skills, sources, windowWorkspaceId])')
     expect(sendMessageSource).not.toContain('}, [sessionOptions, updateSessionById')
+  })
+
+  it('keeps session option state out of the broad app shell context', () => {
+    expect(appShellContextSource).not.toContain('sessionOptions: Map')
+    expect(appShellContextSource).not.toContain('sessionOptions.get(sessionId)')
+    expect(appShellSource).not.toContain('contextValue.sessionOptions')
+  })
+
+  it('does not notify other sessions when one session option changes', () => {
+    const store = createStore()
+    const s2OptionsAtom = sessionOptionsAtomFamily('s2')
+    let s2Notifications = 0
+
+    expect(store.get(s2OptionsAtom)).toBe(defaultSessionOptions)
+    const unsubscribe = store.sub(s2OptionsAtom, () => {
+      s2Notifications++
+    })
+
+    store.set(
+      sessionOptionsAtom,
+      updateSessionOptionsMap(store.get(sessionOptionsAtom), 's1', { permissionMode: 'allow-all' })
+    )
+
+    unsubscribe()
+    expect(store.get(sessionOptionsAtomFamily('s1')).permissionMode).toBe('allow-all')
+    expect(store.get(s2OptionsAtom)).toBe(defaultSessionOptions)
+    expect(s2Notifications).toBe(0)
   })
 })

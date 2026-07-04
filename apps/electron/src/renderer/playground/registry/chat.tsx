@@ -178,7 +178,6 @@ const playgroundAppShellContext = {
   pendingPermissions: new Map(),
   pendingCredentials: new Map(),
   getDraft: () => '',
-  sessionOptions: new Map(),
   onCreateSession: async () => ({
     id: 'playground-session',
     workspaceId: 'playground-workspace',

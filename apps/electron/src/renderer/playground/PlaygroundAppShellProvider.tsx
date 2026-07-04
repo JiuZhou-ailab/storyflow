@@ -40,7 +40,6 @@ const playgroundValue: AppShellContextType = {
   getDraft: () => '',
   getDraftAttachmentRefs: () => [],
   hydrateDraftAttachments: async () => [],
-  sessionOptions: new Map(),
   onCreateSession: (async () => {
     throw new Error('[Playground] onCreateSession is not available')
   }) as AppShellContextType['onCreateSession'],

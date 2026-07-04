@@ -10,7 +10,7 @@ import { useSetAtom, useStore, useAtomValue, useAtom } from 'jotai'
 import type { Session, Workspace, SessionEvent, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, SetupNeeds, SessionStatus, NewChatActionParams, ContentBadge, LlmConnectionWithStatus, PermissionModeState, SendMessageOptions, ClientAuthState } from '../shared/types'
 import type { SessionDraft, DraftAttachmentRef } from '@craft-agent/shared/config'
 import type { SessionOptions, SessionOptionUpdates } from './hooks/useSessionOptions'
-import { defaultSessionOptions, updateSessionOptionsMap } from './hooks/useSessionOptions'
+import { defaultSessionOptions, sessionOptionsAtom, updateSessionOptionsMap } from './hooks/useSessionOptions'
 import { generateMessageId } from '../shared/types'
 import { useEventProcessor } from './event-processor'
 import type { AgentEvent, Effect } from './event-processor'
@@ -290,6 +290,7 @@ export default function App() {
   const removeSession = useSetAtom(removeSessionAtom)
   const updateSessionDirect = useSetAtom(updateSessionAtom)
   const replaceLoadedSession = useSetAtom(replaceLoadedSessionAtom)
+  const setSessionOptions = useSetAtom(sessionOptionsAtom)
   const store = useStore()
   const activeViewingSessionIdRef = useRef<string | null>(null)
   const sessionRefreshInFlightRef = useRef<Map<string, Promise<SessionRefreshResult>>>(new Map())
@@ -356,9 +357,6 @@ export default function App() {
   // during typing; attachments are stored as lightweight refs (path + name) and
   // hydrated via readFileAttachment() on session switch.
   const sessionDraftsRef = useRef<Map<string, SessionDraft>>(new Map())
-  // Unified session options for all session-scoped settings
-  const [sessionOptions, setSessionOptions] = useState<Map<string, SessionOptions>>(new Map())
-
   // Theme state (app-level only)
   const [appTheme, setAppTheme] = useState<ThemeOverrides | null>(null)
   // Reset confirmation dialog
@@ -411,13 +409,6 @@ export default function App() {
   // shikiTheme is passed to ShikiThemeProvider to ensure correct syntax highlighting
   // theme for dark-only themes in light system mode
   const { shikiTheme, isDark } = useTheme({ appTheme })
-
-  // Ref for sessionOptions to access current value in event handlers without re-registering
-  const sessionOptionsRef = useRef(sessionOptions)
-  // Keep ref in sync with state
-  useEffect(() => {
-    sessionOptionsRef.current = sessionOptions
-  }, [sessionOptions])
 
   const applyPermissionModeState = useCallback((sessionId: string, state: PermissionModeState, source: 'event' | 'reconcile') => {
     setSessionOptions(prev => {
@@ -2075,7 +2066,6 @@ export default function App() {
     getDraft,
     getDraftAttachmentRefs,
     hydrateDraftAttachments,
-    sessionOptions,
     // Session callbacks
     onCreateSession: handleCreateSession,
     onSendMessage: handleSendMessage,
@@ -2122,7 +2112,6 @@ export default function App() {
     getDraft,
     getDraftAttachmentRefs,
     hydrateDraftAttachments,
-    sessionOptions,
     handleCreateSession,
     handleSendMessage,
     handleRenameSession,

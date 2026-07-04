@@ -30,7 +30,7 @@ import type {
 } from '../../shared/types'
 import type { SessionStatus as SessionStatusConfig } from '@/config/session-status-config'
 import type { SessionOptions, SessionOptionUpdates } from '../hooks/useSessionOptions'
-import { defaultSessionOptions } from '../hooks/useSessionOptions'
+import { sessionOptionsAtomFamily } from '../hooks/useSessionOptions'
 import { sessionAtomFamily } from '../atoms/sessions'
 
 export interface AppShellContextType {
@@ -77,10 +77,6 @@ export interface AppShellContextType {
   enabledModes?: PermissionMode[]
   /** Dynamic todo states from workspace config (provided by AppShell, defaults to empty) */
   sessionStatuses?: SessionStatusConfig[]
-
-  // Unified session options map
-  /** All session-scoped options in one map. Use useSessionOptionsFor() hook for easy access. */
-  sessionOptions: Map<string, SessionOptions>
 
   // Session callbacks
   onCreateSession: (workspaceId: string, options?: import('../../shared/types').CreateSessionOptions) => Promise<Session>
@@ -253,9 +249,8 @@ export function useSessionOptionsFor(sessionId: string): {
   setPermissionMode: (mode: PermissionMode) => void
   isSafeModeActive: () => boolean
 } {
-  const { sessionOptions, onSessionOptionsChange } = useAppShellContext()
-
-  const options = sessionOptions.get(sessionId) ?? defaultSessionOptions
+  const { onSessionOptionsChange } = useAppShellContext()
+  const options = useAtomValue(sessionOptionsAtomFamily(sessionId))
 
   const setOption = useCallback(<K extends keyof SessionOptions>(
     key: K,

@@ -13,6 +13,8 @@
 import type { PermissionMode } from '../../shared/types'
 import type { ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels'
 import { DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels'
+import { atom } from 'jotai'
+import { atomFamily } from 'jotai-family'
 
 /**
  * All session-scoped options in one place.
@@ -31,6 +33,12 @@ export const defaultSessionOptions: SessionOptions = {
   permissionMode: 'ask', // Default to ask mode (prompt for permissions)
   thinkingLevel: DEFAULT_THINKING_LEVEL, // Default to 'medium' level
 }
+
+export const sessionOptionsAtom = atom<Map<string, SessionOptions>>(new Map())
+
+export const sessionOptionsAtomFamily = atomFamily(
+  (sessionId: string) => atom((get) => get(sessionOptionsAtom).get(sessionId) ?? defaultSessionOptions)
+)
 
 /** Type for partial updates to session options */
 export type SessionOptionUpdates = Partial<SessionOptions>
