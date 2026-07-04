@@ -13,7 +13,7 @@ import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { EditPopover, EditButton, getEditConfig } from '@/components/ui/EditPopover'
-import { useTheme } from '@/context/ThemeContext'
+import { useTheme, type FontFamily, type ThemeMode } from '@/context/ThemeContext'
 import { useAppShellContext } from '@/context/AppShellContext'
 import { routes } from '@/lib/navigate'
 import { Monitor, Sun, Moon } from 'lucide-react'
@@ -27,6 +27,7 @@ import {
   SettingsSegmentedControl,
   SettingsMenuSelect,
   SettingsToggle,
+  type SettingsSegmentedOption,
 } from '@/components/settings'
 import * as storage from '@/lib/local-storage'
 import { useWorkspaceIcons } from '@/hooks/useWorkspaceIcon'
@@ -241,6 +242,19 @@ export default function AppearanceSettingsPage() {
     () => createThemeOptions(workspaceDefaultThemeLabel, presetThemeOptions),
     [workspaceDefaultThemeLabel, presetThemeOptions],
   )
+  const modeOptions = useMemo<SettingsSegmentedOption<ThemeMode>[]>(() => [
+    { value: 'system', label: t("settings.appearance.system"), icon: <Monitor className="w-4 h-4" /> },
+    { value: 'light', label: t("settings.appearance.light"), icon: <Sun className="w-4 h-4" /> },
+    { value: 'dark', label: t("settings.appearance.dark"), icon: <Moon className="w-4 h-4" /> },
+  ], [t])
+  const fontOptions = useMemo<SettingsSegmentedOption<FontFamily>[]>(() => [
+    { value: 'inter', label: t("settings.appearance.fontInter") },
+    { value: 'system', label: t("settings.appearance.fontSystem") },
+  ], [t])
+  const languageOptions = useMemo(() => Object.entries(LANGUAGES).map(([code, config]) => ({
+    value: code,
+    label: config.nativeName,
+  })), [])
 
   return (
     <div className="h-full flex flex-col">
@@ -260,11 +274,7 @@ export default function AppearanceSettingsPage() {
                     <SettingsSegmentedControl
                       value={mode}
                       onValueChange={setMode}
-                      options={[
-                        { value: 'system', label: t("settings.appearance.system"), icon: <Monitor className="w-4 h-4" /> },
-                        { value: 'light', label: t("settings.appearance.light"), icon: <Sun className="w-4 h-4" /> },
-                        { value: 'dark', label: t("settings.appearance.dark"), icon: <Moon className="w-4 h-4" /> },
-                      ]}
+                      options={modeOptions}
                     />
                   </SettingsRow>
                   <SettingsRow label={t("settings.appearance.colorTheme")}>
@@ -278,10 +288,7 @@ export default function AppearanceSettingsPage() {
                     <SettingsSegmentedControl
                       value={font}
                       onValueChange={setFont}
-                      options={[
-                        { value: 'inter', label: t("settings.appearance.fontInter") },
-                        { value: 'system', label: t("settings.appearance.fontSystem") },
-                      ]}
+                      options={fontOptions}
                     />
                   </SettingsRow>
                   <SettingsRow label={t("settings.appearance.language")}>
@@ -291,10 +298,7 @@ export default function AppearanceSettingsPage() {
                         i18n.changeLanguage(value)
                         window.electronAPI?.changeLanguage?.(value)
                       }}
-                      options={Object.entries(LANGUAGES).map(([code, config]) => ({
-                        value: code,
-                        label: config.nativeName,
-                      }))}
+                      options={languageOptions}
                     />
                   </SettingsRow>
                 </SettingsCard>
