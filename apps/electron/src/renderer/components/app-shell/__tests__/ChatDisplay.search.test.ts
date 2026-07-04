@@ -14,6 +14,7 @@ const freeFormInputSource = readFileSync(new URL('../input/FreeFormInput.tsx', i
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf-8')
 const appShellContextSource = readFileSync(new URL('../../../context/AppShellContext.tsx', import.meta.url), 'utf-8')
 const chatPageSource = readFileSync(new URL('../../../pages/ChatPage.tsx', import.meta.url), 'utf-8')
+const chatDisplaySearchSource = readFileSync(new URL('../ChatDisplay.search.ts', import.meta.url), 'utf-8')
 
 function message(overrides: Partial<Omit<Message, 'content'>> & { content?: unknown }): Message {
   return {
@@ -97,6 +98,13 @@ describe('collectTurnSearchOccurrences', () => {
 
     expect(collectTurnSearchOccurrences(turns, '   ', turnKey)).toEqual([])
   })
+
+  test('normalizes the query once while collecting turn matches', () => {
+    expect(chatDisplaySearchSource).toContain('function countSearchOccurrencesLowerQuery')
+    expect(chatDisplaySearchSource).toContain('const normalizedQuery = searchQuery.trim().toLowerCase()')
+    expect(chatDisplaySearchSource).toContain('countSearchOccurrencesLowerQuery(getTurnSearchText(turn), normalizedQuery)')
+    expect(chatDisplaySearchSource).not.toContain('const query = searchQuery.toLowerCase()')
+  })
 })
 
 describe('ChatDisplay search performance contract', () => {
@@ -145,7 +153,7 @@ describe('ChatDisplay search performance contract', () => {
   })
 
   test('passes annotation open requests only to the matching TurnCard', () => {
-    expect(chatDisplaySource).toContain('const turnOpenAnnotationRequest = openAnnotationRequest')
+    expect(chatDisplaySource).toContain('const turnOpenAnnotationRequest = turnRenderMeta?.turnOpenAnnotationRequest ?? null')
     expect(chatDisplaySource).toContain('openAnnotationRequest={turnOpenAnnotationRequest}')
     expect(chatDisplaySource).not.toContain('openAnnotationRequest={openAnnotationRequest}')
   })

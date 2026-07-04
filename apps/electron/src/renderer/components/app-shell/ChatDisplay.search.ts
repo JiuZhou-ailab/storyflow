@@ -12,10 +12,12 @@ export interface TurnSearchOccurrence {
 }
 
 export function countSearchOccurrences(text: string, query: string): number {
-  if (query.length === 0) return 0
+  return countSearchOccurrencesLowerQuery(text, query.toLowerCase())
+}
 
+function countSearchOccurrencesLowerQuery(text: string, lowerQuery: string): number {
+  if (lowerQuery.length === 0) return 0
   const lowerText = text.toLowerCase()
-  const lowerQuery = query.toLowerCase()
   let count = 0
   let pos = 0
 
@@ -56,9 +58,9 @@ export function collectTurnSearchOccurrences(
   searchQuery: string,
   getTurnKey: (turn: Turn) => string
 ): TurnSearchOccurrence[] {
-  if (!searchQuery.trim()) return []
+  const normalizedQuery = searchQuery.trim().toLowerCase()
+  if (!normalizedQuery) return []
 
-  const query = searchQuery.toLowerCase()
   const matches: TurnSearchOccurrence[] = []
 
   for (let turnIndex = 0; turnIndex < turns.length; turnIndex++) {
@@ -66,7 +68,7 @@ export function collectTurnSearchOccurrences(
     if (!turn) continue
 
     const turnId = getTurnKey(turn)
-    const occurrenceCount = countSearchOccurrences(getTurnSearchText(turn), query)
+    const occurrenceCount = countSearchOccurrencesLowerQuery(getTurnSearchText(turn), normalizedQuery)
 
     for (let matchIndexInTurn = 0; matchIndexInTurn < occurrenceCount; matchIndexInTurn++) {
       matches.push({
