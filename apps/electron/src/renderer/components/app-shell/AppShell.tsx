@@ -5256,14 +5256,16 @@ function AppShellContent({
       </Dialog>
 
       {/* Send to Workspace dialog (driven by sendToWorkspaceAtom) */}
-      <SendToWorkspaceDialog
-        open={sendToWorkspaceIds.length > 0}
-        onOpenChange={(open) => { if (!open) setSendToWorkspaceIds([]) }}
-        sessionIds={sendToWorkspaceIds}
-        workspaces={workspaces}
-        activeWorkspaceId={activeWorkspaceId}
-        onTransferComplete={handleTransferComplete}
-      />
+      {sendToWorkspaceIds.length > 0 ? (
+        <SendToWorkspaceDialog
+          open={true}
+          onOpenChange={(open) => { if (!open) setSendToWorkspaceIds([]) }}
+          sessionIds={sendToWorkspaceIds}
+          workspaces={workspaces}
+          activeWorkspaceId={activeWorkspaceId}
+          onTransferComplete={handleTransferComplete}
+        />
+      ) : null}
 
       <NovelExportDialog
         open={novelExportDialogOpen}

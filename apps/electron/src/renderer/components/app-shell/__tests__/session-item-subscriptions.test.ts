@@ -262,4 +262,15 @@ describe('session item subscriptions', () => {
     expect(globalSearchDialogSource).toContain('return props.open ? <GlobalSearchDialogContent {...props} /> : null')
     expect(globalSearchDialogSource).toContain('useAtomValue(sessionMetaMapAtom)')
   })
+
+  it('mounts the send-to-workspace dialog only while sessions are selected for transfer', () => {
+    const sendDialogCall = appShellSource.slice(
+      appShellSource.indexOf('{sendToWorkspaceIds.length > 0 ? ('),
+      appShellSource.indexOf(') : null}', appShellSource.indexOf('{sendToWorkspaceIds.length > 0 ? ('))
+    )
+
+    expect(sendDialogCall).toContain('<SendToWorkspaceDialog')
+    expect(sendDialogCall).toContain('open={true}')
+    expect(sendDialogCall).toContain('sessionIds={sendToWorkspaceIds}')
+  })
 })
