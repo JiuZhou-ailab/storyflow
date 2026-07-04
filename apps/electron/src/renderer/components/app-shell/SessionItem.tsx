@@ -210,7 +210,13 @@ export function SessionItem({
           {formatDistanceToNowStrict(new Date(item.lastMessageAt), { locale: shortTimeLocale as Locale, roundingMethod: 'floor' })}
         </span>
       ) : undefined}
-      badges={resolvedLabelBadges.length > 0 ? <SessionBadges item={item} resolvedLabels={resolvedLabelBadges} /> : undefined}
+      badges={resolvedLabelBadges.length > 0 ? (
+        <SessionBadges
+          item={item}
+          resolvedLabels={resolvedLabelBadges}
+          onLabelsChange={ctx.onLabelsChange}
+        />
+      ) : undefined}
     />
   )
 }

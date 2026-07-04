@@ -1,6 +1,5 @@
 import { parseLabelEntry } from "@craft-agent/shared/labels"
 import { EntityListLabelBadge } from "@/components/ui/entity-list-label-badge"
-import { useSessionListContext } from "@/context/SessionListContext"
 import type { SessionMeta } from "@/atoms/sessions"
 import type { LabelConfig } from "@craft-agent/shared/labels"
 
@@ -12,6 +11,7 @@ export interface ResolvedSessionLabelBadge {
 interface SessionBadgesProps {
   item: SessionMeta
   resolvedLabels: ResolvedSessionLabelBadge[]
+  onLabelsChange?: (sessionId: string, labels: string[]) => void
 }
 
 export function resolveSessionLabelBadges(
@@ -29,8 +29,7 @@ export function resolveSessionLabelBadges(
     .filter((label): label is ResolvedSessionLabelBadge => label != null)
 }
 
-export function SessionBadges({ item, resolvedLabels }: SessionBadgesProps) {
-  const ctx = useSessionListContext()
+export function SessionBadges({ item, resolvedLabels, onLabelsChange }: SessionBadgesProps) {
   if (resolvedLabels.length === 0) return null
 
   return (
@@ -41,7 +40,7 @@ export function SessionBadges({ item, resolvedLabels }: SessionBadgesProps) {
           label={config}
           rawValue={rawValue}
           sessionLabels={item.labels || []}
-          onLabelsChange={(updated) => ctx.onLabelsChange?.(item.id, updated)}
+          onLabelsChange={(updated) => onLabelsChange?.(item.id, updated)}
         />
       ))}
     </>
