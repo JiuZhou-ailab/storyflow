@@ -86,6 +86,16 @@ describe('filterItems', () => {
 
     expect(filterItems(items, 'pri/al').map(item => item.id)).toEqual(['alpha']);
   });
+
+  it('precomputes word-boundary matchers once per query segment', () => {
+    const source = readFileSync(new URL('../label-menu-utils.ts', import.meta.url), 'utf-8');
+    const filterStart = source.indexOf('export function filterItems');
+    const filterSource = source.slice(filterStart);
+
+    expect(filterSource).toContain('const segments = createLabelMenuFilterSegments(filter)');
+    expect(filterSource).toContain('segmentScoreLowerPart(fullParts[partIndex], seg.value, seg.wordBoundaryPattern)');
+    expect(filterSource).not.toContain('const segments = filter.toLowerCase().split');
+  });
 });
 
 describe('InlineLabelMenu render path', () => {

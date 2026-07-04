@@ -17,6 +17,23 @@ export interface LabelMenuItem {
 
 const labelMenuCollator = new Intl.Collator(undefined, { sensitivity: 'base' })
 
+interface LabelMenuFilterSegment {
+  value: string
+  wordBoundaryPattern: RegExp
+}
+
+function createLabelMenuFilterSegments(filter: string): LabelMenuFilterSegment[] {
+  return filter
+    .toLowerCase()
+    .split('/')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(value => ({
+      value,
+      wordBoundaryPattern: new RegExp(`[\\s\\-_]${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
+    }))
+}
+
 export function compareLabelMenuItems(a: LabelMenuItem, b: LabelMenuItem): number {
   return labelMenuCollator.compare(a.label, b.label)
     || labelMenuCollator.compare(a.parentPath ?? '', b.parentPath ?? '')
@@ -52,12 +69,16 @@ export function createLabelMenuItems(labels: LabelConfig[], excludedLabelIds: It
  */
 export function segmentScore(part: string, segment: string): number {
   const lower = part.toLowerCase()
-  return segmentScoreLowerPart(lower, segment)
+  return segmentScoreLowerPart(
+    lower,
+    segment,
+    new RegExp(`[\\s\\-_]${segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
+  )
 }
 
-function segmentScoreLowerPart(lowerPart: string, segment: string): number {
+function segmentScoreLowerPart(lowerPart: string, segment: string, wordBoundaryPattern: RegExp): number {
   if (lowerPart.startsWith(segment)) return 3
-  if (new RegExp(`[\\s\\-_]${segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(lowerPart)) return 2
+  if (wordBoundaryPattern.test(lowerPart)) return 2
   if (lowerPart.includes(segment)) return 1
   return 0
 }
@@ -71,7 +92,7 @@ function segmentScoreLowerPart(lowerPart: string, segment: string): number {
 export function filterItems(items: LabelMenuItem[], filter: string): LabelMenuItem[] {
   if (!filter) return [...items].sort(compareLabelMenuItems)
 
-  const segments = filter.toLowerCase().split('/').map(s => s.trim()).filter(Boolean)
+  const segments = createLabelMenuFilterSegments(filter)
   if (segments.length === 0) return [...items].sort(compareLabelMenuItems)
 
   const scored: { item: LabelMenuItem; score: number }[] = []
@@ -90,7 +111,7 @@ export function filterItems(items: LabelMenuItem[], filter: string): LabelMenuIt
       let bestScore = 0
       let found = false
       while (partIndex < fullParts.length) {
-        const score = segmentScoreLowerPart(fullParts[partIndex], seg)
+        const score = segmentScoreLowerPart(fullParts[partIndex], seg.value, seg.wordBoundaryPattern)
         if (score > 0) {
           bestScore = score
           found = true
