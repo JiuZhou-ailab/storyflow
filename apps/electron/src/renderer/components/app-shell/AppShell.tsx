@@ -206,7 +206,7 @@ const completedNovelFileChangeRefreshKeys = new Set<string>()
  * Adding new features:
  * 1. Add to AppShellContextType in context/AppShellContext.tsx
  * 2. Update App.tsx to include in contextValue
- * 3. Use via useAppShellContext() hook in child components
+ * 3. Expose only the needed field through a narrow context or atom
  */
 interface AppShellProps {
   /** All data and callbacks - passed directly to AppShellProvider */

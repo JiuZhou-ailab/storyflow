@@ -2,8 +2,8 @@
  * PlaygroundAppShellProvider
  *
  * Minimal stand-in for the real AppShellProvider so components that rely on
- * `useActiveWorkspace()` / `useAppShellContext()` (e.g. MessagingSettingsPage)
- * can render inside the playground without the full app shell wiring.
+ * narrow app-shell contexts can render inside the playground without the full
+ * app shell wiring.
  *
  * All callbacks are no-op logging stubs — interactions just go to the console.
  */
@@ -29,7 +29,7 @@ function logCall(method: string) {
 }
 
 // Build a minimal value that satisfies the type. Most callbacks are no-ops;
-// workspace atoms below let `useActiveWorkspace()` resolve in playground.
+// workspace atoms below let workspace-scoped components resolve in playground.
 const playgroundValue: AppShellContextType = {
   workspaces: [PLAYGROUND_WORKSPACE],
   activeWorkspaceId: PLAYGROUND_WORKSPACE.id,

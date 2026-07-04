@@ -31,7 +31,7 @@ import type {
 import type { SessionStatus as SessionStatusConfig } from '@/config/session-status-config'
 import type { SessionOptions, SessionOptionUpdates } from '../hooks/useSessionOptions'
 import { sessionOptionsAtomFamily } from '../hooks/useSessionOptions'
-import { sessionAtomFamily, windowWorkspaceIdAtom, windowWorkspacesAtom } from '../atoms/sessions'
+import { sessionAtomFamily } from '../atoms/sessions'
 import { pendingCredentialAtomFamily, pendingPermissionAtomFamily } from '../atoms/pending-requests'
 
 export interface AppShellContextType {
@@ -172,8 +172,6 @@ export interface AppShellContextType {
   /** Replay (re-execute) webhook actions for a failed automation */
   onReplayAutomation?: (automationId: string, event: string) => void
 }
-
-const AppShellContext = createContext<AppShellContextType | null>(null)
 
 interface SessionInteractionActionsContextType {
   onCreateSession: AppShellContextType['onCreateSession']
@@ -360,37 +358,22 @@ export function AppShellProvider({
   }), [value.onSessionOptionsChange])
 
   return (
-    <AppShellContext.Provider value={value}>
-      <SessionReadActionsContext.Provider value={sessionReadActions}>
-        <SessionDraftActionsContext.Provider value={sessionDraftActions}>
-          <SessionChatResourcesContext.Provider value={sessionChatResources}>
-            <SessionPanelChromeContext.Provider value={sessionPanelChrome}>
-              <SessionInteractionActionsContext.Provider value={sessionInteractionActions}>
-                <SessionBatchActionsContext.Provider value={sessionBatchActions}>
-                  <SessionOptionsActionsContext.Provider value={sessionOptionsActions}>
-                    {children}
-                  </SessionOptionsActionsContext.Provider>
-                </SessionBatchActionsContext.Provider>
-              </SessionInteractionActionsContext.Provider>
-            </SessionPanelChromeContext.Provider>
-          </SessionChatResourcesContext.Provider>
-        </SessionDraftActionsContext.Provider>
-      </SessionReadActionsContext.Provider>
-    </AppShellContext.Provider>
+    <SessionReadActionsContext.Provider value={sessionReadActions}>
+      <SessionDraftActionsContext.Provider value={sessionDraftActions}>
+        <SessionChatResourcesContext.Provider value={sessionChatResources}>
+          <SessionPanelChromeContext.Provider value={sessionPanelChrome}>
+            <SessionInteractionActionsContext.Provider value={sessionInteractionActions}>
+              <SessionBatchActionsContext.Provider value={sessionBatchActions}>
+                <SessionOptionsActionsContext.Provider value={sessionOptionsActions}>
+                  {children}
+                </SessionOptionsActionsContext.Provider>
+              </SessionBatchActionsContext.Provider>
+            </SessionInteractionActionsContext.Provider>
+          </SessionPanelChromeContext.Provider>
+        </SessionChatResourcesContext.Provider>
+      </SessionDraftActionsContext.Provider>
+    </SessionReadActionsContext.Provider>
   )
-}
-
-/** Returns context or null if outside provider (safe for optional consumers like playground) */
-export function useOptionalAppShellContext(): AppShellContextType | null {
-  return useContext(AppShellContext)
-}
-
-export function useAppShellContext(): AppShellContextType {
-  const context = useContext(AppShellContext)
-  if (!context) {
-    throw new Error('useAppShellContext must be used within an AppShellProvider')
-  }
-  return context
 }
 
 export function useSessionInteractionActions(): SessionInteractionActionsContextType {
@@ -457,16 +440,6 @@ export function useSessionOptionsActions(): SessionOptionsActionsContextType {
 export function useSession(sessionId: string): Session | null {
   // Use per-session atom for isolated updates
   return useAtomValue(sessionAtomFamily(sessionId))
-}
-
-/**
- * Get the active workspace
- */
-export function useActiveWorkspace(): Workspace | null {
-  const workspaces = useAtomValue(windowWorkspacesAtom)
-  const activeWorkspaceId = useAtomValue(windowWorkspaceIdAtom)
-  if (!activeWorkspaceId) return null
-  return workspaces.find((w) => w.id === activeWorkspaceId) || null
 }
 
 /**
