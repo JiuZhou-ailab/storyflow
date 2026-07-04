@@ -25,7 +25,7 @@ import { toast } from 'sonner'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { StyledDropdownMenuContent, StyledDropdownMenuItem, StyledDropdownMenuSeparator } from '@/components/ui/styled-dropdown'
-import { useActiveWorkspace, useAppShellContext, usePendingPermission, usePendingCredential, useSessionBatchActions, useSessionInteractionActions, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
+import { useActiveWorkspace, useAppShellContext, usePendingPermission, usePendingCredential, useSessionBatchActions, useSessionInteractionActions, useSessionReadActions, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
 import { SquarePenRounded } from '@/components/icons/SquarePenRounded'
 import { rendererPerf } from '@/lib/perf'
 import { navigate, routes } from '@/lib/navigate'
@@ -172,9 +172,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   }, [sessionId])
 
   const {
-    onMarkSessionRead,
-    onMarkSessionUnread,
-    onSetActiveViewingSession,
     getDraft,
     hydrateDraftAttachments,
     onInputChange,
@@ -197,6 +194,11 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onChatMatchInfoChange,
     isFocusedPanel,
   } = useAppShellContext()
+  const {
+    onMarkSessionRead,
+    onMarkSessionUnread,
+    onSetActiveViewingSession,
+  } = useSessionReadActions()
   const {
     onOpenFile = noopOpenFile,
     onOpenUrl = noopOpenUrl,

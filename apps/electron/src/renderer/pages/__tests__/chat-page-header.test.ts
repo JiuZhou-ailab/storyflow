@@ -115,4 +115,14 @@ describe('chat page header actions', () => {
     expect(appShellDestructure).not.toContain('onOpenFile')
     expect(appShellDestructure).not.toContain('onOpenUrl')
   })
+
+  it('uses the narrow session read action context', () => {
+    const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
+    const appShellDestructure = appShellDestructureFrom(chatPageSource)
+
+    expect(chatPageSource).toContain('useSessionReadActions')
+    expect(appShellDestructure).not.toContain('onMarkSessionRead')
+    expect(appShellDestructure).not.toContain('onMarkSessionUnread')
+    expect(appShellDestructure).not.toContain('onSetActiveViewingSession')
+  })
 })
