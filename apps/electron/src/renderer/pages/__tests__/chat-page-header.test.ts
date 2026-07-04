@@ -137,4 +137,15 @@ describe('chat page header actions', () => {
     expect(appShellDestructure).not.toContain('onMarkSessionUnread')
     expect(appShellDestructure).not.toContain('onSetActiveViewingSession')
   })
+
+  it('uses the narrow session draft action context', () => {
+    const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
+    const appShellDestructure = appShellDestructureFrom(chatPageSource)
+
+    expect(chatPageSource).toContain('useSessionDraftActions')
+    expect(appShellDestructure).not.toContain('getDraft')
+    expect(appShellDestructure).not.toContain('hydrateDraftAttachments')
+    expect(appShellDestructure).not.toContain('onInputChange')
+    expect(appShellDestructure).not.toContain('onAttachmentsChange')
+  })
 })

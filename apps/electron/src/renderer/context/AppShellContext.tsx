@@ -192,6 +192,15 @@ interface SessionReadActionsContextType {
 
 const SessionReadActionsContext = createContext<SessionReadActionsContextType | null>(null)
 
+interface SessionDraftActionsContextType {
+  getDraft: AppShellContextType['getDraft']
+  hydrateDraftAttachments: AppShellContextType['hydrateDraftAttachments']
+  onInputChange: AppShellContextType['onInputChange']
+  onAttachmentsChange: AppShellContextType['onAttachmentsChange']
+}
+
+const SessionDraftActionsContext = createContext<SessionDraftActionsContextType | null>(null)
+
 interface SessionBatchActionsContextType {
   onSessionStatusChange: AppShellContextType['onSessionStatusChange']
   onArchiveSession: AppShellContextType['onArchiveSession']
@@ -242,6 +251,18 @@ export function AppShellProvider({
     value.onSetActiveViewingSession,
   ])
 
+  const sessionDraftActions = React.useMemo<SessionDraftActionsContextType>(() => ({
+    getDraft: value.getDraft,
+    hydrateDraftAttachments: value.hydrateDraftAttachments,
+    onInputChange: value.onInputChange,
+    onAttachmentsChange: value.onAttachmentsChange,
+  }), [
+    value.getDraft,
+    value.hydrateDraftAttachments,
+    value.onInputChange,
+    value.onAttachmentsChange,
+  ])
+
   const sessionBatchActions = React.useMemo<SessionBatchActionsContextType>(() => ({
     onSessionStatusChange: value.onSessionStatusChange,
     onArchiveSession: value.onArchiveSession,
@@ -273,13 +294,15 @@ export function AppShellProvider({
   return (
     <AppShellContext.Provider value={value}>
       <SessionReadActionsContext.Provider value={sessionReadActions}>
-        <SessionInteractionActionsContext.Provider value={sessionInteractionActions}>
-          <SessionBatchActionsContext.Provider value={sessionBatchActions}>
-            <SessionOptionsActionsContext.Provider value={sessionOptionsActions}>
-              {children}
-            </SessionOptionsActionsContext.Provider>
-          </SessionBatchActionsContext.Provider>
-        </SessionInteractionActionsContext.Provider>
+        <SessionDraftActionsContext.Provider value={sessionDraftActions}>
+          <SessionInteractionActionsContext.Provider value={sessionInteractionActions}>
+            <SessionBatchActionsContext.Provider value={sessionBatchActions}>
+              <SessionOptionsActionsContext.Provider value={sessionOptionsActions}>
+                {children}
+              </SessionOptionsActionsContext.Provider>
+            </SessionBatchActionsContext.Provider>
+          </SessionInteractionActionsContext.Provider>
+        </SessionDraftActionsContext.Provider>
       </SessionReadActionsContext.Provider>
     </AppShellContext.Provider>
   )
@@ -310,6 +333,14 @@ export function useSessionReadActions(): SessionReadActionsContextType {
   const context = useContext(SessionReadActionsContext)
   if (!context) {
     throw new Error('useSessionReadActions must be used within an AppShellProvider')
+  }
+  return context
+}
+
+export function useSessionDraftActions(): SessionDraftActionsContextType {
+  const context = useContext(SessionDraftActionsContext)
+  if (!context) {
+    throw new Error('useSessionDraftActions must be used within an AppShellProvider')
   }
   return context
 }

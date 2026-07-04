@@ -25,7 +25,7 @@ import { toast } from 'sonner'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { StyledDropdownMenuContent, StyledDropdownMenuItem, StyledDropdownMenuSeparator } from '@/components/ui/styled-dropdown'
-import { useActiveWorkspace, useAppShellContext, usePendingPermission, usePendingCredential, useSessionBatchActions, useSessionInteractionActions, useSessionReadActions, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
+import { useActiveWorkspace, useAppShellContext, usePendingPermission, usePendingCredential, useSessionBatchActions, useSessionDraftActions, useSessionInteractionActions, useSessionReadActions, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
 import { SquarePenRounded } from '@/components/icons/SquarePenRounded'
 import { rendererPerf } from '@/lib/perf'
 import { navigate, routes } from '@/lib/navigate'
@@ -172,10 +172,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   }, [sessionId])
 
   const {
-    getDraft,
-    hydrateDraftAttachments,
-    onInputChange,
-    onAttachmentsChange,
     enabledSources,
     skills,
     mentionFiles,
@@ -189,6 +185,12 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onChatMatchInfoChange,
     isFocusedPanel,
   } = useAppShellContext()
+  const {
+    getDraft,
+    hydrateDraftAttachments,
+    onInputChange,
+    onAttachmentsChange,
+  } = useSessionDraftActions()
   const {
     onMarkSessionRead,
     onMarkSessionUnread,
