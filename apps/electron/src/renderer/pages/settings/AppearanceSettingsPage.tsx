@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import { LANGUAGES, type LanguageCode } from '@craft-agent/shared/i18n'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -14,7 +15,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { EditPopover, EditButton, getEditConfig } from '@/components/ui/EditPopover'
 import { useTheme, type FontFamily, type ThemeMode } from '@/context/ThemeContext'
-import { useAppShellContext } from '@/context/AppShellContext'
+import { windowWorkspacesAtom } from '@/atoms/sessions'
 import { routes } from '@/lib/navigate'
 import { Monitor, Sun, Moon } from 'lucide-react'
 import type { DetailsPageMeta } from '@/lib/navigation-registry'
@@ -112,7 +113,7 @@ export default function AppearanceSettingsPage() {
     themeLoadError,
     themeResolvedFrom,
   } = useTheme()
-  const { workspaces } = useAppShellContext()
+  const workspaces = useAtomValue(windowWorkspacesAtom)
 
   // Fetch workspace icons as data URLs (file:// URLs don't work in renderer)
   const workspaceIconMap = useWorkspaceIcons(workspaces)
