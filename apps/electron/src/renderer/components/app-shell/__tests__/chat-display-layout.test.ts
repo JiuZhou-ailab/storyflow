@@ -51,6 +51,13 @@ describe('ChatDisplay scroll layout', () => {
     expect(chatDisplaySource).toContain('onRemoveQueuedMessage={handleRemoveQueuedMessage}')
   })
 
+  it('reuses label lookup data when adding labels from the composer', () => {
+    expect(chatInputZoneSource).toContain('const labelById = React.useMemo')
+    expect(chatInputZoneSource).toContain('new Map(flattenLabels(labels).map(label => [label.id, label]))')
+    expect(chatInputZoneSource).toContain('const config = labelById.get(labelId)')
+    expect(chatInputZoneSource).not.toContain('flattenLabels(labels || []).find')
+  })
+
   it('keeps the composer toolbar actions visible in narrow side panels', () => {
     expect(freeFormInputSource).toContain('flex min-w-0 items-center gap-1 px-2 py-2')
     expect(freeFormInputSource).toContain('flex min-w-0 flex-1 items-center gap-1 overflow-hidden')

@@ -66,6 +66,10 @@ export function ChatInputZone({
   const queuedCount = queuedMessages.length
   const shouldShowOptionBadges = showOptionBadges ?? !compactMode
   const inputResetKey = `${sessionId}::${inputProps.structuredInput?.type ?? 'freeform'}`
+  const labelById = React.useMemo(
+    () => new Map(flattenLabels(labels).map(label => [label.id, label])),
+    [labels]
+  )
 
   const handleClearDraft = React.useCallback(() => {
     inputProps.onInputChange?.('')
@@ -78,11 +82,11 @@ export function ChatInputZone({
 
     onLabelsChange?.([...current, labelId])
 
-    const config = flattenLabels(labels || []).find(label => label.id === labelId)
+    const config = labelById.get(labelId)
     if (config?.valueType) {
       setAutoOpenLabelId(labelId)
     }
-  }, [labels, onLabelsChange, sessionLabels])
+  }, [labelById, onLabelsChange, sessionLabels])
 
   return (
     <div className={cn(
