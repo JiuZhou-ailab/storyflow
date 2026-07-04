@@ -8,6 +8,7 @@ import { describe, expect, it } from 'bun:test'
 describe('chat page header actions', () => {
   const appShellDestructureFrom = (source: string) => {
     const end = source.indexOf('} = useAppShellContext()')
+    if (end === -1) return ''
     return source.slice(source.lastIndexOf('const {', end), end)
   }
 
@@ -160,5 +161,19 @@ describe('chat page header actions', () => {
     expect(appShellDestructure).not.toContain('openingProjectMetadata')
     expect(appShellDestructure).not.toContain('enabledModes')
     expect(appShellDestructure).not.toContain('onSessionSourcesChange')
+  })
+
+  it('uses the narrow session panel chrome context', () => {
+    const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
+    const appShellDestructure = appShellDestructureFrom(chatPageSource)
+
+    expect(chatPageSource).toContain('useSessionPanelChrome')
+    expect(chatPageSource).not.toContain('useAppShellContext')
+    expect(appShellDestructure).not.toContain('rightSidebarButton')
+    expect(appShellDestructure).not.toContain('leadingAction')
+    expect(appShellDestructure).not.toContain('isCompactMode')
+    expect(appShellDestructure).not.toContain('chatDisplayRef')
+    expect(appShellDestructure).not.toContain('onChatMatchInfoChange')
+    expect(appShellDestructure).not.toContain('isFocusedPanel')
   })
 })

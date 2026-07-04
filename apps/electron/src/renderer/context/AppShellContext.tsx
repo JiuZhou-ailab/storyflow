@@ -212,6 +212,17 @@ interface SessionChatResourcesContextType {
 
 const SessionChatResourcesContext = createContext<SessionChatResourcesContextType | null>(null)
 
+interface SessionPanelChromeContextType {
+  rightSidebarButton?: AppShellContextType['rightSidebarButton']
+  leadingAction?: AppShellContextType['leadingAction']
+  isCompactMode?: AppShellContextType['isCompactMode']
+  chatDisplayRef?: AppShellContextType['chatDisplayRef']
+  onChatMatchInfoChange?: AppShellContextType['onChatMatchInfoChange']
+  isFocusedPanel?: AppShellContextType['isFocusedPanel']
+}
+
+const SessionPanelChromeContext = createContext<SessionPanelChromeContextType | null>(null)
+
 interface SessionBatchActionsContextType {
   onSessionStatusChange: AppShellContextType['onSessionStatusChange']
   onArchiveSession: AppShellContextType['onArchiveSession']
@@ -290,6 +301,22 @@ export function AppShellProvider({
     value.onSessionSourcesChange,
   ])
 
+  const sessionPanelChrome = React.useMemo<SessionPanelChromeContextType>(() => ({
+    rightSidebarButton: value.rightSidebarButton,
+    leadingAction: value.leadingAction,
+    isCompactMode: value.isCompactMode,
+    chatDisplayRef: value.chatDisplayRef,
+    onChatMatchInfoChange: value.onChatMatchInfoChange,
+    isFocusedPanel: value.isFocusedPanel,
+  }), [
+    value.rightSidebarButton,
+    value.leadingAction,
+    value.isCompactMode,
+    value.chatDisplayRef,
+    value.onChatMatchInfoChange,
+    value.isFocusedPanel,
+  ])
+
   const sessionBatchActions = React.useMemo<SessionBatchActionsContextType>(() => ({
     onSessionStatusChange: value.onSessionStatusChange,
     onArchiveSession: value.onArchiveSession,
@@ -323,13 +350,15 @@ export function AppShellProvider({
       <SessionReadActionsContext.Provider value={sessionReadActions}>
         <SessionDraftActionsContext.Provider value={sessionDraftActions}>
           <SessionChatResourcesContext.Provider value={sessionChatResources}>
-            <SessionInteractionActionsContext.Provider value={sessionInteractionActions}>
-              <SessionBatchActionsContext.Provider value={sessionBatchActions}>
-                <SessionOptionsActionsContext.Provider value={sessionOptionsActions}>
-                  {children}
-                </SessionOptionsActionsContext.Provider>
-              </SessionBatchActionsContext.Provider>
-            </SessionInteractionActionsContext.Provider>
+            <SessionPanelChromeContext.Provider value={sessionPanelChrome}>
+              <SessionInteractionActionsContext.Provider value={sessionInteractionActions}>
+                <SessionBatchActionsContext.Provider value={sessionBatchActions}>
+                  <SessionOptionsActionsContext.Provider value={sessionOptionsActions}>
+                    {children}
+                  </SessionOptionsActionsContext.Provider>
+                </SessionBatchActionsContext.Provider>
+              </SessionInteractionActionsContext.Provider>
+            </SessionPanelChromeContext.Provider>
           </SessionChatResourcesContext.Provider>
         </SessionDraftActionsContext.Provider>
       </SessionReadActionsContext.Provider>
@@ -378,6 +407,14 @@ export function useSessionChatResources(): SessionChatResourcesContextType {
   const context = useContext(SessionChatResourcesContext)
   if (!context) {
     throw new Error('useSessionChatResources must be used within an AppShellProvider')
+  }
+  return context
+}
+
+export function useSessionPanelChrome(): SessionPanelChromeContextType {
+  const context = useContext(SessionPanelChromeContext)
+  if (!context) {
+    throw new Error('useSessionPanelChrome must be used within an AppShellProvider')
   }
   return context
 }
