@@ -13,6 +13,8 @@ import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import { isMac } from '@/lib/platform'
 import { actionsByCategory, useActionLabel, type ActionId } from '@/actions'
 
+const ACTION_CATEGORY_ENTRIES = Object.entries(actionsByCategory)
+
 export const meta: DetailsPageMeta = {
   navigator: 'settings',
   slug: 'shortcuts',
@@ -31,7 +33,7 @@ interface ShortcutSection {
 // Component-specific shortcuts that aren't in the centralized registry
 function useComponentSpecificSections(): ShortcutSection[] {
   const { t } = useTranslation()
-  return [
+  return React.useMemo(() => [
     {
       title: t('shortcuts.listNavigation'),
       shortcuts: [
@@ -56,7 +58,7 @@ function useComponentSpecificSections(): ShortcutSection[] {
         { keys: ['Esc'], description: t('shortcuts.closeDialogBlur') },
       ],
     },
-  ]
+  ], [t])
 }
 
 function Kbd({ children }: { children: React.ReactNode }) {
@@ -133,7 +135,7 @@ export default function ShortcutsPage() {
         <ScrollArea className="h-full">
           <div className="px-5 py-7 max-w-3xl mx-auto space-y-8">
             {/* Registry-driven sections */}
-            {Object.entries(actionsByCategory).map(([category, actions]) => (
+            {ACTION_CATEGORY_ENTRIES.map(([category, actions]) => (
               <SettingsSection key={category} title={t(`shortcuts.category.${category.toLowerCase()}`)}>
                 <SettingsCard>
                   {actions.map(action => (
