@@ -661,6 +661,14 @@ export interface EditPopoverProps {
   inlineExecution?: boolean
 }
 
+type EditPopoverContentProps = Omit<
+  EditPopoverProps,
+  'trigger' | 'triggerClassName' | 'open' | 'onOpenChange' | 'modal'
+> & {
+  open: boolean
+  setOpen: (value: boolean) => void
+}
+
 /**
  * Result from buildEditPrompt containing both the full prompt and badge metadata
  * for hiding the XML context in the UI while keeping it in the actual message.
@@ -721,6 +729,37 @@ ${context.context ? `<context>${context.context}</context>\n` : ''}</edit_reques
 
 export function EditPopover({
   trigger,
+  triggerClassName,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  modal = false,
+  ...contentProps
+}: EditPopoverProps) {
+  // Support both controlled and uncontrolled modes:
+  // - Uncontrolled (default): internal state manages open/close
+  // - Controlled: parent manages state via open/onOpenChange props
+  const [internalOpen, setInternalOpen] = useState(false)
+  const isControlled = controlledOpen !== undefined
+  const open = isControlled ? controlledOpen : internalOpen
+  const setOpen = (value: boolean) => {
+    if (isControlled) {
+      controlledOnOpenChange?.(value)
+    } else {
+      setInternalOpen(value)
+    }
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen} modal={modal}>
+      <PopoverTrigger asChild className={triggerClassName}>
+        {trigger}
+      </PopoverTrigger>
+      {open ? <EditPopoverContent {...contentProps} open={open} setOpen={setOpen} /> : null}
+    </Popover>
+  )
+}
+
+function EditPopoverContent({
   example,
   context,
   permissionMode = 'allow-all',
@@ -728,18 +767,16 @@ export function EditPopover({
   model,
   systemPromptPreset,
   width = 400, // Default 400px for compact chat embedding
-  triggerClassName,
   side = 'bottom',
   align = 'end',
   secondaryAction,
   overridePlaceholder,
   displayLabel,
-  open: controlledOpen,
-  onOpenChange: controlledOnOpenChange,
-  modal = false,
+  open,
+  setOpen,
   defaultValue = '',
   inlineExecution = false,
-}: EditPopoverProps) {
+}: EditPopoverContentProps) {
   const { t } = useTranslation()
   const { onOpenFile, onOpenUrl } = usePlatform()
   const workspaceId = useAtomValue(windowWorkspaceIdAtom)
@@ -755,20 +792,6 @@ export function EditPopover({
           ? `${basePlaceholder.replace(/\.{3}$/, '')}, e.g., "${example}"`
           : basePlaceholder
       })()
-
-  // Support both controlled and uncontrolled modes:
-  // - Uncontrolled (default): internal state manages open/close
-  // - Controlled: parent manages state via open/onOpenChange props
-  const [internalOpen, setInternalOpen] = useState(false)
-  const isControlled = controlledOpen !== undefined
-  const open = isControlled ? controlledOpen : internalOpen
-  const setOpen = (value: boolean) => {
-    if (isControlled) {
-      controlledOnOpenChange?.(value)
-    } else {
-      setInternalOpen(value)
-    }
-  }
 
   // Use App session interaction actions without subscribing to the full shell context.
   const { onCreateSession, onSendMessage, onRespondToPermission, onRespondToCredential } = useSessionInteractionActions()
@@ -1030,83 +1053,78 @@ export function EditPopover({
         )}
       </AnimatePresence>
 
-      <Popover open={open} onOpenChange={setOpen} modal={modal}>
-        <PopoverTrigger asChild className={triggerClassName}>
-          {trigger}
-        </PopoverTrigger>
-        <PopoverContent
-            side={side}
-            align={align}
-            sticky="always"
-            className="p-0"
-            style={{
-              width: containerSize.width,
-              height: containerSize.height,
-              background: 'transparent',
-              border: 'none',
-              boxShadow: 'none',
-            }}
-            onInteractOutside={handleInteractOutside}
-            onEscapeKeyDown={handleEscapeKeyDown}
+      <PopoverContent
+        side={side}
+        align={align}
+        sticky="always"
+        className="p-0"
+        style={{
+          width: containerSize.width,
+          height: containerSize.height,
+          background: 'transparent',
+          border: 'none',
+          boxShadow: 'none',
+        }}
+        onInteractOutside={handleInteractOutside}
+        onEscapeKeyDown={handleEscapeKeyDown}
+      >
+        {/* Container */}
+        <div
+          ref={popoverRef}
+          className="relative bg-foreground-2 overflow-hidden w-full h-full shadow-modal-small"
+          style={{
+            transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`,
+            borderRadius: 16,
+          }}
+        >
+          {/* Drag handle - floating overlay */}
+          <div
+            onMouseDown={handleDragStart}
+            className={cn(
+              "absolute top-0 left-1/2 -translate-x-1/2 z-50 px-4 py-2 cursor-grab rounded pointer-events-auto titlebar-no-drag",
+              isDragging && "cursor-grabbing"
+            )}
           >
-            {/* Container */}
-            <div
-              ref={popoverRef}
-              className="relative bg-foreground-2 overflow-hidden w-full h-full shadow-modal-small"
-              style={{
-                transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`,
-                borderRadius: 16,
-              }}
+            <GripHorizontal className="w-4 h-4 text-muted-foreground/30" />
+          </div>
+
+          {secondaryAction && (
+            <button
+              type="button"
+              onClick={handleSecondaryAction}
+              className="absolute left-3 top-3 z-50 rounded-[6px] px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-background/60 hover:text-foreground"
             >
-              {/* Drag handle - floating overlay */}
-              <div
-                onMouseDown={handleDragStart}
-                className={cn(
-                  "absolute top-0 left-1/2 -translate-x-1/2 z-50 px-4 py-2 cursor-grab rounded pointer-events-auto titlebar-no-drag",
-                  isDragging && "cursor-grabbing"
-                )}
-              >
-                <GripHorizontal className="w-4 h-4 text-muted-foreground/30" />
-              </div>
+              {secondaryAction.label}
+            </button>
+          )}
 
-              {secondaryAction && (
-                <button
-                  type="button"
-                  onClick={handleSecondaryAction}
-                  className="absolute left-3 top-3 z-50 rounded-[6px] px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-background/60 hover:text-foreground"
-                >
-                  {secondaryAction.label}
-                </button>
-              )}
-
-              {/* Content area - always uses compact ChatDisplay */}
-              <div className="flex-1 flex flex-col bg-foreground-2" style={{ height: '100%' }}>
-                <ChatDisplay
-                  session={displaySession}
-                  onSendMessage={inlineExecution ? handleInlineSendMessage : handleLegacySendMessage}
-                  onOpenFile={onOpenFile || (() => {})}
-                  onOpenUrl={onOpenUrl || (() => {})}
-                  currentModel={currentModel}
-                  onModelChange={setCurrentModel}
-                  pendingPermission={pendingPermission}
-                  onRespondToPermission={onRespondToPermission}
-                  pendingCredential={pendingCredential}
-                  onRespondToCredential={onRespondToCredential}
-                  compactMode={true}
-                  placeholder={placeholder}
-                  emptyStateLabel={displayLabel || context.label}
-                />
-              </div>
-            </div>
-
-            {/* Bottom-right resize handle - outside overflow-hidden container */}
-            <div
-              onMouseDown={handleResizeStart}
-              className="absolute -bottom-2 -right-2 w-6 h-6 cursor-nwse-resize pointer-events-auto z-50"
-              style={{ transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)` }}
+          {/* Content area - always uses compact ChatDisplay */}
+          <div className="flex-1 flex flex-col bg-foreground-2" style={{ height: '100%' }}>
+            <ChatDisplay
+              session={displaySession}
+              onSendMessage={inlineExecution ? handleInlineSendMessage : handleLegacySendMessage}
+              onOpenFile={onOpenFile || (() => {})}
+              onOpenUrl={onOpenUrl || (() => {})}
+              currentModel={currentModel}
+              onModelChange={setCurrentModel}
+              pendingPermission={pendingPermission}
+              onRespondToPermission={onRespondToPermission}
+              pendingCredential={pendingCredential}
+              onRespondToCredential={onRespondToCredential}
+              compactMode={true}
+              placeholder={placeholder}
+              emptyStateLabel={displayLabel || context.label}
             />
-          </PopoverContent>
-      </Popover>
+          </div>
+        </div>
+
+        {/* Bottom-right resize handle - outside overflow-hidden container */}
+        <div
+          onMouseDown={handleResizeStart}
+          className="absolute -bottom-2 -right-2 w-6 h-6 cursor-nwse-resize pointer-events-auto z-50"
+          style={{ transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)` }}
+        />
+      </PopoverContent>
     </>
   )
 }

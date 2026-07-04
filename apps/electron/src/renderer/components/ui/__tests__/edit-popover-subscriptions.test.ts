@@ -11,8 +11,20 @@ const escapeInterruptContextSource = readFileSync(new URL('../../../context/Esca
 
 describe('EditPopover subscriptions', () => {
   it('uses a narrow session interaction action context', () => {
+    const shellSource = editPopoverSource.slice(
+      editPopoverSource.indexOf('export function EditPopover'),
+      editPopoverSource.indexOf('function EditPopoverContent')
+    )
+
     expect(editPopoverSource).not.toContain('useAppShellContext')
     expect(editPopoverSource).not.toContain('useActiveWorkspace')
+    expect(editPopoverSource).toContain('function EditPopoverContent')
+    expect(shellSource).toContain('open ? <EditPopoverContent')
+    expect(shellSource).not.toContain('useAtomValue(')
+    expect(shellSource).not.toContain('useSessionInteractionActions')
+    expect(shellSource).not.toContain('useSession(')
+    expect(shellSource).not.toContain('usePendingPermission')
+    expect(shellSource).not.toContain('usePendingCredential')
     expect(editPopoverSource).toContain('workspacePanelFieldsAtomFamily')
     expect(editPopoverSource).toContain('windowWorkspaceIdAtom')
     expect(editPopoverSource).toContain('useSessionInteractionActions')
