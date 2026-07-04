@@ -94,4 +94,16 @@ describe('chat page header actions', () => {
     expect(appShellDestructure).not.toContain('activeWorkspaceId')
     expect(appShellDestructure).not.toContain('workspaces')
   })
+
+  it('uses LLM connection atoms instead of app shell fields', () => {
+    const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
+    const appShellDestructure = appShellDestructureFrom(chatPageSource)
+
+    expect(chatPageSource).toContain('llmConnectionsAtom')
+    expect(chatPageSource).toContain('workspaceDefaultLlmConnectionAtom')
+    expect(chatPageSource).toContain('refreshLlmConnectionsAtom')
+    expect(appShellDestructure).not.toContain('llmConnections')
+    expect(appShellDestructure).not.toContain('workspaceDefaultLlmConnection')
+    expect(appShellDestructure).not.toContain('refreshLlmConnections')
+  })
 })

@@ -32,6 +32,7 @@ import { coerceInputText } from '@/lib/input-text'
 import { deriveSessionMessagesLoadState, formatSessionLoadFailure } from '@/lib/session-load'
 import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, sessionMessagesLoadedAtomFamily, sessionMetaAtomFamily, sessionMetaMapAtom, windowWorkspaceIdAtom } from '@/atoms/sessions'
 import { activeSessionListSearchQueryAtom, sessionListSearchActiveAtom } from '@/atoms/session-list-search'
+import { llmConnectionsAtom, refreshLlmConnectionsAtom, workspaceDefaultLlmConnectionAtom } from '@/atoms/llm-connections'
 import { getSessionPreviewText, getSessionTitle, shortTimeLocale } from '@/utils/session'
 // Model resolution: connection.defaultModel (no hardcoded defaults)
 import { resolveEffectiveConnectionSlug, isSessionConnectionUnavailable } from '@config/llm-connections'
@@ -167,9 +168,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   }, [sessionId])
 
   const {
-    llmConnections,
-    workspaceDefaultLlmConnection,
-    refreshLlmConnections,
     onOpenFile,
     onOpenUrl,
     onMarkSessionRead,
@@ -222,6 +220,9 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const session = useSessionData(sessionId)
   const activeWorkspaceId = useAtomValue(windowWorkspaceIdAtom)
   const activeWorkspace = useActiveWorkspace()
+  const llmConnections = useAtomValue(llmConnectionsAtom)
+  const workspaceDefaultLlmConnection = useAtomValue(workspaceDefaultLlmConnectionAtom)
+  const refreshLlmConnections = useSetAtom(refreshLlmConnectionsAtom)
   const sessionListSearchQuery = useAtomValue(activeSessionListSearchQueryAtom)
   const isSearchModeActive = useAtomValue(sessionListSearchActiveAtom)
 
