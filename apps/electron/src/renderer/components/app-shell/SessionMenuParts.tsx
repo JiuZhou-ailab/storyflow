@@ -115,18 +115,23 @@ export interface LabelMenuItemsProps {
 }
 
 /**
- * Count how many labels in a subtree (including the root) are currently applied.
- * Used to show selection counts on parent SubTriggers so users can see
- * where in the tree their selections are.
+ * Precompute applied label counts for each subtree so nested menu triggers can
+ * show selection counts without recursively rescanning descendant labels.
  */
-function countAppliedInSubtree(label: LabelConfig, appliedIds: Set<string>): number {
-  let count = appliedIds.has(label.id) ? 1 : 0
-  if (label.children) {
-    for (const child of label.children) {
-      count += countAppliedInSubtree(child, appliedIds)
+function buildAppliedCountByLabelId(labels: LabelConfig[], appliedIds: Set<string>): Map<string, number> {
+  const countById = new Map<string, number>()
+  const visit = (label: LabelConfig): number => {
+    let count = appliedIds.has(label.id) ? 1 : 0
+    for (const child of label.children ?? []) {
+      count += visit(child)
     }
+    countById.set(label.id, count)
+    return count
   }
-  return count
+  for (const label of labels) {
+    visit(label)
+  }
+  return countById
 }
 
 /**
@@ -145,6 +150,10 @@ export function LabelMenuItems({
 }: LabelMenuItemsProps) {
   const { MenuItem, Separator, Sub, SubTrigger, SubContent } = menu
   const displayLabels = React.useMemo(() => sortLabelsForDisplay(labels), [labels])
+  const appliedCountById = React.useMemo(
+    () => buildAppliedCountByLabelId(displayLabels, appliedLabelIds),
+    [displayLabels, appliedLabelIds]
+  )
 
   const renderItems = (nodes: LabelConfig[]): React.ReactNode => (
     <>
@@ -153,7 +162,7 @@ export function LabelMenuItems({
         const isApplied = appliedLabelIds.has(label.id)
 
         if (hasChildren) {
-          const subtreeCount = countAppliedInSubtree(label, appliedLabelIds)
+          const subtreeCount = appliedCountById.get(label.id) ?? 0
 
           return (
             <Sub key={label.id}>
