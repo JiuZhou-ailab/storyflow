@@ -661,8 +661,17 @@ export const syncSessionsToAtomsAtom = atom(
 
     // Update ordered IDs (preserve order from React state)
     const ids = get(sessionIdsAtom)
-    const nextIds = sessions.map(s => s.id)
-    if (ids.length !== nextIds.length || ids.some((id, index) => id !== nextIds[index])) {
+    let idsChanged = ids.length !== sessions.length
+    if (!idsChanged) {
+      for (let index = 0; index < sessions.length; index += 1) {
+        if (ids[index] !== sessions[index].id) {
+          idsChanged = true
+          break
+        }
+      }
+    }
+    if (idsChanged) {
+      const nextIds = sessions.map(s => s.id)
       set(sessionIdsAtom, nextIds)
     }
   }

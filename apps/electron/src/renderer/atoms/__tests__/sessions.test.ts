@@ -826,6 +826,10 @@ describe('refreshSessionsMetadataAtom', () => {
 
 describe('syncSessionsToAtomsAtom', () => {
   it('does not notify metadata or id subscribers when synced metadata is unchanged', () => {
+    const syncSource = sessionsAtomSource.slice(
+      sessionsAtomSource.indexOf('export const syncSessionsToAtomsAtom'),
+      sessionsAtomSource.indexOf('// loadedSessionsAtom')
+    )
     const store = createStore()
     const sessions = [
       makeSession({ id: 's1', name: 'First', lastMessageAt: 200 }),
@@ -857,6 +861,9 @@ describe('syncSessionsToAtomsAtom', () => {
     expect(store.get(sessionMetaMapAtom)).toBe(beforeMetaMap)
     expect(store.get(sessionIdsAtom)).toBe(beforeIds)
     expect(store.get(sessionAtomFamily('s1'))).toBe(beforeSession)
+    expect(syncSource).toContain('let idsChanged = ids.length !== sessions.length')
+    expect(syncSource).toContain('if (idsChanged) {\n      const nextIds = sessions.map')
+    expect(syncSource).not.toContain('ids.some((id, index) => id !== nextIds[index])')
     expect(metaNotifications).toBe(0)
     expect(idNotifications).toBe(0)
     expect(sessionNotifications).toBe(0)
