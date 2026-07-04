@@ -51,6 +51,18 @@ describe('chat page header actions', () => {
     expect(chatPageComponentSource).not.toContain('sessionMetaMap.get(sessionId)')
   })
 
+  it('uses minimal chat workspace fields instead of subscribing to the full active workspace', () => {
+    const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
+    const chatPageComponentSource = chatPageSource.slice(
+      chatPageSource.indexOf('const ChatPage = React.memo'),
+      chatPageSource.indexOf('export default ChatPage')
+    )
+
+    expect(chatPageSource).toContain('chatWorkspaceFieldsAtomFamily')
+    expect(chatPageComponentSource).toContain('useAtomValue(chatWorkspaceFieldsAtomFamily(activeWorkspaceId ?? null))')
+    expect(chatPageComponentSource).not.toContain('useActiveWorkspace()')
+  })
+
   it('reuses the relative time locale across conversation history rows', () => {
     const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
     const historySource = chatPageSource.slice(
@@ -102,8 +114,9 @@ describe('chat page header actions', () => {
     const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
     const appShellDestructure = appShellDestructureFrom(chatPageSource)
 
-    expect(chatPageSource).toContain('useActiveWorkspace')
     expect(chatPageSource).toContain('windowWorkspaceIdAtom')
+    expect(chatPageSource).toContain('chatWorkspaceFieldsAtomFamily')
+    expect(chatPageSource).not.toContain('useActiveWorkspace')
     expect(appShellDestructure).not.toContain('activeWorkspaceId')
     expect(appShellDestructure).not.toContain('workspaces')
   })

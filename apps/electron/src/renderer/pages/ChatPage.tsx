@@ -25,13 +25,13 @@ import { toast } from 'sonner'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { StyledDropdownMenuContent, StyledDropdownMenuItem, StyledDropdownMenuSeparator } from '@/components/ui/styled-dropdown'
-import { useActiveWorkspace, usePendingPermission, usePendingCredential, useSessionBatchActions, useSessionChatResources, useSessionDraftActions, useSessionInteractionActions, useSessionPanelChrome, useSessionReadActions, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
+import { usePendingPermission, usePendingCredential, useSessionBatchActions, useSessionChatResources, useSessionDraftActions, useSessionInteractionActions, useSessionPanelChrome, useSessionReadActions, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
 import { SquarePenRounded } from '@/components/icons/SquarePenRounded'
 import { rendererPerf } from '@/lib/perf'
 import { navigate, routes } from '@/lib/navigate'
 import { coerceInputText } from '@/lib/input-text'
 import { deriveSessionMessagesLoadState, formatSessionLoadFailure } from '@/lib/session-load'
-import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, sessionMessagesLoadedAtomFamily, sessionMetaAtomFamily, sessionMetaMapAtom, windowWorkspaceIdAtom } from '@/atoms/sessions'
+import { chatWorkspaceFieldsAtomFamily, ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, sessionMessagesLoadedAtomFamily, sessionMetaAtomFamily, sessionMetaMapAtom, windowWorkspaceIdAtom } from '@/atoms/sessions'
 import { activeSessionListSearchQueryAtom, sessionListSearchActiveAtom } from '@/atoms/session-list-search'
 import { llmConnectionsAtom, refreshLlmConnectionsAtom, workspaceDefaultLlmConnectionAtom } from '@/atoms/llm-connections'
 import { getSessionPreviewText, getSessionTitle, shortTimeLocale } from '@/utils/session'
@@ -231,7 +231,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   // Use per-session atom for isolated updates
   const session = useSessionData(sessionId)
   const activeWorkspaceId = useAtomValue(windowWorkspaceIdAtom)
-  const activeWorkspace = useActiveWorkspace()
+  const chatWorkspace = useAtomValue(chatWorkspaceFieldsAtomFamily(activeWorkspaceId ?? null))
   const llmConnections = useAtomValue(llmConnectionsAtom)
   const workspaceDefaultLlmConnection = useAtomValue(workspaceDefaultLlmConnectionAtom)
   const refreshLlmConnections = useSetAtom(refreshLlmConnectionsAtom)
@@ -463,15 +463,15 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     return connection?.defaultModel ?? ''
   }, [session?.id, session?.model, session?.llmConnection, workspaceDefaultLlmConnection, llmConnections, connectionUnavailable])
 
-  const remoteWorkspaceId = activeWorkspace?.remoteServer?.remoteWorkspaceId
+  const remoteWorkspaceId = chatWorkspace?.remoteWorkspaceId
   const chatOpening = React.useMemo(() => resolveChatOpeningPrompt({
-    workspaceName: activeWorkspace?.name,
-    projectType: openingProjectMetadata?.projectType ?? activeWorkspace?.projectType,
-    methodPackId: openingProjectMetadata?.methodPackId ?? activeWorkspace?.methodPackId,
+    workspaceName: chatWorkspace?.name,
+    projectType: openingProjectMetadata?.projectType ?? chatWorkspace?.projectType,
+    methodPackId: openingProjectMetadata?.methodPackId ?? chatWorkspace?.methodPackId,
   }), [
-    activeWorkspace?.methodPackId,
-    activeWorkspace?.name,
-    activeWorkspace?.projectType,
+    chatWorkspace?.methodPackId,
+    chatWorkspace?.name,
+    chatWorkspace?.projectType,
     openingProjectMetadata?.methodPackId,
     openingProjectMetadata?.projectType,
   ])
@@ -491,7 +491,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
       const resolved = (() => {
         if (path.startsWith('/') || path.startsWith('~/')) return path
 
-        const baseDir = workingDirectory || activeWorkspace?.rootPath
+        const baseDir = workingDirectory || chatWorkspace?.rootPath
         if (!baseDir) return path
 
         const cleanedBase = baseDir.replace(/\/+$/, '')
@@ -529,7 +529,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
       onOpenFile(resolved)
     },
-    [onOpenFile, workingDirectory, activeWorkspace?.rootPath]
+    [onOpenFile, workingDirectory, chatWorkspace?.rootPath]
   )
 
   const handleOpenUrl = React.useCallback(
@@ -863,8 +863,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
                 llmConnections={llmConnections}
                 workspaceDefaultLlmConnection={workspaceDefaultLlmConnection}
                 refreshLlmConnections={refreshLlmConnections}
-                workspaceRootPath={activeWorkspace?.rootPath ?? null}
-                workspaceSlug={activeWorkspace?.slug}
+                workspaceRootPath={chatWorkspace?.rootPath ?? null}
+                workspaceSlug={chatWorkspace?.slug}
                 onCreateSession={onCreateSession}
                 onDraftInputChange={onInputChange}
                 onConnectionChange={handleConnectionChange}
@@ -957,8 +957,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
             llmConnections={llmConnections}
             workspaceDefaultLlmConnection={workspaceDefaultLlmConnection}
             refreshLlmConnections={refreshLlmConnections}
-            workspaceRootPath={activeWorkspace?.rootPath ?? null}
-            workspaceSlug={activeWorkspace?.slug}
+            workspaceRootPath={chatWorkspace?.rootPath ?? null}
+            workspaceSlug={chatWorkspace?.slug}
             onCreateSession={onCreateSession}
             onDraftInputChange={onInputChange}
             onConnectionChange={handleConnectionChange}

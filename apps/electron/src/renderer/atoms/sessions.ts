@@ -13,6 +13,7 @@
  */
 
 import { atom } from 'jotai'
+import { selectAtom } from 'jotai/utils'
 import type { Getter, Setter } from 'jotai/vanilla'
 import { atomFamily } from 'jotai-family'
 import type { Session, Message, Workspace } from '../../shared/types'
@@ -888,6 +889,50 @@ export const windowWorkspaceIdAtom = atom<string | null>(null)
  * Written by App when workspace state changes, read by focused workspace consumers.
  */
 export const windowWorkspacesAtom = atom<Workspace[]>([])
+
+export interface ChatWorkspaceFields {
+  name: string
+  slug: string
+  rootPath: string
+  remoteWorkspaceId?: string
+  projectType?: Workspace['projectType']
+  methodPackId?: Workspace['methodPackId']
+}
+
+function chatWorkspaceFieldsEqual(
+  a: ChatWorkspaceFields | null,
+  b: ChatWorkspaceFields | null,
+): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  return a.name === b.name
+    && a.slug === b.slug
+    && a.rootPath === b.rootPath
+    && a.remoteWorkspaceId === b.remoteWorkspaceId
+    && a.projectType === b.projectType
+    && a.methodPackId === b.methodPackId
+}
+
+export const chatWorkspaceFieldsAtomFamily = atomFamily(
+  (workspaceId: string | null) => selectAtom(
+    windowWorkspacesAtom,
+    (workspaces): ChatWorkspaceFields | null => {
+      if (!workspaceId) return null
+      const workspace = workspaces.find((entry) => entry.id === workspaceId)
+      if (!workspace) return null
+      return {
+        name: workspace.name,
+        slug: workspace.slug,
+        rootPath: workspace.rootPath,
+        remoteWorkspaceId: workspace.remoteServer?.remoteWorkspaceId,
+        projectType: workspace.projectType,
+        methodPackId: workspace.methodPackId,
+      }
+    },
+    chatWorkspaceFieldsEqual,
+  ),
+  (a, b) => a === b,
+)
 
 /**
  * State for "Send to Workspace" dialog.
