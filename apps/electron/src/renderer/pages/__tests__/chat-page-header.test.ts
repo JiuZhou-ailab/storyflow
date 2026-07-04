@@ -6,6 +6,11 @@ import { readFileSync } from 'fs'
 import { describe, expect, it } from 'bun:test'
 
 describe('chat page header actions', () => {
+  const appShellDestructureFrom = (source: string) => {
+    const end = source.indexOf('} = useAppShellContext()')
+    return source.slice(source.lastIndexOf('const {', end), end)
+  }
+
   it('renders the new session action with a visible text label', () => {
     const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
     const newSessionButtonSource = chatPageSource.slice(
@@ -59,10 +64,7 @@ describe('chat page header actions', () => {
 
   it('uses the narrow session interaction action context', () => {
     const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
-    const appShellDestructure = chatPageSource.slice(
-      chatPageSource.indexOf('const {'),
-      chatPageSource.indexOf('} = useAppShellContext()')
-    )
+    const appShellDestructure = appShellDestructureFrom(chatPageSource)
 
     expect(chatPageSource).toContain('useSessionInteractionActions')
     expect(appShellDestructure).not.toContain('onCreateSession')
@@ -73,10 +75,7 @@ describe('chat page header actions', () => {
 
   it('uses the narrow session batch action context', () => {
     const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
-    const appShellDestructure = chatPageSource.slice(
-      chatPageSource.indexOf('const {'),
-      chatPageSource.indexOf('} = useAppShellContext()')
-    )
+    const appShellDestructure = appShellDestructureFrom(chatPageSource)
 
     expect(chatPageSource).toContain('useSessionBatchActions')
     expect(appShellDestructure).not.toContain('labels')
@@ -84,5 +83,15 @@ describe('chat page header actions', () => {
     expect(appShellDestructure).not.toContain('onSessionLabelsChange')
     expect(appShellDestructure).not.toContain('onArchiveSession')
     expect(appShellDestructure).not.toContain('onSessionStatusChange')
+  })
+
+  it('uses workspace atoms instead of app shell workspace fields', () => {
+    const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
+    const appShellDestructure = appShellDestructureFrom(chatPageSource)
+
+    expect(chatPageSource).toContain('useActiveWorkspace')
+    expect(chatPageSource).toContain('windowWorkspaceIdAtom')
+    expect(appShellDestructure).not.toContain('activeWorkspaceId')
+    expect(appShellDestructure).not.toContain('workspaces')
   })
 })
