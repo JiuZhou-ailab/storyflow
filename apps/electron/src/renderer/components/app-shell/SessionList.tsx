@@ -348,6 +348,8 @@ export function SessionList({
     if (groupingMode === 'status') {
       const statusOrder = new Map<string, number>()
       sessionStatuses.forEach((state, index) => statusOrder.set(state.id, index))
+      const statusById = new Map(sessionStatuses.map(state => [state.id, state]))
+      const collapsedMetaByKey = new Map(collapsedGroupsMeta.map(meta => [meta.key, meta]))
 
       // Build groups from visible items
       const groupsByKey = new Map<string, { rows: SessionListRow[], statusId: string }>()
@@ -368,9 +370,9 @@ export function SessionList({
 
       const orderedGroups: EntityListGroup<SessionListRow>[] = []
       for (const [key, { rows: groupRows, statusId }] of groupsByKey) {
-        const state = sessionStatuses.find(s => s.id === statusId)
+        const state = statusById.get(statusId)
         if (!state) continue
-        const collapsedMeta = collapsedGroupsMeta.find(m => m.key === key)
+        const collapsedMeta = collapsedMetaByKey.get(key)
         orderedGroups.push({
           key,
           label: t(`status.${state.id}`, state.label),

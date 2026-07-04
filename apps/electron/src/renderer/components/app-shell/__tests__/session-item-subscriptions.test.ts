@@ -51,6 +51,18 @@ describe('session item subscriptions', () => {
     expect(sessionListSource).not.toContain('groupRows.sort((a, b) =>')
   })
 
+  it('reuses status and collapsed-group lookup maps while building session list groups', () => {
+    const rowDataSource = sessionListSource.slice(
+      sessionListSource.indexOf('const rowData = useMemo(() => {'),
+      sessionListSource.indexOf('const flatRows = rowData.rows')
+    )
+
+    expect(rowDataSource).toContain('const statusById = new Map(sessionStatuses.map(state => [state.id, state]))')
+    expect(rowDataSource).toContain('const collapsedMetaByKey = new Map(collapsedGroupsMeta.map(meta => [meta.key, meta]))')
+    expect(rowDataSource).not.toContain('sessionStatuses.find(s => s.id === statusId)')
+    expect(rowDataSource).not.toContain('collapsedGroupsMeta.find(m => m.key === key)')
+  })
+
   it('uses the shared date group key helper for date grouping', () => {
     expect(sessionListSource).toContain('getSessionDateGroupKey')
     expect(sessionListSource).not.toContain('startOfDay(new Date(row.item.lastMessageAt || 0)).toISOString()')
