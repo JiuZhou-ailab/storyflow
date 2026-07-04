@@ -25,7 +25,7 @@ import { useSessionActions } from "@/hooks/useSessionActions"
 import { useEntityListInteractions } from "@/hooks/useEntityListInteractions"
 import { useFocusZone } from "@/hooks/keyboard"
 import { useEscapeInterrupt } from "@/context/EscapeInterruptContext"
-import { useNavigation, useNavigationState, routes, isSessionsNavigation } from "@/contexts/NavigationContext"
+import { useNavigationActions, useNavigationState, routes, isSessionsNavigation } from "@/contexts/NavigationContext"
 import { useFocusContext } from "@/context/FocusContext"
 import { sendToWorkspaceAtom, sessionMetaMapAtom, type SessionMeta } from "@/atoms/sessions"
 import type { ViewConfig } from "@craft-agent/shared/views"
@@ -155,7 +155,7 @@ export function SessionList({
   } = useSessionSelection()
   const selectionStore = useSessionSelectionStore()
 
-  const { navigate, navigateToSession: navigateToSessionPrimary } = useNavigation()
+  const { navigate, navigateToSession: navigateToSessionPrimary } = useNavigationActions()
   const navigateToSession = onNavigateToSession ?? navigateToSessionPrimary
   const navState = useNavigationState()
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)

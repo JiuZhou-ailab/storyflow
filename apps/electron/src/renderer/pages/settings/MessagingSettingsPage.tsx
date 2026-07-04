@@ -61,7 +61,7 @@ import {
   type PlatformAccessMode,
   type PlatformOwner,
 } from '@/components/messaging/access'
-import { useNavigation } from '@/contexts/NavigationContext'
+import { useNavigationActions } from '@/contexts/NavigationContext'
 import {
   messagingBindingsForPlatformAtomFamily,
   setMessagingBindingsAtom,
@@ -189,7 +189,7 @@ function PlatformRow({ platform, workspaceId }: { platform: Platform; workspaceI
   const { t } = useTranslation()
   const platformBindings = useAtomValue(messagingBindingsForPlatformAtomFamily(platform))
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
-  const { navigateToSession } = useNavigation()
+  const { navigateToSession } = useNavigationActions()
   const [runtime, setRuntime] = React.useState<MessagingPlatformRuntimeInfo>(() =>
     defaultRuntime(platform),
   )

@@ -72,7 +72,7 @@ import { ChatInputZone, type QueuedInputMessage, type StructuredInputState, type
 import type { RichTextInputHandle } from "@/components/ui/rich-text-input"
 import { useBackgroundTasks } from "@/hooks/useBackgroundTasks"
 import { useTurnCardExpansion } from "@/hooks/useTurnCardExpansion"
-import { useNavigation } from "@/contexts/NavigationContext"
+import { useNavigationActions } from "@/contexts/NavigationContext"
 import { navigate, routes } from "@/lib/navigate"
 import { loadSendMessageKeySetting } from "@/lib/input-settings"
 import { CHAT_LAYOUT } from "@/config/layout"
@@ -702,7 +702,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   totalTurnCountRef.current = allTurns.length
 
   // Navigation for session branching
-  const { navigate } = useNavigation()
+  const { navigate } = useNavigationActions()
 
   // Get isDark from useTheme hook for overlay theme
   // This accounts for scenic themes (like Haze) that force dark mode

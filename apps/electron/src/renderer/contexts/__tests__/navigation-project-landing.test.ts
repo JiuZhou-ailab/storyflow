@@ -9,6 +9,18 @@ const navigationContextSource = readFileSync(
   new URL('../NavigationContext.tsx', import.meta.url),
   'utf-8'
 )
+const sessionListSource = readFileSync(
+  new URL('../../components/app-shell/SessionList.tsx', import.meta.url),
+  'utf-8'
+)
+const chatDisplaySource = readFileSync(
+  new URL('../../components/app-shell/ChatDisplay.tsx', import.meta.url),
+  'utf-8'
+)
+const appShellSource = readFileSync(
+  new URL('../../components/app-shell/AppShell.tsx', import.meta.url),
+  'utf-8'
+)
 
 describe('project default navigation', () => {
   it('auto-selects a recent session for the initial default allSessions route', () => {
@@ -54,5 +66,14 @@ describe('project default navigation', () => {
     expect(navigationContextSource).toContain('const NavigationStateContext = createContext<NavigationState | null>(null)')
     expect(navigationContextSource).toContain('<NavigationStateContext.Provider value={navigationState}>')
     expect(navigationContextSource).not.toContain('const { navigationState } = useNavigation()')
+  })
+
+  it('keeps action-only navigation consumers off navigation state context updates', () => {
+    expect(navigationContextSource).toContain('const NavigationActionsContext = createContext<NavigationActionsContextValue | null>(null)')
+    expect(navigationContextSource).toContain('const actionsValue = useMemo<NavigationActionsContextValue>(() => ({')
+    expect(navigationContextSource).toContain('const currentNavigationState = navigationStateRef.current')
+    expect(sessionListSource).toContain('useNavigationActions')
+    expect(chatDisplaySource).toContain('useNavigationActions')
+    expect(appShellSource).toContain('useNavigationActions')
   })
 })

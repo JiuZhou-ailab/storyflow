@@ -112,7 +112,7 @@ import * as storage from "@/lib/local-storage"
 import { toast } from "sonner"
 import { navigate, routes } from "@/lib/navigate"
 import {
-  useNavigation,
+  useNavigationActions,
   useNavigationState,
   isSessionsNavigation,
   isSourcesNavigation,
@@ -1095,7 +1095,7 @@ function AppShellContent({
   const previousNovelWorkspaceShellWidthRef = React.useRef<number | null>(null)
   const [session, setSession] = useSession()
   const { resolvedMode, isDark, setMode } = useTheme()
-  const { goBack, goForward, navigateToSource, navigateToSession } = useNavigation()
+  const { goBack, goForward, navigateToSource, navigateToSession } = useNavigationActions()
 
   // Double-Esc interrupt feature: first Esc shows warning, second Esc interrupts
   const { handleEscapePress } = useEscapeInterrupt()

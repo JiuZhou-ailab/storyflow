@@ -122,7 +122,10 @@ interface NavigationContextValue {
   navigateToSession: (sessionId: string) => void
 }
 
+type NavigationActionsContextValue = Omit<NavigationContextValue, 'isReady' | 'navigationState' | 'canGoBack' | 'canGoForward'>
+
 export const NavigationContext = createContext<NavigationContextValue | null>(null)
+const NavigationActionsContext = createContext<NavigationActionsContextValue | null>(null)
 const NavigationStateContext = createContext<NavigationState | null>(null)
 
 function areRightSidebarPanelsEqual(
@@ -210,6 +213,8 @@ export function NavigationProvider({
       : DEFAULT_NAVIGATION_STATE
     return rightSidebar ? { ...base, rightSidebar } : base
   }, [focusedRoute, rightSidebar])
+  const navigationStateRef = useRef<NavigationState>(navigationState)
+  navigationStateRef.current = navigationState
 
   // =========================================================================
   // BROWSER HISTORY TRACKING
@@ -1214,8 +1219,9 @@ export function NavigationProvider({
   // =========================================================================
 
   const navigateToSource = useCallback((sourceSlug?: string) => {
-    if (isSourcesNavigation(navigationState) && navigationState.filter?.kind === 'type') {
-      switch (navigationState.filter.sourceType) {
+    const currentNavigationState = navigationStateRef.current
+    if (isSourcesNavigation(currentNavigationState) && currentNavigationState.filter?.kind === 'type') {
+      switch (currentNavigationState.filter.sourceType) {
         case 'api':
           navigate(routes.view.sourcesApi(sourceSlug))
           return
@@ -1228,15 +1234,16 @@ export function NavigationProvider({
       }
     }
     navigate(routes.view.sources(sourceSlug ? { sourceSlug } : undefined))
-  }, [navigationState, navigate])
+  }, [navigate])
 
   const navigateToSession = useCallback((sessionId: string) => {
-    if (!isSessionsNavigation(navigationState)) {
+    const currentNavigationState = navigationStateRef.current
+    if (!isSessionsNavigation(currentNavigationState)) {
       navigate(routes.view.allSessions(sessionId))
       return
     }
 
-    const filter = navigationState.filter
+    const filter = currentNavigationState.filter
     switch (filter.kind) {
       case 'allSessions':
         navigate(routes.view.allSessions(sessionId))
@@ -1259,7 +1266,7 @@ export function NavigationProvider({
       default:
         navigate(routes.view.allSessions(sessionId))
     }
-  }, [navigationState, navigate])
+  }, [navigate])
 
   // =========================================================================
   // STALE SESSION PANEL ROUTE RECONCILIATION
@@ -1356,12 +1363,32 @@ export function NavigationProvider({
     navigateToSession,
   ])
 
+  const actionsValue = useMemo<NavigationActionsContextValue>(() => ({
+    navigate,
+    goBack,
+    goForward,
+    updateRightSidebar,
+    toggleRightSidebar,
+    navigateToSource,
+    navigateToSession,
+  }), [
+    navigate,
+    goBack,
+    goForward,
+    updateRightSidebar,
+    toggleRightSidebar,
+    navigateToSource,
+    navigateToSession,
+  ])
+
   return (
-    <NavigationContext.Provider value={contextValue}>
-      <NavigationStateContext.Provider value={navigationState}>
-        {children}
-      </NavigationStateContext.Provider>
-    </NavigationContext.Provider>
+    <NavigationActionsContext.Provider value={actionsValue}>
+      <NavigationContext.Provider value={contextValue}>
+        <NavigationStateContext.Provider value={navigationState}>
+          {children}
+        </NavigationStateContext.Provider>
+      </NavigationContext.Provider>
+    </NavigationActionsContext.Provider>
   )
 }
 
@@ -1372,6 +1399,14 @@ export function useNavigation() {
   const context = useContext(NavigationContext)
   if (!context) {
     throw new Error('useNavigation must be used within NavigationProvider')
+  }
+  return context
+}
+
+export function useNavigationActions() {
+  const context = useContext(NavigationActionsContext)
+  if (!context) {
+    throw new Error('useNavigationActions must be used within NavigationProvider')
   }
   return context
 }

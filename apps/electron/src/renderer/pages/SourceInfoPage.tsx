@@ -10,7 +10,7 @@ import { getEditConfig, type EditContextKey } from '@/components/ui/EditPopover'
 import { ResourceEditActions } from '@/components/ui/resource-edit-actions'
 import { SourceAvatar } from '@/components/ui/source-avatar'
 import { SourceMenu } from '@/components/app-shell/SourceMenu'
-import { useNavigation } from '@/contexts/NavigationContext'
+import { useNavigationActions } from '@/contexts/NavigationContext'
 import { toast } from 'sonner'
 import {
   Info_Page,
@@ -166,7 +166,7 @@ function getPermissionsDescription(source: LoadedSource, t: (key: string) => str
 
 export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: SourceInfoPageProps) {
   const { t } = useTranslation()
-  const { navigateToSource } = useNavigation()
+  const { navigateToSource } = useNavigationActions()
   const [source, setSource] = useState<LoadedSource | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

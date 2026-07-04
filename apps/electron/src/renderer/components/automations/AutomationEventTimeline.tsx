@@ -10,7 +10,7 @@ import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CheckCircle2, XCircle, ShieldAlert, ChevronDown, Copy, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useNavigation } from '@/contexts/NavigationContext'
+import { useNavigationActions } from '@/contexts/NavigationContext'
 import { type ExecutionEntry, type ExecutionStatus } from './types'
 import { formatShortRelativeTime } from './utils'
 
@@ -89,7 +89,7 @@ function CopyButton({ details }: { details: import('./types').WebhookDetails }) 
 
 export function AutomationEventTimeline({ entries, className, onReplay }: AutomationEventTimelineProps) {
   const { t } = useTranslation()
-  const { navigateToSession } = useNavigation()
+  const { navigateToSession } = useNavigationActions()
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   if (entries.length === 0) {
