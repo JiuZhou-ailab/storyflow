@@ -16,6 +16,7 @@ mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDo
 let isValidMentionTrigger: (text: string, position: number) => boolean;
 let parseInlineMentionQuery: typeof import('../mention-menu').parseInlineMentionQuery;
 let filterMentionFileReferences: typeof import('../mention-menu').filterMentionFileReferences;
+let createMentionSections: typeof import('../mention-menu').createMentionSections;
 let getMentionInsertionText: typeof import('../mention-menu').getMentionInsertionText;
 let reuseMentionItemsIfEqual: typeof import('../mention-menu').reuseMentionItemsIfEqual;
 
@@ -24,6 +25,7 @@ beforeAll(async () => {
   isValidMentionTrigger = mod.isValidMentionTrigger;
   parseInlineMentionQuery = mod.parseInlineMentionQuery;
   filterMentionFileReferences = mod.filterMentionFileReferences;
+  createMentionSections = mod.createMentionSections;
   getMentionInsertionText = mod.getMentionInsertionText;
   reuseMentionItemsIfEqual = mod.reuseMentionItemsIfEqual;
 });
@@ -200,10 +202,37 @@ describe('useInlineMention hot path', () => {
     const hookEnd = source.indexOf('function MentionMenuContent', hookStart)
     const hookSource = source.slice(hookStart, hookEnd)
 
-    expect(hookSource).toContain('const hasIndexedFileMatch = files.length > 0 && files.some(')
+    expect(hookSource).toContain('? filterMentionFileReferences(files, filterText)')
+    expect(hookSource).toContain('const hasIndexedFileMatch = indexedFileResults.length > 0')
+    expect(hookSource).not.toContain('files.some(')
     expect(hookSource.indexOf('if (hasIndexedFileMatch)')).toBeLessThan(
       hookSource.indexOf('window.electronAPI.searchFiles(basePath, filterText)')
     )
+  })
+
+  it('passes prefiltered indexed files into section creation without rescanning files', () => {
+    const indexedFileResults = filterMentionFileReferences([
+      {
+        path: '/repo/docs/Chapter.md',
+        relativePath: 'docs/Chapter.md',
+        label: 'Chapter',
+        type: 'file',
+      },
+    ], 'chap')
+
+    const sections = createMentionSections({
+      sources: [],
+      fileResults: [],
+      indexedFileResults,
+    })
+
+    expect(sections).toEqual([
+      {
+        id: 'files',
+        label: 'Files',
+        items: indexedFileResults,
+      },
+    ])
   })
 
   it('precomputes mention filter ranking keys before sorting results', () => {
@@ -234,9 +263,10 @@ describe('useInlineMention hot path', () => {
     const source = readFileSync(new URL('../mention-menu.tsx', import.meta.url), 'utf-8')
 
     expect(source).toContain('const EMPTY_MENTION_SECTIONS: MentionSection[] = []')
-    expect(source).toContain('if (!isOpen && !filter && fileResults.length === 0)')
+    expect(source).toContain('if (!isOpen && !filter && indexedFileResults.length === 0 && fileResults.length === 0)')
     expect(source).toContain('return EMPTY_MENTION_SECTIONS')
     expect(source).toContain('setFileResults(prev => prev.length === 0 ? prev : [])')
+    expect(source).toContain('setIndexedFileResults(prev => prev.length === 0 ? prev : [])')
     expect(source).not.toContain('setFileResults([])')
   })
 

@@ -219,17 +219,14 @@ export function getMentionInsertionText(item: MentionItem, workspaceId?: string)
 }
 
 export interface CreateMentionSectionsOptions {
-  skills: LoadedSkill[]
   sources: LoadedSource[]
-  files: MentionFileReference[]
-  filter: string
+  indexedFileResults: MentionItem[]
   fileResults: MentionItem[]
 }
 
 export function createMentionSections({
   sources,
-  files,
-  filter,
+  indexedFileResults,
   fileResults,
 }: CreateMentionSectionsOptions): MentionSection[] {
   const result: MentionSection[] = []
@@ -252,7 +249,6 @@ export function createMentionSections({
   }
 
   // Files section (indexed writing files + async filesystem search results)
-  const indexedFileResults = filterMentionFileReferences(files, filter)
   const mergedFileResults = dedupeMentionItems([...indexedFileResults, ...fileResults])
   if (mergedFileResults.length > 0) {
     result.push({
@@ -650,7 +646,6 @@ export interface UseInlineMentionReturn {
 
 export function useInlineMention({
   inputRef,
-  skills,
   sources,
   files = [],
   basePath,
@@ -666,6 +661,7 @@ export function useInlineMention({
   const [position, setPosition] = React.useState({ x: 0, y: 0 })
   const [atStart, setAtStart] = React.useState(-1)
   const [fileResults, setFileResults] = React.useState<MentionItem[]>([])
+  const [indexedFileResults, setIndexedFileResults] = React.useState<MentionItem[]>([])
   const fileSearchTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   // Cache of raw IPC file search results for the current menu session.
   // Allows instant client-side filtering when user edits the query (add/delete chars)
@@ -673,8 +669,12 @@ export function useInlineMention({
   const fileCache = React.useRef<FileSearchResult[]>([])
   // Store current input state for handleSelect
   const currentInputRef = React.useRef({ value: '', cursorPosition: 0 })
+  const filesRef = React.useRef(files)
   const clearFileResults = React.useCallback(() => {
     setFileResults(prev => prev.length === 0 ? prev : [])
+  }, [])
+  const clearIndexedFileResults = React.useCallback(() => {
+    setIndexedFileResults(prev => prev.length === 0 ? prev : [])
   }, [])
 
   // Cleanup pending timeout on unmount
@@ -686,13 +686,21 @@ export function useInlineMention({
     }
   }, [])
 
+  React.useEffect(() => {
+    if (filesRef.current === files) return
+    filesRef.current = files
+    if (!isOpen) return
+    const nextIndexedFileResults = filterMentionFileReferences(files, filter)
+    setIndexedFileResults(prev => reuseMentionItemsIfEqual(prev, nextIndexedFileResults))
+  }, [files, filter, isOpen])
+
   // Build sections from available context data (sources and file search results)
   const sections = React.useMemo((): MentionSection[] => {
-    if (!isOpen && !filter && fileResults.length === 0) {
+    if (!isOpen && !filter && indexedFileResults.length === 0 && fileResults.length === 0) {
       return EMPTY_MENTION_SECTIONS
     }
-    return createMentionSections({ skills, sources, files, filter, fileResults })
-  }, [skills, sources, files, filter, fileResults, isOpen])
+    return createMentionSections({ sources, indexedFileResults, fileResults })
+  }, [sources, filter, indexedFileResults, fileResults, isOpen])
 
   const handleInputChange = React.useCallback((value: string, cursorPosition: number) => {
     // Store current state for handleSelect
@@ -721,6 +729,7 @@ export function useInlineMention({
             fileSearchTimeout.current = null
           }
           clearFileResults()
+          clearIndexedFileResults()
           fileCache.current = []
           return
         }
@@ -728,6 +737,10 @@ export function useInlineMention({
 
       setAtStart(query.start)
       setFilter(filterText)
+      const indexedFileResults = files.length > 0
+        ? filterMentionFileReferences(files, filterText)
+        : []
+      setIndexedFileResults(prev => reuseMentionItemsIfEqual(prev, indexedFileResults))
       if (files.length > 0) {
         setCommittedFilter(filterText)
       }
@@ -736,10 +749,7 @@ export function useInlineMention({
       // filter client-side instantly (no IPC, no debounce). Otherwise fire a
       // debounced IPC to populate the cache. Cache clears when menu closes.
       if (basePath && filterText.length >= 1) {
-        const lowerFileFilter = filterText.trimEnd().toLowerCase()
-        const hasIndexedFileMatch = files.length > 0 && files.some(
-          file => scoreMentionFileReference(file, lowerFileFilter) > 0
-        )
+        const hasIndexedFileMatch = indexedFileResults.length > 0
 
         if (hasIndexedFileMatch) {
           if (fileSearchTimeout.current) {
@@ -816,9 +826,10 @@ export function useInlineMention({
         fileSearchTimeout.current = null
       }
       clearFileResults()
+      clearIndexedFileResults()
       fileCache.current = []
     }
-  }, [inputRef, basePath, files, clearFileResults])
+  }, [inputRef, basePath, files, clearFileResults, clearIndexedFileResults])
 
   const handleSelect = React.useCallback((item: MentionItem): { value: string; cursorPosition: number } => {
     let result = ''
@@ -844,10 +855,11 @@ export function useInlineMention({
       fileSearchTimeout.current = null
     }
     clearFileResults()
+    clearIndexedFileResults()
     fileCache.current = []
 
     return { value: result, cursorPosition: newCursorPosition }
-  }, [onSelect, atStart, workspaceId, clearFileResults])
+  }, [onSelect, atStart, workspaceId, clearFileResults, clearIndexedFileResults])
 
   const close = React.useCallback(() => {
     setIsOpen(false)
@@ -860,8 +872,9 @@ export function useInlineMention({
       fileSearchTimeout.current = null
     }
     clearFileResults()
+    clearIndexedFileResults()
     fileCache.current = []
-  }, [clearFileResults])
+  }, [clearFileResults, clearIndexedFileResults])
 
   return {
     isOpen,

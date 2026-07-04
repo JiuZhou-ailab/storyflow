@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
-import type { LoadedSkill, LoadedSource } from '../../../../shared/types'
+import type { LoadedSource } from '../../../../shared/types'
 
 mock.module('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '' }))
 mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDocument: () => ({}) }))
@@ -10,16 +10,6 @@ beforeAll(async () => {
   const mod = await import('../mention-menu')
   createMentionSections = mod.createMentionSections
 })
-
-function skill(slug: string): LoadedSkill {
-  return {
-    slug,
-    metadata: { name: slug, description: '' },
-    content: '',
-    path: `/skills/${slug}`,
-    source: 'workspace',
-  }
-}
 
 function source(slug: string): LoadedSource {
   return {
@@ -39,10 +29,8 @@ function source(slug: string): LoadedSource {
 describe('mention menu sections', () => {
   it('keeps @ mentions scoped to context objects instead of skills', () => {
     const sections = createMentionSections({
-      skills: [skill('review-pr')],
       sources: [source('github')],
-      files: [],
-      filter: '',
+      indexedFileResults: [],
       fileResults: [],
     })
 
