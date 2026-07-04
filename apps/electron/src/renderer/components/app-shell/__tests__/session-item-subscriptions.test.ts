@@ -37,8 +37,8 @@ describe('session item subscriptions', () => {
     expect(sessionListSource).toContain("useActionLabel('chat.prevSearchMatch')")
     expect(sessionListSource).toContain('hasRemoteWorkspaces,')
     expect(sessionListSource).toContain('isCompactMode,')
-    expect(sessionItemSource).toContain('ctx.nextSearchMatchHotkey')
-    expect(sessionItemSource).toContain('ctx.prevSearchMatchHotkey')
+    expect(sessionItemSource).toContain('nextSearchMatchHotkey?: string | null')
+    expect(sessionItemSource).toContain('prevSearchMatchHotkey?: string | null')
     expect(sessionListSource).not.toContain('useAppShellContext')
     expect(sessionItemSource).not.toContain('useAppShellContext')
     expect(sessionItemSource).not.toContain('useActionLabel')
@@ -205,7 +205,15 @@ describe('session item subscriptions', () => {
 
     expect(matchInfoGuardSource).toContain('prev.sessionId === info.sessionId && prev.count === info.count && prev.isHighlighting === info.isHighlighting')
     expect(matchInfoGuardSource).not.toContain('prev.index === info.index')
+    expect(sessionListContextSource).not.toContain('contentSearchResults')
+    expect(sessionListContextSource).not.toContain('activeChatMatchInfo')
+    expect(sessionListContextSource).not.toContain('searchQuery?:')
+    expect(sessionItemSource).toContain('chatMatchCount?: number')
+    expect(sessionItemSource).toContain('searchQuery?: string')
+    expect(sessionListSource).toContain('chatMatchCount={chatMatchCount}')
     expect(sessionItemSource).not.toContain('activeMatch!.index')
+    expect(sessionItemSource).not.toContain('ctx.contentSearchResults')
+    expect(sessionItemSource).not.toContain('ctx.activeChatMatchInfo')
   })
 
   it('does not reset empty chat match info to a new object', () => {

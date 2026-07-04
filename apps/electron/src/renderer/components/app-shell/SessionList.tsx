@@ -745,24 +745,18 @@ export function SessionList({
     flatLabels,
     labelById,
     labels,
-    searchQuery: resolvedSearchQuery,
     isMultiSelectActive,
     isCompactMode,
     hasRemoteWorkspaces,
-    nextSearchMatchHotkey,
-    prevSearchMatchHotkey,
-    contentSearchResults,
-    activeChatMatchInfo,
   }), [
     handleRenameClick, onSessionStatusChange,
     onFlag, handleFlagWithToast, onUnflag, handleUnflagWithToast,
     onArchive, handleArchiveWithToast, onUnarchive, handleUnarchiveWithToast,
     onMarkUnread, handleDeleteWithToast, onLabelsChange,
     handleSelectSessionById, handleOpenInNewWindow, setSendToWorkspace, handleFocusZone, handleKeyDown,
-    sessionStatuses, flatLabels, labelById, labels, resolvedSearchQuery,
+    sessionStatuses, flatLabels, labelById, labels,
     isMultiSelectActive,
-    isCompactMode, hasRemoteWorkspaces, nextSearchMatchHotkey, prevSearchMatchHotkey,
-    contentSearchResults, activeChatMatchInfo,
+    isCompactMode, hasRemoteWorkspaces,
   ])
 
   // --- Empty state (non-search) — render before EntityList ---
@@ -811,6 +805,10 @@ export function SessionList({
         renderItem={(row, _indexInGroup, isFirstInGroup) => {
           const flatIndex = rowIndexMap.get(row.item.id) ?? 0
           const rowProps = interactions.getRowProps(row, flatIndex)
+          const activeMatchCount = rowProps.isSelected && activeChatMatchInfo?.sessionId === row.item.id
+            ? activeChatMatchInfo.count
+            : undefined
+          const chatMatchCount = activeMatchCount ?? contentSearchResults.get(row.item.id)?.matchCount
           return (
             <SessionItem
               item={row.item}
@@ -822,6 +820,10 @@ export function SessionList({
               onSelect={() => handleSelectSession(row, flatIndex)}
               onToggleSelect={() => handleToggleSelect(row, flatIndex)}
               onRangeSelect={() => handleRangeSelect(flatIndex)}
+              searchQuery={resolvedSearchQuery}
+              chatMatchCount={chatMatchCount}
+              nextSearchMatchHotkey={nextSearchMatchHotkey}
+              prevSearchMatchHotkey={prevSearchMatchHotkey}
             />
           )
         }}

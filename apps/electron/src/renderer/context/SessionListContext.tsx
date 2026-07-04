@@ -2,7 +2,6 @@ import { createContext, useContext } from "react"
 import type { LabelConfig } from "@craft-agent/shared/labels"
 import type { SessionStatusId, SessionStatus } from "@/config/session-status-config"
 import type { SessionMeta } from "@/atoms/sessions"
-import type { ContentSearchResult } from "@/hooks/useSessionSearch"
 
 export interface SessionListContextValue {
   // Session action callbacks (shared across all items)
@@ -26,17 +25,9 @@ export interface SessionListContextValue {
   flatLabels: LabelConfig[]
   labelById: Map<string, LabelConfig>
   labels: LabelConfig[]
-  searchQuery?: string
   isMultiSelectActive: boolean
   isCompactMode?: boolean
   hasRemoteWorkspaces?: boolean
-  nextSearchMatchHotkey?: string | null
-  prevSearchMatchHotkey?: string | null
-
-  // Per-session lookup maps
-  contentSearchResults: Map<string, ContentSearchResult>
-  /** DOM-verified match info for the active session (count, highlighting state) */
-  activeChatMatchInfo?: { sessionId: string | null; count: number; isHighlighting?: boolean }
 }
 
 const SessionListContext = createContext<SessionListContextValue | null>(null)

@@ -39,6 +39,10 @@ export interface SessionItemProps {
   onSelect: () => void
   onToggleSelect?: () => void
   onRangeSelect?: () => void
+  searchQuery?: string
+  chatMatchCount?: number
+  nextSearchMatchHotkey?: string | null
+  prevSearchMatchHotkey?: string | null
 }
 
 export function SessionItem({
@@ -50,14 +54,13 @@ export function SessionItem({
   onSelect,
   onToggleSelect,
   onRangeSelect,
+  searchQuery,
+  chatMatchCount,
+  nextSearchMatchHotkey,
+  prevSearchMatchHotkey,
 }: SessionItemProps) {
   const ctx = useSessionListContext()
   const title = getSessionTitle(item)
-  // For the active session, prefer logical match count over ripgrep count
-  const activeMatch = ctx.activeChatMatchInfo
-  const isActiveSession = isSelected && activeMatch?.sessionId === item.id
-  const ripgrepMatchCount = ctx.contentSearchResults.get(item.id)?.matchCount
-  const chatMatchCount = isActiveSession ? activeMatch!.count : ripgrepMatchCount
   const hasMatch = chatMatchCount != null && chatMatchCount > 0
   const resolvedLabelBadges = resolveSessionLabelBadges(item.labels, ctx.labelById)
   const hasPendingPrompt = useAtomValue(hasPendingPromptAtomFamily(item.id))
@@ -163,7 +166,7 @@ export function SessionItem({
           </div>
         </>
       }
-      title={ctx.searchQuery ? highlightMatch(title, ctx.searchQuery) : title}
+      title={searchQuery ? highlightMatch(title, searchQuery) : title}
       titleClassName={cn("text-[13px]", item.isAsyncOperationOngoing && "animate-shimmer-text")}
       subtitle={previewText}
       titleSuffix={
@@ -197,7 +200,7 @@ export function SessionItem({
           style={{
             '--shadow-color': isSelected ? '234, 179, 8' : '133, 77, 14',
           } as React.CSSProperties}
-          title={`Matches found (${ctx.nextSearchMatchHotkey} next, ${ctx.prevSearchMatchHotkey} prev)`}
+          title={`Matches found (${nextSearchMatchHotkey} next, ${prevSearchMatchHotkey} prev)`}
         >
           {chatMatchCount}
         </span>
