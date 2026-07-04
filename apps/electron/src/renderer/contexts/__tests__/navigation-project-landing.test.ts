@@ -44,4 +44,9 @@ describe('project default navigation', () => {
     expect(navigationContextSource).not.toContain('const sessionMetas = useMemo(() => Array.from(sessionMetaMap.values())')
     expect(navigationContextSource).not.toContain('const filtered = filterSessionsByFilter(filter)')
   })
+
+  it('reads session metadata on demand instead of subscribing the provider to every meta update', () => {
+    expect(navigationContextSource).not.toContain('useAtomValue(sessionMetaMapAtom)')
+    expect(navigationContextSource).toContain('const sessionMetaMap = store.get(sessionMetaMapAtom)')
+  })
 })

@@ -175,8 +175,6 @@ export function NavigationProvider({
   const { t } = useTranslation()
   const [, setSession] = useSession()
 
-  // Read session metadata directly from atom (reactive to session changes)
-  const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
   const updateSessionMeta = useSetAtom(updateSessionMetaAtom)
 
   const pushPanel = useSetAtom(pushPanelAtom)
@@ -599,6 +597,7 @@ export function NavigationProvider({
 
   const getFirstSessionId = useCallback(
     (filter: SessionFilter): string | null => {
+      const sessionMetaMap = store.get(sessionMetaMapAtom)
       for (const session of sessionMetaMap.values()) {
         if (doesSessionMatchFilter(session, filter)) {
           return session.id
@@ -606,7 +605,7 @@ export function NavigationProvider({
       }
       return null
     },
-    [doesSessionMatchFilter, sessionMetaMap]
+    [doesSessionMatchFilter, store]
   )
 
   const getLastSelectedSessionId = useCallback(
@@ -618,10 +617,11 @@ export function NavigationProvider({
         workspaceId
       )
       if (!storedId) return null
+      const sessionMetaMap = store.get(sessionMetaMapAtom)
       const session = sessionMetaMap.get(storedId)
       return doesSessionMatchFilter(session, filter) ? storedId : null
     },
-    [doesSessionMatchFilter, sessionMetaMap, workspaceId]
+    [doesSessionMatchFilter, store, workspaceId]
   )
 
   const getFirstSourceSlug = useCallback(
