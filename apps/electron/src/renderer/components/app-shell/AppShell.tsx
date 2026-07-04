@@ -104,7 +104,7 @@ import { loadSkillsForWorkspace } from "@/hooks/useWorkspaceSkills"
 import { LabelIcon } from "@/components/ui/label-icon"
 import { filterSessionStatuses as filterLabelMenuStates } from "@/components/ui/label-menu"
 import { createLabelMenuItems, filterItems as filterLabelMenuItems, type LabelMenuItem } from "@/components/ui/label-menu-utils"
-import { getDescendantIds, getLabelDisplayName, extractLabelId, findLabelById, sortLabelsForDisplay } from "@craft-agent/shared/labels"
+import { getDescendantIds, getLabelDisplayName, extractLabelId, sortLabelsForDisplay } from "@craft-agent/shared/labels"
 import type { LabelConfig } from "@craft-agent/shared/labels"
 import { resolveEntityColor } from "@craft-agent/shared/colors"
 import * as storage from "@/lib/local-storage"
@@ -1526,6 +1526,26 @@ function AppShellContent({
     (): LabelMenuItem[] => createLabelMenuItems(displayLabelConfigs),
     [displayLabelConfigs],
   )
+  const labelConfigById = useMemo(
+    () => new Map(flatLabelMenuItems.map(item => [item.id, item.config])),
+    [flatLabelMenuItems],
+  )
+  const activeStatusFilters = useMemo(() => {
+    const filters: { state: SessionStatus; mode: FilterMode }[] = []
+    for (const state of effectiveSessionStatuses) {
+      const mode = listFilter.get(state.id)
+      if (mode) filters.push({ state, mode })
+    }
+    return filters
+  }, [effectiveSessionStatuses, listFilter])
+  const activeLabelFilters = useMemo(() => {
+    const filters: { label: LabelConfig; mode: FilterMode }[] = []
+    for (const [labelId, mode] of labelFilter) {
+      const label = labelConfigById.get(labelId)
+      if (label) filters.push({ label, mode })
+    }
+    return filters
+  }, [labelFilter, labelConfigById])
 
   // Filter dropdown keyboard navigation: tracks highlighted item index in flat search mode.
   // Unified index: [0..matchedStates-1] = statuses, [matchedStates..total-1] = labels.
@@ -4624,7 +4644,7 @@ function AppShellContent({
                                 {/* Pinned: label from label view */}
                                 {(() => {
                                   if (!pinnedFilters.pinnedLabelId) return null
-                                  const label = findLabelById(labelConfigs, pinnedFilters.pinnedLabelId)
+                                  const label = labelConfigById.get(pinnedFilters.pinnedLabelId)
                                   if (!label) return null
                                   return (
                                     <StyledDropdownMenuItem disabled key={`pinned-label-${label.id}`}>
@@ -4637,9 +4657,8 @@ function AppShellContent({
                                   )
                                 })()}
                                 {/* User-added: selected statuses with mode pill (include/exclude) */}
-                                {effectiveSessionStatuses.filter(s => listFilter.has(s.id)).map(state => {
+                                {activeStatusFilters.map(({ state, mode }) => {
                                   const applyColor = state.iconColorable
-                                  const mode = listFilter.get(state.id)!
                                   return (
                                     <DropdownMenuSub key={`sel-status-${state.id}`}>
                                       <StyledDropdownMenuSubTrigger onClick={(e) => { e.preventDefault(); setListFilter(prev => { const next = new Map(prev); next.delete(state.id); return next }) }}>
@@ -4670,12 +4689,10 @@ function AppShellContent({
                                   )
                                 })}
                                 {/* User-added: selected labels with mode pill (include/exclude) */}
-                                {Array.from(labelFilter).map(([labelId, mode]) => {
-                                  const label = findLabelById(labelConfigs, labelId)
-                                  if (!label) return null
+                                {activeLabelFilters.map(({ label, mode }) => {
                                   return (
-                                    <DropdownMenuSub key={`sel-label-${labelId}`}>
-                                      <StyledDropdownMenuSubTrigger onClick={(e) => { e.preventDefault(); setLabelFilter(prev => { const next = new Map(prev); next.delete(labelId); return next }) }}>
+                                    <DropdownMenuSub key={`sel-label-${label.id}`}>
+                                      <StyledDropdownMenuSubTrigger onClick={(e) => { e.preventDefault(); setLabelFilter(prev => { const next = new Map(prev); next.delete(label.id); return next }) }}>
                                         <FilterMenuRow
                                           icon={<LabelIcon label={label} size="lg" />}
                                           label={label.name}
@@ -4687,12 +4704,12 @@ function AppShellContent({
                                           mode={mode}
                                           onChangeMode={(newMode) => setLabelFilter(prev => {
                                             const next = new Map(prev)
-                                            next.set(labelId, newMode)
+                                            next.set(label.id, newMode)
                                             return next
                                           })}
                                           onRemove={() => setLabelFilter(prev => {
                                             const next = new Map(prev)
-                                            next.delete(labelId)
+                                            next.delete(label.id)
                                             return next
                                           })}
                                         />

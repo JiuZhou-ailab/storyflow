@@ -39,4 +39,13 @@ describe('AppShell derived state', () => {
     expect(appShellSource).toContain('automationFilter={automationListFilter}')
     expect(appShellSource).not.toContain('automationFilter={automationFilter ? { kind:')
   })
+
+  it('derives active filter chips before rendering the filter dropdown', () => {
+    expect(appShellSource).toContain('const labelConfigById = useMemo(')
+    expect(appShellSource).toContain('const activeStatusFilters = useMemo(')
+    expect(appShellSource).toContain('const activeLabelFilters = useMemo(')
+    expect(appShellSource).not.toContain('effectiveSessionStatuses.filter(s => listFilter.has(s.id)).map')
+    expect(appShellSource).not.toContain('Array.from(labelFilter).map')
+    expect(appShellSource).not.toContain('findLabelById(labelConfigs')
+  })
 })
