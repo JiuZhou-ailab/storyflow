@@ -33,4 +33,10 @@ describe('AppShell derived state', () => {
     expect(appShellSource).toContain('hasRemoteWorkspaces={hasRemoteWorkspaces}')
     expect(appShellSource).not.toContain('hasRemoteWorkspaces={workspaces.some')
   })
+
+  it('keeps automation list filter identity stable across shell renders', () => {
+    expect(appShellSource).toContain('const automationListFilter = useMemo(')
+    expect(appShellSource).toContain('automationFilter={automationListFilter}')
+    expect(appShellSource).not.toContain('automationFilter={automationFilter ? { kind:')
+  })
 })

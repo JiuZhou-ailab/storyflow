@@ -1134,6 +1134,11 @@ function AppShellContent({
 
   // Derive automation filter from navigation state (only when in automations navigator)
   const automationFilter: AutomationFilter | null = isAutomationsNavigation(navState) ? navState.filter ?? null : null
+  const automationFilterType = automationFilter?.automationType
+  const automationListFilter = useMemo(() => {
+    if (!automationFilterType) return undefined
+    return { kind: AUTOMATION_TYPE_TO_FILTER_KIND[automationFilterType] ?? 'all' }
+  }, [automationFilterType])
 
   // Per-view filter storage: each session list view (allSessions, flagged, state:X, label:X, view:X)
   // has its own independent set of status and label filters.
@@ -5099,7 +5104,7 @@ function AppShellContent({
               /* Automations List - filtered by type if automationFilter is active */
               <AutomationsListPanel
                 automations={automations}
-                automationFilter={automationFilter ? { kind: AUTOMATION_TYPE_TO_FILTER_KIND[automationFilter.automationType] ?? 'all' } : undefined}
+                automationFilter={automationListFilter}
                 onAutomationClick={handleAutomationSelect}
                 onTestAutomation={handleTestAutomation}
                 onToggleAutomation={handleToggleAutomation}
