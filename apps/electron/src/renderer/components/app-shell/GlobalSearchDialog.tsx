@@ -110,7 +110,6 @@ export function GlobalSearchDialog({
     return () => {
       cancelled = true
       window.clearTimeout(timer)
-      setSearchingContent(false)
     }
   }, [open, query, workspaceId, clearContentResults])
 

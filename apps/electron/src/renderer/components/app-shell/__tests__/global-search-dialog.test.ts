@@ -15,4 +15,14 @@ describe('GlobalSearchDialog performance contracts', () => {
     expect(source).toContain('setContentResults(prev => reuseGlobalSearchContentResults(prev, resultMap))')
     expect(source).not.toContain('setContentResults(new Map())')
   })
+
+  it('does not flip searching state during stale query cleanup', () => {
+    const cleanupStart = source.indexOf('return () => {\n      cancelled = true')
+    const cleanupEnd = source.indexOf('  }, [open, query, workspaceId, clearContentResults])', cleanupStart)
+    const cleanupSource = source.slice(cleanupStart, cleanupEnd)
+
+    expect(cleanupSource).toContain('cancelled = true')
+    expect(cleanupSource).toContain('window.clearTimeout(timer)')
+    expect(cleanupSource).not.toContain('setSearchingContent(false)')
+  })
 })
