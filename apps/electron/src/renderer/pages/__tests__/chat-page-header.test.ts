@@ -148,4 +148,17 @@ describe('chat page header actions', () => {
     expect(appShellDestructure).not.toContain('onInputChange')
     expect(appShellDestructure).not.toContain('onAttachmentsChange')
   })
+
+  it('uses the narrow session chat resources context', () => {
+    const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
+    const appShellDestructure = appShellDestructureFrom(chatPageSource)
+
+    expect(chatPageSource).toContain('useSessionChatResources')
+    expect(appShellDestructure).not.toContain('enabledSources')
+    expect(appShellDestructure).not.toContain('skills')
+    expect(appShellDestructure).not.toContain('mentionFiles')
+    expect(appShellDestructure).not.toContain('openingProjectMetadata')
+    expect(appShellDestructure).not.toContain('enabledModes')
+    expect(appShellDestructure).not.toContain('onSessionSourcesChange')
+  })
 })

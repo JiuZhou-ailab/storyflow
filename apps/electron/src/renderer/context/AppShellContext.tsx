@@ -201,6 +201,17 @@ interface SessionDraftActionsContextType {
 
 const SessionDraftActionsContext = createContext<SessionDraftActionsContextType | null>(null)
 
+interface SessionChatResourcesContextType {
+  enabledSources?: AppShellContextType['enabledSources']
+  skills?: AppShellContextType['skills']
+  mentionFiles?: AppShellContextType['mentionFiles']
+  openingProjectMetadata?: AppShellContextType['openingProjectMetadata']
+  enabledModes?: AppShellContextType['enabledModes']
+  onSessionSourcesChange?: AppShellContextType['onSessionSourcesChange']
+}
+
+const SessionChatResourcesContext = createContext<SessionChatResourcesContextType | null>(null)
+
 interface SessionBatchActionsContextType {
   onSessionStatusChange: AppShellContextType['onSessionStatusChange']
   onArchiveSession: AppShellContextType['onArchiveSession']
@@ -263,6 +274,22 @@ export function AppShellProvider({
     value.onAttachmentsChange,
   ])
 
+  const sessionChatResources = React.useMemo<SessionChatResourcesContextType>(() => ({
+    enabledSources: value.enabledSources,
+    skills: value.skills,
+    mentionFiles: value.mentionFiles,
+    openingProjectMetadata: value.openingProjectMetadata,
+    enabledModes: value.enabledModes,
+    onSessionSourcesChange: value.onSessionSourcesChange,
+  }), [
+    value.enabledSources,
+    value.skills,
+    value.mentionFiles,
+    value.openingProjectMetadata,
+    value.enabledModes,
+    value.onSessionSourcesChange,
+  ])
+
   const sessionBatchActions = React.useMemo<SessionBatchActionsContextType>(() => ({
     onSessionStatusChange: value.onSessionStatusChange,
     onArchiveSession: value.onArchiveSession,
@@ -295,13 +322,15 @@ export function AppShellProvider({
     <AppShellContext.Provider value={value}>
       <SessionReadActionsContext.Provider value={sessionReadActions}>
         <SessionDraftActionsContext.Provider value={sessionDraftActions}>
-          <SessionInteractionActionsContext.Provider value={sessionInteractionActions}>
-            <SessionBatchActionsContext.Provider value={sessionBatchActions}>
-              <SessionOptionsActionsContext.Provider value={sessionOptionsActions}>
-                {children}
-              </SessionOptionsActionsContext.Provider>
-            </SessionBatchActionsContext.Provider>
-          </SessionInteractionActionsContext.Provider>
+          <SessionChatResourcesContext.Provider value={sessionChatResources}>
+            <SessionInteractionActionsContext.Provider value={sessionInteractionActions}>
+              <SessionBatchActionsContext.Provider value={sessionBatchActions}>
+                <SessionOptionsActionsContext.Provider value={sessionOptionsActions}>
+                  {children}
+                </SessionOptionsActionsContext.Provider>
+              </SessionBatchActionsContext.Provider>
+            </SessionInteractionActionsContext.Provider>
+          </SessionChatResourcesContext.Provider>
         </SessionDraftActionsContext.Provider>
       </SessionReadActionsContext.Provider>
     </AppShellContext.Provider>
@@ -341,6 +370,14 @@ export function useSessionDraftActions(): SessionDraftActionsContextType {
   const context = useContext(SessionDraftActionsContext)
   if (!context) {
     throw new Error('useSessionDraftActions must be used within an AppShellProvider')
+  }
+  return context
+}
+
+export function useSessionChatResources(): SessionChatResourcesContextType {
+  const context = useContext(SessionChatResourcesContext)
+  if (!context) {
+    throw new Error('useSessionChatResources must be used within an AppShellProvider')
   }
   return context
 }
