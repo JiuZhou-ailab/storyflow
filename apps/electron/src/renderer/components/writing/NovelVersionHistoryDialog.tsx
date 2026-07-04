@@ -29,7 +29,13 @@ export interface NovelVersionHistoryDialogProps {
   onRestore: (hash: string) => void
 }
 
-export function NovelVersionHistoryDialog({
+export function NovelVersionHistoryDialog(props: NovelVersionHistoryDialogProps) {
+  return props.open || props.saving || Boolean(props.restoringHash)
+    ? <NovelVersionHistoryDialogContent {...props} />
+    : null
+}
+
+function NovelVersionHistoryDialogContent({
   open,
   versions,
   loading = false,

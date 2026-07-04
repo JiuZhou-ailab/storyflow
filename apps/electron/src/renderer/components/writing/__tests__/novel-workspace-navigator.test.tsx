@@ -587,6 +587,10 @@ describe('novel writing workspace layout', () => {
       exportDialogSource.indexOf('export function NovelExportDialog'),
       exportDialogSource.indexOf('function NovelExportDialogContent')
     )
+    const versionDialogShellSource = versionDialogSource.slice(
+      versionDialogSource.indexOf('export function NovelVersionHistoryDialog'),
+      versionDialogSource.indexOf('function NovelVersionHistoryDialogContent')
+    )
 
     expect(appShellSource).toContain('NovelExportDialog')
     expect(appShellSource).toContain('NovelVersionHistoryDialog')
@@ -626,6 +630,8 @@ describe('novel writing workspace layout', () => {
     expect(exportDialogSource).toContain("t('writing.export.action', '导出')")
     expect(exportDialogSource).toContain("manuscript: '正文'")
     expect(versionDialogSource).toContain("t('writing.version.title', '版本管理')")
+    expect(versionDialogSource).toContain('function NovelVersionHistoryDialogContent')
+    expect(versionDialogShellSource).not.toContain('versions.map')
     expect(versionDialogSource).toContain('onCreateVersion')
     expect(versionDialogSource).toContain('onRestore(version.hash)')
     expect(appShellSource).toContain("t('writing.export.action', '导出')")
