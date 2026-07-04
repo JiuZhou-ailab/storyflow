@@ -53,6 +53,7 @@ describe('slash skill commands', () => {
         type: 'skill',
         label: 'Review PR',
         description: 'Review the current pull request',
+        searchText: 'review pr review-pr review the current pull request',
         skill: items[0]!.skill,
       },
     ])
@@ -84,6 +85,7 @@ describe('slash skill commands', () => {
       '~/work/beta',
       '/tmp/zeta',
     ])
+    expect(items.find(item => item.label === 'Alpha')?.searchText).toBe('alpha /users/zjding/work/alpha ~/work/alpha')
   })
 
   it('checks whether slash sections contain a filter match without rebuilding sections', () => {
@@ -124,5 +126,16 @@ describe('slash skill commands', () => {
     expect(source).toContain('[filteredSections]')
     expect(source).not.toContain('const filteredSections = filterSections(sections, filter)')
     expect(source).not.toContain('const flatItems = flattenSections(filteredSections)')
+  })
+
+  it('precomputes slash item search text for inline menu filtering', () => {
+    const source = readFileSync(new URL('../slash-command-menu.tsx', import.meta.url), 'utf-8')
+    const matcherStart = source.indexOf('function slashItemMatchesFilter')
+    const matcherEnd = source.indexOf('export function hasMatchingSlashItems', matcherStart)
+    const matcherSource = source.slice(matcherStart, matcherEnd)
+
+    expect(source).toContain('searchText: buildSlashItemSearchText(')
+    expect(matcherSource).toContain('if (item.searchText) return item.searchText.includes(lowerFilter)')
+    expect(matcherSource).not.toContain('item.label.toLowerCase().includes(lowerFilter)')
   })
 })

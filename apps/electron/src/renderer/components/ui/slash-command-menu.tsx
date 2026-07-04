@@ -26,6 +26,7 @@ export interface SlashCommand {
   label: string
   description: string
   icon: React.ReactNode
+  searchText?: string
   shortcut?: string
   /** Optional color for the command (hex color string) */
   color?: string
@@ -38,6 +39,7 @@ export interface SlashFolderItem {
   label: string
   description: string
   path: string
+  searchText?: string
 }
 
 /** Skill item for the slash menu */
@@ -46,6 +48,7 @@ export interface SlashSkillItem {
   type: 'skill'
   label: string
   description?: string
+  searchText?: string
   skill: LoadedSkill
 }
 
@@ -123,12 +126,17 @@ export const DEFAULT_SLASH_COMMAND_GROUPS: CommandGroup[] = [
   { id: 'modes', commands: permissionModeCommands },
 ]
 
+function buildSlashItemSearchText(...parts: Array<string | undefined>): string {
+  return parts.filter(Boolean).join(' ').toLowerCase()
+}
+
 export function createSlashSkillItems(skills: LoadedSkill[]): SlashSkillItem[] {
   return skills.map(skill => ({
     id: skill.slug,
     type: 'skill' as const,
     label: skill.metadata.name,
     description: skill.metadata.description,
+    searchText: buildSlashItemSearchText(skill.metadata.name, skill.slug, skill.metadata.description),
     skill,
   }))
 }
@@ -173,11 +181,8 @@ function isSkill(item: SlashItem): item is SlashSkillItem {
 }
 
 function slashItemMatchesFilter(item: SlashItem, lowerFilter: string): boolean {
-  return (
-    item.label.toLowerCase().includes(lowerFilter) ||
-    item.id.toLowerCase().includes(lowerFilter) ||
-    item.description?.toLowerCase().includes(lowerFilter) === true
-  )
+  if (item.searchText) return item.searchText.includes(lowerFilter)
+  return buildSlashItemSearchText(item.label, item.id, item.description).includes(lowerFilter)
 }
 
 export function hasMatchingSlashItems(sections: SlashSection[], filter: string): boolean {
@@ -618,13 +623,15 @@ export function createSlashFolderItems(recentFolders: string[], homeDir?: string
   return recentFolders
     .map(path => {
       const label = getFolderName(path)
+      const description = formatPathForDisplay(path, homeDir)
       return {
         item: {
           id: path,
           type: 'folder' as const,
           label,
-          description: formatPathForDisplay(path, homeDir),
+          description,
           path,
+          searchText: buildSlashItemSearchText(label, path, description),
         },
         sortLabel: label.toLowerCase(),
       }
