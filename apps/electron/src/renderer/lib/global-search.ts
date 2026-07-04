@@ -63,6 +63,22 @@ function compareFileResults(a: GlobalSearchFileResult, b: GlobalSearchFileResult
   return a.file.relativePath.localeCompare(b.file.relativePath, undefined, { numeric: true, sensitivity: 'base' })
 }
 
+function insertBoundedResult<T>(results: T[], result: T, compare: (a: T, b: T) => number): void {
+  const insertIndex = results.findIndex(existing => compare(result, existing) < 0)
+
+  if (insertIndex === -1) {
+    if (results.length < MAX_RESULTS_PER_GROUP) {
+      results.push(result)
+    }
+    return
+  }
+
+  results.splice(insertIndex, 0, result)
+  if (results.length > MAX_RESULTS_PER_GROUP) {
+    results.pop()
+  }
+}
+
 export function buildGlobalSearchResults({
   query,
   sessions,
@@ -75,37 +91,40 @@ export function buildGlobalSearchResults({
     return { sessions: [], files: [] }
   }
 
-  const sessionResults = sessions
-    .filter(session => !session.hidden)
-    .map((session): GlobalSearchSessionResult | null => {
-      const title = getSessionTitle(session)
-      const contentResult = sessionContentResults?.get(session.id)
-      const preview = contentResult?.snippet || getSessionPreviewText(session)
-      const score = Math.max(
-        scoreText(title, normalizedQuery),
-        scoreText(preview, normalizedQuery),
-        contentResult ? contentResult.matchCount + 90 : 0,
+  const sessionResults: GlobalSearchSessionResult[] = []
+  for (const session of sessions) {
+    if (session.hidden) continue
+
+    const title = getSessionTitle(session)
+    const contentResult = sessionContentResults?.get(session.id)
+    const preview = contentResult?.snippet || getSessionPreviewText(session)
+    const score = Math.max(
+      scoreText(title, normalizedQuery),
+      scoreText(preview, normalizedQuery),
+      contentResult ? contentResult.matchCount + 90 : 0,
+    )
+
+    if (score > 0) {
+      insertBoundedResult(
+        sessionResults,
+        { session, title, preview, score, matchCount: contentResult?.matchCount },
+        compareByScoreThenRecent,
       )
+    }
+  }
 
-      return score > 0 ? { session, title, preview, score, matchCount: contentResult?.matchCount } : null
-    })
-    .filter((result): result is GlobalSearchSessionResult => result != null)
-    .sort(compareByScoreThenRecent)
-    .slice(0, MAX_RESULTS_PER_GROUP)
+  const fileResults: GlobalSearchFileResult[] = []
+  for (const file of novelFiles) {
+    const title = formatNovelFileTitle(file)
+    const score = Math.max(
+      scoreText(title, normalizedQuery),
+      scoreText(file.relativePath, normalizedQuery),
+    )
 
-  const fileResults = novelFiles
-    .map((file): GlobalSearchFileResult | null => {
-      const title = formatNovelFileTitle(file)
-      const score = Math.max(
-        scoreText(title, normalizedQuery),
-        scoreText(file.relativePath, normalizedQuery),
-      )
-
-      return score > 0 ? { file, title, score } : null
-    })
-    .filter((result): result is GlobalSearchFileResult => result != null)
-    .sort(compareFileResults)
-    .slice(0, MAX_RESULTS_PER_GROUP)
+    if (score > 0) {
+      insertBoundedResult(fileResults, { file, title, score }, compareFileResults)
+    }
+  }
 
   return {
     sessions: sessionResults,

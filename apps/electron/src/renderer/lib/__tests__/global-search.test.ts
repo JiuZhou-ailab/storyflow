@@ -3,6 +3,7 @@
 // pos: Guards the top-bar global search dialog data pipeline
 
 import { describe, expect, it } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import type { SessionMeta } from '@/atoms/sessions'
 import type { NovelWorkspaceFile } from '../writing-workspace'
 import { buildGlobalSearchResults } from '../global-search'
@@ -24,6 +25,13 @@ function novelFile(path: string, relativePath: string): NovelWorkspaceFile {
 }
 
 describe('buildGlobalSearchResults', () => {
+  it('keeps top-N limiting inside result collection instead of sorting every match', () => {
+    const source = readFileSync(new URL('../global-search.ts', import.meta.url), 'utf8')
+
+    expect(source).not.toContain('.sort(compareByScoreThenRecent)\n    .slice(0, MAX_RESULTS_PER_GROUP)')
+    expect(source).not.toContain('.sort(compareFileResults)\n    .slice(0, MAX_RESULTS_PER_GROUP)')
+  })
+
   it('returns no results until the query has at least two visible characters', () => {
     const results = buildGlobalSearchResults({
       query: ' a ',
@@ -50,6 +58,23 @@ describe('buildGlobalSearchResults', () => {
     })
 
     expect(results.sessions.map(result => result.session.id)).toEqual(['s2', 's1'])
+  })
+
+  it('returns only the highest ranked session matches', () => {
+    const results = buildGlobalSearchResults({
+      query: 'dragon',
+      sessions: Array.from({ length: 10 }, (_, index) =>
+        session({
+          id: `s${index + 1}`,
+          name: 'Dragon outline',
+          lastMessageAt: index + 1,
+        }),
+      ),
+      novelFiles: [],
+      formatNovelFileTitle: file => file.relativePath,
+    })
+
+    expect(results.sessions.map(result => result.session.id)).toEqual(['s10', 's9', 's8', 's7', 's6', 's5', 's4', 's3'])
   })
 
   it('includes sessions found by full-text content search results', () => {
