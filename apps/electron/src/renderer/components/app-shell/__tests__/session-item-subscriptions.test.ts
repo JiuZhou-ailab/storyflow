@@ -18,6 +18,7 @@ const activeOptionBadgesSource = readFileSync(new URL('../ActiveOptionBadges.tsx
 const sessionFilesSectionSource = readFileSync(new URL('../../right-sidebar/SessionFilesSection.tsx', import.meta.url), 'utf-8')
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf-8')
 const sessionListContextSource = readFileSync(new URL('../../../context/SessionListContext.tsx', import.meta.url), 'utf-8')
+const focusContextSource = readFileSync(new URL('../../../context/FocusContext.tsx', import.meta.url), 'utf-8')
 const skillsListPanelSource = readFileSync(new URL('../SkillsListPanel.tsx', import.meta.url), 'utf-8')
 const sourcesListPanelSource = readFileSync(new URL('../SourcesListPanel.tsx', import.meta.url), 'utf-8')
 
@@ -39,6 +40,17 @@ describe('session item subscriptions', () => {
     expect(sessionListSource).not.toContain('useAppShellContext')
     expect(sessionItemSource).not.toContain('useAppShellContext')
     expect(sessionItemSource).not.toContain('useActionLabel')
+  })
+
+  it('keeps focus actions off focus-state context updates', () => {
+    expect(appShellSource).toContain('useFocusActions')
+    expect(sessionListSource).toContain('useFocusActions')
+    expect(appShellSource).not.toContain('useFocusContext')
+    expect(sessionListSource).not.toContain('useFocusContext')
+    expect(focusContextSource).toContain('const FocusActionsContext = createContext<FocusActionsContextValue | null>(null)')
+    expect(focusContextSource).toContain('const focusStateRef = useRef(focusState)')
+    expect(focusContextSource).toContain('const currentZone = focusStateRef.current.zone')
+    expect(focusContextSource).toContain('<FocusActionsContext.Provider value={actionsValue}>')
   })
 
   it('does not pass unused session selection callbacks into SessionList', () => {

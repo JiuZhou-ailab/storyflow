@@ -87,7 +87,7 @@ import { useTheme } from "@/context/ThemeContext"
 import { getResizeGradientStyle } from "@/hooks/useResizeGradient"
 import { useAction } from "@/actions"
 import { useFocusZone } from "@/hooks/keyboard"
-import { useFocusContext } from "@/context/FocusContext"
+import { useFocusActions } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import type { Session, Workspace, WorkspaceProjectType, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange, WhatsNewManifest } from "../../../shared/types"
 import { ensureSessionMessagesLoadedAtom, sessionAtomFamily, sessionMetaAtomFamily, sendToWorkspaceAtom } from "@/atoms/sessions"
@@ -1605,7 +1605,7 @@ function AppShellContent({
   }, [navState, navigate])
 
   // Focus zone management
-  const { focusZone, focusNextZone, focusPreviousZone } = useFocusContext()
+  const { focusZone, focusNextZone, focusPreviousZone } = useFocusActions()
 
   // Register focus zones
   const { zoneRef: sidebarRef, isFocused: sidebarFocused } = useFocusZone({ zoneId: 'sidebar' })

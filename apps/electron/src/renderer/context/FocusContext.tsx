@@ -1,5 +1,5 @@
 import * as React from "react"
-import { createContext, useContext, useState, useCallback, useRef, useEffect } from "react"
+import { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo } from "react"
 import { setCurrentZone } from '@/actions/keybinding-context'
 
 /**
@@ -62,7 +62,21 @@ interface FocusContextValue {
   isZoneFocused: (id: FocusZoneId) => boolean
 }
 
+interface FocusActionsContextValue {
+  /** Register a zone (call on mount) */
+  registerZone: (zone: FocusZone) => void
+  /** Unregister a zone (call on unmount) */
+  unregisterZone: (id: FocusZoneId) => void
+  /** Focus a specific zone with optional intent/moveFocus control */
+  focusZone: (id: FocusZoneId, options?: FocusZoneOptions) => void
+  /** Focus next zone (Tab) */
+  focusNextZone: () => void
+  /** Focus previous zone (Shift+Tab) */
+  focusPreviousZone: () => void
+}
+
 const FocusContext = createContext<FocusContextValue | null>(null)
+const FocusActionsContext = createContext<FocusActionsContextValue | null>(null)
 
 export function FocusProvider({ children }: { children: React.ReactNode }) {
   const [focusState, setFocusState] = useState<FocusState>({
@@ -70,6 +84,8 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
     intent: null,
     shouldMoveDOMFocus: false,
   })
+  const focusStateRef = useRef(focusState)
+  focusStateRef.current = focusState
   const zonesRef = useRef<Map<FocusZoneId, FocusZone>>(new Map())
 
   const registerZone = useCallback((zone: FocusZone) => {
@@ -114,18 +130,20 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const focusNextZone = useCallback(() => {
-    const currentIndex = focusState.zone ? ZONE_ORDER.indexOf(focusState.zone) : -1
+    const currentZone = focusStateRef.current.zone
+    const currentIndex = currentZone ? ZONE_ORDER.indexOf(currentZone) : -1
     const nextIndex = (currentIndex + 1) % ZONE_ORDER.length
     // Tab navigation is explicit keyboard intent - always move focus
     focusZone(ZONE_ORDER[nextIndex], { intent: 'keyboard', moveFocus: true })
-  }, [focusState.zone, focusZone])
+  }, [focusZone])
 
   const focusPreviousZone = useCallback(() => {
-    const currentIndex = focusState.zone ? ZONE_ORDER.indexOf(focusState.zone) : 0
+    const currentZone = focusStateRef.current.zone
+    const currentIndex = currentZone ? ZONE_ORDER.indexOf(currentZone) : 0
     const prevIndex = (currentIndex - 1 + ZONE_ORDER.length) % ZONE_ORDER.length
     // Shift+Tab navigation is explicit keyboard intent - always move focus
     focusZone(ZONE_ORDER[prevIndex], { intent: 'keyboard', moveFocus: true })
-  }, [focusState.zone, focusZone])
+  }, [focusZone])
 
   const isZoneFocused = useCallback((id: FocusZoneId) => {
     return focusState.zone === id
@@ -137,7 +155,21 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
   // Components that need to focus on session change should use session?.id as
   // the effect dependency instead of isFocused.
 
-  const value: FocusContextValue = {
+  const actionsValue = useMemo<FocusActionsContextValue>(() => ({
+    registerZone,
+    unregisterZone,
+    focusZone,
+    focusNextZone,
+    focusPreviousZone,
+  }), [
+    registerZone,
+    unregisterZone,
+    focusZone,
+    focusNextZone,
+    focusPreviousZone,
+  ])
+
+  const value = useMemo<FocusContextValue>(() => ({
     currentZone: focusState.zone,
     focusState,
     registerZone,
@@ -146,12 +178,22 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
     focusNextZone,
     focusPreviousZone,
     isZoneFocused,
-  }
+  }), [
+    focusState,
+    registerZone,
+    unregisterZone,
+    focusZone,
+    focusNextZone,
+    focusPreviousZone,
+    isZoneFocused,
+  ])
 
   return (
-    <FocusContext.Provider value={value}>
-      {children}
-    </FocusContext.Provider>
+    <FocusActionsContext.Provider value={actionsValue}>
+      <FocusContext.Provider value={value}>
+        {children}
+      </FocusContext.Provider>
+    </FocusActionsContext.Provider>
   )
 }
 
@@ -159,6 +201,14 @@ export function useFocusContext() {
   const context = useContext(FocusContext)
   if (!context) {
     throw new Error('useFocusContext must be used within a FocusProvider')
+  }
+  return context
+}
+
+export function useFocusActions() {
+  const context = useContext(FocusActionsContext)
+  if (!context) {
+    throw new Error('useFocusActions must be used within a FocusProvider')
   }
   return context
 }

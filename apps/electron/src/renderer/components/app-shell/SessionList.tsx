@@ -26,7 +26,7 @@ import { useEntityListInteractions } from "@/hooks/useEntityListInteractions"
 import { useFocusZone } from "@/hooks/keyboard"
 import { useEscapeInterrupt } from "@/context/EscapeInterruptContext"
 import { useNavigationActions, useNavigationState, routes, isSessionsNavigation } from "@/contexts/NavigationContext"
-import { useFocusContext } from "@/context/FocusContext"
+import { useFocusActions } from "@/context/FocusContext"
 import { sendToWorkspaceAtom, sessionMetaMapAtom, type SessionMeta } from "@/atoms/sessions"
 import type { ViewConfig } from "@craft-agent/shared/views"
 import type { SessionStatusId, SessionStatus } from "@/config/session-status-config"
@@ -581,7 +581,7 @@ export function SessionList({
   } = useSessionActions({ onFlag, onUnflag, onArchive, onUnarchive, onDelete })
 
   // --- Focus zone ---
-  const { focusZone } = useFocusContext()
+  const { focusZone } = useFocusActions()
   const { zoneRef, isFocused, shouldMoveDOMFocus } = useFocusZone({ zoneId: 'navigator' })
 
   // Keyboard eligibility: zone-focused OR search input focused (for arrow navigation)
