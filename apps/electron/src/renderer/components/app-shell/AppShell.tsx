@@ -3270,18 +3270,32 @@ function AppShellContent({
   // Also exclude hidden sessions (mini-agent sessions) from all counts and lists
   // For remote workspaces, sessions have the remote workspace ID (not the local one),
   // so we match against both the local and remote workspace IDs.
-  const workspaceSessionMetas = useMemo(() => {
-    const metas = Array.from(sessionMetaMap.values())
-    if (!activeWorkspaceId) return metas.filter(s => !s.hidden)
-    return metas.filter(s =>
-      !s.hidden && (s.workspaceId === activeWorkspaceId || (remoteWorkspaceId && s.workspaceId === remoteWorkspaceId))
-    )
-  }, [sessionMetaMap, activeWorkspaceId, remoteWorkspaceId])
+  const sessionMetaBuckets = useMemo(() => {
+    const workspaceSessionMetas: SessionMeta[] = []
+    const activeSessionMetas: SessionMeta[] = []
+    const archivedSessionMetas: SessionMeta[] = []
 
-  // Active sessions exclude archived - use this for all counts and filters except archived view
-  const activeSessionMetas = useMemo(() => {
-    return workspaceSessionMetas.filter(s => !s.isArchived)
-  }, [workspaceSessionMetas])
+    for (const meta of sessionMetaMap.values()) {
+      if (meta.hidden) continue
+      if (
+        activeWorkspaceId &&
+        meta.workspaceId !== activeWorkspaceId &&
+        (!remoteWorkspaceId || meta.workspaceId !== remoteWorkspaceId)
+      ) {
+        continue
+      }
+
+      workspaceSessionMetas.push(meta)
+      if (meta.isArchived) {
+        archivedSessionMetas.push(meta)
+      } else {
+        activeSessionMetas.push(meta)
+      }
+    }
+
+    return { workspaceSessionMetas, activeSessionMetas, archivedSessionMetas }
+  }, [sessionMetaMap, activeWorkspaceId, remoteWorkspaceId])
+  const { workspaceSessionMetas, activeSessionMetas, archivedSessionMetas } = sessionMetaBuckets
 
   // Filter session metadata based on sidebar mode and chat filter
   const filteredSessionMetas = useMemo(() => {
@@ -3302,7 +3316,7 @@ function AppShellContent({
         break
       case 'archived':
         // Archived view shows only archived sessions
-        result = workspaceSessionMetas.filter(s => s.isArchived)
+        result = archivedSessionMetas
         break
       case 'state':
         // Filter by specific todo state (excludes archived)
@@ -3382,7 +3396,7 @@ function AppShellContent({
     }
 
     return result
-  }, [workspaceSessionMetas, activeSessionMetas, sessionFilter, listFilter, labelFilter, labelConfigs])
+  }, [workspaceSessionMetas, activeSessionMetas, archivedSessionMetas, sessionFilter, listFilter, labelFilter, labelConfigs])
 
   // Derive "pinned" (non-removable) filters from the current sessionFilter path.
   // These represent filters that are implicit in the current deeplink/route and

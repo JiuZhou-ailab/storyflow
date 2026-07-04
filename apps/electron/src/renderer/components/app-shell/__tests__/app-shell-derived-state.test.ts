@@ -13,4 +13,12 @@ describe('AppShell derived state', () => {
     expect(appShellSource).not.toContain('useState<SessionStatus[]>')
     expect(appShellSource).toContain('const sessionStatuses = React.useMemo(() => {')
   })
+
+  it('derives workspace session buckets in one pass', () => {
+    expect(appShellSource).toContain('const sessionMetaBuckets = useMemo(() => {')
+    expect(appShellSource).toContain('for (const meta of sessionMetaMap.values())')
+    expect(appShellSource).toContain('archivedSessionMetas')
+    expect(appShellSource).not.toContain('Array.from(sessionMetaMap.values())')
+    expect(appShellSource).not.toContain('workspaceSessionMetas.filter(s => s.isArchived)')
+  })
 })
