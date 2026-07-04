@@ -652,16 +652,6 @@ export function SessionList({
     navigateToSession(row.item.id)
   }, [selectSession, navigateToSession])
 
-  const handleSelectSessionById = useCallback((sessionId: string) => {
-    const index = rowIndexMap.get(sessionId) ?? -1
-    if (index >= 0) {
-      selectSession(sessionId, index)
-    } else {
-      selectSession(sessionId, 0)
-    }
-    navigateToSession(sessionId)
-  }, [rowIndexMap, selectSession, navigateToSession])
-
   const handleToggleSelect = useCallback((row: SessionListRow, index: number) => {
     focusZone('navigator', { intent: 'click', moveFocus: false })
     toggleSession(row.item.id, index)
@@ -736,13 +726,11 @@ export function SessionList({
     onMarkUnread,
     onDelete: handleDeleteWithToast,
     onLabelsChange,
-    onSelectSessionById: handleSelectSessionById,
     onOpenInNewWindow: handleOpenInNewWindow,
     onSendToWorkspace: (ids: string[]) => setSendToWorkspace(ids),
     onFocusZone: handleFocusZone,
     onKeyDown: handleKeyDown,
     sessionStatuses,
-    flatLabels,
     labelById,
     labels,
     isMultiSelectActive,
@@ -753,8 +741,8 @@ export function SessionList({
     onFlag, handleFlagWithToast, onUnflag, handleUnflagWithToast,
     onArchive, handleArchiveWithToast, onUnarchive, handleUnarchiveWithToast,
     onMarkUnread, handleDeleteWithToast, onLabelsChange,
-    handleSelectSessionById, handleOpenInNewWindow, setSendToWorkspace, handleFocusZone, handleKeyDown,
-    sessionStatuses, flatLabels, labelById, labels,
+    handleOpenInNewWindow, setSendToWorkspace, handleFocusZone, handleKeyDown,
+    sessionStatuses, labelById, labels,
     isMultiSelectActive,
     isCompactMode, hasRemoteWorkspaces,
   ])

@@ -70,6 +70,8 @@ describe('session item subscriptions', () => {
 
     expect(sessionListCall).not.toContain('onSessionSelect=')
     expect(sessionListSource).not.toContain('onSessionSelect?:')
+    expect(sessionListContextSource).not.toContain('onSelectSessionById')
+    expect(sessionListSource).not.toContain('handleSelectSessionById')
   })
 
   it('does not rebroadcast unused session options through the session list context', () => {
@@ -144,6 +146,7 @@ describe('session item subscriptions', () => {
     expect(sessionBadgesSource).not.toContain('ctx.labelById')
     expect(sessionItemSource).not.toContain('ctx.flatLabels.some')
     expect(sessionBadgesSource).not.toContain('ctx.flatLabels.find')
+    expect(sessionListContextSource).not.toContain('flatLabels')
   })
 
   it('keeps session list bucket order without re-sorting rows inside each group', () => {
