@@ -1041,10 +1041,11 @@ export default function App() {
       const atomSession = store.get(sessionAtomFamily(sessionId))
       const isStreaming = atomSession?.isProcessing === true
       const isHandoff = handoffEventTypes.has(event.type)
+      const isTextDeltaFastPath = event.type === 'text_delta' && !!atomSession
 
-      // During streaming OR for handoff events: use atom as source of truth
+      // During streaming, text deltas, or handoff events: use atom as source of truth
       // This ensures all events during streaming see the complete state
-      if (isStreaming || isHandoff) {
+      if (isStreaming || isHandoff || isTextDeltaFastPath) {
         const currentSession = atomSession ?? null
 
         // Process the event
