@@ -18,9 +18,8 @@ import { buildDroppedLocalSourceInputs } from '@/lib/source-drop'
 import { sourceSelection } from '@/hooks/useEntitySelection'
 import { SourceMenu } from './SourceMenu'
 import { SendResourceToWorkspaceDialog } from './SendResourceToWorkspaceDialog'
-import { useAppShellContext } from '@/context/AppShellContext'
 import { EditPopover, getEditConfig, type EditContextKey } from '@/components/ui/EditPopover'
-import type { LoadedSource, SourceConnectionStatus, SourceFilter } from '../../../shared/types'
+import type { LoadedSource, SourceConnectionStatus, SourceFilter, Workspace } from '../../../shared/types'
 
 const SOURCE_TYPE_CONFIG: Record<string, { labelKey: string; colorClass: string }> = {
   mcp: { labelKey: 'sourcesList.typeMcp', colorClass: 'bg-accent/10 text-accent' },
@@ -47,6 +46,8 @@ export interface SourcesListPanelProps {
   sourceFilter?: SourceFilter | null
   workspaceId?: string
   workspaceRootPath?: string
+  activeWorkspaceId?: string | null
+  workspaces?: Workspace[]
   onDeleteSource: (sourceSlug: string) => void
   onSourceClick: (source: LoadedSource) => void
   selectedSourceSlug?: string | null
@@ -59,6 +60,8 @@ export function SourcesListPanel({
   sourceFilter,
   workspaceId,
   workspaceRootPath,
+  activeWorkspaceId = null,
+  workspaces = [],
   onDeleteSource,
   onSourceClick,
   selectedSourceSlug,
@@ -66,7 +69,6 @@ export function SourcesListPanel({
   className,
 }: SourcesListPanelProps) {
   const { t } = useTranslation()
-  const { workspaces, activeWorkspaceId } = useAppShellContext()
   const hasOtherWorkspaces = workspaces.length > 1
   const dragDepthRef = React.useRef(0)
   const [isDraggingFiles, setIsDraggingFiles] = React.useState(false)

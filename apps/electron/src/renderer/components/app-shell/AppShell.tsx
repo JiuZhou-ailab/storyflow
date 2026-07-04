@@ -5009,6 +5009,8 @@ function AppShellContent({
                 sourceFilter={sourceFilter}
                 workspaceId={activeWorkspaceId ?? undefined}
                 workspaceRootPath={activeWorkspace?.rootPath}
+                activeWorkspaceId={activeWorkspaceId}
+                workspaces={workspaces}
                 onDeleteSource={handleDeleteSource}
                 onSourceClick={handleSourceSelect}
                 selectedSourceSlug={isSourcesNavigation(navState) && navState.details ? navState.details.sourceSlug : null}

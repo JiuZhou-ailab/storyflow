@@ -14,6 +14,7 @@ const sessionStatusIconSource = readFileSync(new URL('../SessionStatusIcon.tsx',
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf-8')
 const sessionListContextSource = readFileSync(new URL('../../../context/SessionListContext.tsx', import.meta.url), 'utf-8')
 const skillsListPanelSource = readFileSync(new URL('../SkillsListPanel.tsx', import.meta.url), 'utf-8')
+const sourcesListPanelSource = readFileSync(new URL('../SourcesListPanel.tsx', import.meta.url), 'utf-8')
 
 describe('session item subscriptions', () => {
   it('reads messaging bindings through a per-session atom', () => {
@@ -73,6 +74,17 @@ describe('session item subscriptions', () => {
     expect(skillsListPanelSource).not.toContain('useActiveWorkspace')
     expect(skillsListCall).toContain('activeWorkspace={activeWorkspace}')
     expect(skillsListCall).toContain('workspaces={workspaces}')
+  })
+
+  it('keeps the sources list off broad app shell context subscriptions', () => {
+    const sourcesListCall = appShellSource.slice(
+      appShellSource.indexOf('<SourcesListPanel'),
+      appShellSource.indexOf('/>', appShellSource.indexOf('<SourcesListPanel'))
+    )
+
+    expect(sourcesListPanelSource).not.toContain('useAppShellContext')
+    expect(sourcesListCall).toContain('activeWorkspaceId={activeWorkspaceId}')
+    expect(sourcesListCall).toContain('workspaces={workspaces}')
   })
 
   it('keeps the per-row status icon off the shared list context', () => {
