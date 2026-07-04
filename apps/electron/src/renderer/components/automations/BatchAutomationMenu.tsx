@@ -17,7 +17,7 @@ import { toast } from 'sonner'
 import { useMenuComponents } from '@/components/ui/menu-context'
 import { automationSelection } from '@/hooks/useEntitySelection'
 import { automationsAtom } from '@/atoms/automations'
-import { useAppShellContext } from '@/context/AppShellContext'
+import { windowWorkspaceIdAtom } from '@/atoms/sessions'
 
 const {
   useSelection: useAutomationSelection,
@@ -31,10 +31,7 @@ export function BatchAutomationMenu() {
   const selectedIds = useAutomationSelectedIds()
   const { clearMultiSelect } = useAutomationSelection()
   const automations = useAtomValue(automationsAtom)
-
-  const {
-    activeWorkspaceId,
-  } = useAppShellContext()
+  const activeWorkspaceId = useAtomValue(windowWorkspaceIdAtom)
 
   // Resolve selected automations metadata
   const selectedAutomations = useMemo(() => {
