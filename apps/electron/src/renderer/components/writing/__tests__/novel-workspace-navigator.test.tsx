@@ -435,7 +435,9 @@ describe('novel writing workspace layout', () => {
     expect(treeBuilderSource).toContain("id = `writing:folder:${node.relativePath}`")
     expect(treeBuilderSource).toContain('title: getNovelWorkspaceFileName(file)')
     expect(treeBuilderSource).toContain('icon: Folder')
-    expect(treeBuilderSource).toContain('countNovelWorkspaceTreeFiles(node)')
+    expect(treeBuilderSource).toContain('label: String(node.fileCount)')
+    expect(appShellSource).not.toContain('function countNovelWorkspaceTreeFiles')
+    expect(treeBuilderSource).not.toContain('countNovelWorkspaceTreeFiles(')
     expect(treeBuilderSource).not.toContain('categorizeNovelPath')
   })
 

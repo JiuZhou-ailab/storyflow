@@ -491,6 +491,7 @@ interface NovelWorkspaceFileTreeNode {
   relativePath: string
   dirs: Map<string, NovelWorkspaceFileTreeNode>
   files: NovelWorkspaceFile[]
+  fileCount: number
 }
 
 interface NovelWorkspaceFileTreeOptions {
@@ -516,20 +517,13 @@ function createNovelWorkspaceFileTreeNode(name: string, relativePath: string): N
     relativePath,
     dirs: new Map(),
     files: [],
+    fileCount: 0,
   }
 }
 
 function getNovelWorkspaceFileName(file: NovelWorkspaceFile): string {
   const normalized = file.relativePath.replace(/\\/g, '/').replace(/\/+$/, '')
   return normalized.slice(normalized.lastIndexOf('/') + 1) || normalized
-}
-
-function countNovelWorkspaceTreeFiles(node: NovelWorkspaceFileTreeNode): number {
-  let count = node.files.length
-  for (const child of node.dirs.values()) {
-    count += countNovelWorkspaceTreeFiles(child)
-  }
-  return count
 }
 
 function buildNovelWorkspaceFileTreeItems(
@@ -546,6 +540,7 @@ function buildNovelWorkspaceFileTreeItems(
     if (segments.length === 0) continue
 
     let current = root
+    current.fileCount += 1
     for (const segment of segments.slice(0, -1)) {
       const relativePath = current.relativePath ? `${current.relativePath}/${segment}` : segment
       let child = current.dirs.get(segment)
@@ -554,6 +549,7 @@ function buildNovelWorkspaceFileTreeItems(
         current.dirs.set(segment, child)
       }
       current = child
+      current.fileCount += 1
     }
     current.files.push(file)
   }
@@ -589,7 +585,7 @@ function buildNovelWorkspaceFileTreeItems(
       id,
       title: node.name,
       tooltip: node.relativePath,
-      label: String(countNovelWorkspaceTreeFiles(node)),
+      label: String(node.fileCount),
       icon: Folder,
       variant: childItems.some(item => !('type' in item) && item.variant === 'default') ? 'default' : 'ghost',
       compact: true,
