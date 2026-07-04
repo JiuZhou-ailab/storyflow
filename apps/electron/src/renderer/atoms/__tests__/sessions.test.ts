@@ -22,7 +22,6 @@ import {
   syncSessionsToAtomsAtom,
   replaceLoadedSessionAtom,
   updateSessionAtom,
-  updateStreamingContentAtom,
   updateSessionMetaAtom,
   removeBackgroundTaskById,
   removeBackgroundTaskByToolUseId,
@@ -274,59 +273,6 @@ describe('session message loading atoms', () => {
     store.set(updateSessionAtom, sessionId, (prev) => prev)
 
     expect(store.get(sessionAtomFamily(sessionId))).toBe(session)
-  })
-
-  it('does not notify session subscribers for empty streaming deltas', () => {
-    const store = createStore()
-    const sessionId = 's1'
-    const session = makeSession({
-      id: sessionId,
-      messages: [{
-        ...msg('m1', 'assistant'),
-        isStreaming: true,
-        turnId: 'turn-1',
-      }],
-    })
-    store.set(replaceLoadedSessionAtom, session)
-    const before = store.get(sessionAtomFamily(sessionId))
-
-    let notifications = 0
-    const unsubscribe = store.sub(sessionAtomFamily(sessionId), () => {
-      notifications += 1
-    })
-
-    store.set(updateStreamingContentAtom, sessionId, '', 'turn-1')
-
-    expect(store.get(sessionAtomFamily(sessionId))).toBe(before)
-    expect(notifications).toBe(0)
-    unsubscribe()
-  })
-
-  it('does not copy messages when streaming delta targets a different turn', () => {
-    const store = createStore()
-    const sessionId = 's1'
-    const messages = new Proxy([
-      { ...msg('m1', 'user'), turnId: 'turn-0' },
-      {
-        ...msg('m2', 'assistant'),
-        isStreaming: true,
-        turnId: 'turn-1',
-      },
-    ] as Message[], {
-      get(target, prop, receiver) {
-        if (prop === Symbol.iterator) {
-          throw new Error('no-op streaming update should not copy messages')
-        }
-        return Reflect.get(target, prop, receiver)
-      },
-    })
-    const session = makeSession({ id: sessionId, messages })
-    store.set(sessionAtomFamily(sessionId), session)
-    const before = store.get(sessionAtomFamily(sessionId))
-
-    store.set(updateStreamingContentAtom, sessionId, ' ignored', 'turn-2')
-
-    expect(store.get(sessionAtomFamily(sessionId))).toBe(before)
   })
 
   it('does not notify metadata subscribers when a metadata patch leaves values unchanged', () => {

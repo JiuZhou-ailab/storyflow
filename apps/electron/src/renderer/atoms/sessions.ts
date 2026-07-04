@@ -318,35 +318,6 @@ export const appendMessageAtom = atom(
 )
 
 /**
- * Action atom: update streaming content for a session
- * For text_delta events - appends to the last streaming message
- */
-export const updateStreamingContentAtom = atom(
-  null,
-  (get, set, sessionId: string, content: string, turnId?: string) => {
-    if (content.length === 0) return
-
-    const sessionAtom = sessionAtomFamily(sessionId)
-    const session = get(sessionAtom)
-    if (!session) return
-
-    const lastIndex = session.messages.length - 1
-    const lastMsg = session.messages[lastIndex]
-
-    // Append to existing streaming message
-    if (lastMsg?.role === 'assistant' && lastMsg.isStreaming &&
-        (!turnId || lastMsg.turnId === turnId)) {
-      const messages = [...session.messages]
-      messages[lastIndex] = {
-        ...lastMsg,
-        content: lastMsg.content + content,
-      }
-      set(sessionAtom, { ...session, messages })
-    }
-  }
-)
-
-/**
  * Action atom: initialize sessions from loaded data
  */
 export const initializeSessionsAtom = atom(
