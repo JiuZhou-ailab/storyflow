@@ -1,3 +1,8 @@
+// input: Session metadata row data and session list context
+// output: Rendered session row with actions, badges, status, and search affordances
+// pos: Per-session row view inside the app shell session navigator
+
+import { useMemo } from "react"
 import { formatDistanceToNowStrict } from "date-fns"
 import type { Locale } from "date-fns"
 import { Flag, ShieldAlert } from "lucide-react"
@@ -60,11 +65,26 @@ export function SessionItem({
   prevSearchMatchHotkey,
 }: SessionItemProps) {
   const ctx = useSessionListContext()
-  const title = getSessionTitle(item)
+  const title = useMemo(() => getSessionTitle(item), [item])
   const hasMatch = chatMatchCount != null && chatMatchCount > 0
-  const resolvedLabelBadges = resolveSessionLabelBadges(item.labels, ctx.labelById)
+  const resolvedLabelBadges = useMemo(
+    () => resolveSessionLabelBadges(item.labels, ctx.labelById),
+    [ctx.labelById, item.labels]
+  )
   const hasPendingPrompt = useAtomValue(hasPendingPromptAtomFamily(item.id))
-  const previewText = ctx.isCompactMode ? getSessionPreviewText(item) : null
+  const previewText = useMemo(
+    () => ctx.isCompactMode ? getSessionPreviewText(item) : null,
+    [ctx.isCompactMode, item]
+  )
+  const lastMessageTimeLabel = useMemo(
+    () => item.lastMessageAt
+      ? formatDistanceToNowStrict(new Date(item.lastMessageAt), {
+          locale: shortTimeLocale as Locale,
+          roundingMethod: 'floor',
+        })
+      : undefined,
+    [item.lastMessageAt]
+  )
   const sessionBindings = useAtomValue(messagingBindingsForSessionAtomFamily(item.id))
   const hasMessagingBinding = sessionBindings.length > 0
 
@@ -208,9 +228,9 @@ export function SessionItem({
         <div className="p-1 flex items-center justify-center">
           <Flag className="h-3.5 w-3.5 text-info" />
         </div>
-      ) : item.lastMessageAt ? (
+      ) : lastMessageTimeLabel ? (
         <span className="text-[11px] text-foreground/40 whitespace-nowrap">
-          {formatDistanceToNowStrict(new Date(item.lastMessageAt), { locale: shortTimeLocale as Locale, roundingMethod: 'floor' })}
+          {lastMessageTimeLabel}
         </span>
       ) : undefined}
       badges={resolvedLabelBadges.length > 0 ? (

@@ -149,6 +149,17 @@ describe('session item subscriptions', () => {
     expect(sessionListContextSource).not.toContain('flatLabels')
   })
 
+  it('memoizes pure session row display derivations inside each row', () => {
+    expect(sessionItemSource).toContain('const title = useMemo(() => getSessionTitle(item), [item])')
+    expect(sessionItemSource).toContain('const resolvedLabelBadges = useMemo(')
+    expect(sessionItemSource).toContain('() => resolveSessionLabelBadges(item.labels, ctx.labelById)')
+    expect(sessionItemSource).toContain('const previewText = useMemo(')
+    expect(sessionItemSource).toContain('() => ctx.isCompactMode ? getSessionPreviewText(item) : null')
+    expect(sessionItemSource).toContain('const lastMessageTimeLabel = useMemo(')
+    expect(sessionItemSource).toContain('{lastMessageTimeLabel}')
+    expect(sessionItemSource).not.toContain('{formatDistanceToNowStrict(new Date(item.lastMessageAt)')
+  })
+
   it('keeps session list bucket order without re-sorting rows inside each group', () => {
     expect(sessionListSource).toContain('const unreadRows: SessionListRow[] = []')
     expect(sessionListSource).toContain('const groupsByKey = new Map<string, { rows: SessionListRow[], statusId: string }>()')
