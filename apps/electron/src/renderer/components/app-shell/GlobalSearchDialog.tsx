@@ -66,20 +66,58 @@ function GlobalSearchDialogContent({
 }: GlobalSearchDialogProps) {
   const { t } = useTranslation()
   const [query, setQuery] = React.useState('')
+  const hasQuery = query.trim().length >= 2
+
+  React.useEffect(() => {
+    if (!open) setQuery('')
+  }, [open])
+
+  return (
+    <CommandDialog open={open} onOpenChange={onOpenChange}>
+      <CommandInput
+        value={query}
+        onValueChange={setQuery}
+        placeholder={t('globalSearch.placeholder', 'Search sessions and writing files...')}
+      />
+      <CommandList className="max-h-[min(520px,70vh)]">
+        {!hasQuery ? (
+          <CommandEmpty className="py-8 text-xs text-muted-foreground">
+            {t('globalSearch.hint', 'Type at least 2 characters to search.')}
+          </CommandEmpty>
+        ) : (
+          <GlobalSearchResults
+            query={query}
+            workspaceId={workspaceId}
+            remoteWorkspaceId={remoteWorkspaceId}
+            novelFiles={novelFiles}
+            formatNovelFileTitle={formatNovelFileTitle}
+            onOpenChange={onOpenChange}
+            onOpenSession={onOpenSession}
+            onOpenNovelFile={onOpenNovelFile}
+          />
+        )}
+      </CommandList>
+    </CommandDialog>
+  )
+}
+
+function GlobalSearchResults({
+  query,
+  workspaceId,
+  remoteWorkspaceId,
+  novelFiles,
+  formatNovelFileTitle,
+  onOpenChange,
+  onOpenSession,
+  onOpenNovelFile,
+}: Omit<GlobalSearchDialogProps, 'open'> & { query: string }) {
+  const { t } = useTranslation()
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
   const [contentResults, setContentResults] = React.useState<Map<string, GlobalSearchContentResult>>(new Map())
   const [searchingContent, setSearchingContent] = React.useState(false)
   const clearContentResults = React.useCallback(() => {
     setContentResults(prev => prev.size === 0 ? prev : new Map())
   }, [])
-
-  React.useEffect(() => {
-    if (!open) {
-      setQuery('')
-      clearContentResults()
-      setSearchingContent(false)
-    }
-  }, [open, clearContentResults])
 
   const sessions = React.useMemo(() => {
     const result: SessionMeta[] = []
@@ -99,7 +137,7 @@ function GlobalSearchDialogContent({
 
   React.useEffect(() => {
     const trimmedQuery = query.trim()
-    if (!open || !workspaceId || trimmedQuery.length < 2) {
+    if (!workspaceId) {
       clearContentResults()
       setSearchingContent(false)
       return
@@ -133,7 +171,7 @@ function GlobalSearchDialogContent({
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [open, query, workspaceId, clearContentResults])
+  }, [query, workspaceId, clearContentResults])
 
   const results = React.useMemo(
     () => buildGlobalSearchResults({
@@ -146,22 +184,11 @@ function GlobalSearchDialogContent({
     [contentResults, formatNovelFileTitle, novelFiles, query, sessions]
   )
 
-  const hasQuery = query.trim().length >= 2
   const hasResults = results.sessions.length > 0 || results.files.length > 0
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput
-        value={query}
-        onValueChange={setQuery}
-        placeholder={t('globalSearch.placeholder', 'Search sessions and writing files...')}
-      />
-      <CommandList className="max-h-[min(520px,70vh)]">
-        {!hasQuery ? (
-          <CommandEmpty className="py-8 text-xs text-muted-foreground">
-            {t('globalSearch.hint', 'Type at least 2 characters to search.')}
-          </CommandEmpty>
-        ) : !hasResults ? (
+    <>
+        {!hasResults ? (
           <CommandEmpty className="py-8 text-xs text-muted-foreground">
             {t('globalSearch.empty', 'No results found.')}
           </CommandEmpty>
@@ -227,8 +254,7 @@ function GlobalSearchDialogContent({
             {t('globalSearch.searchingContent', 'Searching session content...')}
           </div>
         ) : null}
-      </CommandList>
-    </CommandDialog>
+    </>
   )
 }
 

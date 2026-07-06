@@ -282,8 +282,14 @@ describe('session item subscriptions', () => {
     expect(appShellSource).toContain('useAtomValue(sessionMetaAtomFamily(rawEffectiveSessionId')
     expect(sessionListSource).toContain('useAtomValue(sessionMetaMapAtom)')
     expect(globalSearchDialogSource).toContain('function GlobalSearchDialogContent')
+    expect(globalSearchDialogSource).toContain('function GlobalSearchResults')
     expect(globalSearchDialogSource).toContain('return props.open ? <GlobalSearchDialogContent {...props} /> : null')
     expect(globalSearchDialogSource).toContain('useAtomValue(sessionMetaMapAtom)')
+    const globalSearchContentSource = globalSearchDialogSource.slice(
+      globalSearchDialogSource.indexOf('function GlobalSearchDialogContent'),
+      globalSearchDialogSource.indexOf('function GlobalSearchResults')
+    )
+    expect(globalSearchContentSource).not.toContain('useAtomValue(sessionMetaMapAtom)')
   })
 
   it('mounts the send-to-workspace dialog only while sessions are selected for transfer', () => {
