@@ -221,7 +221,7 @@ export function SessionList({
         if (sessionFilter.labelId === '__all__') {
           result = activeItems.filter(item => item.labels && item.labels.length > 0)
         } else {
-          const matchIds = new Set([sessionFilter.labelId, ...getDescendantIds(labels, sessionFilter.labelId)])
+          const matchIds = new Set([sessionFilter.labelId, ...getDescendantLabelIds(sessionFilter.labelId)])
           result = activeItems.filter(item => item.labels?.some(label => matchIds.has(extractLabelId(label))))
         }
         break
@@ -257,7 +257,7 @@ export function SessionList({
       const includes = new Set<string>()
       const excludes = new Set<string>()
       for (const [id, mode] of labelFilterMap) {
-        const ids = [id, ...getDescendantIds(labels, id)]
+        const ids = [id, ...getDescendantLabelIds(id)]
         for (const expandedId of ids) {
           if (mode === 'include') includes.add(expandedId)
           else excludes.add(expandedId)
@@ -272,7 +272,7 @@ export function SessionList({
     }
 
     return result
-  }, [currentFilter, evaluateViews, labelFilterMap, labels, statusFilter, workspaceItems])
+  }, [currentFilter, evaluateViews, getDescendantLabelIds, labelFilterMap, statusFilter, workspaceItems])
 
   const items = searchActive ? workspaceItems : filteredItems
 

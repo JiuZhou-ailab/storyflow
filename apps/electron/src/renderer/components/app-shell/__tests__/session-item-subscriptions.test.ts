@@ -168,6 +168,18 @@ describe('session item subscriptions', () => {
     expect(sessionListSource).not.toContain('groupRows.sort((a, b) =>')
   })
 
+  it('reuses descendant label lookup while filtering the session list', () => {
+    const filteredItemsSource = sessionListSource.slice(
+      sessionListSource.indexOf('const filteredItems = useMemo(() => {'),
+      sessionListSource.indexOf('const items = searchActive ? workspaceItems : filteredItems')
+    )
+
+    expect(sessionListSource).toContain('const getDescendantLabelIds = useCallback')
+    expect(filteredItemsSource).toContain('...getDescendantLabelIds(sessionFilter.labelId)')
+    expect(filteredItemsSource).toContain('...getDescendantLabelIds(id)')
+    expect(filteredItemsSource).not.toContain('getDescendantIds(labels,')
+  })
+
   it('reuses status and collapsed-group lookup maps while building session list groups', () => {
     const rowDataSource = sessionListSource.slice(
       sessionListSource.indexOf('const rowData = useMemo(() => {'),
