@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { useAtomValue, useSetAtom } from "jotai"
+import { selectAtom } from "jotai/utils"
 import { isToday, isYesterday, format } from "date-fns"
 import { getDateLocale } from "@craft-agent/shared/i18n"
 import { useAction, useActionLabel } from "@/actions"
@@ -19,7 +20,7 @@ import { RenameDialog } from "@/components/ui/rename-dialog"
 import { SessionSearchHeader } from "./SessionSearchHeader"
 import { SessionItem } from "./SessionItem"
 import { SessionListProvider, type SessionListContextValue } from "@/context/SessionListContext"
-import { useSessionSelection, useSessionSelectionStore } from "@/hooks/useSession"
+import { sameSessionMetas, useSessionSelection, useSessionSelectionStore } from "@/hooks/useSession"
 import { getSessionDateGroupKey, useSessionSearch, type FilterMode } from "@/hooks/useSessionSearch"
 import { useSessionActions } from "@/hooks/useSessionActions"
 import { useEntityListInteractions } from "@/hooks/useEntityListInteractions"
@@ -158,7 +159,29 @@ export function SessionList({
   const { navigate, navigateToSession: navigateToSessionPrimary } = useNavigationActions()
   const navigateToSession = onNavigateToSession ?? navigateToSessionPrimary
   const navState = useNavigationState()
-  const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
+  const workspaceSessionMetasAtom = useMemo(
+    () => selectAtom(
+      sessionMetaMapAtom,
+      (metaMap) => {
+        const result: SessionMeta[] = []
+        for (const meta of metaMap.values()) {
+          if (meta.hidden) continue
+          if (
+            workspaceId &&
+            meta.workspaceId !== workspaceId &&
+            (!remoteWorkspaceId || meta.workspaceId !== remoteWorkspaceId)
+          ) {
+            continue
+          }
+          result.push(meta)
+        }
+        return result
+      },
+      sameSessionMetas,
+    ),
+    [remoteWorkspaceId, workspaceId]
+  )
+  const workspaceItems = useAtomValue(workspaceSessionMetasAtom)
   const { showEscapeOverlay } = useEscapeInterrupt()
 
   // Pre-flatten label tree once for efficient ID lookups in each SessionItem
@@ -175,22 +198,6 @@ export function SessionList({
 
   // Get current filter from navigation state (for preserving context in tab routes)
   const currentFilter = isSessionsNavigation(navState) ? navState.filter : undefined
-
-  const workspaceItems = useMemo(() => {
-    const result: SessionMeta[] = []
-    for (const meta of sessionMetaMap.values()) {
-      if (meta.hidden) continue
-      if (
-        workspaceId &&
-        meta.workspaceId !== workspaceId &&
-        (!remoteWorkspaceId || meta.workspaceId !== remoteWorkspaceId)
-      ) {
-        continue
-      }
-      result.push(meta)
-    }
-    return result
-  }, [remoteWorkspaceId, sessionMetaMap, workspaceId])
 
   const filteredItems = useMemo(() => {
     const sessionFilter = currentFilter ?? null

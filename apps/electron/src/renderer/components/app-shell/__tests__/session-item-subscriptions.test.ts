@@ -280,7 +280,10 @@ describe('session item subscriptions', () => {
   it('keeps whole-session metadata subscriptions out of the app shell', () => {
     expect(appShellSource).not.toContain('useAtomValue(sessionMetaMapAtom)')
     expect(appShellSource).toContain('useAtomValue(sessionMetaAtomFamily(rawEffectiveSessionId')
-    expect(sessionListSource).toContain('useAtomValue(sessionMetaMapAtom)')
+    expect(sessionListSource).toContain('selectAtom(')
+    expect(sessionListSource).toContain('sessionMetaMapAtom,')
+    expect(sessionListSource).toContain('sameSessionMetas,')
+    expect(sessionListSource).not.toContain('useAtomValue(sessionMetaMapAtom)')
     expect(globalSearchDialogSource).toContain('function GlobalSearchDialogContent')
     expect(globalSearchDialogSource).toContain('function GlobalSearchResults')
     expect(globalSearchDialogSource).toContain('return props.open ? <GlobalSearchDialogContent {...props} /> : null')

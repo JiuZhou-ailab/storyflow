@@ -9,7 +9,7 @@ import { sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
 import { createInitialState, singleSelect } from './useMultiSelect'
 import { sessionSelection } from './useEntitySelection'
 
-function sameSessionMetas(a: SessionMeta[], b: SessionMeta[]): boolean {
+export function sameSessionMetas(a: SessionMeta[], b: SessionMeta[]): boolean {
   return a.length === b.length && a.every((meta, index) => meta === b[index])
 }
 
