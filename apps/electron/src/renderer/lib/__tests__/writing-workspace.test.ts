@@ -16,8 +16,8 @@ import {
   getNovelWorkspaceCandidateRoots,
   getNovelWorkspaceRelativePath,
   getNovelWorkspaceVisibleRootDirectories,
-  getNovelWorkspaceFileSearchQueries,
   mapSearchResultsToNovelWorkspaceFiles,
+  mapNativeWorkspaceCatalog,
   groupNovelFileChanges,
   groupReviewableNovelFileChanges,
   getShortFormGlobalInfoFiles,
@@ -28,7 +28,6 @@ import {
   isShortFormNovelWorkspaceFiles,
   areNovelWorkspaceFilesEqual,
   NOVEL_WORKSPACE_DETECTION_QUERIES,
-  NOVEL_WORKSPACE_FILE_SEARCH_QUERIES,
   selectDefaultNovelFile,
   selectDefaultNovelTab,
   summarizeNovelSection,
@@ -371,6 +370,24 @@ describe('writing workspace helpers', () => {
     ])
   })
 
+  it('maps the native project catalog without Method Pack visibility filtering', () => {
+    const catalog = mapNativeWorkspaceCatalog([
+      { name: '人物.md', path: '/novel/人物.md', relativePath: '人物.md', type: 'file' },
+      { name: 'README.md', path: '/novel/README.md', relativePath: 'README.md', type: 'file' },
+      { name: '资料', path: '/novel/资料', relativePath: '资料', type: 'directory' },
+      { name: '空目录', path: '/novel/资料/空目录', relativePath: '资料/空目录', type: 'directory' },
+      { name: '人物.md', path: '/novel/人物.md', relativePath: '人物.md', type: 'file' },
+    ])
+
+    expect(catalog).toEqual({
+      files: [
+        { path: '/novel/README.md', relativePath: 'README.md' },
+        { path: '/novel/人物.md', relativePath: '人物.md' },
+      ],
+      directories: ['资料', '资料/空目录'],
+    })
+  })
+
   it('maps short-form web fiction workspace files into the writing workspace projection', () => {
     const files = mapSearchResultsToNovelWorkspaceFiles([
       { name: '创作要求.md', path: '/short/全局/创作要求.md', relativePath: '全局/创作要求.md', type: 'file' },
@@ -454,37 +471,6 @@ describe('writing workspace helpers', () => {
     expect(NOVEL_WORKSPACE_DETECTION_QUERIES).toEqual([
       'craft-writing.json',
       '.craft-agent/craft-writing.json',
-    ])
-  })
-
-  it('derives writing workspace file searches from Method Pack root directories', () => {
-    expect(getNovelWorkspaceFileSearchQueries('short-form.article')).toEqual(['正文', '全局', '自由区'])
-    expect(getNovelWorkspaceFileSearchQueries('novel.claude-book')).toEqual(['bible', 'story', 'state', 'timeline'])
-    expect(NOVEL_WORKSPACE_FILE_SEARCH_QUERIES).toEqual([
-      'story',
-      'bible',
-      'state',
-      'timeline',
-      'analysis',
-      'work',
-      'notes',
-      'style',
-      'drafts',
-      'revisions',
-      'published',
-      'reviews',
-      '正文',
-      '全局',
-      '自由区',
-      '大纲',
-      '追踪',
-      '参考资料',
-      '拆文库',
-      '对标',
-      '剧本',
-      '角色',
-      '场景',
-      '逻辑',
     ])
   })
 

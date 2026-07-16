@@ -10,7 +10,6 @@ import {
   categorizeNovelPathForMethodPack,
   type WritingFileCategory,
 } from '@craft-agent/shared/writing/file-categories'
-import { getBuiltInMethodPack } from '@craft-agent/shared/writing/method-packs'
 import type { FileSearchResult } from '@craft-agent/shared/protocol'
 import { collectFileChangesFromActivities } from './file-changes'
 
@@ -123,51 +122,6 @@ export const NOVEL_WORKSPACE_DETECTION_QUERIES = [
   'craft-writing.json',
   '.craft-agent/craft-writing.json',
 ] as const
-
-export const NOVEL_WORKSPACE_FILE_SEARCH_QUERIES = [
-  'story',
-  'bible',
-  'state',
-  'timeline',
-  'analysis',
-  'work',
-  'notes',
-  'style',
-  'drafts',
-  'revisions',
-  'published',
-  'reviews',
-  '正文',
-  '全局',
-  '自由区',
-  '大纲',
-  '追踪',
-  '参考资料',
-  '拆文库',
-  '对标',
-  '剧本',
-  '角色',
-  '场景',
-  '逻辑',
-] as const
-
-function getSearchRootFromRequiredPath(path: string): string | null {
-  const normalized = normalizeRelativePath(path).replace(/\/+$/, '')
-  if (!normalized || normalized === 'craft-writing.json' || normalized === '.craft-agent/craft-writing.json') return null
-  const [root] = normalized.split('/')
-  if (!root) return null
-  return isVisibleNovelWorkspaceAssetPath(`${root}/__probe__.md`) ? root : null
-}
-
-export function getNovelWorkspaceFileSearchQueries(methodPackId?: string): readonly string[] {
-  const methodPack = methodPackId ? getBuiltInMethodPack(methodPackId) : null
-  if (!methodPack) return NOVEL_WORKSPACE_FILE_SEARCH_QUERIES
-
-  const roots = methodPack.requiredPaths
-    .map(requiredPath => getSearchRootFromRequiredPath(requiredPath.path))
-    .filter((root): root is string => !!root)
-  return roots.length > 0 ? [...new Set(roots)] : NOVEL_WORKSPACE_FILE_SEARCH_QUERIES
-}
 
 export function getNovelFileChangeActivityKey(session: { messages?: readonly {
   role?: string
@@ -630,6 +584,36 @@ export function mapSearchResultsToNovelWorkspaceFiles(results: FileSearchResult[
   }
 
   return files
+}
+
+export interface NativeWorkspaceCatalog {
+  files: NovelWorkspaceFile[]
+  directories: string[]
+}
+
+export function mapNativeWorkspaceCatalog(results: FileSearchResult[]): NativeWorkspaceCatalog {
+  const files: NovelWorkspaceFile[] = []
+  const directories: string[] = []
+  const seenPaths = new Set<string>()
+
+  for (const result of results) {
+    if (seenPaths.has(result.path)) continue
+    seenPaths.add(result.path)
+
+    if (result.type === 'directory') {
+      directories.push(result.relativePath)
+      continue
+    }
+
+    files.push({
+      path: result.path,
+      relativePath: result.relativePath,
+    })
+  }
+
+  files.sort((a, b) => a.relativePath.localeCompare(b.relativePath, undefined, { numeric: true, sensitivity: 'base' }))
+  directories.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+  return { files, directories }
 }
 
 export function detectNovelProjectFromSearchResults(results: FileSearchResult[]): boolean {

@@ -378,7 +378,7 @@ describe('novel writing workspace layout', () => {
     const chatPageSource = readFileSync(new URL('../../../pages/ChatPage.tsx', import.meta.url), 'utf-8')
 
     expect(appShellSource).toContain('NovelDocumentEditorPanel')
-    expect(appShellSource).toContain('novelWorkspaceSidebarLinks')
+    expect(appShellSource).toContain('<WorkspaceFileTree')
     expect(appShellSource).not.toContain('<NovelWorkspaceNavigatorPanel')
     expect(chatPageSource).not.toContain('NovelWorkspacePanel')
     expect(chatPageSource).not.toContain('NovelWorkspaceNavigatorPanel')
@@ -393,7 +393,7 @@ describe('novel writing workspace layout', () => {
 
     expect(appShellSource).toContain('<ActivityRail')
     expect(appShellSource).toContain('activeItem={activeActivityRailItem}')
-    expect(appShellSource).toContain('onOpenWritingWorkspace={handleAllSessionsClick}')
+    expect(appShellSource).toContain('onOpenWritingWorkspace={handleWritingWorkspaceClick}')
     expect(appShellSource).toContain('onOpenSources={handleSourcesClick}')
     expect(appShellSource).toContain('onOpenSkills={handleSkillsClick}')
     expect(appShellSource).toContain("onOpenSettings={() => handleSettingsClick('app')}")
@@ -401,8 +401,8 @@ describe('novel writing workspace layout', () => {
     expect(activityRailSource).toContain('label="数据源"')
     expect(activityRailSource).toContain('label="技能"')
     expect(activityRailSource).toContain('label="设置"')
-    expect(appShellSource).toContain('getPrimarySidebarLinks(novelWorkspaceSidebarLinks)')
-    expect(appShellSource).toContain('links={primarySidebarLinks}')
+    expect(appShellSource).toContain('<WorkspaceFileTree')
+    expect(appShellSource).toContain('files={novelWorkspaceFiles}')
     expect(appShellSource).not.toContain('novelWorkspaceUtilitySidebarLinks')
     expect(appShellSource).not.toContain('workspaceTools={showNovelWorkspaceSidebar ? (')
     expect(appShellSource).not.toContain('rightTools={showNovelWorkspaceSidebar ? (')
@@ -419,53 +419,35 @@ describe('novel writing workspace layout', () => {
 
   it('roots the writing catalog at the current project and folds real paths into folders', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
-    const sidebarSource = appShellSource.slice(
-      appShellSource.indexOf('const novelWorkspaceSidebarLinks'),
-      appShellSource.indexOf('const primarySidebarLinks')
-    )
-    const treeBuilderSource = appShellSource.slice(
-      appShellSource.indexOf('function buildNovelWorkspaceFileTreeItems'),
-      appShellSource.indexOf('function getContentChangeSize')
-    )
-    const treeStructureSource = appShellSource.slice(
-      appShellSource.indexOf('const visibleNovelRootDirectories = React.useMemo'),
-      appShellSource.indexOf('const novelWorkspaceSidebarLinks')
-    )
+    const treeSource = readFileSync(new URL('../../workspace/WorkspaceFileTree.tsx', import.meta.url), 'utf-8')
+    const modelSource = readFileSync(new URL('../../workspace/workspace-file-tree-model.ts', import.meta.url), 'utf-8')
 
-    expect(sidebarSource).toContain('const projectSidebarId = `writing:project:${activeWorkspaceId ?? novelWorkspaceRoot}`')
-    expect(sidebarSource).toContain("title: activeWorkspace?.name ?? t('writing.workspace')")
-    expect(sidebarSource).toContain('tooltip: novelWorkspaceRoot')
-    expect(sidebarSource).toContain('items: fileTreeItems')
-    expect(treeBuilderSource).toContain("id = `writing:folder:${node.relativePath}`")
-    expect(treeBuilderSource).toContain('title: getNovelWorkspaceFileName(file)')
-    expect(treeBuilderSource).toContain('icon: Folder')
-    expect(treeBuilderSource).toContain('label: String(node.fileCount)')
-    expect(appShellSource).not.toContain('function countNovelWorkspaceTreeFiles')
-    expect(treeBuilderSource).not.toContain('countNovelWorkspaceTreeFiles(')
-    expect(treeStructureSource).toContain('const novelWorkspaceFileTree = React.useMemo(')
-    expect(treeStructureSource).toContain('buildNovelWorkspaceFileTree(novelWorkspaceFiles, visibleNovelRootDirectories)')
-    expect(treeStructureSource).not.toContain('selectedNovelFile?.path')
-    expect(treeBuilderSource).not.toContain('[...node.dirs.values()].sort')
-    expect(treeBuilderSource).not.toContain('[...node.files].sort')
-    expect(treeBuilderSource).not.toContain('categorizeNovelPath')
+    expect(appShellSource).toContain('<WorkspaceFileTree')
+    expect(appShellSource).toContain('workspaceName={activeWorkspace?.name')
+    expect(appShellSource).toContain('rootPath={novelWorkspaceRoot}')
+    expect(appShellSource).toContain('files={novelWorkspaceFiles}')
+    expect(treeSource).toContain('data={data}')
+    expect(treeSource).toContain('openByDefault={false}')
+    expect(modelSource).toContain(`? \`writing:project:\${workspaceId}\``)
+    expect(modelSource).toContain(`: \`writing:folder:\${node.relativePath}\``)
+    expect(modelSource).toContain(`id: \`writing:file:\${file.path}\``)
+    expect(modelSource).toContain('node.fileCount = children.reduce')
+    expect(modelSource).toContain('.sort((left, right) => collator.compare(left.name, right.name))')
+    expect(modelSource).not.toContain('categorizeNovelPath')
   })
 
-  it('renders compact writing file titles with a softer two-line clamp', () => {
-    const leftSidebarSource = readFileSync(new URL('../../app-shell/LeftSidebar.tsx', import.meta.url), 'utf-8')
+  it('renders file titles in fixed-height virtual rows', () => {
+    const rowSource = readFileSync(new URL('../../workspace/WorkspaceFileTreeRow.tsx', import.meta.url), 'utf-8')
+    const treeSource = readFileSync(new URL('../../workspace/WorkspaceFileTree.tsx', import.meta.url), 'utf-8')
 
-    expect(leftSidebarSource).toContain('const titleClassName')
-    expect(leftSidebarSource).toContain('link.compact')
-    expect(leftSidebarSource).toContain('line-clamp-2')
-    expect(leftSidebarSource).toContain('leading-[1.25]')
-    expect(leftSidebarSource).toContain('min-h-[34px]')
+    expect(rowSource).toContain('min-w-0 flex-1 truncate text-left')
+    expect(treeSource).toContain('const ROW_HEIGHT = 30')
+    expect(treeSource).toContain('rowHeight={ROW_HEIGHT}')
   })
 
-  it('collapses writing file create and import actions behind one menu trigger', () => {
+  it('exposes writing create and import actions through row context menus', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
-    const sidebarSource = appShellSource.slice(
-      appShellSource.indexOf('const novelWorkspaceSidebarLinks'),
-      appShellSource.indexOf('const primarySidebarLinks')
-    )
+    const rowSource = readFileSync(new URL('../../workspace/WorkspaceFileTreeRow.tsx', import.meta.url), 'utf-8')
 
     expect(appShellSource).toContain('novelCreateFileTarget')
     expect(appShellSource).toContain('handleSubmitNovelCreateFile')
@@ -474,67 +456,59 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('handleImportNovelFiles')
     expect(appShellSource).toContain('window.electronAPI.openFileDialog()')
     expect(appShellSource).toContain('getNovelImportTargetRelativePath')
-    expect(sidebarSource).toContain('const createNovelWorkspaceRootActions = () =>')
-    expect(sidebarSource).toContain("void handleImportNovelFiles('正文')")
-    expect(sidebarSource).toContain("void handleImportNovelFiles('全局')")
-    expect(sidebarSource).toContain("void handleImportNovelFiles('自由区')")
-    expect(sidebarSource).toContain("t('writing.createFile.globalInfo', '新建全局信息文件')")
-    expect(sidebarSource).toContain("t('writing.importFile.globalInfo', '导入全局信息文件')")
-    expect(sidebarSource).toContain('const createMenuTrigger = (menuTitle: string) =>')
-    expect(sidebarSource).toContain('<DropdownMenu>')
-    expect(sidebarSource).toContain('<DropdownMenuTrigger asChild>')
-    expect(sidebarSource).toContain('<MoreHorizontal className="h-3 w-3" />')
-    expect(sidebarSource).toContain('<StyledDropdownMenuItem')
-    expect(sidebarSource).toContain('afterTitle: createNovelWorkspaceRootActions()')
-    expect(sidebarSource).not.toContain('const createNovelWorkspaceAddAction =')
-    expect(sidebarSource).not.toContain('const createNovelWorkspaceImportAction =')
+    expect(appShellSource).toContain('const getNovelWorkspaceTreeMenuActions = React.useCallback')
+    expect(appShellSource).toContain("importAction('import-manuscript', '正文'")
+    expect(appShellSource).toContain("importAction('import-global', '全局'")
+    expect(appShellSource).toContain("importAction('import-free', '自由区'")
+    expect(appShellSource).toContain("t('writing.createFile.globalInfo', '新建全局信息文件')")
+    expect(appShellSource).toContain("t('writing.importFile.globalInfo', '导入全局信息文件')")
+    expect(rowSource).toContain('<StyledContextMenuContent')
+    expect(rowSource).toContain('<StyledContextMenuItem')
+    expect(rowSource).toContain('context.getMenuActions?.(entry)')
+    expect(rowSource).not.toContain('MoreHorizontal')
     expect(appShellSource).toContain('placeholder={novelCreateFileTarget?.placeholder}')
     expect(appShellSource).toContain('normalizeNovelCreateFilePath')
     expect(appShellSource).toContain('shouldCreateMarkdownStarter(relativePath)')
-    expect(sidebarSource).toContain("placeholder: '07-标题、07-标题.md 或 第一卷/07-标题.txt'")
-    expect(sidebarSource).toContain("placeholder: '角色/主角、世界观/城市.md 或 补充设定.txt'")
-    expect(sidebarSource).toContain("placeholder: '脑洞、脑洞.md 或 临时/脑洞.txt'")
+    expect(appShellSource).toContain("'07-标题、07-标题.md 或 第一卷/07-标题.txt'")
+    expect(appShellSource).toContain("'角色/主角、世界观/城市.md 或 补充设定.txt'")
+    expect(appShellSource).toContain("'脑洞、脑洞.md 或 临时/脑洞.txt'")
   })
 
   it('keeps the native writing file tree ordered by filesystem path instead of custom catalog order', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
-    const leftSidebarSource = readFileSync(new URL('../../app-shell/LeftSidebar.tsx', import.meta.url), 'utf-8')
-    const sidebarSource = appShellSource.slice(
-      appShellSource.indexOf('const novelWorkspaceSidebarLinks'),
-      appShellSource.indexOf('const primarySidebarLinks')
-    )
+    const treeSource = readFileSync(new URL('../../workspace/WorkspaceFileTree.tsx', import.meta.url), 'utf-8')
+    const modelSource = readFileSync(new URL('../../workspace/workspace-file-tree-model.ts', import.meta.url), 'utf-8')
 
     expect(appShellSource).not.toContain('NovelWorkspaceCatalogOrder')
     expect(appShellSource).not.toContain('novelWorkspaceCatalogOrder')
     expect(appShellSource).not.toContain('novelWorkspaceSidebarItemOrders')
     expect(appShellSource).not.toContain('orderSidebarItemsByStoredIds')
-    expect(sidebarSource).not.toContain('reorderable: true')
-    expect(sidebarSource).not.toContain('onItemsReorder')
-    expect(leftSidebarSource).toContain('import { SortableList }')
-    expect(leftSidebarSource).toContain('onLinksReorder={link.reorderable ? link.onItemsReorder : undefined}')
-    expect(leftSidebarSource).toContain('<SortableList')
-    expect(sidebarSource).not.toContain("t('writing.catalog.manuscriptFirst', '正文置顶')")
-    expect(sidebarSource).not.toContain("t('writing.catalog.globalFirst', '全局信息置顶')")
+    expect(modelSource).toContain('.sort((left, right) => collator.compare(left.name, right.name))')
+    expect(treeSource).toContain('dragNodes.every(node => node.parent?.id === parentNode.id)')
+    expect(treeSource).not.toContain('onItemsReorder')
+    expect(appShellSource).not.toContain("t('writing.catalog.manuscriptFirst', '正文置顶')")
+    expect(appShellSource).not.toContain("t('writing.catalog.globalFirst', '全局信息置顶')")
   })
 
-  it('exposes file-level add and delete controls for writable novel files', () => {
+  it('exposes folder and file operations through Finder-style context menus', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
-    const sidebarSource = appShellSource.slice(
-      appShellSource.indexOf('const novelWorkspaceSidebarLinks'),
-      appShellSource.indexOf('const primarySidebarLinks')
-    )
+    const treeSource = readFileSync(new URL('../../workspace/WorkspaceFileTree.tsx', import.meta.url), 'utf-8')
+    const rowSource = readFileSync(new URL('../../workspace/WorkspaceFileTreeRow.tsx', import.meta.url), 'utf-8')
 
-    expect(appShellSource).toContain('const handleDeleteNovelWorkspaceFile = React.useCallback')
-    expect(appShellSource).toContain('window.confirm(')
-    expect(appShellSource).toContain('await window.electronAPI.deleteFile(file.path)')
-    expect(appShellSource).toContain('novelWorkspaceFilesCacheRef.current.delete(novelWorkspaceRoot)')
-    expect(sidebarSource).toContain('const createNovelWorkspaceFileItemActions = (')
-    expect(sidebarSource).toContain('openNovelCreateFileDialog({')
-    expect(sidebarSource).toContain("title: t('writing.createFile.nearby', '新建同目录文件')")
-    expect(sidebarSource).toContain("t('writing.deleteFile.title', '删除文件')")
-    expect(sidebarSource).toContain('renderFileActions: createNovelWorkspaceFileItemActions')
-    expect(appShellSource).toContain('const basePath = getNovelFileCreateBasePath(file)')
-    expect(appShellSource).not.toContain('createNovelWorkspaceFileItemActions(file, sectionId)')
+    expect(appShellSource).toContain('const handleMoveNovelWorkspaceEntry = React.useCallback')
+    expect(appShellSource).toContain('window.electronAPI.moveWorkspaceEntry({')
+    expect(appShellSource).toContain('const handleDeleteNovelWorkspaceEntry = React.useCallback')
+    expect(appShellSource).toContain('window.electronAPI.deleteWorkspaceEntry({')
+    expect(appShellSource).toContain('recursive: entry.type ===')
+    expect(appShellSource).toContain('novelWorkspaceCatalogCacheRef.current.delete(novelWorkspaceRoot)')
+    expect(appShellSource).toContain('getNovelFolderCreateTarget(entry.relativePath)')
+    expect(appShellSource).toContain('getNovelFileCreateBasePath(file)')
+    expect(treeSource).toContain('onMove={handleMove}')
+    expect(treeSource).toContain('onRename={handleRename}')
+    expect(treeSource).toContain('disableMultiSelection')
+    expect(rowSource).toContain('onSelect={() => void node.edit()}')
+    expect(rowSource).toContain('onSelect={() => context.onDelete(entry)}')
+    expect(rowSource).toContain('<ContextMenuTrigger asChild>{row}</ContextMenuTrigger>')
   })
 
   it('uses current novel project history instead of global release notes in novel utility navigation', () => {
@@ -559,17 +533,15 @@ describe('novel writing workspace layout', () => {
 
   it('renders the writing catalog as a native project file tree instead of classified sections', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
-    const sidebarSource = appShellSource.slice(
-      appShellSource.indexOf('const novelWorkspaceSidebarLinks'),
-      appShellSource.indexOf('const primarySidebarLinks')
-    )
+    const modelSource = readFileSync(new URL('../../workspace/workspace-file-tree-model.ts', import.meta.url), 'utf-8')
 
-    expect(sidebarSource).toContain('const projectSidebarId = `writing:project:${activeWorkspaceId ?? novelWorkspaceRoot}`')
-    expect(sidebarSource).toContain('buildNovelWorkspaceFileTreeItems(novelWorkspaceFileTree')
-    expect(sidebarSource).toContain('title: activeWorkspace?.name ?? t(\'writing.workspace\')')
-    expect(sidebarSource).not.toContain('globalSectionDefinitions')
-    expect(sidebarSource).not.toContain('NOVEL_WORKSPACE_GLOBAL_GROUP_ID')
-    expect(sidebarSource).not.toContain('formatNovelWorkspaceFileTitle(file, t)')
+    expect(appShellSource).toContain('<WorkspaceFileTree')
+    expect(appShellSource).toContain('workspaceName={activeWorkspace?.name')
+    expect(appShellSource).toContain('directories={novelWorkspaceDirectories}')
+    expect(modelSource).toContain('buildWorkspaceFileTree')
+    expect(modelSource).not.toContain('globalSectionDefinitions')
+    expect(modelSource).not.toContain('NOVEL_WORKSPACE_GLOBAL_GROUP_ID')
+    expect(modelSource).not.toContain('formatNovelWorkspaceFileTitle')
   })
 
   it('exposes selectable writing workspace export controls', () => {
@@ -647,10 +619,7 @@ describe('novel writing workspace layout', () => {
 
   it('auto-saves before file switching and selection Ask AI when the current document has unsaved edits', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
-    const fileItemSource = appShellSource.slice(
-      appShellSource.indexOf('const fileItem = (file: NovelWorkspaceFile): LeftSidebarItem => ({'),
-      appShellSource.indexOf('const folderItem =')
-    )
+    const treeSource = readFileSync(new URL('../../workspace/WorkspaceFileTree.tsx', import.meta.url), 'utf-8')
     const askAiSource = appShellSource.slice(
       appShellSource.indexOf('const handleAskAiForNovelSelection'),
       appShellSource.indexOf('const navigatorPanelWidth')
@@ -660,8 +629,8 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('ensureNovelDocumentSaved')
     expect(appShellSource).toContain('window.setTimeout')
     expect(appShellSource).toContain('window.clearTimeout')
-    expect(fileItemSource).toContain('options.onSelectFile(file)')
-    expect(fileItemSource).not.toContain('setSelectedNovelFilePath(file.path)')
+    expect(treeSource).toContain('onSelectFile({ path: node.data.path, relativePath: node.data.relativePath })')
+    expect(treeSource).not.toContain('setSelectedNovelFilePath')
     expect(askAiSource).toContain('const saved = await ensureNovelDocumentSaved()')
     expect(askAiSource).not.toContain('writing.askAiBlockedByUnsavedEdits')
     expect(askAiSource).toContain('window.electronAPI.rewriteNovelSelection')
@@ -787,17 +756,18 @@ describe('novel writing workspace layout', () => {
 
   it('marks changed files with a dismissible green dot in the writing catalog', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
-    const leftSidebarSource = readFileSync(new URL('../../app-shell/LeftSidebar.tsx', import.meta.url), 'utf-8')
+    const treeSource = readFileSync(new URL('../../workspace/WorkspaceFileTree.tsx', import.meta.url), 'utf-8')
+    const rowSource = readFileSync(new URL('../../workspace/WorkspaceFileTreeRow.tsx', import.meta.url), 'utf-8')
 
     expect(appShellSource).toContain('dismissedNovelReviewDotKeys')
     expect(appShellSource).toContain('pendingNovelReviewDotKeysByPath')
     expect(appShellSource).toContain('handleDismissNovelReviewDot')
-    expect(appShellSource).toContain('reviewDot: options.hasReviewDot(file.path) ?')
-    expect(appShellSource).toContain('hasReviewDot: hasNovelReviewDot')
-    expect(appShellSource).toContain('onDismissReviewDot: handleDismissNovelReviewDot')
-    expect(leftSidebarSource).toContain('reviewDot?:')
-    expect(leftSidebarSource).toContain('link.reviewDot?.onDismiss()')
-    expect(leftSidebarSource).toContain('bg-emerald-500')
+    expect(appShellSource).toContain('hasReviewDot={hasNovelReviewDot}')
+    expect(appShellSource).toContain('onDismissReviewDot={handleDismissNovelReviewDot}')
+    expect(treeSource).toContain('hasReviewDot?: (path: string) => boolean')
+    expect(rowSource).toContain('context.hasReviewDot?.(entry.path)')
+    expect(rowSource).toContain('context.onDismissReviewDot?.(entry.path)')
+    expect(rowSource).toContain('bg-emerald-500')
   })
 
   it('defers review change grouping until the changes tab is active', () => {
@@ -863,7 +833,7 @@ describe('novel writing workspace layout', () => {
     expect(reviewControllerSource).toContain('getPendingChangesForFile(reviewableNovelFileChanges')
   })
 
-  it('keeps the novel catalog sidebar scoped to writing mode while utility views use the navigator column', () => {
+  it('keeps the novel catalog sidebar scoped to the writing project shell while utility views use the navigator column', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const navigatorSlotSource = appShellSource.slice(
       appShellSource.indexOf('navigatorSlot={'),
@@ -871,28 +841,28 @@ describe('novel writing workspace layout', () => {
     )
 
     expect(appShellSource).toContain('const showNovelWorkspaceSidebar = novelWorkspaceRootMatchesCandidates')
-    expect(appShellSource).toContain('const showNovelDocumentNavigator = isSessionsNavigation(navState) && showNovelWorkspaceSidebar')
+    expect(appShellSource).toContain('const showWritingWorkspaceShell = isWritingNavigation(navState)')
+    expect(appShellSource).toContain("|| (isSessionsNavigation(navState) && activeWritingWorkspaceRoot !== null)")
+    expect(appShellSource).toContain('const showNovelDocumentNavigator = showWritingWorkspaceShell && showNovelWorkspaceSidebar')
     expect(appShellSource).toContain('const hasUnsettledNovelWorkspaceCandidates = novelWorkspaceCandidateRoots.length > 0 && novelWorkspaceDetectionSettledKey !== novelWorkspaceCandidateKey')
-    expect(appShellSource).toContain('const showNovelWorkspacePending = isSessionsNavigation(navState) && (')
-    expect(appShellSource).toContain('const showNovelWorkspaceUnavailable = isSessionsNavigation(navState)')
+    expect(appShellSource).toContain('const showNovelWorkspacePending = showWritingWorkspaceShell && (')
+    expect(appShellSource).toContain('const showNovelWorkspaceUnavailable = showWritingWorkspaceShell')
     expect(appShellSource).toContain('setNovelWorkspaceDetecting(shouldKeepWorkspaceChromeWhileDetecting)')
     expect(appShellSource).toContain('(showNovelWorkspacePending || showNovelWorkspaceUnavailable) ? novelWorkspaceNavigatorWidth : sessionListWidth')
-    expect(appShellSource).toContain('(showNovelWorkspacePending || showNovelWorkspaceUnavailable) ? [')
+    expect(appShellSource).toContain('const hasPrimarySidebar = showNovelWorkspaceSidebar || showNovelWorkspacePending || showNovelWorkspaceUnavailable')
     expect(appShellSource).toContain("t('writing.loadingWorkspace'")
     expect(navigatorSlotSource).toContain(') : showNovelWorkspacePending ? (')
     expect(navigatorSlotSource).toContain(') : showNovelWorkspaceUnavailable ? (')
     expect(navigatorSlotSource.indexOf('showNovelWorkspacePending')).toBeLessThan(navigatorSlotSource.indexOf('<SessionList'))
     expect(navigatorSlotSource.indexOf('showNovelWorkspaceUnavailable')).toBeLessThan(navigatorSlotSource.indexOf('<SessionList'))
-    expect(appShellSource).toContain('if (!showNovelWorkspaceSidebar) return []')
-    expect(appShellSource).toContain('if (primarySidebarLinks.length > 0) {')
-    expect(appShellSource).toContain('const showPrimarySidebar = hasPrimarySidebar && isSessionsNavigation(navState)')
+    expect(appShellSource).toContain('const showPrimarySidebar = hasPrimarySidebar && showWritingWorkspaceShell')
     expect(appShellSource).toContain('sidebarWidth={effectiveSidebarAndNavigatorHidden ? 0 : (isSidebarVisible && showPrimarySidebar ? sidebarWidth : 0)}')
     expect(appShellSource).not.toContain('NovelWorkspaceUtilityTopNav')
     expect(appShellSource).not.toContain('workspaceTools={showNovelWorkspaceSidebar ? (')
-    expect(appShellSource).toContain('getPrimarySidebarLinks(novelWorkspaceSidebarLinks)')
-    expect(appShellSource).toContain('links={primarySidebarLinks}')
+    expect(appShellSource).toContain('{showNovelWorkspaceSidebar && novelWorkspaceRoot && activeWorkspaceId ? (')
+    expect(appShellSource).toContain('<WorkspaceFileTree')
     expect(appShellSource).toContain('{showNovelDocumentNavigator && novelWorkspaceRoot ? (')
-    expect(appShellSource).toContain('handleAllSessionsClick()')
+    expect(appShellSource).toContain('handleWritingWorkspaceClick')
   })
 
   it('does not derive writing workspace roots from a stale session outside the active workspace', () => {
@@ -984,11 +954,14 @@ describe('novel writing workspace layout', () => {
       appShellSource.indexOf('void detectNovelWorkspace()')
     )
 
-    expect(appShellSource).toContain('novelWorkspaceFilesCacheRef.current.set(rootPath, files)')
-    expect(detectionSource).toContain('const cachedNovelWorkspaceFiles = novelWorkspaceFilesCacheRef.current.get(rootPath)')
-    expect(detectionSource.indexOf('setNovelWorkspaceFilesIfChanged(cachedNovelWorkspaceFiles)')).toBeLessThan(
-      detectionSource.indexOf('loadNovelWorkspaceFiles(')
+    expect(appShellSource).toContain('novelWorkspaceCatalogCacheRef.current.set(rootPath, catalog)')
+    expect(detectionSource).toContain('const cachedNovelWorkspaceCatalog = novelWorkspaceCatalogCacheRef.current.get(rootPath)')
+    const cachedCatalogBranch = detectionSource.slice(
+      detectionSource.indexOf('if (cachedNovelWorkspaceCatalog)'),
+      detectionSource.indexOf('try {')
     )
+    expect(cachedCatalogBranch).toContain('setNovelWorkspaceCatalogIfChanged(cachedNovelWorkspaceCatalog)')
+    expect(cachedCatalogBranch).toContain('return')
   })
 
   it('keeps AppShell off the full active session atom during streaming updates', () => {
@@ -1017,17 +990,17 @@ describe('novel writing workspace layout', () => {
       appShellSource.indexOf('void detectNovelWorkspace()')
     )
 
-    expect(loadSource).toContain("loadNovelWorkspaceFileTree(rootPath, activeWorkspaceMethodPackId)")
+    expect(loadSource).toContain('loadNovelWorkspaceFileTree(rootPath)')
     expect(detectionSource).toContain('const knownWritingWorkspaceRoot = rootPath === activeWritingWorkspaceRoot')
-    expect(detectionSource).toContain('knownWritingWorkspaceRoot || Boolean(cachedNovelWorkspaceFiles)')
+    expect(detectionSource).toContain('knownWritingWorkspaceRoot || Boolean(cachedNovelWorkspaceCatalog)')
     expect(detectionSource).not.toContain('NOVEL_WORKSPACE_DETECTION_QUERIES.map')
   })
 
-  it('loads known writing workspace roots through purpose-built file listing before search fallback', () => {
+  it('loads known writing workspace roots through purpose-built file listing', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const fileTreeSource = appShellSource.slice(
       appShellSource.indexOf('async function loadNovelWorkspaceFileTree'),
-      appShellSource.indexOf('function mapFileSearchResultsToNativeNovelWorkspaceFiles')
+      appShellSource.indexOf('function getParentRelativePath')
     )
     const loadSource = appShellSource.slice(
       appShellSource.indexOf('const loadNovelWorkspaceFiles ='),
@@ -1044,14 +1017,11 @@ describe('novel writing workspace layout', () => {
 
     expect(loadSource).toContain('knownNovelWorkspace = false')
     expect(loadSource).toContain('if (knownNovelWorkspace)')
-    expect(loadSource).toContain('loadNovelWorkspaceFileTree(rootPath, activeWorkspaceMethodPackId)')
-    expect(fileTreeSource).toContain('RPC_CHANNELS.fs.LIST_FILES')
-    expect(fileTreeSource).toContain('window.electronAPI.listWorkspaceFiles(rootPath, [...rootQueries])')
-    expect(fileTreeSource.indexOf('window.electronAPI.listWorkspaceFiles')).toBeLessThan(
-      fileTreeSource.indexOf('searchNovelWorkspaceFiles(rootPath')
-    )
-    expect(refreshSource).toContain('rootPath === novelWorkspaceRootRef.current || novelWorkspaceFilesCacheRef.current.has(rootPath)')
-    expect(detectionSource).toContain('knownWritingWorkspaceRoot || Boolean(cachedNovelWorkspaceFiles)')
+    expect(loadSource).toContain('loadNovelWorkspaceFileTree(rootPath)')
+    expect(fileTreeSource).toContain('window.electronAPI.listWorkspaceFiles(rootPath, [])')
+    expect(fileTreeSource).not.toContain('searchNovelWorkspaceFiles(rootPath')
+    expect(refreshSource).toContain('rootPath === novelWorkspaceRootRef.current || novelWorkspaceCatalogCacheRef.current.has(rootPath)')
+    expect(detectionSource).toContain('knownWritingWorkspaceRoot || Boolean(cachedNovelWorkspaceCatalog)')
   })
 
   it('coalesces writing workspace file loads before refresh state updates', () => {
@@ -1077,7 +1047,7 @@ describe('novel writing workspace layout', () => {
       refreshSource.indexOf('loadNovelWorkspaceFiles(')
     )
     expect(refreshSource).toContain('if (novelWorkspaceRootRef.current && rootPath !== novelWorkspaceRootRef.current) return false')
-    expect(refreshSource).toContain('areNovelWorkspaceFilesEqual(previous, files) ? previous : files')
+    expect(appShellSource).toContain('areNovelWorkspaceFilesEqual(previous, catalog.files) ? previous : catalog.files')
   })
 
   it('rechecks completed file-change refresh keys inside delayed refresh callbacks', () => {
@@ -1109,10 +1079,10 @@ describe('novel writing workspace layout', () => {
       appShellSource.indexOf('void detectNovelWorkspace()')
     )
 
-    expect(appShellSource).toContain('const setNovelWorkspaceFilesIfChanged = React.useCallback')
-    expect(detectionSource).toContain('setNovelWorkspaceFilesIfChanged(cachedNovelWorkspaceFiles)')
-    expect(detectionSource).toContain('setNovelWorkspaceFilesIfChanged(probeFiles)')
-    expect(detectionSource).toContain('setNovelWorkspaceFilesIfChanged(files)')
+    expect(appShellSource).toContain('const setNovelWorkspaceCatalogIfChanged = React.useCallback')
+    expect(detectionSource).toContain('setNovelWorkspaceCatalogIfChanged(cachedNovelWorkspaceCatalog)')
+    expect(detectionSource).toContain('setNovelWorkspaceCatalogIfChanged({ files: probeFiles, directories: [] })')
+    expect(detectionSource).toContain('setNovelWorkspaceCatalogIfChanged(catalog)')
   })
 
   it('preserves the selected writing file when catalog refreshes temporarily omit it', () => {
@@ -1211,8 +1181,8 @@ describe('novel writing workspace layout', () => {
     expect(visibilitySource).toContain('const novelWorkspaceRootMatchesCandidates = !!novelWorkspaceRoot && novelWorkspaceCandidateRootSet.has(novelWorkspaceRoot)')
     expect(visibilitySource).toContain('const hasStaleNovelWorkspaceRoot = !!novelWorkspaceRoot && novelWorkspaceCandidateRoots.length > 0 && !novelWorkspaceRootMatchesCandidates')
     expect(visibilitySource).toContain('const showNovelWorkspaceSidebar = novelWorkspaceRootMatchesCandidates')
-    expect(visibilitySource).toContain('const showNovelWorkspacePending = isSessionsNavigation(navState) && (')
-    expect(visibilitySource).toContain('const showNovelWorkspaceUnavailable = isSessionsNavigation(navState)')
+    expect(visibilitySource).toContain('const showNovelWorkspacePending = showWritingWorkspaceShell && (')
+    expect(visibilitySource).toContain('const showNovelWorkspaceUnavailable = showWritingWorkspaceShell')
     expect(visibilitySource).toContain('hasStaleNovelWorkspaceRoot')
     expect(visibilitySource).toContain('(!showNovelWorkspaceSidebar && hasUnsettledNovelWorkspaceCandidates)')
   })
@@ -1239,26 +1209,24 @@ describe('novel writing workspace layout', () => {
       appShellSource.indexOf('const novelWorkspaceCandidateRootSet ='),
       appShellSource.indexOf('const reviewableNovelFileChanges')
     )
-    const navigatorSizingSource = appShellSource.slice(
-      appShellSource.indexOf('const navigatorPanelWidth ='),
-      appShellSource.indexOf('React.useEffect(() => {', appShellSource.indexOf('const navigatorPanelWidth ='))
-    )
-    const primarySidebarSource = appShellSource.slice(
-      appShellSource.indexOf('const primarySidebarLinks ='),
-      appShellSource.indexOf('const hasPrimarySidebar')
-    )
     const navigatorSlotSource = appShellSource.slice(
       appShellSource.indexOf('navigatorSlot={'),
       appShellSource.indexOf('navigatorWidth=')
     )
 
-    expect(visibilitySource).toContain('novelWorkspaceCandidateRoots.length > 0')
+    expect(visibilitySource).toContain('activeWritingWorkspaceRoot !== null')
     expect(visibilitySource).toContain('&& !showNovelWorkspaceSidebar')
     expect(visibilitySource).toContain('&& !showNovelWorkspacePending')
-    expect(navigatorSizingSource).toContain('showNovelWorkspaceUnavailable')
-    expect(primarySidebarSource).toContain('showNovelWorkspacePending || showNovelWorkspaceUnavailable')
-    expect(navigatorSlotSource).toContain("t('writing.workspaceUnavailable'")
+    expect(navigatorSlotSource).toContain('<SessionList')
+    expect(navigatorSlotSource).toContain(') : showNovelWorkspaceUnavailable ? (')
     expect(navigatorSlotSource.indexOf('showNovelWorkspaceUnavailable')).toBeLessThan(navigatorSlotSource.indexOf('<SessionList'))
+  })
+
+  it('expands a project root by default without overriding a persisted collapse', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+
+    expect(appShellSource).toContain('storage.get<string[] | null>(storage.KEYS.expandedFolders, null, activeWorkspaceId)')
+    expect(appShellSource).toContain('persistedExpandedFolders ?? [`writing:project:${activeWorkspaceId}`]')
   })
 
   it('exposes global search from the activity rail backed by the global search dialog', () => {
@@ -1289,11 +1257,11 @@ describe('novel writing workspace layout', () => {
   })
 
   it('left-aligns sidebar item content instead of letting writing catalog labels drift toward the center', () => {
-    const leftSidebarSource = readFileSync(new URL('../../app-shell/LeftSidebar.tsx', import.meta.url), 'utf-8')
+    const rowSource = readFileSync(new URL('../../workspace/WorkspaceFileTreeRow.tsx', import.meta.url), 'utf-8')
 
-    expect(leftSidebarSource).toContain('"group flex w-full items-center justify-start gap-2 rounded-[6px] text-left text-[13px] select-none outline-none"')
-    expect(leftSidebarSource).toContain(': "min-w-0 flex-1 truncate text-left"')
-    expect(leftSidebarSource).toContain('<span className={titleClassName}>{link.title}</span>')
+    expect(rowSource).toContain('group flex h-full min-w-0 items-center')
+    expect(rowSource).toContain('min-w-0 flex-1 truncate text-left')
+    expect(rowSource).toContain('{entry.name}</span>')
   })
 
   it('does not position the navigator resize handle with detached left math', () => {

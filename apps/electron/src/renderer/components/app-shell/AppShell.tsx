@@ -11,7 +11,6 @@ import { motion, AnimatePresence } from "motion/react"
 import {
   ChevronRight,
   ChevronDown,
-  MoreHorizontal,
   RotateCw,
   Flag,
   ListFilter,
@@ -27,10 +26,7 @@ import {
   Layers,
   Info,
   MailOpen,
-  FileText,
-  Folder,
   History,
-  Library,
   Download,
   FileUp,
 } from "lucide-react"
@@ -78,7 +74,11 @@ import { NovelDocumentEditorPanel, type NovelDocumentEditorPanelHandle, type Nov
 import { NovelExportDialog } from "@/components/writing/NovelExportDialog"
 import { NovelVersionHistoryDialog } from "@/components/writing/NovelVersionHistoryDialog"
 import { formatNovelWorkspaceFileTitle } from "@/components/writing/novel-file-display"
-import { LeftSidebar, type LinkItem as LeftSidebarLinkItem, type SidebarItem as LeftSidebarItem } from "./LeftSidebar"
+import type {
+  WorkspaceFileTreeHandle,
+  WorkspaceFileTreeMenuAction,
+  WorkspaceFileTreeNode,
+} from "@/components/workspace/WorkspaceFileTree"
 import { useSession } from "@/hooks/useSession"
 import { AppShellProvider, type AppShellContextType } from "@/context/AppShellContext"
 import { sessionOptionsAtomFamily } from "@/hooks/useSessionOptions"
@@ -154,7 +154,6 @@ import {
   resolveInitialShellLayoutWidths,
   shouldResolveInitialShellLayoutWidths,
 } from "./layout-defaults"
-import { getPrimarySidebarLinks } from "./primary-sidebar-links"
 import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { rendererPerf } from "@/lib/perf"
@@ -179,25 +178,28 @@ import {
   getNovelImportTargetRelativePath,
   getNovelWorkspaceRelativePath,
   getNovelWorkspaceCandidateRoots,
-  getNovelWorkspaceFileSearchQueries,
-  getNovelWorkspaceVisibleRootDirectories,
   areNovelWorkspaceFilesEqual,
   isNovelWorkspaceFilePathInRoot,
-  isVisibleNovelWorkspaceAssetPath,
   isShortFormNovelWorkspaceFiles,
+  mapNativeWorkspaceCatalog,
   mapSearchResultsToNovelWorkspaceFiles,
   NOVEL_WORKSPACE_DETECTION_QUERIES,
   normalizeNovelCreateFilePath,
   selectDefaultNovelFile,
   type NovelCreateFileBasePath,
+  type NativeWorkspaceCatalog,
   type NovelWorkspaceFile,
 } from "@/lib/writing-workspace"
 import type { FileChange } from "@craft-agent/ui"
-import { RPC_CHANNELS, type FileSearchBatchRequest, type FileSearchBatchResult, type FileSearchResult } from "@craft-agent/shared/protocol"
+import { RPC_CHANNELS, type FileSearchBatchRequest, type FileSearchBatchResult } from "@craft-agent/shared/protocol"
 
 // ponytail: process-local replay guard for passive file-change refreshes; explicit file operations refresh directly.
 const completedNovelFileChangeRefreshKeys = new Set<string>()
 const pendingNovelFileChangeRefreshKeys = new Set<string>()
+const WorkspaceFileTree = React.lazy(async () => {
+  const module = await import("@/components/workspace/WorkspaceFileTree")
+  return { default: module.WorkspaceFileTree }
+})
 
 /**
  * AppShellProps - Minimal props interface for AppShell component
@@ -276,6 +278,25 @@ function joinWorkspacePath(rootPath: string, relativePath: string): string {
   const root = rootPath.replace(/[\\/]+$/, '')
   const relative = relativePath.replace(/^[\\/]+/, '')
   return relative ? `${root}/${relative}` : root
+}
+
+function normalizeWorkspacePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/, '')
+}
+
+function isSameOrChildWorkspacePath(path: string | null | undefined, parentPath: string): boolean {
+  if (!path) return false
+  const normalizedPath = normalizeWorkspacePath(path)
+  const normalizedParent = normalizeWorkspacePath(parentPath)
+  return normalizedPath === normalizedParent || normalizedPath.startsWith(`${normalizedParent}/`)
+}
+
+function remapWorkspacePath(path: string, sourcePath: string, destinationPath: string): string {
+  const normalizedPath = normalizeWorkspacePath(path)
+  const normalizedSource = normalizeWorkspacePath(sourcePath)
+  if (normalizedPath === normalizedSource) return destinationPath
+  if (!normalizedPath.startsWith(`${normalizedSource}/`)) return path
+  return `${normalizeWorkspacePath(destinationPath)}${normalizedPath.slice(normalizedSource.length)}`
 }
 
 function mergeOneTimeContext(existing: string | undefined, addition: string | undefined): string | undefined {
@@ -413,48 +434,9 @@ async function searchNovelWorkspaceFiles(
   )
 }
 
-async function loadNovelWorkspaceFileTree(rootPath: string, methodPackId?: string): Promise<NovelWorkspaceFile[]> {
-  const rootQueries = getNovelWorkspaceFileSearchQueries(methodPackId)
-  const canUseWorkspaceFileList = typeof window.electronAPI.listWorkspaceFiles === 'function'
-    && window.electronAPI.isChannelAvailable(RPC_CHANNELS.fs.LIST_FILES)
-
-  if (canUseWorkspaceFileList) {
-    try {
-      const results = await window.electronAPI.listWorkspaceFiles(rootPath, [...rootQueries])
-      return mapFileSearchResultsToNativeNovelWorkspaceFiles(results)
-    } catch (error) {
-      console.warn('[AppShell] Falling back to writing workspace file search:', error)
-    }
-  }
-
-  const resultSets = await searchNovelWorkspaceFiles(rootPath,
-    rootQueries.map((query) => ({
-      query,
-      options: { mode: 'path' as const },
-    }))
-  )
-  const results = resultSets.flatMap(resultSet => resultSet.results)
-
-  return mapFileSearchResultsToNativeNovelWorkspaceFiles(results)
-}
-
-function mapFileSearchResultsToNativeNovelWorkspaceFiles(results: FileSearchResult[]): NovelWorkspaceFile[] {
-  const files: NovelWorkspaceFile[] = []
-  const seen = new Set<string>()
-
-  for (const result of results) {
-    if (result.type !== 'file' || seen.has(result.path)) continue
-    if (!isVisibleNovelWorkspaceAssetPath(result.relativePath)) continue
-
-    seen.add(result.path)
-    files.push({
-      path: result.path,
-      relativePath: result.relativePath,
-    })
-  }
-
-  files.sort((a, b) => a.relativePath.localeCompare(b.relativePath, undefined, { numeric: true, sensitivity: 'base' }))
-  return files
+async function loadNovelWorkspaceFileTree(rootPath: string): Promise<NativeWorkspaceCatalog> {
+  const results = await window.electronAPI.listWorkspaceFiles(rootPath, [])
+  return mapNativeWorkspaceCatalog(results)
 }
 
 function getParentRelativePath(relativePath: string): string {
@@ -489,135 +471,28 @@ function getNearbyNovelCreateInitialValue(file: NovelWorkspaceFile, basePath: No
   return parent ? `${parent}/` : ''
 }
 
-interface NovelWorkspaceFileTreeNode {
-  name: string
-  relativePath: string
-  dirs: Map<string, NovelWorkspaceFileTreeNode>
-  files: NovelWorkspaceFile[]
-  sortedDirs: NovelWorkspaceFileTreeNode[]
-  sortedFiles: NovelWorkspaceFile[]
-  fileCount: number
-}
-
-interface NovelWorkspaceFileTreeOptions {
-  selectedPath?: string
-  isExpanded: (id: string) => boolean
-  toggleExpanded: (id: string) => void
-  onSelectFile: (file: NovelWorkspaceFile) => void
-  renderFileActions: (file: NovelWorkspaceFile) => React.ReactNode
-  hasReviewDot: (path: string) => boolean
-  onDismissReviewDot: (path: string) => void
-  reviewDotTitle: string
-}
-
-const workspaceFileTreeCollator = new Intl.Collator(undefined, {
-  numeric: true,
-  sensitivity: 'base',
-})
-
-function createNovelWorkspaceFileTreeNode(name: string, relativePath: string): NovelWorkspaceFileTreeNode {
+function getNovelFolderCreateTarget(relativePath: string): {
+  basePath: NovelCreateFileBasePath
+  initialValue: string
+} | null {
+  const segments = relativePath.replace(/\\/g, '/').split('/').filter(Boolean)
+  const [root, ...nestedSegments] = segments
+  if (root !== '正文' && root !== '全局' && root !== '自由区') return null
   return {
-    name,
-    relativePath,
-    dirs: new Map(),
-    files: [],
-    sortedDirs: [],
-    sortedFiles: [],
-    fileCount: 0,
+    basePath: root,
+    initialValue: nestedSegments.length > 0 ? `${nestedSegments.join('/')}/` : '',
   }
 }
 
-function getNovelWorkspaceFileName(file: NovelWorkspaceFile): string {
-  const normalized = file.relativePath.replace(/\\/g, '/').replace(/\/+$/, '')
-  return normalized.slice(normalized.lastIndexOf('/') + 1) || normalized
-}
-
-function sortNovelWorkspaceFileTreeNode(node: NovelWorkspaceFileTreeNode): void {
-  node.sortedDirs = [...node.dirs.values()].sort((a, b) => workspaceFileTreeCollator.compare(a.name, b.name))
-  node.sortedFiles = [...node.files].sort((a, b) => workspaceFileTreeCollator.compare(getNovelWorkspaceFileName(a), getNovelWorkspaceFileName(b)))
-  for (const child of node.sortedDirs) {
-    sortNovelWorkspaceFileTreeNode(child)
-  }
-}
-
-function buildNovelWorkspaceFileTree(
-  files: NovelWorkspaceFile[],
-  rootDirectories: readonly string[] = []
-): NovelWorkspaceFileTreeNode {
-  const root = createNovelWorkspaceFileTreeNode('', '')
-  for (const dir of rootDirectories) {
-    root.dirs.set(dir, createNovelWorkspaceFileTreeNode(dir, dir))
-  }
-
-  for (const file of files) {
-    const segments = file.relativePath.replace(/\\/g, '/').split('/').filter(Boolean)
-    if (segments.length === 0) continue
-
-    let current = root
-    current.fileCount += 1
-    for (const segment of segments.slice(0, -1)) {
-      const relativePath = current.relativePath ? `${current.relativePath}/${segment}` : segment
-      let child = current.dirs.get(segment)
-      if (!child) {
-        child = createNovelWorkspaceFileTreeNode(segment, relativePath)
-        current.dirs.set(segment, child)
-      }
-      current = child
-      current.fileCount += 1
-    }
-    current.files.push(file)
-  }
-
-  sortNovelWorkspaceFileTreeNode(root)
-  return root
-}
-
-function buildNovelWorkspaceFileTreeItems(
-  root: NovelWorkspaceFileTreeNode,
-  options: NovelWorkspaceFileTreeOptions
-): LeftSidebarItem[] {
-  const fileItem = (file: NovelWorkspaceFile): LeftSidebarItem => ({
-    id: `writing:file:${file.path}`,
-    title: getNovelWorkspaceFileName(file),
-    tooltip: file.relativePath,
-    icon: FileText,
-    variant: file.path === options.selectedPath ? 'default' : 'ghost',
-    compact: true,
-    afterTitle: options.renderFileActions(file),
-    reviewDot: options.hasReviewDot(file.path) ? {
-      title: options.reviewDotTitle,
-      onDismiss: () => options.onDismissReviewDot(file.path),
-    } : undefined,
-    onClick: () => options.onSelectFile(file),
-  })
-
-  const folderItem = (node: NovelWorkspaceFileTreeNode): LeftSidebarItem => {
-    const id = `writing:folder:${node.relativePath}`
-    const childItems = [
-      ...node.sortedDirs.map(folderItem),
-      ...node.sortedFiles.map(fileItem),
-    ]
-
-    return {
-      id,
-      title: node.name,
-      tooltip: node.relativePath,
-      label: String(node.fileCount),
-      icon: Folder,
-      variant: childItems.some(item => !('type' in item) && item.variant === 'default') ? 'default' : 'ghost',
-      compact: true,
-      expandable: true,
-      expanded: options.isExpanded(id),
-      onToggle: () => options.toggleExpanded(id),
-      onClick: () => options.toggleExpanded(id),
-      items: childItems,
-    }
-  }
-
-  return [
-    ...root.sortedDirs.map(folderItem),
-    ...root.sortedFiles.map(fileItem),
-  ]
+function getNovelImportTargetRelativePathInFolder(
+  sourcePath: string,
+  basePath: NovelCreateFileBasePath,
+  initialValue = '',
+): string | null {
+  const baseRelativePath = getNovelImportTargetRelativePath(sourcePath, basePath)
+  if (!baseRelativePath || !initialValue) return baseRelativePath
+  const fileName = baseRelativePath.slice(basePath.length + 1)
+  return `${basePath}/${initialValue}${fileName}`
 }
 
 function getContentChangeSize(previous: string, next: string): number {
@@ -1320,25 +1195,21 @@ function AppShellContent({
   // Cmd+F opens the global search surface; the sidebar menu still owns local list search.
   useAction('app.search', () => setGlobalSearchOpen(true))
 
-  // Unified sidebar keyboard navigation state
-  // Load expanded folders from localStorage (default: all collapsed)
+  // Unified sidebar keyboard navigation state. Expansion uses one positive,
+  // workspace-scoped set so persisted state and rendered state cannot diverge.
   const [expandedFolders, setExpandedFolders] = React.useState<Set<string>>(() => {
-    const saved = storage.get<string[]>(storage.KEYS.expandedFolders, [])
-    return new Set(saved)
+    const persistedExpandedFolders = activeWorkspaceId
+      ? storage.get<string[] | null>(storage.KEYS.expandedFolders, null, activeWorkspaceId)
+      : null
+    return new Set(persistedExpandedFolders ?? (activeWorkspaceId ? [`writing:project:${activeWorkspaceId}`] : []))
   })
-  const [focusedSidebarItemId, setFocusedSidebarItemId] = React.useState<string | null>(null)
-  const sidebarItemRefs = React.useRef<Map<string, HTMLElement>>(new Map())
-  // Track which expandable directory items are collapsed.
-  const [collapsedItems, setCollapsedItems] = React.useState<Set<string>>(() => {
-    const saved = storage.get<string[] | null>(storage.KEYS.collapsedSidebarItems, null)
-    return new Set(saved ?? [])
-  })
-  const isExpanded = React.useCallback((id: string) => !collapsedItems.has(id), [collapsedItems])
-  const toggleExpanded = React.useCallback((id: string) => {
-    setCollapsedItems(prev => {
+  const workspaceFileTreeRef = React.useRef<WorkspaceFileTreeHandle>(null)
+  const handleWorkspaceTreeExpandedChange = React.useCallback((id: string, expanded: boolean) => {
+    setExpandedFolders(prev => {
+      if (prev.has(id) === expanded) return prev
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+      if (expanded) next.add(id)
+      else next.delete(id)
       return next
     })
   }, [])
@@ -1413,8 +1284,6 @@ function AppShellContent({
       setFilterDropdownQuery('')
       setFilterDropdownSelectedIdx(0)
 
-      // Clear focused sidebar item
-      setFocusedSidebarItemId(null)
     }
 
     // Load workspace-scoped state on BOTH initial mount AND workspace switch
@@ -1423,11 +1292,9 @@ function AppShellContent({
       const newViewFilters = storage.get<ViewFiltersMap>(storage.KEYS.viewFilters, {}, activeWorkspaceId)
       setViewFiltersMap(newViewFilters)
 
-      const newExpandedFolders = storage.get<string[]>(storage.KEYS.expandedFolders, [], activeWorkspaceId)
-      setExpandedFolders(new Set(newExpandedFolders))
+      const persistedExpandedFolders = storage.get<string[] | null>(storage.KEYS.expandedFolders, null, activeWorkspaceId)
+      setExpandedFolders(new Set(persistedExpandedFolders ?? [`writing:project:${activeWorkspaceId}`]))
 
-      const newCollapsedItems = storage.get<string[] | null>(storage.KEYS.collapsedSidebarItems, null, activeWorkspaceId)
-      setCollapsedItems(new Set(newCollapsedItems ?? []))
     }
 
     previousWorkspaceRef.current = activeWorkspaceId
@@ -1904,8 +1771,8 @@ function AppShellContent({
   const novelFileChangeActivityKey = useAtomValue(effectiveSessionFileChangeKeyAtom)
   const [snapshotNovelFileChanges, setSnapshotNovelFileChanges] = React.useState<FileChange[]>([])
 
-  // Reload skills when active session's workingDirectory changes (for project-level skills)
-  // Skills are loaded from: global (~/.agents/skills/), workspace, and project ({workingDirectory}/.agents/skills/)
+  // The working directory still anchors file-change presentation, but Skills
+  // belong only to the active Storyflow project at {projectRoot}/.pi/skills.
   const activeSessionWorkingDirectory = effectiveSessionId
     ? rawEffectiveSessionMeta?.workingDirectory
     : undefined
@@ -1949,14 +1816,19 @@ function AppShellContent({
   )
   const [novelWorkspaceRoot, setNovelWorkspaceRoot] = React.useState<string | null>(null)
   const [novelWorkspaceFiles, setNovelWorkspaceFiles] = React.useState<NovelWorkspaceFile[]>([])
-  const setNovelWorkspaceFilesIfChanged = React.useCallback((files: NovelWorkspaceFile[]) => {
-    setNovelWorkspaceFiles((previous) => areNovelWorkspaceFilesEqual(previous, files) ? previous : files)
+  const [novelWorkspaceDirectories, setNovelWorkspaceDirectories] = React.useState<string[]>([])
+  const setNovelWorkspaceCatalogIfChanged = React.useCallback((catalog: NativeWorkspaceCatalog) => {
+    setNovelWorkspaceFiles((previous) => areNovelWorkspaceFilesEqual(previous, catalog.files) ? previous : catalog.files)
+    setNovelWorkspaceDirectories((previous) => (
+      previous.length === catalog.directories.length
+      && previous.every((directory, index) => directory === catalog.directories[index])
+    ) ? previous : catalog.directories)
   }, [])
   const [novelWorkspaceDetecting, setNovelWorkspaceDetecting] = React.useState(false)
   const [novelWorkspaceDetectionSettledKey, setNovelWorkspaceDetectionSettledKey] = React.useState<string | null>(null)
   const novelWorkspaceRootRef = React.useRef<string | null>(null)
-  const novelWorkspaceFilesCacheRef = React.useRef<Map<string, NovelWorkspaceFile[]>>(new Map())
-  const novelWorkspaceLoadInFlightRef = React.useRef<Map<string, Promise<NovelWorkspaceFile[] | null>>>(new Map())
+  const novelWorkspaceCatalogCacheRef = React.useRef<Map<string, NativeWorkspaceCatalog>>(new Map())
+  const novelWorkspaceLoadInFlightRef = React.useRef<Map<string, Promise<NativeWorkspaceCatalog | null>>>(new Map())
   const novelWorkspaceRefreshInFlightRef = React.useRef<Map<string, Promise<boolean>>>(new Map())
   const novelWorkspaceLastRefreshKeyRef = React.useRef<string | null>(null)
   const latestNovelFileChangesSignatureRef = React.useRef('')
@@ -1980,16 +1852,16 @@ function AppShellContent({
     rootPath: string,
     onDetected?: (files: NovelWorkspaceFile[]) => void,
     knownNovelWorkspace = false
-  ): Promise<NovelWorkspaceFile[] | null> => {
+  ): Promise<NativeWorkspaceCatalog | null> => {
     const loadKey = `${rootPath}\n${knownNovelWorkspace ? 'known' : 'detect'}`
     const inFlight = novelWorkspaceLoadInFlightRef.current.get(loadKey)
     if (inFlight) return inFlight
 
-    const loadPromise = (async (): Promise<NovelWorkspaceFile[] | null> => {
+    const loadPromise = (async (): Promise<NativeWorkspaceCatalog | null> => {
       if (knownNovelWorkspace) {
-        const files = await loadNovelWorkspaceFileTree(rootPath, activeWorkspaceMethodPackId)
-        novelWorkspaceFilesCacheRef.current.set(rootPath, files)
-        return files
+        const catalog = await loadNovelWorkspaceFileTree(rootPath)
+        novelWorkspaceCatalogCacheRef.current.set(rootPath, catalog)
+        return catalog
       }
 
       const probeResultSets = await searchNovelWorkspaceFiles(rootPath,
@@ -2003,9 +1875,9 @@ function AppShellContent({
       const probeFiles = mapSearchResultsToNovelWorkspaceFiles(probeResults)
       onDetected?.(probeFiles)
 
-      const files = await loadNovelWorkspaceFileTree(rootPath, activeWorkspaceMethodPackId)
-      novelWorkspaceFilesCacheRef.current.set(rootPath, files)
-      return files
+      const catalog = await loadNovelWorkspaceFileTree(rootPath)
+      novelWorkspaceCatalogCacheRef.current.set(rootPath, catalog)
+      return catalog
     })()
 
     novelWorkspaceLoadInFlightRef.current.set(loadKey, loadPromise)
@@ -2024,21 +1896,21 @@ function AppShellContent({
     const refreshPromise = (async (): Promise<boolean> => {
       const detectLoadKey = `${rootPath}\ndetect`
       const detectInFlight = novelWorkspaceLoadInFlightRef.current.get(detectLoadKey)
-      let files = detectInFlight
+      let catalog = detectInFlight
         ? await detectInFlight
         : await loadNovelWorkspaceFiles(
             rootPath,
             undefined,
-            rootPath === novelWorkspaceRootRef.current || novelWorkspaceFilesCacheRef.current.has(rootPath)
+            rootPath === novelWorkspaceRootRef.current || novelWorkspaceCatalogCacheRef.current.has(rootPath)
           )
-      if (!files && detectInFlight) {
-        files = await loadNovelWorkspaceFiles(rootPath, undefined, true)
+      if (!catalog && detectInFlight) {
+        catalog = await loadNovelWorkspaceFiles(rootPath, undefined, true)
       }
-      if (!files) return false
+      if (!catalog) return false
       if (novelWorkspaceRootRef.current && rootPath !== novelWorkspaceRootRef.current) return false
 
       setNovelWorkspaceRoot(rootPath)
-      setNovelWorkspaceFiles((previous) => areNovelWorkspaceFilesEqual(previous, files) ? previous : files)
+      setNovelWorkspaceCatalogIfChanged(catalog)
       return true
     })()
 
@@ -2049,7 +1921,7 @@ function AppShellContent({
       }
     })
     return refreshPromise
-  }, [loadNovelWorkspaceFiles])
+  }, [loadNovelWorkspaceFiles, setNovelWorkspaceCatalogIfChanged])
 
   const openNovelCreateFileDialog = React.useCallback((target: NovelCreateFileTarget) => {
     setNovelCreateFileTarget(target)
@@ -2092,7 +1964,10 @@ function AppShellContent({
     }
   }, [novelCreateFileTarget, novelCreateFileValue, novelWorkspaceFiles, novelWorkspaceRoot, refreshNovelWorkspaceFiles, t])
 
-  const handleImportNovelFiles = React.useCallback(async (basePath: NovelCreateFileBasePath) => {
+  const handleImportNovelFiles = React.useCallback(async (
+    basePath: NovelCreateFileBasePath,
+    initialValue = '',
+  ) => {
     if (!novelWorkspaceRoot) return
 
     const sourcePaths = await window.electronAPI.openFileDialog()
@@ -2104,7 +1979,7 @@ function AppShellContent({
     const reservedRelativePaths = new Set(novelWorkspaceFiles.map(file => file.relativePath))
 
     for (const sourcePath of sourcePaths) {
-      const relativePath = getNovelImportTargetRelativePath(sourcePath, basePath)
+      const relativePath = getNovelImportTargetRelativePathInFolder(sourcePath, basePath, initialValue)
       if (!relativePath || reservedRelativePaths.has(relativePath)) {
         skippedCount += 1
         continue
@@ -2151,6 +2026,7 @@ function AppShellContent({
       setNovelWorkspaceDetectionSettledKey(null)
       setNovelWorkspaceRoot(null)
       setNovelWorkspaceFiles([])
+      setNovelWorkspaceDirectories([])
       return
     }
 
@@ -2162,41 +2038,43 @@ function AppShellContent({
     if (currentNovelWorkspaceRoot && !nextCandidateRoots.has(currentNovelWorkspaceRoot)) {
       setNovelWorkspaceRoot(null)
       setNovelWorkspaceFiles([])
+      setNovelWorkspaceDirectories([])
     }
 
     let cancelled = false
 
     async function detectNovelWorkspace(): Promise<void> {
       for (const rootPath of novelWorkspaceCandidateRoots) {
-        const cachedNovelWorkspaceFiles = novelWorkspaceFilesCacheRef.current.get(rootPath)
+        const cachedNovelWorkspaceCatalog = novelWorkspaceCatalogCacheRef.current.get(rootPath)
         const knownWritingWorkspaceRoot = rootPath === activeWritingWorkspaceRoot
-        if (cachedNovelWorkspaceFiles) {
+        if (cachedNovelWorkspaceCatalog) {
           setNovelWorkspaceRoot(rootPath)
-          setNovelWorkspaceFilesIfChanged(cachedNovelWorkspaceFiles)
+          setNovelWorkspaceCatalogIfChanged(cachedNovelWorkspaceCatalog)
           setNovelWorkspaceDetectionSettledKey(novelWorkspaceCandidateKey)
           setNovelWorkspaceDetecting(false)
           markNovelWorkspaceFileChangesCovered(rootPath)
+          return
         }
 
         try {
-          const files = await loadNovelWorkspaceFiles(
+          const catalog = await loadNovelWorkspaceFiles(
             rootPath,
-            cachedNovelWorkspaceFiles
+            cachedNovelWorkspaceCatalog
               ? undefined
               : (probeFiles) => {
                   if (cancelled) return
                   setNovelWorkspaceRoot(rootPath)
-                  setNovelWorkspaceFilesIfChanged(probeFiles)
+                  setNovelWorkspaceCatalogIfChanged({ files: probeFiles, directories: [] })
                   setNovelWorkspaceDetectionSettledKey(novelWorkspaceCandidateKey)
                   setNovelWorkspaceDetecting(false)
                 },
-            knownWritingWorkspaceRoot || Boolean(cachedNovelWorkspaceFiles)
+            knownWritingWorkspaceRoot || Boolean(cachedNovelWorkspaceCatalog)
           )
           if (cancelled) return
 
-          if (files) {
+          if (catalog) {
             setNovelWorkspaceRoot(rootPath)
-            setNovelWorkspaceFilesIfChanged(files)
+            setNovelWorkspaceCatalogIfChanged(catalog)
             setNovelWorkspaceDetectionSettledKey(novelWorkspaceCandidateKey)
             setNovelWorkspaceDetecting(false)
             markNovelWorkspaceFileChangesCovered(rootPath)
@@ -2209,6 +2087,7 @@ function AppShellContent({
 
       setNovelWorkspaceRoot(null)
       setNovelWorkspaceFiles([])
+      setNovelWorkspaceDirectories([])
       setNovelWorkspaceDetectionSettledKey(novelWorkspaceCandidateKey)
       setNovelWorkspaceDetecting(false)
     }
@@ -2218,7 +2097,7 @@ function AppShellContent({
     return () => {
       cancelled = true
     }
-  }, [activeWritingWorkspaceRoot, loadNovelWorkspaceFiles, markNovelWorkspaceFileChangesCovered, novelWorkspaceCandidateKey, novelWorkspaceCandidateRoots, setNovelWorkspaceFilesIfChanged])
+  }, [activeWritingWorkspaceRoot, loadNovelWorkspaceFiles, markNovelWorkspaceFileChangesCovered, novelWorkspaceCandidateKey, novelWorkspaceCandidateRoots, setNovelWorkspaceCatalogIfChanged])
 
   React.useEffect(() => {
     if (!novelWorkspaceRoot || !latestNovelFileChangesSignature) return
@@ -2232,7 +2111,7 @@ function AppShellContent({
     const sessionWasProcessing = effectiveSessionId
       ? novelSessionProcessingRef.current[effectiveSessionId] === true
       : false
-    if (!sessionWasProcessing && novelWorkspaceFilesCacheRef.current.has(novelWorkspaceRoot)) {
+    if (!sessionWasProcessing && novelWorkspaceCatalogCacheRef.current.has(novelWorkspaceRoot)) {
       markNovelWorkspaceFileChangesCovered(novelWorkspaceRoot, latestNovelFileChangesSignature)
       return
     }
@@ -2511,34 +2390,145 @@ function AppShellContent({
     !selectedNovelDocumentPath || loadedNovelDocumentPath === selectedNovelDocumentPath
   )
 
-  const handleDeleteNovelWorkspaceFile = React.useCallback(async (file: NovelWorkspaceFile) => {
-    if (!novelWorkspaceRoot) return
+  const handleMoveNovelWorkspaceEntry = React.useCallback(async (
+    entry: WorkspaceFileTreeNode,
+    destinationDirectory: WorkspaceFileTreeNode,
+    newName?: string,
+  ) => {
+    if (!novelWorkspaceRoot || entry.type === 'root' || destinationDirectory.type === 'file') return
+    if (isSameOrChildWorkspacePath(selectedNovelFilePath, entry.path) && isCurrentNovelDocumentDirty()) {
+      toast.error(t('writing.moveFile.unsaved', '当前文件有未保存修改，请先保存后再移动或重命名'))
+      return
+    }
 
-    if (file.path === selectedNovelFilePath && isCurrentNovelDocumentDirty()) {
+    try {
+      const result = await window.electronAPI.moveWorkspaceEntry({
+        sourcePath: entry.path,
+        destinationDirectoryPath: destinationDirectory.path,
+        newName,
+      })
+      if (result.sourcePath === result.destinationPath) return
+
+      const destinationName = newName ?? entry.name
+      const destinationRelativePath = destinationDirectory.relativePath
+        ? `${destinationDirectory.relativePath}/${destinationName}`
+        : destinationName
+
+      novelWorkspaceCatalogCacheRef.current.delete(novelWorkspaceRoot)
+      setNovelWorkspaceFiles(previous => previous.map(file => (
+        isSameOrChildWorkspacePath(file.path, result.sourcePath)
+          ? {
+              ...file,
+              path: remapWorkspacePath(file.path, result.sourcePath, result.destinationPath),
+              relativePath: remapWorkspacePath(file.relativePath, entry.relativePath, destinationRelativePath),
+            }
+          : file
+      )))
+      if (entry.type === 'directory') {
+        setNovelWorkspaceDirectories(previous => previous.map(directory => (
+          isSameOrChildWorkspacePath(directory, entry.relativePath)
+            ? remapWorkspacePath(directory, entry.relativePath, destinationRelativePath)
+            : directory
+        )))
+        const sourceFolderId = `writing:folder:${entry.relativePath}`
+        const destinationFolderId = `writing:folder:${destinationRelativePath}`
+        setExpandedFolders(previous => {
+          let changed = false
+          const next = new Set<string>()
+          for (const id of previous) {
+            if (id === sourceFolderId || id.startsWith(`${sourceFolderId}/`)) {
+              next.add(`${destinationFolderId}${id.slice(sourceFolderId.length)}`)
+              changed = true
+            } else {
+              next.add(id)
+            }
+          }
+          return changed ? next : previous
+        })
+      }
+      if (isSameOrChildWorkspacePath(selectedNovelFilePath, result.sourcePath)) {
+        setSelectedNovelFilePath(previous => previous
+          ? remapWorkspacePath(previous, result.sourcePath, result.destinationPath)
+          : previous)
+      }
+
+      await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
+      toast.success(newName
+        ? t('writing.renameFile.success', '已重命名')
+        : t('writing.moveFile.success', '已移动'))
+    } catch (error) {
+      console.error('[AppShell] Failed to move workspace entry:', error)
+      toast.error(newName
+        ? t('writing.renameFile.failed', '重命名失败')
+        : t('writing.moveFile.failed', '移动失败'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }, [
+    isCurrentNovelDocumentDirty,
+    novelWorkspaceRoot,
+    refreshNovelWorkspaceFiles,
+    selectedNovelFilePath,
+    t,
+  ])
+
+  const handleRenameNovelWorkspaceEntry = React.useCallback((entry: WorkspaceFileTreeNode, newName: string) => {
+    if (!novelWorkspaceRoot) return
+    const parentRelativePath = getParentRelativePath(entry.relativePath)
+    const destinationDirectory: WorkspaceFileTreeNode = {
+      id: parentRelativePath ? `writing:folder:${parentRelativePath}` : `writing:project:${activeWorkspaceId}`,
+      name: '',
+      path: joinWorkspacePath(novelWorkspaceRoot, parentRelativePath),
+      relativePath: parentRelativePath,
+      type: parentRelativePath ? 'directory' : 'root',
+      fileCount: 0,
+      children: [],
+    }
+    return handleMoveNovelWorkspaceEntry(entry, destinationDirectory, newName)
+  }, [activeWorkspaceId, handleMoveNovelWorkspaceEntry, novelWorkspaceRoot])
+
+  const handleDeleteNovelWorkspaceEntry = React.useCallback(async (entry: WorkspaceFileTreeNode) => {
+    if (!novelWorkspaceRoot || entry.type === 'root') return
+    if (isSameOrChildWorkspacePath(selectedNovelFilePath, entry.path) && isCurrentNovelDocumentDirty()) {
       toast.error(t('writing.deleteFile.unsaved', '当前文件有未保存修改，请先保存或切换文件'))
       return
     }
 
     const confirmed = window.confirm(t(
-      'writing.deleteFile.confirm',
-      '删除「{{name}}」？此操作无法撤销。',
-      { name: formatNovelWorkspaceFileTitle(file, t) }
+      entry.type === 'directory' ? 'writing.deleteFolder.confirm' : 'writing.deleteFile.confirm',
+      entry.type === 'directory'
+        ? '删除文件夹「{{name}}」及其中全部内容？此操作无法撤销。'
+        : '删除「{{name}}」？此操作无法撤销。',
+      { name: entry.name },
     ))
     if (!confirmed) return
 
     try {
-      await window.electronAPI.deleteFile(file.path)
-      const remainingFiles = novelWorkspaceFiles.filter(entry => entry.path !== file.path)
-      novelWorkspaceFilesCacheRef.current.delete(novelWorkspaceRoot)
+      await window.electronAPI.deleteWorkspaceEntry({
+        path: entry.path,
+        recursive: entry.type === 'directory',
+      })
+      const remainingFiles = novelWorkspaceFiles.filter(file => !isSameOrChildWorkspacePath(file.path, entry.path))
+      novelWorkspaceCatalogCacheRef.current.delete(novelWorkspaceRoot)
       setNovelWorkspaceFiles(remainingFiles)
-      if (selectedNovelFilePath === file.path) {
+      if (entry.type === 'directory') {
+        setNovelWorkspaceDirectories(previous => previous.filter(directory => (
+          !isSameOrChildWorkspacePath(directory, entry.relativePath)
+        )))
+        const folderId = `writing:folder:${entry.relativePath}`
+        setExpandedFolders(previous => {
+          const next = new Set([...previous].filter(id => id !== folderId && !id.startsWith(`${folderId}/`)))
+          return next.size === previous.size ? previous : next
+        })
+      }
+      if (isSameOrChildWorkspacePath(selectedNovelFilePath, entry.path)) {
         setSelectedNovelFilePath(selectDefaultNovelFile(remainingFiles, activeWorkspaceMethodPackId)?.path ?? null)
       }
       await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
-      toast.success(t('writing.deleteFile.success', '已删除文件'))
+      toast.success(t('writing.deleteFile.success', '已删除'))
     } catch (error) {
-      console.error('[AppShell] Failed to delete writing file:', error)
-      toast.error(t('writing.deleteFile.failed', '删除文件失败'), {
+      console.error('[AppShell] Failed to delete workspace entry:', error)
+      toast.error(t('writing.deleteFile.failed', '删除失败'), {
         description: error instanceof Error ? error.message : String(error),
       })
     }
@@ -3336,12 +3326,12 @@ function AppShellContent({
 
   React.useEffect(() => {
     if (!activeWorkspaceId) return
-    loadSkillsForWorkspace(activeWorkspaceId, activeSessionWorkingDirectory).then((loaded) => {
+    loadSkillsForWorkspace(activeWorkspaceId).then((loaded) => {
       setSkills(loaded || [])
     }).catch(err => {
       console.error('[Chat] Failed to load skills:', err)
     })
-  }, [activeWorkspaceId, activeSessionWorkingDirectory])
+  }, [activeWorkspaceId])
 
   // Derive "pinned" (non-removable) filters from the current sessionFilter path.
   // These represent filters that are implicit in the current deeplink/route and
@@ -3477,12 +3467,6 @@ function AppShellContent({
     if (!activeWorkspaceId) return
     storage.set(storage.KEYS.viewFilters, viewFiltersMap, activeWorkspaceId)
   }, [viewFiltersMap, activeWorkspaceId])
-
-  // Persist sidebar section collapsed states (workspace-scoped)
-  React.useEffect(() => {
-    if (!activeWorkspaceId) return
-    storage.set(storage.KEYS.collapsedSidebarItems, [...collapsedItems], activeWorkspaceId)
-  }, [collapsedItems, activeWorkspaceId])
 
   const handleAcceptNovelFileChanges = React.useCallback(async (changes: FileChange[]) => {
     const reviewableChanges = changes.filter(change => !change.error)
@@ -3854,226 +3838,123 @@ function AppShellContent({
     handleNewChat()
   }, [menuNewChatTrigger, handleNewChat])
 
-  const visibleNovelRootDirectories = React.useMemo(
-    () => getNovelWorkspaceVisibleRootDirectories(novelWorkspaceFiles),
-    [novelWorkspaceFiles],
-  )
-  const novelWorkspaceFileTree = React.useMemo(
-    () => buildNovelWorkspaceFileTree(novelWorkspaceFiles, visibleNovelRootDirectories),
-    [novelWorkspaceFiles, visibleNovelRootDirectories],
-  )
-
-  const novelWorkspaceSidebarLinks = React.useMemo((): LeftSidebarItem[] => {
-    if (!showNovelWorkspaceSidebar) return []
-
-    const createMenuTrigger = (menuTitle: string) => (
-      <DropdownMenuTrigger asChild>
-        <span
-          role="button"
-          tabIndex={-1}
-          title={menuTitle}
-          aria-label={menuTitle}
-          className="ml-1 flex h-4 w-4 items-center justify-center rounded-[4px] text-foreground/45 hover:bg-foreground/10 hover:text-foreground data-[state=open]:bg-foreground/10 data-[state=open]:text-foreground"
-          data-no-dnd="true"
-          onPointerDown={(event) => {
-            event.stopPropagation()
-          }}
-          onClick={(event) => {
-            event.stopPropagation()
-          }}
-        >
-          <MoreHorizontal className="h-3 w-3" />
-        </span>
-      </DropdownMenuTrigger>
-    )
-
-    const createNovelWorkspaceRootActions = () => {
-      const menuTitle = t('writing.fileActions.title', '文件操作')
-
-      return (
-        <DropdownMenu>
-          {createMenuTrigger(menuTitle)}
-          <StyledDropdownMenuContent align="end" sideOffset={4} className="min-w-[9.5rem]">
-            <StyledDropdownMenuItem
-              onClick={(event) => {
-                event.stopPropagation()
-                void handleImportNovelFiles('正文')
-              }}
-            >
-              <FileUp className="h-3.5 w-3.5" />
-              {t('writing.importFile.manuscript', '导入正文文件')}
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuItem
-              onClick={(event) => {
-                event.stopPropagation()
-                openNovelCreateFileDialog({
-                  basePath: '正文',
-                  title: t('writing.createFile.manuscript', '新建正文文件'),
-                  placeholder: '07-标题、07-标题.md 或 第一卷/07-标题.txt',
-                  initialValue: '',
-                })
-              }}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              {t('writing.createFile.manuscript', '新建正文文件')}
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuSeparator />
-            <StyledDropdownMenuItem
-              onClick={(event) => {
-                event.stopPropagation()
-                void handleImportNovelFiles('全局')
-              }}
-            >
-              <FileUp className="h-3.5 w-3.5" />
-              {t('writing.importFile.globalInfo', '导入全局信息文件')}
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuItem
-              onClick={(event) => {
-                event.stopPropagation()
-                openNovelCreateFileDialog({
-                  basePath: '全局',
-                  title: t('writing.createFile.globalInfo', '新建全局信息文件'),
-                  placeholder: '角色/主角、世界观/城市.md 或 补充设定.txt',
-                  initialValue: '',
-                })
-              }}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              {t('writing.createFile.globalInfo', '新建全局信息文件')}
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuSeparator />
-            <StyledDropdownMenuItem
-              onClick={(event) => {
-                event.stopPropagation()
-                void handleImportNovelFiles('自由区')
-              }}
-            >
-              <FileUp className="h-3.5 w-3.5" />
-              {t('writing.importFile.freeArea', '导入自由区文件')}
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuItem
-              onClick={(event) => {
-                event.stopPropagation()
-                openNovelCreateFileDialog({
-                  basePath: '自由区',
-                  title: t('writing.createFile.freeArea', '新建自由区文件'),
-                  placeholder: '脑洞、脑洞.md 或 临时/脑洞.txt',
-                  initialValue: '',
-                })
-              }}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              {t('writing.createFile.freeArea', '新建自由区文件')}
-            </StyledDropdownMenuItem>
-          </StyledDropdownMenuContent>
-        </DropdownMenu>
-      )
-    }
-
-    const createNovelWorkspaceFileItemActions = (file: NovelWorkspaceFile) => {
-      const basePath = getNovelFileCreateBasePath(file)
-      const menuTitle = t('writing.fileActions.title', '文件操作')
-
-      return (
-        <DropdownMenu>
-          {createMenuTrigger(menuTitle)}
-          <StyledDropdownMenuContent align="end" sideOffset={4} className="min-w-[10rem]">
-            {basePath ? (
-              <StyledDropdownMenuItem
-                onClick={(event) => {
-                  event.stopPropagation()
-                  openNovelCreateFileDialog({
-                    basePath,
-                    title: t('writing.createFile.nearby', '新建同目录文件'),
-                    placeholder: basePath === '正文'
-                      ? '07-标题、07-标题.md 或 第一卷/07-标题.txt'
-                      : basePath === '自由区'
-                        ? '脑洞、脑洞.md 或 临时/脑洞.txt'
-                        : '角色/主角、世界观/城市.md 或 补充设定.txt',
-                    initialValue: getNearbyNovelCreateInitialValue(file, basePath),
-                  })
-                }}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                {t('writing.createFile.nearby', '新建同目录文件')}
-              </StyledDropdownMenuItem>
-            ) : null}
-            <StyledDropdownMenuItem
-              onClick={(event) => {
-                event.stopPropagation()
-                void handleDeleteNovelWorkspaceFile(file)
-              }}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              {t('writing.deleteFile.title', '删除文件')}
-            </StyledDropdownMenuItem>
-          </StyledDropdownMenuContent>
-        </DropdownMenu>
-      )
-    }
-
-    const projectSidebarId = `writing:project:${activeWorkspaceId ?? novelWorkspaceRoot}`
-    const fileTreeItems = buildNovelWorkspaceFileTreeItems(novelWorkspaceFileTree, {
-      selectedPath: selectedNovelFile?.path,
-      isExpanded,
-      toggleExpanded,
-      onSelectFile: handleSelectNovelFile,
-      renderFileActions: createNovelWorkspaceFileItemActions,
-      hasReviewDot: hasNovelReviewDot,
-      onDismissReviewDot: handleDismissNovelReviewDot,
-      reviewDotTitle: t('writing.review.changedFile', 'Changed file'),
+  const getNovelWorkspaceTreeMenuActions = React.useCallback((
+    entry: WorkspaceFileTreeNode,
+  ): readonly WorkspaceFileTreeMenuAction[] => {
+    const createFileAction = (
+      id: string,
+      basePath: NovelCreateFileBasePath,
+      label: string,
+      placeholder: string,
+      initialValue: string,
+      separatorBefore = false,
+    ): WorkspaceFileTreeMenuAction => ({
+      id,
+      label,
+      icon: <Plus className="h-3.5 w-3.5" />,
+      separatorBefore,
+      onSelect: () => openNovelCreateFileDialog({
+        basePath,
+        title: label,
+        placeholder,
+        initialValue,
+      }),
+    })
+    const importAction = (
+      id: string,
+      basePath: NovelCreateFileBasePath,
+      label: string,
+      initialValue = '',
+      separatorBefore = false,
+    ): WorkspaceFileTreeMenuAction => ({
+      id,
+      label,
+      icon: <FileUp className="h-3.5 w-3.5" />,
+      separatorBefore,
+      onSelect: () => void handleImportNovelFiles(basePath, initialValue),
     })
 
-    return [{
-      id: projectSidebarId,
-      title: activeWorkspace?.name ?? t('writing.workspace'),
-      tooltip: novelWorkspaceRoot,
-      label: String(novelWorkspaceFiles.length),
-      icon: Library,
-      dataTutorial: 'writing-catalog',
-      variant: fileTreeItems.some(item => !('type' in item) && item.variant === 'default') ? 'default' : 'ghost',
-      afterTitle: createNovelWorkspaceRootActions(),
-      expandable: true,
-      expanded: isExpanded(projectSidebarId),
-      onToggle: () => toggleExpanded(projectSidebarId),
-      onClick: () => toggleExpanded(projectSidebarId),
-      items: fileTreeItems,
-    }]
-  }, [
-    activeWorkspace?.name,
-    activeWorkspaceId,
-    handleDeleteNovelWorkspaceFile,
-    handleSelectNovelFile,
-    handleDismissNovelReviewDot,
-    hasNovelReviewDot,
-    handleImportNovelFiles,
-    isExpanded,
-    novelWorkspaceFileTree,
-    novelWorkspaceFiles,
-    novelWorkspaceRoot,
-    openNovelCreateFileDialog,
-    selectedNovelFile?.path,
-    showNovelWorkspaceSidebar,
-    t,
-    toggleExpanded,
-  ])
+    if (entry.type === 'root') {
+      return [
+        importAction('import-manuscript', '正文', t('writing.importFile.manuscript', '导入正文文件')),
+        createFileAction(
+          'create-manuscript',
+          '正文',
+          t('writing.createFile.manuscript', '新建正文文件'),
+          '07-标题、07-标题.md 或 第一卷/07-标题.txt',
+          '',
+        ),
+        importAction('import-global', '全局', t('writing.importFile.globalInfo', '导入全局信息文件'), '', true),
+        createFileAction(
+          'create-global',
+          '全局',
+          t('writing.createFile.globalInfo', '新建全局信息文件'),
+          '角色/主角、世界观/城市.md 或 补充设定.txt',
+          '',
+        ),
+        importAction('import-free', '自由区', t('writing.importFile.freeArea', '导入自由区文件'), '', true),
+        createFileAction(
+          'create-free',
+          '自由区',
+          t('writing.createFile.freeArea', '新建自由区文件'),
+          '脑洞、脑洞.md 或 临时/脑洞.txt',
+          '',
+        ),
+      ]
+    }
 
-  const primarySidebarLinks = React.useMemo(
-    () => {
-      const links = getPrimarySidebarLinks(novelWorkspaceSidebarLinks)
-      return links.length > 0 ? links : (showNovelWorkspacePending || showNovelWorkspaceUnavailable) ? [
-        {
-          id: 'writing:loading',
-          title: t('writing.workspace'),
-          icon: Library,
-          variant: 'default' as const,
-          onClick: () => {},
-        },
-      ] : []
-    },
-    [novelWorkspaceSidebarLinks, showNovelWorkspacePending, showNovelWorkspaceUnavailable, t]
-  )
-  const hasPrimarySidebar = primarySidebarLinks.length > 0
+    if (entry.type === 'file') {
+      const file = { path: entry.path, relativePath: entry.relativePath }
+      const basePath = getNovelFileCreateBasePath(file)
+      if (!basePath) return []
+      return [createFileAction(
+        `create-near:${entry.relativePath}`,
+        basePath,
+        t('writing.createFile.nearby', '新建同目录文件'),
+        basePath === '正文'
+          ? '07-标题、07-标题.md 或 第一卷/07-标题.txt'
+          : basePath === '自由区'
+            ? '脑洞、脑洞.md 或 临时/脑洞.txt'
+            : '角色/主角、世界观/城市.md 或 补充设定.txt',
+        getNearbyNovelCreateInitialValue(file, basePath),
+      )]
+    }
+
+    const target = getNovelFolderCreateTarget(entry.relativePath)
+    if (!target) return []
+    const importLabel = target.basePath === '正文'
+      ? t('writing.importFile.manuscript', '导入正文文件')
+      : target.basePath === '自由区'
+        ? t('writing.importFile.freeArea', '导入自由区文件')
+        : t('writing.importFile.globalInfo', '导入全局信息文件')
+    return [
+      createFileAction(
+        `create-in:${entry.relativePath}`,
+        target.basePath,
+        t('writing.createFile.nearby', '新建同目录文件'),
+        target.basePath === '正文'
+          ? '07-标题、07-标题.md'
+          : target.basePath === '自由区'
+            ? '脑洞、脑洞.md'
+            : '设定、设定.md',
+        target.initialValue,
+      ),
+      importAction(
+        `import-in:${entry.relativePath}`,
+        target.basePath,
+        importLabel,
+        target.initialValue,
+      ),
+    ]
+  }, [handleImportNovelFiles, openNovelCreateFileDialog, t])
+
+  const workspaceFileTreeLabels = React.useMemo(() => ({
+    rename: t('writing.renameFile.title', '重命名'),
+    delete: t('writing.deleteFile.title', '删除'),
+    reviewChanged: t('writing.review.changedFile', 'Changed file'),
+  }), [t])
+
+  const hasPrimarySidebar = showNovelWorkspaceSidebar || showNovelWorkspacePending || showNovelWorkspaceUnavailable
   const showPrimarySidebar = hasPrimarySidebar && showWritingWorkspaceShell
   const activeActivityRailItem = React.useMemo<ActivityRailItemId>(() => {
     if (globalSearchOpen) return 'search'
@@ -4083,141 +3964,10 @@ function AppShellContent({
     return 'writing'
   }, [globalSearchOpen, navState])
 
-  // Unified sidebar items: nav buttons only (agents system removed)
-  type SidebarItem = {
-    id: string
-    type: 'nav'
-    action?: () => void
-  }
-
-  const unifiedSidebarItems = React.useMemo((): SidebarItem[] => {
-    const result: SidebarItem[] = []
-
-    if (primarySidebarLinks.length > 0) {
-      const rootItem = primarySidebarLinks[0]
-      result.push({ id: 'nav:writingCatalog', type: 'nav', action: rootItem && !('type' in rootItem) ? rootItem.onClick : undefined })
-      for (const item of primarySidebarLinks) {
-        if ('items' in item && item.items) {
-          for (const section of item.items) {
-            if ('type' in section) continue
-            result.push({ id: section.id, type: 'nav', action: section.onClick })
-            for (const child of section.items ?? []) {
-              if ('type' in child) continue
-              result.push({ id: child.id, type: 'nav', action: child.onClick })
-            }
-          }
-        }
-      }
-      return result
-    }
-
-    return result
-  }, [primarySidebarLinks])
-
-  // Toggle folder expanded state
-  const handleToggleFolder = React.useCallback((path: string) => {
-    setExpandedFolders(prev => {
-      const next = new Set(prev)
-      if (next.has(path)) {
-        next.delete(path)
-      } else {
-        next.add(path)
-      }
-      return next
-    })
+  const handleSidebarFocus = React.useCallback((event: React.FocusEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return
+    requestAnimationFrame(() => workspaceFileTreeRef.current?.focusSelected())
   }, [])
-
-  // Get props for any sidebar item (unified roving tabindex pattern)
-  const getSidebarItemProps = React.useCallback((id: string) => ({
-    tabIndex: focusedSidebarItemId === id ? 0 : -1,
-    'data-focused': focusedSidebarItemId === id,
-    ref: (el: HTMLElement | null) => {
-      if (el) {
-        sidebarItemRefs.current.set(id, el)
-      } else {
-        sidebarItemRefs.current.delete(id)
-      }
-    },
-  }), [focusedSidebarItemId])
-
-  // Unified sidebar keyboard navigation
-  const handleSidebarKeyDown = React.useCallback((e: React.KeyboardEvent) => {
-    if (!sidebarFocused || unifiedSidebarItems.length === 0) return
-
-    const currentIndex = unifiedSidebarItems.findIndex(item => item.id === focusedSidebarItemId)
-    const currentItem = currentIndex >= 0 ? unifiedSidebarItems[currentIndex] : null
-
-    switch (e.key) {
-      case 'ArrowDown': {
-        e.preventDefault()
-        const nextIndex = currentIndex < unifiedSidebarItems.length - 1 ? currentIndex + 1 : 0
-        const nextItem = unifiedSidebarItems[nextIndex]
-        setFocusedSidebarItemId(nextItem.id)
-        sidebarItemRefs.current.get(nextItem.id)?.focus()
-        break
-      }
-      case 'ArrowUp': {
-        e.preventDefault()
-        const prevIndex = currentIndex > 0 ? currentIndex - 1 : unifiedSidebarItems.length - 1
-        const prevItem = unifiedSidebarItems[prevIndex]
-        setFocusedSidebarItemId(prevItem.id)
-        sidebarItemRefs.current.get(prevItem.id)?.focus()
-        break
-      }
-      case 'ArrowLeft': {
-        e.preventDefault()
-        // At boundary - do nothing (Left doesn't change zones from sidebar)
-        break
-      }
-      case 'ArrowRight': {
-        e.preventDefault()
-        // Move to next zone (navigator) - keyboard navigation
-        focusZone('navigator', { intent: 'keyboard' })
-        break
-      }
-      case 'Enter':
-      case ' ': {
-        e.preventDefault()
-        if (currentItem?.type === 'nav' && currentItem.action) {
-          currentItem.action()
-        }
-        break
-      }
-      case 'Home': {
-        e.preventDefault()
-        if (unifiedSidebarItems.length > 0) {
-          const firstItem = unifiedSidebarItems[0]
-          setFocusedSidebarItemId(firstItem.id)
-          sidebarItemRefs.current.get(firstItem.id)?.focus()
-        }
-        break
-      }
-      case 'End': {
-        e.preventDefault()
-        if (unifiedSidebarItems.length > 0) {
-          const lastItem = unifiedSidebarItems[unifiedSidebarItems.length - 1]
-          setFocusedSidebarItemId(lastItem.id)
-          sidebarItemRefs.current.get(lastItem.id)?.focus()
-        }
-        break
-      }
-    }
-  }, [sidebarFocused, unifiedSidebarItems, focusedSidebarItemId, focusZone])
-
-  // Focus sidebar item when sidebar zone gains focus
-  React.useEffect(() => {
-    if (sidebarFocused && unifiedSidebarItems.length > 0) {
-      // Set focused item if not already set
-      const itemId = focusedSidebarItemId || unifiedSidebarItems[0].id
-      if (!focusedSidebarItemId) {
-        setFocusedSidebarItemId(itemId)
-      }
-      // Actually focus the DOM element
-      requestAnimationFrame(() => {
-        sidebarItemRefs.current.get(itemId)?.focus()
-      })
-    }
-  }, [sidebarFocused, focusedSidebarItemId, unifiedSidebarItems])
 
   // Get title based on navigation state
   const listTitle = React.useMemo(() => {
@@ -4307,22 +4057,45 @@ function AppShellContent({
               className="h-full font-sans relative"
               data-focus-zone="sidebar"
               tabIndex={sidebarFocused ? 0 : -1}
-              onKeyDown={handleSidebarKeyDown}
+              onFocus={handleSidebarFocus}
             >
             <div className="flex h-full flex-col select-none">
               {/* Sidebar Top Section */}
               <div className="flex-1 flex flex-col min-h-0">
-                {/* Primary Nav: workspace directory catalog */}
-                {/* pb-4 provides clearance so the last item scrolls above the mask-fade-bottom gradient */}
-                <div className="flex-1 overflow-y-auto min-h-0 mask-fade-bottom pb-4">
-                <LeftSidebar
-                  isCollapsed={false}
-                  getItemProps={getSidebarItemProps}
-                  focusedItemId={focusedSidebarItemId}
-                  links={primarySidebarLinks}
-                />
-                {/* Agent Tree: Hierarchical list of agents */}
-                {/* Agents section removed */}
+                <div className="flex-1 min-h-0 mask-fade-bottom">
+                {showNovelWorkspaceSidebar && novelWorkspaceRoot && activeWorkspaceId ? (
+                  <React.Suspense fallback={(
+                    <div className="flex h-full items-center justify-center px-4 text-xs text-muted-foreground">
+                      {t('writing.loadingWorkspace', '正在加载项目目录...')}
+                    </div>
+                  )}>
+                    <WorkspaceFileTree
+                      ref={workspaceFileTreeRef}
+                      workspaceId={activeWorkspaceId}
+                      workspaceName={activeWorkspace?.name ?? t('writing.workspace')}
+                      rootPath={novelWorkspaceRoot}
+                      files={novelWorkspaceFiles}
+                      directories={novelWorkspaceDirectories}
+                      selectedPath={selectedNovelFile?.path}
+                      expandedIds={expandedFolders}
+                      labels={workspaceFileTreeLabels}
+                      onExpandedChange={handleWorkspaceTreeExpandedChange}
+                      onSelectFile={handleSelectNovelFile}
+                      onMoveEntry={handleMoveNovelWorkspaceEntry}
+                      onRenameEntry={handleRenameNovelWorkspaceEntry}
+                      onDeleteEntry={handleDeleteNovelWorkspaceEntry}
+                      getMenuActions={getNovelWorkspaceTreeMenuActions}
+                      hasReviewDot={hasNovelReviewDot}
+                      onDismissReviewDot={handleDismissNovelReviewDot}
+                    />
+                  </React.Suspense>
+                ) : (
+                  <div className="flex h-full items-center justify-center px-4 text-xs text-muted-foreground">
+                    {showNovelWorkspaceUnavailable
+                      ? t('writing.workspaceUnavailable', '未检测到项目目录')
+                      : t('writing.loadingWorkspace', '正在加载项目目录...')}
+                  </div>
+                )}
                 </div>
               </div>
 
