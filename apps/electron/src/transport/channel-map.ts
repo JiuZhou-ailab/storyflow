@@ -77,6 +77,8 @@ export const CHANNEL_MAP = {
   readFile: invoke(RPC_CHANNELS.file.READ),
   writeFile: invoke(RPC_CHANNELS.file.WRITE),
   deleteFile: invoke(RPC_CHANNELS.file.DELETE),
+  moveWorkspaceEntry: invoke(RPC_CHANNELS.file.MOVE_ENTRY),
+  deleteWorkspaceEntry: invoke(RPC_CHANNELS.file.DELETE_ENTRY),
   createDirectory: invoke(RPC_CHANNELS.file.CREATE_DIRECTORY),
   readFileDataUrl: invoke(RPC_CHANNELS.file.READ_DATA_URL),
   readFilePreviewDataUrl: invoke(RPC_CHANNELS.file.READ_PREVIEW_DATA_URL),

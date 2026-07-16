@@ -3,7 +3,7 @@
 // pos: Guards file CRUD/search from escaping the active workspace id
 
 import { existsSync, rmSync } from 'node:fs'
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -123,6 +123,25 @@ describe('workspace-scoped file RPCs', () => {
       await expect(searchFiles(ctx, outsideRoot, '', { maxResults: 10 })).rejects.toThrow('outside current workspace')
       await expect(searchFilesBatch(ctx, outsideRoot, [{ query: '' }])).rejects.toThrow('outside current workspace')
       await expect(listWorkspaceFiles(ctx, outsideRoot, ['正文'])).rejects.toThrow('outside current workspace')
+    } finally {
+      rmSync(workspaceRootPath, { recursive: true, force: true })
+      rmSync(outsideRoot, { recursive: true, force: true })
+      workspaceRootPath = ''
+    }
+  })
+
+  it('rejects writes to missing files through a workspace symlink that escapes the root', async () => {
+    workspaceRootPath = await mkdtemp(join(tmpdir(), 'craft-workspace-symlink-root-'))
+    const outsideRoot = await mkdtemp(join(tmpdir(), 'craft-workspace-symlink-outside-'))
+    const linkedDirectory = join(workspaceRootPath, 'linked-outside')
+    const escapedTarget = join(linkedDirectory, 'created.md')
+    const { writeTextFile, ctx } = createFileHarness()
+
+    try {
+      await symlink(outsideRoot, linkedDirectory, 'dir')
+
+      await expect(writeTextFile(ctx, escapedTarget, 'bad')).rejects.toThrow('outside current workspace')
+      expect(existsSync(join(outsideRoot, 'created.md'))).toBe(false)
     } finally {
       rmSync(workspaceRootPath, { recursive: true, force: true })
       rmSync(outsideRoot, { recursive: true, force: true })

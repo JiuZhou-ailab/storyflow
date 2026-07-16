@@ -229,6 +229,41 @@ describe('file write RPC registration', () => {
     }
   })
 
+  it('lists the real project tree when no semantic roots are supplied', async () => {
+    const { listWorkspaceFiles, ctx } = createFileHarness()
+    const root = await mkdtemp(join(tmpdir(), 'craft-project-tree-'))
+
+    try {
+      await mkdir(join(root, '自定义目录', '空目录'), { recursive: true })
+      await mkdir(join(root, '.craft-agent'), { recursive: true })
+      await mkdir(join(root, 'build'), { recursive: true })
+      await writeFile(join(root, 'README.md'), 'project')
+      await writeFile(join(root, '人物.md'), 'characters')
+      await writeFile(join(root, '自定义目录', '线索.md'), 'clue')
+      await writeFile(join(root, '.craft-agent', 'config.json'), '{}')
+      await writeFile(join(root, 'build', 'generated.js'), 'generated')
+
+      const results = await listWorkspaceFiles(ctx, root, []) as Array<{
+        name: string
+        path: string
+        relativePath: string
+        type: string
+      }>
+
+      expect(results).toEqual([
+        { name: 'README.md', path: join(root, 'README.md'), relativePath: 'README.md', type: 'file' },
+        { name: '人物.md', path: join(root, '人物.md'), relativePath: '人物.md', type: 'file' },
+        { name: '自定义目录', path: join(root, '自定义目录'), relativePath: '自定义目录', type: 'directory' },
+        { name: '空目录', path: join(root, '自定义目录', '空目录'), relativePath: '自定义目录/空目录', type: 'directory' },
+        { name: '线索.md', path: join(root, '自定义目录', '线索.md'), relativePath: '自定义目录/线索.md', type: 'file' },
+      ])
+      expect(results.some(result => result.relativePath.startsWith('.craft-agent/'))).toBe(false)
+      expect(results.some(result => result.relativePath.startsWith('build/'))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('creates missing parent directories before writing text files', async () => {
     const { writeFile, ctx } = createFileHarness()
     const root = await mkdtemp(join(tmpdir(), 'craft-file-write-'))

@@ -3,7 +3,7 @@
 // pos: Server-side filesystem boundary for renderer and remote clients
 
 import { readFile, writeFile, unlink, mkdir, readdir, stat } from 'fs/promises'
-import { isAbsolute, join, resolve, dirname, parse as parsePath, relative } from 'path'
+import { isAbsolute, join, resolve, dirname, parse as parsePath } from 'path'
 import { homedir } from 'os'
 import { validatePathFormat } from '../../utils/path-validation'
 import { randomUUID } from 'crypto'
@@ -28,8 +28,10 @@ import { requestClientOpenFileDialog } from '@craft-agent/server-core/transport'
 import {
   resolveContextWorkspaceId,
   validateWorkspaceFilePath,
+  validateWorkspaceMutationPath,
   validateWorkspaceSearchBasePath,
 } from './file-workspace-scope'
+import { notifyConfigWatcherForWrite } from './workspace-file-effects'
 
 export const HANDLED_CHANNELS = [
   RPC_CHANNELS.file.READ,
@@ -130,18 +132,6 @@ function resolveFileSearchMaxResults(options?: FileSearchOptions): number {
   if (typeof requested !== 'number' || !Number.isFinite(requested)) return FILE_SEARCH_MAX_RESULTS
 
   return Math.min(Math.max(1, Math.floor(requested)), FILE_SEARCH_BATCH_MAX_ENTRIES)
-}
-
-function notifyConfigWatcherForWrite(deps: HandlerDeps, workspaceId: string | null | undefined, safePath: string): void {
-  if (!workspaceId) return
-
-  const workspace = getWorkspaceByNameOrId(workspaceId)
-  if (!workspace) return
-
-  const relativePath = relative(workspace.rootPath, safePath).replace(/\\/g, '/')
-  if (relativePath === 'automations.json') {
-    deps.sessionManager.notifyConfigFileChange(workspace.rootPath, relativePath)
-  }
 }
 
 function isPathInsideRoot(path: string, rootPath: string): boolean {
@@ -262,15 +252,21 @@ async function collectWorkspaceFileList(
   const coveredRoots: string[] = []
   const resolvedBasePath = resolve(basePath).replace(/\\/g, '/').replace(/\/+$/, '')
 
-  for (const rawRootPath of rootPaths.slice(0, FILE_LIST_MAX_ROOTS)) {
+  const requestedRoots = rootPaths.length > 0
+    ? rootPaths.slice(0, FILE_LIST_MAX_ROOTS)
+    : ['']
+
+  for (const rawRootPath of requestedRoots) {
     if (entries.length >= maxEntries) break
 
-    const normalizedRoot = normalizeSearchPathQuery(rawRootPath)
-    if (!normalizedRoot) continue
+    const normalizedRoot = rawRootPath === '' ? '' : normalizeSearchPathQuery(rawRootPath)
+    if (normalizedRoot === null) continue
     if (coveredRoots.some(root => normalizedRoot === root || normalizedRoot.startsWith(`${root}/`))) continue
     coveredRoots.push(normalizedRoot)
 
-    const rootPath = resolve(basePath, normalizedRoot).replace(/\\/g, '/')
+    const rootPath = normalizedRoot
+      ? resolve(basePath, normalizedRoot).replace(/\\/g, '/')
+      : resolvedBasePath
     if (!isPathInsideRoot(rootPath, resolvedBasePath)) continue
 
     let rootStat: Awaited<ReturnType<typeof stat>>
@@ -313,11 +309,21 @@ async function collectWorkspaceFileList(
           if (name.startsWith('.') || FILE_SEARCH_SKIP_DIRS.has(name)) continue
 
           const childRelativeToRoot = relDir ? `${relDir}/${name}` : name
-          const relativePath = `${normalizedRoot}/${childRelativeToRoot}`
+          const relativePath = normalizedRoot
+            ? `${normalizedRoot}/${childRelativeToRoot}`
+            : childRelativeToRoot
           const isDir = entry.isDirectory()
 
           if (isDir) {
             nextQueue.push(childRelativeToRoot)
+            if (normalizedRoot === '') {
+              pushFileListEntry(entries, seenPaths, {
+                name,
+                path: join(rootPath, childRelativeToRoot),
+                type: 'directory',
+                relativePath,
+              })
+            }
             continue
           }
 
@@ -512,7 +518,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
         throw new Error('File content must be a string')
       }
 
-      const safePath = await validateWorkspaceFilePath(ctx, deps, path)
+      const safePath = await validateWorkspaceMutationPath(ctx, deps, path)
       const parsedPath = parsePath(safePath)
       writeSpan.setMetadata('file', parsedPath.base)
       writeSpan.setMetadata('extension', parsedPath.ext || null)
@@ -536,7 +542,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
   server.handle(RPC_CHANNELS.file.DELETE, async (ctx, path: string) => {
     try {
       const workspaceId = resolveContextWorkspaceId(ctx, deps)
-      const safePath = await validateWorkspaceFilePath(ctx, deps, path)
+      const safePath = await validateWorkspaceMutationPath(ctx, deps, path)
       await unlink(safePath)
       notifyConfigWatcherForWrite(deps, workspaceId, safePath)
     } catch (error) {
@@ -548,7 +554,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
 
   server.handle(RPC_CHANNELS.file.CREATE_DIRECTORY, async (ctx, path: string) => {
     try {
-      const safePath = await validateWorkspaceFilePath(ctx, deps, path)
+      const safePath = await validateWorkspaceMutationPath(ctx, deps, path)
       await mkdir(safePath, { recursive: true })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
@@ -1048,8 +1054,8 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
     }
   })
 
-  // Purpose-built workspace file listing for known project roots. Unlike search,
-  // this does not build fuzzy snapshots or query-match unknown directories.
+  // Purpose-built workspace listing. Passing no roots lists the real project tree
+  // (files plus directories); named roots preserve the legacy file-only fallback.
   server.handle(RPC_CHANNELS.fs.LIST_FILES, async (ctx, basePath: string, rootPaths: string[]): Promise<FileSearchEntry[]> => {
     const safeRootPaths = Array.isArray(rootPaths) ? rootPaths.slice(0, FILE_LIST_MAX_ROOTS) : []
     deps.platform.logger.debug('[FS_LIST_FILES] called:', basePath, safeRootPaths.length)

@@ -266,6 +266,10 @@ import type {
   FileSearchBatchRequest,
   FileSearchBatchResult,
   FileSearchOptions,
+  MoveWorkspaceEntryInput,
+  MoveWorkspaceEntryResult,
+  DeleteWorkspaceEntryInput,
+  DeleteWorkspaceEntryResult,
   SessionSearchResult,
   LlmConnectionSetup,
   TestLlmConnectionParams,
@@ -393,6 +397,8 @@ export interface ElectronAPI {
   readFile(path: string): Promise<string>
   writeFile(path: string, content: string): Promise<void>
   deleteFile(path: string): Promise<void>
+  moveWorkspaceEntry(input: MoveWorkspaceEntryInput): Promise<MoveWorkspaceEntryResult>
+  deleteWorkspaceEntry(input: DeleteWorkspaceEntryInput): Promise<DeleteWorkspaceEntryResult>
   createDirectory(path: string): Promise<void>
   /** Read a file as binary data (Uint8Array) */
   readFileBinary(path: string): Promise<Uint8Array>

@@ -435,6 +435,28 @@ export interface FileSearchBatchResult {
   results: FileSearchResult[]
 }
 
+export interface MoveWorkspaceEntryInput {
+  sourcePath: string
+  destinationDirectoryPath: string
+  newName?: string
+}
+
+export interface MoveWorkspaceEntryResult {
+  sourcePath: string
+  destinationPath: string
+  type: 'file' | 'directory'
+}
+
+export interface DeleteWorkspaceEntryInput {
+  path: string
+  recursive?: boolean
+}
+
+export interface DeleteWorkspaceEntryResult {
+  path: string
+  type: 'file' | 'directory'
+}
+
 // ---------------------------------------------------------------------------
 // LLM connection types
 // ---------------------------------------------------------------------------

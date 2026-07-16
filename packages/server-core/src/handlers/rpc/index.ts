@@ -4,6 +4,7 @@ import type { HandlerDeps } from '../handler-deps'
 import { registerAuthHandlers } from './auth'
 import { registerAutomationsHandlers } from './automations'
 import { registerFilesHandlers } from './files'
+import { registerWorkspaceFileMutationHandlers } from './workspace-file-mutations'
 import { registerLabelsHandlers } from './labels'
 import { registerLlmConnectionsHandlers } from './llm-connections'
 import { registerOAuthHandlers } from './oauth'
@@ -32,6 +33,7 @@ export function registerCoreRpcHandlers(
   registerAuthHandlers(server, deps)
   registerAutomationsHandlers(server, deps)
   registerFilesHandlers(server, deps)
+  registerWorkspaceFileMutationHandlers(server, deps)
   registerLabelsHandlers(server, deps)
   registerLlmConnectionsHandlers(server, deps)
   registerOAuthHandlers(server, deps)
