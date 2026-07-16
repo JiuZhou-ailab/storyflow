@@ -890,6 +890,12 @@ export interface SessionsNavigationState {
   rightSidebar?: RightSidebarPanel
 }
 
+/** Primary project file tree and document editor surface. */
+export interface WritingNavigationState {
+  navigator: 'writing'
+  rightSidebar?: RightSidebarPanel
+}
+
 /**
  * Source type filter for sources navigation
  */
@@ -948,11 +954,16 @@ export interface AutomationsNavigationState {
  * Unified navigation state
  */
 export type NavigationState =
+  | WritingNavigationState
   | SessionsNavigationState
   | SourcesNavigationState
   | SettingsNavigationState
   | SkillsNavigationState
   | AutomationsNavigationState
+
+export const isWritingNavigation = (
+  state: NavigationState
+): state is WritingNavigationState => state.navigator === 'writing'
 
 export const isSessionsNavigation = (
   state: NavigationState
@@ -975,12 +986,11 @@ export const isAutomationsNavigation = (
 ): state is AutomationsNavigationState => state.navigator === 'automations'
 
 export const DEFAULT_NAVIGATION_STATE: NavigationState = {
-  navigator: 'sessions',
-  filter: { kind: 'allSessions' },
-  details: null,
+  navigator: 'writing',
 }
 
 export const getNavigationStateKey = (state: NavigationState): string => {
+  if (state.navigator === 'writing') return 'writing'
   if (state.navigator === 'sources') {
     if (state.details) {
       return `sources/source/${state.details.sourceSlug}`

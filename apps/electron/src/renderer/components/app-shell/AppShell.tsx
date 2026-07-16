@@ -71,7 +71,7 @@ import {
   springTransition as collapsibleSpring,
 } from "@/components/ui/collapsible"
 import { SessionList, type ChatGroupingMode } from "./SessionList"
-import { MainContentPanel } from "./MainContentPanel"
+import { MainContentPanel, WritingPrimaryContentReadyContext } from "./MainContentPanel"
 import { PanelStackContainer } from "./PanelStackContainer"
 import type { ChatDisplayHandle } from "./ChatDisplay"
 import { NovelDocumentEditorPanel, type NovelDocumentEditorPanelHandle, type NovelSelectionAiRequest } from "@/components/writing/NovelDocumentEditorPanel"
@@ -114,6 +114,7 @@ import { navigate, routes } from "@/lib/navigate"
 import {
   useNavigationActions,
   useNavigationState,
+  isWritingNavigation,
   isSessionsNavigation,
   isSourcesNavigation,
   isSettingsNavigation,
@@ -2265,15 +2266,17 @@ function AppShellContent({
   const novelWorkspaceRootMatchesCandidates = !!novelWorkspaceRoot && novelWorkspaceCandidateRootSet.has(novelWorkspaceRoot)
   const hasStaleNovelWorkspaceRoot = !!novelWorkspaceRoot && novelWorkspaceCandidateRoots.length > 0 && !novelWorkspaceRootMatchesCandidates
   const hasUnsettledNovelWorkspaceCandidates = novelWorkspaceCandidateRoots.length > 0 && novelWorkspaceDetectionSettledKey !== novelWorkspaceCandidateKey
+  const showWritingWorkspaceShell = isWritingNavigation(navState)
+    || (isSessionsNavigation(navState) && activeWritingWorkspaceRoot !== null)
   const showNovelWorkspaceSidebar = novelWorkspaceRootMatchesCandidates
-  const showNovelDocumentNavigator = isSessionsNavigation(navState) && showNovelWorkspaceSidebar
-  const showNovelWorkspacePending = isSessionsNavigation(navState) && (
+  const showNovelDocumentNavigator = showWritingWorkspaceShell && showNovelWorkspaceSidebar
+  const showNovelWorkspacePending = showWritingWorkspaceShell && (
     novelWorkspaceDetecting
     || hasStaleNovelWorkspaceRoot
     || (!showNovelWorkspaceSidebar && hasUnsettledNovelWorkspaceCandidates)
   )
-  const showNovelWorkspaceUnavailable = isSessionsNavigation(navState)
-    && novelWorkspaceCandidateRoots.length > 0
+  const showNovelWorkspaceUnavailable = showWritingWorkspaceShell
+    && activeWritingWorkspaceRoot !== null
     && !showNovelWorkspaceSidebar
     && !showNovelWorkspacePending
   const reviewableNovelFileChanges = React.useMemo(
@@ -2344,6 +2347,7 @@ function AppShellContent({
   const savedNovelDocumentChangeVersionRef = React.useRef(0)
   const novelDocumentChangeVersionFlushRef = React.useRef<number | null>(null)
   const [novelDocumentLoading, setNovelDocumentLoading] = React.useState(false)
+  const [loadedNovelDocumentPath, setLoadedNovelDocumentPath] = React.useState<string | null>(null)
   const [novelDocumentSaving, setNovelDocumentSaving] = React.useState(false)
   const [novelDocumentError, setNovelDocumentError] = React.useState<string | null>(null)
   const [novelExportDialogOpen, setNovelExportDialogOpen] = React.useState(false)
@@ -2433,6 +2437,7 @@ function AppShellContent({
     if (!selectedNovelDocumentPath) {
       replaceNovelDocumentContent('')
       setNovelDocumentLoading(false)
+      setLoadedNovelDocumentPath(null)
       setNovelDocumentError(null)
       return
     }
@@ -2440,6 +2445,7 @@ function AppShellContent({
     let cancelled = false
     const readStartedAt = performance.now()
     setNovelDocumentLoading(true)
+    setLoadedNovelDocumentPath(null)
     setNovelDocumentError(null)
 
     window.electronAPI.readFile(selectedNovelDocumentPath)
@@ -2470,6 +2476,7 @@ function AppShellContent({
       .finally(() => {
         if (!cancelled) {
           setNovelDocumentLoading(false)
+          setLoadedNovelDocumentPath(selectedNovelDocumentPath)
 
           const switchStart = novelDocumentSwitchStartRef.current
           if (switchStart?.filePath === selectedNovelDocumentPath) {
@@ -2499,6 +2506,9 @@ function AppShellContent({
   const novelDocumentDirty = !!selectedNovelFile && (
     novelDocumentContent !== savedNovelDocumentContent
     || novelDocumentChangeVersion !== savedNovelDocumentChangeVersion
+  )
+  const writingPrimaryContentReady = showNovelWorkspaceSidebar && (
+    !selectedNovelDocumentPath || loadedNovelDocumentPath === selectedNovelDocumentPath
   )
 
   const handleDeleteNovelWorkspaceFile = React.useCallback(async (file: NovelWorkspaceFile) => {
@@ -2706,13 +2716,13 @@ function AppShellContent({
     }
   }, [flushNovelDocumentChangeVersion, getCurrentNovelDocumentContent, isCurrentNovelDocumentDirty, markSavedNovelDocumentChangeVersion, maybeCreateNovelAutoVersion, novelDocumentContent, savedNovelDocumentContent, selectedNovelDocumentPath, t])
 
-  const handleAllSessionsClick = useCallback(() => {
-    navigate(routes.view.allSessions())
+  const handleWritingWorkspaceClick = useCallback(() => {
+    navigate(routes.view.writing())
   }, [])
 
   const handleSelectNovelFile = React.useCallback(async (file: NovelWorkspaceFile) => {
     if (file.path === selectedNovelFilePath) {
-      handleAllSessionsClick()
+      handleWritingWorkspaceClick()
       return
     }
 
@@ -2736,8 +2746,8 @@ function AppShellContent({
       phase: 'select',
       durationMs: performance.now() - switchStartedAt,
     })
-    handleAllSessionsClick()
-  }, [ensureNovelDocumentSaved, handleAllSessionsClick, selectedNovelFilePath])
+    handleWritingWorkspaceClick()
+  }, [ensureNovelDocumentSaved, handleWritingWorkspaceClick, selectedNovelFilePath])
 
   const handleSelectNovelFileByPath = React.useCallback(async (filePath: string | null) => {
     if (!filePath) return
@@ -4064,7 +4074,7 @@ function AppShellContent({
     [novelWorkspaceSidebarLinks, showNovelWorkspacePending, showNovelWorkspaceUnavailable, t]
   )
   const hasPrimarySidebar = primarySidebarLinks.length > 0
-  const showPrimarySidebar = hasPrimarySidebar && isSessionsNavigation(navState)
+  const showPrimarySidebar = hasPrimarySidebar && showWritingWorkspaceShell
   const activeActivityRailItem = React.useMemo<ActivityRailItemId>(() => {
     if (globalSearchOpen) return 'search'
     if (isSourcesNavigation(navState)) return 'sources'
@@ -4273,7 +4283,7 @@ function AppShellContent({
           <ActivityRail
             activeItem={activeActivityRailItem}
             onOpenProjectHub={onOpenProjectHub}
-            onOpenWritingWorkspace={handleAllSessionsClick}
+            onOpenWritingWorkspace={handleWritingWorkspaceClick}
             onOpenSources={handleSourcesClick}
             onOpenSkills={handleSkillsClick}
             onOpenSearch={() => setGlobalSearchOpen(true)}
@@ -4288,6 +4298,7 @@ function AppShellContent({
           />
         ) : null}
 
+        <WritingPrimaryContentReadyContext.Provider value={writingPrimaryContentReady}>
         <PanelStackContainer
           sidebarSlot={
             <div
@@ -5169,6 +5180,7 @@ function AppShellContent({
           isResizing={!!isResizing}
           hidePanelCloseButton={showPrimarySidebar}
         />
+        </WritingPrimaryContentReadyContext.Provider>
 
         {/* Sidebar Resize Handle (absolute, hidden when auto-compacted) */}
         {!effectiveSidebarAndNavigatorHidden && showPrimarySidebar && (

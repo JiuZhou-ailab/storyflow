@@ -8,6 +8,7 @@ interface SemanticHistoryKeyInput {
 interface InitialRestoreGateInput {
   isReady: boolean
   isSessionsReady: boolean
+  requiresSessions: boolean
   workspaceId: string | null
   initialRouteRestored: boolean
 }
@@ -38,8 +39,12 @@ export function buildSemanticHistoryKey({
 export function canRunInitialRestore({
   isReady,
   isSessionsReady,
+  requiresSessions,
   workspaceId,
   initialRouteRestored,
 }: InitialRestoreGateInput): boolean {
-  return isReady && isSessionsReady && !!workspaceId && !initialRouteRestored
+  return isReady
+    && (!requiresSessions || isSessionsReady)
+    && !!workspaceId
+    && !initialRouteRestored
 }

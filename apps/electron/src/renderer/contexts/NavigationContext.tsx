@@ -64,6 +64,7 @@ import type {
 } from '../../shared/types'
 import {
   isSessionsNavigation,
+  isWritingNavigation,
   isSourcesNavigation,
   isSettingsNavigation,
   isSkillsNavigation,
@@ -91,7 +92,7 @@ export type { Route }
 
 // Re-export navigation state types for consumers
 export type { NavigationState, SessionFilter }
-export { isSessionsNavigation, isSourcesNavigation, isSettingsNavigation, isSkillsNavigation, isAutomationsNavigation }
+export { isWritingNavigation, isSessionsNavigation, isSourcesNavigation, isSettingsNavigation, isSkillsNavigation, isAutomationsNavigation }
 
 // =============================================================================
 // Context
@@ -1009,7 +1010,7 @@ export function NavigationProvider({
   const previousWorkspaceSlugRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!workspaceId || !workspaceSlug || !isSessionsReady) return
+    if (!workspaceId || !workspaceSlug) return
 
     if (previousWorkspaceSlugRef.current === null) {
       // First mount — initial route restoration handles it
@@ -1018,6 +1019,8 @@ export function NavigationProvider({
     }
 
     if (previousWorkspaceSlugRef.current === workspaceSlug) return
+
+    if (isPopstateSwitchRef.current && !isSessionsReady) return
     previousWorkspaceSlugRef.current = workspaceSlug
 
     // Suppress pushState during reconciliation
@@ -1030,20 +1033,15 @@ export function NavigationProvider({
       lastSemanticHistoryKeyRef.current = getSemanticHistoryKey()
     } else {
       // UI-triggered: load stored URL for the new workspace, push history entry
-      const savedSearch = storage.get<string>(storage.KEYS.workspaceUrl, '', workspaceSlug)
-
       const url = new URL(window.location.href)
-      if (savedSearch) {
-        // Replace all params with the saved workspace's URL
-        url.search = savedSearch
-      } else {
-        // No saved state — default to allSessions
-        for (const key of [...url.searchParams.keys()]) {
-          url.searchParams.delete(key)
-        }
-        url.searchParams.set('ws', workspaceSlug)
-        url.searchParams.set('route', 'allSessions')
+      // Opening a project is a product-level navigation event. It always lands
+      // on the writing surface; session history restoration is an independent
+      // Agent concern and must not take ownership of the project entry route.
+      for (const key of [...url.searchParams.keys()]) {
+        url.searchParams.delete(key)
       }
+      url.searchParams.set('ws', workspaceSlug)
+      url.searchParams.set('route', 'writing')
 
       // Push a new history entry for the workspace switch
       const seq = nextHistorySeqRef.current++
@@ -1070,9 +1068,19 @@ export function NavigationProvider({
   // =========================================================================
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const route = params.get('route')
+    const panels = params.get('panels')
+    const routePrefix = route?.split('/')[0]
+    const sessionRoutePrefixes = new Set(['allSessions', 'flagged', 'archived', 'state', 'label', 'view'])
+    const requiresSessions = Boolean(
+      panels?.includes('/session/')
+      || (routePrefix && sessionRoutePrefixes.has(routePrefix) && route !== 'allSessions')
+    )
     if (!canRunInitialRestore({
       isReady,
       isSessionsReady,
+      requiresSessions,
       workspaceId,
       initialRouteRestored: initialRouteRestoredRef.current,
     })) return
@@ -1081,15 +1089,13 @@ export function NavigationProvider({
     // Suppress pushState during initial restoration
     suppressPushRef.current = true
 
-    const params = new URLSearchParams(window.location.search)
-
     // Reconcile panels + sidebar from current URL
     reconcileFromUrlParamsRef.current(params)
     lastSemanticHistoryKeyRef.current = getSemanticHistoryKey()
 
     // If nothing was in the URL, navigate to default
-    if (!params.get('route') && !params.get('panels')) {
-      navigate(routes.view.allSessions())
+    if ((!params.get('route') || params.get('route') === 'allSessions') && !params.get('panels')) {
+      navigate(routes.view.writing())
     }
 
     // Initialize history with seq=0 (replaceState so we don't create an extra entry)
@@ -1303,7 +1309,7 @@ export function NavigationProvider({
 
   useEffect(() => {
     if (suppressAutoSelectRef.current) return
-    if (!isReady || !workspaceId) return
+    if (!isReady || !isSessionsReady || !workspaceId) return
     // Don't auto-select when panel stack is empty (user closed all panels)
     if (store.get(panelStackAtom).length === 0) return
     if (!isSessionsNavigation(navigationState) || navigationState.details) return
@@ -1315,11 +1321,13 @@ export function NavigationProvider({
     navigateToSession(fallbackSessionId)
   }, [
     isReady,
+    isSessionsReady,
     workspaceId,
     navigationState,
     getLastSelectedSessionId,
     getFirstSessionId,
     navigateToSession,
+    store,
   ])
 
   const actionsValue = useMemo<NavigationActionsContextValue>(() => ({

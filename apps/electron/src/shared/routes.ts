@@ -92,6 +92,9 @@ export const routes = {
   // View Routes - Compound sidebar/navigator/details routes
   // ============================================
   view: {
+    /** Writing project surface. Session history is an independent agent concern. */
+    writing: () => 'writing' as const,
+
     /** All sessions view (sessions navigator, allSessions filter) */
     allSessions: (sessionId?: string) =>
       sessionId ? `allSessions/session/${sessionId}` as const : 'allSessions' as const,

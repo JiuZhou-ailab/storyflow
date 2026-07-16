@@ -14,7 +14,7 @@ export type AutoSelectionResolver = (
 export function shouldPreserveProjectLandingRoute(params: URLSearchParams): boolean {
   if (params.get('panels')) return false
   const route = params.get('route')
-  return !route || route === 'allSessions'
+  return !route || route === 'writing' || route === 'allSessions'
 }
 
 /**

@@ -42,15 +42,27 @@ describe('canRunInitialRestore', () => {
     expect(canRunInitialRestore({
       isReady: true,
       isSessionsReady: false,
+      requiresSessions: true,
       workspaceId: 'ws-1',
       initialRouteRestored: false,
     })).toBe(false)
+  })
+
+  it('allows the writing project route before session metadata is ready', () => {
+    expect(canRunInitialRestore({
+      isReady: true,
+      isSessionsReady: false,
+      requiresSessions: false,
+      workspaceId: 'ws-1',
+      initialRouteRestored: false,
+    })).toBe(true)
   })
 
   it('returns true only when all restore conditions are satisfied', () => {
     expect(canRunInitialRestore({
       isReady: true,
       isSessionsReady: true,
+      requiresSessions: true,
       workspaceId: 'ws-1',
       initialRouteRestored: false,
     })).toBe(true)
@@ -58,6 +70,7 @@ describe('canRunInitialRestore', () => {
     expect(canRunInitialRestore({
       isReady: true,
       isSessionsReady: true,
+      requiresSessions: true,
       workspaceId: 'ws-1',
       initialRouteRestored: true,
     })).toBe(false)

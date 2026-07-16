@@ -118,6 +118,7 @@ export function routeHasSelectedContent(route: ViewRoute): boolean {
   const navState = parseRouteToNavigationState(route)
   if (!navState) return false
   if (navState.navigator === 'settings') return true
+  if (navState.navigator === 'writing') return false
   return !!navState.details
 }
 
