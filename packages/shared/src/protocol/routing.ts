@@ -44,6 +44,9 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
 
   // file — native file dialog
   RPC_CHANNELS.file.OPEN_DIALOG,
+  // file — destructive workspace mutations require the local trust boundary
+  RPC_CHANNELS.file.MOVE_ENTRY,
+  RPC_CHANNELS.file.DELETE_ENTRY,
   // file — draft hydration for user-attached paths. Paths in drafts.json were captured
   // via webUtils.getPathForFile in the renderer, so they point at the user's local machine
   // — even when the workspace itself lives on a remote server. Routing this REMOTE_ELIGIBLE
@@ -272,8 +275,6 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.file.READ,
   RPC_CHANNELS.file.WRITE,
   RPC_CHANNELS.file.DELETE,
-  RPC_CHANNELS.file.DELETE_ENTRY,
-  RPC_CHANNELS.file.MOVE_ENTRY,
   RPC_CHANNELS.file.CREATE_DIRECTORY,
   RPC_CHANNELS.file.READ_DATA_URL,
   RPC_CHANNELS.file.READ_PREVIEW_DATA_URL,

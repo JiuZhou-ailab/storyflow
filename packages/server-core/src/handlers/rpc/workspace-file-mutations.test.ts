@@ -2,8 +2,8 @@
 // output: Safety and behavior regression coverage for move, rename, and recursive delete
 // pos: Contract tests for Finder-style file tree mutations at the server boundary
 
-import { existsSync, rmSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
+import { existsSync, rmSync, symlinkSync, unlinkSync } from 'node:fs'
+import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, mock } from 'bun:test'
@@ -177,6 +177,88 @@ describe('workspace file mutation RPCs', () => {
       expect(existsSync(workspaceRootPath)).toBe(true)
     } finally {
       rmSync(workspaceRootPath, { recursive: true, force: true })
+      workspaceRootPath = ''
+    }
+  })
+
+  it('protects a symlinked workspace root when move targets its realpath alias', async () => {
+    const workspaceContainer = await mkdtemp(join(tmpdir(), 'craft-tree-root-alias-move-'))
+    const realWorkspaceRoot = join(workspaceContainer, 'real-workspace')
+    workspaceRootPath = join(workspaceContainer, 'workspace-link')
+
+    try {
+      await mkdir(realWorkspaceRoot)
+      await symlink(realWorkspaceRoot, workspaceRootPath, 'dir')
+      const canonicalRoot = await realpath(workspaceRootPath)
+      const destinationDirectory = join(canonicalRoot, '归档')
+      await mkdir(destinationDirectory)
+      const { moveEntry, ctx } = createHarness()
+
+      await expect(moveEntry(ctx, {
+        sourcePath: canonicalRoot,
+        destinationDirectoryPath: destinationDirectory,
+      })).rejects.toThrow('Workspace root')
+      expect(existsSync(canonicalRoot)).toBe(true)
+    } finally {
+      rmSync(workspaceContainer, { recursive: true, force: true })
+      workspaceRootPath = ''
+    }
+  })
+
+  it('protects a symlinked workspace root when delete targets its realpath alias', async () => {
+    const workspaceContainer = await mkdtemp(join(tmpdir(), 'craft-tree-root-alias-delete-'))
+    const realWorkspaceRoot = join(workspaceContainer, 'real-workspace')
+    workspaceRootPath = join(workspaceContainer, 'workspace-link')
+
+    try {
+      await mkdir(realWorkspaceRoot)
+      await symlink(realWorkspaceRoot, workspaceRootPath, 'dir')
+      const canonicalRoot = await realpath(workspaceRootPath)
+      const { deleteEntry, ctx } = createHarness()
+
+      await expect(deleteEntry(ctx, {
+        path: canonicalRoot,
+        recursive: true,
+      })).rejects.toThrow('Workspace root')
+      expect(existsSync(canonicalRoot)).toBe(true)
+    } finally {
+      rmSync(workspaceContainer, { recursive: true, force: true })
+      workspaceRootPath = ''
+    }
+  })
+
+  it('rejects a move when a validated source ancestor is rebound outside the workspace', async () => {
+    workspaceRootPath = await mkdtemp(join(tmpdir(), 'craft-tree-rebind-'))
+    const outsideRoot = await mkdtemp(join(tmpdir(), 'craft-tree-rebind-outside-'))
+    const insideSourceDirectory = join(workspaceRootPath, 'inside-source')
+    const sourceAlias = join(workspaceRootPath, 'source-alias')
+    const sourcePath = join(sourceAlias, 'chapter.md')
+    const outsideSourcePath = join(outsideRoot, 'chapter.md')
+    const destinationDirectory = join(workspaceRootPath, 'destination')
+    const { moveEntry, ctx } = createHarness()
+
+    try {
+      await mkdir(insideSourceDirectory)
+      await mkdir(destinationDirectory)
+      await writeFile(join(insideSourceDirectory, 'chapter.md'), 'inside')
+      await writeFile(outsideSourcePath, 'outside')
+      await symlink(insideSourceDirectory, sourceAlias, 'dir')
+
+      await expect(moveEntry(ctx, {
+        sourcePath,
+        destinationDirectoryPath: destinationDirectory,
+        get newName() {
+          unlinkSync(sourceAlias)
+          symlinkSync(outsideRoot, sourceAlias, 'dir')
+          return 'moved.md'
+        },
+      })).rejects.toThrow('outside current workspace')
+
+      expect(await readFile(outsideSourcePath, 'utf8')).toBe('outside')
+      expect(existsSync(join(destinationDirectory, 'moved.md'))).toBe(false)
+    } finally {
+      rmSync(workspaceRootPath, { recursive: true, force: true })
+      rmSync(outsideRoot, { recursive: true, force: true })
       workspaceRootPath = ''
     }
   })

@@ -29,7 +29,7 @@ async function resolveRootComparablePaths(rootPath: string, rawRootPath: string)
   }
 }
 
-async function getRootComparablePaths(rootPath: string): Promise<string[]> {
+export async function getWorkspaceRootComparablePaths(rootPath: string): Promise<string[]> {
   const rawRootPath = normalizeRootComparablePath(rootPath)
   let cached = rootComparablePathCache.get(rawRootPath)
   if (!cached) {
@@ -71,7 +71,7 @@ export async function validateWorkspaceFilePath(ctx: RequestContext, deps: Handl
   const workspace = getWorkspaceByNameOrId(workspaceId)
   if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
 
-  const rootPaths = await getRootComparablePaths(workspace.rootPath)
+  const rootPaths = await getWorkspaceRootComparablePaths(workspace.rootPath)
   let safePath: string
   try {
     safePath = await validateFilePath(path, rootPaths)
@@ -101,7 +101,7 @@ export async function validateWorkspaceMutationPath(ctx: RequestContext, deps: H
   const workspace = getWorkspaceByNameOrId(workspaceId)
   if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
 
-  const rootPaths = await getRootComparablePaths(workspace.rootPath)
+  const rootPaths = await getWorkspaceRootComparablePaths(workspace.rootPath)
   try {
     // Preserve the shared absolute-path and sensitive-file policy. Its return
     // value may be a realpath, while mutations intentionally target the lexical
@@ -127,7 +127,7 @@ export async function validateWorkspaceSearchBasePath(ctx: RequestContext, deps:
   const workspace = getWorkspaceByNameOrId(workspaceId)
   if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
 
-  const rootPaths = await getRootComparablePaths(workspace.rootPath)
+  const rootPaths = await getWorkspaceRootComparablePaths(workspace.rootPath)
   const comparablePath = normalizeRootComparablePath(path)
   if (isAbsolute(path) && rootPaths.includes(comparablePath)) return path
 

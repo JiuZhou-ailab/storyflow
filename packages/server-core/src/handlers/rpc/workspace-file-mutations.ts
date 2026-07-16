@@ -15,6 +15,7 @@ import {
 import type { RequestContext, RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import {
+  getWorkspaceRootComparablePaths,
   resolveContextWorkspaceId,
   validateWorkspaceMutationPath,
 } from './file-workspace-scope'
@@ -64,8 +65,16 @@ function entryType(entryStat: Awaited<ReturnType<typeof lstat>>): 'file' | 'dire
   return entryStat.isDirectory() ? 'directory' : 'file'
 }
 
-function rejectWorkspaceRoot(path: string, rootPath: string): void {
-  if (normalizeComparablePath(path) === normalizeComparablePath(rootPath)) {
+function isSameEntry(
+  left: Awaited<ReturnType<typeof lstat>>,
+  right: Awaited<ReturnType<typeof lstat>>,
+): boolean {
+  return left.dev === right.dev && left.ino === right.ino
+}
+
+function rejectWorkspaceRoot(path: string, rootPaths: readonly string[]): void {
+  const comparablePath = normalizeComparablePath(path)
+  if (rootPaths.some(rootPath => comparablePath === normalizeComparablePath(rootPath))) {
     throw new Error('Workspace root cannot be moved or deleted')
   }
 }
@@ -86,9 +95,10 @@ async function moveWorkspaceEntry(
   }
 
   const { workspaceId, rootPath } = requireWorkspaceRootPath(ctx, deps)
+  const rootPaths = await getWorkspaceRootComparablePaths(rootPath)
   const sourcePath = await validateWorkspaceMutationPath(ctx, deps, input.sourcePath)
   const destinationDirectoryPath = await validateWorkspaceMutationPath(ctx, deps, input.destinationDirectoryPath)
-  rejectWorkspaceRoot(sourcePath, rootPath)
+  rejectWorkspaceRoot(sourcePath, rootPaths)
 
   const sourceStat = await lstat(sourcePath)
   rejectSymlink(sourceStat)
@@ -117,8 +127,9 @@ async function moveWorkspaceEntry(
 
   try {
     const destinationStat = await lstat(destinationPath)
-    const isSameEntry = destinationStat.dev === sourceStat.dev && destinationStat.ino === sourceStat.ino
-    if (!isSameEntry) throw new Error('An entry already exists at the destination path')
+    if (!isSameEntry(destinationStat, sourceStat)) {
+      throw new Error('An entry already exists at the destination path')
+    }
   } catch (error) {
     if (!(error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT')) {
       throw error
@@ -127,7 +138,20 @@ async function moveWorkspaceEntry(
 
   // Keep the move atomic. Cross-device EXDEV failures intentionally surface
   // instead of falling back to a copy/delete sequence.
-  await rename(sourcePath, destinationPath)
+  // Revalidate immediately before mutation so an ancestor rebound through a
+  // symlink after the initial checks fails closed. This narrows, but cannot
+  // eliminate, the OS-level race between the final checks and rename().
+  await validateWorkspaceMutationPath(ctx, deps, destinationDirectoryPath)
+  await validateWorkspaceMutationPath(ctx, deps, destinationPath)
+  const revalidatedSourcePath = await validateWorkspaceMutationPath(ctx, deps, sourcePath)
+  rejectWorkspaceRoot(revalidatedSourcePath, rootPaths)
+  const revalidatedSourceStat = await lstat(revalidatedSourcePath)
+  rejectSymlink(revalidatedSourceStat)
+  if (!isSameEntry(revalidatedSourceStat, sourceStat)) {
+    throw new Error('Move source changed during validation')
+  }
+
+  await rename(revalidatedSourcePath, destinationPath)
   notifyConfigWatcherForWrite(deps, workspaceId, sourcePath)
   notifyConfigWatcherForWrite(deps, workspaceId, destinationPath)
   return { sourcePath, destinationPath, type: entryType(sourceStat) }
@@ -143,18 +167,30 @@ async function deleteWorkspaceEntry(
   }
 
   const { workspaceId, rootPath } = requireWorkspaceRootPath(ctx, deps)
+  const rootPaths = await getWorkspaceRootComparablePaths(rootPath)
   const path = await validateWorkspaceMutationPath(ctx, deps, input.path)
-  rejectWorkspaceRoot(path, rootPath)
+  rejectWorkspaceRoot(path, rootPaths)
 
   const pathStat = await lstat(path)
   rejectSymlink(pathStat)
   const type = entryType(pathStat)
 
+  // Revalidate the canonical ancestor and entry identity immediately before
+  // mutation. Node does not expose an fd-relative recursive delete primitive,
+  // so a kernel-level race remains after this final check.
+  const revalidatedPath = await validateWorkspaceMutationPath(ctx, deps, path)
+  rejectWorkspaceRoot(revalidatedPath, rootPaths)
+  const revalidatedPathStat = await lstat(revalidatedPath)
+  rejectSymlink(revalidatedPathStat)
+  if (!isSameEntry(revalidatedPathStat, pathStat)) {
+    throw new Error('Delete target changed during validation')
+  }
+
   if (type === 'directory') {
-    if (input.recursive === true) await rm(path, { recursive: true, force: false })
-    else await rmdir(path)
+    if (input.recursive === true) await rm(revalidatedPath, { recursive: true, force: false })
+    else await rmdir(revalidatedPath)
   } else {
-    await unlink(path)
+    await unlink(revalidatedPath)
   }
 
   notifyConfigWatcherForWrite(deps, workspaceId, path)

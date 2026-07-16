@@ -75,4 +75,16 @@ describe('channel routing behavior', () => {
     expect(REMOTE_ELIGIBLE_CHANNELS.has(RPC_CHANNELS.userProfile.READ)).toBe(false)
     expect(REMOTE_ELIGIBLE_CHANNELS.has(RPC_CHANNELS.userProfile.WRITE)).toBe(false)
   })
+
+  test('destructive workspace entry mutations are local-only', () => {
+    const destructiveChannels = [
+      RPC_CHANNELS.file.MOVE_ENTRY,
+      RPC_CHANNELS.file.DELETE_ENTRY,
+    ]
+
+    for (const channel of destructiveChannels) {
+      expect(LOCAL_ONLY_CHANNELS.has(channel)).toBe(true)
+      expect(REMOTE_ELIGIBLE_CHANNELS.has(channel)).toBe(false)
+    }
+  })
 })
