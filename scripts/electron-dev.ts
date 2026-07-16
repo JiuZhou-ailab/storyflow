@@ -1,6 +1,7 @@
 /**
- * Cross-platform electron dev script
- * Replaces platform-specific npm scripts with a unified TypeScript solution
+ * input: Development environment, source tree, and optional CRAFT_CLEAN_VITE_CACHE=1 recovery flag
+ * output: Cross-platform Electron development processes with reusable Vite dependency cache
+ * pos: Local desktop development orchestrator
  */
 
 import { spawn, type Subprocess } from "bun";
@@ -236,8 +237,12 @@ async function maybeStartLocalAuthBroker(processes: Subprocess[]): Promise<void>
   }
 }
 
-// Clean Vite cache directory
-function cleanViteCache(): void {
+// Vite fingerprints dependency and config changes itself. Unconditional deletion
+// makes the first project open re-optimize large editor/chat dependencies and
+// reload the renderer; retain an explicit recovery switch for corrupted caches.
+function cleanViteCacheOnRequest(): void {
+  if (process.env.CRAFT_CLEAN_VITE_CACHE !== "1") return;
+
   const viteCacheDir = join(ELECTRON_DIR, "node_modules/.vite");
   if (existsSync(viteCacheDir)) {
     rmSync(viteCacheDir, { recursive: true, force: true });
@@ -470,7 +475,7 @@ async function main(): Promise<void> {
     mode: "dev",
     log: (message) => console.log(`📄 ${message}`),
   });
-  cleanViteCache();
+  cleanViteCacheOnRequest();
 
   // Ensure dist directory exists
   if (!existsSync(DIST_DIR)) {
