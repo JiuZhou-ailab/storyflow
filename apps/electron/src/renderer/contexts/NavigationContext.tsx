@@ -50,7 +50,11 @@ import {
 import { routes, type Route, type ViewRoute } from '../../shared/routes'
 import { parsePermissionMode } from '@craft-agent/shared/agent/mode-types'
 import { NAVIGATE_EVENT, type NavigateOptions } from '../lib/navigate'
-import { normalizePanelRouteForReconcile, shouldPreserveProjectLandingRoute } from './navigation-reconcile'
+import {
+  normalizePanelRouteForReconcile,
+  shouldDefaultInitialRouteToWriting,
+  shouldPreserveProjectLandingRoute,
+} from './navigation-reconcile'
 import { buildSemanticHistoryKey, canRunInitialRestore } from './navigation-history'
 import * as storage from '@/lib/local-storage'
 import type {
@@ -1094,7 +1098,7 @@ export function NavigationProvider({
     lastSemanticHistoryKeyRef.current = getSemanticHistoryKey()
 
     // If nothing was in the URL, navigate to default
-    if ((!params.get('route') || params.get('route') === 'allSessions') && !params.get('panels')) {
+    if (shouldDefaultInitialRouteToWriting(params)) {
       navigate(routes.view.writing())
     }
 

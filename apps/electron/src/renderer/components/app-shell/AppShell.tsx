@@ -68,7 +68,7 @@ import {
   springTransition as collapsibleSpring,
 } from "@/components/ui/collapsible"
 import { SessionList, type ChatGroupingMode } from "./SessionList"
-import { MainContentPanel, WritingPrimaryContentReadyContext } from "./MainContentPanel"
+import { MainContentPanel } from "./MainContentPanel"
 import { PanelStackContainer } from "./PanelStackContainer"
 import type { ChatDisplayHandle } from "./ChatDisplay"
 import { NovelDocumentEditorPanel, type NovelDocumentEditorPanelHandle, type NovelSelectionAiRequest } from "@/components/writing/NovelDocumentEditorPanel"
@@ -2228,7 +2228,6 @@ function AppShellContent({
   const savedNovelDocumentChangeVersionRef = React.useRef(0)
   const novelDocumentChangeVersionFlushRef = React.useRef<number | null>(null)
   const [novelDocumentLoading, setNovelDocumentLoading] = React.useState(false)
-  const [loadedNovelDocumentPath, setLoadedNovelDocumentPath] = React.useState<string | null>(null)
   const [novelDocumentSaving, setNovelDocumentSaving] = React.useState(false)
   const [novelDocumentError, setNovelDocumentError] = React.useState<string | null>(null)
   const [novelExportDialogOpen, setNovelExportDialogOpen] = React.useState(false)
@@ -2318,7 +2317,6 @@ function AppShellContent({
     if (!selectedNovelDocumentPath) {
       replaceNovelDocumentContent('')
       setNovelDocumentLoading(false)
-      setLoadedNovelDocumentPath(null)
       setNovelDocumentError(null)
       return
     }
@@ -2326,7 +2324,6 @@ function AppShellContent({
     let cancelled = false
     const readStartedAt = performance.now()
     setNovelDocumentLoading(true)
-    setLoadedNovelDocumentPath(null)
     setNovelDocumentError(null)
 
     window.electronAPI.readFile(selectedNovelDocumentPath)
@@ -2357,7 +2354,6 @@ function AppShellContent({
       .finally(() => {
         if (!cancelled) {
           setNovelDocumentLoading(false)
-          setLoadedNovelDocumentPath(selectedNovelDocumentPath)
 
           const switchStart = novelDocumentSwitchStartRef.current
           if (switchStart?.filePath === selectedNovelDocumentPath) {
@@ -2388,10 +2384,6 @@ function AppShellContent({
     novelDocumentContent !== savedNovelDocumentContent
     || novelDocumentChangeVersion !== savedNovelDocumentChangeVersion
   )
-  const writingPrimaryContentReady = showNovelWorkspaceSidebar && (
-    !selectedNovelDocumentPath || loadedNovelDocumentPath === selectedNovelDocumentPath
-  )
-
   const handleMoveNovelWorkspaceEntry = React.useCallback(async (
     entry: WorkspaceFileTreeNode,
     destinationDirectory: WorkspaceFileTreeNode,
@@ -4069,7 +4061,6 @@ function AppShellContent({
           />
         ) : null}
 
-        <WritingPrimaryContentReadyContext.Provider value={writingPrimaryContentReady}>
         <PanelStackContainer
           sidebarSlot={
             <div
@@ -4974,7 +4965,6 @@ function AppShellContent({
           isResizing={!!isResizing}
           hidePanelCloseButton={showPrimarySidebar}
         />
-        </WritingPrimaryContentReadyContext.Provider>
 
         {/* Sidebar Resize Handle (absolute, hidden when auto-compacted) */}
         {!effectiveSidebarAndNavigatorHidden && showPrimarySidebar && (

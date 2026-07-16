@@ -1,8 +1,8 @@
 /**
  * MainContentPanel - Right panel component for displaying content
  *
- * input: Navigation state, workspace-scoped session metadata, primary writing-content readiness, narrow action contexts, and entity selection atoms
- * output: Independently loaded writing chat plus content panels for sources, skills, settings, and automations
+ * input: Navigation state, workspace-scoped session metadata, narrow action contexts, and entity selection atoms
+ * output: Immediately selected writing chat plus content panels for sources, skills, settings, and automations
  * pos: Renderer content router inside the app-shell panel stack
  *
  * Renders content based on the unified NavigationState:
@@ -21,7 +21,7 @@
 
 import * as React from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useStore } from 'jotai'
 import { useTranslation, Trans } from 'react-i18next'
 import { Panel } from './Panel'
 import { PanelHeader } from './PanelHeader'
@@ -54,14 +54,9 @@ import type { ExecutionEntry } from '../automations/types'
 import { automationsAtom } from '@/atoms/automations'
 import { useAutomationActions } from '@/hooks/useAutomations'
 import { SendResourceToWorkspaceDialog, type SendResourceType } from './SendResourceToWorkspaceDialog'
+import { resolveWritingSessionId } from './writing-session-selection'
 
 const LazyChatPage = React.lazy(() => import('@/pages/ChatPage'))
-
-/**
- * Writing keeps its chat visible by default, but transcript work must not compete
- * with the directory and first document that make the project usable.
- */
-export const WritingPrimaryContentReadyContext = React.createContext(true)
 
 export interface MainContentPanelProps {
   /** Whether both sidebar and navigator are hidden by responsive compaction. */
@@ -335,7 +330,7 @@ export function MainContentPanel({
     )
   }
 
-  // Session routes reuse the same chat surface for history/deep links.
+  // Chats navigator - show chat, multi-select panel, or empty state.
   if (isSessionsNavigation(navState)) {
     // Multi-select mode: show batch actions panel
     if (isMultiSelectActive) {
@@ -384,70 +379,29 @@ function WritingSessionContent({
   remoteWorkspaceId?: string | null
 }) {
   const sessionIds = useAtomValue(sessionIdsAtom)
-  const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
+  const store = useStore()
   const { state, select } = useSessionSelection()
-  const primaryContentReady = React.useContext(WritingPrimaryContentReadyContext)
-  const [deferredSessionId, setDeferredSessionId] = useState<string | null>(null)
-  const [activatedWorkspaceId, setActivatedWorkspaceId] = useState<string | null>(null)
-  const workspaceId = activeWorkspaceId ?? remoteWorkspaceId ?? null
+  const defaultSessionId = resolveWritingSessionId({
+    sessionIds,
+    sessionMetaMap: store.get(sessionMetaMapAtom),
+    selectedSessionId: state.selected,
+    activeWorkspaceId,
+    remoteWorkspaceId,
+  })
 
-  const defaultSessionId = useMemo(() => {
-    const selectedMeta = state.selected ? sessionMetaMap.get(state.selected) : undefined
-    if (
-      selectedMeta
-      && !selectedMeta.hidden
-      && !selectedMeta.isArchived
-      && (!activeWorkspaceId
-        || selectedMeta.workspaceId === activeWorkspaceId
-        || (!!remoteWorkspaceId && selectedMeta.workspaceId === remoteWorkspaceId))
-    ) {
-      return selectedMeta.id
-    }
-
-    for (const sessionId of sessionIds) {
-      const meta = sessionMetaMap.get(sessionId)
-      if (!meta || meta.hidden || meta.isArchived) continue
-      if (
-        activeWorkspaceId
-        && meta.workspaceId !== activeWorkspaceId
-        && (!remoteWorkspaceId || meta.workspaceId !== remoteWorkspaceId)
-      ) {
-        continue
-      }
-      return sessionId
-    }
-    return null
-  }, [activeWorkspaceId, remoteWorkspaceId, sessionIds, sessionMetaMap, state.selected])
-
-  // AppShell supplies a deterministic readiness signal after the directory and
-  // selected document commit. Once activated, chat remains mounted while the
-  // user switches files; only a project switch closes the latch.
   useEffect(() => {
-    if (!defaultSessionId) {
-      React.startTransition(() => {
-        setDeferredSessionId(null)
-        setActivatedWorkspaceId(null)
-      })
-      return
+    if (defaultSessionId && state.selected !== defaultSessionId) {
+      select(defaultSessionId, sessionIds.indexOf(defaultSessionId))
     }
-    if (!primaryContentReady) return
+  }, [defaultSessionId, select, sessionIds, state.selected])
 
-    React.startTransition(() => {
-      setDeferredSessionId(defaultSessionId)
-      setActivatedWorkspaceId(workspaceId)
-      if (state.selected !== defaultSessionId) {
-        select(defaultSessionId, sessionIds.indexOf(defaultSessionId))
-      }
-    })
-  }, [defaultSessionId, primaryContentReady, select, sessionIds, state.selected, workspaceId])
-
-  if (!deferredSessionId || activatedWorkspaceId !== workspaceId) {
+  if (!defaultSessionId) {
     return <ChatPanelPlaceholder empty={sessionIds.length === 0} />
   }
 
   return (
     <SessionRouteContent
-      sessionId={deferredSessionId}
+      sessionId={defaultSessionId}
       activeWorkspaceId={activeWorkspaceId}
       remoteWorkspaceId={remoteWorkspaceId}
     />

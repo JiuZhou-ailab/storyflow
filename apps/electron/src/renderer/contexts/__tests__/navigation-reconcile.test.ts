@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'bun:test'
-import { normalizePanelRouteForReconcile, shouldPreserveProjectLandingRoute } from '../navigation-reconcile'
+import {
+  normalizePanelRouteForReconcile,
+  shouldDefaultInitialRouteToWriting,
+  shouldPreserveProjectLandingRoute,
+} from '../navigation-reconcile'
 import type { NavigationState } from '../../../shared/types'
 
 describe('shouldPreserveProjectLandingRoute', () => {
@@ -11,6 +15,21 @@ describe('shouldPreserveProjectLandingRoute', () => {
   it('does not treat explicit session or panel URLs as project landing', () => {
     expect(shouldPreserveProjectLandingRoute(new URLSearchParams('route=allSessions/session/s1'))).toBe(false)
     expect(shouldPreserveProjectLandingRoute(new URLSearchParams('panels=allSessions/session/s1:1&fi=0'))).toBe(false)
+  })
+})
+
+describe('shouldDefaultInitialRouteToWriting', () => {
+  it('defaults an empty URL to writing', () => {
+    expect(shouldDefaultInitialRouteToWriting(new URLSearchParams())).toBe(true)
+  })
+
+  it('preserves an explicit allSessions route across refresh', () => {
+    expect(shouldDefaultInitialRouteToWriting(new URLSearchParams('ws=demo&route=allSessions'))).toBe(false)
+  })
+
+  it('does not override explicit routes or panel state', () => {
+    expect(shouldDefaultInitialRouteToWriting(new URLSearchParams('route=writing'))).toBe(false)
+    expect(shouldDefaultInitialRouteToWriting(new URLSearchParams('panels=allSessions/session/s1:1&fi=0'))).toBe(false)
   })
 })
 

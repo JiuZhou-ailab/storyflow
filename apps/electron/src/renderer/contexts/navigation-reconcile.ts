@@ -1,3 +1,7 @@
+// input: URL parameters, navigation routes, and auto-selection policy
+// output: Initial-route and panel-route reconciliation decisions
+// pos: Pure navigation policy shared by NavigationContext and behavior tests
+
 import { buildRouteFromNavigationState, parseRouteToNavigationState } from '../../shared/route-parser'
 import type { ViewRoute } from '../../shared/routes'
 import type { NavigationState } from '../../shared/types'
@@ -15,6 +19,10 @@ export function shouldPreserveProjectLandingRoute(params: URLSearchParams): bool
   if (params.get('panels')) return false
   const route = params.get('route')
   return !route || route === 'writing' || route === 'allSessions'
+}
+
+export function shouldDefaultInitialRouteToWriting(params: URLSearchParams): boolean {
+  return !params.get('route') && !params.get('panels')
 }
 
 /**
