@@ -80,6 +80,7 @@ import type {
   WorkspaceFileTreeMenuAction,
   WorkspaceFileTreeNode,
 } from "@/components/workspace/WorkspaceFileTree"
+import { revealWorkspaceFile } from "@/components/workspace/workspace-file-actions"
 import { useSession } from "@/hooks/useSession"
 import { AppShellProvider, type AppShellContextType } from "@/context/AppShellContext"
 import { sessionOptionsAtomFamily } from "@/hooks/useSessionOptions"
@@ -3913,10 +3914,14 @@ function AppShellContent({
         label: t('sessionMenu.showInFileManager', { fileManager: fileManagerName }),
         icon: <FolderOpen className="h-3.5 w-3.5" />,
         onSelect: () => {
-          void window.electronAPI.showInFolder(entry.path).catch((error) => {
-            toast.error(t('toast.failedToReveal', { fileManager: fileManagerName }), {
-              description: error instanceof Error ? error.message : String(error),
-            })
+          void revealWorkspaceFile({
+            path: entry.path,
+            showInFolder: path => window.electronAPI.showInFolder(path),
+            onError: (error) => {
+              toast.error(t('toast.failedToReveal', { fileManager: fileManagerName }), {
+                description: error instanceof Error ? error.message : String(error),
+              })
+            },
           })
         },
       }]
