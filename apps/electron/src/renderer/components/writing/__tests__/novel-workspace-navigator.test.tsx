@@ -503,6 +503,8 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('novelWorkspaceCatalogCacheRef.current.delete(novelWorkspaceRoot)')
     expect(appShellSource).toContain('getNovelFolderCreateTarget(entry.relativePath)')
     expect(appShellSource).toContain('getNovelFileCreateBasePath(file)')
+    expect(appShellSource).toContain('window.electronAPI.showInFolder(entry.path)')
+    expect(appShellSource).toContain("t('sessionMenu.showInFileManager', { fileManager: fileManagerName })")
     expect(treeSource).toContain('onMove={handleMove}')
     expect(treeSource).toContain('onRename={handleRename}')
     expect(treeSource).toContain('disableMultiSelection')

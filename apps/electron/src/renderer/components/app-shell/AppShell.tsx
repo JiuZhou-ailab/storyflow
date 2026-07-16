@@ -29,6 +29,7 @@ import {
   History,
   Download,
   FileUp,
+  FolderOpen,
 } from "lucide-react"
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
@@ -41,7 +42,7 @@ import { WhatsNewAnnouncementDialog } from "./WhatsNewAnnouncementDialog"
 import { buildWhatsNewAnnouncementCopy, getWhatsNewStartupAction } from "./whats-new-announcement"
 import { McpIcon } from "../icons/McpIcon"
 import { cn } from "@/lib/utils"
-import { isMac } from "@/lib/platform"
+import { getFileManagerName, isMac } from "@/lib/platform"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { HeaderIconButton } from "@/components/ui/HeaderIconButton"
@@ -3906,8 +3907,21 @@ function AppShellContent({
     if (entry.type === 'file') {
       const file = { path: entry.path, relativePath: entry.relativePath }
       const basePath = getNovelFileCreateBasePath(file)
-      if (!basePath) return []
-      return [createFileAction(
+      const fileManagerName = getFileManagerName()
+      const actions: WorkspaceFileTreeMenuAction[] = [{
+        id: `reveal:${entry.relativePath}`,
+        label: t('sessionMenu.showInFileManager', { fileManager: fileManagerName }),
+        icon: <FolderOpen className="h-3.5 w-3.5" />,
+        onSelect: () => {
+          void window.electronAPI.showInFolder(entry.path).catch((error) => {
+            toast.error(t('toast.failedToReveal', { fileManager: fileManagerName }), {
+              description: error instanceof Error ? error.message : String(error),
+            })
+          })
+        },
+      }]
+      if (!basePath) return actions
+      actions.push(createFileAction(
         `create-near:${entry.relativePath}`,
         basePath,
         t('writing.createFile.nearby', '新建同目录文件'),
@@ -3917,7 +3931,9 @@ function AppShellContent({
             ? '脑洞、脑洞.md 或 临时/脑洞.txt'
             : '角色/主角、世界观/城市.md 或 补充设定.txt',
         getNearbyNovelCreateInitialValue(file, basePath),
-      )]
+        true,
+      ))
+      return actions
     }
 
     const target = getNovelFolderCreateTarget(entry.relativePath)
