@@ -150,9 +150,10 @@ describe('resolveChatOpeningPrompt', () => {
     }
   })
 
-  it('uses normalized AppShell opening metadata before raw workspace metadata', () => {
-    expect(chatPageSource).toContain('projectType: openingProjectMetadata?.projectType ?? activeWorkspace?.projectType')
-    expect(chatPageSource).toContain('methodPackId: openingProjectMetadata?.methodPackId ?? activeWorkspace?.methodPackId')
+  it('uses normalized AppShell opening metadata before session-scoped workspace metadata', () => {
+    expect(chatPageSource).toContain('const chatWorkspace = useAtomValue(workspacePanelFieldsAtomFamily(activeWorkspaceId ?? null))')
+    expect(chatPageSource).toContain('projectType: openingProjectMetadata?.projectType ?? chatWorkspace?.projectType')
+    expect(chatPageSource).toContain('methodPackId: openingProjectMetadata?.methodPackId ?? chatWorkspace?.methodPackId')
     expect(chatPageSource).toContain('chatOpening={chatOpening}')
     expect(chatDisplaySource).not.toContain('openingProjectMetadata')
   })

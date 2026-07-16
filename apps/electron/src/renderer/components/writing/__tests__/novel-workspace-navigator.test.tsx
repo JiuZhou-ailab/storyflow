@@ -930,7 +930,7 @@ describe('novel writing workspace layout', () => {
     expect(sessionRouteContentSource).toContain('selectedSessionMeta?.workspaceId === activeWorkspaceId')
     expect(sessionRouteContentSource).toContain('selectedSessionMeta?.workspaceId === remoteWorkspaceId')
     expect(sessionRouteContentSource.indexOf('if (!selectedSessionMatchesWorkspace)')).toBeLessThan(
-      sessionRouteContentSource.indexOf('<ChatPage sessionId={sessionId} />')
+      sessionRouteContentSource.indexOf('<LazyChatPage sessionId={sessionId} />')
     )
   })
 

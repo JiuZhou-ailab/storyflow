@@ -6,6 +6,7 @@ import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
 
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf8')
+const sessionListSource = readFileSync(new URL('../SessionList.tsx', import.meta.url), 'utf8')
 
 describe('AppShell derived state', () => {
   it('derives session statuses with memo instead of effect state', () => {
@@ -14,12 +15,13 @@ describe('AppShell derived state', () => {
     expect(appShellSource).toContain('const sessionStatuses = React.useMemo(() => {')
   })
 
-  it('derives workspace session buckets in one pass', () => {
-    expect(appShellSource).toContain('const sessionMetaBuckets = useMemo(() => {')
-    expect(appShellSource).toContain('for (const meta of sessionMetaMap.values())')
-    expect(appShellSource).toContain('archivedSessionMetas')
-    expect(appShellSource).not.toContain('Array.from(sessionMetaMap.values())')
-    expect(appShellSource).not.toContain('workspaceSessionMetas.filter(s => s.isArchived)')
+  it('keeps workspace session bucketing scoped to SessionList', () => {
+    expect(appShellSource).not.toContain('sessionMetaMapAtom')
+    expect(sessionListSource).toContain('const workspaceSessionMetasAtom = useMemo(')
+    expect(sessionListSource).toContain('selectAtom(')
+    expect(sessionListSource).toContain('for (const meta of metaMap.values())')
+    expect(sessionListSource).toContain('sameSessionMetas,')
+    expect(sessionListSource).toContain('for (const item of workspaceItems)')
   })
 
   it('keeps global search file title formatting callback stable across shell renders', () => {
