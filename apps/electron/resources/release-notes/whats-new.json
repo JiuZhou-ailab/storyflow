@@ -1,19 +1,19 @@
 {
-  "version": "0.9.36",
-  "digest": "666108a4281b5b9f6de3426f971d3d8f2cb346e407faf8527d3d5f9e3712b118",
-  "generatedAt": "2026-07-03T02:22:45.416Z",
-  "title": "What is new in v0.9.36",
-  "summary": "这一版把项目管理和桌面性能排查补齐到更可用的状态：项目卡片现在可以直接重命名或移除，长会话和大文件树也减少了不必要的刷新压力。",
+  "version": "0.9.37",
+  "digest": "2ff69340e4db09e183546eb2c2e1332a7ddb96bcb467a7afb5109167cf2529d4",
+  "generatedAt": "2026-07-16T18:20:18.164Z",
+  "title": "What is new in v0.9.37",
+  "summary": "这一版重做了项目内的文件工作流，并把打开项目、显示对话和 Agent 后台初始化拆开。进入大型写作项目更轻，文件操作也更接近桌面 Finder。",
   "highlights": [
-    "项目卡片支持管理菜单 — Project Hub 中每个项目都可以通过菜单重命名、移除，常用管理动作不再需要绕到工作区切换器。",
-    "移除项目会清理本地状态 — 移除项目会同步删除本地工作区配置、项目凭据和该项目的系统数据目录，减少残留状态。",
-    "流式输出减少列表重算 — text_delta 只更新当前会话正文，不再为每个流式片段重建会话元数据。",
-    "会话打开更轻量 — 已持久化的分支状态会直接复用，避免每次打开会话都读取 provider sidecar。"
+    "原生项目目录 — 侧边栏直接显示工作区中的真实文件和文件夹，不再依赖固定分类或旧对话导航。",
+    "Finder 式文件操作 — 文件和文件夹支持拖动、右键重命名、删除、新建与导入，空目录也会正常显示。",
+    "快速定位单个文件 — 右键某一集或其他文件即可在 Finder、Explorer 或系统文件管理器中显示，方便单独复制和交付。",
+    "Agent 新文件自动出现 — Agent 创建、修改或移动文件后，目录会沿用现有增量刷新与审阅标记，不会打断当前编辑。"
   ],
-  "accentColor": "#af1d26",
+  "accentColor": "#158441",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 5,
-    "userVisibleCommitCount": 2
+    "commitCount": 324,
+    "userVisibleCommitCount": 0
   }
 }
