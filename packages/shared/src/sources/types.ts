@@ -9,7 +9,7 @@
  * They replace the old "connections" concept with a more flexible, folder-based architecture.
  *
  * File structure:
- * ~/.agents/sources/{sourceSlug}/
+ * ~/.craft-agent/sources/{sourceSlug}/
  * ~/.craft-agent/workspaces/{workspaceId}/sources/{sourceSlug}/
  *   ├── config.json   - Source settings
  *   └── guide.md      - Usage guidelines + cached data (in YAML frontmatter)
@@ -501,6 +501,18 @@ export interface SourceGuide {
 }
 
 /**
+ * Filesystem owner of a loaded source definition.
+ *
+ * Runtime state and credentials are Craft-owned even when the definition is
+ * loaded from the shared multi-tool directory.
+ */
+export type SourceDefinitionOrigin =
+  | 'workspace'
+  | 'craft-global'
+  | 'shared-global'
+  | 'builtin';
+
+/**
  * Fully loaded source with all files
  */
 export interface LoadedSource {
@@ -520,10 +532,10 @@ export interface LoadedSource {
   workspaceId: string;
 
   /**
-   * Where this source definition was loaded from.
-   * Global sources live at ~/.agents/sources and are reusable across workspaces.
+   * Filesystem owner of this source definition.
+   * Shared-global definitions are externally owned and must remain read-only.
    */
-  source?: 'global' | 'workspace';
+  origin: SourceDefinitionOrigin;
 
   /**
    * Whether this is a built-in source (e.g., craft-agents-docs).

@@ -11,21 +11,23 @@ import {
   normalizeBedrockModelId,
   deriveBedrockRegionPrefix,
 } from '../llm-connections'
-import { ANTHROPIC_MODELS, getModelDisplayName, getModelContextWindow, getModelShortName, isClaudeModel } from '../models'
+import { getModelDisplayName, getModelContextWindow, getModelShortName, isClaudeModel } from '../models'
 
 // ============================================================
 // getDefaultModelsForConnection
 // ============================================================
 
 describe('getDefaultModelsForConnection', () => {
-  it('anthropic returns ANTHROPIC_MODELS (ModelDefinition[])', () => {
+  it('anthropic returns the executable Pi Anthropic catalog with direct-provider IDs', () => {
     const models = getDefaultModelsForConnection('anthropic')
-    expect(models).toEqual(ANTHROPIC_MODELS)
     expect(models.length).toBeGreaterThan(0)
     // Verify they are ModelDefinition objects, not strings
     const first = models[0]!
     expect(typeof first).toBe('object')
     expect(typeof (first as any).id).toBe('string')
+    expect((first as any).id.startsWith('pi/')).toBe(false)
+    expect((first as any).provider).toBe('anthropic')
+    expect(models.some(model => typeof model !== 'string' && model.id === 'claude-sonnet-5')).toBe(false)
   })
 
   it('pi with piAuthProvider returns filtered models', () => {
@@ -54,8 +56,7 @@ describe('getDefaultModelForConnection', () => {
     const modelId = getDefaultModelForConnection('anthropic')
     expect(typeof modelId).toBe('string')
     expect(modelId.length).toBeGreaterThan(0)
-    // Should match the first ANTHROPIC_MODELS entry
-    expect(modelId).toBe(ANTHROPIC_MODELS[0]!.id)
+    expect(modelId).toBe('claude-opus-4-8')
   })
 
   // Regression: Pi 'anthropic' default must be present in its own model list
@@ -123,8 +124,8 @@ describe('isPiProvider', () => {
     expect(isPiProvider('pi_compat')).toBe(true)
   })
 
-  it('returns false for anthropic', () => {
-    expect(isPiProvider('anthropic')).toBe(false)
+  it('returns true for anthropic because it executes through Pi', () => {
+    expect(isPiProvider('anthropic')).toBe(true)
   })
 })
 

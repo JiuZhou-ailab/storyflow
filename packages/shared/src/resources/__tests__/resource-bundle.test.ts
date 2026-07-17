@@ -24,7 +24,7 @@ function sourceRoot(wsDir: string): string {
 }
 
 function skillRoot(wsDir: string): string {
-  return join(wsDir, '.craft-agent', 'skills')
+  return join(wsDir, '.pi', 'skills')
 }
 
 function sourcePath(wsDir: string, slug: string): string {
@@ -434,7 +434,7 @@ describe('resource-bundle', () => {
           }],
           skills: [{
             slug: 'my-skill',
-            files: [makeBundleFile('SKILL.md', '---\nname: test\ndescription: test\n---\nBody')],
+            files: [makeBundleFile('SKILL.md', '---\nname: my-skill\ndescription: test\n---\nBody')],
           }],
         },
       }
@@ -503,6 +503,43 @@ describe('resource-bundle', () => {
       const { valid, errors } = validateResourceBundle(bundle)
       expect(valid).toBe(false)
       expect(errors.some(e => e.includes('missing SKILL.md'))).toBe(true)
+    })
+
+    it('rejects unsafe Skill slugs and mismatched SKILL.md names', () => {
+      const unsafe = validateResourceBundle({
+        version: 1,
+        exportedAt: Date.now(),
+        resources: { skills: [{ slug: '../escape', files: [makeBundleFile('SKILL.md', '---\nname: escape\ndescription: test\n---\nBody')] }] },
+      })
+      expect(unsafe.valid).toBe(false)
+      expect(unsafe.errors.some(error => error.includes('invalid slug'))).toBe(true)
+
+      const mismatch = validateResourceBundle({
+        version: 1,
+        exportedAt: Date.now(),
+        resources: { skills: [{ slug: 'safe-skill', files: [makeBundleFile('SKILL.md', '---\nname: other-skill\ndescription: test\n---\nBody')] }] },
+      })
+      expect(mismatch.valid).toBe(false)
+      expect(mismatch.errors.some(error => error.includes('does not match'))).toBe(true)
+    })
+
+    it('rejects a SKILL.md that is not valid UTF-8', () => {
+      const invalidUtf8 = validateResourceBundle({
+        version: 1,
+        exportedAt: Date.now(),
+        resources: {
+          skills: [{
+            slug: 'broken-skill',
+            files: [{
+              relativePath: 'SKILL.md',
+              contentBase64: Buffer.from([0xc3, 0x28]).toString('base64'),
+              size: 2,
+            }],
+          }],
+        },
+      })
+      expect(invalidUtf8.valid).toBe(false)
+      expect(invalidUtf8.errors.some(error => error.includes('not valid UTF-8'))).toBe(true)
     })
 
     it('rejects path traversal in files', () => {
@@ -691,7 +728,7 @@ describe('resource-bundle', () => {
           skills: [{
             slug: 'pdf-tools',
             files: [
-              makeBundleFile('SKILL.md', '---\nname: PDF Tools\ndescription: PDF stuff\n---\nInstructions'),
+              makeBundleFile('SKILL.md', '---\nname: pdf-tools\ndescription: PDF stuff\n---\nInstructions'),
               makeBundleFile('forms.md', '# Forms'),
               makeBundleFile('scripts/extract.py', 'import pdf'),
             ],
@@ -723,7 +760,7 @@ describe('resource-bundle', () => {
           }],
           skills: [{
             slug: 'existing-skill',
-            files: [makeBundleFile('SKILL.md', '---\nname: new\ndescription: new\n---\nNew')],
+            files: [makeBundleFile('SKILL.md', '---\nname: existing-skill\ndescription: new\n---\nNew')],
           }],
         },
       }
@@ -1092,7 +1129,7 @@ describe('resource-bundle', () => {
           skills: [
             {
               slug: 'good-skill',
-              files: [makeBundleFile('SKILL.md', '---\nname: Good\ndescription: Good\n---\nBody')],
+              files: [makeBundleFile('SKILL.md', '---\nname: good-skill\ndescription: Good\n---\nBody')],
             },
           ],
         },

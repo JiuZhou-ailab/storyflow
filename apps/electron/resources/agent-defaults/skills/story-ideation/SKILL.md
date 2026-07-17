@@ -1,6 +1,8 @@
 ---
-name: 灵感生成
+name: story-ideation
 description: "用于生成、扩展、筛选或压力测试小说灵感、网文创意、短篇故事点子、题材方向、故事前提、钩子、类型混搭、冲突种子、爽点设计、反转脑洞和商业故事概念。"
+metadata:
+  displayName: 灵感生成
 ---
 
 # 灵感生成

@@ -423,7 +423,7 @@ function textToHTML(
 
     if (match.type === 'skill') {
       skill = skillBySlug.get(match.id)
-      label = skill?.metadata.name || match.id
+      label = skill?.metadata.displayName ?? skill?.metadata.name ?? match.id
     } else if (match.type === 'source') {
       source = sourceBySlug.get(match.id)
       label = source?.config.name || match.id

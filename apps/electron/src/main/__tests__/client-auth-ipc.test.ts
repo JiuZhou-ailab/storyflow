@@ -16,7 +16,7 @@ describe('client auth IPC propagation', () => {
   it('broadcasts client auth state changes from main to every window', () => {
     const source = readElectronFile('main/index.ts')
 
-    expect(source).toContain('client-auth:state-changed')
+    expect(source).toContain('CLIENT_AUTH_IPC_CHANNELS.STATE_CHANGED')
     expect(source).toContain('BrowserWindow.getAllWindows()')
     expect(source).toContain('broadcastClientAuthState()')
   })
@@ -26,7 +26,7 @@ describe('client auth IPC propagation', () => {
 
     expect(source).toContain('onClientAuthStateChanged')
     expect(source).toContain('signUpClient')
-    expect(source).toContain("ipcRenderer.on('client-auth:state-changed'")
+    expect(source).toContain('ipcRenderer.on(CLIENT_AUTH_IPC_CHANNELS.STATE_CHANGED')
     expect(source).toContain('cachedClientAuthState = nextState')
   })
 

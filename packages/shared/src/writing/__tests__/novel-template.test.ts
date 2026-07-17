@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "os";
 import { join } from "path";
 import { createNovelProjectScaffold } from "../novel-template.ts";
+import { getWorkspaceSkillsPath } from "../../workspaces/paths.ts";
 
 function createTempProject(): string {
   return mkdtempSync(join(tmpdir(), "craft-novel-template-"));
@@ -71,7 +72,14 @@ describe("createNovelProjectScaffold", () => {
         version: 1,
       },
       storageProfile: "claude-book-compatible",
+      writePolicy: {
+        mode: "catalog-plus-free",
+        freeRoots: [".work"],
+      },
     });
+    expect(manifest.catalog?.paths).toContain("story/plan.md");
+    expect(manifest.catalog?.paths).toContain("bible/structure.md");
+    expect(manifest.catalog?.paths).not.toContain("craft-writing.json");
     const lock = JSON.parse(readFileSync(statePath(rootPath, "craft-pack-lock.json"), "utf-8"));
     expect(lock.methodPack).toEqual({
       id: "novel.claude-book",
@@ -143,7 +151,7 @@ describe("createNovelProjectScaffold", () => {
     ]) {
       expect(existsSync(join(rootPath, relativePath))).toBe(true);
     }
-    expect(existsSync(statePath(rootPath, "skills/script-logic-planner/SKILL.md"))).toBe(true);
+    expect(existsSync(join(getWorkspaceSkillsPath(rootPath), "script-logic-planner/SKILL.md"))).toBe(true);
     expect(existsSync(statePath(rootPath, "NOTICE-Screenplay-Logic.md"))).toBe(true);
     expect(existsSync(join(rootPath, "skills"))).toBe(false);
     expect(existsSync(join(rootPath, "NOTICE-Screenplay-Logic.md"))).toBe(false);
@@ -246,7 +254,14 @@ describe("createNovelProjectScaffold", () => {
       profile: "short-form",
       methodPack: { id: "short-form.article", version: 1 },
       storageProfile: "short-form-compatible",
+      writePolicy: {
+        mode: "catalog-plus-free",
+        freeRoots: ["自由区", ".work"],
+      },
     });
+    expect(manifest.catalog?.paths).toContain("全局/大纲.md");
+    expect(manifest.catalog?.paths).toContain("全局/简报.md");
+    expect(manifest.catalog?.paths).not.toContain("正文");
 
     const brief = readFileSync(join(rootPath, "全局", "简报.md"), "utf-8");
     expect(brief).toContain("## 题材定位");

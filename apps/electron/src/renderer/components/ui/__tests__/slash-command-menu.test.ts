@@ -30,7 +30,6 @@ function skill(overrides: Partial<LoadedSkill> & Pick<LoadedSkill, 'slug'>): Loa
     },
     content: '',
     path: overrides.path ?? `/skills/${overrides.slug}`,
-    source: overrides.source ?? 'workspace',
     iconPath: overrides.iconPath,
   }
 }
@@ -63,8 +62,8 @@ describe('slash skill commands', () => {
     expect(getSlashSkillInsertionText(skill({ slug: 'review-pr' }), 'craft-agents')).toBe('[skill:craft-agents:review-pr] ')
   })
 
-  it('qualifies bundled skills with the agents plugin name', () => {
-    expect(getSlashSkillInsertionText(skill({ slug: 'debug', source: 'global' }), 'craft-agents')).toBe('[skill:.agents:debug] ')
+  it('keeps every Skill scoped to the current Storyflow project', () => {
+    expect(getSlashSkillInsertionText(skill({ slug: 'debug' }), 'craft-agents')).toBe('[skill:craft-agents:debug] ')
   })
 
   it('keeps hyphenated skill names in the slash query', () => {

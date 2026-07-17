@@ -8,7 +8,7 @@
 
 import { CraftMcpClient } from './client.js';
 import { debug } from '../utils/debug.ts';
-import { normalizeMcpUrl } from '../sources/server-builder.ts';
+import { normalizeMcpUrl } from '../sources/mcp-url.ts';
 import type { McpTransport } from '../sources/types.ts';
 
 export interface InvalidProperty {

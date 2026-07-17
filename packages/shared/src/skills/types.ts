@@ -1,16 +1,17 @@
 /**
  * Skills Types
  *
- * Type definitions for workspace skills.
- * Skills are specialized instructions that extend Claude's capabilities.
+ * Type definitions for Storyflow project Skills executed by the Pi runtime.
  */
 
 /**
  * Skill metadata from SKILL.md YAML frontmatter
  */
 export interface SkillMetadata {
-  /** Display name for the skill */
+  /** Pi/Agent Skills machine identifier; matches the parent directory slug. */
   name: string;
+  /** Optional localized or human-friendly label shown in Storyflow. */
+  displayName?: string;
   /** Brief description shown in skill list */
   description: string;
   /** Optional file patterns that trigger this skill */
@@ -28,18 +29,6 @@ export interface SkillMetadata {
   requiredSources?: string[];
 }
 
-/** Source of a loaded skill */
-export type SkillSource = 'global' | 'workspace' | 'project';
-
-/**
- * Plugin name for project-level and global skills.
- *
- * The SDK derives plugin names from `path.basename()` of the registered plugin
- * directory. Both `{project}/.agents/` and `~/.agents/` share the basename
- * `.agents`, so skills from either tier resolve to `.agents:skillSlug`.
- */
-export const AGENTS_PLUGIN_NAME = '.agents';
-
 /**
  * A loaded skill with parsed content
  */
@@ -54,6 +43,4 @@ export interface LoadedSkill {
   iconPath?: string;
   /** Absolute path to skill directory */
   path: string;
-  /** Where this skill was loaded from */
-  source: SkillSource;
 }

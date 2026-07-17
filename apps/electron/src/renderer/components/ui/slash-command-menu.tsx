@@ -9,7 +9,6 @@ import { Check, Minimize2, Zap } from 'lucide-react'
 import { Icon_Folder } from '@craft-agent/ui'
 import { cn } from '@/lib/utils'
 import { PERMISSION_MODE_CONFIG, PERMISSION_MODE_ORDER, type PermissionMode } from '@craft-agent/shared/agent/modes'
-import { AGENTS_PLUGIN_NAME } from '@craft-agent/shared/skills/types'
 import type { LoadedSkill } from '../../../shared/types'
 
 // ============================================================================
@@ -134,16 +133,15 @@ export function createSlashSkillItems(skills: LoadedSkill[]): SlashSkillItem[] {
   return skills.map(skill => ({
     id: skill.slug,
     type: 'skill' as const,
-    label: skill.metadata.name,
+    label: skill.metadata.displayName ?? skill.metadata.name,
     description: skill.metadata.description,
-    searchText: buildSlashItemSearchText(skill.metadata.name, skill.slug, skill.metadata.description),
+    searchText: buildSlashItemSearchText(skill.metadata.displayName ?? skill.metadata.name, skill.slug, skill.metadata.description),
     skill,
   }))
 }
 
 export function getSlashSkillInsertionText(skill: LoadedSkill, workspaceId?: string): string {
-  const pluginName = skill.source === 'workspace' ? workspaceId : AGENTS_PLUGIN_NAME
-  const qualifiedName = pluginName ? `${pluginName}:${skill.slug}` : skill.slug
+  const qualifiedName = workspaceId ? `${workspaceId}:${skill.slug}` : skill.slug
   return `[skill:${qualifiedName}] `
 }
 

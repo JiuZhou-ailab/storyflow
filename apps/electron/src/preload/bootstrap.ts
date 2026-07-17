@@ -1,3 +1,7 @@
+// input: Electron IPC, local/remote WebSocket transports, and the shared channel map
+// output: The isolated renderer API plus desktop lifecycle and capability bridges
+// pos: Security boundary between untrusted renderer code and privileged desktop services
+
 /**
  * WS-mode preload — replaces the full IPC preload (index.ts).
  *
@@ -35,7 +39,7 @@ import {
 import type { ConfirmDialogSpec, FileDialogSpec } from '@craft-agent/server-core/transport'
 import type { RpcClient } from '@craft-agent/server-core/transport'
 import type { RemoteServerConfig } from '@craft-agent/core/types'
-import type { ClientAuthState, ElectronAPI } from '../shared/types'
+import { CLIENT_AUTH_IPC_CHANNELS, type ClientAuthState, type ElectronAPI } from '../shared/types'
 
 // ---------------------------------------------------------------------------
 // Client interface — common surface for both RoutedClient and WsRpcClient
@@ -183,7 +187,7 @@ client.handleCapability(CLIENT_OPEN_FILE_DIALOG, async (spec: FileDialogSpec) =>
 let cachedClientAuthState: ClientAuthState | null = null
 
 async function readClientAuthState(): Promise<ClientAuthState> {
-  const nextState = await ipcRenderer.invoke('client-auth:get-state') as ClientAuthState
+  const nextState = await ipcRenderer.invoke(CLIENT_AUTH_IPC_CHANNELS.GET_STATE) as ClientAuthState
   cachedClientAuthState = nextState
   return nextState
 }
@@ -198,6 +202,9 @@ async function ensureClientAuthAllowed(): Promise<void> {
 const api = buildClientApi(client, CHANNEL_MAP, (ch) => client.isChannelAvailable(ch), ensureClientAuthAllowed)
 
 ;(api as any).getRuntimeEnvironment = (): 'electron' | 'web' => 'electron'
+;(api as ElectronAPI).notifyShellInteractive = () => {
+  ipcRenderer.send('renderer:shell-interactive')
+}
 
 // ---------------------------------------------------------------------------
 // Transport connection state logging (for remote connections)
@@ -432,26 +439,26 @@ client.onConnectionStateChanged((state) => {
   ensureClientAuthAllowed().then(() => ipcRenderer.invoke('server:invokeOnServer', url, token, channel, ...args))
 ;(api as ElectronAPI).getClientAuthState = () => readClientAuthState()
 ;(api as ElectronAPI).signInClient = async (input) => {
-  const user = await ipcRenderer.invoke('client-auth:sign-in', input)
+  const user = await ipcRenderer.invoke(CLIENT_AUTH_IPC_CHANNELS.SIGN_IN, input)
   await readClientAuthState()
   return user
 }
 ;(api as ElectronAPI).signUpClient = async (input) => {
-  const result = await ipcRenderer.invoke('client-auth:sign-up', input)
+  const result = await ipcRenderer.invoke(CLIENT_AUTH_IPC_CHANNELS.SIGN_UP, input)
   await readClientAuthState()
   return result
 }
 ;(api as ElectronAPI).signInWithFeishuClient = async () => {
-  const user = await ipcRenderer.invoke('client-auth:sign-in-feishu')
+  const user = await ipcRenderer.invoke(CLIENT_AUTH_IPC_CHANNELS.SIGN_IN_WITH_FEISHU)
   await readClientAuthState()
   return user
 }
 ;(api as ElectronAPI).submitFeedbackIssue = (input) => ipcRenderer.invoke('feedback:submitIssue', input)
 ;(api as ElectronAPI).cancelFeishuSignInClient = async () => {
-  await ipcRenderer.invoke('client-auth:cancel-feishu-sign-in')
+  await ipcRenderer.invoke(CLIENT_AUTH_IPC_CHANNELS.CANCEL_FEISHU_SIGN_IN)
 }
 ;(api as ElectronAPI).signOutClient = async () => {
-  await ipcRenderer.invoke('client-auth:sign-out')
+  await ipcRenderer.invoke(CLIENT_AUTH_IPC_CHANNELS.SIGN_OUT)
   await readClientAuthState()
 }
 ;(api as ElectronAPI).onClientAuthStateChanged = (callback: (state: ClientAuthState) => void) => {
@@ -459,8 +466,8 @@ client.onConnectionStateChanged((state) => {
     cachedClientAuthState = nextState
     callback(nextState)
   }
-  ipcRenderer.on('client-auth:state-changed', handler)
-  return () => { ipcRenderer.removeListener('client-auth:state-changed', handler) }
+  ipcRenderer.on(CLIENT_AUTH_IPC_CHANNELS.STATE_CHANGED, handler)
+  return () => { ipcRenderer.removeListener(CLIENT_AUTH_IPC_CHANNELS.STATE_CHANGED, handler) }
 }
 ;(api as ElectronAPI).transferSessionToWorkspace = async (sessionId: string, targetWorkspaceId: string, sessionIndex?: number, sessionCount?: number) => {
   await ensureClientAuthAllowed()

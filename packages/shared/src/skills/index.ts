@@ -1,13 +1,13 @@
 /**
  * Skills Module
  *
- * Workspace skills are specialized instructions that extend Claude's capabilities.
+ * input: Consumers of project-owned Pi Skills and marketplace protocol helpers
+ * output: Stable public exports for Skill metadata, storage, validation, and installation
+ * pos: Shared Skills module entrypoint
  */
 
 export * from './types.ts';
 export {
-  GLOBAL_AGENT_SKILLS_DIR,
-  PROJECT_AGENT_SKILLS_DIR,
   loadSkill,
   loadAllSkills,
   invalidateSkillsCache,
@@ -15,7 +15,12 @@ export {
   getSkillIconPath,
   deleteSkill,
   skillExists,
+  isValidSkillSlug,
   listSkillSlugs,
   skillNeedsIconDownload,
   downloadSkillIcon,
+  parseSkillFile,
+  validateSkillDocumentForSlug,
 } from './storage.ts';
+
+export * from './marketplace.ts';

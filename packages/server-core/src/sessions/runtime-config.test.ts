@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import type { LlmConnection } from '@craft-agent/shared/config'
 import type { FileAttachment } from '@craft-agent/shared/protocol'
-import { buildBackendRuntimeSignature, filterAttachmentsForModelInput } from './runtime-config'
+import { buildBackendRuntimeSignature, filterAttachmentsForModelInput, needsPiRuntimeMigrationSeed } from './runtime-config'
 
 const baseCompat: LlmConnection = {
   slug: 'local',
@@ -87,5 +87,25 @@ describe('filterAttachmentsForModelInput', () => {
 
     expect(result.omittedImages).toEqual([imageAttachment])
     expect(result.attachments).toBeUndefined()
+  })
+})
+
+describe('needsPiRuntimeMigrationSeed', () => {
+  it('seeds legacy sessions that have history but no Pi transcript', () => {
+    expect(needsPiRuntimeMigrationSeed({
+      agentRuntime: 'claude-sdk',
+      hasPiTranscript: false,
+      sdkSessionId: 'legacy-session',
+      messageCount: 4,
+    })).toBe(true)
+  })
+
+  it('does not reseed an existing Pi transcript', () => {
+    expect(needsPiRuntimeMigrationSeed({
+      agentRuntime: 'pi',
+      hasPiTranscript: true,
+      sdkSessionId: 'pi-session',
+      messageCount: 4,
+    })).toBe(false)
   })
 })

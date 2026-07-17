@@ -1,5 +1,7 @@
 /**
- * SourceCredentialManager
+ * input: Loaded Sources, OAuth exchanges, stored credentials, and Source connection-state storage
+ * output: Credential CRUD, authentication, refresh, and connection-state transitions
+ * pos: Source authentication authority separating secrets/runtime state from Source definitions
  *
  * Unified credential management for sources. Consolidates credential CRUD,
  * credential ID resolution, expiry checking, and OAuth flows.
@@ -23,7 +25,7 @@ import {
   type SlackService,
   type MicrosoftService,
 } from './types.ts';
-import { buildAuthorizationHeader } from './api-tools.ts';
+import { buildAuthorizationHeader } from './api-auth.ts';
 import type { CredentialId, StoredCredential } from '../credentials/types.ts';
 import { getCredentialManager } from '../credentials/index.ts';
 import { CraftOAuth, getMcpBaseUrl, prepareMcpOAuth, exchangeMcpOAuth, type OAuthCallbacks, type OAuthTokens } from '../auth/oauth.ts';
@@ -60,7 +62,12 @@ import {
   refreshGenericOAuthToken,
 } from '../auth/generic-oauth.ts';
 import { debug } from '../utils/debug.ts';
-import { markSourceAuthenticated, loadSourceConfig, saveSourceConfig } from './storage.ts';
+import {
+  markSourceAuthenticated,
+  loadSourceConfig,
+  saveSourceConfig,
+  updateSourceConnectionState,
+} from './storage.ts';
 
 /**
  * Result of authentication attempt
@@ -92,6 +99,7 @@ export interface SourceCredentialManagerStorage {
   loadSourceConfig: typeof loadSourceConfig;
   saveSourceConfig: typeof saveSourceConfig;
   markSourceAuthenticated: typeof markSourceAuthenticated;
+  updateSourceConnectionState: typeof updateSourceConnectionState;
 }
 
 /**
@@ -137,6 +145,7 @@ export class SourceCredentialManager {
       loadSourceConfig,
       saveSourceConfig,
       markSourceAuthenticated,
+      updateSourceConnectionState,
       ...storage,
     };
   }
@@ -356,12 +365,16 @@ export class SourceCredentialManager {
    */
   markSourceNeedsReauth(source: LoadedSource, errorMessage: string): void {
     try {
-      const config = this.storage.loadSourceConfig(source.workspaceRootPath, source.config.slug);
-      if (config) {
-        config.isAuthenticated = false;
-        config.connectionStatus = 'needs_auth';
-        config.connectionError = errorMessage;
-        this.storage.saveSourceConfig(source.workspaceRootPath, config);
+      const updated = this.storage.updateSourceConnectionState(
+        source.workspaceRootPath,
+        source.config.slug,
+        {
+          isAuthenticated: false,
+          connectionStatus: 'needs_auth',
+          connectionError: errorMessage,
+        },
+      );
+      if (updated) {
         debug(`[SourceCredentialManager] Marked ${source.config.slug} as needing re-auth: ${errorMessage}`);
       }
     } catch (error) {

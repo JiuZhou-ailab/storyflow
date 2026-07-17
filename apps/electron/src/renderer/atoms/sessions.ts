@@ -756,6 +756,7 @@ async function loadSessionMessages(
       const newLoadedSessions = new Set(get(loadedSessionsAtom))
       newLoadedSessions.add(sessionId)
       set(loadedSessionsAtom, newLoadedSessions)
+      reconcileLoadedSessionTranscripts(get, set)
     }
 
     return mergedSession
@@ -775,6 +776,7 @@ async function loadSessionMessages(
 export const ensureSessionMessagesLoadedAtom = atom(
   null,
   async (get, set, sessionId: string): Promise<Session | null> => {
+    touchSessionTranscriptAccess(sessionId)
     return loadSessionMessages(get, set, sessionId)
   }
 )
@@ -786,8 +788,130 @@ export const ensureSessionMessagesLoadedAtom = atom(
 export const forceSessionMessagesReloadAtom = atom(
   null,
   async (get, set, sessionId: string): Promise<Session | null> => {
+    touchSessionTranscriptAccess(sessionId)
     return loadSessionMessages(get, set, sessionId, { force: true })
   }
+)
+
+// ---------------------------------------------------------------------------
+// Transcript working set (long-lived memory bound)
+// ---------------------------------------------------------------------------
+//
+// Root cause of session-switch heap growth: ensureSessionMessagesLoaded keeps the
+// full message array on sessionAtomFamily forever. Switching across many sessions
+// therefore retains O(N) full transcripts in the renderer.
+//
+// Correct model: only pin transcripts for currently open panels (hard pins) plus
+// a small recency buffer for back-navigation. Everything else keeps SessionMeta
+// and an empty message shell, and re-fetches on next open.
+
+/** Extra full transcripts retained beyond currently open session panels. */
+export const SESSION_TRANSCRIPT_WORKING_SET_EXTRA = 2
+
+/** Bound on recency bookkeeping (not the same as retained transcripts). */
+const SESSION_TRANSCRIPT_RECENCY_CAP = 32
+
+/** Most-recent-last access order for transcript soft pins. */
+let recentTranscriptAccess: string[] = []
+
+/** Latest renderer-owned hard pins, read again when an async load completes. */
+const sessionTranscriptOpenIdsAtom = atom<readonly string[]>([])
+
+/** Test-only reset for the module-level recency list. */
+export function __resetSessionTranscriptWorkingSetForTests(): void {
+  recentTranscriptAccess = []
+}
+
+/** Record that a session's full transcript was accessed / should stay warm briefly. */
+export function touchSessionTranscriptAccess(sessionId: string): void {
+  if (!sessionId) return
+  recentTranscriptAccess = [
+    ...recentTranscriptAccess.filter((id) => id !== sessionId),
+    sessionId,
+  ]
+  if (recentTranscriptAccess.length > SESSION_TRANSCRIPT_RECENCY_CAP) {
+    recentTranscriptAccess = recentTranscriptAccess.slice(-SESSION_TRANSCRIPT_RECENCY_CAP)
+  }
+}
+
+/**
+ * Resolve the set of session ids allowed to keep full message arrays in memory.
+ * Open panel/selected ids are hard pins; recency fills remaining soft slots.
+ */
+export function resolveSessionTranscriptWorkingSet(
+  openSessionIds: readonly string[],
+  extraSlots: number = SESSION_TRANSCRIPT_WORKING_SET_EXTRA,
+): string[] {
+  const open: string[] = []
+  const seen = new Set<string>()
+  for (const id of openSessionIds) {
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    open.push(id)
+  }
+  const extras = recentTranscriptAccess
+    .filter((id) => !seen.has(id))
+    .slice(-Math.max(0, extraSlots))
+  return [...open, ...extras]
+}
+
+/**
+ * Drop a session's full transcript while preserving metadata and session shell.
+ * Skips sessions that are actively processing (streaming is source of truth there).
+ */
+export const unloadSessionTranscriptAtom = atom(
+  null,
+  (get, set, sessionId: string): boolean => {
+    const session = get(sessionAtomFamily(sessionId))
+    if (session?.isProcessing) return false
+
+    if (session && (session.messages?.length ?? 0) > 0) {
+      set(sessionAtomFamily(sessionId), { ...session, messages: [] })
+    }
+
+    const loadedSessions = get(loadedSessionsAtom)
+    if (loadedSessions.has(sessionId)) {
+      const nextLoaded = new Set(loadedSessions)
+      nextLoaded.delete(sessionId)
+      set(loadedSessionsAtom, nextLoaded)
+    }
+
+    sessionLoadingPromises.delete(sessionId)
+    return true
+  },
+)
+
+function reconcileLoadedSessionTranscripts(get: Getter, set: Setter): void {
+  const keep = new Set(resolveSessionTranscriptWorkingSet(get(sessionTranscriptOpenIdsAtom)))
+  for (const id of get(loadedSessionsAtom)) {
+    if (keep.has(id)) continue
+    set(unloadSessionTranscriptAtom, id)
+  }
+}
+
+/**
+ * Evict full transcripts that are outside the working set.
+ * Call after opening/selecting a session with the currently open session ids
+ * (panel stack + selected).
+ */
+export const reconcileSessionTranscriptWorkingSetAtom = atom(
+  null,
+  (get, set, openSessionIds: readonly string[]) => {
+    const normalizedOpenIds = [...new Set(openSessionIds.filter(Boolean))]
+    set(sessionTranscriptOpenIdsAtom, normalizedOpenIds)
+    for (const id of normalizedOpenIds) {
+      touchSessionTranscriptAccess(id)
+    }
+    reconcileLoadedSessionTranscripts(get, set)
+  },
+)
+
+/** Re-run eviction against the latest hard pins after background processing ends. */
+export const reconcileCurrentSessionTranscriptWorkingSetAtom = atom(
+  null,
+  (get, set) => {
+    reconcileLoadedSessionTranscripts(get, set)
+  },
 )
 
 /**

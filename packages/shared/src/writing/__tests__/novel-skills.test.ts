@@ -1,9 +1,14 @@
+// input: Bundled writing Method Packs and temporary Storyflow/Pi projects
+// output: Regression assertions for generated project-local Skills and writing gates
+// pos: Contract test for writing Skill assets installed under .pi/skills
+
 import { describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createNovelProjectScaffold } from "../novel-template.ts";
 import { getBundledNovelSkillFiles } from "../novel-skills.ts";
+import { getWorkspaceSkillsPath } from "../../workspaces/paths.ts";
 
 const EXPECTED_SKILLS = [
   "book-analyzer",
@@ -89,11 +94,11 @@ describe("bundled writing skills", () => {
     createNovelProjectScaffold(rootPath, { title: "Novel Workspace" });
 
     for (const slug of EXPECTED_SKILLS) {
-      expect(existsSync(statePath(rootPath, join("skills", slug, "SKILL.md")))).toBe(true);
+      expect(existsSync(join(getWorkspaceSkillsPath(rootPath), slug, "SKILL.md"))).toBe(true);
     }
     expect(existsSync(join(rootPath, "skills"))).toBe(false);
 
-    const notice = readFileSync(statePath(rootPath, "skills/NOTICE-Claude-Book.md"), "utf-8");
+    const notice = readFileSync(join(getWorkspaceSkillsPath(rootPath), "NOTICE-Claude-Book.md"), "utf-8");
     expect(notice).toContain("Claude-Book");
     expect(notice).toContain("MIT");
   });
@@ -113,7 +118,7 @@ describe("bundled writing skills", () => {
     });
 
     for (const [slug, name] of Object.entries(expectedSkillNames)) {
-      const skillPath = statePath(rootPath, join("skills", slug, "SKILL.md"));
+      const skillPath = join(getWorkspaceSkillsPath(rootPath), slug, "SKILL.md");
       const content = readFileSync(skillPath, "utf-8");
       expect(existsSync(skillPath)).toBe(true);
       expect(content).toContain(`name: ${name}`);
@@ -129,7 +134,7 @@ describe("bundled writing skills", () => {
       methodPackId: "screenplay.logic",
     });
 
-    const planner = readFileSync(statePath(rootPath, "skills/script-logic-planner/SKILL.md"), "utf-8");
+    const planner = readFileSync(join(getWorkspaceSkillsPath(rootPath), "script-logic-planner/SKILL.md"), "utf-8");
     expect(planner).toContain("分场大纲");
     expect(planner).toContain("人物行动线");
     expect(planner).toContain("因果链");

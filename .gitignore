@@ -97,12 +97,19 @@ pnpm-lock.yaml
 .windsurf/
 .zencoder/
 skills/
+!packages/shared/src/skills/
+packages/shared/src/skills/*
+!packages/shared/src/skills/marketplace.ts
+!packages/shared/src/skills/__tests__/
+packages/shared/src/skills/__tests__/*
+!packages/shared/src/skills/__tests__/marketplace.test.ts
 skills-lock.json
 error.log
 
 # Local design/audit artifacts
 react-doctor.config.json
 tokens.css
+!apps/skills-market/public/tokens.css
 craft-agents-clone-*.png
 storyflow-landing-*.png
 apps/marketing/promo-video/renders/

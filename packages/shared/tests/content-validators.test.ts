@@ -110,8 +110,10 @@ describe('validateSourceConfigContent', () => {
 describe('validateSkillContent', () => {
   it('passes for valid SKILL.md content', () => {
     const content = `---
-name: My Skill
+name: my-skill
 description: A test skill for testing
+metadata:
+  displayName: My Skill
 ---
 
 # Instructions
@@ -125,7 +127,7 @@ Do things.
 
   it('passes with optional fields (globs, alwaysAllow)', () => {
     const content = `---
-name: Git Helper
+name: git-helper
 description: Helps with git operations
 globs:
   - "**/*.ts"
@@ -153,7 +155,7 @@ Content here.
 
   it('fails when frontmatter is missing description', () => {
     const content = `---
-name: Test Skill
+name: test-skill
 ---
 
 Content here.
@@ -165,7 +167,7 @@ Content here.
 
   it('fails when body is empty', () => {
     const content = `---
-name: Empty Skill
+name: empty-skill
 description: This skill has no body
 ---
 `;
@@ -367,13 +369,13 @@ describe('detectConfigFileType', () => {
 
   it('detects skill SKILL.md files', () => {
     const result = detectConfigFileType(
-      `${workspaceRoot}/skills/commit/SKILL.md`,
+      `${workspaceRoot}/.pi/skills/commit/SKILL.md`,
       workspaceRoot
     );
     expect(result).not.toBeNull();
     expect(result!.type).toBe('skill');
     expect(result!.slug).toBe('commit');
-    expect(result!.displayFile).toBe('skills/commit/SKILL.md');
+    expect(result!.displayFile).toBe('.pi/skills/commit/SKILL.md');
   });
 
   it('detects statuses config', () => {
@@ -452,7 +454,7 @@ describe('validateConfigFileContent', () => {
   it('dispatches to skill validator', () => {
     const detection = { type: 'skill' as const, slug: 'my-skill', displayFile: 'skills/my-skill/SKILL.md' };
     const content = `---
-name: Test
+name: my-skill
 description: Test skill
 ---
 

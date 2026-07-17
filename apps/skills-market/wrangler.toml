@@ -1,0 +1,16 @@
+name = "storyflow-skills-market"
+main = "src/index.ts"
+compatibility_date = "2026-07-17"
+workers_dev = false
+routes = [
+  { pattern = "storyflow-skills.zjding.com", custom_domain = true },
+]
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/api/*", "/health"]
+not_found_handling = "single-page-application"
+
+[vars]
+MARKET_ORIGIN = "https://storyflow-skills.zjding.com"

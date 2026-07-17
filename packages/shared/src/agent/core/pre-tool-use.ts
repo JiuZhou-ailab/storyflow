@@ -15,7 +15,7 @@
  * 6. Ask-mode prompt decision: Determine if user approval is needed
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { expandPath } from '../../utils/paths.ts';
@@ -33,15 +33,10 @@ import {
   type CliDomainNamespace,
 } from '../../config/cli-domains.ts';
 import { FEATURE_FLAGS } from '../../feature-flags.ts';
-import { AGENTS_PLUGIN_NAME } from '../../skills/types.ts';
-import { GLOBAL_AGENT_SKILLS_DIR, PROJECT_AGENT_SKILLS_DIR } from '../../skills/storage.ts';
-import {
-  getLegacyWorkspaceSkillsPath,
-  getWorkspaceSkillsPath,
-} from '../../workspaces/paths.ts';
 import {
   shouldAllowToolInMode,
   isApiEndpointAllowed,
+  isReadOnlyBashCommand,
   isReadOnlyBashCommandWithConfig,
   extractBashWriteTarget,
   looksLikePotentialWrite,
@@ -54,6 +49,10 @@ import type { PrerequisiteCheckResult } from './prerequisite-manager.ts';
 import { detectWritingProject } from '../../writing/manifest.ts';
 import { categorizeNovelPath } from '../../writing/file-categories.ts';
 import type { WritingFileCategory } from '../../writing/file-categories.ts';
+import {
+  isWritingWriteAllowed,
+  normalizeWritingWritePolicy,
+} from '../../writing/writing-catalog.ts';
 
 // ============================================================
 // TYPES
@@ -206,19 +205,13 @@ export function expandToolPaths(
 /**
  * Ensure skill names are fully-qualified with the correct plugin prefix.
  *
- * The SDK resolves skills as `pluginName:skillSlug` where the plugin name is
- * read from `.claude-plugin/plugin.json` `name` field. Skills can live in 3 tiers:
- *   1. Workspace: {workspaceRoot}/skills/{slug}/ → plugin name from plugin.json
- *   2. Project:   {workingDir}/.agents/skills/{slug}/ → plugin name = ".agents"
- *   3. Global:    ~/.agents/skills/{slug}/ → plugin name = ".agents"
- *
- * This function resolves the bare slug to the correct plugin prefix by checking
- * which directory actually contains the skill. It also handles re-qualifying
- * skills that were incorrectly qualified by the UI (which always uses the
- * workspace slug, even for global/project skills).
+ * Storyflow session history uses `projectSlug:skillSlug` tokens. Pi itself
+ * discovers the current project's `.pi/skills` through its ResourceLoader;
+ * this transform preserves the existing UI/session token contract while
+ * preventing arbitrary session working directories from changing Skill scope.
  *
  * @param input - The Skill tool input ({ skill: string, args?: string })
- * @param workspaceSlug - The workspace slug (from .claude-plugin/plugin.json name)
+ * @param workspaceSlug - Stable Storyflow project qualifier
  * @param workspaceRootPath - Absolute path to the workspace root
  * @param workingDirectory - Absolute path to the current working directory (optional)
  * @param onDebug - Optional debug callback
@@ -227,72 +220,19 @@ export function expandToolPaths(
 export function qualifySkillName(
   input: Record<string, unknown>,
   workspaceSlug: string,
-  workspaceRootPath?: string,
-  workingDirectory?: string,
   onDebug?: (message: string) => void
 ): SkillQualificationResult {
   const skill = input.skill as string | undefined;
   if (!skill) return { modified: false, input };
 
-  // Extract the bare slug — strip any existing qualifier (e.g. "CraftAgentWS:commit" → "commit")
-  const bareSlug = skill.includes(':') ? skill.split(':').pop()! : skill;
-  if (!bareSlug) return { modified: false, input };
-
-  // If we don't have the workspace root path, fall back to simple workspace-only qualification
-  if (!workspaceRootPath) {
-    if (skill.includes(':')) return { modified: false, input };
-    const qualifiedSkill = `${workspaceSlug}:${skill}`;
-    onDebug?.(`Skill tool: qualified "${skill}" → "${qualifiedSkill}" (legacy fallback)`);
-    return { modified: true, input: { ...input, skill: qualifiedSkill } };
-  }
-
-  // Resolve which plugin tier contains this skill by checking SKILL.md existence
-  const resolvedSkill = resolveSkillPlugin(bareSlug, workspaceSlug, workspaceRootPath, workingDirectory);
-
-  if (resolvedSkill === skill) {
-    // Already correctly qualified
-    return { modified: false, input };
-  }
+  if (skill.includes(':')) return { modified: false, input };
+  const resolvedSkill = `${workspaceSlug}:${skill}`;
 
   onDebug?.(`Skill tool: qualified "${skill}" → "${resolvedSkill}"`);
   return {
     modified: true,
     input: { ...input, skill: resolvedSkill },
   };
-}
-
-/**
- * Resolve a skill slug to its fully-qualified plugin:slug name by checking
- * which plugin directory actually contains the skill.
- */
-function resolveSkillPlugin(
-  bareSlug: string,
-  workspaceSlug: string,
-  workspaceRootPath: string,
-  workingDirectory?: string,
-): string {
-  // Priority order matches loadAllSkills: project (highest) > workspace > global (lowest)
-
-  // 1. Project: {workingDir}/.agents/skills/{slug}/SKILL.md
-  if (workingDirectory && existsSync(join(workingDirectory, PROJECT_AGENT_SKILLS_DIR, bareSlug, 'SKILL.md'))) {
-    return `${AGENTS_PLUGIN_NAME}:${bareSlug}`;
-  }
-
-  // 2. Workspace: {workspaceRoot}/.craft-agent/skills/{slug}/SKILL.md
-  if (
-    existsSync(join(getWorkspaceSkillsPath(workspaceRootPath), bareSlug, 'SKILL.md'))
-    || existsSync(join(getLegacyWorkspaceSkillsPath(workspaceRootPath), bareSlug, 'SKILL.md'))
-  ) {
-    return `${workspaceSlug}:${bareSlug}`;
-  }
-
-  // 3. Global: ~/.agents/skills/{slug}/SKILL.md
-  if (existsSync(join(GLOBAL_AGENT_SKILLS_DIR, bareSlug, 'SKILL.md'))) {
-    return `${AGENTS_PLUGIN_NAME}:${bareSlug}`;
-  }
-
-  // Fallback: assume workspace plugin (original behavior)
-  return `${workspaceSlug}:${bareSlug}`;
 }
 
 // ============================================================
@@ -634,6 +574,77 @@ export function getWritingProjectBashWriteRedirect(
   };
 }
 
+/**
+ * When a writing project opts into catalog-plus-free, block Write/Edit outside
+ * the user-authorized catalog and free-root scratch areas.
+ */
+const CATALOG_SCOPED_WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+
+function countShellWriteOperations(command: string): number {
+  const redirects = command.match(/(?:^|[\s;|&()])\d*>>?(?![=>&])/g)?.length ?? 0;
+  const powerShellWrites = command.match(/\b(?:Out-File|Set-Content|Add-Content)\b/gi)?.length ?? 0;
+  return redirects + powerShellWrites;
+}
+
+export function getWritingCatalogWriteBlock(
+  toolName: string,
+  input: Record<string, unknown>,
+  workspaceRootPath: string,
+  workingDirectory?: string,
+): { message: string } | null {
+  const isBash = toolName === 'Bash';
+  if (!isBash && !CATALOG_SCOPED_WRITE_TOOLS.has(toolName)) return null;
+
+  const project = detectWritingProject(workspaceRootPath);
+  if (!project) return null;
+
+  const policy = normalizeWritingWritePolicy(project.manifest.writePolicy, project.manifest.type);
+  if (policy.mode !== 'catalog-plus-free') return null;
+
+  let filePath =
+    (typeof input.file_path === 'string' && input.file_path)
+    || (typeof input.notebook_path === 'string' && input.notebook_path)
+    || '';
+
+  if (!isBash && !filePath) return null;
+
+  if (isBash) {
+    const command = typeof input.command === 'string' ? input.command : '';
+    if (!command || isReadOnlyBashCommand(command)) return null;
+
+    // Bash is an unstructured write boundary. Only permit one deterministically
+    // extracted target; compound or opaque mutations cannot prove catalog scope.
+    if (countShellWriteOperations(command) !== 1) {
+      filePath = '';
+    } else {
+      filePath = extractBashWriteTarget(command) ?? '';
+    }
+  }
+
+  const expandedPath = filePath.startsWith('~') ? expandPath(filePath) : filePath;
+  const relativePath = filePath
+    ? getWorkspaceRelativePath(expandedPath, workspaceRootPath, workingDirectory)
+    : null;
+
+  if (relativePath && isWritingWriteAllowed(relativePath, project.manifest.catalog, policy, project.manifest.type)) {
+    return null;
+  }
+
+  const freeRoots = policy.freeRoots.join(', ');
+  return {
+    message: [
+      `Writes outside the user-authorized writing catalog are blocked.`,
+      ``,
+      `  Target: ${relativePath ?? (isBash ? 'unverified Bash write target' : expandedPath)}`,
+      `  Policy: catalog-plus-free`,
+      ``,
+      `Only files listed in craft-writing.json catalog.paths may be edited as working-surface files.`,
+      `Scratch writes are allowed under: ${freeRoots}`,
+      `To authorize a new path, the user must add it to the workspace catalog (create/import/accept).`,
+    ].join('\n'),
+  };
+}
+
 // ============================================================
 // CENTRALIZED PRETOOLUSE PIPELINE
 // ============================================================
@@ -878,6 +889,17 @@ export function runPreToolUseChecks(ctx: PreToolUseInput): PreToolUseCheckResult
     }
   }
 
+  // 5b2. Writing catalog write scope (user-authorized working surface)
+  const writingCatalogWriteBlock = getWritingCatalogWriteBlock(
+    toolName,
+    currentInput,
+    workspaceRootPath,
+    workingDirectory,
+  );
+  if (writingCatalogWriteBlock) {
+    return { type: 'block', reason: writingCatalogWriteBlock.message };
+  }
+
   // 5c. Config-domain Bash guard (block direct labels/automations path operations unless using craft-agent)
   if (FEATURE_FLAGS.craftAgentsCli && toolName === 'Bash') {
     const configDomainBashRedirect = getConfigDomainBashRedirect(currentInput, workspaceRootPath, workingDirectory);
@@ -905,8 +927,6 @@ export function runPreToolUseChecks(ctx: PreToolUseInput): PreToolUseCheckResult
     const skillResult = qualifySkillName(
       currentInput,
       workspaceId,
-      workspaceRootPath,
-      workingDirectory,
       onDebug
     );
     if (skillResult.modified) {

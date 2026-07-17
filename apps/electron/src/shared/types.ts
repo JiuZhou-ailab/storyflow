@@ -207,6 +207,21 @@ export interface TransportConnectionState {
   updatedAt: number
 }
 
+/**
+ * Desktop-local client-auth IPC channels.
+ * Kept separate from RPC_CHANNELS because authentication gates the transport
+ * itself and must never be routed to a workspace server.
+ */
+export const CLIENT_AUTH_IPC_CHANNELS = {
+  GET_STATE: 'client-auth:get-state',
+  SIGN_IN: 'client-auth:sign-in',
+  SIGN_UP: 'client-auth:sign-up',
+  SIGN_IN_WITH_FEISHU: 'client-auth:sign-in-feishu',
+  CANCEL_FEISHU_SIGN_IN: 'client-auth:cancel-feishu-sign-in',
+  SIGN_OUT: 'client-auth:sign-out',
+  STATE_CHANGED: 'client-auth:state-changed',
+} as const
+
 export interface ClientAuthUser {
   provider: 'neon' | 'feishu'
   userId: string
@@ -300,6 +315,9 @@ import type {
 } from '@craft-agent/shared/protocol'
 
 export interface ElectronAPI {
+  /** Desktop-only signal: the first real product surface has committed and painted. */
+  notifyShellInteractive?(): void
+
   // Session management
   getSessions(): Promise<Session[]>
   getUnreadSummary(): Promise<UnreadSummary>

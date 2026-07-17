@@ -1,7 +1,7 @@
 /**
  * Config File Watcher
  *
- * input: App, global agent, and workspace configuration file changes
+ * input: App, global Source, and workspace/project configuration file changes
  * output: Debounced callbacks for config, sources, skills, permissions, themes, and metadata
  * pos: Shared filesystem watch coordinator for live runtime configuration updates
  *
@@ -13,11 +13,11 @@
  * - ~/.craft-agent/preferences.json - User preferences
  * - ~/.craft-agent/theme.json - App-level theme overrides
  * - ~/.craft-agent/themes/*.json - Preset theme files (app-level)
- * - ~/.agents/sources/{slug}/config.json, guide.md, icon.* - Global agent sources
- * - ~/.agents/skills/{slug}/SKILL.md, icon.* - Global agent skills
+ * - ~/.craft-agent/sources/{slug}/config.json, guide.md, icon.* - Craft global sources
+ * - ~/.agents/sources/{slug}/... - Shared multi-tool sources (read interop)
  * - ~/.craft-agent/workspaces/{slug}/ - Workspace directory (recursive)
  *   - .craft-agent/sources/{slug}/config.json, guide.md, permissions.json
- *   - .craft-agent/skills/{slug}/SKILL.md, icon.*
+ *   - .pi/skills/{slug}/SKILL.md, icon.*
  *   - .craft-agent/sessions/{id}/session.jsonl (header metadata only)
  *   - permissions.json
  */
@@ -46,12 +46,19 @@ import {
   sourceNeedsIconDownload,
   downloadSourceIcon,
   GLOBAL_AGENT_SOURCES_DIR,
+  SHARED_AGENTS_SOURCES_DIR,
 } from '../sources/storage.ts';
 import { permissionsConfigCache, getAppPermissionsDir } from '../agent/permissions-config.ts';
 import { getWorkspacePath, getWorkspaceSourcesPath, getWorkspaceSkillsPath } from '../workspaces/storage.ts';
-import { WORKSPACE_STATE_DIR } from '../workspaces/paths.ts';
+import { PI_PROJECT_DIR, WORKSPACE_STATE_DIR } from '../workspaces/paths.ts';
 import type { LoadedSkill } from '../skills/types.ts';
-import { GLOBAL_AGENT_SKILLS_DIR, loadSkill, loadAllSkills, invalidateSkillsCache, skillNeedsIconDownload, downloadSkillIcon } from '../skills/storage.ts';
+import {
+  loadSkill,
+  loadAllSkills,
+  invalidateSkillsCache,
+  skillNeedsIconDownload,
+  downloadSkillIcon,
+} from '../skills/storage.ts';
 import {
   loadStatusConfig,
   statusNeedsIconDownload,
@@ -470,7 +477,6 @@ export class ConfigWatcher {
   private static startGlobalWatchers(): void {
     ConfigWatcher.globalStarted = true;
     ConfigWatcher.watchGlobalConfigsOnce();
-    ConfigWatcher.watchGlobalSkillsDirOnce();
     ConfigWatcher.watchGlobalSourcesDirOnce();
     ConfigWatcher.watchAppThemesDirOnce();
     ConfigWatcher.watchAppPermissionsDirOnce();
@@ -507,40 +513,18 @@ export class ConfigWatcher {
     }
   }
 
-  private static watchGlobalSkillsDirOnce(): void {
-    if (!existsSync(GLOBAL_AGENT_SKILLS_DIR)) {
-      mkdirSync(GLOBAL_AGENT_SKILLS_DIR, { recursive: true });
+  private static watchSourcesDirOnce(
+    sourcesDir: string,
+    label: string,
+    createIfMissing = true,
+  ): void {
+    if (!existsSync(sourcesDir)) {
+      if (!createIfMissing) return;
+      mkdirSync(sourcesDir, { recursive: true });
     }
 
     try {
-      const watcher = watch(GLOBAL_AGENT_SKILLS_DIR, { recursive: true }, (_eventType, filename) => {
-        if (!filename) return;
-
-        const normalizedPath = filename.replace(/\\/g, '/');
-        const parts = normalizedPath.split('/');
-        const file = parts[1];
-
-        if (parts.length === 1 || file === 'SKILL.md' || (file && /^icon\.(svg|png|jpg|jpeg)$/i.test(file))) {
-          ConfigWatcher.debounceGlobal('global-skills', () => {
-            ConfigWatcher.forEachGlobalSubscriber(w => w.handleGlobalSkillsChange());
-          });
-        }
-      });
-
-      ConfigWatcher.globalWatchers.push(watcher);
-      debug('[ConfigWatcher] Watching global skills once:', GLOBAL_AGENT_SKILLS_DIR);
-    } catch (error) {
-      debug('[ConfigWatcher] Error watching global skills directory:', error);
-    }
-  }
-
-  private static watchGlobalSourcesDirOnce(): void {
-    if (!existsSync(GLOBAL_AGENT_SOURCES_DIR)) {
-      mkdirSync(GLOBAL_AGENT_SOURCES_DIR, { recursive: true });
-    }
-
-    try {
-      const watcher = watch(GLOBAL_AGENT_SOURCES_DIR, { recursive: true }, (_eventType, filename) => {
+      const watcher = watch(sourcesDir, { recursive: true }, (_eventType, filename) => {
         if (!filename) return;
 
         const normalizedPath = filename.replace(/\\/g, '/');
@@ -560,10 +544,15 @@ export class ConfigWatcher {
       });
 
       ConfigWatcher.globalWatchers.push(watcher);
-      debug('[ConfigWatcher] Watching global sources once:', GLOBAL_AGENT_SOURCES_DIR);
+      debug('[ConfigWatcher] Watching global sources once:', label, sourcesDir);
     } catch (error) {
-      debug('[ConfigWatcher] Error watching global sources directory:', error);
+      debug('[ConfigWatcher] Error watching global sources directory:', label, error);
     }
+  }
+
+  private static watchGlobalSourcesDirOnce(): void {
+    ConfigWatcher.watchSourcesDirOnce(GLOBAL_AGENT_SOURCES_DIR, 'craft');
+    ConfigWatcher.watchSourcesDirOnce(SHARED_AGENTS_SOURCES_DIR, 'shared-agents', false);
   }
 
   private static watchAppThemesDirOnce(): void {
@@ -634,46 +623,18 @@ export class ConfigWatcher {
     }
   }
 
-  /**
-   * Watch global agent skills (~/.agents/skills) so edits to global SKILL.md
-   * files refresh every workspace's skill sidebar.
-   */
-  private watchGlobalSkillsDir(): void {
-    if (!existsSync(GLOBAL_AGENT_SKILLS_DIR)) {
-      mkdirSync(GLOBAL_AGENT_SKILLS_DIR, { recursive: true });
+  private watchSourcesDir(
+    sourcesDir: string,
+    label: string,
+    createIfMissing = true,
+  ): void {
+    if (!existsSync(sourcesDir)) {
+      if (!createIfMissing) return;
+      mkdirSync(sourcesDir, { recursive: true });
     }
 
     try {
-      const watcher = watch(GLOBAL_AGENT_SKILLS_DIR, { recursive: true }, (_eventType, filename) => {
-        if (!filename) return;
-
-        const normalizedPath = filename.replace(/\\/g, '/');
-        const parts = normalizedPath.split('/');
-        const file = parts[1];
-
-        if (parts.length === 1 || file === 'SKILL.md' || (file && /^icon\.(svg|png|jpg|jpeg)$/i.test(file))) {
-          this.debounce('global-skills', () => this.handleGlobalSkillsChange());
-        }
-      });
-
-      this.watchers.push(watcher);
-      debug('[ConfigWatcher] Watching global skills recursively:', GLOBAL_AGENT_SKILLS_DIR);
-    } catch (error) {
-      debug('[ConfigWatcher] Error watching global skills directory:', error);
-    }
-  }
-
-  /**
-   * Watch global agent sources (~/.agents/sources) so changes refresh every
-   * workspace's source sidebar and active source server configuration.
-   */
-  private watchGlobalSourcesDir(): void {
-    if (!existsSync(GLOBAL_AGENT_SOURCES_DIR)) {
-      mkdirSync(GLOBAL_AGENT_SOURCES_DIR, { recursive: true });
-    }
-
-    try {
-      const watcher = watch(GLOBAL_AGENT_SOURCES_DIR, { recursive: true }, (_eventType, filename) => {
+      const watcher = watch(sourcesDir, { recursive: true }, (_eventType, filename) => {
         if (!filename) return;
 
         const normalizedPath = filename.replace(/\\/g, '/');
@@ -691,10 +652,19 @@ export class ConfigWatcher {
       });
 
       this.watchers.push(watcher);
-      debug('[ConfigWatcher] Watching global sources recursively:', GLOBAL_AGENT_SOURCES_DIR);
+      debug('[ConfigWatcher] Watching global sources recursively:', label, sourcesDir);
     } catch (error) {
-      debug('[ConfigWatcher] Error watching global sources directory:', error);
+      debug('[ConfigWatcher] Error watching global sources directory:', label, error);
     }
+  }
+
+  /**
+   * Watch Craft-owned and shared multi-tool global sources so changes refresh
+   * every workspace's source sidebar and active source server configuration.
+   */
+  private watchGlobalSourcesDir(): void {
+    this.watchSourcesDir(GLOBAL_AGENT_SOURCES_DIR, 'craft');
+    this.watchSourcesDir(SHARED_AGENTS_SOURCES_DIR, 'shared-agents', false);
   }
 
   /**
@@ -708,25 +678,16 @@ export class ConfigWatcher {
   }
 
   /**
-   * Handle global skill changes. Global skills can affect the full visible
-   * skill list for every workspace, especially when no workspace/project skill
-   * overrides the same slug.
-   */
-  private handleGlobalSkillsChange(): void {
-    debug('[ConfigWatcher] Global skills changed');
-    invalidateSkillsCache();
-    const allSkills = loadAllSkills(this.workspaceDir);
-    this.callbacks.onSkillsListChange?.(allSkills);
-  }
-
-  /**
    * Handle a file change within the workspace directory
    */
   private handleWorkspaceFileChange(relativePath: string, eventType: string): void {
     const statePrefix = `${WORKSPACE_STATE_DIR}/`;
+    const piSkillsPrefix = `${PI_PROJECT_DIR}/skills/`;
     const normalizedRelativePath = relativePath.startsWith(statePrefix)
       ? relativePath.slice(statePrefix.length)
-      : relativePath;
+      : relativePath.startsWith(piSkillsPrefix)
+        ? `skills/${relativePath.slice(piSkillsPrefix.length)}`
+        : relativePath;
     const parts = normalizedRelativePath.split('/');
 
     // Workspace-level permissions.json

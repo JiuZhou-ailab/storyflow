@@ -77,16 +77,6 @@ mock.module('../../../config/validators.ts', () => ({
   formatValidationResult: () => '',
 }));
 
-// Mock skill constants
-mock.module('../../../skills/types.ts', () => ({
-  AGENTS_PLUGIN_NAME: '.agents',
-}));
-
-mock.module('../../../skills/storage.ts', () => ({
-  GLOBAL_AGENT_SKILLS_DIR: '/Users/test/.agents/skills',
-  PROJECT_AGENT_SKILLS_DIR: '.agents/skills',
-}));
-
 let mockCraftAgentsCliFlag = false;
 mock.module('../../../feature-flags.ts', () => ({
   FEATURE_FLAGS: {

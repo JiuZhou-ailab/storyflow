@@ -673,7 +673,8 @@ describe('novel writing workspace layout', () => {
     expect(editorPanelSource).toContain('getMarkdownSnapshot(): string')
     expect(editorPanelSource).toContain('onDocumentChanged?: () => void')
     expect(editorPanelSource).toContain('ref={editorRef}')
-    expect(editorPanelSource).toContain('key={file.path}')
+    // Reuse editor across chapter switches; setContent replaces document content.
+    expect(editorPanelSource).not.toContain('key={file.path}')
     expect(editorPanelSource).toContain('onDocumentChanged={onDocumentChanged}')
     expect(editorPanelSource).not.toContain('onUpdate={onChange}')
     expect(appShellSource).toContain('novelDocumentEditorRef')
@@ -914,8 +915,8 @@ describe('novel writing workspace layout', () => {
   it('does not render stale chat panel routes from another workspace during workspace switches', () => {
     const mainContentSource = readFileSync(new URL('../../app-shell/MainContentPanel.tsx', import.meta.url), 'utf-8')
     const sessionsContentSource = mainContentSource.slice(
-      mainContentSource.indexOf('// Chats navigator - show chat, multi-select panel, or empty state'),
-      mainContentSource.indexOf('// Fallback')
+      mainContentSource.indexOf('// Session routes reuse the same chat surface'),
+      mainContentSource.indexOf('// Fallback (should not happen with proper NavigationState)')
     )
     const sessionRouteContentSource = mainContentSource.slice(
       mainContentSource.indexOf('function SessionRouteContent'),
@@ -930,7 +931,7 @@ describe('novel writing workspace layout', () => {
     expect(sessionRouteContentSource).toContain('selectedSessionMeta?.workspaceId === activeWorkspaceId')
     expect(sessionRouteContentSource).toContain('selectedSessionMeta?.workspaceId === remoteWorkspaceId')
     expect(sessionRouteContentSource.indexOf('if (!selectedSessionMatchesWorkspace)')).toBeLessThan(
-      sessionRouteContentSource.indexOf('<ChatPage sessionId={sessionId} />')
+      sessionRouteContentSource.indexOf('<LazyChatPage sessionId={sessionId} />')
     )
   })
 

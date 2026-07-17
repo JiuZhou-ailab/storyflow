@@ -15,8 +15,9 @@ import type { LoadedSource, ApiConfig } from './types.ts';
 import { isMultiHeaderCredential, type ApiCredential } from './credential-manager.ts';
 import { isSourceUsable } from './storage.ts';
 import { createApiServer, type SummarizeCallback } from './api-tools.ts';
-import { createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
 import { debug } from '../utils/debug.ts';
+import { normalizeMcpUrl } from './mcp-url.ts';
+export { normalizeMcpUrl } from './mcp-url.ts';
 
 /**
  * Standard error messages for server build failures.
@@ -53,7 +54,7 @@ export interface BuiltServers {
   /** MCP server configs keyed by source slug */
   mcpServers: Record<string, McpServerConfig>;
   /** In-process API servers keyed by source slug */
-  apiServers: Record<string, ReturnType<typeof createSdkMcpServer>>;
+  apiServers: Record<string, ReturnType<typeof createApiServer>>;
   /** Sources that failed to build (missing auth, etc.) */
   errors: Array<{ sourceSlug: string; error: string }>;
 }
@@ -165,7 +166,7 @@ export class SourceServerBuilder {
     getToken?: () => Promise<string>,
     sessionPath?: string,
     summarize?: SummarizeCallback
-  ): Promise<ReturnType<typeof createSdkMcpServer> | null> {
+  ): Promise<ReturnType<typeof createApiServer> | null> {
     if (source.config.type !== 'api') return null;
     if (!source.config.api) {
       debug(`[SourceServerBuilder] API source ${source.config.slug} missing api config`);
@@ -296,7 +297,7 @@ export class SourceServerBuilder {
     summarize?: SummarizeCallback
   ): Promise<BuiltServers> {
     const mcpServers: Record<string, McpServerConfig> = {};
-    const apiServers: Record<string, ReturnType<typeof createSdkMcpServer>> = {};
+    const apiServers: Record<string, ReturnType<typeof createApiServer>> = {};
     const errors: BuiltServers['errors'] = [];
 
     for (const { source, token, credential } of sourcesWithCredentials) {
@@ -333,15 +334,6 @@ export class SourceServerBuilder {
 
     return { mcpServers, apiServers, errors };
   }
-}
-
-/**
- * Normalize MCP URL to standard format
- * - Removes trailing slashes
- * - Preserves the user-configured path as-is (no /mcp suffix appended)
- */
-export function normalizeMcpUrl(url: string): string {
-  return url.replace(/\/+$/, '');
 }
 
 // Singleton instance

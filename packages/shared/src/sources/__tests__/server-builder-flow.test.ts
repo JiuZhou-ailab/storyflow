@@ -1,5 +1,7 @@
 /**
- * Tests for SourceServerBuilder → API Tools credential flow
+ * input: Workspace-owned API Source fixtures and credential variants
+ * output: SourceServerBuilder to request-header integration coverage
+ * pos: API Source server construction flow test
  *
  * Verifies that credentials flow correctly from:
  * 1. SourceServerBuilder.buildApiConfig() - creates correct auth config
@@ -32,6 +34,7 @@ function createMockSource(overrides: Partial<FolderSourceConfig> = {}): LoadedSo
     folderPath: '/tmp/test/sources/test-source',
     workspaceRootPath: '/tmp/test',
     workspaceId: 'test-workspace',
+    origin: 'workspace',
   };
 }
 

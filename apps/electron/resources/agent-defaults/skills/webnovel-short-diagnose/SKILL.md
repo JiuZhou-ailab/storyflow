@@ -1,6 +1,8 @@
 ---
-name: 网文短篇诊断
+name: webnovel-short-diagnose
 description: "用于评估、审查、修订、拆解或规划网文短篇、爽文短篇、小故事、小说片段、网文章节和连载文本，重点检查开篇留存、冲突、节奏、爽点、钩子、结尾兑现和商业可读性。"
+metadata:
+  displayName: 网文短篇诊断
 ---
 
 # 网文短篇诊断

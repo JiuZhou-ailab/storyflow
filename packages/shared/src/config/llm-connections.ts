@@ -13,7 +13,6 @@
 // injected at app startup via registerPiModelResolver().
 import {
   type ModelDefinition,
-  ANTHROPIC_MODELS,
   normalizeDeprecatedModelId,
 } from './models';
 import type { CredentialManager } from '../credentials/manager.ts';
@@ -39,10 +38,10 @@ export function registerPiModelResolver(resolver: PiModelResolver): void {
 // ============================================================
 
 /**
- * Provider type determines which backend/SDK implementation to use.
+ * Provider type determines model/auth protocol routing inside the Pi runtime.
  * This is separate from auth mechanism - a provider may support multiple auth types.
  *
- * - 'anthropic': Direct Anthropic API (api.anthropic.com) — uses Claude Agent SDK
+ * - 'anthropic': Direct Anthropic API (api.anthropic.com) through Pi
  * - 'pi': Pi unified LLM API (20+ providers via @earendil-works/pi-ai)
  * - 'pi_compat': Pi with custom endpoint (Ollama, self-hosted models, Anthropic-compat endpoints)
  *
@@ -428,10 +427,9 @@ export function isCompatProvider(providerType: LlmProviderType): boolean {
 }
 
 /**
- * Check if a provider type uses the Anthropic Claude Agent SDK.
- * Only direct Anthropic API connections use the Claude SDK.
+ * Check if a provider type represents a direct Anthropic connection.
  * @param providerType - Provider type to check
- * @returns true if this provider uses the Anthropic SDK
+ * @returns true if this is direct Anthropic protocol/provider identity
  */
 export function isAnthropicProvider(providerType: LlmProviderType): boolean {
   return providerType === 'anthropic';
@@ -457,22 +455,18 @@ export function isLocalConnection(conn: Pick<LlmConnection, 'baseUrl'>): boolean
  * @returns true if this provider uses Pi
  */
 export function isPiProvider(providerType: LlmProviderType): boolean {
-  return providerType === 'pi' || providerType === 'pi_compat';
+  return providerType === 'anthropic' || providerType === 'pi' || providerType === 'pi_compat';
 }
 
 /**
  * Default mid-stream send behavior for a given provider type.
  *
- * - 'anthropic' → 'queue': Claude's emulated steer (PreToolUse hook injection)
- *   has a real failure mode — if no tool fires before the turn ends, the steer
- *   becomes `steer_undelivered` and gets re-queued anyway, paying for the
- *   original turn's tokens for nothing. Default to queue for predictability.
- * - 'pi' / 'pi_compat' → 'steer': Pi's native `.steer()` is non-destructive
- *   (delivers after the current tool finishes, keeps full context). No
- *   downside to defaulting to immediate steering.
+ * Every current connection executes through Pi, whose native `.steer()` is
+ * non-destructive and delivers after the current tool finishes.
  */
 export function defaultMidStreamBehavior(providerType: LlmProviderType): MidStreamBehavior {
-  return providerType === 'anthropic' ? 'queue' : 'steer';
+  void providerType;
+  return 'steer';
 }
 
 /**
@@ -579,8 +573,14 @@ export function getModelsForProviderType(providerType: LlmProviderType, piAuthPr
     return _piModelResolver(piAuthProvider);
   }
 
-  // Anthropic uses Claude models with bare Anthropic IDs.
-  return ANTHROPIC_MODELS;
+  // Direct Anthropic connections retain their product/provider identity, but
+  // the executable catalog must come from the Pi runtime to avoid presenting
+  // model IDs that the installed Pi SDK cannot resolve.
+  return _piModelResolver('anthropic').map(model => ({
+    ...model,
+    id: model.id.startsWith('pi/') ? model.id.slice(3) : model.id,
+    provider: 'anthropic' as const,
+  }));
 }
 
 /**
@@ -632,23 +632,29 @@ export function getDefaultModelsForConnection(providerType: LlmProviderType, piA
         const direct = preferred.findIndex(p => bare === p || bare.startsWith(`${p}-`))
         if (direct >= 0) return direct
         // For Bedrock: reverse-map native ID to bare, then match
-        const reversed = fromBedrockNativeId(bare)
-        if (reversed !== bare) {
+        const isBedrockId = /^(?:us|eu|global)\.anthropic\.|^anthropic\.claude-/.test(bare)
+        const reversed = isBedrockId ? fromBedrockNativeId(bare) : bare
+        if (isBedrockId && reversed !== bare) {
           return preferred.findIndex(p => reversed === p || reversed.startsWith(`${p}-`))
         }
         return -1
       }
-      models.sort((a, b) => {
-        const aPrio = findPreferredIndex(a.id) ?? preferred.length;
-        const bPrio = findPreferredIndex(b.id) ?? preferred.length;
-        return (aPrio >= 0 ? aPrio : preferred.length) - (bPrio >= 0 ? bPrio : preferred.length);
-      });
+      const ranked = preferred.flatMap((_, preferredIndex) =>
+        models.filter(model => findPreferredIndex(model.id) === preferredIndex)
+      );
+      const unranked = models.filter(model => findPreferredIndex(model.id) < 0);
+      return [...ranked, ...unranked];
     }
     return models;
   }
   if (providerType === 'pi_compat') return [];  // Dynamic — user specifies
-  // anthropic
-  return ANTHROPIC_MODELS;
+  // Reuse Pi's sorted Anthropic catalog, then preserve the direct-connection
+  // model ID/provider shape expected by existing Storyflow configuration.
+  return (getDefaultModelsForConnection('pi', 'anthropic') as ModelDefinition[]).map(model => ({
+    ...model,
+    id: model.id.startsWith('pi/') ? model.id.slice(3) : model.id,
+    provider: 'anthropic' as const,
+  }));
 }
 
 /**
@@ -983,7 +989,7 @@ export interface ResolvedAuthEnvVars {
  * Provider-agnostic: switches on providerType to determine which env vars
  * to set and how to retrieve credentials. Shared by:
  * - `SessionManager.reinitializeAuth()` (applies to process.env)
- * - `ClaudeAgent.postInit()` (applies to process.env + envOverrides)
+ * - `PiAgent.postInit()` (applies to the Pi subprocess runtime)
  *
  * Providers that handle auth internally (openai, copilot, pi) return
  * empty envVars — their auth is managed in postInit() via native mechanisms.

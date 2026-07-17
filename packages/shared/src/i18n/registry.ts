@@ -1,3 +1,7 @@
+// input: Locale messages, date-fns locales, and lightweight language metadata
+// output: Complete synchronous locale registry for non-critical consumers
+// pos: Compatibility registry; startup-sensitive renderers use lazy locale loading
+
 /**
  * Canonical locale registry — single source of truth for all supported locales.
  *
@@ -11,6 +15,7 @@
  */
 
 import type { Locale } from "date-fns";
+import { LANGUAGES, type LanguageCode } from "./languages";
 
 // ─── Translation resources ───────────────────────────────────────────────────
 import enMessages from "./locales/en.json";
@@ -39,21 +44,21 @@ interface LocaleEntry {
 }
 
 export const LOCALE_REGISTRY = {
-  en: { nativeName: "English", messages: enMessages, dateLocale: enUS },
-  es: { nativeName: "Español", messages: esMessages, dateLocale: esDateLocale },
+  en: { ...LANGUAGES.en, messages: enMessages, dateLocale: enUS },
+  es: { ...LANGUAGES.es, messages: esMessages, dateLocale: esDateLocale },
   "zh-Hans": {
-    nativeName: "简体中文",
+    ...LANGUAGES["zh-Hans"],
     messages: zhHansMessages,
     dateLocale: zhCN,
   },
-  ja: { nativeName: "日本語", messages: jaMessages, dateLocale: jaDateLocale },
-  hu: { nativeName: "Magyar", messages: huMessages, dateLocale: huDateLocale },
+  ja: { ...LANGUAGES.ja, messages: jaMessages, dateLocale: jaDateLocale },
+  hu: { ...LANGUAGES.hu, messages: huMessages, dateLocale: huDateLocale },
   de: {
-    nativeName: "Deutsch",
+    ...LANGUAGES.de,
     messages: deMessages,
     dateLocale: deDateLocale,
   },
-  pl: { nativeName: "Polski", messages: plMessages, dateLocale: plDateLocale },
+  pl: { ...LANGUAGES.pl, messages: plMessages, dateLocale: plDateLocale },
 } satisfies Record<string, LocaleEntry>;
 
-export type LanguageCode = keyof typeof LOCALE_REGISTRY;
+export type { LanguageCode } from "./languages";

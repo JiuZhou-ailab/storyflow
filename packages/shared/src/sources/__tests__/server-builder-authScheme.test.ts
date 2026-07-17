@@ -1,5 +1,7 @@
 /**
- * Test that SourceServerBuilder.buildApiConfig correctly handles empty authScheme
+ * input: Workspace-owned API Source fixtures with bearer scheme variants
+ * output: SourceServerBuilder authorization scheme regression coverage
+ * pos: API Source server configuration unit test
  *
  * This complements authScheme-empty.test.ts by testing the server-builder layer
  * which transforms source configs before they reach buildAuthorizationHeader.
@@ -34,6 +36,7 @@ describe('SourceServerBuilder.buildApiConfig', () => {
       folderPath: '/test/sources/test-source',
       workspaceRootPath: '/test',
       workspaceId: 'test-workspace',
+      origin: 'workspace',
     };
   }
 

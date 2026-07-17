@@ -39,7 +39,7 @@ describe('project management entry', () => {
     expect(topBarSource).not.toContain('onForward')
     expect(topBarSource).toContain('data-testid="window-title-bar"')
     expect(topBarSource).toContain('aria-label="窗口上下文"')
-    expect(topBarSource).toContain('WINDOW_TITLE_BAR_HEIGHT = 40')
+    expect(topBarSource).toContain("from './layout-constants'")
     expect(topBarSource).toContain('getWorkspaceProjectTypeLabel')
     expect(topBarSource).not.toContain('getNavigationContextLabel')
     expect(topBarSource).not.toContain('写作工作区')

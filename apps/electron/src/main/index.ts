@@ -2,10 +2,7 @@
 // output: Desktop main-process bootstrap, IPC bridges, windows, and cleanup
 // pos: Coordinates the Electron shell around the shared Storyflow server core
 
-// Load user's shell environment first (before other imports that may use env)
-// This ensures tools like Homebrew, nvm, etc. are available to the agent
 import { loadShellEnv } from './shell-env'
-loadShellEnv()
 
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, net, shell } from 'electron'
 import { createHash, randomUUID } from 'crypto'
@@ -81,6 +78,7 @@ import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@cra
 import { registerAllRpcHandlers } from './handlers/index'
 import { registerCoreRpcHandlers, cleanupSessionFileWatchForClient } from '@craft-agent/server-core/handlers/rpc'
 import type { PlatformServices } from '../runtime/platform'
+import { CLIENT_AUTH_IPC_CHANNELS } from '../shared/types'
 import { createElectronPlatform } from './platform'
 import type { HandlerDeps } from './handlers/handler-deps'
 import { bootstrapServer, releaseServerLock } from '@craft-agent/server-core/bootstrap'
@@ -380,7 +378,7 @@ app.whenReady().then(async () => {
   // (docs, permissions, themes, tool-icons resolve via getBundledAssetsDir)
   setBundledAssetsRoot(__dirname)
 
-  // Initialize backend runtime bootstrapping (Codex vendor root, Claude SDK runtime paths).
+  // Initialize the Pi backend runtime and compatibility tooling paths.
   initializeBackendHostRuntime({
     hostRuntime: {
       appRootPath: app.isPackaged ? app.getAppPath() : process.cwd(),
@@ -399,7 +397,7 @@ app.whenReady().then(async () => {
   // Initialize bundled release notes
   initializeReleaseNotes()
 
-  // Seed default skills and sources to ~/.agents/ without overwriting user edits
+  // Seed global Sources only. Skills are installed into each project's .pi/skills.
   seedDefaultAgentResources()
 
   // Ensure default permissions file exists (copies bundled default.json on first run)
@@ -570,13 +568,13 @@ app.whenReady().then(async () => {
       const nextState = clientAuthService.getState()
       for (const window of BrowserWindow.getAllWindows()) {
         if (!window.isDestroyed()) {
-          window.webContents.send('client-auth:state-changed', nextState)
+          window.webContents.send(CLIENT_AUTH_IPC_CHANNELS.STATE_CHANGED, nextState)
         }
       }
     }
 
-    ipcMain.handle('client-auth:get-state', () => clientAuthService.getState())
-    ipcMain.handle('client-auth:sign-in', async (_event, input: unknown) => {
+    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.GET_STATE, () => clientAuthService.getState())
+    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.SIGN_IN, async (_event, input: unknown) => {
       const record = input && typeof input === 'object'
         ? input as Record<string, unknown>
         : {}
@@ -587,7 +585,7 @@ app.whenReady().then(async () => {
       broadcastClientAuthState()
       return user
     })
-    ipcMain.handle('client-auth:sign-up', async (_event, input: unknown) => {
+    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.SIGN_UP, async (_event, input: unknown) => {
       const record = input && typeof input === 'object'
         ? input as Record<string, unknown>
         : {}
@@ -599,15 +597,15 @@ app.whenReady().then(async () => {
       broadcastClientAuthState()
       return result
     })
-    ipcMain.handle('client-auth:sign-in-feishu', async () => {
+    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.SIGN_IN_WITH_FEISHU, async () => {
       const user = await clientAuthService.signInWithFeishu()
       broadcastClientAuthState()
       return user
     })
-    ipcMain.handle('client-auth:cancel-feishu-sign-in', () => {
+    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.CANCEL_FEISHU_SIGN_IN, () => {
       clientAuthService.cancelFeishuSignIn()
     })
-    ipcMain.handle('client-auth:sign-out', async () => {
+    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.SIGN_OUT, async () => {
       await clientAuthService.signOut()
       broadcastClientAuthState()
     })
@@ -616,6 +614,8 @@ app.whenReady().then(async () => {
         fetch: (url, init) => net.fetch(url, init),
       })
     })
+
+    let scheduleDeferredRuntime: (() => void) | null = null
 
     if (!isClientOnly) {
       // Restore persisted Git Bash path on Windows (must happen before any SDK subprocess spawn)
@@ -767,7 +767,13 @@ app.whenReady().then(async () => {
           ? (server, deps, serverCtx) => registerCoreRpcHandlers(server, deps, serverCtx)
           : registerAllRpcHandlers,
         setSessionEventSink: (sm, sink) => sm.setEventSink(sink),
-        initializeSessionManager: (sm) => sm.initialize(),
+        initializeSessionManager: async (sm) => {
+          // Finder/Dock shell discovery exists for Agent subprocesses, not for
+          // rendering or editing workspace files, so keep it in runtime phase 2.
+          await loadShellEnv()
+          await sm.initialize()
+        },
+        deferRuntimeInitialization: !isHeadless,
         initModelRefreshService: () => initModelRefreshService(async (connection) => {
           const { getCredentialManager } = await import('@craft-agent/shared/credentials')
           return resolveModelRefreshCredentials(connection, getCredentialManager())
@@ -789,34 +795,66 @@ app.whenReady().then(async () => {
       moduleSink = instance.wsServer.push.bind(instance.wsServer)
       moduleClientResolver = resolveClientId
 
-      // -----------------------------------------------------------------------
-      // Messaging Gateway — attach the WS publisher, init local workspaces,
-      // install the fan-out event sink. The handle was created inside
-      // createHandlerDeps so the registry could be wired into HandlerDeps.
-      // -----------------------------------------------------------------------
-      try {
-        if (!messagingHandle) {
-          throw new Error('Messaging handle was not constructed in createHandlerDeps')
+      const initializeMessagingGateway = async (): Promise<void> => {
+        // The messaging registry depends on initialized sessions and automations,
+        // so it belongs to the deferred runtime phase rather than shell startup.
+        try {
+          if (!messagingHandle) {
+            throw new Error('Messaging handle was not constructed in createHandlerDeps')
+          }
+
+          messagingHandle.setPublisher(instance.wsServer.push.bind(instance.wsServer))
+
+          // Skip remote-owned workspaces — messaging runs on the remote server.
+          const localWorkspaceIds = getWorkspaces()
+            .filter((ws) => !ws.remoteServer)
+            .map((ws) => ws.id)
+          await messagingHandle.initializeWorkspaces(localWorkspaceIds)
+
+          // Compose fan-out event sink: RPC push + messaging gateway dispatch.
+          // Always install — this lets workspaces enable messaging at runtime
+          // without a process restart.
+          const baseSink = instance.wsServer.push.bind(instance.wsServer)
+          instance.sessionManager.setEventSink(messagingHandle.wrapSink(baseSink))
+          if (messagingHandle.registry.size > 0) {
+            mainLog.info(`[messaging] Fan-out sink active for ${messagingHandle.registry.size} workspace(s)`)
+          }
+        } catch (err) {
+          mainLog.error('[messaging] Gateway initialization failed:', err)
+        }
+      }
+
+      if (isHeadless) {
+        // bootstrapServer remains eager for headless hosts, preserving the
+        // guarantee that connection details are printed only after runtime init.
+        await initializeMessagingGateway()
+      } else {
+        let runtimeStartRequested = false
+        const startRuntime = (): void => {
+          if (runtimeStartRequested) return
+          runtimeStartRequested = true
+          void instance.startRuntime()
+            .then(initializeMessagingGateway)
+            .catch((err) => {
+              mainLog.error('[runtime] Background initialization failed:', err)
+            })
         }
 
-        messagingHandle.setPublisher(instance.wsServer.push.bind(instance.wsServer))
+        let runtimeFallback: ReturnType<typeof setTimeout> | null = null
+        ipcMain.once('renderer:shell-interactive', () => {
+          if (runtimeFallback) clearTimeout(runtimeFallback)
+          setImmediate(startRuntime)
+        })
 
-        // Skip remote-owned workspaces — messaging runs on the remote server.
-        const localWorkspaceIds = getWorkspaces()
-          .filter((ws) => !ws.remoteServer)
-          .map((ws) => ws.id)
-        await messagingHandle.initializeWorkspaces(localWorkspaceIds)
-
-        // Compose fan-out event sink: RPC push + messaging gateway dispatch.
-        // Always install — this lets workspaces enable messaging at runtime
-        // without a process restart.
-        const baseSink = instance.wsServer.push.bind(instance.wsServer)
-        instance.sessionManager.setEventSink(messagingHandle.wrapSink(baseSink))
-        if (messagingHandle.registry.size > 0) {
-          mainLog.info(`[messaging] Fan-out sink active for ${messagingHandle.registry.size} workspace(s)`)
+        // ready-to-show can fire for the static HTML shell before React is
+        // interactive. The renderer owns the real product-readiness signal;
+        // this fallback only recovers Agent availability after renderer failure.
+        const scheduleRuntimeFallback = (): void => {
+          if (runtimeStartRequested) return
+          runtimeFallback = setTimeout(startRuntime, 30_000)
         }
-      } catch (err) {
-        mainLog.error('[messaging] Gateway initialization failed:', err)
+
+        scheduleDeferredRuntime = scheduleRuntimeFallback
       }
 
       // IPC handlers — preload uses sendSync to get WS connection details
@@ -1079,6 +1117,7 @@ app.whenReady().then(async () => {
     })) {
       await createInitialWindows()
     }
+    scheduleDeferredRuntime?.()
 
     // Run credential health check at startup to detect issues early
     // (corruption, machine migration, missing credentials for default connection)

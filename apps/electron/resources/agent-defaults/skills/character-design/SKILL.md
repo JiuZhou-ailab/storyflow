@@ -1,6 +1,8 @@
 ---
-name: 人物设计
+name: character-design
 description: "用于设计、修订或审查小说人物、网文角色、主角、反派、配角和人设，重点处理人物弧线、动机、弱点、欲望、恐惧、关系张力、人物声音、叙事功能和一致性。"
+metadata:
+  displayName: 人物设计
 ---
 
 # 人物设计

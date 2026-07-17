@@ -83,6 +83,7 @@ import { createWebFetchTool } from './tools/web-fetch.ts';
 import { resolveSearchProvider } from './tools/search/resolve-provider.ts';
 import { createSearchTool } from './tools/search/create-search-tool.ts';
 import { createCreateOnlyWriteToolDefinition } from './write-tool.ts';
+import { createProjectResourceLoader } from './project-resource-loader.ts';
 import {
   allowCraftMetadataPropertiesForTool,
   normalizeCraftToolArgumentsForSchema,
@@ -610,6 +611,14 @@ async function ensureSession(): Promise<AgentSession> {
     const agentDir = initConfig.agentDir || join(initConfig.sessionPath, '.pi-agent');
     mkdirSync(agentDir, { recursive: true });
     sessionOptions.agentDir = agentDir;
+
+    const { resourceLoader, settingsManager } = await createProjectResourceLoader({
+      cwd,
+      projectRoot: initConfig.workspaceRootPath,
+      agentDir,
+    });
+    sessionOptions.resourceLoader = resourceLoader;
+    sessionOptions.settingsManager = settingsManager;
 
     // Session resume: use a per-Craft-session directory so the Pi SDK can
     // persist and resume its own session across subprocess restarts.
@@ -1385,11 +1394,20 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
 
     session = await ensureSession();
 
+    // Pi does not auto-reload a caller-provided ResourceLoader. Refresh at the
+    // prompt boundary so project Skill edits are visible without restarting the
+    // session, while the loader remains restricted to {projectRoot}/.pi/skills.
+    await session.resourceLoader.reload();
+
     // Force the Craft-built system prompt onto the Pi session. Direct assignment
     // to `state.systemPrompt` is wiped on every `session.prompt()` call by the Pi
     // SDK (see system-prompt-override.ts).
     if (msg.systemPrompt) {
-      applySystemPromptOverride(session, msg.systemPrompt);
+      applySystemPromptOverride(
+        session,
+        msg.systemPrompt,
+        session.resourceLoader.getSkills().skills,
+      );
     }
 
     // Wire up event handler

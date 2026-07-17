@@ -34,7 +34,6 @@ export {
   getExistingWorkspaceConfigPath,
   getExistingWorkspaceSessionsPath,
   getExistingWorkspaceSourcesPath,
-  getExistingWorkspaceSkillsPath,
   // Config operations
   loadWorkspaceConfig,
   saveWorkspaceConfig,

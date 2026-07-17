@@ -16,7 +16,7 @@
  */
 
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
-import { getSessionPlansPath, getSessionPath } from '../sessions/storage.ts';
+import { getSessionPath } from '../sessions/storage.ts';
 import { DOC_REFS } from '../docs/index.ts';
 import { createClaudeContext } from './claude-context.ts';
 import { basename } from 'node:path';
@@ -31,7 +31,8 @@ import {
   type ToolResult,
   type AuthRequest,
 } from '@craft-agent/session-tools-core';
-import { createLLMTool, type LLMQueryRequest, type LLMQueryResult } from './llm-tool.ts';
+import { createLLMTool } from './claude-llm-tool.ts';
+import type { LLMQueryRequest, LLMQueryResult } from './llm-tool.ts';
 import { createSpawnSessionTool, type SpawnSessionFn } from './spawn-session-tool.ts';
 import { createBrowserTools, type BrowserPaneFns } from './browser-tools.ts';
 import { FEATURE_FLAGS } from '../feature-flags.ts';
@@ -72,6 +73,17 @@ export {
 // Local imports for use within this file's factory function
 import { getSessionScopedToolCallbacks } from './session-scoped-tool-callback-registry.ts';
 import { attachSessionSelfManagementBindings } from './session-self-management-bindings.ts';
+import { registerSessionToolCacheInvalidator } from './session-tool-cache-invalidation.ts';
+import {
+  setLastPlanFilePath,
+} from './session-plan-state.ts';
+export {
+  clearPlanFileState,
+  getLastPlanFilePath,
+  getSessionPlansDir,
+  isPathInPlansDir,
+  setLastPlanFilePath,
+} from './session-plan-state.ts';
 
 /** Backend-executed session tools currently supported by the Claude adapter layer. */
 export const CLAUDE_BACKEND_SESSION_TOOL_NAMES = new Set<string>([
@@ -94,53 +106,6 @@ function assertClaudeBackendSessionToolParity(): void {
       `Claude session tools missing backend adapter implementations: ${missing.join(', ')}`,
     );
   }
-}
-
-// ============================================================
-// Plan State Management
-// ============================================================
-
-// Map of sessionId -> last submitted plan path (for retrieval after submission)
-const sessionPlanFilePaths = new Map<string, string>();
-
-/**
- * Get the last submitted plan file path for a session
- */
-export function getLastPlanFilePath(sessionId: string): string | null {
-  return sessionPlanFilePaths.get(sessionId) ?? null;
-}
-
-/**
- * Set the last submitted plan file path for a session
- */
-export function setLastPlanFilePath(sessionId: string, path: string): void {
-  sessionPlanFilePaths.set(sessionId, path);
-}
-
-/**
- * Clear plan file state for a session
- */
-export function clearPlanFileState(sessionId: string): void {
-  sessionPlanFilePaths.delete(sessionId);
-}
-
-// ============================================================
-// Plan Path Helpers
-// ============================================================
-
-/**
- * Get the plans directory for a session
- */
-export function getSessionPlansDir(workspacePath: string, sessionId: string): string {
-  return getSessionPlansPath(workspacePath, sessionId);
-}
-
-/**
- * Check if a path is within a session's plans directory
- */
-export function isPathInPlansDir(path: string, workspacePath: string, sessionId: string): boolean {
-  const plansDir = getSessionPlansDir(workspacePath, sessionId);
-  return path.startsWith(plansDir);
 }
 
 // ============================================================
@@ -177,6 +142,8 @@ const sessionToolsCache = new Map<string, ReturnType<typeof tool>[]>();
 export function invalidateAllSessionToolsCaches(): void {
   sessionToolsCache.clear();
 }
+
+registerSessionToolCacheInvalidator(invalidateAllSessionToolsCaches);
 
 /**
  * Clean up cached tools for a session

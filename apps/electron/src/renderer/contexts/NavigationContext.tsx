@@ -1,29 +1,12 @@
+// input: Typed routes, external deep links, current project identity, and navigation events
+// output: Panel navigation plus explicit side effects such as verified Skills Market imports
+// pos: Renderer navigation authority; external actions must cross a visible confirmation boundary
+
 /**
- * NavigationContext
- *
  * Provides a global `navigate()` function that decouples components from
- * direct session/action imports. All navigation goes through typed routes.
- *
- * PEER PANEL MODEL:
- * All panels are equal. The **focused** panel drives the NavigationState
- * (which determines sidebar highlight, navigator content, etc.).
- * `navigate(route)` updates the focused panel's route.
- *
- * URL-DRIVEN HISTORY:
- * The URL is the source of truth. Every meaningful navigation pushes a
- * browser history entry via pushState. Back/forward uses the browser's
- * native popstate, with smart panel reconciliation to preserve React keys
- * (and thus scroll position, streaming state, etc.).
- *
- * Usage:
- *   import { useNavigationActions, useNavigationState } from '@/contexts/NavigationContext'
- *   import { routes } from '@/shared/routes'
- *
- *   const { navigate } = useNavigationActions()
- *   const navState = useNavigationState()
- *
- *   navigate(routes.view.allSessions())
- *   navigate(routes.action.newChat())
+ * direct session/action imports. The focused peer panel drives navigation,
+ * while browser history remains URL-driven so back/forward preserves panel
+ * identity, scroll position, and streaming state.
  */
 
 import {
@@ -49,6 +32,7 @@ import {
 } from '../../shared/route-parser'
 import { routes, type Route, type ViewRoute } from '../../shared/routes'
 import { parsePermissionMode } from '@craft-agent/shared/agent/mode-types'
+import { downloadMarketSkillBundle } from '@craft-agent/shared/skills/marketplace'
 import { NAVIGATE_EVENT, type NavigateOptions } from '../lib/navigate'
 import { normalizePanelRouteForReconcile, shouldPreserveProjectLandingRoute } from './navigation-reconcile'
 import { buildSemanticHistoryKey, canRunInitialRestore } from './navigation-history'
@@ -175,6 +159,10 @@ export function NavigationProvider({
 
   // Store reference for reading fresh atom values in callbacks (avoids stale closures)
   const store = useStore()
+  const workspaceIdentityRef = useRef({ id: workspaceId, slug: workspaceSlug })
+  useEffect(() => {
+    workspaceIdentityRef.current = { id: workspaceId, slug: workspaceSlug }
+  }, [workspaceId, workspaceSlug])
 
   // Read sources from atom (populated by AppShell)
   const sources = useAtomValue(sourcesAtom)
@@ -859,11 +847,68 @@ export function NavigationProvider({
           }
           break
 
+        case 'install-skill': {
+          const { slug, version, sha256 } = parsed.params
+          const targetWorkspaceId = workspaceId
+          const targetWorkspaceLabel = workspaceSlug || workspaceId
+          if (!slug || !version || !sha256 || !targetWorkspaceId) {
+            toast.error(t('toast.invalidLink'), { description: t('skillsMarket.invalidLink') })
+            break
+          }
+          const toastId = toast.loading(t('skillsMarket.validating', { slug }))
+          try {
+            const downloaded = await downloadMarketSkillBundle({ slug, version, sha256 })
+            toast.info(t('skillsMarket.ready', { slug }), {
+              id: toastId,
+              description: t('skillsMarket.readyDescription', {
+                version,
+                sha256: downloaded.sha256.slice(0, 12),
+                project: targetWorkspaceLabel,
+              }),
+              duration: 20_000,
+              action: {
+                label: t('skillsMarket.confirm'),
+                onClick: () => {
+                  if (workspaceIdentityRef.current.id !== targetWorkspaceId) {
+                    toast.error(t('skillsMarket.projectChanged'))
+                    return
+                  }
+                  const importToastId = toast.loading(t('skillsMarket.importing', { slug }))
+                  void window.electronAPI.importResources(targetWorkspaceId, downloaded.bundle, 'skip')
+                    .then(result => {
+                      const bucket = result.skills
+                      if (bucket.imported.includes(slug)) {
+                        toast.success(t('skillsMarket.imported', { slug }), { id: importToastId })
+                      } else if (bucket.skipped.includes(slug)) {
+                        toast.info(t('skillsMarket.exists', { slug }), { id: importToastId })
+                      } else {
+                        const reason = bucket.failed.find(item => item.id === slug)?.error
+                        toast.error(t('skillsMarket.importFailed', { slug }), { id: importToastId, description: reason })
+                      }
+                    })
+                    .catch(error => {
+                      toast.error(t('skillsMarket.importFailed', { slug }), {
+                        id: importToastId,
+                        description: error instanceof Error ? error.message : String(error),
+                      })
+                    })
+                },
+              },
+            })
+          } catch (error) {
+            toast.error(t('skillsMarket.validationFailed', { slug }), {
+              id: toastId,
+              description: error instanceof Error ? error.message : String(error),
+            })
+          }
+          break
+        }
+
         default:
           console.warn('[Navigation] Unknown action:', parsed.name)
       }
     },
-    [workspaceId, onCreateSession, onInputChange, pushPanel, store, updateSessionMeta]
+    [workspaceId, onCreateSession, onInputChange, pushPanel, store, t, updateSessionMeta]
   )
 
   // =========================================================================

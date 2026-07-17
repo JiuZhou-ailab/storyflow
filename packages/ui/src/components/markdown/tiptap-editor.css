@@ -1015,9 +1015,3 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.tiptap-slash-empty {
-  font-size: 12px;
-  color: color-mix(in oklch, var(--foreground) 55%, transparent);
-  padding: 8px;
-}

@@ -1,12 +1,12 @@
 /**
  * Agent Backend Abstraction Layer
  *
- * This module provides a unified interface for AI agents (Claude, Pi)
- * allowing seamless provider switching.
+ * This module provides a unified interface for the Pi agent runtime while Pi
+ * handles model-provider switching internally.
  *
  * Naming convention:
- * - ClaudeAgent: Claude SDK implementation (implements AgentBackend directly)
- * - PiAgent: Pi unified API implementation
+ * - PiAgent: the production unified agent runtime
+ * - ClaudeAgent: retained legacy compatibility code; not selected by the factory
  * - AgentBackend: Interface that all agents implement
  * - createAgent: Factory function to create agents
  *
@@ -15,7 +15,7 @@
  * import { createAgent, type AgentBackend } from '@craft-agent/shared/agent/backend';
  *
  * const agent = createAgent({
- *   provider: 'anthropic',
+ *   provider: 'pi',
  *   workspace: myWorkspace,
  *   model: 'claude-sonnet-4-6',
  * });

@@ -1,6 +1,8 @@
 ---
-name: 剧情因果审查
+name: plot-causality-audit
 description: "用于审查小说、网文、短篇、章节、大纲、场景或人工智能初稿中的剧情逻辑、时间线、因果链、人物动机、信息来源、前后矛盾、降智、基础事实错误和强行反转。"
+metadata:
+  displayName: 剧情因果审查
 ---
 
 # 剧情因果审查

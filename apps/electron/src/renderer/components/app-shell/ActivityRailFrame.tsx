@@ -4,7 +4,7 @@
 
 import type { ReactNode } from 'react'
 import { ActivityRail, type ActivityRailItemId } from './ActivityRail'
-import { WINDOW_TITLE_BAR_HEIGHT } from './TopBar'
+import { WINDOW_TITLE_BAR_HEIGHT } from './layout-constants'
 
 interface ActivityRailFrameProps {
   activeItem: ActivityRailItemId

@@ -6,8 +6,9 @@
  * pos: Shared filesystem-backed storage layer for reusable data/tool sources
  *
  * CRUD operations for reusable sources.
- * Global sources are stored at ~/.agents/sources/{sourceSlug}/
- * Workspace sources are stored at {workspaceRootPath}/.craft-agent/sources/{sourceSlug}/
+ * Craft-owned global sources: ~/.craft-agent/sources/{sourceSlug}/
+ * Shared multi-tool globals (read): ~/.agents/sources/{sourceSlug}/
+ * Workspace sources: {workspaceRootPath}/.craft-agent/sources/{sourceSlug}/
  *
  * Note: All functions take `workspaceRootPath` (absolute path to workspace folder),
  * NOT a workspace slug. The `LoadedSource.workspaceId` is derived via basename().
@@ -16,16 +17,18 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'fs';
 import { homedir } from 'os';
 import { join, basename } from 'path';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import type {
   FolderSourceConfig,
   SourceGuide,
   LoadedSource,
   CreateSourceInput,
+  SourceConnectionStatus,
+  SourceDefinitionOrigin,
 } from './types.ts';
 import { validateSourceConfig } from '../config/validators.ts';
 import { debug } from '../utils/debug.ts';
-import { readJsonFileSync } from '../utils/files.ts';
+import { atomicWriteFileSync, readJsonFileSync } from '../utils/files.ts';
 import { getBuiltinSources, isBuiltinSource, getDocsSource } from './builtin-sources.ts';
 import { expandPath, toPortablePath } from '../utils/paths.ts';
 import {
@@ -44,28 +47,152 @@ import {
 // Directory Utilities
 // ============================================================
 
-/** Global agent root directory: ~/.agents/ */
-export const GLOBAL_AGENT_ROOT_DIR = join(homedir(), '.agents');
+/**
+ * Craft-owned global root: ~/.craft-agent/
+ * Craft-created and product-seeded global sources write here.
+ */
+export const GLOBAL_AGENT_ROOT_DIR = join(homedir(), '.craft-agent');
 
-/** Global agent sources directory: ~/.agents/sources/ */
+/** Craft-owned global sources: ~/.craft-agent/sources/ */
 export const GLOBAL_AGENT_SOURCES_DIR = join(GLOBAL_AGENT_ROOT_DIR, 'sources');
 
-type SourceDefinitionScope = 'global' | 'workspace';
+/**
+ * Shared multi-tool root: ~/.agents/
+ * Read for interop; Craft does not seed product defaults here.
+ */
+export const SHARED_AGENTS_ROOT_DIR = join(homedir(), '.agents');
+
+/** Shared multi-tool sources: ~/.agents/sources/ */
+export const SHARED_AGENTS_SOURCES_DIR = join(SHARED_AGENTS_ROOT_DIR, 'sources');
+
+/**
+ * Craft-owned runtime projection for externally owned source definitions.
+ *
+ * This directory stores only connection status, never a copy of the source
+ * definition. Entries are keyed by source slug and guarded by definition ID
+ * (or a content hash when external input omits one), so a removed or replaced
+ * shared definition cannot inherit stale state.
+ */
+export const SHARED_SOURCE_RUNTIME_STATE_DIR = join(
+  GLOBAL_AGENT_ROOT_DIR,
+  'state',
+  'shared-sources',
+);
+
+interface SharedSourceRuntimeState {
+  version: 1;
+  definitionIdentity: string;
+  isAuthenticated: boolean | null;
+  connectionStatus: SourceConnectionStatus | null;
+  connectionError: string | null;
+  lastTestedAt: number | null;
+  updatedAt: number;
+}
+
+export interface SourceConnectionStateUpdate {
+  isAuthenticated?: boolean;
+  connectionStatus?: SourceConnectionStatus;
+  connectionError?: string;
+  lastTestedAt?: number;
+}
+
+export class ReadOnlySourceDefinitionError extends Error {
+  constructor(sourceSlug: string) {
+    super(`Shared source definition is read-only: ${sourceSlug}`);
+    this.name = 'ReadOnlySourceDefinitionError';
+  }
+}
+
+function assertMutableSourceRoot(rootPath: string, sourceSlug: string): void {
+  if (rootPath === SHARED_AGENTS_ROOT_DIR) {
+    throw new ReadOnlySourceDefinitionError(sourceSlug);
+  }
+}
+
+function getSharedSourceRuntimeStatePath(sourceSlug: string): string {
+  return join(SHARED_SOURCE_RUNTIME_STATE_DIR, `${encodeURIComponent(sourceSlug)}.json`);
+}
+
+function getSharedSourceDefinitionIdentity(
+  sourceSlug: string,
+  config: FolderSourceConfig,
+): string {
+  if (typeof config.id === 'string' && config.id.length > 0) {
+    return `id:${config.id}`;
+  }
+
+  const configPath = join(getSourcePath(SHARED_AGENTS_ROOT_DIR, sourceSlug), 'config.json');
+  const digest = createHash('sha256').update(readFileSync(configPath)).digest('hex');
+  return `sha256:${digest}`;
+}
+
+function loadSharedSourceRuntimeState(
+  sourceSlug: string,
+  definitionIdentity: string,
+): SharedSourceRuntimeState | null {
+  const statePath = getSharedSourceRuntimeStatePath(sourceSlug);
+  if (!existsSync(statePath)) return null;
+
+  try {
+    const state = readJsonFileSync<SharedSourceRuntimeState>(statePath);
+    return state.version === 1 && state.definitionIdentity === definitionIdentity ? state : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSharedSourceRuntimeState(
+  sourceSlug: string,
+  definitionIdentity: string,
+  state: SourceConnectionStateUpdate,
+): void {
+  const next: SharedSourceRuntimeState = {
+    version: 1,
+    definitionIdentity,
+    isAuthenticated: state.isAuthenticated ?? null,
+    connectionStatus: state.connectionStatus ?? null,
+    connectionError: state.connectionError ?? null,
+    lastTestedAt: state.lastTestedAt ?? null,
+    updatedAt: Date.now(),
+  };
+
+  mkdirSync(SHARED_SOURCE_RUNTIME_STATE_DIR, { recursive: true });
+  atomicWriteFileSync(
+    getSharedSourceRuntimeStatePath(sourceSlug),
+    JSON.stringify(next, null, 2),
+  );
+}
+
+function isGlobalSourcesRoot(rootPath: string): boolean {
+  return rootPath === GLOBAL_AGENT_ROOT_DIR || rootPath === SHARED_AGENTS_ROOT_DIR;
+}
 
 function getSourcesPathForRoot(rootPath: string): string {
-  return rootPath === GLOBAL_AGENT_ROOT_DIR
-    ? GLOBAL_AGENT_SOURCES_DIR
-    : getWorkspaceSourcesPath(rootPath);
+  if (rootPath === GLOBAL_AGENT_ROOT_DIR) return GLOBAL_AGENT_SOURCES_DIR;
+  if (rootPath === SHARED_AGENTS_ROOT_DIR) return SHARED_AGENTS_SOURCES_DIR;
+  return getWorkspaceSourcesPath(rootPath);
 }
 
 function getLegacySourcesPathForRoot(rootPath: string): string {
-  return rootPath === GLOBAL_AGENT_ROOT_DIR
-    ? GLOBAL_AGENT_SOURCES_DIR
-    : getLegacyWorkspaceSourcesPath(rootPath);
+  if (isGlobalSourcesRoot(rootPath)) return getSourcesPathForRoot(rootPath);
+  return getLegacyWorkspaceSourcesPath(rootPath);
 }
 
 function getSourceWritePath(workspaceRootPath: string, sourceSlug: string): string {
   return join(getSourcesPathForRoot(workspaceRootPath), sourceSlug);
+}
+
+function hasSourceConfigAtRoot(rootPath: string, sourceSlug: string): boolean {
+  return existsSync(join(getSourcePath(rootPath, sourceSlug), 'config.json'));
+}
+
+/** Resolve the definition currently visible to a workspace using load priority. */
+function resolveVisibleSourceRoot(workspaceRootPath: string, sourceSlug: string): string {
+  if (isGlobalSourcesRoot(workspaceRootPath)) return workspaceRootPath;
+  if (hasSourceConfigAtRoot(workspaceRootPath, sourceSlug)) return workspaceRootPath;
+  if (hasSourceConfigAtRoot(GLOBAL_AGENT_ROOT_DIR, sourceSlug)) return GLOBAL_AGENT_ROOT_DIR;
+  if (hasSourceConfigAtRoot(SHARED_AGENTS_ROOT_DIR, sourceSlug)) return SHARED_AGENTS_ROOT_DIR;
+  return workspaceRootPath;
 }
 
 /**
@@ -85,6 +212,7 @@ export function getSourcePath(workspaceRootPath: string, sourceSlug: string): st
  * Ensure sources directory exists for a workspace or global agents root.
  */
 export function ensureSourcesDir(workspaceRootPath: string): void {
+  assertMutableSourceRoot(workspaceRootPath, 'sources');
   const dir = getSourcesPathForRoot(workspaceRootPath);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
@@ -113,7 +241,19 @@ export function loadSourceConfig(
       config.local.path = expandPath(config.local.path);
     }
 
-    return config;
+    if (workspaceRootPath !== SHARED_AGENTS_ROOT_DIR) return config;
+
+    const definitionIdentity = getSharedSourceDefinitionIdentity(sourceSlug, config);
+    const runtimeState = loadSharedSourceRuntimeState(sourceSlug, definitionIdentity);
+    if (!runtimeState) return config;
+
+    return {
+      ...config,
+      isAuthenticated: runtimeState.isAuthenticated ?? undefined,
+      connectionStatus: runtimeState.connectionStatus ?? undefined,
+      connectionError: runtimeState.connectionError ?? undefined,
+      lastTestedAt: runtimeState.lastTestedAt ?? undefined,
+    };
   } catch {
     return null;
   }
@@ -129,18 +269,51 @@ export function markSourceAuthenticated(
   workspaceRootPath: string,
   sourceSlug: string
 ): boolean {
-  const config = loadSourceConfig(workspaceRootPath, sourceSlug);
-  if (!config) {
+  const updated = updateSourceConnectionState(workspaceRootPath, sourceSlug, {
+    isAuthenticated: true,
+    connectionStatus: 'connected',
+    connectionError: undefined,
+  });
+  if (!updated) {
     debug(`[markSourceAuthenticated] Source ${sourceSlug} not found`);
     return false;
   }
 
-  config.isAuthenticated = true;
-  config.connectionStatus = 'connected';
-  config.connectionError = undefined;
-
-  saveSourceConfig(workspaceRootPath, config);
   debug(`[markSourceAuthenticated] Marked ${sourceSlug} as authenticated`);
+  return true;
+}
+
+/**
+ * Persist Craft-owned connection state for a source.
+ *
+ * Owned definitions keep the existing config.json representation. Shared
+ * definitions project the same runtime fields from Craft's private state
+ * directory, leaving every file under ~/.agents/sources byte-for-byte intact.
+ */
+export function updateSourceConnectionState(
+  workspaceRootPath: string,
+  sourceSlug: string,
+  update: SourceConnectionStateUpdate,
+): boolean {
+  const sourceRootPath = resolveVisibleSourceRoot(workspaceRootPath, sourceSlug);
+  const config = loadSourceConfig(sourceRootPath, sourceSlug);
+  if (!config) return false;
+
+  if (sourceRootPath === SHARED_AGENTS_ROOT_DIR) {
+    const definitionIdentity = getSharedSourceDefinitionIdentity(sourceSlug, config);
+    saveSharedSourceRuntimeState(sourceSlug, definitionIdentity, {
+      isAuthenticated: update.isAuthenticated ?? config.isAuthenticated,
+      connectionStatus: update.connectionStatus ?? config.connectionStatus,
+      connectionError: Object.prototype.hasOwnProperty.call(update, 'connectionError')
+        ? update.connectionError
+        : config.connectionError,
+      lastTestedAt: update.lastTestedAt ?? config.lastTestedAt,
+    });
+    return true;
+  }
+
+  Object.assign(config, update);
+  saveSourceConfig(sourceRootPath, config);
   return true;
 }
 
@@ -152,6 +325,8 @@ export function saveSourceConfig(
   workspaceRootPath: string,
   config: FolderSourceConfig
 ): void {
+  assertMutableSourceRoot(workspaceRootPath, config.slug);
+
   // Validate config before writing
   const validation = validateSourceConfig(config);
   if (!validation.valid) {
@@ -286,6 +461,7 @@ export function saveSourceGuide(
   sourceSlug: string,
   guide: SourceGuide
 ): void {
+  assertMutableSourceRoot(workspaceRootPath, sourceSlug);
   const dir = getSourcePath(workspaceRootPath, sourceSlug);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
@@ -315,6 +491,7 @@ export async function downloadSourceIcon(
   sourceSlug: string,
   iconUrl: string
 ): Promise<string | null> {
+  assertMutableSourceRoot(workspaceRootPath, sourceSlug);
   const sourceDir = getSourceWritePath(workspaceRootPath, sourceSlug);
   return downloadIcon(sourceDir, iconUrl, 'Sources');
 }
@@ -347,22 +524,25 @@ export { isIconUrl } from '../utils/icon.ts';
 export function loadSource(workspaceRootPath: string, sourceSlug: string): LoadedSource | null {
   const workspaceSource = loadSourceFromRoot(workspaceRootPath, sourceSlug, 'workspace');
   if (workspaceSource) return workspaceSource;
-  return loadSourceFromRoot(GLOBAL_AGENT_ROOT_DIR, sourceSlug, 'global', workspaceRootPath);
+  return (
+    loadSourceFromRoot(GLOBAL_AGENT_ROOT_DIR, sourceSlug, 'craft-global', workspaceRootPath)
+    ?? loadSourceFromRoot(SHARED_AGENTS_ROOT_DIR, sourceSlug, 'shared-global', workspaceRootPath)
+  );
 }
 
 function loadSourceFromRoot(
   sourceRootPath: string,
   sourceSlug: string,
-  source: SourceDefinitionScope,
+  origin: Exclude<SourceDefinitionOrigin, 'builtin'>,
   consumerWorkspaceRootPath = sourceRootPath
 ): LoadedSource | null {
   const folderPath = getSourcePath(sourceRootPath, sourceSlug);
   const config = loadSourceConfig(sourceRootPath, sourceSlug);
   if (!config) return null;
 
-  const workspaceId = source === 'global'
-    ? 'global'
-    : basename(consumerWorkspaceRootPath);
+  const workspaceId = origin === 'workspace'
+    ? basename(consumerWorkspaceRootPath)
+    : 'global';
 
   // Pre-compute icon path for renderer (avoids fs access in browser)
   const iconPath = findIconFile(folderPath);
@@ -374,13 +554,14 @@ function loadSourceFromRoot(
     workspaceRootPath: sourceRootPath,
     workspaceId,
     iconPath,
-    source,
+    origin,
   };
 }
 
 /**
  * Load all user-configured sources visible in a workspace.
- * Global sources are loaded first and workspace sources override matching slugs.
+ * Shared multi-tool globals load first, then Craft-owned globals, then workspace
+ * sources override matching slugs.
  */
 export function loadWorkspaceSources(workspaceRootPath: string): LoadedSource[] {
   ensureSourcesDir(workspaceRootPath);
@@ -388,7 +569,13 @@ export function loadWorkspaceSources(workspaceRootPath: string): LoadedSource[] 
 
   const sourcesBySlug = new Map<string, LoadedSource>();
 
-  for (const source of loadSourcesFromRoot(GLOBAL_AGENT_ROOT_DIR, 'global', workspaceRootPath)) {
+  // Shared multi-tool globals (~/.agents/sources) — lowest global priority
+  for (const source of loadSourcesFromRoot(SHARED_AGENTS_ROOT_DIR, 'shared-global', workspaceRootPath)) {
+    sourcesBySlug.set(source.config.slug, source);
+  }
+
+  // Craft-owned globals (~/.craft-agent/sources)
+  for (const source of loadSourcesFromRoot(GLOBAL_AGENT_ROOT_DIR, 'craft-global', workspaceRootPath)) {
     sourcesBySlug.set(source.config.slug, source);
   }
 
@@ -405,7 +592,7 @@ export function loadWorkspaceSources(workspaceRootPath: string): LoadedSource[] 
 
 function loadSourcesFromRoot(
   sourceRootPath: string,
-  source: SourceDefinitionScope,
+  origin: Exclude<SourceDefinitionOrigin, 'builtin'>,
   consumerWorkspaceRootPath = sourceRootPath,
   explicitSourcesDir?: string
 ): LoadedSource[] {
@@ -417,7 +604,7 @@ function loadSourcesFromRoot(
 
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      const loadedSource = loadSourceFromRoot(sourceRootPath, entry.name, source, consumerWorkspaceRootPath);
+      const loadedSource = loadSourceFromRoot(sourceRootPath, entry.name, origin, consumerWorkspaceRootPath);
       if (loadedSource) {
         sources.push(loadedSource);
       }
@@ -640,24 +827,22 @@ export async function createSource(
   return config;
 }
 
-/**
- * Delete a workspace source, falling back to a global source when no workspace override exists.
- */
+/** Delete the visible Craft-owned definition; shared definitions are immutable. */
 export function deleteSource(workspaceRootPath: string, sourceSlug: string): void {
-  const workspaceDirs = [
-    getSourceWritePath(workspaceRootPath, sourceSlug),
-    join(getLegacySourcesPathForRoot(workspaceRootPath), sourceSlug),
-  ];
-  const deletedWorkspaceSource = workspaceDirs.some((dir) => {
-    if (!existsSync(dir)) return false;
-    rmSync(dir, { recursive: true });
-    return true;
-  });
+  const sourceRootPath = resolveVisibleSourceRoot(workspaceRootPath, sourceSlug);
+  assertMutableSourceRoot(sourceRootPath, sourceSlug);
 
-  if (!deletedWorkspaceSource) {
-    const globalDir = getSourcePath(GLOBAL_AGENT_ROOT_DIR, sourceSlug);
-    if (existsSync(globalDir)) {
-      rmSync(globalDir, { recursive: true });
+  const sourceDirs = sourceRootPath === workspaceRootPath
+    ? [
+      getSourceWritePath(workspaceRootPath, sourceSlug),
+      join(getLegacySourcesPathForRoot(workspaceRootPath), sourceSlug),
+    ]
+    : [getSourcePath(sourceRootPath, sourceSlug)];
+
+  for (const sourceDir of sourceDirs) {
+    if (existsSync(sourceDir)) {
+      rmSync(sourceDir, { recursive: true });
+      return;
     }
   }
 }
@@ -669,7 +854,8 @@ export function sourceExists(workspaceRootPath: string, sourceSlug: string): boo
   return existsSync(join(getSourcePath(workspaceRootPath, sourceSlug), 'config.json'))
     || existsSync(join(getSourceWritePath(workspaceRootPath, sourceSlug), 'config.json'))
     || existsSync(join(getLegacySourcesPathForRoot(workspaceRootPath), sourceSlug, 'config.json'))
-    || existsSync(join(getSourcePath(GLOBAL_AGENT_ROOT_DIR, sourceSlug), 'config.json'));
+    || existsSync(join(getSourcePath(GLOBAL_AGENT_ROOT_DIR, sourceSlug), 'config.json'))
+    || existsSync(join(getSourcePath(SHARED_AGENTS_ROOT_DIR, sourceSlug), 'config.json'));
 }
 
 // ============================================================

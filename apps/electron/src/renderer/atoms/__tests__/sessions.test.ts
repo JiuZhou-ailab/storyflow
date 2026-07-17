@@ -15,6 +15,13 @@ import {
   sessionMessagesLoadedAtomFamily,
   ensureSessionMessagesLoadedAtom,
   forceSessionMessagesReloadAtom,
+  unloadSessionTranscriptAtom,
+  reconcileCurrentSessionTranscriptWorkingSetAtom,
+  reconcileSessionTranscriptWorkingSetAtom,
+  resolveSessionTranscriptWorkingSet,
+  touchSessionTranscriptAccess,
+  __resetSessionTranscriptWorkingSetForTests,
+  SESSION_TRANSCRIPT_WORKING_SET_EXTRA,
   addSessionAtom,
   removeSessionAtom,
   refreshSessionsMetadataAtom,
@@ -459,6 +466,163 @@ describe('session message loading atoms', () => {
     expect(calls).toEqual([sessionId, sessionId])
     expect(secondResult?.messages.map((message) => message.id)).toEqual(['m1', 'm2'])
     expect(store.get(loadedSessionsAtom).has(sessionId)).toBe(true)
+  })
+})
+
+describe('session transcript working set', () => {
+  const originalWindow = globalThis.window
+
+  afterEach(() => {
+    __resetSessionTranscriptWorkingSetForTests()
+    if (originalWindow) {
+      globalThis.window = originalWindow
+    } else {
+      // @ts-expect-error test cleanup for window shim
+      delete globalThis.window
+    }
+  })
+
+  it('pins open sessions and fills remaining slots from recency', () => {
+    __resetSessionTranscriptWorkingSetForTests()
+    for (const id of ['a', 'b', 'c', 'd', 'e']) {
+      touchSessionTranscriptAccess(id)
+    }
+    const keep = resolveSessionTranscriptWorkingSet(['open-1', 'open-2'])
+    expect(keep.slice(0, 2)).toEqual(['open-1', 'open-2'])
+    expect(keep.length).toBe(2 + SESSION_TRANSCRIPT_WORKING_SET_EXTRA)
+    // Soft pins are the most recent non-open ids (c,d,e → last EXTRA)
+    expect(keep.slice(2)).toEqual(['d', 'e'].slice(-SESSION_TRANSCRIPT_WORKING_SET_EXTRA))
+  })
+
+  it('unloadSessionTranscriptAtom drops messages and loaded flag but keeps the shell', () => {
+    const store = createStore()
+    const sessionId = 'session-1'
+    store.set(sessionAtomFamily(sessionId), makeSession({
+      id: sessionId,
+      messages: [msg('m1'), msg('m2', 'assistant')],
+      name: 'Keep me',
+    }))
+    store.set(loadedSessionsAtom, new Set([sessionId]))
+
+    expect(store.set(unloadSessionTranscriptAtom, sessionId)).toBe(true)
+    const shell = store.get(sessionAtomFamily(sessionId))
+    expect(shell?.name).toBe('Keep me')
+    expect(shell?.messages).toEqual([])
+    expect(store.get(loadedSessionsAtom).has(sessionId)).toBe(false)
+  })
+
+  it('does not unload a processing session transcript', () => {
+    const store = createStore()
+    const sessionId = 'streaming'
+    store.set(sessionAtomFamily(sessionId), makeSession({
+      id: sessionId,
+      isProcessing: true,
+      messages: [msg('m1'), msg('m2', 'assistant')],
+    }))
+    store.set(loadedSessionsAtom, new Set([sessionId]))
+
+    expect(store.set(unloadSessionTranscriptAtom, sessionId)).toBe(false)
+    expect(store.get(sessionAtomFamily(sessionId))?.messages).toHaveLength(2)
+    expect(store.get(loadedSessionsAtom).has(sessionId)).toBe(true)
+  })
+
+  it('evicts an off-screen transcript once background processing ends', () => {
+    const store = createStore()
+    store.set(sessionAtomFamily('current'), makeSession({ id: 'current', messages: [msg('current')] }))
+    store.set(sessionAtomFamily('background'), makeSession({
+      id: 'background',
+      isProcessing: true,
+      messages: [msg('background')],
+    }))
+    store.set(loadedSessionsAtom, new Set(['current', 'background']))
+
+    store.set(reconcileSessionTranscriptWorkingSetAtom, ['current'])
+    expect(store.get(loadedSessionsAtom).has('background')).toBe(true)
+
+    store.set(sessionAtomFamily('background'), {
+      ...store.get(sessionAtomFamily('background'))!,
+      isProcessing: false,
+    })
+    store.set(reconcileCurrentSessionTranscriptWorkingSetAtom)
+
+    expect(store.get(loadedSessionsAtom).has('background')).toBe(false)
+    expect(store.get(sessionAtomFamily('background'))?.messages).toEqual([])
+  })
+
+  it('reconcileSessionTranscriptWorkingSetAtom evicts out-of-set loaded transcripts', () => {
+    const store = createStore()
+    for (const id of ['s1', 's2', 's3', 's4', 's5']) {
+      store.set(sessionAtomFamily(id), makeSession({
+        id,
+        messages: [msg(`${id}-m1`), msg(`${id}-m2`, 'assistant')],
+      }))
+    }
+    store.set(loadedSessionsAtom, new Set(['s1', 's2', 's3', 's4', 's5']))
+    __resetSessionTranscriptWorkingSetForTests()
+
+    // Open only s5; with EXTRA=2 and empty recency, only s5 is kept.
+    store.set(reconcileSessionTranscriptWorkingSetAtom, ['s5'])
+
+    expect(store.get(loadedSessionsAtom).has('s5')).toBe(true)
+    expect(store.get(sessionAtomFamily('s5'))?.messages).toHaveLength(2)
+
+    for (const id of ['s1', 's2', 's3', 's4']) {
+      expect(store.get(loadedSessionsAtom).has(id)).toBe(false)
+      expect(store.get(sessionAtomFamily(id))?.messages).toEqual([])
+    }
+  })
+
+  it('reconcile keeps a small recency buffer beyond open sessions', () => {
+    const store = createStore()
+    for (const id of ['a', 'b', 'c', 'd']) {
+      store.set(sessionAtomFamily(id), makeSession({
+        id,
+        messages: [msg(`${id}-m`)],
+      }))
+    }
+    store.set(loadedSessionsAtom, new Set(['a', 'b', 'c', 'd']))
+    __resetSessionTranscriptWorkingSetForTests()
+    // Simulate prior visits: a,b,c then open d
+    for (const id of ['a', 'b', 'c']) touchSessionTranscriptAccess(id)
+
+    store.set(reconcileSessionTranscriptWorkingSetAtom, ['d'])
+
+    const loaded = store.get(loadedSessionsAtom)
+    expect(loaded.has('d')).toBe(true)
+    // EXTRA most-recent of a,b,c → b,c (if EXTRA=2)
+    expect(loaded.has('c')).toBe(true)
+    expect(loaded.has('b')).toBe(SESSION_TRANSCRIPT_WORKING_SET_EXTRA >= 2)
+    expect(loaded.has('a')).toBe(SESSION_TRANSCRIPT_WORKING_SET_EXTRA >= 3)
+    expect(loaded.size).toBe(1 + Math.min(SESSION_TRANSCRIPT_WORKING_SET_EXTRA, 3))
+  })
+
+  it('evicts an async transcript load against the latest hard pins', async () => {
+    const store = createStore()
+    let resolveLoad!: (session: Session) => void
+    const delayedLoad = new Promise<Session>((resolve) => {
+      resolveLoad = resolve
+    })
+    globalThis.window = {
+      electronAPI: {
+        getSessionMessages: async () => delayedLoad,
+      },
+    } as unknown as typeof window
+
+    store.set(sessionAtomFamily('old'), makeSession({ id: 'old', messages: [] }))
+    store.set(reconcileSessionTranscriptWorkingSetAtom, ['old'])
+    const pending = store.set(ensureSessionMessagesLoadedAtom, 'old')
+
+    // Move far enough through recency that the original request is no longer
+    // a hard or soft pin before its IPC payload arrives.
+    for (const id of ['current', 'next-1', 'next-2', 'next-3']) {
+      store.set(reconcileSessionTranscriptWorkingSetAtom, [id])
+    }
+
+    resolveLoad(makeSession({ id: 'old', messages: [msg('old-message')] }))
+    await pending
+
+    expect(store.get(loadedSessionsAtom).has('old')).toBe(false)
+    expect(store.get(sessionAtomFamily('old'))?.messages).toEqual([])
   })
 })
 

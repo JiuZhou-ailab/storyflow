@@ -279,8 +279,8 @@ describe('resolveSourceMentions', () => {
 
 describe('extractBadges - skill qualification with workspace slug', () => {
   const mockSkills = [
-    { slug: 'commit', metadata: { name: 'Commit' }, source: 'workspace' },
-    { slug: 'review-pr', metadata: { name: 'Review PR' }, source: 'workspace' },
+    { slug: 'commit', metadata: { name: 'Commit' } },
+    { slug: 'review-pr', metadata: { name: 'Review PR' } },
   ] as any[]
   const mockSources = [] as any[]
 

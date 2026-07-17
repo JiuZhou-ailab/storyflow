@@ -632,7 +632,7 @@ Sources are external data connections. Each source has:
 
 **Workspace structure:**
 - Sources: \`${workspacePath}/.craft-agent/sources/{slug}/\`
-- Skills: \`${workspacePath}/.craft-agent/skills/{slug}/\`
+- Skills: \`${workspacePath}/.pi/skills/{slug}/\`
 - Theme: \`${workspacePath}/.craft-agent/theme.json\`
 
 ## Skills
@@ -644,10 +644,8 @@ Skills are reusable instruction sets that teach you specialized behaviors. Each 
 1. Read its \`SKILL.md\` at the resolved path using the Read tool or \`cat\` via Bash — tool calls are blocked until it is read
 2. Follow the instructions in the file to complete the user's request
 
-Skills are stored at three levels (checked in order):
-- Global: \`~/.agents/skills/{slug}/SKILL.md\`
-- Workspace: \`${workspacePath}/.craft-agent/skills/{slug}/SKILL.md\`
-- Project: \`{projectRoot}/.agents/skills/{slug}/SKILL.md\`
+Skills belong only to the current Storyflow project:
+- Project: \`${workspacePath}/.pi/skills/{slug}/SKILL.md\`
 
 ## Project Context
 

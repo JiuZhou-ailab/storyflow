@@ -21,11 +21,86 @@ const appShellSource = readFileSync(
   new URL('../../components/app-shell/AppShell.tsx', import.meta.url),
   'utf-8'
 )
-
+const mainContentPanelSource = readFileSync(
+  new URL('../../components/app-shell/MainContentPanel.tsx', import.meta.url),
+  'utf-8'
+)
+const appSource = readFileSync(
+  new URL('../../App.tsx', import.meta.url),
+  'utf-8'
+)
+const activityRailSource = readFileSync(
+  new URL('../../components/app-shell/ActivityRail.tsx', import.meta.url),
+  'utf-8'
+)
 describe('project default navigation', () => {
-  it('auto-selects a recent session for the initial default allSessions route', () => {
-    expect(navigationContextSource).toContain('navigate(routes.view.allSessions())')
+  it('lands on the writing route without waiting for session auto-selection', () => {
+    expect(navigationContextSource).toContain('navigate(routes.view.writing())')
     expect(navigationContextSource).not.toContain('navigate(routes.view.allSessions(), { skipAutoSelect: true })')
+  })
+
+  it('keeps the writing project shell visible while switching conversations', () => {
+    expect(appShellSource).toContain('const showWritingWorkspaceShell = isWritingNavigation(navState)')
+    expect(appShellSource).toContain("|| (isSessionsNavigation(navState) && activeWritingWorkspaceRoot !== null)")
+    expect(appShellSource).toContain('const showNovelDocumentNavigator = showWritingWorkspaceShell && showNovelWorkspaceSidebar')
+    expect(appShellSource).toContain('const showPrimarySidebar = hasPrimarySidebar && showWritingWorkspaceShell')
+  })
+
+  it('shows the default conversation without putting ChatPage on the project-shell critical path', () => {
+    expect(mainContentPanelSource).toContain('if (isWritingNavigation(navState))')
+    expect(mainContentPanelSource).toContain('<WritingSessionContent')
+    expect(mainContentPanelSource).toContain('useAtomValue(sessionIdsAtom)')
+    expect(mainContentPanelSource).toContain('useAtomValue(sessionMetaMapAtom)')
+    expect(mainContentPanelSource).toContain("const LazyChatPage = React.lazy(() => import('@/pages/ChatPage'))")
+    expect(mainContentPanelSource).toContain('useContext(WritingPrimaryContentReadyContext)')
+    expect(mainContentPanelSource).toContain('if (!primaryContentReady) return')
+    expect(mainContentPanelSource).toContain('React.startTransition(() => {')
+    expect(mainContentPanelSource).not.toContain('window.requestAnimationFrame(() => {')
+    expect(mainContentPanelSource).toContain('<LazyChatPage sessionId={sessionId} />')
+    expect(mainContentPanelSource).not.toContain("import { SourceInfoPage, ChatPage } from '@/pages'")
+    expect(appShellSource).toContain('<WritingPrimaryContentReadyContext.Provider value={writingPrimaryContentReady}>')
+    expect(appShellSource).toContain('loadedNovelDocumentPath === selectedNovelDocumentPath')
+  })
+
+  it('keeps conversation inside the writing workspace instead of adding a rail destination', () => {
+    expect(activityRailSource).not.toContain("'conversations'")
+    expect(activityRailSource).not.toContain('activity-conversations')
+    expect(appShellSource).toContain('const handleWritingWorkspaceClick = useCallback')
+    expect(appShellSource).toContain('navigate(routes.view.writing())')
+    expect(appShellSource).toContain('onOpenWritingWorkspace={handleWritingWorkspaceClick}')
+    expect(appShellSource).not.toContain('onOpenConversations=')
+  })
+
+  it('keeps route auto-selection session-only while writing owns its metadata-driven default', () => {
+    const autoSelectSource = navigationContextSource.slice(
+      navigationContextSource.indexOf('// AUTO-SELECT ON SESSION LOAD'),
+      navigationContextSource.indexOf('const actionsValue')
+    )
+
+    expect(autoSelectSource).toContain('if (!isReady || !isSessionsReady || !workspaceId) return')
+    expect(autoSelectSource).toContain('if (!isSessionsNavigation(navigationState) || navigationState.details) return')
+    expect(autoSelectSource).not.toContain('isWritingNavigation(navigationState)')
+    expect(autoSelectSource).not.toContain('setSession({ selected:')
+    expect(mainContentPanelSource).toContain('const defaultSessionId = useMemo(() => {')
+    expect(mainContentPanelSource).toContain('select(defaultSessionId, sessionIds.indexOf(defaultSessionId))')
+  })
+
+  it('returns from the project hub to the writing route', () => {
+    const returnHandlerSource = appSource.slice(
+      appSource.indexOf('const handleReturnToActiveProject'),
+      appSource.indexOf('const handleOpenActiveProjectRoute')
+    )
+
+    expect(returnHandlerSource).toContain('setPendingReadyRoute(routes.view.writing())')
+    expect(returnHandlerSource.indexOf('setPendingReadyRoute(routes.view.writing())')).toBeLessThan(
+      returnHandlerSource.indexOf("setAppState('ready')")
+    )
+  })
+
+  it('preloads the workspace module during project-hub idle time', () => {
+    expect(appSource).toContain('workspaceSurfaceModulePromise ??= import(')
+    expect(appSource).toContain("if (appState !== 'project-hub') return")
+    expect(appSource).toContain('window.requestIdleCallback(preloadWorkspaceSurface)')
   })
 
   it('lets restored project landing routes skip auto-select without bypassing route validation', () => {
@@ -77,5 +152,12 @@ describe('project default navigation', () => {
     expect(sessionListSource).toContain('useNavigationActions')
     expect(chatDisplaySource).toContain('useNavigationActions')
     expect(appShellSource).toContain('useNavigationActions')
+  })
+
+  it('revalidates the project captured by a delayed Skill install confirmation', () => {
+    expect(navigationContextSource).toContain('const targetWorkspaceId = workspaceId')
+    expect(navigationContextSource).toContain('workspaceIdentityRef.current.id !== targetWorkspaceId')
+    expect(navigationContextSource).toContain('importResources(targetWorkspaceId, downloaded.bundle')
+    expect(navigationContextSource).not.toContain('importResources(workspaceId, downloaded.bundle')
   })
 })

@@ -33,6 +33,8 @@ describe("detectWritingProject", () => {
         version: 1,
       },
       storageProfile: "claude-book-compatible",
+      catalog: { paths: ["story/plan.md", "bible/structure.md"] },
+      writePolicy: { mode: "catalog-plus-free", freeRoots: [".work"] },
     });
 
     const project = detectWritingProject(rootPath);
@@ -45,6 +47,13 @@ describe("detectWritingProject", () => {
       version: 1,
     });
     expect(project?.manifest.storageProfile).toBe("claude-book-compatible");
+    expect(project?.manifest.catalog).toEqual({
+      paths: ["bible/structure.md", "story/plan.md"],
+    });
+    expect(project?.manifest.writePolicy).toEqual({
+      mode: "catalog-plus-free",
+      freeRoots: [".work"],
+    });
     expect(project?.directories.bible).toBe(join(rootPath, "bible"));
   });
 

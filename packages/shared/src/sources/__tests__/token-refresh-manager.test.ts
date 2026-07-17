@@ -1,5 +1,7 @@
 /**
- * Unit tests for TokenRefreshManager and isOAuthSource helper.
+ * input: Workspace-owned OAuth Source fixtures and mocked refresh dependencies
+ * output: Refresh eligibility, state transition, and recovery regression coverage
+ * pos: TokenRefreshManager unit and integration test
  *
  * Tests the proactive token refresh functionality that includes both:
  * - MCP OAuth sources (Linear, Notion, etc.)
@@ -35,6 +37,7 @@ function createMockSource(overrides: Partial<FolderSourceConfig>): LoadedSource 
     folderPath: '/mock/path',
     workspaceRootPath: '/mock/workspace',
     workspaceId: 'mock-workspace',
+    origin: 'workspace',
   };
 }
 

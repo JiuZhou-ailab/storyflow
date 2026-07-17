@@ -1,7 +1,7 @@
 /**
  * Session Tools Core - Source Helpers
  *
- * input: Workspace roots, global agent source/skill folders, and resource slugs
+ * input: Workspace roots, global source folders, project Skill folders, and resource slugs
  * output: Resolved resource paths and lightweight config loading helpers
  * pos: Filesystem helper layer for session tool handlers
  *
@@ -15,8 +15,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { SourceConfig } from './types.ts';
 
-const GLOBAL_AGENT_ROOT_DIR = join(homedir(), '.agents');
-const GLOBAL_AGENT_SOURCES_DIR = join(GLOBAL_AGENT_ROOT_DIR, 'sources');
+const CRAFT_GLOBAL_SOURCES_DIR = join(homedir(), '.craft-agent', 'sources');
+const SHARED_AGENTS_SOURCES_DIR = join(homedir(), '.agents', 'sources');
 
 /** Strip UTF-8 BOM that breaks JSON.parse */
 function stripBom(text: string): string {
@@ -32,9 +32,14 @@ export function getSourcePath(workspaceRootPath: string, sourceSlug: string): st
     return workspaceSourcePath;
   }
 
-  const globalSourcePath = join(GLOBAL_AGENT_SOURCES_DIR, sourceSlug);
-  if (existsSync(globalSourcePath)) {
-    return globalSourcePath;
+  const craftGlobalSourcePath = join(CRAFT_GLOBAL_SOURCES_DIR, sourceSlug);
+  if (existsSync(craftGlobalSourcePath)) {
+    return craftGlobalSourcePath;
+  }
+
+  const sharedGlobalSourcePath = join(SHARED_AGENTS_SOURCES_DIR, sourceSlug);
+  if (existsSync(sharedGlobalSourcePath)) {
+    return sharedGlobalSourcePath;
   }
 
   return workspaceSourcePath;
@@ -97,7 +102,11 @@ export function loadSourceConfig(
 export function listSourceSlugs(workspaceRootPath: string): string[] {
   const slugs = new Set<string>();
 
-  for (const sourcesDir of [GLOBAL_AGENT_SOURCES_DIR, join(workspaceRootPath, 'sources')]) {
+  for (const sourcesDir of [
+    CRAFT_GLOBAL_SOURCES_DIR,
+    SHARED_AGENTS_SOURCES_DIR,
+    join(workspaceRootPath, 'sources'),
+  ]) {
     if (!existsSync(sourcesDir)) continue;
 
     try {
@@ -120,7 +129,7 @@ export function listSourceSlugs(workspaceRootPath: string): string[] {
  * Get the path to a skill's directory
  */
 export function getSkillPath(workspaceRootPath: string, skillSlug: string): string {
-  return join(workspaceRootPath, 'skills', skillSlug);
+  return join(workspaceRootPath, '.pi', 'skills', skillSlug);
 }
 
 /**
@@ -148,7 +157,7 @@ export function skillMdExists(workspaceRootPath: string, skillSlug: string): boo
  * List all skill slugs in a workspace
  */
 export function listSkillSlugs(workspaceRootPath: string): string[] {
-  const skillsDir = join(workspaceRootPath, 'skills');
+  const skillsDir = join(workspaceRootPath, '.pi', 'skills');
 
   if (!existsSync(skillsDir)) {
     return [];

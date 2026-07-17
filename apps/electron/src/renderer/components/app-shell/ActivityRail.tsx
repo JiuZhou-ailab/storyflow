@@ -14,7 +14,7 @@ import {
   UserCircle,
   Zap,
 } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@craft-agent/ui'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@craft-agent/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { FeedbackDialog } from './FeedbackDialog'
 

@@ -1,6 +1,8 @@
 ---
-name: 正文修订
+name: prose-revision
 description: "用于修订小说或网文正文，处理扩写、润色、去人工智能味、机器感、冗余、节奏、对白自然度和场景层次补强，同时保护剧情事实。"
+metadata:
+  displayName: 正文修订
 ---
 
 # 正文修订

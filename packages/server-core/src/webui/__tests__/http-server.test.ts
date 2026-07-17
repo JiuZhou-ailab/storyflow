@@ -3,7 +3,7 @@
 // pos: Server-side regression coverage for browser-facing auth and session boundaries.
 
 import { afterEach, describe, expect, it } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { startWebuiHttpServer } from '../http-server'
@@ -27,6 +27,7 @@ function createTestWebuiDir(): string {
   TEMP_DIRS.push(dir)
   writeFileSync(join(dir, 'login.html'), '<!doctype html><html><body>login</body></html>')
   writeFileSync(join(dir, 'index.html'), '<!doctype html><html><body>app</body></html>')
+  mkdirSync(join(dir, 'assets'))
   return dir
 }
 
@@ -43,9 +44,10 @@ async function createServer(overrides?: {
   clientGatewayTokenTtlSeconds?: number
   clientGatewayConnectionSlugs?: string[]
 }) {
+  const webuiDir = createTestWebuiDir()
   const server = await startWebuiHttpServer({
     port: 0,
-    webuiDir: createTestWebuiDir(),
+    webuiDir,
     secret: SECRET,
     password: PASSWORD,
     secureCookies: overrides?.secureCookies,
@@ -68,6 +70,7 @@ async function createServer(overrides?: {
   return {
     server,
     baseUrl: `http://127.0.0.1:${server.port}`,
+    webuiDir,
   }
 }
 
@@ -265,6 +268,16 @@ describe('startWebuiHttpServer', () => {
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ enabled: false })
+  })
+
+  it('serves login assets before a session exists', async () => {
+    const { baseUrl, webuiDir } = await createServer()
+    writeFileSync(join(webuiDir, 'assets', 'login-marker.js'), 'window.__login_loaded = true')
+
+    const res = await fetch(`${baseUrl}/assets/login-marker.js`)
+
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('window.__login_loaded = true')
   })
 
   it('exposes configured Neon Auth base URL without verifier details', async () => {
@@ -473,6 +486,62 @@ describe('startWebuiHttpServer', () => {
       },
     })
     expect(res.headers.get('set-cookie')).toBeNull()
+  })
+
+  it('allows the registered account to sign in after email verification', async () => {
+    let emailVerified = false
+    const { baseUrl } = await createServer({
+      neonAuth: createNeonAuthConfig({
+        emailSignUpEnabled: true,
+        fetch: async (input) => {
+          if (String(input).endsWith('/sign-up/email')) {
+            return Response.json({
+              data: {
+                user: {
+                  id: 'neon_verified_user',
+                  email: 'verified@example.com',
+                  emailVerified: false,
+                },
+              },
+            })
+          }
+
+          emailVerified = true
+          return Response.json({
+            data: {
+              session: { access_token: 'verified-sign-in-token' },
+              user: {
+                id: 'neon_verified_user',
+                email: 'verified@example.com',
+                emailVerified: true,
+              },
+            },
+          })
+        },
+        tokenVerifier: async (token) => token === 'verified-sign-in-token'
+          ? { sub: 'neon_verified_user', email: 'verified@example.com', emailVerified: true }
+          : null,
+      }),
+    })
+
+    const signUpRes = await fetch(`${baseUrl}/api/auth/neon/email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'sign-up', email: 'verified@example.com', password: 'secret-password' }),
+    })
+
+    expect(signUpRes.status).toBe(202)
+    expect(signUpRes.headers.get('set-cookie')).toBeNull()
+
+    const signInRes = await fetch(`${baseUrl}/api/auth/neon/email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'sign-in', email: 'verified@example.com', password: 'secret-password' }),
+    })
+
+    expect(emailVerified).toBe(true)
+    expect(signInRes.status).toBe(200)
+    expect(extractSessionCookie(signInRes)).toContain('craft_session=')
   })
 
   it('does not set a session cookie when sign-up returns an unverified token identity', async () => {

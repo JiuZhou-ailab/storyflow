@@ -178,33 +178,34 @@ export const NovelDocumentEditorPanel = React.forwardRef<NovelDocumentEditorPane
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1">
+        {/* Keep the editor mounted during loads so chapter switches reuse one
+            ProseMirror instance (setContent). Toggling to a loading-only branch
+            remounted TipTap every open and drove document open/close heap growth. */}
+        <div className={cn('flex h-full min-h-0 flex-col', loading && 'opacity-60')}>
+          <TiptapMarkdownEditor
+            ref={editorRef}
+            content={content}
+            onDocumentChanged={onDocumentChanged}
+            placeholder={t('writing.emptySection')}
+            editable={!loading}
+            markdownEngine="official"
+            showToolbar
+            surface="manuscript"
+            showLineNumbers
+            reviewDiffOriginalContent={fileReviewChange?.original ?? null}
+            bottomRightAccessory={t('writing.totalCharacters', { defaultValue: 'Total {{count}} characters', count: characterCount })}
+            onAskAiForSelection={onSendSelectionToChat || onAskAiForSelection ? handleAskAiForSelection : undefined}
+            onAddSelectionToChat={onAddSelectionToChat ? handleAddSelectionToChat : undefined}
+            className="min-h-0 flex-1"
+          />
+        </div>
         {loading ? (
-          <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 bg-background/40 text-xs text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             {t('fileViewer.loadingContent')}
           </div>
-        ) : (
-          <div className="flex h-full min-h-0 flex-col">
-            <TiptapMarkdownEditor
-              key={file.path}
-              ref={editorRef}
-              content={content}
-              onDocumentChanged={onDocumentChanged}
-              placeholder={t('writing.emptySection')}
-              editable
-              markdownEngine="official"
-              showToolbar
-              surface="manuscript"
-              showLineNumbers
-              reviewDiffOriginalContent={fileReviewChange?.original ?? null}
-              bottomRightAccessory={t('writing.totalCharacters', { defaultValue: 'Total {{count}} characters', count: characterCount })}
-              onAskAiForSelection={onSendSelectionToChat || onAskAiForSelection ? handleAskAiForSelection : undefined}
-              onAddSelectionToChat={onAddSelectionToChat ? handleAddSelectionToChat : undefined}
-              className="min-h-0 flex-1"
-            />
-          </div>
-        )}
+        ) : null}
       </div>
 
       {pendingChangeCount > 0 ? (

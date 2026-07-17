@@ -1,3 +1,7 @@
+// input: CLI domain names, actions, and workspace-relative permission scopes
+// output: Declarative policy table for guarded CLI resource operations
+// pos: Central authorization metadata for the craft-agent CLI
+
 export type CliDomainNamespace = 'label' | 'source' | 'skill' | 'automation' | 'permission' | 'theme'
 
 export interface CliDomainPolicy {
@@ -38,7 +42,7 @@ const POLICIES: Record<CliDomainNamespace, CliDomainPolicy> = {
   skill: {
     namespace: 'skill',
     helpCommand: 'craft-agent skill --help',
-    workspacePathScopes: ['.craft-agent/skills/**', 'skills/**'],
+    workspacePathScopes: ['.pi/skills/**'],
     readActions: ['list', 'get', 'validate', 'where'],
     quickExamples: [
       'craft-agent skill list',

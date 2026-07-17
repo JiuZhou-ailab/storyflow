@@ -27,6 +27,7 @@
  *   delete-session/{id}       - Delete session
  *   flag-session/{id}         - Flag session
  *   unflag-session/{id}       - Unflag session
+ *   install-skill             - Verify a fixed-registry Skill and ask before project import
  *
  * Examples:
  *   craftagents://allSessions                               (all sessions view)

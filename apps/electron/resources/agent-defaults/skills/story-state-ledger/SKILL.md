@@ -1,6 +1,8 @@
 ---
-name: 写作状态
+name: story-state-ledger
 description: "用于抽取、维护、合并或审查共享写作状态、小说设定台账、人物事实、时间线事实、伏笔回收、物件状态、知识边界、世界规则、连续性记录和项目圣经更新。"
+metadata:
+  displayName: 写作状态
 ---
 
 # 写作状态

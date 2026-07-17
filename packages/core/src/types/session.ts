@@ -19,6 +19,7 @@ export type SessionStatus = 'todo' | 'in_progress' | 'needs_review' | 'done' | '
 export interface Session {
   id: string;                    // Unique identifier (stable, known immediately)
   sdkSessionId?: string;         // SDK session ID (captured after first message)
+  agentRuntime?: 'pi' | 'claude-sdk'; // Runtime that owns sdkSessionId
   workspaceId: string;           // Which workspace this session belongs to
   name?: string;                 // Optional user-defined name
   createdAt: number;
@@ -52,6 +53,7 @@ export interface SessionMetadata {
   messageCount: number;
   preview?: string;        // Preview of first user message
   sdkSessionId?: string;
+  agentRuntime?: 'pi' | 'claude-sdk';
   // Inbox/Archive features
   isArchived?: boolean;    // Whether this session is archived
   isFlagged?: boolean;     // Whether this session is flagged

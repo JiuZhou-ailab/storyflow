@@ -1,3 +1,7 @@
+// input: Server transport options plus host-provided SessionManager and RPC dependencies
+// output: A transport-ready server instance with an explicitly startable Agent runtime
+// pos: Owns the two-stage server lifecycle shared by Electron and headless hosts
+
 import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'node:fs'
 import { uptime as osUptime } from 'node:os'
 import { join } from 'node:path'
@@ -30,6 +34,11 @@ export interface ServerBootstrapOptions<TSessionManager, THandlerDeps> {
   }) => THandlerDeps
   registerAllRpcHandlers: (server: RpcServer, deps: THandlerDeps, serverCtx: ServerHandlerContext) => void
   initializeSessionManager: (sessionManager: TSessionManager) => Promise<void>
+  /**
+   * Return once the RPC transport is ready, leaving Agent/session initialization
+   * to startRuntime(). Headless hosts remain eager by default.
+   */
+  deferRuntimeInitialization?: boolean
   setSessionEventSink: (sessionManager: TSessionManager, sink: EventSink) => void
   initModelRefreshService: () => ModelRefreshServiceLike
   cleanupSessionManager?: (sessionManager: TSessionManager) => Promise<void> | void
@@ -66,6 +75,10 @@ export interface ServerInstance<TSessionManager> {
   token: string
   /** Context for server-level RPC handlers (status, health, active sessions). */
   serverHandlerContext: ServerHandlerContext
+  /** Resolves when SessionManager initialization and model refresh startup complete. */
+  ready: Promise<void>
+  /** Idempotently starts the Agent/session runtime. */
+  startRuntime: () => Promise<void>
   stop: () => Promise<void>
 }
 
@@ -325,16 +338,42 @@ export async function bootstrapServer<TSessionManager, THandlerDeps>(
 
   options.setSessionEventSink(sessionManager, wsServer.push.bind(wsServer))
 
-  await options.initializeSessionManager(sessionManager)
-
-  modelRefreshService.startAll()
-
   platform.logger.info(`Storyflow server listening on ${wsServer.protocol}://${rpcHost}:${wsServer.port}`)
 
   let stopped = false
+  let runtimeStarted = false
+  let resolveReady!: () => void
+  let rejectReady!: (error: unknown) => void
+  const ready = new Promise<void>((resolve, reject) => {
+    resolveReady = resolve
+    rejectReady = reject
+  })
+
+  const startRuntime = (): Promise<void> => {
+    if (runtimeStarted) return ready
+    runtimeStarted = true
+
+    void (async () => {
+      await options.initializeSessionManager(sessionManager)
+      if (stopped) return
+      modelRefreshService.startAll()
+      platform.logger.info('[bootstrap] Agent runtime initialized')
+    })().then(resolveReady, rejectReady)
+
+    return ready
+  }
+
   const stop = async (): Promise<void> => {
     if (stopped) return
     stopped = true
+
+    if (!runtimeStarted) {
+      runtimeStarted = true
+      resolveReady()
+    } else {
+      // Do not dispose resources while an in-flight initialization still owns them.
+      await ready.catch(() => {})
+    }
 
     platform.logger.info('Shutting down...')
 
@@ -378,6 +417,10 @@ export async function bootstrapServer<TSessionManager, THandlerDeps>(
     releaseServerLock()
   }
 
+  if (!options.deferRuntimeInitialization) {
+    await startRuntime()
+  }
+
   return {
     platform,
     sessionManager,
@@ -388,6 +431,8 @@ export async function bootstrapServer<TSessionManager, THandlerDeps>(
     protocol: wsServer.protocol,
     token: serverToken,
     serverHandlerContext,
+    ready,
+    startRuntime,
     stop,
   }
 }

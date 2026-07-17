@@ -1,3 +1,7 @@
+// input: Shared RPC transport plus platform and SessionManager dependencies
+// output: Core RPC registration split between shell-safe and runtime-gated domains
+// pos: Defines the server-core capability boundary exposed by every host
+
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
@@ -24,29 +28,37 @@ import { registerSystemCoreHandlers } from './system'
 import { registerTransferHandlers } from './transfer'
 import { registerWorkspaceCoreHandlers } from './workspace'
 import { registerMessagingHandlers } from './messaging'
+import { createInitGatedRpcServer } from './init-gated-server'
+
+export { createInitGatedRpcServer } from './init-gated-server'
 
 export function registerCoreRpcHandlers(
   server: RpcServer,
   deps: HandlerDeps,
   serverCtx?: ServerHandlerContext,
 ): void {
+  const runtimeServer = createInitGatedRpcServer(
+    server,
+    () => deps.sessionManager.waitForInit(),
+  )
+
   registerAuthHandlers(server, deps)
-  registerAutomationsHandlers(server, deps)
+  registerAutomationsHandlers(runtimeServer, deps)
   registerFilesHandlers(server, deps)
   registerWorkspaceFileMutationHandlers(server, deps)
   registerLabelsHandlers(server, deps)
-  registerLlmConnectionsHandlers(server, deps)
-  registerOAuthHandlers(server, deps)
+  registerLlmConnectionsHandlers(runtimeServer, deps)
+  registerOAuthHandlers(runtimeServer, deps)
   registerOnboardingHandlers(server, deps)
   registerResourcesHandlers(server, deps)
-  registerSessionsHandlers(server, deps)
+  registerSessionsHandlers(runtimeServer, deps)
   if (serverCtx) registerServerHandlers(server, deps, serverCtx)
-  registerSettingsHandlers(server, deps)
+  registerSettingsHandlers(runtimeServer, deps)
   registerSkillsHandlers(server, deps)
   registerSourcesHandlers(server, deps)
   registerStatusesHandlers(server, deps)
   registerSystemCoreHandlers(server, deps)
   registerTransferHandlers(server)
   registerWorkspaceCoreHandlers(server, deps)
-  registerMessagingHandlers(server, deps)
+  registerMessagingHandlers(runtimeServer, deps)
 }

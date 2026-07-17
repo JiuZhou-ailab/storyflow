@@ -1,3 +1,7 @@
+// input: The current process environment and the user's configured login shell
+// output: A merged Agent tool environment without blocking the Electron main loop
+// pos: Deferred Agent-runtime preparation, not part of the workspace shell critical path
+
 /**
  * Shell Environment Loader
  *
@@ -9,8 +13,11 @@
  * like Homebrew (gh, brew), nvm, pyenv, etc. are available to the agent.
  */
 
-import { execSync } from 'child_process'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
 import { mainLog } from './logger'
+
+const execFileAsync = promisify(execFile)
 
 // Environment variables that should NOT be imported from the shell
 // VITE_* vars from dev mode would make packaged app try to load from localhost
@@ -25,7 +32,7 @@ const shouldSkipEnvVar = (key: string): boolean => {
  * It spawns the user's login shell to get the full environment including
  * PATH modifications from .zshrc, .bashrc, .zprofile, etc.
  */
-export function loadShellEnv(): void {
+export async function loadShellEnv(): Promise<void> {
   // Only needed on macOS where GUI apps have minimal environment
   if (process.platform !== 'darwin') {
     return
@@ -45,7 +52,7 @@ export function loadShellEnv(): void {
     // -l = login shell (sources profile files like .zprofile)
     // -i = interactive shell (sources rc files like .zshrc)
     // We use a marker to separate shell startup output from env output
-    const output = execSync(`${shell} -l -i -c 'echo __ENV_START__ && env'`, {
+    const { stdout } = await execFileAsync(shell, ['-l', '-i', '-c', 'echo __ENV_START__ && env'], {
       encoding: 'utf-8',
       timeout: 5000,
       env: {
@@ -59,11 +66,10 @@ export function loadShellEnv(): void {
         APPLE_SUPPRESS_DEVELOPER_TOOL_POPUP: '1',
         GIT_TERMINAL_PROMPT: '0',
       },
-      stdio: ['pipe', 'pipe', 'pipe'],
     })
 
     // Parse environment after marker and set variables (excluding blocked ones)
-    const envSection = output.split('__ENV_START__')[1] || ''
+    const envSection = stdout.split('__ENV_START__')[1] || ''
     let count = 0
     for (const line of envSection.trim().split('\n')) {
       const eq = line.indexOf('=')

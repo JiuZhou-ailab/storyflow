@@ -1,3 +1,7 @@
+// input: Playground scenarios and renderer-facing shared DTO contracts
+// output: Deterministic mock Electron API, sessions, Sources, and attachments
+// pos: Sample-data factory for isolated renderer playgrounds
+
 import type {
   FileAttachment,
   LoadedSource,
@@ -708,6 +712,7 @@ export const mockSources: LoadedSource[] = [
     folderPath: '/mock/sources/github-api',
     workspaceRootPath: '/mock/workspaces/playground-workspace',
     workspaceId: 'playground-workspace',
+    origin: 'workspace',
   },
   {
     config: {
@@ -730,6 +735,7 @@ export const mockSources: LoadedSource[] = [
     folderPath: '/mock/sources/linear-api',
     workspaceRootPath: '/mock/workspaces/playground-workspace',
     workspaceId: 'playground-workspace',
+    origin: 'workspace',
   },
   {
     config: {
@@ -749,6 +755,7 @@ export const mockSources: LoadedSource[] = [
     folderPath: '/mock/sources/local-files',
     workspaceRootPath: '/mock/workspaces/playground-workspace',
     workspaceId: 'playground-workspace',
+    origin: 'workspace',
   },
 ]
 

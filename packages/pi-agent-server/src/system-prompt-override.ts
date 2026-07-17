@@ -1,4 +1,12 @@
-import type { AgentSession } from '@earendil-works/pi-coding-agent';
+// input: Storyflow system prompt, Pi AgentSession, and project Skills metadata
+// output: Stable per-turn system prompt that preserves Pi's progressive Skill disclosure
+// pos: Compatibility bridge until Pi exposes a public per-turn system-prompt API
+
+import {
+  formatSkillsForPrompt,
+  type AgentSession,
+  type Skill,
+} from '@earendil-works/pi-coding-agent';
 
 /**
  * Force a system prompt onto a Pi AgentSession.
@@ -17,12 +25,19 @@ import type { AgentSession } from '@earendil-works/pi-coding-agent';
  *
  * Remove once the SDK exposes a public per-turn system-prompt API.
  */
-export function applySystemPromptOverride(session: AgentSession, prompt: string): void {
-  session.agent.state.systemPrompt = prompt;
+export function applySystemPromptOverride(
+  session: AgentSession,
+  prompt: string,
+  skills: Skill[] = [],
+): void {
+  const skillsPrompt = formatSkillsForPrompt(skills);
+  const effectivePrompt = [prompt, skillsPrompt].filter(Boolean).join('\n\n');
+
+  session.agent.state.systemPrompt = effectivePrompt;
   const mutable = session as unknown as {
     _baseSystemPrompt?: string;
     _rebuildSystemPrompt?: (toolNames: string[]) => string;
   };
-  mutable._baseSystemPrompt = prompt;
-  mutable._rebuildSystemPrompt = () => prompt;
+  mutable._baseSystemPrompt = effectivePrompt;
+  mutable._rebuildSystemPrompt = () => effectivePrompt;
 }

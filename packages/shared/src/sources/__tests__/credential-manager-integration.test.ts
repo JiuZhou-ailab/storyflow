@@ -1,5 +1,7 @@
 /**
- * Integration tests for SourceCredentialManager with multi-header auth
+ * input: LoadedSource fixtures and mocked stored API credentials
+ * output: Multi-header and basic-auth credential parsing regression coverage
+ * pos: SourceCredentialManager credential-shape integration test
  *
  * Tests the credential parsing flow:
  * - When source.config.api.headerNames exists, parse credential as JSON
@@ -36,6 +38,7 @@ function createMockSource(overrides: Partial<FolderSourceConfig> = {}): LoadedSo
     folderPath: '/tmp/test/sources/test-source',
     workspaceRootPath: '/tmp/test',
     workspaceId: 'test-workspace',
+    origin: 'workspace',
   };
 }
 

@@ -38,7 +38,7 @@ export function SkillAvatar({ skill, size = 'md', fluid, className, workspaceId 
       icon={icon}
       size={size}
       fallbackIcon={Zap}
-      alt={skill.metadata.name}
+      alt={skill.metadata.displayName ?? skill.metadata.name}
       className={className}
       containerClassName={fluid ? 'h-full w-full' : undefined}
     />

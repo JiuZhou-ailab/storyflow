@@ -97,6 +97,7 @@ export async function handleSourceTest(
   if (!source) {
     return errorResponse(`Failed to load source config for '${sourceSlug}'.`);
   }
+  const definitionReadOnly = ctx.isSourceDefinitionReadOnly?.(sourceSlug) === true;
 
   // Validate loaded config with basic validator
   const configValidation = validateSourceConfigBasic(source);
@@ -150,8 +151,12 @@ export async function handleSourceTest(
   // broken source into the live tool list. 401/403 still pass: the probe maps
   // those to connectionStatus=connected, and checkAuthStatus refreshes tokens.
   const autoEnable = args.autoEnable !== false;
-  const shouldAutoEnable = autoEnable && !hasErrors && connectionStatus === 'connected';
-  const willFlipEnabled = shouldAutoEnable && source.enabled === false;
+  const readOnlyDisabled = definitionReadOnly && source.enabled === false;
+  const shouldAutoEnable = autoEnable
+    && !hasErrors
+    && connectionStatus === 'connected'
+    && !readOnlyDisabled;
+  const willFlipEnabled = shouldAutoEnable && source.enabled === false && !definitionReadOnly;
 
   if (ctx.saveSourceConfig) {
     const updatedSource: SourceConfig = {
@@ -164,13 +169,19 @@ export async function handleSourceTest(
     };
     try {
       ctx.saveSourceConfig(updatedSource);
-      lines.push('\n_Config updated with test results._');
+      lines.push(definitionReadOnly
+        ? '\n_Storyflow connection state updated; shared definition unchanged._'
+        : '\n_Config updated with test results._');
       if (willFlipEnabled) {
         lines.push('✓ Source auto-enabled in config');
       }
     } catch {
       // Silently ignore save errors
     }
+  }
+
+  if (readOnlyDisabled) {
+    lines.push('ℹ Source remains disabled because its shared definition is read-only.');
   }
 
   // Try to activate the source in the running session (backend may not support this).

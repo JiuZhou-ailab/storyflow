@@ -1,6 +1,6 @@
 // input: Workspace storage creation helpers and built-in novel Method Packs
-// output: Regression tests for novel workspace scaffolding and starter session creation
-// pos: Shared storage guard for Method Pack-backed workspace creation
+// output: Regression tests for novel scaffolding, starter sessions, and one-shot Skill migration
+// pos: Shared storage guard for Method Pack creation and project Skill upgrade persistence
 
 import { describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
@@ -9,6 +9,7 @@ import { join } from "path";
 import { createNovelProjectScaffold } from "../../writing/novel-template.ts";
 import { getBuiltInMethodPacks } from "../../writing/method-packs/index.ts";
 import { createDefaultWorkspaceAtPath, createNovelWorkspaceAtPath, createWorkspaceAtPath, generateSlug, loadWorkspaceConfig, saveWorkspaceConfig } from "../storage.ts";
+import { getWorkspaceSkillsPath } from "../paths.ts";
 
 function statePath(rootPath: string, relativePath = ""): string {
   return join(rootPath, ".craft-agent", relativePath);
@@ -52,7 +53,7 @@ describe("createNovelWorkspaceAtPath", () => {
     expect(existsSync(statePath(rootPath, "config.json"))).toBe(true);
     expect(existsSync(statePath(rootPath, "sources"))).toBe(true);
     expect(existsSync(statePath(rootPath, "sessions"))).toBe(true);
-    expect(existsSync(statePath(rootPath, "skills"))).toBe(true);
+    expect(existsSync(getWorkspaceSkillsPath(rootPath))).toBe(true);
     expect(existsSync(statePath(rootPath, "craft-writing.json"))).toBe(true);
     expect(existsSync(join(rootPath, "正文"))).toBe(true);
     expect(existsSync(join(rootPath, "全局", "简报.md"))).toBe(true);
@@ -69,7 +70,7 @@ describe("createNovelWorkspaceAtPath", () => {
     const now = Date.now();
 
     mkdirSync(join(rootPath, "sessions", "260703-legacy"), { recursive: true });
-    mkdirSync(join(rootPath, "skills", "short-reviser"), { recursive: true });
+    mkdirSync(join(rootPath, "skills", "legacy-custom-skill"), { recursive: true });
     mkdirSync(join(rootPath, "labels"), { recursive: true });
     mkdirSync(join(rootPath, "statuses", "icons"), { recursive: true });
     mkdirSync(join(rootPath, ".claude-plugin"), { recursive: true });
@@ -101,7 +102,7 @@ describe("createNovelWorkspaceAtPath", () => {
     writeFileSync(join(rootPath, "statuses", "icons", "todo.svg"), "<svg />\n");
     writeFileSync(join(rootPath, "sessions", "260703-legacy", "session.jsonl"), "{}\n");
     writeFileSync(statePath(rootPath, "sessions/260703-current/session.jsonl"), "{}\n");
-    writeFileSync(join(rootPath, "skills", "short-reviser", "SKILL.md"), "# Skill\n");
+    writeFileSync(join(rootPath, "skills", "legacy-custom-skill", "SKILL.md"), "# Skill\n");
     writeFileSync(join(rootPath, ".claude-plugin", "plugin.json"), "{\"name\":\"craft-workspace-legacy\"}\n");
     writeFileSync(join(rootPath, "全局", "简报.md"), "# 简报\n");
 
@@ -112,7 +113,7 @@ describe("createNovelWorkspaceAtPath", () => {
     expect(existsSync(join(rootPath, "craft-writing.json"))).toBe(false);
     expect(existsSync(join(rootPath, "AGENTS.md"))).toBe(false);
     expect(existsSync(join(rootPath, "sessions"))).toBe(false);
-    expect(existsSync(join(rootPath, "skills"))).toBe(false);
+    expect(existsSync(join(rootPath, "skills"))).toBe(true);
     expect(existsSync(join(rootPath, ".claude-plugin"))).toBe(false);
     expect(existsSync(statePath(rootPath, "config.json"))).toBe(true);
     expect(existsSync(statePath(rootPath, "craft-writing.json"))).toBe(true);
@@ -120,9 +121,14 @@ describe("createNovelWorkspaceAtPath", () => {
     expect(existsSync(statePath(rootPath, "sessions/260703-legacy/session.jsonl"))).toBe(true);
     expect(existsSync(statePath(rootPath, "sessions/260703-current/session.jsonl"))).toBe(true);
     expect(existsSync(statePath(rootPath, "legacy-root/sessions"))).toBe(false);
-    expect(existsSync(statePath(rootPath, "skills/short-reviser/SKILL.md"))).toBe(true);
+    expect(existsSync(join(getWorkspaceSkillsPath(rootPath), "legacy-custom-skill/SKILL.md"))).toBe(true);
     expect(existsSync(statePath(rootPath, "claude-plugin/plugin.json"))).toBe(true);
     expect(existsSync(join(rootPath, "全局", "简报.md"))).toBe(true);
+
+    rmSync(join(getWorkspaceSkillsPath(rootPath), "legacy-custom-skill"), { recursive: true });
+    expect(loadWorkspaceConfig(rootPath)).not.toBeNull();
+    expect(existsSync(join(getWorkspaceSkillsPath(rootPath), "legacy-custom-skill"))).toBe(false);
+    expect(existsSync(join(rootPath, "skills", "legacy-custom-skill", "SKILL.md"))).toBe(true);
   });
 
   it("migrates existing novel workspace configs to use the workspace root as the default working directory", () => {

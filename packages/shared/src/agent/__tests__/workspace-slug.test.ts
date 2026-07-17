@@ -9,11 +9,11 @@
  * 1. The extractWorkspaceSlug utility directly
  * 2. qualifySkillName which consumes the slug
  */
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
+import { describe, it, expect, afterAll } from 'bun:test'
 import { mkdirSync, writeFileSync, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import { qualifySkillName, AGENTS_PLUGIN_NAME } from '../core/index.ts'
+import { qualifySkillName } from '../core/index.ts'
 import { extractWorkspaceSlug, readPluginName } from '../../utils/workspace.ts'
 
 // ============================================================================
@@ -173,7 +173,7 @@ describe('qualifySkillName', () => {
 
   it('calls debug callback when qualifying', () => {
     const messages: string[] = []
-    qualifySkillName({ skill: 'commit' }, 'my-workspace', undefined, undefined, (msg) => messages.push(msg))
+    qualifySkillName({ skill: 'commit' }, 'my-workspace', (msg) => messages.push(msg))
     expect(messages.length).toBe(1)
     expect(messages[0]).toContain('qualified')
     expect(messages[0]).toContain('commit')
@@ -182,7 +182,7 @@ describe('qualifySkillName', () => {
 
   it('does not call debug callback when skill is missing', () => {
     const messages: string[] = []
-    qualifySkillName({ skill: undefined }, 'my-workspace', undefined, undefined, (msg) => messages.push(msg))
+    qualifySkillName({ skill: undefined }, 'my-workspace', (msg) => messages.push(msg))
     expect(messages.length).toBe(0)
   })
 
@@ -201,81 +201,5 @@ describe('qualifySkillName', () => {
   it('handles empty slug from trailing colon', () => {
     const result = qualifySkillName({ skill: 'workspace:' }, 'my-workspace')
     expect(result.modified).toBe(false)
-  })
-})
-
-// ============================================================================
-// qualifySkillName with filesystem resolution (resolveSkillPlugin path)
-// ============================================================================
-
-describe('qualifySkillName with filesystem resolution', () => {
-  const testDir = join(tmpdir(), `skill-resolve-test-${Date.now()}`)
-  const workspaceRoot = join(testDir, 'my-workspace')
-  const projectDir = join(testDir, 'my-project')
-  const workspaceSlug = 'my-workspace'
-
-  beforeAll(() => {
-    // Create workspace skill: my-workspace/skills/ws-only/SKILL.md
-    mkdirSync(join(workspaceRoot, 'skills', 'ws-only'), { recursive: true })
-    writeFileSync(join(workspaceRoot, 'skills', 'ws-only', 'SKILL.md'), '---\nname: WS Only\ndescription: test\n---\n')
-
-    // Create workspace skill that also exists in project (for priority test)
-    mkdirSync(join(workspaceRoot, 'skills', 'shared-skill'), { recursive: true })
-    writeFileSync(join(workspaceRoot, 'skills', 'shared-skill', 'SKILL.md'), '---\nname: WS Shared\ndescription: test\n---\n')
-
-    // Create project skill: my-project/.agents/skills/proj-only/SKILL.md
-    mkdirSync(join(projectDir, '.agents', 'skills', 'proj-only'), { recursive: true })
-    writeFileSync(join(projectDir, '.agents', 'skills', 'proj-only', 'SKILL.md'), '---\nname: Proj Only\ndescription: test\n---\n')
-
-    // Create project skill that also exists in workspace (for priority test)
-    mkdirSync(join(projectDir, '.agents', 'skills', 'shared-skill'), { recursive: true })
-    writeFileSync(join(projectDir, '.agents', 'skills', 'shared-skill', 'SKILL.md'), '---\nname: Proj Shared\ndescription: test\n---\n')
-  })
-
-  afterAll(() => {
-    rmSync(testDir, { recursive: true, force: true })
-  })
-
-  it('resolves workspace-only skill to workspace plugin', () => {
-    const result = qualifySkillName({ skill: 'ws-only' }, workspaceSlug, workspaceRoot, projectDir)
-    expect(result.modified).toBe(true)
-    expect(result.input).toEqual({ skill: 'my-workspace:ws-only' })
-  })
-
-  it('resolves project-only skill to .agents plugin', () => {
-    const result = qualifySkillName({ skill: 'proj-only' }, workspaceSlug, workspaceRoot, projectDir)
-    expect(result.modified).toBe(true)
-    expect(result.input).toEqual({ skill: `${AGENTS_PLUGIN_NAME}:proj-only` })
-  })
-
-  it('project skill takes priority over workspace skill (same slug)', () => {
-    const result = qualifySkillName({ skill: 'shared-skill' }, workspaceSlug, workspaceRoot, projectDir)
-    expect(result.modified).toBe(true)
-    // Project has higher priority than workspace — should resolve to .agents:
-    expect(result.input).toEqual({ skill: `${AGENTS_PLUGIN_NAME}:shared-skill` })
-  })
-
-  it('re-qualifies incorrectly qualified skill (workspace prefix for project skill)', () => {
-    // UI might send "my-workspace:proj-only" but proj-only only exists in project tier
-    const result = qualifySkillName({ skill: 'my-workspace:proj-only' }, workspaceSlug, workspaceRoot, projectDir)
-    expect(result.modified).toBe(true)
-    expect(result.input).toEqual({ skill: `${AGENTS_PLUGIN_NAME}:proj-only` })
-  })
-
-  it('does not modify correctly qualified workspace skill', () => {
-    const result = qualifySkillName({ skill: 'my-workspace:ws-only' }, workspaceSlug, workspaceRoot, projectDir)
-    expect(result.modified).toBe(false)
-  })
-
-  it('falls back to workspace plugin for unknown skill', () => {
-    const result = qualifySkillName({ skill: 'nonexistent' }, workspaceSlug, workspaceRoot, projectDir)
-    expect(result.modified).toBe(true)
-    expect(result.input).toEqual({ skill: 'my-workspace:nonexistent' })
-  })
-
-  it('resolves without project dir (workspace-only mode)', () => {
-    const result = qualifySkillName({ skill: 'ws-only' }, workspaceSlug, workspaceRoot, undefined)
-    expect(result.modified).toBe(true)
-    expect(result.input).toEqual({ skill: 'my-workspace:ws-only' })
   })
 })

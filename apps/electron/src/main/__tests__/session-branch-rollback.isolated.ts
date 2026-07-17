@@ -214,6 +214,7 @@ mock.module('@craft-agent/shared/sources', () => ({
   }),
   getSourceServerBuilder: () => ({ buildServers: async () => ({ mcpServers: {}, apiServers: {} }) }),
   isApiOAuthProvider: () => false,
+  hasRenewEndpoint: () => false,
   SERVER_BUILD_ERRORS: {},
   TokenRefreshManager: class TokenRefreshManager {
     constructor(_mgr: unknown, _opts: unknown) {}

@@ -1,3 +1,7 @@
+// input: Workspace-owned OAuth Source fixtures and mocked discovery responses
+// output: Stable relay callback and OAuth state regression coverage
+// pos: SourceCredentialManager OAuth relay contract test
+
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 
 import { OAUTH_RELAY_CALLBACK_URL, decodeOAuthRelayState, isOAuthRelayState } from '../../auth/oauth-relay.ts';
@@ -26,6 +30,7 @@ function createApiSource(overrides: Partial<FolderSourceConfig> = {}): LoadedSou
     folderPath: '/tmp/test/sources/gmail-test',
     workspaceRootPath: '/tmp/test',
     workspaceId: 'test-workspace',
+    origin: 'workspace',
   };
 }
 
@@ -47,6 +52,7 @@ function createMcpSource(overrides: Partial<FolderSourceConfig> = {}): LoadedSou
     folderPath: '/tmp/test/sources/mcp-test',
     workspaceRootPath: '/tmp/test',
     workspaceId: 'test-workspace',
+    origin: 'workspace',
   };
 }
 

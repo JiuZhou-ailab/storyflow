@@ -8,7 +8,6 @@ import { createNovelProjectScaffold } from "../novel-template.ts";
 import type { MethodPack } from "./types.ts";
 import {
   getExistingWorkspaceWritingManifestPath,
-  getLegacyWorkspaceSkillsPath,
   getWorkspaceSkillsPath,
 } from "../../workspaces/paths.ts";
 
@@ -32,8 +31,7 @@ function pathExists(rootPath: string, relativePath: string, kind: "file" | "dire
 }
 
 function skillExists(rootPath: string, skillSlug: string): boolean {
-  return pathExists(getWorkspaceSkillsPath(rootPath), `${skillSlug}/SKILL.md`, "file")
-    || pathExists(getLegacyWorkspaceSkillsPath(rootPath), `${skillSlug}/SKILL.md`, "file");
+  return pathExists(getWorkspaceSkillsPath(rootPath), `${skillSlug}/SKILL.md`, "file");
 }
 
 export function validateMethodPackInstall(
@@ -53,7 +51,7 @@ export function validateMethodPackInstall(
   }
 
   for (const skillSlug of pack.requiredSkills) {
-    const skillPath = `skills/${skillSlug}/SKILL.md`;
+    const skillPath = `.pi/skills/${skillSlug}/SKILL.md`;
     if (!skillExists(rootPath, skillSlug)) {
       findings.push({
         severity: "error",

@@ -22,6 +22,7 @@ export type {
   SourceConnectionStatus,
   FolderSourceConfig,
   SourceGuide,
+  SourceDefinitionOrigin,
   LoadedSource,
   CreateSourceInput,
   ApiRenewEndpoint,
@@ -41,12 +42,17 @@ export {
   // Directory utilities
   GLOBAL_AGENT_ROOT_DIR,
   GLOBAL_AGENT_SOURCES_DIR,
+  SHARED_AGENTS_ROOT_DIR,
+  SHARED_AGENTS_SOURCES_DIR,
+  SHARED_SOURCE_RUNTIME_STATE_DIR,
+  ReadOnlySourceDefinitionError,
   ensureSourcesDir,
   getSourcePath,
   // Config operations
   loadSourceConfig,
   saveSourceConfig,
   markSourceAuthenticated,
+  updateSourceConnectionState,
   // Guide operations
   loadSourceGuide,
   saveSourceGuide,

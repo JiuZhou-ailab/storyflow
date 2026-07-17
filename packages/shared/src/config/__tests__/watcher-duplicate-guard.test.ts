@@ -13,7 +13,7 @@ import { ConfigWatcher, _getActiveWatchers, _getGlobalWatcherState } from '../wa
 import { invalidateSkillsCache, loadAllSkills } from '../../skills/storage.ts';
 
 function writeSkill(workspaceRoot: string, slug: string, name: string): void {
-  const skillDir = join(workspaceRoot, 'skills', slug);
+  const skillDir = join(workspaceRoot, '.pi', 'skills', slug);
   mkdirSync(skillDir, { recursive: true });
   writeFileSync(join(skillDir, 'SKILL.md'), `---
 name: "${name}"
@@ -98,8 +98,8 @@ describe('ConfigWatcher duplicate guard', () => {
     }
   });
 
-  it('broadcasts fresh skills when the global skills directory changes', () => {
-    const root = mkdtempSync(join(tmpdir(), 'watcher-global-skill-cache-'));
+  it('broadcasts fresh skills when the project skills directory changes', () => {
+    const root = mkdtempSync(join(tmpdir(), 'watcher-project-skill-cache-'));
     try {
       writeSkill(root, 'global-refresh', 'Original Name');
       expect(loadAllSkills(root).find(s => s.slug === 'global-refresh')?.metadata.name).toBe('Original Name');
@@ -113,7 +113,7 @@ describe('ConfigWatcher duplicate guard', () => {
         },
       });
 
-      (watcher as unknown as { handleGlobalSkillsChange: () => void }).handleGlobalSkillsChange();
+      (watcher as unknown as { handleSkillsDirChange: () => void }).handleSkillsDirChange();
 
       expect(broadcastName).toBe('Renamed Skill');
     } finally {

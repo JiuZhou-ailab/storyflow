@@ -29,6 +29,7 @@ import { parsePermissionMode, PERMISSION_MODE_ORDER } from '../agent/mode-types.
 import { detectManifestWritingProject } from '../writing/manifest.ts';
 import { type BuiltinLlmConnectionDefaults, type ConfigDefaults } from './config-defaults-schema.ts';
 import { isValidThemeFile } from './validators.ts';
+import { invalidateAllSessionToolsCaches } from '../agent/session-tool-cache-invalidation.ts';
 
 // Re-export CONFIG_DIR for convenience (centralized in paths.ts)
 export { CONFIG_DIR } from './paths.ts';
@@ -726,9 +727,8 @@ export function setBrowserToolEnabled(enabled: boolean): void {
   config.browserToolEnabled = enabled;
   saveConfig(config);
 
-  // Clear session tool caches so all sessions pick up the change immediately.
-  // Lazy import to avoid circular dependency (storage ← session-scoped-tools ← storage).
-  import('../agent/session-scoped-tools.ts').then(m => m.invalidateAllSessionToolsCaches()).catch(() => {});
+  // Notify any loaded adapter cache without importing an agent framework.
+  invalidateAllSessionToolsCaches();
 }
 
 /**

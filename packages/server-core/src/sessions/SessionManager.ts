@@ -7,7 +7,7 @@ import type { ISessionManager, IBrowserPaneManager, ExecutePromptAutomationInput
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
 import { createScopedLogger, CONSOLE_LOGGER, type PlatformServices, type Logger } from '@craft-agent/server-core/runtime'
 import { basename, dirname, join } from 'path'
-import { existsSync } from 'fs'
+import { existsSync, readdirSync } from 'fs'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { randomUUID } from 'node:crypto'
 import { type AgentEvent, setPermissionMode, hydratePreviousPermissionMode, getPermissionModeDiagnostics, type PermissionMode, unregisterSessionScopedToolCallbacks, mergeSessionScopedToolCallbacks, AbortReason, type AuthRequest, type AuthResult, type CredentialAuthRequest, type BrowserPaneFns, generateConversationSummary } from '@craft-agent/shared/agent'
@@ -99,7 +99,7 @@ import { extractLabelId, resolveSessionLabels } from '@craft-agent/shared/labels
 import { ensureLabelsExist } from '@craft-agent/shared/labels/crud'
 import { loadStatusConfig } from '@craft-agent/shared/statuses/storage'
 import { AutomationSystem, createPromptHistoryEntry, appendAutomationHistoryEntry, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
-import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput } from './runtime-config'
+import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput, needsPiRuntimeMigrationSeed } from './runtime-config'
 import { captureWriteOriginalContent } from './write-original-content'
 import { SESSION_TURN_HARD_TIMEOUT_MS, SESSION_TURN_IDLE_TIMEOUT_MS, TurnWatchdog, type TurnWatchdogTimeout } from './turn-watchdog'
 import { isManagedDefaultGatewayConnection, normalizeManagedDefaultGatewayAuthError } from './managed-gateway-auth-error'
@@ -116,6 +116,17 @@ let _platform: PlatformServices | null = null
 // Scoped logger — upgraded from console fallback when setSessionPlatform() is called.
 // Named `sessionLog` so all ~30 existing call sites remain unchanged.
 let sessionLog: Logger = createScopedLogger(CONSOLE_LOGGER, 'session')
+
+function hasPersistedPiTranscript(sessionPath: string): boolean {
+  const piSessionsPath = join(sessionPath, '.pi-sessions')
+  if (!existsSync(piSessionsPath)) return false
+  try {
+    return readdirSync(piSessionsPath, { withFileTypes: true })
+      .some(entry => entry.isFile() && entry.name.endsWith('.jsonl'))
+  } catch {
+    return false
+  }
+}
 
 export function setSessionPlatform(platform: PlatformServices): void {
   _platform = platform
@@ -656,7 +667,7 @@ async function resolveToolDisplayMeta(
               ? await encodeIconToDataUrlAsync(skill.iconPath, { resize: resizeIconBuffer })
               : getEmojiIcon(skill.metadata.icon)
             return {
-              displayName: skill.metadata.name,
+              displayName: skill.metadata.displayName ?? skill.metadata.name,
               iconDataUrl,
               description: skill.metadata.description,
               category: 'skill' as const,
@@ -777,6 +788,8 @@ interface ManagedSession {
   poolServer?: McpPoolServer
   // SDK session ID for conversation continuity
   sdkSessionId?: string
+  // Runtime lineage for sdkSessionId and the on-disk SDK transcript.
+  agentRuntime?: 'pi' | 'claude-sdk'
   // Token usage for display
   tokenUsage?: {
     inputTokens: number
@@ -1735,7 +1748,7 @@ export class SessionManager implements ISessionManager {
       }
 
       // Load existing sessions from disk
-      this.loadSessionsFromDisk()
+      await this.loadSessionsFromDisk()
 
       // Signal that initialization is complete — IPC handlers waiting on initGate will proceed
       this.initGate.markReady()
@@ -1746,10 +1759,11 @@ export class SessionManager implements ISessionManager {
   }
 
   // Load all existing sessions from disk into memory (metadata only - messages are lazy-loaded)
-  private loadSessionsFromDisk(): void {
+  private async loadSessionsFromDisk(): Promise<void> {
     try {
       const workspaces = getWorkspaces()
       let totalSessions = 0
+      let sessionsSinceYield = 0
 
       // Iterate over each workspace and load its sessions
       for (const workspace of workspaces) {
@@ -1800,7 +1814,16 @@ export class SessionManager implements ISessionManager {
           }
 
           totalSessions++
+          sessionsSinceYield++
+          if (sessionsSinceYield >= 100) {
+            sessionsSinceYield = 0
+            await new Promise<void>((resolve) => setImmediate(resolve))
+          }
         }
+
+        // listStoredSessions() is synchronous per workspace. Yield between
+        // roots so workspace/file RPCs remain responsive during restoration.
+        await new Promise<void>((resolve) => setImmediate(resolve))
       }
 
       sessionLog.info(`Loaded ${totalSessions} sessions from disk (metadata only)`)
@@ -3192,6 +3215,38 @@ export class SessionManager implements ISessionManager {
       // ============================================================
 
       const sessionPath = getSessionStoragePath(managed.workspace.rootPath, managed.id)
+      const hasPiTranscript = provider === 'pi' && hasPersistedPiTranscript(sessionPath)
+      const needsRuntimeMigration = provider === 'pi' && needsPiRuntimeMigrationSeed({
+        agentRuntime: managed.agentRuntime,
+        hasPiTranscript,
+        sdkSessionId: managed.sdkSessionId,
+        messageCount: managed.messages.length,
+      })
+      let seedFreshSessionFromRecovery = false
+
+      if (provider === 'pi' && hasPiTranscript && managed.agentRuntime !== 'pi') {
+        managed.agentRuntime = 'pi'
+        this.persistSession(managed)
+      } else if (needsRuntimeMigration) {
+        // Claude SDK and Pi session IDs/transcripts are not interchangeable.
+        // Retire only the stale runtime pointers; persisted Storyflow messages
+        // remain the source for a one-shot seeded Pi start.
+        managed.sdkSessionId = undefined
+        managed.branchFromSdkSessionId = undefined
+        managed.branchFromSessionPath = undefined
+        managed.branchFromSdkCwd = undefined
+        managed.branchFromSdkTurnId = undefined
+
+        if (managed.branchFromMessageId) {
+          managed.branchContextStrategy = 'seeded-fresh-session'
+          managed.branchSeedApplied = false
+        } else {
+          seedFreshSessionFromRecovery = true
+        }
+        this.persistSession(managed)
+        sessionLog.info(`Migrating session ${managed.id} to a fresh Pi transcript with persisted context`)
+      }
+
       const enabledSlugs = managed.enabledSourceSlugs || []
       const allSources = loadAllSources(managed.workspace.rootPath)
       const enabledSources = allSources.filter(s =>
@@ -3248,6 +3303,7 @@ export class SessionManager implements ISessionManager {
 
       const onSdkSessionIdUpdate = (sdkSessionId: string) => {
         managed.sdkSessionId = sdkSessionId
+        managed.agentRuntime = 'pi'
         // Retire branch-only fork metadata now that child session is established
         if (managed.branchFromSdkSessionId) {
           sessionLog.info(`Branch fork established for ${managed.id}: child=${sdkSessionId}, retiring parent fork metadata (parent=${managed.branchFromSdkSessionId})`)
@@ -3279,10 +3335,16 @@ export class SessionManager implements ISessionManager {
       }
 
       const getRecoveryMessages = () => {
-        const relevantMessages = managed.messages
+        let relevantMessages = managed.messages
           .filter(m => m.role === 'user' || m.role === 'assistant')
           .filter(m => !m.isIntermediate)
           .slice(-6)
+        // The current user message has already been persisted before lazy agent
+        // creation; exclude it from the migration context because chatImpl sends
+        // it separately as the active prompt.
+        if (seedFreshSessionFromRecovery && relevantMessages.at(-1)?.role === 'user') {
+          relevantMessages = relevantMessages.slice(0, -1)
+        }
         return relevantMessages.map(m => ({
           type: m.role as 'user' | 'assistant',
           content: m.content,
@@ -3355,6 +3417,7 @@ export class SessionManager implements ISessionManager {
         onSdkSessionIdCleared,
         onBranchForkInvalidated,
         getRecoveryMessages,
+        seedFreshSessionFromRecovery,
         getBranchFallbackMessages,
         getBranchSeedMessages,
         markBranchSeedApplied,
@@ -4119,10 +4182,9 @@ export class SessionManager implements ISessionManager {
               reason: 'Activation failed — source may be unusable (disabled/unauthenticated) or server build failed. Check session logs.',
             }
           }
-          // Both backends need the current turn to end before new tools are visible:
-          // Claude SDK freezes mcpServers at query() start; Pi only picks up new proxy
-          // tool defs on the next handlePrompt (`toolsChanged` flag in pi-agent-server).
-          // Mark a pending restart on the agent — ClaudeAgent/PiAgent consume it after
+          // Pi needs the current turn to end before new tools are visible; it picks up
+          // proxy tool defs on the next handlePrompt (`toolsChanged` flag in pi-agent-server).
+          // Mark a pending restart on the agent; PiAgent consumes it after
           // the next tool_result, yield source_activated, and forceAbort. The renderer's
           // auto_retry effect then resends the original user message with a
           // "[{slug} activated]" suffix — landing in a fresh turn with tools live.
@@ -5635,7 +5697,7 @@ export class SessionManager implements ISessionManager {
 
         const requiredSources = new Set<string>()
         for (const slug of options.skillSlugs) {
-          const skill = loadSkillBySlug(workspaceRoot, slug, managed.workingDirectory)
+          const skill = loadSkillBySlug(workspaceRoot, slug)
           if (skill?.metadata.requiredSources) {
             for (const src of skill.metadata.requiredSources) {
               requiredSources.add(src)

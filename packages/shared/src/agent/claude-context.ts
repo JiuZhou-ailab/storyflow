@@ -1,5 +1,7 @@
 /**
- * Claude Context Factory
+ * input: Workspace/session paths, callbacks, validators, Sources, and credential adapters
+ * output: SessionToolContext backed by shared runtime services
+ * pos: Adapter boundary between session-tools-core contracts and shared implementations
  *
  * Creates a SessionToolContext implementation for Claude with full access
  * to Electron internals, credential managers, MCP validation, etc.
@@ -49,12 +51,19 @@ import {
   validateStdioMcpConnection as validateStdioMcpConnectionImpl,
 } from '../mcp/validation.ts';
 import {
-  loadSourceConfig as loadSourceConfigImpl,
+  loadSource as loadSourceImpl,
   saveSourceConfig as saveSourceConfigImpl,
+  updateSourceConnectionState,
   getSourcePath,
+  GLOBAL_AGENT_ROOT_DIR,
+  SHARED_AGENTS_ROOT_DIR,
 } from '../sources/storage.ts';
-import type { FolderSourceConfig, LoadedSource as SharedLoadedSource } from '../sources/types.ts';
-import { getSourceCredentialManager } from '../sources/index.ts';
+import type {
+  FolderSourceConfig,
+  LoadedSource as SharedLoadedSource,
+  SourceConnectionStatus,
+} from '../sources/types.ts';
+import { getSourceCredentialManager } from '../sources/credential-manager.ts';
 import {
   inferGoogleServiceFromUrl,
   inferSlackServiceFromUrl,
@@ -138,41 +147,44 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
   };
 
   // Credential manager adapter
+  const toSharedLoadedSource = (source: LoadedSource): SharedLoadedSource => ({
+    config: source.config as unknown as FolderSourceConfig,
+    guide: null,
+    folderPath: source.folderPath,
+    workspaceRootPath: source.workspaceRootPath,
+    workspaceId: source.workspaceId,
+    origin: source.workspaceRootPath === SHARED_AGENTS_ROOT_DIR
+      ? 'shared-global'
+      : source.workspaceRootPath === GLOBAL_AGENT_ROOT_DIR
+        ? 'craft-global'
+        : 'workspace',
+  });
+
+  const normalizeConnectionStatus = (
+    status: SourceConfig['connectionStatus'],
+  ): SourceConnectionStatus | undefined => {
+    switch (status) {
+      case 'connected': return 'connected';
+      case 'error':
+      case 'disconnected': return 'failed';
+      case 'unknown': return 'untested';
+      default: return undefined;
+    }
+  };
+
   const credentialManager: CredentialManagerInterface = {
     hasValidCredentials: async (source: LoadedSource): Promise<boolean> => {
       const mgr = getSourceCredentialManager();
-      // Convert to shared type (guide not needed for credential operations)
-      const sharedSource: SharedLoadedSource = {
-        config: source.config as unknown as FolderSourceConfig,
-        guide: null,
-        folderPath: source.folderPath,
-        workspaceRootPath: source.workspaceRootPath,
-        workspaceId: source.workspaceId,
-      };
-      const token = await mgr.getToken(sharedSource);
+      const token = await mgr.getToken(toSharedLoadedSource(source));
       return !!token;
     },
     getToken: async (source: LoadedSource): Promise<string | null> => {
       const mgr = getSourceCredentialManager();
-      const sharedSource: SharedLoadedSource = {
-        config: source.config as unknown as FolderSourceConfig,
-        guide: null,
-        folderPath: source.folderPath,
-        workspaceRootPath: source.workspaceRootPath,
-        workspaceId: source.workspaceId,
-      };
-      return mgr.getToken(sharedSource);
+      return mgr.getToken(toSharedLoadedSource(source));
     },
     refresh: async (source: LoadedSource): Promise<string | null> => {
       const mgr = getSourceCredentialManager();
-      const sharedSource: SharedLoadedSource = {
-        config: source.config as unknown as FolderSourceConfig,
-        guide: null,
-        folderPath: source.folderPath,
-        workspaceRootPath: source.workspaceRootPath,
-        workspaceId: source.workspaceId,
-      };
-      return mgr.refresh(sharedSource);
+      return mgr.refresh(toSharedLoadedSource(source));
     },
   };
 
@@ -239,11 +251,30 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
     },
     // Source management
     loadSourceConfig: (sourceSlug: string): SourceConfig | null => {
-      const config = loadSourceConfigImpl(workspacePath, sourceSlug);
-      return config as unknown as SourceConfig | null;
+      const source = loadSourceImpl(workspacePath, sourceSlug);
+      return source?.config as unknown as SourceConfig | null;
+    },
+    isSourceDefinitionReadOnly: (sourceSlug: string): boolean => {
+      return loadSourceImpl(workspacePath, sourceSlug)?.origin === 'shared-global';
     },
     saveSourceConfig: (source: SourceConfig) => {
-      saveSourceConfigImpl(workspacePath, source as unknown as FolderSourceConfig);
+      const loaded = loadSourceImpl(workspacePath, source.slug);
+      if (!loaded) return;
+
+      const connectionStatus = normalizeConnectionStatus(source.connectionStatus);
+      if (loaded.origin === 'shared-global') {
+        updateSourceConnectionState(workspacePath, source.slug, {
+          connectionStatus,
+          connectionError: source.connectionError,
+          lastTestedAt: source.lastTestedAt,
+        });
+        return;
+      }
+
+      saveSourceConfigImpl(loaded.workspaceRootPath, {
+        ...source,
+        connectionStatus,
+      } as unknown as FolderSourceConfig);
     },
 
     // Service inference

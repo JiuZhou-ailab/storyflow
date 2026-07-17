@@ -52,6 +52,30 @@ function getPanelPosition(rect: TargetRect | null) {
   return { width: panelWidth, top, left }
 }
 
+function SpotlightBackdrop({ rect }: { rect: TargetRect | null }) {
+  if (!rect) {
+    return <div className="absolute inset-0 bg-black/30" />
+  }
+
+  const top = Math.max(0, rect.top - 6)
+  const left = Math.max(0, rect.left - 6)
+  const right = Math.min(window.innerWidth, rect.left + rect.width + 6)
+  const bottom = Math.min(window.innerHeight, rect.top + rect.height + 6)
+
+  return (
+    <>
+      <div className="absolute inset-x-0 top-0 bg-black/30" style={{ height: top }} />
+      <div className="absolute inset-x-0 bottom-0 bg-black/30" style={{ top: bottom }} />
+      <div className="absolute left-0 bg-black/30" style={{ top, width: left, height: bottom - top }} />
+      <div className="absolute right-0 bg-black/30" style={{ top, left: right, height: bottom - top }} />
+      <div
+        className="absolute rounded-[10px] border border-accent/70"
+        style={{ top, left, width: right - left, height: bottom - top }}
+      />
+    </>
+  )
+}
+
 export function FirstRunTour() {
   const [isVisible, setIsVisible] = React.useState(() => (
     storage.get(storage.KEYS.firstRunTourPending, false)
@@ -103,22 +127,11 @@ export function FirstRunTour() {
 
   return (
     <div className="fixed inset-0 z-[var(--z-modal)] pointer-events-none">
-      <div className="absolute inset-0 bg-background/45" />
-      {targetRect && (
-        <div
-          className="absolute rounded-[10px] border border-accent/70 shadow-[0_0_0_9999px_rgba(0,0,0,0.28)]"
-          style={{
-            top: targetRect.top - 6,
-            left: targetRect.left - 6,
-            width: targetRect.width + 12,
-            height: targetRect.height + 12,
-          }}
-        />
-      )}
+      <SpotlightBackdrop rect={targetRect} />
       <section
         className={cn(
           'pointer-events-auto absolute rounded-[8px] border border-border bg-background p-4',
-          'shadow-[0_18px_60px_rgba(0,0,0,0.22)]'
+          'shadow-modal-small'
         )}
         style={panelPosition}
         role="dialog"

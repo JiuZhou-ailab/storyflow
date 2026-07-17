@@ -219,8 +219,7 @@ async function checkWorkspaceToken(_workspaceId: string): Promise<CheckResult> {
 }
 
 /**
- * Validate an API key by making a minimal query through the Claude Agent SDK.
- * Uses validateAnthropicConnection() which runs query() with maxTurns:1.
+ * Validate an API key with one minimal Anthropic Messages API request.
  */
 async function validateApiKeyWithAnthropic(apiKey: string, baseUrl?: string | null, providerLabel: string = 'Anthropic'): Promise<CheckResult> {
   try {

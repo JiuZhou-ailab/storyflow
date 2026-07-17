@@ -1,5 +1,7 @@
 /**
- * End-to-end integration tests for multi-header authentication
+ * input: Workspace-owned API Source fixtures and multi-header credentials
+ * output: End-to-end Source config to HTTP authentication header coverage
+ * pos: Multi-header Source authentication integration test
  *
  * These tests simulate the full flow from source config to HTTP request headers,
  * specifically targeting the failure scenarios we encountered:
@@ -35,6 +37,7 @@ function createMockSource(overrides: Partial<FolderSourceConfig> = {}): LoadedSo
     folderPath: '/tmp/test/sources/test-source',
     workspaceRootPath: '/tmp/test',
     workspaceId: 'test-workspace',
+    origin: 'workspace',
   };
 }
 

@@ -31,6 +31,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
   const { t } = useTranslation()
   const skills = useAtomValue(skillsAtom)
   const skill = skills.find((s) => s.slug === skillSlug) ?? null
+  const displayName = skill?.metadata.displayName ?? skill?.metadata.name ?? skillSlug
 
   // Handle open in finder
   const handleOpenInFinder = useCallback(async () => {
@@ -49,16 +50,15 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
     if (!skill) return
 
     try {
-      if (skill.source !== 'workspace') return
       await window.electronAPI.deleteSkill(workspaceId, skillSlug)
-      toast.success(t('skillInfo.deletedSkill', { name: skill.metadata.name }))
+      toast.success(t('skillInfo.deletedSkill', { name: displayName }))
       navigate(routes.view.skills())
     } catch (err) {
       toast.error(t('skillInfo.failedToDelete'), {
         description: err instanceof Error ? err.message : undefined,
       })
     }
-  }, [skill, workspaceId, skillSlug])
+  }, [displayName, skill, workspaceId, skillSlug])
 
   // Handle opening in new window
   const handleOpenInNewWindow = useCallback(() => {
@@ -66,8 +66,8 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
   }, [skillSlug])
 
   // Get skill name for header
-  const skillName = skill?.metadata.name || skillSlug
-  const canDeleteSkill = skill?.source === 'workspace'
+  const skillName = displayName
+  const canDeleteSkill = Boolean(skill)
 
   // Format path to show just the skill-relative portion (skills/{slug}/)
   const formatPath = (path: string) => {
@@ -123,7 +123,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
           {/* Hero: Avatar, title, and description */}
           <Info_Page.Hero
             avatar={<SkillAvatar skill={skill} fluid workspaceId={workspaceId} />}
-            title={skill.metadata.name}
+            title={displayName}
             tagline={skill.metadata.description}
           />
 
@@ -134,14 +134,9 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
           >
             <Info_Table>
               <Info_Table.Row label={t('common.slug')} value={skill.slug} />
-              <Info_Table.Row label={t('common.name')}>{skill.metadata.name}</Info_Table.Row>
+              <Info_Table.Row label={t('common.name')}>{displayName}</Info_Table.Row>
               <Info_Table.Row label={t('common.description')}>
                 {skill.metadata.description}
-              </Info_Table.Row>
-              <Info_Table.Row label={t('common.source')}>
-                {skill.source === 'project' ? t('skillInfo.sourceProject') :
-                 skill.source === 'global' ? t('skillInfo.sourceGlobal') :
-                 t('skillInfo.sourceWorkspace')}
               </Info_Table.Row>
               <Info_Table.Row label={t('common.location')}>
                 <button

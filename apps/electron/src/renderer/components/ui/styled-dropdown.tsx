@@ -14,4 +14,4 @@ export {
   StyledDropdownMenuSeparator,
   StyledDropdownMenuSubTrigger,
   StyledDropdownMenuSubContent,
-} from '@craft-agent/ui'
+} from '@craft-agent/ui/styled-dropdown'

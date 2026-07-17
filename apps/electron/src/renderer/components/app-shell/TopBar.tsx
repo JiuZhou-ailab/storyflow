@@ -13,8 +13,7 @@ import { useUpdateChecker } from '@/hooks/useUpdateChecker'
 import { getUpdateIndicatorState } from '@/lib/update-indicator'
 import type { Workspace, WorkspaceProjectType } from '../../../shared/types'
 import { formatTopbarWorkspaceName } from './workspace-switcher-label'
-
-export const WINDOW_TITLE_BAR_HEIGHT = 40
+import { WINDOW_TITLE_BAR_HEIGHT } from './layout-constants'
 
 interface TopBarProps {
   workspaces: Workspace[]

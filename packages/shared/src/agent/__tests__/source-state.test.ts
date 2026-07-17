@@ -1,5 +1,7 @@
 /**
- * Tests for source state display logic
+ * input: Workspace-owned Source fixtures with authentication state variants
+ * output: Needs-auth classification regression coverage
+ * pos: Agent Source state presentation contract test
  *
  * These tests verify that sources are correctly classified as "needs auth" vs "inactive"
  * based on their authentication type and state.
@@ -29,6 +31,7 @@ function createMockSource(
     folderPath: '/test/path',
     workspaceRootPath: '/test/workspace',
     workspaceId: 'test-workspace',
+    origin: 'workspace',
   };
 }
 

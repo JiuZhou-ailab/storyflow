@@ -1,5 +1,7 @@
 /**
- * Built-in Sources
+ * input: Workspace identity and legacy built-in Source requests
+ * output: Built-in LoadedSource placeholders and built-in classification
+ * pos: Backward-compatibility boundary for retired built-in Sources
  *
  * System-level sources that are always available in every workspace.
  * These sources are not shown in the sources list UI but are available
@@ -59,6 +61,7 @@ export function getDocsSource(workspaceId: string, workspaceRootPath: string): L
     folderPath: '',
     config: placeholderConfig,
     guide: { raw: '' },
+    origin: 'builtin',
     isBuiltin: true,
   };
 }

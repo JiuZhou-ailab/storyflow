@@ -3,6 +3,10 @@ import type { ModelDefinition } from '../../../../config/models.ts';
 import { getAllPiModels, getPiModelsForAuthProvider } from '../../../../config/models-pi.ts';
 import { getPiProviderBaseUrl } from '../../../../config/models-pi.ts';
 
+function resolvePiAuthProvider(connection: { providerType?: string; piAuthProvider?: string }): string | undefined {
+  return connection.piAuthProvider || (connection.providerType === 'anthropic' ? 'anthropic' : undefined);
+}
+
 // ── Copilot model types ────────────────────────────────────────────────
 type RawCopilotModel = {
   id: string;
@@ -232,7 +236,8 @@ export const piDriver: ProviderDriver = {
       interceptor: resolvedPaths.interceptorBundlePath,
       node: resolvedPaths.nodeRuntimePath,
     },
-    piAuthProvider: providerOptions?.piAuthProvider || context.connection?.piAuthProvider,
+    piAuthProvider: providerOptions?.piAuthProvider
+      || (context.connection ? resolvePiAuthProvider(context.connection) : undefined),
     baseUrl: context.connection?.baseUrl,
     customEndpoint: context.connection?.customEndpoint,
     customModels: context.connection?.models?.map(m => {
@@ -251,30 +256,31 @@ export const piDriver: ProviderDriver = {
     }),
   }),
   fetchModels: async ({ connection, credentials, timeoutMs }) => {
+    const piAuthProvider = resolvePiAuthProvider(connection);
     // Copilot OAuth: fetch models directly from the Copilot API via HTTP.
     // Uses the GitHub OAuth token (our refreshToken) to exchange for a
     // Copilot API token, then queries GET /models for the live model list.
     const copilotGitHubToken = credentials.oauthRefreshToken || credentials.oauthAccessToken;
-    if (connection.piAuthProvider === 'github-copilot' && copilotGitHubToken) {
+    if (piAuthProvider === 'github-copilot' && copilotGitHubToken) {
       const models = await fetchCopilotModels(copilotGitHubToken, timeoutMs);
       return { models };
     }
 
     // All other Pi providers: use static Pi SDK model registry
-    const models = connection.piAuthProvider
-      ? getPiModelsForAuthProvider(connection.piAuthProvider)
+    const models = piAuthProvider
+      ? getPiModelsForAuthProvider(piAuthProvider)
       : getAllPiModels();
 
     if (models.length === 0) {
       throw new Error(
-        `No Pi models found for provider: ${connection.piAuthProvider ?? 'all'}`,
+        `No Pi models found for provider: ${piAuthProvider ?? 'all'}`,
       );
     }
 
     return { models };
   },
   testConnection: async (args: DriverTestConnectionArgs): Promise<{ success: boolean; error?: string } | null> => {
-    const piAuthProvider = args.connection?.piAuthProvider;
+    const piAuthProvider = args.connection ? resolvePiAuthProvider(args.connection) : undefined;
     if (!piAuthProvider) {
       // No provider hint — fall back to generic subprocess path
       return null;

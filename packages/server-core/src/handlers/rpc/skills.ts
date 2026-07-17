@@ -1,5 +1,9 @@
+// input: Skills RPC requests scoped to a registered Storyflow project
+// output: Project-only Skill listings, files, deletion, and local open actions
+// pos: Server trust boundary for project Skill IPC/RPC operations
+
 import { join } from 'path'
-import { existsSync, readdirSync, statSync } from 'fs'
+import { readdirSync, statSync } from 'fs'
 import { RPC_CHANNELS, type SkillFile } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import type { RpcServer } from '@craft-agent/server-core/transport'
@@ -14,7 +18,13 @@ export const HANDLED_CHANNELS = [
 ] as const
 
 export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): void {
-  // Get all skills for a workspace (and optionally project-level skills from workingDirectory)
+  const assertSkillSlug = async (skillSlug: string): Promise<void> => {
+    const { isValidSkillSlug } = await import('@craft-agent/shared/skills')
+    if (!isValidSkillSlug(skillSlug)) throw new Error('Invalid Skill slug')
+  }
+
+  // workingDirectory remains in the RPC signature for client compatibility but
+  // cannot expand the current Storyflow project's Skill scope.
   server.handle(RPC_CHANNELS.skills.GET, async (_ctx, workspaceId: string, workingDirectory?: string) => {
     deps.platform.logger?.info(`SKILLS_GET: Loading skills for workspace: ${workspaceId}${workingDirectory ? `, workingDirectory: ${workingDirectory}` : ''}`)
     const workspace = getWorkspaceByNameOrId(workspaceId)
@@ -22,19 +32,16 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
       deps.platform.logger?.error(`SKILLS_GET: Workspace not found: ${workspaceId}`)
       return []
     }
-    // Validate workingDirectory exists on this server — a thin client may pass
-    // its local path which doesn't exist on the remote server's filesystem.
-    const effectiveWorkingDir = workingDirectory && existsSync(workingDirectory)
-      ? workingDirectory
-      : undefined
+    void workingDirectory
     const { loadAllSkills } = await import('@craft-agent/shared/skills')
-    const skills = loadAllSkills(workspace.rootPath, effectiveWorkingDir)
+    const skills = loadAllSkills(workspace.rootPath)
     deps.platform.logger?.info(`SKILLS_GET: Loaded ${skills.length} skills from ${workspace.rootPath}`)
     return skills
   })
 
   // Get files in a skill directory
   server.handle(RPC_CHANNELS.skills.GET_FILES, async (_ctx, workspaceId: string, skillSlug: string) => {
+    await assertSkillSlug(skillSlug)
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) {
       deps.platform.logger?.error(`SKILLS_GET_FILES: Workspace not found: ${workspaceId}`)
@@ -83,6 +90,7 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
 
   // Delete a skill from a workspace
   server.handle(RPC_CHANNELS.skills.DELETE, async (_ctx, workspaceId: string, skillSlug: string) => {
+    await assertSkillSlug(skillSlug)
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
@@ -93,6 +101,7 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
 
   // Open skill SKILL.md in editor
   server.handle(RPC_CHANNELS.skills.OPEN_EDITOR, async (_ctx, workspaceId: string, skillSlug: string) => {
+    await assertSkillSlug(skillSlug)
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
     if (workspace.remoteServer) throw new Error('Open in editor is not available for remote workspaces')
@@ -106,6 +115,7 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
 
   // Open skill folder in Finder/Explorer
   server.handle(RPC_CHANNELS.skills.OPEN_FINDER, async (_ctx, workspaceId: string, skillSlug: string) => {
+    await assertSkillSlug(skillSlug)
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
     if (workspace.remoteServer) throw new Error('Show in Finder is not available for remote workspaces')

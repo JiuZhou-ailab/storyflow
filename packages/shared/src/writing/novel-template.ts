@@ -15,6 +15,10 @@ import { getBundledNovelSkillFiles } from "./novel-skills.ts";
 import { scaffoldShortForm } from "./short-form-scaffold.ts";
 import type { WritingProjectManifest } from "./types.ts";
 import {
+  defaultFreeRootsForProjectType,
+  seedCatalogPathsFromRequiredPaths,
+} from "./writing-catalog.ts";
+import {
   getWorkspaceAgentsPath,
   getWorkspaceClaudePath,
   getWorkspaceNoticePath,
@@ -67,6 +71,8 @@ function createManifest(
   options: CreateNovelProjectScaffoldOptions,
   pack: MethodPack
 ): WritingProjectManifest {
+  // New projects opt into catalog-plus-free: sidebar/agent surface is user-authorized.
+  // Existing projects without writePolicy stay on legacy behavior.
   return {
     schemaVersion: 1,
     type: pack.projectType,
@@ -78,6 +84,13 @@ function createManifest(
       version: pack.version,
     },
     storageProfile: pack.storageProfile,
+    catalog: {
+      paths: seedCatalogPathsFromRequiredPaths(pack.requiredPaths),
+    },
+    writePolicy: {
+      mode: "catalog-plus-free",
+      freeRoots: defaultFreeRootsForProjectType(pack.projectType),
+    },
   };
 }
 

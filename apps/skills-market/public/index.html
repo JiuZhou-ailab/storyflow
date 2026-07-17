@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-Hans">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="发现、审查并导入项目级 Storyflow Skills。" />
+    <title>Storyflow Skills Market</title>
+    <link rel="stylesheet" href="/tokens.css" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="nav-edge">
+      <a class="wordmark" href="/" aria-label="Storyflow Skills Market 首页">
+        <span class="wordmark__mark" aria-hidden="true">S/</span>
+        <span>Skills Market</span>
+      </a>
+      <a class="button button--outline" href="/studio/">贡献 Skill</a>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="market-title">
+        <div>
+          <p class="intro__context">Project-owned · Pi-native · Declarative</p>
+          <h1 id="market-title">把经验装进项目。</h1>
+        </div>
+        <p class="intro__lede">每个 Skill 都是一套可检查的方法、目录建议与执行边界。安装只写入当前项目的 <code>.pi/skills</code>；运行时由 Pi 读取，Market 本身不执行任何内容。</p>
+      </section>
+
+      <section class="catalog-controls" aria-label="筛选 Skills">
+        <label class="search-field">
+          <span>搜索方法、任务或目录</span>
+          <input id="skill-search" type="search" placeholder="例如：研究、人物、复盘" autocomplete="off" />
+          <small id="search-status" aria-live="polite">正在读取目录…</small>
+        </label>
+        <div class="distribution-filter" role="group" aria-label="分发状态">
+          <button class="filter-button is-active" type="button" data-filter="all">全部</button>
+          <button class="filter-button" type="button" data-filter="installable">可安装</button>
+          <button class="filter-button" type="button" data-filter="reference-only">仅参考</button>
+        </div>
+      </section>
+
+      <section id="featured-section" class="catalog-band" aria-labelledby="featured-title">
+        <div class="band-heading">
+          <div>
+            <h2 id="featured-title">精选方法</h2>
+            <p>许可边界清晰，已经改造成项目文件工作流。</p>
+          </div>
+          <a class="text-link" href="#catalog">查看全部 →</a>
+        </div>
+        <div id="featured-grid" class="skill-grid" aria-live="polite"></div>
+      </section>
+
+      <section id="catalog" class="catalog-band" aria-labelledby="catalog-title">
+        <div class="band-heading">
+          <div>
+            <h2 id="catalog-title">方法目录</h2>
+            <p>可安装条目提供校验摘要；待授权条目保留发现价值，但不会生成下载包。</p>
+          </div>
+          <output id="catalog-count">—</output>
+        </div>
+        <div id="skill-grid" class="skill-grid"></div>
+        <div id="empty-state" class="empty-state" hidden>
+          <span aria-hidden="true">⌕</span>
+          <p>没有匹配的 Skill。换一个任务词，或清除筛选。</p>
+          <button id="clear-filters" class="button button--outline" type="button">清除筛选</button>
+        </div>
+      </section>
+
+      <section id="studio" class="studio" aria-labelledby="studio-title" hidden>
+        <div class="studio__copy">
+          <p class="intro__context">Publisher studio</p>
+          <h1 id="studio-title">贡献一个可审查的 Skill。</h1>
+          <p>选择一个包含 <code>SKILL.md</code> 与 <code>storyflow.json</code> 的目录。首版只接收 UTF-8 文本文件，不接收脚本、二进制或自动执行逻辑。</p>
+          <a class="text-link" href="/">← 返回目录</a>
+        </div>
+        <form id="submission-form" class="submission-form">
+          <label>
+            <span>Skill 目录</span>
+            <input id="skill-directory" type="file" webkitdirectory multiple required />
+            <small>最多 128 个文件，展开后不超过 5 MB。</small>
+          </label>
+          <div id="submission-preview" class="submission-preview" aria-live="polite">尚未选择目录。</div>
+          <button id="submit-skill" class="button button--solid" type="submit">提交审核</button>
+          <p id="submission-status" class="form-status" aria-live="polite"></p>
+        </form>
+      </section>
+    </main>
+
+    <footer class="foot-line">
+      <p>Storyflow Skills Market · 项目级 Skills · Apache-2.0 host</p>
+      <p><a href="https://github.com/JiuZhou-ailab/storyflow">Source ↗</a></p>
+    </footer>
+
+    <dialog id="skill-dialog" class="skill-dialog" aria-labelledby="dialog-title">
+      <form method="dialog" class="dialog-close-form"><button class="icon-button" aria-label="关闭详情">×</button></form>
+      <div id="dialog-content"></div>
+    </dialog>
+
+    <template id="skill-card-template">
+      <article class="skill-card">
+        <button class="skill-card__open" type="button">
+          <span class="skill-card__visual" aria-hidden="true"></span>
+          <span class="skill-card__meta">
+            <span class="skill-card__status"></span>
+            <strong class="skill-card__title"></strong>
+            <span class="skill-card__summary"></span>
+            <span class="skill-card__author"></span>
+          </span>
+        </button>
+      </article>
+    </template>
+  </body>
+</html>

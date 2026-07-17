@@ -1,11 +1,12 @@
 // input: Workspace root paths
-// output: Canonical app-state and legacy workspace filesystem paths
-// pos: Shared path contract that keeps project content roots free of app metadata
+// output: Canonical Storyflow paths plus project-owned path and symlink boundary guards
+// pos: Shared path contract separating app metadata from safe Pi-native project resources
 
-import { existsSync } from 'fs';
-import { join } from 'path';
+import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync } from 'fs';
+import { isAbsolute, join, relative, resolve, sep } from 'path';
 
 export const WORKSPACE_STATE_DIR = '.craft-agent';
+export const PI_PROJECT_DIR = '.pi';
 
 export function getWorkspaceStatePath(rootPath: string): string {
   return join(rootPath, WORKSPACE_STATE_DIR);
@@ -65,18 +66,19 @@ export function getExistingWorkspaceSessionsPath(rootPath: string): string {
 }
 
 export function getWorkspaceSkillsPath(rootPath: string): string {
+  return join(rootPath, PI_PROJECT_DIR, 'skills');
+}
+
+export function getProjectSkillsLifecycleStatePath(rootPath: string): string {
+  return join(getWorkspaceStatePath(rootPath), 'migrations', 'project-skills.json');
+}
+
+export function getLegacyCraftWorkspaceSkillsPath(rootPath: string): string {
   return join(getWorkspaceStatePath(rootPath), 'skills');
 }
 
 export function getLegacyWorkspaceSkillsPath(rootPath: string): string {
   return join(rootPath, 'skills');
-}
-
-export function getExistingWorkspaceSkillsPath(rootPath: string): string {
-  return getFirstExistingPath([
-    getWorkspaceSkillsPath(rootPath),
-    getLegacyWorkspaceSkillsPath(rootPath),
-  ]);
 }
 
 export function getWorkspaceLabelsPath(rootPath: string): string {
@@ -184,4 +186,127 @@ export function getWorkspaceNoticePath(rootPath: string, fileName: string): stri
 
 export function getWorkspacePluginManifestPath(rootPath: string): string {
   return join(getWorkspaceStatePath(rootPath), 'claude-plugin', 'plugin.json');
+}
+
+export class UnsafeProjectPathError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnsafeProjectPathError';
+  }
+}
+
+function lstatIfPresent(path: string): ReturnType<typeof lstatSync> | null {
+  try {
+    return lstatSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+function isWithinPath(rootPath: string, candidatePath: string): boolean {
+  const relativePath = relative(rootPath, candidatePath);
+  return relativePath === '' || (
+    relativePath !== '..'
+    && !relativePath.startsWith(`..${sep}`)
+    && !isAbsolute(relativePath)
+  );
+}
+
+function getProjectBoundary(projectRoot: string): {
+  lexicalRoot: string;
+  canonicalRoot: string;
+} {
+  const lexicalRoot = resolve(projectRoot);
+  const rootStat = lstatIfPresent(lexicalRoot);
+  if (!rootStat) {
+    throw new UnsafeProjectPathError(`Project root does not exist: ${lexicalRoot}`);
+  }
+
+  const canonicalRoot = realpathSync(lexicalRoot);
+  if (!lstatSync(canonicalRoot).isDirectory()) {
+    throw new UnsafeProjectPathError(`Project root is not a directory: ${lexicalRoot}`);
+  }
+  return { lexicalRoot, canonicalRoot };
+}
+
+function getProjectRelativeSegments(lexicalRoot: string, targetPath: string): string[] {
+  const lexicalTarget = resolve(targetPath);
+  if (!isWithinPath(lexicalRoot, lexicalTarget)) {
+    throw new UnsafeProjectPathError(`Path escapes the project root: ${lexicalTarget}`);
+  }
+
+  const relativePath = relative(lexicalRoot, lexicalTarget);
+  return relativePath ? relativePath.split(sep).filter(Boolean) : [];
+}
+
+/** Resolve an existing project-owned path without following project-internal symlinks. */
+export function resolveProjectOwnedPath(projectRoot: string, targetPath: string): string {
+  const { lexicalRoot, canonicalRoot } = getProjectBoundary(projectRoot);
+  const segments = getProjectRelativeSegments(lexicalRoot, targetPath);
+  let currentPath = lexicalRoot;
+
+  for (const segment of segments) {
+    currentPath = join(currentPath, segment);
+    const stat = lstatIfPresent(currentPath);
+    if (!stat) throw new UnsafeProjectPathError(`Project path does not exist: ${currentPath}`);
+    if (stat.isSymbolicLink()) {
+      throw new UnsafeProjectPathError(`Project path contains a symbolic link: ${currentPath}`);
+    }
+
+    const canonicalPath = realpathSync(currentPath);
+    if (!isWithinPath(canonicalRoot, canonicalPath)) {
+      throw new UnsafeProjectPathError(`Project path escapes its real root: ${currentPath}`);
+    }
+  }
+
+  return currentPath;
+}
+
+/** Create a project-owned directory one component at a time, rejecting symlink ancestors. */
+export function ensureProjectOwnedDirectory(projectRoot: string, targetPath: string): string {
+  const lexicalRoot = resolve(projectRoot);
+  if (!lstatIfPresent(lexicalRoot)) mkdirSync(lexicalRoot, { recursive: true });
+
+  const boundary = getProjectBoundary(lexicalRoot);
+  const segments = getProjectRelativeSegments(boundary.lexicalRoot, targetPath);
+  let currentPath = boundary.lexicalRoot;
+
+  for (const segment of segments) {
+    currentPath = join(currentPath, segment);
+    const existing = lstatIfPresent(currentPath);
+    if (!existing) mkdirSync(currentPath);
+
+    const stat = lstatSync(currentPath);
+    if (stat.isSymbolicLink()) {
+      throw new UnsafeProjectPathError(`Project path contains a symbolic link: ${currentPath}`);
+    }
+    if (!stat.isDirectory()) {
+      throw new UnsafeProjectPathError(`Project directory path is occupied by a file: ${currentPath}`);
+    }
+
+    const canonicalPath = realpathSync(currentPath);
+    if (!isWithinPath(boundary.canonicalRoot, canonicalPath)) {
+      throw new UnsafeProjectPathError(`Project path escapes its real root: ${currentPath}`);
+    }
+  }
+
+  return currentPath;
+}
+
+/** Reject every symlink in a Skill tree so loaders and copies cannot escape indirectly. */
+export function assertSymlinkFreeTree(rootPath: string): void {
+  const pending = [rootPath];
+  while (pending.length > 0) {
+    const currentPath = pending.pop()!;
+    const stat = lstatSync(currentPath);
+    if (stat.isSymbolicLink()) {
+      throw new UnsafeProjectPathError(`Skill tree contains a symbolic link: ${currentPath}`);
+    }
+    if (!stat.isDirectory()) continue;
+
+    for (const entry of readdirSync(currentPath)) {
+      pending.push(join(currentPath, entry));
+    }
+  }
 }

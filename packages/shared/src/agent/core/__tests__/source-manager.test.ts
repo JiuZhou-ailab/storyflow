@@ -1,5 +1,7 @@
 /**
- * Tests for SourceManager
+ * input: Workspace-owned Source fixtures and SourceManager callbacks
+ * output: Active/intended Source state regression coverage
+ * pos: SourceManager state-machine unit test
  *
  * Tests the centralized source state management used by both
  * ClaudeAgent and CodexAgent.
@@ -28,6 +30,7 @@ function createMockSource(
     folderPath: `/test/sources/${slug}`,
     workspaceRootPath: '/test/workspace',
     workspaceId: 'test-workspace',
+    origin: 'workspace',
   };
 }
 

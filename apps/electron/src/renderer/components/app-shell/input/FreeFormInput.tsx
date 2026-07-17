@@ -414,7 +414,7 @@ export function FreeFormInput({
     }
     for (const conn of llmConnections) {
       const provider = conn.providerType || 'anthropic'
-      // Group by SDK: only 'anthropic' uses Claude Agent SDK
+      // Group by connection/provider identity; all groups execute through Pi.
       if (provider === 'anthropic') {
         groups['Anthropic'].push(conn)
       } else if (provider === 'pi_compat' && isLocalConnection(conn)) {

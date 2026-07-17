@@ -1,17 +1,6 @@
-/**
- * Resource Bundle — Export/Import Logic
- *
- * Exports workspace resources (sources, skills, automations) to a portable
- * ResourceBundle, and imports bundles into a target workspace.
- *
- * Key behaviors:
- * - Source configs are sanitized (secrets stripped, auth state reset)
- * - All non-hidden files are included per resource (not just known file types)
- * - Import uses staging + atomic rename per resource (single watcher event)
- * - Source overwrite clears stored credentials
- * - Automations overwrite clears history + retry queue
- * - Relies on existing ConfigWatcher for change notifications (no manual events)
- */
+// input: Workspace resources or untrusted portable ResourceBundle JSON
+// output: Sanitized exports, validated imports, and atomic project resource writes
+// pos: Supply-chain trust boundary shared by local exchange and Skills Market installs
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, rmSync } from 'fs'
 import { join, basename } from 'path'
@@ -24,7 +13,6 @@ import {
   validateBundleFile,
 } from '../utils/bundle-files.ts'
 import {
-  getLegacyWorkspaceSkillsPath,
   getLegacyWorkspaceSourcesPath,
   getExistingWorkspaceConfigPath,
   getWorkspaceSkillsPath,
@@ -38,6 +26,7 @@ import { validateAutomationsConfig } from '../automations/validation.ts'
 import { generateShortId } from '../automations/resolve-config-path.ts'
 import { VALID_EVENTS } from '../automations/schemas.ts'
 import { debug } from '../utils/debug.ts'
+import { isValidSkillSlug, validateSkillDocumentForSlug } from '../skills/storage.ts'
 
 import type { FolderSourceConfig } from '../sources/types.ts'
 import type { AutomationMatcher } from '../automations/types.ts'
@@ -241,10 +230,7 @@ function exportSkills(
   // Determine which slugs to export
   let slugs: string[]
   if (selection === 'all') {
-    slugs = Array.from(new Set([
-      ...listResourceSlugs(getLegacyWorkspaceSkillsPath(workspaceRootPath)),
-      ...listResourceSlugs(skillsDir),
-    ]))
+    slugs = listResourceSlugs(skillsDir)
   } else {
     slugs = selection
   }
@@ -513,7 +499,7 @@ export function validateResourceBundle(bundle: unknown): { valid: boolean; error
 
         const e = entry as Record<string, unknown>
 
-        if (typeof e.slug !== 'string' || !e.slug) {
+        if (typeof e.slug !== 'string' || !isValidSkillSlug(e.slug)) {
           errors.push(`${prefix}: missing or invalid slug`)
           continue
         }
@@ -532,6 +518,18 @@ export function validateResourceBundle(bundle: unknown): { valid: boolean; error
           )
           if (!hasSkillMd) {
             errors.push(`${prefix}: missing SKILL.md`)
+          } else {
+            const skillFile = (e.files as BundleFile[]).find(file => file.relativePath === 'SKILL.md')
+            if (skillFile) {
+              try {
+                const skillDocument = new TextDecoder('utf-8', { fatal: true })
+                  .decode(Buffer.from(skillFile.contentBase64, 'base64'))
+                const validationError = validateSkillDocumentForSlug(skillDocument, e.slug as string)
+                if (validationError) errors.push(`${prefix}: ${validationError}`)
+              } catch {
+                errors.push(`${prefix}: SKILL.md is not valid UTF-8 content`)
+              }
+            }
           }
           validateFileEntries(e.files as BundleFile[], prefix, errors)
         }
@@ -784,8 +782,7 @@ function importSkills(
   for (const entry of entries) {
     try {
       const targetDir = join(skillsDir, entry.slug)
-      const legacyTargetDir = join(getLegacyWorkspaceSkillsPath(workspaceRootPath), entry.slug)
-      const exists = existsSync(targetDir) || existsSync(legacyTargetDir)
+      const exists = existsSync(targetDir)
 
       if (exists && mode === 'skip') {
         result.skipped.push(entry.slug)
@@ -810,7 +807,6 @@ function importSkills(
         // On overwrite: remove old dir
         if (exists) {
           rmSync(targetDir, { recursive: true, force: true })
-          rmSync(legacyTargetDir, { recursive: true, force: true })
         }
 
         // Atomic replace: rename temp → target

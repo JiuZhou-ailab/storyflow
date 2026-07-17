@@ -42,6 +42,7 @@ if (isDebugMode) {
   log.transports.file.format = ({ message }) => [
     JSON.stringify({
       timestamp: message.date.toISOString(),
+      pid: process.pid,
       level: message.level,
       scope: message.scope,
       message: message.data,
@@ -49,6 +50,9 @@ if (isDebugMode) {
   ]
 
   log.transports.file.maxSize = 5 * 1024 * 1024 // 5MB
+  if (process.env.CRAFT_DISABLE_FILE_LOG === '1') {
+    log.transports.file.level = false
+  }
 
   // Console output in debug mode with readable format
   // Note: format must return an array - electron-log's transformStyles calls .reduce() on it

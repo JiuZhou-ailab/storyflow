@@ -1,5 +1,7 @@
 /**
- * Unit tests for the API renew endpoint token refresh feature.
+ * input: Workspace-owned Source fixtures, mocked credentials, and renew responses
+ * output: API renew token substitution and persistence regression coverage
+ * pos: Isolated SourceCredentialManager renew-endpoint test; mocks the process-global credential module
  *
  * Tests the token substitution helpers and the doRefresh() routing
  * for sources with renewEndpoint configuration.
@@ -46,6 +48,7 @@ function createRenewSource(overrides: Partial<FolderSourceConfig> = {}) {
     folderPath: '/mock/path',
     workspaceRootPath: '/mock/workspace',
     workspaceId: 'mock-workspace',
+    origin: 'workspace' as const,
   };
 }
 

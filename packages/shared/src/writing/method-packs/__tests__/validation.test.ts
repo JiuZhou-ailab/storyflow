@@ -1,17 +1,18 @@
+// input: Built-in Method Pack contracts and temporary project scaffolds
+// output: Validation and non-destructive repair regression assertions
+// pos: Contract tests for required paths and Pi-native project Skills
+
 import { describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createNovelProjectScaffold } from "../../novel-template.ts";
+import { getWorkspaceSkillsPath } from "../../../workspaces/paths.ts";
 import { CLAUDE_BOOK_METHOD_PACK } from "../claude-book.ts";
 import { repairMethodPackInstall, validateMethodPackInstall } from "../validation.ts";
 
 function createTempProject(): string {
   return mkdtempSync(join(tmpdir(), "craft-method-pack-"));
-}
-
-function statePath(rootPath: string, relativePath = ""): string {
-  return join(rootPath, ".craft-agent", relativePath);
 }
 
 describe("method pack validation", () => {
@@ -38,12 +39,12 @@ describe("method pack validation", () => {
   it("reports missing required skills", () => {
     const rootPath = createTempProject();
     createNovelProjectScaffold(rootPath, { title: "The Test Novel" });
-    rmSync(statePath(rootPath, "skills/chapter-workflow/SKILL.md"));
+    rmSync(join(getWorkspaceSkillsPath(rootPath), "chapter-workflow/SKILL.md"));
 
     expect(validateMethodPackInstall(rootPath, CLAUDE_BOOK_METHOD_PACK)).toContainEqual({
       severity: "error",
       code: "missing_skill",
-      path: "skills/chapter-workflow/SKILL.md",
+      path: ".pi/skills/chapter-workflow/SKILL.md",
     });
   });
 
@@ -53,13 +54,13 @@ describe("method pack validation", () => {
     const stylePath = join(rootPath, "bible", "style.md");
     writeFileSync(stylePath, "custom style");
     rmSync(join(rootPath, "state", "current", "situation.md"));
-    rmSync(statePath(rootPath, "skills/chapter-workflow/SKILL.md"));
+    rmSync(join(getWorkspaceSkillsPath(rootPath), "chapter-workflow/SKILL.md"));
 
     const findings = repairMethodPackInstall(rootPath, CLAUDE_BOOK_METHOD_PACK);
 
     expect(findings).toEqual([]);
     expect(existsSync(join(rootPath, "state", "current", "situation.md"))).toBe(true);
-    expect(existsSync(statePath(rootPath, "skills/chapter-workflow/SKILL.md"))).toBe(true);
+    expect(existsSync(join(getWorkspaceSkillsPath(rootPath), "chapter-workflow/SKILL.md"))).toBe(true);
     expect(readFileSync(stylePath, "utf-8")).toBe("custom style");
   });
 });

@@ -5,7 +5,7 @@
  * Each tool accepts { path, method, params } and auto-injects authentication.
  */
 
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { ApiConfig } from './types.ts';
 import { debug } from '../utils/debug.ts';
@@ -13,6 +13,8 @@ import { guardLargeResult } from '../utils/large-response.ts';
 import { MAX_DOWNLOAD_SIZE, formatBytes } from '../utils/binary-detection.ts';
 import type { ApiCredential, BasicAuthCredential } from './credential-manager.ts';
 import { isMultiHeaderCredential } from './credential-manager.ts';
+import { buildAuthorizationHeader } from './api-auth.ts';
+export { buildAuthorizationHeader } from './api-auth.ts';
 
 // Re-export for convenience
 export type { ApiCredential, BasicAuthCredential } from './credential-manager.ts';
@@ -32,13 +34,6 @@ export type { ApiCredential, BasicAuthCredential } from './credential-manager.ts
  * @param token - The authentication token
  * @returns The full Authorization header value
  */
-export function buildAuthorizationHeader(authScheme: string | undefined, token: string): string {
-  // Use nullish coalescing (??) so empty string "" is preserved, only undefined/null falls back to 'Bearer'
-  const scheme = authScheme ?? 'Bearer';
-  // If scheme is empty string, return just the token; otherwise prefix with scheme
-  return scheme ? `${scheme} ${token}` : token;
-}
-
 /**
  * API credential source - can be a static credential or a function that returns a token.
  * Token getter functions are used for OAuth sources that need auto-refresh.
@@ -214,16 +209,18 @@ export function createApiTool(
 
   const description = buildToolDescription(config);
 
-  return tool(
-    toolName,
-    description,
-    {
+  const inputSchema = {
       path: z.string().describe('API endpoint path, e.g., "/search" or "/v1/completions"'),
       method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']).describe('HTTP method - check documentation for correct method per endpoint'),
       params: z.record(z.string(), z.unknown()).optional().describe('Request body (POST/PUT/PATCH) or query parameters (GET). For non-JSON bodies, pass { _rawBody: "raw string content", _contentType: "text/plain" } — _rawBody is sent as-is without JSON encoding, _contentType defaults to text/plain if omitted'),
       _intent: z.string().optional().describe('REQUIRED: Describe what you are trying to accomplish with this API call (1-2 sentences)'),
-    },
-    async (args) => {
+  };
+
+  return {
+    name: toolName,
+    description,
+    inputSchema,
+    handler: async (args: z.infer<z.ZodObject<typeof inputSchema>>) => {
       const { path, method, params, _intent } = args;
 
       try {
@@ -313,8 +310,8 @@ export function createApiTool(
           isError: true,
         };
       }
-    }
-  );
+    },
+  };
 }
 
 /**
@@ -324,21 +321,28 @@ export function createApiTool(
  * @param credential - API credential source (string for API key/token, BasicAuthCredential for basic auth,
  *                     empty string for public APIs, or async function for OAuth token refresh)
  * @param sessionPath - Optional path to session folder for saving large responses
- * @returns SDK MCP server that can be passed to query()
+ * @returns In-process MCP server config consumed by the shared MCP pool
  */
 export function createApiServer(
   config: ApiConfig,
   credential: ApiCredentialSource,
   sessionPath?: string,
   summarize?: SummarizeCallback
-): ReturnType<typeof createSdkMcpServer> {
+): { type: 'sdk'; name: string; instance: McpServer } {
   debug(`[api-tools] Creating server for ${config.name}${sessionPath ? ` (session: ${sessionPath})` : ''}`);
 
   const apiTool = createApiTool(config, credential, sessionPath, summarize);
 
-  return createSdkMcpServer({
-    name: `api_${config.name}`,
-    version: '1.0.0',
-    tools: [apiTool],
-  });
+  const name = `api_${config.name}`;
+  const instance = new McpServer({ name, version: '1.0.0' });
+  instance.registerTool(apiTool.name, {
+    description: apiTool.description,
+    inputSchema: apiTool.inputSchema,
+  }, apiTool.handler);
+
+  return {
+    type: 'sdk',
+    name,
+    instance,
+  };
 }

@@ -1,5 +1,5 @@
-// Export ClaudeAgent (renamed from CraftAgent) and backward-compatible aliases
-export * from './claude-agent.ts';
+// Pi is Storyflow's only production agent runtime.
+export type { AgentEvent } from '@craft-agent/core/types';
 export * from './conversation-summary.ts';
 export * from './system-prompt-preset.ts';
 
@@ -8,34 +8,31 @@ export { PiAgent, PiBackend } from './pi-agent.ts';
 export * from './errors.ts';
 export * from './options.ts';
 
-// Export session-scoped-tools - tools scoped to a specific session
+// Export runtime-neutral session callback and plan state.
 export {
-  // Session-scoped tools provider
-  getSessionScopedTools,
-  cleanupSessionScopedTools,
-  // Plan file management
+  registerSessionScopedToolCallbacks,
+  unregisterSessionScopedToolCallbacks,
+  mergeSessionScopedToolCallbacks,
+  type SessionScopedToolCallbacks,
+} from './session-scoped-tool-callback-registry.ts';
+export {
   getSessionPlansDir,
   getLastPlanFilePath,
   clearPlanFileState,
   isPathInPlansDir,
-  // Callback registry for session-scoped tool notifications
-  registerSessionScopedToolCallbacks,
-  unregisterSessionScopedToolCallbacks,
-  mergeSessionScopedToolCallbacks,
-  // Types
-  type SessionScopedToolCallbacks,
-  type BrowserPaneFns,
-  // Auth request types (unified auth flow)
-  type AuthRequest,
-  type AuthRequestType,
-  type AuthResult,
-  type CredentialAuthRequest,
-  type McpOAuthAuthRequest,
-  type GoogleOAuthAuthRequest,
-  type SlackOAuthAuthRequest,
-  type MicrosoftOAuthAuthRequest,
-  type CredentialInputMode,
-} from './session-scoped-tools.ts';
+} from './session-plan-state.ts';
+export type { BrowserPaneFns } from './browser-tools.ts';
+export type {
+  AuthRequest,
+  AuthRequestType,
+  AuthResult,
+  CredentialAuthRequest,
+  McpOAuthAuthRequest,
+  GoogleOAuthAuthRequest,
+  SlackOAuthAuthRequest,
+  MicrosoftOAuthAuthRequest,
+  CredentialInputMode,
+} from '@craft-agent/session-tools-core';
 
 // Export mode-manager - Centralized mode management
 export {
@@ -127,7 +124,7 @@ export {
 } from './base-agent.ts';
 
 // Export backend abstraction - unified interface for AI agents
-// This module enables switching between Claude (Anthropic) and Pi agents
+// Pi owns execution while its provider adapters handle model switching.
 export {
   // Factory (createAgent is the preferred name, createBackend is kept for backward compat)
   createBackend,

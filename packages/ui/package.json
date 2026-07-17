@@ -13,6 +13,9 @@
     "./chat/TurnCard": "./src/components/chat/TurnCard.tsx",
     "./chat/turn-utils": "./src/components/chat/turn-utils.ts",
     "./markdown": "./src/components/markdown/index.ts",
+    "./tooltip": "./src/components/tooltip.tsx",
+    "./file-classification": "./src/lib/file-classification.ts",
+    "./styled-dropdown": "./src/components/ui/StyledDropdown.tsx",
     "./annotations/follow-up-state": "./src/components/annotations/follow-up-state.ts",
     "./context": "./src/context/index.ts",
     "./styles": "./src/styles/index.css"

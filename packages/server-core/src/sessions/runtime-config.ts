@@ -16,6 +16,19 @@ export interface ModelAttachmentFilterResult {
   omittedImages: FileAttachment[]
 }
 
+export interface PiRuntimeMigrationInput {
+  agentRuntime?: 'pi' | 'claude-sdk'
+  hasPiTranscript: boolean
+  sdkSessionId?: string
+  messageCount: number
+}
+
+/** Whether a legacy/lost runtime transcript needs a one-shot seeded Pi start. */
+export function needsPiRuntimeMigrationSeed(input: PiRuntimeMigrationInput): boolean {
+  if (input.agentRuntime === 'pi' || input.hasPiTranscript) return false
+  return Boolean(input.sdkSessionId) || input.messageCount > 1
+}
+
 function definedObject<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
   return Object.fromEntries(Object.entries(obj).filter(([, value]) => value !== undefined))
 }

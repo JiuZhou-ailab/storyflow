@@ -166,8 +166,11 @@ function ConversationHistoryMenuItems({
 
 const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const { t } = useTranslation()
-  // Diagnostic: mark when component runs
+  // Start switch timing for any entry path (session list click, history menu, navigate()).
+  // SessionItem may also start on list mousedown; startSessionSwitch clears prior pending timers.
+  // Then mark panel mount as the first checkpoint for this session's switch.
   React.useLayoutEffect(() => {
+    rendererPerf.startSessionSwitch(sessionId)
     rendererPerf.markSessionSwitch(sessionId, 'panel.mounted')
   }, [sessionId])
 
@@ -830,20 +833,25 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
   // Handle missing session - loading or deleted
   if (!session) {
-    if (sessionMeta) {
-      // Session exists in metadata but not loaded yet - show loading state
+    if (sessionMeta || (!messagesLoaded && !messagesLoadError)) {
+      // Session metadata or the direct session payload is still loading.
+      const loadingSessionMeta = sessionMeta ?? {
+        id: sessionId,
+        workspaceId: activeWorkspaceId || '',
+        lastMessageAt: 0,
+      }
       const skeletonSession = {
-        id: sessionMeta.id,
-        workspaceId: sessionMeta.workspaceId,
+        id: loadingSessionMeta.id,
+        workspaceId: loadingSessionMeta.workspaceId,
         workspaceName: '',
-        name: sessionMeta.name,
-        preview: sessionMeta.preview,
-        lastMessageAt: sessionMeta.lastMessageAt || 0,
+        name: loadingSessionMeta.name,
+        preview: loadingSessionMeta.preview,
+        lastMessageAt: loadingSessionMeta.lastMessageAt || 0,
         messages: [],
-        isProcessing: sessionMeta.isProcessing || false,
-        isFlagged: sessionMeta.isFlagged,
-        workingDirectory: sessionMeta.workingDirectory,
-        enabledSourceSlugs: sessionMeta.enabledSourceSlugs,
+        isProcessing: loadingSessionMeta.isProcessing || false,
+        isFlagged: loadingSessionMeta.isFlagged,
+        workingDirectory: loadingSessionMeta.workingDirectory,
+        enabledSourceSlugs: loadingSessionMeta.enabledSourceSlugs,
       }
 
       return (
@@ -888,7 +896,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
                 onSessionStatusChange={handleSessionStatusChange}
                 workspaceId={activeWorkspaceId || undefined}
                 onSourcesChange={(slugs) => onSessionSourcesChange?.(sessionId, slugs)}
-                workingDirectory={sessionMeta.workingDirectory}
+                workingDirectory={loadingSessionMeta.workingDirectory}
                 onWorkingDirectoryChange={handleWorkingDirectoryChange}
                 messagesLoading={messageLoadState.messagesLoading || (messagesRetrying && !messageLoadState.messagesReady)}
                 messagesLoadError={messageLoadState.error}

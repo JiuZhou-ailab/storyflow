@@ -92,7 +92,13 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusActions } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import type { Session, Workspace, WorkspaceProjectType, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange, WhatsNewManifest } from "../../../shared/types"
-import { ensureSessionMessagesLoadedAtom, sessionAtomFamily, sessionMetaAtomFamily, sendToWorkspaceAtom } from "@/atoms/sessions"
+import {
+  ensureSessionMessagesLoadedAtom,
+  reconcileSessionTranscriptWorkingSetAtom,
+  sessionAtomFamily,
+  sessionMetaAtomFamily,
+  sendToWorkspaceAtom,
+} from "@/atoms/sessions"
 import { sessionListSearchActiveAtom, sessionListSearchQueryAtom } from "@/atoms/session-list-search"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
@@ -192,6 +198,12 @@ import {
   type NativeWorkspaceCatalog,
   type NovelWorkspaceFile,
 } from "@/lib/writing-workspace"
+import {
+  filterFilesByWritingCatalog,
+  parseWritingCatalogConfig,
+  withWritingCatalogPath,
+  type WritingProjectType,
+} from "@craft-agent/shared/writing/writing-catalog"
 import type { FileChange } from "@craft-agent/ui"
 import { RPC_CHANNELS, type FileSearchBatchRequest, type FileSearchBatchResult } from "@craft-agent/shared/protocol"
 
@@ -436,9 +448,82 @@ async function searchNovelWorkspaceFiles(
   )
 }
 
+const WRITING_MANIFEST_RELATIVE_CANDIDATES = [
+  '.craft-agent/craft-writing.json',
+  'craft-writing.json',
+] as const
+
+async function readWritingManifestConfig(rootPath: string): Promise<{
+  absolutePath: string
+  projectType: WritingProjectType
+  raw: Record<string, unknown>
+} | null> {
+  for (const relativePath of WRITING_MANIFEST_RELATIVE_CANDIDATES) {
+    const absolutePath = joinWorkspacePath(rootPath, relativePath)
+    try {
+      const rawText = await window.electronAPI.readFile(absolutePath)
+      const raw = JSON.parse(rawText) as Record<string, unknown>
+      if (raw.schemaVersion !== 1) continue
+      if (raw.type !== 'novel' && raw.type !== 'screenplay' && raw.type !== 'short-form') continue
+      return {
+        absolutePath,
+        projectType: raw.type,
+        raw,
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+  return null
+}
+
+async function applyWritingCatalogVisibility(
+  rootPath: string,
+  catalog: NativeWorkspaceCatalog,
+): Promise<NativeWorkspaceCatalog> {
+  const manifest = await readWritingManifestConfig(rootPath)
+  if (!manifest) return catalog
+
+  const { catalog: writingCatalog, writePolicy } = parseWritingCatalogConfig(manifest.raw)
+  return {
+    files: filterFilesByWritingCatalog(
+      catalog.files,
+      writingCatalog,
+      writePolicy,
+      manifest.projectType,
+    ),
+    directories: catalog.directories,
+  }
+}
+
+/** User-created/imported paths become authorized working-surface entries. */
+async function promoteWritingCatalogPath(rootPath: string, relativePath: string): Promise<void> {
+  const manifest = await readWritingManifestConfig(rootPath)
+  if (!manifest) return
+
+  const { catalog, writePolicy } = parseWritingCatalogConfig(manifest.raw)
+  if (writePolicy?.mode !== 'catalog-plus-free') return
+
+  const nextCatalog = withWritingCatalogPath(catalog, relativePath)
+  const previousPaths = catalog?.paths ?? []
+  if (
+    previousPaths.length === nextCatalog.paths.length
+    && previousPaths.every((path, index) => path === nextCatalog.paths[index])
+  ) {
+    return
+  }
+
+  const nextRaw = {
+    ...manifest.raw,
+    catalog: nextCatalog,
+  }
+  await window.electronAPI.writeFile(manifest.absolutePath, `${JSON.stringify(nextRaw, null, 2)}\n`)
+}
+
 async function loadNovelWorkspaceFileTree(rootPath: string): Promise<NativeWorkspaceCatalog> {
   const results = await window.electronAPI.listWorkspaceFiles(rootPath, [])
-  return mapNativeWorkspaceCatalog(results)
+  const catalog = mapNativeWorkspaceCatalog(results)
+  return applyWritingCatalogVisibility(rootPath, catalog)
 }
 
 function getParentRelativePath(relativePath: string): string {
@@ -1453,8 +1538,9 @@ function AppShellContent({
     if (el) el.scrollIntoView({ block: 'nearest' })
   }, [filterDropdownSelectedIdx])
 
-  // Ensure session messages are loaded when selected
+  // Ensure session messages are loaded when selected; evict out-of-working-set transcripts.
   const ensureMessagesLoaded = useSetAtom(ensureSessionMessagesLoadedAtom)
+  const reconcileSessionTranscriptWorkingSet = useSetAtom(reconcileSessionTranscriptWorkingSetAtom)
 
   // Handle selecting a source from the list (preserves current filter type)
   const handleSourceSelect = React.useCallback((source: LoadedSource) => {
@@ -1953,6 +2039,7 @@ function AppShellContent({
     try {
       await window.electronAPI.createDirectory(parentPath)
       await window.electronAPI.writeFile(targetPath, initialContent)
+      await promoteWritingCatalogPath(novelWorkspaceRoot, relativePath)
       await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
       setSelectedNovelFilePath(targetPath)
       navigate(routes.view.allSessions())
@@ -2000,6 +2087,7 @@ function AppShellContent({
 
         await window.electronAPI.createDirectory(parentPath)
         await window.electronAPI.writeFile(targetPath, attachment.text)
+        await promoteWritingCatalogPath(novelWorkspaceRoot, relativePath)
         importedCount += 1
         reservedRelativePaths.add(relativePath)
         lastImportedPath = targetPath
@@ -2250,6 +2338,42 @@ function AppShellContent({
   const novelSessionProcessingRef = React.useRef<Record<string, boolean>>({})
   const novelAgentTouchedPathsRef = React.useRef<Record<string, string[]>>({})
 
+  // Bound auto-version baselines to a small working set. Unbounded path→content
+  // retention was the root cause of document open/close heap growth in the perf
+  // harness (every chapter open kept a full string copy forever).
+  const NOVEL_VERSION_BASELINE_WORKING_SET = 3
+  const pruneNovelVersionBaselines = React.useCallback((preferPath?: string | null) => {
+    const entries = Object.entries(novelVersionBaselinesRef.current)
+    if (entries.length <= NOVEL_VERSION_BASELINE_WORKING_SET) return
+    entries.sort((a, b) => b[1].timestamp - a[1].timestamp)
+    const ordered: Array<[string, { content: string; timestamp: number }]> = []
+    if (preferPath && novelVersionBaselinesRef.current[preferPath]) {
+      ordered.push([preferPath, novelVersionBaselinesRef.current[preferPath]])
+    }
+    for (const entry of entries) {
+      if (entry[0] === preferPath) continue
+      ordered.push(entry)
+    }
+    novelVersionBaselinesRef.current = Object.fromEntries(
+      ordered.slice(0, NOVEL_VERSION_BASELINE_WORKING_SET),
+    )
+  }, [])
+  const rememberNovelVersionBaseline = React.useCallback((
+    filePath: string,
+    content: string,
+    mode: 'set' | 'ensure' = 'set',
+  ) => {
+    if (mode === 'ensure' && novelVersionBaselinesRef.current[filePath]) {
+      novelVersionBaselinesRef.current[filePath] = {
+        ...novelVersionBaselinesRef.current[filePath],
+        timestamp: Date.now(),
+      }
+    } else {
+      novelVersionBaselinesRef.current[filePath] = { content, timestamp: Date.now() }
+    }
+    pruneNovelVersionBaselines(filePath)
+  }, [pruneNovelVersionBaselines])
+
   React.useEffect(() => {
     latestNovelDocumentPathRef.current = selectedNovelDocumentPath
   }, [selectedNovelDocumentPath])
@@ -2339,10 +2463,7 @@ function AppShellContent({
           contentLength: content.length,
         })
         replaceNovelDocumentContent(content)
-        novelVersionBaselinesRef.current[selectedNovelDocumentPath] ??= {
-          content,
-          timestamp: Date.now(),
-        }
+        rememberNovelVersionBaseline(selectedNovelDocumentPath, content, 'ensure')
       })
       .catch((error) => {
         if (cancelled) return
@@ -2382,7 +2503,7 @@ function AppShellContent({
     return () => {
       cancelled = true
     }
-  }, [replaceNovelDocumentContent, selectedNovelDocumentPath])
+  }, [rememberNovelVersionBaseline, replaceNovelDocumentContent, selectedNovelDocumentPath])
 
   const novelDocumentDirty = !!selectedNovelFile && (
     novelDocumentContent !== savedNovelDocumentContent
@@ -2593,7 +2714,7 @@ function AppShellContent({
     novelAutoVersionInFlightRef.current = true
     try {
       await window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'auto' })
-      novelVersionBaselinesRef.current[filePath] = { content, timestamp: Date.now() }
+      rememberNovelVersionBaseline(filePath, content, 'set')
       if (novelVersionDialogOpen) {
         await refreshNovelVersions()
       }
@@ -2602,7 +2723,7 @@ function AppShellContent({
     } finally {
       novelAutoVersionInFlightRef.current = false
     }
-  }, [novelVersionDialogOpen, novelWorkspaceRoot, refreshNovelVersions])
+  }, [novelVersionDialogOpen, novelWorkspaceRoot, refreshNovelVersions, rememberNovelVersionBaseline])
 
   React.useEffect(() => {
     if (!selectedNovelDocumentPath || !novelDocumentDirty || novelDocumentLoading) return
@@ -2860,10 +2981,7 @@ function AppShellContent({
       if (latestNovelDocumentPathRef.current !== filePath) return true
 
       replaceNovelDocumentContent(content)
-      novelVersionBaselinesRef.current[filePath] ??= {
-        content,
-        timestamp: Date.now(),
-      }
+      rememberNovelVersionBaseline(filePath, content, 'ensure')
       return true
     } catch (error) {
       toast.error(t('writing.review.acceptFailed', 'Failed to accept this change'), {
@@ -2871,7 +2989,7 @@ function AppShellContent({
       })
       return false
     }
-  }, [isCurrentNovelDocumentDirty, replaceNovelDocumentContent, selectedNovelFile?.path, t])
+  }, [isCurrentNovelDocumentDirty, rememberNovelVersionBaseline, replaceNovelDocumentContent, selectedNovelFile?.path, t])
 
   React.useEffect(() => {
     if (!selectedNovelDocumentPath || novelDocumentDirty || latestNovelFileChanges.length === 0) return
@@ -2906,10 +3024,7 @@ function AppShellContent({
       const result = await window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'manual' })
       if (selectedNovelDocumentPath) {
         const content = getCurrentNovelDocumentContent()
-        novelVersionBaselinesRef.current[selectedNovelDocumentPath] = {
-          content,
-          timestamp: Date.now(),
-        }
+        rememberNovelVersionBaseline(selectedNovelDocumentPath, content, 'set')
       }
       await refreshNovelVersions()
       toast.success(
@@ -2924,7 +3039,7 @@ function AppShellContent({
     } finally {
       setNovelVersionSaving(false)
     }
-  }, [ensureNovelDocumentSaved, getCurrentNovelDocumentContent, novelWorkspaceRoot, refreshNovelVersions, selectedNovelDocumentPath, t])
+  }, [ensureNovelDocumentSaved, getCurrentNovelDocumentContent, novelWorkspaceRoot, refreshNovelVersions, rememberNovelVersionBaseline, selectedNovelDocumentPath, t])
 
   const handleRestoreNovelVersion = React.useCallback(async (commitHash: string) => {
     if (!novelWorkspaceRoot) return
@@ -2938,10 +3053,7 @@ function AppShellContent({
       if (selectedNovelDocumentPath) {
         const content = await window.electronAPI.readFile(selectedNovelDocumentPath)
         replaceNovelDocumentContent(content)
-        novelVersionBaselinesRef.current[selectedNovelDocumentPath] = {
-          content,
-          timestamp: Date.now(),
-        }
+        rememberNovelVersionBaseline(selectedNovelDocumentPath, content, 'set')
       }
       await refreshNovelVersions()
       await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
@@ -2953,7 +3065,7 @@ function AppShellContent({
     } finally {
       setNovelVersionRestoringHash(null)
     }
-  }, [ensureNovelDocumentSaved, novelWorkspaceRoot, refreshNovelVersions, refreshNovelWorkspaceFiles, replaceNovelDocumentContent, selectedNovelDocumentPath, t])
+  }, [ensureNovelDocumentSaved, novelWorkspaceRoot, refreshNovelVersions, refreshNovelWorkspaceFiles, rememberNovelVersionBaseline, replaceNovelDocumentContent, selectedNovelDocumentPath, t])
 
   const handleExportNovelWorkspace = React.useCallback(async (options: NovelExportOptions) => {
     if (!novelWorkspaceRoot) return
@@ -3362,12 +3474,21 @@ function AppShellContent({
     [workspaces],
   )
 
-  // Ensure session messages are loaded when selected
+  // Load the selected session transcript and keep only the working-set of full
+  // transcripts (open panels + small recency buffer). The loader re-reads these
+  // hard pins when async IPC completes, so stale loads cannot escape eviction.
   React.useEffect(() => {
-    if (session.selected) {
-      ensureMessagesLoaded(session.selected)
+    const openIds = panelStack
+      .map((entry) => parseSessionIdFromRoute(entry.route))
+      .filter((id): id is string => !!id)
+    if (session.selected && !openIds.includes(session.selected)) {
+      openIds.push(session.selected)
     }
-  }, [session.selected, ensureMessagesLoaded])
+    reconcileSessionTranscriptWorkingSet(openIds)
+    if (session.selected) {
+      void ensureMessagesLoaded(session.selected)
+    }
+  }, [session.selected, panelStack, ensureMessagesLoaded, reconcileSessionTranscriptWorkingSet])
 
   // Wrap delete handler to clear selection when deleting the currently selected session
   // This prevents stale state during re-renders that could cause crashes

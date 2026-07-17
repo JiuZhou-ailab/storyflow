@@ -1,0 +1,17 @@
+{
+  "name": "@craft-agent/skills-market",
+  "version": "0.9.36",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bunx wrangler dev",
+    "dev:local": "bun --watch src/local-dev.ts",
+    "deploy": "bunx wrangler deploy",
+    "test": "bun test src/*.test.ts",
+    "typecheck": "bun ../../node_modules/typescript/bin/tsc --noEmit"
+  },
+  "dependencies": {
+    "@craft-agent/shared": "workspace:*",
+    "jose": "^6.0.0"
+  }
+}

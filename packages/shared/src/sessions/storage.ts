@@ -267,6 +267,7 @@ export async function getOrCreateSessionById(
     return {
       id: existing.id,
       sdkSessionId: existing.sdkSessionId,
+      agentRuntime: existing.agentRuntime,
       workspaceRootPath: existing.workspaceRootPath,
       name: existing.name,
       createdAt: existing.createdAt,
@@ -497,6 +498,7 @@ export async function getOrCreateLatestSession(workspaceRootPath: string): Promi
     return {
       id: latest.id,
       sdkSessionId: latest.sdkSessionId,
+      agentRuntime: latest.agentRuntime,
       workspaceRootPath: latest.workspaceRootPath,
       name: latest.name,
       createdAt: latest.createdAt,

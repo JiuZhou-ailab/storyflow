@@ -14,7 +14,8 @@
 import { describe, it, expect } from 'bun:test';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { consumeLlmQueryMessages, summarizeSdkError } from '../claude-llm-query.ts';
-import { createLLMTool, type LLMQueryRequest, type LLMQueryResult } from '../llm-tool.ts';
+import { createLLMTool } from '../claude-llm-tool.ts';
+import type { LLMQueryRequest, LLMQueryResult } from '../llm-tool.ts';
 
 // ============================================================
 // Helpers

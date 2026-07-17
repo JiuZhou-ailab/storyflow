@@ -1,3 +1,7 @@
+// input: Session ID validators and canonical workspace session path helpers
+// output: Security regression coverage for traversal-safe session storage paths
+// pos: Shared defense-in-depth contract for untrusted session identifiers
+
 /**
  * Tests for session ID validation to prevent path traversal attacks.
  * Security-critical: These tests verify protection against CVE-style vulnerabilities.
@@ -19,6 +23,7 @@ import {
   getSessionPlansPath,
   getSessionDownloadsPath,
 } from '../src/sessions/storage.ts';
+import { getWorkspaceSessionsPath } from '../src/workspaces/paths.ts';
 
 // ============================================================
 // validateSessionId
@@ -164,7 +169,7 @@ describe('isValidSessionId', () => {
 
 describe('getSessionPath - defense in depth', () => {
   const workspaceRoot = '/Users/test/.craft-agent/workspaces/test-workspace';
-  const expectedSessionsDir = `${workspaceRoot}/sessions`;
+  const expectedSessionsDir = getWorkspaceSessionsPath(workspaceRoot);
 
   it('returns correct path for valid session IDs', () => {
     const result = getSessionPath(workspaceRoot, '260202-swift-river');
@@ -205,7 +210,7 @@ describe('getSessionPath - defense in depth', () => {
 
 describe('getSessionAttachmentsPath - defense in depth', () => {
   const workspaceRoot = '/Users/test/.craft-agent/workspaces/test-workspace';
-  const expectedSessionsDir = `${workspaceRoot}/sessions`;
+  const expectedSessionsDir = getWorkspaceSessionsPath(workspaceRoot);
 
   it('returns correct path for valid session IDs', () => {
     const result = getSessionAttachmentsPath(workspaceRoot, '260202-swift-river');
@@ -235,7 +240,7 @@ describe('getSessionAttachmentsPath - defense in depth', () => {
 
 describe('getSessionPlansPath - defense in depth', () => {
   const workspaceRoot = '/Users/test/.craft-agent/workspaces/test-workspace';
-  const expectedSessionsDir = `${workspaceRoot}/sessions`;
+  const expectedSessionsDir = getWorkspaceSessionsPath(workspaceRoot);
 
   it('sanitizes path traversal attempts', () => {
     const result = getSessionPlansPath(workspaceRoot, '../../../tmp');
@@ -246,7 +251,7 @@ describe('getSessionPlansPath - defense in depth', () => {
 
 describe('getSessionDownloadsPath - defense in depth', () => {
   const workspaceRoot = '/Users/test/.craft-agent/workspaces/test-workspace';
-  const expectedSessionsDir = `${workspaceRoot}/sessions`;
+  const expectedSessionsDir = getWorkspaceSessionsPath(workspaceRoot);
 
   it('sanitizes path traversal attempts', () => {
     const result = getSessionDownloadsPath(workspaceRoot, '../../../tmp');
@@ -274,9 +279,9 @@ describe('path normalization safety', () => {
     // Simulate what happens in the real code
     const maliciousInput = '../../../../tmp';
     const sanitized = sanitizeSessionId(maliciousInput); // Returns 'tmp'
-    const result = join(workspaceRoot, 'sessions', sanitized);
+    const result = join(getWorkspaceSessionsPath(workspaceRoot), sanitized);
 
-    expect(result).toBe(`${workspaceRoot}/sessions/tmp`);
+    expect(result).toBe(`${workspaceRoot}/.craft-agent/sessions/tmp`);
     expect(result.startsWith(workspaceRoot)).toBe(true);
   });
 });

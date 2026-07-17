@@ -5,9 +5,8 @@
 /**
  * Backend Abstraction Types
  *
- * Defines the core interface that all AI backends (Claude, OpenAI, etc.) must implement.
- * The CraftAgent facade delegates to these backends, enabling provider switching while
- * maintaining a consistent API surface.
+ * Defines the core interface implemented by the Pi agent runtime. Provider
+ * switching happens inside Pi while CraftAgent keeps one stable API surface.
  *
  * Key design decisions:
  * - Provider-agnostic events: All backends emit the same AgentEvent types
@@ -207,7 +206,7 @@ export interface CoreBackendConfig {
   automationSystem?: AutomationSystem;
 
   /**
-   * Per-session environment variable overrides for the SDK subprocess.
+   * Per-session environment variable overrides for the agent subprocess.
    * Spread after process.env in backend-specific option builders.
    */
   envOverrides?: Record<string, string>;
@@ -246,6 +245,9 @@ export interface CoreBackendConfig {
 
   /** Callback to get recent messages for recovery context */
   getRecoveryMessages?: () => RecoveryMessage[];
+
+  /** Seed one fresh Pi transcript from recent persisted messages during runtime migration. */
+  seedFreshSessionFromRecovery?: boolean;
 
   /**
    * Get ALL parent messages for branch fork fallback (not limited to 6).
@@ -656,7 +658,7 @@ export interface BackendConfig extends CoreBackendConfig {
   /**
    * Provider/SDK to use for this backend.
    * Determines which agent class is instantiated:
-   * - 'anthropic' → ClaudeAgent (Anthropic SDK)
+   * - 'anthropic' → PiAgent using Pi's Anthropic provider adapter
    * - 'pi' → PiAgent (Pi via @earendil-works/pi-coding-agent)
    */
   provider: AgentProvider;

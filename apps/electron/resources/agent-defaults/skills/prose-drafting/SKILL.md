@@ -1,6 +1,8 @@
 ---
-name: 正文写作
+name: prose-drafting
 description: "用于根据当前正文状态续写小说或网文，处理接着写、续章、下一段、短篇大纲转正文、简报转正文和节拍表转正文，并控制篇幅、节奏、冲突、钩子和兑现。"
+metadata:
+  displayName: 正文写作
 ---
 
 # 正文写作

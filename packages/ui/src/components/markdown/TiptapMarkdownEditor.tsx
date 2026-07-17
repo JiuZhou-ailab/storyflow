@@ -14,6 +14,7 @@ import FileHandler from '@tiptap/extension-file-handler'
 import { Markdown as OfficialMarkdown } from '@tiptap/markdown'
 import { Markdown as LegacyMarkdown } from 'tiptap-markdown'
 import type { Editor } from '@tiptap/react'
+import { EditorState } from '@tiptap/pm/state'
 import {
   Bold,
   Code,
@@ -646,6 +647,22 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
           editor.commands.setContent(normalized, { contentType: 'markdown' } as never)
         } else {
           editor.commands.setContent(content)
+        }
+        // Drop undo stack from the previous document when content is replaced
+        // externally (chapter switch). Without this, reused editors retain prior
+        // document history and inflate memory across open/close cycles.
+        const commandsWithHistory = editor.commands as unknown as {
+          clearHistory?: () => boolean
+        }
+        if (typeof commandsWithHistory.clearHistory === 'function') {
+          commandsWithHistory.clearHistory()
+        } else {
+          // reconfigure() reuses plugin state; EditorState.create rebuilds it.
+          const { state } = editor
+          editor.view.updateState(EditorState.create({
+            doc: state.doc,
+            plugins: state.plugins,
+          }))
         }
       } finally {
         isApplyingExternalContentRef.current = false

@@ -42,7 +42,7 @@ function filterSkills(skills: LoadedSkill[], filter: string): LoadedSkill[] {
   return skills.filter(
     skill =>
       skill.slug.toLowerCase().includes(lowerFilter) ||
-      skill.metadata.name.toLowerCase().includes(lowerFilter)
+      (skill.metadata.displayName ?? skill.metadata.name).toLowerCase().includes(lowerFilter)
   )
 }
 
@@ -150,7 +150,7 @@ export function InlineSkillMention({
                 <SkillAvatar skill={skill} size="sm" workspaceId={workspaceId} />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-medium truncate">{skill.metadata.name}</div>
+                <div className="font-medium truncate">{skill.metadata.displayName ?? skill.metadata.name}</div>
                 {skill.metadata.description && (
                   <div className="text-[11px] text-foreground/50 truncate">
                     {skill.metadata.description}

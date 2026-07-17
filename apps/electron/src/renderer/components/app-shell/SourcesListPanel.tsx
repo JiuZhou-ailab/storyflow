@@ -229,6 +229,11 @@ export function SourcesListPanel({
                       {t(statusConfig.labelKey)}
                     </EntityListBadge>
                   )}
+                  {source.origin === 'shared-global' && (
+                    <EntityListBadge colorClass="bg-foreground/10 text-foreground/60">
+                      {t('sourcesList.sharedReadOnly')}
+                    </EntityListBadge>
+                  )}
                   {subtitle && <span className="truncate">{subtitle}</span>}
                 </>
               ),
@@ -238,8 +243,10 @@ export function SourcesListPanel({
                   sourceName={source.config.name}
                   onOpenInNewWindow={() => window.electronAPI.openUrl(`craftagents://sources/source/${source.config.slug}?window=focused`)}
                   onShowInFinder={() => window.electronAPI.showInFolder(source.folderPath)}
-                  onDelete={() => onDeleteSource(source.config.slug)}
-                  onSendToWorkspace={hasOtherWorkspaces && source.source === 'workspace' ? () => {
+                  onDelete={source.origin === 'shared-global'
+                    ? undefined
+                    : () => onDeleteSource(source.config.slug)}
+                  onSendToWorkspace={hasOtherWorkspaces && source.origin === 'workspace' ? () => {
                     setSendResourceSlug(source.config.slug)
                     setSendResourceLabel(source.config.name)
                     setSendDialogOpen(true)

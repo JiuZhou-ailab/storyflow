@@ -1,5 +1,6 @@
 export * from "./types.ts";
 export * from "./manifest.ts";
+export * from "./writing-catalog.ts";
 export * from "./file-categories.ts";
 export * from "./workspace-roots.ts";
 export * from "./claude-book-notice.ts";

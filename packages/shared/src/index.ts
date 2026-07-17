@@ -5,7 +5,7 @@
  * Used by the Electron app.
  *
  * Import specific modules via subpath exports:
- *   import { CraftAgent } from '@craft-agent/shared/agent';
+ *   import { PiAgent } from '@craft-agent/shared/agent';
  *   import { loadStoredConfig } from '@craft-agent/shared/config';
  *   import { getCredentialManager } from '@craft-agent/shared/credentials';
  *   import { CraftMcpClient } from '@craft-agent/shared/mcp';
@@ -14,7 +14,7 @@
  *   import { createWorkspace, loadWorkspace } from '@craft-agent/shared/workspaces';
  *
  * Available modules:
- *   - agent: CraftAgent SDK wrapper, plan tools
+ *   - agent: Pi runtime wrapper, plan tools
  *   - auth: OAuth, token management, auth state
  *   - clients: Craft API client
  *   - config: Storage, models, preferences

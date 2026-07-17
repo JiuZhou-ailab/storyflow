@@ -59,9 +59,9 @@ import {
   registerSessionScopedToolCallbacks,
   mergeSessionScopedToolCallbacks,
   unregisterSessionScopedToolCallbacks,
-  setLastPlanFilePath,
   getSessionScopedToolCallbacks,
-} from './session-scoped-tools.ts';
+} from './session-scoped-tool-callback-registry.ts';
+import { setLastPlanFilePath } from './session-plan-state.ts';
 import { attachSessionSelfManagementBindings } from './session-self-management-bindings.ts';
 
 // Session tool proxy definitions (for registering with subprocess)
@@ -271,10 +271,12 @@ export class PiAgent extends BaseAgent {
     this.onBackendAuthRequired = cb;
   }
   private tokenRefreshInProgress: Promise<void> | null = null;
+  private oauthRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Global mutex: keyed by connectionSlug so multiple PiAgent instances
   // sharing the same connection don't race concurrent token refreshes.
   private static globalRefreshMutex: Map<string, Promise<void>> = new Map();
+  private needsFreshSessionRecoverySeed: boolean;
 
   // ============================================================
   // Constructor
@@ -288,6 +290,7 @@ export class PiAgent extends BaseAgent {
     this._supportsBranching = true;
 
     this.piSessionId = config.session?.sdkSessionId || null;
+    this.needsFreshSessionRecoverySeed = config.seedFreshSessionFromRecovery === true;
     this.adapter = new PiEventAdapter();
     if (modelDef?.contextWindow) {
       this.adapter.setContextWindow(modelDef.contextWindow);
@@ -388,14 +391,14 @@ export class PiAgent extends BaseAgent {
     // Resolve credentials before spawning so we can derive AWS env vars
     // from the same fetch that produces piAuth (single source of truth).
 
-    // For Copilot OAuth: preemptively refresh the short-lived Copilot token
-    // before fetching credentials, so getPiAuth() picks up a fresh token.
-    // refreshAndPushTokens guards this.subprocess internally — safe to call pre-spawn.
-    if (this.config.authType === 'oauth' && runtime.piAuthProvider === 'github-copilot') {
+    // Refresh any supported OAuth credential before it approaches expiry so
+    // rotating refresh tokens are persisted in Storyflow, not only inside the
+    // subprocess's in-memory AuthStorage.
+    if (this.config.authType === 'oauth') {
       const slug = this.config.connectionSlug || 'pi';
       const stored = await getCredentialManager().getLlmOAuth(slug);
       if (stored?.refreshToken && (!stored.expiresAt || stored.expiresAt < Date.now() + 5 * 60_000)) {
-        this.debug('Copilot token expired or expiring soon — refreshing before session start');
+        this.debug(`${runtime.piAuthProvider ?? 'OAuth'} token expired or expiring soon — refreshing before session start`);
         await this.refreshAndPushTokens();
       }
     }
@@ -500,6 +503,11 @@ export class PiAgent extends BaseAgent {
     // Wait for subprocess to report ready
     await this.subprocessReady;
     this.debug('Pi subprocess is ready');
+    try {
+      await this.scheduleOAuthRefresh();
+    } catch (error) {
+      this.debug(`Could not schedule OAuth refresh: ${error}`);
+    }
 
     // Ensure auto-compaction is explicitly enabled for embedded sessions.
     // PI defaults this to enabled, but we set it proactively for clarity and resilience.
@@ -554,10 +562,9 @@ export class PiAgent extends BaseAgent {
    * Returns a provider-aware credential object for the subprocess,
    * or null if no piAuthProvider is configured (falls back to legacy getApiKey).
    *
-   * OAuth tokens from Craft (Claude Max, ChatGPT Plus, Copilot) are passed as
-   * api_key type because they function as bearer tokens that the Pi SDK's provider
-   * modules use directly. The OAuth exchange happens on the Craft side; by the time
-   * it reaches Pi, it's just an access token.
+   * OAuth credentials stay structured so Pi can select the provider-specific
+   * bearer behavior and refresh implementation. Flattening them to api_key loses
+   * refresh metadata and breaks Anthropic/OpenAI OAuth semantics.
    */
   private async getPiAuth(): Promise<{
     provider: string;
@@ -576,12 +583,8 @@ export class PiAgent extends BaseAgent {
       if (this.config.authType === 'oauth') {
         const oauth = await credentialManager.getLlmOAuth(slug);
         if (oauth?.accessToken) {
-          // Copilot: pass full OAuth credential so the Pi SDK can derive the
-          // correct API endpoint from the Copilot token's proxy-ep field.
-          // The refresh token is the GitHub access token used to obtain fresh
-          // Copilot tokens when they expire (~1 hour).
-          if (piAuthProvider === 'github-copilot' && oauth.refreshToken) {
-            this.debug(`Retrieved Copilot OAuth credential for Pi provider: ${piAuthProvider}`);
+          if (oauth.refreshToken) {
+            this.debug(`Retrieved OAuth credential for Pi provider: ${piAuthProvider}`);
             return {
               provider: piAuthProvider,
               credential: {
@@ -592,12 +595,7 @@ export class PiAgent extends BaseAgent {
               },
             };
           }
-          // Other OAuth providers: pass as api_key (bearer token)
-          this.debug(`Retrieved OAuth access token for Pi provider: ${piAuthProvider}`);
-          return {
-            provider: piAuthProvider,
-            credential: { type: 'api_key', key: oauth.accessToken },
-          };
+          this.debug(`OAuth credential for ${piAuthProvider} has no refresh token`);
         }
       } else if (this.config.authType === 'iam_credentials') {
         // AWS IAM credentials — pass structured fields so the subprocess can
@@ -724,8 +722,15 @@ export class PiAgent extends BaseAgent {
             refreshToken: newCreds.refresh,
             expiresAt: newCreds.expires,
           });
-        } else {
-          // ChatGPT Plus: use existing refresh utility
+        } else if (piAuthProvider === 'anthropic') {
+          const { refreshAnthropicToken } = await import('@earendil-works/pi-ai/oauth');
+          const newCreds = await refreshAnthropicToken(stored.refreshToken);
+          await credentialManager.setLlmOAuth(slug, {
+            accessToken: newCreds.access,
+            refreshToken: newCreds.refresh,
+            expiresAt: newCreds.expires,
+          });
+        } else if (piAuthProvider === 'openai-codex') {
           const newTokens = await refreshChatGptTokens(stored.refreshToken);
           await credentialManager.setLlmOAuth(slug, {
             accessToken: newTokens.accessToken,
@@ -733,6 +738,8 @@ export class PiAgent extends BaseAgent {
             refreshToken: newTokens.refreshToken,
             expiresAt: newTokens.expiresAt,
           });
+        } else {
+          throw new Error(`OAuth refresh is not supported for Pi provider: ${piAuthProvider ?? '(missing)'}`);
         }
         this.debug('Token refresh successful');
 
@@ -764,6 +771,27 @@ export class PiAgent extends BaseAgent {
         PiAgent.globalRefreshMutex.delete(slug);
       }
     }
+  }
+
+  /** Schedule provider-aware refresh before Pi's in-memory auth would rotate it. */
+  private async scheduleOAuthRefresh(): Promise<void> {
+    if (this.oauthRefreshTimer) {
+      clearTimeout(this.oauthRefreshTimer);
+      this.oauthRefreshTimer = null;
+    }
+    if (this.config.authType !== 'oauth') return;
+
+    const slug = this.config.connectionSlug || 'pi';
+    const stored = await getCredentialManager().getLlmOAuth(slug);
+    if (!stored?.refreshToken || !stored.expiresAt) return;
+
+    const delay = Math.max(1_000, stored.expiresAt - Date.now() - 5 * 60_000);
+    this.oauthRefreshTimer = setTimeout(() => {
+      this.oauthRefreshTimer = null;
+      void this.refreshAndPushTokens()
+        .then(() => this.scheduleOAuthRefresh())
+        .catch(error => this.debug(`Scheduled OAuth refresh failed: ${error}`));
+    }, delay);
   }
 
   /**
@@ -1896,6 +1924,15 @@ export class PiAgent extends BaseAgent {
     }
 
     try {
+      if (this.needsFreshSessionRecoverySeed) {
+        this.needsFreshSessionRecoverySeed = false;
+        const recoveryContext = this.buildRecoveryContext();
+        if (recoveryContext) {
+          message = recoveryContext + message;
+          this.debug('Seeded fresh Pi transcript from persisted runtime-migration context');
+        }
+      }
+
       // Ensure subprocess is spawned and ready
       try {
         await this.ensureSubprocess();
@@ -2317,6 +2354,10 @@ export class PiAgent extends BaseAgent {
    * Used before an idle runtime restart so we don't leave transient children behind.
    */
   private async killSubprocessGracefully(timeoutMs = 2_000): Promise<void> {
+    if (this.oauthRefreshTimer) {
+      clearTimeout(this.oauthRefreshTimer);
+      this.oauthRefreshTimer = null;
+    }
     const child = this.subprocess;
     if (!child) {
       this.killSubprocess();
@@ -2377,6 +2418,10 @@ export class PiAgent extends BaseAgent {
    * Kill the subprocess and clean up resources.
    */
   private killSubprocess(): void {
+    if (this.oauthRefreshTimer) {
+      clearTimeout(this.oauthRefreshTimer);
+      this.oauthRefreshTimer = null;
+    }
     if (this.readline) {
       this.readline.close();
       this.readline = null;

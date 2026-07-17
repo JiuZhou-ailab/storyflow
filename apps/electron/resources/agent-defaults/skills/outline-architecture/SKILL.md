@@ -1,6 +1,8 @@
 ---
-name: 大纲生成
+name: outline-architecture
 description: "用于创建、修订或审查小说大纲、网文大纲、短篇结构、章节规划、章节单元、弧线设计、情节节拍、剧情路线、起承转合、三幕结构和故事架构。"
+metadata:
+  displayName: 大纲生成
 ---
 
 # 大纲生成

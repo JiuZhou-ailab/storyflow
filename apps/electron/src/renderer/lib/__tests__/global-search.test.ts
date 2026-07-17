@@ -85,6 +85,33 @@ describe('buildGlobalSearchResults', () => {
     expect(results.sessions.map(result => result.session.id)).toEqual(['s10', 's9', 's8', 's7', 's6', 's5', 's4', 's3'])
   })
 
+  it('bounds results at product scale (300 sessions + 400 chapters)', () => {
+    // Standard-fixture shape proxy: must stay top-N bounded without materializing full sorted arrays.
+    const sessions = Array.from({ length: 300 }, (_, index) =>
+      session({
+        id: `s${index + 1}`,
+        name: index % 3 === 0 ? `Chapter notes ${index}` : `Session ${index}`,
+        preview: index % 5 === 0 ? 'dragon scene beat' : 'quiet morning',
+        lastMessageAt: index + 1,
+      }),
+    )
+    const novelFiles = Array.from({ length: 400 }, (_, index) => {
+      const n = String(index + 1).padStart(3, '0')
+      return novelFile(`/novel/正文/第${n}章.md`, `正文/第${n}章.md`)
+    })
+
+    const results = buildGlobalSearchResults({
+      query: '第01',
+      sessions,
+      novelFiles,
+      formatNovelFileTitle: file => file.relativePath.split('/').pop() ?? file.relativePath,
+    })
+
+    expect(results.files.length).toBeLessThanOrEqual(8)
+    expect(results.sessions.length).toBeLessThanOrEqual(8)
+    expect(results.files.length).toBeGreaterThan(0)
+  })
+
   it('includes sessions found by full-text content search results', () => {
     const results = buildGlobalSearchResults({
       query: 'dragon',

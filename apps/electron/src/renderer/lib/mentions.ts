@@ -11,7 +11,6 @@
 import type { ContentBadge } from '@craft-agent/core'
 import type { MentionItemType } from '@/components/ui/mention-menu'
 import type { LoadedSkill, LoadedSource } from '../../shared/types'
-import { AGENTS_PLUGIN_NAME } from '@craft-agent/shared/skills/types'
 import { getSourceIconSync, getSkillIconSync } from './icon-cache'
 
 // Import and re-export parsing functions from shared (pure string operations, no renderer deps)
@@ -221,7 +220,7 @@ export function extractBadges(
 
     if (match.type === 'skill') {
       const skill = skillsBySlug.get(match.id)
-      label = skill?.metadata.name || match.id
+      label = skill?.metadata.displayName ?? skill?.metadata.name ?? match.id
 
       // Get cached icon as data URL (preserves mime type for SVG, PNG, etc.)
       iconDataUrl = getSkillIconSync(workspaceId, match.id) ?? undefined
@@ -241,14 +240,13 @@ export function extractBadges(
       filePath = match.id
     }
 
-    // For skills, create fully-qualified rawText (pluginName:slug) so the agent
-    // receives the correct format for the SDK's Skill tool. Plugin name depends
-    // on which tier the skill came from: workspace → workspaceId, project/global → AGENTS_PLUGIN_NAME
+    // Preserve Storyflow's historical project-qualified token shape. Pi loads
+    // the actual Skill from this project's .pi/skills directory.
     let rawText = match.fullMatch
     if (match.type === 'skill') {
-      const skill = skillsBySlug.get(match.id)
-      const pluginName = skill?.source === 'workspace' ? workspaceId : AGENTS_PLUGIN_NAME
-      rawText = `[skill:${pluginName}:${match.id}]`
+      rawText = workspaceId
+        ? `[skill:${workspaceId}:${match.id}]`
+        : `[skill:${match.id}]`
     }
 
     return {

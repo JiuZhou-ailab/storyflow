@@ -35,6 +35,7 @@ const { registerWorkspaceCoreHandlers } = await import('./workspace')
 function createWorkspaceHarness() {
   const handlers = new Map<string, HandlerFn>()
   let reloadSessionsCount = 0
+  let setupConfigWatcherCount = 0
 
   const server: RpcServer = {
     handle(channel, handler) {
@@ -49,8 +50,12 @@ function createWorkspaceHarness() {
   const deps: HandlerDeps = {
     sessionManager: {
       getWorkspaces: () => createdWorkspaces,
+      waitForInit: async () => {},
       reloadSessions: () => {
         reloadSessionsCount += 1
+      },
+      setupConfigWatcher: () => {
+        setupConfigWatcherCount += 1
       },
     } as unknown as HandlerDeps['sessionManager'],
     oauthFlowStore: {} as HandlerDeps['oauthFlowStore'],
@@ -95,6 +100,7 @@ function createWorkspaceHarness() {
     checkWorkspaceSlug,
     ctx,
     getReloadSessionsCount: () => reloadSessionsCount,
+    getSetupConfigWatcherCount: () => setupConfigWatcherCount,
   }
 }
 
@@ -102,12 +108,13 @@ describe('workspace create RPC registration', () => {
   it('reloads sessions after creating a novel workspace so starter chat appears immediately', async () => {
     createdWorkspaces.length = 0
     const rootPath = mkdtempSync(join(tmpdir(), 'craft-workspace-create-handler-'))
-    const { createWorkspace, ctx, getReloadSessionsCount } = createWorkspaceHarness()
+    const { createWorkspace, ctx, getReloadSessionsCount, getSetupConfigWatcherCount } = createWorkspaceHarness()
 
     try {
       await createWorkspace(ctx, rootPath, 'Book', { projectType: 'novel', methodPackId: 'novel.claude-book' })
 
       expect(getReloadSessionsCount()).toBe(1)
+      expect(getSetupConfigWatcherCount()).toBe(1)
     } finally {
       rmSync(rootPath, { recursive: true, force: true })
     }

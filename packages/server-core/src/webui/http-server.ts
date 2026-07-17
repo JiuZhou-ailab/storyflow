@@ -260,7 +260,7 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
     }
 
     // ── Static assets that login page needs (no auth) ──
-    if (path === '/favicon.ico' || path.startsWith('/login-assets/')) {
+    if (path === '/favicon.ico' || path.startsWith('/login-assets/') || path.startsWith('/assets/')) {
       const file = Bun.file(join(webuiDir, path))
       if (await file.exists()) {
         return new Response(file, {

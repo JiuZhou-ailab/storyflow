@@ -1,18 +1,6 @@
-/**
- * SourceMenu - Shared menu content for source actions
- *
- * Used by:
- * - SourcesListPanel (dropdown via "..." button, context menu via right-click)
- * - SourceInfoPage (title dropdown menu)
- *
- * Uses MenuComponents context to render with either DropdownMenu or ContextMenu
- * primitives, allowing the same component to work in both scenarios.
- *
- * Provides consistent source actions:
- * - Open in New Window
- * - Show in file manager
- * - Delete
- */
+// input: Source identity, filesystem actions, and optional mutation callbacks
+// output: Shared dropdown/context menu that omits unavailable source mutations
+// pos: Renderer action boundary for source list and source detail menus
 
 import * as React from 'react'
 import { useTranslation } from "react-i18next"
@@ -33,7 +21,8 @@ export interface SourceMenuProps {
   /** Callbacks */
   onOpenInNewWindow: () => void
   onShowInFinder: () => void
-  onDelete: () => void
+  /** Omit for externally owned, read-only definitions. */
+  onDelete?: () => void
   /** Send to another workspace (omit to hide the option) */
   onSendToWorkspace?: () => void
 }
@@ -77,13 +66,15 @@ export function SourceMenu({
         </MenuItem>
       )}
 
-      <Separator />
-
-      {/* Delete */}
-      <MenuItem onClick={onDelete} variant="destructive">
-        <Trash2 className="h-3.5 w-3.5" />
-        <span className="flex-1">{t("sidebarMenu.deleteSource")}</span>
-      </MenuItem>
+      {onDelete && (
+        <>
+          <Separator />
+          <MenuItem onClick={onDelete} variant="destructive">
+            <Trash2 className="h-3.5 w-3.5" />
+            <span className="flex-1">{t("sidebarMenu.deleteSource")}</span>
+          </MenuItem>
+        </>
+      )}
     </>
   )
 }

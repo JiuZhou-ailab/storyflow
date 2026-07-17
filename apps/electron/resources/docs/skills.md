@@ -1,335 +1,73 @@
 # Skills Configuration Guide
 
-This guide explains how to create and configure skills in Craft Agent.
+Storyflow Skills are project-owned instructions loaded by the Pi runtime. Each project has one canonical Skills directory:
 
-> **CLI-first workflow (recommended):** Use `craft-agent skill ...` commands instead of editing `SKILL.md` files directly.
-> - `craft-agent skill --help`
-> - Canonical command reference: [craft-cli.md](./craft-cli.md)
-
-## What Are Skills?
-
-Skills are specialized instructions that extend Claude's capabilities for specific tasks. They use **the exact same SKILL.md format as the Claude Code SDK** - making skills fully compatible between systems.
-
-**Key points:**
-- Skills are invoked via slash commands (e.g., `/commit`, `/review-pr`)
-- Skills can be automatically triggered by file patterns (globs)
-- Skills can pre-approve specific tools to run without prompting
-- The SKILL.md format is identical to what Claude Code uses internally
-
-## Same Format as Claude Code SDK
-
-Craft Agent uses **the identical SKILL.md format** as the Claude Code SDK. This means:
-
-1. **Format compatibility**: Any skill written for Claude Code works in Craft Agent
-2. **Same frontmatter fields**: `name`, `description`, `globs`, `alwaysAllow`, `requiredSources`
-3. **Same content structure**: Markdown body with instructions for Claude
-
-**What Craft Agent adds:**
-- **Visual icons**: Display custom icons in the UI for each skill
-- **Workspace organization**: Skills are scoped to workspaces
-- **UI management**: Browse, edit, and validate skills through the interface
-
-## Skill Precedence
-
-When a skill is invoked (e.g., `/commit`):
-
-1. **Workspace skill checked first** - If `~/.craft-agent/workspaces/{id}/skills/commit/SKILL.md` exists, it's used
-2. **SDK skill as fallback** - If no workspace skill exists, the built-in SDK skill is used
-
-This allows you to:
-- **Override SDK skills** - Create a workspace skill with the same slug to replace built-in behavior
-- **Extend SDK skills** - Reference SDK behavior in your custom skill and add workspace-specific instructions
-- **Create new skills** - Add entirely new skills not in the SDK
-
-## Skill Storage
-
-Skills are stored as folders:
-```
-~/.craft-agent/workspaces/{workspaceId}/skills/{slug}/
-├── SKILL.md          # Required: Skill definition (same format as Claude Code SDK)
-├── icon.svg          # Recommended: Skill icon for UI display
-├── icon.png          # Alternative: PNG icon
-└── (other files)     # Optional: Additional resources
+```text
+<project>/.pi/skills/<slug>/
+├── SKILL.md
+├── icon.svg        # optional
+└── ...             # optional supporting files
 ```
 
-## SKILL.md Format
+Storyflow does not discover Skills from `~/.agents`, `~/.codex`, an arbitrary working directory, or another project. Legacy project-local Skills are copied into `.pi/skills` when the project is migrated; all subsequent reads and writes use the canonical path.
 
-The format is identical to Claude Code SDK skills:
+## Create a Skill
 
-```yaml
----
-name: "Skill Display Name"
-description: "Brief description shown in skill list"
-globs: ["*.ts", "*.tsx"]     # Optional: file patterns that trigger skill
-alwaysAllow: ["Bash"]        # Optional: tools to always allow
-requiredSources:             # Optional: sources to auto-enable on invocation
-  - linear
----
-
-# Skill Instructions
-
-Your skill content goes here. This is injected into Claude's context
-when the skill is active.
-
-## Guidelines
-
-- Specific instructions for Claude
-- Best practices to follow
-- Things to avoid
-
-## Examples
-
-Show Claude how to perform the task correctly.
-```
-
-## Metadata Fields
-
-### name (required)
-Display name for the skill. Shown in the UI and skill list.
-
-### description (required)
-Brief description (1-2 sentences) explaining what the skill does.
-
-### globs (optional)
-Array of glob patterns. When a file matching these patterns is being worked on,
-the skill may be automatically suggested or activated.
-
-```yaml
-globs:
-  - "*.test.ts"           # Test files
-  - "*.spec.tsx"          # React test files
-  - "**/__tests__/**"     # Test directories
-```
-
-### alwaysAllow (optional)
-Array of tool names that are automatically allowed when this skill is active.
-Useful for skills that require specific tools without prompting.
-
-```yaml
-alwaysAllow:
-  - "Bash"                # Allow bash commands
-  - "Write"               # Allow file writes
-```
-
-### requiredSources (optional)
-Array of source slugs to auto-enable when this skill is invoked.
-When a user mentions the skill, the listed sources are enabled for the session
-before the agent starts — so tools from those sources are available from the first turn.
-
-Sources must exist in the workspace and be authenticated. Unauthenticated or
-missing sources are silently skipped (the existing runtime auto-enable handles them
-as a fallback).
-
-```yaml
-requiredSources:
-  - linear               # Auto-enable Linear source
-  - github               # Auto-enable GitHub source
-```
-
-## Creating a Skill
-
-### 1. Create the skill directory
+Create a lowercase, hyphenated directory under the current project:
 
 ```bash
-mkdir -p ~/.craft-agent/workspaces/{ws}/skills/my-skill
+mkdir -p .pi/skills/code-review
 ```
 
-### 2. Write SKILL.md
+Add `.pi/skills/code-review/SKILL.md`:
 
 ```markdown
 ---
-name: "Code Review"
-description: "Review code changes for quality, security, and best practices"
-globs: ["*.ts", "*.tsx", "*.js", "*.jsx"]
----
-
-# Code Review Skill
-
-When reviewing code, focus on:
-
-## Quality Checks
-- Consistent code style
-- Clear naming conventions
-- Appropriate abstractions
-
-## Security Checks
-- Input validation
-- Authentication/authorization
-- Sensitive data handling
-
-## Best Practices
-- Error handling
-- Performance considerations
-- Test coverage
-```
-
-### 3. Add an icon (IMPORTANT)
-
-Every skill should have a visually relevant icon. This helps users quickly identify skills in the UI.
-
-**Icon requirements:**
-- **Filename**: Must be `icon.svg`, `icon.png`, `icon.jpg`, or `icon.jpeg`
-- **Format**: SVG preferred (scalable, crisp at all sizes)
-- **Size**: For PNG/JPG, use at least 64x64 pixels
-
-**How to get an icon:**
-
-1. **Search online icon libraries:**
-   - [Heroicons](https://heroicons.com/) - MIT licensed
-   - [Feather Icons](https://feathericons.com/) - MIT licensed
-   - [Simple Icons](https://simpleicons.org/) - Brand icons (git, npm, etc.)
-
-2. **Use WebFetch to download:**
-   ```
-   # Find an appropriate icon URL and download it
-   WebFetch to get SVG content, then save to icon.svg
-   ```
-
-3. **Match the skill's purpose:**
-   - Git/commit skill → git icon or commit icon
-   - Test skill → checkmark or test tube icon
-   - Deploy skill → rocket or cloud icon
-   - Review skill → magnifying glass or eye icon
-
-### 4. Validate the skill
-
-**IMPORTANT**: Always validate after creating or editing a skill:
-
-```
-skill_validate({ skillSlug: "my-skill" })
-```
-
-This validates:
-- Slug format (lowercase, alphanumeric, hyphens only)
-- SKILL.md exists and is readable
-- YAML frontmatter is valid
-- Required fields present (name, description)
-- Content is non-empty
-- Icon format (if present)
-
-## Example Skills
-
-### Commit Message Skill
-
-```yaml
----
-name: "Commit"
-description: "Create well-formatted git commit messages"
-alwaysAllow: ["Bash"]
----
-
-# Commit Message Guidelines
-
-When creating commits:
-
-1. **Format**: Use conventional commits
-   - `feat:` New feature
-   - `fix:` Bug fix
-   - `docs:` Documentation
-   - `refactor:` Code refactoring
-   - `test:` Adding tests
-
-2. **Style**:
-   - Keep subject line under 72 characters
-   - Use imperative mood ("Add feature" not "Added feature")
-   - Explain why, not what (the diff shows what)
-
-3. **Co-authorship**:
-   Always include: `Co-Authored-By: Claude <noreply@anthropic.com>`
-```
-
-**Recommended icon**: Git commit icon from Heroicons or Simple Icons
-
-### Team Standards Skill
-
-```yaml
----
-name: "Team Standards"
-description: "Enforce team coding conventions and patterns"
-globs: ["src/**/*.ts", "src/**/*.tsx"]
----
-
-# Team Coding Standards
-
-## File Organization
-- One component per file
-- Co-locate tests with source files
-- Use barrel exports (index.ts)
-
-## Naming Conventions
-- Components: PascalCase
-- Hooks: camelCase with `use` prefix
-- Constants: SCREAMING_SNAKE_CASE
-
-## Import Order
-1. External packages
-2. Internal packages (@company/*)
-3. Relative imports
-```
-
-**Recommended icon**: Clipboard list or checklist icon
-
-### Skill with Required Sources
-
-```yaml
----
-name: "Linear Triage"
-description: "Triage and prioritize Linear issues"
+name: code-review
+description: Review code changes for maintainability and project conventions.
+metadata:
+  displayName: 代码审查
 requiredSources:
-  - linear
+  - github
 ---
 
-# Linear Triage
+# Code Review
 
-When triaging issues:
-1. List unassigned issues from the current sprint
-2. Categorize by severity
-3. Suggest assignees based on expertise
+Review the requested diff. Report concrete findings with file and line references.
 ```
 
-**Recommended icon**: Kanban board or list icon
+Then validate it:
 
-When this skill is invoked, the `linear` source is automatically enabled for the
-session — no manual toggle needed.
+```text
+skill_validate({ skillSlug: "code-review" })
+```
 
-## Overriding SDK Skills
+## Frontmatter
 
-To customize a built-in SDK skill like `/commit`:
+- `name` is required and must equal the parent directory slug: lowercase letters, digits, and hyphens, up to 64 characters.
+- `description` is required and should state when the Skill applies.
+- `metadata.displayName` is an optional human-facing or localized label.
+- `requiredSources` optionally lists Source slugs to enable before the Skill runs.
+- `globs` and `alwaysAllow` remain available for Storyflow metadata and policy integration.
+- `icon` may be an emoji or URL. A local `icon.svg`, `icon.png`, `icon.jpg`, or `icon.jpeg` is also displayed automatically.
 
-1. Create `~/.craft-agent/workspaces/{ws}/skills/commit/SKILL.md`
-2. Write your custom instructions
-3. Add an icon
-4. Run `skill_validate({ skillSlug: "commit" })`
+The Markdown body contains the instructions Pi should follow. Keep one Skill focused on one capability; put detailed references or scripts beside `SKILL.md` and link to them from the body.
 
-Your skill will be used instead of the SDK's built-in version.
+## Invocation
 
-This is useful for:
-- Adding team-specific commit message formats
-- Enforcing project-specific coding standards
-- Customizing review criteria for your codebase
+Skills appear in the project Skills panel and slash menu. Selecting `/code-review` inserts a project-qualified Skill mention. Storyflow requires the agent to read that Skill before executing its instructions.
 
-## Best Practices
+If a Skill declares `requiredSources`, authenticated Sources are enabled for the session before the turn begins. Missing or unauthenticated Sources are skipped and handled by the normal Source activation flow.
 
-1. **Be specific**: Give Claude clear, actionable instructions
-2. **Include examples**: Show the expected output format
-3. **Set boundaries**: Explain what NOT to do
-4. **Keep focused**: One skill = one specific task or domain
-5. **Add a relevant icon**: Makes skills easily identifiable in the UI
-6. **Always validate**: Run `skill_validate` after creating or editing
+## Editing and Deleting
+
+Use the Skills panel to open the current project’s `.pi/skills` folder or `SKILL.md`. Deleting a Skill removes only its canonical directory from the current project; legacy or global directories are never deleted.
+
+After editing, run `skill_validate` again. The project watcher invalidates the Skills cache, and Pi reloads project Skills at the next prompt boundary.
 
 ## Troubleshooting
 
-**Skill not loading:**
-- Check slug format (lowercase, alphanumeric, hyphens only)
-- Verify SKILL.md exists and is readable
-- Run `skill_validate` for detailed errors
-
-**Skill not triggering:**
-- Check glob patterns match your files
-- Verify skill is in correct workspace
-
-**Icon not showing:**
-- Use supported formats: svg, png, jpg, jpeg
-- File must be named `icon.{ext}` (not `my-icon.svg`)
-- Check icon file is not corrupted
-- For SVG, ensure valid XML structure
+- Not listed: confirm the file is `<project>/.pi/skills/<slug>/SKILL.md`.
+- Validation fails: make `name` match the directory slug and provide a non-empty `description` and body.
+- Source unavailable: authenticate the slug listed in `requiredSources` or remove it.
+- Icon missing: use a supported `icon.*` filename or a valid emoji/URL in frontmatter.

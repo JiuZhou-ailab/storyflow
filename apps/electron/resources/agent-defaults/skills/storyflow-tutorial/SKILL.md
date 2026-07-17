@@ -1,6 +1,8 @@
 ---
-name: Storyflow 使用教程
+name: storyflow-tutorial
 description: "用于用对话方式快速讲解 Storyflow 的对话、Skills、Sources、项目文件和写作工作流。"
+metadata:
+  displayName: Storyflow 使用教程
 ---
 
 # Storyflow 使用教程

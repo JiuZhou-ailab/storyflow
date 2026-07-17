@@ -1,44 +1,20 @@
-// input: Renderer bootstrap readiness flags
-// output: Regression coverage for splash exit gating
-// pos: Prevents default workspace/theme UI from flashing before first-frame data is loaded
+// input: Renderer route state and selected workspace identity
+// output: Regression coverage for project-shell splash gating
+// pos: Prevents background agent/session hydration from blocking the editor
 
 import { describe, expect, it } from 'bun:test'
-import { isAppFullyReady } from '../app-readiness'
+import { isProjectShellReady } from '../app-readiness'
 
-describe('isAppFullyReady', () => {
-  it('does not release the splash when sessions are loaded but workspace data is still pending', () => {
-    expect(isAppFullyReady({
-      appState: 'ready',
-      sessionsLoaded: true,
-      workspacesLoaded: false,
-      themeLoaded: true,
-      llmConnectionsLoaded: true,
-      draftsLoaded: true,
-      notificationsLoaded: true,
-    })).toBe(false)
+describe('isProjectShellReady', () => {
+  it('does not release the splash until a project is selected', () => {
+    expect(isProjectShellReady({ appState: 'ready', workspaceId: null })).toBe(false)
   })
 
   it('does not release the splash before the app enters ready state', () => {
-    expect(isAppFullyReady({
-      appState: 'loading',
-      sessionsLoaded: true,
-      workspacesLoaded: true,
-      themeLoaded: true,
-      llmConnectionsLoaded: true,
-      draftsLoaded: true,
-      notificationsLoaded: true,
-    })).toBe(false)
+    expect(isProjectShellReady({ appState: 'loading', workspaceId: 'workspace-1' })).toBe(false)
   })
 
-  it('releases the splash once all first-frame data is loaded', () => {
-    expect(isAppFullyReady({
-      appState: 'ready',
-      sessionsLoaded: true,
-      workspacesLoaded: true,
-      themeLoaded: true,
-      llmConnectionsLoaded: true,
-      draftsLoaded: true,
-      notificationsLoaded: true,
-    })).toBe(true)
+  it('releases the splash without waiting for session or agent metadata', () => {
+    expect(isProjectShellReady({ appState: 'ready', workspaceId: 'workspace-1' })).toBe(true)
   })
 })

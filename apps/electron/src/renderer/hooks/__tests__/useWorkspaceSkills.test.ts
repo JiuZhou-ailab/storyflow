@@ -10,8 +10,7 @@ const skill: LoadedSkill = {
   slug: 'draft',
   metadata: { name: 'Draft', description: 'Draft prose' },
   content: 'Write a draft.',
-  path: '/project/.agents/skills/draft',
-  source: 'project',
+  path: '/project/.pi/skills/draft',
 }
 
 describe('loadSkillsForWorkspace', () => {
@@ -31,8 +30,8 @@ describe('loadSkillsForWorkspace', () => {
       },
     }
 
-    const first = loadSkillsForWorkspace('workspace-1', '/project', api)
-    const second = loadSkillsForWorkspace('workspace-1', '/project', api)
+    const first = loadSkillsForWorkspace('workspace-1', api)
+    const second = loadSkillsForWorkspace('workspace-1', api)
 
     resolveSkills!([skill])
     expect(await Promise.all([first, second])).toEqual([
@@ -41,7 +40,7 @@ describe('loadSkillsForWorkspace', () => {
     ])
     expect(calls).toBe(1)
 
-    await loadSkillsForWorkspace('workspace-1', '/project', {
+    await loadSkillsForWorkspace('workspace-1', {
       getSkills: async () => {
         calls += 1
         return []

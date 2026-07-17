@@ -1,5 +1,7 @@
 /**
- * Test utilities for agent tests
+ * input: Partial Session and workspace-owned Source fixture overrides
+ * output: Shared deterministic factories for agent tests
+ * pos: Agent test fixture boundary
  *
  * Provides mock factories and helpers for testing agent implementations.
  */
@@ -71,6 +73,7 @@ export function createMockSource(overrides: Partial<LoadedSource['config']> = {}
     folderPath: '/test/source',
     workspaceRootPath: '/test/workspace',
     workspaceId: 'test-workspace-id',
+    origin: 'workspace',
   };
 }
 

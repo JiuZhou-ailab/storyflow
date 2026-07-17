@@ -1,3 +1,7 @@
+// input: Temporary Source definitions and injectable SessionToolContext capabilities
+// output: source_test validation, persistence, and activation regression coverage
+// pos: Session tool ownership and connection-test contract suite
+
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import {
   mkdtempSync,
@@ -24,6 +28,7 @@ interface CtxOverrides {
   validateStdioMcpConnection?: SessionToolContext['validateStdioMcpConnection'];
   validateMcpConnection?: SessionToolContext['validateMcpConnection'];
   credentialManager?: SessionToolContext['credentialManager'];
+  isSourceDefinitionReadOnly?: SessionToolContext['isSourceDefinitionReadOnly'];
 }
 
 function createCtx(workspacePath: string, overrides: CtxOverrides = {}): SessionToolContext {
@@ -68,6 +73,7 @@ function createCtx(workspacePath: string, overrides: CtxOverrides = {}): Session
     validateStdioMcpConnection: overrides.validateStdioMcpConnection,
     validateMcpConnection: overrides.validateMcpConnection,
     credentialManager: overrides.credentialManager,
+    isSourceDefinitionReadOnly: overrides.isSourceDefinitionReadOnly,
     activateSourceInSession: overrides.activateSourceInSession,
   } as unknown as SessionToolContext;
   // Expose saved for assertions (test-only — not on real ctx).
@@ -196,6 +202,31 @@ describe('source_test auto-enable', () => {
     ) as SourceConfig;
     // saveSourceConfig still runs (metadata update), but enabled flag must remain false.
     expect(persisted.enabled).toBe(false);
+  });
+
+  it('does not enable or activate an externally owned disabled definition', async () => {
+    writeSource(tempDir, 'shared-kb', { enabled: false });
+
+    let activated = false;
+    const ctx = createCtx(tempDir, {
+      validateStdioMcpConnection: stubMcpOk(),
+      isSourceDefinitionReadOnly: () => true,
+      activateSourceInSession: async () => {
+        activated = true;
+        return { ok: true };
+      },
+    });
+
+    const result = await handleSourceTest(ctx, { sourceSlug: 'shared-kb' });
+    const text = result.content[0]?.text ?? '';
+    const persisted = JSON.parse(
+      readFileSync(join(tempDir, 'sources', 'shared-kb', 'config.json'), 'utf-8')
+    ) as SourceConfig;
+
+    expect(activated).toBe(false);
+    expect(persisted.enabled).toBe(false);
+    expect(text).toContain('shared definition unchanged');
+    expect(text).toContain('remains disabled because its shared definition is read-only');
   });
 
   it('validation errors skip auto-enable entirely (even when autoEnable is default)', async () => {

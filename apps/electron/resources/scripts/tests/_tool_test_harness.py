@@ -1,3 +1,7 @@
+# input: Repository document-tool wrappers, platform identity, and test arguments
+# output: Portable smoke-test subprocess execution through the wrapper's native shell
+# pos: Test boundary that exercises packaged document-tool launchers as users invoke them
+
 from __future__ import annotations
 
 import os
@@ -72,8 +76,13 @@ def run_tool(tool_name: str, *args: str, env: dict[str, str] | None = None) -> s
     if env is None:
         env = build_env()
     wrapper = resolve_wrapper(tool_name)
+    command = (
+        ["cmd.exe", "/d", "/s", "/c", str(wrapper), *args]
+        if os.name == "nt"
+        else ["/bin/sh", str(wrapper), *args]
+    )
     return subprocess.run(
-        [str(wrapper), *args],
+        command,
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,

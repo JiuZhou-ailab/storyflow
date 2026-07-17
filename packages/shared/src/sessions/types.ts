@@ -25,7 +25,7 @@ import type { StoredAttachment, MessageRole, ToolStatus, AuthRequestType, AuthSt
  */
 export const SESSION_PERSISTENT_FIELDS = [
   // Identity
-  'id', 'workspaceRootPath', 'sdkSessionId', 'sdkCwd',
+  'id', 'workspaceRootPath', 'sdkSessionId', 'agentRuntime', 'sdkCwd',
   // Timestamps
   'createdAt', 'lastUsedAt', 'lastMessageAt',
   // Display
@@ -100,6 +100,8 @@ export interface SessionConfig {
   id: string;
   /** SDK session ID (captured after first message) */
   sdkSessionId?: string;
+  /** Runtime that owns sdkSessionId and its persisted transcript. */
+  agentRuntime?: 'pi' | 'claude-sdk';
   /** Workspace root path this session belongs to */
   workspaceRootPath: string;
   /** Optional user-defined name */
@@ -217,6 +219,8 @@ export interface SessionHeader {
   id: string;
   /** SDK session ID (captured after first message) */
   sdkSessionId?: string;
+  /** Runtime that owns sdkSessionId and its persisted transcript. */
+  agentRuntime?: 'pi' | 'claude-sdk';
   /** Workspace root path (stored as portable path, e.g., ~/.craft-agent/...) */
   workspaceRootPath: string;
   /** Optional user-defined name */
@@ -316,6 +320,8 @@ export interface SessionMetadata {
   /** Preview of first user message */
   preview?: string;
   sdkSessionId?: string;
+  /** Runtime that owns sdkSessionId and its persisted transcript. */
+  agentRuntime?: 'pi' | 'claude-sdk';
   /** Whether this session is flagged */
   isFlagged?: boolean;
   /** User-controlled session status */

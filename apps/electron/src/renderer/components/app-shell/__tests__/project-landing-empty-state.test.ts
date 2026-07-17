@@ -20,10 +20,15 @@ describe('MainContentPanel sessions empty state', () => {
   it('keeps ordinary chat rendering off the whole session metadata map subscription', () => {
     const mainComponentSource = mainContentPanelSource.slice(
       mainContentPanelSource.indexOf('export function MainContentPanel'),
-      mainContentPanelSource.indexOf('function SessionBatchActionsPanel')
+      mainContentPanelSource.indexOf('function WritingSessionContent')
+    )
+    const writingSessionContentSource = mainContentPanelSource.slice(
+      mainContentPanelSource.indexOf('function WritingSessionContent'),
+      mainContentPanelSource.indexOf('function ChatPanelPlaceholder')
     )
 
     expect(mainContentPanelSource).toContain('sessionMetaAtomFamily(sessionId)')
     expect(mainComponentSource).not.toContain('useAtomValue(sessionMetaMapAtom)')
+    expect(writingSessionContentSource).toContain('useAtomValue(sessionMetaMapAtom)')
   })
 })

@@ -4,25 +4,24 @@
 
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { init as sentryInit } from '@sentry/electron/renderer'
-import * as Sentry from '@sentry/react'
-import { captureConsoleIntegration } from '@sentry/react'
 import { Provider as JotaiProvider, useAtomValue } from 'jotai'
 import { ThemeProvider } from './context/ThemeContext'
 import { windowWorkspaceIdAtom } from './atoms/sessions'
 import { Toaster } from '@/components/ui/sonner'
-import { setupI18n } from '@craft-agent/shared/i18n'
+import { setupI18nLazy } from '@craft-agent/shared/i18n/lazy'
 import { initReactI18next } from 'react-i18next'
 import { useTranslation } from 'react-i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 import { getDefaultColorThemeForPlatform, rendererPlatform } from '@/lib/platform'
-import { ClientAuthGate } from '@/components/auth/ClientAuthGate'
+import type { ClientAuthState } from '../shared/types'
 import './index.css'
 
 const App = React.lazy(() => import('./App'))
+const ClientAuthGate = React.lazy(async () => {
+  const module = await import('@/components/auth/ClientAuthGate')
+  return { default: module.ClientAuthGate }
+})
 
-// Initialize i18n before any React rendering
-setupI18n([LanguageDetector, initReactI18next])
 document.documentElement.dataset.platform = rendererPlatform
 
 // Known-harmless console messages that should NOT be sent to Sentry.
@@ -35,30 +34,22 @@ const IGNORED_CONSOLE_PATTERNS = [
   'theme name already registered',
 ]
 
-// Initialize Sentry in the renderer process using the dual-init pattern.
-// Combines Electron IPC transport (sentryInit) with React error boundary support (sentryReactInit).
-// DSN and config are inherited from the main process init.
-//
-// captureConsoleIntegration promotes console.error calls into Sentry events,
-// giving Sentry the same rich context visible in DevTools without needing sourcemaps.
-//
-// NOTE: Source map upload is intentionally disabled — see main/index.ts for details.
-sentryInit(
-  {
-    integrations: [captureConsoleIntegration({ levels: ['error'] })],
+let monitoringPromise: Promise<typeof import('@sentry/react')> | null = null
 
-    beforeSend(event) {
-      // Drop events matching known-harmless console patterns to avoid Sentry quota waste
-      const message = event.message || event.exception?.values?.[0]?.value || ''
-      if (IGNORED_CONSOLE_PATTERNS.some((pattern) => message.includes(pattern))) {
-        return null
-      }
+function initializeRendererMonitoring(): Promise<typeof import('@sentry/react')> {
+  monitoringPromise ??= Promise.all([
+    import('@sentry/electron/renderer'),
+    import('@sentry/react'),
+  ]).then(([electronSentry, reactSentry]) => {
+    electronSentry.init(
+      {
+        integrations: [reactSentry.captureConsoleIntegration({ levels: ['error'] })],
+        beforeSend(event) {
+          const message = event.message || event.exception?.values?.[0]?.value || ''
+          if (IGNORED_CONSOLE_PATTERNS.some((pattern) => message.includes(pattern))) return null
 
-      // Scrub sensitive data from breadcrumbs (mirrors main process scrubbing in main/index.ts)
-      if (event.breadcrumbs) {
-        for (const breadcrumb of event.breadcrumbs) {
-          if (breadcrumb.data) {
-            for (const key of Object.keys(breadcrumb.data)) {
+          for (const breadcrumb of event.breadcrumbs ?? []) {
+            for (const key of Object.keys(breadcrumb.data ?? {})) {
               const lowerKey = key.toLowerCase()
               if (
                 lowerKey.includes('token') ||
@@ -68,22 +59,23 @@ sentryInit(
                 lowerKey.includes('credential') ||
                 lowerKey.includes('auth')
               ) {
-                breadcrumb.data[key] = '[REDACTED]'
+                breadcrumb.data![key] = '[REDACTED]'
               }
             }
           }
-        }
-      }
-
-      return event
-    },
-  },
-  Sentry.init,
-)
+          return event
+        },
+      },
+      reactSentry.init,
+    )
+    return reactSentry
+  })
+  return monitoringPromise
+}
 
 /**
  * Minimal fallback UI shown when the entire React tree crashes.
- * Sentry.ErrorBoundary captures the error and sends it to Sentry automatically.
+ * The local boundary stays in the critical bundle; monitoring loads only after a crash.
  */
 function CrashFallback() {
   const { t } = useTranslation()
@@ -102,11 +94,91 @@ function CrashFallback() {
   )
 }
 
+class RootErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { crashed: boolean }
+> {
+  state = { crashed: false }
+
+  static getDerivedStateFromError() {
+    return { crashed: true }
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    void initializeRendererMonitoring().then((monitoring) => {
+      monitoring.captureException(error, {
+        contexts: { react: { componentStack: info.componentStack } },
+      })
+    })
+  }
+
+  render() {
+    return this.state.crashed ? <CrashFallback /> : this.props.children
+  }
+}
+
 function AppLoadingFallback() {
   return (
     <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">
       正在打开工作区
     </div>
+  )
+}
+
+function ClientAuthBootstrap({ children }: { children: React.ReactNode }) {
+  const [state, setState] = React.useState<ClientAuthState | null>(null)
+  const [loadError, setLoadError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    let cancelled = false
+    const accept = (nextState: ClientAuthState) => {
+      if (cancelled) return
+      setLoadError(null)
+      setState(nextState)
+    }
+
+    if (!window.electronAPI?.getClientAuthState) {
+      accept({
+        required: false,
+        configured: false,
+        authenticated: true,
+        emailPasswordEnabled: false,
+        emailSignUpEnabled: false,
+        feishuLoginEnabled: false,
+      })
+      return () => { cancelled = true }
+    }
+
+    window.electronAPI.getClientAuthState()
+      .then(accept)
+      .catch((error) => {
+        if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error))
+      })
+    const unsubscribe = window.electronAPI.onClientAuthStateChanged?.(accept)
+    return () => {
+      cancelled = true
+      unsubscribe?.()
+    }
+  }, [])
+
+  const gateActive = loadError != null || !state || (state.required && !state.authenticated)
+  React.useEffect(() => {
+    if (!gateActive) return
+    return window.electronAPI.onCloseRequested?.(() => {
+      window.electronAPI.confirmCloseWindow?.()
+    })
+  }, [gateActive])
+
+  if (loadError) {
+    return <div className="flex h-screen items-center justify-center text-sm text-destructive">鉴权初始化失败：{loadError}</div>
+  }
+  if (!state) return <AppLoadingFallback />
+  if (!state.required || state.authenticated) return <>{children}</>
+
+  return (
+    <React.Suspense fallback={<AppLoadingFallback />}>
+      <ClientAuthGate>{children}</ClientAuthGate>
+    </React.Suspense>
   )
 }
 
@@ -123,22 +195,31 @@ function Root() {
       activeWorkspaceId={workspaceId}
       defaultColorTheme={getDefaultColorThemeForPlatform(rendererPlatform)}
     >
-      <ClientAuthGate>
+      <ClientAuthBootstrap>
         <React.Suspense fallback={<AppLoadingFallback />}>
           <App />
         </React.Suspense>
-      </ClientAuthGate>
+      </ClientAuthBootstrap>
       <Toaster />
     </ThemeProvider>
   )
 }
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <Sentry.ErrorBoundary fallback={<CrashFallback />}>
-      <JotaiProvider>
-        <Root />
-      </JotaiProvider>
-    </Sentry.ErrorBoundary>
-  </React.StrictMode>
-)
+async function startRenderer() {
+  await setupI18nLazy([LanguageDetector, initReactI18next])
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <RootErrorBoundary>
+        <JotaiProvider>
+          <Root />
+        </JotaiProvider>
+      </RootErrorBoundary>
+    </React.StrictMode>
+  )
+
+  // Main-process monitoring is already active. Keep the renderer SDK off the startup
+  // critical path; an early render crash still initializes it through RootErrorBoundary.
+  window.setTimeout(() => void initializeRendererMonitoring(), 3_000)
+}
+
+void startRenderer()

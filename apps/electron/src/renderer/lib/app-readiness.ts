@@ -1,23 +1,12 @@
-// input: Renderer startup state and first-frame data loading flags
-// output: Boolean readiness decision for releasing the startup splash
-// pos: Centralizes app bootstrap gating so default workspace/theme UI stays hidden until hydrated
+// input: Renderer route state and the selected workspace identity
+// output: Boolean readiness decision for revealing the project shell
+// pos: Keeps project rendering independent from background agent/session hydration
 
 export interface AppReadinessInput {
   appState: string
-  sessionsLoaded: boolean
-  workspacesLoaded: boolean
-  themeLoaded: boolean
-  llmConnectionsLoaded: boolean
-  draftsLoaded: boolean
-  notificationsLoaded: boolean
+  workspaceId: string | null
 }
 
-export function isAppFullyReady(input: AppReadinessInput): boolean {
-  return input.appState === 'ready'
-    && input.sessionsLoaded
-    && input.workspacesLoaded
-    && input.themeLoaded
-    && input.llmConnectionsLoaded
-    && input.draftsLoaded
-    && input.notificationsLoaded
+export function isProjectShellReady(input: AppReadinessInput): boolean {
+  return input.appState === 'ready' && input.workspaceId !== null
 }

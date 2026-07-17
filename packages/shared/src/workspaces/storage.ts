@@ -30,6 +30,7 @@ import { getDefaultLabelConfig, saveLabelConfig } from '../labels/storage.ts';
 import { loadConfigDefaults } from '../config/storage.ts';
 import { parsePermissionMode, PERMISSION_MODE_ORDER } from '../agent/mode-types.ts';
 import { normalizeThinkingLevel } from '../agent/thinking-levels.ts';
+import { ensureProjectSkillsLifecycle } from '../agent-defaults/default-agent-resources.ts';
 import { generateUniqueSessionId } from '../sessions/slug-generator.ts';
 import { readSessionJsonl, writeSessionJsonl } from '../sessions/jsonl.ts';
 import type { StoredSession } from '../sessions/types.ts';
@@ -46,6 +47,8 @@ import {
   getExistingWorkspaceConfigPath,
   getExistingWorkspaceSessionsPath,
   getExistingWorkspaceSourcesPath,
+  getLegacyCraftWorkspaceSkillsPath,
+  getLegacyWorkspaceSkillsPath,
   getLegacyWorkspaceConfigPath,
   getWorkspaceConfigPath,
   getWorkspaceAgentsPath,
@@ -70,12 +73,12 @@ export {
   getExistingWorkspaceConfigPath,
   getExistingWorkspaceLabelConfigPath,
   getExistingWorkspaceSessionsPath,
-  getExistingWorkspaceSkillsPath,
   getExistingWorkspaceSourcesPath,
   getExistingWorkspaceStatusConfigPath,
   getExistingWorkspaceStatusIconsPath,
   getExistingWorkspaceViewsPath,
   getExistingWorkspaceWritingManifestPath,
+  getLegacyCraftWorkspaceSkillsPath,
   getLegacyWorkspaceConfigPath,
   getLegacyWorkspaceLabelConfigPath,
   getLegacyWorkspaceSessionsPath,
@@ -273,7 +276,6 @@ function restoreMergeableLegacyRootState(rootPath: string): void {
 
   for (const [source, target] of [
     ['sessions', getWorkspaceSessionsPath(rootPath)],
-    ['skills', getWorkspaceSkillsPath(rootPath)],
     ['sources', getWorkspaceSourcesPath(rootPath)],
   ] as const) {
     const sourcePath = join(legacyRoot, source);
@@ -306,7 +308,6 @@ function migrateLegacyWorkspaceState(rootPath: string): void {
       ['config.json', getWorkspaceConfigPath(rootPath)],
       ['sources', getWorkspaceSourcesPath(rootPath)],
       ['sessions', getWorkspaceSessionsPath(rootPath)],
-      ['skills', getWorkspaceSkillsPath(rootPath)],
       ['labels', getWorkspaceLabelsPath(rootPath)],
       ['statuses/config.json', getWorkspaceStatusConfigPath(rootPath)],
       ['statuses/icons', getWorkspaceStatusIconsPath(rootPath)],
@@ -362,6 +363,7 @@ export function loadWorkspaceConfig(rootPath: string): WorkspaceConfig | null {
 
   try {
     const config = readJsonFileSync<WorkspaceConfig>(configPath);
+    ensureProjectSkillsLifecycle(rootPath);
 
     // Expand path variables in defaults for portability
     if (config.defaults?.workingDirectory) {
@@ -496,12 +498,6 @@ export function loadWorkspace(rootPath: string): LoadedWorkspace | null {
   // Ensure plugin manifest exists (migration for existing workspaces)
   ensurePluginManifest(rootPath, config.name);
 
-  // Ensure skills directory exists (migration for existing workspaces)
-  const skillsPath = getWorkspaceSkillsPath(rootPath);
-  if (!existsSync(skillsPath)) {
-    mkdirSync(skillsPath, { recursive: true });
-  }
-
   return {
     config,
     sourceSlugs: listSubdirNames(getExistingWorkspaceSourcesPath(rootPath)),
@@ -627,7 +623,7 @@ export function createWorkspaceAtPath(
   mkdirSync(getWorkspaceStatePath(rootPath), { recursive: true });
   mkdirSync(getWorkspaceSourcesPath(rootPath), { recursive: true });
   mkdirSync(getWorkspaceSessionsPath(rootPath), { recursive: true });
-  mkdirSync(getWorkspaceSkillsPath(rootPath), { recursive: true });
+  ensureProjectSkillsLifecycle(rootPath);
 
   // Save config
   saveWorkspaceConfig(rootPath, config);

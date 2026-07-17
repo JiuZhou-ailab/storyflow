@@ -1,3 +1,7 @@
+// input: Workspace/config RPC requests plus host window and SessionManager services
+// output: Shell-safe workspace navigation, creation, media, theme, and view handlers
+// pos: Keeps workspace/file access available before the deferred Agent runtime is ready
+
 import { join, resolve } from 'path'
 import { homedir } from 'os'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
@@ -64,6 +68,7 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
     }
 
     const options = normalizeCreateWorkspaceOptions(input, projectType)
+    await sessionManager.waitForInit()
     const trackedRootPaths = getWorkspaces().map((workspace) => workspace.rootPath)
     if (resetStaleDefaultWorkspaceRoot(rootPath, trackedRootPaths)) {
       deps.platform.logger.info(`Reinitialized stale default workspace root at ${rootPath}`)
@@ -72,6 +77,7 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
 
     const workspace = addWorkspace({ name, rootPath, ...(options.remoteServer && { remoteServer: options.remoteServer }) })
     sessionManager.reloadSessions()
+    sessionManager.setupConfigWatcher(workspace.rootPath, workspace.id)
     // Make it active
     setActiveWorkspace(workspace.id)
     deps.platform.logger.info(`Created workspace "${name}" at ${rootPath}${options.remoteServer ? ` (remote: ${options.remoteServer.url})` : ''}`)
@@ -96,15 +102,7 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
 
   // Get workspace ID for the calling window
   server.handle(RPC_CHANNELS.window.GET_WORKSPACE, (ctx) => {
-    const workspaceId = ctx.workspaceId ?? windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
-    // Set up ConfigWatcher for live updates (labels, statuses, sources, themes)
-    if (workspaceId) {
-      const workspace = getWorkspaceByNameOrId(workspaceId)
-      if (workspace) {
-        sessionManager.setupConfigWatcher(workspace.rootPath, workspaceId)
-      }
-    }
-    return workspaceId
+    return ctx.workspaceId ?? windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
   })
 
   // Get mode for the calling window (always 'main' now)
@@ -148,11 +146,7 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
       }
     }
 
-    // Set up ConfigWatcher for the new workspace
     const workspace = getWorkspaceByNameOrId(workspaceId)
-    if (workspace) {
-      sessionManager.setupConfigWatcher(workspace.rootPath, workspaceId)
-    }
     end()
 
     // Return connection details so the preload RoutedClient can decide

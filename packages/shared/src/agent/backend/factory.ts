@@ -2,15 +2,14 @@
  * Agent Factory
  *
  * Creates the appropriate AI agent based on configuration.
- * Supports two agents:
- * - ClaudeAgent (Anthropic) - Default, using @anthropic-ai/claude-agent-sdk
- * - PiAgent (Pi) - Using @earendil-works/pi-ai SDK
+ * Storyflow sessions use one execution runtime: PiAgent. LLM provider identity
+ * remains a connection concern (Anthropic, OpenAI, Bedrock, custom endpoints).
  *
  * All agents implement AgentBackend directly.
  *
  * LLM Connections:
  * - Backends can be created from LLM connection configs
- * - providerType determines SDK selection and credential routing
+ * - providerType determines Pi model and credential routing
  * - authType determines how credentials are retrieved
  */
 
@@ -23,7 +22,6 @@ import type {
   CoreBackendConfig,
   BackendHostRuntimeContext,
 } from './types.ts';
-import { ClaudeAgent } from '../claude-agent.ts';
 import { PiAgent } from '../pi-agent.ts';
 import {
   getLlmConnection,
@@ -87,7 +85,7 @@ function resolveDriverRuntime(
  * Detect provider from stored auth type.
  *
  * Maps authentication types to their corresponding providers:
- * - api_key, oauth_token → Anthropic (Claude) by default
+ * - api_key, oauth_token → Pi runtime
  *
  * Note: Provider is now determined by LLM connection type, not auth type.
  * This function is kept for backward compatibility.
@@ -99,11 +97,11 @@ export function detectProvider(authType: string): AgentProvider {
   switch (authType) {
     case 'api_key':
     case 'oauth_token':
-      return 'anthropic';
+      return 'pi';
 
-    // Default to Anthropic for unknown types
+    // Storyflow has a single execution runtime.
     default:
-      return 'anthropic';
+      return 'pi';
   }
 }
 
@@ -116,25 +114,25 @@ export function detectProvider(authType: string): AgentProvider {
  *
  * @example
  * ```typescript
- * // Create Anthropic (Claude) backend
+ * // Create a Pi backend using Anthropic as its model provider
  * const backend = createBackend({
- *   provider: 'anthropic',
+ *   provider: 'pi',
+ *   providerType: 'anthropic',
  *   workspace: myWorkspace,
  *   model: 'claude-sonnet-4-6',
- * });
- *
- * // Create Codex backend (uses app-server mode)
- * const codexBackend = createBackend({
- *   provider: 'openai',
- *   workspace: myWorkspace,
  * });
  * ```
  */
 export function createBackend(config: BackendConfig): AgentBackend {
   switch (config.provider) {
     case 'anthropic':
-      // ClaudeAgent implements AgentBackend directly
-      return new ClaudeAgent(config);
+      // Compatibility boundary: provider used to select the Claude SDK. It now
+      // identifies an Anthropic connection that executes through PiAgent.
+      return new PiAgent({
+        ...config,
+        provider: 'pi',
+        providerType: config.providerType ?? 'anthropic',
+      });
 
     case 'pi':
       // PiAgent implements AgentBackend directly
@@ -191,8 +189,7 @@ export function createBackendFromResolvedContext(args: {
 
 /**
  * Initialize backend host runtime wiring once at app startup.
- * Keeps runtime/bootstrap details (Codex vendor root, Claude SDK executable/interceptor)
- * behind backend internals.
+ * Keeps Pi runtime/bootstrap details behind backend internals.
  */
 export function initializeBackendHostRuntime(args: {
   hostRuntime: BackendHostRuntimeContext;
@@ -222,7 +219,7 @@ export function resolveBackendHostTooling(args: {
  * @returns Array of provider identifiers that have working implementations
  */
 export function getAvailableProviders(): AgentProvider[] {
-  return ['anthropic', 'pi'];
+  return ['pi'];
 }
 
 /**
@@ -240,22 +237,17 @@ export function isProviderAvailable(provider: AgentProvider): boolean {
 // ============================================================
 
 /**
- * Map LlmProviderType to AgentProvider (SDK selection).
+ * Map LlmProviderType to the Storyflow execution runtime.
  *
- * AgentProvider determines which backend class to instantiate:
- * - 'anthropic' → ClaudeAgent
- * - 'openai' → CodexAgent
+ * All current connection types execute through PiAgent. The providerType is
+ * preserved separately for model/auth routing.
  *
  * @param providerType - The full provider type from LLM connection
  * @returns The agent provider for SDK selection
  */
 export function providerTypeToAgentProvider(providerType: LlmProviderType): AgentProvider {
   switch (providerType) {
-    // Anthropic SDK backend (direct API only)
     case 'anthropic':
-      return 'anthropic';
-
-    // Pi backends (includes former bedrock/vertex/anthropic_compat via migration)
     case 'pi':
     case 'pi_compat':
       return 'pi';
@@ -263,7 +255,7 @@ export function providerTypeToAgentProvider(providerType: LlmProviderType): Agen
     default:
       // Exhaustive check
       const _exhaustive: never = providerType;
-      return 'anthropic';
+      return 'pi';
   }
 }
 
@@ -277,12 +269,12 @@ export function providerTypeToAgentProvider(providerType: LlmProviderType): Agen
 export function connectionTypeToProvider(connectionType: LlmConnectionType): AgentProvider {
   switch (connectionType) {
     case 'anthropic':
-      return 'anthropic';
+      return 'pi';
     case 'openai':
     case 'openai-compat':
       return 'pi'; // Legacy OpenAI connections are now routed through Pi
     default:
-      return 'anthropic';
+      return 'pi';
   }
 }
 
@@ -363,7 +355,7 @@ export function resolveBackendContext(args: {
 
   const provider = connection
     ? providerTypeToAgentProvider(connection.providerType || 'anthropic')
-    : 'anthropic';
+    : 'pi';
 
   const authType = connection
     ? connectionAuthTypeToBackendAuthType(connection.authType)
@@ -693,6 +685,7 @@ export async function testBackendConnection(args: {
   try {
     const testModel = args.model;
     const providerType = args.connection?.providerType ?? getDefaultProviderType(args.provider);
+    const executionProvider = providerTypeToAgentProvider(providerType);
     const now = Date.now();
     const authType: LlmAuthType = (
       providerType === 'pi_compat'
@@ -714,16 +707,16 @@ export async function testBackendConnection(args: {
 
     const context: ResolvedBackendContext = {
       connection: syntheticConnection,
-      provider: args.provider,
+      provider: executionProvider,
       authType,
       resolvedModel: testModel,
-      capabilities: BACKEND_CAPABILITIES[args.provider],
+      capabilities: BACKEND_CAPABILITIES[executionProvider],
     };
 
-    const { driver, resolvedPaths } = resolveDriverRuntime(args.provider, args.hostRuntime);
+    const { driver, resolvedPaths } = resolveDriverRuntime(executionProvider, args.hostRuntime);
     if (driver.testConnection) {
       const driverResult = await driver.testConnection({
-        provider: args.provider,
+        provider: executionProvider,
         apiKey: trimmedKey,
         model: testModel,
         baseUrl: args.baseUrl,
@@ -744,7 +737,7 @@ export async function testBackendConnection(args: {
         session: { id: `test-${now}`, workspaceRootPath: cwd, createdAt: 0, lastUsedAt: 0 },
         isHeadless: true,
         miniModel: testModel,
-        envOverrides: args.provider === 'anthropic'
+        envOverrides: providerType === 'anthropic'
           ? {
             ANTHROPIC_API_KEY: trimmedKey,
             ...(args.baseUrl?.trim() ? { ANTHROPIC_BASE_URL: args.baseUrl.trim() } : {}),
@@ -805,8 +798,8 @@ export async function testBackendConnection(args: {
 /**
  * Validate an LLM connection by dispatching to provider-specific validation.
  *
- * - Anthropic/compat/Bedrock/Vertex: validates via Claude Agent SDK (query with maxTurns:1)
- * - OpenAI/Copilot/Pi: returns success (these providers validate on connect, no pre-flight check available)
+ * - Direct Anthropic: validates with a minimal Anthropic Messages API request
+ * - Other Pi providers: validate on connect when no safe provider-specific preflight exists
  *
  * For more thorough provider-specific validation (model list checks, OAuth refresh, etc.),
  * see the IPC handler in apps/electron/src/main/ipc.ts.
@@ -819,18 +812,21 @@ export async function validateConnection(
   connection: LlmConnection,
   credentials: { apiKey?: string; oauthToken?: string },
 ): Promise<LlmValidationResult> {
+  if (connection.providerType === 'anthropic') {
+    const { validateAnthropicConnection } = await import('../../config/llm-validation.ts');
+    return validateAnthropicConnection({
+      model: connection.defaultModel || DEFAULT_MODEL,
+      apiKey: credentials.apiKey,
+      oauthToken: credentials.oauthToken,
+      baseUrl: connection.baseUrl,
+    });
+  }
+
   const provider = providerTypeToAgentProvider(connection.providerType);
 
   switch (provider) {
     case 'anthropic': {
-      // Anthropic-based providers can be validated via the Claude Agent SDK
-      const { validateAnthropicConnection } = await import('../../config/llm-validation.ts');
-      return validateAnthropicConnection({
-        model: connection.defaultModel || DEFAULT_MODEL,
-        apiKey: credentials.apiKey,
-        oauthToken: credentials.oauthToken,
-        baseUrl: connection.baseUrl,
-      });
+      return { success: false, error: 'Legacy Anthropic runtime is disabled' };
     }
 
     case 'pi':

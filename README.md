@@ -26,6 +26,7 @@ storyflow/
 │   ├── electron/            # 主桌面应用：main、preload、renderer
 │   ├── feedback-worker/     # 用户反馈入口：截图上传和 GitHub issue 创建
 │   ├── marketing/           # Storyflow 官网和下载入口
+│   ├── skills-market/       # 公共 Skills 市场、贡献审核和不可变包分发
 │   ├── viewer/              # 共享会话记录查看器
 │   └── webui/               # 无头服务端的浏览器客户端
 ├── packages/
@@ -87,6 +88,8 @@ bun run electron:start
 | `bun run webui:dev` | 启动浏览器客户端 |
 | `bun run viewer:dev` | 启动会话查看器 |
 | `bun run marketing:dev` | 启动 Storyflow 官网 landing 页面 |
+| `bun run skills-market:dev` | 用 Bun 启动公共 Skills Market API 与静态网页的本地适配器 |
+| `bun run skills-market:test` | 验证 Market 目录、包校验与下载 API |
 | `bun run typecheck:all` | 对主要 packages 和 apps 做类型检查 |
 | `bun test` | 运行 Bun 测试 |
 | `bun run validate:ci` | 运行更完整的验证套件 |
@@ -220,8 +223,8 @@ bun run apps/cli/src/index.ts run --workspace-dir . "Inspect this repository"
 
 ## 来源、技能和自动化
 
-- **Sources**：连接 MCP server、REST API、本地文件和服务集成等外部系统；默认保存在全局 `~/.agents/sources/`，工作区内同名配置可覆盖。
-- **Skills**：可在聊天中提及的全局/工作区/项目级指令和工作流。
+- **Sources**：连接 MCP server、REST API、本地文件和服务集成等外部系统；Craft 全局默认保存在 `~/.craft-agent/sources/`（不再写入共享的 `~/.agents/`），工作区内同名配置可覆盖。
+- **Skills**：由当前项目持有、保存在 `<project>/.pi/skills/`，可在聊天中提及的方法、指令和工作流；公共 Market 只负责发现与导入，不写全局 Agent 目录。
 - **Automations**：可根据标签、计划任务、工具事件、权限变化和会话生命周期创建或更新会话。
 
 这些系统的大部分共享逻辑位于 `packages/shared/src`，可复用服务端 handler 位于 `packages/server-core/src/handlers/rpc`。

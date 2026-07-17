@@ -1,5 +1,7 @@
 /**
- * Session Tools Core - Context Interface
+ * input: Host runtime services, workspace/session identity, and optional tool capabilities
+ * output: Portable SessionToolContext contract shared by in-process and subprocess hosts
+ * pos: Dependency-inversion boundary for session-scoped tool handlers
  *
  * Defines the abstract context interface that both Claude (in-process)
  * and Codex (subprocess) implementations must provide.
@@ -203,6 +205,9 @@ export interface SessionToolContext {
    * Load a source config from the workspace.
    */
   loadSourceConfig(sourceSlug: string): SourceConfig | null;
+
+  /** Whether the visible definition is externally owned and immutable. */
+  isSourceDefinitionReadOnly?(sourceSlug: string): boolean;
 
   /**
    * Save a source config to the workspace.

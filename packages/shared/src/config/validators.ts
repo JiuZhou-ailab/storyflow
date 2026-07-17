@@ -657,8 +657,14 @@ import { basename, extname } from 'path';
  * Schema for skill metadata (SKILL.md frontmatter)
  */
 export const SkillMetadataSchema = z.object({
-  name: z.string().min(1, "Add a 'name' field with a human-readable title (e.g., 'Git Commit Helper')"),
+  name: z.string()
+    .min(1, "Add a 'name' field matching the skill folder")
+    .max(64, 'Skill name must be at most 64 characters')
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Skill name must be lowercase letters, numbers, and single hyphens'),
   description: z.string().min(1, "Add a 'description' field explaining what this skill does and when to use it (1-2 sentences)"),
+  metadata: z.object({
+    displayName: z.string().min(1).optional(),
+  }).passthrough().optional(),
   globs: z.array(z.string()).optional(),
   alwaysAllow: z.array(z.string()).optional(),
 });
@@ -688,7 +694,7 @@ export function validateSkill(workspaceRoot: string, slug: string): ValidationRe
   const skillsDir = getWorkspaceSkillsPath(workspaceRoot);
   const skillDir = join(skillsDir, slug);
   const skillFile = join(skillDir, 'SKILL.md');
-  const file = `skills/${slug}/SKILL.md`;
+  const file = `.pi/skills/${slug}/SKILL.md`;
 
   const errors: ValidationIssue[] = [];
   const warnings: ValidationIssue[] = [];
@@ -698,7 +704,7 @@ export function validateSkill(workspaceRoot: string, slug: string): ValidationRe
     return {
       valid: false,
       errors: [{
-        file: `skills/${slug}`,
+        file: `.pi/skills/${slug}`,
         path: '',
         message: `Skill folder '${slug}' does not exist`,
         severity: 'error',
@@ -749,7 +755,7 @@ export function validateSkill(workspaceRoot: string, slug: string): ValidationRe
     const ext = extname(iconPath).toLowerCase();
     if (!['.svg', '.png', '.jpg', '.jpeg'].includes(ext)) {
       warnings.push({
-        file: `skills/${slug}/${basename(iconPath)}`,
+        file: `.pi/skills/${slug}/${basename(iconPath)}`,
         path: '',
         message: `Unexpected icon format: ${ext}`,
         severity: 'warning',
@@ -759,7 +765,7 @@ export function validateSkill(workspaceRoot: string, slug: string): ValidationRe
   } else {
     const searchTerm = slug.replace(/-/g, ' ');
     warnings.push({
-      file: `skills/${slug}/`,
+      file: `.pi/skills/${slug}/`,
       path: 'icon',
       message: 'No icon found',
       severity: 'warning',
@@ -783,7 +789,7 @@ export function validateSkill(workspaceRoot: string, slug: string): ValidationRe
  * @param slug - The skill slug (folder name), used for slug format validation
  */
 export function validateSkillContent(markdownContent: string, slug: string): ValidationResult {
-  const file = `skills/${slug}/SKILL.md`;
+  const file = `.pi/skills/${slug}/SKILL.md`;
   const errors: ValidationIssue[] = [];
 
   // 1. Validate slug format
@@ -794,7 +800,7 @@ export function validateSkillContent(markdownContent: string, slug: string): Val
       .replace(/^-+|-+$/g, '')
       .replace(/-+/g, '-');
     errors.push({
-      file: `skills/${slug}`,
+      file: `.pi/skills/${slug}`,
       path: 'slug',
       message: 'Slug must be lowercase alphanumeric with hyphens',
       severity: 'error',
@@ -827,6 +833,14 @@ export function validateSkillContent(markdownContent: string, slug: string): Val
   const metaResult = SkillMetadataSchema.safeParse(frontmatter);
   if (!metaResult.success) {
     errors.push(...zodErrorToIssues(metaResult.error, file));
+  } else if (metaResult.data.name !== slug) {
+    errors.push({
+      file,
+      path: 'name',
+      message: `Skill name '${metaResult.data.name}' must match its parent directory '${slug}'`,
+      severity: 'error',
+      suggestion: `Set frontmatter name to '${slug}'`,
+    });
   }
 
   // 4. Check content is not empty
@@ -861,7 +875,7 @@ export function validateAllSkills(workspaceRoot: string): ValidationResult {
       valid: true,
       errors: [],
       warnings: [{
-        file: 'skills/',
+        file: '.pi/skills/',
         path: '',
         message: 'Skills directory does not exist (no skills configured)',
         severity: 'warning',
@@ -880,7 +894,7 @@ export function validateAllSkills(workspaceRoot: string): ValidationResult {
       valid: true,
       errors: [],
       warnings: [{
-        file: 'skills/',
+        file: '.pi/skills/',
         path: '',
         message: 'No skills configured',
         severity: 'warning',
@@ -1977,7 +1991,7 @@ export interface ConfigFileDetection {
  *
  * Matches patterns:
  * - .../.craft-agent/sources/{slug}/config.json → source config
- * - .../.craft-agent/skills/{slug}/SKILL.md → skill definition
+ * - .../.pi/skills/{slug}/SKILL.md → project Skill definition
  * - .../.craft-agent/statuses/config.json → status workflow config
  * - .../.craft-agent/labels/config.json → label config
  * - .../permissions.json (workspace or source-level) → permission rules
@@ -1997,7 +2011,9 @@ export function detectConfigFileType(filePath: string, workspaceRootPath: string
   const rawRelativePath = normalizedPath.slice(normalizedRoot.length);
   const relativePath = rawRelativePath.startsWith('.craft-agent/')
     ? rawRelativePath.slice('.craft-agent/'.length)
-    : rawRelativePath;
+    : rawRelativePath.startsWith('.pi/')
+      ? rawRelativePath.slice('.pi/'.length)
+      : rawRelativePath;
 
   // Match: sources/{slug}/config.json
   const sourceMatch = relativePath.match(/^sources\/([^/]+)\/config\.json$/);
@@ -2005,10 +2021,10 @@ export function detectConfigFileType(filePath: string, workspaceRootPath: string
     return { type: 'source', slug: sourceMatch[1], displayFile: `sources/${sourceMatch[1]}/config.json` };
   }
 
-  // Match: skills/{slug}/SKILL.md
+  // Match canonical .pi/skills/{slug}/SKILL.md after prefix normalization.
   const skillMatch = relativePath.match(/^skills\/([^/]+)\/SKILL\.md$/);
   if (skillMatch) {
-    return { type: 'skill', slug: skillMatch[1], displayFile: `skills/${skillMatch[1]}/SKILL.md` };
+    return { type: 'skill', slug: skillMatch[1], displayFile: `.pi/skills/${skillMatch[1]}/SKILL.md` };
   }
 
   // Match: statuses/config.json

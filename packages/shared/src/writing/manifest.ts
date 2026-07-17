@@ -7,6 +7,7 @@ import type {
   WritingProjectManifest,
   WritingProjectType,
 } from "./types.ts";
+import { parseWritingCatalogConfig } from "./writing-catalog.ts";
 
 const SUPPORTED_PROJECT_TYPES = new Set<WritingProjectType>(["novel", "screenplay", "short-form"]);
 const CLAUDE_BOOK_NOVEL_DIRECTORIES = ["bible", "story", "state", "timeline"] as const;
@@ -35,6 +36,8 @@ function parseManifest(rootPath: string): WritingProjectManifest | null {
       ? raw.methodPack as Record<string, unknown>
       : null;
 
+    const catalogConfig = parseWritingCatalogConfig(raw);
+
     return {
       schemaVersion: 1,
       type: raw.type,
@@ -50,6 +53,8 @@ function parseManifest(rootPath: string): WritingProjectManifest | null {
           }
         : undefined,
       storageProfile: typeof raw.storageProfile === "string" ? raw.storageProfile : undefined,
+      catalog: catalogConfig.catalog,
+      writePolicy: catalogConfig.writePolicy,
     };
   } catch {
     return null;

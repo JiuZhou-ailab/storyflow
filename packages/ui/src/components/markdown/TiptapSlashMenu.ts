@@ -382,10 +382,6 @@ function renderMenuItems(container: HTMLElement, items: SlashCommandItem[], sele
   container.innerHTML = ''
 
   if (items.length === 0) {
-    const empty = document.createElement('div')
-    empty.className = 'tiptap-slash-empty'
-    empty.textContent = 'No commands found'
-    container.appendChild(empty)
     return
   }
 
@@ -442,13 +438,13 @@ class SlashMenuView {
     })
 
     this.surface.mount()
-    this.surface.update(props.items, 0)
+    this.updateSurface(props.items, 0)
     this.setPosition(props)
   }
 
   update(props: SuggestionProps<SlashCommandItem>) {
     this.props = props
-    this.surface.update(props.items)
+    this.updateSurface(props.items)
     this.setPosition(props)
   }
 
@@ -483,6 +479,11 @@ class SlashMenuView {
     if (!rect) return
 
     this.surface.setPosition(rect.bottom + 8, rect.left)
+  }
+
+  private updateSurface(items: SlashCommandItem[], selectedIndex?: number) {
+    this.surface.element.hidden = items.length === 0
+    this.surface.update(items, selectedIndex)
   }
 
   destroy() {

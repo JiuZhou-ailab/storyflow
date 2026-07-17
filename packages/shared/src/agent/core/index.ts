@@ -154,6 +154,3 @@ export type {
   PrerequisiteCheckResult,
   PrerequisiteManagerConfig,
 } from './prerequisite-manager.ts';
-
-// Re-export skill plugin constant (used by renderer for mention qualification)
-export { AGENTS_PLUGIN_NAME } from '../../skills/types.ts';

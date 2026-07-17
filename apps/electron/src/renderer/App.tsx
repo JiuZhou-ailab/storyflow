@@ -14,17 +14,14 @@ import { defaultSessionOptions, sessionOptionsAtom, updateSessionOptionsMap } fr
 import { generateMessageId } from '../shared/types'
 import { useEventProcessor } from './event-processor'
 import type { AgentEvent, Effect } from './event-processor'
-import { AppShell } from '@/components/app-shell/AppShell'
-import { ActivityRailFrame } from '@/components/app-shell/ActivityRailFrame'
-import { WINDOW_TITLE_BAR_HEIGHT } from '@/components/app-shell/TopBar'
 import type { AppShellContextType } from '@/context/AppShellContext'
-import { OnboardingWizard, ReauthScreen } from '@/components/onboarding'
-import { WorkspaceCreationScreen, WorkspacePicker, type WorkspaceCreationInitialStep } from '@/components/workspace'
-import { AccountCenterPage } from '@/components/account'
+import { ActivityRailFrame } from '@/components/app-shell/ActivityRailFrame'
+import { WINDOW_TITLE_BAR_HEIGHT } from '@/components/app-shell/layout-constants'
+import type { WorkspaceCreationInitialStep } from '@/components/workspace/WorkspaceCreationScreen'
 import { ProjectHub } from '@/components/project-hub'
 import { ResetConfirmationDialog } from '@/components/ResetConfirmationDialog'
 import { SplashScreen } from '@/components/SplashScreen'
-import { TooltipProvider } from '@craft-agent/ui'
+import { TooltipProvider } from '@craft-agent/ui/tooltip'
 import { FocusProvider } from '@/context/FocusContext'
 import { ModalProvider } from '@/context/ModalContext'
 import { DismissibleLayerProvider } from '@/context/DismissibleLayerContext'
@@ -41,7 +38,7 @@ import { getSessionsToRefreshAfterStaleReconnect } from './lib/reconnect-recover
 import { formatSessionLoadFailure, shouldTreatSessionLoadFailureAsTransportFallback } from './lib/session-load'
 import { resolvePostSetupAppState } from './lib/startup-flow'
 import { buildProjectSummaries } from './lib/project-summary'
-import { isAppFullyReady } from './lib/app-readiness'
+import { isProjectShellReady } from './lib/app-readiness'
 import { appendUniqueRequestForSession, removeFirstRequestForSession } from './lib/request-queue'
 import { isBackgroundingToolResult } from './lib/background-task-result'
 import { extractWorkspaceSlugFromPath } from '@craft-agent/shared/utils/workspace-slug'
@@ -59,6 +56,7 @@ import {
   sessionIdsAtom,
   loadedSessionsAtom,
   forceSessionMessagesReloadAtom,
+  reconcileCurrentSessionTranscriptWorkingSetAtom,
   backgroundTasksAtomFamily,
   updateBackgroundTaskProgress,
   removeBackgroundTaskById,
@@ -73,16 +71,8 @@ import { skillsAtom } from '@/atoms/skills'
 import { llmConnectionsAtom, refreshLlmConnectionsAtom, workspaceDefaultLlmConnectionAtom } from '@/atoms/llm-connections'
 import { extractBadges } from '@/lib/mentions'
 import { getDefaultStore } from 'jotai'
-import {
-  ShikiThemeProvider,
-  PlatformProvider,
-  ImagePreviewOverlay,
-  PDFPreviewOverlay,
-  CodePreviewOverlay,
-  DocumentFormattedMarkdownOverlay,
-  JSONPreviewOverlay,
-} from '@craft-agent/ui'
-import { useLinkInterceptor, type FilePreviewState } from '@/hooks/useLinkInterceptor'
+import { PlatformProvider } from '@craft-agent/ui/context'
+import { useLinkInterceptor } from '@/hooks/useLinkInterceptor'
 import { useTransportConnectionState } from '@/hooks/useTransportConnectionState'
 import { useStaleSessionRecovery } from '@/hooks/useStaleSessionRecovery'
 import { TransportConnectionBanner, shouldShowTransportConnectionBanner } from '@/components/app-shell/TransportConnectionBanner'
@@ -91,6 +81,42 @@ import { rendererLog } from '@/lib/logger'
 import { ActionRegistryProvider } from '@/actions'
 import { toast } from 'sonner'
 import * as storage from '@/lib/local-storage'
+
+let workspaceSurfaceModulePromise: Promise<typeof import('@/components/workspace/WorkspaceSurface')> | null = null
+
+function loadWorkspaceSurfaceModule() {
+  workspaceSurfaceModulePromise ??= import('@/components/workspace/WorkspaceSurface')
+  return workspaceSurfaceModulePromise
+}
+
+const WorkspaceSurface = React.lazy(async () => {
+  const module = await loadWorkspaceSurfaceModule()
+  return { default: module.WorkspaceSurface }
+})
+const OnboardingWizard = React.lazy(async () => {
+  const module = await import('@/components/onboarding/OnboardingWizard')
+  return { default: module.OnboardingWizard }
+})
+const ReauthScreen = React.lazy(async () => {
+  const module = await import('@/components/onboarding/ReauthScreen')
+  return { default: module.ReauthScreen }
+})
+const WorkspaceCreationScreen = React.lazy(async () => {
+  const module = await import('@/components/workspace/WorkspaceCreationScreen')
+  return { default: module.WorkspaceCreationScreen }
+})
+const WorkspacePicker = React.lazy(async () => {
+  const module = await import('@/components/workspace/WorkspacePicker')
+  return { default: module.WorkspacePicker }
+})
+const AccountCenterPage = React.lazy(async () => {
+  const module = await import('@/components/account/AccountCenterPage')
+  return { default: module.AccountCenterPage }
+})
+const FilePreviewRenderer = React.lazy(async () => {
+  const module = await import('@/components/file-preview/FilePreviewRenderer')
+  return { default: module.FilePreviewRenderer }
+})
 
 type AppState = 'loading' | 'account' | 'onboarding' | 'reauth' | 'project-hub' | 'workspace-picker' | 'workspace-creation' | 'ready'
 
@@ -233,7 +259,7 @@ function handleBackgroundTaskEvent(
   // 3. KillShell succeeds (shell_killed event)
 }
 
-function SessionLoadErrorScreen({
+function SessionLoadErrorBanner({
   message,
   onRetry,
 }: {
@@ -243,23 +269,17 @@ function SessionLoadErrorScreen({
   const { t } = useTranslation()
 
   return (
-    <div className="flex h-full items-center justify-center p-6">
-      <div className="max-w-lg rounded-xl border border-border/50 bg-background shadow-minimal p-6 text-center">
-        <h2 className="text-lg font-semibold text-foreground">{t("errors.failedToLoadSessions")}</h2>
-        <p className="mt-2 text-sm text-foreground/60">
-          {t("errors.failedToLoadSessionsDesc")}
-        </p>
-        <p className="mt-3 rounded-lg bg-foreground/5 px-3 py-2 text-left text-xs text-foreground/70 break-words">
-          {message}
-        </p>
+    <div className="flex items-center gap-3 border-b border-border/50 bg-background px-3 py-2 text-xs text-foreground/70">
+      <span className="min-w-0 flex-1 truncate" title={message}>
+        {t("errors.failedToLoadSessionsDesc")}
+      </span>
         <button
           type="button"
           onClick={onRetry}
-          className="mt-4 inline-flex h-8 items-center justify-center rounded-[8px] bg-foreground text-background px-3 text-sm font-medium hover:opacity-90 transition-opacity"
+          className="inline-flex h-7 shrink-0 items-center justify-center rounded-[8px] bg-foreground px-3 font-medium text-background transition-opacity hover:opacity-90"
         >
           {t("errors.retryLoadingSessions")}
         </button>
-      </div>
     </div>
   )
 }
@@ -270,6 +290,7 @@ export default function App() {
   // Initialize renderer perf tracking early (debug mode = running from source)
   // Uses useEffect with empty deps to run once on mount before any session switches
   useEffect(() => {
+    performance.mark('storyflow.app-mounted')
     window.electronAPI.isDebugMode().then((isDebug) => {
       initRendererPerf(isDebug)
     })
@@ -280,9 +301,48 @@ export default function App() {
   const [setupNeeds, setSetupNeeds] = useState<SetupNeeds | null>(null)
   const [clientAuthState, setClientAuthState] = useState<ClientAuthState | null>(null)
   const [accountReturnState, setAccountReturnState] = useState<'project-hub' | 'ready'>('project-hub')
+
+  // Keep ProjectHub's first frame lean, then use its idle time to fetch and
+  // parse the workspace shell. Opening a project no longer pays the cold
+  // AppShell/Tiptap/Shiki module cost before directory loading can begin.
+  useEffect(() => {
+    if (appState !== 'project-hub') return
+
+    const preloadWorkspaceSurface = () => {
+      void loadWorkspaceSurfaceModule()
+    }
+    if ('requestIdleCallback' in window) {
+      const idleCallbackId = window.requestIdleCallback(preloadWorkspaceSurface)
+      return () => window.cancelIdleCallback(idleCallbackId)
+    }
+
+    const timeoutId = setTimeout(preloadWorkspaceSurface, 0)
+    return () => clearTimeout(timeoutId)
+  }, [appState])
   const [workspaceCreationInitialStep, setWorkspaceCreationInitialStep] = useState<WorkspaceCreationInitialStep>('choice')
   const [pendingReadyRoute, setPendingReadyRoute] = useState<Route | null>(null)
   const [openGlobalSearchSignal, setOpenGlobalSearchSignal] = useState(0)
+  const shellInteractiveReportedRef = useRef(false)
+
+  useEffect(() => {
+    if (appState === 'loading' || shellInteractiveReportedRef.current) return
+    performance.mark(`storyflow.surface-committed:${appState}`)
+
+    // Two frames ensure React's committed product surface has reached the
+    // compositor before the main process begins synchronous session discovery.
+    let secondFrame = 0
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        shellInteractiveReportedRef.current = true
+        window.electronAPI.notifyShellInteractive?.()
+      })
+    })
+
+    return () => {
+      window.cancelAnimationFrame(firstFrame)
+      if (secondFrame) window.cancelAnimationFrame(secondFrame)
+    }
+  }, [appState])
 
   // Per-session Jotai atom setters for isolated updates
   // NOTE: No sessionsAtom - we don't store a Session[] array anywhere to prevent memory leaks
@@ -357,18 +417,14 @@ export default function App() {
   // Reset confirmation dialog
   const [showResetDialog, setShowResetDialog] = useState(false)
 
-  // Splash screen state - tracks when app is fully ready (all data loaded)
+  // Session hydration is background state. It must never gate project rendering.
   const [sessionsLoaded, setSessionsLoaded] = useState(false)
-  const [workspacesLoaded, setWorkspacesLoaded] = useState(false)
-  const [themeLoaded, setThemeLoaded] = useState(false)
-  const [llmConnectionsLoaded, setLlmConnectionsLoaded] = useState(false)
-  const [draftsLoaded, setDraftsLoaded] = useState(false)
-  const [notificationsLoaded, setNotificationsLoaded] = useState(false)
   const [sessionLoadError, setSessionLoadError] = useState<string | null>(null)
   const [splashExiting, setSplashExiting] = useState(false)
   const [splashHidden, setSplashHidden] = useState(false)
   const lastLoadedSessionsWorkspaceRef = useRef<string | null>(null)
   const workspaceSwitchInFlightRef = useRef<string | null>(null)
+  const workspaceSelectionGenerationRef = useRef(0)
 
   // Notifications enabled state (from app settings)
   const [notificationsEnabled, setNotificationsEnabled] = useState(true)
@@ -377,23 +433,18 @@ export default function App() {
   const sources = useAtomValue(sourcesAtom)
   const skills = useAtomValue(skillsAtom)
 
-  // Compute if app is fully ready (all data loaded)
-  const isFullyReady = isAppFullyReady({
+  const projectShellReady = isProjectShellReady({
     appState,
-    sessionsLoaded,
-    workspacesLoaded,
-    themeLoaded,
-    llmConnectionsLoaded,
-    draftsLoaded,
-    notificationsLoaded,
+    workspaceId: windowWorkspaceId,
   })
 
-  // Trigger splash exit animation when fully ready
+  // Background session/LLM/draft/notification hydration deliberately does not
+  // participate in this transition.
   useEffect(() => {
-    if (isFullyReady && !splashExiting) {
+    if (projectShellReady && !splashExiting) {
       setSplashExiting(true)
     }
-  }, [isFullyReady, splashExiting])
+  }, [projectShellReady, splashExiting])
 
   // Handler for when splash exit animation completes
   const handleSplashExitComplete = useCallback(() => {
@@ -500,7 +551,10 @@ export default function App() {
     }
   }, [clearStreamingState, replaceLoadedSession, syncSessionOptionsFromSession, reconcilePermissionModeState, store])
 
-  const loadSessionsFromServer = useCallback(async (workspaceIdForLoad = windowWorkspaceId): Promise<Session[]> => {
+  const loadSessionsFromServer = useCallback(async (
+    workspaceIdForLoad = windowWorkspaceId,
+    selectionGeneration = workspaceSelectionGenerationRef.current,
+  ): Promise<Session[]> => {
     const loadingWorkspaceId = workspaceIdForLoad
     setSessionLoadError(null)
 
@@ -510,6 +564,8 @@ export default function App() {
         SESSION_RPC_TIMEOUT_MS,
         'getSessions'
       )
+
+      if (selectionGeneration !== workspaceSelectionGenerationRef.current) return []
 
       // Initialize per-session atoms and metadata map
       // NOTE: No sessionsAtom used - sessions are only in per-session atoms
@@ -544,6 +600,7 @@ export default function App() {
 
       return loadedSessions
     } catch (err) {
+      if (selectionGeneration !== workspaceSelectionGenerationRef.current) return []
       console.error('[App] Failed to load sessions:', err)
       const transportState = await window.electronAPI.getTransportConnectionState().catch(() => null)
 
@@ -709,6 +766,7 @@ export default function App() {
   // Check auth state and get window's workspace ID on mount
   useEffect(() => {
     const initialize = async () => {
+      performance.mark('storyflow.startup-rpc:start')
       try {
         // Get this window's workspace ID (passed via URL query param from main process)
         const wsId = await withTimeout(
@@ -716,6 +774,7 @@ export default function App() {
           STARTUP_RPC_TIMEOUT_MS,
           'getWindowWorkspace'
         )
+        performance.mark('storyflow.startup-rpc:workspace')
         setWindowWorkspaceId(wsId)
 
         const needs = await withTimeout(
@@ -723,8 +782,10 @@ export default function App() {
           STARTUP_RPC_TIMEOUT_MS,
           'getSetupNeeds'
         )
+        performance.mark('storyflow.startup-rpc:setup')
         setSetupNeeds(needs)
         await loadClientAuthState()
+        performance.mark('storyflow.startup-rpc:client-auth')
 
         if (needs.isFullyConfigured) {
           const ws = await withTimeout(
@@ -732,11 +793,13 @@ export default function App() {
             STARTUP_RPC_TIMEOUT_MS,
             'getWorkspaces'
           )
+          performance.mark('storyflow.startup-rpc:workspaces')
           setWorkspaces(ws)
           setAppState(resolvePostSetupAppState({
             windowWorkspaceId: wsId,
             workspaceCount: ws.length,
           }))
+          performance.mark('storyflow.startup-rpc:state-selected')
         } else {
           // New user or needs setup - show onboarding
           setAppState('onboarding')
@@ -781,7 +844,6 @@ export default function App() {
       .catch((error) => {
         console.error('[App] Failed to load workspaces:', error)
       })
-      .finally(() => setWorkspacesLoaded(true))
 
     withTimeout(
       window.electronAPI.getNotificationsEnabled(),
@@ -790,7 +852,6 @@ export default function App() {
     )
       .then(setNotificationsEnabled)
       .catch(() => {})
-      .finally(() => setNotificationsLoaded(true))
 
     // Show actionable toast for missing system dependencies (Windows only)
     window.electronAPI.getSystemWarnings().then((warnings) => {
@@ -812,7 +873,7 @@ export default function App() {
       'listLlmConnectionsWithStatus'
     ).catch((error) => {
       console.error('[App] Failed to load LLM connections:', error)
-    }).finally(() => setLlmConnectionsLoaded(true))
+    })
     // Load persisted input drafts into ref (no re-render needed).
     // Attachment files are not read here — hydration happens lazily when the session
     // is opened so app startup isn't delayed by reading potentially large files.
@@ -829,7 +890,6 @@ export default function App() {
       .catch((error) => {
         console.error('[App] Failed to load drafts:', error)
       })
-      .finally(() => setDraftsLoaded(true))
     // Load app-level theme
     withTimeout(
       window.electronAPI.getAppTheme(),
@@ -840,7 +900,6 @@ export default function App() {
       .catch((error) => {
         console.error('[App] Failed to load app theme:', error)
       })
-      .finally(() => setThemeLoaded(true))
   }, [appState, refreshLlmConnections, t])
 
   // Load sessions for the active workspace
@@ -1061,6 +1120,9 @@ export default function App() {
           store.set(sessionAtomFamily(sessionId), updatedSession)
         } else {
           updateSessionDirect(sessionId, () => updatedSession)
+        }
+        if (isHandoff && !updatedSession.isProcessing) {
+          store.set(reconcileCurrentSessionTranscriptWorkingSetAtom)
         }
 
         // Handle side effects
@@ -1797,6 +1859,7 @@ export default function App() {
       // Open (or focus) the window for the selected workspace
       window.electronAPI.openWorkspace(workspaceId)
     } else {
+      const selectionGeneration = ++workspaceSelectionGenerationRef.current
       workspaceSwitchInFlightRef.current = workspaceId
 
       // Switch the renderer shell immediately so the first frame reflects the
@@ -1843,11 +1906,13 @@ export default function App() {
           WORKSPACE_SWITCH_RPC_TIMEOUT_MS,
           'switchWorkspace'
         )
-        await loadSessionsFromServer(workspaceId)
+        await loadSessionsFromServer(workspaceId, selectionGeneration)
+        if (selectionGeneration !== workspaceSelectionGenerationRef.current) return
         if (pendingCreatedWorkspaceRef.current?.id === workspaceId) {
           pendingCreatedWorkspaceRef.current = null
         }
       } catch (error) {
+        if (selectionGeneration !== workspaceSelectionGenerationRef.current) return
         console.error('[App] Failed to switch workspace:', error)
         setSessionLoadError(formatSessionLoadFailure(error))
         setSessionsLoaded(true)
@@ -1956,8 +2021,9 @@ export default function App() {
       storage.set(storage.KEYS.firstRunTourPending, true)
     }
     openNewProjectConversationAfterSwitchRef.current = workspace.id
-    await handleSelectWorkspace(workspace.id)
+    setPendingReadyRoute(routes.view.writing())
     setAppState('ready')
+    await handleSelectWorkspace(workspace.id)
   }, [handleWorkspaceCreated, handleSelectWorkspace])
 
   // Handle cancel during onboarding
@@ -1980,9 +2046,10 @@ export default function App() {
     setAppState('onboarding')
   }, [loadClientAuthState])
 
-  const handleOpenProjectFromHub = useCallback(async (workspaceId: string) => {
-    await handleSelectWorkspace(workspaceId)
+  const handleOpenProjectFromHub = useCallback((workspaceId: string) => {
+    setPendingReadyRoute(routes.view.writing())
     setAppState('ready')
+    void handleSelectWorkspace(workspaceId)
   }, [handleSelectWorkspace])
 
   const handleOpenProjectHub = useCallback(() => {
@@ -1991,6 +2058,7 @@ export default function App() {
 
   const handleReturnToActiveProject = useCallback(() => {
     if (windowWorkspaceId) {
+      setPendingReadyRoute(routes.view.writing())
       setAppState('ready')
     }
   }, [windowWorkspaceId])
@@ -2331,7 +2399,6 @@ export default function App() {
   // Ready state - main app with splash overlay during data loading
   return (
     <PlatformProvider actions={platformActions}>
-    <ShikiThemeProvider shikiTheme={shikiTheme}>
       <ActionRegistryProvider>
       <FocusProvider>
         <DismissibleLayerProvider>
@@ -2368,14 +2435,21 @@ export default function App() {
                 onRetry={handleReconnectTransport}
               />
             )}
-            <div className="flex-1 min-h-0">
-              {sessionLoadError ? (
-                <SessionLoadErrorScreen
+            <div className="flex min-h-0 flex-1 flex-col">
+              {sessionLoadError && (
+                <SessionLoadErrorBanner
                   message={sessionLoadError}
                   onRetry={() => { void loadSessionsFromServer() }}
                 />
-              ) : (
-                <AppShell
+              )}
+              <React.Suspense fallback={(
+                <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                  {t('writing.loadingWorkspace', '正在加载项目目录...')}
+                </div>
+              )}>
+                <div className="min-h-0 flex-1">
+                <WorkspaceSurface
+                  shikiTheme={shikiTheme}
                   contextValue={appShellContextValue}
                   defaultLayout={[20, 32, 48]}
                   menuNewChatTrigger={menuNewChatTrigger}
@@ -2383,7 +2457,8 @@ export default function App() {
                   onOpenProjectHub={handleOpenProjectHub}
                   onOpenAccount={() => handleOpenAccountCenter('ready')}
                 />
-              )}
+                </div>
+              </React.Suspense>
             </div>
             <ResetConfirmationDialog
               open={showResetDialog}
@@ -2394,13 +2469,15 @@ export default function App() {
 
           {/* File preview overlay — rendered by the link interceptor when a previewable file is clicked */}
           {linkInterceptor.previewState && (
-            <FilePreviewRenderer
-              state={linkInterceptor.previewState}
-              onClose={linkInterceptor.closePreview}
-              loadDataUrl={linkInterceptor.readFileDataUrl}
-              loadPdfData={linkInterceptor.readFileBinary}
-              isDark={isDark}
-            />
+            <React.Suspense fallback={null}>
+              <FilePreviewRenderer
+                state={linkInterceptor.previewState}
+                onClose={linkInterceptor.closePreview}
+                loadDataUrl={linkInterceptor.readFileDataUrl}
+                loadPdfData={linkInterceptor.readFileBinary}
+                isDark={isDark}
+              />
+            </React.Suspense>
           )}
         </NavigationProvider>
         </TooltipProvider>
@@ -2408,7 +2485,6 @@ export default function App() {
         </DismissibleLayerProvider>
       </FocusProvider>
       </ActionRegistryProvider>
-    </ShikiThemeProvider>
     </PlatformProvider>
   )
 }
@@ -2420,140 +2496,4 @@ export default function App() {
 function WindowCloseHandler() {
   useWindowCloseHandler()
   return null
-}
-
-/**
- * FilePreviewRenderer - Routes file preview state to the correct overlay component.
- *
- * Handles all preview types from the link interceptor:
- * - image → ImagePreviewOverlay (binary, loaded via data URL)
- * - pdf → PDFPreviewOverlay (binary, embedded via Chromium viewer)
- * - code/text → CodePreviewOverlay (syntax highlighted)
- * - markdown → DocumentFormattedMarkdownOverlay
- * - json → JSONPreviewOverlay
- *
- * File path badges with "Open" / "Reveal in {file manager}" menus are provided
- * automatically by PlatformContext — no per-overlay callback props needed.
- */
-function FilePreviewRenderer({
-  state,
-  onClose,
-  loadDataUrl,
-  loadPdfData,
-  isDark,
-}: {
-  state: FilePreviewState
-  onClose: () => void
-  loadDataUrl: (path: string) => Promise<string>
-  loadPdfData: (path: string) => Promise<Uint8Array>
-  isDark: boolean
-}) {
-  const theme = isDark ? 'dark' : 'light' as const
-
-  switch (state.type) {
-    case 'image':
-      return (
-        <ImagePreviewOverlay
-          isOpen
-          onClose={onClose}
-          filePath={state.filePath}
-          loadDataUrl={loadDataUrl}
-          theme={theme}
-        />
-      )
-
-    case 'pdf':
-      return (
-        <PDFPreviewOverlay
-          isOpen
-          onClose={onClose}
-          filePath={state.filePath}
-          loadPdfData={loadPdfData}
-          theme={theme}
-        />
-      )
-
-    case 'code':
-    case 'text':
-      return (
-        <CodePreviewOverlay
-          isOpen
-          onClose={onClose}
-          filePath={state.filePath}
-          content={state.content ?? ''}
-          language={state.type === 'code' ? state.language : 'plaintext'}
-          mode="read"
-          theme={theme}
-          error={state.error}
-        />
-      )
-
-    case 'markdown': {
-      // Show PLAN header for .md files in plans folder (handles both absolute and relative paths)
-      const isPlanFile =
-        (state.filePath.includes('/plans/') || state.filePath.startsWith('plans/')) &&
-        state.filePath.endsWith('.md')
-      return (
-        <DocumentFormattedMarkdownOverlay
-          isOpen
-          onClose={onClose}
-          content={state.content ?? ''}
-          filePath={state.filePath}
-          variant={isPlanFile ? 'plan' : 'response'}
-        />
-      )
-    }
-
-    case 'json': {
-      // JSONPreviewOverlay expects parsed data, not a raw string.
-      // @uiw/react-json-view crashes on null value, so guard against it.
-      let parsedData: unknown = null
-      try {
-        if (state.content) parsedData = JSON.parse(state.content)
-      } catch {
-        // If parsing fails, fall back to showing as code
-        return (
-          <CodePreviewOverlay
-            isOpen
-            onClose={onClose}
-            filePath={state.filePath}
-            content={state.content ?? ''}
-            language="json"
-            mode="read"
-            theme={theme}
-            error={state.error}
-          />
-        )
-      }
-      // If read failed and content is empty, show raw code overlay with the read error.
-      if ((!state.content || !state.content.trim()) && state.error) {
-        return (
-          <CodePreviewOverlay
-            isOpen
-            onClose={onClose}
-            filePath={state.filePath}
-            content={state.content ?? ''}
-            language="json"
-            mode="read"
-            theme={theme}
-            error={state.error}
-          />
-        )
-      }
-      return (
-        <JSONPreviewOverlay
-          isOpen
-          onClose={onClose}
-          filePath={state.filePath}
-          title={state.filePath.split('/').pop() ?? 'JSON'}
-          data={parsedData}
-          theme={theme}
-          error={state.error}
-        />
-      )
-    }
-
-    default:
-      return null
-  }
 }
