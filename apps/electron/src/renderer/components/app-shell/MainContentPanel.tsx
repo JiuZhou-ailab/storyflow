@@ -1,8 +1,8 @@
 /**
  * MainContentPanel - Right panel component for displaying content
  *
- * input: Navigation state, workspace-scoped session metadata, narrow action contexts, and entity selection atoms
- * output: Immediately selected writing chat plus content panels for sources, skills, settings, and automations
+ * input: Navigation state, workspace-scoped session metadata, primary writing-content readiness, narrow action contexts, and entity selection atoms
+ * output: Independently loaded writing chat plus content panels for sources, skills, settings, and automations
  * pos: Renderer content router inside the app-shell panel stack
  *
  * Renders content based on the unified NavigationState:
@@ -21,7 +21,7 @@
 
 import * as React from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useAtomValue, useStore } from 'jotai'
+import { useAtomValue } from 'jotai'
 import { useTranslation, Trans } from 'react-i18next'
 import { Panel } from './Panel'
 import { PanelHeader } from './PanelHeader'
@@ -57,6 +57,12 @@ import { SendResourceToWorkspaceDialog, type SendResourceType } from './SendReso
 import { resolveWritingSessionId } from './writing-session-selection'
 
 const LazyChatPage = React.lazy(() => import('@/pages/ChatPage'))
+
+/**
+ * Writing keeps its chat visible by default, but transcript work must not compete
+ * with the directory and first document that make the project usable.
+ */
+export const WritingPrimaryContentReadyContext = React.createContext(true)
 
 export interface MainContentPanelProps {
   /** Whether both sidebar and navigator are hidden by responsive compaction. */
@@ -330,7 +336,7 @@ export function MainContentPanel({
     )
   }
 
-  // Chats navigator - show chat, multi-select panel, or empty state.
+  // Session routes reuse the same chat surface for history/deep links.
   if (isSessionsNavigation(navState)) {
     // Multi-select mode: show batch actions panel
     if (isMultiSelectActive) {
@@ -379,29 +385,52 @@ function WritingSessionContent({
   remoteWorkspaceId?: string | null
 }) {
   const sessionIds = useAtomValue(sessionIdsAtom)
-  const store = useStore()
+  const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
   const { state, select } = useSessionSelection()
-  const defaultSessionId = resolveWritingSessionId({
-    sessionIds,
-    sessionMetaMap: store.get(sessionMetaMapAtom),
-    selectedSessionId: state.selected,
-    activeWorkspaceId,
-    remoteWorkspaceId,
-  })
+  const primaryContentReady = React.useContext(WritingPrimaryContentReadyContext)
+  const [deferredSessionId, setDeferredSessionId] = useState<string | null>(null)
+  const [activatedWorkspaceId, setActivatedWorkspaceId] = useState<string | null>(null)
+  const workspaceId = activeWorkspaceId ?? remoteWorkspaceId ?? null
 
+  const defaultSessionId = useMemo(() => {
+    return resolveWritingSessionId({
+      sessionIds,
+      sessionMetaMap,
+      selectedSessionId: state.selected,
+      activeWorkspaceId,
+      remoteWorkspaceId,
+    })
+  }, [activeWorkspaceId, remoteWorkspaceId, sessionIds, sessionMetaMap, state.selected])
+
+  // AppShell supplies a deterministic readiness signal after the directory and
+  // selected document commit. Once activated, chat remains mounted while the
+  // user switches files; only a project switch closes the latch.
   useEffect(() => {
-    if (defaultSessionId && state.selected !== defaultSessionId) {
-      select(defaultSessionId, sessionIds.indexOf(defaultSessionId))
+    if (!defaultSessionId) {
+      React.startTransition(() => {
+        setDeferredSessionId(null)
+        setActivatedWorkspaceId(null)
+      })
+      return
     }
-  }, [defaultSessionId, select, sessionIds, state.selected])
+    if (!primaryContentReady) return
 
-  if (!defaultSessionId) {
+    React.startTransition(() => {
+      setDeferredSessionId(defaultSessionId)
+      setActivatedWorkspaceId(workspaceId)
+      if (state.selected !== defaultSessionId) {
+        select(defaultSessionId, sessionIds.indexOf(defaultSessionId))
+      }
+    })
+  }, [defaultSessionId, primaryContentReady, select, sessionIds, state.selected, workspaceId])
+
+  if (!deferredSessionId || activatedWorkspaceId !== workspaceId) {
     return <ChatPanelPlaceholder empty={sessionIds.length === 0} />
   }
 
   return (
     <SessionRouteContent
-      sessionId={defaultSessionId}
+      sessionId={deferredSessionId}
       activeWorkspaceId={activeWorkspaceId}
       remoteWorkspaceId={remoteWorkspaceId}
     />
