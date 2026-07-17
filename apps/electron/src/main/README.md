@@ -21,6 +21,7 @@ Electron main-process shell: app startup, native windows, IPC registration, auth
 - `onboarding.ts` - Onboarding state helpers.
 - `platform.ts` - Electron implementation of shared platform services.
 - `power-manager.ts` - Power and sleep integration.
+- `quit-coordinator.ts` - Idempotent cleanup and updater-safe quit sequencing.
 - `runtime-paths.ts` - Packaged/dev runtime resource path resolver.
 - `shell-env.ts` - User shell environment loader.
 - `startup-state.ts` - Startup window creation policy.

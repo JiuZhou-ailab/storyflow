@@ -114,8 +114,14 @@ import {
 import { registerPiModelResolver } from '@craft-agent/shared/config'
 import { getPiModelsForAuthProvider, getAllPiModels } from '@craft-agent/shared/config'
 import { initNotificationService, initBadgeIcon, initInstanceBadge, updateBadgeCount } from './notifications'
-import { checkForUpdatesOnLaunch, setAutoUpdateEventSink, isUpdating } from './auto-update'
+import {
+  checkForUpdatesOnLaunch,
+  isUpdating,
+  setAutoUpdateEventSink,
+  setUpdateInstallPreparation,
+} from './auto-update'
 import { consumeLaunchUpdateCheckDecision } from './auto-update-launch-policy'
+import { createQuitCoordinator } from './quit-coordinator'
 import type { EventSink } from '@craft-agent/server-core/transport'
 import { validateGitBashPath, checkVCRedistInstalled } from '@craft-agent/server-core/services'
 import { shouldCreateWindowsAfterStartup } from './startup-state'
@@ -1192,59 +1198,41 @@ app.on('window-all-closed', () => {
   }
 })
 
-// Track if we're in the process of quitting (to avoid re-entry)
-let isQuitting = false
+const quitCoordinator = createQuitCoordinator({
+  isUpdating,
+  prepare: async () => {
+    // Ensure Cmd+Q/app quit bypasses layered window close interception (Cmd+W behavior).
+    windowManager?.setAppQuitting(true)
 
-// Save window state and clean up resources before quitting
-app.on('before-quit', async (event) => {
-  // Avoid re-entry when we call app.exit()
-  if (isQuitting) return
-  isQuitting = true
+    if (windowManager) {
+      // Get full window states (includes bounds, type, and query)
+      const windows = windowManager.getWindowStates()
+      // Get the focused window's workspace as last focused
+      const focusedWindow = BrowserWindow.getFocusedWindow()
+      let lastFocusedWorkspaceId: string | undefined
+      if (focusedWindow) {
+        lastFocusedWorkspaceId = windowManager.getWorkspaceForWindow(focusedWindow.webContents.id) ?? undefined
+      }
 
-  // Ensure Cmd+Q/app quit bypasses layered window close interception (Cmd+W behavior).
-  windowManager?.setAppQuitting(true)
-
-  if (windowManager) {
-    // Get full window states (includes bounds, type, and query)
-    const windows = windowManager.getWindowStates()
-    // Get the focused window's workspace as last focused
-    const focusedWindow = BrowserWindow.getFocusedWindow()
-    let lastFocusedWorkspaceId: string | undefined
-    if (focusedWindow) {
-      lastFocusedWorkspaceId = windowManager.getWorkspaceForWindow(focusedWindow.webContents.id) ?? undefined
+      saveWindowState({
+        windows,
+        lastFocusedWorkspaceId,
+      })
+      mainLog.info('Saved window state:', windows.length, 'windows')
     }
 
-    saveWindowState({
-      windows,
-      lastFocusedWorkspaceId,
-    })
-    mainLog.info('Saved window state:', windows.length, 'windows')
-  }
-
-  // Flush all pending session writes before quitting
-  if (sessionManager) {
-    // Prevent quit until sessions are flushed
-    event.preventDefault()
-    try {
-      await sessionManager.flushAllSessions()
-      mainLog.info('Flushed all pending session writes')
-    } catch (error) {
-      mainLog.error('Failed to flush sessions:', error)
-    }
-    // Clean up SessionManager resources (file watchers, timers, etc.)
-    sessionManager.cleanup()
-
-    // Clean up browser pane instances
-    if (browserPaneManager) {
-      browserPaneManager.destroyAll()
+    if (sessionManager) {
+      try {
+        await sessionManager.flushAllSessions()
+        mainLog.info('Flushed all pending session writes')
+      } catch (error) {
+        mainLog.error('Failed to flush sessions:', error)
+      }
+      sessionManager.cleanup()
     }
 
-    // Clean up OAuth flow store (stop periodic cleanup timer)
-    if (oauthFlowStore) {
-      oauthFlowStore.dispose()
-    }
-
-    // Stop all model refresh timers
+    browserPaneManager?.destroyAll()
+    oauthFlowStore?.dispose()
     getModelRefreshService().stopAll()
 
     // Stop messaging gateways so the WhatsApp worker subprocess exits cleanly.
@@ -1256,7 +1244,6 @@ app.on('before-quit', async (event) => {
       }
     }
 
-    // Clean up power manager (release power blocker)
     const { cleanup: cleanupPowerManager } = await import('./power-manager')
     cleanupPowerManager()
 
@@ -1264,20 +1251,20 @@ app.on('before-quit', async (event) => {
     await shutdownAnalytics()
 
     // Release the server lock file so the next launch doesn't see a stale PID.
-    // This must happen regardless of the exit path (normal quit or update quit).
     releaseServerLock()
+  },
+  exit: code => app.exit(code),
+})
 
-    // If update is in progress, let electron-updater handle the quit flow
-    // Force exit breaks the NSIS installer on Windows
-    if (isUpdating()) {
-      mainLog.info('Update in progress, letting electron-updater handle quit')
-      app.quit()
-      return
-    }
+// The updater must finish the same cleanup before it takes ownership of the
+// native quit flow. The coordinator makes this idempotent across all exit paths.
+setUpdateInstallPreparation(quitCoordinator.prepare)
 
-    // Now actually quit
-    app.exit(0)
+app.on('before-quit', async (event) => {
+  if (isUpdating()) {
+    mainLog.info('Update in progress, letting electron-updater handle quit')
   }
+  await quitCoordinator.handleBeforeQuit(event)
 })
 
 // Handle uncaught exceptions — forward to Sentry explicitly since registering

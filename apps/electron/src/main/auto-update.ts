@@ -1,3 +1,7 @@
+// input: Electron updater events, release manifests, and app quit preparation
+// output: Update discovery, download state, and native installer handoff
+// pos: Main-process update boundary between Storyflow and electron-updater
+
 /**
  * Auto-update module using electron-updater
  *
@@ -64,6 +68,9 @@ let updateInfo: UpdateInfo = {
 
 let eventSink: EventSink | null = null
 
+type UpdateInstallPreparation = () => Promise<void>
+let prepareForUpdateInstall: UpdateInstallPreparation = async () => {}
+
 // Flag to indicate update is in progress — used to prevent force exit during quitAndInstall
 let __isUpdating = false
 
@@ -80,6 +87,13 @@ export function isUpdating(): boolean {
  */
 export function setAutoUpdateEventSink(sink: EventSink): void {
   eventSink = sink
+}
+
+/**
+ * Register the application cleanup that must finish before quitAndInstall.
+ */
+export function setUpdateInstallPreparation(prepare: UpdateInstallPreparation): void {
+  prepareForUpdateInstall = prepare
 }
 
 /**
@@ -488,10 +502,15 @@ export async function installUpdate(): Promise<void> {
   // Clear dismissed version since user is explicitly updating
   clearDismissedUpdateVersion()
 
-  // Set flag to prevent force exit from breaking electron-updater's shutdown sequence
-  __isUpdating = true
-
   try {
+    // Finish Storyflow-owned cleanup while the app is still running. Once
+    // quitAndInstall starts, Electron must retain ownership of the quit flow.
+    await prepareForUpdateInstall()
+
+    // Set flag only after cleanup so before-quit can pass the native updater
+    // handoff through without intercepting or issuing a second quit.
+    __isUpdating = true
+
     // isSilent=false shows the installer UI on Windows if needed (fallback)
     // isForceRunAfter=true ensures the app relaunches after install
     autoUpdater.quitAndInstall(false, true)
