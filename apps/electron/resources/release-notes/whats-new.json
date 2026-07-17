@@ -1,7 +1,7 @@
 {
   "version": "0.9.39",
   "digest": "181f65e557206fb9fffcfd25e942b5c5b1b52ac90d2ca5761fa2c406bb8f3b55",
-  "generatedAt": "2026-07-17T06:02:10.023Z",
+  "generatedAt": "2026-07-17T06:08:41.656Z",
   "title": "What is new in v0.9.39",
   "summary": "这一版让写作项目更像一个稳定、可持续演进的工作空间：Skills、资料源、写作目录与会话各自守住边界，同时缩短项目打开和长时间编辑时的等待与资源占用。",
   "highlights": [
@@ -13,7 +13,7 @@
   "accentColor": "#af1d72",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 2,
-    "userVisibleCommitCount": 1
+    "commitCount": 4,
+    "userVisibleCommitCount": 2
   }
 }
