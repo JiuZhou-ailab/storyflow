@@ -1650,7 +1650,7 @@
   "writing.deleteFile.title": "Delete file",
   "writing.deleteFile.unsaved": "This file has unsaved edits. Save or switch files first.",
   "writing.emptySection": "Empty section",
-  "writing.emptySnapshotSaveBlocked": "An empty-content overwrite was blocked. Reopen the file before saving again.",
+  "writing.emptySnapshotSaveBlocked": "An empty overwrite was blocked. Reopen the file before saving again.",
   "writing.export.action": "Export",
   "writing.export.content": "Content",
   "writing.export.description": "Choose which project material to export. Files are written into an exports folder inside this workspace.",

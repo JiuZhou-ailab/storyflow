@@ -68,6 +68,11 @@ MVP 是一个 Worker：Static Assets + API，D1 保存身份、元数据与审�
 当前部署资源由 `apps/skills-market/wrangler.resources.example.toml` 描述。资源创建和正式
 发布必须在有效 Cloudflare 登录后执行，staging 与 production 使用独立 binding。
 
+客户端入口的可见性与 registry 身份是两个正交维度：固定 origin 属于供应链信任边界，
+不可由构建参数替换；入口只在 `VITE_STORYFLOW_SKILLS_MARKET_ENABLED=true` 时显示。正式
+服务的 DNS、健康检查、目录、不可变下载与受保护贡献路径未全部验收前，发布构建必须显式
+保持 `false`，避免把尚未部署的外部依赖暴露为可用产品能力。
+
 ## 后果
 
 优点：Pi 兼容、项目隔离、安装链复用、供应链可审计、方法目录不被宿主硬编码。

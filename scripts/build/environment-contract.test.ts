@@ -65,6 +65,18 @@ describe('environment contract', () => {
     expect(advertisedConfig).not.toContain('storyflow-feedback.d1095245867.workers.dev');
   });
 
+  test('keeps Skills Market discovery disabled until a deployed origin is configured', () => {
+    const workflow = readRepoFile('.github/workflows/release.yml');
+    const docs = readRepoFile('docs/environment.md');
+    const envExample = readRepoFile('.env.example');
+
+    expect(
+      workflow.match(/VITE_STORYFLOW_SKILLS_MARKET_ENABLED: "false"/g),
+    ).toHaveLength(2);
+    expect(envExample).toContain('VITE_STORYFLOW_SKILLS_MARKET_ENABLED=false');
+    expect(docs).toContain('Keep `VITE_STORYFLOW_SKILLS_MARKET_ENABLED=false`');
+  });
+
   test('keeps feedback Worker deployment on an explicit manual workflow', () => {
     const workflow = readRepoFile('.github/workflows/deploy-feedback-worker.yml');
 

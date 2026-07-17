@@ -1650,7 +1650,7 @@
   "writing.deleteFile.title": "Datei löschen",
   "writing.deleteFile.unsaved": "Diese Datei hat ungespeicherte Änderungen. Speichere oder wechsle zuerst die Datei.",
   "writing.emptySection": "Leerer Abschnitt",
-  "writing.emptySnapshotSaveBlocked": "Ein Überschreiben mit leerem Inhalt wurde verhindert. Öffne die Datei erneut, bevor du sie speicherst.",
+  "writing.emptySnapshotSaveBlocked": "Ein leeres Überschreiben wurde blockiert. Öffne die Datei erneut, bevor du wieder speicherst.",
   "writing.export.action": "Exportieren",
   "writing.export.content": "Inhalt",
   "writing.export.description": "Wähle aus, welche Projektmaterialien exportiert werden sollen. Dateien werden in einen exports-Ordner in diesem Workspace geschrieben.",

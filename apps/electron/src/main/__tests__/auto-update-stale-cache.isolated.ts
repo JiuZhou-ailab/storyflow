@@ -68,6 +68,10 @@ mock.module('../logger', () => ({
   mainLog: logger,
 }))
 
+mock.module('../menu', () => ({
+  rebuildMenu: mock(() => {}),
+}))
+
 mock.module('@craft-agent/shared/version', () => ({
   getAppVersion: () => '0.9.23',
 }))
@@ -82,6 +86,7 @@ const tempDirs: string[] = []
 afterEach(() => {
   isPackaged = true
   autoUpdater.checkForUpdates.mockClear()
+  autoUpdater.quitAndInstall.mockClear()
 
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop()
@@ -137,5 +142,22 @@ describe('auto-update stale cache handling', () => {
       downloadState: 'downloading',
       downloadProgress: 0,
     })
+  })
+
+  it('finishes application cleanup before handing off to the native updater', async () => {
+    const order: string[] = []
+    const {
+      installUpdate,
+      isUpdating,
+      setUpdateInstallPreparation,
+    } = await import('../auto-update')
+    setUpdateInstallPreparation(async () => { order.push('prepare') })
+    autoUpdater.quitAndInstall.mockImplementation(() => { order.push('install') })
+    autoUpdater.emit('update-downloaded', latestUpdateInfo)
+
+    await installUpdate()
+
+    expect(order).toEqual(['prepare', 'install'])
+    expect(isUpdating()).toBe(true)
   })
 })

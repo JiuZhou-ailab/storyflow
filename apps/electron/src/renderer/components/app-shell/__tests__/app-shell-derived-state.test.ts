@@ -15,12 +15,13 @@ describe('AppShell derived state', () => {
     expect(appShellSource).toContain('const sessionStatuses = React.useMemo(() => {')
   })
 
-  it('keeps workspace session derivation inside the SessionList selector', () => {
+  it('keeps workspace session derivation and bucketing scoped to SessionList', () => {
     expect(appShellSource).not.toContain('sessionMetaMapAtom')
     expect(sessionListSource).toContain('const workspaceSessionMetasAtom = useMemo(')
     expect(sessionListSource).toContain('selectAtom(')
     expect(sessionListSource).toContain('for (const meta of metaMap.values())')
-    expect(sessionListSource).toContain('sameSessionMetas')
+    expect(sessionListSource).toContain('sameSessionMetas,')
+    expect(sessionListSource).toContain('for (const item of workspaceItems)')
     expect(sessionListSource).not.toContain('Array.from(metaMap.values())')
   })
 

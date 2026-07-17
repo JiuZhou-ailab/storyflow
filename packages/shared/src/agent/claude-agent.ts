@@ -551,8 +551,8 @@ export class ClaudeAgent extends BaseAgent {
   public onUsageUpdate: ((update: { inputTokens: number; contextWindow?: number; cacheHitRate?: number }) => void) | null = null;
 
   constructor(config: ClaudeAgentConfig) {
-    // Resolve model: prioritize session model > config model (caller must provide via connection)
-    const model = config.session?.model ?? config.model!;
+    // Resolve model: prioritize session model > config model > application default
+    const model = config.session?.model ?? config.model ?? DEFAULT_MODEL;
 
     // Build BackendConfig for BaseAgent
     // Context window from registry (1M for Opus/Sonnet 4.6, 200K for others)

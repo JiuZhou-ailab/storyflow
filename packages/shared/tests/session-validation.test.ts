@@ -171,6 +171,10 @@ describe('getSessionPath - defense in depth', () => {
   const workspaceRoot = '/Users/test/.craft-agent/workspaces/test-workspace';
   const expectedSessionsDir = getWorkspaceSessionsPath(workspaceRoot);
 
+  it('uses the canonical workspace state directory', () => {
+    expect(expectedSessionsDir).toBe(`${workspaceRoot}/.craft-agent/sessions`);
+  });
+
   it('returns correct path for valid session IDs', () => {
     const result = getSessionPath(workspaceRoot, '260202-swift-river');
     expect(result).toBe(`${expectedSessionsDir}/260202-swift-river`);

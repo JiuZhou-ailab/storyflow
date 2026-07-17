@@ -56,6 +56,7 @@ STORYFLOW_R2_PUBLIC_BASE_URL=https://story-storage.zjding.com
 STORYFLOW_R2_LATEST_PREFIX=latest
 STORYFLOW_R2_RELEASE_PREFIX=releases
 STORYFLOW_PAGES_PROJECT_NAME=storyflow
+VITE_STORYFLOW_SKILLS_MARKET_ENABLED=false
 ```
 
 GitHub repository secrets:
@@ -88,6 +89,12 @@ email provider / verification policy.
 builds should point it at the first-party feedback Worker custom domain, not the
 `workers.dev` deployment URL, because installed desktop clients must not depend
 on Cloudflare's development hostname being reachable from the user's network.
+
+Keep `VITE_STORYFLOW_SKILLS_MARKET_ENABLED=false` until the Market custom domain,
+`/health`, `/api/skills`, and immutable bundle downloads are deployed and
+verified. Only the exact value `true` makes the discovery entry visible. The
+registry origin remains fixed in code so availability configuration cannot
+redirect the trusted install path.
 
 ## Auth Broker / Web UI Server
 

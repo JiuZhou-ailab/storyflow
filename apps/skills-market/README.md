@@ -47,3 +47,9 @@ deployment requirement, not a substitute for origin verification.
 The market never executes Skill code. MVP submissions accept text-only Skill
 packages and remain pending until an administrator publishes an immutable
 content-addressed version.
+
+The desktop discovery entry is a separate availability decision. Keep official
+builds on `VITE_STORYFLOW_SKILLS_MARKET_ENABLED=false` until authoritative DNS,
+`/health`, `/api/skills`, one immutable bundle download, D1 migrations, R2, and
+the protected contribution routes have all been verified in production. The
+registry origin is intentionally fixed and is not a build-time setting.
