@@ -1,19 +1,18 @@
 {
-  "version": "0.9.37",
-  "digest": "2ff69340e4db09e183546eb2c2e1332a7ddb96bcb467a7afb5109167cf2529d4",
-  "generatedAt": "2026-07-16T18:20:18.164Z",
-  "title": "What is new in v0.9.37",
-  "summary": "这一版重做了项目内的文件工作流，并把打开项目、显示对话和 Agent 后台初始化拆开。进入大型写作项目更轻，文件操作也更接近桌面 Finder。",
+  "version": "0.9.38",
+  "digest": "d7390b152a2685dd3b81f0ce1bc2a21a7adf285d938395d186ba9cb54181bd85",
+  "generatedAt": "2026-07-17T01:50:17.828Z",
+  "title": "What is new in v0.9.38",
+  "summary": "这一版修复了 macOS 自动更新没有真正安装的问题。点击「更新并重启」后，Storyflow 会先保存当前状态，再把退出和应用替换完整交给系统更新器。",
   "highlights": [
-    "原生项目目录 — 侧边栏直接显示工作区中的真实文件和文件夹，不再依赖固定分类或旧对话导航。",
-    "Finder 式文件操作 — 文件和文件夹支持拖动、右键重命名、删除、新建与导入，空目录也会正常显示。",
-    "快速定位单个文件 — 右键某一集或其他文件即可在 Finder、Explorer 或系统文件管理器中显示，方便单独复制和交付。",
-    "Agent 新文件自动出现 — Agent 创建、修改或移动文件后，目录会沿用现有增量刷新与审阅标记，不会打断当前编辑。"
+    "重新打开就是新版本：修复了更新包已经下载、应用却只退出而没有完成替换的问题，安装完成后会自动打开新版本。",
+    "安全保存后再安装：更新前会先完成会话、窗口状态和后台资源的清理，避免安装流程与应用退出互相打断。",
+    "项目加载性能保持不变：修复只调整退出与安装的交接，不会让对话历史或后台初始化重新阻塞项目打开。"
   ],
-  "accentColor": "#158441",
+  "accentColor": "#1d37af",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 324,
-    "userVisibleCommitCount": 0
+    "commitCount": 1,
+    "userVisibleCommitCount": 1
   }
 }
