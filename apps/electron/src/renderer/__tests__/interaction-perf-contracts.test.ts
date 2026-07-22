@@ -76,6 +76,18 @@ describe('interaction perf contracts (ADR-0001 CI proxy)', () => {
     expect(textHandlerSource).toContain('const shouldUpdateTimestamp = !event.isIntermediate')
   })
 
+  it('patches structure-stable stream deltas without full turn regroup (continuous axis)', () => {
+    // ChatDisplay must use the pure patch helper so stream frames do not re-walk
+    // completed history on every text_delta. Full regroup remains the fallback.
+    const chatDisplaySource = readFileSync(
+      new URL('../components/app-shell/ChatDisplay.tsx', import.meta.url),
+      'utf8',
+    )
+    expect(chatDisplaySource).toContain('tryPatchTurnsForStreamingContentChange')
+    expect(chatDisplaySource).toContain('turnsCacheRef')
+    expect(chatDisplaySource).toContain('groupMessagesByTurn(transcriptMessages)')
+  })
+
   it('applies text_delta via session atom only (skips metadata map rebuild)', () => {
     // Continuous streaming must not thrash SessionList meta subscribers every chunk.
     expect(appSource).toContain("event.type === 'text_delta'")
@@ -96,6 +108,8 @@ describe('interaction perf contracts (ADR-0001 CI proxy)', () => {
     expect(sessionsAtomSource).toContain('reconcileSessionTranscriptWorkingSetAtom')
     expect(sessionsAtomSource).toContain('unloadSessionTranscriptAtom')
     expect(sessionsAtomSource).toContain('SESSION_TRANSCRIPT_WORKING_SET_EXTRA')
+    // Main-process dual: renderer eviction best-effort releases idle main transcripts.
+    expect(sessionsAtomSource).toContain('releaseSessionMessages')
     expect(appShellSource).toContain('reconcileSessionTranscriptWorkingSet')
     expect(appShellSource).toContain('reconcileSessionTranscriptWorkingSet(openIds)')
   })
@@ -118,6 +132,18 @@ describe('interaction perf contracts (ADR-0001 CI proxy)', () => {
     // Loading overlay must not unmount the editor (remount = ProseMirror leak surface).
     expect(editorPanelSource).toContain('Keep the editor mounted during loads')
     expect(editorPanelSource).toContain('editable={!loading}')
+  })
+
+  it('does not rewrite panel stack for same-route writing navigations (chapter switch)', () => {
+    // handleSelectNovelFile re-calls navigate('writing') on every chapter click.
+    // updateFocusedPanelRouteAtom must no-op when focused route is already writing,
+    // otherwise panelStack identity thrash re-renders AppShell and syncs URL.
+    const panelStackSource = readFileSync(
+      new URL('../atoms/panel-stack.ts', import.meta.url),
+      'utf8',
+    )
+    expect(panelStackSource).toContain('if (focused.route === route)')
+    expect(panelStackSource).toContain('// Chapter switches (and other in-surface actions) re-call navigate')
   })
 
   it('starts session-switch timing for every ChatPage entry path', () => {

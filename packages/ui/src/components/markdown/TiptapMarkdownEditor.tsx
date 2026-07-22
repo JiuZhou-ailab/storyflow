@@ -220,13 +220,23 @@ function forceShikiDecorations(editor: any) {
 }
 
 function scheduleShikiRefresh(editor: any) {
-  forceShikiDecorations(editor)
-
-  for (const delay of [80, 220, 450]) {
-    setTimeout(() => {
-      forceShikiDecorations(editor)
-    }, delay)
+  // Chapter switches already pay for markdown setContent on the critical path.
+  // Force-decorating immediately + three timed passes competes with first paint
+  // after project entry. Defer the first pass to idle/rAF; keep one short retry
+  // for async highlighter readiness without stacking 3 timer storms.
+  const run = () => {
+    if (!editor?.isDestroyed) forceShikiDecorations(editor)
   }
+
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(run, { timeout: 120 })
+  } else {
+    requestAnimationFrame(() => {
+      setTimeout(run, 0)
+    })
+  }
+
+  setTimeout(run, 220)
 }
 
 const INLINE_DOUBLE_DOLLAR_REGEX = /\$\$([^\n]+?)\$\$/g

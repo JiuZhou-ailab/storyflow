@@ -53,6 +53,7 @@ import {
   TurnCard,
   UserMessageBubble,
   groupMessagesByTurn,
+  tryPatchTurnsForStreamingContentChange,
   formatTurnAsMarkdown,
   formatActivityAsMarkdown,
   getAssistantTurnUiKey,
@@ -692,11 +693,45 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const transcriptMessages = partitionedMessages.transcriptMessages
   const latestUserMessage = partitionedMessages.latestUserMessage
   const pendingFollowUpAnnotations = partitionedMessages.pendingFollowUpAnnotations
-  // Memoize turn grouping - avoids O(n) iteration on every render/keystroke
+  // Continuous stream: structure-stable text_delta patches the last turn only.
+  // Full groupMessagesByTurn stays the source of truth for structure changes.
+  const turnsCacheRef = React.useRef<{
+    sessionId: string
+    messages: readonly Message[]
+    turns: Turn[]
+  } | null>(null)
+  const sessionId = session?.id
   const allTurns = React.useMemo(() => {
-    if (!session) return []
-    return groupMessagesByTurn(transcriptMessages)
-  }, [session?.id, transcriptMessages])
+    if (!sessionId) {
+      turnsCacheRef.current = null
+      return []
+    }
+
+    const cache = turnsCacheRef.current
+    if (cache && cache.sessionId === sessionId) {
+      const patched = tryPatchTurnsForStreamingContentChange(
+        cache.messages,
+        transcriptMessages,
+        cache.turns,
+      )
+      if (patched) {
+        turnsCacheRef.current = {
+          sessionId,
+          messages: transcriptMessages,
+          turns: patched,
+        }
+        return patched
+      }
+    }
+
+    const turns = groupMessagesByTurn(transcriptMessages)
+    turnsCacheRef.current = {
+      sessionId,
+      messages: transcriptMessages,
+      turns,
+    }
+    return turns
+  }, [sessionId, transcriptMessages])
   // Ref to track total turn count for scroll handlers
   const totalTurnCountRef = React.useRef(0)
   totalTurnCountRef.current = allTurns.length

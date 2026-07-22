@@ -123,6 +123,7 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.sessions.CREATE,
   RPC_CHANNELS.sessions.DELETE,
   RPC_CHANNELS.sessions.GET_MESSAGES,
+  RPC_CHANNELS.sessions.RELEASE_MESSAGES,
   RPC_CHANNELS.sessions.SEND_MESSAGE,
   RPC_CHANNELS.sessions.REWRITE_NOVEL_SELECTION,
   RPC_CHANNELS.sessions.CANCEL,
@@ -198,6 +199,16 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
     const session = await sessionManager.getSession(sessionId)
     end()
     return session
+  })
+
+  // Drop idle in-memory transcripts so main heap matches renderer working set.
+  server.handle(RPC_CHANNELS.sessions.RELEASE_MESSAGES, async (_ctx, sessionId: string) => {
+    const end = perf.start('rpc.releaseSessionMessages')
+    try {
+      return await sessionManager.releaseIdleSessionMessages(sessionId)
+    } finally {
+      end()
+    }
   })
 
   // Create a new session

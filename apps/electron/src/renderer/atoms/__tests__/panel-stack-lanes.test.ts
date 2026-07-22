@@ -48,6 +48,20 @@ describe('panel stack single-lane behavior', () => {
     expect(stack.some((p) => p.route === 'allSessions/session/s1')).toBe(true)
   })
 
+  it('does not rewrite the panel stack when the focused route is unchanged', () => {
+    const store = createStore()
+    store.set(pushPanelAtom, { route: 'writing' })
+    const before = getStack(store)
+    const beforeEntry = before[0]
+
+    store.set(updateFocusedPanelRouteAtom, 'writing')
+
+    const after = getStack(store)
+    expect(after).toBe(before)
+    expect(after[0]).toBe(beforeEntry)
+    expect(after[0]?.route).toBe('writing')
+  })
+
   it('pushPanel afterIndex inserts immediately after the given panel', () => {
     const store = createStore()
 

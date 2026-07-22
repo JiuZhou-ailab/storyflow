@@ -679,6 +679,131 @@ export function groupMessagesByTurn(messages: Message[]): Turn[] {
 }
 
 /**
+ * Continuous-stream fast path: when only the last assistant message content grows
+ * (typical text_delta), patch that turn instead of regrouping the full transcript.
+ *
+ * Returns null when structure may have changed — caller must run groupMessagesByTurn.
+ *
+ * First-principles: stream frame cost should not grow with completed history length.
+ */
+export function tryPatchTurnsForStreamingContentChange(
+  previousMessages: readonly Message[],
+  nextMessages: readonly Message[],
+  previousTurns: readonly Turn[],
+): Turn[] | null {
+  const length = nextMessages.length
+  if (length === 0 || length !== previousMessages.length || previousTurns.length === 0) {
+    return null
+  }
+
+  const lastIndex = length - 1
+  const prevLast = previousMessages[lastIndex]
+  const nextLast = nextMessages[lastIndex]
+  if (!prevLast || !nextLast) return null
+  if (prevLast.id !== nextLast.id || nextLast.role !== 'assistant' || prevLast.role !== 'assistant') {
+    return null
+  }
+
+  // Lifecycle flags changing means intermediate↔response / complete transitions.
+  if (
+    prevLast.isStreaming !== nextLast.isStreaming
+    || prevLast.isPending !== nextLast.isPending
+    || prevLast.isIntermediate !== nextLast.isIntermediate
+    || prevLast.turnId !== nextLast.turnId
+    || prevLast.parentToolUseId !== nextLast.parentToolUseId
+  ) {
+    return null
+  }
+
+  // Still actively streaming (pending intermediate or final response stream).
+  if (!nextLast.isStreaming && !nextLast.isPending) return null
+
+  // Prefix must be structure-stable (same ids/roles/content). Reference equality short-circuits.
+  for (let i = 0; i < lastIndex; i++) {
+    const prev = previousMessages[i]
+    const next = nextMessages[i]
+    if (!prev || !next) return null
+    if (prev === next) continue
+    if (
+      prev.id !== next.id
+      || prev.role !== next.role
+      || prev.content !== next.content
+      || prev.isStreaming !== next.isStreaming
+      || prev.isPending !== next.isPending
+      || prev.isIntermediate !== next.isIntermediate
+      || prev.toolStatus !== next.toolStatus
+      || prev.toolUseId !== next.toolUseId
+      || prev.turnId !== next.turnId
+    ) {
+      return null
+    }
+  }
+
+  if (prevLast.content === nextLast.content) {
+    // No content change — nothing to patch; reuse turns only when prefix was stable.
+    return previousTurns as Turn[]
+  }
+
+  let turnIndex = -1
+  for (let i = previousTurns.length - 1; i >= 0; i--) {
+    if (previousTurns[i]?.type === 'assistant') {
+      turnIndex = i
+      break
+    }
+  }
+  if (turnIndex < 0) return null
+
+  const turn = previousTurns[turnIndex] as AssistantTurn
+  const nextTurn: AssistantTurn = {
+    ...turn,
+    isStreaming: true,
+    isComplete: false,
+  }
+
+  const treatAsIntermediate = !!(nextLast.isIntermediate || nextLast.isPending)
+  if (treatAsIntermediate) {
+    const activities = turn.activities.slice()
+    let activityIndex = -1
+    for (let i = activities.length - 1; i >= 0; i--) {
+      if (activities[i]?.id === nextLast.id) {
+        activityIndex = i
+        break
+      }
+    }
+    if (activityIndex < 0) return null
+    const existing = activities[activityIndex]!
+    activities[activityIndex] = {
+      ...existing,
+      content: nextLast.content,
+      status: nextLast.isPending ? 'running' : existing.status,
+    }
+    nextTurn.activities = activities
+  } else if (turn.response && (!turn.response.messageId || turn.response.messageId === nextLast.id)) {
+    nextTurn.response = {
+      ...turn.response,
+      text: nextLast.content,
+      isStreaming: !!nextLast.isStreaming,
+      messageId: nextLast.id,
+    }
+  } else if (!turn.response) {
+    nextTurn.response = {
+      text: nextLast.content,
+      isStreaming: !!nextLast.isStreaming,
+      streamStartTime: nextLast.isStreaming ? nextLast.timestamp : undefined,
+      messageId: nextLast.id,
+      canBranch: nextLast.canBranch ?? !!nextLast.turnId,
+      annotations: nextLast.annotations,
+    }
+  } else {
+    return null
+  }
+
+  const nextTurns = previousTurns.slice()
+  nextTurns[turnIndex] = nextTurn
+  return nextTurns
+}
+
+/**
  * Get the primary intent for a turn (first available intent from activities)
  */
 export function getTurnIntent(turn: AssistantTurn): string | undefined {

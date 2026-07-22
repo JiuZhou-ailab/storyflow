@@ -2397,6 +2397,41 @@ export class SessionManager implements ISessionManager {
   }
 
   /**
+   * Drop an idle session's in-memory transcript so main-process heap tracks the
+   * same working-set idea as the renderer (open pins + small recency buffer).
+   *
+   * Safety:
+   * - never touches processing / queued sessions
+   * - flushes pending debounced persists first so disk is not later overwritten
+   *   from a cleared in-memory array via cold hydrate races
+   * - next getSession/sendMessage re-hydrates via ensureMessagesLoaded
+   */
+  async releaseIdleSessionMessages(sessionId: string): Promise<boolean> {
+    const managed = this.sessions.get(sessionId)
+    if (!managed) return false
+    if (!managed.messagesLoaded) return true
+    if (managed.isProcessing) return false
+    if (managed.messageQueue.length > 0) return false
+    if (managed.agent?.isProcessing?.()) return false
+    if (this.messageLoadingPromises.has(sessionId)) return false
+
+    // Ensure any debounced snapshot is on disk before dropping memory.
+    await this.flushSession(sessionId)
+
+    // Re-check after await — a send may have started while we flushed.
+    if (managed.isProcessing || managed.messageQueue.length > 0) return false
+    if (managed.agent?.isProcessing?.()) return false
+    if (!managed.messagesLoaded) return true
+
+    const dropped = managed.messages.length
+    managed.messages = []
+    managed.messagesLoaded = false
+    this.messageLoadingPromises.delete(sessionId)
+    sessionLog.debug(`Released ${dropped} in-memory messages for idle session ${sessionId}`)
+    return true
+  }
+
+  /**
    * Enrich loaded runtime messages with branchability derived from provider sidecars.
    * This metadata is intentionally not persisted in session.jsonl; the sidecar remains
    * the source of truth for provider-native fork anchors.

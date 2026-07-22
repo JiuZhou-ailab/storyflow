@@ -323,6 +323,8 @@ export interface ElectronAPI {
   getUnreadSummary(): Promise<UnreadSummary>
   markAllSessionsRead(workspaceId: string): Promise<void>
   getSessionMessages(sessionId: string): Promise<Session | null>
+  /** Best-effort: drop idle main-process transcript cache (mirrors renderer working set). */
+  releaseSessionMessages(sessionId: string): Promise<boolean>
   createSession(workspaceId: string, options?: CreateSessionOptions): Promise<Session>
   deleteSession(sessionId: string): Promise<void>
   sendMessage(sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachmentType[], options?: SendMessageOptions): Promise<void>

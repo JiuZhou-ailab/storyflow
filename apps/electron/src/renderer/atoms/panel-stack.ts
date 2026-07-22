@@ -285,6 +285,16 @@ export const updateFocusedPanelRouteAtom = atom(
     const focusedId = get(focusedPanelIdAtom)
     const focused = stack.find(p => p.id === focusedId) ?? stack[0]
 
+    // Chapter switches (and other in-surface actions) re-call navigate('writing').
+    // Rewriting the stack for an identical focused route thrash-re-renders AppShell
+    // and forces replaceState URL sync — the main jank source on early project entry.
+    if (focused.route === route) {
+      if (focusedId !== focused.id) {
+        set(focusedPanelIdAtom, focused.id)
+      }
+      return
+    }
+
     const updated = stack.map((p) =>
       p.id === focused.id
         ? { ...createEntry(route, p.proportion, p.id), proportion: p.proportion }

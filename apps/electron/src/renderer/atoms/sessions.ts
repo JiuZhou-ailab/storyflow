@@ -858,6 +858,8 @@ export function resolveSessionTranscriptWorkingSet(
 /**
  * Drop a session's full transcript while preserving metadata and session shell.
  * Skips sessions that are actively processing (streaming is source of truth there).
+ * Best-effort asks main to release the matching idle transcript cache so both
+ * sides stay on the same working-set model.
  */
 export const unloadSessionTranscriptAtom = atom(
   null,
@@ -877,6 +879,12 @@ export const unloadSessionTranscriptAtom = atom(
     }
 
     sessionLoadingPromises.delete(sessionId)
+
+    // Fire-and-forget: main may refuse (processing/queue). Renderer already dropped.
+    if (typeof window !== 'undefined') {
+      void window.electronAPI?.releaseSessionMessages?.(sessionId)?.catch(() => {})
+    }
+
     return true
   },
 )

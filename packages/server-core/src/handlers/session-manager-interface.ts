@@ -47,6 +47,8 @@ export interface ISessionManager {
 
   getSessions(workspaceId?: string): Session[]
   getSession(sessionId: string): Promise<Session | null>
+  /** Drop idle in-memory transcripts (renderer working-set dual). */
+  releaseIdleSessionMessages(sessionId: string): Promise<boolean>
   createSession(workspaceId: string, options?: CreateSessionOptions): Promise<Session>
   deleteSession(sessionId: string): Promise<void>
 
