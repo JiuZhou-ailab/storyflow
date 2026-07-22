@@ -4187,7 +4187,13 @@ function AppShellContent({
       >
         {showActivityRail ? (
           <ActivityRail
+            surface="room"
             activeItem={activeActivityRailItem}
+            workspaces={workspaces}
+            activeWorkspaceId={activeWorkspaceId}
+            onSelectProject={(workspaceId) => {
+              void onSelectWorkspace?.(workspaceId)
+            }}
             onOpenProjectHub={onOpenProjectHub}
             onOpenWritingWorkspace={handleWritingWorkspaceClick}
             onOpenSearch={() => setGlobalSearchOpen(true)}

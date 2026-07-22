@@ -46,7 +46,7 @@ export function ProjectBreadcrumb({
           <TooltipTrigger asChild>
             <button
               type="button"
-              aria-label="返回项目中心"
+              aria-label="退出到作品库"
               onClick={onOpenProjectHub}
               className={cn(
                 'inline-flex h-[28px] shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium',
@@ -55,15 +55,15 @@ export function ProjectBreadcrumb({
               )}
             >
               <LayoutGrid className="h-3.5 w-3.5" />
-              <span className={cn('whitespace-nowrap', isCompact && 'sr-only')}>项目中心</span>
+              <span className={cn('whitespace-nowrap', isCompact && 'sr-only')}>作品库</span>
             </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">返回项目中心</TooltipContent>
+          <TooltipContent side="bottom">退出到作品库</TooltipContent>
         </Tooltip>
       ) : (
         <div className="inline-flex h-[28px] shrink-0 items-center gap-1.5 px-2 text-xs font-medium text-muted-foreground">
           <LayoutGrid className="h-3.5 w-3.5" />
-          <span className={cn('whitespace-nowrap', isCompact && 'sr-only')}>项目中心</span>
+          <span className={cn('whitespace-nowrap', isCompact && 'sr-only')}>作品库</span>
         </div>
       )}
 

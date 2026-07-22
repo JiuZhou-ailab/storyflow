@@ -2304,10 +2304,9 @@ function AppContent() {
         <TooltipProvider delayDuration={0}>
           <WindowCloseHandler />
           <ActivityRailFrame
+            surface="library"
             activeItem="account"
             onOpenProjectHub={handleOpenProjectHub}
-            onOpenWritingWorkspace={windowWorkspaceId ? handleReturnToActiveProject : undefined}
-            onOpenSearch={windowWorkspaceId ? handleOpenActiveProjectSearch : undefined}
             onOpenSettings={windowWorkspaceId ? () => handleOpenActiveProjectRoute(routes.view.settings('app')) : undefined}
             onOpenAccount={() => handleOpenAccountCenter(accountReturnState)}
           >
@@ -2336,10 +2335,9 @@ function AppContent() {
             <ProjectHubNavigationActions onReturn={handleReturnToActiveProject} />
           ) : null}
           <ActivityRailFrame
+            surface="library"
             activeItem="project-hub"
             onOpenProjectHub={handleOpenProjectHub}
-            onOpenWritingWorkspace={windowWorkspaceId ? () => handleOpenActiveProjectRoute(routes.view.writing()) : undefined}
-            onOpenSearch={windowWorkspaceId ? handleOpenActiveProjectSearch : undefined}
             onOpenSettings={windowWorkspaceId ? () => handleOpenActiveProjectRoute(routes.view.settings('app')) : undefined}
             onOpenAccount={() => handleOpenAccountCenter('project-hub')}
           >
@@ -2398,7 +2396,7 @@ function AppContent() {
           <WindowCloseHandler />
           <WorkspaceCreationScreen
             canClose={true}
-            closeLabel="返回项目中心"
+            closeLabel="返回作品库"
             initialStep={workspaceCreationInitialStep}
             onClose={handleWorkspaceCreationClose}
             onWorkspaceCreated={handleProjectHubWorkspaceCreated}
@@ -2463,6 +2461,7 @@ function AppContent() {
               )}>
                 <div className="min-h-0 flex-1">
                 <WorkspaceSurface
+                  key={windowWorkspaceId ?? 'no-workspace'}
                   shikiTheme={shikiTheme}
                   contextValue={appShellContextValue}
                   defaultLayout={[20, 32, 48]}

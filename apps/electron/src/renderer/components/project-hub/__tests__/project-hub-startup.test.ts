@@ -105,7 +105,7 @@ describe('ProjectHub startup integration', () => {
   it('allows returning from project creation when launched from an existing project hub', () => {
     expect(appSource).toContain('handleWorkspaceCreationClose')
     expect(appSource).toContain('canClose={true}')
-    expect(appSource).toContain('closeLabel="返回项目中心"')
+    expect(appSource).toContain('closeLabel="返回作品库"')
     expect(appSource).toContain("setAppState('project-hub')")
   })
 

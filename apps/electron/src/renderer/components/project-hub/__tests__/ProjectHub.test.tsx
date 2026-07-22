@@ -66,8 +66,8 @@ describe('ProjectHub', () => {
     expect(html).toContain('data-testid="project-hub-toolbar"')
     expect(html).toContain('data-testid="project-hub-operations"')
     expect(html).toContain('data-testid="project-hub-empty-state"')
-    expect(html).toContain('项目管理')
-    expect(html).toContain('暂无项目')
+    expect(html).toContain('作品库')
+    expect(html).toContain('暂无作品')
     expect(html).toContain('新建项目')
     expect(html).toContain('导入')
     expect(html).toContain('远端')
@@ -89,7 +89,7 @@ describe('ProjectHub', () => {
     )
 
     expect(html).toContain('data-testid="project-hub-gallery"')
-    expect(html).toContain('aria-label="项目画廊"')
+    expect(html).toContain('aria-label="作品画廊"')
     expect(html).toContain('黎明手稿')
     expect(html).toContain('dawn')
     expect(html).toContain('长篇写作')
@@ -101,7 +101,7 @@ describe('ProjectHub', () => {
     expect(html).toContain('远端')
     expect(html).toContain('剧本')
     expect(html).toContain('打开')
-    expect(html).toContain('继续写作：黎明手稿')
+    expect(html).toContain('进入项目：黎明手稿')
     expect(html).toContain('管理项目 黎明手稿')
     expect(html).not.toContain('novel.claude-book')
     expect(html).not.toContain('删除项目')
@@ -118,7 +118,7 @@ describe('ProjectHub', () => {
       />
     )
 
-    expect(html).toContain('返回：黎明手稿 · 数据源')
+    expect(html).toContain('返回房间：黎明手稿 · 数据源')
     expect(html).not.toContain('继续写作：黎明手稿')
   })
 

@@ -114,7 +114,7 @@ export function ProjectHub({
             </div>
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
-                <h1 className="truncate text-[20px] font-semibold leading-7 text-foreground">项目管理</h1>
+                <h1 className="truncate text-[20px] font-semibold leading-7 text-foreground">作品库</h1>
               </div>
             </div>
           </div>
@@ -130,8 +130,8 @@ export function ProjectHub({
                 {returnDestination ? <ArrowLeft className="size-4" /> : <BookOpen className="size-4" />}
                 <span className="truncate">
                   {returnDestination
-                    ? `返回：${activeProject?.name ?? '当前项目'} · ${returnDestination}`
-                    : `继续写作：${activeProject?.name ?? '当前项目'}`}
+                    ? `返回房间：${activeProject?.name ?? '当前项目'} · ${returnDestination}`
+                    : `进入项目：${activeProject?.name ?? '当前项目'}`}
                 </span>
               </Button>
             )}
@@ -168,7 +168,7 @@ export function ProjectHub({
           ) : (
             <div
               data-testid="project-hub-gallery"
-              aria-label="项目画廊"
+              aria-label="作品画廊"
               className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4"
             >
               {visibleProjects.map((project) => (
@@ -297,9 +297,9 @@ function ProjectHubEmptyState({ onCreateProject }: Pick<ProjectHubCallbacks, 'on
         <div className="mx-auto mb-4 flex size-11 items-center justify-center rounded-lg bg-background text-foreground shadow-minimal">
           <FolderOpen className="size-5" />
         </div>
-        <h2 className="text-[18px] font-semibold leading-7 text-foreground">暂无项目</h2>
+        <h2 className="text-[18px] font-semibold leading-7 text-foreground">暂无作品</h2>
         <p className="mt-2 text-[13px] leading-6 text-muted-foreground">
-          创建或导入项目后，会在这里形成你的项目画廊。
+          创建或导入项目后，会在作品库中以卡片形式列出，再进入房间写作。
         </p>
         <Button type="button" className="mt-5 h-9 rounded-lg px-3" onClick={onCreateProject}>
           <Plus className="size-4" />

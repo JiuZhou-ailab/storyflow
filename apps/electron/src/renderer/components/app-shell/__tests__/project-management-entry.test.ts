@@ -1,6 +1,6 @@
 // input: AppShell, TopBar, ActivityRail, and WorkspaceSwitcher source
-// output: Static regression coverage for the global project-management entry point and shell navigation IA
-// pos: Keeps ProjectHub discoverable after a project has already been opened
+// output: Static regression coverage for rail project switcher + manage hub entry
+// pos: Keeps project switching on the original rail slot via a list popover
 
 import { describe, expect, it } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
@@ -17,15 +17,36 @@ const activityRailFrameSource = activityRailFrameExists ? readFileSync(activityR
 const activityRailPath = fileURLToPath(new URL('../ActivityRail.tsx', import.meta.url))
 const activityRailExists = existsSync(activityRailPath)
 const activityRailSource = activityRailExists ? readFileSync(activityRailPath, 'utf8') : ''
+const projectSwitcherPath = fileURLToPath(new URL('../ProjectSwitcherPopover.tsx', import.meta.url))
+const projectSwitcherExists = existsSync(projectSwitcherPath)
+const projectSwitcherSource = projectSwitcherExists ? readFileSync(projectSwitcherPath, 'utf8') : ''
 
 describe('project management entry', () => {
-  it('routes ProjectHub through the activity rail instead of the window title bar', () => {
+  it('keeps the project control on the original top rail slot', () => {
     expect(appSource).toContain('handleOpenProjectHub')
     expect(appSource).toContain("setAppState('project-hub')")
     expect(appShellSource).toContain('onOpenProjectHub')
     expect(appShellSource).toContain('onOpenProjectHub={onOpenProjectHub}')
-    expect(activityRailSource).toContain('label="项目中心"')
+    expect(activityRailSource).toContain('data-tutorial="activity-project-hub"')
+    expect(activityRailSource).toContain("'项目与工作区'")
+    expect(activityRailSource).toContain('aria-label="项目"')
     expect(topBarSource).not.toContain('onOpenProjectHub')
+  })
+
+  it('opens a column project list popover instead of treating hub as a peer writing surface', () => {
+    expect(projectSwitcherExists).toBe(true)
+    expect(activityRailSource).toContain('<ProjectSwitcherPopover')
+    expect(activityRailSource).toContain('onSelectProject={onSelectProject}')
+    expect(activityRailSource).toContain('onManageProjects={onOpenProjectHub}')
+    expect(activityRailSource).not.toContain('退出到作品库')
+    expect(activityRailSource).not.toContain('activity-exit-library')
+    expect(projectSwitcherSource).toContain('data-testid="project-switcher-popover"')
+    expect(projectSwitcherSource).toContain('切换项目')
+    expect(projectSwitcherSource).toContain('管理全部项目')
+    expect(projectSwitcherSource).toContain('role="listbox"')
+    expect(appShellSource).toContain('onSelectProject={(workspaceId) => {')
+    expect(appShellSource).toContain('void onSelectWorkspace?.(workspaceId)')
+    expect(appShellSource).toContain('workspaces={workspaces}')
   })
 
   it('uses the title bar only for window chrome and current project context', () => {
@@ -58,43 +79,43 @@ describe('project management entry', () => {
     expect(panelHeaderSource).not.toContain('translate-y-[1px]')
   })
 
-  it('moves primary project navigation into a VS Code style icon rail', () => {
+  it('keeps room rail work items: project · writing · search', () => {
     expect(activityRailExists).toBe(true)
     expect(appShellSource).toContain('import { ActivityRail }')
     expect(appShellSource).toContain('<ActivityRail')
-    expect(appShellSource).toContain('onOpenProjectHub={onOpenProjectHub}')
+    expect(appShellSource).toContain('surface="room"')
     expect(appShellSource).toContain('onOpenWritingWorkspace={handleWritingWorkspaceClick}')
     expect(appShellSource).not.toContain('onOpenConversations=')
     expect(appShellSource).not.toContain('onOpenSources={handleSourcesClick}')
     expect(appShellSource).not.toContain('onOpenSkills={handleSkillsClick}')
     expect(appShellSource).toContain("onOpenSettings={() => handleSettingsClick('app')}")
     expect(activityRailSource).toContain('data-testid="activity-rail"')
-    expect(activityRailSource).toContain('aria-label="主导航"')
-    expect(activityRailSource).toContain('项目中心')
-    expect(activityRailSource).toContain('写作工作区')
-    expect(activityRailSource).not.toContain('activity-conversations')
+    expect(activityRailSource).toContain('label="写作工作区"')
+    expect(activityRailSource).toContain('label="搜索"')
     expect(activityRailSource).not.toContain('label="数据源"')
     expect(activityRailSource).not.toContain('label="技能"')
-    expect(activityRailSource).not.toContain('dataTutorial="activity-sources"')
-    expect(activityRailSource).not.toContain('dataTutorial="activity-skills"')
     expect(activityRailSource).toContain('账户与积分')
-    expect(activityRailSource).not.toContain('my-1 h-px w-6 bg-border/50')
-    // Sources/skills remain reachable from the writing tree secondary menu.
     expect(appShellSource).toContain("id: 'open-sources'")
     expect(appShellSource).toContain("id: 'open-skills'")
-    expect(appShellSource).toContain('handleSourcesClick')
-    expect(appShellSource).toContain('handleSkillsClick')
+
+    const projectNavStart = activityRailSource.indexOf("'项目与工作区'")
+    const utilityNavStart = activityRailSource.indexOf('aria-label="账户与帮助"')
+    expect(projectNavStart).toBeGreaterThan(-1)
+    expect(utilityNavStart).toBeGreaterThan(-1)
+    expect(activityRailSource.slice(projectNavStart, utilityNavStart)).toContain('activity-project-hub')
+    expect(activityRailSource.slice(projectNavStart, utilityNavStart)).toContain('activity-writing')
+    expect(activityRailSource.slice(projectNavStart, utilityNavStart)).toContain('activity-search')
+    expect(activityRailSource.slice(projectNavStart, utilityNavStart)).not.toContain('label="设置"')
   })
 
-  it('keeps app settings in the lower utility rail instead of the project rail group', () => {
-    const projectNavStart = activityRailSource.indexOf('aria-label="项目与工作区"')
+  it('keeps app settings in the lower utility rail instead of the room work group', () => {
+    const projectNavStart = activityRailSource.indexOf("'项目与工作区'")
     const utilityNavStart = activityRailSource.indexOf('aria-label="账户与帮助"')
     const settingsButton = activityRailSource.indexOf('label="设置"')
 
     expect(projectNavStart).toBeGreaterThan(-1)
     expect(utilityNavStart).toBeGreaterThan(-1)
     expect(settingsButton).toBeGreaterThan(utilityNavStart)
-    expect(activityRailSource.slice(projectNavStart, utilityNavStart)).not.toContain('label="设置"')
     expect(activityRailSource).toContain('dataTutorial="activity-settings"')
   })
 
@@ -109,19 +130,21 @@ describe('project management entry', () => {
     expect(appSource).toContain('storage.set(storage.KEYS.firstRunTourPending, true)')
   })
 
-  it('keeps ProjectHub and account center inside the same activity rail shell', () => {
+  it('keeps Project Library and account center on the library surface shell', () => {
     expect(activityRailFrameExists).toBe(true)
     expect(activityRailFrameSource).toContain('<ActivityRail')
-    expect(activityRailSource).toContain("'project-hub'")
-    expect(activityRailSource).toContain("'account'")
-    expect(activityRailSource).toContain("activeItem === 'project-hub'")
-    expect(activityRailSource).toContain("activeItem === 'account'")
+    expect(activityRailFrameSource).toContain("surface = 'library'")
     expect(appSource).toContain('<ActivityRailFrame')
+    expect(appSource).toContain('surface="library"')
     expect(appSource).toContain('activeItem="project-hub"')
     expect(appSource).toContain('activeItem="account"')
     expect(appSource).not.toContain('onOpenSources=')
     expect(appSource).not.toContain('onOpenSkills=')
-    expect(appSource).toContain('handleOpenActiveProjectSearch')
+  })
+
+  it('remounts the project room shell when the active workspace changes', () => {
+    expect(appSource).toContain('key={windowWorkspaceId ?? \'no-workspace\'}')
+    expect(appSource).toContain('<WorkspaceSurface')
   })
 
   it('keeps the top bar focused on window chrome and project context only', () => {

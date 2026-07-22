@@ -1,6 +1,6 @@
-// input: Primary shell navigation callbacks and current app section
-// output: VS Code-style icon-only activity rail for project-level navigation
-// pos: Leftmost AppShell navigation layer, orthogonal to project context and chat panels
+// input: Room/library surface mode, project list, and shell navigation callbacks
+// output: Icon rail with project switcher at the original top slot plus room utilities
+// pos: Leftmost chrome; project entry opens a list popover instead of leaving the room
 
 import * as React from 'react'
 import {
@@ -15,13 +15,23 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@craft-agent/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { FeedbackDialog } from './FeedbackDialog'
+import { ProjectSwitcherPopover } from './ProjectSwitcherPopover'
+import type { Workspace } from '../../../shared/types'
 
-/** Primary rail destinations. Sources/skills stay reachable via writing-tree secondary actions. */
 export type ActivityRailItemId = 'project-hub' | 'writing' | 'settings' | 'search' | 'account'
 
+/** library = exclusive ProjectHub page; room = project workspace shell */
+export type ActivityRailSurface = 'library' | 'room'
+
 interface ActivityRailProps {
+  surface?: ActivityRailSurface
   activeItem: ActivityRailItemId
+  workspaces?: Workspace[]
+  activeWorkspaceId?: string | null
+  onSelectProject?: (workspaceId: string) => void
+  /** Full ProjectHub (manage / create / import). Used from library surface or switcher footer. */
   onOpenProjectHub?: () => void
+  onCreateProject?: () => void
   onOpenWritingWorkspace?: () => void
   onOpenSearch?: () => void
   onOpenSettings?: () => void
@@ -42,13 +52,27 @@ interface RailButtonProps {
   accent?: string
   accentText?: string
   dataTutorial?: string
+  disabled?: boolean
 }
 
 export const ACTIVITY_RAIL_WIDTH = 48
 
+const railButtonClassName = (active?: boolean, accent?: boolean) => cn(
+  'relative flex h-9 w-9 items-center justify-center rounded-[8px] outline-none transition-colors',
+  'text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground',
+  'focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-35',
+  active && 'bg-foreground/[0.07] text-foreground',
+  accent && 'hover:brightness-105',
+)
+
 export function ActivityRail({
+  surface = 'room',
   activeItem,
+  workspaces = [],
+  activeWorkspaceId = null,
+  onSelectProject,
   onOpenProjectHub,
+  onCreateProject,
   onOpenWritingWorkspace,
   onOpenSearch,
   onOpenSettings,
@@ -57,36 +81,76 @@ export function ActivityRail({
   whatsNew,
 }: ActivityRailProps) {
   const [feedbackOpen, setFeedbackOpen] = React.useState(false)
+  const [projectSwitcherOpen, setProjectSwitcherOpen] = React.useState(false)
+  const isLibrary = surface === 'library'
+  const canSwitchProjects = !isLibrary && typeof onSelectProject === 'function'
 
   return (
     <aside
       data-testid="activity-rail"
-      aria-label="主导航"
+      data-surface={surface}
+      aria-label={isLibrary ? '作品库导航' : '主导航'}
       className="titlebar-no-drag flex h-full shrink-0 flex-col items-center justify-between border-r border-border/35 bg-background/80 px-1 py-2"
       style={{ width: ACTIVITY_RAIL_WIDTH }}
     >
-      <nav className="flex flex-col items-center gap-1" aria-label="项目与工作区">
-        <RailButton
-          label="项目中心"
-          icon={<LayoutGrid className="h-[18px] w-[18px]" />}
-          active={activeItem === 'project-hub'}
-          onClick={onOpenProjectHub}
-          dataTutorial="activity-project-hub"
-        />
-        <RailButton
-          label="写作工作区"
-          icon={<BookOpenText className="h-[18px] w-[18px]" />}
-          active={activeItem === 'writing'}
-          onClick={onOpenWritingWorkspace}
-          dataTutorial="activity-writing"
-        />
-        <RailButton
-          label="搜索"
-          icon={<Search className="h-[18px] w-[18px]" />}
-          active={activeItem === 'search'}
-          onClick={onOpenSearch}
-          dataTutorial="activity-search"
-        />
+      <nav className="flex flex-col items-center gap-1" aria-label={isLibrary ? '作品库' : '项目与工作区'}>
+        {canSwitchProjects ? (
+          <ProjectSwitcherPopover
+            workspaces={workspaces}
+            activeWorkspaceId={activeWorkspaceId}
+            onSelectProject={onSelectProject}
+            onManageProjects={onOpenProjectHub}
+            onCreateProject={onCreateProject}
+            open={projectSwitcherOpen}
+            onOpenChange={setProjectSwitcherOpen}
+          >
+            <button
+              type="button"
+              aria-label="项目"
+              title="项目"
+              aria-haspopup="dialog"
+              aria-expanded={projectSwitcherOpen}
+              data-tutorial="activity-project-hub"
+              className={railButtonClassName(projectSwitcherOpen)}
+            >
+              {projectSwitcherOpen ? (
+                <span
+                  className="absolute left-[-4px] h-5 w-[2px] rounded-full bg-accent"
+                  aria-hidden="true"
+                />
+              ) : null}
+              <LayoutGrid className="h-[18px] w-[18px]" />
+            </button>
+          </ProjectSwitcherPopover>
+        ) : (
+          <RailButton
+            label={isLibrary ? '作品库' : '项目'}
+            icon={<LayoutGrid className="h-[18px] w-[18px]" />}
+            active={activeItem === 'project-hub'}
+            onClick={onOpenProjectHub}
+            dataTutorial="activity-project-hub"
+            disabled={!onOpenProjectHub}
+          />
+        )}
+
+        {!isLibrary ? (
+          <>
+            <RailButton
+              label="写作工作区"
+              icon={<BookOpenText className="h-[18px] w-[18px]" />}
+              active={activeItem === 'writing'}
+              onClick={onOpenWritingWorkspace}
+              dataTutorial="activity-writing"
+            />
+            <RailButton
+              label="搜索"
+              icon={<Search className="h-[18px] w-[18px]" />}
+              active={activeItem === 'search'}
+              onClick={onOpenSearch}
+              dataTutorial="activity-search"
+            />
+          </>
+        ) : null}
       </nav>
 
       <nav className="flex flex-col items-center gap-1" aria-label="账户与帮助">
@@ -128,7 +192,16 @@ export function ActivityRail({
   )
 }
 
-function RailButton({ label, icon, active, onClick, accent, accentText, dataTutorial }: RailButtonProps) {
+function RailButton({
+  label,
+  icon,
+  active,
+  onClick,
+  accent,
+  accentText,
+  dataTutorial,
+  disabled,
+}: RailButtonProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -137,16 +210,10 @@ function RailButton({ label, icon, active, onClick, accent, accentText, dataTuto
           aria-label={label}
           aria-current={active ? 'page' : undefined}
           data-tutorial={dataTutorial}
-          disabled={!onClick}
+          disabled={disabled || !onClick}
           onClick={onClick}
           style={accent ? { backgroundColor: accent, color: accentText ?? '#ffffff' } : undefined}
-          className={cn(
-            'relative flex h-9 w-9 items-center justify-center rounded-[8px] outline-none transition-colors',
-            'text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground',
-            'focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-35',
-            active && 'bg-foreground/[0.07] text-foreground',
-            accent && 'hover:brightness-105'
-          )}
+          className={railButtonClassName(active, Boolean(accent))}
         >
           {active ? (
             <span
