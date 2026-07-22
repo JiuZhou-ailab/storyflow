@@ -1,5 +1,5 @@
-// input: NavigationContext source text and default project route expectations
-// output: Static regression checks for default route session auto-selection
+// input: NavigationContext, ProjectHub navigation, and default project route expectations
+// output: Static regression checks for default entry and reversible ProjectHub navigation
 // pos: Guards project entry routing without mounting the provider
 
 import { readFileSync } from 'node:fs'
@@ -31,6 +31,10 @@ const appSource = readFileSync(
 )
 const activityRailSource = readFileSync(
   new URL('../../components/app-shell/ActivityRail.tsx', import.meta.url),
+  'utf-8'
+)
+const projectHubNavigationSource = readFileSync(
+  new URL('../../components/project-hub/ProjectHubNavigation.ts', import.meta.url),
   'utf-8'
 )
 describe('project default navigation', () => {
@@ -85,16 +89,18 @@ describe('project default navigation', () => {
     expect(mainContentPanelSource).toContain('select(defaultSessionId, sessionIds.indexOf(defaultSessionId))')
   })
 
-  it('returns from the project hub to the writing route', () => {
+  it('returns from the project hub to the exact source route with a writing fallback', () => {
     const returnHandlerSource = appSource.slice(
       appSource.indexOf('const handleReturnToActiveProject'),
       appSource.indexOf('const handleOpenActiveProjectRoute')
     )
 
-    expect(returnHandlerSource).toContain('setPendingReadyRoute(routes.view.writing())')
-    expect(returnHandlerSource.indexOf('setPendingReadyRoute(routes.view.writing())')).toBeLessThan(
+    expect(returnHandlerSource).toContain('setPendingReadyRoute(consumeReturnRoute(routes.view.writing()))')
+    expect(returnHandlerSource.indexOf('setPendingReadyRoute(consumeReturnRoute(routes.view.writing()))')).toBeLessThan(
       returnHandlerSource.indexOf("setAppState('ready')")
     )
+    expect(projectHubNavigationSource).toContain('{ workspaceId: activeWorkspaceId, route: focusedRoute }')
+    expect(projectHubNavigationSource).toContain('location?.workspaceId === activeWorkspaceId ? location.route : fallback')
   })
 
   it('preloads the workspace module during project-hub idle time', () => {

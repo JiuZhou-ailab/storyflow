@@ -394,13 +394,15 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('<ActivityRail')
     expect(appShellSource).toContain('activeItem={activeActivityRailItem}')
     expect(appShellSource).toContain('onOpenWritingWorkspace={handleWritingWorkspaceClick}')
-    expect(appShellSource).toContain('onOpenSources={handleSourcesClick}')
-    expect(appShellSource).toContain('onOpenSkills={handleSkillsClick}')
+    expect(appShellSource).not.toContain('onOpenSources={handleSourcesClick}')
+    expect(appShellSource).not.toContain('onOpenSkills={handleSkillsClick}')
     expect(appShellSource).toContain("onOpenSettings={() => handleSettingsClick('app')}")
     expect(activityRailSource).toContain('label="写作工作区"')
-    expect(activityRailSource).toContain('label="数据源"')
-    expect(activityRailSource).toContain('label="技能"')
+    expect(activityRailSource).not.toContain('label="数据源"')
+    expect(activityRailSource).not.toContain('label="技能"')
     expect(activityRailSource).toContain('label="设置"')
+    expect(appShellSource).toContain("id: 'open-sources'")
+    expect(appShellSource).toContain("id: 'open-skills'")
     expect(appShellSource).toContain('<WorkspaceFileTree')
     expect(appShellSource).toContain('files={novelWorkspaceFiles}')
     expect(appShellSource).not.toContain('novelWorkspaceUtilitySidebarLinks')
@@ -1226,11 +1228,14 @@ describe('novel writing workspace layout', () => {
     expect(navigatorSlotSource.indexOf('showNovelWorkspaceUnavailable')).toBeLessThan(navigatorSlotSource.indexOf('<SessionList'))
   })
 
-  it('expands a project root by default without overriding a persisted collapse', () => {
+  it('expands project root and manuscript by default without overriding a persisted collapse', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const modelSource = readFileSync(new URL('../../workspace/workspace-file-tree-model.ts', import.meta.url), 'utf-8')
 
     expect(appShellSource).toContain('storage.get<string[] | null>(storage.KEYS.expandedFolders, null, activeWorkspaceId)')
-    expect(appShellSource).toContain('persistedExpandedFolders ?? [`writing:project:${activeWorkspaceId}`]')
+    expect(appShellSource).toContain('getDefaultWritingExpandedIds')
+    expect(appShellSource).toContain('persistedExpandedFolders ?? (activeWorkspaceId ? getDefaultWritingExpandedIds(activeWorkspaceId) : [])')
+    expect(modelSource).toContain("writing:folder:正文")
   })
 
   it('exposes global search from the activity rail backed by the global search dialog', () => {

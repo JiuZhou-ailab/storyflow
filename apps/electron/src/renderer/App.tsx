@@ -18,7 +18,11 @@ import type { AppShellContextType } from '@/context/AppShellContext'
 import { ActivityRailFrame } from '@/components/app-shell/ActivityRailFrame'
 import { WINDOW_TITLE_BAR_HEIGHT } from '@/components/app-shell/layout-constants'
 import type { WorkspaceCreationInitialStep } from '@/components/workspace/WorkspaceCreationScreen'
-import { ProjectHub } from '@/components/project-hub'
+import {
+  ProjectHub,
+  ProjectHubNavigationActions,
+  useProjectHubReturnLocation,
+} from '@/components/project-hub'
 import { ResetConfirmationDialog } from '@/components/ResetConfirmationDialog'
 import { SplashScreen } from '@/components/SplashScreen'
 import { TooltipProvider } from '@craft-agent/ui/tooltip'
@@ -65,6 +69,7 @@ import {
   windowWorkspacesAtom,
   type SessionMeta,
 } from '@/atoms/sessions'
+import { focusedPanelRouteAtom } from '@/atoms/panel-stack'
 import { pendingCredentialsAtom, pendingPermissionsAtom } from '@/atoms/pending-requests'
 import { sourcesAtom } from '@/atoms/sources'
 import { skillsAtom } from '@/atoms/skills'
@@ -284,7 +289,7 @@ function SessionLoadErrorBanner({
   )
 }
 
-export default function App() {
+function AppContent() {
   const { t } = useTranslation()
 
   // Initialize renderer perf tracking early (debug mode = running from source)
@@ -379,6 +384,13 @@ export default function App() {
   const projectSummaries = useMemo(() => buildProjectSummaries(workspaces), [workspaces])
   // Window's workspace ID — shared atom so Root/ThemeProvider stays in sync on switch
   const [windowWorkspaceId, setWindowWorkspaceId] = useAtom(windowWorkspaceIdAtom)
+  const focusedProjectRoute = useAtomValue(focusedPanelRouteAtom)
+  const {
+    captureReturnLocation,
+    clearReturnLocation,
+    consumeReturnRoute,
+    returnDestination,
+  } = useProjectHubReturnLocation(windowWorkspaceId, focusedProjectRoute)
   const pendingCreatedWorkspaceRef = useRef<Workspace | null>(null)
   const openNewProjectConversationAfterSwitchRef = useRef<string | null>(null)
 
@@ -2021,10 +2033,11 @@ export default function App() {
       storage.set(storage.KEYS.firstRunTourPending, true)
     }
     openNewProjectConversationAfterSwitchRef.current = workspace.id
+    clearReturnLocation()
     setPendingReadyRoute(routes.view.writing())
     setAppState('ready')
     await handleSelectWorkspace(workspace.id)
-  }, [handleWorkspaceCreated, handleSelectWorkspace])
+  }, [clearReturnLocation, handleWorkspaceCreated, handleSelectWorkspace])
 
   // Handle cancel during onboarding
   const handleOnboardingCancel = useCallback(() => {
@@ -2047,21 +2060,23 @@ export default function App() {
   }, [loadClientAuthState])
 
   const handleOpenProjectFromHub = useCallback((workspaceId: string) => {
+    clearReturnLocation()
     setPendingReadyRoute(routes.view.writing())
     setAppState('ready')
     void handleSelectWorkspace(workspaceId)
-  }, [handleSelectWorkspace])
+  }, [clearReturnLocation, handleSelectWorkspace])
 
   const handleOpenProjectHub = useCallback(() => {
+    captureReturnLocation()
     setAppState('project-hub')
-  }, [])
+  }, [captureReturnLocation])
 
   const handleReturnToActiveProject = useCallback(() => {
     if (windowWorkspaceId) {
-      setPendingReadyRoute(routes.view.writing())
+      setPendingReadyRoute(consumeReturnRoute(routes.view.writing()))
       setAppState('ready')
     }
-  }, [windowWorkspaceId])
+  }, [consumeReturnRoute, windowWorkspaceId])
 
   const handleOpenActiveProjectRoute = useCallback((route: Route) => {
     if (!windowWorkspaceId) return
@@ -2292,8 +2307,6 @@ export default function App() {
             activeItem="account"
             onOpenProjectHub={handleOpenProjectHub}
             onOpenWritingWorkspace={windowWorkspaceId ? handleReturnToActiveProject : undefined}
-            onOpenSources={windowWorkspaceId ? () => handleOpenActiveProjectRoute(routes.view.sources()) : undefined}
-            onOpenSkills={windowWorkspaceId ? () => handleOpenActiveProjectRoute(routes.view.skills()) : undefined}
             onOpenSearch={windowWorkspaceId ? handleOpenActiveProjectSearch : undefined}
             onOpenSettings={windowWorkspaceId ? () => handleOpenActiveProjectRoute(routes.view.settings('app')) : undefined}
             onOpenAccount={() => handleOpenAccountCenter(accountReturnState)}
@@ -2319,12 +2332,13 @@ export default function App() {
         <ModalProvider>
         <TooltipProvider delayDuration={0}>
           <WindowCloseHandler />
+          {windowWorkspaceId ? (
+            <ProjectHubNavigationActions onReturn={handleReturnToActiveProject} />
+          ) : null}
           <ActivityRailFrame
             activeItem="project-hub"
             onOpenProjectHub={handleOpenProjectHub}
-            onOpenWritingWorkspace={windowWorkspaceId ? handleReturnToActiveProject : undefined}
-            onOpenSources={windowWorkspaceId ? () => handleOpenActiveProjectRoute(routes.view.sources()) : undefined}
-            onOpenSkills={windowWorkspaceId ? () => handleOpenActiveProjectRoute(routes.view.skills()) : undefined}
+            onOpenWritingWorkspace={windowWorkspaceId ? () => handleOpenActiveProjectRoute(routes.view.writing()) : undefined}
             onOpenSearch={windowWorkspaceId ? handleOpenActiveProjectSearch : undefined}
             onOpenSettings={windowWorkspaceId ? () => handleOpenActiveProjectRoute(routes.view.settings('app')) : undefined}
             onOpenAccount={() => handleOpenAccountCenter('project-hub')}
@@ -2333,6 +2347,7 @@ export default function App() {
               projects={projectSummaries}
               activeWorkspaceId={windowWorkspaceId}
               onReturnToActiveProject={windowWorkspaceId ? handleReturnToActiveProject : undefined}
+              returnDestination={returnDestination}
               onOpenProject={(workspaceId) => {
                 void handleOpenProjectFromHub(workspaceId)
               }}
@@ -2399,7 +2414,6 @@ export default function App() {
   // Ready state - main app with splash overlay during data loading
   return (
     <PlatformProvider actions={platformActions}>
-      <ActionRegistryProvider>
       <FocusProvider>
         <DismissibleLayerProvider>
         <ModalProvider>
@@ -2484,8 +2498,15 @@ export default function App() {
         </ModalProvider>
         </DismissibleLayerProvider>
       </FocusProvider>
-      </ActionRegistryProvider>
     </PlatformProvider>
+  )
+}
+
+export default function App() {
+  return (
+    <ActionRegistryProvider>
+      <AppContent />
+    </ActionRegistryProvider>
   )
 }
 

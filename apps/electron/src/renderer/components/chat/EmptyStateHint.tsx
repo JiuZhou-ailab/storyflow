@@ -1,15 +1,13 @@
 /**
  * EmptyStateHint - Rotating workflow suggestions for empty chat state
  *
- * Displays inspirational hints showing what users can do with the agent.
- * Each hint contains inline entity badges (sources, files, folders, skills)
- * with generic Lucide icons.
+ * Displays writing-first hints for what authors can do with the agent.
+ * Each hint may contain inline entity badges (files, folders, skills).
  *
  * Entity token format in hints:
- * - {source:Gmail} → Globe icon + "Gmail" label
- * - {file:screenshot} → Paperclip icon + "screenshot" label
- * - {folder} → Folder icon + "folder" label
- * - {skill} → Zap icon + "skill" label
+ * - {file:chapter} → paperclip-style badge + label
+ * - {folder} → folder badge
+ * - {skill} → skill badge
  */
 
 import * as React from 'react'
@@ -39,31 +37,20 @@ interface ParsedHint {
 // ============================================================================
 
 /**
- * Hint templates with entity placeholders.
+ * Writing-first hint templates with entity placeholders.
  * Format: {type:label} or {type} for default label
- *
- * Supported tokens:
- * - {source:name} - Source with specific provider (gmail, slack, github, etc.)
- * - {file:label} - File attachment with custom label
- * - {folder} - Working directory
- * - {skill} - Custom skill
  */
 const HINT_TEMPLATE_KEYS = [
-  'hints.summarizeGmail',
-  'hints.screenshotToWebsite',
-  'hints.pullIssuesLinear',
-  'hints.transcribeVoiceMemo',
-  'hints.analyzeSpreadsheet',
-  'hints.reviewGitHubPRs',
-  'hints.parseInvoicePDF',
-  'hints.researchExa',
-  'hints.refactorCode',
-  'hints.syncCalendar',
-  'hints.meetingNotesToTickets',
-  'hints.queryDatabase',
-  'hints.fetchFigmaDesigns',
-  'hints.combineSlackThreads',
-  'hints.runSkillAnalyze',
+  'hints.continueChapter',
+  'hints.checkCharacters',
+  'hints.tightenOutline',
+  'hints.chapterEndingHook',
+  'hints.reviewDialogue',
+  'hints.alignTimeline',
+  'hints.selectionRewrite',
+  'hints.runChapterAudit',
+  'hints.updateWorldBible',
+  'hints.syncStoryState',
 ]
 
 // ============================================================================
@@ -167,8 +154,7 @@ export interface EmptyStateHintProps {
 /**
  * EmptyStateHint - Displays a random workflow suggestion
  *
- * Shows what users can accomplish with the agent by displaying
- * example workflows with inline entity badges.
+ * Shows what authors can accomplish in a writing workspace.
  */
 export function EmptyStateHint({ hintIndex, className }: EmptyStateHintProps) {
   const { t } = useTranslation()

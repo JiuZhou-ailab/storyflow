@@ -5,27 +5,24 @@
 import * as React from 'react'
 import {
   BookOpenText,
-  DatabaseZap,
   HelpCircle,
   LayoutGrid,
   Megaphone,
   Search,
   Settings,
   UserCircle,
-  Zap,
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@craft-agent/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { FeedbackDialog } from './FeedbackDialog'
 
-export type ActivityRailItemId = 'project-hub' | 'writing' | 'sources' | 'skills' | 'settings' | 'search' | 'account'
+/** Primary rail destinations. Sources/skills stay reachable via writing-tree secondary actions. */
+export type ActivityRailItemId = 'project-hub' | 'writing' | 'settings' | 'search' | 'account'
 
 interface ActivityRailProps {
   activeItem: ActivityRailItemId
   onOpenProjectHub?: () => void
   onOpenWritingWorkspace?: () => void
-  onOpenSources?: () => void
-  onOpenSkills?: () => void
   onOpenSearch?: () => void
   onOpenSettings?: () => void
   onOpenAccount?: () => void
@@ -53,8 +50,6 @@ export function ActivityRail({
   activeItem,
   onOpenProjectHub,
   onOpenWritingWorkspace,
-  onOpenSources,
-  onOpenSkills,
   onOpenSearch,
   onOpenSettings,
   onOpenAccount,
@@ -84,20 +79,6 @@ export function ActivityRail({
           active={activeItem === 'writing'}
           onClick={onOpenWritingWorkspace}
           dataTutorial="activity-writing"
-        />
-        <RailButton
-          label="数据源"
-          icon={<DatabaseZap className="h-[18px] w-[18px]" />}
-          active={activeItem === 'sources'}
-          onClick={onOpenSources}
-          dataTutorial="activity-sources"
-        />
-        <RailButton
-          label="技能"
-          icon={<Zap className="h-[18px] w-[18px]" />}
-          active={activeItem === 'skills'}
-          onClick={onOpenSkills}
-          dataTutorial="activity-skills"
         />
         <RailButton
           label="搜索"

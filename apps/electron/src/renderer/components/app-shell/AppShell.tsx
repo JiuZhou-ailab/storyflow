@@ -30,6 +30,8 @@ import {
   Download,
   FileUp,
   FolderOpen,
+  DatabaseZap,
+  Zap,
 } from "lucide-react"
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
@@ -81,6 +83,7 @@ import type {
   WorkspaceFileTreeNode,
 } from "@/components/workspace/WorkspaceFileTree"
 import { revealWorkspaceFile } from "@/components/workspace/workspace-file-actions"
+import { getDefaultWritingExpandedIds } from "@/components/workspace/workspace-file-tree-model"
 import { useSession } from "@/hooks/useSession"
 import { AppShellProvider, type AppShellContextType } from "@/context/AppShellContext"
 import { sessionOptionsAtomFamily } from "@/hooks/useSessionOptions"
@@ -1288,7 +1291,7 @@ function AppShellContent({
     const persistedExpandedFolders = activeWorkspaceId
       ? storage.get<string[] | null>(storage.KEYS.expandedFolders, null, activeWorkspaceId)
       : null
-    return new Set(persistedExpandedFolders ?? (activeWorkspaceId ? [`writing:project:${activeWorkspaceId}`] : []))
+    return new Set(persistedExpandedFolders ?? (activeWorkspaceId ? getDefaultWritingExpandedIds(activeWorkspaceId) : []))
   })
   const workspaceFileTreeRef = React.useRef<WorkspaceFileTreeHandle>(null)
   const handleWorkspaceTreeExpandedChange = React.useCallback((id: string, expanded: boolean) => {
@@ -1380,7 +1383,7 @@ function AppShellContent({
       setViewFiltersMap(newViewFilters)
 
       const persistedExpandedFolders = storage.get<string[] | null>(storage.KEYS.expandedFolders, null, activeWorkspaceId)
-      setExpandedFolders(new Set(persistedExpandedFolders ?? [`writing:project:${activeWorkspaceId}`]))
+      setExpandedFolders(new Set(persistedExpandedFolders ?? getDefaultWritingExpandedIds(activeWorkspaceId)))
 
     }
 
@@ -4022,6 +4025,19 @@ function AppShellContent({
           '脑洞、脑洞.md 或 临时/脑洞.txt',
           '',
         ),
+        {
+          id: 'open-sources',
+          label: t('sidebar.sources'),
+          icon: <DatabaseZap className="h-3.5 w-3.5" />,
+          separatorBefore: true,
+          onSelect: handleSourcesClick,
+        },
+        {
+          id: 'open-skills',
+          label: t('sidebar.skills'),
+          icon: <Zap className="h-3.5 w-3.5" />,
+          onSelect: handleSkillsClick,
+        },
       ]
     }
 
@@ -4087,7 +4103,7 @@ function AppShellContent({
         target.initialValue,
       ),
     ]
-  }, [handleImportNovelFiles, openNovelCreateFileDialog, t])
+  }, [handleImportNovelFiles, handleSkillsClick, handleSourcesClick, openNovelCreateFileDialog, t])
 
   const workspaceFileTreeLabels = React.useMemo(() => ({
     rename: t('writing.renameFile.title', '重命名'),
@@ -4099,9 +4115,8 @@ function AppShellContent({
   const showPrimarySidebar = hasPrimarySidebar && showWritingWorkspaceShell
   const activeActivityRailItem = React.useMemo<ActivityRailItemId>(() => {
     if (globalSearchOpen) return 'search'
-    if (isSourcesNavigation(navState)) return 'sources'
-    if (isSkillsNavigation(navState)) return 'skills'
     if (isSettingsNavigation(navState) || isAutomationsNavigation(navState)) return 'settings'
+    // Sources/skills are secondary destinations — keep the primary rail on writing.
     return 'writing'
   }, [globalSearchOpen, navState])
 
@@ -4175,8 +4190,6 @@ function AppShellContent({
             activeItem={activeActivityRailItem}
             onOpenProjectHub={onOpenProjectHub}
             onOpenWritingWorkspace={handleWritingWorkspaceClick}
-            onOpenSources={handleSourcesClick}
-            onOpenSkills={handleSkillsClick}
             onOpenSearch={() => setGlobalSearchOpen(true)}
             onOpenSettings={() => handleSettingsClick('app')}
             onOpenAccount={onOpenAccount}
@@ -4205,31 +4218,43 @@ function AppShellContent({
               <div className="flex-1 flex flex-col min-h-0">
                 <div className="flex-1 min-h-0 mask-fade-bottom">
                 {showNovelWorkspaceSidebar && novelWorkspaceRoot && activeWorkspaceId ? (
-                  <React.Suspense fallback={(
-                    <div className="flex h-full items-center justify-center px-4 text-xs text-muted-foreground">
-                      {t('writing.loadingWorkspace', '正在加载项目目录...')}
+                  <div className="flex h-full min-h-0 flex-col">
+                    <div className="min-h-0 flex-1">
+                      <React.Suspense fallback={(
+                        <div className="flex h-full items-center justify-center px-4 text-xs text-muted-foreground">
+                          {t('writing.loadingWorkspace', '正在加载项目目录...')}
+                        </div>
+                      )}>
+                        <WorkspaceFileTree
+                          ref={workspaceFileTreeRef}
+                          workspaceId={activeWorkspaceId}
+                          workspaceName={activeWorkspace?.name ?? t('writing.workspace')}
+                          rootPath={novelWorkspaceRoot}
+                          files={novelWorkspaceFiles}
+                          directories={novelWorkspaceDirectories}
+                          selectedPath={selectedNovelFile?.path}
+                          expandedIds={expandedFolders}
+                          labels={workspaceFileTreeLabels}
+                          onExpandedChange={handleWorkspaceTreeExpandedChange}
+                          onSelectFile={handleSelectNovelFile}
+                          onMoveEntry={handleMoveNovelWorkspaceEntry}
+                          onRenameEntry={handleRenameNovelWorkspaceEntry}
+                          onDeleteEntry={handleDeleteNovelWorkspaceEntry}
+                          getMenuActions={getNovelWorkspaceTreeMenuActions}
+                          hasReviewDot={hasNovelReviewDot}
+                          onDismissReviewDot={handleDismissNovelReviewDot}
+                        />
+                      </React.Suspense>
                     </div>
-                  )}>
-                    <WorkspaceFileTree
-                      ref={workspaceFileTreeRef}
-                      workspaceId={activeWorkspaceId}
-                      workspaceName={activeWorkspace?.name ?? t('writing.workspace')}
-                      rootPath={novelWorkspaceRoot}
-                      files={novelWorkspaceFiles}
-                      directories={novelWorkspaceDirectories}
-                      selectedPath={selectedNovelFile?.path}
-                      expandedIds={expandedFolders}
-                      labels={workspaceFileTreeLabels}
-                      onExpandedChange={handleWorkspaceTreeExpandedChange}
-                      onSelectFile={handleSelectNovelFile}
-                      onMoveEntry={handleMoveNovelWorkspaceEntry}
-                      onRenameEntry={handleRenameNovelWorkspaceEntry}
-                      onDeleteEntry={handleDeleteNovelWorkspaceEntry}
-                      getMenuActions={getNovelWorkspaceTreeMenuActions}
-                      hasReviewDot={hasNovelReviewDot}
-                      onDismissReviewDot={handleDismissNovelReviewDot}
-                    />
-                  </React.Suspense>
+                    {!novelWorkspaceFiles.some((file) => {
+                      const relativePath = file.relativePath.replace(/\\/g, '/')
+                      return relativePath === '正文' || relativePath.startsWith('正文/')
+                    }) ? (
+                      <div className="shrink-0 border-t border-border/40 px-3 py-2 text-[11px] leading-snug text-muted-foreground">
+                        {t('writing.emptyCoach', '可以先写正文；人物、大纲等全局信息用到再补。')}
+                      </div>
+                    ) : null}
+                  </div>
                 ) : (
                   <div className="flex h-full items-center justify-center px-4 text-xs text-muted-foreground">
                     {showNovelWorkspaceUnavailable

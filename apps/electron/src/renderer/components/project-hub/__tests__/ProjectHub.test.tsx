@@ -14,6 +14,7 @@ let ProjectHub: typeof import('../ProjectHub').ProjectHub
 let createProjectHubActions: typeof import('../ProjectHub').createProjectHubActions
 let filterProjectHubProjects: typeof import('../ProjectHub').filterProjectHubProjects
 let projectMatchesQuery: typeof import('../ProjectHub').projectMatchesQuery
+let getProjectHubReturnDestination: typeof import('../ProjectHubNavigation').getProjectHubReturnDestination
 
 beforeAll(async () => {
   const module = await import('../ProjectHub')
@@ -21,6 +22,8 @@ beforeAll(async () => {
   createProjectHubActions = module.createProjectHubActions
   filterProjectHubProjects = module.filterProjectHubProjects
   projectMatchesQuery = module.projectMatchesQuery
+  const navigationModule = await import('../ProjectHubNavigation')
+  getProjectHubReturnDestination = navigationModule.getProjectHubReturnDestination
 })
 
 const projects: ProjectHubProject[] = [
@@ -98,10 +101,33 @@ describe('ProjectHub', () => {
     expect(html).toContain('远端')
     expect(html).toContain('剧本')
     expect(html).toContain('打开')
-    expect(html).toContain('继续：黎明手稿')
+    expect(html).toContain('继续写作：黎明手稿')
     expect(html).toContain('管理项目 黎明手稿')
     expect(html).not.toContain('novel.claude-book')
     expect(html).not.toContain('删除项目')
+  })
+
+  it('distinguishes returning to an exact project surface from continuing to writing', () => {
+    const html = renderToStaticMarkup(
+      <ProjectHub
+        projects={projects}
+        activeWorkspaceId="local-dawn"
+        onReturnToActiveProject={() => {}}
+        returnDestination="数据源"
+        {...requiredProps}
+      />
+    )
+
+    expect(html).toContain('返回：黎明手稿 · 数据源')
+    expect(html).not.toContain('继续写作：黎明手稿')
+  })
+
+  it('labels return destinations from the existing route model', () => {
+    expect(getProjectHubReturnDestination('writing')).toBe('写作工作区')
+    expect(getProjectHubReturnDestination('sources/mcp/source/story-data')).toBe('数据源')
+    expect(getProjectHubReturnDestination('skills/skill/prose-revision')).toBe('技能')
+    expect(getProjectHubReturnDestination('settings/shortcuts')).toBe('设置')
+    expect(getProjectHubReturnDestination('allSessions/session/session-1')).toBe('对话')
   })
 
   it('keeps account access separated from project management', () => {

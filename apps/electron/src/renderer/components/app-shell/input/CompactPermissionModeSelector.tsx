@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
 import { Check } from 'lucide-react'
 import {
   Drawer,
@@ -55,6 +56,12 @@ const MODE_STYLES: Record<PermissionMode, { className: string; shadowVar: string
   },
 }
 
+const MODE_DESC_KEYS: Record<PermissionMode, string> = {
+  safe: 'mode.exploreFullDesc',
+  ask: 'mode.askFullDesc',
+  'allow-all': 'mode.executeFullDesc',
+}
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -68,6 +75,7 @@ export function CompactPermissionModeSelector({
   permissionMode,
   onPermissionModeChange,
 }: CompactPermissionModeSelectorProps) {
+  const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
   // Optimistic local state — updates immediately, syncs with prop
   const [optimisticMode, setOptimisticMode] = React.useState(permissionMode)
@@ -82,7 +90,7 @@ export function CompactPermissionModeSelector({
     setOpen(false)
   }, [onPermissionModeChange])
 
-  const config = PERMISSION_MODE_CONFIG[optimisticMode]
+  const shortName = t(`mode.${optimisticMode}`)
   const style = MODE_STYLES[optimisticMode]
 
   return (
@@ -90,7 +98,7 @@ export function CompactPermissionModeSelector({
       <DrawerTrigger asChild>
         <button
           type="button"
-          aria-label={`Permission mode: ${config.displayName}`}
+          aria-label={t('mode.permissionAria', { mode: shortName })}
           className={cn(
             "h-7 pl-2 pr-2.5 text-xs font-medium rounded-[6px] flex items-center gap-1.5 shadow-tinted outline-none select-none shrink-0",
             style.className,
@@ -98,18 +106,17 @@ export function CompactPermissionModeSelector({
           style={{ '--shadow-color': style.shadowVar } as React.CSSProperties}
         >
           <ModeIcon mode={optimisticMode} className="h-3.5 w-3.5" />
-          <span>{config.shortName}</span>
+          <span>{shortName}</span>
         </button>
       </DrawerTrigger>
 
       <DrawerContent>
         <DrawerHeader>
-          <DrawerTitle>Permission Mode</DrawerTitle>
+          <DrawerTitle>{t('mode.permissionTitle')}</DrawerTitle>
         </DrawerHeader>
 
         <div className="px-4 pb-6 flex flex-col gap-1">
           {PERMISSION_MODE_ORDER.map((mode) => {
-            const modeConfig = PERMISSION_MODE_CONFIG[mode]
             const isSelected = mode === optimisticMode
             return (
               <DrawerClose asChild key={mode}>
@@ -125,8 +132,8 @@ export function CompactPermissionModeSelector({
                     <ModeIcon mode={mode} className="h-5 w-5" />
                   </span>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium">{modeConfig.displayName}</div>
-                    <div className="text-xs text-muted-foreground">{modeConfig.description}</div>
+                    <div className="text-sm font-medium">{t(`mode.${mode}`)}</div>
+                    <div className="text-xs text-muted-foreground">{t(MODE_DESC_KEYS[mode])}</div>
                   </div>
                   {isSelected && (
                     <Check className="h-4 w-4 shrink-0 text-foreground/60" />

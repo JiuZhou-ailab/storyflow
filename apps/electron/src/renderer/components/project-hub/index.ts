@@ -12,3 +12,8 @@ export {
   type ProjectHubProjectStatus,
   type ProjectHubProps,
 } from './ProjectHub'
+export {
+  getProjectHubReturnDestination,
+  ProjectHubNavigationActions,
+  useProjectHubReturnLocation,
+} from './ProjectHubNavigation'

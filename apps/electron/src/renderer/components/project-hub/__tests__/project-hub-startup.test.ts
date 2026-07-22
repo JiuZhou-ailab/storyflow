@@ -30,6 +30,18 @@ describe('ProjectHub startup integration', () => {
     expect(appSource).not.toContain('ProjectHubPlaceholder')
   })
 
+  it('restores the exact project route that opened the hub', () => {
+    expect(appSource).toContain('focusedPanelRouteAtom')
+    expect(appSource).toContain('captureReturnLocation()')
+    expect(appSource).toContain('consumeReturnRoute(routes.view.writing())')
+    expect(appSource).toContain('returnDestination={returnDestination}')
+  })
+
+  it('keeps project-hub back shortcuts on the root action registry', () => {
+    expect(appSource.match(/<ActionRegistryProvider>/g)).toHaveLength(1)
+    expect(appSource).toContain('<ProjectHubNavigationActions onReturn={handleReturnToActiveProject} />')
+  })
+
   it('shows the project shell before background workspace hydration completes', () => {
     const openProjectSource = appSource.slice(
       appSource.indexOf('const handleOpenProjectFromHub ='),

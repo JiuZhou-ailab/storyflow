@@ -11,8 +11,6 @@ interface ActivityRailFrameProps {
   children: ReactNode
   onOpenProjectHub?: () => void
   onOpenWritingWorkspace?: () => void
-  onOpenSources?: () => void
-  onOpenSkills?: () => void
   onOpenSearch?: () => void
   onOpenSettings?: () => void
   onOpenAccount?: () => void
@@ -23,8 +21,6 @@ export function ActivityRailFrame({
   children,
   onOpenProjectHub,
   onOpenWritingWorkspace,
-  onOpenSources,
-  onOpenSkills,
   onOpenSearch,
   onOpenSettings,
   onOpenAccount,
@@ -42,8 +38,6 @@ export function ActivityRailFrame({
           activeItem={activeItem}
           onOpenProjectHub={onOpenProjectHub}
           onOpenWritingWorkspace={onOpenWritingWorkspace}
-          onOpenSources={onOpenSources}
-          onOpenSkills={onOpenSkills}
           onOpenSearch={onOpenSearch}
           onOpenSettings={onOpenSettings}
           onOpenAccount={onOpenAccount}

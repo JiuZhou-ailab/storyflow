@@ -47,6 +47,7 @@ export interface ProjectHubProps extends ProjectHubCallbacks {
   projects: ProjectHubProject[]
   activeWorkspaceId?: string | null
   onReturnToActiveProject?: () => void
+  returnDestination?: string
 }
 
 export interface ProjectHubCallbacks {
@@ -64,6 +65,7 @@ export function ProjectHub({
   projects,
   activeWorkspaceId,
   onReturnToActiveProject,
+  returnDestination,
   onOpenProject,
   onCreateProject,
   onImportProject,
@@ -125,8 +127,12 @@ export function ProjectHub({
                 className="h-9 max-w-[280px] rounded-lg px-3"
                 onClick={onReturnToActiveProject}
               >
-                <ArrowLeft className="size-4" />
-                <span className="truncate">继续{activeProject ? `：${activeProject.name}` : '当前项目'}</span>
+                {returnDestination ? <ArrowLeft className="size-4" /> : <BookOpen className="size-4" />}
+                <span className="truncate">
+                  {returnDestination
+                    ? `返回：${activeProject?.name ?? '当前项目'} · ${returnDestination}`
+                    : `继续写作：${activeProject?.name ?? '当前项目'}`}
+                </span>
               </Button>
             )}
             {onOpenAccount && <ProjectHubAccountButton onOpenAccount={onOpenAccount} />}

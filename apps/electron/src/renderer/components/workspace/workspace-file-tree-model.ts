@@ -103,6 +103,17 @@ function finalizeDirectory(node: MutableDirectoryNode, workspaceId: string): Wor
   }
 }
 
+/**
+ * Default open folders for a new writing workspace with no persisted expand state.
+ * Expand project root + manuscript only so global/bible folders do not dominate first open.
+ */
+export function getDefaultWritingExpandedIds(workspaceId: string): string[] {
+  return [
+    `writing:project:${workspaceId}`,
+    'writing:folder:正文',
+  ]
+}
+
 export interface BuildWorkspaceFileTreeInput {
   workspaceId: string
   workspaceName: string

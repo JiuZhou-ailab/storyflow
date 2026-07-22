@@ -3,9 +3,16 @@
 // pos: Pure-model tests for the virtualized workspace file tree
 
 import { describe, expect, it } from 'bun:test'
-import { buildWorkspaceFileTree } from '../workspace-file-tree-model'
+import { buildWorkspaceFileTree, getDefaultWritingExpandedIds } from '../workspace-file-tree-model'
 
 describe('workspace file tree model', () => {
+  it('defaults expand state to project root and manuscript only', () => {
+    expect(getDefaultWritingExpandedIds('novel-1')).toEqual([
+      'writing:project:novel-1',
+      'writing:folder:正文',
+    ])
+  })
+
   it('builds a directory-first natural-order tree with stable ids', () => {
     const root = buildWorkspaceFileTree({
       workspaceId: 'novel-1',
