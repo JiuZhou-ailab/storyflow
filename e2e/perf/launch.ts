@@ -167,6 +167,41 @@ export function evalOn<T = any>(app: LaunchedApp, expression: string): Promise<T
   return evaluate<T>(app.cdp, app.sid, expression)
 }
 
+/** Invoke one stable function body in the page with by-value arguments. */
+export async function callOn<T = any>(
+  app: LaunchedApp,
+  functionDeclaration: string,
+  args: unknown[] = [],
+): Promise<T> {
+  const globalObject = await app.cdp.send(
+    'Runtime.evaluate',
+    { expression: 'globalThis', returnByValue: false },
+    app.sid,
+  )
+  const objectId = globalObject.result?.objectId
+  if (typeof objectId !== 'string') throw new Error('Could not resolve renderer global object')
+
+  try {
+    const result = await app.cdp.send(
+      'Runtime.callFunctionOn',
+      {
+        objectId,
+        functionDeclaration,
+        arguments: args.map(value => ({ value })),
+        returnByValue: true,
+        awaitPromise: true,
+      },
+      app.sid,
+    )
+    if (result.exceptionDetails) {
+      throw new Error(`callFunctionOn failed: ${result.exceptionDetails.text ?? 'unknown'}`)
+    }
+    return result.result?.value as T
+  } finally {
+    await app.cdp.send('Runtime.releaseObject', { objectId }, app.sid).catch(() => {})
+  }
+}
+
 /** Force GC and return renderer JS heap used (bytes). */
 export async function heapUsed(app: LaunchedApp): Promise<number> {
   await app.cdp.send('HeapProfiler.collectGarbage', {}, app.sid)

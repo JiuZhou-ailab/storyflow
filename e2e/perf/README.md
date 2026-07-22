@@ -38,8 +38,11 @@ Env knobs:
 | `PERF_SWITCHES` | 20 | Session switch samples |
 | `PERF_LEAK_LOOPS` | 100 | Session-switch leak loops |
 | `PERF_DOC_LOOPS` | 40 | Document open/close leak loops |
+| `PERF_DOC_CHAPTERS` | 60 | Distinct chapters cycled by document leak loops |
 
 Scenarios: `startup`, `switch`, `memory-steady`, `memory-leak`, `memory-leak-docs`, `heavy-writing`, `heavy-search`, `continuous-typing`.
+
+`memory-leak-docs` judges the second of two equivalent chapter rings so bounded first-use caches are excluded while per-switch growth still fails the baseline.
 
 Harness always sets `CRAFT_CLIENT_AUTH_REQUIRED=false` so the offline fixture is not blocked by the desktop login gate.
 

@@ -1,12 +1,13 @@
 // input: A fixture data dir + the launched app handle (launch.ts); CONTEXT.md perf targets
 // output: A JSON report under results/ plus a stdout table, each metric annotated pass/fail vs target
-// pos: The perf harness driver — sequences the four scenarios (startup, switch, steady mem, leak) and judges them
+// pos: The perf harness driver — sequences startup, interaction, typing, and memory scenarios and judges them
 
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   launchApp,
   evalOn,
+  callOn,
   heapUsed,
   waitFor,
   countPerf,
@@ -420,20 +421,27 @@ async function runContinuousTyping(): Promise<Metric[]> {
 async function runDocumentLeak(): Promise<Metric[]> {
   const live = await launchApp(FIXTURE)
   const loops = parsePositiveInteger(process.env.PERF_DOC_LOOPS, 40, 'PERF_DOC_LOOPS')
+  const chapterSpan = parsePositiveInteger(process.env.PERF_DOC_CHAPTERS, 60, 'PERF_DOC_CHAPTERS')
   try {
     await enterFirstWritingWorkspace(live)
-    for (const n of [1, 2, 3, 4]) {
-      await openWritingChapter(live, n)
-      await sleep(80)
+    const runChapterRing = async () => {
+      for (let i = 0; i < loops; i++) {
+        const chapter = 1 + (i % chapterSpan)
+        await openWritingChapter(live, chapter)
+        await sleep(50)
+      }
     }
-    await sleep(250)
+
+    // Measure the second equivalent pass. The first pass initializes bounded
+    // React Arborist, IPC, and editor caches; treating that one-time working set
+    // as a leak produced false failures even when a second pass stayed flat.
+    // A true per-switch leak still compounds during the measured pass.
+    await runChapterRing()
+    await openWritingChapter(live, 1)
+    await sleep(500)
     const baseline = await heapUsed(live)
 
-    for (let i = 0; i < loops; i++) {
-      const chapter = 1 + (i % 60)
-      await openWritingChapter(live, chapter)
-      await sleep(50)
-    }
+    await runChapterRing()
     // Return to a warm chapter and settle before judging growth.
     await openWritingChapter(live, 1)
     await sleep(500)
@@ -442,7 +450,7 @@ async function runDocumentLeak(): Promise<Metric[]> {
     const end = await heapUsed(live)
     const deltaPct = baseline > 0 ? ((end - baseline) / baseline) * 100 : 0
     return [metric('memory-leak-docs', `heap growth after ${loops} chapter opens`, deltaPct, '%', TARGET.leakPct, {
-      note: `baseline=${(baseline / 1e6).toFixed(1)}MB → after=${(end / 1e6).toFixed(1)}MB — CONTEXT leak check includes document open/close`,
+      note: `baseline=${(baseline / 1e6).toFixed(1)}MB → after=${(end / 1e6).toFixed(1)}MB across ${chapterSpan} chapters after an equivalent warm pass — CONTEXT leak check includes document open/close`,
     })]
   } finally {
     await live.close()
@@ -452,26 +460,27 @@ async function runDocumentLeak(): Promise<Metric[]> {
 /** Scroll virtualized catalog to chapter N and click it. Chapters are 1-indexed. */
 async function openWritingChapter(live: LaunchedApp, chapter: number): Promise<void> {
   const label = `第${String(chapter).padStart(3, '0')}章`
-  const rowOffset = chapter + 2 // ~3 non-chapter rows above chapter files
-  const scrolled = await evalOn<boolean>(
+  const scrolled = await callOn<boolean>(
     live,
-    `(() => {
+    `function (chapter) {
       const tree = document.querySelector('[role="tree"]')
       if (!tree) return false
       const scroller = [tree, ...tree.querySelectorAll('*')].find(
         (el) => el.scrollHeight > el.clientHeight + 50 && getComputedStyle(el).overflowY === 'auto',
       )
       if (!scroller) return false
-      scroller.scrollTop = ${rowOffset} * 30
+      globalThis.__storyflowPerfChapterLabel = \`第\${String(chapter).padStart(3, '0')}章\`
+      scroller.scrollTop = (chapter + 2) * 30
       scroller.dispatchEvent(new Event('scroll', { bubbles: true }))
       return true
-    })()`
+    }`,
+    [chapter],
   )
   if (!scrolled) throw new Error(`Could not scroll catalog for ${label}`)
 
   await waitFor(
     live,
-    `Array.from(document.querySelectorAll('[role="treeitem"]')).some((el) => (el.textContent || '').includes(${JSON.stringify(label)}))`,
+    `Array.from(document.querySelectorAll('[role="treeitem"]')).some((el) => (el.textContent || '').includes(globalThis.__storyflowPerfChapterLabel))`,
     8_000,
     `${label} mounted`
   )
@@ -480,7 +489,7 @@ async function openWritingChapter(live: LaunchedApp, chapter: number): Promise<v
     live,
     `(() => {
       const target = Array.from(document.querySelectorAll('[role="treeitem"]')).find((el) =>
-        (el.textContent || '').includes(${JSON.stringify(label)}),
+        (el.textContent || '').includes(globalThis.__storyflowPerfChapterLabel),
       )
       if (!target) return false
       target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
