@@ -247,6 +247,15 @@ describe('detectLinks', () => {
     expect(links[0]!.type).toBe('file')
     expect(links[0]!.url).toBe('../README.md')
   })
+
+  it('detects CJK relative novel chapter paths with fullwidth punctuation', () => {
+    const path = './正文/02-别笑了，我真的报警了.md'
+    const links = detectLinks(`改动位置：\n- ${path}`)
+    expect(links).toHaveLength(1)
+    expect(links[0]).toBeDefined()
+    expect(links[0]!.type).toBe('file')
+    expect(links[0]!.url).toBe(path)
+  })
 })
 
 describe('isFilePathTarget', () => {
@@ -260,6 +269,12 @@ describe('isFilePathTarget', () => {
 
   it('accepts repo-relative markdown paths', () => {
     expect(isFilePathTarget('apps/electron/resources/docs/browser-tools.md')).toBe(true)
+  })
+
+  it('accepts CJK relative markdown paths with fullwidth punctuation in the filename', () => {
+    expect(isFilePathTarget('./正文/02-别笑了，我真的报警了.md')).toBe(true)
+    expect(isFilePathTarget('./正文/03-破门前一秒，院士喊停.md')).toBe(true)
+    expect(isFilePathTarget('正文/02-别笑了，我真的报警了.md')).toBe(true)
   })
 
   it('rejects web URLs', () => {

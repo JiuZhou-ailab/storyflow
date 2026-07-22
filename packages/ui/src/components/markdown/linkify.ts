@@ -11,19 +11,28 @@ import { FILE_EXTENSIONS_PATTERN } from '../../lib/file-classification'
 // Initialize linkify-it with default settings (fuzzy URLs, emails enabled)
 const linkify = new LinkifyIt()
 
-// File path regex - detects absolute/home/explicit-relative/bare-relative paths with common extensions
-// Examples: /Users/foo.ts, ~/src/app.tsx, ./README.md, ../guide.md, apps/electron/src/main.ts
-// Extensions derived from file-classification.ts to stay in sync with preview support
-const FILE_PATH_REGEX_SOURCE = `(?:^|[\\s([\\{<])((?:/|~/|\\./|\\.\\./|[A-Za-z0-9_][\\w\\-./@]*)[\\w\\-./@]*\\.(?:${FILE_EXTENSIONS_PATTERN})(?::\\d+(?::\\d+)?)?)(?=[\\s)\\]}\\.,:;!?>]|$)`
-const FILE_PATH_REGEX = new RegExp(FILE_PATH_REGEX_SOURCE, 'gi')
-const FILE_PATH_PRETEST_REGEX = new RegExp(FILE_PATH_REGEX_SOURCE, 'i')
+// Path body characters for free-text detection.
+// \w is ASCII-only; novel/workspace paths routinely include Unicode (e.g. 正文/第二章.md)
+// and fullwidth punctuation in titles (，。！？…). Keep shell/markdown delimiters out.
+// u-flag + \p{L}\p{N} covers CJK and other scripts without hardcoding codepoints.
+const FILE_PATH_BODY = String.raw`[\p{L}\p{N}_\-./@%+，。、：；！？“”‘’（）()【】《》·…#]`
 
-// File-path regex for markdown anchor targets (entire href/text value)
-// Used by Markdown.tsx click handler to route file links to onFileClick.
-const FILE_PATH_TARGET_REGEX = new RegExp(
-  `^(?!https?://|mailto:|ftp://|data:)(?:/|~/|\./|\.\./|[A-Za-z0-9_][\\w\\-./@]*)[\\w\\-./@]*\\.(?:${FILE_EXTENSIONS_PATTERN})(?::\\d+(?::\\d+)?)?$`,
-  'i'
+// File path regex - detects absolute/home/explicit-relative/bare-relative paths with common extensions
+// Examples: /Users/foo.ts, ~/src/app.tsx, ./README.md, ../guide.md, apps/electron/src/main.ts,
+//           ./正文/02-别笑了，我真的报警了.md
+// Extensions derived from file-classification.ts to stay in sync with preview support
+const FILE_PATH_REGEX_SOURCE = `(?:^|[\\s([\\{<])((?:/|~/|\\./|\\.\\./|${FILE_PATH_BODY})${FILE_PATH_BODY}*\\.(?:${FILE_EXTENSIONS_PATTERN})(?::\\d+(?::\\d+)?)?)(?=[\\s)\\]}\\.,:;!?>。]|$)`
+const FILE_PATH_REGEX = new RegExp(FILE_PATH_REGEX_SOURCE, 'giu')
+const FILE_PATH_PRETEST_REGEX = new RegExp(FILE_PATH_REGEX_SOURCE, 'iu')
+
+// Known extensions as a Set for O(1) target classification (Unicode-safe, no ASCII-only \w).
+const KNOWN_FILE_EXTENSIONS = new Set(
+  FILE_EXTENSIONS_PATTERN.split('|').map((ext) => ext.toLowerCase())
 )
+
+// URL-like schemes that must never be treated as local file paths.
+// `file:` is intentionally included so link-target.ts can own file:// normalization.
+const NON_FILE_SCHEME_RE = /^(?:https?|mailto|ftp|data|file|javascript|vbscript|blob):/i
 
 interface DetectedLink {
   type: 'url' | 'email' | 'file'
@@ -121,7 +130,7 @@ function rangesOverlap(a: { start: number; end: number }, b: { start: number; en
  * Detect all links (URLs, emails, file paths) in text
  */
 export function detectLinks(text: string): DetectedLink[] {
-  const links: DetectedLink[] = []
+  const candidates: DetectedLink[] = []
 
   // 1. Detect URLs and emails with linkify-it
   const urlMatches = linkify.match(text) || []
@@ -142,7 +151,14 @@ export function detectLinks(text: string): DetectedLink[] {
       matchEnd -= diff
     }
 
-    links.push({
+    // Fuzzy host matches (empty schema) on bare file basenames like
+    // `我真的报警了.md` become `http://我真的报警了.md`. Prefer the file-path
+    // detector for those — real scheme-bearing URLs still win below.
+    if (!match.schema && isFilePathTarget(matchText)) {
+      continue
+    }
+
+    candidates.push({
       type: match.schema === 'mailto:' ? 'email' : 'url',
       text: matchText,
       url: matchUrl,
@@ -164,12 +180,7 @@ export function detectLinks(text: string): DetectedLink[] {
     const pathOffset = fullMatch.indexOf(path)
     const start = fileMatch.index + pathOffset
 
-    // Check for overlaps with URL matches (URLs take precedence)
-    const pathRange = { start, end: start + path.length }
-    const overlapsUrl = links.some(link => rangesOverlap(pathRange, link))
-    if (overlapsUrl) continue
-
-    links.push({
+    candidates.push({
       type: 'file',
       text: path,
       url: path, // File paths are passed as-is to onFileClick handler
@@ -178,7 +189,17 @@ export function detectLinks(text: string): DetectedLink[] {
     })
   }
 
-  // Sort by position
+  // 3. Resolve overlaps: earlier + longer match wins.
+  // File paths that fully contain a fuzzy URL basename (CJK chapter titles)
+  // must beat the shorter URL fragment.
+  candidates.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start))
+  const links: DetectedLink[] = []
+  for (const candidate of candidates) {
+    const overlaps = links.some((link) => rangesOverlap(link, candidate))
+    if (overlaps) continue
+    links.push(candidate)
+  }
+
   return links.sort((a, b) => a.start - b.start)
 }
 
@@ -278,7 +299,26 @@ export function hasLinks(text: string): boolean {
 /**
  * Check whether a markdown anchor target should be treated as a local file path.
  * Used by click handlers to route local paths to onFileClick instead of onUrlClick.
+ *
+ * Structured (not pure-regex) so Unicode paths like
+ * `./正文/02-别笑了，我真的报警了.md` classify as files. The old ASCII-only
+ * `[\w\-./@]*` class rejected CJK path segments and fullwidth punctuation.
  */
 export function isFilePathTarget(target: string): boolean {
-  return FILE_PATH_TARGET_REGEX.test(target.trim())
+  const trimmed = target.trim()
+  if (!trimmed) return false
+  if (NON_FILE_SCHEME_RE.test(trimmed)) return false
+  // Reject scheme-bearing URLs even when the path ends in a known extension
+  // (e.g. https://cdn.example.com/assets/doc.md).
+  if (trimmed.includes('://')) return false
+  if (/[\n\r]/.test(trimmed)) return false
+
+  // Optional editor-style line/column suffix: path.ts:12 or path.ts:12:4
+  const pathOnly = trimmed.replace(/:\d+(?::\d+)?$/, '')
+  const basename = pathOnly.split(/[/\\]/).pop() ?? pathOnly
+  const dot = basename.lastIndexOf('.')
+  if (dot <= 0 || dot === basename.length - 1) return false
+
+  const ext = basename.slice(dot + 1).toLowerCase()
+  return KNOWN_FILE_EXTENSIONS.has(ext)
 }

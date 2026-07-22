@@ -23,6 +23,25 @@ describe('resolveMarkdownLinkTarget', () => {
     })
   })
 
+  it('resolves CJK novel chapter paths as file targets (not URLs)', () => {
+    expect(resolveMarkdownLinkTarget('./正文/02-别笑了，我真的报警了.md')).toEqual({
+      kind: 'file',
+      path: './正文/02-别笑了，我真的报警了.md',
+    })
+    expect(resolveMarkdownLinkTarget('./正文/03-破门前一秒，院士喊停.md')).toEqual({
+      kind: 'file',
+      path: './正文/03-破门前一秒，院士喊停.md',
+    })
+  })
+
+  it('decodes percent-encoded CJK relative paths before classifying as files', () => {
+    const encoded = './%E6%AD%A3%E6%96%87/02-%E5%88%AB%E7%AC%91%E4%BA%86.md'
+    expect(resolveMarkdownLinkTarget(encoded)).toEqual({
+      kind: 'file',
+      path: './正文/02-别笑了.md',
+    })
+  })
+
   it('resolves file paths with line suffixes as file targets', () => {
     expect(resolveMarkdownLinkTarget('/Users/tester/project/src/App.tsx:42')).toEqual({
       kind: 'file',

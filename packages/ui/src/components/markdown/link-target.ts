@@ -34,6 +34,19 @@ function stripLineSuffix(target: string): string {
 }
 
 /**
+ * Decode percent-encoded path segments when present (e.g. ./正文 → ./%E6%AD%A3%E6%96%87).
+ * Markdown renderers occasionally emit encoded hrefs; file open needs the real path.
+ */
+function tryDecodePath(target: string): string {
+  if (!/%[0-9A-Fa-f]{2}/.test(target)) return target
+  try {
+    return decodeURIComponent(target)
+  } catch {
+    return target
+  }
+}
+
+/**
  * Resolve markdown link targets for click dispatch.
  *
  * - Raw filesystem paths are routed through onFileClick
@@ -41,7 +54,7 @@ function stripLineSuffix(target: string): string {
  * - Everything else is treated as a URL and routed through onUrlClick
  */
 export function resolveMarkdownLinkTarget(target: string): ResolvedMarkdownLinkTarget {
-  const trimmed = target.trim()
+  const trimmed = tryDecodePath(target.trim())
 
   const fileUrlPath = resolveFileUrlPath(trimmed)
   if (fileUrlPath) {
