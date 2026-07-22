@@ -455,18 +455,18 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
       }),
       FileHandler.configure({
         onPaste: async (editor, files) => {
-          if (!editable || files.length === 0) return
+          if (!editor.isEditable || files.length === 0) return
           await handleDroppedOrPastedFiles(editor as NonNullable<ReturnType<typeof useEditor>>, files)
         },
         onDrop: async (editor, files, pos) => {
-          if (!editable || files.length === 0) return
+          if (!editor.isEditable || files.length === 0) return
           await handleDroppedOrPastedFiles(editor as NonNullable<ReturnType<typeof useEditor>>, files, pos)
         },
       }),
       RichBlockInteractions,
       TiptapReviewDiff,
       SelectionAiRangeHighlight,
-      ...(editable ? [TiptapSlashMenu] : []),
+      TiptapSlashMenu,
     ]
 
     if (useOfficialMarkdown) {
@@ -503,7 +503,7 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
         transformCopiedText: true,
       }),
     ]
-  }, [placeholder, useOfficialMarkdown, editable])
+  }, [placeholder, useOfficialMarkdown])
 
   const initialContent = useOfficialMarkdown
     ? preprocessMarkdownForOfficial(content)
@@ -532,20 +532,20 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
         class: 'tiptap-prose outline-none',
       },
       handlePaste: (_view, event) => {
-        if (!editable) return false
+        const activeEditor = editorRef.current
+        if (!activeEditor?.isEditable) return false
         if (event.clipboardData?.files?.length) return false
 
         const text = event.clipboardData?.getData('text/plain') ?? ''
         const source = extractMermaidSource(text)
         if (!source) return false
 
-        const activeEditor = editorRef.current
-        if (!activeEditor) return false
         insertMermaidBlock(activeEditor, source)
         return true
       },
       handleDrop: (view, event) => {
-        if (!editable) return false
+        const activeEditor = editorRef.current
+        if (!activeEditor?.isEditable) return false
         if (event.dataTransfer?.files?.length) return false
 
         const text = event.dataTransfer?.getData('text/plain') ?? ''
@@ -553,8 +553,6 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
         if (!source) return false
 
         const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos
-        const activeEditor = editorRef.current
-        if (!activeEditor) return false
         insertMermaidBlock(activeEditor, source, pos)
         return true
       },

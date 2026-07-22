@@ -1,3 +1,7 @@
+// input: TipTap editor state, slash trigger text, and rich-block insertion helpers
+// output: An editable-only slash-command suggestion extension and inline command menu
+// pos: Shared Markdown editor command palette extension
+
 import { Extension } from '@tiptap/core'
 import Suggestion, { type SuggestionKeyDownProps, type SuggestionProps } from '@tiptap/suggestion'
 import { NodeSelection, PluginKey } from '@tiptap/pm/state'
@@ -510,6 +514,7 @@ export const TiptapSlashMenu = Extension.create({
         allow: ({ editor, state }) => {
           const { selection } = state
 
+          if (!editor.isEditable) return false
           if (!selection.empty) return false
           if (selection instanceof NodeSelection) return false
           if (editor.isActive('codeBlock')) return false
