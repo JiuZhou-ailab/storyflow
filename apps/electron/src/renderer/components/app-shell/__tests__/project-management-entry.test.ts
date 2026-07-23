@@ -62,6 +62,7 @@ describe('project management entry', () => {
     expect(appShellSource).toContain('void onSelectWorkspace?.(workspaceId)')
     expect(activityRailSource).toContain('<ProjectSwitcherPopover')
     expect(activityRailSource).toContain('onWorkspaceCreated={onWorkspaceCreated}')
+    expect(activityRailSource).not.toContain('onCreateProject')
     expect(activityRailSource).not.toContain('onManageProjects')
     expect(activityRailSource).not.toContain('退出到作品库')
   })

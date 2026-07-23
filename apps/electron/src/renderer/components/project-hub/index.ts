@@ -1,17 +1,7 @@
-// input: ProjectHub component module
-// output: Public exports for the renderer project hub surface
-// pos: Barrel for project-hub consumers without wiring application routes
+// input: Project cold-start navigation helpers
+// output: Return-route hooks/actions for project manager shell
+// pos: Thin barrel; project UI lives in app-shell/ProjectManagerPanel
 
-export {
-  ProjectHub,
-  createProjectHubActions,
-  filterProjectHubProjects,
-  type ProjectHubCallbacks,
-  type ProjectHubProject,
-  type ProjectHubProjectKind,
-  type ProjectHubProjectStatus,
-  type ProjectHubProps,
-} from './ProjectHub'
 export {
   getProjectHubReturnDestination,
   ProjectHubNavigationActions,

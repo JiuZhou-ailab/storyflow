@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from "react"
 import { useTranslation } from "react-i18next"
 import { ArrowLeft } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { shortenDisplayPath } from "@/lib/display-format"
 import { slugify } from "@/lib/slugify"
 import { Input } from "../ui/input"
 import { AddWorkspaceContainer, AddWorkspaceStepHeader, AddWorkspaceSecondaryButton, AddWorkspacePrimaryButton } from "./primitives"
@@ -31,13 +32,6 @@ function getLocalizedMethodPreview(
   _language: string | undefined,
 ): WorkspaceCreationMethodPreview {
   return option.richPreview
-}
-
-function shortenDisplayPath(path: string): string {
-  const normalized = path.replace(/\\/g, "/")
-  const parts = normalized.split("/").filter(Boolean)
-  if (parts.length <= 3) return normalized.startsWith("/") ? `/${parts.join("/")}` : parts.join("/")
-  return `…/${parts.slice(-3).join("/")}`
 }
 
 export function MethodPackPreviewPanel({
@@ -297,7 +291,7 @@ export function AddWorkspaceStep_CreateNew({
                   className="truncate font-mono text-[11px] leading-4 text-muted-foreground/80"
                   title={finalPath}
                 >
-                  {shortenDisplayPath(finalPath)}
+                  {shortenDisplayPath(finalPath, 3)}
                 </p>
               ) : null}
             </div>

@@ -17,9 +17,6 @@ export interface ProjectSwitcherPopoverProps {
   workspaces: Workspace[]
   activeWorkspaceId: string | null
   onSelectProject: (workspaceId: string) => void
-  onCreateProject?: () => void
-  onImportProject?: () => void
-  onConnectRemoteProject?: () => void
   onWorkspaceCreated?: (workspace: Workspace) => void | Promise<void>
   onOpenProjectInNewWindow?: (workspaceId: string) => void
   onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
@@ -27,19 +24,12 @@ export interface ProjectSwitcherPopoverProps {
   children: React.ReactElement
   open?: boolean
   onOpenChange?: (open: boolean) => void
-  /** @deprecated Side alignment no longer applies; dialog is always centered. */
-  side?: 'top' | 'right' | 'bottom' | 'left'
-  /** @deprecated Align no longer applies; dialog is always centered. */
-  align?: 'start' | 'center' | 'end'
 }
 
 export function ProjectSwitcherPopover({
   workspaces,
   activeWorkspaceId,
   onSelectProject,
-  onCreateProject,
-  onImportProject,
-  onConnectRemoteProject,
   onWorkspaceCreated,
   onOpenProjectInNewWindow,
   onRenameProject,
@@ -88,9 +78,6 @@ export function ProjectSwitcherPopover({
           workspaces={workspaces}
           activeWorkspaceId={activeWorkspaceId}
           onSelectProject={onSelectProject}
-          onCreateProject={onCreateProject}
-          onImportProject={onImportProject}
-          onConnectRemoteProject={onConnectRemoteProject}
           onWorkspaceCreated={onWorkspaceCreated}
           onOpenProjectInNewWindow={onOpenProjectInNewWindow}
           onRenameProject={onRenameProject}

@@ -1,7 +1,7 @@
-# Project Hub package (legacy helpers)
+# Project hub navigation
 
-Product UI no longer mounts the full-page ProjectHub gallery. Day-to-day project switch/create/import/remote/rename/remove lives in `app-shell/ProjectManagerPanel` (rail popover + cold-start standalone).
+Product project UI lives in `app-shell/ProjectManagerPanel` (rail dialog + cold-start).
 
-This folder still owns:
-- `ProjectHubNavigation.ts` — reversible return-route helpers for cold-start shell
-- `ProjectHub.tsx` — legacy gallery component kept for helper tests / playground until fully deleted
+This folder only keeps return-route helpers:
+
+- `ProjectHubNavigation.ts` — snapshot/return destination + keyboard back actions

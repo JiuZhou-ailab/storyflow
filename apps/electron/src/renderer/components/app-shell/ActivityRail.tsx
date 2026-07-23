@@ -33,14 +33,11 @@ export type ActivityRailItemId =
   | 'search'
   | 'account'
 
-interface ActivityRailProps {
+export interface ActivityRailProps {
   activeItem: ActivityRailItemId
   workspaces?: Workspace[]
   activeWorkspaceId?: string | null
   onSelectProject?: (workspaceId: string) => void
-  onCreateProject?: () => void
-  onImportProject?: () => void
-  onConnectRemoteProject?: () => void
   onWorkspaceCreated?: (workspace: Workspace) => void | Promise<void>
   onOpenProjectInNewWindow?: (workspaceId: string) => void
   onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
@@ -95,9 +92,6 @@ export function ActivityRail({
   workspaces = [],
   activeWorkspaceId = null,
   onSelectProject,
-  onCreateProject,
-  onImportProject,
-  onConnectRemoteProject,
   onWorkspaceCreated,
   onOpenProjectInNewWindow,
   onRenameProject,
@@ -193,9 +187,6 @@ export function ActivityRail({
             workspaces={workspaces}
             activeWorkspaceId={activeWorkspaceId}
             onSelectProject={onSelectProject}
-            onCreateProject={onCreateProject}
-            onImportProject={onImportProject}
-            onConnectRemoteProject={onConnectRemoteProject}
             onWorkspaceCreated={onWorkspaceCreated}
             onOpenProjectInNewWindow={onOpenProjectInNewWindow}
             onRenameProject={onRenameProject}

@@ -46,7 +46,7 @@ const sampleWorkspaces: Workspace[] = [
   },
 ]
 
-const noop = () => console.log('[Playground] ProjectHub action triggered')
+const noop = () => console.log('[Playground] ProjectManagerPanel action triggered')
 
 function ProjectManagerPreviewWrapper({ children }: { children: ReactNode }) {
   return <ModalProvider>{children}</ModalProvider>

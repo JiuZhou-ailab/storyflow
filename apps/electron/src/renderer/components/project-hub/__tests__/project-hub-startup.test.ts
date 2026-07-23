@@ -105,7 +105,8 @@ describe('ProjectHub startup integration', () => {
   it('keeps project create/import/remote inside the project manager panel', () => {
     expect(appSource).toContain('onWorkspaceCreated: (workspace: Workspace)')
     expect(appSource).toContain('handleProjectHubWorkspaceCreated')
-    expect(appSource).toContain('onWorkspaceCreated={projectManagerActions.onWorkspaceCreated}')
+    expect(appSource).toContain('{...projectManagerActions}')
+    expect(appSource).toContain('<ProjectManagerPanel')
     expect(appSource).not.toContain("openWorkspaceCreation('create')")
     expect(appSource).not.toContain("openWorkspaceCreation('open')")
     expect(appSource).not.toContain("openWorkspaceCreation('remote')")

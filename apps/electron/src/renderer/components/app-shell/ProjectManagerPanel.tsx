@@ -31,6 +31,7 @@ import { AddWorkspaceStep_OpenFolder } from '@/components/workspace/AddWorkspace
 import { AddWorkspaceStep_ConnectRemote } from '@/components/workspace/AddWorkspaceStep_ConnectRemote'
 import type { RemoteServerConfig, Workspace, WorkspaceProjectType } from '../../../shared/types'
 import type { MethodPackId } from '@craft-agent/shared/writing/method-packs'
+import { formatRelativeTimestamp, shortenDisplayPath } from '@/lib/display-format'
 import { formatTopbarWorkspaceName } from './workspace-switcher-label'
 
 export type ProjectManagerView = 'list' | 'create' | 'open' | 'remote'
@@ -39,17 +40,13 @@ export interface ProjectManagerPanelProps {
   workspaces: Workspace[]
   activeWorkspaceId: string | null
   onSelectProject: (workspaceId: string) => void
-  /** Fallback when onWorkspaceCreated is not provided (legacy). */
-  onCreateProject?: () => void
-  onImportProject?: () => void
-  onConnectRemoteProject?: () => void
-  /** Preferred: create/import/remote stay inside this panel. */
+  /** Create/import/remote stay inside this panel. */
   onWorkspaceCreated?: (workspace: Workspace) => void | Promise<void>
   onOpenProjectInNewWindow?: (workspaceId: string) => void
   onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
   onRemoveProject?: (workspaceId: string) => void | Promise<void>
   /** dialog: centered modal; standalone: cold-start panel */
-  variant?: 'dialog' | 'standalone' | 'popover'
+  variant?: 'dialog' | 'standalone'
   className?: string
   onRequestClose?: () => void
   /** Controlled subview; when omitted, panel owns list/create/open/remote state. */
@@ -66,24 +63,6 @@ function sortByRecent(workspaces: Workspace[]): Workspace[] {
   })
 }
 
-function formatRelativeActivity(workspace: Workspace): string {
-  const at = typeof workspace.lastAccessedAt === 'number' ? workspace.lastAccessedAt : undefined
-  if (!at) return '未打开过'
-  const delta = Date.now() - at
-  const minute = 60_000
-  const hour = 60 * minute
-  const day = 24 * hour
-  if (delta < minute) return '刚刚'
-  if (delta < hour) return `${Math.floor(delta / minute)} 分钟前`
-  if (delta < day) return `${Math.floor(delta / hour)} 小时前`
-  if (delta < 7 * day) return `${Math.floor(delta / day)} 天前`
-  try {
-    return new Date(at).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
-  } catch {
-    return '更早'
-  }
-}
-
 function shortLocation(workspace: Workspace): string {
   if (workspace.remoteServer) {
     try {
@@ -92,11 +71,9 @@ function shortLocation(workspace: Workspace): string {
       return '远端'
     }
   }
-  const path = workspace.rootPath?.replace(/\\/g, '/') ?? ''
+  const path = workspace.rootPath ?? ''
   if (!path) return '本地'
-  const parts = path.split('/').filter(Boolean)
-  if (parts.length <= 2) return path
-  return `…/${parts.slice(-2).join('/')}`
+  return shortenDisplayPath(path, 2)
 }
 
 const EMBEDDED_STEP_CLASS =
@@ -121,9 +98,6 @@ export function ProjectManagerPanel({
   workspaces,
   activeWorkspaceId,
   onSelectProject,
-  onCreateProject,
-  onImportProject,
-  onConnectRemoteProject,
   onWorkspaceCreated,
   onOpenProjectInNewWindow,
   onRenameProject,
@@ -143,7 +117,7 @@ export function ProjectManagerPanel({
 
   const view = viewProp ?? uncontrolledView
   const setView = onViewChange ?? setUncontrolledView
-  const inlineCreate = typeof onWorkspaceCreated === 'function'
+  const canCreateInline = typeof onWorkspaceCreated === 'function'
 
   const sorted = React.useMemo(() => sortByRecent(workspaces), [workspaces])
   const visible = React.useMemo(() => {
@@ -156,35 +130,6 @@ export function ProjectManagerPanel({
       return name.includes(needle) || path.includes(needle) || remote.includes(needle)
     })
   }, [query, sorted])
-
-  const runAndClose = React.useCallback((action: () => void) => {
-    onRequestClose?.()
-    action()
-  }, [onRequestClose])
-
-  const openCreate = React.useCallback(() => {
-    if (inlineCreate) {
-      setView('create')
-      return
-    }
-    if (onCreateProject) runAndClose(onCreateProject)
-  }, [inlineCreate, onCreateProject, runAndClose, setView])
-
-  const openImport = React.useCallback(() => {
-    if (inlineCreate) {
-      setView('open')
-      return
-    }
-    if (onImportProject) runAndClose(onImportProject)
-  }, [inlineCreate, onImportProject, runAndClose, setView])
-
-  const openRemote = React.useCallback(() => {
-    if (inlineCreate) {
-      setView('remote')
-      return
-    }
-    if (onConnectRemoteProject) runAndClose(onConnectRemoteProject)
-  }, [inlineCreate, onConnectRemoteProject, runAndClose, setView])
 
   const handleCreateWorkspace = React.useCallback(async (
     folderPath: string,
@@ -212,12 +157,9 @@ export function ProjectManagerPanel({
     }
   }, [onRequestClose, onWorkspaceCreated, setView])
 
-  const isDialog = variant === 'dialog' || variant === 'popover'
+  const isDialog = variant === 'dialog'
   const showSearch = workspaces.length > 3 || query.length > 0
   const isWideStep = view === 'create'
-  const showCreateAction = inlineCreate || Boolean(onCreateProject)
-  const showImportAction = inlineCreate || Boolean(onImportProject)
-  const showRemoteAction = inlineCreate || Boolean(onConnectRemoteProject)
   const stepCopy = view === 'list' ? null : PROJECT_STEP_COPY[view]
 
   return (
@@ -238,7 +180,7 @@ export function ProjectManagerPanel({
         className,
       )}
     >
-      {view !== 'list' && inlineCreate ? (
+      {view !== 'list' && canCreateInline ? (
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <header className="border-b border-foreground/[0.06] px-5 py-3.5 sm:px-7">
             <div className="mx-auto flex w-full max-w-[968px] items-center gap-3">
@@ -310,30 +252,24 @@ export function ProjectManagerPanel({
                   </span>
                 ) : null}
               </div>
-            {(showCreateAction || showImportAction || showRemoteAction) ? (
+            {canCreateInline ? (
               <div className="flex shrink-0 items-center gap-1" aria-label="项目操作">
-                {showCreateAction ? (
-                  <ProjectActionButton
-                    icon={<Plus className="size-4" strokeWidth={2} />}
-                    title="新建项目"
-                    onClick={openCreate}
-                    primary
-                  />
-                ) : null}
-                {showImportAction ? (
-                  <ProjectActionButton
-                    icon={<Import className="size-3.5" strokeWidth={1.8} />}
-                    title="导入"
-                    onClick={openImport}
-                  />
-                ) : null}
-                {showRemoteAction ? (
-                  <ProjectActionButton
-                    icon={<Cloud className="size-3.5" strokeWidth={1.8} />}
-                    title="远端"
-                    onClick={openRemote}
-                  />
-                ) : null}
+                <ProjectActionButton
+                  icon={<Plus className="size-4" strokeWidth={2} />}
+                  title="新建项目"
+                  onClick={() => setView('create')}
+                  primary
+                />
+                <ProjectActionButton
+                  icon={<Import className="size-3.5" strokeWidth={1.8} />}
+                  title="导入"
+                  onClick={() => setView('open')}
+                />
+                <ProjectActionButton
+                  icon={<Cloud className="size-3.5" strokeWidth={1.8} />}
+                  title="远端"
+                  onClick={() => setView('remote')}
+                />
               </div>
             ) : null}
             </div>
@@ -406,7 +342,8 @@ export function ProjectManagerPanel({
                               onRequestClose?.()
                               return
                             }
-                            runAndClose(() => onSelectProject(workspace.id))
+                            onRequestClose?.()
+                            onSelectProject(workspace.id)
                           }}
                           className={cn(
                             'flex min-w-0 flex-1 items-center text-left outline-none',
@@ -448,7 +385,7 @@ export function ProjectManagerPanel({
                             )}>
                               <span className="truncate">{shortLocation(workspace)}</span>
                               <span className="shrink-0 text-muted-foreground/30" aria-hidden>·</span>
-                              <span className="shrink-0 tabular-nums">{formatRelativeActivity(workspace)}</span>
+                              <span className="shrink-0 tabular-nums">{formatRelativeTimestamp(workspace.lastAccessedAt)}</span>
                             </span>
                           </span>
                         </button>

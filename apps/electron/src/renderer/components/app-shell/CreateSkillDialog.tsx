@@ -66,16 +66,6 @@ ${description}
 `
 }
 
-function uniqueSlug(base: string, existing: Set<string>): string {
-  if (!base) base = 'new-skill'
-  if (!existing.has(base)) return base
-  for (let i = 2; i < 100; i++) {
-    const candidate = `${base.slice(0, 60)}-${i}`
-    if (!existing.has(candidate)) return candidate
-  }
-  return `${base.slice(0, 50)}-${Date.now().toString(36)}`
-}
-
 export function CreateSkillDialog({
   open,
   onOpenChange,
@@ -102,26 +92,16 @@ export function CreateSkillDialog({
 
   React.useEffect(() => {
     if (slugTouched) return
-    const next = toSkillSlug(displayName)
-    setSlug(next)
+    setSlug(toSkillSlug(displayName))
   }, [displayName, slugTouched])
 
-  const resolvedSlug = uniqueSlug(slug || toSkillSlug(displayName), existing)
-  const canSubmit = Boolean(displayName.trim() && description.trim() && resolvedSlug)
+  const finalSlug = slug || toSkillSlug(displayName)
+  const slugValid = /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(finalSlug)
+  const canSubmit = Boolean(displayName.trim() && description.trim() && slugValid && !existing.has(finalSlug))
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!canSubmit || submitting) return
-
-    const finalSlug = resolvedSlug
-    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(finalSlug)) {
-      toast.error(t('skillsList.invalidSlug', '技能 ID 只能使用小写字母、数字和连字符'))
-      return
-    }
-    if (existing.has(finalSlug)) {
-      toast.error(t('skillsList.slugExists', '该技能 ID 已存在'))
-      return
-    }
 
     const skillPath = `${workspaceRootPath.replace(/\/+$/, '')}/.pi/skills/${finalSlug}/SKILL.md`
     const content = buildSkillMarkdown({
@@ -188,10 +168,16 @@ export function CreateSkillDialog({
                 placeholder="chapter-continuity"
                 className="font-mono text-[13px]"
               />
-              {displayName.trim() && resolvedSlug ? (
+              {displayName.trim() && finalSlug ? (
                 <p className="text-[11px] text-muted-foreground">
-                  {t('skillsList.willCreateAt', '将创建于')}{' '}
-                  <span className="font-mono">.pi/skills/{resolvedSlug}/SKILL.md</span>
+                  {existing.has(finalSlug)
+                    ? t('skillsList.slugExists', '该技能 ID 已存在')
+                    : (
+                      <>
+                        {t('skillsList.willCreateAt', '将创建于')}{' '}
+                        <span className="font-mono">.pi/skills/{finalSlug}/SKILL.md</span>
+                      </>
+                    )}
                 </p>
               ) : null}
             </div>
