@@ -1,7 +1,7 @@
 {
   "version": "0.9.40",
   "digest": "5890a1277a1b2560cce259d21adf9da50b866245b6f503b17977e0908b9c5c8e",
-  "generatedAt": "2026-07-23T13:59:27.236Z",
+  "generatedAt": "2026-07-23T14:00:00.461Z",
   "title": "What is new in v0.9.40",
   "summary": "这一版重新整理了桌面端工作区：常用入口、最近对话、项目和文件目录集中在一条侧边栏里，登录与账户页面也回到更简单、可信的层级。",
   "highlights": [
@@ -13,7 +13,7 @@
   "accentColor": "#4d7b14",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 17,
+    "commitCount": 18,
     "userVisibleCommitCount": 15
   }
 }
