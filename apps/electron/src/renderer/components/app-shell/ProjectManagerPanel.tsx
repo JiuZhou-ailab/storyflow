@@ -171,12 +171,10 @@ export function ProjectManagerPanel({
         'flex min-h-0 flex-col overflow-hidden bg-background text-foreground',
         isDialog
           ? cn(
-            'w-full rounded-2xl',
-            'shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_28px_80px_-20px_rgba(0,0,0,0.32)]',
-            'dark:shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_32px_88px_-22px_rgba(0,0,0,0.7)]',
+            'w-full rounded-2xl shadow-modal-small',
             isWideStep ? 'h-[min(720px,calc(100vh-4rem))]' : 'min-h-[min(500px,72vh)]',
           )
-          : 'w-full max-w-[720px] rounded-2xl shadow-[0_0_0_1px_rgba(0,0,0,0.04),0_16px_48px_-12px_rgba(0,0,0,0.2)] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_20px_56px_-14px_rgba(0,0,0,0.55)]',
+          : 'w-full max-w-[720px] rounded-2xl shadow-strong',
         className,
       )}
     >

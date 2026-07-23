@@ -6,6 +6,7 @@ import * as React from 'react'
 import { useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import { useCallback } from 'react'
+import { usePlatform } from '@craft-agent/ui'
 import { Check, X, Minus } from 'lucide-react'
 import { getEditConfig } from '@/components/ui/EditPopover'
 import { ResourceEditActions } from '@/components/ui/resource-edit-actions'
@@ -29,6 +30,7 @@ interface SkillInfoPageProps {
 
 export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally = true }: SkillInfoPageProps) {
   const { t } = useTranslation()
+  const { onOpenFile } = usePlatform()
   const skills = useAtomValue(skillsAtom)
   const skill = skills.find((s) => s.slug === skillSlug) ?? null
   const displayName = skill?.metadata.displayName ?? skill?.metadata.name ?? skillSlug
@@ -93,14 +95,13 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
         await window.electronAPI.openSkillInEditor(workspaceId, skillSlug)
         return
       }
-      // Remote / fallback: still try file open path
-      await window.electronAPI.openFile(`${skill.path}/SKILL.md`)
+      onOpenFile?.(`${skill.path}/SKILL.md`)
     } catch (err) {
       toast.error('无法打开编辑器', {
         description: err instanceof Error ? err.message : undefined,
       })
     }
-  }, [canRevealLocally, skill, skillSlug, t, workspaceId])
+  }, [canRevealLocally, onOpenFile, skill, skillSlug, workspaceId])
 
   const renderEditActions = (configKey: 'skill-metadata' | 'skill-instructions') => {
     if (!skill) return null
