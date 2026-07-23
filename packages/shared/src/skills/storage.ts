@@ -1,9 +1,9 @@
 /**
  * Skills Storage
  *
- * input: Project roots, Skill slugs, and SKILL.md documents
- * output: Validated project-owned Pi Skill metadata, content, and storage operations
- * pos: Canonical Skill persistence at {project}/.pi/skills/{slug}/
+ * input: Optional project roots, global/project Skill directories, and SKILL.md documents
+ * output: Project-over-global Skill discovery plus project-owned mutation operations
+ * pos: Shared Skill overlay storage with explicit Storyflow-owned resource roots
  */
 
 import {
@@ -12,12 +12,20 @@ import {
   readdirSync,
   rmSync,
   lstatSync,
+  mkdirSync,
+  writeFileSync,
 } from 'fs';
 import { join } from 'path';
 import matter from 'gray-matter';
-import type { LoadedSkill, SkillMetadata } from './types.ts';
+import type {
+  LoadedSkill,
+  SkillDefinitionOrigin,
+  SkillMetadata,
+} from './types.ts';
+import { resolveResourceRoots } from '../resources/resolver.ts';
 import {
   assertSymlinkFreeTree,
+  ensureProjectOwnedDirectory,
   getWorkspaceSkillsPath,
   resolveProjectOwnedPath,
 } from '../workspaces/paths.ts';
@@ -113,7 +121,11 @@ export function validateSkillDocumentForSlug(content: string, slug: string): str
  * @param slug - Skill directory name
  * @param source - Where this skill is loaded from
  */
-function loadSkillFromDir(skillsDir: string, slug: string): LoadedSkill | null {
+function loadSkillFromDir(
+  skillsDir: string,
+  slug: string,
+  origin: SkillDefinitionOrigin,
+): LoadedSkill | null {
   if (!isValidSkillSlug(slug)) return null;
 
   const skillDir = join(skillsDir, slug);
@@ -154,6 +166,7 @@ function loadSkillFromDir(skillsDir: string, slug: string): LoadedSkill | null {
     content: parsed.body,
     iconPath: findIconFile(skillDir),
     path: skillDir,
+    origin,
   };
 }
 
@@ -162,7 +175,10 @@ function loadSkillFromDir(skillsDir: string, slug: string): LoadedSkill | null {
  * @param skillsDir - Absolute path to skills directory
  * @param source - Where these skills are loaded from
  */
-function loadSkillsFromDir(skillsDir: string): LoadedSkill[] {
+function loadSkillsFromDir(
+  skillsDir: string,
+  origin: SkillDefinitionOrigin,
+): LoadedSkill[] {
   if (!existsSync(skillsDir)) {
     return [];
   }
@@ -174,7 +190,7 @@ function loadSkillsFromDir(skillsDir: string): LoadedSkill[] {
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
 
-      const skill = loadSkillFromDir(skillsDir, entry.name);
+      const skill = loadSkillFromDir(skillsDir, entry.name, origin);
       if (skill) {
         skills.push(skill);
       }
@@ -191,15 +207,29 @@ function loadSkillsFromDir(skillsDir: string): LoadedSkill[] {
  * @param workspaceRoot - Absolute path to workspace root
  * @param slug - Skill directory name
  */
-export function loadSkill(workspaceRoot: string, slug: string): LoadedSkill | null {
+export function loadSkill(
+  projectRoot: string | undefined,
+  slug: string,
+): LoadedSkill | null {
   if (!isValidSkillSlug(slug)) return null;
-  try {
-    const skillsDir = resolveProjectOwnedPath(workspaceRoot, getWorkspaceSkillsPath(workspaceRoot));
-    resolveProjectOwnedPath(workspaceRoot, join(getWorkspaceSkillsPath(workspaceRoot), slug));
-    return loadSkillFromDir(skillsDir, slug);
-  } catch {
-    return null;
+
+  for (const root of resolveResourceRoots({ projectRoot }).skills) {
+    if (root.origin === 'project') {
+      try {
+        const skillsDir = resolveProjectOwnedPath(root.rootPath, root.path);
+        resolveProjectOwnedPath(root.rootPath, join(root.path, slug));
+        const skill = loadSkillFromDir(skillsDir, slug, root.origin);
+        if (skill) return skill;
+      } catch {
+        continue;
+      }
+    } else {
+      const skill = loadSkillFromDir(root.path, slug, root.origin);
+      if (skill) return skill;
+    }
   }
+
+  return null;
 }
 
 /**
@@ -209,7 +239,7 @@ export function loadSkill(workspaceRoot: string, slug: string): LoadedSkill | nu
 export function loadWorkspaceSkills(workspaceRoot: string): LoadedSkill[] {
   try {
     const skillsDir = resolveProjectOwnedPath(workspaceRoot, getWorkspaceSkillsPath(workspaceRoot));
-    return loadSkillsFromDir(skillsDir);
+    return loadSkillsFromDir(skillsDir, 'project');
   } catch {
     return [];
   }
@@ -233,24 +263,26 @@ export function invalidateSkillsCache(): void {
  *
  * @param workspaceRoot - Absolute path to workspace root
  */
-export function loadAllSkills(workspaceRoot: string): LoadedSkill[] {
-  const cached = skillsCache.get(workspaceRoot);
+export function loadAllSkills(projectRoot?: string): LoadedSkill[] {
+  const cacheKey = projectRoot ?? '<global>';
+  const cached = skillsCache.get(cacheKey);
   if (cached) return cached;
 
-  const result = loadWorkspaceSkills(workspaceRoot);
-  skillsCache.set(workspaceRoot, result);
-  return result;
-}
+  const skillsBySlug = new Map<string, LoadedSkill>();
+  for (const root of resolveResourceRoots({ projectRoot }).skills) {
+    const skills = root.origin === 'project'
+      ? loadWorkspaceSkills(root.rootPath)
+      : loadSkillsFromDir(root.path, root.origin);
+    for (const skill of skills) {
+      if (!skillsBySlug.has(skill.slug)) {
+        skillsBySlug.set(skill.slug, skill);
+      }
+    }
+  }
 
-/**
- * Load a single project Skill by slug.
- * Unlike loadAllSkills(), this only reads the specific slug directory — O(1) not O(N).
- *
- * @param workspaceRoot - Absolute path to workspace root
- * @param slug - Skill slug to load
- */
-export function loadSkillBySlug(workspaceRoot: string, slug: string): LoadedSkill | null {
-  return loadSkill(workspaceRoot, slug);
+  const result = Array.from(skillsBySlug.values());
+  skillsCache.set(cacheKey, result);
+  return result;
 }
 
 /**
@@ -258,31 +290,77 @@ export function loadSkillBySlug(workspaceRoot: string, slug: string): LoadedSkil
  * @param workspaceRoot - Absolute path to workspace root
  * @param slug - Skill directory name
  */
-export function getSkillIconPath(workspaceRoot: string, slug: string): string | null {
-  const skillDir = loadSkill(workspaceRoot, slug)?.path;
+export function getSkillIconPath(
+  projectRoot: string | undefined,
+  slug: string,
+): string | null {
+  const skillDir = loadSkill(projectRoot, slug)?.path;
   return skillDir ? findIconFile(skillDir) || null : null;
 }
 
 // ============================================================
-// Delete Operations
+// Mutation Operations
 // ============================================================
 
 /**
- * Delete a skill from a workspace
- * @param workspaceRoot - Absolute path to workspace root
+ * Create a Skill in the active owner layer.
+ *
+ * Free Conversations write to the global root. Project Conversations write to
+ * that project's overlay. Existing definitions are never overwritten.
+ */
+export function createSkill(
+  projectRoot: string | undefined,
+  slug: string,
+  content: string,
+): LoadedSkill {
+  const validationError = validateSkillDocumentForSlug(content, slug);
+  if (validationError) throw new Error(validationError);
+
+  const target = resolveResourceRoots({ projectRoot }).skills[0];
+  if (!target) throw new Error('Skill root is unavailable');
+
+  const targetDirectory = target.origin === 'project'
+    ? ensureProjectOwnedDirectory(target.rootPath, target.path)
+    : target.path;
+  if (target.origin === 'global') {
+    mkdirSync(targetDirectory, { recursive: true });
+    assertSymlinkFreeTree(targetDirectory);
+  }
+
+  const skillDir = join(targetDirectory, slug);
+  if (existsSync(skillDir)) throw new Error(`Skill already exists: ${slug}`);
+
+  mkdirSync(skillDir);
+  writeFileSync(join(skillDir, 'SKILL.md'), content, { encoding: 'utf-8', flag: 'wx' });
+  invalidateSkillsCache();
+
+  const skill = loadSkill(projectRoot, slug);
+  if (!skill) throw new Error(`Failed to load created Skill: ${slug}`);
+  return skill;
+}
+
+/**
+ * Delete the visible Skill definition.
+ * @param projectRoot - Optional project overlay root
  * @param slug - Skill directory name
  */
-export function deleteSkill(workspaceRoot: string, slug: string): boolean {
+export function deleteSkill(projectRoot: string | undefined, slug: string): boolean {
   if (!isValidSkillSlug(slug)) return false;
 
+  const skill = loadSkill(projectRoot, slug);
+  if (!skill) return false;
+
   try {
-    resolveProjectOwnedPath(workspaceRoot, getWorkspaceSkillsPath(workspaceRoot));
-    const skillDir = resolveProjectOwnedPath(
-      workspaceRoot,
-      join(getWorkspaceSkillsPath(workspaceRoot), slug),
-    );
-    assertSymlinkFreeTree(skillDir);
-    rmSync(skillDir, { recursive: true });
+    if (skill.origin === 'project' && projectRoot) {
+      resolveProjectOwnedPath(projectRoot, getWorkspaceSkillsPath(projectRoot));
+      resolveProjectOwnedPath(projectRoot, skill.path);
+    } else {
+      const globalSkillsRoot = resolveResourceRoots().skills[0]?.path;
+      if (!globalSkillsRoot || skill.path !== join(globalSkillsRoot, slug)) return false;
+    }
+    assertSymlinkFreeTree(skill.path);
+    rmSync(skill.path, { recursive: true });
+    invalidateSkillsCache();
     return true;
   } catch {
     return false;
@@ -298,8 +376,8 @@ export function deleteSkill(workspaceRoot: string, slug: string): boolean {
  * @param workspaceRoot - Absolute path to workspace root
  * @param slug - Skill directory name
  */
-export function skillExists(workspaceRoot: string, slug: string): boolean {
-  return !!loadSkill(workspaceRoot, slug);
+export function skillExists(projectRoot: string | undefined, slug: string): boolean {
+  return !!loadSkill(projectRoot, slug);
 }
 
 /** Agent Skills-compatible slug guard used before joining untrusted input. */

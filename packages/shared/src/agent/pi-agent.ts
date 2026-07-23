@@ -1,3 +1,7 @@
+// input: Resolved backend/runtime context and Pi subprocess protocol events
+// output: Pi-backed Agent implementation using the shared permission pipeline
+// pos: Provider adapter beneath the shared Agent Kernel
+
 /**
  * Pi Backend (Subprocess RPC Client)
  *
@@ -482,6 +486,7 @@ export class PiAgent extends BaseAgent {
       cwd,
       thinkingLevel: this._thinkingLevel,
       workspaceRootPath: this.config.workspace.rootPath,
+      projectRoot: this.config.projectRoot,
       sessionId,
       sessionPath,
       workingDirectory,
@@ -1189,6 +1194,7 @@ export class PiAgent extends BaseAgent {
       plansFolderPath,
       dataFolderPath,
       workingDirectory: this.config.session?.workingDirectory,
+      fileAccessBoundary: this.config.fileAccessBoundary,
       activeSourceSlugs: Array.from(this.sourceManager.getActiveSlugs()),
       allSourceSlugs: this.sourceManager.getAllSources().map(s => s.config.slug),
       hasSourceActivation: !!this.onSourceActivationRequest,
@@ -1261,6 +1267,7 @@ export class PiAgent extends BaseAgent {
           plansFolderPath,
           dataFolderPath,
           workingDirectory: this.config.session?.workingDirectory,
+          fileAccessBoundary: this.config.fileAccessBoundary,
           activeSourceSlugs: Array.from(this.sourceManager.getActiveSlugs()),
           allSourceSlugs: this.sourceManager.getAllSources().map(s => s.config.slug),
           hasSourceActivation: !!this.onSourceActivationRequest,

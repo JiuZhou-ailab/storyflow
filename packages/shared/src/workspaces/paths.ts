@@ -240,6 +240,48 @@ function getProjectRelativeSegments(lexicalRoot: string, targetPath: string): st
   return relativePath ? relativePath.split(sep).filter(Boolean) : [];
 }
 
+function getNearestExistingCanonicalPath(targetPath: string): string {
+  let currentPath = targetPath;
+
+  while (!lstatIfPresent(currentPath)) {
+    const parentPath = resolve(currentPath, '..');
+    if (parentPath === currentPath) {
+      throw new UnsafeProjectPathError(`Path does not exist: ${targetPath}`);
+    }
+    currentPath = parentPath;
+  }
+
+  return realpathSync(currentPath);
+}
+
+/**
+ * Check lexical and canonical containment, including paths whose final
+ * components do not exist yet.
+ */
+export function isPathWithinProjectRoot(
+  projectRoot: string,
+  targetPath: string,
+  options: { allowMissing?: boolean } = {},
+): boolean {
+  try {
+    const { lexicalRoot, canonicalRoot } = getProjectBoundary(projectRoot);
+    const lexicalTarget = resolve(targetPath);
+    if (
+      !isWithinPath(lexicalRoot, lexicalTarget)
+      && !isWithinPath(canonicalRoot, lexicalTarget)
+    ) {
+      return false;
+    }
+
+    const canonicalTarget = options.allowMissing
+      ? getNearestExistingCanonicalPath(lexicalTarget)
+      : realpathSync(lexicalTarget);
+    return isWithinPath(canonicalRoot, canonicalTarget);
+  } catch {
+    return false;
+  }
+}
+
 /** Resolve an existing project-owned path without following project-internal symlinks. */
 export function resolveProjectOwnedPath(projectRoot: string, targetPath: string): string {
   const { lexicalRoot, canonicalRoot } = getProjectBoundary(projectRoot);

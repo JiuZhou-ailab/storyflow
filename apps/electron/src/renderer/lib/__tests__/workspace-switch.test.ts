@@ -66,7 +66,7 @@ describe('workspace switch loading boundaries', () => {
   it('switches the renderer shell to the target workspace before awaiting backend hydration', () => {
     const appSource = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf-8')
     const switchHandlerSource = appSource.slice(
-      appSource.indexOf('const handleSelectWorkspace ='),
+      appSource.indexOf('const activateRuntimeWorkspace ='),
       appSource.indexOf('// Handle workspace switch by slug')
     )
     const workspaceSessionEffectSource = appSource.slice(
@@ -97,7 +97,7 @@ describe('workspace switch loading boundaries', () => {
   it('does not leave the app loading forever when backend workspace switching fails', () => {
     const appSource = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf-8')
     const switchHandlerSource = appSource.slice(
-      appSource.indexOf('const handleSelectWorkspace ='),
+      appSource.indexOf('const activateRuntimeWorkspace ='),
       appSource.indexOf('// Handle workspace switch by slug')
     )
 
@@ -116,8 +116,8 @@ describe('workspace switch loading boundaries', () => {
     expect(appSource).toContain('STARTUP_RPC_TIMEOUT_MS')
     expect(appSource).toContain('SESSION_RPC_TIMEOUT_MS')
     expect(appSource).toContain('WORKSPACE_SWITCH_RPC_TIMEOUT_MS')
-    expect(appSource).toContain("withTimeout(\n        window.electronAPI.getSessions()")
-    expect(appSource).toContain("withTimeout(\n      window.electronAPI.getWorkspaces()")
-    expect(appSource).toContain("withTimeout(\n          window.electronAPI.switchWorkspace(workspaceId)")
+    expect(appSource).toMatch(/withTimeout\(\s*window\.electronAPI\.getSessions\(\)/)
+    expect(appSource).toMatch(/withTimeout\(\s*window\.electronAPI\.getWorkspaces\(\)/)
+    expect(appSource).toMatch(/withTimeout\(\s*window\.electronAPI\.switchWorkspace\(workspaceId\)/)
   })
 })

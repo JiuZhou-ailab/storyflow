@@ -931,8 +931,7 @@ ${formattedMessages}
     cleanMessage: string;
     missingSkills: string[];
   } {
-    const workspaceRoot = this.config.workspace?.rootPath ?? this.workingDirectory;
-    const skills = loadAllSkills(workspaceRoot);
+    const skills = loadAllSkills(this.config.projectRoot);
     const skillSlugs = skills.map(s => s.slug);
 
     this.debug(`[extractSkillPaths] Available skills: ${skillSlugs.join(', ')}`);
@@ -1203,7 +1202,7 @@ ${formattedMessages}
   protected getSpawnSessionHelp(): SpawnSessionHelpResult {
     const connections = getLlmConnections();
     const defaultConnectionSlug = getDefaultLlmConnection();
-    const allSources = loadAllSources(this.config.workspace.rootPath);
+    const allSources = loadAllSources(this.config.projectRoot);
     const activeSlugs = this.sourceManager.getActiveSlugs();
 
     return {

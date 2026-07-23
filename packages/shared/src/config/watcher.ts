@@ -1,7 +1,7 @@
 /**
  * Config File Watcher
  *
- * input: App, global Source, and workspace/project configuration file changes
+ * input: App, global Storyflow resources, and workspace/project configuration changes
  * output: Debounced callbacks for config, sources, skills, permissions, themes, and metadata
  * pos: Shared filesystem watch coordinator for live runtime configuration updates
  *
@@ -14,7 +14,7 @@
  * - ~/.craft-agent/theme.json - App-level theme overrides
  * - ~/.craft-agent/themes/*.json - Preset theme files (app-level)
  * - ~/.craft-agent/sources/{slug}/config.json, guide.md, icon.* - Craft global sources
- * - ~/.agents/sources/{slug}/... - Shared multi-tool sources (read interop)
+ * - ~/.craft-agent/skills/{slug}/SKILL.md, icon.* - Craft global Skills
  * - ~/.craft-agent/workspaces/{slug}/ - Workspace directory (recursive)
  *   - .craft-agent/sources/{slug}/config.json, guide.md, permissions.json
  *   - .pi/skills/{slug}/SKILL.md, icon.*
@@ -46,7 +46,6 @@ import {
   sourceNeedsIconDownload,
   downloadSourceIcon,
   GLOBAL_AGENT_SOURCES_DIR,
-  SHARED_AGENTS_SOURCES_DIR,
 } from '../sources/storage.ts';
 import { permissionsConfigCache, getAppPermissionsDir } from '../agent/permissions-config.ts';
 import { getWorkspacePath, getWorkspaceSourcesPath, getWorkspaceSkillsPath } from '../workspaces/storage.ts';
@@ -59,6 +58,7 @@ import {
   skillNeedsIconDownload,
   downloadSkillIcon,
 } from '../skills/storage.ts';
+import { resolveResourceRoots } from '../resources/resolver.ts';
 import {
   loadStatusConfig,
   statusNeedsIconDownload,
@@ -101,6 +101,7 @@ export function _getGlobalWatcherState(): {
 
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 const PREFERENCES_FILE = join(CONFIG_DIR, 'preferences.json');
+const GLOBAL_AGENT_SKILLS_DIR = resolveResourceRoots().skills[0]!.path;
 
 // Debounce delay in milliseconds
 const DEBOUNCE_MS = 100;
@@ -478,6 +479,7 @@ export class ConfigWatcher {
     ConfigWatcher.globalStarted = true;
     ConfigWatcher.watchGlobalConfigsOnce();
     ConfigWatcher.watchGlobalSourcesDirOnce();
+    ConfigWatcher.watchGlobalSkillsDirOnce();
     ConfigWatcher.watchAppThemesDirOnce();
     ConfigWatcher.watchAppPermissionsDirOnce();
   }
@@ -552,7 +554,40 @@ export class ConfigWatcher {
 
   private static watchGlobalSourcesDirOnce(): void {
     ConfigWatcher.watchSourcesDirOnce(GLOBAL_AGENT_SOURCES_DIR, 'craft');
-    ConfigWatcher.watchSourcesDirOnce(SHARED_AGENTS_SOURCES_DIR, 'shared-agents', false);
+  }
+
+  private static watchGlobalSkillsDirOnce(): void {
+    if (!existsSync(GLOBAL_AGENT_SKILLS_DIR)) {
+      mkdirSync(GLOBAL_AGENT_SKILLS_DIR, { recursive: true });
+    }
+
+    try {
+      const watcher = watch(
+        GLOBAL_AGENT_SKILLS_DIR,
+        { recursive: true },
+        (_eventType, filename) => {
+          if (!filename) return;
+
+          const normalizedPath = filename.replace(/\\/g, '/');
+          const parts = normalizedPath.split('/');
+          const file = parts[1];
+          if (
+            parts.length === 1
+            || file === 'SKILL.md'
+            || (file && /^icon\.(svg|png|jpg|jpeg)$/i.test(file))
+          ) {
+            ConfigWatcher.debounceGlobal('global-skills', () => {
+              ConfigWatcher.forEachGlobalSubscriber(w => w.handleGlobalSkillsChange());
+            });
+          }
+        },
+      );
+
+      ConfigWatcher.globalWatchers.push(watcher);
+      debug('[ConfigWatcher] Watching global Skills once:', GLOBAL_AGENT_SKILLS_DIR);
+    } catch (error) {
+      debug('[ConfigWatcher] Error watching global Skills directory:', error);
+    }
   }
 
   private static watchAppThemesDirOnce(): void {
@@ -623,50 +658,6 @@ export class ConfigWatcher {
     }
   }
 
-  private watchSourcesDir(
-    sourcesDir: string,
-    label: string,
-    createIfMissing = true,
-  ): void {
-    if (!existsSync(sourcesDir)) {
-      if (!createIfMissing) return;
-      mkdirSync(sourcesDir, { recursive: true });
-    }
-
-    try {
-      const watcher = watch(sourcesDir, { recursive: true }, (_eventType, filename) => {
-        if (!filename) return;
-
-        const normalizedPath = filename.replace(/\\/g, '/');
-        const parts = normalizedPath.split('/');
-        const file = parts[1];
-
-        if (
-          parts.length === 1
-          || file === 'config.json'
-          || file === 'guide.md'
-          || (file && /^icon\.(svg|png|jpg|jpeg)$/i.test(file))
-        ) {
-          this.debounce('global-sources', () => this.handleGlobalSourcesChange());
-        }
-      });
-
-      this.watchers.push(watcher);
-      debug('[ConfigWatcher] Watching global sources recursively:', label, sourcesDir);
-    } catch (error) {
-      debug('[ConfigWatcher] Error watching global sources directory:', label, error);
-    }
-  }
-
-  /**
-   * Watch Craft-owned and shared multi-tool global sources so changes refresh
-   * every workspace's source sidebar and active source server configuration.
-   */
-  private watchGlobalSourcesDir(): void {
-    this.watchSourcesDir(GLOBAL_AGENT_SOURCES_DIR, 'craft');
-    this.watchSourcesDir(SHARED_AGENTS_SOURCES_DIR, 'shared-agents', false);
-  }
-
   /**
    * Handle global source changes. Global sources are visible from every
    * workspace unless a workspace source overrides the same slug.
@@ -675,6 +666,14 @@ export class ConfigWatcher {
     debug('[ConfigWatcher] Global sources changed');
     const allSources = loadWorkspaceSources(this.workspaceDir);
     this.callbacks.onSourcesListChange?.(allSources);
+  }
+
+  /** Refresh merged project-over-global Skills for this subscriber. */
+  private handleGlobalSkillsChange(): void {
+    debug('[ConfigWatcher] Global Skills changed');
+    invalidateSkillsCache();
+    const allSkills = loadAllSkills(this.workspaceDir);
+    this.callbacks.onSkillsListChange?.(allSkills);
   }
 
   /**
@@ -1008,12 +1007,13 @@ export class ConfigWatcher {
       // Directory was deleted
       const removed = Array.from(this.knownSkills);
       this.knownSkills.clear();
+      invalidateSkillsCache();
 
       for (const slug of removed) {
-        this.callbacks.onSkillChange?.(slug, null);
+        this.callbacks.onSkillChange?.(slug, loadSkill(this.workspaceDir, slug));
       }
 
-      this.callbacks.onSkillsListChange?.([]);
+      this.callbacks.onSkillsListChange?.(loadAllSkills(this.workspaceDir));
       return;
     }
 
@@ -1046,7 +1046,8 @@ export class ConfigWatcher {
         if (!currentFolders.has(folder)) {
           debug('[ConfigWatcher] Removed skill folder:', folder);
           this.knownSkills.delete(folder);
-          this.callbacks.onSkillChange?.(folder, null);
+          invalidateSkillsCache();
+          this.callbacks.onSkillChange?.(folder, loadSkill(this.workspaceDir, folder));
         }
       }
 

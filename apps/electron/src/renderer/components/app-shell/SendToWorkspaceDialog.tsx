@@ -1,19 +1,11 @@
-/**
- * SendToWorkspaceDialog — Transfer sessions to remote workspaces.
- *
- * Shows a workspace picker filtered to remote workspaces only (sending
- * between local workspaces on the same machine is pointless).
- * Disconnected remote workspaces are shown as disabled with a CloudOff icon.
- *
- * Uses invokeOnServer for cross-server transfer:
- * 1. Generate a mini-summary handoff payload from the current server
- * 2. Import that summarized payload on the target server via temporary connection
- */
+// input: Source session ids, Free/Project targets, and transfer RPCs
+// output: Explicit one-time summary snapshots imported as fresh target sessions
+// pos: UI boundary for cross-domain transfer; source and target histories never link
 
 import * as React from 'react'
 import { useTranslation } from "react-i18next"
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { Cloud, CloudOff, Send } from 'lucide-react'
+import { Cloud, CloudOff, Folder, MessageSquare, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -28,6 +20,13 @@ import { CrossfadeAvatar } from '@/components/ui/avatar'
 import { useWorkspaceIcons } from '@/hooks/useWorkspaceIcon'
 import { cn } from '@/lib/utils'
 import type { Workspace } from '../../../shared/types'
+import { FREE_CONVERSATION_WORKSPACE_ID } from '../../../shared/types'
+
+interface TransferTarget {
+  id: string
+  name: string
+  workspace?: Workspace
+}
 
 export interface SendToWorkspaceDialogProps {
   open: boolean
@@ -53,32 +52,27 @@ export function SendToWorkspaceDialog({
   const { t } = useTranslation()
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
   const [isTransferring, setIsTransferring] = useState(false)
-  // Normalized overall progress (0–1) across all sessions in the batch
   const [overallProgress, setOverallProgress] = useState(0)
   const workspaceIconMap = useWorkspaceIcons(workspaces)
 
-  // Listen for chunk upload progress from main process and normalize across batch
-  useEffect(() => {
-    if (!isTransferring) {
-      setOverallProgress(0)
-      return
-    }
-    const cleanup = window.electronAPI.onTransferProgress((p) => {
-      // Each session contributes 1/sessionCount to the total.
-      // Within a session, chunkSent/chunkTotal fills that slice.
-      const sessionSlice = 1 / p.sessionCount
-      const withinSession = p.chunkTotal > 0 ? p.chunkSent / p.chunkTotal : 1
-      setOverallProgress(p.sessionIndex * sessionSlice + withinSession * sessionSlice)
-    })
-    return cleanup
-  }, [isTransferring])
-
-  // Health check results for remote workspaces (checked on dialog open)
+  // Health check results for remote targets (checked on dialog open)
   const [remoteHealthMap, setRemoteHealthMap] = useState<Map<string, 'ok' | 'error' | 'checking'>>(new Map())
   const healthCheckAbort = useRef<AbortController | null>(null)
 
-  // Only show remote workspaces (local-to-local is pointless)
-  const remoteWorkspaces = workspaces.filter(w => w.id !== activeWorkspaceId && w.remoteServer)
+  const targets = React.useMemo<TransferTarget[]>(() => {
+    const projectTargets = workspaces
+      .filter(workspace => workspace.id !== activeWorkspaceId)
+      .map(workspace => ({ id: workspace.id, name: workspace.name, workspace }))
+    if (activeWorkspaceId === FREE_CONVERSATION_WORKSPACE_ID) return projectTargets
+    return [
+      {
+        id: FREE_CONVERSATION_WORKSPACE_ID,
+        name: '自由对话',
+      },
+      ...projectTargets,
+    ]
+  }, [activeWorkspaceId, t, workspaces])
+  const remoteTargets = targets.filter(target => target.workspace?.remoteServer)
 
   // Check connectivity for all remote workspaces when dialog opens
   useEffect(() => {
@@ -92,39 +86,41 @@ export function SendToWorkspaceDialog({
     const abort = new AbortController()
     healthCheckAbort.current = abort
 
-    if (remoteWorkspaces.length === 0) return
+    if (remoteTargets.length === 0) return
 
     // Mark all as checking
     setRemoteHealthMap(() => {
       const next = new Map<string, 'ok' | 'error' | 'checking'>()
-      for (const ws of remoteWorkspaces) next.set(ws.id, 'checking')
+      for (const target of remoteTargets) next.set(target.id, 'checking')
       return next
     })
 
     // Fire parallel checks
-    for (const ws of remoteWorkspaces) {
-      window.electronAPI.testRemoteConnection(ws.remoteServer!.url, ws.remoteServer!.token)
+    for (const target of remoteTargets) {
+      const remoteServer = target.workspace!.remoteServer!
+      window.electronAPI.testRemoteConnection(remoteServer.url, remoteServer.token)
         .then(result => {
           if (abort.signal.aborted) return
-          setRemoteHealthMap(prev => new Map(prev).set(ws.id, result.ok ? 'ok' : 'error'))
+          setRemoteHealthMap(prev => new Map(prev).set(target.id, result.ok ? 'ok' : 'error'))
         })
         .catch(() => {
           if (abort.signal.aborted) return
-          setRemoteHealthMap(prev => new Map(prev).set(ws.id, 'error'))
+          setRemoteHealthMap(prev => new Map(prev).set(target.id, 'error'))
         })
     }
 
     return () => abort.abort()
-  }, [open, remoteWorkspaces.map(w => w.id).join(',')])
+  }, [open, remoteTargets.map(target => target.id).join(',')])
 
   const handleTransfer = useCallback(async () => {
     if (!selectedWorkspaceId || sessionIds.length === 0) return
 
-    const targetWorkspace = workspaces.find(w => w.id === selectedWorkspaceId)
-    if (!targetWorkspace?.remoteServer) return
+    const target = targets.find(candidate => candidate.id === selectedWorkspaceId)
+    if (!target) return
 
     setIsTransferring(true)
-    const targetName = targetWorkspace.name
+    setOverallProgress(0)
+    const targetName = target.name
     const count = sessionIds.length
 
     const toastId = toast.loading(t('sendToWorkspace.sending', { count, target: targetName }))
@@ -134,9 +130,12 @@ export function SendToWorkspaceDialog({
 
       for (let i = 0; i < sessionIds.length; i++) {
         const sessionId = sessionIds[i]
-        // Main process handles export + summary + transport (chunked for large bundles)
-        const result = await window.electronAPI.transferSessionToWorkspace(sessionId, selectedWorkspaceId, i, sessionIds.length)
+        const result = await window.electronAPI.transferSessionToWorkspace(
+          sessionId,
+          selectedWorkspaceId,
+        )
         newSessionIds.push(result.sessionId)
+        setOverallProgress((i + 1) / sessionIds.length)
       }
 
       toast.success(t('sendToWorkspace.sent', { count, target: targetName }), {
@@ -158,7 +157,7 @@ export function SendToWorkspaceDialog({
     } finally {
       setIsTransferring(false)
     }
-  }, [selectedWorkspaceId, sessionIds, workspaces, onOpenChange, onTransferComplete])
+  }, [selectedWorkspaceId, sessionIds, targets, onOpenChange, onTransferComplete])
 
   const count = sessionIds.length
 
@@ -180,25 +179,26 @@ export function SendToWorkspaceDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Workspace list — remote only */}
+        {/* Every target receives a fresh summary-seeded session. */}
         <div className="flex flex-col gap-1 max-h-64 overflow-y-auto py-1">
-          {remoteWorkspaces.length === 0 ? (
+          {targets.length === 0 ? (
             <p className="text-sm text-muted-foreground px-2 py-4 text-center">
               {t("sendToWorkspace.noRemoteWorkspaces")}
             </p>
           ) : (
-            remoteWorkspaces.map(workspace => {
-              const isSelected = selectedWorkspaceId === workspace.id
-              const healthStatus = remoteHealthMap.get(workspace.id)
+            targets.map(target => {
+              const isSelected = selectedWorkspaceId === target.id
+              const healthStatus = remoteHealthMap.get(target.id)
               const isDisconnected = healthStatus === 'error'
               const isChecking = healthStatus === 'checking'
+              const isFreeTarget = target.id === FREE_CONVERSATION_WORKSPACE_ID
 
               return (
                 <button
-                  key={workspace.id}
+                  key={target.id}
                   type="button"
                   disabled={isTransferring || isDisconnected}
-                  onClick={() => setSelectedWorkspaceId(workspace.id)}
+                  onClick={() => setSelectedWorkspaceId(target.id)}
                   className={cn(
                     'flex items-center gap-2 w-full px-2 py-2 rounded-md text-left text-sm transition-colors',
                     'hover:bg-foreground/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -206,22 +206,30 @@ export function SendToWorkspaceDialog({
                     isDisconnected && 'opacity-50 cursor-not-allowed hover:bg-transparent',
                   )}
                 >
-                  <CrossfadeAvatar
-                    src={workspaceIconMap.get(workspace.id)}
-                    alt={workspace.name}
-                    className="h-5 w-5 rounded-full ring-1 ring-border/50 shrink-0"
-                    fallbackClassName="bg-muted text-[10px] rounded-full"
-                    fallback={workspace.name?.charAt(0) || 'W'}
-                  />
-                  <span className="flex-1 truncate">{workspace.name}</span>
+                  {target.workspace ? (
+                    <CrossfadeAvatar
+                      src={workspaceIconMap.get(target.id)}
+                      alt={target.name}
+                      className="h-5 w-5 rounded-full ring-1 ring-border/50 shrink-0"
+                      fallbackClassName="bg-muted text-[10px] rounded-full"
+                      fallback={target.name?.charAt(0) || 'W'}
+                    />
+                  ) : (
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted">
+                      {isFreeTarget
+                        ? <MessageSquare className="h-3 w-3" />
+                        : <Folder className="h-3 w-3" />}
+                    </span>
+                  )}
+                  <span className="flex-1 truncate">{target.name}</span>
                   {isDisconnected ? (
                     <CloudOff className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
-                  ) : (
+                  ) : target.workspace?.remoteServer ? (
                     <Cloud className={cn(
                       'h-3.5 w-3.5 shrink-0',
                       isChecking ? 'text-muted-foreground/30 animate-pulse' : 'text-muted-foreground',
                     )} />
-                  )}
+                  ) : null}
                 </button>
               )
             })

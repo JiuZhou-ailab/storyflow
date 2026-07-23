@@ -20,6 +20,7 @@ let workspaceRootRealpathCalls = 0
 let trackedReaddirPath = ''
 let trackedReaddirCalls = 0
 let trackedReaddirDelay: Promise<void> | null = null
+let attachmentSessionPath = ''
 
 mock.module('fs/promises', () => ({
   ...realFsPromises,
@@ -38,17 +39,6 @@ mock.module('fs/promises', () => ({
   },
 }))
 
-mock.module('@craft-agent/shared/config', () => ({
-  getWorkspaceByNameOrId: (id: string) => id === 'workspace-1'
-    ? {
-        id,
-        name: 'Workspace',
-        rootPath: workspaceRootPath,
-        slug: 'workspace',
-      }
-    : null,
-}))
-
 const { registerFilesHandlers } = await import('./files')
 
 function createFileHarness() {
@@ -63,7 +53,18 @@ function createFileHarness() {
     },
   }
   const deps: HandlerDeps = {
-    sessionManager: {} as HandlerDeps['sessionManager'],
+    sessionManager: {
+      getSessionPath: () => attachmentSessionPath || null,
+    } as unknown as HandlerDeps['sessionManager'],
+    resolveRuntimeWorkspace: (id: string) => id === 'workspace-1'
+      ? {
+          id,
+          name: 'Workspace',
+          rootPath: workspaceRootPath,
+          slug: 'workspace',
+          createdAt: 0,
+        }
+      : null,
     oauthFlowStore: {} as HandlerDeps['oauthFlowStore'],
     platform: {
       appRootPath: '/',
@@ -90,7 +91,8 @@ function createFileHarness() {
   const searchFiles = handlers.get(RPC_CHANNELS.fs.SEARCH)
   const searchFilesBatch = handlers.get(RPC_CHANNELS.fs.SEARCH_BATCH)
   const listWorkspaceFiles = handlers.get(RPC_CHANNELS.fs.LIST_FILES)
-  if (!writeTextFile || !searchFiles || !searchFilesBatch || !listWorkspaceFiles) {
+  const storeAttachment = handlers.get(RPC_CHANNELS.file.STORE_ATTACHMENT)
+  if (!writeTextFile || !searchFiles || !searchFilesBatch || !listWorkspaceFiles || !storeAttachment) {
     throw new Error('file handlers not registered')
   }
 
@@ -100,7 +102,7 @@ function createFileHarness() {
     webContentsId: 1,
   }
 
-  return { writeTextFile, searchFiles, searchFilesBatch, listWorkspaceFiles, ctx }
+  return { writeTextFile, searchFiles, searchFilesBatch, listWorkspaceFiles, storeAttachment, ctx }
 }
 
 describe('workspace-scoped file RPCs', () => {
@@ -146,6 +148,32 @@ describe('workspace-scoped file RPCs', () => {
       rmSync(workspaceRootPath, { recursive: true, force: true })
       rmSync(outsideRoot, { recursive: true, force: true })
       workspaceRootPath = ''
+    }
+  })
+
+  it('rejects attachment writes when the session belongs to another runtime domain', async () => {
+    workspaceRootPath = await mkdtemp(join(tmpdir(), 'craft-workspace-attachment-root-'))
+    const outsideRoot = await mkdtemp(join(tmpdir(), 'craft-workspace-attachment-outside-'))
+    attachmentSessionPath = join(outsideRoot, 'sessions', 'session-1')
+    const { storeAttachment, ctx } = createFileHarness()
+
+    try {
+      await mkdir(attachmentSessionPath, { recursive: true })
+
+      await expect(storeAttachment(ctx, 'session-1', {
+        type: 'text',
+        path: '/tmp/note.txt',
+        name: 'note.txt',
+        mimeType: 'text/plain',
+        text: 'x',
+        size: 1,
+      })).rejects.toThrow('outside current workspace')
+      expect(existsSync(join(attachmentSessionPath, 'attachments'))).toBe(false)
+    } finally {
+      rmSync(workspaceRootPath, { recursive: true, force: true })
+      rmSync(outsideRoot, { recursive: true, force: true })
+      workspaceRootPath = ''
+      attachmentSessionPath = ''
     }
   })
 

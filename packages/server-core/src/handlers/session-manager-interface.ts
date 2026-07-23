@@ -190,7 +190,7 @@ export interface ISessionManager {
   importRemoteSessionTransfer(
     workspaceId: string,
     payload: import('@craft-agent/shared/protocol').RemoteSessionTransferPayload,
-  ): Promise<import('@craft-agent/shared/protocol').ImportRemoteSessionTransferResult>
+  ): Promise<{ sessionId: string }>
 
   // ---------------------------------------------------------------------------
   // Utilities

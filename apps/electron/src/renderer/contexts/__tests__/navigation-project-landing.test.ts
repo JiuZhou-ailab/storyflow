@@ -39,13 +39,14 @@ const projectHubNavigationSource = readFileSync(
 )
 describe('project default navigation', () => {
   it('lands on the writing route without waiting for session auto-selection', () => {
-    expect(navigationContextSource).toContain('navigate(routes.view.writing())')
+    expect(navigationContextSource).toContain('defaultViewRoute = routes.view.writing()')
+    expect(navigationContextSource).toContain('navigate(defaultViewRoute)')
     expect(navigationContextSource).not.toContain('navigate(routes.view.allSessions(), { skipAutoSelect: true })')
   })
 
-  it('keeps the writing project shell visible while switching conversations', () => {
-    expect(appShellSource).toContain('const showWritingWorkspaceShell = isWritingNavigation(navState)')
-    expect(appShellSource).toContain("|| (isSessionsNavigation(navState) && activeWritingWorkspaceRoot !== null)")
+  it('keeps project conversations in project chrome and excludes Free Conversations', () => {
+    expect(appShellSource).toContain('const showWritingWorkspaceShell = isProjectRuntime')
+    expect(appShellSource).toContain('&& (isWritingNavigation(navState) || isSessionsNavigation(navState))')
     expect(appShellSource).toContain('const showNovelDocumentNavigator = showWritingWorkspaceShell && showNovelWorkspaceSidebar')
     expect(appShellSource).toContain('const showPrimarySidebar = hasPrimarySidebar && showWritingWorkspaceShell')
   })
@@ -66,13 +67,13 @@ describe('project default navigation', () => {
     expect(appShellSource).toContain('loadedNovelDocumentPath === selectedNovelDocumentPath')
   })
 
-  it('keeps conversation inside the writing workspace instead of adding a rail destination', () => {
-    expect(activityRailSource).not.toContain("'conversations'")
-    expect(activityRailSource).not.toContain('activity-conversations')
-    expect(appShellSource).toContain('const handleWritingWorkspaceClick = useCallback')
-    expect(appShellSource).toContain('navigate(routes.view.writing())')
-    expect(appShellSource).toContain('onOpenWritingWorkspace={handleWritingWorkspaceClick}')
-    expect(appShellSource).not.toContain('onOpenConversations=')
+  it('exposes free conversation as a first-class activity-rail destination', () => {
+    expect(activityRailSource).toContain("| 'free-conversations'")
+    expect(activityRailSource).toContain('dataTutorial="activity-free-conversations"')
+    expect(activityRailSource).toContain('label="自由对话"')
+    expect(appShellSource).toContain('onOpenWritingWorkspace={onOpenWritingWorkspace}')
+    expect(appShellSource).toContain('onOpenFreeConversations={onOpenFreeConversations}')
+    expect(appShellSource).toContain("if (isSessionsNavigation(navState) && !isProjectRuntime) return 'free-conversations'")
   })
 
   it('keeps route auto-selection session-only while writing owns its metadata-driven default', () => {
@@ -92,13 +93,12 @@ describe('project default navigation', () => {
   it('returns from the project hub to the exact source route with a writing fallback', () => {
     const returnHandlerSource = appSource.slice(
       appSource.indexOf('const handleReturnToActiveProject'),
-      appSource.indexOf('const handleOpenActiveProjectRoute')
+      appSource.indexOf('const handleOpenRuntimeRoute')
     )
 
-    expect(returnHandlerSource).toContain('setPendingReadyRoute(consumeReturnRoute(routes.view.writing()))')
-    expect(returnHandlerSource.indexOf('setPendingReadyRoute(consumeReturnRoute(routes.view.writing()))')).toBeLessThan(
-      returnHandlerSource.indexOf("setAppState('ready')")
-    )
+    expect(returnHandlerSource).toContain('activateRuntimeWorkspace(')
+    expect(returnHandlerSource).toContain('activeProjectId,')
+    expect(returnHandlerSource).toContain('consumeReturnRoute(routes.view.writing())')
     expect(projectHubNavigationSource).toContain('{ workspaceId: activeWorkspaceId, route: focusedRoute }')
     expect(projectHubNavigationSource).toContain('location?.workspaceId === activeWorkspaceId ? location.route : fallback')
   })

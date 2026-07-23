@@ -18,6 +18,7 @@ import type {
   AnnotationV1,
   PermissionRequest as BasePermissionRequest,
 } from '@craft-agent/core/types'
+import type { Workspace } from '@craft-agent/core/types'
 import type { PermissionMode } from '../agent/mode-types'
 import type { ThinkingLevel } from '../agent/thinking-levels'
 import type { CustomEndpointConfig } from '../config/llm-connections'
@@ -33,6 +34,9 @@ export { generateMessageId } from '@craft-agent/core/types'
 // ---------------------------------------------------------------------------
 // Session types
 // ---------------------------------------------------------------------------
+
+export const FREE_CONVERSATION_WORKSPACE_ID = '__storyflow_free__'
+export const FREE_CONVERSATION_WORKSPACE_SLUG = 'free-conversations'
 
 /**
  * Dynamic status ID referencing workspace status config.
@@ -142,16 +146,7 @@ export interface CreateSessionOptions {
 }
 
 export interface RemoteSessionTransferPayload {
-  sourceSessionId: string
-  name?: string
-  sessionStatus?: SessionStatus
-  labels?: string[]
-  permissionMode?: PermissionMode
   summary: string
-}
-
-export interface ImportRemoteSessionTransferResult {
-  sessionId: string
 }
 
 export interface PermissionModeState {

@@ -1,6 +1,9 @@
-// input: Current Storyflow project root, Pi session cwd, and isolated agent directory
-// output: Reloaded Pi resource loader restricted to the project's canonical Skills directory
-// pos: Security boundary preventing Pi from discovering global or shared-agent resources
+// input: Optional Storyflow project root, global resource root, Pi cwd, and isolated agent directory
+// output: Explicit project-over-global Skills and global-only Extensions for the Pi runtime
+// pos: Resource security boundary preventing Pi's implicit third-party discovery
+
+import { existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
   DefaultResourceLoader,
@@ -11,12 +14,13 @@ import {
 import {
   assertSymlinkFreeTree,
   ensureProjectOwnedDirectory,
-  getWorkspaceSkillsPath,
 } from '../../shared/src/workspaces/paths.ts';
+import { resolveResourceRoots } from '../../shared/src/resources/resolver.ts';
 
 export interface ProjectResourceLoaderOptions {
   cwd: string;
-  projectRoot: string;
+  projectRoot?: string;
+  globalRoot?: string;
   agentDir: string;
 }
 
@@ -25,10 +29,49 @@ export interface ProjectResourceLoaderResult {
   settingsManager: SettingsManager;
 }
 
-class ProjectResourceLoader extends DefaultResourceLoader {
+/**
+ * Resolve the global Extensions container into Pi entry paths.
+ *
+ * Pi's ResourceLoader accepts explicit extension entry points, but does not
+ * expand a bare additional directory at load time. Keep discovery bounded to
+ * Storyflow's one trusted global directory and Pi's documented one-level
+ * extension layout.
+ */
+function discoverGlobalExtensionPaths(extensionsRoot: string): string[] {
+  const paths: string[] = [];
+  const entries = readdirSync(extensionsRoot, { withFileTypes: true })
+    .sort((left, right) => left.name.localeCompare(right.name));
+
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue;
+    const entryPath = join(extensionsRoot, entry.name);
+
+    if (entry.isFile() && /\.(?:ts|js)$/.test(entry.name)) {
+      paths.push(entryPath);
+      continue;
+    }
+    if (!entry.isDirectory()) continue;
+
+    if (existsSync(join(entryPath, 'package.json'))) {
+      paths.push(entryPath);
+      continue;
+    }
+    for (const indexName of ['index.ts', 'index.js']) {
+      const indexPath = join(entryPath, indexName);
+      if (existsSync(indexPath)) {
+        paths.push(indexPath);
+        break;
+      }
+    }
+  }
+
+  return paths;
+}
+
+class StoryflowResourceLoader extends DefaultResourceLoader {
   constructor(
     options: ConstructorParameters<typeof DefaultResourceLoader>[0],
-    private readonly projectSkillsPath: string,
+    private readonly managedResourcePaths: readonly string[],
   ) {
     super(options);
   }
@@ -36,9 +79,11 @@ class ProjectResourceLoader extends DefaultResourceLoader {
   override async reload(
     options?: Parameters<DefaultResourceLoader['reload']>[0],
   ): Promise<void> {
-    // The tree may change after session startup. Revalidate at every prompt-time
-    // reload so a newly inserted symlink never reaches Pi's filesystem loader.
-    assertSymlinkFreeTree(this.projectSkillsPath);
+    // Trees may change after startup. Revalidate every prompt-time reload so a
+    // newly inserted symlink never reaches Pi's executable resource loaders.
+    for (const resourcePath of this.managedResourcePaths) {
+      assertSymlinkFreeTree(resourcePath);
+    }
     await super.reload(options);
   }
 }
@@ -46,34 +91,50 @@ class ProjectResourceLoader extends DefaultResourceLoader {
 /**
  * Build the Pi resource boundary owned by Storyflow.
  *
- * Pi's default loader also discovers ~/.agents/skills and ancestor
- * .agents/skills directories. Storyflow Skills are intentionally project-only,
- * so default discovery is disabled and the canonical project path is added
- * explicitly.
+ * Pi's default loader discovers its own global/project resources and ancestor
+ * .agents/skills directories. Storyflow disables that discovery and provides
+ * only ResourceResolver-owned roots explicitly.
  */
 export async function createProjectResourceLoader(
   options: ProjectResourceLoaderOptions,
 ): Promise<ProjectResourceLoaderResult> {
-  const projectSkillsPath = ensureProjectOwnedDirectory(
-    options.projectRoot,
-    getWorkspaceSkillsPath(options.projectRoot),
-  );
-  assertSymlinkFreeTree(projectSkillsPath);
+  const roots = resolveResourceRoots({
+    projectRoot: options.projectRoot,
+    globalRoot: options.globalRoot,
+  });
+
+  const skillPaths = roots.skills.map((root) => {
+    if (root.origin === 'project') {
+      return ensureProjectOwnedDirectory(root.rootPath, root.path);
+    }
+    mkdirSync(root.path, { recursive: true });
+    return root.path;
+  });
+  const extensionRoots = roots.extensions.map((root) => {
+    mkdirSync(root.path, { recursive: true });
+    return root.path;
+  });
+  const extensionPaths = extensionRoots.flatMap(discoverGlobalExtensionPaths);
+  const managedResourcePaths = [...skillPaths, ...extensionRoots];
+  for (const resourcePath of managedResourcePaths) {
+    assertSymlinkFreeTree(resourcePath);
+  }
+
   const settingsManager = SettingsManager.inMemory({
     defaultProjectTrust: 'never',
     enableSkillCommands: true,
   });
-  const resourceLoader = new ProjectResourceLoader(
+  const resourceLoader = new StoryflowResourceLoader(
     {
       cwd: options.cwd,
       agentDir: options.agentDir,
       settingsManager,
       noSkills: true,
       noExtensions: true,
-      // Keep one stable project path registered for every reload.
-      additionalSkillPaths: [projectSkillsPath],
+      additionalSkillPaths: skillPaths,
+      additionalExtensionPaths: extensionPaths,
     },
-    projectSkillsPath,
+    managedResourcePaths,
   );
 
   // createAgentSession() does not reload a caller-provided ResourceLoader.

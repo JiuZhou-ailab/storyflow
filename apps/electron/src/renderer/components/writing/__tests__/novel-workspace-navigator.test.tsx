@@ -393,12 +393,15 @@ describe('novel writing workspace layout', () => {
 
     expect(appShellSource).toContain('<ActivityRail')
     expect(appShellSource).toContain('activeItem={activeActivityRailItem}')
-    expect(appShellSource).toContain('onOpenWritingWorkspace={handleWritingWorkspaceClick}')
+    expect(appShellSource).toContain('onOpenWritingWorkspace={onOpenWritingWorkspace}')
+    expect(appShellSource).toContain('onOpenFreeConversations={onOpenFreeConversations}')
     expect(appShellSource).toContain('onOpenSources={handleSourcesClick}')
     expect(appShellSource).toContain('onOpenSkills={handleSkillsClick}')
     expect(appShellSource).toContain("onOpenSettings={() => handleSettingsClick('app')}")
     expect(appShellSource).toContain('<ActivityRail')
     expect(activityRailSource).toContain('label="写作工作区"')
+    expect(activityRailSource).toContain('label="自由对话"')
+    expect(activityRailSource).toContain('dataTutorial="activity-free-conversations"')
     expect(activityRailSource).toContain('<ProjectSwitcherPopover')
     expect(activityRailSource).toContain('data-tutorial="activity-project-hub"')
     expect(activityRailSource).not.toContain('退出到作品库')
@@ -851,8 +854,8 @@ describe('novel writing workspace layout', () => {
     )
 
     expect(appShellSource).toContain('const showNovelWorkspaceSidebar = novelWorkspaceRootMatchesCandidates')
-    expect(appShellSource).toContain('const showWritingWorkspaceShell = isWritingNavigation(navState)')
-    expect(appShellSource).toContain("|| (isSessionsNavigation(navState) && activeWritingWorkspaceRoot !== null)")
+    expect(appShellSource).toContain('const showWritingWorkspaceShell = isProjectRuntime')
+    expect(appShellSource).toContain('&& (isWritingNavigation(navState) || isSessionsNavigation(navState))')
     expect(appShellSource).toContain('const showNovelDocumentNavigator = showWritingWorkspaceShell && showNovelWorkspaceSidebar')
     expect(appShellSource).toContain('const hasUnsettledNovelWorkspaceCandidates = novelWorkspaceCandidateRoots.length > 0 && novelWorkspaceDetectionSettledKey !== novelWorkspaceCandidateKey')
     expect(appShellSource).toContain('const showNovelWorkspacePending = showWritingWorkspaceShell && (')
@@ -872,7 +875,7 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('{showNovelWorkspaceSidebar && novelWorkspaceRoot && activeWorkspaceId ? (')
     expect(appShellSource).toContain('<WorkspaceFileTree')
     expect(appShellSource).toContain('{showNovelDocumentNavigator && novelWorkspaceRoot ? (')
-    expect(appShellSource).toContain('handleWritingWorkspaceClick')
+    expect(appShellSource).toContain('onOpenWritingWorkspace={onOpenWritingWorkspace}')
   })
 
   it('does not derive writing workspace roots from a stale session outside the active workspace', () => {

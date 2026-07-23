@@ -1,5 +1,13 @@
+// input: Source RPC requests scoped to a Free or Project Conversation runtime
+// output: Global/project overlay discovery plus global Source mutation and auth operations
+// pos: Server trust boundary mapping runtime ownership to the shared Source store
+
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
-import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
+import { CONFIG_DIR } from '@craft-agent/shared/config'
+import {
+  isFreeConversationWorkspaceId,
+  resolveRuntimeWorkspace,
+} from '@craft-agent/shared/workspaces'
 import { loadWorkspaceSources } from '@craft-agent/shared/sources'
 import { safeJsonParse } from '@craft-agent/shared/utils/files'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
@@ -20,23 +28,34 @@ export const HANDLED_CHANNELS = [
 
 export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): void {
   const log = deps.platform.logger
+  const resolveSourceScope = (workspaceId: string) => {
+    const workspace = resolveRuntimeWorkspace(workspaceId)
+    const projectRoot = workspace && !isFreeConversationWorkspaceId(workspace.id)
+      ? workspace.rootPath
+      : undefined
+    return {
+      workspace,
+      projectRoot,
+      mutationRoot: projectRoot ?? CONFIG_DIR,
+    }
+  }
 
   // Get all sources for a workspace
   server.handle(RPC_CHANNELS.sources.GET, async (_ctx, workspaceId: string) => {
-    const workspace = getWorkspaceByNameOrId(workspaceId)
+    const { workspace, projectRoot } = resolveSourceScope(workspaceId)
     if (!workspace) {
       log.error(`SOURCES_GET: Workspace not found: ${workspaceId}`)
       return []
     }
-    return loadWorkspaceSources(workspace.rootPath)
+    return loadWorkspaceSources(projectRoot)
   })
 
   // Create a new source
   server.handle(RPC_CHANNELS.sources.CREATE, async (_ctx, workspaceId: string, config: Partial<import('@craft-agent/shared/sources').CreateSourceInput>) => {
-    const workspace = getWorkspaceByNameOrId(workspaceId)
+    const { workspace, mutationRoot } = resolveSourceScope(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
     const { createSource } = await import('@craft-agent/shared/sources')
-    return createSource(workspace.rootPath, {
+    return createSource(mutationRoot, {
       name: config.name || 'New Source',
       provider: config.provider || 'custom',
       type: config.type || 'mcp',
@@ -49,17 +68,19 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
 
   // Delete a source
   server.handle(RPC_CHANNELS.sources.DELETE, async (_ctx, workspaceId: string, sourceSlug: string) => {
-    const workspace = getWorkspaceByNameOrId(workspaceId)
+    const { workspace, projectRoot, mutationRoot } = resolveSourceScope(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
     const { deleteSource } = await import('@craft-agent/shared/sources')
-    deleteSource(workspace.rootPath, sourceSlug)
+    deleteSource(mutationRoot, sourceSlug)
 
     // Clean up stale slug from workspace default sources
-    const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
-    const config = loadWorkspaceConfig(workspace.rootPath)
-    if (config?.defaults?.enabledSourceSlugs?.includes(sourceSlug)) {
-      config.defaults.enabledSourceSlugs = config.defaults.enabledSourceSlugs.filter(s => s !== sourceSlug)
-      saveWorkspaceConfig(workspace.rootPath, config)
+    if (projectRoot) {
+      const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
+      const config = loadWorkspaceConfig(projectRoot)
+      if (config?.defaults?.enabledSourceSlugs?.includes(sourceSlug)) {
+        config.defaults.enabledSourceSlugs = config.defaults.enabledSourceSlugs.filter(s => s !== sourceSlug)
+        saveWorkspaceConfig(projectRoot, config)
+      }
     }
   })
 
@@ -74,11 +95,11 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
 
   // Save credentials for a source (bearer token or API key)
   server.handle(RPC_CHANNELS.sources.SAVE_CREDENTIALS, async (_ctx, workspaceId: string, sourceSlug: string, credential: string) => {
-    const workspace = getWorkspaceByNameOrId(workspaceId)
+    const { workspace, projectRoot } = resolveSourceScope(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
     const { loadSource, getSourceCredentialManager } = await import('@craft-agent/shared/sources')
 
-    const source = loadSource(workspace.rootPath, sourceSlug)
+    const source = loadSource(projectRoot, sourceSlug)
     if (!source) {
       throw new Error(`Source not found: ${sourceSlug}`)
     }
@@ -92,12 +113,12 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
 
   // Get permissions config for a source (raw format for UI display)
   server.handle(RPC_CHANNELS.sources.GET_PERMISSIONS, async (_ctx, workspaceId: string, sourceSlug: string) => {
-    const workspace = getWorkspaceByNameOrId(workspaceId)
+    const { workspace, mutationRoot } = resolveSourceScope(workspaceId)
     if (!workspace) return null
 
     const { existsSync, readFileSync } = await import('fs')
     const { getSourcePermissionsPath } = await import('@craft-agent/shared/agent')
-    const path = getSourcePermissionsPath(workspace.rootPath, sourceSlug)
+    const path = getSourcePermissionsPath(mutationRoot, sourceSlug)
 
     if (!existsSync(path)) return null
 
@@ -112,12 +133,13 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
 
   // Get permissions config for a workspace (raw format for UI display)
   server.handle(RPC_CHANNELS.workspace.GET_PERMISSIONS, async (_ctx, workspaceId: string) => {
-    const workspace = getWorkspaceByNameOrId(workspaceId)
+    const { workspace, projectRoot } = resolveSourceScope(workspaceId)
     if (!workspace) return null
+    if (!projectRoot) return null
 
     const { existsSync, readFileSync } = await import('fs')
     const { getWorkspacePermissionsPath } = await import('@craft-agent/shared/agent')
-    const path = getWorkspacePermissionsPath(workspace.rootPath)
+    const path = getWorkspacePermissionsPath(projectRoot)
 
     if (!existsSync(path)) return null
 
@@ -150,11 +172,11 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
 
   // Get MCP tools for a source with permission status
   server.handle(RPC_CHANNELS.sources.GET_MCP_TOOLS, async (_ctx, workspaceId: string, sourceSlug: string) => {
-    const workspace = getWorkspaceByNameOrId(workspaceId)
+    const { workspace, projectRoot, mutationRoot } = resolveSourceScope(workspaceId)
     if (!workspace) return { success: false, error: 'Workspace not found' }
 
     try {
-      const sources = await loadWorkspaceSources(workspace.rootPath)
+      const sources = await loadWorkspaceSources(projectRoot)
       const source = sources.find(s => s.config.slug === sourceSlug)
       if (!source) return { success: false, error: 'Source not found' }
       if (source.config.type !== 'mcp') return { success: false, error: 'Source is not an MCP server' }
@@ -211,10 +233,10 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
       await client.close()
 
       const { loadSourcePermissionsConfig, permissionsConfigCache } = await import('@craft-agent/shared/agent')
-      const permissionsConfig = loadSourcePermissionsConfig(workspace.rootPath, sourceSlug)
+      const permissionsConfig = loadSourcePermissionsConfig(mutationRoot, sourceSlug)
 
       const mergedConfig = permissionsConfigCache.getMergedConfig({
-        workspaceRootPath: workspace.rootPath,
+        workspaceRootPath: mutationRoot,
         activeSourceSlugs: [sourceSlug],
       })
 

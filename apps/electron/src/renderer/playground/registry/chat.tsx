@@ -14,7 +14,7 @@ import { motion } from 'motion/react'
 import { ArrowUp, Paperclip, ChevronDown, Circle, Sparkles } from 'lucide-react'
 import type { LabelConfig } from '@craft-agent/shared/labels'
 import type { SessionStatus } from '@/config/session-status-config'
-import type { FileAttachment, PermissionRequest, PermissionMode } from '../../../shared/types'
+import type { FileAttachment, PermissionRequest, PermissionMode, Workspace } from '../../../shared/types'
 import { cn } from '@/lib/utils'
 import { AppShellProvider } from '@/context/AppShellContext'
 import { ModalProvider } from '@/context/ModalContext'
@@ -168,10 +168,17 @@ const inputContainerSampleStatuses: SessionStatus[] = [
   },
 ]
 
+const playgroundWorkspace: Workspace = {
+  id: 'playground-workspace',
+  name: 'Playground',
+  slug: 'playground-workspace',
+  rootPath: '/playground',
+  createdAt: 0,
+}
+
 const playgroundAppShellContext = {
-  workspaces: [{ id: 'playground-workspace', name: 'Playground', path: '/playground', rootPath: '/playground' }],
-  activeWorkspaceId: 'playground-workspace',
-  activeWorkspaceSlug: 'playground-workspace',
+  workspaces: [playgroundWorkspace],
+  runtimeWorkspace: playgroundWorkspace,
   llmConnections: [],
   workspaceDefaultLlmConnection: undefined,
   refreshLlmConnections: async () => {},

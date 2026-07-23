@@ -1,3 +1,7 @@
+// input: Normalized tool requests, permission state, and optional filesystem boundaries
+// output: Shared allow, block, prompt, interception, and input-transform decisions
+// pos: Provider-independent tool authorization pipeline in the Agent Kernel
+
 /**
  * Shared PreToolUse utilities and centralized PreToolUse pipeline.
  *
@@ -17,8 +21,9 @@
 
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { expandPath } from '../../utils/paths.ts';
+import { isPathWithinProjectRoot } from '../../workspaces/paths.ts';
 import {
   detectConfigFileType,
   detectAppConfigFileType,
@@ -698,6 +703,12 @@ export interface PreToolUseInput {
   dataFolderPath?: string;
   /** Working directory override (for skill resolution) */
   workingDirectory?: string;
+  /** Optional read/write roots for application-owned runtime isolation */
+  fileAccessBoundary?: {
+    readRoots: readonly string[];
+    writeRoots: readonly string[];
+    blockBash?: boolean;
+  };
   /** Currently active source slugs */
   activeSourceSlugs: string[];
   /** All available sources (for source-exists check) */
@@ -739,6 +750,59 @@ const BUILT_IN_MCP_SERVERS = new Set(['session', 'craft-agents-docs']);
 
 /** File write tools that require permission in ask mode */
 const FILE_WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+const FILE_READ_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'Ls', 'Find']);
+
+function isPathWithinAnyRoot(
+  rawPath: string,
+  roots: readonly string[],
+  workingDirectory: string,
+): boolean {
+  const expanded = rawPath.startsWith('~') ? expandPath(rawPath) : rawPath;
+  const candidate = resolve(workingDirectory, expanded);
+
+  return roots.some((rootPath) => (
+    isPathWithinProjectRoot(rootPath, candidate, { allowMissing: true })
+  ));
+}
+
+function getBoundaryPaths(toolName: string, input: Record<string, unknown>): string[] {
+  const paths: string[] = [];
+  const filePath = input.file_path;
+  const notebookPath = input.notebook_path;
+  const path = input.path;
+
+  if (typeof filePath === 'string') paths.push(filePath);
+  if (typeof notebookPath === 'string') paths.push(notebookPath);
+  if (typeof path === 'string' && (FILE_READ_TOOLS.has(toolName) || FILE_WRITE_TOOLS.has(toolName))) {
+    paths.push(path);
+  }
+  if (toolName === 'Glob' && typeof input.pattern === 'string') {
+    paths.push(input.pattern);
+  }
+  return paths;
+}
+
+function enforceFileAccessBoundary(
+  toolName: string,
+  input: Record<string, unknown>,
+  workingDirectory: string,
+  boundary: NonNullable<PreToolUseInput['fileAccessBoundary']>,
+): string | null {
+  if (toolName === 'Bash' && boundary.blockBash) {
+    return 'Shell access is unavailable in Free Conversations because this runtime does not have an OS-level filesystem sandbox.';
+  }
+
+  const isWrite = FILE_WRITE_TOOLS.has(toolName);
+  if (!isWrite && !FILE_READ_TOOLS.has(toolName)) return null;
+
+  const roots = isWrite ? boundary.writeRoots : boundary.readRoots;
+  for (const path of getBoundaryPaths(toolName, input)) {
+    if (!isPathWithinAnyRoot(path, roots, workingDirectory)) {
+      return `${toolName} blocked: path is outside this Free Conversation's private workspace.`;
+    }
+  }
+  return null;
+}
 
 /**
  * Centralized PreToolUse pipeline.
@@ -780,6 +844,7 @@ export function runPreToolUseChecks(ctx: PreToolUseInput): PreToolUseCheckResult
     plansFolderPath,
     dataFolderPath,
     workingDirectory,
+    fileAccessBoundary,
     activeSourceSlugs,
     allSourceSlugs,
     hasSourceActivation,
@@ -788,6 +853,19 @@ export function runPreToolUseChecks(ctx: PreToolUseInput): PreToolUseCheckResult
     backendMetadata,
     onDebug,
   } = ctx;
+
+  if (fileAccessBoundary) {
+    const boundaryBlock = enforceFileAccessBoundary(
+      toolName,
+      input,
+      workingDirectory ?? workspaceRootPath,
+      fileAccessBoundary,
+    );
+    if (boundaryBlock) {
+      onDebug?.(`[RuntimeBoundary] blocking ${toolName}: ${boundaryBlock}`);
+      return { type: 'block', reason: boundaryBlock };
+    }
+  }
 
   // Build permissions context for custom permissions.json rules
   const permissionsContext: PermissionsContext = {

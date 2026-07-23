@@ -1,3 +1,7 @@
+// input: Agent Skills frontmatter and resolved resource origin semantics
+// output: Shared Skill metadata and loaded-definition types
+// pos: Type contract used by storage, RPC, renderer, and Agent loaders
+
 /**
  * Skills Types
  *
@@ -32,6 +36,8 @@ export interface SkillMetadata {
 /**
  * A loaded skill with parsed content
  */
+export type SkillDefinitionOrigin = 'project' | 'global';
+
 export interface LoadedSkill {
   /** Directory name (slug) */
   slug: string;
@@ -43,4 +49,11 @@ export interface LoadedSkill {
   iconPath?: string;
   /** Absolute path to skill directory */
   path: string;
+  /**
+   * Filesystem owner of this Skill definition.
+   *
+   * Optional for protocol compatibility with older persisted/test fixtures;
+   * current filesystem loaders always populate it.
+   */
+  origin?: SkillDefinitionOrigin;
 }

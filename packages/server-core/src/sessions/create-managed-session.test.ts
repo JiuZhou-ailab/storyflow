@@ -1,5 +1,10 @@
+// input: Persisted session fields and Free/Project workspace identities
+// output: Regression coverage for restored state and immutable Free Conversation cwd
+// pos: Guards ManagedSession construction and its runtime-domain boundary
+
 import { describe, expect, it } from 'bun:test'
-import { createManagedSession } from './SessionManager.ts'
+import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
+import { createManagedSession, SessionManager } from './SessionManager.ts'
 
 describe('createManagedSession', () => {
   const workspace = {
@@ -25,5 +30,26 @@ describe('createManagedSession', () => {
     }, workspace as any)
 
     expect(managed.thinkingLevel).toBeUndefined()
+  })
+
+  it('rejects working-directory changes for Free Conversations', () => {
+    const sessionManager = new SessionManager()
+    const privateWorkingDirectory = '/tmp/storyflow-free/session/work'
+    const managed = createManagedSession({
+      id: 'session_free',
+      workingDirectory: privateWorkingDirectory,
+      sdkCwd: privateWorkingDirectory,
+    }, {
+      ...workspace,
+      id: FREE_CONVERSATION_WORKSPACE_ID,
+      rootPath: '/tmp/storyflow-free',
+    } as any)
+    ;(sessionManager as unknown as { sessions: Map<string, unknown> })
+      .sessions.set(managed.id, managed)
+
+    sessionManager.updateWorkingDirectory(managed.id, '/tmp/a-project')
+
+    expect(managed.workingDirectory).toBe(privateWorkingDirectory)
+    expect(managed.sdkCwd).toBe(privateWorkingDirectory)
   })
 })

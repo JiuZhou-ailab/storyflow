@@ -11,7 +11,11 @@ import type { Session, Workspace, SessionEvent, Message, FileAttachment, StoredA
 import type { SessionDraft, DraftAttachmentRef } from '@craft-agent/shared/config'
 import type { SessionOptions, SessionOptionUpdates } from './hooks/useSessionOptions'
 import { defaultSessionOptions, sessionOptionsAtom, updateSessionOptionsMap } from './hooks/useSessionOptions'
-import { generateMessageId } from '../shared/types'
+import {
+  FREE_CONVERSATION_WORKSPACE_ID,
+  FREE_CONVERSATION_WORKSPACE_SLUG,
+  generateMessageId,
+} from '../shared/types'
 import { useEventProcessor } from './event-processor'
 import type { AgentEvent, Effect } from './event-processor'
 import type { AppShellContextType } from '@/context/AppShellContext'
@@ -383,20 +387,17 @@ function AppContent() {
   const [workspaces, setWorkspaces] = useAtom(windowWorkspacesAtom)
   // Window's workspace ID — shared atom so Root/ThemeProvider stays in sync on switch
   const [windowWorkspaceId, setWindowWorkspaceId] = useAtom(windowWorkspaceIdAtom)
+  const [runtimeWorkspace, setRuntimeWorkspace] = useState<Workspace | null>(null)
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
   const focusedProjectRoute = useAtomValue(focusedPanelRouteAtom)
   const {
     clearReturnLocation,
     consumeReturnRoute,
     returnDestination,
-  } = useProjectHubReturnLocation(windowWorkspaceId, focusedProjectRoute)
+  } = useProjectHubReturnLocation(activeProjectId, focusedProjectRoute)
   const pendingCreatedWorkspaceRef = useRef<Workspace | null>(null)
 
-  // Derive workspace slug for SDK skill qualification
-  const windowWorkspaceSlug = useMemo(() => {
-    if (!windowWorkspaceId) return null
-    const workspace = workspaces.find(w => w.id === windowWorkspaceId)
-    return workspace?.slug ?? windowWorkspaceId
-  }, [windowWorkspaceId, workspaces])
+  const windowWorkspaceSlug = runtimeWorkspace?.slug ?? null
 
   // Get initial sessionId from URL params (for "Open in New Window" feature)
   const initialSessionId = useMemo(() => {
@@ -404,12 +405,7 @@ function AppContent() {
     return params.get('sessionId')
   }, [])
 
-  // Derive remote workspace ID for session matching in NavigationContext
-  const windowRemoteWorkspaceId = useMemo(() => {
-    if (!windowWorkspaceId) return null
-    const workspace = workspaces.find(w => w.id === windowWorkspaceId)
-    return workspace?.remoteServer?.remoteWorkspaceId ?? null
-  }, [windowWorkspaceId, workspaces])
+  const windowRemoteWorkspaceId = runtimeWorkspace?.remoteServer?.remoteWorkspaceId ?? null
 
   const llmConnections = useAtomValue(llmConnectionsAtom)
   const workspaceDefaultLlmConnection = useAtomValue(workspaceDefaultLlmConnectionAtom)
@@ -784,7 +780,19 @@ function AppContent() {
           'getWindowWorkspace'
         )
         performance.mark('storyflow.startup-rpc:workspace')
-        setWindowWorkspaceId(wsId)
+        let initialRuntimeWorkspace: Workspace | null = null
+        if (wsId) {
+          initialRuntimeWorkspace = await withTimeout(
+            window.electronAPI.resolveRuntimeWorkspace(wsId),
+            STARTUP_RPC_TIMEOUT_MS,
+            'resolveRuntimeWorkspace'
+          )
+        }
+        setRuntimeWorkspace(initialRuntimeWorkspace)
+        setWindowWorkspaceId(initialRuntimeWorkspace?.id ?? null)
+        if (initialRuntimeWorkspace && initialRuntimeWorkspace.id !== FREE_CONVERSATION_WORKSPACE_ID) {
+          setActiveProjectId(initialRuntimeWorkspace.id)
+        }
 
         const needs = await withTimeout(
           window.electronAPI.getSetupNeeds(),
@@ -805,7 +813,7 @@ function AppContent() {
           performance.mark('storyflow.startup-rpc:workspaces')
           setWorkspaces(ws)
           setAppState(resolvePostSetupAppState({
-            windowWorkspaceId: wsId,
+            windowWorkspaceId: initialRuntimeWorkspace?.id,
             workspaceCount: ws.length,
           }))
           performance.mark('storyflow.startup-rpc:state-selected')
@@ -1841,6 +1849,8 @@ function AppContent() {
       initializeSessions([])
       setWorkspaces([])
       setWindowWorkspaceId(null)
+      setRuntimeWorkspace(null)
+      setActiveProjectId(null)
       // Reset setupNeeds to force fresh onboarding start
       setSetupNeeds({
         needsBillingConfig: true,
@@ -1857,94 +1867,95 @@ function AppContent() {
     }
   }, [onboarding, initializeSessions])
 
-  // Handle workspace selection
-  // - Default: switch workspace in same window (in-window switching)
-  // - With openInNewWindow=true: open in new window (or focus existing)
-  const handleSelectWorkspace = useCallback(async (workspaceId: string, openInNewWindow = false) => {
-    // If selecting current workspace, do nothing
-    if (workspaceId === windowWorkspaceId) return
+  const activateRuntimeWorkspace = useCallback(async (
+    workspaceId: string,
+    landingRoute?: Route,
+  ) => {
+    const nextWorkspace = await withTimeout(
+      window.electronAPI.resolveRuntimeWorkspace(workspaceId),
+      WORKSPACE_SWITCH_RPC_TIMEOUT_MS,
+      'resolveRuntimeWorkspace'
+    )
+    if (!nextWorkspace) throw new Error(`Workspace not found: ${workspaceId}`)
 
-    if (openInNewWindow) {
-      // Open (or focus) the window for the selected workspace
-      window.electronAPI.openWorkspace(workspaceId)
-    } else {
-      const selectionGeneration = ++workspaceSelectionGenerationRef.current
-      workspaceSwitchInFlightRef.current = workspaceId
-
-      // Switch the renderer shell immediately so the first frame reflects the
-      // user's target workspace while backend hydration catches up.
-      setWindowWorkspaceId(workspaceId)
-
-      // Mark session metadata as not ready for the new workspace.
-      // Navigation restoration is gated on this flag so it cannot reconcile
-      // a new workspace against an intentionally empty metadata map.
-      setSessionsLoaded(false)
-      setSessionLoadError(null)
-
-      // Clear selected session - the old session belongs to the previous workspace
-      // and should not remain selected when switching to a new workspace.
-      // This prevents showing stale session data from the wrong workspace.
-      setSession({ selected: null })
-
-      // Clear pending permissions/credentials (not relevant to new workspace)
-      setPendingPermissions(new Map())
-      setPendingCredentials(new Map())
-
-      // Clear session options from previous workspace
-      // (session IDs are unique UUIDs, but clearing prevents unbounded memory growth
-      // and ensures no stale state from old workspace persists)
-      setSessionOptions(new Map())
-
-      // Clear message drafts from previous workspace
-      // (prevents memory growth on repeated workspace switches)
-      sessionDraftsRef.current.clear()
-
-      // Reset sources and skills atoms to empty
-      // (prevents stale data flash during workspace switch - AppShell will reload)
-      store.set(sourcesAtom, [])
-      store.set(skillsAtom, [])
-
-      // Clear session atoms before backend hydration for the new workspace.
-      // This prevents stale session data from the previous workspace being visible.
-      store.set(sessionMetaMapAtom, new Map())
-      store.set(sessionIdsAtom, [])
-
-      try {
-        await withTimeout(
-          window.electronAPI.switchWorkspace(workspaceId),
-          WORKSPACE_SWITCH_RPC_TIMEOUT_MS,
-          'switchWorkspace'
-        )
-        await loadSessionsFromServer(workspaceId, selectionGeneration)
-        if (selectionGeneration !== workspaceSelectionGenerationRef.current) return
-        if (pendingCreatedWorkspaceRef.current?.id === workspaceId) {
-          pendingCreatedWorkspaceRef.current = null
-        }
-      } catch (error) {
-        if (selectionGeneration !== workspaceSelectionGenerationRef.current) return
-        console.error('[App] Failed to switch workspace:', error)
-        setSessionLoadError(formatSessionLoadFailure(error))
-        setSessionsLoaded(true)
-        lastLoadedSessionsWorkspaceRef.current = workspaceId
-      } finally {
-        if (workspaceSwitchInFlightRef.current === workspaceId) {
-          workspaceSwitchInFlightRef.current = null
-        }
-      }
-
-      // Note: NavigationContext detects the workspaceId change and handles panel
-      // restoration from the stored workspace URL (or defaults to allSessions).
-      // Sessions and theme reload automatically due to windowWorkspaceId dependency.
+    if (workspaceId === windowWorkspaceId) {
+      setRuntimeWorkspace(nextWorkspace)
+      if (workspaceId !== FREE_CONVERSATION_WORKSPACE_ID) setActiveProjectId(workspaceId)
+      if (landingRoute) setPendingReadyRoute(landingRoute)
+      setAppState('ready')
+      return
     }
-  }, [windowWorkspaceId, setSession, store, loadSessionsFromServer, workspaces])
+
+    const selectionGeneration = ++workspaceSelectionGenerationRef.current
+    workspaceSwitchInFlightRef.current = workspaceId
+
+    setRuntimeWorkspace(nextWorkspace)
+    setWindowWorkspaceId(workspaceId)
+    if (workspaceId !== FREE_CONVERSATION_WORKSPACE_ID) setActiveProjectId(workspaceId)
+
+    setSessionsLoaded(false)
+    setSessionLoadError(null)
+    setSession({ selected: null })
+    setPendingPermissions(new Map())
+    setPendingCredentials(new Map())
+    setSessionOptions(new Map())
+    sessionDraftsRef.current.clear()
+    store.set(sourcesAtom, [])
+    store.set(skillsAtom, [])
+    store.set(sessionMetaMapAtom, new Map())
+    store.set(sessionIdsAtom, [])
+
+    try {
+      await withTimeout(
+        window.electronAPI.switchWorkspace(workspaceId),
+        WORKSPACE_SWITCH_RPC_TIMEOUT_MS,
+        'switchWorkspace'
+      )
+      await loadSessionsFromServer(workspaceId, selectionGeneration)
+      if (selectionGeneration !== workspaceSelectionGenerationRef.current) return
+      if (pendingCreatedWorkspaceRef.current?.id === workspaceId) {
+        pendingCreatedWorkspaceRef.current = null
+      }
+      if (landingRoute) setPendingReadyRoute(landingRoute)
+      setAppState('ready')
+    } catch (error) {
+      if (selectionGeneration !== workspaceSelectionGenerationRef.current) return
+      console.error('[App] Failed to activate runtime workspace:', error)
+      setSessionLoadError(formatSessionLoadFailure(error))
+      setSessionsLoaded(true)
+      lastLoadedSessionsWorkspaceRef.current = workspaceId
+    } finally {
+      if (workspaceSwitchInFlightRef.current === workspaceId) {
+        workspaceSwitchInFlightRef.current = null
+      }
+    }
+  }, [loadSessionsFromServer, setSession, store, windowWorkspaceId])
+
+  // Handle project selection. The project catalog remains independent from the
+  // active runtime, while project switches continue to reuse the existing
+  // transport and session hydration path.
+  const handleSelectWorkspace = useCallback(async (workspaceId: string, openInNewWindow = false) => {
+    if (openInNewWindow) {
+      window.electronAPI.openWorkspace(workspaceId)
+      return
+    }
+    await activateRuntimeWorkspace(
+      workspaceId,
+      routes.view.writing(),
+    )
+  }, [activateRuntimeWorkspace])
 
   // Handle workspace switch by slug (called by NavigationContext on popstate when ?ws= changes)
   const handleSwitchWorkspaceBySlug = useCallback((slug: string) => {
+    if (slug === FREE_CONVERSATION_WORKSPACE_SLUG) {
+      void activateRuntimeWorkspace(FREE_CONVERSATION_WORKSPACE_ID)
+      return
+    }
     const target = workspaces.find(w => w.slug === slug)
     if (target) {
-      handleSelectWorkspace(target.id)
+      void activateRuntimeWorkspace(target.id)
     }
-  }, [workspaces, handleSelectWorkspace])
+  }, [workspaces, activateRuntimeWorkspace])
 
   // Handle workspace refresh (e.g., after icon upload)
   const handleRefreshWorkspaces = useCallback(() => {
@@ -1982,8 +1993,13 @@ function AppContent() {
       }
 
       setWorkspaces(prev => prev.filter(workspace => workspace.id !== workspaceId))
-      if (workspaceId === windowWorkspaceId) {
+      if (workspaceId === activeProjectId) {
+        setActiveProjectId(null)
+      }
+      if (runtimeWorkspace?.id === workspaceId) {
+        setRuntimeWorkspace(null)
         setWindowWorkspaceId(null)
+        setAppState('project-hub')
       }
 
       const refreshed = await window.electronAPI.getWorkspaces()
@@ -1994,7 +2010,7 @@ function AppContent() {
       toast.error('移除项目失败')
       handleRefreshWorkspaces()
     }
-  }, [handleRefreshWorkspaces, setWindowWorkspaceId, windowWorkspaceId, workspaces])
+  }, [activeProjectId, handleRefreshWorkspaces, runtimeWorkspace, setWindowWorkspaceId, workspaces])
 
   const handleWorkspaceCreated = useCallback(async (workspace: Workspace) => {
     pendingCreatedWorkspaceRef.current = workspace
@@ -2030,8 +2046,6 @@ function AppContent() {
       storage.set(storage.KEYS.firstRunTourPending, true)
     }
     clearReturnLocation()
-    setPendingReadyRoute(routes.view.writing())
-    setAppState('ready')
     await handleSelectWorkspace(workspace.id)
   }, [clearReturnLocation, handleWorkspaceCreated, handleSelectWorkspace])
 
@@ -2057,29 +2071,43 @@ function AppContent() {
 
   const handleOpenProjectFromHub = useCallback((workspaceId: string) => {
     clearReturnLocation()
-    setPendingReadyRoute(routes.view.writing())
-    setAppState('ready')
     void handleSelectWorkspace(workspaceId)
   }, [clearReturnLocation, handleSelectWorkspace])
 
   const handleReturnToActiveProject = useCallback(() => {
-    if (windowWorkspaceId) {
-      setPendingReadyRoute(consumeReturnRoute(routes.view.writing()))
-      setAppState('ready')
-    }
-  }, [consumeReturnRoute, windowWorkspaceId])
+    if (!activeProjectId) return
+    void activateRuntimeWorkspace(
+      activeProjectId,
+      consumeReturnRoute(routes.view.writing()),
+    )
+  }, [activeProjectId, activateRuntimeWorkspace, consumeReturnRoute])
 
-  const handleOpenActiveProjectRoute = useCallback((route: Route) => {
+  const handleOpenRuntimeRoute = useCallback((route: Route) => {
     if (!windowWorkspaceId) return
     setPendingReadyRoute(route)
     setAppState('ready')
   }, [windowWorkspaceId])
 
-  const handleOpenActiveProjectSearch = useCallback(() => {
+  const handleOpenRuntimeSearch = useCallback(() => {
     if (!windowWorkspaceId) return
     setOpenGlobalSearchSignal(signal => signal + 1)
     setAppState('ready')
   }, [windowWorkspaceId])
+
+  const handleOpenWritingWorkspace = useCallback(() => {
+    if (!activeProjectId) return
+    void activateRuntimeWorkspace(
+      activeProjectId,
+      routes.view.writing(),
+    )
+  }, [activeProjectId, activateRuntimeWorkspace])
+
+  const handleOpenFreeConversations = useCallback(() => {
+    void activateRuntimeWorkspace(
+      FREE_CONVERSATION_WORKSPACE_ID,
+      routes.view.allSessions(),
+    )
+  }, [activateRuntimeWorkspace])
 
   useEffect(() => {
     if (appState !== 'ready' || !pendingReadyRoute) return
@@ -2103,7 +2131,10 @@ function AppContent() {
 
   const projectManagerActions = useMemo(() => ({
     onSelectProject: (workspaceId: string) => {
-      if (workspaceId === windowWorkspaceId && appState === 'ready') return
+      if (
+        runtimeWorkspace?.id === workspaceId
+        && appState === 'ready'
+      ) return
       void handleOpenProjectFromHub(workspaceId)
     },
     // Create/import/remote stay inside ProjectManagerPanel when onWorkspaceCreated is wired.
@@ -2125,30 +2156,32 @@ function AppContent() {
     handleProjectHubWorkspaceCreated,
     handleRemoveProjectFromHub,
     handleRenameProjectFromHub,
-    windowWorkspaceId,
+    runtimeWorkspace,
   ])
 
   // Shared by account / project-hub ActivityRailFrame (and ready shell project actions).
   const activityRailProjectProps = useMemo(() => ({
     workspaces,
-    activeWorkspaceId: windowWorkspaceId,
+    activeWorkspaceId: activeProjectId,
     ...projectManagerActions,
-    onOpenWritingWorkspace: windowWorkspaceId
-      ? () => handleOpenActiveProjectRoute(routes.view.writing())
-      : undefined,
+    onOpenWritingWorkspace: activeProjectId ? handleOpenWritingWorkspace : undefined,
+    onOpenFreeConversations: handleOpenFreeConversations,
     onOpenSources: windowWorkspaceId
-      ? () => handleOpenActiveProjectRoute(routes.view.sources())
+      ? () => handleOpenRuntimeRoute(routes.view.sources())
       : undefined,
     onOpenSkills: windowWorkspaceId
-      ? () => handleOpenActiveProjectRoute(routes.view.skills())
+      ? () => handleOpenRuntimeRoute(routes.view.skills())
       : undefined,
-    onOpenSearch: windowWorkspaceId ? handleOpenActiveProjectSearch : undefined,
+    onOpenSearch: windowWorkspaceId ? handleOpenRuntimeSearch : undefined,
     onOpenSettings: windowWorkspaceId
-      ? () => handleOpenActiveProjectRoute(routes.view.settings('app'))
+      ? () => handleOpenRuntimeRoute(routes.view.settings('app'))
       : undefined,
   }), [
-    handleOpenActiveProjectRoute,
-    handleOpenActiveProjectSearch,
+    activeProjectId,
+    handleOpenFreeConversations,
+    handleOpenRuntimeRoute,
+    handleOpenRuntimeSearch,
+    handleOpenWritingWorkspace,
     projectManagerActions,
     windowWorkspaceId,
     workspaces,
@@ -2162,8 +2195,8 @@ function AppContent() {
     // NOTE: sessions is NOT included - use sessionMetaMapAtom for listing
     // and useSession(id) hook for individual sessions. This prevents memory leaks.
     workspaces,
-    activeWorkspaceId: windowWorkspaceId,
-    activeWorkspaceSlug: windowWorkspaceSlug,
+    runtimeWorkspace,
+    activeProjectId,
     llmConnections,
     workspaceDefaultLlmConnection,
     refreshLlmConnections,
@@ -2192,6 +2225,8 @@ function AppContent() {
     onSelectWorkspace: handleSelectWorkspace,
     onWorkspaceCreated: handleWorkspaceCreated,
     onRefreshWorkspaces: handleRefreshWorkspaces,
+    onOpenWritingWorkspace: handleOpenWritingWorkspace,
+    onOpenFreeConversations: handleOpenFreeConversations,
     // App actions
     onOpenSettings: handleOpenSettings,
     onOpenKeyboardShortcuts: handleOpenKeyboardShortcuts,
@@ -2206,8 +2241,8 @@ function AppContent() {
   }), [
     // NOTE: sessions removed to prevent memory leaks - components use atoms instead
     workspaces,
-    windowWorkspaceId,
-    windowWorkspaceSlug,
+    runtimeWorkspace,
+    activeProjectId,
     llmConnections,
     workspaceDefaultLlmConnection,
     refreshLlmConnections,
@@ -2233,6 +2268,8 @@ function AppContent() {
     handleSelectWorkspace,
     handleWorkspaceCreated,
     handleRefreshWorkspaces,
+    handleOpenWritingWorkspace,
+    handleOpenFreeConversations,
     handleOpenSettings,
     handleOpenKeyboardShortcuts,
     handleOpenStoredUserPreferences,
@@ -2344,7 +2381,7 @@ function AppContent() {
             <AccountCenterPage
               clientAuthState={clientAuthState}
               workspaces={workspaces}
-              activeWorkspaceId={windowWorkspaceId}
+              activeWorkspaceId={activeProjectId}
               onBack={handleAccountBack}
               onSignOut={handleAccountSignOut}
             />
@@ -2362,7 +2399,7 @@ function AppContent() {
         <ModalProvider>
         <TooltipProvider delayDuration={0}>
           <WindowCloseHandler />
-          {windowWorkspaceId ? (
+          {activeProjectId ? (
             <ProjectHubNavigationActions onReturn={handleReturnToActiveProject} />
           ) : null}
           <ActivityRailFrame
@@ -2375,10 +2412,10 @@ function AppContent() {
               <ProjectManagerPanel
                 variant="standalone"
                 workspaces={workspaces}
-                activeWorkspaceId={windowWorkspaceId}
+                activeWorkspaceId={activeProjectId}
                 {...projectManagerActions}
               />
-              {windowWorkspaceId && returnDestination ? (
+              {activeProjectId && returnDestination ? (
                 <button
                   type="button"
                   className="mt-5 text-[12px] text-muted-foreground/80 transition-colors hover:text-foreground"
@@ -2452,6 +2489,9 @@ function AppContent() {
           isReady={appState === 'ready'}
           isSessionsReady={sessionsLoaded}
           remoteWorkspaceId={windowRemoteWorkspaceId}
+          defaultViewRoute={runtimeWorkspace?.id === FREE_CONVERSATION_WORKSPACE_ID
+            ? routes.view.allSessions()
+            : routes.view.writing()}
         >
           {/* Handle window close requests (X button, Cmd+W) - close modal first if open */}
           <WindowCloseHandler />
@@ -2486,7 +2526,7 @@ function AppContent() {
               )}>
                 <div className="min-h-0 flex-1">
                 <WorkspaceSurface
-                  key={windowWorkspaceId ?? 'no-workspace'}
+                  key={runtimeWorkspace?.id ?? 'no-runtime'}
                   shikiTheme={shikiTheme}
                   contextValue={appShellContextValue}
                   defaultLayout={[20, 32, 48]}

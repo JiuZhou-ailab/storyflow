@@ -43,16 +43,18 @@ describe('ProjectHub startup integration', () => {
   })
 
   it('shows the project shell before background workspace hydration completes', () => {
-    const openProjectSource = appSource.slice(
-      appSource.indexOf('const handleOpenProjectFromHub ='),
-      appSource.indexOf('const handleReturnToActiveProject =')
+    const activationSource = appSource.slice(
+      appSource.indexOf('const activateRuntimeWorkspace ='),
+      appSource.indexOf('// Handle project selection.')
     )
 
-    expect(openProjectSource.indexOf("setAppState('ready')")).toBeLessThan(
-      openProjectSource.indexOf('handleSelectWorkspace(workspaceId)')
+    expect(activationSource.indexOf('setRuntimeWorkspace(nextWorkspace)')).toBeLessThan(
+      activationSource.indexOf('window.electronAPI.switchWorkspace(workspaceId)')
     )
-    expect(openProjectSource).not.toContain('await handleSelectWorkspace(workspaceId)')
-    expect(openProjectSource).toContain('setPendingReadyRoute(routes.view.writing())')
+    expect(activationSource.indexOf('setWindowWorkspaceId(workspaceId)')).toBeLessThan(
+      activationSource.indexOf('window.electronAPI.switchWorkspace(workspaceId)')
+    )
+    expect(activationSource).toContain("setAppState('ready')")
   })
 
   it('starts the Agent runtime from a real renderer-interactive signal', () => {

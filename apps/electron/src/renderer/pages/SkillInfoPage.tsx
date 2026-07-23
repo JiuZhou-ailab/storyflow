@@ -96,7 +96,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
       // Remote / fallback: still try file open path
       await window.electronAPI.openFile(`${skill.path}/SKILL.md`)
     } catch (err) {
-      toast.error(t('skillInfo.failedToOpenEditor', '无法打开编辑器'), {
+      toast.error('无法打开编辑器', {
         description: err instanceof Error ? err.message : undefined,
       })
     }

@@ -1,3 +1,7 @@
+// input: Playground fixture state and AppShell context contracts
+// output: No-op providers for isolated renderer component previews
+// pos: Development-only adapter for components that normally run inside AppShell
+
 /**
  * PlaygroundAppShellProvider
  *
@@ -32,8 +36,8 @@ function logCall(method: string) {
 // workspace atoms below let workspace-scoped components resolve in playground.
 const playgroundValue: AppShellContextType = {
   workspaces: [PLAYGROUND_WORKSPACE],
-  activeWorkspaceId: PLAYGROUND_WORKSPACE.id,
-  activeWorkspaceSlug: PLAYGROUND_WORKSPACE.slug,
+  runtimeWorkspace: PLAYGROUND_WORKSPACE,
+  activeProjectId: PLAYGROUND_WORKSPACE.id,
   llmConnections: [],
   refreshLlmConnections: async () => {},
   getDraft: () => '',
@@ -59,6 +63,8 @@ const playgroundValue: AppShellContextType = {
   onOpenFile: logCall('onOpenFile'),
   onOpenUrl: logCall('onOpenUrl'),
   onSelectWorkspace: logCall('onSelectWorkspace'),
+  onOpenWritingWorkspace: logCall('onOpenWritingWorkspace'),
+  onOpenFreeConversations: logCall('onOpenFreeConversations'),
   onOpenSettings: logCall('onOpenSettings'),
   onOpenKeyboardShortcuts: logCall('onOpenKeyboardShortcuts'),
   onOpenStoredUserPreferences: logCall('onOpenStoredUserPreferences'),

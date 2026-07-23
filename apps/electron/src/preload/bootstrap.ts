@@ -469,14 +469,9 @@ client.onConnectionStateChanged((state) => {
   ipcRenderer.on(CLIENT_AUTH_IPC_CHANNELS.STATE_CHANGED, handler)
   return () => { ipcRenderer.removeListener(CLIENT_AUTH_IPC_CHANNELS.STATE_CHANGED, handler) }
 }
-;(api as ElectronAPI).transferSessionToWorkspace = async (sessionId: string, targetWorkspaceId: string, sessionIndex?: number, sessionCount?: number) => {
+;(api as ElectronAPI).transferSessionToWorkspace = async (sessionId: string, targetWorkspaceId: string) => {
   await ensureClientAuthAllowed()
-  return ipcRenderer.invoke('session:transferToRemoteWorkspace', sessionId, targetWorkspaceId, sessionIndex, sessionCount)
-}
-;(api as ElectronAPI).onTransferProgress = (cb: (progress: { sessionIndex: number; sessionCount: number; chunkSent: number; chunkTotal: number }) => void) => {
-  const handler = (_e: any, progress: { sessionIndex: number; sessionCount: number; chunkSent: number; chunkTotal: number }) => cb(progress)
-  ipcRenderer.on('transfer:progress', handler)
-  return () => { ipcRenderer.removeListener('transfer:progress', handler) }
+  return ipcRenderer.invoke('session:transferToRemoteWorkspace', sessionId, targetWorkspaceId)
 }
 
 // System warnings — expose env-based flags set during main process startup

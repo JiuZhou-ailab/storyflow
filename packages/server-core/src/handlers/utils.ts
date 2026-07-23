@@ -1,7 +1,12 @@
+// input: Workspace identifiers, paths, config, and platform services
+// output: Runtime-aware workspace validation and file-access helper functions
+// pos: Shared handler utility boundary for project and hidden application contexts
+
 import { normalize, isAbsolute, sep } from 'path'
 import { homedir, tmpdir } from 'os'
 import { realpath } from 'fs/promises'
-import { getWorkspaceByNameOrId, type Workspace } from '@craft-agent/shared/config'
+import type { Workspace } from '@craft-agent/shared/config'
+import { resolveRuntimeWorkspace } from '@craft-agent/shared/workspaces'
 import { loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
 import type { PlatformServices } from '../runtime/platform'
 
@@ -10,7 +15,7 @@ import type { PlatformServices } from '../runtime/platform'
  * Use this when a workspace must exist for the operation to proceed.
  */
 export function getWorkspaceOrThrow(workspaceId: string): Workspace {
-  const workspace = getWorkspaceByNameOrId(workspaceId)
+  const workspace = resolveRuntimeWorkspace(workspaceId)
   if (!workspace) {
     throw new Error(`Workspace not found: ${workspaceId}`)
   }
@@ -54,7 +59,7 @@ export function sanitizeFilename(name: string): string {
  */
 export function getWorkspaceAllowedDirs(workspaceId?: string | null): string[] {
   if (!workspaceId) return []
-  const workspace = getWorkspaceByNameOrId(workspaceId)
+  const workspace = resolveRuntimeWorkspace(workspaceId)
   if (!workspace) return []
 
   const dirs: string[] = [workspace.rootPath]

@@ -1,13 +1,12 @@
 /**
  * Source Storage
  *
- * input: Global/workspace source folders and source creation inputs
- * output: Source CRUD, merged source discovery, guide loading, and icon persistence
- * pos: Shared filesystem-backed storage layer for reusable data/tool sources
+ * input: Explicit Storyflow global/project source roots and source creation inputs
+ * output: Source CRUD, project-over-global discovery, guide loading, and icon persistence
+ * pos: Shared filesystem storage without implicit third-party source discovery
  *
  * CRUD operations for reusable sources.
- * Craft-owned global sources: ~/.craft-agent/sources/{sourceSlug}/
- * Shared multi-tool globals (read): ~/.agents/sources/{sourceSlug}/
+ * Craft-owned global sources: {CONFIG_DIR}/sources/{sourceSlug}/
  * Workspace sources: {workspaceRootPath}/.craft-agent/sources/{sourceSlug}/
  *
  * Note: All functions take `workspaceRootPath` (absolute path to workspace folder),
@@ -27,6 +26,7 @@ import type {
   SourceDefinitionOrigin,
 } from './types.ts';
 import { validateSourceConfig } from '../config/validators.ts';
+import { CONFIG_DIR } from '../config/paths.ts';
 import { debug } from '../utils/debug.ts';
 import { atomicWriteFileSync, readJsonFileSync } from '../utils/files.ts';
 import { getBuiltinSources, isBuiltinSource, getDocsSource } from './builtin-sources.ts';
@@ -35,6 +35,7 @@ import {
   getLegacyWorkspaceSourcesPath,
   getWorkspaceSourcesPath,
 } from '../workspaces/paths.ts';
+import { resolveResourceRoots } from '../resources/resolver.ts';
 import {
   validateIconValue,
   findIconFile,
@@ -48,10 +49,11 @@ import {
 // ============================================================
 
 /**
- * Craft-owned global root: ~/.craft-agent/
+ * Craft-owned global root. Defaults to ~/.craft-agent and follows
+ * CRAFT_CONFIG_DIR for isolated development instances.
  * Craft-created and product-seeded global sources write here.
  */
-export const GLOBAL_AGENT_ROOT_DIR = join(homedir(), '.craft-agent');
+export const GLOBAL_AGENT_ROOT_DIR = CONFIG_DIR;
 
 /** Craft-owned global sources: ~/.craft-agent/sources/ */
 export const GLOBAL_AGENT_SOURCES_DIR = join(GLOBAL_AGENT_ROOT_DIR, 'sources');
@@ -186,12 +188,11 @@ function hasSourceConfigAtRoot(rootPath: string, sourceSlug: string): boolean {
   return existsSync(join(getSourcePath(rootPath, sourceSlug), 'config.json'));
 }
 
-/** Resolve the definition currently visible to a workspace using load priority. */
+/** Resolve the Craft-owned definition currently visible to a project. */
 function resolveVisibleSourceRoot(workspaceRootPath: string, sourceSlug: string): string {
   if (isGlobalSourcesRoot(workspaceRootPath)) return workspaceRootPath;
   if (hasSourceConfigAtRoot(workspaceRootPath, sourceSlug)) return workspaceRootPath;
   if (hasSourceConfigAtRoot(GLOBAL_AGENT_ROOT_DIR, sourceSlug)) return GLOBAL_AGENT_ROOT_DIR;
-  if (hasSourceConfigAtRoot(SHARED_AGENTS_ROOT_DIR, sourceSlug)) return SHARED_AGENTS_ROOT_DIR;
   return workspaceRootPath;
 }
 
@@ -521,13 +522,23 @@ export { isIconUrl } from '../utils/icon.ts';
  * @param workspaceRootPath - Absolute path to workspace folder (e.g., ~/.craft-agent/workspaces/xxx)
  * @param sourceSlug - Source folder name
  */
-export function loadSource(workspaceRootPath: string, sourceSlug: string): LoadedSource | null {
-  const workspaceSource = loadSourceFromRoot(workspaceRootPath, sourceSlug, 'workspace');
-  if (workspaceSource) return workspaceSource;
-  return (
-    loadSourceFromRoot(GLOBAL_AGENT_ROOT_DIR, sourceSlug, 'craft-global', workspaceRootPath)
-    ?? loadSourceFromRoot(SHARED_AGENTS_ROOT_DIR, sourceSlug, 'shared-global', workspaceRootPath)
-  );
+export function loadSource(
+  projectRoot: string | undefined,
+  sourceSlug: string,
+): LoadedSource | null {
+  const consumerRoot = projectRoot ?? GLOBAL_AGENT_ROOT_DIR;
+  for (const root of resolveResourceRoots({ projectRoot }).sources) {
+    const origin = root.origin === 'project' ? 'workspace' : 'craft-global';
+    const source = loadSourceFromRoot(
+      root.rootPath,
+      sourceSlug,
+      origin,
+      consumerRoot,
+    );
+    if (source) return source;
+  }
+
+  return null;
 }
 
 function loadSourceFromRoot(
@@ -559,32 +570,37 @@ function loadSourceFromRoot(
 }
 
 /**
- * Load all user-configured sources visible in a workspace.
- * Shared multi-tool globals load first, then Craft-owned globals, then workspace
- * sources override matching slugs.
+ * Load all user-configured sources visible in an optional project.
+ * Resolver roots are consumed from highest to lowest precedence, with the first
+ * definition for a slug winning.
  */
-export function loadWorkspaceSources(workspaceRootPath: string): LoadedSource[] {
-  ensureSourcesDir(workspaceRootPath);
+export function loadWorkspaceSources(projectRoot?: string): LoadedSource[] {
+  if (projectRoot) {
+    ensureSourcesDir(projectRoot);
+  }
   ensureSourcesDir(GLOBAL_AGENT_ROOT_DIR);
 
   const sourcesBySlug = new Map<string, LoadedSource>();
+  const consumerRoot = projectRoot ?? GLOBAL_AGENT_ROOT_DIR;
 
-  // Shared multi-tool globals (~/.agents/sources) — lowest global priority
-  for (const source of loadSourcesFromRoot(SHARED_AGENTS_ROOT_DIR, 'shared-global', workspaceRootPath)) {
-    sourcesBySlug.set(source.config.slug, source);
-  }
+  for (const root of resolveResourceRoots({ projectRoot }).sources) {
+    const origin = root.origin === 'project' ? 'workspace' : 'craft-global';
+    const sourceDirs = root.origin === 'project'
+      ? [root.path, getLegacyWorkspaceSourcesPath(root.rootPath)]
+      : [root.path];
 
-  // Craft-owned globals (~/.craft-agent/sources)
-  for (const source of loadSourcesFromRoot(GLOBAL_AGENT_ROOT_DIR, 'craft-global', workspaceRootPath)) {
-    sourcesBySlug.set(source.config.slug, source);
-  }
-
-  for (const source of loadSourcesFromRoot(workspaceRootPath, 'workspace', workspaceRootPath, getLegacyWorkspaceSourcesPath(workspaceRootPath))) {
-    sourcesBySlug.set(source.config.slug, source);
-  }
-
-  for (const source of loadSourcesFromRoot(workspaceRootPath, 'workspace', workspaceRootPath, getWorkspaceSourcesPath(workspaceRootPath))) {
-    sourcesBySlug.set(source.config.slug, source);
+    for (const sourceDir of sourceDirs) {
+      for (const source of loadSourcesFromRoot(
+        root.rootPath,
+        origin,
+        consumerRoot,
+        sourceDir,
+      )) {
+        if (!sourcesBySlug.has(source.config.slug)) {
+          sourcesBySlug.set(source.config.slug, source);
+        }
+      }
+    }
   }
 
   return Array.from(sourcesBySlug.values());
@@ -617,8 +633,8 @@ function loadSourcesFromRoot(
 /**
  * Get enabled sources for a workspace
  */
-export function getEnabledSources(workspaceRootPath: string): LoadedSource[] {
-  return loadWorkspaceSources(workspaceRootPath).filter((s) => s.config.enabled);
+export function getEnabledSources(projectRoot?: string): LoadedSource[] {
+  return loadWorkspaceSources(projectRoot).filter((s) => s.config.enabled);
 }
 
 /**
@@ -646,20 +662,24 @@ export function isSourceUsable(source: LoadedSource): boolean {
  * Includes both user-configured sources from disk and builtin sources
  * (like craft-agents-docs) that don't have filesystem folders.
  */
-export function getSourcesBySlugs(workspaceRootPath: string, slugs: string[]): LoadedSource[] {
-  const workspaceId = basename(workspaceRootPath);
+export function getSourcesBySlugs(
+  projectRoot: string | undefined,
+  slugs: string[],
+): LoadedSource[] {
+  const consumerRoot = projectRoot ?? GLOBAL_AGENT_ROOT_DIR;
+  const workspaceId = basename(consumerRoot);
   const sources: LoadedSource[] = [];
   for (const slug of slugs) {
     // Check builtin sources first (they don't exist on disk)
     if (isBuiltinSource(slug)) {
       // Currently only craft-agents-docs is a builtin source
       if (slug === 'craft-agents-docs') {
-        sources.push(getDocsSource(workspaceId, workspaceRootPath));
+        sources.push(getDocsSource(workspaceId, consumerRoot));
       }
       continue;
     }
     // Load user-configured source from disk
-    const source = loadSource(workspaceRootPath, slug);
+    const source = loadSource(projectRoot, slug);
     if (source) {
       sources.push(source);
     }
@@ -675,10 +695,11 @@ export function getSourcesBySlugs(workspaceRootPath: string, slugs: string[]): L
  * Use this when the agent needs visibility into all available sources,
  * including system-provided ones that don't live on disk.
  */
-export function loadAllSources(workspaceRootPath: string): LoadedSource[] {
-  const workspaceId = basename(workspaceRootPath);
-  const userSources = loadWorkspaceSources(workspaceRootPath);
-  const builtinSources = getBuiltinSources(workspaceId, workspaceRootPath);
+export function loadAllSources(projectRoot?: string): LoadedSource[] {
+  const consumerRoot = projectRoot ?? GLOBAL_AGENT_ROOT_DIR;
+  const workspaceId = basename(consumerRoot);
+  const userSources = loadWorkspaceSources(projectRoot);
+  const builtinSources = getBuiltinSources(workspaceId, consumerRoot);
   return [...userSources, ...builtinSources];
 }
 
@@ -854,8 +875,7 @@ export function sourceExists(workspaceRootPath: string, sourceSlug: string): boo
   return existsSync(join(getSourcePath(workspaceRootPath, sourceSlug), 'config.json'))
     || existsSync(join(getSourceWritePath(workspaceRootPath, sourceSlug), 'config.json'))
     || existsSync(join(getLegacySourcesPathForRoot(workspaceRootPath), sourceSlug, 'config.json'))
-    || existsSync(join(getSourcePath(GLOBAL_AGENT_ROOT_DIR, sourceSlug), 'config.json'))
-    || existsSync(join(getSourcePath(SHARED_AGENTS_ROOT_DIR, sourceSlug), 'config.json'));
+    || existsSync(join(getSourcePath(GLOBAL_AGENT_ROOT_DIR, sourceSlug), 'config.json'));
 }
 
 // ============================================================

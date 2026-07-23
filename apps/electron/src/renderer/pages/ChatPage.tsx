@@ -31,7 +31,7 @@ import { rendererPerf } from '@/lib/perf'
 import { navigate, routes } from '@/lib/navigate'
 import { coerceInputText } from '@/lib/input-text'
 import { deriveSessionMessagesLoadState, formatSessionLoadFailure } from '@/lib/session-load'
-import { workspacePanelFieldsAtomFamily, ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, sessionMessagesLoadedAtomFamily, sessionMetaAtomFamily, sessionMetaMapAtom, windowWorkspaceIdAtom } from '@/atoms/sessions'
+import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, sessionMessagesLoadedAtomFamily, sessionMetaAtomFamily, sessionMetaMapAtom } from '@/atoms/sessions'
 import { activeSessionListSearchQueryAtom, sessionListSearchActiveAtom } from '@/atoms/session-list-search'
 import { llmConnectionsAtom, refreshLlmConnectionsAtom, workspaceDefaultLlmConnectionAtom } from '@/atoms/llm-connections'
 import { getSessionPreviewText, getSessionTitle, shortTimeLocale } from '@/utils/session'
@@ -39,6 +39,7 @@ import { getSessionPreviewText, getSessionTitle, shortTimeLocale } from '@/utils
 import { resolveEffectiveConnectionSlug, isSessionConnectionUnavailable } from '@config/llm-connections'
 import { selectConversationHistoryItems } from './chat-history-items'
 import { resolveChatOpeningPrompt } from '@/components/app-shell/chat-opening'
+import { FREE_CONVERSATION_WORKSPACE_ID } from '../../shared/types'
 
 export interface ChatPageProps {
   sessionId: string
@@ -183,6 +184,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     isFocusedPanel,
   } = useSessionPanelChrome()
   const {
+    runtimeWorkspace,
     enabledSources,
     skills,
     mentionFiles,
@@ -233,8 +235,10 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
   // Use per-session atom for isolated updates
   const session = useSessionData(sessionId)
-  const activeWorkspaceId = useAtomValue(windowWorkspaceIdAtom)
-  const chatWorkspace = useAtomValue(workspacePanelFieldsAtomFamily(activeWorkspaceId ?? null))
+  const activeWorkspaceId = runtimeWorkspace?.id ?? null
+  const chatWorkspace = runtimeWorkspace
+  const canChangeWorkingDirectory = activeWorkspaceId !== null
+    && activeWorkspaceId !== FREE_CONVERSATION_WORKSPACE_ID
   const llmConnections = useAtomValue(llmConnectionsAtom)
   const workspaceDefaultLlmConnection = useAtomValue(workspaceDefaultLlmConnectionAtom)
   const refreshLlmConnections = useSetAtom(refreshLlmConnectionsAtom)
@@ -466,7 +470,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     return connection?.defaultModel ?? ''
   }, [session?.id, session?.model, session?.llmConnection, workspaceDefaultLlmConnection, llmConnections, connectionUnavailable])
 
-  const remoteWorkspaceId = chatWorkspace?.remoteWorkspaceId
+  const remoteWorkspaceId = chatWorkspace?.remoteServer?.remoteWorkspaceId
   const chatOpening = React.useMemo(() => resolveChatOpeningPrompt({
     workspaceName: chatWorkspace?.name,
     projectType: openingProjectMetadata?.projectType ?? chatWorkspace?.projectType,
@@ -897,7 +901,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
                 workspaceId={activeWorkspaceId || undefined}
                 onSourcesChange={(slugs) => onSessionSourcesChange?.(sessionId, slugs)}
                 workingDirectory={loadingSessionMeta.workingDirectory}
-                onWorkingDirectoryChange={handleWorkingDirectoryChange}
+                onWorkingDirectoryChange={canChangeWorkingDirectory ? handleWorkingDirectoryChange : undefined}
                 messagesLoading={messageLoadState.messagesLoading || (messagesRetrying && !messageLoadState.messagesReady)}
                 messagesLoadError={messageLoadState.error}
                 messagesRetrying={messagesRetrying}
@@ -993,7 +997,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
             workspaceId={activeWorkspaceId || undefined}
             onSourcesChange={(slugs) => onSessionSourcesChange?.(sessionId, slugs)}
             workingDirectory={workingDirectory}
-            onWorkingDirectoryChange={handleWorkingDirectoryChange}
+            onWorkingDirectoryChange={canChangeWorkingDirectory ? handleWorkingDirectoryChange : undefined}
             sessionFolderPath={session?.sessionFolderPath}
             messagesLoading={messageLoadState.messagesLoading || (messagesRetrying && !messageLoadState.messagesReady)}
             messagesLoadError={messageLoadState.error}

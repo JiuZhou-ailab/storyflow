@@ -1,6 +1,6 @@
-// input: Workspace root + existing skill slugs
-// output: Scaffolded project Skill under .pi/skills/{slug}/SKILL.md
-// pos: Direct create surface replacing AI-only EditPopover for add-skill
+// input: Runtime workspace id, owner scope, and existing Skill slugs
+// output: Validated global or project Skill created through the Skills RPC
+// pos: Direct Skill creation surface without generic filesystem write access
 
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
@@ -22,7 +22,8 @@ import { navigate, routes } from '@/lib/navigate'
 export interface CreateSkillDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  workspaceRootPath: string
+  workspaceId: string
+  scope: 'global' | 'project'
   existingSlugs?: string[]
 }
 
@@ -69,7 +70,8 @@ ${description}
 export function CreateSkillDialog({
   open,
   onOpenChange,
-  workspaceRootPath,
+  workspaceId,
+  scope,
   existingSlugs = [],
 }: CreateSkillDialogProps) {
   const { t } = useTranslation()
@@ -103,7 +105,6 @@ export function CreateSkillDialog({
     event.preventDefault()
     if (!canSubmit || submitting) return
 
-    const skillPath = `${workspaceRootPath.replace(/\/+$/, '')}/.pi/skills/${finalSlug}/SKILL.md`
     const content = buildSkillMarkdown({
       slug: finalSlug,
       displayName: displayName.trim(),
@@ -112,12 +113,12 @@ export function CreateSkillDialog({
 
     setSubmitting(true)
     try {
-      await window.electronAPI.writeFile(skillPath, content)
-      toast.success(t('skillsList.createdSkill', { name: displayName.trim() }))
+      await window.electronAPI.createSkill(workspaceId, finalSlug, content)
+      toast.success(`已创建技能：${displayName.trim()}`)
       onOpenChange(false)
       navigate(routes.view.skills(finalSlug))
     } catch (error) {
-      toast.error(t('skillsList.failedToCreate', '创建技能失败'), {
+      toast.error('创建技能失败', {
         description: error instanceof Error ? error.message : undefined,
       })
     } finally {
@@ -132,10 +133,9 @@ export function CreateSkillDialog({
           <DialogHeader>
             <DialogTitle>{t('skillsList.addSkill', '添加技能')}</DialogTitle>
             <DialogDescription>
-              {t(
-                'skillsList.createDescription',
-                '直接在当前项目创建 Skill 文件，无需让 AI 代写。创建后可打开文件继续完善。',
-              )}
+              {scope === 'project'
+                ? '直接在当前项目创建 Skill 文件。项目 Skill 会覆盖同名全局 Skill。'
+                : '创建全局 Skill，所有自由对话和项目都可使用。'}
             </DialogDescription>
           </DialogHeader>
 
@@ -146,16 +146,16 @@ export function CreateSkillDialog({
                 id="skill-display-name"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder={t('skillsList.namePlaceholder', '例如：章节衔接检查')}
+                placeholder="例如：章节衔接检查"
                 autoFocus
               />
             </div>
 
             <div className="space-y-1.5">
               <Label htmlFor="skill-slug">
-                {t('skillsList.slug', '技能 ID')}
+                {t('common.slug', '技能 ID')}
                 <span className="ml-1.5 font-normal text-muted-foreground">
-                  {t('skillsList.slugHint', '小写英文，对应文件夹名')}
+                  小写英文，对应文件夹名
                 </span>
               </Label>
               <Input
@@ -171,11 +171,11 @@ export function CreateSkillDialog({
               {displayName.trim() && finalSlug ? (
                 <p className="text-[11px] text-muted-foreground">
                   {existing.has(finalSlug)
-                    ? t('skillsList.slugExists', '该技能 ID 已存在')
+                    ? '该技能 ID 已存在'
                     : (
                       <>
-                        {t('skillsList.willCreateAt', '将创建于')}{' '}
-                        <span className="font-mono">.pi/skills/{finalSlug}/SKILL.md</span>
+                        {scope === 'project' ? '项目 Skill' : '全局 Skill'}{' '}
+                        <span className="font-mono">{finalSlug}</span>
                       </>
                     )}
                 </p>
@@ -188,10 +188,7 @@ export function CreateSkillDialog({
                 id="skill-description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder={t(
-                  'skillsList.descriptionPlaceholder',
-                  '何时使用这个技能？它应该完成什么？',
-                )}
+                placeholder="何时使用这个技能？它应该完成什么？"
                 rows={3}
                 className="resize-none"
               />
@@ -204,8 +201,8 @@ export function CreateSkillDialog({
             </Button>
             <Button type="submit" disabled={!canSubmit || submitting}>
               {submitting
-                ? t('common.creating', '创建中…')
-                : t('skillsList.createSkill', '创建技能')}
+                ? t('common.loading', '创建中…')
+                : t('common.create', '创建技能')}
             </Button>
           </DialogFooter>
         </form>

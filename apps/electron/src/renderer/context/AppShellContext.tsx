@@ -1,3 +1,7 @@
+// input: Runtime context plus narrow session, navigation, and shell service contracts
+// output: Split React providers and hooks for AppShell consumers
+// pos: Renderer dependency boundary that avoids broad prop drilling
+
 /**
  * AppShellContext
  *
@@ -40,9 +44,10 @@ export interface AppShellContextType {
   // and useSession(id) hook for individual sessions. This prevents closures
   // from retaining the full messages array and causing memory leaks.
   workspaces: Workspace[]
-  activeWorkspaceId: string | null
-  /** Workspace slug for SDK skill qualification (derived from workspace path) */
-  activeWorkspaceSlug: string | null
+  /** Concrete hidden or configured workspace used by the Agent runtime. */
+  runtimeWorkspace: Workspace | null
+  /** Last active project; remains stable while Free Conversations are open. */
+  activeProjectId: string | null
   /** All LLM connections with authentication status */
   llmConnections: LlmConnectionWithStatus[]
   /** Default LLM connection slug for the current workspace */
@@ -116,6 +121,8 @@ export interface AppShellContextType {
   onSelectWorkspace: (id: string, openInNewWindow?: boolean) => void | Promise<void>
   onWorkspaceCreated?: (workspace: Workspace) => void | Promise<void>
   onRefreshWorkspaces?: () => void
+  onOpenWritingWorkspace: () => void
+  onOpenFreeConversations: () => void
 
   // App actions
   onOpenSettings: () => void
@@ -200,6 +207,7 @@ interface SessionDraftActionsContextType {
 const SessionDraftActionsContext = createContext<SessionDraftActionsContextType | null>(null)
 
 interface SessionChatResourcesContextType {
+  runtimeWorkspace: AppShellContextType['runtimeWorkspace']
   enabledSources?: AppShellContextType['enabledSources']
   skills?: AppShellContextType['skills']
   mentionFiles?: AppShellContextType['mentionFiles']
@@ -298,6 +306,7 @@ export function AppShellProvider({
   ])
 
   const sessionChatResources = React.useMemo<SessionChatResourcesContextType>(() => ({
+    runtimeWorkspace: value.runtimeWorkspace,
     enabledSources: value.enabledSources,
     skills: value.skills,
     mentionFiles: value.mentionFiles,
@@ -305,6 +314,7 @@ export function AppShellProvider({
     enabledModes: value.enabledModes,
     onSessionSourcesChange: value.onSessionSourcesChange,
   }), [
+    value.runtimeWorkspace,
     value.enabledSources,
     value.skills,
     value.mentionFiles,

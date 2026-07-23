@@ -72,6 +72,7 @@ export const RPC_CHANNELS = {
   window: {
     GET_WORKSPACE: 'window:getWorkspace',
     GET_MODE: 'window:getMode',
+    RESOLVE_RUNTIME_WORKSPACE: 'window:resolveRuntimeWorkspace',
     OPEN_WORKSPACE: 'window:openWorkspace',
     OPEN_SESSION_IN_NEW_WINDOW: 'window:openSessionInNewWindow',
     SWITCH_WORKSPACE: 'window:switchWorkspace',
@@ -275,6 +276,7 @@ export const RPC_CHANNELS = {
   skills: {
     GET: 'skills:get',
     GET_FILES: 'skills:getFiles',
+    CREATE: 'skills:create',
     DELETE: 'skills:delete',
     OPEN_EDITOR: 'skills:openEditor',
     OPEN_FINDER: 'skills:openFinder',

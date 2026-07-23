@@ -44,6 +44,15 @@ function createHarness(workspaceId: string | null = 'workspace-1') {
     sessionManager: {
       notifyConfigFileChange: () => {},
     } as unknown as HandlerDeps['sessionManager'],
+    resolveRuntimeWorkspace: (id: string) => id === 'workspace-1'
+      ? {
+          id,
+          name: 'Workspace',
+          rootPath: workspaceRootPath,
+          slug: 'workspace',
+          createdAt: 0,
+        }
+      : null,
     oauthFlowStore: {} as HandlerDeps['oauthFlowStore'],
     platform: {
       appRootPath: '/',

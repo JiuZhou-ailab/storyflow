@@ -1,5 +1,5 @@
-// input: Active project Skills, workspace identity, and Skills Market navigation
-// output: Project Skill list, local management actions, and configured public discovery entry
+// input: Resolved runtime Skills, workspace identity, and Skills Market navigation
+// output: Overlay-aware Skill list, local management actions, and public discovery entry
 // pos: Skills navigator surface; installation remains a verified ResourceBundle import
 
 import * as React from 'react'
@@ -11,7 +11,6 @@ import { EntityListEmptyScreen } from '@/components/ui/entity-list-empty'
 import { skillSelection } from '@/hooks/useEntitySelection'
 import { SkillMenu } from './SkillMenu'
 import { SendResourceToWorkspaceDialog } from './SendResourceToWorkspaceDialog'
-import { CreateSkillDialog } from './CreateSkillDialog'
 import { resolveSkillsMarketEntry } from '@/lib/skills-market-entry'
 import type { LoadedSkill, Workspace } from '../../../shared/types'
 
@@ -20,6 +19,7 @@ const skillsMarketEntry = resolveSkillsMarketEntry(import.meta.env.VITE_STORYFLO
 export interface SkillsListPanelProps {
   skills: LoadedSkill[]
   onDeleteSkill: (skillSlug: string) => void
+  onCreateSkill?: () => void
   onSkillClick: (skill: LoadedSkill) => void
   selectedSkillSlug?: string | null
   workspaceId?: string
@@ -32,6 +32,7 @@ export interface SkillsListPanelProps {
 export function SkillsListPanel({
   skills,
   onDeleteSkill,
+  onCreateSkill,
   onSkillClick,
   selectedSkillSlug,
   workspaceId,
@@ -48,8 +49,6 @@ export function SkillsListPanel({
   const [sendDialogOpen, setSendDialogOpen] = React.useState(false)
   const [sendResourceSlug, setSendResourceSlug] = React.useState<string | null>(null)
   const [sendResourceLabel, setSendResourceLabel] = React.useState('')
-  const [createOpen, setCreateOpen] = React.useState(false)
-  const existingSlugs = React.useMemo(() => skills.map((skill) => skill.slug), [skills])
 
   return (
     <>
@@ -80,11 +79,11 @@ export function SkillsListPanel({
             description={t('skillsList.emptyDescription')}
             docKey="skills"
           >
-            {workspaceRootPath && (
+            {onCreateSkill && (
               <button
                 type="button"
                 className="inline-flex items-center h-7 px-3 text-xs font-medium rounded-[8px] bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors"
-                onClick={() => setCreateOpen(true)}
+                onClick={onCreateSkill}
               >
                 {t('skillsList.addSkill')}
               </button>
@@ -131,15 +130,6 @@ export function SkillsListPanel({
           activeWorkspaceId={workspaceId ?? null}
         />
       )}
-
-      {workspaceRootPath ? (
-        <CreateSkillDialog
-          open={createOpen}
-          onOpenChange={setCreateOpen}
-          workspaceRootPath={workspaceRootPath}
-          existingSlugs={existingSlugs}
-        />
-      ) : null}
     </>
   )
 }

@@ -204,6 +204,7 @@ import {
 } from "@/lib/writing-workspace"
 import type { FileChange } from "@craft-agent/ui"
 import { RPC_CHANNELS, type FileSearchBatchRequest, type FileSearchBatchResult } from "@craft-agent/shared/protocol"
+import { FREE_CONVERSATION_WORKSPACE_ID } from "@craft-agent/shared/protocol"
 
 // ponytail: process-local replay guard for passive file-change refreshes; explicit file operations refresh directly.
 const completedNovelFileChangeRefreshKeys = new Set<string>()
@@ -884,10 +885,13 @@ function AppShellContent({
   // to prevent closures from retaining the full messages array
   const {
     workspaces,
-    activeWorkspaceId,
+    runtimeWorkspace,
+    activeProjectId,
     onSelectWorkspace,
     onWorkspaceCreated,
     onRefreshWorkspaces,
+    onOpenWritingWorkspace,
+    onOpenFreeConversations,
     onDeleteSession,
     onFlagSession,
     onUnflagSession,
@@ -906,6 +910,12 @@ function AppShellContent({
     getDraft,
     openNewChat,
   } = contextValue
+  const activeWorkspace = runtimeWorkspace
+  const activeWorkspaceId = runtimeWorkspace?.id ?? null
+  const isProjectRuntime = activeWorkspaceId !== null
+    && activeWorkspaceId !== FREE_CONVERSATION_WORKSPACE_ID
+  const projectWorkspaceId = isProjectRuntime ? activeWorkspaceId : null
+  const remoteWorkspaceId = runtimeWorkspace?.remoteServer?.remoteWorkspaceId
 
   const { t } = useTranslation()
 
@@ -1251,20 +1261,22 @@ function AppShellContent({
     setSkillsAtom(skills)
   }, [skills, setSkillsAtom])
   // Automations — state, handlers, loading, subscriptions
-  const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
-  const remoteWorkspaceId = activeWorkspace?.remoteServer?.remoteWorkspaceId
   // Send to Workspace dialog state (driven by sendToWorkspaceAtom set from SessionMenu/BatchSessionMenu)
   const sendToWorkspaceIds = useAtomValue(sendToWorkspaceAtom)
   const setSendToWorkspaceIds = useSetAtom(sendToWorkspaceAtom)
   const handleTransferComplete = useCallback((targetWorkspaceId: string, _newSessionIds: string[]) => {
+    if (targetWorkspaceId === FREE_CONVERSATION_WORKSPACE_ID) {
+      onOpenFreeConversations()
+      return
+    }
     onSelectWorkspace(targetWorkspaceId)
-  }, [onSelectWorkspace])
+  }, [onOpenFreeConversations, onSelectWorkspace])
   const {
     automations, automationTestResults,
     automationPendingDelete, pendingDeleteAutomation, setAutomationPendingDelete,
     handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, confirmDeleteAutomation,
     getAutomationHistory, handleReplayAutomation,
-  } = useAutomations(activeWorkspaceId)
+  } = useAutomations(projectWorkspaceId)
 
   // Whether local MCP servers are enabled (affects stdio source status)
   const [localMcpEnabled, setLocalMcpEnabled] = React.useState(true)
@@ -1274,8 +1286,12 @@ function AppShellContent({
 
   // Load workspace settings (for localMcpEnabled and cyclablePermissionModes) on workspace change
   React.useEffect(() => {
-    if (!activeWorkspaceId) return
-    window.electronAPI.getWorkspaceSettings(activeWorkspaceId).then((settings) => {
+    if (!projectWorkspaceId) {
+      setLocalMcpEnabled(true)
+      setEnabledModes(['safe', 'ask', 'allow-all'])
+      return
+    }
+    window.electronAPI.getWorkspaceSettings(projectWorkspaceId).then((settings) => {
       if (settings) {
         setLocalMcpEnabled(settings.localMcpEnabled ?? true)
         // Load cyclablePermissionModes from workspace settings
@@ -1286,7 +1302,7 @@ function AppShellContent({
     }).catch((err) => {
       console.error('[Chat] Failed to load workspace settings:', err)
     })
-  }, [activeWorkspaceId])
+  }, [projectWorkspaceId])
 
   // Reset UI state when workspace changes
   // This prevents stale search queries, focused items, and filter state from persisting
@@ -1374,16 +1390,16 @@ function AppShellContent({
 
 
   // Load dynamic statuses from workspace config
-  const { statuses: statusConfigs, isLoading: isLoadingStatuses } = useStatuses(activeWorkspace?.id || null)
+  const { statuses: statusConfigs, isLoading: isLoadingStatuses } = useStatuses(projectWorkspaceId)
 
   // Convert StatusConfig to SessionStatus with resolved icons
   const sessionStatuses = React.useMemo(() => {
-    if (!activeWorkspace?.id || statusConfigs.length === 0) {
+    if (!projectWorkspaceId || statusConfigs.length === 0) {
       return []
     }
 
-    return statusConfigsToSessionStatuses(statusConfigs, activeWorkspace.id, isDark)
-  }, [statusConfigs, activeWorkspace?.id, isDark])
+    return statusConfigsToSessionStatuses(statusConfigs, projectWorkspaceId, isDark)
+  }, [statusConfigs, projectWorkspaceId, isDark])
 
   // Optimistic status order: immediately reflects drag-drop order while IPC propagates.
   // Cleared when statusConfigs changes (config watcher is source of truth).
@@ -1412,11 +1428,11 @@ function AppShellContent({
   }, [sessionStatuses, optimisticStatusOrder])
 
   // Load labels from workspace config
-  const { labels: labelConfigs } = useLabels(activeWorkspace?.id || null)
+  const { labels: labelConfigs } = useLabels(projectWorkspaceId)
   const displayLabelConfigs = useMemo(() => sortLabelsForDisplay(labelConfigs), [labelConfigs])
 
   // Views: compiled once on config load, evaluated per session in list/chat
-  const { evaluateSession: evaluateViews, viewConfigs } = useViews(activeWorkspace?.id || null)
+  const { evaluateSession: evaluateViews, viewConfigs } = useViews(projectWorkspaceId)
 
   // Build flat LabelMenuItem[] from hierarchical labels for the filter dropdown's search mode.
   // Uses the same structure as the # inline menu so the two search surfaces stay aligned.
@@ -1804,7 +1820,8 @@ function AppShellContent({
   const activeWorkspaceMethodPackId = typeof activeWorkspaceMetadata?.methodPackId === 'string'
     ? activeWorkspaceMetadata.methodPackId
     : undefined
-  const activeWritingWorkspaceRoot = activeWorkspace?.rootPath
+  const activeWritingWorkspaceRoot = isProjectRuntime
+    && activeWorkspace
     && (activeWorkspaceProjectType === 'novel' || activeWorkspaceProjectType === 'short-form' || activeWorkspaceProjectType === 'screenplay')
     ? activeWorkspace.rootPath
     : null
@@ -1976,7 +1993,7 @@ function AppShellContent({
       await window.electronAPI.writeFile(targetPath, initialContent)
       await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
       setSelectedNovelFilePath(targetPath)
-      navigate(routes.view.allSessions())
+      navigate(routes.view.writing())
       setNovelCreateFileTarget(null)
       setNovelCreateFileValue('')
     } catch (error) {
@@ -2034,7 +2051,7 @@ function AppShellContent({
       await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
       if (lastImportedPath) {
         setSelectedNovelFilePath(lastImportedPath)
-        navigate(routes.view.allSessions())
+        navigate(routes.view.writing())
       }
       toast.success(t('writing.importFile.success', '已导入文件'))
     }
@@ -2168,8 +2185,9 @@ function AppShellContent({
   const novelWorkspaceRootMatchesCandidates = !!novelWorkspaceRoot && novelWorkspaceCandidateRootSet.has(novelWorkspaceRoot)
   const hasStaleNovelWorkspaceRoot = !!novelWorkspaceRoot && novelWorkspaceCandidateRoots.length > 0 && !novelWorkspaceRootMatchesCandidates
   const hasUnsettledNovelWorkspaceCandidates = novelWorkspaceCandidateRoots.length > 0 && novelWorkspaceDetectionSettledKey !== novelWorkspaceCandidateKey
-  const showWritingWorkspaceShell = isWritingNavigation(navState)
-    || (isSessionsNavigation(navState) && activeWritingWorkspaceRoot !== null)
+  // Project chats retain the project navigator; Free Conversations never mount project chrome.
+  const showWritingWorkspaceShell = isProjectRuntime
+    && (isWritingNavigation(navState) || isSessionsNavigation(navState))
   const showNovelWorkspaceSidebar = novelWorkspaceRootMatchesCandidates
   const showNovelDocumentNavigator = showWritingWorkspaceShell && showNovelWorkspaceSidebar
   const showNovelWorkspacePending = showWritingWorkspaceShell && (
@@ -2761,13 +2779,9 @@ function AppShellContent({
     }
   }, [flushNovelDocumentChangeVersion, getCurrentNovelDocumentContent, isCurrentNovelDocumentDirty, markSavedNovelDocumentChangeVersion, maybeCreateNovelAutoVersion, novelDocumentContent, savedNovelDocumentContent, selectedNovelDocumentPath, t])
 
-  const handleWritingWorkspaceClick = useCallback(() => {
-    navigate(routes.view.writing())
-  }, [])
-
   const handleSelectNovelFile = React.useCallback(async (file: NovelWorkspaceFile) => {
     if (file.path === selectedNovelFilePath) {
-      handleWritingWorkspaceClick()
+      onOpenWritingWorkspace()
       return
     }
 
@@ -2791,8 +2805,8 @@ function AppShellContent({
       phase: 'select',
       durationMs: performance.now() - switchStartedAt,
     })
-    handleWritingWorkspaceClick()
-  }, [ensureNovelDocumentSaved, handleWritingWorkspaceClick, selectedNovelFilePath])
+    onOpenWritingWorkspace()
+  }, [ensureNovelDocumentSaved, onOpenWritingWorkspace, selectedNovelFilePath])
 
   const handleSelectNovelFileByPath = React.useCallback(async (filePath: string | null) => {
     if (!filePath) return
@@ -4060,8 +4074,9 @@ function AppShellContent({
     if (isSettingsNavigation(navState) || isAutomationsNavigation(navState)) return 'settings'
     if (isSourcesNavigation(navState)) return 'sources'
     if (isSkillsNavigation(navState)) return 'skills'
+    if (isSessionsNavigation(navState) && !isProjectRuntime) return 'free-conversations'
     return 'writing'
-  }, [globalSearchOpen, navState])
+  }, [globalSearchOpen, isProjectRuntime, navState])
 
   const handleSidebarFocus = React.useCallback((event: React.FocusEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return
@@ -4118,7 +4133,7 @@ function AppShellContent({
         {/* === TOP BAR === */}
         <TopBar
           workspaces={workspaces}
-          activeWorkspaceId={activeWorkspaceId}
+          activeWorkspaceId={activeProjectId}
           isCompact={isAutoCompact}
         />
 
@@ -4132,7 +4147,7 @@ function AppShellContent({
           <ActivityRail
             activeItem={activeActivityRailItem}
             workspaces={workspaces}
-            activeWorkspaceId={activeWorkspaceId}
+            activeWorkspaceId={activeProjectId}
             onSelectProject={(workspaceId) => {
               void onSelectWorkspace?.(workspaceId)
             }}
@@ -4140,7 +4155,8 @@ function AppShellContent({
             onOpenProjectInNewWindow={onOpenProjectInNewWindow}
             onRenameProject={onRenameProject}
             onRemoveProject={onRemoveProject}
-            onOpenWritingWorkspace={handleWritingWorkspaceClick}
+            onOpenWritingWorkspace={onOpenWritingWorkspace}
+            onOpenFreeConversations={onOpenFreeConversations}
             onOpenSources={handleSourcesClick}
             onOpenSkills={handleSkillsClick}
             onOpenSearch={() => setGlobalSearchOpen(true)}
@@ -4896,7 +4912,7 @@ function AppShellContent({
                     />
                   )}
                   {/* Add Automation button (only for automations mode) */}
-                  {isAutomationsNavigation(navState) && activeWorkspace && (
+                  {isAutomationsNavigation(navState) && isProjectRuntime && activeWorkspace && (
                     <EditPopover
                       trigger={
                         <HeaderIconButton
@@ -4936,10 +4952,11 @@ function AppShellContent({
                 workspaces={workspaces}
                 onSkillClick={handleSkillSelect}
                 onDeleteSkill={handleDeleteSkill}
+                onCreateSkill={() => setCreateSkillOpen(true)}
                 selectedSkillSlug={isSkillsNavigation(navState) && navState.details?.type === 'skill' ? navState.details.skillSlug : null}
               />
             )}
-            {isAutomationsNavigation(navState) && (
+            {isAutomationsNavigation(navState) && isProjectRuntime && (
               /* Automations List - filtered by type if automationFilter is active */
               <AutomationsListPanel
                 automations={automations}
@@ -5242,11 +5259,12 @@ function AppShellContent({
         </DialogContent>
       </Dialog>
 
-      {activeWorkspace?.rootPath ? (
+      {activeWorkspace ? (
         <CreateSkillDialog
           open={createSkillOpen}
           onOpenChange={setCreateSkillOpen}
-          workspaceRootPath={activeWorkspace.rootPath}
+          workspaceId={activeWorkspace.id}
+          scope={isProjectRuntime ? 'project' : 'global'}
           existingSlugs={skills.map((skill) => skill.slug)}
         />
       ) : null}

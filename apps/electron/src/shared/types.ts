@@ -305,7 +305,6 @@ import type {
   WindowCloseRequest,
   DirectoryListingResult,
   RemoteSessionTransferPayload,
-  ImportRemoteSessionTransferResult,
   WorkspaceVersionEntry,
   WorkspaceVersionStatus,
   CreateWorkspaceVersionOptions,
@@ -359,15 +358,14 @@ export interface ElectronAPI {
   signOutClient(): Promise<void>
   onClientAuthStateChanged(callback: (state: ClientAuthState) => void): () => void
 
-  // Remote session transfer (main-process orchestrated, supports chunked upload)
-  transferSessionToWorkspace(sessionId: string, targetWorkspaceId: string, sessionIndex?: number, sessionCount?: number): Promise<{ sessionId: string }>
-  onTransferProgress(callback: (progress: { sessionIndex: number; sessionCount: number; chunkSent: number; chunkTotal: number }) => void): () => void
+  // Cross-domain session transfer (main-process orchestrated, summary snapshot only)
+  transferSessionToWorkspace(sessionId: string, targetWorkspaceId: string): Promise<{ sessionId: string }>
 
   // Session export/import (cross-workspace transfer)
   exportSession(sessionId: string): Promise<unknown>
   importSession(targetWorkspaceId: string, bundle: unknown, mode: 'move' | 'fork'): Promise<{ sessionId: string; warnings?: string[] }>
   exportRemoteSessionTransfer(sessionId: string): Promise<RemoteSessionTransferPayload>
-  importRemoteSessionTransfer(targetWorkspaceId: string, payload: RemoteSessionTransferPayload): Promise<ImportRemoteSessionTransferResult>
+  importRemoteSessionTransfer(targetWorkspaceId: string, payload: RemoteSessionTransferPayload): Promise<{ sessionId: string }>
 
   // Pending plan execution (for reload recovery)
   getPendingPlanExecution(sessionId: string): Promise<{ planPath: string; draftInputSnapshot?: string; awaitingCompaction: boolean; executionDispatched: boolean } | null>
@@ -397,6 +395,7 @@ export interface ElectronAPI {
   // Window management
   getWindowWorkspace(): Promise<string | null>
   getWindowMode(): Promise<string | null>
+  resolveRuntimeWorkspace(workspaceId: string): Promise<Workspace | null>
   openWorkspace(workspaceId: string): Promise<void>
   openSessionInNewWindow(workspaceId: string, sessionId: string): Promise<void>
   switchWorkspace(workspaceId: string): Promise<void>
@@ -604,6 +603,7 @@ export interface ElectronAPI {
   // Skills
   getSkills(workspaceId: string, workingDirectory?: string): Promise<LoadedSkill[]>
   getSkillFiles?(workspaceId: string, skillSlug: string): Promise<SkillFile[]>
+  createSkill(workspaceId: string, skillSlug: string, content: string): Promise<LoadedSkill>
   deleteSkill(workspaceId: string, skillSlug: string): Promise<void>
   openSkillInEditor(workspaceId: string, skillSlug: string): Promise<void>
   openSkillInFinder(workspaceId: string, skillSlug: string): Promise<void>

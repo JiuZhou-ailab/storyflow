@@ -67,26 +67,32 @@ describe('project management entry', () => {
     expect(activityRailSource).not.toContain('退出到作品库')
   })
 
-  it('keeps a fixed foundation rail: project · writing · sources · skills · search', () => {
+  it('keeps a fixed foundation rail: project · writing · free conversation · sources · skills · search', () => {
     expect(appShellSource).toContain('const showActivityRail = true')
     expect(appShellSource).toContain('<ActivityRail')
     expect(activityRailSource).toContain('label="写作工作区"')
+    expect(activityRailSource).toContain('label="自由对话"')
     expect(activityRailSource).toContain('label="数据源"')
     expect(activityRailSource).toContain('label="技能"')
     expect(activityRailSource).toContain('label="搜索"')
     expect(activityRailSource).not.toContain('{!isLibrary ? (')
     expect(appShellSource).toContain('onOpenSources={handleSourcesClick}')
     expect(appShellSource).toContain('onOpenSkills={handleSkillsClick}')
+    expect(appShellSource).toContain('onOpenFreeConversations={onOpenFreeConversations}')
 
     const projectNavStart = activityRailSource.indexOf('aria-label="项目与工作区"')
     const utilityNavStart = activityRailSource.indexOf('aria-label="账户与帮助"')
     expect(projectNavStart).toBeGreaterThan(-1)
     expect(utilityNavStart).toBeGreaterThan(-1)
-    expect(activityRailSource.slice(projectNavStart, utilityNavStart)).toContain('activity-project-hub')
-    expect(activityRailSource.slice(projectNavStart, utilityNavStart)).toContain('activity-writing')
-    expect(activityRailSource.slice(projectNavStart, utilityNavStart)).toContain('activity-sources')
-    expect(activityRailSource.slice(projectNavStart, utilityNavStart)).toContain('activity-skills')
-    expect(activityRailSource.slice(projectNavStart, utilityNavStart)).toContain('activity-search')
+    const projectNav = activityRailSource.slice(projectNavStart, utilityNavStart)
+    expect(projectNav).toContain('activity-project-hub')
+    expect(projectNav).toContain('activity-writing')
+    expect(projectNav).toContain('activity-free-conversations')
+    expect(projectNav).toContain('activity-sources')
+    expect(projectNav).toContain('activity-skills')
+    expect(projectNav).toContain('activity-search')
+    expect(projectNav.indexOf('activity-writing')).toBeLessThan(projectNav.indexOf('activity-free-conversations'))
+    expect(projectNav.indexOf('activity-free-conversations')).toBeLessThan(projectNav.indexOf('activity-sources'))
   })
 
   it('uses the title bar only for window chrome and current project context', () => {
@@ -95,8 +101,8 @@ describe('project management entry', () => {
     expect(topBarSource).not.toContain('onOpenProjectHub')
   })
 
-  it('remounts the project room shell when the active workspace changes', () => {
-    expect(appSource).toContain('key={windowWorkspaceId ?? \'no-workspace\'}')
+  it('remounts the runtime shell when the active room changes', () => {
+    expect(appSource).toContain("key={runtimeWorkspace?.id ?? 'no-runtime'}")
     expect(appSource).toContain('<WorkspaceSurface')
   })
 })

@@ -51,15 +51,17 @@ describe('chat page header actions', () => {
     expect(chatPageComponentSource).not.toContain('sessionMetaMap.get(sessionId)')
   })
 
-  it('uses minimal chat workspace fields instead of subscribing to the full active workspace', () => {
+  it('uses the resolved runtime workspace instead of independently reconstructing workspace state', () => {
     const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
     const chatPageComponentSource = chatPageSource.slice(
       chatPageSource.indexOf('const ChatPage = React.memo'),
       chatPageSource.indexOf('export default ChatPage')
     )
 
-    expect(chatPageSource).toContain('workspacePanelFieldsAtomFamily')
-    expect(chatPageComponentSource).toContain('useAtomValue(workspacePanelFieldsAtomFamily(activeWorkspaceId ?? null))')
+    expect(chatPageComponentSource).toContain('runtimeWorkspace,')
+    expect(chatPageComponentSource).toContain('const activeWorkspaceId = runtimeWorkspace?.id ?? null')
+    expect(chatPageComponentSource).toContain('const chatWorkspace = runtimeWorkspace')
+    expect(chatPageComponentSource).not.toContain('workspacePanelFieldsAtomFamily')
     expect(chatPageComponentSource).not.toContain('useActiveWorkspace()')
   })
 
@@ -110,12 +112,14 @@ describe('chat page header actions', () => {
     expect(appShellDestructure).not.toContain('onDeleteSession')
   })
 
-  it('uses workspace atoms instead of app shell workspace fields', () => {
+  it('gets workspace identity from the narrow session resources context', () => {
     const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
     const appShellDestructure = appShellDestructureFrom(chatPageSource)
 
-    expect(chatPageSource).toContain('windowWorkspaceIdAtom')
-    expect(chatPageSource).toContain('workspacePanelFieldsAtomFamily')
+    expect(chatPageSource).toContain('useSessionChatResources')
+    expect(chatPageSource).toContain('const activeWorkspaceId = runtimeWorkspace?.id ?? null')
+    expect(chatPageSource).not.toContain('windowWorkspaceIdAtom')
+    expect(chatPageSource).not.toContain('workspacePanelFieldsAtomFamily')
     expect(chatPageSource).not.toContain('useActiveWorkspace')
     expect(appShellDestructure).not.toContain('activeWorkspaceId')
     expect(appShellDestructure).not.toContain('workspaces')

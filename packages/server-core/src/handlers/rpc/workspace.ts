@@ -6,6 +6,7 @@ import { join, resolve } from 'path'
 import { homedir } from 'os'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId, addWorkspace, setActiveWorkspace, updateWorkspaceRemoteServer, getWorkspaces } from '@craft-agent/shared/config'
+import { resolveRuntimeWorkspace } from '@craft-agent/shared/workspaces'
 import { perf } from '@craft-agent/shared/utils'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
@@ -25,6 +26,7 @@ export const CORE_HANDLED_CHANNELS = [
   RPC_CHANNELS.workspaces.UPDATE_REMOTE,
   RPC_CHANNELS.window.GET_WORKSPACE,
   RPC_CHANNELS.window.GET_MODE,
+  RPC_CHANNELS.window.RESOLVE_RUNTIME_WORKSPACE,
   RPC_CHANNELS.window.SWITCH_WORKSPACE,
   RPC_CHANNELS.workspace.READ_IMAGE,
   RPC_CHANNELS.workspace.WRITE_IMAGE,
@@ -110,9 +112,20 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
     return 'main'
   })
 
+  // Resolve hidden and configured runtime workspaces through one ID contract.
+  server.handle(
+    RPC_CHANNELS.window.RESOLVE_RUNTIME_WORKSPACE,
+    async (_ctx, workspaceId: string) => resolveRuntimeWorkspace(workspaceId),
+  )
+
   // Switch workspace in current window (in-window switching)
   server.handle(RPC_CHANNELS.window.SWITCH_WORKSPACE, async (ctx, workspaceId: string) => {
     const end = perf.start('ipc.switchWorkspace', { workspaceId })
+    const workspace = resolveRuntimeWorkspace(workspaceId)
+    if (!workspace) {
+      end()
+      throw new Error(`Workspace not found: ${workspaceId}`)
+    }
 
     // Keep WS push routing in sync (works for both GUI and headless)
     server.updateClientWorkspace?.(ctx.clientId, workspaceId)
@@ -146,7 +159,6 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
       }
     }
 
-    const workspace = getWorkspaceByNameOrId(workspaceId)
     end()
 
     // Return connection details so the preload RoutedClient can decide

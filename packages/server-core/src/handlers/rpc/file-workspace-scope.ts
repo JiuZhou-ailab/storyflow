@@ -3,8 +3,11 @@
 // pos: Shared guard for file CRUD/search handlers that must stay inside the active project
 
 import { realpath } from 'fs/promises'
-import { dirname, isAbsolute, resolve } from 'path'
-import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
+import { isAbsolute, resolve } from 'path'
+import {
+  isPathWithinProjectRoot,
+  resolveRuntimeWorkspace,
+} from '@craft-agent/shared/workspaces'
 import { validateFilePath } from '@craft-agent/server-core/handlers'
 import type { RequestContext } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
@@ -39,36 +42,19 @@ export async function getWorkspaceRootComparablePaths(rootPath: string): Promise
   return cached
 }
 
-function isMissingPathError(error: unknown): boolean {
-  return error instanceof Error
-    && 'code' in error
-    && ((error as NodeJS.ErrnoException).code === 'ENOENT' || (error as NodeJS.ErrnoException).code === 'ENOTDIR')
-}
-
-async function resolveNearestExistingAncestor(path: string): Promise<string> {
-  let candidate = path
-
-  while (true) {
-    try {
-      return normalizeRootComparablePath(await realpath(candidate))
-    } catch (error) {
-      if (!isMissingPathError(error)) throw error
-      const parent = dirname(candidate)
-      if (parent === candidate) throw error
-      candidate = parent
-    }
-  }
-}
-
 export function resolveContextWorkspaceId(ctx: RequestContext, deps: HandlerDeps): string | null | undefined {
   return ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
+}
+
+function resolveContextWorkspace(deps: HandlerDeps, workspaceId: string) {
+  return deps.resolveRuntimeWorkspace?.(workspaceId) ?? resolveRuntimeWorkspace(workspaceId)
 }
 
 export async function validateWorkspaceFilePath(ctx: RequestContext, deps: HandlerDeps, path: string): Promise<string> {
   const workspaceId = resolveContextWorkspaceId(ctx, deps)
   if (!workspaceId) return validateFilePath(path)
 
-  const workspace = getWorkspaceByNameOrId(workspaceId)
+  const workspace = resolveContextWorkspace(deps, workspaceId)
   if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
 
   const rootPaths = await getWorkspaceRootComparablePaths(workspace.rootPath)
@@ -98,7 +84,7 @@ export async function validateWorkspaceMutationPath(ctx: RequestContext, deps: H
   const workspaceId = resolveContextWorkspaceId(ctx, deps)
   if (!workspaceId) return validateFilePath(path)
 
-  const workspace = getWorkspaceByNameOrId(workspaceId)
+  const workspace = resolveContextWorkspace(deps, workspaceId)
   if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
 
   const rootPaths = await getWorkspaceRootComparablePaths(workspace.rootPath)
@@ -108,8 +94,7 @@ export async function validateWorkspaceMutationPath(ctx: RequestContext, deps: H
     // entry after separately proving its ancestor remains in the workspace.
     await validateFilePath(path, rootPaths)
     const mutationPath = normalizeRootComparablePath(path)
-    const existingAncestor = await resolveNearestExistingAncestor(mutationPath)
-    if (!rootPaths.some((rootPath) => isPathInsideRoot(existingAncestor, rootPath))) {
+    if (!isPathWithinProjectRoot(workspace.rootPath, mutationPath, { allowMissing: true })) {
       throw new Error('Access denied: file path is outside current workspace')
     }
     return mutationPath
@@ -124,7 +109,7 @@ export async function validateWorkspaceMutationPath(ctx: RequestContext, deps: H
 export async function validateWorkspaceSearchBasePath(ctx: RequestContext, deps: HandlerDeps, path: string): Promise<string> {
   const workspaceId = resolveContextWorkspaceId(ctx, deps)
   if (!workspaceId) return path
-  const workspace = getWorkspaceByNameOrId(workspaceId)
+  const workspace = resolveContextWorkspace(deps, workspaceId)
   if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
 
   const rootPaths = await getWorkspaceRootComparablePaths(workspace.rootPath)

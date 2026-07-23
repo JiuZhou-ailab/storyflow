@@ -22,7 +22,7 @@ import {
   type BackendHostRuntimeContext,
   type PostInitResult,
 } from '@craft-agent/shared/agent/backend'
-import { getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, resetManagedAnthropicAuthEnvVars } from '@craft-agent/shared/config'
+import { CONFIG_DIR, getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, resetManagedAnthropicAuthEnvVars } from '@craft-agent/shared/config'
 import { PrivilegedExecutionBroker } from '@craft-agent/server-core/services'
 import { isValidWorkingDirectory } from '../utils/path-validation'
 import { InitGate } from '@craft-agent/server-core/domain'
@@ -41,6 +41,11 @@ import {
 } from '@craft-agent/shared/config'
 import type { ActiveSessionInfo, SessionProcessingStatus } from '@craft-agent/core/types'
 import { loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
+import {
+  isFreeConversationWorkspaceId,
+  listSessionWorkspaces,
+  resolveRuntimeWorkspace,
+} from '@craft-agent/shared/workspaces'
 import {
   // Session persistence functions
   listSessions as listStoredSessions,
@@ -83,11 +88,11 @@ import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
 import { restoreFiles } from '@craft-agent/shared/utils/bundle-files'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { CraftMcpClient, McpClientPool, McpPoolServer } from '@craft-agent/shared/mcp'
-import { type Session, type SessionEvent, type FileAttachment, type SendMessageOptions, type OneShotLlmRequest, type OneShotLlmResult, type NovelSelectionRewriteRequest, type NovelSelectionRewriteResult, type UnreadSummary, type RemoteSessionTransferPayload, type ImportRemoteSessionTransferResult, RPC_CHANNELS, generateMessageId } from '@craft-agent/shared/protocol'
+import { type Session, type SessionEvent, type FileAttachment, type SendMessageOptions, type OneShotLlmRequest, type OneShotLlmResult, type NovelSelectionRewriteRequest, type NovelSelectionRewriteResult, type UnreadSummary, type RemoteSessionTransferPayload, RPC_CHANNELS, generateMessageId } from '@craft-agent/shared/protocol'
 import { messageToStored, storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta } from '@craft-agent/core/types'
 import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlAsync, getEmojiIcon, resetSummarizationClient, resolveToolIcon, readFileAttachment, selectSpreadMessages, normalizePath, DEFAULT_TITLE_LANGUAGE } from '@craft-agent/shared/utils'
 import { buildNovelSelectionRewritePrompt, sanitizeNovelSelectionReplacement } from '@craft-agent/shared/writing'
-import { loadAllSkills, loadSkillBySlug, invalidateSkillsCache, type LoadedSkill } from '@craft-agent/shared/skills'
+import { loadAllSkills, loadSkill, invalidateSkillsCache, type LoadedSkill } from '@craft-agent/shared/skills'
 import { invalidateContextFileCache } from '@craft-agent/shared/prompts/system'
 import { getToolIconsDir, getMiniModel } from '@craft-agent/shared/config'
 import { getDefaultSummarizationModel } from '@craft-agent/shared/config/models'
@@ -116,6 +121,12 @@ let _platform: PlatformServices | null = null
 // Scoped logger — upgraded from console fallback when setSessionPlatform() is called.
 // Named `sessionLog` so all ~30 existing call sites remain unchanged.
 let sessionLog: Logger = createScopedLogger(CONSOLE_LOGGER, 'session')
+
+function getResourceProjectRoot(workspace: Workspace): string | undefined {
+  return isFreeConversationWorkspaceId(workspace.id)
+    ? undefined
+    : workspace.rootPath
+}
 
 function hasPersistedPiTranscript(sessionPath: string): boolean {
   const piSessionsPath = join(sessionPath, '.pi-sessions')
@@ -575,7 +586,7 @@ async function getBrowserToolIconDataUrl(): Promise<string | undefined> {
 async function resolveToolDisplayMeta(
   toolName: string,
   toolInput: Record<string, unknown> | undefined,
-  workspaceRootPath: string,
+  projectRoot: string | undefined,
   sources: LoadedSource[]
 ): Promise<ToolDisplayMeta | undefined> {
   // Check if it's an MCP tool (format: mcp__<serverSlug>__<toolName>)
@@ -659,7 +670,7 @@ async function resolveToolDisplayMeta(
       if (skillSlug) {
         // Load skills and find the one being invoked
         try {
-          const skills = loadAllSkills(workspaceRootPath)
+          const skills = loadAllSkills(projectRoot)
           const skill = skills.find(s => s.slug === skillSlug)
           if (skill) {
             // Try file-based icon first, fall back to emoji icon from metadata
@@ -1364,16 +1375,20 @@ export class SessionManager implements ISessionManager {
     }
 
     sessionLog.info(`Setting up ConfigWatcher for workspace: ${workspaceId} (${workspaceRootPath})`)
+    const resourceProjectRoot = isFreeConversationWorkspaceId(workspaceId)
+      ? undefined
+      : workspaceRootPath
 
     const callbacks: ConfigWatcherCallbacks = {
-      onSourcesListChange: async (sources: LoadedSource[]) => {
+      onSourcesListChange: async () => {
+        const sources = loadWorkspaceSources(resourceProjectRoot)
         sessionLog.info(`Sources list changed in ${workspaceRootPath} (${sources.length} sources)`)
         this.broadcastSourcesChanged(workspaceId, sources)
         await this.reloadSourcesForWorkspace(workspaceRootPath)
       },
       onSourceChange: async (slug: string, source: LoadedSource | null) => {
         sessionLog.info(`Source '${slug}' changed:`, source ? 'updated' : 'deleted')
-        const sources = loadWorkspaceSources(workspaceRootPath)
+        const sources = loadWorkspaceSources(resourceProjectRoot)
         this.broadcastSourcesChanged(workspaceId, sources)
         await this.reloadSourcesForWorkspace(workspaceRootPath)
       },
@@ -1381,7 +1396,7 @@ export class SessionManager implements ISessionManager {
         sessionLog.info(`Source guide changed: ${sourceSlug}`)
         // Broadcast the updated sources list so sidebar picks up guide changes
         // Note: Guide changes don't require session source reload (no server changes)
-        const sources = loadWorkspaceSources(workspaceRootPath)
+        const sources = loadWorkspaceSources(resourceProjectRoot)
         this.broadcastSourcesChanged(workspaceId, sources)
       },
       onStatusConfigChange: () => {
@@ -1430,7 +1445,9 @@ export class SessionManager implements ISessionManager {
         sessionLog.info('Default permissions changed')
         this.broadcastDefaultPermissionsChanged()
       },
-      onSkillsListChange: async (skills) => {
+      onSkillsListChange: async () => {
+        const { loadAllSkills } = await import('@craft-agent/shared/skills')
+        const skills = loadAllSkills(resourceProjectRoot)
         sessionLog.info(`Skills list changed in ${workspaceRootPath} (${skills.length} skills)`)
         this.broadcastSkillsChanged(workspaceId, skills)
       },
@@ -1438,7 +1455,7 @@ export class SessionManager implements ISessionManager {
         sessionLog.info(`Skill '${slug}' changed:`, skill ? 'updated' : 'deleted')
         // Broadcast updated list to UI
         const { loadAllSkills } = await import('@craft-agent/shared/skills')
-        const skills = loadAllSkills(workspaceRootPath)
+        const skills = loadAllSkills(resourceProjectRoot)
         this.broadcastSkillsChanged(workspaceId, skills)
       },
 
@@ -1635,10 +1652,11 @@ export class SessionManager implements ISessionManager {
     if (!managed.agent) return  // No agent = nothing to update (fresh build on next message)
 
     const workspaceRootPath = managed.workspace.rootPath
+    const projectRoot = getResourceProjectRoot(managed.workspace)
     sessionLog.info(`Reloading sources for session ${managed.id}`)
 
     // Reload all sources from disk (craft-agents-docs is always available as MCP server)
-    const allSources = loadAllSources(workspaceRootPath)
+    const allSources = loadAllSources(projectRoot)
     managed.agent.setAllSources(allSources)
 
     // Rebuild MCP and API servers for session's enabled sources
@@ -1761,7 +1779,7 @@ export class SessionManager implements ISessionManager {
   // Load all existing sessions from disk into memory (metadata only - messages are lazy-loaded)
   private async loadSessionsFromDisk(): Promise<void> {
     try {
-      const workspaces = getWorkspaces()
+      const workspaces = listSessionWorkspaces()
       let totalSessions = 0
       let sessionsSinceYield = 0
 
@@ -2095,7 +2113,7 @@ export class SessionManager implements ISessionManager {
       const workspaceRootPath = managed.workspace.rootPath
       const sessionPath = getSessionStoragePath(workspaceRootPath, managed.id)
       const enabledSlugs = managed.enabledSourceSlugs || []
-      const allSources = loadAllSources(workspaceRootPath)
+      const allSources = loadAllSources(getResourceProjectRoot(managed.workspace))
       const enabledSources = allSources.filter(s =>
         enabledSlugs.includes(s.config.slug) && isSourceUsable(s)
       )
@@ -2291,7 +2309,7 @@ export class SessionManager implements ISessionManager {
     const byWorkspace: Record<string, number> = {}
     const hasUnreadByWorkspace: Record<string, boolean> = {}
 
-    for (const workspace of getWorkspaces()) {
+    for (const workspace of listSessionWorkspaces()) {
       byWorkspace[workspace.id] = 0
       hasUnreadByWorkspace[workspace.id] = false
     }
@@ -2560,7 +2578,7 @@ export class SessionManager implements ISessionManager {
   }
 
   async createSession(workspaceId: string, options?: import('@craft-agent/shared/protocol').CreateSessionOptions): Promise<Session> {
-    const workspace = getWorkspaceByNameOrId(workspaceId)
+    const workspace = resolveRuntimeWorkspace(workspaceId)
     if (!workspace) {
       throw new Error(`Workspace ${workspaceId} not found`)
     }
@@ -2622,7 +2640,11 @@ export class SessionManager implements ISessionManager {
     // - 'none': No working directory (empty string means session folder only)
     // - Absolute path: Use as-is
     let resolvedWorkingDir: string | undefined
-    if (options?.workingDirectory === 'none') {
+    if (isFreeConversationWorkspaceId(workspace.id)) {
+      // The concrete path is derived after storage allocates the session ID.
+      // Free Conversations never inherit a project or user-default cwd.
+      resolvedWorkingDir = undefined
+    } else if (options?.workingDirectory === 'none') {
       resolvedWorkingDir = undefined  // No working directory
     } else if (options?.workingDirectory === 'user_default' || options?.workingDirectory === undefined) {
       resolvedWorkingDir = userDefaultWorkingDir
@@ -2836,6 +2858,21 @@ export class SessionManager implements ISessionManager {
       labels: options?.labels,
       isFlagged: options?.isFlagged,
     })
+
+    if (isFreeConversationWorkspaceId(workspace.id)) {
+      const privateWorkingDirectory = join(
+        getSessionStoragePath(workspaceRootPath, storedSession.id),
+        'work',
+      )
+      await mkdir(privateWorkingDirectory, { recursive: true })
+      await updateSessionMetadata(workspaceRootPath, storedSession.id, {
+        workingDirectory: privateWorkingDirectory,
+        sdkCwd: privateWorkingDirectory,
+      })
+      storedSession.workingDirectory = privateWorkingDirectory
+      storedSession.sdkCwd = privateWorkingDirectory
+      resolvedWorkingDir = privateWorkingDirectory
+    }
 
     // Branch: copy messages from source session up to and including the branch point
     if (validatedBranch) {
@@ -3283,7 +3320,7 @@ export class SessionManager implements ISessionManager {
       }
 
       const enabledSlugs = managed.enabledSourceSlugs || []
-      const allSources = loadAllSources(managed.workspace.rootPath)
+      const allSources = loadAllSources(getResourceProjectRoot(managed.workspace))
       const enabledSources = allSources.filter(s =>
         enabledSlugs.includes(s.config.slug) && isSourceUsable(s)
       )
@@ -3444,11 +3481,32 @@ export class SessionManager implements ISessionManager {
         context: backendContext,
         hostRuntime: buildBackendHostRuntimeContext(),
         coreConfig: {
-        workspace: managed.workspace,
-        miniModel,
-        thinkingLevel: managed.thinkingLevel,
-        session: sessionConfig,
-        onSdkSessionIdUpdate,
+          workspace: managed.workspace,
+          projectRoot: getResourceProjectRoot(managed.workspace),
+          fileAccessBoundary: isFreeConversationWorkspaceId(managed.workspace.id)
+            ? {
+              readRoots: [
+                managed.workingDirectory,
+                join(sessionPath, 'attachments'),
+                join(sessionPath, 'plans'),
+                join(sessionPath, 'data'),
+                join(sessionPath, 'tmp'),
+                join(CONFIG_DIR, 'skills'),
+                join(CONFIG_DIR, 'sources'),
+              ].filter((path): path is string => Boolean(path)),
+              writeRoots: [
+                managed.workingDirectory,
+                join(sessionPath, 'plans'),
+                join(sessionPath, 'data'),
+                join(sessionPath, 'tmp'),
+              ].filter((path): path is string => Boolean(path)),
+              blockBash: true,
+            }
+            : undefined,
+          miniModel,
+          thinkingLevel: managed.thinkingLevel,
+          session: sessionConfig,
+          onSdkSessionIdUpdate,
         onSdkSessionIdCleared,
         onBranchForkInvalidated,
         getRecoveryMessages,
@@ -4237,6 +4295,7 @@ export class SessionManager implements ISessionManager {
         sessionLog.info(`Source activation request for session ${managed.id}:`, sourceSlug)
 
         const workspaceRootPath = managed.workspace.rootPath
+        const projectRoot = getResourceProjectRoot(managed.workspace)
 
         // Check if source is already enabled
         if (managed.enabledSourceSlugs?.includes(sourceSlug)) {
@@ -4245,7 +4304,7 @@ export class SessionManager implements ISessionManager {
         }
 
         // Load the source to check if it exists and is ready
-        const sources = getSourcesBySlugs(workspaceRootPath, [sourceSlug])
+        const sources = getSourcesBySlugs(projectRoot, [sourceSlug])
         if (sources.length === 0) {
           sessionLog.warn(`Source ${sourceSlug} not found in workspace`)
           return false
@@ -4271,7 +4330,7 @@ export class SessionManager implements ISessionManager {
         }
 
         // Build server configs for all enabled sources
-        const allEnabledSources = getSourcesBySlugs(workspaceRootPath, managed.enabledSourceSlugs || [])
+        const allEnabledSources = getSourcesBySlugs(projectRoot, managed.enabledSourceSlugs || [])
         // Pass session path so large API responses can be saved to session folder
         const sessionPath = getSessionStoragePath(workspaceRootPath, managed.id)
         const { mcpServers, apiServers, errors } = await buildServersFromSources(allEnabledSources, sessionPath, managed.tokenRefreshManager, managed.agent?.getSummarizeCallback())
@@ -4737,6 +4796,7 @@ export class SessionManager implements ISessionManager {
     }
 
     const workspaceRootPath = managed.workspace.rootPath
+    const projectRoot = getResourceProjectRoot(managed.workspace)
     sessionLog.info(`Setting sources for session ${sessionId}:`, sourceSlugs)
 
     // Clean up credential cache for sources being disabled (security)
@@ -4757,7 +4817,7 @@ export class SessionManager implements ISessionManager {
 
     // If agent exists, build and apply servers immediately
     if (managed.agent) {
-      const sources = getSourcesBySlugs(workspaceRootPath, sourceSlugs)
+      const sources = getSourcesBySlugs(projectRoot, sourceSlugs)
       // Pass session path so large API responses can be saved to session folder
       const sessionPath = getSessionStoragePath(workspaceRootPath, sessionId)
       const { mcpServers, apiServers, errors } = await buildServersFromSources(sources, sessionPath, managed.tokenRefreshManager, managed.agent.getSummarizeCallback())
@@ -4766,7 +4826,7 @@ export class SessionManager implements ISessionManager {
       }
 
       // Set all sources for context (agent sees full list with descriptions, including built-ins)
-      const allSources = loadAllSources(workspaceRootPath)
+      const allSources = loadAllSources(projectRoot)
       managed.agent.setAllSources(allSources)
 
       // Set active source servers (tools are only available from these)
@@ -5070,6 +5130,16 @@ export class SessionManager implements ISessionManager {
   updateWorkingDirectory(sessionId: string, path: string): void {
     const managed = this.sessions.get(sessionId)
     if (managed) {
+      if (isFreeConversationWorkspaceId(managed.workspace.id)) {
+        sessionLog.warn(`Session ${sessionId}: rejected working directory change in Free Conversations`)
+        this.sendEvent({
+          type: 'working_directory_error',
+          sessionId,
+          error: 'Free Conversations use a private session directory',
+        }, managed.workspace.id)
+        return
+      }
+
       const validation = isValidWorkingDirectory(path)
       if (!validation.valid) {
         sessionLog.warn(`Session ${sessionId}: rejected working directory "${path}" — ${validation.reason}`)
@@ -5725,14 +5795,14 @@ export class SessionManager implements ISessionManager {
 
     // Pre-enable sources required by invoked skills (Issue #249)
     // This eliminates the two-turn penalty where the agent discovers missing sources at runtime.
-    // Uses targeted loadSkillBySlug() instead of loadAllSkills() to avoid O(N) filesystem scans.
+    // Load only the invoked Skill instead of scanning every definition.
     if (options?.skillSlugs?.length) {
       try {
-        const workspaceRoot = managed.workspace.rootPath
+        const projectRoot = getResourceProjectRoot(managed.workspace)
 
         const requiredSources = new Set<string>()
         for (const slug of options.skillSlugs) {
-          const skill = loadSkillBySlug(workspaceRoot, slug)
+          const skill = loadSkill(projectRoot, slug)
           if (skill?.metadata.requiredSources) {
             for (const src of skill.metadata.requiredSources) {
               requiredSources.add(src)
@@ -5745,7 +5815,7 @@ export class SessionManager implements ISessionManager {
           const toEnable: string[] = []
           const skipped: string[] = []
           const candidateSlugs = Array.from(requiredSources)
-          const loadedSources = getSourcesBySlugs(workspaceRoot, candidateSlugs)
+          const loadedSources = getSourcesBySlugs(projectRoot, candidateSlugs)
           const usableSources = new Set(
             loadedSources
               .filter(isSourceUsable)
@@ -5785,6 +5855,7 @@ export class SessionManager implements ISessionManager {
     const sendSpan = perf.span('session.sendMessage', { sessionId })
 
     const workspaceRootPath = managed.workspace.rootPath
+    const projectRoot = getResourceProjectRoot(managed.workspace)
     const enabledSlugs = managed.enabledSourceSlugs ?? []
     const hasSources = enabledSlugs.length > 0
 
@@ -5793,7 +5864,7 @@ export class SessionManager implements ISessionManager {
     // and emits AUTH_REQUIRED, causing a brief "needs_auth" UI flicker before the
     // post-build refresh restores state (#710).
     const sources: LoadedSource[] = hasSources
-      ? getSourcesBySlugs(workspaceRootPath, enabledSlugs)
+      ? getSourcesBySlugs(projectRoot, enabledSlugs)
       : []
 
     if (hasSources && managed.tokenRefreshManager) {
@@ -5813,7 +5884,7 @@ export class SessionManager implements ISessionManager {
     sendSpan.mark('agent.ready')
 
     // Always set all sources for context (even if none are enabled), including built-ins
-    const allSources = loadAllSources(workspaceRootPath)
+    const allSources = loadAllSources(projectRoot)
     agent.setAllSources(allSources)
     sendSpan.mark('sources.loaded')
 
@@ -7056,11 +7127,11 @@ export class SessionManager implements ISessionManager {
 
         // Resolve tool display metadata (icon, displayName) for skills/sources
         // Only resolve when we have input (second event for SDK dual-event pattern)
-        const workspaceRootPath = managed.workspace.rootPath
+        const projectRoot = getResourceProjectRoot(managed.workspace)
         let toolDisplayMeta: ToolDisplayMeta | undefined
         if (formattedToolInput && Object.keys(formattedToolInput).length > 0) {
-          const allSources = loadAllSources(workspaceRootPath)
-          toolDisplayMeta = await resolveToolDisplayMeta(event.toolName, formattedToolInput, workspaceRootPath, allSources)
+          const allSources = loadAllSources(projectRoot)
+          toolDisplayMeta = await resolveToolDisplayMeta(event.toolName, formattedToolInput, projectRoot, allSources)
         }
 
         // Check if a message with this toolUseId already exists FIRST
@@ -7207,9 +7278,9 @@ export class SessionManager implements ISessionManager {
           // without a prior tool_start. If tool_start arrives later, findToolMessage will
           // locate this message by toolUseId and update it with input/intent/displayMeta.
           sessionLog.info(`RESULT WITHOUT START: toolUseId=${event.toolUseId}, toolName=${toolName} (creating message from result)`)
-          const fallbackWorkspaceRootPath = managed.workspace.rootPath
-          const fallbackSources = loadAllSources(fallbackWorkspaceRootPath)
-          const fallbackToolDisplayMeta = await resolveToolDisplayMeta(toolName, undefined, fallbackWorkspaceRootPath, fallbackSources)
+          const fallbackProjectRoot = getResourceProjectRoot(managed.workspace)
+          const fallbackSources = loadAllSources(fallbackProjectRoot)
+          const fallbackToolDisplayMeta = await resolveToolDisplayMeta(toolName, undefined, fallbackProjectRoot, fallbackSources)
 
           const toolMessage: Message = {
             id: generateMessageId(),
@@ -7856,30 +7927,20 @@ export class SessionManager implements ISessionManager {
       return null
     }
 
-    return {
-      sourceSessionId: managed.id,
-      name: managed.name,
-      sessionStatus: managed.sessionStatus,
-      labels: managed.labels,
-      permissionMode: managed.permissionMode,
-      summary,
-    }
+    return { summary }
   }
 
   async importRemoteSessionTransfer(
     workspaceId: string,
     payload: RemoteSessionTransferPayload,
-  ): Promise<ImportRemoteSessionTransferResult> {
+  ): Promise<{ sessionId: string }> {
     if (!payload || typeof payload !== 'object' || typeof payload.summary !== 'string' || !payload.summary.trim()) {
       throw new Error('Invalid remote session transfer payload')
     }
 
-    const session = await this.createSession(workspaceId, {
-      name: payload.name,
-      permissionMode: payload.permissionMode,
-      sessionStatus: payload.sessionStatus,
-      labels: payload.labels,
-    })
+    // The target session starts with target-domain defaults. Operational state
+    // such as permission mode, labels, and status must never cross domains.
+    const session = await this.createSession(workspaceId)
 
     const managed = this.sessions.get(session.id)
     if (!managed) {

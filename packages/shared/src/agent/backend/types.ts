@@ -175,6 +175,19 @@ export interface CoreBackendConfig {
   /** Workspace configuration */
   workspace: Workspace;
 
+  /** Project resource overlay root. Absent for application-owned runtimes. */
+  projectRoot?: string;
+
+  /**
+   * Optional filesystem boundary for application-owned runtimes.
+   * Project runtimes retain their existing permission behavior.
+   */
+  fileAccessBoundary?: {
+    readRoots: readonly string[];
+    writeRoots: readonly string[];
+    blockBash?: boolean;
+  };
+
   /** Session configuration (for resume) */
   session?: Session;
 

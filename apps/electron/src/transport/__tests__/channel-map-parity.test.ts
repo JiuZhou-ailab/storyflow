@@ -34,7 +34,6 @@ type ApiToChannelMapKeys = Exclude<
   | 'signOutClient' // direct IPC to main process — clears process-local auth state
   | 'onClientAuthStateChanged' // direct IPC listener — cross-window client auth state sync
   | 'transferSessionToWorkspace' // direct IPC to main process — orchestrated remote transfer
-  | 'onTransferProgress' // direct IPC listener — chunk upload progress
   | 'changeLanguage' // direct IPC to main process — syncs i18n language
   | 'getFilePath' // renderer-local — webUtils.getPathForFile, no IPC round-trip
 > | BrowserPaneKeys

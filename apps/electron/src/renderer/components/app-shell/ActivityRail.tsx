@@ -10,6 +10,7 @@ import {
   HelpCircle,
   LayoutGrid,
   Megaphone,
+  MessageSquare,
   RefreshCw,
   Search,
   Settings,
@@ -27,6 +28,7 @@ import type { Workspace } from '../../../shared/types'
 export type ActivityRailItemId =
   | 'project-hub'
   | 'writing'
+  | 'free-conversations'
   | 'sources'
   | 'skills'
   | 'settings'
@@ -43,6 +45,8 @@ export interface ActivityRailProps {
   onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
   onRemoveProject?: (workspaceId: string) => void | Promise<void>
   onOpenWritingWorkspace?: () => void
+  /** Application-owned Free Conversations; independent of project selection. */
+  onOpenFreeConversations?: () => void
   onOpenSources?: () => void
   onOpenSkills?: () => void
   onOpenSearch?: () => void
@@ -97,6 +101,7 @@ export function ActivityRail({
   onRenameProject,
   onRemoveProject,
   onOpenWritingWorkspace,
+  onOpenFreeConversations,
   onOpenSources,
   onOpenSkills,
   onOpenSearch,
@@ -212,6 +217,13 @@ export function ActivityRail({
           active={activeItem === 'writing'}
           onClick={writingAction}
           dataTutorial="activity-writing"
+        />
+        <RailButton
+          label="自由对话"
+          icon={<MessageSquare className="h-[18px] w-[18px]" />}
+          active={activeItem === 'free-conversations'}
+          onClick={onOpenFreeConversations}
+          dataTutorial="activity-free-conversations"
         />
         <RailButton
           label="数据源"

@@ -139,6 +139,8 @@ interface NavigationProviderProps {
   isSessionsReady?: boolean
   /** Remote workspace ID — when set, sessions with this ID are also considered part of the workspace */
   remoteWorkspaceId?: string | null
+  /** Owner-specific landing route when the URL does not already carry navigation state. */
+  defaultViewRoute?: ViewRoute
 }
 
 export function NavigationProvider({
@@ -153,6 +155,7 @@ export function NavigationProvider({
   isReady = true,
   isSessionsReady = true,
   remoteWorkspaceId,
+  defaultViewRoute = routes.view.writing(),
 }: NavigationProviderProps) {
   const { t } = useTranslation()
   const [, setSession] = useSession()
@@ -1144,7 +1147,7 @@ export function NavigationProvider({
 
     // If nothing was in the URL, navigate to default
     if (shouldDefaultInitialRouteToWriting(params)) {
-      navigate(routes.view.writing())
+      navigate(defaultViewRoute)
     }
 
     // Initialize history with seq=0 (replaceState so we don't create an extra entry)
@@ -1156,7 +1159,7 @@ export function NavigationProvider({
       suppressPushRef.current = false
       lastSemanticHistoryKeyRef.current = getSemanticHistoryKey()
     })
-  }, [isReady, isSessionsReady, workspaceId, navigate, store, getSemanticHistoryKey])
+  }, [defaultViewRoute, isReady, isSessionsReady, workspaceId, navigate, store, getSemanticHistoryKey])
 
   // =========================================================================
   // PENDING NAVIGATION

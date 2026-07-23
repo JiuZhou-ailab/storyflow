@@ -91,6 +91,7 @@ mock.module('../logger', () => {
 })
 
 mock.module('@craft-agent/shared/config', () => ({
+  CONFIG_DIR: '/tmp/craft-agent',
   getWorkspaceByNameOrId: (id: string) => (id === workspace.id ? workspace : null),
   getWorkspaces: () => [workspace],
   loadConfigDefaults: () => ({
@@ -150,6 +151,9 @@ mock.module('@craft-agent/shared/config', () => ({
 }))
 
 mock.module('@craft-agent/shared/workspaces', () => ({
+  isFreeConversationWorkspaceId: () => false,
+  listSessionWorkspaces: () => [workspace],
+  resolveRuntimeWorkspace: (id: string) => (id === workspace.id ? workspace : null),
   loadWorkspaceConfig: () => ({
     defaults: {
       permissionMode: 'ask',

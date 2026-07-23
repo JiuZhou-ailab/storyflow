@@ -124,6 +124,8 @@ interface InitMessage {
   cwd: string;
   thinkingLevel: string;
   workspaceRootPath: string;
+  /** Explicit resource overlay root. Omit for global-only/free contexts. */
+  projectRoot?: string;
   sessionId: string;
   sessionPath: string;
   workingDirectory: string;
@@ -614,11 +616,24 @@ async function ensureSession(): Promise<AgentSession> {
 
     const { resourceLoader, settingsManager } = await createProjectResourceLoader({
       cwd,
-      projectRoot: initConfig.workspaceRootPath,
+      projectRoot: initConfig.projectRoot,
       agentDir,
     });
     sessionOptions.resourceLoader = resourceLoader;
     sessionOptions.settingsManager = settingsManager;
+
+    const extensionToolNames = new Set<string>();
+    for (const extension of resourceLoader.getExtensions().extensions) {
+      for (const toolName of extension.tools.keys()) {
+        if (toolAllowlist.includes(toolName)) {
+          throw new Error(
+            `Global Extension tool conflicts with a Storyflow tool: ${toolName}`,
+          );
+        }
+        extensionToolNames.add(toolName);
+      }
+    }
+    sessionOptions.tools = [...toolAllowlist, ...extensionToolNames];
 
     // Session resume: use a per-Craft-session directory so the Pi SDK can
     // persist and resume its own session across subprocess restarts.
@@ -1396,7 +1411,7 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
 
     // Pi does not auto-reload a caller-provided ResourceLoader. Refresh at the
     // prompt boundary so project Skill edits are visible without restarting the
-    // session, while the loader remains restricted to {projectRoot}/.pi/skills.
+    // session, while the loader remains restricted to explicit Storyflow roots.
     await session.resourceLoader.reload();
 
     // Force the Craft-built system prompt onto the Pi session. Direct assignment

@@ -15,3 +15,4 @@ Implementation plans for scoped product and architecture changes.
 - `2026-05-28-simple-edit-write-guard.md` - create-only Pi write contract and review semantics for created files.
 - `2026-06-09-formal-novel-surface-audit.md` - formal novel release-surface audit and cleanup recommendations.
 - `2026-06-09-performance-simplicity-parallel-plan.md` - parallel agent plan for performance and project simplicity work.
+- `2026-07-23-runtime-domain-separation.md` - minimal shared-runtime plan for application-level free conversations and project conversations.

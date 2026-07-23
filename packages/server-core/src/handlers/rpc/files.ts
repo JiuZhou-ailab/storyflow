@@ -17,8 +17,7 @@ import {
 } from '@craft-agent/shared/protocol'
 import type { StoredAttachment } from '@craft-agent/core/types'
 import { readFileAttachment, validateImageForClaudeAPI, IMAGE_LIMITS, perf } from '@craft-agent/shared/utils'
-import { getSessionAttachmentsPath, validateSessionId } from '@craft-agent/shared/sessions'
-import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
+import { validateSessionId } from '@craft-agent/shared/sessions'
 import { resizeImageForAPI, inspectImageBuffer } from '@craft-agent/server-core/services'
 import { sanitizeFilename } from '@craft-agent/server-core/handlers'
 import { MarkItDown } from 'markitdown-js'
@@ -732,23 +731,20 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
         throw new Error('Cannot attach empty file')
       }
 
-      // Get workspace slug from the calling window
-      const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
-      if (!workspaceId) {
-        throw new Error('Cannot determine workspace for attachment storage')
-      }
-      const workspace = getWorkspaceByNameOrId(workspaceId)
-      if (!workspace) {
-        throw new Error(`Workspace not found: ${workspaceId}`)
-      }
-      const workspaceRootPath = workspace.rootPath
-
       // SECURITY: Validate sessionId to prevent path traversal attacks
       // This must happen before using sessionId in any file path operations
       validateSessionId(sessionId)
 
+      // Session ownership is authoritative. Using the calling window's current
+      // project here can cross-write attachments during runtime-domain switches.
+      const sessionPath = deps.sessionManager.getSessionPath(sessionId)
+      if (!sessionPath) {
+        throw new Error(`Session not found: ${sessionId}`)
+      }
+      await validateWorkspaceFilePath(ctx, deps, sessionPath)
+
       // Create attachments directory if it doesn't exist
-      const attachmentsDir = getSessionAttachmentsPath(workspaceRootPath, sessionId)
+      const attachmentsDir = join(sessionPath, 'attachments')
       await mkdir(attachmentsDir, { recursive: true })
 
       // Generate unique ID for this attachment

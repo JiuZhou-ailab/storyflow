@@ -1,3 +1,7 @@
+// input: Resolved backend/runtime context and Anthropic Agent SDK events
+// output: Claude-backed Agent implementation with shared permission boundaries
+// pos: Provider adapter beneath the shared Agent Kernel
+
 import { query, createSdkMcpServer, tool, AbortError, type Query, type SDKUserMessage, type SDKAssistantMessageError, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { getDefaultOptions, resetClaudeConfigCheck } from './options.ts';
 // Local type for SDK user message content blocks (text, image, document)
@@ -1105,6 +1109,7 @@ export class ClaudeAgent extends BaseAgent {
                 plansFolderPath: sessionId ? getSessionPlansPath(this.workspaceRootPath, sessionId) : undefined,
                 dataFolderPath: sessionId ? getSessionDataPath(this.workspaceRootPath, sessionId) : undefined,
                 workingDirectory: this.config.session?.workingDirectory,
+                fileAccessBoundary: this.config.fileAccessBoundary,
                 activeSourceSlugs: Array.from(this.sourceManager.getActiveSlugs()),
                 allSourceSlugs: this.sourceManager.getAllSources().map(s => s.config.slug),
                 hasSourceActivation: !!this.onSourceActivationRequest,

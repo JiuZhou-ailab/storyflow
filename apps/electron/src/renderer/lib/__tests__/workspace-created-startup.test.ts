@@ -13,8 +13,13 @@ describe('workspace-created startup route', () => {
       appSource.indexOf('const handleProjectHubWorkspaceCreated'),
       appSource.indexOf('// Handle cancel during onboarding')
     )
+    const projectSelectionSource = appSource.slice(
+      appSource.indexOf('const handleSelectWorkspace ='),
+      appSource.indexOf('// Handle workspace switch by slug')
+    )
 
-    expect(createdHandlerSource).toContain('setPendingReadyRoute(routes.view.writing())')
+    expect(createdHandlerSource).toContain('await handleSelectWorkspace(workspace.id)')
+    expect(projectSelectionSource).toContain('routes.view.writing()')
     expect(createdHandlerSource).not.toContain('routes.action.newSession()')
     expect(appSource).not.toContain('openNewProjectConversationAfterSwitchRef')
   })

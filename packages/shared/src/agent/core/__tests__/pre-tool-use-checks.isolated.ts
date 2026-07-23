@@ -1,3 +1,7 @@
+// input: Normalized tool calls, permission modes, and runtime filesystem roots
+// output: Isolated regression coverage for the shared pre-tool-use pipeline
+// pos: Security contract tests shared by provider adapters
+
 /**
  * Tests for the centralized PreToolUse pipeline.
  *
@@ -61,8 +65,21 @@ mock.module('../../../utils/paths.ts', () => ({
 
 // Mock filesystem for config validation and skill qualification
 mock.module('node:fs', () => ({
-  existsSync: (_path: string) => false,
+  existsSync: (path: string) => path.startsWith('/free/'),
+  lstatSync: (path: string) => {
+    if (!path.startsWith('/free/')) {
+      throw Object.assign(new Error(`ENOENT: ${path}`), { code: 'ENOENT' });
+    }
+    return {
+      isDirectory: () => true,
+      isSymbolicLink: () => false,
+    };
+  },
   readFileSync: (_path: string) => '',
+  realpathSync: Object.assign(
+    (path: string) => path,
+    { native: (path: string) => path },
+  ),
 }));
 
 // Mock config validators (used by validateConfigWrite + CLI redirect)
@@ -166,6 +183,68 @@ describe('runPreToolUseChecks', () => {
     mockValidateConfigFileContent.mockImplementation(() => null);
     mockReadOnlyBashPatterns = [];
     mockCraftAgentsCliFlag = false;
+  });
+
+  // ============================================================
+  // Runtime filesystem boundary
+  // ============================================================
+
+  describe('runtime filesystem boundary', () => {
+    const fileAccessBoundary = {
+      readRoots: ['/free/session/work', '/free/session/attachments'],
+      writeRoots: ['/free/session/work'],
+      blockBash: true,
+    } as const;
+
+    it('allows reads and writes inside the private roots', () => {
+      const readResult = runPreToolUseChecks(createInput({
+        input: { file_path: '/free/session/attachments/input.txt' },
+        workingDirectory: '/free/session/work',
+        fileAccessBoundary,
+      }));
+      const writeResult = runPreToolUseChecks(createInput({
+        toolName: 'Write',
+        input: { file_path: '/free/session/work/output.md', content: 'ok' },
+        workingDirectory: '/free/session/work',
+        fileAccessBoundary,
+      }));
+
+      expect(readResult.type).toBe('allow');
+      expect(writeResult.type).toBe('allow');
+    });
+
+    it('blocks absolute paths and traversal outside the private roots', () => {
+      const absoluteResult = runPreToolUseChecks(createInput({
+        input: { file_path: '/projects/novel/全局/大纲.md' },
+        workingDirectory: '/free/session/work',
+        fileAccessBoundary,
+      }));
+      const traversalResult = runPreToolUseChecks(createInput({
+        toolName: 'Glob',
+        input: { pattern: '../../projects/**/*.md' },
+        workingDirectory: '/free/session/work',
+        fileAccessBoundary,
+      }));
+
+      expect(absoluteResult.type).toBe('block');
+      expect(traversalResult.type).toBe('block');
+    });
+
+    it('blocks Bash even in allow-all mode without an OS sandbox', () => {
+      mockEffectivePermissionMode = 'allow-all';
+      const result = runPreToolUseChecks(createInput({
+        toolName: 'Bash',
+        input: { command: 'pwd' },
+        permissionMode: 'allow-all',
+        workingDirectory: '/free/session/work',
+        fileAccessBoundary,
+      }));
+
+      expect(result.type).toBe('block');
+      if (result.type === 'block') {
+        expect(result.reason).toContain('OS-level filesystem sandbox');
+      }
+    });
   });
 
   // ============================================================
