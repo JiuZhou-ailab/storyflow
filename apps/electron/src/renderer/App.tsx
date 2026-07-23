@@ -16,10 +16,10 @@ import { useEventProcessor } from './event-processor'
 import type { AgentEvent, Effect } from './event-processor'
 import type { AppShellContextType } from '@/context/AppShellContext'
 import { ActivityRailFrame } from '@/components/app-shell/ActivityRailFrame'
+import { ProjectManagerPanel } from '@/components/app-shell/ProjectManagerPanel'
 import { WINDOW_TITLE_BAR_HEIGHT } from '@/components/app-shell/layout-constants'
 import type { WorkspaceCreationInitialStep } from '@/components/workspace/WorkspaceCreationScreen'
 import {
-  ProjectHub,
   ProjectHubNavigationActions,
   useProjectHubReturnLocation,
 } from '@/components/project-hub'
@@ -41,7 +41,7 @@ import { coerceInputText } from './lib/input-text'
 import { getSessionsToRefreshAfterStaleReconnect } from './lib/reconnect-recovery'
 import { formatSessionLoadFailure, shouldTreatSessionLoadFailureAsTransportFallback } from './lib/session-load'
 import { resolvePostSetupAppState } from './lib/startup-flow'
-import { buildProjectSummaries } from './lib/project-summary'
+
 import { isProjectShellReady } from './lib/app-readiness'
 import { appendUniqueRequestForSession, removeFirstRequestForSession } from './lib/request-queue'
 import { isBackgroundingToolResult } from './lib/background-task-result'
@@ -381,18 +381,15 @@ function AppContent() {
   }, [updateSessionDirect])
 
   const [workspaces, setWorkspaces] = useAtom(windowWorkspacesAtom)
-  const projectSummaries = useMemo(() => buildProjectSummaries(workspaces), [workspaces])
   // Window's workspace ID — shared atom so Root/ThemeProvider stays in sync on switch
   const [windowWorkspaceId, setWindowWorkspaceId] = useAtom(windowWorkspaceIdAtom)
   const focusedProjectRoute = useAtomValue(focusedPanelRouteAtom)
   const {
-    captureReturnLocation,
     clearReturnLocation,
     consumeReturnRoute,
     returnDestination,
   } = useProjectHubReturnLocation(windowWorkspaceId, focusedProjectRoute)
   const pendingCreatedWorkspaceRef = useRef<Workspace | null>(null)
-  const openNewProjectConversationAfterSwitchRef = useRef<string | null>(null)
 
   // Derive workspace slug for SDK skill qualification
   const windowWorkspaceSlug = useMemo(() => {
@@ -2032,7 +2029,6 @@ function AppContent() {
     if (!storage.get(storage.KEYS.firstRunTourCompleted, false)) {
       storage.set(storage.KEYS.firstRunTourPending, true)
     }
-    openNewProjectConversationAfterSwitchRef.current = workspace.id
     clearReturnLocation()
     setPendingReadyRoute(routes.view.writing())
     setAppState('ready')
@@ -2066,11 +2062,6 @@ function AppContent() {
     void handleSelectWorkspace(workspaceId)
   }, [clearReturnLocation, handleSelectWorkspace])
 
-  const handleOpenProjectHub = useCallback(() => {
-    captureReturnLocation()
-    setAppState('project-hub')
-  }, [captureReturnLocation])
-
   const handleReturnToActiveProject = useCallback(() => {
     if (windowWorkspaceId) {
       setPendingReadyRoute(consumeReturnRoute(routes.view.writing()))
@@ -2101,17 +2092,6 @@ function AppContent() {
     return () => window.cancelAnimationFrame(frame)
   }, [appState, pendingReadyRoute])
 
-  useEffect(() => {
-    if (appState !== 'ready' || !windowWorkspaceId || !sessionsLoaded) return
-    if (openNewProjectConversationAfterSwitchRef.current !== windowWorkspaceId) return
-
-    openNewProjectConversationAfterSwitchRef.current = null
-    const frame = window.requestAnimationFrame(() => {
-      navigate(routes.action.newSession())
-    })
-    return () => window.cancelAnimationFrame(frame)
-  }, [appState, sessionsLoaded, windowWorkspaceId])
-
   const openWorkspaceCreation = useCallback((initialStep: WorkspaceCreationInitialStep) => {
     setWorkspaceCreationInitialStep(initialStep)
     setAppState('workspace-creation')
@@ -2120,6 +2100,59 @@ function AppContent() {
   const handleWorkspaceCreationClose = useCallback(() => {
     setAppState('project-hub')
   }, [])
+
+  const projectManagerActions = useMemo(() => ({
+    onSelectProject: (workspaceId: string) => {
+      if (workspaceId === windowWorkspaceId && appState === 'ready') return
+      void handleOpenProjectFromHub(workspaceId)
+    },
+    // Create/import/remote stay inside ProjectManagerPanel when onWorkspaceCreated is wired.
+    onWorkspaceCreated: (workspace: Workspace) => {
+      void handleProjectHubWorkspaceCreated(workspace)
+    },
+    onOpenProjectInNewWindow: (workspaceId: string) => {
+      void window.electronAPI.openWorkspace(workspaceId)
+    },
+    onRenameProject: (workspaceId: string, name: string) => {
+      void handleRenameProjectFromHub(workspaceId, name)
+    },
+    onRemoveProject: (workspaceId: string) => {
+      void handleRemoveProjectFromHub(workspaceId)
+    },
+  }), [
+    appState,
+    handleOpenProjectFromHub,
+    handleProjectHubWorkspaceCreated,
+    handleRemoveProjectFromHub,
+    handleRenameProjectFromHub,
+    windowWorkspaceId,
+  ])
+
+  // Shared by account / project-hub ActivityRailFrame (and ready shell project actions).
+  const activityRailProjectProps = useMemo(() => ({
+    workspaces,
+    activeWorkspaceId: windowWorkspaceId,
+    ...projectManagerActions,
+    onOpenWritingWorkspace: windowWorkspaceId
+      ? () => handleOpenActiveProjectRoute(routes.view.writing())
+      : undefined,
+    onOpenSources: windowWorkspaceId
+      ? () => handleOpenActiveProjectRoute(routes.view.sources())
+      : undefined,
+    onOpenSkills: windowWorkspaceId
+      ? () => handleOpenActiveProjectRoute(routes.view.skills())
+      : undefined,
+    onOpenSearch: windowWorkspaceId ? handleOpenActiveProjectSearch : undefined,
+    onOpenSettings: windowWorkspaceId
+      ? () => handleOpenActiveProjectRoute(routes.view.settings('app'))
+      : undefined,
+  }), [
+    handleOpenActiveProjectRoute,
+    handleOpenActiveProjectSearch,
+    projectManagerActions,
+    windowWorkspaceId,
+    workspaces,
+  ])
 
   // Build context value for AppShell component
   // This is memoized to prevent unnecessary re-renders
@@ -2304,10 +2337,8 @@ function AppContent() {
         <TooltipProvider delayDuration={0}>
           <WindowCloseHandler />
           <ActivityRailFrame
-            surface="library"
             activeItem="account"
-            onOpenProjectHub={handleOpenProjectHub}
-            onOpenSettings={windowWorkspaceId ? () => handleOpenActiveProjectRoute(routes.view.settings('app')) : undefined}
+            {...activityRailProjectProps}
             onOpenAccount={() => handleOpenAccountCenter(accountReturnState)}
           >
             <AccountCenterPage
@@ -2324,7 +2355,7 @@ function AppContent() {
     )
   }
 
-  // Project hub — ordinary authenticated startup lands here before any workspace production UI.
+  // Project manager — cold-start / no-window-workspace surface (same panel as the rail popover).
   if (appState === 'project-hub') {
     return (
       <DismissibleLayerProvider>
@@ -2335,34 +2366,28 @@ function AppContent() {
             <ProjectHubNavigationActions onReturn={handleReturnToActiveProject} />
           ) : null}
           <ActivityRailFrame
-            surface="library"
             activeItem="project-hub"
-            onOpenProjectHub={handleOpenProjectHub}
-            onOpenSettings={windowWorkspaceId ? () => handleOpenActiveProjectRoute(routes.view.settings('app')) : undefined}
+            {...activityRailProjectProps}
             onOpenAccount={() => handleOpenAccountCenter('project-hub')}
+            projectMenuOpen={false}
           >
-            <ProjectHub
-              projects={projectSummaries}
-              activeWorkspaceId={windowWorkspaceId}
-              onReturnToActiveProject={windowWorkspaceId ? handleReturnToActiveProject : undefined}
-              returnDestination={returnDestination}
-              onOpenProject={(workspaceId) => {
-                void handleOpenProjectFromHub(workspaceId)
-              }}
-              onCreateProject={() => openWorkspaceCreation('create')}
-              onImportProject={() => openWorkspaceCreation('open')}
-              onConnectRemoteProject={() => openWorkspaceCreation('remote')}
-              onOpenAccount={() => handleOpenAccountCenter('project-hub')}
-              onOpenProjectInNewWindow={(workspaceId) => {
-                void window.electronAPI.openWorkspace(workspaceId)
-              }}
-              onRenameProject={(workspaceId, name) => {
-                void handleRenameProjectFromHub(workspaceId, name)
-              }}
-              onRemoveProject={(workspaceId) => {
-                void handleRemoveProjectFromHub(workspaceId)
-              }}
-            />
+            <div className="flex h-full min-h-0 flex-col items-center justify-center bg-[radial-gradient(ellipse_at_50%_30%,color-mix(in_oklab,var(--foreground)_4%,transparent),transparent_55%)] px-6 py-12">
+              <ProjectManagerPanel
+                variant="standalone"
+                workspaces={workspaces}
+                activeWorkspaceId={windowWorkspaceId}
+                {...projectManagerActions}
+              />
+              {windowWorkspaceId && returnDestination ? (
+                <button
+                  type="button"
+                  className="mt-5 text-[12px] text-muted-foreground/80 transition-colors hover:text-foreground"
+                  onClick={handleReturnToActiveProject}
+                >
+                  返回 · {returnDestination}
+                </button>
+              ) : null}
+            </div>
           </ActivityRailFrame>
         </TooltipProvider>
         </ModalProvider>
@@ -2396,7 +2421,7 @@ function AppContent() {
           <WindowCloseHandler />
           <WorkspaceCreationScreen
             canClose={true}
-            closeLabel="返回作品库"
+            closeLabel="返回项目"
             initialStep={workspaceCreationInitialStep}
             onClose={handleWorkspaceCreationClose}
             onWorkspaceCreated={handleProjectHubWorkspaceCreated}
@@ -2467,8 +2492,11 @@ function AppContent() {
                   defaultLayout={[20, 32, 48]}
                   menuNewChatTrigger={menuNewChatTrigger}
                   openGlobalSearchSignal={openGlobalSearchSignal}
-                  onOpenProjectHub={handleOpenProjectHub}
                   onOpenAccount={() => handleOpenAccountCenter('ready')}
+                  onWorkspaceCreatedFromRail={projectManagerActions.onWorkspaceCreated}
+                  onOpenProjectInNewWindow={projectManagerActions.onOpenProjectInNewWindow}
+                  onRenameProject={projectManagerActions.onRenameProject}
+                  onRemoveProject={projectManagerActions.onRemoveProject}
                 />
                 </div>
               </React.Suspense>

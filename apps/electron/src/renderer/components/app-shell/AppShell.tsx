@@ -144,6 +144,7 @@ import { PanelHeader } from "./PanelHeader"
 import { SendToWorkspaceDialog } from "./SendToWorkspaceDialog"
 import { MessagingDialogHost } from "@/components/messaging/MessagingDialogHost"
 import { EditPopover, getEditConfig, type EditContextKey } from "@/components/ui/EditPopover"
+import { CreateSkillDialog } from "./CreateSkillDialog"
 import SettingsNavigator from "@/pages/settings/SettingsNavigator"
 import {
   PANEL_GAP,
@@ -201,12 +202,6 @@ import {
   type NativeWorkspaceCatalog,
   type NovelWorkspaceFile,
 } from "@/lib/writing-workspace"
-import {
-  filterFilesByWritingCatalog,
-  parseWritingCatalogConfig,
-  withWritingCatalogPath,
-  type WritingProjectType,
-} from "@craft-agent/shared/writing/writing-catalog"
 import type { FileChange } from "@craft-agent/ui"
 import { RPC_CHANNELS, type FileSearchBatchRequest, type FileSearchBatchResult } from "@craft-agent/shared/protocol"
 
@@ -238,10 +233,13 @@ interface AppShellProps {
   menuNewChatTrigger?: number
   /** Monotonic signal for opening global search after entering the ready shell */
   openGlobalSearchSignal?: number
-  /** Open the global project management hub */
-  onOpenProjectHub?: () => void
   /** Open the account and points center */
   onOpenAccount?: () => void
+  onOpenProjectInNewWindow?: (workspaceId: string) => void
+  onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
+  onRemoveProject?: (workspaceId: string) => void | Promise<void>
+  /** Inline project create/import/remote success (preferred over full-page creation). */
+  onWorkspaceCreatedFromRail?: (workspace: Workspace) => void | Promise<void>
 }
 
 function isNovelReviewUndoShortcut(event: KeyboardEvent): boolean {
@@ -451,82 +449,10 @@ async function searchNovelWorkspaceFiles(
   )
 }
 
-const WRITING_MANIFEST_RELATIVE_CANDIDATES = [
-  '.craft-agent/craft-writing.json',
-  'craft-writing.json',
-] as const
-
-async function readWritingManifestConfig(rootPath: string): Promise<{
-  absolutePath: string
-  projectType: WritingProjectType
-  raw: Record<string, unknown>
-} | null> {
-  for (const relativePath of WRITING_MANIFEST_RELATIVE_CANDIDATES) {
-    const absolutePath = joinWorkspacePath(rootPath, relativePath)
-    try {
-      const rawText = await window.electronAPI.readFile(absolutePath)
-      const raw = JSON.parse(rawText) as Record<string, unknown>
-      if (raw.schemaVersion !== 1) continue
-      if (raw.type !== 'novel' && raw.type !== 'screenplay' && raw.type !== 'short-form') continue
-      return {
-        absolutePath,
-        projectType: raw.type,
-        raw,
-      }
-    } catch {
-      // try next candidate
-    }
-  }
-  return null
-}
-
-async function applyWritingCatalogVisibility(
-  rootPath: string,
-  catalog: NativeWorkspaceCatalog,
-): Promise<NativeWorkspaceCatalog> {
-  const manifest = await readWritingManifestConfig(rootPath)
-  if (!manifest) return catalog
-
-  const { catalog: writingCatalog, writePolicy } = parseWritingCatalogConfig(manifest.raw)
-  return {
-    files: filterFilesByWritingCatalog(
-      catalog.files,
-      writingCatalog,
-      writePolicy,
-      manifest.projectType,
-    ),
-    directories: catalog.directories,
-  }
-}
-
-/** User-created/imported paths become authorized working-surface entries. */
-async function promoteWritingCatalogPath(rootPath: string, relativePath: string): Promise<void> {
-  const manifest = await readWritingManifestConfig(rootPath)
-  if (!manifest) return
-
-  const { catalog, writePolicy } = parseWritingCatalogConfig(manifest.raw)
-  if (writePolicy?.mode !== 'catalog-plus-free') return
-
-  const nextCatalog = withWritingCatalogPath(catalog, relativePath)
-  const previousPaths = catalog?.paths ?? []
-  if (
-    previousPaths.length === nextCatalog.paths.length
-    && previousPaths.every((path, index) => path === nextCatalog.paths[index])
-  ) {
-    return
-  }
-
-  const nextRaw = {
-    ...manifest.raw,
-    catalog: nextCatalog,
-  }
-  await window.electronAPI.writeFile(manifest.absolutePath, `${JSON.stringify(nextRaw, null, 2)}\n`)
-}
-
+/** Sidebar is the real project folder: list disk, skip noise dirs server-side, no catalog filter. */
 async function loadNovelWorkspaceFileTree(rootPath: string): Promise<NativeWorkspaceCatalog> {
   const results = await window.electronAPI.listWorkspaceFiles(rootPath, [])
-  const catalog = mapNativeWorkspaceCatalog(results)
-  return applyWritingCatalogVisibility(rootPath, catalog)
+  return mapNativeWorkspaceCatalog(results)
 }
 
 function getParentRelativePath(relativePath: string): string {
@@ -947,8 +873,11 @@ function AppShellContent({
   defaultCollapsed = false,
   menuNewChatTrigger,
   openGlobalSearchSignal = 0,
-  onOpenProjectHub,
   onOpenAccount,
+  onOpenProjectInNewWindow,
+  onRenameProject,
+  onRemoveProject,
+  onWorkspaceCreatedFromRail,
 }: AppShellProps) {
   // Destructure commonly used values from context
   // Note: sessions is NOT destructured here - shell leaves metadata list subscriptions to leaf views.
@@ -1010,8 +939,10 @@ function AppShellContent({
   const isAutoCompact = shellWidth > 0 && shellWidth < MOBILE_THRESHOLD
 
   const effectiveSidebarAndNavigatorHidden = isSidebarAndNavigatorHidden || isAutoCompact
-  const showActivityRail = !isSidebarAndNavigatorHidden
-  const activityRailOffset = showActivityRail ? ACTIVITY_RAIL_WIDTH : 0
+  // Foundation layer: activity rail is always present (not tied to sidebar/navigator chrome).
+  const showActivityRail = true
+  const activityRailOffset = ACTIVITY_RAIL_WIDTH
+
 
   // What's New overlay
   const [showWhatsNew, setShowWhatsNew] = React.useState(false)
@@ -1210,6 +1141,7 @@ function AppShellContent({
   const [searchActive, setSearchActive] = useAtom(sessionListSearchActiveAtom)
   const [searchQuery, setSearchQuery] = useAtom(sessionListSearchQueryAtom)
   const [globalSearchOpen, setGlobalSearchOpen] = React.useState(false)
+  const [createSkillOpen, setCreateSkillOpen] = React.useState(false)
 
   React.useEffect(() => {
     if (openGlobalSearchSignal > 0) {
@@ -2042,7 +1974,6 @@ function AppShellContent({
     try {
       await window.electronAPI.createDirectory(parentPath)
       await window.electronAPI.writeFile(targetPath, initialContent)
-      await promoteWritingCatalogPath(novelWorkspaceRoot, relativePath)
       await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
       setSelectedNovelFilePath(targetPath)
       navigate(routes.view.allSessions())
@@ -2090,7 +2021,6 @@ function AppShellContent({
 
         await window.electronAPI.createDirectory(parentPath)
         await window.electronAPI.writeFile(targetPath, attachment.text)
-        await promoteWritingCatalogPath(novelWorkspaceRoot, relativePath)
         importedCount += 1
         reservedRelativePaths.add(relativePath)
         lastImportedPath = targetPath
@@ -3885,12 +3815,24 @@ function AppShellContent({
     }
   }, [markWhatsNewSeen])
 
-  // Handler for What's New overlay
+  // Handler for full release-notes history overlay (versioned, newest first)
   const handleWhatsNewClick = useCallback(async () => {
-    const content = await window.electronAPI.getReleaseNotes()
-    setReleaseNotesContent(content)
-    setShowWhatsNew(true)
-    await markWhatsNewSeen()
+    try {
+      const content = await window.electronAPI.getReleaseNotes()
+      setReleaseNotesContent(
+        content?.trim()
+          ? content
+          : '# 暂无更新记录\n\n当前安装包未附带历史 release notes。',
+      )
+      setShowWhatsNew(true)
+      await markWhatsNewSeen()
+    } catch (error) {
+      console.warn('[whats-new] Failed to load release notes history:', error)
+      setReleaseNotesContent(
+        `# 无法加载更新记录\n\n${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
+      setShowWhatsNew(true)
+    }
   }, [markWhatsNewSeen])
 
   const handleWhatsNewAnnouncementDetailsClick = useCallback(() => {
@@ -4116,7 +4058,8 @@ function AppShellContent({
   const activeActivityRailItem = React.useMemo<ActivityRailItemId>(() => {
     if (globalSearchOpen) return 'search'
     if (isSettingsNavigation(navState) || isAutomationsNavigation(navState)) return 'settings'
-    // Sources/skills are secondary destinations — keep the primary rail on writing.
+    if (isSourcesNavigation(navState)) return 'sources'
+    if (isSkillsNavigation(navState)) return 'skills'
     return 'writing'
   }, [globalSearchOpen, navState])
 
@@ -4187,15 +4130,19 @@ function AppShellContent({
       >
         {showActivityRail ? (
           <ActivityRail
-            surface="room"
             activeItem={activeActivityRailItem}
             workspaces={workspaces}
             activeWorkspaceId={activeWorkspaceId}
             onSelectProject={(workspaceId) => {
               void onSelectWorkspace?.(workspaceId)
             }}
-            onOpenProjectHub={onOpenProjectHub}
+            onWorkspaceCreated={onWorkspaceCreatedFromRail ?? onWorkspaceCreated}
+            onOpenProjectInNewWindow={onOpenProjectInNewWindow}
+            onRenameProject={onRenameProject}
+            onRemoveProject={onRemoveProject}
             onOpenWritingWorkspace={handleWritingWorkspaceClick}
+            onOpenSources={handleSourcesClick}
+            onOpenSkills={handleSkillsClick}
             onOpenSearch={() => setGlobalSearchOpen(true)}
             onOpenSettings={() => handleSettingsClick('app')}
             onOpenAccount={onOpenAccount}
@@ -4939,17 +4886,13 @@ function AppShellContent({
                       )}
                     />
                   )}
-                  {/* Add Skill button (only for skills mode) */}
+                  {/* Add Skill button (only for skills mode) — direct scaffold, not AI chat */}
                   {isSkillsNavigation(navState) && activeWorkspace && (
-                    <EditPopover
-                      trigger={
-                        <HeaderIconButton
-                          icon={<Plus className="h-4 w-4" />}
-                          tooltip={t("sidebarMenu.addSkill")}
-                          data-tutorial="add-skill-button"
-                        />
-                      }
-                      {...getEditConfig('add-skill', activeWorkspace.rootPath)}
+                    <HeaderIconButton
+                      icon={<Plus className="h-4 w-4" />}
+                      tooltip={t("sidebarMenu.addSkill")}
+                      data-tutorial="add-skill-button"
+                      onClick={() => setCreateSkillOpen(true)}
                     />
                   )}
                   {/* Add Automation button (only for automations mode) */}
@@ -5249,13 +5192,17 @@ function AppShellContent({
         onRestore={handleRestoreNovelVersion}
       />
 
-      <Dialog open={!!novelCreateFileTarget} onOpenChange={(open) => {
-        if (!open && !novelCreatingFile) {
-          setNovelCreateFileTarget(null)
-          setNovelCreateFileValue('')
-        }
-      }}>
-        <DialogContent className="sm:max-w-[420px]" showCloseButton={!novelCreatingFile}>
+      <Dialog
+        open={!!novelCreateFileTarget}
+        busy={novelCreatingFile}
+        onOpenChange={(open) => {
+          if (!open) {
+            setNovelCreateFileTarget(null)
+            setNovelCreateFileValue('')
+          }
+        }}
+      >
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>{novelCreateFileTarget?.title}</DialogTitle>
           </DialogHeader>
@@ -5294,6 +5241,15 @@ function AppShellContent({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {activeWorkspace?.rootPath ? (
+        <CreateSkillDialog
+          open={createSkillOpen}
+          onOpenChange={setCreateSkillOpen}
+          workspaceRootPath={activeWorkspace.rootPath}
+          existingSlugs={skills.map((skill) => skill.slug)}
+        />
+      ) : null}
 
       {/* Messaging dialogs (pairing-code + WA connect) — driven by messagingDialogAtom.
           Mounted here so they survive context-menu / dropdown close. */}

@@ -23,4 +23,18 @@ describe('manual update check entrypoints', () => {
     expect(appMenuSource).toContain('void updateChecker.checkForUpdates()')
     expect(appMenuSource).not.toContain('window.electronAPI.checkForUpdates()')
   })
+
+  it('routes activity rail update control through the feedback-aware hook', () => {
+    const railSource = source('../../components/app-shell/ActivityRail.tsx')
+
+    expect(railSource).toContain('useUpdateChecker')
+    expect(railSource).toContain('getUpdateIndicatorState')
+    expect(railSource).toContain('void updateChecker.checkForUpdates()')
+    expect(railSource).toContain('void updateChecker.installUpdate()')
+    expect(railSource).toContain('dataTutorial="activity-check-updates"')
+    expect(railSource).toContain('onClick={handleUpdateClick}')
+    // Release notes remain a separate secondary control.
+    expect(railSource).toContain('dataTutorial="activity-whats-new"')
+    expect(railSource).toContain("label={whatsNew?.unseen ? '新功能（未读）' : '新功能'}")
+  })
 })

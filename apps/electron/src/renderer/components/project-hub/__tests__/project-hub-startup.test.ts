@@ -1,6 +1,6 @@
 // input: Renderer App source
-// output: Static regression checks for ProjectHub startup integration
-// pos: Guards project-first startup before workspace production UI
+// output: Static regression checks for popover-first project management startup
+// pos: Guards project-first startup without a full-page ProjectHub gallery
 
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
@@ -11,10 +11,11 @@ const rendererHtmlSource = readFileSync(new URL('../../../index.html', import.me
 const mainSource = readFileSync(new URL('../../../../main/index.ts', import.meta.url), 'utf8')
 
 describe('ProjectHub startup integration', () => {
-  it('routes ordinary post-setup startup through the project hub', () => {
+  it('routes ordinary post-setup startup through the project manager surface', () => {
     expect(appSource).toContain("'project-hub'")
-    expect(appSource).toContain('<ProjectHub')
-    expect(appSource).toContain('buildProjectSummaries(workspaces)')
+    expect(appSource).toContain('<ProjectManagerPanel')
+    expect(appSource).toContain('variant="standalone"')
+    expect(appSource).not.toMatch(/<ProjectHub[\s>]/)
   })
 
   it('does not keep the old post-login profile handoff page in the startup path', () => {
@@ -30,11 +31,10 @@ describe('ProjectHub startup integration', () => {
     expect(appSource).not.toContain('ProjectHubPlaceholder')
   })
 
-  it('restores the exact project route that opened the hub', () => {
+  it('can restore a prior room route after project creation / return', () => {
     expect(appSource).toContain('focusedPanelRouteAtom')
-    expect(appSource).toContain('captureReturnLocation()')
     expect(appSource).toContain('consumeReturnRoute(routes.view.writing())')
-    expect(appSource).toContain('returnDestination={returnDestination}')
+    expect(appSource).toContain('returnDestination')
   })
 
   it('keeps project-hub back shortcuts on the root action registry', () => {
@@ -45,7 +45,7 @@ describe('ProjectHub startup integration', () => {
   it('shows the project shell before background workspace hydration completes', () => {
     const openProjectSource = appSource.slice(
       appSource.indexOf('const handleOpenProjectFromHub ='),
-      appSource.indexOf('const handleOpenProjectHub =')
+      appSource.indexOf('const handleReturnToActiveProject =')
     )
 
     expect(openProjectSource.indexOf("setAppState('ready')")).toBeLessThan(
@@ -102,17 +102,12 @@ describe('ProjectHub startup integration', () => {
     expect(appSource).not.toContain('shouldOpenStarterSession')
   })
 
-  it('allows returning from project creation when launched from an existing project hub', () => {
-    expect(appSource).toContain('handleWorkspaceCreationClose')
-    expect(appSource).toContain('canClose={true}')
-    expect(appSource).toContain('closeLabel="返回作品库"')
-    expect(appSource).toContain("setAppState('project-hub')")
-  })
-
-  it('opens the creation flow at the step matching the selected project hub action', () => {
-    expect(appSource).toContain("openWorkspaceCreation('create')")
-    expect(appSource).toContain("openWorkspaceCreation('open')")
-    expect(appSource).toContain("openWorkspaceCreation('remote')")
-    expect(appSource).toContain('initialStep={workspaceCreationInitialStep}')
+  it('keeps project create/import/remote inside the project manager panel', () => {
+    expect(appSource).toContain('onWorkspaceCreated: (workspace: Workspace)')
+    expect(appSource).toContain('handleProjectHubWorkspaceCreated')
+    expect(appSource).toContain('onWorkspaceCreated={projectManagerActions.onWorkspaceCreated}')
+    expect(appSource).not.toContain("openWorkspaceCreation('create')")
+    expect(appSource).not.toContain("openWorkspaceCreation('open')")
+    expect(appSource).not.toContain("openWorkspaceCreation('remote')")
   })
 })

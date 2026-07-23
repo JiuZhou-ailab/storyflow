@@ -1,5 +1,7 @@
-# Project Hub (L0 Work Library)
+# Project Hub package (legacy helpers)
 
-Exclusive project-library surface before entering a project room. Owns gallery, create/import/remote, and reversible return into the active room — not a peer of writing navigation.
+Product UI no longer mounts the full-page ProjectHub gallery. Day-to-day project switch/create/import/remote/rename/remove lives in `app-shell/ProjectManagerPanel` (rail popover + cold-start standalone).
 
-Files: `ProjectHub.tsx`, `ProjectHubNavigation.ts`, `index.ts`, `__tests__/ProjectHub.test.tsx`, `__tests__/project-hub-startup.test.ts`.
+This folder still owns:
+- `ProjectHubNavigation.ts` — reversible return-route helpers for cold-start shell
+- `ProjectHub.tsx` — legacy gallery component kept for helper tests / playground until fully deleted

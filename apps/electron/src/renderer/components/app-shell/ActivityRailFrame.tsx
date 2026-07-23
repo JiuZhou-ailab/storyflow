@@ -1,35 +1,67 @@
 // input: Activity rail navigation callbacks and standalone app surface content
-// output: Shared shell frame for L0 library / account surfaces outside a project room
-// pos: Pre-room AppShell frame; keeps library chrome hierarchical vs the writing room
+// output: Shared shell frame for cold-start project manager and account surfaces
+// pos: Pre-room frame; foundation rail stays identical to the room shell
 
 import type { ReactNode } from 'react'
-import { ActivityRail, type ActivityRailItemId, type ActivityRailSurface } from './ActivityRail'
+import { ActivityRail, type ActivityRailItemId } from './ActivityRail'
 import { WINDOW_TITLE_BAR_HEIGHT } from './layout-constants'
+import type { Workspace } from '../../../shared/types'
 
 interface ActivityRailFrameProps {
   activeItem: ActivityRailItemId
-  /** Defaults to library — frames outside ready never expose room work nav as peers. */
-  surface?: ActivityRailSurface
   children: ReactNode
-  onOpenProjectHub?: () => void
+  workspaces?: Workspace[]
+  activeWorkspaceId?: string | null
+  onSelectProject?: (workspaceId: string) => void
+  onCreateProject?: () => void
+  onImportProject?: () => void
+  onConnectRemoteProject?: () => void
+  onWorkspaceCreated?: (workspace: Workspace) => void | Promise<void>
+  onOpenProjectInNewWindow?: (workspaceId: string) => void
+  onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
+  onRemoveProject?: (workspaceId: string) => void | Promise<void>
   onOpenWritingWorkspace?: () => void
+  onOpenSources?: () => void
+  onOpenSkills?: () => void
   onOpenSearch?: () => void
   onOpenSettings?: () => void
   onOpenAccount?: () => void
+  onOpenWhatsNew?: () => void
+  whatsNew?: {
+    unseen: boolean
+    accentColor?: string
+    textColor?: string
+  }
+  projectMenuOpen?: boolean
+  onProjectMenuOpenChange?: (open: boolean) => void
 }
 
 export function ActivityRailFrame({
   activeItem,
-  surface = 'library',
   children,
-  onOpenProjectHub,
+  workspaces,
+  activeWorkspaceId,
+  onSelectProject,
+  onCreateProject,
+  onImportProject,
+  onConnectRemoteProject,
+  onWorkspaceCreated,
+  onOpenProjectInNewWindow,
+  onRenameProject,
+  onRemoveProject,
   onOpenWritingWorkspace,
+  onOpenSources,
+  onOpenSkills,
   onOpenSearch,
   onOpenSettings,
   onOpenAccount,
+  onOpenWhatsNew,
+  whatsNew,
+  projectMenuOpen,
+  onProjectMenuOpenChange,
 }: ActivityRailFrameProps) {
   return (
-    <div data-testid="activity-rail-frame" data-surface={surface} className="h-full bg-background text-foreground">
+    <div data-testid="activity-rail-frame" className="h-full bg-background text-foreground">
       <div
         className="titlebar-drag-region fixed left-0 right-0 top-0 z-panel"
         style={{ height: WINDOW_TITLE_BAR_HEIGHT }}
@@ -38,13 +70,27 @@ export function ActivityRailFrame({
       </div>
       <div className="flex h-full min-h-0" style={{ paddingTop: WINDOW_TITLE_BAR_HEIGHT }}>
         <ActivityRail
-          surface={surface}
           activeItem={activeItem}
-          onOpenProjectHub={onOpenProjectHub}
-          onOpenWritingWorkspace={surface === 'room' ? onOpenWritingWorkspace : undefined}
-          onOpenSearch={surface === 'room' ? onOpenSearch : undefined}
+          workspaces={workspaces}
+          activeWorkspaceId={activeWorkspaceId}
+          onSelectProject={onSelectProject}
+          onCreateProject={onCreateProject}
+          onImportProject={onImportProject}
+          onConnectRemoteProject={onConnectRemoteProject}
+          onWorkspaceCreated={onWorkspaceCreated}
+          onOpenProjectInNewWindow={onOpenProjectInNewWindow}
+          onRenameProject={onRenameProject}
+          onRemoveProject={onRemoveProject}
+          onOpenWritingWorkspace={onOpenWritingWorkspace}
+          onOpenSources={onOpenSources}
+          onOpenSkills={onOpenSkills}
+          onOpenSearch={onOpenSearch}
           onOpenSettings={onOpenSettings}
           onOpenAccount={onOpenAccount}
+          onOpenWhatsNew={onOpenWhatsNew}
+          whatsNew={whatsNew}
+          projectMenuOpen={projectMenuOpen}
+          onProjectMenuOpenChange={onProjectMenuOpenChange}
         />
         <main className="min-w-0 flex-1 overflow-auto">
           {children}
