@@ -11,7 +11,7 @@ import { EntityListEmptyScreen } from '@/components/ui/entity-list-empty'
 import { skillSelection } from '@/hooks/useEntitySelection'
 import { SkillMenu } from './SkillMenu'
 import { SendResourceToWorkspaceDialog } from './SendResourceToWorkspaceDialog'
-import { EditPopover, getEditConfig } from '@/components/ui/EditPopover'
+import { CreateSkillDialog } from './CreateSkillDialog'
 import { resolveSkillsMarketEntry } from '@/lib/skills-market-entry'
 import type { LoadedSkill, Workspace } from '../../../shared/types'
 
@@ -48,6 +48,8 @@ export function SkillsListPanel({
   const [sendDialogOpen, setSendDialogOpen] = React.useState(false)
   const [sendResourceSlug, setSendResourceSlug] = React.useState<string | null>(null)
   const [sendResourceLabel, setSendResourceLabel] = React.useState('')
+  const [createOpen, setCreateOpen] = React.useState(false)
+  const existingSlugs = React.useMemo(() => skills.map((skill) => skill.slug), [skills])
 
   return (
     <>
@@ -79,15 +81,13 @@ export function SkillsListPanel({
             docKey="skills"
           >
             {workspaceRootPath && (
-              <EditPopover
-                align="center"
-                trigger={
-                  <button className="inline-flex items-center h-7 px-3 text-xs font-medium rounded-[8px] bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors">
-                    {t('skillsList.addSkill')}
-                  </button>
-                }
-                {...getEditConfig('add-skill', workspaceRootPath)}
-              />
+              <button
+                type="button"
+                className="inline-flex items-center h-7 px-3 text-xs font-medium rounded-[8px] bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors"
+                onClick={() => setCreateOpen(true)}
+              >
+                {t('skillsList.addSkill')}
+              </button>
             )}
           </EntityListEmptyScreen>
         }
@@ -131,6 +131,15 @@ export function SkillsListPanel({
           activeWorkspaceId={workspaceId ?? null}
         />
       )}
+
+      {workspaceRootPath ? (
+        <CreateSkillDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          workspaceRootPath={workspaceRootPath}
+          existingSlugs={existingSlugs}
+        />
+      ) : null}
     </>
   )
 }

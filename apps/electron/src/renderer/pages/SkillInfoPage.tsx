@@ -86,13 +86,31 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
     window.electronAPI.showInFolder(`${skill.path}/SKILL.md`)
   }
 
+  const handleOpenInEditor = useCallback(async () => {
+    if (!skill) return
+    try {
+      if (canRevealLocally) {
+        await window.electronAPI.openSkillInEditor(workspaceId, skillSlug)
+        return
+      }
+      // Remote / fallback: still try file open path
+      await window.electronAPI.openFile(`${skill.path}/SKILL.md`)
+    } catch (err) {
+      toast.error(t('skillInfo.failedToOpenEditor', '无法打开编辑器'), {
+        description: err instanceof Error ? err.message : undefined,
+      })
+    }
+  }, [canRevealLocally, skill, skillSlug, t, workspaceId])
+
   const renderEditActions = (configKey: 'skill-metadata' | 'skill-instructions') => {
     if (!skill) return null
     const filePath = `${skill.path}/SKILL.md`
+    // Primary path: open SKILL.md in the system editor. AI assist stays secondary.
     return (
       <ResourceEditActions
         filePath={filePath}
         canEditFile={canRevealLocally}
+        onOpenFile={handleOpenInEditor}
         {...getEditConfig(configKey, skill.path)}
       />
     )

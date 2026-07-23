@@ -13,11 +13,14 @@ export { ManualEditButton } from './manual-edit-button'
 export interface ResourceEditActionsProps extends Omit<EditPopoverProps, 'trigger' | 'secondaryAction'> {
   filePath: string
   canEditFile?: boolean
+  /** Prefer opening in the system/project editor over preview. */
+  onOpenFile?: (filePath: string) => void | Promise<void>
 }
 
 export function ResourceEditActions({
   filePath,
   canEditFile = true,
+  onOpenFile,
   ...editPopoverProps
 }: ResourceEditActionsProps) {
   const { t } = useTranslation()
@@ -30,6 +33,7 @@ export function ResourceEditActions({
         label={editFileLabel}
         filePath={filePath}
         disabled={!canEditFile}
+        onOpenFile={onOpenFile}
       />
       <EditPopover
         {...editPopoverProps}
