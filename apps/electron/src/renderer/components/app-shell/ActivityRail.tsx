@@ -342,7 +342,7 @@ export function ActivityRail({
                       <div
                         key={workspace.id}
                         data-testid="activity-project-directory"
-                        className="min-w-0 overflow-hidden"
+                        className="min-w-0 overflow-hidden pl-3.5"
                       >
                         {workspaceDirectory}
                       </div>
@@ -406,7 +406,7 @@ export function ActivityRail({
             {onOpenAccount ? (
               <StyledDropdownMenuItem onClick={onOpenAccount} data-tutorial="activity-account">
                 <UserCircle className="size-4" />
-                账户与积分
+                账户
               </StyledDropdownMenuItem>
             ) : null}
             {onOpenAccount ? <StyledDropdownMenuSeparator /> : null}

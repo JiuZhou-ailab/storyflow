@@ -233,7 +233,7 @@ interface AppShellProps {
   openGlobalSearchSignal?: number
   /** Monotonic signal for opening release notes after entering the ready shell */
   openWhatsNewSignal?: number
-  /** Open the account and points center */
+  /** Open account management */
   onOpenAccount?: () => void
   /** Current signed-in role shown by the sidebar profile item. */
   profile?: {

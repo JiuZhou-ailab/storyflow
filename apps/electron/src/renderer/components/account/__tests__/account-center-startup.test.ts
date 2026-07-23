@@ -17,7 +17,8 @@ describe('account center routing', () => {
     expect(appSource).toContain('profile={activityRailProfile}')
     expect(activityRailSource).toContain('onOpenAccount')
     expect(activityRailSource).toContain('data-tutorial="activity-profile"')
-    expect(activityRailSource).toContain('账户与积分')
+    expect(activityRailSource).toContain('账户')
+    expect(activityRailSource).not.toContain('账户与积分')
   })
 
   it('keeps account center out of ordinary startup routing', () => {

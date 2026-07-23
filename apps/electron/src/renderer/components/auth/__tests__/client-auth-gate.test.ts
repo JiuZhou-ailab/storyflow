@@ -1,6 +1,6 @@
 // input: Client auth gate source
-// output: Static regression coverage for the login screen hierarchy
-// pos: Keeps Feishu and password login from competing as equal primary actions
+// output: Static regression coverage for the compact login screen hierarchy
+// pos: Keeps auth surfaces aligned with Storyflow components and action priority
 
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
@@ -12,25 +12,27 @@ describe('ClientAuthGate layout', () => {
     expect(source).toContain("from 'motion/react'")
     expect(source).toContain("from '@/components/settings/SettingsCard'")
     expect(source).toContain("from '@/components/icons/CraftAgentsSymbol'")
+    expect(source).toContain("from '@/components/ui/tabs'")
     expect(source).toContain('<SettingsCard')
     expect(source).toContain('<motion.section')
     expect(source).toContain('useReducedMotion')
-    expect(source).toContain('max-w-[760px]')
+    expect(source).toContain('max-w-[420px]')
     expect(source).toContain('bg-foreground-2')
-    expect(source).toContain('AuthContextRow')
-    expect(source).toContain('AuthModeButton')
-    expect(source).not.toContain('md:grid-cols-[minmax(0,0.92fr)_minmax(340px,1fr)]')
-    expect(source).not.toContain('max-w-[430px]')
+    expect(source).toContain('<TabsList')
+    expect(source).not.toContain('grid-cols-[280px_minmax(0,1fr)]')
+    expect(source).not.toContain('AuthContextRow')
+    expect(source).not.toContain('AuthModeButton')
   })
 
   it('renders password login first and keeps Feishu as the bottom alternative entry', () => {
-    const formIndex = source.indexOf('<form className="space-y-3"')
+    const formIndex = source.indexOf('<form className="space-y-4"')
     const feishuIndex = source.indexOf('使用飞书登录')
 
     expect(formIndex).toBeGreaterThan(-1)
     expect(feishuIndex).toBeGreaterThan(formIndex)
     expect(source).toContain('或使用飞书')
     expect(source).toContain("variant={emailPasswordEnabled ? 'outline' : 'default'}")
+    expect(source).not.toContain('bg-background text-foreground')
     expect(source).not.toContain('其他登录方式')
   })
 
@@ -39,10 +41,11 @@ describe('ClientAuthGate layout', () => {
     expect(source).toContain('setAuthMode')
     expect(source).toContain('signUpClient')
     expect(source).toContain('emailSignUpEnabled')
-    expect(source).toContain("emailSignUpEnabled ? '注册后继续进入桌面端。' : '请输入已有账号继续。'")
+    expect(source).toContain('注册完成后即可进入你的工作区。')
     expect(source).toContain('创建账号')
     expect(source).toContain('已有账号')
     expect(source).toContain('registrationNotice')
+    expect(source).toContain('工作区仍保存在本机')
   })
 
   it('normalizes provider auth errors into product-facing messages', () => {

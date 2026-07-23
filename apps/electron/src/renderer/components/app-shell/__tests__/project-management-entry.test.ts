@@ -98,7 +98,8 @@ describe('project management entry', () => {
   it('keeps one profile item at the bottom and nests secondary actions inside it', () => {
     expect(activityRailSource).toContain('data-tutorial="activity-profile"')
     expect(activityRailSource).toContain('<DropdownMenuTrigger asChild>')
-    expect(activityRailSource).toContain('账户与积分')
+    expect(activityRailSource).toContain('账户')
+    expect(activityRailSource).not.toContain('账户与积分')
     expect(activityRailSource).toContain('设置')
     expect(activityRailSource).toContain('新功能')
     expect(activityRailSource).toContain('帮助与反馈')
@@ -114,6 +115,7 @@ describe('project management entry', () => {
     expect(appShellSource).toContain('sidebarSlot={null}')
     expect(appShellSource).toContain('sidebarWidth={0}')
     expect(activityRailSource).toContain('data-testid="activity-project-directory"')
+    expect(activityRailSource).toContain('className="min-w-0 overflow-hidden pl-3.5"')
     expect(activityRailSource).toContain('{workspaceDirectory}')
     expect(activityRailSource).toContain('projectWorkspaces.map((workspace) =>')
     expect(activityRailSource).toContain('workspace.id === activeWorkspaceId')
