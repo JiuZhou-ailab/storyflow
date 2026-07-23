@@ -50,7 +50,10 @@ function loadBundledReleaseNotes(): Record<string, string> {
 
   let files: string[];
   try {
-    files = existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.md')) : [];
+    // Only versioned release notes (exclude scratch next.md and non-semver drafts).
+    files = existsSync(dir)
+      ? readdirSync(dir).filter(f => /^\d+\.\d+\.\d+\.md$/.test(f))
+      : [];
   } catch {
     console.warn(`[release-notes] Could not read release notes dir: ${dir}`);
     return notes;
@@ -157,7 +160,28 @@ function compareSemver(a: string, b: string): number {
 }
 
 /** Maximum number of release notes to display in the UI. */
-const MAX_DISPLAY_NOTES = 10;
+const MAX_DISPLAY_NOTES = 20;
+
+/**
+ * Strip a leading markdown H1 so we can re-inject a versioned header.
+ * Recent releases often use a shared product title ("# 最新动态") which
+ * collapses history into indistinguishable sections when concatenated.
+ */
+export function stripLeadingMarkdownH1(content: string): string {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith('# ')) return trimmed;
+  const firstNewline = trimmed.indexOf('\n');
+  if (firstNewline < 0) return '';
+  return trimmed.slice(firstNewline + 1).trimStart();
+}
+
+/**
+ * Normalize one note for the combined history view: always start with `# vX.Y.Z`.
+ */
+export function formatReleaseNoteForCombinedHistory(version: string, content: string): string {
+  const body = stripLeadingMarkdownH1(content);
+  return body ? `# v${version}\n\n${body}` : `# v${version}`;
+}
 
 export interface ReleaseNote {
   version: string;
@@ -253,17 +277,15 @@ function normalizeWhatsNewManifest(value: unknown): WhatsNewManifest | undefined
 
 /**
  * Get all release notes combined into a single markdown string.
- * Each version is separated by a horizontal rule.
+ * Each version is separated by a horizontal rule and always has a unique
+ * version H1 so history remains scannable (even when source files share a
+ * product title like "最新动态").
  */
 export function getCombinedReleaseNotes(): string {
   const list = getReleaseNotesList();
-  return list.map(n => {
-    // Auto-inject version header if the content doesn't start with one
-    if (!n.content.trimStart().startsWith('# ')) {
-      return `# v${n.version}\n\n${n.content}`;
-    }
-    return n.content;
-  }).join('\n\n---\n\n');
+  return list
+    .map(n => formatReleaseNoteForCombinedHistory(n.version, n.content))
+    .join('\n\n---\n\n');
 }
 
 function extractReleaseSummary(content: string): string {

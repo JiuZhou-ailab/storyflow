@@ -63,4 +63,41 @@ describe('release notes runtime manifest', () => {
       process.chdir(cwd)
     }
   })
+
+  it('formats combined history with unique version headers when sources share 最新动态 titles', async () => {
+    const cwd = process.cwd()
+    const tmp = mkdtempSync(join(tmpdir(), 'storyflow-release-notes-history-'))
+    tempDirs.push(tmp)
+    const notesDir = join(tmp, 'resources', 'release-notes')
+    mkdirSync(notesDir, { recursive: true })
+    writeFileSync(join(notesDir, '1.2.0.md'), '# 最新动态\n\n- Feature A\n')
+    writeFileSync(join(notesDir, '1.1.0.md'), '# 最新动态\n\n- Feature B\n')
+    writeFileSync(join(notesDir, '1.0.0.md'), '# v1.0.0 — first\n\n- Feature C\n')
+    writeFileSync(join(notesDir, 'next.md'), '# Scratch\n\n- Should be ignored\n')
+
+    process.chdir(tmp)
+    try {
+      const releaseNotes = await import(`${moduleUrl}?history=${randomUUID()}`) as typeof import('./index')
+      const combined = releaseNotes.getCombinedReleaseNotes()
+      expect(combined).toContain('# v1.2.0')
+      expect(combined).toContain('# v1.1.0')
+      expect(combined).toContain('# v1.0.0')
+      expect(combined).not.toContain('# 最新动态')
+      expect(combined).not.toContain('Should be ignored')
+      // Newest first
+      expect(combined.indexOf('# v1.2.0')).toBeLessThan(combined.indexOf('# v1.1.0'))
+      expect(combined.indexOf('# v1.1.0')).toBeLessThan(combined.indexOf('# v1.0.0'))
+    } finally {
+      process.chdir(cwd)
+    }
+  })
+
+  it('stripLeadingMarkdownH1 removes only the first heading line', async () => {
+    const releaseNotes = await import(`${moduleUrl}?strip=${randomUUID()}`) as typeof import('./index')
+    expect(releaseNotes.stripLeadingMarkdownH1('# 最新动态\n\nbody\n')).toBe('body')
+    expect(releaseNotes.stripLeadingMarkdownH1('no heading\n')).toBe('no heading')
+    expect(releaseNotes.formatReleaseNoteForCombinedHistory('0.9.39', '# 最新动态\n\nhello')).toBe(
+      '# v0.9.39\n\nhello',
+    )
+  })
 })
