@@ -331,6 +331,7 @@ function AppContent() {
   const [workspaceCreationInitialStep, setWorkspaceCreationInitialStep] = useState<WorkspaceCreationInitialStep>('choice')
   const [pendingReadyRoute, setPendingReadyRoute] = useState<Route | null>(null)
   const [openGlobalSearchSignal, setOpenGlobalSearchSignal] = useState(0)
+  const [openWhatsNewSignal, setOpenWhatsNewSignal] = useState(0)
   const shellInteractiveReportedRef = useRef(false)
 
   useEffect(() => {
@@ -2082,17 +2083,50 @@ function AppContent() {
     )
   }, [activeProjectId, activateRuntimeWorkspace, consumeReturnRoute])
 
+  const fallbackRuntimeWorkspaceId = useMemo(() => {
+    const recentWorkspace = workspaces.reduce<Workspace | null>((current, workspace) => {
+      if (workspace.id === FREE_CONVERSATION_WORKSPACE_ID) return current
+      if (!current) return workspace
+      const currentAccessedAt = current.lastAccessedAt ?? 0
+      const workspaceAccessedAt = workspace.lastAccessedAt ?? 0
+      return workspaceAccessedAt > currentAccessedAt ? workspace : current
+    }, null)
+    return recentWorkspace?.id ?? null
+  }, [workspaces])
+  const runtimeNavigationWorkspaceId = windowWorkspaceId
+    ?? activeProjectId
+    ?? fallbackRuntimeWorkspaceId
+
   const handleOpenRuntimeRoute = useCallback((route: Route) => {
-    if (!windowWorkspaceId) return
+    const targetWorkspaceId = runtimeNavigationWorkspaceId
+    if (!targetWorkspaceId) return
+    if (targetWorkspaceId !== windowWorkspaceId) {
+      void activateRuntimeWorkspace(targetWorkspaceId, route)
+      return
+    }
     setPendingReadyRoute(route)
     setAppState('ready')
-  }, [windowWorkspaceId])
+  }, [activateRuntimeWorkspace, runtimeNavigationWorkspaceId, windowWorkspaceId])
 
-  const handleOpenRuntimeSearch = useCallback(() => {
-    if (!windowWorkspaceId) return
+  const handleOpenRuntimeSearch = useCallback(async () => {
+    const targetWorkspaceId = runtimeNavigationWorkspaceId
+    if (!targetWorkspaceId) return
+    if (targetWorkspaceId !== windowWorkspaceId) {
+      await activateRuntimeWorkspace(targetWorkspaceId)
+    }
     setOpenGlobalSearchSignal(signal => signal + 1)
     setAppState('ready')
-  }, [windowWorkspaceId])
+  }, [activateRuntimeWorkspace, runtimeNavigationWorkspaceId, windowWorkspaceId])
+
+  const handleOpenRuntimeWhatsNew = useCallback(async () => {
+    const targetWorkspaceId = runtimeNavigationWorkspaceId
+    if (!targetWorkspaceId) return
+    if (targetWorkspaceId !== windowWorkspaceId) {
+      await activateRuntimeWorkspace(targetWorkspaceId)
+    }
+    setOpenWhatsNewSignal(signal => signal + 1)
+    setAppState('ready')
+  }, [activateRuntimeWorkspace, runtimeNavigationWorkspaceId, windowWorkspaceId])
 
   const handleOpenWritingWorkspace = useCallback(() => {
     if (!activeProjectId) return
@@ -2102,22 +2136,19 @@ function AppContent() {
     )
   }, [activeProjectId, activateRuntimeWorkspace])
 
-  const handleOpenFreeConversations = useCallback(() => {
-    void activateRuntimeWorkspace(
-      FREE_CONVERSATION_WORKSPACE_ID,
-      routes.view.allSessions(),
-    )
-  }, [activateRuntimeWorkspace])
+  const handleOpenFreeConversations = useCallback(() => activateRuntimeWorkspace(
+    FREE_CONVERSATION_WORKSPACE_ID,
+    routes.view.allSessions(),
+  ), [activateRuntimeWorkspace])
 
   useEffect(() => {
     if (appState !== 'ready' || !pendingReadyRoute) return
 
-    const route = pendingReadyRoute
+    // NavigationProvider is mounted before this parent effect runs, so dispatch
+    // the landing route immediately. Scheduling it in an animation frame made
+    // clearing the pending state cancel that same frame during effect cleanup.
+    navigate(pendingReadyRoute)
     setPendingReadyRoute(null)
-    const frame = window.requestAnimationFrame(() => {
-      navigate(route)
-    })
-    return () => window.cancelAnimationFrame(frame)
   }, [appState, pendingReadyRoute])
 
   const openWorkspaceCreation = useCallback((initialStep: WorkspaceCreationInitialStep) => {
@@ -2159,31 +2190,44 @@ function AppContent() {
     runtimeWorkspace,
   ])
 
+  const activityRailProfile = useMemo(() => {
+    const user = clientAuthState?.user
+    const email = user?.email?.trim()
+    const name = user?.name?.trim() || email || user?.userId || '本地用户'
+    return {
+      name,
+      detail: email && email !== name ? email : undefined,
+    }
+  }, [clientAuthState])
+
   // Shared by account / project-hub ActivityRailFrame (and ready shell project actions).
+  const canOpenRuntimeNavigation = Boolean(runtimeNavigationWorkspaceId)
   const activityRailProjectProps = useMemo(() => ({
     workspaces,
     activeWorkspaceId: activeProjectId,
+    profile: activityRailProfile,
     ...projectManagerActions,
-    onOpenWritingWorkspace: activeProjectId ? handleOpenWritingWorkspace : undefined,
     onOpenFreeConversations: handleOpenFreeConversations,
-    onOpenSources: windowWorkspaceId
+    onOpenSources: canOpenRuntimeNavigation
       ? () => handleOpenRuntimeRoute(routes.view.sources())
       : undefined,
-    onOpenSkills: windowWorkspaceId
+    onOpenSkills: canOpenRuntimeNavigation
       ? () => handleOpenRuntimeRoute(routes.view.skills())
       : undefined,
-    onOpenSearch: windowWorkspaceId ? handleOpenRuntimeSearch : undefined,
-    onOpenSettings: windowWorkspaceId
+    onOpenSearch: canOpenRuntimeNavigation ? handleOpenRuntimeSearch : undefined,
+    onOpenSettings: canOpenRuntimeNavigation
       ? () => handleOpenRuntimeRoute(routes.view.settings('app'))
       : undefined,
+    onOpenWhatsNew: canOpenRuntimeNavigation ? handleOpenRuntimeWhatsNew : undefined,
   }), [
     activeProjectId,
+    activityRailProfile,
+    canOpenRuntimeNavigation,
     handleOpenFreeConversations,
     handleOpenRuntimeRoute,
     handleOpenRuntimeSearch,
-    handleOpenWritingWorkspace,
+    handleOpenRuntimeWhatsNew,
     projectManagerActions,
-    windowWorkspaceId,
     workspaces,
   ])
 
@@ -2403,7 +2447,7 @@ function AppContent() {
             <ProjectHubNavigationActions onReturn={handleReturnToActiveProject} />
           ) : null}
           <ActivityRailFrame
-            activeItem="project-hub"
+            activeItem="recent"
             {...activityRailProjectProps}
             onOpenAccount={() => handleOpenAccountCenter('project-hub')}
             projectMenuOpen={false}
@@ -2532,7 +2576,9 @@ function AppContent() {
                   defaultLayout={[20, 32, 48]}
                   menuNewChatTrigger={menuNewChatTrigger}
                   openGlobalSearchSignal={openGlobalSearchSignal}
+                  openWhatsNewSignal={openWhatsNewSignal}
                   onOpenAccount={() => handleOpenAccountCenter('ready')}
+                  profile={activityRailProfile}
                   onWorkspaceCreatedFromRail={projectManagerActions.onWorkspaceCreated}
                   onOpenProjectInNewWindow={projectManagerActions.onOpenProjectInNewWindow}
                   onRenameProject={projectManagerActions.onRenameProject}

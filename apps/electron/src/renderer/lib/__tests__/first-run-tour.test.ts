@@ -15,7 +15,7 @@ describe('FIRST_RUN_TOUR_STEPS', () => {
       'source-selector-button',
       'permission-mode-dropdown',
       'send-button',
-      'activity-feedback',
+      'activity-profile',
     ])
   })
 
@@ -31,9 +31,9 @@ describe('FIRST_RUN_TOUR_STEPS', () => {
     expect(FIRST_RUN_TOUR_STEPS.some(step => step.target === 'automations-nav')).toBe(false)
   })
 
-  it('points users to feedback without making help a separate setup flow', () => {
-    const feedbackStep = FIRST_RUN_TOUR_STEPS.find(step => step.target === 'activity-feedback')
-    expect(feedbackStep?.selector).toBe('[data-tutorial="activity-feedback"]')
-    expect(feedbackStep?.body).toContain('反馈')
+  it('points users to the profile menu that owns settings, updates, and feedback', () => {
+    const profileStep = FIRST_RUN_TOUR_STEPS.find(step => step.target === 'activity-profile')
+    expect(profileStep?.selector).toBe('[data-tutorial="activity-profile"]')
+    expect(profileStep?.body).toContain('帮助反馈')
   })
 })

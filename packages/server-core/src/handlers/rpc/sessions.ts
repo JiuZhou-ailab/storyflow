@@ -118,6 +118,7 @@ async function scanSessionDirectory(
 
 export const HANDLED_CHANNELS = [
   RPC_CHANNELS.sessions.GET,
+  RPC_CHANNELS.sessions.GET_ALL,
   RPC_CHANNELS.sessions.GET_UNREAD_SUMMARY,
   RPC_CHANNELS.sessions.MARK_ALL_READ,
   RPC_CHANNELS.sessions.CREATE,
@@ -177,6 +178,18 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
     })
 
     return sessions
+  })
+
+  // The Codex-style global sidebar needs recent conversations across projects.
+  // Keep this separate from GET: the normal session navigator intentionally
+  // remains scoped to the active window workspace.
+  server.handle(RPC_CHANNELS.sessions.GET_ALL, async () => {
+    try {
+      await sessionManager.waitForInit()
+    } catch (error) {
+      log.error('GET_ALL_SESSIONS continuing after initialization failure:', error)
+    }
+    return sessionManager.getSessions()
   })
 
   // Get unread summary across all workspaces

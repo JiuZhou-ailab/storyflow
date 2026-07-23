@@ -386,46 +386,6 @@ describe('novel writing workspace layout', () => {
     expect(chatPageSource).not.toContain('WritingChatDropdown')
   })
 
-  it('moves primary workspace navigation into the left activity rail', () => {
-    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
-    const activityRailSource = readFileSync(new URL('../../app-shell/ActivityRail.tsx', import.meta.url), 'utf-8')
-    const panelStackSource = readFileSync(new URL('../../app-shell/PanelStackContainer.tsx', import.meta.url), 'utf-8')
-
-    expect(appShellSource).toContain('<ActivityRail')
-    expect(appShellSource).toContain('activeItem={activeActivityRailItem}')
-    expect(appShellSource).toContain('onOpenWritingWorkspace={onOpenWritingWorkspace}')
-    expect(appShellSource).toContain('onOpenFreeConversations={onOpenFreeConversations}')
-    expect(appShellSource).toContain('onOpenSources={handleSourcesClick}')
-    expect(appShellSource).toContain('onOpenSkills={handleSkillsClick}')
-    expect(appShellSource).toContain("onOpenSettings={() => handleSettingsClick('app')}")
-    expect(appShellSource).toContain('<ActivityRail')
-    expect(activityRailSource).toContain('label="写作工作区"')
-    expect(activityRailSource).toContain('label="自由对话"')
-    expect(activityRailSource).toContain('dataTutorial="activity-free-conversations"')
-    expect(activityRailSource).toContain('<ProjectSwitcherPopover')
-    expect(activityRailSource).toContain('data-tutorial="activity-project-hub"')
-    expect(activityRailSource).not.toContain('退出到作品库')
-    expect(activityRailSource).toContain('label="数据源"')
-    expect(activityRailSource).toContain('label="技能"')
-    expect(activityRailSource).toContain('label="设置"')
-    expect(appShellSource).toContain("id: 'open-sources'")
-    expect(appShellSource).toContain("id: 'open-skills'")
-    expect(appShellSource).toContain('<WorkspaceFileTree')
-    expect(appShellSource).toContain('files={novelWorkspaceFiles}')
-    expect(appShellSource).not.toContain('novelWorkspaceUtilitySidebarLinks')
-    expect(appShellSource).not.toContain('workspaceTools={showNovelWorkspaceSidebar ? (')
-    expect(appShellSource).not.toContain('rightTools={showNovelWorkspaceSidebar ? (')
-    expect(appShellSource).not.toContain('links={showNovelWorkspaceSidebar ? novelWorkspaceSidebarLinks : [')
-    expect(appShellSource).not.toContain('[...novelWorkspaceUtilitySidebarLinks, ...novelWorkspaceSidebarLinks]')
-    expect(panelStackSource).toContain('data-panel-role="content-scroll"')
-    expect(panelStackSource.indexOf('data-panel-role="navigator"')).toBeLessThan(
-      panelStackSource.indexOf('data-panel-role="content-scroll"')
-    )
-    expect(panelStackSource.indexOf('ref={scrollRef}')).toBeGreaterThan(
-      panelStackSource.indexOf('data-panel-role="content-scroll"')
-    )
-  })
-
   it('roots the writing catalog at the current project and folds real paths into folders', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const treeSource = readFileSync(new URL('../../workspace/WorkspaceFileTree.tsx', import.meta.url), 'utf-8')
@@ -452,6 +412,14 @@ describe('novel writing workspace layout', () => {
     expect(rowSource).toContain('min-w-0 flex-1 truncate text-left')
     expect(treeSource).toContain('const ROW_HEIGHT = 30')
     expect(treeSource).toContain('rowHeight={ROW_HEIGHT}')
+    expect(treeSource).toContain('countVisibleRows')
+    expect(treeSource).toContain('fitContent')
+    expect(treeSource).toContain("rowClassName={fitContent ? '!min-w-0 overflow-hidden' : undefined}")
+    expect(treeSource).toContain("? 'w-full overflow-hidden py-1")
+    expect(rowSource).toContain("entry.type === 'root' || entry.type === 'directory'")
+    expect(rowSource).toContain("(entry.type === 'root' || node.isSelected)")
+    expect(rowSource).toContain("node.isFocused && entry.type !== 'root'")
+    expect(rowSource).not.toContain('Library')
   })
 
   it('exposes writing create and import actions through row context menus', () => {
@@ -846,7 +814,7 @@ describe('novel writing workspace layout', () => {
     expect(reviewControllerSource).toContain('getPendingChangesForFile(reviewableNovelFileChanges')
   })
 
-  it('keeps the novel catalog sidebar scoped to the writing project shell while utility views use the navigator column', () => {
+  it('merges the novel catalog into the single workspace sidebar while utility views use the navigator column', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const navigatorSlotSource = appShellSource.slice(
       appShellSource.indexOf('navigatorSlot={'),
@@ -862,20 +830,14 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('const showNovelWorkspaceUnavailable = showWritingWorkspaceShell')
     expect(appShellSource).toContain('setNovelWorkspaceDetecting(shouldKeepWorkspaceChromeWhileDetecting)')
     expect(appShellSource).toContain('(showNovelWorkspacePending || showNovelWorkspaceUnavailable) ? novelWorkspaceNavigatorWidth : sessionListWidth')
-    expect(appShellSource).toContain('const hasPrimarySidebar = showNovelWorkspaceSidebar || showNovelWorkspacePending || showNovelWorkspaceUnavailable')
     expect(appShellSource).toContain("t('writing.loadingWorkspace'")
     expect(navigatorSlotSource).toContain(') : showNovelWorkspacePending ? (')
     expect(navigatorSlotSource).toContain(') : showNovelWorkspaceUnavailable ? (')
     expect(navigatorSlotSource.indexOf('showNovelWorkspacePending')).toBeLessThan(navigatorSlotSource.indexOf('<SessionList'))
     expect(navigatorSlotSource.indexOf('showNovelWorkspaceUnavailable')).toBeLessThan(navigatorSlotSource.indexOf('<SessionList'))
-    expect(appShellSource).toContain('const showPrimarySidebar = hasPrimarySidebar && showWritingWorkspaceShell')
-    expect(appShellSource).toContain('sidebarWidth={effectiveSidebarAndNavigatorHidden ? 0 : (isSidebarVisible && showPrimarySidebar ? sidebarWidth : 0)}')
     expect(appShellSource).not.toContain('NovelWorkspaceUtilityTopNav')
     expect(appShellSource).not.toContain('workspaceTools={showNovelWorkspaceSidebar ? (')
-    expect(appShellSource).toContain('{showNovelWorkspaceSidebar && novelWorkspaceRoot && activeWorkspaceId ? (')
-    expect(appShellSource).toContain('<WorkspaceFileTree')
     expect(appShellSource).toContain('{showNovelDocumentNavigator && novelWorkspaceRoot ? (')
-    expect(appShellSource).toContain('onOpenWritingWorkspace={onOpenWritingWorkspace}')
   })
 
   it('does not derive writing workspace roots from a stale session outside the active workspace', () => {
@@ -1251,7 +1213,7 @@ describe('novel writing workspace layout', () => {
     const globalSearchSource = readFileSync(new URL('../../app-shell/GlobalSearchDialog.tsx', import.meta.url), 'utf-8')
 
     expect(activityRailSource).toContain('label="搜索"')
-    expect(activityRailSource).toContain('<Search className="h-[18px] w-[18px]" />')
+    expect(activityRailSource).toContain('<Search className="h-4 w-4" />')
     expect(appShellSource).toContain('onOpenSearch={() => setGlobalSearchOpen(true)}')
     expect(appShellSource).toContain('const [globalSearchOpen, setGlobalSearchOpen]')
     expect(appShellSource).toContain("useAction('app.search', () => setGlobalSearchOpen(true))")

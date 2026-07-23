@@ -17,10 +17,11 @@ const projectManagerPath = fileURLToPath(new URL('../ProjectManagerPanel.tsx', i
 const projectManagerSource = readFileSync(projectManagerPath, 'utf8')
 
 describe('project management entry', () => {
-  it('keeps the project control on the original top rail slot', () => {
+  it('keeps project management in the workspace header instead of a standalone rail icon', () => {
     expect(activityRailSource).toContain('data-tutorial="activity-project-hub"')
-    expect(activityRailSource).toContain('aria-label="项目与工作区"')
-    expect(activityRailSource).toContain('aria-label="项目"')
+    expect(activityRailSource).toContain('aria-label="工作区导航"')
+    expect(activityRailSource).toContain('aria-label="新建或导入项目"')
+    expect(activityRailSource).not.toContain('aria-label="项目"')
     expect(topBarSource).not.toContain('onOpenProjectHub')
   })
 
@@ -67,32 +68,106 @@ describe('project management entry', () => {
     expect(activityRailSource).not.toContain('退出到作品库')
   })
 
-  it('keeps a fixed foundation rail: project · writing · free conversation · sources · skills · search', () => {
+  it('keeps plugin navigation at the top of the single workspace sidebar', () => {
     expect(appShellSource).toContain('const showActivityRail = true')
     expect(appShellSource).toContain('<ActivityRail')
-    expect(activityRailSource).toContain('label="写作工作区"')
-    expect(activityRailSource).toContain('label="自由对话"')
-    expect(activityRailSource).toContain('label="数据源"')
+    expect(activityRailSource).toContain('label="最近对话"')
+    expect(activityRailSource).toContain('label="项目"')
+    expect(activityRailSource).toContain('RECENT_SESSION_LIMIT = 8')
+    expect(activityRailSource).toContain('getAllSessions')
+    expect(activityRailSource).toContain('onSelectSession')
     expect(activityRailSource).toContain('label="技能"')
+    expect(activityRailSource).toContain('label="数据源"')
     expect(activityRailSource).toContain('label="搜索"')
+    expect(activityRailSource).not.toContain('label="写作工作区"')
+    expect(activityRailSource).not.toContain('dataTutorial="activity-writing"')
+    expect(activityRailSource).toContain('aria-label="插件导航"')
+    expect(activityRailSource).toContain('aria-label="个人菜单"')
+    const skillsIndex = activityRailSource.indexOf('label="技能"')
+    const sourcesIndex = activityRailSource.indexOf('label="数据源"')
+    const searchIndex = activityRailSource.indexOf('label="搜索"')
+    expect(skillsIndex).toBeLessThan(sourcesIndex)
+    expect(sourcesIndex).toBeLessThan(searchIndex)
     expect(activityRailSource).not.toContain('{!isLibrary ? (')
     expect(appShellSource).toContain('onOpenSources={handleSourcesClick}')
     expect(appShellSource).toContain('onOpenSkills={handleSkillsClick}')
     expect(appShellSource).toContain('onOpenFreeConversations={onOpenFreeConversations}')
+    expect(activityRailSource).not.toContain('dataTutorial="activity-free-conversations"')
+  })
 
-    const projectNavStart = activityRailSource.indexOf('aria-label="项目与工作区"')
-    const utilityNavStart = activityRailSource.indexOf('aria-label="账户与帮助"')
-    expect(projectNavStart).toBeGreaterThan(-1)
-    expect(utilityNavStart).toBeGreaterThan(-1)
-    const projectNav = activityRailSource.slice(projectNavStart, utilityNavStart)
-    expect(projectNav).toContain('activity-project-hub')
-    expect(projectNav).toContain('activity-writing')
-    expect(projectNav).toContain('activity-free-conversations')
-    expect(projectNav).toContain('activity-sources')
-    expect(projectNav).toContain('activity-skills')
-    expect(projectNav).toContain('activity-search')
-    expect(projectNav.indexOf('activity-writing')).toBeLessThan(projectNav.indexOf('activity-free-conversations'))
-    expect(projectNav.indexOf('activity-free-conversations')).toBeLessThan(projectNav.indexOf('activity-sources'))
+  it('keeps one profile item at the bottom and nests secondary actions inside it', () => {
+    expect(activityRailSource).toContain('data-tutorial="activity-profile"')
+    expect(activityRailSource).toContain('<DropdownMenuTrigger asChild>')
+    expect(activityRailSource).toContain('账户与积分')
+    expect(activityRailSource).toContain('设置')
+    expect(activityRailSource).toContain('新功能')
+    expect(activityRailSource).toContain('帮助与反馈')
+    expect(activityRailSource).not.toContain('aria-label="系统工具"')
+    expect(activityRailSource).not.toContain('activity-check-updates')
+    expect(appSource).toContain('profile={activityRailProfile}')
+    expect(appShellSource).toContain('profile={profile}')
+  })
+
+  it('embeds the active project directory in the workspace rail instead of a second sidebar', () => {
+    expect(appShellSource).toContain('const activityWorkspaceDirectory = showPrimarySidebar')
+    expect(appShellSource).toContain('workspaceDirectory={activityWorkspaceDirectory}')
+    expect(appShellSource).toContain('sidebarSlot={null}')
+    expect(appShellSource).toContain('sidebarWidth={0}')
+    expect(activityRailSource).toContain('data-testid="activity-project-directory"')
+    expect(activityRailSource).toContain('{workspaceDirectory}')
+    expect(activityRailSource).toContain('projectWorkspaces.map((workspace) =>')
+    expect(activityRailSource).toContain('workspace.id === activeWorkspaceId')
+    expect(activityRailSource).not.toContain('.filter(workspace => !workspaceDirectory')
+    expect(activityRailSource).not.toContain('className="-mx-2')
+  })
+
+  it('folds the whole project collection like recent conversations while preserving the native project root fold', () => {
+    expect(activityRailSource).toContain('const [projectsExpanded, setProjectsExpanded]')
+    expect(activityRailSource).toContain('storage.KEYS.activityProjectsExpanded')
+    expect(activityRailSource).toContain('label="项目"')
+    expect(activityRailSource).toContain('expanded={projectsExpanded}')
+    expect(activityRailSource).toContain('{projectsExpanded ? (')
+    expect(activityRailSource).toContain('data-testid="activity-sidebar-scroll"')
+    expect(activityRailSource.match(/overflow-y-auto/g) ?? []).toHaveLength(1)
+    expect(activityRailSource).toContain('overflow-x-hidden overflow-y-auto')
+    expect(appShellSource).toContain('fitContent')
+    expect(activityRailSource).not.toContain('workspaceDirectoryExpanded')
+    expect(activityRailSource).not.toContain('h-[min(44vh,420px)]')
+  })
+
+  it('keeps global navigation usable from the project manager when an active project exists', () => {
+    expect(appSource).toContain('const fallbackRuntimeWorkspaceId = useMemo(() =>')
+    expect(appSource).toContain('workspace.id === FREE_CONVERSATION_WORKSPACE_ID')
+    expect(appSource).toContain('const runtimeNavigationWorkspaceId = windowWorkspaceId')
+    expect(appSource).toContain('?? activeProjectId')
+    expect(appSource).toContain('?? fallbackRuntimeWorkspaceId')
+    expect(appSource).toContain('const canOpenRuntimeNavigation = Boolean(runtimeNavigationWorkspaceId)')
+    expect(appSource).toContain('const targetWorkspaceId = runtimeNavigationWorkspaceId')
+    expect(appSource).toContain('onOpenSources: canOpenRuntimeNavigation')
+    expect(appSource).toContain('onOpenSkills: canOpenRuntimeNavigation')
+    expect(appSource).toContain('onOpenSearch: canOpenRuntimeNavigation ? handleOpenRuntimeSearch : undefined')
+    expect(appSource).toContain('onOpenSettings: canOpenRuntimeNavigation')
+    expect(appSource).toContain('onOpenWhatsNew: canOpenRuntimeNavigation ? handleOpenRuntimeWhatsNew : undefined')
+    expect(appSource).toContain('openWhatsNewSignal={openWhatsNewSignal}')
+    expect(appShellSource).toContain('if (openWhatsNewSignal > 0)')
+  })
+
+  it('opens a requested runtime route on the first click after activating a fallback project', () => {
+    const pendingRouteEffect = appSource.slice(
+      appSource.indexOf("if (appState !== 'ready' || !pendingReadyRoute) return"),
+      appSource.indexOf('const openWorkspaceCreation')
+    )
+
+    expect(pendingRouteEffect).toContain('navigate(pendingReadyRoute)')
+    expect(pendingRouteEffect).toContain('setPendingReadyRoute(null)')
+    expect(pendingRouteEffect).not.toContain('requestAnimationFrame')
+    expect(pendingRouteEffect).not.toContain('cancelAnimationFrame')
+  })
+
+  it('uses the workspace rail as the only session directory', () => {
+    expect(appShellSource).toContain('const hideSessionListNavigator = showActivityRail && isSessionsNavigation(navState) && !isAutoCompact')
+    expect(appShellSource).toContain('effectiveSidebarAndNavigatorHidden || hideSessionListNavigator ? 0 : navigatorPanelWidth')
+    expect(appShellSource).toContain('!effectiveSidebarAndNavigatorHidden && !hideSessionListNavigator')
   })
 
   it('uses the title bar only for window chrome and current project context', () => {

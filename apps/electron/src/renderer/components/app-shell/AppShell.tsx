@@ -149,8 +149,6 @@ import SettingsNavigator from "@/pages/settings/SettingsNavigator"
 import {
   PANEL_GAP,
   PANEL_EDGE_INSET,
-  PANEL_SASH_HALF_HIT_WIDTH,
-  PANEL_SASH_HIT_WIDTH,
   PANEL_SASH_LINE_WIDTH,
   PANEL_STACK_VERTICAL_OVERFLOW,
   PANEL_MIN_WIDTH,
@@ -158,7 +156,6 @@ import {
   RADIUS_INNER,
 } from "./panel-constants"
 import {
-  DEFAULT_SIDEBAR_WIDTH,
   DEFAULT_WORKSPACE_WIDTH,
   getNavigatorResizeMaxWidth,
   isUserConfiguredShellLayoutWidth,
@@ -234,8 +231,15 @@ interface AppShellProps {
   menuNewChatTrigger?: number
   /** Monotonic signal for opening global search after entering the ready shell */
   openGlobalSearchSignal?: number
+  /** Monotonic signal for opening release notes after entering the ready shell */
+  openWhatsNewSignal?: number
   /** Open the account and points center */
   onOpenAccount?: () => void
+  /** Current signed-in role shown by the sidebar profile item. */
+  profile?: {
+    name: string
+    detail?: string
+  }
   onOpenProjectInNewWindow?: (workspaceId: string) => void
   onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
   onRemoveProject?: (workspaceId: string) => void | Promise<void>
@@ -874,7 +878,9 @@ function AppShellContent({
   defaultCollapsed = false,
   menuNewChatTrigger,
   openGlobalSearchSignal = 0,
+  openWhatsNewSignal = 0,
   onOpenAccount,
+  profile,
   onOpenProjectInNewWindow,
   onRenameProject,
   onRemoveProject,
@@ -923,9 +929,6 @@ function AppShellContent({
 
   const [isSidebarVisible, setIsSidebarVisible] = React.useState(() => {
     return storage.get(storage.KEYS.sidebarVisible, !defaultCollapsed)
-  })
-  const [sidebarWidth, setSidebarWidth] = React.useState(() => {
-    return storage.get(storage.KEYS.sidebarWidth, DEFAULT_SIDEBAR_WIDTH)
   })
   // Session list width in pixels (min 240, max 480)
   const [sessionListWidth, setSessionListWidth] = React.useState(() => {
@@ -991,13 +994,10 @@ function AppShellContent({
     }
   }, [])
 
-  const [isResizing, setIsResizing] = React.useState<'sidebar' | 'session-list' | 'novel-workspace-navigator' | null>(null)
-  const [sidebarHandleY, setSidebarHandleY] = React.useState<number | null>(null)
+  const [isResizing, setIsResizing] = React.useState<'session-list' | 'novel-workspace-navigator' | null>(null)
   const [sessionListHandleY, setSessionListHandleY] = React.useState<number | null>(null)
-  const resizeHandleRef = React.useRef<HTMLDivElement>(null)
   const sessionListHandleRef = React.useRef<HTMLDivElement>(null)
   const navigatorPanelRef = React.useRef<HTMLDivElement>(null)
-  const latestSidebarWidthRef = React.useRef(sidebarWidth)
   const latestSessionListWidthRef = React.useRef(sessionListWidth)
   const latestNovelWorkspaceNavigatorWidthRef = React.useRef(novelWorkspaceNavigatorWidth)
   const previousNovelWorkspaceShellWidthRef = React.useRef<number | null>(null)
@@ -1672,10 +1672,6 @@ function AppShellContent({
   }, [focusedSessionId, session.selected])
 
   React.useEffect(() => {
-    latestSidebarWidthRef.current = sidebarWidth
-  }, [sidebarWidth])
-
-  React.useEffect(() => {
     latestSessionListWidthRef.current = sessionListWidth
   }, [sessionListWidth])
 
@@ -1684,7 +1680,7 @@ function AppShellContent({
   }, [novelWorkspaceNavigatorWidth])
 
   const beginResize = React.useCallback((
-    mode: 'sidebar' | 'session-list' | 'novel-workspace-navigator',
+    mode: 'session-list' | 'novel-workspace-navigator',
     e: React.MouseEvent<HTMLDivElement>
   ) => {
     e.preventDefault()
@@ -1697,33 +1693,20 @@ function AppShellContent({
     document.body.style.userSelect = 'none'
 
     const updateHandleY = (clientY: number) => {
-      const handle = mode === 'sidebar' ? resizeHandleRef.current : sessionListHandleRef.current
+      const handle = sessionListHandleRef.current
       if (!handle) return
       const rect = handle.getBoundingClientRect()
-      if (mode === 'sidebar') {
-        setSidebarHandleY(clientY - rect.top)
-      } else {
-        setSessionListHandleY(clientY - rect.top)
-      }
+      setSessionListHandleY(clientY - rect.top)
     }
 
     const updateWidth = (clientX: number) => {
-      if (mode === 'sidebar') {
-        const newWidth = Math.min(Math.max(clientX - (PANEL_GAP / 2), 180), 320)
-        latestSidebarWidthRef.current = newWidth
-        setSidebarWidth(newWidth)
-        return
-      }
-
       const minWidth = mode === 'novel-workspace-navigator'
         ? NOVEL_WORKSPACE_NAVIGATOR_MIN_WIDTH
         : SESSION_LIST_MIN_WIDTH
       const maxWidth = mode === 'novel-workspace-navigator'
         ? Number.POSITIVE_INFINITY
         : SESSION_LIST_MAX_WIDTH
-      const fallbackNavigatorStartX = isSidebarVisible
-        ? latestSidebarWidthRef.current + PANEL_GAP
-        : PANEL_EDGE_INSET
+      const fallbackNavigatorStartX = activityRailOffset + PANEL_EDGE_INSET
       const navigatorStartX = navigatorPanelRef.current?.getBoundingClientRect().left ?? fallbackNavigatorStartX
       const effectiveMaxWidth = mode === 'novel-workspace-navigator'
         ? Math.max(
@@ -1758,10 +1741,7 @@ function AppShellContent({
     }
 
     const handleMouseUp = () => {
-      if (mode === 'sidebar') {
-        storage.set(storage.KEYS.sidebarWidth, latestSidebarWidthRef.current)
-        setSidebarHandleY(null)
-      } else if (mode === 'novel-workspace-navigator') {
+      if (mode === 'novel-workspace-navigator') {
         storage.set(storage.KEYS.novelWorkspaceNavigatorWidth, latestNovelWorkspaceNavigatorWidthRef.current)
         setSessionListHandleY(null)
       } else {
@@ -1779,7 +1759,7 @@ function AppShellContent({
     updateHandleY(e.clientY)
     document.addEventListener('mousemove', handleMouseMove, true)
     document.addEventListener('mouseup', handleMouseUp, true)
-  }, [isSidebarVisible, shellWidth])
+  }, [activityRailOffset, shellWidth])
 
   // Spring transition config - shared between sidebar and header
   // Critical damping (no bounce): damping = 2 * sqrt(stiffness * mass)
@@ -3311,13 +3291,7 @@ function AppShellContent({
 
     const preservingNovelWorkspaceAssistant = isNovelWorkspaceNavigatorActive
       && previousNovelWorkspaceShellWidthRef.current !== null
-    const persistedSidebarWidth = storage.get<number | undefined>(storage.KEYS.sidebarWidth, undefined)
     const persistedWorkspaceWidth = storage.get<number | undefined>(storage.KEYS.novelWorkspaceNavigatorWidth, undefined)
-    const sidebarPersisted = isUserConfiguredShellLayoutWidth(
-      'sidebar',
-      persistedSidebarWidth,
-      storage.getRaw(storage.KEYS.sidebarWidth) !== null
-    )
     const workspacePersisted = isUserConfiguredShellLayoutWidth(
       'workspace',
       persistedWorkspaceWidth,
@@ -3329,16 +3303,14 @@ function AppShellContent({
       edgeInset: PANEL_EDGE_INSET,
       panelGap: PANEL_GAP,
       assistantMinWidth: PANEL_MIN_WIDTH,
-      sidebarPersisted,
+      // The project catalog now lives inside ActivityRail, so no second
+      // horizontal sidebar participates in document/assistant width ratios.
+      sidebarPersisted: true,
       workspacePersisted,
-      currentSidebarWidth: latestSidebarWidthRef.current,
+      currentSidebarWidth: 0,
       currentWorkspaceWidth: latestNovelWorkspaceNavigatorWidthRef.current,
     })
 
-    if (!preservingNovelWorkspaceAssistant && !sidebarPersisted && latestSidebarWidthRef.current !== widths.sidebar) {
-      latestSidebarWidthRef.current = widths.sidebar
-      setSidebarWidth(widths.sidebar)
-    }
     if (
       !preservingNovelWorkspaceAssistant
       && latestNovelWorkspaceNavigatorWidthRef.current !== widths.workspace
@@ -3364,9 +3336,7 @@ function AppShellContent({
     previousNovelWorkspaceShellWidthRef.current = shellWidth
     if (previousShellWidth === null || previousShellWidth === shellWidth) return
 
-    const fallbackNavigatorStartX = isSidebarVisible
-      ? latestSidebarWidthRef.current + PANEL_GAP
-      : PANEL_EDGE_INSET
+    const fallbackNavigatorStartX = activityRailOffset + PANEL_EDGE_INSET
     const navigatorStartX = navigatorPanelRef.current?.getBoundingClientRect().left ?? fallbackNavigatorStartX
     const nextWidth = preserveAssistantWidthOnShellResize({
       shellWidth,
@@ -3382,7 +3352,7 @@ function AppShellContent({
     if (nextWidth === latestNovelWorkspaceNavigatorWidthRef.current) return
     latestNovelWorkspaceNavigatorWidthRef.current = nextWidth
     setNovelWorkspaceNavigatorWidth(nextWidth)
-  }, [effectiveSidebarAndNavigatorHidden, isNovelWorkspaceNavigatorActive, isSidebarVisible, shellWidth])
+  }, [activityRailOffset, effectiveSidebarAndNavigatorHidden, isNovelWorkspaceNavigatorActive, shellWidth])
 
   React.useEffect(() => {
     if (!activeWorkspaceId) return
@@ -3849,6 +3819,12 @@ function AppShellContent({
     }
   }, [markWhatsNewSeen])
 
+  useEffect(() => {
+    if (openWhatsNewSignal > 0) {
+      void handleWhatsNewClick()
+    }
+  }, [handleWhatsNewClick, openWhatsNewSignal])
+
   const handleWhatsNewAnnouncementDetailsClick = useCallback(() => {
     setShowWhatsNewAnnouncement(false)
     void handleWhatsNewClick()
@@ -4074,9 +4050,27 @@ function AppShellContent({
     if (isSettingsNavigation(navState) || isAutomationsNavigation(navState)) return 'settings'
     if (isSourcesNavigation(navState)) return 'sources'
     if (isSkillsNavigation(navState)) return 'skills'
-    if (isSessionsNavigation(navState) && !isProjectRuntime) return 'free-conversations'
+    if (isSessionsNavigation(navState)) return 'recent'
     return 'writing'
-  }, [globalSearchOpen, isProjectRuntime, navState])
+  }, [globalSearchOpen, navState])
+  // The workspace rail is the single session directory in Codex-style mode.
+  // Keep the legacy navigator for sources/skills/settings and the writing file
+  // tree, but do not render a second session list beside recent conversations.
+  const hideSessionListNavigator = showActivityRail && isSessionsNavigation(navState) && !isAutoCompact
+
+  const handleActivitySessionSelect = React.useCallback(async (
+    sessionId: string,
+    workspaceId: string,
+  ) => {
+    if (workspaceId === FREE_CONVERSATION_WORKSPACE_ID) {
+      if (activeWorkspaceId !== FREE_CONVERSATION_WORKSPACE_ID) {
+        await onOpenFreeConversations()
+      }
+    } else if (activeWorkspaceId !== workspaceId) {
+      await onSelectWorkspace(workspaceId)
+    }
+    navigateToSessionInPanel(sessionId)
+  }, [activeWorkspaceId, navigateToSessionInPanel, onOpenFreeConversations, onSelectWorkspace])
 
   const handleSidebarFocus = React.useCallback((event: React.FocusEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return
@@ -4128,6 +4122,59 @@ function AppShellContent({
     }
   }, [navState, t, sessionFilter, automationFilter, labelConfigs, viewConfigs, effectiveSessionStatuses])
 
+  const activityWorkspaceDirectory = showPrimarySidebar
+    && isSidebarVisible
+    && showNovelWorkspaceSidebar
+    && novelWorkspaceRoot
+    && activeWorkspaceId
+    ? (
+      <div
+        ref={sidebarRef}
+        className="flex flex-col font-sans"
+        data-focus-zone="sidebar"
+        tabIndex={sidebarFocused ? 0 : -1}
+        onFocus={handleSidebarFocus}
+      >
+        <div>
+          <React.Suspense fallback={(
+            <div className="flex h-full items-center justify-center px-4 text-xs text-muted-foreground">
+              {t('writing.loadingWorkspace', '正在加载项目目录...')}
+            </div>
+          )}>
+            <WorkspaceFileTree
+              ref={workspaceFileTreeRef}
+              workspaceId={activeWorkspaceId}
+              workspaceName={activeWorkspace?.name ?? t('writing.workspace')}
+              rootPath={novelWorkspaceRoot}
+              files={novelWorkspaceFiles}
+              directories={novelWorkspaceDirectories}
+              selectedPath={selectedNovelFile?.path}
+              expandedIds={expandedFolders}
+              labels={workspaceFileTreeLabels}
+              onExpandedChange={handleWorkspaceTreeExpandedChange}
+              onSelectFile={handleSelectNovelFile}
+              onMoveEntry={handleMoveNovelWorkspaceEntry}
+              onRenameEntry={handleRenameNovelWorkspaceEntry}
+              onDeleteEntry={handleDeleteNovelWorkspaceEntry}
+              getMenuActions={getNovelWorkspaceTreeMenuActions}
+              hasReviewDot={hasNovelReviewDot}
+              onDismissReviewDot={handleDismissNovelReviewDot}
+              fitContent
+            />
+          </React.Suspense>
+        </div>
+        {!novelWorkspaceFiles.some((file) => {
+          const relativePath = file.relativePath.replace(/\\/g, '/')
+          return relativePath === '正文' || relativePath.startsWith('正文/')
+        }) ? (
+          <div className="shrink-0 border-t border-border/40 px-3 py-2 text-[11px] leading-snug text-muted-foreground">
+            {t('writing.emptyCoach', '可以先写正文；人物、大纲等全局信息用到再补。')}
+          </div>
+        ) : null}
+      </div>
+    )
+    : undefined
+
   return (
     <AppShellProvider value={appShellContextValue}>
         {/* === TOP BAR === */}
@@ -4148,96 +4195,35 @@ function AppShellContent({
             activeItem={activeActivityRailItem}
             workspaces={workspaces}
             activeWorkspaceId={activeProjectId}
+            activeSessionId={panelCount > 1 ? focusedSessionId : session.selected}
             onSelectProject={(workspaceId) => {
               void onSelectWorkspace?.(workspaceId)
             }}
+            onSelectSession={handleActivitySessionSelect}
             onWorkspaceCreated={onWorkspaceCreatedFromRail ?? onWorkspaceCreated}
             onOpenProjectInNewWindow={onOpenProjectInNewWindow}
             onRenameProject={onRenameProject}
             onRemoveProject={onRemoveProject}
-            onOpenWritingWorkspace={onOpenWritingWorkspace}
             onOpenFreeConversations={onOpenFreeConversations}
             onOpenSources={handleSourcesClick}
             onOpenSkills={handleSkillsClick}
             onOpenSearch={() => setGlobalSearchOpen(true)}
             onOpenSettings={() => handleSettingsClick('app')}
             onOpenAccount={onOpenAccount}
+            profile={profile}
+            workspaceDirectory={activityWorkspaceDirectory}
             onOpenWhatsNew={handleWhatsNewClick}
             whatsNew={{
               unseen: hasUnseenReleaseNotes,
               accentColor: whatsNewManifest?.accentColor,
-              textColor: whatsNewManifest?.accentTextColor,
             }}
           />
         ) : null}
 
         <WritingPrimaryContentReadyContext.Provider value={writingPrimaryContentReady}>
         <PanelStackContainer
-          sidebarSlot={
-            <div
-              ref={sidebarRef}
-              style={{ width: sidebarWidth }}
-              className="h-full font-sans relative"
-              data-focus-zone="sidebar"
-              tabIndex={sidebarFocused ? 0 : -1}
-              onFocus={handleSidebarFocus}
-            >
-            <div className="flex h-full flex-col select-none">
-              {/* Sidebar Top Section */}
-              <div className="flex-1 flex flex-col min-h-0">
-                <div className="flex-1 min-h-0 mask-fade-bottom">
-                {showNovelWorkspaceSidebar && novelWorkspaceRoot && activeWorkspaceId ? (
-                  <div className="flex h-full min-h-0 flex-col">
-                    <div className="min-h-0 flex-1">
-                      <React.Suspense fallback={(
-                        <div className="flex h-full items-center justify-center px-4 text-xs text-muted-foreground">
-                          {t('writing.loadingWorkspace', '正在加载项目目录...')}
-                        </div>
-                      )}>
-                        <WorkspaceFileTree
-                          ref={workspaceFileTreeRef}
-                          workspaceId={activeWorkspaceId}
-                          workspaceName={activeWorkspace?.name ?? t('writing.workspace')}
-                          rootPath={novelWorkspaceRoot}
-                          files={novelWorkspaceFiles}
-                          directories={novelWorkspaceDirectories}
-                          selectedPath={selectedNovelFile?.path}
-                          expandedIds={expandedFolders}
-                          labels={workspaceFileTreeLabels}
-                          onExpandedChange={handleWorkspaceTreeExpandedChange}
-                          onSelectFile={handleSelectNovelFile}
-                          onMoveEntry={handleMoveNovelWorkspaceEntry}
-                          onRenameEntry={handleRenameNovelWorkspaceEntry}
-                          onDeleteEntry={handleDeleteNovelWorkspaceEntry}
-                          getMenuActions={getNovelWorkspaceTreeMenuActions}
-                          hasReviewDot={hasNovelReviewDot}
-                          onDismissReviewDot={handleDismissNovelReviewDot}
-                        />
-                      </React.Suspense>
-                    </div>
-                    {!novelWorkspaceFiles.some((file) => {
-                      const relativePath = file.relativePath.replace(/\\/g, '/')
-                      return relativePath === '正文' || relativePath.startsWith('正文/')
-                    }) ? (
-                      <div className="shrink-0 border-t border-border/40 px-3 py-2 text-[11px] leading-snug text-muted-foreground">
-                        {t('writing.emptyCoach', '可以先写正文；人物、大纲等全局信息用到再补。')}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div className="flex h-full items-center justify-center px-4 text-xs text-muted-foreground">
-                    {showNovelWorkspaceUnavailable
-                      ? t('writing.workspaceUnavailable', '未检测到项目目录')
-                      : t('writing.loadingWorkspace', '正在加载项目目录...')}
-                  </div>
-                )}
-                </div>
-              </div>
-
-            </div>
-          </div>
-          }
-          sidebarWidth={effectiveSidebarAndNavigatorHidden ? 0 : (isSidebarVisible && showPrimarySidebar ? sidebarWidth : 0)}
+          sidebarSlot={null}
+          sidebarWidth={0}
           navigatorSlot={
             <div
               ref={navigatorPanelRef}
@@ -5037,8 +5023,10 @@ function AppShellContent({
             )}
             </div>
           }
-          navigatorWidth={isAutoCompact ? navigatorPanelWidth : (effectiveSidebarAndNavigatorHidden ? 0 : navigatorPanelWidth)}
-          navigatorResizeSash={!effectiveSidebarAndNavigatorHidden ? (
+          navigatorWidth={isAutoCompact
+            ? navigatorPanelWidth
+            : (effectiveSidebarAndNavigatorHidden || hideSessionListNavigator ? 0 : navigatorPanelWidth)}
+          navigatorResizeSash={!effectiveSidebarAndNavigatorHidden && !hideSessionListNavigator ? (
             <div
               ref={sessionListHandleRef}
               data-panel-role="navigator-resize-sash"
@@ -5086,41 +5074,6 @@ function AppShellContent({
           hidePanelCloseButton={showPrimarySidebar}
         />
         </WritingPrimaryContentReadyContext.Provider>
-
-        {/* Sidebar Resize Handle (absolute, hidden when auto-compacted) */}
-        {!effectiveSidebarAndNavigatorHidden && showPrimarySidebar && (
-        <div
-          ref={resizeHandleRef}
-          role="separator"
-          aria-orientation="vertical"
-          onMouseDown={(e) => { beginResize('sidebar', e) }}
-          onMouseMove={(e) => {
-            if (resizeHandleRef.current) {
-              const rect = resizeHandleRef.current.getBoundingClientRect()
-              setSidebarHandleY(e.clientY - rect.top)
-            }
-          }}
-          onMouseLeave={() => { if (!isResizing) setSidebarHandleY(null) }}
-          className="absolute cursor-col-resize z-dropdown flex justify-center"
-          style={{
-            width: PANEL_SASH_HIT_WIDTH,
-            top: PANEL_STACK_VERTICAL_OVERFLOW,
-            bottom: PANEL_STACK_VERTICAL_OVERFLOW,
-            left: isSidebarVisible
-              ? activityRailOffset + sidebarWidth + (PANEL_GAP / 2) - PANEL_SASH_HALF_HIT_WIDTH
-              : activityRailOffset - PANEL_GAP,
-            transition: isResizing === 'sidebar' ? undefined : 'left 0.15s ease-out',
-          }}
-        >
-          <div
-            className="h-full"
-            style={{
-              ...getResizeGradientStyle(sidebarHandleY, resizeHandleRef.current?.clientHeight ?? null),
-              width: PANEL_SASH_LINE_WIDTH,
-            }}
-          />
-        </div>
-        )}
 
       </div>
 

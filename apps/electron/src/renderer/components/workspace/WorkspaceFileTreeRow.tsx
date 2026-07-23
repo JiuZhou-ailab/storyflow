@@ -3,7 +3,7 @@
 // pos: Presentation layer for one visible workspace file-tree entry
 
 import * as React from 'react'
-import { ChevronRight, FileText, Folder, Library, Pencil, Trash2 } from 'lucide-react'
+import { ChevronRight, FileText, Folder, Pencil, Trash2 } from 'lucide-react'
 import type { NodeRendererProps } from 'react-arborist'
 import {
   ContextMenu,
@@ -41,8 +41,7 @@ export interface WorkspaceFileTreeRowContextValue {
 export const WorkspaceFileTreeRowContext = React.createContext<WorkspaceFileTreeRowContextValue | null>(null)
 
 function EntryIcon({ entry }: { entry: WorkspaceFileTreeNode }) {
-  if (entry.type === 'root') return <Library className="h-3.5 w-3.5" />
-  if (entry.type === 'directory') return <Folder className="h-3.5 w-3.5" />
+  if (entry.type === 'root' || entry.type === 'directory') return <Folder className="h-3.5 w-3.5" />
   return <FileText className="h-3.5 w-3.5" />
 }
 
@@ -135,8 +134,8 @@ export function WorkspaceFileTreeRow({
       className={cn(
         'group flex h-full min-w-0 items-center gap-1.5 rounded-[6px] px-2 text-[13px] outline-none',
         'text-foreground/90 hover:bg-sidebar-hover',
-        node.isSelected && 'bg-foreground/[0.07]',
-        node.isFocused && 'ring-1 ring-inset ring-ring/60',
+        (entry.type === 'root' || node.isSelected) && 'bg-foreground/[0.07]',
+        node.isFocused && entry.type !== 'root' && 'ring-1 ring-inset ring-ring/60',
         node.willReceiveDrop && 'bg-accent/10 ring-1 ring-inset ring-accent/40',
         node.isDragging && 'opacity-40',
       )}

@@ -43,7 +43,11 @@ export interface WorkspaceFileTreeProps {
   hasReviewDot?: (path: string) => boolean
   onDismissReviewDot?: (path: string) => void
   onError?: (error: unknown) => void
+  /** Grow to the visible rows so an ancestor can own the only scrollbar. */
+  fitContent?: boolean
 }
+
+const TREE_VERTICAL_PADDING = 8
 
 function useElementHeight(elementRef: React.RefObject<HTMLElement>): number {
   const [height, setHeight] = React.useState(1)
@@ -62,6 +66,17 @@ function useElementHeight(elementRef: React.RefObject<HTMLElement>): number {
   }, [elementRef])
 
   return height
+}
+
+function countVisibleRows(
+  node: WorkspaceFileTreeNode,
+  expandedIds: ReadonlySet<string>,
+): number {
+  if (!node.children || !expandedIds.has(node.id)) return 1
+  return 1 + node.children.reduce(
+    (count, child) => count + countVisibleRows(child, expandedIds),
+    0,
+  )
 }
 
 export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, WorkspaceFileTreeProps>(
@@ -83,10 +98,11 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
     hasReviewDot,
     onDismissReviewDot,
     onError,
+    fitContent = false,
   }, forwardedRef) {
     const containerRef = React.useRef<HTMLDivElement>(null)
     const treeRef = React.useRef<TreeApi<WorkspaceFileTreeNode> | null>(null)
-    const height = useElementHeight(containerRef)
+    const measuredHeight = useElementHeight(containerRef)
 
     const root = React.useMemo(() => buildWorkspaceFileTree({
       workspaceId,
@@ -96,6 +112,13 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
       directories,
     }), [directories, files, rootPath, workspaceId, workspaceName])
     const data = React.useMemo(() => [root], [root])
+    const visibleRowCount = React.useMemo(
+      () => countVisibleRows(root, expandedIds),
+      [expandedIds, root],
+    )
+    const treeHeight = fitContent
+      ? Math.max(ROW_HEIGHT, visibleRowCount * ROW_HEIGHT)
+      : measuredHeight
     const selectionId = selectedPath ? `writing:file:${selectedPath}` : undefined
     const initialOpenState = React.useMemo(() => {
       const state: Record<string, boolean> = {}
@@ -157,7 +180,13 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
     }), [selectionId])
 
     return (
-      <div ref={containerRef} className="h-full min-h-0 w-full overflow-hidden px-2 py-1">
+      <div
+        ref={containerRef}
+        className={fitContent
+          ? 'w-full overflow-hidden py-1 [&_[role=tree]>div]:!overflow-hidden'
+          : 'h-full min-h-0 w-full overflow-hidden px-2 py-1'}
+        style={fitContent ? { height: treeHeight + TREE_VERTICAL_PADDING } : undefined}
+      >
         <WorkspaceFileTreeRowContext.Provider value={rowContext}>
           <Tree<WorkspaceFileTreeNode>
             key={workspaceId}
@@ -166,8 +195,9 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
             idAccessor="id"
             childrenAccessor="children"
             width="100%"
-            height={height}
+            height={treeHeight}
             rowHeight={ROW_HEIGHT}
+            rowClassName={fitContent ? '!min-w-0 overflow-hidden' : undefined}
             indent={14}
             overscanCount={TREE_OVERSCAN_ROWS}
             openByDefault={false}

@@ -232,6 +232,7 @@ const EXPECTED_CHANNELS: string[] = [
   'sessions:exportRemoteTransfer',
   'sessions:filesChanged',
   'sessions:get',
+  'sessions:getAll',
   'sessions:getFiles',
   'sessions:getMessages',
   'sessions:getNotes',

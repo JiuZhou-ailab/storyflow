@@ -26,6 +26,8 @@ export const KEYS = {
   expandedFolders: 'expanded-folders',
   chatGroupingMode: 'chat-grouping-mode', // How to group chats: 'date' | 'status'
   collapsedSessionGroups: 'collapsed-session-groups', // Collapsed group keys in session list
+  activityRecentExpanded: 'activity-recent-expanded',
+  activityProjectsExpanded: 'activity-projects-expanded',
 
   // Focus mode
   focusModeEnabled: 'focus-mode-enabled',

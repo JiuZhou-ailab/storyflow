@@ -319,6 +319,8 @@ export interface ElectronAPI {
 
   // Session management
   getSessions(): Promise<Session[]>
+  /** Metadata-only session list across every workspace owned by this server. */
+  getAllSessions(): Promise<Session[]>
   getUnreadSummary(): Promise<UnreadSummary>
   markAllSessionsRead(workspaceId: string): Promise<void>
   getSessionMessages(sessionId: string): Promise<Session | null>

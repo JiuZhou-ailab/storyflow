@@ -14,7 +14,9 @@ describe('account center routing', () => {
     expect(appSource).toContain('AccountCenterPage')
     expect(appSource).toContain("setAppState('account')")
     expect(appSource).toContain('activeItem="account"')
+    expect(appSource).toContain('profile={activityRailProfile}')
     expect(activityRailSource).toContain('onOpenAccount')
+    expect(activityRailSource).toContain('data-tutorial="activity-profile"')
     expect(activityRailSource).toContain('账户与积分')
   })
 

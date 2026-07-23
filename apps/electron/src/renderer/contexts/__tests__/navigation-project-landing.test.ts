@@ -67,13 +67,16 @@ describe('project default navigation', () => {
     expect(appShellSource).toContain('loadedNovelDocumentPath === selectedNovelDocumentPath')
   })
 
-  it('exposes free conversation as a first-class activity-rail destination', () => {
-    expect(activityRailSource).toContain("| 'free-conversations'")
-    expect(activityRailSource).toContain('dataTutorial="activity-free-conversations"')
-    expect(activityRailSource).toContain('label="自由对话"')
-    expect(appShellSource).toContain('onOpenWritingWorkspace={onOpenWritingWorkspace}')
+  it('keeps free conversations in the global recent-conversation list', () => {
+    expect(activityRailSource).toContain("meta.workspaceId === FREE_CONVERSATION_WORKSPACE_ID")
+    expect(activityRailSource).toContain('workspaces.find(workspace => workspace.id === meta.workspaceId)?.name ?? \'项目\'')
+    expect(activityRailSource).toContain('getAllSessions')
+    expect(activityRailSource).not.toContain("| 'free-conversations'")
+    expect(activityRailSource).not.toContain('dataTutorial="activity-free-conversations"')
+    expect(appShellSource).not.toContain('onOpenWritingWorkspace={onOpenWritingWorkspace}')
     expect(appShellSource).toContain('onOpenFreeConversations={onOpenFreeConversations}')
-    expect(appShellSource).toContain("if (isSessionsNavigation(navState) && !isProjectRuntime) return 'free-conversations'")
+    expect(appShellSource).toContain("if (isSessionsNavigation(navState)) return 'recent'")
+    expect(appShellSource).toContain('onSelectSession={handleActivitySessionSelect}')
   })
 
   it('keeps route auto-selection session-only while writing owns its metadata-driven default', () => {

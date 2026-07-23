@@ -53,9 +53,9 @@ export const FIRST_RUN_TOUR_STEPS: FirstRunTourStep[] = [
     body: '确认任务、上下文和权限后从这里发送。涉及文件改动时，结果会进入可查看、可接受或拒绝的确认流程。',
   },
   {
-    target: 'activity-feedback',
-    selector: '[data-tutorial="activity-feedback"]',
-    title: '帮助与反馈',
-    body: '遇到问题或有建议，可以从这里提交反馈。项目资料、技能、设置等入口稍后再探索，不必在第一次任务前全部配置完。',
+    target: 'activity-profile',
+    selector: '[data-tutorial="activity-profile"]',
+    title: '个人菜单',
+    body: '设置、新功能和帮助反馈统一放在这里。第一次任务前不必逐项配置，用到时再打开即可。',
   },
 ]

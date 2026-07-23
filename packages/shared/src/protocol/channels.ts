@@ -23,6 +23,7 @@ export const RPC_CHANNELS = {
   },
   sessions: {
     GET: 'sessions:get',
+    GET_ALL: 'sessions:getAll',
     GET_UNREAD_SUMMARY: 'sessions:getUnreadSummary',
     MARK_ALL_READ: 'sessions:markAllRead',
     UNREAD_SUMMARY_CHANGED: 'sessions:unreadSummaryChanged',

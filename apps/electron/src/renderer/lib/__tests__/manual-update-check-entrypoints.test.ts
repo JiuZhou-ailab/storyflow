@@ -1,6 +1,6 @@
-// input: Renderer menu source that exposes manual update checks
-// output: Regression coverage that manual update checks use the feedback-aware hook
-// pos: Guards user-visible update check entrypoints from silently discarding IPC results
+// input: Renderer menu sources that expose or intentionally omit manual update checks
+// output: Regression coverage for feedback-aware update entrypoints and the simplified activity sidebar
+// pos: Guards update actions without reintroducing a standalone sidebar control
 
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
@@ -24,17 +24,14 @@ describe('manual update check entrypoints', () => {
     expect(appMenuSource).not.toContain('window.electronAPI.checkForUpdates()')
   })
 
-  it('routes activity rail update control through the feedback-aware hook', () => {
+  it('keeps manual updates out of the activity sidebar profile menu', () => {
     const railSource = source('../../components/app-shell/ActivityRail.tsx')
 
-    expect(railSource).toContain('useUpdateChecker')
-    expect(railSource).toContain('getUpdateIndicatorState')
-    expect(railSource).toContain('void updateChecker.checkForUpdates()')
-    expect(railSource).toContain('void updateChecker.installUpdate()')
-    expect(railSource).toContain('dataTutorial="activity-check-updates"')
-    expect(railSource).toContain('onClick={handleUpdateClick}')
-    // Release notes remain a separate secondary control.
-    expect(railSource).toContain('dataTutorial="activity-whats-new"')
-    expect(railSource).toContain("label={whatsNew?.unseen ? '新功能（未读）' : '新功能'}")
+    expect(railSource).not.toContain('useUpdateChecker')
+    expect(railSource).not.toContain('getUpdateIndicatorState')
+    expect(railSource).not.toContain('activity-check-updates')
+    expect(railSource).toContain('data-tutorial="activity-profile"')
+    expect(railSource).toContain('data-tutorial="activity-whats-new"')
+    expect(railSource).toContain("whatsNew?.unseen ? '新功能（未读）' : '新功能'")
   })
 })

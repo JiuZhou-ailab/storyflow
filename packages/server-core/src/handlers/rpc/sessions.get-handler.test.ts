@@ -1,6 +1,6 @@
 // input: Session list RPC requests with both context and Electron window workspace ids
-// output: Regression coverage for using the current window workspace mapping
-// pos: Guards in-window workspace switching against stale transport context ids
+// output: Regression coverage for scoped and global session metadata queries
+// pos: Guards in-window workspace switching and the Codex-style global sidebar boundary
 
 import { describe, expect, it } from 'bun:test'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
@@ -59,9 +59,14 @@ function createSessionsHarness(windowWorkspaceId: string | undefined) {
   if (!getSessions) {
     throw new Error('sessions get handler not registered')
   }
+  const getAllSessions = handlers.get(RPC_CHANNELS.sessions.GET_ALL)
+  if (!getAllSessions) {
+    throw new Error('sessions get-all handler not registered')
+  }
 
   return {
     getSessions,
+    getAllSessions,
     requestedWorkspaceIds,
   }
 }
@@ -78,5 +83,18 @@ describe('sessions get RPC registration', () => {
     await getSessions(ctx)
 
     expect(requestedWorkspaceIds).toEqual(['workspace-new'])
+  })
+
+  it('loads global session metadata without applying the current window workspace filter', async () => {
+    const { getAllSessions, requestedWorkspaceIds } = createSessionsHarness('workspace-new')
+    const ctx: RequestContext = {
+      clientId: 'client-1',
+      workspaceId: 'workspace-old',
+      webContentsId: 1,
+    }
+
+    await getAllSessions(ctx)
+
+    expect(requestedWorkspaceIds).toEqual([undefined])
   })
 })
