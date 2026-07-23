@@ -1,6 +1,6 @@
 // input: Catalog and write-policy fixtures
-// output: Assertions for authorize/filter/seed helpers
-// pos: Protects user-authorized writing surface constraints
+// output: Assertions for optional agent allowlist helpers
+// pos: Keeps legacy catalog-plus-free agent write constraints correct
 
 import { describe, expect, it } from "bun:test";
 import {
@@ -45,7 +45,7 @@ describe("writing-catalog", () => {
     expect(isWritingWriteAllowed("sessions/x/session.jsonl", catalog, policy, "short-form")).toBe(false);
   });
 
-  it("filters sidebar files to catalog only under catalog-plus-free", () => {
+  it("filters paths to catalog only under catalog-plus-free (legacy surface helper)", () => {
     const files = [
       { relativePath: "全局/大纲.md" },
       { relativePath: "正文/01.md" },

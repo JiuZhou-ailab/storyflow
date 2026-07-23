@@ -72,14 +72,9 @@ describe("createNovelProjectScaffold", () => {
         version: 1,
       },
       storageProfile: "claude-book-compatible",
-      writePolicy: {
-        mode: "catalog-plus-free",
-        freeRoots: [".work"],
-      },
     });
-    expect(manifest.catalog?.paths).toContain("story/plan.md");
-    expect(manifest.catalog?.paths).toContain("bible/structure.md");
-    expect(manifest.catalog?.paths).not.toContain("craft-writing.json");
+    expect(manifest.catalog).toBeUndefined();
+    expect(manifest.writePolicy).toBeUndefined();
     const lock = JSON.parse(readFileSync(statePath(rootPath, "craft-pack-lock.json"), "utf-8"));
     expect(lock.methodPack).toEqual({
       id: "novel.claude-book",
@@ -254,14 +249,9 @@ describe("createNovelProjectScaffold", () => {
       profile: "short-form",
       methodPack: { id: "short-form.article", version: 1 },
       storageProfile: "short-form-compatible",
-      writePolicy: {
-        mode: "catalog-plus-free",
-        freeRoots: ["自由区", ".work"],
-      },
     });
-    expect(manifest.catalog?.paths).toContain("全局/大纲.md");
-    expect(manifest.catalog?.paths).toContain("全局/简报.md");
-    expect(manifest.catalog?.paths).not.toContain("正文");
+    expect(manifest.catalog).toBeUndefined();
+    expect(manifest.writePolicy).toBeUndefined();
 
     const brief = readFileSync(join(rootPath, "全局", "简报.md"), "utf-8");
     expect(brief).toContain("## 题材定位");

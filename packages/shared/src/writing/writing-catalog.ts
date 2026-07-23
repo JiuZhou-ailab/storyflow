@@ -1,6 +1,6 @@
 // input: Writing project catalog paths, write policy, and relative file paths
-// output: Pure allow/filter helpers for sidebar visibility and agent write scope
-// pos: Single source of truth for "user-authorized working surface" constraints
+// output: Pure helpers for optional agent write allowlist (legacy catalog-plus-free)
+// pos: Backward-compat constraints; sidebar is always the real project folder
 
 import type { MethodPackRequiredPath } from "./method-packs/types.ts";
 import type {
@@ -117,8 +117,8 @@ export function isWritingWriteAllowed(
 }
 
 /**
- * Sidebar visibility under catalog-plus-free: only authorized catalog files.
- * Free-root scratch stays off the main working surface unless promoted into catalog.
+ * Legacy helper: catalog-plus-free used to filter UI; sidebar is now always disk truth.
+ * Kept for callers that still reason about the optional allowlist surface.
  * legacy / missing policy → no filtering.
  */
 export function isWritingCatalogVisiblePath(

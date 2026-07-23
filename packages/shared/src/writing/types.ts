@@ -1,22 +1,22 @@
 export type WritingProjectType = "novel" | "screenplay" | "short-form";
 
 /**
- * User-authorized working surface. Sidebar (under catalog-plus-free) only
- * renders these relative paths; agent writes are limited to catalog + freeRoots.
+ * Optional legacy allowlist for agent Write/Edit when writePolicy is catalog-plus-free.
+ * Sidebar always shows the real project tree; new projects omit this field.
  */
 export interface WritingCatalog {
   paths: string[];
 }
 
 /**
- * legacy: current behavior (disk scan + open writes within workspace policy).
- * catalog-plus-free: catalog is the authorized surface; freeRoots are scratch.
+ * legacy / missing: workspace folder is the surface (WYSIWYG).
+ * catalog-plus-free: optional agent-only write allowlist (existing projects).
  */
 export type WritingWritePolicyMode = "legacy" | "catalog-plus-free";
 
 export interface WritingWritePolicy {
   mode: WritingWritePolicyMode;
-  /** Relative roots where agent may write without promoting into catalog. */
+  /** Relative roots where agent may write under catalog-plus-free. */
   freeRoots?: string[];
 }
 
@@ -36,8 +36,9 @@ export interface WritingProjectManifest {
     version: number;
   };
   storageProfile?: string;
-  /** Present when the project opts into user-authorized catalog constraints. */
+  /** Legacy agent write allowlist; not used for sidebar visibility. */
   catalog?: WritingCatalog;
+  /** Missing/legacy = full workspace surface. */
   writePolicy?: WritingWritePolicy;
 }
 
