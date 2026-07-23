@@ -1,3 +1,7 @@
+// input: Folder selection, project naming, and workspace creation callbacks
+// output: Form content for importing an existing folder, with optional parent-owned chrome
+// pos: Reusable import form for the legacy creation screen and project manager dialog
+
 import { useState, useCallback } from "react"
 import { useTranslation } from "react-i18next"
 import { ArrowLeft } from "lucide-react"
@@ -11,6 +15,9 @@ interface AddWorkspaceStep_OpenFolderProps {
   onBack: () => void
   onCreate: (folderPath: string, name: string) => Promise<void>
   isCreating: boolean
+  className?: string
+  /** Parent surface already renders the step title and the return action. */
+  embedded?: boolean
 }
 
 /**
@@ -19,7 +26,9 @@ interface AddWorkspaceStep_OpenFolderProps {
 export function AddWorkspaceStep_OpenFolder({
   onBack,
   onCreate,
-  isCreating
+  isCreating,
+  className,
+  embedded = false,
 }: AddWorkspaceStep_OpenFolderProps) {
   const { t } = useTranslation()
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
@@ -48,27 +57,30 @@ export function AddWorkspaceStep_OpenFolder({
   const canOpen = selectedPath && workspaceName.trim()
 
   return (
-    <AddWorkspaceContainer>
-      {/* Back button */}
-      <button
-        onClick={onBack}
-        disabled={isCreating}
-        className={cn(
-          "self-start flex items-center gap-1 text-sm text-muted-foreground",
-          "hover:text-foreground transition-colors mb-4",
-          isCreating && "opacity-50 cursor-not-allowed"
-        )}
-      >
-        <ArrowLeft className="h-4 w-4" />
-        {t("common.back")}
-      </button>
+    <AddWorkspaceContainer embedded={embedded} className={className}>
+      {!embedded ? (
+        <>
+          <button
+            onClick={onBack}
+            disabled={isCreating}
+            className={cn(
+              "self-start flex items-center gap-1 text-sm text-muted-foreground",
+              "hover:text-foreground transition-colors mb-4",
+              isCreating && "opacity-50 cursor-not-allowed"
+            )}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            {t("common.back")}
+          </button>
 
-      <AddWorkspaceStepHeader
-        title={t("workspace.chooseExistingFolder")}
-        description={t("workspace.chooseExistingFolderDesc")}
-      />
+          <AddWorkspaceStepHeader
+            title={t("workspace.chooseExistingFolder")}
+            description={t("workspace.chooseExistingFolderDesc")}
+          />
+        </>
+      ) : null}
 
-      <div className="mt-6 w-full space-y-6">
+      <div className={cn("w-full space-y-6", embedded ? "mt-0" : "mt-6")}>
         {/* Browse folder row */}
         <div
           className={cn(

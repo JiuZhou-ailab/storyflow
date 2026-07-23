@@ -1,3 +1,7 @@
+// input: Remote server credentials, connection state, and workspace creation/update callbacks
+// output: Form content for connecting a remote workspace, optionally under parent-owned navigation
+// pos: Reusable remote connection form for creation and reconnect flows
+
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { ArrowLeft, CheckCircle, XCircle, Plus } from "lucide-react"
@@ -21,6 +25,9 @@ interface AddWorkspaceStep_ConnectRemoteProps {
   reconnectWorkspace?: { id: string; name: string; remoteWorkspaceId: string }
   /** Called when reconnect updates the remote server config */
   onUpdate?: (workspaceId: string, remoteServer: { url: string; token: string; remoteWorkspaceId: string }) => Promise<void>
+  className?: string
+  /** Parent surface already renders the step title and the return action. */
+  embedded?: boolean
 }
 
 /**
@@ -64,6 +71,8 @@ export function AddWorkspaceStep_ConnectRemote({
   initialToken,
   reconnectWorkspace,
   onUpdate,
+  className,
+  embedded = false,
 }: AddWorkspaceStep_ConnectRemoteProps) {
   const { t } = useTranslation()
   const isReconnectMode = !!reconnectWorkspace
@@ -79,7 +88,9 @@ export function AddWorkspaceStep_ConnectRemote({
   const selectPortalRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    window.electronAPI.getHomeDir().then(setHomeDir)
+    const electronAPI = window.electronAPI
+    if (!electronAPI?.getHomeDir) return
+    void electronAPI.getHomeDir().then(setHomeDir)
   }, [])
 
   const isCreateNew = selectedValue === CREATE_NEW_VALUE
@@ -185,29 +196,32 @@ export function AddWorkspaceStep_ConnectRemote({
   const buttonLoadingLabel = isReconnectMode ? 'Reconnecting...' : showCreateMode ? 'Creating...' : 'Connecting...'
 
   return (
-    <AddWorkspaceContainer>
-      {/* Back button */}
-      <button
-        onClick={onBack}
-        disabled={isCreating}
-        className={cn(
-          "self-start flex items-center gap-1 text-sm text-muted-foreground",
-          "hover:text-foreground transition-colors mb-4",
-          isCreating && "opacity-50 cursor-not-allowed"
-        )}
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back
-      </button>
+    <AddWorkspaceContainer embedded={embedded} className={className}>
+      {!embedded ? (
+        <>
+          <button
+            onClick={onBack}
+            disabled={isCreating}
+            className={cn(
+              "self-start flex items-center gap-1 text-sm text-muted-foreground",
+              "hover:text-foreground transition-colors mb-4",
+              isCreating && "opacity-50 cursor-not-allowed"
+            )}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </button>
 
-      <AddWorkspaceStepHeader
-        title={isReconnectMode ? t("workspace.reconnect", { name: reconnectWorkspace!.name }) : "Connect to remote server"}
-        description={isReconnectMode
-          ? "Update the server URL or token to restore the connection."
-          : "Connect to a remote Storyflow Server for this workspace."}
-      />
+          <AddWorkspaceStepHeader
+            title={isReconnectMode ? t("workspace.reconnect", { name: reconnectWorkspace!.name }) : "Connect to remote server"}
+            description={isReconnectMode
+              ? "Update the server URL or token to restore the connection."
+              : "Connect to a remote Storyflow Server for this workspace."}
+          />
+        </>
+      ) : null}
 
-      <div className="mt-6 w-full space-y-5">
+      <div className={cn("w-full space-y-5", embedded ? "mt-0" : "mt-6")}>
         {/* Server URL */}
         <div className="space-y-2">
           <label className="block text-sm font-medium text-foreground">

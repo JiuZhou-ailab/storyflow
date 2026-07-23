@@ -1,3 +1,7 @@
+// input: Workspace step content, optional parent-owned surface chrome, and button states
+// output: Shared workspace flow containers, headers, and actions
+// pos: Visual primitives for standalone cards and chromeless embedded project-dialog steps
+
 import { cn } from "@/lib/utils"
 import { Button, type ButtonProps } from "@/components/ui/button"
 import { Spinner } from "@craft-agent/ui"
@@ -19,22 +23,26 @@ import { Spinner } from "@craft-agent/ui"
 interface AddWorkspaceContainerProps {
   children: React.ReactNode
   className?: string
+  /** Parent surface already owns background, radius, padding, and elevation. */
+  embedded?: boolean
 }
 
 /**
  * AddWorkspaceContainer - Main container for workspace creation steps
  *
- * Provides:
- * - Fixed width (28rem)
- * - Background with rounded corners
- * - Strong shadow for elevation
- * - Consistent padding
+ * The standalone surface provides a bounded card with padding and elevation.
+ * Embedded steps keep only layout ownership so the parent dialog remains the
+ * single visible surface.
  */
-export function AddWorkspaceContainer({ children, className }: AddWorkspaceContainerProps) {
+export function AddWorkspaceContainer({
+  children,
+  className,
+  embedded = false,
+}: AddWorkspaceContainerProps) {
   return (
     <div className={cn(
       "flex w-full max-w-[28rem] flex-col items-center",
-      "bg-background rounded-[20px] shadow-strong p-8",
+      !embedded && "bg-background rounded-[20px] shadow-strong p-8",
       className
     )}>
       {children}

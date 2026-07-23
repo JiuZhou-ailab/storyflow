@@ -1,6 +1,6 @@
 // input: Workspace creation preview panel props with Method Pack workflow summaries
 // output: Regression coverage for the compact Method Pack preview surface
-// pos: Ensures the new-workspace preview emphasizes workflow diagrams over secondary contract lists
+// pos: Ensures the new-workspace preview emphasizes staged setup over secondary contract lists
 
 import * as React from 'react'
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
@@ -12,10 +12,6 @@ import { getWorkspaceCreationMethodOption } from '../workspace-method-options'
 
 mock.module('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '' }))
 mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDocument: () => ({}) }))
-mock.module('beautiful-mermaid', () => ({
-  renderMermaidSVG: () => '<svg width="320" height="180"><text>mock mermaid</text></svg>',
-}))
-
 setupI18n([initReactI18next])
 
 let MethodPackPreviewPanel: typeof import('../AddWorkspaceStep_CreateNew').MethodPackPreviewPanel
@@ -28,40 +24,47 @@ beforeAll(async () => {
 })
 
 describe('AddWorkspaceStep_CreateNew preview panel', () => {
-  it('allocates a wider desktop preview column for workflow diagrams', () => {
+  it('allocates a bounded desktop preview column beside the form', () => {
     const html = renderToStaticMarkup(
       <ModalProvider>
         <AddWorkspaceStep_CreateNew
           onBack={() => {}}
           onCreate={async () => {}}
           isCreating={false}
+          embedded
         />
       </ModalProvider>
     )
 
     expect(html).toContain('max-w-[88rem]')
-    expect(html).toContain('lg:grid-cols-[minmax(0,0.75fr)_minmax(32rem,1.25fr)]')
+    expect(html).toContain('lg:grid-cols-[minmax(17rem,0.9fr)_minmax(0,1.2fr)]')
+    expect(html).toContain('lg:gap-0')
+    expect(html).toContain('lg:pr-8')
+    expect(html).not.toContain('shadow-strong')
+    expect(html).not.toContain('rounded-[20px]')
     expect(html).toContain('短篇/中篇小说')
   })
 
-  it('omits structure and file contract explanations from the default preview', () => {
+  it('uses concise stages instead of an unbounded workflow diagram', () => {
     const option = getWorkspaceCreationMethodOption('novel.claude-book')
     const html = renderToStaticMarkup(
       <MethodPackPreviewPanel
         title={option.fallbackTitle}
         description={option.fallbackPreviewDescription}
         preview={option.richPreview}
-        mermaidCode={option.fallbackPreviewMermaid}
         labels={{
           logic: 'Method logic',
-          workflow: 'Workflow map',
+          stages: 'Writing path',
           assets: 'Workspace assets',
           bestFor: 'Best for',
         }}
       />
     )
 
-    expect(html).toContain('mock mermaid')
+    expect(html).toContain('Writing path')
+    expect(html).toContain('Workspace assets')
+    expect(html).toContain('1.')
+    expect(html).toContain(option.richPreview.stages[0]?.label ?? '')
     expect(html).not.toContain('Structure')
     expect(html).not.toContain('File contract')
     expect(html).not.toContain('craft-writing.json')
