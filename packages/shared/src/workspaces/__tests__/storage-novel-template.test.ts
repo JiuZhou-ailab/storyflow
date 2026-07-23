@@ -172,75 +172,18 @@ describe("createNovelWorkspaceAtPath", () => {
     expect(existsSync(join(rootPath, "bible", "style.md"))).toBe(false);
   });
 
-  it("creates a starter chat session for a new novel workspace", () => {
-    const rootPath = mkdtempSync(join(tmpdir(), "craft-novel-starter-session-"));
-
-    createNovelWorkspaceAtPath(rootPath, "Starter Novel");
-
-    const sessionIds = readdirSync(statePath(rootPath, "sessions"));
-    expect(sessionIds).toHaveLength(1);
-
-    const sessionContent = readFileSync(statePath(rootPath, join("sessions", sessionIds[0]!, "session.jsonl")), "utf-8");
-    expect(sessionContent).toContain('"name":"Start writing"');
-    expect(sessionContent).toContain('"type":"assistant"');
-    expect(sessionContent).toContain("Method Pack: short-form.article");
-    expect(sessionContent).toContain("中文短篇/中篇网文");
-  });
-
-  it("creates a starter chat session for each selected method pack", () => {
+  it("does not seed a starter chat monologue for new writing workspaces", () => {
     for (const methodPack of getBuiltInMethodPacks()) {
-      const rootPath = mkdtempSync(join(tmpdir(), "craft-novel-method-session-"));
+      const rootPath = mkdtempSync(join(tmpdir(), "craft-novel-no-starter-session-"));
 
       createNovelWorkspaceAtPath(rootPath, methodPack.displayName, undefined, methodPack.id);
 
-      const sessionIds = readdirSync(statePath(rootPath, "sessions"));
-      const sessionContent = readFileSync(statePath(rootPath, join("sessions", sessionIds[0]!, "session.jsonl")), "utf-8");
-      const starterMessage = JSON.parse(sessionContent.trim().split(/\r?\n/)[1] ?? "{}") as { content?: string };
-      expect(sessionContent).toContain(methodPack.id);
-      expect(starterMessage.content).toContain(methodPack.starterMessage);
-    }
-  });
-
-  it("writes a localized short-form starter chat session", () => {
-    const rootPath = mkdtempSync(join(tmpdir(), "craft-short-form-starter-session-"));
-
-    createNovelWorkspaceAtPath(rootPath, "Short Starter", undefined, "short-form.article");
-
-    const sessionIds = readdirSync(statePath(rootPath, "sessions"));
-    const sessionContent = readFileSync(statePath(rootPath, join("sessions", sessionIds[0]!, "session.jsonl")), "utf-8");
-    expect(sessionContent).toContain("## 这是什么");
-    expect(sessionContent).toContain("## 我会怎么做");
-    expect(sessionContent).toContain("## 流程");
-    expect(sessionContent).toContain("## 你现在可以提供");
-    expect(sessionContent).toContain("中文短篇/中篇网文");
-    expect(sessionContent).toContain("钩子");
-    expect(sessionContent).toContain("Method Pack: short-form.article");
-    expect(sessionContent).not.toContain("I created a short-form writing workspace");
-  });
-
-  it("repairs stale generated starter sessions for every built-in method pack", () => {
-    for (const methodPack of getBuiltInMethodPacks()) {
-      const rootPath = mkdtempSync(join(tmpdir(), "craft-stale-method-starter-session-"));
-
-      createNovelWorkspaceAtPath(rootPath, methodPack.displayName, undefined, methodPack.id);
-
-      const sessionIds = readdirSync(statePath(rootPath, "sessions"));
-      const sessionPath = statePath(rootPath, join("sessions", sessionIds[0]!, "session.jsonl"));
-      const lines = readFileSync(sessionPath, "utf-8").trim().split(/\r?\n/);
-      const staleMessage = {
-        ...JSON.parse(lines[1] ?? "{}"),
-        content: `I created a short-form writing workspace. Start by sharing the target reader, platform, intended length, central claim or reader promise, source material, examples you like, and whether the first piece should be an essay, newsletter, social post, blog article, memo, or opinion piece.\n\nMethod Pack: ${methodPack.id}`,
-      };
-      writeFileSync(sessionPath, `${lines[0]}\n${JSON.stringify(staleMessage)}\n`, "utf-8");
-
-      expect(loadWorkspaceConfig(rootPath)).not.toBeNull();
-
-      const repairedContent = readFileSync(sessionPath, "utf-8");
-      const repairedMessage = JSON.parse(repairedContent.trim().split(/\r?\n/)[1] ?? "{}") as { content?: string };
-      expect(repairedMessage.content).toContain(methodPack.starterMessage);
-      expect(repairedMessage.content).toContain(`Method Pack: ${methodPack.id}`);
-      expect(repairedMessage.content).not.toContain("I created a short-form writing workspace");
-      expect(repairedMessage.content).not.toContain("Start by sharing");
+      const sessionsDir = statePath(rootPath, "sessions");
+      expect(existsSync(sessionsDir)).toBe(true);
+      const sessionIds = readdirSync(sessionsDir);
+      expect(sessionIds).toHaveLength(0);
+      // Method pack guidance remains in workspace agent instructions, not chat.
+      expect(readFileSync(statePath(rootPath, "AGENTS.md"), "utf-8")).toContain(methodPack.id);
     }
   });
 });

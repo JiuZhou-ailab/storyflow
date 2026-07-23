@@ -31,12 +31,9 @@ import { loadConfigDefaults } from '../config/storage.ts';
 import { parsePermissionMode, PERMISSION_MODE_ORDER } from '../agent/mode-types.ts';
 import { normalizeThinkingLevel } from '../agent/thinking-levels.ts';
 import { ensureProjectSkillsLifecycle } from '../agent-defaults/default-agent-resources.ts';
-import { generateUniqueSessionId } from '../sessions/slug-generator.ts';
-import { readSessionJsonl, writeSessionJsonl } from '../sessions/jsonl.ts';
-import type { StoredSession } from '../sessions/types.ts';
 import { createNovelProjectScaffold } from '../writing/novel-template.ts';
 import { detectWritingProject } from '../writing/manifest.ts';
-import { getBuiltInMethodPack, type MethodPack, type MethodPackId } from '../writing/method-packs/index.ts';
+import { getBuiltInMethodPack, type MethodPackId } from '../writing/method-packs/index.ts';
 import type {
   WorkspaceConfig,
   CreateWorkspaceInput,
@@ -402,16 +399,11 @@ export function loadWorkspaceConfig(rootPath: string): WorkspaceConfig | null {
         createNovelProjectScaffold(rootPath, {
           title: config.name,
         });
-        const defaultMethodPack = getBuiltInMethodPack('novel.claude-book');
-        if (defaultMethodPack) {
-          ensureWritingStarterSession(rootPath, defaultMethodPack);
-        }
       } else if (detectedMethodPack && detectedMethodPack.projectType === writingProject.type) {
         createNovelProjectScaffold(rootPath, {
           title: config.name,
           methodPackId: detectedMethodPack.id,
         });
-        ensureWritingStarterSession(rootPath, detectedMethodPack);
       }
     }
 
@@ -666,7 +658,8 @@ export function createNovelWorkspaceAtPath(
     workingDirectory: rootPath,
   });
   createNovelProjectScaffold(rootPath, { title: name, methodPackId: methodPack.id });
-  ensureWritingStarterSession(rootPath, methodPack);
+  // No seeded "Start writing" monologue — empty project, user starts the first chat.
+  // Method guidance stays in AGENTS.md / runtime context, not as a fake assistant turn.
   return config;
 }
 
@@ -677,103 +670,6 @@ export function createDefaultWorkspaceAtPath(rootPath: string): WorkspaceConfig 
     undefined,
     DEFAULT_STARTER_WORKSPACE_METHOD_PACK_ID,
   );
-}
-
-function ensureSessionSubdirs(sessionDir: string): void {
-  for (const dir of ["plans", "attachments", "long_responses", "data", "downloads"]) {
-    mkdirSync(join(sessionDir, dir), { recursive: true });
-  }
-}
-
-function hasStoredSession(sessionsDir: string): boolean {
-  if (!existsSync(sessionsDir)) return false;
-  try {
-    return readdirSync(sessionsDir, { withFileTypes: true }).some((entry) => {
-      if (!entry.isDirectory()) return false;
-      return existsSync(join(sessionsDir, entry.name, "session.jsonl"));
-    });
-  } catch {
-    return false;
-  }
-}
-
-function getWritingStarterContent(methodPack: MethodPack): string {
-  return `${methodPack.starterMessage}\n\nMethod Pack: ${methodPack.id}`;
-}
-
-function repairWritingStarterSessions(sessionsDir: string, methodPack: MethodPack): void {
-  if (!existsSync(sessionsDir)) return;
-
-  const expectedContent = getWritingStarterContent(methodPack);
-
-  for (const entry of readdirSync(sessionsDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-
-    const sessionFile = join(sessionsDir, entry.name, "session.jsonl");
-    if (!existsSync(sessionFile)) continue;
-
-    const session = readSessionJsonl(sessionFile);
-    const message = session?.messages[0];
-    if (!session || session.name !== "Start writing") continue;
-    if (session.messages.length !== 1) continue;
-    if (!message || message.type !== "assistant") continue;
-    if (message.id !== `${session.id}-starter`) continue;
-    if (typeof message.content !== "string") continue;
-    if (!message.content.includes(`Method Pack: ${methodPack.id}`)) continue;
-    if (message.content === expectedContent) continue;
-
-    writeSessionJsonl(sessionFile, {
-      ...session,
-      messages: [{
-        ...message,
-        content: expectedContent,
-      }],
-    });
-  }
-}
-
-function ensureWritingStarterSession(rootPath: string, methodPack: MethodPack): void {
-  const sessionsDir = getWorkspaceSessionsPath(rootPath);
-  mkdirSync(sessionsDir, { recursive: true });
-  if (hasStoredSession(sessionsDir)) {
-    repairWritingStarterSessions(sessionsDir, methodPack);
-    return;
-  }
-
-  const existingIds = readdirSync(sessionsDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name);
-  const sessionId = generateUniqueSessionId(existingIds);
-  const sessionDir = join(sessionsDir, sessionId);
-  mkdirSync(sessionDir, { recursive: true });
-  ensureSessionSubdirs(sessionDir);
-
-  const now = Date.now();
-  const session: StoredSession = {
-    id: sessionId,
-    workspaceRootPath: rootPath,
-    name: "Start writing",
-    createdAt: now,
-    lastUsedAt: now,
-    lastMessageAt: now,
-    workingDirectory: rootPath,
-    sdkCwd: rootPath,
-    messages: [{
-      id: `${sessionId}-starter`,
-      type: "assistant",
-      content: getWritingStarterContent(methodPack),
-      timestamp: now,
-    }],
-    tokenUsage: {
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
-      contextTokens: 0,
-      costUsd: 0,
-    },
-  };
-
-  writeSessionJsonl(join(sessionDir, "session.jsonl"), session);
 }
 
 /**
