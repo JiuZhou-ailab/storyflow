@@ -16,7 +16,6 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { useRegisterModal } from "@/context/ModalContext"
 import { rendererPlatform } from "@/lib/platform"
 import appPackage from "../../../../package.json"
 import type { FeedbackIssueAttachment } from "../../../shared/types"
@@ -69,8 +68,6 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
   const [error, setError] = React.useState<string | null>(null)
   const [issueUrl, setIssueUrl] = React.useState<string | null>(null)
 
-  useRegisterModal(open, () => onOpenChange(false))
-
   const reset = React.useCallback(() => {
     setTitle("")
     setMessage("")
@@ -82,12 +79,8 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
   }, [])
 
   const handleOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen && !submitting) {
-      onOpenChange(false)
-      reset()
-    } else if (nextOpen) {
-      onOpenChange(true)
-    }
+    onOpenChange(nextOpen)
+    if (!nextOpen) reset()
   }
 
   const addScreenshots = async (files: File[]) => {
@@ -138,8 +131,8 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
   const canSubmit = title.trim().length > 0 && message.trim().length > 0 && !submitting
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[560px]" showCloseButton={!submitting}>
+    <Dialog open={open} onOpenChange={handleOpenChange} busy={submitting}>
+      <DialogContent size="xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <MessageSquarePlus className="h-5 w-5" />

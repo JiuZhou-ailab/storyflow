@@ -5,7 +5,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { useRegisterModal } from "@/context/ModalContext"
+
 import { isMac } from "@/lib/platform"
 import { actionsByCategory, useActionLabel, type ActionId } from "@/actions"
 
@@ -147,12 +147,9 @@ export function KeyboardShortcutsDialog({ open, onOpenChange }: KeyboardShortcut
   const { t } = useTranslation()
   const componentSpecificSections = useComponentSpecificSections()
 
-  // Register with modal context so X button / Cmd+W closes this dialog first
-  useRegisterModal(open, () => onOpenChange(false))
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] max-h-[80vh] overflow-y-auto">
+      <DialogContent className="max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t("shortcuts.title")}</DialogTitle>
         </DialogHeader>

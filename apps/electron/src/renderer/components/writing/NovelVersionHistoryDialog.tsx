@@ -54,8 +54,8 @@ function NovelVersionHistoryDialogContent({
   }, [onRefresh, open])
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[560px]" showCloseButton={!busy}>
+    <Dialog open={open} onOpenChange={onOpenChange} busy={busy}>
+      <DialogContent size="xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <History className="h-4 w-4" />

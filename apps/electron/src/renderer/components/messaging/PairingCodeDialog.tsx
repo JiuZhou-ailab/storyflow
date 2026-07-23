@@ -73,7 +73,7 @@ export function PairingCodeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[440px]">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>{t('dialog.pairingCode.title')}</DialogTitle>
           <DialogDescription>{t(instructionsKey)}</DialogDescription>

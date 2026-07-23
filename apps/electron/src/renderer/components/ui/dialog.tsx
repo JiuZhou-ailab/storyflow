@@ -1,13 +1,57 @@
+// input: Radix Dialog primitives + optional ModalProvider registry
+// output: App dialog chrome with size scale, busy lock, and Cmd+W registration
+// pos: Shared modal base for Electron renderer business dialogs
+
 import * as React from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { useRegisterModal } from "@/context/ModalContext"
+
+export type DialogSize = "sm" | "md" | "lg" | "xl"
+
+/** Maps semantic dialog sizes to max-width classes (sm+ breakpoints). */
+export const DIALOG_SIZE_CLASS: Record<DialogSize, string> = {
+  sm: "sm:max-w-sm",
+  md: "sm:max-w-md",
+  lg: "sm:max-w-lg",
+  xl: "sm:max-w-xl",
+}
+
+const DialogBusyContext = React.createContext(false)
+
+type DialogProps = React.ComponentProps<typeof DialogPrimitive.Root> & {
+  /** When true, dismiss (ESC / overlay / Cmd+W / close) is ignored. */
+  busy?: boolean
+}
 
 function Dialog({
+  open,
+  onOpenChange,
+  busy = false,
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+}: DialogProps) {
+  const handleOpenChange = React.useCallback(
+    (next: boolean) => {
+      if (busy && !next) return
+      onOpenChange?.(next)
+    },
+    [busy, onOpenChange],
+  )
+
+  useRegisterModal(!!open, () => handleOpenChange(false))
+
+  return (
+    <DialogBusyContext.Provider value={busy}>
+      <DialogPrimitive.Root
+        data-slot="dialog"
+        open={open}
+        onOpenChange={handleOpenChange}
+        {...props}
+      />
+    </DialogBusyContext.Provider>
+  )
 }
 
 function DialogTrigger({
@@ -44,27 +88,36 @@ function DialogOverlay({
   )
 }
 
+type DialogContentProps = React.ComponentProps<typeof DialogPrimitive.Content> & {
+  showCloseButton?: boolean
+  /** Semantic max-width. Default matches historical `sm:max-w-lg`. */
+  size?: DialogSize
+}
+
 function DialogContent({
   className,
   children,
-  showCloseButton = true,
+  showCloseButton,
+  size = "lg",
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Content> & {
-  showCloseButton?: boolean
-}) {
+}: DialogContentProps) {
+  const busy = React.useContext(DialogBusyContext)
+  const effectiveShowCloseButton = showCloseButton ?? !busy
+
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "popover-styled data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-modal grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 p-6 duration-200 outline-none sm:max-w-lg",
+          "popover-styled data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-modal grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 p-6 duration-200 outline-none",
+          DIALOG_SIZE_CLASS[size],
           className
         )}
         {...props}
       >
         {children}
-        {showCloseButton && (
+        {effectiveShowCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
             className="ring-offset-background focus:ring-ring data-[state=open]:bg-foreground/5 absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"

@@ -9,7 +9,6 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { useRegisterModal } from '@/context/ModalContext'
 import type { DirectoryListingResult } from '../../shared/types'
 import { FolderIcon, FolderSymlinkIcon, ChevronRightIcon } from 'lucide-react'
 import { Spinner } from '@craft-agent/ui'
@@ -45,7 +44,6 @@ export function ServerDirectoryBrowser({
   onCancel,
   initialPath,
 }: ServerDirectoryBrowserProps) {
-  useRegisterModal(open, onCancel)
   const { t } = useTranslation()
 
   const [listing, setListing] = useState<DirectoryListingResult | null>(null)
@@ -291,7 +289,7 @@ export function ServerDirectoryBrowser({
 
   return (
     <Dialog open={open} onOpenChange={isOpen => { if (!isOpen) onCancel() }}>
-      <DialogContent className="max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{t("settings.server.selectDirectory")}</DialogTitle>
         </DialogHeader>

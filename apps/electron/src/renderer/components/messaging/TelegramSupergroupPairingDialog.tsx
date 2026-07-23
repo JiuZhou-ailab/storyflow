@@ -119,7 +119,7 @@ export function TelegramSupergroupPairingDialog({ open, onOpenChange, botUsernam
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>
             {t('settings.messaging.telegram.supergroup.dialogTitle', {

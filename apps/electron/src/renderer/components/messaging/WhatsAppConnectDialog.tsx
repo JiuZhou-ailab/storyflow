@@ -95,7 +95,7 @@ export function WhatsAppConnectDialog({ open, onOpenChange, onConnected, workspa
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>{t('dialog.whatsapp.title')}</DialogTitle>
           <DialogDescription>{t('dialog.whatsapp.description')}</DialogDescription>

@@ -86,26 +86,24 @@ export function useModalRegistry() {
  * Hook to register a modal. Call this in your modal component.
  * The modal will be automatically unregistered when the component unmounts.
  *
+ * Safe outside ModalProvider: no-ops (Dialog auto-registers via this hook).
+ *
  * @param isOpen - Whether the modal is currently open
  * @param onClose - Function to close the modal
  * @param priority - Higher priority modals are closed first (default: 0)
  *
  * @example
  * ```tsx
- * function MyDialog({ open, onClose }) {
- *   useRegisterModal(open, onClose)
- *   return <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>...</Dialog>
- * }
+ * // Prefer Dialog's built-in registration. Call this only for non-Dialog modals.
+ * useRegisterModal(open, onClose)
  * ```
  */
 export function useRegisterModal(isOpen: boolean, onClose: () => void, priority = 0) {
-  const { registerModal } = useModalRegistry()
+  const context = useContext(ModalContext)
   const idRef = useRef(`modal-${Math.random().toString(36).slice(2)}`)
 
   React.useEffect(() => {
-    if (isOpen) {
-      const unregister = registerModal(idRef.current, onClose, priority)
-      return unregister
-    }
-  }, [isOpen, onClose, priority, registerModal])
+    if (!context || !isOpen) return
+    return context.registerModal(idRef.current, onClose, priority)
+  }, [isOpen, onClose, priority, context])
 }
