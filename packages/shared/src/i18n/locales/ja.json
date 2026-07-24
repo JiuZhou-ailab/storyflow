@@ -866,6 +866,7 @@
   "session.results": "{{count}}件の結果",
   "session.searchUnavailable": "検索は利用できません",
   "session.selectConversation": "会話を選択して開始",
+  "session.statusUpdateFailed": "ステータスの更新に失敗しました",
   "session.unreadGroup": "未読 ({{count}})",
   "sessionMenu.archive": "アーカイブ",
   "sessionMenu.connectMessaging": "メッセージングを接続",

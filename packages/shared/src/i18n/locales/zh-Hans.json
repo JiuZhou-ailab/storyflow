@@ -866,6 +866,7 @@
   "session.results": "{{count}} 个结果",
   "session.searchUnavailable": "搜索不可用",
   "session.selectConversation": "选择一个对话开始",
+  "session.statusUpdateFailed": "状态更新失败",
   "session.unreadGroup": "未读 ({{count}})",
   "sessionMenu.archive": "归档",
   "sessionMenu.connectMessaging": "连接消息平台",

@@ -866,6 +866,7 @@
   "session.results": "{{count}} wyników",
   "session.searchUnavailable": "Wyszukiwanie niedostępne",
   "session.selectConversation": "Wybierz rozmowę, aby rozpocząć",
+  "session.statusUpdateFailed": "Nie udało się zaktualizować statusu",
   "session.unreadGroup": "Nieprzeczytane ({{count}})",
   "sessionMenu.archive": "Archiwizuj",
   "sessionMenu.connectMessaging": "Połącz komunikator",

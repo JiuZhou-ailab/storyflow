@@ -866,6 +866,7 @@
   "session.results": "{{count}} results",
   "session.searchUnavailable": "Search unavailable",
   "session.selectConversation": "Select a conversation to get started",
+  "session.statusUpdateFailed": "Failed to update status",
   "session.unreadGroup": "Unread ({{count}})",
   "sessionMenu.archive": "Archive",
   "sessionMenu.connectMessaging": "Connect Messaging",
