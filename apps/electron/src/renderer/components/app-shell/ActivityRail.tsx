@@ -28,7 +28,12 @@ import {
 } from '@/components/ui/styled-dropdown'
 import { FeedbackDialog } from './FeedbackDialog'
 import { ProjectSwitcherPopover } from './ProjectSwitcherPopover'
-import { extractSessionMeta, sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
+import {
+  extractSessionMeta,
+  sessionMetaMapAtom,
+  shouldRefreshGlobalSessionMetasForEvent,
+  type SessionMeta,
+} from '@/atoms/sessions'
 import { formatRelativeTimestamp } from '@/lib/display-format'
 import * as storage from '@/lib/local-storage'
 import { getSessionTitle } from '@/utils/session'
@@ -81,21 +86,6 @@ export interface ActivityRailProps {
 
 export const ACTIVITY_RAIL_WIDTH = 252
 const RECENT_SESSION_LIMIT = 8
-
-const GLOBAL_SESSION_REFRESH_EVENT_TYPES = new Set([
-  'complete',
-  'interrupted',
-  'title_generated',
-  'session_flagged',
-  'session_unflagged',
-  'session_archived',
-  'session_unarchived',
-  'name_changed',
-  'session_status_changed',
-  'session_deleted',
-  'session_created',
-  'user_message',
-])
 
 export function ActivityRail({
   activeItem,
@@ -157,7 +147,7 @@ export function ActivityRail({
   React.useEffect(() => {
     let refreshTimer: ReturnType<typeof setTimeout> | null = null
     const unsubscribe = window.electronAPI.onSessionEvent((event) => {
-      if (!GLOBAL_SESSION_REFRESH_EVENT_TYPES.has(event.type)) return
+      if (!shouldRefreshGlobalSessionMetasForEvent(event.type)) return
       if (refreshTimer) clearTimeout(refreshTimer)
       refreshTimer = setTimeout(() => {
         refreshTimer = null

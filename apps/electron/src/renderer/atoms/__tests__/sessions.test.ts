@@ -30,6 +30,8 @@ import {
   replaceLoadedSessionAtom,
   updateSessionAtom,
   updateSessionMetaAtom,
+  commitOptimisticSessionStatus,
+  shouldRefreshGlobalSessionMetasForEvent,
   removeBackgroundTaskById,
   removeBackgroundTaskByToolUseId,
   updateBackgroundTaskProgress,
@@ -56,6 +58,64 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     ...overrides,
   } as Session
 }
+
+describe('session status transitions', () => {
+  it('rolls back a failed optimistic status write when it is still current', async () => {
+    let status: string | undefined = 'todo'
+    const applied: Array<string | undefined> = []
+    const error = new Error('offline')
+    let reported: unknown
+
+    const result = await commitOptimisticSessionStatus({
+      nextStatus: 'done',
+      getCurrentStatus: () => status,
+      applyStatus: (nextStatus) => {
+        status = nextStatus
+        applied.push(nextStatus)
+      },
+      persist: () => Promise.reject(error),
+      onError: failure => {
+        reported = failure
+      },
+    })
+
+    expect(result).toBe('rolled_back')
+    expect(status).toBe('todo')
+    expect(applied).toEqual(['done', 'todo'])
+    expect(reported).toBe(error)
+  })
+
+  it('does not let an older failed write overwrite a newer status choice', async () => {
+    let status: string | undefined = 'todo'
+    let rejectPersist!: (error: Error) => void
+    const persist = new Promise<void>((_resolve, reject) => {
+      rejectPersist = reject
+    })
+
+    const transition = commitOptimisticSessionStatus({
+      nextStatus: 'in-progress',
+      getCurrentStatus: () => status,
+      applyStatus: nextStatus => {
+        status = nextStatus
+      },
+      persist: () => persist,
+      onError: () => {},
+    })
+
+    status = 'done'
+    rejectPersist(new Error('stale failure'))
+
+    expect(await transition).toBe('superseded')
+    expect(status).toBe('done')
+  })
+
+  it('keeps precise metadata events off the global session refresh path', () => {
+    expect(shouldRefreshGlobalSessionMetasForEvent('session_status_changed')).toBe(false)
+    expect(shouldRefreshGlobalSessionMetasForEvent('name_changed')).toBe(false)
+    expect(shouldRefreshGlobalSessionMetasForEvent('complete')).toBe(true)
+    expect(shouldRefreshGlobalSessionMetasForEvent('session_deleted')).toBe(true)
+  })
+})
 
 describe('session message loading atoms', () => {
   const originalWindow = globalThis.window

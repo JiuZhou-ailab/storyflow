@@ -57,6 +57,7 @@ import {
   addSessionAtom,
   removeSessionAtom,
   updateSessionAtom,
+  commitOptimisticSessionStatus,
   replaceLoadedSessionAtom,
   refreshSessionsMetadataAtom,
   sessionAtomFamily,
@@ -1413,9 +1414,23 @@ function AppContent() {
   }, [updateSessionById])
 
   const handleSessionStatusChange = useCallback((sessionId: string, state: SessionStatus) => {
-    updateSessionById(sessionId, { sessionStatus: state })
-    window.electronAPI.sessionCommand(sessionId, { type: 'setSessionStatus', state })
-  }, [updateSessionById])
+    void commitOptimisticSessionStatus({
+      nextStatus: state,
+      getCurrentStatus: () => store.get(sessionAtomFamily(sessionId))?.sessionStatus,
+      applyStatus: sessionStatus => {
+        updateSessionById(sessionId, { sessionStatus })
+      },
+      persist: () => window.electronAPI.sessionCommand(sessionId, {
+        type: 'setSessionStatus',
+        state,
+      }),
+      onError: error => {
+        toast.error(t('session.statusUpdateFailed', '状态更新失败'), {
+          description: error instanceof Error ? error.message : String(error),
+        })
+      },
+    })
+  }, [store, t, updateSessionById])
 
   const handleRenameSession = useCallback((sessionId: string, name: string) => {
     updateSessionById(sessionId, { name })
