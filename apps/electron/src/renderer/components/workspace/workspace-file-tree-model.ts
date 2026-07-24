@@ -1,6 +1,6 @@
-// input: Native workspace file and directory snapshots plus project identity
-// output: Stable, sorted hierarchical nodes for the virtualized workspace tree
-// pos: Pure projection layer between filesystem truth and React Arborist
+// input: Native workspace snapshots, project identity, and confirmed filesystem mutations
+// output: Stable tree projection plus deterministic catalog/selection/expansion transitions
+// pos: Pure workspace-tree state boundary between filesystem truth and React Arborist
 
 export interface WorkspaceCatalogFile {
   path: string
@@ -41,6 +41,20 @@ function joinWorkspacePath(rootPath: string, relativePath: string): string {
 
 function normalizeRelativePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+}
+
+function normalizeWorkspacePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/, '')
+}
+
+export function isSameOrChildWorkspacePath(
+  path: string | null | undefined,
+  parentPath: string,
+): boolean {
+  if (!path) return false
+  const normalizedPath = normalizeWorkspacePath(path)
+  const normalizedParent = normalizeWorkspacePath(parentPath)
+  return normalizedPath === normalizedParent || normalizedPath.startsWith(`${normalizedParent}/`)
 }
 
 function joinRelativePath(parentRelativePath: string, name: string): string {
@@ -165,6 +179,106 @@ function finalizeDirectory(node: MutableDirectoryNode, workspaceId: string): Wor
  */
 export function getDefaultWritingExpandedIds(workspaceId: string): string[] {
   return [`writing:project:${workspaceId}`]
+}
+
+export function collectWorkspaceTreeDirectoryIds(root: WorkspaceFileTreeNode): string[] {
+  const ids: string[] = []
+  const visit = (node: WorkspaceFileTreeNode): void => {
+    if (node.type === 'file') return
+    ids.push(node.id)
+    for (const child of node.children ?? []) visit(child)
+  }
+  visit(root)
+  return ids
+}
+
+interface WorkspaceDeletionEntry {
+  path: string
+  relativePath: string
+  type: 'file' | 'directory'
+}
+
+interface ReduceWorkspaceStateAfterDeletionInput<TFile extends WorkspaceCatalogFile> {
+  files: readonly TFile[]
+  directories: readonly string[]
+  expandedIds: ReadonlySet<string>
+  selectedPath: string | null
+  entry: WorkspaceDeletionEntry
+}
+
+interface WorkspaceStateAfterDeletion<TFile extends WorkspaceCatalogFile> {
+  files: TFile[]
+  directories: string[]
+  expandedIds: Set<string>
+  selectedPath: string | null
+}
+
+/**
+ * Applies a confirmed delete as one deterministic UI transition.
+ *
+ * The next selection follows the current catalog order: first surviving file
+ * after the deleted subtree, then the nearest surviving file before it.
+ */
+export function reduceWorkspaceStateAfterDeletion<TFile extends WorkspaceCatalogFile>({
+  files,
+  directories,
+  expandedIds,
+  selectedPath,
+  entry,
+}: ReduceWorkspaceStateAfterDeletionInput<TFile>): WorkspaceStateAfterDeletion<TFile> {
+  const isDeletedFile = (file: WorkspaceCatalogFile): boolean => (
+    isSameOrChildWorkspacePath(file.path, entry.path)
+  )
+  const selectionWasDeleted = isSameOrChildWorkspacePath(selectedPath, entry.path)
+  const selectionIndex = selectionWasDeleted
+    ? Math.max(
+        files.findIndex(file => file.path === selectedPath),
+        files.findIndex(isDeletedFile),
+      )
+    : -1
+  const remainingFiles = files.filter(file => !isDeletedFile(file))
+
+  let nextSelectedPath = selectedPath
+  if (selectionWasDeleted) {
+    nextSelectedPath = null
+    for (let index = selectionIndex + 1; index < files.length; index += 1) {
+      const candidate = files[index]
+      if (candidate && !isDeletedFile(candidate)) {
+        nextSelectedPath = candidate.path
+        break
+      }
+    }
+    if (!nextSelectedPath) {
+      for (let index = selectionIndex - 1; index >= 0; index -= 1) {
+        const candidate = files[index]
+        if (candidate && !isDeletedFile(candidate)) {
+          nextSelectedPath = candidate.path
+          break
+        }
+      }
+    }
+  }
+
+  if (entry.type !== 'directory') {
+    return {
+      files: remainingFiles,
+      directories: [...directories],
+      expandedIds: new Set(expandedIds),
+      selectedPath: nextSelectedPath,
+    }
+  }
+
+  const folderId = `writing:folder:${entry.relativePath}`
+  return {
+    files: remainingFiles,
+    directories: directories.filter(directory => (
+      !isSameOrChildWorkspacePath(directory, entry.relativePath)
+    )),
+    expandedIds: new Set(
+      [...expandedIds].filter(id => id !== folderId && !id.startsWith(`${folderId}/`)),
+    ),
+    selectedPath: nextSelectedPath,
+  }
 }
 
 export interface BuildWorkspaceFileTreeInput {

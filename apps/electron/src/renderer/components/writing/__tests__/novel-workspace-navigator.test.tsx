@@ -509,9 +509,15 @@ describe('novel writing workspace layout', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const treeSource = readFileSync(new URL('../../workspace/WorkspaceFileTree.tsx', import.meta.url), 'utf-8')
     const rowSource = readFileSync(new URL('../../workspace/WorkspaceFileTreeRow.tsx', import.meta.url), 'utf-8')
+    const moveHandlerSource = appShellSource.slice(
+      appShellSource.indexOf('const handleMoveNovelWorkspaceEntry = React.useCallback'),
+      appShellSource.indexOf('const handleRenameNovelWorkspaceEntry = React.useCallback'),
+    )
 
     expect(appShellSource).toContain('const handleMoveNovelWorkspaceEntry = React.useCallback')
     expect(appShellSource).toContain('window.electronAPI.moveWorkspaceEntry({')
+    expect(moveHandlerSource).toContain('novelWorkspaceCatalogCacheRef.current.delete(novelWorkspaceRoot)')
+    expect(moveHandlerSource).not.toContain('refreshNovelWorkspaceFiles')
     expect(appShellSource).toContain('const handleDeleteNovelWorkspaceEntry = React.useCallback')
     expect(appShellSource).toContain('window.electronAPI.deleteWorkspaceEntry({')
     expect(appShellSource).toContain('recursive: entry.type ===')

@@ -94,6 +94,8 @@ import {
 import { revealWorkspaceFile } from "@/components/workspace/workspace-file-actions"
 import {
   getDefaultWritingExpandedIds,
+  isSameOrChildWorkspacePath,
+  reduceWorkspaceStateAfterDeletion,
   resolveWorkspaceCreateRelativePath,
   resolveWorkspaceImportRelativePath,
   type WorkspaceCreateEntryKind,
@@ -299,13 +301,6 @@ function normalizeWorkspacePath(path: string): string {
 
 function getWorkspaceRelativePathKey(path: string): string {
   return normalizeWorkspacePath(path).replace(/^\/+/, '').toLocaleLowerCase()
-}
-
-function isSameOrChildWorkspacePath(path: string | null | undefined, parentPath: string): boolean {
-  if (!path) return false
-  const normalizedPath = normalizeWorkspacePath(path)
-  const normalizedParent = normalizeWorkspacePath(parentPath)
-  return normalizedPath === normalizedParent || normalizedPath.startsWith(`${normalizedParent}/`)
 }
 
 function remapWorkspacePath(path: string, sourcePath: string, destinationPath: string): string {
@@ -2553,7 +2548,6 @@ function AppShellContent({
           : previous)
       }
 
-      await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
       toast.success(newName
         ? t('writing.renameFile.success', '已重命名')
         : t('writing.moveFile.success', '已移动'))
@@ -2568,7 +2562,6 @@ function AppShellContent({
   }, [
     isCurrentNovelDocumentDirty,
     novelWorkspaceRoot,
-    refreshNovelWorkspaceFiles,
     selectedNovelFilePath,
     t,
   ])
@@ -2609,23 +2602,23 @@ function AppShellContent({
         path: entry.path,
         recursive: entry.type === 'directory',
       })
-      const remainingFiles = novelWorkspaceFiles.filter(file => !isSameOrChildWorkspacePath(file.path, entry.path))
+      const nextState = reduceWorkspaceStateAfterDeletion({
+        files: novelWorkspaceFiles,
+        directories: novelWorkspaceDirectories,
+        expandedIds: expandedFolders,
+        selectedPath: selectedNovelFilePath,
+        entry: {
+          path: entry.path,
+          relativePath: entry.relativePath,
+          type: entry.type,
+        },
+      })
+
       novelWorkspaceCatalogCacheRef.current.delete(novelWorkspaceRoot)
-      setNovelWorkspaceFiles(remainingFiles)
-      if (entry.type === 'directory') {
-        setNovelWorkspaceDirectories(previous => previous.filter(directory => (
-          !isSameOrChildWorkspacePath(directory, entry.relativePath)
-        )))
-        const folderId = `writing:folder:${entry.relativePath}`
-        setExpandedFolders(previous => {
-          const next = new Set([...previous].filter(id => id !== folderId && !id.startsWith(`${folderId}/`)))
-          return next.size === previous.size ? previous : next
-        })
-      }
-      if (isSameOrChildWorkspacePath(selectedNovelFilePath, entry.path)) {
-        setSelectedNovelFilePath(selectDefaultNovelFile(remainingFiles)?.path ?? null)
-      }
-      await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
+      setNovelWorkspaceFiles(nextState.files)
+      setNovelWorkspaceDirectories(nextState.directories)
+      setExpandedFolders(nextState.expandedIds)
+      setSelectedNovelFilePath(nextState.selectedPath)
       toast.success(t('writing.deleteFile.success', '已删除'))
     } catch (error) {
       console.error('[AppShell] Failed to delete workspace entry:', error)
@@ -2635,9 +2628,10 @@ function AppShellContent({
     }
   }, [
     isCurrentNovelDocumentDirty,
+    expandedFolders,
+    novelWorkspaceDirectories,
     novelWorkspaceFiles,
     novelWorkspaceRoot,
-    refreshNovelWorkspaceFiles,
     selectedNovelFilePath,
     t,
   ])

@@ -5,7 +5,9 @@
 import { describe, expect, it } from 'bun:test'
 import {
   buildWorkspaceFileTree,
+  collectWorkspaceTreeDirectoryIds,
   getDefaultWritingExpandedIds,
+  reduceWorkspaceStateAfterDeletion,
   resolveWorkspaceCreateRelativePath,
   resolveWorkspaceImportRelativePath,
 } from '../workspace-file-tree-model'
@@ -40,6 +42,65 @@ describe('workspace file tree model', () => {
     expect(manuscript?.children?.map(node => node.name)).toEqual(['空目录', '2.md', '10.md'])
     expect(manuscript?.children?.[0]?.children).toEqual([])
     expect(manuscript?.fileCount).toBe(2)
+    expect(collectWorkspaceTreeDirectoryIds(root)).toEqual([
+      'writing:project:novel-1',
+      'writing:folder:全局',
+      'writing:folder:正文',
+      'writing:folder:正文/空目录',
+    ])
+  })
+
+  it('reduces a deleted folder into one coherent catalog, selection, and expansion state', () => {
+    const files = [
+      { path: '/workspace/novel-1/前言.md', relativePath: '前言.md' },
+      { path: '/workspace/novel-1/正文/01.md', relativePath: '正文/01.md' },
+      { path: '/workspace/novel-1/正文/02.md', relativePath: '正文/02.md' },
+      { path: '/workspace/novel-1/附录.md', relativePath: '附录.md' },
+    ]
+
+    const result = reduceWorkspaceStateAfterDeletion({
+      files,
+      directories: ['正文', '正文/草稿', '资料'],
+      expandedIds: new Set([
+        'writing:project:novel-1',
+        'writing:folder:正文',
+        'writing:folder:正文/草稿',
+        'writing:folder:资料',
+      ]),
+      selectedPath: '/workspace/novel-1/正文/01.md',
+      entry: {
+        path: '/workspace/novel-1/正文',
+        relativePath: '正文',
+        type: 'directory',
+      },
+    })
+
+    expect(result.files).toEqual([files[0], files[3]])
+    expect(result.directories).toEqual(['资料'])
+    expect(result.selectedPath).toBe('/workspace/novel-1/附录.md')
+    expect([...result.expandedIds]).toEqual([
+      'writing:project:novel-1',
+      'writing:folder:资料',
+    ])
+  })
+
+  it('selects the previous adjacent file when deletion removes the final subtree', () => {
+    const result = reduceWorkspaceStateAfterDeletion({
+      files: [
+        { path: '/workspace/novel-1/前言.md', relativePath: '前言.md' },
+        { path: '/workspace/novel-1/正文/01.md', relativePath: '正文/01.md' },
+      ],
+      directories: ['正文'],
+      expandedIds: new Set(['writing:project:novel-1', 'writing:folder:正文']),
+      selectedPath: '/workspace/novel-1/正文/01.md',
+      entry: {
+        path: '/workspace/novel-1/正文',
+        relativePath: '正文',
+        type: 'directory',
+      },
+    })
+
+    expect(result.selectedPath).toBe('/workspace/novel-1/前言.md')
   })
 
   it('resolves generic file and folder creation inside the selected directory', () => {

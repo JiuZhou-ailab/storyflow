@@ -1,12 +1,13 @@
-// input: Controlled workspace catalog snapshot and file mutation callbacks
-// output: Virtualized, keyboard-accessible Finder-style project file tree
-// pos: Workspace file navigation and interaction boundary inside the project sidebar
+// input: Controlled workspace catalog, selection/expansion state, and file mutation callbacks
+// output: Virtualized, keyboard-accessible Finder-style tree synchronized to external state
+// pos: Workspace file navigation boundary and React Arborist state adapter
 
 import * as React from 'react'
 import { Tree, type MoveHandler, type RenameHandler, type TreeApi } from 'react-arborist'
 import type { NovelWorkspaceFile } from '@/lib/writing-workspace'
 import {
   buildWorkspaceFileTree,
+  collectWorkspaceTreeDirectoryIds,
   type WorkspaceFileTreeNode,
 } from './workspace-file-tree-model'
 import {
@@ -103,6 +104,8 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
   }, forwardedRef) {
     const containerRef = React.useRef<HTMLDivElement>(null)
     const treeRef = React.useRef<TreeApi<WorkspaceFileTreeNode> | null>(null)
+    const syncingExpandedStateRef = React.useRef(false)
+    const previousDirectoryIdsRef = React.useRef<Set<string>>(new Set())
     const measuredHeight = useElementHeight(containerRef)
 
     const root = React.useMemo(() => buildWorkspaceFileTree({
@@ -113,6 +116,10 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
       directories,
     }), [directories, files, rootPath, workspaceId, workspaceName])
     const data = React.useMemo(() => [root], [root])
+    const directoryIds = React.useMemo(
+      () => collectWorkspaceTreeDirectoryIds(root),
+      [root],
+    )
     const visibleRowCount = React.useMemo(
       () => countVisibleRows(root, expandedIds),
       [expandedIds, root],
@@ -156,10 +163,35 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
     }, [onSelectFile])
 
     const handleToggle = React.useCallback((id: string) => {
+      if (syncingExpandedStateRef.current) return
       const tree = treeRef.current
       if (!tree) return
       onExpandedChange(id, tree.isOpen(id))
     }, [onExpandedChange])
+
+    React.useLayoutEffect(() => {
+      const tree = treeRef.current
+      if (!tree) return
+
+      const currentDirectoryIds = new Set(directoryIds)
+      const idsToReconcile = new Set([
+        ...previousDirectoryIdsRef.current,
+        ...currentDirectoryIds,
+      ])
+
+      syncingExpandedStateRef.current = true
+      try {
+        for (const id of idsToReconcile) {
+          const shouldOpen = currentDirectoryIds.has(id) && expandedIds.has(id)
+          if (tree.isOpen(id) === shouldOpen) continue
+          if (shouldOpen) tree.open(id)
+          else tree.close(id)
+        }
+      } finally {
+        syncingExpandedStateRef.current = false
+        previousDirectoryIdsRef.current = currentDirectoryIds
+      }
+    }, [directoryIds, expandedIds])
 
     const rowContext = React.useMemo(() => ({
       labels,
