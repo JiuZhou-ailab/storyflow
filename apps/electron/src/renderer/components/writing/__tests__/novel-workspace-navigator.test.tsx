@@ -516,7 +516,7 @@ describe('novel writing workspace layout', () => {
 
     expect(appShellSource).toContain('const handleMoveNovelWorkspaceEntry = React.useCallback')
     expect(appShellSource).toContain('window.electronAPI.moveWorkspaceEntry({')
-    expect(moveHandlerSource).toContain('novelWorkspaceCatalogCacheRef.current.delete(novelWorkspaceRoot)')
+    expect(moveHandlerSource).toContain('invalidateNovelWorkspaceCatalogRequests(novelWorkspaceRoot)')
     expect(moveHandlerSource).not.toContain('refreshNovelWorkspaceFiles')
     expect(appShellSource).toContain('const handleDeleteNovelWorkspaceEntry = React.useCallback')
     expect(appShellSource).toContain('window.electronAPI.deleteWorkspaceEntry({')
@@ -535,6 +535,26 @@ describe('novel writing workspace layout', () => {
     expect(rowSource).toContain('onSelect={() => void node.edit()}')
     expect(rowSource).toContain('onSelect={() => context.onDelete(entry)}')
     expect(rowSource).toContain('<ContextMenuTrigger asChild>{row}</ContextMenuTrigger>')
+  })
+
+  it('prevents pre-mutation catalog requests from republishing stale tree state', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const refreshSource = appShellSource.slice(
+      appShellSource.indexOf('const refreshNovelWorkspaceFiles = React.useCallback'),
+      appShellSource.indexOf('const openWorkspaceCreateEntryDialog = React.useCallback'),
+    )
+    const deleteSource = appShellSource.slice(
+      appShellSource.indexOf('const handleDeleteNovelWorkspaceEntry = React.useCallback'),
+      appShellSource.indexOf('const refreshNovelVersions = React.useCallback'),
+    )
+
+    expect(appShellSource).toContain('advanceWorkspaceCatalogRevision(')
+    expect(appShellSource).toContain('const refreshNovelWorkspaceFilesAfterMutation = React.useCallback')
+    expect(refreshSource).toContain('const requestRevision = readWorkspaceCatalogRevision(')
+    expect(refreshSource).toContain('!== requestRevision')
+    expect(appShellSource).toContain('const detectionRevision = readWorkspaceCatalogRevision(')
+    expect(appShellSource).toContain('!== detectionRevision')
+    expect(deleteSource).toContain('invalidateNovelWorkspaceCatalogRequests(novelWorkspaceRoot)')
   })
 
   it('uses current novel project history instead of global release notes in novel utility navigation', () => {
@@ -609,7 +629,7 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain("window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'auto' })")
     expect(appShellSource).toContain('window.electronAPI.listWorkspaceVersions(novelWorkspaceRoot, 30)')
     expect(appShellSource).toContain('window.electronAPI.restoreWorkspaceVersion(novelWorkspaceRoot, commitHash)')
-    expect(restoreHandlerSource).toContain('await refreshNovelWorkspaceFiles(novelWorkspaceRoot)')
+    expect(restoreHandlerSource).toContain('await refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)')
     expect(exportHandlerSource.indexOf('await window.electronAPI.createDirectory(exportRootPath)')).toBeLessThan(
       exportHandlerSource.indexOf('await window.electronAPI.writeFile(targetPath')
     )
@@ -1082,7 +1102,7 @@ describe('novel writing workspace layout', () => {
       appShellSource.indexOf('React.useEffect(() => {\n    if (!effectiveSessionId || !novelWorkspaceRoot) return')
     )
 
-    expect(checkpointSource).toContain('refreshNovelWorkspaceFiles(novelWorkspaceRoot).then((refreshed) => {')
+    expect(checkpointSource).toContain('refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot).then((refreshed) => {')
     expect(checkpointSource).toContain('if (refreshed) markNovelWorkspaceFileChangesCovered(novelWorkspaceRoot)')
   })
 

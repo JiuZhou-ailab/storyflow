@@ -8,6 +8,7 @@ import type { NovelWorkspaceFile } from '@/lib/writing-workspace'
 import {
   buildWorkspaceFileTree,
   collectWorkspaceTreeDirectoryIds,
+  getWorkspaceTreeExpansionDelta,
   type WorkspaceFileTreeNode,
 } from './workspace-file-tree-model'
 import {
@@ -105,7 +106,7 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
     const containerRef = React.useRef<HTMLDivElement>(null)
     const treeRef = React.useRef<TreeApi<WorkspaceFileTreeNode> | null>(null)
     const syncingExpandedStateRef = React.useRef(false)
-    const previousDirectoryIdsRef = React.useRef<Set<string>>(new Set())
+    const appliedExpandedIdsRef = React.useRef<Set<string>>(new Set())
     const measuredHeight = useElementHeight(containerRef)
 
     const root = React.useMemo(() => buildWorkspaceFileTree({
@@ -119,6 +120,10 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
     const directoryIds = React.useMemo(
       () => collectWorkspaceTreeDirectoryIds(root),
       [root],
+    )
+    const directoryIdSet = React.useMemo(
+      () => new Set(directoryIds),
+      [directoryIds],
     )
     const visibleRowCount = React.useMemo(
       () => countVisibleRows(root, expandedIds),
@@ -173,25 +178,25 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
       const tree = treeRef.current
       if (!tree) return
 
-      const currentDirectoryIds = new Set(directoryIds)
-      const idsToReconcile = new Set([
-        ...previousDirectoryIdsRef.current,
-        ...currentDirectoryIds,
-      ])
+      const {
+        desiredExpandedIds,
+        openIds,
+        closeIds,
+      } = getWorkspaceTreeExpansionDelta({
+        directoryIds: directoryIdSet,
+        expandedIds,
+        appliedExpandedIds: appliedExpandedIdsRef.current,
+      })
 
       syncingExpandedStateRef.current = true
       try {
-        for (const id of idsToReconcile) {
-          const shouldOpen = currentDirectoryIds.has(id) && expandedIds.has(id)
-          if (tree.isOpen(id) === shouldOpen) continue
-          if (shouldOpen) tree.open(id)
-          else tree.close(id)
-        }
+        for (const id of closeIds) tree.close(id)
+        for (const id of openIds) tree.open(id)
       } finally {
         syncingExpandedStateRef.current = false
-        previousDirectoryIdsRef.current = currentDirectoryIds
+        appliedExpandedIdsRef.current = desiredExpandedIds
       }
-    }, [directoryIds, expandedIds])
+    }, [directoryIdSet, expandedIds])
 
     const rowContext = React.useMemo(() => ({
       labels,

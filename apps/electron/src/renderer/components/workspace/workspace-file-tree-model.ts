@@ -192,6 +192,57 @@ export function collectWorkspaceTreeDirectoryIds(root: WorkspaceFileTreeNode): s
   return ids
 }
 
+export function readWorkspaceCatalogRevision(
+  revisions: ReadonlyMap<string, number>,
+  rootPath: string,
+): number {
+  return revisions.get(rootPath) ?? 0
+}
+
+export function advanceWorkspaceCatalogRevision(
+  revisions: Map<string, number>,
+  rootPath: string,
+): number {
+  const nextRevision = readWorkspaceCatalogRevision(revisions, rootPath) + 1
+  revisions.set(rootPath, nextRevision)
+  return nextRevision
+}
+
+interface WorkspaceTreeExpansionDeltaInput {
+  directoryIds: ReadonlySet<string>
+  expandedIds: ReadonlySet<string>
+  appliedExpandedIds: ReadonlySet<string>
+}
+
+interface WorkspaceTreeExpansionDelta {
+  desiredExpandedIds: Set<string>
+  openIds: string[]
+  closeIds: string[]
+}
+
+/**
+ * Reconciles only directories whose open state changed.
+ *
+ * Large closed subtrees never participate in an expand/collapse transition;
+ * the work is bounded by expanded nodes rather than the whole catalog.
+ */
+export function getWorkspaceTreeExpansionDelta({
+  directoryIds,
+  expandedIds,
+  appliedExpandedIds,
+}: WorkspaceTreeExpansionDeltaInput): WorkspaceTreeExpansionDelta {
+  const desiredExpandedIds = new Set<string>()
+  for (const id of expandedIds) {
+    if (directoryIds.has(id)) desiredExpandedIds.add(id)
+  }
+
+  return {
+    desiredExpandedIds,
+    openIds: [...desiredExpandedIds].filter(id => !appliedExpandedIds.has(id)),
+    closeIds: [...appliedExpandedIds].filter(id => !desiredExpandedIds.has(id)),
+  }
+}
+
 interface WorkspaceDeletionEntry {
   path: string
   relativePath: string

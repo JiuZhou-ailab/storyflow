@@ -93,8 +93,10 @@ import {
 } from "@/components/workspace/useWorkspaceProjectSurface"
 import { revealWorkspaceFile } from "@/components/workspace/workspace-file-actions"
 import {
+  advanceWorkspaceCatalogRevision,
   getDefaultWritingExpandedIds,
   isSameOrChildWorkspacePath,
+  readWorkspaceCatalogRevision,
   reduceWorkspaceStateAfterDeletion,
   resolveWorkspaceCreateRelativePath,
   resolveWorkspaceImportRelativePath,
@@ -1795,6 +1797,7 @@ function AppShellContent({
   const novelWorkspaceCatalogCacheRef = React.useRef<Map<string, NativeWorkspaceCatalog>>(new Map())
   const novelWorkspaceLoadInFlightRef = React.useRef<Map<string, Promise<NativeWorkspaceCatalog | null>>>(new Map())
   const novelWorkspaceRefreshInFlightRef = React.useRef<Map<string, Promise<boolean>>>(new Map())
+  const novelWorkspaceCatalogRevisionRef = React.useRef<Map<string, number>>(new Map())
   const novelWorkspaceLastRefreshKeyRef = React.useRef<string | null>(null)
   const latestNovelFileChangesSignatureRef = React.useRef('')
   latestNovelFileChangesSignatureRef.current = latestNovelFileChangesSignature
@@ -1815,6 +1818,17 @@ function AppShellContent({
     completedNovelFileChangeRefreshKeys.add(refreshKey)
   }, [])
 
+  const invalidateNovelWorkspaceCatalogRequests = React.useCallback((rootPath: string) => {
+    advanceWorkspaceCatalogRevision(novelWorkspaceCatalogRevisionRef.current, rootPath)
+    novelWorkspaceCatalogCacheRef.current.delete(rootPath)
+    novelWorkspaceRefreshInFlightRef.current.delete(rootPath)
+    for (const loadKey of novelWorkspaceLoadInFlightRef.current.keys()) {
+      if (loadKey.startsWith(`${rootPath}\n`)) {
+        novelWorkspaceLoadInFlightRef.current.delete(loadKey)
+      }
+    }
+  }, [])
+
   const loadNovelWorkspaceFiles = React.useCallback(async (
     rootPath: string,
     onDetected?: (files: NovelWorkspaceFile[]) => void,
@@ -1824,9 +1838,16 @@ function AppShellContent({
     const inFlight = novelWorkspaceLoadInFlightRef.current.get(loadKey)
     if (inFlight) return inFlight
 
+    const requestRevision = readWorkspaceCatalogRevision(
+      novelWorkspaceCatalogRevisionRef.current,
+      rootPath,
+    )
     const loadPromise = (async (): Promise<NativeWorkspaceCatalog | null> => {
       if (knownNovelWorkspace) {
         const catalog = await loadNovelWorkspaceFileTree(rootPath)
+        if (readWorkspaceCatalogRevision(novelWorkspaceCatalogRevisionRef.current, rootPath) !== requestRevision) {
+          return null
+        }
         novelWorkspaceCatalogCacheRef.current.set(rootPath, catalog)
         return catalog
       }
@@ -1838,11 +1859,17 @@ function AppShellContent({
         }))
       )
       const probeResults = probeResultSets.flatMap(resultSet => resultSet.results)
+      if (readWorkspaceCatalogRevision(novelWorkspaceCatalogRevisionRef.current, rootPath) !== requestRevision) {
+        return null
+      }
       if (!detectNovelProjectFromSearchResults(probeResults)) return null
       const probeFiles = mapSearchResultsToNovelWorkspaceFiles(probeResults)
       onDetected?.(probeFiles)
 
       const catalog = await loadNovelWorkspaceFileTree(rootPath)
+      if (readWorkspaceCatalogRevision(novelWorkspaceCatalogRevisionRef.current, rootPath) !== requestRevision) {
+        return null
+      }
       novelWorkspaceCatalogCacheRef.current.set(rootPath, catalog)
       return catalog
     })()
@@ -1860,6 +1887,10 @@ function AppShellContent({
     const inFlight = novelWorkspaceRefreshInFlightRef.current.get(rootPath)
     if (inFlight) return inFlight
 
+    const requestRevision = readWorkspaceCatalogRevision(
+      novelWorkspaceCatalogRevisionRef.current,
+      rootPath,
+    )
     const refreshPromise = (async (): Promise<boolean> => {
       const detectLoadKey = `${rootPath}\ndetect`
       const detectInFlight = novelWorkspaceLoadInFlightRef.current.get(detectLoadKey)
@@ -1874,6 +1905,9 @@ function AppShellContent({
         catalog = await loadNovelWorkspaceFiles(rootPath, undefined, true)
       }
       if (!catalog) return false
+      if (readWorkspaceCatalogRevision(novelWorkspaceCatalogRevisionRef.current, rootPath) !== requestRevision) {
+        return false
+      }
       if (novelWorkspaceRootRef.current && rootPath !== novelWorkspaceRootRef.current) return false
 
       setNovelWorkspaceRoot(rootPath)
@@ -1889,6 +1923,14 @@ function AppShellContent({
     })
     return refreshPromise
   }, [loadNovelWorkspaceFiles, setNovelWorkspaceCatalogIfChanged])
+
+  const refreshNovelWorkspaceFilesAfterMutation = React.useCallback((rootPath: string): Promise<boolean> => {
+    invalidateNovelWorkspaceCatalogRequests(rootPath)
+    return refreshNovelWorkspaceFiles(rootPath).catch((error) => {
+      console.warn('[AppShell] Failed to refresh workspace catalog after a confirmed mutation:', error)
+      return false
+    })
+  }, [invalidateNovelWorkspaceCatalogRequests, refreshNovelWorkspaceFiles])
 
   const openWorkspaceCreateEntryDialog = React.useCallback((target: WorkspaceCreateEntryTarget) => {
     setWorkspaceCreateEntryTarget(target)
@@ -1945,7 +1987,7 @@ function AppShellContent({
         await window.electronAPI.createDirectory(parentPath)
         await window.electronAPI.writeFile(targetPath, initialContent)
       }
-      await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
+      await refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
       expandWorkspaceTreeDirectory(workspaceCreateEntryTarget.parentRelativePath)
       if (workspaceCreateEntryTarget.kind === 'file') {
         setSelectedNovelFilePath(targetPath)
@@ -1966,7 +2008,7 @@ function AppShellContent({
     novelWorkspaceDirectories,
     novelWorkspaceFiles,
     novelWorkspaceRoot,
-    refreshNovelWorkspaceFiles,
+    refreshNovelWorkspaceFilesAfterMutation,
     t,
     workspaceCreateEntryTarget,
     workspaceCreateEntryValue,
@@ -2024,7 +2066,7 @@ function AppShellContent({
     }
 
     if (importedCount > 0) {
-      await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
+      await refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
       expandWorkspaceTreeDirectory(parentRelativePath)
       if (lastImportedPath) {
         setSelectedNovelFilePath(lastImportedPath)
@@ -2040,7 +2082,7 @@ function AppShellContent({
     novelWorkspaceDirectories,
     novelWorkspaceFiles,
     novelWorkspaceRoot,
-    refreshNovelWorkspaceFiles,
+    refreshNovelWorkspaceFilesAfterMutation,
     t,
   ])
 
@@ -2081,6 +2123,10 @@ function AppShellContent({
         }
 
         try {
+          const detectionRevision = readWorkspaceCatalogRevision(
+            novelWorkspaceCatalogRevisionRef.current,
+            rootPath,
+          )
           const catalog = await loadNovelWorkspaceFiles(
             rootPath,
             cachedNovelWorkspaceCatalog
@@ -2095,6 +2141,11 @@ function AppShellContent({
             knownWritingWorkspaceRoot || Boolean(cachedNovelWorkspaceCatalog)
           )
           if (cancelled) return
+          if (readWorkspaceCatalogRevision(novelWorkspaceCatalogRevisionRef.current, rootPath) !== detectionRevision) {
+            setNovelWorkspaceDetectionSettledKey(novelWorkspaceCandidateKey)
+            setNovelWorkspaceDetecting(false)
+            return
+          }
 
           if (catalog) {
             setNovelWorkspaceRoot(rootPath)
@@ -2143,7 +2194,7 @@ function AppShellContent({
     const timeoutId = window.setTimeout(() => {
       if (completedNovelFileChangeRefreshKeys.has(refreshKey)) return
       if (pendingNovelFileChangeRefreshKeys.has(refreshKey)) return
-      void refreshNovelWorkspaceFiles(novelWorkspaceRoot).then((refreshed) => {
+      void refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot).then((refreshed) => {
         if (refreshed) {
           markNovelWorkspaceFileChangesCovered(novelWorkspaceRoot, latestNovelFileChangesSignature)
         }
@@ -2159,7 +2210,7 @@ function AppShellContent({
     latestNovelFileChangesSignature,
     markNovelWorkspaceFileChangesCovered,
     novelWorkspaceRoot,
-    refreshNovelWorkspaceFiles,
+    refreshNovelWorkspaceFilesAfterMutation,
   ])
 
   const novelWorkspaceCandidateRootSet = React.useMemo(
@@ -2510,7 +2561,7 @@ function AppShellContent({
         ? `${destinationDirectory.relativePath}/${destinationName}`
         : destinationName
 
-      novelWorkspaceCatalogCacheRef.current.delete(novelWorkspaceRoot)
+      invalidateNovelWorkspaceCatalogRequests(novelWorkspaceRoot)
       setNovelWorkspaceFiles(previous => previous.map(file => (
         isSameOrChildWorkspacePath(file.path, result.sourcePath)
           ? {
@@ -2560,6 +2611,7 @@ function AppShellContent({
       })
     }
   }, [
+    invalidateNovelWorkspaceCatalogRequests,
     isCurrentNovelDocumentDirty,
     novelWorkspaceRoot,
     selectedNovelFilePath,
@@ -2614,7 +2666,7 @@ function AppShellContent({
         },
       })
 
-      novelWorkspaceCatalogCacheRef.current.delete(novelWorkspaceRoot)
+      invalidateNovelWorkspaceCatalogRequests(novelWorkspaceRoot)
       setNovelWorkspaceFiles(nextState.files)
       setNovelWorkspaceDirectories(nextState.directories)
       setExpandedFolders(nextState.expandedIds)
@@ -2627,6 +2679,7 @@ function AppShellContent({
       })
     }
   }, [
+    invalidateNovelWorkspaceCatalogRequests,
     isCurrentNovelDocumentDirty,
     expandedFolders,
     novelWorkspaceDirectories,
@@ -2900,7 +2953,7 @@ function AppShellContent({
         const refreshSignature = latestNovelFileChangesSignatureRef.current
         const refreshKey = refreshSignature ? `${novelWorkspaceRoot}\n${refreshSignature}` : null
         if (refreshKey) pendingNovelFileChangeRefreshKeys.add(refreshKey)
-        void refreshNovelWorkspaceFiles(novelWorkspaceRoot).then((refreshed) => {
+        void refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot).then((refreshed) => {
           if (refreshed) markNovelWorkspaceFileChangesCovered(novelWorkspaceRoot)
         }).finally(() => {
           if (refreshKey) pendingNovelFileChangeRefreshKeys.delete(refreshKey)
@@ -2914,7 +2967,7 @@ function AppShellContent({
     } finally {
       novelAgentTurnCheckpointInFlightRef.current = false
     }
-  }, [markNovelWorkspaceFileChangesCovered, novelVersionDialogOpen, novelWorkspaceFiles, novelWorkspaceRoot, refreshNovelVersions, refreshNovelWorkspaceFiles, reviewableNovelFileChanges])
+  }, [markNovelWorkspaceFileChangesCovered, novelVersionDialogOpen, novelWorkspaceFiles, novelWorkspaceRoot, refreshNovelVersions, refreshNovelWorkspaceFilesAfterMutation, reviewableNovelFileChanges])
 
   React.useEffect(() => {
     if (!effectiveSessionId || !novelWorkspaceRoot) return
@@ -3023,7 +3076,7 @@ function AppShellContent({
         rememberNovelVersionBaseline(selectedNovelDocumentPath, content, 'set')
       }
       await refreshNovelVersions()
-      await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
+      await refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
       toast.success(t('writing.version.restored', '已恢复到所选版本'))
     } catch (error) {
       toast.error(t('writing.version.restoreFailed', '恢复版本失败'), {
@@ -3032,7 +3085,7 @@ function AppShellContent({
     } finally {
       setNovelVersionRestoringHash(null)
     }
-  }, [ensureNovelDocumentSaved, novelWorkspaceRoot, refreshNovelVersions, refreshNovelWorkspaceFiles, rememberNovelVersionBaseline, replaceNovelDocumentContent, selectedNovelDocumentPath, t])
+  }, [ensureNovelDocumentSaved, novelWorkspaceRoot, refreshNovelVersions, refreshNovelWorkspaceFilesAfterMutation, rememberNovelVersionBaseline, replaceNovelDocumentContent, selectedNovelDocumentPath, t])
 
   const handleExportNovelWorkspace = React.useCallback(async (options: ProjectExportOptions) => {
     if (!novelWorkspaceRoot) return
@@ -3059,6 +3112,7 @@ function AppShellContent({
         const content = await window.electronAPI.readFile(entry.sourcePath)
         await window.electronAPI.writeFile(targetPath, content)
       }
+      await refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
 
       toast.success(t('writing.export.success', '已导出 {{count}} 个文件', { count: plan.sourceFileCount }), {
         id: toastId,
@@ -3077,7 +3131,7 @@ function AppShellContent({
     } finally {
       setNovelExporting(false)
     }
-  }, [ensureNovelDocumentSaved, novelWorkspaceFiles, novelWorkspaceRoot, t])
+  }, [ensureNovelDocumentSaved, novelWorkspaceFiles, novelWorkspaceRoot, refreshNovelWorkspaceFilesAfterMutation, t])
 
   const novelReviewUndoStackRef = React.useRef<NovelReviewUndoEntry[]>([])
 
@@ -3143,7 +3197,7 @@ function AppShellContent({
         replaceNovelDocumentContent('')
       }
       if (novelWorkspaceRoot) {
-        void refreshNovelWorkspaceFiles(novelWorkspaceRoot)
+        void refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
       }
 
       toast.success(t('writing.review.undone', 'Review action undone'))
@@ -3159,7 +3213,7 @@ function AppShellContent({
     novelDocumentDirty,
     novelWorkspaceRoot,
     persistNovelChangeReviewStatus,
-    refreshNovelWorkspaceFiles,
+    refreshNovelWorkspaceFilesAfterMutation,
     replaceNovelDocumentContent,
     selectedNovelFile?.path,
     t,
@@ -3711,7 +3765,7 @@ function AppShellContent({
         replaceNovelDocumentContent(nextContent)
       }
       if (novelWorkspaceRoot) {
-        void refreshNovelWorkspaceFiles(novelWorkspaceRoot)
+        void refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
       }
 
       void handleSelectNextNovelChangeAfterStatus(filePath, nextStatus)
@@ -3735,7 +3789,7 @@ function AppShellContent({
     persistNovelChangeReviewStatus,
     replaceNovelDocumentContent,
     pushNovelReviewUndoEntry,
-    refreshNovelWorkspaceFiles,
+    refreshNovelWorkspaceFilesAfterMutation,
     selectedNovelFile?.path,
     t,
   ])

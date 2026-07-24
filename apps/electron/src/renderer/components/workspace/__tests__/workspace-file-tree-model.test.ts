@@ -5,8 +5,11 @@
 import { describe, expect, it } from 'bun:test'
 import {
   buildWorkspaceFileTree,
+  advanceWorkspaceCatalogRevision,
   collectWorkspaceTreeDirectoryIds,
   getDefaultWritingExpandedIds,
+  getWorkspaceTreeExpansionDelta,
+  readWorkspaceCatalogRevision,
   reduceWorkspaceStateAfterDeletion,
   resolveWorkspaceCreateRelativePath,
   resolveWorkspaceImportRelativePath,
@@ -101,6 +104,29 @@ describe('workspace file tree model', () => {
     })
 
     expect(result.selectedPath).toBe('/workspace/novel-1/前言.md')
+  })
+
+  it('invalidates only catalog requests captured before the current mutation', () => {
+    const revisions = new Map<string, number>()
+    const root = '/workspace/novel-1'
+    const capturedRevision = readWorkspaceCatalogRevision(revisions, root)
+
+    expect(capturedRevision).toBe(0)
+    expect(advanceWorkspaceCatalogRevision(revisions, root)).toBe(1)
+    expect(readWorkspaceCatalogRevision(revisions, root)).not.toBe(capturedRevision)
+    expect(readWorkspaceCatalogRevision(revisions, '/workspace/novel-2')).toBe(0)
+  })
+
+  it('reconciles expansion from open nodes instead of scanning closed directories', () => {
+    const result = getWorkspaceTreeExpansionDelta({
+      directoryIds: new Set(['root', 'chapter-1', 'chapter-2', 'notes']),
+      expandedIds: new Set(['root', 'chapter-2', 'deleted-folder']),
+      appliedExpandedIds: new Set(['root', 'chapter-1', 'deleted-folder']),
+    })
+
+    expect([...result.desiredExpandedIds]).toEqual(['root', 'chapter-2'])
+    expect(result.openIds).toEqual(['chapter-2'])
+    expect(result.closeIds).toEqual(['chapter-1', 'deleted-folder'])
   })
 
   it('resolves generic file and folder creation inside the selected directory', () => {
