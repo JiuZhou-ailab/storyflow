@@ -4,7 +4,7 @@
 
 Storyflow 是一个基于 Bun workspace 的 AI Agent 工作台项目，支持桌面端和无头服务端两种运行形态。核心产品是 Electron 桌面应用，集成聊天会话、本地工作区、外部来源、技能、文件编辑、差异审阅、自动化和写作项目工作流。
 
-当前仓库主要面向源码开发、本地打包和自定义工作区流程。它不只是一个 Claude 包装层：仓库内包含共享 RPC 服务、Pi SDK 子进程适配器、可复用 UI 包、Web 客户端、会话查看器，以及写作方法包脚手架。
+当前仓库主要面向源码开发、本地打包和自定义工作区流程。它不只是一个 Claude 包装层：仓库内包含共享 RPC 服务、Pi SDK 子进程适配器、可复用 UI 包、Web 客户端、会话查看器，以及项目文件工作台。
 
 ## 项目能力
 
@@ -14,7 +14,7 @@ Storyflow 是一个基于 Bun workspace 的 AI Agent 工作台项目，支持桌
 - **共享 UI 与协议包**：供 Electron、Web UI 和 Viewer 复用。
 - **多 Agent 后端**：支持 Anthropic Claude Agent SDK 和基于 Pi SDK 的 Provider 集成。
 - **写作工作区模式**：支持 Markdown 编辑、文件提及、行号、总字数、选区改写、导出、本地版本快照和差异审阅。
-- **写作方法包**：内置 Claude-Book、Oh Story、Crucible 和通用创意写作脚手架。
+- **空白项目冷启动**：新项目不预设目录或方法，用户可从描述目标、导入内容、新建文件或选择 Skill 开始。
 - **来源、技能和自动化**：支持 MCP server、REST API、本地文件、工作区指令和 Agent 原生集成。
 
 ## 仓库结构
@@ -127,28 +127,24 @@ bun run electron:start
 
 ## 写作工作区
 
-写作项目是一等工作区，支持：
+项目文件是一等工作区，支持：
 
-- 基于方法包的项目脚手架。
+- 新项目以空白文件夹启动，不自动创建领域目录、模板文件或 Git 仓库。
+- 真实文件树中的新建、导入、移动、重命名和删除。
 - 带行号和总字数的 Markdown 稿件编辑。
 - 面向作者的章节、规划文件标签。
 - 按展示名进行 `@file` 提及，同时保留真实文件路径。
 - 选区改写：直接编辑当前文档，而不是走普通聊天转录流程。
-- 生成文件变更的内联差异审阅。
-- 对稿件、大纲、状态、时间线、风格、作品和分析文件的导出控制。
+- 对项目内任意文件变更的内联差异审阅。
+- 按真实文件或文件夹显式选择导出，并保留原目录结构。
 - 通过导出附近的版本历史按钮创建本地 git 版本快照。
 
-内置方法包位于：
-
-```text
-packages/shared/src/writing/method-packs/
-```
-
-脚手架和写作项目逻辑位于：
+项目文件与写作编辑逻辑位于：
 
 ```text
 packages/shared/src/writing/
 packages/shared/src/workspaces/
+apps/electron/src/renderer/components/workspace/
 apps/electron/src/renderer/components/writing/
 ```
 

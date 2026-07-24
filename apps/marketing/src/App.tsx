@@ -174,7 +174,6 @@ const docsImages = {
   windowMap: "/reference-assets/docs/doc-01-window-map.png",
   sourceTree: "/reference-assets/docs/doc-02-source-tree.png",
   collaboration: "/reference-assets/docs/doc-03-collaboration.png",
-  templatePicker: "/reference-assets/docs/doc-04-template-picker.png",
   initialBrief: "/reference-assets/docs/doc-05-initial-brief.png",
   chapterCheck: "/reference-assets/docs/doc-06-chapter-check.png",
   fullReview: "/reference-assets/docs/doc-07-full-review.png",
@@ -746,61 +745,30 @@ function DocsPage() {
         </ul>
       </section>
 
-      <section className="docs-section" id="template-picker">
-        <div className="docs-section-copy">
-          <h2>图 4：创建新项目时怎么选模板</h2>
-          <p>模板决定新项目的文件结构、助手默认工作法、适合的写作任务。默认是短篇/中篇小说。</p>
-        </div>
-        <figure className="docs-figure docs-figure-wide">
-          <img src={docsImages.templatePicker} alt="真实截图：创建新项目时的模板选择" />
-          <figcaption>图 4：创建新项目时的模板选择</figcaption>
-        </figure>
-        <ul className="docs-bullet-list">
-          <li>
-            <strong>短篇/中篇小说：</strong>5,000-30,000 字中文短中篇网文；强钩子、强反转、每章一个正文文件。
-          </li>
-          <li>
-            <strong>Claude-Book 小说法：</strong>长篇小说；用项目圣经、章节计划、时间线和当前状态保证连续性。
-          </li>
-          <li>
-            <strong>Oh Story 网文连载法：</strong>连载网文；强调题材定位、对标拆文、章节钩子、追读节奏和去 AI 味。
-          </li>
-          <li>
-            <strong>Crucible 结构长篇法：</strong>强结构长篇；三条叙事线、36 beats、forge points 和审校关卡。
-          </li>
-          <li>
-            <strong>Creative Writing 技法工坊：</strong>探索型文学创作；知识库、声线捕捉、自由探索、批评反馈和修订循环。
-          </li>
-        </ul>
-      </section>
-
       <section className="docs-section" id="create-project">
         <div className="docs-section-copy">
-          <h2>图 5：查看项目</h2>
+          <h2>创建并开始一个项目</h2>
           <h3>创建项目功能怎么用</h3>
           <p>
-            创建项目可以理解成给一本新作品开一个独立资料柜。它不是新建一段聊天，而是新建一个可以长期保存大纲、人物、正文、素材和修改记录的作品空间。
+            创建项目可以理解成给一本新作品开一个独立资料柜。系统只建立空项目，不预先创建目录或文件；项目结构由你真正创建或导入的内容决定。
           </p>
           <h3>创建时要决定什么</h3>
           <ul className="docs-inline-list">
             <li>项目名称：建议直接写作品名或暂定名，例如《女扮男装入朝后》。</li>
             <li>保存位置：决定这个项目放在哪个工作区或文件夹里，方便以后找回。</li>
-            <li>模板：决定项目一开始自带哪些写作分区、默认流程和助手工作方法。</li>
-            <li>初始方向：可以先用一句话写清题材、主角、冲突和篇幅，后面再逐步补充。</li>
           </ul>
-          <h3>模板会影响什么</h3>
+          <h3>空项目从哪里开始</h3>
           <p>
-            模板不是标签，而是新项目的写作模板。选完之后，系统会按这个方法准备项目结构，让作者从合适的资料格子开始写。
+            新项目打开后会提供四个入口。它们都是显式操作，不会在背后改动你的文件夹。
           </p>
           <ul className="docs-inline-list">
-            <li>短篇/中篇小说：更适合先抓开篇钩子、反转和章节节奏。</li>
-            <li>长篇小说方法：更适合先建世界观、人物线、章节计划和连续性记录。</li>
-            <li>连载网文方法：更适合先做题材定位、对标拆文、追读点和章末钩子。</li>
-            <li>强结构长篇方法：更适合多线叙事、复杂伏笔和结构审校。</li>
-            <li>创意写作方法：更适合探索声线、风格、主题和多轮修订。</li>
+            <li>描述项目：先告诉助手题材、主角、冲突、篇幅和禁区。</li>
+            <li>导入文件：把已有大纲、正文或素材原样放入项目。</li>
+            <li>创建文件：从一个真实文件开始，按需要逐步形成目录。</li>
+            <li>添加 Skills：为当前任务选择可复用的写作方法。</li>
           </ul>
           <h3>创建后第一件事</h3>
-          <p>创建完成后，不要马上让助手写正文。更稳的顺序是：</p>
+          <p>没有旧稿时，建议先描述项目；已有材料时，直接导入文件。随后按真实工作需要逐步沉淀：</p>
           <ul className="docs-inline-list">
             <li>先填简报：题材、主角、核心钩子、篇幅、禁区。</li>
             <li>再推大纲：每章钩子、冲突、反转、情绪落点。</li>

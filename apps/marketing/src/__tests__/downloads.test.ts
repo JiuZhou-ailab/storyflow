@@ -135,8 +135,8 @@ describe("downloadOptions", () => {
       expect(html).toContain("一句话理解");
       expect(html).toContain("图 0：Header 功能区");
       expect(html).toContain("图 1：整窗地图");
-      expect(html).toContain("图 4：创建新项目时怎么选模板");
-      expect(html).toContain("图 5：查看项目");
+      expect(html).toContain("创建并开始一个项目");
+      expect(html).toContain("系统只建立空项目");
       expect(html).toContain("判断是否用对了");
       expect(html).toContain("初始给出的信息越明确越好");
       expect(html).toContain("然后在对话框中打出");
