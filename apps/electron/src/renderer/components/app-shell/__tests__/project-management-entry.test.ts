@@ -79,6 +79,7 @@ describe('project management entry', () => {
     expect(appShellSource).toContain('<ActivityRail')
     expect(activityRailSource).toContain('label="最近对话"')
     expect(activityRailSource).toContain('label="项目"')
+    expect(activityRailSource).toContain('text-[13px] font-semibold text-foreground/90')
     expect(activityRailSource).toContain('RECENT_SESSION_LIMIT = 8')
     expect(activityRailSource).toContain('getAllSessions')
     expect(activityRailSource).toContain('onSelectSession')
