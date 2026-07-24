@@ -1,5 +1,5 @@
 // input: Novel workspace file projections, review changes, and renderer callbacks
-// output: Regression coverage for the Cursor-style writing workspace layout and inline review UI
+// output: Regression coverage for disk-synced project navigation, lifecycle menus, and inline review UI
 // pos: Keeps writing catalog navigation in the app shell and document editing in the navigator column
 
 import * as React from 'react'
@@ -375,10 +375,12 @@ describe('novel writing workspace layout', () => {
 
   it('keeps writing catalog ownership in the left shell and document editing in the navigator shell', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const sidebarSource = readFileSync(new URL('../../workspace/WorkspaceProjectSidebar.tsx', import.meta.url), 'utf-8')
     const chatPageSource = readFileSync(new URL('../../../pages/ChatPage.tsx', import.meta.url), 'utf-8')
 
     expect(appShellSource).toContain('NovelDocumentEditorPanel')
-    expect(appShellSource).toContain('<WorkspaceFileTree')
+    expect(appShellSource).toContain('<WorkspaceProjectSidebar')
+    expect(sidebarSource).toContain('<WorkspaceFileTree')
     expect(appShellSource).not.toContain('<NovelWorkspaceNavigatorPanel')
     expect(chatPageSource).not.toContain('NovelWorkspacePanel')
     expect(chatPageSource).not.toContain('NovelWorkspaceNavigatorPanel')
@@ -391,10 +393,10 @@ describe('novel writing workspace layout', () => {
     const treeSource = readFileSync(new URL('../../workspace/WorkspaceFileTree.tsx', import.meta.url), 'utf-8')
     const modelSource = readFileSync(new URL('../../workspace/workspace-file-tree-model.ts', import.meta.url), 'utf-8')
 
-    expect(appShellSource).toContain('<WorkspaceFileTree')
-    expect(appShellSource).toContain('workspaceName={activeWorkspace?.name')
-    expect(appShellSource).toContain('rootPath={novelWorkspaceRoot}')
-    expect(appShellSource).toContain('files={novelWorkspaceFiles}')
+    expect(appShellSource).toContain('<WorkspaceProjectSidebar')
+    expect(appShellSource).toContain('workspaceName: activeWorkspace?.name')
+    expect(appShellSource).toContain('rootPath: novelWorkspaceRoot')
+    expect(appShellSource).toContain('files: novelWorkspaceFiles')
     expect(treeSource).toContain('data={data}')
     expect(treeSource).toContain('openByDefault={false}')
     expect(modelSource).toContain(`? \`writing:project:\${workspaceId}\``)
@@ -425,30 +427,66 @@ describe('novel writing workspace layout', () => {
   it('exposes writing create and import actions through row context menus', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const rowSource = readFileSync(new URL('../../workspace/WorkspaceFileTreeRow.tsx', import.meta.url), 'utf-8')
+    const modelSource = readFileSync(new URL('../../workspace/workspace-file-tree-model.ts', import.meta.url), 'utf-8')
+    const rootMenuSource = appShellSource.slice(
+      appShellSource.indexOf("if (entry.type === 'root')"),
+      appShellSource.indexOf("if (entry.type === 'file')"),
+    )
 
-    expect(appShellSource).toContain('novelCreateFileTarget')
-    expect(appShellSource).toContain('handleSubmitNovelCreateFile')
+    expect(appShellSource).toContain('workspaceCreateEntryTarget')
+    expect(appShellSource).toContain('handleSubmitWorkspaceCreateEntry')
+    expect(appShellSource).toContain('workspaceFileTreeRef.current?.open(id)')
+    expect(appShellSource).toContain('window.electronAPI.createDirectory(targetPath)')
     expect(appShellSource).toContain('window.electronAPI.createDirectory(parentPath)')
     expect(appShellSource).toContain('window.electronAPI.writeFile(targetPath,')
     expect(appShellSource).toContain('handleImportNovelFiles')
     expect(appShellSource).toContain('window.electronAPI.openFileDialog()')
-    expect(appShellSource).toContain('getNovelImportTargetRelativePath')
+    expect(appShellSource).toContain('resolveWorkspaceImportRelativePath(parentRelativePath, sourcePath)')
     expect(appShellSource).toContain('const getNovelWorkspaceTreeMenuActions = React.useCallback')
-    expect(appShellSource).toContain("importAction('import-manuscript', '正文'")
-    expect(appShellSource).toContain("importAction('import-global', '全局'")
-    expect(appShellSource).toContain("importAction('import-free', '自由区'")
-    expect(appShellSource).toContain("t('writing.createFile.globalInfo', '新建全局信息文件')")
-    expect(appShellSource).toContain("t('writing.importFile.globalInfo', '导入全局信息文件')")
+    expect(appShellSource).toContain("t('writing.createFile.menu', '新建文件')")
+    expect(appShellSource).toContain("t('writing.createFolder.menu', '新建文件夹')")
+    expect(appShellSource).toContain("t('writing.importFile.menu', '导入文件')")
+    expect(rootMenuSource).toContain("...createActions('')")
+    expect(rootMenuSource).toContain("id: 'reveal-root'")
+    expect(rootMenuSource).toContain("id: 'open-project-in-new-window'")
+    expect(rootMenuSource).toContain("id: 'rename-project'")
+    expect(rootMenuSource).toContain("id: 'remove-project'")
+    expect(rootMenuSource).toContain("t('workspace.removeWorkspace')")
+    expect(rootMenuSource).toContain('variant: \'destructive\'')
+    expect(rootMenuSource).toContain('onRemoveProject(activeProjectId)')
+    expect(rootMenuSource).not.toContain('children:')
+    expect(rootMenuSource).not.toContain("id: 'open-sources'")
+    expect(rootMenuSource).not.toContain("id: 'open-skills'")
+    expect(appShellSource).not.toContain('create-manuscript')
+    expect(appShellSource).not.toContain('create-global')
+    expect(appShellSource).not.toContain('create-free')
     expect(rowSource).toContain('<StyledContextMenuContent')
     expect(rowSource).toContain('<StyledContextMenuItem')
+    expect(rowSource).not.toContain('<StyledContextMenuSubTrigger')
+    expect(rowSource).toContain("const ROOT_MENU_ITEM_CLASS =")
     expect(rowSource).toContain('context.getMenuActions?.(entry)')
     expect(rowSource).not.toContain('MoreHorizontal')
-    expect(appShellSource).toContain('placeholder={novelCreateFileTarget?.placeholder}')
-    expect(appShellSource).toContain('normalizeNovelCreateFilePath')
+    expect(appShellSource).toContain('placeholder={workspaceCreateEntryTarget?.placeholder}')
+    expect(appShellSource).toContain('resolveWorkspaceCreateRelativePath(')
     expect(appShellSource).toContain('shouldCreateMarkdownStarter(relativePath)')
-    expect(appShellSource).toContain("'07-标题、07-标题.md 或 第一卷/07-标题.txt'")
-    expect(appShellSource).toContain("'角色/主角、世界观/城市.md 或 补充设定.txt'")
-    expect(appShellSource).toContain("'脑洞、脑洞.md 或 临时/脑洞.txt'")
+    expect(modelSource).toContain("export type WorkspaceCreateEntryKind = 'file' | 'directory'")
+    expect(modelSource).toContain("name = `${name}.md`")
+  })
+
+  it('refreshes the project tree from its real folder when the app regains focus', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const syncSource = appShellSource.slice(
+      appShellSource.indexOf('const syncWorkspaceTreeFromDisk ='),
+      appShellSource.indexOf('const selectedNovelFile = React.useMemo'),
+    )
+
+    expect(syncSource).toContain("window.addEventListener('focus', syncWorkspaceTreeFromDisk)")
+    expect(syncSource).toContain("document.addEventListener('visibilitychange', handleVisibilityChange)")
+    expect(syncSource).toContain('novelWorkspaceCatalogCacheRef.current.delete(novelWorkspaceRoot)')
+    expect(syncSource).toContain('refreshNovelWorkspaceFiles(novelWorkspaceRoot)')
+    expect(syncSource).toContain("error.message.includes('Workspace not found')")
+    expect(syncSource).toContain('setNovelWorkspaceCatalogIfChanged(emptyCatalog)')
+    expect(syncSource).toContain('setSelectedNovelFilePath(null)')
   })
 
   it('keeps the native writing file tree ordered by filesystem path instead of custom catalog order', () => {
@@ -478,8 +516,10 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('window.electronAPI.deleteWorkspaceEntry({')
     expect(appShellSource).toContain('recursive: entry.type ===')
     expect(appShellSource).toContain('novelWorkspaceCatalogCacheRef.current.delete(novelWorkspaceRoot)')
-    expect(appShellSource).toContain('getNovelFolderCreateTarget(entry.relativePath)')
-    expect(appShellSource).toContain('getNovelFileCreateBasePath(file)')
+    expect(appShellSource).toContain('...createActions(entry.relativePath)')
+    expect(appShellSource).toContain("if (entry.type === 'file')")
+    expect(appShellSource).not.toContain('getNovelFolderCreateTarget')
+    expect(appShellSource).not.toContain('getNovelFileCreateBasePath')
     expect(appShellSource).toContain('revealWorkspaceFile({')
     expect(appShellSource).toContain('showInFolder: path => window.electronAPI.showInFolder(path)')
     expect(appShellSource).toContain("t('sessionMenu.showInFileManager', { fileManager: fileManagerName })")
@@ -515,22 +555,21 @@ describe('novel writing workspace layout', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const modelSource = readFileSync(new URL('../../workspace/workspace-file-tree-model.ts', import.meta.url), 'utf-8')
 
-    expect(appShellSource).toContain('<WorkspaceFileTree')
-    expect(appShellSource).toContain('workspaceName={activeWorkspace?.name')
-    expect(appShellSource).toContain('directories={novelWorkspaceDirectories}')
+    expect(appShellSource).toContain('<WorkspaceProjectSidebar')
+    expect(appShellSource).toContain('workspaceName: activeWorkspace?.name')
+    expect(appShellSource).toContain('directories: novelWorkspaceDirectories')
     expect(modelSource).toContain('buildWorkspaceFileTree')
     expect(modelSource).not.toContain('globalSectionDefinitions')
     expect(modelSource).not.toContain('NOVEL_WORKSPACE_GLOBAL_GROUP_ID')
     expect(modelSource).not.toContain('formatNovelWorkspaceFileTitle')
   })
 
-  it('exposes selectable writing workspace export controls', () => {
+  it('exports explicitly selected project files without category inference', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
-    const exportDialogSource = readFileSync(new URL('../NovelExportDialog.tsx', import.meta.url), 'utf-8')
+    const exportDialogSource = readFileSync(new URL('../../workspace/ProjectExportDialog.tsx', import.meta.url), 'utf-8')
     const versionDialogSource = readFileSync(new URL('../NovelVersionHistoryDialog.tsx', import.meta.url), 'utf-8')
     const topBarSource = readFileSync(new URL('../../app-shell/TopBar.tsx', import.meta.url), 'utf-8')
     const editorPanelSource = readFileSync(new URL('../NovelDocumentEditorPanel.tsx', import.meta.url), 'utf-8')
-    const zhHansLocale = JSON.parse(readFileSync(new URL('../../../../../../../packages/shared/src/i18n/locales/zh-Hans.json', import.meta.url), 'utf-8'))
     const exportHandlerSource = appShellSource.slice(
       appShellSource.indexOf('const handleExportNovelWorkspace'),
       appShellSource.indexOf('const novelReviewUndoStackRef')
@@ -540,15 +579,15 @@ describe('novel writing workspace layout', () => {
       appShellSource.indexOf('const handleExportNovelWorkspace')
     )
     const exportDialogShellSource = exportDialogSource.slice(
-      exportDialogSource.indexOf('export function NovelExportDialog'),
-      exportDialogSource.indexOf('function NovelExportDialogContent')
+      exportDialogSource.indexOf('export function ProjectExportDialog'),
+      exportDialogSource.indexOf('function ProjectExportDialogContent')
     )
     const versionDialogShellSource = versionDialogSource.slice(
       versionDialogSource.indexOf('export function NovelVersionHistoryDialog'),
       versionDialogSource.indexOf('function NovelVersionHistoryDialogContent')
     )
 
-    expect(appShellSource).toContain('NovelExportDialog')
+    expect(appShellSource).toContain('ProjectExportDialog')
     expect(appShellSource).toContain('NovelVersionHistoryDialog')
     expect(appShellSource).toContain('handleExportNovelWorkspace')
     expect(appShellSource).toContain('handleCreateNovelVersion')
@@ -556,8 +595,8 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('setNovelExportDialogOpen(true)')
     expect(appShellSource).toContain('setNovelVersionDialogOpen(true)')
     expect(appShellSource).toContain('workspaceActions={(')
-    expect(appShellSource).toContain('buildNovelExportPlan')
-    expect(appShellSource).toContain('buildMergedManuscriptContent')
+    expect(appShellSource).toContain('buildProjectExportPlan')
+    expect(appShellSource).not.toContain('buildMergedManuscriptContent')
     expect(appShellSource).toContain('NOVEL_AUTO_VERSION_CHAR_THRESHOLD = 100')
     expect(appShellSource).toContain('NOVEL_AUTO_VERSION_INTERVAL_MS = 5 * 60 * 1000')
     expect(appShellSource).toContain('novelAutoVersionTimerRef')
@@ -576,25 +615,22 @@ describe('novel writing workspace layout', () => {
     expect(topBarSource).not.toContain('ml-auto flex min-w-0 flex-1 items-center justify-end gap-1')
     expect(topBarSource).not.toContain('w-[clamp(220px,42vw,640px)]')
     expect(topBarSource).not.toContain('titlebar-no-drag min-w-0 shrink-0')
-    expect(exportDialogSource).toContain('NOVEL_EXPORT_SECTIONS')
-    expect(exportDialogSource).toContain('tree[section].files.length')
-    expect(exportDialogSource).toContain('function NovelExportDialogContent')
+    expect(exportDialogSource).toContain('getProjectExportDirectories')
+    expect(exportDialogSource).toContain('selectedFilePaths')
+    expect(exportDialogSource).toContain('function ProjectExportDialogContent')
     expect(exportDialogShellSource).not.toContain('buildNovelWorkspaceTree')
     expect(exportDialogSource).not.toContain('summarizeNovelSection')
-    expect(exportDialogSource).toContain('mergeManuscript')
-    expect(exportDialogSource).toContain("'writing.export.sections.manuscript'")
-    expect(exportDialogSource).toContain("t('writing.export.title', '导出写作工作区')")
+    expect(exportDialogSource).not.toContain('mergeManuscript')
+    expect(exportDialogSource).not.toContain('NOVEL_EXPORT_SECTIONS')
+    expect(exportDialogSource).toContain("t('writing.export.title', '导出项目')")
     expect(exportDialogSource).toContain("t('writing.export.action', '导出')")
-    expect(exportDialogSource).toContain("manuscript: '正文'")
+    expect(exportDialogSource).toContain("onExport({ selectedPaths: selectedFilePaths })")
     expect(versionDialogSource).toContain("t('writing.version.title', '版本管理')")
     expect(versionDialogSource).toContain('function NovelVersionHistoryDialogContent')
     expect(versionDialogShellSource).not.toContain('versions.map')
     expect(versionDialogSource).toContain('onCreateVersion')
     expect(versionDialogSource).toContain('onRestore(version.hash)')
     expect(appShellSource).toContain("t('writing.export.action', '导出')")
-    expect(zhHansLocale['writing.export.title']).toBe('导出写作工作区')
-    expect(zhHansLocale['writing.export.sections.manuscript']).toBe('正文')
-    expect(zhHansLocale['writing.export.mergeManuscript']).toBe('正文导出为一个文件')
   })
 
   it('auto-saves before file switching and selection Ask AI when the current document has unsaved edits', () => {
@@ -743,21 +779,18 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('dismissedNovelReviewDotKeys')
     expect(appShellSource).toContain('pendingNovelReviewDotKeysByPath')
     expect(appShellSource).toContain('handleDismissNovelReviewDot')
-    expect(appShellSource).toContain('hasReviewDot={hasNovelReviewDot}')
-    expect(appShellSource).toContain('onDismissReviewDot={handleDismissNovelReviewDot}')
+    expect(appShellSource).toContain('hasReviewDot: hasNovelReviewDot')
+    expect(appShellSource).toContain('onDismissReviewDot: handleDismissNovelReviewDot')
     expect(treeSource).toContain('hasReviewDot?: (path: string) => boolean')
     expect(rowSource).toContain('context.hasReviewDot?.(entry.path)')
     expect(rowSource).toContain('context.onDismissReviewDot?.(entry.path)')
     expect(rowSource).toContain('bg-emerald-500')
   })
 
-  it('defers review change grouping until the changes tab is active', () => {
+  it('removes the obsolete categorized changes navigator', () => {
     const navigatorSource = readSourceIfExists(new URL('../NovelWorkspaceNavigatorPanel.tsx', import.meta.url))
 
-    expect(navigatorSource).toContain("activeTab === 'changes' ? groupReviewableNovelFileChanges")
-    expect(navigatorSource).toContain('reviewableChangeCount')
-    expect(navigatorSource).not.toContain('filterReviewableNovelFileChanges')
-    expect(navigatorSource).not.toContain('groupNovelFileChanges(reviewableChanges')
+    expect(navigatorSource).toBe('')
   })
 
   it('saves the selected writing document before accepting file-level review changes', () => {
@@ -983,7 +1016,7 @@ describe('novel writing workspace layout', () => {
     )
     const refreshSource = appShellSource.slice(
       appShellSource.indexOf('const refreshNovelWorkspaceFiles ='),
-      appShellSource.indexOf('const openNovelCreateFileDialog')
+      appShellSource.indexOf('const openWorkspaceCreateEntryDialog')
     )
     const detectionSource = appShellSource.slice(
       appShellSource.indexOf('async function detectNovelWorkspace'),
@@ -1007,7 +1040,7 @@ describe('novel writing workspace layout', () => {
     )
     const refreshSource = appShellSource.slice(
       appShellSource.indexOf('const refreshNovelWorkspaceFiles ='),
-      appShellSource.indexOf('const openNovelCreateFileDialog')
+      appShellSource.indexOf('const openWorkspaceCreateEntryDialog')
     )
 
     expect(appShellSource).toContain('novelWorkspaceLoadInFlightRef')
@@ -1197,14 +1230,12 @@ describe('novel writing workspace layout', () => {
     expect(navigatorSlotSource.indexOf('showNovelWorkspaceUnavailable')).toBeLessThan(navigatorSlotSource.indexOf('<SessionList'))
   })
 
-  it('expands project root and manuscript by default without overriding a persisted collapse', () => {
+  it('uses generic project-tree defaults without overriding a persisted collapse', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
-    const modelSource = readFileSync(new URL('../../workspace/workspace-file-tree-model.ts', import.meta.url), 'utf-8')
 
     expect(appShellSource).toContain('storage.get<string[] | null>(storage.KEYS.expandedFolders, null, activeWorkspaceId)')
     expect(appShellSource).toContain('getDefaultWritingExpandedIds')
     expect(appShellSource).toContain('persistedExpandedFolders ?? (activeWorkspaceId ? getDefaultWritingExpandedIds(activeWorkspaceId) : [])')
-    expect(modelSource).toContain("writing:folder:正文")
   })
 
   it('exposes global search from the activity rail backed by the global search dialog', () => {

@@ -124,7 +124,7 @@ export interface CreateSessionOptions {
   /**
    * Working directory for the session:
    * - 'user_default' or undefined: Use workspace's configured default working directory
-   * - 'none': No working directory (session folder only)
+   * - 'none': Use the private session folder
    * - Absolute path string: Use this specific path
    */
   workingDirectory?: string | 'user_default' | 'none'

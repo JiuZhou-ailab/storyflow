@@ -42,18 +42,10 @@ describe("detectWritingProject", () => {
     expect(project?.type).toBe("novel");
     expect(project?.source).toBe("manifest");
     expect(project?.manifest.title).toBe("Test Novel");
-    expect(project?.manifest.methodPack).toEqual({
-      id: "novel.claude-book",
-      version: 1,
-    });
+    expect("methodPack" in (project?.manifest ?? {})).toBe(false);
     expect(project?.manifest.storageProfile).toBe("claude-book-compatible");
-    expect(project?.manifest.catalog).toEqual({
-      paths: ["bible/structure.md", "story/plan.md"],
-    });
-    expect(project?.manifest.writePolicy).toEqual({
-      mode: "catalog-plus-free",
-      freeRoots: [".work"],
-    });
+    expect("catalog" in (project?.manifest ?? {})).toBe(false);
+    expect("writePolicy" in (project?.manifest ?? {})).toBe(false);
     expect(project?.directories.bible).toBe(join(rootPath, "bible"));
   });
 

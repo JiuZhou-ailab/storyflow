@@ -57,7 +57,6 @@ export {
   generateSlug,
   generateUniqueWorkspacePath,
   createWorkspaceAtPath,
-  createNovelWorkspaceAtPath,
   createDefaultWorkspaceAtPath,
   deleteWorkspaceFolder,
   isValidWorkspace,
@@ -68,5 +67,4 @@ export {
   CONFIG_DIR,
   DEFAULT_WORKSPACES_DIR,
   DEFAULT_STARTER_WORKSPACE_NAME,
-  DEFAULT_STARTER_WORKSPACE_METHOD_PACK_ID,
 } from './storage.ts';

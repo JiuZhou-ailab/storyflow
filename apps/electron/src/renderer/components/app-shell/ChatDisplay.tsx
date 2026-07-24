@@ -82,6 +82,7 @@ import { resolveBranchNewPanelOption } from "./branching"
 import {
   resolveChatOpeningPrompt,
   type ChatOpeningAction,
+  type ChatOpeningCommand,
   type ChatOpeningPrompt,
 } from "./chat-opening"
 import {
@@ -274,6 +275,8 @@ interface ChatDisplayProps {
   onDraftInputChange?: (sessionId: string, value: string) => void
   /** Empty-chat opening prompt, resolved by the parent context boundary. */
   chatOpening?: ChatOpeningPrompt
+  /** Execute an explicit project action from the empty-chat opening. */
+  onChatOpeningCommand?: (command: ChatOpeningCommand) => void
   /** Whether this ChatDisplay belongs to the currently focused panel. */
   isFocusedPanel?: boolean
 }
@@ -473,7 +476,6 @@ function ChatOpeningEmptyState({
   const { t } = useTranslation()
   const contextParts = [
     opening.workspaceName ? t('chatOpening.contextProject', { workspaceName: opening.workspaceName }) : undefined,
-    opening.methodPackName,
   ].filter((part): part is string => Boolean(part))
 
   return (
@@ -600,6 +602,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   onCreateSession,
   onDraftInputChange,
   chatOpening = resolveChatOpeningPrompt({}),
+  onChatOpeningCommand,
   isFocusedPanel = true,
 }, ref) {
   const { t } = useTranslation()
@@ -628,13 +631,18 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const internalTextareaRef = React.useRef<RichTextInputHandle>(null)
   const textareaRef = externalTextareaRef || internalTextareaRef
   const handleOpeningAction = React.useCallback((action: ChatOpeningAction) => {
+    if (action.kind === 'command') {
+      onChatOpeningCommand?.(action.command)
+      return
+    }
+
     const prompt = t(action.promptKey)
     onInputChange?.(prompt)
     textareaRef.current?.focus()
     window.setTimeout(() => {
       textareaRef.current?.setSelectionRange(prompt.length, prompt.length)
     }, 0)
-  }, [onInputChange, t, textareaRef])
+  }, [onChatOpeningCommand, onInputChange, t, textareaRef])
   const [sendMessageKey, setSendMessageKey] = useState<'enter' | 'cmd-enter'>('enter')
   const [openAnnotationRequest, setOpenAnnotationRequest] = React.useState<{
     messageId: string

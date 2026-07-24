@@ -7,8 +7,6 @@
  * Note: Different from SourceMcpAuthType which uses 'oauth' | 'bearer' | 'none' for individual sources
  */
 export type McpAuthType = 'workspace_oauth' | 'workspace_bearer' | 'public';
-export type WorkspaceProjectType = 'general' | 'novel' | 'screenplay' | 'short-form';
-
 /**
  * Configuration for a remote Craft Agent Server.
  * When set on a workspace, handler calls are proxied over WebSocket.
@@ -32,8 +30,6 @@ export interface WorkspaceInfo {
   mcpUrl?: string;
   mcpAuthType?: McpAuthType;
   remoteServer?: RemoteServerConfig;
-  projectType?: WorkspaceProjectType;
-  methodPackId?: string;
 }
 
 /**

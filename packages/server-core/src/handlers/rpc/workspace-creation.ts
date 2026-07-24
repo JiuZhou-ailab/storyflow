@@ -1,24 +1,17 @@
+// input: Current and legacy workspace creation options plus tracked root paths
+// output: Remote-only option normalization and stale default root cleanup
+// pos: Compatibility boundary between CREATE RPC input and generic workspace storage
+
 import { rmSync } from 'fs'
 import { dirname, resolve } from 'path'
 import type { RemoteServerConfig } from '@craft-agent/core/types'
 import {
-  createNovelWorkspaceAtPath as defaultCreateNovelWorkspaceAtPath,
   getDefaultWorkspacesDir,
   isValidWorkspace as defaultIsValidWorkspace,
 } from '@craft-agent/shared/workspaces'
-import { getBuiltInMethodPack, type MethodPackId } from '@craft-agent/shared/writing/method-packs'
-
-export type WorkspaceProjectType = 'general' | 'novel' | 'screenplay' | 'short-form'
 
 export interface CreateWorkspaceOptions {
   remoteServer?: RemoteServerConfig
-  projectType?: WorkspaceProjectType
-  methodPackId?: MethodPackId
-}
-
-export interface WorkspaceRootProjectDeps {
-  isValidWorkspace: (rootPath: string) => boolean
-  createNovelWorkspaceAtPath: (rootPath: string, name: string, methodPackId?: MethodPackId) => void
 }
 
 export interface StaleDefaultWorkspaceRootDeps {
@@ -38,42 +31,21 @@ function isRemoteServerConfig(value: unknown): value is RemoteServerConfig {
 }
 
 export function normalizeCreateWorkspaceOptions(
-  input?: CreateWorkspaceOptions | RemoteServerConfig,
-  projectType?: WorkspaceProjectType,
+  input?: CreateWorkspaceOptions | RemoteServerConfig | Record<string, unknown>,
+  _legacyProjectType?: unknown,
 ): CreateWorkspaceOptions {
-  const withDefaultMethodPack = (options: CreateWorkspaceOptions): CreateWorkspaceOptions => {
-    if (options.methodPackId) return options
-    if (options.projectType === 'short-form') {
-      return {
-        ...options,
-        methodPackId: 'short-form.article',
-      }
-    }
-    if (options.projectType === 'screenplay') {
-      return {
-        ...options,
-        methodPackId: 'screenplay.logic',
-      }
-    }
-    if (options.projectType !== 'novel') return options
-    return {
-      ...options,
-      methodPackId: 'novel.claude-book',
-    }
-  }
-
-  if (!input) {
-    return withDefaultMethodPack(projectType ? { projectType } : {})
-  }
-
   if (isRemoteServerConfig(input)) {
-    return withDefaultMethodPack({
-      remoteServer: input,
-      ...(projectType && { projectType }),
-    })
+    return { remoteServer: input }
   }
 
-  return withDefaultMethodPack(input)
+  const remoteServer = input && typeof input === 'object'
+    ? (input as { remoteServer?: unknown }).remoteServer
+    : undefined
+  if (isRemoteServerConfig(remoteServer)) {
+    return { remoteServer }
+  }
+
+  return {}
 }
 
 function isDefaultWorkspaceChild(rootPath: string, defaultWorkspacesDir: string): boolean {
@@ -102,29 +74,4 @@ export function resetStaleDefaultWorkspaceRoot(
   })
   removeWorkspaceRoot(rootPath)
   return true
-}
-
-export function ensureWorkspaceRootForProject(
-  rootPath: string,
-  name: string,
-  options: CreateWorkspaceOptions,
-  deps: WorkspaceRootProjectDeps = {
-    isValidWorkspace: defaultIsValidWorkspace,
-    createNovelWorkspaceAtPath: (rootPath, workspaceName, methodPackId) =>
-      defaultCreateNovelWorkspaceAtPath(rootPath, workspaceName, undefined, methodPackId),
-  },
-): void {
-  const methodPackId = options.methodPackId
-    ?? (options.projectType === 'novel' ? 'novel.claude-book' : undefined)
-    ?? (options.projectType === 'screenplay' ? 'screenplay.logic' : undefined)
-    ?? (options.projectType === 'short-form' ? 'short-form.article' : undefined)
-  if (!methodPackId) return
-
-  const methodPack = getBuiltInMethodPack(methodPackId)
-  if (!methodPack) {
-    throw new Error(`Unknown method pack: ${methodPackId}`)
-  }
-  if (deps.isValidWorkspace(rootPath)) return
-
-  deps.createNovelWorkspaceAtPath(rootPath, name, methodPack.id)
 }

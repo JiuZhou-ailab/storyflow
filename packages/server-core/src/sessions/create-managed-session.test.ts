@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from 'bun:test'
 import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
+import { getSessionPath } from '@craft-agent/shared/sessions'
 import { createManagedSession, SessionManager } from './SessionManager.ts'
 
 describe('createManagedSession', () => {
@@ -30,6 +31,39 @@ describe('createManagedSession', () => {
     }, workspace as any)
 
     expect(managed.thinkingLevel).toBeUndefined()
+  })
+
+  it('repairs legacy project sessions without a working directory to the visible workspace root', () => {
+    const managed = createManagedSession({
+      id: 'session_legacy_project',
+    }, workspace as any)
+
+    expect(managed.workingDirectory).toBe(workspace.rootPath)
+  })
+
+  it('preserves an explicit project working directory', () => {
+    const workingDirectory = '/tmp/test-workspace/第一卷'
+    const managed = createManagedSession({
+      id: 'session_explicit_project',
+      workingDirectory,
+    }, workspace as any)
+
+    expect(managed.workingDirectory).toBe(workingDirectory)
+  })
+
+  it('keeps legacy Free Conversations inside private session storage', () => {
+    const freeWorkspace = {
+      ...workspace,
+      id: FREE_CONVERSATION_WORKSPACE_ID,
+      rootPath: '/tmp/storyflow-free',
+    }
+    const managed = createManagedSession({
+      id: 'session_legacy_free',
+    }, freeWorkspace as any)
+
+    expect(managed.workingDirectory).toBe(
+      getSessionPath(freeWorkspace.rootPath, managed.id),
+    )
   })
 
   it('rejects working-directory changes for Free Conversations', () => {

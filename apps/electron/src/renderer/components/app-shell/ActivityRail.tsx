@@ -504,7 +504,7 @@ function SidebarSectionHeader({
       <button
         type="button"
         aria-expanded={expanded}
-        className="flex min-w-0 flex-1 items-center gap-1 rounded-[7px] px-2 py-1.5 text-left text-[11px] font-medium text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+        className="flex min-w-0 flex-1 items-center gap-1 rounded-[7px] px-2 py-1.5 text-left text-[12px] font-semibold text-foreground/75 outline-none transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
         onClick={onToggle}
       >
         {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
@@ -595,7 +595,7 @@ function ProjectFolderRow({
         <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
       </span>
       <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/90">{workspace.name}</span>
+      <span className="min-w-0 flex-1 truncate text-[12px] text-foreground/85">{workspace.name}</span>
       {hasUnread ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-label="有未读对话" /> : null}
     </button>
   )

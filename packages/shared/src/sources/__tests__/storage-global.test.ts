@@ -3,7 +3,7 @@
 // pos: Source storage boundary excluding implicit third-party agent directories
 
 import { afterEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir, homedir } from 'os';
 import { join } from 'path';
 import {
@@ -62,6 +62,18 @@ function writeSource(
 }
 
 afterEach(() => {
+  // createSource writes config before optional icon discovery completes. If the
+  // async test times out in that window, its slug is not returned to the caller,
+  // so clean by this run's unique prefix as a final isolation boundary.
+  for (const root of [GLOBAL_SOURCES_DIR, SHARED_AGENTS_SOURCES_DIR]) {
+    if (!existsSync(root)) continue;
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (entry.isDirectory() && entry.name.startsWith(TEST_PREFIX)) {
+        rmSync(join(root, entry.name), { recursive: true, force: true });
+      }
+    }
+  }
+
   for (const slug of touchedGlobalSlugs) {
     rmSync(join(GLOBAL_SOURCES_DIR, slug), { recursive: true, force: true });
   }
@@ -94,7 +106,7 @@ describe('global source storage', () => {
     expect(existsSync(join(GLOBAL_SOURCES_DIR, config.slug, 'config.json'))).toBe(true);
     expect(existsSync(join(SHARED_AGENTS_SOURCES_DIR, config.slug, 'config.json'))).toBe(false);
     expect(existsSync(join(getWorkspaceSourcesPath(workspaceRoot), config.slug, 'config.json'))).toBe(false);
-  });
+  }, 15_000);
 
   it('loads project and Craft globals, lets the project override, and ignores ~/.agents', () => {
     const workspaceRoot = makeWorkspaceRoot('merge-global-workspace');

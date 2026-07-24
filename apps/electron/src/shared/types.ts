@@ -75,14 +75,9 @@ export type { LoadedSkill, SkillMetadata };
 import type { ExportResourcesOptions, ExportResult, ResourceImportMode, ResourceBundle, ResourceImportResult } from '@craft-agent/shared/resources';
 export type { ExportResourcesOptions, ExportResult, ResourceImportMode, ResourceBundle, ResourceImportResult };
 
-// Writing method pack types
-import type { MethodPackId } from '@craft-agent/shared/writing/method-packs';
-
 // LLM connection types
 import type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings } from '@craft-agent/shared/config';
 export type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings };
-
-export type WorkspaceProjectType = 'general' | 'novel' | 'screenplay' | 'short-form';
 
 export interface FeedbackIssueAttachment {
   name: string
@@ -106,8 +101,6 @@ export interface FeedbackIssueResult {
 
 export interface CreateWorkspaceOptions {
   remoteServer?: CoreRemoteServerConfig;
-  projectType?: WorkspaceProjectType;
-  methodPackId?: MethodPackId;
 }
 
 // =============================================================================

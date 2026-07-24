@@ -7,7 +7,6 @@ import type { FileChange } from '@craft-agent/ui'
 import { groupMessagesByTurn } from '@craft-agent/ui/chat/turn-utils'
 import {
   categorizeNovelPath,
-  categorizeNovelPathForMethodPack,
   type WritingFileCategory,
 } from '@craft-agent/shared/writing/file-categories'
 import type { FileSearchResult } from '@craft-agent/shared/protocol'
@@ -80,9 +79,6 @@ export interface NovelWorkspaceRootCandidates {
   sessionWorkingDirectory?: string
 }
 
-export type NovelCreateFileBasePath = '正文' | '全局' | '自由区'
-
-const NOVEL_CREATE_FILE_ALLOWED_EXTENSIONS = new Set(['.md', '.txt'])
 const SHORT_FORM_WORKSPACE_SIGNAL_PATHS = new Set([
   '全局/简报.md',
   '全局/大纲.md',
@@ -320,46 +316,6 @@ function stripMarkdownExtension(filename: string): string {
   return filename.replace(/\.md$/i, '')
 }
 
-function getFileExtension(path: string): string | null {
-  const fileName = path.split('/').pop() ?? ''
-  const match = fileName.match(/(\.[^/.]+)$/)
-  return match?.[1]?.toLowerCase() ?? null
-}
-
-export function normalizeNovelCreateFilePath(input: string, basePath: NovelCreateFileBasePath): string | null {
-  let relative = input.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
-  if (!relative) return null
-
-  const segments = relative.split('/').map(segment => segment.trim())
-  if (segments.some(segment => !segment || segment === '.' || segment === '..')) {
-    return null
-  }
-
-  relative = segments.join('/')
-  const extension = getFileExtension(relative)
-  if (!extension) {
-    relative = `${relative}.md`
-  } else if (!NOVEL_CREATE_FILE_ALLOWED_EXTENSIONS.has(extension)) {
-    return null
-  }
-
-  return `${basePath}/${relative}`
-}
-
-export function getNovelImportTargetRelativePath(sourcePath: string, basePath: NovelCreateFileBasePath): string | null {
-  const normalizedPath = sourcePath.trim().replace(/\\/g, '/')
-  const fileName = normalizedPath.split('/').pop()?.trim() ?? ''
-  if (!fileName || fileName === '.' || fileName === '..') return null
-
-  const extension = getFileExtension(fileName)
-  const stem = extension ? fileName.slice(0, -extension.length) : fileName
-  if (!extension || !stem || !NOVEL_CREATE_FILE_ALLOWED_EXTENSIONS.has(extension)) {
-    return null
-  }
-
-  return `${basePath}/${fileName}`
-}
-
 function normalizeChapterNumber(rawNumber: string): string {
   const parsed = Number(rawNumber)
   return Number.isFinite(parsed) ? String(parsed) : rawNumber.replace(/^0+/, '') || rawNumber
@@ -441,11 +397,11 @@ export function getNovelWorkspaceCandidateRoots({
   return [...new Set(roots)]
 }
 
-export function buildNovelWorkspaceTree(files: NovelWorkspaceFile[], methodPackId?: string): NovelWorkspaceTree {
+export function buildNovelWorkspaceTree(files: NovelWorkspaceFile[]): NovelWorkspaceTree {
   const tree = createEmptyTree()
 
   for (const file of files) {
-    const category = categorizeNovelPathForMethodPack(file.relativePath, methodPackId)
+    const category = categorizeNovelPath(file.relativePath)
     tree[category].files.push(file)
   }
 
@@ -492,34 +448,14 @@ export function selectDefaultNovelTab(tree: NovelWorkspaceTree): NovelWorkspaceT
   return 'outline'
 }
 
-export function selectDefaultNovelFile(files: NovelWorkspaceFile[], methodPackId?: string): NovelWorkspaceFile | undefined {
-  const orderedSections: NovelWorkspaceFileSectionId[] = [
-    'manuscript',
-    'outline',
-    'characters',
-    'locations',
-    'timeline',
-    'state',
-    'style',
-    'analysis',
-    'work',
-  ]
-  const bestBySection = new Map<NovelWorkspaceFileSectionId, NovelWorkspaceFile>()
-
+export function selectDefaultNovelFile(files: NovelWorkspaceFile[]): NovelWorkspaceFile | undefined {
+  let selected: NovelWorkspaceFile | undefined
   for (const file of files) {
-    const sectionId = categorizeNovelPathForMethodPack(file.relativePath, methodPackId)
-    const current = bestBySection.get(sectionId)
-    if (!current || sortByRelativePath(file, current) < 0) {
-      bestBySection.set(sectionId, file)
+    if (!selected || sortByRelativePath(file, selected) < 0) {
+      selected = file
     }
   }
-
-  for (const sectionId of orderedSections) {
-    const file = bestBySection.get(sectionId)
-    if (file) return file
-  }
-
-  return undefined
+  return selected
 }
 
 export function summarizeNovelSection(files: NovelWorkspaceFile[]): NovelSectionSummary {
@@ -533,47 +469,45 @@ export function summarizeNovelSection(files: NovelWorkspaceFile[]): NovelSection
   }
 }
 
-export function groupNovelFileChanges(changes: FileChange[], rootPath = '', methodPackId?: string): NovelFileChangeGroups {
+export function groupNovelFileChanges(changes: FileChange[], rootPath = ''): NovelFileChangeGroups {
   const groups = createEmptyChangeGroups()
 
   for (const change of changes) {
-    const category = categorizeNovelFileChange(change, rootPath, methodPackId)
+    const category = categorizeNovelFileChange(change, rootPath)
     groups[category].push(change)
   }
 
   return groups
 }
 
-export function groupReviewableNovelFileChanges(changes: FileChange[], rootPath = '', methodPackId?: string): NovelFileChangeGroups {
+export function groupReviewableNovelFileChanges(changes: FileChange[], rootPath = ''): NovelFileChangeGroups {
   const groups = createEmptyChangeGroups()
 
   for (const change of changes) {
-    const category = categorizeNovelFileChange(change, rootPath, methodPackId)
-    if (category === 'other') continue
+    const category = categorizeNovelFileChange(change, rootPath)
     groups[category].push(change)
   }
 
   return groups
 }
 
-export function filterReviewableNovelFileChanges(changes: FileChange[], rootPath = '', methodPackId?: string): FileChange[] {
-  return changes.filter(change => categorizeNovelFileChange(change, rootPath, methodPackId) !== 'other')
+export function filterReviewableNovelFileChanges(changes: FileChange[], _rootPath = ''): FileChange[] {
+  return changes
 }
 
-function categorizeNovelFileChange(change: FileChange, rootPath: string, methodPackId?: string): WritingFileCategory {
+function categorizeNovelFileChange(change: FileChange, rootPath: string): WritingFileCategory {
   const relativePath = rootPath
     ? stripRootPath(change.filePath, rootPath)
     : change.filePath
-  return categorizeNovelPathForMethodPack(relativePath, methodPackId)
+  return categorizeNovelPath(relativePath)
 }
 
-export function mapSearchResultsToNovelWorkspaceFiles(results: FileSearchResult[], methodPackId?: string): NovelWorkspaceFile[] {
+export function mapSearchResultsToNovelWorkspaceFiles(results: FileSearchResult[]): NovelWorkspaceFile[] {
   const files: NovelWorkspaceFile[] = []
   const seen = new Set<string>()
 
   for (const result of results) {
     if (result.type !== 'file') continue
-    if (categorizeNovelPathForMethodPack(result.relativePath, methodPackId) === 'other') continue
     if (seen.has(result.path)) continue
 
     seen.add(result.path)

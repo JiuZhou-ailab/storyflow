@@ -43,7 +43,7 @@ export function formatUserProfileForPrompt(): string {
   return [
     '## User Profile',
     '',
-    'The following Markdown is written by the user and describes their identity, long-term preferences, thoughts, and collaboration style. Treat it as user-level defaults. Project instructions, Method Pack contracts, and explicit user requests override it when they conflict.',
+    'The following Markdown is written by the user and describes their identity, long-term preferences, thoughts, and collaboration style. Treat it as user-level defaults. Project instructions and explicit user requests override it when they conflict.',
     '',
     clippedContent,
     '',

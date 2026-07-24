@@ -1,12 +1,11 @@
-// input: Writing workspace method-pack metadata and per-message iteration counts
-// output: Regression coverage for dynamic periodic reminder injection
-// pos: Guards PromptBuilder runtime context for sustained writing sessions
+// input: Project files and a PromptBuilder turn
+// output: Regression coverage for bounded workspace structure injection
+// pos: Guards PromptBuilder runtime context for project sessions
 
 import { describe, expect, it, mock } from 'bun:test'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { createNovelProjectScaffold } from '../../../writing/novel-template'
 import { PromptBuilder } from '../prompt-builder'
 
 mock.module('../../../config/preferences.ts', () => ({
@@ -33,22 +32,7 @@ function createBuilder(rootPath: string): PromptBuilder {
   })
 }
 
-describe('PromptBuilder writing profile context', () => {
-  it('does not inject method-pack periodic reminders', () => {
-    const rootPath = mkdtempSync(join(tmpdir(), 'craft-profile-reminder-'))
-    createNovelProjectScaffold(rootPath, {
-      title: 'Short Form Reminder',
-      methodPackId: 'short-form.article',
-    })
-    const builder = createBuilder(rootPath)
-
-    const secondTurn = builder.buildContextParts({ userIteration: 2 }).join('\n\n')
-    const fourthTurn = builder.buildContextParts({ userIteration: 4 }).join('\n\n')
-
-    expect(secondTurn).not.toContain('<method_pack_periodic_reminder')
-    expect(fourthTurn).not.toContain('<method_pack_periodic_reminder')
-  })
-
+describe('PromptBuilder project context', () => {
   it('injects a bounded workspace structure on every turn', () => {
     const rootPath = mkdtempSync(join(tmpdir(), 'craft-workspace-state-'))
     mkdirSync(join(rootPath, '正文'), { recursive: true })

@@ -16,8 +16,6 @@ const sampleWorkspaces: Workspace[] = [
     slug: 'dawn',
     createdAt: 1772834400000,
     lastAccessedAt: 1773309600000,
-    projectType: 'novel',
-    methodPackId: 'novel.claude-book',
   },
   {
     id: 'remote-river',
@@ -26,8 +24,6 @@ const sampleWorkspaces: Workspace[] = [
     slug: 'river',
     createdAt: 1772409600000,
     lastAccessedAt: 1772877600000,
-    projectType: 'short-form',
-    methodPackId: 'short-form.article',
     remoteServer: {
       url: 'wss://river.storyflow.dev',
       token: 'playground-only',
@@ -41,8 +37,6 @@ const sampleWorkspaces: Workspace[] = [
     slug: 'old-manuscript',
     createdAt: 1771113600000,
     lastAccessedAt: 1771113600000,
-    projectType: 'general',
-    methodPackId: 'novel.creative-writing',
   },
 ]
 

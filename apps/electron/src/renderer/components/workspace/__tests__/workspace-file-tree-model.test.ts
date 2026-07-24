@@ -3,13 +3,17 @@
 // pos: Pure-model tests for the virtualized workspace file tree
 
 import { describe, expect, it } from 'bun:test'
-import { buildWorkspaceFileTree, getDefaultWritingExpandedIds } from '../workspace-file-tree-model'
+import {
+  buildWorkspaceFileTree,
+  getDefaultWritingExpandedIds,
+  resolveWorkspaceCreateRelativePath,
+  resolveWorkspaceImportRelativePath,
+} from '../workspace-file-tree-model'
 
 describe('workspace file tree model', () => {
-  it('defaults expand state to project root and manuscript only', () => {
+  it('defaults expand state to the project root without privileging content folders', () => {
     expect(getDefaultWritingExpandedIds('novel-1')).toEqual([
       'writing:project:novel-1',
-      'writing:folder:正文',
     ])
   })
 
@@ -36,5 +40,19 @@ describe('workspace file tree model', () => {
     expect(manuscript?.children?.map(node => node.name)).toEqual(['空目录', '2.md', '10.md'])
     expect(manuscript?.children?.[0]?.children).toEqual([])
     expect(manuscript?.fileCount).toBe(2)
+  })
+
+  it('resolves generic file and folder creation inside the selected directory', () => {
+    expect(resolveWorkspaceCreateRelativePath('', '新章节', 'file')).toBe('新章节.md')
+    expect(resolveWorkspaceCreateRelativePath('正文/第一卷', '新章节.txt', 'file')).toBe('正文/第一卷/新章节.txt')
+    expect(resolveWorkspaceCreateRelativePath('正文', '第二卷', 'directory')).toBe('正文/第二卷')
+    expect(resolveWorkspaceCreateRelativePath('正文', '../越界', 'file')).toBeNull()
+    expect(resolveWorkspaceCreateRelativePath('正文', '资料.docx', 'file')).toBeNull()
+  })
+
+  it('imports supported text files into the selected directory without semantic routing', () => {
+    expect(resolveWorkspaceImportRelativePath('', '/Users/me/Desktop/第七章.md')).toBe('第七章.md')
+    expect(resolveWorkspaceImportRelativePath('资料', 'C:\\Users\\me\\Desktop\\笔记.TXT')).toBe('资料/笔记.TXT')
+    expect(resolveWorkspaceImportRelativePath('资料', '/Users/me/Desktop/附件.docx')).toBeNull()
   })
 })

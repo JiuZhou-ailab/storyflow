@@ -484,8 +484,6 @@ function main() {
     slug: string;
     id: string;
     createdAt: number;
-    projectType?: "novel";
-    methodPackId?: "short-form.article";
   }> = [];
   const wsNamePool = ["长篇小说", "短篇练习", "世界观设定", "资料整理", "番外集", "修订稿", "投稿准备", "读者反馈", "灵感碎片", "连载主线"];
 
@@ -507,7 +505,6 @@ function main() {
       slug,
       id: uuidLike(rng),
       createdAt: wsCreatedAt,
-      ...(isNovelWs ? { projectType: "novel" as const, methodPackId: "short-form.article" as const } : {}),
     });
 
     // Workspace-level config.json (format observed in real workspaces)
@@ -534,9 +531,6 @@ function main() {
         schemaVersion: 1,
         type: "novel",
         title: wsName,
-        profile: "short-form",
-        methodPack: { id: "short-form.article", version: 1 },
-        storageProfile: "short-form-compatible",
       });
       totalBytes += buildNovelContent(rng, wsRoot, nChapters);
       chaptersWritten = nChapters;

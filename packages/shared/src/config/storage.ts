@@ -1,5 +1,5 @@
 // input: Config files, bundled defaults, workspace metadata, and encrypted credentials
-// output: Persistent app config, default workspace/session records, and seeded connection credentials
+// output: Persistent app config, explicit workspace references, default session records, and seeded connection credentials
 // pos: Shared configuration persistence layer used by Electron, server, and tests
 import { createHash } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync, readdirSync } from 'fs';
@@ -26,7 +26,6 @@ import type { PermissionMode } from '../agent/mode-manager.ts';
 import type { ThinkingLevel } from '../agent/thinking-levels.ts';
 import { isValidThinkingLevel, normalizeThinkingLevel } from '../agent/thinking-levels.ts';
 import { parsePermissionMode, PERMISSION_MODE_ORDER } from '../agent/mode-types.ts';
-import { detectManifestWritingProject } from '../writing/manifest.ts';
 import { type BuiltinLlmConnectionDefaults, type ConfigDefaults } from './config-defaults-schema.ts';
 import { isValidThemeFile } from './validators.ts';
 import { invalidateAllSessionToolsCaches } from '../agent/session-tool-cache-invalidation.ts';
@@ -496,18 +495,6 @@ export function loadStoredConfig(): StoredConfig | null {
       config.activeWorkspaceId = config.workspaces[0]?.id || null;
     }
 
-    // Ensure workspace folder structure exists for all workspaces.
-    // Failures here are non-fatal — the workspace will be re-created on next access.
-    for (const workspace of config.workspaces) {
-      if (!isValidWorkspace(workspace.rootPath)) {
-        try {
-          createWorkspaceAtPath(workspace.rootPath, workspace.name);
-        } catch (wsError) {
-          debug('[config] Failed to create workspace at', workspace.rootPath, ':', wsError instanceof Error ? wsError.message : wsError);
-        }
-      }
-    }
-
     return config;
   } catch (error) {
     debug('[config] loadStoredConfig failed:', error instanceof Error ? error.message : error);
@@ -873,15 +860,11 @@ export function getWorkspaces(): Workspace[] {
     }
 
     const slug = extractWorkspaceSlugFromPath(w.rootPath, w.id);
-    const writingProject = detectManifestWritingProject(w.rootPath);
-    const methodPackId = writingProject?.manifest.methodPack?.id;
     return {
       ...w,
       name,
       slug,
       iconUrl,
-      ...(writingProject ? { projectType: writingProject.type } : {}),
-      ...(methodPackId ? { methodPackId } : {}),
     };
   });
 }
@@ -900,10 +883,17 @@ export function getActiveWorkspace(): Workspace | null {
  */
 export function getWorkspaceByNameOrId(nameOrId: string): Workspace | null {
   const workspaces = getWorkspaces();
-  return workspaces.find(w =>
+  const workspace = workspaces.find(w =>
     w.id === nameOrId ||
     w.name.toLowerCase() === nameOrId.toLowerCase()
-  ) || null;
+  );
+  if (!workspace) return null;
+
+  // The configured root is a reference, not an instruction to recreate user data.
+  // Remote workspaces resolve on their own server; local workspaces must still exist.
+  if (!workspace.remoteServer && !existsSync(workspace.rootPath)) return null;
+
+  return workspace;
 }
 
 export function updateWorkspaceRemoteServer(

@@ -29,8 +29,7 @@ import { cn } from '@/lib/utils'
 import { AddWorkspaceStep_CreateNew } from '@/components/workspace/AddWorkspaceStep_CreateNew'
 import { AddWorkspaceStep_OpenFolder } from '@/components/workspace/AddWorkspaceStep_OpenFolder'
 import { AddWorkspaceStep_ConnectRemote } from '@/components/workspace/AddWorkspaceStep_ConnectRemote'
-import type { RemoteServerConfig, Workspace, WorkspaceProjectType } from '../../../shared/types'
-import type { MethodPackId } from '@craft-agent/shared/writing/method-packs'
+import type { RemoteServerConfig, Workspace } from '../../../shared/types'
 import { formatRelativeTimestamp, shortenDisplayPath } from '@/lib/display-format'
 import { formatTopbarWorkspaceName } from './workspace-switcher-label'
 
@@ -82,7 +81,7 @@ const EMBEDDED_STEP_CLASS =
 const PROJECT_STEP_COPY: Record<Exclude<ProjectManagerView, 'list'>, { title: string; description: string }> = {
   create: {
     title: '创建项目',
-    description: '选择写作方法和保存位置。',
+    description: '输入名称，并选择新项目的存储位置。',
   },
   open: {
     title: '导入文件夹',
@@ -135,17 +134,13 @@ export function ProjectManagerPanel({
     folderPath: string,
     name: string,
     remoteServer?: RemoteServerConfig,
-    projectType: WorkspaceProjectType = 'general',
-    methodPackId?: MethodPackId,
   ) => {
     if (!onWorkspaceCreated) return
     setIsCreating(true)
     try {
-      const workspace = await window.electronAPI.createWorkspace(folderPath, name, {
-        ...(remoteServer && { remoteServer }),
-        projectType,
-        ...(methodPackId && { methodPackId }),
-      })
+      const workspace = remoteServer
+        ? await window.electronAPI.createWorkspace(folderPath, name, { remoteServer })
+        : await window.electronAPI.createWorkspace(folderPath, name)
       await onWorkspaceCreated(workspace)
       setView('list')
       onRequestClose?.()

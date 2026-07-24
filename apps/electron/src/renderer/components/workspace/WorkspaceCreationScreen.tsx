@@ -14,8 +14,7 @@ import { AddWorkspaceStep_Choice } from "./AddWorkspaceStep_Choice"
 import { AddWorkspaceStep_CreateNew } from "./AddWorkspaceStep_CreateNew"
 import { AddWorkspaceStep_OpenFolder } from "./AddWorkspaceStep_OpenFolder"
 import { AddWorkspaceStep_ConnectRemote } from "./AddWorkspaceStep_ConnectRemote"
-import type { RemoteServerConfig, Workspace, WorkspaceProjectType } from "../../../shared/types"
-import type { MethodPackId } from "@craft-agent/shared/writing/method-packs"
+import type { RemoteServerConfig, Workspace } from "../../../shared/types"
 import { toast } from "sonner"
 
 export type WorkspaceCreationInitialStep = 'choice' | 'create' | 'open' | 'remote'
@@ -37,6 +36,28 @@ interface WorkspaceCreationScreenProps {
   closeLabel?: string
   /** Initial step selected by the action that opened the flow. */
   initialStep?: WorkspaceCreationInitialStep
+}
+
+interface WorkspaceCreationApi {
+  createWorkspace(
+    folderPath: string,
+    name: string,
+    options?: { remoteServer?: RemoteServerConfig },
+  ): Promise<Workspace>
+}
+
+export async function createWorkspaceAndNotify(
+  api: WorkspaceCreationApi,
+  folderPath: string,
+  name: string,
+  remoteServer: RemoteServerConfig | undefined,
+  onWorkspaceCreated: (workspace: Workspace) => void | Promise<void>,
+): Promise<void> {
+  const workspace = remoteServer
+    ? await api.createWorkspace(folderPath, name, { remoteServer })
+    : await api.createWorkspace(folderPath, name)
+
+  await onWorkspaceCreated(workspace)
 }
 
 /**
@@ -85,17 +106,16 @@ export function WorkspaceCreationScreen({
     folderPath: string,
     name: string,
     remoteServer?: RemoteServerConfig,
-    projectType: WorkspaceProjectType = 'general',
-    methodPackId?: MethodPackId,
   ) => {
     setIsCreating(true)
     try {
-      const workspace = await window.electronAPI.createWorkspace(folderPath, name, {
-        ...(remoteServer && { remoteServer }),
-        projectType,
-        ...(methodPackId && { methodPackId }),
-      })
-      await onWorkspaceCreated(workspace)
+      await createWorkspaceAndNotify(
+        window.electronAPI,
+        folderPath,
+        name,
+        remoteServer,
+        onWorkspaceCreated,
+      )
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       toast.error(t('toast.failedToCreateWorkspace'), {
@@ -104,7 +124,7 @@ export function WorkspaceCreationScreen({
     } finally {
       setIsCreating(false)
     }
-  }, [onWorkspaceCreated])
+  }, [onWorkspaceCreated, t])
 
   const handleReconnectWorkspace = useCallback(async (workspaceId: string, remoteServer: { url: string; token: string; remoteWorkspaceId: string }) => {
     if (!onReconnectWorkspace) {

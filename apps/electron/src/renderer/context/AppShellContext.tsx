@@ -14,6 +14,7 @@ import * as React from 'react'
 import { createContext, useContext, useCallback } from 'react'
 import { useAtomValue } from 'jotai'
 import type { ChatDisplayHandle } from '@/components/app-shell/ChatDisplay'
+import type { ChatOpeningCommand } from '@/components/app-shell/chat-opening'
 import type { MentionFileReference } from '@/components/ui/mention-menu'
 import type {
   Session,
@@ -30,7 +31,6 @@ import type {
   LlmConnectionWithStatus,
   TestAutomationResult,
   SendMessageOptions,
-  WorkspaceProjectType,
 } from '../../shared/types'
 import type { SessionStatus as SessionStatusConfig } from '@/config/session-status-config'
 import type { SessionOptions, SessionOptionUpdates } from '../hooks/useSessionOptions'
@@ -68,11 +68,12 @@ export interface AppShellContextType {
   mentionFiles?: MentionFileReference[]
   /** Working directory of the active session — needed for project-level skill resolution */
   activeSessionWorkingDirectory?: string
-  /** Project metadata used by the empty chat opening state. */
-  openingProjectMetadata?: {
-    projectType?: WorkspaceProjectType
-    methodPackId?: string
+  /** Real project content state used by the empty chat opening. */
+  openingProjectState?: {
+    hasUserContent: boolean
   }
+  /** Execute a project command selected from the empty chat opening. */
+  onWorkspaceOpeningCommand?: (command: ChatOpeningCommand) => void
   /** All label configs (tree) for label menu and badge display */
   labels?: import('@craft-agent/shared/labels').LabelConfig[]
   /** Callback when session labels change */
@@ -211,7 +212,8 @@ interface SessionChatResourcesContextType {
   enabledSources?: AppShellContextType['enabledSources']
   skills?: AppShellContextType['skills']
   mentionFiles?: AppShellContextType['mentionFiles']
-  openingProjectMetadata?: AppShellContextType['openingProjectMetadata']
+  openingProjectState?: AppShellContextType['openingProjectState']
+  onWorkspaceOpeningCommand?: AppShellContextType['onWorkspaceOpeningCommand']
   enabledModes?: AppShellContextType['enabledModes']
   onSessionSourcesChange?: AppShellContextType['onSessionSourcesChange']
 }
@@ -310,7 +312,8 @@ export function AppShellProvider({
     enabledSources: value.enabledSources,
     skills: value.skills,
     mentionFiles: value.mentionFiles,
-    openingProjectMetadata: value.openingProjectMetadata,
+    openingProjectState: value.openingProjectState,
+    onWorkspaceOpeningCommand: value.onWorkspaceOpeningCommand,
     enabledModes: value.enabledModes,
     onSessionSourcesChange: value.onSessionSourcesChange,
   }), [
@@ -318,7 +321,8 @@ export function AppShellProvider({
     value.enabledSources,
     value.skills,
     value.mentionFiles,
-    value.openingProjectMetadata,
+    value.openingProjectState,
+    value.onWorkspaceOpeningCommand,
     value.enabledModes,
     value.onSessionSourcesChange,
   ])

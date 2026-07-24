@@ -114,6 +114,9 @@ export class PromptBuilder {
     } else {
       capabilities.push('local-mcp: disabled (only HTTP/SSE servers)');
     }
+    capabilities.push(
+      'workspace-files: use filesystem tools for writes; only report success after the tool confirms it'
+    );
 
     return `<workspace_capabilities>\n${capabilities.join('\n')}\n</workspace_capabilities>`;
   }

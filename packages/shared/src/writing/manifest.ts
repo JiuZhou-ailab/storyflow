@@ -7,7 +7,6 @@ import type {
   WritingProjectManifest,
   WritingProjectType,
 } from "./types.ts";
-import { parseWritingCatalogConfig } from "./writing-catalog.ts";
 
 const SUPPORTED_PROJECT_TYPES = new Set<WritingProjectType>(["novel", "screenplay", "short-form"]);
 const CLAUDE_BOOK_NOVEL_DIRECTORIES = ["bible", "story", "state", "timeline"] as const;
@@ -32,29 +31,14 @@ function parseManifest(rootPath: string): WritingProjectManifest | null {
     const raw = JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<string, unknown>;
     if (raw.schemaVersion !== 1) return null;
     if (!isSupportedProjectType(raw.type)) return null;
-    const methodPack = raw.methodPack && typeof raw.methodPack === "object"
-      ? raw.methodPack as Record<string, unknown>
-      : null;
-
-    const catalogConfig = parseWritingCatalogConfig(raw);
 
     return {
       schemaVersion: 1,
       type: raw.type,
-      title: typeof raw.title === "string" ? raw.title : undefined,
-      language: typeof raw.language === "string" ? raw.language : undefined,
-      profile: typeof raw.profile === "string" ? raw.profile : undefined,
-      methodPack: methodPack
-        && typeof methodPack.id === "string"
-        && typeof methodPack.version === "number"
-        ? {
-            id: methodPack.id,
-            version: methodPack.version,
-          }
-        : undefined,
-      storageProfile: typeof raw.storageProfile === "string" ? raw.storageProfile : undefined,
-      catalog: catalogConfig.catalog,
-      writePolicy: catalogConfig.writePolicy,
+      ...(typeof raw.title === "string" ? { title: raw.title } : {}),
+      ...(typeof raw.language === "string" ? { language: raw.language } : {}),
+      ...(typeof raw.profile === "string" ? { profile: raw.profile } : {}),
+      ...(typeof raw.storageProfile === "string" ? { storageProfile: raw.storageProfile } : {}),
     };
   } catch {
     return null;

@@ -12,11 +12,9 @@ import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { isValidWorkspaceRootPath } from '../../utils/path-validation'
 import {
-  ensureWorkspaceRootForProject,
   normalizeCreateWorkspaceOptions,
   resetStaleDefaultWorkspaceRoot,
   type CreateWorkspaceOptions,
-  type WorkspaceProjectType,
 } from './workspace-creation'
 
 export const CORE_HANDLED_CHANNELS = [
@@ -60,8 +58,8 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
     _ctx,
     folderPath: string,
     name: string,
-    input?: CreateWorkspaceOptions | { url: string; token: string; remoteWorkspaceId: string },
-    projectType?: WorkspaceProjectType,
+    input?: CreateWorkspaceOptions | { url: string; token: string; remoteWorkspaceId: string } | Record<string, unknown>,
+    legacyProjectType?: unknown,
   ) => {
     const rootPath = folderPath.trim()
     const validation = isValidWorkspaceRootPath(rootPath)
@@ -69,14 +67,12 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
       throw new Error(validation.reason!)
     }
 
-    const options = normalizeCreateWorkspaceOptions(input, projectType)
+    const options = normalizeCreateWorkspaceOptions(input, legacyProjectType)
     await sessionManager.waitForInit()
     const trackedRootPaths = getWorkspaces().map((workspace) => workspace.rootPath)
     if (resetStaleDefaultWorkspaceRoot(rootPath, trackedRootPaths)) {
       deps.platform.logger.info(`Reinitialized stale default workspace root at ${rootPath}`)
     }
-    ensureWorkspaceRootForProject(rootPath, name, options)
-
     const workspace = addWorkspace({ name, rootPath, ...(options.remoteServer && { remoteServer: options.remoteServer }) })
     sessionManager.reloadSessions()
     sessionManager.setupConfigWatcher(workspace.rootPath, workspace.id)

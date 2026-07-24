@@ -1,4 +1,4 @@
-// input: AppShell, TopBar, ActivityRail, and ProjectManagerPanel source
+// input: AppShell, TopBar, ActivityRail, WorkspaceProjectSidebar, and ProjectManagerPanel source
 // output: Static regression for popover-only project management IA
 // pos: Full-page ProjectHub is abandoned; rail popover is the manage surface
 
@@ -15,6 +15,10 @@ const projectSwitcherPath = fileURLToPath(new URL('../ProjectSwitcherPopover.tsx
 const projectSwitcherSource = readFileSync(projectSwitcherPath, 'utf8')
 const projectManagerPath = fileURLToPath(new URL('../ProjectManagerPanel.tsx', import.meta.url))
 const projectManagerSource = readFileSync(projectManagerPath, 'utf8')
+const projectSidebarSource = readFileSync(
+  new URL('../../workspace/WorkspaceProjectSidebar.tsx', import.meta.url),
+  'utf8',
+)
 
 describe('project management entry', () => {
   it('keeps project management in the workspace header instead of a standalone rail icon', () => {
@@ -33,6 +37,8 @@ describe('project management entry', () => {
     expect(projectManagerSource).toContain('连接远端')
     expect(projectManagerSource).toContain('最近项目')
     expect(projectManagerSource).toContain('返回项目')
+    expect(projectManagerSource).toContain('输入名称，并选择新项目的存储位置。')
+    expect(projectManagerSource).not.toContain('选择写作方法')
     expect(projectManagerSource).toContain('<ProjectActionButton')
     expect(projectManagerSource).not.toContain('ProjectActionCard')
     expect(projectManagerSource).toContain('重命名')
@@ -109,6 +115,12 @@ describe('project management entry', () => {
     expect(appShellSource).toContain('profile={profile}')
   })
 
+  it('keeps the workspace rail flush with the bottom edge while insetting floating panels', () => {
+    expect(appShellSource).toContain('data-testid="panel-stack-inset"')
+    expect(appShellSource).toContain('style={{ paddingBottom: PANEL_EDGE_INSET }}')
+    expect(activityRailSource).toContain('className="titlebar-no-drag flex h-full')
+  })
+
   it('embeds the active project directory in the workspace rail instead of a second sidebar', () => {
     expect(appShellSource).toContain('const activityWorkspaceDirectory = showPrimarySidebar')
     expect(appShellSource).toContain('workspaceDirectory={activityWorkspaceDirectory}')
@@ -132,7 +144,7 @@ describe('project management entry', () => {
     expect(activityRailSource).toContain('data-testid="activity-sidebar-scroll"')
     expect(activityRailSource.match(/overflow-y-auto/g) ?? []).toHaveLength(1)
     expect(activityRailSource).toContain('overflow-x-hidden overflow-y-auto')
-    expect(appShellSource).toContain('fitContent')
+    expect(projectSidebarSource).toContain('fitContent')
     expect(activityRailSource).not.toContain('workspaceDirectoryExpanded')
     expect(activityRailSource).not.toContain('h-[min(44vh,420px)]')
   })

@@ -1,6 +1,6 @@
-// input: Bundled defaults, legacy Skills, lifecycle state, symlinks, and user Source directories
-// output: Regression coverage for one-shot project Skill upgrades and global Source seeding
-// pos: Protects deletion persistence, resource scope, and project filesystem boundaries
+// input: Bundled defaults, explicit project Skill installation, symlinks, and user Source directories
+// output: Regression coverage for opt-in project Skills and global Source seeding
+// pos: Protects resource scope and project filesystem boundaries
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import {
@@ -17,14 +17,10 @@ import { join } from 'path';
 import {
   DEFAULT_AGENT_SKILL_SLUGS,
   DEFAULT_AGENT_SOURCE_SLUGS,
-  ensureProjectSkillsLifecycle,
   seedDefaultAgentResources,
   seedDefaultProjectSkills,
 } from '../default-agent-resources.ts';
-import {
-  getProjectSkillsLifecycleStatePath,
-  getWorkspaceSkillsPath,
-} from '../../workspaces/paths.ts';
+import { getWorkspaceSkillsPath } from '../../workspaces/paths.ts';
 
 let tempDir: string;
 
@@ -100,41 +96,7 @@ describe('default agent resources', () => {
     expect(result?.sources.failed).toEqual(['demo-source']);
   });
 
-  it('upgrades legacy and bundled Skills once, then preserves user deletions', () => {
-    const assetsDir = join(tempDir, 'resources', 'agent-defaults');
-    const projectRoot = join(tempDir, 'project');
-    const legacySkill = join(projectRoot, '.agents', 'skills', 'legacy-skill', 'SKILL.md');
-    const bundledSkill = join(assetsDir, 'skills', 'bundled-skill', 'SKILL.md');
-
-    writeFile(legacySkill, 'legacy skill');
-    writeFile(bundledSkill, 'bundled skill');
-
-    ensureProjectSkillsLifecycle(projectRoot, { assetsDir });
-
-    const skillsRoot = getWorkspaceSkillsPath(projectRoot);
-    expect(readFileSync(join(skillsRoot, 'legacy-skill', 'SKILL.md'), 'utf-8')).toBe('legacy skill');
-    expect(readFileSync(join(skillsRoot, 'bundled-skill', 'SKILL.md'), 'utf-8')).toBe('bundled skill');
-
-    const state = JSON.parse(
-      readFileSync(getProjectSkillsLifecycleStatePath(projectRoot), 'utf-8'),
-    );
-    expect(state).toEqual({
-      schemaVersion: 1,
-      legacyMigrationVersion: 1,
-      bundledDefaultsVersion: 1,
-      legacySkillSlugs: ['legacy-skill'],
-      bundledSkillSlugs: ['bundled-skill'],
-    });
-
-    rmSync(join(skillsRoot, 'legacy-skill'), { recursive: true });
-    rmSync(join(skillsRoot, 'bundled-skill'), { recursive: true });
-    ensureProjectSkillsLifecycle(projectRoot, { assetsDir });
-
-    expect(existsSync(join(skillsRoot, 'legacy-skill'))).toBe(false);
-    expect(existsSync(join(skillsRoot, 'bundled-skill'))).toBe(false);
-  });
-
-  it('does not seed or migrate through a symlinked .pi ancestor', () => {
+  it('does not install through a symlinked .pi ancestor', () => {
     const assetsDir = join(tempDir, 'resources', 'agent-defaults');
     const projectRoot = join(tempDir, 'project');
     const outsideRoot = join(tempDir, 'outside');
@@ -143,27 +105,11 @@ describe('default agent resources', () => {
     mkdirSync(outsideRoot, { recursive: true });
     symlinkSync(outsideRoot, join(projectRoot, '.pi'), 'dir');
     writeFile(join(assetsDir, 'skills', 'bundled-skill', 'SKILL.md'), 'bundled skill');
-    writeFile(join(projectRoot, '.agents', 'skills', 'legacy-skill', 'SKILL.md'), 'legacy skill');
 
     const result = seedDefaultProjectSkills(projectRoot, { assetsDir });
-    ensureProjectSkillsLifecycle(projectRoot, { assetsDir });
 
     expect(result.failed).toEqual(['bundled-skill']);
     expect(existsSync(join(outsideRoot, 'skills', 'bundled-skill'))).toBe(false);
-    expect(existsSync(join(outsideRoot, 'skills', 'legacy-skill'))).toBe(false);
-  });
-
-  it('rejects a symlinked legacy Skill root without copying its target', () => {
-    const projectRoot = join(tempDir, 'project');
-    const outsideRoot = join(tempDir, 'outside');
-
-    writeFile(join(outsideRoot, 'skills', 'outside-skill', 'SKILL.md'), 'outside skill');
-    mkdirSync(projectRoot, { recursive: true });
-    symlinkSync(outsideRoot, join(projectRoot, '.agents'), 'dir');
-
-    ensureProjectSkillsLifecycle(projectRoot, { assetsDir: join(tempDir, 'missing-assets') });
-
-    expect(existsSync(join(getWorkspaceSkillsPath(projectRoot), 'outside-skill'))).toBe(false);
   });
 
   it('ships reviewable default resources without bundled secrets', () => {

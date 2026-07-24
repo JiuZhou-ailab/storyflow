@@ -1004,8 +1004,6 @@ export interface WorkspacePanelFields {
   slug: string
   rootPath: string
   remoteWorkspaceId?: string
-  projectType?: Workspace['projectType']
-  methodPackId?: Workspace['methodPackId']
 }
 
 function workspacePanelFieldsEqual(
@@ -1018,8 +1016,6 @@ function workspacePanelFieldsEqual(
     && a.slug === b.slug
     && a.rootPath === b.rootPath
     && a.remoteWorkspaceId === b.remoteWorkspaceId
-    && a.projectType === b.projectType
-    && a.methodPackId === b.methodPackId
 }
 
 export const workspacePanelFieldsAtomFamily = atomFamily(
@@ -1034,8 +1030,6 @@ export const workspacePanelFieldsAtomFamily = atomFamily(
         slug: workspace.slug,
         rootPath: workspace.rootPath,
         remoteWorkspaceId: workspace.remoteServer?.remoteWorkspaceId,
-        projectType: workspace.projectType,
-        methodPackId: workspace.methodPackId,
       }
     },
     workspacePanelFieldsEqual,

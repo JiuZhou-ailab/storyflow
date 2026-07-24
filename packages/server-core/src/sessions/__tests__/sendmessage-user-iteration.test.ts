@@ -1,6 +1,6 @@
 // input: SessionManager send-message orchestration source
 // output: Regression coverage for user-message iteration propagation to agents
-// pos: Guards method-pack periodic reminder scheduling at the session boundary
+// pos: Guards iteration-aware agent context at the session boundary
 
 import { readFileSync } from 'fs'
 import { describe, expect, it } from 'bun:test'

@@ -828,8 +828,8 @@ interface ManagedSession {
   enabledSourceSlugs?: string[]
   // Labels applied to this session (additive tags, many-per-session)
   labels?: string[]
-  // Working directory for this session (used by agent for bash commands)
-  workingDirectory?: string
+  // Effective working directory for this session (always concrete at runtime)
+  workingDirectory: string
   // SDK cwd for session storage - set once at creation, never changes.
   // Ensures SDK can find session transcripts regardless of workingDirectory changes.
   sdkCwd?: string
@@ -993,6 +993,16 @@ export function createManagedSession(
     // Caller overrides (permissionMode defaults, thinkingLevel, messagesLoaded, etc.)
     ...overrides,
   } as ManagedSession
+
+  // Runtime invariant: every managed session has one concrete working directory.
+  // Persisted sessions keep this field optional only for backward compatibility.
+  // Project sessions fall back to their visible workspace root; application-owned
+  // Free Conversations remain inside their private session storage.
+  if (!managed.workingDirectory) {
+    managed.workingDirectory = isFreeConversationWorkspaceId(workspace.id)
+      ? getSessionStoragePath(workspace.rootPath, managed.id)
+      : workspace.rootPath
+  }
 
   if (managed.branchFromMessageId && !managed.branchContextStrategy) {
     managed.branchContextStrategy = managed.branchFromSdkSessionId
@@ -2594,7 +2604,7 @@ export class SessionManager implements ISessionManager {
       ?? wsConfig?.defaults?.permissionMode
       ?? globalDefaults.workspaceDefaults.permissionMode
 
-    const userDefaultWorkingDir = wsConfig?.defaults?.workingDirectory || undefined
+    const userDefaultWorkingDir = wsConfig?.defaults?.workingDirectory || workspaceRootPath
     // Resolve thinking level with caller-first precedence, matching permissionMode above:
     //   caller override → workspace default → global default.
     // normalizeThinkingLevel() tolerates undefined/unknown inputs.
@@ -2637,7 +2647,7 @@ export class SessionManager implements ISessionManager {
 
     // Resolve working directory from options:
     // - 'user_default' or undefined: Use workspace's configured default
-    // - 'none': No working directory (empty string means session folder only)
+    // - 'none': Use the private session folder (materialized after storage allocates the ID)
     // - Absolute path: Use as-is
     let resolvedWorkingDir: string | undefined
     if (isFreeConversationWorkspaceId(workspace.id)) {
@@ -2645,7 +2655,7 @@ export class SessionManager implements ISessionManager {
       // Free Conversations never inherit a project or user-default cwd.
       resolvedWorkingDir = undefined
     } else if (options?.workingDirectory === 'none') {
-      resolvedWorkingDir = undefined  // No working directory
+      resolvedWorkingDir = undefined
     } else if (options?.workingDirectory === 'user_default' || options?.workingDirectory === undefined) {
       resolvedWorkingDir = userDefaultWorkingDir
     } else {
@@ -2872,6 +2882,13 @@ export class SessionManager implements ISessionManager {
       storedSession.workingDirectory = privateWorkingDirectory
       storedSession.sdkCwd = privateWorkingDirectory
       resolvedWorkingDir = privateWorkingDirectory
+    } else if (options?.workingDirectory === 'none') {
+      const sessionWorkingDirectory = getSessionStoragePath(workspaceRootPath, storedSession.id)
+      await updateSessionMetadata(workspaceRootPath, storedSession.id, {
+        workingDirectory: sessionWorkingDirectory,
+      })
+      storedSession.workingDirectory = sessionWorkingDirectory
+      resolvedWorkingDir = sessionWorkingDirectory
     }
 
     // Branch: copy messages from source session up to and including the branch point

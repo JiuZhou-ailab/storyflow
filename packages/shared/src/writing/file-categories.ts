@@ -1,11 +1,6 @@
-// input: Novel workspace relative file paths
-// output: Stable writing UI category labels for each path
-// pos: Shared classifier between writing scaffolds and workspace navigation
-
-import {
-  getBuiltInMethodPack,
-  type MethodPackArtifactLifecycle,
-} from "./method-packs/index.ts";
+// input: Legacy writing workspace relative file paths
+// output: Stable presentation categories for existing writing projects
+// pos: Compatibility classifier for older categorized writing surfaces
 
 export type WritingFileCategory =
   | "manuscript"
@@ -25,42 +20,6 @@ function normalizePath(path: string): string[] {
     .split("/")
     .map((segment) => segment.trim())
     .filter(Boolean);
-}
-
-function normalizePathString(path: string): string {
-  return normalizePath(path).join("/");
-}
-
-function isContractPathMatch(relativePath: string, contractPath: string): boolean {
-  const path = normalizePathString(relativePath);
-  const contract = normalizePathString(contractPath);
-  if (!path || !contract) return false;
-
-  const isDirectoryContract = contractPath.replace(/\\/g, "/").trim().endsWith("/");
-  return isDirectoryContract
-    ? path === contract || path.startsWith(`${contract}/`)
-    : path === contract;
-}
-
-function categoryFromArtifactLifecycle(
-  relativePath: string,
-  lifecycle: MethodPackArtifactLifecycle
-): WritingFileCategory {
-  if (lifecycle === "final") return "manuscript";
-  if (lifecycle === "outline" || lifecycle === "intake") return "outline";
-  if (lifecycle === "draft") return "work";
-  if (lifecycle === "review") return "analysis";
-  if (lifecycle === "state") return "state";
-
-  const [first] = normalizePath(relativePath);
-  if (lifecycle === "reference") {
-    if (first === "角色") return "characters";
-    if (first === "场景") return "locations";
-    return "analysis";
-  }
-
-  if (lifecycle === "canon") return "state";
-  return "other";
 }
 
 export function categorizeNovelPath(relativePath: string): WritingFileCategory {
@@ -129,21 +88,4 @@ export function categorizeNovelPath(relativePath: string): WritingFileCategory {
   }
 
   return "other";
-}
-
-export function categorizeNovelPathForMethodPack(
-  relativePath: string,
-  methodPackId?: string
-): WritingFileCategory {
-  const category = categorizeNovelPath(relativePath);
-  if (category !== "other" || !methodPackId) return category;
-
-  const methodPack = getBuiltInMethodPack(methodPackId);
-  if (!methodPack) return category;
-
-  const artifact = methodPack.artifactContract
-    .filter((entry) => isContractPathMatch(relativePath, entry.path))
-    .sort((left, right) => normalizePathString(right.path).length - normalizePathString(left.path).length)[0];
-
-  return artifact ? categoryFromArtifactLifecycle(relativePath, artifact.lifecycle) : category;
 }

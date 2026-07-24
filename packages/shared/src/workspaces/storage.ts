@@ -30,10 +30,7 @@ import { getDefaultLabelConfig, saveLabelConfig } from '../labels/storage.ts';
 import { loadConfigDefaults } from '../config/storage.ts';
 import { parsePermissionMode, PERMISSION_MODE_ORDER } from '../agent/mode-types.ts';
 import { normalizeThinkingLevel } from '../agent/thinking-levels.ts';
-import { ensureProjectSkillsLifecycle } from '../agent-defaults/default-agent-resources.ts';
-import { createNovelProjectScaffold } from '../writing/novel-template.ts';
 import { detectWritingProject } from '../writing/manifest.ts';
-import { getBuiltInMethodPack, type MethodPackId } from '../writing/method-packs/index.ts';
 import type {
   WorkspaceConfig,
   CreateWorkspaceInput,
@@ -106,8 +103,7 @@ export {
   getWorkspaceWritingManifestPath,
 } from './paths.ts';
 
-export const DEFAULT_STARTER_WORKSPACE_NAME = '短篇/中篇小说';
-export const DEFAULT_STARTER_WORKSPACE_METHOD_PACK_ID = 'short-form.article' satisfies MethodPackId;
+export const DEFAULT_STARTER_WORKSPACE_NAME = '我的项目';
 
 const CONFIG_DIR = join(homedir(), '.craft-agent');
 const DEFAULT_WORKSPACES_DIR = join(CONFIG_DIR, 'workspaces');
@@ -360,8 +356,6 @@ export function loadWorkspaceConfig(rootPath: string): WorkspaceConfig | null {
 
   try {
     const config = readJsonFileSync<WorkspaceConfig>(configPath);
-    ensureProjectSkillsLifecycle(rootPath);
-
     // Expand path variables in defaults for portability
     if (config.defaults?.workingDirectory) {
       config.defaults.workingDirectory = expandPath(config.defaults.workingDirectory);
@@ -391,28 +385,11 @@ export function loadWorkspaceConfig(rootPath: string): WorkspaceConfig | null {
     }
 
     const writingProject = detectWritingProject(rootPath);
-    if (writingProject) {
-      const detectedMethodPackId = writingProject.manifest.methodPack?.id;
-      const detectedMethodPack = detectedMethodPackId ? getBuiltInMethodPack(detectedMethodPackId) : null;
-
-      if (!detectedMethodPackId && writingProject.type === 'novel') {
-        createNovelProjectScaffold(rootPath, {
-          title: config.name,
-        });
-      } else if (detectedMethodPack && detectedMethodPack.projectType === writingProject.type) {
-        createNovelProjectScaffold(rootPath, {
-          title: config.name,
-          methodPackId: detectedMethodPack.id,
-        });
-      }
-    }
-
     if (!config.defaults?.workingDirectory && writingProject && writingProject.type !== 'screenplay') {
       config.defaults = {
         ...config.defaults,
         workingDirectory: rootPath,
       };
-      saveWorkspaceConfig(rootPath, config);
     }
 
     return config;
@@ -596,7 +573,7 @@ export function createWorkspaceAtPath(
     permissionMode: globalDefaults.workspaceDefaults.permissionMode,
     cyclablePermissionModes: globalDefaults.workspaceDefaults.cyclablePermissionModes,
     enabledSourceSlugs: [],
-    workingDirectory: undefined,
+    workingDirectory: rootPath,
     ...defaults, // User-provided defaults override global defaults
   };
 
@@ -615,8 +592,6 @@ export function createWorkspaceAtPath(
   mkdirSync(getWorkspaceStatePath(rootPath), { recursive: true });
   mkdirSync(getWorkspaceSourcesPath(rootPath), { recursive: true });
   mkdirSync(getWorkspaceSessionsPath(rootPath), { recursive: true });
-  ensureProjectSkillsLifecycle(rootPath);
-
   // Save config
   saveWorkspaceConfig(rootPath, config);
 
@@ -633,43 +608,8 @@ export function createWorkspaceAtPath(
   return config;
 }
 
-/**
- * Create a workspace folder structure and seed it as a novel writing project.
- * Existing generic workspace behavior remains unchanged; callers must opt in.
- *
- * @param rootPath - Absolute path where workspace folder will be created
- * @param name - Display name for the workspace and novel title
- * @param defaults - Optional default settings for new sessions
- * @returns The created WorkspaceConfig
- */
-export function createNovelWorkspaceAtPath(
-  rootPath: string,
-  name: string,
-  defaults?: WorkspaceConfig['defaults'],
-  methodPackId: MethodPackId = 'short-form.article'
-): WorkspaceConfig {
-  const methodPack = getBuiltInMethodPack(methodPackId);
-  if (!methodPack) {
-    throw new Error(`Unknown method pack: ${methodPackId}`);
-  }
-
-  const config = createWorkspaceAtPath(rootPath, name, {
-    ...defaults,
-    workingDirectory: rootPath,
-  });
-  createNovelProjectScaffold(rootPath, { title: name, methodPackId: methodPack.id });
-  // No seeded "Start writing" monologue — empty project, user starts the first chat.
-  // Method guidance stays in AGENTS.md / runtime context, not as a fake assistant turn.
-  return config;
-}
-
 export function createDefaultWorkspaceAtPath(rootPath: string): WorkspaceConfig {
-  return createNovelWorkspaceAtPath(
-    rootPath,
-    DEFAULT_STARTER_WORKSPACE_NAME,
-    undefined,
-    DEFAULT_STARTER_WORKSPACE_METHOD_PACK_ID,
-  );
+  return createWorkspaceAtPath(rootPath, DEFAULT_STARTER_WORKSPACE_NAME);
 }
 
 /**

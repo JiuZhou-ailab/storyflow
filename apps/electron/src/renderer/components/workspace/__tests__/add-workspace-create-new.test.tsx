@@ -1,6 +1,6 @@
-// input: Workspace creation preview panel props with Method Pack workflow summaries
-// output: Regression coverage for the compact Method Pack preview surface
-// pos: Ensures the new-workspace preview emphasizes staged setup over secondary contract lists
+// input: New-workspace form props and workspace path inputs
+// output: Regression coverage for blank workspace creation UI and path resolution
+// pos: Protects the user-visible name-and-location-only creation contract
 
 import * as React from 'react'
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
@@ -8,23 +8,22 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { setupI18n } from '@craft-agent/shared/i18n/setupI18n'
 import { initReactI18next } from 'react-i18next'
 import { ModalProvider } from '../../../context/ModalContext'
-import { getWorkspaceCreationMethodOption } from '../workspace-method-options'
 
 mock.module('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '' }))
 mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDocument: () => ({}) }))
 setupI18n([initReactI18next])
 
-let MethodPackPreviewPanel: typeof import('../AddWorkspaceStep_CreateNew').MethodPackPreviewPanel
 let AddWorkspaceStep_CreateNew: typeof import('../AddWorkspaceStep_CreateNew').AddWorkspaceStep_CreateNew
+let buildWorkspaceFolderPath: typeof import('../AddWorkspaceStep_CreateNew').buildWorkspaceFolderPath
 
 beforeAll(async () => {
   const module = await import('../AddWorkspaceStep_CreateNew')
-  MethodPackPreviewPanel = module.MethodPackPreviewPanel
   AddWorkspaceStep_CreateNew = module.AddWorkspaceStep_CreateNew
+  buildWorkspaceFolderPath = module.buildWorkspaceFolderPath
 })
 
-describe('AddWorkspaceStep_CreateNew preview panel', () => {
-  it('allocates a bounded desktop preview column beside the form', () => {
+describe('AddWorkspaceStep_CreateNew', () => {
+  it('renders only the project name and location choices', () => {
     const html = renderToStaticMarkup(
       <ModalProvider>
         <AddWorkspaceStep_CreateNew
@@ -36,39 +35,29 @@ describe('AddWorkspaceStep_CreateNew preview panel', () => {
       </ModalProvider>
     )
 
-    expect(html).toContain('max-w-[88rem]')
-    expect(html).toContain('lg:grid-cols-[minmax(17rem,0.9fr)_minmax(0,1.2fr)]')
-    expect(html).toContain('lg:gap-0')
-    expect(html).toContain('lg:pr-8')
-    expect(html).not.toContain('shadow-strong')
-    expect(html).not.toContain('rounded-[20px]')
-    expect(html).toContain('短篇/中篇小说')
+    expect(html.match(/data-slot="input"/g) ?? []).toHaveLength(1)
+    expect(html.match(/type="radio"/g) ?? []).toHaveLength(2)
+    expect(html.match(/name="location"/g) ?? []).toHaveLength(2)
+    expect(html).not.toContain('Method Pack')
+    expect(html).not.toContain('短篇/中篇小说')
+    expect(html).not.toContain('长文小说')
+    expect(html).not.toContain('剧本逻辑')
+    expect(html).not.toContain('自由创作')
   })
 
-  it('uses concise stages instead of an unbounded workflow diagram', () => {
-    const option = getWorkspaceCreationMethodOption('novel.claude-book')
-    const html = renderToStaticMarkup(
-      <MethodPackPreviewPanel
-        title={option.fallbackTitle}
-        description={option.fallbackPreviewDescription}
-        preview={option.richPreview}
-        labels={{
-          logic: 'Method logic',
-          stages: 'Writing path',
-          assets: 'Workspace assets',
-          bestFor: 'Best for',
-        }}
-      />
-    )
+  it('preserves default and custom project paths for Chinese names on Windows', () => {
+    expect(buildWorkspaceFolderPath({
+      homeDir: 'C:\\Users\\zjding',
+      name: '九州小说',
+      customPath: null,
+      locationOption: 'default',
+    })).toMatch(/^C:\\Users\\zjding\\\.craft-agent\\workspaces\\workspace-[a-z0-9]+$/)
 
-    expect(html).toContain('Writing path')
-    expect(html).toContain('Workspace assets')
-    expect(html).toContain('1.')
-    expect(html).toContain(option.richPreview.stages[0]?.label ?? '')
-    expect(html).not.toContain('Structure')
-    expect(html).not.toContain('File contract')
-    expect(html).not.toContain('craft-writing.json')
-    expect(html).not.toContain('bible/style.md')
-    expect(html).not.toContain('timeline/current-chapter.md')
+    expect(buildWorkspaceFolderPath({
+      homeDir: 'C:\\Users\\zjding',
+      name: '九州小说',
+      customPath: 'D:\\写作项目',
+      locationOption: 'custom',
+    })).toMatch(/^D:\\写作项目\\workspace-[a-z0-9]+$/)
   })
 })

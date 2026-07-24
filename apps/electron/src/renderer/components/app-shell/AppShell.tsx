@@ -1,5 +1,5 @@
 // input: Workspace/session state, navigation state, and shell callbacks
-// output: Desktop app shell with sidebar, navigator, and main content panels
+// output: Desktop app shell with disk-synced project navigation, project lifecycle actions, and main content panels
 // pos: Top-level renderer layout coordinator for workspace navigation
 
 import * as React from "react"
@@ -27,11 +27,13 @@ import {
   Info,
   MailOpen,
   History,
+  ArrowUpRight,
   Download,
+  FilePlus,
   FileUp,
   FolderOpen,
-  DatabaseZap,
-  Zap,
+  FolderPlus,
+  Pencil,
 } from "lucide-react"
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
@@ -47,6 +49,7 @@ import { cn } from "@/lib/utils"
 import { getFileManagerName, isMac } from "@/lib/platform"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { RenameDialog } from "@/components/ui/rename-dialog"
 import { HeaderIconButton } from "@/components/ui/HeaderIconButton"
 import type { MentionFileReference } from "@/components/ui/mention-menu"
 import { Separator } from "@/components/ui/separator"
@@ -74,7 +77,7 @@ import { MainContentPanel, WritingPrimaryContentReadyContext } from "./MainConte
 import { PanelStackContainer } from "./PanelStackContainer"
 import type { ChatDisplayHandle } from "./ChatDisplay"
 import { NovelDocumentEditorPanel, type NovelDocumentEditorPanelHandle, type NovelSelectionAiRequest } from "@/components/writing/NovelDocumentEditorPanel"
-import { NovelExportDialog } from "@/components/writing/NovelExportDialog"
+import { ProjectExportDialog } from "@/components/workspace/ProjectExportDialog"
 import { NovelVersionHistoryDialog } from "@/components/writing/NovelVersionHistoryDialog"
 import { formatNovelWorkspaceFileTitle } from "@/components/writing/novel-file-display"
 import type {
@@ -82,8 +85,19 @@ import type {
   WorkspaceFileTreeMenuAction,
   WorkspaceFileTreeNode,
 } from "@/components/workspace/WorkspaceFileTree"
+import { WorkspaceEmptyState } from "@/components/workspace/WorkspaceEmptyState"
+import { WorkspaceProjectSidebar } from "@/components/workspace/WorkspaceProjectSidebar"
+import {
+  useWorkspaceProjectSurface,
+  type WorkspaceCreateEntryTarget,
+} from "@/components/workspace/useWorkspaceProjectSurface"
 import { revealWorkspaceFile } from "@/components/workspace/workspace-file-actions"
-import { getDefaultWritingExpandedIds } from "@/components/workspace/workspace-file-tree-model"
+import {
+  getDefaultWritingExpandedIds,
+  resolveWorkspaceCreateRelativePath,
+  resolveWorkspaceImportRelativePath,
+  type WorkspaceCreateEntryKind,
+} from "@/components/workspace/workspace-file-tree-model"
 import { useSession } from "@/hooks/useSession"
 import { AppShellProvider, type AppShellContextType } from "@/context/AppShellContext"
 import { sessionOptionsAtomFamily } from "@/hooks/useSessionOptions"
@@ -94,7 +108,7 @@ import { useAction } from "@/actions"
 import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusActions } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
-import type { Session, Workspace, WorkspaceProjectType, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange, WhatsNewManifest } from "../../../shared/types"
+import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange, WhatsNewManifest } from "../../../shared/types"
 import {
   ensureSessionMessagesLoadedAtom,
   reconcileSessionTranscriptWorkingSetAtom,
@@ -169,11 +183,10 @@ import { rendererPerf } from "@/lib/perf"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
 import { buildRejectFileChangesOperation } from "@/lib/file-change-review"
 import {
-  buildMergedManuscriptContent,
-  buildNovelExportPlan,
-  createNovelExportFolderName,
-  type NovelExportOptions,
-} from "@/lib/novel-export"
+  buildProjectExportPlan,
+  createProjectExportFolderName,
+  type ProjectExportOptions,
+} from "@/lib/project-export"
 import {
   getNovelReviewChangeKey,
   normalizeNovelFileChangePaths,
@@ -184,18 +197,14 @@ import {
   detectNovelProjectFromSearchResults,
   getLatestNovelFileChangesFromMessages,
   getNovelFileChangeActivityKey,
-  getNovelImportTargetRelativePath,
   getNovelWorkspaceRelativePath,
   getNovelWorkspaceCandidateRoots,
   areNovelWorkspaceFilesEqual,
   isNovelWorkspaceFilePathInRoot,
-  isShortFormNovelWorkspaceFiles,
   mapNativeWorkspaceCatalog,
   mapSearchResultsToNovelWorkspaceFiles,
   NOVEL_WORKSPACE_DETECTION_QUERIES,
-  normalizeNovelCreateFilePath,
   selectDefaultNovelFile,
-  type NovelCreateFileBasePath,
   type NativeWorkspaceCatalog,
   type NovelWorkspaceFile,
 } from "@/lib/writing-workspace"
@@ -206,10 +215,6 @@ import { FREE_CONVERSATION_WORKSPACE_ID } from "@craft-agent/shared/protocol"
 // ponytail: process-local replay guard for passive file-change refreshes; explicit file operations refresh directly.
 const completedNovelFileChangeRefreshKeys = new Set<string>()
 const pendingNovelFileChangeRefreshKeys = new Set<string>()
-const WorkspaceFileTree = React.lazy(async () => {
-  const module = await import("@/components/workspace/WorkspaceFileTree")
-  return { default: module.WorkspaceFileTree }
-})
 
 /**
  * AppShellProps - Minimal props interface for AppShell component
@@ -267,13 +272,6 @@ function isTextEditingTarget(target: EventTarget | null): boolean {
 /** Filter mode for tri-state filtering: include shows only matching, exclude hides matching */
 type FilterMode = 'include' | 'exclude'
 
-interface NovelCreateFileTarget {
-  basePath: NovelCreateFileBasePath
-  title: string
-  placeholder: string
-  initialValue: string
-}
-
 interface NovelWorkspaceBriefPreparation {
   shouldSend: boolean
   brief?: string
@@ -289,11 +287,6 @@ const NAVIGATOR_SASH_FLEX_MARGIN = -(PANEL_GAP / 2)
 const NOVEL_AUTO_VERSION_CHAR_THRESHOLD = 100
 const NOVEL_AUTO_VERSION_INTERVAL_MS = 5 * 60 * 1000
 const NOVEL_WORKSPACE_BRIEF_CHANGE_LIMIT = 20
-type WorkspaceOpeningMetadata = {
-  projectType?: WorkspaceProjectType
-  methodPackId?: string
-}
-
 function joinWorkspacePath(rootPath: string, relativePath: string): string {
   const root = rootPath.replace(/[\\/]+$/, '')
   const relative = relativePath.replace(/^[\\/]+/, '')
@@ -302,6 +295,10 @@ function joinWorkspacePath(rootPath: string, relativePath: string): string {
 
 function normalizeWorkspacePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '')
+}
+
+function getWorkspaceRelativePathKey(path: string): string {
+  return normalizeWorkspacePath(path).replace(/^\/+/, '').toLocaleLowerCase()
 }
 
 function isSameOrChildWorkspacePath(path: string | null | undefined, parentPath: string): boolean {
@@ -473,47 +470,6 @@ function getMarkdownTitleFromRelativePath(relativePath: string): string {
 
 function shouldCreateMarkdownStarter(relativePath: string): boolean {
   return relativePath.toLowerCase().endsWith('.md')
-}
-
-function getNovelFileCreateBasePath(file: NovelWorkspaceFile): NovelCreateFileBasePath | null {
-  const normalizedPath = file.relativePath.replace(/\\/g, '/')
-  if (normalizedPath.startsWith('自由区/')) return '自由区'
-  if (normalizedPath.startsWith('正文/')) return '正文'
-  if (normalizedPath.startsWith('全局/')) return '全局'
-  return null
-}
-
-function getNearbyNovelCreateInitialValue(file: NovelWorkspaceFile, basePath: NovelCreateFileBasePath): string {
-  const normalized = file.relativePath.replace(/\\/g, '/')
-  const withoutBase = normalized.startsWith(`${basePath}/`)
-    ? normalized.slice(basePath.length + 1)
-    : normalized
-  const parent = getParentRelativePath(withoutBase)
-  return parent ? `${parent}/` : ''
-}
-
-function getNovelFolderCreateTarget(relativePath: string): {
-  basePath: NovelCreateFileBasePath
-  initialValue: string
-} | null {
-  const segments = relativePath.replace(/\\/g, '/').split('/').filter(Boolean)
-  const [root, ...nestedSegments] = segments
-  if (root !== '正文' && root !== '全局' && root !== '自由区') return null
-  return {
-    basePath: root,
-    initialValue: nestedSegments.length > 0 ? `${nestedSegments.join('/')}/` : '',
-  }
-}
-
-function getNovelImportTargetRelativePathInFolder(
-  sourcePath: string,
-  basePath: NovelCreateFileBasePath,
-  initialValue = '',
-): string | null {
-  const baseRelativePath = getNovelImportTargetRelativePath(sourcePath, basePath)
-  if (!baseRelativePath || !initialValue) return baseRelativePath
-  const fileName = baseRelativePath.slice(basePath.length + 1)
-  return `${basePath}/${initialValue}${fileName}`
 }
 
 function getContentChangeSize(previous: string, next: string): number {
@@ -1795,14 +1751,8 @@ function AppShellContent({
   const activeSessionWorkingDirectory = effectiveSessionId
     ? rawEffectiveSessionMeta?.workingDirectory
     : undefined
-  const activeWorkspaceMetadata = activeWorkspace as (Workspace & WorkspaceOpeningMetadata) | undefined
-  const activeWorkspaceProjectType = activeWorkspaceMetadata?.projectType
-  const activeWorkspaceMethodPackId = typeof activeWorkspaceMetadata?.methodPackId === 'string'
-    ? activeWorkspaceMetadata.methodPackId
-    : undefined
   const activeWritingWorkspaceRoot = isProjectRuntime
     && activeWorkspace
-    && (activeWorkspaceProjectType === 'novel' || activeWorkspaceProjectType === 'short-form' || activeWorkspaceProjectType === 'screenplay')
     ? activeWorkspace.rootPath
     : null
 
@@ -1853,9 +1803,11 @@ function AppShellContent({
   const novelWorkspaceLastRefreshKeyRef = React.useRef<string | null>(null)
   const latestNovelFileChangesSignatureRef = React.useRef('')
   latestNovelFileChangesSignatureRef.current = latestNovelFileChangesSignature
-  const [novelCreateFileTarget, setNovelCreateFileTarget] = React.useState<NovelCreateFileTarget | null>(null)
-  const [novelCreateFileValue, setNovelCreateFileValue] = React.useState('')
-  const [novelCreatingFile, setNovelCreatingFile] = React.useState(false)
+  const [workspaceCreateEntryTarget, setWorkspaceCreateEntryTarget] = React.useState<WorkspaceCreateEntryTarget | null>(null)
+  const [workspaceCreateEntryValue, setWorkspaceCreateEntryValue] = React.useState('')
+  const [workspaceCreatingEntry, setWorkspaceCreatingEntry] = React.useState(false)
+  const [novelProjectRenameOpen, setNovelProjectRenameOpen] = React.useState(false)
+  const [novelProjectRenameValue, setNovelProjectRenameValue] = React.useState('')
 
   React.useEffect(() => {
     novelWorkspaceRootRef.current = novelWorkspaceRoot
@@ -1907,7 +1859,7 @@ function AppShellContent({
       }
     })
     return loadPromise
-  }, [activeWorkspaceMethodPackId])
+  }, [])
 
   const refreshNovelWorkspaceFiles = React.useCallback(async (rootPath: string): Promise<boolean> => {
     const inFlight = novelWorkspaceRefreshInFlightRef.current.get(rootPath)
@@ -1943,51 +1895,96 @@ function AppShellContent({
     return refreshPromise
   }, [loadNovelWorkspaceFiles, setNovelWorkspaceCatalogIfChanged])
 
-  const openNovelCreateFileDialog = React.useCallback((target: NovelCreateFileTarget) => {
-    setNovelCreateFileTarget(target)
-    setNovelCreateFileValue(target.initialValue)
+  const openWorkspaceCreateEntryDialog = React.useCallback((target: WorkspaceCreateEntryTarget) => {
+    setWorkspaceCreateEntryTarget(target)
+    setWorkspaceCreateEntryValue('')
   }, [])
 
-  const handleSubmitNovelCreateFile = React.useCallback(async () => {
-    if (!novelWorkspaceRoot || !novelCreateFileTarget) return
+  const expandWorkspaceTreeDirectory = React.useCallback((relativePath: string) => {
+    const id = relativePath
+      ? `writing:folder:${relativePath}`
+      : `writing:project:${activeWorkspaceId}`
+    setExpandedFolders(previous => {
+      if (previous.has(id)) return previous
+      const next = new Set(previous)
+      next.add(id)
+      return next
+    })
+    requestAnimationFrame(() => workspaceFileTreeRef.current?.open(id))
+  }, [activeWorkspaceId])
 
-    const relativePath = normalizeNovelCreateFilePath(novelCreateFileValue, novelCreateFileTarget.basePath)
+  const handleSubmitWorkspaceCreateEntry = React.useCallback(async () => {
+    if (!novelWorkspaceRoot || !workspaceCreateEntryTarget) return
+
+    const relativePath = resolveWorkspaceCreateRelativePath(
+      workspaceCreateEntryTarget.parentRelativePath,
+      workspaceCreateEntryValue,
+      workspaceCreateEntryTarget.kind,
+    )
     if (!relativePath) {
-      toast.error(t('writing.createFile.invalidName', '请输入有效文件名'))
+      toast.error(workspaceCreateEntryTarget.kind === 'file'
+        ? t('writing.createFile.invalidName', '请输入有效文件名')
+        : t('writing.createFolder.invalidName', '请输入有效文件夹名称'))
       return
     }
-    if (novelWorkspaceFiles.some(file => file.relativePath === relativePath)) {
-      toast.error(t('writing.createFile.exists', '文件已存在'))
+    const relativePathKey = getWorkspaceRelativePathKey(relativePath)
+    const entryExists = novelWorkspaceFiles.some(file => getWorkspaceRelativePathKey(file.relativePath) === relativePathKey)
+      || novelWorkspaceDirectories.some(directory => getWorkspaceRelativePathKey(directory) === relativePathKey)
+    if (entryExists) {
+      toast.error(workspaceCreateEntryTarget.kind === 'file'
+        ? t('writing.createFile.exists', '文件已存在')
+        : t('writing.createFolder.exists', '同名文件或文件夹已存在'))
       return
     }
 
     const targetPath = joinWorkspacePath(novelWorkspaceRoot, relativePath)
-    const parentRelativePath = getParentRelativePath(relativePath)
-    const parentPath = joinWorkspacePath(novelWorkspaceRoot, parentRelativePath)
-    const title = getMarkdownTitleFromRelativePath(relativePath)
-    const initialContent = shouldCreateMarkdownStarter(relativePath) && title ? `# ${title}\n\n` : ''
-
-    setNovelCreatingFile(true)
+    setWorkspaceCreatingEntry(true)
     try {
-      await window.electronAPI.createDirectory(parentPath)
-      await window.electronAPI.writeFile(targetPath, initialContent)
+      if (workspaceCreateEntryTarget.kind === 'directory') {
+        await window.electronAPI.createDirectory(targetPath)
+      } else {
+        const parentRelativePath = getParentRelativePath(relativePath)
+        const parentPath = joinWorkspacePath(novelWorkspaceRoot, parentRelativePath)
+        const title = getMarkdownTitleFromRelativePath(relativePath)
+        const initialContent = shouldCreateMarkdownStarter(relativePath) && title ? `# ${title}\n\n` : ''
+        await window.electronAPI.createDirectory(parentPath)
+        await window.electronAPI.writeFile(targetPath, initialContent)
+      }
       await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
-      setSelectedNovelFilePath(targetPath)
-      navigate(routes.view.writing())
-      setNovelCreateFileTarget(null)
-      setNovelCreateFileValue('')
+      expandWorkspaceTreeDirectory(workspaceCreateEntryTarget.parentRelativePath)
+      if (workspaceCreateEntryTarget.kind === 'file') {
+        setSelectedNovelFilePath(targetPath)
+        navigate(routes.view.writing())
+      }
+      setWorkspaceCreateEntryTarget(null)
+      setWorkspaceCreateEntryValue('')
     } catch (error) {
-      console.error('[AppShell] Failed to create writing file:', error)
-      toast.error(t('writing.createFile.failed', '创建文件失败'))
+      console.error('[AppShell] Failed to create workspace entry:', error)
+      toast.error(workspaceCreateEntryTarget.kind === 'file'
+        ? t('writing.createFile.failed', '创建文件失败')
+        : t('writing.createFolder.failed', '创建文件夹失败'))
     } finally {
-      setNovelCreatingFile(false)
+      setWorkspaceCreatingEntry(false)
     }
-  }, [novelCreateFileTarget, novelCreateFileValue, novelWorkspaceFiles, novelWorkspaceRoot, refreshNovelWorkspaceFiles, t])
+  }, [
+    expandWorkspaceTreeDirectory,
+    novelWorkspaceDirectories,
+    novelWorkspaceFiles,
+    novelWorkspaceRoot,
+    refreshNovelWorkspaceFiles,
+    t,
+    workspaceCreateEntryTarget,
+    workspaceCreateEntryValue,
+  ])
 
-  const handleImportNovelFiles = React.useCallback(async (
-    basePath: NovelCreateFileBasePath,
-    initialValue = '',
-  ) => {
+  const handleSubmitNovelProjectRename = React.useCallback(() => {
+    const nextName = novelProjectRenameValue.trim()
+    if (!activeProjectId || !onRenameProject || !nextName) return
+    setNovelProjectRenameOpen(false)
+    void onRenameProject(activeProjectId, nextName)
+  }, [activeProjectId, novelProjectRenameValue, onRenameProject])
+
+  const handleImportNovelFiles = React.useCallback(async (parentRelativePath: string) => {
     if (!novelWorkspaceRoot) return
 
     const sourcePaths = await window.electronAPI.openFileDialog()
@@ -1996,11 +1993,15 @@ function AppShellContent({
     let importedCount = 0
     let skippedCount = 0
     let lastImportedPath: string | null = null
-    const reservedRelativePaths = new Set(novelWorkspaceFiles.map(file => file.relativePath))
+    const reservedRelativePathKeys = new Set([
+      ...novelWorkspaceFiles.map(file => getWorkspaceRelativePathKey(file.relativePath)),
+      ...novelWorkspaceDirectories.map(getWorkspaceRelativePathKey),
+    ])
 
     for (const sourcePath of sourcePaths) {
-      const relativePath = getNovelImportTargetRelativePathInFolder(sourcePath, basePath, initialValue)
-      if (!relativePath || reservedRelativePaths.has(relativePath)) {
+      const relativePath = resolveWorkspaceImportRelativePath(parentRelativePath, sourcePath)
+      const relativePathKey = relativePath ? getWorkspaceRelativePathKey(relativePath) : null
+      if (!relativePath || !relativePathKey || reservedRelativePathKeys.has(relativePathKey)) {
         skippedCount += 1
         continue
       }
@@ -2019,7 +2020,7 @@ function AppShellContent({
         await window.electronAPI.createDirectory(parentPath)
         await window.electronAPI.writeFile(targetPath, attachment.text)
         importedCount += 1
-        reservedRelativePaths.add(relativePath)
+        reservedRelativePathKeys.add(relativePathKey)
         lastImportedPath = targetPath
       } catch (error) {
         console.error('[AppShell] Failed to import writing file:', error)
@@ -2029,6 +2030,7 @@ function AppShellContent({
 
     if (importedCount > 0) {
       await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
+      expandWorkspaceTreeDirectory(parentRelativePath)
       if (lastImportedPath) {
         setSelectedNovelFilePath(lastImportedPath)
         navigate(routes.view.writing())
@@ -2038,7 +2040,14 @@ function AppShellContent({
     if (skippedCount > 0) {
       toast.error(t('writing.importFile.skipped', '部分文件未导入，仅支持不重名的 md/txt 文件'))
     }
-  }, [novelWorkspaceFiles, novelWorkspaceRoot, refreshNovelWorkspaceFiles, t])
+  }, [
+    expandWorkspaceTreeDirectory,
+    novelWorkspaceDirectories,
+    novelWorkspaceFiles,
+    novelWorkspaceRoot,
+    refreshNovelWorkspaceFiles,
+    t,
+  ])
 
   React.useEffect(() => {
     if (novelWorkspaceCandidateRoots.length === 0) {
@@ -2183,19 +2192,58 @@ function AppShellContent({
     () => normalizeNovelFileChangePaths(latestNovelFileChanges, novelWorkspaceRoot, novelWorkspaceFiles),
     [latestNovelFileChanges, novelWorkspaceFiles, novelWorkspaceRoot]
   )
-  const isShortFormNovelWorkspace = React.useMemo(
-    () => isShortFormNovelWorkspaceFiles(novelWorkspaceFiles),
-    [novelWorkspaceFiles]
-  )
   const defaultNovelFile = React.useMemo(
-    () => selectDefaultNovelFile(novelWorkspaceFiles, activeWorkspaceMethodPackId),
-    [activeWorkspaceMethodPackId, novelWorkspaceFiles]
+    () => selectDefaultNovelFile(novelWorkspaceFiles),
+    [novelWorkspaceFiles]
   )
   const novelWorkspaceFileByPath = React.useMemo(
     () => new Map(novelWorkspaceFiles.map(file => [file.path, file])),
     [novelWorkspaceFiles]
   )
   const [selectedNovelFilePath, setSelectedNovelFilePath] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    if (!novelWorkspaceRoot) return
+
+    const syncWorkspaceTreeFromDisk = (): void => {
+      novelWorkspaceCatalogCacheRef.current.delete(novelWorkspaceRoot)
+      void refreshNovelWorkspaceFiles(novelWorkspaceRoot)
+        .then((refreshed) => {
+          if (!refreshed) return
+          const catalog = novelWorkspaceCatalogCacheRef.current.get(novelWorkspaceRoot)
+          if (!catalog) return
+
+          setSelectedNovelFilePath((currentPath) => {
+            if (!currentPath || catalog.files.some(file => file.path === currentPath)) {
+              return currentPath
+            }
+            return selectDefaultNovelFile(catalog.files)?.path ?? null
+          })
+        })
+        .catch((error) => {
+          if (!(error instanceof Error) || !error.message.includes('Workspace not found')) {
+            console.warn('[AppShell] Failed to sync workspace tree from disk:', error)
+            return
+          }
+
+          const emptyCatalog: NativeWorkspaceCatalog = { files: [], directories: [] }
+          novelWorkspaceCatalogCacheRef.current.set(novelWorkspaceRoot, emptyCatalog)
+          setNovelWorkspaceCatalogIfChanged(emptyCatalog)
+          setSelectedNovelFilePath(null)
+        })
+    }
+    const handleVisibilityChange = (): void => {
+      if (document.visibilityState === 'visible') syncWorkspaceTreeFromDisk()
+    }
+
+    window.addEventListener('focus', syncWorkspaceTreeFromDisk)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.removeEventListener('focus', syncWorkspaceTreeFromDisk)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [novelWorkspaceRoot, refreshNovelWorkspaceFiles, setNovelWorkspaceCatalogIfChanged])
+
   const selectedNovelFile = React.useMemo(() => {
     const canResolveSelectedNovelFile = showNovelWorkspaceSidebar || showNovelWorkspacePending
     if (!canResolveSelectedNovelFile) return undefined
@@ -2575,7 +2623,7 @@ function AppShellContent({
         })
       }
       if (isSameOrChildWorkspacePath(selectedNovelFilePath, entry.path)) {
-        setSelectedNovelFilePath(selectDefaultNovelFile(remainingFiles, activeWorkspaceMethodPackId)?.path ?? null)
+        setSelectedNovelFilePath(selectDefaultNovelFile(remainingFiles)?.path ?? null)
       }
       await refreshNovelWorkspaceFiles(novelWorkspaceRoot)
       toast.success(t('writing.deleteFile.success', '已删除'))
@@ -2586,7 +2634,6 @@ function AppShellContent({
       })
     }
   }, [
-    activeWorkspaceMethodPackId,
     isCurrentNovelDocumentDirty,
     novelWorkspaceFiles,
     novelWorkspaceRoot,
@@ -2993,19 +3040,19 @@ function AppShellContent({
     }
   }, [ensureNovelDocumentSaved, novelWorkspaceRoot, refreshNovelVersions, refreshNovelWorkspaceFiles, rememberNovelVersionBaseline, replaceNovelDocumentContent, selectedNovelDocumentPath, t])
 
-  const handleExportNovelWorkspace = React.useCallback(async (options: NovelExportOptions) => {
+  const handleExportNovelWorkspace = React.useCallback(async (options: ProjectExportOptions) => {
     if (!novelWorkspaceRoot) return
 
     const saved = await ensureNovelDocumentSaved()
     if (!saved) return
 
-    const plan = buildNovelExportPlan(novelWorkspaceFiles, options, activeWorkspaceMethodPackId)
+    const plan = buildProjectExportPlan(novelWorkspaceFiles, options)
     if (plan.entries.length === 0) {
       toast.error(t('writing.export.empty', '没有可导出的内容'))
       return
     }
 
-    const exportRootPath = joinWorkspacePath(novelWorkspaceRoot, createNovelExportFolderName())
+    const exportRootPath = joinWorkspacePath(novelWorkspaceRoot, createProjectExportFolderName())
     const toastId = toast.loading(t('writing.export.exporting', '正在导出'))
     setNovelExporting(true)
 
@@ -3015,17 +3062,8 @@ function AppShellContent({
       for (const entry of plan.entries) {
         const targetPath = joinWorkspacePath(exportRootPath, entry.targetRelativePath)
 
-        if (entry.kind === 'copy') {
-          const content = await window.electronAPI.readFile(entry.sourcePath)
-          await window.electronAPI.writeFile(targetPath, content)
-          continue
-        }
-
-        const parts = await Promise.all(entry.sourcePaths.map(async (sourcePath) => ({
-          sourcePath,
-          content: await window.electronAPI.readFile(sourcePath),
-        })))
-        await window.electronAPI.writeFile(targetPath, buildMergedManuscriptContent(parts))
+        const content = await window.electronAPI.readFile(entry.sourcePath)
+        await window.electronAPI.writeFile(targetPath, content)
       }
 
       toast.success(t('writing.export.success', '已导出 {{count}} 个文件', { count: plan.sourceFileCount }), {
@@ -3045,7 +3083,7 @@ function AppShellContent({
     } finally {
       setNovelExporting(false)
     }
-  }, [activeWorkspaceMethodPackId, ensureNovelDocumentSaved, novelWorkspaceFiles, novelWorkspaceRoot, t])
+  }, [ensureNovelDocumentSaved, novelWorkspaceFiles, novelWorkspaceRoot, t])
 
   const novelReviewUndoStackRef = React.useRef<NovelReviewUndoEntry[]>([])
 
@@ -3426,33 +3464,22 @@ function AppShellContent({
     }))
   }, [novelWorkspaceFiles, t])
 
-  const openingProjectMetadata = React.useMemo<WorkspaceOpeningMetadata | undefined>(() => {
-    const workspaceMetadata = activeWorkspace as (Workspace & WorkspaceOpeningMetadata) | undefined
-    const workspaceProjectType = workspaceMetadata?.projectType
-    const workspaceMethodPackId = typeof workspaceMetadata?.methodPackId === 'string'
-      ? workspaceMetadata.methodPackId
-      : undefined
-
-    if (workspaceMethodPackId || (workspaceProjectType && workspaceProjectType !== 'general')) {
-      return {
-        projectType: workspaceProjectType,
-        methodPackId: workspaceMethodPackId,
-      }
-    }
-
-    if (showNovelWorkspaceSidebar && isShortFormNovelWorkspace) {
-      return {
-        projectType: 'short-form',
-        methodPackId: 'short-form.article',
-      }
-    }
-
-    if (showNovelWorkspaceSidebar) {
-      return { projectType: 'novel' }
-    }
-
-    return workspaceProjectType ? { projectType: workspaceProjectType } : undefined
-  }, [activeWorkspace, isShortFormNovelWorkspace, showNovelWorkspaceSidebar])
+  const handleOpenProjectSkills = React.useCallback(() => {
+    navigate(routes.view.skills())
+  }, [])
+  const {
+    openingProjectState,
+    handleOpeningCommand: handleWorkspaceOpeningCommand,
+  } = useWorkspaceProjectSurface({
+    isProjectRuntime,
+    fileCount: novelWorkspaceFiles.length,
+    directoryCount: novelWorkspaceDirectories.length,
+    createFileTitle: t('writing.createFile.menu', '新建文件'),
+    createFilePlaceholder: t('writing.createFile.placeholder', '文件名，例如 新章节.md'),
+    openCreateEntryDialog: openWorkspaceCreateEntryDialog,
+    importFiles: handleImportNovelFiles,
+    openSkills: handleOpenProjectSkills,
+  })
 
   // Extend context value with local overrides (wrapped onDeleteSession, sources, skills, labels, enabledModes, rightSidebarOpenButton, effectiveSessionStatuses)
   const appShellContextValue = React.useMemo<AppShellContextType>(() => ({
@@ -3463,7 +3490,8 @@ function AppShellContent({
     skills,
     mentionFiles,
     activeSessionWorkingDirectory,
-    openingProjectMetadata,
+    openingProjectState,
+    onWorkspaceOpeningCommand: handleWorkspaceOpeningCommand,
     labels: displayLabelConfigs,
     onSessionLabelsChange: handleSessionLabelsChange,
     enabledModes,
@@ -3480,7 +3508,7 @@ function AppShellContent({
     automationTestResults,
     getAutomationHistory,
     onReplayAutomation: handleReplayAutomation,
-  }), [contextValue, handleDeleteSession, handleNovelWorkspaceSendMessage, sources, skills, mentionFiles, activeSessionWorkingDirectory, openingProjectMetadata, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
+  }), [contextValue, handleDeleteSession, handleNovelWorkspaceSendMessage, sources, skills, mentionFiles, activeSessionWorkingDirectory, openingProjectState, handleWorkspaceOpeningCommand, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
 
   // Persist expanded folders to localStorage (workspace-scoped)
   React.useEffect(() => {
@@ -3898,86 +3926,89 @@ function AppShellContent({
   const getNovelWorkspaceTreeMenuActions = React.useCallback((
     entry: WorkspaceFileTreeNode,
   ): readonly WorkspaceFileTreeMenuAction[] => {
-    const createFileAction = (
+    const createEntryAction = (
       id: string,
-      basePath: NovelCreateFileBasePath,
-      label: string,
-      placeholder: string,
-      initialValue: string,
-      separatorBefore = false,
+      kind: WorkspaceCreateEntryKind,
+      parentRelativePath: string,
     ): WorkspaceFileTreeMenuAction => ({
       id,
-      label,
-      icon: <Plus className="h-3.5 w-3.5" />,
-      separatorBefore,
-      onSelect: () => openNovelCreateFileDialog({
-        basePath,
-        title: label,
-        placeholder,
-        initialValue,
+      label: kind === 'file'
+        ? t('writing.createFile.menu', '新建文件')
+        : t('writing.createFolder.menu', '新建文件夹'),
+      icon: kind === 'file'
+        ? <FilePlus className="h-3.5 w-3.5" />
+        : <FolderPlus className="h-3.5 w-3.5" />,
+      onSelect: () => openWorkspaceCreateEntryDialog({
+        kind,
+        parentRelativePath,
+        title: kind === 'file'
+          ? t('writing.createFile.menu', '新建文件')
+          : t('writing.createFolder.menu', '新建文件夹'),
+        placeholder: kind === 'file'
+          ? t('writing.createFile.placeholder', '文件名，例如 新章节.md')
+          : t('writing.createFolder.placeholder', '文件夹名称'),
       }),
     })
     const importAction = (
       id: string,
-      basePath: NovelCreateFileBasePath,
-      label: string,
-      initialValue = '',
-      separatorBefore = false,
+      parentRelativePath: string,
     ): WorkspaceFileTreeMenuAction => ({
       id,
-      label,
+      label: t('writing.importFile.menu', '导入文件'),
       icon: <FileUp className="h-3.5 w-3.5" />,
-      separatorBefore,
-      onSelect: () => void handleImportNovelFiles(basePath, initialValue),
+      onSelect: () => void handleImportNovelFiles(parentRelativePath),
     })
+    const createActions = (parentRelativePath: string): WorkspaceFileTreeMenuAction[] => [
+      createEntryAction(`create-file:${parentRelativePath}`, 'file', parentRelativePath),
+      createEntryAction(`create-folder:${parentRelativePath}`, 'directory', parentRelativePath),
+      importAction(`import-file:${parentRelativePath}`, parentRelativePath),
+    ]
+    const fileManagerName = getFileManagerName()
 
     if (entry.type === 'root') {
       return [
-        importAction('import-manuscript', '正文', t('writing.importFile.manuscript', '导入正文文件')),
-        createFileAction(
-          'create-manuscript',
-          '正文',
-          t('writing.createFile.manuscript', '新建正文文件'),
-          '07-标题、07-标题.md 或 第一卷/07-标题.txt',
-          '',
-        ),
-        importAction('import-global', '全局', t('writing.importFile.globalInfo', '导入全局信息文件'), '', true),
-        createFileAction(
-          'create-global',
-          '全局',
-          t('writing.createFile.globalInfo', '新建全局信息文件'),
-          '角色/主角、世界观/城市.md 或 补充设定.txt',
-          '',
-        ),
-        importAction('import-free', '自由区', t('writing.importFile.freeArea', '导入自由区文件'), '', true),
-        createFileAction(
-          'create-free',
-          '自由区',
-          t('writing.createFile.freeArea', '新建自由区文件'),
-          '脑洞、脑洞.md 或 临时/脑洞.txt',
-          '',
-        ),
+        ...createActions(''),
         {
-          id: 'open-sources',
-          label: t('sidebar.sources'),
-          icon: <DatabaseZap className="h-3.5 w-3.5" />,
+          id: 'reveal-root',
+          label: t('sessionMenu.showInFileManager', { fileManager: fileManagerName }),
+          icon: <FolderOpen className="h-3.5 w-3.5" />,
+          onSelect: () => {
+            void window.electronAPI.showInFolder(entry.path)
+          },
+        },
+        ...(activeProjectId && onOpenProjectInNewWindow ? [{
+          id: 'open-project-in-new-window',
+          label: t('sidebarMenu.openInNewWindow'),
+          icon: <ArrowUpRight className="h-3.5 w-3.5" />,
+          onSelect: () => onOpenProjectInNewWindow(activeProjectId),
+        }] satisfies readonly WorkspaceFileTreeMenuAction[] : []),
+        ...(activeWorkspace && onRenameProject ? [{
+          id: 'rename-project',
+          label: t('common.rename'),
+          icon: <Pencil className="h-3.5 w-3.5" />,
+          onSelect: () => {
+            setNovelProjectRenameValue(activeWorkspace.name)
+            setNovelProjectRenameOpen(true)
+          },
+        }] satisfies readonly WorkspaceFileTreeMenuAction[] : []),
+        ...(activeProjectId && activeWorkspace && onRemoveProject ? [{
+          id: 'remove-project',
+          label: t('workspace.removeWorkspace'),
+          icon: <Trash2 className="h-3.5 w-3.5" />,
           separatorBefore: true,
-          onSelect: handleSourcesClick,
-        },
-        {
-          id: 'open-skills',
-          label: t('sidebar.skills'),
-          icon: <Zap className="h-3.5 w-3.5" />,
-          onSelect: handleSkillsClick,
-        },
+          variant: 'destructive' as const,
+          onSelect: () => {
+            const confirmed = window.confirm(
+              `从列表中移除「${activeWorkspace.name}」？不会删除磁盘文件。`
+            )
+            if (confirmed) void onRemoveProject(activeProjectId)
+          },
+        }] satisfies readonly WorkspaceFileTreeMenuAction[] : []),
       ]
     }
 
     if (entry.type === 'file') {
-      const file = { path: entry.path, relativePath: entry.relativePath }
-      const basePath = getNovelFileCreateBasePath(file)
-      const fileManagerName = getFileManagerName()
-      const actions: WorkspaceFileTreeMenuAction[] = [{
+      return [{
         id: `reveal:${entry.relativePath}`,
         label: t('sessionMenu.showInFileManager', { fileManager: fileManagerName }),
         icon: <FolderOpen className="h-3.5 w-3.5" />,
@@ -3993,49 +4024,37 @@ function AppShellContent({
           })
         },
       }]
-      if (!basePath) return actions
-      actions.push(createFileAction(
-        `create-near:${entry.relativePath}`,
-        basePath,
-        t('writing.createFile.nearby', '新建同目录文件'),
-        basePath === '正文'
-          ? '07-标题、07-标题.md 或 第一卷/07-标题.txt'
-          : basePath === '自由区'
-            ? '脑洞、脑洞.md 或 临时/脑洞.txt'
-            : '角色/主角、世界观/城市.md 或 补充设定.txt',
-        getNearbyNovelCreateInitialValue(file, basePath),
-        true,
-      ))
-      return actions
     }
 
-    const target = getNovelFolderCreateTarget(entry.relativePath)
-    if (!target) return []
-    const importLabel = target.basePath === '正文'
-      ? t('writing.importFile.manuscript', '导入正文文件')
-      : target.basePath === '自由区'
-        ? t('writing.importFile.freeArea', '导入自由区文件')
-        : t('writing.importFile.globalInfo', '导入全局信息文件')
     return [
-      createFileAction(
-        `create-in:${entry.relativePath}`,
-        target.basePath,
-        t('writing.createFile.nearby', '新建同目录文件'),
-        target.basePath === '正文'
-          ? '07-标题、07-标题.md'
-          : target.basePath === '自由区'
-            ? '脑洞、脑洞.md'
-            : '设定、设定.md',
-        target.initialValue,
-      ),
-      importAction(
-        `import-in:${entry.relativePath}`,
-        target.basePath,
-        importLabel,
-        target.initialValue,
-      ),
+      ...createActions(entry.relativePath),
+      {
+        id: `reveal:${entry.relativePath}`,
+        label: t('sessionMenu.showInFileManager', { fileManager: fileManagerName }),
+        icon: <FolderOpen className="h-3.5 w-3.5" />,
+        onSelect: () => {
+          void revealWorkspaceFile({
+            path: entry.path,
+            showInFolder: path => window.electronAPI.showInFolder(path),
+            onError: (error) => {
+              toast.error(t('toast.failedToReveal', { fileManager: fileManagerName }), {
+                description: error instanceof Error ? error.message : String(error),
+              })
+            },
+          })
+        },
+      },
     ]
-  }, [handleImportNovelFiles, handleSkillsClick, handleSourcesClick, openNovelCreateFileDialog, t])
+  }, [
+    activeProjectId,
+    activeWorkspace,
+    handleImportNovelFiles,
+    onOpenProjectInNewWindow,
+    onRemoveProject,
+    onRenameProject,
+    openWorkspaceCreateEntryDialog,
+    t,
+  ])
 
   const workspaceFileTreeLabels = React.useMemo(() => ({
     rename: t('writing.renameFile.title', '重命名'),
@@ -4128,50 +4147,32 @@ function AppShellContent({
     && novelWorkspaceRoot
     && activeWorkspaceId
     ? (
-      <div
-        ref={sidebarRef}
-        className="flex flex-col font-sans"
-        data-focus-zone="sidebar"
-        tabIndex={sidebarFocused ? 0 : -1}
+      <WorkspaceProjectSidebar
+        sidebarRef={sidebarRef}
+        treeRef={workspaceFileTreeRef}
+        focused={sidebarFocused}
         onFocus={handleSidebarFocus}
-      >
-        <div>
-          <React.Suspense fallback={(
-            <div className="flex h-full items-center justify-center px-4 text-xs text-muted-foreground">
-              {t('writing.loadingWorkspace', '正在加载项目目录...')}
-            </div>
-          )}>
-            <WorkspaceFileTree
-              ref={workspaceFileTreeRef}
-              workspaceId={activeWorkspaceId}
-              workspaceName={activeWorkspace?.name ?? t('writing.workspace')}
-              rootPath={novelWorkspaceRoot}
-              files={novelWorkspaceFiles}
-              directories={novelWorkspaceDirectories}
-              selectedPath={selectedNovelFile?.path}
-              expandedIds={expandedFolders}
-              labels={workspaceFileTreeLabels}
-              onExpandedChange={handleWorkspaceTreeExpandedChange}
-              onSelectFile={handleSelectNovelFile}
-              onMoveEntry={handleMoveNovelWorkspaceEntry}
-              onRenameEntry={handleRenameNovelWorkspaceEntry}
-              onDeleteEntry={handleDeleteNovelWorkspaceEntry}
-              getMenuActions={getNovelWorkspaceTreeMenuActions}
-              hasReviewDot={hasNovelReviewDot}
-              onDismissReviewDot={handleDismissNovelReviewDot}
-              fitContent
-            />
-          </React.Suspense>
-        </div>
-        {!novelWorkspaceFiles.some((file) => {
-          const relativePath = file.relativePath.replace(/\\/g, '/')
-          return relativePath === '正文' || relativePath.startsWith('正文/')
-        }) ? (
-          <div className="shrink-0 border-t border-border/40 px-3 py-2 text-[11px] leading-snug text-muted-foreground">
-            {t('writing.emptyCoach', '可以先写正文；人物、大纲等全局信息用到再补。')}
-          </div>
-        ) : null}
-      </div>
+        loadingLabel={t('writing.loadingWorkspace', '正在加载项目目录...')}
+        emptyHint={t('chatOpening.project.emptyHint', '先说目标即可；Storyflow 不会预先创建目录。')}
+        treeProps={{
+          workspaceId: activeWorkspaceId,
+          workspaceName: activeWorkspace?.name ?? t('writing.workspace'),
+          rootPath: novelWorkspaceRoot,
+          files: novelWorkspaceFiles,
+          directories: novelWorkspaceDirectories,
+          selectedPath: selectedNovelFile?.path,
+          expandedIds: expandedFolders,
+          labels: workspaceFileTreeLabels,
+          onExpandedChange: handleWorkspaceTreeExpandedChange,
+          onSelectFile: handleSelectNovelFile,
+          onMoveEntry: handleMoveNovelWorkspaceEntry,
+          onRenameEntry: handleRenameNovelWorkspaceEntry,
+          onDeleteEntry: handleDeleteNovelWorkspaceEntry,
+          getMenuActions: getNovelWorkspaceTreeMenuActions,
+          hasReviewDot: hasNovelReviewDot,
+          onDismissReviewDot: handleDismissNovelReviewDot,
+        }}
+      />
     )
     : undefined
 
@@ -4188,7 +4189,7 @@ function AppShellContent({
       <div
         ref={shellRef}
         className="flex items-stretch relative"
-        style={{ height: '100%', paddingRight: PANEL_EDGE_INSET, paddingBottom: PANEL_EDGE_INSET, paddingLeft: 0, gap: showActivityRail ? 0 : PANEL_GAP }}
+        style={{ height: '100%', paddingRight: PANEL_EDGE_INSET, paddingLeft: 0, gap: showActivityRail ? 0 : PANEL_GAP }}
       >
         {showActivityRail ? (
           <ActivityRail
@@ -4220,8 +4221,13 @@ function AppShellContent({
           />
         ) : null}
 
-        <WritingPrimaryContentReadyContext.Provider value={writingPrimaryContentReady}>
-        <PanelStackContainer
+        <div
+          data-testid="panel-stack-inset"
+          className="flex min-w-0 flex-1"
+          style={{ paddingBottom: PANEL_EDGE_INSET }}
+        >
+          <WritingPrimaryContentReadyContext.Provider value={writingPrimaryContentReady}>
+          <PanelStackContainer
           sidebarSlot={null}
           sidebarWidth={0}
           navigatorSlot={
@@ -4231,44 +4237,54 @@ function AppShellContent({
               className="h-full flex flex-col min-w-0 relative z-panel"
             >
             {showNovelDocumentNavigator && novelWorkspaceRoot ? (
-              <NovelDocumentEditorPanel
-                ref={novelDocumentEditorRef}
-                file={selectedNovelFile}
-                content={novelDocumentContent}
-                loading={novelDocumentLoading}
-                saving={novelDocumentSaving}
-                error={novelDocumentError}
-                onDocumentChanged={handleNovelDocumentChanged}
-                onAskAiForSelection={handleAskAiForNovelSelection}
-                onAddSelectionToChat={handleAddNovelSelectionToChat}
-                onSendSelectionToChat={handleSendNovelSelectionToChat}
-                reviewChanges={selectedNovelPendingChanges}
-                pendingChangeCount={pendingNovelChangedFilePaths.length}
-                pendingFileIndex={selectedNovelReviewFileIndex >= 0 ? selectedNovelReviewFileIndex : undefined}
-                onAcceptReviewChanges={selectedNovelPendingChanges.length > 0 ? () => handleAcceptNovelFileChanges(selectedNovelPendingChanges) : undefined}
-                onAcceptAllReviewChanges={pendingNovelChangedFilePaths.length > 0 ? handleAcceptAllNovelChanges : undefined}
-                onRejectReviewChanges={selectedNovelPendingChanges.length > 0 ? () => { void handleRejectNovelFileChanges(selectedNovelPendingChanges) } : undefined}
-                onPreviousReviewFile={() => { void handleSelectAdjacentNovelChangeFile('previous') }}
-                onNextReviewFile={() => { void handleSelectAdjacentNovelChangeFile('next') }}
-                workspaceActions={(
-                  <>
-                    <HeaderIconButton
-                      icon={<History className="h-4 w-4" />}
-                      tooltip={t('writing.version.title', '版本管理')}
-                      disabled={!novelWorkspaceRoot}
-                      onClick={() => setNovelVersionDialogOpen(true)}
-                      className="h-[26px] w-[26px] rounded-lg"
-                    />
-                    <HeaderIconButton
-                      icon={<Download className="h-4 w-4" />}
-                      tooltip={t('writing.export.action', '导出')}
-                      disabled={novelWorkspaceFiles.length === 0}
-                      onClick={() => setNovelExportDialogOpen(true)}
-                      className="h-[26px] w-[26px] rounded-lg"
-                    />
-                  </>
-                )}
-              />
+              selectedNovelFile ? (
+                <NovelDocumentEditorPanel
+                  ref={novelDocumentEditorRef}
+                  file={selectedNovelFile}
+                  content={novelDocumentContent}
+                  loading={novelDocumentLoading}
+                  saving={novelDocumentSaving}
+                  error={novelDocumentError}
+                  onDocumentChanged={handleNovelDocumentChanged}
+                  onAskAiForSelection={handleAskAiForNovelSelection}
+                  onAddSelectionToChat={handleAddNovelSelectionToChat}
+                  onSendSelectionToChat={handleSendNovelSelectionToChat}
+                  reviewChanges={selectedNovelPendingChanges}
+                  pendingChangeCount={pendingNovelChangedFilePaths.length}
+                  pendingFileIndex={selectedNovelReviewFileIndex >= 0 ? selectedNovelReviewFileIndex : undefined}
+                  onAcceptReviewChanges={selectedNovelPendingChanges.length > 0 ? () => handleAcceptNovelFileChanges(selectedNovelPendingChanges) : undefined}
+                  onAcceptAllReviewChanges={pendingNovelChangedFilePaths.length > 0 ? handleAcceptAllNovelChanges : undefined}
+                  onRejectReviewChanges={selectedNovelPendingChanges.length > 0 ? () => { void handleRejectNovelFileChanges(selectedNovelPendingChanges) } : undefined}
+                  onPreviousReviewFile={() => { void handleSelectAdjacentNovelChangeFile('previous') }}
+                  onNextReviewFile={() => { void handleSelectAdjacentNovelChangeFile('next') }}
+                  workspaceActions={(
+                    <>
+                      <HeaderIconButton
+                        icon={<History className="h-4 w-4" />}
+                        tooltip={t('writing.version.title', '版本管理')}
+                        disabled={!novelWorkspaceRoot}
+                        onClick={() => setNovelVersionDialogOpen(true)}
+                        className="h-[26px] w-[26px] rounded-lg"
+                      />
+                      <HeaderIconButton
+                        icon={<Download className="h-4 w-4" />}
+                        tooltip={t('writing.export.action', '导出')}
+                        disabled={novelWorkspaceFiles.length === 0}
+                        onClick={() => setNovelExportDialogOpen(true)}
+                        className="h-[26px] w-[26px] rounded-lg"
+                      />
+                    </>
+                  )}
+                />
+              ) : (
+                <WorkspaceEmptyState
+                  workspaceName={activeWorkspace?.name ?? t('writing.workspace')}
+                  rootPath={novelWorkspaceRoot}
+                  onCreateFile={() => handleWorkspaceOpeningCommand('create-file')}
+                  onImportFiles={() => handleWorkspaceOpeningCommand('import-files')}
+                  onOpenSkills={() => handleWorkspaceOpeningCommand('open-skills')}
+                />
+              )
             ) : showNovelWorkspacePending ? (
               <div className="flex h-full flex-col">
                 <PanelHeader
@@ -5073,7 +5089,8 @@ function AppShellContent({
           isResizing={!!isResizing}
           hidePanelCloseButton={showPrimarySidebar}
         />
-        </WritingPrimaryContentReadyContext.Provider>
+          </WritingPrimaryContentReadyContext.Provider>
+        </div>
 
       </div>
 
@@ -5139,10 +5156,9 @@ function AppShellContent({
         />
       ) : null}
 
-      <NovelExportDialog
+      <ProjectExportDialog
         open={novelExportDialogOpen}
         files={novelWorkspaceFiles}
-        methodPackId={activeWorkspaceMethodPackId}
         exporting={novelExporting}
         onOpenChange={(open) => {
           if (!novelExporting) setNovelExportDialogOpen(open)
@@ -5163,30 +5179,30 @@ function AppShellContent({
       />
 
       <Dialog
-        open={!!novelCreateFileTarget}
-        busy={novelCreatingFile}
+        open={!!workspaceCreateEntryTarget}
+        busy={workspaceCreatingEntry}
         onOpenChange={(open) => {
           if (!open) {
-            setNovelCreateFileTarget(null)
-            setNovelCreateFileValue('')
+            setWorkspaceCreateEntryTarget(null)
+            setWorkspaceCreateEntryValue('')
           }
         }}
       >
         <DialogContent size="sm">
           <DialogHeader>
-            <DialogTitle>{novelCreateFileTarget?.title}</DialogTitle>
+            <DialogTitle>{workspaceCreateEntryTarget?.title}</DialogTitle>
           </DialogHeader>
           <div className="py-3">
             <Input
-              value={novelCreateFileValue}
-              onChange={(event) => setNovelCreateFileValue(event.target.value)}
-              placeholder={novelCreateFileTarget?.placeholder}
-              disabled={novelCreatingFile}
+              value={workspaceCreateEntryValue}
+              onChange={(event) => setWorkspaceCreateEntryValue(event.target.value)}
+              placeholder={workspaceCreateEntryTarget?.placeholder}
+              disabled={workspaceCreatingEntry}
               autoFocus
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
                   event.preventDefault()
-                  void handleSubmitNovelCreateFile()
+                  void handleSubmitWorkspaceCreateEntry()
                 }
               }}
             />
@@ -5194,23 +5210,32 @@ function AppShellContent({
           <DialogFooter>
             <Button
               variant="outline"
-              disabled={novelCreatingFile}
+              disabled={workspaceCreatingEntry}
               onClick={() => {
-                setNovelCreateFileTarget(null)
-                setNovelCreateFileValue('')
+                setWorkspaceCreateEntryTarget(null)
+                setWorkspaceCreateEntryValue('')
               }}
             >
               {t('common.cancel')}
             </Button>
             <Button
-              disabled={novelCreatingFile || !novelCreateFileValue.trim()}
-              onClick={() => void handleSubmitNovelCreateFile()}
+              disabled={workspaceCreatingEntry || !workspaceCreateEntryValue.trim()}
+              onClick={() => void handleSubmitWorkspaceCreateEntry()}
             >
               {t('common.create', '创建')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <RenameDialog
+        open={novelProjectRenameOpen}
+        onOpenChange={setNovelProjectRenameOpen}
+        title={t('common.rename')}
+        value={novelProjectRenameValue}
+        onValueChange={setNovelProjectRenameValue}
+        onSubmit={handleSubmitNovelProjectRename}
+      />
 
       {activeWorkspace ? (
         <CreateSkillDialog

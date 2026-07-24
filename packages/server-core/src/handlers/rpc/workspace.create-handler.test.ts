@@ -1,25 +1,49 @@
-// input: Workspace create RPC registration with Method Pack scaffolding
-// output: Regression coverage for starter sessions and stale default workspace reuse
-// pos: Guards the server-side boundary between workspace scaffolding and in-memory sessions
+// input: Current and legacy workspace CREATE RPC requests
+// output: Regression coverage for blank roots, remote options, and stale default reuse
+// pos: Guards the server boundary between blank workspace storage and in-memory sessions
 
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, mock } from 'bun:test'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
-import { createNovelWorkspaceAtPath } from '@craft-agent/shared/workspaces'
+import {
+  createWorkspaceAtPath,
+  isValidWorkspace,
+  loadWorkspaceConfig,
+} from '@craft-agent/shared/workspaces'
 import type { HandlerFn, RequestContext, RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
-const createdWorkspaces: Array<{ id: string; name: string; rootPath: string; slug: string }> = []
+interface CreatedWorkspace {
+  id: string
+  name: string
+  rootPath: string
+  slug: string
+  remoteServer?: {
+    url: string
+    token: string
+    remoteWorkspaceId: string
+  }
+}
+
+const createdWorkspaces: CreatedWorkspace[] = []
 
 mock.module('@craft-agent/shared/config', () => ({
-  addWorkspace: ({ name, rootPath }: { name: string; rootPath: string }) => {
+  addWorkspace: ({
+    name,
+    rootPath,
+    remoteServer,
+  }: Pick<CreatedWorkspace, 'name' | 'rootPath' | 'remoteServer'>) => {
+    if (!isValidWorkspace(rootPath)) {
+      createWorkspaceAtPath(rootPath, name)
+    }
     const workspace = {
       id: `workspace-${createdWorkspaces.length + 1}`,
       name,
       rootPath,
       slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'workspace',
+      ...(remoteServer && { remoteServer }),
     }
     createdWorkspaces.push(workspace)
     return workspace
@@ -105,38 +129,67 @@ function createWorkspaceHarness() {
 }
 
 describe('workspace create RPC registration', () => {
-  it('reloads sessions after creating a novel workspace so starter chat appears immediately', async () => {
+  it('creates a blank workspace while tolerating legacy method fields', async () => {
     createdWorkspaces.length = 0
     const rootPath = mkdtempSync(join(tmpdir(), 'craft-workspace-create-handler-'))
     const { createWorkspace, ctx, getReloadSessionsCount, getSetupConfigWatcherCount } = createWorkspaceHarness()
 
     try {
-      await createWorkspace(ctx, rootPath, 'Book', { projectType: 'novel', methodPackId: 'novel.claude-book' })
+      await createWorkspace(
+        ctx,
+        rootPath,
+        'Book',
+        { projectType: 'novel', methodPackId: 'novel.claude-book' },
+        'novel',
+      )
 
       expect(getReloadSessionsCount()).toBe(1)
       expect(getSetupConfigWatcherCount()).toBe(1)
+      expect(loadWorkspaceConfig(rootPath)?.defaults?.workingDirectory).toBe(rootPath)
+      expect(readdirSync(rootPath).filter(entry => !entry.startsWith('.'))).toEqual([])
+      expect(existsSync(join(rootPath, '.git'))).toBe(false)
+      expect(existsSync(join(rootPath, '.craft-agent', 'craft-writing.json'))).toBe(false)
+      expect(existsSync(join(rootPath, '.craft-agent', 'craft-pack-lock.json'))).toBe(false)
     } finally {
       rmSync(rootPath, { recursive: true, force: true })
     }
   })
 
-  it('reinitializes an untracked stale default workspace folder before applying the selected method pack', async () => {
+  it('preserves a legacy direct remote server argument while ignoring the fourth argument', async () => {
+    createdWorkspaces.length = 0
+    const rootPath = mkdtempSync(join(tmpdir(), 'craft-remote-workspace-create-handler-'))
+    const { createWorkspace, ctx } = createWorkspaceHarness()
+    const remoteServer = {
+      url: 'ws://localhost:9100',
+      token: 'token',
+      remoteWorkspaceId: 'remote-ws',
+    }
+
+    try {
+      const workspace = await createWorkspace(ctx, rootPath, 'Remote', remoteServer, 'novel')
+
+      expect(workspace.remoteServer).toEqual(remoteServer)
+      expect(readdirSync(rootPath).filter(entry => !entry.startsWith('.'))).toEqual([])
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true })
+    }
+  })
+
+  it('reinitializes an untracked stale default workspace folder as a blank workspace', async () => {
     createdWorkspaces.length = 0
     const slug = `craft-stale-default-${Date.now()}-${Math.random().toString(36).slice(2)}`
     const rootPath = join(homedir(), '.craft-agent', 'workspaces', slug)
     rmSync(rootPath, { recursive: true, force: true })
-    createNovelWorkspaceAtPath(rootPath, 'Old Book', undefined, 'novel.free-creation')
+    createWorkspaceAtPath(rootPath, 'Old Project')
     const { createWorkspace, ctx } = createWorkspaceHarness()
 
     try {
       await createWorkspace(ctx, rootPath, 'Book', { projectType: 'novel', methodPackId: 'novel.claude-book' })
 
-      const manifest = JSON.parse(readFileSync(join(rootPath, '.craft-agent', 'craft-writing.json'), 'utf-8')) as {
-        methodPack?: { id?: string }
-      }
-      expect(manifest.methodPack?.id).toBe('novel.claude-book')
-      expect(existsSync(join(rootPath, 'bible', 'style.md'))).toBe(true)
-      expect(existsSync(join(rootPath, '项目说明.md'))).toBe(false)
+      expect(loadWorkspaceConfig(rootPath)?.name).toBe('Book')
+      expect(readdirSync(rootPath).filter(entry => !entry.startsWith('.'))).toEqual([])
+      expect(existsSync(join(rootPath, '.craft-agent', 'craft-writing.json'))).toBe(false)
+      expect(existsSync(join(rootPath, '.craft-agent', 'craft-pack-lock.json'))).toBe(false)
     } finally {
       rmSync(rootPath, { recursive: true, force: true })
     }
@@ -145,17 +198,15 @@ describe('workspace create RPC registration', () => {
   it('does not reinitialize an existing custom workspace folder when creating at an explicit path', async () => {
     createdWorkspaces.length = 0
     const rootPath = mkdtempSync(join(tmpdir(), 'craft-custom-stale-workspace-'))
-    createNovelWorkspaceAtPath(rootPath, 'Old Book', undefined, 'novel.free-creation')
+    createWorkspaceAtPath(rootPath, 'Old Project')
+    writeFileSync(join(rootPath, 'keep.md'), '# Keep\n')
     const { createWorkspace, ctx } = createWorkspaceHarness()
 
     try {
       await createWorkspace(ctx, rootPath, 'Book', { projectType: 'novel', methodPackId: 'novel.claude-book' })
 
-      const manifest = JSON.parse(readFileSync(join(rootPath, '.craft-agent', 'craft-writing.json'), 'utf-8')) as {
-        methodPack?: { id?: string }
-      }
-      expect(manifest.methodPack?.id).toBe('novel.free-creation')
-      expect(existsSync(join(rootPath, '全局', '项目说明.md'))).toBe(true)
+      expect(existsSync(join(rootPath, '.craft-agent', 'config.json'))).toBe(true)
+      expect(existsSync(join(rootPath, 'keep.md'))).toBe(true)
     } finally {
       rmSync(rootPath, { recursive: true, force: true })
     }

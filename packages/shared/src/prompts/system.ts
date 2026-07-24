@@ -323,29 +323,6 @@ ${fileList}
 </project_context_files>`;
 }
 
-/**
- * Work Profiles are product metadata for scaffold, validation, repair, and
- * migration. Agent-readable runtime instructions belong in AGENTS.md and
- * workspace skills, so profile metadata is not injected into system prompts.
- *
- * @deprecated Retained for source compatibility; Storyflow no longer calls this
- * from system prompt construction.
- */
-export function getMethodPackRuntimePrompt(_workingDirectory?: string): string {
-  return '';
-}
-
-/**
- * @deprecated Retained for source compatibility; periodic writing reminders are
- * owned by workspace skills instead of PromptBuilder context injection.
- */
-export function getMethodPackPeriodicReminderPrompt(
-  _workingDirectory: string | undefined,
-  _userIteration: number | undefined,
-): string {
-  return '';
-}
-
 /** Options for getSystemPrompt */
 export interface SystemPromptOptions {
   pinnedPreferencesPrompt?: string;
@@ -412,7 +389,7 @@ Treat novel projects as long-form creative work where manuscript fidelity and co
 - Before drafting or revising, read the relevant bible, outline, current state, and timeline files so new prose fits canon and sequence.
 - Group changes by manuscript, outline, characters, locations, state, timeline, and working notes so creative text, planning, and continuity records stay easy to review.
 - prefer project and workspace skills for novel-specific workflows before inventing ad hoc processes.
-- Do not draft directly from a broad first writing request. First use the workspace Method Pack intake or router skill, extract known constraints, and ask only the missing decisions that materially change the story method.
+- Do not draft directly from a broad first writing request. First use a relevant project Skill when available, extract known constraints, and ask only for missing decisions that materially change the story.
 - For prompts like "write a story" or "写一个...", clarify method-defining dimensions before outline or prose: audience lane, genre promise, protagonist/relationship setup, emotional engine, reversal rhythm, ending/payoff, and length or chapter target.
 `;
 }
@@ -720,7 +697,7 @@ Co-Authored-By: Storyflow <agents-noreply@craft.do>
 
 **Mode switching is normal:** Users may switch between exploration and implementation multiple times during the same conversation. Do not be surprised when this happens. Adapt to the current mode and respect the user's latest intention as it changes.
 
-Current mode is in \`<session_state>\`, along with last mode-transition metadata when available (for example: \`modeTransition\`, \`modeChangedBy\`, \`modeChangedAt\`, \`modeVersion\`). \`plansFolderPath\` shows the **exact path** where you can write plan files. \`dataFolderPath\` shows where you can write data files (e.g. \`transform_data\` output). In Explore mode, writes are only allowed to these two folders — writes to any other location will be blocked.
+Current mode is in \`<session_state>\`, along with last mode-transition metadata when available (for example: \`modeTransition\`, \`modeChangedBy\`, \`modeChangedAt\`, \`modeVersion\`). \`plansFolderPath\` is the **exact path** for implementation plans. \`dataFolderPath\` is only for scratch or intermediate tool output (for example, \`transform_data\` output); it is not the destination for user-requested project files. Durable deliverables belong in the current working directory and should follow the visible workspace structure. In Explore mode, writes are only allowed to the plans and data folders — writes to any other location will be blocked.
 
 **${PERMISSION_MODE_CONFIG['safe'].displayName} mode:** Read, search, and explore freely. Use \`SubmitPlan\` when ready to implement - the user sees an "Accept Plan" button to transition to execution. 
 Be decisive: when you have enough context, present your approach and ask "Ready for a plan?" or write it directly. This will help the user move forward.
@@ -729,8 +706,7 @@ Be decisive: when you have enough context, present your approach and ask "Ready 
 When presenting a plan via SubmitPlan the system will interrupt your current run and wait for user confirmation. Expect, and prepare for this.
 Never try to execute a plan without submitting it first - it will fail, especially if user is in ${PERMISSION_MODE_CONFIG['safe'].displayName} mode.
 
-**CRITICAL:** You MUST write plan files to the **exact \`plansFolderPath\`** and data files to the **exact \`dataFolderPath\`** from \`<session_state>\`. These folders already exist (created by the system). Writes to any other path (including the parent session folder) will be blocked.
-**Do NOT** write to \`.copilot-config/\`, \`session-state/\`, or any other directory — those paths will be rejected. Use ONLY \`plansFolderPath\` or \`dataFolderPath\`.
+**CRITICAL in Explore mode:** Write implementation plans to the exact \`plansFolderPath\` and scratch or intermediate tool output to the exact \`dataFolderPath\` from \`<session_state>\`. These folders already exist. Do not use the parent session folder or invent another runtime directory. After the user approves execution or switches to Ask/Auto mode, write durable project deliverables to the current working directory instead of the session data folder.
 ${backendName === 'Codex' ? `
 ### Planning tools (Codex)
 - **update_plan** — Live task tracking within a turn/session (statuses: pending/in_progress/completed). Does not pause execution or request approval.

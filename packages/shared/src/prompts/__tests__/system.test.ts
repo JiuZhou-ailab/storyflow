@@ -35,6 +35,15 @@ describe('system prompt guidance', () => {
     expect(prompt).toContain('The subtask needs file/shell tools (for example, Read or Bash)')
     expect(prompt).not.toContain('The subtask needs tools (Read, Bash, Grep)')
   })
+
+  it('keeps session data temporary and durable deliverables in the workspace', () => {
+    const prompt = getSystemPrompt(undefined, undefined, '/tmp/workspace', '/tmp/workspace')
+
+    expect(prompt).toContain('it is not the destination for user-requested project files')
+    expect(prompt).toContain('Durable deliverables belong in the current working directory')
+    expect(prompt).toContain('write durable project deliverables to the current working directory')
+    expect(prompt).not.toContain('data files to the **exact `dataFolderPath`**')
+  })
 })
 
 describe('includeCoAuthoredBy handling', () => {

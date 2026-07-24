@@ -23,6 +23,7 @@ export type { WorkspaceFileTreeMenuAction, WorkspaceFileTreeNode }
 
 export interface WorkspaceFileTreeHandle {
   focusSelected(): void
+  open(id: string): void
 }
 
 export interface WorkspaceFileTreeProps {
@@ -176,6 +177,9 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
         const target = selectedNode ?? tree.visibleNodes[0]
         target?.openParents()
         requestAnimationFrame(() => target?.focus())
+      },
+      open(id: string) {
+        treeRef.current?.open(id)
       },
     }), [selectionId])
 

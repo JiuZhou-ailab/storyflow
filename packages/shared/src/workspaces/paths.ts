@@ -69,10 +69,6 @@ export function getWorkspaceSkillsPath(rootPath: string): string {
   return join(rootPath, PI_PROJECT_DIR, 'skills');
 }
 
-export function getProjectSkillsLifecycleStatePath(rootPath: string): string {
-  return join(getWorkspaceStatePath(rootPath), 'migrations', 'project-skills.json');
-}
-
 export function getLegacyCraftWorkspaceSkillsPath(rootPath: string): string {
   return join(getWorkspaceStatePath(rootPath), 'skills');
 }

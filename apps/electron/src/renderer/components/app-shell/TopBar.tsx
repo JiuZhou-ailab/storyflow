@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils'
 import { useTransportConnectionState } from '@/hooks/useTransportConnectionState'
 import { useUpdateChecker } from '@/hooks/useUpdateChecker'
 import { getUpdateIndicatorState } from '@/lib/update-indicator'
-import type { Workspace, WorkspaceProjectType } from '../../../shared/types'
+import type { Workspace } from '../../../shared/types'
 import { formatTopbarWorkspaceName } from './workspace-switcher-label'
 import { WINDOW_TITLE_BAR_HEIGHT } from './layout-constants'
 
@@ -37,7 +37,6 @@ export function TopBar({
   )
   const workspaceName = selectedWorkspace?.name ?? '未选择项目'
   const displayName = formatTopbarWorkspaceName(workspaceName)
-  const projectTypeLabel = getWorkspaceProjectTypeLabel(selectedWorkspace)
   const isRemoteWorkspace = Boolean(selectedWorkspace?.remoteServer)
   const isDisconnected = isRemoteWorkspace
     && connectionState?.mode === 'remote'
@@ -57,7 +56,7 @@ export function TopBar({
         )}
       >
         <span className="shrink-0 text-[12px] font-medium text-muted-foreground">
-          {projectTypeLabel}
+          {t('workspace.projectLabel', '项目')}
         </span>
         <span className="shrink-0 text-[12px] text-muted-foreground/40" aria-hidden="true">/</span>
         <FadingText className="min-w-0 max-w-[320px] whitespace-nowrap text-[13px] font-medium text-foreground" fadeWidth={24}>
@@ -133,28 +132,4 @@ export function TopBar({
       )}
     </header>
   )
-}
-
-type WorkspaceWithProjectMetadata = Workspace & {
-  projectType?: WorkspaceProjectType
-  methodPackId?: string
-}
-
-function getWorkspaceProjectTypeLabel(workspace: Workspace | undefined): string {
-  const metadata = workspace as WorkspaceWithProjectMetadata | undefined
-  switch (metadata?.projectType) {
-    case 'novel':
-      return '小说'
-    case 'short-form':
-      return '短篇'
-    case 'screenplay':
-      return '剧本'
-    case 'general':
-      return '项目'
-    default:
-      if (metadata?.methodPackId?.startsWith('short-form.')) return '短篇'
-      if (metadata?.methodPackId?.startsWith('novel.')) return '小说'
-      if (metadata?.methodPackId?.startsWith('screenplay.')) return '剧本'
-      return '项目'
-  }
 }

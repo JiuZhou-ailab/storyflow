@@ -21,8 +21,6 @@ import {
   groupNovelFileChanges,
   groupReviewableNovelFileChanges,
   getShortFormGlobalInfoFiles,
-  getNovelImportTargetRelativePath,
-  normalizeNovelCreateFilePath,
   isNovelWorkspaceFilePathInRoot,
   isVisibleNovelWorkspaceAssetPath,
   isShortFormNovelWorkspaceFiles,
@@ -156,22 +154,6 @@ describe('writing workspace helpers', () => {
     expect(tree.work.files.map(file => file.relativePath)).toEqual(['.work/chapter-01-plan.md'])
   })
 
-  it('uses Method Pack artifact contracts for workspace section projection', () => {
-    const tree = buildNovelWorkspaceTree([
-      { path: '/script/剧本/分场大纲.md', relativePath: '剧本/分场大纲.md' },
-      { path: '/script/剧本/对白草稿/01-开场.md', relativePath: '剧本/对白草稿/01-开场.md' },
-      { path: '/script/角色/人物表.md', relativePath: '角色/人物表.md' },
-      { path: '/script/场景/场景表.md', relativePath: '场景/场景表.md' },
-      { path: '/script/逻辑/因果链.md', relativePath: '逻辑/因果链.md' },
-    ], 'screenplay.logic')
-
-    expect(tree.outline.files.map(file => file.relativePath)).toEqual(['剧本/分场大纲.md'])
-    expect(tree.work.files.map(file => file.relativePath)).toEqual(['剧本/对白草稿/01-开场.md'])
-    expect(tree.characters.files.map(file => file.relativePath)).toEqual(['角色/人物表.md'])
-    expect(tree.locations.files.map(file => file.relativePath)).toEqual(['场景/场景表.md'])
-    expect(tree.state.files.map(file => file.relativePath)).toEqual(['逻辑/因果链.md'])
-  })
-
   it('selects manuscript as default when chapters exist', () => {
     const tree = buildNovelWorkspaceTree([
       { path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md' },
@@ -181,24 +163,25 @@ describe('writing workspace helpers', () => {
     expect(selectDefaultNovelTab(tree)).toBe('manuscript')
   })
 
-  it('selects the first manuscript file as the default editable document', () => {
+  it('selects the first real file by path without inferring a writing category', () => {
     expect(selectDefaultNovelFile([
       { path: '/novel/story/plan.md', relativePath: 'story/plan.md' },
       { path: '/novel/story/chapters/chapter-02.md', relativePath: 'story/chapters/chapter-02.md' },
-      { path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md' },
+      { path: '/novel/README.md', relativePath: 'README.md' },
     ])).toEqual({
-      path: '/novel/story/chapters/chapter-01.md',
-      relativePath: 'story/chapters/chapter-01.md',
+      path: '/novel/README.md',
+      relativePath: 'README.md',
     })
   })
 
-  it('selects default files without building and sorting the whole workspace tree', () => {
+  it('selects default files without category projection', () => {
     const functionStart = writingWorkspaceSource.indexOf('export function selectDefaultNovelFile')
     const functionEnd = writingWorkspaceSource.indexOf('export function summarizeNovelSection', functionStart)
     const functionSource = writingWorkspaceSource.slice(functionStart, functionEnd)
 
-    expect(functionSource).toContain('const bestBySection = new Map<NovelWorkspaceFileSectionId, NovelWorkspaceFile>()')
-    expect(functionSource).not.toContain('buildNovelWorkspaceTree(files, methodPackId)')
+    expect(functionSource).toContain('sortByRelativePath')
+    expect(functionSource).not.toContain('categorizeNovelPath')
+    expect(functionSource).not.toContain('methodPackId')
   })
 
   it('sorts manuscript chapters by numeric chapter order', () => {
@@ -255,13 +238,13 @@ describe('writing workspace helpers', () => {
     })
   })
 
-  it('falls back to outline when no manuscript file exists', () => {
+  it('does not prioritize legacy outline paths over earlier project files', () => {
     expect(selectDefaultNovelFile([
       { path: '/novel/bible/characters/alice.md', relativePath: 'bible/characters/alice.md' },
       { path: '/novel/story/plan.md', relativePath: 'story/plan.md' },
     ])).toEqual({
-      path: '/novel/story/plan.md',
-      relativePath: 'story/plan.md',
+      path: '/novel/bible/characters/alice.md',
+      relativePath: 'bible/characters/alice.md',
     })
   })
 
@@ -315,7 +298,7 @@ describe('writing workspace helpers', () => {
     expect(grouped.other.map(item => item.filePath)).toEqual(['/novel/README.md'])
   })
 
-  it('filters changes that are not visible in the writing workspace catalog', () => {
+  it('keeps every changed project file reviewable regardless of folder name', () => {
     const changes: FileChange[] = [
       change('/novel/story/chapters/chapter-02.md'),
       change('/novel/自由区/灵感.md'),
@@ -328,10 +311,12 @@ describe('writing workspace helpers', () => {
     expect(reviewableChanges.map(item => item.filePath)).toEqual([
       '/novel/story/chapters/chapter-02.md',
       '/novel/自由区/灵感.md',
+      '/novel/README.md',
+      '/novel/.codex/session.json',
     ])
   })
 
-  it('groups reviewable file changes without keeping other files', () => {
+  it('keeps uncategorized project changes in the review projection', () => {
     const grouped = groupReviewableNovelFileChanges([
       change('/novel/story/chapters/chapter-02.md'),
       change('/novel/自由区/灵感.md'),
@@ -340,7 +325,7 @@ describe('writing workspace helpers', () => {
 
     expect(grouped.manuscript.map(item => item.filePath)).toEqual(['/novel/story/chapters/chapter-02.md'])
     expect(grouped.work.map(item => item.filePath)).toEqual(['/novel/自由区/灵感.md'])
-    expect(grouped.other).toEqual([])
+    expect(grouped.other.map(item => item.filePath)).toEqual(['/novel/README.md'])
   })
 
   it('strips the novel workspace root before deriving display paths', () => {
@@ -355,7 +340,7 @@ describe('writing workspace helpers', () => {
     expect(isNovelWorkspaceFilePathInRoot('/other/正文/01.md', '/novel')).toBe(false)
   })
 
-  it('maps file search results to novel workspace files and drops unknown files', () => {
+  it('maps every unique project file without path-category filtering', () => {
     const files = mapSearchResultsToNovelWorkspaceFiles([
       { name: 'chapter-01.md', path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md', type: 'file' },
       { name: 'chapter-01.md', path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md', type: 'file' },
@@ -366,11 +351,12 @@ describe('writing workspace helpers', () => {
 
     expect(files).toEqual([
       { path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md' },
+      { path: '/novel/README.md', relativePath: 'README.md' },
       { path: '/novel/state/template/situation.md', relativePath: 'state/template/situation.md' },
     ])
   })
 
-  it('maps the native project catalog without Method Pack visibility filtering', () => {
+  it('maps the native project catalog without path-category filtering', () => {
     const catalog = mapNativeWorkspaceCatalog([
       { name: '人物.md', path: '/novel/人物.md', relativePath: '人物.md', type: 'file' },
       { name: 'README.md', path: '/novel/README.md', relativePath: 'README.md', type: 'file' },
@@ -407,6 +393,7 @@ describe('writing workspace helpers', () => {
       '全局/简报.md',
       '全局/大纲.md',
       '全局/人物.md',
+      '素材.md',
       '正文/01-未婚夫和闺蜜在我葬礼上接吻.md',
       '正文/03-番外.txt',
       '正文/第一卷/02-雨夜.md',
@@ -427,7 +414,7 @@ describe('writing workspace helpers', () => {
     expect(tree.work.files.map(file => file.relativePath)).toEqual(['自由区/临时笔记.txt', '自由区/脑洞/反派试稿.md'])
   })
 
-  it('flattens short-form global information files in method pack order', () => {
+  it('flattens legacy short-form global information files in stable display order', () => {
     const files = mapSearchResultsToNovelWorkspaceFiles([
       { name: '素材.md', path: '/short/素材.md', relativePath: '素材.md', type: 'file' },
       { name: '人物.md', path: '/short/全局/人物.md', relativePath: '全局/人物.md', type: 'file' },
@@ -447,24 +434,6 @@ describe('writing workspace helpers', () => {
       '全局/大纲.md',
       '全局/人物.md',
     ])
-  })
-
-  it('normalizes new manuscript, global information, and free-area file paths to supported text files', () => {
-    expect(normalizeNovelCreateFilePath('07-标题', '正文')).toBe('正文/07-标题.md')
-    expect(normalizeNovelCreateFilePath('第一卷/07-标题.md', '正文')).toBe('正文/第一卷/07-标题.md')
-    expect(normalizeNovelCreateFilePath('角色/主角', '全局')).toBe('全局/角色/主角.md')
-    expect(normalizeNovelCreateFilePath('灵感.txt', '自由区')).toBe('自由区/灵感.txt')
-    expect(normalizeNovelCreateFilePath(' 临时\\灵感.TXT ', '自由区')).toBe('自由区/临时/灵感.TXT')
-    expect(normalizeNovelCreateFilePath('资料.docx', '自由区')).toBeNull()
-    expect(normalizeNovelCreateFilePath('../资料', '自由区')).toBeNull()
-  })
-
-  it('derives import targets for supported local text files only', () => {
-    expect(getNovelImportTargetRelativePath('/Users/me/Desktop/第七章.md', '正文')).toBe('正文/第七章.md')
-    expect(getNovelImportTargetRelativePath('/Users/me/Desktop/角色补充.md', '全局')).toBe('全局/角色补充.md')
-    expect(getNovelImportTargetRelativePath('C:\\Users\\me\\Desktop\\笔记.TXT', '自由区')).toBe('自由区/笔记.TXT')
-    expect(getNovelImportTargetRelativePath('/Users/me/Desktop/资料.docx', '自由区')).toBeNull()
-    expect(getNovelImportTargetRelativePath('/Users/me/Desktop/.md', '正文')).toBeNull()
   })
 
   it('keeps hot-path writing workspace detection manifest-only', () => {

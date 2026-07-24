@@ -41,7 +41,6 @@ import { FEATURE_FLAGS } from '../../feature-flags.ts';
 import {
   shouldAllowToolInMode,
   isApiEndpointAllowed,
-  isReadOnlyBashCommand,
   isReadOnlyBashCommandWithConfig,
   extractBashWriteTarget,
   looksLikePotentialWrite,
@@ -51,13 +50,6 @@ import {
 } from '../mode-manager.ts';
 import { permissionsConfigCache, type PermissionsContext } from '../permissions-config.ts';
 import type { PrerequisiteCheckResult } from './prerequisite-manager.ts';
-import { detectWritingProject } from '../../writing/manifest.ts';
-import { categorizeNovelPath } from '../../writing/file-categories.ts';
-import type { WritingFileCategory } from '../../writing/file-categories.ts';
-import {
-  isWritingWriteAllowed,
-  normalizeWritingWritePolicy,
-} from '../../writing/writing-catalog.ts';
 
 // ============================================================
 // TYPES
@@ -529,127 +521,6 @@ export function getConfigDomainBashRedirect(
   return null;
 }
 
-const REVIEWABLE_WRITING_FILE_CATEGORIES = new Set<WritingFileCategory>([
-  'manuscript',
-  'outline',
-  'characters',
-  'locations',
-  'style',
-  'state',
-  'timeline',
-]);
-
-function isReviewableWritingTextPath(relativePath: string): boolean {
-  const normalizedPath = relativePath.replace(/\\/g, '/');
-  if (!/\.(?:md|markdown|txt)$/i.test(normalizedPath)) return false;
-  return REVIEWABLE_WRITING_FILE_CATEGORIES.has(categorizeNovelPath(normalizedPath));
-}
-
-/**
- * Writing-project text files must be edited through structured file tools so
- * the renderer can present reviewable diffs. Bash redirects mutate disk without
- * producing a file-change payload, so they are blocked before execution.
- */
-export function getWritingProjectBashWriteRedirect(
-  input: Record<string, unknown>,
-  workspaceRootPath: string,
-  workingDirectory?: string,
-): { message: string } | null {
-  if (!detectWritingProject(workspaceRootPath)) return null;
-
-  const command = typeof input.command === 'string' ? input.command : '';
-  if (!command || !looksLikePotentialWrite(command)) return null;
-
-  const targetPath = extractBashWriteTarget(command);
-  if (!targetPath) return null;
-
-  const expandedTargetPath = targetPath.startsWith('~') ? expandPath(targetPath) : targetPath;
-  const relativePath = getWorkspaceRelativePath(expandedTargetPath, workspaceRootPath, workingDirectory);
-  if (!relativePath || !isReviewableWritingTextPath(relativePath)) return null;
-
-  return {
-    message: [
-      `Direct Bash writes to writing workspace files are blocked because they bypass reviewable diffs.`,
-      ``,
-      `  Target: ${relativePath}`,
-      ``,
-      `Use Edit, MultiEdit, or Write for workspace text changes so the review UI can show the diff.`,
-      `For scratch output, write to the session plans or data folder instead.`,
-    ].join('\n'),
-  };
-}
-
-/**
- * When a writing project opts into catalog-plus-free, block Write/Edit outside
- * the user-authorized catalog and free-root scratch areas.
- */
-const CATALOG_SCOPED_WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
-
-function countShellWriteOperations(command: string): number {
-  const redirects = command.match(/(?:^|[\s;|&()])\d*>>?(?![=>&])/g)?.length ?? 0;
-  const powerShellWrites = command.match(/\b(?:Out-File|Set-Content|Add-Content)\b/gi)?.length ?? 0;
-  return redirects + powerShellWrites;
-}
-
-export function getWritingCatalogWriteBlock(
-  toolName: string,
-  input: Record<string, unknown>,
-  workspaceRootPath: string,
-  workingDirectory?: string,
-): { message: string } | null {
-  const isBash = toolName === 'Bash';
-  if (!isBash && !CATALOG_SCOPED_WRITE_TOOLS.has(toolName)) return null;
-
-  const project = detectWritingProject(workspaceRootPath);
-  if (!project) return null;
-
-  const policy = normalizeWritingWritePolicy(project.manifest.writePolicy, project.manifest.type);
-  if (policy.mode !== 'catalog-plus-free') return null;
-
-  let filePath =
-    (typeof input.file_path === 'string' && input.file_path)
-    || (typeof input.notebook_path === 'string' && input.notebook_path)
-    || '';
-
-  if (!isBash && !filePath) return null;
-
-  if (isBash) {
-    const command = typeof input.command === 'string' ? input.command : '';
-    if (!command || isReadOnlyBashCommand(command)) return null;
-
-    // Bash is an unstructured write boundary. Only permit one deterministically
-    // extracted target; compound or opaque mutations cannot prove catalog scope.
-    if (countShellWriteOperations(command) !== 1) {
-      filePath = '';
-    } else {
-      filePath = extractBashWriteTarget(command) ?? '';
-    }
-  }
-
-  const expandedPath = filePath.startsWith('~') ? expandPath(filePath) : filePath;
-  const relativePath = filePath
-    ? getWorkspaceRelativePath(expandedPath, workspaceRootPath, workingDirectory)
-    : null;
-
-  if (relativePath && isWritingWriteAllowed(relativePath, project.manifest.catalog, policy, project.manifest.type)) {
-    return null;
-  }
-
-  const freeRoots = policy.freeRoots.join(', ');
-  return {
-    message: [
-      `Writes outside the user-authorized writing catalog are blocked.`,
-      ``,
-      `  Target: ${relativePath ?? (isBash ? 'unverified Bash write target' : expandedPath)}`,
-      `  Policy: catalog-plus-free`,
-      ``,
-      `Only files listed in craft-writing.json catalog.paths may be edited as working-surface files.`,
-      `Scratch writes are allowed under: ${freeRoots}`,
-      `To authorize a new path, the user must add it to the workspace catalog (create/import/accept).`,
-    ].join('\n'),
-  };
-}
-
 // ============================================================
 // CENTRALIZED PRETOOLUSE PIPELINE
 // ============================================================
@@ -959,26 +830,7 @@ export function runPreToolUseChecks(ctx: PreToolUseInput): PreToolUseCheckResult
     wasModified = true;
   }
 
-  // 5b. Writing-project Bash guard (block direct content writes that bypass review diffs)
-  if (toolName === 'Bash') {
-    const writingProjectBashRedirect = getWritingProjectBashWriteRedirect(currentInput, workspaceRootPath, workingDirectory);
-    if (writingProjectBashRedirect) {
-      return { type: 'block', reason: writingProjectBashRedirect.message };
-    }
-  }
-
-  // 5b2. Writing catalog write scope (user-authorized working surface)
-  const writingCatalogWriteBlock = getWritingCatalogWriteBlock(
-    toolName,
-    currentInput,
-    workspaceRootPath,
-    workingDirectory,
-  );
-  if (writingCatalogWriteBlock) {
-    return { type: 'block', reason: writingCatalogWriteBlock.message };
-  }
-
-  // 5c. Config-domain Bash guard (block direct labels/automations path operations unless using craft-agent)
+  // 5b. Config-domain Bash guard (block direct labels/automations path operations unless using craft-agent)
   if (FEATURE_FLAGS.craftAgentsCli && toolName === 'Bash') {
     const configDomainBashRedirect = getConfigDomainBashRedirect(currentInput, workspaceRootPath, workingDirectory);
     if (configDomainBashRedirect) {
@@ -986,13 +838,13 @@ export function runPreToolUseChecks(ctx: PreToolUseInput): PreToolUseCheckResult
     }
   }
 
-  // 5d. Config file validation
+  // 5c. Config file validation
   const configResult = validateConfigWrite(toolName, currentInput, workspaceRootPath, onDebug);
   if (!configResult.valid) {
     return { type: 'block', reason: configResult.error! };
   }
 
-  // 5e. Config file CLI redirect (labels + automations)
+  // 5d. Config file CLI redirect (labels + automations)
   if (FEATURE_FLAGS.craftAgentsCli) {
     const cliRedirect = getConfigCliRedirect(toolName, currentInput, workspaceRootPath, workingDirectory);
     if (cliRedirect) {
@@ -1000,7 +852,7 @@ export function runPreToolUseChecks(ctx: PreToolUseInput): PreToolUseCheckResult
     }
   }
 
-  // 5f. Skill qualification
+  // 5e. Skill qualification
   if (toolName === 'Skill') {
     const skillResult = qualifySkillName(
       currentInput,
@@ -1013,7 +865,7 @@ export function runPreToolUseChecks(ctx: PreToolUseInput): PreToolUseCheckResult
     }
   }
 
-  // 5g. Metadata stripping
+  // 5f. Metadata stripping
   const metadataResult = stripToolMetadata(toolName, currentInput, onDebug);
   if (metadataResult.modified) {
     currentInput = metadataResult.input;

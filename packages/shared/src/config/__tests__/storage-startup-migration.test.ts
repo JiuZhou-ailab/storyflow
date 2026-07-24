@@ -1,5 +1,9 @@
+// input: Isolated global configs, tracked project roots, and legacy provider records
+// output: Integration coverage for startup migrations and non-destructive project-root resolution
+// pos: Guards config startup from mutating user-owned project directories
+
 import { describe, expect, it } from 'bun:test'
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { pathToFileURL } from 'url'
@@ -122,6 +126,29 @@ function runGetWorkspaces(configDir: string): any[] {
   return JSON.parse(run.stdout.toString())
 }
 
+function runWorkspaceLookup(configDir: string, workspaceId: string): any {
+  const run = Bun.spawnSync([
+    process.execPath,
+    '--eval',
+    `import { getWorkspaceByNameOrId } from '${STORAGE_MODULE_PATH}'; console.log(JSON.stringify(getWorkspaceByNameOrId(${JSON.stringify(workspaceId)})));`,
+  ], {
+    env: {
+      ...process.env,
+      CRAFT_CONFIG_DIR: configDir,
+    },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+
+  if (run.exitCode !== 0) {
+    throw new Error(
+      `workspace lookup subprocess failed (exit ${run.exitCode})\nstdout:\n${run.stdout.toString()}\nstderr:\n${run.stderr.toString()}`,
+    )
+  }
+
+  return JSON.parse(run.stdout.toString())
+}
+
 function readPiApiKeyConnection(configPath: string): any {
   const migrated = JSON.parse(readFileSync(configPath, 'utf-8'))
   return migrated.llmConnections.find((c: any) => c.slug === 'pi-api-key')
@@ -132,7 +159,20 @@ function getModelIds(connection: any): string[] {
 }
 
 describe('startup migration (integration)', () => {
-  it('attaches writing project metadata to workspace DTOs from the manifest', () => {
+  it('keeps a deleted local project root missing until the user explicitly recreates it', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'craft-agent-missing-root-'))
+    const workspaceRoot = join(configDir, 'deleted-local-project')
+    const configPath = join(configDir, 'config.json')
+    writeRootConfig(configPath, workspaceRoot, [])
+
+    expect(existsSync(workspaceRoot)).toBe(false)
+    expect(runGetWorkspaces(configDir)).toHaveLength(1)
+    expect(existsSync(workspaceRoot)).toBe(false)
+    expect(runWorkspaceLookup(configDir, 'ws-1')).toBeNull()
+    expect(existsSync(workspaceRoot)).toBe(false)
+  })
+
+  it('keeps legacy writing metadata out of workspace DTOs', () => {
     const { configDir, workspaceRoot, configPath } = setupWorkspaceConfigDir()
     writeRootConfig(configPath, workspaceRoot, [])
     mkdirSync(join(workspaceRoot, '.craft-agent'), { recursive: true })
@@ -148,8 +188,8 @@ describe('startup migration (integration)', () => {
 
     const [workspace] = runGetWorkspaces(configDir)
 
-    expect(workspace.projectType).toBe('short-form')
-    expect(workspace.methodPackId).toBe('short-form.article')
+    expect(workspace).not.toHaveProperty('projectType')
+    expect(workspace).not.toHaveProperty('methodPackId')
   })
 
   it('backs up config.json once per day before startup mutations', () => {

@@ -188,7 +188,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     enabledSources,
     skills,
     mentionFiles,
-    openingProjectMetadata,
+    openingProjectState,
+    onWorkspaceOpeningCommand,
     enabledModes,
     onSessionSourcesChange,
   } = useSessionChatResources()
@@ -473,14 +474,11 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const remoteWorkspaceId = chatWorkspace?.remoteServer?.remoteWorkspaceId
   const chatOpening = React.useMemo(() => resolveChatOpeningPrompt({
     workspaceName: chatWorkspace?.name,
-    projectType: openingProjectMetadata?.projectType ?? chatWorkspace?.projectType,
-    methodPackId: openingProjectMetadata?.methodPackId ?? chatWorkspace?.methodPackId,
+    isProject: openingProjectState !== undefined,
+    hasUserContent: openingProjectState?.hasUserContent,
   }), [
-    chatWorkspace?.methodPackId,
     chatWorkspace?.name,
-    chatWorkspace?.projectType,
-    openingProjectMetadata?.methodPackId,
-    openingProjectMetadata?.projectType,
+    openingProjectState,
   ])
 
   // Working directory for this session
@@ -912,6 +910,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
                 connectionUnavailable={connectionUnavailable}
                 compactMode={!!isCompactMode}
                 chatOpening={chatOpening}
+                onChatOpeningCommand={onWorkspaceOpeningCommand}
                 isFocusedPanel={isFocusedPanel ?? true}
               />
             </div>
@@ -1009,6 +1008,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
             connectionUnavailable={connectionUnavailable}
             compactMode={!!isCompactMode}
             chatOpening={chatOpening}
+            onChatOpeningCommand={onWorkspaceOpeningCommand}
             isFocusedPanel={isFocusedPanel ?? true}
           />
         </div>

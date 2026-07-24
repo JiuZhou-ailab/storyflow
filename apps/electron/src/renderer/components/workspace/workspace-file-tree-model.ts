@@ -31,6 +31,7 @@ const collator = new Intl.Collator(undefined, {
   numeric: true,
   sensitivity: 'base',
 })
+const WORKSPACE_EDITABLE_FILE_EXTENSIONS = new Set(['.md', '.txt'])
 
 function joinWorkspacePath(rootPath: string, relativePath: string): string {
   const root = rootPath.replace(/[\\/]+$/, '')
@@ -40,6 +41,61 @@ function joinWorkspacePath(rootPath: string, relativePath: string): string {
 
 function normalizeRelativePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+}
+
+function joinRelativePath(parentRelativePath: string, name: string): string {
+  const parent = normalizeRelativePath(parentRelativePath)
+  return parent ? `${parent}/${name}` : name
+}
+
+function getFileExtension(name: string): string | null {
+  const match = name.match(/(\.[^/.]+)$/)
+  return match?.[1]?.toLowerCase() ?? null
+}
+
+function normalizeWorkspaceEntryName(input: string): string | null {
+  const name = input.trim()
+  if (!name || name === '.' || name === '..') return null
+  if (/[/\\\u0000-\u001f]/.test(name)) return null
+  return name
+}
+
+export type WorkspaceCreateEntryKind = 'file' | 'directory'
+
+export function resolveWorkspaceCreateRelativePath(
+  parentRelativePath: string,
+  input: string,
+  kind: WorkspaceCreateEntryKind,
+): string | null {
+  let name = normalizeWorkspaceEntryName(input)
+  if (!name) return null
+
+  if (kind === 'file') {
+    const extension = getFileExtension(name)
+    if (!extension) {
+      name = `${name}.md`
+    } else if (!WORKSPACE_EDITABLE_FILE_EXTENSIONS.has(extension) || name.length === extension.length) {
+      return null
+    }
+  }
+
+  return joinRelativePath(parentRelativePath, name)
+}
+
+export function resolveWorkspaceImportRelativePath(
+  parentRelativePath: string,
+  sourcePath: string,
+): string | null {
+  const normalizedSourcePath = sourcePath.trim().replace(/\\/g, '/')
+  const name = normalizeWorkspaceEntryName(normalizedSourcePath.split('/').pop() ?? '')
+  if (!name) return null
+
+  const extension = getFileExtension(name)
+  if (!extension || !WORKSPACE_EDITABLE_FILE_EXTENSIONS.has(extension) || name.length === extension.length) {
+    return null
+  }
+
+  return joinRelativePath(parentRelativePath, name)
 }
 
 function fileName(relativePath: string): string {
@@ -104,14 +160,11 @@ function finalizeDirectory(node: MutableDirectoryNode, workspaceId: string): Wor
 }
 
 /**
- * Default open folders for a new writing workspace with no persisted expand state.
- * Expand project root + manuscript only so global/bible folders do not dominate first open.
+ * Default open nodes for a workspace with no persisted expand state.
+ * Content folders are user-owned organization, not application-defined schema.
  */
 export function getDefaultWritingExpandedIds(workspaceId: string): string[] {
-  return [
-    `writing:project:${workspaceId}`,
-    'writing:folder:正文',
-  ]
+  return [`writing:project:${workspaceId}`]
 }
 
 export interface BuildWorkspaceFileTreeInput {
