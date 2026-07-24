@@ -18,4 +18,10 @@ describe('Markdown link href safety', () => {
     expect(html).toContain('href="https://example.com"')
     expect(html).not.toContain('href="javascript:')
   })
+
+  it('preserves file URLs for local file routing', () => {
+    const html = renderToStaticMarkup(<Markdown>{'[report](file:///Users/tester/report.pdf)'}</Markdown>)
+
+    expect(html).toContain('href="file:///Users/tester/report.pdf"')
+  })
 })

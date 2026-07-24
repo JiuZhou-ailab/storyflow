@@ -1,5 +1,5 @@
 import * as React from 'react'
-import ReactMarkdown, { type Components } from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown'
 import rehypeKatex from 'rehype-katex'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -559,6 +559,7 @@ export function Markdown({
         remarkPlugins={remarkPlugins}
         rehypePlugins={[rehypeKatex]}
         components={components}
+        urlTransform={(url) => /^file:/i.test(url) ? url : defaultUrlTransform(url)}
       >
         {processedContent}
       </ReactMarkdown>
