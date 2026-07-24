@@ -30,12 +30,17 @@ import {
   replaceLoadedSessionAtom,
   updateSessionAtom,
   updateSessionMetaAtom,
-  commitOptimisticSessionStatus,
-  shouldRefreshGlobalSessionMetasForEvent,
   removeBackgroundTaskById,
   removeBackgroundTaskByToolUseId,
   updateBackgroundTaskProgress,
 } from '../sessions'
+import {
+  beginSessionStatusMutation,
+  commitOptimisticSessionStatus,
+  invalidateSessionStatusMutation,
+  ownsSessionStatusMutation,
+  shouldRefreshGlobalSessionMetasForEvent,
+} from '../session-status-transition'
 
 const sessionsAtomSource = readFileSync(new URL('../sessions.ts', import.meta.url), 'utf8')
 
@@ -74,6 +79,7 @@ describe('session status transitions', () => {
         applied.push(nextStatus)
       },
       persist: () => Promise.reject(error),
+      ownsMutation: () => true,
       onError: failure => {
         reported = failure
       },
@@ -99,6 +105,7 @@ describe('session status transitions', () => {
         status = nextStatus
       },
       persist: () => persist,
+      ownsMutation: () => true,
       onError: () => {},
     })
 
@@ -107,6 +114,44 @@ describe('session status transitions', () => {
 
     expect(await transition).toBe('superseded')
     expect(status).toBe('done')
+  })
+
+  it('does not let an older failed write roll back a newer choice with the same value', async () => {
+    let status: string | undefined = 'todo'
+    let rejectPersist!: (error: Error) => void
+    const sessionId = 'session-repeated-status'
+    const firstToken = beginSessionStatusMutation(sessionId)
+    const persist = new Promise<void>((_resolve, reject) => {
+      rejectPersist = reject
+    })
+
+    const transition = commitOptimisticSessionStatus({
+      nextStatus: 'in-progress',
+      getCurrentStatus: () => status,
+      applyStatus: nextStatus => {
+        status = nextStatus
+      },
+      persist: () => persist,
+      ownsMutation: () => ownsSessionStatusMutation(sessionId, firstToken),
+      onError: () => {},
+    })
+
+    status = 'done'
+    beginSessionStatusMutation(sessionId)
+    status = 'in-progress'
+    rejectPersist(new Error('stale failure'))
+
+    expect(await transition).toBe('superseded')
+    expect(status).toBe('in-progress')
+  })
+
+  it('invalidates local mutation ownership when an authoritative status event arrives', () => {
+    const token = beginSessionStatusMutation('session-authoritative')
+    expect(ownsSessionStatusMutation('session-authoritative', token)).toBe(true)
+
+    invalidateSessionStatusMutation('session-authoritative')
+
+    expect(ownsSessionStatusMutation('session-authoritative', token)).toBe(false)
   })
 
   it('keeps precise metadata events off the global session refresh path', () => {

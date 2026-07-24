@@ -57,7 +57,6 @@ import {
   addSessionAtom,
   removeSessionAtom,
   updateSessionAtom,
-  commitOptimisticSessionStatus,
   replaceLoadedSessionAtom,
   refreshSessionsMetadataAtom,
   sessionAtomFamily,
@@ -74,6 +73,12 @@ import {
   windowWorkspacesAtom,
   type SessionMeta,
 } from '@/atoms/sessions'
+import {
+  beginSessionStatusMutation,
+  commitOptimisticSessionStatus,
+  invalidateSessionStatusMutation,
+  ownsSessionStatusMutation,
+} from '@/atoms/session-status-transition'
 import { focusedPanelRouteAtom } from '@/atoms/panel-stack'
 import { pendingCredentialsAtom, pendingPermissionsAtom } from '@/atoms/pending-requests'
 import { sourcesAtom } from '@/atoms/sources'
@@ -1074,6 +1079,9 @@ function AppContent() {
 
       const sessionId = event.sessionId
       const workspaceId = windowWorkspaceId ?? ''
+      if (event.type === 'session_status_changed') {
+        invalidateSessionStatusMutation(sessionId)
+      }
 
       // Session lifecycle events are handled explicitly (not by the agent event processor).
       if (event.type === 'session_created') {
@@ -1414,6 +1422,7 @@ function AppContent() {
   }, [updateSessionById])
 
   const handleSessionStatusChange = useCallback((sessionId: string, state: SessionStatus) => {
+    const mutationToken = beginSessionStatusMutation(sessionId)
     void commitOptimisticSessionStatus({
       nextStatus: state,
       getCurrentStatus: () => store.get(sessionAtomFamily(sessionId))?.sessionStatus,
@@ -1424,6 +1433,7 @@ function AppContent() {
         type: 'setSessionStatus',
         state,
       }),
+      ownsMutation: () => ownsSessionStatusMutation(sessionId, mutationToken),
       onError: error => {
         toast.error(t('session.statusUpdateFailed', '状态更新失败'), {
           description: error instanceof Error ? error.message : String(error),

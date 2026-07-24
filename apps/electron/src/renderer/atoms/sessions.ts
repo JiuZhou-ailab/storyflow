@@ -1,5 +1,5 @@
-// input: Session payloads, events, transcript messages, and renderer-side mutations
-// output: Per-session atoms, metadata actions, and deterministic optimistic transitions
+// input: Session payloads, transcript messages, and renderer-side mutations
+// output: Per-session atoms, metadata actions, and isolated transcript working sets
 // pos: Renderer session state boundary that keeps chat updates isolated by session
 
 /**
@@ -16,7 +16,7 @@ import { atom } from 'jotai'
 import { selectAtom } from 'jotai/utils'
 import type { Getter, Setter } from 'jotai/vanilla'
 import { atomFamily } from 'jotai-family'
-import type { Session, Message, SessionEvent, SessionStatus, Workspace } from '../../shared/types'
+import type { Session, Message, Workspace } from '../../shared/types'
 
 /**
  * Session metadata for list display (lightweight, no messages)
@@ -80,70 +80,6 @@ export interface SessionMeta {
   isArchived?: boolean
   /** Timestamp when session was archived (for retention policy) */
   archivedAt?: number
-}
-
-const GLOBAL_SESSION_META_REFRESH_EVENT_TYPES = new Set<SessionEvent['type']>([
-  'complete',
-  'interrupted',
-  'title_generated',
-  'session_deleted',
-  'session_created',
-  'user_message',
-])
-
-/**
- * Global session metadata is a cross-workspace snapshot. Events whose exact
- * fields are already applied to the active workspace atom must not invalidate
- * that whole snapshot; the active atom overlays it until the next workspace
- * mount performs an authoritative load.
- */
-export function shouldRefreshGlobalSessionMetasForEvent(eventType: SessionEvent['type']): boolean {
-  return GLOBAL_SESSION_META_REFRESH_EVENT_TYPES.has(eventType)
-}
-
-interface CommitOptimisticSessionStatusInput {
-  nextStatus: SessionStatus
-  getCurrentStatus: () => SessionStatus | undefined
-  applyStatus: (status: SessionStatus | undefined) => void
-  persist: () => Promise<unknown>
-  onError: (error: unknown) => void
-}
-
-export type OptimisticSessionStatusResult =
-  | 'unchanged'
-  | 'committed'
-  | 'rolled_back'
-  | 'superseded'
-
-/**
- * Commits one status choice with a race-safe rollback.
- *
- * A failed older request may only roll back while its optimistic value is
- * still current; a newer user choice always wins.
- */
-export async function commitOptimisticSessionStatus({
-  nextStatus,
-  getCurrentStatus,
-  applyStatus,
-  persist,
-  onError,
-}: CommitOptimisticSessionStatusInput): Promise<OptimisticSessionStatusResult> {
-  const previousStatus = getCurrentStatus()
-  if (previousStatus === nextStatus) return 'unchanged'
-
-  applyStatus(nextStatus)
-  try {
-    await persist()
-    return 'committed'
-  } catch (error) {
-    if (getCurrentStatus() === nextStatus) {
-      applyStatus(previousStatus)
-      onError(error)
-      return 'rolled_back'
-    }
-    onError(error)
-    return 'superseded'
-  }
 }
 
 /**

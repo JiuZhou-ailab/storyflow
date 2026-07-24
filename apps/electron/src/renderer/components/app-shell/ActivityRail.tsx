@@ -31,9 +31,9 @@ import { ProjectSwitcherPopover } from './ProjectSwitcherPopover'
 import {
   extractSessionMeta,
   sessionMetaMapAtom,
-  shouldRefreshGlobalSessionMetasForEvent,
   type SessionMeta,
 } from '@/atoms/sessions'
+import { shouldRefreshGlobalSessionMetasForEvent } from '@/atoms/session-status-transition'
 import { formatRelativeTimestamp } from '@/lib/display-format'
 import * as storage from '@/lib/local-storage'
 import { getSessionTitle } from '@/utils/session'
