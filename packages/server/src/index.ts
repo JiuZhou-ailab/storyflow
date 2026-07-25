@@ -35,6 +35,7 @@
  *   CRAFT_WEBUI_NEON_AUTH_AUDIENCE — optional Neon Auth JWT audience override
  *   CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN — optional internal email domain for username login
  *   CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED — enables public Neon Auth email/password registration
+ *   STORYFLOW_GATEWAY_JWT_SECRET — optional desktop model access token signing secret
  *   CRAFT_MESSAGING_WA_WORKER  — absolute path to worker.cjs (default: packages/messaging-whatsapp-worker/dist/worker.cjs)
  *   CRAFT_MESSAGING_NODE_BIN   — Node binary used to spawn the WhatsApp worker (default: node)
  */
@@ -220,6 +221,7 @@ if (webuiEnabled && serverToken) {
     publicWsUrl: webuiWsUrl,
     feishuAuth: webuiFeishuAuth,
     neonAuth: webuiNeonAuth,
+    modelAccessTokenSecret: process.env.STORYFLOW_GATEWAY_JWT_SECRET?.trim() || undefined,
     wsProtocol: rpcProtocol,
     // WebUI is served on the same port as WS — wsPort matches the RPC port
     wsPort: rpcPort,

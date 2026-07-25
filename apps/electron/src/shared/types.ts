@@ -342,6 +342,7 @@ export interface ElectronAPI {
 
   // App lifecycle
   relaunchApp(): Promise<void>
+  setWorkspaceArchived(workspaceId: string, archived: boolean): Promise<boolean>
   removeWorkspace(workspaceId: string): Promise<boolean>
   invokeOnServer(url: string, token: string, channel: string, ...args: any[]): Promise<any>
   getClientAuthState(): Promise<ClientAuthState>

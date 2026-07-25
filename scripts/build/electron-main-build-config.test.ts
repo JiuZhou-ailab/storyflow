@@ -74,30 +74,29 @@ describe('desktop auth build config', () => {
     })).toEqual({ ok: true });
   });
 
-  test('accepts Neon-only client auth for packaged builds', () => {
+  test('accepts Neon-only client auth through the shared broker', () => {
     expect(validateDesktopAuthBuildEnv({
       CRAFT_CLIENT_NEON_AUTH_BASE_URL: 'https://auth.example.com',
-      CRAFT_CLIENT_GATEWAY_TOKEN: 'cfut-test',
+      CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
     })).toEqual({ ok: true });
   });
 
-  test('requires a broker for Feishu client auth', () => {
+  test('requires a broker for packaged model access', () => {
     expect(validateDesktopAuthBuildEnv({
       CRAFT_CLIENT_AUTH_REQUIRED: 'true',
       CRAFT_CLIENT_FEISHU_APP_ID: 'cli_test',
     })).toEqual({
       ok: false,
-      message: 'CRAFT_CLIENT_AUTH_BROKER_URL is required for packaged Feishu client auth.',
+      message: 'CRAFT_CLIENT_AUTH_BROKER_URL is required for packaged client auth and model access.',
     });
   });
 
-  test('requires a Feishu app id when a Feishu broker is configured', () => {
+  test('does not treat a broker URL as a login method', () => {
     expect(validateDesktopAuthBuildEnv({
       CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
-      CRAFT_CLIENT_GATEWAY_TOKEN: 'cfut-test',
     })).toEqual({
       ok: false,
-      message: 'CRAFT_CLIENT_FEISHU_APP_ID is required when CRAFT_CLIENT_AUTH_BROKER_URL is set.',
+      message: 'Packaged desktop client auth requires CRAFT_CLIENT_FEISHU_APP_ID or CRAFT_CLIENT_NEON_AUTH_BASE_URL.',
     });
   });
 
@@ -130,19 +129,7 @@ describe('desktop auth build config', () => {
       CRAFT_CLIENT_AUTH_REQUIRED: 'true',
       CRAFT_CLIENT_AUTH_BROKER_URL: ' https://auth.storyflow.example.com/ ',
       CRAFT_CLIENT_FEISHU_APP_ID: 'cli_test',
-      CRAFT_CLIENT_GATEWAY_TOKEN: 'cfut-test',
     })).toEqual({ ok: true });
-  });
-
-  test('requires a direct model gateway token for packaged desktop client auth', () => {
-    expect(validateDesktopAuthBuildEnv({
-      CRAFT_CLIENT_AUTH_REQUIRED: 'true',
-      CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
-      CRAFT_CLIENT_FEISHU_APP_ID: 'cli_test',
-    })).toEqual({
-      ok: false,
-      message: 'CRAFT_CLIENT_GATEWAY_TOKEN is required for the packaged direct Cloudflare model gateway.',
-    });
   });
 
   test('accepts both Feishu and Neon client auth for packaged builds', () => {
@@ -150,7 +137,6 @@ describe('desktop auth build config', () => {
       CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
       CRAFT_CLIENT_FEISHU_APP_ID: 'cli_test',
       CRAFT_CLIENT_NEON_AUTH_BASE_URL: 'https://auth.example.com',
-      CRAFT_CLIENT_GATEWAY_TOKEN: 'cfut-test',
     })).toEqual({ ok: true });
   });
 });

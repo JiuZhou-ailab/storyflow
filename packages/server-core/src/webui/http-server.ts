@@ -20,6 +20,7 @@ import {
   initPasswordHash,
   verifyPassword,
   createSessionToken,
+  createModelAccessToken,
   validateSession,
   buildSessionCookie,
   buildLogoutCookie,
@@ -158,18 +159,8 @@ export interface WebuiHandlerOptions {
   feishuAuth?: FeishuAuthConfig
   /** Neon Auth configuration for email sign-in/sign-up browser sessions. */
   neonAuth?: NeonAuthConfig
-  /** Deprecated. Model access is seeded locally through CRAFT_CLIENT_GATEWAY_TOKEN. */
-  clientGatewayToken?: string
-  /** Deprecated. The desktop auth broker no longer issues model gateway JWTs. */
-  clientGatewayJwtSecret?: string
-  /** Deprecated. The desktop auth broker no longer issues model gateway JWTs. */
-  clientGatewayTokenTtlSeconds?: number
-  /** Deprecated. The desktop auth broker no longer issues model gateway JWTs. */
-  clientGatewayTokenAudience?: string
-  /** Deprecated. The desktop auth broker no longer issues model gateway JWTs. */
-  clientGatewayTokenIssuer?: string
-  /** Deprecated. Model connection selection is local to the desktop app. */
-  clientGatewayConnectionSlugs?: string[]
+  /** Secret used only to sign scoped desktop model access tokens. */
+  modelAccessTokenSecret?: string
   /** Enables the legacy server-token login form and /api/auth endpoint. Defaults to true. */
   passwordAuthEnabled?: boolean
   /**
@@ -420,12 +411,16 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
 
       const { identity } = exchange
       const appSessionToken = await createSessionToken(secret, identity.subject)
+      const modelAccessToken = options.modelAccessTokenSecret
+        ? await createModelAccessToken(options.modelAccessTokenSecret, identity.subject, 'standard')
+        : undefined
       logger.info(`[webui] Successful Neon client auth broker exchange for ${formatNeonIdentity(identity)}`)
 
       return Response.json({
         ok: true,
         user: toPublicNeonIdentity(identity),
         appSessionToken,
+        ...(modelAccessToken ? { modelAccessToken } : {}),
       })
     }
 
@@ -591,11 +586,19 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
         }
 
         const appSessionToken = await createSessionToken(secret, `feishu:${decision.user.openId}`)
+        const modelAccessToken = options.modelAccessTokenSecret
+          ? await createModelAccessToken(
+              options.modelAccessTokenSecret,
+              `feishu:${decision.user.openId}`,
+              'pro',
+            )
+          : undefined
         logger.info(`[webui] Successful Feishu client auth broker exchange (${decision.reason}) for ${formatFeishuIdentity(decision.user)}`)
         return Response.json({
           ok: true,
           user: toPublicFeishuIdentity(decision.user),
           appSessionToken,
+          ...(modelAccessToken ? { modelAccessToken } : {}),
         })
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Feishu client auth broker exchange failed'

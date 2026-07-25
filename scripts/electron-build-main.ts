@@ -48,8 +48,7 @@ function getBuildDefines(): string[] {
     "MICROSOFT_OAUTH_CLIENT_SECRET",
     "SENTRY_ELECTRON_INGEST_URL",
     "CRAFT_DEV_RUNTIME",
-    // Desktop auth bootstrap plus the direct Cloudflare gateway token used to
-    // seed the bundled managed model credential.
+    // Public desktop auth bootstrap values. Server credentials stay on Workers.
     "CRAFT_CLIENT_AUTH_REQUIRED",
     "CRAFT_CLIENT_AUTH_BROKER_URL",
     "CRAFT_CLIENT_FEISHU_AUTH_BROKER_URL",
@@ -65,7 +64,6 @@ function getBuildDefines(): string[] {
     "CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN",
     "CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED",
     "CRAFT_CLIENT_NEON_AUTH_ORIGIN",
-    "CRAFT_CLIENT_GATEWAY_TOKEN",
     "STORYFLOW_FEEDBACK_ENDPOINT",
     "POSTHOG_API_KEY",
     "POSTHOG_HOST",

@@ -1,3 +1,7 @@
+// input: Workspace identity, catalog metadata, and optional remote connection details
+// output: Shared workspace DTOs for local, renderer, and remote boundaries
+// pos: Canonical workspace type definitions
+
 /**
  * Workspace and authentication types
  */
@@ -26,6 +30,7 @@ export interface WorkspaceInfo {
   name: string;
   slug: string;              // Server-computed from rootPath basename
   lastAccessedAt?: number;
+  archivedAt?: number;
   iconUrl?: string;
   mcpUrl?: string;
   mcpAuthType?: McpAuthType;

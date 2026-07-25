@@ -110,7 +110,7 @@ describe('environment contract', () => {
     expect(envExample).not.toContain('CRAFT_CLIENT_FEISHU_AUTH_BROKER_URL=');
   });
 
-  test('separates public release vars from release secrets', () => {
+  test('keeps model credentials out of packaged release inputs', () => {
     const workflow = readRepoFile('.github/workflows/release.yml');
     const docs = readRepoFile('docs/environment.md');
 
@@ -118,9 +118,10 @@ describe('environment contract', () => {
     expect(workflow).toContain('CRAFT_CLIENT_FEISHU_APP_ID: ${{ vars.CRAFT_CLIENT_FEISHU_APP_ID }}');
     expect(workflow).toContain('CRAFT_CLIENT_NEON_AUTH_BASE_URL: ${{ vars.CRAFT_CLIENT_NEON_AUTH_BASE_URL }}');
     expect(workflow).toContain('CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED: ${{ vars.CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED }}');
-    expect(workflow).toContain('CRAFT_CLIENT_GATEWAY_TOKEN: ${{ secrets.CRAFT_CLIENT_GATEWAY_TOKEN }}');
+    expect(workflow).not.toContain('CRAFT_CLIENT_GATEWAY_TOKEN');
     expect(docs).toMatch(/GitHub repository vars:[\s\S]*CRAFT_CLIENT_AUTH_BROKER_URL/);
-    expect(docs).toMatch(/GitHub repository secrets:[\s\S]*CRAFT_CLIENT_GATEWAY_TOKEN/);
+    expect(docs).toMatch(/## Model Gateway Worker[\s\S]*NEWAPI_API_KEY/);
+    expect(docs).toContain('None of these values\nbelong in Electron build environment variables or GitHub release secrets.');
   });
 
   test('marks Feishu app secrets as server-only broker configuration', () => {

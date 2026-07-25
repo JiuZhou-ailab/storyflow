@@ -7,6 +7,7 @@ export interface CustomEndpointModelDefaults {
 export interface CustomEndpointModelOverrides {
   contextWindow?: number
   supportsImages?: boolean
+  supportsThinking?: boolean
 }
 
 export interface CustomEndpointModelEntry extends CustomEndpointModelOverrides {
@@ -17,6 +18,7 @@ export type CustomEndpointModelConfig = string | {
   id: string
   contextWindow?: number
   supportsImages?: boolean
+  supportsThinking?: boolean
 }
 
 export interface CustomEndpointProviderApiKeyInput {
@@ -77,6 +79,7 @@ export function normalizeCustomEndpointModelEntry(model: CustomEndpointModelConf
     id: stripPiPrefix(model.id),
     ...(model.contextWindow !== undefined ? { contextWindow: model.contextWindow } : {}),
     ...(model.supportsImages !== undefined ? { supportsImages: model.supportsImages } : {}),
+    ...(model.supportsThinking !== undefined ? { supportsThinking: model.supportsThinking } : {}),
   }
 }
 
@@ -97,7 +100,7 @@ export function buildCustomEndpointModelDef(
   return {
     id,
     name: id,
-    reasoning: false,
+    reasoning: overrides?.supportsThinking ?? false,
     input,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: overrides?.contextWindow ?? 131_072,

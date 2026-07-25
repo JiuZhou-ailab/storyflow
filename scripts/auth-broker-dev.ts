@@ -131,6 +131,11 @@ if (await isHealthy(port)) {
 }
 
 const secret = readEnv('CRAFT_SERVER_TOKEN') ?? randomBytes(24).toString('hex')
+const configuredModelAccessTokenSecret = readEnv('STORYFLOW_GATEWAY_JWT_SECRET')
+const modelAccessTokenSecret = configuredModelAccessTokenSecret ?? secret
+if (!configuredModelAccessTokenSecret) {
+  console.warn('[auth-broker-dev] STORYFLOW_GATEWAY_JWT_SECRET is unset; reusing the local server token for development.')
+}
 
 const server = await startWebuiHttpServer({
   port,
@@ -143,6 +148,7 @@ const server = await startWebuiHttpServer({
   getHealthCheck: () => ({ status: 'ok' }),
   feishuAuth,
   neonAuth,
+  modelAccessTokenSecret,
   logger: console as any,
 })
 

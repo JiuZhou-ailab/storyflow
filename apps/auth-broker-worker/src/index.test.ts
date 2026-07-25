@@ -2,8 +2,10 @@
 // output: Regression coverage for login-only auth broker exchanges
 // pos: Tests the deployed HTTPS auth broker used by packaged desktop client auth
 import { describe, expect, it } from 'bun:test'
-import { exportJWK, generateKeyPair, SignJWT } from 'jose'
+import { exportJWK, generateKeyPair, jwtVerify, SignJWT } from 'jose'
 import { handleRequest } from './index'
+
+const MODEL_ACCESS_SECRET = 'broker-signing-secret'
 
 function makeEnv(overrides: Record<string, string | undefined> = {}) {
   return {
@@ -12,8 +14,23 @@ function makeEnv(overrides: Record<string, string | undefined> = {}) {
     CRAFT_WEBUI_FEISHU_ALLOW_ALL_USERS: 'true',
     CRAFT_WEBUI_NEON_AUTH_BASE_URL: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
     CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN: 'users.craft.invalid',
+    STORYFLOW_GATEWAY_JWT_SECRET: MODEL_ACCESS_SECRET,
     ...overrides,
   }
+}
+
+async function verifyModelAccessToken(token: unknown) {
+  expect(typeof token).toBe('string')
+  const { payload } = await jwtVerify(
+    token as string,
+    new TextEncoder().encode(MODEL_ACCESS_SECRET),
+    {
+      algorithms: ['HS256'],
+      issuer: 'storyflow-auth-broker',
+      audience: 'storyflow-model-gateway',
+    },
+  )
+  return payload
 }
 
 describe('auth broker worker', () => {
@@ -30,7 +47,7 @@ describe('auth broker worker', () => {
     })
   })
 
-  it('exchanges Feishu OAuth codes without returning a model gateway token', async () => {
+  it('exchanges Feishu OAuth codes for a pro model access token', async () => {
     const fetchCalls: Array<{ url: string, init?: RequestInit }> = []
     const res = await handleRequest(
       new Request('https://auth.example.com/api/client-auth/feishu/exchange', {
@@ -42,7 +59,10 @@ describe('auth broker worker', () => {
           codeVerifier: 'desktop-verifier',
         }),
       }),
-      makeEnv(),
+      makeEnv({
+        CRAFT_WEBUI_FEISHU_ALLOW_ALL_USERS: 'false',
+        CRAFT_WEBUI_FEISHU_INTERNAL_TENANT_KEYS: 'tenant_external',
+      }),
       async (input, init) => {
         fetchCalls.push({ url: input.toString(), init })
         if (input.toString().endsWith('/open-apis/authen/v2/oauth/token')) {
@@ -71,7 +91,11 @@ describe('auth broker worker', () => {
       email: 'desktop.user@example.com',
       name: 'Desktop User',
     })
-    expect(body.gatewayToken).toBeUndefined()
+    const payload = await verifyModelAccessToken(body.modelAccessToken)
+    expect(payload.sub).toBe('feishu:ou_desktop')
+    expect(payload.scopes).toEqual(['model:chat'])
+    expect(payload.model_tier).toBe('pro')
+    expect((payload.exp as number) - (payload.iat as number)).toBe(86_400)
 
     const tokenCall = fetchCalls[0]
     expect(tokenCall?.init?.method).toBe('POST')
@@ -84,7 +108,39 @@ describe('auth broker worker', () => {
     })
   })
 
-  it('exchanges verified Neon Auth JWTs without returning a model gateway token', async () => {
+  it('does not grant pro access to Feishu users outside the company tenant', async () => {
+    const res = await handleRequest(
+      new Request('https://auth.example.com/api/client-auth/feishu/exchange', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: 'desktop-code',
+          redirectUri: 'http://localhost:6477/callback',
+          codeVerifier: 'desktop-verifier',
+        }),
+      }),
+      makeEnv({
+        CRAFT_WEBUI_FEISHU_ALLOW_ALL_USERS: 'false',
+        CRAFT_WEBUI_FEISHU_INTERNAL_TENANT_KEYS: 'tenant_company',
+      }),
+      async (input) => {
+        if (input.toString().endsWith('/open-apis/authen/v2/oauth/token')) {
+          return Response.json({ access_token: 'feishu-access-token' })
+        }
+        return Response.json({
+          data: {
+            open_id: 'ou_external',
+            tenant_key: 'tenant_external',
+          },
+        })
+      },
+    )
+
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'Registration required' })
+  })
+
+  it('exchanges verified Neon Auth JWTs for a standard model access token', async () => {
     const { publicKey, privateKey } = await generateKeyPair('RS256')
     const publicJwk = await exportJWK(publicKey)
     publicJwk.kid = 'test-key'
@@ -121,6 +177,22 @@ describe('auth broker worker', () => {
       email: 'neon.user@example.com',
       emailVerified: true,
     })
-    expect(body.gatewayToken).toBeUndefined()
+    const payload = await verifyModelAccessToken(body.modelAccessToken)
+    expect(payload.sub).toBe('neon:neon_user_123')
+    expect(payload.scopes).toEqual(['model:chat'])
+    expect(payload.model_tier).toBe('standard')
+  })
+
+  it('fails closed when model access token signing is not configured', async () => {
+    const res = await handleRequest(
+      new Request('https://auth.example.com/api/client-auth/neon/exchange', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer provider-token' },
+      }),
+      makeEnv({ STORYFLOW_GATEWAY_JWT_SECRET: undefined }),
+    )
+
+    expect(res.status).toBe(503)
+    expect(await res.json()).toEqual({ error: 'Model access token signing is not configured' })
   })
 })

@@ -1,11 +1,6 @@
-/**
- * Web UI session authentication.
- *
- * Cookie-based JWT session auth for the browser-served web UI.
- * - Login: verify password → issue signed JWT → set HttpOnly cookie
- * - Validation: check cookie on every HTTP request + WebSocket upgrade
- * - Rate limiting: per-IP brute-force protection on /api/auth
- */
+// input: Web UI credentials, session cookies, and verified desktop identities
+// output: Signed Web UI sessions and scoped desktop model access tokens
+// pos: Server-core JWT boundary shared by browser auth and the local desktop auth broker
 
 import { SignJWT, jwtVerify } from 'jose'
 
@@ -14,6 +9,9 @@ import { SignJWT, jwtVerify } from 'jose'
 // ---------------------------------------------------------------------------
 
 const JWT_EXPIRY_SECONDS = 86_400 // 24 hours
+const MODEL_ACCESS_TOKEN_TTL_SECONDS = 86_400
+const MODEL_ACCESS_TOKEN_ISSUER = 'storyflow-auth-broker'
+const MODEL_ACCESS_TOKEN_AUDIENCE = 'storyflow-model-gateway'
 
 export interface JwtPayload {
   sub: string
@@ -47,6 +45,25 @@ export async function verifyJwt(token: string, secret: string): Promise<JwtPaylo
 export async function createSessionToken(secret: string, subject = 'webui'): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   return signJwt({ sub: subject, iat: now, exp: now + JWT_EXPIRY_SECONDS }, secret)
+}
+
+export async function createModelAccessToken(
+  secret: string,
+  subject: string,
+  modelTier: 'standard' | 'pro',
+): Promise<string> {
+  const key = new TextEncoder().encode(secret)
+  return new SignJWT({
+    scopes: ['model:chat'],
+    model_tier: modelTier,
+  })
+    .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+    .setIssuer(MODEL_ACCESS_TOKEN_ISSUER)
+    .setAudience(MODEL_ACCESS_TOKEN_AUDIENCE)
+    .setSubject(subject)
+    .setIssuedAt()
+    .setExpirationTime(`${MODEL_ACCESS_TOKEN_TTL_SECONDS}s`)
+    .sign(key)
 }
 
 // ---------------------------------------------------------------------------

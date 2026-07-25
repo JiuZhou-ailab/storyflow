@@ -1,6 +1,7 @@
-// input: Cloudflare Worker requests, signed desktop gateway JWTs, and upstream fetch stubs
-// output: Regression coverage for the managed model gateway proxy contract
-// pos: Tests the edge boundary that keeps provider credentials off the desktop client
+// input: Cloudflare Worker requests, signed model access JWTs, and upstream fetch stubs
+// output: Regression coverage for NewAPI proxy authorization and credential isolation
+// pos: Guards the edge boundary that keeps the NewAPI service key off desktop clients
+
 import { describe, expect, it } from 'bun:test'
 import { handleRequest } from './index'
 
@@ -13,8 +14,9 @@ async function signTestJwt(
   const body = {
     iss: 'storyflow-auth-broker',
     aud: 'storyflow-model-gateway',
-    sub: 'neon_user_123',
+    sub: 'neon:neon_user_123',
     scopes: ['model:chat'],
+    model_tier: 'standard',
     exp: now + 60,
     iat: now,
     ...payload,
@@ -51,133 +53,154 @@ function makeEnv() {
   return {
     STORYFLOW_GATEWAY_JWT_SECRET: 'broker-signing-secret',
     STORYFLOW_GATEWAY_JWT_AUDIENCE: 'storyflow-model-gateway',
-    CLOUDFLARE_AI_GATEWAY_TOKEN: 'cfut-upstream-token',
-    WANGSU_UPSTREAM_BASE_URL: 'https://gateway.ai.cloudflare.com/v1/account/default/custom-wangsu',
-    XIAOMI_UPSTREAM_BASE_URL: 'https://gateway.ai.cloudflare.com/v1/account/default/custom-xiaomi',
+    NEWAPI_API_KEY: 'server-only-newapi-key',
+    NEWAPI_UPSTREAM_BASE_URL: 'https://jzapi.duanju.com',
   }
 }
 
 describe('model gateway worker', () => {
-  it('rejects requests without a desktop gateway bearer token', async () => {
-    const res = await handleRequest(
-      new Request('https://model-gateway.example.com/wangsu/v1/chat/completions', {
+  it('exposes only a GET health endpoint outside the chat route', async () => {
+    const health = await handleRequest(
+      new Request('https://model.storyflow.example.com/health'),
+      makeEnv(),
+    )
+    const unknown = await handleRequest(
+      new Request('https://model.storyflow.example.com/v1/models'),
+      makeEnv(),
+    )
+    const wrongMethod = await handleRequest(
+      new Request('https://model.storyflow.example.com/v1/chat/completions'),
+      makeEnv(),
+    )
+
+    expect(health.status).toBe(200)
+    expect(await health.json()).toEqual({ status: 'ok' })
+    expect(unknown.status).toBe(404)
+    expect(wrongMethod.status).toBe(405)
+    expect(wrongMethod.headers.get('allow')).toBe('POST')
+  })
+
+  it('rejects missing or invalid model access tokens before calling NewAPI', async () => {
+    let upstreamCalls = 0
+    const fetchStub = async () => {
+      upstreamCalls += 1
+      return new Response('unexpected')
+    }
+
+    const missing = await handleRequest(
+      new Request('https://model.storyflow.example.com/v1/chat/completions', {
         method: 'POST',
       }),
       makeEnv(),
-      async () => new Response('unexpected'),
+      fetchStub,
+    )
+    const cloudflareHeaderOnly = await handleRequest(
+      new Request('https://model.storyflow.example.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'cf-aig-authorization': 'Bearer legacy-token' },
+      }),
+      makeEnv(),
+      fetchStub,
+    )
+    const invalid = await handleRequest(
+      new Request('https://model.storyflow.example.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer invalid-token' },
+      }),
+      makeEnv(),
+      fetchStub,
     )
 
-    expect(res.status).toBe(401)
+    expect(missing.status).toBe(401)
+    expect(cloudflareHeaderOnly.status).toBe(401)
+    expect(invalid.status).toBe(401)
+    expect(upstreamCalls).toBe(0)
   })
 
-  it('rejects invalid desktop gateway JWTs before reaching Cloudflare AI Gateway', async () => {
-    let upstreamCalled = false
+  it('rejects expired, unscoped, and unknown-tier tokens', async () => {
+    const now = Math.floor(Date.now() / 1000)
+    const expiredToken = await signTestJwt('broker-signing-secret', { exp: now - 1 })
+    const unscopedToken = await signTestJwt('broker-signing-secret', { scopes: ['profile:read'] })
+    const unknownTierToken = await signTestJwt('broker-signing-secret', { model_tier: 'admin' })
 
-    const res = await handleRequest(
-      new Request('https://model-gateway.example.com/wangsu/v1/chat/completions', {
+    const requestWith = (token: string) => new Request(
+      'https://model.storyflow.example.com/v1/chat/completions',
+      {
         method: 'POST',
-        headers: {
-          Authorization: 'Bearer invalid-token',
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    )
+
+    const expired = await handleRequest(requestWith(expiredToken), makeEnv())
+    const unscoped = await handleRequest(requestWith(unscopedToken), makeEnv())
+    const unknownTier = await handleRequest(requestWith(unknownTierToken), makeEnv())
+
+    expect(expired.status).toBe(401)
+    expect(unscoped.status).toBe(403)
+    expect(unknownTier.status).toBe(403)
+  })
+
+  it('maps standard and pro tokens to the same server-side NewAPI credential', async () => {
+    for (const tier of ['standard', 'pro'] as const) {
+      const token = await signTestJwt('broker-signing-secret', { model_tier: tier })
+      let upstreamRequest: Request | null = null
+
+      const response = await handleRequest(
+        new Request('https://model.storyflow.example.com/v1/chat/completions?debug=1', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'text/event-stream',
+            'Content-Type': 'application/json',
+            Cookie: 'must-not-forward=1',
+            'X-Untrusted-Header': 'must-not-forward',
+          },
+          body: JSON.stringify({ model: 'gpt-5.5', messages: [], stream: true }),
+        }),
+        makeEnv(),
+        async (request) => {
+          upstreamRequest = request
+          return new Response('data: {"ok":true}\n\n', {
+            headers: { 'Content-Type': 'text/event-stream' },
+          })
         },
-      }),
+      )
+
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-type')).toBe('text/event-stream')
+      expect(await response.text()).toBe('data: {"ok":true}\n\n')
+      expect(upstreamRequest?.url).toBe('https://jzapi.duanju.com/v1/chat/completions?debug=1')
+      expect(upstreamRequest?.headers.get('authorization')).toBe('Bearer server-only-newapi-key')
+      expect(upstreamRequest?.headers.get('accept')).toBe('text/event-stream')
+      expect(upstreamRequest?.headers.get('content-type')).toBe('application/json')
+      expect(upstreamRequest?.headers.get('cookie')).toBeNull()
+      expect(upstreamRequest?.headers.get('x-untrusted-header')).toBeNull()
+    }
+  })
+
+  it('fails closed when NewAPI configuration or the upstream is unavailable', async () => {
+    const token = await signTestJwt('broker-signing-secret')
+    const requestWithToken = () => new Request(
+      'https://model.storyflow.example.com/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    )
+
+    const missingConfig = await handleRequest(
+      requestWithToken(),
+      { ...makeEnv(), NEWAPI_API_KEY: undefined },
+    )
+    const unavailable = await handleRequest(
+      requestWithToken(),
       makeEnv(),
       async () => {
-        upstreamCalled = true
-        return new Response('unexpected')
+        throw new Error('network down')
       },
     )
 
-    expect(res.status).toBe(401)
-    expect(upstreamCalled).toBe(false)
-  })
-
-  it('forwards valid requests with the server-side Cloudflare AI Gateway credential', async () => {
-    const token = await signTestJwt('broker-signing-secret')
-    let upstreamRequest: Request | null = null
-
-    const res = await handleRequest(
-      new Request('https://model-gateway.example.com/wangsu/v1/chat/completions?debug=1', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ model: 'gemini-3.5-flash', messages: [] }),
-      }),
-      makeEnv(),
-      async (request) => {
-        upstreamRequest = request
-        return Response.json({ ok: true })
-      },
-    )
-
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true })
-    expect(upstreamRequest).toBeTruthy()
-    expect(upstreamRequest?.url).toBe('https://gateway.ai.cloudflare.com/v1/account/default/custom-wangsu/v1/chat/completions?debug=1')
-    expect(upstreamRequest?.headers.get('authorization')).toBeNull()
-    expect(upstreamRequest?.headers.get('cf-aig-authorization')).toBe('Bearer cfut-upstream-token')
-    expect(await upstreamRequest?.json()).toEqual({ model: 'gemini-3.5-flash', messages: [] })
-  })
-
-  it('accepts broker JWTs from the Cloudflare provider header and replaces it upstream', async () => {
-    const token = await signTestJwt('broker-signing-secret')
-    let upstreamRequest: Request | null = null
-
-    const res = await handleRequest(
-      new Request('https://model-gateway.example.com/wangsu/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'cf-aig-authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ model: 'gemini-3.5-flash', messages: [] }),
-      }),
-      makeEnv(),
-      async (request) => {
-        upstreamRequest = request
-        return Response.json({ ok: true })
-      },
-    )
-
-    expect(res.status).toBe(200)
-    expect(upstreamRequest?.headers.get('authorization')).toBeNull()
-    expect(upstreamRequest?.headers.get('cf-aig-authorization')).toBe('Bearer cfut-upstream-token')
-  })
-
-  it('rejects tokens without the model chat scope', async () => {
-    const token = await signTestJwt('broker-signing-secret', { scopes: ['profile:read'] })
-
-    const res = await handleRequest(
-      new Request('https://model-gateway.example.com/xiaomi/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }),
-      makeEnv(),
-      async () => new Response('unexpected'),
-    )
-
-    expect(res.status).toBe(403)
-  })
-
-  it('rejects valid tokens that are not authorized for the requested managed route', async () => {
-    const token = await signTestJwt('broker-signing-secret', {
-      connections: ['xiaomi-default'],
-    })
-
-    const res = await handleRequest(
-      new Request('https://model-gateway.example.com/wangsu/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }),
-      makeEnv(),
-      async () => new Response('unexpected'),
-    )
-
-    expect(res.status).toBe(403)
+    expect(missingConfig.status).toBe(503)
+    expect(unavailable.status).toBe(502)
   })
 })

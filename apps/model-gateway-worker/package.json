@@ -5,5 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "bun test src/index.test.ts"
+  },
+  "dependencies": {
+    "jose": "^6.0.0"
   }
 }

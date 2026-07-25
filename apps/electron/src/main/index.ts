@@ -866,6 +866,11 @@ app.whenReady().then(async () => {
       // IPC handlers — preload uses sendSync to get WS connection details
 
       // Remove workspace from config (cleanup stale entries)
+      ipcMain.handle('workspace:setArchived', async (_event, workspaceId: string, archived: boolean) => {
+        const { setWorkspaceArchived } = await import('@craft-agent/shared/config')
+        return setWorkspaceArchived(workspaceId, archived)
+      })
+
       ipcMain.handle('workspace:remove', async (_event, workspaceId: string) => {
         const { removeWorkspace: remove } = await import('@craft-agent/shared/config')
         return remove(workspaceId)
