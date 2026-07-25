@@ -34,4 +34,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run validation suite
-        run: bun run validate:ci
+        run: |
+          bun run validate:ci
+          bun run test

@@ -1,4 +1,4 @@
-// input: Workspace package manifests and the root release version
+// input: Workspace package manifests, the root version, and optional RELEASE_VERSION
 // output: Failing or passing version consistency status for release gates
 // pos: Root release preflight guard before validation and packaging
 
@@ -36,9 +36,15 @@ const packagePaths = [
 
 const rootManifest = readPackageJson(rootPackagePath);
 const rootVersion = rootManifest.version;
+const releaseVersion = process.env.RELEASE_VERSION?.trim().replace(/^v/, "");
 
 if (!rootVersion || !versionPattern.test(rootVersion)) {
   console.error(`Invalid root package version: ${rootVersion ?? "(missing)"}`);
+  process.exit(1);
+}
+
+if (releaseVersion && (!versionPattern.test(releaseVersion) || releaseVersion !== rootVersion)) {
+  console.error(`Release version ${releaseVersion} does not match package version ${rootVersion}.`);
   process.exit(1);
 }
 

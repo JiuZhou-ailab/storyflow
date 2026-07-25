@@ -12,7 +12,7 @@ Build, validation, packaging, install, and local development entry scripts for t
 - `check-i18n-coverage.ts` - i18n literal coverage check.
 - `check-i18n-parity.ts` - i18n locale parity check.
 - `check-raw-sends.sh` - raw IPC send guard.
-- `check-version.ts` - workspace package version consistency check.
+- `check-version.ts` - workspace and release-target version consistency check.
 - `docker-smoke-test.sh` - Docker distribution smoke test.
 - `electron-build-main.ts` - Electron main-process and subprocess bundle builder.
 - `electron-build-preload.ts` - Electron preload bundle builder.
