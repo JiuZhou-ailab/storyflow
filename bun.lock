@@ -204,6 +204,9 @@
     "apps/model-gateway-worker": {
       "name": "@craft-agent/model-gateway-worker",
       "version": "0.9.42",
+      "dependencies": {
+        "jose": "^6.0.0",
+      },
     },
     "apps/skills-market": {
       "name": "@craft-agent/skills-market",

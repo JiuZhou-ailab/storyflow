@@ -112,7 +112,6 @@ jobs:
           CRAFT_CLIENT_FEISHU_APP_ID: ${{ vars.CRAFT_CLIENT_FEISHU_APP_ID }}
           CRAFT_CLIENT_NEON_AUTH_BASE_URL: ${{ vars.CRAFT_CLIENT_NEON_AUTH_BASE_URL }}
           CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED: ${{ vars.CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED }}
-          CRAFT_CLIENT_GATEWAY_TOKEN: ${{ secrets.CRAFT_CLIENT_GATEWAY_TOKEN }}
           RELEASE_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_profile || 'full' }}
         run: |
           set -euo pipefail
@@ -145,7 +144,7 @@ jobs:
             fi
           done
 
-          for name in CRAFT_CLIENT_AUTH_BROKER_URL CRAFT_CLIENT_FEISHU_APP_ID CRAFT_CLIENT_NEON_AUTH_BASE_URL CRAFT_CLIENT_GATEWAY_TOKEN; do
+          for name in CRAFT_CLIENT_AUTH_BROKER_URL CRAFT_CLIENT_FEISHU_APP_ID CRAFT_CLIENT_NEON_AUTH_BASE_URL; do
             if [ -z "${!name}" ]; then
               missing+=("Missing $name")
             fi
@@ -213,7 +212,6 @@ jobs:
           CRAFT_CLIENT_NEON_AUTH_BASE_URL: ${{ vars.CRAFT_CLIENT_NEON_AUTH_BASE_URL }}
           CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN: ${{ vars.CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN }}
           CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED: ${{ vars.CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED }}
-          CRAFT_CLIENT_GATEWAY_TOKEN: ${{ secrets.CRAFT_CLIENT_GATEWAY_TOKEN }}
           VITE_STORYFLOW_SKILLS_MARKET_ENABLED: "false"
 
       - name: Verify macOS signing and notarization
@@ -304,7 +302,6 @@ jobs:
           CRAFT_CLIENT_NEON_AUTH_BASE_URL: ${{ vars.CRAFT_CLIENT_NEON_AUTH_BASE_URL }}
           CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN: ${{ vars.CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN }}
           CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED: ${{ vars.CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED }}
-          CRAFT_CLIENT_GATEWAY_TOKEN: ${{ secrets.CRAFT_CLIENT_GATEWAY_TOKEN }}
           VITE_STORYFLOW_SKILLS_MARKET_ENABLED: "false"
 
       - name: Upload Windows artifacts to release

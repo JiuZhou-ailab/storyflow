@@ -1,146 +1,164 @@
-# Feishu Desktop Auth
+# Desktop Auth and Model Access
 
-Storyflow desktop uses Feishu OAuth as a public-client flow:
+Storyflow keeps identity login, product sessions, and upstream model credentials
+as separate trust boundaries:
 
-1. The desktop app asks `CRAFT_CLIENT_AUTH_BROKER_URL` for the public Feishu OAuth config.
-2. The desktop app opens Feishu's authorize URL with the broker's current app ID.
-3. Feishu redirects back to the loopback callback URL on the user's machine.
-4. The desktop app sends the code and PKCE verifier to `CRAFT_CLIENT_AUTH_BROKER_URL`.
-5. The broker exchanges the code with Feishu using the server-only app secret.
-6. If allowed, the broker returns the authenticated user identity. Model access is handled by the desktop LLM connection config and is not derived from the login session.
+```text
+desktop login
+  -> auth broker verifies Feishu or Neon identity
+  -> auth broker assigns model_tier and signs modelAccessToken
+  -> desktop stores that token for the hidden managed connection
+  -> model gateway validates the token
+  -> model gateway injects the server-only NewAPI key
+  -> NewAPI
+```
 
-The desktop app must never include `CRAFT_WEBUI_FEISHU_APP_SECRET` or any Feishu app secret. In the simplified model path, `CRAFT_CLIENT_GATEWAY_TOKEN` is a direct Cloudflare AI Gateway credential used to seed the bundled managed LLM connection; it is intentionally separate from login auth.
+Feishu users receive `model_tier=pro`. Neon email users receive
+`model_tier=standard`. Both tiers currently have the same model access; the
+claim is already separate so future policy changes stay inside the model
+gateway.
 
-## Feishu Console
+The desktop app must never contain the Feishu app secret, the model-token
+signing secret, or the NewAPI key.
 
-Add this redirect URL to the Feishu Open Platform app used for desktop login:
+## Feishu OAuth
+
+The desktop Feishu flow is:
+
+1. The desktop asks `CRAFT_CLIENT_AUTH_BROKER_URL` for public Feishu OAuth config.
+2. It opens Feishu authorization with PKCE.
+3. Feishu redirects to the loopback callback.
+4. The desktop sends the code and verifier to the broker.
+5. The broker exchanges the code with its server-only Feishu secret.
+6. The broker checks the company tenant allowlist and returns the user plus a
+   `pro` model access token.
+
+Add this redirect URL to the Feishu Open Platform application:
 
 ```text
 http://localhost:6477/callback
 ```
 
-The `cli_...` prefix is Feishu's app ID format. If the Feishu login page shows the wrong app name, update `CRAFT_WEBUI_FEISHU_APP_ID` on the auth broker deployment or update the app name in the Feishu Open Platform app. Downloaded desktop clients prefer the broker's public config over any packaged fallback app ID.
-
-## Local Development
-
-Local development can use the built-in dev broker:
+Production should use:
 
 ```dotenv
-CRAFT_CLIENT_AUTH_REQUIRED=true
-CRAFT_CLIENT_FEISHU_APP_ID=cli_xxx
-CRAFT_CLIENT_AUTH_BROKER_URL=http://localhost:9100
-CRAFT_WEBUI_FEISHU_APP_ID=cli_xxx
-CRAFT_WEBUI_FEISHU_APP_SECRET=server-only-secret
-CRAFT_WEBUI_FEISHU_ALLOW_ALL_USERS=true
-CRAFT_CLIENT_GATEWAY_TOKEN=cfut_xxx
+CRAFT_WEBUI_FEISHU_ALLOW_ALL_USERS=false
+CRAFT_WEBUI_FEISHU_INTERNAL_TENANT_KEYS=tenant_key_a,tenant_key_b
 ```
 
-`bun run electron:dev` starts the local broker automatically when the broker URL points at localhost and no broker is already healthy.
-`CRAFT_CLIENT_FEISHU_APP_ID` is only a packaged fallback for older brokers that do not expose `/api/client-auth/feishu/config`. The current desktop flow prefers the broker's `CRAFT_WEBUI_FEISHU_APP_ID` at login time.
-`CRAFT_CLIENT_GATEWAY_TOKEN` seeds the direct Cloudflare AI Gateway credential into the managed model connection. Login success does not write or rotate model credentials.
+## Email Login
 
-## Direct Model Gateway
+The desktop first verifies email/password with Neon Auth, then sends the Neon
+token to the same auth broker. The broker verifies the JWT against Neon JWKS
+and returns a `standard` model access token.
 
-The recommended stability-first production path is:
-
-```text
-desktop -> Cloudflare AI Gateway custom provider -> upstream model provider
-```
-
-The bundled managed desktop connections use direct Cloudflare AI Gateway base URLs:
-
-```dotenv
-CRAFT_CLIENT_GATEWAY_TOKEN=cfut_xxx
-```
-
-The direct Wangsu route used by `wangsu-default` is:
-
-```text
-https://gateway.ai.cloudflare.com/v1/ec286cbbbae1647af670efd1b3289631/default/custom-wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4
-```
-
-Cloudflare appends the SDK path after the gateway route. Keep the Cloudflare custom provider `base_url` at the Wangsu domain root:
-
-```text
-https://aigateway.edgecloudapp.com
-```
-
-The managed Wangsu route exposes `gemini-3.5-flash`, `gpt-5.5`, and `deepseek-v4-pro`. Keep this as the only bundled managed model route for now; do not add a separate Xiaomi route unless Wangsu is deliberately abandoned later.
-
-For Pi-managed calls, keep this connection on `piAuthProvider = cloudflare-ai-gateway`. That provider lets Cloudflare auth travel via `cf-aig-authorization`; sending both `Authorization` and `cf-aig-authorization` can make Wangsu validate the wrong bearer token upstream.
-
-The current managed defaults use OpenAI-compatible Chat Completions (`customEndpoint.api = openai-completions`). Do not switch these defaults to Responses API unless each upstream provider accepts Responses-shaped `input` payloads.
-For Feishu-authenticated users, model access remains independent of login. Login decides whether the user can enter the app; the LLM connection decides whether model calls work.
-
-## Auth Broker Worker
-
-Packaged desktop builds use the deployed HTTPS auth broker:
-
-```text
-https://storyflow-auth.zjding.com
-```
-
-The auth broker Worker exposes:
-
-```text
-GET  /api/client-auth/feishu/config
-POST /api/client-auth/feishu/exchange
-POST /api/client-auth/neon/exchange
-```
-
-Keep Feishu app secrets and Neon Auth verification config on the Worker. The desktop build only receives public auth bootstrap values plus the direct model gateway token used by the bundled managed connection.
-
-## Email Registration
-
-Neon Auth email/password sign-in and sign-up are separate product switches.
-The desktop app can keep email login available while hiding and rejecting new
-registrations:
+Email sign-in and registration are independent switches:
 
 ```dotenv
 CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED=false
 CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED=false
 ```
 
-Set these to `true` only when the matching Neon Auth branch has email/password
-sign-up enabled and a deliberate email verification policy. If verification is
-required, the app reports the pending account and leaves the client
-unauthenticated until the user verifies and signs in.
+Enable registration only after the Neon project has the intended email
+verification and delivery policy.
 
-## Distribution
+## Model Gateway
 
-Packaged builds must use a deployed HTTPS broker:
+The bundled managed connection points to:
+
+```text
+https://storyflow-model.zjding.com/v1
+```
+
+Only these public routes exist:
+
+```text
+GET  /health
+POST /v1/chat/completions
+```
+
+For chat calls, the Worker validates the HS256 token signature, issuer,
+audience, expiry, subject, `model:chat` scope, and `model_tier`. It then replaces
+the client authorization header with its server-only `NEWAPI_API_KEY` and
+forwards the request to `NEWAPI_UPSTREAM_BASE_URL`.
+
+The MVP deliberately uses one NewAPI key and one upstream for both roles. Add
+per-tier model allowlists only when Standard and Pro actually diverge; add
+per-user NewAPI keys only when upstream accounting or revocation requires them.
+
+The active managed endpoint uses OpenAI-compatible Chat Completions
+(`customEndpoint.api=openai-completions`).
+
+## Local Development
+
+The built-in local broker can issue model tokens with the local server secret:
 
 ```dotenv
 CRAFT_CLIENT_AUTH_REQUIRED=true
+CRAFT_CLIENT_AUTH_BROKER_URL=http://localhost:9100
 CRAFT_CLIENT_FEISHU_APP_ID=cli_xxx
-CRAFT_CLIENT_AUTH_BROKER_URL=https://storyflow-auth.zjding.com
-CRAFT_CLIENT_GATEWAY_TOKEN=cfut_xxx
-```
-
-The broker environment holds the matching server-only values:
-
-```dotenv
 CRAFT_WEBUI_FEISHU_APP_ID=cli_xxx
 CRAFT_WEBUI_FEISHU_APP_SECRET=server-only-secret
-CRAFT_WEBUI_FEISHU_INTERNAL_TENANT_KEYS=tenant_key_a,tenant_key_b
-CRAFT_WEBUI_FEISHU_ALLOW_ALL_USERS=false
-CRAFT_WEBUI_AUTH_DATABASE_URL=postgres://...
+CRAFT_WEBUI_FEISHU_ALLOW_ALL_USERS=true
+STORYFLOW_GATEWAY_JWT_SECRET=replace-with-a-long-random-local-secret
 ```
 
-Normal packaged builds fail fast if Feishu client auth points at localhost or a non-HTTPS broker. Use `CRAFT_DEV_RUNTIME=1` only for dev-only builds.
+`bun run electron:dev` starts the local broker automatically when the broker URL
+is localhost and no broker is healthy. `STORYFLOW_GATEWAY_JWT_SECRET` is
+optional for login-only local development; when omitted, the broker reuses
+`CRAFT_SERVER_TOKEN`. Set it explicitly when a local model gateway must verify
+the same token.
+
+## Production Deployment
+
+Packaged Electron builds contain public bootstrap values only:
+
+```dotenv
+CRAFT_CLIENT_AUTH_REQUIRED=true
+CRAFT_CLIENT_AUTH_BROKER_URL=https://storyflow-auth.zjding.com
+CRAFT_CLIENT_FEISHU_APP_ID=cli_xxx
+CRAFT_CLIENT_NEON_AUTH_BASE_URL=https://your-neon-auth.example.com/neondb/auth
+```
+
+Set the same strong random signing secret on both Workers:
+
+```bash
+cd apps/auth-broker-worker
+bunx wrangler secret put STORYFLOW_GATEWAY_JWT_SECRET
+bunx wrangler deploy
+
+cd ../model-gateway-worker
+bunx wrangler secret put STORYFLOW_GATEWAY_JWT_SECRET
+bunx wrangler secret put NEWAPI_API_KEY
+bunx wrangler deploy
+```
+
+The model gateway upstream URL is a non-secret Worker variable in
+`apps/model-gateway-worker/wrangler.toml`. Rotate any upstream key that has ever
+been pasted into chat, logs, or source before deployment.
+
+Minimal smoke checks:
+
+```bash
+curl -i https://storyflow-auth.zjding.com/health
+curl -i https://storyflow-model.zjding.com/health
+curl -i -X POST https://storyflow-model.zjding.com/v1/chat/completions
+```
+
+The final request must return `401` without a model access token. A successful
+end-to-end chat should be verified only after signing in through the desktop
+client.
 
 ## Runtime Broker Override
 
-If the packaged broker URL becomes unreachable for an installed client, drop a `client-auth.json` into the Electron user data directory to redirect login without rebuilding:
+If an installed build has a bad broker URL, add `client-auth.json` to the
+Electron user data directory:
 
 ```json
-{ "authBrokerUrl": "https://your-broker.example.com" }
+{ "authBrokerUrl": "https://storyflow-auth.zjding.com" }
 ```
 
-The app maps `authBrokerUrl` to `CRAFT_CLIENT_AUTH_BROKER_URL` at startup. Empty, malformed, or non-object JSON files are ignored.
-The override takes precedence over the URL baked in at build time. The main process logs which keys were applied on startup under `[client-auth]`.
-
-User data paths:
+The override wins over packaged defaults.
 
 - macOS: `~/Library/Application Support/Storyflow/client-auth.json`
 - Windows: `%APPDATA%/Storyflow/client-auth.json`
