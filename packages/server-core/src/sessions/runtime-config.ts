@@ -1,3 +1,7 @@
+// input: Backend connection state, session runtime lineage, and pending model attachments
+// output: Stable runtime signatures, Pi migration decisions, and model-safe attachments
+// pos: Pure session-runtime policy shared by SessionManager and focused regression tests
+
 import type { AgentProvider, LlmAuthType } from '@craft-agent/shared/agent/backend'
 import { isCompatProvider, modelSupportsImages, type LlmConnection } from '@craft-agent/shared/config'
 import type { FileAttachment } from '@craft-agent/shared/protocol'
@@ -18,6 +22,7 @@ export interface ModelAttachmentFilterResult {
 
 export interface PiRuntimeMigrationInput {
   agentRuntime?: 'pi' | 'claude-sdk'
+  branchContextStrategy?: 'sdk-fork' | 'seeded-fresh-session'
   hasPiTranscript: boolean
   sdkSessionId?: string
   messageCount: number
@@ -25,7 +30,7 @@ export interface PiRuntimeMigrationInput {
 
 /** Whether a legacy/lost runtime transcript needs a one-shot seeded Pi start. */
 export function needsPiRuntimeMigrationSeed(input: PiRuntimeMigrationInput): boolean {
-  if (input.agentRuntime === 'pi' || input.hasPiTranscript) return false
+  if (input.agentRuntime === 'pi' || input.hasPiTranscript || input.branchContextStrategy === 'sdk-fork') return false
   return Boolean(input.sdkSessionId) || input.messageCount > 1
 }
 

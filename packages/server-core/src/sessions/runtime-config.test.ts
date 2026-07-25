@@ -1,3 +1,7 @@
+// input: Representative backend connections, runtime lineages, and attachments
+// output: Regression coverage for runtime signatures, Pi migration, and attachment filtering
+// pos: Focused tests for pure session-runtime policy
+
 import { describe, expect, it } from 'bun:test'
 import type { LlmConnection } from '@craft-agent/shared/config'
 import type { FileAttachment } from '@craft-agent/shared/protocol'
@@ -105,6 +109,14 @@ describe('needsPiRuntimeMigrationSeed', () => {
       agentRuntime: 'pi',
       hasPiTranscript: true,
       sdkSessionId: 'pi-session',
+      messageCount: 4,
+    })).toBe(false)
+  })
+
+  it('does not reinterpret a pending Pi sdk fork as legacy history', () => {
+    expect(needsPiRuntimeMigrationSeed({
+      branchContextStrategy: 'sdk-fork',
+      hasPiTranscript: false,
       messageCount: 4,
     })).toBe(false)
   })
