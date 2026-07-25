@@ -555,6 +555,27 @@ export function modelSupportsImages(
 }
 
 /**
+ * Resolve whether a model exposes configurable thinking effort.
+ *
+ * Custom endpoints are opt-in because their string-only model lists do not
+ * carry capability metadata. SDK-owned catalogs remain opt-out for backwards
+ * compatibility with built-in model definitions created before this flag.
+ */
+export function modelSupportsThinking(
+  connection: Pick<LlmConnection, 'providerType' | 'models'>,
+  modelId: string,
+): boolean {
+  const entry = connection.models?.find(m =>
+    (typeof m === 'string' ? m : m.id) === modelId,
+  );
+  if (!entry || typeof entry === 'string') return false;
+
+  return isCompatProvider(connection.providerType)
+    ? entry.supportsThinking === true
+    : entry.supportsThinking !== false;
+}
+
+/**
  * Get the default model list for a provider type from the registry.
  * For *_compat providers, returns empty array - those should use connection.models instead.
  *
