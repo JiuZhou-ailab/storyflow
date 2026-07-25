@@ -1,3 +1,7 @@
+// input: Host environment variables and script runtime options
+// output: Regression coverage for credential stripping and runtime-local cache paths
+// pos: Test boundary for sandbox subprocess environment construction
+
 import { describe, it, expect, afterEach } from 'bun:test';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -65,7 +69,7 @@ describe('sandbox-env', () => {
     const env = createScriptRuntimeEnv({
       language: 'node',
       dataDir,
-    });
+    }, {});
 
     expect(env.TMPDIR).toBe(join(dataDir, '.tmp'));
     expect(env.UV_CACHE_DIR).toBeUndefined();

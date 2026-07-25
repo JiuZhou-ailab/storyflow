@@ -125,6 +125,7 @@ describe("downloadOptions", () => {
     const originalWindow = globalThis.window;
     Object.defineProperty(globalThis, "window", {
       configurable: true,
+      writable: true,
       value: { location: { pathname: "/docs" } },
     });
 
@@ -145,10 +146,15 @@ describe("downloadOptions", () => {
       expect(html).not.toContain("https://ehyg6a9wjd.feishu.cn/wiki");
       expect(html).toContain('aria-current="page"');
     } finally {
-      Object.defineProperty(globalThis, "window", {
-        configurable: true,
-        value: originalWindow,
-      });
+      if (originalWindow === undefined) {
+        delete (globalThis as { window?: unknown }).window;
+      } else {
+        Object.defineProperty(globalThis, "window", {
+          configurable: true,
+          writable: true,
+          value: originalWindow,
+        });
+      }
     }
   });
 

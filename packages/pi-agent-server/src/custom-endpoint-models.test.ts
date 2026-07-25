@@ -39,10 +39,12 @@ describe('normalizeCustomEndpointModelEntry', () => {
       id: 'pi/vision-model',
       contextWindow: 262_144,
       supportsImages: true,
+      supportsThinking: true,
     })).toEqual({
       id: 'vision-model',
       contextWindow: 262_144,
       supportsImages: true,
+      supportsThinking: true,
     })
   })
 })
@@ -64,8 +66,13 @@ describe('buildCustomEndpointModelDef', () => {
   })
 
   it('lets per-model overrides enable image input and custom context window', () => {
-    const model = buildCustomEndpointModelDef('vision-model', undefined, { supportsImages: true, contextWindow: 262_144 })
+    const model = buildCustomEndpointModelDef('vision-model', undefined, {
+      supportsImages: true,
+      supportsThinking: true,
+      contextWindow: 262_144,
+    })
     expect(model.input).toEqual(['text', 'image'])
+    expect(model.reasoning).toBe(true)
     expect(model.contextWindow).toBe(262_144)
   })
 })

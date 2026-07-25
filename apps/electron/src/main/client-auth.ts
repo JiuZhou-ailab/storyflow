@@ -56,6 +56,7 @@ export interface ClientAuthUser {
 export interface ClientAuthSession {
   user: ClientAuthUser
   appSessionToken?: string
+  modelAccessToken?: string
 }
 
 export type ClientAuthSignUpResult =
@@ -77,6 +78,7 @@ export interface ClientAuthNeonBrokerExchangeInput {
 export interface ClientAuthBrokerExchangeResult {
   user: ClientAuthUser
   appSessionToken?: string
+  modelAccessToken?: string
 }
 
 export interface ClientAuthBrokerClient {
@@ -260,7 +262,10 @@ export function createClientAuthService(
   const emailSignUpEnabled = neonClientConfig?.emailSignUpEnabled === true
   const feishuLoginEnabled = config.feishuBrokerAuth !== undefined && authBrokerClient !== null
   const configured = emailPasswordEnabled || feishuLoginEnabled
-  let currentSession: ClientAuthSession | null = deps.initialSession ?? null
+  let currentSession: ClientAuthSession | null = deps.initialSession
+    && (!config.required || deps.initialSession.modelAccessToken)
+    ? deps.initialSession
+    : null
   let activeFeishuLogin: {
     close: () => void | Promise<void>
     reject: (error: Error) => void
@@ -269,6 +274,29 @@ export function createClientAuthService(
   async function saveCurrentSession(session: ClientAuthSession): Promise<void> {
     await deps.sessionStore?.save(session)
     currentSession = session
+  }
+
+  async function saveNeonSession(
+    providerToken: string,
+    verifiedUser: ClientAuthUser,
+  ): Promise<ClientAuthUser> {
+    if (!config.authBrokerUrl || !authBrokerClient) {
+      await saveCurrentSession({ user: verifiedUser, appSessionToken: providerToken })
+      return verifiedUser
+    }
+
+    const brokerResult = await authBrokerClient.exchangeNeonToken({
+      brokerUrl: config.authBrokerUrl,
+      token: providerToken,
+    })
+    const user = normalizeBrokerClientAuthUser(brokerResult.user, 'neon')
+    const modelAccessToken = requireModelAccessToken(brokerResult)
+    await saveCurrentSession({
+      user,
+      appSessionToken: brokerResult.appSessionToken ?? providerToken,
+      modelAccessToken,
+    })
+    return user
   }
 
   return {
@@ -310,8 +338,7 @@ export function createClientAuthService(
       }
 
       const user = toClientAuthUser(await neonAuth.verifyToken(authResult.token))
-      await saveCurrentSession({ user, appSessionToken: authResult.token })
-      return user
+      return saveNeonSession(authResult.token, user)
     },
 
     async signUp(input: ClientAuthSignUpInput): Promise<ClientAuthSignUpResult> {
@@ -351,8 +378,8 @@ export function createClientAuthService(
       if (user.emailVerified === false) {
         return { status: 'verification-required', user }
       }
-      await saveCurrentSession({ user, appSessionToken: authResult.token })
-      return { status: 'authenticated', user }
+      const authenticatedUser = await saveNeonSession(authResult.token, user)
+      return { status: 'authenticated', user: authenticatedUser }
     },
 
     async signInWithFeishu(): Promise<ClientAuthUser> {
@@ -430,9 +457,11 @@ export function createClientAuthService(
           codeVerifier: consumedState.codeVerifier,
         })
         const user = normalizeBrokerClientAuthUser(brokerResult.user)
+        const modelAccessToken = requireModelAccessToken(brokerResult)
         await saveCurrentSession({
           user,
           ...(brokerResult.appSessionToken ? { appSessionToken: brokerResult.appSessionToken } : {}),
+          modelAccessToken,
         })
         return user
       } finally {
@@ -609,11 +638,21 @@ function normalizeFeishuBrokerPublicConfig(body: Record<string, unknown>): Clien
 function normalizeBrokerExchangeResult(body: Record<string, unknown>, defaultProvider: ClientAuthUser['provider']): ClientAuthBrokerExchangeResult {
   const user = normalizeBrokerClientAuthUser(readObjectValue(body.user), defaultProvider)
   const appSessionToken = readStringValue(body.appSessionToken) ?? readStringValue(body.sessionToken)
+  const modelAccessToken = readStringValue(body.modelAccessToken)
 
   return {
     user,
     ...(appSessionToken ? { appSessionToken } : {}),
+    ...(modelAccessToken ? { modelAccessToken } : {}),
   }
+}
+
+function requireModelAccessToken(result: ClientAuthBrokerExchangeResult): string {
+  const token = readEnv(result.modelAccessToken)
+  if (!token) {
+    throw new Error('Auth broker exchange response did not include a model access token')
+  }
+  return token
 }
 
 function normalizeBrokerClientAuthUser(value: unknown, defaultProvider: ClientAuthUser['provider'] = 'feishu'): ClientAuthUser {

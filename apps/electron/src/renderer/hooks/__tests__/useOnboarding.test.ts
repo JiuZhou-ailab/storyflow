@@ -8,8 +8,8 @@ import {
 } from '../useOnboarding'
 import {
   JIUZHOU_MANAGED_DEFAULT_BASE_URL,
+  JIUZHOU_MANAGED_DEFAULT_CONNECTION_MODELS,
   JIUZHOU_MANAGED_DEFAULT_MODEL,
-  JIUZHOU_MANAGED_DEFAULT_MODELS,
   JIUZHOU_MANAGED_DEFAULT_SETUP,
 } from '@/components/onboarding/managed-defaults'
 import type { ApiSetupMethod } from '@/components/onboarding'
@@ -120,7 +120,7 @@ describe('apiSetupMethodToConnectionSetup', () => {
     expect(setup.credential).toBe('author-key')
     expect(setup.baseUrl).toBe(JIUZHOU_MANAGED_DEFAULT_BASE_URL)
     expect(setup.defaultModel).toBe(JIUZHOU_MANAGED_DEFAULT_MODEL)
-    expect(setup.models).toEqual([...JIUZHOU_MANAGED_DEFAULT_MODELS])
+    expect(setup.models).toEqual(JIUZHOU_MANAGED_DEFAULT_CONNECTION_MODELS)
     expect(setup.customEndpoint).toEqual({ api: 'openai-completions' })
   })
 

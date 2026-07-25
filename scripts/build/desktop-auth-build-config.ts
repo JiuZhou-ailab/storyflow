@@ -46,35 +46,18 @@ export function validateDesktopAuthBuildEnv(env: Env): DesktopAuthBuildValidatio
     ?? readEnv(env.CRAFT_CLIENT_FEISHU_AUTH_BROKER_URL);
   const hasFeishuLogin = Boolean(feishuAppId);
 
-  if (!hasNeonLogin && !hasFeishuLogin && !brokerUrl) {
+  if (!hasNeonLogin && !hasFeishuLogin) {
     return {
       ok: false,
       message: 'Packaged desktop client auth requires CRAFT_CLIENT_FEISHU_APP_ID or CRAFT_CLIENT_NEON_AUTH_BASE_URL.',
     };
   }
 
-  if (brokerUrl && !feishuAppId) {
-    return {
-      ok: false,
-      message: 'CRAFT_CLIENT_FEISHU_APP_ID is required when CRAFT_CLIENT_AUTH_BROKER_URL is set.',
-    };
-  }
-
-  if (feishuAppId && !brokerUrl) {
-    return {
-      ok: false,
-      message: 'CRAFT_CLIENT_AUTH_BROKER_URL is required for packaged Feishu client auth.',
-    };
-  }
-
   if (!brokerUrl) {
-    if (!readEnv(env.CRAFT_CLIENT_GATEWAY_TOKEN) && !readEnv(env.CRAFT_BUILTIN_LLM_API_KEY)) {
-      return {
-        ok: false,
-        message: 'CRAFT_CLIENT_GATEWAY_TOKEN is required for the packaged direct Cloudflare model gateway.',
-      };
-    }
-    return { ok: true };
+    return {
+      ok: false,
+      message: 'CRAFT_CLIENT_AUTH_BROKER_URL is required for packaged client auth and model access.',
+    };
   }
 
   let parsed: URL;
@@ -99,13 +82,6 @@ export function validateDesktopAuthBuildEnv(env: Env): DesktopAuthBuildValidatio
     return {
       ok: false,
       message: 'CRAFT_CLIENT_AUTH_BROKER_URL must use https for packaged desktop client auth.',
-    };
-  }
-
-  if (!readEnv(env.CRAFT_CLIENT_GATEWAY_TOKEN) && !readEnv(env.CRAFT_BUILTIN_LLM_API_KEY)) {
-    return {
-      ok: false,
-      message: 'CRAFT_CLIENT_GATEWAY_TOKEN is required for the packaged direct Cloudflare model gateway.',
     };
   }
 

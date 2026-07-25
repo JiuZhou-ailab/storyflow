@@ -28,18 +28,78 @@
       "enabled": true,
       "connection": {
         "slug": "wangsu-default",
-        "name": "JiuZhou-AI Wangsu",
+        "name": "JiuZhou AI",
         "providerType": "pi_compat",
         "authType": "api_key_with_endpoint",
-        "baseUrl": "https://gateway.ai.cloudflare.com/v1/ec286cbbbae1647af670efd1b3289631/default/custom-wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4",
+        "baseUrl": "https://storyflow-model.zjding.com/v1",
         "models": [
-          "gemini-3.5-flash",
-          "gpt-5.5",
-          "deepseek-v4-pro"
+          {
+            "id": "gpt-5.5",
+            "name": "GPT-5.5",
+            "shortName": "GPT-5.5",
+            "description": "",
+            "provider": "pi",
+            "contextWindow": 131072,
+            "supportsThinking": true
+          },
+          {
+            "id": "gpt-5.6-sol",
+            "name": "GPT-5.6 Sol",
+            "shortName": "GPT-5.6 Sol",
+            "description": "",
+            "provider": "pi",
+            "contextWindow": 131072,
+            "supportsThinking": true
+          },
+          {
+            "id": "gpt-5.6-terra",
+            "name": "GPT-5.6 Terra",
+            "shortName": "GPT-5.6 Terra",
+            "description": "",
+            "provider": "pi",
+            "contextWindow": 131072,
+            "supportsThinking": true
+          },
+          {
+            "id": "gpt-5.6-luna",
+            "name": "GPT-5.6 Luna",
+            "shortName": "GPT-5.6 Luna",
+            "description": "",
+            "provider": "pi",
+            "contextWindow": 131072,
+            "supportsThinking": true
+          },
+          {
+            "id": "gemini-3.5-flash",
+            "name": "Gemini 3.5 Flash",
+            "shortName": "Gemini 3.5 Flash",
+            "description": "",
+            "provider": "pi",
+            "contextWindow": 131072,
+            "supportsThinking": false
+          },
+          {
+            "id": "deepseek-v4-pro",
+            "name": "DeepSeek V4 Pro",
+            "shortName": "DeepSeek V4 Pro",
+            "description": "",
+            "provider": "pi",
+            "contextWindow": 131072,
+            "supportsThinking": false
+          },
+          {
+            "id": "deepseek-v4-flash",
+            "name": "DeepSeek V4 Flash",
+            "shortName": "DeepSeek V4 Flash",
+            "description": "",
+            "provider": "pi",
+            "contextWindow": 131072,
+            "supportsThinking": false
+          }
         ],
         "defaultModel": "gpt-5.5",
         "modelSelectionMode": "userDefined3Tier",
-        "piAuthProvider": "cloudflare-ai-gateway",
+        "piAuthProvider": "openai",
         "customEndpoint": {
           "api": "openai-completions"
         },
@@ -58,18 +118,78 @@
     "enabled": true,
     "connection": {
       "slug": "wangsu-default",
-      "name": "JiuZhou-AI Wangsu",
+      "name": "JiuZhou AI",
       "providerType": "pi_compat",
       "authType": "api_key_with_endpoint",
-      "baseUrl": "https://gateway.ai.cloudflare.com/v1/ec286cbbbae1647af670efd1b3289631/default/custom-wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4",
+      "baseUrl": "https://storyflow-model.zjding.com/v1",
       "models": [
-        "gemini-3.5-flash",
-        "gpt-5.5",
-        "deepseek-v4-pro"
+        {
+          "id": "gpt-5.5",
+          "name": "GPT-5.5",
+          "shortName": "GPT-5.5",
+          "description": "",
+          "provider": "pi",
+          "contextWindow": 131072,
+          "supportsThinking": true
+        },
+        {
+          "id": "gpt-5.6-sol",
+          "name": "GPT-5.6 Sol",
+          "shortName": "GPT-5.6 Sol",
+          "description": "",
+          "provider": "pi",
+          "contextWindow": 131072,
+          "supportsThinking": true
+        },
+        {
+          "id": "gpt-5.6-terra",
+          "name": "GPT-5.6 Terra",
+          "shortName": "GPT-5.6 Terra",
+          "description": "",
+          "provider": "pi",
+          "contextWindow": 131072,
+          "supportsThinking": true
+        },
+        {
+          "id": "gpt-5.6-luna",
+          "name": "GPT-5.6 Luna",
+          "shortName": "GPT-5.6 Luna",
+          "description": "",
+          "provider": "pi",
+          "contextWindow": 131072,
+          "supportsThinking": true
+        },
+        {
+          "id": "gemini-3.5-flash",
+          "name": "Gemini 3.5 Flash",
+          "shortName": "Gemini 3.5 Flash",
+          "description": "",
+          "provider": "pi",
+          "contextWindow": 131072,
+          "supportsThinking": false
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "name": "DeepSeek V4 Pro",
+          "shortName": "DeepSeek V4 Pro",
+          "description": "",
+          "provider": "pi",
+          "contextWindow": 131072,
+          "supportsThinking": false
+        },
+        {
+          "id": "deepseek-v4-flash",
+          "name": "DeepSeek V4 Flash",
+          "shortName": "DeepSeek V4 Flash",
+          "description": "",
+          "provider": "pi",
+          "contextWindow": 131072,
+          "supportsThinking": false
+        }
       ],
       "defaultModel": "gpt-5.5",
       "modelSelectionMode": "userDefined3Tier",
-      "piAuthProvider": "cloudflare-ai-gateway",
+      "piAuthProvider": "openai",
       "customEndpoint": {
         "api": "openai-completions"
       },

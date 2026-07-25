@@ -1,3 +1,7 @@
+// input: User-edited config files and runtime-supported config contracts
+// output: Structured validation results and safe parsed configuration
+// pos: Trust-boundary validation for persisted configuration
+
 /**
  * Config Validators
  *
@@ -58,6 +62,7 @@ const WorkspaceSchema = z.object({
   name: z.string().min(1),
   slug: z.string().optional(),
   createdAt: z.number().int().positive(),
+  archivedAt: z.number().int().positive().optional(),
   sessionId: z.string().optional(),
   iconUrl: z.string().optional(),
 });

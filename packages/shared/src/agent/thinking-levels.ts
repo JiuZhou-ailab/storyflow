@@ -1,3 +1,7 @@
+// input: Persisted thinking levels and provider model identifiers
+// output: Shared thinking metadata, validation, effort mappings, and token budgets
+// pos: Canonical thinking-level contract across UI, storage, and model runtimes
+
 /**
  * Thinking Level Configuration
  *
@@ -55,7 +59,7 @@ export const THINKING_LEVELS: readonly ThinkingLevelDefinition[] = [
   { id: 'low', nameKey: 'thinking.low', descriptionKey: 'thinking.lowDesc' },
   { id: 'medium', nameKey: 'thinking.medium', descriptionKey: 'thinking.mediumDesc' },
   { id: 'high', nameKey: 'thinking.high', descriptionKey: 'thinking.highDesc' },
-  { id: 'xhigh', nameKey: 'thinking.xhigh', descriptionKey: 'thinking.xhighDesc' },
+  { id: 'xhigh', nameKey: 'thinking.xhigh', descriptionKey: 'thinking.extendedDesc' },
   { id: 'max', nameKey: 'thinking.max', descriptionKey: 'thinking.maxDesc' },
 ] as const;
 

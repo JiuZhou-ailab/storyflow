@@ -1,9 +1,12 @@
 {
   "name": "@craft-agent/model-gateway-worker",
-  "version": "0.9.42",
+  "version": "0.9.43",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "bun test src/index.test.ts"
+  },
+  "dependencies": {
+    "jose": "^6.0.0"
   }
 }

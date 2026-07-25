@@ -1,11 +1,12 @@
-// input: Generic/default workspace creators plus legacy host-state layouts
+// input: Global config defaults, workspace creators, and legacy host-state layouts
 // output: Regression coverage for blank roots and host-state migration
 // pos: Shared storage guard for project creation and existing workspace loading
 
-import { describe, expect, it } from 'bun:test'
+import { beforeAll, describe, expect, it } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { CONFIG_DIR, ensureConfigDefaults } from '../../config/storage.ts'
 import {
   createDefaultWorkspaceAtPath,
   createWorkspaceAtPath,
@@ -17,6 +18,11 @@ import { getWorkspaceSkillsPath } from '../paths.ts'
 function statePath(rootPath: string, relativePath = ''): string {
   return join(rootPath, '.craft-agent', relativePath)
 }
+
+beforeAll(() => {
+  mkdirSync(CONFIG_DIR, { recursive: true })
+  ensureConfigDefaults()
+})
 
 describe('blank workspace creation', () => {
   it('creates a blank workspace rooted at the selected project folder', () => {

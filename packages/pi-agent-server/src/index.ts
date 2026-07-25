@@ -68,6 +68,7 @@ import {
   resolveCustomEndpointProviderName,
   shouldUseCustomEndpointBearerAuthHeader,
   stripPiPrefix,
+  type CustomEndpointModelConfig,
   type CustomEndpointModelEntry,
   type CustomEndpointModelOverrides,
 } from './custom-endpoint-models.ts';
@@ -140,7 +141,7 @@ interface InitMessage {
   branchFromSessionPath?: string;
   branchFromSdkTurnId?: string;
   customEndpoint?: { api: CustomEndpointApi; supportsImages?: boolean };
-  customModels?: Array<string | { id: string; contextWindow?: number; supportsImages?: boolean }>;
+  customModels?: CustomEndpointModelConfig[];
   piAuth?: { provider: string; credential: PiCredential };
 }
 
@@ -152,7 +153,7 @@ interface RuntimeConfigUpdateMessage {
   authType?: string;
   baseUrl?: string;
   customEndpoint?: { api: CustomEndpointApi; supportsImages?: boolean };
-  customModels?: Array<string | { id: string; contextWindow?: number; supportsImages?: boolean }>;
+  customModels?: CustomEndpointModelConfig[];
 }
 
 /** Messages from main process (stdin) */
@@ -470,10 +471,11 @@ function registerCustomEndpointModels(
 ): void {
   for (const m of models) {
     customEndpointModelIds.add(m.id);
-    if (m.contextWindow || m.supportsImages !== undefined) {
+    if (m.contextWindow || m.supportsImages !== undefined || m.supportsThinking !== undefined) {
       customModelOverrides.set(m.id, {
         ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
         ...(m.supportsImages !== undefined ? { supportsImages: m.supportsImages } : {}),
+        ...(m.supportsThinking !== undefined ? { supportsThinking: m.supportsThinking } : {}),
       });
     }
   }

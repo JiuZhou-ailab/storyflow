@@ -9,6 +9,7 @@ import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai"
 import { selectAtom } from "jotai/utils"
 import { motion, AnimatePresence } from "motion/react"
 import {
+  Archive,
   ChevronRight,
   ChevronDown,
   RotateCw,
@@ -251,6 +252,7 @@ interface AppShellProps {
   }
   onOpenProjectInNewWindow?: (workspaceId: string) => void
   onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
+  onSetProjectArchived?: (workspaceId: string, archived: boolean) => void | Promise<void>
   onRemoveProject?: (workspaceId: string) => void | Promise<void>
   /** Inline project create/import/remote success (preferred over full-page creation). */
   onWorkspaceCreatedFromRail?: (workspace: Workspace) => void | Promise<void>
@@ -836,6 +838,7 @@ function AppShellContent({
   profile,
   onOpenProjectInNewWindow,
   onRenameProject,
+  onSetProjectArchived,
   onRemoveProject,
   onWorkspaceCreatedFromRail,
 }: AppShellProps) {
@@ -4039,6 +4042,12 @@ function AppShellContent({
             setNovelProjectRenameOpen(true)
           },
         }] satisfies readonly WorkspaceFileTreeMenuAction[] : []),
+        ...(activeProjectId && onSetProjectArchived ? [{
+          id: 'archive-project',
+          label: '归档项目',
+          icon: <Archive className="h-3.5 w-3.5" />,
+          onSelect: () => void onSetProjectArchived(activeProjectId, true),
+        }] satisfies readonly WorkspaceFileTreeMenuAction[] : []),
         ...(activeProjectId && activeWorkspace && onRemoveProject ? [{
           id: 'remove-project',
           label: t('workspace.removeWorkspace'),
@@ -4100,6 +4109,7 @@ function AppShellContent({
     onOpenProjectInNewWindow,
     onRemoveProject,
     onRenameProject,
+    onSetProjectArchived,
     openWorkspaceCreateEntryDialog,
     t,
   ])
@@ -4252,6 +4262,7 @@ function AppShellContent({
             onWorkspaceCreated={onWorkspaceCreatedFromRail ?? onWorkspaceCreated}
             onOpenProjectInNewWindow={onOpenProjectInNewWindow}
             onRenameProject={onRenameProject}
+            onSetProjectArchived={onSetProjectArchived}
             onRemoveProject={onRemoveProject}
             onOpenFreeConversations={onOpenFreeConversations}
             onOpenSources={handleSourcesClick}

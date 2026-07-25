@@ -70,7 +70,7 @@ describe('AI settings options', () => {
     ])
   })
 
-  it('derives model options from explicit connection models and localizes descriptions', () => {
+  it('preserves unknown model IDs and localizes explicit model descriptions', () => {
     const conn = connection({
       models: [
         'claude-opus-4-20250514',
@@ -88,7 +88,7 @@ describe('AI settings options', () => {
     const translate = (key: string) => `translated:${key}`
 
     expect(createModelOptionsForConnection(conn, translate)).toEqual([
-      { value: 'claude-opus-4-20250514', label: 'Opus 4', description: '' },
+      { value: 'claude-opus-4-20250514', label: 'claude-opus-4-20250514', description: '' },
       { value: 'custom-balanced', label: 'Balanced', description: 'translated:model.balanced' },
     ])
     expect(createWorkspaceModelOptions(conn, {

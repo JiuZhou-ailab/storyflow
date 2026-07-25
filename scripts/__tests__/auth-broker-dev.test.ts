@@ -103,5 +103,6 @@ describe('auth-broker-dev', () => {
     await proc.exited.catch(() => {})
     const output = await readProcessOutput(proc)
     expect(output).not.toContain('Gateway token mode')
+    expect(output).toContain('reusing the local server token for development')
   }, 15_000)
 })

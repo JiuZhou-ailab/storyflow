@@ -3,15 +3,39 @@
 // pos: Shared onboarding contract for provider selection and credential forms
 
 import type { CustomEndpointApi, CustomEndpointConfig } from '@config/llm-connections'
+import type { ModelDefinition } from '@config/models'
 
-export const JIUZHOU_MANAGED_DEFAULT_MODELS = [
-  'gemini-3.5-flash',
-  'gpt-5.5',
-  'deepseek-v4-pro',
-] as const
+function managedModel(
+  id: string,
+  name: string,
+  supportsThinking: boolean,
+): ModelDefinition {
+  return {
+    id,
+    name,
+    shortName: name,
+    description: '',
+    provider: 'pi',
+    contextWindow: 131_072,
+    supportsThinking,
+  }
+}
+
+export const JIUZHOU_MANAGED_DEFAULT_CONNECTION_MODELS: ModelDefinition[] = [
+  managedModel('gpt-5.5', 'GPT-5.5', true),
+  managedModel('gpt-5.6-sol', 'GPT-5.6 Sol', true),
+  managedModel('gpt-5.6-terra', 'GPT-5.6 Terra', true),
+  managedModel('gpt-5.6-luna', 'GPT-5.6 Luna', true),
+  managedModel('gemini-3.5-flash', 'Gemini 3.5 Flash', false),
+  managedModel('deepseek-v4-pro', 'DeepSeek V4 Pro', false),
+  managedModel('deepseek-v4-flash', 'DeepSeek V4 Flash', false),
+]
+
+export const JIUZHOU_MANAGED_DEFAULT_MODELS =
+  JIUZHOU_MANAGED_DEFAULT_CONNECTION_MODELS.map(model => model.id)
 
 export const JIUZHOU_MANAGED_DEFAULT_BASE_URL =
-  'https://gateway.ai.cloudflare.com/v1/ec286cbbbae1647af670efd1b3289631/default/custom-wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4'
+  'https://storyflow-model.zjding.com/v1'
 
 export const JIUZHOU_MANAGED_DEFAULT_MODEL = 'gpt-5.5'
 export const JIUZHOU_MANAGED_DEFAULT_API: CustomEndpointApi = 'openai-completions'
@@ -19,7 +43,7 @@ export const JIUZHOU_MANAGED_DEFAULT_API: CustomEndpointApi = 'openai-completion
 export const JIUZHOU_MANAGED_DEFAULT_SETUP = {
   baseUrl: JIUZHOU_MANAGED_DEFAULT_BASE_URL,
   connectionDefaultModel: JIUZHOU_MANAGED_DEFAULT_MODEL,
-  models: [...JIUZHOU_MANAGED_DEFAULT_MODELS],
+  models: JIUZHOU_MANAGED_DEFAULT_CONNECTION_MODELS.map(model => ({ ...model })),
   customEndpoint: { api: JIUZHOU_MANAGED_DEFAULT_API } satisfies CustomEndpointConfig,
 }
 

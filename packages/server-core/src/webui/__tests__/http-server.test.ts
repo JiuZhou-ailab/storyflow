@@ -6,11 +6,13 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { jwtVerify } from 'jose'
 import { startWebuiHttpServer } from '../http-server'
 import type { FeishuAuthConfig, FeishuOAuthClient, FeishuUserInfo } from '../feishu-auth'
 import type { NeonAuthConfig } from '../neon-auth'
 
 const SECRET = 'test-server-secret'
+const MODEL_ACCESS_SECRET = 'test-model-access-secret'
 const PASSWORD = 'test-password'
 const TEMP_DIRS: string[] = []
 const SERVERS: Array<{ stop: () => void }> = []
@@ -39,10 +41,7 @@ async function createServer(overrides?: {
   feishuAuth?: FeishuAuthConfig
   neonAuth?: NeonAuthConfig
   passwordAuthEnabled?: boolean
-  clientGatewayToken?: string
-  clientGatewayJwtSecret?: string
-  clientGatewayTokenTtlSeconds?: number
-  clientGatewayConnectionSlugs?: string[]
+  modelAccessTokenSecret?: string | null
 }) {
   const webuiDir = createTestWebuiDir()
   const server = await startWebuiHttpServer({
@@ -59,10 +58,9 @@ async function createServer(overrides?: {
     feishuAuth: overrides?.feishuAuth,
     neonAuth: overrides?.neonAuth,
     passwordAuthEnabled: overrides?.passwordAuthEnabled,
-    clientGatewayToken: overrides?.clientGatewayToken,
-    clientGatewayJwtSecret: overrides?.clientGatewayJwtSecret,
-    clientGatewayTokenTtlSeconds: overrides?.clientGatewayTokenTtlSeconds,
-    clientGatewayConnectionSlugs: overrides?.clientGatewayConnectionSlugs,
+    modelAccessTokenSecret: overrides?.modelAccessTokenSecret === null
+      ? undefined
+      : overrides?.modelAccessTokenSecret ?? MODEL_ACCESS_SECRET,
   })
 
   SERVERS.push(server)
@@ -72,6 +70,20 @@ async function createServer(overrides?: {
     baseUrl: `http://127.0.0.1:${server.port}`,
     webuiDir,
   }
+}
+
+async function verifyModelAccessToken(token: unknown) {
+  expect(typeof token).toBe('string')
+  const { payload } = await jwtVerify(
+    token as string,
+    new TextEncoder().encode(MODEL_ACCESS_SECRET),
+    {
+      algorithms: ['HS256'],
+      issuer: 'storyflow-auth-broker',
+      audience: 'storyflow-model-gateway',
+    },
+  )
+  return payload
 }
 
 function extractSessionCookie(res: Response): string {
@@ -731,7 +743,9 @@ describe('startWebuiHttpServer', () => {
       },
     })
     expect(typeof body.appSessionToken).toBe('string')
-    expect(body.gatewayToken).toBeUndefined()
+    const modelAccess = await verifyModelAccessToken(body.modelAccessToken)
+    expect(modelAccess.sub).toBe('feishu:ou_desktop')
+    expect(modelAccess.model_tier).toBe('pro')
     expect(exchangeCalls).toEqual([{
       code: 'desktop-code',
       redirectUri: 'http://localhost:6477/callback',
@@ -763,16 +777,14 @@ describe('startWebuiHttpServer', () => {
       },
     })
     expect(typeof body.appSessionToken).toBe('string')
-    expect(body.gatewayToken).toBeUndefined()
+    const modelAccess = await verifyModelAccessToken(body.modelAccessToken)
+    expect(modelAccess.sub).toBe('neon:neon_user_123')
+    expect(modelAccess.model_tier).toBe('standard')
   })
 
-  it('ignores deprecated gateway token options during desktop client auth exchange', async () => {
+  it('keeps product sessions and model access tokens as separate credentials', async () => {
     const { baseUrl } = await createServer({
       neonAuth: createNeonAuthConfig(),
-      clientGatewayToken: 'cfut-upstream-token',
-      clientGatewayJwtSecret: 'broker-signing-secret',
-      clientGatewayTokenTtlSeconds: 60,
-      clientGatewayConnectionSlugs: ['wangsu-default'],
     })
 
     const res = await fetch(`${baseUrl}/api/client-auth/neon/exchange`, {
@@ -785,12 +797,14 @@ describe('startWebuiHttpServer', () => {
     expect(res.status).toBe(200)
     const body = await res.json() as Record<string, unknown>
     expect(typeof body.appSessionToken).toBe('string')
-    expect(body.gatewayToken).toBeUndefined()
+    expect(typeof body.modelAccessToken).toBe('string')
+    expect(body.modelAccessToken).not.toBe(body.appSessionToken)
   })
 
-  it('does not return a model gateway token from desktop client auth exchanges', async () => {
+  it('can omit model access tokens when the local server is not configured as a model broker', async () => {
     const { baseUrl } = await createServer({
       neonAuth: createNeonAuthConfig(),
+      modelAccessTokenSecret: null,
     })
 
     const res = await fetch(`${baseUrl}/api/client-auth/neon/exchange`, {
@@ -803,7 +817,7 @@ describe('startWebuiHttpServer', () => {
     expect(res.status).toBe(200)
     const body = await res.json() as Record<string, unknown>
     expect(body.appSessionToken).toBeTruthy()
-    expect(body.gatewayToken).toBeUndefined()
+    expect(body.modelAccessToken).toBeUndefined()
   })
 
   it('requires registration for unregistered external Feishu users', async () => {

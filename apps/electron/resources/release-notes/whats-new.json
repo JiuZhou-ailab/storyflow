@@ -1,19 +1,19 @@
 {
-  "version": "0.9.42",
-  "digest": "ef96e6a6bec26609fa4964e74b44c111a3ffd6e08be4ae16bfcc0949a1c0fbba",
-  "generatedAt": "2026-07-24T08:06:09.488Z",
-  "title": "What is new in v0.9.42",
-  "summary": "这一版让项目导航层级更清晰，文件操作与会话状态也会更稳定地反映真实结果。",
+  "version": "0.9.43",
+  "digest": "568d456fd18ea7547d38f783121488545533b806b764a43b1b0d95b9c0e2262a",
+  "generatedAt": "2026-07-25T13:29:12.876Z",
+  "title": "What is new in v0.9.43",
+  "summary": "这一版修复了新建分支异常和重复对话框，并让模型访问与思考强度选择更安全、清晰。",
   "highlights": [
-    "项目与最近对话更醒目：一级分组入口拥有更明确的视觉层级，方便快速定位当前工作范围。",
-    "子项保持紧凑：文件、文件夹和会话仍保留清晰的缩进与轻量样式，信息密度更合理。",
-    "删除后立即反映真实文件树：删除文件夹后，侧边栏不会被延迟刷新重新写回已删除内容。",
-    "状态切换更一致：会话状态更新失败时会回滚到正确状态，较早的异步结果不会覆盖较新的操作。"
+    "新建分支不再因元数据缺失失败：分支预检会获得正确的源会话路径，避免出现 missing branchFromSessionPath metadata。",
+    "始终保持单一对话框：创建分支会复用当前聚焦的对话面板，不再被旧参数打开第二个面板。",
+    "模型密钥不再随客户端分发：登录后由服务端按账号类型签发模型访问凭证，真实上游密钥只保留在网关中。",
+    "模型选择已同步：新增 GPT-5.6 Sol、Terra、Luna 与 DeepSeek V4 Flash，并保留 GPT-5.5、Gemini 3.5 Flash 和 DeepSeek V4 Pro。"
   ],
-  "accentColor": "#af1d35",
+  "accentColor": "#8c7317",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 5,
-    "userVisibleCommitCount": 0
+    "commitCount": 8,
+    "userVisibleCommitCount": 2
   }
 }

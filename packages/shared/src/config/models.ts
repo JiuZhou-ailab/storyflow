@@ -1,3 +1,7 @@
+// input: Provider model IDs and built-in model metadata
+// output: Canonical model definitions, names, capabilities, and lookup helpers
+// pos: Shared model catalog and display contract for all application surfaces
+
 /**
  * Centralized Model Registry
  *
@@ -274,19 +278,9 @@ export function getModelById(modelId: string): ModelDefinition | undefined {
 export function getModelDisplayName(modelId: string): string {
   const model = getModelById(modelId);
   if (model) return model.name;
-  // Fallback: normalize Bedrock-native IDs, then strip prefix and date suffix
-  // e.g., "claude-opus-4-5-20251101" → "Opus 4.5"
-  const normalized = bedrockToBareId(normalizeDeprecatedModelId(modelId));
-  const stripped = normalized
-    .replace('claude-', '')
-    .replace(/-\d{8}$/, '');  // Remove date suffix
-  // Split on dashes, capitalize first part, join version parts with dots
-  const parts = stripped.split('-');
-  const first = parts[0];
-  if (!first) return modelId;
-  const name = first.charAt(0).toUpperCase() + first.slice(1);
-  const version = parts.slice(1).join('.');
-  return version ? `${name} ${version}` : name;
+  // Unknown custom models have no trustworthy display metadata.
+  // Preserve the exact ID instead of guessing brand casing or token boundaries.
+  return modelId;
 }
 
 /**
@@ -295,19 +289,7 @@ export function getModelDisplayName(modelId: string): string {
 export function getModelShortName(modelId: string): string {
   const model = getModelById(modelId);
   if (model) return model.shortName;
-  // For provider-prefixed IDs (e.g. "openai/gpt-5"), show just the model part
-  if (modelId.includes('/')) {
-    return modelId.split('/').pop() || modelId;
-  }
-  // Fallback: normalize Bedrock-native IDs, then humanize (same logic as getModelDisplayName)
-  const normalized = bedrockToBareId(normalizeDeprecatedModelId(modelId));
-  const stripped = normalized.replace('claude-', '').replace(/-\d{8}$/, '');
-  const parts = stripped.split('-');
-  const first = parts[0];
-  if (!first) return modelId;
-  const name = first.charAt(0).toUpperCase() + first.slice(1);
-  const version = parts.slice(1).join('.');
-  return version ? `${name} ${version}` : name;
+  return modelId;
 }
 
 /**

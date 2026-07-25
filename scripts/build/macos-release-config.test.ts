@@ -101,8 +101,12 @@ describe('macOS release configuration', () => {
 
   test('official release workflow validates versions and never builds Windows with dev runtime', () => {
     const workflow = readRepoFile('.github/workflows/release.yml');
+    const validateWorkflow = readRepoFile('.github/workflows/validate.yml');
 
     expect(workflow).toContain('bun run check-version');
+    expect(workflow).toContain("RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}");
+    expect(workflow).toContain('bun run test');
+    expect(validateWorkflow).toContain('bun run test');
     expect(workflow).toContain('run: bun run electron:dist:win');
     expect(workflow).not.toContain('run: bun run electron:dist:dev:win');
   });

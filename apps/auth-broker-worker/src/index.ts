@@ -1,7 +1,7 @@
 // input: Desktop client-auth exchange requests and Feishu/Neon identity provider responses
-// output: Public auth config and verified desktop login identity
+// output: Public auth config, verified desktop identity, and role-scoped model access JWT
 // pos: HTTPS auth broker for packaged desktop login without shipping server secrets
-import { createRemoteJWKSet, customFetch, jwtVerify, type JWTPayload } from 'jose'
+import { createRemoteJWKSet, customFetch, jwtVerify, SignJWT, type JWTPayload } from 'jose'
 
 export interface Env {
   CRAFT_WEBUI_FEISHU_APP_ID?: string
@@ -16,6 +16,9 @@ export interface Env {
   CRAFT_WEBUI_NEON_AUTH_ISSUER?: string
   CRAFT_WEBUI_NEON_AUTH_AUDIENCE?: string
   CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN?: string
+  STORYFLOW_GATEWAY_JWT_SECRET?: string
+  STORYFLOW_GATEWAY_JWT_AUDIENCE?: string
+  STORYFLOW_GATEWAY_JWT_ISSUER?: string
 }
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
@@ -39,6 +42,9 @@ interface NeonIdentity {
 
 const DEFAULT_FEISHU_AUTH_BASE_URL = 'https://accounts.feishu.cn/open-apis/authen/v1/authorize'
 const DEFAULT_FEISHU_API_BASE_URL = 'https://open.feishu.cn'
+const DEFAULT_GATEWAY_AUDIENCE = 'storyflow-model-gateway'
+const DEFAULT_GATEWAY_ISSUER = 'storyflow-auth-broker'
+const MODEL_ACCESS_TOKEN_TTL_SECONDS = 86_400
 
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
@@ -105,6 +111,9 @@ async function exchangeFeishuCode(
     return Response.json({ error: 'Feishu redirect URI must be a loopback callback' }, { status: 400 })
   }
   if (!codeVerifier) return Response.json({ error: 'Feishu PKCE code verifier is required' }, { status: 400 })
+  if (!readString(env.STORYFLOW_GATEWAY_JWT_SECRET)) {
+    return Response.json({ error: 'Model access token signing is not configured' }, { status: 503 })
+  }
 
   try {
     const apiBaseUrl = readString(env.CRAFT_WEBUI_FEISHU_API_BASE_URL) ?? DEFAULT_FEISHU_API_BASE_URL
@@ -153,10 +162,12 @@ async function exchangeFeishuCode(
       ...(email ? { email } : {}),
       ...(user.name ? { name: user.name } : {}),
     }
+    const modelAccessToken = await createModelAccessToken(env, `feishu:${user.openId}`, 'pro')
 
     return Response.json({
       ok: true,
       user: publicUser,
+      modelAccessToken,
     })
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : 'Feishu exchange failed' }, { status: 401 })
@@ -178,6 +189,9 @@ async function exchangeNeonToken(
   if (!token) {
     return Response.json({ error: 'Neon Auth token is required' }, { status: 400 })
   }
+  if (!readString(env.STORYFLOW_GATEWAY_JWT_SECRET)) {
+    return Response.json({ error: 'Model access token signing is not configured' }, { status: 503 })
+  }
 
   try {
     const origin = new URL(baseUrl).origin
@@ -187,6 +201,7 @@ async function exchangeNeonToken(
     const jwks = createRemoteJWKSet(new URL(jwksUrl), { [customFetch]: fetchImpl })
     const { payload } = await jwtVerify(token, jwks, { issuer, audience })
     const identity = normalizeNeonIdentity(payload)
+    const modelAccessToken = await createModelAccessToken(env, identity.subject, 'standard')
 
     return Response.json({
       ok: true,
@@ -197,10 +212,32 @@ async function exchangeNeonToken(
         ...(identity.emailVerified !== undefined ? { emailVerified: identity.emailVerified } : {}),
         ...(identity.name ? { name: identity.name } : {}),
       },
+      modelAccessToken,
     })
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : 'Invalid Neon Auth token' }, { status: 401 })
   }
+}
+
+async function createModelAccessToken(
+  env: Env,
+  subject: string,
+  modelTier: 'standard' | 'pro',
+): Promise<string> {
+  const secret = readString(env.STORYFLOW_GATEWAY_JWT_SECRET)
+  if (!secret) throw new Error('Model access token signing is not configured')
+
+  return new SignJWT({
+    scopes: ['model:chat'],
+    model_tier: modelTier,
+  })
+    .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+    .setIssuer(readString(env.STORYFLOW_GATEWAY_JWT_ISSUER) ?? DEFAULT_GATEWAY_ISSUER)
+    .setAudience(readString(env.STORYFLOW_GATEWAY_JWT_AUDIENCE) ?? DEFAULT_GATEWAY_AUDIENCE)
+    .setSubject(subject)
+    .setIssuedAt()
+    .setExpirationTime(`${MODEL_ACCESS_TOKEN_TTL_SECONDS}s`)
+    .sign(new TextEncoder().encode(secret))
 }
 
 function normalizeFeishuUser(raw: Record<string, unknown>): FeishuUserInfo {

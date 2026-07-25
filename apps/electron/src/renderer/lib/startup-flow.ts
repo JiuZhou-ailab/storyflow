@@ -1,8 +1,8 @@
-// input: Auth/setup completion state, window workspace, and project availability
-// output: Renderer app state after setup has completed
+// input: Auth/setup completion state, window workspace, and project catalog metadata
+// output: Renderer app state and the most recent non-archived startup project
 // pos: Central startup decision point before project or workspace UI is shown
 
-export type PostSetupAppState = 'ready' | 'project-hub' | 'workspace-picker' | 'workspace-creation'
+export type PostSetupAppState = 'ready' | 'project-hub' | 'workspace-picker'
 
 export function resolvePostSetupAppState(input: {
   windowWorkspaceId: string | null | undefined
@@ -10,4 +10,12 @@ export function resolvePostSetupAppState(input: {
 }): PostSetupAppState {
   if (input.windowWorkspaceId) return 'ready'
   return 'project-hub'
+}
+
+export function selectStartupWorkspaceId(
+  workspaces: Array<{ id: string; lastAccessedAt?: number; archivedAt?: number }>,
+): string | null {
+  return workspaces
+    .filter(workspace => !workspace.archivedAt)
+    .sort((left, right) => (right.lastAccessedAt ?? 0) - (left.lastAccessedAt ?? 0))[0]?.id ?? null
 }

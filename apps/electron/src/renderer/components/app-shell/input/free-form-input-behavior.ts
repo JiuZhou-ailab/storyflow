@@ -8,6 +8,8 @@ export interface InputCompositionMeta {
   isComposing?: boolean
   nativeIsComposing?: boolean
   inputType?: string
+  inputData?: string | null
+  isPostCompositionInput?: boolean
 }
 
 export interface AutoCapitalisationOptions {
@@ -46,6 +48,7 @@ export async function readAttachmentBatch<TFile>(
 export function isCompositionInput(meta?: InputCompositionMeta): boolean {
   if (!meta) return false
   if (meta.isComposing || meta.nativeIsComposing) return true
+  if (meta.isPostCompositionInput) return true
 
   return meta.inputType === 'insertCompositionText'
     || meta.inputType === 'deleteCompositionText'

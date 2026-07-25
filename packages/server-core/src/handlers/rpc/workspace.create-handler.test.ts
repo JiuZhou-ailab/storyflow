@@ -2,11 +2,12 @@
 // output: Regression coverage for blank roots, remote options, and stale default reuse
 // pos: Guards the server boundary between blank workspace storage and in-memory sessions
 
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it, mock } from 'bun:test'
+import { beforeAll, describe, expect, it, mock } from 'bun:test'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { CONFIG_DIR, ensureConfigDefaults } from '../../../../shared/src/config/storage.ts'
 import {
   createWorkspaceAtPath,
   isValidWorkspace,
@@ -55,6 +56,11 @@ mock.module('@craft-agent/shared/config', () => ({
 }))
 
 const { registerWorkspaceCoreHandlers } = await import('./workspace')
+
+beforeAll(() => {
+  mkdirSync(CONFIG_DIR, { recursive: true })
+  ensureConfigDefaults()
+})
 
 function createWorkspaceHarness() {
   const handlers = new Map<string, HandlerFn>()

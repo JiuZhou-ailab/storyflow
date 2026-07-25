@@ -245,11 +245,15 @@ export const piDriver: ProviderDriver = {
       const supportsImages = typeof m.supportsImages === 'boolean'
         ? m.supportsImages
         : undefined;
-      if (m.contextWindow || supportsImages !== undefined) {
+      const supportsThinking = typeof m.supportsThinking === 'boolean'
+        ? m.supportsThinking
+        : undefined;
+      if (m.contextWindow || supportsImages !== undefined || supportsThinking !== undefined) {
         return {
           id: m.id,
           ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
           ...(supportsImages !== undefined ? { supportsImages } : {}),
+          ...(supportsThinking !== undefined ? { supportsThinking } : {}),
         };
       }
       return m.id;

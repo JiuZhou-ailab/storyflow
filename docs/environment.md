@@ -39,8 +39,7 @@ release builds. Release builds read GitHub repository vars/secrets.
 ## Packaged Desktop Build
 
 These values are read while building Electron and are baked into the main
-process bundle. Only public client bootstrap values belong here, except for the
-managed model gateway token, which must come from GitHub Actions secrets.
+process bundle. Only public client bootstrap values belong here.
 
 GitHub repository vars:
 
@@ -62,7 +61,6 @@ VITE_STORYFLOW_SKILLS_MARKET_ENABLED=false
 GitHub repository secrets:
 
 ```dotenv
-CRAFT_CLIENT_GATEWAY_TOKEN=cfut_...
 CSC_LINK=...
 CSC_KEY_PASSWORD=...
 APPLE_API_KEY_BASE64=...
@@ -112,11 +110,14 @@ CRAFT_WEBUI_AUTH_DATABASE_URL=...
 CRAFT_WEBUI_NEON_AUTH_BASE_URL=...
 CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN=users.craft.invalid
 CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED=false
+STORYFLOW_GATEWAY_JWT_SECRET=...
 ```
 
 The desktop app asks the broker for public Feishu config and sends OAuth codes
 back to the broker. The Feishu app secret and user allow policy belong on the
-broker side only.
+broker side only. After verifying either Feishu or Neon identity, the broker
+uses `STORYFLOW_GATEWAY_JWT_SECRET` to sign the role-scoped model access token
+returned to the desktop.
 
 `CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED` controls the standalone Web UI email
 registration endpoint and sign-up tab. Email sign-in remains available when it
@@ -124,6 +125,21 @@ is `false`; sign-up requests return 403 before contacting Neon Auth. Neon Auth
 itself must still be configured in the Neon Console or API: enable email/password
 sign-up, pick the verification policy, and configure email delivery. Neon shared
 email supports verification codes; verification links require a custom provider.
+
+## Model Gateway Worker
+
+The model gateway is the only component that receives the NewAPI credential:
+
+```dotenv
+STORYFLOW_GATEWAY_JWT_SECRET=...
+NEWAPI_API_KEY=...
+NEWAPI_UPSTREAM_BASE_URL=https://jzapi.duanju.com
+```
+
+`STORYFLOW_GATEWAY_JWT_SECRET` must match the auth broker secret.
+`NEWAPI_API_KEY` and the signing secret are Cloudflare Worker secrets;
+`NEWAPI_UPSTREAM_BASE_URL` is a non-secret Worker variable. None of these values
+belong in Electron build environment variables or GitHub release secrets.
 
 ## Electron Runtime Internals
 

@@ -23,7 +23,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.3.10"
+          bun-version: "1.3.14"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -34,4 +34,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run validation suite
-        run: bun run validate:ci
+        run: |
+          bun run validate:ci
+          bun run test

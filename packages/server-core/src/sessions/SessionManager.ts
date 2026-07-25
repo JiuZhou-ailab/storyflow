@@ -3307,6 +3307,7 @@ export class SessionManager implements ISessionManager {
       const hasPiTranscript = provider === 'pi' && hasPersistedPiTranscript(sessionPath)
       const needsRuntimeMigration = provider === 'pi' && needsPiRuntimeMigrationSeed({
         agentRuntime: managed.agentRuntime,
+        branchContextStrategy: managed.branchContextStrategy,
         hasPiTranscript,
         sdkSessionId: managed.sdkSessionId,
         messageCount: managed.messages.length,

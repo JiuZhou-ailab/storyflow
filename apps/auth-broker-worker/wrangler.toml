@@ -5,3 +5,7 @@ workers_dev = true
 routes = [
   { pattern = "storyflow-auth.zjding.com", custom_domain = true },
 ]
+
+[vars]
+STORYFLOW_GATEWAY_JWT_AUDIENCE = "storyflow-model-gateway"
+STORYFLOW_GATEWAY_JWT_ISSUER = "storyflow-auth-broker"

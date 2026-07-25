@@ -1,5 +1,5 @@
-// input: Isolated global configs, tracked project roots, and legacy provider records
-// output: Integration coverage for startup migrations and non-destructive project-root resolution
+// input: Isolated global configs, tracked/archived project roots, and legacy provider records
+// output: Integration coverage for startup migrations and non-destructive project catalog behavior
 // pos: Guards config startup from mutating user-owned project directories
 
 import { describe, expect, it } from 'bun:test'
@@ -149,6 +149,27 @@ function runWorkspaceLookup(configDir: string, workspaceId: string): any {
   return JSON.parse(run.stdout.toString())
 }
 
+function runSetWorkspaceArchived(configDir: string, workspaceId: string, archived: boolean) {
+  const run = Bun.spawnSync([
+    process.execPath,
+    '--eval',
+    `import { setWorkspaceArchived } from '${STORAGE_MODULE_PATH}'; console.log(setWorkspaceArchived(${JSON.stringify(workspaceId)}, ${archived}));`,
+  ], {
+    env: {
+      ...process.env,
+      CRAFT_CONFIG_DIR: configDir,
+    },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+
+  if (run.exitCode !== 0) {
+    throw new Error(
+      `setWorkspaceArchived subprocess failed (exit ${run.exitCode})\nstdout:\n${run.stdout.toString()}\nstderr:\n${run.stderr.toString()}`,
+    )
+  }
+}
+
 function readPiApiKeyConnection(configPath: string): any {
   const migrated = JSON.parse(readFileSync(configPath, 'utf-8'))
   return migrated.llmConnections.find((c: any) => c.slug === 'pi-api-key')
@@ -159,6 +180,17 @@ function getModelIds(connection: any): string[] {
 }
 
 describe('startup migration (integration)', () => {
+  it('archives and restores a project without removing its catalog entry', () => {
+    const { configDir, workspaceRoot, configPath } = setupWorkspaceConfigDir()
+    writeRootConfig(configPath, workspaceRoot, [])
+
+    runSetWorkspaceArchived(configDir, 'ws-1', true)
+    expect(runGetWorkspaces(configDir)[0]?.archivedAt).toBeNumber()
+
+    runSetWorkspaceArchived(configDir, 'ws-1', false)
+    expect(runGetWorkspaces(configDir)[0]?.archivedAt).toBeUndefined()
+  })
+
   it('keeps a deleted local project root missing until the user explicitly recreates it', () => {
     const configDir = mkdtempSync(join(tmpdir(), 'craft-agent-missing-root-'))
     const workspaceRoot = join(configDir, 'deleted-local-project')

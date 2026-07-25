@@ -1,3 +1,7 @@
+// input: Renderer ElectronAPI methods and the runtime transport channel map
+// output: Compile-time and runtime parity checks for routed and direct IPC methods
+// pos: Guards preload transport wiring from drifting out of the renderer contract
+
 import { describe, it, expect } from 'bun:test'
 import type { ElectronAPI } from '../../shared/types'
 import { CHANNEL_MAP } from '../channel-map'
@@ -23,6 +27,7 @@ type ApiToChannelMapKeys = Exclude<
   | 'isChannelAvailable'
   | 'getSystemWarnings' // reads env var set at startup — no IPC needed
   | 'relaunchApp' // direct IPC to main process — not through WS RPC
+  | 'setWorkspaceArchived' // direct IPC to main process — updates local project catalog metadata
   | 'removeWorkspace' // direct IPC to main process — modifies local config
   | 'invokeOnServer' // direct IPC to main process — cross-server RPC
   | 'getClientAuthState' // direct IPC to main process — client startup auth state

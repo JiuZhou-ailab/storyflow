@@ -271,8 +271,7 @@ export async function seedBuiltinLlmConnectionFromDefaults(): Promise<boolean> {
   let credentialChanged = false;
   try {
     const manager = getCredentialManager();
-    const envApiKey = process.env.CRAFT_BUILTIN_LLM_API_KEY?.trim()
-      || process.env.CRAFT_CLIENT_GATEWAY_TOKEN?.trim();
+    const envApiKey = process.env.CRAFT_BUILTIN_LLM_API_KEY?.trim();
     const credentialsToSeed = new Map(
       (result.credentialsToSeed ?? [])
         .map(credential => [credential.connectionSlug, credential] as const),
@@ -871,10 +870,10 @@ export function getWorkspaces(): Workspace[] {
 
 export function getActiveWorkspace(): Workspace | null {
   const config = loadStoredConfig();
-  if (!config || !config.activeWorkspaceId) {
-    return config?.workspaces[0] || null;
-  }
-  return config.workspaces.find(w => w.id === config.activeWorkspaceId) || config.workspaces[0] || null;
+  if (!config) return null;
+  const active = config.workspaces.find(w => w.id === config.activeWorkspaceId);
+  if (active && !active.archivedAt) return active;
+  return config.workspaces.find(w => !w.archivedAt) ?? null;
 }
 
 /**
@@ -913,10 +912,30 @@ export function setActiveWorkspace(workspaceId: string): void {
   if (!config) return;
 
   const workspace = config.workspaces.find(w => w.id === workspaceId);
-  if (!workspace) return;
+  if (!workspace || workspace.archivedAt) return;
 
   config.activeWorkspaceId = workspaceId;
   saveConfig(config);
+}
+
+export function setWorkspaceArchived(workspaceId: string, archived: boolean): boolean {
+  const config = loadStoredConfig();
+  if (!config) return false;
+
+  const workspace = config.workspaces.find(w => w.id === workspaceId);
+  if (!workspace) return false;
+
+  if (archived) {
+    workspace.archivedAt = Date.now();
+    if (config.activeWorkspaceId === workspaceId) {
+      config.activeWorkspaceId = config.workspaces.find(w => !w.archivedAt)?.id ?? null;
+    }
+  } else {
+    delete workspace.archivedAt;
+  }
+
+  saveConfig(config);
+  return true;
 }
 
 /**
@@ -931,7 +950,7 @@ export async function switchWorkspaceAtomic(workspaceId: string): Promise<{ work
   if (!config) return null;
 
   const workspace = config.workspaces.find(w => w.id === workspaceId);
-  if (!workspace) return null;
+  if (!workspace || workspace.archivedAt) return null;
 
   // Get or create the latest session for this workspace
   const session = await getOrCreateLatestSession(workspace.rootPath);

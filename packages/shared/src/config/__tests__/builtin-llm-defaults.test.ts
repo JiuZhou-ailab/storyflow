@@ -14,6 +14,15 @@ const STORAGE_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', 'storage.t
 const UTILS_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', '..', 'utils', 'index.ts')).href
 const CREDENTIALS_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', '..', 'credentials', 'index.ts')).href
 const BUNDLED_DEFAULTS_PATH = join(import.meta.dir, '../../../../../apps/electron/resources/config-defaults.json')
+const EXPECTED_MANAGED_MODEL_NAMES = [
+  'GPT-5.5',
+  'GPT-5.6 Sol',
+  'GPT-5.6 Terra',
+  'GPT-5.6 Luna',
+  'Gemini 3.5 Flash',
+  'DeepSeek V4 Pro',
+  'DeepSeek V4 Flash',
+]
 
 function makeConfig(overrides: Partial<StoredConfig> = {}): StoredConfig {
   return {
@@ -81,7 +90,15 @@ function makePluralDefaults(): ConfigDefaults {
         apiKey: 'wangsu-secret',
         connection: {
           ...wangsu.connection!,
-          models: ['gemini-3.5-flash', 'gpt-5.5', 'deepseek-v4-pro'],
+          models: [
+            'gpt-5.5',
+            'gpt-5.6-sol',
+            'gpt-5.6-terra',
+            'gpt-5.6-luna',
+            'gemini-3.5-flash',
+            'deepseek-v4-pro',
+            'deepseek-v4-flash',
+          ],
         },
       },
       {
@@ -107,34 +124,75 @@ describe('builtin LLM connection defaults', () => {
     expect(defaults.defaults.autoCapitalisation).toBe(false)
   })
 
-  it('keeps the bundled managed gateway on the direct Wangsu custom provider', () => {
+  it('routes the bundled managed connection through the product model gateway', () => {
     const defaults = JSON.parse(readFileSync(BUNDLED_DEFAULTS_PATH, 'utf-8')) as ConfigDefaults
     const connections = defaults.builtinLlmConnections?.map(entry => entry.connection) ?? []
     const connection = connections.find(entry => entry?.slug === 'wangsu-default')
     const legacyConnection = defaults.builtinLlmConnection?.connection
 
     expect(connections.map(entry => entry?.slug)).toEqual(['wangsu-default'])
-    expect(JSON.stringify(defaults)).not.toContain('storyflow-model-gateway')
+    expect(JSON.stringify(defaults)).not.toContain('gateway.ai.cloudflare.com')
     expect(connection).toMatchObject({
       slug: 'wangsu-default',
       providerType: 'pi_compat',
-      baseUrl: 'https://gateway.ai.cloudflare.com/v1/ec286cbbbae1647af670efd1b3289631/default/custom-wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4',
+      baseUrl: 'https://storyflow-model.zjding.com/v1',
       defaultModel: 'gpt-5.5',
-      piAuthProvider: 'cloudflare-ai-gateway',
+      piAuthProvider: 'openai',
       customEndpoint: { api: 'openai-completions' },
     })
-    expect(connection?.models).toEqual([
-      'gemini-3.5-flash',
+    const modelIds = connection?.models?.map(model => typeof model === 'string' ? model : model.id)
+    const modelNames = connection?.models?.map(model => typeof model === 'string' ? model : model.name)
+    const thinkingModelIds = connection?.models
+      ?.filter(model => typeof model !== 'string' && model.supportsThinking === true)
+      .map(model => typeof model === 'string' ? model : model.id)
+
+    expect(connection?.models?.every(model => typeof model !== 'string')).toBe(true)
+    expect(modelIds).toEqual([
       'gpt-5.5',
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+      'gemini-3.5-flash',
       'deepseek-v4-pro',
+      'deepseek-v4-flash',
+    ])
+    expect(modelNames).toEqual(EXPECTED_MANAGED_MODEL_NAMES)
+    expect(thinkingModelIds).toEqual([
+      'gpt-5.5',
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
     ])
     expect(legacyConnection).toMatchObject({
       slug: 'wangsu-default',
-      baseUrl: 'https://gateway.ai.cloudflare.com/v1/ec286cbbbae1647af670efd1b3289631/default/custom-wangsu/v1/17d9ef9735d84a4d37fb44efa49d8148/yewu4',
+      baseUrl: 'https://storyflow-model.zjding.com/v1',
       defaultModel: 'gpt-5.5',
-      piAuthProvider: 'cloudflare-ai-gateway',
+      piAuthProvider: 'openai',
       customEndpoint: { api: 'openai-completions' },
     })
+    expect(legacyConnection?.models).toEqual(connection?.models)
+  })
+
+  it('upgrades persisted managed model IDs to the canonical bundled catalog', () => {
+    const defaults = JSON.parse(readFileSync(BUNDLED_DEFAULTS_PATH, 'utf-8')) as ConfigDefaults
+    const bundled = defaults.builtinLlmConnections?.[0]?.connection
+    expect(bundled).toBeDefined()
+
+    const config = makeConfig({
+      defaultLlmConnection: 'wangsu-default',
+      llmConnections: [{
+        ...bundled!,
+        models: bundled!.models?.map(model => typeof model === 'string' ? model : model.id),
+      }],
+    })
+
+    const result = applyBuiltinLlmConnectionDefaults(config, defaults)
+    const models = config.llmConnections?.[0]?.models
+
+    expect(result.changed).toBe(true)
+    expect(models?.every(model => typeof model !== 'string')).toBe(true)
+    expect(models?.map(model => typeof model === 'string' ? model : model.name))
+      .toEqual(EXPECTED_MANAGED_MODEL_NAMES)
   })
 
   it('adds multiple bundled managed connections and keeps the first one as the default', () => {
@@ -153,9 +211,13 @@ describe('builtin LLM connection defaults', () => {
     expect(config.defaultLlmConnection).toBe('wangsu-default')
     expect(config.llmConnections?.map(c => c.slug)).toEqual(['wangsu-default', 'backup-default'])
     expect(config.llmConnections?.find(c => c.slug === 'wangsu-default')?.models).toEqual([
-      'gemini-3.5-flash',
       'gpt-5.5',
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+      'gemini-3.5-flash',
       'deepseek-v4-pro',
+      'deepseek-v4-flash',
     ])
     expect(config.llmConnections?.find(c => c.slug === 'backup-default')?.models).toEqual(['backup-model'])
     expect(JSON.stringify(config)).not.toContain('wangsu-secret')
@@ -222,6 +284,7 @@ describe('builtin LLM connection defaults', () => {
       llmConnections: [{
         ...makeDefaults().builtinLlmConnection!.connection!,
         name: '网宿',
+        models: ['legacy-model'],
         piAuthProvider: 'anthropic',
         hidden: true,
         managed: true,
@@ -240,6 +303,7 @@ describe('builtin LLM connection defaults', () => {
 
     expect(result.changed).toBe(true)
     expect(config.llmConnections?.[0]?.name).toBe('JiuZhou-AI')
+    expect(config.llmConnections?.[0]?.models).toEqual(['internal-model'])
     expect(config.llmConnections?.[0]?.piAuthProvider).toBe('openai')
     expect(config.llmConnections?.[0]?.hidden).toBe(false)
     expect(result.credentialToSeed).toBeUndefined()
@@ -321,60 +385,6 @@ describe('builtin LLM connection defaults', () => {
     expect(readFileSync(join(configDir, 'config-defaults.json'), 'utf-8')).not.toContain('env-managed-secret')
   })
 
-  it('seeds the direct Cloudflare gateway credential from CRAFT_CLIENT_GATEWAY_TOKEN when the bundle omits a key', () => {
-    const configDir = mkdtempSync(join(tmpdir(), 'craft-agent-client-gateway-env-'))
-    const bundledRoot = join(configDir, 'bundle')
-    const bundledResources = join(bundledRoot, 'resources')
-    mkdirSync(bundledResources, { recursive: true })
-
-    writeFileSync(
-      join(configDir, 'config.json'),
-      JSON.stringify({
-        workspaces: [],
-        activeWorkspaceId: null,
-        activeSessionId: null,
-        llmConnections: [],
-      }, null, 2),
-      'utf-8',
-    )
-    writeFileSync(
-      join(bundledResources, 'config-defaults.json'),
-      JSON.stringify(makeDefaults({ apiKey: '' }), null, 2),
-      'utf-8',
-    )
-
-    const run = Bun.spawnSync([
-      process.execPath,
-      '--eval',
-      `
-        import { setBundledAssetsRoot } from '${UTILS_MODULE_PATH}';
-        import { seedBuiltinLlmConnectionFromDefaults } from '${STORAGE_MODULE_PATH}';
-        import { getCredentialManager } from '${CREDENTIALS_MODULE_PATH}';
-        setBundledAssetsRoot(${JSON.stringify(bundledRoot)});
-        await seedBuiltinLlmConnectionFromDefaults();
-        const key = await getCredentialManager().getLlmApiKey('wangsu-default');
-        console.log(key ?? '');
-      `,
-    ], {
-      env: {
-        ...process.env,
-        CRAFT_CONFIG_DIR: configDir,
-        CRAFT_BUILTIN_LLM_API_KEY: '',
-        CRAFT_CLIENT_GATEWAY_TOKEN: 'direct-cloudflare-token',
-      },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-
-    if (run.exitCode !== 0) {
-      throw new Error(`client gateway seed subprocess failed:\n${run.stderr.toString()}`)
-    }
-
-    expect(run.stdout.toString().trim()).toBe('direct-cloudflare-token')
-    expect(readFileSync(join(configDir, 'config.json'), 'utf-8')).not.toContain('direct-cloudflare-token')
-    expect(readFileSync(join(configDir, 'config-defaults.json'), 'utf-8')).not.toContain('direct-cloudflare-token')
-  })
-
   it('seeds the credential from bundled defaults without copying the key to local config files', () => {
     const configDir = mkdtempSync(join(tmpdir(), 'craft-agent-builtin-'))
     const bundledRoot = join(configDir, 'bundle')
@@ -414,7 +424,6 @@ describe('builtin LLM connection defaults', () => {
         ...process.env,
         CRAFT_CONFIG_DIR: configDir,
         CRAFT_BUILTIN_LLM_API_KEY: '',
-        CRAFT_CLIENT_GATEWAY_TOKEN: '',
       },
       stdout: 'pipe',
       stderr: 'pipe',
@@ -480,7 +489,6 @@ describe('builtin LLM connection defaults', () => {
         ...process.env,
         CRAFT_CONFIG_DIR: configDir,
         CRAFT_BUILTIN_LLM_API_KEY: '',
-        CRAFT_CLIENT_GATEWAY_TOKEN: '',
       },
       stdout: 'pipe',
       stderr: 'pipe',

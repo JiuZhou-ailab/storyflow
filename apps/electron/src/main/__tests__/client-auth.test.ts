@@ -214,6 +214,7 @@ describe('client auth', () => {
           email: 'user@example.com',
         },
         appSessionToken: 'app-session-token',
+        modelAccessToken: 'model-access-token',
       },
     })
 
@@ -230,6 +231,20 @@ describe('client auth', () => {
         email: 'user@example.com',
       },
     })
+  })
+
+  it('does not restore a legacy required-auth session without model access', () => {
+    const service = createClientAuthService({ required: true }, {
+      initialSession: {
+        user: {
+          provider: 'neon',
+          userId: 'user-1',
+        },
+        appSessionToken: 'app-session-token',
+      },
+    })
+
+    expect(service.getState().authenticated).toBe(false)
   })
 
   it('persists and clears the desktop auth session around password sign-in', async () => {
@@ -444,7 +459,7 @@ describe('client auth', () => {
     expect(service.getState().authenticated).toBe(false)
   })
 
-  it('keeps Neon login separate from auth broker model credential exchange', async () => {
+  it('exchanges a verified Neon login for a standard model access token', async () => {
     const exchangedTokens: string[] = []
     const fakeNeonAuth: ClientAuthNeonService = {
       isConfigured: () => true,
@@ -468,6 +483,7 @@ describe('client auth', () => {
             email: 'user@example.com',
           },
           appSessionToken: 'app-session-token',
+          modelAccessToken: 'model-access-token',
         }
       },
       exchangeFeishuCode: async () => {
@@ -486,7 +502,8 @@ describe('client auth', () => {
 
     await service.signIn({ identifier: 'user@example.com', password: 'secret' })
 
-    expect(exchangedTokens).toEqual([])
+    expect(exchangedTokens).toEqual(['neon-jwt-token'])
+    expect(service.getState().authenticated).toBe(true)
   })
 
   it('clears the process-local identity on sign-out', async () => {
@@ -660,6 +677,7 @@ describe('client auth', () => {
             name: 'Broker User',
           },
           appSessionToken: 'app-session-token',
+          modelAccessToken: 'model-access-token',
         }
       },
     }
@@ -737,6 +755,7 @@ describe('client auth', () => {
           userId: 'ou_user',
         },
         appSessionToken: 'app-session-token',
+        modelAccessToken: 'model-access-token',
       }),
     }
     const service = createClientAuthService({
@@ -771,30 +790,6 @@ describe('client auth', () => {
 
     const openedUrl = new URL(openedUrls[0]!)
     expect(openedUrl.searchParams.get('client_id')).toBe('cli_user_deployment')
-  })
-
-  it('keeps sign-out separate from managed model credentials', async () => {
-    const fakeNeonAuth: ClientAuthNeonService = {
-      isConfigured: () => true,
-      getClientConfig: () => ({ enabled: true }),
-      authenticateWithEmailPassword: async () => ({ status: 'authenticated', token: 'jwt-token' }),
-      verifyToken: async () => ({
-        provider: 'neon',
-        userId: 'user-1',
-        subject: 'neon:user-1',
-      }),
-    }
-    const service = createClientAuthService({
-      required: true,
-      neonAuth: { baseUrl: 'https://auth.example.com' },
-    }, {
-      createNeonAuthService: () => fakeNeonAuth,
-    })
-
-    await service.signIn({ identifier: 'user@example.com', password: 'secret' })
-    await service.signOut()
-
-    expect(service.getState().authenticated).toBe(false)
   })
 
   it('rejects Feishu sign-in when the Feishu account requires registration', async () => {

@@ -1,6 +1,7 @@
-/**
- * Tests for model detection utilities in config/models.ts
- */
+// input: Built-in and custom provider model identifiers
+// output: Regression coverage for model detection and user-visible names
+// pos: Shared model catalog contract tests
+
 import { describe, it, expect } from 'bun:test';
 import {
   isClaudeModel,
@@ -11,6 +12,10 @@ import {
   getModelIdByShortName,
   normalizeDeprecatedModelId,
 } from '../src/config/models.ts';
+import {
+  setModelSupportsImages,
+  type LlmConnection,
+} from '../src/config/llm-connections.ts';
 
 describe('isClaudeModel', () => {
   // Direct Anthropic model IDs
@@ -69,29 +74,53 @@ describe('getModelShortName', () => {
     expect(getModelShortName('claude-haiku-4-5-20251001')).toBe('Haiku');
   });
 
-  it('strips provider prefix for slash-separated IDs', () => {
-    expect(getModelShortName('openai/gpt-5.4')).toBe('gpt-5.4');
-    expect(getModelShortName('anthropic/claude-sonnet-4')).toBe('claude-sonnet-4');
+  it('preserves unknown custom model IDs instead of guessing display names', () => {
+    const ids = [
+      'openai/gpt-5.4',
+      'gpt-5.4',
+      'glm-4.7',
+      'mistral',
+      'deepseek-r1',
+      'claude-sonnet-3-5-20241022',
+    ];
+
+    for (const id of ids) {
+      expect(getModelShortName(id)).toBe(id);
+      expect(getModelDisplayName(id)).toBe(id);
+    }
   });
 
-  it('preserves version numbers for custom endpoint models', () => {
-    expect(getModelShortName('gpt-5.4')).toBe('Gpt 5.4');
-    expect(getModelShortName('gpt-5.2')).toBe('Gpt 5.2');
-    expect(getModelShortName('glm-4.7')).toBe('Glm 4.7');
-  });
+  it('keeps an unknown custom model label stable across capability promotion', () => {
+    const modelId = 'vendor/custom-model-alpha';
+    const connection: LlmConnection = {
+      slug: 'custom',
+      name: 'Custom Endpoint',
+      providerType: 'pi_compat',
+      authType: 'api_key_with_endpoint',
+      baseUrl: 'http://localhost:8080',
+      customEndpoint: { api: 'openai-completions' },
+      models: [modelId],
+      createdAt: 1,
+    };
 
-  it('humanizes bare model names without versions', () => {
-    expect(getModelShortName('mistral')).toBe('Mistral');
-    expect(getModelShortName('gemma2')).toBe('Gemma2');
-  });
+    const promoted = setModelSupportsImages(connection, modelId, true).models?.[0];
+    expect(typeof promoted).toBe('object');
+    expect(typeof promoted === 'string' ? promoted : promoted?.name).toBe(modelId);
 
-  it('humanizes multi-part model names', () => {
-    expect(getModelShortName('mistral-large')).toBe('Mistral large');
-    expect(getModelShortName('deepseek-r1')).toBe('Deepseek r1');
-  });
-
-  it('strips date suffix for unknown claude models', () => {
-    expect(getModelShortName('claude-sonnet-3-5-20241022')).toBe('Sonnet 3.5');
+    const canonicalConnection: LlmConnection = {
+      ...connection,
+      models: [{
+        id: 'gpt-5.5',
+        name: 'GPT-5.5',
+        shortName: 'GPT-5.5',
+        description: '',
+        provider: 'pi',
+        contextWindow: 131_072,
+        supportsThinking: true,
+      }],
+    };
+    const updatedCanonical = setModelSupportsImages(canonicalConnection, 'gpt-5.5', true).models?.[0];
+    expect(typeof updatedCanonical === 'string' ? updatedCanonical : updatedCanonical?.name).toBe('GPT-5.5');
   });
 });
 

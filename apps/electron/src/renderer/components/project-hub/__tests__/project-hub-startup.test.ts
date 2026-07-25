@@ -1,6 +1,6 @@
 // input: Renderer App source
-// output: Static regression checks for popover-first project management startup
-// pos: Guards project-first startup without a full-page ProjectHub gallery
+// output: Static regression checks for direct-project startup and rail-owned project management
+// pos: Guards startup from reintroducing a duplicate full-page project gallery
 
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
@@ -11,10 +11,11 @@ const rendererHtmlSource = readFileSync(new URL('../../../index.html', import.me
 const mainSource = readFileSync(new URL('../../../../main/index.ts', import.meta.url), 'utf8')
 
 describe('ProjectHub startup integration', () => {
-  it('routes ordinary post-setup startup through the project manager surface', () => {
+  it('keeps the project catalog in the rail instead of a central manager surface', () => {
     expect(appSource).toContain("'project-hub'")
-    expect(appSource).toContain('<ProjectManagerPanel')
-    expect(appSource).toContain('variant="standalone"')
+    expect(appSource).not.toContain('<ProjectManagerPanel')
+    expect(appSource).toContain('selectStartupWorkspaceId')
+    expect(appSource).toContain('从左侧选择项目')
     expect(appSource).not.toMatch(/<ProjectHub[\s>]/)
   })
 
@@ -104,11 +105,11 @@ describe('ProjectHub startup integration', () => {
     expect(appSource).not.toContain('shouldOpenStarterSession')
   })
 
-  it('keeps project create/import/remote inside the project manager panel', () => {
+  it('keeps project create/import/remote in the rail creation entry', () => {
     expect(appSource).toContain('onWorkspaceCreated: (workspace: Workspace)')
     expect(appSource).toContain('handleProjectHubWorkspaceCreated')
-    expect(appSource).toContain('{...projectManagerActions}')
-    expect(appSource).toContain('<ProjectManagerPanel')
+    expect(appSource).toContain('onWorkspaceCreatedFromRail={projectManagerActions.onWorkspaceCreated}')
+    expect(appSource).not.toContain('<ProjectManagerPanel')
     expect(appSource).not.toContain("openWorkspaceCreation('create')")
     expect(appSource).not.toContain("openWorkspaceCreation('open')")
     expect(appSource).not.toContain("openWorkspaceCreation('remote')")
