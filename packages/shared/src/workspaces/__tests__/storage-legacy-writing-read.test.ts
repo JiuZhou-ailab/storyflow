@@ -1,13 +1,19 @@
-// input: Existing workspace config plus a legacy writing manifest and user files
+// input: Global config defaults, existing workspace config, a legacy writing manifest, and user files
 // output: Regression coverage for read-only legacy project compatibility
 // pos: Prevents workspace loading from repairing or rewriting project content
 
-import { describe, expect, it } from 'bun:test'
+import { beforeAll, describe, expect, it } from 'bun:test'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { CONFIG_DIR, ensureConfigDefaults } from '../../config/storage.ts'
 import { detectManifestWritingProject } from '../../writing/manifest.ts'
 import { createWorkspaceAtPath, loadWorkspaceConfig } from '../storage.ts'
+
+beforeAll(() => {
+  mkdirSync(CONFIG_DIR, { recursive: true })
+  ensureConfigDefaults()
+})
 
 describe('legacy writing workspace loading', () => {
   it('reads the old project type while ignoring Method Pack metadata', () => {

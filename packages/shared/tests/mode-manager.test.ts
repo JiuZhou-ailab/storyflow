@@ -1,9 +1,6 @@
-/**
- * Tests for mode-manager.ts shell command security
- *
- * These tests verify that dangerous shell commands are blocked in Safe (Explore) mode
- * while legitimate read-only commands are allowed.
- */
+// input: Tool calls, permission modes, shell commands, and platform capabilities
+// output: Regression coverage for safe-mode command classification
+// pos: Security boundary tests for mode-manager.ts
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { join } from 'path';
 import { mkdirSync, rmSync } from 'fs';
@@ -1999,7 +1996,7 @@ describe('unwrapPowerShellCommand', () => {
 // ============================================================
 
 describe('PowerShell plans folder exception', () => {
-  const psAvailable = isPowerShellAvailable();
+  const psAvailable = process.platform === 'win32' && isPowerShellAvailable();
   const plansFolderPath = 'C:\\Users\\test\\.craft-agent\\workspaces\\ws\\sessions\\s1\\plans';
 
   describe('should allow Out-File to plans folder', () => {

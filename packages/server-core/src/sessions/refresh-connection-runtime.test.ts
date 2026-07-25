@@ -1,3 +1,7 @@
+// input: Managed sessions, stored connection resolution, and runtime refresh payloads
+// output: Regression coverage for serialized in-place runtime updates and restart fallbacks
+// pos: SessionManager runtime-refresh contract tests
+
 import { afterEach, beforeEach, describe, expect, it, jest } from 'bun:test'
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
@@ -203,9 +207,40 @@ describe('refreshConnectionRuntime', () => {
     // helper must forward that field on `customModels` so the Pi subprocess
     // can re-register the model with `input: ['text', 'image']`.
     const agent = createAgentStub()
-    injectSession(sm, 'shape-check', tmpRoot, 'slug-A', agent)
+    const managed = injectSession(sm, 'shape-check', tmpRoot, 'slug-A', agent)
+    const backendContext = {
+      connection: {
+        slug: 'slug-A',
+        name: 'Custom endpoint',
+        providerType: 'pi_compat',
+        authType: 'api_key',
+        models: [{ id: 'custom-model', supportsImages: true }],
+        defaultModel: 'custom-model',
+        createdAt: Date.now(),
+      },
+      provider: 'pi',
+      authType: 'api_key',
+      resolvedModel: 'custom-model',
+      capabilities: { needsHttpPoolServer: true },
+    } as ReturnType<typeof resolveBackendContext>
 
-    await sm.refreshConnectionRuntime('slug-A')
+    await (sm as unknown as {
+      runAgentRuntimeRefresh(
+        session: typeof managed,
+        context: ReturnType<typeof resolveBackendContext>,
+        runtimeSignature: string,
+        restartSignature: string,
+        restartRequired: boolean,
+        reason: string,
+      ): Promise<void>
+    }).runAgentRuntimeRefresh(
+      managed,
+      backendContext,
+      '__runtime_signature__',
+      '__restart_signature__',
+      false,
+      'test',
+    )
 
     expect(agent.updateRuntimeConfig).toHaveBeenCalledTimes(1)
     const payload = agent.updateRuntimeConfig.mock.calls[0]?.[0]
