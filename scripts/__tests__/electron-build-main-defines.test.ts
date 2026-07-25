@@ -6,7 +6,7 @@ import { describe, expect, it } from 'bun:test'
 import { join } from 'node:path'
 
 describe('electron build defines', () => {
-  it('bakes desktop auth bootstrap values and the direct model gateway token into the main bundle', async () => {
+  it('bakes only public desktop auth bootstrap values into the main bundle', async () => {
     const source = await Bun.file(join(import.meta.dir, '..', 'electron-build-main.ts')).text()
 
     expect(source).toContain('"CRAFT_CLIENT_AUTH_REQUIRED"')
@@ -15,8 +15,8 @@ describe('electron build defines', () => {
     expect(source).toContain('"CRAFT_CLIENT_FEISHU_APP_ID"')
     expect(source).toContain('"CRAFT_CLIENT_FEISHU_SCOPE"')
     expect(source).toContain('"CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED"')
-    expect(source).toContain('"CRAFT_CLIENT_GATEWAY_TOKEN"')
     expect(source).toContain('"STORYFLOW_FEEDBACK_ENDPOINT"')
+    expect(source).not.toContain('"CRAFT_CLIENT_GATEWAY_TOKEN"')
     expect(source).not.toContain('"CRAFT_CLIENT_FEISHU_APP_SECRET"')
     expect(source).not.toContain('"CRAFT_WEBUI_FEISHU_APP_SECRET"')
   })
