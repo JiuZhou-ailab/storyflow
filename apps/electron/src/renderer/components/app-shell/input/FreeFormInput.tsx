@@ -71,6 +71,7 @@ import {
   isCompatProvider,
   isLocalConnection,
   modelSupportsImages,
+  modelSupportsThinking,
   setModelSupportsImages,
   type LlmConnection,
 } from '@config/llm-connections'
@@ -82,7 +83,7 @@ import { FreeFormInputContextBadge } from './FreeFormInputContextBadge'
 import type { FileAttachment, LoadedSource, LoadedSkill, LlmConnectionWithStatus } from '../../../../shared/types'
 import type { SessionStatus } from '@/config/session-status-config'
 import type { PermissionMode } from '@craft-agent/shared/agent/modes'
-import { type ThinkingLevel, THINKING_LEVELS, getThinkingLevelNameKey } from '@craft-agent/shared/agent/thinking-levels'
+import { type ThinkingLevel, THINKING_LEVELS } from '@craft-agent/shared/agent/thinking-levels'
 import { useEscapeInterrupt } from '@/context/EscapeInterruptContext'
 import { hasOpenOverlay } from '@/lib/overlay-detection'
 import { ToolbarStatusSlot } from './ToolbarStatusSlot'
@@ -373,13 +374,7 @@ export function FreeFormInput({
     return connection.models || ANTHROPIC_MODELS
   }, [llmConnections, currentConnection, workspaceDefaultConnection, connectionUnavailable])
 
-  const availableThinkingLevels = THINKING_LEVELS
-
-  // Disable thinking selector when the current model explicitly doesn't support it
-  const thinkingDisabled = React.useMemo(() => {
-    const model = availableModels.find(m => typeof m !== 'string' && m.id === currentModel)
-    return typeof model !== 'string' && model?.supportsThinking === false
-  }, [availableModels, currentModel])
+  const availableThinkingLevels = THINKING_LEVELS.filter(({ id }) => id !== 'off')
 
   // Get display name for current model (full name, not short name)
   const currentModelDisplayName = React.useMemo(() => {
@@ -1419,7 +1414,11 @@ export function FreeFormInput({
   }
 
   // Handle input changes from RichTextInput
-  const handleInputChange = React.useCallback((value: string) => {
+  const handleInputChange = React.useCallback((value: string, meta?: RichTextInputChangeMeta) => {
+    if (meta?.isPostCompositionInput && meta.inputType === 'insertText' && meta.inputData === ' ') {
+      return
+    }
+
     const nextValue = coerceInputText(value)
     // Get previous input value before updating state
     const prevValue = inputRef.current
@@ -1594,6 +1593,133 @@ export function FreeFormInput({
     && !!effectiveConnectionDetails
     && isCompatProvider(effectiveConnectionDetails.providerType)
     && !modelSupportsImages(effectiveConnectionDetails, currentModel)
+
+  const renderModelMenuItem = ({
+    modelId,
+    modelName,
+    description,
+    connection,
+    selected,
+    locked = false,
+    selectModel,
+  }: {
+    modelId: string
+    modelName: string
+    description?: string
+    connection?: LlmConnection
+    selected: boolean
+    locked?: boolean
+    selectModel?: () => void
+  }) => {
+    const showVisionToggle = !!connection && isCompatProvider(connection.providerType)
+    const visionOn = !!connection && showVisionToggle && modelSupportsImages(connection, modelId)
+    const supportsThinking =
+      !!connection
+      && !!onThinkingLevelChange
+      && modelSupportsThinking(connection, modelId)
+
+    const content = (
+      <>
+        <div className="min-w-0 flex-1 text-left">
+          <div className="truncate font-medium text-sm">{modelName}</div>
+          {description && (
+            <div className="truncate text-xs text-muted-foreground">{description}</div>
+          )}
+        </div>
+        <div className="flex items-center gap-1 ml-3 shrink-0">
+          {showVisionToggle && connection && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-label={visionOn
+                    ? t('chat.modelPicker.supportsImagesOn')
+                    : t('chat.modelPicker.supportsImagesOff')}
+                  className="inline-flex items-center justify-center p-1 rounded hover:bg-foreground/5 cursor-pointer"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    handleToggleModelVision(connection.slug, modelId, !visionOn)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      handleToggleModelVision(connection.slug, modelId, !visionOn)
+                    }
+                  }}
+                >
+                  <ImageIcon className={cn(
+                    "h-3.5 w-3.5",
+                    visionOn ? "text-foreground/70" : "text-foreground/30"
+                  )} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {visionOn
+                  ? t('chat.modelPicker.supportsImagesOn')
+                  : t('chat.modelPicker.supportsImagesOff')}
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {selected && <Check className="h-3 w-3 text-foreground" />}
+        </div>
+      </>
+    )
+
+    if (!supportsThinking) {
+      return (
+        <StyledDropdownMenuItem
+          key={modelId}
+          disabled={locked}
+          onSelect={locked ? undefined : selectModel}
+          className={cn(
+            "flex items-center justify-between px-2 py-2 rounded-lg",
+            !locked && "cursor-pointer",
+          )}
+        >
+          {content}
+        </StyledDropdownMenuItem>
+      )
+    }
+
+    return (
+      <DropdownMenuSub key={modelId}>
+        <StyledDropdownMenuSubTrigger
+          onClick={locked ? undefined : selectModel}
+          className="flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer"
+        >
+          {content}
+        </StyledDropdownMenuSubTrigger>
+        <StyledDropdownMenuSubContent
+          minWidth="min-w-0"
+          className="w-[220px] whitespace-normal"
+        >
+          {availableThinkingLevels.map(({ id, nameKey, descriptionKey }) => (
+            <StyledDropdownMenuItem
+              key={id}
+              onSelect={() => {
+                if (!locked) selectModel?.()
+                onThinkingLevelChange(id)
+              }}
+              className="flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer"
+            >
+              <div className="min-w-0 flex-1 text-left">
+                <div className="font-medium text-sm">{t(nameKey)}</div>
+                <div className="whitespace-normal text-xs leading-4 text-muted-foreground">
+                  {t(descriptionKey)}
+                </div>
+              </div>
+              {thinkingLevel === id && (
+                <Check className="h-3 w-3 text-foreground shrink-0 ml-3" />
+              )}
+            </StyledDropdownMenuItem>
+          ))}
+        </StyledDropdownMenuSubContent>
+      </DropdownMenuSub>
+    )
+  }
 
   return (
     <form onSubmit={handleSubmit}>
@@ -2085,63 +2211,14 @@ export function FreeFormInput({
                   </div>
                 </div>
               ) : connectionDefaultModel ? (
-                (() => {
-                  // Single-model pi_compat connection: model row is disabled (you
-                  // can't switch), but vision toggle is still a separate control.
-                  const showVisionToggle =
-                    !!effectiveConnectionDetails && isCompatProvider(effectiveConnectionDetails.providerType)
-                  const visionOn = showVisionToggle && modelSupportsImages(effectiveConnectionDetails!, connectionDefaultModel)
-                  return (
-                    <StyledDropdownMenuItem
-                      disabled
-                      className="flex items-center justify-between px-2 py-2 rounded-lg"
-                    >
-                      <div className="text-left">
-                        <div className="font-medium text-sm">{stripPiPrefixForDisplay(connectionDefaultModel)}</div>
-                        <div className="text-xs text-muted-foreground">{t('chat.connectionDefault')}</div>
-                      </div>
-                      <div className="flex items-center gap-1 ml-3 shrink-0">
-                        {showVisionToggle && effectiveConnectionDetails && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span
-                                role="button"
-                                tabIndex={0}
-                                aria-label={visionOn
-                                  ? t('chat.modelPicker.supportsImagesOn')
-                                  : t('chat.modelPicker.supportsImagesOff')}
-                                className="inline-flex items-center justify-center p-1 rounded pointer-events-auto opacity-100 hover:bg-foreground/5 cursor-pointer"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  handleToggleModelVision(effectiveConnectionDetails.slug, connectionDefaultModel, !visionOn)
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault()
-                                    e.stopPropagation()
-                                    handleToggleModelVision(effectiveConnectionDetails.slug, connectionDefaultModel, !visionOn)
-                                  }
-                                }}
-                              >
-                                <ImageIcon className={cn(
-                                  "h-3.5 w-3.5",
-                                  visionOn ? "text-foreground/70" : "text-foreground/30"
-                                )} />
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {visionOn
-                                ? t('chat.modelPicker.supportsImagesOn')
-                                : t('chat.modelPicker.supportsImagesOff')}
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
-                        <Check className="h-3 w-3 text-foreground" />
-                      </div>
-                    </StyledDropdownMenuItem>
-                  )
-                })()
+                renderModelMenuItem({
+                  modelId: connectionDefaultModel,
+                  modelName: stripPiPrefixForDisplay(connectionDefaultModel),
+                  description: t('chat.connectionDefault'),
+                  connection: effectiveConnectionDetails ?? undefined,
+                  selected: true,
+                  locked: true,
+                })
               ) : isEmptySession && llmConnections.length > 1 ? (
                 /* Hierarchical view: Provider → Connection → Models (for new sessions with multiple connections) */
                 connectionsByProvider.map(([providerName, connections], index) => (
@@ -2182,65 +2259,20 @@ export function FreeFormInput({
                                   ? stripPiPrefixForDisplay(getModelShortName(model))
                                   : (model.name ?? stripPiPrefixForDisplay(model.id))
                                 const isSelectedModel = isCurrentConnection && currentModel === modelId
-                                const showVisionToggle = isCompatProvider(conn.providerType)
-                                const visionOn = showVisionToggle && modelSupportsImages(conn, modelId)
-                                return (
-                                  <StyledDropdownMenuItem
-                                    key={modelId}
-                                    onSelect={() => {
-                                      // If selecting a different connection, update both connection and model
-                                      if (!isCurrentConnection && onConnectionChange) {
-                                        onConnectionChange(conn.slug)
-                                      }
-                                      // Always pass connection with model for proper persistence
-                                      onModelChange(modelId, conn.slug)
-                                    }}
-                                    className="flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer"
-                                  >
-                                    <div className="font-medium text-sm">{modelName}</div>
-                                    <div className="flex items-center gap-1 ml-3 shrink-0">
-                                      {showVisionToggle && (
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <span
-                                              role="button"
-                                              tabIndex={0}
-                                              aria-label={visionOn
-                                                ? t('chat.modelPicker.supportsImagesOn')
-                                                : t('chat.modelPicker.supportsImagesOff')}
-                                              className="inline-flex items-center justify-center p-1 rounded hover:bg-foreground/5 cursor-pointer"
-                                              onClick={(e) => {
-                                                e.preventDefault()
-                                                e.stopPropagation()
-                                                handleToggleModelVision(conn.slug, modelId, !visionOn)
-                                              }}
-                                              onKeyDown={(e) => {
-                                                if (e.key === 'Enter' || e.key === ' ') {
-                                                  e.preventDefault()
-                                                  e.stopPropagation()
-                                                  handleToggleModelVision(conn.slug, modelId, !visionOn)
-                                                }
-                                              }}
-                                            >
-                                              <ImageIcon className={cn(
-                                                "h-3.5 w-3.5",
-                                                visionOn ? "text-foreground/70" : "text-foreground/30"
-                                              )} />
-                                            </span>
-                                          </TooltipTrigger>
-                                          <TooltipContent>
-                                            {visionOn
-                                              ? t('chat.modelPicker.supportsImagesOn')
-                                              : t('chat.modelPicker.supportsImagesOff')}
-                                          </TooltipContent>
-                                        </Tooltip>
-                                      )}
-                                      {isSelectedModel && (
-                                        <Check className="h-3 w-3 text-foreground" />
-                                      )}
-                                    </div>
-                                  </StyledDropdownMenuItem>
-                                )
+                                return renderModelMenuItem({
+                                  modelId,
+                                  modelName,
+                                  connection: conn,
+                                  selected: isSelectedModel,
+                                  selectModel: () => {
+                                    // If selecting a different connection, update both connection and model
+                                    if (!isCurrentConnection && onConnectionChange) {
+                                      onConnectionChange(conn.slug)
+                                    }
+                                    // Always pass connection with model for proper persistence
+                                    onModelChange(modelId, conn.slug)
+                                  },
+                                })
                               })}
                             </StyledDropdownMenuSubContent>
                           )}
@@ -2273,102 +2305,15 @@ export function FreeFormInput({
                     const isSelected = currentModel === modelId
                     const descriptionKey = typeof model !== 'string' && 'descriptionKey' in model ? (model.descriptionKey as string) : undefined
                     const description = descriptionKey ? t(descriptionKey) : (typeof model !== 'string' && 'description' in model ? (model.description as string) : '')
-                    const showVisionToggle =
-                      !!effectiveConnectionDetails && isCompatProvider(effectiveConnectionDetails.providerType)
-                    const visionOn = showVisionToggle && modelSupportsImages(effectiveConnectionDetails!, modelId)
-                    return (
-                      <StyledDropdownMenuItem
-                        key={modelId}
-                        onSelect={() => onModelChange(modelId, effectiveConnection)}
-                        className="flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer"
-                      >
-                        <div className="text-left">
-                          <div className="font-medium text-sm">{modelName}</div>
-                          {description && (
-                            <div className="text-xs text-muted-foreground">{description}</div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1 ml-3 shrink-0">
-                          {showVisionToggle && effectiveConnectionDetails && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span
-                                  role="button"
-                                  tabIndex={0}
-                                  aria-label={visionOn
-                                    ? t('chat.modelPicker.supportsImagesOn')
-                                    : t('chat.modelPicker.supportsImagesOff')}
-                                  className="inline-flex items-center justify-center p-1 rounded hover:bg-foreground/5 cursor-pointer"
-                                  onClick={(e) => {
-                                    e.preventDefault()
-                                    e.stopPropagation()
-                                    handleToggleModelVision(effectiveConnectionDetails.slug, modelId, !visionOn)
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter' || e.key === ' ') {
-                                      e.preventDefault()
-                                      e.stopPropagation()
-                                      handleToggleModelVision(effectiveConnectionDetails.slug, modelId, !visionOn)
-                                    }
-                                  }}
-                                >
-                                  <ImageIcon className={cn(
-                                    "h-3.5 w-3.5",
-                                    visionOn ? "text-foreground/70" : "text-foreground/30"
-                                  )} />
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                {visionOn
-                                  ? t('chat.modelPicker.supportsImagesOn')
-                                  : t('chat.modelPicker.supportsImagesOff')}
-                              </TooltipContent>
-                            </Tooltip>
-                          )}
-                          {isSelected && (
-                            <Check className="h-3 w-3 text-foreground" />
-                          )}
-                        </div>
-                      </StyledDropdownMenuItem>
-                    )
+                    return renderModelMenuItem({
+                      modelId,
+                      modelName,
+                      description,
+                      connection: effectiveConnectionDetails ?? undefined,
+                      selected: isSelected,
+                      selectModel: () => onModelChange(modelId, effectiveConnection),
+                    })
                   })}
-                </>
-              )}
-
-              {/* Thinking level selector — only shown when thinking levels are available
-                  (Claude supports extended thinking, OpenAI backends may not) */}
-              {availableThinkingLevels.length > 0 && (
-                <>
-                  <StyledDropdownMenuSeparator className="my-1" />
-
-                  <DropdownMenuSub>
-                    <StyledDropdownMenuSubTrigger disabled={thinkingDisabled} className={cn("flex items-center justify-between px-2 py-2 rounded-lg", thinkingDisabled && "opacity-50 cursor-not-allowed")}>
-                      <div className="text-left flex-1">
-                        <div className="font-medium text-sm">{t(getThinkingLevelNameKey(thinkingLevel))}</div>
-                        <div className="text-xs text-muted-foreground">{thinkingDisabled ? t('thinking.notSupported') : t('thinking.extendedDesc')}</div>
-                      </div>
-                    </StyledDropdownMenuSubTrigger>
-                    <StyledDropdownMenuSubContent className="min-w-[220px]">
-                      {availableThinkingLevels.map(({ id, nameKey, descriptionKey }) => {
-                        const isSelected = thinkingLevel === id
-                        return (
-                          <StyledDropdownMenuItem
-                            key={id}
-                            onSelect={() => onThinkingLevelChange?.(id)}
-                            className="flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer"
-                          >
-                            <div className="text-left">
-                              <div className="font-medium text-sm">{t(nameKey)}</div>
-                              <div className="text-xs text-muted-foreground">{t(descriptionKey)}</div>
-                            </div>
-                            {isSelected && (
-                              <Check className="h-3 w-3 text-foreground shrink-0 ml-3" />
-                            )}
-                          </StyledDropdownMenuItem>
-                        )
-                      })}
-                    </StyledDropdownMenuSubContent>
-                  </DropdownMenuSub>
                 </>
               )}
 

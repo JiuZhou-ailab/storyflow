@@ -19,6 +19,7 @@ import type { ProviderChoice } from '@/components/onboarding/ProviderSelectStep'
 import type { LocalModelSubmitData } from '@/components/onboarding/LocalModelStep'
 import type { ApiKeySubmitData } from '@/components/apisetup'
 import type { CustomEndpointConfig } from '@config/llm-connections'
+import type { ModelDefinition } from '@config/models'
 import { isMaskedCredential } from '@craft-agent/shared/utils/mask'
 import type { SetupNeeds, LlmConnectionSetup } from '../../shared/types'
 import { JIUZHOU_MANAGED_DEFAULT_SETUP } from '@/components/onboarding/managed-defaults'
@@ -165,7 +166,7 @@ export function apiSetupMethodToConnectionSetup(
     credential?: string
     baseUrl?: string
     connectionDefaultModel?: string
-    models?: string[]
+    models?: Array<ModelDefinition | string>
     piAuthProvider?: string
     modelSelectionMode?: 'automaticallySyncedFromProvider' | 'userDefined3Tier'
     customEndpoint?: CustomEndpointConfig
@@ -272,7 +273,7 @@ export function useOnboarding({
     options?: {
       baseUrl?: string
       connectionDefaultModel?: string
-      models?: string[]
+      models?: Array<ModelDefinition | string>
       piAuthProvider?: string
       modelSelectionMode?: 'automaticallySyncedFromProvider' | 'userDefined3Tier'
       customEndpoint?: CustomEndpointConfig

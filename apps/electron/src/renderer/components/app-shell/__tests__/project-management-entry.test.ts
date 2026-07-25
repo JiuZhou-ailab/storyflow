@@ -1,6 +1,6 @@
-// input: AppShell, TopBar, ActivityRail, WorkspaceProjectSidebar, and ProjectManagerPanel source
-// output: Static regression for popover-only project management IA
-// pos: Full-page ProjectHub is abandoned; rail popover is the manage surface
+// input: AppShell, TopBar, ActivityRail, WorkspaceProjectSidebar, and project-creation source
+// output: Static regression for rail-owned project management IA
+// pos: Project browsing is rail-only; dialogs are reserved for creation forms
 
 import { describe, expect, it } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
@@ -29,33 +29,33 @@ describe('project management entry', () => {
     expect(topBarSource).not.toContain('onOpenProjectHub')
   })
 
-  it('hosts create/import/remote/rename/remove inside the project manager panel', () => {
+  it('keeps project creation in a small menu and opens dialogs only for forms', () => {
     expect(existsSync(projectManagerPath)).toBe(true)
     expect(projectManagerSource).toContain('data-testid="project-manager-panel"')
-    expect(projectManagerSource).toContain('新建项目')
     expect(projectManagerSource).toContain('导入文件夹')
     expect(projectManagerSource).toContain('连接远端')
-    expect(projectManagerSource).toContain('最近项目')
-    expect(projectManagerSource).toContain('返回项目')
     expect(projectManagerSource).toContain('输入名称，并选择新项目的存储位置。')
     expect(projectManagerSource).not.toContain('选择写作方法')
-    expect(projectManagerSource).toContain('<ProjectActionButton')
-    expect(projectManagerSource).not.toContain('ProjectActionCard')
-    expect(projectManagerSource).toContain('重命名')
-    expect(projectManagerSource).toContain('移除')
-    expect(projectManagerSource).toContain('新窗口打开')
+    expect(projectManagerSource).not.toContain('最近项目')
+    expect(projectManagerSource).not.toContain('重命名')
+    expect(projectManagerSource).not.toContain('移除')
+    expect(projectManagerSource).not.toContain('新窗口打开')
     expect(projectManagerSource).toContain("view === 'create'")
     expect(projectManagerSource).toContain('<AddWorkspaceStep_CreateNew')
     expect(projectManagerSource).toContain('<AddWorkspaceStep_OpenFolder')
     expect(projectManagerSource).toContain('<AddWorkspaceStep_ConnectRemote')
     expect(projectManagerSource).toContain('embedded')
-    expect(projectManagerSource).not.toContain('管理全部项目')
     expect(projectSwitcherSource).toContain('<ProjectManagerPanel')
-    expect(projectSwitcherSource).toContain('variant="dialog"')
     expect(projectSwitcherSource).toContain('<Dialog')
+    expect(projectSwitcherSource).toContain('<DropdownMenu')
+    expect(projectSwitcherSource).not.toContain('<DialogTrigger')
+    expect(projectSwitcherSource).toContain("setView('create')")
+    expect(projectSwitcherSource).toContain("setView('open')")
+    expect(projectSwitcherSource).toContain("setView('remote')")
     expect(projectSwitcherSource).toContain('onWorkspaceCreated={onWorkspaceCreated}')
-    expect(appSource).toContain('variant="standalone"')
-    expect(appSource).toContain('{...projectManagerActions}')
+    expect(appSource).not.toContain('<ProjectManagerPanel')
+    expect(appSource).toContain('从左侧选择项目')
+    expect(appSource).toContain('onWorkspaceCreatedFromRail={projectManagerActions.onWorkspaceCreated}')
     expect(appSource).toContain('onWorkspaceCreated:')
     expect(appSource).not.toMatch(/<ProjectHub[\s>]/)
   })
@@ -63,12 +63,16 @@ describe('project management entry', () => {
   it('wires project manager actions through the room AppShell rail', () => {
     expect(appShellSource).toContain('onWorkspaceCreated={onWorkspaceCreatedFromRail ?? onWorkspaceCreated}')
     expect(appShellSource).toContain('onRenameProject={onRenameProject}')
+    expect(appShellSource).toContain('onSetProjectArchived={onSetProjectArchived}')
     expect(appShellSource).toContain('onRemoveProject={onRemoveProject}')
     expect(appShellSource).toContain('onOpenProjectInNewWindow={onOpenProjectInNewWindow}')
     expect(appShellSource).toContain('workspaces={workspaces}')
     expect(appShellSource).toContain('void onSelectWorkspace?.(workspaceId)')
     expect(activityRailSource).toContain('<ProjectSwitcherPopover')
     expect(activityRailSource).toContain('onWorkspaceCreated={onWorkspaceCreated}')
+    expect(activityRailSource).toContain('data-testid="activity-archived-projects"')
+    expect(activityRailSource).toContain('<span>归档</span>')
+    expect(activityRailSource).toContain('<span>恢复</span>')
     expect(activityRailSource).not.toContain('onCreateProject')
     expect(activityRailSource).not.toContain('onManageProjects')
     expect(activityRailSource).not.toContain('退出到作品库')

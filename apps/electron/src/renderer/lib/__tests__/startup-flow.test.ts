@@ -1,9 +1,9 @@
 // input: Startup workspace facts after auth/setup checks
-// output: Expected renderer app state for first-run, project-hub, and explicit workspace flows
-// pos: Guards project-management-first routing before the main app shell is shown
+// output: Expected renderer state and non-archived startup-project selection
+// pos: Guards direct project entry before the main app shell is shown
 
 import { describe, expect, it } from 'bun:test'
-import { resolvePostSetupAppState } from '../startup-flow'
+import { resolvePostSetupAppState, selectStartupWorkspaceId } from '../startup-flow'
 
 describe('resolvePostSetupAppState', () => {
   it('opens the project hub empty state when no workspace exists', () => {
@@ -23,5 +23,21 @@ describe('resolvePostSetupAppState', () => {
       windowWorkspaceId: '',
       workspaceCount: 1,
     })).toBe('project-hub')
+  })
+})
+
+describe('selectStartupWorkspaceId', () => {
+  it('selects the most recent active project and ignores archived projects', () => {
+    expect(selectStartupWorkspaceId([
+      { id: 'older', lastAccessedAt: 10 },
+      { id: 'archived', lastAccessedAt: 30, archivedAt: 40 },
+      { id: 'recent', lastAccessedAt: 20 },
+    ])).toBe('recent')
+  })
+
+  it('returns null when every project is archived', () => {
+    expect(selectStartupWorkspaceId([
+      { id: 'archived', archivedAt: 10 },
+    ])).toBeNull()
   })
 })

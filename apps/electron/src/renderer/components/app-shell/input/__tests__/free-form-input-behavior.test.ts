@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'fs'
+import { THINKING_LEVELS } from '@craft-agent/shared/agent/thinking-levels'
 import {
   getPrimaryInputAction,
   isCompositionInput,
@@ -21,11 +22,15 @@ describe('FreeFormInput behavior helpers', () => {
   })
 
   describe('resolveAutoCapitalisedInput', () => {
-    it('does not rewrite IME composition text', () => {
+  it('does not rewrite IME composition text', () => {
       expect(resolveAutoCapitalisedInput('n', 1, {
         enabled: true,
         isCompositionInput: true,
       })).toBeNull()
+    })
+
+    it('treats post-composition input as composition input', () => {
+      expect(isCompositionInput({ isPostCompositionInput: true })).toBe(true)
     })
 
     it('capitalises ordinary latin input when enabled', () => {
@@ -161,6 +166,21 @@ describe('FreeFormInput attachment read path', () => {
     expect(helperSource.indexOf('window.electronAPI.readUserAttachment(realPath)')).toBeLessThan(
       helperSource.indexOf('new FileReader()'),
     )
+  })
+})
+
+describe('FreeFormInput model menu', () => {
+  it('shows thinking levels only as a capability-gated model submenu', () => {
+    const source = readFileSync(new URL('../FreeFormInput.tsx', import.meta.url), 'utf-8')
+
+    expect(source).toContain('modelSupportsThinking(connection, modelId)')
+    expect(source).toContain('<StyledDropdownMenuSubTrigger')
+    expect(source).toContain("THINKING_LEVELS.filter(({ id }) => id !== 'off')")
+    expect(source).toContain('className="w-[220px] whitespace-normal"')
+    expect(THINKING_LEVELS.find(({ id }) => id === 'xhigh')?.descriptionKey)
+      .toBe('thinking.extendedDesc')
+    expect(source).not.toContain('thinkingDisabled')
+    expect(source).not.toContain('getThinkingLevelNameKey')
   })
 })
 

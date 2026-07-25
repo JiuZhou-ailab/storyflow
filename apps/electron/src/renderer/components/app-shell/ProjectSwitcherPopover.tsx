@@ -1,92 +1,89 @@
-// input: Workspace list and project management callbacks
-// output: Large centered dialog hosting ProjectManagerPanel (list + inline create)
-// pos: In-room project switcher/manager; create/import/remote stay in-dialog
+// input: Project-create trigger and create/import/remote callbacks
+// output: Compact action menu plus the selected project-creation dialog
+// pos: Creation-only entry; project browsing and management live in ActivityRail
 
 import * as React from 'react'
+import { Cloud, FolderPlus, Import } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  StyledDropdownMenuContent,
+  StyledDropdownMenuItem,
+} from '@/components/ui/styled-dropdown'
 import type { Workspace } from '../../../shared/types'
 import { ProjectManagerPanel, type ProjectManagerView } from './ProjectManagerPanel'
 
 export interface ProjectSwitcherPopoverProps {
-  workspaces: Workspace[]
-  activeWorkspaceId: string | null
-  onSelectProject: (workspaceId: string) => void
-  onWorkspaceCreated?: (workspace: Workspace) => void | Promise<void>
-  onOpenProjectInNewWindow?: (workspaceId: string) => void
-  onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
-  onRemoveProject?: (workspaceId: string) => void | Promise<void>
+  onWorkspaceCreated: (workspace: Workspace) => void | Promise<void>
   children: React.ReactElement
-  open?: boolean
-  onOpenChange?: (open: boolean) => void
 }
 
 export function ProjectSwitcherPopover({
-  workspaces,
-  activeWorkspaceId,
-  onSelectProject,
   onWorkspaceCreated,
-  onOpenProjectInNewWindow,
-  onRenameProject,
-  onRemoveProject,
   children,
-  open: openProp,
-  onOpenChange,
 }: ProjectSwitcherPopoverProps) {
-  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false)
-  const [view, setView] = React.useState<ProjectManagerView>('list')
-  const open = openProp ?? uncontrolledOpen
-  const setOpen = onOpenChange ?? setUncontrolledOpen
+  const [view, setView] = React.useState<ProjectManagerView | null>(null)
 
   const handleOpenChange = React.useCallback((next: boolean) => {
-    setOpen(next)
-    if (!next) setView('list')
-  }, [setOpen])
+    if (!next) setView(null)
+  }, [])
 
   const wide = view === 'create'
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent
-        showCloseButton
-        className={
-          wide
-            ? 'w-[min(1040px,calc(100vw-2rem))] max-w-none border-0 bg-transparent p-0 shadow-none ring-0 sm:max-w-none'
-            : 'w-[min(760px,calc(100vw-2rem))] max-w-none border-0 bg-transparent p-0 shadow-none ring-0 sm:max-w-none'
-        }
-        data-testid="project-switcher-popover"
-        onOpenAutoFocus={(event) => {
-          event.preventDefault()
-        }}
-        onPointerDownOutside={(event) => {
-          // Keep dialog open while OS folder picker / nested menus are used.
-          if (view !== 'list') event.preventDefault()
-        }}
-      >
-        <DialogTitle className="sr-only">项目管理</DialogTitle>
-        <DialogDescription className="sr-only">
-          浏览最近项目，或在同一弹窗内新建、导入、连接远端项目
-        </DialogDescription>
-        <ProjectManagerPanel
-          variant="dialog"
-          workspaces={workspaces}
-          activeWorkspaceId={activeWorkspaceId}
-          onSelectProject={onSelectProject}
-          onWorkspaceCreated={onWorkspaceCreated}
-          onOpenProjectInNewWindow={onOpenProjectInNewWindow}
-          onRenameProject={onRenameProject}
-          onRemoveProject={onRemoveProject}
-          view={view}
-          onViewChange={setView}
-          onRequestClose={() => handleOpenChange(false)}
-        />
-      </DialogContent>
-    </Dialog>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+        <StyledDropdownMenuContent align="end" sideOffset={4}>
+          <StyledDropdownMenuItem onClick={() => setView('create')}>
+            <FolderPlus className="size-3.5" />
+            <span>新建项目</span>
+          </StyledDropdownMenuItem>
+          <StyledDropdownMenuItem onClick={() => setView('open')}>
+            <Import className="size-3.5" />
+            <span>导入文件夹</span>
+          </StyledDropdownMenuItem>
+          <StyledDropdownMenuItem onClick={() => setView('remote')}>
+            <Cloud className="size-3.5" />
+            <span>连接远端</span>
+          </StyledDropdownMenuItem>
+        </StyledDropdownMenuContent>
+      </DropdownMenu>
+
+      <Dialog open={view !== null} onOpenChange={handleOpenChange}>
+        <DialogContent
+          showCloseButton
+          className={
+            wide
+              ? 'w-[min(1040px,calc(100vw-2rem))] max-w-none border-0 bg-transparent p-0 shadow-none ring-0 sm:max-w-none'
+              : 'w-[min(760px,calc(100vw-2rem))] max-w-none border-0 bg-transparent p-0 shadow-none ring-0 sm:max-w-none'
+          }
+          data-testid="project-switcher-popover"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault()
+          }}
+          onPointerDownOutside={(event) => {
+            // Keep dialog open while OS folder picker / nested menus are used.
+            event.preventDefault()
+          }}
+        >
+          <DialogTitle className="sr-only">添加项目</DialogTitle>
+          <DialogDescription className="sr-only">
+            新建项目、导入文件夹或连接远端项目
+          </DialogDescription>
+          <ProjectManagerPanel
+            onWorkspaceCreated={onWorkspaceCreated}
+            view={view ?? 'create'}
+            onRequestClose={() => handleOpenChange(false)}
+          />
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

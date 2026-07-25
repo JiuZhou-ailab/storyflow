@@ -20,9 +20,7 @@ import { useEventProcessor } from './event-processor'
 import type { AgentEvent, Effect } from './event-processor'
 import type { AppShellContextType } from '@/context/AppShellContext'
 import { ActivityRailFrame } from '@/components/app-shell/ActivityRailFrame'
-import { ProjectManagerPanel } from '@/components/app-shell/ProjectManagerPanel'
 import { WINDOW_TITLE_BAR_HEIGHT } from '@/components/app-shell/layout-constants'
-import type { WorkspaceCreationInitialStep } from '@/components/workspace/WorkspaceCreationScreen'
 import {
   ProjectHubNavigationActions,
   useProjectHubReturnLocation,
@@ -44,7 +42,7 @@ import { stripMarkdown } from './utils/text'
 import { coerceInputText } from './lib/input-text'
 import { getSessionsToRefreshAfterStaleReconnect } from './lib/reconnect-recovery'
 import { formatSessionLoadFailure, shouldTreatSessionLoadFailureAsTransportFallback } from './lib/session-load'
-import { resolvePostSetupAppState } from './lib/startup-flow'
+import { resolvePostSetupAppState, selectStartupWorkspaceId } from './lib/startup-flow'
 
 import { isProjectShellReady } from './lib/app-readiness'
 import { appendUniqueRequestForSession, removeFirstRequestForSession } from './lib/request-queue'
@@ -116,10 +114,6 @@ const ReauthScreen = React.lazy(async () => {
   const module = await import('@/components/onboarding/ReauthScreen')
   return { default: module.ReauthScreen }
 })
-const WorkspaceCreationScreen = React.lazy(async () => {
-  const module = await import('@/components/workspace/WorkspaceCreationScreen')
-  return { default: module.WorkspaceCreationScreen }
-})
 const WorkspacePicker = React.lazy(async () => {
   const module = await import('@/components/workspace/WorkspacePicker')
   return { default: module.WorkspacePicker }
@@ -133,7 +127,7 @@ const FilePreviewRenderer = React.lazy(async () => {
   return { default: module.FilePreviewRenderer }
 })
 
-type AppState = 'loading' | 'account' | 'onboarding' | 'reauth' | 'project-hub' | 'workspace-picker' | 'workspace-creation' | 'ready'
+type AppState = 'loading' | 'account' | 'onboarding' | 'reauth' | 'project-hub' | 'workspace-picker' | 'ready'
 
 /** Type for the Jotai store returned by useStore() */
 type JotaiStore = ReturnType<typeof getDefaultStore>
@@ -334,7 +328,6 @@ function AppContent() {
     const timeoutId = setTimeout(preloadWorkspaceSurface, 0)
     return () => clearTimeout(timeoutId)
   }, [appState])
-  const [workspaceCreationInitialStep, setWorkspaceCreationInitialStep] = useState<WorkspaceCreationInitialStep>('choice')
   const [pendingReadyRoute, setPendingReadyRoute] = useState<Route | null>(null)
   const [openGlobalSearchSignal, setOpenGlobalSearchSignal] = useState(0)
   const [openWhatsNewSignal, setOpenWhatsNewSignal] = useState(0)
@@ -819,6 +812,33 @@ function AppContent() {
           )
           performance.mark('storyflow.startup-rpc:workspaces')
           setWorkspaces(ws)
+
+          if (!initialRuntimeWorkspace) {
+            const startupWorkspaceId = selectStartupWorkspaceId(ws)
+            if (startupWorkspaceId) {
+              try {
+                initialRuntimeWorkspace = await withTimeout(
+                  window.electronAPI.resolveRuntimeWorkspace(startupWorkspaceId),
+                  STARTUP_RPC_TIMEOUT_MS,
+                  'resolveStartupWorkspace'
+                )
+                if (initialRuntimeWorkspace) {
+                  await withTimeout(
+                    window.electronAPI.switchWorkspace(startupWorkspaceId),
+                    STARTUP_RPC_TIMEOUT_MS,
+                    'switchStartupWorkspace'
+                  )
+                  setRuntimeWorkspace(initialRuntimeWorkspace)
+                  setWindowWorkspaceId(initialRuntimeWorkspace.id)
+                  setActiveProjectId(initialRuntimeWorkspace.id)
+                }
+              } catch (error) {
+                console.warn('[App] Failed to restore startup project:', error)
+                initialRuntimeWorkspace = null
+              }
+            }
+          }
+
           setAppState(resolvePostSetupAppState({
             windowWorkspaceId: initialRuntimeWorkspace?.id,
             workspaceCount: ws.length,
@@ -2038,6 +2058,34 @@ function AppContent() {
     }
   }, [activeProjectId, handleRefreshWorkspaces, runtimeWorkspace, setWindowWorkspaceId, workspaces])
 
+  const handleSetProjectArchived = useCallback(async (workspaceId: string, archived: boolean) => {
+    const project = workspaces.find(workspace => workspace.id === workspaceId)
+
+    try {
+      const updated = await window.electronAPI.setWorkspaceArchived(workspaceId, archived)
+      if (!updated) {
+        toast.error(archived ? '归档项目失败' : '恢复项目失败')
+        return
+      }
+
+      const refreshed = await window.electronAPI.getWorkspaces()
+      setWorkspaces(refreshed)
+
+      if (archived && runtimeWorkspace?.id === workspaceId) {
+        setRuntimeWorkspace(null)
+        setWindowWorkspaceId(null)
+        setActiveProjectId(null)
+        setAppState('project-hub')
+      }
+
+      toast.success(`${archived ? '已归档' : '已恢复'}${project ? `：${project.name}` : '项目'}`)
+    } catch (error) {
+      console.error(`[App] Failed to ${archived ? 'archive' : 'restore'} project:`, error)
+      toast.error(archived ? '归档项目失败' : '恢复项目失败')
+      handleRefreshWorkspaces()
+    }
+  }, [handleRefreshWorkspaces, runtimeWorkspace, setWindowWorkspaceId, setWorkspaces, workspaces])
+
   const handleWorkspaceCreated = useCallback(async (workspace: Workspace) => {
     pendingCreatedWorkspaceRef.current = workspace
 
@@ -2176,15 +2224,6 @@ function AppContent() {
     setPendingReadyRoute(null)
   }, [appState, pendingReadyRoute])
 
-  const openWorkspaceCreation = useCallback((initialStep: WorkspaceCreationInitialStep) => {
-    setWorkspaceCreationInitialStep(initialStep)
-    setAppState('workspace-creation')
-  }, [])
-
-  const handleWorkspaceCreationClose = useCallback(() => {
-    setAppState('project-hub')
-  }, [])
-
   const projectManagerActions = useMemo(() => ({
     onSelectProject: (workspaceId: string) => {
       if (
@@ -2193,7 +2232,7 @@ function AppContent() {
       ) return
       void handleOpenProjectFromHub(workspaceId)
     },
-    // Create/import/remote stay inside ProjectManagerPanel when onWorkspaceCreated is wired.
+    // Create/import/remote stay inside the rail's creation flow.
     onWorkspaceCreated: (workspace: Workspace) => {
       void handleProjectHubWorkspaceCreated(workspace)
     },
@@ -2202,6 +2241,9 @@ function AppContent() {
     },
     onRenameProject: (workspaceId: string, name: string) => {
       void handleRenameProjectFromHub(workspaceId, name)
+    },
+    onSetProjectArchived: (workspaceId: string, archived: boolean) => {
+      void handleSetProjectArchived(workspaceId, archived)
     },
     onRemoveProject: (workspaceId: string) => {
       void handleRemoveProjectFromHub(workspaceId)
@@ -2212,6 +2254,7 @@ function AppContent() {
     handleProjectHubWorkspaceCreated,
     handleRemoveProjectFromHub,
     handleRenameProjectFromHub,
+    handleSetProjectArchived,
     runtimeWorkspace,
   ])
 
@@ -2461,8 +2504,12 @@ function AppContent() {
     )
   }
 
-  // Project manager — cold-start / no-window-workspace surface (same panel as the rail popover).
+  // Project catalog — browsing stays in the rail; the main surface no longer duplicates it.
   if (appState === 'project-hub') {
+    const hasActiveProjects = workspaces.some(workspace => (
+      workspace.id !== FREE_CONVERSATION_WORKSPACE_ID
+      && !workspace.archivedAt
+    ))
     return (
       <DismissibleLayerProvider>
         <ModalProvider>
@@ -2475,15 +2522,14 @@ function AppContent() {
             activeItem="recent"
             {...activityRailProjectProps}
             onOpenAccount={() => handleOpenAccountCenter('project-hub')}
-            projectMenuOpen={false}
           >
             <div className="flex h-full min-h-0 flex-col items-center justify-center bg-[radial-gradient(ellipse_at_50%_30%,color-mix(in_oklab,var(--foreground)_4%,transparent),transparent_55%)] px-6 py-12">
-              <ProjectManagerPanel
-                variant="standalone"
-                workspaces={workspaces}
-                activeWorkspaceId={activeProjectId}
-                {...projectManagerActions}
-              />
+              <p className="text-[14px] font-medium text-foreground/80">
+                {hasActiveProjects ? '从左侧选择项目' : '还没有项目'}
+              </p>
+              <p className="mt-1.5 text-[12px] text-muted-foreground">
+                使用左侧“项目”旁的 + 新建、导入或连接项目
+              </p>
               {activeProjectId && returnDestination ? (
                 <button
                   type="button"
@@ -2513,24 +2559,6 @@ function AppContent() {
               setWindowWorkspaceId(id)
               setAppState('ready')
             }}
-          />
-        </ModalProvider>
-      </DismissibleLayerProvider>
-    )
-  }
-
-  // Explicit workspace creation — opened from the project hub.
-  if (appState === 'workspace-creation') {
-    return (
-      <DismissibleLayerProvider>
-        <ModalProvider>
-          <WindowCloseHandler />
-          <WorkspaceCreationScreen
-            canClose={true}
-            closeLabel="返回项目"
-            initialStep={workspaceCreationInitialStep}
-            onClose={handleWorkspaceCreationClose}
-            onWorkspaceCreated={handleProjectHubWorkspaceCreated}
           />
         </ModalProvider>
       </DismissibleLayerProvider>
@@ -2607,6 +2635,7 @@ function AppContent() {
                   onWorkspaceCreatedFromRail={projectManagerActions.onWorkspaceCreated}
                   onOpenProjectInNewWindow={projectManagerActions.onOpenProjectInNewWindow}
                   onRenameProject={projectManagerActions.onRenameProject}
+                  onSetProjectArchived={projectManagerActions.onSetProjectArchived}
                   onRemoveProject={projectManagerActions.onRemoveProject}
                 />
                 </div>

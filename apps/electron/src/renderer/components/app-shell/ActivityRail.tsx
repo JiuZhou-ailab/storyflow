@@ -4,6 +4,9 @@
 
 import * as React from 'react'
 import {
+  Archive,
+  ArchiveRestore,
+  ArrowUpRight,
   ChevronDown,
   ChevronRight,
   DatabaseZap,
@@ -11,9 +14,12 @@ import {
   HelpCircle,
   Megaphone,
   MessageSquareText,
+  MoreHorizontal,
+  Pencil,
   Plus,
   Search,
   Settings,
+  Trash2,
   UserCircle,
   Zap,
 } from 'lucide-react'
@@ -26,6 +32,7 @@ import {
   StyledDropdownMenuItem,
   StyledDropdownMenuSeparator,
 } from '@/components/ui/styled-dropdown'
+import { RenameDialog } from '@/components/ui/rename-dialog'
 import { FeedbackDialog } from './FeedbackDialog'
 import { ProjectSwitcherPopover } from './ProjectSwitcherPopover'
 import {
@@ -59,6 +66,7 @@ export interface ActivityRailProps {
   onWorkspaceCreated?: (workspace: Workspace) => void | Promise<void>
   onOpenProjectInNewWindow?: (workspaceId: string) => void
   onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
+  onSetProjectArchived?: (workspaceId: string, archived: boolean) => void | Promise<void>
   onRemoveProject?: (workspaceId: string) => void | Promise<void>
   /** Opens the free-conversation runtime for the new-conversation affordance. */
   onOpenFreeConversations?: () => void | Promise<void>
@@ -79,9 +87,6 @@ export interface ActivityRailProps {
     unseen: boolean
     accentColor?: string
   }
-  /** Controlled project manager dialog open state. */
-  projectMenuOpen?: boolean
-  onProjectMenuOpenChange?: (open: boolean) => void
 }
 
 export const ACTIVITY_RAIL_WIDTH = 252
@@ -97,6 +102,7 @@ export function ActivityRail({
   onWorkspaceCreated,
   onOpenProjectInNewWindow,
   onRenameProject,
+  onSetProjectArchived,
   onRemoveProject,
   onOpenFreeConversations,
   onOpenSources,
@@ -108,8 +114,6 @@ export function ActivityRail({
   workspaceDirectory,
   onOpenWhatsNew,
   whatsNew,
-  projectMenuOpen,
-  onProjectMenuOpenChange,
 }: ActivityRailProps) {
   const localSessionMetaMap = useAtomValue(sessionMetaMapAtom)
   const [globalSessionMetas, setGlobalSessionMetas] = React.useState<SessionMeta[] | null>(null)
@@ -119,13 +123,13 @@ export function ActivityRail({
   const [projectsExpanded, setProjectsExpanded] = React.useState(() => (
     storage.get(storage.KEYS.activityProjectsExpanded, true)
   ))
+  const [archivedExpanded, setArchivedExpanded] = React.useState(false)
   const [showAllRecent, setShowAllRecent] = React.useState(false)
   const [feedbackOpen, setFeedbackOpen] = React.useState(false)
-  const [uncontrolledMenuOpen, setUncontrolledMenuOpen] = React.useState(false)
+  const [renameTarget, setRenameTarget] = React.useState<Workspace | null>(null)
+  const [renameValue, setRenameValue] = React.useState('')
   const refreshGenerationRef = React.useRef(0)
-  const menuOpen = projectMenuOpen ?? uncontrolledMenuOpen
-  const setMenuOpen = onProjectMenuOpenChange ?? setUncontrolledMenuOpen
-  const canManageProjects = typeof onSelectProject === 'function'
+  const canCreateProjects = typeof onWorkspaceCreated === 'function'
 
   const refreshGlobalSessionMetas = React.useCallback(async () => {
     const generation = ++refreshGenerationRef.current
@@ -161,6 +165,10 @@ export function ActivityRail({
     }
   }, [refreshGlobalSessionMetas])
 
+  const archivedWorkspaceIds = React.useMemo(
+    () => new Set(workspaces.filter(workspace => workspace.archivedAt).map(workspace => workspace.id)),
+    [workspaces],
+  )
   const sessionMetas = React.useMemo(() => {
     const merged = new Map<string, SessionMeta>()
     for (const meta of globalSessionMetas ?? []) merged.set(meta.id, meta)
@@ -168,9 +176,13 @@ export function ActivityRail({
     // processing updates are reflected before the next metadata refresh.
     for (const meta of localSessionMetaMap.values()) merged.set(meta.id, meta)
     return [...merged.values()]
-      .filter(meta => !meta.hidden && meta.isArchived !== true)
+      .filter(meta => (
+        !meta.hidden
+        && meta.isArchived !== true
+        && !archivedWorkspaceIds.has(meta.workspaceId)
+      ))
       .sort((left, right) => (right.lastMessageAt ?? right.createdAt ?? 0) - (left.lastMessageAt ?? left.createdAt ?? 0))
-  }, [globalSessionMetas, localSessionMetaMap])
+  }, [archivedWorkspaceIds, globalSessionMetas, localSessionMetaMap])
 
   const recentSessions = showAllRecent
     ? sessionMetas
@@ -178,11 +190,23 @@ export function ActivityRail({
   const hasMoreRecentSessions = sessionMetas.length > RECENT_SESSION_LIMIT
   const projectWorkspaces = React.useMemo(
     () => [...workspaces]
-      .filter(workspace => workspace.id !== FREE_CONVERSATION_WORKSPACE_ID)
+      .filter(workspace => (
+        workspace.id !== FREE_CONVERSATION_WORKSPACE_ID
+        && !workspace.archivedAt
+      ))
       .sort((left, right) => {
         const recentOrder = (right.lastAccessedAt ?? 0) - (left.lastAccessedAt ?? 0)
         return recentOrder || left.name.localeCompare(right.name, 'zh-Hans')
       }),
+    [workspaces],
+  )
+  const archivedWorkspaces = React.useMemo(
+    () => workspaces
+      .filter(workspace => (
+        workspace.id !== FREE_CONVERSATION_WORKSPACE_ID
+        && Boolean(workspace.archivedAt)
+      ))
+      .sort((left, right) => (right.archivedAt ?? 0) - (left.archivedAt ?? 0)),
     [workspaces],
   )
 
@@ -305,17 +329,9 @@ export function ActivityRail({
               label="项目"
               expanded={projectsExpanded}
               onToggle={() => updateProjectsExpanded(!projectsExpanded)}
-              action={canManageProjects ? (
+              action={canCreateProjects ? (
                 <ProjectSwitcherPopover
-                  workspaces={workspaces}
-                  activeWorkspaceId={activeWorkspaceId}
-                  onSelectProject={onSelectProject}
                   onWorkspaceCreated={onWorkspaceCreated}
-                  onOpenProjectInNewWindow={onOpenProjectInNewWindow}
-                  onRenameProject={onRenameProject}
-                  onRemoveProject={onRemoveProject}
-                  open={menuOpen}
-                  onOpenChange={setMenuOpen}
                 >
                   {projectCreateTrigger}
                 </ProjectSwitcherPopover>
@@ -344,6 +360,18 @@ export function ActivityRail({
                         hasUnread={sessionMetas.some(meta => meta.hasUnread && meta.workspaceId === workspace.id)}
                         disabled={!onSelectProject}
                         onSelect={() => onSelectProject?.(workspace.id)}
+                        onOpenInNewWindow={onOpenProjectInNewWindow
+                          ? () => onOpenProjectInNewWindow(workspace.id)
+                          : undefined}
+                        onRename={onRenameProject
+                          ? () => {
+                            setRenameTarget(workspace)
+                            setRenameValue(workspace.name)
+                          }
+                          : undefined}
+                        onArchive={onSetProjectArchived
+                          ? () => onSetProjectArchived(workspace.id, true)
+                          : undefined}
                       />
                     )
                   })}
@@ -351,6 +379,39 @@ export function ActivityRail({
               ) : (
                 <div className="px-3 py-3 text-xs text-muted-foreground/60">暂无项目</div>
               )
+            ) : null}
+            {archivedWorkspaces.length > 0 ? (
+              <>
+                <SidebarSectionHeader
+                  label={`已归档 ${archivedWorkspaces.length}`}
+                  expanded={archivedExpanded}
+                  onToggle={() => setArchivedExpanded(value => !value)}
+                />
+                {archivedExpanded ? (
+                  <div className="space-y-0.5 pb-1" data-testid="activity-archived-projects">
+                    {archivedWorkspaces.map(workspace => (
+                      <ProjectFolderRow
+                        key={workspace.id}
+                        workspace={workspace}
+                        active={false}
+                        archived
+                        hasUnread={false}
+                        disabled
+                        onSelect={() => {}}
+                        onRestore={onSetProjectArchived
+                          ? () => onSetProjectArchived(workspace.id, false)
+                          : undefined}
+                        onRemove={onRemoveProject
+                          ? () => {
+                            const ok = window.confirm(`从列表中移除「${workspace.name}」？不会删除磁盘文件。`)
+                            if (ok) void onRemoveProject(workspace.id)
+                          }
+                          : undefined}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </>
             ) : null}
           </section>
         </div>
@@ -436,6 +497,25 @@ export function ActivityRail({
         </DropdownMenu>
         <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
       </nav>
+      {renameTarget ? (
+        <RenameDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setRenameTarget(null)
+          }}
+          title="重命名项目"
+          value={renameValue}
+          onValueChange={setRenameValue}
+          onSubmit={() => {
+            const nextName = renameValue.trim()
+            if (nextName && nextName !== renameTarget.name) {
+              void onRenameProject?.(renameTarget.id, nextName)
+            }
+            setRenameTarget(null)
+          }}
+          placeholder="输入项目名称"
+        />
+      ) : null}
     </aside>
   )
 }
@@ -557,36 +637,97 @@ function getProfileInitial(name: string | undefined): string {
 function ProjectFolderRow({
   workspace,
   active,
+  archived = false,
   hasUnread,
   disabled,
   onSelect,
+  onOpenInNewWindow,
+  onRename,
+  onArchive,
+  onRestore,
+  onRemove,
 }: {
   workspace: Workspace
   active: boolean
+  archived?: boolean
   hasUnread: boolean
   disabled: boolean
   onSelect: () => void
+  onOpenInNewWindow?: () => void
+  onRename?: () => void
+  onArchive?: () => void
+  onRestore?: () => void
+  onRemove?: () => void
 }) {
   return (
-    <button
-      type="button"
-      aria-label={`项目：${workspace.name}`}
-      title={workspace.name}
-      aria-current={active ? 'page' : undefined}
-      disabled={disabled}
-      className={cn(
-        'group flex h-[30px] w-full min-w-0 items-center gap-1.5 rounded-[6px] px-2 text-left outline-none transition-colors',
-        'hover:bg-foreground/[0.045] focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-60',
-        active && 'bg-foreground/[0.07] text-foreground',
-      )}
-      onClick={onSelect}
-    >
-      <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
-        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-      </span>
-      <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate text-[12px] text-foreground/85">{workspace.name}</span>
-      {hasUnread ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-label="有未读对话" /> : null}
-    </button>
+    <div className="group flex min-w-0 items-center rounded-[6px] hover:bg-foreground/[0.045]">
+      <button
+        type="button"
+        aria-label={`项目：${workspace.name}`}
+        title={workspace.name}
+        aria-current={active ? 'page' : undefined}
+        disabled={disabled}
+        className={cn(
+          'flex h-[30px] min-w-0 flex-1 items-center gap-1.5 rounded-[6px] px-2 text-left outline-none transition-colors',
+          'focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default',
+          active && 'bg-foreground/[0.07] text-foreground',
+          archived && 'opacity-60',
+        )}
+        onClick={onSelect}
+      >
+        <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+        </span>
+        <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate text-[12px] text-foreground/85">{workspace.name}</span>
+        {hasUnread ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-label="有未读对话" /> : null}
+      </button>
+      {(onOpenInNewWindow || onRename || onArchive || onRestore || onRemove) ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={`管理 ${workspace.name}`}
+              className="mr-1 flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-foreground/[0.06] hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100 data-[state=open]:opacity-100"
+            >
+              <MoreHorizontal className="size-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <StyledDropdownMenuContent align="end" sideOffset={4}>
+            {onOpenInNewWindow ? (
+              <StyledDropdownMenuItem onClick={onOpenInNewWindow}>
+                <ArrowUpRight className="size-3.5" />
+                <span>新窗口打开</span>
+              </StyledDropdownMenuItem>
+            ) : null}
+            {onRename ? (
+              <StyledDropdownMenuItem onClick={onRename}>
+                <Pencil className="size-3.5" />
+                <span>重命名</span>
+              </StyledDropdownMenuItem>
+            ) : null}
+            {onArchive ? (
+              <StyledDropdownMenuItem onClick={onArchive}>
+                <Archive className="size-3.5" />
+                <span>归档</span>
+              </StyledDropdownMenuItem>
+            ) : null}
+            {onRestore ? (
+              <StyledDropdownMenuItem onClick={onRestore}>
+                <ArchiveRestore className="size-3.5" />
+                <span>恢复</span>
+              </StyledDropdownMenuItem>
+            ) : null}
+            {onRemove ? <StyledDropdownMenuSeparator /> : null}
+            {onRemove ? (
+              <StyledDropdownMenuItem variant="destructive" onClick={onRemove}>
+                <Trash2 className="size-3.5" />
+                <span>移除</span>
+              </StyledDropdownMenuItem>
+            ) : null}
+          </StyledDropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
+    </div>
   )
 }
