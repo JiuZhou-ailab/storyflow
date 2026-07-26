@@ -11,7 +11,6 @@ import {
   getNavigatorResizeMaxWidth,
   getDefaultWritingWorkspaceLayoutWidths,
   isUserConfiguredShellLayoutWidth,
-  preserveAssistantWidthOnShellResize,
   resolveInitialShellLayoutWidths,
   shouldResolveInitialShellLayoutWidths,
 } from '../layout-defaults'
@@ -154,44 +153,28 @@ describe('app shell layout defaults', () => {
     expect(shouldResolveInitialShellLayoutWidths(768, 768)).toBe(true)
   })
 
-  it('keeps the writing assistant width stable after the first desktop measurement', () => {
-    expect(appShellSource).toContain('shouldResolveInitialShellLayoutWidths(shellWidth, MOBILE_THRESHOLD)')
-    expect(appShellSource).toContain('activityRailWidth: activityRailOffset')
-    expect(appShellSource).toContain('sidebarPersisted: true')
-    expect(appShellSource).toContain('currentSidebarWidth: 0')
-    expect(appShellSource).not.toContain('storage.get<number | undefined>(storage.KEYS.sidebarWidth, undefined)')
-    expect(appShellSource).toContain('storage.get<number | undefined>(storage.KEYS.novelWorkspaceNavigatorWidth, undefined)')
-    expect(appShellSource).not.toContain('if (sidebarPersisted && workspacePersisted) return')
-    expect(appShellSource).toContain('previousNovelWorkspaceShellWidthRef')
-    expect(appShellSource).toContain('preservingNovelWorkspaceAssistant')
-    expect(appShellSource).toContain('preserveAssistantWidthOnShellResize')
-    expect(appShellSource).not.toContain('latestSidebarWidthRef.current !== widths.sidebar')
-    expect(appShellSource).toContain('latestNovelWorkspaceNavigatorWidthRef.current !== widths.workspace')
-    expect(appShellSource).toContain('(!workspacePersisted || latestNovelWorkspaceNavigatorWidthRef.current > widths.workspace)')
+  it('keeps the manuscript column independent of the active route', () => {
+    // The manuscript and the conversation list are distinct roles. Gating the
+    // document on the writing route made opening a new conversation replace the
+    // manuscript with the conversation list.
+    expect(appShellSource).toContain('const showWritingDocumentSurface = showWritingWorkspaceShell')
+    expect(appShellSource).not.toContain('const showWritingDocumentSurface = isProjectRuntime && isWritingNavigation(navState)')
+    // The navigator column carries one role, so its width no longer switches meaning.
+    expect(appShellSource).toContain('const navigatorPanelWidth = sessionListWidth')
   })
 
-  it('moves shell resize delta into the writing workspace instead of the assistant panel', () => {
-    expect(preserveAssistantWidthOnShellResize({
-      shellWidth: 1700,
-      previousShellWidth: 1600,
-      currentWorkspaceWidth: 800,
-      workspaceMinWidth: 420,
-      navigatorStartX: 300,
-      edgeInset: 6,
-      panelGap: 6,
-      assistantMinWidth: 440,
-    })).toBe(900)
+  it('leaves the manuscript width to the user when the window resizes', () => {
+    // The dock is anchored to the right edge, so a wider window must widen the
+    // conversation, not the manuscript. Only the clamp may move it.
+    expect(appShellSource).toContain('shouldResolveInitialShellLayoutWidths(shellWidth, MOBILE_THRESHOLD)')
+    expect(appShellSource).toContain('DEFAULT_DOCUMENT_DOCK_WIDTH_RATIO')
+    expect(appShellSource).not.toContain('preserveAssistantWidthOnShellResize')
+    expect(appShellSource).not.toContain('preservingNovelWorkspaceAssistant')
+  })
 
-    expect(preserveAssistantWidthOnShellResize({
-      shellWidth: 1200,
-      previousShellWidth: 1600,
-      currentWorkspaceWidth: 800,
-      workspaceMinWidth: 420,
-      navigatorStartX: 300,
-      edgeInset: 6,
-      panelGap: 6,
-      assistantMinWidth: 440,
-    })).toBe(420)
+  it('resizes the manuscript from its left edge because it is right-anchored', () => {
+    expect(appShellSource).toContain("if (mode === 'document-dock')")
+    expect(appShellSource).toContain('available - clientX')
   })
 
   it('keeps the desktop assistant panel from shrinking below the shared panel minimum', () => {

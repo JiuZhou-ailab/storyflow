@@ -565,7 +565,7 @@ describe('novel writing workspace layout', () => {
     )
     const novelWorkspaceActionsSource = appShellSource.slice(
       appShellSource.indexOf('workspaceActions={('),
-      appShellSource.indexOf('</NovelDocumentEditorPanel>', appShellSource.indexOf('workspaceActions={('))
+      appShellSource.indexOf('<WorkspaceEmptyState', appShellSource.indexOf('workspaceActions={('))
     )
 
     expect(appShellSource).not.toContain('nav:writing-version')
@@ -879,6 +879,12 @@ describe('novel writing workspace layout', () => {
       appShellSource.indexOf('navigatorSlot={'),
       appShellSource.indexOf('navigatorWidth=')
     )
+    // The manuscript owns its own column, so its states live in the document
+    // surface rather than competing with the conversation list for one slot.
+    const documentSurfaceSource = appShellSource.slice(
+      appShellSource.indexOf('const writingDocumentSurface ='),
+      appShellSource.indexOf('navigatorSlot={')
+    )
 
     expect(appShellSource).toContain('const showNovelWorkspaceSidebar = novelWorkspaceRootMatchesCandidates')
     expect(appShellSource).toContain('const showWritingWorkspaceShell = isProjectRuntime')
@@ -888,15 +894,15 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('const showNovelWorkspacePending = showWritingDocumentSurface && (')
     expect(appShellSource).toContain('const showNovelWorkspaceUnavailable = showWritingDocumentSurface')
     expect(appShellSource).toContain('setNovelWorkspaceDetecting(shouldKeepWorkspaceChromeWhileDetecting)')
-    expect(appShellSource).toContain('(showNovelWorkspacePending || showNovelWorkspaceUnavailable) ? novelWorkspaceNavigatorWidth : sessionListWidth')
+    expect(appShellSource).toContain('const navigatorPanelWidth = sessionListWidth')
     expect(appShellSource).toContain("t('writing.loadingWorkspace'")
-    expect(navigatorSlotSource).toContain(') : showNovelWorkspacePending ? (')
-    expect(navigatorSlotSource).toContain(') : showNovelWorkspaceUnavailable ? (')
-    expect(navigatorSlotSource.indexOf('showNovelWorkspacePending')).toBeLessThan(navigatorSlotSource.indexOf('<SessionList'))
-    expect(navigatorSlotSource.indexOf('showNovelWorkspaceUnavailable')).toBeLessThan(navigatorSlotSource.indexOf('<SessionList'))
+    expect(documentSurfaceSource).toContain(') : showNovelWorkspacePending ? (')
+    expect(documentSurfaceSource).toContain(') : showNovelWorkspaceUnavailable ? (')
+    expect(navigatorSlotSource).toContain('<SessionList')
+    expect(navigatorSlotSource).not.toContain('showNovelWorkspacePending')
     expect(appShellSource).not.toContain('NovelWorkspaceUtilityTopNav')
     expect(appShellSource).not.toContain('workspaceTools={showNovelWorkspaceSidebar ? (')
-    expect(appShellSource).toContain('{showNovelDocumentNavigator && novelWorkspaceRoot ? (')
+    expect(appShellSource).toContain('showNovelDocumentNavigator && novelWorkspaceRoot ? (')
   })
 
   it('does not derive writing workspace roots from a stale session outside the active workspace', () => {
@@ -1227,14 +1233,14 @@ describe('novel writing workspace layout', () => {
       appShellSource.indexOf('const novelWorkspaceCandidateKey ='),
       appShellSource.indexOf('const reviewableNovelFileChanges')
     )
-    const navigatorSlotSource = appShellSource.slice(
-      appShellSource.indexOf('navigatorSlot={'),
-      appShellSource.indexOf('navigatorWidth=')
+    const documentSurfaceSource = appShellSource.slice(
+      appShellSource.indexOf('const writingDocumentSurface ='),
+      appShellSource.indexOf('navigatorSlot={')
     )
 
     expect(visibilitySource).toContain('const hasUnsettledNovelWorkspaceCandidates = novelWorkspaceCandidateRoots.length > 0 && novelWorkspaceDetectionSettledKey !== novelWorkspaceCandidateKey')
     expect(visibilitySource).toContain('(!showNovelWorkspaceSidebar && hasUnsettledNovelWorkspaceCandidates)')
-    expect(navigatorSlotSource.indexOf('showNovelWorkspacePending')).toBeLessThan(navigatorSlotSource.indexOf('<SessionList'))
+    expect(documentSurfaceSource).toContain('showNovelWorkspacePending')
   })
 
   it('does not render the legacy session navigator after writing workspace detection misses', () => {
@@ -1247,13 +1253,19 @@ describe('novel writing workspace layout', () => {
       appShellSource.indexOf('navigatorSlot={'),
       appShellSource.indexOf('navigatorWidth=')
     )
+    // The manuscript states live in their own column now, so the detection-miss
+    // notice belongs to the document surface rather than the navigator.
+    const documentSurfaceSource = appShellSource.slice(
+      appShellSource.indexOf('const writingDocumentSurface ='),
+      appShellSource.indexOf('navigatorSlot={')
+    )
 
     expect(visibilitySource).toContain('activeWritingWorkspaceRoot !== null')
     expect(visibilitySource).toContain('&& !showNovelWorkspaceSidebar')
     expect(visibilitySource).toContain('&& !showNovelWorkspacePending')
     expect(navigatorSlotSource).toContain('<SessionList')
-    expect(navigatorSlotSource).toContain(') : showNovelWorkspaceUnavailable ? (')
-    expect(navigatorSlotSource.indexOf('showNovelWorkspaceUnavailable')).toBeLessThan(navigatorSlotSource.indexOf('<SessionList'))
+    expect(navigatorSlotSource).not.toContain('showNovelWorkspaceUnavailable')
+    expect(documentSurfaceSource).toContain(') : showNovelWorkspaceUnavailable ? (')
   })
 
   it('uses generic project-tree defaults without overriding a persisted collapse', () => {
@@ -1325,16 +1337,17 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('latestNovelWorkspaceNavigatorWidthRef')
     expect(appShellSource).toContain('setNovelWorkspaceNavigatorWidth(newWidth)')
     expect(appShellSource).toContain('storage.KEYS.novelWorkspaceNavigatorWidth')
-    expect(appShellSource).toContain('const navigatorPanelWidth = showNovelDocumentNavigator')
-    expect(appShellSource).toContain('? novelWorkspaceNavigatorWidth')
-    expect(appShellSource).toContain(': sessionListWidth')
+    expect(appShellSource).toContain('setNovelWorkspaceNavigatorWidth(nextWidth)')
+    expect(appShellSource).toContain('width: novelWorkspaceNavigatorWidth')
+    expect(appShellSource).toContain('const navigatorPanelWidth = sessionListWidth')
   })
 
   it('starts navigator resizing synchronously from the separator handle', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
 
     expect(appShellSource).toContain('beginResize')
-    expect(appShellSource).toContain("beginResize(isNovelWorkspaceNavigatorActive ? 'novel-workspace-navigator' : 'session-list', e)")
+    expect(appShellSource).toContain("beginResize('document-dock', e)")
+    expect(appShellSource).toContain("beginResize('session-list', e)")
     expect(appShellSource).toContain("document.addEventListener('mousemove', handleMouseMove, true)")
     expect(appShellSource).toContain('z-dropdown')
   })
@@ -1362,6 +1375,7 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).not.toContain('handleNavigatorResizeBoundaryMouseDownCapture')
     expect(appShellSource).not.toContain('onMouseDownCapture={handleNavigatorResizeBoundaryMouseDownCapture}')
     expect(appShellSource).not.toContain('navigatorPanelRect.right + (PANEL_GAP / 2)')
-    expect(appShellSource).toContain("beginResize(isNovelWorkspaceNavigatorActive ? 'novel-workspace-navigator' : 'session-list', e)")
+    expect(appShellSource).toContain("beginResize('document-dock', e)")
+    expect(appShellSource).toContain("beginResize('session-list', e)")
   })
 })

@@ -132,33 +132,6 @@ export function getNavigatorResizeMaxWidth({
   return Math.max(0, shellWidth - navigatorStartX - edgeInset - panelGap - assistantMinWidth)
 }
 
-export interface PreserveAssistantWidthOnShellResizeInput extends NavigatorResizeMaxWidthInput {
-  previousShellWidth: number
-  currentWorkspaceWidth: number
-  workspaceMinWidth: number
-}
-
-export function preserveAssistantWidthOnShellResize({
-  shellWidth,
-  previousShellWidth,
-  currentWorkspaceWidth,
-  workspaceMinWidth,
-  navigatorStartX,
-  edgeInset,
-  panelGap,
-  assistantMinWidth,
-}: PreserveAssistantWidthOnShellResizeInput): number {
-  const maxWidth = getNavigatorResizeMaxWidth({
-    shellWidth,
-    navigatorStartX,
-    edgeInset,
-    panelGap,
-    assistantMinWidth,
-  })
-  const nextWidth = currentWorkspaceWidth + (shellWidth - previousShellWidth)
-  return Math.min(Math.max(nextWidth, workspaceMinWidth), Math.max(workspaceMinWidth, maxWidth))
-}
-
 const DEFAULT_SHELL_LAYOUT_WIDTHS = getDefaultShellLayoutWidths()
 
 export const DEFAULT_SIDEBAR_WIDTH = DEFAULT_SHELL_LAYOUT_WIDTHS.sidebar

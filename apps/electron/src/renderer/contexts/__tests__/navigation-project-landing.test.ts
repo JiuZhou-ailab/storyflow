@@ -91,7 +91,10 @@ describe('project default navigation', () => {
     // The rail no longer lists project conversations, so the project's own
     // SessionList is their only entry and must not be collapsed away.
     expect(appShellSource).toContain('&& !isProjectRuntime')
-    expect(appShellSource).toContain('const showWritingDocumentSurface = isProjectRuntime && isWritingNavigation(navState)')
+    // It keeps that entry by owning a column outright rather than borrowing the
+    // navigator from the manuscript, which is what made the two mutually exclusive.
+    expect(appShellSource).toContain('const navigatorPanelWidth = sessionListWidth')
+    expect(appShellSource).not.toContain('const showWritingDocumentSurface = isProjectRuntime && isWritingNavigation(navState)')
   })
 
   it('keeps route auto-selection session-only while writing owns its metadata-driven default', () => {
