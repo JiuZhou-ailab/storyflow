@@ -95,7 +95,7 @@
 }
 
 .tiptap-editor--manuscript {
-  --tiptap-manuscript-width: min(100%, 920px);
+  --tiptap-manuscript-width: min(100%, 1120px);
   --tiptap-manuscript-line-height: 1.2;
   --tiptap-manuscript-paragraph-spacing: 0;
   --tiptap-manuscript-paper: color-mix(in oklch, var(--background) 99.5%, var(--foreground) 0.5%);

@@ -287,6 +287,7 @@ const SESSION_LIST_MIN_WIDTH = 240
 const SESSION_LIST_MAX_WIDTH = 480
 const NOVEL_WORKSPACE_NAVIGATOR_MIN_WIDTH = 420
 const NOVEL_WORKSPACE_NAVIGATOR_DEFAULT_WIDTH = DEFAULT_WORKSPACE_WIDTH
+const WRITING_ASSISTANT_MIN_WIDTH = 320
 // The directory is the outermost content navigator, so it stays narrow like a
 // file tree rather than matching the manuscript's reading width.
 const WORKSPACE_DIRECTORY_MIN_WIDTH = 220
@@ -996,6 +997,15 @@ function AppShellContent({
   // UNIFIED NAVIGATION STATE - single source of truth from NavigationContext
   // Derived from focused panel's route — all panels are peers
   const navState = useNavigationState()
+  // The Activity Rail already owns conversation navigation in these views, so
+  // the hidden legacy navigator must not keep consuming manuscript width.
+  const hideSessionListNavigator = showActivityRail
+    && !isAutoCompact
+    && (
+      isSessionsNavigation(navState)
+      || (isProjectRuntime && isWritingNavigation(navState))
+    )
+  const visibleSessionListWidth = hideSessionListNavigator ? 0 : sessionListWidth
 
   const store = useStore()
   const panelStack = useAtomValue(panelStackAtom)
@@ -1725,7 +1735,7 @@ function AppShellContent({
           : 0
         const maxDocumentWidth = Math.max(
           NOVEL_WORKSPACE_NAVIGATOR_MIN_WIDTH,
-          shellWidth - activityRailOffset - sessionListWidth - PANEL_MIN_WIDTH - directoryReserve - (PANEL_GAP * 2) - PANEL_EDGE_INSET,
+          shellWidth - activityRailOffset - visibleSessionListWidth - WRITING_ASSISTANT_MIN_WIDTH - directoryReserve - (PANEL_GAP * 2) - PANEL_EDGE_INSET,
         )
         const nextWidth = Math.min(Math.max(raw, NOVEL_WORKSPACE_NAVIGATOR_MIN_WIDTH), maxDocumentWidth)
         latestNovelWorkspaceNavigatorWidthRef.current = nextWidth
@@ -1795,7 +1805,7 @@ function AppShellContent({
     updateHandleY(e.clientY)
     document.addEventListener('mousemove', handleMouseMove, true)
     document.addEventListener('mouseup', handleMouseUp, true)
-  }, [activityRailOffset, rightWorkspaceVisible, shellWidth, sessionListWidth, workspaceDirectoryVisible, workspaceDirectoryWidth])
+  }, [activityRailOffset, rightWorkspaceVisible, shellWidth, visibleSessionListWidth, workspaceDirectoryVisible, workspaceDirectoryWidth])
 
   // Spring transition config - shared between sidebar and header
   // Critical damping (no bounce): damping = 2 * sqrt(stiffness * mass)
@@ -3470,10 +3480,14 @@ function AppShellContent({
     if (!shouldResolveInitialShellLayoutWidths(shellWidth, MOBILE_THRESHOLD)) return
     if (!isNovelWorkspaceNavigatorActive) return
 
+    const directoryReserve = rightWorkspaceVisible && workspaceDirectoryVisible
+      ? workspaceDirectoryWidth + PANEL_GAP
+      : 0
     const available = shellWidth
       - activityRailOffset
-      - sessionListWidth
-      - PANEL_MIN_WIDTH
+      - visibleSessionListWidth
+      - WRITING_ASSISTANT_MIN_WIDTH
+      - directoryReserve
       - (PANEL_GAP * 2)
       - PANEL_EDGE_INSET
     const maxWidth = Math.max(NOVEL_WORKSPACE_NAVIGATOR_MIN_WIDTH, available)
@@ -3487,7 +3501,15 @@ function AppShellContent({
     if (nextWidth === latestNovelWorkspaceNavigatorWidthRef.current) return
     latestNovelWorkspaceNavigatorWidthRef.current = nextWidth
     setNovelWorkspaceNavigatorWidth(nextWidth)
-  }, [activityRailOffset, isNovelWorkspaceNavigatorActive, sessionListWidth, shellWidth])
+  }, [
+    activityRailOffset,
+    isNovelWorkspaceNavigatorActive,
+    rightWorkspaceVisible,
+    shellWidth,
+    visibleSessionListWidth,
+    workspaceDirectoryVisible,
+    workspaceDirectoryWidth,
+  ])
 
   React.useEffect(() => {
     if (!activeWorkspaceId) return
@@ -4176,18 +4198,6 @@ function AppShellContent({
     if (isSessionsNavigation(navState)) return 'recent'
     return 'writing'
   }, [globalSearchOpen, navState])
-  // The rail now carries both domains as a two-level tree — Free Conversations
-  // plus each project expanded into its own conversations (ADR 0006 revision).
-  // So the standalone SessionList navigator is redundant for every runtime, not
-  // just the free one; suppressing it also removes the empty column that used to
-  // sit between the rail and the chat when a project had no session route.
-  const hideSessionListNavigator = showActivityRail
-    && !isAutoCompact
-    && (
-      isSessionsNavigation(navState)
-      || (isProjectRuntime && isWritingNavigation(navState))
-    )
-
   // One rail callback for every conversation, free or project. The domain rule
   // lives here, not in two parallel handlers: if the session already belongs to
   // the active runtime, just focus it in place; otherwise perform the EXPLICIT
@@ -5209,7 +5219,7 @@ function AppShellContent({
           }
           navigatorWidth={isAutoCompact
             ? navigatorPanelWidth
-            : (effectiveSidebarAndNavigatorHidden || hideSessionListNavigator ? 0 : navigatorPanelWidth)}
+            : (effectiveSidebarAndNavigatorHidden ? 0 : visibleSessionListWidth)}
           navigatorResizeSash={!effectiveSidebarAndNavigatorHidden && !hideSessionListNavigator ? (
             <div
               ref={sessionListHandleRef}
@@ -5250,6 +5260,7 @@ function AppShellContent({
           isCompact={isAutoCompact}
           isResizing={!!isResizing}
           hidePanelCloseButton={showPrimarySidebar}
+          contentPanelMinWidth={showWritingDocumentColumn ? WRITING_ASSISTANT_MIN_WIDTH : PANEL_MIN_WIDTH}
         />
         <AnimatePresence initial={false}>
           {/* The title-bar toggle folds the complete writing workspace; the

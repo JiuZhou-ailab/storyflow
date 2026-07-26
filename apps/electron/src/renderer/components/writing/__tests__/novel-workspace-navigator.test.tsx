@@ -276,7 +276,7 @@ describe('novel writing workspace layout', () => {
     expect(tiptapBubbleSource).not.toContain('Sparkles')
     expect(tiptapEditorStyles).toContain('.tiptap-editor--manuscript .tiptap-prose')
     expect(tiptapEditorStyles).toContain('--tiptap-manuscript-width')
-    expect(tiptapEditorStyles).toContain('--tiptap-manuscript-width: min(100%, 920px)')
+    expect(tiptapEditorStyles).toContain('--tiptap-manuscript-width: min(100%, 1120px)')
     expect(tiptapEditorStyles).toContain('--tiptap-manuscript-line-height: 1.2')
     expect(tiptapEditorStyles).toContain('--tiptap-manuscript-paragraph-spacing: 0')
     expect(tiptapEditorStyles).toContain('line-height: var(--tiptap-manuscript-line-height)')
@@ -1326,6 +1326,8 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).not.toContain('NOVEL_WORKSPACE_NAVIGATOR_MAX_WIDTH')
     expect(appShellSource).toContain('getNavigatorResizeMaxWidth')
     expect(appShellSource).toContain('assistantMinWidth: PANEL_MIN_WIDTH')
+    expect(appShellSource).toContain('const visibleSessionListWidth = hideSessionListNavigator ? 0 : sessionListWidth')
+    expect(appShellSource).toContain('shellWidth - activityRailOffset - visibleSessionListWidth - WRITING_ASSISTANT_MIN_WIDTH')
   })
 
   it('keeps novel navigator width separate from the regular session list width', () => {

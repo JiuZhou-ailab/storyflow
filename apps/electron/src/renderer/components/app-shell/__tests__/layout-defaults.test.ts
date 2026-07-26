@@ -253,9 +253,13 @@ describe('app shell layout defaults', () => {
     expect(resizableColumnSource).toContain('disableAnimation')
   })
 
-  it('keeps the desktop assistant panel from shrinking below the shared panel minimum', () => {
-    expect(panelSlotSource).toContain('? { flexGrow: 1, minWidth: isCompact ? 0 : PANEL_MIN_WIDTH }')
-    expect(panelSlotSource).toContain(': { flexGrow: proportion, flexShrink: 1, flexBasis: 0, minWidth: PANEL_MIN_WIDTH }')
+  it('keeps the shared desktop panel minimum as the default while writing can reserve less space', () => {
+    expect(panelSlotSource).toContain('minWidth = PANEL_MIN_WIDTH')
+    expect(panelSlotSource).toContain('? { flexGrow: 1, minWidth: isCompact ? 0 : minWidth }')
+    expect(panelSlotSource).toContain(': { flexGrow: proportion, flexShrink: 1, flexBasis: 0, minWidth }')
+    expect(appShellSource).toContain('const WRITING_ASSISTANT_MIN_WIDTH = 320')
+    expect(appShellSource).toContain('contentPanelMinWidth={showWritingDocumentColumn ? WRITING_ASSISTANT_MIN_WIDTH : PANEL_MIN_WIDTH}')
+    expect(panelStackSource).toContain('minWidth={contentPanelMinWidth}')
   })
 
   it('uses shared default layout constants for both navigator widths before measurement', () => {

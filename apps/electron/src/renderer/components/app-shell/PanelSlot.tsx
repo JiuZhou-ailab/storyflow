@@ -1,4 +1,4 @@
-// input: One panel-stack entry, focus state, and proportional sizing
+// input: One panel-stack entry, focus state, proportional sizing, and optional minimum width
 // output: One flat content pane with panel-specific chrome
 // pos: Content pane renderer inside the continuous app workbench
 
@@ -9,7 +9,7 @@
  *
  * When a panel is the only one (isOnly), it flex-grows to fill available space.
  * When multiple panels exist, each uses flex-grow with its proportion as the weight,
- * combined with min-width to prevent shrinking below PANEL_MIN_WIDTH.
+ * combined with a layout-owned minimum width.
  *
  * Each PanelSlot overrides panel chrome to inject a per-panel close button
  * into PanelHeader's rightSidebarButton slot. All panels are equal — closing
@@ -42,6 +42,8 @@ interface PanelSlotProps {
   isCompact?: boolean
   /** Hide the per-panel close button when the surrounding workspace owns navigation. */
   hideCloseButton?: boolean
+  /** Per-layout minimum; defaults to the shared desktop content minimum. */
+  minWidth?: number
 }
 
 export function PanelSlot({
@@ -53,6 +55,7 @@ export function PanelSlot({
   sash,
   isCompact,
   hideCloseButton,
+  minWidth = PANEL_MIN_WIDTH,
 }: PanelSlotProps) {
   const { t } = useTranslation()
   const closePanel = useSetAtom(closePanelAtom)
@@ -122,8 +125,8 @@ export function PanelSlot({
             : {}
           ),
           ...(isOnly
-            ? { flexGrow: 1, minWidth: isCompact ? 0 : PANEL_MIN_WIDTH }
-            : { flexGrow: proportion, flexShrink: 1, flexBasis: 0, minWidth: PANEL_MIN_WIDTH }
+            ? { flexGrow: 1, minWidth: isCompact ? 0 : minWidth }
+            : { flexGrow: proportion, flexShrink: 1, flexBasis: 0, minWidth }
           ),
         }}
       >

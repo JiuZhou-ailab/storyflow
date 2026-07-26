@@ -1,4 +1,4 @@
-// input: Pinned shell columns, content panel state, and optional resize sash
+// input: Pinned shell columns, content panel state, optional minimum width, and resize sash
 // output: Continuous horizontal workbench with one scrollable content lane
 // pos: Parent layout owner for navigator, content panes, and their shared seams
 
@@ -9,7 +9,7 @@
  * Sidebar → Navigator → horizontally scrollable Content Panel(s).
  *
  * Content panels use CSS flex-grow with their proportions as weights:
- * - Each panel gets `flex: <proportion> 1 0px` with `min-width: PANEL_MIN_WIDTH`
+ * - Each panel gets `flex: <proportion> 1 0px` with the layout's content minimum
  * - Flex distributes available space proportionally — panels fill the viewport
  * - When panels hit min-width, overflow-x: auto kicks in naturally
  *
@@ -42,6 +42,7 @@ interface PanelStackContainerProps {
   isCompact?: boolean
   isResizing?: boolean
   hidePanelCloseButton?: boolean
+  contentPanelMinWidth?: number
 }
 
 export function PanelStackContainer({
@@ -54,6 +55,7 @@ export function PanelStackContainer({
   isCompact = false,
   isResizing,
   hidePanelCloseButton,
+  contentPanelMinWidth,
 }: PanelStackContainerProps) {
   const panelStack = useAtomValue(panelStackAtom)
   const focusedPanelId = useAtomValue(focusedPanelIdAtom)
@@ -171,6 +173,7 @@ export function PanelStackContainer({
                   proportion={entry.proportion}
                   isCompact={isCompact}
                   hideCloseButton={hidePanelCloseButton}
+                  minWidth={contentPanelMinWidth}
                   sash={index > 0 ? (
                     <PanelResizeSash
                       leftIndex={index - 1}
