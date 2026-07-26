@@ -3,6 +3,13 @@
 // pos: The factual axis of session state, orthogonal to the user-authored Kanban status
 
 /**
+ * This module must stay dependency-free so the renderer can import it directly
+ * via `@craft-agent/shared/statuses/runtime`. The `./statuses` barrel pulls in
+ * filesystem-backed storage and is Node-only — value-importing the barrel from
+ * renderer code breaks the browser bundle.
+ */
+
+/**
  * Sessions carry two orthogonal kinds of state:
  *
  * - **Kanban status** (`StatusConfig` in `./types.ts`) is the *human's intent* —

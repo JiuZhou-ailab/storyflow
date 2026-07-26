@@ -21,7 +21,7 @@ import { navigate, routes } from "@/lib/navigate"
 import type { SessionMeta } from "@/atoms/sessions"
 import { messagingBindingsForSessionAtomFamily } from "@/atoms/messaging"
 import { hasPendingPromptAtomFamily } from "@/atoms/pending-requests"
-import { deriveSessionRuntimeStatus } from "@craft-agent/shared/statuses"
+import { deriveSessionRuntimeStatus } from "@craft-agent/shared/statuses/runtime"
 import { useAtomValue } from "jotai"
 
 const PLATFORM_PILL: Record<'telegram' | 'whatsapp', { label: string; colorClass: string }> = {

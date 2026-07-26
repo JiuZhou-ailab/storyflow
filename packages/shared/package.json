@@ -49,6 +49,7 @@
     "./utils/url-safety": "./src/utils/url-safety.ts",
     "./utils/workspace": "./src/utils/workspace.ts",
     "./utils/workspace-slug": "./src/utils/workspace-slug.ts",
+    "./statuses/runtime": "./src/statuses/runtime.ts",
     "./labels": "./src/labels/index.ts",
     "./labels/auto": "./src/labels/auto/index.ts",
     "./labels/storage": "./src/labels/storage.ts",

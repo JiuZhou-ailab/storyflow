@@ -46,7 +46,7 @@ import { formatRelativeTimestamp } from '@/lib/display-format'
 import * as storage from '@/lib/local-storage'
 import { getSessionTitle } from '@/utils/session'
 import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
-import { deriveSessionRuntimeStatus, requiresHumanAttention } from '@craft-agent/shared/statuses'
+import { deriveSessionRuntimeStatus, requiresHumanAttention } from '@craft-agent/shared/statuses/runtime'
 import { hasPendingPromptAtomFamily, sessionIdsWithPendingPromptAtom } from '@/atoms/pending-requests'
 import type { Workspace } from '../../../shared/types'
 
