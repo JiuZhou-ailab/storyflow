@@ -171,11 +171,9 @@ import SettingsNavigator from "@/pages/settings/SettingsNavigator"
 import {
   PANEL_GAP,
   PANEL_EDGE_INSET,
+  PANEL_SASH_HIT_WIDTH,
   PANEL_SASH_LINE_WIDTH,
-  PANEL_STACK_VERTICAL_OVERFLOW,
   PANEL_MIN_WIDTH,
-  RADIUS_EDGE,
-  RADIUS_INNER,
 } from "./panel-constants"
 import {
   DEFAULT_WORKSPACE_WIDTH,
@@ -296,8 +294,6 @@ const WORKSPACE_DIRECTORY_MAX_WIDTH = 460
 const WORKSPACE_DIRECTORY_DEFAULT_WIDTH = 300
 /** Fraction of the window the manuscript column takes before the user resizes it. */
 const DEFAULT_DOCUMENT_DOCK_WIDTH_RATIO = 0.34
-const NAVIGATOR_SASH_HIT_WIDTH = 14
-const NAVIGATOR_SASH_FLEX_MARGIN = -(PANEL_GAP / 2)
 const NOVEL_AUTO_VERSION_CHAR_THRESHOLD = 100
 const NOVEL_AUTO_VERSION_INTERVAL_MS = 5 * 60 * 1000
 const NOVEL_WORKSPACE_BRIEF_CHANGE_LIMIT = 20
@@ -4409,8 +4405,6 @@ function AppShellContent({
   const showWorkspaceDirectoryColumn = Boolean(
     activityWorkspaceDirectory && rightWorkspaceVisible && workspaceDirectoryVisible && !isAutoCompact,
   )
-  const hasVisibleRightWorkspace = showWritingDocumentColumn || showWorkspaceDirectoryColumn
-
   return (
     <AppShellProvider value={appShellContextValue}>
         {/* === TOP BAR === */}
@@ -5236,29 +5230,23 @@ function AppShellContent({
                 }
               }}
               className="relative h-full cursor-col-resize flex justify-center shrink-0 z-dropdown"
-              style={{
-                width: 0,
-                margin: `0 ${NAVIGATOR_SASH_FLEX_MARGIN}px`,
-              }}
+              style={{ width: 0 }}
             >
               <div
                 className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 flex justify-center cursor-col-resize"
-                style={{ width: NAVIGATOR_SASH_HIT_WIDTH }}
+                style={{ width: PANEL_SASH_HIT_WIDTH }}
               >
                 <div
-                  className="absolute left-1/2 -translate-x-1/2"
+                  className="absolute inset-y-0 left-1/2 -translate-x-1/2"
                   style={{
                     ...getResizeGradientStyle(sessionListHandleY, sessionListHandleRef.current?.clientHeight ?? null),
                     width: PANEL_SASH_LINE_WIDTH,
-                    top: PANEL_STACK_VERTICAL_OVERFLOW,
-                    bottom: PANEL_STACK_VERTICAL_OVERFLOW,
                   }}
                 />
               </div>
             </div>
           ) : null}
           isSidebarAndNavigatorHidden={effectiveSidebarAndNavigatorHidden}
-          isRightSidebarVisible={hasVisibleRightWorkspace}
           isCompact={isAutoCompact}
           isResizing={!!isResizing}
           hidePanelCloseButton={showPrimarySidebar}
@@ -5275,7 +5263,6 @@ function AppShellContent({
               onResizeStart={beginResize}
               width={novelWorkspaceNavigatorWidth}
               panelRef={navigatorPanelRef}
-              isAtRightEdge={!showWorkspaceDirectoryColumn}
               disableAnimation={isResizing === 'document-dock'}
             >
               {writingDocumentSurface}
@@ -5289,7 +5276,6 @@ function AppShellContent({
               sashLabel={t('writing.directory.title', '目录')}
               onResizeStart={beginResize}
               width={workspaceDirectoryWidth}
-              isAtRightEdge
               disableAnimation={isResizing === 'directory-dock'}
               header={(
                 <PanelHeader

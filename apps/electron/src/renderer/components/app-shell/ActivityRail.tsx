@@ -319,7 +319,7 @@ export function ActivityRail({
     <aside
       data-testid="activity-rail"
       aria-label="工作区导航"
-      className="titlebar-no-drag flex h-full shrink-0 flex-col border-r border-border/35 bg-background/80"
+      className="titlebar-no-drag flex h-full shrink-0 flex-col border-r border-foreground/[0.09] bg-background/80"
       style={{ width: ACTIVITY_RAIL_WIDTH }}
     >
       <div className="flex min-h-0 flex-1 flex-col px-2 pt-2">

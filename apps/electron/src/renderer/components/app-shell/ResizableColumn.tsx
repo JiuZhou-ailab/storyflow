@@ -6,14 +6,10 @@ import * as React from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { useResizeGradient } from '@/hooks/useResizeGradient'
 import {
-  PANEL_SASH_FLEX_MARGIN,
   PANEL_SASH_HIT_WIDTH,
   PANEL_SASH_LINE_WIDTH,
   PANEL_SLIDE_OFFSET,
   PANEL_SPRING,
-  PANEL_STACK_VERTICAL_OVERFLOW,
-  RADIUS_EDGE,
-  RADIUS_INNER,
 } from './panel-constants'
 
 /** The two right-side columns AppShell drives through this shape. */
@@ -32,8 +28,6 @@ export interface ResizableColumnProps {
   width: number
   /** Ref attached to the panel body (used by neighbouring resize math). */
   panelRef?: React.Ref<HTMLDivElement>
-  /** Whether this is the last panel touching the window's right edge. */
-  isAtRightEdge?: boolean
   /** Keeps direct resize updates attached to the pointer instead of springing. */
   disableAnimation?: boolean
   /** Optional header rendered above the scrolling body. */
@@ -48,7 +42,6 @@ export function ResizableColumn({
   onResizeStart,
   width,
   panelRef,
-  isAtRightEdge = false,
   disableAnimation = false,
   header,
   children,
@@ -65,13 +58,7 @@ export function ResizableColumn({
       animate={{ width, x: 0, opacity: 1 }}
       exit={{ width: 0, x: PANEL_SLIDE_OFFSET, opacity: 0 }}
       transition={transition}
-      className="relative h-full min-w-0 shrink-0 bg-background shadow-middle z-panel"
-      style={{
-        borderTopLeftRadius: RADIUS_INNER,
-        borderBottomLeftRadius: RADIUS_INNER,
-        borderTopRightRadius: RADIUS_INNER,
-        borderBottomRightRadius: isAtRightEdge ? RADIUS_EDGE : RADIUS_INNER,
-      }}
+      className="relative h-full min-w-0 shrink-0 bg-background z-panel"
     >
       <div
         ref={sashRef}
@@ -87,7 +74,7 @@ export function ResizableColumn({
         onMouseLeave={handlers.onMouseLeave}
         className="absolute inset-y-0 cursor-col-resize z-dropdown"
         style={{
-          left: PANEL_SASH_FLEX_MARGIN,
+          left: 0,
           width: PANEL_SASH_HIT_WIDTH,
           transform: 'translateX(-50%)',
         }}
@@ -96,18 +83,16 @@ export function ResizableColumn({
           className="absolute inset-0 flex justify-center cursor-col-resize"
         >
           <div
-            className="absolute left-1/2 -translate-x-1/2"
+            className="absolute inset-y-0 left-1/2 -translate-x-1/2"
             style={{
               ...gradientStyle,
               width: PANEL_SASH_LINE_WIDTH,
-              top: PANEL_STACK_VERTICAL_OVERFLOW,
-              bottom: PANEL_STACK_VERTICAL_OVERFLOW,
             }}
           />
         </div>
       </div>
       <div
-        className="absolute inset-0 overflow-hidden [border-radius:inherit]"
+        className="absolute inset-0 overflow-hidden"
       >
         <div
           className="absolute inset-y-0 right-0 flex flex-col"

@@ -1,3 +1,7 @@
+// input: Adjacent panel indices and current panel-stack proportions
+// output: One draggable seam that resizes or equalizes neighbouring panes
+// pos: Parent-owned separator between content panes
+
 /**
  * PanelResizeSash
  *
@@ -17,10 +21,8 @@ import { panelStackAtom, resizePanelsAtom } from '@/atoms/panel-stack'
 import { useResizeGradient } from '@/hooks/useResizeGradient'
 import {
   PANEL_MIN_WIDTH,
-  PANEL_SASH_FLEX_MARGIN,
   PANEL_SASH_HALF_HIT_WIDTH,
   PANEL_SASH_LINE_WIDTH,
-  PANEL_STACK_VERTICAL_OVERFLOW,
 } from './panel-constants'
 
 export { PANEL_MIN_WIDTH }
@@ -126,7 +128,6 @@ export function PanelResizeSash({
     <div
       ref={ref}
       className="relative w-0 h-full cursor-col-resize flex justify-center shrink-0"
-      style={{ margin: `0 ${PANEL_SASH_FLEX_MARGIN}px` }}
       onMouseDown={handleMouseDown}
       onMouseMove={handlers.onMouseMove}
       onMouseLeave={handlers.onMouseLeave}
@@ -138,12 +139,10 @@ export function PanelResizeSash({
         style={{ left: -PANEL_SASH_HALF_HIT_WIDTH, right: -PANEL_SASH_HALF_HIT_WIDTH }}
       >
         <div
-          className="absolute left-1/2 -translate-x-1/2"
+          className="absolute inset-y-0 left-1/2 -translate-x-1/2"
           style={{
             ...gradientStyle,
             width: PANEL_SASH_LINE_WIDTH,
-            top: PANEL_STACK_VERTICAL_OVERFLOW,
-            bottom: PANEL_STACK_VERTICAL_OVERFLOW,
           }}
         />
       </div>

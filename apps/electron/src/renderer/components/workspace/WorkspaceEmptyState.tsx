@@ -32,7 +32,7 @@ export function WorkspaceEmptyState({
       className="flex h-full min-w-0 flex-col bg-background"
       aria-label={workspaceName}
     >
-      <header className="flex h-[42px] shrink-0 items-center justify-between gap-3 border-b border-border/50 px-3">
+      <header className="flex h-[42px] shrink-0 items-center justify-between gap-3 border-b border-foreground/[0.09] px-3">
         <div className="min-w-0 truncate text-xs font-medium text-muted-foreground">
           {workspaceName}
         </div>

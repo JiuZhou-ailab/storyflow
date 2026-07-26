@@ -1,3 +1,7 @@
+// input: Pointer position within a vertical resize hit area
+// output: A persistent 1px seam that strengthens around hover and drag
+// pos: Shared visual state for vertical split-pane separators
+
 import * as React from "react"
 
 const RESIZE_GRADIENT_EDGE_BUFFER_PX = 64
@@ -21,8 +25,8 @@ export function getResizeGradientStyle(
   if (mouseY === null || !handleHeight || handleHeight <= 0) {
     return {
       transition: 'opacity 150ms ease-out',
-      opacity: 0,
-      background: 'none',
+      opacity: 1,
+      background: 'color-mix(in oklch, var(--foreground) 9%, transparent)',
     }
   }
 

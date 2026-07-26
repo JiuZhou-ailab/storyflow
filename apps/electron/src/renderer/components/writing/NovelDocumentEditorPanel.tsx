@@ -161,7 +161,7 @@ export const NovelDocumentEditorPanel = React.forwardRef<NovelDocumentEditorPane
   return (
     <div className={cn('flex h-full min-w-0 flex-col bg-background', className)}>
       {workspaceActions ? (
-        <div className="flex h-[42px] shrink-0 items-center justify-between gap-3 border-b border-border/50 px-3">
+        <div className="flex h-[42px] shrink-0 items-center justify-between gap-3 border-b border-foreground/[0.09] px-3">
           <div className="min-w-0 truncate text-xs font-medium text-muted-foreground">
             {formatNovelWorkspaceFileTitle(file, t)}
           </div>

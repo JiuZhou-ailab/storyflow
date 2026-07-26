@@ -1,13 +1,10 @@
-/**
- * ShortcutsPage
- *
- * Displays keyboard shortcuts reference from the centralized action registry.
- */
+// input: Centralized action registry and platform shortcut labels
+// output: Keyboard shortcuts reference panel
+// pos: Settings surface below the shared panel header
 
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
-import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { routes } from '@/lib/navigate'
@@ -105,7 +102,6 @@ export default function ShortcutsPage() {
   return (
     <div className="h-full flex flex-col">
       <PanelHeader title={t("shortcuts.title")} actions={<HeaderMenu route={routes.view.settings('shortcuts')} />} />
-      <Separator />
       <ScrollArea className="flex-1">
         <div className="px-5 py-4">
           <div className="space-y-6">

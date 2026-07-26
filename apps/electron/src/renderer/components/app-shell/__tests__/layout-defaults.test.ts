@@ -14,11 +14,20 @@ import {
   resolveInitialShellLayoutWidths,
   shouldResolveInitialShellLayoutWidths,
 } from '../layout-defaults'
+import {
+  PANEL_EDGE_INSET,
+  PANEL_GAP,
+  PANEL_SASH_LINE_WIDTH,
+} from '../panel-constants'
 
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf8')
+const panelConstantsSource = readFileSync(new URL('../panel-constants.ts', import.meta.url), 'utf8')
+const panelStackSource = readFileSync(new URL('../PanelStackContainer.tsx', import.meta.url), 'utf8')
 const panelSlotSource = readFileSync(new URL('../PanelSlot.tsx', import.meta.url), 'utf8')
 const panelHeaderSource = readFileSync(new URL('../PanelHeader.tsx', import.meta.url), 'utf8')
 const resizableColumnSource = readFileSync(new URL('../ResizableColumn.tsx', import.meta.url), 'utf8')
+const resizeGradientSource = readFileSync(new URL('../../../hooks/useResizeGradient.ts', import.meta.url), 'utf8')
+const rendererCssSource = readFileSync(new URL('../../../index.css', import.meta.url), 'utf8')
 const editorPanelSource = readFileSync(
   new URL('../../writing/NovelDocumentEditorPanel.tsx', import.meta.url),
   'utf8',
@@ -198,19 +207,36 @@ describe('app shell layout defaults', () => {
 
   it('keeps the writing columns on one panel chrome contract', () => {
     expect(appShellSource).toContain('paddingBottom: PANEL_EDGE_INSET, gap: PANEL_GAP')
-    expect(appShellSource).toContain('isRightSidebarVisible={hasVisibleRightWorkspace}')
-    expect(appShellSource).toContain('isAtRightEdge={!showWorkspaceDirectoryColumn}')
-    expect(appShellSource).toContain('isAtRightEdge')
     expect(resizableColumnSource).toContain('useResizeGradient')
-    expect(resizableColumnSource).toContain('PANEL_SASH_FLEX_MARGIN')
     expect(resizableColumnSource).not.toContain('bg-border/60')
     expect(resizableColumnSource).not.toContain('marginBottom: PANEL_EDGE_INSET')
-    expect(resizableColumnSource).toContain(
-      'borderBottomRightRadius: isAtRightEdge ? RADIUS_EDGE : RADIUS_INNER',
-    )
+    expect(resizableColumnSource).not.toContain('borderRadius')
+    expect(appShellSource).not.toContain('isRightSidebarVisible')
+    expect(appShellSource).not.toContain('isAtRightEdge')
     expect(editorPanelSource).toContain('h-[42px]')
     expect(workspaceEmptyStateSource).toContain('h-[42px]')
     expect(panelHeaderSource).toContain('h-[42px]')
+  })
+
+  it('renders structural panes as one continuous workbench with parent-owned seams', () => {
+    expect(PANEL_GAP).toBe(0)
+    expect(PANEL_EDGE_INSET).toBe(0)
+    expect(PANEL_SASH_LINE_WIDTH).toBe(1)
+    expect(panelConstantsSource).not.toContain('RADIUS_')
+    expect(panelConstantsSource).not.toContain('PANEL_STACK_VERTICAL_OVERFLOW')
+    expect(panelConstantsSource).not.toContain('PANEL_SASH_FLEX_MARGIN')
+    expect(panelStackSource).not.toContain('shadow-middle')
+    expect(panelStackSource).not.toContain('borderRadius')
+    expect(panelSlotSource).not.toContain('shadow-middle')
+    expect(panelSlotSource).not.toContain('shadow-panel-focused')
+    expect(panelSlotSource).not.toContain('borderRadius')
+    expect(resizableColumnSource).not.toContain('shadow-middle')
+    expect(resizeGradientSource).toContain('var(--foreground) 9%')
+    expect(panelHeaderSource).toContain('border-b border-foreground/[0.09]')
+    expect(rendererCssSource).toContain('[data-panel-role="navigator"]')
+    expect(rendererCssSource).toContain('[data-panel-role="content"]')
+    expect(rendererCssSource).toContain('[data-panel-role="document"]')
+    expect(rendererCssSource).toContain('[data-panel-role="directory"]')
   })
 
   it('folds the directory independently and slides right-side columns in and out', () => {

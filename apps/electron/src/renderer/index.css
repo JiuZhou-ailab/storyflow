@@ -1,3 +1,8 @@
+/* input: Theme variables, renderer utility classes, and structural panel roles
+ * output: Global renderer styling for flat workbench panes and floating surfaces
+ * pos: Renderer-wide CSS entrypoint and scenic-mode contract
+ */
+
 @import "tailwindcss" source(none);
 @plugin "@tailwindcss/typography";
 
@@ -739,13 +744,20 @@ html[data-font="inter"] {
 /* =============================================================================
    SCENIC MODE - GLASS PANEL EFFECTS
 
-   In scenic mode, panels become translucent with backdrop blur (glassmorphism).
+   In scenic mode, panes and elevated surfaces become translucent with backdrop blur.
    The glass effect provides visual depth while showing the background image through.
-   Target panels by their shadow classes (shadow-middle, shadow-strong).
+   Structural panes are identified by role; floating surfaces keep shadow classes.
 ============================================================================= */
 
-  html[data-scenic] .shadow-middle,
-  html[data-scenic] .shadow-strong {
+html[data-scenic] :where(
+  [data-panel-role="sidebar"],
+  [data-panel-role="navigator"],
+  [data-panel-role="content"],
+  [data-panel-role="document"],
+  [data-panel-role="directory"]
+),
+html[data-scenic] .shadow-middle,
+html[data-scenic] .shadow-strong {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   position: relative;

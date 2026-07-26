@@ -46,7 +46,7 @@ export function TopBar({
     <header
       data-testid="window-title-bar"
       aria-label="窗口上下文"
-      className="fixed left-0 right-0 top-0 z-panel titlebar-drag-region border-b border-border/25 bg-background/90 text-foreground"
+      className="fixed left-0 right-0 top-0 z-panel titlebar-drag-region border-b border-foreground/[0.09] bg-background/90 text-foreground"
       style={{ height: WINDOW_TITLE_BAR_HEIGHT }}
     >
       <div

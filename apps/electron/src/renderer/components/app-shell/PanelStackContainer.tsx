@@ -1,3 +1,7 @@
+// input: Pinned shell columns, content panel state, and optional resize sash
+// output: Continuous horizontal workbench with one scrollable content lane
+// pos: Parent layout owner for navigator, content panes, and their shared seams
+
 /**
  * PanelStackContainer
  *
@@ -19,17 +23,12 @@
 import { useRef, useEffect } from 'react'
 import { useAtomValue } from 'jotai'
 import { motion } from 'motion/react'
-import { cn } from '@/lib/utils'
 import { panelStackAtom, focusedPanelIdAtom, focusedRouteHasSelectedContentAtom } from '@/atoms/panel-stack'
 import { PanelSlot } from './PanelSlot'
 import { PanelResizeSash } from './PanelResizeSash'
 import {
   PANEL_GAP,
-  PANEL_EDGE_INSET,
   PANEL_SPRING,
-  PANEL_STACK_VERTICAL_OVERFLOW,
-  RADIUS_EDGE,
-  RADIUS_INNER,
 } from './panel-constants'
 
 interface PanelStackContainerProps {
@@ -39,7 +38,6 @@ interface PanelStackContainerProps {
   navigatorWidth: number
   navigatorResizeSash?: React.ReactNode
   isSidebarAndNavigatorHidden: boolean
-  isRightSidebarVisible?: boolean
   /** Compact mode: single-panel, list/content toggle (mobile or narrow window) */
   isCompact?: boolean
   isResizing?: boolean
@@ -53,7 +51,6 @@ export function PanelStackContainer({
   navigatorWidth,
   navigatorResizeSash,
   isSidebarAndNavigatorHidden,
-  isRightSidebarVisible,
   isCompact = false,
   isResizing,
   hidePanelCloseButton,
@@ -81,7 +78,6 @@ export function PanelStackContainer({
   // In compact mode, hide navigator when content is selected (show list OR content, not both)
   const hasNavigator = isCompact ? (navigatorWidth > 0 && !hasSelectedContent) : navigatorWidth > 0
   const isMultiPanel = visiblePanels.length > 1
-  const isLeftEdge = !hasSidebar && !hasNavigator
 
   // Auto-scroll to newly pushed content panel
   useEffect(() => {
@@ -104,17 +100,11 @@ export function PanelStackContainer({
       style={{
         overflowX: 'hidden',
         overflowY: 'hidden',
-        // Extra vertical space for box-shadows (collapsed back with negative margin)
-        paddingBlock: PANEL_STACK_VERTICAL_OVERFLOW,
-        marginBlock: -PANEL_STACK_VERTICAL_OVERFLOW,
       }}
     >
       {/* Inner flex container keeps shell columns pinned. Only the content lane scrolls. */}
-      <motion.div
+      <div
         className="flex h-full min-w-0 flex-1"
-        initial={false}
-        animate={{ paddingLeft: !hasSidebar ? PANEL_EDGE_INSET : 0 }}
-        transition={transition}
         style={{ gap: PANEL_GAP, flexGrow: 1, minWidth: 0 }}
       >
         {/* === SIDEBAR SLOT === */}
@@ -123,7 +113,6 @@ export function PanelStackContainer({
           initial={false}
           animate={{
             width: hasSidebar ? sidebarWidth : 0,
-            marginRight: hasSidebar ? 0 : -PANEL_GAP,
             opacity: hasSidebar ? 1 : 0,
           }}
           transition={transition}
@@ -141,21 +130,13 @@ export function PanelStackContainer({
           initial={false}
           animate={{
             width: hasNavigator ? navigatorWidth : 0,
-            marginRight: hasNavigator ? 0 : -PANEL_GAP,
             opacity: hasNavigator ? 1 : 0,
           }}
           transition={transition}
-          className={cn(
-            'h-full overflow-hidden relative shrink-0 z-[2]',
-            'bg-background shadow-middle',
-          )}
+          className="h-full overflow-hidden relative shrink-0 z-[2] bg-background"
           style={{
             // In compact mode (no content selected), navigator fills available space
             ...(isCompact && hasNavigator && !hasSelectedContent ? { flex: '1 1 auto' } : {}),
-            borderTopLeftRadius: RADIUS_INNER,
-            borderBottomLeftRadius: !hasSidebar ? RADIUS_EDGE : RADIUS_INNER,
-            borderTopRightRadius: RADIUS_INNER,
-            borderBottomRightRadius: RADIUS_INNER,
           }}
         >
           <div className="h-full" style={{ width: isCompact && hasNavigator && !hasSelectedContent ? '100%' : navigatorWidth }}>
@@ -172,12 +153,6 @@ export function PanelStackContainer({
           style={{
             overflowX: 'auto',
             overflowY: 'hidden',
-            // Extend to window bottom so scrollbar sits at the very edge.
-            marginBottom: -6,
-            paddingBottom: 6,
-            // Extra horizontal space for last panel's box-shadow.
-            paddingRight: 8,
-            marginRight: -8,
           }}
         >
           <div className="flex h-full min-w-full" style={{ gap: PANEL_GAP, flexGrow: 1, minWidth: 0 }}>
@@ -193,8 +168,6 @@ export function PanelStackContainer({
                   isOnly={visiblePanels.length === 1}
                   isFocusedPanel={isMultiPanel ? entry.id === focusedPanelId : true}
                   isSidebarAndNavigatorHidden={isSidebarAndNavigatorHidden}
-                  isAtLeftEdge={index === 0 && isLeftEdge}
-                  isAtRightEdge={index === visiblePanels.length - 1 && !isRightSidebarVisible}
                   proportion={entry.proportion}
                   isCompact={isCompact}
                   hideCloseButton={hidePanelCloseButton}
@@ -209,7 +182,7 @@ export function PanelStackContainer({
             )}
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   )
 }

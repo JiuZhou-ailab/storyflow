@@ -1,3 +1,7 @@
+// input: One panel-stack entry, focus state, and proportional sizing
+// output: One flat content pane with panel-specific chrome
+// pos: Content pane renderer inside the continuous app workbench
+
 /**
  * PanelSlot
  *
@@ -16,14 +20,13 @@
 import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSetAtom } from 'jotai'
-import { cn } from '@/lib/utils'
 import { X, ChevronLeft } from 'lucide-react'
 import { parseRouteToNavigationState } from '../../../shared/route-parser'
 import { closePanelAtom, focusedPanelIdAtom, type PanelStackEntry } from '@/atoms/panel-stack'
 import { SessionPanelChromeProvider } from '@/context/AppShellContext'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
 import { MainContentPanel } from './MainContentPanel'
-import { PANEL_MIN_WIDTH, RADIUS_EDGE, RADIUS_INNER } from './panel-constants'
+import { PANEL_MIN_WIDTH } from './panel-constants'
 
 interface PanelSlotProps {
   entry: PanelStackEntry
@@ -31,10 +34,6 @@ interface PanelSlotProps {
   /** Whether this panel is the focused panel in a multi-panel layout */
   isFocusedPanel: boolean
   isSidebarAndNavigatorHidden: boolean
-  /** Whether this panel's left corners touch the window edge (no sidebar/navigator before it) */
-  isAtLeftEdge: boolean
-  /** Whether this panel's right corners touch the window edge (no right sidebar after it) */
-  isAtRightEdge: boolean
   /** Flex-grow weight for proportional sizing */
   proportion: number
   /** Optional sash element rendered before this panel */
@@ -50,8 +49,6 @@ export function PanelSlot({
   isOnly,
   isFocusedPanel,
   isSidebarAndNavigatorHidden,
-  isAtLeftEdge,
-  isAtRightEdge,
   proportion,
   sash,
   isCompact,
@@ -112,11 +109,7 @@ export function PanelSlot({
         onPointerDown={handlePointerDown}
         data-panel-role="content"
         data-compact={isCompact || undefined}
-        className={cn(
-          'h-full overflow-hidden relative @container/panel',
-          !isOnly && isFocusedPanel ? 'shadow-panel-focused z-[1]' : 'shadow-middle z-0',
-          'bg-foreground-2',
-        )}
+        className="h-full overflow-hidden relative @container/panel bg-foreground-2"
         style={{
           // In multi-panel, unfocused panels override --background so all
           // bg-background children render at the elevated (dimmed) background.
@@ -128,11 +121,6 @@ export function PanelSlot({
               } as React.CSSProperties
             : {}
           ),
-          // Corner radii: edge corners (touching window boundary) vs interior corners
-          borderTopLeftRadius: RADIUS_INNER,
-          borderBottomLeftRadius: isAtLeftEdge ? RADIUS_EDGE : RADIUS_INNER,
-          borderTopRightRadius: RADIUS_INNER,
-          borderBottomRightRadius: isAtRightEdge ? RADIUS_EDGE : RADIUS_INNER,
           ...(isOnly
             ? { flexGrow: 1, minWidth: isCompact ? 0 : PANEL_MIN_WIDTH }
             : { flexGrow: proportion, flexShrink: 1, flexBasis: 0, minWidth: PANEL_MIN_WIDTH }
