@@ -41,6 +41,11 @@ Project Conversation ┘                         ├─ SessionManager
   并按目标域默认权限与资源配置创建新会话；不继承源会话权限、状态或标签，不复制 provider transcript、
   项目文件或附件，不改变源会话，也不建立实时历史链接。
 - Activity Rail 的“自由对话”始终查询隐藏 workspace；项目会话继续只出现在相应项目 workspace。
+- 会话列表 RPC 只接受显式 workspaceId（`sessions:listByWorkspace`）。协议层不提供跨 workspace
+  返回会话的通道，边界由协议保证而非调用方自觉。跨域聚合只允许返回不含会话身份的计数
+  （`sessions:getUnreadSummary`）。
+- 每个 Runtime Domain 恰好拥有一个会话列表界面：自由对话域由 Activity Rail 承担，项目域由项目
+  自己的 SessionList 承担。任何"统一的全局最近对话列表"都会重新合并两个域。
 
 ## 后果
 
@@ -65,3 +70,20 @@ Project Conversation ┘                         ├─ SessionManager
 - 不允许自由对话临时挂载整个项目目录。
 - 不把 Project Skill Package 扩展成可执行 Extension。
 - 不为外部 Agent 配置目录维护双向同步或长期兼容层。
+- 不提供跨 Runtime Domain 的统一会话列表，即使它在交互上更省一次点击。
+
+## 回归记录：2026-07-26
+
+本 ADR 落地（`3a174fb5e`）之后，Codex 风格侧边栏改造（`3f20237a7`）引入了跨 workspace 的
+`sessions:getAll` 与"最近对话"全局列表，边界被重新打穿。侧边栏同时出现两个互斥语义：区块内容
+是全局的，而新建按钮是自由对话域的；`RecentConversationRow` 用一行 workspaceName 小字标注每条
+会话属于哪个项目——这个标签正是"知道混了、用补丁缓解"的信号。
+
+三条独立泄漏路径，缺一不可修：
+
+1. `sessions:getAll` 服务端不过滤 workspace。
+2. 即使服务端过滤，`localSessionMetaMap` overlay 仍会把当前运行项目的会话并进列表。
+3. 泄漏是双向的——点击项目会话会切走整个运行时，列表成了跨域跳板。
+
+修复同时移除了两处以字符串匹配锁定该实现的静态测试。教训：静态源码断言会把违反 ADR 的实现
+一起冻结，涉及所有权边界的不变量应当用行为测试表达。
