@@ -69,16 +69,29 @@ describe('project default navigation', () => {
     expect(appShellSource).toContain('loadedNovelDocumentPath === selectedNovelDocumentPath')
   })
 
-  it('keeps free conversations in the global recent-conversation list', () => {
-    expect(activityRailSource).toContain("meta.workspaceId === FREE_CONVERSATION_WORKSPACE_ID")
-    expect(activityRailSource).toContain('workspaces.find(workspace => workspace.id === meta.workspaceId)?.name ?? \'项目\'')
-    expect(activityRailSource).toContain('listSessionsByWorkspace')
+  it('keeps the rail conversation list scoped to the free-conversation domain', () => {
+    // The rail must ask for one named workspace. A cross-workspace fetch here
+    // is what put project conversations in the free list (ADR 0006).
+    expect(activityRailSource).toContain('listSessionsByWorkspace(FREE_CONVERSATION_WORKSPACE_ID)')
+    expect(activityRailSource).not.toContain('getAllSessions')
+    // The local atom overlay is workspace-scoped to whatever runtime is open,
+    // so it must be filtered back down or the open project leaks in anyway.
+    expect(activityRailSource).toContain('if (meta.workspaceId !== FREE_CONVERSATION_WORKSPACE_ID) continue')
+    // Per-row workspace labels only exist to excuse a mixed list.
+    expect(activityRailSource).not.toContain("?.name ?? '项目'")
     expect(activityRailSource).not.toContain("| 'free-conversations'")
     expect(activityRailSource).not.toContain('dataTutorial="activity-free-conversations"')
     expect(appShellSource).not.toContain('onOpenWritingWorkspace={onOpenWritingWorkspace}')
     expect(appShellSource).toContain('onOpenFreeConversations={onOpenFreeConversations}')
     expect(appShellSource).toContain("if (isSessionsNavigation(navState)) return 'recent'")
     expect(appShellSource).toContain('onSelectSession={handleActivitySessionSelect}')
+  })
+
+  it('keeps a project-owned conversation list reachable inside the project', () => {
+    // The rail no longer lists project conversations, so the project's own
+    // SessionList is their only entry and must not be collapsed away.
+    expect(appShellSource).toContain('&& !isProjectRuntime')
+    expect(appShellSource).toContain('const showWritingDocumentSurface = isProjectRuntime && isWritingNavigation(navState)')
   })
 
   it('keeps route auto-selection session-only while writing owns its metadata-driven default', () => {

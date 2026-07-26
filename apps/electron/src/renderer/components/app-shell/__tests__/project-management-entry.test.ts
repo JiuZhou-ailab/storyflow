@@ -81,7 +81,7 @@ describe('project management entry', () => {
   it('keeps plugin navigation at the top of the single workspace sidebar', () => {
     expect(appShellSource).toContain('const showActivityRail = true')
     expect(appShellSource).toContain('<ActivityRail')
-    expect(activityRailSource).toContain('label="最近对话"')
+    expect(activityRailSource).toContain('label="自由对话"')
     expect(activityRailSource).toContain('label="项目"')
     expect(activityRailSource).toContain('text-[13px] font-semibold text-foreground/90')
     expect(activityRailSource).toContain('RECENT_SESSION_LIMIT = 8')

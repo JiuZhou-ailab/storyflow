@@ -4144,19 +4144,26 @@ function AppShellContent({
     && !isAutoCompact
     && !isProjectRuntime
 
+  // The rail lists Free Conversations only, so selecting from it enters the
+  // free runtime — never another project's. Silently switching workspaces here
+  // is what turned a display leak into a cross-domain jump; a project session
+  // arriving from this surface means the rail's scope regressed upstream.
   const handleActivitySessionSelect = React.useCallback(async (
     sessionId: string,
     workspaceId: string,
   ) => {
-    if (workspaceId === FREE_CONVERSATION_WORKSPACE_ID) {
-      if (activeWorkspaceId !== FREE_CONVERSATION_WORKSPACE_ID) {
-        await onOpenFreeConversations()
-      }
-    } else if (activeWorkspaceId !== workspaceId) {
-      await onSelectWorkspace(workspaceId)
+    if (workspaceId !== FREE_CONVERSATION_WORKSPACE_ID) {
+      console.warn(
+        '[activity-rail] Ignoring non-free session selection; the rail must not cross runtime domains:',
+        { sessionId, workspaceId },
+      )
+      return
+    }
+    if (activeWorkspaceId !== FREE_CONVERSATION_WORKSPACE_ID) {
+      await onOpenFreeConversations()
     }
     navigateToSessionInPanel(sessionId)
-  }, [activeWorkspaceId, navigateToSessionInPanel, onOpenFreeConversations, onSelectWorkspace])
+  }, [activeWorkspaceId, navigateToSessionInPanel, onOpenFreeConversations])
 
   const handleSidebarFocus = React.useCallback((event: React.FocusEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return

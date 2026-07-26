@@ -1,6 +1,6 @@
-// input: Workspace catalog, active project directory, global session metadata, shell navigation callbacks, and current profile
-// output: Single Codex-style sidebar with top tools, collapsible conversations/projects, and one profile menu
-// pos: Global navigation surface; project and profile actions stay inside one sidebar column
+// input: Workspace catalog, active project directory, free-conversation session metadata, unread summary, shell navigation callbacks, and current profile
+// output: Single Codex-style sidebar listing Free Conversations plus collapsible projects and one profile menu
+// pos: Global navigation surface owning the free-conversation runtime domain; project conversations stay in project chrome (ADR 0006)
 
 import * as React from 'react'
 import {
@@ -116,7 +116,8 @@ export function ActivityRail({
   whatsNew,
 }: ActivityRailProps) {
   const localSessionMetaMap = useAtomValue(sessionMetaMapAtom)
-  const [globalSessionMetas, setGlobalSessionMetas] = React.useState<SessionMeta[] | null>(null)
+  const [freeSessionMetas, setFreeSessionMetas] = React.useState<SessionMeta[] | null>(null)
+  const [unreadByWorkspace, setUnreadByWorkspace] = React.useState<Record<string, boolean>>({})
   const [recentExpanded, setRecentExpanded] = React.useState(() => (
     storage.get(storage.KEYS.activityRecentExpanded, true)
   ))
@@ -131,20 +132,42 @@ export function ActivityRail({
   const refreshGenerationRef = React.useRef(0)
   const canCreateProjects = typeof onWorkspaceCreated === 'function'
 
-  const refreshGlobalSessionMetas = React.useCallback(async () => {
+  const refreshFreeSessionMetas = React.useCallback(async () => {
     const generation = ++refreshGenerationRef.current
     try {
       const sessions = await window.electronAPI.listSessionsByWorkspace(FREE_CONVERSATION_WORKSPACE_ID)
       if (generation !== refreshGenerationRef.current) return
-      setGlobalSessionMetas(sessions.map(extractSessionMeta))
+      setFreeSessionMetas(sessions.map(extractSessionMeta))
     } catch (error) {
+      // Older remote servers may not expose the scoped metadata endpoint yet.
+      // Rendering nothing is the honest fallback: the previous cross-workspace
+      // fallback leaked project conversations into this list.
       console.warn('[activity-sidebar] Failed to load free conversation metadata:', error)
     }
   }, [])
 
+  const refreshUnreadSummary = React.useCallback(async () => {
+    try {
+      setUnreadByWorkspace((await window.electronAPI.getUnreadSummary()).hasUnreadByWorkspace)
+    } catch (error) {
+      console.warn('[activity-sidebar] Failed to load unread summary:', error)
+    }
+  }, [])
+
   React.useEffect(() => {
-    void refreshGlobalSessionMetas()
-  }, [refreshGlobalSessionMetas, workspaces])
+    void refreshFreeSessionMetas()
+  }, [refreshFreeSessionMetas, workspaces])
+
+  // Project unread state comes from the aggregate summary rather than the
+  // conversation list: the rail lists Free Conversations only, but it still
+  // renders an unread dot per project row. The summary carries counts keyed by
+  // workspace, never session identities, so it crosses no ownership boundary.
+  React.useEffect(() => {
+    void refreshUnreadSummary()
+    return window.electronAPI.onUnreadSummaryChanged((summary) => {
+      setUnreadByWorkspace(summary.hasUnreadByWorkspace)
+    })
+  }, [refreshUnreadSummary])
 
   React.useEffect(() => {
     let refreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -153,7 +176,7 @@ export function ActivityRail({
       if (refreshTimer) clearTimeout(refreshTimer)
       refreshTimer = setTimeout(() => {
         refreshTimer = null
-        void refreshGlobalSessionMetas()
+        void refreshFreeSessionMetas()
       }, 180)
     })
 
@@ -161,26 +184,24 @@ export function ActivityRail({
       if (refreshTimer) clearTimeout(refreshTimer)
       unsubscribe()
     }
-  }, [refreshGlobalSessionMetas])
+  }, [refreshFreeSessionMetas])
 
-  const archivedWorkspaceIds = React.useMemo(
-    () => new Set(workspaces.filter(workspace => workspace.archivedAt).map(workspace => workspace.id)),
-    [workspaces],
-  )
   const sessionMetas = React.useMemo(() => {
     const merged = new Map<string, SessionMeta>()
-    for (const meta of globalSessionMetas ?? []) merged.set(meta.id, meta)
+    for (const meta of freeSessionMetas ?? []) merged.set(meta.id, meta)
     // Overlay the active workspace's live atom state so optimistic title/read/
-    // processing updates are reflected before the next metadata refresh.
-    for (const meta of localSessionMetaMap.values()) merged.set(meta.id, meta)
+    // processing updates are reflected before the next metadata refresh. That
+    // atom is scoped to whichever workspace is running, so it must be filtered
+    // back down to the free domain — otherwise the open project's sessions
+    // reappear here regardless of what the server returned.
+    for (const meta of localSessionMetaMap.values()) {
+      if (meta.workspaceId !== FREE_CONVERSATION_WORKSPACE_ID) continue
+      merged.set(meta.id, meta)
+    }
     return [...merged.values()]
-      .filter(meta => (
-        !meta.hidden
-        && meta.isArchived !== true
-        && !archivedWorkspaceIds.has(meta.workspaceId)
-      ))
+      .filter(meta => !meta.hidden && meta.isArchived !== true)
       .sort((left, right) => (right.lastMessageAt ?? right.createdAt ?? 0) - (left.lastMessageAt ?? left.createdAt ?? 0))
-  }, [archivedWorkspaceIds, globalSessionMetas, localSessionMetaMap])
+  }, [freeSessionMetas, localSessionMetaMap])
 
   const recentSessions = showAllRecent
     ? sessionMetas
@@ -273,9 +294,9 @@ export function ActivityRail({
           className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-0.5"
           data-testid="activity-sidebar-scroll"
         >
-          <section aria-label="最近对话">
+          <section aria-label="自由对话">
             <SidebarSectionHeader
-              label="最近对话"
+              label="自由对话"
               expanded={recentExpanded}
               onToggle={() => updateRecentExpanded(!recentExpanded)}
               action={onOpenFreeConversations ? (
@@ -299,15 +320,12 @@ export function ActivityRail({
                   <RecentConversationRow
                     key={meta.id}
                     meta={meta}
-                    workspaceName={meta.workspaceId === FREE_CONVERSATION_WORKSPACE_ID
-                      ? '自由对话'
-                      : workspaces.find(workspace => workspace.id === meta.workspaceId)?.name ?? '项目'}
                     active={activeSessionId === meta.id}
                     disabled={!onSelectSession}
                     onSelect={() => onSelectSession?.(meta.id, meta.workspaceId)}
                   />
                 )) : (
-                  <div className="px-3 py-3 text-xs text-muted-foreground/60">暂无对话</div>
+                  <div className="px-3 py-3 text-xs text-muted-foreground/60">暂无自由对话</div>
                 )}
                 {hasMoreRecentSessions ? (
                   <button
@@ -315,7 +333,7 @@ export function ActivityRail({
                     className="mt-1 w-full rounded-[7px] px-3 py-1.5 text-left text-[11px] text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground"
                     onClick={() => setShowAllRecent(value => !value)}
                   >
-                    {showAllRecent ? '收起对话' : `显示全部 ${sessionMetas.length} 个对话`}
+                    {showAllRecent ? '收起对话' : `显示全部 ${sessionMetas.length} 个自由对话`}
                   </button>
                 ) : null}
               </div>
@@ -355,7 +373,7 @@ export function ActivityRail({
                         key={workspace.id}
                         workspace={workspace}
                         active={activeWorkspaceId === workspace.id}
-                        hasUnread={sessionMetas.some(meta => meta.hasUnread && meta.workspaceId === workspace.id)}
+                        hasUnread={unreadByWorkspace[workspace.id] === true}
                         disabled={!onSelectProject}
                         onSelect={() => onSelectProject?.(workspace.id)}
                         onOpenInNewWindow={onOpenProjectInNewWindow
@@ -585,13 +603,11 @@ function SidebarSectionHeader({
 
 function RecentConversationRow({
   meta,
-  workspaceName,
   active,
   disabled,
   onSelect,
 }: {
   meta: SessionMeta
-  workspaceName: string
   active: boolean
   disabled: boolean
   onSelect: () => void
@@ -599,7 +615,7 @@ function RecentConversationRow({
   return (
     <button
       type="button"
-      aria-label={`${getSessionTitle(meta)} · ${workspaceName}`}
+      aria-label={getSessionTitle(meta)}
       aria-current={active ? 'page' : undefined}
       disabled={disabled}
       data-session-id={meta.id}
@@ -618,9 +634,8 @@ function RecentConversationRow({
         )} />
       </span>
       <MessageSquareText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[12px] leading-4 text-foreground/90">{getSessionTitle(meta)}</span>
-        <span className="block truncate text-[10px] leading-4 text-muted-foreground/65">{workspaceName}</span>
+      <span className="min-w-0 flex-1 truncate text-[12px] leading-4 text-foreground/90">
+        {getSessionTitle(meta)}
       </span>
       <span className="shrink-0 text-[10px] text-muted-foreground/55">{formatRelativeTimestamp(meta.lastMessageAt, '')}</span>
     </button>
