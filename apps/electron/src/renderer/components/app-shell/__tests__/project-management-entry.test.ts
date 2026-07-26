@@ -183,8 +183,12 @@ describe('project management entry', () => {
     expect(pendingRouteEffect).not.toContain('cancelAnimationFrame')
   })
 
-  it('uses the workspace rail as the only session directory', () => {
-    expect(appShellSource).toContain('const hideSessionListNavigator = showActivityRail && isSessionsNavigation(navState) && !isAutoCompact')
+  it('gives each runtime domain exactly one session directory', () => {
+    // The rail is the directory for Free Conversations only. In a project
+    // runtime it must yield to the project's own SessionList, which is the
+    // sole entry to project conversations now that the rail excludes them.
+    expect(appShellSource).toContain('const hideSessionListNavigator = showActivityRail')
+    expect(appShellSource).toContain('&& !isProjectRuntime')
     expect(appShellSource).toContain('effectiveSidebarAndNavigatorHidden || hideSessionListNavigator ? 0 : navigatorPanelWidth')
     expect(appShellSource).toContain('!effectiveSidebarAndNavigatorHidden && !hideSessionListNavigator')
   })

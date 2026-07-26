@@ -2226,14 +2226,19 @@ function AppShellContent({
   // Project chats retain the project navigator; Free Conversations never mount project chrome.
   const showWritingWorkspaceShell = isProjectRuntime
     && (isWritingNavigation(navState) || isSessionsNavigation(navState))
+  // The navigator column holds one surface at a time: the document editor on
+  // the writing route, the project's own conversation list on the session
+  // route. The rail keeps the file tree across both, so nothing is lost by
+  // yielding this column to project conversations.
+  const showWritingDocumentSurface = isProjectRuntime && isWritingNavigation(navState)
   const showNovelWorkspaceSidebar = novelWorkspaceRootMatchesCandidates
-  const showNovelDocumentNavigator = showWritingWorkspaceShell && showNovelWorkspaceSidebar
-  const showNovelWorkspacePending = showWritingWorkspaceShell && (
+  const showNovelDocumentNavigator = showWritingDocumentSurface && showNovelWorkspaceSidebar
+  const showNovelWorkspacePending = showWritingDocumentSurface && (
     novelWorkspaceDetecting
     || hasStaleNovelWorkspaceRoot
     || (!showNovelWorkspaceSidebar && hasUnsettledNovelWorkspaceCandidates)
   )
-  const showNovelWorkspaceUnavailable = showWritingWorkspaceShell
+  const showNovelWorkspaceUnavailable = showWritingDocumentSurface
     && activeWritingWorkspaceRoot !== null
     && !showNovelWorkspaceSidebar
     && !showNovelWorkspacePending
@@ -4130,10 +4135,14 @@ function AppShellContent({
     if (isSessionsNavigation(navState)) return 'recent'
     return 'writing'
   }, [globalSearchOpen, navState])
-  // The workspace rail is the single session directory in Codex-style mode.
-  // Keep the legacy navigator for sources/skills/settings and the writing file
-  // tree, but do not render a second session list beside recent conversations.
-  const hideSessionListNavigator = showActivityRail && isSessionsNavigation(navState) && !isAutoCompact
+  // Each runtime domain owns exactly one conversation list (ADR 0006).
+  // The rail lists Free Conversations, so it replaces the navigator only in the
+  // free runtime. Project conversations stay in the project's own SessionList —
+  // that is their only entry, and it is what keeps them out of the rail.
+  const hideSessionListNavigator = showActivityRail
+    && isSessionsNavigation(navState)
+    && !isAutoCompact
+    && !isProjectRuntime
 
   const handleActivitySessionSelect = React.useCallback(async (
     sessionId: string,

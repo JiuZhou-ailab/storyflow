@@ -47,7 +47,9 @@ describe('project default navigation', () => {
   it('keeps project conversations in project chrome and excludes Free Conversations', () => {
     expect(appShellSource).toContain('const showWritingWorkspaceShell = isProjectRuntime')
     expect(appShellSource).toContain('&& (isWritingNavigation(navState) || isSessionsNavigation(navState))')
-    expect(appShellSource).toContain('const showNovelDocumentNavigator = showWritingWorkspaceShell && showNovelWorkspaceSidebar')
+    // The document surface is writing-route-only so the navigator column can
+    // hand itself to the project's conversation list on the session route.
+    expect(appShellSource).toContain('const showNovelDocumentNavigator = showWritingDocumentSurface && showNovelWorkspaceSidebar')
     expect(appShellSource).toContain('const showPrimarySidebar = hasPrimarySidebar && showWritingWorkspaceShell')
   })
 
