@@ -233,7 +233,7 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
 
   // sessions — core session runtime
   RPC_CHANNELS.sessions.GET,
-  RPC_CHANNELS.sessions.GET_ALL,
+  RPC_CHANNELS.sessions.LIST_BY_WORKSPACE,
   RPC_CHANNELS.sessions.GET_UNREAD_SUMMARY,
   RPC_CHANNELS.sessions.MARK_ALL_READ,
   RPC_CHANNELS.sessions.UNREAD_SUMMARY_CHANGED,

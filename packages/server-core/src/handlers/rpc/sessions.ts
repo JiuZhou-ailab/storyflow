@@ -118,7 +118,7 @@ async function scanSessionDirectory(
 
 export const HANDLED_CHANNELS = [
   RPC_CHANNELS.sessions.GET,
-  RPC_CHANNELS.sessions.GET_ALL,
+  RPC_CHANNELS.sessions.LIST_BY_WORKSPACE,
   RPC_CHANNELS.sessions.GET_UNREAD_SUMMARY,
   RPC_CHANNELS.sessions.MARK_ALL_READ,
   RPC_CHANNELS.sessions.CREATE,
@@ -180,16 +180,21 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
     return sessions
   })
 
-  // The Codex-style global sidebar needs recent conversations across projects.
-  // Keep this separate from GET: the normal session navigator intentionally
-  // remains scoped to the active window workspace.
-  server.handle(RPC_CHANNELS.sessions.GET_ALL, async () => {
+  // Session lists are always scoped to one runtime workspace (ADR 0006).
+  // Unlike GET, which infers the workspace from the calling window, this takes
+  // the workspace explicitly so a surface can render a workspace it is not
+  // currently running — e.g. the rail listing Free Conversations while a
+  // project is open. It still cannot ask for more than one workspace at a time.
+  server.handle(RPC_CHANNELS.sessions.LIST_BY_WORKSPACE, async (_ctx, workspaceId: string) => {
+    if (!workspaceId) {
+      throw new Error('sessions:listByWorkspace requires a workspaceId')
+    }
     try {
       await sessionManager.waitForInit()
     } catch (error) {
-      log.error('GET_ALL_SESSIONS continuing after initialization failure:', error)
+      log.error('LIST_SESSIONS_BY_WORKSPACE continuing after initialization failure:', error)
     }
-    return sessionManager.getSessions()
+    return sessionManager.getSessions(workspaceId)
   })
 
   // Get unread summary across all workspaces

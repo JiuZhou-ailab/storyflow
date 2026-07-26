@@ -85,7 +85,7 @@ describe('project management entry', () => {
     expect(activityRailSource).toContain('label="项目"')
     expect(activityRailSource).toContain('text-[13px] font-semibold text-foreground/90')
     expect(activityRailSource).toContain('RECENT_SESSION_LIMIT = 8')
-    expect(activityRailSource).toContain('getAllSessions')
+    expect(activityRailSource).toContain('listSessionsByWorkspace')
     expect(activityRailSource).toContain('onSelectSession')
     expect(activityRailSource).toContain('label="技能"')
     expect(activityRailSource).toContain('label="数据源"')

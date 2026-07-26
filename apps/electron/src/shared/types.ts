@@ -312,8 +312,13 @@ export interface ElectronAPI {
 
   // Session management
   getSessions(): Promise<Session[]>
-  /** Metadata-only session list across every workspace owned by this server. */
-  getAllSessions(): Promise<Session[]>
+  /**
+   * Metadata-only session list for one runtime workspace.
+   * Sessions are owned by exactly one workspace, so callers must name the
+   * workspace they are rendering. There is deliberately no cross-workspace
+   * variant: mixing runtime domains in one list is what ADR 0006 forbids.
+   */
+  listSessionsByWorkspace(workspaceId: string): Promise<Session[]>
   getUnreadSummary(): Promise<UnreadSummary>
   markAllSessionsRead(workspaceId: string): Promise<void>
   getSessionMessages(sessionId: string): Promise<Session | null>

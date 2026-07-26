@@ -3,7 +3,7 @@
 // pos: Guards in-window workspace switching and the Codex-style global sidebar boundary
 
 import { describe, expect, it } from 'bun:test'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { FREE_CONVERSATION_WORKSPACE_ID, RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import type { HandlerFn, RequestContext, RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { registerSessionsHandlers } from './sessions'
@@ -59,14 +59,14 @@ function createSessionsHarness(windowWorkspaceId: string | undefined) {
   if (!getSessions) {
     throw new Error('sessions get handler not registered')
   }
-  const getAllSessions = handlers.get(RPC_CHANNELS.sessions.GET_ALL)
-  if (!getAllSessions) {
-    throw new Error('sessions get-all handler not registered')
+  const listSessionsByWorkspace = handlers.get(RPC_CHANNELS.sessions.LIST_BY_WORKSPACE)
+  if (!listSessionsByWorkspace) {
+    throw new Error('sessions list-by-workspace handler not registered')
   }
 
   return {
     getSessions,
-    getAllSessions,
+    listSessionsByWorkspace,
     requestedWorkspaceIds,
   }
 }
@@ -85,16 +85,34 @@ describe('sessions get RPC registration', () => {
     expect(requestedWorkspaceIds).toEqual(['workspace-new'])
   })
 
-  it('loads global session metadata without applying the current window workspace filter', async () => {
-    const { getAllSessions, requestedWorkspaceIds } = createSessionsHarness('workspace-new')
+  it('scopes an explicit workspace list to the requested workspace, not the window', async () => {
+    const { listSessionsByWorkspace, requestedWorkspaceIds } = createSessionsHarness('workspace-new')
     const ctx: RequestContext = {
       clientId: 'client-1',
       workspaceId: 'workspace-old',
       webContentsId: 1,
     }
 
-    await getAllSessions(ctx)
+    await listSessionsByWorkspace(ctx, FREE_CONVERSATION_WORKSPACE_ID)
 
-    expect(requestedWorkspaceIds).toEqual([undefined])
+    expect(requestedWorkspaceIds).toEqual([FREE_CONVERSATION_WORKSPACE_ID])
+  })
+
+  // A missing workspaceId must not silently degrade into an unfiltered query:
+  // that is exactly how project conversations leaked into Free Conversations.
+  it('refuses to list sessions without a workspace instead of returning every workspace', async () => {
+    const { listSessionsByWorkspace, requestedWorkspaceIds } = createSessionsHarness('workspace-new')
+    const ctx: RequestContext = {
+      clientId: 'client-1',
+      workspaceId: 'workspace-old',
+      webContentsId: 1,
+    }
+
+    await expect(listSessionsByWorkspace(ctx, '')).rejects.toThrow(/workspaceId/)
+    expect(requestedWorkspaceIds).toEqual([])
+  })
+
+  it('exposes no channel that returns sessions across workspaces', () => {
+    expect(RPC_CHANNELS.sessions).not.toHaveProperty('GET_ALL')
   })
 })

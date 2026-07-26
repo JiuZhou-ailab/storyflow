@@ -72,7 +72,7 @@ describe('project default navigation', () => {
   it('keeps free conversations in the global recent-conversation list', () => {
     expect(activityRailSource).toContain("meta.workspaceId === FREE_CONVERSATION_WORKSPACE_ID")
     expect(activityRailSource).toContain('workspaces.find(workspace => workspace.id === meta.workspaceId)?.name ?? \'项目\'')
-    expect(activityRailSource).toContain('getAllSessions')
+    expect(activityRailSource).toContain('listSessionsByWorkspace')
     expect(activityRailSource).not.toContain("| 'free-conversations'")
     expect(activityRailSource).not.toContain('dataTutorial="activity-free-conversations"')
     expect(appShellSource).not.toContain('onOpenWritingWorkspace={onOpenWritingWorkspace}')

@@ -134,13 +134,11 @@ export function ActivityRail({
   const refreshGlobalSessionMetas = React.useCallback(async () => {
     const generation = ++refreshGenerationRef.current
     try {
-      const sessions = await window.electronAPI.getAllSessions()
+      const sessions = await window.electronAPI.listSessionsByWorkspace(FREE_CONVERSATION_WORKSPACE_ID)
       if (generation !== refreshGenerationRef.current) return
       setGlobalSessionMetas(sessions.map(extractSessionMeta))
     } catch (error) {
-      // Older remote servers may not expose the global metadata endpoint yet.
-      // The active-workspace atom remains a useful, honest fallback in that case.
-      console.warn('[activity-sidebar] Failed to load global session metadata:', error)
+      console.warn('[activity-sidebar] Failed to load free conversation metadata:', error)
     }
   }, [])
 
