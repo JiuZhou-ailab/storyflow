@@ -458,6 +458,8 @@ export interface ElectronAPI {
   isDebugMode(): Promise<boolean>
   getWorkspaceVersionStatus(rootPath: string): Promise<WorkspaceVersionStatus>
   compareWorkspaceVersions(rootPath: string, baseCommit: string, headCommit?: string): Promise<WorkspaceVersionFileChange[]>
+  /** Returns file content at a commit, or null when the path is absent there (absence != empty). */
+  readWorkspaceFileAtVersion(rootPath: string, commitHash: string, relativePath: string): Promise<string | null>
   createWorkspaceVersion(rootPath: string, options: CreateWorkspaceVersionOptions): Promise<CreateWorkspaceVersionResult>
   listWorkspaceVersions(rootPath: string, limit?: number): Promise<WorkspaceVersionEntry[]>
   restoreWorkspaceVersion(rootPath: string, commitHash: string): Promise<RestoreWorkspaceVersionResult>

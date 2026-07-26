@@ -46,6 +46,12 @@ export function buildRejectFileChangeOperation(
 
   const changeKind = getEffectiveChangeKind(change)
 
+  if (changeKind === 'delete') {
+    // Reversing a deletion needs the file's full prior content, which only the
+    // snapshot path can supply. See `snapshot-revert.ts`.
+    return { ok: false, reason: 'Deletions can only be reverted from a workspace snapshot.' }
+  }
+
   if (changeKind === 'create') {
     if (currentContent !== change.modified) {
       return { ok: false, reason: 'Current file no longer matches the reviewed creation.' }

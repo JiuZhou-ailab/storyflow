@@ -109,6 +109,7 @@ const EXPECTED_CHANNELS: string[] = [
   'git:getBranch',
   'git:getVersionStatus',
   'git:listVersions',
+  'git:readFileAtVersion',
   'git:restoreVersion',
   'gitbash:browse',
   'gitbash:check',

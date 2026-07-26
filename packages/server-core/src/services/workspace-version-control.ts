@@ -43,21 +43,34 @@ export interface WorkspaceVersionFileChange {
 }
 
 const GIT_TIMEOUT_MS = 10_000
+const GIT_MAX_BUFFER_BYTES = 1024 * 1024
+/** File content reads need a larger ceiling than metadata queries. */
+const GIT_CONTENT_MAX_BUFFER_BYTES = 16 * 1024 * 1024
 
-async function runGit(rootPath: string, args: string[]): Promise<string> {
+interface RunGitOptions {
+  /**
+   * Keep stdout byte-exact. Required for file content reads, where trimming
+   * would silently drop leading/trailing whitespace and the trailing newline.
+   */
+  raw?: boolean
+  maxBuffer?: number
+}
+
+async function runGit(rootPath: string, args: string[], options: RunGitOptions = {}): Promise<string> {
+  const { raw = false, maxBuffer = GIT_MAX_BUFFER_BYTES } = options
   return await new Promise((resolve, reject) => {
     execFile('git', args, {
       cwd: rootPath,
       encoding: 'utf-8',
       timeout: GIT_TIMEOUT_MS,
-      maxBuffer: 1024 * 1024,
+      maxBuffer,
     }, (error, stdout, stderr) => {
       if (error) {
         const message = stderr.trim() || stdout.trim() || error.message
         reject(new Error(message))
         return
       }
-      resolve(stdout.trim())
+      resolve(raw ? stdout : stdout.trim())
     })
   })
 }
@@ -196,6 +209,45 @@ export async function listWorkspaceVersions(rootPath: string, limit = 20): Promi
   } catch {
     return []
   }
+}
+
+/**
+ * Reads a single file's content as of a commit.
+ *
+ * Returns `null` when the path does not exist at that commit — absence is a
+ * distinct outcome from an empty file, and collapsing the two into `''` is what
+ * makes reverting a create/delete ambiguous downstream.
+ *
+ * Existence is probed with `cat-file -t` rather than by matching `git show`'s
+ * error text, because git localizes its messages and text matching would break
+ * under a non-English locale.
+ */
+export async function readWorkspaceFileAtCommit(
+  rootPath: string,
+  commitHash: string,
+  relativePath: string,
+): Promise<string | null> {
+  if (!await isGitRepo(rootPath)) return null
+
+  const normalizedPath = relativePath.replace(/\\/g, '/').replace(/^\/+/, '')
+  if (!normalizedPath) return null
+
+  const objectRef = `${commitHash}:${normalizedPath}`
+
+  let objectType: string
+  try {
+    objectType = await runGit(rootPath, ['cat-file', '-t', objectRef])
+  } catch {
+    // Path absent at this commit, or the commit itself is unreachable.
+    return null
+  }
+
+  if (objectType !== 'blob') return null
+
+  return await runGit(rootPath, ['cat-file', 'blob', objectRef], {
+    raw: true,
+    maxBuffer: GIT_CONTENT_MAX_BUFFER_BYTES,
+  })
 }
 
 export async function compareWorkspaceVersions(

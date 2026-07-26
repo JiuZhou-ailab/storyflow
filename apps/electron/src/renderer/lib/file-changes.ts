@@ -51,7 +51,7 @@ function getFilePathFromUnifiedDiff(diff: string | undefined): string | undefine
 function getChangeKindFromUnifiedDiff(diff: string | undefined): FileChange['changeKind'] {
   if (!diff?.trim()) return 'modify'
   if (diff.includes('new file mode') || diff.includes('--- /dev/null')) return 'create'
-  if (diff.includes('deleted file mode') || diff.includes('+++ /dev/null')) return 'replace'
+  if (diff.includes('deleted file mode') || diff.includes('+++ /dev/null')) return 'delete'
   return 'modify'
 }
 

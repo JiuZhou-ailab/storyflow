@@ -187,6 +187,7 @@ import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { rendererPerf } from "@/lib/perf"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
 import { buildRejectFileChangesOperation } from "@/lib/file-change-review"
+import { getSnapshotChangeKind } from "@/lib/snapshot-revert"
 import {
   buildProjectExportPlan,
   createProjectExportFolderName,
@@ -389,7 +390,7 @@ function buildWorkspaceVersionReviewChanges(
       id: `workspace-version:${change.path}`,
       filePath: `${normalizedRoot}/${change.path}`,
       toolType: 'Edit',
-      changeKind: change.status === 'added' ? 'create' : change.status === 'deleted' ? 'replace' : 'modify',
+      changeKind: getSnapshotChangeKind(change.status),
       original: '',
       modified: '',
       unifiedDiff: change.unifiedDiff,

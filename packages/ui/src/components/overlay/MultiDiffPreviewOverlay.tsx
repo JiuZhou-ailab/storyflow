@@ -45,7 +45,7 @@ export interface FileChange {
   /** Tool type: Edit or Write */
   toolType: 'Edit' | 'Write'
   /** Semantic file operation represented by the change. */
-  changeKind?: 'create' | 'modify' | 'replace'
+  changeKind?: 'create' | 'modify' | 'replace' | 'delete'
   /** For Edit: the old_string; For Write: empty or previous content if available */
   original: string
   /** For Edit: the new_string; For Write: the written content */
