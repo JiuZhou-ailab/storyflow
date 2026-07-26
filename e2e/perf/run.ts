@@ -7,7 +7,6 @@ import { join } from 'node:path'
 import {
   launchApp,
   evalOn,
-  callOn,
   heapUsed,
   waitFor,
   countPerf,
@@ -20,6 +19,14 @@ import {
   parsePerfScenarios,
   parsePositiveInteger,
 } from './contract.ts'
+import {
+  expandWritingChapterDirectoryExpression,
+  openFixtureProjectExpression,
+  openWritingChapterExpression,
+  projectButtonsReadyExpression,
+  writingChapterLabel,
+  writingChapterMountedExpression,
+} from './navigation.ts'
 
 // ---- Config (env-driven, no framework) ----------------------------------
 const FIXTURE = process.env.PERF_FIXTURE || DEFAULT_FIXTURE
@@ -44,9 +51,7 @@ const TARGET = {
 }
 
 const SWITCH_COMPLETE = /Session switch complete:\s*([\d.]+)\s*ms/i
-// The app opens onto the Project Hub. Startup is judged against the actual writing product
-// surface; session-list navigation remains only for the legacy switch/memory diagnostics.
-const OPEN_LABEL = '打开|Open'
+const DOCUMENT_PAINT_COMPLETE = /writing\.document\.paintAfterRead:\s*([\d.]+)\s*ms/i
 
 interface Metric {
   scenario: string
@@ -89,20 +94,20 @@ async function main() {
 
 // ---- Navigation ---------------------------------------------------------
 /**
- * From a fresh launch: hub → open a non-novel workspace that has fixture sessions.
+ * From a fresh launch: ActivityRail → open a non-writing workspace that has fixture sessions.
  * Product UI is writing-first (no always-visible SessionList); session switching is
  * exercised via the same navigate() route the ConversationHistoryMenu uses.
  */
 async function enterWorkspaceWithSessions(live: LaunchedApp): Promise<void> {
   await waitFor(
     live,
-    `Array.from(document.querySelectorAll('button')).some(b=>/${OPEN_LABEL}/.test(b.textContent||''))`,
+    projectButtonsReadyExpression(),
     60_000,
-    'hub open button'
+    'ActivityRail project buttons'
   )
 
   const opened = await openNonNovelProject(live)
-  if (!opened) throw new Error('Could not open a non-novel project from the hub')
+  if (!opened) throw new Error('Could not open a non-writing fixture project from ActivityRail')
 
   // Backend session index for this workspace (300/workspace can take a moment).
   await waitFor(
@@ -118,7 +123,7 @@ async function enterWorkspaceWithSessions(live: LaunchedApp): Promise<void> {
   await sleep(200)
 }
 
-/** From a fresh launch: hub → writing project → project tree + first document ready. */
+/** From a fresh launch: ActivityRail → writing project → project tree + first document ready. */
 interface WritingWorkspaceEntryTiming {
   hubReadyAt: number
   projectClickedAt: number
@@ -130,9 +135,9 @@ interface WritingWorkspaceEntryTiming {
 async function enterFirstWritingWorkspace(live: LaunchedApp): Promise<WritingWorkspaceEntryTiming> {
   await waitFor(
     live,
-    `Array.from(document.querySelectorAll('button')).some(b=>/${OPEN_LABEL}/.test(b.textContent||''))`,
+    projectButtonsReadyExpression(),
     60_000,
-    'hub open button'
+    'ActivityRail project buttons'
   )
   const hubReadyAt = Date.now()
   const startupMarks = await evalOn<Record<string, number>>(
@@ -147,12 +152,19 @@ async function enterFirstWritingWorkspace(live: LaunchedApp): Promise<WritingWor
   )
 
   const opened = await openWritingProject(live)
-  if (!opened) throw new Error('Could not open a writing project from the hub')
+  if (!opened) throw new Error('Could not open the writing fixture project from ActivityRail')
   const projectClickedAt = Date.now()
 
   await waitFor(live, `!!document.querySelector('[data-tutorial="writing-catalog"]')`, 45_000, 'writing catalog')
   const catalogReadyAt = Date.now()
-  await waitFor(live, `!!document.querySelector('.tiptap-editor--manuscript .ProseMirror')`, 90_000, 'first writing document')
+  // The editor stays mounted while a document loads; editability is the current
+  // product contract that content has finished loading into the reusable instance.
+  await waitFor(
+    live,
+    `!!document.querySelector('.tiptap-editor--manuscript .ProseMirror[contenteditable="true"]')`,
+    90_000,
+    'first editable writing document',
+  )
   const legacyChatMounted = await evalOn<boolean>(
     live,
     `!!document.querySelector('[data-tutorial="chat-history"], [data-tutorial="new-session-button"]')`,
@@ -169,42 +181,14 @@ async function enterFirstWritingWorkspace(live: LaunchedApp): Promise<WritingWor
   }
 }
 
-/** Click 打开 on the first ProjectHub card whose title is not the novel writing fixture. */
+/** Open the first ActivityRail project whose name is not the deterministic writing fixture. */
 async function openNonNovelProject(live: LaunchedApp): Promise<string | null> {
-  return evalOn<string | null>(
-    live,
-    `(() => {
-      const isNovel = (name) => /400\\s*章|长篇|novel|写作小说/i.test(name)
-      const articles = Array.from(document.querySelectorAll('article'))
-      for (const a of articles) {
-        const name = (a.querySelector('h2')?.textContent || '').trim()
-        if (!name || isNovel(name)) continue
-        const btn = Array.from(a.querySelectorAll('button')).find((b) => /打开|Open/.test(b.textContent || ''))
-        if (btn) { btn.click(); return name }
-      }
-      const btns = Array.from(document.querySelectorAll('button')).filter((b) => /打开|Open/.test(b.textContent || ''))
-      if (btns.length >= 2) { btns[1].click(); return '__fallback_index_1__' }
-      return null
-    })()`
-  )
+  return evalOn<string | null>(live, openFixtureProjectExpression('sessions'))
 }
 
-/** Click 打开 on the writing fixture card. */
+/** Open the deterministic 400-chapter writing fixture from ActivityRail. */
 async function openWritingProject(live: LaunchedApp): Promise<string | null> {
-  return evalOn<string | null>(
-    live,
-    `(() => {
-      const isWriting = (name) => /400\\s*章|长篇|novel|写作小说/i.test(name)
-      const articles = Array.from(document.querySelectorAll('article'))
-      for (const a of articles) {
-        const name = (a.querySelector('h2')?.textContent || '').trim()
-        if (!name || !isWriting(name)) continue
-        const btn = Array.from(a.querySelectorAll('button')).find((b) => /打开|Open/.test(b.textContent || ''))
-        if (btn) { btn.click(); return name }
-      }
-      return null
-    })()`
-  )
+  return evalOn<string | null>(live, openFixtureProjectExpression('writing'))
 }
 
 // ---- Scenario 1: startup ------------------------------------------------
@@ -240,7 +224,7 @@ async function runStartup(): Promise<Metric[]> {
   devtoolsDurations.sort((a, b) => a - b)
   pageAttachDurations.sort((a, b) => a - b)
   return [
-    metric('startup', `launch→ProjectHub interactive median (n=${STARTUP_RUNS})`, median(hubDurations), 'ms', TARGET.hubInteractiveMs, {
+    metric('startup', `launch→ActivityRail interactive median (n=${STARTUP_RUNS})`, median(hubDurations), 'ms', TARGET.hubInteractiveMs, {
       note: `runs=[${hubDurations.join(', ')}], devtools=[${devtoolsDurations.join(', ')}], page=[${pageAttachDurations.join(', ')}], renderer=${startupMarkRuns.join('|')}`,
     }),
     metric('startup', `project click→writing document median (n=${STARTUP_RUNS})`, median(projectOpenDurations), 'ms', TARGET.projectOpenMs, {
@@ -257,52 +241,28 @@ async function runHeavyWriting(): Promise<Metric[]> {
   const live = await launchApp(FIXTURE)
   try {
     await enterFirstWritingWorkspace(live)
-    // react-arborist virtualizes rows: scroll its overflow:auto list until 第200章 mounts.
-    const scrolled = await evalOn<boolean>(
-      live,
-      `(() => {
-        const tree = document.querySelector('[role="tree"]')
-        if (!tree) return false
-        const scroller = [tree, ...tree.querySelectorAll('*')].find(
-          (el) => el.scrollHeight > el.clientHeight + 50 && getComputedStyle(el).overflowY === 'auto',
-        )
-        if (!scroller) return false
-        // ~3 non-chapter rows + 200 * 30px row height
-        scroller.scrollTop = 203 * 30
-        scroller.dispatchEvent(new Event('scroll', { bubbles: true }))
-        return true
-      })()`
-    )
-    if (!scrolled) throw new Error('Could not scroll writing catalog list')
+    await ensureWritingChapterDirectory(live)
     await waitFor(
       live,
-      `Array.from(document.querySelectorAll('[role="treeitem"]')).some((el) => /第200章/.test(el.textContent || ''))`,
+      writingChapterMountedExpression(200),
       10_000,
       'chapter 200 row mounted'
     )
 
+    const beforeDocumentPaint = countPerf(live, DOCUMENT_PAINT_COMPLETE)
     const t0 = Date.now()
-    const clicked = await evalOn<boolean>(
+    const opened = await evalOn<'clicked' | 'already-selected' | null>(live, openWritingChapterExpression(200))
+    if (opened !== 'clicked') throw new Error('Could not scroll to and click 第200章')
+    await requirePerfLine(
       live,
-      `(() => {
-        const target = Array.from(document.querySelectorAll('[role="treeitem"]')).find((el) =>
-          /第200章/.test(el.textContent || ''),
-        )
-        if (!target) return false
-        target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
-        return true
-      })()`
-    )
-    if (!clicked) throw new Error('Could not click 第200章 after scroll')
-    await waitFor(
-      live,
-      `!!document.querySelector('.tiptap-editor--manuscript .ProseMirror') && /第200章/.test(document.body.innerText || '')`,
+      DOCUMENT_PAINT_COMPLETE,
+      beforeDocumentPaint,
       30_000,
-      'chapter 200 document ready'
+      'chapter 200 document paint',
     )
     const ms = Date.now() - t0
     return [metric('heavy-writing', 'open mid catalog chapter (第200章)', ms, 'ms', TARGET.heavyMs, {
-      note: 'CONTEXT heavy tier ≤1s; wall-clock from treeitem click to editor ready (scroll excluded)',
+      note: 'CONTEXT heavy tier ≤1s; wall-clock includes scrollIntoView + treeitem click→document paint',
     })]
   } finally {
     await live.close()
@@ -389,18 +349,31 @@ async function runContinuousTyping(): Promise<Metric[]> {
           const ch = chars[i]
           const t0 = performance.now()
           if (el.isContentEditable) {
-            document.execCommand('insertText', false, ch)
+            el.textContent = (el.textContent || '') + ch
+            el.dispatchEvent(new InputEvent('input', {
+              bubbles: true,
+              data: ch,
+              inputType: 'insertText',
+            }))
           } else if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
             const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
               || Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
             setter?.call(el, (el.value || '') + ch)
-            el.dispatchEvent(new Event('input', { bubbles: true }))
+            el.dispatchEvent(new InputEvent('input', {
+              bubbles: true,
+              data: ch,
+              inputType: 'insertText',
+            }))
           }
           // Force style/layout for the inserted character — measures typing echo work,
           // not display-refresh cadence (double-rAF is ~16.7ms by definition and cannot
           // pass a 16.7ms continuous budget).
           void el.getBoundingClientRect()
           durations.push(performance.now() - t0)
+        }
+        const finalText = el.isContentEditable ? el.textContent || '' : el.value || ''
+        if (finalText !== chars) {
+          throw new Error(\`chat input benchmark inserted \${finalText.length}/\${chars.length} characters\`)
         }
         const sorted = durations.slice().sort((a, b) => a - b)
         const p50 = sorted[Math.floor(sorted.length * 0.5)]
@@ -459,44 +432,31 @@ async function runDocumentLeak(): Promise<Metric[]> {
 
 /** Scroll virtualized catalog to chapter N and click it. Chapters are 1-indexed. */
 async function openWritingChapter(live: LaunchedApp, chapter: number): Promise<void> {
-  const label = `第${String(chapter).padStart(3, '0')}章`
-  const scrolled = await callOn<boolean>(
-    live,
-    `function (chapter) {
-      const tree = document.querySelector('[role="tree"]')
-      if (!tree) return false
-      const scroller = [tree, ...tree.querySelectorAll('*')].find(
-        (el) => el.scrollHeight > el.clientHeight + 50 && getComputedStyle(el).overflowY === 'auto',
-      )
-      if (!scroller) return false
-      globalThis.__storyflowPerfChapterLabel = \`第\${String(chapter).padStart(3, '0')}章\`
-      scroller.scrollTop = (chapter + 2) * 30
-      scroller.dispatchEvent(new Event('scroll', { bubbles: true }))
-      return true
-    }`,
-    [chapter],
-  )
-  if (!scrolled) throw new Error(`Could not scroll catalog for ${label}`)
+  const label = writingChapterLabel(chapter)
 
+  await ensureWritingChapterDirectory(live)
   await waitFor(
     live,
-    `Array.from(document.querySelectorAll('[role="treeitem"]')).some((el) => (el.textContent || '').includes(globalThis.__storyflowPerfChapterLabel))`,
+    writingChapterMountedExpression(chapter),
     8_000,
     `${label} mounted`
   )
 
-  const clicked = await evalOn<boolean>(
+  const beforeDocumentPaint = countPerf(live, DOCUMENT_PAINT_COMPLETE)
+  const opened = await evalOn<'clicked' | 'already-selected' | null>(
     live,
-    `(() => {
-      const target = Array.from(document.querySelectorAll('[role="treeitem"]')).find((el) =>
-        (el.textContent || '').includes(globalThis.__storyflowPerfChapterLabel),
-      )
-      if (!target) return false
-      target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
-      return true
-    })()`
+    openWritingChapterExpression(chapter),
   )
-  if (!clicked) throw new Error(`Could not click ${label}`)
+  if (!opened) throw new Error(`Could not scroll to or click ${label}`)
+  if (opened === 'clicked') {
+    await requirePerfLine(
+      live,
+      DOCUMENT_PAINT_COMPLETE,
+      beforeDocumentPaint,
+      15_000,
+      `${label} document paint`,
+    )
+  }
 
   await waitFor(
     live,
@@ -504,6 +464,14 @@ async function openWritingChapter(live: LaunchedApp, chapter: number): Promise<v
     15_000,
     `${label} editor ready`
   )
+}
+
+async function ensureWritingChapterDirectory(live: LaunchedApp): Promise<void> {
+  const expanded = await evalOn<'expanded' | 'already-expanded' | null>(
+    live,
+    expandWritingChapterDirectoryExpression(),
+  )
+  if (!expanded) throw new Error('Could not find or expand the writing chapter directory')
 }
 
 // ---- Scenario 2: session switch ----------------------------------------
@@ -606,11 +574,32 @@ async function navigateToSession(live: LaunchedApp, id: string): Promise<void> {
 }
 
 async function waitForSwitchLine(live: LaunchedApp, before: number, timeoutMs: number): Promise<number | null> {
+  return waitForPerfLine(live, SWITCH_COMPLETE, before, timeoutMs)
+}
+
+async function requirePerfLine(
+  live: LaunchedApp,
+  pattern: RegExp,
+  before: number,
+  timeoutMs: number,
+  label: string,
+): Promise<number> {
+  const duration = await waitForPerfLine(live, pattern, before, timeoutMs)
+  if (duration == null) throw new Error(`Timed out waiting for ${label}`)
+  return duration
+}
+
+async function waitForPerfLine(
+  live: LaunchedApp,
+  pattern: RegExp,
+  before: number,
+  timeoutMs: number,
+): Promise<number | null> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    const complete = live.perfLines.filter((l) => SWITCH_COMPLETE.test(l.text))
+    const complete = live.perfLines.filter((line) => pattern.test(line.text))
     if (complete.length > before) {
-      const m = complete[complete.length - 1].text.match(SWITCH_COMPLETE)
+      const m = complete[complete.length - 1].text.match(pattern)
       return m ? parseFloat(m[1]) : null
     }
     await sleep(25)

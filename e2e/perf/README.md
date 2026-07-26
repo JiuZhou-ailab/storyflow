@@ -6,6 +6,8 @@ Uses **raw CDP** (bun native WebSocket via `cdp.ts`), not Playwright — Playwri
 
 - `cdp.ts` — flat-session CDP client
 - `launch.ts` — launch/teardown + heap GC + perf-log capture
+- `navigation.ts` — ActivityRail project discovery + deterministic fixture selection
+- `navigation.test.tsx` — rendered ActivityRail ↔ perf navigation contract
 - `contract.ts` — strict scenario/config parsing and fail-closed baseline decision
 - `contract.test.ts` — regression coverage for invalid or incomplete runs
 - `run.ts` — scenario driver + pass/fail report
@@ -50,6 +52,6 @@ An explicit `PERF_SCENARIOS` value is diagnostic mode (selected baselines only).
 
 ## Navigation contracts
 
-- **Startup / heavy-writing / memory-leak-docs**: hub → 400-chapter writing fixture → catalog + Tiptap
-- **Switch / memory / continuous-typing**: hub → non-writing fixture → sessions + chat input
+- **Startup / heavy-writing / memory-leak-docs**: ActivityRail → 400-chapter writing fixture → catalog + Tiptap
+- **Switch / memory / continuous-typing**: ActivityRail → non-writing fixture → sessions + chat input
 - **Heavy-search**: writing fixture → activity-search → results
