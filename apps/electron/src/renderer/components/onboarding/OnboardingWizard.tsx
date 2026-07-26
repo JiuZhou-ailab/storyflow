@@ -1,6 +1,10 @@
+// input: Onboarding state and side-effect handlers supplied by useOnboarding
+// output: The current provider, credential, or completion step
+// pos: Renderer state-machine view for first-run and connection setup
+
 import { cn } from "@/lib/utils"
 import { WelcomeStep } from "./WelcomeStep"
-import type { ApiSetupMethod } from "./APISetupStep"
+import type { ApiSetupMethod, CredentialSetupMethod } from "./APISetupStep"
 import { ProviderSelectStep, type ProviderChoice } from "./ProviderSelectStep"
 import { CredentialsStep, type CredentialStatus } from "./CredentialsStep"
 import { LocalModelStep, type LocalModelSubmitData } from "./LocalModelStep"
@@ -39,9 +43,9 @@ interface OnboardingWizardProps {
   // Event handlers
   onContinue: () => void
   onBack: () => void
-  onSelectApiSetupMethod: (method: ApiSetupMethod) => void
+  onSelectApiSetupMethod: (method: CredentialSetupMethod) => void
   onSubmitCredential: (data: ApiKeySubmitData) => void
-  onStartOAuth?: (methodOverride?: ApiSetupMethod) => void
+  onStartOAuth?: (methodOverride?: CredentialSetupMethod) => void
   onFinish: () => void
 
   // Claude OAuth (two-step flow)
@@ -161,6 +165,11 @@ export function OnboardingWizard({
         )
 
       case 'credentials':
+        // Managed connections never collect user credentials. Keep this view
+        // unreachable even if the state machine is restored from stale state.
+        if (!state.apiSetupMethod || state.apiSetupMethod === 'managed_default') {
+          return null
+        }
         return (
           <CredentialsStep
             apiSetupMethod={state.apiSetupMethod!}

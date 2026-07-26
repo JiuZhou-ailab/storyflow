@@ -1,5 +1,9 @@
+// input: LLM connection RPC requests, credentials, and installed provider catalogs
+// output: Connection CRUD, validation, and provider-model RPC responses
+// pos: Server-side RPC boundary for LLM connection management
+
 import { RPC_CHANNELS, type LlmConnectionSetup } from '@craft-agent/shared/protocol'
-import { getLlmConnections, getLlmConnection, addLlmConnection, updateLlmConnection, deleteLlmConnection, getDefaultLlmConnection, setDefaultLlmConnection, touchLlmConnection, isCompatProvider, isAnthropicProvider, getDefaultModelsForConnection, getDefaultModelForConnection, type LlmConnection, type LlmConnectionWithStatus, toBedrockNativeId, deriveBedrockRegionPrefix } from '@craft-agent/shared/config'
+import { getLlmConnections, getLlmConnection, addLlmConnection, updateLlmConnection, deleteLlmConnection, getDefaultLlmConnection, setDefaultLlmConnection, touchLlmConnection, isCompatProvider, isAnthropicProvider, getDefaultModelsForConnection, getDefaultModelForConnection, MANAGED_LLM_CONNECTION_SLUG, normalizeLlmConnectionSlug, type LlmConnection, type LlmConnectionWithStatus, toBedrockNativeId, deriveBedrockRegionPrefix } from '@craft-agent/shared/config'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { isMaskedCredential } from '@craft-agent/shared/utils/mask'
 import { setSetupDeferred } from '@craft-agent/shared/config/storage'
@@ -9,7 +13,7 @@ import {
   validateStoredBackendConnection,
 } from '@craft-agent/shared/agent/backend'
 import { getModelRefreshService } from '@craft-agent/server-core/model-fetchers'
-import { parseTestConnectionError, createBuiltInConnection, validateModelList, piAuthProviderDisplayName, validateSetupTestInput, setupTestRequiresApiKey, resolveCustomEndpointSetup } from '@craft-agent/server-core/domain'
+import { parseTestConnectionError, createBuiltInConnection, isAppManagedConnection, isAppManagedConnectionAvailable, validateModelList, piAuthProviderDisplayName, validateSetupTestInput, setupTestRequiresApiKey, resolveCustomEndpointSetup } from '@craft-agent/server-core/domain'
 import { getWorkspaceOrThrow, buildBackendHostRuntimeContext } from '@craft-agent/server-core/handlers'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
@@ -48,14 +52,34 @@ export const HANDLED_CHANNELS = [
 
 export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerDeps): void {
   const { sessionManager } = deps
+  const isAvailable = (connection: Parameters<typeof isAppManagedConnectionAvailable>[0]) =>
+    isAppManagedConnectionAvailable(connection, deps.managedModelAccessAvailable)
+  const managedUnavailable = { success: false, error: 'Managed connections are unavailable on shared or remote servers' }
 
   // Unified handler for LLM connection setup
   server.handle(RPC_CHANNELS.settings.SETUP_LLM_CONNECTION, async (_ctx, setup: LlmConnectionSetup): Promise<{ success: boolean; error?: string }> => {
     try {
+      const existingConnection = getLlmConnection(setup.slug)
+      if (!isAvailable(existingConnection ?? setup.slug)) return managedUnavailable
+      if (
+        normalizeLlmConnectionSlug(setup.slug) === MANAGED_LLM_CONNECTION_SLUG
+        && (!existingConnection || (existingConnection.managed !== true && existingConnection.source !== 'builtin'))
+      ) {
+        return { success: false, error: 'Managed connection is unavailable' }
+      }
+      if (isAppManagedConnection(existingConnection)) {
+        const success = setDefaultLlmConnection(setup.slug)
+        if (success) {
+          setSetupDeferred(false)
+          await sessionManager.reinitializeAuth(setup.slug)
+        }
+        return { success, error: success ? undefined : 'Managed connection is unavailable' }
+      }
+
       const manager = getCredentialManager()
 
       // Ensure connection exists in config
-      let connection = getLlmConnection(setup.slug)
+      let connection = existingConnection
       let isNewConnection = false
       if (!connection) {
         // Reauth guard: if updateOnly is set, the connection must already exist.
@@ -103,13 +127,6 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
       if (setup.modelSelectionMode !== undefined) {
         updates.modelSelectionMode = setup.modelSelectionMode
       }
-      if (setup.slug === 'wangsu-default') {
-        updates.name = 'JiuZhou-AI Wangsu'
-        updates.hidden = true
-        updates.managed = true
-        updates.source = 'builtin'
-      }
-
       const customEndpoint = hasConfiguredBaseUrl ? setup.customEndpoint : undefined
       const isCustomEndpointCompat = !!customEndpoint
       if (customEndpoint) {
@@ -122,9 +139,7 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
         })
         updates.authType = branch.authType
         if (branch.name !== undefined) updates.name = branch.name
-        if (setup.slug === 'wangsu-default') {
-          updates.piAuthProvider = 'cloudflare-ai-gateway'
-        } else if (branch.piAuthProvider !== undefined) {
+        if (branch.piAuthProvider !== undefined) {
           updates.piAuthProvider = branch.piAuthProvider
         }
       } else if (setup.baseUrl !== undefined) {
@@ -365,7 +380,7 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
   })
 
   server.handle(RPC_CHANNELS.pi.GET_PROVIDER_MODELS, async (_ctx, provider: string) => {
-    const { getModels } = await import('@earendil-works/pi-ai')
+    const { getModels } = await import('@earendil-works/pi-ai/compat')
     try {
       const models = getModels(provider as Parameters<typeof getModels>[0])
       const sorted = [...models].sort((a, b) => b.cost.output - a.cost.output || b.cost.input - a.cost.input)
@@ -391,12 +406,12 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
 
   // List all LLM connections (includes built-in and custom)
   server.handle(RPC_CHANNELS.llmConnections.LIST, async (): Promise<LlmConnection[]> => {
-    return getLlmConnections()
+    return getLlmConnections().filter(isAvailable)
   })
 
   // List all LLM connections with authentication status
   server.handle(RPC_CHANNELS.llmConnections.LIST_WITH_STATUS, async (): Promise<LlmConnectionWithStatus[]> => {
-    const connections = getLlmConnections()
+    const connections = getLlmConnections().filter(isAvailable)
     const credentialManager = getCredentialManager()
     const defaultSlug = getDefaultLlmConnection()
 
@@ -413,11 +428,13 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
 
   // Get a specific LLM connection by slug
   server.handle(RPC_CHANNELS.llmConnections.GET, async (_ctx, slug: string): Promise<LlmConnection | null> => {
-    return getLlmConnection(slug)
+    const connection = getLlmConnection(slug)
+    return isAvailable(connection ?? slug) ? connection : null
   })
 
   // Get stored API key for an LLM connection (masked — for edit form display only)
   server.handle(RPC_CHANNELS.llmConnections.GET_API_KEY, async (_ctx, slug: string): Promise<string | null> => {
+    if (isAppManagedConnection(slug) || isAppManagedConnection(getLlmConnection(slug))) return null
     const manager = getCredentialManager()
     const key = await manager.getLlmApiKey(slug)
     if (!key) return null
@@ -434,6 +451,9 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
     try {
       // Check if this is an update or create
       const existing = getLlmConnection(connection.slug)
+      if (isAppManagedConnection(existing) || isAppManagedConnection(connection)) {
+        return { success: false, error: 'Managed connections cannot be modified' }
+      }
       if (existing) {
         // Update existing connection (can't change slug)
         const { slug: _slug, ...updates } = connection
@@ -480,6 +500,9 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
       if (!connection) {
         return { success: false, error: 'Connection not found' }
       }
+      if (isAppManagedConnection(connection)) {
+        return { success: false, error: 'Managed connections cannot be deleted' }
+      }
       // deleteLlmConnection handles the "at least one must remain" check
       const success = deleteLlmConnection(slug)
       if (success) {
@@ -500,6 +523,7 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
   // Test an LLM connection (validate credentials and connectivity with actual API call)
   server.handle(RPC_CHANNELS.llmConnections.TEST, async (_ctx, slug: string): Promise<{ success: boolean; error?: string }> => {
     try {
+      if (!isAvailable(getLlmConnection(slug) ?? slug)) return managedUnavailable
       const result = await validateStoredBackendConnection({
         slug,
         hostRuntime: buildBackendHostRuntimeContext(deps.platform),
@@ -530,8 +554,10 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
   // Set global default LLM connection
   server.handle(RPC_CHANNELS.llmConnections.SET_DEFAULT, async (_ctx, slug: string): Promise<{ success: boolean; error?: string }> => {
     try {
+      if (!isAvailable(getLlmConnection(slug) ?? slug)) return managedUnavailable
       const success = setDefaultLlmConnection(slug)
       if (success) {
+        setSetupDeferred(false)
         deps.platform.logger?.info(`Global default LLM connection set to: ${slug}`)
         // Reinitialize auth so env vars and summarization model override match the new default
         await sessionManager.reinitializeAuth()
@@ -554,6 +580,7 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
         if (!connection) {
           return { success: false, error: 'Connection not found' }
         }
+        if (!isAvailable(connection)) return managedUnavailable
       }
 
       const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
@@ -586,6 +613,7 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
       if (!connection) {
         return { success: false, error: 'Connection not found' }
       }
+      if (!isAvailable(connection)) return managedUnavailable
 
       await getModelRefreshService().refreshNow(slug)
       return { success: true }
@@ -731,6 +759,9 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
 
   // Logout from ChatGPT (clear stored tokens)
   server.handle(RPC_CHANNELS.chatgpt.LOGOUT, async (_ctx, connectionSlug: string): Promise<{ success: boolean }> => {
+    if (isAppManagedConnection(connectionSlug) || isAppManagedConnection(getLlmConnection(connectionSlug))) {
+      return { success: false }
+    }
     try {
       const credentialManager = getCredentialManager()
       await credentialManager.deleteLlmCredentials(connectionSlug)
@@ -839,6 +870,9 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
 
   // Logout from Copilot (clear stored tokens)
   server.handle(RPC_CHANNELS.copilot.LOGOUT, async (_ctx, connectionSlug: string): Promise<{ success: boolean }> => {
+    if (isAppManagedConnection(connectionSlug) || isAppManagedConnection(getLlmConnection(connectionSlug))) {
+      return { success: false }
+    }
     try {
       const credentialManager = getCredentialManager()
       await credentialManager.deleteLlmCredentials(connectionSlug)

@@ -15,8 +15,6 @@ import type { LlmConnection } from './llm-connections.ts';
 export interface BuiltinLlmConnectionDefaults {
   enabled: boolean;
   connection?: LlmConnection;
-  apiKey?: string;
-  revokedApiKeySha256?: string[];
 }
 
 export interface ConfigDefaults {

@@ -1,3 +1,7 @@
+// input: Canonical session-tool safety metadata and representative tool names
+// output: Proof that read-only tools run and mutations block in safe mode
+// pos: Regression check for metadata-driven session permissions
+
 /**
  * Regression tests for metadata-driven session tool safe-mode classification.
  */
@@ -30,6 +34,7 @@ describe('session tool safe-mode classification', () => {
     const blockedTools = [
       'mcp__session__source_oauth_trigger',
       'mcp__session__source_credential_prompt',
+      'mcp__session__skill_create',
       'mcp__session__spawn_session',
       'mcp__session__update_user_preferences',
     ] as const;

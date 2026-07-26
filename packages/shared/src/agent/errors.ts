@@ -390,6 +390,12 @@ export function parseError(
   const fullErrorText = extractErrorMessages(error);
   const errorMessage = error instanceof Error ? error.message : String(error);
   const lowerMessage = fullErrorText.toLowerCase();
+  const hasExplicitAuthExpiry =
+    lowerMessage.includes('token is expired') ||
+    lowerMessage.includes('token expired') ||
+    lowerMessage.includes('token has expired') ||
+    lowerMessage.includes('session expired') ||
+    (lowerMessage.includes('oauth') && lowerMessage.includes('expired'));
 
   // Detect error type from message/status
   let code: ErrorCode = 'unknown_error';
@@ -422,8 +428,6 @@ export function parseError(
     (lowerMessage.includes('tool') && lowerMessage.includes('not') && lowerMessage.includes('support'))
   ) {
     code = 'model_no_tool_support';
-  } else if (lowerMessage.includes('is not a valid model') || lowerMessage.includes('model not found') || lowerMessage.includes('invalid model') || lowerMessage.includes('model identifier is invalid')) {
-    code = 'invalid_model';
   // HTML-intercepted responses (proxy/firewall/captive portal).
   // Must be checked BEFORE status codes: a 502 Cloudflare page or 401 proxy login
   // page would otherwise be misclassified as service_error or invalid_api_key.
@@ -432,13 +436,21 @@ export function parseError(
   // Check for specific HTTP status codes or patterns
   } else if (lowerMessage.includes('402') || lowerMessage.includes('payment required')) {
     code = 'billing_error';
-  } else if (lowerMessage.includes('401') || lowerMessage.includes('unauthorized') || lowerMessage.includes('invalid api key') || lowerMessage.includes('invalid x-api-key') || lowerMessage.includes('authentication failed') || lowerMessage.includes('token is expired') || lowerMessage.includes('token expired')) {
-    // Distinguish between API key and OAuth errors
-    if (lowerMessage.includes('oauth') || lowerMessage.includes('token') || lowerMessage.includes('session')) {
-      code = 'expired_oauth_token';
-    } else {
-      code = 'invalid_api_key';
-    }
+  } else if (lowerMessage.includes('upstream_auth_failed')) {
+    code = 'service_error';
+  } else if (
+    lowerMessage.includes('401') ||
+    lowerMessage.includes('unauthorized') ||
+    lowerMessage.includes('invalid api key') ||
+    lowerMessage.includes('invalid x-api-key') ||
+    lowerMessage.includes('authentication failed') ||
+    lowerMessage.includes('invalid model access token') ||
+    lowerMessage.includes('model_access_token_invalid') ||
+    hasExplicitAuthExpiry
+  ) {
+    code = hasExplicitAuthExpiry ? 'expired_oauth_token' : 'invalid_api_key';
+  } else if (lowerMessage.includes('is not a valid model') || lowerMessage.includes('model not found') || lowerMessage.includes('invalid model') || lowerMessage.includes('model identifier is invalid')) {
+    code = 'invalid_model';
   } else if (lowerMessage.includes('429') || lowerMessage.includes('rate limit') || lowerMessage.includes('too many requests')) {
     code = 'rate_limited';
   } else if (isAnthropicMessageStopStreamError(lowerMessage)) {

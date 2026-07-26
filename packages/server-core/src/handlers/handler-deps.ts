@@ -28,6 +28,8 @@ export interface HandlerDeps<
   browserPaneManager?: TBrowserPaneManager
   oauthFlowStore: TOAuthFlowStore
   messagingRegistry?: IMessagingGatewayRegistry
+  /** True only for a single-user host that can refresh its own managed model token. */
+  managedModelAccessAvailable?: boolean
   /** Optional host/test override for resolving hidden and configured runtime workspaces. */
   resolveRuntimeWorkspace?: (workspaceId: string) => Workspace | null
 }

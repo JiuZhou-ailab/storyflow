@@ -17,6 +17,9 @@ import {
 
 mock.module('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '' }))
 mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDocument: () => ({}) }))
+mock.module('@/context/ThemeContext', () => ({
+  useTheme: () => ({ isDark: false }),
+}))
 setupI18n([initReactI18next])
 
 let ActivityRail: typeof import('../../apps/electron/src/renderer/components/app-shell/ActivityRail').ActivityRail

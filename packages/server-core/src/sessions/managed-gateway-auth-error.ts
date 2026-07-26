@@ -3,14 +3,19 @@
 // pos: Session error normalization boundary for bundled default AI access
 
 import type { TypedError } from '@craft-agent/core/types'
+import {
+  MANAGED_LLM_CONNECTION_SLUG,
+  normalizeLlmConnectionSlug,
+} from '@craft-agent/shared/config'
 
-export const MANAGED_DEFAULT_GATEWAY_CONNECTION_SLUG = 'wangsu-default'
-export const MANAGED_GATEWAY_CONNECTION_SLUGS = new Set([
-  MANAGED_DEFAULT_GATEWAY_CONNECTION_SLUG,
-])
+export const MANAGED_MODEL_ACCESS_UNAVAILABLE_MESSAGE =
+  'Default AI access is unavailable on shared or remote servers. Use the local desktop runtime or configure a custom provider.'
 
-export function isManagedDefaultGatewayConnection(connectionSlug: string | null | undefined): boolean {
-  return !!connectionSlug && MANAGED_GATEWAY_CONNECTION_SLUGS.has(connectionSlug)
+export function isManagedDefaultGatewayConnection(
+  connectionSlug: string | null | undefined,
+): connectionSlug is string {
+  return !!connectionSlug
+    && normalizeLlmConnectionSlug(connectionSlug) === MANAGED_LLM_CONNECTION_SLUG
 }
 
 export function normalizeManagedDefaultGatewayAuthError(
@@ -24,17 +29,16 @@ export function normalizeManagedDefaultGatewayAuthError(
   return {
     ...error,
     code: 'invalid_api_key',
-    title: 'Default AI Access Unavailable',
-    message: 'The default AI service rejected its model gateway credential. Open model settings or contact support if this keeps happening.',
+    title: 'Default AI Access Interrupted',
+    message: 'Default AI access could not be refreshed automatically. Retry this message; if sign-in appears, sign in again.',
     actions: [
       {
-        key: 's',
-        label: 'Open model settings',
-        command: '/settings',
-        action: 'settings',
+        key: 'r',
+        label: 'Retry',
+        action: 'retry',
       },
     ],
-    canRetry: false,
+    canRetry: true,
     details: undefined,
     originalError: undefined,
   }

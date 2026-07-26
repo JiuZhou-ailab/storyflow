@@ -1,3 +1,7 @@
+// input: Simulated onboarding choices and credential actions
+// output: Interactive managed-default or custom-provider onboarding demo
+// pos: Playground-only walkthrough of the production onboarding state flow
+
 /**
  * OnboardingFlowDemo — Interactive walkthrough of the new onboarding flow.
  *
@@ -12,22 +16,16 @@ import { WelcomeStep } from '@/components/onboarding/WelcomeStep'
 import { ProviderSelectStep, type ProviderChoice } from '@/components/onboarding/ProviderSelectStep'
 import { CredentialsStep } from '@/components/onboarding/CredentialsStep'
 import { CompletionStep } from '@/components/onboarding/CompletionStep'
-import type { ApiSetupMethod } from '@/components/onboarding/APISetupStep'
+import type { CredentialSetupMethod } from '@/components/onboarding/APISetupStep'
 import type { CredentialStatus } from '@/components/onboarding/CredentialsStep'
 
 type DemoStep = 'welcome' | 'provider-select' | 'credentials' | 'complete'
-
-/** Map ProviderChoice → ApiSetupMethod for the credentials step */
-const CHOICE_TO_METHOD: Record<ProviderChoice, ApiSetupMethod> = {
-  jiuzhou: 'jiuzhou_api_key',
-  custom_provider: 'pi_api_key',
-}
 
 export function OnboardingFlowDemo() {
   useEffect(() => { ensureMockElectronAPI() }, [])
 
   const [step, setStep] = useState<DemoStep>('welcome')
-  const [method, setMethod] = useState<ApiSetupMethod | null>(null)
+  const [method, setMethod] = useState<CredentialSetupMethod | null>(null)
   const [credStatus, setCredStatus] = useState<CredentialStatus>('idle')
   const [errorMessage, setErrorMessage] = useState<string | undefined>()
 
@@ -38,7 +36,14 @@ export function OnboardingFlowDemo() {
     setProviderChoice(choice)
     setCredStatus('idle')
     setErrorMessage(undefined)
-    setMethod(CHOICE_TO_METHOD[choice])
+
+    if (choice === 'jiuzhou') {
+      setMethod(null)
+      setStep('complete')
+      return
+    }
+
+    setMethod('pi_api_key')
     setStep('credentials')
   }, [])
 

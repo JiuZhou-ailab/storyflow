@@ -1,6 +1,6 @@
-// input: Bundled default Sources and explicit project Skill installation requests
-// output: Best-effort global Source seeding plus an opt-in project Skill copy primitive
-// pos: Resource bootstrap that never mutates project folders implicitly
+// input: Bundled product Skills, default Sources, and explicit project Skill installation requests
+// output: Best-effort global resource seeding plus an opt-in project Skill copy primitive
+// pos: Resource bootstrap separating product-wide capabilities from project-owned methods
 
 import {
   cpSync,
@@ -34,6 +34,10 @@ export const DEFAULT_AGENT_SKILL_SLUGS = [
   'story-state-ledger',
   'storyflow-tutorial',
   'webnovel-short-diagnose',
+] as const;
+
+export const DEFAULT_GLOBAL_AGENT_SKILL_SLUGS = [
+  'skill-creator',
 ] as const;
 
 export const DEFAULT_AGENT_SOURCE_SLUGS = [
@@ -161,8 +165,7 @@ export function seedDefaultAgentResources(
   }
 
   return {
-    // Project Skills are installed only after an explicit project action.
-    skills: emptyBucket(),
+    skills: copyMissingResourceDirs(join(assetsDir, 'global-skills'), join(agentRootDir, 'skills')),
     sources: copyMissingResourceDirs(join(assetsDir, 'sources'), join(agentRootDir, 'sources')),
   };
 }

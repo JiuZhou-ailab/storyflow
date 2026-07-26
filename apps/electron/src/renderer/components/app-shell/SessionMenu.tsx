@@ -1,3 +1,7 @@
+// input: Session metadata, workspace-specific status/label configuration, and session action callbacks
+// output: Shared dropdown/context-menu items for safe session operations
+// pos: Single source of truth for conversation actions across shell navigation surfaces
+
 /**
  * SessionMenu - Shared menu content for session actions
  *
@@ -206,27 +210,29 @@ export function SessionMenu({
       <Separator />
 
       {/* Status submenu - includes all statuses plus Flag/Unflag at the bottom */}
-      <Sub>
-        <SubTrigger className="pr-2">
-          <span style={{ color: getStateColor(currentSessionStatus, sessionStatuses) ?? 'var(--foreground)' }}>
-            {(() => {
-              const icon = getStateIcon(currentSessionStatus, sessionStatuses)
-              return React.isValidElement(icon)
-                ? React.cloneElement(icon as React.ReactElement<{ bare?: boolean }>, { bare: true })
-                : icon
-            })()}
-          </span>
-          <span className="flex-1">{t("sessionMenu.status")}</span>
-        </SubTrigger>
-        <SubContent>
-          <StatusMenuItems
-            sessionStatuses={sessionStatuses}
-            activeStateId={currentSessionStatus}
-            onSelect={onSessionStatusChange}
-            menu={{ MenuItem }}
-          />
-        </SubContent>
-      </Sub>
+      {sessionStatuses.length > 0 && (
+        <Sub>
+          <SubTrigger className="pr-2">
+            <span style={{ color: getStateColor(currentSessionStatus, sessionStatuses) ?? 'var(--foreground)' }}>
+              {(() => {
+                const icon = getStateIcon(currentSessionStatus, sessionStatuses)
+                return React.isValidElement(icon)
+                  ? React.cloneElement(icon as React.ReactElement<{ bare?: boolean }>, { bare: true })
+                  : icon
+              })()}
+            </span>
+            <span className="flex-1">{t("sessionMenu.status")}</span>
+          </SubTrigger>
+          <SubContent>
+            <StatusMenuItems
+              sessionStatuses={sessionStatuses}
+              activeStateId={currentSessionStatus}
+              onSelect={onSessionStatusChange}
+              menu={{ MenuItem }}
+            />
+          </SubContent>
+        </Sub>
+      )}
 
       {/* Labels submenu - hierarchical label tree with nested sub-menus and toggle checkmarks */}
       {labels.length > 0 && (

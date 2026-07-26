@@ -139,6 +139,11 @@ export interface ValidatorInterface {
   validateSkill(workspaceRootPath: string, skillSlug: string): import('./types.js').ValidationResult;
 }
 
+export interface SkillDocument {
+  path: string;
+  content: string;
+}
+
 // ============================================================
 // Session Tool Context
 // ============================================================
@@ -205,6 +210,12 @@ export interface SessionToolContext {
    * Load a source config from the workspace.
    */
   loadSourceConfig(sourceSlug: string): SourceConfig | null;
+
+  /** Create a new Skill in a validated Storyflow owner layer without overwriting. */
+  createSkillDocument?(skillSlug: string, content: string, targetWorkspaceId?: string): SkillDocument | Promise<SkillDocument>;
+
+  /** Load the visible Skill document from a validated Storyflow resource overlay. */
+  loadSkillDocument?(skillSlug: string, targetWorkspaceId?: string): SkillDocument | null;
 
   /** Whether the visible definition is externally owned and immutable. */
   isSourceDefinitionReadOnly?(sourceSlug: string): boolean;

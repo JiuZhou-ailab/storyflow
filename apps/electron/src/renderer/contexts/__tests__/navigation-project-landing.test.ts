@@ -74,9 +74,10 @@ describe('project default navigation', () => {
     // is what put project conversations in the free list (ADR 0006).
     expect(activityRailSource).toContain('listSessionsByWorkspace(FREE_CONVERSATION_WORKSPACE_ID)')
     expect(activityRailSource).not.toContain('getAllSessions')
-    // The local atom overlay is workspace-scoped to whatever runtime is open,
-    // so it must be filtered back down or the open project leaks in anyway.
-    expect(activityRailSource).toContain('if (meta.workspaceId !== FREE_CONVERSATION_WORKSPACE_ID) continue')
+    // Filter the local atom at subscription time so project updates cannot
+    // leak into the free list or trigger unrelated rail rerenders.
+    expect(activityRailSource).toContain('const freeRuntimeSessionMetasAtom = selectAtom(')
+    expect(activityRailSource).toContain('meta.workspaceId === FREE_CONVERSATION_WORKSPACE_ID')
     // Per-row workspace labels only exist to excuse a mixed list.
     expect(activityRailSource).not.toContain("?.name ?? '项目'")
     expect(activityRailSource).not.toContain("| 'free-conversations'")

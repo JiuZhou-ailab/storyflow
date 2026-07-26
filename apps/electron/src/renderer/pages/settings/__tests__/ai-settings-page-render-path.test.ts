@@ -16,4 +16,14 @@ describe('AiSettingsPage render path', () => {
     expect(source).not.toContain(': getSummary()')
     expect(source).not.toContain('const conn = llmConnections.find(c => c.slug === settings.defaultLlmConnection)')
   })
+
+  it('rejects managed connections before reading or editing API keys', () => {
+    const ownershipGuard = "if (conn.hidden || conn.managed || conn.source === 'builtin') return null"
+    const editMethodLookup = 'const method = getApiKeyMethodForConnection(connection)'
+    const credentialRead = 'getLlmConnectionApiKey(connection.slug)'
+
+    expect(source).toContain(ownershipGuard)
+    expect(source.indexOf(editMethodLookup)).toBeLessThan(source.indexOf(credentialRead))
+    expect(source).toContain('if (!method) return')
+  })
 })

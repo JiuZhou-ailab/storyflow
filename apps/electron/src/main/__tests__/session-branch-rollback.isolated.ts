@@ -102,6 +102,8 @@ mock.module('@craft-agent/shared/config', () => ({
   }),
   getLlmConnection: () => null,
   getDefaultLlmConnection: () => null,
+  MANAGED_LLM_CONNECTION_SLUG: 'storyflow-managed',
+  normalizeLlmConnectionSlug: (slug: string) => slug === 'wangsu-default' ? 'storyflow-managed' : slug,
   resolveAuthEnvVars: () => ({}),
   clearClaudeBedrockRoutingEnvVars: () => {},
   resetManagedAnthropicAuthEnvVars: () => {},

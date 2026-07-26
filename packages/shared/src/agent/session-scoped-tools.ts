@@ -1,3 +1,7 @@
+// input: Session identity, Storyflow workspace scope, and canonical tool definitions
+// output: Claude SDK MCP tools bound to shared session handlers
+// pos: In-process Claude adapter for provider-independent session tools
+
 /**
  * Session-Scoped Tools
  *
@@ -165,6 +169,7 @@ const TOOL_DESCRIPTIONS: Record<string, string> = {
   ...BASE_DESCRIPTIONS,
   // Claude-specific enrichments with DOC_REFs
   config_validate: BASE_DESCRIPTIONS.config_validate + `\n\n**Reference:** ${DOC_REFS.sources}`,
+  skill_create: BASE_DESCRIPTIONS.skill_create + `\n\n**Reference:** ${DOC_REFS.skills}`,
   skill_validate: BASE_DESCRIPTIONS.skill_validate + `\n\n**Reference:** ${DOC_REFS.skills}`,
   mermaid_validate: BASE_DESCRIPTIONS.mermaid_validate + `\n\n**Reference:** ${DOC_REFS.mermaid}`,
   source_test: BASE_DESCRIPTIONS.source_test + `\n\n**Reference:** ${DOC_REFS.sources}`,

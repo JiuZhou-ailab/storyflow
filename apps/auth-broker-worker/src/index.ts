@@ -1,7 +1,7 @@
 // input: Desktop client-auth exchange requests and Feishu/Neon identity provider responses
-// output: Public auth config, verified desktop identity, and role-scoped model access JWT
+// output: Public auth config, verified desktop identity, renewable client session, and short-lived model access JWT
 // pos: HTTPS auth broker for packaged desktop login without shipping server secrets
-import { createRemoteJWKSet, customFetch, jwtVerify, SignJWT, type JWTPayload } from 'jose'
+import { createRemoteJWKSet, customFetch, decodeProtectedHeader, jwtVerify, SignJWT, type JWTPayload } from 'jose'
 
 export interface Env {
   CRAFT_WEBUI_FEISHU_APP_ID?: string
@@ -16,7 +16,14 @@ export interface Env {
   CRAFT_WEBUI_NEON_AUTH_ISSUER?: string
   CRAFT_WEBUI_NEON_AUTH_AUDIENCE?: string
   CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN?: string
-  STORYFLOW_GATEWAY_JWT_SECRET?: string
+  STORYFLOW_CLIENT_SESSION_JWT_CURRENT_KEY_ID?: string
+  STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET?: string
+  STORYFLOW_CLIENT_SESSION_JWT_PREVIOUS_KEY_ID?: string
+  STORYFLOW_CLIENT_SESSION_JWT_PREVIOUS_SECRET?: string
+  STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID?: string
+  STORYFLOW_GATEWAY_JWT_CURRENT_SECRET?: string
+  STORYFLOW_GATEWAY_JWT_PREVIOUS_KEY_ID?: string
+  STORYFLOW_GATEWAY_JWT_PREVIOUS_SECRET?: string
   STORYFLOW_GATEWAY_JWT_AUDIENCE?: string
   STORYFLOW_GATEWAY_JWT_ISSUER?: string
 }
@@ -40,11 +47,20 @@ interface NeonIdentity {
   name?: string
 }
 
+interface ClientSessionPayload extends JWTPayload {
+  scope?: unknown
+  model_tier?: unknown
+  auth_time?: unknown
+}
+
 const DEFAULT_FEISHU_AUTH_BASE_URL = 'https://accounts.feishu.cn/open-apis/authen/v1/authorize'
 const DEFAULT_FEISHU_API_BASE_URL = 'https://open.feishu.cn'
 const DEFAULT_GATEWAY_AUDIENCE = 'storyflow-model-gateway'
 const DEFAULT_GATEWAY_ISSUER = 'storyflow-auth-broker'
-const MODEL_ACCESS_TOKEN_TTL_SECONDS = 86_400
+const DEFAULT_CLIENT_SESSION_AUDIENCE = 'storyflow-client-auth'
+const DEFAULT_CURRENT_KEY_ID = 'current'
+const CLIENT_SESSION_TOKEN_TTL_SECONDS = 2_592_000
+const MODEL_ACCESS_TOKEN_TTL_SECONDS = 900
 
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
@@ -61,6 +77,21 @@ export async function handleRequest(
 
   if (url.pathname === '/health') {
     return Response.json({ status: 'ok' })
+  }
+
+  if (url.pathname === '/ready') {
+    if (request.method !== 'GET') {
+      return Response.json(
+        { error: 'Method not allowed' },
+        { status: 405, headers: { Allow: 'GET' } },
+      )
+    }
+    return getBrokerReadinessError(env)
+      ? Response.json(
+          { status: 'not_ready', code: 'configuration_invalid' },
+          { status: 503 },
+        )
+      : Response.json({ status: 'ready' })
   }
 
   if (url.pathname === '/api/client-auth/feishu/config' && request.method === 'GET') {
@@ -88,6 +119,10 @@ export async function handleRequest(
     return exchangeNeonToken(request, env, fetchImpl)
   }
 
+  if (url.pathname === '/api/client-auth/token' && request.method === 'POST') {
+    return refreshClientAuthToken(request, env)
+  }
+
   return Response.json({ error: 'Not found' }, { status: 404 })
 }
 
@@ -111,9 +146,8 @@ async function exchangeFeishuCode(
     return Response.json({ error: 'Feishu redirect URI must be a loopback callback' }, { status: 400 })
   }
   if (!codeVerifier) return Response.json({ error: 'Feishu PKCE code verifier is required' }, { status: 400 })
-  if (!readString(env.STORYFLOW_GATEWAY_JWT_SECRET)) {
-    return Response.json({ error: 'Model access token signing is not configured' }, { status: 503 })
-  }
+  const tokenConfigError = getTokenIssuanceConfigError(env)
+  if (tokenConfigError) return Response.json({ error: tokenConfigError }, { status: 503 })
 
   try {
     const apiBaseUrl = readString(env.CRAFT_WEBUI_FEISHU_API_BASE_URL) ?? DEFAULT_FEISHU_API_BASE_URL
@@ -162,12 +196,12 @@ async function exchangeFeishuCode(
       ...(email ? { email } : {}),
       ...(user.name ? { name: user.name } : {}),
     }
-    const modelAccessToken = await createModelAccessToken(env, `feishu:${user.openId}`, 'pro')
+    const tokens = await createAuthTokens(env, `feishu:${user.openId}`, 'pro')
 
     return Response.json({
       ok: true,
       user: publicUser,
-      modelAccessToken,
+      ...tokens,
     })
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : 'Feishu exchange failed' }, { status: 401 })
@@ -179,29 +213,37 @@ async function exchangeNeonToken(
   env: Env,
   fetchImpl: FetchLike,
 ): Promise<Response> {
-  const baseUrl = normalizeUrlString(env.CRAFT_WEBUI_NEON_AUTH_BASE_URL)
-  if (!baseUrl) {
+  if (!readString(env.CRAFT_WEBUI_NEON_AUTH_BASE_URL)) {
     return Response.json({ error: 'Neon Auth is not configured' }, { status: 404 })
+  }
+  let baseUrl: string
+  let jwksUrl: string
+  try {
+    baseUrl = normalizeNeonAuthUrl(env.CRAFT_WEBUI_NEON_AUTH_BASE_URL)!
+    jwksUrl = normalizeNeonAuthUrl(env.CRAFT_WEBUI_NEON_AUTH_JWKS_URL)
+      ?? `${baseUrl}/.well-known/jwks.json`
+  } catch (error) {
+    return Response.json({
+      error: error instanceof Error ? error.message : 'Neon Auth URL is invalid',
+    }, { status: 503 })
   }
 
   const token = readBearerToken(request.headers.get('authorization'))
-    ?? readString((await readJsonObject(request).catch(() => ({}))).token)
+    ?? readString((await readJsonObject(request).catch((): Record<string, unknown> => ({}))).token)
   if (!token) {
     return Response.json({ error: 'Neon Auth token is required' }, { status: 400 })
   }
-  if (!readString(env.STORYFLOW_GATEWAY_JWT_SECRET)) {
-    return Response.json({ error: 'Model access token signing is not configured' }, { status: 503 })
-  }
+  const tokenConfigError = getTokenIssuanceConfigError(env)
+  if (tokenConfigError) return Response.json({ error: tokenConfigError }, { status: 503 })
 
   try {
     const origin = new URL(baseUrl).origin
-    const jwksUrl = normalizeUrlString(env.CRAFT_WEBUI_NEON_AUTH_JWKS_URL) ?? `${baseUrl}/.well-known/jwks.json`
     const issuer = readString(env.CRAFT_WEBUI_NEON_AUTH_ISSUER) ?? origin
     const audience = readString(env.CRAFT_WEBUI_NEON_AUTH_AUDIENCE) ?? origin
     const jwks = createRemoteJWKSet(new URL(jwksUrl), { [customFetch]: fetchImpl })
     const { payload } = await jwtVerify(token, jwks, { issuer, audience })
     const identity = normalizeNeonIdentity(payload)
-    const modelAccessToken = await createModelAccessToken(env, identity.subject, 'standard')
+    const tokens = await createAuthTokens(env, identity.subject, 'standard')
 
     return Response.json({
       ok: true,
@@ -212,32 +254,212 @@ async function exchangeNeonToken(
         ...(identity.emailVerified !== undefined ? { emailVerified: identity.emailVerified } : {}),
         ...(identity.name ? { name: identity.name } : {}),
       },
-      modelAccessToken,
+      ...tokens,
     })
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : 'Invalid Neon Auth token' }, { status: 401 })
   }
 }
 
+async function refreshClientAuthToken(request: Request, env: Env): Promise<Response> {
+  const tokenConfigError = getTokenIssuanceConfigError(env)
+  if (tokenConfigError) return Response.json({ error: tokenConfigError }, { status: 503 })
+
+  const token = readBearerToken(request.headers.get('authorization'))
+  if (!token) return invalidClientSessionResponse()
+
+  try {
+    const session = await verifyClientSessionToken(token, env)
+    return Response.json({
+      ok: true,
+      ...await createAuthTokens(
+        env,
+        session.subject,
+        session.modelTier,
+        session.authenticatedAtSeconds,
+      ),
+    })
+  } catch {
+    return invalidClientSessionResponse()
+  }
+}
+
+async function verifyClientSessionToken(
+  token: string,
+  env: Env,
+): Promise<{ subject: string, modelTier: 'standard' | 'pro', authenticatedAtSeconds: number }> {
+  const kid = decodeProtectedHeader(token).kid
+  if (typeof kid !== 'string' || !kid.trim()) throw new Error('Client session token key id is required')
+
+  const key = [getCurrentClientSessionKey(env), getPreviousClientSessionKey(env)]
+    .find(candidate => candidate?.id === kid)
+  if (!key) throw new Error('Client session token key is unknown')
+
+  const { payload } = await jwtVerify<ClientSessionPayload>(
+    token,
+    new TextEncoder().encode(key.secret),
+    {
+      algorithms: ['HS256'],
+      issuer: DEFAULT_GATEWAY_ISSUER,
+      audience: DEFAULT_CLIENT_SESSION_AUDIENCE,
+    },
+  )
+  const subject = readString(payload.sub)
+  if (!subject) throw new Error('Client session subject is required')
+  if (payload.scope !== 'model:issue') throw new Error('Client session scope is invalid')
+  if (payload.model_tier !== 'standard' && payload.model_tier !== 'pro') {
+    throw new Error('Client session model tier is invalid')
+  }
+  const authenticatedAtSeconds = typeof payload.auth_time === 'number'
+    ? payload.auth_time
+    : payload.iat
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  const expiresAtSeconds = typeof authenticatedAtSeconds === 'number'
+    ? authenticatedAtSeconds + CLIENT_SESSION_TOKEN_TTL_SECONDS
+    : 0
+  if (
+    typeof authenticatedAtSeconds !== 'number'
+    || !Number.isFinite(authenticatedAtSeconds)
+    || authenticatedAtSeconds > nowSeconds + 60
+    || expiresAtSeconds <= nowSeconds + MODEL_ACCESS_TOKEN_TTL_SECONDS
+  ) {
+    throw new Error('Client session authentication time is invalid')
+  }
+  return { subject, modelTier: payload.model_tier, authenticatedAtSeconds }
+}
+
+function invalidClientSessionResponse(): Response {
+  return Response.json(
+    {
+      error: 'Invalid client session token',
+      code: 'client_session_token_invalid',
+    },
+    { status: 401 },
+  )
+}
+
+async function createAuthTokens(
+  env: Env,
+  subject: string,
+  modelTier: 'standard' | 'pro',
+  authenticatedAtSeconds?: number,
+): Promise<{ appSessionToken: string, modelAccessToken: string }> {
+  const authenticationTime = authenticatedAtSeconds ?? Math.floor(Date.now() / 1000)
+  const clientSessionExpiresAt = authenticationTime + CLIENT_SESSION_TOKEN_TTL_SECONDS
+  return {
+    appSessionToken: await createClientSessionToken(env, subject, modelTier, authenticationTime),
+    modelAccessToken: await createModelAccessToken(env, subject, modelTier, clientSessionExpiresAt),
+  }
+}
+
+async function createClientSessionToken(
+  env: Env,
+  subject: string,
+  modelTier: 'standard' | 'pro',
+  authenticatedAtSeconds = Math.floor(Date.now() / 1000),
+): Promise<string> {
+  const key = getCurrentClientSessionKey(env)
+  if (!key) throw new Error('Client session token signing is not configured')
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  const expiresAtSeconds = authenticatedAtSeconds + CLIENT_SESSION_TOKEN_TTL_SECONDS
+  if (expiresAtSeconds <= nowSeconds) throw new Error('Client session has reached its maximum lifetime')
+
+  return new SignJWT({
+    scope: 'model:issue',
+    model_tier: modelTier,
+    auth_time: authenticatedAtSeconds,
+  })
+    .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: key.id })
+    .setIssuer(DEFAULT_GATEWAY_ISSUER)
+    .setAudience(DEFAULT_CLIENT_SESSION_AUDIENCE)
+    .setSubject(subject)
+    .setIssuedAt(nowSeconds)
+    .setExpirationTime(expiresAtSeconds)
+    .sign(new TextEncoder().encode(key.secret))
+}
+
 async function createModelAccessToken(
   env: Env,
   subject: string,
   modelTier: 'standard' | 'pro',
+  parentExpiresAtSeconds?: number,
 ): Promise<string> {
-  const secret = readString(env.STORYFLOW_GATEWAY_JWT_SECRET)
-  if (!secret) throw new Error('Model access token signing is not configured')
+  const key = getCurrentModelAccessKey(env)
+  if (!key) throw new Error('Model access token signing is not configured')
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  const expiresAtSeconds = Math.min(
+    nowSeconds + MODEL_ACCESS_TOKEN_TTL_SECONDS,
+    parentExpiresAtSeconds ?? Number.POSITIVE_INFINITY,
+  )
+  if (expiresAtSeconds <= nowSeconds) throw new Error('Client session has reached its maximum lifetime')
 
   return new SignJWT({
     scopes: ['model:chat'],
     model_tier: modelTier,
   })
-    .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+    .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: key.id })
     .setIssuer(readString(env.STORYFLOW_GATEWAY_JWT_ISSUER) ?? DEFAULT_GATEWAY_ISSUER)
     .setAudience(readString(env.STORYFLOW_GATEWAY_JWT_AUDIENCE) ?? DEFAULT_GATEWAY_AUDIENCE)
     .setSubject(subject)
-    .setIssuedAt()
-    .setExpirationTime(`${MODEL_ACCESS_TOKEN_TTL_SECONDS}s`)
-    .sign(new TextEncoder().encode(secret))
+    .setIssuedAt(nowSeconds)
+    .setExpirationTime(expiresAtSeconds)
+    .sign(new TextEncoder().encode(key.secret))
+}
+
+function getTokenIssuanceConfigError(env: Env): string | null {
+  const clientSessionKey = getCurrentClientSessionKey(env)
+  const modelAccessKey = getCurrentModelAccessKey(env)
+  if (!clientSessionKey) return 'Client session token signing is not configured'
+  if (!modelAccessKey) return 'Model access token signing is not configured'
+  if (
+    clientSessionKey.secret === modelAccessKey.secret
+    || getPreviousClientSessionKey(env)?.secret === modelAccessKey.secret
+  ) {
+    return 'Client session and model access tokens require separate signing secrets'
+  }
+  return null
+}
+
+function getBrokerReadinessError(env: Env): string | null {
+  const tokenError = getTokenIssuanceConfigError(env)
+  if (tokenError) return tokenError
+
+  const hasFeishu = !!readString(env.CRAFT_WEBUI_FEISHU_APP_ID)
+    && !!readString(env.CRAFT_WEBUI_FEISHU_APP_SECRET)
+  const neonBaseUrl = readString(env.CRAFT_WEBUI_NEON_AUTH_BASE_URL)
+  if (!hasFeishu && !neonBaseUrl) return 'No login provider is configured'
+  if (neonBaseUrl) {
+    try {
+      normalizeNeonAuthUrl(neonBaseUrl)
+    } catch (error) {
+      return error instanceof Error ? error.message : 'Neon Auth URL is invalid'
+    }
+  }
+  return null
+}
+
+function getCurrentClientSessionKey(env: Env): { id: string, secret: string } | null {
+  const secret = readString(env.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET)
+  if (!secret) return null
+  return {
+    id: readString(env.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_KEY_ID) ?? DEFAULT_CURRENT_KEY_ID,
+    secret,
+  }
+}
+
+function getPreviousClientSessionKey(env: Env): { id: string, secret: string } | null {
+  const id = readString(env.STORYFLOW_CLIENT_SESSION_JWT_PREVIOUS_KEY_ID)
+  const secret = readString(env.STORYFLOW_CLIENT_SESSION_JWT_PREVIOUS_SECRET)
+  return id && secret ? { id, secret } : null
+}
+
+function getCurrentModelAccessKey(env: Env): { id: string, secret: string } | null {
+  const secret = readString(env.STORYFLOW_GATEWAY_JWT_CURRENT_SECRET)
+  if (!secret) return null
+  return {
+    id: readString(env.STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID) ?? DEFAULT_CURRENT_KEY_ID,
+    secret,
+  }
 }
 
 function normalizeFeishuUser(raw: Record<string, unknown>): FeishuUserInfo {
@@ -253,13 +475,18 @@ function normalizeFeishuUser(raw: Record<string, unknown>): FeishuUserInfo {
 }
 
 function normalizeNeonIdentity(payload: JWTPayload): NeonIdentity {
-  const subject = readString(payload.sub) ?? readString((payload as Record<string, unknown>).id)
+  const claims = payload as Record<string, unknown>
+  if (readBoolean(claims.banned) === true) throw new Error('Neon Auth user is banned')
+
+  const subject = readString(payload.sub) ?? readString(claims.id)
   if (!subject) throw new Error('Neon Auth token did not include a subject')
 
-  const email = normalizeEmail(readString((payload as Record<string, unknown>).email))
-  const emailVerified = readBoolean((payload as Record<string, unknown>).emailVerified)
-    ?? readBoolean((payload as Record<string, unknown>).email_verified)
-  const name = readString((payload as Record<string, unknown>).name)
+  const email = normalizeEmail(readString(claims.email))
+  const emailVerified = readBoolean(claims.emailVerified)
+    ?? readBoolean(claims.email_verified)
+  if (emailVerified === false) throw new Error('Email verification is required')
+
+  const name = readString(claims.name)
   return {
     provider: 'neon',
     subject: `neon:${subject}`,
@@ -334,10 +561,20 @@ function normalizeEmail(value: string | undefined): string | undefined {
   return value?.trim().toLowerCase() || undefined
 }
 
-function normalizeUrlString(value: string | undefined): string | undefined {
+function normalizeNeonAuthUrl(value: string | undefined): string | undefined {
   const trimmed = value?.trim()
   if (!trimmed) return undefined
-  return trimmed.replace(/\/+$/, '')
+
+  const url = new URL(trimmed)
+  const loopbackHttp = url.protocol === 'http:'
+    && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+  if (url.protocol !== 'https:' && !loopbackHttp) {
+    throw new Error('Neon Auth URL must use HTTPS, except for loopback development')
+  }
+  if (url.username || url.password) {
+    throw new Error('Neon Auth URL must not contain credentials')
+  }
+  return url.toString().replace(/\/+$/, '')
 }
 
 function formatProviderError(prefix: string, body: Record<string, unknown>): string {

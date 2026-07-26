@@ -49,6 +49,8 @@ export interface EditContext {
   filePath: string
   /** Optional additional context/instructions for the agent */
   context?: string
+  /** Storyflow workspace that owns the resource being edited or created */
+  targetWorkspaceId?: string
 }
 
 /* ============================================================================
@@ -86,6 +88,7 @@ export type EditContextKey =
   | 'add-source-mcp'   // Filter-specific: user is viewing MCPs
   | 'add-source-local' // Filter-specific: user is viewing Local Folders
   | 'add-skill'
+  | 'add-global-skill'
   | 'edit-statuses'
   | 'edit-labels'
   | 'edit-auto-rules'
@@ -125,7 +128,7 @@ export interface EditConfig {
  * Registry of all edit configurations.
  * Each entry contains all strings needed for the edit popover and agent context.
  */
-const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
+const EDIT_CONFIGS: Record<EditContextKey, (location: string, targetWorkspaceId?: string) => EditConfig> = {
   'workspace-permissions': (location) => ({
     context: {
       label: 'Permission Settings',
@@ -389,17 +392,36 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
     overridePlaceholderKey: 'editPopover.placeholder.addSourceLocal',
   }),
 
-  'add-skill': (location) => ({
+  'add-skill': (location, targetWorkspaceId) => ({
     context: {
       label: 'Add Skill',
       filePath: `${location}/.pi/skills/`,
+      targetWorkspaceId,
       context:
-        'The user wants to add a new Skill owned only by the current Storyflow project. ' +
-        'Pi Skills use Agent Skills-compatible SKILL.md files: frontmatter name must be a lowercase-hyphen slug matching the parent folder, description explains when to use it, and metadata.displayName may hold a human-friendly label. ' +
-        'Ask clarifying questions if needed: What should the skill do? When should it trigger? ' +
-        `Create the skill folder and SKILL.md under ${location}/.pi/skills/. Do not write to ~/.agents, ~/.codex, or any global agent directory. ` +
-        'Follow the patterns in ~/.craft-agent/docs/skills.md. ' +
-        'After creating the skill, call skill_validate with the skill slug to verify the SKILL.md file.',
+        'Use [skill:skill-creator] to design a new Skill through conversation. ' +
+        'The target is owned only by the current Storyflow project. ' +
+        `After the user confirms the summarized draft, call skill_create with targetWorkspaceId from <edit_request>; it will create under ${location}/.pi/skills/. ` +
+        'Do not write the Skill with generic file or shell tools. ' +
+        'Do not write to ~/.craft-agent/skills, ~/.agents, ~/.codex, or any other Skill root.',
+    },
+    example: 'Review PRs following our code standards',
+    overridePlaceholder: 'What should I learn to do?',
+    displayLabelKey: 'editPopover.label.addSkill',
+    exampleKey: 'editPopover.example.addSkill',
+    overridePlaceholderKey: 'editPopover.placeholder.addSkill',
+  }),
+
+  'add-global-skill': (_location, targetWorkspaceId) => ({
+    context: {
+      label: 'Add Global Skill',
+      filePath: '~/.craft-agent/skills/',
+      targetWorkspaceId,
+      context:
+        'Use [skill:skill-creator] to design a new Skill through conversation. ' +
+        'The target is a Storyflow global Skill available to every Runtime Domain. ' +
+        'After the user confirms the summarized draft, call skill_create with targetWorkspaceId from <edit_request>; it will create under ~/.craft-agent/skills/. ' +
+        'Do not write the Skill with generic file or shell tools. ' +
+        'Do not write to ~/.agents, ~/.codex, a project .pi/skills directory, or any other Skill root.',
     },
     example: 'Review PRs following our code standards',
     overridePlaceholder: 'What should I learn to do?',
@@ -574,12 +596,15 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
  * @example
  * const { context, example } = getEditConfig('workspace-permissions', workspace.rootPath)
  */
-export function getEditConfig(key: EditContextKey, location: string): EditConfig {
+export function getEditConfig(key: EditContextKey, location: string, targetWorkspaceId?: string): EditConfig {
   const factory = EDIT_CONFIGS[key]
   if (!factory) {
     throw new Error(`Unknown edit context key: ${key}. Add it to EDIT_CONFIGS in EditPopover.tsx`)
   }
-  const config = factory(location)
+  if ((key === 'add-skill' || key === 'add-global-skill') && !targetWorkspaceId) {
+    throw new Error(`${key} requires a target Storyflow workspace`)
+  }
+  const config = factory(location, targetWorkspaceId)
 
   // Resolve i18n keys to translated strings for UI display
   // context.label remains in English for agent prompts; displayLabel is used in UI
@@ -609,6 +634,8 @@ export interface EditPopoverProps {
   example?: string
   /** Context passed to the new chat session */
   context: EditContext
+  /** Workspace that owns the conversation, when different from the visible workspace */
+  conversationWorkspaceId?: string
   /** Permission mode for the new session (default: 'allow-all' / canonical: execute for fast execution) */
   permissionMode?: CreateSessionOptions['permissionMode']
   /**
@@ -704,6 +731,7 @@ export function buildEditPrompt(context: EditContext, userInstructions: string, 
   const metadataSection = `<edit_request>
 <label>${context.label}</label>
 <file>${context.filePath}</file>
+${context.targetWorkspaceId ? `<target_workspace_id>${context.targetWorkspaceId}</target_workspace_id>\n` : ''}
 ${context.context ? `<context>${context.context}</context>\n` : ''}</edit_request>
 
 `
@@ -762,6 +790,7 @@ export function EditPopover({
 function EditPopoverContent({
   example,
   context,
+  conversationWorkspaceId,
   permissionMode = 'allow-all',
   workingDirectory = 'none', // Default to session folder for config edits
   model,
@@ -993,7 +1022,8 @@ function EditPopoverContent({
 
     // Create session on first message
     let sessionId = inlineSessionId
-    if (!sessionId && workspaceId) {
+    const sessionWorkspaceId = conversationWorkspaceId ?? workspaceId
+    if (!sessionId && sessionWorkspaceId) {
       const createOptions: CreateSessionOptions = {
         model: model || 'fast',
         systemPromptPreset: systemPromptPreset || 'mini',
@@ -1001,7 +1031,7 @@ function EditPopoverContent({
         workingDirectory,
         hidden: true, // Hidden sessions use same App code path but don't appear in list
       }
-      const newSession = await onCreateSession(workspaceId, createOptions)
+      const newSession = await onCreateSession(sessionWorkspaceId, createOptions)
       sessionId = newSession.id
       setInlineSessionId(sessionId)
     }
@@ -1011,7 +1041,7 @@ function EditPopoverContent({
     if (sessionId) {
       onSendMessage(sessionId, prompt, undefined, undefined, badges)
     }
-  }, [context, displayLabel, inlineSessionId, workspaceId, model, systemPromptPreset, permissionMode, workingDirectory, onCreateSession, onSendMessage])
+  }, [context, conversationWorkspaceId, displayLabel, inlineSessionId, workspaceId, model, systemPromptPreset, permissionMode, workingDirectory, onCreateSession, onSendMessage])
 
   // Legacy mode: navigates to chat in the same window
   const handleLegacySendMessage = useCallback((message: string) => {
@@ -1022,12 +1052,15 @@ function EditPopoverContent({
     const workdirParam = workingDirectory ? `&workdir=${encodeURIComponent(workingDirectory)}` : ''
     const modelParam = model ? `&model=${encodeURIComponent(model)}` : ''
     const systemPromptParam = systemPromptPreset ? `&systemPrompt=${encodeURIComponent(systemPromptPreset)}` : ''
-    // Navigate in same window by omitting window=focused parameter
-    const url = `craftagents://action/new-session?input=${encodedInput}&send=true&mode=${permissionMode}&badges=${encodedBadges}${workdirParam}${modelParam}${systemPromptParam}`
+    const actionPath = conversationWorkspaceId
+      ? `workspace/${encodeURIComponent(conversationWorkspaceId)}/action/new-session`
+      : 'action/new-session'
+    const windowParam = conversationWorkspaceId ? '&window=focused' : ''
+    const url = `craftagents://${actionPath}?input=${encodedInput}&send=true&mode=${permissionMode}&badges=${encodedBadges}${workdirParam}${modelParam}${systemPromptParam}${windowParam}`
 
     window.electronAPI.openUrl(url)
     setOpen(false)
-  }, [context, displayLabel, workingDirectory, model, systemPromptPreset, permissionMode, setOpen])
+  }, [context, conversationWorkspaceId, displayLabel, workingDirectory, model, systemPromptPreset, permissionMode, setOpen])
 
   const handleSecondaryAction = useCallback(async () => {
     if (!secondaryAction) return

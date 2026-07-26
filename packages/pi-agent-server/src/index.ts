@@ -52,9 +52,9 @@ import type { TextContent as PiTextContent } from '@earendil-works/pi-ai';
 // Pre-register the Bedrock provider module so the Pi SDK doesn't attempt a
 // dynamic import of "./amazon-bedrock.js" — which fails in the bundled output
 // because bun collapses everything into a single file.
-// With the current Pi SDK (0.70.0 here), pi-ai is deduped (single hoisted
-// copy), so one registration covers both pi-ai and pi-agent-core module scopes.
-import { setBedrockProviderModule } from '@earendil-works/pi-ai';
+// pi-ai is deduped (single hoisted copy), so one registration covers both
+// pi-ai and pi-agent-core module scopes.
+import { setBedrockProviderModule } from '@earendil-works/pi-ai/api/bedrock-converse-stream.lazy';
 import { bedrockProviderModule } from '@earendil-works/pi-ai/bedrock-provider';
 setBedrockProviderModule(bedrockProviderModule);
 
@@ -66,6 +66,7 @@ import {
   normalizeCustomEndpointModelEntry,
   resolveCustomEndpointProviderApiKey,
   resolveCustomEndpointProviderName,
+  resolveRuntimeCredentialProviderNames,
   shouldUseCustomEndpointBearerAuthHeader,
   stripPiPrefix,
   type CustomEndpointModelConfig,
@@ -510,14 +511,21 @@ function createAuthenticatedRegistry(): {
     moduleAuthStorage = PiAuthStorage.inMemory();
   }
   const authStorage = moduleAuthStorage;
+  const hasCustomEndpoint = !!initConfig?.baseUrl?.trim();
   if (initConfig?.piAuth) {
     const { provider, credential } = initConfig.piAuth;
     // Pi SDK 0.70.0's AuthCredential union (ApiKeyCredential | OAuthCredential) doesn't
     // include 'iam' as a first-class member, but the auth storage accepts it at runtime
     // — the Bedrock provider module reads AWS env directly; this `set` keeps Pi SDK's
     // internal provider-tracking consistent regardless of credential shape.
-    authStorage.set(provider, credential as unknown as AuthCredential);
-    debugLog(`Injected ${credential.type} credential for provider: ${provider}`);
+    const credentialProviders = resolveRuntimeCredentialProviderNames(
+      provider,
+      hasCustomEndpoint && !!initConfig.customEndpoint,
+    );
+    for (const credentialProvider of credentialProviders) {
+      authStorage.set(credentialProvider, credential as unknown as AuthCredential);
+    }
+    debugLog(`Injected ${credential.type} credential for provider(s): ${credentialProviders.join(', ')}`);
   } else if (initConfig?.apiKey) {
     authStorage.set('anthropic', { type: 'api_key', key: initConfig.apiKey });
     debugLog('Injected API key into auth storage (legacy fallback)');
@@ -528,7 +536,6 @@ function createAuthenticatedRegistry(): {
   // Register custom endpoint models dynamically via Pi SDK's registerProvider API.
   // This makes arbitrary OpenAI/Anthropic-compatible endpoints work through the Pi SDK
   // by creating synthetic Model<Api> objects that the SDK requires.
-  const hasCustomEndpoint = !!initConfig?.baseUrl?.trim();
   if (hasCustomEndpoint && initConfig?.customEndpoint) {
     const { api } = initConfig.customEndpoint;
     const modelEntries: CustomEndpointModelEntry[] = (initConfig.customModels?.length
@@ -1849,11 +1856,17 @@ async function processMessage(msg: InboundMessage): Promise<void> {
       if (moduleAuthStorage) {
         const { provider, credential } = msg.piAuth;
         // See ambient comment at the initial `authStorage.set` call — same shape reason.
-        moduleAuthStorage.set(provider, credential as unknown as AuthCredential);
+        const credentialProviders = resolveRuntimeCredentialProviderNames(
+          provider,
+          !!initConfig?.baseUrl?.trim() && !!initConfig.customEndpoint,
+        );
+        for (const credentialProvider of credentialProviders) {
+          moduleAuthStorage.set(credentialProvider, credential as unknown as AuthCredential);
+        }
         if (initConfig) {
           initConfig.piAuth = msg.piAuth;
         }
-        debugLog(`Updated ${credential.type} credential for provider: ${provider}`);
+        debugLog(`Updated ${credential.type} credential for provider(s): ${credentialProviders.join(', ')}`);
       } else {
         debugLog('token_update received but no authStorage initialized');
       }

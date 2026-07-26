@@ -1,22 +1,34 @@
 // input: Web UI credentials, session cookies, and verified desktop identities
-// output: Signed Web UI sessions and scoped desktop model access tokens
+// output: Signed Web UI sessions plus renewable desktop and scoped model tokens
 // pos: Server-core JWT boundary shared by browser auth and the local desktop auth broker
 
-import { SignJWT, jwtVerify } from 'jose'
+import { decodeProtectedHeader, SignJWT, jwtVerify } from 'jose'
 
 // ---------------------------------------------------------------------------
 // JWT helpers (via jose library)
 // ---------------------------------------------------------------------------
 
 const JWT_EXPIRY_SECONDS = 86_400 // 24 hours
-const MODEL_ACCESS_TOKEN_TTL_SECONDS = 86_400
+const CLIENT_SESSION_TOKEN_TTL_SECONDS = 2_592_000
+const MODEL_ACCESS_TOKEN_TTL_SECONDS = 900
 const MODEL_ACCESS_TOKEN_ISSUER = 'storyflow-auth-broker'
 const MODEL_ACCESS_TOKEN_AUDIENCE = 'storyflow-model-gateway'
+const CLIENT_SESSION_TOKEN_AUDIENCE = 'storyflow-client-auth'
 
 export interface JwtPayload {
   sub: string
   iat: number
   exp: number
+}
+
+export interface JwtSigningKey {
+  id: string
+  secret: string
+}
+
+export interface JwtKeyRing {
+  current: JwtSigningKey
+  previous?: JwtSigningKey
 }
 
 export async function signJwt(payload: JwtPayload, secret: string): Promise<string> {
@@ -47,23 +59,100 @@ export async function createSessionToken(secret: string, subject = 'webui'): Pro
   return signJwt({ sub: subject, iat: now, exp: now + JWT_EXPIRY_SECONDS }, secret)
 }
 
-export async function createModelAccessToken(
-  secret: string,
+export async function createClientSessionToken(
+  key: JwtSigningKey,
   subject: string,
   modelTier: 'standard' | 'pro',
+  authenticatedAtSeconds = Math.floor(Date.now() / 1000),
 ): Promise<string> {
-  const key = new TextEncoder().encode(secret)
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  const expiresAtSeconds = authenticatedAtSeconds + CLIENT_SESSION_TOKEN_TTL_SECONDS
+  if (expiresAtSeconds <= nowSeconds) throw new Error('Client session has reached its maximum lifetime')
+
+  return new SignJWT({
+    scope: 'model:issue',
+    model_tier: modelTier,
+    auth_time: authenticatedAtSeconds,
+  })
+    .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: key.id })
+    .setIssuer(MODEL_ACCESS_TOKEN_ISSUER)
+    .setAudience(CLIENT_SESSION_TOKEN_AUDIENCE)
+    .setSubject(subject)
+    .setIssuedAt(nowSeconds)
+    .setExpirationTime(expiresAtSeconds)
+    .sign(new TextEncoder().encode(key.secret))
+}
+
+export async function verifyClientSessionToken(
+  token: string,
+  keys: JwtKeyRing,
+): Promise<{ subject: string, modelTier: 'standard' | 'pro', authenticatedAtSeconds: number } | null> {
+  try {
+    const kid = decodeProtectedHeader(token).kid
+    if (typeof kid !== 'string' || !kid.trim()) return null
+    const key = [keys.current, keys.previous].find(candidate => candidate?.id === kid)
+    if (!key) return null
+
+    const { payload } = await jwtVerify(token, new TextEncoder().encode(key.secret), {
+      algorithms: ['HS256'],
+      issuer: MODEL_ACCESS_TOKEN_ISSUER,
+      audience: CLIENT_SESSION_TOKEN_AUDIENCE,
+    })
+    if (
+      typeof payload.sub !== 'string'
+      || payload.scope !== 'model:issue'
+      || (payload.model_tier !== 'standard' && payload.model_tier !== 'pro')
+    ) {
+      return null
+    }
+    const authenticatedAtSeconds = typeof payload.auth_time === 'number'
+      ? payload.auth_time
+      : payload.iat
+    const nowSeconds = Math.floor(Date.now() / 1000)
+    const expiresAtSeconds = typeof authenticatedAtSeconds === 'number'
+      ? authenticatedAtSeconds + CLIENT_SESSION_TOKEN_TTL_SECONDS
+      : 0
+    if (
+      typeof authenticatedAtSeconds !== 'number'
+      || !Number.isFinite(authenticatedAtSeconds)
+      || authenticatedAtSeconds > nowSeconds + 60
+      || expiresAtSeconds <= nowSeconds + MODEL_ACCESS_TOKEN_TTL_SECONDS
+    ) {
+      return null
+    }
+    return { subject: payload.sub, modelTier: payload.model_tier, authenticatedAtSeconds }
+  } catch {
+    return null
+  }
+}
+
+export async function createModelAccessToken(
+  key: JwtSigningKey,
+  subject: string,
+  modelTier: 'standard' | 'pro',
+  parentAuthenticatedAtSeconds?: number,
+): Promise<string> {
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  const parentExpiresAtSeconds = parentAuthenticatedAtSeconds === undefined
+    ? Number.POSITIVE_INFINITY
+    : parentAuthenticatedAtSeconds + CLIENT_SESSION_TOKEN_TTL_SECONDS
+  const expiresAtSeconds = Math.min(
+    nowSeconds + MODEL_ACCESS_TOKEN_TTL_SECONDS,
+    parentExpiresAtSeconds,
+  )
+  if (expiresAtSeconds <= nowSeconds) throw new Error('Client session has reached its maximum lifetime')
+
   return new SignJWT({
     scopes: ['model:chat'],
     model_tier: modelTier,
   })
-    .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+    .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: key.id })
     .setIssuer(MODEL_ACCESS_TOKEN_ISSUER)
     .setAudience(MODEL_ACCESS_TOKEN_AUDIENCE)
     .setSubject(subject)
-    .setIssuedAt()
-    .setExpirationTime(`${MODEL_ACCESS_TOKEN_TTL_SECONDS}s`)
-    .sign(key)
+    .setIssuedAt(nowSeconds)
+    .setExpirationTime(expiresAtSeconds)
+    .sign(new TextEncoder().encode(key.secret))
 }
 
 // ---------------------------------------------------------------------------

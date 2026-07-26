@@ -80,6 +80,8 @@ describe('auth-broker-dev', () => {
         NO_COLOR: '1',
         CRAFT_CLIENT_AUTH_BROKER_URL: `http://127.0.0.1:${port}`,
         CRAFT_SERVER_TOKEN: 'test-server-token',
+        STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: 'test-client-session-secret',
+        STORYFLOW_GATEWAY_JWT_CURRENT_SECRET: 'test-model-access-secret',
         CRAFT_WEBUI_NEON_AUTH_BASE_URL: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
         CRAFT_WEBUI_FEISHU_APP_ID: '',
         CRAFT_WEBUI_FEISHU_APP_SECRET: '',
@@ -103,6 +105,62 @@ describe('auth-broker-dev', () => {
     await proc.exited.catch(() => {})
     const output = await readProcessOutput(proc)
     expect(output).not.toContain('Gateway token mode')
-    expect(output).toContain('reusing the local server token for development')
+    expect(output).not.toContain('reusing the local server token for development')
+  }, 15_000)
+
+  it('refuses to mint model tokens without the gateway signing secret', async () => {
+    const port = await getFreePort()
+    const proc = Bun.spawn({
+      cmd: [process.execPath, 'run', 'scripts/auth-broker-dev.ts'],
+      cwd: ROOT_DIR,
+      env: {
+        PATH: process.env.PATH ?? '',
+        HOME: process.env.HOME ?? '',
+        TMPDIR: process.env.TMPDIR ?? '',
+        NO_COLOR: '1',
+        CRAFT_CLIENT_AUTH_BROKER_URL: `http://127.0.0.1:${port}`,
+        CRAFT_SERVER_TOKEN: 'test-server-token',
+        STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: 'test-client-session-secret',
+        CRAFT_WEBUI_NEON_AUTH_BASE_URL: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+        CRAFT_WEBUI_FEISHU_APP_ID: '',
+        CRAFT_WEBUI_FEISHU_APP_SECRET: '',
+        CRAFT_CLIENT_FEISHU_APP_ID: '',
+      },
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    PROCESSES.push(proc)
+
+    expect(await proc.exited).not.toBe(0)
+    expect(await readProcessOutput(proc)).toContain('STORYFLOW_GATEWAY_JWT_CURRENT_SECRET')
+  }, 15_000)
+
+  it('refuses to mint renewable sessions without an independent client-session secret', async () => {
+    const port = await getFreePort()
+    const proc = Bun.spawn({
+      cmd: [process.execPath, 'run', 'scripts/auth-broker-dev.ts'],
+      cwd: ROOT_DIR,
+      env: {
+        PATH: process.env.PATH ?? '',
+        HOME: process.env.HOME ?? '',
+        TMPDIR: process.env.TMPDIR ?? '',
+        NO_COLOR: '1',
+        CRAFT_CLIENT_AUTH_BROKER_URL: `http://127.0.0.1:${port}`,
+        CRAFT_SERVER_TOKEN: 'test-server-token',
+        STORYFLOW_GATEWAY_JWT_CURRENT_SECRET: 'test-model-access-secret',
+        CRAFT_WEBUI_NEON_AUTH_BASE_URL: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+        CRAFT_WEBUI_FEISHU_APP_ID: '',
+        CRAFT_WEBUI_FEISHU_APP_SECRET: '',
+        CRAFT_CLIENT_FEISHU_APP_ID: '',
+      },
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    PROCESSES.push(proc)
+
+    expect(await proc.exited).not.toBe(0)
+    expect(await readProcessOutput(proc)).toContain('STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET')
   }, 15_000)
 })

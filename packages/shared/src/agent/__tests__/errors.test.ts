@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { parseError } from '../errors.ts'
 
-describe('parseError proxy interception handling', () => {
+describe('parseError', () => {
   it('maps interceptor proxy marker message to proxy_error', () => {
     const message = 'Received an unexpected HTML error page (HTTP 400) instead of a JSON API response. This may be caused by your network proxy (http://example.com:8080). Check your proxy settings in Settings > Network.'
     const parsed = parseError(new Error(message))
@@ -33,6 +33,22 @@ describe('parseError proxy interception handling', () => {
     const parsed = parseError(new Error('401 Unauthorized'))
 
     expect(parsed.code).toBe('invalid_api_key')
+  })
+
+  it('classifies model access token rejection as auth, not a missing model', () => {
+    expect(parseError(new Error('401 "Invalid model access token"')).code).toBe('invalid_api_key')
+    expect(parseError(new Error('Invalid model access token')).code).toBe('invalid_api_key')
+    expect(parseError(new Error('model_access_token_invalid')).code).toBe('invalid_api_key')
+    expect(parseError(new Error('Provided authentication token is expired.')).code).toBe('expired_oauth_token')
+    expect(parseError(new Error('Model not found.')).code).toBe('invalid_model')
+  })
+
+  it('keeps gateway upstream credential failures out of the client auth retry path', () => {
+    const parsed = parseError(new Error(
+      '502 {"error":"Model provider authentication failed","code":"upstream_auth_failed"}',
+    ))
+
+    expect(parsed.code).toBe('service_error')
   })
 
   it('maps missing Anthropic message_stop stream endings to retryable provider_error', () => {

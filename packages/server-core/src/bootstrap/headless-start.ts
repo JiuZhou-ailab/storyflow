@@ -6,6 +6,7 @@ import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'node:fs'
 import { uptime as osUptime } from 'node:os'
 import { join } from 'node:path'
 import { OAuthFlowStore } from '@craft-agent/shared/auth'
+import { seedDefaultAgentResources } from '@craft-agent/shared/agent-defaults'
 import { ensureConfigDir, loadStoredConfig, saveConfig } from '@craft-agent/shared/config'
 import { CONFIG_DIR } from '@craft-agent/shared/config/paths'
 import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
@@ -280,6 +281,7 @@ export async function bootstrapServer<TSessionManager, THandlerDeps>(
     ?? process.env.CRAFT_BUNDLED_ASSETS_ROOT
     ?? process.cwd()
   setBundledAssetsRoot(bundledAssetsRoot)
+  seedDefaultAgentResources()
 
   if (entropy.warning) {
     platform.logger.warn(`[bootstrap] ${entropy.warning}`)

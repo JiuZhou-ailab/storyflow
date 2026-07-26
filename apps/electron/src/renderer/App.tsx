@@ -2151,11 +2151,6 @@ function AppContent() {
     setAppState('onboarding')
   }, [loadClientAuthState])
 
-  const handleOpenProjectFromHub = useCallback((workspaceId: string) => {
-    clearReturnLocation()
-    void handleSelectWorkspace(workspaceId)
-  }, [clearReturnLocation, handleSelectWorkspace])
-
   const handleReturnToActiveProject = useCallback(() => {
     if (!activeProjectId) return
     void activateRuntimeWorkspace(
@@ -2233,13 +2228,6 @@ function AppContent() {
   }, [appState, pendingReadyRoute])
 
   const projectManagerActions = useMemo(() => ({
-    onSelectProject: (workspaceId: string) => {
-      if (
-        runtimeWorkspace?.id === workspaceId
-        && appState === 'ready'
-      ) return
-      void handleOpenProjectFromHub(workspaceId)
-    },
     // Create/import/remote stay inside the rail's creation flow.
     onWorkspaceCreated: (workspace: Workspace) => {
       void handleProjectHubWorkspaceCreated(workspace)
@@ -2257,13 +2245,10 @@ function AppContent() {
       void handleRemoveProjectFromHub(workspaceId)
     },
   }), [
-    appState,
-    handleOpenProjectFromHub,
     handleProjectHubWorkspaceCreated,
     handleRemoveProjectFromHub,
     handleRenameProjectFromHub,
     handleSetProjectArchived,
-    runtimeWorkspace,
   ])
 
   const activityRailProfile = useMemo(() => {
@@ -2283,6 +2268,10 @@ function AppContent() {
     activeWorkspaceId: activeProjectId,
     profile: activityRailProfile,
     ...projectManagerActions,
+    onSelectSession: (sessionId: string, workspaceId: string) => {
+      clearReturnLocation()
+      void handleSelectProjectSession(workspaceId, sessionId)
+    },
     onOpenFreeConversations: handleOpenFreeConversations,
     onOpenSources: canOpenRuntimeNavigation
       ? () => handleOpenRuntimeRoute(routes.view.sources())
@@ -2299,10 +2288,12 @@ function AppContent() {
     activeProjectId,
     activityRailProfile,
     canOpenRuntimeNavigation,
+    clearReturnLocation,
     handleOpenFreeConversations,
     handleOpenRuntimeRoute,
     handleOpenRuntimeSearch,
     handleOpenRuntimeWhatsNew,
+    handleSelectProjectSession,
     projectManagerActions,
     workspaces,
   ])
@@ -2535,7 +2526,7 @@ function AppContent() {
           >
             <div className="flex h-full min-h-0 flex-col items-center justify-center bg-[radial-gradient(ellipse_at_50%_30%,color-mix(in_oklab,var(--foreground)_4%,transparent),transparent_55%)] px-6 py-12">
               <p className="text-[14px] font-medium text-foreground/80">
-                {hasActiveProjects ? '从左侧选择项目' : '还没有项目'}
+                {hasActiveProjects ? '从左侧展开项目并选择对话' : '还没有项目'}
               </p>
               <p className="mt-1.5 text-[12px] text-muted-foreground">
                 使用左侧“项目”旁的 + 新建、导入或连接项目

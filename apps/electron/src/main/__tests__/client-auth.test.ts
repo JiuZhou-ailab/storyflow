@@ -7,15 +7,40 @@ import {
   createClientAuthConfigFromEnv,
   createClientAuthConfigFromRuntimeEnv,
   createClientAuthService,
-  DefaultClientAuthBrokerClient,
   type ClientAuthBrokerClient,
+  type ClientAuthBrokerExchangeResult,
+  type ClientAuthBrokerTokenRefreshResult,
   type ClientAuthNeonService,
 } from '../client-auth'
+
+function modelToken(expiresAtMs: number): string {
+  return [
+    Buffer.from('{}').toString('base64url'),
+    Buffer.from(JSON.stringify({ exp: expiresAtMs / 1000 })).toString('base64url'),
+    'signature',
+  ].join('.')
+}
+
+const unusedBrokerMethods: ClientAuthBrokerClient = {
+  exchangeNeonToken: async () => { throw new Error('not used') },
+  exchangeFeishuCode: async () => { throw new Error('not used') },
+  refreshModelAccessToken: async () => { throw new Error('not used') },
+}
+
+function neonBroker(user: ClientAuthBrokerExchangeResult['user']): ClientAuthBrokerClient {
+  return {
+    ...unusedBrokerMethods,
+    exchangeNeonToken: async () => ({
+      user,
+      appSessionToken: 'app-session-token',
+      modelAccessToken: 'model-access-token',
+    }),
+  }
+}
 
 describe('client auth', () => {
   it('treats disabled client auth as already authenticated', () => {
     const service = createClientAuthService({ required: false })
-
     expect(service.getState()).toEqual({
       required: false,
       configured: false,
@@ -31,7 +56,6 @@ describe('client auth', () => {
       CRAFT_IS_PACKAGED: '1',
     })
     const service = createClientAuthService(config)
-
     expect(service.getState()).toEqual({
       required: true,
       configured: false,
@@ -48,7 +72,6 @@ describe('client auth', () => {
       CRAFT_CLIENT_AUTH_REQUIRED: 'false',
     })
     const service = createClientAuthService(config)
-
     expect(service.getState()).toEqual({
       required: false,
       configured: false,
@@ -67,7 +90,6 @@ describe('client auth', () => {
       CRAFT_CLIENT_NEON_AUTH_BASE_URL: 'https://auth.example.com',
       CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN: 'users.craft.invalid',
     })
-
     expect(config.required).toBe(true)
     expect(config.authBrokerUrl).toBe('https://auth.storyflow.example.com')
     expect(config.feishuBrokerAuth?.appId).toBe('cli_test')
@@ -84,14 +106,12 @@ describe('client auth', () => {
       CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
       CRAFT_CLIENT_FEISHU_APP_ID: 'cli_test',
     })
-
     expect(config.authBrokerUrl).toBe('https://auth.storyflow.example.com')
     expect(config.feishuBrokerAuth?.appId).toBe('cli_test')
   })
 
   it('blocks required auth when Neon Auth is not configured', async () => {
     const service = createClientAuthService({ required: true })
-
     expect(service.getState()).toEqual({
       required: true,
       configured: false,
@@ -101,6 +121,22 @@ describe('client auth', () => {
       feishuLoginEnabled: false,
     })
     await expect(service.signIn({ identifier: 'zjding', password: 'secret' }))
+      .rejects
+      .toThrow('Client auth is not configured')
+  })
+
+  it('does not expose Neon login when the renewable-session broker is missing', async () => {
+    const service = createClientAuthService({
+      required: true,
+      neonAuth: { baseUrl: 'https://auth.example.com' },
+    })
+
+    expect(service.getState()).toMatchObject({
+      configured: false,
+      authenticated: false,
+      emailPasswordEnabled: false,
+    })
+    await expect(service.signIn({ identifier: 'user@example.com', password: 'secret' }))
       .rejects
       .toThrow('Client auth is not configured')
   })
@@ -138,12 +174,20 @@ describe('client auth', () => {
     const service = createClientAuthService({
       required: true,
       neonAuthOrigin: 'http://localhost:9100',
+      authBrokerUrl: 'https://auth.storyflow.example.com',
       neonAuth: {
         baseUrl: 'https://auth.example.com',
         usernameEmailDomain: 'users.craft.invalid',
       },
     }, {
       createNeonAuthService: () => fakeNeonAuth,
+      createAuthBrokerClient: () => neonBroker({
+        provider: 'neon',
+        userId: 'user-1',
+        email: 'zjding@users.craft.invalid',
+        emailVerified: true,
+        name: 'zjding',
+      }),
     })
 
     const signedIn = await service.signIn({ identifier: 'zjding', password: 'secret' })
@@ -184,8 +228,15 @@ describe('client auth', () => {
       },
     }
     const service = createClientAuthService(
-      { required: true, neonAuth: { baseUrl: 'https://auth.example.com' } },
-      { createNeonAuthService: () => fakeNeonAuth },
+      {
+        required: true,
+        authBrokerUrl: 'https://auth.storyflow.example.com',
+        neonAuth: { baseUrl: 'https://auth.example.com' },
+      },
+      {
+        createNeonAuthService: () => fakeNeonAuth,
+        createAuthBrokerClient: () => unusedBrokerMethods,
+      },
     )
 
     expect(service.getState()).toEqual({
@@ -206,7 +257,9 @@ describe('client auth', () => {
   it('restores a persisted desktop auth session on process start', () => {
     const service = createClientAuthService({
       required: true,
+      authBrokerUrl: 'https://auth.storyflow.example.com',
     }, {
+      createAuthBrokerClient: () => unusedBrokerMethods,
       initialSession: {
         user: {
           provider: 'neon',
@@ -233,8 +286,21 @@ describe('client auth', () => {
     })
   })
 
-  it('does not restore a legacy required-auth session without model access', () => {
-    const service = createClientAuthService({ required: true }, {
+  it('uses the renewable app session, not a model-token projection, as required-auth identity', () => {
+    const legacyService = createClientAuthService({ required: true }, {
+      initialSession: {
+        user: {
+          provider: 'neon',
+          userId: 'user-1',
+        },
+        modelAccessToken: 'legacy-model-token',
+      },
+    })
+    const renewableService = createClientAuthService({
+      required: true,
+      authBrokerUrl: 'https://auth.storyflow.example.com',
+    }, {
+      createAuthBrokerClient: () => unusedBrokerMethods,
       initialSession: {
         user: {
           provider: 'neon',
@@ -244,7 +310,8 @@ describe('client auth', () => {
       },
     })
 
-    expect(service.getState().authenticated).toBe(false)
+    expect(legacyService.getState().authenticated).toBe(false)
+    expect(renewableService.getState().authenticated).toBe(true)
   })
 
   it('persists and clears the desktop auth session around password sign-in', async () => {
@@ -264,9 +331,15 @@ describe('client auth', () => {
 
     const service = createClientAuthService({
       required: true,
+      authBrokerUrl: 'https://auth.storyflow.example.com',
       neonAuth: { baseUrl: 'https://auth.example.com' },
     }, {
       createNeonAuthService: () => fakeNeonAuth,
+      createAuthBrokerClient: () => neonBroker({
+        provider: 'neon',
+        userId: 'user-1',
+        email: 'user@example.com',
+      }),
       sessionStore: {
         save: async (session) => { savedSessions.push(session) },
         clear: async () => { clearCount += 1 },
@@ -282,13 +355,14 @@ describe('client auth', () => {
         userId: 'user-1',
         email: 'user@example.com',
       },
-      appSessionToken: 'jwt-token',
+      appSessionToken: 'app-session-token',
+      modelAccessToken: 'model-access-token',
     }])
     expect(clearCount).toBe(1)
     expect(service.getState().authenticated).toBe(false)
   })
 
-  it('keeps the live auth state unchanged when session persistence fails', async () => {
+  it('rejects a Neon broker login without a renewable app session', async () => {
     const fakeNeonAuth: ClientAuthNeonService = {
       isConfigured: () => true,
       getClientConfig: () => ({ enabled: true }),
@@ -299,20 +373,30 @@ describe('client auth', () => {
         subject: 'neon:user-1',
       }),
     }
+    let saveCount = 0
     const service = createClientAuthService({
       required: true,
       neonAuth: { baseUrl: 'https://auth.example.com' },
+      authBrokerUrl: 'https://auth.storyflow.example.com',
     }, {
       createNeonAuthService: () => fakeNeonAuth,
+      createAuthBrokerClient: () => ({
+        ...unusedBrokerMethods,
+        exchangeNeonToken: async () => ({
+          user: { provider: 'neon', userId: 'user-1' },
+          modelAccessToken: 'model-access-token',
+        }),
+      }),
       sessionStore: {
-        save: async () => { throw new Error('store failed') },
+        save: async () => { saveCount += 1 },
         clear: async () => {},
       },
     })
 
     await expect(service.signIn({ identifier: 'user@example.com', password: 'secret' }))
       .rejects
-      .toThrow('store failed')
+      .toThrow('app session token')
+    expect(saveCount).toBe(0)
     expect(service.getState().authenticated).toBe(false)
   })
 
@@ -346,9 +430,17 @@ describe('client auth', () => {
     const service = createClientAuthService({
       required: true,
       neonAuthOrigin: 'http://localhost:9100',
+      authBrokerUrl: 'https://auth.storyflow.example.com',
       neonAuth: { baseUrl: 'https://auth.example.com', emailSignUpEnabled: true },
     }, {
       createNeonAuthService: () => fakeNeonAuth,
+      createAuthBrokerClient: () => neonBroker({
+        provider: 'neon',
+        userId: 'user-registered',
+        email: 'new@example.com',
+        emailVerified: true,
+        name: 'New User',
+      }),
     })
 
     const result = await service.signUp({
@@ -395,8 +487,15 @@ describe('client auth', () => {
       },
     }
     const service = createClientAuthService(
-      { required: true, neonAuth: { baseUrl: 'https://auth.example.com', emailSignUpEnabled: true } },
-      { createNeonAuthService: () => fakeNeonAuth },
+      {
+        required: true,
+        authBrokerUrl: 'https://auth.storyflow.example.com',
+        neonAuth: { baseUrl: 'https://auth.example.com', emailSignUpEnabled: true },
+      },
+      {
+        createNeonAuthService: () => fakeNeonAuth,
+        createAuthBrokerClient: () => unusedBrokerMethods,
+      },
     )
 
     const result = await service.signUp({
@@ -436,8 +535,15 @@ describe('client auth', () => {
       },
     }
     const service = createClientAuthService(
-      { required: true, neonAuth: { baseUrl: 'https://auth.example.com', emailSignUpEnabled: true } },
-      { createNeonAuthService: () => fakeNeonAuth },
+      {
+        required: true,
+        authBrokerUrl: 'https://auth.storyflow.example.com',
+        neonAuth: { baseUrl: 'https://auth.example.com', emailSignUpEnabled: true },
+      },
+      {
+        createNeonAuthService: () => fakeNeonAuth,
+        createAuthBrokerClient: () => unusedBrokerMethods,
+      },
     )
 
     const result = await service.signUp({
@@ -459,80 +565,137 @@ describe('client auth', () => {
     expect(service.getState().authenticated).toBe(false)
   })
 
-  it('exchanges a verified Neon login for a standard model access token', async () => {
-    const exchangedTokens: string[] = []
-    const fakeNeonAuth: ClientAuthNeonService = {
-      isConfigured: () => true,
-      getClientConfig: () => ({ enabled: true }),
-      authenticateWithEmailPassword: async () => ({ status: 'authenticated', token: 'neon-jwt-token' }),
-      verifyToken: async () => ({
-        provider: 'neon',
-        userId: 'user-1',
-        subject: 'neon:user-1',
-        email: 'user@example.com',
-      }),
-    }
+  it('silently refreshes a stale model token and persists rotated broker tokens', async () => {
+    const now = Date.UTC(2026, 6, 27)
+    const refreshedModelToken = modelToken(now + 15 * 60 * 1000)
+    const savedSessions: unknown[] = []
+    const changes: unknown[] = []
+    const scheduledDelays: number[] = []
+    let cancelCount = 0
+    let refreshCount = 0
     const broker: ClientAuthBrokerClient = {
-      exchangeNeonToken: async (input) => {
-        exchangedTokens.push(input.token)
-        expect(input.brokerUrl).toBe('https://auth.storyflow.example.com')
+      ...unusedBrokerMethods,
+      refreshModelAccessToken: async (input) => {
+        refreshCount += 1
+        expect(input).toEqual({
+          brokerUrl: 'https://auth.storyflow.example.com',
+          appSessionToken: 'old-app-session',
+        })
         return {
-          user: {
-            provider: 'neon',
-            userId: 'user-1',
-            email: 'user@example.com',
-          },
-          appSessionToken: 'app-session-token',
-          modelAccessToken: 'model-access-token',
+          appSessionToken: 'rotated-app-session',
+          modelAccessToken: refreshedModelToken,
         }
       },
-      exchangeFeishuCode: async () => {
-        throw new Error('not used')
-      },
     }
-
     const service = createClientAuthService({
       required: true,
-      neonAuth: { baseUrl: 'https://auth.example.com' },
       authBrokerUrl: 'https://auth.storyflow.example.com',
     }, {
-      createNeonAuthService: () => fakeNeonAuth,
       createAuthBrokerClient: () => broker,
+      initialSession: {
+        user: { provider: 'neon', userId: 'user-1' },
+        appSessionToken: 'old-app-session',
+        modelAccessToken: modelToken(now + 60_000),
+      },
+      now: () => now,
+      sessionStore: {
+        save: async (session) => { savedSessions.push(session) },
+        clear: async () => {},
+      },
+      onAuthChange: async (change) => { changes.push(change) },
+      scheduleTimeout: (_callback, delayMs) => { scheduledDelays.push(delayMs); return delayMs },
+      cancelTimeout: () => { cancelCount += 1 },
     })
-
-    await service.signIn({ identifier: 'user@example.com', password: 'secret' })
-
-    expect(exchangedTokens).toEqual(['neon-jwt-token'])
-    expect(service.getState().authenticated).toBe(true)
+    expect(scheduledDelays).toEqual([0])
+    const [result, duplicate] = await Promise.all([
+      service.ensureModelAccessToken(),
+      service.ensureModelAccessToken(),
+    ])
+    expect(result).toEqual({ token: refreshedModelToken, refreshed: true })
+    expect(duplicate).toEqual(result)
+    expect(refreshCount).toBe(1)
+    expect(savedSessions).toEqual([{
+      user: { provider: 'neon', userId: 'user-1' },
+      appSessionToken: 'rotated-app-session',
+      modelAccessToken: refreshedModelToken,
+    }])
+    expect(changes).toHaveLength(1)
+    expect(scheduledDelays.at(-1)).toBe(13 * 60 * 1000)
+    service.dispose()
+    expect(cancelCount).toBe(2)
   })
 
-  it('clears the process-local identity on sign-out', async () => {
-    const fakeNeonAuth: ClientAuthNeonService = {
-      isConfigured: () => true,
-      getClientConfig: () => ({ enabled: true }),
-      authenticateWithEmailPassword: async () => ({ status: 'authenticated', token: 'jwt-token' }),
-      verifyToken: async () => ({
-        provider: 'neon',
-        userId: 'user-1',
-        subject: 'neon:user-1',
-      }),
+  it('does not let a fresh non-force preflight swallow a forced gateway retry', async () => {
+    const now = Date.UTC(2026, 6, 27)
+    const freshToken = modelToken(now + 15 * 60 * 1000)
+    const rotatedToken = modelToken(now + 30 * 60 * 1000)
+    let refreshCount = 0
+    const broker: ClientAuthBrokerClient = {
+      ...unusedBrokerMethods,
+      refreshModelAccessToken: async () => {
+        refreshCount += 1
+        return {
+          appSessionToken: 'rotated-app-session',
+          modelAccessToken: rotatedToken,
+        }
+      },
     }
-    const service = createClientAuthService(
-      { required: true, neonAuth: { baseUrl: 'https://auth.example.com' } },
-      { createNeonAuthService: () => fakeNeonAuth },
-    )
-
-    await service.signIn({ identifier: 'user@example.com', password: 'secret' })
-    await service.signOut()
-
-    expect(service.getState()).toEqual({
+    const service = createClientAuthService({
       required: true,
-      configured: true,
-      authenticated: false,
-      emailPasswordEnabled: true,
-      emailSignUpEnabled: false,
-      feishuLoginEnabled: false,
+      authBrokerUrl: 'https://auth.storyflow.example.com',
+    }, {
+      createAuthBrokerClient: () => broker,
+      initialSession: {
+        user: { provider: 'neon', userId: 'user-1' },
+        appSessionToken: 'old-app-session',
+        modelAccessToken: freshToken,
+      },
+      now: () => now,
     })
+
+    const [normal, forced] = await Promise.all([
+      service.ensureModelAccessToken(),
+      service.ensureModelAccessToken({ force: true }),
+    ])
+
+    expect(normal).toEqual({ token: freshToken, refreshed: false })
+    expect(forced).toEqual({ token: rotatedToken, refreshed: true })
+    expect(refreshCount).toBe(1)
+  })
+
+  it('lets sign-out win over an older in-flight token refresh', async () => {
+    let resolveRefresh!: (value: ClientAuthBrokerTokenRefreshResult) => void
+    const refreshResponse = new Promise<ClientAuthBrokerTokenRefreshResult>((resolve) => {
+      resolveRefresh = resolve
+    })
+    const savedSessions: unknown[] = []
+    const broker: ClientAuthBrokerClient = {
+      ...unusedBrokerMethods,
+      refreshModelAccessToken: async () => refreshResponse,
+    }
+    const service = createClientAuthService({
+      required: true,
+      authBrokerUrl: 'https://auth.storyflow.example.com',
+    }, {
+      createAuthBrokerClient: () => broker,
+      initialSession: {
+        user: { provider: 'neon', userId: 'old-user' },
+        appSessionToken: 'old-app-session',
+      },
+      sessionStore: {
+        save: async (session) => { savedSessions.push(session) },
+        clear: async () => {},
+      },
+    })
+    const pendingRefresh = service.ensureModelAccessToken()
+    await service.signOut()
+    resolveRefresh({
+      appSessionToken: 'late-app-session',
+      modelAccessToken: modelToken(Date.now() + 60 * 60 * 1000),
+    })
+    await expect(pendingRefresh).rejects.toThrow('session changed')
+    expect(savedSessions).toEqual([])
+    expect(service.getState().authenticated).toBe(false)
   })
 
   it('reads Electron client auth config from client env with WebUI Neon fallback, sign-up flag, and a stable Origin', () => {
@@ -575,80 +738,6 @@ describe('client auth', () => {
     expect(config.neonAuthOrigin).toBe('http://127.0.0.1:3100')
   })
 
-  it('does not configure distributed Feishu client auth from app secrets', () => {
-    const config = createClientAuthConfigFromEnv({
-      CRAFT_CLIENT_AUTH_REQUIRED: 'true',
-      CRAFT_WEBUI_FEISHU_APP_ID: 'cli_test',
-      CRAFT_CLIENT_FEISHU_APP_SECRET: 'secret_test',
-      CRAFT_WEBUI_FEISHU_APP_SECRET: 'server-only-secret',
-      CRAFT_WEBUI_FEISHU_INTERNAL_TENANT_KEYS: 'tenant_a, tenant_b',
-      CRAFT_CLIENT_FEISHU_CALLBACK_PORT: '6477',
-    })
-
-    expect(config.feishuBrokerAuth).toBeUndefined()
-    expect((config as unknown as Record<string, unknown>).feishuAuth).toBeUndefined()
-    expect(JSON.stringify(config)).not.toContain('secret_test')
-    expect(JSON.stringify(config)).not.toContain('server-only-secret')
-  })
-
-  it('requires an explicit desktop Feishu app id instead of falling back to WebUI app id', () => {
-    const config = createClientAuthConfigFromEnv({
-      CRAFT_CLIENT_AUTH_REQUIRED: 'true',
-      CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
-      CRAFT_WEBUI_FEISHU_APP_ID: 'cli_webui_only',
-      CRAFT_WEBUI_FEISHU_APP_SECRET: 'server-only-secret',
-    })
-
-    expect(config.feishuBrokerAuth).toBeUndefined()
-    expect(JSON.stringify(config)).not.toContain('cli_webui_only')
-    expect(JSON.stringify(config)).not.toContain('server-only-secret')
-  })
-
-  it('configures Feishu client auth through a broker without requiring a client secret', () => {
-    const config = createClientAuthConfigFromEnv({
-      CRAFT_CLIENT_AUTH_REQUIRED: 'true',
-      CRAFT_CLIENT_AUTH_BROKER_URL: ' https://auth.storyflow.example.com/ ',
-      CRAFT_CLIENT_FEISHU_APP_ID: 'cli_test',
-      CRAFT_CLIENT_FEISHU_CALLBACK_PORT: '6477',
-      CRAFT_WEBUI_FEISHU_APP_SECRET: 'server-only-secret',
-    })
-
-    expect(config.feishuBrokerAuth).toEqual({
-      appId: 'cli_test',
-      brokerUrl: 'https://auth.storyflow.example.com',
-    })
-    expect((config as unknown as Record<string, unknown>).feishuAuth).toBeUndefined()
-    expect(JSON.stringify(config)).not.toContain('server-only-secret')
-  })
-
-  it('keeps Feishu access policy on the broker instead of the distributed client', () => {
-    const config = createClientAuthConfigFromEnv({
-      CRAFT_CLIENT_AUTH_REQUIRED: 'true',
-      CRAFT_CLIENT_FEISHU_APP_ID: 'cli_test',
-      CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
-      CRAFT_CLIENT_FEISHU_ALLOW_ALL_USERS: 'false',
-      CRAFT_CLIENT_FEISHU_INTERNAL_TENANT_KEYS: 'tenant_internal',
-    })
-
-    expect(config.feishuBrokerAuth).toEqual({
-      appId: 'cli_test',
-      brokerUrl: 'https://auth.storyflow.example.com',
-    })
-    expect(JSON.stringify(config)).not.toContain('tenant_internal')
-    expect(JSON.stringify(config)).not.toContain('allowAllUsers')
-  })
-
-  it('reads the Feishu login timeout from client env', () => {
-    const config = createClientAuthConfigFromEnv({
-      CRAFT_CLIENT_AUTH_REQUIRED: 'true',
-      CRAFT_CLIENT_FEISHU_APP_ID: 'cli_test',
-      CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
-      CRAFT_CLIENT_FEISHU_LOGIN_TIMEOUT_MS: '5000',
-    })
-
-    expect(config.feishuLoginTimeoutMs).toBe(5000)
-  })
-
   it('exchanges Feishu OAuth callbacks through the auth broker instead of a local app secret', async () => {
     const openedUrls: string[] = []
     const exchanges: Array<{
@@ -659,9 +748,7 @@ describe('client auth', () => {
     let callbackState = ''
     let resolveCallback: ((value: { query: Record<string, string> }) => void) | null = null
     const broker: ClientAuthBrokerClient = {
-      exchangeNeonToken: async () => {
-        throw new Error('not used')
-      },
+      ...unusedBrokerMethods,
       exchangeFeishuCode: async (input) => {
         exchanges.push({
           code: input.code,
@@ -742,13 +829,11 @@ describe('client auth', () => {
     let callbackState = ''
     let resolveCallback: ((value: { query: Record<string, string> }) => void) | null = null
     const broker = {
+      ...unusedBrokerMethods,
       getFeishuAuthConfig: async () => ({
         enabled: true,
         appId: 'cli_user_deployment',
       }),
-      exchangeNeonToken: async () => {
-        throw new Error('not used')
-      },
       exchangeFeishuCode: async () => ({
         user: {
           provider: 'feishu' as const,
@@ -792,16 +877,15 @@ describe('client auth', () => {
     expect(openedUrl.searchParams.get('client_id')).toBe('cli_user_deployment')
   })
 
-  it('rejects Feishu sign-in when the Feishu account requires registration', async () => {
+  it('rejects a Feishu broker login without a renewable app session', async () => {
     let callbackState = ''
     let resolveCallback: ((value: { query: Record<string, string> }) => void) | null = null
     const broker: ClientAuthBrokerClient = {
-      exchangeNeonToken: async () => {
-        throw new Error('not used')
-      },
-      exchangeFeishuCode: async () => {
-        throw new Error('Feishu registration is required')
-      },
+      ...unusedBrokerMethods,
+      exchangeFeishuCode: async () => ({
+        user: { provider: 'feishu', userId: 'ou_user' },
+        modelAccessToken: 'model-access-token',
+      }),
     }
     const service = createClientAuthService({
       required: true,
@@ -831,19 +915,14 @@ describe('client auth', () => {
 
     await expect(service.signInWithFeishu())
       .rejects
-      .toThrow('Feishu registration is required')
+      .toThrow('app session token')
     expect(service.getState().authenticated).toBe(false)
   })
 
   it('times out Feishu sign-in when the browser never returns to the callback URL', async () => {
     let closeCalled = false
     const broker: ClientAuthBrokerClient = {
-      exchangeNeonToken: async () => {
-        throw new Error('not used')
-      },
-      exchangeFeishuCode: async () => {
-        throw new Error('not used')
-      },
+      ...unusedBrokerMethods,
     }
     const service = createClientAuthService({
       required: true,
@@ -879,12 +958,7 @@ describe('client auth', () => {
       markBrowserOpened = resolve
     })
     const broker: ClientAuthBrokerClient = {
-      exchangeNeonToken: async () => {
-        throw new Error('not used')
-      },
-      exchangeFeishuCode: async () => {
-        throw new Error('not used')
-      },
+      ...unusedBrokerMethods,
     }
     const service = createClientAuthService({
       required: true,
@@ -920,24 +994,4 @@ describe('client auth', () => {
     expect(service.getState().authenticated).toBe(false)
   })
 
-  it('explains when the Feishu auth broker cannot be reached', async () => {
-    const originalFetch = globalThis.fetch
-    globalThis.fetch = (async () => {
-      throw new TypeError('fetch failed')
-    }) as unknown as typeof fetch
-
-    try {
-      const broker = new DefaultClientAuthBrokerClient()
-      await expect(broker.exchangeFeishuCode({
-        brokerUrl: 'http://localhost:9100',
-        code: 'feishu-code',
-        redirectUri: 'http://localhost:6477/callback',
-        codeVerifier: 'verifier',
-      }))
-        .rejects
-        .toThrow('Auth broker is unreachable at http://localhost:9100/api/client-auth/feishu/exchange')
-    } finally {
-      globalThis.fetch = originalFetch
-    }
-  })
 })

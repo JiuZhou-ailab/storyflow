@@ -36,6 +36,10 @@ const workspaceEmptyStateSource = readFileSync(
   new URL('../../workspace/WorkspaceEmptyState.tsx', import.meta.url),
   'utf8',
 )
+const tiptapEditorStyles = readFileSync(
+  new URL('../../../../../../../packages/ui/src/components/markdown/tiptap-editor.css', import.meta.url),
+  'utf8',
+)
 const localStorageSource = readFileSync(new URL('../../../lib/local-storage.ts', import.meta.url), 'utf8')
 
 describe('app shell layout defaults', () => {
@@ -213,7 +217,10 @@ describe('app shell layout defaults', () => {
     expect(resizableColumnSource).not.toContain('borderRadius')
     expect(appShellSource).not.toContain('isRightSidebarVisible')
     expect(appShellSource).not.toContain('isAtRightEdge')
-    expect(editorPanelSource).toContain('h-[42px]')
+    expect(editorPanelSource).toContain('toolbarAccessory={toolbarAccessory}')
+    expect(editorPanelSource).not.toContain('flex h-[42px] shrink-0')
+    expect(tiptapEditorStyles).toContain('.tiptap-editor--manuscript .tiptap-toolbar')
+    expect(tiptapEditorStyles).toContain('height: 42px')
     expect(workspaceEmptyStateSource).toContain('h-[42px]')
     expect(panelHeaderSource).toContain('h-[42px]')
   })

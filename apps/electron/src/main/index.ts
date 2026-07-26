@@ -89,7 +89,11 @@ import { setSearchPlatform, setImageProcessor } from '@craft-agent/server-core/s
 import { createApplicationMenu } from './menu'
 import { WindowManager } from './window-manager'
 import { loadWindowState, saveWindowState } from './window-state'
-import { getWorkspaces, getWorkspaceByNameOrId } from '@craft-agent/shared/config'
+import {
+  getWorkspaces,
+  getWorkspaceByNameOrId,
+  MANAGED_LLM_CONNECTION_SLUG,
+} from '@craft-agent/shared/config'
 import { initializeDocs } from '@craft-agent/shared/docs'
 import { initializeReleaseNotes } from '@craft-agent/shared/release-notes'
 import { seedDefaultAgentResources } from '@craft-agent/shared/agent-defaults'
@@ -123,7 +127,12 @@ import { createQuitCoordinator } from './quit-coordinator'
 import type { EventSink } from '@craft-agent/server-core/transport'
 import { validateGitBashPath, checkVCRedistInstalled } from '@craft-agent/server-core/services'
 import { shouldCreateWindowsAfterStartup } from './startup-state'
-import { createClientAuthConfigFromRuntimeEnv, createClientAuthService } from './client-auth'
+import {
+  createClientAuthConfigFromRuntimeEnv,
+  createClientAuthService,
+  type ClientAuthService,
+  type ClientAuthState,
+} from './client-auth'
 import { readClientAuthOverrides } from './client-auth-overrides'
 import { createClientAuthSessionStore } from './client-auth-session-store'
 import { resolveElectronRuntimePaths } from './runtime-paths'
@@ -216,6 +225,7 @@ const DEEPLINK_SCHEME = process.env.CRAFT_DEEPLINK_SCHEME || 'craftagents'
 
 let windowManager: WindowManager | null = null
 let sessionManager: SessionManager | null = null
+let clientAuthService: ClientAuthService | null = null
 let browserPaneManager: BrowserPaneManager | null = null
 let oauthFlowStore: OAuthFlowStore | null = null
 let moduleSink: EventSink | null = null
@@ -403,7 +413,7 @@ app.whenReady().then(async () => {
   // Initialize bundled release notes
   initializeReleaseNotes()
 
-  // Seed global Sources only. Skills are installed into each project's .pi/skills.
+  // Seed product-wide Skills and Sources. Domain Skills remain explicit project installs.
   seedDefaultAgentResources()
 
   // Ensure default permissions file exists (copies bundled default.json on first run)
@@ -557,64 +567,69 @@ app.whenReady().then(async () => {
     }
     const clientAuthSessionStore = createClientAuthSessionStore()
     const initialClientAuthSession = await clientAuthSessionStore.load()
-    const clientAuthService = createClientAuthService(createClientAuthConfigFromRuntimeEnv({
-      ...process.env,
-      ...clientAuthOverrides.values,
-    }), {
-      initialSession: initialClientAuthSession,
-      sessionStore: clientAuthSessionStore,
-      openExternal: (url) => shell.openExternal(url).then(() => undefined),
-    })
-    const initialClientAuthState = clientAuthService.getState()
-    if (initialClientAuthState.required) {
-      mainLog.info(`[client-auth] Required (${initialClientAuthState.configured ? 'configured' : 'not configured'})`)
-    }
-
-    const broadcastClientAuthState = () => {
-      const nextState = clientAuthService.getState()
+    const broadcastClientAuthState = (nextState: ClientAuthState) => {
       for (const window of BrowserWindow.getAllWindows()) {
         if (!window.isDestroyed()) {
           window.webContents.send(CLIENT_AUTH_IPC_CHANNELS.STATE_CHANGED, nextState)
         }
       }
     }
+    const clientAuthConfig = createClientAuthConfigFromRuntimeEnv({
+      ...process.env,
+      ...clientAuthOverrides.values,
+    })
+    const managedModelAccessConfigured = Boolean(
+      clientAuthConfig.authBrokerUrl ?? clientAuthConfig.feishuBrokerAuth?.brokerUrl,
+    )
+    const authService = createClientAuthService(clientAuthConfig, {
+      initialSession: initialClientAuthSession,
+      sessionStore: clientAuthSessionStore,
+      openExternal: (url) => shell.openExternal(url).then(() => undefined),
+      onAuthChange: async (change) => {
+        broadcastClientAuthState(change.state)
+        try {
+          if (!sessionManager) return
+          if (!change.session) {
+            await sessionManager.disposeConnectionRuntimes(MANAGED_LLM_CONNECTION_SLUG)
+          } else if (change.modelAccessTokenChanged) {
+            await sessionManager.reloadConnectionCredentials(MANAGED_LLM_CONNECTION_SLUG)
+          }
+        } catch (error) {
+          mainLog.warn('[client-auth] Failed to propagate auth change to live runtimes:', error)
+        }
+      },
+    })
+    clientAuthService = authService
+    const initialClientAuthState = authService.getState()
+    if (initialClientAuthState.required) {
+      mainLog.info(`[client-auth] Required (${initialClientAuthState.configured ? 'configured' : 'not configured'})`)
+    }
 
-    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.GET_STATE, () => clientAuthService.getState())
+    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.GET_STATE, () => authService.getState())
     ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.SIGN_IN, async (_event, input: unknown) => {
       const record = input && typeof input === 'object'
         ? input as Record<string, unknown>
         : {}
-      const user = await clientAuthService.signIn({
+      return authService.signIn({
         identifier: typeof record.identifier === 'string' ? record.identifier : '',
         password: typeof record.password === 'string' ? record.password : '',
       })
-      broadcastClientAuthState()
-      return user
     })
     ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.SIGN_UP, async (_event, input: unknown) => {
       const record = input && typeof input === 'object'
         ? input as Record<string, unknown>
         : {}
-      const result = await clientAuthService.signUp({
+      return authService.signUp({
         identifier: typeof record.identifier === 'string' ? record.identifier : '',
         password: typeof record.password === 'string' ? record.password : '',
         name: typeof record.name === 'string' ? record.name : undefined,
       })
-      broadcastClientAuthState()
-      return result
     })
-    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.SIGN_IN_WITH_FEISHU, async () => {
-      const user = await clientAuthService.signInWithFeishu()
-      broadcastClientAuthState()
-      return user
-    })
+    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.SIGN_IN_WITH_FEISHU, () => authService.signInWithFeishu())
     ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.CANCEL_FEISHU_SIGN_IN, () => {
-      clientAuthService.cancelFeishuSignIn()
+      authService.cancelFeishuSignIn()
     })
-    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.SIGN_OUT, async () => {
-      await clientAuthService.signOut()
-      broadcastClientAuthState()
-    })
+    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.SIGN_OUT, () => authService.signOut())
     ipcMain.handle('feedback:submitIssue', async (_event, input: unknown) => {
       return submitFeedbackIssue(normalizeFeedbackIssueInput(input), {
         fetch: (url, init) => net.fetch(url, init),
@@ -713,6 +728,13 @@ app.whenReady().then(async () => {
             updateBadgeCount,
             onSessionStarted,
             onSessionStopped,
+            ensureManagedModelAccessToken: async (forceRefresh) => {
+              if (serverModeEnabled) {
+                throw new Error('Default AI access is unavailable while shared server mode is enabled')
+              }
+              const result = await authService.ensureModelAccessToken({ force: forceRefresh === true })
+              return { refreshed: result.refreshed }
+            },
             captureException: (error, context) => {
               Sentry.captureException(error instanceof Error ? error : new Error(String(error)), {
                 tags: {
@@ -765,6 +787,7 @@ app.whenReady().then(async () => {
             browserPaneManager: browserPaneManager ?? undefined,
             oauthFlowStore: ofs,
             messagingRegistry: messagingHandle.registry,
+            managedModelAccessAvailable: !serverModeEnabled && managedModelAccessConfigured,
           }
         },
         // Headless: register only core handlers (no GUI handlers for browser, settings, etc.)
@@ -1205,6 +1228,8 @@ const quitCoordinator = createQuitCoordinator({
   prepare: async () => {
     // Ensure Cmd+Q/app quit bypasses layered window close interception (Cmd+W behavior).
     windowManager?.setAppQuitting(true)
+    clientAuthService?.dispose()
+    clientAuthService = null
 
     if (windowManager) {
       // Get full window states (includes bounds, type, and query)

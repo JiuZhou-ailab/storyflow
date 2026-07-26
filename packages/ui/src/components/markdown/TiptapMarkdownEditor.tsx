@@ -131,7 +131,15 @@ function ToolbarDivider() {
   return <div className="tiptap-toolbar-divider" aria-hidden="true" />
 }
 
-function TiptapFixedToolbar({ editor, editable }: { editor: Editor; editable: boolean }) {
+function TiptapFixedToolbar({
+  editor,
+  editable,
+  accessory,
+}: {
+  editor: Editor
+  editable: boolean
+  accessory?: React.ReactNode
+}) {
   useEditorToolbarRefresh(editor)
 
   const disabled = !editable
@@ -194,6 +202,12 @@ function TiptapFixedToolbar({ editor, editable }: { editor: Editor; editable: bo
           <Minus className="h-3.5 w-3.5" />
         </ToolbarButton>
       </div>
+      {accessory ? (
+        <>
+          <ToolbarDivider />
+          <div className="tiptap-toolbar-group tiptap-toolbar-accessory">{accessory}</div>
+        </>
+      ) : null}
     </div>
   )
 }
@@ -398,6 +412,8 @@ export interface TiptapMarkdownEditorProps {
   markdownEngine?: MarkdownEngine
   /** Show a fixed formatting toolbar above the editable document. */
   showToolbar?: boolean
+  /** Optional document action rendered at the end of the fixed toolbar. */
+  toolbarAccessory?: React.ReactNode
   /** Visual surface tuned for the current document type. */
   surface?: 'default' | 'manuscript'
   /** Show a subtle line-number gutter for long-form editing surfaces. */
@@ -421,6 +437,7 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
   editable = true,
   markdownEngine = 'legacy',
   showToolbar = false,
+  toolbarAccessory,
   surface = 'default',
   showLineNumbers = false,
   bottomRightAccessory,
@@ -695,7 +712,9 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
         className
       )}
     >
-      {editor && showToolbar && <TiptapFixedToolbar editor={editor} editable={editable} />}
+      {editor && showToolbar && (
+        <TiptapFixedToolbar editor={editor} editable={editable} accessory={toolbarAccessory} />
+      )}
       <div ref={setBubbleMenuScrollTarget} className="tiptap-editor-content">
         <EditorContent editor={editor} />
       </div>

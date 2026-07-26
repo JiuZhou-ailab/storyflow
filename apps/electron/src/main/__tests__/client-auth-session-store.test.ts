@@ -29,6 +29,10 @@ describe('createClientAuthSessionStore', () => {
     })
 
     const token = modelToken(Math.floor(Date.now() / 1000) + 3600)
+    records.set(keyFor({
+      type: 'llm_api_key',
+      connectionSlug: 'wangsu-default',
+    }), { value: 'legacy-model-token' })
     await store.save({
       user: {
         provider: 'feishu',
@@ -42,8 +46,12 @@ describe('createClientAuthSessionStore', () => {
 
     expect(records.get(keyFor({
       type: 'llm_api_key',
-      connectionSlug: 'wangsu-default',
+      connectionSlug: 'storyflow-managed',
     }))).toEqual({ value: token })
+    expect(records.has(keyFor({
+      type: 'llm_api_key',
+      connectionSlug: 'wangsu-default',
+    }))).toBe(false)
     expect(await store.load()).toEqual({
       user: {
         provider: 'feishu',
@@ -63,29 +71,32 @@ describe('createClientAuthSessionStore', () => {
 
   it('ignores malformed persisted sessions and removes stale managed credentials', async () => {
     let managedCredentialDeleted = false
+    let malformedSessionDeleted = false
     const store = createClientAuthSessionStore({
       get: async () => ({ value: JSON.stringify({ user: { provider: 'neon' } }) }),
       set: async () => {},
       delete: async (id) => {
         if (id.type === 'llm_api_key') managedCredentialDeleted = true
+        if (id.type === 'client_auth_session') malformedSessionDeleted = true
         return false
       },
     })
 
     expect(await store.load()).toBeNull()
     expect(managedCredentialDeleted).toBe(true)
+    expect(malformedSessionDeleted).toBe(true)
   })
 
-  it('clears an expired model token instead of restoring an unusable session', async () => {
+  it('clears a model token that has no renewable app session', async () => {
     const records = new Map<string, StoredCredential>()
     const keyFor = (id: unknown) => JSON.stringify(id)
     records.set(keyFor({ type: 'client_auth_session' }), {
       value: JSON.stringify({
         user: { provider: 'neon', userId: 'user-1' },
-        modelAccessToken: modelToken(Math.floor(Date.now() / 1000) - 1),
+        modelAccessToken: modelToken(Math.floor(Date.now() / 1000) + 3600),
       }),
     })
-    records.set(keyFor({ type: 'llm_api_key', connectionSlug: 'wangsu-default' }), {
+    records.set(keyFor({ type: 'llm_api_key', connectionSlug: 'storyflow-managed' }), {
       value: 'expired',
     })
     const store = createClientAuthSessionStore({
@@ -98,5 +109,42 @@ describe('createClientAuthSessionStore', () => {
 
     expect(await store.load()).toBeNull()
     expect(records.size).toBe(0)
+  })
+
+  it('preserves a renewable app session while removing its stale model-token projection', async () => {
+    const records = new Map<string, StoredCredential>()
+    const keyFor = (id: unknown) => JSON.stringify(id)
+    records.set(keyFor({ type: 'client_auth_session' }), {
+      value: JSON.stringify({
+        user: { provider: 'neon', userId: 'user-1' },
+        appSessionToken: 'renewable-app-session',
+        modelAccessToken: modelToken(Math.floor(Date.now() / 1000) + 60),
+      }),
+    })
+    records.set(keyFor({ type: 'llm_api_key', connectionSlug: 'storyflow-managed' }), {
+      value: 'stale-model-token',
+    })
+    const store = createClientAuthSessionStore({
+      get: async (id) => records.get(keyFor(id)) ?? null,
+      set: async (id, credential) => {
+        records.set(keyFor(id), credential)
+      },
+      delete: async (id) => records.delete(keyFor(id)),
+    })
+
+    expect(await store.load()).toEqual({
+      user: { provider: 'neon', userId: 'user-1' },
+      appSessionToken: 'renewable-app-session',
+    })
+    expect(records.get(keyFor({ type: 'client_auth_session' }))).toEqual({
+      value: JSON.stringify({
+        user: { provider: 'neon', userId: 'user-1' },
+        appSessionToken: 'renewable-app-session',
+      }),
+    })
+    expect(records.has(keyFor({
+      type: 'llm_api_key',
+      connectionSlug: 'storyflow-managed',
+    }))).toBe(false)
   })
 })

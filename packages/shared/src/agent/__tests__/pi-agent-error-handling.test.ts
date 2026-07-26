@@ -43,9 +43,9 @@ describe('PiAgent subprocess error handling', () => {
     agent.destroy()
   })
 
-  it('maps managed default gateway auth failures to model settings instead of reauth', () => {
+  it('leaves managed gateway presentation to the session boundary', () => {
     const agent = new PiAgent(createConfig({
-      connectionSlug: 'wangsu-default',
+      connectionSlug: 'storyflow-managed',
       authType: 'api_key',
     }))
 
@@ -64,8 +64,33 @@ describe('PiAgent subprocess error handling', () => {
     expect(enqueued[0].error.code).toBe('invalid_api_key')
     expect(enqueued[0].error.actions.some((action: any) => action.action === 'reauth')).toBe(false)
     expect(enqueued[0].error.actions.some((action: any) => action.action === 'settings')).toBe(true)
-    expect(enqueued[0].error.message.toLowerCase()).not.toContain('api key')
 
+    agent.destroy()
+  })
+
+  it('pushes the latest API credential into a live subprocess', async () => {
+    const agent = new PiAgent(createConfig({
+      connectionSlug: 'storyflow-managed',
+      authType: 'api_key',
+    }))
+    const sent: unknown[] = []
+    ;(agent as any).subprocess = {}
+    ;(agent as any).getPiAuth = async () => ({
+      provider: 'openai',
+      credential: { type: 'api_key', key: 'rotated-token' },
+    })
+    ;(agent as any).send = (message: unknown) => sent.push(message)
+
+    await expect(agent.reloadCredentials()).resolves.toBe(true)
+    expect(sent).toEqual([{
+      type: 'token_update',
+      piAuth: {
+        provider: 'openai',
+        credential: { type: 'api_key', key: 'rotated-token' },
+      },
+    }])
+
+    ;(agent as any).subprocess = null
     agent.destroy()
   })
 

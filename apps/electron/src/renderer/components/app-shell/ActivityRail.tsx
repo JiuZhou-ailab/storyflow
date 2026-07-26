@@ -24,7 +24,8 @@ import {
   UserCircle,
   Zap,
 } from 'lucide-react'
-import { useAtomValue } from 'jotai'
+import { atom, useAtom, useAtomValue, useStore } from 'jotai'
+import { selectAtom } from 'jotai/utils'
 import { cn } from '@/lib/utils'
 import {
   DropdownMenu,
@@ -33,14 +34,18 @@ import {
   StyledDropdownMenuItem,
   StyledDropdownMenuSeparator,
 } from '@/components/ui/styled-dropdown'
+import { DropdownMenuProvider } from '@/components/ui/menu-context'
 import { RenameDialog } from '@/components/ui/rename-dialog'
 import { FeedbackDialog } from './FeedbackDialog'
 import { ProjectSwitcherPopover } from './ProjectSwitcherPopover'
+import { SessionMenu } from './SessionMenu'
 import {
   extractSessionMeta,
   sessionMetaMapAtom,
   type SessionMeta,
 } from '@/atoms/sessions'
+import type { SessionStatus, SessionStatusId } from '@/config/session-status-config'
+import type { LabelConfig } from '@craft-agent/shared/labels'
 import { shouldRefreshGlobalSessionMetasForEvent } from '@/atoms/session-status-transition'
 import { formatRelativeTimestamp } from '@/lib/display-format'
 import * as storage from '@/lib/local-storage'
@@ -64,7 +69,6 @@ export interface ActivityRailProps {
   workspaces?: Workspace[]
   activeWorkspaceId?: string | null
   activeSessionId?: string | null
-  onSelectProject?: (workspaceId: string) => void
   /**
    * Selects any conversation, free or project. The handler decides whether it is
    * an in-domain focus or an explicit cross-domain runtime switch (ADR 0006).
@@ -95,17 +99,47 @@ export interface ActivityRailProps {
     unseen: boolean
     accentColor?: string
   }
+  sessionActions?: ActivityRailSessionActions
+}
+
+export interface ActivityRailSessionActions {
+  configurationWorkspaceId?: string | null
+  sessionStatuses: SessionStatus[]
+  labels?: LabelConfig[]
+  onLabelsChange?: (sessionId: string, labels: string[]) => void
+  onRename: (sessionId: string, name: string) => void
+  onFlag: (sessionId: string) => void
+  onUnflag: (sessionId: string) => void
+  onArchive: (sessionId: string) => void
+  onUnarchive: (sessionId: string) => void
+  onMarkUnread: (sessionId: string) => void
+  onSessionStatusChange: (sessionId: string, state: SessionStatusId) => void
+  onOpenInNewWindow: (session: SessionMeta) => void
+  onSendToWorkspace?: (sessionId: string) => void
+  onDelete: (sessionId: string) => void
+  hasRemoteWorkspaces?: boolean
 }
 
 export const ACTIVITY_RAIL_WIDTH = 252
 const RECENT_SESSION_LIMIT = 8
+const activityFreeSessionMetasAtom = atom<SessionMeta[] | null>(null)
+const activityExpandedProjectIdsAtom = atom<Set<string>>(new Set<string>())
+const activityProjectSessionMetasAtom = atom<Record<string, SessionMeta[]>>({})
+const activityShowAllRecentAtom = atom(false)
+const activityArchivedExpandedAtom = atom(false)
+const activitySidebarScrollTopAtom = atom(0)
+const activityUnreadByWorkspaceAtom = atom<Record<string, boolean> | null>(null)
+const freeRuntimeSessionMetasAtom = selectAtom(
+  sessionMetaMapAtom,
+  (metas) => [...metas.values()].filter((meta) => meta.workspaceId === FREE_CONVERSATION_WORKSPACE_ID),
+  (left, right) => left.length === right.length && left.every((meta, index) => meta === right[index]),
+)
 
 export function ActivityRail({
   activeItem,
   workspaces = [],
   activeWorkspaceId = null,
   activeSessionId = null,
-  onSelectProject,
   onSelectSession,
   activeProjectSessionId = null,
   onCreateConversationInProject,
@@ -123,29 +157,36 @@ export function ActivityRail({
   profile,
   onOpenWhatsNew,
   whatsNew,
+  sessionActions,
 }: ActivityRailProps) {
-  const localSessionMetaMap = useAtomValue(sessionMetaMapAtom)
+  const activityStore = useStore()
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null)
+  const localFreeSessionMetas = useAtomValue(freeRuntimeSessionMetasAtom)
   const sessionIdsWithPendingPrompt = useAtomValue(sessionIdsWithPendingPromptAtom)
-  const [freeSessionMetas, setFreeSessionMetas] = React.useState<SessionMeta[] | null>(null)
-  const [unreadByWorkspace, setUnreadByWorkspace] = React.useState<Record<string, boolean>>({})
+  const [freeSessionMetas, setFreeSessionMetas] = useAtom(activityFreeSessionMetasAtom)
+  const [unreadByWorkspace, setUnreadByWorkspace] = useAtom(activityUnreadByWorkspaceAtom)
   const [recentExpanded, setRecentExpanded] = React.useState(() => (
     storage.get(storage.KEYS.activityRecentExpanded, true)
   ))
   const [projectsExpanded, setProjectsExpanded] = React.useState(() => (
     storage.get(storage.KEYS.activityProjectsExpanded, true)
   ))
-  const [archivedExpanded, setArchivedExpanded] = React.useState(false)
-  const [showAllRecent, setShowAllRecent] = React.useState(false)
-  // Lists stay keyed by workspace instead of being flattened, preserving the
-  // runtime-domain boundary while sharing one Codex-style navigation surface.
-  const [expandedProjectIds, setExpandedProjectIds] = React.useState<Set<string>>(() => new Set())
-  const [projectSessionMetas, setProjectSessionMetas] = React.useState<Record<string, SessionMeta[]>>({})
+  const [archivedExpanded, setArchivedExpanded] = useAtom(activityArchivedExpandedAtom)
+  const [showAllRecent, setShowAllRecent] = useAtom(activityShowAllRecentAtom)
+  const [expandedProjectIds, setExpandedProjectIds] = useAtom(activityExpandedProjectIdsAtom)
+  const [projectSessionMetas, setProjectSessionMetas] = useAtom(activityProjectSessionMetasAtom)
   const [loadingProjectIds, setLoadingProjectIds] = React.useState<Set<string>>(() => new Set())
   const [feedbackOpen, setFeedbackOpen] = React.useState(false)
-  const [renameTarget, setRenameTarget] = React.useState<Workspace | null>(null)
+  const [renameTarget, setRenameTarget] = React.useState<
+    { kind: 'project' | 'session'; id: string; name: string } | null
+  >(null)
   const [renameValue, setRenameValue] = React.useState('')
   const refreshGenerationRef = React.useRef(0)
   const canCreateProjects = typeof onWorkspaceCreated === 'function'
+
+  React.useLayoutEffect(() => {
+    if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = activityStore.get(activitySidebarScrollTopAtom)
+  }, [activityStore])
 
   const refreshFreeSessionMetas = React.useCallback(async () => {
     const generation = ++refreshGenerationRef.current
@@ -159,7 +200,7 @@ export function ActivityRail({
       // fallback leaked project conversations into this list.
       console.warn('[activity-sidebar] Failed to load free conversation metadata:', error)
     }
-  }, [])
+  }, [setFreeSessionMetas])
 
   const refreshProjectSessionMetas = React.useCallback(async (workspaceId: string) => {
     setLoadingProjectIds((prev) => {
@@ -184,7 +225,7 @@ export function ActivityRail({
         return next
       })
     }
-  }, [])
+  }, [setProjectSessionMetas])
 
   const toggleProjectExpanded = React.useCallback((workspaceId: string) => {
     setExpandedProjectIds((prev) => {
@@ -197,7 +238,7 @@ export function ActivityRail({
       }
       return next
     })
-  }, [refreshProjectSessionMetas])
+  }, [refreshProjectSessionMetas, setExpandedProjectIds])
 
   const refreshUnreadSummary = React.useCallback(async () => {
     try {
@@ -205,20 +246,20 @@ export function ActivityRail({
     } catch (error) {
       console.warn('[activity-sidebar] Failed to load unread summary:', error)
     }
-  }, [])
+  }, [setUnreadByWorkspace])
 
   React.useEffect(() => {
-    void refreshFreeSessionMetas()
-  }, [refreshFreeSessionMetas, workspaces])
+    if (freeSessionMetas === null) void refreshFreeSessionMetas()
+  }, [freeSessionMetas, refreshFreeSessionMetas])
 
   // The aggregate summary keeps collapsed project rows honest without loading
   // or merging their session identities; expanded lists remain workspace-scoped.
   React.useEffect(() => {
-    void refreshUnreadSummary()
+    if (activityStore.get(activityUnreadByWorkspaceAtom) === null) void refreshUnreadSummary()
     return window.electronAPI.onUnreadSummaryChanged((summary) => {
       setUnreadByWorkspace(summary.hasUnreadByWorkspace)
     })
-  }, [refreshUnreadSummary])
+  }, [activityStore, refreshUnreadSummary, setUnreadByWorkspace])
 
   React.useEffect(() => {
     let refreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -248,14 +289,13 @@ export function ActivityRail({
     // atom is scoped to whichever workspace is running, so it must be filtered
     // back down to the free domain — otherwise the open project's sessions
     // reappear here regardless of what the server returned.
-    for (const meta of localSessionMetaMap.values()) {
-      if (meta.workspaceId !== FREE_CONVERSATION_WORKSPACE_ID) continue
+    for (const meta of localFreeSessionMetas) {
       merged.set(meta.id, meta)
     }
     return [...merged.values()]
       .filter(meta => !meta.hidden && meta.isArchived !== true)
       .sort((left, right) => (right.lastMessageAt ?? right.createdAt ?? 0) - (left.lastMessageAt ?? left.createdAt ?? 0))
-  }, [freeSessionMetas, localSessionMetaMap])
+  }, [freeSessionMetas, localFreeSessionMetas])
 
   const recentSessions = showAllRecent
     ? sessionMetas
@@ -355,6 +395,8 @@ export function ActivityRail({
         </nav>
 
         <div
+          ref={scrollContainerRef}
+          onScroll={(event) => activityStore.set(activitySidebarScrollTopAtom, event.currentTarget.scrollTop)}
           className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-0.5"
           data-testid="activity-sidebar-scroll"
         >
@@ -388,6 +430,11 @@ export function ActivityRail({
                     active={activeSessionId === meta.id}
                     disabled={!onSelectSession}
                     onSelect={() => onSelectSession?.(meta.id, meta.workspaceId)}
+                    sessionActions={sessionActions}
+                    onRename={() => {
+                      setRenameTarget({ kind: 'session', id: meta.id, name: getSessionTitle(meta) })
+                      setRenameValue(getSessionTitle(meta))
+                    }}
                   />
                 )) : (
                   <div className="px-3 py-3 text-xs text-muted-foreground/60">暂无自由对话</div>
@@ -428,8 +475,8 @@ export function ActivityRail({
                         key={workspace.id}
                         workspace={workspace}
                         active={activeWorkspaceId === workspace.id}
-                        hasUnread={unreadByWorkspace[workspace.id] === true}
-                        disabled={!onSelectProject}
+                        hasUnread={unreadByWorkspace?.[workspace.id] === true}
+                        disabled={!onSelectSession}
                         expandable={Boolean(onSelectSession)}
                         expanded={expanded}
                         onToggleExpanded={() => toggleProjectExpanded(workspace.id)}
@@ -442,13 +489,17 @@ export function ActivityRail({
                         onCreateConversation={onCreateConversationInProject
                           ? () => onCreateConversationInProject(workspace.id)
                           : undefined}
-                        onSelect={() => onSelectProject?.(workspace.id)}
+                        sessionActions={sessionActions}
+                        onRenameSession={(meta) => {
+                          setRenameTarget({ kind: 'session', id: meta.id, name: getSessionTitle(meta) })
+                          setRenameValue(getSessionTitle(meta))
+                        }}
                         onOpenInNewWindow={onOpenProjectInNewWindow
                           ? () => onOpenProjectInNewWindow(workspace.id)
                           : undefined}
                         onRename={onRenameProject
                           ? () => {
-                            setRenameTarget(workspace)
+                            setRenameTarget({ kind: 'project', id: workspace.id, name: workspace.name })
                             setRenameValue(workspace.name)
                           }
                           : undefined}
@@ -480,7 +531,6 @@ export function ActivityRail({
                         archived
                         hasUnread={false}
                         disabled
-                        onSelect={() => {}}
                         onRestore={onSetProjectArchived
                           ? () => onSetProjectArchived(workspace.id, false)
                           : undefined}
@@ -586,17 +636,32 @@ export function ActivityRail({
           onOpenChange={(open) => {
             if (!open) setRenameTarget(null)
           }}
-          title="重命名项目"
+          title={renameTarget.kind === 'project' ? '重命名项目' : '重命名对话'}
           value={renameValue}
           onValueChange={setRenameValue}
           onSubmit={() => {
             const nextName = renameValue.trim()
             if (nextName && nextName !== renameTarget.name) {
-              void onRenameProject?.(renameTarget.id, nextName)
+              if (renameTarget.kind === 'project') {
+                void onRenameProject?.(renameTarget.id, nextName)
+              } else {
+                setFreeSessionMetas((metas) => metas?.map((meta) => (
+                  meta.id === renameTarget.id ? { ...meta, name: nextName } : meta
+                )) ?? null)
+                setProjectSessionMetas((byWorkspace) => Object.fromEntries(
+                  Object.entries(byWorkspace).map(([workspaceId, metas]) => [
+                    workspaceId,
+                    metas.map((meta) => (
+                      meta.id === renameTarget.id ? { ...meta, name: nextName } : meta
+                    )),
+                  ]),
+                ))
+                sessionActions?.onRename(renameTarget.id, nextName)
+              }
             }
             setRenameTarget(null)
           }}
-          placeholder="输入项目名称"
+          placeholder={renameTarget.kind === 'project' ? '输入项目名称' : '输入对话名称'}
         />
       ) : null}
     </aside>
@@ -679,11 +744,15 @@ function RecentConversationRow({
   active,
   disabled,
   onSelect,
+  sessionActions,
+  onRename,
 }: {
   meta: SessionMeta
   active: boolean
   disabled: boolean
   onSelect: () => void
+  sessionActions?: ActivityRailSessionActions
+  onRename: () => void
 }) {
   const hasPendingPrompt = useAtomValue(hasPendingPromptAtomFamily(meta.id))
   const runtimeStatus = deriveSessionRuntimeStatus({
@@ -691,36 +760,80 @@ function RecentConversationRow({
     hasPendingPrompt,
     lastMessageRole: meta.lastMessageRole,
   })
+  const usesCurrentConfiguration = (
+    !sessionActions?.configurationWorkspaceId
+    || sessionActions.configurationWorkspaceId === meta.workspaceId
+  )
   return (
-    <button
-      type="button"
-      aria-label={getSessionTitle(meta)}
-      aria-current={active ? 'page' : undefined}
-      disabled={disabled}
+    <div
       data-session-id={meta.id}
       className={cn(
-        'group flex w-full min-w-0 items-center gap-1.5 rounded-[6px] px-2 py-2 text-left outline-none transition-colors',
-        'hover:bg-foreground/[0.045] focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-60',
+        'group flex w-full min-w-0 items-center rounded-[6px] transition-colors hover:bg-foreground/[0.045]',
         active && 'bg-foreground/[0.07] text-foreground',
       )}
-      onClick={onSelect}
     >
-      <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
-        <span className={cn(
-          'h-1.5 w-1.5 rounded-full bg-transparent',
-          meta.hasUnread && 'bg-accent',
-          // A blocked or failed session must not read as healthy progress.
-          runtimeStatus === 'running' && 'animate-pulse bg-foreground/50',
-          runtimeStatus === 'waiting-input' && 'bg-info',
-          runtimeStatus === 'error' && 'bg-destructive',
-        )} />
-      </span>
-      <MessageSquareText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <span className="min-w-0 flex-1 truncate text-[12px] leading-4 text-foreground/90">
-        {getSessionTitle(meta)}
-      </span>
-      <span className="shrink-0 text-[10px] text-muted-foreground/55">{formatRelativeTimestamp(meta.lastMessageAt, '')}</span>
-    </button>
+      <button
+        type="button"
+        aria-label={getSessionTitle(meta)}
+        aria-current={active ? 'page' : undefined}
+        disabled={disabled}
+        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-[6px] px-2 py-2 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-60"
+        onClick={onSelect}
+      >
+        <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+          <span className={cn(
+            'h-1.5 w-1.5 rounded-full bg-transparent',
+            meta.hasUnread && 'bg-accent',
+            runtimeStatus === 'running' && 'animate-pulse bg-foreground/50',
+            runtimeStatus === 'waiting-input' && 'bg-info',
+            runtimeStatus === 'error' && 'bg-destructive',
+          )} />
+        </span>
+        <MessageSquareText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate text-[12px] leading-4 text-foreground/90">
+          {getSessionTitle(meta)}
+        </span>
+        <span className="shrink-0 text-[10px] text-muted-foreground/55">{formatRelativeTimestamp(meta.lastMessageAt, '')}</span>
+      </button>
+      {sessionActions ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={`管理 ${getSessionTitle(meta)}`}
+              className="mr-1 flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-foreground/[0.06] hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100 data-[state=open]:opacity-100"
+            >
+              <MoreHorizontal className="size-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <StyledDropdownMenuContent align="end" sideOffset={4}>
+            <DropdownMenuProvider>
+              <SessionMenu
+                item={meta}
+                sessionStatuses={usesCurrentConfiguration ? sessionActions.sessionStatuses : []}
+                labels={usesCurrentConfiguration ? sessionActions.labels : []}
+                onLabelsChange={usesCurrentConfiguration && sessionActions.onLabelsChange
+                  ? (labels) => sessionActions.onLabelsChange?.(meta.id, labels)
+                  : undefined}
+                onRename={onRename}
+                onFlag={() => sessionActions.onFlag(meta.id)}
+                onUnflag={() => sessionActions.onUnflag(meta.id)}
+                onArchive={() => sessionActions.onArchive(meta.id)}
+                onUnarchive={() => sessionActions.onUnarchive(meta.id)}
+                onMarkUnread={() => sessionActions.onMarkUnread(meta.id)}
+                onSessionStatusChange={(state) => sessionActions.onSessionStatusChange(meta.id, state)}
+                onOpenInNewWindow={() => sessionActions.onOpenInNewWindow(meta)}
+                onSendToWorkspace={sessionActions.onSendToWorkspace
+                  ? () => sessionActions.onSendToWorkspace?.(meta.id)
+                  : undefined}
+                onDelete={() => sessionActions.onDelete(meta.id)}
+                hasRemoteWorkspaces={sessionActions.hasRemoteWorkspaces}
+              />
+            </DropdownMenuProvider>
+          </StyledDropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
+    </div>
   )
 }
 
@@ -743,7 +856,8 @@ function ProjectFolderRow({
   activeSessionId = null,
   onSelectSession,
   onCreateConversation,
-  onSelect,
+  sessionActions,
+  onRenameSession,
   onOpenInNewWindow,
   onRename,
   onArchive,
@@ -763,7 +877,8 @@ function ProjectFolderRow({
   activeSessionId?: string | null
   onSelectSession?: (sessionId: string) => void
   onCreateConversation?: () => void | Promise<void>
-  onSelect: () => void
+  sessionActions?: ActivityRailSessionActions
+  onRenameSession?: (meta: SessionMeta) => void
   onOpenInNewWindow?: () => void
   onRename?: () => void
   onArchive?: () => void
@@ -788,10 +903,7 @@ function ProjectFolderRow({
           'focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default',
           archived && 'opacity-60',
         )}
-        onClick={() => {
-          onToggleExpanded?.()
-          onSelect()
-        }}
+        onClick={() => onToggleExpanded?.()}
       >
         <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
           {expanded
@@ -807,7 +919,7 @@ function ProjectFolderRow({
           type="button"
           aria-label={`在 ${workspace.name} 中新建对话`}
           title="新建对话"
-          className="flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-foreground/[0.06] hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
+          className="flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
           onClick={() => { void onCreateConversation() }}
         >
           <Plus className="size-3.5" />
@@ -872,6 +984,8 @@ function ProjectFolderRow({
               active={activeSessionId === meta.id}
               disabled={!onSelectSession}
               onSelect={() => onSelectSession?.(meta.id)}
+              sessionActions={sessionActions}
+              onRename={() => onRenameSession?.(meta)}
             />
           ))
         ) : (

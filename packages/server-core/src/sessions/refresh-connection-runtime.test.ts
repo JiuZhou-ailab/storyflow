@@ -27,6 +27,7 @@ import { buildRestartRequiredSignature } from './runtime-config.ts'
 interface AgentStub {
   isProcessing: () => boolean
   updateRuntimeConfig: jest.Mock
+  reloadCredentials?: jest.Mock
   dispose: () => void
   disposeForRestart?: () => Promise<void>
 }
@@ -119,6 +120,43 @@ describe('refreshConnectionRuntime', () => {
 
     expect(matchingAgent.updateRuntimeConfig).toHaveBeenCalledTimes(1)
     expect(otherAgent.updateRuntimeConfig).not.toHaveBeenCalled()
+  })
+
+  it('pushes rotated credentials to every live runtime on the matching connection', async () => {
+    const matchingAgent = createAgentStub()
+    matchingAgent.reloadCredentials = jest.fn().mockResolvedValue(true)
+    const otherAgent = createAgentStub()
+    otherAgent.reloadCredentials = jest.fn().mockResolvedValue(true)
+    injectSession(sm, 'matching', tmpRoot, 'slug-A', matchingAgent)
+    injectSession(sm, 'other', tmpRoot, 'slug-B', otherAgent)
+
+    await sm.reloadConnectionCredentials('slug-A')
+
+    expect(matchingAgent.reloadCredentials).toHaveBeenCalledTimes(1)
+    expect(otherAgent.reloadCredentials).not.toHaveBeenCalled()
+  })
+
+  it('recreates an idle runtime when it cannot accept rotated credentials', async () => {
+    const agent = createAgentStub()
+    agent.reloadCredentials = jest.fn().mockResolvedValue(false)
+    const managed = injectSession(sm, 'stale', tmpRoot, 'slug-A', agent)
+
+    await sm.reloadConnectionCredentials('slug-A')
+
+    expect(agent.reloadCredentials).toHaveBeenCalledTimes(1)
+    expect(managed.agent).toBeNull()
+  })
+
+  it('disposes matching runtimes when the managed account signs out', async () => {
+    const matchingAgent = createAgentStub()
+    const otherAgent = createAgentStub()
+    const matching = injectSession(sm, 'matching', tmpRoot, 'slug-A', matchingAgent)
+    const other = injectSession(sm, 'other', tmpRoot, 'slug-B', otherAgent)
+
+    await sm.disposeConnectionRuntimes('slug-A')
+
+    expect(matching.agent).toBeNull()
+    expect(other.agent).toBe(otherAgent)
   })
 
   it('skips sessions whose agent is mid-stream (defers, does not yank)', async () => {

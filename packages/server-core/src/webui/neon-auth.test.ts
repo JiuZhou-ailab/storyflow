@@ -29,6 +29,19 @@ describe('NeonAuthService', () => {
     })
   })
 
+  it('requires HTTPS for remote Neon Auth and JWKS endpoints', () => {
+    expect(() => new NeonAuthService({
+      baseUrl: 'http://auth.example.com/neondb/auth',
+    })).toThrow('Neon Auth URL must use HTTPS')
+    expect(() => new NeonAuthService({
+      baseUrl: 'https://auth.example.com/neondb/auth',
+      jwksUrl: 'http://keys.example.com/jwks.json',
+    })).toThrow('Neon Auth URL must use HTTPS')
+    expect(new NeonAuthService({
+      baseUrl: 'http://127.0.0.1:3000/neondb/auth',
+    }).isConfigured()).toBe(true)
+  })
+
   it('keeps email sign-up disabled unless explicitly enabled', async () => {
     const requests: Array<{ url: string, init?: RequestInit }> = []
     const service = new NeonAuthService({
@@ -142,6 +155,7 @@ describe('NeonAuthService', () => {
       Accept: 'application/json',
       Origin: 'https://craft.example.com',
     })
+    expect(requests[0]?.init?.signal).toBeDefined()
     expect(JSON.parse(String(requests[0]?.init?.body))).toEqual({
       email: 'signin@example.com',
       password: 'secret-password',

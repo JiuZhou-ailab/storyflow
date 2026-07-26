@@ -118,6 +118,21 @@ if (!feishuAuth && !neonAuth) {
   process.exit(1)
 }
 
+const modelAccessTokenSecret = readEnv('STORYFLOW_GATEWAY_JWT_CURRENT_SECRET')
+if (!modelAccessTokenSecret) {
+  console.error('[auth-broker-dev] STORYFLOW_GATEWAY_JWT_CURRENT_SECRET is required and must match the configured model gateway.')
+  process.exit(1)
+}
+const clientSessionTokenSecret = readEnv('STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET')
+if (!clientSessionTokenSecret) {
+  console.error('[auth-broker-dev] STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET is required and must be independent from the model gateway secret.')
+  process.exit(1)
+}
+if (clientSessionTokenSecret === modelAccessTokenSecret) {
+  console.error('[auth-broker-dev] Client-session and model-access signing secrets must be different.')
+  process.exit(1)
+}
+
 const clientAppId = readEnv('CRAFT_CLIENT_FEISHU_APP_ID')
 if (clientAppId && appId && clientAppId !== appId) {
   console.warn(`[auth-broker-dev] CRAFT_CLIENT_FEISHU_APP_ID (${clientAppId}) differs from CRAFT_WEBUI_FEISHU_APP_ID (${appId}). Feishu token exchange will fail unless they match.`)
@@ -131,10 +146,9 @@ if (await isHealthy(port)) {
 }
 
 const secret = readEnv('CRAFT_SERVER_TOKEN') ?? randomBytes(24).toString('hex')
-const configuredModelAccessTokenSecret = readEnv('STORYFLOW_GATEWAY_JWT_SECRET')
-const modelAccessTokenSecret = configuredModelAccessTokenSecret ?? secret
-if (!configuredModelAccessTokenSecret) {
-  console.warn('[auth-broker-dev] STORYFLOW_GATEWAY_JWT_SECRET is unset; reusing the local server token for development.')
+if (secret === clientSessionTokenSecret || secret === modelAccessTokenSecret) {
+  console.error('[auth-broker-dev] CRAFT_SERVER_TOKEN, client-session, and model-access signing secrets must be pairwise distinct.')
+  process.exit(1)
 }
 
 const server = await startWebuiHttpServer({
@@ -148,7 +162,16 @@ const server = await startWebuiHttpServer({
   getHealthCheck: () => ({ status: 'ok' }),
   feishuAuth,
   neonAuth,
-  modelAccessTokenSecret,
+  clientSessionTokenKeyRing: {
+    current: {
+      id: readEnv('STORYFLOW_CLIENT_SESSION_JWT_CURRENT_KEY_ID') ?? 'current',
+      secret: clientSessionTokenSecret,
+    },
+  },
+  modelAccessTokenKey: {
+    id: readEnv('STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID') ?? 'current',
+    secret: modelAccessTokenSecret,
+  },
   logger: console as any,
 })
 

@@ -1,3 +1,7 @@
+// input: Portable session-tool contracts, handlers, schemas, and registries
+// output: Public session-tools-core API shared across Storyflow runtimes
+// pos: Package entrypoint for provider-independent session tools
+
 /**
  * Session Tools Core
  *
@@ -119,6 +123,7 @@ export type {
   CredentialManagerInterface,
   ValidatorInterface,
   LoadedSource,
+  SkillDocument,
   // MCP validation types
   StdioMcpConfig,
   HttpMcpConfig,
@@ -142,6 +147,8 @@ export {
   handleSubmitPlan,
   // Config Validate
   handleConfigValidate,
+  // Skill Create
+  handleSkillCreate,
   // Skill Validate
   handleSkillValidate,
   // Mermaid Validate
@@ -170,6 +177,7 @@ export {
 export type {
   SubmitPlanArgs,
   ConfigValidateArgs,
+  SkillCreateArgs,
   SkillValidateArgs,
   MermaidValidateArgs,
   SourceTestArgs,
@@ -190,6 +198,7 @@ export {
   // Individual Zod schemas
   SubmitPlanSchema,
   ConfigValidateSchema,
+  SkillCreateSchema,
   SkillValidateSchema,
   MermaidValidateSchema,
   SourceTestSchema,

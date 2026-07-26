@@ -1,3 +1,7 @@
+// input: Individual portable session-tool handlers and their argument types
+// output: Stable handler exports for all Storyflow agent backends
+// pos: Public handler barrel for session-tools-core
+
 /**
  * Session Tools Core - Handlers
  *
@@ -12,6 +16,10 @@ export type { SubmitPlanArgs } from './submit-plan.ts';
 // Config Validate
 export { handleConfigValidate } from './config-validate.ts';
 export type { ConfigValidateArgs } from './config-validate.ts';
+
+// Skill Create
+export { handleSkillCreate } from './skill-create.ts';
+export type { SkillCreateArgs } from './skill-create.ts';
 
 // Skill Validate
 export { handleSkillValidate } from './skill-validate.ts';

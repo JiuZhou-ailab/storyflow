@@ -3,6 +3,7 @@
 // pos: Pure helper layer for editing historical user messages without mutating history
 
 import type { CreateSessionOptions, Message } from '../../../shared/types'
+import { MANAGED_LLM_CONNECTION_SLUG } from '@config/llm-connections'
 import type { Session } from '@craft-agent/shared/protocol'
 
 type RewindSourceSession = Pick<
@@ -16,7 +17,7 @@ type RewindSourceSession = Pick<
   | 'enabledSourceSlugs'
 >
 
-export const MANAGED_DEFAULT_CONNECTION_SLUG = 'wangsu-default'
+export const MANAGED_DEFAULT_CONNECTION_SLUG = MANAGED_LLM_CONNECTION_SLUG
 
 export function canCreateDefaultRewindBranch(
   session: Pick<RewindSourceSession, 'llmConnection'>,

@@ -34,6 +34,23 @@ function hasNeonLoginMethod(env: Env): boolean {
   return Boolean(readEnv(env.CRAFT_CLIENT_NEON_AUTH_BASE_URL) || readEnv(env.CRAFT_WEBUI_NEON_AUTH_BASE_URL));
 }
 
+function validatePackagedNeonUrl(name: string, value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return `Invalid ${name}: ${value}`;
+  }
+  if (isLocalhostHostname(parsed.hostname)) {
+    return `Refusing to package desktop client auth with a localhost ${name}.`;
+  }
+  if (parsed.protocol !== 'https:') {
+    return `${name} must use https for packaged desktop client auth.`;
+  }
+  return undefined;
+}
+
 export function validateDesktopAuthBuildEnv(env: Env): DesktopAuthBuildValidationResult {
   if (readBooleanEnv(env.CRAFT_DEV_RUNTIME)) return { ok: true };
 
@@ -51,6 +68,18 @@ export function validateDesktopAuthBuildEnv(env: Env): DesktopAuthBuildValidatio
       ok: false,
       message: 'Packaged desktop client auth requires CRAFT_CLIENT_FEISHU_APP_ID or CRAFT_CLIENT_NEON_AUTH_BASE_URL.',
     };
+  }
+
+  const neonBaseUrl = readEnv(env.CRAFT_CLIENT_NEON_AUTH_BASE_URL)
+    ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_BASE_URL);
+  const neonJwksUrl = readEnv(env.CRAFT_CLIENT_NEON_AUTH_JWKS_URL)
+    ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_JWKS_URL);
+  for (const [name, value] of [
+    ['CRAFT_CLIENT_NEON_AUTH_BASE_URL', neonBaseUrl],
+    ['CRAFT_CLIENT_NEON_AUTH_JWKS_URL', neonJwksUrl],
+  ] as const) {
+    const message = validatePackagedNeonUrl(name, value);
+    if (message) return { ok: false, message };
   }
 
   if (!brokerUrl) {

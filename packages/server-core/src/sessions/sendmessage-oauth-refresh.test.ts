@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { SessionManager, createManagedSession } from './SessionManager.ts'
+import { SessionManager, createManagedSession, setSessionRuntimeHooks } from './SessionManager.ts'
 
 // Regression tests for #710 — OAuth tokens expire without silent refresh.
 //
@@ -32,6 +32,9 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
   })
 
   afterEach(() => {
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: async () => ({ refreshed: false }),
+    })
     rmSync(tmpRoot, { recursive: true, force: true })
   })
 
@@ -133,5 +136,92 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
       config: { ...reloaded[0]!.config, isAuthenticated: false, connectionStatus: 'needs_auth' as const },
     }
     expect(isSourceUsable(mutated)).toBe(false)
+  })
+
+  it('ensures managed model access before creating the backend', async () => {
+    const managed = buildSession('managed-model-access')
+    managed.llmConnection = 'storyflow-managed'
+    let ensureCalls = 0
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: async () => {
+        ensureCalls++
+        return { refreshed: false }
+      },
+    })
+
+    await sm.sendMessage(managed.id, 'hello').catch(() => { /* expected in minimal harness */ })
+
+    expect(ensureCalls).toBe(1)
+  })
+
+  it('cleans up processing state when managed model access cannot refresh', async () => {
+    const managed = buildSession('managed-refresh-failure')
+    managed.llmConnection = 'storyflow-managed'
+    const errors: unknown[] = []
+    sm.setEventSink((channel, _target, event) => {
+      if (channel === 'session:event' && (event as { type?: string })?.type === 'error') {
+        errors.push(event)
+      }
+    })
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: async () => {
+        throw new Error('broker unavailable')
+      },
+    })
+
+    await sm.sendMessage(managed.id, 'hello')
+
+    expect(managed.isProcessing).toBe(false)
+    expect(errors).toHaveLength(1)
+  })
+
+  it('preflights managed model access for one-shot calls', async () => {
+    const managed = buildSession('managed-query-once')
+    managed.llmConnection = 'storyflow-managed'
+    let ensureCalls = 0
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: async () => {
+        ensureCalls++
+        return { refreshed: false }
+      },
+    })
+
+    await sm.queryOnce(managed.id, { prompt: 'summarize' } as never).catch(() => { /* expected */ })
+
+    expect(ensureCalls).toBe(1)
+  })
+
+  it('preflights managed model access for manual title refresh', async () => {
+    const managed = buildSession('managed-refresh-title')
+    managed.llmConnection = 'storyflow-managed'
+    managed.messages = [{ id: 'user-1', role: 'user', content: 'hello', timestamp: 1 }]
+    let ensureCalls = 0
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: async () => {
+        ensureCalls++
+        return { refreshed: false }
+      },
+    })
+
+    await sm.refreshTitle(managed.id)
+
+    expect(ensureCalls).toBe(1)
+  })
+
+  it('preflights managed model access for remote transfer summaries', async () => {
+    const managed = buildSession('managed-transfer-summary')
+    managed.llmConnection = 'storyflow-managed'
+    managed.messages = [{ id: 'user-1', role: 'user', content: 'hello', timestamp: 1 }]
+    let ensureCalls = 0
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: async () => {
+        ensureCalls++
+        return { refreshed: false }
+      },
+    })
+
+    await (sm as any).generateRemoteTransferSummary(managed).catch(() => { /* expected */ })
+
+    expect(ensureCalls).toBe(1)
   })
 })

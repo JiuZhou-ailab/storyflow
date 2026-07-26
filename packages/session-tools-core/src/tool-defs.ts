@@ -1,3 +1,7 @@
+// input: Session-tool schemas, descriptions, safety metadata, and portable handlers
+// output: Canonical registry plus backend-specific schema projections
+// pos: Single source of truth for Storyflow session-tool availability
+
 /**
  * Session Tool Definitions — Single Source of Truth
  *
@@ -19,6 +23,7 @@ import type { ToolResult } from './types.ts';
 // Handlers
 import { handleSubmitPlan } from './handlers/submit-plan.ts';
 import { handleConfigValidate } from './handlers/config-validate.ts';
+import { handleSkillCreate } from './handlers/skill-create.ts';
 import { handleSkillValidate } from './handlers/skill-validate.ts';
 import { handleMermaidValidate } from './handlers/mermaid-validate.ts';
 import { handleSourceTest } from './handlers/source-test.ts';
@@ -57,6 +62,13 @@ export const ConfigValidateSchema = z.object({
 
 export const SkillValidateSchema = z.object({
   skillSlug: z.string().describe('The slug of the skill to validate'),
+  targetWorkspaceId: z.string().optional().describe('Storyflow workspace ID supplied by the creation entry'),
+});
+
+export const SkillCreateSchema = z.object({
+  skillSlug: z.string().describe('Lowercase hyphenated slug for the new Skill'),
+  content: z.string().describe('Complete SKILL.md document, including YAML frontmatter'),
+  targetWorkspaceId: z.string().describe('Storyflow workspace ID supplied by the creation entry'),
 });
 
 export const MermaidValidateSchema = z.object({
@@ -260,6 +272,12 @@ Checks:
 - YAML frontmatter is valid with required fields (name, description)
 - Content is non-empty after frontmatter
 - Icon format if present (svg/png/jpg)`,
+
+  skill_create: `Create one validated Skill in a Storyflow-owned scope.
+
+Use only after the user has explicitly confirmed the summarized Skill draft.
+Pass targetWorkspaceId from <edit_request> when present. The workspace ID is resolved through Storyflow; arbitrary filesystem paths are not accepted.
+Existing Skills are never overwritten. After creation, call skill_validate.`,
 
   mermaid_validate: `Validate Mermaid diagram syntax before outputting.
 
@@ -530,6 +548,7 @@ export type SessionToolDef = RegistrySessionToolDef | BackendSessionToolDef;
 export const SESSION_TOOL_DEFS: SessionToolDef[] = [
   { name: 'SubmitPlan', description: TOOL_DESCRIPTIONS.SubmitPlan, inputSchema: SubmitPlanSchema, executionMode: 'registry', safeMode: 'allow', handler: handleSubmitPlan },
   { name: 'config_validate', description: TOOL_DESCRIPTIONS.config_validate, inputSchema: ConfigValidateSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleConfigValidate },
+  { name: 'skill_create', description: TOOL_DESCRIPTIONS.skill_create, inputSchema: SkillCreateSchema, executionMode: 'registry', safeMode: 'block', handler: handleSkillCreate },
   { name: 'skill_validate', description: TOOL_DESCRIPTIONS.skill_validate, inputSchema: SkillValidateSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleSkillValidate },
   { name: 'mermaid_validate', description: TOOL_DESCRIPTIONS.mermaid_validate, inputSchema: MermaidValidateSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleMermaidValidate },
   { name: 'source_test', description: TOOL_DESCRIPTIONS.source_test, inputSchema: SourceTestSchema, executionMode: 'registry', safeMode: 'allow', handler: handleSourceTest },

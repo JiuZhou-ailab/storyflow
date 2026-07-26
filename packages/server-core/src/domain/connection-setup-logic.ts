@@ -1,3 +1,7 @@
+// input: Provider setup inputs, stored LLM connection metadata, and host managed-access capability.
+// output: Pure setup validation, built-in connection templates, and managed connection policy.
+// pos: Domain policy shared by onboarding and server-side LLM connection handlers.
+
 /**
  * Connection Setup Logic
  *
@@ -12,6 +16,8 @@ import {
   getDefaultModelsForConnection,
   getDefaultModelForConnection,
   defaultMidStreamBehavior,
+  MANAGED_LLM_CONNECTION_SLUG,
+  normalizeLlmConnectionSlug,
 } from '@craft-agent/shared/config'
 
 // ============================================================
@@ -159,12 +165,6 @@ export const BUILT_IN_CONNECTION_TEMPLATES: Record<string, {
     authType: 'oauth',
     piAuthProvider: 'github-copilot',
   },
-  'wangsu-default': {
-    name: 'JiuZhou-AI Wangsu',
-    providerType: 'pi_compat',
-    authType: 'api_key_with_endpoint',
-    piAuthProvider: 'cloudflare-ai-gateway',
-  },
   'pi-api-key': {
     name: 'Storyflow Backend (API Key)',
     providerType: 'pi',
@@ -247,15 +247,27 @@ export function createBuiltInConnection(slug: string, baseUrl?: string | null): 
     modelSelectionMode: providerType === 'pi' ? 'automaticallySyncedFromProvider' : undefined,
     piAuthProvider: template.piAuthProvider,
     midStreamBehavior: defaultMidStreamBehavior(providerType),
-    hidden: isManagedJiuZhouConnectionSlug(slug) ? true : undefined,
-    managed: isManagedJiuZhouConnectionSlug(slug) ? true : undefined,
-    source: isManagedJiuZhouConnectionSlug(slug) ? 'builtin' : undefined,
     createdAt: Date.now(),
   }
 }
 
-function isManagedJiuZhouConnectionSlug(slug: string): boolean {
-  return slug === 'wangsu-default'
+export function isAppManagedConnection(
+  connection: string | (Pick<LlmConnection, 'managed' | 'source'> & Partial<Pick<LlmConnection, 'slug'>>) | null | undefined,
+): boolean {
+  if (typeof connection === 'string') {
+    return normalizeLlmConnectionSlug(connection) === MANAGED_LLM_CONNECTION_SLUG
+  }
+  if (connection?.slug && normalizeLlmConnectionSlug(connection.slug) === MANAGED_LLM_CONNECTION_SLUG) {
+    return true
+  }
+  return connection?.managed === true || connection?.source === 'builtin'
+}
+
+export function isAppManagedConnectionAvailable(
+  connection: Parameters<typeof isAppManagedConnection>[0],
+  managedModelAccessAvailable: boolean | undefined,
+): boolean {
+  return managedModelAccessAvailable === true || !isAppManagedConnection(connection)
 }
 
 // ============================================================

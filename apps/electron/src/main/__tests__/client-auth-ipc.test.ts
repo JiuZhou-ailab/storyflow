@@ -18,7 +18,19 @@ describe('client auth IPC propagation', () => {
 
     expect(source).toContain('CLIENT_AUTH_IPC_CHANNELS.STATE_CHANGED')
     expect(source).toContain('BrowserWindow.getAllWindows()')
-    expect(source).toContain('broadcastClientAuthState()')
+    expect(source).toContain('onAuthChange: async (change)')
+    expect(source).toContain('broadcastClientAuthState(change.state)')
+  })
+
+  it('wires managed model-token refresh and revocation into live runtimes', () => {
+    const source = readElectronFile('main/index.ts')
+
+    expect(source).toContain('ensureManagedModelAccessToken: async (forceRefresh)')
+    expect(source).toContain('authService.ensureModelAccessToken')
+    expect(source).toContain('reloadConnectionCredentials(MANAGED_LLM_CONNECTION_SLUG)')
+    expect(source).toContain('disposeConnectionRuntimes(MANAGED_LLM_CONNECTION_SLUG)')
+    expect(source).toContain('managedModelAccessAvailable: !serverModeEnabled && managedModelAccessConfigured')
+    expect(source).toContain('clientAuthService?.dispose()')
   })
 
   it('updates preload auth cache and exposes a renderer subscription', () => {

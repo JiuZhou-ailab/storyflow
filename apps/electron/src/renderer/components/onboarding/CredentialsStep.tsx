@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Check, ExternalLink } from "lucide-react"
-import type { ApiSetupMethod } from "./APISetupStep"
+import type { CredentialSetupMethod } from "./APISetupStep"
 import { StepFormLayout, BackButton, ContinueButton } from "./primitives"
 import {
   ApiKeyInput,
@@ -15,16 +15,15 @@ import {
   type OAuthStatus,
 } from "../apisetup"
 import type { CustomEndpointApi } from '@config/llm-connections'
-import { JIUZHOU_MANAGED_DEFAULT_INITIAL_VALUES } from "./managed-defaults"
 
 export type CredentialStatus = ApiKeyStatus | OAuthStatus
 
 interface CredentialsStepProps {
-  apiSetupMethod: ApiSetupMethod
+  apiSetupMethod: CredentialSetupMethod
   status: CredentialStatus
   errorMessage?: string
   onSubmit: (data: ApiKeySubmitData) => void
-  onStartOAuth?: (methodOverride?: ApiSetupMethod) => void
+  onStartOAuth?: (methodOverride?: CredentialSetupMethod) => void
   onBack: () => void
   // Two-step OAuth flow
   isWaitingForCode?: boolean
@@ -60,9 +59,8 @@ export function CredentialsStep({
   const isClaudeOAuth = apiSetupMethod === 'claude_oauth'
   const isChatGptOAuth = apiSetupMethod === 'pi_chatgpt_oauth'
   const isCopilotOAuth = apiSetupMethod === 'pi_copilot_oauth'
-  const isJiuZhouApiKey = apiSetupMethod === 'jiuzhou_api_key'
   const isAnthropicApiKey = apiSetupMethod === 'anthropic_api_key'
-  const isPiApiKey = apiSetupMethod === 'pi_api_key' || isJiuZhouApiKey
+  const isPiApiKey = apiSetupMethod === 'pi_api_key'
   const isApiKey = isAnthropicApiKey || isPiApiKey
 
   // Copilot device code clipboard handling
@@ -267,14 +265,10 @@ export function CredentialsStep({
   // Determine provider type and description based on selected method
   const providerType = isPiApiKey ? 'pi_api_key' : 'anthropic'
   const apiKeyDescription = isPiApiKey
-    ? (isJiuZhouApiKey
-      ? "输入分发给作者的 JiuZhou-AI API Key。Endpoint 和模型已预设。"
-      : "Select a provider preset and enter the API key. For arbitrary Anthropic-compatible endpoints, use Anthropic API Key mode.")
+    ? "Select a provider preset and enter the API key. For arbitrary Anthropic-compatible endpoints, use Anthropic API Key mode."
     : "Enter your API key. Optionally configure a custom endpoint for OpenRouter, Ollama, or compatible APIs."
 
-  const effectiveInitialValues = isJiuZhouApiKey
-    ? (editInitialValues ?? JIUZHOU_MANAGED_DEFAULT_INITIAL_VALUES)
-    : editInitialValues
+  const effectiveInitialValues = editInitialValues
 
   const apiKeyInputKey = [
     apiSetupMethod,
@@ -287,7 +281,7 @@ export function CredentialsStep({
 
   return (
     <StepFormLayout
-      title={isJiuZhouApiKey ? 'JiuZhou-AI' : t("onboarding.credentials.apiConfiguration")}
+      title={t("onboarding.credentials.apiConfiguration")}
       description={apiKeyDescription}
       actions={
         <>

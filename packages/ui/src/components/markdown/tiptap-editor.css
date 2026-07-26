@@ -114,18 +114,20 @@
 }
 
 .tiptap-editor--manuscript .tiptap-toolbar {
-  min-height: 32px;
+  position: relative;
+  height: 42px;
+  min-height: 42px;
   justify-content: center;
-  border-bottom-color: color-mix(in oklch, var(--border) 36%, transparent);
-  background: color-mix(in oklch, var(--background) 99%, var(--foreground) 1%);
-  padding: 0.15rem clamp(0.75rem, 1.6vw, 1rem);
-  opacity: 0.72;
-  transition: opacity 0.16s ease, background-color 0.16s ease;
+  border-bottom-color: color-mix(in oklch, var(--foreground) 9%, transparent);
+  background: var(--background);
+  padding: 0 0.5rem 0 1rem;
 }
 
-.tiptap-editor--manuscript:hover .tiptap-toolbar,
-.tiptap-editor--manuscript:focus-within .tiptap-toolbar {
-  opacity: 1;
+.tiptap-editor--manuscript .tiptap-toolbar-accessory {
+  position: absolute;
+  top: 50%;
+  right: 0.5rem;
+  transform: translateY(-50%);
 }
 
 .tiptap-editor--manuscript .tiptap-toolbar-btn {

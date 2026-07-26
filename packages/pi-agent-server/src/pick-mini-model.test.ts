@@ -1,3 +1,7 @@
+// input: Mock Pi model registries and provider preferred-model ordering
+// output: Regression coverage for provider-appropriate summarization model selection
+// pos: Unit test for the Pi subprocess mini-model fallback
+
 import { describe, expect, it } from 'bun:test';
 import { pickProviderAppropriateMiniModel } from './pick-mini-model.ts';
 
@@ -43,7 +47,7 @@ describe('pickProviderAppropriateMiniModel', () => {
   });
 
   it('openai-codex: skips denied codex-mini variants, returns first resolvable candidate', () => {
-    // PI_PREFERRED_DEFAULTS['openai-codex'] = ['gpt-5.5', 'gpt-5.2', ...].
+    // PI_PREFERRED_DEFAULTS['openai-codex'] starts with GPT-5.6, then GPT-5.5/5.2.
     // None of these are *codex-mini*, so isDeniedMiniModelId won't filter any.
     // But we verify the filter works by registering only gpt-5.2 as resolvable.
     const registry = createMockRegistry({
@@ -64,18 +68,17 @@ describe('pickProviderAppropriateMiniModel', () => {
     expect(result).toBeUndefined();
   });
 
-  it('openai: returns first resolvable candidate from preferred list', () => {
-    // PI_PREFERRED_DEFAULTS.openai = ['gpt-5.5', 'gpt-5.2', 'gpt-5.1', ...].
-    // gpt-5.5 is resolvable → returned first.
+  it('openai: returns the first resolvable GPT-5.6 candidate', () => {
     const registry = createMockRegistry({
       openai: [
+        { id: 'gpt-5.6-sol', name: 'GPT 5.6 Sol' },
         { id: 'gpt-5.5', name: 'GPT 5.5' },
         { id: 'gpt-5.2', name: 'GPT 5.2' },
       ],
     });
 
     const result = pickProviderAppropriateMiniModel('openai', registry, false);
-    expect(result).toBe('gpt-5.5');
+    expect(result).toBe('gpt-5.6-sol');
   });
 
   it('unknown provider: returns undefined', () => {

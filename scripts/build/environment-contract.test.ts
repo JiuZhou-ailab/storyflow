@@ -121,7 +121,8 @@ describe('environment contract', () => {
     expect(workflow).not.toContain('CRAFT_CLIENT_GATEWAY_TOKEN');
     expect(docs).toMatch(/GitHub repository vars:[\s\S]*CRAFT_CLIENT_AUTH_BROKER_URL/);
     expect(docs).toMatch(/## Model Gateway Worker[\s\S]*NEWAPI_API_KEY/);
-    expect(docs).toContain('None of these values\nbelong in Electron build environment variables or GitHub release secrets.');
+    expect(docs).toContain('None belong in Electron build environment variables.');
+    expect(docs).toContain('`NEWAPI_API_KEY` remains Cloudflare-only.');
   });
 
   test('marks Feishu app secrets as server-only broker configuration', () => {

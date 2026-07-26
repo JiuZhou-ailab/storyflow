@@ -81,6 +81,25 @@ describe('desktop auth build config', () => {
     })).toEqual({ ok: true });
   });
 
+  test('rejects insecure Neon Auth endpoints in packaged builds', () => {
+    expect(validateDesktopAuthBuildEnv({
+      CRAFT_CLIENT_NEON_AUTH_BASE_URL: 'http://auth.example.com',
+      CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
+    })).toEqual({
+      ok: false,
+      message: 'CRAFT_CLIENT_NEON_AUTH_BASE_URL must use https for packaged desktop client auth.',
+    });
+
+    expect(validateDesktopAuthBuildEnv({
+      CRAFT_CLIENT_NEON_AUTH_BASE_URL: 'https://auth.example.com',
+      CRAFT_CLIENT_NEON_AUTH_JWKS_URL: 'http://keys.example.com/jwks.json',
+      CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
+    })).toEqual({
+      ok: false,
+      message: 'CRAFT_CLIENT_NEON_AUTH_JWKS_URL must use https for packaged desktop client auth.',
+    });
+  });
+
   test('requires a broker for packaged model access', () => {
     expect(validateDesktopAuthBuildEnv({
       CRAFT_CLIENT_AUTH_REQUIRED: 'true',

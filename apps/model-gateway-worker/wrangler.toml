@@ -1,12 +1,13 @@
 name = "storyflow-newapi"
 main = "src/index.ts"
 compatibility_date = "2026-05-28"
-workers_dev = true
+workers_dev = false
 routes = [
   { pattern = "storyflow-model.zjding.com", custom_domain = true },
 ]
 
 [vars]
+STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID = "model-access-2026-07"
 STORYFLOW_GATEWAY_JWT_AUDIENCE = "storyflow-model-gateway"
 STORYFLOW_GATEWAY_JWT_ISSUER = "storyflow-auth-broker"
 NEWAPI_UPSTREAM_BASE_URL = "https://jzapi.duanju.com"

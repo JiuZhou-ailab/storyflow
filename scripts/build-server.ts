@@ -1,4 +1,8 @@
 #!/usr/bin/env bun
+// input: Storyflow server packages, runtime binaries, and bundled product resources
+// output: Self-contained headless server distribution
+// pos: Release assembly boundary for the standalone server
+
 /**
  * Build script for standalone Storyflow server.
  *
@@ -117,8 +121,8 @@ function assembleResources(config: ServerBuildConfig): void {
   const srcResources = join(electronDir, 'resources');
   const destResources = join(outputDir, 'resources');
 
-  console.log('  Copying docs, themes, permissions, tool-icons...');
-  for (const dir of ['docs', 'themes', 'permissions', 'tool-icons']) {
+  console.log('  Copying agent defaults, docs, themes, permissions, tool-icons...');
+  for (const dir of ['agent-defaults', 'docs', 'themes', 'permissions', 'tool-icons']) {
     const src = join(srcResources, dir);
     if (existsSync(src)) {
       cpSync(src, join(destResources, dir), { recursive: true });

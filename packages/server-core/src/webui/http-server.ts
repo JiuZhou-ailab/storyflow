@@ -20,10 +20,14 @@ import {
   initPasswordHash,
   verifyPassword,
   createSessionToken,
+  createClientSessionToken,
   createModelAccessToken,
+  verifyClientSessionToken,
   validateSession,
   buildSessionCookie,
   buildLogoutCookie,
+  type JwtKeyRing,
+  type JwtSigningKey,
 } from './auth'
 import { generateCallbackPage } from '@craft-agent/shared/auth'
 import type { PlatformServices } from '../runtime/platform'
@@ -159,8 +163,10 @@ export interface WebuiHandlerOptions {
   feishuAuth?: FeishuAuthConfig
   /** Neon Auth configuration for email sign-in/sign-up browser sessions. */
   neonAuth?: NeonAuthConfig
-  /** Secret used only to sign scoped desktop model access tokens. */
-  modelAccessTokenSecret?: string
+  /** Dedicated current/previous keys for renewable desktop client sessions. */
+  clientSessionTokenKeyRing?: JwtKeyRing
+  /** Dedicated current key used only to sign scoped desktop model access tokens. */
+  modelAccessTokenKey?: JwtSigningKey
   /** Enables the legacy server-token login form and /api/auth endpoint. Defaults to true. */
   passwordAuthEnabled?: boolean
   /**
@@ -203,6 +209,19 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
     logger,
     trustedProxies,
   } = options
+
+  const clientSessionSecrets = [
+    options.clientSessionTokenKeyRing?.current.secret,
+    options.clientSessionTokenKeyRing?.previous?.secret,
+  ].filter((value): value is string => Boolean(value))
+  const modelAccessSecret = options.modelAccessTokenKey?.secret
+  if (
+    clientSessionSecrets.includes(secret)
+    || modelAccessSecret === secret
+    || (modelAccessSecret && clientSessionSecrets.includes(modelAccessSecret))
+  ) {
+    throw new Error('Web UI/RPC, client-session, and model-access signing secrets must be pairwise distinct')
+  }
 
   const rateLimiter = new RateLimiter(5, 60_000)
   const cleanupTimer = setInterval(() => rateLimiter.cleanup(), 120_000)
@@ -379,12 +398,15 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
         }
 
         const identity = await neonAuth.verifyToken(result.token)
-        if (emailRequest.mode === 'sign-up' && identity.emailVerified === false) {
-          return Response.json({
-            ok: false,
-            status: 'verification-required',
-            user: toPublicNeonIdentity(identity),
-          }, { status: 202 })
+        if (identity.emailVerified === false) {
+          if (emailRequest.mode === 'sign-up') {
+            return Response.json({
+              ok: false,
+              status: 'verification-required',
+              user: toPublicNeonIdentity(identity),
+            }, { status: 202 })
+          }
+          return Response.json({ error: 'Email verification is required' }, { status: 401 })
         }
         const jwt = await createSessionToken(secret, identity.subject)
         logger.info(`[webui] Successful Neon Auth email ${emailRequest.mode} for ${formatNeonIdentity(identity)}`)
@@ -406,21 +428,26 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
     }
 
     if (path === '/api/client-auth/neon/exchange' && req.method === 'POST') {
+      if (!options.clientSessionTokenKeyRing || !options.modelAccessTokenKey) {
+        return Response.json({ error: 'Client auth token signing is not configured' }, { status: 503 })
+      }
       const exchange = await verifyNeonExchangeIdentity(req, 'Neon client auth broker exchange')
       if (exchange instanceof Response) return exchange
 
       const { identity } = exchange
-      const appSessionToken = await createSessionToken(secret, identity.subject)
-      const modelAccessToken = options.modelAccessTokenSecret
-        ? await createModelAccessToken(options.modelAccessTokenSecret, identity.subject, 'standard')
-        : undefined
+      const appSessionToken = await createClientSessionToken(
+        options.clientSessionTokenKeyRing.current,
+        identity.subject,
+        'standard',
+      )
+      const modelAccessToken = await createModelAccessToken(options.modelAccessTokenKey, identity.subject, 'standard')
       logger.info(`[webui] Successful Neon client auth broker exchange for ${formatNeonIdentity(identity)}`)
 
       return Response.json({
         ok: true,
         user: toPublicNeonIdentity(identity),
         appSessionToken,
-        ...(modelAccessToken ? { modelAccessToken } : {}),
+        modelAccessToken,
       })
     }
 
@@ -563,6 +590,9 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
       if (!feishuLogin?.isConfigured()) {
         return Response.json({ error: 'Feishu login is not configured' }, { status: 404 })
       }
+      if (!options.clientSessionTokenKeyRing || !options.modelAccessTokenKey) {
+        return Response.json({ error: 'Client auth token signing is not configured' }, { status: 503 })
+      }
 
       const ip = getClientIp(req)
       if (!rateLimiter.check(ip)) {
@@ -585,26 +615,60 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
           return Response.json({ error: 'Registration required' }, { status: 403 })
         }
 
-        const appSessionToken = await createSessionToken(secret, `feishu:${decision.user.openId}`)
-        const modelAccessToken = options.modelAccessTokenSecret
-          ? await createModelAccessToken(
-              options.modelAccessTokenSecret,
-              `feishu:${decision.user.openId}`,
-              'pro',
-            )
-          : undefined
+        const subject = `feishu:${decision.user.openId}`
+        const appSessionToken = await createClientSessionToken(
+          options.clientSessionTokenKeyRing.current,
+          subject,
+          'pro',
+        )
+        const modelAccessToken = await createModelAccessToken(
+          options.modelAccessTokenKey,
+          subject,
+          'pro',
+        )
         logger.info(`[webui] Successful Feishu client auth broker exchange (${decision.reason}) for ${formatFeishuIdentity(decision.user)}`)
         return Response.json({
           ok: true,
           user: toPublicFeishuIdentity(decision.user),
           appSessionToken,
-          ...(modelAccessToken ? { modelAccessToken } : {}),
+          modelAccessToken,
         })
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Feishu client auth broker exchange failed'
         logger.warn(`[webui] Feishu client auth broker exchange rejected from ${ip}: ${msg}`)
         return Response.json({ error: msg }, { status: 401 })
       }
+    }
+
+    if (path === '/api/client-auth/token' && req.method === 'POST') {
+      if (!options.clientSessionTokenKeyRing || !options.modelAccessTokenKey) {
+        return Response.json({ error: 'Client auth token signing is not configured' }, { status: 503 })
+      }
+      const token = readBearerToken(req.headers.get('authorization'))
+      const clientSession = token
+        ? await verifyClientSessionToken(token, options.clientSessionTokenKeyRing)
+        : null
+      if (!clientSession) {
+        return Response.json({
+          error: 'Invalid client session token',
+          code: 'client_session_token_invalid',
+        }, { status: 401 })
+      }
+      return Response.json({
+        ok: true,
+        appSessionToken: await createClientSessionToken(
+          options.clientSessionTokenKeyRing.current,
+          clientSession.subject,
+          clientSession.modelTier,
+          clientSession.authenticatedAtSeconds,
+        ),
+        modelAccessToken: await createModelAccessToken(
+          options.modelAccessTokenKey,
+          clientSession.subject,
+          clientSession.modelTier,
+          clientSession.authenticatedAtSeconds,
+        ),
+      })
     }
 
     // ── Config endpoint (requires session cookie) ──
@@ -687,7 +751,9 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
     }
 
     try {
-      return { identity: await neonAuth.verifyToken(token) }
+      const identity = await neonAuth.verifyToken(token)
+      if (identity.emailVerified === false) throw new Error('Email verification is required')
+      return { identity }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Invalid Neon Auth token'
       logger.warn(`[webui] ${label} rejected from ${ip}: ${msg}`)

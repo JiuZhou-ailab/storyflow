@@ -33,6 +33,17 @@ describe('createManagedSession', () => {
     expect(managed.thinkingLevel).toBeUndefined()
   })
 
+  it('normalizes the legacy managed connection before it reaches runtime state', () => {
+    const managed = createManagedSession({
+      id: 'session_legacy_gateway',
+      llmConnection: 'wangsu-default',
+      connectionLocked: true,
+    }, workspace as any)
+
+    expect(managed.llmConnection).toBe('storyflow-managed')
+    expect(managed.connectionLocked).toBe(true)
+  })
+
   it('repairs legacy project sessions without a working directory to the visible workspace root', () => {
     const managed = createManagedSession({
       id: 'session_legacy_project',

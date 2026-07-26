@@ -62,7 +62,7 @@ export interface NovelDocumentEditorPanelProps {
   onRejectReviewChanges?: () => void
   onPreviousReviewFile?: () => void
   onNextReviewFile?: () => void
-  workspaceActions?: React.ReactNode
+  toolbarAccessory?: React.ReactNode
   className?: string
 }
 
@@ -88,7 +88,7 @@ export const NovelDocumentEditorPanel = React.forwardRef<NovelDocumentEditorPane
   onRejectReviewChanges,
   onPreviousReviewFile,
   onNextReviewFile,
-  workspaceActions,
+  toolbarAccessory,
   className,
 }, ref) {
   const { t } = useTranslation()
@@ -160,17 +160,6 @@ export const NovelDocumentEditorPanel = React.forwardRef<NovelDocumentEditorPane
 
   return (
     <div className={cn('flex h-full min-w-0 flex-col bg-background', className)}>
-      {workspaceActions ? (
-        <div className="flex h-[42px] shrink-0 items-center justify-between gap-3 border-b border-foreground/[0.09] px-3">
-          <div className="min-w-0 truncate text-xs font-medium text-muted-foreground">
-            {formatNovelWorkspaceFileTitle(file, t)}
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {workspaceActions}
-          </div>
-        </div>
-      ) : null}
-
       {error ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
@@ -191,6 +180,7 @@ export const NovelDocumentEditorPanel = React.forwardRef<NovelDocumentEditorPane
             editable={!loading}
             markdownEngine="official"
             showToolbar
+            toolbarAccessory={toolbarAccessory}
             surface="manuscript"
             showLineNumbers
             reviewDiffOriginalContent={fileReviewChange?.original ?? null}

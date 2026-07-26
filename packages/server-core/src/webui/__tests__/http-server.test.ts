@@ -6,13 +6,17 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { jwtVerify } from 'jose'
+import { jwtVerify, SignJWT } from 'jose'
+import { createClientSessionToken } from '../auth'
 import { startWebuiHttpServer } from '../http-server'
 import type { FeishuAuthConfig, FeishuOAuthClient, FeishuUserInfo } from '../feishu-auth'
 import type { NeonAuthConfig } from '../neon-auth'
 
 const SECRET = 'test-server-secret'
+const CLIENT_SESSION_SECRET = 'test-client-session-secret'
+const CLIENT_SESSION_KEY_ID = 'client-current'
 const MODEL_ACCESS_SECRET = 'test-model-access-secret'
+const MODEL_ACCESS_KEY_ID = 'model-current'
 const PASSWORD = 'test-password'
 const TEMP_DIRS: string[] = []
 const SERVERS: Array<{ stop: () => void }> = []
@@ -41,6 +45,7 @@ async function createServer(overrides?: {
   feishuAuth?: FeishuAuthConfig
   neonAuth?: NeonAuthConfig
   passwordAuthEnabled?: boolean
+  clientSessionTokenSecret?: string | null
   modelAccessTokenSecret?: string | null
 }) {
   const webuiDir = createTestWebuiDir()
@@ -58,9 +63,20 @@ async function createServer(overrides?: {
     feishuAuth: overrides?.feishuAuth,
     neonAuth: overrides?.neonAuth,
     passwordAuthEnabled: overrides?.passwordAuthEnabled,
-    modelAccessTokenSecret: overrides?.modelAccessTokenSecret === null
+    clientSessionTokenKeyRing: overrides?.clientSessionTokenSecret === null
       ? undefined
-      : overrides?.modelAccessTokenSecret ?? MODEL_ACCESS_SECRET,
+      : {
+          current: {
+            id: CLIENT_SESSION_KEY_ID,
+            secret: overrides?.clientSessionTokenSecret ?? CLIENT_SESSION_SECRET,
+          },
+        },
+    modelAccessTokenKey: overrides?.modelAccessTokenSecret === null
+      ? undefined
+      : {
+          id: MODEL_ACCESS_KEY_ID,
+          secret: overrides?.modelAccessTokenSecret ?? MODEL_ACCESS_SECRET,
+        },
   })
 
   SERVERS.push(server)
@@ -81,6 +97,20 @@ async function verifyModelAccessToken(token: unknown) {
       algorithms: ['HS256'],
       issuer: 'storyflow-auth-broker',
       audience: 'storyflow-model-gateway',
+    },
+  )
+  return payload
+}
+
+async function verifyClientSessionToken(token: unknown) {
+  expect(typeof token).toBe('string')
+  const { payload } = await jwtVerify(
+    token as string,
+    new TextEncoder().encode(CLIENT_SESSION_SECRET),
+    {
+      algorithms: ['HS256'],
+      issuer: 'storyflow-auth-broker',
+      audience: 'storyflow-client-auth',
     },
   )
   return payload
@@ -743,9 +773,13 @@ describe('startWebuiHttpServer', () => {
       },
     })
     expect(typeof body.appSessionToken).toBe('string')
+    const appSession = await verifyClientSessionToken(body.appSessionToken)
+    expect(appSession.scope).toBe('model:issue')
+    expect(appSession.model_tier).toBe('pro')
     const modelAccess = await verifyModelAccessToken(body.modelAccessToken)
     expect(modelAccess.sub).toBe('feishu:ou_desktop')
     expect(modelAccess.model_tier).toBe('pro')
+    expect((modelAccess.exp as number) - (modelAccess.iat as number)).toBe(900)
     expect(exchangeCalls).toEqual([{
       code: 'desktop-code',
       redirectUri: 'http://localhost:6477/callback',
@@ -777,6 +811,9 @@ describe('startWebuiHttpServer', () => {
       },
     })
     expect(typeof body.appSessionToken).toBe('string')
+    const appSession = await verifyClientSessionToken(body.appSessionToken)
+    expect(appSession.scope).toBe('model:issue')
+    expect(appSession.model_tier).toBe('standard')
     const modelAccess = await verifyModelAccessToken(body.modelAccessToken)
     expect(modelAccess.sub).toBe('neon:neon_user_123')
     expect(modelAccess.model_tier).toBe('standard')
@@ -801,7 +838,7 @@ describe('startWebuiHttpServer', () => {
     expect(body.modelAccessToken).not.toBe(body.appSessionToken)
   })
 
-  it('can omit model access tokens when the local server is not configured as a model broker', async () => {
+  it('fails closed when the local client-auth broker cannot issue model access', async () => {
     const { baseUrl } = await createServer({
       neonAuth: createNeonAuthConfig(),
       modelAccessTokenSecret: null,
@@ -814,10 +851,130 @@ describe('startWebuiHttpServer', () => {
       },
     })
 
-    expect(res.status).toBe(200)
-    const body = await res.json() as Record<string, unknown>
-    expect(body.appSessionToken).toBeTruthy()
-    expect(body.modelAccessToken).toBeUndefined()
+    expect(res.status).toBe(503)
+    expect(await res.json()).toEqual({
+      error: 'Client auth token signing is not configured',
+    })
+  })
+
+  it('fails closed when the local client-auth broker has no independent client-session key', async () => {
+    const { baseUrl } = await createServer({
+      neonAuth: createNeonAuthConfig(),
+      clientSessionTokenSecret: null,
+    })
+
+    const res = await fetch(`${baseUrl}/api/client-auth/neon/exchange`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer valid-neon-token',
+      },
+    })
+
+    expect(res.status).toBe(503)
+    expect(await res.json()).toEqual({
+      error: 'Client auth token signing is not configured',
+    })
+  })
+
+  it('renews a client session and model access token without provider credentials', async () => {
+    const { baseUrl } = await createServer({
+      neonAuth: createNeonAuthConfig(),
+    })
+    const login = await fetch(`${baseUrl}/api/client-auth/neon/exchange`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer valid-neon-token' },
+    })
+    const loginBody = await login.json() as Record<string, unknown>
+
+    const refreshed = await fetch(`${baseUrl}/api/client-auth/token`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${loginBody.appSessionToken}` },
+    })
+
+    expect(refreshed.status).toBe(200)
+    const refreshedBody = await refreshed.json() as Record<string, unknown>
+    expect(Object.keys(refreshedBody).sort()).toEqual([
+      'appSessionToken',
+      'modelAccessToken',
+      'ok',
+    ])
+    const appSession = await verifyClientSessionToken(refreshedBody.appSessionToken)
+    expect(appSession.sub).toBe('neon:neon_user_123')
+    expect(appSession.model_tier).toBe('standard')
+    const loginSession = await verifyClientSessionToken(loginBody.appSessionToken)
+    expect(appSession.auth_time).toBe(loginSession.auth_time)
+    expect(appSession.exp).toBe(loginSession.exp)
+    const modelAccess = await verifyModelAccessToken(refreshedBody.modelAccessToken)
+    expect(modelAccess.sub).toBe('neon:neon_user_123')
+  })
+
+  it('rejects refresh after the absolute client-session lifetime', async () => {
+    const { baseUrl } = await createServer()
+    const now = Math.floor(Date.now() / 1000)
+    const expiredByPolicy = await new SignJWT({
+      scope: 'model:issue',
+      model_tier: 'standard',
+      auth_time: now - 31 * 24 * 60 * 60,
+    })
+      .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: CLIENT_SESSION_KEY_ID })
+      .setIssuer('storyflow-auth-broker')
+      .setAudience('storyflow-client-auth')
+      .setSubject('neon:neon_user_123')
+      .setIssuedAt(now)
+      .setExpirationTime(now + 300)
+      .sign(new TextEncoder().encode(CLIENT_SESSION_SECRET))
+
+    const res = await fetch(`${baseUrl}/api/client-auth/token`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${expiredByPolicy}` },
+    })
+
+    expect(res.status).toBe(401)
+    expect(await res.json()).toEqual({
+      error: 'Invalid client session token',
+      code: 'client_session_token_invalid',
+    })
+  })
+
+  it('rejects invalid client sessions with a stable machine code', async () => {
+    const { baseUrl } = await createServer()
+
+    const res = await fetch(`${baseUrl}/api/client-auth/token`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer invalid-session' },
+    })
+
+    expect(res.status).toBe(401)
+    expect(await res.json()).toEqual({
+      error: 'Invalid client session token',
+      code: 'client_session_token_invalid',
+    })
+  })
+
+  it('does not accept the RPC/Web UI secret as a client-session signing key', async () => {
+    const { baseUrl } = await createServer()
+    const forged = await createClientSessionToken(
+      { id: CLIENT_SESSION_KEY_ID, secret: SECRET },
+      'attacker',
+      'pro',
+    )
+
+    const res = await fetch(`${baseUrl}/api/client-auth/token`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${forged}` },
+    })
+
+    expect(res.status).toBe(401)
+    expect(await res.json()).toEqual({
+      error: 'Invalid client session token',
+      code: 'client_session_token_invalid',
+    })
+  })
+
+  it('rejects a broker configured to reuse a shared RPC secret', async () => {
+    await expect(createServer({
+      clientSessionTokenSecret: SECRET,
+    })).rejects.toThrow('pairwise distinct')
   })
 
   it('requires registration for unregistered external Feishu users', async () => {

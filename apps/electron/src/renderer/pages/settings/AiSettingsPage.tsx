@@ -1,3 +1,7 @@
+// input: LLM connection state, workspace overrides, and settings IPC actions
+// output: User-editable AI settings and connection management surfaces
+// pos: Renderer settings boundary for user-owned LLM configuration
+
 /**
  * AiSettingsPage
  *
@@ -51,7 +55,7 @@ import {
 } from '@/components/settings'
 import { useOnboarding } from '@/hooks/useOnboarding'
 import { useWorkspaceIcon } from '@/hooks/useWorkspaceIcon'
-import { OnboardingWizard, type ApiSetupMethod } from '@/components/onboarding'
+import { OnboardingWizard, type CredentialSetupMethod } from '@/components/onboarding'
 import { RenameDialog } from '@/components/ui/rename-dialog'
 import { getModelShortName, type ModelDefinition } from '@config/models'
 import { resolveMidStreamBehavior, type CustomEndpointApi, type MidStreamBehavior } from '@config/llm-connections'
@@ -538,9 +542,9 @@ function WorkspaceOverrideCard({ workspace, llmConnections, connectionOptions, t
 // Helpers
 // ============================================
 
-/** Map a connection's provider type to the corresponding API key setup method. */
-function getApiKeyMethodForConnection(conn: LlmConnectionWithStatus): ApiSetupMethod {
-  if (conn.slug === 'wangsu-default') return 'jiuzhou_api_key'
+/** Map a user-owned connection to its editable API key setup method. */
+function getApiKeyMethodForConnection(conn: LlmConnectionWithStatus): CredentialSetupMethod | null {
+  if (conn.hidden || conn.managed || conn.source === 'builtin') return null
   const provider = conn.providerType || conn.type
   if (provider === 'pi' || provider === 'pi_compat') return 'pi_api_key'
   return 'anthropic_api_key'
@@ -764,6 +768,9 @@ export default function AiSettingsPage() {
   }, [apiSetupOnboarding, openApiSetup])
 
   const handleEditConnection = useCallback(async (connection: LlmConnectionWithStatus) => {
+    const method = getApiKeyMethodForConnection(connection)
+    if (!method) return
+
     // Fetch stored API key (best-effort — if IPC not available yet, skip pre-fill)
     let apiKey: string | undefined
     try {
@@ -796,7 +803,6 @@ export default function AiSettingsPage() {
     // Open overlay and jump directly to credentials step (no reset — jumpToCredentials sets state)
     openApiSetup(connection.slug)
     setIsDirectEdit(true)
-    const method = getApiKeyMethodForConnection(connection)
     apiSetupOnboarding.jumpToCredentials(method)
   }, [apiSetupOnboarding, openApiSetup])
 

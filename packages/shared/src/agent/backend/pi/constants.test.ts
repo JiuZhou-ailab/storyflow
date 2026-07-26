@@ -1,3 +1,7 @@
+// input: Canonical Storyflow-to-Pi thinking-level mappings
+// output: Regression coverage for native Pi reasoning effort forwarding
+// pos: Unit test for the Pi thinking contract
+
 import { describe, expect, it } from 'bun:test'
 import { THINKING_TO_PI } from './constants.ts'
 
@@ -6,8 +10,8 @@ describe('THINKING_TO_PI', () => {
     expect(THINKING_TO_PI.xhigh).toBe('xhigh')
   })
 
-  it('saturates Craft max to Pi xhigh (Pi has no higher tier)', () => {
-    expect(THINKING_TO_PI.max).toBe('xhigh')
+  it('passes max through natively (Pi clamps per model)', () => {
+    expect(THINKING_TO_PI.max).toBe('max')
   })
 
   it('passes lower tiers through unchanged', () => {

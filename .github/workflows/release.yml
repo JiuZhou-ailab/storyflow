@@ -109,6 +109,8 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           STORYFLOW_R2_BUCKET: ${{ secrets.STORYFLOW_R2_BUCKET }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}
+          STORYFLOW_GATEWAY_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_GATEWAY_JWT_CURRENT_SECRET }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CRAFT_CLIENT_AUTH_BROKER_URL: ${{ vars.CRAFT_CLIENT_AUTH_BROKER_URL }}
           CRAFT_CLIENT_FEISHU_APP_ID: ${{ vars.CRAFT_CLIENT_FEISHU_APP_ID }}
@@ -140,7 +142,7 @@ jobs:
             fi
           fi
 
-          for name in STORYFLOW_R2_BUCKET CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+          for name in STORYFLOW_R2_BUCKET CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET STORYFLOW_GATEWAY_JWT_CURRENT_SECRET; do
             if [ -z "${!name}" ]; then
               missing+=("Missing $name")
             fi
@@ -156,6 +158,11 @@ jobs:
             printf '%s\n' "${missing[@]}"
             exit 1
           fi
+
+  deploy-managed-auth:
+    needs: validate
+    uses: ./.github/workflows/deploy-managed-auth.yml
+    secrets: inherit
 
   build-macos:
     needs: create-release
@@ -330,6 +337,7 @@ jobs:
     needs:
       - validate
       - preflight-release-secrets
+      - deploy-managed-auth
     runs-on: ubuntu-latest
     timeout-minutes: 15
 

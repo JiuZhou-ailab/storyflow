@@ -56,8 +56,6 @@ import { getCredentialManager } from '../credentials/manager.ts';
 // ChatGPT OAuth token refresh (shared with CodexAgent)
 import { refreshChatGptTokens } from '../auth/chatgpt-oauth.ts';
 
-const MANAGED_GATEWAY_CONNECTION_SLUGS = new Set(['wangsu-default']);
-
 // Session-scoped tool callbacks (for SubmitPlan, source auth, etc.)
 import {
   registerSessionScopedToolCallbacks,
@@ -2164,6 +2162,16 @@ export class PiAgent extends BaseAgent {
     return updated;
   }
 
+  async reloadCredentials(): Promise<boolean> {
+    const piAuth = await this.getPiAuth();
+    if (!piAuth) return false;
+    if (this.subprocess) {
+      this.send({ type: 'token_update', piAuth });
+      this.debug(`Pushed refreshed credential for Pi provider: ${piAuth.provider}`);
+    }
+    return true;
+  }
+
   override setModel(model: string): void {
     const previousModel = this.getModel();
     super.setModel(model);
@@ -2562,19 +2570,6 @@ export class PiAgent extends BaseAgent {
         this.refreshAndPushTokens().catch(err => {
           this.debug(`Token refresh from parsePiError failed: ${err}`);
         });
-      }
-
-      if (MANAGED_GATEWAY_CONNECTION_SLUGS.has(this.config.connectionSlug ?? '')) {
-        return {
-          code: 'invalid_api_key',
-          title: 'Default AI Access Unavailable',
-          message: 'The default AI service rejected its model gateway credential. Open model settings or contact support if this keeps happening.',
-          actions: [
-            { key: 's', label: 'Open model settings', command: '/settings', action: 'settings' },
-          ],
-          canRetry: false,
-          originalError: error.message,
-        };
       }
 
       return {

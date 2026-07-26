@@ -1,3 +1,7 @@
+// input: Pi SDK model/provider registry and Storyflow catalog filters
+// output: Browser-safe model definitions and provider metadata for server-side registration
+// pos: Canonical adapter from the installed Pi catalog to Storyflow model discovery
+
 /**
  * Pi Model & Provider Discovery (from SDK)
  *
@@ -13,7 +17,7 @@
  * NEVER import this file from renderer components or from files that the renderer imports.
  */
 
-import { getProviders, getModels } from '@earendil-works/pi-ai';
+import { getProviders, getModels } from '@earendil-works/pi-ai/compat';
 import type { KnownProvider, Model, Api } from '@earendil-works/pi-ai';
 import type { ModelDefinition } from './models.ts';
 

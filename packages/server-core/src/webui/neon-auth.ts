@@ -5,6 +5,7 @@
 import { createRemoteJWKSet, customFetch, jwtVerify, type JWTPayload } from 'jose'
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+const NEON_AUTH_REQUEST_TIMEOUT_MS = 15_000
 
 export interface NeonAuthTokenPayload {
   sub?: unknown
@@ -242,7 +243,7 @@ function normalizeNeonAuthConfig(config: NeonAuthConfig | undefined): Normalized
     audience: config?.audience?.trim() || origin,
     usernameEmailDomain: normalizeUsernameEmailDomain(config?.usernameEmailDomain),
     emailSignUpEnabled: config?.emailSignUpEnabled === true,
-    fetch: config?.fetch,
+    fetch: withRequestTimeout(config?.fetch ?? fetch),
     tokenVerifier: config?.tokenVerifier,
   }
 }
@@ -294,7 +295,22 @@ function normalizeUrlString(value: string | undefined): string | undefined {
   if (!trimmed) return undefined
 
   const url = new URL(trimmed)
+  const loopbackHttp = url.protocol === 'http:'
+    && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+  if (url.protocol !== 'https:' && !loopbackHttp) {
+    throw new Error('Neon Auth URL must use HTTPS, except for loopback development')
+  }
+  if (url.username || url.password) {
+    throw new Error('Neon Auth URL must not contain credentials')
+  }
   return url.toString().replace(/\/+$/, '')
+}
+
+function withRequestTimeout(fetchImpl: FetchLike): FetchLike {
+  return (input, init) => fetchImpl(input, {
+    ...init,
+    signal: init?.signal ?? AbortSignal.timeout(NEON_AUTH_REQUEST_TIMEOUT_MS),
+  })
 }
 
 function readString(value: unknown): string | undefined {

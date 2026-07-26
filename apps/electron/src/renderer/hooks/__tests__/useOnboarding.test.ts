@@ -6,13 +6,7 @@ import {
   normalizeCredentialForSetup,
   providerChoiceToSetupAction,
 } from '../useOnboarding'
-import {
-  JIUZHOU_MANAGED_DEFAULT_BASE_URL,
-  JIUZHOU_MANAGED_DEFAULT_CONNECTION_MODELS,
-  JIUZHOU_MANAGED_DEFAULT_MODEL,
-  JIUZHOU_MANAGED_DEFAULT_SETUP,
-} from '@/components/onboarding/managed-defaults'
-import type { ApiSetupMethod } from '@/components/onboarding'
+import type { CredentialSetupMethod } from '@/components/onboarding'
 
 // ============================================================
 // resolveSlugForMethod
@@ -40,8 +34,8 @@ describe('resolveSlugForMethod', () => {
   })
 
   it('works for all setup methods', () => {
-    const methods: ApiSetupMethod[] = [
-      'jiuzhou_api_key', 'anthropic_api_key', 'claude_oauth',
+    const methods: CredentialSetupMethod[] = [
+      'anthropic_api_key', 'claude_oauth',
       'pi_chatgpt_oauth', 'pi_copilot_oauth', 'pi_api_key',
     ]
     for (const method of methods) {
@@ -109,21 +103,6 @@ describe('apiSetupMethodToConnectionSetup', () => {
     expect(setup.modelSelectionMode).toBe('userDefined3Tier')
   })
 
-  it('jiuzhou_api_key reuses the direct managed default slug and includes endpoint config', () => {
-    const setup = apiSetupMethodToConnectionSetup(
-      'jiuzhou_api_key',
-      { credential: 'author-key', ...JIUZHOU_MANAGED_DEFAULT_SETUP },
-      null,
-      new Set(['wangsu-default']),
-    )
-    expect(setup.slug).toBe('wangsu-default')
-    expect(setup.credential).toBe('author-key')
-    expect(setup.baseUrl).toBe(JIUZHOU_MANAGED_DEFAULT_BASE_URL)
-    expect(setup.defaultModel).toBe(JIUZHOU_MANAGED_DEFAULT_MODEL)
-    expect(setup.models).toEqual(JIUZHOU_MANAGED_DEFAULT_CONNECTION_MODELS)
-    expect(setup.customEndpoint).toEqual({ api: 'openai-completions' })
-  })
-
   it('uses editingSlug when editing', () => {
     const setup = apiSetupMethodToConnectionSetup(
       'anthropic_api_key',
@@ -160,7 +139,7 @@ describe('providerChoiceToSetupAction', () => {
   it('maps JiuZhou to the managed default path instead of a user credential form', () => {
     expect(providerChoiceToSetupAction('jiuzhou')).toEqual({
       mode: 'managed-default',
-      method: 'jiuzhou_api_key',
+      method: 'managed_default',
     })
   })
 

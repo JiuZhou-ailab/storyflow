@@ -1,5 +1,5 @@
 // input: Electron auth environment and Neon Auth email/password credentials
-// output: Client auth state, persisted session handoff, and sign-in/sign-out operations
+// output: Client auth state, persisted session handoff, token freshness checks, and auth operations
 // pos: Main-process auth boundary that gates the desktop renderer before App mounts
 
 import {
@@ -11,6 +11,29 @@ import {
   type NeonAuthIdentity,
 } from '@craft-agent/server-core/webui'
 import { createCallbackServer, type CallbackServer } from '@craft-agent/shared/auth/callback-server'
+import {
+  ClientAuthTokenLifecycle,
+  isClientModelAccessTokenFresh,
+} from './client-auth-token-lifecycle'
+import {
+  DefaultClientAuthBrokerClient,
+  isRejectedAppSession,
+  normalizeClientAuthBrokerUrl,
+  normalizeBrokerClientAuthUser,
+  requireAppSessionToken,
+  requireModelAccessToken,
+  resolveFeishuBrokerAuthConfig,
+} from './client-auth-broker'
+
+export {
+  CLIENT_MODEL_ACCESS_TOKEN_REFRESH_SKEW_MS,
+  getClientModelAccessTokenExpiryMs,
+  isClientModelAccessTokenFresh,
+} from './client-auth-token-lifecycle'
+export {
+  ClientAuthBrokerHttpError,
+  DefaultClientAuthBrokerClient,
+} from './client-auth-broker'
 
 export interface ClientAuthConfig {
   required: boolean
@@ -36,14 +59,9 @@ export interface ClientFeishuBrokerPublicConfig {
   authBaseUrl?: string
 }
 
-export interface ClientAuthSignInInput {
-  identifier: string
-  password: string
-}
+export interface ClientAuthSignInInput { identifier: string, password: string }
 
-export interface ClientAuthSignUpInput extends ClientAuthSignInInput {
-  name?: string
-}
+export interface ClientAuthSignUpInput extends ClientAuthSignInInput { name?: string }
 
 export interface ClientAuthUser {
   provider: 'neon' | 'feishu'
@@ -75,16 +93,21 @@ export interface ClientAuthNeonBrokerExchangeInput {
   token: string
 }
 
+export interface ClientAuthBrokerTokenRefreshInput { brokerUrl: string, appSessionToken: string }
+
 export interface ClientAuthBrokerExchangeResult {
   user: ClientAuthUser
   appSessionToken?: string
   modelAccessToken?: string
 }
 
+export interface ClientAuthBrokerTokenRefreshResult { appSessionToken: string, modelAccessToken: string }
+
 export interface ClientAuthBrokerClient {
   getFeishuAuthConfig?(input: { brokerUrl: string }): Promise<ClientFeishuBrokerPublicConfig | null>
   exchangeNeonToken(input: ClientAuthNeonBrokerExchangeInput): Promise<ClientAuthBrokerExchangeResult>
   exchangeFeishuCode(input: ClientAuthBrokerExchangeInput): Promise<ClientAuthBrokerExchangeResult>
+  refreshModelAccessToken(input: ClientAuthBrokerTokenRefreshInput): Promise<ClientAuthBrokerTokenRefreshResult>
 }
 
 export interface ClientAuthState {
@@ -103,35 +126,45 @@ export type ClientAuthNeonService = Pick<
   'isConfigured' | 'getClientConfig' | 'authenticateWithEmailPassword' | 'verifyToken'
 >
 
-interface ClientAuthServiceDeps {
+export interface ClientAuthChange {
+  session: ClientAuthSession | null
+  state: ClientAuthState
+  modelAccessTokenChanged: boolean
+}
+
+export interface ClientAuthServiceDeps {
   createNeonAuthService?: (config: NeonAuthConfig) => ClientAuthNeonService
   createAuthBrokerClient?: () => ClientAuthBrokerClient
   createCallbackServer?: (options: { port: number }) => Promise<CallbackServer>
   openExternal?: (url: string) => Promise<void>
   initialSession?: ClientAuthSession | null
   sessionStore?: ClientAuthSessionStore
+  now?: () => number
+  /** Runs after a durable auth transition so main can reload or revoke live model runtimes. */
+  onAuthChange?: (change: ClientAuthChange) => void | Promise<void>
+  scheduleTimeout?: (callback: () => void, delayMs: number) => unknown
+  cancelTimeout?: (handle: unknown) => void
 }
+
+export interface ClientAuthModelAccessTokenResult { token: string, refreshed: boolean }
 
 export interface ClientAuthService {
   getState(): ClientAuthState
+  /** Returns a fresh managed-model token, rotating both broker tokens when needed or forced. */
+  ensureModelAccessToken(options?: { force?: boolean }): Promise<ClientAuthModelAccessTokenResult>
   signIn(input: ClientAuthSignInInput): Promise<ClientAuthUser>
   signUp(input: ClientAuthSignUpInput): Promise<ClientAuthSignUpResult>
   signInWithFeishu(): Promise<ClientAuthUser>
   cancelFeishuSignIn(): void
   signOut(): Promise<void>
+  dispose(): void
 }
 
-export interface ClientAuthSessionStore {
-  save(session: ClientAuthSession): Promise<void>
-  clear(): Promise<void>
-}
+export interface ClientAuthSessionStore { save(session: ClientAuthSession): Promise<void>, clear(): Promise<void> }
 
 const DEFAULT_CLIENT_AUTH_ORIGIN = 'http://localhost:9100'
 const DEFAULT_FEISHU_CALLBACK_PORT = 6477
 const DEFAULT_FEISHU_LOGIN_TIMEOUT_MS = 90_000
-const DEFAULT_NEON_BROKER_EXCHANGE_PATH = '/api/client-auth/neon/exchange'
-const DEFAULT_FEISHU_BROKER_CONFIG_PATH = '/api/client-auth/feishu/config'
-const DEFAULT_FEISHU_BROKER_EXCHANGE_PATH = '/api/client-auth/feishu/exchange'
 
 type ClientAuthEnv = Partial<Pick<NodeJS.ProcessEnv,
   | 'CRAFT_CLIENT_AUTH_REQUIRED'
@@ -196,10 +229,11 @@ export function createClientAuthConfigFromEnv(env: NodeJS.ProcessEnv): ClientAut
     ?? (baseUrl ? DEFAULT_CLIENT_AUTH_ORIGIN : undefined)
 
   const feishuAppId = readEnv(env.CRAFT_CLIENT_FEISHU_APP_ID)
-  const authBrokerUrl = normalizeUrlString(
-    readEnv(env.CRAFT_CLIENT_AUTH_BROKER_URL)
-      ?? readEnv(env.CRAFT_CLIENT_FEISHU_AUTH_BROKER_URL),
-  )
+  const rawAuthBrokerUrl = readEnv(env.CRAFT_CLIENT_AUTH_BROKER_URL)
+    ?? readEnv(env.CRAFT_CLIENT_FEISHU_AUTH_BROKER_URL)
+  const authBrokerUrl = rawAuthBrokerUrl
+    ? normalizeClientAuthBrokerUrl(rawAuthBrokerUrl)
+    : undefined
   const feishuBrokerUrl = authBrokerUrl
   const feishuScope = readEnv(env.CRAFT_CLIENT_FEISHU_SCOPE) ?? readEnv(env.CRAFT_WEBUI_FEISHU_SCOPE)
   const feishuAuthBaseUrl = readEnv(env.CRAFT_CLIENT_FEISHU_AUTH_BASE_URL) ?? readEnv(env.CRAFT_WEBUI_FEISHU_AUTH_BASE_URL)
@@ -253,67 +287,155 @@ export function createClientAuthService(
   const neonAuth = config.neonAuth
     ? (deps.createNeonAuthService ?? ((neonAuthConfig) => new NeonAuthService(neonAuthConfig)))(config.neonAuth)
     : null
-  const authBrokerClient = config.authBrokerUrl || config.feishuBrokerAuth
+  const authBrokerUrl = config.authBrokerUrl ?? config.feishuBrokerAuth?.brokerUrl
+  const authBrokerClient = authBrokerUrl
     ? (deps.createAuthBrokerClient ?? (() => new DefaultClientAuthBrokerClient()))()
     : null
   const feishuBrokerStateStore = config.feishuBrokerAuth ? new FeishuOAuthStateStore() : null
-  const emailPasswordEnabled = neonAuth?.isConfigured() ?? false
+  const emailPasswordEnabled = Boolean(neonAuth?.isConfigured() && authBrokerClient)
   const neonClientConfig = emailPasswordEnabled ? neonAuth?.getClientConfig() : undefined
   const emailSignUpEnabled = neonClientConfig?.emailSignUpEnabled === true
   const feishuLoginEnabled = config.feishuBrokerAuth !== undefined && authBrokerClient !== null
   const configured = emailPasswordEnabled || feishuLoginEnabled
   let currentSession: ClientAuthSession | null = deps.initialSession
-    && (!config.required || deps.initialSession.modelAccessToken)
+    && authBrokerClient
+    && readEnv(deps.initialSession.appSessionToken)
     ? deps.initialSession
     : null
   let activeFeishuLogin: {
     close: () => void | Promise<void>
     reject: (error: Error) => void
   } | null = null
+  let service: ClientAuthService
+  const tokenLifecycle = new ClientAuthTokenLifecycle<ClientAuthModelAccessTokenResult>({
+    canRefresh: () => Boolean(currentSession?.appSessionToken && authBrokerClient),
+    onScheduledRefresh: () => service.ensureModelAccessToken({ force: true }),
+    now: deps.now,
+    scheduleTimeout: deps.scheduleTimeout,
+    cancelTimeout: deps.cancelTimeout,
+  })
+
+  function getState(): ClientAuthState {
+    return buildClientAuthState({
+      required: config.required,
+      configured,
+      emailPasswordEnabled,
+      emailSignUpEnabled,
+      feishuLoginEnabled,
+      clientConfig: neonClientConfig,
+      user: currentSession?.user ?? null,
+    })
+  }
 
   async function saveCurrentSession(session: ClientAuthSession): Promise<void> {
-    await deps.sessionStore?.save(session)
-    currentSession = session
+    if (tokenLifecycle.disposed) throw new Error('Client auth service is disposed')
+    const generation = tokenLifecycle.beginTransition()
+    await tokenLifecycle.runExclusive(async () => {
+      tokenLifecycle.assertCurrent(generation)
+      const modelAccessTokenChanged = currentSession?.modelAccessToken !== session.modelAccessToken
+      await deps.sessionStore?.save(session)
+      tokenLifecycle.assertCurrent(generation)
+      currentSession = session
+      await notifyAuthChange(modelAccessTokenChanged)
+    })
+    tokenLifecycle.schedule(session.modelAccessToken)
+  }
+
+  async function notifyAuthChange(modelAccessTokenChanged: boolean): Promise<void> {
+    await deps.onAuthChange?.({
+      session: currentSession,
+      state: getState(),
+      modelAccessTokenChanged,
+    })
   }
 
   async function saveNeonSession(
     providerToken: string,
     verifiedUser: ClientAuthUser,
   ): Promise<ClientAuthUser> {
-    if (!config.authBrokerUrl || !authBrokerClient) {
-      await saveCurrentSession({ user: verifiedUser, appSessionToken: providerToken })
-      return verifiedUser
-    }
+    if (!authBrokerUrl || !authBrokerClient) throw new Error('Client auth broker is not configured')
 
     const brokerResult = await authBrokerClient.exchangeNeonToken({
-      brokerUrl: config.authBrokerUrl,
+      brokerUrl: authBrokerUrl,
       token: providerToken,
     })
     const user = normalizeBrokerClientAuthUser(brokerResult.user, 'neon')
     const modelAccessToken = requireModelAccessToken(brokerResult)
     await saveCurrentSession({
       user,
-      appSessionToken: brokerResult.appSessionToken ?? providerToken,
+      appSessionToken: requireAppSessionToken(brokerResult),
       modelAccessToken,
     })
     return user
   }
 
-  return {
-    getState(): ClientAuthState {
-      return buildClientAuthState({
-        required: config.required,
-        configured,
-        emailPasswordEnabled,
-        emailSignUpEnabled,
-        feishuLoginEnabled,
-        clientConfig: neonClientConfig,
-        user: currentSession?.user ?? null,
+  service = {
+    getState,
+
+    ensureModelAccessToken(options = {}): Promise<ClientAuthModelAccessTokenResult> {
+      const session = currentSession
+      if (!session) return Promise.reject(new Error('Client authentication is required'))
+      if (!options.force) {
+        const pendingRefresh = tokenLifecycle.getPendingRefresh()
+        if (pendingRefresh) return pendingRefresh
+        const existingToken = readEnv(session.modelAccessToken)
+        if (existingToken && isClientModelAccessTokenFresh(existingToken, tokenLifecycle.nowMs)) {
+          return Promise.resolve({ token: existingToken, refreshed: false })
+        }
+      }
+
+      return tokenLifecycle.runSingleFlight(async () => {
+        const session = currentSession
+        const generation = tokenLifecycle.generation
+        if (!session) throw new Error('Client authentication is required')
+        const existingToken = readEnv(session.modelAccessToken)
+        if (!options.force && existingToken && isClientModelAccessTokenFresh(existingToken, tokenLifecycle.nowMs)) {
+          return { token: existingToken, refreshed: false }
+        }
+        const appSessionToken = readEnv(session.appSessionToken)
+        if (!authBrokerUrl || !authBrokerClient || !appSessionToken) {
+          throw new Error('Client auth session cannot refresh model access')
+        }
+        let refreshed: ClientAuthBrokerTokenRefreshResult
+        try {
+          refreshed = await authBrokerClient.refreshModelAccessToken({
+            brokerUrl: authBrokerUrl,
+            appSessionToken,
+          })
+        } catch (error) {
+          if (isRejectedAppSession(error) && tokenLifecycle.isCurrent(generation) && currentSession === session) {
+            const invalidationGeneration = tokenLifecycle.beginTransition()
+            tokenLifecycle.cancelScheduled()
+            await tokenLifecycle.runExclusive(async () => {
+              if (!tokenLifecycle.isCurrent(invalidationGeneration)) return
+              await deps.sessionStore?.clear()
+              if (!tokenLifecycle.isCurrent(invalidationGeneration)) return
+              currentSession = null
+              await notifyAuthChange(true)
+            })
+          }
+          throw error
+        }
+        const nextSession = {
+          user: session.user,
+          appSessionToken: requireAppSessionToken(refreshed),
+          modelAccessToken: requireModelAccessToken(refreshed),
+        }
+        await tokenLifecycle.runExclusive(async () => {
+          tokenLifecycle.assertCurrent(generation)
+          if (currentSession !== session) throw new Error('Client auth session changed')
+          await deps.sessionStore?.save(nextSession)
+          tokenLifecycle.assertCurrent(generation)
+          currentSession = nextSession
+          await notifyAuthChange(true)
+        })
+        tokenLifecycle.schedule(nextSession.modelAccessToken)
+        return { token: nextSession.modelAccessToken, refreshed: true }
       })
     },
 
     async signIn(input: ClientAuthSignInInput): Promise<ClientAuthUser> {
-      if (!neonAuth || !configured) {
+      if (!neonAuth || !emailPasswordEnabled) {
         throw new Error('Client auth is not configured')
       }
 
@@ -342,7 +464,7 @@ export function createClientAuthService(
     },
 
     async signUp(input: ClientAuthSignUpInput): Promise<ClientAuthSignUpResult> {
-      if (!neonAuth || !configured) {
+      if (!neonAuth || !emailPasswordEnabled) {
         throw new Error('Client auth is not configured')
       }
       if (!emailSignUpEnabled) {
@@ -460,7 +582,7 @@ export function createClientAuthService(
         const modelAccessToken = requireModelAccessToken(brokerResult)
         await saveCurrentSession({
           user,
-          ...(brokerResult.appSessionToken ? { appSessionToken: brokerResult.appSessionToken } : {}),
+          appSessionToken: requireAppSessionToken(brokerResult),
           modelAccessToken,
         })
         return user
@@ -479,15 +601,28 @@ export function createClientAuthService(
     },
 
     async signOut(): Promise<void> {
+      const generation = tokenLifecycle.beginTransition()
+      tokenLifecycle.cancelScheduled()
       if (activeFeishuLogin) {
         activeFeishuLogin.reject(new Error('Feishu login was cancelled'))
         await activeFeishuLogin.close()
         activeFeishuLogin = null
       }
-      await deps.sessionStore?.clear()
-      currentSession = null
+      await tokenLifecycle.runExclusive(async () => {
+        if (!tokenLifecycle.isCurrent(generation)) return
+        await deps.sessionStore?.clear()
+        if (!tokenLifecycle.isCurrent(generation)) return
+        currentSession = null
+        await notifyAuthChange(true)
+      })
+    },
+
+    dispose(): void {
+      tokenLifecycle.dispose()
     },
   }
+  tokenLifecycle.schedule(currentSession?.modelAccessToken)
+  return service
 }
 
 function shouldRequireClientAuthByDefault(env: NodeJS.ProcessEnv): boolean {
@@ -548,142 +683,6 @@ function toClientAuthUserFromEmailPasswordUser(user: {
   }
 }
 
-export class DefaultClientAuthBrokerClient implements ClientAuthBrokerClient {
-  async getFeishuAuthConfig(input: { brokerUrl: string }): Promise<ClientFeishuBrokerPublicConfig | null> {
-    const endpoint = buildBrokerEndpointUrl(input.brokerUrl, DEFAULT_FEISHU_BROKER_CONFIG_PATH)
-    const body = await requestBrokerJson(endpoint, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-    }, 'Feishu broker config request failed', { allowNotFound: true })
-
-    return body ? normalizeFeishuBrokerPublicConfig(body) : null
-  }
-
-  async exchangeNeonToken(input: ClientAuthNeonBrokerExchangeInput): Promise<ClientAuthBrokerExchangeResult> {
-    const endpoint = buildBrokerEndpointUrl(input.brokerUrl, DEFAULT_NEON_BROKER_EXCHANGE_PATH)
-    const body = await requestBrokerJson(endpoint, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${input.token}`,
-        Accept: 'application/json',
-      },
-    }, 'Neon broker exchange failed')
-
-    return normalizeBrokerExchangeResult(body, 'neon')
-  }
-
-  async exchangeFeishuCode(input: ClientAuthBrokerExchangeInput): Promise<ClientAuthBrokerExchangeResult> {
-    const endpoint = buildBrokerEndpointUrl(input.brokerUrl, DEFAULT_FEISHU_BROKER_EXCHANGE_PATH)
-    const body = await requestBrokerJson(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        code: input.code,
-        redirectUri: input.redirectUri,
-        codeVerifier: input.codeVerifier,
-      }),
-    }, 'Feishu broker exchange failed')
-
-    return normalizeBrokerExchangeResult(body, 'feishu')
-  }
-}
-
-async function resolveFeishuBrokerAuthConfig(
-  fallback: ClientFeishuBrokerAuthConfig,
-  brokerClient: ClientAuthBrokerClient,
-): Promise<ClientFeishuBrokerAuthConfig> {
-  if (!brokerClient.getFeishuAuthConfig) {
-    return fallback
-  }
-
-  const brokerConfig = await brokerClient.getFeishuAuthConfig({ brokerUrl: fallback.brokerUrl })
-  if (!brokerConfig) {
-    return fallback
-  }
-
-  if (!brokerConfig.enabled) {
-    throw new Error('Feishu login is not configured on the auth broker')
-  }
-
-  const appId = readEnv(brokerConfig.appId)
-  if (!appId) {
-    throw new Error('Feishu auth broker config did not include an app id')
-  }
-
-  const scope = readEnv(brokerConfig.scope)
-  const authBaseUrl = readEnv(brokerConfig.authBaseUrl)
-  return {
-    appId,
-    brokerUrl: fallback.brokerUrl,
-    ...(scope ? { scope } : {}),
-    ...(authBaseUrl ? { authBaseUrl } : {}),
-  }
-}
-
-function normalizeFeishuBrokerPublicConfig(body: Record<string, unknown>): ClientFeishuBrokerPublicConfig {
-  const appId = readStringValue(body.appId)
-  const scope = readStringValue(body.scope)
-  const authBaseUrl = readStringValue(body.authBaseUrl)
-  return {
-    enabled: body.enabled === true,
-    ...(appId ? { appId } : {}),
-    ...(scope ? { scope } : {}),
-    ...(authBaseUrl ? { authBaseUrl } : {}),
-  }
-}
-
-function normalizeBrokerExchangeResult(body: Record<string, unknown>, defaultProvider: ClientAuthUser['provider']): ClientAuthBrokerExchangeResult {
-  const user = normalizeBrokerClientAuthUser(readObjectValue(body.user), defaultProvider)
-  const appSessionToken = readStringValue(body.appSessionToken) ?? readStringValue(body.sessionToken)
-  const modelAccessToken = readStringValue(body.modelAccessToken)
-
-  return {
-    user,
-    ...(appSessionToken ? { appSessionToken } : {}),
-    ...(modelAccessToken ? { modelAccessToken } : {}),
-  }
-}
-
-function requireModelAccessToken(result: ClientAuthBrokerExchangeResult): string {
-  const token = readEnv(result.modelAccessToken)
-  if (!token) {
-    throw new Error('Auth broker exchange response did not include a model access token')
-  }
-  return token
-}
-
-function normalizeBrokerClientAuthUser(value: unknown, defaultProvider: ClientAuthUser['provider'] = 'feishu'): ClientAuthUser {
-  const record = readObjectValue(value)
-  if (!record) {
-    throw new Error('Feishu broker exchange response did not include a user')
-  }
-
-  const provider = record.provider === 'neon' || record.provider === 'feishu'
-    ? record.provider
-    : defaultProvider
-  const userId = readStringValue(record.userId)
-    ?? readStringValue(record.openId)
-    ?? readStringValue(record.id)
-  if (!userId) {
-    throw new Error('Feishu broker exchange response did not include a user id')
-  }
-
-  const email = readEnv(readStringValue(record.email))
-  const name = readEnv(readStringValue(record.name))
-  const emailVerified = typeof record.emailVerified === 'boolean' ? record.emailVerified : undefined
-
-  return {
-    provider,
-    userId,
-    ...(email ? { email: email.toLowerCase() } : {}),
-    ...(emailVerified !== undefined ? { emailVerified } : {}),
-    ...(name ? { name } : {}),
-  }
-}
-
 function clientConfigRequiresUsername(config: NeonAuthClientConfig): boolean {
   return config.usernameLoginEnabled === true
 }
@@ -721,91 +720,6 @@ function readPositiveIntegerEnv(value: string | undefined): number | undefined {
     throw new Error(`Invalid positive integer env value: ${value}`)
   }
   return parsed
-}
-
-function normalizeUrlString(value: string | undefined): string | undefined {
-  const trimmed = readEnv(value)
-  if (!trimmed) return undefined
-
-  return new URL(trimmed).toString().replace(/\/+$/, '')
-}
-
-function buildBrokerEndpointUrl(baseUrl: string, path: string): string {
-  const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
-  return new URL(path.replace(/^\/+/, ''), normalizedBase).toString()
-}
-
-function formatBrokerNetworkError(endpoint: string, error: unknown): string {
-  const detail = error instanceof Error && error.message
-    ? ` (${error.message})`
-    : ''
-  return `Auth broker is unreachable at ${endpoint}${detail}. ` +
-    '若网络受限或 broker 已迁移，可在客户端用户数据目录创建 client-auth.json '
-    + '（内容形如 {"authBrokerUrl":"https://your-broker"}）以覆盖打包默认值；'
-    + 'or set CRAFT_CLIENT_AUTH_BROKER_URL and rebuild the desktop client.'
-}
-
-function requestBrokerJson(
-  endpoint: string,
-  init: RequestInit,
-  failurePrefix: string,
-  options: { allowNotFound: true },
-): Promise<Record<string, unknown> | null>
-function requestBrokerJson(
-  endpoint: string,
-  init: RequestInit,
-  failurePrefix: string,
-  options?: { allowNotFound?: false },
-): Promise<Record<string, unknown>>
-async function requestBrokerJson(
-  endpoint: string,
-  init: RequestInit,
-  failurePrefix: string,
-  options: { allowNotFound?: boolean } = {},
-): Promise<Record<string, unknown> | null> {
-  let res: Response
-  try {
-    res = await fetch(endpoint, init)
-  } catch (err) {
-    throw new Error(formatBrokerNetworkError(endpoint, err))
-  }
-
-  if (options.allowNotFound && res.status === 404) {
-    return null
-  }
-
-  const body = await parseJsonObject(res)
-  if (!res.ok) {
-    throw new Error(readBrokerError(body) ?? `${failurePrefix}: HTTP ${res.status}`)
-  }
-
-  return body
-}
-
-async function parseJsonObject(res: Response): Promise<Record<string, unknown>> {
-  try {
-    const body = await res.json()
-    return readObjectValue(body) ?? {}
-  } catch {
-    return {}
-  }
-}
-
-function readBrokerError(body: Record<string, unknown>): string | undefined {
-  const error = readObjectValue(body.error)
-  return readStringValue(error?.message)
-    ?? readStringValue(body.message)
-    ?? readStringValue(body.error)
-}
-
-function readObjectValue(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined
-}
-
-function readStringValue(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
 function withTimeout<T>(

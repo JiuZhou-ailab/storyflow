@@ -12,7 +12,11 @@ export {
 // Individual steps
 export { ProviderSelectStep, type ProviderChoice } from './ProviderSelectStep'
 export { WelcomeStep } from './WelcomeStep'
-export { APISetupStep, type ApiSetupMethod } from './APISetupStep'
+export {
+  APISetupStep,
+  type ApiSetupMethod,
+  type CredentialSetupMethod,
+} from './APISetupStep'
 export { CredentialsStep, type CredentialStatus } from './CredentialsStep'
 export { CompletionStep } from './CompletionStep'
 export { LocalModelStep, type LocalModelSubmitData } from './LocalModelStep'

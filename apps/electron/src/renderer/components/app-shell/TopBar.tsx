@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { Cloud, CloudOff, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@craft-agent/ui'
 import { FadingText } from '@/components/ui/fading-text'
+import { HeaderIconButton } from '@/components/ui/HeaderIconButton'
 import { cn } from '@/lib/utils'
 import { useTransportConnectionState } from '@/hooks/useTransportConnectionState'
 import type { Workspace } from '../../../shared/types'
@@ -72,22 +73,15 @@ export function TopBar({
       {onToggleRightPanel ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <button
-              type="button"
+            <HeaderIconButton
+              icon={isRightPanelVisible
+                ? <PanelRightClose className="h-4 w-4" strokeWidth={1.7} />
+                : <PanelRightOpen className="h-4 w-4" strokeWidth={1.7} />}
               aria-label={isRightPanelVisible ? '收起右侧栏' : '展开右侧栏'}
               aria-expanded={isRightPanelVisible}
               onClick={onToggleRightPanel}
-              className={cn(
-                'titlebar-no-drag absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md outline-none transition-colors',
-                'bg-foreground/5 text-foreground/60 hover:bg-foreground/10 hover:text-foreground/80 focus-visible:ring-1 focus-visible:ring-ring'
-              )}
-            >
-              {isRightPanelVisible ? (
-                <PanelRightClose className="h-3.5 w-3.5" strokeWidth={1.7} />
-              ) : (
-                <PanelRightOpen className="h-3.5 w-3.5" strokeWidth={1.7} />
-              )}
-            </button>
+              className="absolute right-2 top-1/2 h-[26px] w-[26px] -translate-y-1/2 rounded-lg bg-foreground/5 text-foreground/60 hover:bg-foreground/10 hover:text-foreground/80"
+            />
           </TooltipTrigger>
           <TooltipContent side="bottom">
             {isRightPanelVisible ? '收起右侧栏' : '展开右侧栏'}

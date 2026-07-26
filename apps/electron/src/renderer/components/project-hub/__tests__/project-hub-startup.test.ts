@@ -15,7 +15,7 @@ describe('ProjectHub startup integration', () => {
     expect(appSource).toContain("'project-hub'")
     expect(appSource).not.toContain('<ProjectManagerPanel')
     expect(appSource).toContain('selectStartupWorkspaceId')
-    expect(appSource).toContain('从左侧选择项目')
+    expect(appSource).toContain('从左侧展开项目并选择对话')
     expect(appSource).not.toMatch(/<ProjectHub[\s>]/)
   })
 
@@ -26,9 +26,10 @@ describe('ProjectHub startup integration', () => {
     expect(appSource).not.toContain('showProfile:')
   })
 
-  it('opens projects through the existing workspace switch path', () => {
-    expect(appSource).toContain('handleOpenProjectFromHub')
-    expect(appSource).toContain('handleSelectWorkspace(workspaceId)')
+  it('opens project conversations through the explicit runtime switch path', () => {
+    expect(appSource).toContain('handleSelectProjectSession')
+    expect(appSource).toContain('activateRuntimeWorkspace(workspaceId, routes.view.allSessions(sessionId))')
+    expect(appSource).not.toContain('handleOpenProjectFromHub')
     expect(appSource).not.toContain('ProjectHubPlaceholder')
   })
 

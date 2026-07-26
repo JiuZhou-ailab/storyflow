@@ -1,3 +1,7 @@
+// input: Onboarding UI actions, existing connection metadata, and renderer IPC
+// output: State-machine state and commands for managed or user-owned LLM setup
+// pos: Renderer orchestration boundary for onboarding connection setup
+
 /**
  * useOnboarding Hook
  *
@@ -14,15 +18,18 @@ import type {
   OnboardingState,
   OnboardingStep,
   ApiSetupMethod,
+  CredentialSetupMethod,
 } from '@/components/onboarding'
 import type { ProviderChoice } from '@/components/onboarding/ProviderSelectStep'
 import type { LocalModelSubmitData } from '@/components/onboarding/LocalModelStep'
 import type { ApiKeySubmitData } from '@/components/apisetup'
-import type { CustomEndpointConfig } from '@config/llm-connections'
+import {
+  MANAGED_LLM_CONNECTION_SLUG,
+  type CustomEndpointConfig,
+} from '@config/llm-connections'
 import type { ModelDefinition } from '@config/models'
 import { isMaskedCredential } from '@craft-agent/shared/utils/mask'
 import type { SetupNeeds, LlmConnectionSetup } from '../../shared/types'
-import { JIUZHOU_MANAGED_DEFAULT_SETUP } from '@/components/onboarding/managed-defaults'
 
 interface UseOnboardingOptions {
   /** Called when onboarding is complete */
@@ -32,7 +39,7 @@ interface UseOnboardingOptions {
   /** Start the wizard at a specific step (default: 'welcome') */
   initialStep?: OnboardingStep
   /** Pre-select an API setup method (useful when editing an existing connection) */
-  initialApiSetupMethod?: ApiSetupMethod
+  initialApiSetupMethod?: CredentialSetupMethod
   /** Called when user goes back from the initial step (dismisses the wizard) */
   onDismiss?: () => void
   /** Called immediately after config is saved to disk (before wizard closes).
@@ -56,14 +63,14 @@ interface UseOnboardingReturn {
   handleSelectProvider: (choice: ProviderChoice) => void
 
   // API Setup (legacy — kept for direct edit)
-  handleSelectApiSetupMethod: (method: ApiSetupMethod) => void
+  handleSelectApiSetupMethod: (method: CredentialSetupMethod) => void
 
   // Credentials
   handleSubmitCredential: (data: ApiKeySubmitData) => void
 
   // Local model
   handleSubmitLocalModel: (data: LocalModelSubmitData) => void
-  handleStartOAuth: (methodOverride?: ApiSetupMethod, connectionSlugOverride?: string) => void
+  handleStartOAuth: (methodOverride?: CredentialSetupMethod, connectionSlugOverride?: string) => void
 
   // Claude OAuth (two-step flow)
   isWaitingForCode: boolean
@@ -87,7 +94,7 @@ interface UseOnboardingReturn {
   handleCancel: () => void
 
   // Direct edit (skip method selection, jump to credentials)
-  jumpToCredentials: (method: ApiSetupMethod) => void
+  jumpToCredentials: (method: CredentialSetupMethod) => void
 
   // Reset
   reset: () => void
@@ -95,7 +102,7 @@ interface UseOnboardingReturn {
 
 // Base slug for each setup method (used as template key in ipc.ts)
 export const BASE_SLUG_FOR_METHOD: Record<ApiSetupMethod, string> = {
-  jiuzhou_api_key: 'wangsu-default',
+  managed_default: MANAGED_LLM_CONNECTION_SLUG,
   anthropic_api_key: 'anthropic-api',
   claude_oauth: 'claude-max',
   pi_chatgpt_oauth: 'chatgpt-plus',
@@ -109,15 +116,15 @@ export const BASE_SLUG_FOR_METHOD: Record<ApiSetupMethod, string> = {
  * When editingSlug is provided, reuses that slug (editing existing connection).
  */
 export function resolveSlugForMethod(
-  method: ApiSetupMethod,
+  method: CredentialSetupMethod,
   editingSlug: string | null,
   existingSlugs: Set<string>,
 ): string {
+  const base = BASE_SLUG_FOR_METHOD[method]
+
   // Editing an existing connection — reuse its slug
   if (editingSlug) return editingSlug
 
-  const base = BASE_SLUG_FOR_METHOD[method]
-  if (method === 'jiuzhou_api_key') return base
   if (!existingSlugs.has(base)) return base
 
   let i = 2
@@ -134,13 +141,13 @@ export function normalizeCredentialForSetup(credential?: string): string | undef
 }
 
 export type ProviderChoiceSetupAction =
-  | { mode: 'managed-default'; method: Extract<ApiSetupMethod, 'jiuzhou_api_key'> }
-  | { mode: 'credentials'; method: Extract<ApiSetupMethod, 'pi_api_key'> }
+  | { mode: 'managed-default'; method: Extract<ApiSetupMethod, 'managed_default'> }
+  | { mode: 'credentials'; method: Extract<CredentialSetupMethod, 'pi_api_key'> }
 
 export function providerChoiceToSetupAction(choice: ProviderChoice): ProviderChoiceSetupAction {
   switch (choice) {
     case 'jiuzhou':
-      return { mode: 'managed-default', method: 'jiuzhou_api_key' }
+      return { mode: 'managed-default', method: 'managed_default' }
     case 'custom_provider':
       return { mode: 'credentials', method: 'pi_api_key' }
   }
@@ -161,7 +168,7 @@ function isLoopbackEndpoint(baseUrl?: string): boolean {
 }
 
 export function apiSetupMethodToConnectionSetup(
-  method: ApiSetupMethod,
+  method: CredentialSetupMethod,
   options: {
     credential?: string
     baseUrl?: string
@@ -178,14 +185,11 @@ export function apiSetupMethodToConnectionSetup(
   existingSlugs: Set<string>,
 ): LlmConnectionSetup {
   const slug = resolveSlugForMethod(method, editingSlug, existingSlugs)
-  const credential = normalizeCredentialForSetup(options.credential)
-
   switch (method) {
     case 'anthropic_api_key':
-    case 'jiuzhou_api_key':
       return {
         slug,
-        credential,
+        credential: normalizeCredentialForSetup(options.credential),
         baseUrl: options.baseUrl,
         defaultModel: options.connectionDefaultModel,
         models: options.models,
@@ -194,18 +198,18 @@ export function apiSetupMethodToConnectionSetup(
     case 'claude_oauth':
       return {
         slug,
-        credential,
+        credential: normalizeCredentialForSetup(options.credential),
       }
     case 'pi_chatgpt_oauth':
     case 'pi_copilot_oauth':
       return {
         slug,
-        credential,
+        credential: normalizeCredentialForSetup(options.credential),
       }
     case 'pi_api_key':
       return {
         slug,
-        credential,
+        credential: normalizeCredentialForSetup(options.credential),
         baseUrl: options.baseUrl,
         defaultModel: options.connectionDefaultModel,
         models: options.models,
@@ -281,12 +285,12 @@ export function useOnboarding({
       awsRegion?: string
       bedrockAuthMethod?: 'iam_credentials' | 'environment'
     },
-    methodOverride?: ApiSetupMethod,
+    methodOverride?: CredentialSetupMethod,
     connectionSlugOverride?: string,
     updateOnly?: boolean,
   ): Promise<boolean> => {
     const method = methodOverride ?? state.apiSetupMethod
-    if (!method) {
+    if (!method || method === 'managed_default') {
       return false
     }
 
@@ -399,7 +403,7 @@ export function useOnboarding({
   }, [state.step, state.gitBashStatus, initialStep, onDismiss])
 
   // Select API setup method (legacy — kept for direct edit flows)
-  const handleSelectApiSetupMethod = useCallback((method: ApiSetupMethod) => {
+  const handleSelectApiSetupMethod = useCallback((method: CredentialSetupMethod) => {
     setState(s => ({ ...s, apiSetupMethod: method }))
   }, [])
 
@@ -528,7 +532,7 @@ export function useOnboarding({
   // `method` is passed explicitly to break the stale-closure chain — the OAuth
   // await crosses renders, so handleSaveConfig's closure may have an outdated
   // state.apiSetupMethod.
-  const saveAndValidateConnection = useCallback(async (connectionSlug: string, method: ApiSetupMethod, credential?: string, updateOnly?: boolean): Promise<boolean> => {
+  const saveAndValidateConnection = useCallback(async (connectionSlug: string, method: CredentialSetupMethod, credential?: string, updateOnly?: boolean): Promise<boolean> => {
     const saved = await handleSaveConfig(credential, undefined, method, connectionSlug, updateOnly)
     if (!saved) {
       setState(s => ({ ...s, credentialStatus: 'error' }))
@@ -551,7 +555,7 @@ export function useOnboarding({
   const [copilotDeviceCode, setCopilotDeviceCode] = useState<{ userCode: string; verificationUri: string } | undefined>()
 
   // Start OAuth flow (Claude or ChatGPT depending on selected method)
-  const handleStartOAuth = useCallback(async (methodOverride?: ApiSetupMethod, connectionSlugOverride?: string) => {
+  const handleStartOAuth = useCallback(async (methodOverride?: CredentialSetupMethod, connectionSlugOverride?: string) => {
     const effectiveMethod = methodOverride ?? state.apiSetupMethod
 
     if (methodOverride && methodOverride !== state.apiSetupMethod) {
@@ -672,13 +676,12 @@ export function useOnboarding({
         errorMessage: undefined,
       }))
 
-      const saved = await handleSaveConfig(
-        undefined,
-        JIUZHOU_MANAGED_DEFAULT_SETUP,
-        action.method,
+      const saved = await window.electronAPI.setDefaultLlmConnection(
+        BASE_SLUG_FOR_METHOD[action.method],
       )
 
-      if (saved) {
+      if (saved.success) {
+        onConfigSaved?.()
         setState(s => ({
           ...s,
           credentialStatus: 'success',
@@ -691,6 +694,7 @@ export function useOnboarding({
           credentialStatus: 'error',
           completionStatus: 'saving',
           step: 'provider-select',
+          errorMessage: saved.error || 'Failed to select the managed provider',
         }))
       }
       return
@@ -704,7 +708,7 @@ export function useOnboarding({
       errorMessage: undefined,
     }))
 
-  }, [handleSaveConfig])
+  }, [onConfigSaved])
 
   // Submit authorization code (second step of OAuth flow)
   const handleSubmitAuthCode = useCallback(async (code: string) => {
@@ -841,7 +845,7 @@ export function useOnboarding({
   }, [])
 
   // Jump directly to credentials step with a pre-set method (for editing existing connections)
-  const jumpToCredentials = useCallback((method: ApiSetupMethod) => {
+  const jumpToCredentials = useCallback((method: CredentialSetupMethod) => {
     setState(s => ({
       ...s,
       step: 'credentials' as const,

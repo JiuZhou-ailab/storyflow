@@ -1,3 +1,7 @@
+// input: Installed Pi SDK catalog and Storyflow model/provider filters
+// output: Regression coverage for provider visibility and excluded model families
+// pos: Verifies the server-side Pi model discovery contract
+
 import { describe, it, expect } from 'bun:test';
 import { getPiApiKeyProviders, getPiModelsForAuthProvider } from '../src/config/models-pi.ts';
 
@@ -24,5 +28,20 @@ describe('models-pi filtering', () => {
     const ids = models.map(m => m.id);
     expect(ids).toContain('pi/deepseek-v4-flash');
     expect(ids).toContain('pi/deepseek-v4-pro');
+  });
+
+  it('exposes the GPT-5.6 family for OpenAI-compatible Pi providers', () => {
+    const expectedIds = [
+      'pi/gpt-5.6-sol',
+      'pi/gpt-5.6-terra',
+      'pi/gpt-5.6-luna',
+    ];
+
+    for (const provider of ['openai', 'openai-codex', 'azure-openai-responses']) {
+      const ids = getPiModelsForAuthProvider(provider).map(model => model.id);
+      for (const id of expectedIds) {
+        expect(ids).toContain(id);
+      }
+    }
   });
 });

@@ -14,6 +14,7 @@ const requiredFiles = [
   ['browser-toolbar-preload.cjs', 'browser toolbar preload'],
   ['interceptor.cjs', 'Pi network interceptor'],
   ['renderer/index.html', 'renderer entrypoint'],
+  ['resources/agent-defaults/global-skills/skill-creator/SKILL.md', 'Storyflow Skill Creator'],
   ['resources/config-defaults.json', 'configuration defaults'],
   ['resources/docs/craft-cli.md', 'CLI documentation'],
   ['resources/permissions/default.json', 'default permissions'],

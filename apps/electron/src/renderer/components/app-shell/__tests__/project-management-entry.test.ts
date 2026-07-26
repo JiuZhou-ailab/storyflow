@@ -54,7 +54,7 @@ describe('project management entry', () => {
     expect(projectSwitcherSource).toContain("setView('remote')")
     expect(projectSwitcherSource).toContain('onWorkspaceCreated={onWorkspaceCreated}')
     expect(appSource).not.toContain('<ProjectManagerPanel')
-    expect(appSource).toContain('从左侧选择项目')
+    expect(appSource).toContain('从左侧展开项目并选择对话')
     expect(appSource).toContain('onWorkspaceCreatedFromRail={projectManagerActions.onWorkspaceCreated}')
     expect(appSource).toContain('onWorkspaceCreated:')
     expect(appSource).not.toMatch(/<ProjectHub[\s>]/)
@@ -67,7 +67,7 @@ describe('project management entry', () => {
     expect(appShellSource).toContain('onRemoveProject={onRemoveProject}')
     expect(appShellSource).toContain('onOpenProjectInNewWindow={onOpenProjectInNewWindow}')
     expect(appShellSource).toContain('workspaces={workspaces}')
-    expect(appShellSource).toContain('void onSelectWorkspace?.(workspaceId)')
+    expect(appShellSource).not.toContain('onSelectProject=')
     expect(activityRailSource).toContain('<ProjectSwitcherPopover')
     expect(activityRailSource).toContain('onWorkspaceCreated={onWorkspaceCreated}')
     expect(activityRailSource).toContain('data-testid="activity-archived-projects"')
@@ -154,13 +154,15 @@ describe('project management entry', () => {
     expect(activityRailSource).not.toContain('h-[min(44vh,420px)]')
   })
 
-  it('makes each project row one disclosure target with row-wide actions', () => {
+  it('keeps project disclosure separate from conversation selection', () => {
     const projectRowSource = activityRailSource.slice(
       activityRailSource.indexOf('function ProjectFolderRow'),
     )
 
     expect(projectRowSource).toContain('aria-expanded={expandable ? expanded : undefined}')
-    expect(projectRowSource).toContain('onToggleExpanded?.()')
+    expect(projectRowSource).toContain('onClick={() => onToggleExpanded?.()}')
+    expect(projectRowSource).not.toContain('onSelect()')
+    expect(activityRailSource).not.toContain('onSelectProject?:')
     expect(projectRowSource).not.toContain("role={expandable ? 'button' : undefined}")
     expect(projectRowSource).toContain("active && 'bg-foreground/[0.07] text-foreground'")
     expect(projectRowSource).toContain('aria-label={`在 ${workspace.name} 中新建对话`}')
@@ -168,6 +170,28 @@ describe('project management entry', () => {
     expect(appShellSource).toContain('const session = await onCreateSession(workspaceId)')
     expect(appShellSource).toContain('await onSelectProjectSession(workspaceId, session.id)')
     expect(appShellSource).toContain('onCreateConversationInProject={handleActivityProjectSessionCreate}')
+  })
+
+  it('keeps the activity list stable while runtime content switches', () => {
+    expect(activityRailSource).toContain('const activityExpandedProjectIdsAtom = atom<Set<string>>(new Set<string>())')
+    expect(activityRailSource).toContain('useAtom(activityExpandedProjectIdsAtom)')
+    expect(activityRailSource).toContain('useAtom(activityProjectSessionMetasAtom)')
+    expect(activityRailSource).toContain('useAtom(activityShowAllRecentAtom)')
+    expect(activityRailSource).toContain('useAtom(activityArchivedExpandedAtom)')
+    expect(activityRailSource).toContain('activityStore.get(activitySidebarScrollTopAtom)')
+    expect(activityRailSource).toContain('useAtomValue(freeRuntimeSessionMetasAtom)')
+    expect(activityRailSource).not.toContain('useAtomValue(sessionMetaMapAtom)')
+    expect(activityRailSource).toContain('if (freeSessionMetas === null) void refreshFreeSessionMetas()')
+    expect(activityRailSource).not.toContain('[refreshFreeSessionMetas, workspaces]')
+    expect(appSource).toContain("key={runtimeWorkspace?.id ?? 'no-runtime'}")
+  })
+
+  it('restores the shared conversation action menu in the activity rail', () => {
+    expect(activityRailSource).toContain("import { SessionMenu } from './SessionMenu'")
+    expect(activityRailSource).toContain('aria-label={`管理 ${getSessionTitle(meta)}`}')
+    expect(activityRailSource).toContain('<SessionMenu')
+    expect(appShellSource).toContain('onRename: onRenameSession')
+    expect(appShellSource).toContain('onDelete: (sessionId) => { void handleDeleteSession(sessionId) }')
   })
 
   it('keeps global navigation usable from the project manager when an active project exists', () => {
@@ -209,7 +233,7 @@ describe('project management entry', () => {
     expect(appShellSource).not.toContain('&& !isProjectRuntime')
     expect(appShellSource).toContain('isProjectRuntime && isWritingNavigation(navState)')
     expect(appShellSource).toContain('isSessionsNavigation(navState) && (!showActivityRail || isAutoCompact)')
-    expect(appShellSource).toContain('effectiveSidebarAndNavigatorHidden || hideSessionListNavigator ? 0 : navigatorPanelWidth')
+    expect(appShellSource).toContain('effectiveSidebarAndNavigatorHidden ? 0 : visibleSessionListWidth')
     expect(appShellSource).toContain('!effectiveSidebarAndNavigatorHidden && !hideSessionListNavigator')
   })
 

@@ -12,6 +12,8 @@ import { skillSelection } from '@/hooks/useEntitySelection'
 import { SkillMenu } from './SkillMenu'
 import { SendResourceToWorkspaceDialog } from './SendResourceToWorkspaceDialog'
 import { resolveSkillsMarketEntry } from '@/lib/skills-market-entry'
+import { EditPopover, getEditConfig } from '@/components/ui/EditPopover'
+import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
 import type { LoadedSkill, Workspace } from '../../../shared/types'
 
 const skillsMarketEntry = resolveSkillsMarketEntry(import.meta.env.VITE_STORYFLOW_SKILLS_MARKET_ENABLED)
@@ -19,7 +21,6 @@ const skillsMarketEntry = resolveSkillsMarketEntry(import.meta.env.VITE_STORYFLO
 export interface SkillsListPanelProps {
   skills: LoadedSkill[]
   onDeleteSkill: (skillSlug: string) => void
-  onCreateSkill?: () => void
   onSkillClick: (skill: LoadedSkill) => void
   selectedSkillSlug?: string | null
   workspaceId?: string
@@ -29,10 +30,27 @@ export interface SkillsListPanelProps {
   className?: string
 }
 
+export function AddSkillPopover({
+  workspace,
+  trigger,
+}: {
+  workspace: Workspace
+  trigger: React.ReactNode
+}) {
+  const isProject = workspace.id !== FREE_CONVERSATION_WORKSPACE_ID
+  return (
+    <EditPopover
+      trigger={trigger}
+      {...getEditConfig(isProject ? 'add-skill' : 'add-global-skill', workspace.rootPath, workspace.id)}
+      conversationWorkspaceId={FREE_CONVERSATION_WORKSPACE_ID}
+      workingDirectory="none"
+    />
+  )
+}
+
 export function SkillsListPanel({
   skills,
   onDeleteSkill,
-  onCreateSkill,
   onSkillClick,
   selectedSkillSlug,
   workspaceId,
@@ -79,14 +97,18 @@ export function SkillsListPanel({
             description={t('skillsList.emptyDescription')}
             docKey="skills"
           >
-            {onCreateSkill && (
-              <button
-                type="button"
-                className="inline-flex items-center h-7 px-3 text-xs font-medium rounded-[8px] bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors"
-                onClick={onCreateSkill}
-              >
-                {t('skillsList.addSkill')}
-              </button>
+            {activeWorkspace && (
+              <AddSkillPopover
+                workspace={activeWorkspace}
+                trigger={(
+                  <button
+                    type="button"
+                    className="inline-flex items-center h-7 px-3 text-xs font-medium rounded-[8px] bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors"
+                  >
+                    {t('skillsList.addSkill')}
+                  </button>
+                )}
+              />
             )}
           </EntityListEmptyScreen>
         }

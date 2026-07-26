@@ -15,6 +15,7 @@ const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const WINDOW_SCREEN_MARGIN = 64
 const DEFAULT_MAIN_WINDOW_SIZE = { width: 1400, height: 900 }
 const MIN_WINDOW_SIZE = { width: 800, height: 600 }
+const MACOS_TRAFFIC_LIGHT_POSITION = { x: 18, y: 13 }
 
 function resolveInitialWindowSize(): { width: number, height: number } {
   const baseSize = DEFAULT_MAIN_WINDOW_SIZE
@@ -166,7 +167,7 @@ export class WindowManager {
       // macOS-specific: hidden title bar with inset traffic lights
       ...(isMac && {
         titleBarStyle: 'hiddenInset',
-        trafficLightPosition: { x: 18, y: 16 },
+        trafficLightPosition: MACOS_TRAFFIC_LIGHT_POSITION,
         vibrancy: 'under-window',
         visualEffectState: 'active',
       }),
@@ -651,7 +652,7 @@ export class WindowManager {
       // setWindowButtonVisibility can reset position to default, so we need
       // to restore the custom position using the modern setWindowButtonPosition API
       if (visible) {
-        managed.window.setWindowButtonPosition({ x: 18, y: 19 })
+        managed.window.setWindowButtonPosition(MACOS_TRAFFIC_LIGHT_POSITION)
       }
     }
   }

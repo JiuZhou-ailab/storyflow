@@ -71,11 +71,17 @@ APPLE_APP_SPECIFIC_PASSWORD=...
 STORYFLOW_R2_BUCKET=...
 CLOUDFLARE_API_TOKEN=...
 CLOUDFLARE_PAGES_API_TOKEN=...
+STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET=...
+STORYFLOW_GATEWAY_JWT_CURRENT_SECRET=...
 ```
 
 `CRAFT_CLIENT_AUTH_BROKER_URL` is the canonical broker variable. The older
 `CRAFT_CLIENT_FEISHU_AUTH_BROKER_URL` remains a compatibility fallback in code,
 but new configuration should not use it.
+
+Broker, Neon Auth, and explicit Neon JWKS URLs must use HTTPS. Plain HTTP is
+accepted only for loopback development; packaged-build validation rejects
+loopback and insecure remote endpoints before release.
 
 `CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED` only controls whether the packaged
 desktop UI exposes email registration and allows the local sign-up IPC path.
@@ -110,14 +116,37 @@ CRAFT_WEBUI_AUTH_DATABASE_URL=...
 CRAFT_WEBUI_NEON_AUTH_BASE_URL=...
 CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN=users.craft.invalid
 CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED=false
-STORYFLOW_GATEWAY_JWT_SECRET=...
+STORYFLOW_CLIENT_SESSION_JWT_CURRENT_KEY_ID=client-session-2026-07
+STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET=...
+STORYFLOW_CLIENT_SESSION_JWT_PREVIOUS_KEY_ID=
+STORYFLOW_CLIENT_SESSION_JWT_PREVIOUS_SECRET=
+STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID=model-access-2026-07
+STORYFLOW_GATEWAY_JWT_CURRENT_SECRET=...
 ```
 
 The desktop app asks the broker for public Feishu config and sends OAuth codes
 back to the broker. The Feishu app secret and user allow policy belong on the
 broker side only. After verifying either Feishu or Neon identity, the broker
-uses `STORYFLOW_GATEWAY_JWT_SECRET` to sign the role-scoped model access token
-returned to the desktop.
+returns two independent capabilities:
+
+- an `appSessionToken` bounded to 30 days from the original authentication,
+  signed only with the client-session key, which may request rotated replacement
+  tokens without extending that absolute lifetime;
+- a 15-minute `modelAccessToken`, signed with the model-access key, which may
+  call the model gateway but cannot mint another token.
+
+The broker requires a new login during the final 15 minutes of the app session,
+so a model capability can never outlive the parent authentication.
+
+The RPC/Web UI secret, client-session secret, and model-access secret must be
+independently generated and must never share a
+value. `STORYFLOW_CLIENT_SESSION_JWT_PREVIOUS_*` is used only while rotating
+existing app sessions. Every runtime requires the explicit `CURRENT_*`
+variables; retired unkeyed secret aliases are rejected.
+
+`CRAFT_BUILTIN_LLM_API_KEY` is retired and no longer read. Managed model
+credentials must come from the authenticated client session; do not place a
+static gateway token in Electron defaults, build variables, or runtime env.
 
 `CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED` controls the standalone Web UI email
 registration endpoint and sign-up tab. Email sign-in remains available when it
@@ -131,15 +160,24 @@ email supports verification codes; verification links require a custom provider.
 The model gateway is the only component that receives the NewAPI credential:
 
 ```dotenv
-STORYFLOW_GATEWAY_JWT_SECRET=...
+STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID=model-access-2026-07
+STORYFLOW_GATEWAY_JWT_CURRENT_SECRET=...
+STORYFLOW_GATEWAY_JWT_PREVIOUS_KEY_ID=
+STORYFLOW_GATEWAY_JWT_PREVIOUS_SECRET=
 NEWAPI_API_KEY=...
 NEWAPI_UPSTREAM_BASE_URL=https://jzapi.duanju.com
 ```
 
-`STORYFLOW_GATEWAY_JWT_SECRET` must match the auth broker secret.
-`NEWAPI_API_KEY` and the signing secret are Cloudflare Worker secrets;
-`NEWAPI_UPSTREAM_BASE_URL` is a non-secret Worker variable. None of these values
-belong in Electron build environment variables or GitHub release secrets.
+The gateway `CURRENT_KEY_ID` and `CURRENT_SECRET` must match the broker's
+model-access signing key; they must not match the broker's client-session key.
+During rotation, the gateway accepts both current and previous keyed model
+tokens. Tokens without `kid` are rejected.
+
+`NEWAPI_API_KEY` and JWT secrets are Cloudflare
+Worker secrets; key IDs and `NEWAPI_UPSTREAM_BASE_URL` are non-secret Worker
+variables. None belong in Electron build environment variables. The two
+current JWT secrets are mirrored in GitHub Actions only as Worker deployment
+inputs; `NEWAPI_API_KEY` remains Cloudflare-only.
 
 ## Electron Runtime Internals
 

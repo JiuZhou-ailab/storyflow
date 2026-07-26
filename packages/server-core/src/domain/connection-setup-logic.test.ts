@@ -5,6 +5,8 @@ import {
   setupTestRequiresApiKey,
   resolveCustomEndpointSetup,
   createBuiltInConnection,
+  isAppManagedConnection,
+  isAppManagedConnectionAvailable,
 } from './connection-setup-logic'
 
 describe('validateSetupTestInput', () => {
@@ -26,6 +28,15 @@ describe('validateSetupTestInput', () => {
       baseUrl: 'https://example.com/v1',
       piAuthProvider: 'openai',
     })).toEqual({ valid: true })
+  })
+})
+
+describe('managed connection runtime availability', () => {
+  it('keeps app-managed access local unless the host explicitly provides it', () => {
+    expect(isAppManagedConnectionAvailable('storyflow-managed', undefined)).toBe(false)
+    expect(isAppManagedConnectionAvailable('storyflow-managed', false)).toBe(false)
+    expect(isAppManagedConnectionAvailable('storyflow-managed', true)).toBe(true)
+    expect(isAppManagedConnectionAvailable('pi-api-key', false)).toBe(true)
   })
 })
 
@@ -139,25 +150,25 @@ describe('createBuiltInConnection seeds midStreamBehavior', () => {
     expect(conn.midStreamBehavior).toBe('steer')
   })
 
-  it("JiuZhou-AI managed provider is hidden from normal connection selection", () => {
-    const conn = createBuiltInConnection('wangsu-default')
-    expect(conn.name).toBe('JiuZhou-AI Wangsu')
-    expect(conn.providerType).toBe('pi_compat')
-    expect(conn.authType).toBe('api_key_with_endpoint')
-    expect(conn.piAuthProvider).toBe('cloudflare-ai-gateway')
-    expect(conn.hidden).toBe(true)
-    expect(conn.managed).toBe(true)
-    expect(conn.source).toBe('builtin')
-  })
-
-  it("keeps JiuZhou-AI managed provider hidden during setup updates", () => {
-    const conn = createBuiltInConnection('wangsu-default')
-    expect(conn.hidden).toBe(true)
+  it('does not expose the managed default as a user-created setup template', () => {
+    expect(() => createBuiltInConnection('storyflow-managed'))
+      .toThrow('Unknown built-in connection slug')
   })
 
   it("anthropic-api with custom endpoint becomes pi_compat → 'steer'", () => {
     const conn = createBuiltInConnection('anthropic-api', 'http://localhost:11434/v1')
     expect(conn.providerType).toBe('pi_compat')
     expect(conn.midStreamBehavior).toBe('steer')
+  })
+})
+
+describe('isAppManagedConnection', () => {
+  it('protects both managed and builtin-owned connections', () => {
+    expect(isAppManagedConnection('storyflow-managed')).toBe(true)
+    expect(isAppManagedConnection({ slug: 'storyflow-managed', managed: false, source: 'user' })).toBe(true)
+    expect(isAppManagedConnection({ managed: true })).toBe(true)
+    expect(isAppManagedConnection({ source: 'builtin' })).toBe(true)
+    expect(isAppManagedConnection({ managed: false, source: 'user' })).toBe(false)
+    expect(isAppManagedConnection(null)).toBe(false)
   })
 })

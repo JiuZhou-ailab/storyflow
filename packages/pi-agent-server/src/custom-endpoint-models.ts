@@ -1,3 +1,7 @@
+// input: Custom endpoint model configuration and the authenticated Pi provider.
+// output: Normalized model definitions plus provider/auth routing decisions for Pi.
+// pos: Shared, side-effect-free policy for registering and authenticating custom endpoint models.
+
 export type CustomEndpointInput = 'text' | 'image'
 
 export interface CustomEndpointModelDefaults {
@@ -57,6 +61,18 @@ export function resolveCustomEndpointProviderName(piAuthProvider: string | undef
   return piAuthProvider === CLOUDFLARE_AI_GATEWAY_PROVIDER_NAME
     ? CLOUDFLARE_AI_GATEWAY_PROVIDER_NAME
     : CUSTOM_ENDPOINT_PROVIDER_NAME
+}
+
+export function resolveRuntimeCredentialProviderNames(
+  piAuthProvider: string,
+  hasCustomEndpoint: boolean,
+): string[] {
+  if (!hasCustomEndpoint) return [piAuthProvider]
+
+  const customProvider = resolveCustomEndpointProviderName(piAuthProvider)
+  return customProvider === piAuthProvider
+    ? [piAuthProvider]
+    : [piAuthProvider, customProvider]
 }
 
 export function shouldUseCustomEndpointBearerAuthHeader(providerName: string): boolean {

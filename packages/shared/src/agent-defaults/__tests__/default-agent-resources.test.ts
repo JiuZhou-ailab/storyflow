@@ -1,5 +1,5 @@
-// input: Bundled defaults, explicit project Skill installation, symlinks, and user Source directories
-// output: Regression coverage for opt-in project Skills and global Source seeding
+// input: Bundled defaults, explicit project Skill installation, symlinks, and user resource directories
+// output: Regression coverage for product/global resources and opt-in project Skills
 // pos: Protects resource scope and project filesystem boundaries
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
@@ -15,6 +15,7 @@ import {
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
+  DEFAULT_GLOBAL_AGENT_SKILL_SLUGS,
   DEFAULT_AGENT_SKILL_SLUGS,
   DEFAULT_AGENT_SOURCE_SLUGS,
   seedDefaultAgentResources,
@@ -38,7 +39,8 @@ afterEach(() => {
 });
 
 describe('default agent resources', () => {
-  it('declares the default writing skills and Wangwen BigData source', () => {
+  it('declares the product Skill, default writing Skills, and Wangwen BigData Source', () => {
+    expect(DEFAULT_GLOBAL_AGENT_SKILL_SLUGS).toEqual(['skill-creator']);
     expect(DEFAULT_AGENT_SKILL_SLUGS).toEqual([
       'character-design',
       'outline-architecture',
@@ -60,6 +62,7 @@ describe('default agent resources', () => {
     const existingSkill = join(projectRoot, '.pi', 'skills', 'demo-skill', 'SKILL.md');
     const existingSource = join(agentRootDir, 'sources', 'demo-source', 'config.json');
 
+    writeFile(join(assetsDir, 'global-skills', 'skill-creator', 'SKILL.md'), 'product skill');
     writeFile(join(assetsDir, 'skills', 'demo-skill', 'SKILL.md'), 'bundled skill');
     writeFile(join(assetsDir, 'sources', 'demo-source', 'config.json'), '{"name":"Bundled"}\n');
     writeFile(join(assetsDir, 'sources', 'demo-source', 'guide.md'), '# Bundled Guide\n');
@@ -69,18 +72,33 @@ describe('default agent resources', () => {
     const result = seedDefaultAgentResources({ assetsDir, agentRootDir });
     const projectResult = seedDefaultProjectSkills(projectRoot, { assetsDir });
 
-    expect(result.skills).toEqual({ imported: [], skipped: [], failed: [] });
+    expect(result.skills.imported).toEqual(['skill-creator']);
     expect(projectResult.skipped).toEqual(['demo-skill']);
     expect(result.sources.skipped).toEqual(['demo-source']);
+    expect(readFileSync(join(agentRootDir, 'skills', 'skill-creator', 'SKILL.md'), 'utf-8')).toBe('product skill');
     expect(readFileSync(existingSkill, 'utf-8')).toBe('user skill');
     expect(readFileSync(existingSource, 'utf-8')).toBe('{"name":"User"}\n');
+  });
+
+  it('does not overwrite a customized global product Skill', () => {
+    const assetsDir = join(tempDir, 'resources', 'agent-defaults');
+    const agentRootDir = join(tempDir, '.craft-agent');
+    const existingSkill = join(agentRootDir, 'skills', 'skill-creator', 'SKILL.md');
+
+    writeFile(join(assetsDir, 'global-skills', 'skill-creator', 'SKILL.md'), 'product skill');
+    writeFile(existingSkill, 'user skill');
+
+    const result = seedDefaultAgentResources({ assetsDir, agentRootDir });
+
+    expect(result.skills.skipped).toEqual(['skill-creator']);
+    expect(readFileSync(existingSkill, 'utf-8')).toBe('user skill');
   });
 
   it('does not throw when the Craft root is not writable as a directory', () => {
     const assetsDir = join(tempDir, 'resources', 'agent-defaults');
     const agentRootDir = join(tempDir, '.craft-agent');
 
-    writeFile(join(assetsDir, 'skills', 'demo-skill', 'SKILL.md'), 'bundled skill');
+    writeFile(join(assetsDir, 'global-skills', 'skill-creator', 'SKILL.md'), 'product skill');
     writeFile(join(assetsDir, 'sources', 'demo-source', 'config.json'), '{"name":"Bundled"}\n');
     writeFileSync(agentRootDir, 'occupied by a file');
 
@@ -91,7 +109,7 @@ describe('default agent resources', () => {
     }).not.toThrow();
 
     expect(result?.skills.imported).toEqual([]);
-    expect(result?.skills.failed).toEqual([]);
+    expect(result?.skills.failed).toEqual(['skill-creator']);
     expect(result?.sources.imported).toEqual([]);
     expect(result?.sources.failed).toEqual(['demo-source']);
   });
@@ -115,6 +133,9 @@ describe('default agent resources', () => {
   it('ships reviewable default resources without bundled secrets', () => {
     const assetsDir = join(import.meta.dir, '../../../../../apps/electron/resources/agent-defaults');
 
+    for (const slug of DEFAULT_GLOBAL_AGENT_SKILL_SLUGS) {
+      expect(existsSync(join(assetsDir, 'global-skills', slug, 'SKILL.md'))).toBe(true);
+    }
     for (const slug of DEFAULT_AGENT_SKILL_SLUGS) {
       expect(existsSync(join(assetsDir, 'skills', slug, 'SKILL.md'))).toBe(true);
     }

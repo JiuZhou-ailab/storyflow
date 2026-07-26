@@ -1,10 +1,13 @@
 // input: OpenAI-compatible desktop chat requests and broker-issued model access JWTs
 // output: NewAPI chat requests with the server-only service credential
 // pos: Edge authorization boundary that keeps NewAPI credentials out of desktop builds
-import { jwtVerify, type JWTPayload } from 'jose'
+import { decodeProtectedHeader, jwtVerify, type JWTPayload } from 'jose'
 
 export interface Env {
-  STORYFLOW_GATEWAY_JWT_SECRET?: string
+  STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID?: string
+  STORYFLOW_GATEWAY_JWT_CURRENT_SECRET?: string
+  STORYFLOW_GATEWAY_JWT_PREVIOUS_KEY_ID?: string
+  STORYFLOW_GATEWAY_JWT_PREVIOUS_SECRET?: string
   STORYFLOW_GATEWAY_JWT_AUDIENCE?: string
   STORYFLOW_GATEWAY_JWT_ISSUER?: string
   NEWAPI_API_KEY?: string
@@ -20,6 +23,7 @@ interface GatewayJwtPayload extends JWTPayload {
 
 const DEFAULT_AUDIENCE = 'storyflow-model-gateway'
 const DEFAULT_ISSUER = 'storyflow-auth-broker'
+const DEFAULT_CURRENT_KEY_ID = 'current'
 const CHAT_COMPLETIONS_PATH = '/v1/chat/completions'
 
 class ForbiddenGatewayTokenError extends Error {}
@@ -44,6 +48,18 @@ export async function handleRequest(
     return Response.json({ status: 'ok' })
   }
 
+  if (requestUrl.pathname === '/ready') {
+    if (request.method !== 'GET') {
+      return methodNotAllowed('GET')
+    }
+    return getGatewayReadinessError(env)
+      ? Response.json(
+          { status: 'not_ready', code: 'configuration_invalid' },
+          { status: 503 },
+        )
+      : Response.json({ status: 'ready' })
+  }
+
   if (requestUrl.pathname !== CHAT_COMPLETIONS_PATH) {
     return Response.json({ error: 'Unknown model gateway route' }, { status: 404 })
   }
@@ -53,7 +69,7 @@ export async function handleRequest(
 
   const token = readBearerToken(request.headers.get('authorization'))
   if (!token) {
-    return Response.json({ error: 'Model access token is required' }, { status: 401 })
+    return invalidModelAccessTokenResponse()
   }
 
   try {
@@ -62,7 +78,7 @@ export async function handleRequest(
     if (error instanceof ForbiddenGatewayTokenError) {
       return Response.json({ error: error.message }, { status: 403 })
     }
-    return Response.json({ error: 'Invalid model access token' }, { status: 401 })
+    return invalidModelAccessTokenResponse()
   }
 
   const newApiKey = readRequiredEnv(env.NEWAPI_API_KEY)
@@ -86,21 +102,31 @@ export async function handleRequest(
   )
 
   try {
-    return await fetchImpl(upstreamRequest)
+    const upstreamResponse = await fetchImpl(upstreamRequest)
+    if (upstreamResponse.status === 401 || upstreamResponse.status === 403) {
+      console.error('[model-gateway] Upstream authentication failed', {
+        status: upstreamResponse.status,
+      })
+      return Response.json(
+        {
+          error: 'Model provider authentication failed',
+          code: 'upstream_auth_failed',
+        },
+        { status: 502 },
+      )
+    }
+    return upstreamResponse
   } catch {
     return Response.json({ error: 'NewAPI gateway is unavailable' }, { status: 502 })
   }
 }
 
 export async function verifyGatewayJwt(token: string, env: Env): Promise<GatewayJwtPayload> {
-  const secret = readRequiredEnv(env.STORYFLOW_GATEWAY_JWT_SECRET)
-  if (!secret) {
-    throw new Error('Gateway JWT secret is not configured')
-  }
+  const key = resolveGatewayVerificationKey(token, env)
 
   const { payload } = await jwtVerify<GatewayJwtPayload>(
     token,
-    new TextEncoder().encode(secret),
+    new TextEncoder().encode(key.secret),
     {
       algorithms: ['HS256'],
       issuer: env.STORYFLOW_GATEWAY_JWT_ISSUER ?? DEFAULT_ISSUER,
@@ -116,6 +142,41 @@ export async function verifyGatewayJwt(token: string, env: Env): Promise<Gateway
   return payload
 }
 
+function resolveGatewayVerificationKey(token: string, env: Env): { id: string, secret: string } {
+  const current = getCurrentGatewayKey(env)
+  if (!current) throw new Error('Gateway JWT secret is not configured')
+
+  const kid = decodeProtectedHeader(token).kid
+  if (typeof kid !== 'string' || !kid.trim()) throw new Error('Gateway JWT key id is required')
+  if (kid === current.id) return current
+
+  const previous = getPreviousGatewayKey(env)
+  if (previous?.id === kid) return previous
+  throw new Error('Gateway JWT key id is unknown')
+}
+
+function getCurrentGatewayKey(env: Env): { id: string, secret: string } | null {
+  const secret = readRequiredEnv(env.STORYFLOW_GATEWAY_JWT_CURRENT_SECRET)
+  if (!secret) return null
+  return {
+    id: readRequiredEnv(env.STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID) ?? DEFAULT_CURRENT_KEY_ID,
+    secret,
+  }
+}
+
+function getPreviousGatewayKey(env: Env): { id: string, secret: string } | null {
+  const id = readRequiredEnv(env.STORYFLOW_GATEWAY_JWT_PREVIOUS_KEY_ID)
+  const secret = readRequiredEnv(env.STORYFLOW_GATEWAY_JWT_PREVIOUS_SECRET)
+  return id && secret ? { id, secret } : null
+}
+
+function getGatewayReadinessError(env: Env): string | null {
+  if (!getCurrentGatewayKey(env)) return 'Gateway JWT current key is not configured'
+  if (!readRequiredEnv(env.NEWAPI_API_KEY)) return 'NewAPI key is not configured'
+  if (!readRequiredEnv(env.NEWAPI_UPSTREAM_BASE_URL)) return 'NewAPI upstream is not configured'
+  return null
+}
+
 function methodNotAllowed(allowedMethod: string): Response {
   return Response.json(
     { error: 'Method not allowed' },
@@ -123,6 +184,16 @@ function methodNotAllowed(allowedMethod: string): Response {
       status: 405,
       headers: { Allow: allowedMethod },
     },
+  )
+}
+
+function invalidModelAccessTokenResponse(): Response {
+  return Response.json(
+    {
+      error: 'Invalid model access token',
+      code: 'model_access_token_invalid',
+    },
+    { status: 401 },
   )
 }
 

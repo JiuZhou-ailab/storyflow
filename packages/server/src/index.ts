@@ -35,7 +35,12 @@
  *   CRAFT_WEBUI_NEON_AUTH_AUDIENCE — optional Neon Auth JWT audience override
  *   CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN — optional internal email domain for username login
  *   CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED — enables public Neon Auth email/password registration
- *   STORYFLOW_GATEWAY_JWT_SECRET — optional desktop model access token signing secret
+ *   STORYFLOW_CLIENT_SESSION_JWT_CURRENT_KEY_ID — key ID for renewable desktop client sessions
+ *   STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET — independent desktop client-session signing secret
+ *   STORYFLOW_CLIENT_SESSION_JWT_PREVIOUS_KEY_ID — optional prior key ID during rotation
+ *   STORYFLOW_CLIENT_SESSION_JWT_PREVIOUS_SECRET — optional prior signing secret during rotation
+ *   STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID — key ID for scoped model access tokens
+ *   STORYFLOW_GATEWAY_JWT_CURRENT_SECRET — optional desktop model access signing secret
  *   CRAFT_MESSAGING_WA_WORKER  — absolute path to worker.cjs (default: packages/messaging-whatsapp-worker/dist/worker.cjs)
  *   CRAFT_MESSAGING_NODE_BIN   — Node binary used to spawn the WhatsApp worker (default: node)
  */
@@ -194,6 +199,67 @@ function createNeonAuthConfigFromEnv(): NeonAuthConfig | undefined {
 }
 
 const webuiNeonAuth = createNeonAuthConfigFromEnv()
+const clientSessionCurrentSecret = process.env.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET?.trim()
+const clientSessionPreviousKeyId = process.env.STORYFLOW_CLIENT_SESSION_JWT_PREVIOUS_KEY_ID?.trim()
+const clientSessionPreviousSecret = process.env.STORYFLOW_CLIENT_SESSION_JWT_PREVIOUS_SECRET?.trim()
+const modelAccessCurrentSecret = process.env.STORYFLOW_GATEWAY_JWT_CURRENT_SECRET?.trim()
+const clientAuthSigningConfigured = Boolean(
+  clientSessionCurrentSecret
+  || clientSessionPreviousKeyId
+  || clientSessionPreviousSecret
+  || modelAccessCurrentSecret,
+)
+
+if (Boolean(clientSessionPreviousKeyId) !== Boolean(clientSessionPreviousSecret)) {
+  console.error('Client session key rotation requires both STORYFLOW_CLIENT_SESSION_JWT_PREVIOUS_KEY_ID and STORYFLOW_CLIENT_SESSION_JWT_PREVIOUS_SECRET.')
+  process.exit(1)
+}
+if (clientAuthSigningConfigured && (!clientSessionCurrentSecret || !modelAccessCurrentSecret)) {
+  console.error('Desktop client auth requires separate STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET and STORYFLOW_GATEWAY_JWT_CURRENT_SECRET values.')
+  process.exit(1)
+}
+if (clientSessionCurrentSecret && clientSessionCurrentSecret === modelAccessCurrentSecret) {
+  console.error('Desktop client-session and model-access signing secrets must be different.')
+  process.exit(1)
+}
+if (
+  serverToken
+  && (
+    serverToken === clientSessionCurrentSecret
+    || serverToken === clientSessionPreviousSecret
+    || serverToken === modelAccessCurrentSecret
+  )
+) {
+  console.error('CRAFT_SERVER_TOKEN, client-session keys, and model-access keys must be pairwise distinct.')
+  process.exit(1)
+}
+if (clientSessionPreviousSecret && clientSessionPreviousSecret === modelAccessCurrentSecret) {
+  console.error('Previous client-session and current model-access signing secrets must be different.')
+  process.exit(1)
+}
+
+const clientSessionTokenKeyRing = clientSessionCurrentSecret
+  ? {
+      current: {
+        id: process.env.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_KEY_ID?.trim() || 'current',
+        secret: clientSessionCurrentSecret,
+      },
+      ...(clientSessionPreviousKeyId && clientSessionPreviousSecret
+        ? {
+            previous: {
+              id: clientSessionPreviousKeyId,
+              secret: clientSessionPreviousSecret,
+            },
+          }
+        : {}),
+    }
+  : undefined
+const modelAccessTokenKey = modelAccessCurrentSecret
+  ? {
+      id: process.env.STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID?.trim() || 'current',
+      secret: modelAccessCurrentSecret,
+    }
+  : undefined
 
 // ---------------------------------------------------------------------------
 // Create WebUI handler early so it can be embedded in the WsRpcServer.
@@ -221,7 +287,8 @@ if (webuiEnabled && serverToken) {
     publicWsUrl: webuiWsUrl,
     feishuAuth: webuiFeishuAuth,
     neonAuth: webuiNeonAuth,
-    modelAccessTokenSecret: process.env.STORYFLOW_GATEWAY_JWT_SECRET?.trim() || undefined,
+    clientSessionTokenKeyRing,
+    modelAccessTokenKey,
     wsProtocol: rpcProtocol,
     // WebUI is served on the same port as WS — wsPort matches the RPC port
     wsPort: rpcPort,

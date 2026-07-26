@@ -1,3 +1,7 @@
+// input: Persisted connection settings, provider catalogs, and credential metadata
+// output: Canonical LLM connection CRUD, model defaults, validation, and provider helpers
+// pos: Single source of truth for Storyflow LLM connection behavior
+
 /**
  * LLM Connections
  *
@@ -52,6 +56,20 @@ export type LlmProviderType =
   | 'anthropic'
   | 'pi'
   | 'pi_compat';
+
+export const MANAGED_LLM_CONNECTION_SLUG = 'storyflow-managed';
+
+/**
+ * Migration-only identifier used by releases before the provider-neutral
+ * managed gateway contract. Runtime decisions must use the canonical slug.
+ */
+export const LEGACY_MANAGED_LLM_CONNECTION_SLUG = 'wangsu-default';
+
+export function normalizeLlmConnectionSlug(slug: string): string {
+  return slug === LEGACY_MANAGED_LLM_CONNECTION_SLUG
+    ? MANAGED_LLM_CONNECTION_SLUG
+    : slug;
+}
 
 /**
  * @deprecated Use LlmProviderType instead. Kept for migration compatibility.
@@ -625,8 +643,8 @@ export function getModelsForProviderType(providerType: LlmProviderType, piAuthPr
  */
 export const PI_PREFERRED_DEFAULTS: Record<string, string[]> = {
   anthropic: ['claude-opus-4-8', 'claude-opus-4-7', 'claude-fable-5', 'claude-sonnet-5', 'claude-sonnet-4-6', 'claude-haiku-4-5'],
-  openai: ['gpt-5.5', 'gpt-5.2', 'gpt-5.1', 'gpt-5', 'o4-mini', 'o3', 'gpt-4o'],
-  'openai-codex': ['gpt-5.5', 'gpt-5.2', 'gpt-5.1', 'gpt-5', 'o4-mini', 'o3', 'gpt-4o'],
+  openai: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.2', 'gpt-5.1', 'gpt-5', 'o4-mini', 'o3', 'gpt-4o'],
+  'openai-codex': ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.2', 'gpt-5.1', 'gpt-5', 'o4-mini', 'o3', 'gpt-4o'],
   // Stable models first so the connection-setup test (which uses
   // getDefaultModelForConnection) lands on a reliable model.
   // gemini-3-pro-preview and gemini-3.1-pro-preview are intermittently

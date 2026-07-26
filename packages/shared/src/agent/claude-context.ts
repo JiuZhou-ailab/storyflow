@@ -17,6 +17,10 @@ import {
   getWorkspaceSkillsPath,
   getWorkspaceSourcesPath,
 } from '../workspaces/paths.ts';
+import {
+  isFreeConversationWorkspaceId,
+  resolveRuntimeWorkspace,
+} from '../workspaces/application-context.ts';
 import type {
   SessionToolContext,
   SessionToolCallbacks,
@@ -76,6 +80,10 @@ import { isGoogleOAuthConfigured as isGoogleOAuthConfiguredImpl } from '../auth/
 import { debug } from '../utils/debug.ts';
 import { getSessionPlansPath, getSessionPath, getSessionDataPath } from '../sessions/storage.ts';
 import { updatePreferences as updatePreferencesImpl } from '../config/preferences.ts';
+import {
+  createSkill as createSkillImpl,
+  loadSkill as loadSkillImpl,
+} from '../skills/storage.ts';
 
 // Re-export types that may be needed by consumers
 export type { SessionToolContext, SessionToolCallbacks } from '@craft-agent/session-tools-core';
@@ -103,6 +111,17 @@ export interface ClaudeContextOptions {
  */
 export function createClaudeContext(options: ClaudeContextOptions): SessionToolContext {
   const { sessionId, workspacePath, workspaceId, onPlanSubmitted, onAuthRequest } = options;
+  const skillProjectRoot = isFreeConversationWorkspaceId(workspaceId)
+    ? undefined
+    : workspacePath;
+  const resolveSkillProjectRoot = (targetWorkspaceId?: string): string | undefined => {
+    if (!targetWorkspaceId) return skillProjectRoot;
+    const targetWorkspace = resolveRuntimeWorkspace(targetWorkspaceId);
+    if (!targetWorkspace) throw new Error(`Skill target workspace not found: ${targetWorkspaceId}`);
+    return isFreeConversationWorkspaceId(targetWorkspace.id)
+      ? undefined
+      : targetWorkspace.rootPath;
+  };
 
   // File system implementation
   const fs: FileSystemInterface = {
@@ -231,7 +250,11 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
     sessionId,
     workspacePath,
     get sourcesPath() { return getWorkspaceSourcesPath(workspacePath); },
-    get skillsPath() { return getWorkspaceSkillsPath(workspacePath); },
+    get skillsPath() {
+      return skillProjectRoot
+        ? getWorkspaceSkillsPath(skillProjectRoot)
+        : join(CONFIG_DIR, 'skills');
+    },
     plansFolderPath: getSessionPlansPath(workspacePath, sessionId),
     sessionPath: getSessionPath(workspacePath, sessionId),
     dataPath: getSessionDataPath(workspacePath, sessionId),
@@ -253,6 +276,17 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
     loadSourceConfig: (sourceSlug: string): SourceConfig | null => {
       const source = loadSourceImpl(workspacePath, sourceSlug);
       return source?.config as unknown as SourceConfig | null;
+    },
+    createSkillDocument: (skillSlug: string, content: string, targetWorkspaceId?: string) => {
+      const skill = createSkillImpl(resolveSkillProjectRoot(targetWorkspaceId), skillSlug, content);
+      const path = join(skill.path, 'SKILL.md');
+      return { path, content };
+    },
+    loadSkillDocument: (skillSlug: string, targetWorkspaceId?: string) => {
+      const skill = loadSkillImpl(resolveSkillProjectRoot(targetWorkspaceId), skillSlug);
+      if (!skill) return null;
+      const path = join(skill.path, 'SKILL.md');
+      return { path, content: readFileSync(path, 'utf-8') };
     },
     isSourceDefinitionReadOnly: (sourceSlug: string): boolean => {
       return loadSourceImpl(workspacePath, sourceSlug)?.origin === 'shared-global';

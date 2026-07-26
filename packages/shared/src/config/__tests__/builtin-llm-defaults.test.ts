@@ -1,14 +1,13 @@
 // input: Bundled LLM defaults fixtures and temporary config directories
-// output: Regression coverage for managed default connection and credential seeding behavior
+// output: Regression coverage for managed connection metadata without static credentials
 // pos: Tests distribution-provided LLM connection bootstrapping
 import { describe, expect, it } from 'bun:test'
-import { createHash } from 'crypto'
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { applyBuiltinLlmConnectionDefaults, type StoredConfig } from '../storage.ts'
-import type { ConfigDefaults } from '../config-defaults-schema.ts'
+import type { BuiltinLlmConnectionDefaults, ConfigDefaults } from '../config-defaults-schema.ts'
 
 const STORAGE_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', 'storage.ts')).href
 const UTILS_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', '..', 'utils', 'index.ts')).href
@@ -34,7 +33,7 @@ function makeConfig(overrides: Partial<StoredConfig> = {}): StoredConfig {
   }
 }
 
-function makeDefaults(overrides: Partial<ConfigDefaults['builtinLlmConnection']> = {}): ConfigDefaults {
+function makeDefaults(overrides: Partial<BuiltinLlmConnectionDefaults> = {}): ConfigDefaults {
   return {
     version: 'test',
     description: 'test defaults',
@@ -55,10 +54,10 @@ function makeDefaults(overrides: Partial<ConfigDefaults['builtinLlmConnection']>
       cyclablePermissionModes: ['safe', 'ask', 'allow-all'],
       localMcpServers: { enabled: true },
     },
-    builtinLlmConnection: {
+    builtinLlmConnections: [{
       enabled: true,
       connection: {
-        slug: 'wangsu-default',
+        slug: 'storyflow-managed',
         name: 'Internal Default',
         providerType: 'pi_compat',
         authType: 'api_key_with_endpoint',
@@ -73,23 +72,20 @@ function makeDefaults(overrides: Partial<ConfigDefaults['builtinLlmConnection']>
         source: 'builtin',
         createdAt: 0,
       },
-      apiKey: 'internal-secret',
       ...overrides,
-    },
+    }],
   }
 }
 
 function makePluralDefaults(): ConfigDefaults {
-  const wangsu = makeDefaults().builtinLlmConnection!
+  const managed = makeDefaults().builtinLlmConnections![0]!
   return {
     ...makeDefaults(),
-    builtinLlmConnection: undefined,
     builtinLlmConnections: [
       {
-        ...wangsu,
-        apiKey: 'wangsu-secret',
+        ...managed,
         connection: {
-          ...wangsu.connection!,
+          ...managed.connection!,
           models: [
             'gpt-5.5',
             'gpt-5.6-sol',
@@ -103,9 +99,8 @@ function makePluralDefaults(): ConfigDefaults {
       },
       {
         enabled: true,
-        apiKey: 'backup-secret',
         connection: {
-          ...wangsu.connection!,
+          ...managed.connection!,
           slug: 'backup-default',
           name: 'Backup Default',
           baseUrl: 'https://example.internal/backup/v1',
@@ -127,13 +122,15 @@ describe('builtin LLM connection defaults', () => {
   it('routes the bundled managed connection through the product model gateway', () => {
     const defaults = JSON.parse(readFileSync(BUNDLED_DEFAULTS_PATH, 'utf-8')) as ConfigDefaults
     const connections = defaults.builtinLlmConnections?.map(entry => entry.connection) ?? []
-    const connection = connections.find(entry => entry?.slug === 'wangsu-default')
-    const legacyConnection = defaults.builtinLlmConnection?.connection
+    const connection = connections.find(entry => entry?.slug === 'storyflow-managed')
 
-    expect(connections.map(entry => entry?.slug)).toEqual(['wangsu-default'])
+    expect(connections.map(entry => entry?.slug)).toEqual(['storyflow-managed'])
+    expect(defaults.builtinLlmConnection).toBeUndefined()
     expect(JSON.stringify(defaults)).not.toContain('gateway.ai.cloudflare.com')
+    expect(JSON.stringify(defaults)).not.toContain('apiKey')
+    expect(JSON.stringify(defaults)).not.toContain('revokedApiKeySha256')
     expect(connection).toMatchObject({
-      slug: 'wangsu-default',
+      slug: 'storyflow-managed',
       providerType: 'pi_compat',
       baseUrl: 'https://storyflow-model.zjding.com/v1',
       defaultModel: 'gpt-5.5',
@@ -163,14 +160,6 @@ describe('builtin LLM connection defaults', () => {
       'gpt-5.6-terra',
       'gpt-5.6-luna',
     ])
-    expect(legacyConnection).toMatchObject({
-      slug: 'wangsu-default',
-      baseUrl: 'https://storyflow-model.zjding.com/v1',
-      defaultModel: 'gpt-5.5',
-      piAuthProvider: 'openai',
-      customEndpoint: { api: 'openai-completions' },
-    })
-    expect(legacyConnection?.models).toEqual(connection?.models)
   })
 
   it('upgrades persisted managed model IDs to the canonical bundled catalog', () => {
@@ -179,7 +168,7 @@ describe('builtin LLM connection defaults', () => {
     expect(bundled).toBeDefined()
 
     const config = makeConfig({
-      defaultLlmConnection: 'wangsu-default',
+      defaultLlmConnection: 'storyflow-managed',
       llmConnections: [{
         ...bundled!,
         models: bundled!.models?.map(model => typeof model === 'string' ? model : model.id),
@@ -195,22 +184,34 @@ describe('builtin LLM connection defaults', () => {
       .toEqual(EXPECTED_MANAGED_MODEL_NAMES)
   })
 
+  it('atomically migrates the legacy managed connection slug to the provider-neutral gateway identity', () => {
+    const defaults = makeDefaults({
+      connection: {
+        ...makeDefaults().builtinLlmConnections![0]!.connection!,
+        slug: 'storyflow-managed',
+      },
+    })
+    const config = makeConfig({
+      defaultLlmConnection: 'wangsu-default',
+      llmConnections: [{
+        ...makeDefaults().builtinLlmConnections![0]!.connection!,
+        slug: 'wangsu-default',
+      }],
+    })
+
+    expect(applyBuiltinLlmConnectionDefaults(config, defaults)).toEqual({ changed: true })
+    expect(config.defaultLlmConnection).toBe('storyflow-managed')
+    expect(config.llmConnections?.map(connection => connection.slug)).toEqual(['storyflow-managed'])
+  })
+
   it('adds multiple bundled managed connections and keeps the first one as the default', () => {
     const config = makeConfig()
     const result = applyBuiltinLlmConnectionDefaults(config, makePluralDefaults())
 
     expect(result.changed).toBe(true)
-    expect(result.credentialsToSeed).toEqual([
-      { connectionSlug: 'wangsu-default', apiKey: 'wangsu-secret' },
-      { connectionSlug: 'backup-default', apiKey: 'backup-secret' },
-    ])
-    expect(result.credentialToSeed).toEqual({
-      connectionSlug: 'wangsu-default',
-      apiKey: 'wangsu-secret',
-    })
-    expect(config.defaultLlmConnection).toBe('wangsu-default')
-    expect(config.llmConnections?.map(c => c.slug)).toEqual(['wangsu-default', 'backup-default'])
-    expect(config.llmConnections?.find(c => c.slug === 'wangsu-default')?.models).toEqual([
+    expect(config.defaultLlmConnection).toBe('storyflow-managed')
+    expect(config.llmConnections?.map(c => c.slug)).toEqual(['storyflow-managed', 'backup-default'])
+    expect(config.llmConnections?.find(c => c.slug === 'storyflow-managed')?.models).toEqual([
       'gpt-5.5',
       'gpt-5.6-sol',
       'gpt-5.6-terra',
@@ -220,27 +221,20 @@ describe('builtin LLM connection defaults', () => {
       'deepseek-v4-flash',
     ])
     expect(config.llmConnections?.find(c => c.slug === 'backup-default')?.models).toEqual(['backup-model'])
-    expect(JSON.stringify(config)).not.toContain('wangsu-secret')
-    expect(JSON.stringify(config)).not.toContain('backup-secret')
   })
 
-  it('adds the bundled managed connection and returns the credential without storing it in config', () => {
+  it('adds the bundled managed connection without a credential side channel', () => {
     const config = makeConfig()
     const result = applyBuiltinLlmConnectionDefaults(config, makeDefaults())
 
-    expect(result.changed).toBe(true)
-    expect(result.credentialToSeed).toEqual({
-      connectionSlug: 'wangsu-default',
-      apiKey: 'internal-secret',
-    })
-    expect(config.defaultLlmConnection).toBe('wangsu-default')
+    expect(result).toEqual({ changed: true })
+    expect(config.defaultLlmConnection).toBe('storyflow-managed')
     expect(config.llmConnections).toHaveLength(1)
     expect(config.llmConnections?.[0]).toMatchObject({
-      slug: 'wangsu-default',
+      slug: 'storyflow-managed',
       hidden: true,
       managed: true,
     })
-    expect(JSON.stringify(config)).not.toContain('internal-secret')
   })
 
   it('preserves a user-selected default connection when adding the bundled managed connection', () => {
@@ -259,30 +253,28 @@ describe('builtin LLM connection defaults', () => {
 
     expect(result.changed).toBe(true)
     expect(config.defaultLlmConnection).toBe('user-default')
-    expect(config.llmConnections?.map(c => c.slug)).toEqual(['user-default', 'wangsu-default'])
+    expect(config.llmConnections?.map(c => c.slug)).toEqual(['user-default', 'storyflow-managed'])
   })
 
   it('is idempotent when the bundled connection already exists', () => {
+    const bundled = makeDefaults().builtinLlmConnections![0]!
     const config = makeConfig({
-      defaultLlmConnection: 'wangsu-default',
-      llmConnections: [makeDefaults().builtinLlmConnection!.connection!],
+      defaultLlmConnection: 'storyflow-managed',
+      llmConnections: [bundled.connection!],
     })
 
     const result = applyBuiltinLlmConnectionDefaults(config, makeDefaults())
 
-    expect(result.changed).toBe(false)
-    expect(result.credentialToSeed).toEqual({
-      connectionSlug: 'wangsu-default',
-      apiKey: 'internal-secret',
-    })
+    expect(result).toEqual({ changed: false })
     expect(config.llmConnections).toHaveLength(1)
   })
 
   it('updates existing managed bundled connection metadata', () => {
+    const bundled = makeDefaults().builtinLlmConnections![0]!
     const config = makeConfig({
-      defaultLlmConnection: 'wangsu-default',
+      defaultLlmConnection: 'storyflow-managed',
       llmConnections: [{
-        ...makeDefaults().builtinLlmConnection!.connection!,
+        ...bundled.connection!,
         name: '网宿',
         models: ['legacy-model'],
         piAuthProvider: 'anthropic',
@@ -294,11 +286,10 @@ describe('builtin LLM connection defaults', () => {
 
     const result = applyBuiltinLlmConnectionDefaults(config, makeDefaults({
       connection: {
-        ...makeDefaults().builtinLlmConnection!.connection!,
+        ...bundled.connection!,
         name: 'JiuZhou-AI',
         hidden: false,
       },
-      apiKey: '',
     }))
 
     expect(result.changed).toBe(true)
@@ -306,7 +297,32 @@ describe('builtin LLM connection defaults', () => {
     expect(config.llmConnections?.[0]?.models).toEqual(['internal-model'])
     expect(config.llmConnections?.[0]?.piAuthProvider).toBe('openai')
     expect(config.llmConnections?.[0]?.hidden).toBe(false)
-    expect(result.credentialToSeed).toBeUndefined()
+  })
+
+  it('reclaims a reserved bundled slug whose ownership metadata was tampered with', () => {
+    const config = makeConfig({
+      defaultLlmConnection: 'storyflow-managed',
+      llmConnections: [{
+        slug: 'storyflow-managed',
+        name: 'User endpoint',
+        providerType: 'anthropic',
+        authType: 'api_key',
+        managed: false,
+        source: 'user',
+        createdAt: 1,
+      }],
+    })
+
+    expect(applyBuiltinLlmConnectionDefaults(config, makeDefaults())).toEqual({ changed: true })
+    expect(config.llmConnections?.[0]).toMatchObject({
+      slug: 'storyflow-managed',
+      name: 'Internal Default',
+      providerType: 'pi_compat',
+      authType: 'api_key_with_endpoint',
+      hidden: true,
+      managed: true,
+      source: 'builtin',
+    })
   })
 
   it('ignores disabled defaults', () => {
@@ -314,29 +330,36 @@ describe('builtin LLM connection defaults', () => {
     const result = applyBuiltinLlmConnectionDefaults(config, makeDefaults({ enabled: false }))
 
     expect(result.changed).toBe(false)
-    expect(result.credentialToSeed).toBeUndefined()
     expect(config.llmConnections).toEqual([])
   })
 
-  it('adds the bundled managed connection without seeding a credential when no API key is bundled', () => {
+  it('ignores legacy bundled and environment API keys', () => {
     const config = makeConfig()
-    const result = applyBuiltinLlmConnectionDefaults(config, makeDefaults({ apiKey: '' }))
+    const defaults = makeDefaults() as ConfigDefaults & {
+      builtinLlmConnections: Array<BuiltinLlmConnectionDefaults & { apiKey: string }>
+    }
+    defaults.builtinLlmConnections[0]!.apiKey = 'legacy-static-secret'
+    const result = applyBuiltinLlmConnectionDefaults(config, defaults)
 
-    expect(result.changed).toBe(true)
-    expect(result.credentialToSeed).toBeUndefined()
-    expect(config.defaultLlmConnection).toBe('wangsu-default')
+    expect(result).toEqual({ changed: true })
+    expect(config.defaultLlmConnection).toBe('storyflow-managed')
     expect(config.llmConnections?.[0]).toMatchObject({
-      slug: 'wangsu-default',
+      slug: 'storyflow-managed',
       hidden: true,
       managed: true,
     })
+    expect(JSON.stringify(config)).not.toContain('legacy-static-secret')
   })
 
-  it('seeds the managed gateway credential from CRAFT_BUILTIN_LLM_API_KEY when the bundle omits a key', () => {
+  it('does not restore a static managed credential from legacy defaults or environment', () => {
     const configDir = mkdtempSync(join(tmpdir(), 'craft-agent-builtin-env-'))
     const bundledRoot = join(configDir, 'bundle')
     const bundledResources = join(bundledRoot, 'resources')
     mkdirSync(bundledResources, { recursive: true })
+    const defaults = makeDefaults() as ConfigDefaults & {
+      builtinLlmConnections: Array<BuiltinLlmConnectionDefaults & { apiKey: string }>
+    }
+    defaults.builtinLlmConnections[0]!.apiKey = 'bundled-static-secret'
 
     writeFileSync(
       join(configDir, 'config.json'),
@@ -350,7 +373,7 @@ describe('builtin LLM connection defaults', () => {
     )
     writeFileSync(
       join(bundledResources, 'config-defaults.json'),
-      JSON.stringify(makeDefaults({ apiKey: '' }), null, 2),
+      JSON.stringify(defaults, null, 2),
       'utf-8',
     )
 
@@ -363,7 +386,7 @@ describe('builtin LLM connection defaults', () => {
         import { getCredentialManager } from '${CREDENTIALS_MODULE_PATH}';
         setBundledAssetsRoot(${JSON.stringify(bundledRoot)});
         await seedBuiltinLlmConnectionFromDefaults();
-        const key = await getCredentialManager().getLlmApiKey('wangsu-default');
+        const key = await getCredentialManager().getLlmApiKey('storyflow-managed');
         console.log(key ?? '');
       `,
     ], {
@@ -377,130 +400,11 @@ describe('builtin LLM connection defaults', () => {
     })
 
     if (run.exitCode !== 0) {
-      throw new Error(`env seed subprocess failed:\n${run.stderr.toString()}`)
+      throw new Error(`metadata sync subprocess failed:\n${run.stderr.toString()}`)
     }
 
-    expect(run.stdout.toString().trim()).toBe('env-managed-secret')
+    expect(run.stdout.toString().trim()).toBe('')
     expect(readFileSync(join(configDir, 'config.json'), 'utf-8')).not.toContain('env-managed-secret')
-    expect(readFileSync(join(configDir, 'config-defaults.json'), 'utf-8')).not.toContain('env-managed-secret')
-  })
-
-  it('seeds the credential from bundled defaults without copying the key to local config files', () => {
-    const configDir = mkdtempSync(join(tmpdir(), 'craft-agent-builtin-'))
-    const bundledRoot = join(configDir, 'bundle')
-    const bundledResources = join(bundledRoot, 'resources')
-    mkdirSync(bundledResources, { recursive: true })
-
-    writeFileSync(
-      join(configDir, 'config.json'),
-      JSON.stringify({
-        workspaces: [],
-        activeWorkspaceId: null,
-        activeSessionId: null,
-        llmConnections: [],
-      }, null, 2),
-      'utf-8',
-    )
-    writeFileSync(
-      join(bundledResources, 'config-defaults.json'),
-      JSON.stringify(makeDefaults(), null, 2),
-      'utf-8',
-    )
-
-    const run = Bun.spawnSync([
-      process.execPath,
-      '--eval',
-      `
-        import { setBundledAssetsRoot } from '${UTILS_MODULE_PATH}';
-        import { seedBuiltinLlmConnectionFromDefaults } from '${STORAGE_MODULE_PATH}';
-        import { getCredentialManager } from '${CREDENTIALS_MODULE_PATH}';
-        setBundledAssetsRoot(${JSON.stringify(bundledRoot)});
-        await seedBuiltinLlmConnectionFromDefaults();
-        const key = await getCredentialManager().getLlmApiKey('wangsu-default');
-        console.log(key ?? '');
-      `,
-    ], {
-      env: {
-        ...process.env,
-        CRAFT_CONFIG_DIR: configDir,
-        CRAFT_BUILTIN_LLM_API_KEY: '',
-      },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-
-    if (run.exitCode !== 0) {
-      throw new Error(`seed subprocess failed:\n${run.stderr.toString()}`)
-    }
-
-    expect(run.stdout.toString().trim()).toBe('internal-secret')
-    expect(readFileSync(join(configDir, 'config.json'), 'utf-8')).not.toContain('internal-secret')
-    expect(readFileSync(join(configDir, 'config-defaults.json'), 'utf-8')).not.toContain('internal-secret')
-    expect(existsSync(join(configDir, 'credentials.enc'))).toBe(true)
-  })
-
-  it('removes a revoked bundled credential without touching user-provided credentials', () => {
-    const configDir = mkdtempSync(join(tmpdir(), 'craft-agent-revoked-builtin-'))
-    const bundledRoot = join(configDir, 'bundle')
-    const bundledResources = join(bundledRoot, 'resources')
-    mkdirSync(bundledResources, { recursive: true })
-
-    const revokedKey = 'revoked-distribution-key'
-    const revokedHash = createHash('sha256').update(revokedKey, 'utf8').digest('hex')
-
-    writeFileSync(
-      join(configDir, 'config.json'),
-      JSON.stringify({
-        workspaces: [],
-        activeWorkspaceId: null,
-        activeSessionId: null,
-        llmConnections: [],
-      }, null, 2),
-      'utf-8',
-    )
-    writeFileSync(
-      join(bundledResources, 'config-defaults.json'),
-      JSON.stringify(makeDefaults({
-        apiKey: '',
-        revokedApiKeySha256: [revokedHash],
-      }), null, 2),
-      'utf-8',
-    )
-
-    const run = Bun.spawnSync([
-      process.execPath,
-      '--eval',
-      `
-        import { setBundledAssetsRoot } from '${UTILS_MODULE_PATH}';
-        import { seedBuiltinLlmConnectionFromDefaults } from '${STORAGE_MODULE_PATH}';
-        import { getCredentialManager } from '${CREDENTIALS_MODULE_PATH}';
-        setBundledAssetsRoot(${JSON.stringify(bundledRoot)});
-        const manager = getCredentialManager();
-        await manager.setLlmApiKey('wangsu-default', ${JSON.stringify(revokedKey)});
-        await seedBuiltinLlmConnectionFromDefaults();
-        const afterRevoked = await manager.getLlmApiKey('wangsu-default');
-        await manager.setLlmApiKey('wangsu-default', 'author-owned-key');
-        await seedBuiltinLlmConnectionFromDefaults();
-        const afterUserKey = await manager.getLlmApiKey('wangsu-default');
-        console.log(JSON.stringify({ afterRevoked, afterUserKey }));
-      `,
-    ], {
-      env: {
-        ...process.env,
-        CRAFT_CONFIG_DIR: configDir,
-        CRAFT_BUILTIN_LLM_API_KEY: '',
-      },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-
-    if (run.exitCode !== 0) {
-      throw new Error(`revoked seed subprocess failed:\n${run.stderr.toString()}`)
-    }
-
-    expect(JSON.parse(run.stdout.toString().trim())).toEqual({
-      afterRevoked: null,
-      afterUserKey: 'author-owned-key',
-    })
+    expect(readFileSync(join(configDir, 'config.json'), 'utf-8')).not.toContain('bundled-static-secret')
   })
 })

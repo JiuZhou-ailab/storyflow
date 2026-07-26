@@ -5,7 +5,6 @@
 - `WorkspaceSurface.tsx`：延迟装载 AppShell 与编辑器专用主题 Provider。
 - `WorkspaceEmptyState.tsx`：为空项目提供不写入磁盘的创建、导入与 Skills 冷启动入口。
 - `WorkspaceProjectSidebar.tsx`：延迟装载真实项目文件树，并呈现空白项目提示。
-- `ProjectExportDialog.tsx`：按真实文件或文件夹显式选择导出内容。
 - `WorkspaceFileTree.tsx`：受控、虚拟化的文件树与拖动/重命名适配层。
 - `WorkspaceFileTreeRow.tsx`：文件树可见行、右键菜单和行内编辑。
 - `useWorkspaceProjectSurface.ts`：冷启动状态与创建、导入、Skills 命令的编排边界。

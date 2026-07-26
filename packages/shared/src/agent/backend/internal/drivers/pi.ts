@@ -1,3 +1,7 @@
+// input: Provider connection settings, credentials, and the installed Pi model catalog
+// output: Internal Pi driver configuration and connection-test behavior
+// pos: Provider driver boundary between Storyflow's internal agent runtime and Pi
+
 import type { ProviderDriver, DriverTestConnectionArgs } from '../driver-types.ts';
 import type { ModelDefinition } from '../../../../config/models.ts';
 import { getAllPiModels, getPiModelsForAuthProvider } from '../../../../config/models-pi.ts';
@@ -296,7 +300,7 @@ export const piDriver: ProviderDriver = {
     let modelApi: string | undefined;
     let modelBaseUrl: string | undefined;
     try {
-      const { getModels } = await import('@earendil-works/pi-ai');
+      const { getModels } = await import('@earendil-works/pi-ai/compat');
       const models = getModels(piAuthProvider as Parameters<typeof getModels>[0]);
       const requestedId = args.model.startsWith('pi/') ? args.model.slice(3) : args.model;
       const match = models.find(m => m.id === requestedId) || models[0];

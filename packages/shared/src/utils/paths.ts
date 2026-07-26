@@ -1,3 +1,7 @@
+// input: User paths, process cwd, and optional Electron bundled-assets root
+// output: Portable path helpers and deterministic bundled-resource resolution
+// pos: Shared filesystem path boundary for desktop, headless, and development runtimes
+
 /**
  * Path Portability Utilities
  *
@@ -198,7 +202,8 @@ export function setBundledAssetsRoot(dir: string): void {
  * Tries candidates in order:
  * 1. Electron packaged app: <assetsRoot>/resources/<subfolder>
  * 2. Dev: electron app resources folder (when running from apps/electron)
- * 3. Dev: dist output (after build:copy)
+ * 3. Dev: monorepo electron resources folder (when running from repo root)
+ * 4. Dev: dist output (after build:copy)
  *
  * Returns the first candidate that exists on disk, or undefined if none found.
  *
@@ -210,6 +215,8 @@ export function getBundledAssetsDir(subfolder: string): string | undefined {
     ...(_assetsRoot ? [join(_assetsRoot, 'resources', subfolder)] : []),
     // Dev: electron app resources folder (when cwd is apps/electron)
     join(process.cwd(), 'resources', subfolder),
+    // Dev: electron app resources folder (when cwd is the monorepo root)
+    join(process.cwd(), 'apps', 'electron', 'resources', subfolder),
     // Dev: dist output (after build:copy)
     join(process.cwd(), 'dist', 'resources', subfolder),
   ];

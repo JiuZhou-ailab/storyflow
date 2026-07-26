@@ -1,0 +1,139 @@
+# input: Cloudflare credentials and separate client-session/model-access signing secrets
+# output: Deployed managed-auth Workers plus live negative and end-to-end positive canaries
+# pos: Reusable production gate that publishes the model gateway before the auth broker
+name: Deploy managed auth
+
+on:
+  workflow_call:
+    secrets:
+      CLOUDFLARE_API_TOKEN:
+        required: true
+      STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET:
+        required: true
+      STORYFLOW_GATEWAY_JWT_CURRENT_SECRET:
+        required: true
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-managed-auth
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}
+      STORYFLOW_GATEWAY_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_GATEWAY_JWT_CURRENT_SECRET }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Verify deployment inputs
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET STORYFLOW_GATEWAY_JWT_CURRENT_SECRET; do
+            test -n "${!name}" || { echo "Missing $name"; exit 1; }
+          done
+          test "$STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET" != "$STORYFLOW_GATEWAY_JWT_CURRENT_SECRET" \
+            || { echo "Client-session and model-access secrets must differ"; exit 1; }
+
+      - name: Test managed auth contract
+        run: |
+          bun test \
+            apps/auth-broker-worker/src/index.test.ts \
+            apps/model-gateway-worker/src/index.test.ts \
+            apps/model-gateway-worker/src/managed-auth-flow.test.ts
+
+      - name: Deploy and canary model gateway
+        run: |
+          set -euo pipefail
+          printf '%s' "$STORYFLOW_GATEWAY_JWT_CURRENT_SECRET" \
+            | bunx wrangler@4.114.0 secret put STORYFLOW_GATEWAY_JWT_CURRENT_SECRET \
+                --config apps/model-gateway-worker/wrangler.toml >/dev/null
+          bunx wrangler@4.114.0 deploy --config apps/model-gateway-worker/wrangler.toml
+
+          curl --fail --silent --show-error --retry 5 --retry-delay 2 \
+            https://storyflow-model.zjding.com/ready >/dev/null
+          status="$(curl --silent --show-error --output "$RUNNER_TEMP/gateway-negative.json" \
+            --write-out '%{http_code}' \
+            -H 'Authorization: Bearer invalid' \
+            -H 'Content-Type: application/json' \
+            -d '{"model":"gemini-3.5-flash","messages":[{"role":"user","content":"ping"}],"max_tokens":1}' \
+            https://storyflow-model.zjding.com/v1/chat/completions)"
+          test "$status" = 401
+          grep -q '"code":"model_access_token_invalid"' "$RUNNER_TEMP/gateway-negative.json"
+
+      - name: Deploy and verify auth broker
+        run: |
+          set -euo pipefail
+          printf '%s' "$STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET" \
+            | bunx wrangler@4.114.0 secret put STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET \
+                --config apps/auth-broker-worker/wrangler.toml >/dev/null
+          printf '%s' "$STORYFLOW_GATEWAY_JWT_CURRENT_SECRET" \
+            | bunx wrangler@4.114.0 secret put STORYFLOW_GATEWAY_JWT_CURRENT_SECRET \
+                --config apps/auth-broker-worker/wrangler.toml >/dev/null
+          bunx wrangler@4.114.0 deploy --config apps/auth-broker-worker/wrangler.toml
+
+          curl --fail --silent --show-error --retry 5 --retry-delay 2 \
+            https://storyflow-auth.zjding.com/ready >/dev/null
+          status="$(curl --silent --show-error --output "$RUNNER_TEMP/broker-negative.json" \
+            --write-out '%{http_code}' \
+            -X POST https://storyflow-auth.zjding.com/api/client-auth/token)"
+          test "$status" = 401
+          grep -q '"code":"client_session_token_invalid"' "$RUNNER_TEMP/broker-negative.json"
+
+          APP_SESSION_TOKEN="$(bun --eval '
+            import { SignJWT } from "jose";
+            const now = Math.floor(Date.now() / 1000);
+            console.log(await new SignJWT({
+              scope: "model:issue",
+              model_tier: "standard",
+              auth_time: now,
+            })
+              .setProtectedHeader({ alg: "HS256", typ: "JWT", kid: "client-session-2026-07" })
+              .setIssuer("storyflow-auth-broker")
+              .setAudience("storyflow-client-auth")
+              .setSubject("release-canary")
+              .setIssuedAt(now)
+              .setExpirationTime(now + 300)
+              .sign(new TextEncoder().encode(process.env.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET)));
+          ')"
+
+          status="$(curl --silent --show-error --output "$RUNNER_TEMP/token-response.json" \
+            --write-out '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bearer $APP_SESSION_TOKEN" \
+            https://storyflow-auth.zjding.com/api/client-auth/token)"
+          test "$status" = 200
+          MODEL_ACCESS_TOKEN="$(TOKEN_RESPONSE_PATH="$RUNNER_TEMP/token-response.json" bun --eval '
+            const body = await Bun.file(process.env.TOKEN_RESPONSE_PATH).json();
+            if (typeof body.modelAccessToken !== "string") process.exit(1);
+            console.log(body.modelAccessToken);
+          ')"
+
+          status="$(curl --silent --show-error --output "$RUNNER_TEMP/model-response.json" \
+            --write-out '%{http_code}' \
+            -H "Authorization: Bearer $MODEL_ACCESS_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{"model":"gemini-3.5-flash","messages":[{"role":"user","content":"Reply OK"}],"max_tokens":4}' \
+            https://storyflow-model.zjding.com/v1/chat/completions)"
+          test "$status" = 200
+          MODEL_RESPONSE_PATH="$RUNNER_TEMP/model-response.json" bun --eval '
+            const body = await Bun.file(process.env.MODEL_RESPONSE_PATH).json();
+            if (!Array.isArray(body.choices) || body.choices.length === 0) process.exit(1);
+          '

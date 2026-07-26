@@ -29,7 +29,6 @@ import {
   MailOpen,
   History,
   ArrowUpRight,
-  Download,
   FilePlus,
   FileUp,
   FolderOpen,
@@ -81,7 +80,6 @@ import { PanelStackContainer } from "./PanelStackContainer"
 import { ResizableColumn } from "./ResizableColumn"
 import type { ChatDisplayHandle } from "./ChatDisplay"
 import { NovelDocumentEditorPanel, type NovelDocumentEditorPanelHandle, type NovelSelectionAiRequest } from "@/components/writing/NovelDocumentEditorPanel"
-import { ProjectExportDialog } from "@/components/workspace/ProjectExportDialog"
 import { NovelVersionHistoryDialog } from "@/components/writing/NovelVersionHistoryDialog"
 import { formatNovelWorkspaceFileTitle } from "@/components/writing/novel-file-display"
 import type {
@@ -157,7 +155,7 @@ import {
 } from "@/contexts/NavigationContext"
 import type { SettingsSubpage } from "../../../shared/types"
 import { SourcesListPanel } from "./SourcesListPanel"
-import { SkillsListPanel } from "./SkillsListPanel"
+import { AddSkillPopover, SkillsListPanel } from "./SkillsListPanel"
 import { AutomationsListPanel } from "../automations/AutomationsListPanel"
 import { AUTOMATION_TYPE_TO_FILTER_KIND } from "../automations/types"
 import { useAutomations } from "@/hooks/useAutomations"
@@ -166,7 +164,6 @@ import { PanelHeader } from "./PanelHeader"
 import { SendToWorkspaceDialog } from "./SendToWorkspaceDialog"
 import { MessagingDialogHost } from "@/components/messaging/MessagingDialogHost"
 import { EditPopover, getEditConfig, type EditContextKey } from "@/components/ui/EditPopover"
-import { CreateSkillDialog } from "./CreateSkillDialog"
 import SettingsNavigator from "@/pages/settings/SettingsNavigator"
 import {
   PANEL_GAP,
@@ -186,11 +183,6 @@ import { rendererPerf } from "@/lib/perf"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
 import { buildRejectFileChangesOperation } from "@/lib/file-change-review"
 import { getSnapshotChangeKind } from "@/lib/snapshot-revert"
-import {
-  buildProjectExportPlan,
-  createProjectExportFolderName,
-  type ProjectExportOptions,
-} from "@/lib/project-export"
 import {
   getNovelReviewChangeKey,
   normalizeNovelFileChangePaths,
@@ -1146,8 +1138,6 @@ function AppShellContent({
   const [searchActive, setSearchActive] = useAtom(sessionListSearchActiveAtom)
   const [searchQuery, setSearchQuery] = useAtom(sessionListSearchQueryAtom)
   const [globalSearchOpen, setGlobalSearchOpen] = React.useState(false)
-  const [createSkillOpen, setCreateSkillOpen] = React.useState(false)
-
   React.useEffect(() => {
     if (openGlobalSearchSignal > 0) {
       setGlobalSearchOpen(true)
@@ -2443,8 +2433,6 @@ function AppShellContent({
   const [loadedNovelDocumentPath, setLoadedNovelDocumentPath] = React.useState<string | null>(null)
   const [novelDocumentSaving, setNovelDocumentSaving] = React.useState(false)
   const [novelDocumentError, setNovelDocumentError] = React.useState<string | null>(null)
-  const [novelExportDialogOpen, setNovelExportDialogOpen] = React.useState(false)
-  const [novelExporting, setNovelExporting] = React.useState(false)
   const [novelVersionDialogOpen, setNovelVersionDialogOpen] = React.useState(false)
   const [novelVersions, setNovelVersions] = React.useState<WorkspaceVersionEntry[]>([])
   const [novelVersionsLoading, setNovelVersionsLoading] = React.useState(false)
@@ -3185,52 +3173,6 @@ function AppShellContent({
       setNovelVersionRestoringHash(null)
     }
   }, [ensureNovelDocumentSaved, novelWorkspaceRoot, refreshNovelVersions, refreshNovelWorkspaceFilesAfterMutation, rememberNovelVersionBaseline, replaceNovelDocumentContent, selectedNovelDocumentPath, t])
-
-  const handleExportNovelWorkspace = React.useCallback(async (options: ProjectExportOptions) => {
-    if (!novelWorkspaceRoot) return
-
-    const saved = await ensureNovelDocumentSaved()
-    if (!saved) return
-
-    const plan = buildProjectExportPlan(novelWorkspaceFiles, options)
-    if (plan.entries.length === 0) {
-      toast.error(t('writing.export.empty', '没有可导出的内容'))
-      return
-    }
-
-    const exportRootPath = joinWorkspacePath(novelWorkspaceRoot, createProjectExportFolderName())
-    const toastId = toast.loading(t('writing.export.exporting', '正在导出'))
-    setNovelExporting(true)
-
-    try {
-      await window.electronAPI.createDirectory(exportRootPath)
-
-      for (const entry of plan.entries) {
-        const targetPath = joinWorkspacePath(exportRootPath, entry.targetRelativePath)
-
-        const content = await window.electronAPI.readFile(entry.sourcePath)
-        await window.electronAPI.writeFile(targetPath, content)
-      }
-      await refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
-
-      toast.success(t('writing.export.success', '已导出 {{count}} 个文件', { count: plan.sourceFileCount }), {
-        id: toastId,
-        description: exportRootPath,
-        action: {
-          label: t('writing.export.reveal', '显示'),
-          onClick: () => { void window.electronAPI.showInFolder(exportRootPath).catch(() => {}) },
-        },
-      })
-      setNovelExportDialogOpen(false)
-    } catch (error) {
-      toast.error(t('writing.export.failed', '导出写作工作区失败'), {
-        id: toastId,
-        description: error instanceof Error ? error.message : String(error),
-      })
-    } finally {
-      setNovelExporting(false)
-    }
-  }, [ensureNovelDocumentSaved, novelWorkspaceFiles, novelWorkspaceRoot, refreshNovelWorkspaceFilesAfterMutation, t])
 
   const novelReviewUndoStackRef = React.useRef<NovelReviewUndoEntry[]>([])
 
@@ -4355,20 +4297,13 @@ function AppShellContent({
                   onRejectReviewChanges={selectedNovelPendingChanges.length > 0 ? () => { void handleRejectNovelFileChanges(selectedNovelPendingChanges) } : undefined}
                   onPreviousReviewFile={() => { void handleSelectAdjacentNovelChangeFile('previous') }}
                   onNextReviewFile={() => { void handleSelectAdjacentNovelChangeFile('next') }}
-                  workspaceActions={(
+                  toolbarAccessory={(
                     <>
                       <HeaderIconButton
-                        icon={<History className="h-4 w-4" />}
+                        icon={<History className="h-4 w-4" strokeWidth={1.7} />}
                         tooltip={t('writing.version.title', '版本管理')}
                         disabled={!novelWorkspaceRoot}
                         onClick={() => setNovelVersionDialogOpen(true)}
-                        className="h-[26px] w-[26px] rounded-lg"
-                      />
-                      <HeaderIconButton
-                        icon={<Download className="h-4 w-4" />}
-                        tooltip={t('writing.export.action', '导出')}
-                        disabled={novelWorkspaceFiles.length === 0}
-                        onClick={() => setNovelExportDialogOpen(true)}
                         className="h-[26px] w-[26px] rounded-lg"
                       />
                       {collapsedDirectoryToggleButton}
@@ -4440,9 +4375,6 @@ function AppShellContent({
             workspaces={workspaces}
             activeWorkspaceId={activeProjectId}
             activeSessionId={panelCount > 1 ? focusedSessionId : session.selected}
-            onSelectProject={(workspaceId) => {
-              void onSelectWorkspace?.(workspaceId)
-            }}
             onSelectSession={handleActivitySessionSelect}
             onCreateConversationInProject={handleActivityProjectSessionCreate}
             activeProjectSessionId={activeProjectId && activeProjectId !== FREE_CONVERSATION_WORKSPACE_ID
@@ -4461,6 +4393,25 @@ function AppShellContent({
             onOpenAccount={onOpenAccount}
             profile={profile}
             onOpenWhatsNew={handleWhatsNewClick}
+            sessionActions={{
+              configurationWorkspaceId: activeWorkspaceId,
+              sessionStatuses: effectiveSessionStatuses,
+              labels: displayLabelConfigs,
+              onLabelsChange: handleSessionLabelsChange,
+              onRename: onRenameSession,
+              onFlag: onFlagSession,
+              onUnflag: onUnflagSession,
+              onArchive: onArchiveSession,
+              onUnarchive: onUnarchiveSession,
+              onMarkUnread: onMarkSessionUnread,
+              onSessionStatusChange,
+              onOpenInNewWindow: (meta) => {
+                window.electronAPI.openSessionInNewWindow(meta.workspaceId, meta.id)
+              },
+              onSendToWorkspace: (sessionId) => setSendToWorkspaceIds([sessionId]),
+              onDelete: (sessionId) => { void handleDeleteSession(sessionId) },
+              hasRemoteWorkspaces,
+            }}
             whatsNew={{
               unseen: hasUnseenReleaseNotes,
               accentColor: whatsNewManifest?.accentColor,
@@ -5082,13 +5033,17 @@ function AppShellContent({
                       )}
                     />
                   )}
-                  {/* Add Skill button (only for skills mode) — direct scaffold, not AI chat */}
+                  {/* Add Skill opens a scoped Skill Creator conversation. */}
                   {isSkillsNavigation(navState) && activeWorkspace && (
-                    <HeaderIconButton
-                      icon={<Plus className="h-4 w-4" />}
-                      tooltip={t("sidebarMenu.addSkill")}
-                      data-tutorial="add-skill-button"
-                      onClick={() => setCreateSkillOpen(true)}
+                    <AddSkillPopover
+                      workspace={activeWorkspace}
+                      trigger={
+                        <HeaderIconButton
+                          icon={<Plus className="h-4 w-4" />}
+                          tooltip={t("sidebarMenu.addSkill")}
+                          data-tutorial="add-skill-button"
+                        />
+                      }
                     />
                   )}
                   {/* Add Automation button (only for automations mode) */}
@@ -5132,7 +5087,6 @@ function AppShellContent({
                 workspaces={workspaces}
                 onSkillClick={handleSkillSelect}
                 onDeleteSkill={handleDeleteSkill}
-                onCreateSkill={() => setCreateSkillOpen(true)}
                 selectedSkillSlug={isSkillsNavigation(navState) && navState.details?.type === 'skill' ? navState.details.skillSlug : null}
               />
             )}
@@ -5366,16 +5320,6 @@ function AppShellContent({
         />
       ) : null}
 
-      <ProjectExportDialog
-        open={novelExportDialogOpen}
-        files={novelWorkspaceFiles}
-        exporting={novelExporting}
-        onOpenChange={(open) => {
-          if (!novelExporting) setNovelExportDialogOpen(open)
-        }}
-        onExport={handleExportNovelWorkspace}
-      />
-
       <NovelVersionHistoryDialog
         open={novelVersionDialogOpen}
         versions={novelVersions}
@@ -5446,16 +5390,6 @@ function AppShellContent({
         onValueChange={setNovelProjectRenameValue}
         onSubmit={handleSubmitNovelProjectRename}
       />
-
-      {activeWorkspace ? (
-        <CreateSkillDialog
-          open={createSkillOpen}
-          onOpenChange={setCreateSkillOpen}
-          workspaceId={activeWorkspace.id}
-          scope={isProjectRuntime ? 'project' : 'global'}
-          existingSlugs={skills.map((skill) => skill.slug)}
-        />
-      ) : null}
 
       {/* Messaging dialogs (pairing-code + WA connect) — driven by messagingDialogAtom.
           Mounted here so they survive context-menu / dropdown close. */}

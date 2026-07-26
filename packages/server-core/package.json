@@ -1,6 +1,6 @@
 {
   "name": "@craft-agent/server-core",
-  "version": "0.9.44",
+  "version": "0.9.45",
   "license": "Apache-2.0",
   "description": "Reusable headless server infrastructure for Storyflow",
   "type": "module",
@@ -29,7 +29,7 @@
     "jose": "^6.0.0",
     "ws": "^8.19.0",
     "sharp": "0.34.5",
-    "@earendil-works/pi-ai": "0.79.9"
+    "@earendil-works/pi-ai": "0.80.6"
   },
   "devDependencies": {
     "typescript": "^5.8.2",

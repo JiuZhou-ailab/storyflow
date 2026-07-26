@@ -502,6 +502,12 @@ export interface AgentBackend {
   updateRuntimeConfig?(update: BackendRuntimeUpdate): Promise<boolean>;
 
   /**
+   * Reload credentials from the shared credential store and push them into an
+   * already-running backend. Returns false when an idle restart is required.
+   */
+  reloadCredentials?(): Promise<boolean>;
+
+  /**
    * Dispose resources before an idle backend restart. Backends with subprocesses
    * can wait for child process exit here to avoid transient process leaks.
    */

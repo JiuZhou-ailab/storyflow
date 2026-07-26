@@ -22,7 +22,7 @@ import {
   type BackendHostRuntimeContext,
   type PostInitResult,
 } from '@craft-agent/shared/agent/backend'
-import { CONFIG_DIR, getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, resetManagedAnthropicAuthEnvVars } from '@craft-agent/shared/config'
+import { CONFIG_DIR, getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, normalizeLlmConnectionSlug, resetManagedAnthropicAuthEnvVars } from '@craft-agent/shared/config'
 import { PrivilegedExecutionBroker } from '@craft-agent/server-core/services'
 import { isValidWorkingDirectory } from '../utils/path-validation'
 import { InitGate } from '@craft-agent/server-core/domain'
@@ -107,7 +107,11 @@ import { AutomationSystem, createPromptHistoryEntry, appendAutomationHistoryEntr
 import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput, needsPiRuntimeMigrationSeed } from './runtime-config'
 import { captureWriteOriginalContent } from './write-original-content'
 import { SESSION_TURN_HARD_TIMEOUT_MS, SESSION_TURN_IDLE_TIMEOUT_MS, TurnWatchdog, type TurnWatchdogTimeout } from './turn-watchdog'
-import { isManagedDefaultGatewayConnection, normalizeManagedDefaultGatewayAuthError } from './managed-gateway-auth-error'
+import {
+  isManagedDefaultGatewayConnection,
+  MANAGED_MODEL_ACCESS_UNAVAILABLE_MESSAGE,
+  normalizeManagedDefaultGatewayAuthError,
+} from './managed-gateway-auth-error'
 import { runAutoCompactBeforeTurn } from './auto-compact-lifecycle'
 
 // Import from server-core domain utilities
@@ -149,12 +153,16 @@ interface SessionRuntimeHooks {
   captureException: (error: unknown, context?: { errorSource?: string; sessionId?: string }) => void
   onSessionStarted: () => void
   onSessionStopped: () => void
+  ensureManagedModelAccessToken: (forceRefresh?: boolean) => Promise<{ refreshed: boolean }>
 }
 
 const defaultSessionRuntimeHooks: SessionRuntimeHooks = {
   updateBadgeCount: () => {},
   onSessionStarted: () => {},
   onSessionStopped: () => {},
+  ensureManagedModelAccessToken: async () => {
+    throw new Error(MANAGED_MODEL_ACCESS_UNAVAILABLE_MESSAGE)
+  },
   captureException: (error, context) => {
     const err = error instanceof Error ? error : new Error(String(error))
     if (_platform?.captureError) {
@@ -602,6 +610,7 @@ async function resolveToolDisplayMeta(
           'SubmitPlan': 'Submit Plan',
           'call_llm': 'LLM Query',
           'config_validate': 'Validate Config',
+          'skill_create': 'Create Skill',
           'skill_validate': 'Validate Skill',
           'mermaid_validate': 'Validate Mermaid',
           'source_test': 'Test Source',
@@ -894,6 +903,8 @@ interface ManagedSession {
   lastSentOptions?: SendMessageOptions
   // Flag to prevent infinite retry loops (reset at start of each sendMessage)
   authRetryAttempted?: boolean
+  // Whole-turn replay is safe only until the first tool starts.
+  authRetrySafe?: boolean
   // Flag indicating auth retry is in progress (to prevent complete handler from interfering)
   authRetryInProgress?: boolean
   // Whether this session is hidden from session list (e.g., mini edit sessions)
@@ -970,6 +981,10 @@ export function createManagedSession(
     }
   }
 
+  if (sourceFields.llmConnection) {
+    sourceFields.llmConnection = normalizeLlmConnectionSlug(sourceFields.llmConnection)
+  }
+
   const managed = {
     // Spread all session-like fields from source (id, name, permissionMode, labels, model, etc.)
     // This ensures new persistent fields automatically flow through without manual copying.
@@ -1038,6 +1053,16 @@ function resolveManagedBackendProvider(managed: ManagedSession): string {
     workspaceDefaultConnectionSlug: workspaceConfig?.defaults?.defaultLlmConnection,
     managedModel: managed.model,
   }).provider
+}
+
+function resolveManagedConnectionSlug(managed: ManagedSession): string | undefined {
+  const workspaceConfig = loadWorkspaceConfig(managed.workspace.rootPath)
+  return resolveBackendContext({
+    sessionConnectionSlug: managed.llmConnection,
+    workspaceDefaultConnectionSlug: workspaceConfig?.defaults?.defaultLlmConnection,
+    managedModel: managed.model,
+  }).connection?.slug
+    ?? (managed.llmConnection ? normalizeLlmConnectionSlug(managed.llmConnection) : undefined)
 }
 
 function resolveLiveAssistantBranchability(
@@ -1755,8 +1780,8 @@ export class SessionManager implements ISessionManager {
       // Fix defaultLlmConnection if it points to a non-existent connection
       migrateOrphanedDefaultConnections()
 
-      // Seed distribution-provided internal LLM defaults after legacy migration
-      // but before auth env resolution, so first launch can work without setup.
+      // Sync distribution-provided connection metadata after legacy migration.
+      // Managed credentials are projected separately from client auth sessions.
       await seedBuiltinLlmConnectionFromDefaults()
 
       // Migrate legacy credentials to LLM connection format (one-time migration)
@@ -2541,7 +2566,7 @@ export class SessionManager implements ISessionManager {
       managed.name = storedSession.name
       // Restore LLM connection state - ensures correct provider on resume
       if (storedSession.llmConnection) {
-        managed.llmConnection = storedSession.llmConnection
+        managed.llmConnection = normalizeLlmConnectionSlug(storedSession.llmConnection)
       }
       if (storedSession.connectionLocked) {
         managed.connectionLocked = storedSession.connectionLocked
@@ -3231,6 +3256,48 @@ export class SessionManager implements ISessionManager {
   }
 
   /**
+   * Push a rotated credential into every live backend using this connection.
+   * Pi supports this in-place through its existing `token_update` protocol.
+   */
+  async reloadConnectionCredentials(connectionSlug: string): Promise<void> {
+    for (const managed of this.sessions.values()) {
+      if (managed.llmConnection !== connectionSlug || !managed.agent) continue
+      try {
+        const reloaded = await managed.agent.reloadCredentials?.() ?? false
+        if (!reloaded && !managed.agent.isProcessing()) {
+          await this.disposeManagedAgentRuntime(managed, 'credential reload')
+        }
+      } catch (error) {
+        sessionLog.warn(`reloadConnectionCredentials failed for ${managed.id}: ${error instanceof Error ? error.message : error}`)
+        if (!managed.agent?.isProcessing()) {
+          await this.disposeManagedAgentRuntime(managed, 'failed credential reload')
+        }
+      }
+    }
+  }
+
+  /** Revoke all live runtimes that still hold credentials for this connection. */
+  async disposeConnectionRuntimes(connectionSlug: string): Promise<void> {
+    for (const managed of this.sessions.values()) {
+      if (managed.llmConnection !== connectionSlug || !managed.agent) continue
+      await this.disposeManagedAgentRuntime(managed, 'connection sign-out')
+    }
+  }
+
+  private async ensureManagedCredentialForSession(
+    managed: ManagedSession,
+    forceRefresh = false,
+  ): Promise<void> {
+    const connectionSlug = resolveManagedConnectionSlug(managed)
+    if (!isManagedDefaultGatewayConnection(connectionSlug)) return
+
+    const modelAccess = await sessionRuntimeHooks.ensureManagedModelAccessToken(forceRefresh)
+    if (modelAccess.refreshed) {
+      await this.reloadConnectionCredentials(connectionSlug)
+    }
+  }
+
+  /**
    * Get or create agent for a session (lazy loading)
    * Creates the appropriate backend agent based on LLM connection.
    *
@@ -3241,6 +3308,8 @@ export class SessionManager implements ISessionManager {
    * 4. fallback: no connection configured
    */
   private async getOrCreateAgent(managed: ManagedSession): Promise<AgentInstance> {
+    await this.ensureManagedCredentialForSession(managed)
+
     // Refresh runtime config in-place when the connection has drifted since
     // the agent was created. May null out `managed.agent` if the in-place
     // refresh fails, in which case the create branch below rebuilds it.
@@ -5037,6 +5106,14 @@ export class SessionManager implements ISessionManager {
       return { success: false, error: 'Session not found' }
     }
 
+    try {
+      await this.ensureManagedCredentialForSession(managed)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Default AI access is unavailable'
+      sessionLog.warn(`refreshTitle: Managed model access unavailable: ${message}`)
+      return { success: false, error: message }
+    }
+
     // Ensure messages are loaded from disk (lazy loading support)
     await this.ensureMessagesLoaded(managed)
 
@@ -5525,7 +5602,7 @@ export class SessionManager implements ISessionManager {
       throw new Error(`Session ${sessionId} not found`)
     }
 
-    const agent = await this.getOrCreateAgent(managed)
+    let agent = await this.getOrCreateAgent(managed)
     let lastError: unknown
 
     for (let attempt = 1; attempt <= ONE_SHOT_LLM_MAX_ATTEMPTS; attempt += 1) {
@@ -5533,8 +5610,19 @@ export class SessionManager implements ISessionManager {
         return await agent.queryLlm(request)
       } catch (error) {
         lastError = error
-        if (attempt >= ONE_SHOT_LLM_MAX_ATTEMPTS || !isRetryableOneShotLlmError(error)) {
+        const connectionSlug = resolveManagedConnectionSlug(managed)
+        const errorText = error instanceof Error ? error.message : String(error)
+        const isManagedAuthError = isManagedDefaultGatewayConnection(connectionSlug)
+          && (
+            errorText.toLowerCase().includes('invalid model access token')
+            || errorText.toLowerCase().includes('model_access_token_invalid')
+          )
+        if (attempt >= ONE_SHOT_LLM_MAX_ATTEMPTS || (!isManagedAuthError && !isRetryableOneShotLlmError(error))) {
           break
+        }
+        if (isManagedAuthError) {
+          await this.ensureManagedCredentialForSession(managed, true)
+          agent = await this.getOrCreateAgent(managed)
         }
         sessionLog.warn('[queryOnce] retrying one-shot LLM request after transient failure', {
           sessionId,
@@ -5792,6 +5880,7 @@ export class SessionManager implements ISessionManager {
     if (!_isAuthRetry) {
       managed.authRetryAttempted = false
     }
+    managed.authRetrySafe = true
 
     // Store message/attachments for potential retry after auth refresh
     // (SDK subprocess caches token at startup, so if it expires mid-session,
@@ -5872,6 +5961,7 @@ export class SessionManager implements ISessionManager {
     // Start perf span for entire sendMessage flow
     const sendSpan = perf.span('session.sendMessage', { sessionId })
 
+    try {
     const workspaceRootPath = managed.workspace.rootPath
     const projectRoot = getResourceProjectRoot(managed.workspace)
     const enabledSlugs = managed.enabledSourceSlugs ?? []
@@ -5927,7 +6017,6 @@ export class SessionManager implements ISessionManager {
       sendSpan.mark('servers.applied')
     }
 
-    try {
       sessionLog.info('Starting chat for session:', sessionId)
       sessionLog.info('Workspace:', JSON.stringify(managed.workspace, null, 2))
       sessionLog.info('Message:', message)
@@ -6366,8 +6455,9 @@ export class SessionManager implements ISessionManager {
     managed: ManagedSession,
     workspaceId: string,
     failureErrorCode?: string,
+    beforeRetry?: () => Promise<void>,
   ): boolean {
-    if (managed.authRetryAttempted || !managed.lastSentMessage) return false
+    if (managed.authRetryAttempted || managed.authRetrySafe === false || !managed.lastSentMessage) return false
 
     sessionLog.info(`Auth error detected, attempting token refresh and retry for session ${sessionId}`)
     managed.authRetryAttempted = true
@@ -6383,13 +6473,15 @@ export class SessionManager implements ISessionManager {
 
     setImmediate(async () => {
       try {
+        await beforeRetry?.()
+
         // 1. Reset summarization client so it picks up fresh credentials
         sessionLog.info(`[auth-retry] Resetting summarization client for session ${sessionId}`)
         resetSummarizationClient()
 
-        // 2. Destroy the agent — the new agent's postInit() will refresh auth
+        // 2. Dispose the agent — the new agent's postInit() reads fresh auth.
         sessionLog.info(`[auth-retry] Destroying agent for session ${sessionId}`)
-        managed.agent = null
+        await this.disposeManagedAgentRuntime(managed, 'authentication retry')
 
         // 3. Retry the message
         const retryMessage = managed.lastSentMessage
@@ -6430,7 +6522,7 @@ export class SessionManager implements ISessionManager {
         const failedMessage: Message = {
           id: generateMessageId(),
           role: 'error',
-          content: 'Authentication failed. Please check your credentials.',
+          content: 'Authentication could not be refreshed. Retry or sign in again.',
           timestamp: this.monotonic(),
           errorCode: failureErrorCode,
         }
@@ -6438,7 +6530,7 @@ export class SessionManager implements ISessionManager {
         this.sendEvent({
           type: 'error',
           sessionId,
-          error: 'Authentication failed. Please check your credentials.',
+          error: 'Authentication could not be refreshed. Retry or sign in again.',
           timestamp: failedMessage.timestamp,
         }, workspaceId)
         this.onProcessingStopped(sessionId, 'error')
@@ -6446,6 +6538,36 @@ export class SessionManager implements ISessionManager {
     })
 
     return true
+  }
+
+  private attemptManagedModelAccessRetry(
+    sessionId: string,
+    managed: ManagedSession,
+    workspaceId: string,
+    connectionSlug: string,
+    failureErrorCode?: string,
+  ): boolean {
+    const retryStarted = this.attemptAuthRetry(
+      sessionId,
+      managed,
+      workspaceId,
+      failureErrorCode,
+      async () => {
+        await sessionRuntimeHooks.ensureManagedModelAccessToken(true)
+      },
+    )
+    if (!retryStarted && managed.authRetrySafe === false && !managed.authRetryAttempted) {
+      // Refresh the capability for the next model call, but never replay a turn
+      // after tools may have produced external side effects.
+      void sessionRuntimeHooks.ensureManagedModelAccessToken(true)
+        .then(result => result.refreshed
+          ? this.reloadConnectionCredentials(connectionSlug)
+          : undefined)
+        .catch(error => {
+          sessionLog.warn(`[auth-retry] Managed credential refresh failed for ${sessionId}: ${error instanceof Error ? error.message : error}`)
+        })
+    }
+    return retryStarted
   }
 
   /**
@@ -6966,6 +7088,13 @@ export class SessionManager implements ISessionManager {
   private async generateTitle(managed: ManagedSession, userMessage: string): Promise<void> {
     sessionLog.info(`[generateTitle] Starting for session ${managed.id}`)
 
+    try {
+      await this.ensureManagedCredentialForSession(managed)
+    } catch (error) {
+      sessionLog.warn(`[generateTitle] Managed model access unavailable: ${error instanceof Error ? error.message : error}`)
+      return
+    }
+
     // Use existing agent or create temporary one
     let agent: AgentInstance | null = managed.agent
     let isTemporary = false
@@ -7117,6 +7246,7 @@ export class SessionManager implements ISessionManager {
       }
 
       case 'tool_start': {
+        managed.authRetrySafe = false
         const toolInput = await captureWriteOriginalContent({
           toolName: event.toolName,
           input: event.input,
@@ -7442,14 +7572,15 @@ export class SessionManager implements ISessionManager {
           lowerErr.includes('token is expired') ||
           lowerErr.includes('authentication token is expired') ||
           lowerErr.includes('please try signing in again') ||
+          lowerErr.includes('invalid model access token') ||
           (lowerErr.includes('401') && (lowerErr.includes('unauthorized') || lowerErr.includes('auth')))
 
-        if (
-          isPlainAuthError &&
-          !isManagedDefaultGatewayConnection(managed.llmConnection) &&
-          this.attemptAuthRetry(sessionId, managed, workspaceId)
-        ) {
-          break
+        if (isPlainAuthError) {
+          const connectionSlug = resolveManagedConnectionSlug(managed)
+          const retryStarted = isManagedDefaultGatewayConnection(connectionSlug)
+            ? this.attemptManagedModelAccessRetry(sessionId, managed, workspaceId, connectionSlug)
+            : this.attemptAuthRetry(sessionId, managed, workspaceId)
+          if (retryStarted) break
         }
 
         // AgentEvent uses `message` not `error`
@@ -7477,7 +7608,8 @@ export class SessionManager implements ISessionManager {
           sessionLog.info('Skipping typed abort error event (expected during interrupt)')
           break
         }
-        const typedError = normalizeManagedDefaultGatewayAuthError(event.error, managed.llmConnection)
+        const connectionSlug = resolveManagedConnectionSlug(managed)
+        const typedError = normalizeManagedDefaultGatewayAuthError(event.error, connectionSlug)
 
         // Typed errors have structured information - send both formats for compatibility
         sessionLog.info('typed_error:', JSON.stringify(typedError, null, 2))
@@ -7491,13 +7623,14 @@ export class SessionManager implements ISessionManager {
         const isAuthError = typedError.code === 'invalid_api_key' ||
           typedError.code === 'expired_oauth_token'
 
-        if (
-          isAuthError &&
-          !isManagedDefaultGatewayConnection(managed.llmConnection) &&
-          this.attemptAuthRetry(sessionId, managed, workspaceId, typedError.code)
-        ) {
-          // Don't add error message or send to renderer - we're handling it via retry
-          break
+        if (isAuthError) {
+          const retryStarted = isManagedDefaultGatewayConnection(connectionSlug)
+            ? this.attemptManagedModelAccessRetry(sessionId, managed, workspaceId, connectionSlug, typedError.code)
+            : this.attemptAuthRetry(sessionId, managed, workspaceId, typedError.code)
+          if (retryStarted) {
+            // Don't add error message or send to renderer - we're handling it via retry
+            break
+          }
         }
 
         // Build rich error message with all diagnostic fields for persistence and UI display
@@ -7869,6 +8002,7 @@ export class SessionManager implements ISessionManager {
       }))
 
     if (messages.length === 0) return null
+    await this.ensureManagedCredentialForSession(managed)
 
     const workspaceRootPath = managed.workspace.rootPath
     const wsConfig = loadWorkspaceConfig(workspaceRootPath)

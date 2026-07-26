@@ -3,10 +3,19 @@
 // pos: Guards the first-run model setup surface from drifting back to a provider marketplace
 
 import { describe, expect, it } from "bun:test"
+import { readFileSync } from "node:fs"
 import { PROVIDER_CHOICE_IDS } from "../provider-options"
+
+const apiSetupSource = readFileSync(new URL("../APISetupStep.tsx", import.meta.url), "utf8")
+const credentialsSource = readFileSync(new URL("../CredentialsStep.tsx", import.meta.url), "utf8")
 
 describe("ProviderSelectStep choices", () => {
   it("offers only managed default and custom provider modes", () => {
     expect(PROVIDER_CHOICE_IDS).toEqual(["jiuzhou", "custom_provider"])
+  })
+
+  it("keeps managed default selection out of user credential surfaces", () => {
+    expect(apiSetupSource).not.toContain("id: 'managed_default'")
+    expect(credentialsSource).not.toContain("./managed-defaults")
   })
 })

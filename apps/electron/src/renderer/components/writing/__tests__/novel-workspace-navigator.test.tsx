@@ -563,18 +563,18 @@ describe('novel writing workspace layout', () => {
       appShellSource.indexOf('const unifiedSidebarItems'),
       appShellSource.indexOf('// Toggle folder expanded state')
     )
-    const novelWorkspaceActionsSource = appShellSource.slice(
-      appShellSource.indexOf('workspaceActions={('),
-      appShellSource.indexOf('<WorkspaceEmptyState', appShellSource.indexOf('workspaceActions={('))
+    const novelToolbarAccessorySource = appShellSource.slice(
+      appShellSource.indexOf('toolbarAccessory={('),
+      appShellSource.indexOf('<WorkspaceEmptyState', appShellSource.indexOf('toolbarAccessory={('))
     )
 
     expect(appShellSource).not.toContain('nav:writing-version')
     expect(appShellSource).not.toContain('nav:whats-new')
-    expect(novelWorkspaceActionsSource).not.toContain('handleWhatsNewClick')
+    expect(novelToolbarAccessorySource).not.toContain('handleWhatsNewClick')
     expect(novelKeyboardItemsSource).not.toContain("result.push({ id: 'nav:writing-version'")
     expect(novelKeyboardItemsSource).not.toContain("result.push({ id: 'nav:whats-new'")
-    expect(novelWorkspaceActionsSource).toContain("tooltip={t('writing.version.title', '版本管理')}")
-    expect(novelWorkspaceActionsSource).toContain('setNovelVersionDialogOpen(true)')
+    expect(novelToolbarAccessorySource).toContain("tooltip={t('writing.version.title', '版本管理')}")
+    expect(novelToolbarAccessorySource).toContain('setNovelVersionDialogOpen(true)')
   })
 
   it('renders the writing catalog as a native project file tree instead of classified sections', () => {
@@ -590,38 +590,31 @@ describe('novel writing workspace layout', () => {
     expect(modelSource).not.toContain('formatNovelWorkspaceFileTitle')
   })
 
-  it('exports explicitly selected project files without category inference', () => {
+  it('keeps version history in the Markdown toolbar without a redundant export surface', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
-    const exportDialogSource = readFileSync(new URL('../../workspace/ProjectExportDialog.tsx', import.meta.url), 'utf-8')
     const versionDialogSource = readFileSync(new URL('../NovelVersionHistoryDialog.tsx', import.meta.url), 'utf-8')
     const topBarSource = readFileSync(new URL('../../app-shell/TopBar.tsx', import.meta.url), 'utf-8')
     const editorPanelSource = readFileSync(new URL('../NovelDocumentEditorPanel.tsx', import.meta.url), 'utf-8')
-    const exportHandlerSource = appShellSource.slice(
-      appShellSource.indexOf('const handleExportNovelWorkspace'),
-      appShellSource.indexOf('const novelReviewUndoStackRef')
-    )
+    const tiptapEditorSource = readFileSync(new URL('../../../../../../../packages/ui/src/components/markdown/TiptapMarkdownEditor.tsx', import.meta.url), 'utf-8')
     const restoreHandlerSource = appShellSource.slice(
       appShellSource.indexOf('const handleRestoreNovelVersion'),
-      appShellSource.indexOf('const handleExportNovelWorkspace')
-    )
-    const exportDialogShellSource = exportDialogSource.slice(
-      exportDialogSource.indexOf('export function ProjectExportDialog'),
-      exportDialogSource.indexOf('function ProjectExportDialogContent')
+      appShellSource.indexOf('const novelReviewUndoStackRef')
     )
     const versionDialogShellSource = versionDialogSource.slice(
       versionDialogSource.indexOf('export function NovelVersionHistoryDialog'),
       versionDialogSource.indexOf('function NovelVersionHistoryDialogContent')
     )
 
-    expect(appShellSource).toContain('ProjectExportDialog')
     expect(appShellSource).toContain('NovelVersionHistoryDialog')
-    expect(appShellSource).toContain('handleExportNovelWorkspace')
     expect(appShellSource).toContain('handleCreateNovelVersion')
     expect(appShellSource).toContain('handleRestoreNovelVersion')
-    expect(appShellSource).toContain('setNovelExportDialogOpen(true)')
     expect(appShellSource).toContain('setNovelVersionDialogOpen(true)')
-    expect(appShellSource).toContain('workspaceActions={(')
-    expect(appShellSource).toContain('buildProjectExportPlan')
+    expect(appShellSource).toContain('toolbarAccessory={(')
+    expect(appShellSource).not.toContain('ProjectExportDialog')
+    expect(appShellSource).not.toContain('handleExportNovelWorkspace')
+    expect(appShellSource).not.toContain('setNovelExportDialogOpen')
+    expect(appShellSource).not.toContain('buildProjectExportPlan')
+    expect(appShellSource).not.toContain("t('writing.export.action', '导出')")
     expect(appShellSource).not.toContain('buildMergedManuscriptContent')
     expect(appShellSource).toContain('NOVEL_AUTO_VERSION_CHAR_THRESHOLD = 100')
     expect(appShellSource).toContain('NOVEL_AUTO_VERSION_INTERVAL_MS = 5 * 60 * 1000')
@@ -630,33 +623,23 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('window.electronAPI.listWorkspaceVersions(novelWorkspaceRoot, 30)')
     expect(appShellSource).toContain('window.electronAPI.restoreWorkspaceVersion(novelWorkspaceRoot, commitHash)')
     expect(restoreHandlerSource).toContain('await refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)')
-    expect(exportHandlerSource.indexOf('await window.electronAPI.createDirectory(exportRootPath)')).toBeLessThan(
-      exportHandlerSource.indexOf('await window.electronAPI.writeFile(targetPath')
-    )
     expect(topBarSource).not.toContain('rightTools?: React.ReactNode')
     expect(topBarSource).not.toContain('{rightTools ? (')
-    expect(editorPanelSource).toContain('workspaceActions?: React.ReactNode')
-    expect(editorPanelSource).toContain('{workspaceActions ? (')
+    expect(editorPanelSource).toContain('toolbarAccessory?: React.ReactNode')
+    expect(editorPanelSource).toContain('toolbarAccessory={toolbarAccessory}')
+    expect(editorPanelSource).not.toContain('workspaceActions')
+    expect(editorPanelSource).not.toContain('flex h-[42px] shrink-0')
+    expect(tiptapEditorSource).toContain('toolbarAccessory?: React.ReactNode')
+    expect(tiptapEditorSource).toContain('accessory={toolbarAccessory}')
     expect(topBarSource).toContain('data-testid="window-title-bar"')
     expect(topBarSource).not.toContain('ml-auto flex min-w-0 flex-1 items-center justify-end gap-1')
     expect(topBarSource).not.toContain('w-[clamp(220px,42vw,640px)]')
     expect(topBarSource).not.toContain('titlebar-no-drag min-w-0 shrink-0')
-    expect(exportDialogSource).toContain('getProjectExportDirectories')
-    expect(exportDialogSource).toContain('selectedFilePaths')
-    expect(exportDialogSource).toContain('function ProjectExportDialogContent')
-    expect(exportDialogShellSource).not.toContain('buildNovelWorkspaceTree')
-    expect(exportDialogSource).not.toContain('summarizeNovelSection')
-    expect(exportDialogSource).not.toContain('mergeManuscript')
-    expect(exportDialogSource).not.toContain('NOVEL_EXPORT_SECTIONS')
-    expect(exportDialogSource).toContain("t('writing.export.title', '导出项目')")
-    expect(exportDialogSource).toContain("t('writing.export.action', '导出')")
-    expect(exportDialogSource).toContain("onExport({ selectedPaths: selectedFilePaths })")
     expect(versionDialogSource).toContain("t('writing.version.title', '版本管理')")
     expect(versionDialogSource).toContain('function NovelVersionHistoryDialogContent')
     expect(versionDialogShellSource).not.toContain('versions.map')
     expect(versionDialogSource).toContain('onCreateVersion')
     expect(versionDialogSource).toContain('onRestore(version.hash)')
-    expect(appShellSource).toContain("t('writing.export.action', '导出')")
   })
 
   it('auto-saves before file switching and selection Ask AI when the current document has unsaved edits', () => {

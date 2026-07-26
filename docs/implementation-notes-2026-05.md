@@ -1,5 +1,10 @@
 # Implementation Notes
 
+> Historical snapshot: entries describing bundled/static `wangsu-default`
+> credential seeding are superseded by the dual-token broker flow documented in
+> [feishu-desktop-auth.md](./feishu-desktop-auth.md). Current builds do not seed
+> managed model credentials from defaults or `CRAFT_BUILTIN_LLM_API_KEY`.
+
 ## 2026-05-29
 
 - Split Neon Auth email sign-in from email registration. Configuring a Neon Auth base URL now enables email/password login only; sign-up remains hidden and rejected until `CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED=true` or `CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED=true` is set for the matching surface.

@@ -88,10 +88,10 @@ describe('chat rewind helpers', () => {
   })
 
   it('allows default rewind branches only when the source session already uses the default connection', () => {
-    expect(MANAGED_DEFAULT_CONNECTION_SLUG).toBe('wangsu-default')
+    expect(MANAGED_DEFAULT_CONNECTION_SLUG).toBe('storyflow-managed')
     expect(canCreateDefaultRewindBranch(baseSession, 'a1', 'pi')).toBe(true)
-    expect(canCreateDefaultRewindBranch(baseSession, 'a1', 'wangsu-default')).toBe(false)
-    expect(canCreateDefaultRewindBranch(baseSession, null, 'wangsu-default')).toBe(true)
+    expect(canCreateDefaultRewindBranch(baseSession, 'a1', 'storyflow-managed')).toBe(false)
+    expect(canCreateDefaultRewindBranch(baseSession, null, 'storyflow-managed')).toBe(true)
   })
 
   it('does not allow rewind to fall back to an empty session when history cannot be branched', () => {

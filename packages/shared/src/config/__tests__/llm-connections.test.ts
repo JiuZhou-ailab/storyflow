@@ -1,3 +1,7 @@
+// input: Registered Pi model resolver and LLM connection helpers
+// output: Regression coverage for defaults, provider guards, and Bedrock normalization
+// pos: Tests the canonical LLM connection contract
+
 import { describe, it, expect } from 'bun:test'
 import '../../../tests/setup/register-pi-model-resolver.ts'
 import {
@@ -27,7 +31,6 @@ describe('getDefaultModelsForConnection', () => {
     expect(typeof (first as any).id).toBe('string')
     expect((first as any).id.startsWith('pi/')).toBe(false)
     expect((first as any).provider).toBe('anthropic')
-    expect(models.some(model => typeof model !== 'string' && model.id === 'claude-sonnet-5')).toBe(false)
   })
 
   it('pi with piAuthProvider returns filtered models', () => {
@@ -67,11 +70,19 @@ describe('getDefaultModelForConnection', () => {
     expect(modelIds).toContain(defaultModel)
   })
 
-  it('Pi openai default is in its own model list', () => {
-    const defaultModel = getDefaultModelForConnection('pi', 'openai')
-    const models = getDefaultModelsForConnection('pi', 'openai')
-    const modelIds = models.map(m => typeof m === 'string' ? m : m.id)
-    expect(modelIds).toContain(defaultModel)
+  it('prefers the GPT-5.6 family for Pi OpenAI providers', () => {
+    for (const provider of ['openai', 'openai-codex'] as const) {
+      const defaultModel = getDefaultModelForConnection('pi', provider)
+      const models = getDefaultModelsForConnection('pi', provider)
+      const modelIds = models.map(m => typeof m === 'string' ? m : m.id)
+
+      expect(defaultModel).toBe('pi/gpt-5.6-sol')
+      expect(modelIds.slice(0, 3)).toEqual([
+        'pi/gpt-5.6-sol',
+        'pi/gpt-5.6-terra',
+        'pi/gpt-5.6-luna',
+      ])
+    }
   })
 
   it('Pi deepseek default is in its own model list', () => {

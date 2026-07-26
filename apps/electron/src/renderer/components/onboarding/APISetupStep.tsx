@@ -1,3 +1,7 @@
+// input: User-selectable credential setup methods and provider segment state
+// output: Credential or OAuth method selection step
+// pos: Onboarding surface for user-owned LLM connections
+
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
@@ -23,20 +27,23 @@ const BetaBadge = ({ label }: { label: string }) => (
  * - 'pi_chatgpt_oauth' → pi + oauth
  * - 'pi_copilot_oauth' → pi + oauth
  * - 'pi_api_key' → pi + api_key
- * - 'jiuzhou_api_key' → pi_compat + api_key_with_endpoint
+ * - 'managed_default' selects the app-managed built-in connection without
+ *   collecting user credentials and is therefore not shown by APISetupStep.
  */
 export type ApiSetupMethod =
-  | 'jiuzhou_api_key'
+  | 'managed_default'
   | 'anthropic_api_key'
   | 'claude_oauth'
   | 'pi_chatgpt_oauth'
   | 'pi_copilot_oauth'
   | 'pi_api_key'
 
+export type CredentialSetupMethod = Exclude<ApiSetupMethod, 'managed_default'>
+
 /**
- * Map ApiSetupMethod to the underlying LLM connection types.
+ * Map user-owned credential setup methods to the underlying connection types.
  */
-export function apiSetupMethodToConnectionTypes(method: ApiSetupMethod): {
+export function apiSetupMethodToConnectionTypes(method: CredentialSetupMethod): {
   providerType: LlmProviderType;
   authType: LlmAuthType;
 } {
@@ -45,8 +52,6 @@ export function apiSetupMethodToConnectionTypes(method: ApiSetupMethod): {
       return { providerType: 'anthropic', authType: 'oauth' };
     case 'anthropic_api_key':
       return { providerType: 'anthropic', authType: 'api_key' };
-    case 'jiuzhou_api_key':
-      return { providerType: 'pi_compat', authType: 'api_key_with_endpoint' };
     case 'pi_chatgpt_oauth':
       return { providerType: 'pi', authType: 'oauth' };
     case 'pi_copilot_oauth':
@@ -57,15 +62,14 @@ export function apiSetupMethodToConnectionTypes(method: ApiSetupMethod): {
 }
 
 interface ApiSetupOption {
-  id: ApiSetupMethod
+  id: CredentialSetupMethod
   name: string
   description: string
   icon: React.ReactNode
   providerType: LlmProviderType
 }
 
-const API_SETUP_ICONS: Record<ApiSetupMethod, React.ReactNode> = {
-  jiuzhou_api_key: <Key className="size-4" />,
+const API_SETUP_ICONS: Record<CredentialSetupMethod, React.ReactNode> = {
   claude_oauth: <CreditCard className="size-4" />,
   anthropic_api_key: <Key className="size-4" />,
   pi_chatgpt_oauth: <Cpu className="size-4" />,
@@ -74,8 +78,8 @@ const API_SETUP_ICONS: Record<ApiSetupMethod, React.ReactNode> = {
 }
 
 interface APISetupStepProps {
-  selectedMethod: ApiSetupMethod | null
-  onSelect: (method: ApiSetupMethod) => void
+  selectedMethod: CredentialSetupMethod | null
+  onSelect: (method: CredentialSetupMethod) => void
   onContinue: () => void
   onBack: () => void
   /** Initial segment to show (defaults to 'anthropic') */
@@ -92,7 +96,7 @@ function OptionButton({
 }: {
   option: ApiSetupOption
   isSelected: boolean
-  onSelect: (method: ApiSetupMethod) => void
+  onSelect: (method: CredentialSetupMethod) => void
 }) {
   return (
     <button
@@ -217,13 +221,6 @@ export function APISetupStep({
       description: t("onboarding.apiSetup.anthropicApiKeyDesc"),
       icon: API_SETUP_ICONS.anthropic_api_key,
       providerType: 'anthropic',
-    },
-    {
-      id: 'jiuzhou_api_key',
-      name: 'JiuZhou-AI',
-      description: '使用默认 JiuZhou-AI。',
-      icon: API_SETUP_ICONS.jiuzhou_api_key,
-      providerType: 'pi',
     },
     {
       id: 'pi_chatgpt_oauth',

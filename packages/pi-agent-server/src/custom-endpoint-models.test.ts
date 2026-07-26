@@ -1,8 +1,17 @@
+// input: Custom endpoint model normalization and provider routing helpers.
+// output: Regression checks for model capabilities, registration keys, and credential rotation slots.
+// pos: Focused contract tests for the Pi custom endpoint policy.
+
 import { describe, expect, it } from 'bun:test'
+import {
+  AuthStorage as PiAuthStorage,
+  ModelRegistry as PiModelRegistry,
+} from '@earendil-works/pi-coding-agent'
 import {
   buildCustomEndpointModelDef,
   normalizeCustomEndpointModelEntry,
   resolveCustomEndpointProviderName,
+  resolveRuntimeCredentialProviderNames,
   shouldUseCustomEndpointBearerAuthHeader,
   resolveCustomEndpointProviderApiKey,
   stripPiPrefix,
@@ -109,6 +118,44 @@ describe('resolveCustomEndpointProviderName', () => {
 
   it('keeps Cloudflare AI Gateway models under the Cloudflare provider', () => {
     expect(resolveCustomEndpointProviderName('cloudflare-ai-gateway')).toBe('cloudflare-ai-gateway')
+  })
+})
+
+describe('resolveRuntimeCredentialProviderNames', () => {
+  it('updates both the source and synthetic provider for generic custom endpoints', () => {
+    expect(resolveRuntimeCredentialProviderNames('openai', true)).toEqual([
+      'openai',
+      'custom-endpoint',
+    ])
+  })
+
+  it('does not duplicate providers with first-class custom endpoint routing', () => {
+    expect(resolveRuntimeCredentialProviderNames('cloudflare-ai-gateway', true)).toEqual([
+      'cloudflare-ai-gateway',
+    ])
+  })
+
+  it('only updates the authenticated provider without a custom endpoint', () => {
+    expect(resolveRuntimeCredentialProviderNames('openai', false)).toEqual(['openai'])
+  })
+
+  it('rotates the credential read by an already-registered synthetic provider', async () => {
+    const authStorage = PiAuthStorage.inMemory()
+    const registry = PiModelRegistry.inMemory(authStorage)
+    registry.registerProvider('custom-endpoint', {
+      baseUrl: 'https://model.example.com/v1',
+      apiKey: 'old-token',
+      api: 'openai-completions',
+      models: [buildCustomEndpointModelDef('test-model')],
+    })
+
+    authStorage.set('openai', { type: 'api_key', key: 'new-token' })
+    expect(await registry.getApiKeyForProvider('custom-endpoint')).toBe('old-token')
+
+    for (const provider of resolveRuntimeCredentialProviderNames('openai', true)) {
+      authStorage.set(provider, { type: 'api_key', key: 'new-token' })
+    }
+    expect(await registry.getApiKeyForProvider('custom-endpoint')).toBe('new-token')
   })
 })
 
