@@ -5,7 +5,7 @@
 import { useMemo } from "react"
 import { formatDistanceToNowStrict } from "date-fns"
 import type { Locale } from "date-fns"
-import { Flag, ShieldAlert } from "lucide-react"
+import { Flag, ShieldAlert, AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { rendererPerf } from "@/lib/perf"
 import { Spinner } from "@craft-agent/ui"
@@ -21,6 +21,7 @@ import { navigate, routes } from "@/lib/navigate"
 import type { SessionMeta } from "@/atoms/sessions"
 import { messagingBindingsForSessionAtomFamily } from "@/atoms/messaging"
 import { hasPendingPromptAtomFamily } from "@/atoms/pending-requests"
+import { deriveSessionRuntimeStatus } from "@craft-agent/shared/statuses"
 import { useAtomValue } from "jotai"
 
 const PLATFORM_PILL: Record<'telegram' | 'whatsapp', { label: string; colorClass: string }> = {
@@ -72,6 +73,11 @@ export function SessionItem({
     [ctx.labelById, item.labels]
   )
   const hasPendingPrompt = useAtomValue(hasPendingPromptAtomFamily(item.id))
+  const runtimeStatus = deriveSessionRuntimeStatus({
+    isProcessing: item.isProcessing,
+    hasPendingPrompt,
+    lastMessageRole: item.lastMessageRole,
+  })
   const previewText = useMemo(
     () => ctx.isCompactMode ? getSessionPreviewText(item) : null,
     [ctx.isCompactMode, item]
@@ -165,11 +171,12 @@ export function SessionItem({
           <div className={cn(
             "flex items-center justify-center overflow-hidden gap-1",
             "transition-all duration-200 ease-out",
-            (item.isProcessing || hasUnreadMeta(item) || item.lastMessageRole === 'plan' || hasPendingPrompt)
+            (runtimeStatus !== 'idle' || hasUnreadMeta(item))
               ? "opacity-100 ml-0"
               : "!w-0 opacity-0 -ml-[10px]"
           )}>
-            {item.isProcessing && <Spinner className="text-[10px]" />}
+            {/* Only a genuinely progressing turn spins; a blocked one must not look healthy. */}
+            {runtimeStatus === 'running' && <Spinner className="text-[10px]" />}
             {hasUnreadMeta(item) && (
               <svg className="text-accent h-3.5 w-3.5" viewBox="0 0 25 24" fill="currentColor">
                 <g transform="translate(1.748, 0.7832)">
@@ -183,6 +190,7 @@ export function SessionItem({
               </svg>
             )}
             {hasPendingPrompt && <ShieldAlert className="h-3.5 w-3.5 text-info" />}
+            {runtimeStatus === 'error' && <AlertTriangle className="h-3.5 w-3.5 text-destructive" />}
           </div>
         </>
       }

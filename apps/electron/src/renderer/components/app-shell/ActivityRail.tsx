@@ -19,6 +19,7 @@ import {
   Plus,
   Search,
   Settings,
+  ShieldAlert,
   Trash2,
   UserCircle,
   Zap,
@@ -45,6 +46,8 @@ import { formatRelativeTimestamp } from '@/lib/display-format'
 import * as storage from '@/lib/local-storage'
 import { getSessionTitle } from '@/utils/session'
 import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
+import { deriveSessionRuntimeStatus, requiresHumanAttention } from '@craft-agent/shared/statuses'
+import { hasPendingPromptAtomFamily, sessionIdsWithPendingPromptAtom } from '@/atoms/pending-requests'
 import type { Workspace } from '../../../shared/types'
 
 export type ActivityRailItemId =
@@ -116,6 +119,7 @@ export function ActivityRail({
   whatsNew,
 }: ActivityRailProps) {
   const localSessionMetaMap = useAtomValue(sessionMetaMapAtom)
+  const sessionIdsWithPendingPrompt = useAtomValue(sessionIdsWithPendingPromptAtom)
   const [freeSessionMetas, setFreeSessionMetas] = React.useState<SessionMeta[] | null>(null)
   const [unreadByWorkspace, setUnreadByWorkspace] = React.useState<Record<string, boolean>>({})
   const [recentExpanded, setRecentExpanded] = React.useState(() => (
@@ -207,6 +211,16 @@ export function ActivityRail({
     ? sessionMetas
     : sessionMetas.slice(0, RECENT_SESSION_LIMIT)
   const hasMoreRecentSessions = sessionMetas.length > RECENT_SESSION_LIMIT
+  // Aggregated over every session, not just the visible slice: a collapsed or
+  // truncated group must still reveal that something inside needs a human.
+  const recentNeedsAttention = React.useMemo(
+    () => sessionMetas.some(meta => requiresHumanAttention(deriveSessionRuntimeStatus({
+      isProcessing: meta.isProcessing,
+      hasPendingPrompt: sessionIdsWithPendingPrompt.has(meta.id),
+      lastMessageRole: meta.lastMessageRole,
+    }))),
+    [sessionIdsWithPendingPrompt, sessionMetas]
+  )
   const projectWorkspaces = React.useMemo(
     () => [...workspaces]
       .filter(workspace => (
@@ -298,6 +312,7 @@ export function ActivityRail({
             <SidebarSectionHeader
               label="自由对话"
               expanded={recentExpanded}
+              needsAttention={recentNeedsAttention}
               onToggle={() => updateRecentExpanded(!recentExpanded)}
               action={onOpenFreeConversations ? (
                 <button
@@ -579,11 +594,14 @@ function SidebarSectionHeader({
   expanded,
   onToggle,
   action,
+  needsAttention,
 }: {
   label: string
   expanded: boolean
   onToggle: () => void
   action?: React.ReactNode
+  /** Shows an indicator when a collapsed group hides sessions awaiting a human. */
+  needsAttention?: boolean
 }) {
   return (
     <div className="flex items-center justify-between px-1">
@@ -594,7 +612,10 @@ function SidebarSectionHeader({
         onClick={onToggle}
       >
         {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
-        <span>{label}</span>
+        <span className="min-w-0 truncate">{label}</span>
+        {needsAttention && !expanded ? (
+          <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-info" aria-label="有对话等待处理" />
+        ) : null}
       </button>
       {action}
     </div>
@@ -612,6 +633,12 @@ function RecentConversationRow({
   disabled: boolean
   onSelect: () => void
 }) {
+  const hasPendingPrompt = useAtomValue(hasPendingPromptAtomFamily(meta.id))
+  const runtimeStatus = deriveSessionRuntimeStatus({
+    isProcessing: meta.isProcessing,
+    hasPendingPrompt,
+    lastMessageRole: meta.lastMessageRole,
+  })
   return (
     <button
       type="button"
@@ -630,7 +657,10 @@ function RecentConversationRow({
         <span className={cn(
           'h-1.5 w-1.5 rounded-full bg-transparent',
           meta.hasUnread && 'bg-accent',
-          meta.isProcessing && 'animate-pulse bg-foreground/50',
+          // A blocked or failed session must not read as healthy progress.
+          runtimeStatus === 'running' && 'animate-pulse bg-foreground/50',
+          runtimeStatus === 'waiting-input' && 'bg-info',
+          runtimeStatus === 'error' && 'bg-destructive',
         )} />
       </span>
       <MessageSquareText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
