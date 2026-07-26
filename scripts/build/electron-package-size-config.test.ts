@@ -49,7 +49,7 @@ function collectExtraResourceTargets(value: unknown): string[] {
 }
 
 describe('Electron package size configuration', () => {
-  test('electron build has a single resource staging step', () => {
+  test('electron build stages resources once and validates the staged output', () => {
     const rootPackage = JSON.parse(readRepoFile('package.json')) as {
       scripts: Record<string, string>;
     };
@@ -58,6 +58,10 @@ describe('Electron package size configuration', () => {
       'electron:build:resources && bun run electron:build:assets',
     );
     expect(rootPackage.scripts['electron:build']).toContain('electron:build:assets');
+    expect(rootPackage.scripts['electron:build']).toContain('electron:build:validate');
+    expect(rootPackage.scripts['electron:build:validate']).toBe(
+      'cd apps/electron && bun run build:validate',
+    );
   });
 
   test('uses explicit platform allowlists instead of negative-only platform file rules', () => {
