@@ -1,6 +1,6 @@
-// input: Workspace catalog, active project directory, free-conversation session metadata, unread summary, shell navigation callbacks, and current profile
-// output: Single Codex-style sidebar listing Free Conversations plus collapsible projects and one profile menu
-// pos: Global navigation surface owning the free-conversation runtime domain; project conversations stay in project chrome (ADR 0006)
+// input: Workspace catalog, workspace-scoped session metadata, unread summary, shell callbacks, and current profile
+// output: Single Codex-style sidebar listing Free Conversations plus collapsible project conversation subtrees
+// pos: Global navigation surface; every project subtree is fetched and selected through its own runtime domain (ADR 0006)
 
 import * as React from 'react'
 import {
@@ -65,7 +65,14 @@ export interface ActivityRailProps {
   activeWorkspaceId?: string | null
   activeSessionId?: string | null
   onSelectProject?: (workspaceId: string) => void
+  /**
+   * Selects any conversation, free or project. The handler decides whether it is
+   * an in-domain focus or an explicit cross-domain runtime switch (ADR 0006).
+   */
   onSelectSession?: (sessionId: string, workspaceId: string) => void | Promise<void>
+  /** The currently open project session, so its nested row can render as active. */
+  activeProjectSessionId?: string | null
+  onCreateConversationInProject?: (workspaceId: string) => void | Promise<void>
   onWorkspaceCreated?: (workspace: Workspace) => void | Promise<void>
   onOpenProjectInNewWindow?: (workspaceId: string) => void
   onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
@@ -82,8 +89,6 @@ export interface ActivityRailProps {
     name: string
     detail?: string
   }
-  /** Active writing project's directory tree, rendered inside its project node. */
-  workspaceDirectory?: React.ReactNode
   /** Optional release-notes surface inside the profile menu. */
   onOpenWhatsNew?: () => void
   whatsNew?: {
@@ -102,6 +107,8 @@ export function ActivityRail({
   activeSessionId = null,
   onSelectProject,
   onSelectSession,
+  activeProjectSessionId = null,
+  onCreateConversationInProject,
   onWorkspaceCreated,
   onOpenProjectInNewWindow,
   onRenameProject,
@@ -114,7 +121,6 @@ export function ActivityRail({
   onOpenSettings,
   onOpenAccount,
   profile,
-  workspaceDirectory,
   onOpenWhatsNew,
   whatsNew,
 }: ActivityRailProps) {
@@ -130,6 +136,11 @@ export function ActivityRail({
   ))
   const [archivedExpanded, setArchivedExpanded] = React.useState(false)
   const [showAllRecent, setShowAllRecent] = React.useState(false)
+  // Lists stay keyed by workspace instead of being flattened, preserving the
+  // runtime-domain boundary while sharing one Codex-style navigation surface.
+  const [expandedProjectIds, setExpandedProjectIds] = React.useState<Set<string>>(() => new Set())
+  const [projectSessionMetas, setProjectSessionMetas] = React.useState<Record<string, SessionMeta[]>>({})
+  const [loadingProjectIds, setLoadingProjectIds] = React.useState<Set<string>>(() => new Set())
   const [feedbackOpen, setFeedbackOpen] = React.useState(false)
   const [renameTarget, setRenameTarget] = React.useState<Workspace | null>(null)
   const [renameValue, setRenameValue] = React.useState('')
@@ -150,6 +161,44 @@ export function ActivityRail({
     }
   }, [])
 
+  const refreshProjectSessionMetas = React.useCallback(async (workspaceId: string) => {
+    setLoadingProjectIds((prev) => {
+      const next = new Set(prev)
+      next.add(workspaceId)
+      return next
+    })
+    try {
+      const sessions = await window.electronAPI.listSessionsByWorkspace(workspaceId)
+      const metas = sessions
+        .map(extractSessionMeta)
+        .filter((meta) => !meta.hidden && meta.isArchived !== true)
+        .sort((left, right) => (right.lastMessageAt ?? right.createdAt ?? 0) - (left.lastMessageAt ?? left.createdAt ?? 0))
+      setProjectSessionMetas((prev) => ({ ...prev, [workspaceId]: metas }))
+    } catch (error) {
+      console.warn('[activity-sidebar] Failed to load project conversations:', workspaceId, error)
+      setProjectSessionMetas((prev) => ({ ...prev, [workspaceId]: [] }))
+    } finally {
+      setLoadingProjectIds((prev) => {
+        const next = new Set(prev)
+        next.delete(workspaceId)
+        return next
+      })
+    }
+  }, [])
+
+  const toggleProjectExpanded = React.useCallback((workspaceId: string) => {
+    setExpandedProjectIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(workspaceId)) {
+        next.delete(workspaceId)
+      } else {
+        next.add(workspaceId)
+        void refreshProjectSessionMetas(workspaceId)
+      }
+      return next
+    })
+  }, [refreshProjectSessionMetas])
+
   const refreshUnreadSummary = React.useCallback(async () => {
     try {
       setUnreadByWorkspace((await window.electronAPI.getUnreadSummary()).hasUnreadByWorkspace)
@@ -162,10 +211,8 @@ export function ActivityRail({
     void refreshFreeSessionMetas()
   }, [refreshFreeSessionMetas, workspaces])
 
-  // Project unread state comes from the aggregate summary rather than the
-  // conversation list: the rail lists Free Conversations only, but it still
-  // renders an unread dot per project row. The summary carries counts keyed by
-  // workspace, never session identities, so it crosses no ownership boundary.
+  // The aggregate summary keeps collapsed project rows honest without loading
+  // or merging their session identities; expanded lists remain workspace-scoped.
   React.useEffect(() => {
     void refreshUnreadSummary()
     return window.electronAPI.onUnreadSummaryChanged((summary) => {
@@ -181,6 +228,9 @@ export function ActivityRail({
       refreshTimer = setTimeout(() => {
         refreshTimer = null
         void refreshFreeSessionMetas()
+        for (const workspaceId of expandedProjectIds) {
+          void refreshProjectSessionMetas(workspaceId)
+        }
       }, 180)
     })
 
@@ -188,7 +238,7 @@ export function ActivityRail({
       if (refreshTimer) clearTimeout(refreshTimer)
       unsubscribe()
     }
-  }, [refreshFreeSessionMetas])
+  }, [expandedProjectIds, refreshFreeSessionMetas, refreshProjectSessionMetas])
 
   const sessionMetas = React.useMemo(() => {
     const merged = new Map<string, SessionMeta>()
@@ -372,24 +422,26 @@ export function ActivityRail({
               projectWorkspaces.length > 0 ? (
                 <div className="space-y-0.5 pb-1" data-testid="activity-projects">
                   {projectWorkspaces.map((workspace) => {
-                    const showsActiveDirectory = Boolean(
-                      workspaceDirectory && workspace.id === activeWorkspaceId,
-                    )
-                    return showsActiveDirectory ? (
-                      <div
-                        key={workspace.id}
-                        data-testid="activity-project-directory"
-                        className="min-w-0 overflow-hidden pl-3.5"
-                      >
-                        {workspaceDirectory}
-                      </div>
-                    ) : (
+                    const expanded = expandedProjectIds.has(workspace.id)
+                    return (
                       <ProjectFolderRow
                         key={workspace.id}
                         workspace={workspace}
                         active={activeWorkspaceId === workspace.id}
                         hasUnread={unreadByWorkspace[workspace.id] === true}
                         disabled={!onSelectProject}
+                        expandable={Boolean(onSelectSession)}
+                        expanded={expanded}
+                        onToggleExpanded={() => toggleProjectExpanded(workspace.id)}
+                        sessions={projectSessionMetas[workspace.id]}
+                        loadingSessions={loadingProjectIds.has(workspace.id)}
+                        activeSessionId={activeWorkspaceId === workspace.id ? activeProjectSessionId : null}
+                        onSelectSession={onSelectSession
+                          ? (sessionId) => { void onSelectSession(sessionId, workspace.id) }
+                          : undefined}
+                        onCreateConversation={onCreateConversationInProject
+                          ? () => onCreateConversationInProject(workspace.id)
+                          : undefined}
                         onSelect={() => onSelectProject?.(workspace.id)}
                         onOpenInNewWindow={onOpenProjectInNewWindow
                           ? () => onOpenProjectInNewWindow(workspace.id)
@@ -683,6 +735,14 @@ function ProjectFolderRow({
   archived = false,
   hasUnread,
   disabled,
+  expandable = false,
+  expanded = false,
+  onToggleExpanded,
+  sessions,
+  loadingSessions = false,
+  activeSessionId = null,
+  onSelectSession,
+  onCreateConversation,
   onSelect,
   onOpenInNewWindow,
   onRename,
@@ -695,6 +755,14 @@ function ProjectFolderRow({
   archived?: boolean
   hasUnread: boolean
   disabled: boolean
+  expandable?: boolean
+  expanded?: boolean
+  onToggleExpanded?: () => void
+  sessions?: SessionMeta[]
+  loadingSessions?: boolean
+  activeSessionId?: string | null
+  onSelectSession?: (sessionId: string) => void
+  onCreateConversation?: () => void | Promise<void>
   onSelect: () => void
   onOpenInNewWindow?: () => void
   onRename?: () => void
@@ -703,28 +771,48 @@ function ProjectFolderRow({
   onRemove?: () => void
 }) {
   return (
-    <div className="group flex min-w-0 items-center rounded-[6px] hover:bg-foreground/[0.045]">
+    <div>
+    <div className={cn(
+      'group flex min-w-0 items-center rounded-[6px] transition-colors hover:bg-foreground/[0.045]',
+      active && 'bg-foreground/[0.07] text-foreground',
+    )}>
       <button
         type="button"
         aria-label={`项目：${workspace.name}`}
         title={workspace.name}
         aria-current={active ? 'page' : undefined}
+        aria-expanded={expandable ? expanded : undefined}
         disabled={disabled}
         className={cn(
-          'flex h-[30px] min-w-0 flex-1 items-center gap-1.5 rounded-[6px] px-2 text-left outline-none transition-colors',
+          'flex h-[30px] min-w-0 flex-1 items-center gap-1.5 rounded-[6px] px-2 text-left outline-none',
           'focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default',
-          active && 'bg-foreground/[0.07] text-foreground',
           archived && 'opacity-60',
         )}
-        onClick={onSelect}
+        onClick={() => {
+          onToggleExpanded?.()
+          onSelect()
+        }}
       >
         <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+          {expanded
+            ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
         </span>
         <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate text-[12px] text-foreground/85">{workspace.name}</span>
         {hasUnread ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-label="有未读对话" /> : null}
       </button>
+      {onCreateConversation ? (
+        <button
+          type="button"
+          aria-label={`在 ${workspace.name} 中新建对话`}
+          title="新建对话"
+          className="flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-foreground/[0.06] hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
+          onClick={() => { void onCreateConversation() }}
+        >
+          <Plus className="size-3.5" />
+        </button>
+      ) : null}
       {(onOpenInNewWindow || onRename || onArchive || onRestore || onRemove) ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -771,6 +859,26 @@ function ProjectFolderRow({
           </StyledDropdownMenuContent>
         </DropdownMenu>
       ) : null}
+    </div>
+    {expandable && expanded ? (
+      <div className="ml-[18px] mt-0.5 space-y-0.5 border-l border-border/40 pl-1.5" data-testid="activity-project-conversations">
+        {loadingSessions && !sessions ? (
+          <div className="px-2 py-1.5 text-[11px] text-muted-foreground/60">正在加载对话…</div>
+        ) : sessions && sessions.length > 0 ? (
+          sessions.map((meta) => (
+            <RecentConversationRow
+              key={meta.id}
+              meta={meta}
+              active={activeSessionId === meta.id}
+              disabled={!onSelectSession}
+              onSelect={() => onSelectSession?.(meta.id)}
+            />
+          ))
+        ) : (
+          <div className="px-2 py-1.5 text-[11px] text-muted-foreground/60">暂无对话</div>
+        )}
+      </div>
+    ) : null}
     </div>
   )
 }

@@ -26,13 +26,11 @@ import { PanelResizeSash } from './PanelResizeSash'
 import {
   PANEL_GAP,
   PANEL_EDGE_INSET,
+  PANEL_SPRING,
   PANEL_STACK_VERTICAL_OVERFLOW,
   RADIUS_EDGE,
   RADIUS_INNER,
 } from './panel-constants'
-
-/** Spring transition matching AppShell's sidebar/navigator animation */
-const PANEL_SPRING = { type: 'spring' as const, stiffness: 600, damping: 49 }
 
 interface PanelStackContainerProps {
   sidebarSlot: React.ReactNode

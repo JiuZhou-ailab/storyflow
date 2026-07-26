@@ -120,6 +120,13 @@ export interface AppShellContextType {
 
   // Workspace
   onSelectWorkspace: (id: string, openInNewWindow?: boolean) => void | Promise<void>
+  /**
+   * Activates a project runtime AND deep-links to one of its sessions in a
+   * single, explicit step. This is the sanctioned cross-domain jump: the rail
+   * may surface project conversations only when selecting one switches the
+   * whole runtime (never a silent overlay). See ADR 0006.
+   */
+  onSelectProjectSession?: (workspaceId: string, sessionId: string) => void | Promise<void>
   onWorkspaceCreated?: (workspace: Workspace) => void | Promise<void>
   onRefreshWorkspaces?: () => void
   onOpenWritingWorkspace: () => void

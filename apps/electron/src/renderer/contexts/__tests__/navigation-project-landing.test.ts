@@ -88,11 +88,20 @@ describe('project default navigation', () => {
   })
 
   it('keeps a project-owned conversation list reachable inside the project', () => {
-    // The rail no longer lists project conversations, so the project's own
-    // SessionList is their only entry and must not be collapsed away.
-    expect(appShellSource).toContain('&& !isProjectRuntime')
-    // It keeps that entry by owning a column outright rather than borrowing the
-    // navigator from the manuscript, which is what made the two mutually exclusive.
+    // ADR 0006 revision: the rail carries project conversations as a two-level
+    // tree, so the standalone SessionList navigator is no longer their only
+    // entry. What must hold is that selecting a project conversation is an
+    // EXPLICIT cross-domain switch — activating the owning runtime and
+    // deep-linking to the session — never a silent overlay merging two domains.
+    // A single rail callback branches on domain: in-domain focuses in place,
+    // cross-domain delegates to the runtime-switch primitive.
+    expect(appShellSource).toContain('if (workspaceId === activeWorkspaceId)')
+    expect(appShellSource).toContain('await onSelectProjectSession(workspaceId, sessionId)')
+    expect(appShellSource).toContain('const hideSessionListNavigator = showActivityRail')
+    expect(appShellSource).toContain('isProjectRuntime && isWritingNavigation(navState)')
+    expect(appShellSource).toContain('isSessionsNavigation(navState) && (!showActivityRail || isAutoCompact)')
+    // The manuscript owns a column outright rather than borrowing the navigator,
+    // which is what previously made the two mutually exclusive.
     expect(appShellSource).toContain('const navigatorPanelWidth = sessionListWidth')
     expect(appShellSource).not.toContain('const showWritingDocumentSurface = isProjectRuntime && isWritingNavigation(navState)')
   })

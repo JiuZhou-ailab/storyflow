@@ -1,6 +1,6 @@
-// input: Renderer menu sources that expose or intentionally omit manual update checks
-// output: Regression coverage for feedback-aware update entrypoints and the simplified activity sidebar
-// pos: Guards update actions without reintroducing a standalone sidebar control
+// input: Renderer title-bar and menu sources for panel and update actions
+// output: Regression coverage for the right-workspace toggle and remaining update entrypoint
+// pos: Guards title-bar ownership without reintroducing a standalone update control
 
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
@@ -10,11 +10,20 @@ function source(path: string): string {
 }
 
 describe('manual update check entrypoints', () => {
-  it('routes top bar manual update checks through the feedback-aware hook', () => {
+  it('uses the top bar action for the right panel instead of update checks', () => {
     const topBarSource = source('../../components/app-shell/TopBar.tsx')
+    const appShellSource = source('../../components/app-shell/AppShell.tsx')
 
-    expect(topBarSource).toContain('void updateChecker.checkForUpdates()')
-    expect(topBarSource).not.toContain('window.electronAPI.checkForUpdates()')
+    expect(topBarSource).toContain('onToggleRightPanel')
+    expect(topBarSource).toContain('PanelRightClose')
+    expect(topBarSource).not.toContain('useUpdateChecker')
+    expect(topBarSource).not.toContain('checkForUpdates')
+    expect(appShellSource).toContain('onToggleRightPanel={writingDocumentSurface && !isAutoCompact')
+    expect(appShellSource).toContain('setRightWorkspaceVisible((visible) => !visible)')
+    expect(appShellSource).toContain('writingDocumentSurface && rightWorkspaceVisible && !isAutoCompact')
+    expect(appShellSource).toContain(
+      'activityWorkspaceDirectory && rightWorkspaceVisible && workspaceDirectoryVisible && !isAutoCompact',
+    )
   })
 
   it('routes legacy app menu manual update checks through the feedback-aware hook', () => {

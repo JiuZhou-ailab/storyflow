@@ -129,6 +129,161 @@ Fidelity checks:
 
 final result: passed
 
+## Directory independent collapse and panel motion QA — 2026-07-26
+
+### Sources
+
+- Interaction truth: the directory folds independently from the complete
+  writing workspace, with a persistent toggle and horizontal slide motion.
+- Expanded implementation:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/26/019f9df5-e400-7012-9e00-46208f788e99/ui-boundary-audit/07-directory-expanded.png`
+- Collapsed implementation:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/26/019f9df5-e400-7012-9e00-46208f788e99/ui-boundary-audit/06-directory-collapsed.png`
+- Full-view comparison:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/26/019f9df5-e400-7012-9e00-46208f788e99/ui-boundary-audit/08-directory-expanded-collapsed.png`
+- Focused header comparison:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/26/019f9df5-e400-7012-9e00-46208f788e99/ui-boundary-audit/09-directory-toggle-focus.png`
+
+Both application captures are 1339 × 768 CSS pixels at 1× density in the
+same light-theme project, file, window, and DevTools-docked state.
+
+### Iteration 1
+
+P1 findings:
+
+- The title-bar control owned one boolean for both manuscript and directory,
+  so the directory could not be folded without also removing the manuscript.
+- Right-side columns unmounted immediately, producing a hard layout jump
+  instead of spatially explaining where the panels went.
+
+Root fixes:
+
+- Keep the title-bar control for the complete writing workspace and give the
+  directory its own persisted visibility state.
+- Keep the directory toggle at the right edge: inside the directory header
+  while expanded, then inside the manuscript header while collapsed.
+- Route manuscript, directory, and existing shell visibility changes through
+  one critically damped panel spring with horizontal travel and animated width.
+- Disable motion during direct sash dragging and respect reduced-motion
+  preferences.
+
+### Iteration 2
+
+Interaction evidence:
+
+- `收起目录` removes only the directory; the manuscript remains mounted and
+  receives the released width.
+- `展开目录` remains available at the manuscript's upper-right edge and
+  restores the directory.
+- The title-bar `收起右侧栏` / `展开右侧栏` still hides and restores both
+  right-side columns.
+- The directory sash was dragged 40 px and restored; width tracking remained
+  attached to the pointer rather than springing behind it.
+
+Required fidelity surfaces:
+
+- Fonts and typography: unchanged.
+- Spacing and layout rhythm: the existing 6 px gaps, 42 px headers, and outer
+  right radius remain aligned in both states.
+- Colors and visual tokens: the toggle reuses `HeaderIconButton` and the
+  existing foreground, hover, focus, shadow, and panel tokens.
+- Image quality and assets: no raster assets were added; the control reuses the
+  installed Lucide panel icons.
+- Copy and content: only accessible labels/tooltips `收起目录` and `展开目录`
+  were added; project and manuscript content are unchanged.
+
+Runtime evidence:
+
+- Electron TypeScript check passes.
+- Five relevant suites pass with 108 tests and 818 assertions.
+- Targeted ESLint reports no errors; warnings are pre-existing hook and shared
+  local-storage warnings.
+- `git diff --check` passes.
+
+No actionable P0, P1, or P2 visual or interaction differences remain.
+
+final result: passed
+
+## Writing panel chrome QA — 2026-07-26
+
+### Sources
+
+- Source visual truth:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/26/019f9df5-e400-7012-9e00-46208f788e99/ui-boundary-audit/01-writing-layout.png`
+- Rendered implementation:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/26/019f9df5-e400-7012-9e00-46208f788e99/ui-boundary-audit/02-writing-layout-fixed.png`
+- Full-view comparison:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/26/019f9df5-e400-7012-9e00-46208f788e99/ui-boundary-audit/03-before-after-full.png`
+- Focused header and seam comparison:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/26/019f9df5-e400-7012-9e00-46208f788e99/ui-boundary-audit/04-before-after-boundaries.png`
+
+The source capture is 1276 × 768 pixels and the implementation capture is
+1277 × 768 pixels. The comparison crops one pixel from the implementation
+without resampling, producing two 1276 × 768 panels. The Electron capture uses
+the native desktop viewport at the same apparent CSS size and light theme.
+The selected file changed from `简报.md` to `创作要求.md` between captures, so
+copy and document body content are excluded from the comparison; the panel
+headers, seams, outer frame, and directory state remain comparable.
+
+### Iteration 1
+
+P1/P2 findings:
+
+- The outer writing row had no flex gap while each zero-width resize sash used
+  negative half-gap margins, causing the manuscript and directory surfaces to
+  overlap.
+- A permanent 2 px sash line stacked with both panels' one-pixel shadow
+  outlines, making the seam look like a doubled border.
+- The manuscript header was 40 px while the shared shell header was 42 px.
+- The conversation panel was incorrectly marked as the right window edge while
+  the actual outer directory always used the inner radius.
+
+Root fixes:
+
+- Make the shared writing row own `PANEL_GAP` and remove per-column bottom
+  compensation.
+- Reuse the shared sash hit geometry and existing hover/drag gradient.
+- Align manuscript and empty-workspace headers to the 42 px shell contract.
+- Derive visible right-column state once and assign `RADIUS_EDGE` only to the
+  actual outermost column.
+
+### Iteration 2
+
+Full-view evidence shows equal panel tops and bottoms, consistent open space
+between conversation, manuscript, and directory, and no dark permanent resize
+lines. The focused comparison confirms that the three title regions now share
+one vertical baseline and the manuscript-directory seam no longer stacks
+multiple outlines.
+
+Required fidelity surfaces:
+
+- Fonts and typography: font family, size, weight, wrapping, and antialiasing
+  are unchanged; only the manuscript header box height moved from 40 to 42 px.
+- Spacing and layout rhythm: adjacent panels now use the shared 6 px gap;
+  top/bottom alignment and inner/outer radii are consistent.
+- Colors and visual tokens: existing background, border, shadow, and muted
+  foreground tokens are preserved.
+- Image quality and assets: this shell contains no new raster or decorative
+  image assets.
+- Copy and content: no product copy changed; differing selected-file content is
+  intentionally outside the visual comparison.
+
+Runtime evidence:
+
+- Electron TypeScript check passes.
+- The four relevant suites pass with 104 tests and 791 assertions.
+- Targeted ESLint reports no errors; the nine warnings are pre-existing
+  `AppShell` hook dependency warnings outside this change.
+- The implementation rendered through the existing Electron dev process
+  without an HMR error overlay.
+- Direct collapse/expand automation was not used as pass evidence because the
+  active project/window changed during QA; the toggle implementation itself was
+  not modified.
+
+No actionable P0, P1, or P2 visual differences remain.
+
+final result: passed
+
 ## Generic file-tree creation QA — 2026-07-24
 
 ### Sources

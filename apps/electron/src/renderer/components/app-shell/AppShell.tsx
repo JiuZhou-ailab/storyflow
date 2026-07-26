@@ -34,6 +34,8 @@ import {
   FileUp,
   FolderOpen,
   FolderPlus,
+  PanelRightClose,
+  PanelRightOpen,
   Pencil,
 } from "lucide-react"
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
@@ -76,6 +78,7 @@ import {
 import { SessionList, type ChatGroupingMode } from "./SessionList"
 import { MainContentPanel, WritingPrimaryContentReadyContext } from "./MainContentPanel"
 import { PanelStackContainer } from "./PanelStackContainer"
+import { ResizableColumn } from "./ResizableColumn"
 import type { ChatDisplayHandle } from "./ChatDisplay"
 import { NovelDocumentEditorPanel, type NovelDocumentEditorPanelHandle, type NovelSelectionAiRequest } from "@/components/writing/NovelDocumentEditorPanel"
 import { ProjectExportDialog } from "@/components/workspace/ProjectExportDialog"
@@ -286,6 +289,11 @@ const SESSION_LIST_MIN_WIDTH = 240
 const SESSION_LIST_MAX_WIDTH = 480
 const NOVEL_WORKSPACE_NAVIGATOR_MIN_WIDTH = 420
 const NOVEL_WORKSPACE_NAVIGATOR_DEFAULT_WIDTH = DEFAULT_WORKSPACE_WIDTH
+// The directory is the outermost content navigator, so it stays narrow like a
+// file tree rather than matching the manuscript's reading width.
+const WORKSPACE_DIRECTORY_MIN_WIDTH = 220
+const WORKSPACE_DIRECTORY_MAX_WIDTH = 460
+const WORKSPACE_DIRECTORY_DEFAULT_WIDTH = 300
 /** Fraction of the window the manuscript column takes before the user resizes it. */
 const DEFAULT_DOCUMENT_DOCK_WIDTH_RATIO = 0.34
 const NAVIGATOR_SASH_HIT_WIDTH = 14
@@ -850,6 +858,7 @@ function AppShellContent({
     runtimeWorkspace,
     activeProjectId,
     onSelectWorkspace,
+    onSelectProjectSession,
     onWorkspaceCreated,
     onRefreshWorkspaces,
     onOpenWritingWorkspace,
@@ -863,6 +872,7 @@ function AppShellContent({
     onMarkSessionUnread,
     onSessionStatusChange,
     onRenameSession,
+    onCreateSession,
     onOpenSettings,
     onOpenKeyboardShortcuts,
     onReset,
@@ -892,6 +902,22 @@ function AppShellContent({
   })
   const [novelWorkspaceNavigatorWidth, setNovelWorkspaceNavigatorWidth] = React.useState(() => {
     return storage.get(storage.KEYS.novelWorkspaceNavigatorWidth, NOVEL_WORKSPACE_NAVIGATOR_DEFAULT_WIDTH)
+  })
+  const [workspaceDirectoryWidth, setWorkspaceDirectoryWidth] = React.useState(() => {
+    return storage.get(storage.KEYS.workspaceDirectoryWidth, WORKSPACE_DIRECTORY_DEFAULT_WIDTH)
+  })
+  const [rightWorkspaceVisible, setRightWorkspaceVisible] = React.useState(() => {
+    return storage.get(
+      storage.KEYS.writingWorkspaceVisible,
+      storage.get(storage.KEYS.workspaceDirectoryVisible, true),
+    )
+  })
+  const [workspaceDirectoryVisible, setWorkspaceDirectoryVisible] = React.useState(() => {
+    // Before independent directory folding existed, workspaceDirectoryVisible
+    // controlled the complete writing workspace. Keep that legacy value as the
+    // group preference above, then start the directory itself expanded.
+    if (storage.getRaw(storage.KEYS.writingWorkspaceVisible) === null) return true
+    return storage.get(storage.KEYS.workspaceDirectoryVisible, true)
   })
   React.useEffect(() => {
     storage.remove(storage.KEYS.focusModeEnabled)
@@ -950,14 +976,19 @@ function AppShellContent({
     }
   }, [])
 
-  const [isResizing, setIsResizing] = React.useState<'session-list' | 'novel-workspace-navigator' | 'document-dock' | null>(null)
+  const [isResizing, setIsResizing] = React.useState<'session-list' | 'novel-workspace-navigator' | 'document-dock' | 'directory-dock' | null>(null)
   const [sessionListHandleY, setSessionListHandleY] = React.useState<number | null>(null)
   const sessionListHandleRef = React.useRef<HTMLDivElement>(null)
   const navigatorPanelRef = React.useRef<HTMLDivElement>(null)
-  const documentDockHandleRef = React.useRef<HTMLDivElement>(null)
   const sessionListPanelRef = React.useRef<HTMLDivElement>(null)
   const latestSessionListWidthRef = React.useRef(sessionListWidth)
   const latestNovelWorkspaceNavigatorWidthRef = React.useRef(novelWorkspaceNavigatorWidth)
+  const latestWorkspaceDirectoryWidthRef = React.useRef(workspaceDirectoryWidth)
+  // Delta-based resize baselines: once the directory anchors the window's right
+  // edge, the manuscript column no longer touches any edge, so its width is
+  // tracked as an offset from where the drag started rather than from a wall.
+  const resizeStartXRef = React.useRef(0)
+  const resizeStartWidthRef = React.useRef(0)
 
   const [session, setSession] = useSession()
   const { resolvedMode, isDark, setMode } = useTheme()
@@ -1637,13 +1668,33 @@ function AppShellContent({
     latestNovelWorkspaceNavigatorWidthRef.current = novelWorkspaceNavigatorWidth
   }, [novelWorkspaceNavigatorWidth])
 
+  React.useEffect(() => {
+    latestWorkspaceDirectoryWidthRef.current = workspaceDirectoryWidth
+  }, [workspaceDirectoryWidth])
+
+  React.useEffect(() => {
+    storage.set(storage.KEYS.writingWorkspaceVisible, rightWorkspaceVisible)
+  }, [rightWorkspaceVisible])
+
+  React.useEffect(() => {
+    storage.set(storage.KEYS.workspaceDirectoryVisible, workspaceDirectoryVisible)
+  }, [workspaceDirectoryVisible])
+
   const beginResize = React.useCallback((
-    mode: 'session-list' | 'novel-workspace-navigator' | 'document-dock',
+    mode: 'session-list' | 'novel-workspace-navigator' | 'document-dock' | 'directory-dock',
     e: React.MouseEvent<HTMLDivElement>
   ) => {
     e.preventDefault()
     e.stopPropagation()
     setIsResizing(mode)
+
+    // Capture the drag baseline for delta-based columns. Both the manuscript and
+    // the directory carry their resize handle on the left edge and grow as it
+    // moves left, so width = startWidth + (startX - clientX).
+    resizeStartXRef.current = e.clientX
+    resizeStartWidthRef.current = mode === 'directory-dock'
+      ? latestWorkspaceDirectoryWidthRef.current
+      : latestNovelWorkspaceNavigatorWidthRef.current
 
     const previousCursor = document.body.style.cursor
     const previousUserSelect = document.body.style.userSelect
@@ -1658,19 +1709,29 @@ function AppShellContent({
     }
 
     const updateWidth = (clientX: number) => {
-      // The document dock is anchored to the window's right edge, so its width
-      // grows as the handle moves left — the mirror of the left-anchored columns.
-      if (mode === 'document-dock') {
-        const shellRight = shellRef.current?.getBoundingClientRect().right ?? shellWidth
-        const available = shellRight - PANEL_EDGE_INSET - (PANEL_GAP / 2)
+      // Both right-side columns carry their handle on the left edge and grow as
+      // it moves left, so they share one delta rule (width = start + drag). The
+      // math is position-independent, so it works whether the column hugs the
+      // window edge (directory) or floats between chat and directory (manuscript).
+      // Only the bounds and the target state differ, so they live in a per-mode
+      // config rather than a second branch.
+      if (mode === 'directory-dock' || mode === 'document-dock') {
+        const delta = resizeStartXRef.current - clientX
+        const raw = resizeStartWidthRef.current + delta
+        if (mode === 'directory-dock') {
+          const nextWidth = Math.min(Math.max(raw, WORKSPACE_DIRECTORY_MIN_WIDTH), WORKSPACE_DIRECTORY_MAX_WIDTH)
+          latestWorkspaceDirectoryWidthRef.current = nextWidth
+          setWorkspaceDirectoryWidth(nextWidth)
+          return
+        }
+        const directoryReserve = rightWorkspaceVisible && workspaceDirectoryVisible
+          ? workspaceDirectoryWidth + PANEL_GAP
+          : 0
         const maxDocumentWidth = Math.max(
           NOVEL_WORKSPACE_NAVIGATOR_MIN_WIDTH,
-          shellWidth - activityRailOffset - sessionListWidth - PANEL_MIN_WIDTH - (PANEL_GAP * 2) - PANEL_EDGE_INSET,
+          shellWidth - activityRailOffset - sessionListWidth - PANEL_MIN_WIDTH - directoryReserve - (PANEL_GAP * 2) - PANEL_EDGE_INSET,
         )
-        const nextWidth = Math.min(
-          Math.max(available - clientX, NOVEL_WORKSPACE_NAVIGATOR_MIN_WIDTH),
-          maxDocumentWidth,
-        )
+        const nextWidth = Math.min(Math.max(raw, NOVEL_WORKSPACE_NAVIGATOR_MIN_WIDTH), maxDocumentWidth)
         latestNovelWorkspaceNavigatorWidthRef.current = nextWidth
         setNovelWorkspaceNavigatorWidth(nextWidth)
         return
@@ -1717,7 +1778,10 @@ function AppShellContent({
     }
 
     const handleMouseUp = () => {
-      if (mode === 'novel-workspace-navigator' || mode === 'document-dock') {
+      if (mode === 'directory-dock') {
+        storage.set(storage.KEYS.workspaceDirectoryWidth, latestWorkspaceDirectoryWidthRef.current)
+        setSessionListHandleY(null)
+      } else if (mode === 'novel-workspace-navigator' || mode === 'document-dock') {
         storage.set(storage.KEYS.novelWorkspaceNavigatorWidth, latestNovelWorkspaceNavigatorWidthRef.current)
         setSessionListHandleY(null)
       } else {
@@ -1735,7 +1799,7 @@ function AppShellContent({
     updateHandleY(e.clientY)
     document.addEventListener('mousemove', handleMouseMove, true)
     document.addEventListener('mouseup', handleMouseUp, true)
-  }, [activityRailOffset, shellWidth])
+  }, [activityRailOffset, rightWorkspaceVisible, shellWidth, sessionListWidth, workspaceDirectoryVisible, workspaceDirectoryWidth])
 
   // Spring transition config - shared between sidebar and header
   // Critical damping (no bounce): damping = 2 * sqrt(stiffness * mass)
@@ -4116,35 +4180,46 @@ function AppShellContent({
     if (isSessionsNavigation(navState)) return 'recent'
     return 'writing'
   }, [globalSearchOpen, navState])
-  // Each runtime domain owns exactly one conversation list (ADR 0006).
-  // The rail lists Free Conversations, so it replaces the navigator only in the
-  // free runtime. Project conversations stay in the project's own SessionList —
-  // that is their only entry, and it is what keeps them out of the rail.
+  // The rail now carries both domains as a two-level tree — Free Conversations
+  // plus each project expanded into its own conversations (ADR 0006 revision).
+  // So the standalone SessionList navigator is redundant for every runtime, not
+  // just the free one; suppressing it also removes the empty column that used to
+  // sit between the rail and the chat when a project had no session route.
   const hideSessionListNavigator = showActivityRail
-    && isSessionsNavigation(navState)
     && !isAutoCompact
-    && !isProjectRuntime
+    && (
+      isSessionsNavigation(navState)
+      || (isProjectRuntime && isWritingNavigation(navState))
+    )
 
-  // The rail lists Free Conversations only, so selecting from it enters the
-  // free runtime — never another project's. Silently switching workspaces here
-  // is what turned a display leak into a cross-domain jump; a project session
-  // arriving from this surface means the rail's scope regressed upstream.
+  // One rail callback for every conversation, free or project. The domain rule
+  // lives here, not in two parallel handlers: if the session already belongs to
+  // the active runtime, just focus it in place; otherwise perform the EXPLICIT
+  // cross-domain switch (activate the owning runtime, deep-link to the session).
+  // Activating the runtime IS the visible whole-runtime move the ADR requires —
+  // never a silent overlay — so this stays inside ADR 0006's boundary.
   const handleActivitySessionSelect = React.useCallback(async (
     sessionId: string,
     workspaceId: string,
   ) => {
-    if (workspaceId !== FREE_CONVERSATION_WORKSPACE_ID) {
-      console.warn(
-        '[activity-rail] Ignoring non-free session selection; the rail must not cross runtime domains:',
-        { sessionId, workspaceId },
-      )
+    if (workspaceId === activeWorkspaceId) {
+      navigateToSessionInPanel(sessionId)
       return
     }
-    if (activeWorkspaceId !== FREE_CONVERSATION_WORKSPACE_ID) {
-      await onOpenFreeConversations()
+    if (onSelectProjectSession) {
+      await onSelectProjectSession(workspaceId, sessionId)
     }
-    navigateToSessionInPanel(sessionId)
-  }, [activeWorkspaceId, navigateToSessionInPanel, onOpenFreeConversations])
+  }, [activeWorkspaceId, navigateToSessionInPanel, onSelectProjectSession])
+
+  const handleActivityProjectSessionCreate = React.useCallback(async (workspaceId: string) => {
+    await onSelectWorkspace(workspaceId)
+    const session = await onCreateSession(workspaceId)
+    if (onSelectProjectSession) {
+      await onSelectProjectSession(workspaceId, session.id)
+    } else {
+      navigateToSessionInPanel(session.id)
+    }
+  }, [navigateToSessionInPanel, onCreateSession, onSelectProjectSession, onSelectWorkspace])
 
   const handleSidebarFocus = React.useCallback((event: React.FocusEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return
@@ -4231,6 +4306,25 @@ function AppShellContent({
     )
     : undefined
 
+  const directoryToggleLabel = workspaceDirectoryVisible
+    ? t('writing.directory.collapse', '收起目录')
+    : t('writing.directory.expand', '展开目录')
+  const directoryToggleButton = activityWorkspaceDirectory ? (
+    <HeaderIconButton
+      icon={workspaceDirectoryVisible
+        ? <PanelRightClose className="h-4 w-4" strokeWidth={1.7} />
+        : <PanelRightOpen className="h-4 w-4" strokeWidth={1.7} />}
+      tooltip={directoryToggleLabel}
+      aria-label={directoryToggleLabel}
+      aria-expanded={workspaceDirectoryVisible}
+      onClick={() => setWorkspaceDirectoryVisible((visible) => !visible)}
+      className="h-[26px] w-[26px] rounded-lg"
+    />
+  ) : null
+  const collapsedDirectoryToggleButton = workspaceDirectoryVisible
+    ? null
+    : directoryToggleButton
+
   // The document and the conversation list are distinct roles and therefore own
   // distinct columns. Sharing one slot is what let a route change (opening a new
   // conversation) silently replace the manuscript.
@@ -4271,6 +4365,7 @@ function AppShellContent({
                         onClick={() => setNovelExportDialogOpen(true)}
                         className="h-[26px] w-[26px] rounded-lg"
                       />
+                      {collapsedDirectoryToggleButton}
                     </>
                   )}
                 />
@@ -4281,6 +4376,7 @@ function AppShellContent({
                   onCreateFile={() => handleWorkspaceOpeningCommand('create-file')}
                   onImportFiles={() => handleWorkspaceOpeningCommand('import-files')}
                   onOpenSkills={() => handleWorkspaceOpeningCommand('open-skills')}
+                  headerActions={collapsedDirectoryToggleButton}
                 />
               )
             ) : showNovelWorkspacePending ? (
@@ -4288,6 +4384,7 @@ function AppShellContent({
                 <PanelHeader
                   title={isSidebarVisible ? t('writing.workspace') : undefined}
                   compensateForStoplight={!isSidebarVisible}
+                  actions={collapsedDirectoryToggleButton}
                 />
                 <div className="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
                   {t('writing.loadingWorkspace', '正在加载项目目录...')}
@@ -4298,12 +4395,21 @@ function AppShellContent({
                 <PanelHeader
                   title={isSidebarVisible ? t('writing.workspace') : undefined}
                   compensateForStoplight={!isSidebarVisible}
+                  actions={collapsedDirectoryToggleButton}
                 />
                 <div className="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
                   {t('writing.workspaceUnavailable', '未检测到项目目录')}
                 </div>
               </div>
             ) : null
+
+  const showWritingDocumentColumn = Boolean(
+    writingDocumentSurface && rightWorkspaceVisible && !isAutoCompact,
+  )
+  const showWorkspaceDirectoryColumn = Boolean(
+    activityWorkspaceDirectory && rightWorkspaceVisible && workspaceDirectoryVisible && !isAutoCompact,
+  )
+  const hasVisibleRightWorkspace = showWritingDocumentColumn || showWorkspaceDirectoryColumn
 
   return (
     <AppShellProvider value={appShellContextValue}>
@@ -4312,6 +4418,10 @@ function AppShellContent({
           workspaces={workspaces}
           activeWorkspaceId={activeProjectId}
           isCompact={isAutoCompact}
+          isRightPanelVisible={rightWorkspaceVisible}
+          onToggleRightPanel={writingDocumentSurface && !isAutoCompact
+            ? () => setRightWorkspaceVisible((visible) => !visible)
+            : undefined}
         />
 
       {/* === OUTER LAYOUT: Unified Panel Stack | Right Sidebar === */}
@@ -4330,6 +4440,10 @@ function AppShellContent({
               void onSelectWorkspace?.(workspaceId)
             }}
             onSelectSession={handleActivitySessionSelect}
+            onCreateConversationInProject={handleActivityProjectSessionCreate}
+            activeProjectSessionId={activeProjectId && activeProjectId !== FREE_CONVERSATION_WORKSPACE_ID
+              ? (panelCount > 1 ? focusedSessionId : session.selected)
+              : null}
             onWorkspaceCreated={onWorkspaceCreatedFromRail ?? onWorkspaceCreated}
             onOpenProjectInNewWindow={onOpenProjectInNewWindow}
             onRenameProject={onRenameProject}
@@ -4342,7 +4456,6 @@ function AppShellContent({
             onOpenSettings={() => handleSettingsClick('app')}
             onOpenAccount={onOpenAccount}
             profile={profile}
-            workspaceDirectory={activityWorkspaceDirectory}
             onOpenWhatsNew={handleWhatsNewClick}
             whatsNew={{
               unseen: hasUnseenReleaseNotes,
@@ -4354,7 +4467,7 @@ function AppShellContent({
         <div
           data-testid="panel-stack-inset"
           className="flex min-w-0 flex-1"
-          style={{ paddingBottom: PANEL_EDGE_INSET }}
+          style={{ paddingBottom: PANEL_EDGE_INSET, gap: PANEL_GAP }}
         >
           <WritingPrimaryContentReadyContext.Provider value={writingPrimaryContentReady}>
           <PanelStackContainer
@@ -5042,7 +5155,7 @@ function AppShellContent({
                 onSelectSubpage={(subpage) => handleSettingsClick(subpage)}
               />
             )}
-            {isSessionsNavigation(navState) && (
+            {isSessionsNavigation(navState) && (!showActivityRail || isAutoCompact) && (
               /* Sessions List */
               <>
                 {/* SessionList: Scrollable list of session cards */}
@@ -5145,54 +5258,50 @@ function AppShellContent({
             </div>
           ) : null}
           isSidebarAndNavigatorHidden={effectiveSidebarAndNavigatorHidden}
-          isRightSidebarVisible={false}
+          isRightSidebarVisible={hasVisibleRightWorkspace}
           isCompact={isAutoCompact}
           isResizing={!!isResizing}
           hidePanelCloseButton={showPrimarySidebar}
         />
-        {/* Manuscript column: content sits next to the conversation, navigators
-            stay on the outer edges. Collapsing it never removes the column's
-            owner, only its width. */}
-        {writingDocumentSurface && !isAutoCompact ? (
-          <>
-            <div
-              ref={documentDockHandleRef}
-              data-panel-role="document-resize-sash"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label={t('writing.workspace')}
-              onMouseDown={(e) => { beginResize('document-dock', e) }}
-              className="relative h-full cursor-col-resize flex justify-center shrink-0 z-dropdown"
-              style={{ width: 0, margin: `0 ${NAVIGATOR_SASH_FLEX_MARGIN}px` }}
-            >
-              <div
-                className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 flex justify-center cursor-col-resize"
-                style={{ width: NAVIGATOR_SASH_HIT_WIDTH }}
-              >
-                <div
-                  className="absolute left-1/2 -translate-x-1/2 bg-border/60"
-                  style={{
-                    width: PANEL_SASH_LINE_WIDTH,
-                    top: PANEL_STACK_VERTICAL_OVERFLOW,
-                    bottom: PANEL_STACK_VERTICAL_OVERFLOW,
-                  }}
-                />
-              </div>
-            </div>
-            <div
-              ref={navigatorPanelRef}
-              data-panel-role="document"
-              className="h-full flex flex-col min-w-0 shrink-0 overflow-hidden bg-background shadow-middle relative z-panel"
-              style={{
-                width: novelWorkspaceNavigatorWidth,
-                borderRadius: RADIUS_INNER,
-                marginBottom: PANEL_EDGE_INSET,
-              }}
+        <AnimatePresence initial={false}>
+          {/* The title-bar toggle folds the complete writing workspace; the
+              directory-header toggle only folds the outer directory column. */}
+          {showWritingDocumentColumn ? (
+            <ResizableColumn
+              key="writing-document"
+              mode="document-dock"
+              role="document"
+              sashLabel={t('writing.workspace')}
+              onResizeStart={beginResize}
+              width={novelWorkspaceNavigatorWidth}
+              panelRef={navigatorPanelRef}
+              isAtRightEdge={!showWorkspaceDirectoryColumn}
+              disableAnimation={isResizing === 'document-dock'}
             >
               {writingDocumentSurface}
-            </div>
-          </>
-        ) : null}
+            </ResizableColumn>
+          ) : null}
+          {showWorkspaceDirectoryColumn ? (
+            <ResizableColumn
+              key="workspace-directory"
+              mode="directory-dock"
+              role="directory"
+              sashLabel={t('writing.directory.title', '目录')}
+              onResizeStart={beginResize}
+              width={workspaceDirectoryWidth}
+              isAtRightEdge
+              disableAnimation={isResizing === 'directory-dock'}
+              header={(
+                <PanelHeader
+                  title={t('writing.directory.title', '目录')}
+                  actions={directoryToggleButton}
+                />
+              )}
+            >
+              {activityWorkspaceDirectory}
+            </ResizableColumn>
+          ) : null}
+        </AnimatePresence>
           </WritingPrimaryContentReadyContext.Provider>
         </div>
 

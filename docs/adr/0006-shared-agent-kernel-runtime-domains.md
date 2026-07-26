@@ -1,6 +1,6 @@
 # ADR 0006: 自由对话与项目对话共享 Agent 内核
 
-状态：Accepted
+状态：Accepted（2026-07-23）；已修订（见文末「修订：Rail 两级树」）
 日期：2026-07-23
 
 ## 背景
@@ -87,3 +87,38 @@ Project Conversation ┘                         ├─ SessionManager
 
 修复同时移除了两处以字符串匹配锁定该实现的静态测试。教训：静态源码断言会把违反 ADR 的实现
 一起冻结，涉及所有权边界的不变量应当用行为测试表达。
+
+## 修订：Rail 两级树（2026）
+
+### 变更
+
+原决策第 47–48 行要求「每个 Runtime Domain 恰好拥有一个会话列表界面：自由对话域由 Activity
+Rail 承担，项目域由项目自己的 SessionList 承担」。本次修订取消这条 UI 约束：Activity Rail
+改为一个两级树，顶层是项目，展开后是该项目的对话列表（对齐 Codex 的资源管理器布局）。项目自身
+不再需要一个独立的 SessionList 导航列——它作为空列常驻，是被取代的原因。
+
+运行时域的其余决策全部不变：仍是一个 Agent Kernel、一个 SessionManager、一个 Resource
+Resolver；仍只传递 `workspaceId`；跨域仍只能显式转移。本修订只改「会话列表在哪一个 UI 控件里
+呈现」，不改「哪个运行时拥有会话」。
+
+### 为什么不违反原边界
+
+原边界的关切是**导航语义**——点击不能静默跨域跳转、列表不能隐式合并两个域的会话身份。两级树把
+这条关切表达得更强，而不是更弱：
+
+- 分组本身就是域边界。每个项目的对话挂在自己的分组下，来源单一，`listSessionsByWorkspace`
+  按显式 `workspaceId` 查询，协议层不提供跨 workspace 聚合——回归记录第 1 条路径不复存在。
+- 不存在扁平的「全局最近对话」列表。自由对话域和各项目域各自成组，永不合并成一个混合列表——
+  回归记录里"两个互斥语义共处一行"的情况不会出现。
+- 选择项目对话是**显式**的跨域运行时切换（`onSelectProjectSession` →
+  `activateRuntimeWorkspace(workspaceId, allSessions(sessionId))`），会切走整个运行时并落到
+  目标会话。这正是 ADR 允许的「显式转移」，不是回归记录第 3 条的隐式跳板：跳转对用户可见，且
+  由运行时切换而非 overlay 承担。
+
+### 仍必须遵守的约束（回归记录的教训未过期）
+
+- 每个项目分组只能通过 `sessions:listByWorkspace` 拉取自己的会话，禁止 `sessions:getAll`。
+- 展开态子树的实时更新必须按 workspaceId 各自刷新；不得用 `localSessionMetaMap` overlay 把当前
+  运行项目的会话并入其它分组（回归记录第 2 条）。当前实现里每个分组的 metas 按 `workspaceId`
+  独立存储，不经过全局 overlay。
+- 跨域聚合仍只允许返回不含会话身份的计数（`sessions:getUnreadSummary`），用于项目行的未读点。

@@ -19,6 +19,10 @@ export const KEYS = {
   sidebarWidth: 'sidebar-width',
   sessionListWidth: 'session-list-width',
   novelWorkspaceNavigatorWidth: 'novel-workspace-navigator-width',
+  // Manuscript directory column (right-anchored, outermost content navigator).
+  workspaceDirectoryWidth: 'workspace-directory-width',
+  writingWorkspaceVisible: 'writing-workspace-visible',
+  workspaceDirectoryVisible: 'workspace-directory-visible',
   sidebarMode: 'sidebar-mode',
   listFilter: 'list-filter',
   labelFilter: 'label-filter',

@@ -1991,6 +1991,14 @@ function AppContent() {
     )
   }, [activateRuntimeWorkspace])
 
+  // Explicit cross-domain jump: switch the runtime to the owning project and
+  // land directly on the chosen session. The rail lists project conversations,
+  // but selecting one always moves the whole runtime — never an overlay that
+  // merges two domains (ADR 0006).
+  const handleSelectProjectSession = useCallback(async (workspaceId: string, sessionId: string) => {
+    await activateRuntimeWorkspace(workspaceId, routes.view.allSessions(sessionId))
+  }, [activateRuntimeWorkspace])
+
   // Handle workspace switch by slug (called by NavigationContext on popstate when ?ws= changes)
   const handleSwitchWorkspaceBySlug = useCallback((slug: string) => {
     if (slug === FREE_CONVERSATION_WORKSPACE_SLUG) {
@@ -2335,6 +2343,7 @@ function AppContent() {
     onOpenUrl: handleOpenUrl,
     // Workspace
     onSelectWorkspace: handleSelectWorkspace,
+    onSelectProjectSession: handleSelectProjectSession,
     onWorkspaceCreated: handleWorkspaceCreated,
     onRefreshWorkspaces: handleRefreshWorkspaces,
     onOpenWritingWorkspace: handleOpenWritingWorkspace,
@@ -2378,6 +2387,7 @@ function AppContent() {
     handleOpenFile,
     handleOpenUrl,
     handleSelectWorkspace,
+    handleSelectProjectSession,
     handleWorkspaceCreated,
     handleRefreshWorkspaces,
     handleOpenWritingWorkspace,

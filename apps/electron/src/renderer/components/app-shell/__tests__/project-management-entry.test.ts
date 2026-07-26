@@ -122,22 +122,22 @@ describe('project management entry', () => {
 
   it('keeps the workspace rail flush with the bottom edge while insetting floating panels', () => {
     expect(appShellSource).toContain('data-testid="panel-stack-inset"')
-    expect(appShellSource).toContain('style={{ paddingBottom: PANEL_EDGE_INSET }}')
+    expect(appShellSource).toContain('paddingBottom: PANEL_EDGE_INSET, gap: PANEL_GAP')
     expect(activityRailSource).toContain('className="titlebar-no-drag flex h-full')
   })
 
-  it('embeds the active project directory in the workspace rail instead of a second sidebar', () => {
+  it('gives the project directory its own right-anchored column instead of nesting it in the rail', () => {
+    // The directory used to replace the active project's row inside the rail,
+    // conflating "project catalog" with "file tree". It is now the outermost
+    // content navigator: a right-anchored ResizableColumn beside the manuscript.
+    // So the rail no longer renders the directory at all.
     expect(appShellSource).toContain('const activityWorkspaceDirectory = showPrimarySidebar')
-    expect(appShellSource).toContain('workspaceDirectory={activityWorkspaceDirectory}')
+    expect(appShellSource).toContain('role="directory"')
     expect(appShellSource).toContain('sidebarSlot={null}')
     expect(appShellSource).toContain('sidebarWidth={0}')
-    expect(activityRailSource).toContain('data-testid="activity-project-directory"')
-    expect(activityRailSource).toContain('className="min-w-0 overflow-hidden pl-3.5"')
-    expect(activityRailSource).toContain('{workspaceDirectory}')
+    expect(activityRailSource).not.toContain('data-testid="activity-project-directory"')
+    expect(activityRailSource).not.toContain('{workspaceDirectory}')
     expect(activityRailSource).toContain('projectWorkspaces.map((workspace) =>')
-    expect(activityRailSource).toContain('workspace.id === activeWorkspaceId')
-    expect(activityRailSource).not.toContain('.filter(workspace => !workspaceDirectory')
-    expect(activityRailSource).not.toContain('className="-mx-2')
   })
 
   it('folds the whole project collection like recent conversations while preserving the native project root fold', () => {
@@ -152,6 +152,22 @@ describe('project management entry', () => {
     expect(projectSidebarSource).toContain('fitContent')
     expect(activityRailSource).not.toContain('workspaceDirectoryExpanded')
     expect(activityRailSource).not.toContain('h-[min(44vh,420px)]')
+  })
+
+  it('makes each project row one disclosure target with row-wide actions', () => {
+    const projectRowSource = activityRailSource.slice(
+      activityRailSource.indexOf('function ProjectFolderRow'),
+    )
+
+    expect(projectRowSource).toContain('aria-expanded={expandable ? expanded : undefined}')
+    expect(projectRowSource).toContain('onToggleExpanded?.()')
+    expect(projectRowSource).not.toContain("role={expandable ? 'button' : undefined}")
+    expect(projectRowSource).toContain("active && 'bg-foreground/[0.07] text-foreground'")
+    expect(projectRowSource).toContain('aria-label={`在 ${workspace.name} 中新建对话`}')
+    expect(appShellSource).toContain('await onSelectWorkspace(workspaceId)')
+    expect(appShellSource).toContain('const session = await onCreateSession(workspaceId)')
+    expect(appShellSource).toContain('await onSelectProjectSession(workspaceId, session.id)')
+    expect(appShellSource).toContain('onCreateConversationInProject={handleActivityProjectSessionCreate}')
   })
 
   it('keeps global navigation usable from the project manager when an active project exists', () => {
@@ -183,12 +199,16 @@ describe('project management entry', () => {
     expect(pendingRouteEffect).not.toContain('cancelAnimationFrame')
   })
 
-  it('gives each runtime domain exactly one session directory', () => {
-    // The rail is the directory for Free Conversations only. In a project
-    // runtime it must yield to the project's own SessionList, which is the
-    // sole entry to project conversations now that the rail excludes them.
+  it('drops the redundant SessionList navigator now that the rail carries every domain', () => {
+    // ADR 0006 revision: the rail is a two-level tree (Free Conversations plus
+    // each project expanded into its own conversations), so the standalone
+    // SessionList navigator column is redundant for every runtime — not just the
+    // free one. Suppressing it also removes the empty column that used to sit
+    // between the rail and the chat when a project had no open session.
     expect(appShellSource).toContain('const hideSessionListNavigator = showActivityRail')
-    expect(appShellSource).toContain('&& !isProjectRuntime')
+    expect(appShellSource).not.toContain('&& !isProjectRuntime')
+    expect(appShellSource).toContain('isProjectRuntime && isWritingNavigation(navState)')
+    expect(appShellSource).toContain('isSessionsNavigation(navState) && (!showActivityRail || isAutoCompact)')
     expect(appShellSource).toContain('effectiveSidebarAndNavigatorHidden || hideSessionListNavigator ? 0 : navigatorPanelWidth')
     expect(appShellSource).toContain('!effectiveSidebarAndNavigatorHidden && !hideSessionListNavigator')
   })

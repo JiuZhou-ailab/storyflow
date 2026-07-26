@@ -1,16 +1,14 @@
-// input: Workspace identity, transport state, and update status
-// output: Thin desktop window title bar with current project context only
+// input: Workspace identity, transport state, and right-panel visibility
+// output: Thin desktop window title bar with current project context and panel toggle
 // pos: Window chrome layer above ActivityRail and project work surfaces
 
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Cloud, CloudOff, Download, RefreshCw } from 'lucide-react'
+import { Cloud, CloudOff, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@craft-agent/ui'
 import { FadingText } from '@/components/ui/fading-text'
 import { cn } from '@/lib/utils'
 import { useTransportConnectionState } from '@/hooks/useTransportConnectionState'
-import { useUpdateChecker } from '@/hooks/useUpdateChecker'
-import { getUpdateIndicatorState } from '@/lib/update-indicator'
 import type { Workspace } from '../../../shared/types'
 import { formatTopbarWorkspaceName } from './workspace-switcher-label'
 import { WINDOW_TITLE_BAR_HEIGHT } from './layout-constants'
@@ -19,17 +17,19 @@ interface TopBarProps {
   workspaces: Workspace[]
   activeWorkspaceId: string | null
   isCompact?: boolean
+  isRightPanelVisible?: boolean
+  onToggleRightPanel?: () => void
 }
 
 export function TopBar({
   workspaces,
   activeWorkspaceId,
   isCompact,
+  isRightPanelVisible,
+  onToggleRightPanel,
 }: TopBarProps) {
   const { t } = useTranslation()
   const connectionState = useTransportConnectionState()
-  const updateChecker = useUpdateChecker()
-  const updateIndicator = getUpdateIndicatorState(updateChecker.updateInfo)
 
   const selectedWorkspace = useMemo(
     () => workspaces.find((workspace) => workspace.id === activeWorkspaceId),
@@ -69,67 +69,31 @@ export function TopBar({
         ) : null}
       </div>
 
-      {updateIndicator ? (
+      {onToggleRightPanel ? (
         <Tooltip>
           <TooltipTrigger asChild>
             <button
               type="button"
-              aria-label={
-                updateIndicator.kind === 'ready'
-                  ? t('settings.about.restartToUpdate', { version: updateIndicator.version ?? '' })
-                  : updateIndicator.kind === 'downloading'
-                    ? t('settings.about.downloading', { version: updateIndicator.version ?? '', percent: updateIndicator.progress })
-                    : t('toast.installingUpdate')
-              }
-              disabled={!updateIndicator.actionable}
-              onClick={() => {
-                if (updateIndicator.actionable) {
-                  void updateChecker.installUpdate()
-                }
-              }}
-              className={cn(
-                'titlebar-no-drag absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md outline-none transition-colors',
-                'focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default',
-                updateIndicator.kind === 'ready'
-                  ? 'bg-accent/10 text-accent hover:bg-accent/15'
-                  : 'bg-foreground/5 text-foreground/60'
-              )}
-            >
-              {updateIndicator.kind === 'ready' ? (
-                <Download className="h-3.5 w-3.5" strokeWidth={1.7} />
-              ) : (
-                <RefreshCw className="h-3.5 w-3.5 animate-spin" strokeWidth={1.7} />
-              )}
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            {updateIndicator.kind === 'ready'
-              ? t('settings.about.restartToUpdate', { version: updateIndicator.version ?? '' })
-              : updateIndicator.kind === 'downloading'
-                ? t('settings.about.downloading', { version: updateIndicator.version ?? '', percent: updateIndicator.progress })
-                : t('toast.installingUpdate')}
-          </TooltipContent>
-        </Tooltip>
-      ) : (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              aria-label={t('settings.about.checkForUpdates')}
-              onClick={() => void updateChecker.checkForUpdates()}
+              aria-label={isRightPanelVisible ? '收起右侧栏' : '展开右侧栏'}
+              aria-expanded={isRightPanelVisible}
+              onClick={onToggleRightPanel}
               className={cn(
                 'titlebar-no-drag absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md outline-none transition-colors',
                 'bg-foreground/5 text-foreground/60 hover:bg-foreground/10 hover:text-foreground/80 focus-visible:ring-1 focus-visible:ring-ring'
               )}
             >
-              <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.7} />
+              {isRightPanelVisible ? (
+                <PanelRightClose className="h-3.5 w-3.5" strokeWidth={1.7} />
+              ) : (
+                <PanelRightOpen className="h-3.5 w-3.5" strokeWidth={1.7} />
+              )}
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            {t('settings.about.checkForUpdates')}
+            {isRightPanelVisible ? '收起右侧栏' : '展开右侧栏'}
           </TooltipContent>
         </Tooltip>
-      )}
+      ) : null}
     </header>
   )
 }

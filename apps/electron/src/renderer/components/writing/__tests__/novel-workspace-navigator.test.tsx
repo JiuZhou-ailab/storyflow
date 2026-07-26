@@ -1338,7 +1338,8 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('setNovelWorkspaceNavigatorWidth(newWidth)')
     expect(appShellSource).toContain('storage.KEYS.novelWorkspaceNavigatorWidth')
     expect(appShellSource).toContain('setNovelWorkspaceNavigatorWidth(nextWidth)')
-    expect(appShellSource).toContain('width: novelWorkspaceNavigatorWidth')
+    // The manuscript column's width now flows through the shared ResizableColumn.
+    expect(appShellSource).toContain('width={novelWorkspaceNavigatorWidth}')
     expect(appShellSource).toContain('const navigatorPanelWidth = sessionListWidth')
   })
 
@@ -1346,7 +1347,9 @@ describe('novel writing workspace layout', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
 
     expect(appShellSource).toContain('beginResize')
-    expect(appShellSource).toContain("beginResize('document-dock', e)")
+    // The manuscript sash lives in ResizableColumn and forwards beginResize via
+    // onResizeStart; the session-list sash still calls it inline.
+    expect(appShellSource).toContain('onResizeStart={beginResize}')
     expect(appShellSource).toContain("beginResize('session-list', e)")
     expect(appShellSource).toContain("document.addEventListener('mousemove', handleMouseMove, true)")
     expect(appShellSource).toContain('z-dropdown')
@@ -1375,7 +1378,7 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).not.toContain('handleNavigatorResizeBoundaryMouseDownCapture')
     expect(appShellSource).not.toContain('onMouseDownCapture={handleNavigatorResizeBoundaryMouseDownCapture}')
     expect(appShellSource).not.toContain('navigatorPanelRect.right + (PANEL_GAP / 2)')
-    expect(appShellSource).toContain("beginResize('document-dock', e)")
+    expect(appShellSource).toContain('onResizeStart={beginResize}')
     expect(appShellSource).toContain("beginResize('session-list', e)")
   })
 })

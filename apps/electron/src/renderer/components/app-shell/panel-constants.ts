@@ -36,3 +36,14 @@ export const PANEL_SASH_FLEX_MARGIN = -(PANEL_GAP / 2)
 
 /** Half-width helper for centering sash containers on seam coordinates. */
 export const PANEL_SASH_HALF_HIT_WIDTH = PANEL_SASH_HIT_WIDTH / 2
+
+/** Shared no-bounce motion for panel visibility changes. */
+export const PANEL_SPRING = {
+  type: 'spring' as const,
+  stiffness: 420,
+  damping: 38,
+  mass: 0.9,
+}
+
+/** Horizontal travel keeps panel visibility changes spatial rather than fade-only. */
+export const PANEL_SLIDE_OFFSET = 20

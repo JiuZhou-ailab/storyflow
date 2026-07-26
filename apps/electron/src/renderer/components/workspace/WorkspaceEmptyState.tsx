@@ -3,6 +3,7 @@
 // pos: First-class empty workspace between the project tree and chat
 
 import { FilePlus, FileUp, FolderOpen, Sparkles } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 
@@ -12,6 +13,7 @@ interface WorkspaceEmptyStateProps {
   onCreateFile: () => void
   onImportFiles: () => void
   onOpenSkills: () => void
+  headerActions?: ReactNode
 }
 
 export function WorkspaceEmptyState({
@@ -20,6 +22,7 @@ export function WorkspaceEmptyState({
   onCreateFile,
   onImportFiles,
   onOpenSkills,
+  headerActions,
 }: WorkspaceEmptyStateProps) {
   const { t } = useTranslation()
 
@@ -29,10 +32,11 @@ export function WorkspaceEmptyState({
       className="flex h-full min-w-0 flex-col bg-background"
       aria-label={workspaceName}
     >
-      <header className="flex h-10 shrink-0 items-center border-b border-border/50 px-3">
+      <header className="flex h-[42px] shrink-0 items-center justify-between gap-3 border-b border-border/50 px-3">
         <div className="min-w-0 truncate text-xs font-medium text-muted-foreground">
           {workspaceName}
         </div>
+        {headerActions}
       </header>
 
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-5 py-8">

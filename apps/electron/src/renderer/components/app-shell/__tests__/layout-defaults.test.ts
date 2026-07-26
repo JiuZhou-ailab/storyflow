@@ -17,6 +17,17 @@ import {
 
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf8')
 const panelSlotSource = readFileSync(new URL('../PanelSlot.tsx', import.meta.url), 'utf8')
+const panelHeaderSource = readFileSync(new URL('../PanelHeader.tsx', import.meta.url), 'utf8')
+const resizableColumnSource = readFileSync(new URL('../ResizableColumn.tsx', import.meta.url), 'utf8')
+const editorPanelSource = readFileSync(
+  new URL('../../writing/NovelDocumentEditorPanel.tsx', import.meta.url),
+  'utf8',
+)
+const workspaceEmptyStateSource = readFileSync(
+  new URL('../../workspace/WorkspaceEmptyState.tsx', import.meta.url),
+  'utf8',
+)
+const localStorageSource = readFileSync(new URL('../../../lib/local-storage.ts', import.meta.url), 'utf8')
 
 describe('app shell layout defaults', () => {
   it('uses a 2:5:3 default ratio for catalog, document, and dialog columns', () => {
@@ -172,9 +183,48 @@ describe('app shell layout defaults', () => {
     expect(appShellSource).not.toContain('preservingNovelWorkspaceAssistant')
   })
 
-  it('resizes the manuscript from its left edge because it is right-anchored', () => {
-    expect(appShellSource).toContain("if (mode === 'document-dock')")
-    expect(appShellSource).toContain('available - clientX')
+  it('resizes both right-side columns by one shared handle-delta rule', () => {
+    // The directory owns the right edge; the manuscript is now a middle column.
+    // Neither can measure from a wall, so both share the position-independent
+    // delta rule (width = dragStartWidth + handleDelta) in a single branch.
+    expect(appShellSource).toContain("if (mode === 'directory-dock' || mode === 'document-dock')")
+    expect(appShellSource).toContain('resizeStartXRef.current - clientX')
+  })
+
+  it('bounds the directory column by its own min width as the outermost navigator', () => {
+    expect(appShellSource).toContain("if (mode === 'directory-dock')")
+    expect(appShellSource).toContain('WORKSPACE_DIRECTORY_MIN_WIDTH')
+  })
+
+  it('keeps the writing columns on one panel chrome contract', () => {
+    expect(appShellSource).toContain('paddingBottom: PANEL_EDGE_INSET, gap: PANEL_GAP')
+    expect(appShellSource).toContain('isRightSidebarVisible={hasVisibleRightWorkspace}')
+    expect(appShellSource).toContain('isAtRightEdge={!showWorkspaceDirectoryColumn}')
+    expect(appShellSource).toContain('isAtRightEdge')
+    expect(resizableColumnSource).toContain('useResizeGradient')
+    expect(resizableColumnSource).toContain('PANEL_SASH_FLEX_MARGIN')
+    expect(resizableColumnSource).not.toContain('bg-border/60')
+    expect(resizableColumnSource).not.toContain('marginBottom: PANEL_EDGE_INSET')
+    expect(resizableColumnSource).toContain(
+      'borderBottomRightRadius: isAtRightEdge ? RADIUS_EDGE : RADIUS_INNER',
+    )
+    expect(editorPanelSource).toContain('h-[42px]')
+    expect(workspaceEmptyStateSource).toContain('h-[42px]')
+    expect(panelHeaderSource).toContain('h-[42px]')
+  })
+
+  it('folds the directory independently and slides right-side columns in and out', () => {
+    expect(localStorageSource).toContain("writingWorkspaceVisible: 'writing-workspace-visible'")
+    expect(localStorageSource).toContain("workspaceDirectoryVisible: 'workspace-directory-visible'")
+    expect(appShellSource).toContain('const [workspaceDirectoryVisible, setWorkspaceDirectoryVisible]')
+    expect(appShellSource).toContain('activityWorkspaceDirectory && rightWorkspaceVisible && workspaceDirectoryVisible')
+    expect(appShellSource).toContain("t('writing.directory.collapse', '收起目录')")
+    expect(appShellSource).toContain("t('writing.directory.expand', '展开目录')")
+    expect(appShellSource).toContain('<AnimatePresence initial={false}>')
+    expect(resizableColumnSource).toContain('useReducedMotion')
+    expect(resizableColumnSource).toContain('initial={{ width: 0, x: PANEL_SLIDE_OFFSET, opacity: 0 }}')
+    expect(resizableColumnSource).toContain('exit={{ width: 0, x: PANEL_SLIDE_OFFSET, opacity: 0 }}')
+    expect(resizableColumnSource).toContain('disableAnimation')
   })
 
   it('keeps the desktop assistant panel from shrinking below the shared panel minimum', () => {
