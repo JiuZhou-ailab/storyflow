@@ -146,9 +146,15 @@ describe('interaction perf contracts (ADR-0001 CI proxy)', () => {
     expect(panelStackSource).toContain('// Chapter switches (and other in-surface actions) re-call navigate')
   })
 
-  it('starts session-switch timing for every ChatPage entry path', () => {
-    // Guards discrete interaction instrumentation for list, history menu, and navigate().
+  it('keeps one session-switch timer across list, history, and direct navigation entry paths', () => {
+    // Same-session clicks do not navigate and therefore must not leave a pending timer.
+    expect(sessionItemSource).toMatch(/if \(!isSelected\) \{\s*rendererPerf\.startSessionSwitch\(item\.id\)/)
+    expect(chatPageSource).toMatch(/if \(!isActive\) \{\s*rendererPerf\.startSessionSwitch\(item\.id\)/)
+    // ChatPage provides the fallback for direct navigate() callers.
     expect(chatPageSource).toContain('rendererPerf.startSessionSwitch(sessionId)')
+    expect(chatPageSource).toContain("rendererPerf.markSessionSwitch(sessionId, 'panel.mounted')")
+    expect(chatPageSource).toContain('if (!session || !messageLoadState.messagesReady) return')
+    expect(chatPageSource).toContain('rendererPerf.cancelSessionSwitch(sessionId)')
     expect(chatPageSource).toContain('rendererPerf.endSessionSwitch(sessionId)')
   })
 

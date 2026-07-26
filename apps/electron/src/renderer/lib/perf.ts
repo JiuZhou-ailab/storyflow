@@ -9,7 +9,7 @@
  * Logs via electron-log to the main log file.
  *
  * Usage:
- *   // In SessionList click handler:
+ *   // At the earliest known navigation entry:
  *   rendererPerf.startSessionSwitch(sessionId)
  *
  *   // In ChatTabPanel when session loads:
@@ -161,11 +161,15 @@ export function recordTextDeltaEvent(sessionId: string, delta: string, turnId?: 
 
 /**
  * Start tracking a session switch.
- * Call this when user clicks on a session in the list.
- * Clears any other pending switches (user navigated away before completion).
+ * The first caller owns the start time; later lifecycle callers for the same
+ * session only ensure the metric exists. Starting another session abandons
+ * the previous incomplete switch.
  */
 export function startSessionSwitch(sessionId: string): void {
   if (!debugMode) return
+
+  // Preserve the earliest interaction start when ChatPage mounts after a list click.
+  if (pendingSwitches.has(sessionId)) return
 
   // Clear any other pending switches - user navigated away before they completed
   pendingSwitches.clear()
@@ -177,8 +181,7 @@ export function startSessionSwitch(sessionId: string): void {
   }
   pendingSwitches.set(sessionId, metric)
 
-  // Log the tap immediately (0ms elapsed) - shows the start of the flow
-  perfLog.info(`${sessionId.slice(0, 8)}... session-list.tap: 0.0ms`)
+  perfLog.info(`${sessionId.slice(0, 8)}... session-switch.start: 0.0ms`)
 }
 
 /**
@@ -190,6 +193,8 @@ export function markSessionSwitch(sessionId: string, markName: string): void {
 
   const metric = pendingSwitches.get(sessionId)
   if (!metric) return
+  // React StrictMode may replay layout effects; each named checkpoint is single-shot.
+  if (metric.marks.some((mark) => mark.name === markName)) return
 
   const elapsed = performance.now() - metric.startTime
   metric.marks.push({ name: markName, elapsed })
@@ -227,6 +232,11 @@ export function endSessionSwitch(sessionId: string): number | null {
   )
 
   return metric.duration
+}
+
+export function cancelSessionSwitch(sessionId: string): void {
+  if (!debugMode) return
+  pendingSwitches.delete(sessionId)
 }
 
 /**
@@ -284,6 +294,7 @@ export const rendererPerf = {
   startSessionSwitch,
   markSessionSwitch,
   endSessionSwitch,
+  cancelSessionSwitch,
   recordTextDeltaEvent,
   recordNovelDocumentEvent,
   getRecentMetrics,

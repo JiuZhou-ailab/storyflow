@@ -117,7 +117,9 @@ export function SessionItem({
       onRangeSelect()
       return
     }
-    rendererPerf.startSessionSwitch(item.id)
+    if (!isSelected) {
+      rendererPerf.startSessionSwitch(item.id)
+    }
     onSelect()
   }
 

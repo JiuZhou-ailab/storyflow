@@ -139,6 +139,9 @@ function ConversationHistoryMenuItems({
             type="button"
             className="flex w-full min-w-0 items-start gap-2 rounded-[6px] px-2 py-2 text-left transition-colors hover:bg-foreground/[0.04]"
             onClick={() => {
+              if (!isActive) {
+                rendererPerf.startSessionSwitch(item.id)
+              }
               onSelect()
               navigate(routes.view.allSessions(item.id))
             }}
@@ -167,9 +170,8 @@ function ConversationHistoryMenuItems({
 
 const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const { t } = useTranslation()
-  // Start switch timing for any entry path (session list click, history menu, navigate()).
-  // SessionItem may also start on list mousedown; startSessionSwitch clears prior pending timers.
-  // Then mark panel mount as the first checkpoint for this session's switch.
+  // List/history clicks own the interaction start. This idempotent fallback covers
+  // direct navigation without overwriting that earlier timestamp.
   React.useLayoutEffect(() => {
     rendererPerf.startSessionSwitch(sessionId)
     rendererPerf.markSessionSwitch(sessionId, 'panel.mounted')
@@ -555,13 +557,17 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
   // Perf: Mark render complete after paint
   React.useEffect(() => {
-    if (session) {
-      const rafId = requestAnimationFrame(() => {
-        rendererPerf.endSessionSwitch(sessionId)
-      })
-      return () => cancelAnimationFrame(rafId)
+    if (messageLoadState.error) {
+      rendererPerf.cancelSessionSwitch(sessionId)
+      return
     }
-  }, [sessionId, session])
+    if (!session || !messageLoadState.messagesReady) return
+
+    const rafId = requestAnimationFrame(() => {
+      rendererPerf.endSessionSwitch(sessionId)
+    })
+    return () => cancelAnimationFrame(rafId)
+  }, [sessionId, session, messageLoadState.error, messageLoadState.messagesReady])
 
   // Get display title for header - use getSessionTitle for consistent fallback logic with SessionList
   // Priority: name > first user message > preview > "New chat"
