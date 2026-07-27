@@ -15,7 +15,9 @@ type RewindSourceSession = Pick<
   | 'permissionMode'
   | 'workingDirectory'
   | 'enabledSourceSlugs'
->
+> & {
+  messages: Array<Pick<Message, 'id' | 'role' | 'isIntermediate' | 'turnId' | 'canBranch'>>
+}
 
 export const MANAGED_DEFAULT_CONNECTION_SLUG = MANAGED_LLM_CONNECTION_SLUG
 
@@ -30,14 +32,16 @@ export function canCreateDefaultRewindBranch(
 }
 
 export function canRewindWithoutDroppingHistory(
-  _session: RewindSourceSession,
+  session: RewindSourceSession,
+  userMessageId: string,
   branchFromMessageId: string | null
 ): boolean {
   return !!branchFromMessageId
+    || session.messages.find(message => message.role === 'user')?.id === userMessageId
 }
 
 export function resolveRewindBranchMessageId(
-  messages: Array<Pick<Message, 'id' | 'role' | 'isIntermediate' | 'turnId' | 'canBranch'>>,
+  messages: RewindSourceSession['messages'],
   userMessageId: string
 ): string | null {
   const index = messages.findIndex(message => message.id === userMessageId)

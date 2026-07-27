@@ -94,8 +94,9 @@ describe('chat rewind helpers', () => {
     expect(canCreateDefaultRewindBranch(baseSession, null, 'storyflow-managed')).toBe(true)
   })
 
-  it('does not allow rewind to fall back to an empty session when history cannot be branched', () => {
-    expect(canRewindWithoutDroppingHistory(baseSession, 'a1')).toBe(true)
-    expect(canRewindWithoutDroppingHistory(baseSession, null)).toBe(false)
+  it('only uses a fresh session when editing the first user message', () => {
+    expect(canRewindWithoutDroppingHistory(baseSession, 'u2', 'a1')).toBe(true)
+    expect(canRewindWithoutDroppingHistory(baseSession, 'u1', null)).toBe(true)
+    expect(canRewindWithoutDroppingHistory(baseSession, 'u2', null)).toBe(false)
   })
 })

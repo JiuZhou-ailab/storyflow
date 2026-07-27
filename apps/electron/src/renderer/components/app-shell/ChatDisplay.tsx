@@ -1610,7 +1610,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       toast.error(t('chat.rewindUnavailable', 'This message cannot be safely rewound.'))
       return
     }
-    if (!canRewindWithoutDroppingHistory(session, branchFromMessageId)) {
+    if (!canRewindWithoutDroppingHistory(session, message.id, branchFromMessageId)) {
       toast.error(t('chat.rewindUnavailable', 'This message cannot be safely rewound.'))
       return
     }
