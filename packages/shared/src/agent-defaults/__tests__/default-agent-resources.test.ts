@@ -150,4 +150,18 @@ describe('default agent resources', () => {
     expect(wangwenConfig).not.toContain('X-MCP-API-Key');
     expect(wangwenConfig).not.toContain('wwmcp_');
   });
+
+  it('runs the bundled AnySearch Node CLI from the Electron ESM package tree', () => {
+    const cliPath = join(
+      import.meta.dir,
+      '../../../../../apps/electron/resources/agent-defaults/global-skills/anysearch/scripts/anysearch_cli.js',
+    );
+    const result = Bun.spawnSync(['node', cliPath, 'doc'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.toString()).toContain('# AnySearch Interface Specification');
+  });
 });
