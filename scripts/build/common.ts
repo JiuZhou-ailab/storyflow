@@ -1,6 +1,6 @@
-/**
- * Common build utilities shared across all platforms
- */
+// input: Platform build configuration, workspace packages, and release environment
+// output: Shared download, bundling, verification, and resource-staging utilities
+// pos: Cross-platform build foundation used by Electron and server release scripts
 
 import { $ } from 'bun';
 import { execSync } from 'child_process';
@@ -537,22 +537,10 @@ export function copySessionServer(config: BuildConfig): void {
 }
 
 /**
- * Map our Platform type to koffi's directory naming convention.
- * koffi uses: darwin_arm64, darwin_x64, linux_x64, win32_x64, etc.
- */
-function koffiPlatformDir(platform: Platform, arch: Arch): string {
-  return `${platform}_${arch}`;
-}
-
-/**
  * Copy Pi Agent Server to packaged app resources.
- *
- * The bun build uses --external koffi so the bare import resolves through
- * node_modules at runtime. We copy the koffi npm package next to index.js
- * with only the target platform's native binary (~4MB instead of ~80MB).
  */
 export function copyPiAgentServer(config: BuildConfig): void {
-  const { rootDir, electronDir, platform, arch } = config;
+  const { rootDir, electronDir } = config;
 
   const piSourceDir = join(rootDir, 'packages', 'pi-agent-server', 'dist');
   const piDestDir = join(electronDir, 'resources', 'pi-agent-server');
@@ -567,41 +555,6 @@ export function copyPiAgentServer(config: BuildConfig): void {
 
   // 1. Copy index.js
   copyFileSync(join(piSourceDir, 'index.js'), join(piDestDir, 'index.js'));
-
-  // 2. Copy koffi npm package (external import, resolved via node_modules at runtime)
-  const koffiSource = join(rootDir, 'node_modules', 'koffi');
-
-  if (!existsSync(koffiSource)) {
-    console.warn('  Warning: koffi not found in node_modules. Pi SDK sessions may not work.');
-    return;
-  }
-
-  const koffiDest = join(piDestDir, 'node_modules', 'koffi');
-  mkdirSync(koffiDest, { recursive: true });
-
-  // Copy koffi JS files
-  for (const entry of ['package.json', 'index.js', 'indirect.js', 'index.d.ts', 'lib']) {
-    const src = join(koffiSource, entry);
-    if (existsSync(src)) {
-      cpSync(src, join(koffiDest, entry), { recursive: true });
-    }
-  }
-
-  // Copy only the target platform's native binary
-  const targetDir = koffiPlatformDir(platform, arch);
-  const nativeSrc = join(koffiSource, 'build', 'koffi', targetDir);
-  const nativeDest = join(koffiDest, 'build', 'koffi', targetDir);
-
-  if (existsSync(nativeSrc)) {
-    mkdirSync(nativeDest, { recursive: true });
-    cpSync(nativeSrc, nativeDest, { recursive: true });
-    const size = lstatSync(join(nativeSrc, readdirSync(nativeSrc)[0])).size;
-    console.log(`  Copied index.js + koffi/${targetDir} (${(size / 1024 / 1024).toFixed(1)}MB)`);
-  } else {
-    console.warn(`  Warning: koffi native binary not found for ${targetDir}`);
-    cpSync(join(koffiSource, 'build'), join(koffiDest, 'build'), { recursive: true });
-    console.log('  Copied index.js + koffi (all platforms as fallback)');
-  }
 }
 
 /**
@@ -631,13 +584,11 @@ export function buildMcpServers(config: BuildConfig): void {
 
   // Pi agent server uses --target=bun --format=esm because its Pi SDK deps are ESM-only.
   // --target=node --format=cjs leaves ESM deps as external require() calls that fail at runtime.
-  // koffi is marked external because it's a native N-API module — bun can't inline .node binaries
-  // and inlining its JS breaks the native binary resolution paths.
   // Optional: skip if package directory is missing (e.g., not synced to OSS).
   if (existsSync(join(piDir, 'src'))) {
     mkdirSync(join(piDir, 'dist'), { recursive: true });
     execSync(
-      `bun build ${join(piDir, 'src', 'index.ts')} --outdir ${join(piDir, 'dist')} --target bun --format esm --external koffi`,
+      `bun build ${join(piDir, 'src', 'index.ts')} --outdir ${join(piDir, 'dist')} --target bun --format esm`,
       { cwd: rootDir, stdio: 'inherit', shell: true }
     );
     if (!existsSync(piOut)) {

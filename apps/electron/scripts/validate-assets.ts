@@ -23,7 +23,6 @@ const requiredFiles = [
   ['resources/tool-icons/tool-icons.json', 'tool icon manifest'],
   ['resources/session-mcp-server/index.js', 'session MCP server'],
   ['resources/pi-agent-server/index.js', 'Pi agent server'],
-  ['resources/pi-agent-server/node_modules/koffi/package.json', 'Pi native runtime'],
   ['resources/scripts/markitdown_cli.py', 'document conversion runtime'],
   ['resources/bin/markitdown', 'Unix document conversion launcher'],
   ['resources/bin/markitdown.cmd', 'Windows document conversion launcher'],

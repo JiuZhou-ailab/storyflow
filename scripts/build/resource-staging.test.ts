@@ -1,8 +1,8 @@
-// input: Temporary package build outputs and fake native dependencies
+// input: Temporary package build outputs without stale transitive native dependencies
 // output: Regression coverage for Electron subprocess resource staging
 // pos: Guards the packaging contract consumed by backend runtime path resolution
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -36,21 +36,14 @@ describe('Electron subprocess resource staging', () => {
     })).toEqual({ platform: 'darwin', arch: 'x64' });
   });
 
-  test('copies session and Pi subprocess bundles into Electron resources', () => {
+  test('copies session and Pi subprocess bundles without legacy koffi resources', () => {
     const rootDir = createTempRoot();
     const electronDir = join(rootDir, 'apps', 'electron');
+    const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
 
     writeFile(join(rootDir, 'packages', 'session-mcp-server', 'dist', 'index.js'), 'session');
     writeFile(join(rootDir, 'packages', 'pi-agent-server', 'src', 'index.ts'), 'source');
     writeFile(join(rootDir, 'packages', 'pi-agent-server', 'dist', 'index.js'), 'pi');
-
-    const koffiRoot = join(rootDir, 'node_modules', 'koffi');
-    writeFile(join(koffiRoot, 'package.json'), '{"name":"koffi"}');
-    writeFile(join(koffiRoot, 'index.js'), 'module.exports = {}');
-    writeFile(join(koffiRoot, 'indirect.js'), 'module.exports = {}');
-    writeFile(join(koffiRoot, 'index.d.ts'), 'export {};');
-    writeFile(join(koffiRoot, 'lib', 'index.js'), 'module.exports = {}');
-    writeFile(join(koffiRoot, 'build', 'koffi', 'darwin_x64', 'koffi.node'), 'native');
 
     stageSubprocessResources({
       rootDir,
@@ -61,16 +54,8 @@ describe('Electron subprocess resource staging', () => {
 
     expect(existsSync(join(electronDir, 'resources', 'session-mcp-server', 'index.js'))).toBe(true);
     expect(existsSync(join(electronDir, 'resources', 'pi-agent-server', 'index.js'))).toBe(true);
-    expect(existsSync(join(
-      electronDir,
-      'resources',
-      'pi-agent-server',
-      'node_modules',
-      'koffi',
-      'build',
-      'koffi',
-      'darwin_x64',
-      'koffi.node',
-    ))).toBe(true);
+    expect(existsSync(join(electronDir, 'resources', 'pi-agent-server', 'node_modules'))).toBe(false);
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });
