@@ -145,7 +145,7 @@ export interface AppShellContextType {
   onWorkspaceCreated?: (workspace: Workspace) => void | Promise<void>
   onRefreshWorkspaces?: () => void
   onOpenWritingWorkspace: () => void
-  onOpenFreeConversations: () => void | Promise<void>
+  onOpenFreeConversations: (options?: { createNew?: boolean }) => void | Promise<void>
 
   // App actions
   onOpenSettings: () => void

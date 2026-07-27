@@ -2242,9 +2242,9 @@ function AppContent() {
     )
   }, [activeProjectId, activateRuntimeWorkspace])
 
-  const handleOpenFreeConversations = useCallback(() => activateRuntimeWorkspace(
+  const handleOpenFreeConversations = useCallback((options?: { createNew?: boolean }) => activateRuntimeWorkspace(
     FREE_CONVERSATION_WORKSPACE_ID,
-    routes.view.allSessions(),
+    options?.createNew ? routes.action.newSession() : routes.view.allSessions(),
   ), [activateRuntimeWorkspace])
 
   useEffect(() => {

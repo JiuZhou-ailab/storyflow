@@ -4,10 +4,15 @@
 
 import * as React from 'react'
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Provider, createStore } from 'jotai'
 import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
 import { sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
+
+const appSource = readFileSync(new URL('../../../App.tsx', import.meta.url), 'utf8')
+const appShellContextSource = readFileSync(new URL('../../../context/AppShellContext.tsx', import.meta.url), 'utf8')
+const activityRailSource = readFileSync(new URL('../ActivityRail.tsx', import.meta.url), 'utf8')
 
 mock.module('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '' }))
 mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDocument: () => ({}) }))
@@ -100,5 +105,19 @@ describe('ActivityRail free-conversation scope', () => {
 
     expect(html).toContain('自由对话')
     expect(html).not.toContain('最近对话')
+  })
+
+  it('creates a fresh free conversation instead of only reopening the list', () => {
+    const handlerStart = appSource.indexOf('const handleOpenFreeConversations =')
+    const handlerEnd = appSource.indexOf('\n\n  useEffect(', handlerStart)
+    const handlerSource = appSource.slice(handlerStart, handlerEnd)
+
+    expect(handlerSource).toContain('options?.createNew')
+    expect(handlerSource).toContain('routes.action.newSession()')
+    expect(handlerSource).toContain('routes.view.allSessions()')
+    expect(appShellContextSource).toContain(
+      'onOpenFreeConversations: (options?: { createNew?: boolean }) => void | Promise<void>'
+    )
+    expect(activityRailSource).toContain('onOpenFreeConversations({ createNew: true })')
   })
 })

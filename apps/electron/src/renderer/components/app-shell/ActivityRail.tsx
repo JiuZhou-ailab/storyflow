@@ -87,8 +87,8 @@ export interface ActivityRailProps {
   onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
   onSetProjectArchived?: (workspaceId: string, archived: boolean) => void | Promise<void>
   onRemoveProject?: (workspaceId: string) => void | Promise<void>
-  /** Opens the free-conversation runtime for the new-conversation affordance. */
-  onOpenFreeConversations?: () => void | Promise<void>
+  /** Opens the free-conversation runtime and optionally creates a fresh conversation. */
+  onOpenFreeConversations?: (options?: { createNew?: boolean }) => void | Promise<void>
   onOpenSources?: () => void
   onOpenSkills?: () => void
   onOpenSearch?: () => void
@@ -410,7 +410,7 @@ export function ActivityRail({
                   aria-label="新建自由对话"
                   title="新建自由对话"
                   className="flex h-7 w-7 items-center justify-center rounded-[7px] text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
-                  onClick={() => { void onOpenFreeConversations() }}
+                  onClick={() => { void onOpenFreeConversations({ createNew: true }) }}
                 >
                   <Plus className="h-4 w-4" />
                 </button>
