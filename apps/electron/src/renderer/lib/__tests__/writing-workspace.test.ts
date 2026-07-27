@@ -1,5 +1,5 @@
 // input: Renderer writing workspace file fixtures and search results
-// output: Workspace tree, labels, search query, and detection assertions
+// output: Workspace tree, document-tab behavior, labels, search query, and detection assertions
 // pos: Protects the renderer projection of writing workspaces
 
 import { describe, expect, it } from 'bun:test'
@@ -211,6 +211,25 @@ describe('writing workspace helpers', () => {
       workspaceRoot: '/novel',
       paths: ['/novel/a.md'],
       activePath: '/novel/a.md',
+    })
+  })
+
+  it('replaces the active document on single-click intent and appends on double-click intent', () => {
+    const initial = {
+      workspaceRoot: '/novel',
+      paths: ['/novel/a.md', '/novel/b.md'],
+      activePath: '/novel/b.md',
+    }
+
+    expect(openNovelDocumentTab(initial, '/novel', '/novel/c.md', 'replace')).toEqual({
+      workspaceRoot: '/novel',
+      paths: ['/novel/a.md', '/novel/c.md'],
+      activePath: '/novel/c.md',
+    })
+    expect(openNovelDocumentTab(initial, '/novel', '/novel/c.md', 'append')).toEqual({
+      workspaceRoot: '/novel',
+      paths: ['/novel/a.md', '/novel/b.md', '/novel/c.md'],
+      activePath: '/novel/c.md',
     })
   })
 

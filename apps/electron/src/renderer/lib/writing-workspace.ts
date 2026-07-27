@@ -1,5 +1,5 @@
 // input: File search results, file changes, and workspace/session root paths
-// output: Browser-safe novel workspace projection helpers
+// output: Browser-safe novel workspace projection and document-tab helpers
 // pos: Renderer adapter between workspace files and writing workspace UI
 
 import type { Message } from '@craft-agent/core'
@@ -36,18 +36,31 @@ export interface NovelDocumentTabsState {
   activePath: string | null
 }
 
+export type NovelDocumentOpenMode = 'append' | 'replace'
+
 export function openNovelDocumentTab(
   state: NovelDocumentTabsState,
   workspaceRoot: string,
   path: string,
+  mode: NovelDocumentOpenMode = 'append',
 ): NovelDocumentTabsState {
   if (state.workspaceRoot !== workspaceRoot) {
     return { workspaceRoot, paths: [path], activePath: path }
   }
   if (state.activePath === path) return state
+  if (state.paths.includes(path)) {
+    return { ...state, activePath: path }
+  }
+  if (mode === 'replace' && state.activePath && state.paths.includes(state.activePath)) {
+    return {
+      workspaceRoot,
+      paths: state.paths.map(openPath => openPath === state.activePath ? path : openPath),
+      activePath: path,
+    }
+  }
   return {
     workspaceRoot,
-    paths: state.paths.includes(path) ? state.paths : [...state.paths, path],
+    paths: [...state.paths, path],
     activePath: path,
   }
 }

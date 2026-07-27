@@ -1,5 +1,5 @@
-// input: Workspace/session state, navigation state, and shell callbacks
-// output: Desktop app shell with disk-synced project navigation, project lifecycle actions, and main content panels
+// input: Workspace/session state, navigation state, file-open intent, and shell callbacks
+// output: Desktop app shell with disk-synced project navigation, tabbed writing documents, and main content panels
 // pos: Top-level renderer layout coordinator for workspace navigation
 
 import * as React from "react"
@@ -212,6 +212,7 @@ import {
   NOVEL_WORKSPACE_DETECTION_QUERIES,
   openNovelDocumentTab,
   selectDefaultNovelFile,
+  type NovelDocumentOpenMode,
   type NovelDocumentTabsState,
   type NativeWorkspaceCatalog,
   type NovelWorkspaceFile,
@@ -2352,6 +2353,10 @@ function AppShellContent({
   // afford to lose. Presence follows the workspace, never the route; the route
   // only decides what is shown *inside* each column.
   const showWritingDocumentSurface = showWritingWorkspaceShell
+  const showEmptyProjectSession = isSessionsNavigation(navState) && novelWorkspaceFiles.length === 0
+  // Optional callbacks are capability contracts: only claim the embedded review
+  // when this shell can actually render it. ChatDisplay owns the fullscreen fallback.
+  const canPresentConversationDiffInWorkspace = showWritingDocumentSurface && !isAutoCompact && !showEmptyProjectSession
   const showNovelWorkspaceSidebar = novelWorkspaceRootMatchesCandidates
   const showNovelDocumentNavigator = showWritingDocumentSurface && showNovelWorkspaceSidebar
   const showNovelWorkspacePending = showWritingDocumentSurface && (
@@ -2996,7 +3001,10 @@ function AppShellContent({
   }, [flushNovelDocumentChangeVersion, getCurrentNovelDocumentContent, isCurrentNovelDocumentDirty, markSavedNovelDocumentChangeVersion, maybeCreateNovelAutoVersion, novelDocumentContent, savedNovelDocumentContent, selectedNovelDocumentPath, t])
   ensureNovelDocumentSavedRef.current = ensureNovelDocumentSaved
 
-  const handleSelectNovelFile = React.useCallback(async (file: NovelWorkspaceFile) => {
+  const handleSelectNovelFile = React.useCallback(async (
+    file: NovelWorkspaceFile,
+    openMode: NovelDocumentOpenMode = 'append',
+  ) => {
     if (file.path === selectedNovelFilePath) {
       onOpenWritingWorkspace()
       return
@@ -3017,7 +3025,12 @@ function AppShellContent({
       startedAt: switchStartedAt,
     }
     if (novelWorkspaceRoot) {
-      setNovelDocumentTabs(current => openNovelDocumentTab(current, novelWorkspaceRoot, file.path))
+      setNovelDocumentTabs(current => openNovelDocumentTab(
+        current,
+        novelWorkspaceRoot,
+        file.path,
+        openMode,
+      ))
     }
     rendererPerf.recordNovelDocumentEvent({
       filePath: file.path,
@@ -4029,10 +4042,11 @@ function AppShellContent({
     resolveFileChangeReviewStatus,
     onAcceptFileChange: handleAcceptConversationFileChange,
     onRejectFileChange: handleRejectConversationFileChange,
-    onOpenFileChanges: handleOpenConversationFileChanges,
+    onOpenFileChanges: canPresentConversationDiffInWorkspace ? handleOpenConversationFileChanges : undefined,
     onRevertFileChanges: handleRevertConversationFileChanges,
   }), [
     appShellContextValue,
+    canPresentConversationDiffInWorkspace,
     handleAcceptConversationFileChange,
     handleOpenConversationFileChanges,
     handleRejectConversationFileChange,
@@ -4589,9 +4603,8 @@ function AppShellContent({
   ) : null
   const activeWritingDocumentSurface = conversationDiffSurface ?? writingDocumentSurface
   const activeWritingWorkspaceHeader = conversationDiffSurface ? null : writingWorkspaceHeader
-  const showEmptyProjectSession = isSessionsNavigation(navState) && novelWorkspaceFiles.length === 0
   const showWritingDocumentColumn = Boolean(
-    activeWritingDocumentSurface && rightWorkspaceVisible && !isAutoCompact && !showEmptyProjectSession,
+    activeWritingDocumentSurface && rightWorkspaceVisible && canPresentConversationDiffInWorkspace,
   )
   const showWorkspaceDirectoryColumn = Boolean(
     activityWorkspaceDirectory

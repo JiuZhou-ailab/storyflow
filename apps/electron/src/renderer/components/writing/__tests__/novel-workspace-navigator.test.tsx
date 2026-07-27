@@ -1,5 +1,5 @@
 // input: Novel workspace file projections, review changes, and renderer callbacks
-// output: Regression coverage for disk-synced project navigation, lifecycle menus, and inline review UI
+// output: Regression coverage for project navigation, file-open gestures, lifecycle menus, and inline review UI
 // pos: Keeps writing catalog navigation in the app shell and document editing in the navigator column
 
 import * as React from 'react'
@@ -676,7 +676,7 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('ensureNovelDocumentSaved')
     expect(appShellSource).toContain('window.setTimeout')
     expect(appShellSource).toContain('window.clearTimeout')
-    expect(treeSource).toContain('onSelectFile({ path: node.data.path, relativePath: node.data.relativePath })')
+    expect(treeSource).toContain("openFile(node, 'replace')")
     expect(treeSource).not.toContain('setSelectedNovelFilePath')
     expect(askAiSource).toContain('const saved = await ensureNovelDocumentSaved()')
     expect(askAiSource).not.toContain('writing.askAiBlockedByUnsavedEdits')
@@ -684,6 +684,18 @@ describe('novel writing workspace layout', () => {
     expect(askAiSource).toContain('relaunchApp')
     expect(askAiSource).not.toContain("type: 'rewriteNovelSelection'")
     expect(askAiSource).toContain('handleNovelWorkspaceSendMessage(effectiveSessionId')
+  })
+
+  it('reuses the active file tab on single click and appends a tab on double click', () => {
+    const treeSource = readFileSync(new URL('../../workspace/WorkspaceFileTree.tsx', import.meta.url), 'utf-8')
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+
+    expect(treeSource).toContain('renderRow={renderRow}')
+    expect(treeSource).toContain('onDoubleClick={(event) =>')
+    expect(treeSource).toContain("openFile(node, 'replace')")
+    expect(treeSource).toContain("openFile(node, 'append')")
+    expect(appShellSource).toContain('openMode: NovelDocumentOpenMode')
+    expect(appShellSource).toContain('file.path,\n        openMode,')
   })
 
   it('keeps tab state unchanged when saving the active file before close fails', () => {
@@ -777,7 +789,7 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('oneTimeContext: mergeOneTimeContext')
   })
 
-  it('hides the generic content panel close button in writing workspace mode', () => {
+  it('hides the generic content panel close button for owned navigation or a sole panel', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const panelStackSource = readFileSync(new URL('../../app-shell/PanelStackContainer.tsx', import.meta.url), 'utf-8')
     const panelSlotSource = readFileSync(new URL('../../app-shell/PanelSlot.tsx', import.meta.url), 'utf-8')
@@ -786,7 +798,7 @@ describe('novel writing workspace layout', () => {
     expect(panelStackSource).toContain('hidePanelCloseButton?: boolean')
     expect(panelStackSource).toContain('hideCloseButton={hidePanelCloseButton}')
     expect(panelSlotSource).toContain('hideCloseButton?: boolean')
-    expect(panelSlotSource).toContain('if (hideCloseButton) return undefined')
+    expect(panelSlotSource).toContain('if (hideCloseButton || isOnly) return undefined')
   })
 
   it('reviews file changes from the conversation diff while keeping manuscript inline diff', () => {

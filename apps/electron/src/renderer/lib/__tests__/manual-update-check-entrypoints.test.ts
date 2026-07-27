@@ -20,7 +20,7 @@ describe('manual update check entrypoints', () => {
     expect(appShellSource).not.toContain('<TopBar')
     expect(appShellSource).toContain('setRightWorkspaceVisible((visible) => !visible)')
     expect(appShellSource).toContain(
-      'activeWritingDocumentSurface && rightWorkspaceVisible && !isAutoCompact && !showEmptyProjectSession',
+      'activeWritingDocumentSurface && rightWorkspaceVisible && canPresentConversationDiffInWorkspace',
     )
     expect(appShellSource).toContain('const showWorkspaceDirectoryColumn = Boolean(')
     expect(appShellSource).toContain('&& !conversationDiffSurface')

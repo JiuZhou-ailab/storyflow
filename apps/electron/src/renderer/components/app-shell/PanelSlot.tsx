@@ -11,10 +11,8 @@
  * When multiple panels exist, each uses flex-grow with its proportion as the weight,
  * combined with a layout-owned minimum width.
  *
- * Each PanelSlot overrides panel chrome to inject a per-panel close button
- * into PanelHeader's rightSidebarButton slot. All panels are equal — closing
- * any panel removes it from the stack. A reactive effect handles window close
- * when the stack becomes empty.
+ * Multi-panel slots inject a close button into PanelHeader's rightSidebarButton
+ * slot. The sole panel stays open; compact layouts use the back button instead.
  */
 
 import { useCallback, useMemo } from 'react'
@@ -71,7 +69,7 @@ export function PanelSlot({
 
   // Build close button for PanelHeader (via context override)
   const closeButton = useMemo(() => {
-    if (hideCloseButton) return undefined
+    if (hideCloseButton || isOnly) return undefined
     return (
       <PanelHeaderCenterButton
         icon={<X className="h-4 w-4" />}
@@ -79,7 +77,7 @@ export function PanelSlot({
         tooltip={t("common.close")}
       />
     )
-  }, [handleClose, hideCloseButton])
+  }, [handleClose, hideCloseButton, isOnly])
 
   // Build back button for compact mode — closes the panel to reveal the session list.
   // Same PanelHeaderCenterButton style as X and share, just on the left side.

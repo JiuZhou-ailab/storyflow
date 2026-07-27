@@ -1,10 +1,19 @@
-// input: Controlled workspace catalog, selection/expansion state, and file mutation callbacks
-// output: Virtualized, keyboard-accessible Finder-style tree synchronized to external state
+// input: Controlled workspace catalog, selection/expansion state, file-open intent, and mutation callbacks
+// output: Virtualized, keyboard-accessible tree with single-click replacement and double-click tab opening
 // pos: Workspace file navigation boundary and React Arborist state adapter
 
 import * as React from 'react'
-import { Tree, type MoveHandler, type RenameHandler, type TreeApi } from 'react-arborist'
-import type { NovelWorkspaceFile } from '@/lib/writing-workspace'
+import {
+  Tree,
+  type MoveHandler,
+  type RenameHandler,
+  type RowRendererProps,
+  type TreeApi,
+} from 'react-arborist'
+import type {
+  NovelDocumentOpenMode,
+  NovelWorkspaceFile,
+} from '@/lib/writing-workspace'
 import {
   buildWorkspaceFileTree,
   collectWorkspaceTreeDirectoryIds,
@@ -20,6 +29,8 @@ import {
 
 const ROW_HEIGHT = 30
 const TREE_OVERSCAN_ROWS = 8
+// ponytail: The DOM exposes no OS double-click interval; add preview-tab state only if this delay becomes noticeable.
+const FILE_OPEN_DOUBLE_CLICK_DELAY_MS = 250
 
 export type { WorkspaceFileTreeMenuAction, WorkspaceFileTreeNode }
 
@@ -38,7 +49,7 @@ export interface WorkspaceFileTreeProps {
   expandedIds: ReadonlySet<string>
   labels: WorkspaceFileTreeLabels
   onExpandedChange: (id: string, expanded: boolean) => void
-  onSelectFile: (file: NovelWorkspaceFile) => void
+  onSelectFile: (file: NovelWorkspaceFile, mode: NovelDocumentOpenMode) => void
   onMoveEntry: (entry: WorkspaceFileTreeNode, destinationDirectory: WorkspaceFileTreeNode) => void | Promise<void>
   onRenameEntry: (entry: WorkspaceFileTreeNode, newName: string) => void | Promise<void>
   onDeleteEntry: (entry: WorkspaceFileTreeNode) => void
@@ -107,6 +118,7 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
     const treeRef = React.useRef<TreeApi<WorkspaceFileTreeNode> | null>(null)
     const syncingExpandedStateRef = React.useRef(false)
     const appliedExpandedIdsRef = React.useRef<Set<string>>(new Set())
+    const pendingFileOpenRef = React.useRef<number | null>(null)
     const measuredHeight = useElementHeight(containerRef)
 
     const root = React.useMemo(() => buildWorkspaceFileTree({
@@ -159,13 +171,71 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
       }
     }, [onError, onRenameEntry])
 
+    const clearPendingFileOpen = React.useCallback(() => {
+      if (pendingFileOpenRef.current === null) return
+      window.clearTimeout(pendingFileOpenRef.current)
+      pendingFileOpenRef.current = null
+    }, [])
+
+    React.useEffect(() => clearPendingFileOpen, [clearPendingFileOpen])
+
+    const openFile = React.useCallback((
+      node: { data: WorkspaceFileTreeNode },
+      mode: NovelDocumentOpenMode,
+    ) => {
+      onSelectFile({
+        path: node.data.path,
+        relativePath: node.data.relativePath,
+      }, mode)
+    }, [onSelectFile])
+
     const handleActivate = React.useCallback((node: { data: WorkspaceFileTreeNode; toggle(): void }) => {
       if (node.data.type === 'file') {
-        onSelectFile({ path: node.data.path, relativePath: node.data.relativePath })
+        clearPendingFileOpen()
+        openFile(node, 'replace')
       } else {
         node.toggle()
       }
-    }, [onSelectFile])
+    }, [clearPendingFileOpen, openFile])
+
+    const renderRow = React.useCallback(({
+      node,
+      attrs,
+      innerRef,
+      children,
+    }: RowRendererProps<WorkspaceFileTreeNode>) => (
+      <div
+        {...attrs}
+        ref={innerRef}
+        onFocus={event => event.stopPropagation()}
+        onClick={(event) => {
+          if (node.data.type !== 'file') {
+            clearPendingFileOpen()
+            node.handleClick(event)
+            return
+          }
+
+          node.select()
+          node.focus()
+          clearPendingFileOpen()
+          pendingFileOpenRef.current = window.setTimeout(() => {
+            pendingFileOpenRef.current = null
+            openFile(node, 'replace')
+          }, FILE_OPEN_DOUBLE_CLICK_DELAY_MS)
+        }}
+        onDoubleClick={(event) => {
+          if (node.data.type !== 'file') return
+          if (event.target instanceof Element && event.target.closest('button, input')) return
+          event.preventDefault()
+          clearPendingFileOpen()
+          node.select()
+          node.focus()
+          openFile(node, 'append')
+        }}
+      >
+        {children}
+      </div>
+    ), [clearPendingFileOpen, openFile])
 
     const handleToggle = React.useCallback((id: string) => {
       if (syncingExpandedStateRef.current) return
@@ -256,6 +326,7 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
             onToggle={handleToggle}
             onMove={handleMove}
             onRename={handleRename}
+            renderRow={renderRow}
             aria-label={workspaceName}
           >
             {WorkspaceFileTreeRow}

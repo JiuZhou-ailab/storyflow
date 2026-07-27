@@ -182,9 +182,21 @@ describe('app shell layout defaults', () => {
       'const showEmptyProjectSession = isSessionsNavigation(navState) && novelWorkspaceFiles.length === 0',
     )
     expect(appShellSource).toContain(
-      'activeWritingDocumentSurface && rightWorkspaceVisible && !isAutoCompact && !showEmptyProjectSession',
+      'activeWritingDocumentSurface && rightWorkspaceVisible && canPresentConversationDiffInWorkspace',
     )
     expect(appShellSource).toContain('&& !showEmptyProjectSession')
+  })
+
+  it('only delegates diff review when the workspace can render it', () => {
+    expect(appShellSource).toContain(
+      'const canPresentConversationDiffInWorkspace = showWritingDocumentSurface && !isAutoCompact && !showEmptyProjectSession',
+    )
+    expect(appShellSource).toContain(
+      'onOpenFileChanges: canPresentConversationDiffInWorkspace ? handleOpenConversationFileChanges : undefined',
+    )
+    expect(appShellSource).toContain(
+      'activeWritingDocumentSurface && rightWorkspaceVisible && canPresentConversationDiffInWorkspace',
+    )
   })
 
   it('defers first-run desktop proportions while the shell is still compact', () => {
