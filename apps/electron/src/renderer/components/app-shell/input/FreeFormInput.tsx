@@ -260,8 +260,6 @@ export interface FreeFormInputProps {
   onSessionStatusChange?: (stateId: string) => void
   /** Workspace root path for label-edit actions. */
   workspaceRootPath?: string | null
-  /** Workspace slug for SDK skill qualification. */
-  workspaceSlug?: string
   /** Whether this input belongs to the focused panel. */
   isFocusedPanel?: boolean
 }
@@ -327,7 +325,6 @@ export function FreeFormInput({
   sessionStatuses = [],
   onSessionStatusChange,
   workspaceRootPath = null,
-  workspaceSlug,
   isFocusedPanel = true,
 }: FreeFormInputProps) {
   const { t } = useTranslation()
@@ -438,9 +435,6 @@ export function FreeFormInput({
     if (!effectiveConnection) return null
     return llmConnections.find(c => c.slug === effectiveConnection) ?? null
   }, [llmConnections, effectiveConnection])
-
-  // SDK expects "workspaceSlug:skillSlug" format, NOT UUID.
-  const resolvedWorkspaceSlug = workspaceSlug ?? workspaceId
 
   // Shuffle placeholder order once per mount so each session feels fresh.
   // In compact mode, suppress desktop-keyboard guidance that is noisy or misleading
@@ -989,8 +983,6 @@ export function FreeFormInput({
     skills,
     recentFolders,
     homeDir,
-    // Use workspace slug (not UUID) for SDK skill qualification
-    workspaceId: resolvedWorkspaceSlug,
   })
 
   // Handle mention selection (sources, skills, files)
@@ -1016,8 +1008,6 @@ export function FreeFormInput({
     files: mentionFiles,
     basePath: workingDirectory,
     onSelect: handleMentionSelect,
-    // Use workspace slug (not UUID) for SDK skill qualification
-    workspaceId: resolvedWorkspaceSlug,
   })
 
   // Inline label menu hook (for #labels)
@@ -1925,7 +1915,7 @@ export function FreeFormInput({
           skills={skills}
           sources={sources}
           mentionFiles={mentionFiles}
-          workspaceId={resolvedWorkspaceSlug}
+          workspaceId={workspaceId}
           className="pl-5 pr-4 pt-4 pb-3 overflow-y-auto min-h-[88px]"
           style={{ maxHeight: inputMaxHeight }}
           data-tutorial="chat-input"

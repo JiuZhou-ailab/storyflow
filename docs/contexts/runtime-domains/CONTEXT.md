@@ -1,6 +1,6 @@
 # Runtime Domains
 
-Runtime Domains define which product context owns a conversation and the state visible to its Agent.
+Runtime Domains define which product context owns a conversation. They do not create a second operating-system permission boundary.
 
 ## Language
 
@@ -17,15 +17,15 @@ A conversation owned by the Free Conversation Domain whose history and workspace
 _Avoid_: Project conversation without a selected project
 
 **Free Conversation Workspace**:
-The hidden application-managed Workspace that owns Free Conversation history; each session receives a private working directory for its files, generated artifacts, and Explicit Attachments.
+The hidden application-managed Workspace that owns Free Conversation history; each session receives a private default working directory for its files, generated artifacts, and Explicit Attachments.
 _Avoid_: Selected working directory, project root
 
 **Explicit Attachment**:
-A file deliberately added to a Free Conversation without granting access to its containing directory or project.
-_Avoid_: Mounted folder, implicit workspace
+A file deliberately surfaced in a Free Conversation as relevant input. It changes context, not local filesystem authority.
+_Avoid_: Security grant, mounted folder
 
 **Project Work Domain**:
-A Runtime Domain owned by one project and limited to that project's state and workspace.
+A Runtime Domain owned by one project whose history, default working directory, source overlay, and deliverables stay with that project.
 _Avoid_: Global chat, free conversation
 
 **Project Conversation**:
@@ -45,7 +45,7 @@ The single shared Agent implementation used by every Runtime Domain; domain diff
 _Avoid_: Free-conversation system, project Agent
 
 **Runtime Workspace**:
-The existing Workspace resolved from one workspace id. It binds history, filesystem boundaries, navigation identity, and the resource view without a parallel owner or context wrapper.
+The existing Workspace resolved from one workspace id. It binds history, default working directory, navigation identity, and the resource view without a parallel owner or context wrapper.
 _Avoid_: Runtime context wrapper, navigation identity
 
 **Application Workspace**:
@@ -60,14 +60,18 @@ _Avoid_: Domain-specific Agent implementation, orchestration layer, owner wrappe
 The single application-owned source of global Skills, Sources, trusted Extensions, and model-connection definitions shared by every Runtime Domain.
 _Avoid_: Project defaults, implicitly discovered user directory
 
-**Project Resource Overlay**:
-Project-owned Skills and Sources that extend one Project Work Domain without modifying or copying the Global Resource Root.
-_Avoid_: Global resource copy, shared project resources
+**Project Source Overlay**:
+Project-owned Sources that extend one Project Work Domain without modifying or copying global Sources.
+_Avoid_: Project Skill overlay, global resource copy
 
 **Resource Resolver**:
-The single resource-loading entry point that always reads the Global Resource Root and optionally applies one Project Resource Overlay.
+The single resource-loading entry point that always reads global Skills and Extensions, and optionally applies one Project Source Overlay over global Sources.
 _Avoid_: Domain-specific loader, resource synchronization layer
 
+**Local User Trust Space**:
+The filesystem authority already held by the operating-system user running Storyflow. Local Agents use this same authority across projects; a Project selects context and defaults, not authorization.
+_Avoid_: Project sandbox, attachment grant
+
 **Trusted Extension**:
-An executable Agent extension installed through the Global Resource Root and instantiated within a Runtime Domain's boundaries.
-_Avoid_: Project Skill, Skill Package extension
+An executable Agent extension installed through the Global Resource Root and instantiated by the shared Agent Kernel.
+_Avoid_: Skill Package extension

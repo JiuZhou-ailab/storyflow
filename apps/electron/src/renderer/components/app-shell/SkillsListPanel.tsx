@@ -1,5 +1,5 @@
-// input: Resolved runtime Skills, workspace identity, and Skills Market navigation
-// output: Overlay-aware Skill list, local management actions, and public discovery entry
+// input: Runtime-global Skills, runtime routing identity, and Skills Market navigation
+// output: Global Skill list, local management actions, and public discovery entry
 // pos: Skills navigator surface; installation remains a verified ResourceBundle import
 
 import * as React from 'react'
@@ -10,10 +10,8 @@ import { EntityPanel } from '@/components/ui/entity-panel'
 import { EntityListEmptyScreen } from '@/components/ui/entity-list-empty'
 import { skillSelection } from '@/hooks/useEntitySelection'
 import { SkillMenu } from './SkillMenu'
-import { SendResourceToWorkspaceDialog } from './SendResourceToWorkspaceDialog'
 import { resolveSkillsMarketEntry } from '@/lib/skills-market-entry'
 import { EditPopover, getEditConfig } from '@/components/ui/EditPopover'
-import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
 import type { LoadedSkill, Workspace } from '../../../shared/types'
 
 const skillsMarketEntry = resolveSkillsMarketEntry(import.meta.env.VITE_STORYFLOW_SKILLS_MARKET_ENABLED)
@@ -24,9 +22,7 @@ export interface SkillsListPanelProps {
   onSkillClick: (skill: LoadedSkill) => void
   selectedSkillSlug?: string | null
   workspaceId?: string
-  workspaceRootPath?: string
   activeWorkspace?: Workspace | null
-  workspaces?: Workspace[]
   className?: string
 }
 
@@ -37,12 +33,11 @@ export function AddSkillPopover({
   workspace: Workspace
   trigger: React.ReactNode
 }) {
-  const isProject = workspace.id !== FREE_CONVERSATION_WORKSPACE_ID
   return (
     <EditPopover
       trigger={trigger}
-      {...getEditConfig(isProject ? 'add-skill' : 'add-global-skill', workspace.rootPath, workspace.id)}
-      conversationWorkspaceId={FREE_CONVERSATION_WORKSPACE_ID}
+      {...getEditConfig('add-skill', '~/.craft-agent')}
+      conversationWorkspaceId={workspace.id}
       workingDirectory="none"
     />
   )
@@ -54,19 +49,11 @@ export function SkillsListPanel({
   onSkillClick,
   selectedSkillSlug,
   workspaceId,
-  workspaceRootPath,
   activeWorkspace,
-  workspaces = [],
   className,
 }: SkillsListPanelProps) {
   const { t } = useTranslation()
   const canRevealLocally = !activeWorkspace?.remoteServer
-  const hasOtherWorkspaces = workspaces.length > 1
-
-  // Send to Workspace dialog state
-  const [sendDialogOpen, setSendDialogOpen] = React.useState(false)
-  const [sendResourceSlug, setSendResourceSlug] = React.useState<string | null>(null)
-  const [sendResourceLabel, setSendResourceLabel] = React.useState('')
 
   return (
     <>
@@ -130,28 +117,11 @@ export function SkillsListPanel({
               onDelete={() => onDeleteSkill(skill.slug)}
               canDelete
               deleteLabel={t('skillsList.deleteSkill')}
-              onSendToWorkspace={hasOtherWorkspaces ? () => {
-                setSendResourceSlug(skill.slug)
-                setSendResourceLabel(skill.metadata.displayName ?? skill.metadata.name)
-                setSendDialogOpen(true)
-              } : undefined}
             />
           ),
         })}
       />
 
-      {/* Send to Workspace dialog */}
-      {sendResourceSlug && (
-        <SendResourceToWorkspaceDialog
-          open={sendDialogOpen}
-          onOpenChange={setSendDialogOpen}
-          resourceType="skill"
-          resourceIds={[sendResourceSlug]}
-          resourceLabel={sendResourceLabel}
-          workspaces={workspaces}
-          activeWorkspaceId={workspaceId ?? null}
-        />
-      )}
     </>
   )
 }

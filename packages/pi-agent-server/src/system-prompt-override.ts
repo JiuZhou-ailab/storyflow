@@ -1,4 +1,4 @@
-// input: Storyflow system prompt, Pi AgentSession, and project Skills metadata
+// input: Storyflow system prompt, Pi AgentSession, and global Skills metadata
 // output: Stable per-turn system prompt that preserves Pi's progressive Skill disclosure
 // pos: Compatibility bridge until Pi exposes a public per-turn system-prompt API
 

@@ -58,7 +58,6 @@ import {
 } from './mode-manager.ts';
 import { getSessionDataPath, getSessionPlansPath, getSessionPath } from '../sessions/storage.ts';
 import { getLastApiError } from '../interceptor-common.ts';
-import { extractWorkspaceSlug } from '../utils/workspace.ts';
 import {
   ConfigWatcher,
   createConfigWatcher,
@@ -1104,7 +1103,6 @@ export class ClaudeAgent extends BaseAgent {
                 sessionId,
                 permissionMode,
                 workspaceRootPath: this.workspaceRootPath,
-                workspaceId: extractWorkspaceSlug(this.workspaceRootPath, this.config.workspace.id),
                 plansFolderPath: sessionId ? getSessionPlansPath(this.workspaceRootPath, sessionId) : undefined,
                 dataFolderPath: sessionId ? getSessionDataPath(this.workspaceRootPath, sessionId) : undefined,
                 workingDirectory: this.config.session?.workingDirectory,

@@ -1,5 +1,5 @@
-// input: Optional Storyflow project root, global resource root, Pi cwd, and isolated agent directory
-// output: Explicit project-over-global Skills and global-only Extensions for the Pi runtime
+// input: Global resource root, Pi cwd, and isolated agent directory
+// output: Explicit global-only Skills and Extensions for the Pi runtime
 // pos: Resource security boundary preventing Pi's implicit third-party discovery
 
 import { existsSync, mkdirSync, readdirSync } from 'node:fs';
@@ -11,15 +11,11 @@ import {
   type ResourceLoader,
 } from '@earendil-works/pi-coding-agent';
 
-import {
-  assertSymlinkFreeTree,
-  ensureProjectOwnedDirectory,
-} from '../../shared/src/workspaces/paths.ts';
+import { assertSymlinkFreeTree } from '../../shared/src/workspaces/paths.ts';
 import { resolveResourceRoots } from '../../shared/src/resources/resolver.ts';
 
 export interface ProjectResourceLoaderOptions {
   cwd: string;
-  projectRoot?: string;
   globalRoot?: string;
   agentDir: string;
 }
@@ -99,21 +95,13 @@ export async function createProjectResourceLoader(
   options: ProjectResourceLoaderOptions,
 ): Promise<ProjectResourceLoaderResult> {
   const roots = resolveResourceRoots({
-    projectRoot: options.projectRoot,
     globalRoot: options.globalRoot,
   });
 
-  const skillPaths = roots.skills.map((root) => {
-    if (root.origin === 'project') {
-      return ensureProjectOwnedDirectory(root.rootPath, root.path);
-    }
-    mkdirSync(root.path, { recursive: true });
-    return root.path;
-  });
-  const extensionRoots = roots.extensions.map((root) => {
-    mkdirSync(root.path, { recursive: true });
-    return root.path;
-  });
+  mkdirSync(roots.skillsPath, { recursive: true });
+  mkdirSync(roots.extensionsPath, { recursive: true });
+  const skillPaths = [roots.skillsPath];
+  const extensionRoots = [roots.extensionsPath];
   const extensionPaths = extensionRoots.flatMap(discoverGlobalExtensionPaths);
   const managedResourcePaths = [...skillPaths, ...extensionRoots];
   for (const resourcePath of managedResourcePaths) {

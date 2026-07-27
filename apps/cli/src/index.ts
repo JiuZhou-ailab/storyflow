@@ -1368,16 +1368,14 @@ export function getValidateSteps(): ValidateStep[] {
     {
       name: 'send + skill create',
       fn: async (client, ctx) => {
-        if (!ctx.createdSessionId || !ctx.workspaceRootPath) return 'skipped (no session or workspace)'
-        ctx.createdSkillSlug = '__cli-validate-skill'
+        if (!ctx.createdSessionId) return 'skipped (no session)'
+        ctx.createdSkillSlug = 'cli-validate-skill'
         const sourceSlug = ctx.createdSourceSlug ?? 'cat-facts'
-        const skillDir = `${ctx.workspaceRootPath}/skills/${ctx.createdSkillSlug}`
-        // Use bash to create the skill file deterministically
         return await waitForSendEvents(client, ctx.createdSessionId,
-          `Use the Bash tool to run this exact command:
-mkdir -p "${skillDir}" && cat > "${skillDir}/SKILL.md" << 'SKILLEOF'
+          `Use skill_create to create the global Skill "${ctx.createdSkillSlug}" with this exact complete document:
+
 ---
-name: "CLI Validate Skill"
+name: "${ctx.createdSkillSlug}"
 description: "Validation skill created by craft-cli"
 requiredSources:
   - "${sourceSlug}"
@@ -1388,7 +1386,7 @@ This skill does two things:
 2. Use the Cat Facts source to get a random cat fact
 
 Always perform both steps when this skill is invoked.
-SKILLEOF`, 90_000, true, undefined, ctx.onEvent)
+`, 90_000, true, undefined, ctx.onEvent)
       },
     },
     {

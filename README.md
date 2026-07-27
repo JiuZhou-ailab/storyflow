@@ -220,7 +220,7 @@ bun run apps/cli/src/index.ts run --workspace-dir . "Inspect this repository"
 ## 来源、技能和自动化
 
 - **Sources**：连接 MCP server、REST API、本地文件和服务集成等外部系统；Craft 全局默认保存在 `~/.craft-agent/sources/`（不再写入共享的 `~/.agents/`），工作区内同名配置可覆盖。
-- **Skills**：由当前项目持有、保存在 `<project>/.pi/skills/`，可在聊天中提及的方法、指令和工作流；公共 Market 只负责发现与导入，不写全局 Agent 目录。
+- **Skills**：统一保存在 `~/.craft-agent/skills/`，在所有项目中复用；项目只提供调用时的上下文，公共 Market 负责发现并导入这一全局事实源。
 - **Automations**：可根据标签、计划任务、工具事件、权限变化和会话生命周期创建或更新会话。
 
 这些系统的大部分共享逻辑位于 `packages/shared/src`，可复用服务端 handler 位于 `packages/server-core/src/handlers/rpc`。

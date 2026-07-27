@@ -1,11 +1,11 @@
-// input: Agent Skills frontmatter and resolved resource origin semantics
+// input: Agent Skills frontmatter and global resource ownership semantics
 // output: Shared Skill metadata and loaded-definition types
 // pos: Type contract used by storage, RPC, renderer, and Agent loaders
 
 /**
  * Skills Types
  *
- * Type definitions for Storyflow project Skills executed by the Pi runtime.
+ * Type definitions for Storyflow Skills executed by the Pi runtime.
  */
 
 /**
@@ -33,11 +33,6 @@ export interface SkillMetadata {
   requiredSources?: string[];
 }
 
-/**
- * A loaded skill with parsed content
- */
-export type SkillDefinitionOrigin = 'project' | 'global';
-
 export interface LoadedSkill {
   /** Directory name (slug) */
   slug: string;
@@ -49,11 +44,4 @@ export interface LoadedSkill {
   iconPath?: string;
   /** Absolute path to skill directory */
   path: string;
-  /**
-   * Filesystem owner of this Skill definition.
-   *
-   * Optional for protocol compatibility with older persisted/test fixtures;
-   * current filesystem loaders always populate it.
-   */
-  origin?: SkillDefinitionOrigin;
 }

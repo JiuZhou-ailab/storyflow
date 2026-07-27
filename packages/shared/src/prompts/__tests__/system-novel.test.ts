@@ -32,9 +32,9 @@ describe('novel system prompt preset', () => {
     expect(prompt).toContain('state and timeline files as continuity records')
     expect(prompt).toContain('read the relevant bible, outline, current state, and timeline')
     expect(prompt).toContain('Group changes by manuscript, outline, characters, locations, state, timeline, and working notes')
-    expect(prompt).toContain('prefer project and workspace skills')
+    expect(prompt).toContain('Prefer relevant Skills')
     expect(prompt).toContain('Do not draft directly from a broad first writing request')
-    expect(prompt).toContain('use a relevant project Skill when available')
+    expect(prompt).toContain('use a relevant Skill when available')
   })
 
   it('keeps the mini preset focused on quick configuration edits', () => {

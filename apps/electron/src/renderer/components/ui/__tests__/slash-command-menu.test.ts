@@ -1,3 +1,7 @@
+// input: Slash-menu Skill, command, and folder fixtures
+// output: Regression proof for canonical global Skill insertion and menu filtering
+// pos: Renderer-unit boundary for slash command behavior
+
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import type { LoadedSkill } from '../../../../shared/types'
@@ -58,12 +62,8 @@ describe('slash skill commands', () => {
     ])
   })
 
-  it('inserts selected skills as existing skill mention tokens', () => {
-    expect(getSlashSkillInsertionText(skill({ slug: 'review-pr' }), 'craft-agents')).toBe('[skill:craft-agents:review-pr] ')
-  })
-
-  it('keeps every Skill scoped to the current Storyflow project', () => {
-    expect(getSlashSkillInsertionText(skill({ slug: 'debug' }), 'craft-agents')).toBe('[skill:craft-agents:debug] ')
+  it('inserts selected Skills as global mention tokens', () => {
+    expect(getSlashSkillInsertionText(skill({ slug: 'review-pr' }))).toBe('[skill:review-pr] ')
   })
 
   it('keeps hyphenated skill names in the slash query', () => {

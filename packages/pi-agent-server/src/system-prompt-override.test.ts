@@ -1,4 +1,4 @@
-// input: Fake Pi sessions, Storyflow prompts, and representative project Skill metadata
+// input: Fake Pi sessions, Storyflow prompts, and representative global Skill metadata
 // output: Regression assertions for stable prompt overrides and progressive Skill disclosure
 // pos: Contract test for the Storyflow-to-Pi system prompt bridge
 
@@ -69,15 +69,15 @@ describe('applySystemPromptOverride', () => {
     expect(session._rebuildSystemPrompt!([])).toBe('SECOND');
   });
 
-  it('preserves Pi project Skill metadata for automatic invocation', () => {
+  it('preserves Pi global Skill metadata for automatic invocation', () => {
     const session = makeFakeSession();
     const skill: Skill = {
       name: 'outline-architecture',
       description: 'Design a story outline.',
-      filePath: '/project/.pi/skills/outline-architecture/SKILL.md',
-      baseDir: '/project/.pi/skills/outline-architecture',
+      filePath: '/home/user/.craft-agent/skills/outline-architecture/SKILL.md',
+      baseDir: '/home/user/.craft-agent/skills/outline-architecture',
       sourceInfo: createSyntheticSourceInfo(
-        '/project/.pi/skills/outline-architecture/SKILL.md',
+        '/home/user/.craft-agent/skills/outline-architecture/SKILL.md',
         { source: 'storyflow-project', scope: 'project' },
       ),
       disableModelInvocation: false,

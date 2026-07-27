@@ -191,10 +191,10 @@ describe('project default navigation', () => {
     expect(appShellSource).toContain('useNavigationActions')
   })
 
-  it('revalidates the project captured by a delayed Skill install confirmation', () => {
-    expect(navigationContextSource).toContain('const targetWorkspaceId = workspaceId')
-    expect(navigationContextSource).toContain('workspaceIdentityRef.current.id !== targetWorkspaceId')
-    expect(navigationContextSource).toContain('importResources(targetWorkspaceId, downloaded.bundle')
+  it('revalidates the runtime route captured by a delayed global Skill install confirmation', () => {
+    expect(navigationContextSource).toContain('const targetRuntimeWorkspaceId = workspaceId')
+    expect(navigationContextSource).toContain('runtimeWorkspaceRouteRef.current !== targetRuntimeWorkspaceId')
+    expect(navigationContextSource).toContain('importResources(targetRuntimeWorkspaceId, downloaded.bundle')
     expect(navigationContextSource).not.toContain('importResources(workspaceId, downloaded.bundle')
   })
 })

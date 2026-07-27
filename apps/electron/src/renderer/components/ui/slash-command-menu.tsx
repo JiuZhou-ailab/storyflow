@@ -140,9 +140,8 @@ export function createSlashSkillItems(skills: LoadedSkill[]): SlashSkillItem[] {
   }))
 }
 
-export function getSlashSkillInsertionText(skill: LoadedSkill, workspaceId?: string): string {
-  const qualifiedName = workspaceId ? `${workspaceId}:${skill.slug}` : skill.slug
-  return `[skill:${qualifiedName}] `
+export function getSlashSkillInsertionText(skill: LoadedSkill): string {
+  return `[skill:${skill.slug}] `
 }
 
 // ============================================================================
@@ -658,7 +657,6 @@ export interface UseInlineSlashCommandOptions {
   skills?: LoadedSkill[]
   recentFolders?: string[]
   homeDir?: string
-  workspaceId?: string
 }
 
 export interface UseInlineSlashCommandReturn {
@@ -683,7 +681,6 @@ export function useInlineSlashCommand({
   skills = [],
   recentFolders = [],
   homeDir,
-  workspaceId,
 }: UseInlineSlashCommandOptions): UseInlineSlashCommandReturn {
   const [isOpen, setIsOpen] = React.useState(false)
   const [filter, setFilter] = React.useState('')
@@ -807,7 +804,7 @@ export function useInlineSlashCommand({
       const { value: currentValue, cursorPosition } = currentInputRef.current
       const before = currentValue.slice(0, slashStart)
       const after = currentValue.slice(cursorPosition)
-      const skillText = getSlashSkillInsertionText(skill, workspaceId)
+      const skillText = getSlashSkillInsertionText(skill)
       result = before + skillText + after
       newCursorPosition = before.length + skillText.length
     }
@@ -816,7 +813,7 @@ export function useInlineSlashCommand({
     setIsOpen(false)
 
     return { value: result, cursorPosition: newCursorPosition }
-  }, [onSelectSkill, slashStart, workspaceId])
+  }, [onSelectSkill, slashStart])
 
   const handleSelectFolder = React.useCallback((path: string): string => {
     // Capture values BEFORE any state changes to avoid race conditions

@@ -1,4 +1,0 @@
-interface:
-  display_name: "正文写作"
-  short_description: "从续写或大纲生成正文并控制篇幅节奏章末钩子和爽点兑现"
-  default_prompt: "使用 $prose-drafting 根据当前正文状态或大纲生成正文。"

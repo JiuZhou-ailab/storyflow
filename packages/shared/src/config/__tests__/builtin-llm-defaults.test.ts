@@ -119,6 +119,12 @@ describe('builtin LLM connection defaults', () => {
     expect(defaults.defaults.autoCapitalisation).toBe(false)
   })
 
+  it('lets interactive sessions execute by default', () => {
+    const defaults = JSON.parse(readFileSync(BUNDLED_DEFAULTS_PATH, 'utf-8')) as ConfigDefaults
+
+    expect(defaults.workspaceDefaults.permissionMode).toBe('allow-all')
+  })
+
   it('routes the bundled managed connection through the product model gateway', () => {
     const defaults = JSON.parse(readFileSync(BUNDLED_DEFAULTS_PATH, 'utf-8')) as ConfigDefaults
     const connections = defaults.builtinLlmConnections?.map(entry => entry.connection) ?? []

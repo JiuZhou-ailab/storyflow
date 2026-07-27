@@ -1,7 +1,7 @@
-/**
- * Tests for content-based config validators used by PreToolUse hook.
- * These validators check file content in memory before it reaches disk.
- */
+// input: In-memory config and SKILL.md documents at trust boundaries
+// output: Regression proof for shared validation adapters and canonical Skill rules
+// pos: Cross-package contract test for content validators used before persistence
+
 import { describe, it, expect } from 'bun:test';
 import {
   validateSourceConfigContent,
@@ -11,6 +11,7 @@ import {
   detectConfigFileType,
   validateConfigFileContent,
 } from '../src/config/validators.ts';
+import { resolveResourceRoots } from '../src/resources/resolver.ts';
 
 // ============================================================
 // validateSourceConfigContent
@@ -186,7 +187,34 @@ Content.
 `;
     const result = validateSkillContent(content, 'Invalid_Slug');
     expect(result.valid).toBe(false);
-    expect(result.errors.some(e => e.message.includes('Slug'))).toBe(true);
+    expect(result.errors.some(e => e.path === 'slug')).toBe(true);
+  });
+
+  it('fails when the Skill name does not match its global slug', () => {
+    const content = `---
+name: another-skill
+description: Test skill
+---
+
+Content.
+`;
+    const result = validateSkillContent(content, 'test-skill');
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.path === 'name' && e.message.includes('does not match'))).toBe(true);
+  });
+
+  it('enforces the Agent Skills name length limit', () => {
+    const slug = 'a'.repeat(65);
+    const content = `---
+name: ${slug}
+description: Test skill
+---
+
+Content.
+`;
+    const result = validateSkillContent(content, slug);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.message.includes('64'))).toBe(true);
   });
 
   it('fails for invalid YAML frontmatter', () => {
@@ -368,14 +396,15 @@ describe('detectConfigFileType', () => {
   });
 
   it('detects skill SKILL.md files', () => {
+    const globalSkillsRoot = resolveResourceRoots().skillsPath;
     const result = detectConfigFileType(
-      `${workspaceRoot}/.pi/skills/commit/SKILL.md`,
+      `${globalSkillsRoot}/commit/SKILL.md`,
       workspaceRoot
     );
     expect(result).not.toBeNull();
     expect(result!.type).toBe('skill');
     expect(result!.slug).toBe('commit');
-    expect(result!.displayFile).toBe('.pi/skills/commit/SKILL.md');
+    expect(result!.displayFile).toBe('~/.craft-agent/skills/commit/SKILL.md');
   });
 
   it('detects statuses config', () => {

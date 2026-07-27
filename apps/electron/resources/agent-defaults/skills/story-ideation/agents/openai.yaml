@@ -1,4 +1,0 @@
-interface:
-  display_name: "灵感生成"
-  short_description: "生成和筛选网文短篇故事核、题材方向、冲突种子与兑现看点"
-  default_prompt: "使用 $story-ideation 生成多个故事核，并筛选最值得展开的方向。"

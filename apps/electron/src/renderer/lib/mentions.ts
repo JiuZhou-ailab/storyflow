@@ -1,11 +1,9 @@
+// input: Chat text, globally identified Skills, project Sources, and cached entity icons
+// output: Parsed mentions and canonical badge metadata for persisted messages
+// pos: Renderer adapter preserving legacy mention reads while emitting global Skill references
+
 /**
- * Utilities for parsing [bracket] mentions from chat messages
- *
- * Mention types:
- * - Skills:  [skill:slug]
- * - Sources: [source:slug]
- *
- * Bracket syntax allows mentions anywhere in text without word boundaries.
+ * Utilities for parsing [bracket] mentions from chat messages.
  */
 
 import type { ContentBadge } from '@craft-agent/core'
@@ -240,14 +238,11 @@ export function extractBadges(
       filePath = match.id
     }
 
-    // Preserve Storyflow's historical project-qualified token shape. Pi loads
-    // the actual Skill from this project's .pi/skills directory.
-    let rawText = match.fullMatch
-    if (match.type === 'skill') {
-      rawText = workspaceId
-        ? `[skill:${workspaceId}:${match.id}]`
-        : `[skill:${match.id}]`
-    }
+    // Skill identity is global. Legacy qualified input is accepted by the
+    // parser but all newly persisted badge metadata uses the canonical form.
+    const rawText = match.type === 'skill'
+      ? `[skill:${match.id}]`
+      : match.fullMatch
 
     return {
       type: match.type as 'source' | 'skill' | 'file' | 'folder',

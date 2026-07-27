@@ -166,10 +166,10 @@ export function NavigationProvider({
 
   // Store reference for reading fresh atom values in callbacks (avoids stale closures)
   const store = useStore()
-  const workspaceIdentityRef = useRef({ id: workspaceId, slug: workspaceSlug })
+  const runtimeWorkspaceRouteRef = useRef(workspaceId)
   useEffect(() => {
-    workspaceIdentityRef.current = { id: workspaceId, slug: workspaceSlug }
-  }, [workspaceId, workspaceSlug])
+    runtimeWorkspaceRouteRef.current = workspaceId
+  }, [workspaceId])
 
   // Read sources from atom (populated by AppShell)
   const sources = useAtomValue(sourcesAtom)
@@ -856,9 +856,8 @@ export function NavigationProvider({
 
         case 'install-skill': {
           const { slug, version, sha256 } = parsed.params
-          const targetWorkspaceId = workspaceId
-          const targetWorkspaceLabel = workspaceSlug || workspaceId
-          if (!slug || !version || !sha256 || !targetWorkspaceId) {
+          const targetRuntimeWorkspaceId = workspaceId
+          if (!slug || !version || !sha256 || !targetRuntimeWorkspaceId) {
             toast.error(t('toast.invalidLink'), { description: t('skillsMarket.invalidLink') })
             break
           }
@@ -870,18 +869,17 @@ export function NavigationProvider({
               description: t('skillsMarket.readyDescription', {
                 version,
                 sha256: downloaded.sha256.slice(0, 12),
-                project: targetWorkspaceLabel,
               }),
               duration: 20_000,
               action: {
                 label: t('skillsMarket.confirm'),
                 onClick: () => {
-                  if (workspaceIdentityRef.current.id !== targetWorkspaceId) {
-                    toast.error(t('skillsMarket.projectChanged'))
+                  if (runtimeWorkspaceRouteRef.current !== targetRuntimeWorkspaceId) {
+                    toast.error(t('skillsMarket.runtimeChanged'))
                     return
                   }
                   const importToastId = toast.loading(t('skillsMarket.importing', { slug }))
-                  void window.electronAPI.importResources(targetWorkspaceId, downloaded.bundle, 'skip')
+                  void window.electronAPI.importResources(targetRuntimeWorkspaceId, downloaded.bundle, 'skip')
                     .then(result => {
                       const bucket = result.skills
                       if (bucket.imported.includes(slug)) {

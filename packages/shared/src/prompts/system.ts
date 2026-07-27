@@ -6,12 +6,11 @@ import { formatPreferencesForPrompt, getCoAuthorPreference } from '../config/pre
 import { getBrowserToolEnabled } from '../config/storage.ts';
 import { debug } from '../utils/debug.ts';
 import { existsSync, readFileSync, readdirSync } from 'fs';
-import { join, relative, basename } from 'path';
+import { join, relative } from 'path';
 import { DOC_REFS, APP_ROOT } from '../docs/index.ts';
 import { PERMISSION_MODE_CONFIG } from '../agent/mode-types.ts';
 import { FEATURE_FLAGS } from '../feature-flags.ts';
 import { APP_VERSION } from '../version/index.ts';
-import { readPluginName } from '../utils/workspace.ts';
 import { globSync } from 'glob';
 import os from 'os';
 import { WORKSPACE_STATE_DIR } from '../workspaces/paths.ts';
@@ -388,8 +387,8 @@ Treat novel projects as long-form creative work where manuscript fidelity and co
 - Treat state and timeline files as continuity records. Keep them consistent with manuscript events and update them when drafting changes continuity.
 - Before drafting or revising, read the relevant bible, outline, current state, and timeline files so new prose fits canon and sequence.
 - Group changes by manuscript, outline, characters, locations, state, timeline, and working notes so creative text, planning, and continuity records stay easy to review.
-- prefer project and workspace skills for novel-specific workflows before inventing ad hoc processes.
-- Do not draft directly from a broad first writing request. First use a relevant project Skill when available, extract known constraints, and ask only for missing decisions that materially change the story.
+- Prefer relevant Skills for novel-specific workflows before inventing ad hoc processes.
+- Do not draft directly from a broad first writing request. First use a relevant Skill when available, extract known constraints, and ask only for missing decisions that materially change the story.
 - For prompts like "write a story" or "写一个...", clarify method-defining dimensions before outline or prose: audience lane, genre promise, protagonist/relationship setup, emotional engine, reversal rhythm, ending/payoff, and length or chapter target.
 `;
 }
@@ -519,12 +518,6 @@ function getCraftAssistantPrompt(workspaceRootPath?: string, backendName: string
   // Default to ${APP_ROOT}/workspaces/{id} if no path provided
   const workspacePath = workspaceRootPath || `${APP_ROOT}/workspaces/{id}`;
 
-  // Read the SDK plugin name from .craft-agent/claude-plugin/plugin.json — this is what the SDK
-  // uses to resolve skills. Falls back to basename for backwards compatibility.
-  const workspaceId = (workspaceRootPath && readPluginName(workspaceRootPath))
-    || basename(workspacePath)
-    || '{workspaceId}';
-
   // Environment marker for SDK JSONL detection
   const environmentMarker = getCraftAgentEnvironmentMarker();
 
@@ -609,7 +602,7 @@ Sources are external data connections. Each source has:
 
 **Workspace structure:**
 - Sources: \`${workspacePath}/.craft-agent/sources/{slug}/\`
-- Skills: \`${workspacePath}/.pi/skills/{slug}/\`
+- Skills: \`${APP_ROOT}/skills/{slug}/\`
 - Theme: \`${workspacePath}/.craft-agent/theme.json\`
 
 ## Skills
@@ -617,12 +610,12 @@ Sources are external data connections. Each source has:
 Skills are reusable instruction sets that teach you specialized behaviors. Each skill has:
 - \`SKILL.md\` - Instructions and behavior definition (read before execution!)
 
-**Using a skill** (user mentions it with \`[skill:slug]\`):
+**Using a skill** (it matches the request or the user mentions it with \`[skill:slug]\`):
 1. Read its \`SKILL.md\` at the resolved path using the Read tool or \`cat\` via Bash — tool calls are blocked until it is read
 2. Follow the instructions in the file to complete the user's request
 
-Skills belong only to the current Storyflow project:
-- Project: \`${workspacePath}/.pi/skills/{slug}/SKILL.md\`
+All projects share the same Skill definition:
+- Global: \`${APP_ROOT}/skills/{slug}/SKILL.md\`
 
 ## Project Context
 
@@ -783,7 +776,9 @@ The \`session\` MCP server provides tools for managing external sources:
 
 ## Web Search
 
-You have access to web search for up-to-date information. Use it proactively to get up-to-date information and best practices.
+Use the resolved \`anysearch\` Skill as the default for web search, up-to-date information, documentation lookups, and fact-checking. Read its \`SKILL.md\` before use.
+Use the built-in \`web_search\` tool only when AnySearch is unavailable and the user approves the fallback.
+Use browser tools directly when the task requires interaction, authentication, or dynamic UI state.
 Your memory is limited as of cut-off date, so it contain wrong or stale info, or be out-of-date, specifically for fast-changing topics like technology, current events, and recent developments.
 I.e. there is now iOS/MacOS26, it's 2026, the world has changed a lot since your training data!
 

@@ -1559,9 +1559,8 @@ function AppContent() {
       // Step 3: Extract badges from mentions (sources/skills) with embedded icons
       // Badges are self-contained for display in UserMessageBubble and viewer
       // Merge with any externally provided badges (e.g., from EditPopover context badges)
-      // Use workspace slug (not UUID) for skill qualification - SDK expects "workspaceSlug:skillSlug"
-      const mentionBadges: ContentBadge[] = windowWorkspaceSlug
-        ? extractBadges(message, skills, sources, windowWorkspaceSlug)
+      const mentionBadges: ContentBadge[] = windowWorkspaceId
+        ? extractBadges(message, skills, sources, windowWorkspaceId)
         : []
       const badges: ContentBadge[] = [...(externalBadges || []), ...mentionBadges]
 

@@ -78,13 +78,11 @@ export const ConfigValidateSchema = z.object({
 
 export const SkillValidateSchema = z.object({
   skillSlug: z.string().describe('The slug of the skill to validate'),
-  targetWorkspaceId: z.string().optional().describe('Storyflow workspace ID supplied by the creation entry'),
 });
 
 export const SkillCreateSchema = z.object({
   skillSlug: z.string().describe('Lowercase hyphenated slug for the new Skill'),
   content: z.string().describe('Complete SKILL.md document, including YAML frontmatter'),
-  targetWorkspaceId: z.string().describe('Storyflow workspace ID supplied by the creation entry'),
 });
 
 export const MermaidValidateSchema = z.object({
@@ -294,10 +292,9 @@ Checks:
 - Content is non-empty after frontmatter
 - Icon format if present (svg/png/jpg)`,
 
-  skill_create: `Create one validated Skill in a Storyflow-owned scope.
+  skill_create: `Create one validated global Skill.
 
 Use only after the user has explicitly confirmed the summarized Skill draft.
-Pass targetWorkspaceId from <edit_request> when present. The workspace ID is resolved through Storyflow; arbitrary filesystem paths are not accepted.
 Existing Skills are never overwritten. After creation, call skill_validate.`,
 
   mermaid_validate: `Validate Mermaid diagram syntax before outputting.

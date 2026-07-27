@@ -49,8 +49,6 @@ export interface EditContext {
   filePath: string
   /** Optional additional context/instructions for the agent */
   context?: string
-  /** Storyflow workspace that owns the resource being edited or created */
-  targetWorkspaceId?: string
 }
 
 /* ============================================================================
@@ -88,7 +86,6 @@ export type EditContextKey =
   | 'add-source-mcp'   // Filter-specific: user is viewing MCPs
   | 'add-source-local' // Filter-specific: user is viewing Local Folders
   | 'add-skill'
-  | 'add-global-skill'
   | 'edit-statuses'
   | 'edit-labels'
   | 'edit-auto-rules'
@@ -128,7 +125,7 @@ export interface EditConfig {
  * Registry of all edit configurations.
  * Each entry contains all strings needed for the edit popover and agent context.
  */
-const EDIT_CONFIGS: Record<EditContextKey, (location: string, targetWorkspaceId?: string) => EditConfig> = {
+const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
   'workspace-permissions': (location) => ({
     context: {
       label: 'Permission Settings',
@@ -392,34 +389,14 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string, targetWorkspaceId?
     overridePlaceholderKey: 'editPopover.placeholder.addSourceLocal',
   }),
 
-  'add-skill': (location, targetWorkspaceId) => ({
+  'add-skill': () => ({
     context: {
       label: 'Add Skill',
-      filePath: `${location}/.pi/skills/`,
-      targetWorkspaceId,
-      context:
-        'Use [skill:skill-creator] to design a new Skill through conversation. ' +
-        'The target is owned only by the current Storyflow project. ' +
-        `After the user confirms the summarized draft, call skill_create with targetWorkspaceId from <edit_request>; it will create under ${location}/.pi/skills/. ` +
-        'Do not write the Skill with generic file or shell tools. ' +
-        'Do not write to ~/.craft-agent/skills, ~/.agents, ~/.codex, or any other Skill root.',
-    },
-    example: 'Review PRs following our code standards',
-    overridePlaceholder: 'What should I learn to do?',
-    displayLabelKey: 'editPopover.label.addSkill',
-    exampleKey: 'editPopover.example.addSkill',
-    overridePlaceholderKey: 'editPopover.placeholder.addSkill',
-  }),
-
-  'add-global-skill': (_location, targetWorkspaceId) => ({
-    context: {
-      label: 'Add Global Skill',
       filePath: '~/.craft-agent/skills/',
-      targetWorkspaceId,
       context:
         'Use [skill:skill-creator] to design a new Skill through conversation. ' +
-        'The target is a Storyflow global Skill available to every Runtime Domain. ' +
-        'After the user confirms the summarized draft, call skill_create with targetWorkspaceId from <edit_request>; it will create under ~/.craft-agent/skills/. ' +
+        'The target is the one global Storyflow Skill store, available to every project. ' +
+        'After the user confirms the summarized draft, call skill_create; it will create under ~/.craft-agent/skills/. ' +
         'Do not write the Skill with generic file or shell tools. ' +
         'Do not write to ~/.agents, ~/.codex, a project .pi/skills directory, or any other Skill root.',
     },
@@ -596,15 +573,12 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string, targetWorkspaceId?
  * @example
  * const { context, example } = getEditConfig('workspace-permissions', workspace.rootPath)
  */
-export function getEditConfig(key: EditContextKey, location: string, targetWorkspaceId?: string): EditConfig {
+export function getEditConfig(key: EditContextKey, location: string): EditConfig {
   const factory = EDIT_CONFIGS[key]
   if (!factory) {
     throw new Error(`Unknown edit context key: ${key}. Add it to EDIT_CONFIGS in EditPopover.tsx`)
   }
-  if ((key === 'add-skill' || key === 'add-global-skill') && !targetWorkspaceId) {
-    throw new Error(`${key} requires a target Storyflow workspace`)
-  }
-  const config = factory(location, targetWorkspaceId)
+  const config = factory(location)
 
   // Resolve i18n keys to translated strings for UI display
   // context.label remains in English for agent prompts; displayLabel is used in UI
@@ -731,7 +705,6 @@ export function buildEditPrompt(context: EditContext, userInstructions: string, 
   const metadataSection = `<edit_request>
 <label>${context.label}</label>
 <file>${context.filePath}</file>
-${context.targetWorkspaceId ? `<target_workspace_id>${context.targetWorkspaceId}</target_workspace_id>\n` : ''}
 ${context.context ? `<context>${context.context}</context>\n` : ''}</edit_request>
 
 `

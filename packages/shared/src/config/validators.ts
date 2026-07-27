@@ -19,11 +19,15 @@
 import { z } from 'zod';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
+import { validateSkillContent as validatePortableSkillContent } from '@craft-agent/session-tools-core';
+export { SkillMetadataSchema } from '@craft-agent/session-tools-core';
 import { CONFIG_DIR } from './paths.ts';
 import { safeJsonParse, readJsonFileSync } from '../utils/files.ts';
+import { findIconFile } from '../utils/icon.ts';
 import { EntityColorSchema } from '../colors/validate.ts';
 import { THINKING_LEVEL_IDS } from '../agent/thinking-levels.ts';
 import { isValidProviderAuthCombination } from './llm-connections.ts';
+import { resolveResourceRoots } from '../resources/resolver.ts';
 
 // ============================================================
 // Config Directory
@@ -341,6 +345,7 @@ export function validateAll(workspaceId?: string, workspaceRoot?: string): Valid
     validateConfig(),
     validatePreferences(),
     validateToolIcons(),
+    validateAllSkills(),
   ];
 
   // Include workspace-scoped validations if workspaceId is provided
@@ -348,9 +353,8 @@ export function validateAll(workspaceId?: string, workspaceRoot?: string): Valid
     results.push(validateAllSources(workspaceId));
   }
 
-  // Include skill, status, label, automations, and permissions validation if workspaceRoot is provided
+  // Include project-scoped validation if workspaceRoot is provided
   if (workspaceRoot) {
-    results.push(validateAllSkills(workspaceRoot));
     results.push(validateStatuses(workspaceRoot));
     results.push(validateLabels(workspaceRoot));
     results.push(validateAutomations(workspaceRoot));
@@ -654,52 +658,15 @@ export function validateAllSources(workspaceId: string): ValidationResult {
 // Skill Validators
 // ============================================================
 
-import matter from 'gray-matter';
-import { getWorkspaceSkillsPath } from '../workspaces/storage.ts';
-import { basename, extname } from 'path';
-
-/**
- * Schema for skill metadata (SKILL.md frontmatter)
- */
-export const SkillMetadataSchema = z.object({
-  name: z.string()
-    .min(1, "Add a 'name' field matching the skill folder")
-    .max(64, 'Skill name must be at most 64 characters')
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Skill name must be lowercase letters, numbers, and single hyphens'),
-  description: z.string().min(1, "Add a 'description' field explaining what this skill does and when to use it (1-2 sentences)"),
-  metadata: z.object({
-    displayName: z.string().min(1).optional(),
-  }).passthrough().optional(),
-  globs: z.array(z.string()).optional(),
-  alwaysAllow: z.array(z.string()).optional(),
-});
-
-/**
- * Find icon file in skill directory
- */
-function findSkillIconForValidation(skillDir: string): string | null {
-  const iconExtensions = ['.svg', '.png', '.jpg', '.jpeg'];
-
-  for (const ext of iconExtensions) {
-    const iconPath = join(skillDir, `icon${ext}`);
-    if (existsSync(iconPath)) {
-      return iconPath;
-    }
-  }
-
-  return null;
-}
-
 /**
  * Validate a skill folder
- * @param workspaceRoot - Absolute path to workspace root folder
  * @param slug - Skill directory name
  */
-export function validateSkill(workspaceRoot: string, slug: string): ValidationResult {
-  const skillsDir = getWorkspaceSkillsPath(workspaceRoot);
+export function validateSkill(slug: string): ValidationResult {
+  const skillsDir = resolveResourceRoots().skillsPath;
   const skillDir = join(skillsDir, slug);
   const skillFile = join(skillDir, 'SKILL.md');
-  const file = `.pi/skills/${slug}/SKILL.md`;
+  const file = `~/.craft-agent/skills/${slug}/SKILL.md`;
 
   const errors: ValidationIssue[] = [];
   const warnings: ValidationIssue[] = [];
@@ -709,7 +676,7 @@ export function validateSkill(workspaceRoot: string, slug: string): ValidationRe
     return {
       valid: false,
       errors: [{
-        file: `.pi/skills/${slug}`,
+        file: `~/.craft-agent/skills/${slug}`,
         path: '',
         message: `Skill folder '${slug}' does not exist`,
         severity: 'error',
@@ -754,23 +721,11 @@ export function validateSkill(workspaceRoot: string, slug: string): ValidationRe
   const contentResult = validateSkillContent(content, slug);
   errors.push(...contentResult.errors);
 
-  // 5. FS-only checks: icon existence (warnings)
-  const iconPath = findSkillIconForValidation(skillDir);
-  if (iconPath) {
-    const ext = extname(iconPath).toLowerCase();
-    if (!['.svg', '.png', '.jpg', '.jpeg'].includes(ext)) {
-      warnings.push({
-        file: `.pi/skills/${slug}/${basename(iconPath)}`,
-        path: '',
-        message: `Unexpected icon format: ${ext}`,
-        severity: 'warning',
-        suggestion: 'Use .svg, .png, or .jpg for icons',
-      });
-    }
-  } else {
+  // 5. FS-only check: icon existence
+  if (!findIconFile(skillDir)) {
     const searchTerm = slug.replace(/-/g, ' ');
     warnings.push({
-      file: `.pi/skills/${slug}/`,
+      file: `~/.craft-agent/skills/${slug}/`,
       path: 'icon',
       message: 'No icon found',
       severity: 'warning',
@@ -794,84 +749,29 @@ export function validateSkill(workspaceRoot: string, slug: string): ValidationRe
  * @param slug - The skill slug (folder name), used for slug format validation
  */
 export function validateSkillContent(markdownContent: string, slug: string): ValidationResult {
-  const file = `.pi/skills/${slug}/SKILL.md`;
-  const errors: ValidationIssue[] = [];
-
-  // 1. Validate slug format
-  if (!/^[a-z0-9-]+$/.test(slug)) {
-    const suggestedSlug = slug
-      .toLowerCase()
-      .replace(/[^a-z0-9-]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .replace(/-+/g, '-');
-    errors.push({
-      file: `.pi/skills/${slug}`,
-      path: 'slug',
-      message: 'Slug must be lowercase alphanumeric with hyphens',
-      severity: 'error',
-      suggestion: `Rename folder to '${suggestedSlug || 'valid-slug-name'}'`,
-    });
-  }
-
-  // 2. Parse frontmatter
-  let frontmatter: unknown;
-  let body: string;
-  try {
-    const parsed = matter(markdownContent);
-    frontmatter = parsed.data;
-    body = parsed.content;
-  } catch (e) {
-    return {
-      valid: false,
-      errors: [{
-        file,
-        path: 'frontmatter',
-        message: `Invalid YAML frontmatter: ${e instanceof Error ? e.message : 'Unknown error'}`,
-        severity: 'error',
-        suggestion: 'See ~/.craft-agent/docs/skills.md for SKILL.md format reference',
-      }],
-      warnings: [],
-    };
-  }
-
-  // 3. Validate frontmatter schema
-  const metaResult = SkillMetadataSchema.safeParse(frontmatter);
-  if (!metaResult.success) {
-    errors.push(...zodErrorToIssues(metaResult.error, file));
-  } else if (metaResult.data.name !== slug) {
-    errors.push({
-      file,
-      path: 'name',
-      message: `Skill name '${metaResult.data.name}' must match its parent directory '${slug}'`,
-      severity: 'error',
-      suggestion: `Set frontmatter name to '${slug}'`,
-    });
-  }
-
-  // 4. Check content is not empty
-  if (!body || body.trim().length === 0) {
-    errors.push({
-      file,
-      path: 'content',
-      message: 'Skill content is empty (nothing after frontmatter)',
-      severity: 'error',
-      suggestion: 'Add instructions after the frontmatter describing what the skill should do',
-    });
-  }
+  const file = `~/.craft-agent/skills/${slug}/SKILL.md`;
+  const result = validatePortableSkillContent(markdownContent, slug);
 
   return {
-    valid: errors.length === 0,
-    errors,
-    warnings: [],  // Icon/folder warnings skipped in content-only validation
+    valid: result.valid,
+    errors: result.errors.map(issue => ({
+      ...issue,
+      file,
+      severity: 'error' as const,
+    })),
+    warnings: result.warnings.map(issue => ({
+      ...issue,
+      file,
+      severity: 'warning' as const,
+    })),
   };
 }
 
 /**
- * Validate all skills in a workspace
- * @param workspaceRoot - Absolute path to workspace root folder
+ * Validate all global Skills.
  */
-export function validateAllSkills(workspaceRoot: string): ValidationResult {
-  const skillsDir = getWorkspaceSkillsPath(workspaceRoot);
+export function validateAllSkills(): ValidationResult {
+  const skillsDir = resolveResourceRoots().skillsPath;
   const errors: ValidationIssue[] = [];
   const warnings: ValidationIssue[] = [];
 
@@ -880,7 +780,7 @@ export function validateAllSkills(workspaceRoot: string): ValidationResult {
       valid: true,
       errors: [],
       warnings: [{
-        file: '.pi/skills/',
+        file: '~/.craft-agent/skills/',
         path: '',
         message: 'Skills directory does not exist (no skills configured)',
         severity: 'warning',
@@ -899,7 +799,7 @@ export function validateAllSkills(workspaceRoot: string): ValidationResult {
       valid: true,
       errors: [],
       warnings: [{
-        file: '.pi/skills/',
+        file: '~/.craft-agent/skills/',
         path: '',
         message: 'No skills configured',
         severity: 'warning',
@@ -908,7 +808,7 @@ export function validateAllSkills(workspaceRoot: string): ValidationResult {
   }
 
   for (const folder of skillFolders) {
-    const result = validateSkill(workspaceRoot, folder);
+    const result = validateSkill(folder);
     errors.push(...result.errors);
     warnings.push(...result.warnings);
   }
@@ -1996,7 +1896,7 @@ export interface ConfigFileDetection {
  *
  * Matches patterns:
  * - .../.craft-agent/sources/{slug}/config.json → source config
- * - .../.pi/skills/{slug}/SKILL.md → project Skill definition
+ * - ~/.craft-agent/skills/{slug}/SKILL.md → global Skill definition
  * - .../.craft-agent/statuses/config.json → status workflow config
  * - .../.craft-agent/labels/config.json → label config
  * - .../permissions.json (workspace or source-level) → permission rules
@@ -2006,6 +1906,23 @@ export function detectConfigFileType(filePath: string, workspaceRootPath: string
   // so startsWith doesn't false-match on path prefixes (e.g., /workspace vs /workspacefoo)
   const normalizedPath = filePath.replace(/\\/g, '/');
   const normalizedRoot = workspaceRootPath.replace(/\\/g, '/').replace(/\/?$/, '/');
+  const normalizedSkillsRoot = resolveResourceRoots().skillsPath
+    .replace(/\\/g, '/')
+    .replace(/\/?$/, '/');
+
+  if (normalizedPath.startsWith(normalizedSkillsRoot)) {
+    const skillMatch = normalizedPath
+      .slice(normalizedSkillsRoot.length)
+      .match(/^([^/]+)\/SKILL\.md$/);
+    if (skillMatch) {
+      return {
+        type: 'skill',
+        slug: skillMatch[1],
+        displayFile: `~/.craft-agent/skills/${skillMatch[1]}/SKILL.md`,
+      };
+    }
+    return null;
+  }
 
   // Only validate files within the workspace root
   if (!normalizedPath.startsWith(normalizedRoot)) {
@@ -2016,20 +1933,12 @@ export function detectConfigFileType(filePath: string, workspaceRootPath: string
   const rawRelativePath = normalizedPath.slice(normalizedRoot.length);
   const relativePath = rawRelativePath.startsWith('.craft-agent/')
     ? rawRelativePath.slice('.craft-agent/'.length)
-    : rawRelativePath.startsWith('.pi/')
-      ? rawRelativePath.slice('.pi/'.length)
-      : rawRelativePath;
+    : rawRelativePath;
 
   // Match: sources/{slug}/config.json
   const sourceMatch = relativePath.match(/^sources\/([^/]+)\/config\.json$/);
   if (sourceMatch) {
     return { type: 'source', slug: sourceMatch[1], displayFile: `sources/${sourceMatch[1]}/config.json` };
-  }
-
-  // Match canonical .pi/skills/{slug}/SKILL.md after prefix normalization.
-  const skillMatch = relativePath.match(/^skills\/([^/]+)\/SKILL\.md$/);
-  if (skillMatch) {
-    return { type: 'skill', slug: skillMatch[1], displayFile: `.pi/skills/${skillMatch[1]}/SKILL.md` };
   }
 
   // Match: statuses/config.json

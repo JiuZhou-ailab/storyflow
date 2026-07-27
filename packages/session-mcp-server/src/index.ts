@@ -38,11 +38,6 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSy
 import { dirname, join } from 'node:path';
 import { isDeveloperFeedbackEnabled } from '@craft-agent/shared/feature-flags';
 import { createSkill, loadSkill } from '@craft-agent/shared/skills';
-import {
-  getFreeConversationWorkspace,
-  isFreeConversationWorkspaceId,
-  resolveRuntimeWorkspace,
-} from '@craft-agent/shared/workspaces';
 // Import from session-tools-core
 import {
   type SessionToolContext,
@@ -164,17 +159,6 @@ function createCredentialManager(workspaceRootPath: string): CredentialManagerIn
  */
 function createCodexContext(config: SessionConfig): SessionToolContext {
   const { sessionId, workspaceRootPath, plansFolderPath } = config;
-  const skillProjectRoot = workspaceRootPath === getFreeConversationWorkspace().rootPath
-    ? undefined
-    : workspaceRootPath;
-  const resolveSkillProjectRoot = (targetWorkspaceId?: string): string | undefined => {
-    if (!targetWorkspaceId) return skillProjectRoot;
-    const targetWorkspace = resolveRuntimeWorkspace(targetWorkspaceId);
-    if (!targetWorkspace) throw new Error(`Skill target workspace not found: ${targetWorkspaceId}`);
-    return isFreeConversationWorkspaceId(targetWorkspace.id)
-      ? undefined
-      : targetWorkspace.rootPath;
-  };
 
   // File system implementation
   const fs = {
@@ -222,11 +206,7 @@ function createCodexContext(config: SessionConfig): SessionToolContext {
     sessionId,
     workspacePath: workspaceRootPath,
     get sourcesPath() { return join(workspaceRootPath, 'sources'); },
-    get skillsPath() {
-      return skillProjectRoot
-        ? join(skillProjectRoot, '.pi', 'skills')
-        : join(dirname(dirname(workspaceRootPath)), 'skills');
-    },
+    get skillsPath() { return join(dirname(dirname(workspaceRootPath)), 'skills'); },
     plansFolderPath,
     sessionPath: sessionsDir,
     dataPath: sessionDataDir,
@@ -235,13 +215,13 @@ function createCodexContext(config: SessionConfig): SessionToolContext {
     loadSourceConfig: (sourceSlug: string): SourceConfig | null => {
       return loadSourceConfigFromHelpers(workspaceRootPath, sourceSlug);
     },
-    createSkillDocument: (skillSlug: string, content: string, targetWorkspaceId?: string) => {
-      const skill = createSkill(resolveSkillProjectRoot(targetWorkspaceId), skillSlug, content);
+    createSkillDocument: (skillSlug: string, content: string) => {
+      const skill = createSkill(skillSlug, content);
       const path = join(skill.path, 'SKILL.md');
       return { path, content };
     },
-    loadSkillDocument: (skillSlug: string, targetWorkspaceId?: string) => {
-      const skill = loadSkill(resolveSkillProjectRoot(targetWorkspaceId), skillSlug);
+    loadSkillDocument: (skillSlug: string) => {
+      const skill = loadSkill(skillSlug);
       if (!skill) return null;
       const path = join(skill.path, 'SKILL.md');
       return { path, content: readFileSync(path, 'utf-8') };

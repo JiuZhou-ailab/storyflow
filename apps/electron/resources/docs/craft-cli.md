@@ -135,16 +135,16 @@ craft-agent source auth-help linear
 <!-- cli:skill:start -->
 ## Skill
 
-Manage workspace skills stored under `skills/{slug}/SKILL.md`.
+Manage global Skills stored under `~/.craft-agent/skills/{slug}/SKILL.md`.
 
 ### Commands
-- `craft-agent skill list [--workspace-only] [--project-root <path>]`
-- `craft-agent skill get <slug> [--project-root <path>]`
-- `craft-agent skill where <slug> [--project-root <path>]`
+- `craft-agent skill list`
+- `craft-agent skill get <slug>`
+- `craft-agent skill where <slug>`
 - `craft-agent skill create` (see flags below)
-- `craft-agent skill update <slug> --json '{...}' [--project-root <path>]`
+- `craft-agent skill update <slug> --json '{...}'`
 - `craft-agent skill delete <slug>`
-- `craft-agent skill validate <slug> [--source workspace|project|global] [--project-root <path>]`
+- `craft-agent skill validate <slug>`
 
 ### Flags for `skill create`
 
@@ -163,20 +163,17 @@ Manage workspace skills stored under `skills/{slug}/SKILL.md`.
 
 ```bash
 craft-agent skill list
-craft-agent skill list --workspace-only
 craft-agent skill where commit-helper
 craft-agent skill create --name "Commit Helper" --description "Generate conventional commits" --slug commit-helper
 craft-agent skill create --name "Code Review" --description "Review PRs" --globs "*.ts,*.tsx" --always-allow "Bash" --required-sources "github"
 craft-agent skill update commit-helper --json '{"requiredSources":["github"],"body":"Use concise, imperative commit messages."}'
 craft-agent skill validate commit-helper
-craft-agent skill validate commit-helper --source global
 craft-agent skill delete commit-helper
 ```
 
 ### Notes
 - `create` / `update` write `SKILL.md` frontmatter and content body.
-- Use `where` to inspect project/workspace/global resolution precedence.
-- `--project-root` scopes resolution to a project directory (defaults to cwd).
+- Use `where` to inspect the global filesystem path.
 <!-- cli:skill:end -->
 
 ---

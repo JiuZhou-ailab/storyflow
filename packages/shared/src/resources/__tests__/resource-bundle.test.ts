@@ -744,6 +744,42 @@ describe('resource-bundle', () => {
       expect(existsSync(join(skillPath(wsDir, 'pdf-tools'), 'scripts', 'extract.py'))).toBe(true)
     })
 
+    it('imports and exports Skills through an explicit global root', async () => {
+      const wsDir = createTestWorkspace(tmpDir)
+      const globalSkillsRoot = join(tmpDir, 'global-skills')
+      const bundle: ResourceBundle = {
+        version: 1,
+        exportedAt: Date.now(),
+        resources: {
+          skills: [{
+            slug: 'global-review',
+            files: [makeBundleFile(
+              'SKILL.md',
+              '---\nname: global-review\ndescription: Global review\n---\nReview globally.',
+            )],
+          }],
+        },
+      }
+
+      const imported = await importResources(
+        wsDir,
+        bundle,
+        'skip',
+        noopDeps,
+        globalSkillsRoot,
+      )
+      const exported = exportResources(
+        wsDir,
+        { skills: 'all' },
+        globalSkillsRoot,
+      )
+
+      expect(imported.skills.imported).toEqual(['global-review'])
+      expect(existsSync(join(globalSkillsRoot, 'global-review', 'SKILL.md'))).toBe(true)
+      expect(existsSync(skillPath(wsDir, 'global-review'))).toBe(false)
+      expect(exported.bundle.resources.skills?.map(skill => skill.slug)).toEqual(['global-review'])
+    })
+
     it('skips existing resources in skip mode', async () => {
       const wsDir = createTestWorkspace(tmpDir)
       createTestSource(wsDir, 'existing')

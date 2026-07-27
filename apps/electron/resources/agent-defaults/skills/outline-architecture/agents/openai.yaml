@@ -1,4 +1,0 @@
-interface:
-  display_name: "大纲生成"
-  short_description: "生成和审查小说大纲、章节规划、阶段目标、冲突升级与兑现节奏"
-  default_prompt: "使用 $outline-architecture 把这个故事前提整理成有阶段目标、冲突和兑现节奏的大纲。"

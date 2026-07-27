@@ -1,3 +1,7 @@
+// input: Storyflow prompt options and user preference stubs
+// output: Regression coverage for runtime guidance and prompt policy
+// pos: Contract tests for the central Storyflow system prompt
+
 import { describe, it, expect, mock, beforeEach } from 'bun:test'
 
 // Stub the preferences module so we can toggle `getCoAuthorPreference` per test
@@ -43,6 +47,14 @@ describe('system prompt guidance', () => {
     expect(prompt).toContain('Durable deliverables belong in the current working directory')
     expect(prompt).toContain('write durable project deliverables to the current working directory')
     expect(prompt).not.toContain('data files to the **exact `dataFolderPath`**')
+  })
+
+  it('uses AnySearch by default and keeps built-in web_search as an approved fallback', () => {
+    const prompt = getSystemPrompt(undefined, undefined, '/tmp/workspace', '/tmp/workspace')
+
+    expect(prompt).toContain('Use the resolved `anysearch` Skill as the default for web search')
+    expect(prompt).toContain('Use the built-in `web_search` tool only when AnySearch is unavailable')
+    expect(prompt).toContain('Global: `~/.craft-agent/skills/{slug}/SKILL.md`')
   })
 })
 

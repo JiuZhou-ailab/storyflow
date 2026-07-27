@@ -101,7 +101,7 @@ describe('session item subscriptions', () => {
     expect(skillsListPanelSource).not.toContain('useAppShellContext')
     expect(skillsListPanelSource).not.toContain('useActiveWorkspace')
     expect(skillsListCall).toContain('activeWorkspace={activeWorkspace}')
-    expect(skillsListCall).toContain('workspaces={workspaces}')
+    expect(skillsListCall).not.toContain('workspaces={workspaces}')
   })
 
   it('keeps the sources list off broad app shell context subscriptions', () => {

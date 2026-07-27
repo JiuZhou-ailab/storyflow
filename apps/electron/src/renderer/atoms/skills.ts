@@ -1,7 +1,7 @@
 /**
  * Skills Atom
  *
- * Simple atom for storing workspace skills.
+ * Simple atom for storing the runtime's global skills.
  * Used by NavigationContext for auto-selection when navigating to skills view.
  */
 
@@ -9,7 +9,7 @@ import { atom } from 'jotai'
 import type { LoadedSkill } from '../../shared/types'
 
 /**
- * Atom to store the current workspace's skills.
+ * Atom to store the global skills loaded from the active runtime.
  * AppShell populates this when skills are loaded.
  * NavigationContext reads from it for auto-selection.
  */

@@ -79,11 +79,6 @@ export {
   sourceConfigExists,
   loadSourceConfig,
   listSourceSlugs,
-  getSkillPath,
-  getSkillMdPath,
-  skillExists,
-  skillMdExists,
-  listSkillSlugs,
   generateRequestId,
   // Multi-header credential helpers
   detectCredentialMode,
@@ -111,6 +106,7 @@ export {
 
   // Skill validation
   SkillMetadataSchema,
+  validateSkillSlug,
   validateSkillContent,
 
   // Source validation

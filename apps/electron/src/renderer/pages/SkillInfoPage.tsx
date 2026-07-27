@@ -1,4 +1,4 @@
-// input: Workspace skill slug, workspace id, and AppShell-populated skills atom
+// input: Global Skill slug, runtime routing id, and AppShell-populated skills atom
 // output: Skill metadata, instructions, permissions, and explicit edit actions
 // pos: Detail page for inspecting and maintaining reusable agent skills
 
@@ -132,7 +132,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
             canShowInFinder={canRevealLocally}
             onDelete={canDeleteSkill ? handleDelete : undefined}
             canDelete={canDeleteSkill}
-            deleteLabel={canDeleteSkill ? t('skillInfo.deleteSkill') : t('skillInfo.managedByProject')}
+            deleteLabel={t('skillInfo.deleteSkill')}
           />
         }
       />

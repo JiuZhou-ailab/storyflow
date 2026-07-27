@@ -122,9 +122,7 @@ export {
 // PreToolUse Utilities
 export {
   // Types
-  type PreToolUseContext,
   type PathExpansionResult,
-  type SkillQualificationResult,
   type MetadataStrippingResult,
   type ConfigValidationResult as PreToolUseConfigValidationResult,
   // Centralized pipeline types
@@ -138,7 +136,6 @@ export {
   CONFIG_WRITE_TOOLS,
   // Functions
   expandToolPaths,
-  qualifySkillName,
   stripToolMetadata,
   stripMcpMetadata, // deprecated alias for backwards compatibility
   validateConfigWrite,

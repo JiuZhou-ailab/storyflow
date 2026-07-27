@@ -931,7 +931,7 @@ ${formattedMessages}
     cleanMessage: string;
     missingSkills: string[];
   } {
-    const skills = loadAllSkills(this.config.projectRoot);
+    const skills = loadAllSkills();
     const skillSlugs = skills.map(s => s.slug);
 
     this.debug(`[extractSkillPaths] Available skills: ${skillSlugs.join(', ')}`);

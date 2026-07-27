@@ -11,17 +11,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigWatcher, _getActiveWatchers, _getGlobalWatcherState } from '../watcher.ts';
 import { invalidateSkillsCache, loadAllSkills } from '../../skills/storage.ts';
+import { resolveResourceRoots } from '../../resources/resolver.ts';
 
-function writeSkill(workspaceRoot: string, slug: string, name: string): void {
-  const skillDir = join(workspaceRoot, '.pi', 'skills', slug);
+function writeSkill(skillsRoot: string, slug: string, name: string): string {
+  const skillDir = join(skillsRoot, slug);
   mkdirSync(skillDir, { recursive: true });
   writeFileSync(join(skillDir, 'SKILL.md'), `---
-name: "${name}"
+name: "${slug}"
 description: "A test skill"
+metadata:
+  displayName: "${name}"
 ---
 
 Instructions
 `);
+  return skillDir;
 }
 
 describe('ConfigWatcher duplicate guard', () => {
@@ -74,50 +78,29 @@ describe('ConfigWatcher duplicate guard', () => {
     expect(_getGlobalWatcherState().started).toBe(false);
   });
 
-  it('invalidates cached skill metadata when a SKILL.md file changes', () => {
-    const root = mkdtempSync(join(tmpdir(), 'watcher-skill-cache-'));
+  it('broadcasts fresh Skills when the global store changes', () => {
+    const root = mkdtempSync(join(tmpdir(), 'watcher-global-skill-cache-'));
+    const skillsRoot = resolveResourceRoots().skillsPath;
+    const slug = `watcher-global-refresh-${process.pid}`;
+    const skillDir = writeSkill(skillsRoot, slug, 'Original Name');
     try {
-      writeSkill(root, 'rename-me', 'Original Name');
-      expect(loadAllSkills(root).find(s => s.slug === 'rename-me')?.metadata.name).toBe('Original Name');
+      expect(loadAllSkills().find(s => s.slug === slug)?.metadata.displayName).toBe('Original Name');
 
-      writeSkill(root, 'rename-me', 'Renamed Skill');
-
-      let broadcastName: string | undefined;
-      const watcher = new ConfigWatcher(root, {
-        onSkillChange: () => {
-          broadcastName = loadAllSkills(root).find(s => s.slug === 'rename-me')?.metadata.name;
-        },
-      });
-
-      (watcher as unknown as { handleSkillChange: (slug: string) => void }).handleSkillChange('rename-me');
-
-      expect(broadcastName).toBe('Renamed Skill');
-    } finally {
-      invalidateSkillsCache();
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it('broadcasts fresh skills when the project skills directory changes', () => {
-    const root = mkdtempSync(join(tmpdir(), 'watcher-project-skill-cache-'));
-    try {
-      writeSkill(root, 'global-refresh', 'Original Name');
-      expect(loadAllSkills(root).find(s => s.slug === 'global-refresh')?.metadata.name).toBe('Original Name');
-
-      writeSkill(root, 'global-refresh', 'Renamed Skill');
+      writeSkill(skillsRoot, slug, 'Renamed Skill');
 
       let broadcastName: string | undefined;
       const watcher = new ConfigWatcher(root, {
         onSkillsListChange: (skills) => {
-          broadcastName = skills.find(s => s.slug === 'global-refresh')?.metadata.name;
+          broadcastName = skills.find(s => s.slug === slug)?.metadata.displayName;
         },
       });
 
-      (watcher as unknown as { handleSkillsDirChange: () => void }).handleSkillsDirChange();
+      (watcher as unknown as { handleGlobalSkillsChange: () => void }).handleGlobalSkillsChange();
 
       expect(broadcastName).toBe('Renamed Skill');
     } finally {
       invalidateSkillsCache();
+      rmSync(skillDir, { recursive: true, force: true });
       rmSync(root, { recursive: true, force: true });
     }
   });

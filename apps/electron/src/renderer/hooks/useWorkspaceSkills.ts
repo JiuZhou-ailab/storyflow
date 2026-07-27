@@ -1,6 +1,6 @@
-// input: Active Storyflow project ID and Electron skills IPC API
-// output: Project-only Skills loaded with duplicate in-flight requests coalesced
-// pos: Renderer loader boundary for AppShell skill state
+// input: Active runtime routing ID and Electron skills IPC API
+// output: Runtime-global Skills loaded with duplicate in-flight requests coalesced
+// pos: Renderer routing boundary for AppShell Skill state
 
 import type { LoadedSkill } from '../../shared/types'
 

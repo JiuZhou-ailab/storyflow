@@ -17,7 +17,9 @@ const sessionManagerSource = readFileSync(
 describe('runtime domain separation', () => {
   it('switches rooms through one runtime workspace activation path', () => {
     expect(appSource).toContain('activateRuntimeWorkspace')
-    expect(appSource).toMatch(/activateRuntimeWorkspace\(\s*FREE_CONVERSATION_WORKSPACE_ID,\s*routes\.view\.allSessions\(\)/)
+    expect(appSource).toMatch(
+      /activateRuntimeWorkspace\(\s*FREE_CONVERSATION_WORKSPACE_ID,\s*options\?\.createNew \? routes\.action\.newSession\(\) : routes\.view\.allSessions\(\)/,
+    )
     expect(appSource).toMatch(/activateRuntimeWorkspace\(\s*workspaceId,/)
   })
 

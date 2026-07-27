@@ -1,6 +1,6 @@
-// input: Renderer workspace skill loader and mocked Electron skills API
+// input: Renderer runtime Skill loader and mocked Electron skills API
 // output: Regression coverage for duplicate in-flight skills loads
-// pos: Guards the AppShell skills loading boundary used by project-scoped skills
+// pos: Guards the AppShell Skill loading boundary
 
 import { describe, expect, it } from 'bun:test'
 import { __resetWorkspaceSkillsLoadCacheForTests, loadSkillsForWorkspace } from '../useWorkspaceSkills'
@@ -10,7 +10,7 @@ const skill: LoadedSkill = {
   slug: 'draft',
   metadata: { name: 'Draft', description: 'Draft prose' },
   content: 'Write a draft.',
-  path: '/project/.pi/skills/draft',
+  path: '/home/user/.craft-agent/skills/draft',
 }
 
 describe('loadSkillsForWorkspace', () => {

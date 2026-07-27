@@ -28,8 +28,9 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
       const workspace = getWorkspaceByNameOrId(workspaceId)
       if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
 
-      const { exportResources } = await import('@craft-agent/shared/resources')
-      const result = exportResources(workspace.rootPath, options)
+      const { exportResources, resolveResourceRoots } = await import('@craft-agent/shared/resources')
+      const skillsRootPath = resolveResourceRoots().skillsPath
+      const result = exportResources(workspace.rootPath, options, skillsRootPath)
 
       deps.platform.logger?.info(
         `RESOURCES_EXPORT: Exported from ${workspaceId}: ` +
@@ -50,8 +51,9 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
       const workspace = getWorkspaceByNameOrId(workspaceId)
       if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
 
-      const { importResources } = await import('@craft-agent/shared/resources')
+      const { importResources, resolveResourceRoots } = await import('@craft-agent/shared/resources')
       const credManager = getCredentialManager()
+      const skillsRootPath = resolveResourceRoots().skillsPath
 
       const result = await importResources(workspace.rootPath, bundle, mode, {
         // Clear all credential types for a source slug on overwrite
@@ -68,7 +70,7 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
             }
           }
         },
-      })
+      }, skillsRootPath)
 
       deps.platform.logger?.info(
         `RESOURCES_IMPORT: Imported into ${workspaceId} (mode=${mode}): ` +
@@ -84,9 +86,6 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
       }
       for (const slug of result.sources.imported) {
         deps.sessionManager.notifyConfigFileChange(workspace.rootPath, `sources/${slug}/config.json`)
-      }
-      for (const slug of result.skills.imported) {
-        deps.sessionManager.notifyConfigFileChange(workspace.rootPath, `skills/${slug}/SKILL.md`)
       }
 
       return result

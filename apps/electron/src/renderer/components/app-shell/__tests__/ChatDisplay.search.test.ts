@@ -226,7 +226,6 @@ describe('ChatDisplay search performance contract', () => {
     expect(freeFormInputSource).toContain('llmConnections = []')
     expect(freeFormInputSource).toContain('workspaceDefaultConnection')
     expect(freeFormInputSource).toContain('workspaceRootPath')
-    expect(freeFormInputSource).toContain('workspaceSlug')
     expect(inputContainerSource).toContain('...freeFormProps')
     expect(chatDisplaySource).toContain('refreshLlmConnections,')
   })

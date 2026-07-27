@@ -192,13 +192,12 @@ export function reuseMentionItemsIfEqual(previous: MentionItem[], next: MentionI
     : next
 }
 
-export function getMentionInsertionText(item: MentionItem, workspaceId?: string): string {
+export function getMentionInsertionText(item: MentionItem): string {
   const buildMentionText = (kind: 'skill' | 'source' | 'file' | 'folder', value: string): string =>
     '[' + kind + ':' + value + '] '
 
   if (item.type === 'skill') {
-    const qualifiedName = workspaceId ? `${workspaceId}:${item.id}` : item.id
-    return buildMentionText('skill', qualifiedName)
+    return buildMentionText('skill', item.id)
   }
 
   if (item.type === 'source') {
@@ -626,8 +625,6 @@ export interface UseInlineMentionOptions {
   /** Base path for file search (working directory) */
   basePath?: string
   onSelect: (item: MentionItem) => void
-  /** Workspace ID for fully-qualified skill names */
-  workspaceId?: string
 }
 
 export interface UseInlineMentionReturn {
@@ -648,7 +645,6 @@ export function useInlineMention({
   files = [],
   basePath,
   onSelect,
-  workspaceId,
 }: UseInlineMentionOptions): UseInlineMentionReturn {
   const [isOpen, setIsOpen] = React.useState(false)
   const [filter, setFilter] = React.useState('')
@@ -838,7 +834,7 @@ export function useInlineMention({
       const before = currentValue.slice(0, atStart)
       const after = currentValue.slice(cursorPosition)
 
-      const mentionText = getMentionInsertionText(item, workspaceId)
+      const mentionText = getMentionInsertionText(item)
 
       result = before + mentionText + after
       newCursorPosition = before.length + mentionText.length
@@ -857,7 +853,7 @@ export function useInlineMention({
     fileCache.current = []
 
     return { value: result, cursorPosition: newCursorPosition }
-  }, [onSelect, atStart, workspaceId, clearFileResults, clearIndexedFileResults])
+  }, [onSelect, atStart, clearFileResults, clearIndexedFileResults])
 
   const close = React.useCallback(() => {
     setIsOpen(false)

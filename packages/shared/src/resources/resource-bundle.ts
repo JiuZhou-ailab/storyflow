@@ -1,6 +1,6 @@
-// input: Workspace resources or untrusted portable ResourceBundle JSON
-// output: Sanitized exports, validated imports, and atomic project resource writes
-// pos: Supply-chain trust boundary shared by local exchange and Skills Market installs
+// input: Workspace resources, global Skill root, or untrusted portable ResourceBundle JSON
+// output: Sanitized exports, validated imports, and atomic resource writes
+// pos: Supply-chain trust boundary shared by local exchange and global Skills Market installs
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, rmSync } from 'fs'
 import { join, basename } from 'path'
@@ -121,6 +121,7 @@ function sanitizeSourceConfig(config: FolderSourceConfig): { config: FolderSourc
 export function exportResources(
   workspaceRootPath: string,
   options: ExportResourcesOptions,
+  skillsRootPath = getWorkspaceSkillsPath(workspaceRootPath),
 ): ExportResult {
   const warnings: string[] = []
   const bundle: ResourceBundle = {
@@ -149,7 +150,7 @@ export function exportResources(
 
   // --- Export skills ---
   if (options.skills) {
-    bundle.resources.skills = exportSkills(workspaceRootPath, options.skills, warnings)
+    bundle.resources.skills = exportSkills(skillsRootPath, options.skills, warnings)
   }
 
   // --- Export automations ---
@@ -220,12 +221,11 @@ function exportSources(
 }
 
 function exportSkills(
-  workspaceRootPath: string,
+  skillsDir: string,
   selection: string[] | 'all',
   warnings: string[],
 ): SkillBundleEntry[] {
   const entries: SkillBundleEntry[] = []
-  const skillsDir = getWorkspaceSkillsPath(workspaceRootPath)
 
   // Determine which slugs to export
   let slugs: string[]
@@ -638,6 +638,7 @@ export async function importResources(
   bundle: ResourceBundle,
   mode: ResourceImportMode,
   deps: ResourceImportDeps,
+  skillsRootPath = getWorkspaceSkillsPath(workspaceRootPath),
 ): Promise<ResourceImportResult> {
   // Validate bundle first
   const validation = validateResourceBundle(bundle)
@@ -659,7 +660,7 @@ export async function importResources(
     : emptyBucketResult()
 
   const skillsResult = bundle.resources.skills
-    ? importSkills(workspaceRootPath, bundle.resources.skills, mode)
+    ? importSkills(skillsRootPath, bundle.resources.skills, mode)
     : emptyBucketResult()
 
   const automationsResult = bundle.resources.automations?.length
@@ -768,12 +769,11 @@ async function importSources(
 // ============================================================
 
 function importSkills(
-  workspaceRootPath: string,
+  skillsDir: string,
   entries: SkillBundleEntry[],
   mode: ResourceImportMode,
 ): ImportBucketResult {
   const result = emptyBucketResult()
-  const skillsDir = getWorkspaceSkillsPath(workspaceRootPath)
 
   if (!existsSync(skillsDir)) {
     mkdirSync(skillsDir, { recursive: true })

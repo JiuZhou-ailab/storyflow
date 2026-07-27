@@ -1,4 +1,0 @@
-interface:
-  display_name: "正文修订"
-  short_description: "统一处理扩写润色去人工智能味并明确事实保留字数边界和风险"
-  default_prompt: "使用 $prose-revision 修订这段正文，并明确事实保留、字数边界和改动风险。"

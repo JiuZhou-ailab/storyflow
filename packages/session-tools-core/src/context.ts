@@ -141,7 +141,6 @@ export interface ValidatorInterface {
   validateAutomations(workspaceRootPath: string): import('./types.js').ValidationResult;
   validateToolIcons(): import('./types.js').ValidationResult;
   validateAll(workspaceRootPath: string): import('./types.js').ValidationResult;
-  validateSkill(workspaceRootPath: string, skillSlug: string): import('./types.js').ValidationResult;
 }
 
 export interface SkillDocument {
@@ -216,11 +215,11 @@ export interface SessionToolContext {
    */
   loadSourceConfig(sourceSlug: string): SourceConfig | null;
 
-  /** Create a new Skill in a validated Storyflow owner layer without overwriting. */
-  createSkillDocument?(skillSlug: string, content: string, targetWorkspaceId?: string): SkillDocument | Promise<SkillDocument>;
+  /** Create a new global Skill without overwriting. */
+  createSkillDocument?(skillSlug: string, content: string): SkillDocument | Promise<SkillDocument>;
 
-  /** Load the visible Skill document from a validated Storyflow resource overlay. */
-  loadSkillDocument?(skillSlug: string, targetWorkspaceId?: string): SkillDocument | null;
+  /** Load a global Skill document. */
+  loadSkillDocument?(skillSlug: string): SkillDocument | null;
 
   /** Whether the visible definition is externally owned and immutable. */
   isSourceDefinitionReadOnly?(sourceSlug: string): boolean;

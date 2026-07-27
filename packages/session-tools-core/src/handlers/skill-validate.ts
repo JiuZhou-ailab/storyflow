@@ -1,5 +1,5 @@
-// input: Current Storyflow resource scope and a visible Skill slug
-// output: Validation result for the owner-aware SKILL.md
+// input: Global Storyflow Skill store and a Skill slug
+// output: Validation result for the global SKILL.md
 // pos: Session-tool boundary for validating Pi-compatible Storyflow Skills
 
 import { join } from 'node:path';
@@ -7,21 +7,20 @@ import type { SessionToolContext, SkillDocument } from '../context.ts';
 import type { ToolResult } from '../types.ts';
 import { errorResponse } from '../response.ts';
 import {
-  validateSlug,
+  validateSkillSlug,
   validateSkillContent,
   formatValidationResult,
 } from '../validation.ts';
 
 export interface SkillValidateArgs {
   skillSlug: string;
-  targetWorkspaceId?: string;
 }
 
 /**
  * Handle the skill_validate tool call.
  *
  * 1. Validate slug format
- * 2. Resolve SKILL.md from the active Storyflow resource overlay
+ * 2. Resolve SKILL.md from the global Storyflow Skill store
  * 3. Read and validate content (frontmatter + body)
  * 4. Return the validation result
  */
@@ -32,7 +31,7 @@ export async function handleSkillValidate(
   const { skillSlug } = args;
 
   // Validate slug format first
-  const slugResult = validateSlug(skillSlug);
+  const slugResult = validateSkillSlug(skillSlug);
   if (!slugResult.valid) {
     return {
       content: [{ type: 'text', text: formatValidationResult(slugResult) }],
@@ -42,7 +41,7 @@ export async function handleSkillValidate(
 
   let document: SkillDocument | null | undefined;
   try {
-    document = ctx.loadSkillDocument?.(skillSlug, args.targetWorkspaceId);
+    document = ctx.loadSkillDocument?.(skillSlug);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : 'Failed to resolve Skill');
   }

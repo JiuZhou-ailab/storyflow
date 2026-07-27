@@ -17,7 +17,6 @@
  * - ~/.craft-agent/skills/{slug}/SKILL.md, icon.* - Craft global Skills
  * - ~/.craft-agent/workspaces/{slug}/ - Workspace directory (recursive)
  *   - .craft-agent/sources/{slug}/config.json, guide.md, permissions.json
- *   - .pi/skills/{slug}/SKILL.md, icon.*
  *   - .craft-agent/sessions/{id}/session.jsonl (header metadata only)
  *   - permissions.json
  */
@@ -48,15 +47,12 @@ import {
   GLOBAL_AGENT_SOURCES_DIR,
 } from '../sources/storage.ts';
 import { permissionsConfigCache, getAppPermissionsDir } from '../agent/permissions-config.ts';
-import { getWorkspacePath, getWorkspaceSourcesPath, getWorkspaceSkillsPath } from '../workspaces/storage.ts';
-import { PI_PROJECT_DIR, WORKSPACE_STATE_DIR } from '../workspaces/paths.ts';
+import { getWorkspacePath, getWorkspaceSourcesPath } from '../workspaces/storage.ts';
+import { WORKSPACE_STATE_DIR } from '../workspaces/paths.ts';
 import type { LoadedSkill } from '../skills/types.ts';
 import {
-  loadSkill,
   loadAllSkills,
   invalidateSkillsCache,
-  skillNeedsIconDownload,
-  downloadSkillIcon,
 } from '../skills/storage.ts';
 import { resolveResourceRoots } from '../resources/resolver.ts';
 import {
@@ -101,7 +97,7 @@ export function _getGlobalWatcherState(): {
 
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 const PREFERENCES_FILE = join(CONFIG_DIR, 'preferences.json');
-const GLOBAL_AGENT_SKILLS_DIR = resolveResourceRoots().skills[0]!.path;
+const GLOBAL_AGENT_SKILLS_DIR = resolveResourceRoots().skillsPath;
 
 // Debounce delay in milliseconds
 const DEBOUNCE_MS = 100;
@@ -238,7 +234,6 @@ export class ConfigWatcher {
 
   // Track known items for detecting adds/removes
   private knownSources: Set<string> = new Set();
-  private knownSkills: Set<string> = new Set();
   private knownThemes: Set<string> = new Set();
 
   // Track LLM connections for change detection (JSON string for deep comparison)
@@ -247,7 +242,6 @@ export class ConfigWatcher {
   // Computed paths
   private workspaceDir: string;
   private sourcesDir: string;
-  private skillsDir: string;
 
   constructor(workspaceIdOrPath: string, callbacks: ConfigWatcherCallbacks) {
     this.callbacks = callbacks;
@@ -263,7 +257,6 @@ export class ConfigWatcher {
       this.workspaceDir = getWorkspacePath(workspaceIdOrPath);
     }
     this.sourcesDir = getWorkspaceSourcesPath(this.workspaceDir);
-    this.skillsDir = getWorkspaceSkillsPath(this.workspaceDir);
   }
 
   /**
@@ -315,12 +308,9 @@ export class ConfigWatcher {
     span.mark('watchAppThemesDir');
     span.mark('watchAppPermissionsDir');
 
-    // Initial scan to populate known sources, skills, and themes
+    // Initial scan to populate known sources and themes
     this.scanSources();
     span.mark('scanSources');
-
-    this.scanSkills();
-    span.mark('scanSkills');
 
     this.scanAppThemes();
     span.mark('scanAppThemes');
@@ -382,7 +372,6 @@ export class ConfigWatcher {
     this.watchers = [];
 
     this.knownSources.clear();
-    this.knownSkills.clear();
     this.knownThemes.clear();
 
     debug('[ConfigWatcher] Stopped');
@@ -668,11 +657,11 @@ export class ConfigWatcher {
     this.callbacks.onSourcesListChange?.(allSources);
   }
 
-  /** Refresh merged project-over-global Skills for this subscriber. */
+  /** Refresh global Skills for this subscriber. */
   private handleGlobalSkillsChange(): void {
     debug('[ConfigWatcher] Global Skills changed');
     invalidateSkillsCache();
-    const allSkills = loadAllSkills(this.workspaceDir);
+    const allSkills = loadAllSkills();
     this.callbacks.onSkillsListChange?.(allSkills);
   }
 
@@ -681,12 +670,9 @@ export class ConfigWatcher {
    */
   private handleWorkspaceFileChange(relativePath: string, eventType: string): void {
     const statePrefix = `${WORKSPACE_STATE_DIR}/`;
-    const piSkillsPrefix = `${PI_PROJECT_DIR}/skills/`;
     const normalizedRelativePath = relativePath.startsWith(statePrefix)
       ? relativePath.slice(statePrefix.length)
-      : relativePath.startsWith(piSkillsPrefix)
-        ? `skills/${relativePath.slice(piSkillsPrefix.length)}`
-        : relativePath;
+      : relativePath;
     const parts = normalizedRelativePath.split('/');
 
     // Workspace-level permissions.json
@@ -720,27 +706,6 @@ export class ConfigWatcher {
         this.debounce(`source-guide:${slug}`, () => this.handleSourceGuideChange(slug));
       } else if (file === 'permissions.json') {
         this.debounce(`source-permissions:${slug}`, () => this.handleSourcePermissionsChange(slug));
-      }
-      return;
-    }
-
-    // Skills changes: skills/{slug}/...
-    if (parts[0] === 'skills' && parts.length >= 2) {
-      const slug = parts[1]!;  // Safe: checked parts.length >= 2
-      const file = parts[2];
-
-      // Directory-level changes (new/removed skill folders)
-      if (parts.length === 2) {
-        this.debounce('skills-dir', () => this.handleSkillsDirChange());
-        return;
-      }
-
-      // File-level changes
-      if (file === 'SKILL.md') {
-        this.debounce(`skill:${slug}`, () => this.handleSkillChange(slug));
-      } else if (file && /^icon\.(svg|png|jpg|jpeg)$/i.test(file)) {
-        // Icon file changes also trigger a skill change (to update iconPath)
-        this.debounce(`skill-icon:${slug}`, () => this.handleSkillChange(slug));
       }
       return;
     }
@@ -966,133 +931,6 @@ export class ConfigWatcher {
 
     // Notify callback
     this.callbacks.onSourcePermissionsChange?.(slug);
-  }
-
-  // ============================================================
-  // Skills Handlers
-  // ============================================================
-
-  /**
-   * Scan skills directory to populate known skills
-   */
-  private scanSkills(): void {
-    if (!existsSync(this.skillsDir)) {
-      mkdirSync(this.skillsDir, { recursive: true });
-      return;
-    }
-
-    try {
-      const entries = readdirSync(this.skillsDir);
-
-      for (const entry of entries) {
-        const entryPath = join(this.skillsDir, entry);
-        if (statSync(entryPath).isDirectory()) {
-          this.knownSkills.add(entry);
-        }
-      }
-
-      debug('[ConfigWatcher] Known skills:', Array.from(this.knownSkills));
-    } catch (error) {
-      debug('[ConfigWatcher] Error scanning skills:', error);
-    }
-  }
-
-  /**
-   * Handle skills directory change (add/remove folders)
-   */
-  private handleSkillsDirChange(): void {
-    debug('[ConfigWatcher] Skills directory changed');
-
-    if (!existsSync(this.skillsDir)) {
-      // Directory was deleted
-      const removed = Array.from(this.knownSkills);
-      this.knownSkills.clear();
-      invalidateSkillsCache();
-
-      for (const slug of removed) {
-        this.callbacks.onSkillChange?.(slug, loadSkill(this.workspaceDir, slug));
-      }
-
-      this.callbacks.onSkillsListChange?.(loadAllSkills(this.workspaceDir));
-      return;
-    }
-
-    try {
-      const entries = readdirSync(this.skillsDir);
-      const currentFolders = new Set<string>();
-
-      for (const entry of entries) {
-        const entryPath = join(this.skillsDir, entry);
-        if (statSync(entryPath).isDirectory()) {
-          currentFolders.add(entry);
-        }
-      }
-
-      // Find added folders
-      for (const folder of currentFolders) {
-        if (!this.knownSkills.has(folder)) {
-          debug('[ConfigWatcher] New skill folder:', folder);
-          this.knownSkills.add(folder);
-
-          const skill = loadSkill(this.workspaceDir, folder);
-          if (skill) {
-            this.callbacks.onSkillChange?.(folder, skill);
-          }
-        }
-      }
-
-      // Find removed folders
-      for (const folder of this.knownSkills) {
-        if (!currentFolders.has(folder)) {
-          debug('[ConfigWatcher] Removed skill folder:', folder);
-          this.knownSkills.delete(folder);
-          invalidateSkillsCache();
-          this.callbacks.onSkillChange?.(folder, loadSkill(this.workspaceDir, folder));
-        }
-      }
-
-      // Invalidate cache before reloading so we get fresh results
-      invalidateSkillsCache();
-      const allSkills = loadAllSkills(this.workspaceDir);
-      this.callbacks.onSkillsListChange?.(allSkills);
-    } catch (error) {
-      debug('[ConfigWatcher] Error handling skills dir change:', error);
-      this.callbacks.onError?.('skills/', error as Error);
-    }
-  }
-
-  /**
-   * Handle skill SKILL.md or icon change.
-   * If the skill has an icon URL in metadata but no local icon file,
-   * downloads the icon and emits another change event after completion.
-   */
-  private handleSkillChange(slug: string): void {
-    debug('[ConfigWatcher] Skill changed:', slug);
-
-    invalidateSkillsCache();
-    const skill = loadSkill(this.workspaceDir, slug);
-    this.callbacks.onSkillChange?.(slug, skill);
-
-    // Check if we need to download an icon from URL
-    // This happens when SKILL.md has icon: "https://..." but no local icon.* file exists
-    if (skill && skillNeedsIconDownload(skill)) {
-      debug('[ConfigWatcher] Skill needs icon download:', slug, skill.metadata.icon);
-
-      // Download asynchronously - don't block the watcher
-      downloadSkillIcon(skill.path, skill.metadata.icon!)
-        .then((iconPath) => {
-          if (iconPath) {
-            // Reload the skill with the new icon and emit another change
-            const updatedSkill = loadSkill(this.workspaceDir, slug);
-            debug('[ConfigWatcher] Icon downloaded, emitting updated skill:', slug);
-            invalidateSkillsCache();
-            this.callbacks.onSkillChange?.(slug, updatedSkill);
-          }
-        })
-        .catch((error) => {
-          debug('[ConfigWatcher] Icon download failed for skill:', slug, error);
-        });
-    }
   }
 
   // ============================================================

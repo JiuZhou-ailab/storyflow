@@ -1,7 +1,7 @@
 /**
  * Skills Module
  *
- * input: Consumers of project-owned Pi Skills and marketplace protocol helpers
+ * input: Consumers of global Pi Skills and marketplace protocol helpers
  * output: Stable public exports for Skill metadata, storage, validation, and installation
  * pos: Shared Skills module entrypoint
  */

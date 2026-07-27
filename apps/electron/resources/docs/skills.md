@@ -1,42 +1,28 @@
 # Skills Configuration Guide
 
-Storyflow Skills are project-owned instructions loaded by the Pi runtime. Each project has one canonical Skills directory:
+Storyflow Skills are reusable instructions loaded by every project from one global directory:
 
 ```text
-<project>/.pi/skills/<slug>/
+~/.craft-agent/skills/<slug>/
 ├── SKILL.md
 ├── icon.svg        # optional
 └── ...             # optional supporting files
 ```
 
-Storyflow does not discover Skills from `~/.agents`, `~/.codex`, an arbitrary working directory, or another project. Legacy project-local Skills are copied into `.pi/skills` when the project is migrated; all subsequent reads and writes use the canonical path.
+Storyflow does not discover Skills from `~/.agents`, `~/.codex`, an arbitrary working directory, or `<project>/.pi/skills`. Existing project-local directories are left untouched but are no longer loaded.
 
 ## Create a Skill
 
-Create a lowercase, hyphenated directory under the current project:
+Use the Add Skill action and describe the behavior you want. After confirming the summarized draft, Storyflow calls:
 
-```bash
-mkdir -p .pi/skills/code-review
+```text
+skill_create({
+  skillSlug: "code-review",
+  content: "---\nname: code-review\n..."
+})
 ```
 
-Add `.pi/skills/code-review/SKILL.md`:
-
-```markdown
----
-name: code-review
-description: Review code changes for maintainability and project conventions.
-metadata:
-  displayName: 代码审查
-requiredSources:
-  - github
----
-
-# Code Review
-
-Review the requested diff. Report concrete findings with file and line references.
-```
-
-Then validate it:
+Creation validates the complete `SKILL.md` and never overwrites an existing slug. Then validate it:
 
 ```text
 skill_validate({ skillSlug: "code-review" })
@@ -55,19 +41,20 @@ The Markdown body contains the instructions Pi should follow. Keep one Skill foc
 
 ## Invocation
 
-Skills appear in the project Skills panel and slash menu. Selecting `/code-review` inserts a project-qualified Skill mention. Storyflow requires the agent to read that Skill before executing its instructions.
+The same Skills appear in every project's Skills panel and slash menu. Storyflow requires the Agent to read the resolved `SKILL.md` before executing its instructions.
+New invocations use the global `[skill:<slug>]` reference. Legacy project-qualified references remain readable but are no longer generated.
 
-If a Skill declares `requiredSources`, authenticated Sources are enabled for the session before the turn begins. Missing or unauthenticated Sources are skipped and handled by the normal Source activation flow.
+If a Skill declares `requiredSources`, Storyflow resolves those Sources in the active project's Source overlay and enables the authenticated matches before the turn begins.
 
 ## Editing and Deleting
 
-Use the Skills panel to open the current project’s `.pi/skills` folder or `SKILL.md`. Deleting a Skill removes only its canonical directory from the current project; legacy or global directories are never deleted.
+Use the Skills panel to open `~/.craft-agent/skills/<slug>/SKILL.md`. Editing changes the Skill for every project. Deleting removes only that global slug.
 
-After editing, run `skill_validate` again. The project watcher invalidates the Skills cache, and Pi reloads project Skills at the next prompt boundary.
+After editing, run `skill_validate` again. The global watcher invalidates the Skills cache, and Pi reloads Skills at the next prompt boundary.
 
 ## Troubleshooting
 
-- Not listed: confirm the file is `<project>/.pi/skills/<slug>/SKILL.md`.
+- Not listed: confirm the file is `~/.craft-agent/skills/<slug>/SKILL.md`.
 - Validation fails: make `name` match the directory slug and provide a non-empty `description` and body.
-- Source unavailable: authenticate the slug listed in `requiredSources` or remove it.
+- Source unavailable: authenticate the slug in the active project or remove it from `requiredSources`.
 - Icon missing: use a supported `icon.*` filename or a valid emoji/URL in frontmatter.

@@ -680,7 +680,7 @@ async function resolveToolDisplayMeta(
       if (skillSlug) {
         // Load skills and find the one being invoked
         try {
-          const skills = loadAllSkills(projectRoot)
+          const skills = loadAllSkills()
           const skill = skills.find(s => s.slug === skillSlug)
           if (skill) {
             // Try file-based icon first, fall back to emoji icon from metadata
@@ -1495,7 +1495,7 @@ export class SessionManager implements ISessionManager {
       },
       onSkillsListChange: async () => {
         const { loadAllSkills } = await import('@craft-agent/shared/skills')
-        const skills = loadAllSkills(resourceProjectRoot)
+        const skills = loadAllSkills()
         sessionLog.info(`Skills list changed in ${workspaceRootPath} (${skills.length} skills)`)
         this.broadcastSkillsChanged(workspaceId, skills)
       },
@@ -1503,7 +1503,7 @@ export class SessionManager implements ISessionManager {
         sessionLog.info(`Skill '${slug}' changed:`, skill ? 'updated' : 'deleted')
         // Broadcast updated list to UI
         const { loadAllSkills } = await import('@craft-agent/shared/skills')
-        const skills = loadAllSkills(resourceProjectRoot)
+        const skills = loadAllSkills()
         this.broadcastSkillsChanged(workspaceId, skills)
       },
 
@@ -3583,26 +3583,6 @@ export class SessionManager implements ISessionManager {
         coreConfig: {
           workspace: managed.workspace,
           projectRoot: getResourceProjectRoot(managed.workspace),
-          fileAccessBoundary: isFreeConversationWorkspaceId(managed.workspace.id)
-            ? {
-              readRoots: [
-                managed.workingDirectory,
-                join(sessionPath, 'attachments'),
-                join(sessionPath, 'plans'),
-                join(sessionPath, 'data'),
-                join(sessionPath, 'tmp'),
-                join(CONFIG_DIR, 'skills'),
-                join(CONFIG_DIR, 'sources'),
-              ].filter((path): path is string => Boolean(path)),
-              writeRoots: [
-                managed.workingDirectory,
-                join(sessionPath, 'plans'),
-                join(sessionPath, 'data'),
-                join(sessionPath, 'tmp'),
-              ].filter((path): path is string => Boolean(path)),
-              blockBash: true,
-            }
-            : undefined,
           miniModel,
           thinkingLevel: managed.thinkingLevel,
           session: sessionConfig,
@@ -5931,10 +5911,9 @@ export class SessionManager implements ISessionManager {
     if (options?.skillSlugs?.length) {
       try {
         const projectRoot = getResourceProjectRoot(managed.workspace)
-
         const requiredSources = new Set<string>()
         for (const slug of options.skillSlugs) {
-          const skill = loadSkill(projectRoot, slug)
+          const skill = loadSkill(slug)
           if (skill?.metadata.requiredSources) {
             for (const src of skill.metadata.requiredSources) {
               requiredSources.add(src)
@@ -6053,11 +6032,6 @@ export class SessionManager implements ISessionManager {
       if (attachments?.length) {
         sessionLog.info('Attachments:', attachments.length)
       }
-
-      // Skills mentioned via @mentions are handled by the SDK's Skill tool.
-      // The UI layer (extractBadges in mentions.ts) injects fully-qualified names
-      // in the rawText, and canUseTool in craft-agent.ts provides a fallback
-      // to qualify short names. No transformation needed here.
 
       // Ensure main process reads tool metadata from the correct session directory.
       // This must be set before each chat() call since multiple sessions share the process.
@@ -8008,7 +7982,7 @@ export class SessionManager implements ISessionManager {
    */
   private resolveAutomationMentions(workspaceRootPath: string, mentions: string[]): { sourceSlugs: string[]; skillSlugs: string[] } | undefined {
     const sources = loadWorkspaceSources(workspaceRootPath)
-    const skills = loadAllSkills(workspaceRootPath)
+    const skills = loadAllSkills()
     const sourceSlugs: string[] = []
     const skillSlugs: string[] = []
 

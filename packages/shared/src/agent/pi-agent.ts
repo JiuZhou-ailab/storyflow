@@ -96,9 +96,6 @@ import { parseError, type AgentError } from './errors.ts';
 // Centralized PreToolUse pipeline
 import { runPreToolUseChecks, type PreToolUseCheckResult } from './core/pre-tool-use.ts';
 
-// Workspace slug extraction for skill qualification
-import { extractWorkspaceSlug } from '../utils/workspace.ts';
-
 // LLM tool types
 import { LLM_QUERY_TIMEOUT_MS, type LLMQueryRequest, type LLMQueryResult } from './llm-tool.ts';
 import { executeBrowserToolCommand } from './browser-tool-runtime.ts';
@@ -1173,7 +1170,6 @@ export class PiAgent extends BaseAgent {
     });
 
     const rootPath = this.config.workspace.rootPath ?? this.workingDirectory;
-    const workspaceSlug = extractWorkspaceSlug(rootPath, this.config.workspace.id);
     const sessionId = this.config.session?.id || this._sessionId;
     const plansFolderPath = sessionId
       ? getSessionPlansPath(rootPath, sessionId)
@@ -1188,7 +1184,6 @@ export class PiAgent extends BaseAgent {
       sessionId,
       permissionMode: this.permissionManager.getPermissionMode(),
       workspaceRootPath: rootPath,
-      workspaceId: workspaceSlug,
       plansFolderPath,
       dataFolderPath,
       workingDirectory: this.config.session?.workingDirectory,
@@ -1261,7 +1256,6 @@ export class PiAgent extends BaseAgent {
           sessionId,
           permissionMode: this.permissionManager.getPermissionMode(),
           workspaceRootPath: rootPath,
-          workspaceId: workspaceSlug,
           plansFolderPath,
           dataFolderPath,
           workingDirectory: this.config.session?.workingDirectory,

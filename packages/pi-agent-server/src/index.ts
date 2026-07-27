@@ -625,7 +625,6 @@ async function ensureSession(): Promise<AgentSession> {
 
     const { resourceLoader, settingsManager } = await createProjectResourceLoader({
       cwd,
-      projectRoot: initConfig.projectRoot,
       agentDir,
     });
     sessionOptions.resourceLoader = resourceLoader;
@@ -1419,7 +1418,7 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
     session = await ensureSession();
 
     // Pi does not auto-reload a caller-provided ResourceLoader. Refresh at the
-    // prompt boundary so project Skill edits are visible without restarting the
+    // prompt boundary so global Skill edits are visible without restarting the
     // session, while the loader remains restricted to explicit Storyflow roots.
     await session.resourceLoader.reload();
 

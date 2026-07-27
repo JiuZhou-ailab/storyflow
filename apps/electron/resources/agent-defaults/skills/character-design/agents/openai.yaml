@@ -1,4 +1,0 @@
-interface:
-  display_name: "人物设计"
-  short_description: "设计和审查小说人物的欲望、恐惧、策略、关系张力与变化弧线"
-  default_prompt: "使用 $character-design 设计或审查这些人物的动机、弱点、关系张力和变化弧线。"

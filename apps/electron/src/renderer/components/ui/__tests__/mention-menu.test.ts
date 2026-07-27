@@ -147,6 +147,14 @@ describe('parseInlineMentionQuery', () => {
 })
 
 describe('writing file mention references', () => {
+  it('keeps Skill references global', () => {
+    expect(getMentionInsertionText({
+      id: 'review-pr',
+      type: 'skill',
+      label: 'Review PR',
+    })).toBe('[skill:review-pr] ')
+  })
+
   it('matches files by display label while preserving the relative path as mention payload', () => {
     const [item] = filterMentionFileReferences([
       {

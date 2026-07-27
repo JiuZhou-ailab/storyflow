@@ -5,7 +5,7 @@
 /**
  * Shared PreToolUse utilities and centralized PreToolUse pipeline.
  *
- * Individual utility functions (path expansion, skill qualification, etc.)
+ * Individual utility functions (path expansion, config validation, etc.)
  * are used by the centralized `runPreToolUseChecks()` pipeline, which all
  * four agent backends (Claude, Codex, Copilot, Pi) call with normalized input
  * and then translate the result to their SDK-specific format.
@@ -15,7 +15,7 @@
  * 2. Source blocking: Block tools from inactive MCP sources
  * 3. Prerequisite check: Block source tools until guide.md is read
  * 4. call_llm detection: Intercept mcp__session__call_llm
- * 5. Input transforms: Path expansion, config validation, skill qualification, metadata stripping
+ * 5. Input transforms: Path expansion, config validation, metadata stripping
  * 6. Ask-mode prompt decision: Determine if user approval is needed
  */
 
@@ -55,26 +55,10 @@ import type { PrerequisiteCheckResult } from './prerequisite-manager.ts';
 // TYPES
 // ============================================================
 
-export interface PreToolUseContext {
-  /** Current working directory or workspace root */
-  workspaceRootPath: string;
-  /** Workspace ID for skill qualification */
-  workspaceId: string;
-  /** Debug callback */
-  onDebug?: (message: string) => void;
-}
-
 export interface PathExpansionResult {
   /** Whether any paths were modified */
   modified: boolean;
   /** The updated input (or original if not modified) */
-  input: Record<string, unknown>;
-}
-
-export interface SkillQualificationResult {
-  /** Whether the skill name was qualified */
-  modified: boolean;
-  /** The updated input */
   input: Record<string, unknown>;
 }
 
@@ -192,43 +176,6 @@ export function expandToolPaths(
   return {
     modified: updatedInput !== null,
     input: updatedInput || input,
-  };
-}
-
-// ============================================================
-// SKILL QUALIFICATION
-// ============================================================
-
-/**
- * Ensure skill names are fully-qualified with the correct plugin prefix.
- *
- * Storyflow session history uses `projectSlug:skillSlug` tokens. Pi itself
- * discovers the current project's `.pi/skills` through its ResourceLoader;
- * this transform preserves the existing UI/session token contract while
- * preventing arbitrary session working directories from changing Skill scope.
- *
- * @param input - The Skill tool input ({ skill: string, args?: string })
- * @param workspaceSlug - Stable Storyflow project qualifier
- * @param workspaceRootPath - Absolute path to the workspace root
- * @param workingDirectory - Absolute path to the current working directory (optional)
- * @param onDebug - Optional debug callback
- * @returns SkillQualificationResult with modified flag and updated input
- */
-export function qualifySkillName(
-  input: Record<string, unknown>,
-  workspaceSlug: string,
-  onDebug?: (message: string) => void
-): SkillQualificationResult {
-  const skill = input.skill as string | undefined;
-  if (!skill) return { modified: false, input };
-
-  if (skill.includes(':')) return { modified: false, input };
-  const resolvedSkill = `${workspaceSlug}:${skill}`;
-
-  onDebug?.(`Skill tool: qualified "${skill}" → "${resolvedSkill}"`);
-  return {
-    modified: true,
-    input: { ...input, skill: resolvedSkill },
   };
 }
 
@@ -566,8 +513,6 @@ export interface PreToolUseInput {
   permissionMode: PermissionMode;
   /** Absolute path to workspace root */
   workspaceRootPath: string;
-  /** Workspace ID or slug for skill qualification */
-  workspaceId: string;
   /** Plans folder path for the session (writes allowed in explore mode) */
   plansFolderPath?: string;
   /** Data folder path (writes allowed in explore mode for transform_data output) */
@@ -711,7 +656,6 @@ export function runPreToolUseChecks(ctx: PreToolUseInput): PreToolUseCheckResult
     sessionId,
     permissionMode,
     workspaceRootPath,
-    workspaceId,
     plansFolderPath,
     dataFolderPath,
     workingDirectory,
@@ -852,20 +796,7 @@ export function runPreToolUseChecks(ctx: PreToolUseInput): PreToolUseCheckResult
     }
   }
 
-  // 5e. Skill qualification
-  if (toolName === 'Skill') {
-    const skillResult = qualifySkillName(
-      currentInput,
-      workspaceId,
-      onDebug
-    );
-    if (skillResult.modified) {
-      currentInput = skillResult.input;
-      wasModified = true;
-    }
-  }
-
-  // 5f. Metadata stripping
+  // 5e. Metadata stripping
   const metadataResult = stripToolMetadata(toolName, currentInput, onDebug);
   if (metadataResult.modified) {
     currentInput = metadataResult.input;

@@ -1,5 +1,5 @@
 // input: Temporary Pi projects, explicit global resources, and escaping filesystem symlinks
-// output: Assertions for project-over-global Skills and global-only Extensions
+// output: Assertions for global-only Skills and Extensions
 // pos: Security regression test for explicit Pi resource discovery and scope isolation
 
 import { afterEach, describe, expect, it } from 'bun:test';
@@ -65,7 +65,7 @@ afterEach(() => {
 });
 
 describe('createProjectResourceLoader', () => {
-  it('loads explicit project/global Skills and only global Extensions', async () => {
+  it('loads only explicit global Skills and Extensions', async () => {
     const projectRoot = createRoot();
     const globalRoot = createRoot();
     const agentDir = join(createRoot(), 'agent');
@@ -83,13 +83,11 @@ describe('createProjectResourceLoader', () => {
 
     const { resourceLoader } = await createProjectResourceLoader({
       cwd: projectRoot,
-      projectRoot,
       globalRoot,
       agentDir,
     });
 
     expect(resourceLoader.getSkills().skills.map(skill => skill.name)).toEqual([
-      'project-skill',
       'global-skill',
     ]);
     expect(resourceLoader.getExtensions().extensions).toHaveLength(1);
@@ -118,7 +116,7 @@ describe('createProjectResourceLoader', () => {
     expect(existsSync(join(cwd, '.pi'))).toBe(false);
   });
 
-  it('lets a project Skill override a global Skill with the same name', async () => {
+  it('ignores project Skills even when they share a global name', async () => {
     const projectRoot = createRoot();
     const globalRoot = createRoot();
     const agentDir = join(createRoot(), 'agent');
@@ -127,18 +125,17 @@ describe('createProjectResourceLoader', () => {
 
     const { resourceLoader } = await createProjectResourceLoader({
       cwd: projectRoot,
-      projectRoot,
       globalRoot,
       agentDir,
     });
 
     const skills = resourceLoader.getSkills();
     expect(skills.skills).toHaveLength(1);
-    expect(skills.skills[0]?.filePath).toContain(projectRoot);
-    expect(skills.diagnostics.some(diagnostic => diagnostic.type === 'collision')).toBe(true);
+    expect(skills.skills[0]?.filePath).toContain(globalRoot);
+    expect(skills.diagnostics.some(diagnostic => diagnostic.type === 'collision')).toBe(false);
   });
 
-  it('rejects a canonical Skills path whose .pi ancestor escapes through a symlink', async () => {
+  it('does not inspect a project .pi symlink', async () => {
     const projectRoot = createRoot();
     const outsideRoot = createRoot();
     const globalRoot = createRoot();
@@ -147,28 +144,26 @@ describe('createProjectResourceLoader', () => {
 
     await expect(createProjectResourceLoader({
       cwd: projectRoot,
-      projectRoot,
       globalRoot,
       agentDir,
-    })).rejects.toThrow('symbolic link');
+    })).resolves.toBeDefined();
   });
 
-  it('rejects a Skill tree containing a symlink before Pi can load it', async () => {
+  it('rejects a global Skill tree containing a symlink before Pi can load it', async () => {
     const projectRoot = createRoot();
     const outsideRoot = createRoot();
     const globalRoot = createRoot();
     const agentDir = join(createRoot(), 'agent');
-    writeSkill(projectRoot, '.pi/skills', 'safe-skill');
+    writeSkill(globalRoot, 'skills', 'safe-skill');
     writeSkill(outsideRoot, 'skills', 'outside-skill');
     symlinkSync(
       join(outsideRoot, 'skills', 'outside-skill'),
-      join(projectRoot, '.pi', 'skills', 'escaped-skill'),
+      join(globalRoot, 'skills', 'escaped-skill'),
       'dir',
     );
 
     await expect(createProjectResourceLoader({
       cwd: projectRoot,
-      projectRoot,
       globalRoot,
       agentDir,
     })).rejects.toThrow('symbolic link');
@@ -179,18 +174,17 @@ describe('createProjectResourceLoader', () => {
     const outsideRoot = createRoot();
     const globalRoot = createRoot();
     const agentDir = join(createRoot(), 'agent');
-    writeSkill(projectRoot, '.pi/skills', 'safe-skill');
+    writeSkill(globalRoot, 'skills', 'safe-skill');
     writeSkill(outsideRoot, 'skills', 'outside-skill');
 
     const { resourceLoader } = await createProjectResourceLoader({
       cwd: projectRoot,
-      projectRoot,
       globalRoot,
       agentDir,
     });
     symlinkSync(
       join(outsideRoot, 'skills', 'outside-skill'),
-      join(projectRoot, '.pi', 'skills', 'escaped-after-start'),
+      join(globalRoot, 'skills', 'escaped-after-start'),
       'dir',
     );
 

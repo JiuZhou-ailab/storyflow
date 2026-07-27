@@ -1,8 +1,8 @@
 /**
  * Session Tools Core - Source Helpers
  *
- * input: Workspace roots, global source folders, project Skill folders, and resource slugs
- * output: Resolved resource paths and lightweight config loading helpers
+ * input: Workspace roots, global source folders, and resource slugs
+ * output: Resolved Source paths and lightweight config loading helpers
  * pos: Filesystem helper layer for session tool handlers
  *
  * Utilities for loading and working with source configurations.
@@ -123,55 +123,6 @@ export function listSourceSlugs(workspaceRootPath: string): string[] {
   }
 
   return Array.from(slugs);
-}
-
-/**
- * Get the path to a skill's directory
- */
-export function getSkillPath(workspaceRootPath: string, skillSlug: string): string {
-  return join(workspaceRootPath, '.pi', 'skills', skillSlug);
-}
-
-/**
- * Get the path to a skill's SKILL.md file
- */
-export function getSkillMdPath(workspaceRootPath: string, skillSlug: string): string {
-  return join(getSkillPath(workspaceRootPath, skillSlug), 'SKILL.md');
-}
-
-/**
- * Check if a skill directory exists
- */
-export function skillExists(workspaceRootPath: string, skillSlug: string): boolean {
-  return existsSync(getSkillPath(workspaceRootPath, skillSlug));
-}
-
-/**
- * Check if a skill's SKILL.md file exists
- */
-export function skillMdExists(workspaceRootPath: string, skillSlug: string): boolean {
-  return existsSync(getSkillMdPath(workspaceRootPath, skillSlug));
-}
-
-/**
- * List all skill slugs in a workspace
- */
-export function listSkillSlugs(workspaceRootPath: string): string[] {
-  const skillsDir = join(workspaceRootPath, '.pi', 'skills');
-
-  if (!existsSync(skillsDir)) {
-    return [];
-  }
-
-  try {
-    const entries = readdirSync(skillsDir);
-    return entries.filter((entry) => {
-      const entryPath = join(skillsDir, entry);
-      return statSync(entryPath).isDirectory();
-    });
-  } catch {
-    return [];
-  }
 }
 
 // ============================================================

@@ -1,0 +1,43 @@
+{
+  "skill_name": "sn2s-novel-to-screenplay",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "把 /workspace/长篇小说.txt 转成 compact 模式的分集短剧剧本，完整结果放到小说旁边；不要让我配置任何后端，也不要把正文贴进聊天。",
+      "expected_output": "The Agent prepares a local project, creates global story state, drafts and validates every episode, and merges a non-empty full screenplay without requesting a service URL or token.",
+      "files": [],
+      "expectations": [
+        "The workflow explicitly requires no SN2S backend URL, service, token, or external model API key.",
+        "The source remains file-based and the full novel is not pasted into chat.",
+        "The local helper prepares deterministic episode files and project.json.",
+        "The Agent creates story metadata and continuity state before screenplay drafting.",
+        "Every episode is locally validated before full-screenplay.md is merged."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "先读取 novel.docx，按原章节拆成分集，只把集数和标题给我看；我确认后再生成第 2、4 集，模式 aligned。",
+      "expected_output": "The Agent locally prepares the DOCX, stops after reporting the split, then drafts only episodes 2 and 4 after confirmation without contacting a backend.",
+      "files": [],
+      "expectations": [
+        "The local prepare step reads DOCX without a remote service.",
+        "The workflow stops after reporting episode indexes and titles.",
+        "Only episodes 2 and 4 are drafted after confirmation.",
+        "The aligned policy and local validator are applied to both episodes."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "继续上次没做完的小说转剧本项目：修好第 3 集格式问题，再改一句对白；先给 diff，确认后写入，改坏了能退回。",
+      "expected_output": "The Agent resumes from project.json, checkpoints the local episode, shows an exact diff, validates after confirmed editing, and can restore a local version after separate confirmation.",
+      "files": [],
+      "expectations": [
+        "The workflow resumes pending or invalid work from project.json instead of restarting.",
+        "The current episode is checkpointed before editing.",
+        "An exact diff is shown before the confirmed write.",
+        "The revised episode is validated locally.",
+        "Restore requires separate confirmation and preserves the replaced current version."
+      ]
+    }
+  ]
+}

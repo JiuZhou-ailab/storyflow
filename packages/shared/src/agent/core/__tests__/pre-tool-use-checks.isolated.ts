@@ -149,7 +149,6 @@ function createInput(overrides?: Partial<PreToolUseInput>): PreToolUseInput {
     sessionId: 'test-session',
     permissionMode: 'allow-all',
     workspaceRootPath: '/test/workspace',
-    workspaceId: 'test-ws',
     activeSourceSlugs: [],
     allSourceSlugs: [],
     hasSourceActivation: true,

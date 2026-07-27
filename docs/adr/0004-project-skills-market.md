@@ -1,6 +1,6 @@
 # ADR 0004: 项目级 Skills Market 与声明式贡献
 
-状态：Accepted
+状态：Superseded by ADR 0010
 日期：2026-07-17
 
 ## 背景

@@ -1,4 +1,0 @@
-interface:
-  display_name: "写作状态台账"
-  short_description: "抽取和维护人物、时间线、设定、物件、伏笔与知识边界等共享事实"
-  default_prompt: "使用 $story-state-ledger 从这段草稿或大纲中抽取并更新共享写作状态。"

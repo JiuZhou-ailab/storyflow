@@ -42,7 +42,7 @@ const POLICIES: Record<CliDomainNamespace, CliDomainPolicy> = {
   skill: {
     namespace: 'skill',
     helpCommand: 'craft-agent skill --help',
-    workspacePathScopes: ['.pi/skills/**'],
+    workspacePathScopes: [],
     readActions: ['list', 'get', 'validate', 'where'],
     quickExamples: [
       'craft-agent skill list',

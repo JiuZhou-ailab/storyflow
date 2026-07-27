@@ -13,14 +13,7 @@
 import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, mkdirSync } from 'fs';
 import { join, basename } from 'path';
 import { CONFIG_DIR } from '../config/paths.ts';
-import {
-  getWorkspaceSkillsPath,
-  getWorkspaceSourcesPath,
-} from '../workspaces/paths.ts';
-import {
-  isFreeConversationWorkspaceId,
-  resolveRuntimeWorkspace,
-} from '../workspaces/application-context.ts';
+import { getWorkspaceSourcesPath } from '../workspaces/paths.ts';
 import type {
   SessionToolContext,
   SessionToolCallbacks,
@@ -45,7 +38,6 @@ import {
   validateStatuses,
   validatePreferences,
   validateAll,
-  validateSkill,
   validateWorkspacePermissions,
   validateSourcePermissions,
   validateAllPermissions,
@@ -114,17 +106,7 @@ export interface ClaudeContextOptions {
  */
 export function createClaudeContext(options: ClaudeContextOptions): SessionToolContext {
   const { sessionId, workspacePath, workspaceId, onPlanSubmitted, onAuthRequest, onAskUserQuestion } = options;
-  const skillProjectRoot = isFreeConversationWorkspaceId(workspaceId)
-    ? undefined
-    : workspacePath;
-  const resolveSkillProjectRoot = (targetWorkspaceId?: string): string | undefined => {
-    if (!targetWorkspaceId) return skillProjectRoot;
-    const targetWorkspace = resolveRuntimeWorkspace(targetWorkspaceId);
-    if (!targetWorkspace) throw new Error(`Skill target workspace not found: ${targetWorkspaceId}`);
-    return isFreeConversationWorkspaceId(targetWorkspace.id)
-      ? undefined
-      : targetWorkspace.rootPath;
-  };
+  void workspaceId;
 
   // File system implementation
   const fs: FileSystemInterface = {
@@ -166,7 +148,6 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
     validateAutomations: (wsPath: string) => validateAutomations(wsPath),
     validateToolIcons: () => validateToolIcons(),
     validateAll: (wsPath: string) => validateAll(wsPath),
-    validateSkill: (wsPath: string, slug: string) => validateSkill(wsPath, slug),
   };
 
   // Credential manager adapter
@@ -254,11 +235,7 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
     sessionId,
     workspacePath,
     get sourcesPath() { return getWorkspaceSourcesPath(workspacePath); },
-    get skillsPath() {
-      return skillProjectRoot
-        ? getWorkspaceSkillsPath(skillProjectRoot)
-        : join(CONFIG_DIR, 'skills');
-    },
+    get skillsPath() { return join(CONFIG_DIR, 'skills'); },
     plansFolderPath: getSessionPlansPath(workspacePath, sessionId),
     sessionPath: getSessionPath(workspacePath, sessionId),
     dataPath: getSessionDataPath(workspacePath, sessionId),
@@ -281,13 +258,13 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
       const source = loadSourceImpl(workspacePath, sourceSlug);
       return source?.config as unknown as SourceConfig | null;
     },
-    createSkillDocument: (skillSlug: string, content: string, targetWorkspaceId?: string) => {
-      const skill = createSkillImpl(resolveSkillProjectRoot(targetWorkspaceId), skillSlug, content);
+    createSkillDocument: (skillSlug: string, content: string) => {
+      const skill = createSkillImpl(skillSlug, content);
       const path = join(skill.path, 'SKILL.md');
       return { path, content };
     },
-    loadSkillDocument: (skillSlug: string, targetWorkspaceId?: string) => {
-      const skill = loadSkillImpl(resolveSkillProjectRoot(targetWorkspaceId), skillSlug);
+    loadSkillDocument: (skillSlug: string) => {
+      const skill = loadSkillImpl(skillSlug);
       if (!skill) return null;
       const path = join(skill.path, 'SKILL.md');
       return { path, content: readFileSync(path, 'utf-8') };

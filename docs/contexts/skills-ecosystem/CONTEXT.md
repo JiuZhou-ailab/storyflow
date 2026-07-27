@@ -1,11 +1,11 @@
 # Skills Ecosystem
 
-The Skills Ecosystem lets people publish and install project-owned experience while Storyflow retains control of host behavior and project state. Global Agent resources remain application-owned and are combined with project resources by the shared Resource Resolver.
+The Skills Ecosystem lets people publish reusable experience while Storyflow retains control of host behavior and project state. Every installed Skill has one global definition; projects supply invocation context, not a second Skill scope.
 
 ## Language
 
 **Skill Package**:
-The versioned, installable product distributed by the Market into one Project Resource Overlay. It contains one Agent Skill, optional Workspace Contributions, and publication metadata.
+The versioned, installable product distributed by the Market into the Global Resource Root. It contains one Agent Skill, optional Workspace Contributions, and publication metadata.
 _Avoid_: Skill, plugin, extension
 
 **Agent Skill**:
@@ -13,15 +13,11 @@ The Pi-readable method and instructions contained in `SKILL.md`; it influences A
 _Avoid_: Plugin, workflow engine
 
 **Global Agent Skill**:
-An Agent Skill stored in the Global Resource Root and visible to every Runtime Domain.
-_Avoid_: Bundled project Skill, copied workspace Skill
-
-**Project Agent Skill**:
-An Agent Skill stored in `<project>/.pi/skills/` and visible only through that project's Project Resource Overlay.
-_Avoid_: Global Skill, Extension
+An Agent Skill stored in the Global Resource Root, identified only by its global slug, and visible to every Runtime Domain. Project identity is invocation context, not part of Skill identity.
+_Avoid_: Project Skill, copied workspace Skill
 
 **Workspace Contribution**:
-A declarative request from a Skill Package for host-owned workspace capabilities such as project layout, templates, views, or required Sources.
+A declarative request from a global Skill Package for host-owned capabilities such as project layout, templates, views, or required Sources. It applies to the project where the Skill is invoked.
 _Avoid_: UI plugin, sidebar code, host command
 
 **Skill Market**:

@@ -1864,8 +1864,7 @@ function AppShellContent({
     changes: FileChange[]
   } | null>(null)
 
-  // The working directory still anchors file-change presentation, but Skills
-  // belong only to the active Storyflow project at {projectRoot}/.pi/skills.
+  // The working directory anchors file-change presentation; Skills are global.
   const activeSessionWorkingDirectory = effectiveSessionId
     ? rawEffectiveSessionMeta?.workingDirectory
     : undefined
@@ -5320,9 +5319,7 @@ function AppShellContent({
               <SkillsListPanel
                 skills={skills}
                 workspaceId={activeWorkspaceId}
-                workspaceRootPath={activeWorkspace?.rootPath}
                 activeWorkspace={activeWorkspace}
-                workspaces={workspaces}
                 onSkillClick={handleSkillSelect}
                 onDeleteSkill={handleDeleteSkill}
                 selectedSkillSlug={isSkillsNavigation(navState) && navState.details?.type === 'skill' ? navState.details.skillSlug : null}
