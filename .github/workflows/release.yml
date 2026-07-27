@@ -109,6 +109,7 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           STORYFLOW_R2_BUCKET: ${{ secrets.STORYFLOW_R2_BUCKET }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_PAGES_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_API_TOKEN }}
           STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}
           STORYFLOW_GATEWAY_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_GATEWAY_JWT_CURRENT_SECRET }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -153,6 +154,10 @@ jobs:
               missing+=("Missing $name")
             fi
           done
+
+          if [ "$RELEASE_PROFILE" = "full" ] && [ -z "$CLOUDFLARE_PAGES_API_TOKEN" ]; then
+            missing+=("Missing CLOUDFLARE_PAGES_API_TOKEN")
+          fi
 
           if [ ${#missing[@]} -gt 0 ]; then
             printf '%s\n' "${missing[@]}"
@@ -542,20 +547,12 @@ jobs:
       - name: Build marketing site
         run: bun run marketing:build
 
-      - name: Skip marketing deploy without Pages token
-        run: |
-          if [ -z "$CLOUDFLARE_PAGES_API_TOKEN" ]; then
-            echo "CLOUDFLARE_PAGES_API_TOKEN is not configured; skipping Cloudflare Pages deploy."
-          fi
-
       - name: Deploy marketing site to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           STORYFLOW_PAGES_PROJECT_NAME: ${{ vars.STORYFLOW_PAGES_PROJECT_NAME || 'storyflow' }}
         run: |
-          if [ -n "$CLOUDFLARE_PAGES_API_TOKEN" ]; then
-            bunx wrangler pages deploy apps/marketing/dist \
-              --project-name "$STORYFLOW_PAGES_PROJECT_NAME" \
-              --branch main
-          fi
+          bunx wrangler pages deploy apps/marketing/dist \
+            --project-name "$STORYFLOW_PAGES_PROJECT_NAME" \
+            --branch main

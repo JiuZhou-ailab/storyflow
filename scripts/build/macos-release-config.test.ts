@@ -41,7 +41,7 @@ describe('macOS release configuration', () => {
     expect(builderConfig).toMatch(/target:\n\s+- dmg\n\s+- zip/);
   });
 
-  test('injects Apple signing, notarization, and R2 credentials into the release workflow', () => {
+  test('fails closed when official release credentials or Pages deployment are unavailable', () => {
     const workflow = readRepoFile('.github/workflows/release.yml');
 
     expect(workflow).toContain('preflight-release-secrets:');
@@ -75,13 +75,16 @@ describe('macOS release configuration', () => {
     expect(workflow).toContain('Build marketing site');
     expect(workflow).toContain('bun run marketing:build');
     expect(workflow).toContain('Deploy marketing site to Cloudflare Pages');
-    expect(workflow).toContain('Skip marketing deploy without Pages token');
     expect(workflow).toContain('CLOUDFLARE_PAGES_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_API_TOKEN }}');
     expect(workflow).toContain('CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_API_TOKEN }}');
     expect(workflow).toContain('bunx wrangler pages deploy apps/marketing/dist');
     expect(workflow).toContain("STORYFLOW_PAGES_PROJECT_NAME: ${{ vars.STORYFLOW_PAGES_PROJECT_NAME || 'storyflow' }}");
-    expect(workflow).toContain("if [ -z \"$CLOUDFLARE_PAGES_API_TOKEN\" ]; then");
-    expect(workflow).toContain("if [ -n \"$CLOUDFLARE_PAGES_API_TOKEN\" ]; then");
+    expect(workflow).toContain(
+      'if [ "$RELEASE_PROFILE" = "full" ] && [ -z "$CLOUDFLARE_PAGES_API_TOKEN" ]; then',
+    );
+    expect(workflow).toContain('missing+=("Missing CLOUDFLARE_PAGES_API_TOKEN")');
+    expect(workflow).not.toContain('Skip marketing deploy without Pages token');
+    expect(workflow).not.toContain("if [ -n \"$CLOUDFLARE_PAGES_API_TOKEN\" ]; then");
     expect(workflow).toContain('Annotate macOS update manifest');
     expect(workflow).toContain('${{ matrix.arch }}=$manifest');
     expect(workflow).toContain('latest-mac-${{ matrix.arch }}.yml');
