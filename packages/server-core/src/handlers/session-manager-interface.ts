@@ -23,6 +23,7 @@ import type {
   NovelSelectionRewriteResult,
   PermissionResponseOptions,
   CredentialResponse,
+  UserQuestionResponse,
   PermissionModeState,
   UnreadSummary,
   ShareResult,
@@ -121,6 +122,7 @@ export interface ISessionManager {
     alwaysAllow: boolean,
     options?: PermissionResponseOptions,
   ): boolean
+  respondToUserQuestion(sessionId: string, requestId: string, response: UserQuestionResponse): boolean
   respondToCredential(sessionId: string, requestId: string, response: CredentialResponse): Promise<boolean>
   getSessionPermissionModeState(sessionId: string): PermissionModeState | null
 

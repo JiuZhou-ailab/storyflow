@@ -336,18 +336,17 @@ function nativeBinaryName(config: BuildConfig): string {
   return config.platform === 'win32' ? 'claude.exe' : 'claude';
 }
 
-function fetchNativeSdkPackage(config: BuildConfig, pkg: string, destination: string): void {
-  const { rootDir } = config;
-  const packageJson = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8'));
-  const sdkVersion = packageJson.dependencies?.['@anthropic-ai/claude-agent-sdk'];
-  if (!sdkVersion) {
-    throw new Error('Unable to determine @anthropic-ai/claude-agent-sdk version from package.json.');
-  }
-
-  const tempDir = mkdtempSync(join(tmpdir(), 'storyflow-claude-sdk-'));
+function fetchScopedPackage(
+  scope: string,
+  pkg: string,
+  version: string,
+  destination: string,
+  tempPrefix: string,
+): void {
+  const tempDir = mkdtempSync(join(tmpdir(), tempPrefix));
   try {
-    console.log(`Cross-arch build: @anthropic-ai/${pkg} not in node_modules; fetching from npm...`);
-    execSync(`npm pack @anthropic-ai/${pkg}@${sdkVersion}`, {
+    console.log(`Cross-arch build: @${scope}/${pkg} not in node_modules; fetching from npm...`);
+    execSync(`npm pack @${scope}/${pkg}@${version}`, {
       cwd: tempDir,
       stdio: 'inherit',
       shell: true,
@@ -355,7 +354,7 @@ function fetchNativeSdkPackage(config: BuildConfig, pkg: string, destination: st
 
     const tarball = readdirSync(tempDir).find((entry) => entry.endsWith('.tgz'));
     if (!tarball) {
-      throw new Error(`npm pack did not produce a tarball for @anthropic-ai/${pkg}@${sdkVersion}`);
+      throw new Error(`npm pack did not produce a tarball for @${scope}/${pkg}@${version}`);
     }
 
     execSync(`tar -xzf ${tarball}`, { cwd: tempDir, stdio: 'inherit', shell: true });
@@ -364,6 +363,17 @@ function fetchNativeSdkPackage(config: BuildConfig, pkg: string, destination: st
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
+}
+
+function fetchNativeSdkPackage(config: BuildConfig, pkg: string, destination: string): void {
+  const { rootDir } = config;
+  const packageJson = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8'));
+  const sdkVersion = packageJson.dependencies?.['@anthropic-ai/claude-agent-sdk'];
+  if (!sdkVersion) {
+    throw new Error('Unable to determine @anthropic-ai/claude-agent-sdk version from package.json.');
+  }
+
+  fetchScopedPackage('anthropic-ai', pkg, sdkVersion, destination, 'storyflow-claude-sdk-');
 }
 
 /**
@@ -434,26 +444,26 @@ export function verifySDKCopy(config: BuildConfig): void {
   console.log(`  SDK copy verified: native binary is ${(size / 1024 / 1024).toFixed(1)} MB`);
 }
 
-/**
- * Copy @vscode/ripgrep into the staged node_modules. Replaces the previous
- * `vendor/ripgrep/<platform>/rg` shipped by the SDK before 0.2.113.
- */
+/** Stage the target-specific @vscode/ripgrep binary behind a stable package alias. */
 export function copyRipgrep(config: BuildConfig): void {
   const { rootDir, electronDir } = config;
-  const rgSource = join(rootDir, 'node_modules', '@vscode', 'ripgrep');
+  const packageName = `ripgrep-${config.platform}-${config.arch}`;
+  const rgSource = join(rootDir, 'node_modules', '@vscode', packageName);
   const binaryName = config.platform === 'win32' ? 'rg.exe' : 'rg';
   const rgBinary = join(rgSource, 'bin', binaryName);
 
-  if (!existsSync(rgSource) || !existsSync(rgBinary)) {
-    throw new Error(
-      `@vscode/ripgrep not installed or postinstall did not run. ` +
-      `Run 'bun install' and 'bun pm trust @vscode/ripgrep'.`,
-    );
+  if (!existsSync(rgBinary)) {
+    const corePackagePath = join(rootDir, 'node_modules', '@vscode', 'ripgrep', 'package.json');
+    if (!existsSync(corePackagePath)) {
+      throw new Error("@vscode/ripgrep is missing. Run 'bun install' before packaging.");
+    }
+    const version = JSON.parse(readFileSync(corePackagePath, 'utf8')).version;
+    fetchScopedPackage('vscode', packageName, version, rgSource, 'storyflow-ripgrep-');
   }
 
   const rgScope = join(electronDir, 'node_modules', '@vscode');
-  const rgDest = join(rgScope, 'ripgrep');
-  console.log('Copying @vscode/ripgrep...');
+  const rgDest = join(rgScope, 'ripgrep-binary');
+  console.log(`Staging @vscode/${packageName} as ripgrep-binary...`);
   mkdirSync(rgScope, { recursive: true });
   if (existsSync(rgDest)) {
     rmSync(rgDest, { recursive: true, force: true });

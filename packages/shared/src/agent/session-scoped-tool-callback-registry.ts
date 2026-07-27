@@ -13,7 +13,7 @@
 import type { LLMQueryRequest, LLMQueryResult } from './llm-tool.ts';
 import type { SpawnSessionFn } from './spawn-session-tool.ts';
 import type { BrowserPaneFns } from './browser-tools.ts';
-import type { AuthRequest } from '@craft-agent/session-tools-core';
+import type { AuthRequest, UserQuestionRequest, UserQuestionResponse } from '@craft-agent/session-tools-core';
 import { debug } from '../utils/debug.ts';
 
 /**
@@ -31,6 +31,9 @@ export interface SessionScopedToolCallbacks {
    * The auth UI should be shown and execution paused.
    */
   onAuthRequest?: (request: AuthRequest) => void;
+
+  /** Show a structured question prompt and resolve when the user answers. */
+  askUserQuestionFn?: (request: UserQuestionRequest) => Promise<UserQuestionResponse>;
 
   /**
    * Agent-native LLM query callback for call_llm tool (OAuth path).

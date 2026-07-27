@@ -16,6 +16,8 @@ import type {
   ContentBadge,
   ToolDisplayMeta,
   AnnotationV1,
+  AttachmentRepresentation,
+  StoredAttachment,
   PermissionRequest as BasePermissionRequest,
 } from '@craft-agent/core/types'
 import type { Workspace } from '@craft-agent/core/types'
@@ -28,6 +30,13 @@ import type {
   CredentialInputMode as SharedCredentialInputMode,
   CredentialAuthRequest as SharedCredentialAuthRequest,
 } from '../agent/index'
+import type {
+  UserQuestion,
+  UserQuestionOption,
+  UserQuestionRequest,
+  UserQuestionResponse,
+} from '@craft-agent/session-tools-core'
+export type { UserQuestion, UserQuestionOption, UserQuestionRequest, UserQuestionResponse }
 
 // Re-export generateMessageId for handler convenience
 export { generateMessageId } from '@craft-agent/core/types'
@@ -180,6 +189,7 @@ export type SessionEvent =
   | { type: 'async_operation'; sessionId: string; isOngoing: boolean }
   | { type: 'working_directory_changed'; sessionId: string; workingDirectory: string }
   | { type: 'permission_request'; sessionId: string; request: PermissionRequest }
+  | { type: 'user_question_request'; sessionId: string; request: UserQuestionRequest }
   | { type: 'credential_request'; sessionId: string; request: CredentialRequest }
   | { type: 'permission_mode_changed'; sessionId: string; permissionMode: PermissionMode; previousPermissionMode?: PermissionMode; transitionDisplay?: string; modeVersion?: number; changedAt?: string; changedBy?: PermissionModeState['changedBy'] }
   | { type: 'plan_submitted'; sessionId: string; message: Message }
@@ -398,6 +408,19 @@ export interface FileAttachment {
   text?: string
   size: number
   thumbnailBase64?: string
+  /** Server-owned immutable original path after attachment storage. */
+  storedPath?: string
+  /** Legacy alias for the preferred readable representation. */
+  markdownPath?: string
+  /** Durable original and derived forms created during attachment storage. */
+  representations?: AttachmentRepresentation[]
+}
+
+/** Result of storing an attachment; transient model bytes never enter session persistence. */
+export interface StoreAttachmentResult {
+  attachment: StoredAttachment
+  modelInputBase64?: string
+  modelInputMimeType?: string
 }
 
 export interface SessionFile {
@@ -544,6 +567,35 @@ export interface SessionSearchResult {
   sessionId: string
   matchCount: number
   matches: SessionSearchMatch[]
+}
+
+export interface WorkspaceSearchRequest {
+  query: string
+  requestId?: string
+}
+
+export interface WorkspaceSessionSearchHit {
+  kind: 'session'
+  sessionId: string
+  matchCount: number
+  snippet: string
+}
+
+export interface WorkspaceDocumentSearchHit {
+  kind: 'document'
+  path: string
+  relativePath: string
+  lineNumber: number
+  matchCount: number
+  snippet: string
+}
+
+export type WorkspaceSearchHit = WorkspaceSessionSearchHit | WorkspaceDocumentSearchHit
+
+export interface WorkspaceSearchResponse {
+  status: 'complete' | 'unavailable'
+  hits: WorkspaceSearchHit[]
+  message?: string
 }
 
 // ---------------------------------------------------------------------------

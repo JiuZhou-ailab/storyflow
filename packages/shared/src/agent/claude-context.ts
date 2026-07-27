@@ -24,6 +24,8 @@ import {
 import type {
   SessionToolContext,
   SessionToolCallbacks,
+  UserQuestionRequest,
+  UserQuestionResponse,
   FileSystemInterface,
   CredentialManagerInterface,
   ValidatorInterface,
@@ -97,6 +99,7 @@ export interface ClaudeContextOptions {
   workspaceId: string;
   onPlanSubmitted: (planPath: string) => void;
   onAuthRequest: (request: unknown) => void;
+  onAskUserQuestion?: (request: UserQuestionRequest) => Promise<UserQuestionResponse>;
 }
 
 /**
@@ -110,7 +113,7 @@ export interface ClaudeContextOptions {
  * - Icon management
  */
 export function createClaudeContext(options: ClaudeContextOptions): SessionToolContext {
-  const { sessionId, workspacePath, workspaceId, onPlanSubmitted, onAuthRequest } = options;
+  const { sessionId, workspacePath, workspaceId, onPlanSubmitted, onAuthRequest, onAskUserQuestion } = options;
   const skillProjectRoot = isFreeConversationWorkspaceId(workspaceId)
     ? undefined
     : workspacePath;
@@ -144,6 +147,7 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
   const callbacks: SessionToolCallbacks = {
     onPlanSubmitted,
     onAuthRequest: (request) => onAuthRequest(request),
+    onAskUserQuestion,
   };
 
   // Validators implementation

@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'bun:test'
 import type { LlmConnection } from '@craft-agent/shared/config'
 import type { FileAttachment } from '@craft-agent/shared/protocol'
+import { formatAttachmentContextForModel } from '@craft-agent/shared/utils'
 import { buildBackendRuntimeSignature, filterAttachmentsForModelInput, needsPiRuntimeMigrationSeed } from './runtime-config'
 
 const baseCompat: LlmConnection = {
@@ -91,6 +92,38 @@ describe('filterAttachmentsForModelInput', () => {
 
     expect(result.omittedImages).toEqual([imageAttachment])
     expect(result.attachments).toBeUndefined()
+  })
+})
+
+describe('formatAttachmentContextForModel', () => {
+  it('prefers durable representations while preserving legacy path fallback', () => {
+    expect(formatAttachmentContextForModel({
+      ...textAttachment,
+      storedPath: '/session/original.docx',
+      markdownPath: '/legacy/readable.md',
+      representations: [
+        {
+          kind: 'original',
+          path: '/session/original.docx',
+          mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          size: 12,
+          sha256: 'source',
+        },
+        {
+          kind: 'markdown',
+          path: '/session/readable.md',
+          mimeType: 'text/markdown',
+          size: 10,
+          sha256: 'derived',
+        },
+      ],
+    })).toBe([
+      '[Attached file: note.txt]',
+      '[Stored at: /session/original.docx]',
+      '[Readable version: /session/readable.md]',
+    ].join('\n'))
+
+    expect(formatAttachmentContextForModel(textAttachment)).toContain('[Stored at: /tmp/note.txt]')
   })
 })
 

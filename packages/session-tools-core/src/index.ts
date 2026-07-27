@@ -31,6 +31,10 @@ export type {
   MicrosoftOAuthAuthRequest,
   AuthRequest,
   AuthResult,
+  UserQuestionOption,
+  UserQuestion,
+  UserQuestionRequest,
+  UserQuestionResponse,
 
   // IPC types
   CallbackMessage,

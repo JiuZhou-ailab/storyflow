@@ -1,3 +1,7 @@
+// input: Core domain type modules
+// output: Stable public type exports for @craft-agent/core
+// pos: Package type boundary consumed by storage, transports, runtimes, and UI
+
 /**
  * Re-export all types from @craft-agent/core
  */
@@ -27,6 +31,8 @@ export type {
   ToolStatus,
   ToolDisplayMeta,
   AttachmentType,
+  AttachmentRepresentationKind,
+  AttachmentRepresentation,
   MessageAttachment,
   StoredAttachment,
   ContentBadge,
@@ -64,4 +70,3 @@ export type {
   SessionProcessingStatus,
   ActiveSessionInfo,
 } from './server.ts';
-

@@ -6,6 +6,7 @@
 // Protocol re-exports (channels, DTOs, events, wire types)
 // =============================================================================
 export * from '@craft-agent/shared/protocol'
+import type { UserQuestionResponse } from '@craft-agent/shared/protocol'
 
 // =============================================================================
 // Package re-exports (convenience for renderer imports)
@@ -261,6 +262,7 @@ import type {
   UnreadSummary,
   CreateSessionOptions,
   FileAttachment,
+  StoreAttachmentResult,
   SendMessageOptions,
   NovelSelectionRewriteRequest,
   NovelSelectionRewriteResult,
@@ -279,6 +281,8 @@ import type {
   DeleteWorkspaceEntryInput,
   DeleteWorkspaceEntryResult,
   SessionSearchResult,
+  WorkspaceSearchRequest,
+  WorkspaceSearchResponse,
   LlmConnectionSetup,
   TestLlmConnectionParams,
   TestLlmConnectionResult,
@@ -332,6 +336,7 @@ export interface ElectronAPI {
   killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }>
   getTaskOutput(taskId: string): Promise<string | null>
   respondToPermission(sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean, options?: PermissionResponseOptions): Promise<boolean>
+  respondToUserQuestion(sessionId: string, requestId: string, response: UserQuestionResponse): Promise<boolean>
   respondToCredential(sessionId: string, requestId: string, response: CredentialResponse): Promise<boolean>
 
   // Consolidated session command handler
@@ -431,7 +436,7 @@ export interface ElectronAPI {
   /** Re-read a user-attached file by absolute path (bypasses workspace-dir validation).
    *  Used only by draft hydration for paths the user explicitly picked via OS dialog / drag. */
   readUserAttachment(path: string): Promise<FileAttachment | null>
-  storeAttachment(sessionId: string, attachment: FileAttachment): Promise<import('../../../../packages/core/src/types/index.ts').StoredAttachment>
+  storeAttachment(sessionId: string, attachment: FileAttachment): Promise<StoreAttachmentResult>
   generateThumbnail(base64: string, mimeType: string): Promise<string | null>
   /** Returns the absolute filesystem path for a File (only works for file-picker / OS-drag Files). */
   getFilePath(file: File): string | null
@@ -596,6 +601,7 @@ export interface ElectronAPI {
 
   // Session content search (full-text search via ripgrep)
   searchSessionContent(workspaceId: string, query: string, searchId?: string): Promise<SessionSearchResult[]>
+  searchWorkspace(request: WorkspaceSearchRequest): Promise<WorkspaceSearchResponse>
 
   // Sources change listener (live updates when sources are added/removed)
   onSourcesChanged(callback: (workspaceId: string, sources: LoadedSource[]) => void): () => void

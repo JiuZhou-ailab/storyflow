@@ -29,7 +29,6 @@ import { loadPlanFromPath, type SessionConfig as Session } from '../sessions/sto
 import { DEFAULT_MODEL, isClaudeModel, isAdaptiveThinkingAlwaysOnModel, getDefaultSummarizationModel, getModelContextWindow } from '../config/models.ts';
 import { getCredentialManager } from '../credentials/index.ts';
 import { loadPreferences, formatPreferencesForPrompt, getCoAuthorPreference } from '../config/preferences.ts';
-import type { FileAttachment } from '../utils/files.ts';
 import type { LLMQueryRequest, LLMQueryResult } from './llm-tool.ts';
 import { consumeLlmQueryMessages } from './claude-llm-query.ts';
 import { debug } from '../utils/debug.ts';
@@ -91,7 +90,7 @@ import {
   extractSdkReportedBinaryPath,
   isSpawnEnoent as detectSpawnEnoent,
 } from './spawn-helpers.ts';
-import { IMAGE_LIMITS } from '../utils/files.ts';
+import { formatAttachmentContextForModel, IMAGE_LIMITS, type FileAttachment } from '../utils/files.ts';
 
 /** Image extensions that may need size-guard in PreToolUse (matches Read tool's image detection) */
 const IMAGE_READ_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff']);
@@ -863,7 +862,7 @@ export class ClaudeAgent extends BaseAgent {
 
       // Block SDK tools that require UI we don't have:
       // - EnterPlanMode/ExitPlanMode: We use safe mode instead (user-controlled via UI)
-      // - AskUserQuestion: Requires interactive UI to show question options to user
+      // - AskUserQuestion: Replaced by the provider-independent ask_user_question session tool
       // Note: Mini agents use a minimal tool list directly, so no additional blocking needed
       const disallowedTools: string[] = ['EnterPlanMode', 'ExitPlanMode', 'AskUserQuestion', 'Skill'];
 
@@ -2139,18 +2138,10 @@ This is a branched conversation. All prior messages in this conversation are par
 
     parts.push(...contextParts);
 
-    // Add file attachments with stored path info (agent uses Read tool to access content)
-    // Text files are NOT embedded inline to prevent context overflow from large files
+    // Add provider-neutral durable paths; binary content is handled by provider adapters below.
     if (attachments) {
       for (const attachment of attachments) {
-        if (attachment.storedPath) {
-          let pathInfo = `[Attached file: ${attachment.name}]`;
-          pathInfo += `\n[Stored at: ${attachment.storedPath}]`;
-          if (attachment.markdownPath) {
-            pathInfo += `\n[Markdown version: ${attachment.markdownPath}]`;
-          }
-          parts.push(pathInfo);
-        }
+        parts.push(formatAttachmentContextForModel(attachment));
       }
     }
 
@@ -2194,18 +2185,10 @@ This is a branched conversation. All prior messages in this conversation are par
     // Text files are NOT embedded to prevent context overflow; agent uses Read tool
     if (attachments) {
       for (const attachment of attachments) {
-        // Add path info text block so the agent knows where the file is stored
-        // This enables the agent to use the Read tool to access text/office files
-        if (attachment.storedPath) {
-          let pathInfo = `[Attached file: ${attachment.name}]\n[Stored at: ${attachment.storedPath}]`;
-          if (attachment.markdownPath) {
-            pathInfo += `\n[Markdown version: ${attachment.markdownPath}]`;
-          }
-          contentBlocks.push({
-            type: 'text',
-            text: pathInfo,
-          });
-        }
+        contentBlocks.push({
+          type: 'text',
+          text: formatAttachmentContextForModel(attachment),
+        });
 
         // Only images and PDFs are uploaded inline (agent cannot read these with Read tool)
         if (attachment.type === 'image' && attachment.base64) {

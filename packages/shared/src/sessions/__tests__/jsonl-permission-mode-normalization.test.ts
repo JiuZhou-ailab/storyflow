@@ -1,8 +1,12 @@
+// input: Temporary JSONL fixtures with legacy and malformed persisted fields
+// output: Regression coverage for session JSONL read-time normalization
+// pos: Persistence-boundary contract test for session history
+
 import { afterEach, describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { makeSessionPathPortable, readSessionHeader, readSessionJsonl } from '../jsonl.ts';
+import { makeSessionPathPortable, readSessionHeader, readSessionJsonl, readSessionMessages } from '../jsonl.ts';
 
 const tempDirs: string[] = [];
 
@@ -128,5 +132,18 @@ describe('session jsonl: permission mode normalization', () => {
       id: 'm1',
       artifactPath: join(sessionDir, 'artifact.json'),
     }));
+  });
+
+  it('drops null attachment entries from persisted messages', () => {
+    const sessionDir = mkdtempSync(join(tmpdir(), 'session-jsonl-attachments-'));
+    tempDirs.push(sessionDir);
+
+    const sessionFile = join(sessionDir, 'session.jsonl');
+    writeFileSync(sessionFile, [
+      JSON.stringify({ id: 's4' }),
+      JSON.stringify({ id: 'm1', type: 'user', attachments: [null] }),
+    ].join('\n'), 'utf-8');
+
+    expect(readSessionMessages(sessionFile)[0]?.attachments).toEqual([]);
   });
 });

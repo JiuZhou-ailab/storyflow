@@ -1,7 +1,15 @@
+// input: Local file paths, clipboard payloads, and shared attachment DTOs
+// output: File classification, safe loading, and provider-neutral attachment context helpers
+// pos: Shared file boundary used before persistence and model-provider adaptation
+
 import { existsSync, readFileSync, statSync, writeFileSync, unlinkSync, mkdtempSync, renameSync } from 'fs';
 import { extname, basename, resolve, join, relative } from 'path';
 import { execSync } from 'child_process';
 import { tmpdir } from 'os';
+import type { AttachmentRepresentationKind } from '@craft-agent/core/types';
+import type { FileAttachment } from '../protocol/dto.ts';
+
+export type { FileAttachment } from '../protocol/dto.ts';
 
 /**
  * Strip UTF-8 BOM (Byte Order Mark) from a string.
@@ -43,20 +51,6 @@ export function atomicWriteFileSync(filePath: string, data: string): void {
     try { unlinkSync(tmpPath); } catch {}
     throw error;
   }
-}
-
-export interface FileAttachment {
-  type: 'image' | 'text' | 'pdf' | 'office' | 'unknown';
-  path: string;
-  name: string;
-  mimeType: string;
-  base64?: string;
-  text?: string;
-  size: number;
-  /** Path where file is stored in session attachments folder (set by Electron app) */
-  storedPath?: string;
-  /** Path to converted markdown version (for office files) */
-  markdownPath?: string;
 }
 
 // Supported image types for Claude API
@@ -327,6 +321,35 @@ export function getMimeType(filePath: string): string {
   return 'application/octet-stream';
 }
 
+export function getAttachmentRepresentationPath(
+  attachment: FileAttachment,
+  kind: AttachmentRepresentationKind,
+): string | undefined {
+  const representedPath = attachment.representations?.find(representation => representation.kind === kind)?.path;
+  if (representedPath) return representedPath;
+  if (kind === 'original') return attachment.storedPath || attachment.path;
+  if (kind === 'markdown') return attachment.markdownPath;
+  return undefined;
+}
+
+/**
+ * Describe durable attachment paths without teaching providers about file formats.
+ * Providers may still add native image/PDF content blocks after this shared context.
+ */
+export function formatAttachmentContextForModel(attachment: FileAttachment): string {
+  const originalPath = getAttachmentRepresentationPath(attachment, 'original');
+  const readablePath = getAttachmentRepresentationPath(attachment, 'markdown');
+  const label = attachment.type === 'image'
+    ? 'Attached image'
+    : attachment.type === 'pdf'
+      ? 'Attached PDF'
+      : 'Attached file';
+  const parts = [`[${label}: ${attachment.name}]`];
+  if (originalPath) parts.push(`[Stored at: ${originalPath}]`);
+  if (readablePath && readablePath !== originalPath) parts.push(`[Readable version: ${readablePath}]`);
+  return parts.join('\n');
+}
+
 /**
  * Read a file and return attachment info
  */
@@ -365,10 +388,11 @@ export function readFileAttachment(filePath: string): FileAttachment | null {
       const buffer = readFileSync(resolved);
       attachment.base64 = buffer.toString('base64');
     } else if (type === 'text') {
-      // Read as text for text files (with size limit)
+      // Keep the complete original bytes separate from the bounded readable preview.
+      const buffer = readFileSync(resolved);
+      attachment.base64 = buffer.toString('base64');
       if (stats.size > MAX_TEXT_SIZE) {
         // Read only first part of large text files
-        const buffer = readFileSync(resolved);
         attachment.text = buffer.toString('utf-8').slice(0, MAX_TEXT_SIZE) +
           `\n\n[File truncated - showing first ${MAX_TEXT_SIZE / 1024}KB of ${Math.round(stats.size / 1024)}KB]`;
       } else {

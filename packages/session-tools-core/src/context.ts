@@ -12,6 +12,8 @@
 import type {
   AuthRequest,
   ToolResult,
+  UserQuestionRequest,
+  UserQuestionResponse,
   SourceConfig,
   GoogleService,
   SlackService,
@@ -58,6 +60,9 @@ export interface SessionToolCallbacks {
    * Codex: sends __CALLBACK__ message to stderr
    */
   onAuthRequest(request: AuthRequest): void;
+
+  /** Ask the user a structured question and wait for the answer. */
+  onAskUserQuestion?(request: UserQuestionRequest): Promise<UserQuestionResponse>;
 }
 
 // ============================================================

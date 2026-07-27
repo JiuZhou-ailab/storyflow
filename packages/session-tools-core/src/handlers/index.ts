@@ -13,6 +13,10 @@
 export { handleSubmitPlan } from './submit-plan.ts';
 export type { SubmitPlanArgs } from './submit-plan.ts';
 
+// Ask User Question
+export { handleAskUserQuestion } from './ask-user-question.ts';
+export type { AskUserQuestionArgs } from './ask-user-question.ts';
+
 // Config Validate
 export { handleConfigValidate } from './config-validate.ts';
 export type { ConfigValidateArgs } from './config-validate.ts';

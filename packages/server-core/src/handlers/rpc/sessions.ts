@@ -131,6 +131,7 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.sessions.KILL_SHELL,
   RPC_CHANNELS.tasks.GET_OUTPUT,
   RPC_CHANNELS.sessions.RESPOND_TO_PERMISSION,
+  RPC_CHANNELS.sessions.RESPOND_TO_USER_QUESTION,
   RPC_CHANNELS.sessions.RESPOND_TO_CREDENTIAL,
   RPC_CHANNELS.sessions.COMMAND,
   RPC_CHANNELS.sessions.GET_PENDING_PLAN_EXECUTION,
@@ -332,6 +333,10 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
     return sessionManager.respondToPermission(sessionId, requestId, allowed, alwaysAllow)
   })
 
+  server.handle(RPC_CHANNELS.sessions.RESPOND_TO_USER_QUESTION, async (_ctx, sessionId: string, requestId: string, response: import('@craft-agent/shared/protocol').UserQuestionResponse) => {
+    return sessionManager.respondToUserQuestion(sessionId, requestId, response)
+  })
+
   // Respond to a credential request (secure auth input)
   // Returns true if the response was delivered, false if agent/session is gone
   server.handle(RPC_CHANNELS.sessions.RESPOND_TO_CREDENTIAL, async (_ctx, sessionId: string, requestId: string, response: import('@craft-agent/shared/protocol').CredentialResponse) => {
@@ -458,7 +463,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   // Search session content using ripgrep
   server.handle(RPC_CHANNELS.sessions.SEARCH_CONTENT, async (_ctx, workspaceId: string, query: string, searchId?: string) => {
     const id = searchId || Date.now().toString(36)
-    log.info('[search]','ipc:request', { searchId: id, query })
+    log.info('[search]','ipc:request', { searchId: id, queryLength: query.length })
 
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) {
@@ -470,7 +475,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
     const { getWorkspaceSessionsPath } = await import('@craft-agent/shared/workspaces')
 
     const sessionsDir = getWorkspaceSessionsPath(workspace.rootPath)
-    log.debug(`SEARCH_SESSIONS: Searching "${query}" in ${sessionsDir}`)
+    log.debug(`SEARCH_SESSIONS: Searching ${query.length} characters in ${sessionsDir}`)
 
     const results = await searchSessions(query, sessionsDir, {
       timeout: 5000,

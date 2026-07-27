@@ -36,6 +36,7 @@ export const CHANNEL_MAP = {
   killShell: invoke(RPC_CHANNELS.sessions.KILL_SHELL),
   getTaskOutput: invoke(RPC_CHANNELS.tasks.GET_OUTPUT),
   respondToPermission: invoke(RPC_CHANNELS.sessions.RESPOND_TO_PERMISSION),
+  respondToUserQuestion: invoke(RPC_CHANNELS.sessions.RESPOND_TO_USER_QUESTION),
   respondToCredential: invoke(RPC_CHANNELS.sessions.RESPOND_TO_CREDENTIAL),
   sessionCommand: invoke(RPC_CHANNELS.sessions.COMMAND),
   exportSession: invoke(RPC_CHANNELS.sessions.EXPORT),
@@ -241,6 +242,7 @@ export const CHANNEL_MAP = {
 
   // Session content search
   searchSessionContent: invoke(RPC_CHANNELS.sessions.SEARCH_CONTENT),
+  searchWorkspace: invoke(RPC_CHANNELS.search.QUERY_WORKSPACE),
 
   // OAuth (server-owned credentials)
   oauthRevoke: invoke(RPC_CHANNELS.oauth.REVOKE),

@@ -1,6 +1,18 @@
 # CONTEXT
 
-Glossary of terms for the Storyflow performance-optimization effort. Definitions only — no implementation details.
+Shared Storyflow domain glossary. Definitions only — no implementation details.
+
+## Search
+
+- **Application Search** — The application-level navigation surface. It may rank the local project catalog, then compose results returned by the active Runtime Domain; it does not scan or preload other Runtime Domains.
+- **Workspace Search** — A content query executed and authorized by exactly one Runtime Domain. Its searchable facts are that workspace's conversations and real files.
+- **Search Hit** — A typed, navigable result containing an entity identity and locator (for example `sessionId`, file path, or line number). An error or unavailable search engine is not an empty hit set.
+
+## Documents
+
+- **Source Document** — The immutable bytes supplied by the user and the only authoritative content of an attachment. Derived or optimized files are not source documents.
+- **Document Representation** — A traceable, rebuildable form of a Source Document for a particular consumer, such as Markdown, a thumbnail, or bounded model input.
+- **Model Input** — The Document Representation selected for one model invocation. It is transport state, not conversation history or document truth.
 
 ## Performance
 

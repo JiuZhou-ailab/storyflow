@@ -1,3 +1,7 @@
+// input: Isolated persisted configs and shared LLM connection storage operations
+// output: Regression coverage for connection updates and remembered model selections
+// pos: Storage-level contract tests for global LLM connection preferences
+
 import { describe, expect, it } from 'bun:test'
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
@@ -57,12 +61,32 @@ function setup(llmConnections: any[]) {
     return run.exitCode === 0
   }
 
+  function runSetDefaultSelection(slug: string, model: string): boolean {
+    const run = Bun.spawnSync([
+      process.execPath,
+      '--eval',
+      `import { setDefaultLlmSelection } from '${STORAGE_MODULE_PATH}'; const ok = setDefaultLlmSelection(${JSON.stringify(slug)}, ${JSON.stringify(model)}); process.exit(ok ? 0 : 1);`,
+    ], {
+      env: { ...process.env, CRAFT_CONFIG_DIR: configDir },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    if (run.exitCode !== 0 && run.stderr.toString().trim()) {
+      throw new Error(`selection subprocess failed:\n${run.stderr.toString()}`)
+    }
+    return run.exitCode === 0
+  }
+
+  function readConfig(): any {
+    return JSON.parse(readFileSync(configPath, 'utf-8'))
+  }
+
   function readConnection(slug: string): any {
-    const config = JSON.parse(readFileSync(configPath, 'utf-8'))
+    const config = readConfig()
     return config.llmConnections.find((c: any) => c.slug === slug)
   }
 
-  return { configDir, configPath, runUpdate, readConnection }
+  return { configDir, configPath, runUpdate, runSetDefaultSelection, readConfig, readConnection }
 }
 
 function makeConnection(overrides: Record<string, unknown> = {}) {
@@ -131,5 +155,27 @@ describe('updateLlmConnection – customEndpoint', () => {
     expect(conn.hidden).toBe(true)
     expect(conn.managed).toBe(true)
     expect(conn.source).toBe('builtin')
+  })
+})
+
+describe('setDefaultLlmSelection', () => {
+  it('remembers the selected connection and model for future sessions', () => {
+    const first = makeConnection({
+      slug: 'first',
+      models: ['model-a'],
+      defaultModel: 'model-a',
+    })
+    const second = makeConnection({
+      slug: 'second',
+      models: ['model-b', 'model-c'],
+      defaultModel: 'model-b',
+    })
+    const { runSetDefaultSelection, readConfig } = setup([first, second])
+
+    expect(runSetDefaultSelection('second', 'model-c')).toBe(true)
+
+    const config = readConfig()
+    expect(config.defaultLlmConnection).toBe('second')
+    expect(config.llmConnections.find((connection: any) => connection.slug === 'second')?.defaultModel).toBe('model-c')
   })
 })

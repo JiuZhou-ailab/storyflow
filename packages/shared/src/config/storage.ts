@@ -2992,6 +2992,29 @@ export function setDefaultLlmConnection(slug: string): boolean {
 }
 
 /**
+ * Persist the connection and model selected for future sessions.
+ */
+export function setDefaultLlmSelection(slug: string, model: string): boolean {
+  const config = loadStoredConfig();
+  const trimmedModel = model.trim();
+  if (!config?.llmConnections?.length || !trimmedModel) return false;
+
+  const canonicalSlug = normalizeLlmConnectionSlug(slug);
+  const connection = config.llmConnections.find(candidate => candidate.slug === canonicalSlug);
+  if (!connection) return false;
+
+  const normalizedModel = normalizeConnectionModelId(connection, trimmedModel);
+  const availableModels = normalizeModelIds(connection.models)
+    .map(candidate => normalizeConnectionModelId(connection, candidate));
+  if (availableModels.length > 0 && !availableModels.includes(normalizedModel)) return false;
+
+  connection.defaultModel = normalizedModel;
+  config.defaultLlmConnection = canonicalSlug;
+  saveConfig(config);
+  return true;
+}
+
+/**
  * Get the app-level default thinking level for new sessions.
  * Falls back to bundled config-defaults when unset.
  */

@@ -1,3 +1,7 @@
+// input: Runtime conversation events, persisted message records, and attachment metadata
+// output: Core message, annotation, attachment, and authentication domain types
+// pos: Persistence-safe conversation contract shared by runtimes, transports, and UI
+
 /**
  * Message types for conversations
  */
@@ -227,22 +231,35 @@ export interface AnnotationV1 {
 }
 
 /**
- * Stored attachment metadata (persisted to disk, no base64)
- * Created when user sends a message with attachments
+ * A durable form derived from an attachment's immutable original bytes.
+ */
+export type AttachmentRepresentationKind = 'original' | 'markdown' | 'thumbnail' | 'model-input';
+
+export interface AttachmentRepresentation {
+  kind: AttachmentRepresentationKind;
+  path: string;
+  mimeType: string;
+  size: number;
+  sha256: string;
+  generator?: string;
+}
+
+/**
+ * Stored attachment metadata (no inline source or model-input bytes).
+ * A small thumbnail may remain embedded so exported session viewers stay portable.
+ * Legacy path fields remain while readers migrate to `representations`.
  */
 export interface StoredAttachment {
   id: string;                    // Unique identifier
   type: AttachmentType;
   name: string;                  // Original filename
   mimeType: string;
-  size: number;                  // Final size (after any resize)
-  originalSize?: number;         // Original size before resize (if applicable)
-  storedPath: string;            // Full path to copied file on disk
+  size: number;                  // Immutable original byte size
+  storedPath: string;            // Legacy alias for the original representation path
   thumbnailPath?: string;        // Path to OS-generated thumbnail (images/PDFs/Office)
   thumbnailBase64?: string;      // Base64-encoded thumbnail PNG (for renderer display)
-  markdownPath?: string;         // For Office files: converted markdown for Claude
-  wasResized?: boolean;          // True if image was auto-resized for Claude API limits
-  resizedBase64?: string;        // Base64 of resized image (only when wasResized=true, for Claude API)
+  markdownPath?: string;         // Legacy alias for the Markdown representation path
+  representations?: AttachmentRepresentation[];
 }
 
 /**

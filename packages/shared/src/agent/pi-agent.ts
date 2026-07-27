@@ -20,7 +20,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface, type Interface as ReadlineInterface } from 'node:readline';
 import type { AgentEvent } from '@craft-agent/core/types';
-import type { FileAttachment } from '../utils/files.ts';
+import { formatAttachmentContextForModel, type FileAttachment } from '../utils/files.ts';
 import { getProxyEnvVars } from '../config/proxy-env.ts';
 
 import type {
@@ -1445,6 +1445,11 @@ export class PiAgent extends BaseAgent {
       onAuthRequest: (request: unknown) => {
         this.onAuthRequest?.(request as any);
       },
+      onAskUserQuestion: async (request) => {
+        const callback = getSessionScopedToolCallbacks(sessionId)?.askUserQuestionFn;
+        if (!callback) throw new Error('Interactive questions are not supported by this host.');
+        return callback(request);
+      },
     });
 
     // Attach session self-management bindings (lazy getters from callback registry)
@@ -2024,16 +2029,8 @@ export class PiAgent extends BaseAgent {
             data: att.base64,
             mimeType: att.mimeType,
           });
-        } else if (att.mimeType?.startsWith('image/') && (att.storedPath || att.path)) {
-          attachmentParts.push(`[Attached image: ${att.name}]\n[Stored at: ${att.storedPath || att.path}]`);
-        } else if (att.mimeType === 'application/pdf' && att.storedPath) {
-          attachmentParts.push(`[Attached PDF: ${att.name}]\n[Stored at: ${att.storedPath}]`);
-        } else if (att.storedPath) {
-          let pathInfo = `[Attached file: ${att.name}]\n[Stored at: ${att.storedPath}]`;
-          if (att.markdownPath) {
-            pathInfo += `\n[Markdown version: ${att.markdownPath}]`;
-          }
-          attachmentParts.push(pathInfo);
+        } else {
+          attachmentParts.push(formatAttachmentContextForModel(att));
         }
       }
 

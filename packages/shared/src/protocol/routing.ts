@@ -246,6 +246,7 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.sessions.CANCEL,
   RPC_CHANNELS.sessions.KILL_SHELL,
   RPC_CHANNELS.sessions.RESPOND_TO_PERMISSION,
+  RPC_CHANNELS.sessions.RESPOND_TO_USER_QUESTION,
   RPC_CHANNELS.sessions.RESPOND_TO_CREDENTIAL,
   RPC_CHANNELS.sessions.COMMAND,
   RPC_CHANNELS.sessions.GET_PENDING_PLAN_EXECUTION,
@@ -291,6 +292,9 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.fs.SEARCH_BATCH,
   RPC_CHANNELS.fs.LIST_FILES,
   RPC_CHANNELS.fs.LIST_DIRECTORY,
+
+  // search — content owned by the active runtime workspace
+  RPC_CHANNELS.search.QUERY_WORKSPACE,
 
   // credentials — remote server's credential state
   RPC_CHANNELS.credentials.HEALTH_CHECK,

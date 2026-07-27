@@ -42,8 +42,8 @@ files:
 # `node_modules` directories are auto-excluded from `files`. extraResources
 # bypasses that. See: https://github.com/electron-userland/electron-builder/issues/3104
 #
-# Ripgrep is sourced from `@vscode/ripgrep` (was previously bundled inside the
-# SDK as `vendor/ripgrep/<platform>/rg`; removed in 0.2.113).
+# Ripgrep is sourced from the target-specific optional package installed by
+# `@vscode/ripgrep` and staged as the stable `ripgrep-binary` alias.
 
 extraMetadata:
   main: dist/main.cjs
@@ -83,8 +83,8 @@ mac:
     - from: node_modules/@anthropic-ai/claude-agent-sdk-binary
       to: app/node_modules/@anthropic-ai/claude-agent-sdk-binary
     # ripgrep (used by packages/server-core/src/services/search.ts).
-    - from: node_modules/@vscode/ripgrep
-      to: app/node_modules/@vscode/ripgrep
+    - from: node_modules/@vscode/ripgrep-binary
+      to: app/node_modules/@vscode/ripgrep-binary
     # WhatsApp worker subprocess (self-contained; Baileys bundled in).
     - from: ../../packages/messaging-whatsapp-worker/dist/worker.cjs
       to: messaging-whatsapp-worker/worker.cjs
@@ -171,8 +171,8 @@ win:
       to: app/node_modules/@anthropic-ai/claude-agent-sdk
     - from: node_modules/@anthropic-ai/claude-agent-sdk-binary
       to: app/node_modules/@anthropic-ai/claude-agent-sdk-binary
-    - from: node_modules/@vscode/ripgrep
-      to: app/node_modules/@vscode/ripgrep
+    - from: node_modules/@vscode/ripgrep-binary
+      to: app/node_modules/@vscode/ripgrep-binary
     - from: vendor/bun/bun.exe
       to: vendor/bun/bun.exe
     - from: vendor/codex/win32-x64
@@ -206,8 +206,8 @@ linux:
       to: app/node_modules/@anthropic-ai/claude-agent-sdk
     - from: node_modules/@anthropic-ai/claude-agent-sdk-binary
       to: app/node_modules/@anthropic-ai/claude-agent-sdk-binary
-    - from: node_modules/@vscode/ripgrep
-      to: app/node_modules/@vscode/ripgrep
+    - from: node_modules/@vscode/ripgrep-binary
+      to: app/node_modules/@vscode/ripgrep-binary
     # WhatsApp worker subprocess (self-contained; Baileys bundled in).
     - from: ../../packages/messaging-whatsapp-worker/dist/worker.cjs
       to: messaging-whatsapp-worker/worker.cjs

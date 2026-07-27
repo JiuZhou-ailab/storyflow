@@ -1,9 +1,6 @@
-/**
- * JSONL Session Storage
- *
- * Helpers for reading/writing sessions in JSONL format.
- * Format: Line 1 = SessionHeader, Lines 2+ = StoredMessage (one per line)
- */
+// input: Session JSONL files, portable paths, and persisted session/message types
+// output: Resilient session readers/writers with normalized persisted data
+// pos: Shared persistence boundary for workspace session history
 
 import { openSync, readSync, closeSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'fs';
 import { open, readFile } from 'fs/promises';
@@ -294,7 +291,11 @@ function parseMessagesResilient(content: string, sessionDir: string, startIndex:
 
     const line = expandSessionPath(content.slice(lineStart, lineEnd), sessionDir);
     try {
-      messages.push(JSON.parse(line) as StoredMessage);
+      const message = JSON.parse(line) as StoredMessage;
+      message.attachments = Array.isArray(message.attachments)
+        ? message.attachments.filter(Boolean)
+        : undefined;
+      messages.push(message);
     } catch {
       // Corrupted/truncated line (likely from a crash during write).
       // Skip it and continue — losing one message is better than losing all.

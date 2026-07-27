@@ -1,3 +1,7 @@
+// input: Core and GUI RPC registrars with mocked Electron host dependencies
+// output: Profile-level channel registration parity checks
+// pos: Prevents runtime handlers from escaping their declared host profile
+
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
@@ -92,6 +96,7 @@ async function getExpectedCoreChannels(): Promise<Set<string>> {
     labels,
     llm,
     oauth,
+    search,
     sessions,
     settings,
     skills,
@@ -110,6 +115,7 @@ async function getExpectedCoreChannels(): Promise<Set<string>> {
     import('@craft-agent/server-core/handlers/rpc/labels'),
     import('@craft-agent/server-core/handlers/rpc/llm-connections'),
     import('@craft-agent/server-core/handlers/rpc/oauth'),
+    import('@craft-agent/server-core/handlers/rpc/search'),
     import('@craft-agent/server-core/handlers/rpc/sessions'),
     import('@craft-agent/server-core/handlers/rpc/settings'),
     import('@craft-agent/server-core/handlers/rpc/skills'),
@@ -130,6 +136,7 @@ async function getExpectedCoreChannels(): Promise<Set<string>> {
     ...labels.HANDLED_CHANNELS,
     ...llm.HANDLED_CHANNELS,
     ...oauth.HANDLED_CHANNELS,
+    ...search.HANDLED_CHANNELS,
     ...sessions.HANDLED_CHANNELS,
     ...settings.HANDLED_CHANNELS,
     ...skills.HANDLED_CHANNELS,

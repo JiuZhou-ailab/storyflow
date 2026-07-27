@@ -36,6 +36,7 @@ export const RPC_CHANNELS = {
     CANCEL: 'sessions:cancel',
     KILL_SHELL: 'sessions:killShell',
     RESPOND_TO_PERMISSION: 'sessions:respondToPermission',
+    RESPOND_TO_USER_QUESTION: 'sessions:respondToUserQuestion',
     RESPOND_TO_CREDENTIAL: 'sessions:respondToCredential',
     COMMAND: 'sessions:command',
     GET_PENDING_PLAN_EXECUTION: 'sessions:getPendingPlanExecution',
@@ -106,6 +107,9 @@ export const RPC_CHANNELS = {
     SEARCH_BATCH: 'fs:searchBatch',
     LIST_FILES: 'fs:listFiles',
     LIST_DIRECTORY: 'fs:listDirectory',
+  },
+  search: {
+    QUERY_WORKSPACE: 'search:queryWorkspace',
   },
   debug: {
     LOG: 'debug:log',

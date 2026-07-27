@@ -136,6 +136,33 @@ export interface AuthResult {
 }
 
 // ============================================================
+// User Question Types
+// ============================================================
+
+export interface UserQuestionOption {
+  label: string;
+  description: string;
+}
+
+export interface UserQuestion {
+  header: string;
+  question: string;
+  options: UserQuestionOption[];
+  multiSelect: boolean;
+}
+
+export interface UserQuestionRequest {
+  requestId: string;
+  sessionId: string;
+  questions: UserQuestion[];
+}
+
+export interface UserQuestionResponse {
+  answers: Record<string, string>;
+  cancelled?: boolean;
+}
+
+// ============================================================
 // Developer Feedback
 // ============================================================
 

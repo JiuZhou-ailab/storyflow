@@ -11,6 +11,7 @@ import { existsSync, readdirSync } from 'fs'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { randomUUID } from 'node:crypto'
 import { type AgentEvent, setPermissionMode, hydratePreviousPermissionMode, getPermissionModeDiagnostics, type PermissionMode, unregisterSessionScopedToolCallbacks, mergeSessionScopedToolCallbacks, AbortReason, type AuthRequest, type AuthResult, type CredentialAuthRequest, type BrowserPaneFns, generateConversationSummary } from '@craft-agent/shared/agent'
+import type { UserQuestionRequest, UserQuestionResponse } from '@craft-agent/session-tools-core'
 import {
   resolveSessionConnection,
   createBackendFromConnection,
@@ -1145,6 +1146,18 @@ export class SessionManager implements ISessionManager {
     type?: 'bash' | 'file_write' | 'mcp_mutation' | 'api_mutation' | 'admin_approval'
     commandHash?: string
   }> = new Map()
+  private pendingUserQuestions = new Map<string, {
+    sessionId: string
+    resolve: (response: UserQuestionResponse) => void
+  }>()
+
+  private cancelPendingUserQuestionsForSession(sessionId: string): void {
+    for (const [requestId, pending] of this.pendingUserQuestions) {
+      if (pending.sessionId !== sessionId) continue
+      pending.resolve({ answers: {}, cancelled: true })
+      this.pendingUserQuestions.delete(requestId)
+    }
+  }
   // Privileged approval binding + audit logger
   private privilegedExecutionBroker = new PrivilegedExecutionBroker(sessionLog)
   // Session-local admin remember windows (exact command hash binding)
@@ -4238,6 +4251,17 @@ export class SessionManager implements ISessionManager {
 
       // Wire up session self-management tools (set_session_labels, set_session_status, etc.)
       mergeSessionScopedToolCallbacks(managed.id, {
+        askUserQuestionFn: (request: UserQuestionRequest) => new Promise<UserQuestionResponse>((resolve) => {
+          this.pendingUserQuestions.set(request.requestId, {
+            sessionId: managed.id,
+            resolve,
+          })
+          this.sendEvent({
+            type: 'user_question_request',
+            sessionId: managed.id,
+            request,
+          }, managed.workspace.id)
+        }),
         setSessionLabelsFn: async (sessionId: string | undefined, labels: string[]) => {
           await this.setSessionLabels(sessionId ?? managed.id, labels)
         },
@@ -5553,6 +5577,7 @@ export class SessionManager implements ISessionManager {
     this.pendingDeltas.delete(sessionId)
     this.clearAdminRememberApprovalsForSession(sessionId)
     this.clearPendingPermissionRequestsForSession(sessionId)
+    this.cancelPendingUserQuestionsForSession(sessionId)
 
     // Cancel any pending persistence write (session is being deleted, no need to save)
     sessionPersistenceQueue.cancel(sessionId)
@@ -6328,6 +6353,7 @@ export class SessionManager implements ISessionManager {
     if (managed.agent) {
       managed.agent.forceAbort(AbortReason.UserStop)
     }
+    this.cancelPendingUserQuestionsForSession(sessionId)
 
     // Only show "Response interrupted" message when user explicitly clicked Stop
     // Silent mode is used when redirecting (sending new message while processing)
@@ -6883,6 +6909,19 @@ export class SessionManager implements ISessionManager {
       sessionLog.warn(`Cannot respond to permission - no agent for session ${sessionId}`)
       return false
     }
+  }
+
+  respondToUserQuestion(
+    sessionId: string,
+    requestId: string,
+    response: UserQuestionResponse,
+  ): boolean {
+    const pending = this.pendingUserQuestions.get(requestId)
+    if (!pending || pending.sessionId !== sessionId) return false
+
+    this.pendingUserQuestions.delete(requestId)
+    pending.resolve(response)
+    return true
   }
 
   /**
@@ -8389,6 +8428,10 @@ export class SessionManager implements ISessionManager {
     // Clear pending credential resolvers (they won't be resolved, but prevents memory leak)
     this.pendingCredentialResolvers.clear()
     this.pendingPermissionRequests.clear()
+    for (const pending of this.pendingUserQuestions.values()) {
+      pending.resolve({ answers: {}, cancelled: true })
+    }
+    this.pendingUserQuestions.clear()
     this.adminRememberApprovals.clear()
 
     // Clean up session-scoped tool callbacks for all sessions

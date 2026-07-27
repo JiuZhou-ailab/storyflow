@@ -3,12 +3,14 @@
 // pos: Guards file CRUD/search from escaping the active workspace id
 
 import { existsSync, rmSync } from 'node:fs'
-import { mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, mock } from 'bun:test'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import type { StoreAttachmentResult } from '@craft-agent/shared/protocol'
 import type { HandlerFn, RequestContext, RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
@@ -21,6 +23,8 @@ let trackedReaddirPath = ''
 let trackedReaddirCalls = 0
 let trackedReaddirDelay: Promise<void> | null = null
 let attachmentSessionPath = ''
+let attachmentImageMetadata: { width: number; height: number } | null = null
+let attachmentProcessedImage = Buffer.from('')
 
 mock.module('fs/promises', () => ({
   ...realFsPromises,
@@ -79,8 +83,8 @@ function createFileHarness() {
         debug: () => {},
       },
       imageProcessor: {
-        getMetadata: async () => null,
-        process: async () => Buffer.from(''),
+        getMetadata: async () => attachmentImageMetadata,
+        process: async () => attachmentProcessedImage,
       },
     },
   }
@@ -174,6 +178,74 @@ describe('workspace-scoped file RPCs', () => {
       rmSync(outsideRoot, { recursive: true, force: true })
       workspaceRootPath = ''
       attachmentSessionPath = ''
+    }
+  })
+
+  it('stores original bytes as the attachment truth and keeps model bytes out of persistence', async () => {
+    workspaceRootPath = await mkdtemp(join(tmpdir(), 'craft-workspace-attachment-store-'))
+    attachmentSessionPath = join(workspaceRootPath, '.craft-agent', 'sessions', 'session-1')
+    const { storeAttachment, ctx } = createFileHarness()
+    const original = Buffer.from('complete original text', 'utf8')
+
+    try {
+      await mkdir(attachmentSessionPath, { recursive: true })
+      const result = await storeAttachment(ctx, 'session-1', {
+        type: 'text',
+        path: '/tmp/note.txt',
+        name: 'note.txt',
+        mimeType: 'text/plain',
+        base64: original.toString('base64'),
+        text: 'truncated preview',
+        size: original.length,
+      }) as StoreAttachmentResult
+
+      expect(await readFile(result.attachment.storedPath)).toEqual(original)
+      expect(result.attachment.size).toBe(original.length)
+      expect(result.attachment.representations?.find(item => item.kind === 'original')).toMatchObject({
+        path: result.attachment.storedPath,
+        size: original.length,
+        sha256: createHash('sha256').update(original).digest('hex'),
+      })
+      expect(result.modelInputBase64).toBeUndefined()
+      expect('resizedBase64' in result.attachment).toBe(false)
+    } finally {
+      rmSync(workspaceRootPath, { recursive: true, force: true })
+      workspaceRootPath = ''
+      attachmentSessionPath = ''
+    }
+  })
+
+  it('stores optimized model images as a separate derived representation', async () => {
+    workspaceRootPath = await mkdtemp(join(tmpdir(), 'craft-workspace-attachment-image-'))
+    attachmentSessionPath = join(workspaceRootPath, '.craft-agent', 'sessions', 'session-1')
+    attachmentImageMetadata = { width: 2000, height: 1000 }
+    attachmentProcessedImage = Buffer.from('bounded model image', 'utf8')
+    const { storeAttachment, ctx } = createFileHarness()
+    const original = Buffer.from('immutable original image', 'utf8')
+
+    try {
+      await mkdir(attachmentSessionPath, { recursive: true })
+      const result = await storeAttachment(ctx, 'session-1', {
+        type: 'image',
+        path: '/tmp/image.png',
+        name: 'image.png',
+        mimeType: 'image/png',
+        base64: original.toString('base64'),
+        size: original.length,
+      }) as StoreAttachmentResult
+
+      expect(await readFile(result.attachment.storedPath)).toEqual(original)
+      const modelInput = result.attachment.representations?.find(item => item.kind === 'model-input')
+      expect(modelInput).toBeDefined()
+      expect(await readFile(modelInput!.path)).toEqual(attachmentProcessedImage)
+      expect(result.modelInputBase64).toBe(attachmentProcessedImage.toString('base64'))
+      expect(result.modelInputMimeType).toBe('image/png')
+    } finally {
+      rmSync(workspaceRootPath, { recursive: true, force: true })
+      workspaceRootPath = ''
+      attachmentSessionPath = ''
+      attachmentImageMetadata = null
+      attachmentProcessedImage = Buffer.from('')
     }
   })
 

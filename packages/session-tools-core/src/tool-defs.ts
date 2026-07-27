@@ -22,6 +22,7 @@ import type { ToolResult } from './types.ts';
 
 // Handlers
 import { handleSubmitPlan } from './handlers/submit-plan.ts';
+import { handleAskUserQuestion } from './handlers/ask-user-question.ts';
 import { handleConfigValidate } from './handlers/config-validate.ts';
 import { handleSkillCreate } from './handlers/skill-create.ts';
 import { handleSkillValidate } from './handlers/skill-validate.ts';
@@ -52,6 +53,21 @@ import { handleListMessagingChannels, handleUnbindMessagingChannel } from './han
 
 export const SubmitPlanSchema = z.object({
   planPath: z.string().describe('Absolute path to the plan markdown file you wrote'),
+});
+
+export const AskUserQuestionSchema = z.object({
+  questions: z.array(z.object({
+    header: z.string().min(1).max(12).describe('Short label for the question'),
+    question: z.string().min(1).describe('Clear question shown to the user'),
+    options: z.array(z.object({
+      label: z.string().min(1).max(40).describe('Concise option label'),
+      description: z.string().min(1).describe('Meaning or trade-off of this option'),
+    })).min(2).max(4),
+    multiSelect: z.boolean().default(false),
+  })).min(1).max(4).refine(
+    questions => new Set(questions.map(question => question.question)).size === questions.length,
+    'Question text must be unique.',
+  ),
 });
 
 export const ConfigValidateSchema = z.object({
@@ -238,6 +254,11 @@ export const UnbindMessagingChannelSchema = z.object({
 // ============================================================
 
 export const TOOL_DESCRIPTIONS = {
+  ask_user_question: `Ask the user one to four focused questions and wait for their answers.
+
+Use this only when the answer materially changes the result and cannot be inferred safely.
+Each question needs 2-4 concrete options. The UI also provides a free-form answer.
+Batch independent questions into one call. Do not continue until the tool returns.`,
   SubmitPlan: `Submit a plan for user review.
 
 Call this after you have written your plan to a markdown file using the Write tool.
@@ -546,6 +567,7 @@ export type SessionToolDef = RegistrySessionToolDef | BackendSessionToolDef;
 // ============================================================
 
 export const SESSION_TOOL_DEFS: SessionToolDef[] = [
+  { name: 'ask_user_question', description: TOOL_DESCRIPTIONS.ask_user_question, inputSchema: AskUserQuestionSchema, executionMode: 'registry', safeMode: 'allow', handler: handleAskUserQuestion },
   { name: 'SubmitPlan', description: TOOL_DESCRIPTIONS.SubmitPlan, inputSchema: SubmitPlanSchema, executionMode: 'registry', safeMode: 'allow', handler: handleSubmitPlan },
   { name: 'config_validate', description: TOOL_DESCRIPTIONS.config_validate, inputSchema: ConfigValidateSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleConfigValidate },
   { name: 'skill_create', description: TOOL_DESCRIPTIONS.skill_create, inputSchema: SkillCreateSchema, executionMode: 'registry', safeMode: 'block', handler: handleSkillCreate },

@@ -14,6 +14,7 @@ import { registerLlmConnectionsHandlers } from './llm-connections'
 import { registerOAuthHandlers } from './oauth'
 import { registerResourcesHandlers } from './resources'
 import { registerOnboardingHandlers } from './onboarding'
+import { registerSearchHandlers } from './search'
 import { registerSessionsHandlers } from './sessions'
 export { registerSessionsHandlers, cleanupSessionFileWatchForClient } from './sessions'
 import { registerServerHandlers } from './server'
@@ -51,6 +52,7 @@ export function registerCoreRpcHandlers(
   registerOAuthHandlers(runtimeServer, deps)
   registerOnboardingHandlers(server, deps)
   registerResourcesHandlers(server, deps)
+  registerSearchHandlers(runtimeServer, deps)
   registerSessionsHandlers(runtimeServer, deps)
   if (serverCtx) registerServerHandlers(server, deps, serverCtx)
   registerSettingsHandlers(runtimeServer, deps)

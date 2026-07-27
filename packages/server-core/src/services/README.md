@@ -1,0 +1,11 @@
+# Services
+
+RPC 与会话边界之下可复用的服务。
+
+- `attachment-storage.ts` — 保存不可变附件原件与派生表示。
+- `git-bash.ts` — 在 Windows 上解析 Git Bash。
+- `image-utils.ts` / `image-utils.test.ts` — 检查并缩放图像。
+- `privileged-execution-broker.ts` — 管理高权限命令执行。
+- `search.ts` / `search.test.ts` — 执行有边界的 workspace 搜索。
+- `vcredist.ts` / `vcredist.test.ts` — 检查 Visual C++ 运行库。
+- `workspace-version-control.ts` — 提供 workspace 版本控制操作。

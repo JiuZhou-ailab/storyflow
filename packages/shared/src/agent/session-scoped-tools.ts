@@ -211,6 +211,11 @@ export function getSessionScopedTools(
         const callbacks = getSessionScopedToolCallbacks(sessionId);
         callbacks?.onAuthRequest?.(request as AuthRequest);
       },
+      onAskUserQuestion: async (request) => {
+        const callback = getSessionScopedToolCallbacks(sessionId)?.askUserQuestionFn;
+        if (!callback) throw new Error('Interactive questions are not supported by this host.');
+        return callback(request);
+      },
     });
 
     // Attach session self-management bindings (lazy getters from callback registry)
