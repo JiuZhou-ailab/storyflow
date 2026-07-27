@@ -18,6 +18,10 @@ import {
   getNovelWorkspaceVisibleRootDirectories,
   mapSearchResultsToNovelWorkspaceFiles,
   mapNativeWorkspaceCatalog,
+  openNovelDocumentTab,
+  closeNovelDocumentTab,
+  filterNovelDocumentTabs,
+  mapNovelDocumentTabs,
   groupNovelFileChanges,
   groupReviewableNovelFileChanges,
   getShortFormGlobalInfoFiles,
@@ -182,6 +186,52 @@ describe('writing workspace helpers', () => {
     expect(functionSource).toContain('sortByRelativePath')
     expect(functionSource).not.toContain('categorizeNovelPath')
     expect(functionSource).not.toContain('methodPackId')
+  })
+
+  it('keeps open document tabs unique and selects a neighbour when closing the active tab', () => {
+    const first = openNovelDocumentTab(
+      { workspaceRoot: null, paths: [], activePath: null },
+      '/novel',
+      '/novel/a.md',
+    )
+    const second = openNovelDocumentTab(first, '/novel', '/novel/b.md')
+    const reopened = openNovelDocumentTab(second, '/novel', '/novel/a.md')
+
+    expect(reopened).toEqual({
+      workspaceRoot: '/novel',
+      paths: ['/novel/a.md', '/novel/b.md'],
+      activePath: '/novel/a.md',
+    })
+    expect(closeNovelDocumentTab(reopened, '/novel/a.md')).toEqual({
+      workspaceRoot: '/novel',
+      paths: ['/novel/b.md'],
+      activePath: '/novel/b.md',
+    })
+    expect(closeNovelDocumentTab(second, '/novel/b.md')).toEqual({
+      workspaceRoot: '/novel',
+      paths: ['/novel/a.md'],
+      activePath: '/novel/a.md',
+    })
+  })
+
+  it('remaps and filters every affected open document tab without opening catalog neighbours', () => {
+    const state = {
+      workspaceRoot: '/novel',
+      paths: ['/novel/chapters/a.md', '/novel/chapters/b.md', '/novel/notes.md'],
+      activePath: '/novel/chapters/a.md',
+    }
+    const moved = mapNovelDocumentTabs(state, path => path.replace('/novel/chapters', '/novel/story'))
+
+    expect(moved).toEqual({
+      workspaceRoot: '/novel',
+      paths: ['/novel/story/a.md', '/novel/story/b.md', '/novel/notes.md'],
+      activePath: '/novel/story/a.md',
+    })
+    expect(filterNovelDocumentTabs(moved, path => !path.startsWith('/novel/story'))).toEqual({
+      workspaceRoot: '/novel',
+      paths: ['/novel/notes.md'],
+      activePath: '/novel/notes.md',
+    })
   })
 
   it('sorts manuscript chapters by numeric chapter order', () => {

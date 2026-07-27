@@ -368,6 +368,8 @@ export interface TurnCardProps {
   openAnnotationRequest?: OpenAnnotationRequest | null
   /** Annotation interaction mode (viewer uses tooltip-only to suppress the island) */
   annotationInteractionMode?: AnnotationInteractionMode
+  /** Optional product-specific content rendered after the assistant response. */
+  footer?: React.ReactNode
 }
 
 // ============================================================================
@@ -2794,6 +2796,7 @@ export const TurnCard = React.memo(function TurnCard({
   hasActiveFollowUpAnnotations = false,
   openAnnotationRequest,
   annotationInteractionMode = 'interactive',
+  footer,
 }: TurnCardProps) {
   // Derive the turn phase from props using the state machine.
   // This provides a single source of truth for lifecycle state,
@@ -3236,6 +3239,7 @@ export const TurnCard = React.memo(function TurnCard({
           />
         </div>
       )}
+      {footer}
     </div>
   )
 }, (prev, next) => {
@@ -3272,6 +3276,7 @@ export const TurnCard = React.memo(function TurnCard({
 
   // Re-render when active follow-up annotation state changes (plan CTA label)
   if (prev.hasActiveFollowUpAnnotations !== next.hasActiveFollowUpAnnotations) return false
+  if (prev.footer !== next.footer) return false
 
   // For complete, non-streaming turns: skip re-render only when both
   // session and turn identities match. Prevents stale local UI state from

@@ -1,6 +1,6 @@
-// input: Controlled directory visibility and the real project-sidebar component
-// output: Regression coverage for the directory module's collapsed public surface
-// pos: Keeps the directory toggle discoverable without leaking the file tree into the document toolbar
+// input: Expanded directory state and the real project-sidebar component
+// output: Regression coverage for the directory module without duplicate header controls
+// pos: Keeps directory visibility control on the document surface
 
 import * as React from 'react'
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
@@ -43,7 +43,7 @@ const treeProps: WorkspaceFileTreeProps = {
 }
 
 describe('WorkspaceProjectSidebar', () => {
-  it('keeps an independent directory toggle visible when the tree is collapsed', () => {
+  it('does not duplicate the document-owned directory toggle', () => {
     const html = renderToStaticMarkup(
       <TooltipProvider>
         <WorkspaceProjectSidebar
@@ -53,17 +53,13 @@ describe('WorkspaceProjectSidebar', () => {
           loadingLabel="正在加载项目目录..."
           emptyHint="项目为空"
           treeProps={treeProps}
-          expanded={false}
-          onExpandedChange={() => {}}
           onFocus={() => {}}
         />
       </TooltipProvider>
     )
 
-    expect(html).toMatch(/aria-label="[^"]+"/)
-    expect(html).toContain('aria-expanded="false"')
-    expect(html).toContain('lucide-folder-open')
-    expect(html).not.toContain('正在加载项目目录...')
-    expect(html).not.toContain('项目为空')
+    expect(html).not.toContain('aria-expanded')
+    expect(html).not.toContain('lucide-folder-open')
+    expect(html).not.toContain('h-[42px]')
   })
 })

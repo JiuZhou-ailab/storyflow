@@ -35,6 +35,7 @@ const FALLBACK_HEIGHTS: Record<InputMode | string, number> = {
   permission: 200,
   credential: 240,  // Taller for form fields + hint
   admin_approval: 220,
+  user_question: 360,
 }
 
 /**

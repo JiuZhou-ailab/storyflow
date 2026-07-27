@@ -28,6 +28,7 @@ import {
   handleSessionUnarchived,
   handleNameChanged,
   handlePermissionRequest,
+  handleUserQuestionRequest,
   handleCredentialRequest,
   handlePlanSubmitted,
   handleStatus,
@@ -177,6 +178,9 @@ export function processEvent(
 
     case 'permission_request':
       return handlePermissionRequest(state, event)
+
+    case 'user_question_request':
+      return handleUserQuestionRequest(state, event)
 
     case 'credential_request':
       return handleCredentialRequest(state, event)

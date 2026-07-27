@@ -5,7 +5,7 @@
  * All agent events flow through a single pure function for consistent state transitions.
  */
 
-import type { Session, Message, PermissionRequest, CredentialRequest, TypedError, PermissionMode, SessionStatus, AuthRequest, ToolDisplayMeta } from '../../shared/types'
+import type { Session, Message, PermissionRequest, CredentialRequest, UserQuestionRequest, TypedError, PermissionMode, SessionStatus, AuthRequest, ToolDisplayMeta } from '../../shared/types'
 
 /**
  * Streaming state for a session - replaces streamingTextRef
@@ -122,6 +122,12 @@ export interface PermissionRequestEvent {
   type: 'permission_request'
   sessionId: string
   request: PermissionRequest
+}
+
+export interface UserQuestionRequestEvent {
+  type: 'user_question_request'
+  sessionId: string
+  request: UserQuestionRequest
 }
 
 /**
@@ -493,6 +499,7 @@ export type AgentEvent =
   | ErrorEvent
   | TypedErrorEvent
   | PermissionRequestEvent
+  | UserQuestionRequestEvent
   | CredentialRequestEvent
   | SourcesChangedEvent
   | LabelsChangedEvent
@@ -533,6 +540,7 @@ export type AgentEvent =
  */
 export type Effect =
   | { type: 'permission_request'; request: PermissionRequest }
+  | { type: 'user_question_request'; request: UserQuestionRequest }
   | { type: 'credential_request'; request: CredentialRequest }
   | { type: 'generate_title'; sessionId: string; userMessage: string }
   | { type: 'permission_mode_changed'; sessionId: string; permissionMode: PermissionMode; previousPermissionMode?: PermissionMode; transitionDisplay?: string; modeVersion?: number; changedAt?: string; changedBy?: 'user' | 'system' | 'restore' | 'automation' | 'unknown' }

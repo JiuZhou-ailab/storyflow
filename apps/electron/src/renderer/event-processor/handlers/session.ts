@@ -20,6 +20,7 @@ import type {
   SessionUnarchivedEvent,
   NameChangedEvent,
   PermissionRequestEvent,
+  UserQuestionRequestEvent,
   CredentialRequestEvent,
   PlanSubmittedEvent,
   StatusEvent,
@@ -882,6 +883,19 @@ export function handlePermissionRequest(
       type: 'permission_request',
       request: event.request,
     }]
+  }
+}
+
+export function handleUserQuestionRequest(
+  state: SessionState,
+  event: UserQuestionRequestEvent
+): ProcessResult {
+  return {
+    state,
+    effects: [{
+      type: 'user_question_request',
+      request: event.request,
+    }],
   }
 }
 

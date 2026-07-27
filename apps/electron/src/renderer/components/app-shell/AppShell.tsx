@@ -54,7 +54,7 @@ import { RenameDialog } from "@/components/ui/rename-dialog"
 import { HeaderIconButton } from "@/components/ui/HeaderIconButton"
 import type { MentionFileReference } from "@/components/ui/mention-menu"
 import { Separator } from "@/components/ui/separator"
-import { Tooltip, TooltipTrigger, TooltipContent, DocumentFormattedMarkdownOverlay } from "@craft-agent/ui"
+import { Tooltip, TooltipTrigger, TooltipContent, DocumentFormattedMarkdownOverlay, MultiDiffPreviewOverlay } from "@craft-agent/ui"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -79,6 +79,7 @@ import { PanelStackContainer } from "./PanelStackContainer"
 import { ResizableColumn } from "./ResizableColumn"
 import type { ChatDisplayHandle } from "./ChatDisplay"
 import { NovelDocumentEditorPanel, type NovelDocumentEditorPanelHandle, type NovelSelectionAiRequest } from "@/components/writing/NovelDocumentEditorPanel"
+import { NovelDocumentTabStrip } from "@/components/writing/NovelDocumentTabStrip"
 import { NovelVersionHistoryDialog } from "@/components/writing/NovelVersionHistoryDialog"
 import { formatNovelWorkspaceFileTitle } from "@/components/writing/novel-file-display"
 import type {
@@ -181,9 +182,16 @@ import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { rendererPerf } from "@/lib/perf"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
 import { buildRejectFileChangesOperation } from "@/lib/file-change-review"
-import { getSnapshotChangeKind } from "@/lib/snapshot-revert"
+import {
+  buildRevertOperation,
+  buildSnapshotRevertPlan,
+  getSnapshotChangeKind,
+  type FileRevertPlan,
+  type FileState,
+} from "@/lib/snapshot-revert"
 import {
   getNovelReviewChangeKey,
+  getNovelReviewStatus,
   normalizeNovelFileChangePaths,
   type NovelReviewStatusMap,
 } from "@/lib/novel-review-workflow"
@@ -195,11 +203,16 @@ import {
   getNovelWorkspaceRelativePath,
   getNovelWorkspaceCandidateRoots,
   areNovelWorkspaceFilesEqual,
+  closeNovelDocumentTab,
+  filterNovelDocumentTabs,
   isNovelWorkspaceFilePathInRoot,
+  mapNovelDocumentTabs,
   mapNativeWorkspaceCatalog,
   mapSearchResultsToNovelWorkspaceFiles,
   NOVEL_WORKSPACE_DETECTION_QUERIES,
+  openNovelDocumentTab,
   selectDefaultNovelFile,
+  type NovelDocumentTabsState,
   type NativeWorkspaceCatalog,
   type NovelWorkspaceFile,
 } from "@/lib/writing-workspace"
@@ -284,7 +297,6 @@ const WRITING_ASSISTANT_MIN_WIDTH = 320
 const WORKSPACE_DIRECTORY_MIN_WIDTH = 220
 const WORKSPACE_DIRECTORY_MAX_WIDTH = 460
 const WORKSPACE_DIRECTORY_DEFAULT_WIDTH = 300
-const WORKSPACE_DIRECTORY_COLLAPSED_WIDTH = 42
 /** Fraction of the window the manuscript column takes before the user resizes it. */
 const DEFAULT_DOCUMENT_DOCK_WIDTH_RATIO = 0.34
 const NOVEL_AUTO_VERSION_CHAR_THRESHOLD = 100
@@ -410,6 +422,21 @@ function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
       }
     )
   })
+}
+
+async function readCurrentFileState(filePath: string): Promise<FileState> {
+  try {
+    return await window.electronAPI.readFile(filePath)
+  } catch (error) {
+    const code = typeof error === 'object' && error && 'code' in error
+      ? String(error.code)
+      : ''
+    const message = error instanceof Error ? error.message : String(error)
+    if (code === 'ENOENT' || message.includes('ENOENT') || message.includes('no such file')) {
+      return null
+    }
+    throw error
+  }
 }
 
 async function searchNovelWorkspaceFiles(
@@ -908,9 +935,7 @@ function AppShellContent({
     if (storage.getRaw(storage.KEYS.writingWorkspaceVisible) === null) return true
     return storage.get(storage.KEYS.workspaceDirectoryVisible, true)
   })
-  const workspaceDirectoryColumnWidth = workspaceDirectoryVisible
-    ? workspaceDirectoryWidth
-    : WORKSPACE_DIRECTORY_COLLAPSED_WIDTH
+  const writingWorkspaceDockWidth = novelWorkspaceNavigatorWidth + workspaceDirectoryWidth
   React.useEffect(() => {
     storage.remove(storage.KEYS.focusModeEnabled)
   }, [])
@@ -1724,7 +1749,7 @@ function AppShellContent({
           return
         }
         const directoryReserve = rightWorkspaceVisible
-          ? workspaceDirectoryColumnWidth + PANEL_GAP
+          ? workspaceDirectoryWidth + PANEL_GAP
           : 0
         const maxDocumentWidth = Math.max(
           NOVEL_WORKSPACE_NAVIGATOR_MIN_WIDTH,
@@ -1798,7 +1823,7 @@ function AppShellContent({
     updateHandleY(e.clientY)
     document.addEventListener('mousemove', handleMouseMove, true)
     document.addEventListener('mouseup', handleMouseUp, true)
-  }, [activityRailOffset, rightWorkspaceVisible, shellWidth, visibleSessionListWidth, workspaceDirectoryColumnWidth])
+  }, [activityRailOffset, rightWorkspaceVisible, shellWidth, visibleSessionListWidth, workspaceDirectoryWidth])
 
   // Spring transition config - shared between sidebar and header
   // Critical damping (no bounce): damping = 2 * sqrt(stiffness * mass)
@@ -1828,6 +1853,15 @@ function AppShellContent({
   const effectiveSessionFolderPath = useAtomValue(effectiveSessionFolderPathAtom)
   const novelFileChangeActivityKey = useAtomValue(effectiveSessionFileChangeKeyAtom)
   const [snapshotNovelFileChanges, setSnapshotNovelFileChanges] = React.useState<FileChange[]>([])
+  const [snapshotNovelRevert, setSnapshotNovelRevert] = React.useState<{
+    sessionId: string
+    changePaths: string[]
+    plans: FileRevertPlan[]
+  } | null>(null)
+  const [conversationDiffReview, setConversationDiffReview] = React.useState<{
+    sessionId: string
+    changes: FileChange[]
+  } | null>(null)
 
   // The working directory still anchors file-change presentation, but Skills
   // belong only to the active Storyflow project at {projectRoot}/.pi/skills.
@@ -1885,6 +1919,7 @@ function AppShellContent({
   const novelWorkspaceRefreshInFlightRef = React.useRef<Map<string, Promise<boolean>>>(new Map())
   const novelWorkspaceCatalogRevisionRef = React.useRef<Map<string, number>>(new Map())
   const novelWorkspaceLastRefreshKeyRef = React.useRef<string | null>(null)
+  const ensureNovelDocumentSavedRef = React.useRef<() => Promise<boolean>>(async () => true)
   const latestNovelFileChangesSignatureRef = React.useRef('')
   latestNovelFileChangesSignatureRef.current = latestNovelFileChangesSignature
   const [workspaceCreateEntryTarget, setWorkspaceCreateEntryTarget] = React.useState<WorkspaceCreateEntryTarget | null>(null)
@@ -2061,6 +2096,7 @@ function AppShellContent({
     }
 
     const targetPath = joinWorkspacePath(novelWorkspaceRoot, relativePath)
+    if (workspaceCreateEntryTarget.kind === 'file' && !await ensureNovelDocumentSavedRef.current()) return
     setWorkspaceCreatingEntry(true)
     try {
       if (workspaceCreateEntryTarget.kind === 'directory') {
@@ -2076,7 +2112,7 @@ function AppShellContent({
       await refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
       expandWorkspaceTreeDirectory(workspaceCreateEntryTarget.parentRelativePath)
       if (workspaceCreateEntryTarget.kind === 'file') {
-        setSelectedNovelFilePath(targetPath)
+        setNovelDocumentTabs(current => openNovelDocumentTab(current, novelWorkspaceRoot, targetPath))
         navigate(routes.view.writing())
       }
       setWorkspaceCreateEntryTarget(null)
@@ -2112,6 +2148,7 @@ function AppShellContent({
 
     const sourcePaths = await window.electronAPI.openFileDialog()
     if (sourcePaths.length === 0) return
+    if (!await ensureNovelDocumentSavedRef.current()) return
 
     let importedCount = 0
     let skippedCount = 0
@@ -2155,7 +2192,7 @@ function AppShellContent({
       await refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
       expandWorkspaceTreeDirectory(parentRelativePath)
       if (lastImportedPath) {
-        setSelectedNovelFilePath(lastImportedPath)
+        setNovelDocumentTabs(current => openNovelDocumentTab(current, novelWorkspaceRoot, lastImportedPath))
         navigate(routes.view.writing())
       }
       toast.success(t('writing.importFile.success', '已导入文件'))
@@ -2338,7 +2375,12 @@ function AppShellContent({
     () => new Map(novelWorkspaceFiles.map(file => [file.path, file])),
     [novelWorkspaceFiles]
   )
-  const [selectedNovelFilePath, setSelectedNovelFilePath] = React.useState<string | null>(null)
+  const [novelDocumentTabs, setNovelDocumentTabs] = React.useState<NovelDocumentTabsState>({
+    workspaceRoot: null,
+    paths: [],
+    activePath: null,
+  })
+  const selectedNovelFilePath = novelDocumentTabs.activePath
 
   React.useEffect(() => {
     if (!novelWorkspaceRoot) return
@@ -2351,12 +2393,8 @@ function AppShellContent({
           const catalog = novelWorkspaceCatalogCacheRef.current.get(novelWorkspaceRoot)
           if (!catalog) return
 
-          setSelectedNovelFilePath((currentPath) => {
-            if (!currentPath || catalog.files.some(file => file.path === currentPath)) {
-              return currentPath
-            }
-            return selectDefaultNovelFile(catalog.files)?.path ?? null
-          })
+          // A transiently incomplete catalog must not discard an open editor.
+          // Explicit move/delete actions below reconcile tabs with confirmed disk mutations.
         })
         .catch((error) => {
           if (!(error instanceof Error) || !error.message.includes('Workspace not found')) {
@@ -2367,7 +2405,6 @@ function AppShellContent({
           const emptyCatalog: NativeWorkspaceCatalog = { files: [], directories: [] }
           novelWorkspaceCatalogCacheRef.current.set(novelWorkspaceRoot, emptyCatalog)
           setNovelWorkspaceCatalogIfChanged(emptyCatalog)
-          setSelectedNovelFilePath(null)
         })
     }
     const handleVisibilityChange = (): void => {
@@ -2385,7 +2422,7 @@ function AppShellContent({
   const selectedNovelFile = React.useMemo(() => {
     const canResolveSelectedNovelFile = showNovelWorkspaceSidebar || showNovelWorkspacePending
     if (!canResolveSelectedNovelFile) return undefined
-    if (!selectedNovelFilePath) return defaultNovelFile
+    if (!selectedNovelFilePath) return undefined
 
     const listedFile = novelWorkspaceFileByPath.get(selectedNovelFilePath)
     if (listedFile) return listedFile
@@ -2398,32 +2435,43 @@ function AppShellContent({
     }
 
     return undefined
-  }, [defaultNovelFile, novelWorkspaceFileByPath, novelWorkspaceRoot, selectedNovelFilePath, showNovelWorkspacePending, showNovelWorkspaceSidebar])
+  }, [novelWorkspaceFileByPath, novelWorkspaceRoot, selectedNovelFilePath, showNovelWorkspacePending, showNovelWorkspaceSidebar])
 
   React.useEffect(() => {
     if (!showNovelWorkspaceSidebar) {
       if (novelWorkspaceCandidateRoots.length === 0) {
-        setSelectedNovelFilePath(null)
+        setNovelDocumentTabs({ workspaceRoot: null, paths: [], activePath: null })
       }
       return
     }
 
-    if (
-      selectedNovelFilePath
-      && novelWorkspaceRoot
-      && isNovelWorkspaceFilePathInRoot(selectedNovelFilePath, novelWorkspaceRoot)
-    ) {
-      return
-    }
-
-    setSelectedNovelFilePath(defaultNovelFile?.path ?? null)
+    if (!novelWorkspaceRoot || novelDocumentTabs.workspaceRoot === novelWorkspaceRoot) return
+    const initialPath = defaultNovelFile?.path ?? null
+    setNovelDocumentTabs({
+      workspaceRoot: novelWorkspaceRoot,
+      paths: initialPath ? [initialPath] : [],
+      activePath: initialPath,
+    })
   }, [
     defaultNovelFile?.path,
     novelWorkspaceCandidateRoots.length,
     novelWorkspaceRoot,
-    selectedNovelFilePath,
+    novelDocumentTabs.workspaceRoot,
     showNovelWorkspaceSidebar,
   ])
+
+  const openNovelFiles = React.useMemo(
+    () => novelDocumentTabs.paths.flatMap((path): NovelWorkspaceFile[] => {
+      const listedFile = novelWorkspaceFileByPath.get(path)
+      if (listedFile) return [listedFile]
+      if (!novelWorkspaceRoot || !isNovelWorkspaceFilePathInRoot(path, novelWorkspaceRoot)) return []
+      return [{
+        path,
+        relativePath: getNovelWorkspaceRelativePath(path, novelWorkspaceRoot),
+      }]
+    }),
+    [novelDocumentTabs.paths, novelWorkspaceFileByPath, novelWorkspaceRoot],
+  )
 
   const [novelDocumentContent, setNovelDocumentContent] = React.useState('')
   const [savedNovelDocumentContent, setSavedNovelDocumentContent] = React.useState('')
@@ -2683,11 +2731,12 @@ function AppShellContent({
           return changed ? next : previous
         })
       }
-      if (isSameOrChildWorkspacePath(selectedNovelFilePath, result.sourcePath)) {
-        setSelectedNovelFilePath(previous => previous
-          ? remapWorkspacePath(previous, result.sourcePath, result.destinationPath)
-          : previous)
-      }
+      setNovelDocumentTabs(current => mapNovelDocumentTabs(
+        current,
+        path => isSameOrChildWorkspacePath(path, result.sourcePath)
+          ? remapWorkspacePath(path, result.sourcePath, result.destinationPath)
+          : path,
+      ))
 
       toast.success(newName
         ? t('writing.renameFile.success', '已重命名')
@@ -2760,7 +2809,10 @@ function AppShellContent({
       setNovelWorkspaceFiles(nextState.files)
       setNovelWorkspaceDirectories(nextState.directories)
       setExpandedFolders(nextState.expandedIds)
-      setSelectedNovelFilePath(nextState.selectedPath)
+      setNovelDocumentTabs(current => filterNovelDocumentTabs(
+        current,
+        path => !isSameOrChildWorkspacePath(path, entry.path),
+      ))
       toast.success(t('writing.deleteFile.success', '已删除'))
     } catch (error) {
       console.error('[AppShell] Failed to delete workspace entry:', error)
@@ -2942,6 +2994,7 @@ function AppShellContent({
       }
     }
   }, [flushNovelDocumentChangeVersion, getCurrentNovelDocumentContent, isCurrentNovelDocumentDirty, markSavedNovelDocumentChangeVersion, maybeCreateNovelAutoVersion, novelDocumentContent, savedNovelDocumentContent, selectedNovelDocumentPath, t])
+  ensureNovelDocumentSavedRef.current = ensureNovelDocumentSaved
 
   const handleSelectNovelFile = React.useCallback(async (file: NovelWorkspaceFile) => {
     if (file.path === selectedNovelFilePath) {
@@ -2963,14 +3016,16 @@ function AppShellContent({
       filePath: file.path,
       startedAt: switchStartedAt,
     }
-    setSelectedNovelFilePath(file.path)
+    if (novelWorkspaceRoot) {
+      setNovelDocumentTabs(current => openNovelDocumentTab(current, novelWorkspaceRoot, file.path))
+    }
     rendererPerf.recordNovelDocumentEvent({
       filePath: file.path,
       phase: 'select',
       durationMs: performance.now() - switchStartedAt,
     })
     onOpenWritingWorkspace()
-  }, [ensureNovelDocumentSaved, onOpenWritingWorkspace, selectedNovelFilePath])
+  }, [ensureNovelDocumentSaved, novelWorkspaceRoot, onOpenWritingWorkspace, selectedNovelFilePath])
 
   const handleSelectNovelFileByPath = React.useCallback(async (filePath: string | null) => {
     if (!filePath) return
@@ -2981,6 +3036,23 @@ function AppShellContent({
     }
     await handleSelectNovelFile(file)
   }, [handleSelectNovelFile, novelWorkspaceFileByPath, onOpenFile])
+
+  const handleCloseNovelFileTab = React.useCallback(async (filePath: string) => {
+    if (filePath !== selectedNovelFilePath) {
+      setNovelDocumentTabs(current => closeNovelDocumentTab(current, filePath))
+      return
+    }
+
+    if (!await ensureNovelDocumentSaved()) return
+    const nextTabs = closeNovelDocumentTab(novelDocumentTabs, filePath)
+    if (nextTabs.activePath) {
+      novelDocumentSwitchStartRef.current = {
+        filePath: nextTabs.activePath,
+        startedAt: performance.now(),
+      }
+    }
+    setNovelDocumentTabs(nextTabs)
+  }, [ensureNovelDocumentSaved, novelDocumentTabs, selectedNovelFilePath])
 
   const prepareNovelWorkspaceBriefForSend = React.useCallback(async (sessionId: string): Promise<NovelWorkspaceBriefPreparation> => {
     if (!novelWorkspaceRoot) return { shouldSend: true }
@@ -3033,7 +3105,31 @@ function AppShellContent({
       if (previousCommit && headCommit && previousCommit !== headCommit) {
         const changedFiles = await window.electronAPI.compareWorkspaceVersions(novelWorkspaceRoot, previousCommit, headCommit)
         const snapshotChanges = buildWorkspaceVersionReviewChanges(changedFiles, novelWorkspaceRoot)
+        const relativePaths = [...new Set(changedFiles.flatMap(change => (
+          change.status === 'renamed' && change.previousPath
+            ? [change.previousPath, change.path]
+            : [change.path]
+        )))]
+        const normalizedRoot = novelWorkspaceRoot.replace(/\/+$/, '')
+        const plans = await Promise.all(relativePaths.map(async relativePath => buildSnapshotRevertPlan({
+          filePath: `${normalizedRoot}/${relativePath}`,
+          baseContent: await window.electronAPI.readWorkspaceFileAtVersion(
+            novelWorkspaceRoot,
+            previousCommit,
+            relativePath,
+          ),
+          headContent: await window.electronAPI.readWorkspaceFileAtVersion(
+            novelWorkspaceRoot,
+            headCommit,
+            relativePath,
+          ),
+        })))
         setSnapshotNovelFileChanges(snapshotChanges)
+        setSnapshotNovelRevert({
+          sessionId,
+          changePaths: snapshotChanges.map(change => change.filePath),
+          plans,
+        })
         novelAgentTouchedPathsRef.current[sessionId] = collectAgentTouchedRelativePaths(
           snapshotChanges.length > 0 ? snapshotChanges : reviewableNovelFileChanges,
           novelWorkspaceRoot,
@@ -3068,6 +3164,7 @@ function AppShellContent({
 
     if (!wasProcessing && isProcessing) {
       setSnapshotNovelFileChanges([])
+      setSnapshotNovelRevert(null)
     }
 
     if (wasProcessing && !isProcessing) {
@@ -3182,16 +3279,11 @@ function AppShellContent({
   const {
     novelChangeReviewStatus,
     persistNovelChangeReviewStatus,
-    pendingNovelChangedFilePaths,
     selectedNovelPendingChanges,
-    selectedNovelReviewFileIndex,
-    handleSelectAdjacentNovelChangeFile,
-    handleSelectNextNovelChangeAfterStatus,
   } = useNovelReviewController({
     novelWorkspaceRoot,
     reviewableNovelFileChanges,
     selectedNovelFilePath: selectedNovelFile?.path,
-    onSelectNovelFileByPath: handleSelectNovelFileByPath,
   })
 
   React.useEffect(() => {
@@ -3432,6 +3524,22 @@ function AppShellContent({
       />
     )
   }, [isAutoCompact, isNovelWorkspaceNavigatorActive, rightWorkspaceVisible])
+  const directoryToggleLabel = workspaceDirectoryVisible
+    ? t('writing.directory.collapse', '收起目录')
+    : t('writing.directory.expand', '展开目录')
+  const directoryToggleButton = showNovelWorkspaceSidebar
+    ? (
+      <HeaderIconButton
+        icon={<FolderOpen className="h-4 w-4" strokeWidth={1.7} />}
+        tooltip={directoryToggleLabel}
+        aria-label={directoryToggleLabel}
+        aria-expanded={workspaceDirectoryVisible}
+        data-state={workspaceDirectoryVisible ? 'open' : 'closed'}
+        onClick={() => setWorkspaceDirectoryVisible((visible) => !visible)}
+        className="h-[26px] w-[26px] rounded-lg"
+      />
+    )
+    : null
 
   // The document dock is anchored to the right edge at a width the user owns.
   // Window resizing must therefore leave it alone and let the conversation absorb
@@ -3443,7 +3551,7 @@ function AppShellContent({
     if (!isNovelWorkspaceNavigatorActive) return
 
     const directoryReserve = rightWorkspaceVisible
-      ? workspaceDirectoryColumnWidth + PANEL_GAP
+      ? workspaceDirectoryWidth + PANEL_GAP
       : 0
     const available = shellWidth
       - activityRailOffset
@@ -3469,7 +3577,7 @@ function AppShellContent({
     rightWorkspaceVisible,
     shellWidth,
     visibleSessionListWidth,
-    workspaceDirectoryColumnWidth,
+    workspaceDirectoryWidth,
   ])
 
   React.useEffect(() => {
@@ -3657,7 +3765,6 @@ function AppShellContent({
     }
     persistNovelChangeReviewStatus(nextStatus)
     pushNovelReviewUndoEntry(undoEntry)
-    void handleSelectNextNovelChangeAfterStatus(filePath, nextStatus)
     toast.success(t('writing.review.fileAccepted', 'File changes accepted'), undoEntry ? {
       action: {
         label: t('common.undo', 'Undo'),
@@ -3667,81 +3774,9 @@ function AppShellContent({
   }, [
     ensureNovelDocumentSaved,
     handleUndoNovelReviewAction,
-    handleSelectNextNovelChangeAfterStatus,
     novelChangeReviewStatus,
     persistNovelChangeReviewStatus,
     pushNovelReviewUndoEntry,
-    selectedNovelFile?.path,
-    t,
-  ])
-
-  const handleAcceptAllNovelChanges = React.useCallback(async () => {
-    const pendingChangesByPath = new Map<string, FileChange[]>()
-    for (const change of reviewableNovelFileChanges) {
-      if (change.error) continue
-      const changeKey = getNovelReviewChangeKey(change)
-      if (novelChangeReviewStatus[changeKey]) continue
-
-      const changesForFile = pendingChangesByPath.get(change.filePath) ?? []
-      changesForFile.push(change)
-      pendingChangesByPath.set(change.filePath, changesForFile)
-    }
-
-    if (selectedNovelFile?.path && pendingChangesByPath.has(selectedNovelFile.path)) {
-      const saved = await ensureNovelDocumentSaved()
-      if (!saved) return
-    }
-
-    const nextStatus: NovelReviewStatusMap = { ...novelChangeReviewStatus }
-    let undoStatus: NovelReviewStatusMap = { ...novelChangeReviewStatus }
-    const undoContentByPath = new Map<string, string>()
-    const undoDeletePaths = new Set<string>()
-    for (const [filePath, changes] of pendingChangesByPath) {
-      try {
-        const currentContent = await window.electronAPI.readFile(filePath)
-        const rejected = buildRejectFileChangesOperation(changes, currentContent)
-        if (rejected.ok) {
-          for (const change of changes) {
-            undoStatus[getNovelReviewChangeKey(change)] = 'rejected'
-          }
-          if (rejected.operation === 'write') {
-            undoContentByPath.set(filePath, rejected.content)
-          } else {
-            undoDeletePaths.add(filePath)
-            undoContentByPath.delete(filePath)
-          }
-        }
-      } catch (error) {
-        console.warn('[writing] Failed to capture accept-all undo entry:', error)
-      }
-
-      for (const change of changes) {
-        nextStatus[getNovelReviewChangeKey(change)] = 'accepted'
-      }
-    }
-
-    persistNovelChangeReviewStatus(nextStatus)
-    const undoEntry: NovelReviewUndoEntry | undefined = undoContentByPath.size > 0 || undoDeletePaths.size > 0
-      ? {
-          status: undoStatus,
-          writes: Array.from(undoContentByPath, ([filePath, content]) => ({ filePath, content })),
-          deletes: Array.from(undoDeletePaths, (filePath) => ({ filePath })),
-        }
-      : undefined
-    pushNovelReviewUndoEntry(undoEntry)
-    toast.success(t('writing.review.acceptedAll', 'All changes accepted'), undoEntry ? {
-      action: {
-        label: t('common.undo', 'Undo'),
-        onClick: () => { void handleUndoNovelReviewAction() },
-      },
-    } : undefined)
-  }, [
-    ensureNovelDocumentSaved,
-    handleUndoNovelReviewAction,
-    novelChangeReviewStatus,
-    persistNovelChangeReviewStatus,
-    pushNovelReviewUndoEntry,
-    reviewableNovelFileChanges,
     selectedNovelFile?.path,
     t,
   ])
@@ -3800,7 +3835,6 @@ function AppShellContent({
         void refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
       }
 
-      void handleSelectNextNovelChangeAfterStatus(filePath, nextStatus)
       toast.success(t('writing.review.fileRejected', 'File changes rejected'), {
         action: {
           label: t('common.undo', 'Undo'),
@@ -3815,7 +3849,6 @@ function AppShellContent({
   }, [
     ensureNovelDocumentSaved,
     handleUndoNovelReviewAction,
-    handleSelectNextNovelChangeAfterStatus,
     novelChangeReviewStatus,
     novelWorkspaceRoot,
     persistNovelChangeReviewStatus,
@@ -3824,6 +3857,187 @@ function AppShellContent({
     refreshNovelWorkspaceFilesAfterMutation,
     selectedNovelFile?.path,
     t,
+  ])
+
+  const reviewableNovelFileChangeByKey = React.useMemo(
+    () => new Map(reviewableNovelFileChanges.map(change => [getNovelReviewChangeKey(change), change])),
+    [reviewableNovelFileChanges]
+  )
+  const resolveFileChangeReviewStatus = React.useCallback<NonNullable<AppShellContextType['resolveFileChangeReviewStatus']>>(
+    (sessionId, change) => {
+      if (sessionId !== effectiveSessionId) return undefined
+      const reviewableChange = reviewableNovelFileChangeByKey.get(getNovelReviewChangeKey(change))
+      if (!reviewableChange) return undefined
+      return getNovelReviewStatus(novelChangeReviewStatus, reviewableChange) ?? 'pending'
+    },
+    [effectiveSessionId, novelChangeReviewStatus, reviewableNovelFileChangeByKey]
+  )
+  const handleAcceptConversationFileChange = React.useCallback<NonNullable<AppShellContextType['onAcceptFileChange']>>(
+    (sessionId, change) => {
+      if (sessionId !== effectiveSessionId) return
+      const reviewableChange = reviewableNovelFileChangeByKey.get(getNovelReviewChangeKey(change))
+      if (reviewableChange) void handleAcceptNovelFileChanges([reviewableChange])
+    },
+    [effectiveSessionId, handleAcceptNovelFileChanges, reviewableNovelFileChangeByKey]
+  )
+  const handleRejectConversationFileChange = React.useCallback<NonNullable<AppShellContextType['onRejectFileChange']>>(
+    (sessionId, change) => {
+      if (sessionId !== effectiveSessionId) return
+      const reviewableChange = reviewableNovelFileChangeByKey.get(getNovelReviewChangeKey(change))
+      if (reviewableChange) void handleRejectNovelFileChanges([reviewableChange])
+    },
+    [effectiveSessionId, handleRejectNovelFileChanges, reviewableNovelFileChangeByKey]
+  )
+  const handleOpenConversationFileChanges = React.useCallback<NonNullable<AppShellContextType['onOpenFileChanges']>>(
+    (sessionId, changes) => {
+      if (sessionId !== effectiveSessionId) return
+      const reviewableChanges = changes.filter(change => !change.error)
+      if (reviewableChanges.length === 0) return
+      setConversationDiffReview({ sessionId, changes: reviewableChanges })
+      setRightWorkspaceVisible(true)
+    },
+    [effectiveSessionId]
+  )
+  const handleRevertConversationFileChanges = React.useCallback<NonNullable<AppShellContextType['onRevertFileChanges']>>(
+    async (sessionId, changes) => {
+      if (sessionId !== effectiveSessionId) return
+      const reviewableChanges = changes.filter(change => !change.error)
+      const requestedPaths = [...new Set(reviewableChanges.map(change => change.filePath))]
+      if (requestedPaths.length === 0) return
+
+      if (selectedNovelFile?.path && requestedPaths.includes(selectedNovelFile.path)) {
+        const saved = await ensureNovelDocumentSaved()
+        if (!saved) return
+      }
+
+      try {
+        const snapshotMatches = snapshotNovelRevert?.sessionId === sessionId
+          && requestedPaths.length === snapshotNovelRevert.changePaths.length
+          && requestedPaths.every(path => snapshotNovelRevert.changePaths.includes(path))
+        const planned: Array<{
+          plan: FileRevertPlan
+          current: FileState
+          operation: ReturnType<typeof buildRevertOperation>
+        }> = []
+
+        if (snapshotMatches && snapshotNovelRevert) {
+          for (const plan of snapshotNovelRevert.plans) {
+            const current = await readCurrentFileState(plan.filePath)
+            const operation = buildRevertOperation(plan, current)
+            if (!operation.ok) {
+              throw new Error(t(
+                'writing.review.revertConflict',
+                '文件已被后续编辑，无法安全撤回本轮修改。'
+              ))
+            }
+            planned.push({ plan, current, operation })
+          }
+        } else {
+          const changesByPath = new Map<string, FileChange[]>()
+          for (const change of reviewableChanges) {
+            changesByPath.set(change.filePath, [
+              ...(changesByPath.get(change.filePath) ?? []),
+              change,
+            ])
+          }
+          for (const [filePath, fileChanges] of changesByPath) {
+            const current = await window.electronAPI.readFile(filePath)
+            const rejected = buildRejectFileChangesOperation(fileChanges, current)
+            if (!rejected.ok) throw new Error(rejected.reason)
+            const plan = buildSnapshotRevertPlan({
+              filePath,
+              baseContent: rejected.operation === 'delete' ? null : rejected.content,
+              headContent: current,
+            })
+            planned.push({ plan, current, operation: buildRevertOperation(plan, current) })
+          }
+        }
+
+        const undoEntry: NovelReviewUndoEntry = {
+          status: novelChangeReviewStatus,
+          writes: planned.flatMap(({ plan, current }) => (
+            current == null ? [] : [{ filePath: plan.filePath, content: current }]
+          )),
+          deletes: planned.flatMap(({ plan, current }) => (
+            current == null ? [{ filePath: plan.filePath }] : []
+          )),
+        }
+        for (const { plan, operation } of planned) {
+          if (!operation.ok || operation.operation === 'noop') continue
+          if (operation.operation === 'write') {
+            await window.electronAPI.writeFile(plan.filePath, operation.content)
+          } else {
+            await window.electronAPI.deleteFile(plan.filePath)
+          }
+        }
+
+        const revertedPaths = new Set(planned.map(({ plan }) => plan.filePath))
+        const nextStatus = { ...novelChangeReviewStatus }
+        for (const change of [...reviewableChanges, ...reviewableNovelFileChanges]) {
+          if (revertedPaths.has(change.filePath)) {
+            nextStatus[getNovelReviewChangeKey(change)] = 'rejected'
+          }
+        }
+        persistNovelChangeReviewStatus(nextStatus)
+        pushNovelReviewUndoEntry(undoEntry)
+
+        if (selectedNovelFile?.path) {
+          const selectedOperation = planned.find(({ plan }) => plan.filePath === selectedNovelFile.path)
+          if (selectedOperation?.operation.ok) {
+            replaceNovelDocumentContent(
+              selectedOperation.operation.operation === 'write'
+                ? selectedOperation.operation.content
+                : selectedOperation.operation.operation === 'noop'
+                  ? selectedOperation.current ?? ''
+                  : ''
+            )
+          }
+        }
+        if (novelWorkspaceRoot) {
+          await refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
+        }
+        toast.success(t('writing.review.turnReverted', '已撤回本轮文件修改'), {
+          action: {
+            label: t('common.undo', 'Undo'),
+            onClick: () => { void handleUndoNovelReviewAction() },
+          },
+        })
+      } catch (error) {
+        toast.error(t('writing.review.rejectFailed', 'Failed to reject this change'), {
+          description: error instanceof Error ? error.message : String(error),
+        })
+      }
+    },
+    [
+      effectiveSessionId,
+      ensureNovelDocumentSaved,
+      handleUndoNovelReviewAction,
+      novelChangeReviewStatus,
+      novelWorkspaceRoot,
+      persistNovelChangeReviewStatus,
+      pushNovelReviewUndoEntry,
+      refreshNovelWorkspaceFilesAfterMutation,
+      replaceNovelDocumentContent,
+      reviewableNovelFileChanges,
+      selectedNovelFile?.path,
+      snapshotNovelRevert,
+      t,
+    ]
+  )
+  const appShellContextValueWithReview = React.useMemo<AppShellContextType>(() => ({
+    ...appShellContextValue,
+    resolveFileChangeReviewStatus,
+    onAcceptFileChange: handleAcceptConversationFileChange,
+    onRejectFileChange: handleRejectConversationFileChange,
+    onOpenFileChanges: handleOpenConversationFileChanges,
+    onRevertFileChanges: handleRevertConversationFileChanges,
+  }), [
+    appShellContextValue,
+    handleAcceptConversationFileChange,
+    handleOpenConversationFileChanges,
+    handleRejectConversationFileChange,
+    handleRevertConversationFileChanges,
+    resolveFileChangeReviewStatus,
   ])
 
   const handleFlaggedClick = useCallback(() => {
@@ -4241,6 +4455,7 @@ function AppShellContent({
   const activityWorkspaceDirectory = showPrimarySidebar
     && isSidebarVisible
     && showNovelWorkspaceSidebar
+    && workspaceDirectoryVisible
     && novelWorkspaceRoot
     && activeWorkspaceId
     ? (
@@ -4251,8 +4466,6 @@ function AppShellContent({
         onFocus={handleSidebarFocus}
         loadingLabel={t('writing.loadingWorkspace', '正在加载项目目录...')}
         emptyHint={t('chatOpening.project.emptyHint', '先说目标即可；Storyflow 不会预先创建目录。')}
-        expanded={workspaceDirectoryVisible}
-        onExpandedChange={setWorkspaceDirectoryVisible}
         treeProps={{
           workspaceId: activeWorkspaceId,
           workspaceName: activeWorkspace?.name ?? t('writing.workspace'),
@@ -4292,24 +4505,14 @@ function AppShellContent({
                   onAddSelectionToChat={handleAddNovelSelectionToChat}
                   onSendSelectionToChat={handleSendNovelSelectionToChat}
                   reviewChanges={selectedNovelPendingChanges}
-                  pendingChangeCount={pendingNovelChangedFilePaths.length}
-                  pendingFileIndex={selectedNovelReviewFileIndex >= 0 ? selectedNovelReviewFileIndex : undefined}
-                  onAcceptReviewChanges={selectedNovelPendingChanges.length > 0 ? () => handleAcceptNovelFileChanges(selectedNovelPendingChanges) : undefined}
-                  onAcceptAllReviewChanges={pendingNovelChangedFilePaths.length > 0 ? handleAcceptAllNovelChanges : undefined}
-                  onRejectReviewChanges={selectedNovelPendingChanges.length > 0 ? () => { void handleRejectNovelFileChanges(selectedNovelPendingChanges) } : undefined}
-                  onPreviousReviewFile={() => { void handleSelectAdjacentNovelChangeFile('previous') }}
-                  onNextReviewFile={() => { void handleSelectAdjacentNovelChangeFile('next') }}
                   toolbarAccessory={(
-                    <>
-                      <HeaderIconButton
-                        icon={<History className="h-4 w-4" strokeWidth={1.7} />}
-                        tooltip={t('writing.version.title', '版本管理')}
-                        disabled={!novelWorkspaceRoot}
-                        onClick={() => setNovelVersionDialogOpen(true)}
-                        className="h-[26px] w-[26px] rounded-lg"
-                      />
-                      {rightWorkspaceToggleButton}
-                    </>
+                    <HeaderIconButton
+                      icon={<History className="h-4 w-4" strokeWidth={1.7} />}
+                      tooltip={t('writing.version.title', '版本管理')}
+                      disabled={!novelWorkspaceRoot}
+                      onClick={() => setNovelVersionDialogOpen(true)}
+                      className="h-[26px] w-[26px] rounded-lg"
+                    />
                   )}
                 />
               ) : (
@@ -4319,11 +4522,6 @@ function AppShellContent({
                   onCreateFile={() => handleWorkspaceOpeningCommand('create-file')}
                   onImportFiles={() => handleWorkspaceOpeningCommand('import-files')}
                   onOpenSkills={() => handleWorkspaceOpeningCommand('open-skills')}
-                  headerActions={(
-                    <>
-                      {rightWorkspaceToggleButton}
-                    </>
-                  )}
                 />
               )
             ) : showNovelWorkspacePending ? (
@@ -4358,14 +4556,52 @@ function AppShellContent({
               </div>
             ) : null
 
+  const writingWorkspaceHeader = showNovelDocumentNavigator && novelWorkspaceRoot ? (
+    <NovelDocumentTabStrip
+      files={openNovelFiles}
+      activePath={selectedNovelFilePath}
+      onActivate={(file) => { void handleSelectNovelFile(file) }}
+      onClose={(filePath) => { void handleCloseNovelFileTab(filePath) }}
+      onCreateFile={() => handleWorkspaceOpeningCommand('create-file')}
+      trailingActions={(
+        <>
+          {directoryToggleButton}
+          {rightWorkspaceToggleButton}
+        </>
+      )}
+    />
+  ) : null
+
+  const conversationDiffSurface = conversationDiffReview?.sessionId === effectiveSessionId ? (
+    <MultiDiffPreviewOverlay
+      isOpen
+      embedded
+      consolidated
+      changes={conversationDiffReview.changes}
+      onClose={() => setConversationDiffReview(null)}
+      reviewStatusByChangeId={Object.fromEntries(conversationDiffReview.changes.map(change => [
+        change.id,
+        resolveFileChangeReviewStatus(effectiveSessionId, change) ?? 'pending',
+      ]))}
+      onAcceptChange={change => handleAcceptConversationFileChange(effectiveSessionId, change)}
+      onRejectChange={change => handleRejectConversationFileChange(effectiveSessionId, change)}
+    />
+  ) : null
+  const activeWritingDocumentSurface = conversationDiffSurface ?? writingDocumentSurface
+  const activeWritingWorkspaceHeader = conversationDiffSurface ? null : writingWorkspaceHeader
+  const showEmptyProjectSession = isSessionsNavigation(navState) && novelWorkspaceFiles.length === 0
   const showWritingDocumentColumn = Boolean(
-    writingDocumentSurface && rightWorkspaceVisible && !isAutoCompact,
+    activeWritingDocumentSurface && rightWorkspaceVisible && !isAutoCompact && !showEmptyProjectSession,
   )
   const showWorkspaceDirectoryColumn = Boolean(
-    activityWorkspaceDirectory && rightWorkspaceVisible && !isAutoCompact,
+    activityWorkspaceDirectory
+      && !conversationDiffSurface
+      && rightWorkspaceVisible
+      && !isAutoCompact
+      && !showEmptyProjectSession,
   )
   return (
-    <AppShellProvider value={appShellContextValue}>
+    <AppShellProvider value={appShellContextValueWithReview}>
       {/* === OUTER LAYOUT: Unified Panel Stack | Right Sidebar === */}
       <div
         ref={shellRef}
@@ -4397,23 +4633,9 @@ function AppShellContent({
             profile={profile}
             onOpenWhatsNew={handleWhatsNewClick}
             sessionActions={{
-              configurationWorkspaceId: activeWorkspaceId,
-              sessionStatuses: effectiveSessionStatuses,
-              labels: displayLabelConfigs,
-              onLabelsChange: handleSessionLabelsChange,
               onRename: onRenameSession,
-              onFlag: onFlagSession,
-              onUnflag: onUnflagSession,
               onArchive: onArchiveSession,
-              onUnarchive: onUnarchiveSession,
-              onMarkUnread: onMarkSessionUnread,
-              onSessionStatusChange,
-              onOpenInNewWindow: (meta) => {
-                window.electronAPI.openSessionInNewWindow(meta.workspaceId, meta.id)
-              },
-              onSendToWorkspace: (sessionId) => setSendToWorkspaceIds([sessionId]),
               onDelete: (sessionId) => { void handleDeleteSession(sessionId) },
-              hasRemoteWorkspaces,
             }}
             whatsNew={{
               unseen: hasUnseenReleaseNotes,
@@ -5221,34 +5443,49 @@ function AppShellContent({
           contentPanelMinWidth={showWritingDocumentColumn ? WRITING_ASSISTANT_MIN_WIDTH : PANEL_MIN_WIDTH}
         />
         <AnimatePresence initial={false}>
-          {/* The right-workspace toggle folds the complete writing workspace; the
-              directory-header toggle only folds the outer directory column. */}
+          {/* Tabs and the directory toggle belong to one stable workspace header.
+              Folding the directory only reallocates the body below that header. */}
           {showWritingDocumentColumn ? (
             <ResizableColumn
-              key="writing-document"
+              key="writing-workspace"
               mode="document-dock"
               role="document"
               sashLabel={t('writing.workspace')}
               onResizeStart={beginResize}
-              width={novelWorkspaceNavigatorWidth}
+              width={writingWorkspaceDockWidth}
               panelRef={navigatorPanelRef}
               disableAnimation={isResizing === 'document-dock'}
             >
-              {writingDocumentSurface}
-            </ResizableColumn>
-          ) : null}
-          {showWorkspaceDirectoryColumn ? (
-            <ResizableColumn
-              key="workspace-directory"
-              mode="directory-dock"
-              role="directory"
-              sashLabel={t('writing.directory.title', '目录')}
-              onResizeStart={beginResize}
-              width={workspaceDirectoryColumnWidth}
-              disableAnimation={isResizing === 'directory-dock'}
-              resizable={workspaceDirectoryVisible}
-            >
-              {activityWorkspaceDirectory}
+              <div className="flex h-full min-w-0 flex-col">
+                {activeWritingWorkspaceHeader}
+                <div className="flex min-h-0 flex-1">
+                  <div className="min-w-0 flex-1">
+                    {activeWritingDocumentSurface}
+                  </div>
+                  <AnimatePresence initial={false}>
+                    {showWorkspaceDirectoryColumn ? (
+                      <ResizableColumn
+                        key="workspace-directory"
+                        mode="directory-dock"
+                        role="directory"
+                        sashLabel={t('writing.directory.title', '目录')}
+                        onResizeStart={beginResize}
+                        width={workspaceDirectoryWidth}
+                        disableAnimation={isResizing === 'directory-dock'}
+                        header={(
+                          <div
+                            aria-hidden="true"
+                            data-panel-role="directory-header"
+                            className="titlebar-drag-region relative z-panel h-[42px] shrink-0 border-b border-foreground/[0.06]"
+                          />
+                        )}
+                      >
+                        {activityWorkspaceDirectory}
+                      </ResizableColumn>
+                    ) : null}
+                  </AnimatePresence>
+                </div>
+              </div>
             </ResizableColumn>
           ) : null}
         </AnimatePresence>
@@ -5279,11 +5516,17 @@ function AppShellContent({
         onOpenChange={setGlobalSearchOpen}
         workspaceId={activeWorkspaceId ?? undefined}
         remoteWorkspaceId={remoteWorkspaceId}
+        workspaces={workspaces}
         novelFiles={novelWorkspaceFiles}
         formatNovelFileTitle={formatGlobalSearchNovelFileTitle}
-        onOpenSession={navigateToSession}
-        onOpenNovelFile={(file) => {
-          void handleSelectNovelFile(file)
+        onOpenWorkspace={onSelectWorkspace}
+        onOpenSession={(workspaceId, sessionId, query) => {
+          setSearchActive(true)
+          setSearchQuery(query)
+          void handleActivitySessionSelect(sessionId, workspaceId)
+        }}
+        onOpenNovelFile={(path) => {
+          void handleSelectNovelFileByPath(path)
         }}
       />
 

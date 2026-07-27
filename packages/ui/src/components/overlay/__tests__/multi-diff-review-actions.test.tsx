@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
-import { MultiDiffPreviewOverlay, type FileChange } from '../MultiDiffPreviewOverlay'
+import { MultiDiffPreviewOverlay, type FileChange, type FileChangeReviewStatus } from '../MultiDiffPreviewOverlay'
 
 beforeAll(async () => {
   if (i18n.isInitialized) return
@@ -20,13 +20,17 @@ beforeAll(async () => {
   })
 })
 
-function renderOverlay(change: FileChange): string {
+function renderOverlay(
+  change: FileChange,
+  reviewStatusByChangeId?: Record<string, FileChangeReviewStatus>,
+): string {
   return renderToStaticMarkup(
     <MultiDiffPreviewOverlay
       isOpen
       embedded
       onClose={() => {}}
       changes={[change]}
+      reviewStatusByChangeId={reviewStatusByChangeId}
       onAcceptChange={() => {}}
       onRejectChange={() => {}}
     />
@@ -47,5 +51,18 @@ describe('MultiDiffPreviewOverlay review actions', () => {
     expect(html).toContain('Edit Failed')
     expect(html).not.toContain('Accept')
     expect(html).not.toContain('Reject')
+  })
+
+  it('shows review actions only for changes included in the review state', () => {
+    const change: FileChange = {
+      id: 'reviewable-change',
+      filePath: '/repo/story/chapter.md',
+      toolType: 'Edit',
+      original: 'old',
+      modified: 'new',
+    }
+
+    expect(renderOverlay(change, {})).not.toContain('Accept')
+    expect(renderOverlay(change, { [change.id]: 'pending' })).toContain('Accept')
   })
 })

@@ -7,6 +7,7 @@ import {
   Archive,
   ArchiveRestore,
   ArrowUpRight,
+  BookOpen,
   ChevronDown,
   ChevronRight,
   DatabaseZap,
@@ -34,18 +35,21 @@ import {
   StyledDropdownMenuItem,
   StyledDropdownMenuSeparator,
 } from '@/components/ui/styled-dropdown'
-import { DropdownMenuProvider } from '@/components/ui/menu-context'
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  StyledContextMenuContent,
+  StyledContextMenuItem,
+  StyledContextMenuSeparator,
+} from '@/components/ui/styled-context-menu'
 import { RenameDialog } from '@/components/ui/rename-dialog'
 import { FeedbackDialog } from './FeedbackDialog'
 import { ProjectSwitcherPopover } from './ProjectSwitcherPopover'
-import { SessionMenu } from './SessionMenu'
 import {
   extractSessionMeta,
   sessionMetaMapAtom,
   type SessionMeta,
 } from '@/atoms/sessions'
-import type { SessionStatus, SessionStatusId } from '@/config/session-status-config'
-import type { LabelConfig } from '@craft-agent/shared/labels'
 import { shouldRefreshGlobalSessionMetasForEvent } from '@/atoms/session-status-transition'
 import { formatRelativeTimestamp } from '@/lib/display-format'
 import * as storage from '@/lib/local-storage'
@@ -104,21 +108,9 @@ export interface ActivityRailProps {
 }
 
 export interface ActivityRailSessionActions {
-  configurationWorkspaceId?: string | null
-  sessionStatuses: SessionStatus[]
-  labels?: LabelConfig[]
-  onLabelsChange?: (sessionId: string, labels: string[]) => void
   onRename: (sessionId: string, name: string) => void
-  onFlag: (sessionId: string) => void
-  onUnflag: (sessionId: string) => void
   onArchive: (sessionId: string) => void
-  onUnarchive: (sessionId: string) => void
-  onMarkUnread: (sessionId: string) => void
-  onSessionStatusChange: (sessionId: string, state: SessionStatusId) => void
-  onOpenInNewWindow: (session: SessionMeta) => void
-  onSendToWorkspace?: (sessionId: string) => void
   onDelete: (sessionId: string) => void
-  hasRemoteWorkspaces?: boolean
 }
 
 export const ACTIVITY_RAIL_WIDTH = 252
@@ -626,6 +618,13 @@ export function ActivityRail({
               ) : null}
             </StyledDropdownMenuItem>
             <StyledDropdownMenuItem
+              onClick={() => window.electronAPI.openUrl('https://ehyg6a9wjd.feishu.cn/docx/MC49dYJYtoRnalxgYi1ceH01nWb')}
+              data-tutorial="activity-beginner-guide"
+            >
+              <BookOpen className="size-4" />
+              新手教程
+            </StyledDropdownMenuItem>
+            <StyledDropdownMenuItem
               onClick={() => setFeedbackOpen(true)}
               data-tutorial="activity-feedback"
             >
@@ -766,15 +765,11 @@ function RecentConversationRow({
     hasPendingPrompt,
     lastMessageRole: meta.lastMessageRole,
   })
-  const usesCurrentConfiguration = (
-    !sessionActions?.configurationWorkspaceId
-    || sessionActions.configurationWorkspaceId === meta.workspaceId
-  )
-  return (
+  const row = (
     <div
       data-session-id={meta.id}
       className={cn(
-        'group flex w-full min-w-0 items-center rounded-[6px] transition-colors hover:bg-foreground/[0.045]',
+        'flex w-full min-w-0 items-center rounded-[6px] transition-colors hover:bg-foreground/[0.045]',
         active && 'bg-foreground/[0.07] text-foreground',
       )}
     >
@@ -801,45 +796,33 @@ function RecentConversationRow({
         </span>
         <span className="shrink-0 text-[10px] text-muted-foreground/55">{formatRelativeTimestamp(meta.lastMessageAt, '')}</span>
       </button>
-      {sessionActions ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label={`管理 ${getSessionTitle(meta)}`}
-              className="mr-1 flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-foreground/[0.06] hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100 data-[state=open]:opacity-100"
-            >
-              <MoreHorizontal className="size-3.5" />
-            </button>
-          </DropdownMenuTrigger>
-          <StyledDropdownMenuContent align="end" sideOffset={4}>
-            <DropdownMenuProvider>
-              <SessionMenu
-                item={meta}
-                sessionStatuses={usesCurrentConfiguration ? sessionActions.sessionStatuses : []}
-                labels={usesCurrentConfiguration ? sessionActions.labels : []}
-                onLabelsChange={usesCurrentConfiguration && sessionActions.onLabelsChange
-                  ? (labels) => sessionActions.onLabelsChange?.(meta.id, labels)
-                  : undefined}
-                onRename={onRename}
-                onFlag={() => sessionActions.onFlag(meta.id)}
-                onUnflag={() => sessionActions.onUnflag(meta.id)}
-                onArchive={() => sessionActions.onArchive(meta.id)}
-                onUnarchive={() => sessionActions.onUnarchive(meta.id)}
-                onMarkUnread={() => sessionActions.onMarkUnread(meta.id)}
-                onSessionStatusChange={(state) => sessionActions.onSessionStatusChange(meta.id, state)}
-                onOpenInNewWindow={() => sessionActions.onOpenInNewWindow(meta)}
-                onSendToWorkspace={sessionActions.onSendToWorkspace
-                  ? () => sessionActions.onSendToWorkspace?.(meta.id)
-                  : undefined}
-                onDelete={() => sessionActions.onDelete(meta.id)}
-                hasRemoteWorkspaces={sessionActions.hasRemoteWorkspaces}
-              />
-            </DropdownMenuProvider>
-          </StyledDropdownMenuContent>
-        </DropdownMenu>
-      ) : null}
     </div>
+  )
+
+  if (!sessionActions) return row
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
+      <StyledContextMenuContent>
+        <StyledContextMenuItem onSelect={onRename}>
+          <Pencil className="h-3.5 w-3.5" />
+          重命名
+        </StyledContextMenuItem>
+        <StyledContextMenuItem onSelect={() => sessionActions.onArchive(meta.id)}>
+          <Archive className="h-3.5 w-3.5" />
+          归档
+        </StyledContextMenuItem>
+        <StyledContextMenuSeparator />
+        <StyledContextMenuItem
+          variant="destructive"
+          onSelect={() => sessionActions.onDelete(meta.id)}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          删除
+        </StyledContextMenuItem>
+      </StyledContextMenuContent>
+    </ContextMenu>
   )
 }
 

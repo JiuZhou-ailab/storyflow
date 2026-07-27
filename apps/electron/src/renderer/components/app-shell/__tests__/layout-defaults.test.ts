@@ -177,6 +177,16 @@ describe('app shell layout defaults', () => {
     expect(widths.assistant).toBe(440)
   })
 
+  it('keeps an empty project starter conversation free of file columns', () => {
+    expect(appShellSource).toContain(
+      'const showEmptyProjectSession = isSessionsNavigation(navState) && novelWorkspaceFiles.length === 0',
+    )
+    expect(appShellSource).toContain(
+      'activeWritingDocumentSurface && rightWorkspaceVisible && !isAutoCompact && !showEmptyProjectSession',
+    )
+    expect(appShellSource).toContain('&& !showEmptyProjectSession')
+  })
+
   it('defers first-run desktop proportions while the shell is still compact', () => {
     expect(shouldResolveInitialShellLayoutWidths(0, 768)).toBe(false)
     expect(shouldResolveInitialShellLayoutWidths(767, 768)).toBe(false)
@@ -266,19 +276,40 @@ describe('app shell layout defaults', () => {
     expect(rendererCssSource).toContain('[data-panel-role="directory"]')
   })
 
-  it('folds the directory independently and slides right-side columns in and out', () => {
+  it('folds the directory inside a stable shared writing workspace header', () => {
+    const workspaceColumnStart = appShellSource.indexOf('key="writing-workspace"')
+    const directoryColumnStart = appShellSource.indexOf('key="workspace-directory"')
+    const directoryColumnEnd = appShellSource.indexOf('</ResizableColumn>', directoryColumnStart)
+    expect(workspaceColumnStart).toBeGreaterThan(-1)
+    expect(directoryColumnStart).toBeGreaterThan(-1)
+    expect(directoryColumnStart).toBeGreaterThan(workspaceColumnStart)
+    expect(directoryColumnEnd).toBeGreaterThan(directoryColumnStart)
+    const directoryColumnSource = appShellSource.slice(directoryColumnStart, directoryColumnEnd)
+
     expect(localStorageSource).toContain("writingWorkspaceVisible: 'writing-workspace-visible'")
     expect(localStorageSource).toContain("workspaceDirectoryVisible: 'workspace-directory-visible'")
     expect(appShellSource).toContain('const [workspaceDirectoryVisible, setWorkspaceDirectoryVisible]')
-    expect(appShellSource).toContain('activityWorkspaceDirectory && rightWorkspaceVisible && !isAutoCompact')
-    expect(appShellSource).toContain('const WORKSPACE_DIRECTORY_COLLAPSED_WIDTH = 42')
-    expect(appShellSource).toContain('width={workspaceDirectoryColumnWidth}')
-    expect(appShellSource).toContain('resizable={workspaceDirectoryVisible}')
-    expect(appShellSource).not.toContain('collapsedDirectoryToggleButton')
-    expect(workspaceProjectSidebarSource).toContain("t('writing.directory.collapse', '收起目录')")
-    expect(workspaceProjectSidebarSource).toContain("t('writing.directory.expand', '展开目录')")
-    expect(workspaceProjectSidebarSource).toContain('onExpandedChange(!expanded)')
-    expect(workspaceProjectSidebarSource).toContain('<FolderOpen')
+    expect(appShellSource).toMatch(
+      /activityWorkspaceDirectory\s+&& !conversationDiffSurface\s+&& rightWorkspaceVisible\s+&& !isAutoCompact/,
+    )
+    expect(appShellSource).not.toContain('WORKSPACE_DIRECTORY_COLLAPSED_WIDTH')
+    expect(appShellSource).toContain('const writingWorkspaceDockWidth = novelWorkspaceNavigatorWidth + workspaceDirectoryWidth')
+    expect(appShellSource).toContain('width={writingWorkspaceDockWidth}')
+    expect(directoryColumnSource).toContain('width={workspaceDirectoryWidth}')
+    expect(appShellSource).not.toContain('resizable={workspaceDirectoryVisible}')
+    expect(appShellSource).toContain('const directoryToggleButton')
+    expect(appShellSource).toContain('<NovelDocumentTabStrip')
+    expect(appShellSource).toContain('trailingActions={(')
+    expect(appShellSource).not.toContain('absolute right-2 top-[46px] z-panel')
+    expect(directoryColumnSource).toContain('header={(')
+    expect(directoryColumnSource).toContain('data-panel-role="directory-header"')
+    expect(directoryColumnSource).toContain('titlebar-drag-region relative z-panel h-[42px] shrink-0')
+    expect(appShellSource).toContain("t('writing.directory.collapse', '收起目录')")
+    expect(appShellSource).toContain("t('writing.directory.expand', '展开目录')")
+    expect(appShellSource).toContain('onClick={() => setWorkspaceDirectoryVisible((visible) => !visible)}')
+    expect(workspaceProjectSidebarSource).not.toContain('HeaderIconButton')
+    expect(workspaceProjectSidebarSource).not.toContain('<FolderOpen')
+    expect(workspaceProjectSidebarSource).not.toContain('h-[42px]')
     expect(appShellSource).toContain('<AnimatePresence initial={false}>')
     expect(resizableColumnSource).toContain('useReducedMotion')
     expect(resizableColumnSource).toContain('resizable = true')

@@ -7,14 +7,17 @@ import { existsSync, readFileSync } from 'fs'
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { setupI18n } from '@craft-agent/shared/i18n/setupI18n'
-import { initReactI18next } from 'react-i18next'
+import { I18nextProvider, initReactI18next } from 'react-i18next'
 
 mock.module('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '' }))
 mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDocument: () => ({}) }))
 
-setupI18n([initReactI18next])
+const testI18n = setupI18n([initReactI18next]).cloneInstance({
+  lng: 'en',
+})
 
 let NovelDocumentEditorPanel: typeof import('../NovelDocumentEditorPanel').NovelDocumentEditorPanel
+let NovelDocumentTabStrip: typeof import('../NovelDocumentTabStrip').NovelDocumentTabStrip
 let countMarkdownTextCharacters: typeof import('../NovelDocumentEditorPanel').countMarkdownTextCharacters
 let NovelSectionList: typeof import('../NovelSectionList').NovelSectionList
 
@@ -22,17 +25,47 @@ function readSourceIfExists(url: URL): string {
   return existsSync(url) ? readFileSync(url, 'utf-8') : ''
 }
 
+function renderLocalized(node: React.ReactNode): string {
+  return renderToStaticMarkup(<I18nextProvider i18n={testI18n}>{node}</I18nextProvider>)
+}
+
 beforeAll(async () => {
   const editorModule = await import('../NovelDocumentEditorPanel')
+  const tabStripModule = await import('../NovelDocumentTabStrip')
   const listModule = await import('../NovelSectionList')
   NovelDocumentEditorPanel = editorModule.NovelDocumentEditorPanel
+  NovelDocumentTabStrip = tabStripModule.NovelDocumentTabStrip
   countMarkdownTextCharacters = editorModule.countMarkdownTextCharacters
   NovelSectionList = listModule.NovelSectionList
 })
 
 describe('novel writing workspace layout', () => {
+  it('renders multiple closable files in one shared accessible tab header', () => {
+    const html = renderLocalized(
+      <NovelDocumentTabStrip
+        files={[
+          { path: '/novel/a.md', relativePath: 'a.md' },
+          { path: '/novel/b.md', relativePath: 'b.md' },
+        ]}
+        activePath="/novel/b.md"
+        onActivate={() => {}}
+        onClose={() => {}}
+        onCreateFile={() => {}}
+        trailingActions={<button type="button">目录</button>}
+      />
+    )
+
+    expect(html).toContain('role="tablist"')
+    expect(html).toContain('role="tab"')
+    expect(html).toContain('aria-selected="true"')
+    expect(html).toContain('a.md')
+    expect(html).toContain('b.md')
+    expect(html).toMatch(/aria-label="[^"]+" title="[^"]+"/)
+    expect(html).toContain('目录')
+  })
+
   it('renders the selected Markdown document in a single editable writing surface', () => {
-    const html = renderToStaticMarkup(
+    const html = renderLocalized(
       <NovelDocumentEditorPanel
         file={{ path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md' }}
         content={'# 第一章\n\n你好 world'}
@@ -60,7 +93,7 @@ describe('novel writing workspace layout', () => {
   })
 
   it('renders mergeable review changes through the native TipTap diff surface', () => {
-    const html = renderToStaticMarkup(
+    const html = renderLocalized(
       <NovelDocumentEditorPanel
         file={{ path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md' }}
         content={'# 第一章\n\n她走进明亮的房间。\n\n尾声'}
@@ -82,7 +115,7 @@ describe('novel writing workspace layout', () => {
   })
 
   it('keeps unified-diff review changes out of the editable manuscript fallback panel', () => {
-    const html = renderToStaticMarkup(
+    const html = renderLocalized(
       <NovelDocumentEditorPanel
         file={{ path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md' }}
         content={'# 第一章\n\n她走进明亮的房间。\n\n尾声'}
@@ -113,7 +146,7 @@ describe('novel writing workspace layout', () => {
   })
 
   it('renders multiline review changes without replacing the editable manuscript', () => {
-    const html = renderToStaticMarkup(
+    const html = renderLocalized(
       <NovelDocumentEditorPanel
         file={{ path: '/novel/正文/01.md', relativePath: '正文/01.md' }}
         content={'# 第一章\n\n- 第一段\n- 第二段'}
@@ -146,7 +179,7 @@ describe('novel writing workspace layout', () => {
   })
 
   it('keeps new Chinese manuscript unified diffs in the single editable surface', () => {
-    const html = renderToStaticMarkup(
+    const html = renderLocalized(
       <NovelDocumentEditorPanel
         file={{ path: '/novel/正文/02.md', relativePath: '正文/02.md' }}
         content={'# 第二章\n\n她推开门。\n\n风从长廊尽头吹来。'}
@@ -181,7 +214,7 @@ describe('novel writing workspace layout', () => {
   })
 
   it('renders write-created manuscript files through the native TipTap diff surface', () => {
-    const html = renderToStaticMarkup(
+    const html = renderLocalized(
       <NovelDocumentEditorPanel
         file={{ path: '/novel/正文/03.md', relativePath: '正文/03.md' }}
         content={'# 第三章\n\n她停在窗前。'}
@@ -203,7 +236,7 @@ describe('novel writing workspace layout', () => {
   })
 
   it('keeps the editable manuscript as the only surface when a review change cannot be merged into a file diff', () => {
-    const html = renderToStaticMarkup(
+    const html = renderLocalized(
       <NovelDocumentEditorPanel
         file={{ path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md' }}
         content={'# 第一章\n\n她走进明亮的房间。'}
@@ -228,7 +261,7 @@ describe('novel writing workspace layout', () => {
   })
 
   it('renders writer-facing file labels in the writing catalog', () => {
-    const html = renderToStaticMarkup(
+    const html = renderLocalized(
       <NovelSectionList
         files={[
           { path: '/novel/bible/structure.md', relativePath: 'bible/structure.md' },
@@ -367,9 +400,14 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('NovelDocumentEditorPanel')
     expect(appShellSource).toContain('<WorkspaceProjectSidebar')
     expect(sidebarSource).toContain('<WorkspaceFileTree')
-    expect(sidebarSource).toContain('onExpandedChange(!expanded)')
-    expect(sidebarSource).toContain('<FolderOpen')
-    expect(appShellSource).not.toContain('collapsedDirectoryToggleButton')
+    expect(sidebarSource).not.toContain('HeaderIconButton')
+    expect(sidebarSource).not.toContain('<FolderOpen')
+    expect(appShellSource).toContain('const directoryToggleButton')
+    expect(appShellSource).toContain('<NovelDocumentTabStrip')
+    expect(appShellSource).toContain('trailingActions={(')
+    expect(appShellSource).not.toContain('absolute right-2 top-[46px] z-panel')
+    expect(appShellSource).toContain('data-panel-role="directory-header"')
+    expect(appShellSource).toContain('titlebar-drag-region relative z-panel h-[42px] shrink-0')
     expect(appShellSource).not.toContain('<NovelWorkspaceNavigatorPanel')
     expect(chatPageSource).not.toContain('NovelWorkspacePanel')
     expect(chatPageSource).not.toContain('NovelWorkspaceNavigatorPanel')
@@ -475,7 +513,7 @@ describe('novel writing workspace layout', () => {
     expect(syncSource).toContain('refreshNovelWorkspaceFiles(novelWorkspaceRoot)')
     expect(syncSource).toContain("error.message.includes('Workspace not found')")
     expect(syncSource).toContain('setNovelWorkspaceCatalogIfChanged(emptyCatalog)')
-    expect(syncSource).toContain('setSelectedNovelFilePath(null)')
+    expect(syncSource).not.toContain('setNovelDocumentTabs')
   })
 
   it('keeps the native writing file tree ordered by filesystem path instead of custom catalog order', () => {
@@ -648,6 +686,20 @@ describe('novel writing workspace layout', () => {
     expect(askAiSource).toContain('handleNovelWorkspaceSendMessage(effectiveSessionId')
   })
 
+  it('keeps tab state unchanged when saving the active file before close fails', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const closeSource = appShellSource.slice(
+      appShellSource.indexOf('const handleCloseNovelFileTab ='),
+      appShellSource.indexOf('const prepareNovelWorkspaceBriefForSend'),
+    )
+
+    expect(closeSource).toContain('if (!await ensureNovelDocumentSaved()) return')
+    expect(closeSource.indexOf('if (!await ensureNovelDocumentSaved()) return')).toBeLessThan(
+      closeSource.indexOf('setNovelDocumentTabs(nextTabs)'),
+    )
+    expect(closeSource).toContain('closeNovelDocumentTab(novelDocumentTabs, filePath)')
+  })
+
   it('keeps the writing editor editable during background autosave so typing focus is not stolen', () => {
     const editorPanelSource = readFileSync(new URL('../NovelDocumentEditorPanel.tsx', import.meta.url), 'utf-8')
 
@@ -737,8 +789,9 @@ describe('novel writing workspace layout', () => {
     expect(panelSlotSource).toContain('if (hideCloseButton) return undefined')
   })
 
-  it('keeps novel file review controls in the workspace and uses the editable manuscript as the only review surface', () => {
+  it('reviews file changes from the conversation diff while keeping manuscript inline diff', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const chatDisplaySource = readFileSync(new URL('../../app-shell/ChatDisplay.tsx', import.meta.url), 'utf-8')
     const editorPanelSource = readFileSync(new URL('../NovelDocumentEditorPanel.tsx', import.meta.url), 'utf-8')
     const multiDiffSource = readFileSync(new URL('../../../../../../../packages/ui/src/components/overlay/MultiDiffPreviewOverlay.tsx', import.meta.url), 'utf-8')
 
@@ -750,12 +803,18 @@ describe('novel writing workspace layout', () => {
     expect(editorPanelSource).not.toContain('ShikiDiffViewer')
     expect(editorPanelSource).not.toContain('UnifiedDiffViewer')
     expect(editorPanelSource).toContain('<TiptapMarkdownEditor')
+    expect(editorPanelSource).toContain('reviewDiffOriginalContent=')
+    expect(editorPanelSource).not.toContain('pendingChangeCount')
     expect(appShellSource).toContain('reviewChanges={selectedNovelPendingChanges}')
     expect(appShellSource).toContain('handleAcceptNovelFileChanges')
     expect(appShellSource).toContain('handleRejectNovelFileChanges')
     expect(appShellSource).toContain('buildRejectFileChangesOperation')
-    expect(appShellSource).toContain('handleAcceptAllNovelChanges')
-    expect(appShellSource).toContain('void handleSelectNextNovelChangeAfterStatus(filePath, nextStatus)')
+    expect(appShellSource).not.toContain('handleSelectNextNovelChangeAfterStatus')
+    expect(appShellSource).toContain('resolveFileChangeReviewStatus')
+    expect(chatDisplaySource).toContain('reviewStatusByChangeId={overlayReviewStatusByChangeId}')
+    expect(chatDisplaySource).toContain('onAcceptChange={onAcceptFileChange}')
+    expect(chatDisplaySource).toContain('onRejectChange={onRejectFileChange}')
+    expect(chatDisplaySource).not.toContain('isDocumentWrite')
     expect(appShellSource).not.toContain("id: 'writing:section:changes'")
     expect(appShellSource).not.toContain('handleOpenNovelChangeReview')
     expect(appShellSource).not.toContain('focusedChangeId: change.id')
@@ -790,19 +849,12 @@ describe('novel writing workspace layout', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const acceptSource = appShellSource.slice(
       appShellSource.indexOf('const handleAcceptNovelFileChanges'),
-      appShellSource.indexOf('const handleAcceptAllNovelChanges')
-    )
-    const acceptAllSource = appShellSource.slice(
-      appShellSource.indexOf('const handleAcceptAllNovelChanges'),
       appShellSource.indexOf('const handleRejectNovelFileChanges')
     )
 
     expect(acceptSource).toContain('await ensureNovelDocumentSaved()')
     expect(acceptSource).toContain('buildRejectFileChangesOperation(reviewableChanges, currentContent)')
-    expect(acceptAllSource).toContain('const pendingChangesByPath = new Map<string, FileChange[]>()')
-    expect(acceptAllSource).toContain('pendingChangesByPath.has(selectedNovelFile.path)')
-    expect(acceptAllSource).toContain('buildRejectFileChangesOperation(changes, currentContent)')
-    expect(acceptAllSource).not.toContain('buildAcceptNovelChangeUndoEntry')
+    expect(appShellSource).not.toContain('handleAcceptAllNovelChanges')
     expect(appShellSource).toContain('setNovelDocumentContent(content)')
     expect(appShellSource).toContain('setSavedNovelDocumentContent(content)')
     expect(appShellSource).toContain('novelDocumentDirty')
@@ -822,11 +874,7 @@ describe('novel writing workspace layout', () => {
     expect(reviewControllerSource).toContain('storage.get<Record<string, unknown>>(storage.KEYS.novelChangeReviewStatus, {}, novelWorkspaceRoot)')
     expect(reviewControllerSource).toContain('storage.set(storage.KEYS.novelChangeReviewStatus, nextStatus, novelWorkspaceRoot)')
     expect(reviewControllerSource).toContain('storage.set(storage.KEYS.novelChangeReviewStatus, normalizedStatus, novelWorkspaceRoot)')
-    expect(reviewControllerSource).toContain('getAdjacentChangedFilePath(')
-    expect(reviewControllerSource).toContain('handleSelectNextNovelChangeAfterStatus')
-    expect(reviewControllerSource).toContain('const nextPendingPathSet = new Set(nextPendingPaths)')
-    expect(reviewControllerSource).toContain('nextPendingPathSet.has(path)')
-    expect(reviewControllerSource).not.toContain('nextPendingPaths.includes(path)')
+    expect(reviewControllerSource).not.toContain('handleSelectNextNovelChangeAfterStatus')
     expect(reviewControllerSource).not.toContain('effectiveSessionId')
   })
 
@@ -1099,7 +1147,7 @@ describe('novel writing workspace layout', () => {
       appShellSource.indexOf('const [novelDocumentContent')
     )
 
-    expect(selectionSource).toContain('if (!selectedNovelFilePath) return defaultNovelFile')
+    expect(selectionSource).toContain('if (!selectedNovelFilePath) return undefined')
     expect(selectionSource).toContain('const listedFile = novelWorkspaceFileByPath.get(selectedNovelFilePath)')
     expect(selectionSource).not.toContain('novelWorkspaceFiles.find(file => file.path === selectedNovelFilePath)')
     expect(selectionSource).toContain('isNovelWorkspaceFilePathInRoot(selectedNovelFilePath, novelWorkspaceRoot)')
@@ -1118,7 +1166,7 @@ describe('novel writing workspace layout', () => {
     expect(selectionSource).toContain('const canResolveSelectedNovelFile = showNovelWorkspaceSidebar || showNovelWorkspacePending')
     expect(selectionSource).toContain('if (!canResolveSelectedNovelFile) return undefined')
     expect(selectionSource.indexOf('if (!canResolveSelectedNovelFile) return undefined')).toBeLessThan(
-      selectionSource.indexOf('if (!selectedNovelFilePath) return defaultNovelFile')
+      selectionSource.indexOf('if (!selectedNovelFilePath) return undefined')
     )
     expect(selectionSource).toContain('showNovelWorkspacePending')
   })
@@ -1305,8 +1353,9 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('setNovelWorkspaceNavigatorWidth(newWidth)')
     expect(appShellSource).toContain('storage.KEYS.novelWorkspaceNavigatorWidth')
     expect(appShellSource).toContain('setNovelWorkspaceNavigatorWidth(nextWidth)')
-    // The manuscript column's width now flows through the shared ResizableColumn.
-    expect(appShellSource).toContain('width={novelWorkspaceNavigatorWidth}')
+    // The manuscript and directory now share one stable outer workspace width.
+    expect(appShellSource).toContain('const writingWorkspaceDockWidth = novelWorkspaceNavigatorWidth + workspaceDirectoryWidth')
+    expect(appShellSource).toContain('width={writingWorkspaceDockWidth}')
     expect(appShellSource).toContain('const navigatorPanelWidth = sessionListWidth')
   })
 

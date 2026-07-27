@@ -26,6 +26,7 @@ import type { MentionFileReference } from "@/components/ui/mention-menu"
 import { AnimatedCollapsibleContent } from "@/components/ui/collapsible"
 import {
   Spinner,
+  FileChangesSummary,
   parseReadResult,
   parseBashResult,
   parseGrepResult,
@@ -42,11 +43,12 @@ import {
   detectLanguage,
   type ActivityItem,
   type FileChange,
+  type FileChangeReviewStatus,
   type DiffViewerSettings,
 } from "@craft-agent/ui"
 import { useFocusZone } from "@/hooks/keyboard"
 import { useTheme } from "@/hooks/useTheme"
-import type { Session, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, LoadedSource, LoadedSkill, CreateSessionOptions, LlmConnectionWithStatus } from "../../../shared/types"
+import type { Session, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, UserQuestionRequest, UserQuestionResponse, LoadedSource, LoadedSkill, CreateSessionOptions, LlmConnectionWithStatus } from "../../../shared/types"
 import type { PermissionMode } from "@craft-agent/shared/agent/modes"
 import type { ThinkingLevel } from "@craft-agent/shared/agent/thinking-levels"
 import {
@@ -157,6 +159,12 @@ interface ChatDisplayProps {
   ) => void
   onOpenFile: (path: string) => void
   onOpenUrl: (url: string) => void
+  /** Review integration for file changes surfaced by this conversation. */
+  resolveFileChangeReviewStatus?: (change: FileChange) => FileChangeReviewStatus | undefined
+  onAcceptFileChange?: (change: FileChange) => void
+  onRejectFileChange?: (change: FileChange) => void
+  onOpenFileChanges?: (changes: FileChange[]) => void
+  onRevertFileChanges?: (changes: FileChange[]) => Promise<void> | void
   onRenameSession?: (sessionId: string, name: string) => void
   // Model selection
   currentModel: string
@@ -182,6 +190,8 @@ interface ChatDisplayProps {
   pendingCredential?: CredentialRequest
   /** Callback to respond to credential request */
   onRespondToCredential?: (sessionId: string, requestId: string, response: CredentialResponse) => void
+  pendingUserQuestion?: UserQuestionRequest
+  onRespondToUserQuestion?: (sessionId: string, requestId: string, response: UserQuestionResponse) => void
   // Thinking level (session-level setting)
   /** Current thinking level ('off', 'think', 'max') */
   thinkingLevel?: ThinkingLevel
@@ -538,6 +548,11 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   onSendMessage,
   onOpenFile,
   onOpenUrl,
+  resolveFileChangeReviewStatus,
+  onAcceptFileChange,
+  onRejectFileChange,
+  onOpenFileChanges,
+  onRevertFileChanges,
   currentModel,
   onModelChange,
   onConnectionChange,
@@ -547,6 +562,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   onRespondToPermission,
   pendingCredential,
   onRespondToCredential,
+  pendingUserQuestion,
+  onRespondToUserQuestion,
   // Thinking level
   thinkingLevel = 'medium',
   onThinkingLevelChange,
@@ -1138,6 +1155,17 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
   // Overlay state - controls which overlay is shown (if any)
   const [overlayState, setOverlayState] = useState<OverlayState>(null)
+  const [revertingTurnKey, setRevertingTurnKey] = useState<string | null>(null)
+  const overlayReviewStatusByChangeId = useMemo(() => {
+    if (overlayState?.type !== 'multi-diff' || !resolveFileChangeReviewStatus) return undefined
+
+    return Object.fromEntries(
+      overlayState.changes.flatMap((change) => {
+        const status = resolveFileChangeReviewStatus(change)
+        return status ? [[change.id, status]] : []
+      })
+    )
+  }, [overlayState, resolveFileChangeReviewStatus])
   const fileChangeBasePath = workingDirectory || sessionFolderPath
   const collectTurnFileChanges = useCallback(
     (activities: ActivityItem[]) => collectFileChangesFromActivities(activities, { basePath: fileChangeBasePath }),
@@ -1529,6 +1557,15 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
         pendingCredential.requestId,
         credResponse
       )
+    } else if (response.type === 'user_question' && pendingUserQuestion && onRespondToUserQuestion) {
+      onRespondToUserQuestion(
+        pendingUserQuestion.sessionId,
+        pendingUserQuestion.requestId,
+        {
+          answers: response.answers,
+          cancelled: response.cancelled,
+        },
+      )
     }
   }
 
@@ -1550,11 +1587,14 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       }
       return { type: 'permission', data: pendingPermission }
     }
+    if (pendingUserQuestion) {
+      return { type: 'user_question', data: pendingUserQuestion }
+    }
     if (pendingCredential) {
       return { type: 'credential', data: pendingCredential }
     }
     return undefined
-  }, [pendingPermission, pendingCredential])
+  }, [pendingPermission, pendingCredential, pendingUserQuestion])
 
   const handleRewindUserMessage = useCallback(async (message: Message) => {
     if (!session) return
@@ -1966,6 +2006,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
                     // Assistant turns - render with TurnCard (buffered streaming)
                     const assistantUiKey = getAssistantTurnUiKey(turn, index)
+                    const turnFileChanges = turn.isComplete
+                      ? collectTurnFileChanges(turn.activities).filter(change => !change.error)
+                      : []
                     return (
                       <div
                         key={turnKey}
@@ -2116,18 +2159,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                           })
                         }}
                         onOpenActivityDetails={(activity) => {
-                          // Write tool for .md/.txt → Document overlay (rendered markdown)
-                          // rather than multi-diff, since these are better viewed as formatted documents
-                          const isDocumentWrite = activity.toolName === 'Write' && (() => {
-                            const actInput = activity.toolInput as Record<string, unknown> | undefined
-                            const fp = (actInput?.file_path as string) || ''
-                            const ext = fp.split('.').pop()?.toLowerCase()
-                            return ext === 'md' || ext === 'txt'
-                          })()
-
                           // Edit/Write tool → Multi-file diff overlay (ungrouped, focused on this change)
-                          // Exception: Write to .md/.txt files goes to document overlay instead
-                          if ((activity.toolName === 'Edit' || activity.toolName === 'Write') && !isDocumentWrite) {
+                          if (activity.toolName === 'Edit' || activity.toolName === 'Write') {
                             const changes = collectTurnFileChanges(turn.activities)
                             if (changes.length > 0) {
                               setOverlayState({
@@ -2152,6 +2185,31 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                             })
                           }
                         }}
+                        footer={!compactMode && turnFileChanges.length > 0 ? (
+                          <FileChangesSummary
+                            changes={turnFileChanges}
+                            reverting={revertingTurnKey === turnKey}
+                            onOpen={() => {
+                              if (onOpenFileChanges) {
+                                onOpenFileChanges(turnFileChanges)
+                                return
+                              }
+                              setOverlayState({
+                                type: 'multi-diff',
+                                changes: turnFileChanges,
+                                consolidated: true,
+                              })
+                            }}
+                            onRevert={onRevertFileChanges ? async () => {
+                              setRevertingTurnKey(turnKey)
+                              try {
+                                await onRevertFileChanges(turnFileChanges)
+                              } finally {
+                                setRevertingTurnKey(null)
+                              }
+                            } : undefined}
+                          />
+                        ) : undefined}
                       />
                       </div>
                     )
@@ -2358,6 +2416,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
           theme={isDark ? 'dark' : 'light'}
           diffViewerSettings={diffViewerSettings}
           onDiffViewerSettingsChange={handleDiffViewerSettingsChange}
+          reviewStatusByChangeId={overlayReviewStatusByChangeId}
+          onAcceptChange={onAcceptFileChange}
+          onRejectChange={onRejectFileChange}
         />
       )}
 

@@ -30,6 +30,73 @@ export interface NovelWorkspaceFile {
   modifiedAt?: number
 }
 
+export interface NovelDocumentTabsState {
+  workspaceRoot: string | null
+  paths: string[]
+  activePath: string | null
+}
+
+export function openNovelDocumentTab(
+  state: NovelDocumentTabsState,
+  workspaceRoot: string,
+  path: string,
+): NovelDocumentTabsState {
+  if (state.workspaceRoot !== workspaceRoot) {
+    return { workspaceRoot, paths: [path], activePath: path }
+  }
+  if (state.activePath === path) return state
+  return {
+    workspaceRoot,
+    paths: state.paths.includes(path) ? state.paths : [...state.paths, path],
+    activePath: path,
+  }
+}
+
+export function closeNovelDocumentTab(
+  state: NovelDocumentTabsState,
+  path: string,
+): NovelDocumentTabsState {
+  const closedIndex = state.paths.indexOf(path)
+  if (closedIndex === -1) return state
+
+  const paths = state.paths.filter(openPath => openPath !== path)
+  if (state.activePath !== path) return { ...state, paths }
+
+  return {
+    ...state,
+    paths,
+    activePath: paths[closedIndex] ?? paths[closedIndex - 1] ?? null,
+  }
+}
+
+export function mapNovelDocumentTabs(
+  state: NovelDocumentTabsState,
+  mapPath: (path: string) => string,
+): NovelDocumentTabsState {
+  const paths = [...new Set(state.paths.map(mapPath))]
+  return {
+    ...state,
+    paths,
+    activePath: state.activePath ? mapPath(state.activePath) : null,
+  }
+}
+
+export function filterNovelDocumentTabs(
+  state: NovelDocumentTabsState,
+  keepPath: (path: string) => boolean,
+): NovelDocumentTabsState {
+  if (state.paths.every(keepPath)) return state
+
+  const activeIndex = state.activePath ? state.paths.indexOf(state.activePath) : -1
+  const paths = state.paths.filter(keepPath)
+  if (!state.activePath || keepPath(state.activePath)) return { ...state, paths }
+
+  const activePath = state.paths.slice(activeIndex + 1).find(keepPath)
+    ?? state.paths.slice(0, activeIndex).reverse().find(keepPath)
+    ?? null
+  return { ...state, paths, activePath }
+}
+
 export function areNovelWorkspaceFilesEqual(left: readonly NovelWorkspaceFile[], right: readonly NovelWorkspaceFile[]): boolean {
   if (left === right) return true
   if (left.length !== right.length) return false

@@ -6,7 +6,6 @@ import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import type { FileChange } from '@craft-agent/ui'
 import {
-  getAdjacentChangedFilePath,
   getPendingChangedFilePaths,
   getPendingChangesForFile,
   getNovelReviewChangeKey,
@@ -97,14 +96,6 @@ describe('novel review workflow', () => {
       [getNovelReviewChangeKey(changes[0])]: 'accepted',
       [getNovelReviewChangeKey(changes[1])]: 'rejected',
     })
-  })
-
-  it('wraps next and previous changed-file navigation', () => {
-    const paths = ['/novel/a.md', '/novel/b.md', '/novel/c.md']
-
-    expect(getAdjacentChangedFilePath(paths, '/novel/a.md', 'previous')).toBe('/novel/c.md')
-    expect(getAdjacentChangedFilePath(paths, '/novel/c.md', 'next')).toBe('/novel/a.md')
-    expect(getAdjacentChangedFilePath(paths, '/novel/missing.md', 'next')).toBe('/novel/a.md')
   })
 
   it('normalizes relative agent change paths to workspace file paths before review matching', () => {

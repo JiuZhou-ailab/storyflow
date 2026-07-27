@@ -4,10 +4,11 @@
 
 import { atom } from 'jotai'
 import { atomFamily } from 'jotai-family'
-import type { CredentialRequest, PermissionRequest } from '../../shared/types'
+import type { CredentialRequest, PermissionRequest, UserQuestionRequest } from '../../shared/types'
 
 export const pendingPermissionsAtom = atom<Map<string, PermissionRequest[]>>(new Map())
 export const pendingCredentialsAtom = atom<Map<string, CredentialRequest[]>>(new Map())
+export const pendingUserQuestionsAtom = atom<Map<string, UserQuestionRequest[]>>(new Map())
 
 export const pendingPermissionAtomFamily = atomFamily(
   (sessionId: string) => atom((get) => get(pendingPermissionsAtom).get(sessionId)?.[0])
@@ -15,6 +16,10 @@ export const pendingPermissionAtomFamily = atomFamily(
 
 export const pendingCredentialAtomFamily = atomFamily(
   (sessionId: string) => atom((get) => get(pendingCredentialsAtom).get(sessionId)?.[0])
+)
+
+export const pendingUserQuestionAtomFamily = atomFamily(
+  (sessionId: string) => atom((get) => get(pendingUserQuestionsAtom).get(sessionId)?.[0])
 )
 
 /**
@@ -32,6 +37,9 @@ export const sessionIdsWithPendingPromptAtom = atom((get) => {
   for (const [sessionId, requests] of get(pendingCredentialsAtom)) {
     if (requests.length > 0) ids.add(sessionId)
   }
+  for (const [sessionId, requests] of get(pendingUserQuestionsAtom)) {
+    if (requests.length > 0) ids.add(sessionId)
+  }
   return ids
 })
 
@@ -46,5 +54,6 @@ export const hasPendingPromptAtomFamily = atomFamily(
   (sessionId: string) => atom((get) => (
     (get(pendingPermissionsAtom).get(sessionId)?.length ?? 0) > 0
     || (get(pendingCredentialsAtom).get(sessionId)?.length ?? 0) > 0
+    || (get(pendingUserQuestionsAtom).get(sessionId)?.length ?? 0) > 0
   ))
 )

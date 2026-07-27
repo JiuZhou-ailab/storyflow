@@ -3,7 +3,7 @@
 // pos: Replaces the session-list navigator column for novel writing workspaces
 
 import * as React from 'react'
-import { AlertCircle, Check, ChevronLeft, ChevronRight, GitPullRequestArrow, Loader2, RotateCcw } from 'lucide-react'
+import { AlertCircle, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { FileChange } from '@craft-agent/ui'
 import {
@@ -12,11 +12,9 @@ import {
   formatNovelSelectionContextForChat,
 } from '@craft-agent/shared/writing/selection-context'
 import { TiptapMarkdownEditor, type TiptapMarkdownEditorHandle } from '@/components/markdown'
-import { Button } from '@/components/ui/button'
 import { resolveReviewFileChangeSnapshot, type ReviewFileChangeSnapshot } from '@/lib/file-change-review'
 import { cn } from '@/lib/utils'
 import type { NovelWorkspaceFile } from '@/lib/writing-workspace'
-import { formatNovelWorkspaceFileTitle } from './novel-file-display'
 
 export function countMarkdownTextCharacters(markdown: string): number {
   const text = markdown
@@ -55,13 +53,6 @@ export interface NovelDocumentEditorPanelProps {
   onAddSelectionToChat?: (message: string) => void
   onSendSelectionToChat?: (message: string) => Promise<void> | void
   reviewChanges?: FileChange[]
-  pendingChangeCount?: number
-  pendingFileIndex?: number
-  onAcceptReviewChanges?: () => void
-  onAcceptAllReviewChanges?: () => void
-  onRejectReviewChanges?: () => void
-  onPreviousReviewFile?: () => void
-  onNextReviewFile?: () => void
   toolbarAccessory?: React.ReactNode
   className?: string
 }
@@ -81,13 +72,6 @@ export const NovelDocumentEditorPanel = React.forwardRef<NovelDocumentEditorPane
   onAddSelectionToChat,
   onSendSelectionToChat,
   reviewChanges,
-  pendingChangeCount = 0,
-  pendingFileIndex,
-  onAcceptReviewChanges,
-  onAcceptAllReviewChanges,
-  onRejectReviewChanges,
-  onPreviousReviewFile,
-  onNextReviewFile,
   toolbarAccessory,
   className,
 }, ref) {
@@ -105,7 +89,6 @@ export const NovelDocumentEditorPanel = React.forwardRef<NovelDocumentEditorPane
     () => (reviewChanges ?? []).filter(change => !change.error),
     [reviewChanges]
   )
-  const reviewChangeCount = reviewChangesForFile.length
   const reviewFileChangeSnapshotRef = React.useRef<ReviewFileChangeSnapshot | null>(null)
   const fileReviewChange = React.useMemo(
     () => {
@@ -197,78 +180,6 @@ export const NovelDocumentEditorPanel = React.forwardRef<NovelDocumentEditorPane
           </div>
         ) : null}
       </div>
-
-      {pendingChangeCount > 0 ? (
-        <div className="flex min-h-11 shrink-0 items-center gap-2 border-t border-border/60 bg-background px-3">
-          <GitPullRequestArrow className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <div className="min-w-0 flex-1 truncate text-left text-xs text-muted-foreground">
-            <span className="font-medium text-foreground/75">
-              {pendingFileIndex != null && pendingFileIndex >= 0
-                ? t('writing.review.fileProgress', '{{current}} / {{total}} files with changes', {
-                    current: pendingFileIndex + 1,
-                    total: pendingChangeCount,
-                  })
-                : t('writing.review.pendingFiles', '{{count}} files with changes', { count: pendingChangeCount })}
-            </span>
-            {reviewChangeCount > 0 ? (
-              <span className="ml-2">{formatNovelWorkspaceFileTitle(file, t)}</span>
-            ) : null}
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            disabled={pendingChangeCount === 0 || !onPreviousReviewFile}
-            onClick={onPreviousReviewFile}
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            disabled={pendingChangeCount === 0 || !onNextReviewFile}
-            onClick={onNextReviewFile}
-          >
-            <ChevronRight className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            disabled={pendingChangeCount === 0 || !onAcceptAllReviewChanges}
-            onClick={onAcceptAllReviewChanges}
-          >
-            <Check className="h-3.5 w-3.5" />
-            {t('common.acceptAll', 'Accept all')}
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            disabled={reviewChangeCount === 0 || !onRejectReviewChanges}
-            onClick={onRejectReviewChanges}
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            {t('writing.review.rejectFile', 'Reject file')}
-          </Button>
-          <Button
-            type="button"
-            variant="default"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            disabled={reviewChangeCount === 0 || !onAcceptReviewChanges}
-            onClick={onAcceptReviewChanges}
-          >
-            <Check className="h-3.5 w-3.5" />
-            {t('writing.review.acceptFile', 'Accept file')}
-          </Button>
-        </div>
-      ) : null}
     </div>
   )
 })

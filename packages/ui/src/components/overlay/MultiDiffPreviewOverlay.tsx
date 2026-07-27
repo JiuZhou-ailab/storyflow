@@ -358,7 +358,9 @@ export function MultiDiffPreviewOverlay({
                     className="rounded-xl overflow-hidden bg-background shadow-minimal"
                     style={{ minHeight: change.error ? undefined : 200, borderRadius: 12 }}
                   >
-                    {!change.error && (onAcceptChange || onRejectChange) ? (
+                    {!change.error
+                      && (onAcceptChange || onRejectChange)
+                      && (!reviewStatusByChangeId || reviewStatusByChangeId[change.id]) ? (
                       <ReviewActionBar
                         change={change}
                         status={reviewStatusByChangeId?.[change.id] ?? 'pending'}

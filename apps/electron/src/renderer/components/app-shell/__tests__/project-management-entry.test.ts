@@ -187,11 +187,22 @@ describe('project management entry', () => {
     expect(appSource).toContain("key={runtimeWorkspace?.id ?? 'no-runtime'}")
   })
 
-  it('restores the shared conversation action menu in the activity rail', () => {
-    expect(activityRailSource).toContain("import { SessionMenu } from './SessionMenu'")
-    expect(activityRailSource).toContain('aria-label={`管理 ${getSessionTitle(meta)}`}')
-    expect(activityRailSource).toContain('<SessionMenu')
+  it('keeps rail conversation actions in a small right-click menu', () => {
+    const conversationRowSource = activityRailSource.slice(
+      activityRailSource.indexOf('function RecentConversationRow'),
+      activityRailSource.indexOf('function getProfileInitial'),
+    )
+
+    expect(activityRailSource).not.toContain("import { SessionMenu } from './SessionMenu'")
+    expect(conversationRowSource).toContain('<ContextMenuTrigger asChild>{row}</ContextMenuTrigger>')
+    expect(conversationRowSource).toContain('重命名')
+    expect(conversationRowSource).toContain('归档')
+    expect(conversationRowSource).toContain('删除')
+    expect(conversationRowSource).not.toContain('<DropdownMenu')
+    expect(conversationRowSource).not.toContain('MoreHorizontal')
+    expect(conversationRowSource).not.toContain('<SessionMenu')
     expect(appShellSource).toContain('onRename: onRenameSession')
+    expect(appShellSource).toContain('onArchive: onArchiveSession')
     expect(appShellSource).toContain('onDelete: (sessionId) => { void handleDeleteSession(sessionId) }')
   })
 

@@ -77,7 +77,7 @@ import {
   ownsSessionStatusMutation,
 } from '@/atoms/session-status-transition'
 import { focusedPanelRouteAtom } from '@/atoms/panel-stack'
-import { pendingCredentialsAtom, pendingPermissionsAtom } from '@/atoms/pending-requests'
+import { pendingCredentialsAtom, pendingPermissionsAtom, pendingUserQuestionsAtom } from '@/atoms/pending-requests'
 import { sourcesAtom } from '@/atoms/sources'
 import { skillsAtom } from '@/atoms/skills'
 import { llmConnectionsAtom, refreshLlmConnectionsAtom, workspaceDefaultLlmConnectionAtom } from '@/atoms/llm-connections'
@@ -365,6 +365,7 @@ function AppContent() {
   const setSessionOptions = useSetAtom(sessionOptionsAtom)
   const setPendingPermissions = useSetAtom(pendingPermissionsAtom)
   const setPendingCredentials = useSetAtom(pendingCredentialsAtom)
+  const setPendingUserQuestions = useSetAtom(pendingUserQuestionsAtom)
   const store = useStore()
   const activeViewingSessionIdRef = useRef<string | null>(null)
   const sessionRefreshInFlightRef = useRef<Map<string, Promise<SessionRefreshResult>>>(new Map())
@@ -1015,6 +1016,14 @@ function AppContent() {
             }
             break
           }
+          case 'user_question_request': {
+            setPendingUserQuestions(current => appendUniqueRequestForSession(current, sessionId, effect.request))
+            const notifySession = store.get(sessionAtomFamily(sessionId))
+            if (notifySession && !notifySession.hidden) {
+              showSessionNotification(notifySession, effect.request.questions[0]?.question ?? 'Input required')
+            }
+            break
+          }
           case 'permission_mode_changed': {
             if (typeof effect.modeVersion === 'number' && effect.changedAt && effect.changedBy) {
               applyPermissionModeState(effect.sessionId, {
@@ -1089,6 +1098,12 @@ function AppContent() {
             return next
           }
           return prevCreds
+        })
+        setPendingUserQuestions(current => {
+          if (!current.has(sessionId)) return current
+          const next = new Map(current)
+          next.delete(sessionId)
+          return next
         })
       }
     }
@@ -1480,7 +1495,7 @@ function AppContent() {
       let processedAttachments: FileAttachment[] | undefined
 
       if (attachments?.length) {
-        // Store each attachment to disk (generates thumbnails, converts Office→markdown)
+        // Store immutable originals and derive reusable representations.
         // Use allSettled so one failure doesn't kill all attachments
         const storeResults = await Promise.allSettled(
           attachments.map(a => window.electronAPI.storeAttachment(sessionId, a))
@@ -1489,10 +1504,14 @@ function AppContent() {
         // Filter successful stores, warn about failures
         storedAttachments = []
         const successfulAttachments: FileAttachment[] = []
+        const modelInputBase64: Array<string | undefined> = []
+        const modelInputMimeType: Array<string | undefined> = []
         storeResults.forEach((result, i) => {
           if (result.status === 'fulfilled') {
-            storedAttachments!.push(result.value)
+            storedAttachments!.push(result.value.attachment)
             successfulAttachments.push(attachments[i])
+            modelInputBase64.push(result.value.modelInputBase64)
+            modelInputMimeType.push(result.value.modelInputMimeType)
           } else {
             console.warn(`Failed to store attachment "${attachments[i].name}":`, result.reason)
           }
@@ -1517,11 +1536,7 @@ function AppContent() {
           }))
         }
 
-        // Step 2: Create processed attachments for Claude
-        // - Office files: Convert to text with markdown content
-        // - Others: Use original FileAttachment
-        // - All: Include storedPath so agent knows where files are stored
-        // - Resized images: Use resizedBase64 instead of original large base64
+        // Step 2: Add durable representations and select bounded model-input bytes.
         processedAttachments = await Promise.all(
           successfulAttachments.map(async (att, i) => {
             const stored = storedAttachments?.[i]
@@ -1529,15 +1544,13 @@ function AppContent() {
               console.error(`Missing stored attachment at index ${i}`)
               return att // Fall back to original
             }
-            // Include storedPath and markdownPath for all attachment types
-            // Agent will use Read tool to access text/office files via these paths
-            // If image was resized, use the resized base64 for Claude API
             return {
               ...att,
               storedPath: stored.storedPath,
               markdownPath: stored.markdownPath,
-              // Use resized base64 if available (for images that exceeded size limits)
-              base64: stored.resizedBase64 ?? att.base64,
+              representations: stored.representations,
+              base64: modelInputBase64[i] ?? att.base64,
+              mimeType: modelInputMimeType[i] ?? att.mimeType,
             }
           })
         )
@@ -1813,6 +1826,15 @@ function AppContent() {
     setPendingCredentials(prev => removeFirstRequestForSession(prev, sessionId))
   }, [])
 
+  const handleRespondToUserQuestion = useCallback(async (
+    sessionId: string,
+    requestId: string,
+    response: import('../shared/types').UserQuestionResponse,
+  ) => {
+    await window.electronAPI.respondToUserQuestion(sessionId, requestId, response)
+    setPendingUserQuestions(current => removeFirstRequestForSession(current, sessionId))
+  }, [])
+
   // Centralized link interceptor: classifies file types and decides whether to
   // show an in-app preview overlay or open externally. Replaces the old
   // handleOpenFile/handleOpenUrl that always opened in external apps.
@@ -1943,6 +1965,7 @@ function AppContent() {
     setSession({ selected: null })
     setPendingPermissions(new Map())
     setPendingCredentials(new Map())
+    setPendingUserQuestions(new Map())
     setSessionOptions(new Map())
     sessionDraftsRef.current.clear()
     store.set(sourcesAtom, [])
@@ -2128,7 +2151,15 @@ function AppContent() {
     }
     clearReturnLocation()
     await handleSelectWorkspace(workspace.id)
-  }, [clearReturnLocation, handleWorkspaceCreated, handleSelectWorkspace])
+    const session = await handleCreateSession(workspace.id)
+    await handleSelectProjectSession(workspace.id, session.id)
+  }, [
+    clearReturnLocation,
+    handleCreateSession,
+    handleSelectProjectSession,
+    handleSelectWorkspace,
+    handleWorkspaceCreated,
+  ])
 
   // Handle cancel during onboarding
   const handleOnboardingCancel = useCallback(() => {
@@ -2328,6 +2359,7 @@ function AppContent() {
     onDeleteSession: handleDeleteSession,
     onRespondToPermission: handleRespondToPermission,
     onRespondToCredential: handleRespondToCredential,
+    onRespondToUserQuestion: handleRespondToUserQuestion,
     // File/URL handlers
     onOpenFile: handleOpenFile,
     onOpenUrl: handleOpenUrl,
@@ -2374,6 +2406,7 @@ function AppContent() {
     handleDeleteSession,
     handleRespondToPermission,
     handleRespondToCredential,
+    handleRespondToUserQuestion,
     handleOpenFile,
     handleOpenUrl,
     handleSelectWorkspace,

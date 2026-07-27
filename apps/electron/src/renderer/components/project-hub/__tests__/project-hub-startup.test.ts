@@ -100,8 +100,10 @@ describe('ProjectHub startup integration', () => {
     expect(appSource).not.toContain('<SessionLoadErrorScreen')
   })
 
-  it('does not auto-open a starter chat session after creating or opening a project', () => {
+  it('opens a new project in its starter conversation', () => {
     expect(appSource).toContain('handleSelectWorkspace(workspace.id)')
+    expect(appSource).toContain('const session = await handleCreateSession(workspace.id)')
+    expect(appSource).toContain('await handleSelectProjectSession(workspace.id, session.id)')
     expect(appSource).not.toContain('getAutoSessionIdForWorkspaceSwitch')
     expect(appSource).not.toContain('shouldOpenStarterSession')
   })

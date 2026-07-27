@@ -23,6 +23,8 @@ import type {
   PermissionRequest,
   CredentialRequest,
   CredentialResponse,
+  UserQuestionRequest,
+  UserQuestionResponse,
   PermissionMode,
   SessionStatus,
   LoadedSource,
@@ -36,7 +38,8 @@ import type { SessionStatus as SessionStatusConfig } from '@/config/session-stat
 import type { SessionOptions, SessionOptionUpdates } from '../hooks/useSessionOptions'
 import { sessionOptionsAtomFamily } from '../hooks/useSessionOptions'
 import { sessionAtomFamily } from '../atoms/sessions'
-import { pendingCredentialAtomFamily, pendingPermissionAtomFamily } from '../atoms/pending-requests'
+import { pendingCredentialAtomFamily, pendingPermissionAtomFamily, pendingUserQuestionAtomFamily } from '../atoms/pending-requests'
+import type { FileChange, FileChangeReviewStatus } from '@craft-agent/ui'
 
 export interface AppShellContextType {
   // Data
@@ -114,9 +117,21 @@ export interface AppShellContextType {
     response: CredentialResponse
   ) => void
 
+  onRespondToUserQuestion?: (
+    sessionId: string,
+    requestId: string,
+    response: UserQuestionResponse
+  ) => void
+
   // File/URL handlers - these can open in tabs or external apps
   onOpenFile: (path: string) => void
   onOpenUrl: (url: string) => void
+  /** Resolve and update review state for file changes shown inside the active conversation. */
+  resolveFileChangeReviewStatus?: (sessionId: string, change: FileChange) => FileChangeReviewStatus | undefined
+  onAcceptFileChange?: (sessionId: string, change: FileChange) => void
+  onRejectFileChange?: (sessionId: string, change: FileChange) => void
+  onOpenFileChanges?: (sessionId: string, changes: FileChange[]) => void
+  onRevertFileChanges?: (sessionId: string, changes: FileChange[]) => Promise<void> | void
 
   // Workspace
   onSelectWorkspace: (id: string, openInNewWindow?: boolean) => void | Promise<void>
@@ -193,6 +208,12 @@ interface SessionInteractionActionsContextType {
   onSendMessage: AppShellContextType['onSendMessage']
   onRespondToPermission?: AppShellContextType['onRespondToPermission']
   onRespondToCredential?: AppShellContextType['onRespondToCredential']
+  onRespondToUserQuestion?: AppShellContextType['onRespondToUserQuestion']
+  resolveFileChangeReviewStatus?: AppShellContextType['resolveFileChangeReviewStatus']
+  onAcceptFileChange?: AppShellContextType['onAcceptFileChange']
+  onRejectFileChange?: AppShellContextType['onRejectFileChange']
+  onOpenFileChanges?: AppShellContextType['onOpenFileChanges']
+  onRevertFileChanges?: AppShellContextType['onRevertFileChanges']
 }
 
 const SessionInteractionActionsContext = createContext<SessionInteractionActionsContextType | null>(null)
@@ -285,11 +306,23 @@ export function AppShellProvider({
     onSendMessage: value.onSendMessage,
     onRespondToPermission: value.onRespondToPermission,
     onRespondToCredential: value.onRespondToCredential,
+    onRespondToUserQuestion: value.onRespondToUserQuestion,
+    resolveFileChangeReviewStatus: value.resolveFileChangeReviewStatus,
+    onAcceptFileChange: value.onAcceptFileChange,
+    onRejectFileChange: value.onRejectFileChange,
+    onOpenFileChanges: value.onOpenFileChanges,
+    onRevertFileChanges: value.onRevertFileChanges,
   }), [
     value.onCreateSession,
     value.onSendMessage,
     value.onRespondToPermission,
     value.onRespondToCredential,
+    value.onRespondToUserQuestion,
+    value.resolveFileChangeReviewStatus,
+    value.onAcceptFileChange,
+    value.onRejectFileChange,
+    value.onOpenFileChanges,
+    value.onRevertFileChanges,
   ])
 
   const sessionReadActions = React.useMemo<SessionReadActionsContextType>(() => ({
@@ -475,6 +508,10 @@ export function usePendingPermission(sessionId: string): PermissionRequest | und
  */
 export function usePendingCredential(sessionId: string): CredentialRequest | undefined {
   return useAtomValue(pendingCredentialAtomFamily(sessionId))
+}
+
+export function usePendingUserQuestion(sessionId: string): UserQuestionRequest | undefined {
+  return useAtomValue(pendingUserQuestionAtomFamily(sessionId))
 }
 
 /**

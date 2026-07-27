@@ -129,6 +129,44 @@ Fidelity checks:
 
 final result: passed
 
+## Writing workspace shared tabs and directory QA — 2026-07-27
+
+### Sources
+
+- Open-directory reference:
+  `/var/folders/jk/7_pcx4cd3y94_lwnf7hbxcv80000gn/T/codex-clipboard-1ecd352a-01de-4a1b-8e62-421ae3fb4ab3.png`
+- Closed-directory reference:
+  `/var/folders/jk/7_pcx4cd3y94_lwnf7hbxcv80000gn/T/codex-clipboard-518d47b9-769a-4918-9e12-d8ac631f77b9.png`
+- Storyflow open-directory result:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/27/019fa244-8fc4-7941-91fe-ee2b0f244a8f/storyflow-writing-tabs-open.jpeg`
+- Reference/result comparison:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/27/019fa244-8fc4-7941-91fe-ee2b0f244a8f/writing-tabs-reference-vs-storyflow.jpg`
+
+Visible behavior:
+
+- A single 42 px file-tab header owns open files, new-file action, directory
+  visibility, and the complete writing-workspace toggle.
+- The directory is nested below that shared header. Its 42 px alignment row
+  matches the TipTap toolbar, so the file tree begins at the editor-content row.
+- Folding the directory preserves the outer writing-workspace width and header
+  position; the manuscript consumes the released body width.
+- Opening files appends unique closable tabs while one TipTap instance remains
+  mounted. Switching or closing the active tab saves first.
+- Moving or renaming a file or folder remaps every affected tab; deleting one
+  removes only affected tabs and selects an already-open neighbour.
+
+Runtime evidence:
+
+- 129 focused writing/layout tests pass with 785 assertions.
+- Electron TypeScript check passes.
+- Renderer production build passes.
+- Electron lint reports zero errors; remaining warnings predate this change.
+- The live Electron dev window rendered three tabs, the shared right-side
+  controls, aligned formatting/directory rows, and one manuscript editor without
+  an HMR error overlay.
+
+final result: passed
+
 ## Directory independent collapse and panel motion QA — 2026-07-26
 
 ### Sources
@@ -201,6 +239,31 @@ Runtime evidence:
 - `git diff --check` passes.
 
 No actionable P0, P1, or P2 visual or interaction differences remain.
+
+### Iteration 3
+
+User feedback:
+
+- The directory toggle must not jump back into the directory header after
+  expansion.
+- The directory tree must not start at the window's top edge; the 42 px header
+  lane remains the highest-priority structural row.
+
+Root fix:
+
+- Keep the directory toggle on the manuscript surface in both visibility
+  states.
+- Let the outer `ResizableColumn` own an empty 42 px directory header, then
+  place the scrolling project tree beneath it. `WorkspaceProjectSidebar`
+  contains neither a duplicate header nor a duplicate toggle.
+
+Verification:
+
+- Three focused suites pass with 92 tests and 690 assertions.
+- Electron TypeScript checking and the renderer production build pass.
+- Targeted ESLint reports no errors; its nine Hook dependency warnings are
+  pre-existing in `AppShell`.
+- `git diff --check` passes.
 
 final result: passed
 

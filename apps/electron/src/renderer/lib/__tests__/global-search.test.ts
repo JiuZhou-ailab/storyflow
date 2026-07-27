@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import type { SessionMeta } from '@/atoms/sessions'
+import type { Workspace } from '../../../shared/types'
 import type { NovelWorkspaceFile } from '../writing-workspace'
 import { buildGlobalSearchResults } from '../global-search'
 
@@ -143,5 +144,35 @@ describe('buildGlobalSearchResults', () => {
 
     expect(results.files.map(result => result.file.path)).toEqual(['/novel/story/chapters/chapter-01.md'])
     expect(results.files[0]?.title).toBe('Opening Chapter')
+  })
+
+  it('combines project navigation and runtime document content without preloading other projects', () => {
+    const workspaces = [
+      { id: 'workspace-1', name: 'Dragon Project', rootPath: '/dragon', createdAt: 1 },
+      { id: 'workspace-2', name: 'Market Project', rootPath: '/market', createdAt: 2 },
+    ] as Workspace[]
+    const results = buildGlobalSearchResults({
+      query: 'dragon',
+      workspaces,
+      sessions: [],
+      novelFiles: [],
+      workspaceSearchHits: [{
+        kind: 'document',
+        path: '/dragon/manuscript/chapter-01.md',
+        relativePath: 'manuscript/chapter-01.md',
+        lineNumber: 7,
+        matchCount: 2,
+        snippet: 'The dragon turns at the gate.',
+      }],
+      formatNovelFileTitle: file => file.relativePath.split('/').pop() ?? file.relativePath,
+    })
+
+    expect(results.workspaces.map(result => result.workspace.id)).toEqual(['workspace-1'])
+    expect(results.files[0]).toMatchObject({
+      file: { path: '/dragon/manuscript/chapter-01.md' },
+      preview: 'The dragon turns at the gate.',
+      lineNumber: 7,
+      matchCount: 2,
+    })
   })
 })

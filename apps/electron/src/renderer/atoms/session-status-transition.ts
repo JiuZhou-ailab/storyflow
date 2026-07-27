@@ -26,6 +26,9 @@ const GLOBAL_SESSION_META_REFRESH_EVENT_TYPES = new Set<SessionEvent['type']>([
   'title_generated',
   'session_deleted',
   'session_created',
+  // Archiving changes membership in every cached workspace snapshot.
+  'session_archived',
+  'session_unarchived',
   'user_message',
 ])
 

@@ -154,11 +154,13 @@ describe('session status transitions', () => {
     expect(ownsSessionStatusMutation('session-authoritative', token)).toBe(false)
   })
 
-  it('keeps precise metadata events off the global session refresh path', () => {
+  it('refreshes list membership changes while keeping display-only metadata precise', () => {
     expect(shouldRefreshGlobalSessionMetasForEvent('session_status_changed')).toBe(false)
     expect(shouldRefreshGlobalSessionMetasForEvent('name_changed')).toBe(false)
     expect(shouldRefreshGlobalSessionMetasForEvent('complete')).toBe(true)
     expect(shouldRefreshGlobalSessionMetasForEvent('session_deleted')).toBe(true)
+    expect(shouldRefreshGlobalSessionMetasForEvent('session_archived')).toBe(true)
+    expect(shouldRefreshGlobalSessionMetasForEvent('session_unarchived')).toBe(true)
   })
 })
 

@@ -2,6 +2,7 @@ import type { PermissionRequest as PermissionRequestType, CredentialRequest as C
 import { PermissionRequest } from './structured/PermissionRequest'
 import { CredentialRequest } from './structured/CredentialRequest'
 import { AdminApprovalRequest } from './structured/AdminApprovalRequest'
+import { UserQuestionRequest } from './structured/UserQuestionRequest'
 import type { StructuredInputState, StructuredResponse } from './structured/types'
 
 interface StructuredInputProps {
@@ -42,6 +43,14 @@ export function StructuredInput({ state, onResponse, unstyled = false }: Structu
           request={state.data as import('./structured/AdminApprovalRequest').AdminApprovalRequestData}
           onApprove={({ rememberForMinutes }) => onResponse({ type: 'admin_approval', approved: true, rememberForMinutes })}
           onCancel={() => onResponse({ type: 'admin_approval', approved: false })}
+          unstyled={unstyled}
+        />
+      )
+    case 'user_question':
+      return (
+        <UserQuestionRequest
+          request={state.data as import('../../../../shared/types').UserQuestionRequest}
+          onResponse={onResponse}
           unstyled={unstyled}
         />
       )

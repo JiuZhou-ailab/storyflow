@@ -61,7 +61,7 @@ export function getNovelReviewChangeKey(change: Pick<FileChange, 'filePath' | 't
   ].join(':')
 }
 
-function getNovelReviewStatus(
+export function getNovelReviewStatus(
   statusByChangeId: NovelReviewStatusMap,
   change: Pick<FileChange, 'id' | 'filePath' | 'toolType' | 'original' | 'modified' | 'unifiedDiff'>,
 ): NovelReviewStatus | undefined {
@@ -173,19 +173,4 @@ export function parseNovelReviewStatusMap(
   }
 
   return parsed
-}
-
-export function getAdjacentChangedFilePath(
-  filePaths: string[],
-  currentFilePath: string | null | undefined,
-  direction: 'next' | 'previous',
-): string | null {
-  if (filePaths.length === 0) return null
-
-  const currentIndex = currentFilePath ? filePaths.indexOf(currentFilePath) : -1
-  if (currentIndex === -1) return filePaths[0] ?? null
-
-  const offset = direction === 'next' ? 1 : -1
-  const nextIndex = (currentIndex + offset + filePaths.length) % filePaths.length
-  return filePaths[nextIndex] ?? null
 }

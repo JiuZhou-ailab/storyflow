@@ -19,10 +19,11 @@ describe('manual update check entrypoints', () => {
     expect(appShellSource).not.toContain('checkForUpdates')
     expect(appShellSource).not.toContain('<TopBar')
     expect(appShellSource).toContain('setRightWorkspaceVisible((visible) => !visible)')
-    expect(appShellSource).toContain('writingDocumentSurface && rightWorkspaceVisible && !isAutoCompact')
     expect(appShellSource).toContain(
-      'activityWorkspaceDirectory && rightWorkspaceVisible && !isAutoCompact',
+      'activeWritingDocumentSurface && rightWorkspaceVisible && !isAutoCompact && !showEmptyProjectSession',
     )
+    expect(appShellSource).toContain('const showWorkspaceDirectoryColumn = Boolean(')
+    expect(appShellSource).toContain('&& !conversationDiffSurface')
   })
 
   it('routes legacy app menu manual update checks through the feedback-aware hook', () => {

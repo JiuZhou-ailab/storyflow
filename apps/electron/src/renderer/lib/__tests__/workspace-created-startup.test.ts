@@ -1,6 +1,6 @@
 // input: renderer app workspace creation flow source
-// output: Static regression coverage for new-project writing-workspace landing behavior
-// pos: Guards project creation against replacing the writing route with a transient empty conversation
+// output: Static regression coverage for new-project starter-conversation landing behavior
+// pos: Guards project creation so it opens a project-owned initial conversation
 
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'bun:test'
@@ -8,18 +8,15 @@ import { describe, expect, it } from 'bun:test'
 const appSource = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8')
 
 describe('workspace-created startup route', () => {
-  it('lands directly in the writing workspace without creating a transient conversation', () => {
+  it('creates and opens the project starter conversation', () => {
     const createdHandlerSource = appSource.slice(
       appSource.indexOf('const handleProjectHubWorkspaceCreated'),
       appSource.indexOf('// Handle cancel during onboarding')
     )
-    const projectSelectionSource = appSource.slice(
-      appSource.indexOf('const handleSelectWorkspace ='),
-      appSource.indexOf('// Handle workspace switch by slug')
-    )
 
     expect(createdHandlerSource).toContain('await handleSelectWorkspace(workspace.id)')
-    expect(projectSelectionSource).toContain('routes.view.writing()')
+    expect(createdHandlerSource).toContain('const session = await handleCreateSession(workspace.id)')
+    expect(createdHandlerSource).toContain('await handleSelectProjectSession(workspace.id, session.id)')
     expect(createdHandlerSource).not.toContain('routes.action.newSession()')
     expect(appSource).not.toContain('openNewProjectConversationAfterSwitchRef')
   })

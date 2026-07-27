@@ -21,7 +21,7 @@ import { SessionInfoPopover } from '@/components/app-shell/SessionInfoPopover'
 import { RenameDialog } from '@/components/ui/rename-dialog'
 import { toast } from 'sonner'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
-import { usePendingPermission, usePendingCredential, useSessionBatchActions, useSessionChatResources, useSessionDraftActions, useSessionInteractionActions, useSessionPanelChrome, useSessionReadActions, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
+import { usePendingPermission, usePendingCredential, usePendingUserQuestion, useSessionBatchActions, useSessionChatResources, useSessionDraftActions, useSessionInteractionActions, useSessionPanelChrome, useSessionReadActions, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
 import { rendererPerf } from '@/lib/perf'
 import { navigate, routes } from '@/lib/navigate'
 import { coerceInputText } from '@/lib/input-text'
@@ -89,6 +89,12 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onSendMessage,
     onRespondToPermission,
     onRespondToCredential,
+    onRespondToUserQuestion,
+    resolveFileChangeReviewStatus,
+    onAcceptFileChange,
+    onRejectFileChange,
+    onOpenFileChanges,
+    onRevertFileChanges,
   } = useSessionInteractionActions()
   const {
     labels,
@@ -235,6 +241,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   // Get pending permission and credential for this session
   const pendingPermission = usePendingPermission(sessionId)
   const pendingCredential = usePendingCredential(sessionId)
+  const pendingUserQuestion = usePendingUserQuestion(sessionId)
 
   // Track draft value for this session
   const [inputValue, setInputValue] = React.useState(() => coerceInputText(getDraft(sessionId)))
@@ -309,12 +316,17 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onAttachmentsChange(sessionId, attachments)
   }, [sessionId, onAttachmentsChange])
 
-  // Session model change handler - persists per-session model and connection
-  const handleModelChange = React.useCallback((model: string, connection?: string) => {
+  // Persist the current selection and refresh the global default used by new sessions.
+  const handleModelChange = React.useCallback(async (model: string, connection?: string) => {
     if (activeWorkspaceId) {
-      window.electronAPI.setSessionModel(sessionId, activeWorkspaceId, model, connection)
+      try {
+        await window.electronAPI.setSessionModel(sessionId, activeWorkspaceId, model, connection)
+        await refreshLlmConnections()
+      } catch (error) {
+        console.error('Failed to change model:', error)
+      }
     }
-  }, [sessionId, activeWorkspaceId])
+  }, [sessionId, activeWorkspaceId, refreshLlmConnections])
 
   // Session connection change handler - can only change before first message
   const handleConnectionChange = React.useCallback(async (connectionSlug: string) => {
@@ -619,6 +631,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
                 pendingPermission={undefined}
                 onRespondToPermission={onRespondToPermission}
                 pendingCredential={undefined}
+                pendingUserQuestion={undefined}
                 onRespondToCredential={onRespondToCredential}
                 thinkingLevel={sessionOpts.thinkingLevel}
                 onThinkingLevelChange={(level) => setOption('thinkingLevel', level)}
@@ -700,6 +713,21 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
             }}
             onOpenFile={handleOpenFile}
             onOpenUrl={handleOpenUrl}
+            resolveFileChangeReviewStatus={resolveFileChangeReviewStatus
+              ? change => resolveFileChangeReviewStatus(sessionId, change)
+              : undefined}
+            onAcceptFileChange={onAcceptFileChange
+              ? change => onAcceptFileChange(sessionId, change)
+              : undefined}
+            onRejectFileChange={onRejectFileChange
+              ? change => onRejectFileChange(sessionId, change)
+              : undefined}
+            onOpenFileChanges={onOpenFileChanges
+              ? changes => onOpenFileChanges(sessionId, changes)
+              : undefined}
+            onRevertFileChanges={onRevertFileChanges
+              ? changes => onRevertFileChanges(sessionId, changes)
+              : undefined}
             onRenameSession={onRenameSession}
             currentModel={effectiveModel}
             onModelChange={handleModelChange}
@@ -714,6 +742,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
             pendingPermission={pendingPermission}
             onRespondToPermission={onRespondToPermission}
             pendingCredential={pendingCredential}
+            pendingUserQuestion={pendingUserQuestion}
+            onRespondToUserQuestion={onRespondToUserQuestion}
             onRespondToCredential={onRespondToCredential}
             thinkingLevel={sessionOpts.thinkingLevel}
             onThinkingLevelChange={(level) => setOption('thinkingLevel', level)}
