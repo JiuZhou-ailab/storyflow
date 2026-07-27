@@ -19,9 +19,12 @@ export function ActivityRailFrame({ children, ...railProps }: ActivityRailFrameP
       >
         <div className="titlebar-no-drag absolute left-0 top-0 h-full w-[80px]" />
       </div>
-      <div className="flex h-full min-h-0" style={{ paddingTop: WINDOW_TITLE_BAR_HEIGHT }}>
+      <div className="flex h-full min-h-0">
         <ActivityRail {...railProps} />
-        <main className="min-w-0 flex-1 overflow-auto">
+        <main
+          className="min-w-0 flex-1 overflow-auto"
+          style={{ paddingTop: WINDOW_TITLE_BAR_HEIGHT }}
+        >
           {children}
         </main>
       </div>

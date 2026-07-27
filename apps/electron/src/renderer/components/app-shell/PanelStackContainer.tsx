@@ -1,4 +1,4 @@
-// input: Pinned shell columns, content panel state, optional minimum width, and resize sash
+// input: Pinned shell columns, content panel state, optional shell action, minimum width, and resize sash
 // output: Continuous horizontal workbench with one scrollable content lane
 // pos: Parent layout owner for navigator, content panes, and their shared seams
 
@@ -42,6 +42,7 @@ interface PanelStackContainerProps {
   isCompact?: boolean
   isResizing?: boolean
   hidePanelCloseButton?: boolean
+  rightSidebarButton?: React.ReactNode
   contentPanelMinWidth?: number
 }
 
@@ -55,6 +56,7 @@ export function PanelStackContainer({
   isCompact = false,
   isResizing,
   hidePanelCloseButton,
+  rightSidebarButton,
   contentPanelMinWidth,
 }: PanelStackContainerProps) {
   const panelStack = useAtomValue(panelStackAtom)
@@ -173,6 +175,7 @@ export function PanelStackContainer({
                   proportion={entry.proportion}
                   isCompact={isCompact}
                   hideCloseButton={hidePanelCloseButton}
+                  rightSidebarButton={index === visiblePanels.length - 1 ? rightSidebarButton : undefined}
                   minWidth={contentPanelMinWidth}
                   sash={index > 0 ? (
                     <PanelResizeSash

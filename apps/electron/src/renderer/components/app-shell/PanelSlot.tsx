@@ -1,4 +1,4 @@
-// input: One panel-stack entry, focus state, proportional sizing, and optional minimum width
+// input: One panel-stack entry, focus state, proportional sizing, optional shell action, and minimum width
 // output: One flat content pane with panel-specific chrome
 // pos: Content pane renderer inside the continuous app workbench
 
@@ -42,6 +42,8 @@ interface PanelSlotProps {
   isCompact?: boolean
   /** Hide the per-panel close button when the surrounding workspace owns navigation. */
   hideCloseButton?: boolean
+  /** Optional shell action shown at the right edge of the rightmost content panel. */
+  rightSidebarButton?: React.ReactNode
   /** Per-layout minimum; defaults to the shared desktop content minimum. */
   minWidth?: number
 }
@@ -55,6 +57,7 @@ export function PanelSlot({
   sash,
   isCompact,
   hideCloseButton,
+  rightSidebarButton,
   minWidth = PANEL_MIN_WIDTH,
 }: PanelSlotProps) {
   const { t } = useTranslation()
@@ -94,10 +97,10 @@ export function PanelSlot({
   // Override panel chrome so ChatPage/PanelHeader gets our per-panel close button,
   // back button (compact mode), and isFocusedPanel for input field appearance
   const panelChrome = useMemo(() => ({
-    rightSidebarButton: closeButton,
+    rightSidebarButton: rightSidebarButton ?? closeButton,
     leadingAction: backButton,
     isFocusedPanel,
-  }), [closeButton, backButton, isFocusedPanel])
+  }), [backButton, closeButton, isFocusedPanel, rightSidebarButton])
 
   const handlePointerDown = useCallback(() => {
     if (!isFocusedPanel) {
@@ -112,13 +115,11 @@ export function PanelSlot({
         onPointerDown={handlePointerDown}
         data-panel-role="content"
         data-compact={isCompact || undefined}
-        className="h-full overflow-hidden relative @container/panel bg-foreground-2"
+        className="h-full overflow-hidden relative @container/panel bg-background"
         style={{
-          // In multi-panel, unfocused panels override --background so all
-          // bg-background children render at the elevated (dimmed) background.
+          // Keep focus feedback local to controls instead of tinting the whole pane.
           ...(!isFocusedPanel && !isOnly
             ? {
-                '--background': 'var(--background-elevated)',
                 '--shadow-minimal': 'var(--shadow-minimal-flat)',
                 '--user-message-bubble': 'var(--user-message-bubble-dimmed)',
               } as React.CSSProperties

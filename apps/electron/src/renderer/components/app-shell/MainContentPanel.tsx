@@ -26,7 +26,7 @@ import { useTranslation, Trans } from 'react-i18next'
 import { Panel } from './Panel'
 import { PanelHeader } from './PanelHeader'
 import { MultiSelectPanel } from './MultiSelectPanel'
-import { useSessionBatchActions } from '@/context/AppShellContext'
+import { useSessionBatchActions, useSessionPanelChrome } from '@/context/AppShellContext'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { workspacePanelFieldsAtomFamily, hasOtherWorkspacesAtom, sessionIdsAtom, sessionMetaAtomFamily, sessionMetaMapAtom, windowWorkspaceIdAtom, windowWorkspacesAtom, type SessionMeta } from '@/atoms/sessions'
@@ -440,11 +440,14 @@ function WritingSessionContent({
 function ChatPanelPlaceholder({ empty = false }: { empty?: boolean }) {
   const { t } = useTranslation()
   const { navigate } = useNavigationActions()
+  const { rightSidebarButton } = useSessionPanelChrome()
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="writing-chat-placeholder">
       <PanelHeader
+        className="border-b-0"
         title={t('chat.session')}
+        rightSidebarButton={rightSidebarButton}
         actions={(
           <Button
             variant="ghost"

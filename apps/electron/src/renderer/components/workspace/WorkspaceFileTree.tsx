@@ -224,7 +224,7 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
       <div
         ref={containerRef}
         className={fitContent
-          ? 'w-full overflow-hidden py-1 [&_[role=tree]>div]:!overflow-hidden'
+          ? 'w-full overflow-hidden px-2 py-1 [&_[role=tree]>div]:!overflow-hidden'
           : 'h-full min-h-0 w-full overflow-hidden px-2 py-1'}
         style={fitContent ? { height: treeHeight + TREE_VERTICAL_PADDING } : undefined}
       >

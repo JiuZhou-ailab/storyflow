@@ -1,5 +1,5 @@
-// input: Workspace catalog, workspace-scoped session metadata, unread summary, shell callbacks, and current profile
-// output: Single Codex-style sidebar listing Free Conversations plus collapsible project conversation subtrees
+// input: Workspace catalog, workspace-scoped session metadata, unread summary, shell callbacks, current profile, and window chrome inset
+// output: Single Codex-style sidebar with a native titlebar drag region plus collapsible project conversation subtrees
 // pos: Global navigation surface; every project subtree is fetched and selected through its own runtime domain (ADR 0006)
 
 import * as React from 'react'
@@ -54,6 +54,7 @@ import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
 import { deriveSessionRuntimeStatus, requiresHumanAttention } from '@craft-agent/shared/statuses/runtime'
 import { hasPendingPromptAtomFamily, sessionIdsWithPendingPromptAtom } from '@/atoms/pending-requests'
 import type { Workspace } from '../../../shared/types'
+import { WINDOW_TITLE_BAR_HEIGHT } from './layout-constants'
 
 export type ActivityRailItemId =
   | 'recent'
@@ -359,9 +360,14 @@ export function ActivityRail({
     <aside
       data-testid="activity-rail"
       aria-label="工作区导航"
-      className="titlebar-no-drag flex h-full shrink-0 flex-col border-r border-foreground/[0.09] bg-background/80"
+      className="titlebar-no-drag flex h-full shrink-0 flex-col bg-foreground-2"
       style={{ width: ACTIVITY_RAIL_WIDTH }}
     >
+      <div
+        aria-hidden="true"
+        className="titlebar-drag-region shrink-0"
+        style={{ height: WINDOW_TITLE_BAR_HEIGHT }}
+      />
       <div className="flex min-h-0 flex-1 flex-col px-2 pt-2">
         <div className="flex items-center px-2 pb-2">
           <span className="text-[12px] font-semibold tracking-wide text-foreground/75">工作区</span>

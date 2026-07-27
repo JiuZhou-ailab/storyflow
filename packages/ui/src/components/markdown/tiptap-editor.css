@@ -98,19 +98,11 @@
   --tiptap-manuscript-width: min(100%, 1120px);
   --tiptap-manuscript-line-height: 1.2;
   --tiptap-manuscript-paragraph-spacing: 0;
-  --tiptap-manuscript-paper: color-mix(in oklch, var(--background) 99.5%, var(--foreground) 0.5%);
   --tiptap-manuscript-ink: color-mix(in oklch, var(--foreground) 95%, transparent);
   --tiptap-manuscript-muted: color-mix(in oklch, var(--foreground) 54%, transparent);
   --tiptap-manuscript-rule: color-mix(in oklch, var(--foreground) 6%, transparent);
   container-type: inline-size;
-  background:
-    linear-gradient(
-      90deg,
-      color-mix(in oklch, var(--background) 97%, var(--foreground) 3%) 0%,
-      color-mix(in oklch, var(--background) 99.5%, var(--foreground) 0.5%) 20%,
-      color-mix(in oklch, var(--background) 99.5%, var(--foreground) 0.5%) 80%,
-      color-mix(in oklch, var(--background) 97%, var(--foreground) 3%) 100%
-    );
+  background: var(--background);
 }
 
 .tiptap-editor--manuscript .tiptap-toolbar {
@@ -118,9 +110,11 @@
   height: 42px;
   min-height: 42px;
   justify-content: center;
-  border-bottom-color: color-mix(in oklch, var(--foreground) 9%, transparent);
+  border-bottom-color: color-mix(in oklch, var(--foreground) 6%, transparent);
   background: var(--background);
   padding: 0 0.5rem 0 1rem;
+  -webkit-app-region: drag;
+  app-region: drag;
 }
 
 .tiptap-editor--manuscript .tiptap-toolbar-accessory {
@@ -128,6 +122,8 @@
   top: 50%;
   right: 0.5rem;
   transform: translateY(-50%);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .tiptap-editor--manuscript .tiptap-toolbar-btn {
@@ -135,6 +131,8 @@
   width: 25px;
   border-radius: 5px;
   color: color-mix(in oklch, var(--foreground) 44%, transparent);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .tiptap-editor--manuscript .tiptap-toolbar-btn:hover,
@@ -159,9 +157,7 @@
   min-height: 100%;
   margin: 0 auto;
   padding: clamp(32px, 4.2vw, 52px) clamp(34px, 5vw, 62px);
-  border-left: 1px solid var(--tiptap-manuscript-rule);
-  border-right: 1px solid var(--tiptap-manuscript-rule);
-  background: var(--tiptap-manuscript-paper);
+  background: transparent;
   color: var(--tiptap-manuscript-ink);
   font-family: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "Times New Roman", serif;
   font-size: 16.5px;
@@ -170,9 +166,6 @@
   text-wrap: pretty;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  box-shadow:
-    0 1px 0 color-mix(in oklch, var(--foreground) 3%, transparent),
-    0 14px 32px color-mix(in oklch, var(--foreground) 5%, transparent);
 }
 
 .tiptap-editor-status-badge {

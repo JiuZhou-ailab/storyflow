@@ -21,6 +21,8 @@ import {
 } from '../panel-constants'
 
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf8')
+const appSource = readFileSync(new URL('../../../App.tsx', import.meta.url), 'utf8')
+const activityRailSource = readFileSync(new URL('../ActivityRail.tsx', import.meta.url), 'utf8')
 const panelConstantsSource = readFileSync(new URL('../panel-constants.ts', import.meta.url), 'utf8')
 const panelStackSource = readFileSync(new URL('../PanelStackContainer.tsx', import.meta.url), 'utf8')
 const panelSlotSource = readFileSync(new URL('../PanelSlot.tsx', import.meta.url), 'utf8')
@@ -34,6 +36,10 @@ const editorPanelSource = readFileSync(
 )
 const workspaceEmptyStateSource = readFileSync(
   new URL('../../workspace/WorkspaceEmptyState.tsx', import.meta.url),
+  'utf8',
+)
+const workspaceProjectSidebarSource = readFileSync(
+  new URL('../../workspace/WorkspaceProjectSidebar.tsx', import.meta.url),
   'utf8',
 )
 const tiptapEditorStyles = readFileSync(
@@ -225,6 +231,16 @@ describe('app shell layout defaults', () => {
     expect(panelHeaderSource).toContain('h-[42px]')
   })
 
+  it('uses the existing panel headers as window chrome without a duplicate project title strip', () => {
+    expect(appSource).not.toContain('paddingTop: WINDOW_TITLE_BAR_HEIGHT')
+    expect(appShellSource).not.toContain('<TopBar')
+    expect(panelHeaderSource).toContain('titlebar-drag-region')
+    expect(activityRailSource).toContain('style={{ height: WINDOW_TITLE_BAR_HEIGHT }}')
+    expect(tiptapEditorStyles).toContain('-webkit-app-region: drag')
+    expect(appShellSource).toContain('rightSidebarButton={!rightWorkspaceVisible ? rightWorkspaceToggleButton : undefined}')
+    expect(panelStackSource).toContain('index === visiblePanels.length - 1 ? rightSidebarButton : undefined')
+  })
+
   it('renders structural panes as one continuous workbench with parent-owned seams', () => {
     expect(PANEL_GAP).toBe(0)
     expect(PANEL_EDGE_INSET).toBe(0)
@@ -238,8 +254,12 @@ describe('app shell layout defaults', () => {
     expect(panelSlotSource).not.toContain('shadow-panel-focused')
     expect(panelSlotSource).not.toContain('borderRadius')
     expect(resizableColumnSource).not.toContain('shadow-middle')
-    expect(resizeGradientSource).toContain('var(--foreground) 9%')
-    expect(panelHeaderSource).toContain('border-b border-foreground/[0.09]')
+    expect(resizeGradientSource).toContain('var(--foreground) 6%')
+    expect(panelHeaderSource).toContain('border-b border-foreground/[0.06]')
+    expect(panelSlotSource).toContain('bg-background')
+    expect(panelSlotSource).not.toContain('background-elevated')
+    expect(tiptapEditorStyles).toContain('background: var(--background)')
+    expect(tiptapEditorStyles).not.toContain('--tiptap-manuscript-paper')
     expect(rendererCssSource).toContain('[data-panel-role="navigator"]')
     expect(rendererCssSource).toContain('[data-panel-role="content"]')
     expect(rendererCssSource).toContain('[data-panel-role="document"]')
@@ -250,11 +270,18 @@ describe('app shell layout defaults', () => {
     expect(localStorageSource).toContain("writingWorkspaceVisible: 'writing-workspace-visible'")
     expect(localStorageSource).toContain("workspaceDirectoryVisible: 'workspace-directory-visible'")
     expect(appShellSource).toContain('const [workspaceDirectoryVisible, setWorkspaceDirectoryVisible]')
-    expect(appShellSource).toContain('activityWorkspaceDirectory && rightWorkspaceVisible && workspaceDirectoryVisible')
-    expect(appShellSource).toContain("t('writing.directory.collapse', '收起目录')")
-    expect(appShellSource).toContain("t('writing.directory.expand', '展开目录')")
+    expect(appShellSource).toContain('activityWorkspaceDirectory && rightWorkspaceVisible && !isAutoCompact')
+    expect(appShellSource).toContain('const WORKSPACE_DIRECTORY_COLLAPSED_WIDTH = 42')
+    expect(appShellSource).toContain('width={workspaceDirectoryColumnWidth}')
+    expect(appShellSource).toContain('resizable={workspaceDirectoryVisible}')
+    expect(appShellSource).not.toContain('collapsedDirectoryToggleButton')
+    expect(workspaceProjectSidebarSource).toContain("t('writing.directory.collapse', '收起目录')")
+    expect(workspaceProjectSidebarSource).toContain("t('writing.directory.expand', '展开目录')")
+    expect(workspaceProjectSidebarSource).toContain('onExpandedChange(!expanded)')
+    expect(workspaceProjectSidebarSource).toContain('<FolderOpen')
     expect(appShellSource).toContain('<AnimatePresence initial={false}>')
     expect(resizableColumnSource).toContain('useReducedMotion')
+    expect(resizableColumnSource).toContain('resizable = true')
     expect(resizableColumnSource).toContain('initial={{ width: 0, x: PANEL_SLIDE_OFFSET, opacity: 0 }}')
     expect(resizableColumnSource).toContain('exit={{ width: 0, x: PANEL_SLIDE_OFFSET, opacity: 0 }}')
     expect(resizableColumnSource).toContain('disableAnimation')

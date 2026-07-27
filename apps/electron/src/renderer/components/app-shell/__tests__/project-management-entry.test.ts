@@ -1,4 +1,4 @@
-// input: AppShell, TopBar, ActivityRail, WorkspaceProjectSidebar, and project-creation source
+// input: AppShell, panel chrome, ActivityRail, WorkspaceProjectSidebar, and project-creation source
 // output: Static regression for rail-owned project management IA
 // pos: Project browsing is rail-only; dialogs are reserved for creation forms
 
@@ -7,7 +7,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf8')
-const topBarSource = readFileSync(new URL('../TopBar.tsx', import.meta.url), 'utf8')
+const topBarPath = fileURLToPath(new URL('../TopBar.tsx', import.meta.url))
+const panelHeaderSource = readFileSync(new URL('../PanelHeader.tsx', import.meta.url), 'utf8')
 const appSource = readFileSync(new URL('../../../App.tsx', import.meta.url), 'utf8')
 const activityRailPath = fileURLToPath(new URL('../ActivityRail.tsx', import.meta.url))
 const activityRailSource = readFileSync(activityRailPath, 'utf8')
@@ -26,7 +27,7 @@ describe('project management entry', () => {
     expect(activityRailSource).toContain('aria-label="工作区导航"')
     expect(activityRailSource).toContain('aria-label="新建或导入项目"')
     expect(activityRailSource).not.toContain('aria-label="项目"')
-    expect(topBarSource).not.toContain('onOpenProjectHub')
+    expect(appShellSource).not.toContain('<TopBar')
   })
 
   it('keeps project creation in a small menu and opens dialogs only for forms', () => {
@@ -237,10 +238,10 @@ describe('project management entry', () => {
     expect(appShellSource).toContain('!effectiveSidebarAndNavigatorHidden && !hideSessionListNavigator')
   })
 
-  it('uses the title bar only for window chrome and current project context', () => {
-    expect(topBarSource).toContain('data-testid="window-title-bar"')
-    expect(topBarSource).not.toContain('<WorkspaceSwitcher')
-    expect(topBarSource).not.toContain('onOpenProjectHub')
+  it('removes the duplicate project title strip and uses panel headers as window chrome', () => {
+    expect(existsSync(topBarPath)).toBe(false)
+    expect(appShellSource).not.toContain('<TopBar')
+    expect(panelHeaderSource).toContain('titlebar-drag-region')
   })
 
   it('remounts the runtime shell when the active room changes', () => {

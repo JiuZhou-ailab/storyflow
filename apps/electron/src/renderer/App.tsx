@@ -20,7 +20,6 @@ import { useEventProcessor } from './event-processor'
 import type { AgentEvent, Effect } from './event-processor'
 import type { AppShellContextType } from '@/context/AppShellContext'
 import { ActivityRailFrame } from '@/components/app-shell/ActivityRailFrame'
-import { WINDOW_TITLE_BAR_HEIGHT } from '@/components/app-shell/layout-constants'
 import {
   ProjectHubNavigationActions,
   useProjectHubReturnLocation,
@@ -2603,7 +2602,7 @@ function AppContent() {
           )}
 
           {/* Main UI - always rendered, splash fades away to reveal it */}
-          <div className="h-full flex flex-col text-foreground" style={{ paddingTop: WINDOW_TITLE_BAR_HEIGHT }}>
+          <div className="h-full flex flex-col text-foreground">
             {showTransportConnectionBanner && connectionState && (
               <TransportConnectionBanner
                 state={connectionState}

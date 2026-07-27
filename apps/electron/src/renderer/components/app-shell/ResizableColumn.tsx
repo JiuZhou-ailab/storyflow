@@ -1,4 +1,4 @@
-// input: A resize mode, width, optional header, and column content
+// input: A resize mode, width, optional resize affordance/header, and column content
 // output: A left-handle resizable shell column (sash + panel) for the right side
 // pos: Shared shape for the manuscript and directory columns in AppShell
 
@@ -30,6 +30,8 @@ export interface ResizableColumnProps {
   panelRef?: React.Ref<HTMLDivElement>
   /** Keeps direct resize updates attached to the pointer instead of springing. */
   disableAnimation?: boolean
+  /** Whether the left resize sash is interactive. */
+  resizable?: boolean
   /** Optional header rendered above the scrolling body. */
   header?: React.ReactNode
   children: React.ReactNode
@@ -43,6 +45,7 @@ export function ResizableColumn({
   width,
   panelRef,
   disableAnimation = false,
+  resizable = true,
   header,
   children,
 }: ResizableColumnProps) {
@@ -60,37 +63,41 @@ export function ResizableColumn({
       transition={transition}
       className="relative h-full min-w-0 shrink-0 bg-background z-panel"
     >
-      <div
-        ref={sashRef}
-        data-panel-role={`${role}-resize-sash`}
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={sashLabel}
-        onMouseDown={(e) => {
-          handlers.onMouseDown()
-          onResizeStart(mode, e)
-        }}
-        onMouseMove={handlers.onMouseMove}
-        onMouseLeave={handlers.onMouseLeave}
-        className="absolute inset-y-0 cursor-col-resize z-dropdown"
-        style={{
-          left: 0,
-          width: PANEL_SASH_HIT_WIDTH,
-          transform: 'translateX(-50%)',
-        }}
-      >
+      {resizable ? (
         <div
-          className="absolute inset-0 flex justify-center cursor-col-resize"
+          ref={sashRef}
+          data-panel-role={`${role}-resize-sash`}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={sashLabel}
+          onMouseDown={(e) => {
+            handlers.onMouseDown()
+            onResizeStart(mode, e)
+          }}
+          onMouseMove={handlers.onMouseMove}
+          onMouseLeave={handlers.onMouseLeave}
+          className="absolute inset-y-0 cursor-col-resize z-dropdown"
+          style={{
+            left: 0,
+            width: PANEL_SASH_HIT_WIDTH,
+            transform: 'translateX(-50%)',
+          }}
         >
           <div
-            className="absolute inset-y-0 left-1/2 -translate-x-1/2"
-            style={{
-              ...gradientStyle,
-              width: PANEL_SASH_LINE_WIDTH,
-            }}
-          />
+            className="absolute inset-0 flex justify-center cursor-col-resize"
+          >
+            <div
+              className="absolute inset-y-0 left-1/2 -translate-x-1/2"
+              style={{
+                ...gradientStyle,
+                width: PANEL_SASH_LINE_WIDTH,
+              }}
+            />
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="absolute inset-y-0 left-0 w-px bg-foreground/[0.06]" />
+      )}
       <div
         className="absolute inset-0 overflow-hidden"
       >

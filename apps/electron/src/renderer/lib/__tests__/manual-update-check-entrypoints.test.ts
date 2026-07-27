@@ -1,4 +1,4 @@
-// input: Renderer title-bar and menu sources for panel and update actions
+// input: Renderer panel chrome and menu sources for workspace and update actions
 // output: Regression coverage for the right-workspace toggle and remaining update entrypoint
 // pos: Guards title-bar ownership without reintroducing a standalone update control
 
@@ -10,19 +10,18 @@ function source(path: string): string {
 }
 
 describe('manual update check entrypoints', () => {
-  it('uses the top bar action for the right panel instead of update checks', () => {
-    const topBarSource = source('../../components/app-shell/TopBar.tsx')
+  it('keeps the right workspace action in panel chrome instead of update checks', () => {
     const appShellSource = source('../../components/app-shell/AppShell.tsx')
 
-    expect(topBarSource).toContain('onToggleRightPanel')
-    expect(topBarSource).toContain('PanelRightClose')
-    expect(topBarSource).not.toContain('useUpdateChecker')
-    expect(topBarSource).not.toContain('checkForUpdates')
-    expect(appShellSource).toContain('onToggleRightPanel={writingDocumentSurface && !isAutoCompact')
+    expect(appShellSource).toContain('const rightWorkspaceToggleButton = React.useMemo')
+    expect(appShellSource).toContain('PanelRightClose')
+    expect(appShellSource).not.toContain('useUpdateChecker')
+    expect(appShellSource).not.toContain('checkForUpdates')
+    expect(appShellSource).not.toContain('<TopBar')
     expect(appShellSource).toContain('setRightWorkspaceVisible((visible) => !visible)')
     expect(appShellSource).toContain('writingDocumentSurface && rightWorkspaceVisible && !isAutoCompact')
     expect(appShellSource).toContain(
-      'activityWorkspaceDirectory && rightWorkspaceVisible && workspaceDirectoryVisible && !isAutoCompact',
+      'activityWorkspaceDirectory && rightWorkspaceVisible && !isAutoCompact',
     )
   })
 

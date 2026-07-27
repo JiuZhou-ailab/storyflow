@@ -348,28 +348,14 @@ describe('novel writing workspace layout', () => {
     expect(inputSource).toContain('files: mentionFiles')
   })
 
-  it('keeps conversation history as a collapsible tab in the chat header', () => {
+  it('keeps duplicate session navigation out of the chat header', () => {
     const chatPageSource = readFileSync(new URL('../../../pages/ChatPage.tsx', import.meta.url), 'utf-8')
-    const historyMenuSource = chatPageSource.slice(
-      chatPageSource.indexOf('function ConversationHistoryMenu'),
-      chatPageSource.indexOf('const ChatPage')
-    )
 
-    expect(chatPageSource).toContain('ConversationHistoryMenu')
-    expect(chatPageSource).toContain("t('chat.history')")
-    expect(chatPageSource).toContain('ConversationHistoryMenuItems')
-    expect(chatPageSource).toContain('{open ? (')
-    expect(chatPageSource).toContain('useAtomValue(sessionMetaMapAtom)')
-    expect(chatPageSource).toContain('routes.view.allSessions(item.id)')
-    expect(historyMenuSource).toContain('<PanelHeaderCenterButton')
-    expect(historyMenuSource).toContain("title={t('chat.history')}")
-    expect(historyMenuSource).toContain('icon={<History className="h-4 w-4" />}')
-    expect(chatPageSource).toContain('<SquarePenRounded className="h-4 w-4" />')
-    expect(chatPageSource).toContain('<span className="text-[11px] font-medium leading-none">{t("session.newSession")}</span>')
+    expect(chatPageSource).not.toContain('ConversationHistoryMenu')
+    expect(chatPageSource).not.toContain('newSessionButton')
+    expect(chatPageSource).not.toContain('shareButton')
     expect(chatPageSource).toContain('const headerLeadingAction = React.useMemo(() => leadingAction')
-    expect(chatPageSource).toContain('{newSessionButton}')
-    expect(chatPageSource.indexOf('{newSessionButton}')).toBeGreaterThan(chatPageSource.indexOf('const headerActions = React.useMemo'))
-    expect(chatPageSource.indexOf('{newSessionButton}')).toBeLessThan(chatPageSource.indexOf('{conversationHistoryMenu}'))
+    expect(chatPageSource).toContain('const headerActions = isCompactMode ? compactInfoButton : undefined')
     expect(chatPageSource).toContain("title={t('chat.session')} leadingAction={headerLeadingAction} actions={headerActions}")
   })
 
@@ -381,6 +367,9 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('NovelDocumentEditorPanel')
     expect(appShellSource).toContain('<WorkspaceProjectSidebar')
     expect(sidebarSource).toContain('<WorkspaceFileTree')
+    expect(sidebarSource).toContain('onExpandedChange(!expanded)')
+    expect(sidebarSource).toContain('<FolderOpen')
+    expect(appShellSource).not.toContain('collapsedDirectoryToggleButton')
     expect(appShellSource).not.toContain('<NovelWorkspaceNavigatorPanel')
     expect(chatPageSource).not.toContain('NovelWorkspacePanel')
     expect(chatPageSource).not.toContain('NovelWorkspaceNavigatorPanel')
@@ -417,7 +406,7 @@ describe('novel writing workspace layout', () => {
     expect(treeSource).toContain('countVisibleRows')
     expect(treeSource).toContain('fitContent')
     expect(treeSource).toContain("rowClassName={fitContent ? '!min-w-0 overflow-hidden' : undefined}")
-    expect(treeSource).toContain("? 'w-full overflow-hidden py-1")
+    expect(treeSource).toContain("? 'w-full overflow-hidden px-2 py-1")
     expect(rowSource).toContain("entry.type === 'root' || entry.type === 'directory'")
     expect(rowSource).toContain("(entry.type === 'root' || node.isSelected)")
     expect(rowSource).toContain("node.isFocused && entry.type !== 'root'")
@@ -593,7 +582,6 @@ describe('novel writing workspace layout', () => {
   it('keeps version history in the Markdown toolbar without a redundant export surface', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const versionDialogSource = readFileSync(new URL('../NovelVersionHistoryDialog.tsx', import.meta.url), 'utf-8')
-    const topBarSource = readFileSync(new URL('../../app-shell/TopBar.tsx', import.meta.url), 'utf-8')
     const editorPanelSource = readFileSync(new URL('../NovelDocumentEditorPanel.tsx', import.meta.url), 'utf-8')
     const tiptapEditorSource = readFileSync(new URL('../../../../../../../packages/ui/src/components/markdown/TiptapMarkdownEditor.tsx', import.meta.url), 'utf-8')
     const restoreHandlerSource = appShellSource.slice(
@@ -623,18 +611,14 @@ describe('novel writing workspace layout', () => {
     expect(appShellSource).toContain('window.electronAPI.listWorkspaceVersions(novelWorkspaceRoot, 30)')
     expect(appShellSource).toContain('window.electronAPI.restoreWorkspaceVersion(novelWorkspaceRoot, commitHash)')
     expect(restoreHandlerSource).toContain('await refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)')
-    expect(topBarSource).not.toContain('rightTools?: React.ReactNode')
-    expect(topBarSource).not.toContain('{rightTools ? (')
+    expect(appShellSource).not.toContain('<TopBar')
     expect(editorPanelSource).toContain('toolbarAccessory?: React.ReactNode')
     expect(editorPanelSource).toContain('toolbarAccessory={toolbarAccessory}')
     expect(editorPanelSource).not.toContain('workspaceActions')
     expect(editorPanelSource).not.toContain('flex h-[42px] shrink-0')
     expect(tiptapEditorSource).toContain('toolbarAccessory?: React.ReactNode')
     expect(tiptapEditorSource).toContain('accessory={toolbarAccessory}')
-    expect(topBarSource).toContain('data-testid="window-title-bar"')
-    expect(topBarSource).not.toContain('ml-auto flex min-w-0 flex-1 items-center justify-end gap-1')
-    expect(topBarSource).not.toContain('w-[clamp(220px,42vw,640px)]')
-    expect(topBarSource).not.toContain('titlebar-no-drag min-w-0 shrink-0')
+    expect(appShellSource).toContain('const rightWorkspaceToggleButton = React.useMemo')
     expect(versionDialogSource).toContain("t('writing.version.title', '版本管理')")
     expect(versionDialogSource).toContain('function NovelVersionHistoryDialogContent')
     expect(versionDialogShellSource).not.toContain('versions.map')
@@ -1275,13 +1259,11 @@ describe('novel writing workspace layout', () => {
     expect(globalSearchSource).toContain('onOpenNovelFile')
   })
 
-  it('keeps global search outside the top bar so compact layout does not hide it', () => {
+  it('keeps global search in the activity rail so compact layout does not hide it', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
-    const topBarSource = readFileSync(new URL('../../app-shell/TopBar.tsx', import.meta.url), 'utf-8')
     const activityRailSource = readFileSync(new URL('../../app-shell/ActivityRail.tsx', import.meta.url), 'utf-8')
 
-    expect(topBarSource).not.toContain('const globalSearchButton =')
-    expect(topBarSource).not.toContain('{isCompact ? globalSearchButton : null}')
+    expect(appShellSource).not.toContain('const globalSearchButton =')
     expect(appShellSource).toContain('const showActivityRail = true')
     expect(activityRailSource).toContain('label="搜索"')
   })

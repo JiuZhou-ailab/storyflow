@@ -21,6 +21,8 @@ describe('MainContentPanel subscriptions', () => {
     expect(panelSlotSource).not.toContain('useAppShellContext')
     expect(panelSlotSource).not.toContain('AppShellProvider')
     expect(panelSlotSource).toContain('SessionPanelChromeProvider')
+    expect(mainContentPanelSource).toContain('const { rightSidebarButton } = useSessionPanelChrome()')
+    expect(mainContentPanelSource).toContain('rightSidebarButton={rightSidebarButton}')
     expect(appShellContextSource).toContain('SessionPanelChromeProvider')
   })
 

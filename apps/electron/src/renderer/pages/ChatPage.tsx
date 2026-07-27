@@ -12,9 +12,7 @@
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { formatDistanceToNowStrict } from 'date-fns'
-import { AlertCircle, Check, Clock3, Globe, Copy, History, RefreshCw, Link2Off, Info, MessageSquareText } from 'lucide-react'
-import { getDateLocale } from '@craft-agent/shared/i18n'
+import { AlertCircle, Info } from 'lucide-react'
 import { usePlatform } from '@craft-agent/ui'
 import { ChatDisplay, type ChatDisplayHandle } from '@/components/app-shell/ChatDisplay'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
@@ -23,21 +21,17 @@ import { SessionInfoPopover } from '@/components/app-shell/SessionInfoPopover'
 import { RenameDialog } from '@/components/ui/rename-dialog'
 import { toast } from 'sonner'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
-import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { StyledDropdownMenuContent, StyledDropdownMenuItem, StyledDropdownMenuSeparator } from '@/components/ui/styled-dropdown'
 import { usePendingPermission, usePendingCredential, useSessionBatchActions, useSessionChatResources, useSessionDraftActions, useSessionInteractionActions, useSessionPanelChrome, useSessionReadActions, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
-import { SquarePenRounded } from '@/components/icons/SquarePenRounded'
 import { rendererPerf } from '@/lib/perf'
 import { navigate, routes } from '@/lib/navigate'
 import { coerceInputText } from '@/lib/input-text'
 import { deriveSessionMessagesLoadState, formatSessionLoadFailure } from '@/lib/session-load'
-import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, sessionMessagesLoadedAtomFamily, sessionMetaAtomFamily, sessionMetaMapAtom } from '@/atoms/sessions'
+import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, sessionMessagesLoadedAtomFamily, sessionMetaAtomFamily } from '@/atoms/sessions'
 import { activeSessionListSearchQueryAtom, sessionListSearchActiveAtom } from '@/atoms/session-list-search'
 import { llmConnectionsAtom, refreshLlmConnectionsAtom, workspaceDefaultLlmConnectionAtom } from '@/atoms/llm-connections'
-import { getSessionPreviewText, getSessionTitle, shortTimeLocale } from '@/utils/session'
+import { getSessionTitle } from '@/utils/session'
 // Model resolution: connection.defaultModel (no hardcoded defaults)
 import { resolveEffectiveConnectionSlug, isSessionConnectionUnavailable } from '@config/llm-connections'
-import { selectConversationHistoryItems } from './chat-history-items'
 import { resolveChatOpeningPrompt } from '@/components/app-shell/chat-opening'
 import { FREE_CONVERSATION_WORKSPACE_ID } from '../../shared/types'
 
@@ -47,126 +41,6 @@ export interface ChatPageProps {
 
 const noopOpenFile = (_path: string) => {}
 const noopOpenUrl = (_url: string) => {}
-
-function ConversationHistoryMenu({
-  activeSessionId,
-  activeWorkspaceId,
-  remoteWorkspaceId,
-}: {
-  activeSessionId: string
-  activeWorkspaceId?: string | null
-  remoteWorkspaceId?: string | null
-}) {
-  const { t } = useTranslation()
-  const [open, setOpen] = React.useState(false)
-
-  return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <PanelHeaderCenterButton
-          aria-label={t('chat.history')}
-          title={t('chat.history')}
-          data-tutorial="chat-history"
-          icon={<History className="h-4 w-4" />}
-          className={open ? 'opacity-100 bg-foreground/[0.05]' : undefined}
-        />
-      </DropdownMenuTrigger>
-      <StyledDropdownMenuContent align="end" sideOffset={8} className="w-[320px] p-1.5">
-        <div className="px-2 pb-1 pt-0.5 text-[11px] font-medium text-muted-foreground">
-          {t('chat.history')}
-        </div>
-        {open ? (
-          <ConversationHistoryMenuItems
-            activeSessionId={activeSessionId}
-            activeWorkspaceId={activeWorkspaceId}
-            remoteWorkspaceId={remoteWorkspaceId}
-            onSelect={() => setOpen(false)}
-          />
-        ) : null}
-      </StyledDropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
-function ConversationHistoryMenuItems({
-  activeSessionId,
-  activeWorkspaceId,
-  remoteWorkspaceId,
-  onSelect,
-}: {
-  activeSessionId: string
-  activeWorkspaceId?: string | null
-  remoteWorkspaceId?: string | null
-  onSelect: () => void
-}) {
-  const { t, i18n } = useTranslation()
-  const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
-  const relativeTimeLocale = React.useMemo(() => ({
-    ...getDateLocale(i18n.language),
-    formatDistance: shortTimeLocale.formatDistance,
-  }), [i18n.language])
-  const visibleItems = React.useMemo(() => {
-    return selectConversationHistoryItems(sessionMetaMap.values(), {
-      activeWorkspaceId,
-      remoteWorkspaceId,
-    })
-  }, [activeWorkspaceId, remoteWorkspaceId, sessionMetaMap])
-
-  if (visibleItems.length === 0) {
-    return (
-      <div className="px-2 py-6 text-center text-xs text-muted-foreground">
-        {t('chat.historyEmpty')}
-      </div>
-    )
-  }
-
-  return (
-    <div className="max-h-[360px] overflow-y-auto">
-      {visibleItems.map((item) => {
-        const isActive = item.id === activeSessionId
-        const title = getSessionTitle(item)
-        const preview = getSessionPreviewText(item, 72)
-        const time = item.lastMessageAt || item.createdAt
-          ? formatDistanceToNowStrict(new Date(item.lastMessageAt || item.createdAt || Date.now()), {
-              addSuffix: true,
-              locale: relativeTimeLocale,
-            })
-          : ''
-
-        return (
-          <button
-            key={item.id}
-            type="button"
-            className="flex w-full min-w-0 items-start gap-2 rounded-[6px] px-2 py-2 text-left transition-colors hover:bg-foreground/[0.04]"
-            onClick={() => {
-              if (!isActive) {
-                rendererPerf.startSessionSwitch(item.id)
-              }
-              onSelect()
-              navigate(routes.view.allSessions(item.id))
-            }}
-          >
-            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] bg-foreground/[0.05] text-muted-foreground">
-              {isActive ? <Check className="h-3.5 w-3.5" /> : <MessageSquareText className="h-3.5 w-3.5" />}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-xs font-medium text-foreground">{title}</span>
-              {preview ? (
-                <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{preview}</span>
-              ) : null}
-            </span>
-            {time ? (
-              <span className="ml-1 flex shrink-0 items-center gap-1 pt-0.5 text-[10px] text-muted-foreground/70">
-                <Clock3 className="h-3 w-3" />
-                {time}
-              </span>
-            ) : null}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
 
 const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const { t } = useTranslation()
@@ -473,7 +347,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     return connection?.defaultModel ?? ''
   }, [session?.id, session?.model, session?.llmConnection, workspaceDefaultLlmConnection, llmConnections, connectionUnavailable])
 
-  const remoteWorkspaceId = chatWorkspace?.remoteServer?.remoteWorkspaceId
   const chatOpening = React.useMemo(() => resolveChatOpeningPrompt({
     workspaceName: chatWorkspace?.name,
     isProject: openingProjectState !== undefined,
@@ -574,7 +447,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const displayTitle = session ? getSessionTitle(session) : (sessionMeta ? getSessionTitle(sessionMeta) : t('chat.session'))
   const isFlagged = session?.isFlagged || sessionMeta?.isFlagged || false
   const isArchived = session?.isArchived || sessionMeta?.isArchived || false
-  const sharedUrl = session?.sharedUrl || sessionMeta?.sharedUrl || null
   const currentSessionStatus = session?.sessionStatus || sessionMeta?.sessionStatus || 'todo'
   const hasMessages = !!(session?.messages?.length || sessionMeta?.lastFinalMessageId)
   const hasUnreadMessages = sessionMeta
@@ -643,111 +515,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     }
   }, [sessionId])
 
-  // Share action handlers
-  const handleShare = React.useCallback(async () => {
-    const result = await window.electronAPI.sessionCommand(sessionId, { type: 'shareToViewer' }) as { success: boolean; url?: string; error?: string } | undefined
-    if (result?.success && result.url) {
-      await navigator.clipboard.writeText(result.url)
-      toast.success(t('toast.linkCopied'), {
-        description: result.url,
-        action: { label: t('sendToWorkspace.open'), onClick: () => window.electronAPI.openUrl(result.url!) },
-      })
-    } else {
-      toast.error(t('toast.failedToShare'), { description: result?.error || t('toast.unknownError') })
-    }
-  }, [sessionId])
-
-  const handleOpenInBrowser = React.useCallback(() => {
-    if (sharedUrl) window.electronAPI.openUrl(sharedUrl)
-  }, [sharedUrl])
-
-  const handleCopyLink = React.useCallback(async () => {
-    if (sharedUrl) {
-      await navigator.clipboard.writeText(sharedUrl)
-      toast.success(t('toast.linkCopied'))
-    }
-  }, [sharedUrl])
-
-  const handleUpdateShare = React.useCallback(async () => {
-    const result = await window.electronAPI.sessionCommand(sessionId, { type: 'updateShare' }) as { success: boolean; error?: string } | undefined
-    if (result?.success) {
-      toast.success(t('chat.shareUpdated'))
-    } else {
-      toast.error(t('chat.failedToUpdateShare'), { description: result?.error })
-    }
-  }, [sessionId])
-
-  const handleRevokeShare = React.useCallback(async () => {
-    const result = await window.electronAPI.sessionCommand(sessionId, { type: 'revokeShare' }) as { success: boolean; error?: string } | undefined
-    if (result?.success) {
-      toast.success(t('chat.sharingStopped'))
-    } else {
-      toast.error(t('chat.failedToStopSharing'), { description: result?.error })
-    }
-  }, [sessionId])
-
-  // Share button with dropdown menu rendered in PanelHeader actions slot
-  const shareButton = React.useMemo(() => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <PanelHeaderCenterButton
-          aria-label={sharedUrl ? 'Shared session options' : 'Share session'}
-          icon={sharedUrl
-            ? <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M11.2383 10.2871C11.6481 10.0391 12.1486 10.0082 12.5811 10.1943L12.7617 10.2871L13.0088 10.4414C14.2231 11.227 15.1393 12.2124 15.8701 13.502C16.1424 13.9824 15.9736 14.5929 15.4932 14.8652C15.0127 15.1375 14.4022 14.9688 14.1299 14.4883C13.8006 13.9073 13.4303 13.417 13 12.9883V21C13 21.5523 12.5523 22 12 22C11.4477 22 11 21.5523 11 21V12.9883C10.5697 13.417 10.1994 13.9073 9.87012 14.4883C9.59781 14.9688 8.98732 15.1375 8.50684 14.8652C8.02643 14.5929 7.8576 13.9824 8.12988 13.502C8.90947 12.1264 9.90002 11.0972 11.2383 10.2871ZM11.5 3C14.2848 3 16.6594 4.75164 17.585 7.21289C20.1294 7.90815 22 10.235 22 13C22 16.3137 19.3137 19 16 19H15V16.9961C15.5021 16.9966 16.0115 16.8707 16.4795 16.6055C17.9209 15.7885 18.4272 13.9571 17.6104 12.5156C16.6661 10.8495 15.4355 9.56805 13.7969 8.57617C12.692 7.90745 11.308 7.90743 10.2031 8.57617C8.56453 9.56806 7.3339 10.8495 6.38965 12.5156C5.57277 13.957 6.07915 15.7885 7.52051 16.6055C7.98851 16.8707 8.49794 16.9966 9 16.9961V19H7C4.23858 19 2 16.7614 2 14C2 11.9489 3.23498 10.1861 5.00195 9.41504C5.04745 5.86435 7.93852 3 11.5 3Z" />
-              </svg>
-            : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M8 8.53809C6.74209 8.60866 5.94798 8.80911 5.37868 9.37841C4.5 10.2571 4.5 11.6713 4.5 14.4997V15.4997C4.5 18.3282 4.5 19.7424 5.37868 20.6211C6.25736 21.4997 7.67157 21.4997 10.5 21.4997H13.5C16.3284 21.4997 17.7426 21.4997 18.6213 20.6211C19.5 19.7424 19.5 18.3282 19.5 15.4997V14.4997C19.5 11.6713 19.5 10.2571 18.6213 9.37841C18.052 8.80911 17.2579 8.60866 16 8.53809M12 14V3.5M9.5 5.5C9.99903 4.50411 10.6483 3.78875 11.5606 3.24093C11.7612 3.12053 11.8614 3.06033 12 3.06033C12.1386 3.06033 12.2388 3.12053 12.4394 3.24093C13.3517 3.78875 14.001 4.50411 14.5 5.5" />
-              </svg>
-          }
-          className={sharedUrl ? 'text-accent' : undefined}
-        />
-      </DropdownMenuTrigger>
-      <StyledDropdownMenuContent align="end" sideOffset={8}>
-        {sharedUrl ? (
-          <>
-            <StyledDropdownMenuItem onClick={handleOpenInBrowser}>
-              <Globe className="h-3.5 w-3.5" />
-              <span className="flex-1">{t('sessionMenu.openInBrowser')}</span>
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuItem onClick={handleCopyLink}>
-              <Copy className="h-3.5 w-3.5" />
-              <span className="flex-1">{t('sessionMenu.copyLink')}</span>
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuItem onClick={handleUpdateShare}>
-              <RefreshCw className="h-3.5 w-3.5" />
-              <span className="flex-1">{t('sessionMenu.updateShare')}</span>
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuSeparator />
-            <StyledDropdownMenuItem onClick={handleRevokeShare} variant="destructive">
-              <Link2Off className="h-3.5 w-3.5" />
-              <span className="flex-1">{t('sessionMenu.stopSharing')}</span>
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuSeparator />
-            <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl('https://agents.craft.do/docs/go-further/sharing')}>
-              <Info className="h-3.5 w-3.5" />
-              <span className="flex-1">{t('chat.learnMore')}</span>
-            </StyledDropdownMenuItem>
-          </>
-        ) : (
-          <>
-            <StyledDropdownMenuItem onClick={handleShare}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <path d="M8 8.53809C6.74209 8.60866 5.94798 8.80911 5.37868 9.37841C4.5 10.2571 4.5 11.6713 4.5 14.4997V15.4997C4.5 18.3282 4.5 19.7424 5.37868 20.6211C6.25736 21.4997 7.67157 21.4997 10.5 21.4997H13.5C16.3284 21.4997 17.7426 21.4997 18.6213 20.6211C19.5 19.7424 19.5 18.3282 19.5 15.4997V14.4997C19.5 11.6713 19.5 10.2571 18.6213 9.37841C18.052 8.80911 17.2579 8.60866 16 8.53809M12 14V3.5M9.5 5.5C9.99903 4.50411 10.6483 3.78875 11.5606 3.24093C11.7612 3.12053 11.8614 3.06033 12 3.06033C12.1386 3.06033 12.2388 3.12053 12.4394 3.24093C13.3517 3.78875 14.001 4.50411 14.5 5.5" />
-              </svg>
-              <span className="flex-1">{t('chat.shareOnline')}</span>
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuSeparator />
-            <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl('https://agents.craft.do/docs/go-further/sharing')}>
-              <Info className="h-3.5 w-3.5" />
-              <span className="flex-1">{t('chat.learnMore')}</span>
-            </StyledDropdownMenuItem>
-          </>
-        )}
-      </StyledDropdownMenuContent>
-    </DropdownMenu>
-  ), [sharedUrl, handleShare, handleOpenInBrowser, handleCopyLink, handleUpdateShare, handleRevokeShare])
-
   const compactInfoButton = React.useMemo(() => {
     if (!isCompactMode || !sessionMeta) return undefined
 
@@ -768,43 +535,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     )
   }, [handleOpenFile, isCompactMode, onRenameSession, sessionId, session?.sessionFolderPath, sessionMeta])
 
-  const conversationHistoryMenu = React.useMemo(() => (
-    <ConversationHistoryMenu
-      activeSessionId={sessionId}
-      activeWorkspaceId={activeWorkspaceId}
-      remoteWorkspaceId={remoteWorkspaceId}
-    />
-  ), [activeWorkspaceId, remoteWorkspaceId, sessionId])
-
-  const handleNewSession = React.useCallback(() => {
-    navigate(routes.action.newSession())
-  }, [])
-
-  const newSessionButton = React.useMemo(() => (
-    <PanelHeaderCenterButton
-      data-tutorial="new-session-button"
-      icon={(
-        <>
-          <SquarePenRounded className="h-4 w-4" />
-          <span className="text-[11px] font-medium leading-none">{t("session.newSession")}</span>
-        </>
-      )}
-      onClick={handleNewSession}
-      tooltip={t("session.newSession")}
-      aria-label={t("session.newSession")}
-      className="gap-1.5 px-2 bg-background shadow-minimal"
-    />
-  ), [handleNewSession, t])
-
   const headerLeadingAction = React.useMemo(() => leadingAction, [leadingAction])
-
-  const headerActions = React.useMemo(() => (
-    <div className="flex items-center gap-1">
-      {newSessionButton}
-      {conversationHistoryMenu}
-      {isCompactMode ? compactInfoButton : shareButton}
-    </div>
-  ), [compactInfoButton, conversationHistoryMenu, isCompactMode, newSessionButton, shareButton])
+  const headerActions = isCompactMode ? compactInfoButton : undefined
 
   // Build title menu content for chat sessions using shared SessionMenu
   const titleMenu = React.useMemo(() => sessionMeta ? (
@@ -865,7 +597,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
       return (
         <>
           <div className="h-full flex flex-col">
-            <PanelHeader  title={displayTitle} titleMenu={titleMenu} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
+            <PanelHeader className="border-b-0" title={displayTitle} titleMenu={titleMenu} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
             <div className="flex-1 flex flex-col min-h-0">
               <ChatDisplay
                 ref={chatDisplayRef}
@@ -937,7 +669,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     // Session truly doesn't exist
     return (
       <div className="h-full flex flex-col">
-        <PanelHeader  title={t('chat.session')} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} />
+        <PanelHeader className="border-b-0" title={t('chat.session')} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} />
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
           <AlertCircle className="h-10 w-10" />
           <p className="text-sm">{t('chat.sessionNoLongerExists')}</p>
@@ -949,7 +681,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   return (
     <>
       <div className="h-full flex flex-col">
-        <PanelHeader  title={displayTitle} titleMenu={titleMenu} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
+        <PanelHeader className="border-b-0" title={displayTitle} titleMenu={titleMenu} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
         <div className="flex-1 flex flex-col min-h-0">
           <ChatDisplay
             ref={chatDisplayRef}

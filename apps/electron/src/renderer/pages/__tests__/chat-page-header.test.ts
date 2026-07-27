@@ -1,6 +1,6 @@
-// input: Chat page source and header action contracts
-// output: Regression coverage for visible chat header controls
-// pos: Keeps primary chat header actions discoverable in the Electron renderer
+// input: Chat page, activity rail, and shared session menu source contracts
+// output: Regression coverage for minimal chat header controls
+// pos: Keeps duplicate session navigation out of the Electron chat header
 
 import { readFileSync } from 'fs'
 import { describe, expect, it } from 'bun:test'
@@ -12,18 +12,19 @@ describe('chat page header actions', () => {
     return source.slice(source.lastIndexOf('const {', end), end)
   }
 
-  it('renders the new session action with a visible text label', () => {
+  it('leaves navigation and sharing to the activity rail and session menu', () => {
     const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
-    const newSessionButtonSource = chatPageSource.slice(
-      chatPageSource.indexOf('const newSessionButton = React.useMemo'),
-      chatPageSource.indexOf('<StyledContextMenuContent>')
-    )
+    const activityRailSource = readFileSync(new URL('../../components/app-shell/ActivityRail.tsx', import.meta.url), 'utf-8')
+    const sessionMenuSource = readFileSync(new URL('../../components/app-shell/SessionMenu.tsx', import.meta.url), 'utf-8')
 
-    expect(newSessionButtonSource).toContain('icon={(')
-    expect(newSessionButtonSource).toContain('<SquarePenRounded className="h-4 w-4" />')
-    expect(newSessionButtonSource).toContain(
-      '<span className="text-[11px] font-medium leading-none">{t("session.newSession")}</span>'
-    )
+    expect(chatPageSource).not.toContain('newSessionButton')
+    expect(chatPageSource).not.toContain('ConversationHistoryMenu')
+    expect(chatPageSource).not.toContain('shareButton')
+    expect(chatPageSource).toContain('const headerActions = isCompactMode ? compactInfoButton : undefined')
+    expect(chatPageSource).toContain('<SessionMenu')
+    expect(activityRailSource).toContain('aria-label="新建自由对话"')
+    expect(activityRailSource).toContain('onCreateConversation={onCreateConversationInProject')
+    expect(sessionMenuSource).toContain('<ShareMenuItems sessionId={sessionId}')
   })
 
   it('uses per-session loaded state instead of subscribing to the whole loaded set', () => {
@@ -63,18 +64,6 @@ describe('chat page header actions', () => {
     expect(chatPageComponentSource).toContain('const chatWorkspace = runtimeWorkspace')
     expect(chatPageComponentSource).not.toContain('workspacePanelFieldsAtomFamily')
     expect(chatPageComponentSource).not.toContain('useActiveWorkspace()')
-  })
-
-  it('reuses the relative time locale across conversation history rows', () => {
-    const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
-    const historySource = chatPageSource.slice(
-      chatPageSource.indexOf('function ConversationHistoryMenuItems'),
-      chatPageSource.indexOf('const ChatPage = React.memo')
-    )
-
-    expect(historySource).toContain('const relativeTimeLocale = React.useMemo')
-    expect(historySource).toContain('locale: relativeTimeLocale')
-    expect(historySource).not.toContain('locale: {\n                ...getDateLocale')
   })
 
   it('uses the narrow session interaction action context', () => {
@@ -185,6 +174,7 @@ describe('chat page header actions', () => {
     const appShellDestructure = appShellDestructureFrom(chatPageSource)
 
     expect(chatPageSource).toContain('useSessionPanelChrome')
+    expect(chatPageSource.match(/className="border-b-0"/g)).toHaveLength(3)
     expect(chatPageSource).not.toContain('useAppShellContext')
     expect(appShellDestructure).not.toContain('rightSidebarButton')
     expect(appShellDestructure).not.toContain('leadingAction')

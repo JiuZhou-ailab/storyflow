@@ -26,7 +26,7 @@ export function getResizeGradientStyle(
     return {
       transition: 'opacity 150ms ease-out',
       opacity: 1,
-      background: 'color-mix(in oklch, var(--foreground) 9%, transparent)',
+      background: 'color-mix(in oklch, var(--foreground) 6%, transparent)',
     }
   }
 

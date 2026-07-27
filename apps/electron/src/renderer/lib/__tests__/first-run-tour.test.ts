@@ -25,7 +25,7 @@ describe('FIRST_RUN_TOUR_STEPS', () => {
   })
 
   it('keeps secondary app surfaces out of the blocking first-run path', () => {
-    for (const target of ['activity-project-hub', 'activity-sources', 'activity-skills', 'activity-settings', 'chat-history', 'new-session-button']) {
+    for (const target of ['activity-project-hub', 'activity-sources', 'activity-skills', 'activity-settings']) {
       expect(FIRST_RUN_TOUR_STEPS.some(step => step.target === target)).toBe(false)
     }
     expect(FIRST_RUN_TOUR_STEPS.some(step => step.target === 'automations-nav')).toBe(false)

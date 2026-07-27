@@ -39,7 +39,6 @@ import {
 } from "lucide-react"
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
-import { TopBar } from "./TopBar"
 import { ActivityRail } from "./ActivityRail"
 import { ACTIVITY_RAIL_WIDTH, type ActivityRailItemId } from "./ActivityRail"
 import { FirstRunTour } from "./FirstRunTour"
@@ -285,6 +284,7 @@ const WRITING_ASSISTANT_MIN_WIDTH = 320
 const WORKSPACE_DIRECTORY_MIN_WIDTH = 220
 const WORKSPACE_DIRECTORY_MAX_WIDTH = 460
 const WORKSPACE_DIRECTORY_DEFAULT_WIDTH = 300
+const WORKSPACE_DIRECTORY_COLLAPSED_WIDTH = 42
 /** Fraction of the window the manuscript column takes before the user resizes it. */
 const DEFAULT_DOCUMENT_DOCK_WIDTH_RATIO = 0.34
 const NOVEL_AUTO_VERSION_CHAR_THRESHOLD = 100
@@ -908,6 +908,9 @@ function AppShellContent({
     if (storage.getRaw(storage.KEYS.writingWorkspaceVisible) === null) return true
     return storage.get(storage.KEYS.workspaceDirectoryVisible, true)
   })
+  const workspaceDirectoryColumnWidth = workspaceDirectoryVisible
+    ? workspaceDirectoryWidth
+    : WORKSPACE_DIRECTORY_COLLAPSED_WIDTH
   React.useEffect(() => {
     storage.remove(storage.KEYS.focusModeEnabled)
   }, [])
@@ -1720,8 +1723,8 @@ function AppShellContent({
           setWorkspaceDirectoryWidth(nextWidth)
           return
         }
-        const directoryReserve = rightWorkspaceVisible && workspaceDirectoryVisible
-          ? workspaceDirectoryWidth + PANEL_GAP
+        const directoryReserve = rightWorkspaceVisible
+          ? workspaceDirectoryColumnWidth + PANEL_GAP
           : 0
         const maxDocumentWidth = Math.max(
           NOVEL_WORKSPACE_NAVIGATOR_MIN_WIDTH,
@@ -1795,7 +1798,7 @@ function AppShellContent({
     updateHandleY(e.clientY)
     document.addEventListener('mousemove', handleMouseMove, true)
     document.addEventListener('mouseup', handleMouseUp, true)
-  }, [activityRailOffset, rightWorkspaceVisible, shellWidth, visibleSessionListWidth, workspaceDirectoryVisible, workspaceDirectoryWidth])
+  }, [activityRailOffset, rightWorkspaceVisible, shellWidth, visibleSessionListWidth, workspaceDirectoryColumnWidth])
 
   // Spring transition config - shared between sidebar and header
   // Critical damping (no bounce): damping = 2 * sqrt(stiffness * mass)
@@ -3412,6 +3415,23 @@ function AppShellContent({
   // so its width no longer flips meaning with the route.
   const navigatorPanelWidth = sessionListWidth
   const isNovelWorkspaceNavigatorActive = showNovelDocumentNavigator || showNovelWorkspacePending || showNovelWorkspaceUnavailable
+  const rightWorkspaceToggleButton = React.useMemo(() => {
+    if (!isNovelWorkspaceNavigatorActive || isAutoCompact) return null
+
+    const label = rightWorkspaceVisible ? '收起右侧栏' : '展开右侧栏'
+    return (
+      <HeaderIconButton
+        icon={rightWorkspaceVisible
+          ? <PanelRightClose className="h-4 w-4" strokeWidth={1.7} />
+          : <PanelRightOpen className="h-4 w-4" strokeWidth={1.7} />}
+        tooltip={label}
+        aria-label={label}
+        aria-expanded={rightWorkspaceVisible}
+        onClick={() => setRightWorkspaceVisible((visible) => !visible)}
+        className="h-[26px] w-[26px] rounded-lg"
+      />
+    )
+  }, [isAutoCompact, isNovelWorkspaceNavigatorActive, rightWorkspaceVisible])
 
   // The document dock is anchored to the right edge at a width the user owns.
   // Window resizing must therefore leave it alone and let the conversation absorb
@@ -3422,8 +3442,8 @@ function AppShellContent({
     if (!shouldResolveInitialShellLayoutWidths(shellWidth, MOBILE_THRESHOLD)) return
     if (!isNovelWorkspaceNavigatorActive) return
 
-    const directoryReserve = rightWorkspaceVisible && workspaceDirectoryVisible
-      ? workspaceDirectoryWidth + PANEL_GAP
+    const directoryReserve = rightWorkspaceVisible
+      ? workspaceDirectoryColumnWidth + PANEL_GAP
       : 0
     const available = shellWidth
       - activityRailOffset
@@ -3449,8 +3469,7 @@ function AppShellContent({
     rightWorkspaceVisible,
     shellWidth,
     visibleSessionListWidth,
-    workspaceDirectoryVisible,
-    workspaceDirectoryWidth,
+    workspaceDirectoryColumnWidth,
   ])
 
   React.useEffect(() => {
@@ -4232,6 +4251,8 @@ function AppShellContent({
         onFocus={handleSidebarFocus}
         loadingLabel={t('writing.loadingWorkspace', '正在加载项目目录...')}
         emptyHint={t('chatOpening.project.emptyHint', '先说目标即可；Storyflow 不会预先创建目录。')}
+        expanded={workspaceDirectoryVisible}
+        onExpandedChange={setWorkspaceDirectoryVisible}
         treeProps={{
           workspaceId: activeWorkspaceId,
           workspaceName: activeWorkspace?.name ?? t('writing.workspace'),
@@ -4253,25 +4274,6 @@ function AppShellContent({
       />
     )
     : undefined
-
-  const directoryToggleLabel = workspaceDirectoryVisible
-    ? t('writing.directory.collapse', '收起目录')
-    : t('writing.directory.expand', '展开目录')
-  const directoryToggleButton = activityWorkspaceDirectory ? (
-    <HeaderIconButton
-      icon={workspaceDirectoryVisible
-        ? <PanelRightClose className="h-4 w-4" strokeWidth={1.7} />
-        : <PanelRightOpen className="h-4 w-4" strokeWidth={1.7} />}
-      tooltip={directoryToggleLabel}
-      aria-label={directoryToggleLabel}
-      aria-expanded={workspaceDirectoryVisible}
-      onClick={() => setWorkspaceDirectoryVisible((visible) => !visible)}
-      className="h-[26px] w-[26px] rounded-lg"
-    />
-  ) : null
-  const collapsedDirectoryToggleButton = workspaceDirectoryVisible
-    ? null
-    : directoryToggleButton
 
   // The document and the conversation list are distinct roles and therefore own
   // distinct columns. Sharing one slot is what let a route change (opening a new
@@ -4306,7 +4308,7 @@ function AppShellContent({
                         onClick={() => setNovelVersionDialogOpen(true)}
                         className="h-[26px] w-[26px] rounded-lg"
                       />
-                      {collapsedDirectoryToggleButton}
+                      {rightWorkspaceToggleButton}
                     </>
                   )}
                 />
@@ -4317,7 +4319,11 @@ function AppShellContent({
                   onCreateFile={() => handleWorkspaceOpeningCommand('create-file')}
                   onImportFiles={() => handleWorkspaceOpeningCommand('import-files')}
                   onOpenSkills={() => handleWorkspaceOpeningCommand('open-skills')}
-                  headerActions={collapsedDirectoryToggleButton}
+                  headerActions={(
+                    <>
+                      {rightWorkspaceToggleButton}
+                    </>
+                  )}
                 />
               )
             ) : showNovelWorkspacePending ? (
@@ -4325,7 +4331,11 @@ function AppShellContent({
                 <PanelHeader
                   title={isSidebarVisible ? t('writing.workspace') : undefined}
                   compensateForStoplight={!isSidebarVisible}
-                  actions={collapsedDirectoryToggleButton}
+                  actions={(
+                    <>
+                      {rightWorkspaceToggleButton}
+                    </>
+                  )}
                 />
                 <div className="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
                   {t('writing.loadingWorkspace', '正在加载项目目录...')}
@@ -4336,7 +4346,11 @@ function AppShellContent({
                 <PanelHeader
                   title={isSidebarVisible ? t('writing.workspace') : undefined}
                   compensateForStoplight={!isSidebarVisible}
-                  actions={collapsedDirectoryToggleButton}
+                  actions={(
+                    <>
+                      {rightWorkspaceToggleButton}
+                    </>
+                  )}
                 />
                 <div className="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
                   {t('writing.workspaceUnavailable', '未检测到项目目录')}
@@ -4348,21 +4362,10 @@ function AppShellContent({
     writingDocumentSurface && rightWorkspaceVisible && !isAutoCompact,
   )
   const showWorkspaceDirectoryColumn = Boolean(
-    activityWorkspaceDirectory && rightWorkspaceVisible && workspaceDirectoryVisible && !isAutoCompact,
+    activityWorkspaceDirectory && rightWorkspaceVisible && !isAutoCompact,
   )
   return (
     <AppShellProvider value={appShellContextValue}>
-        {/* === TOP BAR === */}
-        <TopBar
-          workspaces={workspaces}
-          activeWorkspaceId={activeProjectId}
-          isCompact={isAutoCompact}
-          isRightPanelVisible={rightWorkspaceVisible}
-          onToggleRightPanel={writingDocumentSurface && !isAutoCompact
-            ? () => setRightWorkspaceVisible((visible) => !visible)
-            : undefined}
-        />
-
       {/* === OUTER LAYOUT: Unified Panel Stack | Right Sidebar === */}
       <div
         ref={shellRef}
@@ -5214,10 +5217,11 @@ function AppShellContent({
           isCompact={isAutoCompact}
           isResizing={!!isResizing}
           hidePanelCloseButton={showPrimarySidebar}
+          rightSidebarButton={!rightWorkspaceVisible ? rightWorkspaceToggleButton : undefined}
           contentPanelMinWidth={showWritingDocumentColumn ? WRITING_ASSISTANT_MIN_WIDTH : PANEL_MIN_WIDTH}
         />
         <AnimatePresence initial={false}>
-          {/* The title-bar toggle folds the complete writing workspace; the
+          {/* The right-workspace toggle folds the complete writing workspace; the
               directory-header toggle only folds the outer directory column. */}
           {showWritingDocumentColumn ? (
             <ResizableColumn
@@ -5240,14 +5244,9 @@ function AppShellContent({
               role="directory"
               sashLabel={t('writing.directory.title', '目录')}
               onResizeStart={beginResize}
-              width={workspaceDirectoryWidth}
+              width={workspaceDirectoryColumnWidth}
               disableAnimation={isResizing === 'directory-dock'}
-              header={(
-                <PanelHeader
-                  title={t('writing.directory.title', '目录')}
-                  actions={directoryToggleButton}
-                />
-              )}
+              resizable={workspaceDirectoryVisible}
             >
               {activityWorkspaceDirectory}
             </ResizableColumn>
