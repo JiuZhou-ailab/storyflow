@@ -1,13 +1,16 @@
-// input: Structured single- and multi-select user questions
-// output: Accessible native controls and guarded submission markup
-// pos: Minimal renderer check for ask_user_question's human input component
+// input: Structured single- and multi-select user questions plus their input shell
+// output: Accessible controls, guarded submission markup, and bounded prompt height
+// pos: Minimal renderer checks for ask_user_question's human input component
 
 import * as React from 'react'
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createInstance } from 'i18next'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 import { UserQuestionRequest } from '../structured/UserQuestionRequest'
+
+const inputContainerSource = readFileSync(new URL('../InputContainer.tsx', import.meta.url), 'utf-8')
 
 const testI18n = createInstance().use(initReactI18next)
 await testI18n.init({
@@ -63,5 +66,10 @@ describe('UserQuestionRequest', () => {
     expect(html).toContain('type="checkbox"')
     expect(html).toContain('其他答案')
     expect(html).toContain('disabled=""')
+  })
+
+  it('caps the question form below the shared structured-input maximum', () => {
+    expect(inputContainerSource).toContain("structuredInput?.type === 'user_question'")
+    expect(inputContainerSource).toContain('Math.min(defaultStructuredMaxHeight, FALLBACK_HEIGHTS.user_question)')
   })
 })
