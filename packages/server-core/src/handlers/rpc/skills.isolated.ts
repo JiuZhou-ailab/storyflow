@@ -1,6 +1,6 @@
 // input: Registered Skills RPC handlers, a non-ASCII Pi Skill name, and a temporary Skill directory
 // output: Regression proof that catalog identity is not mistaken for a filesystem slug during deletion
-// pos: Transport-boundary guard for Pi-native Skill management
+// pos: Isolated transport-boundary guard; module mocks must not leak into the shared test process
 
 import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
