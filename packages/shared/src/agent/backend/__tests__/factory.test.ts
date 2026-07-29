@@ -247,7 +247,7 @@ describe('phase4 backend abstraction APIs', () => {
     })).not.toThrow();
   });
 
-  it('initializeBackendHostRuntime does not require a Claude SDK binary', () => {
+  it('initializeBackendHostRuntime does not require a second agent runtime', () => {
     expect(() => initializeBackendHostRuntime({
       hostRuntime: {
         appRootPath: join(process.cwd(), 'apps', 'electron', 'dist'),

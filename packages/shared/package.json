@@ -92,7 +92,6 @@
     "@earendil-works/pi-coding-agent": "0.80.6"
   },
   "peerDependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.197",
     "@modelcontextprotocol/sdk": ">=1.29.0",
     "zod": ">=4.0.0"
   },

@@ -14,6 +14,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createClaudeContext } from '../claude-context.ts';
 import { CONFIG_DIR } from '../../config/paths.ts';
+import { getPiUserSkillsDir } from '../../skills/storage.ts';
 import {
   SHARED_AGENTS_SOURCES_DIR,
 } from '../../sources/storage.ts';
@@ -64,7 +65,7 @@ describe('Claude SessionToolContext Source ownership', () => {
   it('creates and resolves Skills globally from every project context', async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), `${TEST_PREFIX}-skills-`));
     const slug = `${TEST_PREFIX}-global-skill`;
-    const globalSkillDir = join(CONFIG_DIR, 'skills', slug);
+    const globalSkillDir = join(getPiUserSkillsDir(), slug);
     touchedPaths.add(workspaceRoot);
     touchedPaths.add(globalSkillDir);
 
@@ -87,6 +88,6 @@ Inspect the current project evidence.
     const created = await projectContext.createSkillDocument?.(slug, content);
     expect(created?.path).toBe(join(globalSkillDir, 'SKILL.md'));
     expect(projectContext.loadSkillDocument?.(slug)?.content).toBe(content);
-    expect(projectContext.skillsPath).toBe(join(CONFIG_DIR, 'skills'));
+    expect(projectContext.skillsPath).toBe(getPiUserSkillsDir());
   });
 });

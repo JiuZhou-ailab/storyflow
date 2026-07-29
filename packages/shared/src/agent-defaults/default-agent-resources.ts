@@ -1,5 +1,5 @@
 // input: Bundled product Skills, default Sources, and optional user environment overrides
-// output: Best-effort global resource seeding plus the shared AnySearch fallback credential
+// output: Best-effort Pi user Skill and Storyflow Source seeding plus AnySearch fallback
 // pos: Resource bootstrap for the minimal Storyflow product defaults
 
 import {
@@ -12,11 +12,13 @@ import {
 import { homedir } from 'os';
 import { join } from 'path';
 import { getBundledAssetsDir } from '../utils/paths.ts';
+import { getPiUserSkillsDir } from '../skills/storage.ts';
 
 const DEFAULT_ANYSEARCH_API_KEY = 'as_sk_6176d2e008b82e3218006c5c2835ce0b';
 
 export const DEFAULT_GLOBAL_AGENT_SKILL_SLUGS = [
   'anysearch',
+  'find-skills',
   'skill-creator',
   'sn2s-novel-to-screenplay',
 ] as const;
@@ -30,8 +32,10 @@ export const CRAFT_AGENT_ROOT_DIR = join(homedir(), '.craft-agent');
 
 export interface SeedDefaultAgentResourcesOptions {
   assetsDir?: string;
-  /** Craft-owned root for seeded skills/sources. Defaults to ~/.craft-agent */
+  /** Craft-owned root for seeded Sources. Also scopes Skills in tests/legacy callers. */
   agentRootDir?: string;
+  /** Pi user Skills target. Defaults to ~/.pi/agent/skills. */
+  skillsDir?: string;
 }
 
 export interface SeedBucketResult {
@@ -103,6 +107,8 @@ export function seedDefaultAgentResources(
 
   const assetsDir = options.assetsDir ?? getBundledAssetsDir('agent-defaults');
   const agentRootDir = options.agentRootDir ?? CRAFT_AGENT_ROOT_DIR;
+  const skillsDir = options.skillsDir
+    ?? (options.agentRootDir ? join(agentRootDir, 'skills') : getPiUserSkillsDir());
 
   if (!assetsDir || !existsSync(assetsDir)) {
     return {
@@ -112,7 +118,7 @@ export function seedDefaultAgentResources(
   }
 
   return {
-    skills: copyMissingResourceDirs(join(assetsDir, 'global-skills'), join(agentRootDir, 'skills')),
+    skills: copyMissingResourceDirs(join(assetsDir, 'global-skills'), skillsDir),
     sources: copyMissingResourceDirs(join(assetsDir, 'sources'), join(agentRootDir, 'sources')),
   };
 }

@@ -1,6 +1,11 @@
+// input: Canonical session-tool definitions and filtering helpers
+// output: Regression checks for visibility, safety, schema, and lifecycle contracts
+// pos: Contract tests for the session-tools-core registry
+
 import { describe, it, expect } from 'bun:test';
 import {
   SESSION_TOOL_DEFS,
+  TOOL_DESCRIPTIONS,
   getSessionToolDefs,
   getSessionToolNames,
   getSessionToolRegistry,
@@ -41,6 +46,15 @@ describe('session tool filtering helpers', () => {
     const names = defs.map(d => d.name);
 
     expect(names.includes('send_developer_feedback')).toBe(false);
+  });
+
+  it('defines spawn_session as a durable user-visible conversation, not temporary delegation', () => {
+    const description = TOOL_DESCRIPTIONS.spawn_session;
+
+    expect(description).toContain('user-visible, durable session');
+    expect(description).toContain('see, reopen, and continue later');
+    expect(description).toContain('Do not use it for ordinary subtasks or temporary parallel work');
+    expect(description).not.toContain('delegate tasks to parallel sessions');
   });
 
   it('all canonical session tools declare safeMode metadata', () => {

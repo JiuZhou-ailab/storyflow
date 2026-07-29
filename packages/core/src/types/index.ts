@@ -47,6 +47,8 @@ export type {
   Message,
   StoredMessage,
   TokenUsage,
+  TurnUsage,
+  TurnMetrics,
   AgentEventUsage,
   RecoveryAction,
   ErrorCode,

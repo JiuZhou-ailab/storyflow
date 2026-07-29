@@ -148,9 +148,21 @@ describe('needsPiRuntimeMigrationSeed', () => {
 
   it('does not reinterpret a pending Pi sdk fork as legacy history', () => {
     expect(needsPiRuntimeMigrationSeed({
+      agentRuntime: 'pi',
       branchContextStrategy: 'sdk-fork',
       hasPiTranscript: false,
       messageCount: 4,
     })).toBe(false)
+  })
+
+  it('seeds Claude and untagged sdk forks instead of passing incompatible IDs to Pi', () => {
+    for (const agentRuntime of ['claude-sdk', undefined] as const) {
+      expect(needsPiRuntimeMigrationSeed({
+        agentRuntime,
+        branchContextStrategy: 'sdk-fork',
+        hasPiTranscript: false,
+        messageCount: 1,
+      })).toBe(true)
+    }
   })
 })

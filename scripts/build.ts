@@ -10,7 +10,6 @@ import {
   cleanBuildArtifacts,
   copyInterceptor,
   copyRipgrep,
-  copySDK,
   createManifest,
   downloadBun,
   downloadUv,
@@ -18,7 +17,6 @@ import {
   loadEnvFile,
   uploadToS3,
   verifyMcpServersExist,
-  verifySDKCopy,
   type BuildConfig,
 } from "./build/common.ts";
 import { packageDarwin } from "./build/darwin.ts";
@@ -139,8 +137,6 @@ async function prepareRuntime(config: BuildConfig): Promise<void> {
   await installDependencies(config);
   await downloadBun(config);
   await downloadUv(config);
-  copySDK(config);
-  verifySDKCopy(config);
   copyRipgrep(config);
   copyInterceptor(config);
   buildMcpServers(config);

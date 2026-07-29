@@ -1,3 +1,7 @@
+// input: Pi SDK lifecycle events, canonical tool metadata, and streamed tool output
+// output: Craft agent events with stable tool names, results, and failure status
+// pos: Semantic boundary between Pi runtime events and renderer-visible session state
+
 /**
  * Pi SDK Event Adapter
  *
@@ -84,8 +88,15 @@ export class PiEventAdapter extends BaseEventAdapter {
   // leaving the badge blank.
   private miniModel: string | undefined;
 
-  // Track last usage for emitting with complete event
-  private lastUsage: { input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens: number; cost: { total: number } } | undefined;
+  // Aggregate every model call in the outer user turn; tool loops may contain many.
+  private turnUsage: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreationTokens: number;
+    costUsd: number;
+    contextTokens: number;
+  } | undefined;
 
   // ============================================================
   // Overflow-recovery state machine
@@ -205,12 +216,25 @@ export class PiEventAdapter extends BaseEventAdapter {
     return `${base}__${prefix}${this.subTurnCounter++}`;
   }
 
+  private completeEvent(): CraftAgentEvent {
+    return this.turnUsage
+      ? {
+          type: 'complete',
+          usage: {
+            ...this.turnUsage,
+            contextWindow: this.contextWindow,
+          },
+        }
+      : { type: 'complete' };
+  }
+
   protected onTurnStart(): void {
     this.toolNames.clear();
     this.hasStreamedDeltas = false;
     this.hasEmittedFinalText = false;
     this.subTurnCounter = 0;
     this.messageSubTurnId = null;
+    this.turnUsage = undefined;
     this.log.debug('Turn started', { turnIndex: this.turnIndex });
   }
 
@@ -246,22 +270,7 @@ export class PiEventAdapter extends BaseEventAdapter {
           // Recovered turn just finished — fall through to normal completion.
           this.overflowState = 'none';
         }
-        if (this.lastUsage) {
-          const inputTokens = this.lastUsage.input + (this.lastUsage.cacheRead || 0);
-          yield {
-            type: 'complete',
-            usage: {
-              inputTokens,
-              outputTokens: this.lastUsage.output,
-              cacheReadTokens: this.lastUsage.cacheRead,
-              cacheCreationTokens: this.lastUsage.cacheWrite,
-              costUsd: this.lastUsage.cost.total,
-              contextWindow: this.contextWindow,
-            },
-          };
-        } else {
-          yield { type: 'complete' };
-        }
+        yield this.completeEvent();
         break;
 
       // ============================================================
@@ -315,6 +324,34 @@ export class PiEventAdapter extends BaseEventAdapter {
         const sdkTurnAnchor = (event as { sdkTurnAnchor?: string }).sdkTurnAnchor;
         if (msg?.role !== 'assistant') break;
 
+        if (msg.usage && typeof msg.usage.input === 'number') {
+          const cacheReadTokens = msg.usage.cacheRead || 0;
+          const cacheCreationTokens = msg.usage.cacheWrite || 0;
+          const contextTokens = msg.usage.input + cacheReadTokens + cacheCreationTokens;
+          this.turnUsage ??= {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            costUsd: 0,
+            contextTokens,
+          };
+          this.turnUsage.inputTokens += contextTokens;
+          this.turnUsage.outputTokens += msg.usage.output || 0;
+          this.turnUsage.cacheReadTokens += cacheReadTokens;
+          this.turnUsage.cacheCreationTokens += cacheCreationTokens;
+          this.turnUsage.costUsd += msg.usage.cost.total || 0;
+          this.turnUsage.contextTokens = contextTokens;
+
+          yield {
+            type: 'usage_update',
+            usage: {
+              inputTokens: contextTokens,
+              contextWindow: this.contextWindow,
+            },
+          };
+        }
+
         // Surface API errors — Pi SDK sets stopReason: 'error' and errorMessage on failures
         if (msg.stopReason === 'error' && msg.errorMessage) {
           // Context overflow: hand recovery to the SDK's _runAutoCompaction
@@ -362,18 +399,6 @@ export class PiEventAdapter extends BaseEventAdapter {
           this.hasStreamedDeltas = false;
         }
 
-        // Emit usage_update if the assistant message includes token usage
-        if (msg.usage && typeof msg.usage.input === 'number') {
-          this.lastUsage = msg.usage;
-          const inputTokens = msg.usage.input + (msg.usage.cacheRead || 0);
-          yield {
-            type: 'usage_update',
-            usage: {
-              inputTokens,
-              contextWindow: this.contextWindow,
-            },
-          };
-        }
         break;
       }
 
@@ -487,7 +512,10 @@ export class PiEventAdapter extends BaseEventAdapter {
         // Use accumulated output from partial results if available
         const accumulatedOutput = this.consumeOutput(toolCallId);
 
-        const isError = event.isError;
+        const resultDetails = event.result && typeof event.result === 'object'
+          ? (event.result as { details?: { isError?: boolean } }).details
+          : undefined;
+        const isError = event.isError === true || resultDetails?.isError === true;
         let result: string;
 
         if (accumulatedOutput) {
@@ -572,7 +600,7 @@ export class PiEventAdapter extends BaseEventAdapter {
             this.overflowState === 'awaiting' ||
             this.overflowState === 'held'
           ) {
-            yield { type: 'complete' };
+            yield this.completeEvent();
             this.pendingQueueComplete = true;
             this.overflowState = 'none';
             this.heldOverflowError = null;

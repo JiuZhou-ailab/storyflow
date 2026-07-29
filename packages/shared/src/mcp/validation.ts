@@ -36,7 +36,7 @@ export interface McpValidationResult {
  *
  * This pattern is enforced server-side by the Anthropic API.
  * It is NOT defined in the MCP specification (which has no naming constraints).
- * It is NOT exported by @anthropic-ai/sdk or @anthropic-ai/claude-agent-sdk.
+ * It is not exported by the provider client SDK.
  *
  * API error when violated:
  * "tools.0.custom.input_schema.properties: Property keys should match pattern '^[a-zA-Z0-9_.-]{1,64}$'"

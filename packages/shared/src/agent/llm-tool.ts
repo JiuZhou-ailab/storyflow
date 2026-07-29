@@ -1,3 +1,7 @@
+// input: call_llm arguments, model registry metadata, and attachment paths
+// output: Validated runtime-neutral one-shot LLM requests
+// pos: Shared call_llm contract and attachment trust boundary
+
 /**
  * LLM Query Protocol (call_llm)
  *
@@ -7,7 +11,7 @@
  * Key features:
  * - Attachment-based file loading (agent passes paths, tool loads content)
  * - Line range support for large files
- * - Predefined output formats + custom JSON Schema (native structured output)
+ * - Predefined output formats + custom JSON Schema prompt instructions
  * - Parallel execution support (multiple calls run simultaneously)
  * - Comprehensive validation with actionable error messages
  *
@@ -39,7 +43,7 @@ export interface LLMQueryRequest {
   maxTokens?: number;
   /** Sampling temperature 0-1 */
   temperature?: number;
-  /** Structured output JSON schema — backends handle natively when possible */
+  /** Structured output JSON schema — backends may handle natively when possible */
   outputSchema?: Record<string, unknown>;
 }
 
@@ -182,6 +186,11 @@ export async function buildCallLlmRequest(
   const attachments = input.attachments as Array<string | { path: string; startLine?: number; endLine?: number }> | undefined;
 
   if (attachments?.length) {
+    if (attachments.length > MAX_ATTACHMENTS) {
+      throw new Error(`Too many attachments (${attachments.length}, max ${MAX_ATTACHMENTS}).`);
+    }
+
+    let totalContentBytes = 0;
     for (let i = 0; i < attachments.length; i++) {
       const result = await processAttachment(attachments[i]!, i, options.sessionPath);
       if (result.type === 'error') {
@@ -193,6 +202,12 @@ export async function buildCallLlmRequest(
         );
       }
       if (result.type === 'text') {
+        totalContentBytes += result.bytes;
+        if (totalContentBytes > MAX_TOTAL_CONTENT_BYTES) {
+          throw new Error(
+            `Attachments exceed the ${MAX_TOTAL_CONTENT_BYTES / 1_000_000}MB total content limit. Reduce the files or line ranges.`,
+          );
+        }
         textParts.push(`<file path="${result.filename}">\n${result.content}\n</file>`);
       }
     }

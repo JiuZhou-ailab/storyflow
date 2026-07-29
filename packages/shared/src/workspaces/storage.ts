@@ -364,13 +364,14 @@ export function loadWorkspaceConfig(rootPath: string): WorkspaceConfig | null {
     // Compatibility: accept canonical or legacy permission mode names on read
     if (config.defaults?.permissionMode && typeof config.defaults.permissionMode === 'string') {
       const parsed = parsePermissionMode(config.defaults.permissionMode);
-      config.defaults.permissionMode = parsed ?? undefined;
+      config.defaults.permissionMode = parsed === 'safe' ? 'ask' : parsed ?? undefined;
     }
 
     if (Array.isArray(config.defaults?.cyclablePermissionModes)) {
       const normalized = config.defaults.cyclablePermissionModes
         .map(mode => (typeof mode === 'string' ? parsePermissionMode(mode) : null))
         .filter((mode): mode is NonNullable<typeof mode> => !!mode)
+        .filter(mode => PERMISSION_MODE_ORDER.includes(mode))
         .filter((mode, index, arr) => arr.indexOf(mode) === index);
 
       config.defaults.cyclablePermissionModes = normalized.length >= 2

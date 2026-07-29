@@ -1,13 +1,15 @@
-// input: Global resource root, Pi cwd, and isolated agent directory
-// output: Explicit global-only Skills and Extensions for the Pi runtime
-// pos: Resource security boundary preventing Pi's implicit third-party discovery
+// input: Pi cwd, isolated session directory, user Skills, and Storyflow resources
+// output: Pi-native Skills plus explicit Storyflow Extensions
+// pos: Runtime resource boundary preserving native Skill discovery and Extension isolation
 
 import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
   DefaultResourceLoader,
+  getAgentDir,
   SettingsManager,
+  type InlineExtension,
   type ResourceLoader,
 } from '@earendil-works/pi-coding-agent';
 
@@ -18,6 +20,9 @@ export interface ProjectResourceLoaderOptions {
   cwd: string;
   globalRoot?: string;
   agentDir: string;
+  /** Internal/test override for Pi's canonical user directory. */
+  userAgentDir?: string;
+  extensionFactories?: InlineExtension[];
 }
 
 export interface ProjectResourceLoaderResult {
@@ -75,8 +80,8 @@ class StoryflowResourceLoader extends DefaultResourceLoader {
   override async reload(
     options?: Parameters<DefaultResourceLoader['reload']>[0],
   ): Promise<void> {
-    // Trees may change after startup. Revalidate every prompt-time reload so a
-    // newly inserted symlink never reaches Pi's executable resource loaders.
+    // Extensions execute code. Revalidate them on every prompt-time reload.
+    // Skills remain under Pi's native discovery and symlink-deduplication rules.
     for (const resourcePath of this.managedResourcePaths) {
       assertSymlinkFreeTree(resourcePath);
     }
@@ -87,9 +92,8 @@ class StoryflowResourceLoader extends DefaultResourceLoader {
 /**
  * Build the Pi resource boundary owned by Storyflow.
  *
- * Pi's default loader discovers its own global/project resources and ancestor
- * .agents/skills directories. Storyflow disables that discovery and provides
- * only ResourceResolver-owned roots explicitly.
+ * Skills use Pi's complete discovery contract. Extensions remain isolated to
+ * Storyflow's explicit global root because they execute code at load time.
  */
 export async function createProjectResourceLoader(
   options: ProjectResourceLoaderOptions,
@@ -100,27 +104,29 @@ export async function createProjectResourceLoader(
 
   mkdirSync(roots.skillsPath, { recursive: true });
   mkdirSync(roots.extensionsPath, { recursive: true });
-  const skillPaths = [roots.skillsPath];
+  const userSkillsPath = join(options.userAgentDir ?? getAgentDir(), 'skills');
+  const skillPaths = [userSkillsPath, roots.skillsPath]
+    .filter((path, index, paths) => existsSync(path) && paths.indexOf(path) === index);
   const extensionRoots = [roots.extensionsPath];
   const extensionPaths = extensionRoots.flatMap(discoverGlobalExtensionPaths);
-  const managedResourcePaths = [...skillPaths, ...extensionRoots];
+  const managedResourcePaths = extensionRoots;
   for (const resourcePath of managedResourcePaths) {
     assertSymlinkFreeTree(resourcePath);
   }
 
   const settingsManager = SettingsManager.inMemory({
-    defaultProjectTrust: 'never',
     enableSkillCommands: true,
-  });
+  }, { projectTrusted: true });
   const resourceLoader = new StoryflowResourceLoader(
     {
       cwd: options.cwd,
       agentDir: options.agentDir,
       settingsManager,
-      noSkills: true,
+      noSkills: false,
       noExtensions: true,
       additionalSkillPaths: skillPaths,
       additionalExtensionPaths: extensionPaths,
+      extensionFactories: options.extensionFactories,
     },
     managedResourcePaths,
   );

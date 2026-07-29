@@ -8,8 +8,6 @@ import { join } from 'node:path';
 import { validateDesktopAuthBuildEnv } from './desktop-auth-build-config';
 
 const rootDir = join(import.meta.dir, '..', '..');
-const CLAUDE_AGENT_SDK_EXTERNAL = '@anthropic-ai/claude-agent-sdk';
-const CLAUDE_AGENT_SDK_EXTERNAL_ARG = '--external:@anthropic-ai/claude-agent-sdk';
 const AWS_S3_CLIENT_EXTERNAL = '@aws-sdk/client-s3';
 const AWS_S3_CLIENT_EXTERNAL_ARG = '--external:@aws-sdk/client-s3';
 
@@ -18,10 +16,6 @@ function readRepoFile(path: string): string {
 }
 
 describe('Electron main process build config', () => {
-  test('keeps Claude Agent SDK external in the shared main build path', () => {
-    expect(readRepoFile('scripts/electron-build-main.ts')).toContain(CLAUDE_AGENT_SDK_EXTERNAL_ARG);
-  });
-
   test('does not require the unused unzipper S3 optional client during main bundling', () => {
     expect(readRepoFile('scripts/electron-build-main.ts')).toContain(AWS_S3_CLIENT_EXTERNAL_ARG);
   });
@@ -30,10 +24,6 @@ describe('Electron main process build config', () => {
     expect(readRepoFile('scripts/build/win32.ts')).toContain('electron:build:main');
     expect(readRepoFile('scripts/build/common.ts')).toContain('bun run electron:build');
     expect(readRepoFile('apps/electron/package.json')).toContain('"build:main"');
-  });
-
-  test('keeps Claude Agent SDK external in dev esbuild config', () => {
-    expect(readRepoFile('scripts/electron-dev.ts')).toContain(CLAUDE_AGENT_SDK_EXTERNAL);
   });
 
   test('does not require the unused unzipper S3 optional client during dev main bundling', () => {

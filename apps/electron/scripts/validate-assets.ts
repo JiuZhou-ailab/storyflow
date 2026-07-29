@@ -16,6 +16,8 @@ const requiredFiles = [
   ['renderer/index.html', 'renderer entrypoint'],
   ['resources/agent-defaults/global-skills/anysearch/SKILL.md', 'AnySearch Skill'],
   ['resources/agent-defaults/global-skills/anysearch/scripts/anysearch_cli.js', 'AnySearch Node.js runtime'],
+  ['resources/agent-defaults/global-skills/find-skills/SKILL.md', 'Find Skills Skill'],
+  ['resources/agent-defaults/global-skills/find-skills/LICENSE.txt', 'Find Skills license'],
   ['resources/agent-defaults/global-skills/skill-creator/SKILL.md', 'Storyflow Skill Creator'],
   ['resources/agent-defaults/global-skills/sn2s-novel-to-screenplay/SKILL.md', 'SN2S novel-to-screenplay Skill'],
   ['resources/agent-defaults/global-skills/sn2s-novel-to-screenplay/scripts/screenplay_project.py', 'SN2S local project helper'],

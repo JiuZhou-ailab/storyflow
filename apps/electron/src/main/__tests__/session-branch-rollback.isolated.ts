@@ -283,12 +283,22 @@ mock.module('@craft-agent/shared/sessions', () => ({
   getPendingPlanExecution: async () => null,
   getSessionAttachmentsPath: () => '/tmp/attachments',
   getSessionPath: (_root: string, id: string) => `${workspaceRootPath}/sessions/${id}`,
+  getSessionFilePath: (_root: string, id: string) => `${workspaceRootPath}/sessions/${id}/session.jsonl`,
+  ensureSessionDir: (_root: string, id: string) => {
+    const path = `${workspaceRootPath}/sessions/${id}`
+    mkdirSync(path, { recursive: true })
+    return path
+  },
+  validateBundle: () => true,
+  writeSessionJsonl: (_path: string, session: any) => {
+    storedById.set(session.id, session)
+  },
   getOrCreateLatestSession: async () => null,
   sessionPersistenceQueue: { flush: async () => {} },
   pickSessionFields: (s: any) => {
     // Must match SESSION_PERSISTENT_FIELDS to prevent contamination of persistence tests
     const fields = [
-      'id','workspaceRootPath','sdkSessionId','sdkCwd',
+      'id','workspaceRootPath','sdkSessionId','agentRuntime','sdkCwd',
       'createdAt','lastUsedAt','lastMessageAt',
       'name','isFlagged','sessionStatus','labels','hidden',
       'lastReadMessageId','hasUnread',
@@ -414,5 +424,50 @@ describe('session branch rollback on preflight failure', () => {
     expect(getOrCreateAgentCalled).toBe(true)
     expect(deletedIds).toEqual(['child-1'])
     expect(storedById.has('child-1')).toBe(false)
+  })
+
+  it('marks a pending Pi branch as Pi-owned before preflight', async () => {
+    mockedProvider = 'pi'
+
+    const manager = new SessionManager()
+    ;(manager as any).ensureMessagesLoaded = async (_managed: any) => {}
+    ;(manager as any).getOrCreateAgent = async (managed: any) => {
+      managed.agent = {
+        supportsBranching: true,
+        ensureBranchReady: async () => {},
+        destroy: () => {},
+      }
+      return managed.agent
+    }
+
+    const session = await manager.createSession('ws-1', {
+      branchFromSessionId: 'source-1',
+      branchFromMessageId: 'm1',
+    } as any)
+
+    expect((manager as any).sessions.get(session.id)?.agentRuntime).toBe('pi')
+    expect(storedById.get('child-1')?.agentRuntime).toBe('pi')
+  })
+
+  it('preserves legacy runtime ownership when importing a session', async () => {
+    const manager = new SessionManager()
+
+    await manager.importSession('ws-1', {
+      version: 1,
+      session: {
+        header: {
+          id: 'legacy-import',
+          workspaceRootPath: '/source',
+          agentRuntime: 'claude-sdk',
+          createdAt: Date.now(),
+          lastUsedAt: Date.now(),
+        },
+        messages: [],
+      },
+      files: [],
+    } as any, 'move')
+
+    expect(storedById.get('legacy-import')?.agentRuntime).toBe('claude-sdk')
+    expect((manager as any).sessions.get('legacy-import')?.agentRuntime).toBe('claude-sdk')
   })
 })

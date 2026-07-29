@@ -6,7 +6,6 @@ export * from './system-prompt-preset.ts';
 // Export PiAgent for direct use
 export { PiAgent, PiBackend } from './pi-agent.ts';
 export * from './errors.ts';
-export * from './options.ts';
 
 // Export runtime-neutral session callback and plan state.
 export {

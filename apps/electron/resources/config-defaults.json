@@ -16,7 +16,7 @@
     "thinkingLevel": "think",
     "permissionMode": "allow-all",
     "cyclablePermissionModes": [
-      "safe",
+      "ask",
       "allow-all"
     ],
     "localMcpServers": {
@@ -40,7 +40,8 @@
             "description": "",
             "provider": "pi",
             "contextWindow": 131072,
-            "supportsThinking": true
+            "supportsThinking": true,
+            "supportsImages": true
           },
           {
             "id": "gpt-5.6-sol",
@@ -49,7 +50,8 @@
             "description": "",
             "provider": "pi",
             "contextWindow": 131072,
-            "supportsThinking": true
+            "supportsThinking": true,
+            "supportsImages": true
           },
           {
             "id": "gpt-5.6-terra",
@@ -58,7 +60,8 @@
             "description": "",
             "provider": "pi",
             "contextWindow": 131072,
-            "supportsThinking": true
+            "supportsThinking": true,
+            "supportsImages": true
           },
           {
             "id": "gpt-5.6-luna",
@@ -67,7 +70,8 @@
             "description": "",
             "provider": "pi",
             "contextWindow": 131072,
-            "supportsThinking": true
+            "supportsThinking": true,
+            "supportsImages": true
           },
           {
             "id": "gemini-3.5-flash",
@@ -76,7 +80,8 @@
             "description": "",
             "provider": "pi",
             "contextWindow": 131072,
-            "supportsThinking": false
+            "supportsThinking": false,
+            "supportsImages": true
           },
           {
             "id": "deepseek-v4-pro",
@@ -85,7 +90,8 @@
             "description": "",
             "provider": "pi",
             "contextWindow": 131072,
-            "supportsThinking": false
+            "supportsThinking": false,
+            "supportsImages": false
           },
           {
             "id": "deepseek-v4-flash",
@@ -94,7 +100,8 @@
             "description": "",
             "provider": "pi",
             "contextWindow": 131072,
-            "supportsThinking": false
+            "supportsThinking": false,
+            "supportsImages": false
           }
         ],
         "defaultModel": "gpt-5.5",

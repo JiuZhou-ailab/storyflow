@@ -1,14 +1,6 @@
-/**
- * Resolves the best web search provider based on the user's LLM connection.
- *
- * Priority:
- *   1. Provider-native search (OpenAI, ChatGPT, OpenRouter, Google) — best quality
- *   2. DuckDuckGo — universal fallback, no API key required
- *
- * To add a new Responses API-compatible provider:
- *   1. Add a case here with the provider name and apiBase URL
- *   2. The ResponsesApiSearchProvider handles the rest
- */
+// input: Model-provider authentication, custom-endpoint mode, and AnySearch credentials
+// output: A web search provider that never crosses model-provider credential boundaries
+// pos: Trust-boundary router for Storyflow's typed web_search capability
 
 import type { WebSearchProvider } from './types.ts';
 import { ResponsesApiSearchProvider } from './providers/openai.ts';
@@ -24,6 +16,60 @@ export type SearchProviderCredential =
 export interface SearchProviderAuthConfig {
   provider?: string;
   credential?: SearchProviderCredential;
+}
+
+const ANYSEARCH_ENDPOINT = 'https://api.anysearch.com/mcp';
+
+interface AnySearchResponse {
+  error?: { message?: string };
+  result?: {
+    content?: Array<{ type?: string; text?: string }>;
+  };
+}
+
+export class AnySearchProvider implements WebSearchProvider {
+  name = 'AnySearch';
+
+  async search(query: string, count: number) {
+    const apiKey = process.env.ANYSEARCH_API_KEY;
+    const response = await fetch(ANYSEARCH_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Anysearch-Client': 'storyflow/web-search',
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'search',
+          arguments: { query, max_results: count },
+        },
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`AnySearch failed (HTTP ${response.status})`);
+    }
+
+    const data = await response.json() as AnySearchResponse;
+    if (data.error) {
+      throw new Error(data.error.message || 'AnySearch returned an unknown error');
+    }
+
+    const text = data.result?.content
+      ?.filter((item) => item.type === 'text' && item.text)
+      .map((item) => item.text)
+      .join('\n\n');
+    if (!text) {
+      throw new Error('AnySearch returned no text results');
+    }
+
+    return [{ title: 'AnySearch results', url: '', description: text }];
+  }
 }
 
 function getApiKey(piAuth?: SearchProviderAuthConfig): string | undefined {
@@ -49,7 +95,16 @@ function getOpenAiCodexAccessToken(piAuth?: SearchProviderAuthConfig): string | 
   return getOAuthAccess(piAuth) ?? getApiKey(piAuth);
 }
 
-export function resolveSearchProvider(piAuth?: SearchProviderAuthConfig): WebSearchProvider {
+export function resolveSearchProvider(
+  piAuth?: SearchProviderAuthConfig,
+  customEndpoint = false,
+): WebSearchProvider {
+  // A custom endpoint's auth shape may say "openai", but its credential belongs
+  // only to that endpoint and must never be sent to api.openai.com.
+  if (customEndpoint) {
+    return new AnySearchProvider();
+  }
+
   const provider = piAuth?.provider;
   const apiKey = getApiKey(piAuth);
   const openAiCodexAccess = getOpenAiCodexAccessToken(piAuth);

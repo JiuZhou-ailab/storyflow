@@ -1,3 +1,7 @@
+// input: Session permission state, tool calls, filesystem paths, and permission configuration
+// output: Mode transitions plus centralized allow, block, and prompt decisions
+// pos: Shared runtime authority for Storyflow tool permissions
+
 /**
  * Centralized Permission Mode Manager
  *
@@ -408,7 +412,7 @@ export function consumeUserModeSignal(sessionId: string): void {
 /**
  * Cycle to the next permission mode (for SHIFT+TAB)
  * @param sessionId - The session to cycle mode for
- * @param enabledModes - Optional list of enabled modes to cycle through (defaults to all 3)
+ * @param enabledModes - Optional list of enabled modes to cycle through
  * Returns the new mode
  */
 export function cyclePermissionMode(
@@ -416,7 +420,7 @@ export function cyclePermissionMode(
   enabledModes?: PermissionMode[]
 ): PermissionMode {
   const currentMode = getPermissionMode(sessionId);
-  // Use provided modes or default to all modes
+  // Use provided modes or the two user-selectable modes
   const modes = enabledModes && enabledModes.length >= 2 ? enabledModes : PERMISSION_MODE_ORDER;
   const currentIndex = modes.indexOf(currentMode);
 

@@ -1,6 +1,6 @@
-// input: Global Skill fixtures, legacy project Skills, invalid documents, caches, and symlinks
-// output: Regression coverage for one global Skill store and safe mutations
-// pos: Storage boundary preventing project overlays and implicit agent-directory discovery
+// input: Pi user and legacy Skill fixtures, invalid documents, caches, and symlinks
+// output: Regression coverage for compatibility reads and canonical user mutations
+// pos: Synchronous compatibility boundary beneath Pi-native project discovery
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import {
@@ -18,6 +18,7 @@ import { resolveResourceRoots } from '../../resources/resolver.ts';
 import {
   createSkill,
   deleteSkill,
+  getPiUserSkillsDir,
   invalidateSkillsCache,
   isValidSkillSlug,
   listSkillSlugs,
@@ -27,6 +28,7 @@ import {
 } from '../storage.ts';
 
 const globalSkillsDir = resolveResourceRoots().skillsPath;
+const userSkillsDir = getPiUserSkillsDir();
 const testPrefix = `test-global-skills-${process.pid}-`;
 const touchedGlobalPaths = new Set<string>();
 let tempDir: string;
@@ -120,7 +122,7 @@ describe('global Skill storage', () => {
     expect(loadAllSkills().find(skill => skill.slug === slug)?.metadata.description).toBe('After');
   });
 
-  it('creates once, lists, and deletes only from the global store', () => {
+  it('creates once, lists, and deletes from Pi user storage', () => {
     const slug = globalSlug('mutation');
     const content = `---
 name: ${slug}
@@ -129,11 +131,11 @@ description: Created globally
 
 Use globally.
 `;
-    touchedGlobalPaths.add(join(globalSkillsDir, slug));
+    touchedGlobalPaths.add(join(userSkillsDir, slug));
 
     const created = createSkill(slug, content);
 
-    expect(created.path).toBe(join(globalSkillsDir, slug));
+    expect(created.path).toBe(join(userSkillsDir, slug));
     expect(skillExists(slug)).toBe(true);
     expect(listSkillSlugs()).toContain(slug);
     expect(() => createSkill(slug, content)).toThrow('already exists');

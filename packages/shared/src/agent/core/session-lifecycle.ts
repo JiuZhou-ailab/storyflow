@@ -1,14 +1,8 @@
 /**
  * SessionLifecycle
  *
- * Shared session lifecycle types and utilities for agent implementations.
+ * Shared session lifecycle types and utilities for PiAgent.
  * Provides common abort reasons, session state, and cleanup patterns.
- *
- * The actual abort implementation is provider-specific:
- * - ClaudeAgent uses AbortController with the Claude SDK
- * - CodexAgent uses client.turnInterrupt() with the Codex API
- *
- * This module provides the shared types and utilities that both use.
  */
 
 // ============================================================

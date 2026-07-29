@@ -90,7 +90,7 @@ import { restoreFiles } from '@craft-agent/shared/utils/bundle-files'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { CraftMcpClient, McpClientPool, McpPoolServer } from '@craft-agent/shared/mcp'
 import { type Session, type SessionEvent, type FileAttachment, type SendMessageOptions, type OneShotLlmRequest, type OneShotLlmResult, type NovelSelectionRewriteRequest, type NovelSelectionRewriteResult, type UnreadSummary, type RemoteSessionTransferPayload, RPC_CHANNELS, generateMessageId } from '@craft-agent/shared/protocol'
-import { messageToStored, storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta } from '@craft-agent/core/types'
+import { messageToStored, storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta, type TurnMetrics } from '@craft-agent/core/types'
 import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlAsync, getEmojiIcon, resetSummarizationClient, resolveToolIcon, readFileAttachment, selectSpreadMessages, normalizePath, DEFAULT_TITLE_LANGUAGE } from '@craft-agent/shared/utils'
 import { buildNovelSelectionRewritePrompt, sanitizeNovelSelectionReplacement } from '@craft-agent/shared/writing'
 import { loadAllSkills, loadSkill, invalidateSkillsCache, type LoadedSkill } from '@craft-agent/shared/skills'
@@ -863,6 +863,10 @@ interface ManagedSession {
   lastFinalMessageId?: string
   // Turn baseline: last final assistant message ID at turn start (runtime-only, not persisted)
   turnStartFinalMessageId?: string
+  // User-visible start time for the active turn (runtime-only, not persisted)
+  turnStartedAt?: number
+  // Completed queued turns waiting for the renderer's terminal complete event
+  pendingTurnMetrics?: Map<string, TurnMetrics>
   // External session metadata updates seen while processing (applied after turn stop)
   pendingExternalMetadata?: SessionHeader
   // Guard: suppress external metadata revert after programmatic writes (setSessionStatus/setSessionLabels).
@@ -954,6 +958,28 @@ interface ManagedSession {
   wasInterrupted?: boolean
   // Runtime-only proactive compaction marker. Persisted JSONL remains lossless.
   lastAutoCompactedUserIteration?: number
+}
+
+type SdkForkState = Pick<
+  ManagedSession,
+  | 'branchContextStrategy'
+  | 'branchFromSdkSessionId'
+  | 'branchFromSessionPath'
+  | 'branchFromSdkCwd'
+  | 'branchFromSdkTurnId'
+>
+
+function clearSdkForkFields(state: SdkForkState): void {
+  state.branchFromSdkSessionId = undefined
+  state.branchFromSessionPath = undefined
+  state.branchFromSdkCwd = undefined
+  state.branchFromSdkTurnId = undefined
+}
+
+export function consumePendingSdkFork(state: SdkForkState): boolean {
+  if (state.branchContextStrategy !== 'sdk-fork') return false
+  clearSdkForkFields(state)
+  return true
 }
 
 /**
@@ -1493,17 +1519,15 @@ export class SessionManager implements ISessionManager {
         sessionLog.info('Default permissions changed')
         this.broadcastDefaultPermissionsChanged()
       },
-      onSkillsListChange: async () => {
-        const { loadAllSkills } = await import('@craft-agent/shared/skills')
-        const skills = loadAllSkills()
+      onSkillsListChange: async (skills) => {
         sessionLog.info(`Skills list changed in ${workspaceRootPath} (${skills.length} skills)`)
         this.broadcastSkillsChanged(workspaceId, skills)
       },
       onSkillChange: async (slug, skill) => {
         sessionLog.info(`Skill '${slug}' changed:`, skill ? 'updated' : 'deleted')
         // Broadcast updated list to UI
-        const { loadAllSkills } = await import('@craft-agent/shared/skills')
-        const skills = loadAllSkills()
+        const { loadPiSkillCatalog } = await import('@craft-agent/shared/skills')
+        const { skills } = await loadPiSkillCatalog(resourceProjectRoot ?? workspaceRootPath)
         this.broadcastSkillsChanged(workspaceId, skills)
       },
 
@@ -2954,6 +2978,11 @@ export class SessionManager implements ISessionManager {
         branchedStored.messages = sourceMessages
       }
 
+      // Current branch creation always targets Pi. Persist the owner before
+      // preflight so this pending fork is never mistaken for a legacy Claude
+      // session when no child transcript exists yet.
+      branchedStored.agentRuntime = 'pi'
+      storedSession.agentRuntime = 'pi'
       branchedStored.branchFromMessageId = validatedBranch.sourceMessageId
       if (validatedBranch.branchContextStrategy === 'sdk-fork') {
         branchedStored.branchFromSdkSessionId = validatedBranch.branchFromSdkSessionId
@@ -3477,11 +3506,9 @@ export class SessionManager implements ISessionManager {
         managed.sdkSessionId = sdkSessionId
         managed.agentRuntime = 'pi'
         // Retire branch-only fork metadata now that child session is established
-        if (managed.branchFromSdkSessionId) {
-          sessionLog.info(`Branch fork established for ${managed.id}: child=${sdkSessionId}, retiring parent fork metadata (parent=${managed.branchFromSdkSessionId})`)
-          managed.branchFromSdkSessionId = undefined
-          managed.branchFromSdkCwd = undefined
-          managed.branchFromSdkTurnId = undefined
+        const parentSdkSessionId = managed.branchFromSdkSessionId
+        if (consumePendingSdkFork(managed)) {
+          sessionLog.info(`Branch fork established for ${managed.id}: child=${sdkSessionId}, retiring parent fork metadata (parent=${parentSdkSessionId ?? 'unknown'})`)
         } else {
           sessionLog.info(`SDK session ID captured for ${managed.id}: ${sdkSessionId}`)
         }
@@ -3498,9 +3525,7 @@ export class SessionManager implements ISessionManager {
 
       const onBranchForkInvalidated = () => {
         managed.sdkSessionId = undefined
-        managed.branchFromSdkSessionId = undefined
-        managed.branchFromSdkCwd = undefined
-        managed.branchFromSdkTurnId = undefined
+        clearSdkForkFields(managed)
         sessionLog.info(`Branch fork invalidated for ${managed.id}: cleared all fork metadata`)
         this.persistSession(managed)
         sessionPersistenceQueue.flush(managed.id)
@@ -5873,6 +5898,9 @@ export class SessionManager implements ISessionManager {
     }
 
     managed.lastMessageAt = Date.now()
+    if (!_isAuthRetry || managed.turnStartedAt === undefined) {
+      managed.turnStartedAt = userMessage?.timestamp ?? Date.now()
+    }
     this.setProcessing(managed, true)
     managed.streamingText = ''
     managed.processingGeneration++
@@ -6592,6 +6620,7 @@ export class SessionManager implements ISessionManager {
 
     const turnStartFinalMessageId = managed.turnStartFinalMessageId
     managed.turnStartFinalMessageId = undefined
+    managed.turnStartedAt = undefined
 
     // Clear agent control overlay between turns. The session keeps browser
     // ownership (boundSessionId) — only the visual overlay is removed.
@@ -6657,8 +6686,12 @@ export class SessionManager implements ISessionManager {
         type: 'complete',
         sessionId,
         tokenUsage: managed.tokenUsage,
+        turnMetrics: managed.pendingTurnMetrics
+          ? Array.from(managed.pendingTurnMetrics, ([messageId, metrics]) => ({ messageId, metrics }))
+          : undefined,
         hasUnread: managed.hasUnread,  // Propagate unread state to renderer
       }, managed.workspace.id)
+      managed.pendingTurnMetrics = undefined
     }
 
     // 6. Always persist
@@ -7755,19 +7788,35 @@ export class SessionManager implements ISessionManager {
               costUsd: 0,
             }
           }
-          // inputTokens = current context size (full conversation sent this turn), NOT accumulated
-          // Each API call sends the full conversation history, so we use the latest value
-          managed.tokenUsage.inputTokens = event.usage.inputTokens
-          // outputTokens and costUsd are accumulated across all turns (total session usage)
+          // Session totals accumulate the provider-reported totals from each user turn.
+          managed.tokenUsage.inputTokens += event.usage.inputTokens
           managed.tokenUsage.outputTokens += event.usage.outputTokens
           managed.tokenUsage.totalTokens = managed.tokenUsage.inputTokens + managed.tokenUsage.outputTokens
           managed.tokenUsage.costUsd += event.usage.costUsd ?? 0
-          // Cache tokens reflect current state, not accumulated
-          managed.tokenUsage.cacheReadTokens = event.usage.cacheReadTokens ?? 0
-          managed.tokenUsage.cacheCreationTokens = event.usage.cacheCreationTokens ?? 0
+          managed.tokenUsage.cacheReadTokens = (managed.tokenUsage.cacheReadTokens ?? 0) + (event.usage.cacheReadTokens ?? 0)
+          managed.tokenUsage.cacheCreationTokens = (managed.tokenUsage.cacheCreationTokens ?? 0) + (event.usage.cacheCreationTokens ?? 0)
+          if (event.usage.contextTokens !== undefined) {
+            managed.tokenUsage.contextTokens = event.usage.contextTokens
+          }
           // Update context window (use latest value - may change if model switches)
           if (event.usage.contextWindow) {
             managed.tokenUsage.contextWindow = event.usage.contextWindow
+          }
+        }
+
+        {
+          const finalMessageId = this.getLastFinalAssistantMessageId(managed.messages)
+          if (finalMessageId && finalMessageId !== managed.turnStartFinalMessageId) {
+            const finalMessage = managed.messages.findLast(message => message.id === finalMessageId)
+            if (finalMessage) {
+              const metrics: TurnMetrics = {
+                durationMs: Math.max(0, Date.now() - (managed.turnStartedAt ?? finalMessage.timestamp)),
+                ...(event.usage && { usage: event.usage }),
+              }
+              finalMessage.turnMetrics = metrics
+              managed.pendingTurnMetrics ??= new Map()
+              managed.pendingTurnMetrics.set(finalMessageId, metrics)
+            }
           }
         }
         break
@@ -7785,8 +7834,8 @@ export class SessionManager implements ISessionManager {
               costUsd: 0,
             }
           }
-          // Update only inputTokens (current context size) - other fields accumulate on complete
-          managed.tokenUsage.inputTokens = event.usage.inputTokens
+          // Live updates are current context size, not cumulative session input.
+          managed.tokenUsage.contextTokens = event.usage.inputTokens
           if (event.usage.contextWindow) {
             managed.tokenUsage.contextWindow = event.usage.contextWindow
           }
@@ -8210,6 +8259,7 @@ export class SessionManager implements ISessionManager {
       id: sessionId,
       workspaceRootPath,
       sdkSessionId: header.sdkSessionId, // Preserved initially; fork logic below may clear it
+      agentRuntime: header.agentRuntime,
       // Always regenerate sdkCwd for the target workspace.
       // The source sdkCwd points to a path on the originating server
       // which doesn't exist here (cross-server transfer).

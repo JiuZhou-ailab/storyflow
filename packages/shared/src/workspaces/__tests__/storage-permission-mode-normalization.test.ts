@@ -62,8 +62,8 @@ describe('workspace storage: config normalization', () => {
 
     const loaded = loadWorkspaceConfig(workspaceRoot);
     expect(loaded).not.toBeNull();
-    expect(loaded?.defaults?.permissionMode).toBe('safe');
-    expect(loaded?.defaults?.cyclablePermissionModes).toEqual(['safe', 'ask', 'allow-all']);
+    expect(loaded?.defaults?.permissionMode).toBe('ask');
+    expect(loaded?.defaults?.cyclablePermissionModes).toEqual(['ask', 'allow-all']);
   });
 
   it('falls back to full cycle if persisted cyclablePermissionModes are invalid', () => {
@@ -87,7 +87,7 @@ describe('workspace storage: config normalization', () => {
     const loaded = loadWorkspaceConfig(workspaceRoot);
     expect(loaded).not.toBeNull();
     expect(loaded?.defaults?.permissionMode).toBe('allow-all');
-    expect(loaded?.defaults?.cyclablePermissionModes).toEqual(['safe', 'ask', 'allow-all']);
+    expect(loaded?.defaults?.cyclablePermissionModes).toEqual(['ask', 'allow-all']);
   });
 
   it('normalizes legacy defaults.thinkingLevel=think on read', () => {

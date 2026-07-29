@@ -28,6 +28,7 @@ import { EntityColorSchema } from '../colors/validate.ts';
 import { THINKING_LEVEL_IDS } from '../agent/thinking-levels.ts';
 import { isValidProviderAuthCombination } from './llm-connections.ts';
 import { resolveResourceRoots } from '../resources/resolver.ts';
+import { getPiUserSkillsDir } from '../skills/storage.ts';
 
 // ============================================================
 // Config Directory
@@ -35,6 +36,8 @@ import { resolveResourceRoots } from '../resources/resolver.ts';
 
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 const PREFERENCES_FILE = join(CONFIG_DIR, 'preferences.json');
+const PI_USER_SKILLS_DIR = getPiUserSkillsDir();
+const PI_USER_SKILLS_DISPLAY = '~/.pi/agent/skills';
 
 // ============================================================
 // Validation Result Types
@@ -663,10 +666,10 @@ export function validateAllSources(workspaceId: string): ValidationResult {
  * @param slug - Skill directory name
  */
 export function validateSkill(slug: string): ValidationResult {
-  const skillsDir = resolveResourceRoots().skillsPath;
+  const skillsDir = PI_USER_SKILLS_DIR;
   const skillDir = join(skillsDir, slug);
   const skillFile = join(skillDir, 'SKILL.md');
-  const file = `~/.craft-agent/skills/${slug}/SKILL.md`;
+  const file = `${PI_USER_SKILLS_DISPLAY}/${slug}/SKILL.md`;
 
   const errors: ValidationIssue[] = [];
   const warnings: ValidationIssue[] = [];
@@ -676,7 +679,7 @@ export function validateSkill(slug: string): ValidationResult {
     return {
       valid: false,
       errors: [{
-        file: `~/.craft-agent/skills/${slug}`,
+        file: `${PI_USER_SKILLS_DISPLAY}/${slug}`,
         path: '',
         message: `Skill folder '${slug}' does not exist`,
         severity: 'error',
@@ -725,7 +728,7 @@ export function validateSkill(slug: string): ValidationResult {
   if (!findIconFile(skillDir)) {
     const searchTerm = slug.replace(/-/g, ' ');
     warnings.push({
-      file: `~/.craft-agent/skills/${slug}/`,
+      file: `${PI_USER_SKILLS_DISPLAY}/${slug}/`,
       path: 'icon',
       message: 'No icon found',
       severity: 'warning',
@@ -749,7 +752,7 @@ export function validateSkill(slug: string): ValidationResult {
  * @param slug - The skill slug (folder name), used for slug format validation
  */
 export function validateSkillContent(markdownContent: string, slug: string): ValidationResult {
-  const file = `~/.craft-agent/skills/${slug}/SKILL.md`;
+  const file = `${PI_USER_SKILLS_DISPLAY}/${slug}/SKILL.md`;
   const result = validatePortableSkillContent(markdownContent, slug);
 
   return {
@@ -771,7 +774,7 @@ export function validateSkillContent(markdownContent: string, slug: string): Val
  * Validate all global Skills.
  */
 export function validateAllSkills(): ValidationResult {
-  const skillsDir = resolveResourceRoots().skillsPath;
+  const skillsDir = PI_USER_SKILLS_DIR;
   const errors: ValidationIssue[] = [];
   const warnings: ValidationIssue[] = [];
 
@@ -780,7 +783,7 @@ export function validateAllSkills(): ValidationResult {
       valid: true,
       errors: [],
       warnings: [{
-        file: '~/.craft-agent/skills/',
+        file: `${PI_USER_SKILLS_DISPLAY}/`,
         path: '',
         message: 'Skills directory does not exist (no skills configured)',
         severity: 'warning',
@@ -799,7 +802,7 @@ export function validateAllSkills(): ValidationResult {
       valid: true,
       errors: [],
       warnings: [{
-        file: '~/.craft-agent/skills/',
+        file: `${PI_USER_SKILLS_DISPLAY}/`,
         path: '',
         message: 'No skills configured',
         severity: 'warning',
@@ -1896,7 +1899,8 @@ export interface ConfigFileDetection {
  *
  * Matches patterns:
  * - .../.craft-agent/sources/{slug}/config.json → source config
- * - ~/.craft-agent/skills/{slug}/SKILL.md → global Skill definition
+ * - ~/.pi/agent/skills/{slug}/SKILL.md → Pi user Skill definition
+ * - ~/.craft-agent/skills/{slug}/SKILL.md → legacy user Skill definition
  * - .../.craft-agent/statuses/config.json → status workflow config
  * - .../.craft-agent/labels/config.json → label config
  * - .../permissions.json (workspace or source-level) → permission rules
@@ -1906,22 +1910,32 @@ export function detectConfigFileType(filePath: string, workspaceRootPath: string
   // so startsWith doesn't false-match on path prefixes (e.g., /workspace vs /workspacefoo)
   const normalizedPath = filePath.replace(/\\/g, '/');
   const normalizedRoot = workspaceRootPath.replace(/\\/g, '/').replace(/\/?$/, '/');
-  const normalizedSkillsRoot = resolveResourceRoots().skillsPath
-    .replace(/\\/g, '/')
-    .replace(/\/?$/, '/');
+  const skillRoots = [
+    {
+      path: PI_USER_SKILLS_DIR,
+      display: PI_USER_SKILLS_DISPLAY,
+    },
+    {
+      path: resolveResourceRoots().skillsPath,
+      display: '~/.craft-agent/skills',
+    },
+  ];
 
-  if (normalizedPath.startsWith(normalizedSkillsRoot)) {
-    const skillMatch = normalizedPath
-      .slice(normalizedSkillsRoot.length)
-      .match(/^([^/]+)\/SKILL\.md$/);
-    if (skillMatch) {
-      return {
-        type: 'skill',
-        slug: skillMatch[1],
-        displayFile: `~/.craft-agent/skills/${skillMatch[1]}/SKILL.md`,
-      };
+  for (const root of skillRoots) {
+    const normalizedSkillsRoot = root.path.replace(/\\/g, '/').replace(/\/?$/, '/');
+    if (normalizedPath.startsWith(normalizedSkillsRoot)) {
+      const skillMatch = normalizedPath
+        .slice(normalizedSkillsRoot.length)
+        .match(/^([^/]+)\/SKILL\.md$/);
+      if (skillMatch) {
+        return {
+          type: 'skill',
+          slug: skillMatch[1],
+          displayFile: `${root.display}/${skillMatch[1]}/SKILL.md`,
+        };
+      }
+      return null;
     }
-    return null;
   }
 
   // Only validate files within the workspace root

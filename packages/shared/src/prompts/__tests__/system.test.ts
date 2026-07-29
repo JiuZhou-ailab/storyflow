@@ -33,11 +33,13 @@ describe('system prompt guidance', () => {
     expect(prompt).not.toContain('Grep pattern=')
   })
 
-  it('does not mention Grep in call_llm tool-dependency guidance', () => {
+  it('describes the real call_llm boundary without advertising unregistered agent tools', () => {
     const prompt = getSystemPrompt(undefined, undefined, '/tmp/workspace', '/tmp/workspace')
 
-    expect(prompt).toContain('The subtask needs file/shell tools (for example, Read or Bash)')
-    expect(prompt).not.toContain('The subtask needs tools (Read, Bash, Grep)')
+    expect(prompt).toContain('`call_llm` cannot use them; handle it with the current agent')
+    expect(prompt).not.toContain('Task tool')
+    expect(prompt).not.toContain('Task (subagents)')
+    expect(prompt).not.toContain('Task = full agent')
   })
 
   it('keeps session data temporary and durable deliverables in the workspace', () => {
@@ -49,12 +51,14 @@ describe('system prompt guidance', () => {
     expect(prompt).not.toContain('data files to the **exact `dataFolderPath`**')
   })
 
-  it('uses AnySearch by default and keeps built-in web_search as an approved fallback', () => {
+  it('uses the typed web_search capability for routine search', () => {
     const prompt = getSystemPrompt(undefined, undefined, '/tmp/workspace', '/tmp/workspace')
 
-    expect(prompt).toContain('Use the resolved `anysearch` Skill as the default for web search')
-    expect(prompt).toContain('Use the built-in `web_search` tool only when AnySearch is unavailable')
-    expect(prompt).toContain('Global: `~/.craft-agent/skills/{slug}/SKILL.md`')
+    expect(prompt).toContain('Use the built-in `web_search` tool as the default')
+    expect(prompt).toContain('Do not run the AnySearch CLI for routine web searches')
+    expect(prompt).toContain('never through `script_sandbox`')
+    expect(prompt).toContain('user Skills from `~/.pi/agent/skills` and `~/.agents/skills`')
+    expect(prompt).toContain('project Skills from `.pi/skills` and `.agents/skills`')
   })
 })
 

@@ -19,7 +19,6 @@
  */
 
 import http from 'node:http';
-import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 import { mkdirSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -30,12 +29,15 @@ import {
   SessionManager as PiSessionManager,
   AuthStorage as PiAuthStorage,
   ModelRegistry as PiModelRegistry,
+  DefaultResourceLoader,
+  SettingsManager,
   createReadToolDefinition,
   createBashToolDefinition,
   createEditToolDefinition,
   createGrepToolDefinition,
   createFindToolDefinition,
   createLsToolDefinition,
+  getAgentDir,
 } from '@earendil-works/pi-coding-agent';
 import type {
   AgentSession,
@@ -43,11 +45,16 @@ import type {
   AgentToolResult,
   AuthCredential,
   CreateAgentSessionOptions,
+  ToolCallEvent,
   ToolDefinition,
+  ToolResultEvent,
 } from '@earendil-works/pi-coding-agent';
 
 // Pi AI types
-import type { TextContent as PiTextContent } from '@earendil-works/pi-ai';
+import type {
+  ImageContent as PiImageContent,
+  TextContent as PiTextContent,
+} from '@earendil-works/pi-ai';
 
 // Pre-register the Bedrock provider module so the Pi SDK doesn't attempt a
 // dynamic import of "./amazon-bedrock.js" — which fails in the bundled output
@@ -79,6 +86,7 @@ import { handleLargeResponse, estimateTokens, tokenLimitFor } from '../../shared
 import { getSessionPlansPath, getSessionPath } from '../../shared/src/sessions/storage.ts';
 import { buildCallLlmRequest, withTimeout, LLM_QUERY_TIMEOUT_MS } from '../../shared/src/agent/llm-tool.ts';
 import type { LLMQueryRequest, LLMQueryResult } from '../../shared/src/agent/llm-tool.ts';
+import { readJsonLines } from '../../shared/src/utils/jsonl.ts';
 import { PI_TOOL_NAME_MAP, THINKING_TO_PI } from '../../shared/src/agent/backend/pi/constants.ts';
 import { getDefaultSummarizationModel } from '../../shared/src/config/models.ts';
 import { createWebFetchTool } from './tools/web-fetch.ts';
@@ -91,7 +99,8 @@ import {
   normalizeCraftToolArgumentsForSchema,
   stripCraftMetadata,
 } from './craft-metadata-schema.ts';
-import { applySystemPromptOverride } from './system-prompt-override.ts';
+import { createSystemPromptOverride } from './system-prompt-override.ts';
+import { createToolHooks } from './tool-hooks.ts';
 import {
   sanitizeAssistantMessageForResume,
   sanitizeSessionFileForResume,
@@ -269,6 +278,7 @@ let piSession: AgentSession | null = null;
 let piModelRegistry: PiModelRegistry | null = null;
 let moduleAuthStorage: PiAuthStorage | null = null;
 let unsubscribeEvents: (() => void) | null = null;
+let systemPromptOverride: ReturnType<typeof createSystemPromptOverride> | null = null;
 
 // Init config (set on 'init' message)
 let initConfig: Extract<InboundMessage, { type: 'init' }> | null = null;
@@ -280,24 +290,13 @@ let currentPromptAttemptState: PromptAttemptState | null = null;
 // Pending promises for async handshakes
 const pendingPreToolUse = new Map<string, { resolve: (response: { action: string; input?: Record<string, unknown>; reason?: string }) => void }>();
 const pendingToolExecutions = new Map<string, { resolve: (result: { content: string; isError: boolean }) => void }>();
+const toolIntentByCallId = new Map<string, string>();
 
 // Pending session MCP tool calls for completion detection
 const pendingSessionToolCalls = new Map<string, { toolName: string; arguments: Record<string, unknown> }>();
 
 // Proxy tool definitions from main process
 let proxyToolDefs: ProxyToolDef[] = [];
-
-// Speculative prefetch for read-only tools (enables parallel execution despite Pi SDK's sequential loop).
-// When the LLM emits multiple call_llm tool calls in a single message, we fire all requests
-// to the main process in parallel on message_end (before executeToolCalls iterates sequentially).
-// Each proxy tool's execute() then hits the cache instead of sending a new request.
-const PREFETCHABLE_TOOLS = new Set(['call_llm']);
-const prefetchCache = new Map<string, Promise<{ content: string; isError: boolean }>>();
-
-function isPrefetchableTool(toolName: string): boolean {
-  const stripped = toolName.replace(/^(mcp__session__|session__)/, '');
-  return PREFETCHABLE_TOOLS.has(stripped);
-}
 
 // Flag: proxy tools changed since last session creation — session needs recreation
 let toolsChanged = false;
@@ -566,16 +565,20 @@ async function ensureSession(): Promise<AgentSession> {
   //   - OpenAI/OpenRouter → Responses API built-in web_search
   //   - ChatGPT Plus (openai-codex) → ChatGPT backend responses endpoint
   //   - Google → Gemini API with googleSearch grounding
+  //   - Custom endpoints → AnySearch (never reuse custom model credentials)
   //   - Others → DuckDuckGo fallback
   //
   // IMPORTANT: resolve dynamically on each search call so token_update refreshes
   // are used without recreating the session.
   const searchProvider = {
     get name() {
-      return resolveSearchProvider(initConfig?.piAuth).name;
+      return resolveSearchProvider(initConfig?.piAuth, !!initConfig?.customEndpoint).name;
     },
     async search(query: string, count: number) {
-      return resolveSearchProvider(initConfig?.piAuth).search(query, count);
+      return resolveSearchProvider(
+        initConfig?.piAuth,
+        !!initConfig?.customEndpoint,
+      ).search(query, count);
     },
   };
   const searchTool = createSearchTool(searchProvider);
@@ -584,8 +587,8 @@ async function ensureSession(): Promise<AgentSession> {
   );
   const webTools = [searchTool, webFetchTool];
 
-  // Pi SDK 0.70.0 registration contract:
-  //   - `customTools` accepts ToolDefinition[] — our hook-wrapped objects go here
+  // Pi SDK registration contract:
+  //   - `customTools` accepts ToolDefinition[] — our schema-adapted objects go here
   //   - `tools` is a string[] name allowlist — MUST include every tool we want active,
   //     otherwise Pi SDK defaults to the built-in [read, bash, edit, write] set and
   //     silently filters out everything else. Custom tool names with matching built-in
@@ -603,46 +606,54 @@ async function ensureSession(): Promise<AgentSession> {
     createLsToolDefinition(cwd),
   ];
   const proxyTools = buildProxyTools();
-  const wrappedAll = wrapToolsWithHooks([...builtinDefs, ...webTools, ...proxyTools]);
-  const toolAllowlist = wrappedAll.map(t => t.name);
-  debugLog(`Session tools: ${builtinDefs.length} builtin + ${webTools.length} web + ${proxyTools.length} proxy = ${wrappedAll.length} total`);
+  const allTools = prepareToolDefinitions([...builtinDefs, ...webTools, ...proxyTools]);
+  const toolAllowlist = allTools.map(t => t.name);
+  systemPromptOverride = createSystemPromptOverride();
+  toolIntentByCallId.clear();
+  const toolHooks = createToolHooks({
+    beforeToolCall: prepareToolInput,
+    afterToolCall: postprocessToolResult,
+  });
+  debugLog(`Session tools: ${builtinDefs.length} builtin + ${webTools.length} web + ${proxyTools.length} proxy = ${allTools.length} total`);
 
   // Build session options
   const sessionOptions: CreateAgentSessionOptions = {
     cwd,
     authStorage,
     modelRegistry,
-    customTools: wrappedAll,
+    customTools: allTools,
     tools: toolAllowlist,
   };
 
-  // Extension isolation: set agentDir to a temp directory under session path
-  // to prevent loading global Pi extensions from ~/.pi/agent
-  if (initConfig.sessionPath) {
-    const agentDir = initConfig.agentDir || join(initConfig.sessionPath, '.pi-agent');
-    mkdirSync(agentDir, { recursive: true });
-    sessionOptions.agentDir = agentDir;
+  // Every session uses the explicit Storyflow ResourceLoader so prompt and
+  // permission hooks cannot be bypassed by non-persisted/free contexts.
+  const agentDir = initConfig.agentDir
+    || (initConfig.sessionPath ? join(initConfig.sessionPath, '.pi-agent') : getAgentDir());
+  mkdirSync(agentDir, { recursive: true });
+  sessionOptions.agentDir = agentDir;
 
-    const { resourceLoader, settingsManager } = await createProjectResourceLoader({
-      cwd,
-      agentDir,
-    });
-    sessionOptions.resourceLoader = resourceLoader;
-    sessionOptions.settingsManager = settingsManager;
+  const { resourceLoader, settingsManager } = await createProjectResourceLoader({
+    cwd,
+    agentDir,
+    extensionFactories: [systemPromptOverride.extension, toolHooks],
+  });
+  sessionOptions.resourceLoader = resourceLoader;
+  sessionOptions.settingsManager = settingsManager;
 
-    const extensionToolNames = new Set<string>();
-    for (const extension of resourceLoader.getExtensions().extensions) {
-      for (const toolName of extension.tools.keys()) {
-        if (toolAllowlist.includes(toolName)) {
-          throw new Error(
-            `Global Extension tool conflicts with a Storyflow tool: ${toolName}`,
-          );
-        }
-        extensionToolNames.add(toolName);
+  const extensionToolNames = new Set<string>();
+  for (const extension of resourceLoader.getExtensions().extensions) {
+    for (const toolName of extension.tools.keys()) {
+      if (toolAllowlist.includes(toolName)) {
+        throw new Error(
+          `Global Extension tool conflicts with a Storyflow tool: ${toolName}`,
+        );
       }
+      extensionToolNames.add(toolName);
     }
-    sessionOptions.tools = [...toolAllowlist, ...extensionToolNames];
+  }
+  sessionOptions.tools = [...toolAllowlist, ...extensionToolNames];
 
+  if (initConfig.sessionPath) {
     // Session resume: use a per-Craft-session directory so the Pi SDK can
     // persist and resume its own session across subprocess restarts.
     // continueRecent() loads the existing session if one exists, otherwise
@@ -689,7 +700,6 @@ async function ensureSession(): Promise<AgentSession> {
       }
       sessionOptions.sessionManager = PiSessionManager.continueRecent(cwd, sessionDir);
     }
-
   }
 
   // Set model if specified
@@ -733,7 +743,7 @@ async function ensureSession(): Promise<AgentSession> {
   piSession = session;
 
   toolsChanged = false;
-  debugLog(`Created Pi session: ${session.sessionId} (${wrappedAll.length} tools)`);
+  debugLog(`Created Pi session: ${session.sessionId} (${allTools.length} tools)`);
 
   // Notify main process of session ID
   send({ type: 'session_id_update', sessionId: session.sessionId });
@@ -743,7 +753,7 @@ async function ensureSession(): Promise<AgentSession> {
 
 
 // ============================================================
-// Tool Wrapping (Permission Enforcement + Large Response Summarization)
+// Tool Hooks (Permission Enforcement + Large Response Summarization)
 // ============================================================
 
 /**
@@ -782,109 +792,84 @@ async function requestPreToolUseApproval(
   return response.action === 'modify' && response.input ? response.input : input;
 }
 
-function wrapToolsWithHooks(tools: ToolDefinition<any, any>[]): ToolDefinition<any, any>[] {
-  return tools.map(tool => wrapSingleTool(tool));
+function prepareToolDefinitions(tools: ToolDefinition<any, any>[]): ToolDefinition<any, any>[] {
+  return tools.map((tool) => {
+    const originalPrepareArguments = tool.prepareArguments;
+    const parameters = allowCraftMetadataPropertiesForTool(tool.name, tool.parameters);
+    const prepareArguments: ToolDefinition<any, any>['prepareArguments'] = (args) => {
+      const normalized = normalizeCraftToolArgumentsForSchema(tool.name, tool.parameters, args);
+      return originalPrepareArguments ? originalPrepareArguments(normalized) : normalized;
+    };
+
+    return {
+      ...tool,
+      parameters,
+      prepareArguments,
+    };
+  });
 }
 
-function makeErrorResult(message: string): AgentToolResult<any> {
-  return {
-    content: [{ type: 'text', text: message }],
-    details: { isError: true },
-  };
+async function prepareToolInput(event: ToolCallEvent): Promise<Record<string, unknown>> {
+  const sdkToolName = PI_TOOL_NAME_MAP[event.toolName] || event.toolName;
+  let input: Record<string, unknown> = { ...event.input };
+  const intent = typeof input._intent === 'string' ? input._intent : undefined;
+
+  // Normalize Pi SDK parameter names for the shared permission pipeline.
+  if ((sdkToolName === 'Write' || sdkToolName === 'Edit' || sdkToolName === 'MultiEdit' || sdkToolName === 'NotebookEdit')
+      && typeof input.path === 'string' && !input.file_path) {
+    input = { ...input, file_path: input.path };
+  }
+
+  const approvedInput = await requestPreToolUseApproval(sdkToolName, input, event.toolCallId);
+  if (intent) toolIntentByCallId.set(event.toolCallId, intent);
+  return stripCraftMetadata(approvedInput);
 }
 
-function wrapSingleTool(tool: ToolDefinition<any, any>): ToolDefinition<any, any> {
-  const originalExecute = tool.execute;
-  const originalPrepareArguments = tool.prepareArguments;
-  const parameters = allowCraftMetadataPropertiesForTool(tool.name, tool.parameters);
-  const prepareArguments: ToolDefinition<any, any>['prepareArguments'] = (args) => {
-    const normalized = normalizeCraftToolArgumentsForSchema(tool.name, tool.parameters, args);
-    return originalPrepareArguments ? originalPrepareArguments(normalized) : normalized;
-  };
+async function postprocessToolResult(event: ToolResultEvent): Promise<{
+  content?: (PiTextContent | PiImageContent)[];
+  details?: unknown;
+  isError?: boolean;
+} | void> {
+  const intent = toolIntentByCallId.get(event.toolCallId);
+  toolIntentByCallId.delete(event.toolCallId);
+  if (event.isError) return;
 
-  const wrappedExecute: ToolDefinition<any, any>['execute'] = async (
-    toolCallId,
-    params,
-    signal,
-    onUpdate,
-    ctx,
-  ) => {
-    const sdkToolName = PI_TOOL_NAME_MAP[tool.name] || tool.name;
-    let inputObj: Record<string, unknown> = { ...(params as Record<string, unknown>) };
+  const resultText = event.content
+    .filter((content): content is PiTextContent => content.type === 'text')
+    .map(content => content.text)
+    .join('');
+  const modelContextWindow = piSession?.agent.state.model?.contextWindow;
+  if (estimateTokens(resultText) <= tokenLimitFor(modelContextWindow) || !initConfig) {
+    return;
+  }
 
-    // Extract intent before main process strips metadata (used for summarization)
-    const intent = typeof inputObj._intent === 'string' ? inputObj._intent : undefined;
+  try {
+    const sdkToolName = PI_TOOL_NAME_MAP[event.toolName] || event.toolName;
+    const largeResult = await handleLargeResponse({
+      text: resultText,
+      sessionPath: getSessionPath(initConfig.workspaceRootPath, initConfig.sessionId),
+      context: {
+        toolName: sdkToolName,
+        input: event.input,
+        intent,
+        userRequest: currentUserMessage,
+      },
+      summarize: runMiniCompletion,
+      contextWindow: modelContextWindow,
+    });
 
-    // Normalize Pi SDK parameter names: path → file_path
-    if ((sdkToolName === 'Write' || sdkToolName === 'Edit' || sdkToolName === 'MultiEdit' || sdkToolName === 'NotebookEdit')
-        && typeof inputObj.path === 'string' && !inputObj.file_path) {
-      inputObj = { ...inputObj, file_path: inputObj.path };
+    if (largeResult) {
+      return {
+        content: [{ type: 'text', text: largeResult.message }],
+        details: event.details,
+        isError: event.isError,
+      };
     }
-
-    // Send to main process for permission checking + transforms
-    inputObj = await requestPreToolUseApproval(sdkToolName, inputObj, toolCallId);
-
-    // Metadata is for Craft UI only. Keep a final defensive strip here so the
-    // upstream Pi tool implementation always receives clean executable args,
-    // even if a future pre-tool-use path returns `allow` without modification.
-    inputObj = stripCraftMetadata(inputObj);
-
-    // Execute original tool with (potentially modified) input
-    const result = await originalExecute(toolCallId, inputObj, signal, onUpdate, ctx);
-
-    // --- Post-execute: large response summarization ---
-
-    const resultText = result.content
-      .filter((c): c is PiTextContent => c.type === 'text')
-      .map(c => c.text)
-      .join('');
-
-    // Source the active model's contextWindow each call so the threshold
-    // tracks set_model mid-session, not the model that was active at session
-    // creation. Falls back to the fixed default when the model isn't set yet.
-    const modelContextWindow = piSession?.agent.state.model?.contextWindow;
-    if (estimateTokens(resultText) > tokenLimitFor(modelContextWindow) && initConfig) {
-      try {
-        const sessionPath = getSessionPath(
-          initConfig.workspaceRootPath,
-          initConfig.sessionId,
-        );
-
-        const largeResult = await handleLargeResponse({
-          text: resultText,
-          sessionPath,
-          context: {
-            toolName: sdkToolName,
-            input: inputObj,
-            intent,
-            userRequest: currentUserMessage,
-          },
-          summarize: runMiniCompletion,
-          contextWindow: modelContextWindow,
-        });
-
-        if (largeResult) {
-          return {
-            content: [{ type: 'text', text: largeResult.message }],
-            details: result.details,
-          };
-        }
-      } catch (error) {
-        debugLog(
-          `Large response handling failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }
-
-    return result;
-  };
-
-  return {
-    ...tool,
-    parameters,
-    prepareArguments,
-    execute: wrappedExecute,
-  };
+  } catch (error) {
+    debugLog(
+      `Large response handling failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 // ============================================================
@@ -909,27 +894,21 @@ function buildProxyTools(): ToolDefinition<any, any>[] {
       : def.description,
     parameters: def.inputSchema,
     execute: async (
-      toolCallId: string,
+      _toolCallId: string,
       params: any,
     ): Promise<AgentToolResult<any>> => {
-      // Check speculative prefetch cache first (parallel call_llm optimization).
-      // If this tool was prefetched on message_end, the request is already in-flight —
-      // just await the result instead of sending a duplicate request.
-      const prefetched = prefetchCache.get(toolCallId);
-      if (prefetched) {
-        prefetchCache.delete(toolCallId);
-        debugLog(`Prefetch cache hit for ${def.name} (toolCallId: ${toolCallId})`);
-        const result = await prefetched;
-        return {
-          content: [{ type: 'text', text: result.content }],
-          details: result.isError ? { isError: true } : undefined,
-        };
+      if (def.name === 'mcp__session__call_llm') {
+        try {
+          const result = await preExecuteCallLlm(params as Record<string, unknown>);
+          return {
+            content: [{ type: 'text', text: result.text || '(Model returned empty response)' }],
+            details: result.warning ? { warning: result.warning } : undefined,
+          };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(`call_llm failed: ${message}`);
+        }
       }
-
-      const inputObj = params as Record<string, unknown>;
-
-      // Permission checking via main process
-      const approvedInput = await requestPreToolUseApproval(def.name, inputObj, toolCallId);
 
       // Execute via main process
       const requestId = `proxy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -938,7 +917,7 @@ function buildProxyTools(): ToolDefinition<any, any>[] {
         type: 'tool_execute_request',
         requestId,
         toolName: def.name,
-        args: approvedInput,
+        args: params as Record<string, unknown>,
       });
 
       const result = await new Promise<{ content: string; isError: boolean }>((resolve) => {
@@ -1019,6 +998,24 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
       sessionManager: PiSessionManager.inMemory(),
       model: piModel,
     };
+    const promptOverride = createSystemPromptOverride();
+    const promptForSession =
+      request.systemPrompt ?? 'Reply with ONLY the requested text. No explanation.';
+    promptOverride.set(promptForSession);
+    const resourceLoader = new DefaultResourceLoader({
+      cwd: resolvedCwd(),
+      agentDir: initConfig!.agentDir
+        || (initConfig!.sessionPath ? join(initConfig!.sessionPath, '.pi-agent') : getAgentDir()),
+      settingsManager: SettingsManager.inMemory(),
+      extensionFactories: [promptOverride.extension],
+      noExtensions: true,
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
+      noContextFiles: true,
+    });
+    await resourceLoader.reload();
+    ephemeralOptions.resourceLoader = resourceLoader;
 
     const { session: ephemeralSession } = await createAgentSession(ephemeralOptions);
 
@@ -1031,12 +1028,6 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
     }
 
     debugLog(`[queryLlm] Created ephemeral session: ${ephemeralSession.sessionId}`);
-
-    // Force the system prompt — see system-prompt-override.ts for why direct
-    // assignment to `state.systemPrompt` doesn't survive `session.prompt()`.
-    const promptForSession =
-      request.systemPrompt ?? 'Reply with ONLY the requested text. No explanation.';
-    applySystemPromptOverride(ephemeralSession, promptForSession);
 
     // Collect response text and errors from events
     let result = '';
@@ -1268,33 +1259,6 @@ function handleSessionEvent(event: AgentSessionEvent): void {
           sdkTurnAnchor,
         } as unknown as OutboundAgentEvent;
       }
-
-      // Speculative prefetch: if the assistant message contains 2+ prefetchable tool calls,
-      // fire all requests to the main process in parallel NOW, before executeToolCalls
-      // iterates sequentially. Each proxy tool's execute() will hit the cache.
-      const content = (msg as { content?: Array<{ type: string; id?: string; name?: string; arguments?: unknown }> }).content;
-      if (Array.isArray(content)) {
-        const prefetchableToolCalls = content.filter(
-          (c) => c.type === 'toolCall' && c.name && isPrefetchableTool(c.name),
-        );
-        if (prefetchableToolCalls.length >= 2) {
-          const firstToolName = prefetchableToolCalls[0]?.name ?? 'tool';
-          debugLog(`Prefetching ${prefetchableToolCalls.length} parallel ${firstToolName} calls`);
-          for (const tc of prefetchableToolCalls) {
-            const requestId = `prefetch-${tc.id}`;
-            const promise = new Promise<{ content: string; isError: boolean }>((resolve) => {
-              pendingToolExecutions.set(requestId, { resolve });
-            });
-            send({
-              type: 'tool_execute_request',
-              requestId,
-              toolName: tc.name!,
-              args: (tc.arguments ?? {}) as Record<string, unknown>,
-            });
-            prefetchCache.set(tc.id!, promise);
-          }
-        }
-      }
     }
   }
 
@@ -1422,12 +1386,8 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
     // session, while the loader remains restricted to explicit Storyflow roots.
     await session.resourceLoader.reload();
 
-    // Force the Craft-built system prompt onto the Pi session. Direct assignment
-    // to `state.systemPrompt` is wiped on every `session.prompt()` call by the Pi
-    // SDK (see system-prompt-override.ts).
     if (msg.systemPrompt) {
-      applySystemPromptOverride(
-        session,
+      systemPromptOverride?.set(
         msg.systemPrompt,
         session.resourceLoader.getSkills().skills,
       );
@@ -1534,9 +1494,6 @@ async function handleAbort(): Promise<void> {
     pending.resolve({ action: 'block', reason: 'Aborted' });
   }
   pendingPreToolUse.clear();
-
-  // Clear speculative prefetch cache — in-flight prefetches will resolve but never be consumed
-  prefetchCache.clear();
 }
 
 async function handleMiniCompletion(msg: Extract<InboundMessage, { type: 'mini_completion' }>): Promise<void> {
@@ -1883,9 +1840,7 @@ async function processMessage(msg: InboundMessage): Promise<void> {
 function main(): void {
   debugLog('Pi agent server starting');
 
-  const rl = createInterface({ input: process.stdin });
-
-  rl.on('line', (line: string) => {
+  readJsonLines(process.stdin, (line) => {
     if (!line.trim()) return;
     try {
       const msg = JSON.parse(line) as InboundMessage;
@@ -1897,9 +1852,7 @@ function main(): void {
     } catch (parseError) {
       debugLog(`Failed to parse JSONL: ${parseError}`);
     }
-  });
-
-  rl.on('close', () => {
+  }, () => {
     debugLog('stdin closed, shutting down');
     handleShutdown();
   });
@@ -1931,4 +1884,24 @@ function main(): void {
   });
 }
 
-main();
+async function runSkillCatalogMode(cwd: string): Promise<void> {
+  const agentDir = getAgentDir();
+  const { resourceLoader } = await createProjectResourceLoader({ cwd, agentDir });
+  const catalog = resourceLoader.getSkills();
+  process.stdout.write(`${JSON.stringify(catalog)}\n`);
+}
+
+const skillCatalogArg = process.argv.indexOf('--skill-catalog');
+if (skillCatalogArg >= 0) {
+  const cwd = process.argv[skillCatalogArg + 1];
+  if (!cwd) {
+    console.error('Missing cwd after --skill-catalog');
+    process.exit(2);
+  }
+  runSkillCatalogMode(cwd).catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+} else {
+  main();
+}

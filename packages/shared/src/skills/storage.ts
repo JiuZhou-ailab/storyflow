@@ -1,9 +1,9 @@
 /**
  * Skills Storage
  *
- * input: Global Skill directory and SKILL.md documents
- * output: Global Skill discovery and mutation operations
- * pos: Single Storyflow-owned Skill store shared by every project
+ * input: Pi user Skill directory, legacy Storyflow directory, and SKILL.md documents
+ * output: Compatibility Skill discovery and canonical user mutation operations
+ * pos: Synchronous compatibility API; workspace discovery lives in pi-catalog.ts
  */
 
 import {
@@ -15,6 +15,7 @@ import {
   mkdirSync,
   writeFileSync,
 } from 'fs';
+import { homedir } from 'os';
 import { join } from 'path';
 import matter from 'gray-matter';
 import {
@@ -155,6 +156,10 @@ function loadSkillFromDir(
     content: parsed.body,
     iconPath: findIconFile(skillDir),
     path: skillDir,
+    filePath: skillFile,
+    scope: 'user',
+    source: 'storyflow-compat',
+    origin: 'top-level',
   };
 }
 
@@ -195,7 +200,8 @@ function loadSkillsFromDir(
  */
 export function loadSkill(slug: string): LoadedSkill | null {
   if (!isValidSkillSlug(slug)) return null;
-  return loadSkillFromDir(resolveResourceRoots().skillsPath, slug);
+  return loadSkillFromDir(getPiUserSkillsDir(), slug)
+    ?? loadSkillFromDir(resolveResourceRoots().skillsPath, slug);
 }
 
 // ── Skills cache ────────────────────────────────────────────────────────
@@ -213,7 +219,13 @@ export function invalidateSkillsCache(): void {
  */
 export function loadAllSkills(): LoadedSkill[] {
   if (skillsCache) return skillsCache;
-  skillsCache = loadSkillsFromDir(resolveResourceRoots().skillsPath);
+  const skills = [
+    ...loadSkillsFromDir(getPiUserSkillsDir()),
+    ...loadSkillsFromDir(resolveResourceRoots().skillsPath),
+  ];
+  skillsCache = Array.from(
+    new Map(skills.map(skill => [skill.slug, skill])).values(),
+  );
   return skillsCache;
 }
 
@@ -242,9 +254,8 @@ export function createSkill(
   const validationError = validateSkillDocumentForSlug(content, slug);
   if (validationError) throw new Error(validationError);
 
-  const targetDirectory = resolveResourceRoots().skillsPath;
+  const targetDirectory = getPiUserSkillsDir();
   mkdirSync(targetDirectory, { recursive: true });
-  assertSymlinkFreeTree(targetDirectory);
 
   const skillDir = join(targetDirectory, slug);
   if (existsSync(skillDir)) throw new Error(`Skill already exists: ${slug}`);
@@ -269,8 +280,11 @@ export function deleteSkill(slug: string): boolean {
   if (!skill) return false;
 
   try {
-    const globalSkillsRoot = resolveResourceRoots().skillsPath;
-    if (skill.path !== join(globalSkillsRoot, slug)) return false;
+    const mutableRoots = [
+      getPiUserSkillsDir(),
+      resolveResourceRoots().skillsPath,
+    ];
+    if (!mutableRoots.some(root => skill.path === join(root, slug))) return false;
     assertSymlinkFreeTree(skill.path);
     rmSync(skill.path, { recursive: true });
     invalidateSkillsCache();
@@ -295,6 +309,20 @@ export function skillExists(slug: string): boolean {
 /** Agent Skills-compatible slug guard used before joining untrusted input. */
 export function isValidSkillSlug(slug: string): boolean {
   return validateSkillSlug(slug).valid;
+}
+
+/** Canonical user Skill directory shared with Pi and skills.sh installers. */
+export function getPiUserSkillsDir(): string {
+  const configuredAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = configuredAgentDir === '~'
+    ? homedir()
+    : configuredAgentDir?.startsWith('~/')
+      ? join(homedir(), configuredAgentDir.slice(2))
+      : process.platform === 'win32' && configuredAgentDir?.startsWith('~\\')
+        ? join(homedir(), configuredAgentDir.slice(2))
+        : configuredAgentDir || join(homedir(), '.pi', 'agent');
+
+  return join(agentDir, 'skills');
 }
 
 /**

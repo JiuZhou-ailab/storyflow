@@ -1,20 +1,20 @@
 /**
  * Session-Scoped Tool Callback Registry
  *
- * Extracted from session-scoped-tools.ts to break the dependency between
- * the callback registry (shared by Claude + Pi paths) and the Claude SDK
- * adapter layer (only used by ClaudeAgent).
- *
  * The registry is a simple Map keyed by sessionId. Each backend registers
  * callbacks when a session starts and merges additional callbacks (e.g.
  * browser pane functions) as they become available.
  */
 
 import type { LLMQueryRequest, LLMQueryResult } from './llm-tool.ts';
-import type { SpawnSessionFn } from './spawn-session-tool.ts';
+import type { SpawnSessionHelpResult, SpawnSessionResult } from './base-agent.ts';
 import type { BrowserPaneFns } from './browser-tools.ts';
 import type { AuthRequest, UserQuestionRequest, UserQuestionResponse } from '@craft-agent/session-tools-core';
 import { debug } from '../utils/debug.ts';
+
+export type SpawnSessionFn = (
+  input: Record<string, unknown>,
+) => Promise<SpawnSessionResult | SpawnSessionHelpResult>;
 
 /**
  * Callbacks that can be registered per-session

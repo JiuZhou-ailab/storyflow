@@ -5,7 +5,7 @@
  * The PiAgent communicates with a pi-agent-server subprocess via JSONL.
  *
  * Note: The main PiAgent class is at ../pi-agent.ts
- * for consistency with ClaudeAgent/CodexAgent/CopilotAgent. This index re-exports.
+ * This index re-exports the Pi adapter boundary.
  */
 
 export { PiAgent } from '../../pi-agent.ts';

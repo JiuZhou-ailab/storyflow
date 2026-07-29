@@ -1,3 +1,7 @@
+// input: Electron source layout and shared lint plugins
+// output: Flat ESLint rules for the desktop application
+// pos: Static architecture guard for Electron code
+
 /**
  * ESLint Configuration for Electron App
  *
@@ -202,10 +206,6 @@ export default [
         {
           selector: "CallExpression[callee.name='fetch']",
           message: 'Do not call provider APIs directly in Electron model fetchers. Delegate to fetchBackendModels() from @craft-agent/shared/agent/backend.',
-        },
-        {
-          selector: "ImportDeclaration[source.value='@anthropic-ai/claude-agent-sdk']",
-          message: 'Provider SDK usage must stay in backend drivers under packages/shared/src/agent/backend/internal/drivers.',
         },
         {
           selector: "ImportDeclaration[source.value='@github/copilot-sdk']",

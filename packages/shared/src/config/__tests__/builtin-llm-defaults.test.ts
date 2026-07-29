@@ -148,6 +148,12 @@ describe('builtin LLM connection defaults', () => {
     const thinkingModelIds = connection?.models
       ?.filter(model => typeof model !== 'string' && model.supportsThinking === true)
       .map(model => typeof model === 'string' ? model : model.id)
+    const imageModelIds = connection?.models
+      ?.filter(model => typeof model !== 'string' && model.supportsImages === true)
+      .map(model => typeof model === 'string' ? model : model.id)
+    const textOnlyModelIds = connection?.models
+      ?.filter(model => typeof model !== 'string' && model.supportsImages === false)
+      .map(model => typeof model === 'string' ? model : model.id)
 
     expect(connection?.models?.every(model => typeof model !== 'string')).toBe(true)
     expect(modelIds).toEqual([
@@ -165,6 +171,17 @@ describe('builtin LLM connection defaults', () => {
       'gpt-5.6-sol',
       'gpt-5.6-terra',
       'gpt-5.6-luna',
+    ])
+    expect(imageModelIds).toEqual([
+      'gpt-5.5',
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+      'gemini-3.5-flash',
+    ])
+    expect(textOnlyModelIds).toEqual([
+      'deepseek-v4-pro',
+      'deepseek-v4-flash',
     ])
   })
 
@@ -185,6 +202,7 @@ describe('builtin LLM connection defaults', () => {
     const models = config.llmConnections?.[0]?.models
 
     expect(result.changed).toBe(true)
+    expect(models).toEqual(bundled!.models)
     expect(models?.every(model => typeof model !== 'string')).toBe(true)
     expect(models?.map(model => typeof model === 'string' ? model : model.name))
       .toEqual(EXPECTED_MANAGED_MODEL_NAMES)

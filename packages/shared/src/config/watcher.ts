@@ -14,8 +14,9 @@
  * - ~/.craft-agent/theme.json - App-level theme overrides
  * - ~/.craft-agent/themes/*.json - Preset theme files (app-level)
  * - ~/.craft-agent/sources/{slug}/config.json, guide.md, icon.* - Craft global sources
- * - ~/.craft-agent/skills/{slug}/SKILL.md, icon.* - Craft global Skills
+ * - ~/.pi/agent/skills, ~/.agents/skills, ~/.craft-agent/skills - Pi user Skills
  * - ~/.craft-agent/workspaces/{slug}/ - Workspace directory (recursive)
+ *   - .pi/skills and .agents/skills - Pi project Skills
  *   - .craft-agent/sources/{slug}/config.json, guide.md, permissions.json
  *   - .craft-agent/sessions/{id}/session.jsonl (header metadata only)
  *   - permissions.json
@@ -23,7 +24,7 @@
 
 import { watch, existsSync, readdirSync, statSync, readFileSync, mkdirSync } from 'fs';
 import { join, dirname, basename, relative } from 'path';
-import { platform } from 'os';
+import { homedir, platform } from 'os';
 import type { FSWatcher } from 'fs';
 import { CONFIG_DIR } from './paths.ts';
 import { debug } from '../utils/debug.ts';
@@ -51,9 +52,10 @@ import { getWorkspacePath, getWorkspaceSourcesPath } from '../workspaces/storage
 import { WORKSPACE_STATE_DIR } from '../workspaces/paths.ts';
 import type { LoadedSkill } from '../skills/types.ts';
 import {
-  loadAllSkills,
+  getPiUserSkillsDir,
   invalidateSkillsCache,
 } from '../skills/storage.ts';
+import { loadPiSkillCatalog } from '../skills/pi-catalog.ts';
 import { resolveResourceRoots } from '../resources/resolver.ts';
 import {
   loadStatusConfig,
@@ -97,7 +99,11 @@ export function _getGlobalWatcherState(): {
 
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 const PREFERENCES_FILE = join(CONFIG_DIR, 'preferences.json');
-const GLOBAL_AGENT_SKILLS_DIR = resolveResourceRoots().skillsPath;
+const GLOBAL_AGENT_SKILLS_DIRS = Array.from(new Set([
+  getPiUserSkillsDir(),
+  join(homedir(), '.agents', 'skills'),
+  resolveResourceRoots().skillsPath,
+]));
 
 // Debounce delay in milliseconds
 const DEBOUNCE_MS = 100;
@@ -546,36 +552,38 @@ export class ConfigWatcher {
   }
 
   private static watchGlobalSkillsDirOnce(): void {
-    if (!existsSync(GLOBAL_AGENT_SKILLS_DIR)) {
-      mkdirSync(GLOBAL_AGENT_SKILLS_DIR, { recursive: true });
-    }
+    for (const skillsDir of GLOBAL_AGENT_SKILLS_DIRS) {
+      if (!existsSync(skillsDir)) {
+        mkdirSync(skillsDir, { recursive: true });
+      }
 
-    try {
-      const watcher = watch(
-        GLOBAL_AGENT_SKILLS_DIR,
-        { recursive: true },
-        (_eventType, filename) => {
-          if (!filename) return;
+      try {
+        const watcher = watch(
+          skillsDir,
+          { recursive: true },
+          (_eventType, filename) => {
+            if (!filename) return;
 
-          const normalizedPath = filename.replace(/\\/g, '/');
-          const parts = normalizedPath.split('/');
-          const file = parts[1];
-          if (
-            parts.length === 1
-            || file === 'SKILL.md'
-            || (file && /^icon\.(svg|png|jpg|jpeg)$/i.test(file))
-          ) {
-            ConfigWatcher.debounceGlobal('global-skills', () => {
-              ConfigWatcher.forEachGlobalSubscriber(w => w.handleGlobalSkillsChange());
-            });
-          }
-        },
-      );
+            const normalizedPath = filename.replace(/\\/g, '/');
+            const parts = normalizedPath.split('/');
+            const file = parts[1];
+            if (
+              parts.length === 1
+              || file === 'SKILL.md'
+              || (file && /^icon\.(svg|png|jpg|jpeg)$/i.test(file))
+            ) {
+              ConfigWatcher.debounceGlobal('global-skills', () => {
+                ConfigWatcher.forEachGlobalSubscriber(w => void w.handleSkillsChange());
+              });
+            }
+          },
+        );
 
-      ConfigWatcher.globalWatchers.push(watcher);
-      debug('[ConfigWatcher] Watching global Skills once:', GLOBAL_AGENT_SKILLS_DIR);
-    } catch (error) {
-      debug('[ConfigWatcher] Error watching global Skills directory:', error);
+        ConfigWatcher.globalWatchers.push(watcher);
+        debug('[ConfigWatcher] Watching global Skills once:', skillsDir);
+      } catch (error) {
+        debug('[ConfigWatcher] Error watching global Skills directory:', skillsDir, error);
+      }
     }
   }
 
@@ -657,12 +665,16 @@ export class ConfigWatcher {
     this.callbacks.onSourcesListChange?.(allSources);
   }
 
-  /** Refresh global Skills for this subscriber. */
-  private handleGlobalSkillsChange(): void {
-    debug('[ConfigWatcher] Global Skills changed');
+  /** Refresh Pi's complete user/project Skill catalog for this subscriber. */
+  private async handleSkillsChange(): Promise<void> {
+    debug('[ConfigWatcher] Skills changed');
     invalidateSkillsCache();
-    const allSkills = loadAllSkills();
-    this.callbacks.onSkillsListChange?.(allSkills);
+    try {
+      const catalog = await loadPiSkillCatalog(this.workspaceDir);
+      this.callbacks.onSkillsListChange?.(catalog.skills);
+    } catch (error) {
+      this.callbacks.onError?.(this.workspaceDir, error instanceof Error ? error : new Error(String(error)));
+    }
   }
 
   /**
@@ -674,6 +686,14 @@ export class ConfigWatcher {
       ? relativePath.slice(statePrefix.length)
       : relativePath;
     const parts = normalizedRelativePath.split('/');
+
+    if (
+      (parts[0] === '.pi' || parts[0] === '.agents')
+      && parts[1] === 'skills'
+    ) {
+      this.debounce('project-skills', () => void this.handleSkillsChange());
+      return;
+    }
 
     // Workspace-level permissions.json
     if (normalizedRelativePath === 'permissions.json') {

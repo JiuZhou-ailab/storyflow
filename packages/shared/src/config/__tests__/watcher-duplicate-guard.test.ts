@@ -78,7 +78,7 @@ describe('ConfigWatcher duplicate guard', () => {
     expect(_getGlobalWatcherState().started).toBe(false);
   });
 
-  it('broadcasts fresh Skills when the global store changes', () => {
+  it('broadcasts fresh Skills when a Pi-visible store changes', async () => {
     const root = mkdtempSync(join(tmpdir(), 'watcher-global-skill-cache-'));
     const skillsRoot = resolveResourceRoots().skillsPath;
     const slug = `watcher-global-refresh-${process.pid}`;
@@ -95,7 +95,7 @@ describe('ConfigWatcher duplicate guard', () => {
         },
       });
 
-      (watcher as unknown as { handleGlobalSkillsChange: () => void }).handleGlobalSkillsChange();
+      await (watcher as unknown as { handleSkillsChange: () => Promise<void> }).handleSkillsChange();
 
       expect(broadcastName).toBe('Renamed Skill');
     } finally {

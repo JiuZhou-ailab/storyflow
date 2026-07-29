@@ -6,8 +6,7 @@
  *
  * Naming convention:
  * - PiAgent: the production unified agent runtime
- * - ClaudeAgent: retained legacy compatibility code; not selected by the factory
- * - AgentBackend: Interface that all agents implement
+ * - AgentBackend: Interface implemented by the runtime
  * - createAgent: Factory function to create agents
  *
  * Usage:
@@ -84,8 +83,7 @@ export {
 export { BaseEventAdapter } from './base-event-adapter.ts';
 export { EventQueue } from './event-queue.ts';
 
-// Provider-specific event adapters
-export { ClaudeEventAdapter } from './claude/event-adapter.ts';
+// Provider-specific event adapter
 export { PiEventAdapter } from './pi/event-adapter.ts';
 
 // Agent implementations are imported directly by factory.ts

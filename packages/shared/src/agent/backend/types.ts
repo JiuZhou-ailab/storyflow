@@ -20,7 +20,7 @@ import type { FileAttachment } from '../../utils/files.ts';
 import type { ThinkingLevel } from '../thinking-levels.ts';
 import type { PermissionMode } from '../mode-manager.ts';
 import type { LoadedSource } from '../../sources/types.ts';
-import type { AuthRequest } from '../session-scoped-tools.ts';
+import type { AuthRequest } from '@craft-agent/session-tools-core';
 import type { McpClientPool } from '../../mcp/mcp-pool.ts';
 import type { Workspace } from '../../config/storage.ts';
 import type { SessionConfig as Session } from '../../sessions/storage.ts';
@@ -354,13 +354,12 @@ export type SdkMcpServerConfig =
     };
 
 /**
- * Core backend interface - all AI providers must implement this.
+ * Core interface implemented by the production agent runtime.
  *
  * The interface is designed to:
- * 1. Abstract provider differences (Claude SDK vs OpenAI Responses API)
- * 2. Enable the facade pattern in CraftAgent
- * 3. Support streaming via AsyncGenerator
- * 4. Allow capability-based UI adaptation
+ * 1. Keep session orchestration independent from Pi subprocess details
+ * 2. Support streaming via AsyncGenerator
+ * 3. Allow capability-based UI adaptation
  */
 export interface AgentBackend {
   // ============================================================

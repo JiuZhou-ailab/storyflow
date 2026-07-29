@@ -3,7 +3,7 @@
  *
  * Bridges async event handlers (.on() listeners) with AsyncGenerator<AgentEvent>.
  * Used by CodexAgent and CopilotAgent where events arrive asynchronously from
- * separate notification handlers, unlike ClaudeAgent's synchronous for-await loop.
+ * separate notification handlers around the Pi subprocess stream.
  *
  * Pattern:
  *   handler calls enqueue(event) → pushes to queue, wakes waiters

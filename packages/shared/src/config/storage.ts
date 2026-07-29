@@ -143,7 +143,7 @@ const FALLBACK_CONFIG_DEFAULTS: ConfigDefaults = {
   workspaceDefaults: {
     thinkingLevel: 'medium',
     permissionMode: 'ask',
-    cyclablePermissionModes: ['safe', 'ask', 'allow-all'],
+    cyclablePermissionModes: ['ask', 'allow-all'],
     localMcpServers: { enabled: true },
   },
 };
@@ -293,7 +293,8 @@ function normalizeConfigDefaults(defaults: ConfigDefaults): ConfigDefaults {
     typeof defaults.workspaceDefaults?.permissionMode === 'string'
       ? parsePermissionMode(defaults.workspaceDefaults.permissionMode)
       : null;
-  defaults.workspaceDefaults.permissionMode = parsedPermissionMode ?? 'ask';
+  defaults.workspaceDefaults.permissionMode =
+    parsedPermissionMode === 'safe' ? 'ask' : parsedPermissionMode ?? 'ask';
 
   const rawCyclable = Array.isArray(defaults.workspaceDefaults?.cyclablePermissionModes)
     ? defaults.workspaceDefaults.cyclablePermissionModes
@@ -304,6 +305,7 @@ function normalizeConfigDefaults(defaults: ConfigDefaults): ConfigDefaults {
     if (typeof mode !== 'string') continue;
     const parsed = parsePermissionMode(mode);
     if (!parsed) continue;
+    if (!PERMISSION_MODE_ORDER.includes(parsed)) continue;
     if (!normalizedCyclable.includes(parsed)) {
       normalizedCyclable.push(parsed);
     }

@@ -1,6 +1,10 @@
+// input: Representative call_llm arguments and temporary attachment files
+// output: Regression coverage for request building and attachment limits
+// pos: Contract test for the shared call_llm trust boundary
+
 /**
  * Tests for buildCallLlmRequest() — the shared pre-execution pipeline
- * used by CodexAgent and CopilotAgent PreToolUse intercepts.
+ * used by runtime adapters.
  *
  * Tests cover input validation, attachment processing, schema injection,
  * and the validateModel callback hook.
@@ -113,6 +117,28 @@ describe('buildCallLlmRequest()', () => {
         { backendName: 'Test' }
       )
     ).rejects.toThrow('File not found');
+  });
+
+  it('enforces attachment count and total content limits', async () => {
+    await expect(
+      buildCallLlmRequest(
+        { prompt: 'test', attachments: Array(21).fill(join(TMP_DIR, 'test.ts')) },
+        { backendName: 'Test' },
+      ),
+    ).rejects.toThrow('Too many attachments');
+
+    const largePath = join(TMP_DIR, 'large.txt');
+    writeFileSync(largePath, 'x'.repeat(450_000));
+    try {
+      await expect(
+        buildCallLlmRequest(
+          { prompt: 'test', attachments: Array(5).fill(largePath) },
+          { backendName: 'Test' },
+        ),
+      ).rejects.toThrow('total content limit');
+    } finally {
+      rmSync(largePath, { force: true });
+    }
   });
 
   // --- Schema injection ---

@@ -100,9 +100,11 @@ skills/
 !packages/shared/src/skills/
 packages/shared/src/skills/*
 !packages/shared/src/skills/marketplace.ts
+!packages/shared/src/skills/pi-catalog.ts
 !packages/shared/src/skills/__tests__/
 packages/shared/src/skills/__tests__/*
 !packages/shared/src/skills/__tests__/marketplace.test.ts
+!packages/shared/src/skills/__tests__/pi-catalog.test.ts
 skills-lock.json
 error.log
 

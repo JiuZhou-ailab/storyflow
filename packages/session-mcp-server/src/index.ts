@@ -35,9 +35,9 @@ import {
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { isDeveloperFeedbackEnabled } from '@craft-agent/shared/feature-flags';
-import { createSkill, loadSkill } from '@craft-agent/shared/skills';
+import { createSkill, getPiUserSkillsDir, loadSkill } from '@craft-agent/shared/skills';
 // Import from session-tools-core
 import {
   type SessionToolContext,
@@ -206,7 +206,7 @@ function createCodexContext(config: SessionConfig): SessionToolContext {
     sessionId,
     workspacePath: workspaceRootPath,
     get sourcesPath() { return join(workspaceRootPath, 'sources'); },
-    get skillsPath() { return join(dirname(dirname(workspaceRootPath)), 'skills'); },
+    get skillsPath() { return getPiUserSkillsDir(); },
     plansFolderPath,
     sessionPath: sessionsDir,
     dataPath: sessionDataDir,
@@ -217,14 +217,12 @@ function createCodexContext(config: SessionConfig): SessionToolContext {
     },
     createSkillDocument: (skillSlug: string, content: string) => {
       const skill = createSkill(skillSlug, content);
-      const path = join(skill.path, 'SKILL.md');
-      return { path, content };
+      return { path: skill.filePath, content };
     },
     loadSkillDocument: (skillSlug: string) => {
       const skill = loadSkill(skillSlug);
       if (!skill) return null;
-      const path = join(skill.path, 'SKILL.md');
-      return { path, content: readFileSync(path, 'utf-8') };
+      return { path: skill.filePath, content: readFileSync(skill.filePath, 'utf-8') };
     },
 
     // Credential manager reads from cache files written by main process

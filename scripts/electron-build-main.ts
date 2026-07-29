@@ -361,10 +361,6 @@ async function main(): Promise<void> {
       // Keep it external so local filesystem zip support can bundle without
       // shipping the AWS client.
       "--external:@aws-sdk/client-s3",
-      // Claude Agent SDK uses top-level import.meta.url to initialize
-      // createRequire(). Keep it external so Electron loads the real ESM file
-      // instead of an inlined CJS bundle where import.meta.url is undefined.
-      "--external:@anthropic-ai/claude-agent-sdk",
       // Replace grammY's bundled polyfills (node-fetch@2 + abort-controller@3)
       // with native Node globals. esbuild otherwise renames the polyfill's
       // `class AbortSignal` to `_AbortSignal` to dodge collision with the

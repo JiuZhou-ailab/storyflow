@@ -1,3 +1,7 @@
+// input: Session-scoped permission manager fixtures and representative tool calls
+// output: Regression coverage for mode transitions and permission decisions
+// pos: Focused unit contract for the shared permission policy layer
+
 /**
  * Tests for PermissionManager
  *
@@ -52,10 +56,7 @@ describe('PermissionManager', () => {
       expect(nextMode).toBe('allow-all');
 
       const nextMode2 = permissionManager.cyclePermissionMode();
-      expect(nextMode2).toBe('safe');
-
-      const nextMode3 = permissionManager.cyclePermissionMode();
-      expect(nextMode3).toBe('ask');
+      expect(nextMode2).toBe('ask');
     });
   });
 

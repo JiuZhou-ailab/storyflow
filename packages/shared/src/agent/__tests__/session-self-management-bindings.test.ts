@@ -3,7 +3,7 @@ import {
   registerSessionScopedToolCallbacks,
   mergeSessionScopedToolCallbacks,
   unregisterSessionScopedToolCallbacks,
-} from '../session-scoped-tools.ts';
+} from '../session-scoped-tool-callback-registry.ts';
 import { createClaudeContext } from '../claude-context.ts';
 import { attachSessionSelfManagementBindings } from '../session-self-management-bindings.ts';
 import type { SessionToolContext, SessionInfo } from '@craft-agent/session-tools-core';
@@ -218,17 +218,17 @@ describe('attachSessionSelfManagementBindings', () => {
 });
 
 // ============================================================
-// Phase 3 — Parity: Claude and Pi paths expose same bindings
+// Phase 3 — Pi runtime exposes all session bindings
 // ============================================================
 
-describe('Claude/Pi session self-management parity', () => {
+describe('Pi session self-management bindings', () => {
   const sessionId = 'test-parity';
 
   beforeEach(() => {
     unregisterSessionScopedToolCallbacks(sessionId);
   });
 
-  it('both paths expose the same 6 bound properties when callbacks are registered', () => {
+  it('exposes all 6 bound properties when callbacks are registered', () => {
     const SELF_MGMT_PROPERTIES = [
       'setSessionLabels',
       'setSessionStatus',
@@ -247,20 +247,12 @@ describe('Claude/Pi session self-management parity', () => {
       resolveStatusFn: (s) => ({ resolved: s, available: [] }),
     });
 
-    // Simulate Pi path: createClaudeContext + attachBindings
-    const piCtx = createBaseContext(sessionId);
-    attachSessionSelfManagementBindings(piCtx, sessionId);
-
-    // Simulate Claude path: same thing after refactor
-    const claudeCtx = createBaseContext(sessionId);
-    attachSessionSelfManagementBindings(claudeCtx, sessionId);
+    const ctx = createBaseContext(sessionId);
+    attachSessionSelfManagementBindings(ctx, sessionId);
 
     for (const prop of SELF_MGMT_PROPERTIES) {
-      expect(piCtx[prop]).toBeDefined();
-      expect(claudeCtx[prop]).toBeDefined();
-      // Both should be functions
-      expect(typeof piCtx[prop]).toBe('function');
-      expect(typeof claudeCtx[prop]).toBe('function');
+      expect(ctx[prop]).toBeDefined();
+      expect(typeof ctx[prop]).toBe('function');
     }
   });
 

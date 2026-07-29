@@ -127,20 +127,16 @@ export const CallLlmSchema = z.object({
       startLine: z.number().optional().describe('First line (1-indexed)'),
       endLine: z.number().optional().describe('Last line (1-indexed)'),
     }),
-  ])).optional().describe('File paths on disk to attach (max 20). NOT for inline text — put text in prompt instead. Use {path, startLine, endLine} for large files.'),
+  ])).max(20).optional().describe('File paths on disk to attach (max 20). NOT for inline text — put text in prompt instead. Use {path, startLine, endLine} for large files.'),
   model: z.string().optional().describe('Model ID or short name. Defaults to a fast model.'),
   systemPrompt: z.string().optional().describe('Optional system prompt'),
-  maxTokens: z.number().optional().describe('Max output tokens (1-64000). Defaults to 4096'),
-  temperature: z.number().optional().describe('Sampling temperature 0-1'),
-  thinking: z.boolean().optional().describe('Enable extended thinking. Incompatible with outputFormat/outputSchema'),
-  thinkingBudget: z.number().optional().describe('Token budget for thinking (1024-100000). Defaults to 10000'),
   outputFormat: z.enum(['summary', 'classification', 'extraction', 'analysis', 'comparison', 'validation']).optional()
-    .describe('Predefined output format'),
+    .describe('Predefined JSON shape enforced through prompt instructions'),
   outputSchema: z.object({
     type: z.literal('object'),
     properties: z.record(z.string(), z.unknown()),
     required: z.array(z.string()).optional(),
-  }).optional().describe('Custom JSON Schema for structured output'),
+  }).optional().describe('Custom JSON Schema enforced through prompt instructions; validate the returned JSON before relying on it'),
 });
 
 export const UpdatePreferencesSchema = z.object({
@@ -469,18 +465,19 @@ Put text/content directly in the 'prompt' parameter. Do NOT pass inline text via
 Only use 'attachments' for existing file paths on disk - the tool loads file content automatically.
 For large files (>2000 lines), use {path, startLine, endLine} to select a portion.`,
 
-  spawn_session: `Create a new session that runs independently with its own prompt, connection, model, and sources.
+  spawn_session: `Create a user-visible, durable session with its own conversation history, prompt, connection, model, and sources.
 
-Use this to delegate tasks to parallel sessions — research, analysis, drafts, or any work that benefits from separate context.
+Use this only when the work should become an independent conversation that the user can see, reopen, and continue later.
+Do not use it for ordinary subtasks or temporary parallel work within the current turn.
 
-Call with help=true first to discover available connections, models, and sources.
+Call with help=true when you need to discover available connections, models, and sources.
 When spawning, the 'prompt' parameter is required.
 
 Optional overrides: \`model\`, \`llmConnection\`, \`permissionMode\`, \`thinkingLevel\`, \`enabledSourceSlugs\`, \`labels\`, \`workingDirectory\`. Omitted fields inherit from the spawning session or the workspace default.
 
 \`thinkingLevel\` is silently ignored on non-reasoning models (e.g. gpt-4o, gemini-2.5-flash) — the SDK drops the reasoning param rather than erroring. Use it when you want to force deeper reasoning on a supported model, or set it to \`off\` when spawning a session that doesn't need to think.
 
-The spawned session appears in the session list and runs fire-and-forget.
+The spawned session appears in the session list, runs its initial prompt asynchronously, and remains available after the current turn completes.
 Only use 'attachments' for existing file paths on disk — the tool reads them automatically.`,
 
   send_developer_feedback: `Send freeform feedback to the Craft Agent development team.

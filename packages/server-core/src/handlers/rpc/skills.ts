@@ -1,9 +1,9 @@
 // input: Skills RPC requests routed through a Free or Project Conversation runtime
-// output: Global Skill listings, creation, deletion, and local open actions
-// pos: Server boundary routing clients to the runtime-global Skill store
+// output: Pi-native Skill listings, user creation, safe deletion, and local open actions
+// pos: Server boundary projecting the active project's Pi Skill catalog
 
-import { join } from 'path'
-import { readdirSync, statSync } from 'fs'
+import { basename, join } from 'path'
+import { readdirSync, rmSync, statSync } from 'fs'
 import { RPC_CHANNELS, type SkillFile } from '@craft-agent/shared/protocol'
 import { resolveRuntimeWorkspace } from '@craft-agent/shared/workspaces'
 import type { RpcServer } from '@craft-agent/server-core/transport'
@@ -24,8 +24,22 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
     if (!isValidSkillSlug(skillSlug)) throw new Error('Invalid Skill slug')
   }
 
-  // workspaceId routes to the owning runtime; Skills are global within it.
-  // workingDirectory remains in the RPC signature for client compatibility.
+  const loadWorkspaceCatalog = async (
+    workspace: NonNullable<ReturnType<typeof resolveRuntimeWorkspace>>,
+    workingDirectory?: string,
+  ) => {
+    const { loadPiSkillCatalog } = await import('@craft-agent/shared/skills')
+    return loadPiSkillCatalog(workingDirectory || workspace.rootPath)
+  }
+
+  const findWorkspaceSkill = async (
+    workspace: NonNullable<ReturnType<typeof resolveRuntimeWorkspace>>,
+    skillSlug: string,
+  ) => {
+    const catalog = await loadWorkspaceCatalog(workspace)
+    return catalog.skills.find(skill => skill.slug === skillSlug) ?? null
+  }
+
   server.handle(RPC_CHANNELS.skills.GET, async (_ctx, workspaceId: string, workingDirectory?: string) => {
     deps.platform.logger?.info(`SKILLS_GET: Loading skills for workspace: ${workspaceId}${workingDirectory ? `, workingDirectory: ${workingDirectory}` : ''}`)
     const workspace = resolveRuntimeWorkspace(workspaceId)
@@ -33,24 +47,24 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
       deps.platform.logger?.error(`SKILLS_GET: Workspace not found: ${workspaceId}`)
       return []
     }
-    void workingDirectory
-    const { loadAllSkills } = await import('@craft-agent/shared/skills')
-    const skills = loadAllSkills()
+    const catalog = await loadWorkspaceCatalog(workspace, workingDirectory)
+    const skills = catalog.skills
     deps.platform.logger?.info(`SKILLS_GET: Loaded ${skills.length} skills for runtime ${workspace.id}`)
+    for (const diagnostic of catalog.diagnostics) {
+      deps.platform.logger?.warn(`SKILLS_GET: ${diagnostic.message}`, diagnostic)
+    }
     return skills
   })
 
   // Get files in a skill directory
   server.handle(RPC_CHANNELS.skills.GET_FILES, async (_ctx, workspaceId: string, skillSlug: string) => {
-    await assertSkillSlug(skillSlug)
     const workspace = resolveRuntimeWorkspace(workspaceId)
     if (!workspace) {
       deps.platform.logger?.error(`SKILLS_GET_FILES: Workspace not found: ${workspaceId}`)
       return []
     }
 
-    const { loadSkill } = await import('@craft-agent/shared/skills')
-    const skillDir = loadSkill(skillSlug)?.path
+    const skillDir = (await findWorkspaceSkill(workspace, skillSlug))?.path
     if (!skillDir) return []
 
     function scanDirectory(dirPath: string): SkillFile[] {
@@ -105,41 +119,42 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
     return skill
   })
 
-  // Delete a global Skill.
   server.handle(RPC_CHANNELS.skills.DELETE, async (_ctx, workspaceId: string, skillSlug: string) => {
-    await assertSkillSlug(skillSlug)
     const workspace = resolveRuntimeWorkspace(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
-    const { deleteSkill } = await import('@craft-agent/shared/skills')
-    if (!deleteSkill(skillSlug)) throw new Error('Skill not found or cannot be deleted')
+    const skill = await findWorkspaceSkill(workspace, skillSlug)
+    if (!skill) throw new Error('Skill not found')
+    if (skill.origin === 'package') throw new Error('Packaged Skills must be removed with their package manager')
+
+    const target = basename(skill.filePath) === 'SKILL.md'
+      ? skill.path
+      : skill.filePath
+    rmSync(target, { recursive: true })
+    const { invalidateSkillsCache } = await import('@craft-agent/shared/skills')
+    invalidateSkillsCache()
     deps.platform.logger?.info(`Deleted skill: ${skillSlug}`)
   })
 
   // Open skill SKILL.md in editor
   server.handle(RPC_CHANNELS.skills.OPEN_EDITOR, async (_ctx, workspaceId: string, skillSlug: string) => {
-    await assertSkillSlug(skillSlug)
     const workspace = resolveRuntimeWorkspace(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
     if (workspace.remoteServer) throw new Error('Open in editor is not available for remote workspaces')
 
-    const { loadSkill } = await import('@craft-agent/shared/skills')
-    const skill = loadSkill(skillSlug)
+    const skill = await findWorkspaceSkill(workspace, skillSlug)
     if (!skill) throw new Error('Skill not found')
-    const skillFile = join(skill.path, 'SKILL.md')
-    await deps.platform.openPath?.(skillFile)
+    await deps.platform.openPath?.(skill.filePath)
   })
 
   // Open skill folder in Finder/Explorer
   server.handle(RPC_CHANNELS.skills.OPEN_FINDER, async (_ctx, workspaceId: string, skillSlug: string) => {
-    await assertSkillSlug(skillSlug)
     const workspace = resolveRuntimeWorkspace(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
     if (workspace.remoteServer) throw new Error('Show in Finder is not available for remote workspaces')
 
-    const { loadSkill } = await import('@craft-agent/shared/skills')
-    const skill = loadSkill(skillSlug)
+    const skill = await findWorkspaceSkill(workspace, skillSlug)
     if (!skill) throw new Error('Skill not found')
-    await deps.platform.showItemInFolder?.(skill.path)
+    await deps.platform.showItemInFolder?.(skill.filePath)
   })
 }

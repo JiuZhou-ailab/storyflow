@@ -32,10 +32,6 @@ const MAIN_PROCESS_EXTERNAL = [
   // Keep it external so electron-updater zip support can bundle in dev
   // without requiring the unused AWS client.
   "@aws-sdk/client-s3",
-  // Claude Agent SDK uses top-level import.meta.url to initialize
-  // createRequire(). Keep it external so Electron loads the real ESM file
-  // instead of an inlined CJS bundle where import.meta.url is undefined.
-  "@anthropic-ai/claude-agent-sdk",
 ];
 
 // MCP server paths

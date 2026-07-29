@@ -1,6 +1,11 @@
-// input: Agent Skills frontmatter and global resource ownership semantics
-// output: Shared Skill metadata and loaded-definition types
+// input: Agent Skills frontmatter and Pi-native resource ownership semantics
+// output: Shared Skill metadata, loaded definitions, and catalog diagnostics
 // pos: Type contract used by storage, RPC, renderer, and Agent loaders
+
+import type { ResourceDiagnostic } from '@earendil-works/pi-coding-agent';
+
+export type SkillScope = 'user' | 'project' | 'temporary';
+export type SkillOrigin = 'package' | 'top-level';
 
 /**
  * Skills Types
@@ -34,7 +39,7 @@ export interface SkillMetadata {
 }
 
 export interface LoadedSkill {
-  /** Directory name (slug) */
+  /** Pi Skill machine name. */
   slug: string;
   /** Parsed metadata from YAML frontmatter */
   metadata: SkillMetadata;
@@ -44,4 +49,17 @@ export interface LoadedSkill {
   iconPath?: string;
   /** Absolute path to skill directory */
   path: string;
+  /** Absolute path to the loaded Markdown definition. */
+  filePath: string;
+  /** Pi-native ownership scope. */
+  scope: SkillScope;
+  /** Pi-native source label. */
+  source: string;
+  /** Whether Pi found the Skill directly or through a package. */
+  origin: SkillOrigin;
+}
+
+export interface SkillCatalog {
+  skills: LoadedSkill[];
+  diagnostics: ResourceDiagnostic[];
 }

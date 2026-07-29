@@ -1,3 +1,7 @@
+// input: Persisted permission values and renderer display requirements
+// output: Permission mode types, the two selectable modes, and policy display metadata
+// pos: Browser-safe source of truth for Storyflow permission mode identity
+
 /**
  * Mode Types and Constants
  *
@@ -17,9 +21,12 @@ import { z } from 'zod';
  * Available permission modes (internal storage keys).
  *
  * UI-facing canonical names are:
- * - explore  -> safe
  * - ask      -> ask
  * - execute  -> allow-all
+ *
+ * `safe` / `explore` remains readable for historical sessions, but is no
+ * longer user-selectable. Pi itself runs tools directly; Storyflow adds the
+ * optional ask gate.
  */
 export type PermissionMode = 'safe' | 'ask' | 'allow-all';
 
@@ -29,9 +36,9 @@ export type PermissionMode = 'safe' | 'ask' | 'allow-all';
 export type PermissionModeCanonical = 'explore' | 'ask' | 'execute';
 
 /**
- * Order of modes for cycling with SHIFT+TAB
+ * User-selectable modes, in SHIFT+TAB order.
  */
-export const PERMISSION_MODE_ORDER: PermissionMode[] = ['safe', 'ask', 'allow-all'];
+export const PERMISSION_MODE_ORDER: PermissionMode[] = ['ask', 'allow-all'];
 
 /**
  * Internal -> canonical mapping.

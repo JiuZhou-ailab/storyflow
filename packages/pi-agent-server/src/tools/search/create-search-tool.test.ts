@@ -1,6 +1,6 @@
 // input: Stub primary and fallback search providers
-// output: Regression coverage for web_search fallback behavior and result formatting
-// pos: Contract tests for Storyflow's secondary built-in search path
+// output: Regression coverage for canonical web_search behavior and result formatting
+// pos: Contract tests for Storyflow's typed search capability
 
 import { describe, expect, it } from 'bun:test';
 import { createSearchTool } from './create-search-tool.ts';
@@ -19,8 +19,9 @@ describe('createSearchTool', () => {
 
     expect(tool.name).toBe('web_search');
     expect(tool.label).toBe('Web Search');
-    expect(tool.description).toContain('Fallback web search');
-    expect(tool.promptSnippet).toContain('after AnySearch is unavailable');
+    expect(tool.description).toContain('Search the web');
+    expect(tool.promptSnippet).toContain('Use web_search');
+    expect(tool.promptSnippet).not.toContain('user approves');
   });
 
   it('clamps count to [1, 10] and formats results', async () => {

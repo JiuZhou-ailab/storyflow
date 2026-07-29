@@ -4,7 +4,7 @@ import {
   mergeSessionScopedToolCallbacks,
   getSessionScopedToolCallbacks,
   unregisterSessionScopedToolCallbacks,
-} from '../session-scoped-tools.ts';
+} from '../session-scoped-tool-callback-registry.ts';
 
 describe('session-scoped tool callback merge', () => {
   const sessionId = 'test-session-merge';

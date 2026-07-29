@@ -1,11 +1,11 @@
 // input: Backend config, source/tool managers, permissions, and session messages
-// output: Common agent behavior for provider-specific backend subclasses
-// pos: Shared base layer beneath concrete agent backend implementations
+// output: Common agent behavior used by the Pi runtime
+// pos: Shared lifecycle and policy layer beneath PiAgent
 
 /**
  * BaseAgent Abstract Class
  *
- * Shared base class for all AI agent backends (ClaudeAgent, CodexAgent, etc.).
+ * Shared base class for the production agent runtime.
  * Extracts common functionality including:
  * - Model/thinking configuration
  * - Permission mode management (via PermissionManager)
@@ -14,11 +14,10 @@
  * - Config watching (via ConfigWatcherManager)
  * - Usage tracking (via UsageTracker)
  *
- * Provider-specific behavior (chat, abort, capabilities) is implemented in subclasses.
+ * Runtime behavior (chat, abort, capabilities) is implemented by PiAgent.
  */
 
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 
 import type { AgentEvent } from '@craft-agent/core/types';
 import type { FileAttachment } from '../utils/files.ts';
@@ -48,7 +47,7 @@ import type {
   RecoveryMessage,
 } from './backend/types.ts';
 import { AbortReason } from './backend/types.ts';
-import type { AuthRequest } from './session-scoped-tools.ts';
+import type { AuthRequest } from '@craft-agent/session-tools-core';
 import type { Workspace } from '../config/storage.ts';
 
 // Core modules
@@ -68,9 +67,9 @@ import { getMiniAgentSystemPrompt } from '../prompts/system.ts';
 import { buildTitlePrompt, buildRegenerateTitlePrompt, validateTitle } from '../utils/title-generator.ts';
 import { resolveSystemPromptPresetForWorkingDirectory } from './system-prompt-preset.ts';
 
-// Skill extraction for Codex/Copilot backends (Claude uses native SDK Skill tool)
+// Storyflow mention compatibility; Pi's catalog remains the discovery source of truth.
 import { parseMentions, resolveSkillMentions, resolveSourceMentions, resolveFileMentions } from '../mentions/index.ts';
-import { loadAllSkills } from '../skills/storage.ts';
+import { loadPiSkillCatalog } from '../skills/pi-catalog.ts';
 
 // ============================================================
 // Mini Agent Configuration
@@ -209,8 +208,7 @@ export abstract class BaseAgent implements AgentBackend {
   // + forceAbort + auto_retry pipeline used for tool-call errors).
   //
   // When a session-scoped tool (source_test) successfully activates a new source
-  // mid-turn, the Claude SDK's mcpServers is already frozen for the current query
-  // (and Pi's tool registry is only refreshed between turns). The only way to
+  // mid-turn, Pi's tool registry is only refreshed between turns. The only way to
   // expose the new tools is to end the current turn and auto-resend the user's
   // original message with a "[{slug} activated]" suffix — same as what happens
   // when a model directly calls an unknown tool on an inactive source.
@@ -386,9 +384,6 @@ export abstract class BaseAgent implements AgentBackend {
   /**
    * Fire an automation agent event (from automations.json) via AutomationSystem.
    * Catches all errors — automations must never break the agent flow.
-   *
-   * Non-Claude backends call this directly. ClaudeAgent uses SDK's buildSdkHooks() instead.
-   *
    * @param signal - Optional AbortSignal for cancelling automation execution on abort
    */
   protected async emitAutomationEvent(event: AutomationAgentEvent, input: SdkAutomationInput, signal?: AbortSignal): Promise<void> {
@@ -413,12 +408,8 @@ export abstract class BaseAgent implements AgentBackend {
    * has its own process memory, so when it calls getSessionScopedToolCallbacks(),
    * the callback registry is empty — it was populated in THIS process, not the subprocess.
    *
-   * Instead, each backend (CodexAgent, CopilotAgent) detects session MCP tool
-   * completions from its own event stream (different formats per SDK) and calls
-   * THIS shared method to fire the appropriate callback.
-   *
-   * ClaudeAgent doesn't need this — its session-scoped tools run in-process
-   * via Claude Agent SDK, so the callback registry works directly.
+   * PiAgent detects session MCP tool completions from its event stream and calls
+   * this shared method to fire the appropriate callback.
    *
    * CALLBACKS FIRED:
    * - SubmitPlan → this.onPlanSubmitted(planPath)
@@ -569,7 +560,7 @@ export abstract class BaseAgent implements AgentBackend {
    */
   updateWorkingDirectory(path: string): void {
     this.workingDirectory = path;
-    // Persist to session config for storage and consistency with ClaudeAgent
+    // Persist to session config.
     if (this.config.session) {
       this.config.session.workingDirectory = path;
     }
@@ -710,10 +701,7 @@ export abstract class BaseAgent implements AgentBackend {
   }
 
   /**
-   * Get mini agent configuration for provider-specific application.
-   * Returns centralized config that each backend interprets appropriately:
-   * - ClaudeAgent: Uses tools array, mcpServers filter, maxThinkingTokens: 0
-   * - CodexAgent: Uses baseInstructions, codex-mini model, effort: 'low'
+   * Get the mini-agent configuration applied by PiAgent.
    */
   getMiniAgentConfig(): MiniAgentConfig {
     const enabled = this.isMiniAgent();
@@ -926,12 +914,13 @@ ${formattedMessages}
    *   - cleanMessage: Message with mentions stripped, or default directive
    *   - missingSkills: Array of skill slugs that were mentioned but not found
    */
-  protected extractSkillPaths(message: string): {
+  protected async extractSkillPaths(message: string): Promise<{
     skillPaths: Map<string, string>;
     cleanMessage: string;
     missingSkills: string[];
-  } {
-    const skills = loadAllSkills();
+  }> {
+    const workDir = this.config.session?.workingDirectory ?? this.workingDirectory;
+    const { skills } = await loadPiSkillCatalog(workDir);
     const skillSlugs = skills.map(s => s.slug);
 
     this.debug(`[extractSkillPaths] Available skills: ${skillSlugs.join(', ')}`);
@@ -947,7 +936,7 @@ ${formattedMessages}
     for (const slug of parsed.skills) {
       const skill = skills.find(s => s.slug === slug);
       if (skill) {
-        const skillMdPath = join(skill.path, 'SKILL.md');
+        const skillMdPath = skill.filePath;
         if (existsSync(skillMdPath)) {
           skillPaths.set(slug, skillMdPath);
           this.debug(`[extractSkillPaths] Resolved skill ${slug} → ${skillMdPath}`);
@@ -963,7 +952,6 @@ ${formattedMessages}
     const skillNames = new Map(skills.map(s => [s.slug, s.metadata.displayName ?? s.metadata.name]));
     const withSkills = resolveSkillMentions(message, skillNames);
     const withSources = resolveSourceMentions(withSkills);
-    const workDir = this.config.session?.workingDirectory ?? this.workingDirectory;
     const resolved = resolveFileMentions(withSources, workDir).trim();
 
     // If user sent only skill mentions with no other text, add a directive
@@ -1007,7 +995,7 @@ ${formattedMessages}
     attachments?: FileAttachment[],
     options?: ChatOptions
   ): AsyncGenerator<AgentEvent> {
-    const { skillPaths, cleanMessage, missingSkills } = this.extractSkillPaths(message);
+    const { skillPaths, cleanMessage, missingSkills } = await this.extractSkillPaths(message);
     if (missingSkills.length > 0) {
       yield { type: 'error', message: `Skill(s) not found: ${missingSkills.join(', ')}` };
       yield { type: 'complete' };
@@ -1114,7 +1102,7 @@ ${formattedMessages}
   /**
    * Run a simple text completion using the agent's auth infrastructure.
    * No tools, no system prompt - just text in → text out.
-   * Each backend implements using its own SDK (Claude SDK query() or Codex app-server).
+   * Implemented by the active runtime.
    *
    * @param prompt - The prompt to send
    * @returns The model's response text, or null if completion fails
@@ -1125,11 +1113,6 @@ ${formattedMessages}
    * Execute an LLM query using the agent's auth infrastructure.
    * Used by call_llm tool (via queryFn callback) and potentially by runMiniCompletion.
    *
-   * Each backend implements this using its own SDK/session mechanism:
-   * - ClaudeAgent: SDK query() with OAuth
-   * - CodexAgent: Ephemeral thread on app-server
-   * - CopilotAgent: Ephemeral CopilotSession
-   *
    * @param request - The query request (prompt, model, systemPrompt, etc.)
    * @returns The model's response text and optional token usage
    */
@@ -1137,7 +1120,7 @@ ${formattedMessages}
 
   /**
    * Pre-execute a call_llm request: resolve attachments, validate model, run query.
-   * Shared across all backends. Codex overrides validateCallLlmModel() for provider filtering.
+   * Shared by Pi execution paths.
    */
   protected async preExecuteCallLlm(input: Record<string, unknown>): Promise<LLMQueryResult> {
     const sessionPath = getSessionPath(this.config.workspace.rootPath, this._sessionId);

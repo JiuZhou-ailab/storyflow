@@ -7,6 +7,7 @@
  */
 
 export * from './types.ts';
+export * from './pi-catalog.ts';
 export {
   loadSkill,
   loadAllSkills,
@@ -21,6 +22,7 @@ export {
   downloadSkillIcon,
   parseSkillFile,
   validateSkillDocumentForSlug,
+  getPiUserSkillsDir,
 } from './storage.ts';
 
 export * from './marketplace.ts';

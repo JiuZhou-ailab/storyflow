@@ -1,3 +1,7 @@
+// input: Mock Pi lifecycle events, tool payloads, and session state
+// output: Regression coverage for Craft event projection, including tool failure semantics
+// pos: Contract tests for the Pi-to-Craft UI event boundary
+
 /**
  * Tests for PiEventAdapter
  *
@@ -47,6 +51,82 @@ describe('PiEventAdapter', () => {
       const events = collect(adapter.adaptEvent({ type: 'agent_end' } as any));
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({ type: 'complete' });
+    });
+
+    it('should aggregate usage across every model call in the user turn', () => {
+      collect(adapter.adaptEvent({
+        type: 'message_end',
+        message: {
+          role: 'assistant',
+          stopReason: 'toolUse',
+          content: 'Checking',
+          usage: {
+            input: 100,
+            output: 40,
+            cacheRead: 20,
+            cacheWrite: 10,
+            totalTokens: 170,
+            cost: { total: 0.01 },
+          },
+        },
+      } as any));
+      collect(adapter.adaptEvent({
+        type: 'message_end',
+        message: {
+          role: 'assistant',
+          stopReason: 'stop',
+          content: 'Done',
+          usage: {
+            input: 200,
+            output: 50,
+            cacheRead: 30,
+            cacheWrite: 5,
+            totalTokens: 285,
+            cost: { total: 0.02 },
+          },
+        },
+      } as any));
+
+      const events = collect(adapter.adaptEvent({ type: 'agent_end' } as any));
+
+      expect(events).toEqual([{
+        type: 'complete',
+        usage: {
+          inputTokens: 365,
+          outputTokens: 90,
+          cacheReadTokens: 50,
+          cacheCreationTokens: 15,
+          costUsd: 0.03,
+          contextTokens: 235,
+          contextWindow: undefined,
+        },
+      }]);
+    });
+
+    it('should reset turn usage before the next user turn', () => {
+      collect(adapter.adaptEvent({
+        type: 'message_end',
+        message: {
+          role: 'assistant',
+          stopReason: 'stop',
+          content: 'Done',
+          usage: {
+            input: 100,
+            output: 25,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 125,
+            cost: { total: 0.01 },
+          },
+        },
+      } as any));
+      collect(adapter.adaptEvent({ type: 'agent_end' } as any));
+
+      adapter.startTurn();
+
+      expect(collect(adapter.adaptEvent({ type: 'agent_end' } as any))).toEqual([
+        { type: 'complete' },
+      ]);
     });
   });
 
@@ -871,6 +951,33 @@ describe('PiEventAdapter', () => {
         type: 'tool_result',
         isError: true,
         result: 'Tool execution failed',
+      });
+    });
+
+    it('should preserve errors reported in tool result details', () => {
+      collect(adapter.adaptEvent({ type: 'turn_start' } as any));
+      collect(adapter.adaptEvent({
+        type: 'tool_execution_start',
+        toolCallId: 'call_1',
+        toolName: 'web_search',
+        args: { query: 'Storyflow' },
+      } as any));
+
+      const events = collect(adapter.adaptEvent({
+        type: 'tool_execution_end',
+        toolCallId: 'call_1',
+        result: {
+          content: [{ type: 'text', text: 'Search failed' }],
+          details: { isError: true },
+        },
+        isError: false,
+      } as any));
+
+      expect(events[0]).toMatchObject({
+        type: 'tool_result',
+        toolName: 'WebSearch',
+        result: 'Search failed',
+        isError: true,
       });
     });
 

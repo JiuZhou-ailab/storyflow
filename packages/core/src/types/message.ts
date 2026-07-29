@@ -263,6 +263,29 @@ export interface StoredAttachment {
 }
 
 /**
+ * Provider-reported consumption for one user-to-assistant turn.
+ *
+ * `inputTokens` is the sum across every model call in the turn, including
+ * cache reads/writes. `contextTokens` is the latest single-call context size.
+ */
+export interface TurnUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  costUsd?: number;
+  contextTokens?: number;
+  /** Model's context window size in tokens (from SDK modelUsage) */
+  contextWindow?: number;
+}
+
+/** Durable measurements attached to the final assistant message for a turn. */
+export interface TurnMetrics {
+  durationMs: number;
+  usage?: TurnUsage;
+}
+
+/**
  * Runtime message type (includes transient fields like isStreaming)
  */
 export interface Message {
@@ -308,6 +331,8 @@ export interface Message {
   turnId?: string;
   // Whether this final assistant message has provider-native metadata required for safe branching
   canBranch?: boolean;
+  /** Elapsed time and provider-reported usage for the completed turn */
+  turnMetrics?: TurnMetrics;
   // Status type for special status messages (e.g., compacting)
   statusType?: 'compacting' | 'compaction_complete';
   // Info level for info messages (determines icon/color)
@@ -389,6 +414,8 @@ export interface StoredMessage {
   turnId?: string;
   // Whether this final assistant message has provider-native metadata required for safe branching
   canBranch?: boolean;
+  /** Elapsed time and provider-reported usage for the completed turn */
+  turnMetrics?: TurnMetrics;
   // Status type for compaction messages (persisted for reload)
   statusType?: 'compacting' | 'compaction_complete';
   // Info level for info messages (persisted for reload)
@@ -546,18 +573,9 @@ export interface PermissionRequest {
 }
 
 /**
- * Usage data emitted by CraftAgent in 'complete' events
- * Note: This is a subset of TokenUsage - totalTokens/contextTokens are computed by consumers
+ * Usage data emitted by CraftAgent in 'complete' events.
  */
-export interface AgentEventUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens?: number;
-  cacheCreationTokens?: number;
-  costUsd?: number;
-  /** Model's context window size in tokens (from SDK modelUsage) */
-  contextWindow?: number;
-}
+export type AgentEventUsage = TurnUsage;
 
 /**
  * Events emitted by CraftAgent during chat

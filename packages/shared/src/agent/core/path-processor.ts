@@ -1,7 +1,7 @@
 /**
  * PathProcessor - Path Expansion and Normalization
  *
- * Provides path utilities that both ClaudeAgent and CodexAgent can use.
+ * Provides path utilities used by PiAgent.
  * Wraps the existing path utilities with a consistent interface for agent
  * tool processing.
  *

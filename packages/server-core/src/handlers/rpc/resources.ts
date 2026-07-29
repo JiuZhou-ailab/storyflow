@@ -28,8 +28,9 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
       const workspace = getWorkspaceByNameOrId(workspaceId)
       if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
 
-      const { exportResources, resolveResourceRoots } = await import('@craft-agent/shared/resources')
-      const skillsRootPath = resolveResourceRoots().skillsPath
+      const { exportResources } = await import('@craft-agent/shared/resources')
+      const { getPiUserSkillsDir } = await import('@craft-agent/shared/skills')
+      const skillsRootPath = getPiUserSkillsDir()
       const result = exportResources(workspace.rootPath, options, skillsRootPath)
 
       deps.platform.logger?.info(
@@ -51,9 +52,10 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
       const workspace = getWorkspaceByNameOrId(workspaceId)
       if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
 
-      const { importResources, resolveResourceRoots } = await import('@craft-agent/shared/resources')
+      const { importResources } = await import('@craft-agent/shared/resources')
+      const { getPiUserSkillsDir } = await import('@craft-agent/shared/skills')
       const credManager = getCredentialManager()
-      const skillsRootPath = resolveResourceRoots().skillsPath
+      const skillsRootPath = getPiUserSkillsDir()
 
       const result = await importResources(workspace.rootPath, bundle, mode, {
         // Clear all credential types for a source slug on overwrite
@@ -86,6 +88,9 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
       }
       for (const slug of result.sources.imported) {
         deps.sessionManager.notifyConfigFileChange(workspace.rootPath, `sources/${slug}/config.json`)
+      }
+      for (const slug of result.skills.imported) {
+        deps.sessionManager.notifyConfigFileChange(workspace.rootPath, `.pi/skills/${slug}/SKILL.md`)
       }
 
       return result

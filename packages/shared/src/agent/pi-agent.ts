@@ -18,10 +18,10 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
-import { createInterface, type Interface as ReadlineInterface } from 'node:readline';
 import type { AgentEvent } from '@craft-agent/core/types';
 import { formatAttachmentContextForModel, type FileAttachment } from '../utils/files.ts';
 import { getProxyEnvVars } from '../config/proxy-env.ts';
+import { readJsonLines } from '../utils/jsonl.ts';
 
 import type {
   BackendConfig,
@@ -128,7 +128,7 @@ export class PiAgent extends BaseAgent {
 
   // Subprocess process handle
   private subprocess: ChildProcess | null = null;
-  private readline: ReadlineInterface | null = null;
+  private stopReadingStdout: (() => void) | null = null;
   private subprocessReady: Promise<void> | null = null;
   private subprocessReadyResolve: (() => void) | null = null;
 
@@ -433,15 +433,7 @@ export class PiAgent extends BaseAgent {
 
     this.subprocess = child;
 
-    // Set up readline for JSONL parsing from stdout
-    this.readline = createInterface({
-      input: child.stdout!,
-      crlfDelay: Infinity,
-    });
-
-    this.readline.on('line', (line: string) => {
-      this.handleLine(line);
-    });
+    this.stopReadingStdout = readJsonLines(child.stdout!, (line) => this.handleLine(line));
 
     // Always capture stderr into a bounded ring buffer so callers (e.g. the
     // connection-test timeout path in factory.ts) can surface it on failure.
@@ -518,9 +510,8 @@ export class PiAgent extends BaseAgent {
       this.debug(`Failed to configure PI auto-compaction (continuing): ${error instanceof Error ? error.message : String(error)}`);
     }
 
-    // Register session-scoped tools as proxy tools in the subprocess.
-    // These tools (SubmitPlan, config_validate, source auth, call_llm, etc.)
-    // are executed in the main process when the LLM calls them.
+    // Register session-scoped tools with the subprocess. Host-owned tools run
+    // in the main process; call_llm stays inside the Pi runtime.
     this.assertBackendSessionToolParity();
     const sessionToolDefs = getSessionToolProxyDefs();
 
@@ -1672,7 +1663,8 @@ export class PiAgent extends BaseAgent {
     this.debug(`Pi subprocess exited: code=${code}, signal=${signal}`);
 
     this.subprocess = null;
-    this.readline = null;
+    this.stopReadingStdout?.();
+    this.stopReadingStdout = null;
     this.resetSubprocessErrorDedup();
     this.subprocessReady = null;
     this.subprocessReadyResolve = null;
@@ -2057,8 +2049,8 @@ export class PiAgent extends BaseAgent {
       // Yield events as they arrive. After each tool_result, check whether
       // a session-scoped tool (source_test) activated a new source — if so,
       // yield source_activated and force-abort the turn for auto-retry.
-      // Mirrors the same check in ClaudeAgent.chatImpl; Pi's subprocess only
-      // picks up new proxy tools on the next handlePrompt, so the restart
+      // Pi's subprocess only picks up new proxy tools on the next handlePrompt,
+      // so the restart
       // is needed here too.
       for await (const event of this.eventQueue.drain()) {
         yield event;
@@ -2400,10 +2392,8 @@ export class PiAgent extends BaseAgent {
       ]);
     }
 
-    if (this.readline) {
-      this.readline.close();
-      this.readline = null;
-    }
+    this.stopReadingStdout?.();
+    this.stopReadingStdout = null;
     if (this.subprocess === child) {
       this.subprocess = null;
     }
@@ -2428,10 +2418,8 @@ export class PiAgent extends BaseAgent {
       clearTimeout(this.oauthRefreshTimer);
       this.oauthRefreshTimer = null;
     }
-    if (this.readline) {
-      this.readline.close();
-      this.readline = null;
-    }
+    this.stopReadingStdout?.();
+    this.stopReadingStdout = null;
 
     if (this.subprocess) {
       // Try graceful shutdown first

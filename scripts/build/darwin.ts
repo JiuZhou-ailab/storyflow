@@ -8,33 +8,10 @@
 
 import { $ } from 'bun';
 import { spawnSync } from 'child_process';
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import type { Arch, BuildConfig } from './common';
-
-/**
- * Verify SDK native binary is bundled in the packaged macOS app.
- * Since SDK 0.2.113 the SDK ships a per-platform native binary instead of cli.js.
- */
-export function verifyPackagedSDK(appPath: string, _arch: Arch): void {
-  const appResourcesPath = join(appPath, 'Contents', 'Resources', 'app');
-  const binaryPath = join(
-    appResourcesPath,
-    'node_modules', '@anthropic-ai', 'claude-agent-sdk-binary', 'claude',
-  );
-
-  if (!existsSync(binaryPath)) {
-    throw new Error(`CRITICAL: SDK native binary not bundled! Expected at: ${binaryPath}`);
-  }
-
-  const stats = statSync(binaryPath);
-  if (stats.size < 50_000_000) {
-    throw new Error(`CRITICAL: SDK native binary too small (${stats.size} bytes, expected ~210 MB)`);
-  }
-
-  console.log(`  SDK bundled: claude binary is ${(stats.size / 1024 / 1024).toFixed(1)} MB`);
-}
+import type { BuildConfig } from './common';
 
 function requireEnv(name: string): void {
   if (!process.env[name]) {
@@ -225,11 +202,8 @@ export async function packageDarwin(config: BuildConfig): Promise<string> {
 
     await runElectronBuilderWithRetries(electronDir, builderArgs);
 
-    // Verify SDK is bundled in the .app before checking artifacts
     const macDir = arch === 'arm64' ? 'mac-arm64' : 'mac';
     const appPath = join(electronDir, 'release', macDir, 'Storyflow.app');
-    console.log('Verifying SDK in packaged app...');
-    verifyPackagedSDK(appPath, arch);
 
     // Verify the DMG was built.
     const dmgName = `Storyflow-${arch}.dmg`;

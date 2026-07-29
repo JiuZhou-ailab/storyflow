@@ -76,6 +76,7 @@ import { getSessionPlansPath, getSessionPath, getSessionDataPath } from '../sess
 import { updatePreferences as updatePreferencesImpl } from '../config/preferences.ts';
 import {
   createSkill as createSkillImpl,
+  getPiUserSkillsDir,
   loadSkill as loadSkillImpl,
 } from '../skills/storage.ts';
 
@@ -235,7 +236,7 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
     sessionId,
     workspacePath,
     get sourcesPath() { return getWorkspaceSourcesPath(workspacePath); },
-    get skillsPath() { return join(CONFIG_DIR, 'skills'); },
+    get skillsPath() { return getPiUserSkillsDir(); },
     plansFolderPath: getSessionPlansPath(workspacePath, sessionId),
     sessionPath: getSessionPath(workspacePath, sessionId),
     dataPath: getSessionDataPath(workspacePath, sessionId),
@@ -260,14 +261,12 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
     },
     createSkillDocument: (skillSlug: string, content: string) => {
       const skill = createSkillImpl(skillSlug, content);
-      const path = join(skill.path, 'SKILL.md');
-      return { path, content };
+      return { path: skill.filePath, content };
     },
     loadSkillDocument: (skillSlug: string) => {
       const skill = loadSkillImpl(skillSlug);
       if (!skill) return null;
-      const path = join(skill.path, 'SKILL.md');
-      return { path, content: readFileSync(path, 'utf-8') };
+      return { path: skill.filePath, content: readFileSync(skill.filePath, 'utf-8') };
     },
     isSourceDefinitionReadOnly: (sourceSlug: string): boolean => {
       return loadSourceImpl(workspacePath, sourceSlug)?.origin === 'shared-global';

@@ -30,7 +30,12 @@ export interface PiRuntimeMigrationInput {
 
 /** Whether a legacy/lost runtime transcript needs a one-shot seeded Pi start. */
 export function needsPiRuntimeMigrationSeed(input: PiRuntimeMigrationInput): boolean {
-  if (input.agentRuntime === 'pi' || input.hasPiTranscript || input.branchContextStrategy === 'sdk-fork') return false
+  // A pending SDK fork is safe to hand to Pi only when its lineage is
+  // explicitly Pi-owned. Legacy Claude and untagged forks use incompatible
+  // session/turn IDs, so recover them from persisted Storyflow messages.
+  if (input.hasPiTranscript) return false
+  if (input.branchContextStrategy === 'sdk-fork') return input.agentRuntime !== 'pi'
+  if (input.agentRuntime === 'pi') return false
   return Boolean(input.sdkSessionId) || input.messageCount > 1
 }
 

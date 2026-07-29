@@ -18,6 +18,7 @@ import {
   DEFAULT_AGENT_SOURCE_SLUGS,
   seedDefaultAgentResources,
 } from '../default-agent-resources.ts';
+import { validateSkillDocumentForSlug } from '../../skills/storage.ts';
 
 let tempDir: string;
 
@@ -38,6 +39,7 @@ describe('default agent resources', () => {
   it('declares only the product Skills and Wangwen BigData Source', () => {
     expect(DEFAULT_GLOBAL_AGENT_SKILL_SLUGS).toEqual([
       'anysearch',
+      'find-skills',
       'skill-creator',
       'sn2s-novel-to-screenplay',
     ]);
@@ -74,6 +76,21 @@ describe('default agent resources', () => {
 
     expect(result.skills.skipped).toEqual(['skill-creator']);
     expect(readFileSync(existingSkill, 'utf-8')).toBe('user skill');
+  });
+
+  it('can seed Pi user Skills separately from Storyflow Sources', () => {
+    const assetsDir = join(tempDir, 'resources', 'agent-defaults');
+    const agentRootDir = join(tempDir, '.craft-agent');
+    const skillsDir = join(tempDir, '.pi', 'agent', 'skills');
+
+    writeFile(join(assetsDir, 'global-skills', 'skill-creator', 'SKILL.md'), 'product skill');
+    writeFile(join(assetsDir, 'sources', 'demo-source', 'config.json'), '{"name":"Bundled"}\n');
+
+    seedDefaultAgentResources({ assetsDir, agentRootDir, skillsDir });
+
+    expect(readFileSync(join(skillsDir, 'skill-creator', 'SKILL.md'), 'utf-8')).toBe('product skill');
+    expect(existsSync(join(agentRootDir, 'skills'))).toBe(false);
+    expect(existsSync(join(agentRootDir, 'sources', 'demo-source', 'config.json'))).toBe(true);
   });
 
   it('provides the shared AnySearch key without overriding user configuration', () => {
@@ -132,14 +149,25 @@ describe('default agent resources', () => {
 
     const anysearchDir = join(assetsDir, 'global-skills', 'anysearch');
     const anysearchSkill = readFileSync(join(anysearchDir, 'SKILL.md'), 'utf-8');
-    expect(anysearchSkill).toContain('**recommended** search tool');
+    expect(anysearchSkill).toContain('call Storyflow\'s built-in `web_search` tool');
+    expect(anysearchSkill).toContain('MUST NOT run through `script_sandbox`');
     expect(existsSync(join(anysearchDir, 'scripts', 'anysearch_cli.js'))).toBe(true);
     expect(existsSync(join(anysearchDir, '.env'))).toBe(false);
     expect(existsSync(join(anysearchDir, 'runtime.conf'))).toBe(false);
 
+    const findSkillsDir = join(assetsDir, 'global-skills', 'find-skills');
+    const findSkills = readFileSync(join(findSkillsDir, 'SKILL.md'), 'utf-8');
+    expect(validateSkillDocumentForSlug(findSkills, 'find-skills')).toBeNull();
+    expect(findSkills).toContain('https://skills.sh/');
+    expect(findSkills).toContain("Storyflow uses Pi's native Agent Skills discovery");
+    expect(existsSync(join(findSkillsDir, 'LICENSE.txt'))).toBe(true);
+
     const sn2sDir = join(assetsDir, 'global-skills', 'sn2s-novel-to-screenplay');
     const sn2sSkill = readFileSync(join(sn2sDir, 'SKILL.md'), 'utf-8');
-    expect(sn2sSkill).toContain('requires no external SN2S server');
+    expect(sn2sSkill).toContain('内置本地辅助脚本只负责确定性文件操作');
+    expect(sn2sSkill).toContain('metadata: { displayName: 小说转剧本 }');
+    expect(readFileSync(join(sn2sDir, 'agents', 'openai.yaml'), 'utf-8'))
+      .toContain('display_name: "小说转剧本"');
     expect(existsSync(join(sn2sDir, 'scripts', 'screenplay_project.py'))).toBe(true);
     expect(existsSync(join(sn2sDir, 'references', 'workflow.md'))).toBe(true);
     expect(existsSync(join(sn2sDir, 'references', 'adaptation-policy.md'))).toBe(true);

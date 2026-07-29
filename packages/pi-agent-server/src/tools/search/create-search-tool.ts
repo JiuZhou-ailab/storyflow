@@ -1,6 +1,6 @@
 // input: Primary and fallback web search providers
-// output: Provider-neutral built-in fallback web_search tool
-// pos: Secondary search path used only when the default AnySearch Skill is unavailable
+// output: Provider-neutral built-in web_search tool
+// pos: Canonical typed search capability for agent sessions
 
 /**
  * Creates a `web_search` ToolDefinition backed by the given search provider.
@@ -65,9 +65,9 @@ export function createSearchTool(
     name: 'web_search',
     label: 'Web Search',
     description:
-      'Fallback web search for current information. Use only when AnySearch is unavailable and the user approved fallback.',
+      'Search the web for current information, documentation, and fact-checking.',
     promptSnippet:
-      'Fallback only: use web_search after AnySearch is unavailable and the user approves fallback. Returns titles, URLs, and snippets. Accepts a query string and optional count (1-10).',
+      'Use web_search for routine web research. The runtime selects a safe provider and returns titles, URLs, and snippets. Accepts a query string and optional count (1-10).',
     parameters: schema,
     async execute(toolCallId, params) {
       const { query } = params;

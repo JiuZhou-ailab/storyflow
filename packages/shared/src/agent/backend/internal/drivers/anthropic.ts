@@ -1,18 +1,9 @@
 import type { ProviderDriver } from '../driver-types.ts';
-import { applyAnthropicRuntimeBootstrap } from '../runtime-resolver.ts';
 import { validateAnthropicConnection } from '../../../../config/llm-validation.ts';
 import { getModelContextWindow } from '../../../../config/models.ts';
 
 export const anthropicDriver: ProviderDriver = {
   provider: 'anthropic',
-  initializeHostRuntime: ({ hostRuntime, resolvedPaths }) => {
-    // Set paths opportunistically — don't throw on missing.
-    // Missing paths will be caught at session start (prepareRuntime).
-    applyAnthropicRuntimeBootstrap(hostRuntime, resolvedPaths, { strict: false });
-  },
-  prepareRuntime: ({ hostRuntime, resolvedPaths }) => {
-    applyAnthropicRuntimeBootstrap(hostRuntime, resolvedPaths);
-  },
   buildRuntime: () => ({}),
   fetchModels: async ({ connection, credentials }) => {
     // After legacy migration, only direct 'anthropic' connections reach this driver.
