@@ -1364,6 +1364,7 @@
   "skillsList.discover": "スキルを探す",
   "skillsList.emptyDescription": "スキルとは、エージェントに専門的な動作を教える再利用可能な指示です。",
   "skillsList.noSkillsConfigured": "スキルが設定されていません",
+  "skillsList.publishToSkillHub": "SkillHub に公開",
   "skillsMarket.confirm": "インポート",
   "skillsMarket.exists": "{{slug}} はすでに存在するため、上書きしませんでした",
   "skillsMarket.importFailed": "{{slug}} をインポートできませんでした",

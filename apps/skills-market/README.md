@@ -1,6 +1,8 @@
-# Skills Market
+# Legacy Skills Market
 
-Public discovery and contribution surface for project-owned Storyflow Skills.
+Frozen Storyflow ResourceBundle registry retained for compatibility and local
+verification. The desktop app now uses SkillHub for public discovery and
+publishing; do not add new catalog features here.
 
 | Path | Role |
 | --- | --- |
@@ -48,8 +50,6 @@ The market never executes Skill code. MVP submissions accept text-only Skill
 packages and remain pending until an administrator publishes an immutable
 content-addressed version.
 
-The desktop discovery entry is a separate availability decision. Keep official
-builds on `VITE_STORYFLOW_SKILLS_MARKET_ENABLED=false` until authoritative DNS,
-`/health`, `/api/skills`, one immutable bundle download, D1 migrations, R2, and
-the protected contribution routes have all been verified in production. The
-registry origin is intentionally fixed and is not a build-time setting.
+The desktop no longer links to this service. Existing install deep links and
+ResourceBundle verification remain supported until their data is migrated or
+retired explicitly.

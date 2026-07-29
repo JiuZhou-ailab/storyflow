@@ -1364,6 +1364,7 @@
   "skillsList.discover": "Készségek felfedezése",
   "skillsList.emptyDescription": "A készségek újrafelhasználható utasítások, amelyek speciális viselkedést tanítanak az ügynöknek.",
   "skillsList.noSkillsConfigured": "Nincs konfigurált készség",
+  "skillsList.publishToSkillHub": "Közzététel a SkillHubon",
   "skillsMarket.confirm": "Importálás",
   "skillsMarket.exists": "A(z) {{slug}} már létezik; semmi sem lett felülírva",
   "skillsMarket.importFailed": "A(z) {{slug}} importálása nem sikerült",

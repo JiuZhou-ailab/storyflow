@@ -1364,6 +1364,7 @@
   "skillsList.discover": "发现 Skills",
   "skillsList.emptyDescription": "技能是可复用的说明，教智能体学习专门的行为。",
   "skillsList.noSkillsConfigured": "未配置技能",
+  "skillsList.publishToSkillHub": "发布到 SkillHub",
   "skillsMarket.confirm": "确认导入",
   "skillsMarket.exists": "{{slug}} 已存在，未覆盖",
   "skillsMarket.importFailed": "{{slug}} 导入失败",

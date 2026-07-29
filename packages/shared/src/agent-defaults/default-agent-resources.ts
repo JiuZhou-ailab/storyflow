@@ -1,5 +1,5 @@
-// input: Bundled product Skills, default Sources, and optional user environment overrides
-// output: Best-effort Pi user Skill and Storyflow Source seeding plus AnySearch fallback
+// input: Bundled product Skills, default Sources, and optional resource-root overrides
+// output: Best-effort Pi user Skill and Storyflow Source seeding
 // pos: Resource bootstrap for the minimal Storyflow product defaults
 
 import {
@@ -14,13 +14,9 @@ import { join } from 'path';
 import { getBundledAssetsDir } from '../utils/paths.ts';
 import { getPiUserSkillsDir } from '../skills/storage.ts';
 
-const DEFAULT_ANYSEARCH_API_KEY = 'as_sk_6176d2e008b82e3218006c5c2835ce0b';
-
 export const DEFAULT_GLOBAL_AGENT_SKILL_SLUGS = [
-  'anysearch',
   'find-skills',
   'skill-creator',
-  'sn2s-novel-to-screenplay',
 ] as const;
 
 export const DEFAULT_AGENT_SOURCE_SLUGS = [
@@ -66,9 +62,12 @@ function listResourceDirs(rootPath: string): string[] {
   }
 }
 
-function copyMissingResourceDirs(sourceRoot: string, targetRoot: string): SeedBucketResult {
+function copyMissingResourceDirs(
+  sourceRoot: string,
+  targetRoot: string,
+  slugs: readonly string[] = listResourceDirs(sourceRoot),
+): SeedBucketResult {
   const result = emptyBucket();
-  const slugs = listResourceDirs(sourceRoot);
   if (slugs.length === 0) return result;
 
   try {
@@ -103,8 +102,6 @@ function copyMissingResourceDirs(sourceRoot: string, targetRoot: string): SeedBu
 export function seedDefaultAgentResources(
   options: SeedDefaultAgentResourcesOptions = {},
 ): SeedDefaultAgentResourcesResult {
-  process.env.ANYSEARCH_API_KEY ||= DEFAULT_ANYSEARCH_API_KEY;
-
   const assetsDir = options.assetsDir ?? getBundledAssetsDir('agent-defaults');
   const agentRootDir = options.agentRootDir ?? CRAFT_AGENT_ROOT_DIR;
   const skillsDir = options.skillsDir
@@ -118,7 +115,11 @@ export function seedDefaultAgentResources(
   }
 
   return {
-    skills: copyMissingResourceDirs(join(assetsDir, 'global-skills'), skillsDir),
+    skills: copyMissingResourceDirs(
+      join(assetsDir, 'global-skills'),
+      skillsDir,
+      DEFAULT_GLOBAL_AGENT_SKILL_SLUGS,
+    ),
     sources: copyMissingResourceDirs(join(assetsDir, 'sources'), join(agentRootDir, 'sources')),
   };
 }

@@ -1364,6 +1364,7 @@
   "skillsList.discover": "Discover Skills",
   "skillsList.emptyDescription": "Skills are reusable instructions that teach your agent specialized behaviors.",
   "skillsList.noSkillsConfigured": "No skills configured",
+  "skillsList.publishToSkillHub": "Publish to SkillHub",
   "skillsMarket.confirm": "Import",
   "skillsMarket.exists": "{{slug}} already exists; nothing was overwritten",
   "skillsMarket.importFailed": "Could not import {{slug}}",

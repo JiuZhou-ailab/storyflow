@@ -92,8 +92,8 @@ bun run electron:start
 | `bun run webui:dev` | 启动浏览器客户端 |
 | `bun run viewer:dev` | 启动会话查看器 |
 | `bun run marketing:dev` | 启动 Storyflow 官网 landing 页面 |
-| `bun run skills-market:dev` | 用 Bun 启动公共 Skills Market API 与静态网页的本地适配器 |
-| `bun run skills-market:test` | 验证 Market 目录、包校验与下载 API |
+| `bun run skills-market:dev` | 启动冻结的旧 ResourceBundle Market 本地适配器 |
+| `bun run skills-market:test` | 验证旧 Market 的兼容目录、包校验与下载 API |
 | `bun run typecheck:all` | 对主要 packages 和 apps 做类型检查 |
 | `bun test` | 运行 Bun 测试 |
 | `bun run validate:ci` | 运行更完整的验证套件 |

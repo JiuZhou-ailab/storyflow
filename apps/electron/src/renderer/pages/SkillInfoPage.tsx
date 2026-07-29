@@ -1,5 +1,5 @@
 // input: Pi-native Skill slug, runtime routing id, and AppShell-populated skills atom
-// output: Skill metadata, instructions, permissions, and explicit edit actions
+// output: Skill metadata, instructions, permissions, edit actions, and SkillHub publishing
 // pos: Detail page for inspecting and maintaining reusable agent skills
 
 import * as React from 'react'
@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 import { SkillMenu } from '@/components/app-shell/SkillMenu'
 import { SkillAvatar } from '@/components/ui/skill-avatar'
 import { routes, navigate } from '@/lib/navigate'
+import { SKILLHUB_PUBLISH_URL } from '@/lib/skillhub'
 import { skillsAtom } from '@/atoms/skills'
 import {
   Info_Page,
@@ -130,6 +131,9 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
             onOpenInNewWindow={handleOpenInNewWindow}
             onShowInFinder={handleOpenInFinder}
             canShowInFinder={canRevealLocally}
+            onPublishToSkillHub={canRevealLocally && canDeleteSkill
+              ? () => window.electronAPI.openUrl(SKILLHUB_PUBLISH_URL)
+              : undefined}
             onDelete={canDeleteSkill ? handleDelete : undefined}
             canDelete={canDeleteSkill}
             deleteLabel={t('skillInfo.deleteSkill')}

@@ -1364,6 +1364,7 @@
   "skillsList.discover": "Odkryj umiejętności",
   "skillsList.emptyDescription": "Umiejętności to instrukcje wielokrotnego użytku, które uczą agenta specjalistycznych zachowań.",
   "skillsList.noSkillsConfigured": "Brak skonfigurowanych umiejętności",
+  "skillsList.publishToSkillHub": "Opublikuj w SkillHub",
   "skillsMarket.confirm": "Importuj",
   "skillsMarket.exists": "{{slug}} już istnieje; niczego nie nadpisano",
   "skillsMarket.importFailed": "Nie udało się zaimportować {{slug}}",

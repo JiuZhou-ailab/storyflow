@@ -1,6 +1,6 @@
-// input: Pi-native user/project Skills, runtime routing identity, and Market navigation
-// output: Scoped Skill list, safe local management actions, and public discovery entry
-// pos: Skills navigator surface; installation remains a verified ResourceBundle import
+// input: Pi-native user/project Skills, runtime routing identity, and SkillHub navigation
+// output: Scoped Skill list, safe local management actions, and public discovery/publishing entries
+// pos: Skills navigator surface; installation remains an explicit external action
 
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
@@ -10,11 +10,9 @@ import { EntityPanel } from '@/components/ui/entity-panel'
 import { EntityListEmptyScreen } from '@/components/ui/entity-list-empty'
 import { skillSelection } from '@/hooks/useEntitySelection'
 import { SkillMenu } from './SkillMenu'
-import { resolveSkillsMarketEntry } from '@/lib/skills-market-entry'
+import { SKILLHUB_ORIGIN, SKILLHUB_PUBLISH_URL } from '@/lib/skillhub'
 import { EditPopover, getEditConfig } from '@/components/ui/EditPopover'
 import type { LoadedSkill, Workspace } from '../../../shared/types'
-
-const skillsMarketEntry = resolveSkillsMarketEntry(import.meta.env.VITE_STORYFLOW_SKILLS_MARKET_ENABLED)
 
 export interface SkillsListPanelProps {
   skills: LoadedSkill[]
@@ -57,19 +55,17 @@ export function SkillsListPanel({
 
   return (
     <>
-      {skillsMarketEntry && (
-        <div className="px-2 pb-2">
-          <button
-            type="button"
-            className="flex min-h-9 w-full items-center gap-2 rounded-lg border border-border/70 bg-background px-3 text-left text-xs font-medium transition-colors hover:bg-foreground/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => window.electronAPI.openUrl(skillsMarketEntry.origin)}
-          >
-            <Compass className="h-3.5 w-3.5" aria-hidden="true" />
-            <span className="flex-1">{t('skillsList.discover', '发现 Skills')}</span>
-            <span aria-hidden="true">↗</span>
-          </button>
-        </div>
-      )}
+      <div className="px-2 pb-2">
+        <button
+          type="button"
+          className="flex min-h-9 w-full items-center gap-2 rounded-lg border border-border/70 bg-background px-3 text-left text-xs font-medium transition-colors hover:bg-foreground/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => window.electronAPI.openUrl(SKILLHUB_ORIGIN)}
+        >
+          <Compass className="h-3.5 w-3.5" aria-hidden="true" />
+          <span className="flex-1">{t('skillsList.discover', '发现 Skills')}</span>
+          <span aria-hidden="true">↗</span>
+        </button>
+      </div>
       <EntityPanel<LoadedSkill>
         items={skills}
         getId={(s) => s.slug}
@@ -121,6 +117,9 @@ export function SkillsListPanel({
                 }
               }}
               canShowInFinder={canRevealLocally}
+              onPublishToSkillHub={canRevealLocally && skill.origin === 'top-level'
+                ? () => window.electronAPI.openUrl(SKILLHUB_PUBLISH_URL)
+                : undefined}
               onDelete={() => onDeleteSkill(skill.slug)}
               canDelete={skill.origin === 'top-level'}
               deleteLabel={t('skillsList.deleteSkill')}

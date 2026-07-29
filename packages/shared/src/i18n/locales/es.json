@@ -1364,6 +1364,7 @@
   "skillsList.discover": "Descubrir skills",
   "skillsList.emptyDescription": "Los skills son instrucciones reutilizables que enseñan a tu agente comportamientos especializados.",
   "skillsList.noSkillsConfigured": "No hay skills configurados",
+  "skillsList.publishToSkillHub": "Publicar en SkillHub",
   "skillsMarket.confirm": "Importar",
   "skillsMarket.exists": "{{slug}} ya existe; no se sobrescribió nada",
   "skillsMarket.importFailed": "No se pudo importar {{slug}}",
