@@ -50,7 +50,7 @@ describe('novel writing workspace layout', () => {
         activePath="/novel/b.md"
         onActivate={() => {}}
         onClose={() => {}}
-        onCreateFile={() => {}}
+        onOpenStart={() => {}}
         trailingActions={<button type="button">目录</button>}
       />
     )
@@ -710,6 +710,19 @@ describe('novel writing workspace layout', () => {
       closeSource.indexOf('setNovelDocumentTabs(nextTabs)'),
     )
     expect(closeSource).toContain('closeNovelDocumentTab(novelDocumentTabs, filePath)')
+  })
+
+  it('opens the workspace start page without closing document tabs', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const handlerSource = appShellSource.slice(
+      appShellSource.indexOf('const handleOpenNovelWorkspaceStart ='),
+      appShellSource.indexOf('const handleCloseNovelFileTab ='),
+    )
+
+    expect(handlerSource).toContain('if (!await ensureNovelDocumentSaved()) return')
+    expect(handlerSource).toContain('setNovelDocumentTabs(current => ({ ...current, activePath: null }))')
+    expect(handlerSource).not.toContain('paths: []')
+    expect(appShellSource).toContain('onOpenStart={() => { void handleOpenNovelWorkspaceStart() }}')
   })
 
   it('keeps the writing editor editable during background autosave so typing focus is not stolen', () => {

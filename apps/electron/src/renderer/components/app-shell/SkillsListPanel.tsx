@@ -1,5 +1,5 @@
-// input: Runtime-global Skills, runtime routing identity, and Skills Market navigation
-// output: Global Skill list, local management actions, and public discovery entry
+// input: Pi-native user/project Skills, runtime routing identity, and Market navigation
+// output: Scoped Skill list, safe local management actions, and public discovery entry
 // pos: Skills navigator surface; installation remains a verified ResourceBundle import
 
 import * as React from 'react'
@@ -36,7 +36,7 @@ export function AddSkillPopover({
   return (
     <EditPopover
       trigger={trigger}
-      {...getEditConfig('add-skill', '~/.craft-agent')}
+      {...getEditConfig('add-skill', '~/.pi/agent')}
       conversationWorkspaceId={workspace.id}
       workingDirectory="none"
     />
@@ -102,7 +102,14 @@ export function SkillsListPanel({
         mapItem={(skill) => ({
           icon: <SkillAvatar skill={skill} size="sm" workspaceId={workspaceId} />,
           title: skill.metadata.displayName ?? skill.metadata.name,
-          badges: <span className="truncate">{skill.metadata.description}</span>,
+          badges: (
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate">{skill.metadata.description}</span>
+              <span className="shrink-0 uppercase text-[9px] text-muted-foreground/70">
+                {skill.scope}
+              </span>
+            </span>
+          ),
           menu: (
             <SkillMenu
               skillSlug={skill.slug}
@@ -110,12 +117,12 @@ export function SkillsListPanel({
               onOpenInNewWindow={() => window.electronAPI.openUrl(`craftagents://skills/skill/${skill.slug}?window=focused`)}
               onShowInFinder={() => {
                 if (canRevealLocally) {
-                  void window.electronAPI.showInFolder(`${skill.path}/SKILL.md`)
+                  void window.electronAPI.showInFolder(skill.filePath)
                 }
               }}
               canShowInFinder={canRevealLocally}
               onDelete={() => onDeleteSkill(skill.slug)}
-              canDelete
+              canDelete={skill.origin === 'top-level'}
               deleteLabel={t('skillsList.deleteSkill')}
             />
           ),

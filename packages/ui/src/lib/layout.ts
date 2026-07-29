@@ -1,3 +1,6 @@
+// input: Viewport dimensions and shared chat/overlay layout requirements
+// output: Layout constants plus responsive overlay mode resolution
+// pos: Single source of truth for shared UI sizing and overlay breakpoints
 /**
  * Shared layout constants for chat UI
  *
@@ -13,8 +16,12 @@ export const OVERLAY_LAYOUT = {
   /** Minimum viewport width for modal display (below this = fullscreen) */
   /** Set very high to always use fullscreen mode */
   modalBreakpoint: 99999,
+  /** Reading and single-activity overlays stay fullscreen only on narrow windows */
+  desktopModalBreakpoint: 1024,
   /** Modal max width */
   modalMaxWidth: 1100,
+  /** Content-sized modal max width */
+  contentModalMaxWidth: 960,
   /** Modal max height as percentage of viewport */
   modalMaxHeightPercent: 85,
   /** Backdrop class for modal mode (semi-transparent) */
@@ -71,27 +78,35 @@ import { useState, useEffect } from 'react'
 
 export type OverlayMode = 'modal' | 'fullscreen'
 
+export function resolveOverlayMode(
+  viewportWidth: number,
+  modalBreakpoint: number = OVERLAY_LAYOUT.modalBreakpoint
+): OverlayMode {
+  return viewportWidth >= modalBreakpoint ? 'modal' : 'fullscreen'
+}
+
 /**
  * Hook to determine if overlay should show as modal or fullscreen
  * based on viewport size.
  *
  * @returns 'modal' if viewport is large enough, 'fullscreen' otherwise
  */
-export function useOverlayMode(): OverlayMode {
+export function useOverlayMode(
+  modalBreakpoint: number = OVERLAY_LAYOUT.modalBreakpoint
+): OverlayMode {
   const [mode, setMode] = useState<OverlayMode>(() => {
     if (typeof window === 'undefined') return 'fullscreen'
-    return window.innerWidth >= OVERLAY_LAYOUT.modalBreakpoint ? 'modal' : 'fullscreen'
+    return resolveOverlayMode(window.innerWidth, modalBreakpoint)
   })
 
   useEffect(() => {
     const handleResize = () => {
-      const newMode = window.innerWidth >= OVERLAY_LAYOUT.modalBreakpoint ? 'modal' : 'fullscreen'
-      setMode(newMode)
+      setMode(resolveOverlayMode(window.innerWidth, modalBreakpoint))
     }
 
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
-  }, [])
+  }, [modalBreakpoint])
 
   return mode
 }

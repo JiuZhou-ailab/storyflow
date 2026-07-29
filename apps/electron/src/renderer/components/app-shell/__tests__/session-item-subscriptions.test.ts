@@ -264,17 +264,17 @@ describe('session item subscriptions', () => {
     expect(contentSource).not.toContain('useSession(sessionId)')
   })
 
-  it('keeps session info and file popovers off broad app shell context subscriptions', () => {
+  it('keeps session info and file actions out of the composer option strip', () => {
     expect(sessionInfoPopoverSource).not.toContain('useAppShellContext')
     expect(sessionFilesSectionSource).not.toContain('useAppShellContext')
     expect(sessionInfoPopoverSource).toContain('onRenameSession: (sessionId: string, name: string) => void')
     expect(sessionFilesSectionSource).toContain('onOpenFile: (path: string) => void')
     expect(chatDisplaySource).toContain('onRenameSession?: (sessionId: string, name: string) => void')
-    expect(chatInputZoneSource).toContain('onRenameSession?: (sessionId: string, name: string) => void')
-    expect(activeOptionBadgesSource).toContain('onRenameSession?: (sessionId: string, name: string) => void')
+    expect(chatInputZoneSource).not.toContain('onRenameSession?:')
+    expect(activeOptionBadgesSource).not.toContain('onRenameSession?:')
     expect(chatDisplaySource).toContain('onOpenFile={onOpenFile}')
-    expect(chatInputZoneSource).toContain('onOpenFile={onOpenFile}')
-    expect(activeOptionBadgesSource).toContain('onOpenFile={onOpenFile}')
+    expect(chatInputZoneSource).not.toContain('onOpenFile?:')
+    expect(activeOptionBadgesSource).not.toContain('onOpenFile?:')
   })
 
   it('keeps whole-session metadata subscriptions out of the app shell', () => {

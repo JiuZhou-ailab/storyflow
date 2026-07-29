@@ -1,24 +1,26 @@
+// input: Preview content, header metadata, and responsive presentation preferences
+// output: Accessible preview rendered inline, fullscreen, or as a modal
+// pos: Shared presentation boundary for code, terminal, data, and activity previews
 /**
  * PreviewOverlay - Base component for all preview overlays
  *
  * Provides unified presentation logic for modal/fullscreen overlays:
  * - Portal rendering to document.body (via FullscreenOverlayBase for fullscreen mode)
- * - Responsive modal (>=1200px) vs fullscreen (<1200px) modes
+ * - Caller-selected responsive modal vs fullscreen breakpoint
  * - Escape key to close
  * - Backdrop click to close (modal mode)
  * - Consistent header layout with badges, close button
  * - Optional error banner
  *
- * Header is delegated to FullscreenOverlayBase in fullscreen mode (which renders
- * FullscreenOverlayBaseHeader). In modal/embedded mode, renders the header directly.
+ * Header and dialog behavior are delegated to FullscreenOverlayBase.
+ * Embedded playground previews render the same header inline.
  *
  * Used by: CodePreviewOverlay, TerminalPreviewOverlay, GenericOverlay, etc.
  */
 
-import { useEffect, type ReactNode } from 'react'
-import * as ReactDOM from 'react-dom'
+import type { ReactNode } from 'react'
 import { type LucideIcon } from 'lucide-react'
-import { useOverlayMode, OVERLAY_LAYOUT } from '../../lib/layout'
+import { useOverlayMode } from '../../lib/layout'
 import { FullscreenOverlayBase } from './FullscreenOverlayBase'
 import { FullscreenOverlayBaseHeader } from './FullscreenOverlayBaseHeader'
 import { OverlayErrorBanner } from './OverlayErrorBanner'
@@ -71,6 +73,10 @@ export interface PreviewOverlayProps {
 
   /** Custom class names for the overlay container (e.g., to override bg-background) */
   className?: string
+  /** Optional responsive breakpoint override */
+  modalBreakpoint?: number
+  /** Content-sized modals shrink to short previews and cap long previews */
+  modalSizing?: 'fixed' | 'content'
 }
 
 export function PreviewOverlay({
@@ -87,25 +93,13 @@ export function PreviewOverlay({
   children,
   embedded = false,
   className,
+  modalBreakpoint,
+  modalSizing = 'fixed',
 }: PreviewOverlayProps) {
   // Use custom className if provided, otherwise fall back to default bg
   const bgClass = className || OVERLAY_BG
-  const responsiveMode = useOverlayMode()
+  const responsiveMode = useOverlayMode(modalBreakpoint)
   const isModal = responsiveMode === 'modal'
-
-  // Handle Escape key for modal mode only (fullscreen mode uses FullscreenOverlayBase which handles ESC)
-  useEffect(() => {
-    if (!isOpen || !isModal) return
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose()
-      }
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, isModal, onClose])
 
   if (!isOpen && !embedded) return null
 
@@ -164,47 +158,23 @@ export function PreviewOverlay({
     )
   }
 
-  // Fullscreen mode — FullscreenOverlayBase renders the header via structured props
-  // and owns the masked scroll container. Children are rendered directly inside it.
-  if (!isModal) {
-    return (
-      <FullscreenOverlayBase
-        isOpen={isOpen}
-        onClose={onClose}
-        typeBadge={typeBadge}
-        filePath={filePath}
-        title={title}
-        onTitleClick={onTitleClick}
-        subtitle={subtitle}
-        headerActions={headerActions}
-        error={error}
-      >
-        {children}
-      </FullscreenOverlayBase>
-    )
-  }
-
-  // Modal mode - uses its own portal with backdrop click to close
-  return ReactDOM.createPortal(
-    <div
-      className={`fixed inset-0 z-50 flex items-center justify-center ${OVERLAY_LAYOUT.modalBackdropClass}`}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
+  return (
+    <FullscreenOverlayBase
+      isOpen={isOpen}
+      onClose={onClose}
+      mode={responsiveMode}
+      modalSizing={modalSizing}
+      accessibleTitle={title || typeBadge.label}
+      typeBadge={typeBadge}
+      filePath={filePath}
+      title={title}
+      onTitleClick={onTitleClick}
+      subtitle={subtitle}
+      headerActions={headerActions}
+      error={error}
+      className={isModal ? bgClass : undefined}
     >
-      <div
-        className={`flex flex-col ${bgClass} shadow-3xl overflow-hidden smooth-corners`}
-        style={{
-          width: '90vw',
-          maxWidth: OVERLAY_LAYOUT.modalMaxWidth,
-          height: `${OVERLAY_LAYOUT.modalMaxHeightPercent}vh`,
-          borderRadius: 16,
-        }}
-      >
-        {header}
-        {contentArea}
-      </div>
-    </div>,
-    document.body
+      {children}
+    </FullscreenOverlayBase>
   )
 }

@@ -47,6 +47,26 @@ describe('handleComplete performance contracts', () => {
     expect(next.state.streaming).toBeNull()
   })
 
+  it('attaches completed turn metrics in the same message pass', () => {
+    const state = makeState([
+      { id: 'assistant-1', role: 'assistant', content: 'done', timestamp: 1 },
+      { id: 'assistant-2', role: 'assistant', content: 'older', timestamp: 2 },
+    ])
+    const metrics = {
+      durationMs: 12_300,
+      usage: { inputTokens: 1_500, outputTokens: 240 },
+    }
+
+    const next = handleComplete(state, {
+      type: 'complete',
+      sessionId: 'session-1',
+      turnMetrics: [{ messageId: 'assistant-1', metrics }],
+    })
+
+    expect(next.state.session.messages[0]?.turnMetrics).toBe(metrics)
+    expect(next.state.session.messages[1]).toBe(state.session.messages[1])
+  })
+
   it('does not pre-scan messages before applying complete-event message updates', () => {
     const functionStart = sessionHandlerSource.indexOf('export function handleComplete(')
     const functionEnd = sessionHandlerSource.indexOf('/**\n * Handle error', functionStart)

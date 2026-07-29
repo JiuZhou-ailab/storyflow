@@ -6,7 +6,7 @@ import * as React from 'react'
 import { useMemo, useEffect, useRef, useCallback, useState } from 'react'
 import i18n from 'i18next'
 import { useTranslation } from 'react-i18next'
-import type { ToolDisplayMeta, AnnotationV1 } from '@craft-agent/core'
+import type { ToolDisplayMeta, AnnotationV1, TurnMetrics } from '@craft-agent/core'
 import { normalizePath, pathStartsWith, stripPathPrefix } from '@craft-agent/core/utils'
 import { motion, AnimatePresence } from 'motion/react'
 import {
@@ -17,11 +17,9 @@ import {
   MessageCircleDashed,
   FileText,
   ArrowUpRight,
-  Ban,
   Copy,
   Check,
   Maximize2,
-  CircleCheck,
   ListTodo,
   Pencil,
   FilePenLine,
@@ -222,21 +220,6 @@ export type ActivityStatus = 'pending' | 'running' | 'completed' | 'error' | 'ba
 export type ActivityType = 'tool' | 'thinking' | 'intermediate' | 'status' | 'plan'
 export type AnnotationInteractionMode = 'interactive' | 'tooltip-only'
 
-// ============================================================================
-// Todo Types (for task tracking tool visualization)
-// ============================================================================
-
-export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'interrupted'
-
-export interface TodoItem {
-  /** Task content/description */
-  content: string
-  /** Current status */
-  status: TodoStatus
-  /** Present continuous form shown when in_progress (e.g., "Running tests") */
-  activeForm?: string
-}
-
 export interface ActivityItem {
   id: string
   type: ActivityType
@@ -308,6 +291,8 @@ export interface TurnCardProps {
   isStreaming: boolean
   /** Whether this turn is fully complete */
   isComplete: boolean
+  /** Durable elapsed time and token usage for the completed turn */
+  metrics?: TurnMetrics
   /** Start in expanded state */
   defaultExpanded?: boolean
   /** Controlled expansion state (overrides internal state) */
@@ -332,8 +317,6 @@ export interface TurnCardProps {
   onOpenMultiFileDiff?: () => void
   /** Whether this turn has any Edit or Write activities */
   hasEditOrWriteActivities?: boolean
-  /** Task tracking state - shown at bottom of turn */
-  todos?: TodoItem[]
   /** Optional render prop for actions menu (Electron provides dropdown) */
   renderActionsMenu?: () => React.ReactNode
   /** Callback when user accepts the plan (plan responses only) */
@@ -2669,83 +2652,6 @@ export function ResponseCard({
 }
 
 // ============================================================================
-// TodoList Component (for task tracking tool visualization)
-// ============================================================================
-
-/** Status icon for a todo item - uses purple filled icon for completed */
-function TodoStatusIcon({ status }: { status: TodoStatus }) {
-  switch (status) {
-    case 'pending':
-      return <Circle className={cn(SIZE_CONFIG.iconSize, "shrink-0 text-muted-foreground/50")} />
-    case 'in_progress':
-      return (
-        <div className={cn(SIZE_CONFIG.iconSize, "flex items-center justify-center shrink-0")}>
-          <Spinner className={SIZE_CONFIG.spinnerSize} />
-        </div>
-      )
-    case 'completed':
-      return <CircleCheck className={cn(SIZE_CONFIG.iconSize, "shrink-0 text-accent")} />
-    case 'interrupted':
-      return <Ban className={cn(SIZE_CONFIG.iconSize, "shrink-0 text-muted-foreground/50")} />
-  }
-}
-
-/** Single todo row - styled like ActivityRow */
-function TodoRow({ todo }: { todo: TodoItem }) {
-  const displayText = todo.status === 'in_progress' && todo.activeForm
-    ? todo.activeForm
-    : todo.content
-
-  return (
-    <div className={cn(
-      "flex items-center gap-2 py-0.5 text-muted-foreground",
-      SIZE_CONFIG.fontSize,
-      todo.status === 'completed' && "opacity-50"
-    )}>
-      <TodoStatusIcon status={todo.status} />
-      <span className={cn(
-        "truncate flex-1",
-        todo.status === 'completed' && "line-through"
-      )}>
-        {displayText}
-      </span>
-    </div>
-  )
-}
-
-interface TodoListProps {
-  todos: TodoItem[]
-}
-
-/**
- * TodoList - Displays the current task tracking state
- * Styled to blend with TurnCard activities
- */
-function TodoList({ todos }: TodoListProps) {
-  if (todos.length === 0) return null
-
-  return (
-    <div className="pl-4 pr-2 pt-2.5 pb-1.5 space-y-0.5 border-l-2 border-muted ml-[13px]">
-      {/* Header */}
-      <div className={cn("text-muted-foreground pb-1", SIZE_CONFIG.fontSize)}>
-        Todo List
-      </div>
-      {/* Todo items */}
-      {todos.map((todo, index) => (
-        <motion.div
-          key={`${todo.content}-${index}`}
-          initial={{ opacity: 0, x: -8 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: index * 0.03 }}
-        >
-          <TodoRow todo={todo} />
-        </motion.div>
-      ))}
-    </div>
-  )
-}
-
-// ============================================================================
 // Main Component
 // ============================================================================
 
@@ -2766,6 +2672,7 @@ export const TurnCard = React.memo(function TurnCard({
   intent,
   isStreaming,
   isComplete,
+  metrics,
   defaultExpanded = false,
   isExpanded: externalIsExpanded,
   onExpandedChange,
@@ -2778,7 +2685,6 @@ export const TurnCard = React.memo(function TurnCard({
   onOpenActivityDetails,
   onOpenMultiFileDiff,
   hasEditOrWriteActivities,
-  todos,
   renderActionsMenu,
   onAcceptPlan,
   onAcceptPlanWithCompact,
@@ -3121,10 +3027,6 @@ export const TurnCard = React.memo(function TurnCard({
                   )}
                   </AnimatePresence>
                 </div>
-                {/* TodoList - inside expanded section */}
-                {todos && todos.length > 0 && (
-                  <TodoList todos={todos} />
-                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -3240,6 +3142,27 @@ export const TurnCard = React.memo(function TurnCard({
         </div>
       )}
       {footer}
+      {!compactMode && isComplete && metrics && (
+        <div
+          className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 px-1 pt-1 text-[11px] leading-4 text-muted-foreground/60 tabular-nums select-none"
+          data-search-exclude="true"
+          aria-label="Turn usage"
+        >
+          <span title={`${Math.round(metrics.durationMs).toLocaleString()} milliseconds`}>
+            {formatDuration(metrics.durationMs)} elapsed
+          </span>
+          {metrics.usage && (
+            <>
+              <span title={`${metrics.usage.inputTokens.toLocaleString()} input tokens`}>
+                {formatTokens(metrics.usage.inputTokens)} input
+              </span>
+              <span title={`${metrics.usage.outputTokens.toLocaleString()} output tokens`}>
+                {formatTokens(metrics.usage.outputTokens)} output
+              </span>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }, (prev, next) => {
@@ -3270,6 +3193,7 @@ export const TurnCard = React.memo(function TurnCard({
 
   // Re-render when response object changes (e.g., annotation updates)
   if (prev.response !== next.response) return false
+  if (prev.metrics !== next.metrics) return false
 
   // Re-render when external annotation-open requests change
   if (prev.openAnnotationRequest !== next.openAnnotationRequest) return false

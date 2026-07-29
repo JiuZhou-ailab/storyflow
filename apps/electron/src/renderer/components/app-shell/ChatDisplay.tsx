@@ -27,20 +27,11 @@ import { AnimatedCollapsibleContent } from "@/components/ui/collapsible"
 import {
   Spinner,
   FileChangesSummary,
-  parseReadResult,
-  parseBashResult,
-  parseGrepResult,
-  parseGlobResult,
-  extractOverlayData,
   extractOverlayCards,
   ActivityCardsOverlay,
   CodePreviewOverlay,
   MultiDiffPreviewOverlay,
-  TerminalPreviewOverlay,
-  GenericOverlay,
-  JSONPreviewOverlay,
   DocumentFormattedMarkdownOverlay,
-  detectLanguage,
   type ActivityItem,
   type FileChange,
   type FileChangeReviewStatus,
@@ -73,7 +64,6 @@ import {
 import { MemoizedAuthRequestCard } from "@/components/chat/AuthRequestCard"
 import { ChatInputZone, type QueuedInputMessage, type StructuredInputState, type StructuredResponse, type PermissionResponse, type AdminApprovalResponse } from "./input"
 import type { RichTextInputHandle } from "@/components/ui/rich-text-input"
-import { useBackgroundTasks } from "@/hooks/useBackgroundTasks"
 import { useTurnCardExpansion } from "@/hooks/useTurnCardExpansion"
 import { useNavigationActions } from "@/contexts/NavigationContext"
 import { navigate, routes } from "@/lib/navigate"
@@ -136,11 +126,6 @@ type OverlayState =
   | MultiDiffOverlayState
   | MarkdownOverlayState
   | null
-
-function isStackedActivityTool(activity: ActivityItem): boolean {
-  const toolName = activity.toolName?.toLowerCase() || ''
-  return toolName === 'bash' || toolName.startsWith('mcp__') || toolName.startsWith('browser_')
-}
 
 function getTurnKey(turn: Turn): string {
   if (turn.type === 'user') return `user-${turn.message.id}`
@@ -227,7 +212,7 @@ interface ChatDisplayProps {
   labels?: import('@craft-agent/shared/labels').LabelConfig[]
   /** Callback when labels change */
   onLabelsChange?: (labels: string[]) => void
-  // State/status selection (for # menu and ActiveOptionBadges)
+  // State/status selection for the # command menu.
   /** Available workflow states */
   sessionStatuses?: import('@/config/session-status-config').SessionStatus[]
   /** Callback when session state changes */
@@ -777,11 +762,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     },
   })
 
-  // Background tasks management
-  const { tasks: backgroundTasks, killTask } = useBackgroundTasks({
-    sessionId: session?.id ?? ''
-  })
-
   // TurnCard expansion state — persisted to localStorage across session switches
   const {
     isTurnExpanded,
@@ -1213,18 +1193,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const overlayCards = useMemo(() => {
     if (!overlayState || overlayState.type !== 'activity') return []
     return extractOverlayCards(overlayState.activity)
-  }, [overlayState])
-
-  // Parsed output data for legacy output-only activity overlays
-  const activityOutputOverlayData = useMemo(() => {
-    if (!overlayState || overlayState.type !== 'activity') return null
-    return extractOverlayData(overlayState.activity)
-  }, [overlayState])
-
-  // Stacked input/output cards are only enabled for Bash and MCP tools
-  const useStackedActivityOverlay = useMemo(() => {
-    if (!overlayState || overlayState.type !== 'activity') return false
-    return isStackedActivityTool(overlayState.activity)
   }, [overlayState])
 
   // Pop-out handler - opens message in overlay (read-only markdown)
@@ -2027,11 +1995,11 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                         intent={turn.intent}
                         isStreaming={turn.isStreaming}
                         isComplete={turn.isComplete}
+                        metrics={turn.metrics}
                         isExpanded={isTurnExpanded(assistantUiKey)}
                         onExpandedChange={(expanded) => toggleTurn(assistantUiKey, expanded)}
                         expandedActivityGroups={expandedActivityGroups}
                         onExpandedActivityGroupsChange={setExpandedActivityGroups}
-                        todos={turn.todos}
                         onOpenFile={onOpenFile}
                         onOpenUrl={onOpenUrl}
                         isLastResponse={isLastResponse}
@@ -2235,13 +2203,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
             compactMode={compactMode}
             permissionMode={permissionMode}
             onPermissionModeChange={onPermissionModeChange}
-            tasks={backgroundTasks}
             sessionId={session.id}
             sessionFolderPath={sessionFolderPath}
-            onRenameSession={onRenameSession}
-            onOpenFile={onOpenFile}
-            onKillTask={(taskId) => killTask(taskId, backgroundTasks.find(t => t.id === taskId)?.type ?? 'shell')}
-            onInsertMessage={onInputChange}
             sessionLabels={session.labels}
             labels={labels}
             onLabelsChange={onLabelsChange}
@@ -2311,7 +2274,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       {/* ================================================================== */}
 
       {/* Activity details overlay */}
-      {overlayState?.type === 'activity' && useStackedActivityOverlay && (
+      {overlayState?.type === 'activity' && (
         <ActivityCardsOverlay
           isOpen={true}
           onClose={handleCloseOverlay}
@@ -2321,84 +2284,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
           onOpenUrl={onOpenUrl}
           onOpenFile={onOpenFile}
         />
-      )}
-
-      {/* Legacy output-only activity overlay for non-bash/non-mcp tools */}
-      {overlayState?.type === 'activity' && !useStackedActivityOverlay && activityOutputOverlayData && (
-        activityOutputOverlayData.type === 'code' ? (
-          <CodePreviewOverlay
-            isOpen={true}
-            onClose={handleCloseOverlay}
-            content={activityOutputOverlayData.content}
-            filePath={activityOutputOverlayData.filePath}
-            mode={activityOutputOverlayData.mode}
-            startLine={activityOutputOverlayData.startLine}
-            totalLines={activityOutputOverlayData.totalLines}
-            numLines={activityOutputOverlayData.numLines}
-            command={activityOutputOverlayData.command}
-            error={activityOutputOverlayData.error}
-            theme={isDark ? 'dark' : 'light'}
-          />
-        ) : activityOutputOverlayData.type === 'terminal' ? (
-          <TerminalPreviewOverlay
-            isOpen={true}
-            onClose={handleCloseOverlay}
-            command={activityOutputOverlayData.command}
-            output={activityOutputOverlayData.output}
-            exitCode={activityOutputOverlayData.exitCode}
-            toolType={activityOutputOverlayData.toolType}
-            description={activityOutputOverlayData.description}
-            error={activityOutputOverlayData.error}
-            theme={isDark ? 'dark' : 'light'}
-          />
-        ) : activityOutputOverlayData.type === 'json' ? (
-          <JSONPreviewOverlay
-            isOpen={true}
-            onClose={handleCloseOverlay}
-            data={activityOutputOverlayData.data}
-            title={activityOutputOverlayData.title}
-            error={activityOutputOverlayData.error}
-            theme={isDark ? 'dark' : 'light'}
-          />
-        ) : activityOutputOverlayData.type === 'document' ? (
-          <DocumentFormattedMarkdownOverlay
-            isOpen={true}
-            onClose={handleCloseOverlay}
-            content={activityOutputOverlayData.content}
-            onOpenUrl={onOpenUrl}
-            onOpenFile={onOpenFile}
-            filePath={activityOutputOverlayData.filePath}
-            typeBadge={{
-              icon: Info,
-              label: activityOutputOverlayData.toolName,
-              variant: 'blue',
-            }}
-            error={activityOutputOverlayData.error}
-          />
-        ) : detectLanguage(activityOutputOverlayData.content) === 'markdown' ? (
-          <DocumentFormattedMarkdownOverlay
-            isOpen={true}
-            onClose={handleCloseOverlay}
-            content={activityOutputOverlayData.content}
-            onOpenUrl={onOpenUrl}
-            onOpenFile={onOpenFile}
-            typeBadge={{
-              icon: Info,
-              label: overlayState.activity.displayName || overlayState.activity.toolName || 'Activity',
-              variant: 'blue',
-            }}
-            error={activityOutputOverlayData.error}
-          />
-        ) : (
-          <GenericOverlay
-            isOpen={true}
-            onClose={handleCloseOverlay}
-            content={activityOutputOverlayData.content}
-            title={activityOutputOverlayData.title}
-            error={activityOutputOverlayData.error}
-            theme={isDark ? 'dark' : 'light'}
-          />
-        )
       )}
 
       {/* Multi-diff preview overlay (Edit/Write tools) */}

@@ -1,5 +1,8 @@
+// input: Overlay content, dismissal callbacks, platform chrome, and responsive layout mode
+// output: Accessible Radix dialog rendered as fullscreen or centered modal
+// pos: Shared presentation and dismissal boundary for high-priority overlays
 /**
- * FullscreenOverlayBase - Base component for all fullscreen overlays
+ * FullscreenOverlayBase - Base component for fullscreen and centered modal overlays
  *
  * Uses Radix Dialog primitives for proper:
  * - Focus management (blur on open, restore on close)
@@ -35,6 +38,7 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { usePlatform } from '../../context/PlatformContext'
 import { cn } from '../../lib/utils'
 import { getDismissibleLayerBridge } from '../../lib/dismissible-layer-bridge'
+import { OVERLAY_LAYOUT, type OverlayMode } from '../../lib/layout'
 import { FullscreenOverlayBaseHeader, type OverlayTypeBadge } from './FullscreenOverlayBaseHeader'
 import { OverlayErrorBanner, type OverlayErrorBannerProps } from './OverlayErrorBanner'
 
@@ -60,6 +64,10 @@ export interface FullscreenOverlayBaseProps {
   children: ReactNode
   /** Additional CSS classes for the container */
   className?: string
+  /** Presentation mode; existing callers remain fullscreen by default */
+  mode?: OverlayMode
+  /** Fixed fills the modal viewport; content grows only as tall as needed */
+  modalSizing?: 'fixed' | 'content'
   /** Accessible title for the overlay (visually hidden) */
   accessibleTitle?: string
 
@@ -96,6 +104,8 @@ export function FullscreenOverlayBase({
   onClose,
   children,
   className,
+  mode = 'fullscreen',
+  modalSizing = 'fixed',
   accessibleTitle = 'Overlay',
   typeBadge,
   filePath,
@@ -107,6 +117,9 @@ export function FullscreenOverlayBase({
   error,
 }: FullscreenOverlayBaseProps) {
   const { onSetTrafficLightsVisible } = usePlatform()
+  const isModal = mode === 'modal'
+  const isContentSizedModal = isModal && modalSizing === 'content'
+  const previouslyFocusedElementRef = useRef<HTMLElement | null>(null)
 
   // Determine if we should render the structured header.
   // Any header-related prop triggers header rendering.
@@ -130,11 +143,11 @@ export function FullscreenOverlayBase({
   // Hide macOS traffic lights when overlay opens, restore when it closes
   // This prevents accidental clicks on window controls behind the fullscreen overlay
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen || isModal) return
 
     onSetTrafficLightsVisible?.(false)
     return () => onSetTrafficLightsVisible?.(true)
-  }, [isOpen, onSetTrafficLightsVisible])
+  }, [isOpen, isModal, onSetTrafficLightsVisible])
 
   // Content padding clears the floating header at rest (when present).
   // Without a header, just the fade zone inset.
@@ -143,14 +156,46 @@ export function FullscreenOverlayBase({
   return (
     <Dialog.Root open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <Dialog.Portal>
+        {isModal && (
+          <Dialog.Overlay
+            className={OVERLAY_LAYOUT.modalBackdropClass}
+            style={{ position: 'fixed', inset: 0, zIndex: Z_FULLSCREEN }}
+          />
+        )}
         <Dialog.Content
           className={cn(
-            'fixed inset-0 overflow-hidden outline-none',
-            'bg-foreground-3 fullscreen-overlay-background',
+            isModal
+              ? 'fixed left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[16px] bg-background shadow-modal-small outline-none'
+              : 'fixed inset-0 overflow-hidden bg-foreground-3 fullscreen-overlay-background outline-none',
             className
           )}
-          style={{ zIndex: Z_FULLSCREEN }}
-          onOpenAutoFocus={(e) => e.preventDefault()}
+          style={isModal
+            ? {
+                zIndex: Z_FULLSCREEN,
+                width: '90vw',
+                maxWidth: isContentSizedModal
+                  ? OVERLAY_LAYOUT.contentModalMaxWidth
+                  : OVERLAY_LAYOUT.modalMaxWidth,
+                height: isContentSizedModal
+                  ? 'auto'
+                  : `${OVERLAY_LAYOUT.modalMaxHeightPercent}vh`,
+                maxHeight: `${OVERLAY_LAYOUT.modalMaxHeightPercent}vh`,
+              }
+            : { zIndex: Z_FULLSCREEN }}
+          onOpenAutoFocus={(event) => {
+            previouslyFocusedElementRef.current = document.activeElement instanceof HTMLElement
+              ? document.activeElement
+              : null
+
+            if (!isModal) event.preventDefault()
+          }}
+          onCloseAutoFocus={(event) => {
+            const target = previouslyFocusedElementRef.current
+            if (!target?.isConnected) return
+
+            event.preventDefault()
+            target.focus()
+          }}
           onEscapeKeyDown={(event) => {
             const handled = handleFullscreenEscapeWithStack()
             if (!handled) return
@@ -158,25 +203,47 @@ export function FullscreenOverlayBase({
             event.preventDefault()
             event.stopPropagation()
           }}
+          onPointerDownOutside={isModal
+            ? (event) => {
+                const bridge = getDismissibleLayerBridge()
+                const topLayer = bridge?.getTopLayer()
+
+                if (topLayer && topLayer.id !== overlayIdRef.current) {
+                  event.preventDefault()
+                  bridge?.closeTop()
+                }
+              }
+            : undefined}
         >
           {/* Visually hidden title for accessibility - required by Radix Dialog */}
           <Dialog.Title className="sr-only">{accessibleTitle}</Dialog.Title>
 
-          {/* Full-viewport masked scroll area — covers the entire dialog including behind the header.
-              The CSS mask gradient fades content at both edges (starting from y=0).
-              Content padding clears the header at rest. */}
+          {/* Fullscreen content scrolls behind its floating header; modal content scrolls below it. */}
           <div
-            className="absolute inset-0"
+            className={
+              isContentSizedModal
+                ? 'min-h-0 overflow-y-auto'
+                : isModal
+                  ? 'relative min-h-0 flex-1'
+                  : 'absolute inset-0'
+            }
             style={{ maskImage: FADE_MASK, WebkitMaskImage: FADE_MASK }}
           >
             <div
-              className="h-full overflow-y-auto"
-              style={{ paddingTop: contentPaddingTop, paddingBottom: FADE_SIZE, scrollPaddingTop: contentPaddingTop }}
+              className={
+                isContentSizedModal
+                  ? ''
+                  : isModal
+                    ? 'absolute inset-0 overflow-y-auto'
+                    : 'h-full overflow-y-auto'
+              }
+              style={{
+                paddingTop: isModal ? FADE_SIZE : contentPaddingTop,
+                paddingBottom: FADE_SIZE,
+                scrollPaddingTop: isModal ? FADE_SIZE : contentPaddingTop,
+              }}
             >
-              {/* Centering wrapper — error + content move together as a unit.
-                  min-h-full ensures centering when content is small; content can grow beyond. */}
-              <div className="min-h-full flex flex-col justify-center">
-                {/* Error banner — inside centering flow, above content */}
+              <div className={isContentSizedModal ? 'flex flex-col' : 'flex min-h-full flex-col justify-center'}>
                 {error && (
                   <div className="px-6 pb-4">
                     <OverlayErrorBanner label={error.label} message={error.message} />
@@ -187,10 +254,8 @@ export function FullscreenOverlayBase({
             </div>
           </div>
 
-          {/* Floating header — rendered after scroll area so it's visually on top (DOM order).
-              Positioned absolutely at the top of the viewport, above the scroll content. */}
           {hasHeader && (
-            <div className="absolute top-0 left-0 right-0 z-10">
+            <div className={isModal ? 'order-first shrink-0' : 'absolute top-0 left-0 right-0 z-10'}>
               <FullscreenOverlayBaseHeader
                 onClose={onClose}
                 typeBadge={typeBadge}

@@ -1,3 +1,7 @@
+// input: Chat session metadata, composer props, queued messages, and panel layout mode
+// output: Option strip, queued-message controls, and the active chat input
+// pos: Composition boundary between ChatDisplay and the primary input container
+
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { Clock, Pencil, Trash2 } from 'lucide-react'
@@ -7,7 +11,6 @@ import { flattenLabels, type LabelConfig } from '@craft-agent/shared/labels'
 import type { PermissionMode } from '@craft-agent/shared/agent/modes'
 import type { Message } from '../../../../shared/types'
 import type { SessionStatus } from '@/config/session-status-config'
-import type { BackgroundTask } from '../ActiveTasksBar'
 import { ActiveOptionBadges } from '../ActiveOptionBadges'
 import { InputContainer } from './InputContainer'
 import { InputErrorBoundary } from './InputErrorBoundary'
@@ -19,13 +22,8 @@ interface ChatInputZoneProps {
   showOptionBadges?: boolean
   permissionMode?: PermissionMode
   onPermissionModeChange?: (mode: PermissionMode) => void
-  tasks?: BackgroundTask[]
   sessionId: string
   sessionFolderPath?: string
-  onRenameSession?: (sessionId: string, name: string) => void
-  onOpenFile?: (path: string) => void
-  onKillTask?: (taskId: string) => void
-  onInsertMessage?: (text: string) => void
   sessionLabels?: string[]
   labels?: LabelConfig[]
   onLabelsChange?: (labels: string[]) => void
@@ -45,13 +43,8 @@ export function ChatInputZone({
   showOptionBadges,
   permissionMode = 'ask',
   onPermissionModeChange,
-  tasks = [],
   sessionId,
   sessionFolderPath,
-  onRenameSession,
-  onOpenFile,
-  onKillTask,
-  onInsertMessage,
   sessionLabels = [],
   labels = [],
   onLabelsChange,
@@ -103,13 +96,7 @@ export function ChatInputZone({
         <ActiveOptionBadges
           permissionMode={permissionMode}
           onPermissionModeChange={onPermissionModeChange}
-          tasks={tasks}
           sessionId={sessionId}
-          sessionFolderPath={sessionFolderPath}
-          onRenameSession={onRenameSession}
-          onOpenFile={onOpenFile}
-          onKillTask={onKillTask}
-          onInsertMessage={onInsertMessage ?? inputProps.onInputChange}
           sessionLabels={sessionLabels}
           labels={labels}
           onLabelsChange={onLabelsChange}
@@ -119,9 +106,6 @@ export function ChatInputZone({
           }}
           autoOpenLabelId={autoOpenLabelId}
           onAutoOpenConsumed={() => setAutoOpenLabelId(null)}
-          sessionStatuses={sessionStatuses}
-          currentSessionStatus={currentSessionStatus}
-          onSessionStatusChange={onSessionStatusChange}
         />
       )}
 

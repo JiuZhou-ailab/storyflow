@@ -1,10 +1,12 @@
+// input: Playground controls and representative chat/session fixture data
+// output: Interactive registry entries for chat surfaces and composer states
+// pos: Renderer playground catalog for chat UI regression checks
+
 import * as React from 'react'
 import type { ComponentEntry } from './types'
 import { AttachmentPreview } from '@/components/app-shell/AttachmentPreview'
 import { SetupAuthBanner } from '@/components/app-shell/SetupAuthBanner'
 import { TurnCard, type ActivityItem } from '@craft-agent/ui'
-import type { BackgroundTask } from '@/components/app-shell/ActiveTasksBar'
-import { ActiveOptionBadges } from '@/components/app-shell/ActiveOptionBadges'
 import { ChatInputZone, InputContainer } from '@/components/app-shell/input'
 import { setRecentWorkingDirs } from '@/components/app-shell/input/working-directory-history'
 import type { StructuredResponse } from '@/components/app-shell/input/structured/types'
@@ -77,62 +79,6 @@ docker push registry.example.com/myapp:latest
 kubectl apply -f k8s/deployment.yaml
 kubectl rollout status deployment/myapp`,
 }
-
-// Sample background tasks
-const sampleBackgroundTasks: BackgroundTask[] = [
-  {
-    id: 'task-abc123',
-    type: 'agent',
-    toolUseId: 'tool-1',
-    startTime: Date.now() - 45000, // 45 seconds ago
-    elapsedSeconds: 45,
-    intent: 'Explore codebase structure',
-  },
-  {
-    id: 'shell-xyz456',
-    type: 'shell',
-    toolUseId: 'tool-2',
-    startTime: Date.now() - 154000, // 2m 34s ago
-    elapsedSeconds: 154,
-  },
-]
-
-const singleBackgroundTask: BackgroundTask[] = [
-  {
-    id: 'task-123456',
-    type: 'agent',
-    toolUseId: 'tool-single',
-    startTime: Date.now() - 23000,
-    elapsedSeconds: 23,
-    intent: 'Search for TypeScript files',
-  },
-]
-
-const longRunningTasks: BackgroundTask[] = [
-  {
-    id: 'task-long-1',
-    type: 'agent',
-    toolUseId: 'tool-long-1',
-    startTime: Date.now() - 3723000, // 1h 2m 3s
-    elapsedSeconds: 3723,
-    intent: 'Refactor authentication system',
-  },
-  {
-    id: 'shell-long-2',
-    type: 'shell',
-    toolUseId: 'tool-long-2',
-    startTime: Date.now() - 245000, // 4m 5s
-    elapsedSeconds: 245,
-  },
-  {
-    id: 'task-long-3',
-    type: 'agent',
-    toolUseId: 'tool-long-3',
-    startTime: Date.now() - 12000, // 12s
-    elapsedSeconds: 12,
-    intent: 'Run tests',
-  },
-]
 
 const inputContainerSampleLabels: LabelConfig[] = [
   { id: 'bug', name: 'Bug', color: { light: '#EF4444', dark: '#F87171' } },
@@ -540,7 +486,6 @@ interface InputContainerPlaygroundProps {
   inputMode?: InputContainerMode
   compactMode?: boolean
   showOptionBadges?: boolean
-  showTasks?: boolean
   showLabels?: boolean
   showStatuses?: boolean
   labelCount?: number
@@ -565,7 +510,6 @@ function InputContainerPlayground({
   inputMode = 'freeform',
   compactMode = false,
   showOptionBadges = true,
-  showTasks = true,
   showLabels = true,
   showStatuses = true,
   labelCount = 3,
@@ -743,10 +687,7 @@ function InputContainerPlayground({
           showOptionBadges={showOptionBadges}
           permissionMode={mode}
           onPermissionModeChange={setMode}
-          tasks={showTasks ? sampleBackgroundTasks : []}
           sessionId={playgroundSessionId}
-          onKillTask={(taskId) => console.log('[Playground] Kill task:', taskId)}
-          onInsertMessage={setInputValue}
           sessionLabels={showLabels ? sessionLabels : []}
           labels={showLabels ? labels : []}
           onLabelsChange={setSessionLabels}
@@ -780,77 +721,6 @@ function InputContainerPlayground({
       </div>
     </AppShellProvider>
     </ModalProvider>
-  )
-}
-
-/**
- * Contextual wrapper for ActiveTasksBar showing it with messages and input
- */
-interface ActiveTasksBarContextProps {
-  tasks?: BackgroundTask[]
-}
-
-function ActiveTasksBarContext({ tasks = sampleBackgroundTasks }: ActiveTasksBarContextProps) {
-  const [permissionMode, setPermissionMode] = React.useState<PermissionMode>('ask')
-
-  // Inject mock electronAPI for file attachments
-  React.useEffect(() => {
-    ensureMockElectronAPI()
-  }, [])
-
-  return (
-    <div className="w-full max-w-[960px] h-full flex flex-col">
-      {/* Sample messages for context - matches ChatDisplay padding */}
-      <div className="flex-1 overflow-auto px-5 py-8 space-y-2.5">
-        {/* User message */}
-        <div className="pt-3 flex justify-end">
-          <div className="max-w-[80%] rounded-2xl bg-foreground text-background px-4 py-2">
-            <p className="text-sm">Can you explore the codebase structure and analyze the API endpoints?</p>
-          </div>
-        </div>
-
-        {/* Assistant message */}
-        <div className="flex justify-start">
-          <div className="max-w-[80%] rounded-2xl bg-muted px-4 py-2">
-            <p className="text-sm">I'll explore the codebase and analyze the API endpoints. Let me start by running a background task to search for API route definitions...</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Input area - matches ChatDisplay padding */}
-      <div className="mx-auto w-full px-4 pb-4 mt-1" style={{ maxWidth: 'var(--content-max-width, 960px)' }}>
-        {/* Active option badges and tasks */}
-        <ActiveOptionBadges
-          permissionMode={permissionMode}
-          onPermissionModeChange={setPermissionMode}
-          tasks={tasks}
-          sessionId="playground-session"
-          onKillTask={(taskId) => console.log('[Playground] Kill task:', taskId)}
-        />
-
-        {/* Real InputContainer */}
-        <InputContainer
-          placeholder="Message Craft Agent..."
-          disabled={false}
-          isProcessing={false}
-          currentModel="claude-sonnet-4-6"
-          permissionMode={permissionMode}
-          onPermissionModeChange={setPermissionMode}
-          sources={mockSources}
-          enabledSourceSlugs={['github-api', 'local-files']}
-          workingDirectory="/Users/demo/projects/craft-agent"
-          sessionId="playground-session"
-          onSubmit={mockInputCallbacks.onSubmit}
-          onModelChange={mockInputCallbacks.onModelChange}
-          onInputChange={mockInputCallbacks.onInputChange}
-          onHeightChange={mockInputCallbacks.onHeightChange}
-          onFocusChange={mockInputCallbacks.onFocusChange}
-          onSourcesChange={mockInputCallbacks.onSourcesChange}
-          onWorkingDirectoryChange={mockInputCallbacks.onWorkingDirectoryChange}
-          onStop={mockInputCallbacks.onStop}
-        />
-      </div>
-    </div>
   )
 }
 
@@ -924,12 +794,6 @@ function PermissionInputToggle({ autoToggle = false, autoToggleInterval = 3000, 
           Current: <span className="font-medium">{showPermission ? 'Permission Banner' : 'Input View'}</span>
         </span>
       </div>
-
-      {/* Active option badges */}
-      <ActiveOptionBadges
-        permissionMode={permissionMode}
-        onPermissionModeChange={setPermissionMode}
-      />
 
       {/* Real InputContainer - handles animation automatically */}
       <InputContainer
@@ -1056,57 +920,6 @@ export const chatComponents: ComponentEntry[] = [
     }),
   },
   {
-    id: 'active-option-badges',
-    name: 'ActiveOptionBadges',
-    category: 'Chat',
-    description: 'Shows active options (permission mode) and background tasks as badge pills above chat input',
-    component: ActiveOptionBadges,
-    props: [
-      {
-        name: 'permissionMode',
-        description: 'Current permission mode',
-        control: {
-          type: 'select',
-          options: [
-            { label: 'Safe Mode', value: 'safe' },
-            { label: 'Ask Permission', value: 'ask' },
-            { label: 'Allow All', value: 'allow-all' },
-          ],
-        },
-        defaultValue: 'ask',
-      },
-      {
-        name: 'variant',
-        description: 'Interaction variant',
-        control: {
-          type: 'select',
-          options: [
-            { label: 'Dropdown', value: 'dropdown' },
-            { label: 'Cycle', value: 'cycle' },
-          ],
-        },
-        defaultValue: 'dropdown',
-      },
-    ],
-    variants: [
-      { name: 'Permission Mode (Ask)', props: { permissionMode: 'ask', tasks: [], sessionId: 'session-1' } },
-      { name: 'Permission Mode (Safe)', props: { permissionMode: 'safe', tasks: [], sessionId: 'session-1' } },
-      { name: 'Permission Mode (Allow All)', props: { permissionMode: 'allow-all', tasks: [], sessionId: 'session-1' } },
-      { name: 'Single Task', props: { permissionMode: 'ask', tasks: singleBackgroundTask, sessionId: 'session-1' } },
-      { name: 'Multiple Tasks', props: { permissionMode: 'ask', tasks: sampleBackgroundTasks, sessionId: 'session-1' } },
-      { name: 'Long Running Tasks', props: { permissionMode: 'ask', tasks: longRunningTasks, sessionId: 'session-1' } },
-      { name: 'All Active (Everything)', props: { permissionMode: 'ask', tasks: sampleBackgroundTasks, sessionId: 'session-1' } },
-      { name: 'Tasks in Safe Mode', props: { permissionMode: 'safe', tasks: sampleBackgroundTasks, sessionId: 'session-1' } },
-      { name: 'Cycle Variant', props: { permissionMode: 'ask', tasks: sampleBackgroundTasks, variant: 'cycle', sessionId: 'session-1' } },
-    ],
-    mockData: () => ({
-      tasks: sampleBackgroundTasks,
-      sessionId: 'session-playground',
-      onPermissionModeChange: (mode: string) => console.log('[Playground] Permission mode changed:', mode),
-      onKillTask: (taskId: string) => console.log('[Playground] Kill task:', taskId),
-    }),
-  },
-  {
     id: 'permission-input-toggle',
     name: 'Permission ↔ Input Toggle',
     category: 'Chat',
@@ -1224,28 +1037,10 @@ export const chatComponents: ComponentEntry[] = [
     }),
   },
   {
-    id: 'active-tasks-bar-context',
-    name: 'Active Tasks & Badges',
-    category: 'Chat',
-    description: 'Integrated display of option badges (permission mode) and background tasks in a horizontally scrollable row. Shows full chat context with messages above and input below.',
-    component: ActiveTasksBarContext,
-    layout: 'full',
-    props: [],
-    variants: [
-      { name: 'With Multiple Tasks', props: { tasks: sampleBackgroundTasks } },
-      { name: 'With Single Task', props: { tasks: singleBackgroundTask } },
-      { name: 'With Long Running Tasks', props: { tasks: longRunningTasks } },
-      { name: 'Empty (Hidden)', props: { tasks: [] } },
-    ],
-    mockData: () => ({
-      tasks: sampleBackgroundTasks,
-    }),
-  },
-  {
     id: 'input-container',
     name: 'InputContainer',
     category: 'Chat Inputs',
-    description: 'App-like input zone with max-width layout, active option badges, labels, statuses, tasks, and full InputContainer behavior',
+    description: 'App-like input zone with bottom permission control, labels, statuses, and full InputContainer behavior',
     component: InputContainerPlayground,
     layout: 'full',
     previewOverflow: 'visible',
@@ -1315,13 +1110,7 @@ export const chatComponents: ComponentEntry[] = [
       },
       {
         name: 'showOptionBadges',
-        description: 'Show the ActiveOptionBadges row above input',
-        control: { type: 'boolean' },
-        defaultValue: true,
-      },
-      {
-        name: 'showTasks',
-        description: 'Include background tasks in badges row',
+        description: 'Show the session label row above input',
         control: { type: 'boolean' },
         defaultValue: true,
       },
@@ -1455,11 +1244,10 @@ export const chatComponents: ComponentEntry[] = [
         },
       },
       {
-        name: 'Processing + Tasks',
-        description: 'Streaming/processing state with background task badges',
+        name: 'Processing',
+        description: 'Streaming/processing composer state',
         props: {
           isProcessing: true,
-          showTasks: true,
           showOptionBadges: true,
         },
       },
@@ -1469,7 +1257,6 @@ export const chatComponents: ComponentEntry[] = [
         props: {
           permissionMode: 'safe',
           compactMode: true,
-          showTasks: false,
         },
       },
       {
@@ -1495,7 +1282,6 @@ export const chatComponents: ComponentEntry[] = [
           showLabels: true,
           labelCount: 4,
           showStatuses: true,
-          showTasks: false,
         },
       },
       {

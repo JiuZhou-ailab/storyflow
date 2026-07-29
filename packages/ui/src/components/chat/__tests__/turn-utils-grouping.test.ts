@@ -3,7 +3,7 @@
  *
  * These tests cover:
  * - groupActivitiesByParent() - Task subagent grouping
- * - extractTodosFromActivities() - task tracking parsing (internal, tested via exports)
+ * - legacy task-tool activities remain compatible with generic grouping
  * - computeLastChildSet() - Tree view last-child detection
  * - extractTaskOutputData() - TaskOutput JSON parsing (internal, tested indirectly)
  */
@@ -610,15 +610,10 @@ describe('isActivityGroup', () => {
 })
 
 // ============================================================================
-// extractTodosFromActivities Tests (tested via groupMessagesByTurn integration)
-// Note: This function is internal but we can test its behavior indirectly
-// by checking that turns have correct todos extracted
+// Legacy task-tool activity grouping
 // ============================================================================
 
-describe('TodoWrite extraction', () => {
-  // These tests verify the todo extraction behavior by creating activities
-  // and checking groupActivitiesByParent doesn't break with TodoWrite activities
-
+describe('legacy task-tool grouping', () => {
   it('includes TodoWrite activities in flat list (not grouped)', () => {
     resetCounters()
     const todoActivity = createTodoWriteActivity([

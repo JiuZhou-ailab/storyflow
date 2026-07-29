@@ -38,6 +38,10 @@ const workspaceEmptyStateSource = readFileSync(
   new URL('../../workspace/WorkspaceEmptyState.tsx', import.meta.url),
   'utf8',
 )
+const novelDocumentTabStripSource = readFileSync(
+  new URL('../../writing/NovelDocumentTabStrip.tsx', import.meta.url),
+  'utf8',
+)
 const workspaceProjectSidebarSource = readFileSync(
   new URL('../../workspace/WorkspaceProjectSidebar.tsx', import.meta.url),
   'utf8',
@@ -249,7 +253,8 @@ describe('app shell layout defaults', () => {
     expect(editorPanelSource).not.toContain('flex h-[42px] shrink-0')
     expect(tiptapEditorStyles).toContain('.tiptap-editor--manuscript .tiptap-toolbar')
     expect(tiptapEditorStyles).toContain('height: 42px')
-    expect(workspaceEmptyStateSource).toContain('h-[42px]')
+    expect(workspaceEmptyStateSource).not.toContain('h-[42px]')
+    expect(novelDocumentTabStripSource).toContain('h-[42px]')
     expect(panelHeaderSource).toContain('h-[42px]')
   })
 

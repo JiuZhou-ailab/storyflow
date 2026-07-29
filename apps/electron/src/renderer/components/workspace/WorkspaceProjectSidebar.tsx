@@ -37,7 +37,7 @@ export function WorkspaceProjectSidebar({
   return (
     <div
       ref={sidebarRef}
-      className="flex h-full min-h-0 flex-col font-sans"
+      className="flex min-h-full flex-col font-sans"
       data-focus-zone="sidebar"
       tabIndex={focused ? 0 : -1}
       onFocus={onFocus}

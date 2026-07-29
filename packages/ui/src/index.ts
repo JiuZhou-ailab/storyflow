@@ -61,7 +61,6 @@ export {
   type ActivityItem,
   type ActivityStatus,
   type ResponseContent,
-  type TodoItem,
   type InlineExecutionProps,
   type InlineExecutionStatus,
   type InlineActivityItem,

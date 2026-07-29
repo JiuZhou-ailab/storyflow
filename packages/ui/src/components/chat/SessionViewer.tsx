@@ -1,3 +1,7 @@
+// input: Stored session transcripts, viewer mode, and platform navigation callbacks
+// output: Read-only grouped turn cards for shared and embedded session surfaces
+// pos: Platform-agnostic transcript viewer built on the shared chat presentation layer
+
 /**
  * SessionViewer - Read-only session transcript viewer
  *
@@ -197,6 +201,7 @@ export function SessionViewer({
                     intent={turn.intent}
                     isStreaming={turn.isStreaming}
                     isComplete={turn.isComplete}
+                    metrics={turn.metrics}
                     isExpanded={expandedTurns.has(assistantUiKey)}
                     onExpandedChange={(expanded) => handleExpandedChange(assistantUiKey, expanded)}
                     onOpenFile={platformActions.onOpenFile}
@@ -204,7 +209,6 @@ export function SessionViewer({
                     onPopOut={platformActions.onOpenMarkdownPreview}
                     onOpenDetails={() => handleOpenTurnDetails(turn.turnId)}
                     onOpenActivityDetails={handleOpenActivityDetails}
-                    todos={turn.todos}
                     expandedActivityGroups={expandedActivityGroups}
                     onExpandedActivityGroupsChange={handleExpandedActivityGroupsChange}
                     onOpenMultiFileDiff={platformActions.onOpenMultiFileDiff

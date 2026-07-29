@@ -61,5 +61,6 @@ describe('WorkspaceProjectSidebar', () => {
     expect(html).not.toContain('aria-expanded')
     expect(html).not.toContain('lucide-folder-open')
     expect(html).not.toContain('h-[42px]')
+    expect(html).toContain('flex min-h-full flex-col font-sans')
   })
 })

@@ -1,3 +1,6 @@
+// input: Preview content plus optional width, height, and sidebar constraints
+// output: Centered framed preview card that grows with its content
+// pos: Shared visual frame inside code, terminal, diff, and activity overlays
 /**
  * ContentFrame - Shared terminal-style card frame for all preview overlays
  *
@@ -44,6 +47,8 @@ export interface ContentFrameProps {
   maxWidth?: number
   /** Minimum width of the card. Only used when fitContent is true. */
   minWidth?: number
+  /** Minimum height of the card */
+  minHeight?: number
   /** When true, the card uses CSS `width: max-content` to naturally grow to fit
    *  its content width (e.g., wide diff tables). The card is capped at 100% of
    *  the viewport (minus padding) and floored at minWidth. This is more reliable
@@ -61,6 +66,7 @@ export function ContentFrame({
   title,
   maxWidth = 850,
   minWidth,
+  minHeight = 320,
   fitContent,
   leftSidebar,
   rightSidebar,
@@ -89,7 +95,10 @@ export function ContentFrame({
         )}
 
         {/* Main card — grows to fit content, no internal scrolling */}
-        <div className="flex flex-col rounded-2xl overflow-hidden backdrop-blur-sm shadow-strong bg-background min-h-[320px]">
+        <div
+          className="flex flex-col rounded-2xl overflow-hidden backdrop-blur-sm shadow-strong bg-background"
+          style={{ minHeight }}
+        >
           {/* Title bar */}
           <div className="flex justify-center items-center px-4 py-3 border-b border-foreground/7 select-none shrink-0">
             <div className="text-xs font-semibold tracking-wider text-foreground/30">

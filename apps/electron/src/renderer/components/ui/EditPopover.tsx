@@ -392,13 +392,13 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
   'add-skill': () => ({
     context: {
       label: 'Add Skill',
-      filePath: '~/.craft-agent/skills/',
+      filePath: '~/.pi/agent/skills/',
       context:
         'Use [skill:skill-creator] to design a new Skill through conversation. ' +
-        'The target is the one global Storyflow Skill store, available to every project. ' +
-        'After the user confirms the summarized draft, call skill_create; it will create under ~/.craft-agent/skills/. ' +
+        'The target is the Pi user Skill store, available to every project. ' +
+        'After the user confirms the summarized draft, call skill_create; it will create under ~/.pi/agent/skills/. ' +
         'Do not write the Skill with generic file or shell tools. ' +
-        'Do not write to ~/.agents, ~/.codex, a project .pi/skills directory, or any other Skill root.',
+        'Use the Skills CLI when the user explicitly wants a project-local .agents/skills installation.',
     },
     example: 'Review PRs following our code standards',
     overridePlaceholder: 'What should I learn to do?',

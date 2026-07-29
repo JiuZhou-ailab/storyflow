@@ -2,12 +2,12 @@
 // output: Grouped user, assistant, system, and auth turns with render metadata
 // pos: Shared transcript normalization layer before TurnCard rendering
 
-import type { Message, StoredMessage, MessageRole } from '@craft-agent/core'
-import { isParentTaskTool, isTodoMutationTool } from '@craft-agent/shared/utils/toolNames'
+import type { Message, StoredMessage, MessageRole, TurnMetrics } from '@craft-agent/core'
+import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
 import { storedToMessage } from '@craft-agent/core'
 
 export { storedToMessage }
-import type { ActivityItem, ActivityStatus, ActivityType, ResponseContent, TodoItem } from './TurnCard'
+import type { ActivityItem, ActivityStatus, ActivityType, ResponseContent } from './TurnCard'
 
 // Re-export ActivityItem for consumers
 export type { ActivityItem }
@@ -46,8 +46,8 @@ export interface AssistantTurn {
   isStreaming: boolean
   isComplete: boolean
   timestamp: number
-  /** Extracted from task tracking tools - latest todo state in this turn */
-  todos?: TodoItem[]
+  /** Durable elapsed time and token usage for this completed turn */
+  metrics?: TurnMetrics
 }
 
 /** Represents a user message */
@@ -287,68 +287,6 @@ function calculateActivityDepths(activities: ActivityItem[]): void {
 // Task Tracking Extraction
 // ============================================================================
 
-/**
- * Extract todos from legacy TodoWrite or SDK 0.3+ Task* tool results in activities.
- * Returns the latest complete task state available in the turn.
- */
-function extractTodosFromActivities(activities: ActivityItem[]): TodoItem[] | undefined {
-  let latestActivity: ActivityItem | undefined
-  for (let i = activities.length - 1; i >= 0; i--) {
-    const activity = activities[i]
-    if (activity?.toolName && isTodoMutationTool(activity.toolName) && activity.status === 'completed') {
-      latestActivity = activity
-      break
-    }
-  }
-  if (!latestActivity) return undefined
-
-  try {
-    const input = latestActivity.toolInput
-    if (input && Array.isArray(input.todos)) {
-      return input.todos.map((todo: { content: string; status: string; activeForm?: string }) => ({
-        content: todo.content,
-        status: todo.status as 'pending' | 'in_progress' | 'completed',
-        activeForm: todo.activeForm,
-      }))
-    }
-
-    if (input && latestActivity.toolName === 'TaskCreate') {
-      const content = typeof input.content === 'string'
-        ? input.content
-        : typeof input.description === 'string'
-          ? input.description
-          : typeof input.task === 'string'
-            ? input.task
-            : undefined
-      if (content) {
-        return [{ content, status: 'pending' }]
-      }
-    }
-
-    if (input && latestActivity.toolName === 'TaskUpdate') {
-      const content = typeof input.content === 'string'
-        ? input.content
-        : typeof input.description === 'string'
-          ? input.description
-          : typeof input.task === 'string'
-            ? input.task
-            : undefined
-      const status = typeof input.status === 'string'
-        ? input.status
-        : typeof input.state === 'string'
-          ? input.state
-          : undefined
-      if (content && (status === 'pending' || status === 'in_progress' || status === 'completed')) {
-        return [{ content, status }]
-      }
-    }
-  } catch {
-    // Failed to parse, return undefined
-  }
-
-  return undefined
-}
-
 // ============================================================================
 // Main Grouping Function
 // ============================================================================
@@ -395,23 +333,13 @@ export function groupMessagesByTurn(messages: Message[]): Turn[] {
       // Calculate nesting depths for parent-child tool relationships
       calculateActivityDepths(currentTurn.activities)
 
-      // Extract todos from task tracking tool results
-      currentTurn.todos = extractTodosFromActivities(currentTurn.activities)
-
-      // If interrupted, mark any running activities as error and todos as interrupted
+      // If interrupted, mark any running activities as error
       if (interrupted) {
         currentTurn.activities = currentTurn.activities.map(activity =>
           activity.status === 'running'
             ? { ...activity, status: 'error' as ActivityStatus, error: 'Interrupted' }
             : activity
         )
-        if (currentTurn.todos) {
-          currentTurn.todos = currentTurn.todos.map(todo =>
-            todo.status === 'in_progress'
-              ? { ...todo, status: 'interrupted' as const }
-              : todo
-          )
-        }
         currentTurn.isStreaming = false
         currentTurn.isComplete = true
       }
@@ -661,6 +589,7 @@ export function groupMessagesByTurn(messages: Message[]): Turn[] {
         canBranch: message.canBranch ?? !!message.turnId,
         annotations: message.annotations,
       }
+      currentTurn.metrics = message.turnMetrics
       currentTurn.isStreaming = !!message.isStreaming
       currentTurn.isComplete = !message.isStreaming
 
@@ -1102,7 +1031,7 @@ export function computeLastChildSet(activities: ActivityItem[]): Set<string> {
  * Format duration in milliseconds to human-readable string.
  * @example formatDuration(1234) => "1.2s"
  * @example formatDuration(65000) => "1m 5s"
- * @example formatDuration(125000) => "2m+"
+ * @example formatDuration(125000) => "2m 5s"
  */
 export function formatDuration(ms: number): string {
   // Guard against invalid inputs
@@ -1113,10 +1042,12 @@ export function formatDuration(ms: number): string {
   if (seconds < 60) {
     return `${seconds.toFixed(1)}s`
   }
-  const minutes = Math.floor(seconds / 60)
-  const remainingSeconds = Math.round(seconds % 60)
-  if (minutes >= 2) {
-    return `${minutes}m+`
+  const totalSeconds = Math.round(seconds)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const remainingSeconds = totalSeconds % 60
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${remainingSeconds}s`
   }
   return `${minutes}m ${remainingSeconds}s`
 }

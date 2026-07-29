@@ -1,3 +1,7 @@
+// input: Main-process session events and current renderer session state
+// output: Typed event-processor contracts and state transition payloads
+// pos: Renderer boundary between transport DTOs and pure session handlers
+
 /**
  * Event Processor Types
  *
@@ -95,6 +99,7 @@ export interface CompleteEvent {
   type: 'complete'
   sessionId: string
   tokenUsage?: Session['tokenUsage']
+  turnMetrics?: Array<{ messageId: string; metrics: NonNullable<Message['turnMetrics']> }>
   /** Explicit unread flag - set by main process based on viewing state */
   hasUnread?: boolean
 }

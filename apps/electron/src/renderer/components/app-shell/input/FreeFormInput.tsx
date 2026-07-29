@@ -82,7 +82,7 @@ import { ConnectionIcon } from '@/components/icons/ConnectionIcon'
 import { FreeFormInputContextBadge } from './FreeFormInputContextBadge'
 import type { FileAttachment, LoadedSource, LoadedSkill, LlmConnectionWithStatus } from '../../../../shared/types'
 import type { SessionStatus } from '@/config/session-status-config'
-import type { PermissionMode } from '@craft-agent/shared/agent/modes'
+import { PERMISSION_MODE_ORDER, type PermissionMode } from '@craft-agent/shared/agent/modes'
 import { type ThinkingLevel, THINKING_LEVELS } from '@craft-agent/shared/agent/thinking-levels'
 import { useEscapeInterrupt } from '@/context/EscapeInterruptContext'
 import { hasOpenOverlay } from '@/lib/overlay-detection'
@@ -287,7 +287,7 @@ export function FreeFormInput({
   onThinkingLevelChange,
   permissionMode = 'ask',
   onPermissionModeChange,
-  enabledModes = ['safe', 'ask', 'allow-all'],
+  enabledModes = PERMISSION_MODE_ORDER,
   inputValue,
   onInputChange,
   attachmentsValue,
@@ -2149,6 +2149,7 @@ export function FreeFormInput({
               workspaceId={workspaceId}
             />
           )}
+
           </div>
           )}
 

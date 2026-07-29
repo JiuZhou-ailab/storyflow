@@ -1,3 +1,7 @@
+// input: Session lifecycle events and immutable renderer session state
+// output: Pure state transitions for completion, usage, errors, and metadata
+// pos: Canonical renderer projection of main-process session events
+
 /**
  * Session Event Handlers
  *
@@ -95,6 +99,9 @@ export function handleComplete(
   // the natural place to drop the indicator. Claude's queued path has already
   // cleared via the 'processing' status update before this fires; this is
   // a safe no-op for that case.
+  const turnMetricsByMessageId = event.turnMetrics?.length
+    ? new Map(event.turnMetrics.map(({ messageId, metrics }) => [messageId, metrics]))
+    : undefined
   for (let index = 0; index < session.messages.length; index++) {
     const message = session.messages[index]
     const shouldCompleteTool = message.role === 'tool'
@@ -102,12 +109,20 @@ export function handleComplete(
       && message.toolStatus !== 'error'
       && !(message.isBackground && message.taskId)  // Don't force-complete genuine background tasks
     const shouldClearQueuedUser = message.role === 'user' && message.isQueued
+    const turnMetrics = turnMetricsByMessageId?.get(message.id)
+    const shouldUpdateTurnMetrics = turnMetrics !== undefined && message.turnMetrics !== turnMetrics
 
-    if (!shouldCompleteTool && !shouldClearQueuedUser) continue
+    if (!shouldCompleteTool && !shouldClearQueuedUser && !shouldUpdateTurnMetrics) continue
     if (updatedMessages === session.messages) updatedMessages = [...session.messages]
-    updatedMessages[index] = shouldCompleteTool
-      ? { ...message, toolStatus: 'completed', toolResult: message.toolResult ?? '' }
-      : { ...message, isQueued: false }
+    let updatedMessage: Message = shouldCompleteTool
+      ? { ...message, toolStatus: 'completed' as const, toolResult: message.toolResult ?? '' }
+      : shouldClearQueuedUser
+        ? { ...message, isQueued: false }
+        : message
+    if (shouldUpdateTurnMetrics) {
+      updatedMessage = { ...updatedMessage, turnMetrics }
+    }
+    updatedMessages[index] = updatedMessage
   }
 
   const nextTokenUsage = event.tokenUsage ?? session.tokenUsage
@@ -1058,7 +1073,7 @@ export function handleUsageUpdate(
   const currentTokenUsage = session.tokenUsage
   if (
     currentTokenUsage !== undefined
-    && currentTokenUsage.inputTokens === event.tokenUsage.inputTokens
+    && currentTokenUsage.contextTokens === event.tokenUsage.inputTokens
     && currentTokenUsage.contextWindow === event.tokenUsage.contextWindow
   ) {
     return { state, effects: [] }
@@ -1066,10 +1081,10 @@ export function handleUsageUpdate(
 
   // Merge usage update into existing tokenUsage, providing defaults for required fields
   const updatedTokenUsage = {
-    inputTokens: event.tokenUsage.inputTokens,
+    inputTokens: session.tokenUsage?.inputTokens ?? 0,
     outputTokens: session.tokenUsage?.outputTokens ?? 0,
     totalTokens: session.tokenUsage?.totalTokens ?? 0,
-    contextTokens: session.tokenUsage?.contextTokens ?? 0,
+    contextTokens: event.tokenUsage.inputTokens,
     costUsd: session.tokenUsage?.costUsd ?? 0,
     ...(session.tokenUsage?.cacheReadTokens !== undefined && { cacheReadTokens: session.tokenUsage.cacheReadTokens }),
     ...(session.tokenUsage?.cacheCreationTokens !== undefined && { cacheCreationTokens: session.tokenUsage.cacheCreationTokens }),

@@ -1,5 +1,5 @@
 // input: Slash-menu Skill, command, and folder fixtures
-// output: Regression proof for canonical global Skill insertion and menu filtering
+// output: Regression proof for canonical Pi Skill insertion and menu filtering
 // pos: Renderer-unit boundary for slash command behavior
 
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
@@ -15,6 +15,7 @@ let createSlashFolderItems: typeof import('../slash-command-menu').createSlashFo
 let hasMatchingSlashItems: typeof import('../slash-command-menu').hasMatchingSlashItems
 let getSlashSkillInsertionText: typeof import('../slash-command-menu').getSlashSkillInsertionText
 let parseInlineSlashCommandQuery: typeof import('../slash-command-menu').parseInlineSlashCommandQuery
+let defaultSlashCommandGroups: typeof import('../slash-command-menu').DEFAULT_SLASH_COMMAND_GROUPS
 
 beforeAll(async () => {
   const mod = await import('../slash-command-menu')
@@ -23,6 +24,7 @@ beforeAll(async () => {
   hasMatchingSlashItems = mod.hasMatchingSlashItems
   getSlashSkillInsertionText = mod.getSlashSkillInsertionText
   parseInlineSlashCommandQuery = mod.parseInlineSlashCommandQuery
+  defaultSlashCommandGroups = mod.DEFAULT_SLASH_COMMAND_GROUPS
 })
 
 function skill(overrides: Partial<LoadedSkill> & Pick<LoadedSkill, 'slug'>): LoadedSkill {
@@ -34,11 +36,20 @@ function skill(overrides: Partial<LoadedSkill> & Pick<LoadedSkill, 'slug'>): Loa
     },
     content: '',
     path: overrides.path ?? `/skills/${overrides.slug}`,
+    filePath: overrides.filePath ?? `/skills/${overrides.slug}/SKILL.md`,
+    scope: overrides.scope ?? 'user',
+    source: overrides.source ?? 'pi',
+    origin: overrides.origin ?? 'top-level',
     iconPath: overrides.iconPath,
   }
 }
 
 describe('slash skill commands', () => {
+  it('offers only ask and direct-run permission modes', () => {
+    expect(defaultSlashCommandGroups[0]?.commands.map(command => command.id))
+      .toEqual(['ask', 'allow-all'])
+  })
+
   it('maps skills into slash command items', () => {
     const items = createSlashSkillItems([
       skill({

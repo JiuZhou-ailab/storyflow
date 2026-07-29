@@ -1,4 +1,4 @@
-// input: Global Skill slug, runtime routing id, and AppShell-populated skills atom
+// input: Pi-native Skill slug, runtime routing id, and AppShell-populated skills atom
 // output: Skill metadata, instructions, permissions, and explicit edit actions
 // pos: Detail page for inspecting and maintaining reusable agent skills
 
@@ -41,7 +41,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
 
     try {
       if (!canRevealLocally) return
-      await window.electronAPI.showInFolder(`${skill.path}/SKILL.md`)
+      await window.electronAPI.showInFolder(skill.filePath)
     } catch (err) {
       console.error('Failed to open skill in finder:', err)
     }
@@ -60,7 +60,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
         description: err instanceof Error ? err.message : undefined,
       })
     }
-  }, [displayName, skill, workspaceId, skillSlug])
+  }, [displayName, skill, t, workspaceId, skillSlug])
 
   // Handle opening in new window
   const handleOpenInNewWindow = useCallback(() => {
@@ -69,7 +69,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
 
   // Get skill name for header
   const skillName = displayName
-  const canDeleteSkill = Boolean(skill)
+  const canDeleteSkill = skill?.origin === 'top-level'
 
   // Format path to show just the skill-relative portion (skills/{slug}/)
   const formatPath = (path: string) => {
@@ -85,7 +85,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
     if (!skill) return
     // Show the SKILL.md file in Finder (this reveals the enclosing folder with file focused)
     if (!canRevealLocally) return
-    window.electronAPI.showInFolder(`${skill.path}/SKILL.md`)
+    window.electronAPI.showInFolder(skill.filePath)
   }
 
   const handleOpenInEditor = useCallback(async () => {
@@ -95,7 +95,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
         await window.electronAPI.openSkillInEditor(workspaceId, skillSlug)
         return
       }
-      onOpenFile?.(`${skill.path}/SKILL.md`)
+      onOpenFile?.(skill.filePath)
     } catch (err) {
       toast.error('无法打开编辑器', {
         description: err instanceof Error ? err.message : undefined,
@@ -105,7 +105,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
 
   const renderEditActions = (configKey: 'skill-metadata' | 'skill-instructions') => {
     if (!skill) return null
-    const filePath = `${skill.path}/SKILL.md`
+    const filePath = skill.filePath
     // Primary path: open SKILL.md in the system editor. AI assist stays secondary.
     return (
       <ResourceEditActions

@@ -38,6 +38,8 @@ describe('WorkspaceEmptyState', () => {
     expect(html).toContain('data-workspace-action="create-file"')
     expect(html).toContain('data-workspace-action="import-files"')
     expect(html).toContain('data-workspace-action="open-skills"')
+    expect(html).toContain('flex h-full min-h-0 flex-1 items-center justify-center overflow-y-auto px-5 py-8')
+    expect(html).not.toContain('<header')
     expect(html).not.toContain('writing.emptySection')
   })
 
@@ -48,6 +50,7 @@ describe('WorkspaceEmptyState', () => {
     expect(appShellSource).toContain('selectedNovelFile ? (')
     expect(appShellSource).toContain('<WorkspaceEmptyState')
     expect(appShellSource).toContain('onCreateFile={() => handleWorkspaceOpeningCommand')
+    expect(appShellSource).toContain('<div className="min-w-0 flex-1">')
     expect(editorSource).not.toContain('WorkspaceEmptyState')
   })
 })

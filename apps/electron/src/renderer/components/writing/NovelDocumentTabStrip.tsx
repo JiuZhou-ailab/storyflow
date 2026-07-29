@@ -1,5 +1,5 @@
-// input: Open writing files, active path, workspace actions, and trailing header controls
-// output: Shared closable file-tab header for the writing workspace
+// input: Open writing files, active path, start-page action, and trailing header controls
+// output: Shared closable file-tab header with a workspace start-page button
 // pos: Stable chrome above both the manuscript editor and optional directory pane
 
 import * as React from 'react'
@@ -14,7 +14,7 @@ export interface NovelDocumentTabStripProps {
   activePath: string | null
   onActivate: (file: NovelWorkspaceFile) => void
   onClose: (path: string) => void
-  onCreateFile: () => void
+  onOpenStart: () => void
   trailingActions?: React.ReactNode
 }
 
@@ -23,7 +23,7 @@ export function NovelDocumentTabStrip({
   activePath,
   onActivate,
   onClose,
-  onCreateFile,
+  onOpenStart,
   trailingActions,
 }: NovelDocumentTabStripProps) {
   const { t } = useTranslation()
@@ -74,9 +74,9 @@ export function NovelDocumentTabStrip({
         })}
         <button
           type="button"
-          aria-label={t('writing.createFile.menu', '新建文件')}
-          title={t('writing.createFile.menu', '新建文件')}
-          onClick={onCreateFile}
+          aria-label={t('chatOpening.project.emptyTitle', '从哪里开始？')}
+          title={t('chatOpening.project.emptyTitle', '从哪里开始？')}
+          onClick={onOpenStart}
           className="titlebar-no-drag inline-flex h-full w-10 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-foreground/[0.025] hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
         >
           <Plus className="h-3.5 w-3.5" strokeWidth={1.7} />

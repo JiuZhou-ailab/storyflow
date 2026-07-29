@@ -10,7 +10,11 @@ const skill: LoadedSkill = {
   slug: 'draft',
   metadata: { name: 'Draft', description: 'Draft prose' },
   content: 'Write a draft.',
-  path: '/home/user/.craft-agent/skills/draft',
+  path: '/home/user/.pi/agent/skills/draft',
+  filePath: '/home/user/.pi/agent/skills/draft/SKILL.md',
+  scope: 'user',
+  source: 'pi',
+  origin: 'top-level',
 }
 
 describe('loadSkillsForWorkspace', () => {
@@ -30,8 +34,8 @@ describe('loadSkillsForWorkspace', () => {
       },
     }
 
-    const first = loadSkillsForWorkspace('workspace-1', api)
-    const second = loadSkillsForWorkspace('workspace-1', api)
+    const first = loadSkillsForWorkspace('workspace-1', '/project-a', api)
+    const second = loadSkillsForWorkspace('workspace-1', '/project-a', api)
 
     resolveSkills!([skill])
     expect(await Promise.all([first, second])).toEqual([
@@ -40,7 +44,7 @@ describe('loadSkillsForWorkspace', () => {
     ])
     expect(calls).toBe(1)
 
-    await loadSkillsForWorkspace('workspace-1', {
+    await loadSkillsForWorkspace('workspace-1', '/project-a', {
       getSkills: async () => {
         calls += 1
         return []
@@ -48,5 +52,23 @@ describe('loadSkillsForWorkspace', () => {
     })
 
     expect(calls).toBe(2)
+  })
+
+  it('does not coalesce different project catalogs in one workspace', async () => {
+    __resetWorkspaceSkillsLoadCacheForTests()
+    const calls: Array<string | undefined> = []
+    const api = {
+      getSkills: async (_workspaceId: string, cwd?: string) => {
+        calls.push(cwd)
+        return []
+      },
+    }
+
+    await Promise.all([
+      loadSkillsForWorkspace('workspace-1', '/project-a', api),
+      loadSkillsForWorkspace('workspace-1', '/project-b', api),
+    ])
+
+    expect(calls).toEqual(['/project-a', '/project-b'])
   })
 })

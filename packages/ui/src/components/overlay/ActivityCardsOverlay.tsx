@@ -1,3 +1,6 @@
+// input: One completed tool activity expressed as input and output cards
+// output: Content-sized desktop modal or narrow-window fullscreen activity details
+// pos: Canonical detail surface for a single chat tool invocation
 import * as React from 'react'
 import { useMemo } from 'react'
 import JsonView from '@uiw/react-json-view'
@@ -12,6 +15,7 @@ import { Markdown } from '../markdown'
 import { CodeBlock } from '../markdown/CodeBlock'
 import { detectLanguage } from './GenericOverlay'
 import type { OverlayCard } from '../../lib/tool-parsers'
+import { OVERLAY_LAYOUT } from '../../lib/layout'
 
 export interface ActivityCardsOverlayProps {
   isOpen: boolean
@@ -70,7 +74,7 @@ export function ActivityCardsOverlay({
 
   const renderMarkdownCard = (card: OverlayCard, content: string) => {
     return (
-      <ContentFrame title={card.label}>
+      <ContentFrame title={card.label} minHeight={160}>
         <div className="px-10 pt-8 pb-8">
           <div className="text-sm">
             <Markdown
@@ -95,7 +99,7 @@ export function ActivityCardsOverlay({
     if (data.type === 'json') {
       const processedData = deepParseJson(data.data) as object
       return (
-        <ContentFrame title={card.label}>
+        <ContentFrame title={card.label} minHeight={160}>
           <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4">
             {isInputCard && commandPreview && (
               <div className="bg-background shadow-minimal rounded-[8px] px-4 py-3 font-mono">
@@ -133,7 +137,7 @@ export function ActivityCardsOverlay({
 
     if (data.type === 'code') {
       return (
-        <ContentFrame title={card.label} fitContent minWidth={850}>
+        <ContentFrame title={card.label} fitContent minWidth={850} minHeight={160}>
           <ShikiCodeViewer
             code={data.content}
             filePath={data.filePath}
@@ -147,7 +151,7 @@ export function ActivityCardsOverlay({
 
     if (data.type === 'terminal') {
       return (
-        <ContentFrame title={card.label}>
+        <ContentFrame title={card.label} minHeight={160}>
           <TerminalOutput
             command={data.command}
             output={data.output}
@@ -170,7 +174,7 @@ export function ActivityCardsOverlay({
     }
 
     return (
-      <ContentFrame title={card.label}>
+      <ContentFrame title={card.label} minHeight={160}>
         <div className="p-4">
           <CodeBlock code={data.content} language={lang} mode="minimal" forcedTheme={theme} />
         </div>
@@ -186,6 +190,8 @@ export function ActivityCardsOverlay({
       typeBadge={{ icon: Layers, label: 'Activity', variant: 'blue' }}
       title={title}
       className="bg-foreground-3"
+      modalBreakpoint={OVERLAY_LAYOUT.desktopModalBreakpoint}
+      modalSizing="content"
     >
       <div className="w-full space-y-6 py-1">
         {cards.map((card) => (

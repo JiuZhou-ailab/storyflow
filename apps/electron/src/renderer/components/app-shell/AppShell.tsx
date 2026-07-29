@@ -114,7 +114,7 @@ import { useAction } from "@/actions"
 import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusActions } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
-import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange, WhatsNewManifest } from "../../../shared/types"
+import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, SourceFilter, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange, WhatsNewManifest } from "../../../shared/types"
 import {
   ensureSessionMessagesLoadedAtom,
   reconcileSessionTranscriptWorkingSetAtom,
@@ -133,6 +133,7 @@ import { useViews } from "@/hooks/useViews"
 import { useContainerWidth } from "@/hooks/useContainerWidth"
 import { useNovelReviewController } from "@/hooks/useNovelReviewController"
 import { loadSkillsForWorkspace } from "@/hooks/useWorkspaceSkills"
+import { PERMISSION_MODE_ORDER } from "@craft-agent/shared/agent/modes"
 import { LabelIcon } from "@/components/ui/label-icon"
 import { filterSessionStatuses as filterLabelMenuStates } from "@/components/ui/label-menu"
 import { createLabelMenuItems, filterItems as filterLabelMenuItems, type LabelMenuItem } from "@/components/ui/label-menu-utils"
@@ -1295,23 +1296,17 @@ function AppShellContent({
   // Whether local MCP servers are enabled (affects stdio source status)
   const [localMcpEnabled, setLocalMcpEnabled] = React.useState(true)
 
-  // Enabled permission modes for Shift+Tab cycling (min 2 modes)
-  const [enabledModes, setEnabledModes] = React.useState<PermissionMode[]>(['safe', 'ask', 'allow-all'])
+  const enabledModes = PERMISSION_MODE_ORDER
 
-  // Load workspace settings (for localMcpEnabled and cyclablePermissionModes) on workspace change
+  // Load workspace settings on workspace change
   React.useEffect(() => {
     if (!projectWorkspaceId) {
       setLocalMcpEnabled(true)
-      setEnabledModes(['safe', 'ask', 'allow-all'])
       return
     }
     window.electronAPI.getWorkspaceSettings(projectWorkspaceId).then((settings) => {
       if (settings) {
         setLocalMcpEnabled(settings.localMcpEnabled ?? true)
-        // Load cyclablePermissionModes from workspace settings
-        if (settings.cyclablePermissionModes && settings.cyclablePermissionModes.length >= 2) {
-          setEnabledModes(settings.cyclablePermissionModes)
-        }
       }
     }).catch((err) => {
       console.error('[Chat] Failed to load workspace settings:', err)
@@ -1321,6 +1316,7 @@ function AppShellContent({
   // Reset UI state when workspace changes
   // This prevents stale search queries, focused items, and filter state from persisting
   const previousWorkspaceRef = React.useRef<string | null>(null)
+  const skillDiscoveryCwdRef = React.useRef<string | undefined>(undefined)
   React.useEffect(() => {
     if (!activeWorkspaceId) return
 
@@ -1375,9 +1371,13 @@ function AppShellContent({
 
   // Subscribe to live skill updates (when skills are added/removed dynamically)
   React.useEffect(() => {
-    const cleanup = window.electronAPI.onSkillsChanged((workspaceId, updatedSkills) => {
-      if (workspaceId !== activeWorkspaceId) return
-      setSkills(updatedSkills || [])
+    const cleanup = window.electronAPI.onSkillsChanged((workspaceId) => {
+      if (!activeWorkspaceId || workspaceId !== activeWorkspaceId) return
+      loadSkillsForWorkspace(workspaceId, skillDiscoveryCwdRef.current).then((loaded) => {
+        setSkills(loaded || [])
+      }).catch(err => {
+        console.error('[Chat] Failed to refresh skills:', err)
+      })
     })
     return cleanup
   }, [activeWorkspaceId])
@@ -1566,7 +1566,7 @@ function AppShellContent({
       const currentOptions = store.get(sessionOptionsAtomFamily(effectiveSessionId))
       const currentMode = currentOptions.permissionMode
       // Cycle through enabled permission modes
-      const modes = enabledModes.length >= 2 ? enabledModes : ['safe', 'ask', 'allow-all'] as PermissionMode[]
+      const modes = enabledModes
       const currentIndex = modes.indexOf(currentMode)
       // If current mode not in enabled list, jump to first enabled mode
       const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % modes.length
@@ -1864,10 +1864,11 @@ function AppShellContent({
     changes: FileChange[]
   } | null>(null)
 
-  // The working directory anchors file-change presentation; Skills are global.
+  // The working directory anchors file changes and Pi project Skill discovery.
   const activeSessionWorkingDirectory = effectiveSessionId
     ? rawEffectiveSessionMeta?.workingDirectory
     : undefined
+  skillDiscoveryCwdRef.current = activeSessionWorkingDirectory || activeWorkspace?.rootPath
   const activeWritingWorkspaceRoot = isProjectRuntime
     && activeWorkspace
     ? activeWorkspace.rootPath
@@ -3049,6 +3050,12 @@ function AppShellContent({
     await handleSelectNovelFile(file)
   }, [handleSelectNovelFile, novelWorkspaceFileByPath, onOpenFile])
 
+  const handleOpenNovelWorkspaceStart = React.useCallback(async () => {
+    if (!selectedNovelFilePath) return
+    if (!await ensureNovelDocumentSaved()) return
+    setNovelDocumentTabs(current => ({ ...current, activePath: null }))
+  }, [ensureNovelDocumentSaved, selectedNovelFilePath])
+
   const handleCloseNovelFileTab = React.useCallback(async (filePath: string) => {
     if (filePath !== selectedNovelFilePath) {
       setNovelDocumentTabs(current => closeNovelDocumentTab(current, filePath))
@@ -3594,12 +3601,13 @@ function AppShellContent({
 
   React.useEffect(() => {
     if (!activeWorkspaceId) return
-    loadSkillsForWorkspace(activeWorkspaceId).then((loaded) => {
+    const skillsCwd = activeSessionWorkingDirectory || activeWorkspace?.rootPath
+    loadSkillsForWorkspace(activeWorkspaceId, skillsCwd).then((loaded) => {
       setSkills(loaded || [])
     }).catch(err => {
       console.error('[Chat] Failed to load skills:', err)
     })
-  }, [activeWorkspaceId])
+  }, [activeSessionWorkingDirectory, activeWorkspace?.rootPath, activeWorkspaceId])
 
   // Derive "pinned" (non-removable) filters from the current sessionFilter path.
   // These represent filters that are implicit in the current deeplink/route and
@@ -4575,7 +4583,7 @@ function AppShellContent({
       activePath={selectedNovelFilePath}
       onActivate={(file) => { void handleSelectNovelFile(file) }}
       onClose={(filePath) => { void handleCloseNovelFileTab(filePath) }}
-      onCreateFile={() => handleWorkspaceOpeningCommand('create-file')}
+      onOpenStart={() => { void handleOpenNovelWorkspaceStart() }}
       trailingActions={(
         <>
           {directoryToggleButton}

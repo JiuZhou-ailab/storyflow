@@ -15,4 +15,11 @@ describe('ActiveOptionBadges label lookup', () => {
     expect(source).not.toContain('const flat = flattenLabels(labels)')
     expect(source).not.toContain('flat.find(l => l.id === parsed.id)')
   })
+
+  it('keeps permission mode above the input without restoring status or info buttons', () => {
+    expect(source).not.toContain('StateBadge')
+    expect(source).not.toContain('FilesPopoverButton')
+    expect(source).not.toContain('PermissionModeDropdown')
+    expect(source).toContain('<DesktopPermissionModeSelector')
+  })
 })

@@ -1,5 +1,8 @@
+// input: Markdown response or plan content, annotations, and overlay callbacks
+// output: Responsive document reader using a desktop modal and narrow-window fullscreen view
+// pos: Shared expanded-reading surface for chat responses, plans, and Markdown files
 /**
- * DocumentFormattedMarkdownOverlay - Fullscreen view for reading AI responses and plans
+ * DocumentFormattedMarkdownOverlay - Expanded view for reading AI responses and plans
  *
  * Renders markdown content in a document-like format with:
  * - Centered content card with max-width
@@ -15,6 +18,7 @@ import { ListTodo } from 'lucide-react'
 import { Markdown } from '../markdown'
 import type { AnnotationV1 } from '@craft-agent/core'
 import type { ExternalOpenAnnotationRequest } from '../annotations/use-annotation-interaction-controller'
+import { OVERLAY_LAYOUT, useOverlayMode } from '../../lib/layout'
 import { FullscreenOverlayBase } from './FullscreenOverlayBase'
 import type { OverlayTypeBadge } from './FullscreenOverlayBaseHeader'
 import { AnnotatableMarkdownDocument } from './AnnotatableMarkdownDocument'
@@ -78,23 +82,31 @@ export function DocumentFormattedMarkdownOverlay({
   isStreaming = false,
   openAnnotationRequest,
 }: DocumentFormattedMarkdownOverlayProps) {
+  const overlayMode = useOverlayMode(OVERLAY_LAYOUT.desktopModalBreakpoint)
+  const isModal = overlayMode === 'modal'
+
   return (
     <FullscreenOverlayBase
       isOpen={isOpen}
       onClose={onClose}
+      mode={overlayMode}
+      accessibleTitle={variant === 'plan' ? 'Plan' : 'Response preview'}
       filePath={filePath}
       typeBadge={typeBadge}
       copyContent={content}
       error={error ? { label: 'Write Failed', message: error } : undefined}
     >
-      {/* Content wrapper — min-h-full for vertical centering within FullscreenOverlayBase's scroll container.
-          Scrolling and gradient fade mask are handled by FullscreenOverlayBase. */}
-      <div className="min-h-full flex flex-col justify-center px-6 py-16">
+      {/* Scrolling and gradient fade mask are handled by FullscreenOverlayBase. */}
+      <div className={`min-h-full flex flex-col justify-center ${isModal ? '' : 'px-6 py-16'}`}>
         {/* Content card - my-auto centers vertically when content is small, flows naturally when large */}
-        <div className="bg-background rounded-[16px] shadow-strong w-full max-w-[960px] h-fit mx-auto my-auto">
+        <div className={`w-full max-w-[960px] h-fit mx-auto my-auto bg-background ${
+          isModal ? '' : 'rounded-[16px] shadow-strong'
+        }`}>
           {/* Plan header (variant="plan" only) */}
           {variant === 'plan' && (
-            <div className="px-4 py-2 border-b border-border/30 flex items-center gap-2 bg-success/5 rounded-t-[16px]">
+            <div className={`px-4 py-2 border-b border-border/30 flex items-center gap-2 bg-success/5 ${
+              isModal ? '' : 'rounded-t-[16px]'
+            }`}>
               <ListTodo className="w-3 h-3 text-success" />
               <span className="text-[13px] font-medium text-success">Plan</span>
             </div>
