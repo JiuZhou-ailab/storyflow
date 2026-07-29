@@ -1,21 +1,22 @@
 # Storyflow Runtime Contract
 
-Use this adapter only when the host is Storyflow. It keeps writes inside Storyflow's validated global Skill store while leaving the official Skill Creator method intact.
+Use this adapter only when the host is Storyflow. It keeps user-level writes inside Pi's validated Skill store while leaving the official Skill Creator method intact.
 
 ## Resolve the target
 
-Storyflow has one Skill scope:
+Storyflow's `skill_create` tool creates one user-level scope:
 
-- Global Skill: `~/.craft-agent/skills/<slug>/`
+- User Skill: `~/.pi/agent/skills/<slug>/`
 
-Do not redirect Storyflow Skills into `.agents`, `.codex`, a project directory, or an arbitrary working directory.
+Pi also discovers project `.pi/skills` and `.agents/skills`. Use the Skills CLI
+when the user explicitly requests a project-local installation.
 
 ## Create safely
 
 1. Inspect visible Skills first and reject accidental duplicate responsibilities.
 2. Confirm the slug, triggers, expected output, and success criteria before writing.
 3. Create the complete initial `SKILL.md` with `skill_create`. This boundary validates ownership and refuses silent overwrite.
-4. Add justified `scripts/`, `references/`, `assets/`, or `evals/` only inside the returned global Skill directory.
+4. Add justified `scripts/`, `references/`, `assets/`, or `evals/` only inside the returned user Skill directory.
 5. Run `skill_validate`. When shell execution is available, also run this creator's `scripts/quick_validate.py` against the finished directory.
 
 For updates, use the active resource-edit flow. Never call `skill_create` over an existing slug and never overwrite user content silently.

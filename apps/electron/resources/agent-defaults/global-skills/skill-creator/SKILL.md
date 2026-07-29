@@ -57,6 +57,16 @@ Start by understanding the user's intent. The current conversation might already
 3. What's the expected output format?
 4. Should we set up test cases to verify the skill works? Skills with objectively verifiable outputs (file transforms, data extraction, code generation, fixed workflow steps) benefit from test cases. Skills with subjective outputs (writing style, art) often don't need them. Suggest the appropriate default based on the skill type, but let the user decide.
 
+### Choose the Output Language
+
+Treat language as independent from skill behavior. Resolve it once before drafting, then keep it consistent through revisions, examples, evals, and description optimization:
+
+1. Follow an explicit requested output or target-audience language.
+2. When updating an existing skill without a language change request, preserve its current language.
+3. Otherwise, use the dominant natural language of the user's request, ignoring code, paths, identifiers, and pasted source text; fall back to English only when the request provides no reliable signal.
+
+Write newly authored human-readable Skill content in the resolved language, including the frontmatter `description`, headings, instructions, examples, eval prompts, expected outputs, and human-facing resource text. Keep machine-constrained text in its required form: the ASCII kebab-case folder and `name`, YAML/JSON keys, filenames, code, commands, and API identifiers. Preserve technical terms when translating them would reduce precision, and never translate user-provided source material unless the user asks.
+
 ### Interview and Research
 
 Proactively ask questions about edge cases, input/output formats, example files, success criteria, and dependencies. Wait to write test prompts until you've got this part ironed out.

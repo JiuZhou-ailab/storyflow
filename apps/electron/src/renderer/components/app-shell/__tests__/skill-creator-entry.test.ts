@@ -1,5 +1,5 @@
-// input: Bundled official Skill Creator, Storyflow runtime adapter, and renderer creation-entry source
-// output: Contract checks for the full evaluation loop and global conversational creation
+// input: Bundled official Skill Creator, description optimizer, Storyflow runtime adapter, and renderer creation-entry source
+// output: Contract checks for multilingual generation, the full evaluation loop, and global conversational creation
 // pos: Prevents Add Skill from regressing to a shallow scaffold or foreign resource owner
 
 import { readFileSync } from 'node:fs'
@@ -26,6 +26,13 @@ const skillCreatorSource = readFileSync(
   new URL('../../../../../resources/agent-defaults/global-skills/skill-creator/SKILL.md', import.meta.url),
   'utf-8',
 )
+const descriptionImproverSource = readFileSync(
+  new URL(
+    '../../../../../resources/agent-defaults/global-skills/skill-creator/scripts/improve_description.py',
+    import.meta.url,
+  ),
+  'utf-8',
+)
 const storyflowRuntimeSource = readFileSync(
   new URL(
     '../../../../../resources/agent-defaults/global-skills/skill-creator/references/storyflow-runtime.md',
@@ -41,10 +48,16 @@ describe('Skill Creator entry', () => {
     expect(skillCreatorSource).toContain('## Running and evaluating test cases')
     expect(skillCreatorSource).toContain('eval-viewer/generate_review.py')
     expect(skillCreatorSource).toContain('python -m scripts.run_loop')
+    expect(skillCreatorSource).toContain('### Choose the Output Language')
+    expect(skillCreatorSource).toContain("use the dominant natural language of the user's request")
+    expect(skillCreatorSource).toContain('the ASCII kebab-case folder and `name`')
+    expect(descriptionImproverSource).toContain(
+      'Write the new description in the same language as the current description.',
+    )
     expect(storyflowRuntimeSource).toContain('skill_create')
     expect(storyflowRuntimeSource).toContain('skill_validate')
-    expect(storyflowRuntimeSource).toContain('~/.craft-agent/skills/<slug>/')
-    expect(storyflowRuntimeSource).toContain('Do not redirect Storyflow Skills into `.agents`, `.codex`, a project directory')
+    expect(storyflowRuntimeSource).toContain('~/.pi/agent/skills/<slug>/')
+    expect(storyflowRuntimeSource).toContain('project `.pi/skills` and `.agents/skills`')
   })
 
   it('routes every project through one global Skill Creator flow', () => {
@@ -53,7 +66,7 @@ describe('Skill Creator entry', () => {
     expect(editPopoverSource).not.toContain('<target_workspace_id>')
     expect(editPopoverSource).not.toContain("'add-global-skill'")
     expect(appShellSource).toContain('<AddSkillPopover')
-    expect(skillsListSource).toContain("getEditConfig('add-skill', '~/.craft-agent')")
+    expect(skillsListSource).toContain("getEditConfig('add-skill', '~/.pi/agent')")
     expect(skillsListSource).toContain('conversationWorkspaceId={workspace.id}')
     expect(skillsListSource).toContain('workingDirectory="none"')
     expect(editPopoverSource).toContain('workspace/${encodeURIComponent(conversationWorkspaceId)}/action/new-session')

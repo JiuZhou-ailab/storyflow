@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# input: Skill content, trigger evaluation results, and the current description language
+# output: An optimized trigger description that preserves the Skill's language
+# pos: Description-optimization boundary in the Skill Creator evaluation loop
+
 """Improve a skill description based on eval results.
 
 Takes eval results (from run_eval.py) and generates an improved description
@@ -79,6 +83,8 @@ def improve_description(
     prompt = f"""You are optimizing a skill description for a Claude Code skill called "{skill_name}". A "skill" is sort of like a prompt, but with progressive disclosure -- there's a title and description that Claude sees when deciding whether to use the skill, and then if it does use the skill, it reads the .md file which has lots more details and potentially links to other resources in the skill folder like helper files and scripts and additional documentation or examples.
 
 The description appears in Claude's "available_skills" list. When a user sends a query, Claude decides whether to invoke the skill based solely on the title and on this description. Your goal is to write a description that triggers for relevant queries, and doesn't trigger for irrelevant ones.
+
+Write the new description in the same language as the current description. Do not switch languages because this optimization prompt, the skill body, or eval queries use another language. Only an explicit instruction in the skill content to change the description language overrides this rule. Keep required identifiers and technical terms unchanged when translating them would reduce precision.
 
 Here's the current description:
 <current_description>
