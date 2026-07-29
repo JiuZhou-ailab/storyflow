@@ -630,18 +630,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const internalTextareaRef = React.useRef<RichTextInputHandle>(null)
   const textareaRef = externalTextareaRef || internalTextareaRef
   const handleOpeningAction = React.useCallback((action: ChatOpeningAction) => {
-    if (action.kind === 'command') {
-      onChatOpeningCommand?.(action.command)
-      return
-    }
-
-    const prompt = t(action.promptKey)
-    onInputChange?.(prompt)
-    textareaRef.current?.focus()
-    window.setTimeout(() => {
-      textareaRef.current?.setSelectionRange(prompt.length, prompt.length)
-    }, 0)
-  }, [onChatOpeningCommand, onInputChange, t, textareaRef])
+    onChatOpeningCommand?.(action.command)
+  }, [onChatOpeningCommand])
   const [sendMessageKey, setSendMessageKey] = useState<'enter' | 'cmd-enter'>('enter')
   const [openAnnotationRequest, setOpenAnnotationRequest] = React.useState<{
     messageId: string
@@ -1996,8 +1986,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                         isStreaming={turn.isStreaming}
                         isComplete={turn.isComplete}
                         metrics={turn.metrics}
-                        isExpanded={isTurnExpanded(assistantUiKey)}
-                        onExpandedChange={(expanded) => toggleTurn(assistantUiKey, expanded)}
+                        isExpanded={isTurnExpanded(assistantUiKey, turn.isComplete)}
+                        onExpandedChange={(expanded) =>
+                          toggleTurn(assistantUiKey, turn.isComplete, expanded)
+                        }
                         expandedActivityGroups={expandedActivityGroups}
                         onExpandedActivityGroupsChange={setExpandedActivityGroups}
                         onOpenFile={onOpenFile}

@@ -1,5 +1,5 @@
 // input: persisted turn-card expansion records
-// output: regression coverage for default expanded thinking/activity state
+// output: regression coverage for lifecycle-derived thinking/activity expansion
 // pos: guards the chat turn activity expansion persistence contract
 
 import { describe, expect, it } from 'bun:test'
@@ -8,28 +8,33 @@ import { readFileSync } from 'node:fs'
 import {
   createTurnExpansionState,
   createTurnExpansionEntry,
-  isTurnExpandedByDefault,
+  resolveTurnExpanded,
   readCollapsedTurns,
+  readExpandedTurns,
 } from '../useTurnCardExpansion'
 
 const hookSource = readFileSync(new URL('../useTurnCardExpansion.ts', import.meta.url), 'utf-8')
 
 describe('turn card expansion state', () => {
-  it('expands thinking/activity turns by default when no collapsed state exists', () => {
-    expect(isTurnExpandedByDefault('turn-1', new Set())).toBe(true)
+  it('expands active turns and collapses completed turns by default', () => {
+    expect(resolveTurnExpanded('turn-1', false, new Set(), new Set())).toBe(true)
+    expect(resolveTurnExpanded('turn-1', true, new Set(), new Set())).toBe(false)
   })
 
-  it('persists explicit collapsed turns instead of old expanded-only state', () => {
-    const collapsed = readCollapsedTurns({
+  it('persists explicit expansion overrides in either direction', () => {
+    const entry = {
       collapsedTurns: ['turn-2'],
-      turns: ['legacy-expanded-turn'],
+      turns: ['turn-3'],
       groups: [],
       lastAccessed: 1,
-    })
+    }
+    const expanded = readExpandedTurns(entry)
+    const collapsed = readCollapsedTurns(entry)
 
-    expect(isTurnExpandedByDefault('turn-1', collapsed)).toBe(true)
-    expect(isTurnExpandedByDefault('turn-2', collapsed)).toBe(false)
-    expect(createTurnExpansionEntry(['turn-2'], [], 10)).toEqual({
+    expect(resolveTurnExpanded('turn-2', false, expanded, collapsed)).toBe(false)
+    expect(resolveTurnExpanded('turn-3', true, expanded, collapsed)).toBe(true)
+    expect(createTurnExpansionEntry(['turn-3'], ['turn-2'], [], 10)).toEqual({
+      turns: ['turn-3'],
       collapsedTurns: ['turn-2'],
       groups: [],
       lastAccessed: 10,
@@ -43,6 +48,7 @@ describe('turn card expansion state', () => {
       lastAccessed: 1,
     })
 
+    expect(state.expandedTurns.size).toBe(0)
     expect(state.collapsedTurns.has('turn-2')).toBe(true)
     expect([...state.expandedActivityGroups]).toEqual(['group-1'])
   })

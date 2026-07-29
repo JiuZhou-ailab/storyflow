@@ -1,5 +1,5 @@
 // input: Project content state for a new conversation panel
-// output: Regression coverage for folder-first chat opening prompts
+// output: Regression coverage for folder-first chat opening commands
 // pos: Protects the empty-session opening contract shown before the first user message
 
 import { readFileSync } from 'node:fs'
@@ -10,7 +10,7 @@ import { resolveChatOpeningPrompt } from '../chat-opening'
 const zhHansLocale = JSON.parse(readFileSync(new URL('../../../../../../../packages/shared/src/i18n/locales/zh-Hans.json', import.meta.url), 'utf8'))
 
 describe('resolveChatOpeningPrompt', () => {
-  it('offers a content-empty project four explicit ways to begin', () => {
+  it('offers a content-empty project three real ways to begin', () => {
     const opening = resolveChatOpeningPrompt({
       workspaceName: '空白作品',
       isProject: true,
@@ -23,13 +23,11 @@ describe('resolveChatOpeningPrompt', () => {
     expect(opening.sections.map(section => section.id)).toEqual(['project'])
     expect(opening.actions.map(action => ({
       id: action.id,
-      kind: action.kind,
-      command: action.kind === 'command' ? action.command : undefined,
+      command: action.command,
     }))).toEqual([
-      { id: 'project.describe', kind: 'prompt', command: undefined },
-      { id: 'project.import', kind: 'command', command: 'import-files' },
-      { id: 'project.createFile', kind: 'command', command: 'create-file' },
-      { id: 'project.skills', kind: 'command', command: 'open-skills' },
+      { id: 'project.import', command: 'import-files' },
+      { id: 'project.createFile', command: 'create-file' },
+      { id: 'project.skills', command: 'open-skills' },
     ])
   })
 
@@ -43,7 +41,6 @@ describe('resolveChatOpeningPrompt', () => {
     expect(opening.titleKey).toBe('chatOpening.project.readyTitle')
     expect(opening.hintKey).toBe('chatOpening.project.readyHint')
     expect(opening.actions.map(action => action.id)).toEqual([
-      'project.describe',
       'project.import',
       'project.createFile',
       'project.skills',
@@ -58,13 +55,8 @@ describe('resolveChatOpeningPrompt', () => {
     })
 
     expect(opening.titleKey).toBe('chatOpening.general.title')
-    expect(opening.actions.map(action => action.id)).toEqual([
-      'general.analyze',
-      'general.fix',
-      'general.implement',
-      'general.summarize',
-    ])
-    expect(opening.actions.every(action => action.kind === 'prompt')).toBe(true)
+    expect(opening.sections).toEqual([])
+    expect(opening.actions).toEqual([])
   })
 
   it('keeps project starter labels and descriptions concise', () => {
