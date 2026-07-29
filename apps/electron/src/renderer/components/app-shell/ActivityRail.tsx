@@ -1,27 +1,19 @@
-// input: Workspace catalog, workspace-scoped session metadata, unread summary, shell callbacks, current profile, and window chrome inset
+// input: Workspace catalog, workspace-scoped session metadata, unread/active summaries, shell callbacks, current profile, and window chrome inset
 // output: Single Codex-style sidebar with a native titlebar drag region plus collapsible project conversation subtrees
 // pos: Global navigation surface; every project subtree is fetched and selected through its own runtime domain (ADR 0006)
 
 import * as React from 'react'
 import {
-  Archive,
-  ArchiveRestore,
-  ArrowUpRight,
   BookOpen,
   ChevronDown,
   ChevronRight,
   DatabaseZap,
-  Folder,
   HelpCircle,
   Megaphone,
-  MessageSquareText,
-  MoreHorizontal,
-  Pencil,
   Plus,
   Search,
   Settings,
   ShieldAlert,
-  Trash2,
   UserCircle,
   Zap,
 } from 'lucide-react'
@@ -35,28 +27,25 @@ import {
   StyledDropdownMenuItem,
   StyledDropdownMenuSeparator,
 } from '@/components/ui/styled-dropdown'
-import {
-  ContextMenu,
-  ContextMenuTrigger,
-  StyledContextMenuContent,
-  StyledContextMenuItem,
-  StyledContextMenuSeparator,
-} from '@/components/ui/styled-context-menu'
 import { RenameDialog } from '@/components/ui/rename-dialog'
 import { FeedbackDialog } from './FeedbackDialog'
 import { ProjectSwitcherPopover } from './ProjectSwitcherPopover'
+import {
+  ProjectFolderRow,
+  RecentConversationRow,
+  type ActivityRailSessionActions,
+} from './ActivityRailRows'
 import {
   extractSessionMeta,
   sessionMetaMapAtom,
   type SessionMeta,
 } from '@/atoms/sessions'
 import { shouldRefreshGlobalSessionMetasForEvent } from '@/atoms/session-status-transition'
-import { formatRelativeTimestamp } from '@/lib/display-format'
 import * as storage from '@/lib/local-storage'
 import { getSessionTitle } from '@/utils/session'
 import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
 import { deriveSessionRuntimeStatus, requiresHumanAttention } from '@craft-agent/shared/statuses/runtime'
-import { hasPendingPromptAtomFamily, sessionIdsWithPendingPromptAtom } from '@/atoms/pending-requests'
+import { sessionIdsWithPendingPromptAtom } from '@/atoms/pending-requests'
 import type { Workspace } from '../../../shared/types'
 import { WINDOW_TITLE_BAR_HEIGHT } from './layout-constants'
 
@@ -107,17 +96,14 @@ export interface ActivityRailProps {
   sessionActions?: ActivityRailSessionActions
 }
 
-export interface ActivityRailSessionActions {
-  onRename: (sessionId: string, name: string) => void
-  onArchive: (sessionId: string) => void
-  onDelete: (sessionId: string) => void
-}
+export type { ActivityRailSessionActions } from './ActivityRailRows'
 
 export const ACTIVITY_RAIL_WIDTH = 252
 const RECENT_SESSION_LIMIT = 8
 const activityFreeSessionMetasAtom = atom<SessionMeta[] | null>(null)
 const activityExpandedProjectIdsAtom = atom<Set<string>>(new Set<string>())
 const activityProjectSessionMetasAtom = atom<Record<string, SessionMeta[]>>({})
+const activityActiveWorkspaceIdsAtom = atom<Set<string>>(new Set<string>())
 const activityShowAllRecentAtom = atom(false)
 const activityArchivedExpandedAtom = atom(false)
 const activitySidebarScrollTopAtom = atom(0)
@@ -168,6 +154,7 @@ export function ActivityRail({
   const [showAllRecent, setShowAllRecent] = useAtom(activityShowAllRecentAtom)
   const [expandedProjectIds, setExpandedProjectIds] = useAtom(activityExpandedProjectIdsAtom)
   const [projectSessionMetas, setProjectSessionMetas] = useAtom(activityProjectSessionMetasAtom)
+  const [activeWorkspaceIds, setActiveWorkspaceIds] = useAtom(activityActiveWorkspaceIdsAtom)
   const [loadingProjectIds, setLoadingProjectIds] = React.useState<Set<string>>(() => new Set())
   const [feedbackOpen, setFeedbackOpen] = React.useState(false)
   const [renameTarget, setRenameTarget] = React.useState<
@@ -175,6 +162,7 @@ export function ActivityRail({
   >(null)
   const [renameValue, setRenameValue] = React.useState('')
   const refreshGenerationRef = React.useRef(0)
+  const activeRefreshGenerationRef = React.useRef(0)
   const canCreateProjects = typeof onWorkspaceCreated === 'function'
 
   React.useLayoutEffect(() => {
@@ -241,9 +229,25 @@ export function ActivityRail({
     }
   }, [setUnreadByWorkspace])
 
+  const refreshActiveWorkspaceIds = React.useCallback(async () => {
+    const generation = ++activeRefreshGenerationRef.current
+    try {
+      const activeSessions = await window.electronAPI.getActiveSessions()
+      if (generation !== activeRefreshGenerationRef.current) return
+      setActiveWorkspaceIds(new Set(activeSessions.map(session => session.workspaceId)))
+    } catch (error) {
+      if (generation === activeRefreshGenerationRef.current) setActiveWorkspaceIds(new Set())
+      console.warn('[activity-sidebar] Failed to load active session summary:', error)
+    }
+  }, [setActiveWorkspaceIds])
+
   React.useEffect(() => {
     if (freeSessionMetas === null) void refreshFreeSessionMetas()
   }, [freeSessionMetas, refreshFreeSessionMetas])
+
+  React.useEffect(() => {
+    void refreshActiveWorkspaceIds()
+  }, [refreshActiveWorkspaceIds])
 
   // The aggregate summary keeps collapsed project rows honest without loading
   // or merging their session identities; expanded lists remain workspace-scoped.
@@ -262,6 +266,7 @@ export function ActivityRail({
       refreshTimer = setTimeout(() => {
         refreshTimer = null
         void refreshFreeSessionMetas()
+        void refreshActiveWorkspaceIds()
         for (const workspaceId of expandedProjectIds) {
           void refreshProjectSessionMetas(workspaceId)
         }
@@ -272,7 +277,7 @@ export function ActivityRail({
       if (refreshTimer) clearTimeout(refreshTimer)
       unsubscribe()
     }
-  }, [expandedProjectIds, refreshFreeSessionMetas, refreshProjectSessionMetas])
+  }, [expandedProjectIds, refreshActiveWorkspaceIds, refreshFreeSessionMetas, refreshProjectSessionMetas])
 
   const sessionMetas = React.useMemo(() => {
     const merged = new Map<string, SessionMeta>()
@@ -342,7 +347,7 @@ export function ActivityRail({
       aria-label="新建或导入项目"
       title="新建或导入项目"
       data-tutorial="activity-project-hub"
-      className="flex h-7 w-7 items-center justify-center rounded-[7px] text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+      className="flex h-7 w-7 items-center justify-center rounded-[7px] text-muted-foreground opacity-0 outline-none transition-[color,background-color,opacity] hover:bg-foreground/[0.06] hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100 focus-visible:ring-1 focus-visible:ring-ring"
     >
       <Plus className="h-4 w-4" />
     </button>
@@ -409,7 +414,7 @@ export function ActivityRail({
                   type="button"
                   aria-label="新建自由对话"
                   title="新建自由对话"
-                  className="flex h-7 w-7 items-center justify-center rounded-[7px] text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+                  className="flex h-7 w-7 items-center justify-center rounded-[7px] text-muted-foreground opacity-0 outline-none transition-[color,background-color,opacity] hover:bg-foreground/[0.06] hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:ring-1 focus-visible:ring-ring"
                   onClick={() => { void onOpenFreeConversations({ createNew: true }) }}
                 >
                   <Plus className="h-4 w-4" />
@@ -472,8 +477,9 @@ export function ActivityRail({
                       <ProjectFolderRow
                         key={workspace.id}
                         workspace={workspace}
-                        active={activeWorkspaceId === workspace.id}
+                        active={activeWorkspaceId === workspace.id && !activeProjectSessionId}
                         hasUnread={unreadByWorkspace?.[workspace.id] === true}
+                        hasActiveSession={activeWorkspaceIds.has(workspace.id)}
                         disabled={!onSelectSession}
                         expandable={Boolean(onSelectSession)}
                         expanded={expanded}
@@ -726,15 +732,19 @@ function SidebarSectionHeader({
   needsAttention?: boolean
 }) {
   return (
-    <div className="flex items-center justify-between px-1">
+    <div className="group flex items-center justify-between rounded-[7px] transition-colors hover:bg-foreground/[0.045] focus-within:bg-foreground/[0.045]">
       <button
         type="button"
         aria-expanded={expanded}
-        className="flex min-w-0 flex-1 items-center gap-1 rounded-[7px] px-2 py-1.5 text-left text-[13px] font-semibold text-foreground/90 outline-none transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+        className="flex min-w-0 flex-1 items-center gap-1 rounded-[7px] px-2 py-1.5 text-left text-[13px] font-semibold text-foreground/90 outline-none transition-colors group-hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
         onClick={onToggle}
       >
-        {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
         <span className="min-w-0 truncate">{label}</span>
+        {expanded ? (
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100" />
+        )}
         {needsAttention && !expanded ? (
           <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-info" aria-label="有对话等待处理" />
         ) : null}
@@ -744,244 +754,7 @@ function SidebarSectionHeader({
   )
 }
 
-function RecentConversationRow({
-  meta,
-  active,
-  disabled,
-  onSelect,
-  sessionActions,
-  onRename,
-}: {
-  meta: SessionMeta
-  active: boolean
-  disabled: boolean
-  onSelect: () => void
-  sessionActions?: ActivityRailSessionActions
-  onRename: () => void
-}) {
-  const hasPendingPrompt = useAtomValue(hasPendingPromptAtomFamily(meta.id))
-  const runtimeStatus = deriveSessionRuntimeStatus({
-    isProcessing: meta.isProcessing,
-    hasPendingPrompt,
-    lastMessageRole: meta.lastMessageRole,
-  })
-  const row = (
-    <div
-      data-session-id={meta.id}
-      className={cn(
-        'flex w-full min-w-0 items-center rounded-[6px] transition-colors hover:bg-foreground/[0.045]',
-        active && 'bg-foreground/[0.07] text-foreground',
-      )}
-    >
-      <button
-        type="button"
-        aria-label={getSessionTitle(meta)}
-        aria-current={active ? 'page' : undefined}
-        disabled={disabled}
-        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-[6px] px-2 py-2 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-60"
-        onClick={onSelect}
-      >
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
-          <span className={cn(
-            'h-1.5 w-1.5 rounded-full bg-transparent',
-            meta.hasUnread && 'bg-accent',
-            runtimeStatus === 'running' && 'animate-pulse bg-foreground/50',
-            runtimeStatus === 'waiting-input' && 'bg-info',
-            runtimeStatus === 'error' && 'bg-destructive',
-          )} />
-        </span>
-        <MessageSquareText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate text-[12px] leading-4 text-foreground/90">
-          {getSessionTitle(meta)}
-        </span>
-        <span className="shrink-0 text-[10px] text-muted-foreground/55">{formatRelativeTimestamp(meta.lastMessageAt, '')}</span>
-      </button>
-    </div>
-  )
-
-  if (!sessionActions) return row
-
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
-      <StyledContextMenuContent>
-        <StyledContextMenuItem onSelect={onRename}>
-          <Pencil className="h-3.5 w-3.5" />
-          重命名
-        </StyledContextMenuItem>
-        <StyledContextMenuItem onSelect={() => sessionActions.onArchive(meta.id)}>
-          <Archive className="h-3.5 w-3.5" />
-          归档
-        </StyledContextMenuItem>
-        <StyledContextMenuSeparator />
-        <StyledContextMenuItem
-          variant="destructive"
-          onSelect={() => sessionActions.onDelete(meta.id)}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          删除
-        </StyledContextMenuItem>
-      </StyledContextMenuContent>
-    </ContextMenu>
-  )
-}
-
 function getProfileInitial(name: string | undefined): string {
   const normalized = name?.trim()
   return normalized ? Array.from(normalized)[0].toLocaleUpperCase() : '本'
-}
-
-function ProjectFolderRow({
-  workspace,
-  active,
-  archived = false,
-  hasUnread,
-  disabled,
-  expandable = false,
-  expanded = false,
-  onToggleExpanded,
-  sessions,
-  loadingSessions = false,
-  activeSessionId = null,
-  onSelectSession,
-  onCreateConversation,
-  sessionActions,
-  onRenameSession,
-  onOpenInNewWindow,
-  onRename,
-  onArchive,
-  onRestore,
-  onRemove,
-}: {
-  workspace: Workspace
-  active: boolean
-  archived?: boolean
-  hasUnread: boolean
-  disabled: boolean
-  expandable?: boolean
-  expanded?: boolean
-  onToggleExpanded?: () => void
-  sessions?: SessionMeta[]
-  loadingSessions?: boolean
-  activeSessionId?: string | null
-  onSelectSession?: (sessionId: string) => void
-  onCreateConversation?: () => void | Promise<void>
-  sessionActions?: ActivityRailSessionActions
-  onRenameSession?: (meta: SessionMeta) => void
-  onOpenInNewWindow?: () => void
-  onRename?: () => void
-  onArchive?: () => void
-  onRestore?: () => void
-  onRemove?: () => void
-}) {
-  return (
-    <div>
-    <div className={cn(
-      'group flex min-w-0 items-center rounded-[6px] transition-colors hover:bg-foreground/[0.045]',
-      active && 'bg-foreground/[0.07] text-foreground',
-    )}>
-      <button
-        type="button"
-        aria-label={`项目：${workspace.name}`}
-        title={workspace.name}
-        aria-current={active ? 'page' : undefined}
-        aria-expanded={expandable ? expanded : undefined}
-        disabled={disabled}
-        className={cn(
-          'flex h-[30px] min-w-0 flex-1 items-center gap-1.5 rounded-[6px] px-2 text-left outline-none',
-          'focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default',
-          archived && 'opacity-60',
-        )}
-        onClick={() => onToggleExpanded?.()}
-      >
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
-          {expanded
-            ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
-        </span>
-        <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-[12px] text-foreground/85">{workspace.name}</span>
-        {hasUnread ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-label="有未读对话" /> : null}
-      </button>
-      {onCreateConversation ? (
-        <button
-          type="button"
-          aria-label={`在 ${workspace.name} 中新建对话`}
-          title="新建对话"
-          className="flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
-          onClick={() => { void onCreateConversation() }}
-        >
-          <Plus className="size-3.5" />
-        </button>
-      ) : null}
-      {(onOpenInNewWindow || onRename || onArchive || onRestore || onRemove) ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label={`管理 ${workspace.name}`}
-              className="mr-1 flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-foreground/[0.06] hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100 data-[state=open]:opacity-100"
-            >
-              <MoreHorizontal className="size-3.5" />
-            </button>
-          </DropdownMenuTrigger>
-          <StyledDropdownMenuContent align="end" sideOffset={4}>
-            {onOpenInNewWindow ? (
-              <StyledDropdownMenuItem onClick={onOpenInNewWindow}>
-                <ArrowUpRight className="size-3.5" />
-                <span>新窗口打开</span>
-              </StyledDropdownMenuItem>
-            ) : null}
-            {onRename ? (
-              <StyledDropdownMenuItem onClick={onRename}>
-                <Pencil className="size-3.5" />
-                <span>重命名</span>
-              </StyledDropdownMenuItem>
-            ) : null}
-            {onArchive ? (
-              <StyledDropdownMenuItem onClick={onArchive}>
-                <Archive className="size-3.5" />
-                <span>归档</span>
-              </StyledDropdownMenuItem>
-            ) : null}
-            {onRestore ? (
-              <StyledDropdownMenuItem onClick={onRestore}>
-                <ArchiveRestore className="size-3.5" />
-                <span>恢复</span>
-              </StyledDropdownMenuItem>
-            ) : null}
-            {onRemove ? <StyledDropdownMenuSeparator /> : null}
-            {onRemove ? (
-              <StyledDropdownMenuItem variant="destructive" onClick={onRemove}>
-                <Trash2 className="size-3.5" />
-                <span>移除</span>
-              </StyledDropdownMenuItem>
-            ) : null}
-          </StyledDropdownMenuContent>
-        </DropdownMenu>
-      ) : null}
-    </div>
-    {expandable && expanded ? (
-      <div className="ml-[18px] mt-0.5 space-y-0.5 border-l border-border/40 pl-1.5" data-testid="activity-project-conversations">
-        {loadingSessions && !sessions ? (
-          <div className="px-2 py-1.5 text-[11px] text-muted-foreground/60">正在加载对话…</div>
-        ) : sessions && sessions.length > 0 ? (
-          sessions.map((meta) => (
-            <RecentConversationRow
-              key={meta.id}
-              meta={meta}
-              active={activeSessionId === meta.id}
-              disabled={!onSelectSession}
-              onSelect={() => onSelectSession?.(meta.id)}
-              sessionActions={sessionActions}
-              onRename={() => onRenameSession?.(meta)}
-            />
-          ))
-        ) : (
-          <div className="px-2 py-1.5 text-[11px] text-muted-foreground/60">暂无对话</div>
-        )}
-      </div>
-    ) : null}
-    </div>
-  )
 }

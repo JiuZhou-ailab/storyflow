@@ -1,4 +1,4 @@
-// input: AppShell, panel chrome, ActivityRail, WorkspaceProjectSidebar, and project-creation source
+// input: AppShell, panel chrome, ActivityRail row primitives, WorkspaceProjectSidebar, and project-creation source
 // output: Static regression for rail-owned project management IA
 // pos: Project browsing is rail-only; dialogs are reserved for creation forms
 
@@ -12,6 +12,7 @@ const panelHeaderSource = readFileSync(new URL('../PanelHeader.tsx', import.meta
 const appSource = readFileSync(new URL('../../../App.tsx', import.meta.url), 'utf8')
 const activityRailPath = fileURLToPath(new URL('../ActivityRail.tsx', import.meta.url))
 const activityRailSource = readFileSync(activityRailPath, 'utf8')
+const activityRailRowsSource = readFileSync(new URL('../ActivityRailRows.tsx', import.meta.url), 'utf8')
 const projectSwitcherPath = fileURLToPath(new URL('../ProjectSwitcherPopover.tsx', import.meta.url))
 const projectSwitcherSource = readFileSync(projectSwitcherPath, 'utf8')
 const projectManagerPath = fileURLToPath(new URL('../ProjectManagerPanel.tsx', import.meta.url))
@@ -72,8 +73,8 @@ describe('project management entry', () => {
     expect(activityRailSource).toContain('<ProjectSwitcherPopover')
     expect(activityRailSource).toContain('onWorkspaceCreated={onWorkspaceCreated}')
     expect(activityRailSource).toContain('data-testid="activity-archived-projects"')
-    expect(activityRailSource).toContain('<span>归档</span>')
-    expect(activityRailSource).toContain('<span>恢复</span>')
+    expect(activityRailRowsSource).toContain('<span>归档</span>')
+    expect(activityRailRowsSource).toContain('<span>恢复</span>')
     expect(activityRailSource).not.toContain('onCreateProject')
     expect(activityRailSource).not.toContain('onManageProjects')
     expect(activityRailSource).not.toContain('退出到作品库')
@@ -156,8 +157,12 @@ describe('project management entry', () => {
   })
 
   it('keeps project disclosure separate from conversation selection', () => {
-    const projectRowSource = activityRailSource.slice(
-      activityRailSource.indexOf('function ProjectFolderRow'),
+    const sectionHeaderSource = activityRailSource.slice(
+      activityRailSource.indexOf('function SidebarSectionHeader'),
+      activityRailSource.indexOf('function getProfileInitial'),
+    )
+    const projectRowSource = activityRailRowsSource.slice(
+      activityRailRowsSource.indexOf('export function ProjectFolderRow'),
     )
 
     expect(projectRowSource).toContain('aria-expanded={expandable ? expanded : undefined}')
@@ -167,6 +172,19 @@ describe('project management entry', () => {
     expect(projectRowSource).not.toContain("role={expandable ? 'button' : undefined}")
     expect(projectRowSource).toContain("active && 'bg-foreground/[0.07] text-foreground'")
     expect(projectRowSource).toContain('aria-label={`在 ${workspace.name} 中新建对话`}')
+    expect(activityRailRowsSource).toContain('const PROJECT_SESSION_LIMIT = 5')
+    expect(projectRowSource).toContain('sessions?.slice(0, PROJECT_SESSION_LIMIT)')
+    expect(projectRowSource).toContain("{showAllSessions ? '收起显示' : '展开显示'}")
+    expect(projectRowSource).toContain('<FolderOpen')
+    expect(activityRailRowsSource).toContain("nested ? 'py-1.5 pl-[30px] pr-2'")
+    expect(sectionHeaderSource).toContain('<div className="group flex items-center justify-between rounded-[7px]')
+    expect(sectionHeaderSource).toContain('opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100')
+    expect(activityRailSource).toContain('group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100')
+    expect(sectionHeaderSource.indexOf('{label}')).toBeLessThan(sectionHeaderSource.indexOf('{expanded ?'))
+    expect(projectRowSource).toContain('role="status">正在加载对话…')
+    expect(activityRailRowsSource).toContain('animate-spin text-muted-foreground/75')
+    expect(activityRailSource).toContain('window.electronAPI.getActiveSessions()')
+    expect(projectRowSource).toContain("aria-label={loadingSessions ? '正在加载对话' : '项目中有对话正在运行'}")
     expect(appShellSource).toContain('await onSelectWorkspace(workspaceId)')
     expect(appShellSource).toContain('const session = await onCreateSession(workspaceId)')
     expect(appShellSource).toContain('await onSelectProjectSession(workspaceId, session.id)')
@@ -188,9 +206,9 @@ describe('project management entry', () => {
   })
 
   it('keeps rail conversation actions in a small right-click menu', () => {
-    const conversationRowSource = activityRailSource.slice(
-      activityRailSource.indexOf('function RecentConversationRow'),
-      activityRailSource.indexOf('function getProfileInitial'),
+    const conversationRowSource = activityRailRowsSource.slice(
+      activityRailRowsSource.indexOf('export function RecentConversationRow'),
+      activityRailRowsSource.indexOf('export function ProjectFolderRow'),
     )
 
     expect(activityRailSource).not.toContain("import { SessionMenu } from './SessionMenu'")

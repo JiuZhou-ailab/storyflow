@@ -129,6 +129,159 @@ Fidelity checks:
 
 final result: passed
 
+## Activity rail project hierarchy QA — 2026-07-29
+
+### Sources
+
+- Storyflow before:
+  `/var/folders/jk/7_pcx4cd3y94_lwnf7hbxcv80000gn/T/codex-clipboard-2c259c6f-091a-4449-a597-f660508f7cd1.png`
+- Codex hierarchy reference:
+  `/var/folders/jk/7_pcx4cd3y94_lwnf7hbxcv80000gn/T/codex-clipboard-85de8320-46fa-4414-bfda-13f24b35a982.png`
+- Codex spacing, hover, and loading reference:
+  `/var/folders/jk/7_pcx4cd3y94_lwnf7hbxcv80000gn/T/codex-clipboard-d4e8ad52-5bfc-46fa-803a-76cc15ccd4c5.png`
+- Storyflow five-session preview:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/29/019faccb-90d4-72c0-823a-bf02b376d449/activity-rail-hierarchy-qa/storyflow-project-preview-final.jpeg`
+- Storyflow expanded sessions:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/29/019faccb-90d4-72c0-823a-bf02b376d449/activity-rail-hierarchy-qa/storyflow-project-expanded-final.jpeg`
+- Reference versus preview:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/29/019faccb-90d4-72c0-823a-bf02b376d449/activity-rail-hierarchy-qa/reference-vs-preview-final.png`
+- Preview versus expanded:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/29/019faccb-90d4-72c0-823a-bf02b376d449/activity-rail-hierarchy-qa/preview-vs-expanded-final.png`
+- Storyflow project-row hover:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/29/019faccb-90d4-72c0-823a-bf02b376d449/activity-rail-hierarchy-qa/storyflow-spacing-hover.png`
+- Codex reference versus Storyflow hover:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/29/019faccb-90d4-72c0-823a-bf02b376d449/activity-rail-hierarchy-qa/reference-vs-hover-final.png`
+
+The live Electron capture is 1164 × 768 pixels in the current light-theme
+writing workspace. Computer Use does not expose the CSS viewport or device
+pixel ratio, so the focused project crops were normalized to 442 × 940 pixels
+before comparison; raw font pixels were not treated as fidelity evidence.
+
+### Iteration 1
+
+P2 findings:
+
+- Project conversations repeated the free-conversation leading icons, pushing
+  their titles past the project-name column instead of forming Codex's clear
+  second level.
+- Expanding a project rendered every conversation immediately, so one large
+  project could consume the complete sidebar.
+- Removing the project chevron also removed the remaining visible open/closed
+  cue.
+
+Root fixes:
+
+- Keep project conversations inside the existing project subtree, remove their
+  repeated leading icons, and align their title edge with the project title.
+- Show five recent project conversations by default, then toggle the complete
+  list with `展开显示` and `收起显示`.
+- Reuse the installed Lucide closed/open folder icons for project disclosure.
+- Keep runtime and unread indicators at the right edge of nested rows.
+
+### Iteration 2
+
+Full-view evidence shows the existing Free Conversations and Projects sections
+remain in the same order and one sidebar scroll owner still contains both.
+The focused reference comparison shows that project names and their nested
+conversation names now share one title column. The preview/expanded comparison
+shows five rows plus `展开显示`, then all eight rows plus `收起显示`.
+
+The first focused pass found one remaining P2: the selected nested
+conversation's background inherited the subtree margin and became narrower
+than the project rows. The fix moved indentation from the subtree container to
+the nested button's content padding.
+
+### Iteration 3
+
+The final focused comparison shows a full-width selected row while its title
+still aligns with the project-name column. No surrounding project geometry or
+free-conversation layout changed.
+
+### Iteration 4
+
+The newer Codex reference exposed one remaining P2: the section wrapper added a
+4 px inset before its own 8 px button padding, so the `项目` parent appeared
+farther right than the project-folder column. The shared section header now has
+no extra wrapper inset, puts its chevron after the title, and starts the title
+on the same column as project folder icons. Project names and nested
+conversation titles keep their shared second column, one icon-and-gap step to
+the right.
+
+The live hover capture shows the existing full-width soft background and only
+the hovered project's `+` and overflow controls. Keyboard focus keeps the same
+controls visible. Loading and running states now reuse the installed Lucide
+spinner at the right edge: list loading is announced with screen-reader-only
+copy, running conversations show the ring in their row, and collapsed projects
+with active sessions receive the same ring from the existing server active
+session summary. This adds one aggregate request, not one request per project.
+
+The Codex section-level overflow icon was not copied because Storyflow has no
+equivalent section action; adding a decorative dead control would reduce
+fidelity of behavior.
+
+### Iteration 5
+
+The project creation trigger previously remained a separate, permanently
+visible control beside the section title. The shared section header now owns
+one rounded hover/focus surface. Its disclosure icon and the project creation
+trigger reserve their layout space but remain transparent until the row is
+hovered or keyboard focus enters it; the creation trigger also remains visible
+while its menu is open. The disclosure and creation actions stay as separate
+semantic buttons, so the unified visual item does not introduce nested buttons.
+
+The free-conversation creation trigger now uses the same contextual visibility
+contract. Its rendered class list contains `opacity-0`, `group-hover:opacity-100`,
+and `group-focus-within:opacity-100`; the live stylesheet contains both group
+selectors. A DevTools query after force reload returned zero
+`.lucide-message-square-text` elements, confirming that free-conversation rows
+retain only their status marker, title, and timestamp.
+
+The desktop capture surface remained blank while docked DevTools could inspect
+the live renderer DOM, so it was not used as visual evidence. Further UI
+automation stopped when the user resumed interacting with the Electron window.
+
+Interaction evidence:
+
+- Clicking `短篇/中篇小说` loaded its workspace-scoped conversations.
+- The first state exposed exactly five sessions and `展开显示`.
+- Activating `展开显示` exposed all eight sessions and changed the control to
+  `收起显示`.
+- Activating `收起显示` restored the five-session preview.
+- The project-level disclosure and per-project show-more state remain separate.
+
+Required fidelity surfaces:
+
+- Fonts and typography: existing Storyflow family, 12 px row text, truncation,
+  and optical weights remain unchanged; Codex typography was not copied.
+- Spacing and layout rhythm: the section title matches the folder-icon column,
+  nested titles match the project-title column, the obsolete tree border is
+  gone, and compact 28–30 px rows remain.
+- Colors and visual tokens: existing foreground, muted, active, hover, focus,
+  unread, and runtime-status tokens remain unchanged.
+- Image quality and assets: no raster assets were added; closed/open folder
+  states use the existing Lucide dependency.
+- Copy and content: the only new visible copy is `展开显示` / `收起显示`;
+  project and conversation names remain source data.
+
+Runtime evidence:
+
+- 32 focused tests pass with 1,439 assertions.
+- Electron TypeScript check passes.
+- Targeted ESLint reports no errors.
+- `git diff --check` passes.
+- ActivityRail orchestration is 756 lines; its row primitives are isolated in a
+  324-line sibling component.
+- The live Electron window rendered both interaction states without an HMR
+  error overlay.
+
+The remaining density difference from Codex is intentional: this task adopts
+its hierarchy and disclosure behavior while retaining Storyflow's product
+tokens and compact sidebar.
+
+No actionable P0, P1, or P2 differences remain.
+
+final result: passed
+
 ## Writing workspace shared tabs and directory QA — 2026-07-27
 
 ### Sources

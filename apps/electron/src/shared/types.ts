@@ -344,6 +344,7 @@ export interface ElectronAPI {
 
   // Server info (REMOTE_ELIGIBLE — returns data from whichever server owns the workspace)
   getServerHomeDir(): Promise<string>
+  getActiveSessions(): Promise<import('@craft-agent/core/types').ActiveSessionInfo[]>
 
   // Server mode configuration
   getServerConfig(): Promise<import('@craft-agent/shared/config/server-config').ServerConfig>

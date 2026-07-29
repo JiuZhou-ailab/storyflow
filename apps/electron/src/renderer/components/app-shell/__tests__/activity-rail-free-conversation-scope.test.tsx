@@ -91,6 +91,7 @@ describe('ActivityRail free-conversation scope', () => {
 
     expect(html).not.toContain('九州项目对话')
     expect(html).not.toContain('data-session-id="project-1"')
+    expect(html).not.toContain('lucide-message-square-text')
     // The project itself still belongs in the rail — only its conversations do not.
     expect(html).toContain('九州')
   })
@@ -105,6 +106,11 @@ describe('ActivityRail free-conversation scope', () => {
 
     expect(html).toContain('自由对话')
     expect(html).not.toContain('最近对话')
+    const createButtonStart = html.indexOf('aria-label="新建自由对话"')
+    const createButton = html.slice(createButtonStart, html.indexOf('</button>', createButtonStart))
+    expect(createButton).toContain('opacity-0')
+    expect(createButton).toContain('group-hover:opacity-100')
+    expect(createButton).toContain('group-focus-within:opacity-100')
   })
 
   it('creates a fresh free conversation instead of only reopening the list', () => {
