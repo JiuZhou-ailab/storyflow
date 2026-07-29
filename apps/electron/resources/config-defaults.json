@@ -108,7 +108,7 @@
         "modelSelectionMode": "userDefined3Tier",
         "piAuthProvider": "openai",
         "customEndpoint": {
-          "api": "openai-completions"
+          "api": "openai-responses"
         },
         "hidden": true,
         "managed": true,

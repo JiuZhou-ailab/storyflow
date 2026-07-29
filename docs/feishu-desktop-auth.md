@@ -88,10 +88,12 @@ Only these public routes exist:
 
 ```text
 GET  /health
-POST /v1/chat/completions
+GET  /ready
+POST /v1/responses
+POST /v1/chat/completions  # legacy desktop compatibility
 ```
 
-For chat calls, the Worker validates the HS256 token signature, issuer,
+For model calls, the Worker validates the HS256 token signature, issuer,
 audience, expiry, subject, `model:chat` scope, and `model_tier`. It then replaces
 the client authorization header with its server-only `NEWAPI_API_KEY` and
 forwards the request to `NEWAPI_UPSTREAM_BASE_URL`.
@@ -100,7 +102,7 @@ Stable authentication failures are machine-readable:
 
 - broker `POST /api/client-auth/token`: `401` with
   `code=client_session_token_invalid`;
-- gateway `POST /v1/chat/completions`: `401` with
+- gateway `POST /v1/responses`: `401` with
   `code=model_access_token_invalid`.
 - gateway upstream service authentication: `502` with
   `code=upstream_auth_failed`.
@@ -113,8 +115,9 @@ The MVP deliberately uses one NewAPI key and one upstream for both roles. Add
 per-tier model allowlists only when Standard and Pro actually diverge; add
 per-user NewAPI keys only when upstream accounting or revocation requires them.
 
-The active managed endpoint uses OpenAI-compatible Chat Completions
-(`customEndpoint.api=openai-completions`).
+The active managed endpoint uses the OpenAI Responses API
+(`customEndpoint.api=openai-responses`). The gateway still accepts legacy Chat
+Completions requests from older desktop releases during migration.
 
 ## Local Development
 
@@ -218,7 +221,7 @@ Health and unauthenticated checks:
 ```bash
 curl -i https://storyflow-auth.zjding.com/health
 curl -i https://storyflow-model.zjding.com/health
-curl -i -X POST https://storyflow-model.zjding.com/v1/chat/completions
+curl -i -X POST https://storyflow-model.zjding.com/v1/responses
 ```
 
 The final request must return `401` with
@@ -250,8 +253,8 @@ printf 'refresh: ok\n'
 printf 'header = "Authorization: Bearer %s"\n' "$MODEL_ACCESS_TOKEN" |
   curl --silent --show-error --fail-with-body --config - \
     --header 'Content-Type: application/json' \
-    --data '{"model":"gpt-5.5","messages":[{"role":"user","content":"Reply exactly: OK"}],"max_tokens":8,"stream":false}' \
-    "$MODEL_GATEWAY_URL/v1/chat/completions"
+    --data '{"model":"gpt-5.5","input":"Reply exactly: OK","max_output_tokens":16,"stream":false}' \
+    "$MODEL_GATEWAY_URL/v1/responses"
 ```
 
 Do not enable shell tracing or paste a token directly into a command. The

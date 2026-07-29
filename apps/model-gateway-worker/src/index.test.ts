@@ -2,7 +2,7 @@
 // output: Regression coverage for NewAPI proxy authorization and credential isolation
 // pos: Guards the edge boundary that keeps the NewAPI service key off desktop clients
 
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it, spyOn } from 'bun:test'
 import { handleRequest } from './index'
 
 const CURRENT_MODEL_KEY_ID = 'model-access-2026-07'
@@ -101,7 +101,7 @@ describe('model gateway worker', () => {
       makeEnv(),
     )
     const wrongMethod = await handleRequest(
-      new Request('https://model.storyflow.example.com/v1/chat/completions'),
+      new Request('https://model.storyflow.example.com/v1/responses'),
       makeEnv(),
     )
 
@@ -120,14 +120,14 @@ describe('model gateway worker', () => {
     }
 
     const missing = await handleRequest(
-      new Request('https://model.storyflow.example.com/v1/chat/completions', {
+      new Request('https://model.storyflow.example.com/v1/responses', {
         method: 'POST',
       }),
       makeEnv(),
       fetchStub,
     )
     const cloudflareHeaderOnly = await handleRequest(
-      new Request('https://model.storyflow.example.com/v1/chat/completions', {
+      new Request('https://model.storyflow.example.com/v1/responses', {
         method: 'POST',
         headers: { 'cf-aig-authorization': 'Bearer legacy-token' },
       }),
@@ -135,7 +135,7 @@ describe('model gateway worker', () => {
       fetchStub,
     )
     const invalid = await handleRequest(
-      new Request('https://model.storyflow.example.com/v1/chat/completions', {
+      new Request('https://model.storyflow.example.com/v1/responses', {
         method: 'POST',
         headers: { Authorization: 'Bearer invalid-token' },
       }),
@@ -168,7 +168,7 @@ describe('model gateway worker', () => {
     const unknownTierToken = await signTestJwt('broker-signing-secret', { model_tier: 'admin' })
 
     const requestWith = (token: string) => new Request(
-      'https://model.storyflow.example.com/v1/chat/completions',
+      'https://model.storyflow.example.com/v1/responses',
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -190,7 +190,7 @@ describe('model gateway worker', () => {
 
   it('accepts current and previous keyed tokens but rejects missing or unknown key IDs', async () => {
     const requestWith = (token: string) => new Request(
-      'https://model.storyflow.example.com/v1/chat/completions',
+      'https://model.storyflow.example.com/v1/responses',
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -235,7 +235,7 @@ describe('model gateway worker', () => {
       let upstreamRequest: Request | null = null
 
       const response = await handleRequest(
-        new Request('https://model.storyflow.example.com/v1/chat/completions?debug=1', {
+        new Request('https://model.storyflow.example.com/v1/responses?debug=1', {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
@@ -244,7 +244,7 @@ describe('model gateway worker', () => {
             Cookie: 'must-not-forward=1',
             'X-Untrusted-Header': 'must-not-forward',
           },
-          body: JSON.stringify({ model: 'gpt-5.5', messages: [], stream: true }),
+          body: JSON.stringify({ model: 'gpt-5.5', input: [], stream: true }),
         }),
         makeEnv(),
         async (request) => {
@@ -258,7 +258,7 @@ describe('model gateway worker', () => {
       expect(response.status).toBe(200)
       expect(response.headers.get('content-type')).toBe('text/event-stream')
       expect(await response.text()).toBe('data: {"ok":true}\n\n')
-      expect(upstreamRequest?.url).toBe('https://jzapi.duanju.com/v1/chat/completions?debug=1')
+      expect(upstreamRequest?.url).toBe('https://jzapi.duanju.com/v1/responses?debug=1')
       expect(upstreamRequest?.headers.get('authorization')).toBe('Bearer server-only-newapi-key')
       expect(upstreamRequest?.headers.get('accept')).toBe('text/event-stream')
       expect(upstreamRequest?.headers.get('content-type')).toBe('application/json')
@@ -267,10 +267,31 @@ describe('model gateway worker', () => {
     }
   })
 
+  it('keeps the legacy Chat Completions route for older desktop releases', async () => {
+    const token = await signTestJwt(CURRENT_MODEL_SECRET)
+    let upstreamUrl = ''
+
+    const response = await handleRequest(
+      new Request('https://model.storyflow.example.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ model: 'gpt-5.5', messages: [] }),
+      }),
+      makeEnv(),
+      async (request) => {
+        upstreamUrl = request.url
+        return Response.json({ ok: true })
+      },
+    )
+
+    expect(response.status).toBe(200)
+    expect(upstreamUrl).toBe('https://jzapi.duanju.com/v1/chat/completions')
+  })
+
   it('fails closed when NewAPI configuration or the upstream is unavailable', async () => {
     const token = await signTestJwt('broker-signing-secret')
     const requestWithToken = () => new Request(
-      'https://model.storyflow.example.com/v1/chat/completions',
+      'https://model.storyflow.example.com/v1/responses',
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -296,7 +317,7 @@ describe('model gateway worker', () => {
   it('does not misclassify upstream service authentication failures as client token failures', async () => {
     const token = await signTestJwt(CURRENT_MODEL_SECRET)
     const response = await handleRequest(
-      new Request('https://model.storyflow.example.com/v1/chat/completions', {
+      new Request('https://model.storyflow.example.com/v1/responses', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       }),
@@ -312,5 +333,56 @@ describe('model gateway worker', () => {
       error: 'Model provider authentication failed',
       code: 'upstream_auth_failed',
     })
+  })
+
+  it('logs upstream failures with correlation fields but without request content or credentials', async () => {
+    const errorSpy = spyOn(console, 'error').mockImplementation(() => {})
+
+    try {
+      const token = await signTestJwt(CURRENT_MODEL_SECRET)
+      const response = await handleRequest(
+        new Request('https://model.storyflow.example.com/v1/responses', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'cf-ray': 'incoming-request-ray',
+          },
+          body: JSON.stringify({
+            model: 'gpt-5.5',
+            input: [{ role: 'user', content: 'private prompt content' }],
+          }),
+        }),
+        makeEnv(),
+        async () => new Response('error code: 520', {
+          status: 520,
+          headers: { 'cf-ray': 'upstream-request-ray' },
+        }),
+      )
+
+      expect(response.status).toBe(520)
+      expect(errorSpy).toHaveBeenCalledTimes(1)
+      expect(errorSpy.mock.calls[0]?.[0]).toMatchObject({
+        stage: 'upstream',
+        upstream_status: 520,
+        upstream_ray: 'upstream-request-ray',
+        user: 'neon:neon_user_123',
+        duration_ms: expect.any(Number),
+      })
+      expect(Object.keys(errorSpy.mock.calls[0]?.[0] as object).sort()).toEqual([
+        'duration_ms',
+        'stage',
+        'upstream_ray',
+        'upstream_status',
+        'user',
+      ])
+
+      const logged = JSON.stringify(errorSpy.mock.calls[0]?.[0])
+      expect(logged).not.toContain('private prompt content')
+      expect(logged).not.toContain(CURRENT_MODEL_SECRET)
+      expect(logged).not.toContain('server-only-newapi-key')
+    } finally {
+      errorSpy.mockRestore()
+    }
   })
 })

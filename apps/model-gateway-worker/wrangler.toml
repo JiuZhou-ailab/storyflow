@@ -6,6 +6,19 @@ routes = [
   { pattern = "storyflow-model.zjding.com", custom_domain = true },
 ]
 
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+
 [vars]
 STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID = "model-access-2026-07"
 STORYFLOW_GATEWAY_JWT_AUDIENCE = "storyflow-model-gateway"

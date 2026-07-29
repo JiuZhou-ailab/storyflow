@@ -64,13 +64,13 @@ describe('managed auth flow', () => {
       NEWAPI_UPSTREAM_BASE_URL: 'https://newapi.example.com',
     }
     const accepted = await handleModelGatewayRequest(
-      new Request('https://model.example.com/v1/chat/completions', {
+      new Request('https://model.example.com/v1/responses', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${tokens.modelAccessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ model: 'gpt-5.5', messages: [] }),
+        body: JSON.stringify({ model: 'gpt-5.5', input: [] }),
       }),
       gatewayEnv,
       async (request) => {
@@ -79,20 +79,20 @@ describe('managed auth flow', () => {
       },
     )
     const rejectedAppSession = await handleModelGatewayRequest(
-      new Request('https://model.example.com/v1/chat/completions', {
+      new Request('https://model.example.com/v1/responses', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${tokens.appSessionToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ model: 'gpt-5.5', messages: [] }),
+        body: JSON.stringify({ model: 'gpt-5.5', input: [] }),
       }),
       gatewayEnv,
     )
 
     expect(accepted.status).toBe(200)
     expect(await accepted.json()).toEqual({ ok: true })
-    expect(upstreamRequest?.url).toBe('https://newapi.example.com/v1/chat/completions')
+    expect(upstreamRequest?.url).toBe('https://newapi.example.com/v1/responses')
     expect(upstreamRequest?.headers.get('authorization')).toBe('Bearer server-only-newapi-key')
     expect(upstreamRequest?.headers.get('authorization')).not.toContain(tokens.modelAccessToken)
     expect(rejectedAppSession.status).toBe(401)

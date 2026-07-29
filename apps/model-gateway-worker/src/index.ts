@@ -1,5 +1,5 @@
-// input: OpenAI-compatible desktop chat requests and broker-issued model access JWTs
-// output: NewAPI chat requests with the server-only service credential
+// input: OpenAI Responses or legacy Chat Completions requests and broker-issued model access JWTs
+// output: Authenticated NewAPI requests plus minimal structured upstream diagnostics
 // pos: Edge authorization boundary that keeps NewAPI credentials out of desktop builds
 import { decodeProtectedHeader, jwtVerify, type JWTPayload } from 'jose'
 
@@ -21,10 +21,23 @@ interface GatewayJwtPayload extends JWTPayload {
   model_tier?: unknown
 }
 
+interface VerifiedGatewayJwtPayload extends GatewayJwtPayload {
+  sub: string
+  model_tier: 'standard' | 'pro'
+}
+
+interface GatewayRequestLogDetails {
+  user: string
+  stage?: 'config' | 'upstream'
+  upstream_status?: number
+  upstream_ray?: string
+  error?: string
+}
+
 const DEFAULT_AUDIENCE = 'storyflow-model-gateway'
 const DEFAULT_ISSUER = 'storyflow-auth-broker'
 const DEFAULT_CURRENT_KEY_ID = 'current'
-const CHAT_COMPLETIONS_PATH = '/v1/chat/completions'
+const MODEL_API_PATHS = new Set(['/v1/responses', '/v1/chat/completions'])
 
 class ForbiddenGatewayTokenError extends Error {}
 
@@ -60,20 +73,22 @@ export async function handleRequest(
       : Response.json({ status: 'ready' })
   }
 
-  if (requestUrl.pathname !== CHAT_COMPLETIONS_PATH) {
+  if (!MODEL_API_PATHS.has(requestUrl.pathname)) {
     return Response.json({ error: 'Unknown model gateway route' }, { status: 404 })
   }
   if (request.method !== 'POST') {
     return methodNotAllowed('POST')
   }
 
+  const startedAt = Date.now()
   const token = readBearerToken(request.headers.get('authorization'))
   if (!token) {
     return invalidModelAccessTokenResponse()
   }
 
+  let access: VerifiedGatewayJwtPayload
   try {
-    await verifyGatewayJwt(token, env)
+    access = await verifyGatewayJwt(token, env)
   } catch (error) {
     if (error instanceof ForbiddenGatewayTokenError) {
       return Response.json({ error: error.message }, { status: 403 })
@@ -84,6 +99,11 @@ export async function handleRequest(
   const newApiKey = readRequiredEnv(env.NEWAPI_API_KEY)
   const upstreamBaseUrl = readRequiredEnv(env.NEWAPI_UPSTREAM_BASE_URL)
   if (!newApiKey || !upstreamBaseUrl) {
+    logGatewayRequest(startedAt, {
+      stage: 'config',
+      user: access.sub,
+      error: 'missing_configuration',
+    })
     return Response.json({ error: 'NewAPI gateway is not configured' }, { status: 503 })
   }
 
@@ -104,8 +124,11 @@ export async function handleRequest(
   try {
     const upstreamResponse = await fetchImpl(upstreamRequest)
     if (upstreamResponse.status === 401 || upstreamResponse.status === 403) {
-      console.error('[model-gateway] Upstream authentication failed', {
-        status: upstreamResponse.status,
+      logGatewayRequest(startedAt, {
+        stage: 'upstream',
+        user: access.sub,
+        upstream_status: upstreamResponse.status,
+        upstream_ray: upstreamResponse.headers.get('cf-ray') ?? undefined,
       })
       return Response.json(
         {
@@ -115,13 +138,32 @@ export async function handleRequest(
         { status: 502 },
       )
     }
+    logGatewayRequest(
+      startedAt,
+      upstreamResponse.ok
+        ? { user: access.sub }
+        : {
+            stage: 'upstream',
+            user: access.sub,
+            upstream_status: upstreamResponse.status,
+            upstream_ray: upstreamResponse.headers.get('cf-ray') ?? undefined,
+          },
+    )
     return upstreamResponse
-  } catch {
+  } catch (error) {
+    logGatewayRequest(startedAt, {
+      stage: 'upstream',
+      user: access.sub,
+      error: error instanceof Error ? error.message.slice(0, 500) : 'Unknown upstream fetch error',
+    })
     return Response.json({ error: 'NewAPI gateway is unavailable' }, { status: 502 })
   }
 }
 
-export async function verifyGatewayJwt(token: string, env: Env): Promise<GatewayJwtPayload> {
+export async function verifyGatewayJwt(
+  token: string,
+  env: Env,
+): Promise<VerifiedGatewayJwtPayload> {
   const key = resolveGatewayVerificationKey(token, env)
 
   const { payload } = await jwtVerify<GatewayJwtPayload>(
@@ -206,7 +248,9 @@ function copyHeader(source: Headers, target: Headers, name: string): void {
   if (value) target.set(name, value)
 }
 
-function assertSubject(payload: GatewayJwtPayload): void {
+function assertSubject(
+  payload: GatewayJwtPayload,
+): asserts payload is GatewayJwtPayload & { sub: string } {
   if (typeof payload.sub !== 'string' || !payload.sub.trim()) {
     throw new Error('Model access subject is required')
   }
@@ -218,7 +262,9 @@ function assertScope(payload: GatewayJwtPayload, expectedScope: string): void {
   }
 }
 
-function assertModelTier(payload: GatewayJwtPayload): void {
+function assertModelTier(
+  payload: GatewayJwtPayload,
+): asserts payload is GatewayJwtPayload & { model_tier: 'standard' | 'pro' } {
   if (payload.model_tier !== 'standard' && payload.model_tier !== 'pro') {
     throw new ForbiddenGatewayTokenError('Model access tier is not authorized')
   }
@@ -235,4 +281,19 @@ function readBearerToken(header: string | null): string | null {
 function readRequiredEnv(value: string | undefined): string | null {
   const trimmed = value?.trim()
   return trimmed || null
+}
+
+function logGatewayRequest(
+  startedAt: number,
+  details: GatewayRequestLogDetails,
+): void {
+  const entry = {
+    ...details,
+    duration_ms: Date.now() - startedAt,
+  }
+  if (details.error || (details.upstream_status !== undefined && details.upstream_status >= 400)) {
+    console.error(entry)
+  } else {
+    console.log(entry)
+  }
 }
