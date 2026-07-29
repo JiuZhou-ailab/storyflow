@@ -10,43 +10,11 @@
  */
 
 import { useCallback, useRef } from 'react'
-import * as Sentry from '@sentry/electron/renderer'
 import type { Session } from '../../shared/types'
 import { processEvent } from './processor'
-import type { SessionState, AgentEvent, Effect, StreamingState, ErrorEvent, TypedErrorEvent } from './types'
+import type { SessionState, AgentEvent, Effect, StreamingState } from './types'
 import { createEmptySession } from './helpers'
 import { rendererPerf } from '../lib/perf'
-
-/**
- * Report agent error/typed_error events to Sentry as exceptions (not messages).
- * Using captureException gives proper stack traces and better error grouping in Sentry.
- * Called as a side effect after the pure processEvent function returns.
- * Keeps the event processor handlers pure while capturing every agent error shown in chat.
- */
-function captureAgentError(event: AgentEvent): void {
-  if (event.type === 'error') {
-    const errorEvent = event as ErrorEvent
-    Sentry.captureException(new Error(errorEvent.error), {
-      tags: { errorSource: 'agent' },
-      extra: { sessionId: event.sessionId },
-    })
-  } else if (event.type === 'typed_error') {
-    const typedEvent = event as TypedErrorEvent
-    const title = typedEvent.error.title ?? 'Agent Error'
-    Sentry.captureException(new Error(`${title}: ${typedEvent.error.message}`), {
-      tags: {
-        errorSource: 'agent',
-        errorCode: typedEvent.error.code ?? 'unknown',
-      },
-      extra: {
-        sessionId: event.sessionId,
-        // Include error metadata for debugging but omit details/originalError
-        // which may contain sensitive user content or file paths
-        canRetry: typedEvent.error.canRetry,
-      },
-    })
-  }
-}
 
 interface UseEventProcessorResult {
   /**
@@ -102,11 +70,6 @@ export function useEventProcessor(): UseEventProcessorResult {
     const result = processEvent(currentState, event)
     if (event.type === 'text_delta') {
       rendererPerf.recordTextDeltaEvent(event.sessionId, event.delta, event.turnId)
-    }
-
-    // Side effect: capture error events to Sentry (outside the pure processor)
-    if (event.type === 'error' || event.type === 'typed_error') {
-      captureAgentError(event)
     }
 
     // Update streaming state ref

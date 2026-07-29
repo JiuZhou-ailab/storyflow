@@ -20,7 +20,6 @@
  * connection is established.
  */
 
-import '@sentry/electron/preload'
 import { contextBridge, ipcRenderer, shell, webUtils } from 'electron'
 import { WsRpcClient, type TransportConnectionState } from '../transport/client'
 import { RoutedClient } from '../transport/routed-client'
@@ -38,8 +37,8 @@ import {
 } from '@craft-agent/server-core/transport'
 import type { ConfirmDialogSpec, FileDialogSpec } from '@craft-agent/server-core/transport'
 import type { RpcClient } from '@craft-agent/server-core/transport'
-import type { RemoteServerConfig } from '@craft-agent/core/types'
-import { CLIENT_AUTH_IPC_CHANNELS, type ClientAuthState, type ElectronAPI } from '../shared/types'
+import type { RemoteServerConfig, RemoteServerConnectionInput } from '@craft-agent/core/types'
+import { CLIENT_AUTH_IPC_CHANNELS, RPC_CHANNELS, type ClientAuthState, type ElectronAPI } from '../shared/types'
 
 // ---------------------------------------------------------------------------
 // Client interface — common surface for both RoutedClient and WsRpcClient
@@ -113,10 +112,11 @@ if (isClientOnly) {
   })
 
   // Check if the current workspace is remote (synchronous IPC during preload eval)
-  const remoteConfig: RemoteServerConfig | null = ipcRenderer.sendSync('__get-workspace-remote-config')
+  const remoteConfig: RemoteServerConnectionInput | null = ipcRenderer.sendSync('__get-workspace-remote-config')
 
   let initialWorkspaceClient: WsRpcClient
   if (remoteConfig && typeof remoteConfig.url === 'string') {
+    if (!remoteConfig.token) throw new Error('Remote server credential is unavailable')
     // Workspace is remote — create a direct connection to the remote server
     initialWorkspaceClient = new WsRpcClient(remoteConfig.url, {
       token: remoteConfig.token,
@@ -125,7 +125,6 @@ if (isClientOnly) {
       autoReconnect: true,
       mode: 'remote',
       clientCapabilities: [...LOCAL_CLIENT_CAPABILITIES],
-      tlsRejectUnauthorized: false,
     })
     initialWorkspaceClient.connect()
   } else {
@@ -142,14 +141,18 @@ if (isClientOnly) {
 
   // Factory for creating remote workspace clients on switch
   routedClient.setClientFactory((remoteServer: RemoteServerConfig) => {
+    const token: string | null = ipcRenderer.sendSync(
+      '__get-remote-server-token',
+      remoteServer.credentialRef,
+    )
+    if (!token) throw new Error('Remote server credential is unavailable')
     return new WsRpcClient(remoteServer.url, {
-      token: remoteServer.token,
+      token,
       workspaceId: remoteServer.remoteWorkspaceId,
       webContentsId,
       autoReconnect: true,
       mode: 'remote',
       clientCapabilities: [...LOCAL_CLIENT_CAPABILITIES],
-      tlsRejectUnauthorized: false,
     })
   })
 
@@ -192,14 +195,7 @@ async function readClientAuthState(): Promise<ClientAuthState> {
   return nextState
 }
 
-async function ensureClientAuthAllowed(): Promise<void> {
-  const state = cachedClientAuthState ?? await readClientAuthState()
-  if (state.required && !state.authenticated) {
-    throw new Error('Client authentication is required')
-  }
-}
-
-const api = buildClientApi(client, CHANNEL_MAP, (ch) => client.isChannelAvailable(ch), ensureClientAuthAllowed)
+const api = buildClientApi(client, CHANNEL_MAP, (ch) => client.isChannelAvailable(ch))
 
 ;(api as any).getRuntimeEnvironment = (): 'electron' | 'web' => 'electron'
 ;(api as ElectronAPI).notifyShellInteractive = () => {
@@ -223,6 +219,13 @@ function formatTransportReason(state: TransportConnectionState): string {
   }
 
   return 'no additional details'
+}
+
+function resolveRemoteServerCredential(tokenOrRef: string): string {
+  if (!tokenOrRef.startsWith('remote_server_token::')) return tokenOrRef
+  const token: string | null = ipcRenderer.sendSync('__get-remote-server-token', tokenOrRef)
+  if (!token) throw new Error('Remote server credential is unavailable')
+  return token
 }
 
 // Log remote connection state changes to main process (visible in terminal + main.log).
@@ -291,8 +294,6 @@ client.onConnectionStateChanged((state) => {
   let state: string | undefined
 
   try {
-    await ensureClientAuthAllowed()
-
     // 1. Start local callback server to receive OAuth redirect
     callbackServer = await createCallbackServer({ appType: 'electron' })
     const callbackUrl = `${callbackServer.url}/callback`
@@ -353,8 +354,6 @@ client.onConnectionStateChanged((state) => {
   error?: string
 }> => {
   try {
-    await ensureClientAuthAllowed()
-
     const result = await client.invoke('onboarding:startClaudeOAuth')
     if (result.success && result.authUrl) {
       await shell.openExternal(result.authUrl)
@@ -380,8 +379,6 @@ client.onConnectionStateChanged((state) => {
   let state: string | undefined
 
   try {
-    await ensureClientAuthAllowed()
-
     // 1. Start callback server on ChatGPT's fixed port with /auth/callback path
     callbackServer = await createCallbackServer({
       appType: 'electron',
@@ -432,15 +429,15 @@ client.onConnectionStateChanged((state) => {
 // App lifecycle — direct IPC (not WS RPC) since it restarts the server itself
 ;(api as ElectronAPI).relaunchApp = () => ipcRenderer.invoke('app:relaunch')
 ;(api as ElectronAPI).setWorkspaceArchived = async (workspaceId: string, archived: boolean) => {
-  await ensureClientAuthAllowed()
   return ipcRenderer.invoke('workspace:setArchived', workspaceId, archived)
 }
 ;(api as ElectronAPI).removeWorkspace = async (workspaceId: string) => {
-  await ensureClientAuthAllowed()
   return ipcRenderer.invoke('workspace:remove', workspaceId)
 }
 ;(api as ElectronAPI).invokeOnServer = (url: string, token: string, channel: string, ...args: any[]) =>
-  ensureClientAuthAllowed().then(() => ipcRenderer.invoke('server:invokeOnServer', url, token, channel, ...args))
+  ipcRenderer.invoke('server:invokeOnServer', url, resolveRemoteServerCredential(token), channel, ...args)
+;(api as ElectronAPI).testRemoteConnection = (url: string, token: string) =>
+  client.invoke(RPC_CHANNELS.remote.TEST_CONNECTION, url, resolveRemoteServerCredential(token))
 ;(api as ElectronAPI).getClientAuthState = () => readClientAuthState()
 ;(api as ElectronAPI).signInClient = async (input) => {
   const user = await ipcRenderer.invoke(CLIENT_AUTH_IPC_CHANNELS.SIGN_IN, input)
@@ -474,7 +471,6 @@ client.onConnectionStateChanged((state) => {
   return () => { ipcRenderer.removeListener(CLIENT_AUTH_IPC_CHANNELS.STATE_CHANGED, handler) }
 }
 ;(api as ElectronAPI).transferSessionToWorkspace = async (sessionId: string, targetWorkspaceId: string) => {
-  await ensureClientAuthAllowed()
   return ipcRenderer.invoke('session:transferToRemoteWorkspace', sessionId, targetWorkspaceId)
 }
 

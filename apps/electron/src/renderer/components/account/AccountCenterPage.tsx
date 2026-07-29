@@ -1,6 +1,6 @@
-// input: Client authentication state, workspace list, and account actions
-// output: Factual account management surface opened from user avatar actions
-// pos: Renderer account-management layer outside startup and workspace/session routing
+// input: Client authentication state, workspace list, and account auth actions
+// output: Managed-account login or factual account details without gating local projects
+// pos: Renderer account boundary opened explicitly or by managed model use
 
 import { useState, type ReactNode } from 'react'
 import {
@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 
 import { CraftAgentsSymbol } from '@/components/icons/CraftAgentsSymbol'
+import { ClientSignInForm } from '@/components/auth/ClientSignInForm'
 import { SettingsCard, SettingsCardContent } from '@/components/settings/SettingsCard'
 import { Button } from '@/components/ui/button'
 import type { ClientAuthState, ClientAuthUser, Workspace } from '../../../shared/types'
@@ -23,6 +24,7 @@ interface AccountCenterPageProps {
   workspaces: Workspace[]
   activeWorkspaceId: string | null
   onBack: () => void
+  onSignedIn: () => Promise<void>
   onSignOut: () => Promise<void>
 }
 
@@ -31,6 +33,7 @@ export function AccountCenterPage({
   workspaces,
   activeWorkspaceId,
   onBack,
+  onSignedIn,
   onSignOut,
 }: AccountCenterPageProps) {
   const [isSigningOut, setIsSigningOut] = useState(false)
@@ -76,46 +79,67 @@ export function AccountCenterPage({
           </Button>
         </header>
 
-        <section>
-          <SettingsCard className="border border-border/60 bg-background shadow-minimal" divided={false}>
-            <SettingsCardContent className="flex flex-col gap-8 p-5">
-              <div className="space-y-5">
-                <div className="flex items-center gap-3">
-                  <div className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-foreground-2 text-foreground shadow-minimal">
-                    <UserCircle className="size-8" />
+        {!user ? (
+          clientAuthState?.configured ? (
+            <ClientSignInForm
+              emailPasswordEnabled={clientAuthState.emailPasswordEnabled}
+              emailSignUpEnabled={clientAuthState.emailSignUpEnabled}
+              feishuLoginEnabled={clientAuthState.feishuLoginEnabled}
+              usernameLoginEnabled={clientAuthState.usernameLoginEnabled === true}
+              onSignedIn={onSignedIn}
+            />
+          ) : (
+            <SettingsCard className="border border-border/60 bg-background shadow-minimal" divided={false}>
+              <SettingsCardContent className="p-5">
+                <h2 className="text-[15px] font-semibold text-foreground">托管模型登录未配置</h2>
+                <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
+                  本地项目和自定义模型仍可正常使用。
+                </p>
+              </SettingsCardContent>
+            </SettingsCard>
+          )
+        ) : (
+          <section>
+            <SettingsCard className="border border-border/60 bg-background shadow-minimal" divided={false}>
+              <SettingsCardContent className="flex flex-col gap-8 p-5">
+                <div className="space-y-5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-foreground-2 text-foreground shadow-minimal">
+                      <UserCircle className="size-8" />
+                    </div>
+                    <div className="min-w-0">
+                      <h2 className="truncate text-[17px] font-semibold leading-6 text-foreground">{displayName}</h2>
+                      <p className="truncate text-[12px] leading-5 text-muted-foreground">{email}</p>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <h2 className="truncate text-[17px] font-semibold leading-6 text-foreground">{displayName}</h2>
-                    <p className="truncate text-[12px] leading-5 text-muted-foreground">{email}</p>
+
+                  <div className="space-y-3">
+                    <AccountFact icon={<ShieldCheck className="size-4" />} label="登录方式" value={providerLabel} />
+                    <AccountFact icon={<Mail className="size-4" />} label="邮箱状态" value={user.emailVerified ? '已验证' : '未验证'} />
+                    <AccountFact
+                      icon={<Building2 className="size-4" />}
+                      label="当前项目"
+                      value={activeWorkspace?.name ?? (workspaces.length > 0 ? `${workspaces.length} 个项目` : '未选择')}
+                    />
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  <AccountFact icon={<ShieldCheck className="size-4" />} label="登录方式" value={providerLabel} />
-                  <AccountFact icon={<Mail className="size-4" />} label="邮箱状态" value={user?.emailVerified ? '已验证' : '未验证'} />
-                  <AccountFact
-                    icon={<Building2 className="size-4" />}
-                    label="当前项目"
-                    value={activeWorkspace?.name ?? (workspaces.length > 0 ? `${workspaces.length} 个项目` : '未选择')}
-                  />
+                <div className="border-t border-border/60 pt-4">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-9 justify-start rounded-lg text-muted-foreground hover:text-foreground"
+                    disabled={isSigningOut}
+                    onClick={handleSignOut}
+                  >
+                    {isSigningOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
+                    退出登录
+                  </Button>
                 </div>
-              </div>
-
-              <div className="border-t border-border/60 pt-4">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="h-9 justify-start rounded-lg text-muted-foreground hover:text-foreground"
-                  disabled={isSigningOut}
-                  onClick={handleSignOut}
-                >
-                  {isSigningOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
-                  退出登录
-                </Button>
-              </div>
-            </SettingsCardContent>
-          </SettingsCard>
-        </section>
+              </SettingsCardContent>
+            </SettingsCard>
+          </section>
+        )}
       </main>
     </div>
   )

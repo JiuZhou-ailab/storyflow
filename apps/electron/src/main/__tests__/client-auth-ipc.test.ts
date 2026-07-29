@@ -1,6 +1,6 @@
 // input: Electron main/preload/renderer client-auth source files
 // output: Regression coverage for cross-window client-auth state propagation
-// pos: Static IPC contract guard for the desktop login gate
+// pos: Static IPC contract guard for managed-account auth without a desktop gate
 
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
@@ -42,12 +42,14 @@ describe('client auth IPC propagation', () => {
     expect(source).toContain('cachedClientAuthState = nextState')
   })
 
-  it('keeps the login gate subscribed after the initial state load', () => {
-    const source = readElectronFile('renderer/components/auth/ClientAuthGate.tsx')
+  it('keeps managed sign-in at the account capability boundary', () => {
+    const rendererEntry = readElectronFile('renderer/main.tsx')
+    const signInForm = readElectronFile('renderer/components/auth/ClientSignInForm.tsx')
 
-    expect(source).toContain('onClientAuthStateChanged')
-    expect(source).toContain('signUpClient')
-    expect(source).toContain('setState(nextState)')
+    expect(rendererEntry).not.toContain('ClientAuthGate')
+    expect(signInForm).toContain('signUpClient')
+    expect(signInForm).toContain('signInClient')
+    expect(signInForm).toContain('signInWithFeishuClient')
   })
 })
 

@@ -23,7 +23,7 @@ interface CreatedWorkspace {
   slug: string
   remoteServer?: {
     url: string
-    token: string
+    credentialRef: string
     remoteWorkspaceId: string
   }
 }
@@ -52,7 +52,19 @@ mock.module('@craft-agent/shared/config', () => ({
   getWorkspaceByNameOrId: (id: string) => createdWorkspaces.find(workspace => workspace.id === id) ?? null,
   getWorkspaces: () => createdWorkspaces,
   setActiveWorkspace: () => {},
-  updateWorkspaceRemoteServer: () => {},
+  updateWorkspaceRemoteServer: async (
+    workspaceId: string,
+    remoteServer: { url: string; token: string; remoteWorkspaceId: string },
+  ) => {
+    const stored = {
+      url: remoteServer.url,
+      credentialRef: `remote_server_token::${workspaceId}`,
+      remoteWorkspaceId: remoteServer.remoteWorkspaceId,
+    }
+    const workspace = createdWorkspaces.find(candidate => candidate.id === workspaceId)
+    if (workspace) workspace.remoteServer = stored
+    return stored
+  },
 }))
 
 const { registerWorkspaceCoreHandlers } = await import('./workspace')
@@ -174,7 +186,12 @@ describe('workspace create RPC registration', () => {
     try {
       const workspace = await createWorkspace(ctx, rootPath, 'Remote', remoteServer, 'novel')
 
-      expect(workspace.remoteServer).toEqual(remoteServer)
+      expect(workspace.remoteServer).toEqual({
+        url: remoteServer.url,
+        credentialRef: `remote_server_token::${workspace.id}`,
+        remoteWorkspaceId: remoteServer.remoteWorkspaceId,
+      })
+      expect(JSON.stringify(workspace)).not.toContain('"token":')
       expect(readdirSync(rootPath).filter(entry => !entry.startsWith('.'))).toEqual([])
     } finally {
       rmSync(rootPath, { recursive: true, force: true })

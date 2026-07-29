@@ -10,6 +10,7 @@ TypeScript build/dev entrypoints.
 - `common.ts` - shared build utilities for downloads, runtime staging, uploads, and verification.
 - `darwin.ts` - macOS packaging helpers.
 - `desktop-auth-build-config.ts` - validates packaged Electron client-auth broker settings.
+- `desktop-trust-boundaries.test.ts` - guards desktop auth, telemetry, TLS, and production packaging boundaries.
 - `environment-contract.test.ts` - regression tests for env-var lifecycle boundaries.
 - `electron-package-size-config.test.ts` - regression tests for Electron package-size inputs.
 - `electron-main-build-config.test.ts` - regression tests for Electron main process bundling constraints.

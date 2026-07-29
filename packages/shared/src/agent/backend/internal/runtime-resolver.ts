@@ -13,7 +13,6 @@ export interface ResolvedBackendRuntimePaths {
    * subprocess.
    */
   interceptorBundlePath?: string;
-  copilotCliPath?: string;
   sessionServerPath?: string;
   piServerPath?: string;
   nodeRuntimePath?: string;
@@ -90,26 +89,6 @@ function resolveInterceptorBundlePath(hostRuntime: BackendHostRuntimeContext): s
     ?? resolveUpwards(hostRuntime.appRootPath, join('apps', 'electron', 'dist', 'interceptor.cjs'));
 }
 
-function resolveCopilotCliPath(hostRuntime: BackendHostRuntimeContext): string | undefined {
-  const platform = process.platform === 'win32'
-    ? 'win32'
-    : process.platform === 'linux'
-      ? 'linux'
-      : 'darwin';
-  const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
-  const binaryName = platform === 'win32' ? 'copilot.exe' : 'copilot';
-
-  if (hostRuntime.isPackaged) {
-    const packaged = join(hostRuntime.appRootPath, 'vendor', 'copilot', `${platform}-${arch}`, binaryName);
-    return existsSync(packaged) ? packaged : undefined;
-  }
-
-  return resolveUpwards(
-    hostRuntime.appRootPath,
-    join('node_modules', '@github', `copilot-${platform}-${arch}`, binaryName),
-  );
-}
-
 function resolveServerPath(hostRuntime: BackendHostRuntimeContext, serverName: string): string | undefined {
   if (hostRuntime.isPackaged) {
     return firstExistingPath([
@@ -171,7 +150,6 @@ export function resolveBackendRuntimePaths(hostRuntime: BackendHostRuntimeContex
 
   return {
     interceptorBundlePath: resolveInterceptorBundlePath(hostRuntime),
-    copilotCliPath: resolveCopilotCliPath(hostRuntime),
     sessionServerPath: resolveServerPath(hostRuntime, 'session-mcp-server'),
     piServerPath: resolveServerPath(hostRuntime, 'pi-agent-server'),
     nodeRuntimePath: hostRuntime.nodeRuntimePath || bundledRuntimePath || process.execPath,

@@ -22,7 +22,9 @@ describe('AccountCenterPage', () => {
 
   it('keeps account actions scoped to account management', () => {
     expect(source).toContain('onBack')
+    expect(source).toContain('onSignedIn')
     expect(source).toContain('onSignOut')
     expect(source).toContain('退出登录')
+    expect(source).toContain('ClientSignInForm')
   })
 })

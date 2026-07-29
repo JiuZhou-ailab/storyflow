@@ -55,13 +55,14 @@ export function validateDesktopAuthBuildEnv(env: Env): DesktopAuthBuildValidatio
   if (readBooleanEnv(env.CRAFT_DEV_RUNTIME)) return { ok: true };
 
   const explicitAuthRequired = readOptionalBooleanEnv(env.CRAFT_CLIENT_AUTH_REQUIRED);
-  if (explicitAuthRequired === false) return { ok: true };
-
   const hasNeonLogin = hasNeonLoginMethod(env);
   const feishuAppId = readEnv(env.CRAFT_CLIENT_FEISHU_APP_ID);
   const brokerUrl = readEnv(env.CRAFT_CLIENT_AUTH_BROKER_URL)
     ?? readEnv(env.CRAFT_CLIENT_FEISHU_AUTH_BROKER_URL);
   const hasFeishuLogin = Boolean(feishuAppId);
+  const hasManagedAuthConfig = explicitAuthRequired === true || hasNeonLogin || hasFeishuLogin || Boolean(brokerUrl);
+
+  if (!hasManagedAuthConfig) return { ok: true };
 
   if (!hasNeonLogin && !hasFeishuLogin) {
     return {

@@ -1,8 +1,8 @@
 // input: Renderer startup and main-process client auth IPC
-// output: Login gate that prevents the desktop App tree from mounting until authenticated
-// pos: First renderer boundary before workspace/session UI initializes
+// output: Reusable managed-account login surface
+// pos: Renderer authentication UI used at managed capability boundaries
 
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import {
   AlertCircle,
@@ -19,128 +19,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { ClientAuthState } from '../../../shared/types'
 
 const AUTH_MOTION_EASE = [0.16, 1, 0.3, 1] as const
 
 type EmailAuthMode = 'sign-in' | 'sign-up'
 
-interface ClientAuthGateProps {
-  children: ReactNode
-}
-
-export function ClientAuthGate({ children }: ClientAuthGateProps) {
-  const [state, setState] = useState<ClientAuthState | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    let unsubscribe: (() => void) | undefined
-
-    async function loadState() {
-      try {
-        if (!window.electronAPI?.getClientAuthState) {
-          if (!cancelled) {
-            setState({
-              required: false,
-              configured: false,
-              authenticated: true,
-              emailPasswordEnabled: false,
-              emailSignUpEnabled: false,
-              feishuLoginEnabled: false,
-            })
-          }
-          return
-        }
-
-        const nextState = await window.electronAPI.getClientAuthState()
-        if (!cancelled) setState(nextState)
-      } catch (err) {
-        if (!cancelled) setLoadError(getErrorMessage(err))
-      }
-    }
-
-    void loadState()
-    unsubscribe = window.electronAPI?.onClientAuthStateChanged?.((nextState) => {
-      if (!cancelled) {
-        setLoadError(null)
-        setState(nextState)
-      }
-    })
-
-    return () => {
-      cancelled = true
-      unsubscribe?.()
-    }
-  }, [])
-
-  // While the auth gate blocks the App tree, useWindowCloseHandler (mounted inside App)
-  // is absent — so nothing answers the main process's CLOSE_REQUESTED ping and the window
-  // only closes after the 3s fallback timeout (the "close is laggy" symptom). The gate has
-  // no modals/panels, so confirm the close immediately for any source.
-  const gateActive = loadError != null || !state || (state.required && !state.authenticated)
-  useEffect(() => {
-    if (!gateActive) return
-    return window.electronAPI?.onCloseRequested?.(() => {
-      window.electronAPI?.confirmCloseWindow?.()
-    })
-  }, [gateActive])
-
-  if (loadError) {
-    return (
-      <AuthShell>
-        <AuthStatus
-          tone="error"
-          title="鉴权初始化失败"
-          description={loadError}
-        />
-      </AuthShell>
-    )
-  }
-
-  if (!state) {
-    return (
-      <AuthShell>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
-          正在检查登录状态
-        </div>
-      </AuthShell>
-    )
-  }
-
-  if (!state.required || state.authenticated) {
-    return <>{children}</>
-  }
-
-  if (!state.configured) {
-    return (
-      <AuthShell>
-        <AuthStatus
-          tone="error"
-          title="客户端鉴权未配置"
-          description="已启用客户端鉴权，但没有可用的邮箱或飞书登录配置。请检查 Neon Auth 或 Feishu Auth 环境变量。"
-        />
-      </AuthShell>
-    )
-  }
-
-  return (
-    <AuthShell>
-      <ClientSignInForm
-        emailPasswordEnabled={state.emailPasswordEnabled}
-        emailSignUpEnabled={state.emailSignUpEnabled}
-        feishuLoginEnabled={state.feishuLoginEnabled}
-        usernameLoginEnabled={state.usernameLoginEnabled === true}
-        onSignedIn={async () => {
-          setState(await window.electronAPI.getClientAuthState())
-        }}
-      />
-    </AuthShell>
-  )
-}
-
-function ClientSignInForm({
+export function ClientSignInForm({
   emailPasswordEnabled,
   emailSignUpEnabled,
   feishuLoginEnabled,
@@ -261,8 +145,8 @@ function ClientSignInForm({
     ? '创建 Storyflow 账号'
     : '登录 Storyflow'
   const formDescription = authMode === 'sign-up' && emailSignUpEnabled
-    ? '注册完成后即可进入你的工作区。'
-    : '继续进入你的工作区。'
+    ? '注册后可使用 Storyflow 托管模型，本地项目不受影响。'
+    : '登录后可使用 Storyflow 托管模型，本地项目不受影响。'
   const identifierLabel = authMode === 'sign-up'
     ? '邮箱'
     : usernameLoginEnabled ? '用户名或邮箱' : '邮箱'
@@ -475,42 +359,6 @@ function ClientSignInForm({
         </SettingsCardContent>
       </SettingsCard>
     </motion.section>
-  )
-}
-
-function AuthShell({ children }: { children: ReactNode }) {
-  return (
-    <div className="min-h-screen bg-foreground-2 text-foreground">
-      <div className="titlebar-drag-region fixed left-0 right-0 top-0 z-titlebar h-[50px]">
-        {/* macOS: the native traffic-light cluster sits at the top-left ({x:18,y:16}).
-            A drag region covering it swallows clicks, so the window can't be closed.
-            Carve out a no-drag zone to keep the close/minimize/zoom buttons clickable. */}
-        <div className="titlebar-no-drag absolute left-0 top-0 h-full w-[80px]" />
-      </div>
-      <div className="flex min-h-screen items-center justify-center px-8 py-12 max-[720px]:px-4">
-        {children}
-      </div>
-    </div>
-  )
-}
-
-function AuthStatus({
-  tone,
-  title,
-  description,
-}: {
-  tone: 'error'
-  title: string
-  description: string
-}) {
-  return (
-    <div className="flex w-full max-w-[420px] gap-3 rounded-md border border-destructive/20 bg-destructive/5 p-4 text-destructive">
-      <AlertCircle className="mt-0.5 size-5 shrink-0" />
-      <div className="min-w-0">
-        <h1 className="text-sm font-semibold leading-5">{title}</h1>
-        <p className="mt-1 break-words text-[13px] leading-5 opacity-90">{description}</p>
-      </div>
-    </div>
   )
 }
 

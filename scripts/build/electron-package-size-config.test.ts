@@ -122,4 +122,10 @@ describe('Electron package size configuration', () => {
     expect(viteConfig).toContain("sourcemap: process.env.CRAFT_RENDERER_SOURCEMAP === '1'");
     expect(viteConfig).not.toContain('sourcemap: true');
   });
+
+  test('does not include the component Playground in production renderer inputs', () => {
+    const viteConfig = readRepoFile('apps/electron/vite.config.ts');
+
+    expect(viteConfig).not.toMatch(/playground:\s*resolve\([^)]*playground\.html/);
+  });
 });

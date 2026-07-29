@@ -72,10 +72,6 @@ mock.module('electron', () => ({
   },
 }))
 
-mock.module('@sentry/electron/main', () => ({
-  captureException: () => {},
-}))
-
 mock.module('../logger', () => {
   const stubLog = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }
   return {

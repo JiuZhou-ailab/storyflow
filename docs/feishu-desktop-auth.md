@@ -124,7 +124,7 @@ Completions requests from older desktop releases during migration.
 The built-in local broker requires three independent trust boundaries:
 
 ```dotenv
-CRAFT_CLIENT_AUTH_REQUIRED=true
+CRAFT_CLIENT_AUTH_REQUIRED=false
 CRAFT_CLIENT_AUTH_BROKER_URL=http://localhost:9100
 CRAFT_CLIENT_FEISHU_APP_ID=cli_xxx
 CRAFT_WEBUI_FEISHU_APP_ID=cli_xxx
@@ -149,11 +149,14 @@ unkeyed secret names are rejected.
 Packaged Electron builds contain public bootstrap values only:
 
 ```dotenv
-CRAFT_CLIENT_AUTH_REQUIRED=true
+CRAFT_CLIENT_AUTH_REQUIRED=false
 CRAFT_CLIENT_AUTH_BROKER_URL=https://storyflow-auth.zjding.com
 CRAFT_CLIENT_FEISHU_APP_ID=cli_xxx
 CRAFT_CLIENT_NEON_AUTH_BASE_URL=https://your-neon-auth.example.com/neondb/auth
 ```
+
+The desktop shell and local projects do not require login. Managed model
+capabilities request authentication only when they are used.
 
 Configure two independent keys:
 

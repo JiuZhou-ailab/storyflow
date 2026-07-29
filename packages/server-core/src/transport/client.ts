@@ -1,3 +1,7 @@
+// input: WebSocket endpoints, authentication tokens, and RPC requests
+// output: Verified-TLS RPC client connections, events, and capabilities
+// pos: Shared local/remote WebSocket client transport
+
 /**
  * WsRpcClient — WebSocket-based RPC client.
  *
@@ -96,8 +100,6 @@ export interface WsRpcClientOptions {
   clientCapabilities?: string[]
   /** Runtime mode — local embedded or remote thin-client connection. */
   mode?: TransportMode
-  /** Accept self-signed TLS certificates for wss:// connections. Default: false. Only works in Node.js (main process). */
-  tlsRejectUnauthorized?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -144,7 +146,6 @@ export class WsRpcClient implements RpcClient {
   private readonly autoReconnect: boolean
   private readonly connectTimeout: number
   private readonly mode: TransportMode
-  private readonly tlsRejectUnauthorized: boolean
 
   constructor(url: string, opts?: WsRpcClientOptions) {
     this.url = url
@@ -157,7 +158,6 @@ export class WsRpcClient implements RpcClient {
     this.autoReconnect = opts?.autoReconnect ?? true
     this.connectTimeout = opts?.connectTimeout ?? 10_000
     this.mode = opts?.mode ?? this.inferMode(url)
-    this.tlsRejectUnauthorized = opts?.tlsRejectUnauthorized ?? true
 
     this.connectionState = {
       mode: this.mode,
@@ -320,29 +320,6 @@ export class WsRpcClient implements RpcClient {
   // Connection lifecycle
   // -------------------------------------------------------------------------
 
-  /**
-   * Create a WebSocket instance. In Node.js (main process), uses the `ws` library
-   * to support TLS options (e.g. rejectUnauthorized for self-signed certs).
-   * In the renderer (browser), falls back to the global WebSocket.
-   */
-  private createWebSocket(url: string): WebSocket {
-    const needsTlsOptions = url.startsWith('wss://') && !this.tlsRejectUnauthorized
-
-    if (needsTlsOptions && typeof process !== 'undefined' && process.versions?.node) {
-      // Node.js / Electron main process — use `ws` library for TLS options
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { WebSocket: WsWebSocket } = require('ws') as typeof import('ws')
-        return new WsWebSocket(url, { rejectUnauthorized: false }) as unknown as WebSocket
-      } catch {
-        // Fallback if ws not available
-        return new WebSocket(url)
-      }
-    }
-
-    return new WebSocket(url)
-  }
-
   connect(): void {
     if (this.destroyed) return
 
@@ -390,7 +367,7 @@ export class WsRpcClient implements RpcClient {
       }
     }, this.connectTimeout)
 
-    const ws = this.createWebSocket(this.url)
+    const ws = new WebSocket(this.url)
     this.ws = ws
 
     ws.onopen = () => {

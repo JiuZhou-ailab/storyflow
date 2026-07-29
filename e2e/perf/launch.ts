@@ -4,7 +4,7 @@
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { CdpClient, evaluate } from './cdp.ts'
 
@@ -35,6 +35,11 @@ export interface LaunchedApp {
   close(): Promise<void>
 }
 
+export interface LaunchAppOptions {
+  executablePath?: string
+  packaged?: boolean
+}
+
 /**
  * Launch the built Electron app against a fixture data dir and attach over raw CDP.
  *
@@ -44,9 +49,11 @@ export interface LaunchedApp {
  * (logger.ts:resolveDebugMode) so the perf console transport streams rendererPerf lines to
  * stdout — do NOT pass `--debug`, which Electron/Node intercept as deprecated `node --debug`.
  */
-export async function launchApp(fixtureDir: string): Promise<LaunchedApp> {
-  if (!existsSync(ELECTRON_BIN)) throw new Error(`Electron binary not found at ${ELECTRON_BIN}. Run \`bun install\` at repo root.`)
-  if (!existsSync(BUILT_MAIN)) throw new Error(`Built main not found at ${BUILT_MAIN}. Run \`cd apps/electron && bun run build\`.`)
+export async function launchApp(fixtureDir: string, options: LaunchAppOptions = {}): Promise<LaunchedApp> {
+  const executablePath = options.executablePath ?? ELECTRON_BIN
+  const packaged = options.packaged === true
+  if (!existsSync(executablePath)) throw new Error(`Electron binary not found at ${executablePath}. Run \`bun install\` or build the requested package.`)
+  if (!packaged && !existsSync(BUILT_MAIN)) throw new Error(`Built main not found at ${BUILT_MAIN}. Run \`cd apps/electron && bun run build\`.`)
   if (!existsSync(join(fixtureDir, 'config.json'))) throw new Error(`Fixture config.json missing under ${fixtureDir}. Run scripts/perf/generate-fixture.ts first.`)
 
   // Stale `.server.lock` from a killed run makes bootstrap abort and never open a window. The
@@ -58,21 +65,20 @@ export async function launchApp(fixtureDir: string): Promise<LaunchedApp> {
 
   const spawnedAt = Date.now()
   const proc = spawn(
-    ELECTRON_BIN,
-    ['.', `--user-data-dir=${userDataDir}`, '--remote-debugging-port=0'],
+    executablePath,
+    [...(packaged ? [] : ['.']), `--user-data-dir=${userDataDir}`, '--remote-debugging-port=0'],
     {
-      cwd: ELECTRON_APP_DIR,
+      cwd: packaged ? dirname(executablePath) : ELECTRON_APP_DIR,
       env: {
         ...process.env,
         CRAFT_CONFIG_DIR: fixtureDir,
         CRAFT_DEBUG: '1',
-        CRAFT_IS_PACKAGED: 'false',
+        CRAFT_IS_PACKAGED: String(packaged),
         CRAFT_DISABLE_FILE_LOG: '1',
         // Perf fixture is synthetic and offline. Force-disable client auth so the shell
         // reaches Project Hub / SessionList without Neon/Feishu login (root process.env
         // often has CRAFT_CLIENT_AUTH_REQUIRED=true from .env).
         CRAFT_CLIENT_AUTH_REQUIRED: 'false',
-        SENTRY_ELECTRON_INGEST_URL: '',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     }
@@ -150,12 +156,25 @@ export async function launchApp(fixtureDir: string): Promise<LaunchedApp> {
       pageAttachedAt,
     },
     async close() {
-      cdp.close()
       if (proc.exitCode === null && proc.signalCode === null) {
         const exited = new Promise<void>((resolveExit) => proc.once('exit', () => resolveExit()))
-        proc.kill('SIGKILL')
-        await Promise.race([exited, sleep(5_000)])
+        await Promise.race([
+          callOn<void>(
+            app,
+            'async function () { await window.electronAPI.menuQuit() }',
+          ).catch(() => {}),
+          sleep(1_000),
+        ])
+        const graceful = await Promise.race([
+          exited.then(() => true),
+          sleep(5_000).then(() => false),
+        ])
+        if (!graceful && proc.exitCode === null && proc.signalCode === null) {
+          proc.kill('SIGKILL')
+          await Promise.race([exited, sleep(5_000)])
+        }
       }
+      cdp.close()
       rmSync(userDataDir, { recursive: true, force: true })
     },
   } as LaunchedApp

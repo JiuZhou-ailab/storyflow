@@ -1,3 +1,7 @@
+// input: Workspace paths, persisted session JSONL candidates, and session mutations
+// output: Workspace-scoped session CRUD with crash-safe JSONL candidate recovery
+// pos: Shared storage boundary for durable session state and session-owned files
+
 /**
  * Session Storage
  *
@@ -21,6 +25,7 @@ import {
   rmSync,
   statSync,
   unlinkSync,
+  renameSync,
 } from 'fs';
 import { join, basename } from 'path';
 import {
@@ -87,6 +92,84 @@ export function getSessionPath(workspaceRootPath: string, sessionId: string): st
  */
 export function getSessionFilePath(workspaceRootPath: string, sessionId: string): string {
   return join(getSessionPath(workspaceRootPath, sessionId), 'session.jsonl');
+}
+
+interface ValidSessionFileCandidate {
+  path: string;
+  mtimeMs: number;
+  priority: number;
+}
+
+const activeSessionFileReplacements = new Set<string>();
+
+export function setSessionFileReplacementActive(sessionFile: string, active: boolean): void {
+  if (active) activeSessionFileReplacements.add(sessionFile);
+  else activeSessionFileReplacements.delete(sessionFile);
+}
+
+function getValidSessionFileCandidate(path: string, priority: number): ValidSessionFileCandidate | null {
+  try {
+    if (!existsSync(path) || !statSync(path).isFile()) return null;
+
+    const lines = readFileSync(path, 'utf-8').split('\n');
+    if (lines.at(-1) === '') lines.pop();
+    if (lines.length === 0 || lines.some(line => line.trim() === '')) return null;
+    for (const line of lines) JSON.parse(line);
+
+    const session = readSessionJsonl(path);
+    if (!session || typeof session.id !== 'string' || !Array.isArray(session.messages)) return null;
+
+    return { path, mtimeMs: statSync(path).mtimeMs, priority };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Recover an interrupted session replacement from the newest complete JSONL
+ * among the committed file, temporary file, and backup.
+ *
+ * Returns a readable candidate even if promotion fails, so callers never need
+ * to discard the only valid copy.
+ */
+export function recoverSessionFile(sessionFile: string): string | null {
+  const tmpFile = sessionFile + '.tmp';
+  const backupFile = sessionFile + '.bak';
+
+  if (activeSessionFileReplacements.has(sessionFile)) {
+    return existsSync(sessionFile) ? sessionFile : null;
+  }
+
+  if (!existsSync(tmpFile) && !existsSync(backupFile)) {
+    return existsSync(sessionFile) ? sessionFile : null;
+  }
+
+  const candidates = [
+    getValidSessionFileCandidate(sessionFile, 1),
+    getValidSessionFileCandidate(tmpFile, 2),
+    getValidSessionFileCandidate(backupFile, 0),
+  ].filter((candidate): candidate is ValidSessionFileCandidate => candidate !== null);
+
+  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs || b.priority - a.priority);
+  const newest = candidates[0];
+  if (!newest) return null;
+
+  if (newest.path !== sessionFile) {
+    try {
+      if (existsSync(sessionFile)) unlinkSync(sessionFile);
+      renameSync(newest.path, sessionFile);
+    } catch (error) {
+      debug('[sessions] Failed to promote recovered session candidate:', newest.path, error);
+      return newest.path;
+    }
+  }
+
+  for (const staleFile of [tmpFile, backupFile]) {
+    if (staleFile === newest.path) continue;
+    try { unlinkSync(staleFile); } catch { /* keep unreadable or concurrently used candidates */ }
+  }
+
+  return sessionFile;
 }
 
 /**
@@ -340,8 +423,9 @@ export function loadSession(workspaceRootPath: string, sessionId: string): Store
   const end = perf.start('session.loadSession', { sessionId });
 
   const jsonlPath = getSessionFilePath(workspaceRootPath, sessionId);
-  if (existsSync(jsonlPath)) {
-    const session = readSessionJsonl(jsonlPath);
+  const readablePath = recoverSessionFile(jsonlPath);
+  if (readablePath) {
+    const session = readSessionJsonl(readablePath);
     if (session) {
       end();
       return session;
@@ -375,15 +459,9 @@ export function listSessions(workspaceRootPath: string): SessionMetadata[] {
         const sessionDir = join(sessionsDir, sessionId);
         const jsonlFile = join(sessionDir, 'session.jsonl');
 
-        // Clean up orphaned .tmp files from crashed atomic writes.
-        // These are harmless but waste disk space.
-        const tmpFile = jsonlFile + '.tmp';
-        if (existsSync(tmpFile)) {
-          try { unlinkSync(tmpFile); } catch { /* ignore */ }
-        }
-
-        if (existsSync(jsonlFile)) {
-          const header = readSessionHeader(jsonlFile);
+        const readablePath = recoverSessionFile(jsonlFile);
+        if (readablePath) {
+          const header = readSessionHeader(readablePath);
           if (header) {
             const metadata = headerToMetadata(header, workspaceRootPath);
             if (metadata) sessionsById.set(metadata.id, metadata);

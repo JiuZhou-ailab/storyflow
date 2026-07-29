@@ -1,3 +1,7 @@
+// input: Credential scopes and encrypted credential payload metadata
+// output: Stable credential identifiers, validation, and account serialization
+// pos: Canonical credential type contract shared by storage backends and services
+
 /**
  * Credential Storage Types
  *
@@ -28,6 +32,7 @@ export type CredentialType =
   | 'llm_service_account' // GCP service account JSON
   // Workspace credentials
   | 'workspace_oauth'    // Workspace MCP OAuth token
+  | 'remote_server_token' // Remote workspace server bearer token
   // Source credentials (stored at ~/.craft-agent/workspaces/{ws}/sources/{slug}/)
   | 'source_oauth'       // OAuth tokens for MCP/API sources
   | 'source_bearer'      // Bearer tokens
@@ -46,6 +51,7 @@ const VALID_CREDENTIAL_TYPES: readonly CredentialType[] = [
   'llm_iam',
   'llm_service_account',
   'workspace_oauth',
+  'remote_server_token',
   'source_oauth',
   'source_bearer',
   'source_apikey',
@@ -182,8 +188,8 @@ export function credentialIdToAccount(id: CredentialId): string {
   }
 
   // Workspace-scoped format (no source):
-  // workspace_oauth::{workspaceId}
-  if (id.type === 'workspace_oauth' && id.workspaceId) {
+  // workspace_oauth::{workspaceId} or remote_server_token::{workspaceId}
+  if ((id.type === 'workspace_oauth' || id.type === 'remote_server_token') && id.workspaceId) {
     parts.push(id.workspaceId);
     return parts.join(CREDENTIAL_DELIMITER);
   }
@@ -255,8 +261,8 @@ export function accountToCredentialId(account: string): CredentialId | null {
   }
 
   // Workspace-scoped format (no source):
-  // workspace_oauth::{workspaceId}
-  if (type === 'workspace_oauth' && parts.length === 2) {
+  // workspace_oauth::{workspaceId} or remote_server_token::{workspaceId}
+  if ((type === 'workspace_oauth' || type === 'remote_server_token') && parts.length === 2) {
     return { type, workspaceId: parts[1] };
   }
 

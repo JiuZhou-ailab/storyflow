@@ -98,7 +98,7 @@ export function SendToWorkspaceDialog({
     // Fire parallel checks
     for (const target of remoteTargets) {
       const remoteServer = target.workspace!.remoteServer!
-      window.electronAPI.testRemoteConnection(remoteServer.url, remoteServer.token)
+      window.electronAPI.testRemoteConnection(remoteServer.url, remoteServer.credentialRef)
         .then(result => {
           if (abort.signal.aborted) return
           setRemoteHealthMap(prev => new Map(prev).set(target.id, result.ok ? 'ok' : 'error'))

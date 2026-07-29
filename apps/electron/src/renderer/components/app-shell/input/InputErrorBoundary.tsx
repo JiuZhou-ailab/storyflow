@@ -1,5 +1,8 @@
+// input: Chat composer subtree and local retry/reset callbacks
+// output: Local composer crash fallback without external error reporting
+// pos: Renderer error containment boundary for chat input
+
 import * as React from 'react'
-import * as Sentry from '@sentry/electron/renderer'
 import { useTranslation } from 'react-i18next'
 import { AlertCircle, RefreshCw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -17,9 +20,8 @@ interface InputErrorBoundaryState {
 
 /**
  * Keeps chat input failures local to the composer area so the rest of the chat
- * page remains usable. This is intentionally narrower than the root Sentry
- * boundary because malformed drafts or future composer bugs should not blank the
- * entire app.
+ * page remains usable because malformed drafts or future composer bugs should
+ * not blank the entire app.
  */
 export class InputErrorBoundary extends React.Component<
   InputErrorBoundaryProps,
@@ -31,15 +33,8 @@ export class InputErrorBoundary extends React.Component<
     return { hasError: true }
   }
 
-  componentDidCatch(error: Error, info: React.ErrorInfo) {
+  componentDidCatch(error: Error) {
     console.error('[InputErrorBoundary] Composer crashed:', error)
-    Sentry.captureException(error, {
-      tags: { errorSource: 'chat-input' },
-      extra: {
-        sessionId: this.props.sessionId,
-        componentStack: info.componentStack,
-      },
-    })
   }
 
   componentDidUpdate(prevProps: InputErrorBoundaryProps) {

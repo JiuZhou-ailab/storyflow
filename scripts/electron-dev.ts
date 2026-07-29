@@ -401,8 +401,8 @@ async function buildPiAgentServer(): Promise<{ success: boolean; error?: string 
 
 // Verify a built JavaScript bundle is parseable. `node --check` performs
 // syntax-only validation — it does NOT execute module-level code or resolve
-// `require()`, so Electron-specific top-level requires (e.g. @sentry/electron)
-// are safe. This catches truncated writes, FS corruption, and edge cases that
+// `require()`, so Electron-specific top-level requires are safe. This catches
+// truncated writes, FS corruption, and edge cases that
 // esbuild's build-success signal doesn't cover.
 async function verifyJsFile(filePath: string): Promise<{ valid: boolean; error?: string }> {
   if (!existsSync(filePath)) {

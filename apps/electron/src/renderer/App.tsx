@@ -48,6 +48,10 @@ import { appendUniqueRequestForSession, removeFirstRequestForSession } from './l
 import { isBackgroundingToolResult } from './lib/background-task-result'
 import { extractWorkspaceSlugFromPath } from '@craft-agent/shared/utils/workspace-slug'
 import { DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels'
+import {
+  MANAGED_LLM_CONNECTION_SLUG,
+  resolveEffectiveConnectionSlug,
+} from '@config/llm-connections'
 import { initRendererPerf } from './lib/perf'
 import {
   initializeSessionsAtom,
@@ -1483,6 +1487,22 @@ function AppContent() {
 
   const handleSendMessage = useCallback(async (sessionId: string, message: string, attachments?: FileAttachment[], skillSlugs?: string[], externalBadges?: ContentBadge[], sendOptions?: Pick<SendMessageOptions, 'oneTimeContext' | 'hideUserMessage'> & { forceQueuedUserMessage?: boolean }) => {
     try {
+      const session = store.get(sessionAtomFamily(sessionId))
+      const connectionSlug = resolveEffectiveConnectionSlug(
+        session?.llmConnection,
+        workspaceDefaultLlmConnection,
+        llmConnections,
+      )
+      if (connectionSlug === MANAGED_LLM_CONNECTION_SLUG) {
+        const auth = await loadClientAuthState()
+        if (auth && !auth.user) {
+          setAccountReturnState('ready')
+          setAppState('account')
+          toast.info('请先登录以使用 Storyflow 托管模型')
+          return
+        }
+      }
+
       const hideUserMessage = sendOptions?.hideUserMessage === true
       // Capture pre-send processing state so we can flag mid-stream sends
       // for the queued badge (#616 follow-up — covers Pi steer path which
@@ -1652,7 +1672,16 @@ function AppContent() {
         ]
       }))
     }
-  }, [updateSessionById, skills, sources, windowWorkspaceId])
+  }, [
+    updateSessionById,
+    skills,
+    sources,
+    windowWorkspaceId,
+    store,
+    workspaceDefaultLlmConnection,
+    llmConnections,
+    loadClientAuthState,
+  ])
 
   /**
    * Unified handler for all session option changes.
@@ -2177,8 +2206,8 @@ function AppContent() {
   const handleAccountSignOut = useCallback(async () => {
     await window.electronAPI.signOutClient()
     await loadClientAuthState()
-    setAppState('onboarding')
-  }, [loadClientAuthState])
+    setAppState(accountReturnState)
+  }, [accountReturnState, loadClientAuthState])
 
   const handleReturnToActiveProject = useCallback(() => {
     if (!activeProjectId) return
@@ -2527,6 +2556,7 @@ function AppContent() {
               workspaces={workspaces}
               activeWorkspaceId={activeProjectId}
               onBack={handleAccountBack}
+              onSignedIn={async () => { await loadClientAuthState() }}
               onSignOut={handleAccountSignOut}
             />
           </ActivityRailFrame>

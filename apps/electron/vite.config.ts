@@ -1,12 +1,11 @@
+// input: Electron renderer entry documents and installed Vite plugins
+// output: Production renderer bundle without development-only Playground assets
+// pos: Renderer build boundary shared by desktop development and packaging
+
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
-
-// NOTE: Source map upload to Sentry is intentionally disabled.
-// To re-enable, uncomment the sentryVitePlugin below and add SENTRY_AUTH_TOKEN,
-// SENTRY_ORG, SENTRY_PROJECT to CI secrets. See CLAUDE.md "Sentry Error Tracking" section.
-// import { sentryVitePlugin } from '@sentry/vite-plugin'
 
 export default defineConfig({
   plugins: [
@@ -22,16 +21,6 @@ export default defineConfig({
       },
     }),
     tailwindcss(),
-    // Sentry source map upload — intentionally disabled. See CLAUDE.md for re-enabling instructions.
-    // sentryVitePlugin({
-    //   org: process.env.SENTRY_ORG,
-    //   project: process.env.SENTRY_PROJECT,
-    //   authToken: process.env.SENTRY_AUTH_TOKEN,
-    //   disable: !process.env.SENTRY_AUTH_TOKEN,
-    //   sourcemaps: {
-    //     filesToDeleteAfterUpload: ['**/*.map'],
-    //   },
-    // }),
   ],
   root: resolve(__dirname, 'src/renderer'),
   base: './',
@@ -42,7 +31,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'src/renderer/index.html'),
-        playground: resolve(__dirname, 'src/renderer/playground.html'),
         'browser-toolbar': resolve(__dirname, 'src/renderer/browser-toolbar.html'),
         'browser-empty-state': resolve(__dirname, 'src/renderer/browser-empty-state.html'),
       }

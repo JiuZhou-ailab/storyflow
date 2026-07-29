@@ -2,7 +2,7 @@
 // output: Runtime-aware workspace validation and file-access helper functions
 // pos: Shared handler utility boundary for project and hidden application contexts
 
-import { normalize, isAbsolute, sep } from 'path'
+import { basename, dirname, isAbsolute, join, normalize, sep } from 'path'
 import { homedir, tmpdir } from 'os'
 import { realpath } from 'fs/promises'
 import type { Workspace } from '@craft-agent/shared/config'
@@ -70,6 +70,22 @@ export function getWorkspaceAllowedDirs(workspaceId?: string | null): string[] {
   return dirs
 }
 
+async function resolveRealPathWithMissingLeaf(filePath: string): Promise<string> {
+  let cursor = filePath
+  const missingSegments: string[] = []
+
+  while (true) {
+    try {
+      return join(await realpath(cursor), ...missingSegments.reverse())
+    } catch {
+      const parent = dirname(cursor)
+      if (parent === cursor) return filePath
+      missingSegments.push(basename(cursor))
+      cursor = parent
+    }
+  }
+}
+
 /**
  * Validates that a file path is within allowed directories to prevent path traversal attacks.
  * Allowed directories: user's home directory, /tmp, and any additional dirs passed by the caller
@@ -92,28 +108,26 @@ export async function validateFilePath(
     throw new Error('Only absolute file paths are allowed')
   }
 
-  // Resolve symlinks to get the real path
-  let realFilePath: string
-  try {
-    realFilePath = await realpath(normalizedPath)
-  } catch {
-    // File doesn't exist or can't be resolved - use normalized path
-    realFilePath = normalizedPath
+  const realFilePath = await resolveRealPathWithMissingLeaf(normalizedPath)
+
+  const normalizedReal = normalize(realFilePath)
+  const allowedDirs = [homedir(), tmpdir(), ...(additionalAllowedDirs ?? [])]
+    .filter(Boolean)
+    .map(dir => normalize(dir))
+  const isWithinAllowedDir = (dir: string) => {
+    const normalizedDir = normalize(dir)
+    return normalizedReal.startsWith(normalizedDir + sep) || normalizedReal === normalizedDir
   }
 
-  // Define allowed base directories
-  const allowedDirs = [
-    homedir(),
-    tmpdir(),
-    ...(additionalAllowedDirs ?? []),
-  ].filter(Boolean)
-
-  // Check if the real path is within an allowed directory (cross-platform)
-  const isAllowed = allowedDirs.some(dir => {
-    const normalizedDir = normalize(dir)
-    const normalizedReal = normalize(realFilePath)
-    return normalizedReal.startsWith(normalizedDir + sep) || normalizedReal === normalizedDir
-  })
+  // Most callers already provide canonical workspace roots. Only resolve the
+  // allowed directories when their lexical paths do not cover the real target.
+  let isAllowed = allowedDirs.some(isWithinAllowedDir)
+  if (!isAllowed) {
+    const realAllowedDirs = await Promise.all(
+      allowedDirs.map(dir => resolveRealPathWithMissingLeaf(dir)),
+    )
+    isAllowed = realAllowedDirs.some(isWithinAllowedDir)
+  }
 
   if (!isAllowed) {
     throw new Error('Access denied: file path is outside allowed directories')

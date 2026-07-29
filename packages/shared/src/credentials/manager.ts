@@ -1,3 +1,7 @@
+// input: Credential identifiers, encrypted backends, and credential values
+// output: Shared credential persistence plus trusted remote-token memory access
+// pos: Credential orchestration boundary used by main-process services
+
 /**
  * Credential Manager
  *
@@ -17,6 +21,7 @@ export class CredentialManager {
   private initialized = false;
   private initPromise: Promise<void> | null = null;
   private pendingReads = new Map<string, Promise<StoredCredential | null>>();
+  private remoteServerTokens = new Map<string, string>();
 
   /**
    * Explicitly initialize the credential manager.
@@ -143,6 +148,9 @@ export class CredentialManager {
   async delete(id: CredentialId): Promise<boolean> {
     await this.ensureInitialized();
     this.pendingReads.delete(credentialIdToAccount(id));
+    if (id.type === 'remote_server_token' && id.workspaceId) {
+      this.remoteServerTokens.delete(id.workspaceId);
+    }
 
     let deleted = false;
     for (const backend of this.backends) {
@@ -279,7 +287,32 @@ export class CredentialManager {
     );
   }
 
-  /** Delete all credentials for a workspace (source credentials) */
+  /** Load and retain a remote server token for trusted synchronous preload transport setup. */
+  async getRemoteServerToken(workspaceId: string): Promise<string | null> {
+    const cached = this.remoteServerTokens.get(workspaceId);
+    if (cached) return cached;
+    const credential = await this.get({ type: 'remote_server_token', workspaceId });
+    if (!credential?.value) return null;
+    this.remoteServerTokens.set(workspaceId, credential.value);
+    return credential.value;
+  }
+
+  /** Read a token that startup migration has already loaded into trusted main-process memory. */
+  peekRemoteServerToken(workspaceId: string): string | null {
+    return this.remoteServerTokens.get(workspaceId) ?? null;
+  }
+
+  /** Encrypt a remote server token and make it available to trusted preload transport setup. */
+  async setRemoteServerToken(workspaceId: string, token: string): Promise<void> {
+    await this.set({ type: 'remote_server_token', workspaceId }, { value: token });
+    this.remoteServerTokens.set(workspaceId, token);
+  }
+
+  async deleteRemoteServerToken(workspaceId: string): Promise<boolean> {
+    return this.delete({ type: 'remote_server_token', workspaceId });
+  }
+
+  /** Delete all credentials for a workspace. */
   async deleteWorkspaceCredentials(workspaceId: string): Promise<void> {
     const allCreds = await this.list({ workspaceId });
     for (const cred of allCreds) {

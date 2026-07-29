@@ -19,10 +19,6 @@ files:
   # the top-level resources/ tree, or uv and subprocess bundles are duplicated.
   # Include bundled Bun runtime (platform-specific, set by build script)
   - vendor/bun/**/*
-  # Include bundled Codex binary (platform-specific, downloaded by build script)
-  - vendor/codex/**/*
-  # Include bundled Copilot CLI binary (platform-specific, copied from node_modules by build script)
-  - vendor/copilot/**/*
   # Exclude development-only trees and generated source maps from app payload.
   - "!node_modules/**/*"
   - "!src/**/*"
@@ -74,8 +70,6 @@ mac:
     - dist/**/*
     - package.json
     - vendor/bun/**/*
-    - vendor/codex/**/*
-    - vendor/copilot/**/*
     - "!node_modules/**/*"
     - "!src/**/*"
     - "!resources/**/*"
@@ -83,10 +77,6 @@ mac:
     - "!dist/**/*.map"
     - "!**/*.map"
     - "!dist/resources/dmg-background*"
-    - "!**/vendor/codex/linux-*/**"
-    - "!**/vendor/codex/win32-*/**"
-    - "!**/vendor/copilot/linux-*/**"
-    - "!**/vendor/copilot/win32-*/**"
     - "!**/resources/bin/win32-*/**"
     - "!**/resources/bin/linux-*/**"
   # Use predictable naming for macOS packages (applies to zip; dmg uses its own config below)
@@ -131,20 +121,14 @@ win:
   # here to platform-specific exclusions only; repeating positive patterns can
   # produce duplicate copy tasks for dist/main.cjs on Windows Server 2025.
   files:
-    - "!**/vendor/codex/darwin-*/**"
-    - "!**/vendor/codex/linux-*/**"
-    - "!**/vendor/copilot/darwin-*/**"
-    - "!**/vendor/copilot/linux-*/**"
     - "!**/resources/bin/darwin-*/**"
     - "!**/resources/bin/linux-*/**"
-    # WORKAROUND: Exclude bun, codex, copilot, and uv from regular files on Windows.
+    # WORKAROUND: Exclude bun and uv from regular files on Windows.
     # electron-builder's npm node module collector causes EBUSY errors when copying
     # .exe files because it scans/locks files while simultaneously trying to copy them.
     # Moving them to extraResources avoids this by copying before the collector runs.
     # See: https://github.com/electron-userland/electron-builder/issues/8250
     - "!vendor/bun/**/*"
-    - "!vendor/codex/**/*"
-    - "!vendor/copilot/**/*"
     - "!**/resources/bin/win32-x64/**"
   # Copy executables as extraResources to avoid EBUSY file locking (see comment above)
   extraResources:
@@ -152,10 +136,6 @@ win:
       to: app/node_modules/@vscode/ripgrep-binary
     - from: vendor/bun/bun.exe
       to: vendor/bun/bun.exe
-    - from: vendor/codex/win32-x64
-      to: app/vendor/codex/win32-x64
-    - from: vendor/copilot/win32-x64
-      to: app/vendor/copilot/win32-x64
     - from: resources/bin/win32-x64
       to: app/dist/resources/bin/win32-x64
     # WhatsApp worker subprocess (self-contained; Baileys bundled in).
@@ -189,8 +169,6 @@ linux:
     - dist/**/*
     - package.json
     - vendor/bun/**/*
-    - vendor/codex/**/*
-    - vendor/copilot/**/*
     - "!node_modules/**/*"
     - "!src/**/*"
     - "!resources/**/*"
@@ -198,9 +176,5 @@ linux:
     - "!dist/**/*.map"
     - "!**/*.map"
     - "!dist/resources/dmg-background*"
-    - "!**/vendor/codex/darwin-*/**"
-    - "!**/vendor/codex/win32-*/**"
-    - "!**/vendor/copilot/darwin-*/**"
-    - "!**/vendor/copilot/win32-*/**"
     - "!**/resources/bin/darwin-*/**"
     - "!**/resources/bin/win32-*/**"

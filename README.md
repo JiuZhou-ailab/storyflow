@@ -42,6 +42,9 @@ storyflow/
 │   └── ui/                  # 共享 React UI、Markdown、diff、chat 组件
 ├── docs/
 │   └── plans/               # 设计和实现规划文档
+├── e2e/
+│   ├── core/                # 桌面核心闭环：Agent 编辑、版本恢复、重启恢复
+│   └── perf/                # 大型合成工作区的 Electron 性能基线
 ├── scripts/                 # 构建、验证、发布和维护脚本
 └── README.md                # 项目总览和开发入口
 ```
@@ -82,6 +85,7 @@ bun run electron:start
 | `bun run electron:start` | 构建并运行 Electron 应用 |
 | `bun run electron:build` | 构建 Electron main、preload、renderer、resources 和 assets |
 | `bun run electron:dist:dev:mac` | 通过 runtime-staged 打包路径构建未签名的 macOS 开发包 |
+| `bun run e2e:core` | 驱动真实 Pi 编辑、独立版本恢复与重启恢复的 Electron 核心闭环 |
 | `bun run release -- --platform=darwin --arch=arm64` | 运行版本检查、CI 验证和 runtime-staged 本地打包 |
 | `bun run server:start` | 启动独立无头服务端 |
 | `bun run server:dev` | 以 debug 设置启动无头服务端 |

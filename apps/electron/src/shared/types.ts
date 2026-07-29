@@ -21,6 +21,7 @@ import type {
   WorkspaceInfo as CoreWorkspaceInfo,
   Workspace as CoreWorkspace,
   RemoteServerConfig as CoreRemoteServerConfig,
+  RemoteServerConnectionInput as CoreRemoteServerConnectionInput,
   SessionMetadata as CoreSessionMetadata,
   StoredAttachment as CoreStoredAttachment,
   ContentBadge,
@@ -48,6 +49,7 @@ export type {
   CoreWorkspaceInfo as WorkspaceInfo,
   CoreWorkspace as Workspace,
   CoreRemoteServerConfig as RemoteServerConfig,
+  CoreRemoteServerConnectionInput as RemoteServerConnectionInput,
   CoreSessionMetadata as SessionMetadata,
   CoreStoredAttachment as StoredAttachment,
   ContentBadge,
@@ -101,7 +103,7 @@ export interface FeedbackIssueResult {
 }
 
 export interface CreateWorkspaceOptions {
-  remoteServer?: CoreRemoteServerConfig;
+  remoteServer?: CoreRemoteServerConnectionInput;
 }
 
 // =============================================================================
@@ -383,7 +385,7 @@ export interface ElectronAPI {
   getWorkspaces(): Promise<Workspace[]>
   createWorkspace(folderPath: string, name: string, options?: CreateWorkspaceOptions): Promise<Workspace>
   checkWorkspaceSlug(slug: string): Promise<{ exists: boolean; path: string }>
-  updateWorkspaceRemoteServer(workspaceId: string, remoteServer: { url: string; token: string; remoteWorkspaceId: string }): Promise<{ success: boolean }>
+  updateWorkspaceRemoteServer(workspaceId: string, remoteServer: CoreRemoteServerConnectionInput): Promise<{ success: boolean }>
 
   // Server-level workspace operations (for thin client / remote workspace discovery)
   getServerWorkspaces(): Promise<WorkspaceInfo[]>

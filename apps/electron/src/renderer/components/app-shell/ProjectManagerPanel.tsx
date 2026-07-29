@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import { AddWorkspaceStep_CreateNew } from '@/components/workspace/AddWorkspaceStep_CreateNew'
 import { AddWorkspaceStep_OpenFolder } from '@/components/workspace/AddWorkspaceStep_OpenFolder'
 import { AddWorkspaceStep_ConnectRemote } from '@/components/workspace/AddWorkspaceStep_ConnectRemote'
-import type { RemoteServerConfig, Workspace } from '../../../shared/types'
+import type { RemoteServerConnectionInput, Workspace } from '../../../shared/types'
 
 export type ProjectManagerView = 'create' | 'open' | 'remote'
 
@@ -50,7 +50,7 @@ export function ProjectManagerPanel({
   const handleCreateWorkspace = React.useCallback(async (
     folderPath: string,
     name: string,
-    remoteServer?: RemoteServerConfig,
+    remoteServer?: RemoteServerConnectionInput,
   ) => {
     setIsCreating(true)
     try {

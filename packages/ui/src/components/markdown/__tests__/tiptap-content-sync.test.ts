@@ -57,4 +57,11 @@ describe('getIncomingContentSyncAction', () => {
     expect(source).toContain('React.useImperativeHandle')
     expect(source).toContain('onDocumentChangedRef.current?.()')
   })
+
+  it('does not emit a user edit while applying external document content', () => {
+    const source = readFileSync(new URL('../TiptapMarkdownEditor.tsx', import.meta.url), 'utf-8')
+
+    expect(source).toContain('emitUpdate: false')
+    expect(source).toContain('isApplyingExternalContentRef.current || !editor.isFocused')
+  })
 })

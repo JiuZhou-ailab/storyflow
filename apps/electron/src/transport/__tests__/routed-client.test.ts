@@ -1,3 +1,7 @@
+// input: Local/remote RPC client doubles and secret-free workspace switch responses
+// output: Routing and workspace transport swap regression coverage
+// pos: Transport contract guard for RoutedClient
+
 /**
  * RoutedClient tests — channel routing, workspace switch, listener re-subscription.
  */
@@ -111,7 +115,7 @@ describe('RoutedClient', () => {
       const local = stubClient({
         invoke: mock(async () => ({
           workspaceId: 'ws-2',
-          remoteServer: { url: 'wss://remote:9001', token: 'tok', remoteWorkspaceId: 'rw-1' },
+          remoteServer: { url: 'wss://remote:9001', credentialRef: 'remote_server_token::ws-1', remoteWorkspaceId: 'rw-1' },
         })),
       })
       const workspace = stubClient()
@@ -151,7 +155,7 @@ describe('RoutedClient', () => {
       const local = stubClient({
         invoke: mock(async () => ({
           workspaceId: 'ws-2',
-          remoteServer: { url: 'wss://remote:9001', token: 'tok', remoteWorkspaceId: 'rw-1' },
+          remoteServer: { url: 'wss://remote:9001', credentialRef: 'remote_server_token::ws-1', remoteWorkspaceId: 'rw-1' },
         })),
       })
       const workspace = stubClient()
@@ -176,7 +180,7 @@ describe('RoutedClient', () => {
       const local = stubClient({
         invoke: mock(async () => ({
           workspaceId: 'ws-2',
-          remoteServer: { url: 'wss://remote:9001', token: 'tok', remoteWorkspaceId: 'rw-1' },
+          remoteServer: { url: 'wss://remote:9001', credentialRef: 'remote_server_token::ws-1', remoteWorkspaceId: 'rw-1' },
         })),
       })
       const workspace = stubClient()

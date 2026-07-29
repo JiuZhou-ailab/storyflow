@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'bun:test';
 import { CredentialManager } from '../manager.ts';
 import type { CredentialBackend } from '../backends/types.ts';
-import type { CredentialId, StoredCredential } from '../types.ts';
+import { credentialIdToAccount, type CredentialId, type StoredCredential } from '../types.ts';
 
 function createManagerWithBackend(backend: CredentialBackend): CredentialManager {
   const manager = new CredentialManager();
@@ -53,5 +53,24 @@ describe('CredentialManager', () => {
 
     await manager.get(id);
     expect(getCalls).toBe(2);
+  });
+
+  it('removes remote tokens from both encrypted storage and the synchronous cache', async () => {
+    const stored = new Map<string, StoredCredential>();
+    const backend: CredentialBackend = {
+      name: 'mock',
+      priority: 1,
+      isAvailable: async () => true,
+      get: async (id) => stored.get(credentialIdToAccount(id)) ?? null,
+      set: async (id, credential) => { stored.set(credentialIdToAccount(id), credential); },
+      delete: async (id) => stored.delete(credentialIdToAccount(id)),
+      list: async () => [],
+    };
+    const manager = createManagerWithBackend(backend);
+
+    await manager.setRemoteServerToken('workspace-1', 'secret');
+    expect(manager.peekRemoteServerToken('workspace-1')).toBe('secret');
+    expect(await manager.deleteRemoteServerToken('workspace-1')).toBe(true);
+    expect(manager.peekRemoteServerToken('workspace-1')).toBeNull();
   });
 });

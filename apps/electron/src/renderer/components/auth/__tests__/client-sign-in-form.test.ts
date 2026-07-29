@@ -1,13 +1,13 @@
-// input: Client auth gate source
+// input: Managed-account sign-in form source
 // output: Static regression coverage for the compact login screen hierarchy
 // pos: Keeps auth surfaces aligned with Storyflow components and action priority
 
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
 
-const source = readFileSync(new URL('../ClientAuthGate.tsx', import.meta.url), 'utf8')
+const source = readFileSync(new URL('../ClientSignInForm.tsx', import.meta.url), 'utf8')
 
-describe('ClientAuthGate layout', () => {
+describe('ClientSignInForm layout', () => {
   it('uses the existing app surface and motion language for the login screen', () => {
     expect(source).toContain("from 'motion/react'")
     expect(source).toContain("from '@/components/settings/SettingsCard'")
@@ -41,7 +41,7 @@ describe('ClientAuthGate layout', () => {
     expect(source).toContain('setAuthMode')
     expect(source).toContain('signUpClient')
     expect(source).toContain('emailSignUpEnabled')
-    expect(source).toContain('注册完成后即可进入你的工作区。')
+    expect(source).toContain('注册后可使用 Storyflow 托管模型，本地项目不受影响。')
     expect(source).toContain('创建账号')
     expect(source).toContain('已有账号')
     expect(source).toContain('registrationNotice')

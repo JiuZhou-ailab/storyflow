@@ -1,3 +1,7 @@
+// input: Selected resources, secret-free workspace DTOs, and trusted preload RPCs
+// output: Cross-workspace resource import results and user feedback
+// pos: Renderer transfer UI that refers to encrypted remote credentials opaquely
+
 /**
  * SendResourceToWorkspaceDialog — Copy a source, skill, or automation to another workspace.
  *
@@ -100,7 +104,7 @@ function SendResourceToWorkspaceDialogContent({
 
     // Fire parallel checks
     for (const ws of remoteTargets) {
-      window.electronAPI.testRemoteConnection(ws.remoteServer!.url, ws.remoteServer!.token)
+      window.electronAPI.testRemoteConnection(ws.remoteServer!.url, ws.remoteServer!.credentialRef)
         .then(result => {
           if (abort.signal.aborted) return
           setRemoteHealthMap(prev => new Map(prev).set(ws.id, result.ok ? 'ok' : 'error'))
@@ -145,9 +149,9 @@ function SendResourceToWorkspaceDialogContent({
       let importResult
       if (targetWorkspace.remoteServer) {
         // Remote target — use invokeOnServer
-        const { url, token, remoteWorkspaceId } = targetWorkspace.remoteServer
+        const { url, credentialRef, remoteWorkspaceId } = targetWorkspace.remoteServer
         importResult = await window.electronAPI.invokeOnServer(
-          url, token,
+          url, credentialRef,
           'resources:import',
           remoteWorkspaceId, bundle, mode,
         )

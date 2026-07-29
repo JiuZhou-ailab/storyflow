@@ -5,71 +5,12 @@
 import { loadShellEnv } from './shell-env'
 
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, net, shell } from 'electron'
-import { createHash, randomUUID } from 'crypto'
-import { hostname, homedir } from 'os'
-import * as Sentry from '@sentry/electron/main'
-
-// Initialize Sentry error tracking as early as possible after app import.
-// Only enabled in production (packaged) builds to avoid noise during development.
-// DSN is baked in at build time via esbuild --define (same pattern as OAuth secrets).
-//
-// NOTE: Source map upload is intentionally disabled. Stack traces in Sentry will show
-// bundled/minified code. To enable source map upload in the future:
-//   1. Add SENTRY_AUTH_TOKEN, SENTRY_ORG, SENTRY_PROJECT to CI secrets
-//   2. Re-enable the @sentry/vite-plugin in vite.config.ts (handles renderer maps)
-//   3. Add @sentry/esbuild-plugin to scripts/electron-build-main.ts (handles main process maps)
-Sentry.init({
-  dsn: process.env.SENTRY_ELECTRON_INGEST_URL,
-  environment: app.isPackaged ? 'production' : 'development',
-  release: app.getVersion(),
-  // Enabled whenever the ingest URL is available — works in both production (baked via CI)
-  // and development (injected via .env / 1Password). Filter by environment in Sentry dashboard.
-  enabled: !!process.env.SENTRY_ELECTRON_INGEST_URL,
-
-  // Scrub sensitive data before sending to Sentry.
-  // Removes authorization headers, API keys/tokens, and credential-like values.
-  beforeSend(event) {
-    // Scrub request headers (authorization, cookies)
-    if (event.request?.headers) {
-      const sensitiveHeaders = ['authorization', 'cookie', 'x-api-key']
-      for (const header of sensitiveHeaders) {
-        if (event.request.headers[header]) {
-          event.request.headers[header] = '[REDACTED]'
-        }
-      }
-    }
-
-    // Scrub breadcrumb data that may contain sensitive values
-    if (event.breadcrumbs) {
-      for (const breadcrumb of event.breadcrumbs) {
-        if (breadcrumb.data) {
-          for (const key of Object.keys(breadcrumb.data)) {
-            const lowerKey = key.toLowerCase()
-            if (lowerKey.includes('token') || lowerKey.includes('key') ||
-                lowerKey.includes('secret') || lowerKey.includes('password') ||
-                lowerKey.includes('credential') || lowerKey.includes('auth')) {
-              breadcrumb.data[key] = '[REDACTED]'
-            }
-          }
-        }
-      }
-    }
-
-    return event
-  },
-})
+import { randomUUID } from 'crypto'
+import { homedir } from 'os'
 
 // Initialize i18n for main process (menus, dialogs, etc.)
 import { setupI18n, i18n } from '@craft-agent/shared/i18n'
 setupI18n()
-
-// Set anonymous machine ID for Sentry user tracking (no PII — just a hash).
-// Uses hostname + homedir to produce a stable per-machine identifier.
-const machineId = createHash('sha256').update(hostname() + homedir()).digest('hex').slice(0, 16)
-Sentry.setUser({ id: machineId })
-
-import { initAnalytics, shutdownAnalytics } from './analytics'
-initAnalytics(machineId)
 
 import { join, delimiter } from 'path'
 import { existsSync, readFileSync } from 'fs'
@@ -93,6 +34,7 @@ import {
   getWorkspaces,
   getWorkspaceByNameOrId,
   MANAGED_LLM_CONNECTION_SLUG,
+  migrateRemoteServerCredentialsOnStartup,
 } from '@craft-agent/shared/config'
 import { initializeDocs } from '@craft-agent/shared/docs'
 import { initializeReleaseNotes } from '@craft-agent/shared/release-notes'
@@ -263,43 +205,6 @@ if (process.defaultApp) {
 import { applyConfiguredProxySettings } from './network-proxy'
 void applyConfiguredProxySettings()
 
-// Accept self-signed / untrusted certificates when connecting to a user-configured remote server.
-// Only bypasses cert validation for the exact CRAFT_SERVER_URL origin — all other connections
-// use standard certificate verification. Without this, wss:// to self-signed servers fails with
-// ERR_CERT_AUTHORITY_INVALID because Chromium's WebSocket rejects untrusted certs.
-//
-// Electron's certificate-error always reports URLs with https:// scheme, so we normalize
-// wss:// → https:// (and ws:// → http://) to ensure origins compare correctly.
-function normalizeOriginForCert(urlStr: string): string {
-  const u = new URL(urlStr)
-  if (u.protocol === 'wss:') u.protocol = 'https:'
-  else if (u.protocol === 'ws:') u.protocol = 'http:'
-  return u.origin
-}
-
-if (process.env.CRAFT_SERVER_URL) {
-  let serverOrigin: string | undefined
-  try {
-    serverOrigin = normalizeOriginForCert(process.env.CRAFT_SERVER_URL)
-  } catch {
-    // Invalid URL — will fail later during connection, no need to handle here
-  }
-  if (serverOrigin) {
-    app.on('certificate-error', (event, _webContents, url, _error, _certificate, callback) => {
-      try {
-        if (normalizeOriginForCert(url) === serverOrigin) {
-          event.preventDefault()
-          callback(true)
-          return
-        }
-      } catch {
-        // URL parse failure — fall through to default rejection
-      }
-      callback(false)
-    })
-  }
-}
-
 // Register thumbnail:// custom protocol for file preview thumbnails in the sidebar.
 // Must happen before app.whenReady() — Electron requires early scheme registration.
 registerThumbnailScheme()
@@ -463,6 +368,10 @@ app.whenReady().then(async () => {
   }
 
   try {
+    if (!process.env.CRAFT_SERVER_URL) {
+      await migrateRemoteServerCredentialsOnStartup()
+    }
+
     // Initialize window manager
     windowManager = new WindowManager()
 
@@ -497,7 +406,6 @@ app.whenReady().then(async () => {
       logger: log,
       isDebugMode,
       getLogFilePath,
-      captureError: (err) => Sentry.captureException(err),
     })
 
     // Bootstrap IPC handlers — preload uses sendSync for window-local details
@@ -735,14 +643,6 @@ app.whenReady().then(async () => {
               const result = await authService.ensureModelAccessToken({ force: forceRefresh === true })
               return { refreshed: result.refreshed }
             },
-            captureException: (error, context) => {
-              Sentry.captureException(error instanceof Error ? error : new Error(String(error)), {
-                tags: {
-                  ...(context?.errorSource ? { errorSource: context.errorSource } : {}),
-                  ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
-                },
-              })
-            },
           })
           setSearchPlatform(p)
           setImageProcessor(p.imageProcessor)
@@ -930,7 +830,9 @@ app.whenReady().then(async () => {
         let transferPayload: import('@craft-agent/shared/protocol').RemoteSessionTransferPayload
 
         if (sourceWorkspace.remoteServer) {
-          const { url: sourceUrl, token: sourceToken, remoteWorkspaceId: sourceRemoteWorkspaceId } = sourceWorkspace.remoteServer
+          const { url: sourceUrl, remoteWorkspaceId: sourceRemoteWorkspaceId } = sourceWorkspace.remoteServer
+          const sourceToken = await getCredentialManager().getRemoteServerToken(sourceWorkspace.id)
+          if (!sourceToken) throw new Error('Source remote server credential is unavailable')
           console.log(`[Transfer] Exporting remote-owned session ${sessionId} from workspace ${sourceRemoteWorkspaceId}...`)
           const { client: sourceClient, error: sourceError } = await connectToRemote(sourceUrl, sourceToken, sourceRemoteWorkspaceId)
           if (!sourceClient) throw new Error(sourceError ?? 'Connection failed to source remote server')
@@ -954,7 +856,9 @@ app.whenReady().then(async () => {
           )
         }
 
-        const { url, token, remoteWorkspaceId } = targetWorkspace.remoteServer
+        const { url, remoteWorkspaceId } = targetWorkspace.remoteServer
+        const token = await getCredentialManager().getRemoteServerToken(targetWorkspace.id)
+        if (!token) throw new Error('Target remote server credential is unavailable')
         console.log(`[Transfer] Connecting to target remote server: ${url}`)
         const { client, error } = await connectToRemote(url, token, remoteWorkspaceId)
         if (!client) throw new Error(error ?? 'Connection failed to target remote server')
@@ -995,7 +899,21 @@ app.whenReady().then(async () => {
         const wsId = windowManager?.getWorkspaceForWindow(e.sender.id)
         if (!wsId) { e.returnValue = null; return }
         const ws = getWorkspaceByNameOrId(wsId)
-        e.returnValue = ws?.remoteServer ?? null
+        if (!ws?.remoteServer) { e.returnValue = null; return }
+        e.returnValue = {
+          url: ws.remoteServer.url,
+          token: getCredentialManager().peekRemoteServerToken(ws.id) ?? '',
+          remoteWorkspaceId: ws.remoteServer.remoteWorkspaceId,
+        }
+      })
+      ipcMain.on('__get-remote-server-token', (e, credentialRef: unknown) => {
+        if (typeof credentialRef !== 'string') { e.returnValue = null; return }
+        const workspace = getWorkspaces().find(
+          candidate => candidate.remoteServer?.credentialRef === credentialRef,
+        )
+        e.returnValue = workspace
+          ? getCredentialManager().peekRemoteServerToken(workspace.id)
+          : null
       })
 
       // Server config RPC handlers (LOCAL_ONLY — Electron-specific)
@@ -1137,23 +1055,6 @@ app.whenReady().then(async () => {
       mainLog.warn('[power] Power manager init failed (non-critical):', err instanceof Error ? err.message : err)
     }
 
-    // Set Sentry context tags for error grouping (no PII — just config classification).
-    // Runs after init so config and auth state are available.
-    // Derives values from the default LLM connection instead of legacy config fields.
-    try {
-      const { getLlmConnection, getDefaultLlmConnection } = await import('@craft-agent/shared/config')
-      const workspaces = getWorkspaces()
-      const defaultConnSlug = getDefaultLlmConnection()
-      const defaultConn = defaultConnSlug ? getLlmConnection(defaultConnSlug) : null
-      Sentry.setTag('authType', defaultConn?.authType ?? 'unknown')
-      Sentry.setTag('providerType', defaultConn?.providerType ?? 'unknown')
-      Sentry.setTag('hasCustomEndpoint', String(!!defaultConn?.baseUrl))
-      Sentry.setTag('model', defaultConn?.defaultModel ?? 'default')
-      Sentry.setTag('workspaceCount', String(workspaces.length))
-    } catch (err) {
-      mainLog.warn('Failed to set Sentry context tags:', err)
-    }
-
     // Initialize auto-update (check immediately on launch)
     // Skip in dev mode to avoid replacing /Applications app and launching it instead
     if (moduleSink) setAutoUpdateEventSink(moduleSink)
@@ -1274,9 +1175,6 @@ const quitCoordinator = createQuitCoordinator({
     const { cleanup: cleanupPowerManager } = await import('./power-manager')
     cleanupPowerManager()
 
-    // Flush PostHog analytics before exit so no events are dropped.
-    await shutdownAnalytics()
-
     // Release the server lock file so the next launch doesn't see a stale PID.
     releaseServerLock()
   },
@@ -1294,14 +1192,10 @@ app.on('before-quit', async (event) => {
   await quitCoordinator.handleBeforeQuit(event)
 })
 
-// Handle uncaught exceptions — forward to Sentry explicitly since registering
-// a custom handler can interfere with @sentry/electron's automatic capture.
 process.on('uncaughtException', (error) => {
   mainLog.error('Uncaught exception:', error)
-  Sentry.captureException(error)
 })
 
 process.on('unhandledRejection', (reason, promise) => {
   mainLog.error('Unhandled rejection at:', promise, 'reason:', reason)
-  Sentry.captureException(reason instanceof Error ? reason : new Error(String(reason)))
 })

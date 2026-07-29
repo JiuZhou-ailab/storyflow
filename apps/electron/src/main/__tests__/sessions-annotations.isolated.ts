@@ -1,3 +1,7 @@
+// input: Mocked Electron runtime and SessionManager annotation operations
+// output: Isolated annotation validation regression coverage
+// pos: Main-process SessionManager safety guard without real app services
+
 import { describe, expect, it, mock } from 'bun:test'
 import type { AnnotationV1 } from '@craft-agent/core/types'
 
@@ -9,10 +13,6 @@ mock.module('electron', () => ({
   nativeImage: {
     createFromPath: () => ({ isEmpty: () => true }),
   },
-}))
-
-mock.module('@sentry/electron/main', () => ({
-  captureException: () => {},
 }))
 
 mock.module('../logger', () => ({

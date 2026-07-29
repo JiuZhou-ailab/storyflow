@@ -2,10 +2,16 @@
 // output: Debounced, serialized, atomic persistence writes for session state
 // pos: Shared persistence queue used by server-core session lifecycle code
 
-import { writeFile, rename, unlink } from 'fs/promises'
+import { writeFile as writeFileToDisk, rename, unlink } from 'fs/promises'
 import { dirname } from 'path'
 import type { StoredSession, SessionHeader } from './types.js'
-import { getSessionFilePath, ensureSessionsDir, ensureSessionDir } from './storage.js'
+import {
+  getSessionFilePath,
+  ensureSessionsDir,
+  ensureSessionDir,
+  recoverSessionFile,
+  setSessionFileReplacementActive,
+} from './storage.js'
 import { toPortablePath } from '../utils/paths.js'
 import { createSessionHeader, makeSessionPathPortable, readSessionHeader } from './jsonl.js'
 import { debug } from '../utils/debug.js'
@@ -73,6 +79,10 @@ function mergeHeaderWithExternalMetadata(localHeader: SessionHeader, diskHeader:
   }
 }
 
+function isMissingFileError(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException).code === 'ENOENT'
+}
+
 /**
  * Debounced async session persistence queue.
  * Prevents main thread blocking by using async writes and coalescing
@@ -88,7 +98,10 @@ class SessionPersistenceQueue {
   private lastWrittenHeaderSignature = new Map<string, string>()
   private debounceMs: number
 
-  constructor(debounceMs = 500) {
+  constructor(
+    debounceMs = 500,
+    private readonly writeFile: (path: string, data: string, encoding: BufferEncoding) => Promise<void> = writeFileToDisk,
+  ) {
     this.debounceMs = debounceMs
   }
 
@@ -103,120 +116,179 @@ class SessionPersistenceQueue {
     }
 
     const timer = setTimeout(() => {
-      void this.write(session.id)
+      const write = this.scheduleWrite(session.id)
+      if (write) {
+        void write.catch(error => {
+          console.error(`[PersistenceQueue] Failed to write session ${session.id}:`, error)
+        })
+      }
     }, this.debounceMs)
 
     this.pending.set(session.id, { data: session, timer })
+  }
+
+  private scheduleWrite(sessionId: string): Promise<void> | undefined {
+    const entry = this.pending.get(sessionId)
+    if (!entry) return undefined
+
+    this.pending.delete(sessionId)
+
+    const previous = this.writeInProgress.get(sessionId)
+    const write = (previous ? previous.catch(() => undefined) : Promise.resolve())
+      .then(() => this.write(entry.data))
+
+    this.writeInProgress.set(sessionId, write)
+    void write.then(() => {
+      if (this.writeInProgress.get(sessionId) === write) {
+        this.writeInProgress.delete(sessionId)
+      }
+    }, () => {
+      // Keep the rejected tail so flush/flushAll can report the terminal failure.
+    })
+
+    return write
   }
 
   /**
    * Write a session to disk immediately in JSONL format.
    * Uses atomic write (write-to-temp-then-rename) to prevent corruption on crash.
    */
-  private async write(sessionId: string): Promise<void> {
-    const entry = this.pending.get(sessionId)
-    if (!entry) return
-
-    this.pending.delete(sessionId)
-
+  private async write(data: StoredSession): Promise<void> {
+    const sessionId = data.id
+    const persistSpan = perf.span('session.persist.write', { sessionId })
     try {
-      const persistSpan = perf.span('session.persist.write', { sessionId })
-      const { data } = entry
+      ensureSessionsDir(data.workspaceRootPath)
+      ensureSessionDir(data.workspaceRootPath, sessionId)
+
+      const filePath = getSessionFilePath(data.workspaceRootPath, sessionId)
+      const recoveredFile = recoverSessionFile(filePath)
+      if (recoveredFile && recoveredFile !== filePath) {
+        throw new Error(`Could not promote recovered session file: ${recoveredFile}`)
+      }
+      const serializeEnd = perf.start('session.persist.serialize', { sessionId })
+      let header: SessionHeader
+      let hasExternalMetadataChange = false
+      let jsonl = ''
+      let persistableMessageCount = 0
+      let lineCount = 0
+
       try {
-        ensureSessionsDir(data.workspaceRootPath)
-        ensureSessionDir(data.workspaceRootPath, sessionId)
-
-        const filePath = getSessionFilePath(data.workspaceRootPath, sessionId)
-        const serializeEnd = perf.start('session.persist.serialize', { sessionId })
-        let header: SessionHeader
-        let hasExternalMetadataChange = false
-        let jsonl = ''
-        let persistableMessageCount = 0
-        let lineCount = 0
-
-        try {
-          // Prepare session with portable paths for cross-machine compatibility
-          const storageSession: StoredSession = {
-            ...data,
-            workspaceRootPath: toPortablePath(data.workspaceRootPath),
-            workingDirectory: data.workingDirectory ? toPortablePath(data.workingDirectory) : undefined,
-            sdkCwd: data.sdkCwd ? toPortablePath(data.sdkCwd) : undefined,
-            lastUsedAt: Date.now(),
-          }
-
-          // Create JSONL content: header + messages (one per line)
-          // Filter out intermediate messages - they're transient streaming status updates
-          const localHeader = createSessionHeader(storageSession)
-          const localSig = getHeaderMetadataSignature(localHeader)
-          const diskHeader = readSessionHeader(filePath)
-          const previousSig = this.lastWrittenHeaderSignature.get(sessionId)
-          const diskSig = diskHeader ? getHeaderMetadataSignature(diskHeader) : undefined
-
-          // Queue writes should never clobber session metadata changed externally
-          // (watcher edits, direct header edits, other instances), but they must
-          // still persist local metadata updates (e.g. generated title).
-          //
-          // Preserve disk metadata only when disk diverged from our last written
-          // signature, which indicates an external mutation.
-          const hasMetadataMismatch = !!diskHeader && !!diskSig && diskSig !== localSig
-          hasExternalMetadataChange = !!diskHeader && !!diskSig && !!previousSig && diskSig !== previousSig
-          header = hasExternalMetadataChange && diskHeader
-            ? mergeHeaderWithExternalMetadata(localHeader, diskHeader)
-            : localHeader
-
-          if (shouldLogMetadataMismatch({ hasMetadataMismatch, hasExternalMetadataChange })) {
-            const baseline = previousSig ? `, previousSig=${previousSig.slice(0, 12)}` : ', previousSig=<none>'
-            debug(`[PersistenceQueue] Session ${sessionId} metadata mismatch detected (disk preserved${baseline})`)
-          }
-
-          const persistableMessages = storageSession.messages
-          // Use original absolute sessionDir (before toPortablePath) for path replacement
-          const sessionDir = dirname(filePath)
-          const lines = [
-            makeSessionPathPortable(JSON.stringify(header), sessionDir),
-            ...persistableMessages.map(m => makeSessionPathPortable(JSON.stringify(m), sessionDir)),
-          ]
-          jsonl = lines.join('\n') + '\n'
-          persistableMessageCount = persistableMessages.length
-          lineCount = lines.length
-        } finally {
-          serializeEnd()
+        // Prepare session with portable paths for cross-machine compatibility
+        const storageSession: StoredSession = {
+          ...data,
+          workspaceRootPath: toPortablePath(data.workspaceRootPath),
+          workingDirectory: data.workingDirectory ? toPortablePath(data.workingDirectory) : undefined,
+          sdkCwd: data.sdkCwd ? toPortablePath(data.sdkCwd) : undefined,
+          lastUsedAt: Date.now(),
         }
 
-        const writeSummary = summarizeSessionPersistWrite({
-          sessionId,
-          messageCount: persistableMessageCount,
-          lineCount,
-          hasExternalMetadataChange,
-        })
-        persistSpan.setMetadata('messageCount', writeSummary.messageCount)
-        persistSpan.setMetadata('lineCount', writeSummary.lineCount)
-        persistSpan.setMetadata('hasExternalMetadataChange', writeSummary.hasExternalMetadataChange)
+        // Create JSONL content: header + messages (one per line)
+        // Filter out intermediate messages - they're transient streaming status updates
+        const localHeader = createSessionHeader(storageSession)
+        const localSig = getHeaderMetadataSignature(localHeader)
+        const diskHeader = readSessionHeader(filePath)
+        const previousSig = this.lastWrittenHeaderSignature.get(sessionId)
+        const diskSig = diskHeader ? getHeaderMetadataSignature(diskHeader) : undefined
 
-        // Atomic write: write to .tmp then rename over the real file.
-        // If the process crashes mid-write, only the .tmp is corrupted —
-        // the original session.jsonl remains intact.
+        // Queue writes should never clobber session metadata changed externally
+        // (watcher edits, direct header edits, other instances), but they must
+        // still persist local metadata updates (e.g. generated title).
         //
-        // Update signature BEFORE the write so that fs.watch events fired
-        // during unlink/rename are correctly identified as self-writes.
-        // Without this, onSessionMetadataChange sees the stale signature
-        // and reverts in-memory metadata on idle sessions.
-        const finalSignature = getHeaderMetadataSignature(header)
-        this.lastWrittenHeaderSignature.set(sessionId, finalSignature)
+        // Preserve disk metadata only when disk diverged from our last written
+        // signature, which indicates an external mutation.
+        const hasMetadataMismatch = !!diskHeader && !!diskSig && diskSig !== localSig
+        hasExternalMetadataChange = !!diskHeader && !!diskSig && !!previousSig && diskSig !== previousSig
+        header = hasExternalMetadataChange && diskHeader
+          ? mergeHeaderWithExternalMetadata(localHeader, diskHeader)
+          : localHeader
 
-        const writeEnd = perf.start('session.persist.diskWrite', { sessionId })
-        const tmpFile = filePath + '.tmp'
-        await writeFile(tmpFile, jsonl, 'utf-8')
-        // On Windows, rename fails if target exists. Delete first for cross-platform compatibility.
-        try { await unlink(filePath) } catch { /* ignore if doesn't exist */ }
-        await rename(tmpFile, filePath)
-        writeEnd()
-        debug(`[PersistenceQueue] Wrote session ${sessionId}`)
+        if (shouldLogMetadataMismatch({ hasMetadataMismatch, hasExternalMetadataChange })) {
+          const baseline = previousSig ? `, previousSig=${previousSig.slice(0, 12)}` : ', previousSig=<none>'
+          debug(`[PersistenceQueue] Session ${sessionId} metadata mismatch detected (disk preserved${baseline})`)
+        }
+
+        const persistableMessages = storageSession.messages
+        // Use original absolute sessionDir (before toPortablePath) for path replacement
+        const sessionDir = dirname(filePath)
+        const lines = [
+          makeSessionPathPortable(JSON.stringify(header), sessionDir),
+          ...persistableMessages.map(m => makeSessionPathPortable(JSON.stringify(m), sessionDir)),
+        ]
+        jsonl = lines.join('\n') + '\n'
+        persistableMessageCount = persistableMessages.length
+        lineCount = lines.length
       } finally {
-        persistSpan.end()
+        serializeEnd()
       }
-    } catch (error) {
-      console.error(`[PersistenceQueue] Failed to write session ${sessionId}:`, error)
+
+      const writeSummary = summarizeSessionPersistWrite({
+        sessionId,
+        messageCount: persistableMessageCount,
+        lineCount,
+        hasExternalMetadataChange,
+      })
+      persistSpan.setMetadata('messageCount', writeSummary.messageCount)
+      persistSpan.setMetadata('lineCount', writeSummary.lineCount)
+      persistSpan.setMetadata('hasExternalMetadataChange', writeSummary.hasExternalMetadataChange)
+
+      // Crash-safe replacement: write .tmp, move the current file to .bak,
+      // then promote .tmp. At least one valid candidate survives each step.
+      //
+      // Update signature BEFORE the write so that fs.watch events fired
+      // during unlink/rename are correctly identified as self-writes.
+      // Without this, onSessionMetadataChange sees the stale signature
+      // and reverts in-memory metadata on idle sessions.
+      const finalSignature = getHeaderMetadataSignature(header)
+      const previousWrittenSignature = this.lastWrittenHeaderSignature.get(sessionId)
+      this.lastWrittenHeaderSignature.set(sessionId, finalSignature)
+
+      const writeEnd = perf.start('session.persist.diskWrite', { sessionId })
+      const tmpFile = filePath + '.tmp'
+      const backupFile = filePath + '.bak'
+      let hasBackup = false
+      setSessionFileReplacementActive(filePath, true)
+      try {
+        await this.writeFile(tmpFile, jsonl, 'utf-8')
+        try {
+          await rename(filePath, backupFile)
+          hasBackup = true
+        } catch (error) {
+          if (!isMissingFileError(error)) throw error
+        }
+        await rename(tmpFile, filePath)
+      } catch (error) {
+        if (previousWrittenSignature === undefined) {
+          this.lastWrittenHeaderSignature.delete(sessionId)
+        } else {
+          this.lastWrittenHeaderSignature.set(sessionId, previousWrittenSignature)
+        }
+
+        if (hasBackup) {
+          try {
+            await rename(backupFile, filePath)
+          } catch (restoreError) {
+            throw new AggregateError(
+              [error, restoreError],
+              `Failed to replace and restore session ${sessionId}`,
+            )
+          }
+        }
+        throw error
+      } finally {
+        setSessionFileReplacementActive(filePath, false)
+        writeEnd()
+      }
+
+      if (hasBackup) {
+        try { await unlink(backupFile) } catch (error) {
+          if (!isMissingFileError(error)) {
+            debug(`[PersistenceQueue] Could not remove backup for session ${sessionId}:`, error)
+          }
+        }
+      }
+      debug(`[PersistenceQueue] Wrote session ${sessionId}`)
+    } finally {
+      persistSpan.end()
     }
   }
 
@@ -229,23 +301,10 @@ class SessionPersistenceQueue {
     const entry = this.pending.get(sessionId)
     if (entry) {
       clearTimeout(entry.timer)
-
-      // Wait for any in-progress write to complete first
-      const inProgress = this.writeInProgress.get(sessionId)
-      if (inProgress) {
-        await inProgress
-      }
-
-      // Start new write and track it
-      const writePromise = this.write(sessionId)
-      this.writeInProgress.set(sessionId, writePromise)
-
-      try {
-        await writePromise
-      } finally {
-        this.writeInProgress.delete(sessionId)
-      }
     }
+
+    const write = this.scheduleWrite(sessionId) ?? this.writeInProgress.get(sessionId)
+    if (write) await write
   }
 
   /**
@@ -262,11 +321,22 @@ class SessionPersistenceQueue {
   }
 
   /**
-   * Flush all pending sessions. Call this on app quit.
+   * Flush all pending and timer-started sessions. Call this on app quit.
    */
   async flushAll(): Promise<void> {
-    const sessionIds = [...this.pending.keys()]
-    await Promise.all(sessionIds.map(id => this.flush(id)))
+    const sessionIds = new Set([
+      ...this.pending.keys(),
+      ...this.writeInProgress.keys(),
+    ])
+    const results = await Promise.allSettled([...sessionIds].map(id => this.flush(id)))
+    const failures = results
+      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      .map(result => result.reason)
+
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) {
+      throw new AggregateError(failures, 'Failed to flush all sessions')
+    }
   }
 
   /**

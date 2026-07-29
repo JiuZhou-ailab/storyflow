@@ -1,3 +1,7 @@
+// input: Workspace catalog, active workspace state, and trusted remote health RPCs
+// output: Workspace switch, reconnect, create, archive, and remove interactions
+// pos: App-shell workspace navigation boundary using secret-free workspace DTOs
+
 import * as React from "react"
 import { useTranslation } from "react-i18next"
 import { useState, useCallback, useRef } from "react"
@@ -87,7 +91,7 @@ export function WorkspaceSwitcher({
 
     // Fire parallel checks
     for (const ws of remoteWorkspaces) {
-      window.electronAPI.testRemoteConnection(ws.remoteServer!.url, ws.remoteServer!.token)
+      window.electronAPI.testRemoteConnection(ws.remoteServer!.url, ws.remoteServer!.credentialRef)
         .then(result => {
           if (abort.signal.aborted) return
           setRemoteHealthMap(prev => new Map(prev).set(ws.id, result.ok ? 'ok' : 'error'))

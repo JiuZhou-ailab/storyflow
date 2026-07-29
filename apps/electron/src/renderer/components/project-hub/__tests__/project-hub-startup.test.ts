@@ -75,17 +75,15 @@ describe('ProjectHub startup integration', () => {
     expect(appSource).not.toContain('PDFPreviewOverlay,')
   })
 
-  it('keeps the full client auth UI out of the ordinary startup bundle', () => {
-    expect(rendererEntrySource).not.toContain("import { ClientAuthGate } from '@/components/auth/ClientAuthGate'")
-    expect(rendererEntrySource).toContain("await import('@/components/auth/ClientAuthGate')")
-    expect(rendererEntrySource).toContain('if (!state.required || state.authenticated) return <>{children}</>')
+  it('mounts the local project shell without a renderer login bootstrap', () => {
+    expect(rendererEntrySource).not.toContain('ClientAuthBootstrap')
+    expect(rendererEntrySource).not.toContain('ClientAuthGate')
+    expect(rendererEntrySource).not.toContain('getClientAuthState')
   })
 
-  it('defers renderer monitoring until after the startup critical path', () => {
-    expect(rendererEntrySource).not.toContain("import * as Sentry from '@sentry/react'")
-    expect(rendererEntrySource).not.toContain("import { init as sentryInit } from '@sentry/electron/renderer'")
-    expect(rendererEntrySource).toContain("import('@sentry/electron/renderer')")
-    expect(rendererEntrySource).toContain('window.setTimeout(() => void initializeRendererMonitoring(), 3_000)')
+  it('does not start automatic renderer monitoring', () => {
+    expect(rendererEntrySource).not.toContain('@sentry/')
+    expect(rendererEntrySource).not.toContain('initializeRendererMonitoring')
   })
 
   it('keeps locale payloads and external fonts off the startup critical path', () => {

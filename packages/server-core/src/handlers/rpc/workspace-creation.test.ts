@@ -40,4 +40,22 @@ describe('normalizeCreateWorkspaceOptions', () => {
       methodPackId: 'novel.claude-book',
     })).toEqual({})
   })
+
+  it('rejects malformed remote configuration instead of creating a local workspace', () => {
+    expect(() => normalizeCreateWorkspaceOptions({
+      remoteServer: {
+        url: 'https://storyflow.example.test',
+        token: 'token',
+        remoteWorkspaceId: 'remote-ws',
+      },
+    })).toThrow('must use ws:// or wss://')
+
+    expect(() => normalizeCreateWorkspaceOptions({
+      remoteServer: {
+        url: 'wss://storyflow.example.test',
+        token: ' ',
+        remoteWorkspaceId: 'remote-ws',
+      },
+    })).toThrow('cannot be blank')
+  })
 })

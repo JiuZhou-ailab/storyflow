@@ -3,7 +3,7 @@
 // pos: Ensures blank local projects carry no hidden project profile options
 
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
-import type { RemoteServerConfig, Workspace } from '../../../../shared/types'
+import type { RemoteServerConnectionInput, Workspace } from '../../../../shared/types'
 
 mock.module('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '' }))
 mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDocument: () => ({}) }))
@@ -43,7 +43,7 @@ describe('workspace creation request', () => {
 
   it('sends only remote server configuration for a remote workspace', async () => {
     const calls: unknown[][] = []
-    const remoteServer: RemoteServerConfig = {
+    const remoteServer: RemoteServerConnectionInput = {
       url: 'https://storyflow.example.test',
       token: 'test-token',
       remoteWorkspaceId: 'remote-1',

@@ -26,7 +26,7 @@ const sampleWorkspaces: Workspace[] = [
     lastAccessedAt: 1772877600000,
     remoteServer: {
       url: 'wss://river.storyflow.dev',
-      token: 'playground-only',
+      credentialRef: 'remote_server_token::remote-river',
       remoteWorkspaceId: 'remote-river',
     },
   },

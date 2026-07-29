@@ -55,8 +55,8 @@ describe('updateSessionOptionsMap', () => {
       appSource.indexOf('const handleSessionOptionsChange')
     )
 
-    expect(sendMessageSource).toContain('}, [updateSessionById, skills, sources, windowWorkspaceId])')
-    expect(sendMessageSource).not.toContain('}, [sessionOptions, updateSessionById')
+    const dependencyList = sendMessageSource.slice(sendMessageSource.lastIndexOf('}, ['))
+    expect(dependencyList).not.toContain('sessionOptions')
   })
 
   it('keeps session option state out of the broad app shell context', () => {

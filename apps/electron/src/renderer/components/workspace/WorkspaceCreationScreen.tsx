@@ -14,7 +14,7 @@ import { AddWorkspaceStep_Choice } from "./AddWorkspaceStep_Choice"
 import { AddWorkspaceStep_CreateNew } from "./AddWorkspaceStep_CreateNew"
 import { AddWorkspaceStep_OpenFolder } from "./AddWorkspaceStep_OpenFolder"
 import { AddWorkspaceStep_ConnectRemote } from "./AddWorkspaceStep_ConnectRemote"
-import type { RemoteServerConfig, Workspace } from "../../../shared/types"
+import type { RemoteServerConnectionInput, Workspace } from "../../../shared/types"
 import { toast } from "sonner"
 
 export type WorkspaceCreationInitialStep = 'choice' | 'create' | 'open' | 'remote'
@@ -42,7 +42,7 @@ interface WorkspaceCreationApi {
   createWorkspace(
     folderPath: string,
     name: string,
-    options?: { remoteServer?: RemoteServerConfig },
+    options?: { remoteServer?: RemoteServerConnectionInput },
   ): Promise<Workspace>
 }
 
@@ -50,7 +50,7 @@ export async function createWorkspaceAndNotify(
   api: WorkspaceCreationApi,
   folderPath: string,
   name: string,
-  remoteServer: RemoteServerConfig | undefined,
+  remoteServer: RemoteServerConnectionInput | undefined,
   onWorkspaceCreated: (workspace: Workspace) => void | Promise<void>,
 ): Promise<void> {
   const workspace = remoteServer
@@ -105,7 +105,7 @@ export function WorkspaceCreationScreen({
   const handleCreateWorkspace = useCallback(async (
     folderPath: string,
     name: string,
-    remoteServer?: RemoteServerConfig,
+    remoteServer?: RemoteServerConnectionInput,
   ) => {
     setIsCreating(true)
     try {
@@ -175,7 +175,6 @@ export function WorkspaceCreationScreen({
             onCreate={handleCreateWorkspace}
             isCreating={isCreating}
             initialUrl={reconnectWorkspace?.remoteServer?.url}
-            initialToken={reconnectWorkspace?.remoteServer?.token}
             reconnectWorkspace={reconnectWorkspace?.remoteServer ? {
               id: reconnectWorkspace.id,
               name: reconnectWorkspace.name,

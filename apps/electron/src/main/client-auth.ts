@@ -1,6 +1,6 @@
 // input: Electron auth environment and Neon Auth email/password credentials
 // output: Client auth state, persisted session handoff, token freshness checks, and auth operations
-// pos: Main-process auth boundary that gates the desktop renderer before App mounts
+// pos: Main-process auth boundary used by managed model capabilities without gating local workspaces
 
 import {
   buildFeishuAuthorizeUrl,
@@ -214,7 +214,7 @@ function mergeBundledClientAuthEnv(
 }
 
 export function createClientAuthConfigFromEnv(env: NodeJS.ProcessEnv): ClientAuthConfig {
-  const required = readBooleanEnv(env.CRAFT_CLIENT_AUTH_REQUIRED) ?? shouldRequireClientAuthByDefault(env)
+  const required = readBooleanEnv(env.CRAFT_CLIENT_AUTH_REQUIRED) ?? false
   const baseUrl = readEnv(env.CRAFT_CLIENT_NEON_AUTH_BASE_URL) ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_BASE_URL)
   const jwksUrl = readEnv(env.CRAFT_CLIENT_NEON_AUTH_JWKS_URL) ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_JWKS_URL)
   const issuer = readEnv(env.CRAFT_CLIENT_NEON_AUTH_ISSUER) ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_ISSUER)
@@ -625,11 +625,6 @@ export function createClientAuthService(
   return service
 }
 
-function shouldRequireClientAuthByDefault(env: NodeJS.ProcessEnv): boolean {
-  return readBooleanEnv(env.CRAFT_IS_PACKAGED) === true
-    && readBooleanEnv(env.CRAFT_DEV_RUNTIME) !== true
-}
-
 function buildClientAuthState(input: {
   required: boolean
   configured: boolean
@@ -639,12 +634,10 @@ function buildClientAuthState(input: {
   clientConfig?: NeonAuthClientConfig
   user: ClientAuthUser | null
 }): ClientAuthState {
-  const authenticated = input.required ? input.user !== null : true
-
   return {
     required: input.required,
     configured: input.configured,
-    authenticated,
+    authenticated: input.user !== null,
     emailPasswordEnabled: input.emailPasswordEnabled,
     emailSignUpEnabled: input.emailSignUpEnabled,
     feishuLoginEnabled: input.feishuLoginEnabled,

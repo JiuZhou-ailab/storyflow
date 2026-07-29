@@ -3,7 +3,7 @@
 // pos: Shared configuration persistence layer used by Electron, server, and tests
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync, readdirSync } from 'fs';
 import { join, dirname, basename } from 'path';
-import { getCredentialManager } from '../credentials/index.ts';
+import { credentialIdToAccount, getCredentialManager } from '../credentials/index.ts';
 import { getOrCreateLatestSession, type SessionConfig } from '../sessions/index.ts';
 import {
   discoverWorkspacesInDefaultLocation,
@@ -42,7 +42,12 @@ export type {
 } from '@craft-agent/core/types';
 
 // Import for local use
-import type { Workspace, AuthType } from '@craft-agent/core/types';
+import type {
+  Workspace,
+  AuthType,
+  RemoteServerConfig,
+  RemoteServerConnectionInput,
+} from '@craft-agent/core/types';
 
 // Import LLM connection types and constants
 import type { LlmConnection } from './llm-connections.ts';
@@ -805,6 +810,59 @@ export function findWorkspaceIcon(rootPath: string): string | null {
   return findIconFile(rootPath) ?? null;
 }
 
+type RemoteServerCredentialStore = Pick<
+  ReturnType<typeof getCredentialManager>,
+  'getRemoteServerToken' | 'setRemoteServerToken'
+>;
+
+export function remoteServerCredentialRef(workspaceId: string): string {
+  return credentialIdToAccount({ type: 'remote_server_token', workspaceId });
+}
+
+/**
+ * Moves legacy plaintext remote tokens into encrypted credential storage.
+ * Reading safe entries also warms the main-process cache required by preload's
+ * synchronous transport bootstrap.
+ */
+export async function migrateRemoteServerCredentials(
+  config: StoredConfig,
+  credentialStore: RemoteServerCredentialStore = getCredentialManager(),
+): Promise<boolean> {
+  let changed = false;
+
+  for (const workspace of config.workspaces) {
+    if (!workspace.remoteServer) continue;
+    const legacy = workspace.remoteServer as RemoteServerConfig & { token?: unknown };
+    const token = typeof legacy.token === 'string' && legacy.token.length > 0
+      ? legacy.token
+      : null;
+    const storedToken = await credentialStore.getRemoteServerToken(workspace.id);
+
+    if (token && token !== storedToken) {
+      await credentialStore.setRemoteServerToken(workspace.id, token);
+    }
+
+    if (token) {
+      workspace.remoteServer = {
+        url: legacy.url,
+        credentialRef: remoteServerCredentialRef(workspace.id),
+        remoteWorkspaceId: legacy.remoteWorkspaceId,
+      };
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
+export async function migrateRemoteServerCredentialsOnStartup(): Promise<boolean> {
+  const config = loadStoredConfig();
+  if (!config) return false;
+  const changed = await migrateRemoteServerCredentials(config);
+  if (changed) saveConfig(config);
+  return changed;
+}
+
 export function getWorkspaces(): Workspace[] {
   const config = loadStoredConfig();
   const workspaces = config?.workspaces || [];
@@ -869,16 +927,41 @@ export function getWorkspaceByNameOrId(nameOrId: string): Workspace | null {
   return workspace;
 }
 
-export function updateWorkspaceRemoteServer(
+export async function updateWorkspaceRemoteServer(
   workspaceId: string,
-  remoteServer: { url: string; token: string; remoteWorkspaceId: string },
-): void {
+  remoteServer: RemoteServerConnectionInput,
+): Promise<RemoteServerConfig> {
   const config = loadStoredConfig();
-  if (!config) return;
+  if (!config) throw new Error('Config not found');
   const ws = config.workspaces.find(w => w.id === workspaceId);
   if (!ws) throw new Error('Workspace not found');
-  ws.remoteServer = remoteServer;
-  saveConfig(config);
+  const credentialManager = getCredentialManager();
+  const previousToken = await credentialManager.getRemoteServerToken(workspaceId);
+  await credentialManager.setRemoteServerToken(workspaceId, remoteServer.token);
+  const storedRemoteServer: RemoteServerConfig = {
+    url: remoteServer.url,
+    credentialRef: remoteServerCredentialRef(workspaceId),
+    remoteWorkspaceId: remoteServer.remoteWorkspaceId,
+  };
+  ws.remoteServer = storedRemoteServer;
+  try {
+    saveConfig(config);
+  } catch (error) {
+    try {
+      if (previousToken) {
+        await credentialManager.setRemoteServerToken(workspaceId, previousToken);
+      } else {
+        await credentialManager.deleteRemoteServerToken(workspaceId);
+      }
+    } catch (rollbackError) {
+      throw new AggregateError(
+        [error, rollbackError],
+        'Failed to save remote server config and restore its credential',
+      );
+    }
+    throw error;
+  }
+  return storedRemoteServer;
 }
 
 export function setActiveWorkspace(workspaceId: string): void {

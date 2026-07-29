@@ -1,9 +1,10 @@
 // input: Workspace root paths and git command availability
-// output: Local git snapshot, history, status, and restore helpers
-// pos: Server-side version-control adapter for user workspaces
+// output: Isolated local git snapshot, history, status, and restore helpers
+// pos: Server-side adapter that keeps Storyflow history separate from user git state
 
 import { execFile } from 'child_process'
 import { realpath } from 'fs/promises'
+import { join } from 'path'
 
 export interface WorkspaceVersionEntry {
   hash: string
@@ -46,6 +47,9 @@ const GIT_TIMEOUT_MS = 10_000
 const GIT_MAX_BUFFER_BYTES = 1024 * 1024
 /** File content reads need a larger ceiling than metadata queries. */
 const GIT_CONTENT_MAX_BUFFER_BYTES = 16 * 1024 * 1024
+const STORYFLOW_HISTORY_REF = 'refs/storyflow/history'
+const STORYFLOW_INDEX_NAME = 'storyflow-index'
+const workspaceOperations = new Map<string, Promise<unknown>>()
 
 interface RunGitOptions {
   /**
@@ -54,16 +58,18 @@ interface RunGitOptions {
    */
   raw?: boolean
   maxBuffer?: number
+  indexFile?: string
 }
 
 async function runGit(rootPath: string, args: string[], options: RunGitOptions = {}): Promise<string> {
-  const { raw = false, maxBuffer = GIT_MAX_BUFFER_BYTES } = options
+  const { raw = false, maxBuffer = GIT_MAX_BUFFER_BYTES, indexFile } = options
   return await new Promise((resolve, reject) => {
     execFile('git', args, {
       cwd: rootPath,
       encoding: 'utf-8',
       timeout: GIT_TIMEOUT_MS,
       maxBuffer,
+      env: indexFile ? { ...process.env, GIT_INDEX_FILE: indexFile } : undefined,
     }, (error, stdout, stderr) => {
       if (error) {
         const message = stderr.trim() || stdout.trim() || error.message
@@ -93,9 +99,55 @@ async function ensureGitRepo(rootPath: string): Promise<void> {
   await runGit(rootPath, ['init'])
 }
 
-async function getPorcelainStatus(rootPath: string): Promise<string[]> {
-  const output = await runGit(rootPath, ['status', '--porcelain'])
-  return output ? output.split('\n').filter(Boolean) : []
+async function withWorkspaceOperation<T>(rootPath: string, operation: () => Promise<T>): Promise<T> {
+  const previous = workspaceOperations.get(rootPath) ?? Promise.resolve()
+  const current = previous.catch(() => undefined).then(operation)
+  workspaceOperations.set(rootPath, current)
+  return current.finally(() => {
+    if (workspaceOperations.get(rootPath) === current) workspaceOperations.delete(rootPath)
+  })
+}
+
+async function getStoryflowHead(rootPath: string): Promise<string | undefined> {
+  try {
+    return await runGit(rootPath, ['rev-parse', '--verify', STORYFLOW_HISTORY_REF])
+  } catch {
+    return undefined
+  }
+}
+
+interface PreparedWorkspaceSnapshot {
+  changedFiles: string[]
+  head?: string
+  indexFile: string
+  tree: string
+}
+
+async function prepareWorkspaceSnapshot(rootPath: string): Promise<PreparedWorkspaceSnapshot> {
+  const [gitDir, head] = await Promise.all([
+    runGit(rootPath, ['rev-parse', '--absolute-git-dir']),
+    getStoryflowHead(rootPath),
+  ])
+  const indexFile = join(gitDir, STORYFLOW_INDEX_NAME)
+
+  await runGit(rootPath, head ? ['read-tree', head] : ['read-tree', '--empty'], { indexFile })
+  await runGit(rootPath, ['add', '-A', '--', '.'], { indexFile })
+
+  const tree = await runGit(rootPath, ['write-tree'], { indexFile })
+  if (head && tree === await runGit(rootPath, ['rev-parse', `${head}^{tree}`])) {
+    return { changedFiles: [], head, indexFile, tree }
+  }
+
+  const output = head
+    ? await runGit(rootPath, ['diff-tree', '--no-commit-id', '--name-only', '-r', '-z', head, tree], { raw: true })
+    : await runGit(rootPath, ['ls-files', '-z'], { raw: true, indexFile })
+
+  return {
+    changedFiles: output.split('\0').filter(Boolean),
+    head,
+    indexFile,
+    tree,
+  }
 }
 
 function buildSnapshotSubject(options: CreateWorkspaceVersionOptions): string {
@@ -128,63 +180,67 @@ function parseNameStatusLine(line: string): WorkspaceVersionFileChange | null {
   return { path, status: 'modified' }
 }
 
-async function getHeadHash(rootPath: string): Promise<string | undefined> {
-  try {
-    return await runGit(rootPath, ['rev-parse', 'HEAD'])
-  } catch {
-    return undefined
-  }
-}
-
-export async function getWorkspaceVersionStatus(rootPath: string): Promise<WorkspaceVersionStatus> {
+async function getWorkspaceVersionStatusUnlocked(rootPath: string): Promise<WorkspaceVersionStatus> {
   const repo = await isGitRepo(rootPath)
   if (!repo) {
     return { isGitRepo: false, hasChanges: true, lastCommit: null }
   }
 
-  const [changes, latest] = await Promise.all([
-    getPorcelainStatus(rootPath),
+  const [snapshot, latest] = await Promise.all([
+    prepareWorkspaceSnapshot(rootPath),
     listWorkspaceVersions(rootPath, 1),
   ])
 
   return {
     isGitRepo: true,
-    hasChanges: changes.length > 0,
+    hasChanges: snapshot.changedFiles.length > 0,
     lastCommit: latest[0] ?? null,
   }
 }
 
-export async function createWorkspaceVersion(
+export function getWorkspaceVersionStatus(rootPath: string): Promise<WorkspaceVersionStatus> {
+  return withWorkspaceOperation(rootPath, () => getWorkspaceVersionStatusUnlocked(rootPath))
+}
+
+async function createWorkspaceVersionUnlocked(
   rootPath: string,
   options: CreateWorkspaceVersionOptions,
 ): Promise<CreateWorkspaceVersionResult> {
   await ensureGitRepo(rootPath)
-  await runGit(rootPath, ['add', '-A', '--', '.'])
+  const snapshot = await prepareWorkspaceSnapshot(rootPath)
 
-  const changes = await getPorcelainStatus(rootPath)
-  if (changes.length === 0) {
+  if (snapshot.changedFiles.length === 0) {
     return {
       created: false,
-      commitHash: await getHeadHash(rootPath),
+      commitHash: snapshot.head,
       changedFiles: 0,
     }
   }
 
   const message = buildSnapshotSubject(options)
-  await runGit(rootPath, [
+  const commitHash = await runGit(rootPath, [
     '-c', 'user.name=Craft Agent',
     '-c', 'user.email=craft-agent@local',
-    'commit',
-    '--no-gpg-sign',
+    'commit-tree',
+    snapshot.tree,
+    ...(snapshot.head ? ['-p', snapshot.head] : []),
     '-m', message,
   ])
+  await runGit(rootPath, ['update-ref', STORYFLOW_HISTORY_REF, commitHash])
 
   return {
     created: true,
-    commitHash: await getHeadHash(rootPath),
+    commitHash,
     message,
-    changedFiles: changes.length,
+    changedFiles: snapshot.changedFiles.length,
   }
+}
+
+export function createWorkspaceVersion(
+  rootPath: string,
+  options: CreateWorkspaceVersionOptions,
+): Promise<CreateWorkspaceVersionResult> {
+  return withWorkspaceOperation(rootPath, () => createWorkspaceVersionUnlocked(rootPath, options))
 }
 
 export async function listWorkspaceVersions(rootPath: string, limit = 20): Promise<WorkspaceVersionEntry[]> {
@@ -195,6 +251,7 @@ export async function listWorkspaceVersions(rootPath: string, limit = 20): Promi
       'log',
       `-${Math.max(1, Math.min(limit, 100))}`,
       '--format=%H%x1f%ct%x1f%s',
+      STORYFLOW_HISTORY_REF,
     ])
     if (!output) return []
 
@@ -253,7 +310,7 @@ export async function readWorkspaceFileAtCommit(
 export async function compareWorkspaceVersions(
   rootPath: string,
   baseCommit: string,
-  headCommit = 'HEAD',
+  headCommit = STORYFLOW_HISTORY_REF,
 ): Promise<WorkspaceVersionFileChange[]> {
   if (!await isGitRepo(rootPath)) return []
 
@@ -286,19 +343,21 @@ export async function compareWorkspaceVersions(
   }))
 }
 
-export async function restoreWorkspaceVersion(
+async function restoreWorkspaceVersionUnlocked(
   rootPath: string,
   commitHash: string,
 ): Promise<RestoreWorkspaceVersionResult> {
   await ensureGitRepo(rootPath)
 
-  const pendingChanges = await getPorcelainStatus(rootPath)
-  if (pendingChanges.length > 0) {
-    await createWorkspaceVersion(rootPath, { reason: 'before-restore' })
+  const pendingSnapshot = await prepareWorkspaceSnapshot(rootPath)
+  if (pendingSnapshot.changedFiles.length > 0) {
+    await createWorkspaceVersionUnlocked(rootPath, { reason: 'before-restore' })
   }
 
-  await runGit(rootPath, ['restore', '--source', commitHash, '--', '.'])
-  const restored = await createWorkspaceVersion(rootPath, {
+  const indexFile = pendingSnapshot.indexFile
+  await runGit(rootPath, ['read-tree', STORYFLOW_HISTORY_REF], { indexFile })
+  await runGit(rootPath, ['restore', '--source', commitHash, '--worktree', '--', '.'], { indexFile })
+  const restored = await createWorkspaceVersionUnlocked(rootPath, {
     reason: 'restore',
     label: commitHash.slice(0, 8),
   })
@@ -308,4 +367,11 @@ export async function restoreWorkspaceVersion(
     commitHash,
     restoreCommitHash: restored.commitHash,
   }
+}
+
+export function restoreWorkspaceVersion(
+  rootPath: string,
+  commitHash: string,
+): Promise<RestoreWorkspaceVersionResult> {
+  return withWorkspaceOperation(rootPath, () => restoreWorkspaceVersionUnlocked(rootPath, commitHash))
 }

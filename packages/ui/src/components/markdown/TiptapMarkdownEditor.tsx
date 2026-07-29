@@ -590,7 +590,7 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
       })
     },
     onUpdate: ({ editor }) => {
-      if (isApplyingExternalContentRef.current) return
+      if (isApplyingExternalContentRef.current || !editor.isFocused) return
       if (!onUpdateRef.current) {
         onDocumentChangedRef.current?.()
         return
@@ -669,9 +669,12 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
         isApplyingExternalContentRef.current = true
         if (useOfficialMarkdown) {
           const normalized = preprocessMarkdownForOfficial(content)
-          editor.commands.setContent(normalized, { contentType: 'markdown' } as never)
+          editor.commands.setContent(normalized, {
+            contentType: 'markdown',
+            emitUpdate: false,
+          } as never)
         } else {
-          editor.commands.setContent(content)
+          editor.commands.setContent(content, { emitUpdate: false })
         }
         // Drop undo stack from the previous document when content is replaced
         // externally (chapter switch). Without this, reused editors retain prior

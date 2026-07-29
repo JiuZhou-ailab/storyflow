@@ -8,4 +8,4 @@ RPC 与会话边界之下可复用的服务。
 - `privileged-execution-broker.ts` — 管理高权限命令执行。
 - `search.ts` / `search.test.ts` — 执行有边界的 workspace 搜索。
 - `vcredist.ts` / `vcredist.test.ts` — 检查 Visual C++ 运行库。
-- `workspace-version-control.ts` — 提供 workspace 版本控制操作。
+- `workspace-version-control.ts` — 通过独立 index 与 `refs/storyflow/*` 提供不侵入用户 Git 状态的 workspace 版本控制。

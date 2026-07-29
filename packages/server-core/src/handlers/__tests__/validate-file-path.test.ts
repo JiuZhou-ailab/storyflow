@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'bun:test'
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { homedir, tmpdir } from 'os'
 import { join, sep } from 'path'
 import { validateFilePath } from '../utils'
@@ -17,6 +18,28 @@ describe('validateFilePath', () => {
     const path = join(tmp, 'craft-test.txt')
     const result = await validateFilePath(path)
     expect(result).toContain('craft-test.txt')
+  })
+
+  it('canonicalizes both an existing temp path and its allowed root', async () => {
+    const dir = mkdtempSync(join(tmp, 'craft-realpath-test-'))
+    const path = join(dir, 'test.txt')
+    writeFileSync(path, 'ok')
+    try {
+      expect(await validateFilePath(path)).toContain('test.txt')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')('rejects a missing file reached through a symlink escape', async () => {
+    const dir = mkdtempSync(join(tmp, 'craft-symlink-test-'))
+    const link = join(dir, 'outside')
+    symlinkSync('/', link)
+    try {
+      await expect(validateFilePath(join(link, 'definitely-missing-file'))).rejects.toThrow('Access denied')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('denies paths outside all allowed directories', async () => {

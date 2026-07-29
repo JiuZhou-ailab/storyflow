@@ -4,6 +4,7 @@
 
 import { join, resolve } from 'path'
 import { homedir } from 'os'
+import type { RemoteServerConnectionInput } from '@craft-agent/core/types'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId, addWorkspace, setActiveWorkspace, updateWorkspaceRemoteServer, getWorkspaces } from '@craft-agent/shared/config'
 import { resolveRuntimeWorkspace } from '@craft-agent/shared/workspaces'
@@ -12,6 +13,7 @@ import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { isValidWorkspaceRootPath } from '../../utils/path-validation'
 import {
+  normalizeRemoteServerConnectionInput,
   normalizeCreateWorkspaceOptions,
   resetStaleDefaultWorkspaceRoot,
   type CreateWorkspaceOptions,
@@ -58,7 +60,7 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
     _ctx,
     folderPath: string,
     name: string,
-    input?: CreateWorkspaceOptions | { url: string; token: string; remoteWorkspaceId: string } | Record<string, unknown>,
+    input?: CreateWorkspaceOptions | RemoteServerConnectionInput | Record<string, unknown>,
     legacyProjectType?: unknown,
   ) => {
     const rootPath = folderPath.trim()
@@ -73,7 +75,10 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
     if (resetStaleDefaultWorkspaceRoot(rootPath, trackedRootPaths)) {
       deps.platform.logger.info(`Reinitialized stale default workspace root at ${rootPath}`)
     }
-    const workspace = addWorkspace({ name, rootPath, ...(options.remoteServer && { remoteServer: options.remoteServer }) })
+    const workspace = addWorkspace({ name, rootPath })
+    if (options.remoteServer) {
+      workspace.remoteServer = await updateWorkspaceRemoteServer(workspace.id, options.remoteServer)
+    }
     sessionManager.reloadSessions()
     sessionManager.setupConfigWatcher(workspace.rootPath, workspace.id)
     // Make it active
@@ -92,9 +97,10 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
   })
 
   // Update remote server config for an existing workspace (reconnect flow)
-  server.handle(RPC_CHANNELS.workspaces.UPDATE_REMOTE, async (_ctx, workspaceId: string, remoteServer: { url: string; token: string; remoteWorkspaceId: string }) => {
-    updateWorkspaceRemoteServer(workspaceId, remoteServer)
-    deps.platform.logger.info(`Updated remote server for workspace ${workspaceId}: ${remoteServer.url}`)
+  server.handle(RPC_CHANNELS.workspaces.UPDATE_REMOTE, async (_ctx, workspaceId: string, remoteServer: RemoteServerConnectionInput) => {
+    const normalized = normalizeRemoteServerConnectionInput(remoteServer)
+    await updateWorkspaceRemoteServer(workspaceId, normalized)
+    deps.platform.logger.info(`Updated remote server for workspace ${workspaceId}: ${normalized.url}`)
     return { success: true }
   })
 

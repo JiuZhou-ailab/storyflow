@@ -39,25 +39,25 @@ function neonBroker(user: ClientAuthBrokerExchangeResult['user']): ClientAuthBro
 }
 
 describe('client auth', () => {
-  it('treats disabled client auth as already authenticated', () => {
+  it('keeps shell access separate from managed-account authentication', () => {
     const service = createClientAuthService({ required: false })
     expect(service.getState()).toEqual({
       required: false,
       configured: false,
-      authenticated: true,
+      authenticated: false,
       emailPasswordEnabled: false,
       emailSignUpEnabled: false,
       feishuLoginEnabled: false,
     })
   })
 
-  it('requires client auth by default in packaged runtime', () => {
+  it('keeps packaged local workspace access available by default', () => {
     const config = createClientAuthConfigFromEnv({
       CRAFT_IS_PACKAGED: '1',
     })
     const service = createClientAuthService(config)
     expect(service.getState()).toEqual({
-      required: true,
+      required: false,
       configured: false,
       authenticated: false,
       emailPasswordEnabled: false,
@@ -75,7 +75,7 @@ describe('client auth', () => {
     expect(service.getState()).toEqual({
       required: false,
       configured: false,
-      authenticated: true,
+      authenticated: false,
       emailPasswordEnabled: false,
       emailSignUpEnabled: false,
       feishuLoginEnabled: false,

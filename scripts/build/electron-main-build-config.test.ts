@@ -49,11 +49,8 @@ describe('desktop auth build config', () => {
     })).toEqual({ ok: true });
   });
 
-  test('requires at least one client login method by default for packaged builds', () => {
-    expect(validateDesktopAuthBuildEnv({})).toEqual({
-      ok: false,
-      message: 'Packaged desktop client auth requires CRAFT_CLIENT_FEISHU_APP_ID or CRAFT_CLIENT_NEON_AUTH_BASE_URL.',
-    });
+  test('allows local-only packaged builds without a desktop login gate', () => {
+    expect(validateDesktopAuthBuildEnv({})).toEqual({ ok: true });
   });
 
   test('allows localhost brokers only for explicit dev-runtime builds', () => {

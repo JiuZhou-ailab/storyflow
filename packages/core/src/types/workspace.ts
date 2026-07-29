@@ -17,8 +17,15 @@ export type McpAuthType = 'workspace_oauth' | 'workspace_bearer' | 'public';
  */
 export interface RemoteServerConfig {
   url: string;              // ws://host:port or wss://host:port
-  token: string;            // Auth token for the remote server
+  credentialRef: string;    // Opaque reference to the encrypted server token
   remoteWorkspaceId: string; // ID of the workspace on the remote server
+}
+
+/** Trusted connection input accepted at credential capture boundaries only. */
+export interface RemoteServerConnectionInput {
+  url: string;
+  token: string;
+  remoteWorkspaceId: string;
 }
 
 /**
