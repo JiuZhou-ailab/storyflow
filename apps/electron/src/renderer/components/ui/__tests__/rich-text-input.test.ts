@@ -3,7 +3,19 @@ import { describe, it, expect } from 'bun:test'
 import {
   exceedsLongTextLineThreshold,
   isEscapeDuringComposition,
+  isRichTextDomMutationSafe,
 } from '../rich-text-input'
+
+describe('isRichTextDomMutationSafe', () => {
+  it('accepts ordinary input immediately after composition ends', () => {
+    expect(isRichTextDomMutationSafe(false, false)).toBe(true)
+  })
+
+  it('protects the IME-owned DOM while either composition signal is active', () => {
+    expect(isRichTextDomMutationSafe(true, false)).toBe(false)
+    expect(isRichTextDomMutationSafe(false, true)).toBe(false)
+  })
+})
 
 describe('isEscapeDuringComposition', () => {
   it('returns true for Escape when local composition ref is active', () => {

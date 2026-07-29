@@ -1404,11 +1404,7 @@ export function FreeFormInput({
   }
 
   // Handle input changes from RichTextInput
-  const handleInputChange = React.useCallback((value: string, meta?: RichTextInputChangeMeta) => {
-    if (meta?.isPostCompositionInput && meta.inputType === 'insertText' && meta.inputData === ' ') {
-      return
-    }
-
+  const handleInputChange = React.useCallback((value: string) => {
     const nextValue = coerceInputText(value)
     // Get previous input value before updating state
     const prevValue = inputRef.current

@@ -29,10 +29,6 @@ describe('FreeFormInput behavior helpers', () => {
       })).toBeNull()
     })
 
-    it('treats post-composition input as composition input', () => {
-      expect(isCompositionInput({ isPostCompositionInput: true })).toBe(true)
-    })
-
     it('capitalises ordinary latin input when enabled', () => {
       expect(resolveAutoCapitalisedInput('hello', 1, {
         enabled: true,

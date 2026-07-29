@@ -59,6 +59,13 @@ export function isEscapeDuringComposition(
   return Boolean(isComposingRefActive || event.isComposing || event.nativeEvent?.isComposing)
 }
 
+export function isRichTextDomMutationSafe(
+  isComposingRefActive: boolean,
+  nativeIsComposing = false,
+): boolean {
+  return !isComposingRefActive && !nativeIsComposing
+}
+
 export interface RichTextInputProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'onChange' | 'onInput' | 'onPaste'> {
   /** Current text value */
   value: string
@@ -88,8 +95,6 @@ export interface RichTextInputChangeMeta {
   isComposing: boolean
   nativeIsComposing: boolean
   inputType?: string
-  inputData?: string | null
-  isPostCompositionInput?: boolean
 }
 
 export interface RichTextInputHandle {
@@ -556,8 +561,6 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
     const cursorPositionRef = React.useRef(0)
     const lastMentionSignatureRef = React.useRef('')
     const isInternalUpdate = React.useRef(false)
-    const isPostCompositionInputRef = React.useRef(false)
-    const clearPostCompositionTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
     // Pending cursor position to restore after external value update (e.g., after @mention selection)
     const pendingCursorRef = React.useRef<number | null>(null)
 
@@ -633,33 +636,12 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
     ) => {
       const nativeEvent = event?.nativeEvent as InputEvent | undefined
       const overrideInputType = overrideMeta?.inputType ?? nativeEvent?.inputType
-      const isPostCompositionInput = isPostCompositionInputRef.current && overrideInputType !== 'insertFromComposition'
-      if (isPostCompositionInput) {
-        if (clearPostCompositionTimeoutRef.current) {
-          clearTimeout(clearPostCompositionTimeoutRef.current)
-          clearPostCompositionTimeoutRef.current = null
-        }
-        isPostCompositionInputRef.current = false
-      }
-
       const nativeIsComposing = overrideMeta?.nativeIsComposing ?? Boolean(nativeEvent?.isComposing)
       const composing = overrideMeta?.isComposing ?? isComposing.current
-      if (composing || nativeIsComposing) return
+      if (!isRichTextDomMutationSafe(composing, nativeIsComposing)) return
       if (!divRef.current) return
 
       const newText = getTextFromElement(divRef.current)
-      const isPostCompositionSpace = isPostCompositionInput
-        && overrideInputType === 'insertText'
-        && nativeEvent?.data === ' '
-      if (isPostCompositionSpace) {
-        isInternalUpdate.current = true
-        const html = textToHTML(lastValueRef.current, skillSlugs, sourceSlugs, skillBySlug, sourceBySlug, workspaceId, fileLabelByRelativePath)
-        divRef.current.innerHTML = html || '<br>'
-        setCursorPosition(divRef.current, cursorPositionRef.current)
-        isInternalUpdate.current = false
-        return
-      }
-
       const cursorPos = getCursorPosition(divRef.current, cursorPositionRef.current)
 
       lastValueRef.current = newText
@@ -685,18 +667,10 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
         isComposing: composing,
         nativeIsComposing,
         inputType: overrideInputType,
-        inputData: nativeEvent?.data,
-        isPostCompositionInput,
       }
 
       onChange(newText, meta)
-      onInput?.(newText, cursorPos, {
-        isComposing: composing,
-        nativeIsComposing,
-        inputType: overrideInputType,
-        inputData: nativeEvent?.data,
-        isPostCompositionInput,
-      })
+      onInput?.(newText, cursorPos, meta)
     }, [onChange, onInput, skillSlugs, sourceSlugs, skillBySlug, sourceBySlug, workspaceId, fileLabelByRelativePath])
 
     // Handle composition (IME)
@@ -705,26 +679,9 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
     }, [])
 
     const handleCompositionEnd = React.useCallback(() => {
-      isPostCompositionInputRef.current = true
-      if (clearPostCompositionTimeoutRef.current) {
-        clearTimeout(clearPostCompositionTimeoutRef.current)
-      }
-      clearPostCompositionTimeoutRef.current = setTimeout(() => {
-        isPostCompositionInputRef.current = false
-        clearPostCompositionTimeoutRef.current = null
-      }, 500)
-
       isComposing.current = false
       handleInput(undefined, { inputType: 'insertFromComposition' })
     }, [handleInput])
-
-    React.useEffect(() => {
-      return () => {
-        if (clearPostCompositionTimeoutRef.current) {
-          clearTimeout(clearPostCompositionTimeoutRef.current)
-        }
-      }
-    }, [])
 
     const handleKeyDownInternal = React.useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
       if (isEscapeDuringComposition(e, isComposing.current)) {
@@ -782,6 +739,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
     React.useEffect(() => {
       if (!divRef.current) return
       if (isInternalUpdate.current) return
+      if (!isRichTextDomMutationSafe(isComposing.current)) return
       if (lastValueRef.current === safeValue) return
 
       // External value change - update content
