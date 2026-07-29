@@ -103,6 +103,79 @@ describe('PiEventAdapter', () => {
       }]);
     });
 
+    it('should include subagent usage without replacing parent context usage', () => {
+      collect(adapter.adaptEvent({
+        type: 'message_end',
+        message: {
+          role: 'assistant',
+          stopReason: 'toolUse',
+          content: 'Delegating',
+          usage: {
+            input: 100,
+            output: 40,
+            cacheRead: 20,
+            cacheWrite: 10,
+            totalTokens: 170,
+            cost: { total: 0.01 },
+          },
+        },
+      } as any));
+      collect(adapter.adaptEvent({
+        type: 'tool_execution_start',
+        toolCallId: 'subagent-1',
+        toolName: 'subagent',
+        args: { tasks: [{ task: 'inspect', capability: 'read_only' }] },
+      } as any));
+      collect(adapter.adaptEvent({
+        type: 'tool_execution_end',
+        toolCallId: 'subagent-1',
+        result: {
+          content: [{ type: 'text', text: 'done' }],
+          details: {
+            kind: 'storyflow-subagent',
+            results: [],
+            usage: {
+              input: 120,
+              output: 30,
+              cacheRead: 10,
+              cacheWrite: 5,
+              cost: 0.02,
+            },
+          },
+        },
+        isError: false,
+      } as any));
+      collect(adapter.adaptEvent({
+        type: 'message_end',
+        message: {
+          role: 'assistant',
+          stopReason: 'stop',
+          content: 'Done',
+          usage: {
+            input: 200,
+            output: 50,
+            cacheRead: 30,
+            cacheWrite: 5,
+            totalTokens: 285,
+            cost: { total: 0.03 },
+          },
+        },
+      } as any));
+
+      expect(collect(adapter.adaptEvent({ type: 'agent_end' } as any))).toEqual([{
+        type: 'complete',
+        usage: {
+          inputTokens: 500,
+          outputTokens: 120,
+          cacheReadTokens: 60,
+          cacheCreationTokens: 20,
+          costUsd: 0.06,
+          contextTokens: 235,
+          contextWindow: undefined,
+        },
+      }]);
+    });
+
     it('should reset turn usage before the next user turn', () => {
       collect(adapter.adaptEvent({
         type: 'message_end',
@@ -1011,6 +1084,52 @@ describe('PiEventAdapter', () => {
       } as any));
 
       expect(events[0].result).toBe('line 1\nline 2\n');
+    });
+
+    it('should replace subagent progress with its final result', () => {
+      collect(adapter.adaptEvent({ type: 'turn_start' } as any));
+      collect(adapter.adaptEvent({
+        type: 'tool_execution_start',
+        toolCallId: 'subagent-progress',
+        toolName: 'subagent',
+        args: { tasks: [{ task: 'inspect', capability: 'read_only' }] },
+      } as any));
+      collect(adapter.adaptEvent({
+        type: 'tool_execution_update',
+        toolCallId: 'subagent-progress',
+        partialResult: {
+          content: [{ type: 'text', text: 'Subagents: 0/1 completed' }],
+        },
+      } as any));
+      collect(adapter.adaptEvent({
+        type: 'tool_execution_update',
+        toolCallId: 'subagent-progress',
+        partialResult: {
+          content: [{ type: 'text', text: 'Subagents: 1/1 completed' }],
+        },
+      } as any));
+
+      const events = collect(adapter.adaptEvent({
+        type: 'tool_execution_end',
+        toolCallId: 'subagent-progress',
+        result: {
+          content: [{ type: 'text', text: '### Task 1 (completed)\nfinal finding' }],
+          details: {
+            kind: 'storyflow-subagent',
+            results: [],
+            usage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              cost: 0,
+            },
+          },
+        },
+        isError: false,
+      } as any));
+
+      expect(events[0].result).toBe('### Task 1 (completed)\nfinal finding');
     });
 
     it('should use description as intent for bash tools', () => {

@@ -24,6 +24,10 @@ import type { AssistantMessage, AssistantMessageEvent } from '@earendil-works/pi
 import { isContextOverflow } from '@earendil-works/pi-ai';
 import { BaseEventAdapter } from '../base-event-adapter.ts';
 import { PI_TOOL_NAME_MAP } from './constants.ts';
+import {
+  isPiSubagentDetails,
+  parsePiSubagentUsage,
+} from './subagent-contract.ts';
 import { toolMetadataStore } from '../../../interceptor-common.ts';
 import { parseError } from '../../errors.ts';
 
@@ -226,6 +230,24 @@ export class PiEventAdapter extends BaseEventAdapter {
           },
         }
       : { type: 'complete' };
+  }
+
+  private addSubagentUsage(details: unknown): void {
+    const usage = parsePiSubagentUsage(details);
+    if (!usage) return;
+    this.turnUsage ??= {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 0,
+      contextTokens: 0,
+    };
+    this.turnUsage.inputTokens += usage.input + usage.cacheRead + usage.cacheWrite;
+    this.turnUsage.outputTokens += usage.output;
+    this.turnUsage.cacheReadTokens += usage.cacheRead;
+    this.turnUsage.cacheCreationTokens += usage.cacheWrite;
+    this.turnUsage.costUsd += usage.cost;
   }
 
   protected onTurnStart(): void {
@@ -513,12 +535,20 @@ export class PiEventAdapter extends BaseEventAdapter {
         const accumulatedOutput = this.consumeOutput(toolCallId);
 
         const resultDetails = event.result && typeof event.result === 'object'
-          ? (event.result as { details?: { isError?: boolean } }).details
+          ? (event.result as {
+              details?: {
+                isError?: boolean;
+                kind?: unknown;
+                usage?: unknown;
+              };
+            }).details
           : undefined;
+        this.addSubagentUsage(resultDetails);
         const isError = event.isError === true || resultDetails?.isError === true;
+        const isSubagentResult = isPiSubagentDetails(resultDetails);
         let result: string;
 
-        if (accumulatedOutput) {
+        if (accumulatedOutput && !isSubagentResult) {
           result = accumulatedOutput;
         } else if (blockReason) {
           result = blockReason;

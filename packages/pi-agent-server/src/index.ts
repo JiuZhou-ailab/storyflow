@@ -102,6 +102,10 @@ import {
 import { createSystemPromptOverride } from './system-prompt-override.ts';
 import { createToolHooks } from './tool-hooks.ts';
 import {
+  createSubagentExtension,
+  type SubagentHookContext,
+} from './subagent-tool.ts';
+import {
   sanitizeAssistantMessageForResume,
   sanitizeSessionFileForResume,
   type PiSessionSanitizeResult,
@@ -290,7 +294,7 @@ let currentPromptAttemptState: PromptAttemptState | null = null;
 // Pending promises for async handshakes
 const pendingPreToolUse = new Map<string, { resolve: (response: { action: string; input?: Record<string, unknown>; reason?: string }) => void }>();
 const pendingToolExecutions = new Map<string, { resolve: (result: { content: string; isError: boolean }) => void }>();
-const toolIntentByCallId = new Map<string, string>();
+const activeSubagentSessions = new Set<AgentSession>();
 
 // Pending session MCP tool calls for completion detection
 const pendingSessionToolCalls = new Map<string, { toolName: string; arguments: Record<string, unknown> }>();
@@ -555,6 +559,12 @@ async function ensureSession(): Promise<AgentSession> {
   if (!initConfig) throw new Error('Cannot create session: init not received');
 
   const cwd = resolvedCwd();
+  const agentDir = initConfig.agentDir
+    || (initConfig.sessionPath ? join(initConfig.sessionPath, '.pi-agent') : getAgentDir());
+  mkdirSync(agentDir, { recursive: true });
+  const piThinkingLevel = THINKING_TO_PI[
+    initConfig.thinkingLevel as keyof typeof THINKING_TO_PI
+  ];
 
   const { authStorage, modelRegistry } = createAuthenticatedRegistry();
   // Store at module scope for set_model handler
@@ -609,10 +619,24 @@ async function ensureSession(): Promise<AgentSession> {
   const allTools = prepareToolDefinitions([...builtinDefs, ...webTools, ...proxyTools]);
   const toolAllowlist = allTools.map(t => t.name);
   systemPromptOverride = createSystemPromptOverride();
-  toolIntentByCallId.clear();
-  const toolHooks = createToolHooks({
-    beforeToolCall: prepareToolInput,
-    afterToolCall: postprocessToolResult,
+  const toolHooks = createSessionToolHooks({
+    getSession: () => piSession,
+    getUserRequest: () => currentUserMessage,
+    intentByCallId: new Map(),
+  });
+  const subagentExtension = createSubagentExtension({
+    cwd,
+    agentDir,
+    authStorage,
+    modelRegistry,
+    thinkingLevel: piThinkingLevel,
+    toolDefinitions: allTools,
+    activeSessions: activeSubagentSessions,
+    createSessionHooks: (context: SubagentHookContext) => createSessionToolHooks({
+      getSession: () => context.session,
+      getUserRequest: () => context.userRequest,
+      intentByCallId: new Map(),
+    }),
   });
   debugLog(`Session tools: ${builtinDefs.length} builtin + ${webTools.length} web + ${proxyTools.length} proxy = ${allTools.length} total`);
 
@@ -623,19 +647,20 @@ async function ensureSession(): Promise<AgentSession> {
     modelRegistry,
     customTools: allTools,
     tools: toolAllowlist,
+    agentDir,
+    ...(piThinkingLevel ? { thinkingLevel: piThinkingLevel } : {}),
   };
 
   // Every session uses the explicit Storyflow ResourceLoader so prompt and
   // permission hooks cannot be bypassed by non-persisted/free contexts.
-  const agentDir = initConfig.agentDir
-    || (initConfig.sessionPath ? join(initConfig.sessionPath, '.pi-agent') : getAgentDir());
-  mkdirSync(agentDir, { recursive: true });
-  sessionOptions.agentDir = agentDir;
-
   const { resourceLoader, settingsManager } = await createProjectResourceLoader({
     cwd,
     agentDir,
-    extensionFactories: [systemPromptOverride.extension, toolHooks],
+    extensionFactories: [
+      systemPromptOverride.extension,
+      toolHooks,
+      subagentExtension,
+    ],
   });
   sessionOptions.resourceLoader = resourceLoader;
   sessionOptions.settingsManager = settingsManager;
@@ -643,6 +668,14 @@ async function ensureSession(): Promise<AgentSession> {
   const extensionToolNames = new Set<string>();
   for (const extension of resourceLoader.getExtensions().extensions) {
     for (const toolName of extension.tools.keys()) {
+      if (
+        toolName === 'subagent'
+        && extension.path !== '<inline:storyflow-subagent>'
+      ) {
+        throw new Error(
+          `Global Extension tool conflicts with the built-in Storyflow subagent: ${extension.path}`,
+        );
+      }
       if (toolAllowlist.includes(toolName)) {
         throw new Error(
           `Global Extension tool conflicts with a Storyflow tool: ${toolName}`,
@@ -732,12 +765,6 @@ async function ensureSession(): Promise<AgentSession> {
     setInterceptorApiHints(undefined);
   }
 
-  // Set thinking level
-  const piThinkingLevel = THINKING_TO_PI[initConfig.thinkingLevel as keyof typeof THINKING_TO_PI];
-  if (piThinkingLevel) {
-    sessionOptions.thinkingLevel = piThinkingLevel;
-  }
-
   // Create the session — tools flow through customTools + allowlist (see comment above).
   const { session } = await createAgentSession(sessionOptions);
   piSession = session;
@@ -755,6 +782,19 @@ async function ensureSession(): Promise<AgentSession> {
 // ============================================================
 // Tool Hooks (Permission Enforcement + Large Response Summarization)
 // ============================================================
+
+interface SessionToolHookState {
+  getSession(): AgentSession | null;
+  getUserRequest(): string;
+  intentByCallId: Map<string, string>;
+}
+
+function createSessionToolHooks(state: SessionToolHookState) {
+  return createToolHooks({
+    beforeToolCall: event => prepareToolInput(event, state.intentByCallId),
+    afterToolCall: event => postprocessToolResult(event, state),
+  });
+}
 
 /**
  * Shared permission enforcement for both coding tools and proxy tools.
@@ -809,7 +849,10 @@ function prepareToolDefinitions(tools: ToolDefinition<any, any>[]): ToolDefiniti
   });
 }
 
-async function prepareToolInput(event: ToolCallEvent): Promise<Record<string, unknown>> {
+async function prepareToolInput(
+  event: ToolCallEvent,
+  intentByCallId: Map<string, string>,
+): Promise<Record<string, unknown>> {
   const sdkToolName = PI_TOOL_NAME_MAP[event.toolName] || event.toolName;
   let input: Record<string, unknown> = { ...event.input };
   const intent = typeof input._intent === 'string' ? input._intent : undefined;
@@ -821,24 +864,27 @@ async function prepareToolInput(event: ToolCallEvent): Promise<Record<string, un
   }
 
   const approvedInput = await requestPreToolUseApproval(sdkToolName, input, event.toolCallId);
-  if (intent) toolIntentByCallId.set(event.toolCallId, intent);
+  if (intent) intentByCallId.set(event.toolCallId, intent);
   return stripCraftMetadata(approvedInput);
 }
 
-async function postprocessToolResult(event: ToolResultEvent): Promise<{
+async function postprocessToolResult(
+  event: ToolResultEvent,
+  state: SessionToolHookState,
+): Promise<{
   content?: (PiTextContent | PiImageContent)[];
   details?: unknown;
   isError?: boolean;
 } | void> {
-  const intent = toolIntentByCallId.get(event.toolCallId);
-  toolIntentByCallId.delete(event.toolCallId);
+  const intent = state.intentByCallId.get(event.toolCallId);
+  state.intentByCallId.delete(event.toolCallId);
   if (event.isError) return;
 
   const resultText = event.content
     .filter((content): content is PiTextContent => content.type === 'text')
     .map(content => content.text)
     .join('');
-  const modelContextWindow = piSession?.agent.state.model?.contextWindow;
+  const modelContextWindow = state.getSession()?.agent.state.model?.contextWindow;
   if (estimateTokens(resultText) <= tokenLimitFor(modelContextWindow) || !initConfig) {
     return;
   }
@@ -852,7 +898,7 @@ async function postprocessToolResult(event: ToolResultEvent): Promise<{
         toolName: sdkToolName,
         input: event.input,
         intent,
-        userRequest: currentUserMessage,
+        userRequest: state.getUserRequest(),
       },
       summarize: runMiniCompletion,
       contextWindow: modelContextWindow,
@@ -1304,6 +1350,8 @@ function handleSessionEvent(event: AgentSessionEvent): void {
 // ============================================================
 
 async function handleInit(msg: Extract<InboundMessage, { type: 'init' }>): Promise<void> {
+  await abortActiveSubagentSessions();
+
   // Clean up any existing session from a previous init
   if (piSession) {
     if (unsubscribeEvents) {
@@ -1480,12 +1528,25 @@ function handlePreToolUseResponse(msg: Extract<InboundMessage, { type: 'pre_tool
   }
 }
 
+async function abortActiveSubagentSessions(): Promise<void> {
+  await Promise.allSettled(
+    [...activeSubagentSessions].map(session => session.abort()),
+  );
+}
+
 async function handleAbort(): Promise<void> {
-  if (piSession) {
-    try {
-      await piSession.abort();
-    } catch (error) {
-      debugLog(`Abort failed: ${error instanceof Error ? error.message : String(error)}`);
+  const sessions = [
+    ...(piSession ? [piSession] : []),
+    ...activeSubagentSessions,
+  ];
+  const results = await Promise.allSettled(
+    sessions.map(session => session.abort()),
+  );
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      debugLog(
+        `Abort failed: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
+      );
     }
   }
 
@@ -1707,6 +1768,8 @@ async function handleSetThinkingLevel(msg: Extract<InboundMessage, { type: 'set_
 
 function handleShutdown(): void {
   debugLog('Shutdown requested');
+
+  void abortActiveSubagentSessions();
 
   // Unsubscribe events
   if (unsubscribeEvents) {

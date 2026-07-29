@@ -44,6 +44,14 @@ _Avoid_: Shared conversation, synchronized history
 The single shared Agent implementation used by every Runtime Domain; domain differences come from the resolved Workspace rather than separate Agent systems.
 _Avoid_: Free-conversation system, project Agent
 
+**Subagent Run**:
+An isolated, temporary execution of the Agent Kernel that returns one result to its parent Conversation without owning persistent history.
+_Avoid_: Child Session, background Session, specialized persona
+
+**Capability Profile**:
+A Host-enforced fixed tool set assigned to a Subagent Run independently of its context, lifecycle, and scheduling.
+_Avoid_: Agent role, persona, prompt-only permission
+
 **Runtime Workspace**:
 The existing Workspace resolved from one workspace id. It binds history, default working directory, navigation identity, and the resource view without a parallel owner or context wrapper.
 _Avoid_: Runtime context wrapper, navigation identity
