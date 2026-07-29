@@ -1,77 +1,62 @@
-# Adaptation policy
+# 改编策略
 
-## Non-negotiable story truth
+## 故事事实
 
-Preserve the source's main causality, character relationships, key reversals,
-necessary dialogue, character choices, names, places, institutions, and
-important props. Add only connective action, staging, performance detail, and
-small transitions that do not change motivation or outcome.
+保留原作的主要因果、人物关系、关键反转、必要对白、人物选择，以及姓名、地点、
+机构和重要道具。只允许补充不改变动机或结果的衔接动作、调度、表演细节和小型转场。
 
-Keep labels explicit and stable. Scene character lists and speaker labels use
-names or clear identities, never pronouns such as “我、你、他、她”. Dialogue
-content keeps the character's natural pronouns and forms of address.
+标签必须明确且稳定。场景人物表和说话人标签使用姓名或清晰身份；对白内容保留
+人物自然的代词和称谓。
 
-## Production target
+## 制作目标
 
-Write an executable live-action vertical-screen screenplay:
+创作可直接执行的真人竖屏短剧剧本：
 
-- identify location, interior/exterior, time, characters, and core action for
-  every scene;
-- prefer no more than three scenes per episode;
-- split scenes only for meaningful location, time, or dramatic-function
-  changes;
-- externalize thought and exposition through action, expression, silence,
-  props, blocking, dialogue, OS, or VO;
-- advance each scene through pressure → reaction → choice/action → consequence;
-- end with a visible consequence, unresolved pressure, decision, revelation,
-  or danger.
+- 每个场景都要明确地点、内外景、时间、人物和核心动作；
+- 每集尽量不超过三个场景；
+- 只有地点、时间或戏剧功能发生实质变化时才切场；
+- 通过动作、表情、沉默、道具、调度、对白、OS 或 VO，把心理和说明外化；
+- 每场按“压力 → 反应 → 选择/行动 → 后果”推进；
+- 结尾必须落在可见后果、未解决压力、决定、揭示或危险上。
 
-Dialogue should arise from the character's immediate goal, concealment, test,
-attack, or defense. Preserve voice and subtext.
+对白应源于人物当下的目标、隐瞒、试探、攻击或防御，并保留人物声音和潜台词。
 
-## Conversion modes
+## 转换模式
 
-Count visible screenplay characters, excluding Markdown syntax and blank lines.
-Source-grounded causality takes priority over an exact target.
+统计剧本可见字符时，排除 Markdown 语法和空行。忠于原作的因果完整性优先于
+精确字数目标。
 
 ### compact
 
-- Target: about 25–35% of source characters.
-- Hard maximum: about 40%.
-- Keep the main causal chain, relationship changes, key reversals, necessary
-  dialogue, hooks, and choices.
-- Merge or remove repeated emotion, weak setup, idle talk, decorative
-  description, and nonessential branches.
+- 目标：约为原文字符数的 25%–35%。
+- 硬上限：约 40%。
+- 保留主要因果链、关系变化、关键反转、必要对白、钩子和选择。
+- 合并或删除重复情绪、薄弱铺垫、闲聊、装饰性描写和非必要支线。
 
 ### aligned
 
-- Target: about 55–65%.
-- Hard maximum: about 70%.
-- Preserve facts and event order while compressing by dramatic function.
-- Retain motivation and emotional turns even when prose is condensed.
+- 目标：约为原文字符数的 55%–65%。
+- 硬上限：约 70%。
+- 保留事实和事件顺序，按戏剧功能压缩。
+- 即使压缩文字，也要保留人物动机和情绪转折。
 
 ### rich
 
-- Target floor: up to 1,000 characters or the source length when shorter.
-- Hard maximum: about 120%.
-- Add only necessary staging, shots, action, reactions, and natural dialogue
-  around existing events.
-- Do not create new plot events merely to increase length.
+- 目标下限：最多 1,000 字；原文不足 1,000 字时，以原文长度为下限。
+- 硬上限：约为原文字符数的 120%。
+- 只围绕既有事件补充必要调度、镜头、动作、反应和自然对白。
 
-## Episode drafting checklist
+## 分集创作检查表
 
-Before writing:
+创作前：
 
-1. Identify this episode's trigger, pressure, central choice, reversal, result,
-   and ending hook.
-2. Identify facts that must carry in from `continuity.md`.
-3. Identify facts or hooks this episode changes.
+1. 明确本集的触发事件、压力、核心选择、反转、结果和结尾钩子。
+2. 明确必须从 `continuity.md` 延续的事实。
+3. 明确本集改变了哪些事实或伏笔。
 
-After writing:
+创作后：
 
-1. Verify every material beat traces to the source.
-2. Verify every scene changes situation, relationship, information, goal, or
-   risk.
-3. Verify the ending was prepared earlier in the episode.
-4. Verify names, knowledge, locations, objects, injuries, and timing against
-   global state.
+1. 确认每个重要节拍都能追溯到原文。
+2. 确认每个场景都改变了局势、关系、信息、目标或风险。
+3. 确认结尾在本集前文已有铺垫。
+4. 对照全局状态核对姓名、认知、地点、物品、伤势和时间。

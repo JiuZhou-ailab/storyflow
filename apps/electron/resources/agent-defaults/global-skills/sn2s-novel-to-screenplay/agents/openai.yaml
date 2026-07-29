@@ -1,4 +1,4 @@
 interface:
-  display_name: "SN2S 小说转剧本"
+  display_name: "小说转剧本"
   short_description: "直接在 Storyflow 中把小说转换为可校验、可回滚的分集剧本"
-  default_prompt: "Use $sn2s-novel-to-screenplay to convert this local novel into a complete episodic screenplay project."
+  default_prompt: "使用 $sn2s-novel-to-screenplay 将这部本地小说转换为完整的分集剧本项目。"

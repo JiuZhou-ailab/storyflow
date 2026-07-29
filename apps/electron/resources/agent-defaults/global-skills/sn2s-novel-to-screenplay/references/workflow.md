@@ -1,39 +1,36 @@
-# Local novel-to-screenplay workflow
+# 本地小说转剧本工作流
 
-## Contents
+## 目录
 
-- Responsibility boundary
-- Project layout
-- Lifecycle
-- Story state
-- Decision rules
-- Recovery
-- Acceptance
+- 职责边界
+- 项目结构
+- 生命周期
+- 故事状态
+- 决策规则
+- 恢复
+- 验收
 
-## Responsibility boundary
+## 职责边界
 
-The current Storyflow Agent performs the reasoning:
+当前 Storyflow Agent 负责推理：
 
-- whole-story understanding;
-- character and relationship extraction;
-- adaptation decisions;
-- per-episode screenplay drafting;
-- semantic causality and continuity review.
+- 理解完整故事；
+- 提取人物与关系；
+- 作出改编决策；
+- 逐集创作剧本；
+- 审查语义因果与连续性。
 
-The bundled `scripts/screenplay_project.py` performs deterministic local work:
+内置的 `scripts/screenplay_project.py` 负责确定性本地工作：
 
-- source normalization and author-heading-first splitting;
-- project state creation;
-- screenplay format validation;
-- local checkpoints and confirmed restore;
-- final merge.
+- 规范化源文件，并优先按作者标题分集；
+- 创建项目状态；
+- 校验剧本格式；
+- 创建本地检查点并执行已确认的恢复；
+- 最终合并。
 
-Nothing in this workflow requires an SN2S service, URL, token, database, Redis,
-or external model API. Storyflow's current model is the writer.
+## 项目结构
 
-## Project layout
-
-`prepare` creates:
+`prepare` 创建：
 
 ```text
 <project>/
@@ -51,106 +48,95 @@ or external model API. Storyflow's current model is the writer.
 └── full-screenplay.md
 ```
 
-`project.json` is the resume index. Source bodies live in `episodes/`; generated
-scripts live in `scripts/`. Do not copy full source bodies into the state file.
+`project.json` 是续作索引。原文分集位于 `episodes/`，生成剧本位于 `scripts/`，
+状态文件只保存故事元数据和连续性。
 
-## Lifecycle
+## 生命周期
 
 ```text
-local novel
-  -> extract text when needed
-  -> deterministic prepare and split
-  -> global story metadata
-  -> continuity ledger
-  -> draft one episode
-  -> deterministic validation
-  -> semantic causality/continuity review
-  -> update continuity
-  -> repeat
-  -> validate all
-  -> merge
+本地小说
+  -> 按需提取文本
+  -> 确定性准备与分集
+  -> 全局故事元数据
+  -> 连续性台账
+  -> 创作一集
+  -> 确定性校验
+  -> 语义因果与连续性审查
+  -> 更新连续性
+  -> 重复
+  -> 校验全部分集
+  -> 合并
 ```
 
-The split is author-structure-first:
+分集优先遵循作者结构：
 
-1. Prefer explicit chapter, episode, part, act, prologue, and epilogue markers.
-2. Use repeated Markdown headings when explicit markers are absent.
-3. Fall back to paragraph chunks of at most roughly 3,000 characters or 50
-   lines.
-4. Locally subdivide only structured chapters above 20,000 characters.
+1. 优先使用明确的章、集、节、幕、序章和尾声标记。
+2. 没有明确标记时，使用重复的 Markdown 标题。
+3. 再无标题时，回退为每块约不超过 3,000 字或 50 行的段落分块。
+4. 只有结构化章节超过 20,000 字时，才在本地进一步拆分。
 
-This preserves author boundaries without making an external model invent a
-regular expression.
+这样可以保留作者边界。
 
-## Story state
+## 故事状态
 
-Fill `story-metadata.md` once, then correct it only from source evidence. Include:
+首次填写 `story-metadata.md` 后，只能依据原文证据修正。内容包括：
 
-- title and premise;
-- whole-story causality;
-- genre, audience, era, and world rules;
-- recurring locations and important objects;
-- main characters: identity, goal, pressure, relationships, speech pattern,
-  and non-negotiable facts.
+- 标题与故事前提；
+- 全篇因果；
+- 题材、受众、时代和世界规则；
+- 反复出现的地点与重要物品；
+- 主要人物的身份、目标、压力、关系、说话方式和不可更改事实。
 
-Maintain `continuity.md` after each valid episode:
+每个有效分集完成后维护 `continuity.md`：
 
-- established facts;
-- current character goals and knowledge;
-- relationship changes;
-- injuries, possessions, locations, and time progression;
-- unresolved hooks;
-- a short episode result summary.
+- 已确立事实；
+- 人物当前目标与认知；
+- 关系变化；
+- 伤势、持有物、地点和时间进展；
+- 未解决伏笔；
+- 简短的分集结果摘要。
 
-Later episodes must use this state, but source text wins when state and source
-conflict.
+后续分集必须使用这些状态；状态与原文冲突时，以原文为准。
 
-## Decision rules
+## 决策规则
 
-- Complete novel plus final file requested: continue through merge.
-- Split inspection requested: stop after `prepare`.
-- Selected episodes requested: draft and validate only those entries.
-- Existing valid episode: keep it unless revision is explicit.
-- Existing invalid episode: repair the smallest failing portion.
-- Output directory or merged file already exists: stop and ask for a new path
-  or explicit overwrite direction; bundled scripts do not overwrite it.
+- 用户要求转换完整小说并交付最终文件：继续执行到合并。
+- 用户要求检查分集：在 `prepare` 后停止。
+- 用户只要求指定分集：只创作并校验对应条目。
+- 已有有效分集：除非用户明确要求修订，否则保留。
+- 已有无效分集：只修复最小失败部分。
+- 输出目录或合并文件已存在：使用新路径；需要覆盖时先取得明确确认。
 
-## Revision lifecycle
+## 修订生命周期
 
-Before editing an existing script:
+编辑已有剧本前：
 
-1. Create a checkpoint.
-2. Read the current file.
-3. Prepare and show an exact diff.
-4. Obtain confirmation.
-5. Apply the smallest change.
-6. Validate format and semantics.
-7. Update continuity only if story state changed.
+1. 创建检查点。
+2. 读取当前文件。
+3. 准备并展示准确 diff。
+4. 获得确认。
+5. 应用最小修改。
+6. 校验格式与语义。
+7. 只有故事状态发生变化时才更新连续性。
 
-Restore is a separate confirmed action. Never delete version snapshots
-automatically.
+恢复版本是独立的确认操作，并保留版本快照。
 
-## Recovery
+## 恢复
 
-- Extraction failure: keep the source untouched and report the format/page that
-  could not be read.
-- Split is implausible: show titles and sizes; adjust only the local split
-  inputs or prepare from a corrected extracted text file.
-- Episode validation failure: preserve the file, report diagnostics, and repair
-  that episode.
-- Semantic conflict: cite both source passages, pause affected episodes, and
-  reconcile global state before proceeding.
-- Interrupted run: inspect `project.json`; continue pending or invalid entries.
-- Merge failure: repair missing or invalid episodes; do not emit a partial file
-  as complete.
+- 提取失败：保持源文件不变，报告无法读取的格式或页码。
+- 分集不合理：展示标题和大小；只调整本地分集输入，或使用修正后的提取文本重新准备。
+- 分集校验失败：保留文件，报告诊断并修复该集。
+- 语义冲突：引用双方原文，暂停受影响分集，协调全局状态后再继续。
+- 运行中断：检查 `project.json`，继续处理 `pending` 或 `invalid` 条目。
+- 合并失败：修复缺失或无效分集，只有完整文件才能标记为完成。
 
-## Acceptance
+## 验收
 
-A complete conversion requires:
+完整转换必须满足：
 
-1. `project.json` exists and describes every episode.
-2. `story-metadata.md` and `continuity.md` contain source-grounded state.
-3. Every episode script exists.
-4. Every episode passes deterministic format validation.
-5. Cross-episode causality and continuity review passes.
-6. `full-screenplay.md` exists and is non-empty.
+1. `project.json` 存在并描述所有分集。
+2. `story-metadata.md` 和 `continuity.md` 包含基于原文的状态。
+3. 每个分集剧本都存在。
+4. 每个分集都通过确定性格式校验。
+5. 通过跨集因果与连续性审查。
+6. `full-screenplay.md` 存在且非空。

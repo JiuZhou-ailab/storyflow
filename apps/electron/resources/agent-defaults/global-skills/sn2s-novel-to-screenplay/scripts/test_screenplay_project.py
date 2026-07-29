@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# input: Bundled local screenplay project helper
-# output: Runnable checks for splitting, validation, versioning, and merge
-# pos: Minimal regression test for the self-contained Storyflow workflow
+# input: 内置本地剧本项目辅助脚本
+# output: 分集、校验、版本管理和合并的可运行检查
+# pos: Storyflow 小说转剧本自包含工作流的最小回归测试
 
 from __future__ import annotations
 
@@ -138,6 +138,14 @@ class ScreenplayProjectTest(unittest.TestCase):
             )
             self.assertEqual(result["mode"], "rich")
             self.assertGreaterEqual(result["episode_count"], 1)
+
+    def test_cli_help_is_chinese(self) -> None:
+        help_text = screenplay_project.build_parser().format_help()
+        self.assertIn("用法：", help_text)
+        self.assertIn("位置参数", help_text)
+        self.assertIn("选项", help_text)
+        self.assertIn("显示帮助并退出", help_text)
+        self.assertNotIn("positional arguments", help_text)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# input: Local novel text or DOCX files plus a screenplay project directory
-# output: Deterministic episode splits, validation reports, versions, and merged screenplays
-# pos: Local standard-library helper for the self-contained Storyflow novel-to-screenplay Skill
+# input: 本地小说文本或 DOCX 文件，以及剧本项目目录
+# output: 确定性分集、校验报告、版本快照和合并剧本
+# pos: Storyflow 小说转剧本 Skill 的本地标准库辅助脚本
 
 from __future__ import annotations
 
@@ -48,6 +48,21 @@ DIALOGUE = re.compile(
 
 class ProjectError(Exception):
     pass
+
+
+class ChineseArgumentParser(argparse.ArgumentParser):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs["add_help"] = False
+        super().__init__(*args, **kwargs)
+        self.add_argument("-h", "--help", action="help", help="显示帮助并退出")
+        self._positionals.title = "位置参数"
+        self._optionals.title = "选项"
+
+    def format_usage(self) -> str:
+        return super().format_usage().replace("usage:", "用法：", 1)
+
+    def format_help(self) -> str:
+        return super().format_help().replace("usage:", "用法：", 1)
 
 
 def _read_text(path: Path) -> str:
@@ -540,29 +555,29 @@ def merge(project_dir: Path, output: Path | None = None) -> dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Manage a local Storyflow screenplay project.")
+    parser = ChineseArgumentParser(description="管理本地 Storyflow 小说转剧本项目。")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    prepare_parser = subparsers.add_parser("prepare", help="Normalize and split a local novel.")
+    prepare_parser = subparsers.add_parser("prepare", help="规范化本地小说并确定性分集。")
     prepare_parser.add_argument("source")
     prepare_parser.add_argument("project_dir")
     prepare_parser.add_argument("--mode", choices=MODES, default="compact")
 
-    validate_parser = subparsers.add_parser("validate", help="Validate one generated episode.")
+    validate_parser = subparsers.add_parser("validate", help="校验一个已生成分集。")
     validate_parser.add_argument("project_dir")
     validate_parser.add_argument("episode", type=int)
 
-    checkpoint_parser = subparsers.add_parser("checkpoint", help="Snapshot one episode script.")
+    checkpoint_parser = subparsers.add_parser("checkpoint", help="为一个分集剧本创建快照。")
     checkpoint_parser.add_argument("project_dir")
     checkpoint_parser.add_argument("episode", type=int)
 
-    restore_parser = subparsers.add_parser("restore", help="Restore one local episode version.")
+    restore_parser = subparsers.add_parser("restore", help="恢复一个本地分集版本。")
     restore_parser.add_argument("project_dir")
     restore_parser.add_argument("episode", type=int)
     restore_parser.add_argument("version")
     restore_parser.add_argument("--yes", action="store_true")
 
-    merge_parser = subparsers.add_parser("merge", help="Validate and merge every episode.")
+    merge_parser = subparsers.add_parser("merge", help="校验并合并全部分集。")
     merge_parser.add_argument("project_dir")
     merge_parser.add_argument("--output")
     return parser

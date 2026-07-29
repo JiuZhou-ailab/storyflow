@@ -1,57 +1,51 @@
 ---
 name: sn2s-novel-to-screenplay
-description: Convert local TXT, Markdown, DOCX, or PDF novels directly inside Storyflow into resumable episodic vertical-screen screenplays, including deterministic splitting, story metadata, character continuity, per-episode drafting, validation, revision checkpoints, rollback, and final merge. Use whenever a user asks to turn a novel into a screenplay, short-drama scripts, episodic scripts, selected episode rewrites, or a complete screenplay project, even if they do not mention SN2S. This Skill requires no external SN2S server, backend URL, API token, or separate model configuration.
+description: 直接在 Storyflow 中将本地 TXT、Markdown、DOCX 或 PDF 小说转换为可续作的分集竖屏短剧剧本，涵盖确定性分集、故事元数据、人物连续性、逐集创作、校验、修订检查点、回滚与最终合并。用户要求把小说转换成剧本、短剧剧本、分集剧本、改写指定集或建立完整剧本项目时，都使用此 Skill，即使未提及 SN2S。
+metadata: { displayName: 小说转剧本 }
 ---
 
-# SN2S Novel to Screenplay
+# 小说转剧本
 
-Run the SN2S method entirely in the current Storyflow Agent. Use the current
-model for analysis and screenplay writing, and use the bundled local helper
-only for deterministic file operations.
+在当前 Storyflow Agent 内完整执行 SN2S 方法。使用当前模型分析小说和创作剧本，
+内置本地辅助脚本只负责确定性文件操作。
 
-Do not ask for `SN2S_BASE_URL`, `SN2S_TOKEN`, a remote service, or another
-model API key. Do not call an external SN2S backend.
+## 加载方法
 
-## Load the method
+按需读取：
 
-Read:
+- 准备或恢复项目前，读取 `references/workflow.md`。
+- 创作或修订剧本前，读取 `references/adaptation-policy.md`。
+- 创作、校验或合并前，读取 `references/screenplay-format.md`。
 
-- `references/workflow.md` before preparing or resuming a project.
-- `references/adaptation-policy.md` before drafting or revising screenplay text.
-- `references/screenplay-format.md` before drafting, validating, or merging.
+所有内置路径都相对于本 Skill 目录解析。
 
-Resolve all bundled paths relative to this Skill directory.
+## 使用本地辅助脚本
 
-## Use the local helper
-
-The helper uses only the Python standard library and never accesses the
-network:
+辅助脚本使用 Python 标准库：
 
 ```bash
 python3 scripts/screenplay_project.py --help
 ```
 
-Use any available Python 3 interpreter. The helper owns normalization,
-deterministic splitting, format checks, local version snapshots, rollback, and
-merge. The Agent owns story understanding and screenplay writing.
+使用任意可用的 Python 3 解释器。辅助脚本负责规范化、确定性分集、格式检查、
+本地版本快照、回滚与合并；Agent 负责理解故事和创作剧本。
 
-## Resolve the request
+## 明确请求
 
-Require only:
+只需要：
 
-1. A source novel path.
-2. An output directory, or default to `<source-stem>-screenplay` beside the
-   source.
-3. A conversion mode. Default to `compact` when the user does not choose:
-   `compact`, `aligned`, or `rich`.
+1. 小说源文件路径。
+2. 输出目录；未指定时，默认使用源文件旁的 `<source-stem>-screenplay`。
+3. 转换模式；用户未选择时默认使用 `compact`。可选值为 `compact`、`aligned`
+   或 `rich`。
 
-Do not ask the user for choices that already have safe defaults.
+直接采用上述默认值。
 
-Keep the source file intact. Never paste a full novel into chat.
+保持源文件不变；处理长篇内容时始终通过文件读取。
 
-## Prepare the project
+## 准备项目
 
-For TXT, Markdown, or DOCX:
+对于 TXT、Markdown 或 DOCX：
 
 ```bash
 python3 scripts/screenplay_project.py prepare \
@@ -60,134 +54,117 @@ python3 scripts/screenplay_project.py prepare \
   --mode compact
 ```
 
-For PDF, use Storyflow's normal document-reading capability to extract the
-text into a temporary UTF-8 `.txt` file, then pass that file to `prepare`.
-This is a local host operation; do not ask the user to install a PDF package
-or configure a service.
+对于 PDF，使用 Storyflow 常规文档读取能力把文本提取到临时 UTF-8 `.txt`
+文件，再把该文件交给 `prepare`。
 
-The helper refuses to overwrite a non-empty output directory. Preserve that
-guard. Read the returned `project.json` and report the detected split method,
-episode count, indexes, and titles.
+辅助脚本拒绝覆盖非空输出目录，必须保留这一保护。读取返回的 `project.json`，
+报告识别出的分集方式、集数、索引和标题。
 
-If the user asks to inspect or approve the split, stop here. Otherwise continue
-through the complete conversion.
+如果用户要求检查或确认分集，就在这里停止；否则继续完成完整转换。
 
-## Build global story state
+## 建立全局故事状态
 
-Fill `story-metadata.md` from the prepared source:
+根据准备好的源文件填写 `story-metadata.md`：
 
-- title;
-- concise whole-story summary;
-- genre and intended audience;
-- world rules, era, and recurring locations;
-- principal characters with identity, goal, conflict, speech pattern, and
-  relationships.
+- 标题；
+- 简洁的全篇故事梗概；
+- 题材与目标受众；
+- 世界规则、时代和反复出现的地点；
+- 主要人物的身份、目标、冲突、说话方式和关系。
 
-Fill `continuity.md` with confirmed facts, character states, relationship
-changes, unresolved hooks, and one concise summary per completed episode.
+在 `continuity.md` 中记录已确认事实、人物状态、关系变化、未解决伏笔，
+以及每个已完成分集的简要摘要。
 
-For a source too large to fit at once, process the prepared episode files in
-order and merge facts into these two files. Treat source text as truth. Mark
-uncertain facts instead of inventing them.
+如果源文件过大，无法一次放入上下文，就按顺序处理准备好的分集文件，并把事实
+合并到这两个文件中。以原文为事实来源；不确定的事实明确标注为待确认。
 
-## Draft episodes
+## 创作分集
 
-For each entry in `project.json`:
+对 `project.json` 中的每个条目：
 
-1. Read its `source_path`, `story-metadata.md`, and `continuity.md`.
-2. Draft the corresponding `script_path` using
-   `references/screenplay-format.md`.
-3. Apply the selected mode from `references/adaptation-policy.md`.
-4. Preserve main causality, character relationships, key reversals, necessary
-   dialogue, names, places, institutions, and important props.
-5. Update `continuity.md` with the episode outcome and remaining hooks.
-6. Validate the episode:
+1. 读取它的 `source_path`、`story-metadata.md` 和 `continuity.md`。
+2. 按 `references/screenplay-format.md` 创作对应的 `script_path`。
+3. 应用 `references/adaptation-policy.md` 中选定的模式。
+4. 保留主要因果、人物关系、关键反转、必要对白，以及姓名、地点、机构和重要道具。
+5. 用本集结果和遗留伏笔更新 `continuity.md`。
+6. 校验本集：
 
 ```bash
 python3 scripts/screenplay_project.py validate PROJECT_DIR EPISODE_INDEX
 ```
 
-Fix validation errors before continuing. Treat length warnings as a review
-signal: causality and necessary context take priority over exact ratios.
+继续前修复所有校验错误。长度警告只作为审查信号：因果完整和必要上下文优先于
+精确比例。
 
-Draft sequentially by default because continuity is more valuable than raw
-parallelism. For a long project, small parallel batches are acceptable only
-after global metadata exists; give every worker the same metadata, the exact
-episode source, and adjacent episode summaries, then perform a cross-episode
-continuity pass.
+默认按顺序创作，因为连续性比单纯并行更重要。长项目只有在全局元数据建立后，
+才可采用小批量并行；每个 worker 都必须获得相同元数据、准确的本集原文和相邻集
+摘要，随后再执行跨集连续性审查。
 
-Do not claim an episode is complete until its local validation status is
-`valid` and the semantic review in `references/screenplay-format.md` passes.
+只有本地校验状态为 `valid`，且通过 `references/screenplay-format.md` 中的
+语义审查后，才能声称本集完成。
 
-## Merge the complete screenplay
+## 合并完整剧本
 
-After every episode is valid:
+所有分集都有效后：
 
 ```bash
 python3 scripts/screenplay_project.py merge PROJECT_DIR
 ```
 
-The helper validates every episode again and writes `full-screenplay.md`. It
-refuses partial or invalid projects and refuses to overwrite an existing
-merged file.
+辅助脚本会再次校验每一集并写入 `full-screenplay.md`。它拒绝合并不完整或
+无效的项目，也拒绝覆盖已有合并文件。
 
-Confirm that the merged file exists and is non-empty before reporting
-completion.
+报告完成前，确认合并文件存在且非空。
 
-## Revise and roll back
+## 修订与回滚
 
-Before changing an existing episode, create a local checkpoint:
+修改已有分集前，先创建本地检查点：
 
 ```bash
 python3 scripts/screenplay_project.py checkpoint PROJECT_DIR EPISODE_INDEX
 ```
 
-Read the current episode, show the exact proposed diff, and obtain confirmation
-before writing. Validate after the edit.
+读取当前分集，展示准确的拟议 diff，获得确认后再写入；编辑后重新校验。
 
-To restore a prior version:
+恢复旧版本时：
 
-1. Show the exact version path and target episode.
-2. Obtain separate confirmation.
-3. Run:
+1. 展示准确的版本路径和目标分集。
+2. 单独获得确认。
+3. 运行：
 
 ```bash
 python3 scripts/screenplay_project.py restore \
   PROJECT_DIR EPISODE_INDEX VERSION_PATH --yes
 ```
 
-`--yes` records that confirmation already happened; it does not replace the
-conversation step. The helper checkpoints the current file before restoring
-and validates the restored episode.
+`--yes` 只表示已经完成确认，不能替代对话确认步骤。辅助脚本会在恢复前为当前
+文件创建检查点，并校验恢复后的分集。
 
-## Resume and recover
+## 续作与恢复
 
-Use `project.json` as the resume index:
+使用 `project.json` 作为续作索引：
 
-- `pending`: not drafted;
-- `invalid`: drafted but needs repair;
-- `valid`: format-valid and eligible for merge.
+- `pending`：尚未创作；
+- `invalid`：已经创作，但需要修复；
+- `valid`：格式有效，可以合并。
 
-Keep successful episode files when another episode fails. Resume only pending
-or invalid episodes. Do not restart or overwrite the whole project.
+某一集失败时，保留其他成功分集，只继续处理 `pending` 或 `invalid` 分集。
 
-If story facts conflict, stop the affected episode, cite the competing source
-passages, update `continuity.md` after resolving the conflict, and revalidate
-only affected scripts.
+如果故事事实冲突，暂停受影响分集，引用相互冲突的原文；解决冲突并更新
+`continuity.md` 后，只重新校验受影响的剧本。
 
-## Completion report
+## 完成报告
 
 Return:
 
 ```text
 小说转剧本
-- 项目目录：<absolute project path>
+- 项目目录：<项目绝对路径>
 - 模式：<compact|aligned|rich>
 - 分集：<count>
 - 已通过校验：<count>/<count>
-- 完整剧本：<absolute full-screenplay.md path>
-- 待处理：<only when something remains>
+- 完整剧本：<full-screenplay.md 绝对路径>
+- 待处理：<仅在仍有未完成事项时填写>
 ```
 
-Lead with the output path. Do not dump the source novel or complete screenplay
-into chat.
+先给出输出路径，正文保留在结果文件中。

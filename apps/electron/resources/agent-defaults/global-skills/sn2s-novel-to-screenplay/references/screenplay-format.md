@@ -1,8 +1,8 @@
-# Screenplay format and quality contract
+# 剧本格式与质量契约
 
-## Exact Markdown form
+## 准确的 Markdown 格式
 
-Write each `scripts/NNN.md` as:
+每个 `scripts/NNN.md` 都按以下格式编写：
 
 ```markdown
 # 第 1 集｜本集标题
@@ -22,85 +22,78 @@ Write each `scripts/NNN.md` as:
 旁白 [VO]：三年前，她也是在这样的雨夜离开。
 ```
 
-Rules:
+规则：
 
-- Use `# 第 N 集｜标题` once.
-- Use `## N-M 地点 内/外 时间` for each scene.
-- Number scenes consecutively from `N-1`.
-- Put `人物：` immediately after each scene heading.
-- Start visible action with `▲`.
-- Write dialogue as `角色（可选语气）：台词`.
-- Use `[OS]` only for the character's unspoken immediate thought.
-- Use `[VO]` for narration, remembered narration, telephone/radio/recording
-  heard off screen, or another non-immediate-thought voice.
-- Keep ordinary spoken dialogue unmarked.
-- Use `【闪回】` and `【闪出】` as paired standalone lines.
+- 全文只使用一次 `# 第 N 集｜标题`。
+- 每个场景使用 `## N-M 地点 内/外 时间`。
+- 场号从 `N-1` 开始连续编号。
+- 每个场景标题后立即写 `人物：`。
+- 可见动作以 `▲` 开头。
+- 对白写成 `角色（可选语气）：台词`。
+- `[OS]` 只用于人物未说出口的即时想法。
+- `[VO]` 用于旁白、回忆旁白、画外听到的电话/广播/录音，或其他非即时想法的声音。
+- 普通口语对白不加标记。
+- `【闪回】` 和 `【闪出】` 必须成对，且各自独占一行。
 
-Speaker and scene-character labels use explicit names or identities. They must
-not be “我、你、他、她、它” or other pronouns. Non-named groups use stable
-numbered labels such as `工作人员1`.
+说话人和场景人物标签使用明确姓名或身份。无名群体使用 `工作人员1` 这类稳定
+编号标签。
 
-Dialogue text is different from its label: keep natural “我、你” and forms of
-address inside the spoken content.
+对白正文不同于标签；对白中保留自然的“我、你”和称谓。
 
-## Deterministic validation
+## 确定性校验
 
-Run:
+运行：
 
 ```bash
 python3 scripts/screenplay_project.py validate PROJECT_DIR EPISODE_INDEX
 ```
 
-The validator checks:
+校验器检查：
 
-- episode and scene numbering;
-- required scene headings and character lists;
-- action/dialogue placement;
-- speaker membership in the scene;
-- pronoun speaker labels;
-- paired flashback markers;
-- conversion-mode length budget.
+- 集号与场号；
+- 必需的场景标题和人物表；
+- 动作与对白的位置；
+- 说话人是否属于本场人物；
+- 使用代词的说话人标签；
+- 成对的闪回标记；
+- 转换模式的长度预算。
 
-Fix every `error`. Review each `warning`; a length warning may remain when
-necessary causality or context justifies it.
+修复所有 `error`。逐条审查 `warning`；如果必要因果或上下文确有需要，可以保留
+长度警告。
 
-## Semantic review
+## 语义审查
 
-The local validator cannot judge story truth. Review manually:
+本地校验器无法判断故事事实，必须人工审查：
 
-### Causality
+### 因果
 
-- Every choice has a visible pressure or motive.
-- Every reversal has setup.
-- Every consequence follows an action or revelation.
-- Removed prose did not remove a required causal bridge.
+- 每个选择都有可见压力或动机。
+- 每个反转都有铺垫。
+- 每个后果都源于行动或揭示。
+- 删除原文时没有删掉必要的因果桥梁。
 
-### Character continuity
+### 人物连续性
 
-- Goals, knowledge, relationships, injuries, possessions, locations, and
-  speech patterns agree with `continuity.md`.
-- A character does not know information before learning it.
-- Names and identity labels remain stable.
+- 目标、认知、关系、伤势、持有物、地点和说话方式与 `continuity.md` 一致。
+- 人物不会提前知道尚未获得的信息。
+- 姓名和身份标签保持稳定。
 
-### Shootability
+### 可拍摄性
 
-- Internal narration has been externalized where possible.
-- Actions are playable and visible.
-- Scenes do not exist only to restate information.
-- Locations and time changes are explicit.
+- 内心叙述尽可能外化。
+- 动作可以表演且可见。
+- 每个场景都推进新的信息或行动。
+- 地点和时间变化必须明确。
 
-### Dialogue
+### 对白
 
-- Each line performs pressure, concealment, testing, attack, defense, choice,
-  reversal, or relationship change.
-- Characters retain distinct voices.
-- Exposition sounds motivated rather than delivered for the audience.
+- 每句对白都在施压、隐瞒、试探、攻击、防御、选择、反转或改变关系。
+- 人物声音保持差异。
+- 信息说明应符合人物动机，而不是直接讲给观众。
 
-### Episode ending
+### 分集结尾
 
-- The ending visibly changes risk, goal, information, relationship, or
-  consequence.
-- Its setup exists earlier in the episode.
+- 结尾必须明显改变风险、目标、信息、关系或后果。
+- 本集前文必须已有相应铺垫。
 
-Only mark an episode complete after deterministic and semantic review both
-pass.
+只有确定性校验和语义审查都通过后，才能把本集标记为完成。
