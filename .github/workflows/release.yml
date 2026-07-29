@@ -172,12 +172,16 @@ jobs:
   build-macos:
     needs: create-release
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.release_profile == 'full' || inputs.release_profile == 'macos-hotfix' }}
-    runs-on: macos-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
-        arch: [arm64, x64]
+        include:
+          - arch: arm64
+            runner: macos-26
+          - arch: x64
+            runner: macos-26-intel
 
     steps:
       - name: Checkout

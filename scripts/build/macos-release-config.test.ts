@@ -114,6 +114,15 @@ describe('macOS release configuration', () => {
     expect(workflow).not.toContain('run: bun run electron:dist:dev:win');
   });
 
+  test('runs packaged macOS E2E on a native runner for each architecture', () => {
+    const workflow = readRepoFile('.github/workflows/release.yml');
+
+    expect(workflow).toContain('runs-on: ${{ matrix.runner }}');
+    expect(workflow).toMatch(/- arch: arm64\n\s+runner: macos-26/);
+    expect(workflow).toMatch(/- arch: x64\n\s+runner: macos-26-intel/);
+    expect(workflow).toContain('Run packaged core E2E');
+  });
+
   test('manual release profiles can publish platform hotfixes and prune old R2 releases', () => {
     const workflow = readRepoFile('.github/workflows/release.yml');
 
