@@ -115,9 +115,11 @@ The MVP deliberately uses one NewAPI key and one upstream for both roles. Add
 per-tier model allowlists only when Standard and Pro actually diverge; add
 per-user NewAPI keys only when upstream accounting or revocation requires them.
 
-The active managed endpoint uses the OpenAI Responses API
-(`customEndpoint.api=openai-responses`). The gateway still accepts legacy Chat
-Completions requests from older desktop releases during migration.
+The active managed endpoint uses Chat Completions
+(`customEndpoint.api=openai-completions`) because it is supported by every model
+currently exposed through the connection. The gateway also accepts Responses
+requests, but that protocol must not become the managed default until every
+exposed model passes the same end-to-end compatibility check.
 
 ## Local Development
 

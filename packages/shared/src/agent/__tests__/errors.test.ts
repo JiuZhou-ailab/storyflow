@@ -1,3 +1,7 @@
+// input: Representative provider, protocol, authentication, and stream failures
+// output: Regression coverage for shared typed-error classification
+// pos: Protects actionable UI error semantics from raw provider status codes
+
 import { describe, expect, it } from 'bun:test'
 import { parseError } from '../errors.ts'
 
@@ -30,9 +34,9 @@ describe('parseError', () => {
   })
 
   it('does not remap regular 401 auth errors as proxy_error', () => {
-    const parsed = parseError(new Error('401 Unauthorized'))
-
-    expect(parsed.code).toBe('invalid_api_key')
+    expect(parseError(new Error('401 Unauthorized')).code).toBe('invalid_api_key')
+    expect(parseError(new Error('API key is required')).code).toBe('invalid_api_key')
+    expect(parseError(new Error('Authentication required')).code).toBe('invalid_api_key')
   })
 
   it('classifies model access token rejection as auth, not a missing model', () => {
@@ -49,6 +53,24 @@ describe('parseError', () => {
     ))
 
     expect(parsed.code).toBe('service_error')
+  })
+
+  it('maps unsupported upstream protocol conversion to a non-retryable request error', () => {
+    const parsed = parseError(new Error(
+      'OpenAI API error (500): {"message":"not implemented","code":"convert_request_failed"}',
+    ))
+
+    expect(parsed.code).toBe('invalid_request')
+    expect(parsed.title).toBe('Model Protocol Unsupported')
+    expect(parsed.canRetry).toBe(false)
+    expect(parsed.actions.some(action => action.action === 'retry')).toBe(false)
+  })
+
+  it('maps provider overloads to a retryable service error', () => {
+    const parsed = parseError(new Error('Provider is overloaded'))
+
+    expect(parsed.code).toBe('service_error')
+    expect(parsed.canRetry).toBe(true)
   })
 
   it('maps missing Anthropic message_stop stream endings to retryable provider_error', () => {

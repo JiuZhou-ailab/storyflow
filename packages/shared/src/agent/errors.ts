@@ -1,3 +1,7 @@
+// input: Provider/runtime failures plus optional provider context
+// output: Stable typed errors with safe user-facing recovery actions
+// pos: Shared error-classification boundary between agent runtimes and the UI
+
 /**
  * Typed errors for better error handling and user-friendly messages.
  *
@@ -438,12 +442,14 @@ export function parseError(
     code = 'billing_error';
   } else if (lowerMessage.includes('upstream_auth_failed')) {
     code = 'service_error';
+  } else if (lowerMessage.includes('convert_request_failed')) {
+    code = 'invalid_request';
   } else if (
     lowerMessage.includes('401') ||
     lowerMessage.includes('unauthorized') ||
-    lowerMessage.includes('invalid api key') ||
+    lowerMessage.includes('api key') ||
     lowerMessage.includes('invalid x-api-key') ||
-    lowerMessage.includes('authentication failed') ||
+    lowerMessage.includes('authentication') ||
     lowerMessage.includes('invalid model access token') ||
     lowerMessage.includes('model_access_token_invalid') ||
     hasExplicitAuthExpiry
@@ -455,7 +461,7 @@ export function parseError(
     code = 'rate_limited';
   } else if (isAnthropicMessageStopStreamError(lowerMessage)) {
     code = 'provider_error';
-  } else if (lowerMessage.includes('500') || lowerMessage.includes('502') || lowerMessage.includes('503') || lowerMessage.includes('504') || lowerMessage.includes('internal server error') || lowerMessage.includes('service unavailable')) {
+  } else if (lowerMessage.includes('500') || lowerMessage.includes('502') || lowerMessage.includes('503') || lowerMessage.includes('504') || lowerMessage.includes('internal server error') || lowerMessage.includes('service unavailable') || lowerMessage.includes('overloaded')) {
     code = 'service_error';
   } else if (lowerMessage.includes('network') || lowerMessage.includes('econnrefused') || lowerMessage.includes('enotfound') || lowerMessage.includes('fetch failed') || lowerMessage.includes('connection')) {
     code = 'network_error';
@@ -507,6 +513,21 @@ export function parseError(
       ...definition,
       title: 'Stream Interrupted',
       message: 'The AI provider stream ended before the final stop event. This is usually transient; retry the message.',
+      originalError: errorMessage,
+      providerInfo,
+    };
+  }
+
+  if (code === 'invalid_request' && lowerMessage.includes('convert_request_failed')) {
+    return {
+      code,
+      ...definition,
+      title: 'Model Protocol Unsupported',
+      message: 'The selected model cannot handle this request through the connection’s API protocol. Choose a compatible model or update the connection protocol.',
+      actions: [
+        { key: 's', label: 'Change model or settings', command: '/settings', action: 'settings' },
+      ],
+      canRetry: false,
       originalError: errorMessage,
       providerInfo,
     };

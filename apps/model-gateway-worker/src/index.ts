@@ -19,15 +19,18 @@ type FetchLike = (request: Request) => Promise<Response>
 interface GatewayJwtPayload extends JWTPayload {
   scopes?: unknown
   model_tier?: unknown
+  user_name?: unknown
 }
 
 interface VerifiedGatewayJwtPayload extends GatewayJwtPayload {
   sub: string
   model_tier: 'standard' | 'pro'
+  user_name?: string
 }
 
 interface GatewayRequestLogDetails {
   user: string
+  user_name?: string
   stage?: 'config' | 'upstream'
   upstream_status?: number
   upstream_ray?: string
@@ -95,13 +98,17 @@ export async function handleRequest(
     }
     return invalidModelAccessTokenResponse()
   }
+  const logIdentity = {
+    user: access.sub,
+    ...(access.user_name ? { user_name: access.user_name } : {}),
+  }
 
   const newApiKey = readRequiredEnv(env.NEWAPI_API_KEY)
   const upstreamBaseUrl = readRequiredEnv(env.NEWAPI_UPSTREAM_BASE_URL)
   if (!newApiKey || !upstreamBaseUrl) {
     logGatewayRequest(startedAt, {
       stage: 'config',
-      user: access.sub,
+      ...logIdentity,
       error: 'missing_configuration',
     })
     return Response.json({ error: 'NewAPI gateway is not configured' }, { status: 503 })
@@ -123,10 +130,29 @@ export async function handleRequest(
 
   try {
     const upstreamResponse = await fetchImpl(upstreamRequest)
+    if (upstreamResponse.status === 400 && !(await upstreamResponse.clone().text()).trim()) {
+      logGatewayRequest(startedAt, {
+        stage: 'upstream',
+        ...logIdentity,
+        upstream_status: 400,
+        upstream_ray: upstreamResponse.headers.get('cf-ray') ?? undefined,
+        error: 'empty_response_body',
+      })
+      return Response.json(
+        {
+          error: {
+            message: 'Model provider rejected the request without an error body',
+            type: 'upstream_error',
+            code: 'upstream_empty_response',
+          },
+        },
+        { status: 502 },
+      )
+    }
     if (upstreamResponse.status === 401 || upstreamResponse.status === 403) {
       logGatewayRequest(startedAt, {
         stage: 'upstream',
-        user: access.sub,
+        ...logIdentity,
         upstream_status: upstreamResponse.status,
         upstream_ray: upstreamResponse.headers.get('cf-ray') ?? undefined,
       })
@@ -141,10 +167,10 @@ export async function handleRequest(
     logGatewayRequest(
       startedAt,
       upstreamResponse.ok
-        ? { user: access.sub }
+        ? logIdentity
         : {
             stage: 'upstream',
-            user: access.sub,
+            ...logIdentity,
             upstream_status: upstreamResponse.status,
             upstream_ray: upstreamResponse.headers.get('cf-ray') ?? undefined,
           },
@@ -153,7 +179,7 @@ export async function handleRequest(
   } catch (error) {
     logGatewayRequest(startedAt, {
       stage: 'upstream',
-      user: access.sub,
+      ...logIdentity,
       error: error instanceof Error ? error.message.slice(0, 500) : 'Unknown upstream fetch error',
     })
     return Response.json({ error: 'NewAPI gateway is unavailable' }, { status: 502 })
@@ -181,7 +207,12 @@ export async function verifyGatewayJwt(
   assertSubject(payload)
   assertScope(payload, 'model:chat')
   assertModelTier(payload)
-  return payload
+  const userName = normalizeUserName(payload.user_name)
+  const { user_name: _untrustedUserName, ...verifiedPayload } = payload
+  return {
+    ...verifiedPayload,
+    ...(userName ? { user_name: userName } : {}),
+  }
 }
 
 function resolveGatewayVerificationKey(token: string, env: Env): { id: string, secret: string } {
@@ -281,6 +312,12 @@ function readBearerToken(header: string | null): string | null {
 function readRequiredEnv(value: string | undefined): string | null {
   const trimmed = value?.trim()
   return trimmed || null
+}
+
+function normalizeUserName(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.replace(/[\u0000-\u001F\u007F]/g, '').trim()
+  return normalized ? normalized.slice(0, 100) : undefined
 }
 
 function logGatewayRequest(

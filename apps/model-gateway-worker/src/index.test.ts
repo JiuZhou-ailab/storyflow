@@ -335,11 +335,50 @@ describe('model gateway worker', () => {
     })
   })
 
-  it('logs upstream failures with correlation fields but without request content or credentials', async () => {
+  it('normalizes an empty upstream 400 into a structured gateway failure', async () => {
     const errorSpy = spyOn(console, 'error').mockImplementation(() => {})
 
     try {
       const token = await signTestJwt(CURRENT_MODEL_SECRET)
+      const response = await handleRequest(
+        new Request('https://model.storyflow.example.com/v1/responses', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        makeEnv(),
+        async () => new Response(null, {
+          status: 400,
+          headers: { 'cf-ray': 'empty-400-ray' },
+        }),
+      )
+
+      expect(response.status).toBe(502)
+      expect(await response.json()).toEqual({
+        error: {
+          message: 'Model provider rejected the request without an error body',
+          type: 'upstream_error',
+          code: 'upstream_empty_response',
+        },
+      })
+      expect(errorSpy.mock.calls[0]?.[0]).toMatchObject({
+        stage: 'upstream',
+        upstream_status: 400,
+        upstream_ray: 'empty-400-ray',
+        error: 'empty_response_body',
+      })
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
+  it('logs upstream failures with correlation fields but without request content or credentials', async () => {
+    const errorSpy = spyOn(console, 'error').mockImplementation(() => {})
+
+    try {
+      const token = await signTestJwt(CURRENT_MODEL_SECRET, {
+        sub: 'feishu:ou_debug',
+        user_name: '飞书用户',
+      })
       const response = await handleRequest(
         new Request('https://model.storyflow.example.com/v1/responses', {
           method: 'POST',
@@ -366,7 +405,8 @@ describe('model gateway worker', () => {
         stage: 'upstream',
         upstream_status: 520,
         upstream_ray: 'upstream-request-ray',
-        user: 'neon:neon_user_123',
+        user: 'feishu:ou_debug',
+        user_name: '飞书用户',
         duration_ms: expect.any(Number),
       })
       expect(Object.keys(errorSpy.mock.calls[0]?.[0] as object).sort()).toEqual([
@@ -375,6 +415,7 @@ describe('model gateway worker', () => {
         'upstream_ray',
         'upstream_status',
         'user',
+        'user_name',
       ])
 
       const logged = JSON.stringify(errorSpy.mock.calls[0]?.[0])

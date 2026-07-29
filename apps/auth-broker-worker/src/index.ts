@@ -51,6 +51,7 @@ interface ClientSessionPayload extends JWTPayload {
   scope?: unknown
   model_tier?: unknown
   auth_time?: unknown
+  user_name?: unknown
 }
 
 const DEFAULT_FEISHU_AUTH_BASE_URL = 'https://accounts.feishu.cn/open-apis/authen/v1/authorize'
@@ -196,7 +197,7 @@ async function exchangeFeishuCode(
       ...(email ? { email } : {}),
       ...(user.name ? { name: user.name } : {}),
     }
-    const tokens = await createAuthTokens(env, `feishu:${user.openId}`, 'pro')
+    const tokens = await createAuthTokens(env, `feishu:${user.openId}`, 'pro', user.name)
 
     return Response.json({
       ok: true,
@@ -243,7 +244,7 @@ async function exchangeNeonToken(
     const jwks = createRemoteJWKSet(new URL(jwksUrl), { [customFetch]: fetchImpl })
     const { payload } = await jwtVerify(token, jwks, { issuer, audience })
     const identity = normalizeNeonIdentity(payload)
-    const tokens = await createAuthTokens(env, identity.subject, 'standard')
+    const tokens = await createAuthTokens(env, identity.subject, 'standard', identity.name)
 
     return Response.json({
       ok: true,
@@ -276,6 +277,7 @@ async function refreshClientAuthToken(request: Request, env: Env): Promise<Respo
         env,
         session.subject,
         session.modelTier,
+        session.userName,
         session.authenticatedAtSeconds,
       ),
     })
@@ -287,7 +289,12 @@ async function refreshClientAuthToken(request: Request, env: Env): Promise<Respo
 async function verifyClientSessionToken(
   token: string,
   env: Env,
-): Promise<{ subject: string, modelTier: 'standard' | 'pro', authenticatedAtSeconds: number }> {
+): Promise<{
+  subject: string
+  modelTier: 'standard' | 'pro'
+  authenticatedAtSeconds: number
+  userName?: string
+}> {
   const kid = decodeProtectedHeader(token).kid
   if (typeof kid !== 'string' || !kid.trim()) throw new Error('Client session token key id is required')
 
@@ -325,7 +332,13 @@ async function verifyClientSessionToken(
   ) {
     throw new Error('Client session authentication time is invalid')
   }
-  return { subject, modelTier: payload.model_tier, authenticatedAtSeconds }
+  const userName = normalizeUserName(payload.user_name)
+  return {
+    subject,
+    modelTier: payload.model_tier,
+    authenticatedAtSeconds,
+    ...(userName ? { userName } : {}),
+  }
 }
 
 function invalidClientSessionResponse(): Response {
@@ -342,13 +355,14 @@ async function createAuthTokens(
   env: Env,
   subject: string,
   modelTier: 'standard' | 'pro',
+  userName?: string,
   authenticatedAtSeconds?: number,
 ): Promise<{ appSessionToken: string, modelAccessToken: string }> {
   const authenticationTime = authenticatedAtSeconds ?? Math.floor(Date.now() / 1000)
   const clientSessionExpiresAt = authenticationTime + CLIENT_SESSION_TOKEN_TTL_SECONDS
   return {
-    appSessionToken: await createClientSessionToken(env, subject, modelTier, authenticationTime),
-    modelAccessToken: await createModelAccessToken(env, subject, modelTier, clientSessionExpiresAt),
+    appSessionToken: await createClientSessionToken(env, subject, modelTier, userName, authenticationTime),
+    modelAccessToken: await createModelAccessToken(env, subject, modelTier, userName, clientSessionExpiresAt),
   }
 }
 
@@ -356,6 +370,7 @@ async function createClientSessionToken(
   env: Env,
   subject: string,
   modelTier: 'standard' | 'pro',
+  userName?: string,
   authenticatedAtSeconds = Math.floor(Date.now() / 1000),
 ): Promise<string> {
   const key = getCurrentClientSessionKey(env)
@@ -368,6 +383,7 @@ async function createClientSessionToken(
     scope: 'model:issue',
     model_tier: modelTier,
     auth_time: authenticatedAtSeconds,
+    ...(userName ? { user_name: userName } : {}),
   })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: key.id })
     .setIssuer(DEFAULT_GATEWAY_ISSUER)
@@ -382,6 +398,7 @@ async function createModelAccessToken(
   env: Env,
   subject: string,
   modelTier: 'standard' | 'pro',
+  userName?: string,
   parentExpiresAtSeconds?: number,
 ): Promise<string> {
   const key = getCurrentModelAccessKey(env)
@@ -396,6 +413,7 @@ async function createModelAccessToken(
   return new SignJWT({
     scopes: ['model:chat'],
     model_tier: modelTier,
+    ...(userName ? { user_name: userName } : {}),
   })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: key.id })
     .setIssuer(readString(env.STORYFLOW_GATEWAY_JWT_ISSUER) ?? DEFAULT_GATEWAY_ISSUER)
@@ -465,12 +483,15 @@ function getCurrentModelAccessKey(env: Env): { id: string, secret: string } | nu
 function normalizeFeishuUser(raw: Record<string, unknown>): FeishuUserInfo {
   const openId = readString(raw.open_id) ?? readString(raw.openId)
   if (!openId) throw new Error('Feishu user info did not include open_id')
+  const name = normalizeUserName(raw.name)
+    ?? normalizeUserName(raw.en_name)
+    ?? normalizeUserName(raw.display_name)
   return {
     openId,
     ...(readString(raw.tenant_key) ?? readString(raw.tenantKey) ? { tenantKey: readString(raw.tenant_key) ?? readString(raw.tenantKey) } : {}),
     ...(readString(raw.email) ? { email: readString(raw.email) } : {}),
     ...(readString(raw.enterprise_email) ?? readString(raw.enterpriseEmail) ? { enterpriseEmail: readString(raw.enterprise_email) ?? readString(raw.enterpriseEmail) } : {}),
-    ...(readString(raw.name) ? { name: readString(raw.name) } : {}),
+    ...(name ? { name } : {}),
   }
 }
 
@@ -486,7 +507,7 @@ function normalizeNeonIdentity(payload: JWTPayload): NeonIdentity {
     ?? readBoolean(claims.email_verified)
   if (emailVerified === false) throw new Error('Email verification is required')
 
-  const name = readString(claims.name)
+  const name = normalizeUserName(claims.name)
   return {
     provider: 'neon',
     subject: `neon:${subject}`,
@@ -534,6 +555,12 @@ function readObject(value: unknown): Record<string, unknown> | null {
 
 function readString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function normalizeUserName(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.replace(/[\u0000-\u001F\u007F]/g, '').trim()
+  return normalized ? normalized.slice(0, 100) : undefined
 }
 
 function readBoolean(value: unknown): boolean | undefined {

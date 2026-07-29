@@ -141,7 +141,7 @@ describe('builtin LLM connection defaults', () => {
       baseUrl: 'https://storyflow-model.zjding.com/v1',
       defaultModel: 'gpt-5.5',
       piAuthProvider: 'openai',
-      customEndpoint: { api: 'openai-responses' },
+      customEndpoint: { api: 'openai-completions' },
     })
     const modelIds = connection?.models?.map(model => typeof model === 'string' ? model : model.id)
     const modelNames = connection?.models?.map(model => typeof model === 'string' ? model : model.name)

@@ -157,12 +157,14 @@ describe('auth broker worker', () => {
     expect(sessionPayload.sub).toBe('feishu:ou_desktop')
     expect(sessionPayload.scope).toBe('model:issue')
     expect(sessionPayload.model_tier).toBe('pro')
+    expect(sessionPayload.user_name).toBe('Desktop User')
     expect((sessionPayload.exp as number) - (sessionPayload.iat as number)).toBe(2_592_000)
 
     const payload = await verifyModelAccessToken(body.modelAccessToken)
     expect(payload.sub).toBe('feishu:ou_desktop')
     expect(payload.scopes).toEqual(['model:chat'])
     expect(payload.model_tier).toBe('pro')
+    expect(payload.user_name).toBe('Desktop User')
     expect((payload.exp as number) - (payload.iat as number)).toBe(900)
 
     const tokenCall = fetchCalls[0]
@@ -289,6 +291,7 @@ describe('auth broker worker', () => {
       scope: 'model:issue',
       model_tier: 'standard',
       auth_time: authenticatedAt,
+      user_name: 'Desktop User',
     })
       .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: PREVIOUS_CLIENT_SESSION_KEY_ID })
       .setIssuer('storyflow-auth-broker')
@@ -318,6 +321,7 @@ describe('auth broker worker', () => {
     expect(sessionPayload.sub).toBe('neon:neon_user_123')
     expect(sessionPayload.scope).toBe('model:issue')
     expect(sessionPayload.model_tier).toBe('standard')
+    expect(sessionPayload.user_name).toBe('Desktop User')
     expect(sessionPayload.auth_time).toBe(authenticatedAt)
     expect(sessionPayload.exp).toBe(authenticatedAt + 2_592_000)
     expect((sessionPayload.exp as number) - (sessionPayload.iat as number)).toBeLessThan(2_592_000)
@@ -325,6 +329,7 @@ describe('auth broker worker', () => {
     const modelPayload = await verifyModelAccessToken(body.modelAccessToken)
     expect(modelPayload.sub).toBe('neon:neon_user_123')
     expect(modelPayload.model_tier).toBe('standard')
+    expect(modelPayload.user_name).toBe('Desktop User')
     expect(modelPayload.exp as number).toBeLessThanOrEqual(sessionPayload.exp as number)
   })
 

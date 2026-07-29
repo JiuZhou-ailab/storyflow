@@ -2535,91 +2535,15 @@ export class PiAgent extends BaseAgent {
    * Parse a Pi error into a typed AgentError.
    */
   private parsePiError(error: Error): AgentError {
-    const errorMessage = error.message.toLowerCase();
-
-    // Auth errors
-    if (
-      errorMessage.includes('api key') ||
-      errorMessage.includes('unauthorized') ||
-      errorMessage.includes('401') ||
-      errorMessage.includes('authentication')
-    ) {
-      // For OAuth connections, attempt token refresh before giving up
-      if (this.config.authType === 'oauth') {
-        this.refreshAndPushTokens().catch(err => {
-          this.debug(`Token refresh from parsePiError failed: ${err}`);
-        });
-      }
-
-      return {
-        code: 'invalid_api_key',
-        title: 'Invalid API Key',
-        message: 'Your API key was rejected. Check your credentials in Settings.',
-        actions: [
-          { key: 's', label: 'Update API key', command: '/settings', action: 'settings' },
-        ],
-        canRetry: this.config.authType === 'oauth',
-        originalError: error.message,
-      };
+    const parsed = parseError(error);
+    if (parsed.code !== 'invalid_api_key' || this.config.authType !== 'oauth') {
+      return parsed;
     }
 
-    // Rate limiting
-    if (errorMessage.includes('rate') || errorMessage.includes('429')) {
-      return {
-        code: 'rate_limited',
-        title: 'Rate Limited',
-        message: 'Too many requests. Please wait a moment before trying again.',
-        actions: [
-          { key: 'r', label: 'Retry', action: 'retry' },
-        ],
-        canRetry: true,
-        retryDelayMs: 5000,
-        originalError: error.message,
-      };
-    }
-
-    // Service errors
-    if (
-      errorMessage.includes('500') ||
-      errorMessage.includes('502') ||
-      errorMessage.includes('503') ||
-      errorMessage.includes('service') ||
-      errorMessage.includes('overloaded')
-    ) {
-      return {
-        code: 'service_error',
-        title: 'Service Error',
-        message: 'The AI service is temporarily unavailable. Please try again.',
-        actions: [
-          { key: 'r', label: 'Retry', action: 'retry' },
-        ],
-        canRetry: true,
-        retryDelayMs: 2000,
-        originalError: error.message,
-      };
-    }
-
-    // Network errors
-    if (
-      errorMessage.includes('network') ||
-      errorMessage.includes('econnrefused') ||
-      errorMessage.includes('fetch failed')
-    ) {
-      return {
-        code: 'network_error',
-        title: 'Connection Error',
-        message: 'Could not connect to the server. Check your internet connection.',
-        actions: [
-          { key: 'r', label: 'Retry', action: 'retry' },
-        ],
-        canRetry: true,
-        retryDelayMs: 1000,
-        originalError: error.message,
-      };
-    }
-
-    // Fall back to shared error parsing
-    return parseError(error);
+    this.refreshAndPushTokens().catch(err => {
+      this.debug(`Token refresh from parsePiError failed: ${err}`);
+    });
+    return { ...parsed, canRetry: true };
   }
 
   // ============================================================
