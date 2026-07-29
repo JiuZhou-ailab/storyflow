@@ -1,8 +1,8 @@
 {
-  "version": "0.9.51",
+  "version": "0.9.52",
   "digest": "d34688c85b27c4368e3b268796edf2cf248f222739383a4cade7c29be617af67",
-  "generatedAt": "2026-07-29T11:28:53.397Z",
-  "title": "What is new in v0.9.51",
+  "generatedAt": "2026-07-29T13:34:20.019Z",
+  "title": "What is new in v0.9.52",
   "summary": "这一版让 Storyflow 更专注于本地创作，并补齐 Agent 协作、Skills、更新提醒和托管模型稳定性。",
   "highlights": [
     "本地项目直接可用：桌面端本地工作区不再被账号登录挡住，账号能力与本地创作保持清晰边界。",
@@ -13,7 +13,7 @@
   "accentColor": "#a7661b",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 7,
+    "commitCount": 1,
     "userVisibleCommitCount": 0
   }
 }
