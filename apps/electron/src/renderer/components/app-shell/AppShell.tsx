@@ -1,4 +1,4 @@
-// input: Workspace/session state, navigation state, file-open intent, and shell callbacks
+// input: Workspace/session state, application update state, navigation state, file-open intent, and shell callbacks
 // output: Desktop app shell with disk-synced project navigation, tabbed writing documents, and main content panels
 // pos: Top-level renderer layout coordinator for workspace navigation
 
@@ -160,6 +160,8 @@ import { AddSkillPopover, SkillsListPanel } from "./SkillsListPanel"
 import { AutomationsListPanel } from "../automations/AutomationsListPanel"
 import { AUTOMATION_TYPE_TO_FILTER_KIND } from "../automations/types"
 import { useAutomations } from "@/hooks/useAutomations"
+import { useUpdateChecker } from "@/hooks/useUpdateChecker"
+import { getUpdateIndicatorState } from "@/lib/update-indicator"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { PanelHeader } from "./PanelHeader"
 import { SendToWorkspaceDialog } from "./SendToWorkspaceDialog"
@@ -908,6 +910,8 @@ function AppShellContent({
   const remoteWorkspaceId = runtimeWorkspace?.remoteServer?.remoteWorkspaceId
 
   const { t } = useTranslation()
+  const updateChecker = useUpdateChecker()
+  const updateIndicator = getUpdateIndicatorState(updateChecker.updateInfo)
 
   // Get hotkey labels from centralized action registry
 
@@ -4661,6 +4665,8 @@ function AppShellContent({
               unseen: hasUnseenReleaseNotes,
               accentColor: whatsNewManifest?.accentColor,
             }}
+            updateIndicator={updateIndicator}
+            onInstallUpdate={updateChecker.installUpdate}
           />
         ) : null}
 

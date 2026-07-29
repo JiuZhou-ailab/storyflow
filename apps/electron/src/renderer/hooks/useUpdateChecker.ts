@@ -1,6 +1,6 @@
 // input: Electron auto-update IPC state and renderer runtime environment
-// output: React hook exposing update state, manual retry, scheduled checks, and install action
-// pos: Renderer coordinator between updater IPC and update-related UI surfaces
+// output: Application-wide update provider and hook for state, checks, notifications, and install
+// pos: Single renderer coordinator between updater IPC and all update-related UI surfaces
 
 /**
  * Update Checker Hook
@@ -13,13 +13,22 @@
  * - Persistent dismissal across app restarts (per version)
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import {
+  createElement,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type PropsWithChildren,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import type { UpdateInfo } from '../../shared/types'
 import { shouldRunScheduledUpdateCheck } from '../lib/update-indicator'
 
-interface UseUpdateCheckerResult {
+export interface UseUpdateCheckerResult {
   /** Current update info */
   updateInfo: UpdateInfo | null
   /** Whether an update is available */
@@ -53,7 +62,9 @@ async function canRunScheduledUpdateChecks(): Promise<boolean> {
   }
 }
 
-export function useUpdateChecker(): UseUpdateCheckerResult {
+const UpdateCheckerContext = createContext<UseUpdateCheckerResult | null>(null)
+
+function useUpdateCheckerController(): UseUpdateCheckerResult {
   const { t } = useTranslation()
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
   // Track if we've shown the toast for this version to avoid duplicates
@@ -100,7 +111,7 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
         description: error instanceof Error ? error.message : 'Unknown error',
       })
     }
-  }, [])
+  }, [t])
 
   const checkAndNotify = useCallback(async (info: UpdateInfo) => {
     if (!info.available || !info.latestVersion) return
@@ -226,7 +237,7 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
         description: error instanceof Error ? error.message : 'Unknown error',
       })
     }
-  }, [showUpdateToast, installUpdate])
+  }, [showUpdateToast, installUpdate, t])
 
   return {
     updateInfo,
@@ -237,4 +248,17 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
     checkForUpdates,
     installUpdate,
   }
+}
+
+export function UpdateCheckerProvider({ children }: PropsWithChildren) {
+  const updateChecker = useUpdateCheckerController()
+  return createElement(UpdateCheckerContext.Provider, { value: updateChecker }, children)
+}
+
+export function useUpdateChecker(): UseUpdateCheckerResult {
+  const updateChecker = useContext(UpdateCheckerContext)
+  if (!updateChecker) {
+    throw new Error('useUpdateChecker must be used within UpdateCheckerProvider')
+  }
+  return updateChecker
 }

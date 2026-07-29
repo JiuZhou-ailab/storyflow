@@ -1,5 +1,5 @@
-// input: Workspace catalog, workspace-scoped session metadata, unread/active summaries, shell callbacks, current profile, and window chrome inset
-// output: Single Codex-style sidebar with a native titlebar drag region plus collapsible project conversation subtrees
+// input: Workspace catalog, scoped session metadata, update status, shell callbacks, current profile, and window chrome inset
+// output: Codex-style sidebar with project conversations, persistent update action, and profile navigation
 // pos: Global navigation surface; every project subtree is fetched and selected through its own runtime domain (ADR 0006)
 
 import * as React from 'react'
@@ -8,7 +8,9 @@ import {
   ChevronDown,
   ChevronRight,
   DatabaseZap,
+  Download,
   HelpCircle,
+  LoaderCircle,
   Megaphone,
   Plus,
   Search,
@@ -19,6 +21,7 @@ import {
 } from 'lucide-react'
 import { atom, useAtom, useAtomValue, useStore } from 'jotai'
 import { selectAtom } from 'jotai/utils'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import {
   DropdownMenu,
@@ -48,6 +51,7 @@ import { deriveSessionRuntimeStatus, requiresHumanAttention } from '@craft-agent
 import { sessionIdsWithPendingPromptAtom } from '@/atoms/pending-requests'
 import type { Workspace } from '../../../shared/types'
 import { WINDOW_TITLE_BAR_HEIGHT } from './layout-constants'
+import type { UpdateIndicatorState } from '@/lib/update-indicator'
 
 export type ActivityRailItemId =
   | 'recent'
@@ -93,6 +97,8 @@ export interface ActivityRailProps {
     unseen: boolean
     accentColor?: string
   }
+  updateIndicator?: UpdateIndicatorState | null
+  onInstallUpdate?: () => void | Promise<void>
   sessionActions?: ActivityRailSessionActions
 }
 
@@ -136,8 +142,11 @@ export function ActivityRail({
   profile,
   onOpenWhatsNew,
   whatsNew,
+  updateIndicator,
+  onInstallUpdate,
   sessionActions,
 }: ActivityRailProps) {
+  const { t } = useTranslation()
   const activityStore = useStore()
   const scrollContainerRef = React.useRef<HTMLDivElement>(null)
   const localFreeSessionMetas = useAtomValue(freeRuntimeSessionMetasAtom)
@@ -164,6 +173,19 @@ export function ActivityRail({
   const refreshGenerationRef = React.useRef(0)
   const activeRefreshGenerationRef = React.useRef(0)
   const canCreateProjects = typeof onWorkspaceCreated === 'function'
+  let updateIndicatorLabel: string | null = null
+  if (updateIndicator?.kind === 'downloading' && updateIndicator.version) {
+    updateIndicatorLabel = t('settings.about.downloading', {
+      version: updateIndicator.version,
+      percent: updateIndicator.progress,
+    })
+  } else if (updateIndicator?.kind === 'ready' && updateIndicator.version) {
+    updateIndicatorLabel = t('settings.about.restartToUpdate', { version: updateIndicator.version })
+  } else if (updateIndicator?.kind === 'ready') {
+    updateIndicatorLabel = t('settings.about.updateReady')
+  } else if (updateIndicator?.kind === 'installing') {
+    updateIndicatorLabel = t('toast.installingUpdate')
+  }
 
   React.useLayoutEffect(() => {
     if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = activityStore.get(activitySidebarScrollTopAtom)
@@ -554,8 +576,35 @@ export function ActivityRail({
         </div>
       </div>
 
-      <nav className="border-t border-border/35 px-2 py-2" aria-label="个人菜单">
-        <DropdownMenu>
+      <div className="border-t border-border/35 px-2 py-2">
+        {updateIndicator ? (
+          <div aria-live="polite">
+            <button
+              type="button"
+              disabled={!updateIndicator.actionable}
+              aria-label={updateIndicatorLabel ?? undefined}
+              data-tutorial="activity-update"
+              className={cn(
+                'mb-1.5 flex w-full items-center gap-2 rounded-[8px] px-2 py-2 text-left text-[12px] font-medium outline-none transition-colors',
+                updateIndicator.actionable
+                  ? 'bg-info/10 text-[var(--info-text)] hover:bg-info/15 focus-visible:ring-1 focus-visible:ring-info'
+                  : 'cursor-default bg-foreground/[0.035] text-muted-foreground',
+              )}
+              onClick={() => {
+                if (updateIndicator.actionable) void onInstallUpdate?.()
+              }}
+            >
+              {updateIndicator.kind === 'ready' ? (
+                <Download className="size-4 shrink-0" aria-hidden="true" />
+              ) : (
+                <LoaderCircle className="size-4 shrink-0 animate-spin" aria-hidden="true" />
+              )}
+              <span className="min-w-0 flex-1 truncate">{updateIndicatorLabel}</span>
+            </button>
+          </div>
+        ) : null}
+        <nav aria-label="个人菜单">
+          <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
@@ -638,9 +687,10 @@ export function ActivityRail({
               帮助与反馈
             </StyledDropdownMenuItem>
           </StyledDropdownMenuContent>
-        </DropdownMenu>
-        <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
-      </nav>
+          </DropdownMenu>
+          <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
+        </nav>
+      </div>
       {renameTarget ? (
         <RenameDialog
           open

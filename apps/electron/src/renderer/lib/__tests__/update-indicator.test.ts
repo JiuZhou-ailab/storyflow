@@ -1,5 +1,5 @@
 // input: Auto-update state snapshots from the Electron main process
-// output: Regression coverage for the top-bar update indicator visibility contract
+// output: Regression coverage for the persistent update indicator visibility contract
 // pos: Guards renderer update affordance state derivation
 
 import { describe, expect, it } from 'bun:test'

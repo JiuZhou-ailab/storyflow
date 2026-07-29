@@ -1,5 +1,5 @@
 // input: Electron preload API and renderer startup container
-// output: React root that mounts the local workspace application
+// output: React root that mounts the workspace app with one application-wide update controller
 // pos: Renderer entrypoint for the desktop application
 
 import React from 'react'
@@ -8,6 +8,7 @@ import { Provider as JotaiProvider, useAtomValue } from 'jotai'
 import { ThemeProvider } from './context/ThemeContext'
 import { windowWorkspaceIdAtom } from './atoms/sessions'
 import { Toaster } from '@/components/ui/sonner'
+import { UpdateCheckerProvider } from '@/hooks/useUpdateChecker'
 import { setupI18nLazy } from '@craft-agent/shared/i18n/lazy'
 import { initReactI18next } from 'react-i18next'
 import { useTranslation } from 'react-i18next'
@@ -78,10 +79,12 @@ function Root() {
       activeWorkspaceId={workspaceId}
       defaultColorTheme={getDefaultColorThemeForPlatform(rendererPlatform)}
     >
-      <React.Suspense fallback={<AppLoadingFallback />}>
-        <App />
-      </React.Suspense>
-      <Toaster />
+      <UpdateCheckerProvider>
+        <React.Suspense fallback={<AppLoadingFallback />}>
+          <App />
+        </React.Suspense>
+        <Toaster />
+      </UpdateCheckerProvider>
     </ThemeProvider>
   )
 }

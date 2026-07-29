@@ -1,6 +1,6 @@
-// input: Renderer panel chrome and menu sources for workspace and update actions
-// output: Regression coverage for the right-workspace toggle and remaining update entrypoint
-// pos: Guards title-bar ownership without reintroducing a standalone update control
+// input: Renderer root, panel chrome, sidebar, and legacy menu sources for update actions
+// output: Regression coverage for one global update owner and its persistent sidebar affordance
+// pos: Guards update ownership without reintroducing route-scoped updater controllers
 
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
@@ -15,7 +15,6 @@ describe('manual update check entrypoints', () => {
 
     expect(appShellSource).toContain('const rightWorkspaceToggleButton = React.useMemo')
     expect(appShellSource).toContain('PanelRightClose')
-    expect(appShellSource).not.toContain('useUpdateChecker')
     expect(appShellSource).not.toContain('checkForUpdates')
     expect(appShellSource).not.toContain('<TopBar')
     expect(appShellSource).toContain('setRightWorkspaceVisible((visible) => !visible)')
@@ -33,12 +32,16 @@ describe('manual update check entrypoints', () => {
     expect(appMenuSource).not.toContain('window.electronAPI.checkForUpdates()')
   })
 
-  it('keeps manual updates out of the activity sidebar profile menu', () => {
+  it('mounts one global update owner and keeps update readiness separate from release notes', () => {
+    const mainSource = source('../../main.tsx')
     const railSource = source('../../components/app-shell/ActivityRail.tsx')
 
+    expect(mainSource.match(/<UpdateCheckerProvider>/g)).toHaveLength(1)
     expect(railSource).not.toContain('useUpdateChecker')
     expect(railSource).not.toContain('getUpdateIndicatorState')
     expect(railSource).not.toContain('activity-check-updates')
+    expect(railSource).toContain('data-tutorial="activity-update"')
+    expect(railSource).toContain('aria-live="polite"')
     expect(railSource).toContain('data-tutorial="activity-profile"')
     expect(railSource).toContain('data-tutorial="activity-whats-new"')
     expect(railSource).toContain("whatsNew?.unseen ? '新功能（未读）' : '新功能'")
