@@ -13,31 +13,37 @@ credentials:
 
 ## Overview
 
-AnySearch is a unified real-time search service supporting general web search, vertical domain search, parallel batch search, and full-page content extraction. It exposes a single JSON-RPC 2.0 endpoint and requires no MCP server installation. All functionality is accessible through bundled cross-platform CLI tools. Use the configured runtime directly for routine `search`, `batch_search`, `extract`, and `get_sub_domains` calls; run the `doc` command only when the CLI interface is unknown or recovery information is needed (see Recommended Entry Point).
+AnySearch is a unified real-time search service supporting general web search, vertical domain search, parallel batch search, and full-page content extraction. Storyflow exposes routine general search through the typed `web_search` tool; the runtime selects AnySearch or another safe provider without reusing model credentials. The bundled CLI is reserved for specialized `batch_search`, `extract`, `get_sub_domains`, and vertical-search operations that `web_search` cannot express.
 
 ## Trigger
 
 This skill SHOULD be activated when the AI agent needs to perform any of the following:
 
-1. **Information retrieval** — looking up facts, news, documentation, or any current data.
-2. **Fact-checking** — verifying claims, cross-referencing statements.
-3. **Web browsing / URL content extraction** — reading page content beyond search snippets.
-4. **Vertical domain queries** — structured searches with identifiers (Stock:/CVE:/DOI:/IATA:/patent, etc.).
-5. **Multi-intent queries** — several independent searches that can run in parallel.
+1. **URL content extraction** — reading page content beyond search snippets.
+2. **Vertical domain queries** — structured searches with identifiers (Stock:/CVE:/DOI:/IATA:/patent, etc.).
+3. **Multi-intent queries** — several independent searches that require `batch_search`.
 
 **Vertical domain rule:** The DEFAULT search path is Path 2 (vertical). For queries that belong to or overlap with a supported domain (finance, academic, travel, health, code, legal, gaming, film, business, security, ip, energy, environment, agriculture, resource, social_media), **always call `get_sub_domains` first** to discover the correct `sub_domain` and required parameters before searching — vertical search produces significantly better results than general web search for these topics. Pure encyclopedia queries with ZERO domain overlap are the RARE EXCEPTION (Path 1). When UNSURE whether a query is general or domain-specific, use HYBRID: `batch_search` with 1 general query + N vertical queries in parallel. Coverage beats guessing.
 
 **Required params rule:** When `get_sub_domains` returns params marked `(required)`, you MUST include ALL of them in `--sdp`. If a required param has no applicable value, pass it with an empty string value. Omitting a required param will cause a backend validation error. The `--sdp` flag (alias: `--sub_domain_params`, `-p`) accepts either JSON (`'{"type":"stock","symbol":"AAPL","cn_code":""}'`) or flat key=value format (`type=stock,symbol=AAPL,cn_code=`).
 
-**Rule:** This skill is the **recommended** search tool. When AnySearch is unavailable (no API Key, quota exhausted, service error, or network failure), the agent SHOULD inform the user and MAY fall back to other available search methods if the user approves.
+**Rule:** Use `web_search` directly for routine information retrieval and fact-checking; do not invoke a CLI for those requests. Use this Skill's CLI only for the specialized operations above. Networked CLI commands MUST run through the normal shell tool and MUST NOT run through `script_sandbox`, whose network isolation is intentional.
 
 ## Recommended Entry Point
 
-Prefer direct CLI invocation. If `<skill_dir>/runtime.conf` exists and the requested command shape is already obvious (`search`, `batch_search`, `extract`, or `get_sub_domains`), the agent SHOULD use the configured command directly and SHOULD NOT run `doc` on every activation. Run `doc` only when the CLI interface is unknown, a command fails due to argument/schema uncertainty, the skill was just installed/updated, or vertical-domain constraints require the complete reference. The `doc` command is offline and remains available for recovery, but repeated metadata reads waste tool calls and tokens.
+For a general `search`, call Storyflow's built-in `web_search` tool and stop here. It owns provider routing, credentials, timeouts, fallback, and UI error status.
+
+For `batch_search`, `extract`, `get_sub_domains`, or vertical search, invoke the bundled Node.js CLI through the normal shell tool:
+
+```bash
+node <skill_dir>/scripts/anysearch_cli.js <command> [options]
+```
+
+Node.js is the default CLI because it has no external dependencies. If it is unavailable, follow Platform Detection below. Never use `script_sandbox` for a networked command. Run `doc` only when the command contract is unknown or a schema error needs recovery.
 
 ### Command Cheat Sheet
 
-Use these exact command shapes for routine calls. Replace `<cmd>` with the command from `runtime.conf` (for example, `python3 <skill_dir>/scripts/anysearch_cli.py`). Do not invent extra output-format flags.
+Use these exact command shapes for specialized calls. Replace `<cmd>` with the selected CLI command. Do not invent extra output-format flags.
 
 ```bash
 # Search. Optional filter: --max_results N (1-10, default 10)
@@ -127,35 +133,31 @@ When a user provides a key in chat, advise them to configure it via `.env` or en
 
 ## Platform Detection & CLI Routing
 
-### Pre-detected Runtime
-
-If `<skill_dir>/runtime.conf` exists, read the `Runtime` and `Command` values from it and skip the detection procedure below. Treat this as the normal fast path for routine searches. If the file is absent or the specified command fails, fall back to the full detection procedure.
-
-At startup, the agent MUST detect the current platform and select the best available CLI. The priority order is:
+The missing `runtime.conf` file is not an error. For specialized calls, select the first available runtime in this order:
 
 ```
-Python  >  Node.js  >  Shell (powershell on Windows, bash on Linux/macOS)
+Node.js  >  Python  >  Shell (powershell on Windows, bash on Linux/macOS)
 ```
 
 ### Detection Procedure
 
 Run the following checks in order. The first success determines the active CLI:
 
-**Step 1 — Check Python**
+**Step 1 — Check Node.js**
+```
+node --version 2>&1
+```
+- If exit code 0 → use `anysearch_cli.js`
+- No external dependencies required (uses the built-in `https` module)
+
+**Step 2 — Check Python** (if Node.js failed)
 ```
 python --version 2>&1
 python3 --version 2>&1
 ```
 - If either `python` or `python3` exists with version >= 3.6 → use `anysearch_cli.py`
 - On many macOS systems, `python` is absent while `python3` is available. Treat both names as valid probes.
-- Dependency: the `requests` library (not part of the standard library). It is commonly already available; if importing it fails, install with `pip install requests` (or `pip install -r requirements.txt`), or fall through to the Node.js CLI, which has no dependencies.
-
-**Step 2 — Check Node.js** (if Python failed)
-```
-node --version 2>&1
-```
-- If exit code 0 → use `anysearch_cli.js`
-- No external dependencies required (uses built-in `https` module)
+- Dependency: the `requests` library. If it is missing, do not install it implicitly; fall through to the shell CLI.
 
 **Step 3 — Check Shell** (if both Python and Node.js failed)
 
