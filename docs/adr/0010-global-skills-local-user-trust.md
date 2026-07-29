@@ -1,6 +1,6 @@
 # ADR 0010: 全局 Skills 与本机用户信任域
 
-状态：Accepted
+状态：Superseded by ADR 0011
 日期：2026-07-28
 
 ## 背景

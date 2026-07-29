@@ -3,6 +3,8 @@
 Product, release, and operator-facing documentation for Storyflow.
 
 - `cli.md` - CLI usage, server validation, and TLS notes.
+- `current-architecture.html` - offline interactive architecture explorer with collapsible modules and safe protocol mocks.
+- `current-architecture.puml` / `current-architecture.svg` - current layered module, runtime, and data-flow architecture.
 - `electron-performance-qa.md` - desktop performance measurement runbook and metric interpretation.
 - `environment.md` - environment variable lifecycle and release/broker boundaries.
 - `feedback-issue-ingestion.md` - feedback issue ingestion setup.

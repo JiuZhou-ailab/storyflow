@@ -48,45 +48,7 @@ apps/electron/
 
 ## Key Learnings & Gotchas
 
-### 1. SDK Path Resolution (CRITICAL)
-
-The Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) works by spawning a subprocess that runs `cli.js`. When esbuild bundles the SDK into `main.js`, the SDK's auto-detection of `cli.js` breaks.
-
-**Problem:**
-```
-Error: The "path" argument must be of type string or an instance of URL. Received undefined
-```
-
-**Root cause:** The SDK uses `import.meta.url` to find `cli.js`. After bundling, this path is invalid.
-
-**Solution:** Explicitly set the path before creating any agents:
-```typescript
-import { setPathToClaudeCodeExecutable } from '../../../src/agent/options'
-
-// In initialize():
-const cliPath = join(process.cwd(), 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'cli.js')
-setPathToClaudeCodeExecutable(cliPath)
-```
-
-### 2. Authentication Environment Setup (CRITICAL)
-
-The SDK requires authentication environment variables to be set BEFORE creating agents. The Electron app must do this explicitly during initialization.
-
-```typescript
-import { getAuthState } from '../../../src/auth/state'
-
-// In initialize():
-const authState = await getAuthState()
-const { billing } = authState
-
-if (billing.type === 'oauth_token' && billing.claudeOAuthToken) {
-  process.env.CLAUDE_CODE_OAUTH_TOKEN = billing.claudeOAuthToken
-} else if (billing.apiKey) {
-  process.env.ANTHROPIC_API_KEY = billing.apiKey
-}
-```
-
-### 3. AgentEvent Type Mismatches
+### 1. AgentEvent Type Mismatches
 
 The `AgentEvent` types from `CraftAgent` use different property names than you might expect:
 
@@ -111,7 +73,7 @@ const toolName = managed.pendingTools.get(event.toolUseId) || 'unknown'
 managed.pendingTools.delete(event.toolUseId)
 ```
 
-### 4. CraftAgent Constructor
+### 2. CraftAgent Constructor
 
 `CraftAgent` expects the full `Workspace` object, not just the ID:
 
@@ -122,19 +84,6 @@ new CraftAgent({ workspaceId: workspace.id, model })
 // Correct:
 new CraftAgent({ workspace, model })
 ```
-
-### 5. esbuild Configuration
-
-Only `electron` is externalized. The SDK is bundled into `main.js`:
-
-```json
-"electron:build:main": "esbuild ... --external:electron"
-```
-
-This means:
-- SDK code is inlined (~950KB)
-- SDK's runtime path resolution breaks (see #1)
-- Native modules would need explicit externalization
 
 ## Environment Variables
 

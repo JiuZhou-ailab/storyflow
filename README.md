@@ -4,7 +4,7 @@
 
 Storyflow 是一个基于 Bun workspace 的 AI Agent 工作台项目，支持桌面端和无头服务端两种运行形态。核心产品是 Electron 桌面应用，集成聊天会话、本地工作区、外部来源、技能、文件编辑、差异审阅、自动化和写作项目工作流。
 
-当前仓库主要面向源码开发、本地打包和自定义工作区流程。它不只是一个 Claude 包装层：仓库内包含共享 RPC 服务、Pi SDK 子进程适配器、可复用 UI 包、Web 客户端、会话查看器，以及项目文件工作台。
+当前仓库主要面向源码开发、本地打包和自定义工作区流程。仓库内包含共享 RPC 服务、Pi SDK 子进程适配器、可复用 UI 包、Web 客户端、会话查看器，以及项目文件工作台。
 
 ## 项目能力
 
@@ -12,7 +12,7 @@ Storyflow 是一个基于 Bun workspace 的 AI Agent 工作台项目，支持桌
 - **无头服务端**：通过 WebSocket 远程运行会话和工具。
 - **CLI 客户端**：用于脚本化访问无头服务端。
 - **共享 UI 与协议包**：供 Electron、Web UI 和 Viewer 复用。
-- **多 Agent 后端**：支持 Anthropic Claude Agent SDK 和基于 Pi SDK 的 Provider 集成。
+- **统一 Agent runtime**：会话执行统一由 Pi runtime 承担，模型与认证由 Provider adapter 处理。
 - **写作工作区模式**：支持 Markdown 编辑、文件提及、行号、总字数、选区改写、导出、本地版本快照和差异审阅。
 - **空白项目冷启动**：新项目不预设目录或方法，用户可从描述目标、导入内容、新建文件或选择 Skill 开始。
 - **来源、技能和自动化**：支持 MCP server、REST API、本地文件、工作区指令和 Agent 原生集成。
@@ -210,10 +210,7 @@ bun run apps/cli/src/index.ts run --workspace-dir . "Inspect this repository"
 
 ## LLM Provider
 
-项目通过两条运行时路径支持多种连接类型：
-
-- **Claude backend**：Anthropic Claude Agent SDK、Anthropic API key、Claude Max/Pro OAuth，以及兼容的自定义 endpoint。
-- **Pi backend**：基于 Pi SDK 的连接，包括 Google AI Studio、ChatGPT/Codex OAuth、GitHub Copilot OAuth、OpenAI API key 和相关 provider 流程。
+项目通过一条 Pi runtime 路径支持多种连接类型，包括 Anthropic API key、Claude Max/Pro OAuth、Google AI Studio、ChatGPT/Codex OAuth、GitHub Copilot OAuth、OpenAI API key 和兼容的自定义 endpoint。Provider adapter 只负责模型与认证，不拥有另一套 Agent 生命周期。
 
 连接配置保存在用户配置和凭据存储中，不写入仓库源码。
 
@@ -288,4 +285,4 @@ bun run release -- --platform=darwin --arch=arm64
 
 本项目使用 Apache License 2.0。详见 [LICENSE](LICENSE)。
 
-第三方 SDK 和服务可能有各自条款。尤其是 Claude Agent SDK 受 Anthropic 条款约束，Pi SDK/provider 使用受对应 provider 条款约束。
+第三方 SDK 和服务可能有各自条款；Pi SDK 及各模型 Provider 的使用受对应条款约束。

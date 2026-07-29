@@ -1,0 +1,191 @@
+' input: Current Storyflow runtime, transport, resource, and persistence boundaries
+' output: Layered component diagram of the repository's deployed architecture
+' pos: Source-of-truth visual index for module ownership and dependency direction
+
+@startuml current-architecture
+!pragma layout smetana
+title Storyflow 当前模块关系、层级与运行架构
+
+top to bottom direction
+skinparam backgroundColor #FAFAF8
+skinparam shadowing false
+skinparam roundCorner 10
+skinparam linetype ortho
+skinparam defaultFontName "PingFang SC"
+skinparam defaultFontSize 13
+skinparam ArrowColor #64748B
+skinparam ArrowThickness 1
+skinparam packageStyle rectangle
+skinparam componentStyle rectangle
+skinparam component {
+  BackgroundColor #FFFFFF
+  BorderColor #94A3B8
+  FontColor #172033
+}
+skinparam package {
+  BackgroundColor #F8FAFC
+  BorderColor #CBD5E1
+  FontColor #172033
+}
+skinparam database {
+  BackgroundColor #FFFDF5
+  BorderColor #D6B75B
+}
+skinparam folder {
+  BackgroundColor #FFFDF5
+  BorderColor #D6B75B
+}
+skinparam cloud {
+  BackgroundColor #F5F3FF
+  BorderColor #8B5CF6
+}
+
+actor "用户" as User
+
+package "1 · 产品与交互层" as Presentation {
+  component "Electron Renderer\nApp / AppShell / Chat / Writing Workspace" as Renderer
+  component "@craft-agent/ui\n共享 Chat / Markdown / Diff 组件" as SharedUI
+  component "Web UI / Viewer" as WebClients
+  component "CLI / Messaging Gateway" as NonGuiClients
+
+  package "Runtime Domain（身份隔离，不复制内核）" as Domains {
+    component "Free Conversation\n隐藏 Workspace" as FreeDomain
+    component "Project Conversation\n项目 Workspace" as ProjectDomain
+    component "workspaceId → Workspace\n唯一身份解析" as WorkspaceResolver
+  }
+}
+
+package "2 · 桌面宿主与传输层" as HostTransport {
+  component "Electron Preload\ncontextBridge + typed API" as Preload
+  component "RoutedClient\n本地/远程 channel 路由" as Router
+  component "Electron Main\n生命周期 / 窗口 / OS 能力" as ElectronMain
+  component "Embedded WS RPC Server\n桌面内置服务" as EmbeddedServer
+  component "@craft-agent/server\n独立 Headless WS 服务" as HeadlessServer
+  component "@craft-agent/shared/protocol\nRPC channel + routing contract" as Protocol
+
+  note right of Router
+    LOCAL_ONLY → EmbeddedServer
+    REMOTE_ELIGIBLE → 当前 Workspace owner
+    切换远程 Workspace 时重订阅 listener
+  end note
+}
+
+package "3 · 应用与会话内核" as ApplicationKernel {
+  component "@craft-agent/server-core/bootstrap\n统一服务启动与 EventSink" as ServerBootstrap
+  component "RPC Handlers\nsessions / workspace / skills / sources /\nautomations / resources / settings" as RpcHandlers
+  component "SessionManager\n会话生命周期、事件流、分支、恢复" as SessionManager
+  component "Workspace / Resource Resolver\n全局资源 + 项目 Sources 覆盖" as ResourceResolver
+  component "@craft-agent/core\nWorkspace / Session / Message DTO" as CoreTypes
+  component "@craft-agent/shared\n配置、凭据、prompt、writing、sources" as SharedDomain
+}
+
+package "4 · 单一 Agent Kernel" as AgentKernel {
+  component "createAgent + Driver Registry\n解析 connection / model / auth / runtime path" as AgentFactory
+  component "PiAgent\nBaseAgent 子类；JSONL 子进程客户端" as PiAgent
+  component "Provider Adapters\nAnthropic / OpenAI / Bedrock /\nOAuth / Custom Endpoint" as ProviderAdapters
+
+  node "@craft-agent/pi-agent-server\n隔离的 Pi runtime 子进程" as PiRuntime {
+    component "JSONL Command / Event Adapter\n权限、工具代理、流式事件" as PiProtocol
+    component "Pi AgentSession\n唯一执行 runtime" as PiSession
+    component "In-memory AuthStorage\n+ ModelRegistry" as PiModels
+    component "StoryflowResourceLoader\nPi Skills 开启；任意 project extension 关闭" as PiResources
+  }
+
+  note right of PiRuntime
+    当前没有正式 child-session / subagent package。
+    Claude Agent runtime 已删除；
+    claude-sdk 仅可能作为历史迁移标记出现。
+  end note
+}
+
+package "5 · Capability 与工具层" as Capabilities {
+  component "@craft-agent/session-tools-core\nCanonical schema + handler registry" as ToolCore
+  component "@craft-agent/session-mcp-server\nstdio MCP 适配器，不拥有 Agent 生命周期" as SessionMcp
+  component "Pi Built-in / Custom Tools\nread / edit / bash / search / web" as PiTools
+  component "Host Capabilities\nBrowserPane / shell / filesystem / permission" as HostCapabilities
+  component "Sources\nMCP / REST / local integrations" as Sources
+}
+
+package "6 · 事实源与外部系统" as DataExternal {
+  database "~~/.craft-agent\nconfig / credentials / global resources /\nhidden + configured workspaces" as CraftData
+  folder "真实项目目录\n文件树 / 写作稿件 / Sources overlay" as ProjectFiles
+  folder "{sessionPath}\nStoryflow JSONL / attachments / plans" as SessionStore
+  folder "{sessionPath}/.pi-sessions\nPi resume / fork 的 provider 事实源" as PiSessionStore
+  folder "Skills / Extensions\nPi native Skills + Storyflow global resources" as SkillsStore
+  cloud "LLM Provider APIs" as LlmApis
+  cloud "外部 MCP / REST 服务" as ExternalSources
+}
+
+User --> Renderer
+Renderer --> SharedUI : 复用 UI
+WebClients --> SharedUI : 复用 UI
+Renderer --> Preload : typed API
+Preload --> Router : WS RPC client
+WebClients --> HeadlessServer : WS RPC
+NonGuiClients --> HeadlessServer : WS RPC / gateway
+
+FreeDomain --> WorkspaceResolver
+ProjectDomain --> WorkspaceResolver
+Renderer --> FreeDomain : 显式选择
+Renderer --> ProjectDomain : 显式选择
+WorkspaceResolver --> SessionManager : Workspace DTO
+
+Router --> EmbeddedServer : LOCAL_ONLY + local Workspace
+Router --> HeadlessServer : remote Workspace
+Protocol ..> Router : exhaustive classification
+Protocol ..> EmbeddedServer
+Protocol ..> HeadlessServer
+ElectronMain --> EmbeddedServer : bootstrap
+ElectronMain --> HostCapabilities : 原生 OS 边界
+
+EmbeddedServer --> ServerBootstrap
+HeadlessServer --> ServerBootstrap
+ServerBootstrap --> RpcHandlers
+ServerBootstrap --> SessionManager
+RpcHandlers --> SessionManager
+RpcHandlers --> ResourceResolver
+SessionManager --> SharedDomain
+SessionManager --> CoreTypes
+RpcHandlers --> CoreTypes
+ResourceResolver --> SharedDomain
+
+SessionManager --> AgentFactory : 每个 managed session
+AgentFactory --> PiAgent : 唯一 backend
+AgentFactory --> ProviderAdapters : 解析配置
+ProviderAdapters --> PiModels : model + auth
+PiAgent <--> PiProtocol : JSONL commands / events /\nproxy tool requests
+PiProtocol --> PiSession
+PiSession --> PiModels
+PiSession --> PiResources
+PiSession --> PiTools
+
+PiAgent --> ToolCore : backend-mode session tools
+SessionMcp --> ToolCore : 复用 registry
+PiTools --> HostCapabilities : 需要宿主执行时代理
+PiTools --> Sources
+ToolCore --> HostCapabilities
+ToolCore --> Sources
+
+ResourceResolver --> CraftData
+ResourceResolver --> ProjectFiles : Sources overlay
+PiResources --> SkillsStore
+SessionManager --> SessionStore
+PiSession --> PiSessionStore
+SharedDomain --> CraftData
+SharedDomain --> ProjectFiles
+PiModels --> LlmApis
+Sources --> ExternalSources
+
+CoreTypes -[hidden]down-> AgentFactory
+AgentFactory -[hidden]down-> ToolCore
+ToolCore -[hidden]down-> CraftData
+
+legend bottom
+  |= 线型 |= 含义 |
+  | 实线箭头 | 运行时调用或数据流 |
+  | 虚线箭头 | 编译期协议/类型依赖 |
+  | 关键不变量 | 一个 SessionManager、一个 Resource Resolver、一个 Pi Agent runtime |
+  | Workspace | 会话身份、cwd 和上下文边界；不是另一套 Agent 实现 |
+endlegend
+
+@enduml

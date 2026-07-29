@@ -135,7 +135,7 @@ craft-agent source auth-help linear
 <!-- cli:skill:start -->
 ## Skill
 
-Manage global Skills stored under `~/.craft-agent/skills/{slug}/SKILL.md`.
+Manage user Skills stored under `~/.pi/agent/skills/{slug}/SKILL.md`.
 
 ### Commands
 - `craft-agent skill list`

@@ -2,12 +2,12 @@
 
 ## Purpose
 Core business logic package for Craft Agent:
-- Agent backends and session-scoped tools
+- Pi agent runtime and session-scoped tools
 - Sources, credentials, sessions, and config
 - Permission modes and validation
 
 ## Key folders
-- `src/agent/` — `claude-agent.ts`, `pi-agent.ts`, `base-agent.ts`, tools, permissions
+- `src/agent/` — `pi-agent.ts`, `base-agent.ts`, tools, permissions
 - `src/sources/` — source storage/types/services
 - `src/sessions/` — session persistence/index
 - `src/config/` — config/preferences/theme/watcher
@@ -26,9 +26,7 @@ cd packages/shared && bun run tsc --noEmit
 - Keep user-facing tool contracts backward-compatible where possible.
 
 ## Notes
-- `ClaudeAgent` is the primary class in `src/agent/claude-agent.ts`.
-- Claude SDK subprocess env is sanitized to strip Claude-specific Bedrock routing vars (`CLAUDE_CODE_USE_BEDROCK`, `AWS_BEARER_TOKEN_BEDROCK`, `ANTHROPIC_BEDROCK_BASE_URL`). Pi Bedrock uses its own AWS env path instead.
-- Backward alias export (`CraftAgent`) exists for compatibility.
+- `PiAgent` is the only production Agent runtime; Anthropic remains a model/auth provider.
 - Prefer routing new model vendors through the existing Pi path (`providerType: 'pi'` + `piAuthProvider`) unless they truly need a distinct runtime/backend. The Pi provider catalog and display metadata live in `src/config/models-pi.ts`.
 - Custom endpoint model capabilities must preserve explicit per-model overrides end-to-end. In particular, `supportsImages: true` enables image input for one model and `supportsImages: false` must remain available to override a global endpoint image default. Active Pi custom-endpoint sessions refresh runtime capabilities via `updateRuntimeConfig`; capability changes are pushed proactively from the `llmConnections.SAVE` handler through `SessionManager.refreshConnectionRuntime`, with the lazy `getOrCreateAgent` path acting as a backstop. The session layer still gates image attachments at send time so disabled images are not sent even if a subprocess refresh fails.
 - `update_runtime_config` IPC carries `model, providerType, authType, baseUrl, customEndpoint, customModels` only — `piAuthProvider`, `slug`, and the broader credential/provider routing state cannot be re-routed inside a live Pi subprocess. `runtime-config.ts:buildRestartRequiredSignature` hashes those fields separately from the in-place-safe ones; when the restart signature drifts, `tryRefreshAgentRuntime` skips the in-place attempt and goes straight to dispose + recreate so the new auth/provider state actually takes effect.
@@ -41,7 +39,7 @@ cd packages/shared && bun run tsc --noEmit
 - Automation matchers may declare an optional `telegramTopic?: string` to route spawned sessions into a Telegram forum topic in the workspace's paired supergroup. The field is plumbed through `PendingPrompt` and `ExecutePromptAutomationInput`; runtime resolution and topic creation live in `@craft-agent/messaging-gateway`'s `TopicRegistry` and `MessagingGatewayRegistry.bindAutomationSession`. SessionManager picks up the resolution via the optional `setAutomationBinder` hook installed by the messaging-gateway bootstrap.
 - The OpenAI Chat Completions strip stream (`unified-network-interceptor.ts:createOpenAiSseStrippingStream`) emits **one consolidated SSE event per logical tool call** with `id + name + cleanArgs` together — never split across init + args-only deltas. Some downstream SDKs (Pi SDK) treat args-only deltas as new tool_calls instead of merging by index, which produces duplicate empty-id entries on parallel-tool turns from DeepSeek and other relays. `sanitizeOpenAiHistoryInPlace` recovers sessions whose history was persisted by the pre-fix split-emit version.
 - `LlmConnection.midStreamBehavior` controls whether mid-stream user sends try to steer the in-flight turn or hold for the next turn. Default is per-`providerType` via `defaultMidStreamBehavior()` (anthropic→`'queue'`, pi/pi_compat→`'steer'`). **Read everywhere via `resolveMidStreamBehavior(connection)`** — never branch on `providerType` directly for this decision; legacy connections without the field rely on the resolver's fallback. New connections persist the explicit default at `createBuiltInConnection` time so the Settings → AI submenu shows a checkmark on first load. The decision is made in `SessionManager.sendMessage`'s mid-stream branch only — backend code (`claude-agent.ts`, `pi-agent.ts`) is unchanged: `'queue'` mode skips `agent.redirect()` entirely and lets the current turn finish before replay.
-- The network interceptor (`unified-network-interceptor.ts`) is currently **Pi-only**: it preloads into the Pi subprocess via Bun `--preload`. The Claude SDK no longer runs under Bun (since 0.2.113 it spawns a per-platform native `claude` binary), so `--preload` is not available there. Features that used to live in the interceptor for Claude (rich tool intent, fast-mode override, MalformedBodyError validation, etc.) are tracked as Phase-2 work in `plans/sdk-uplift-plan.md` — they'll need to move to SDK hooks or a local proxy. In dev / monorepo runs, the Pi interceptor still preloads from the .ts source so changes propagate without a rebuild; packaged builds use `apps/electron/dist/interceptor.cjs`. See `agent/backend/internal/runtime-resolver.ts:resolveInterceptorBundlePath`.
+- The network interceptor (`unified-network-interceptor.ts`) preloads into the Pi subprocess via Bun `--preload`. In dev / monorepo runs it loads the .ts source so changes propagate without a rebuild; packaged builds use `apps/electron/dist/interceptor.cjs`. See `agent/backend/internal/runtime-resolver.ts:resolveInterceptorBundlePath`.
 
 ## i18n (Internationalization)
 
