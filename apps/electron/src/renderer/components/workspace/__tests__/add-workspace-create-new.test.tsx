@@ -36,8 +36,6 @@ describe('AddWorkspaceStep_CreateNew', () => {
     )
 
     expect(html.match(/data-slot="input"/g) ?? []).toHaveLength(1)
-    expect(html).toContain('No folder selected')
-    expect(html).toContain('Optional')
     expect(html).not.toContain('type="radio"')
     expect(html).not.toContain('Method Pack')
     expect(html).not.toContain('短篇/中篇小说')

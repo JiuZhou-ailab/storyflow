@@ -62,7 +62,7 @@ describe('ChatDisplay scroll layout', () => {
     expect(freeFormInputSource).toContain('flex min-w-0 items-center gap-1 px-2 py-2')
     expect(freeFormInputSource).toContain('flex min-w-0 flex-1 items-center gap-1 overflow-hidden')
     expect(freeFormInputSource).toContain('flex min-w-0 max-w-[52%] items-center justify-end shrink-0')
-    expect(freeFormInputSource).toContain('inline-flex min-w-0 max-w-[140px] items-center h-7')
+    expect(freeFormInputSource).toContain('input-toolbar-btn inline-flex !h-7 min-w-0 max-w-[140px]')
     expect(freeFormInputSource).toContain('<span className="min-w-0 truncate">{currentModelDisplayName}</span>')
   })
 })
