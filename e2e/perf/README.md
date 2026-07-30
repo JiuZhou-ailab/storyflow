@@ -46,7 +46,7 @@ Scenarios: `startup`, `switch`, `memory-steady`, `memory-leak`, `memory-leak-doc
 
 `memory-leak-docs` judges the second of two equivalent chapter rings so bounded first-use caches are excluded while per-switch growth still fails the baseline.
 
-Harness always sets `CRAFT_CLIENT_AUTH_REQUIRED=false` so the offline fixture is not blocked by the desktop login gate.
+The generated fixture marks setup as deferred, and the harness sets `CRAFT_CLIENT_AUTH_REQUIRED=false`, so offline baselines are not blocked by onboarding or the desktop login gate.
 
 An explicit `PERF_SCENARIOS` value is diagnostic mode (selected baselines only).
 

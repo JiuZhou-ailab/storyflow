@@ -561,12 +561,13 @@ function main() {
   }
 
   // Global config.json (workspaces array format replicated from real ~/.craft-agent/config.json;
-  // llmConnections intentionally empty — never copy credentials or endpoints)
+  // setup is explicitly deferred so the offline fixture never opens onboarding)
   totalBytes += writeJson(join(outDir, "config.json"), {
     workspaces: configWorkspaces,
     activeWorkspaceId: configWorkspaces[0]!.id,
     activeSessionId: null,
     llmConnections: [],
+    setupDeferred: true,
   });
 
   const elapsedSec = (performance.now() - started) / 1000;
