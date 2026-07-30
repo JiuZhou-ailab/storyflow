@@ -10,6 +10,7 @@ import {
   type ExtensionAPI,
   type Skill,
 } from '@earendil-works/pi-coding-agent';
+import { fingerprintTools } from './prompt-cache-profile.ts';
 import { createSystemPromptOverride } from './system-prompt-override.ts';
 
 function registerHandler(controller: ReturnType<typeof createSystemPromptOverride>) {
@@ -62,5 +63,48 @@ describe('createSystemPromptOverride', () => {
 
     expect(result?.systemPrompt).toContain('CRAFT_PROMPT');
     expect(result?.systemPrompt).toContain('<name>outline-architecture</name>');
+  });
+
+  it('keeps sorted Skills in the stable prefix and dynamic context at the tail', async () => {
+    const controller = createSystemPromptOverride();
+    const run = registerHandler(controller);
+    const makeSkill = (name: string): Skill => ({
+      name,
+      description: `${name} instructions`,
+      filePath: `/skills/${name}/SKILL.md`,
+      baseDir: `/skills/${name}`,
+      sourceInfo: createSyntheticSourceInfo(
+        `/skills/${name}/SKILL.md`,
+        { source: 'storyflow-project', scope: 'project' },
+      ),
+      disableModelInvocation: false,
+    });
+    const alpha = makeSkill('alpha');
+    const zeta = makeSkill('zeta');
+
+    const firstProfile = controller.set('STABLE', [zeta, alpha], 'DYNAMIC ONE');
+    const firstPrompt = (await run())?.systemPrompt ?? '';
+    const secondProfile = controller.set('STABLE', [alpha, zeta], 'DYNAMIC TWO');
+
+    expect(firstPrompt.indexOf('<name>alpha</name>')).toBeLessThan(
+      firstPrompt.indexOf('<name>zeta</name>'),
+    );
+    expect(firstPrompt.indexOf('<name>zeta</name>')).toBeLessThan(
+      firstPrompt.indexOf('DYNAMIC ONE'),
+    );
+    expect(secondProfile.stablePrefixHash).toBe(firstProfile.stablePrefixHash);
+  });
+
+  it('fingerprints the serialized toolset independently of registration order', () => {
+    const tools = [
+      { name: 'zeta', description: 'Z', parameters: { type: 'object' } },
+      { name: 'alpha', description: 'A', parameters: { type: 'object' } },
+    ];
+
+    expect(fingerprintTools(tools)).toBe(fingerprintTools([...tools].reverse()));
+    expect(fingerprintTools(tools)).not.toBe(fingerprintTools([
+      { ...tools[0], description: 'changed' },
+      tools[1],
+    ]));
   });
 });

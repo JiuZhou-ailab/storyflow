@@ -49,5 +49,4 @@ export const PI_TOOL_NAME_MAP: Record<string, string> = {
   web_search: 'WebSearch',
   notebook_edit: 'NotebookEdit',
   glob: 'Glob',
-  task: 'Task',
 };

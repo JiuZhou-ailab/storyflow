@@ -89,12 +89,31 @@ describe('managed auth flow', () => {
       }),
       gatewayEnv,
     )
+    let geminiUpstream: Request | null = null
+    const nativeGemini = await handleModelGatewayRequest(
+      new Request('https://model.example.com/v1beta/models/gemini-3.1-flash-lite:generateContent', {
+        method: 'POST',
+        headers: {
+          'x-goog-api-key': tokens.modelAccessToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'ping' }] }] }),
+      }),
+      gatewayEnv,
+      async (request) => {
+        geminiUpstream = request
+        return Response.json({ candidates: [] })
+      },
+    )
 
     expect(accepted.status).toBe(200)
     expect(await accepted.json()).toEqual({ ok: true })
     expect(upstreamRequest?.url).toBe('https://newapi.example.com/v1/responses')
     expect(upstreamRequest?.headers.get('authorization')).toBe('Bearer server-only-newapi-key')
     expect(upstreamRequest?.headers.get('authorization')).not.toContain(tokens.modelAccessToken)
+    expect(nativeGemini.status).toBe(200)
+    expect(geminiUpstream?.headers.get('x-goog-api-key')).toBe('server-only-newapi-key')
+    expect(geminiUpstream?.headers.get('authorization')).toBeNull()
     expect(rejectedAppSession.status).toBe(401)
     expect(await rejectedAppSession.json()).toEqual({
       error: 'Invalid model access token',

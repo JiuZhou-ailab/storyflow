@@ -48,6 +48,8 @@ describe('system prompt guidance', () => {
     expect(prompt).toContain('it is not the destination for user-requested project files')
     expect(prompt).toContain('Durable deliverables belong in the current working directory')
     expect(prompt).toContain('write durable project deliverables to the current working directory')
+    expect(prompt).toContain('use `SubmitPlan` only when the plan is ready')
+    expect(prompt).not.toContain('`update_plan`')
     expect(prompt).not.toContain('data files to the **exact `dataFolderPath`**')
   })
 
@@ -59,6 +61,20 @@ describe('system prompt guidance', () => {
     expect(prompt).toContain('never through `script_sandbox`')
     expect(prompt).toContain('user Skills from `~/.pi/agent/skills` and `~/.agents/skills`')
     expect(prompt).toContain('project Skills from `.pi/skills` and `.agents/skills`')
+  })
+
+  it('keeps static guidance below the fixed-context budget', () => {
+    const prompt = getSystemPrompt(undefined, undefined, '/tmp/workspace', '/tmp/workspace')
+
+    expect(prompt.length).toBeLessThan(7_000)
+  })
+
+  it('keeps workspace-specific paths out of the stable prefix', () => {
+    const prompt = getSystemPrompt(undefined, undefined, '/tmp/workspace', '/tmp/workspace')
+
+    expect(prompt).not.toContain('/tmp/workspace')
+    expect(prompt).toContain('workspace root at `.craft-agent/sources/{slug}/`')
+    expect(prompt).not.toContain('<project_context_files working_directory=')
   })
 })
 

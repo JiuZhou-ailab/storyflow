@@ -7,6 +7,7 @@ import { readFileSync } from 'fs'
 import { THINKING_LEVELS } from '@craft-agent/shared/agent/thinking-levels'
 import {
   getPrimaryInputAction,
+  groupModelMenuOptions,
   isCompositionInput,
   readAttachmentBatch,
   resolveAutoCapitalisedInput,
@@ -166,13 +167,37 @@ describe('FreeFormInput attachment read path', () => {
 })
 
 describe('FreeFormInput model menu', () => {
-  it('shows thinking levels only as a capability-gated model submenu', () => {
+  it('groups concrete models under their ordered series', () => {
+    expect(groupModelMenuOptions([
+      { id: 'gpt-5.5', name: 'GPT-5.5', series: 'GPT-5' },
+      { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', series: 'GPT-5' },
+      { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', series: 'GPT-5' },
+      { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', series: 'Gemini 3.5' },
+    ])).toEqual([
+      {
+        name: 'GPT-5',
+        models: [
+          { id: 'gpt-5.5', name: 'GPT-5.5', series: 'GPT-5' },
+          { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', series: 'GPT-5' },
+          { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', series: 'GPT-5' },
+        ],
+      },
+      {
+        name: 'Gemini 3.5',
+        models: [{ id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', series: 'Gemini 3.5' }],
+      },
+    ])
+  })
+
+  it('puts thinking strength beside model series instead of inside each model', () => {
     const source = readFileSync(new URL('../FreeFormInput.tsx', import.meta.url), 'utf-8')
 
-    expect(source).toContain('modelSupportsThinking(connection, modelId)')
+    expect(source).toContain('modelSupportsThinking(effectiveConnectionDetails, currentModel)')
+    expect(source).toContain('modelSupportsThinkingLevel(effectiveConnectionDetails, currentModel, id)')
+    expect(source).toContain('resolveModelThinkingLevel(effectiveConnectionDetails, currentModel, thinkingLevel)')
     expect(source).toContain('<StyledDropdownMenuSubTrigger')
-    expect(source).toContain("THINKING_LEVELS.filter(({ id }) => id !== 'off')")
-    expect(source).toContain('className="w-[220px] whitespace-normal"')
+    expect(source).toContain("{t('settings.ai.thinking')}")
+    expect(source).toContain('renderThinkingMenuItem()')
     expect(THINKING_LEVELS.find(({ id }) => id === 'xhigh')?.descriptionKey)
       .toBe('thinking.extendedDesc')
     expect(source).not.toContain('thinkingDisabled')

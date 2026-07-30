@@ -5,7 +5,11 @@
 import { isLocalMcpEnabled } from '../../workspaces/storage.ts';
 import { formatPreferencesForPrompt } from '../../config/preferences.ts';
 import { formatSessionState } from '../mode-manager.ts';
-import { getDateTimeContext, getWorkingDirectoryContext } from '../../prompts/system.ts';
+import {
+  getDateTimeContext,
+  getProjectContextFilesPrompt,
+  getWorkingDirectoryContext,
+} from '../../prompts/system.ts';
 import { getSessionPlansPath, getSessionDataPath, getSessionPath } from '../../sessions/storage.ts';
 import {
   buildWorkspaceStructureSnapshot,
@@ -63,10 +67,35 @@ export class PromptBuilder {
   ): string[] {
     const parts: string[] = [];
 
-    // Add date/time context first (enables prompt caching)
-    parts.push(getDateTimeContext());
+    // Keep the least volatile context first so provider caches can reuse the
+    // longest possible prefix across turns.
+    if (this.workspaceRootPath) {
+      parts.push(`<workspace_root>${this.workspaceRootPath}</workspace_root>`);
+    }
 
-    // Add session state (permission mode, plans folder path, data folder path)
+    parts.push(this.formatWorkspaceCapabilities());
+
+    const workingDirContext = this.getWorkingDirectoryContext();
+    if (workingDirContext) {
+      parts.push(workingDirContext);
+    }
+
+    const projectContextFiles = getProjectContextFilesPrompt(
+      this.config.session?.workingDirectory ?? this.workspaceRootPath
+    );
+    if (projectContextFiles) {
+      parts.push(projectContextFiles);
+    }
+
+    const workspaceStructureContext = this.formatWorkspaceStructure();
+    if (workspaceStructureContext) {
+      parts.push(workspaceStructureContext);
+    }
+
+    if (sourceStateBlock) {
+      parts.push(sourceStateBlock);
+    }
+
     const sessionId = this.config.session?.id ?? `temp-${Date.now()}`;
     const plansFolderPath = options.plansFolderPath ??
       getSessionPlansPath(this.workspaceRootPath, sessionId);
@@ -78,24 +107,8 @@ export class PromptBuilder {
       consumeModeChangeUserSignal: true,
     }));
 
-    // Add source state if provided
-    if (sourceStateBlock) {
-      parts.push(sourceStateBlock);
-    }
-
-    // Add workspace capabilities
-    parts.push(this.formatWorkspaceCapabilities());
-
-    // Add working directory context
-    const workingDirContext = this.getWorkingDirectoryContext();
-    if (workingDirContext) {
-      parts.push(workingDirContext);
-    }
-
-    const workspaceStructureContext = this.formatWorkspaceStructure();
-    if (workspaceStructureContext) {
-      parts.push(workspaceStructureContext);
-    }
+    // Current time changes every turn, so it must stay at the dynamic tail.
+    parts.push(getDateTimeContext());
 
     return parts;
   }

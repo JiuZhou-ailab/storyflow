@@ -72,6 +72,8 @@ import {
   isLocalConnection,
   modelSupportsImages,
   modelSupportsThinking,
+  modelSupportsThinkingLevel,
+  resolveModelThinkingLevel,
   setModelSupportsImages,
   type LlmConnection,
 } from '@config/llm-connections'
@@ -97,17 +99,39 @@ import {
   createRecentWorkingDirItems,
 } from './working-directory-history'
 import { CompactPermissionModeSelector } from './CompactPermissionModeSelector'
-import { formatTokenCount, resolveContextUsage } from './context-usage'
+import { resolveContextUsage } from './context-usage'
 import {
   getPrimaryInputAction,
+  groupModelMenuOptions,
   isCompositionInput,
   readAttachmentBatch,
   resolveAutoCapitalisedInput,
   shouldShowTextInput,
+  type ModelMenuOption,
+  type ModelMenuSeries,
 } from './free-form-input-behavior'
 
 function stripPiPrefixForDisplay(value: string): string {
   return value.startsWith('pi/') ? value.slice(3) : value
+}
+
+function toModelMenuOption(model: ModelDefinition | string): ModelMenuOption {
+  if (typeof model === 'string') {
+    return {
+      id: model,
+      name: stripPiPrefixForDisplay(getModelDisplayName(model)),
+      series: stripPiPrefixForDisplay(getModelShortName(model)),
+    }
+  }
+
+  const name = model.name ?? stripPiPrefixForDisplay(model.id)
+  return {
+    id: model.id,
+    name,
+    series: model.shortName?.trim() || name,
+    description: model.description,
+    descriptionKey: model.descriptionKey,
+  }
 }
 
 function formatFollowUpChipText(text: string, fallback: string, maxLength = 50): string {
@@ -226,8 +250,6 @@ export interface FreeFormInputProps {
   contextStatus?: {
     /** True when SDK is actively compacting the conversation */
     isCompacting?: boolean
-    /** Input tokens used so far in this session */
-    inputTokens?: number
     /** Context tokens currently occupying the model context window */
     contextTokens?: number
     /** Model's context window size in tokens */
@@ -371,7 +393,10 @@ export function FreeFormInput({
     return connection.models || ANTHROPIC_MODELS
   }, [llmConnections, currentConnection, workspaceDefaultConnection, connectionUnavailable])
 
-  const availableThinkingLevels = THINKING_LEVELS.filter(({ id }) => id !== 'off')
+  const availableModelSeries = React.useMemo(
+    () => groupModelMenuOptions(availableModels.map(toModelMenuOption)),
+    [availableModels],
+  )
 
   // Get display name for current model (full name, not short name)
   const currentModelDisplayName = React.useMemo(() => {
@@ -391,10 +416,9 @@ export function FreeFormInput({
   }, [availableModels, currentModel, connectionDefaultModel])
 
   const contextUsage = React.useMemo(() => resolveContextUsage({
-    inputTokens: contextStatus?.inputTokens,
     contextTokens: contextStatus?.contextTokens,
     contextWindow: contextStatus?.contextWindow || getModelContextWindow(currentModel),
-  }), [contextStatus?.inputTokens, contextStatus?.contextTokens, contextStatus?.contextWindow, currentModel])
+  }), [contextStatus?.contextTokens, contextStatus?.contextWindow, currentModel])
 
   // Group connections by provider type for hierarchical dropdown
   // Each provider (Anthropic, Pi) can have multiple connections (API Key, OAuth, etc.)
@@ -435,6 +459,43 @@ export function FreeFormInput({
     if (!effectiveConnection) return null
     return llmConnections.find(c => c.slug === effectiveConnection) ?? null
   }, [llmConnections, effectiveConnection])
+  const currentModelSupportsThinking = React.useMemo(() => {
+    if (effectiveConnectionDetails) {
+      return modelSupportsThinking(effectiveConnectionDetails, currentModel)
+    }
+
+    const model = availableModels.find(entry =>
+      typeof entry === 'string' ? entry === currentModel : entry.id === currentModel
+    )
+    return !!model && typeof model !== 'string' && model.supportsThinking !== false
+  }, [availableModels, currentModel, effectiveConnectionDetails])
+  const availableThinkingLevels = React.useMemo(
+    () => THINKING_LEVELS.filter(({ id }) =>
+      id !== 'off'
+      && (
+        effectiveConnectionDetails
+          ? modelSupportsThinkingLevel(effectiveConnectionDetails, currentModel, id)
+          : currentModelSupportsThinking
+      )
+    ),
+    [currentModel, currentModelSupportsThinking, effectiveConnectionDetails],
+  )
+  const effectiveThinkingLevel = React.useMemo(
+    () => thinkingLevel && effectiveConnectionDetails
+      ? resolveModelThinkingLevel(effectiveConnectionDetails, currentModel, thinkingLevel)
+      : thinkingLevel,
+    [currentModel, effectiveConnectionDetails, thinkingLevel],
+  )
+
+  React.useEffect(() => {
+    if (
+      effectiveThinkingLevel
+      && thinkingLevel
+      && effectiveThinkingLevel !== thinkingLevel
+    ) {
+      onThinkingLevelChange?.(effectiveThinkingLevel)
+    }
+  }, [effectiveThinkingLevel, onThinkingLevelChange, thinkingLevel])
 
   // Shuffle placeholder order once per mount so each session feels fresh.
   // In compact mode, suppress desktop-keyboard guidance that is noisy or misleading
@@ -1599,20 +1660,24 @@ export function FreeFormInput({
   }) => {
     const showVisionToggle = !!connection && isCompatProvider(connection.providerType)
     const visionOn = !!connection && showVisionToggle && modelSupportsImages(connection, modelId)
-    const supportsThinking =
-      !!connection
-      && !!onThinkingLevelChange
-      && modelSupportsThinking(connection, modelId)
 
-    const content = (
-      <>
+    return (
+      <StyledDropdownMenuItem
+        key={modelId}
+        disabled={locked}
+        onSelect={locked ? undefined : selectModel}
+        className={cn(
+          "flex items-center justify-between rounded-[6px] px-2 py-1.5 hover:bg-foreground/[0.07] focus:bg-foreground/[0.07]",
+          !locked && "cursor-pointer",
+        )}
+      >
         <div className="min-w-0 flex-1 text-left">
-          <div className="truncate font-medium text-sm">{modelName}</div>
+          <div className="truncate text-[13px] leading-5">{modelName}</div>
           {description && (
-            <div className="truncate text-xs text-muted-foreground">{description}</div>
+            <div className="truncate text-[11px] leading-4 text-muted-foreground">{description}</div>
           )}
         </div>
-        <div className="flex items-center gap-1 ml-3 shrink-0">
+        <div className="ml-3 flex shrink-0 items-center gap-1">
           {showVisionToggle && connection && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -1649,56 +1714,70 @@ export function FreeFormInput({
               </TooltipContent>
             </Tooltip>
           )}
-          {selected && <Check className="h-3 w-3 text-foreground" />}
+          {selected && <Check className="h-3.5 w-3.5 text-foreground" />}
         </div>
-      </>
+      </StyledDropdownMenuItem>
     )
+  }
 
-    if (!supportsThinking) {
-      return (
-        <StyledDropdownMenuItem
-          key={modelId}
-          disabled={locked}
-          onSelect={locked ? undefined : selectModel}
-          className={cn(
-            "flex items-center justify-between px-2 py-2 rounded-lg",
-            !locked && "cursor-pointer",
-          )}
-        >
-          {content}
-        </StyledDropdownMenuItem>
-      )
-    }
+  const renderModelSeries = ({
+    series,
+    connection,
+    selectedModelId,
+    selectModel,
+  }: {
+    series: ModelMenuSeries
+    connection?: LlmConnection
+    selectedModelId?: string
+    selectModel: (modelId: string) => void
+  }) => (
+    <DropdownMenuSub key={`${connection?.slug ?? 'models'}:${series.name}`}>
+      <StyledDropdownMenuSubTrigger className="rounded-[6px] px-2 py-1.5 hover:bg-foreground/[0.07] focus:bg-foreground/[0.07] data-[state=open]:bg-foreground/[0.07]">
+        <span className="min-w-0 flex-1 truncate text-[13px] leading-5">{series.name}</span>
+        {series.models.some(model => model.id === selectedModelId) && (
+          <Check className="h-3.5 w-3.5 text-foreground" />
+        )}
+      </StyledDropdownMenuSubTrigger>
+      <StyledDropdownMenuSubContent minWidth="min-w-0" className="w-52">
+        {series.models.map(model => renderModelMenuItem({
+          modelId: model.id,
+          modelName: model.name,
+          description: model.descriptionKey ? t(model.descriptionKey) : model.description,
+          connection,
+          selected: model.id === selectedModelId,
+          selectModel: () => selectModel(model.id),
+        }))}
+      </StyledDropdownMenuSubContent>
+    </DropdownMenuSub>
+  )
 
+  const renderThinkingMenuItem = () => {
+    if (!onThinkingLevelChange || connectionUnavailable) return null
+
+    const selectedLevel = THINKING_LEVELS.find(({ id }) => id === effectiveThinkingLevel)
     return (
-      <DropdownMenuSub key={modelId}>
+      <DropdownMenuSub>
         <StyledDropdownMenuSubTrigger
-          onClick={locked ? undefined : selectModel}
-          className="flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer"
+          disabled={!currentModelSupportsThinking}
+          className="rounded-[6px] px-2 py-1.5 hover:bg-foreground/[0.07] focus:bg-foreground/[0.07] data-[state=open]:bg-foreground/[0.07]"
         >
-          {content}
+          <span className="flex-1 text-[13px] leading-5">{t('settings.ai.thinking')}</span>
+          <span className="text-[12px] text-muted-foreground">
+            {currentModelSupportsThinking && selectedLevel
+              ? t(selectedLevel.nameKey)
+              : t('thinking.notSupported')}
+          </span>
         </StyledDropdownMenuSubTrigger>
-        <StyledDropdownMenuSubContent
-          minWidth="min-w-0"
-          className="w-[220px] whitespace-normal"
-        >
-          {availableThinkingLevels.map(({ id, nameKey, descriptionKey }) => (
+        <StyledDropdownMenuSubContent minWidth="min-w-32">
+          {availableThinkingLevels.map(({ id, nameKey }) => (
             <StyledDropdownMenuItem
               key={id}
-              onSelect={() => {
-                if (!locked) selectModel?.()
-                onThinkingLevelChange(id)
-              }}
-              className="flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer"
+              onSelect={() => onThinkingLevelChange(id)}
+              className="flex cursor-pointer items-center justify-between rounded-[6px] px-2 py-1.5 hover:bg-foreground/[0.07] focus:bg-foreground/[0.07]"
             >
-              <div className="min-w-0 flex-1 text-left">
-                <div className="font-medium text-sm">{t(nameKey)}</div>
-                <div className="whitespace-normal text-xs leading-4 text-muted-foreground">
-                  {t(descriptionKey)}
-                </div>
-              </div>
-              {thinkingLevel === id && (
-                <Check className="h-3 w-3 text-foreground shrink-0 ml-3" />
+              <span className="text-[13px] leading-5">{t(nameKey)}</span>
+              {effectiveThinkingLevel === id && (
+                <Check className="ml-3 h-3.5 w-3.5 shrink-0 text-foreground" />
               )}
             </StyledDropdownMenuItem>
           ))}
@@ -2163,8 +2242,8 @@ export function FreeFormInput({
                   <button
                     type="button"
                     className={cn(
-                      "input-toolbar-btn inline-flex min-w-0 max-w-[140px] items-center h-7 px-1.5 gap-0.5 text-[13px] rounded-[6px] hover:bg-foreground/5 transition-colors select-none",
-                      modelDropdownOpen && "bg-foreground/5",
+                      "input-toolbar-btn inline-flex !h-7 min-w-0 max-w-[140px] select-none items-center gap-1 rounded-full px-2 text-[12px] transition-colors hover:bg-foreground/[0.07]",
+                      modelDropdownOpen && "bg-foreground/[0.07]",
                       connectionUnavailable && "text-destructive",
                     )}
                   >
@@ -2187,7 +2266,7 @@ export function FreeFormInput({
                 {t('common.model')}
               </TooltipContent>
             </Tooltip>
-            <StyledDropdownMenuContent side="top" align="end" sideOffset={8} className="min-w-[260px]">
+            <StyledDropdownMenuContent side="top" align="end" sideOffset={6} className="min-w-60">
               {/* Connection unavailable message */}
               {connectionUnavailable ? (
                 <div className="flex flex-col items-center justify-center py-6 px-4 text-center">
@@ -2211,7 +2290,7 @@ export function FreeFormInput({
                 connectionsByProvider.map(([providerName, connections], index) => (
                   <React.Fragment key={providerName}>
                     {/* Provider group label */}
-                    <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide select-none">
+                    <div className="select-none px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                       {providerName}
                     </div>
                     {connections.map((conn) => {
@@ -2222,12 +2301,12 @@ export function FreeFormInput({
                           <StyledDropdownMenuSubTrigger
                             disabled={!isAuthenticated}
                             className={cn(
-                              "flex items-center justify-between px-2 py-2 rounded-lg",
+                              "flex items-center justify-between rounded-[6px] px-2 py-1.5 hover:bg-foreground/[0.07] focus:bg-foreground/[0.07] data-[state=open]:bg-foreground/[0.07]",
                               isCurrentConnection && "bg-foreground/5"
                             )}
                           >
                             <div className="text-left flex-1">
-                              <div className="font-medium text-sm flex items-center gap-1.5">
+                              <div className="flex items-center gap-1.5 text-[13px] leading-5">
                                 <ConnectionIcon connection={conn} size={14} />
                                 {conn.name}
                                 {isCurrentConnection && <Check className="h-3 w-3 text-foreground" />}
@@ -2240,18 +2319,13 @@ export function FreeFormInput({
                           {isAuthenticated && (
                             <StyledDropdownMenuSubContent className="min-w-[220px]">
                               {/* Show models for this connection - use provider-specific models as fallback */}
-                              {(conn.models || ANTHROPIC_MODELS).map((model) => {
-                                const modelId = typeof model === 'string' ? model : model.id
-                                const modelName = typeof model === 'string'
-                                  ? stripPiPrefixForDisplay(getModelShortName(model))
-                                  : (model.name ?? stripPiPrefixForDisplay(model.id))
-                                const isSelectedModel = isCurrentConnection && currentModel === modelId
-                                return renderModelMenuItem({
-                                  modelId,
-                                  modelName,
+                              {groupModelMenuOptions(
+                                (conn.models || ANTHROPIC_MODELS).map(toModelMenuOption)
+                              ).map(series => renderModelSeries({
+                                  series,
                                   connection: conn,
-                                  selected: isSelectedModel,
-                                  selectModel: () => {
+                                  selectedModelId: isCurrentConnection ? currentModel : undefined,
+                                  selectModel: (modelId) => {
                                     // If selecting a different connection, update both connection and model
                                     if (!isCurrentConnection && onConnectionChange) {
                                       onConnectionChange(conn.slug)
@@ -2259,8 +2333,7 @@ export function FreeFormInput({
                                     // Always pass connection with model for proper persistence
                                     onModelChange(modelId, conn.slug)
                                   },
-                                })
-                              })}
+                                }))}
                             </StyledDropdownMenuSubContent>
                           )}
                         </DropdownMenuSub>
@@ -2284,62 +2357,60 @@ export function FreeFormInput({
                     </>
                   )}
                   {/* Model options based on effective connection's provider type */}
-                  {availableModels.map((model) => {
-                    const modelId = typeof model === 'string' ? model : model.id
-                    const modelName = typeof model === 'string'
-                      ? stripPiPrefixForDisplay(getModelShortName(model))
-                      : (model.name ?? stripPiPrefixForDisplay(model.id))
-                    const isSelected = currentModel === modelId
-                    const descriptionKey = typeof model !== 'string' && 'descriptionKey' in model ? (model.descriptionKey as string) : undefined
-                    const description = descriptionKey ? t(descriptionKey) : (typeof model !== 'string' && 'description' in model ? (model.description as string) : '')
-                    return renderModelMenuItem({
-                      modelId,
-                      modelName,
-                      description,
-                      connection: effectiveConnectionDetails ?? undefined,
-                      selected: isSelected,
-                      selectModel: () => onModelChange(modelId, effectiveConnection),
-                    })
-                  })}
+                  {availableModelSeries.map(series => renderModelSeries({
+                    series,
+                    connection: effectiveConnectionDetails ?? undefined,
+                    selectedModelId: currentModel,
+                    selectModel: modelId => onModelChange(modelId, effectiveConnection),
+                  }))}
                 </>
               )}
 
-              {/* Context usage footer - only show when we have token data */}
-              {contextUsage && contextUsage.tokens > 0 && (
-                <>
-                  <StyledDropdownMenuSeparator className="my-1" />
-                  <div className="px-2 py-1.5 select-none">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{t('chat.context')}</span>
-                      <span className="flex items-center gap-1.5">
-                        {contextStatus?.isCompacting && (
-                          <Spinner className="h-3 w-3" />
-                        )}
-                        {t('chat.tokensUsed', { displayCount: formatTokenCount(contextUsage.tokens) })}
-                      </span>
-                    </div>
-                  </div>
-                </>
-              )}
+              {renderThinkingMenuItem()}
             </StyledDropdownMenuContent>
           </DropdownMenu>
           )}
 
-          {/* 5.5 Context Usage Button */}
+          {/* 5.5 Context Usage */}
           {contextUsage && !compactMode && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
                   type="button"
                   className={cn(
-                    "ml-1 inline-flex h-6 min-w-9 items-center justify-center rounded-[6px] px-2 text-[12px] font-medium transition-colors select-none",
+                    "ml-1 inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors select-none",
                     contextUsage.percent >= 80
-                      ? "bg-info/10 text-info hover:bg-info/20"
+                      ? "text-info hover:bg-info/10"
                       : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
                   )}
-                  aria-label={t('chat.contextUsage', 'Context usage')}
+                  aria-label={`${t('chat.contextUsage', 'Context usage')}: ${contextUsage.label} (${contextUsage.tokenLabel})`}
                 >
-                  {contextStatus?.isCompacting ? <Spinner className="h-3 w-3" /> : contextUsage.label}
+                  {contextStatus?.isCompacting ? (
+                    <Spinner className="h-3.5 w-3.5" />
+                  ) : (
+                    <svg aria-hidden="true" className="h-4 w-4 -rotate-90" viewBox="0 0 16 16">
+                      <circle
+                        className="stroke-current opacity-20"
+                        cx="8"
+                        cy="8"
+                        r="6.5"
+                        fill="none"
+                        strokeWidth="2"
+                      />
+                      <circle
+                        className="stroke-current"
+                        cx="8"
+                        cy="8"
+                        r="6.5"
+                        fill="none"
+                        pathLength="100"
+                        strokeDasharray="100"
+                        strokeDashoffset={100 - contextUsage.percent}
+                        strokeLinecap="round"
+                        strokeWidth="2"
+                      />
+                    </svg>
+                  )}
                 </button>
               </TooltipTrigger>
               <TooltipContent side="top">

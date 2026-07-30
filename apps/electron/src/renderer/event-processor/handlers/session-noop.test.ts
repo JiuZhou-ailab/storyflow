@@ -306,7 +306,7 @@ describe('session event no-op guards', () => {
       type: 'usage_update',
       sessionId: 'session-1',
       tokenUsage: {
-        inputTokens: 1200,
+        contextTokens: 1200,
         contextWindow: 200000,
       },
     }

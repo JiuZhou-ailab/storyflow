@@ -190,7 +190,7 @@ export function expandToolPaths(
  * so Claude provides semantic intent for UI display. They must be stripped
  * before execution to avoid SDK validation errors and MCP server rejections.
  *
- * The extraction for UI happens in tool-matching.ts BEFORE this stripping.
+ * The event adapter captures the metadata for UI display before this stripping.
  *
  * @param toolName - The tool name
  * @param input - The tool input object

@@ -1,7 +1,8 @@
-// input: OpenAI Responses or legacy Chat Completions requests and broker-issued model access JWTs
-// output: Authenticated NewAPI requests plus minimal structured upstream diagnostics
+// input: OpenAI model API requests and broker-issued model access JWTs
+// output: Authenticated managed model catalog or NewAPI requests plus minimal upstream diagnostics
 // pos: Edge authorization boundary that keeps NewAPI credentials out of desktop builds
 import { decodeProtectedHeader, jwtVerify, type JWTPayload } from 'jose'
+import { MANAGED_MODEL_CATALOG } from '@craft-agent/shared/config/managed-model-catalog'
 
 export interface Env {
   STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID?: string
@@ -40,7 +41,8 @@ interface GatewayRequestLogDetails {
 const DEFAULT_AUDIENCE = 'storyflow-model-gateway'
 const DEFAULT_ISSUER = 'storyflow-auth-broker'
 const DEFAULT_CURRENT_KEY_ID = 'current'
-const MODEL_API_PATHS = new Set(['/v1/responses', '/v1/chat/completions'])
+const MODEL_API_PATHS = new Set(['/v1/models', '/v1/responses', '/v1/chat/completions'])
+const MANAGED_GEMINI_VIDEO_MODELS = new Set(['gemini-3.1-flash-lite'])
 
 class ForbiddenGatewayTokenError extends Error {}
 
@@ -76,22 +78,27 @@ export async function handleRequest(
       : Response.json({ status: 'ready' })
   }
 
-  if (!MODEL_API_PATHS.has(requestUrl.pathname)) {
+  const geminiModel = geminiModelFromPath(requestUrl.pathname)
+  if (!MODEL_API_PATHS.has(requestUrl.pathname) && !geminiModel) {
     return Response.json({ error: 'Unknown model gateway route' }, { status: 404 })
   }
-  if (request.method !== 'POST') {
-    return methodNotAllowed('POST')
+  const allowedMethod = requestUrl.pathname === '/v1/models' ? 'GET' : 'POST'
+  if (request.method !== allowedMethod) {
+    return methodNotAllowed(allowedMethod)
   }
 
   const startedAt = Date.now()
-  const token = readBearerToken(request.headers.get('authorization'))
+  const requiredScope = geminiModel ? 'model:video' : 'model:chat'
+  const token = geminiModel
+    ? readRequiredEnv(request.headers.get('x-goog-api-key') ?? undefined)
+    : readBearerToken(request.headers.get('authorization'))
   if (!token) {
     return invalidModelAccessTokenResponse()
   }
 
   let access: VerifiedGatewayJwtPayload
   try {
-    access = await verifyGatewayJwt(token, env)
+    access = await verifyGatewayJwt(token, env, requiredScope)
   } catch (error) {
     if (error instanceof ForbiddenGatewayTokenError) {
       return Response.json({ error: error.message }, { status: 403 })
@@ -101,6 +108,35 @@ export async function handleRequest(
   const logIdentity = {
     user: access.sub,
     ...(access.user_name ? { user_name: access.user_name } : {}),
+  }
+
+  if (geminiModel && !MANAGED_GEMINI_VIDEO_MODELS.has(geminiModel)) {
+    return Response.json(
+      {
+        error: 'Gemini video model is not enabled',
+        code: 'model_not_allowed',
+      },
+      { status: 403 },
+    )
+  }
+
+  if (requestUrl.pathname === '/v1/models') {
+    return Response.json({
+      object: 'list',
+      data: MANAGED_MODEL_CATALOG.map(model => ({
+        id: model.id,
+        name: model.name,
+        short_name: model.shortName,
+        description: model.description,
+        provider: model.provider,
+        context_window: model.contextWindow,
+        supports_thinking: model.supportsThinking,
+        thinking_level_map: model.thinkingLevelMap,
+        supports_images: model.supportsImages,
+        object: 'model',
+        owned_by: 'storyflow',
+      })),
+    })
   }
 
   const newApiKey = readRequiredEnv(env.NEWAPI_API_KEY)
@@ -117,7 +153,12 @@ export async function handleRequest(
   const upstreamHeaders = new Headers()
   copyHeader(request.headers, upstreamHeaders, 'accept')
   copyHeader(request.headers, upstreamHeaders, 'content-type')
-  upstreamHeaders.set('authorization', `Bearer ${newApiKey}`)
+  if (geminiModel) {
+    copyHeader(request.headers, upstreamHeaders, 'x-goog-api-client')
+    upstreamHeaders.set('x-goog-api-key', newApiKey)
+  } else {
+    upstreamHeaders.set('authorization', `Bearer ${newApiKey}`)
+  }
 
   const upstreamRequest = new Request(
     buildUpstreamUrl(upstreamBaseUrl, requestUrl.pathname, requestUrl.search),
@@ -189,6 +230,7 @@ export async function handleRequest(
 export async function verifyGatewayJwt(
   token: string,
   env: Env,
+  requiredScope = 'model:chat',
 ): Promise<VerifiedGatewayJwtPayload> {
   const key = resolveGatewayVerificationKey(token, env)
 
@@ -205,7 +247,7 @@ export async function verifyGatewayJwt(
     throw new Error('Model access token expiry is required')
   }
   assertSubject(payload)
-  assertScope(payload, 'model:chat')
+  assertScope(payload, requiredScope)
   assertModelTier(payload)
   const userName = normalizeUserName(payload.user_name)
   const { user_name: _untrustedUserName, ...verifiedPayload } = payload
@@ -274,6 +316,11 @@ function buildUpstreamUrl(baseUrl: string, pathname: string, search: string): st
   return `${baseUrl.replace(/\/+$/, '')}${pathname}${search}`
 }
 
+function geminiModelFromPath(pathname: string): string | null {
+  const match = /^\/v1beta\/models\/([A-Za-z0-9._-]+):generateContent$/.exec(pathname)
+  return match?.[1] ?? null
+}
+
 function copyHeader(source: Headers, target: Headers, name: string): void {
   const value = source.get(name)
   if (value) target.set(name, value)
@@ -289,7 +336,7 @@ function assertSubject(
 
 function assertScope(payload: GatewayJwtPayload, expectedScope: string): void {
   if (!Array.isArray(payload.scopes) || !payload.scopes.includes(expectedScope)) {
-    throw new ForbiddenGatewayTokenError('Model chat scope is required')
+    throw new ForbiddenGatewayTokenError(`${expectedScope} scope is required`)
   }
 }
 

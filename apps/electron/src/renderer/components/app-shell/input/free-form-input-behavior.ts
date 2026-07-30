@@ -22,6 +22,35 @@ export interface AutoCapitalisationResult {
 
 export type PrimaryInputAction = 'send' | 'stop'
 
+export interface ModelMenuOption {
+  id: string
+  name: string
+  series: string
+  description?: string
+  descriptionKey?: string
+}
+
+export interface ModelMenuSeries {
+  name: string
+  models: ModelMenuOption[]
+}
+
+export function groupModelMenuOptions(models: readonly ModelMenuOption[]): ModelMenuSeries[] {
+  const groups = new Map<string, ModelMenuOption[]>()
+
+  for (const model of models) {
+    const series = model.series.trim() || model.name
+    const group = groups.get(series)
+    if (group) {
+      group.push(model)
+    } else {
+      groups.set(series, [model])
+    }
+  }
+
+  return Array.from(groups, ([name, groupedModels]) => ({ name, models: groupedModels }))
+}
+
 export async function readAttachmentBatch<TFile>(
   files: readonly TFile[],
   readAttachment: (file: TFile, index: number) => Promise<FileAttachment | null>,

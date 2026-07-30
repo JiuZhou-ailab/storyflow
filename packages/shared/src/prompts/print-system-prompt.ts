@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Debug script to print the full Storyflow system prompt with annotations.
- * Shows both the static system prompt and dynamic user message context components.
+ * Shows both the static Storyflow prompt and Pi's dynamic system context.
  *
  * Run with: bun run print:system-prompt
  */
@@ -52,18 +52,17 @@ ${colors.bgMagenta}${colors.bold}                                               
 // PART 1: STATIC SYSTEM PROMPT
 // ------------------------------------------------------------
 
-printHeader('PART 1: STATIC SYSTEM PROMPT (systemPrompt.append)');
-printAnnotation('Built once per session, passed to SDK, enables prompt caching');
-printAnnotation('The SDK also uses preset: "claude_code" which adds Claude Code\'s base system prompt');
+printHeader('PART 1: STATIC STORYFLOW SYSTEM PROMPT');
+printAnnotation('Generated per turn, but kept stable so providers can cache the prefix');
+printAnnotation('Pi appends dynamic context and its Skill catalog; tool schemas travel separately');
 printAnnotation('');
 printAnnotation('Composed of:');
 printAnnotation('  1. User Preferences (if set) - formatPreferencesForPrompt()');
 printAnnotation('  2. Storyflow Environment Marker - version, platform, arch');
-printAnnotation('  3. Core Instructions - capabilities, sources, guidelines');
-printAnnotation('  4. Configuration Documentation Refs - permissions, skills, themes, statuses');
-printAnnotation('  5. Permission Modes Documentation - inlined in system prompt');
-printAnnotation('  6. Error Handling & Tool Metadata - guidelines for tool usage');
-printAnnotation('  7. Debug Mode Context (if enabled) - formatDebugModeContext()');
+printAnnotation('  3. Stable Runtime Contracts - safety, sources, skills, permissions');
+printAnnotation('  4. On-demand Documentation References - no inlined manuals');
+printAnnotation('  5. Output Protocols & Tool Metadata');
+printAnnotation('  6. Debug Mode Context (if enabled) - formatDebugModeContext()');
 
 const systemPrompt = getSystemPrompt(
   undefined, // No pinned preferences (use current from disk)
@@ -84,16 +83,16 @@ const systemPromptWithDebug = getSystemPrompt(
 console.log(`${colors.dim}With debug mode: ${systemPromptWithDebug.length.toLocaleString()} characters (+${(systemPromptWithDebug.length - systemPrompt.length).toLocaleString()})${colors.reset}`);
 
 // ------------------------------------------------------------
-// PART 2: DYNAMIC USER MESSAGE CONTEXT
+// PART 2: DYNAMIC SYSTEM CONTEXT
 // ------------------------------------------------------------
 
-printHeader('PART 2: DYNAMIC USER MESSAGE CONTEXT (per message)');
-printAnnotation('These components are prepended to every user message');
-printAnnotation('Placed in user messages (not system prompt) to enable prompt caching');
+printHeader('PART 2: DYNAMIC PI SYSTEM CONTEXT (per turn)');
+printAnnotation('PromptBuilder appends these components after the stable Storyflow prompt');
+printAnnotation('Pi then appends the Skill catalog through system-prompt-override');
 
 // 1. Date/Time
 printSection('1. DATE/TIME CONTEXT - getDateTimeContext()', getDateTimeContext(), colors.magenta);
-printAnnotation('Added first to user message for prompt caching optimization');
+printAnnotation('Added last to the dynamic system context because it changes every turn');
 
 // 2. Session State
 const sessionState = formatSessionState('260121-example-session', {
@@ -142,36 +141,33 @@ printSection(
   colors.magenta
 );
 printAnnotation('Contains: working_directory path, working_directory_context explanation');
-printAnnotation('If project context file exists, includes <project_context_file> tag (agent reads via Read tool)');
+printAnnotation('Project context file discovery is appended by PromptBuilder after this block');
 
-// 6. Recovery Context (example)
-const exampleRecoveryContext = `<recovery_context>
-This session was interrupted and is being recovered. Here's a summary of the previous conversation:
-[Summary of previous messages would appear here]
-</recovery_context>`;
+// 6. Workspace Structure (example)
+const exampleWorkspaceStructure = `<workspace_structure root="/Users/example/projects/my-app" maxDepth="4" maxEntries="120" truncated="false">
+<tree>
+src/
+</tree>
+</workspace_structure>`;
 printSection(
-  '6. RECOVERY CONTEXT - buildRecoveryContext() [only on resume]',
-  exampleRecoveryContext,
+  '6. WORKSPACE STRUCTURE - formatWorkspaceStructure()',
+  exampleWorkspaceStructure,
   colors.magenta
 );
-printAnnotation('Only added when resuming a session after SDK resume fails');
-printAnnotation('Contains summary of previous conversation for context continuity');
+printAnnotation('Bounded file tree: depth 4, at most 120 entries');
 
 // ------------------------------------------------------------
-// PART 3: COMPLETE USER MESSAGE STRUCTURE
+// PART 3: COMPLETE PI SYSTEM PROMPT STRUCTURE
 // ------------------------------------------------------------
 
-printHeader('PART 3: COMPLETE USER MESSAGE STRUCTURE');
-printAnnotation('How a user message looks after all context is injected');
+printHeader('PART 3: COMPLETE PI SYSTEM PROMPT STRUCTURE');
+printAnnotation('The Pi Extension keeps Skills stable and appends volatile context last');
 
-const completeUserMessage = `${getDateTimeContext()}
+const completeSystemPrompt = `${systemPrompt}
 
-${sessionState}
-
-<sources>
-Active: linear
-Inactive: slack (inactive)
-</sources>
+<skills>
+...sorted Pi Skill catalog...
+</skills>
 
 <workspace_capabilities>
 local-mcp: enabled (stdio subprocess servers supported)
@@ -181,11 +177,22 @@ local-mcp: enabled (stdio subprocess servers supported)
 
 <working_directory_context>The user explicitly selected this as the working directory for this session.</working_directory_context>
 
-<project_context_file>CLAUDE.md</project_context_file>
+<workspace_structure root="/Users/example/projects/my-app">
+<tree>
+src/
+</tree>
+</workspace_structure>
 
-What files are in the src directory?`;
+<sources>
+Active: linear
+Inactive: slack (inactive)
+</sources>
 
-printSection('COMPLETE USER MESSAGE (example)', completeUserMessage, colors.green);
+${sessionState}
+
+${getDateTimeContext()}`;
+
+printSection('COMPLETE PI SYSTEM PROMPT (example)', completeSystemPrompt, colors.green);
 
 // ------------------------------------------------------------
 // SUMMARY
@@ -196,32 +203,33 @@ ${colors.bgMagenta}${colors.bold}                                               
 ${colors.bgMagenta}${colors.bold}                              SUMMARY                                           ${colors.reset}
 ${colors.bgMagenta}${colors.bold}                                                                                ${colors.reset}
 
-${colors.bold}SDK Configuration:${colors.reset}
-  systemPrompt.preset: 'claude_code'     ${colors.dim}// Claude Code's base system prompt${colors.reset}
-  systemPrompt.append: getSystemPrompt() ${colors.dim}// Storyflow additions (static, cacheable)${colors.reset}
+${colors.bold}Pi Prompt Assembly:${colors.reset}
+  1. getSystemPrompt()                   ${colors.dim}// Stable Storyflow contracts${colors.reset}
+  2. formatSkillsForPrompt()             ${colors.dim}// Sorted Pi Skill catalog${colors.reset}
+  3. PromptBuilder.buildContextParts()   ${colors.dim}// Per-turn environment state${colors.reset}
+  4. request tools[]                     ${colors.dim}// Separate provider tool schemas${colors.reset}
 
 ${colors.bold}Static System Prompt Components:${colors.reset}
   1. User Preferences (if set)           ${colors.dim}// formatPreferencesForPrompt()${colors.reset}
-  2. Storyflow Environment Marker      ${colors.dim}// Version, platform, arch${colors.reset}
-  3. Core Instructions                   ${colors.dim}// Capabilities, sources, guidelines${colors.reset}
-  4. Configuration Documentation Refs    ${colors.dim}// Permissions, skills, themes, statuses${colors.reset}
-  5. Permission Modes Documentation      ${colors.dim}// Inlined in system prompt${colors.reset}
-  6. Error Handling & Tool Metadata      ${colors.dim}// Guidelines for tool usage${colors.reset}
-  7. Debug Mode Context (if enabled)     ${colors.dim}// formatDebugModeContext()${colors.reset}
+  2. Storyflow Environment Marker        ${colors.dim}// Version, platform, arch${colors.reset}
+  3. Stable Runtime Contracts             ${colors.dim}// Safety and responsibility boundaries${colors.reset}
+  4. On-demand Documentation Refs         ${colors.dim}// Manuals stay out of every request${colors.reset}
+  5. Output Protocols & Tool Metadata     ${colors.dim}// Storyflow renderer contracts${colors.reset}
+  6. Debug Mode Context (if enabled)      ${colors.dim}// formatDebugModeContext()${colors.reset}
 
-${colors.bold}Dynamic User Message Components (per message):${colors.reset}
-  1. Date/Time Context                   ${colors.dim}// getDateTimeContext()${colors.reset}
-  2. Session State                       ${colors.dim}// formatSessionState()${colors.reset}
-  3. Source State                        ${colors.dim}// formatSourceState()${colors.reset}
-  4. Workspace Capabilities              ${colors.dim}// formatWorkspaceCapabilities()${colors.reset}
-  5. Working Directory + project_context_file  ${colors.dim}// getWorkingDirectoryContext()${colors.reset}
-  6. Recovery Context (on resume only)   ${colors.dim}// buildRecoveryContext()${colors.reset}
-  7. File Attachments                    ${colors.dim}// Inline paths or base64${colors.reset}
-  8. User Message Text                   ${colors.dim}// The actual user input${colors.reset}
+${colors.bold}Dynamic System Context (per turn):${colors.reset}
+  1. Workspace root and capabilities     ${colors.dim}// Stable workspace identity${colors.reset}
+  2. Working directory + context files   ${colors.dim}// Project scope${colors.reset}
+  3. Workspace structure                 ${colors.dim}// Bounded filesystem snapshot${colors.reset}
+  4. Source State                        ${colors.dim}// Connected source state${colors.reset}
+  5. Session State                       ${colors.dim}// Permission and session paths${colors.reset}
+  6. Date/Time Context                   ${colors.dim}// Most volatile, kept last${colors.reset}
 
 ${colors.bold}Key Files:${colors.reset}
   packages/shared/src/prompts/system.ts          ${colors.dim}// Main prompt assembly${colors.reset}
-  packages/shared/src/agent/craft-agent.ts       ${colors.dim}// User message building${colors.reset}
+  packages/shared/src/agent/core/prompt-builder.ts ${colors.dim}// Dynamic context${colors.reset}
+  packages/shared/src/agent/pi-agent.ts          ${colors.dim}// Pi request assembly${colors.reset}
+  packages/pi-agent-server/src/system-prompt-override.ts ${colors.dim}// Skill catalog append${colors.reset}
   packages/shared/src/agent/mode-manager.ts      ${colors.dim}// Permission modes${colors.reset}
   packages/shared/src/config/preferences.ts      ${colors.dim}// User preferences${colors.reset}
 `);

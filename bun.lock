@@ -199,6 +199,7 @@
       "name": "@craft-agent/model-gateway-worker",
       "version": "0.9.52",
       "dependencies": {
+        "@craft-agent/shared": "workspace:*",
         "jose": "^6.0.0",
       },
     },

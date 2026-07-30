@@ -37,6 +37,7 @@ describe('PromptBuilder project context', () => {
     const rootPath = mkdtempSync(join(tmpdir(), 'craft-workspace-state-'))
     mkdirSync(join(rootPath, '正文'), { recursive: true })
     mkdirSync(join(rootPath, 'node_modules', 'ignored-package'), { recursive: true })
+    writeFileSync(join(rootPath, 'AGENTS.md'), 'project instructions')
     writeFileSync(join(rootPath, '创作要求.md'), 'requirements')
     writeFileSync(join(rootPath, '正文', '01-opening.md'), 'chapter')
     writeFileSync(join(rootPath, 'node_modules', 'ignored-package', 'index.js'), 'ignored')
@@ -53,5 +54,31 @@ describe('PromptBuilder project context', () => {
     expect(context).toContain('01-opening.md')
     expect(context).not.toContain('node_modules')
     expect(context).toContain('Do not invent paths from display names')
+  })
+
+  it('orders per-turn context from least to most volatile', () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'craft-prompt-order-'))
+    writeFileSync(join(rootPath, 'AGENTS.md'), 'project instructions')
+    const builder = createBuilder(rootPath)
+    const context = builder.buildContextParts(
+      { userIteration: 7 },
+      '<sources>active source</sources>',
+    ).join('\n\n')
+    const markers = [
+      '<workspace_root>',
+      '<workspace_capabilities>',
+      '<working_directory>',
+      '<project_context_files',
+      '<workspace_structure',
+      '<sources>',
+      '<session_state>',
+      "**USER'S DATE AND TIME:",
+    ]
+
+    for (let index = 1; index < markers.length; index++) {
+      expect(context.indexOf(markers[index - 1]!)).toBeLessThan(
+        context.indexOf(markers[index]!),
+      )
+    }
   })
 })

@@ -64,7 +64,7 @@ type PiEvent = PiAgentEvent | AgentSessionEvent;
  * - tool_execution_end → tool_result
  * - agent_end → complete
  * - compaction_start → status
- * - compaction_end → info/error
+ * - compaction_end → info/error + current context estimate
  * - auto_retry_start → status
  * - auto_retry_end → status
  * - queue_update → ignored (no current UI consumer)
@@ -343,8 +343,17 @@ export class PiEventAdapter extends BaseEventAdapter {
         // Pi SDK emits message_end for ALL messages (user, assistant, toolResult).
         // Only process assistant messages — skip user prompts and tool results.
         const msg = event.message as { role?: string; stopReason?: string; errorMessage?: string; usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens: number; cost: { total: number } } } | undefined;
-        const sdkTurnAnchor = (event as { sdkTurnAnchor?: string }).sdkTurnAnchor;
+        const eventMetadata = event as { sdkTurnAnchor?: string; contextWindow?: number };
+        const sdkTurnAnchor = eventMetadata.sdkTurnAnchor;
         if (msg?.role !== 'assistant') break;
+
+        if (
+          typeof eventMetadata.contextWindow === 'number' &&
+          Number.isFinite(eventMetadata.contextWindow) &&
+          eventMetadata.contextWindow > 0
+        ) {
+          this.contextWindow = eventMetadata.contextWindow;
+        }
 
         if (msg.usage && typeof msg.usage.input === 'number') {
           const cacheReadTokens = msg.usage.cacheRead || 0;
@@ -368,7 +377,7 @@ export class PiEventAdapter extends BaseEventAdapter {
           yield {
             type: 'usage_update',
             usage: {
-              inputTokens: contextTokens,
+              contextTokens,
               contextWindow: this.contextWindow,
             },
           };
@@ -601,6 +610,23 @@ export class PiEventAdapter extends BaseEventAdapter {
             message: 'Compacted context to fit within limits',
             statusType: 'compaction_complete',
           };
+          const estimatedTokensAfter = compactionEvent.result.estimatedTokensAfter;
+          if (
+            typeof estimatedTokensAfter === 'number' &&
+            Number.isFinite(estimatedTokensAfter) &&
+            estimatedTokensAfter >= 0
+          ) {
+            if (this.turnUsage) {
+              this.turnUsage.contextTokens = estimatedTokensAfter;
+            }
+            yield {
+              type: 'usage_update',
+              usage: {
+                contextTokens: estimatedTokensAfter,
+                contextWindow: this.contextWindow,
+              },
+            };
+          }
         } else if (compactionEvent.errorMessage) {
           // Defensive handler for the Pi SDK auto-compaction race (cause A
           // in plans/fix-pi-gpt-compaction.md). The raw stack

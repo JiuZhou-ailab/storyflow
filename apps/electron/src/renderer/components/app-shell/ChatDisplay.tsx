@@ -2248,7 +2248,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
               onSessionStatusChange,
               contextStatus: {
                 isCompacting: session.currentStatus?.statusType === 'compacting',
-                inputTokens: session.tokenUsage?.inputTokens,
                 contextTokens: session.tokenUsage?.contextTokens,
                 contextWindow: session.tokenUsage?.contextWindow,
               },

@@ -252,12 +252,19 @@ export const piDriver: ProviderDriver = {
       const supportsThinking = typeof m.supportsThinking === 'boolean'
         ? m.supportsThinking
         : undefined;
-      if (m.contextWindow || supportsImages !== undefined || supportsThinking !== undefined) {
+      const thinkingLevelMap = m.thinkingLevelMap;
+      if (
+        m.contextWindow
+        || supportsImages !== undefined
+        || supportsThinking !== undefined
+        || thinkingLevelMap !== undefined
+      ) {
         return {
           id: m.id,
           ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
           ...(supportsImages !== undefined ? { supportsImages } : {}),
           ...(supportsThinking !== undefined ? { supportsThinking } : {}),
+          ...(thinkingLevelMap !== undefined ? { thinkingLevelMap } : {}),
         };
       }
       return m.id;

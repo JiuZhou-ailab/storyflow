@@ -28,9 +28,17 @@ function createRoot(): string {
   return root;
 }
 
-function writeSkill(root: string, relativeDir: string, slug: string): void {
+function writeSkill(
+  root: string,
+  relativeDir: string,
+  slug: string,
+  requiredSources: string[] = [],
+): void {
   const skillDir = join(root, relativeDir, slug);
   mkdirSync(skillDir, { recursive: true });
+  const requiredSourcesYaml = requiredSources.length > 0
+    ? `requiredSources:\n${requiredSources.map(source => `  - ${source}`).join('\n')}\n`
+    : '';
   writeFileSync(
     join(skillDir, 'SKILL.md'),
     `---
@@ -38,7 +46,7 @@ name: ${slug}
 description: ${slug} description
 metadata:
   displayName: ${slug} display
----
+${requiredSourcesYaml}---
 
 # ${slug}
 `,
@@ -74,7 +82,7 @@ describe('loadPiSkillCatalog', () => {
     const userAgentDir = join(createRoot(), 'agent');
     const legacyRoot = createRoot();
     writeSkill(userAgentDir, 'skills', 'user-skill');
-    writeSkill(cwd, '.pi/skills', 'project-skill');
+    writeSkill(cwd, '.pi/skills', 'project-skill', ['linear']);
     writeSkill(legacyRoot, 'skills', 'legacy-skill');
 
     const catalog = await loadPiSkillCatalog(cwd, {
@@ -87,6 +95,8 @@ describe('loadPiSkillCatalog', () => {
     expect(catalog.skills.find(skill => skill.slug === 'legacy-skill')?.scope).toBe('temporary');
     expect(catalog.skills.find(skill => skill.slug === 'project-skill')?.metadata.displayName)
       .toBe('project-skill display');
+    expect(catalog.skills.find(skill => skill.slug === 'project-skill')?.metadata.requiredSources)
+      .toEqual(['linear']);
   });
 
   it('preserves Pi collision diagnostics and the winning definition', async () => {

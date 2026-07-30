@@ -1,3 +1,7 @@
+// input: Automation events, prompt actions, environment expansion, and mention syntax
+// output: Regression coverage for PromptHandler delivery and prompt reference parsing
+// pos: Behavioral tests for Automation prompt preparation
+
 /**
  * Tests for PromptHandler
  */
@@ -7,6 +11,7 @@ import { WorkspaceEventBus } from '../event-bus.ts';
 import { PromptHandler } from './prompt-handler.ts';
 import type { AutomationsConfigProvider, PromptHandlerOptions } from './types.ts';
 import type { AutomationMatcher, AutomationEvent, PendingPrompt } from '../index.ts';
+import { canonicalizeSkillReferences } from '../utils.ts';
 
 // Helper to create a mock AutomationsConfigProvider
 function createMockConfigProvider(matchersByEvent: Partial<Record<AutomationEvent, AutomationMatcher[]>> = {}): AutomationsConfigProvider {
@@ -291,6 +296,13 @@ describe('PromptHandler', () => {
   });
 
   describe('@mention parsing and deduplication', () => {
+    it('canonicalizes only resolved Skill references', () => {
+      expect(canonicalizeSkillReferences(
+        'Run @weather with @linear, not test@example.com',
+        ['weather'],
+      )).toBe('Run [skill:weather] with @linear, not test@example.com');
+    });
+
     it('should parse @mentions from prompt text', async () => {
       const onPromptsReady = jest.fn();
       const configProvider = createMockConfigProvider({

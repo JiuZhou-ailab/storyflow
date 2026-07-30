@@ -52,6 +52,7 @@ import type {
 
 // Pi AI types
 import type {
+  AssistantMessage,
   ImageContent as PiImageContent,
   TextContent as PiTextContent,
 } from '@earendil-works/pi-ai';
@@ -100,6 +101,7 @@ import {
   stripCraftMetadata,
 } from './craft-metadata-schema.ts';
 import { createSystemPromptOverride } from './system-prompt-override.ts';
+import { fingerprintTools } from './prompt-cache-profile.ts';
 import { createToolHooks } from './tool-hooks.ts';
 import {
   createSubagentExtension,
@@ -173,7 +175,7 @@ interface RuntimeConfigUpdateMessage {
 /** Messages from main process (stdin) */
 type InboundMessage =
   | InitMessage
-  | { type: 'prompt'; id: string; message: string; systemPrompt: string; images?: Array<{ type: 'image'; data: string; mimeType: string }> }
+  | { type: 'prompt'; id: string; message: string; systemPrompt: string; dynamicSystemPrompt?: string; images?: Array<{ type: 'image'; data: string; mimeType: string }> }
   | { type: 'register_tools'; tools: ProxyToolDef[] }
   | { type: 'tool_execute_response'; requestId: string; result: { content: string; isError: boolean } }
   | { type: 'pre_tool_use_response'; requestId: string; action: 'allow' | 'block' | 'modify'; input?: Record<string, unknown>; reason?: string }
@@ -208,7 +210,15 @@ type EnrichedToolExecutionStartEvent = Extract<AgentSessionEvent, { type: 'tool_
   toolMetadata?: ToolExecutionMetadata;
 };
 
-type OutboundAgentEvent = AgentSessionEvent | EnrichedToolExecutionStartEvent;
+type EnrichedAssistantMessageEndEvent = Extract<AgentSessionEvent, { type: 'message_end' }> & {
+  sdkTurnAnchor?: string;
+  contextWindow?: number;
+};
+
+type OutboundAgentEvent =
+  | AgentSessionEvent
+  | EnrichedToolExecutionStartEvent
+  | EnrichedAssistantMessageEndEvent;
 
 /** Messages to main process (stdout) */
 interface OutboundReady { type: 'ready'; sessionId: string | null; callbackPort: number }
@@ -290,6 +300,8 @@ let initConfig: Extract<InboundMessage, { type: 'init' }> | null = null;
 // Mutable state
 let currentUserMessage = '';
 let currentPromptAttemptState: PromptAttemptState | null = null;
+let currentStablePrefixHash: string | null = null;
+let currentToolsetHash: string | null = null;
 
 // Pending promises for async handshakes
 const pendingPreToolUse = new Map<string, { resolve: (response: { action: string; input?: Record<string, unknown>; reason?: string }) => void }>();
@@ -475,11 +487,17 @@ function registerCustomEndpointModels(
 ): void {
   for (const m of models) {
     customEndpointModelIds.add(m.id);
-    if (m.contextWindow || m.supportsImages !== undefined || m.supportsThinking !== undefined) {
+    if (
+      m.contextWindow
+      || m.supportsImages !== undefined
+      || m.supportsThinking !== undefined
+      || m.thinkingLevelMap !== undefined
+    ) {
       customModelOverrides.set(m.id, {
         ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
         ...(m.supportsImages !== undefined ? { supportsImages: m.supportsImages } : {}),
         ...(m.supportsThinking !== undefined ? { supportsThinking: m.supportsThinking } : {}),
+        ...(m.thinkingLevelMap !== undefined ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
       });
     }
   }
@@ -986,6 +1004,9 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
   if (!initConfig) throw new Error('Cannot run queryLlm: init not received');
 
   debugLog('[queryLlm] Starting');
+  const piThinkingLevel = THINKING_TO_PI[
+    initConfig.thinkingLevel as keyof typeof THINKING_TO_PI
+  ];
 
   // Pick mini model. If the configured miniModel uses a different provider than
   // what the user authenticated with (e.g. gemini-2.5-pro when only anthropic
@@ -1043,6 +1064,7 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
       tools: [],
       sessionManager: PiSessionManager.inMemory(),
       model: piModel,
+      ...(piThinkingLevel ? { thinkingLevel: piThinkingLevel } : {}),
     };
     const promptOverride = createSystemPromptOverride();
     const promptForSession =
@@ -1284,27 +1306,33 @@ function handleSessionEvent(event: AgentSessionEvent): void {
 
   // Log API errors for debugging and attach provider-native turn anchor for branch cutoffs.
   if (event.type === 'message_end') {
-    const msg = event.message as { role?: string; stopReason?: string; errorMessage?: string } | undefined;
+    const msg = event.message as AssistantMessage | undefined;
     if (msg?.stopReason === 'error') {
       debugLog(`API error in message_end: ${msg.errorMessage || 'unknown'}`);
     }
 
     if (msg?.role === 'assistant' && piSession) {
+      const promptTokens = msg.usage.input + msg.usage.cacheRead + msg.usage.cacheWrite;
+      const cacheHitRate = promptTokens > 0 ? msg.usage.cacheRead / promptTokens : 0;
+      debugLog(
+        `[prompt-cache] stable_prefix_hash=${currentStablePrefixHash ?? 'unknown'} ` +
+        `toolset_hash=${currentToolsetHash ?? 'unknown'} prompt_tokens=${promptTokens} ` +
+        `cache_read_tokens=${msg.usage.cacheRead} cache_write_tokens=${msg.usage.cacheWrite} ` +
+        `cache_hit_rate=${cacheHitRate.toFixed(4)}`,
+      );
+
       logSanitizeResult(
         'Sanitized assistant message before Pi persistence',
         sanitizeAssistantMessageForResume(event.message),
       );
 
       const sdkTurnAnchor = piSession.sessionManager.getLeafId();
-      if (sdkTurnAnchor) {
-        // Enrichment: main process reads `sdkTurnAnchor` off the forwarded event to
-        // set branch cutoff points. The SDK's event shape doesn't declare this field,
-        // so the cast is intentional.
-        forwardedEvent = {
-          ...(event as Record<string, unknown>),
-          sdkTurnAnchor,
-        } as unknown as OutboundAgentEvent;
-      }
+      const contextWindow = piSession.agent.state.model?.contextWindow;
+      forwardedEvent = {
+        ...event,
+        ...(sdkTurnAnchor ? { sdkTurnAnchor } : {}),
+        ...(typeof contextWindow === 'number' && contextWindow > 0 ? { contextWindow } : {}),
+      };
     }
   }
 
@@ -1434,11 +1462,14 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
     // session, while the loader remains restricted to explicit Storyflow roots.
     await session.resourceLoader.reload();
 
+    currentToolsetHash = fingerprintTools(session.agent.state.tools);
     if (msg.systemPrompt) {
-      systemPromptOverride?.set(
+      const profile = systemPromptOverride?.set(
         msg.systemPrompt,
         session.resourceLoader.getSkills().skills,
+        msg.dynamicSystemPrompt,
       );
+      currentStablePrefixHash = profile?.stablePrefixHash ?? null;
     }
 
     // Wire up event handler
@@ -1497,7 +1528,7 @@ function handleRegisterTools(msg: Extract<InboundMessage, { type: 'register_tool
   proxyToolDefs = [
     ...proxyToolDefs.filter(t => !incoming.has(t.name)),
     ...msg.tools,
-  ];
+  ].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
   debugLog(`Registered ${msg.tools.length} proxy tools (total: ${proxyToolDefs.length}): ${msg.tools.map(t => t.name).join(', ')}`);
 
   // If session exists, mark for recreation on next prompt.

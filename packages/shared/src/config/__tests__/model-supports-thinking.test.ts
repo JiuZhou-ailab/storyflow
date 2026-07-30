@@ -3,7 +3,12 @@
 // pos: Shared model capability policy tests
 
 import { describe, expect, it } from 'bun:test'
-import { modelSupportsThinking, type LlmConnection } from '../llm-connections.ts'
+import {
+  modelSupportsThinking,
+  modelSupportsThinkingLevel,
+  resolveModelThinkingLevel,
+  type LlmConnection,
+} from '../llm-connections.ts'
 
 function connection(
   providerType: LlmConnection['providerType'],
@@ -33,5 +38,31 @@ describe('modelSupportsThinking', () => {
     expect(modelSupportsThinking(connection('pi', [
       { id: 'plain-model', supportsThinking: false } as never,
     ]), 'plain-model')).toBe(false)
+  })
+})
+
+describe('model thinking levels', () => {
+  const managedConnection = connection('pi_compat', [
+    {
+      id: 'gpt-5.6-sol',
+      supportsThinking: true,
+      thinkingLevelMap: { max: 'max' },
+    } as never,
+    {
+      id: 'gpt-5.6-luna',
+      supportsThinking: true,
+      thinkingLevelMap: { xhigh: 'xhigh', max: null },
+    } as never,
+  ])
+
+  it('exposes only levels supported by the concrete model', () => {
+    expect(modelSupportsThinkingLevel(managedConnection, 'gpt-5.6-sol', 'max')).toBe(true)
+    expect(modelSupportsThinkingLevel(managedConnection, 'gpt-5.6-luna', 'xhigh')).toBe(true)
+    expect(modelSupportsThinkingLevel(managedConnection, 'gpt-5.6-luna', 'max')).toBe(false)
+  })
+
+  it('resolves an unsupported persisted level to the nearest supported level', () => {
+    expect(resolveModelThinkingLevel(managedConnection, 'gpt-5.6-sol', 'max')).toBe('max')
+    expect(resolveModelThinkingLevel(managedConnection, 'gpt-5.6-luna', 'max')).toBe('xhigh')
   })
 })

@@ -411,7 +411,7 @@ async function createModelAccessToken(
   if (expiresAtSeconds <= nowSeconds) throw new Error('Client session has reached its maximum lifetime')
 
   return new SignJWT({
-    scopes: ['model:chat'],
+    scopes: ['model:chat', 'model:video'],
     model_tier: modelTier,
     ...(userName ? { user_name: userName } : {}),
   })

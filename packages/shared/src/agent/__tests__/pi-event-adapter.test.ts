@@ -54,8 +54,9 @@ describe('PiEventAdapter', () => {
     });
 
     it('should aggregate usage across every model call in the user turn', () => {
-      collect(adapter.adaptEvent({
+      const firstCallEvents = collect(adapter.adaptEvent({
         type: 'message_end',
+        contextWindow: 131_072,
         message: {
           role: 'assistant',
           stopReason: 'toolUse',
@@ -70,6 +71,13 @@ describe('PiEventAdapter', () => {
           },
         },
       } as any));
+      expect(firstCallEvents).toContainEqual({
+        type: 'usage_update',
+        usage: {
+          contextTokens: 130,
+          contextWindow: 131_072,
+        },
+      });
       collect(adapter.adaptEvent({
         type: 'message_end',
         message: {
@@ -98,7 +106,7 @@ describe('PiEventAdapter', () => {
           cacheCreationTokens: 15,
           costUsd: 0.03,
           contextTokens: 235,
-          contextWindow: undefined,
+          contextWindow: 131_072,
         },
       }]);
     });
@@ -942,6 +950,7 @@ describe('PiEventAdapter', () => {
         { piName: 'grep', expected: 'Grep' },
         { piName: 'find', expected: 'Find' },
         { piName: 'ls', expected: 'Ls' },
+        { piName: 'task', expected: 'task' },
       ];
 
       for (const { piName, expected } of toolTests) {
@@ -1210,19 +1219,57 @@ describe('PiEventAdapter', () => {
       });
     });
 
-    it('should emit info for successful compaction_end', () => {
+    it('should report the compacted context estimate without changing turn input', () => {
+      adapter.setContextWindow(131_072);
+      collect(adapter.adaptEvent({
+        type: 'message_end',
+        message: {
+          role: 'assistant',
+          stopReason: 'stop',
+          content: '',
+          usage: {
+            input: 100_000,
+            output: 100,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 100_100,
+            cost: { total: 0.1 },
+          },
+        },
+      } as any));
+
       const events = collect(adapter.adaptEvent({
         type: 'compaction_end',
-        result: { /* compaction result */ },
+        result: { estimatedTokensAfter: 20_000 },
         aborted: false,
       } as any));
 
-      expect(events).toHaveLength(1);
-      expect(events[0]).toMatchObject({
-        type: 'info',
-        message: 'Compacted context to fit within limits',
-        statusType: 'compaction_complete',
-      });
+      expect(events).toEqual([
+        {
+          type: 'info',
+          message: 'Compacted context to fit within limits',
+          statusType: 'compaction_complete',
+        },
+        {
+          type: 'usage_update',
+          usage: {
+            contextTokens: 20_000,
+            contextWindow: 131_072,
+          },
+        },
+      ]);
+      expect(collect(adapter.adaptEvent({ type: 'agent_end' } as any))).toEqual([{
+        type: 'complete',
+        usage: {
+          inputTokens: 100_000,
+          outputTokens: 100,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          costUsd: 0.1,
+          contextTokens: 20_000,
+          contextWindow: 131_072,
+        },
+      }]);
     });
 
     it('should emit error for failed compaction_end', () => {

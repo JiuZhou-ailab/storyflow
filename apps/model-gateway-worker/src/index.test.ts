@@ -91,25 +91,64 @@ describe('model gateway worker', () => {
     })
   })
 
-  it('exposes only a GET health endpoint outside the chat route', async () => {
+  it('exposes the authenticated managed model catalog with total context windows', async () => {
+    const token = await signTestJwt(CURRENT_MODEL_SECRET)
     const health = await handleRequest(
       new Request('https://model.storyflow.example.com/health'),
       makeEnv(),
     )
-    const unknown = await handleRequest(
-      new Request('https://model.storyflow.example.com/v1/models'),
+    const catalog = await handleRequest(
+      new Request('https://model.storyflow.example.com/v1/models', {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
       makeEnv(),
     )
-    const wrongMethod = await handleRequest(
+    const wrongChatMethod = await handleRequest(
       new Request('https://model.storyflow.example.com/v1/responses'),
+      makeEnv(),
+    )
+    const wrongCatalogMethod = await handleRequest(
+      new Request('https://model.storyflow.example.com/v1/models', {
+        method: 'POST',
+      }),
       makeEnv(),
     )
 
     expect(health.status).toBe(200)
     expect(await health.json()).toEqual({ status: 'ok' })
-    expect(unknown.status).toBe(404)
-    expect(wrongMethod.status).toBe(405)
-    expect(wrongMethod.headers.get('allow')).toBe('POST')
+    expect(catalog.status).toBe(200)
+    expect(await catalog.json()).toMatchObject({
+      object: 'list',
+      data: [
+        {
+          id: 'gpt-5.5',
+          name: 'GPT-5.5',
+          short_name: 'GPT-5',
+          context_window: 262_144,
+          supports_thinking: true,
+          thinking_level_map: { max: null },
+          supports_images: true,
+        },
+        {
+          id: 'gpt-5.6-sol',
+          name: 'GPT-5.6 Sol',
+          short_name: 'GPT-5',
+          context_window: 262_144,
+          supports_thinking: true,
+          thinking_level_map: { max: 'max' },
+          supports_images: true,
+        },
+        { id: 'gpt-5.6-terra', context_window: 262_144 },
+        { id: 'gpt-5.6-luna', context_window: 262_144 },
+        { id: 'gemini-3.5-flash', context_window: 1_000_000 },
+        { id: 'deepseek-v4-pro', context_window: 1_000_000 },
+        { id: 'deepseek-v4-flash', context_window: 1_000_000 },
+      ],
+    })
+    expect(wrongChatMethod.status).toBe(405)
+    expect(wrongChatMethod.headers.get('allow')).toBe('POST')
+    expect(wrongCatalogMethod.status).toBe(405)
+    expect(wrongCatalogMethod.headers.get('allow')).toBe('GET')
   })
 
   it('rejects missing or invalid model access tokens before calling NewAPI', async () => {
@@ -286,6 +325,84 @@ describe('model gateway worker', () => {
 
     expect(response.status).toBe(200)
     expect(upstreamUrl).toBe('https://jzapi.duanju.com/v1/chat/completions')
+  })
+
+  it('proxies only the approved native Gemini video route with isolated credentials', async () => {
+    const token = await signTestJwt(CURRENT_MODEL_SECRET, {
+      scopes: ['model:chat', 'model:video'],
+    })
+    let upstreamRequest: Request | null = null
+    const response = await handleRequest(
+      new Request(
+        'https://model.storyflow.example.com/v1beta/models/gemini-3.1-flash-lite:generateContent',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-client': 'google-genai-sdk/1.52.0',
+            'x-goog-api-key': token,
+            Authorization: 'Bearer must-not-forward',
+          },
+          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'ping' }] }] }),
+        },
+      ),
+      makeEnv(),
+      async (request) => {
+        upstreamRequest = request
+        return Response.json({ candidates: [] })
+      },
+    )
+
+    expect(response.status).toBe(200)
+    expect(upstreamRequest?.url).toBe(
+      'https://jzapi.duanju.com/v1beta/models/gemini-3.1-flash-lite:generateContent',
+    )
+    expect(upstreamRequest?.headers.get('x-goog-api-key')).toBe('server-only-newapi-key')
+    expect(upstreamRequest?.headers.get('x-goog-api-client')).toBe('google-genai-sdk/1.52.0')
+    expect(upstreamRequest?.headers.get('authorization')).toBeNull()
+    expect([...upstreamRequest!.headers.values()].join(' ')).not.toContain(token)
+  })
+
+  it('rejects unscoped, unapproved, and Files API Gemini requests', async () => {
+    let upstreamCalls = 0
+    const chatOnlyToken = await signTestJwt(CURRENT_MODEL_SECRET)
+    const videoToken = await signTestJwt(CURRENT_MODEL_SECRET, {
+      scopes: ['model:chat', 'model:video'],
+    })
+    const request = (path: string, token: string) => new Request(
+      `https://model.storyflow.example.com${path}`,
+      {
+        method: 'POST',
+        headers: { 'x-goog-api-key': token },
+        body: '{}',
+      },
+    )
+    const fetchStub = async () => {
+      upstreamCalls += 1
+      return Response.json({ unexpected: true })
+    }
+
+    const unscoped = await handleRequest(
+      request('/v1beta/models/gemini-3.1-flash-lite:generateContent', chatOnlyToken),
+      makeEnv(),
+      fetchStub,
+    )
+    const unapproved = await handleRequest(
+      request('/v1beta/models/gemini-unapproved:generateContent', videoToken),
+      makeEnv(),
+      fetchStub,
+    )
+    const files = await handleRequest(
+      request('/v1beta/files', videoToken),
+      makeEnv(),
+      fetchStub,
+    )
+
+    expect(unscoped.status).toBe(403)
+    expect(unapproved.status).toBe(403)
+    expect(await unapproved.json()).toMatchObject({ code: 'model_not_allowed' })
+    expect(files.status).toBe(404)
+    expect(upstreamCalls).toBe(0)
   })
 
   it('fails closed when NewAPI configuration or the upstream is unavailable', async () => {

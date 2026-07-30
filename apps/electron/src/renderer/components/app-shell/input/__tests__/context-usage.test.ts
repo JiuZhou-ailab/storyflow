@@ -5,10 +5,9 @@ import {
 } from '../context-usage'
 
 describe('context usage helpers', () => {
-  it('uses context tokens before input tokens for occupancy', () => {
+  it('uses current context tokens for occupancy', () => {
     expect(resolveContextUsage({
       contextTokens: 50_000,
-      inputTokens: 12_000,
       contextWindow: 200_000,
     })).toEqual({
       tokens: 50_000,
@@ -19,11 +18,10 @@ describe('context usage helpers', () => {
     })
   })
 
-  it('falls back to input tokens when context tokens are unavailable', () => {
+  it('does not mistake cumulative input for current context', () => {
     expect(resolveContextUsage({
-      inputTokens: 10_000,
       contextWindow: 100_000,
-    })?.percent).toBe(10)
+    })).toBeNull()
   })
 
   it('clamps usage at 100 percent', () => {

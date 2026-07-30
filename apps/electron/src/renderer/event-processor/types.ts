@@ -487,7 +487,7 @@ export interface UsageUpdateEvent {
   type: 'usage_update'
   sessionId: string
   tokenUsage: {
-    inputTokens: number
+    contextTokens: number
     contextWindow?: number
   }
 }

@@ -3,7 +3,6 @@
 // pos: Pure formatting layer for context occupancy UI
 
 export interface ContextUsageInput {
-  inputTokens?: number
   contextTokens?: number
   contextWindow?: number
 }
@@ -27,7 +26,9 @@ export function formatTokenCount(tokens: number): string {
 }
 
 export function resolveContextUsage(input: ContextUsageInput): ContextUsageDisplay | null {
-  const tokens = input.contextTokens ?? input.inputTokens ?? 0
+  if (input.contextTokens === undefined) return null
+
+  const tokens = input.contextTokens
   const contextWindow = input.contextWindow ?? 0
   if (contextWindow <= 0) return null
 

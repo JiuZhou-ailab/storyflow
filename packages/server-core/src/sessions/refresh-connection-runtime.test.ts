@@ -239,7 +239,7 @@ describe('refreshConnectionRuntime', () => {
     expect(agent.updateRuntimeConfig).toHaveBeenCalledTimes(1)
   })
 
-  it('records customModels with the per-model supportsImages flag in the IPC payload', async () => {
+  it('preserves per-model capabilities in the runtime refresh IPC payload', async () => {
     // End-to-end shape check: when the session's connection resolves to a
     // pi_compat connection with explicit per-model `supportsImages`, the
     // helper must forward that field on `customModels` so the Pi subprocess
@@ -252,7 +252,20 @@ describe('refreshConnectionRuntime', () => {
         name: 'Custom endpoint',
         providerType: 'pi_compat',
         authType: 'api_key',
-        models: [{ id: 'custom-model', supportsImages: true }],
+        models: [{
+          id: 'custom-model',
+          supportsImages: true,
+          supportsThinking: true,
+          thinkingLevelMap: {
+            off: 'none',
+            minimal: null,
+            low: 'low',
+            medium: 'medium',
+            high: 'high',
+            xhigh: 'xhigh',
+            max: null,
+          },
+        }],
         defaultModel: 'custom-model',
         createdAt: Date.now(),
       },
@@ -283,21 +296,20 @@ describe('refreshConnectionRuntime', () => {
     expect(agent.updateRuntimeConfig).toHaveBeenCalledTimes(1)
     const payload = agent.updateRuntimeConfig.mock.calls[0]?.[0]
     expect(payload).toBeDefined()
-    expect(payload).toMatchObject({
-      model: expect.any(String),
-      runtime: expect.any(Object),
-    })
-    // The runtime envelope mirrors what `pi-agent.ts:requestRuntimeConfigUpdate`
-    // unpacks — `customModels` shape preserves `supportsImages` when set.
-    if (payload.runtime?.customModels) {
-      for (const m of payload.runtime.customModels) {
-        if (typeof m === 'object') {
-          expect(typeof m.id).toBe('string')
-          if ('supportsImages' in m) {
-            expect(typeof m.supportsImages).toBe('boolean')
-          }
-        }
-      }
-    }
+    expect(payload.runtime?.customModels).toEqual([{
+      id: 'custom-model',
+      supportsImages: true,
+      supportsThinking: true,
+      thinkingLevelMap: {
+        off: 'none',
+        minimal: null,
+        low: 'low',
+        medium: 'medium',
+        high: 'high',
+        xhigh: 'xhigh',
+        max: null,
+      },
+    }])
+    expect(typeof payload.model).toBe('string')
   })
 })

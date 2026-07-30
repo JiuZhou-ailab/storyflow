@@ -1,3 +1,7 @@
+// input: Persisted LLM connections, provider credentials, and live model catalogs
+// output: Deduplicated model refresh with managed-catalog reconciliation and offline fallbacks
+// pos: Server-side synchronization boundary between provider metadata and stored connections
+
 /**
  * Model Refresh Service
  *
@@ -11,7 +15,11 @@
  */
 
 import type { ModelFetcherMap, ModelFetcherCredentials, FetchableProvider } from '@craft-agent/shared/config'
-import type { LlmConnection, ModelDefinition } from '@craft-agent/shared/config'
+import type {
+  LlmConnection,
+  ModelDefinition,
+  ModelThinkingLevelMap,
+} from '@craft-agent/shared/config'
 import type { CredentialManager } from '@craft-agent/shared/credentials'
 import {
   getLlmConnections,
@@ -19,6 +27,7 @@ import {
   updateLlmConnection,
   isCompatProvider,
   getModelsForProviderType,
+  MANAGED_LLM_CONNECTION_SLUG,
 } from '@craft-agent/shared/config'
 import { MODEL_FETCHERS } from './registry'
 import { handlerLog } from './runtime'
@@ -32,6 +41,115 @@ const COPILOT_REFRESH_INTERVAL_MS = 10 * 60 * 1000
 
 type CredentialReader = Pick<CredentialManager, 'getLlmApiKey' | 'getLlmOAuth'>
 type CredentialResolver = (connection: LlmConnection) => Promise<ModelFetcherCredentials>
+
+function isManagedModelCatalogConnection(connection: LlmConnection): boolean {
+  return connection.slug === MANAGED_LLM_CONNECTION_SLUG && connection.managed === true
+}
+
+async function fetchManagedModelCatalog(
+  connection: LlmConnection,
+  credentials: ModelFetcherCredentials,
+): Promise<ModelDefinition[]> {
+  if (!connection.baseUrl) throw new Error('Managed model gateway URL is missing')
+  if (!credentials.apiKey) throw new Error('Managed model access token is missing')
+
+  const response = await fetch(`${connection.baseUrl.replace(/\/+$/, '')}/models`, {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${credentials.apiKey}`,
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`Managed model catalog returned HTTP ${response.status}`)
+  }
+
+  const body: unknown = await response.json()
+  if (!body || typeof body !== 'object' || !Array.isArray((body as { data?: unknown }).data)) {
+    throw new Error('Managed model catalog is invalid')
+  }
+
+  const models = (body as { data: unknown[] }).data.map(parseManagedModelDefinition)
+  if (models.length === 0) throw new Error('Managed model catalog is empty')
+  if (new Set(models.map(model => model.id)).size !== models.length) {
+    throw new Error('Managed model catalog contains duplicate model IDs')
+  }
+  return models
+}
+
+const THINKING_LEVEL_MAP_KEYS = new Set([
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+])
+
+function parseManagedThinkingLevelMap(value: unknown): ModelThinkingLevelMap | undefined {
+  if (value === undefined) return undefined
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Managed model catalog has an invalid thinking level map')
+  }
+
+  const result: Record<string, string | null> = {}
+  for (const [key, effort] of Object.entries(value)) {
+    if (!THINKING_LEVEL_MAP_KEYS.has(key) || (typeof effort !== 'string' && effort !== null)) {
+      throw new Error('Managed model catalog has an invalid thinking level map')
+    }
+    result[key] = effort
+  }
+  return result as ModelThinkingLevelMap
+}
+
+function parseManagedModelDefinition(item: unknown): ModelDefinition {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    throw new Error('Managed model catalog contains an invalid model')
+  }
+
+  const {
+    id,
+    name,
+    short_name: shortName,
+    description,
+    provider,
+    context_window: contextWindow,
+    supports_thinking: supportsThinking,
+    thinking_level_map: thinkingLevelMap,
+    supports_images: supportsImages,
+  } = item as Record<string, unknown>
+
+  if (
+    typeof id !== 'string'
+    || id.trim().length === 0
+    || typeof name !== 'string'
+    || name.trim().length === 0
+    || typeof shortName !== 'string'
+    || shortName.trim().length === 0
+    || typeof description !== 'string'
+    || (provider !== 'pi' && provider !== 'anthropic')
+    || typeof contextWindow !== 'number'
+    || !Number.isSafeInteger(contextWindow)
+    || contextWindow <= 0
+    || typeof supportsThinking !== 'boolean'
+    || typeof supportsImages !== 'boolean'
+  ) {
+    throw new Error('Managed model catalog contains an invalid model')
+  }
+
+  const parsedThinkingLevelMap = parseManagedThinkingLevelMap(thinkingLevelMap)
+  return {
+    id,
+    name,
+    shortName,
+    description,
+    provider,
+    contextWindow,
+    supportsThinking,
+    ...(parsedThinkingLevelMap ? { thinkingLevelMap: parsedThinkingLevelMap } : {}),
+    supportsImages,
+  }
+}
 
 export async function resolveModelRefreshCredentials(
   connection: LlmConnection,
@@ -89,7 +207,7 @@ class ModelRefreshService {
 
   /**
    * Internal: actual refresh logic with fallback chain.
-   * Skips compat providers (not in fetcher map).
+   * Skips user-configured compat providers (not in fetcher map).
    * Preserves user's defaultModel if still valid.
    * Updates connection.models in storage on success.
    */
@@ -100,14 +218,17 @@ class ModelRefreshService {
       return
     }
 
-    // Skip compat providers — users configure models manually
-    if (isCompatProvider(connection.providerType)) {
+    const isManagedCatalog = isManagedModelCatalogConnection(connection)
+
+    // User-owned compat providers configure models manually. The single managed
+    // compat connection is backed by the authenticated Storyflow catalog.
+    if (isCompatProvider(connection.providerType) && !isManagedCatalog) {
       return
     }
 
     const providerType = connection.providerType as FetchableProvider
     const fetcher = this.fetchers[providerType]
-    if (!fetcher) {
+    if (!isManagedCatalog && !fetcher) {
       handlerLog.warn(`Model refresh: no fetcher for provider type: ${providerType}`)
       return
     }
@@ -119,9 +240,13 @@ class ModelRefreshService {
     try {
       const credentials = await this.getCredentials(connection)
       handlerLog.info(`Model refresh [${slug}]: fetching (provider=${connection.providerType}, piAuth=${connection.piAuthProvider}, hasOAuthRefresh=${!!credentials.oauthRefreshToken}, hasOAuthAccess=${!!credentials.oauthAccessToken})`)
-      const result = await fetcher.fetchModels(connection, credentials)
-      newModels = result.models
-      serverDefault = result.serverDefault
+      if (isManagedCatalog) {
+        newModels = await fetchManagedModelCatalog(connection, credentials)
+      } else {
+        const result = await fetcher!.fetchModels(connection, credentials)
+        newModels = result.models
+        serverDefault = result.serverDefault
+      }
       handlerLog.info(`Model refresh [${slug}]: fetched ${newModels.length} models from provider: ${newModels.map(m => m.id).join(', ')}`)
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
@@ -136,7 +261,9 @@ class ModelRefreshService {
 
     // Layer 3: MODEL_REGISTRY hardcoded fallback
     if (!newModels) {
-      const registryModels = getModelsForProviderType(providerType, connection.piAuthProvider)
+      const registryModels = isManagedCatalog
+        ? []
+        : getModelsForProviderType(providerType, connection.piAuthProvider)
       if (registryModels.length > 0) {
         newModels = registryModels
         handlerLog.info(`Model refresh [${slug}]: using ${newModels.length} models from MODEL_REGISTRY`)
@@ -185,6 +312,12 @@ class ModelRefreshService {
     const connections = getLlmConnections()
 
     for (const conn of connections) {
+      if (isManagedModelCatalogConnection(conn)) {
+        this.refreshConnection(conn.slug).catch(err => {
+          handlerLog.warn(`Initial model refresh failed for ${conn.slug}: ${err instanceof Error ? err.message : err}`)
+        })
+        continue
+      }
       if (isCompatProvider(conn.providerType)) continue
 
       const providerType = conn.providerType as FetchableProvider

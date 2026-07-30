@@ -2,6 +2,8 @@
 // output: Normalized model definitions plus provider/auth routing decisions for Pi.
 // pos: Shared, side-effect-free policy for registering and authenticating custom endpoint models.
 
+import type { ModelThinkingLevelMap } from '../../shared/src/config/models.ts'
+
 export type CustomEndpointInput = 'text' | 'image'
 
 export interface CustomEndpointModelDefaults {
@@ -12,6 +14,7 @@ export interface CustomEndpointModelOverrides {
   contextWindow?: number
   supportsImages?: boolean
   supportsThinking?: boolean
+  thinkingLevelMap?: ModelThinkingLevelMap
 }
 
 export interface CustomEndpointModelEntry extends CustomEndpointModelOverrides {
@@ -23,6 +26,7 @@ export type CustomEndpointModelConfig = string | {
   contextWindow?: number
   supportsImages?: boolean
   supportsThinking?: boolean
+  thinkingLevelMap?: ModelThinkingLevelMap
 }
 
 export interface CustomEndpointProviderApiKeyInput {
@@ -96,6 +100,7 @@ export function normalizeCustomEndpointModelEntry(model: CustomEndpointModelConf
     ...(model.contextWindow !== undefined ? { contextWindow: model.contextWindow } : {}),
     ...(model.supportsImages !== undefined ? { supportsImages: model.supportsImages } : {}),
     ...(model.supportsThinking !== undefined ? { supportsThinking: model.supportsThinking } : {}),
+    ...(model.thinkingLevelMap !== undefined ? { thinkingLevelMap: model.thinkingLevelMap } : {}),
   }
 }
 
@@ -117,6 +122,9 @@ export function buildCustomEndpointModelDef(
     id,
     name: id,
     reasoning: overrides?.supportsThinking ?? false,
+    ...(overrides?.thinkingLevelMap !== undefined
+      ? { thinkingLevelMap: overrides.thinkingLevelMap }
+      : {}),
     input,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: overrides?.contextWindow ?? 131_072,

@@ -1,3 +1,7 @@
+// input: Automation domain modules and public consumer contracts
+// output: Stable public API for Automation matching, execution, history, and prompt references
+// pos: Package entrypoint for the shared Automations domain
+
 /**
  * Craft Agent Automations - Public API
  *
@@ -66,7 +70,7 @@ export { buildEnvFromSdkInput } from './sdk-bridge.ts';
 // Utilities
 // ============================================================================
 
-export { parsePromptReferences } from './utils.ts';
+export { canonicalizeSkillReferences, parsePromptReferences } from './utils.ts';
 
 // ============================================================================
 // Re-exports from sub-modules

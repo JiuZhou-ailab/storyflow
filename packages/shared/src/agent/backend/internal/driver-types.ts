@@ -8,6 +8,7 @@ import type {
 } from '../types.ts';
 import type { LlmConnection } from '../../../config/storage.ts';
 import type { ModelFetchResult } from '../../../config/model-fetcher.ts';
+import type { ModelThinkingLevelMap } from '../../../config/models.ts';
 import type { CredentialManager } from '../../../credentials/manager.ts';
 import type { ResolvedBackendRuntimePaths } from './runtime-resolver.ts';
 
@@ -33,6 +34,7 @@ export interface BackendRuntimePayload extends Record<string, unknown> {
     contextWindow?: number;
     supportsImages?: boolean;
     supportsThinking?: boolean;
+    thinkingLevelMap?: ModelThinkingLevelMap;
   }>;
 }
 

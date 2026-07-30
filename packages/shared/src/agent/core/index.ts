@@ -77,17 +77,6 @@ export { SourceManager } from './source-manager.ts';
 // Prompt Builder
 export { PromptBuilder } from './prompt-builder.ts';
 
-// Auto compact policy
-export {
-  DEFAULT_AUTO_COMPACT_INTERVAL_USER_ITERATIONS,
-  DEFAULT_AUTO_COMPACT_START_USER_ITERATION,
-  shouldAutoCompact,
-} from './auto-compact-policy.ts';
-export type {
-  AutoCompactDecision,
-  AutoCompactPolicyInput,
-} from './auto-compact-policy.ts';
-
 // Path Processor
 export {
   PathProcessor,

@@ -1,3 +1,7 @@
+// input: Temporary persisted connections, credential resolvers, and provider catalog responses
+// output: Regression coverage for managed model reconciliation and auth-specific credential lookup
+// pos: Public ModelRefreshService contract tests
+
 import { describe, expect, it } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
@@ -37,6 +41,49 @@ function setupModelRefreshConfigDir() {
   return configDir
 }
 
+function setupManagedModelRefreshConfigDir() {
+  const configDir = mkdtempSync(join(tmpdir(), 'craft-managed-model-refresh-'))
+  writeFileSync(
+    join(configDir, 'config.json'),
+    JSON.stringify({
+      workspaces: [],
+      activeWorkspaceId: null,
+      activeSessionId: null,
+      defaultLlmConnection: 'storyflow-managed',
+      llmConnections: [{
+        slug: 'storyflow-managed',
+        name: 'JiuZhou AI',
+        providerType: 'pi_compat',
+        authType: 'api_key_with_endpoint',
+        baseUrl: 'https://model.example.com/v1',
+        models: [
+          {
+            id: 'gpt-5.5',
+            name: 'GPT-5.5',
+            shortName: 'GPT-5',
+            description: '',
+            provider: 'pi',
+            contextWindow: 131_072,
+          },
+          {
+            id: 'retired-model',
+            name: 'Retired Model',
+            shortName: 'Retired',
+            description: '',
+            provider: 'pi',
+            contextWindow: 131_072,
+          },
+        ],
+        defaultModel: 'retired-model',
+        managed: true,
+        createdAt: 0,
+      }],
+    }, null, 2),
+    'utf-8',
+  )
+  return configDir
+}
+
 function runModelRefreshEval(configDir: string, code: string): string {
   const run = Bun.spawnSync([
     process.execPath,
@@ -56,6 +103,79 @@ function runModelRefreshEval(configDir: string, code: string): string {
 }
 
 describe('ModelRefreshService credentials', () => {
+  it('reconciles the managed connection to the authenticated gateway catalog', () => {
+    const configDir = setupManagedModelRefreshConfigDir()
+
+    const output = runModelRefreshEval(configDir, `
+      globalThis.fetch = async (input, init) => {
+        if (String(input) !== 'https://model.example.com/v1/models') {
+          throw new Error('unexpected URL: ' + String(input));
+        }
+        if (new Headers(init?.headers).get('authorization') !== 'Bearer managed-token') {
+          throw new Error('missing managed token');
+        }
+        return Response.json({
+          object: 'list',
+          data: [
+            {
+              id: 'gpt-5.5',
+              name: 'GPT-5.5',
+              short_name: 'GPT-5',
+              description: '',
+              provider: 'pi',
+              context_window: 262144,
+              supports_thinking: true,
+              thinking_level_map: { low: 'low', max: null },
+              supports_images: true,
+            },
+            {
+              id: 'gpt-5.6-sol',
+              name: 'GPT-5.6 Sol',
+              short_name: 'GPT-5',
+              description: '',
+              provider: 'pi',
+              context_window: 262144,
+              supports_thinking: true,
+              thinking_level_map: { low: 'low', max: 'max' },
+              supports_images: true,
+            },
+          ],
+        });
+      };
+      const service = initModelRefreshService(async () => ({ apiKey: 'managed-token' }));
+      await service.refreshNow('storyflow-managed');
+      const { getLlmConnection } = await import('@craft-agent/shared/config');
+      console.log(JSON.stringify(getLlmConnection('storyflow-managed')));
+    `)
+
+    const connection = JSON.parse(output)
+    expect(connection.defaultModel).toBe('gpt-5.5')
+    expect(connection.models).toEqual([
+      {
+        id: 'gpt-5.5',
+        name: 'GPT-5.5',
+        shortName: 'GPT-5',
+        description: '',
+        provider: 'pi',
+        contextWindow: 262_144,
+        supportsThinking: true,
+        thinkingLevelMap: { low: 'low', max: null },
+        supportsImages: true,
+      },
+      {
+        id: 'gpt-5.6-sol',
+        name: 'GPT-5.6 Sol',
+        shortName: 'GPT-5',
+        description: '',
+        provider: 'pi',
+        contextWindow: 262_144,
+        supportsThinking: true,
+        thinkingLevelMap: { low: 'low', max: 'max' },
+        supportsImages: true,
+      },
+    ])
+  })
+
   it('passes the full connection to the credential resolver', () => {
     const configDir = setupModelRefreshConfigDir()
 

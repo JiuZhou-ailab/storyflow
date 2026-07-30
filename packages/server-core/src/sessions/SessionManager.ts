@@ -93,7 +93,7 @@ import { type Session, type SessionEvent, type FileAttachment, type SendMessageO
 import { messageToStored, storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta, type TurnMetrics } from '@craft-agent/core/types'
 import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlAsync, getEmojiIcon, resetSummarizationClient, resolveToolIcon, readFileAttachment, selectSpreadMessages, normalizePath, DEFAULT_TITLE_LANGUAGE } from '@craft-agent/shared/utils'
 import { buildNovelSelectionRewritePrompt, sanitizeNovelSelectionReplacement } from '@craft-agent/shared/writing'
-import { loadAllSkills, loadSkill, invalidateSkillsCache, type LoadedSkill } from '@craft-agent/shared/skills'
+import { loadPiSkillCatalog, invalidateSkillsCache, type LoadedSkill } from '@craft-agent/shared/skills'
 import { invalidateContextFileCache } from '@craft-agent/shared/prompts/system'
 import { getToolIconsDir, getMiniModel } from '@craft-agent/shared/config'
 import { getDefaultSummarizationModel } from '@craft-agent/shared/config/models'
@@ -104,7 +104,7 @@ import { listLabels, loadLabelConfig } from '@craft-agent/shared/labels/storage'
 import { extractLabelId, resolveSessionLabels } from '@craft-agent/shared/labels'
 import { ensureLabelsExist } from '@craft-agent/shared/labels/crud'
 import { loadStatusConfig } from '@craft-agent/shared/statuses/storage'
-import { AutomationSystem, createPromptHistoryEntry, appendAutomationHistoryEntry, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
+import { AutomationSystem, canonicalizeSkillReferences, createPromptHistoryEntry, appendAutomationHistoryEntry, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
 import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput, needsPiRuntimeMigrationSeed } from './runtime-config'
 import { captureWriteOriginalContent } from './write-original-content'
 import { SESSION_TURN_HARD_TIMEOUT_MS, SESSION_TURN_IDLE_TIMEOUT_MS, TurnWatchdog, type TurnWatchdogTimeout } from './turn-watchdog'
@@ -113,7 +113,6 @@ import {
   MANAGED_MODEL_ACCESS_UNAVAILABLE_MESSAGE,
   normalizeManagedDefaultGatewayAuthError,
 } from './managed-gateway-auth-error'
-import { runAutoCompactBeforeTurn } from './auto-compact-lifecycle'
 
 // Import from server-core domain utilities
 import { sanitizeForTitle, shouldActivateBrowserOverlay, normalizeBrowserToolName, rollbackFailedBranchCreation, releaseBrowserOwnershipOnForcedStop } from '@craft-agent/server-core/domain'
@@ -297,27 +296,6 @@ async function savePiTurnAnchor(sessionPath: string, messageId: string, anchorId
   await writeFile(filePath, JSON.stringify(index), 'utf-8')
 }
 
-const CLAUDE_TURN_ANCHORS_VERSION = 1
-const CLAUDE_TURN_ANCHORS_FILE = 'claude-turn-anchors.json'
-
-interface ClaudeTurnAnchorRecord {
-  sdkSessionId: string
-  sdkMessageUuid: string
-}
-
-interface ClaudeTurnAnchorsIndex {
-  version: number
-  anchors: Record<string, ClaudeTurnAnchorRecord>
-}
-
-function getClaudeTurnAnchorsPath(sessionPath: string): string {
-  return join(sessionPath, 'meta', CLAUDE_TURN_ANCHORS_FILE)
-}
-
-function isClaudeMessageUuid(turnId: string): boolean {
-  return /^msg_[A-Za-z0-9]+$/.test(turnId)
-}
-
 export function requireSdkForkBranchAnchor(input: {
   provider: string
   branchFromSessionId: string
@@ -331,64 +309,6 @@ export function requireSdkForkBranchAnchor(input: {
   throw new Error(
     `Cannot create branch yet: selected message is missing a provider branch anchor (${input.provider}; source=${input.branchFromSessionId}; message=${input.branchFromMessageId}). Branch from a completed assistant response and try again.`
   )
-}
-
-async function loadClaudeTurnAnchors(sessionPath: string): Promise<ClaudeTurnAnchorsIndex> {
-  const filePath = getClaudeTurnAnchorsPath(sessionPath)
-  try {
-    const raw = await readFile(filePath, 'utf-8')
-    const parsed = JSON.parse(raw) as Partial<ClaudeTurnAnchorsIndex>
-    const anchors = (parsed.anchors && typeof parsed.anchors === 'object') ? parsed.anchors : {}
-    const normalized: Record<string, ClaudeTurnAnchorRecord> = {}
-
-    for (const [messageId, value] of Object.entries(anchors)) {
-      if (!messageId || typeof messageId !== 'string') continue
-      if (!value || typeof value !== 'object') continue
-      const sdkSessionId = (value as { sdkSessionId?: unknown }).sdkSessionId
-      const sdkMessageUuid = (value as { sdkMessageUuid?: unknown }).sdkMessageUuid
-      if (typeof sdkSessionId === 'string' && sdkSessionId && typeof sdkMessageUuid === 'string' && sdkMessageUuid) {
-        normalized[messageId] = { sdkSessionId, sdkMessageUuid }
-      }
-    }
-
-    return {
-      version: CLAUDE_TURN_ANCHORS_VERSION,
-      anchors: normalized,
-    }
-  } catch {
-    return {
-      version: CLAUDE_TURN_ANCHORS_VERSION,
-      anchors: {},
-    }
-  }
-}
-
-async function getClaudeTurnAnchor(sessionPath: string, messageId: string): Promise<ClaudeTurnAnchorRecord | undefined> {
-  if (!messageId) return undefined
-  const index = await loadClaudeTurnAnchors(sessionPath)
-  return index.anchors[messageId]
-}
-
-async function saveClaudeTurnAnchor(
-  sessionPath: string,
-  messageId: string,
-  sdkSessionId: string,
-  sdkMessageUuid: string,
-): Promise<void> {
-  if (!messageId || !sdkSessionId || !sdkMessageUuid) return
-
-  const index = await loadClaudeTurnAnchors(sessionPath)
-  const previous = index.anchors[messageId]
-  if (previous && previous.sdkSessionId === sdkSessionId && previous.sdkMessageUuid === sdkMessageUuid) return
-
-  index.anchors[messageId] = {
-    sdkSessionId,
-    sdkMessageUuid,
-  }
-
-  const filePath = getClaudeTurnAnchorsPath(sessionPath)
-  await mkdir(join(sessionPath, 'meta'), { recursive: true })
-  await writeFile(filePath, JSON.stringify(index), 'utf-8')
 }
 
 /**
@@ -595,7 +515,7 @@ async function getBrowserToolIconDataUrl(): Promise<string | undefined> {
 async function resolveToolDisplayMeta(
   toolName: string,
   toolInput: Record<string, unknown> | undefined,
-  projectRoot: string | undefined,
+  skillCwd: string | undefined,
   sources: LoadedSource[]
 ): Promise<ToolDisplayMeta | undefined> {
   // Check if it's an MCP tool (format: mcp__<serverSlug>__<toolName>)
@@ -680,7 +600,8 @@ async function resolveToolDisplayMeta(
       if (skillSlug) {
         // Load skills and find the one being invoked
         try {
-          const skills = loadAllSkills()
+          if (!skillCwd) return undefined
+          const { skills } = await loadPiSkillCatalog(skillCwd)
           const skill = skills.find(s => s.slug === skillSlug)
           if (skill) {
             // Try file-based icon first, fall back to emoji icon from metadata
@@ -790,8 +711,7 @@ interface ManagedSession {
   processingGeneration: number
   // NOTE: Parent-child tracking state (pendingTools, parentToolStack, toolToParentMap,
   // pendingTextParent) has been removed. CraftAgent now provides parentToolUseId
-  // directly on all events using the SDK's authoritative parent_tool_use_id field.
-  // See: packages/shared/src/agent/tool-matching.ts
+  // directly on normalized AgentEvents.
   // Session name (user-defined or AI-generated)
   name?: string
   isFlagged: boolean
@@ -956,8 +876,6 @@ interface ManagedSession {
   // Whether the previous turn was interrupted (for context injection on next message).
   // Ephemeral — not persisted to disk. Cleared after one-shot injection.
   wasInterrupted?: boolean
-  // Runtime-only proactive compaction marker. Persisted JSONL remains lossless.
-  lastAutoCompactedUserIteration?: number
 }
 
 type SdkForkState = Pick<
@@ -1073,15 +991,6 @@ function resolveSupportsBranching(managed: ManagedSession): boolean {
   return true // default: branching enabled for all backends
 }
 
-function resolveManagedBackendProvider(managed: ManagedSession): string {
-  const workspaceConfig = loadWorkspaceConfig(managed.workspace.rootPath)
-  return resolveBackendContext({
-    sessionConnectionSlug: managed.llmConnection,
-    workspaceDefaultConnectionSlug: workspaceConfig?.defaults?.defaultLlmConnection,
-    managedModel: managed.model,
-  }).provider
-}
-
 function resolveManagedConnectionSlug(managed: ManagedSession): string | undefined {
   const workspaceConfig = loadWorkspaceConfig(managed.workspace.rootPath)
   return resolveBackendContext({
@@ -1100,14 +1009,7 @@ function resolveLiveAssistantBranchability(
     return false
   }
 
-  const provider = resolveManagedBackendProvider(managed)
-  if (provider === 'pi') {
-    return !!event.sdkTurnAnchor
-  }
-  if (provider === 'anthropic') {
-    return !!managed.sdkSessionId && isClaudeMessageUuid(event.turnId)
-  }
-  return true
+  return !!event.sdkTurnAnchor
 }
 
 function hasPersistedAssistantBranchability(messages: Message[]): boolean {
@@ -2547,15 +2449,8 @@ export class SessionManager implements ISessionManager {
       return
     }
 
-    const provider = resolveManagedBackendProvider(managed)
     const sessionPath = getSessionStoragePath(managed.workspace.rootPath, managed.id)
-
-    const piAnchors = provider === 'pi'
-      ? await loadPiTurnAnchors(sessionPath)
-      : null
-    const claudeAnchors = provider === 'anthropic'
-      ? await loadClaudeTurnAnchors(sessionPath)
-      : null
+    const piAnchors = await loadPiTurnAnchors(sessionPath)
 
     for (const message of managed.messages) {
       if (message.role !== 'assistant' || message.isIntermediate) {
@@ -2568,21 +2463,7 @@ export class SessionManager implements ISessionManager {
         continue
       }
 
-      if (provider === 'pi') {
-        message.canBranch = !!piAnchors?.anchors[message.id]
-        continue
-      }
-
-      if (provider === 'anthropic') {
-        const anchor = claudeAnchors?.anchors[message.id]
-        message.canBranch = !!managed.sdkSessionId
-          && !!anchor
-          && anchor.sdkSessionId === managed.sdkSessionId
-          && isClaudeMessageUuid(anchor.sdkMessageUuid)
-        continue
-      }
-
-      message.canBranch = true
+      message.canBranch = !!piAnchors.anchors[message.id]
     }
   }
 
@@ -2704,7 +2585,7 @@ export class SessionManager implements ISessionManager {
       managedModel: resolvedModelOption,
     })
     const targetProviderType = targetBackendContext.connection?.providerType
-      ?? (targetBackendContext.provider === 'pi' ? 'pi' : 'anthropic')
+      ?? 'pi'
     const targetPiAuthProvider = targetBackendContext.connection?.piAuthProvider
 
     // Resolve working directory from options:
@@ -2734,7 +2615,6 @@ export class SessionManager implements ISessionManager {
       branchContextStrategy: 'sdk-fork' | 'seeded-fresh-session'
       branchFromSdkSessionId?: string
       branchFromSessionPath?: string
-      branchFromSdkCwd?: string
       branchFromSdkTurnId?: string
     } | undefined
 
@@ -2780,26 +2660,22 @@ export class SessionManager implements ISessionManager {
         managedModel: sourceManaged?.model || sourceSession.model,
       })
       const sourceProviderType = sourceBackendContext.connection?.providerType
-        ?? (sourceBackendContext.provider === 'pi' ? 'pi' : 'anthropic')
+        ?? 'pi'
       const sourcePiAuthProvider = sourceBackendContext.connection?.piAuthProvider
 
-      const providerMismatch = sourceBackendContext.provider !== targetBackendContext.provider
       const providerTypeMismatch = sourceProviderType !== targetProviderType
-      const piAuthProviderMismatch =
-        sourceBackendContext.provider === 'pi' && sourcePiAuthProvider !== targetPiAuthProvider
+      const piAuthProviderMismatch = sourcePiAuthProvider !== targetPiAuthProvider
 
-      if (providerMismatch || providerTypeMismatch || piAuthProviderMismatch) {
-        sessionLog.warn('Branch validation failed: source and target providers are incompatible', {
+      if (providerTypeMismatch || piAuthProviderMismatch) {
+        sessionLog.warn('Branch validation failed: source and target model providers are incompatible', {
           workspaceId,
           branchFromSessionId: options.branchFromSessionId,
-          sourceProvider: sourceBackendContext.provider,
           sourceProviderType,
           sourcePiAuthProvider,
-          targetProvider: targetBackendContext.provider,
           targetProviderType,
           targetPiAuthProvider,
         })
-        throw new Error('Branching is only supported within the same provider/backend. Switch this panel connection and try again.')
+        throw new Error('Branching is only supported within the same model provider and auth context. Switch this panel connection and try again.')
       }
 
       const branchIdx = sourceSession.messages.findIndex(m => m.id === options.branchFromMessageId)
@@ -2822,60 +2698,17 @@ export class SessionManager implements ISessionManager {
       const branchFromSessionPath = branchContextStrategy === 'sdk-fork'
         ? getSessionStoragePath(workspaceRootPath, options.branchFromSessionId)
         : undefined
-      // Capture parent's sdkCwd so the child SDK subprocess can find the parent's
-      // session file (stored under ~/.claude/projects/{cwd-hash}/).
-      const branchFromSdkCwd = branchContextStrategy === 'sdk-fork'
-        ? (sourceManaged?.sdkCwd || sourceSession.sdkCwd)
-        : undefined
 
-      // Provider-native branch anchor at branch point.
-      // - Claude: assistant message UUID (resumeSessionAt), but only when anchor lineage
-      //   matches the parent SDK session being resumed.
-      // - Pi: session entry ID loaded from sidecar (pi-turn-anchors.json)
-      const branchMessage = sourceSession.messages[branchIdx]
+      // Pi session entry ID loaded from sidecar (pi-turn-anchors.json).
       let branchFromSdkTurnId: string | undefined
-      if (branchContextStrategy === 'sdk-fork') {
-        if (sourceBackendContext.provider === 'pi') {
-          if (branchFromSessionPath) {
-            branchFromSdkTurnId = await getPiTurnAnchor(branchFromSessionPath, options.branchFromMessageId)
-            if (!branchFromSdkTurnId) {
-              sessionLog.warn('Pi branch anchor missing: rejecting unsafe SDK fork branch', {
-                workspaceId,
-                branchFromSessionId: options.branchFromSessionId,
-                branchFromMessageId: options.branchFromMessageId,
-              })
-            }
-          }
-        } else if (sourceBackendContext.provider === 'anthropic') {
-          if (branchFromSessionPath && branchFromSdkSessionId) {
-            const anchor = await getClaudeTurnAnchor(branchFromSessionPath, options.branchFromMessageId)
-            if (!anchor) {
-              sessionLog.warn('Claude branch anchor missing: rejecting unsafe SDK fork branch', {
-                workspaceId,
-                branchFromSessionId: options.branchFromSessionId,
-                branchFromMessageId: options.branchFromMessageId,
-              })
-            } else if (!anchor.sdkMessageUuid || !isClaudeMessageUuid(anchor.sdkMessageUuid)) {
-              sessionLog.warn('Claude branch anchor malformed: rejecting unsafe SDK fork branch', {
-                workspaceId,
-                branchFromSessionId: options.branchFromSessionId,
-                branchFromMessageId: options.branchFromMessageId,
-                anchorSdkSessionId: anchor.sdkSessionId,
-              })
-            } else if (anchor.sdkSessionId !== branchFromSdkSessionId) {
-              sessionLog.warn('Claude branch anchor lineage mismatch: rejecting unsafe SDK fork branch', {
-                workspaceId,
-                branchFromSessionId: options.branchFromSessionId,
-                branchFromMessageId: options.branchFromMessageId,
-                anchorSdkSessionId: anchor.sdkSessionId,
-                parentSdkSessionId: branchFromSdkSessionId,
-              })
-            } else {
-              branchFromSdkTurnId = anchor.sdkMessageUuid
-            }
-          }
-        } else {
-          branchFromSdkTurnId = branchMessage?.turnId
+      if (branchContextStrategy === 'sdk-fork' && branchFromSessionPath) {
+        branchFromSdkTurnId = await getPiTurnAnchor(branchFromSessionPath, options.branchFromMessageId)
+        if (!branchFromSdkTurnId) {
+          sessionLog.warn('Pi branch anchor missing: rejecting unsafe SDK fork branch', {
+            workspaceId,
+            branchFromSessionId: options.branchFromSessionId,
+            branchFromMessageId: options.branchFromMessageId,
+          })
         }
       }
 
@@ -2906,7 +2739,6 @@ export class SessionManager implements ISessionManager {
         branchContextStrategy,
         branchFromSdkSessionId,
         branchFromSessionPath,
-        branchFromSdkCwd,
         branchFromSdkTurnId,
       }
 
@@ -2984,17 +2816,9 @@ export class SessionManager implements ISessionManager {
       branchedStored.agentRuntime = 'pi'
       storedSession.agentRuntime = 'pi'
       branchedStored.branchFromMessageId = validatedBranch.sourceMessageId
-      if (validatedBranch.branchContextStrategy === 'sdk-fork') {
-        branchedStored.branchFromSdkSessionId = validatedBranch.branchFromSdkSessionId
-        branchedStored.branchFromSessionPath = validatedBranch.branchFromSessionPath
-        branchedStored.branchFromSdkCwd = validatedBranch.branchFromSdkCwd
-        branchedStored.branchFromSdkTurnId = validatedBranch.branchFromSdkTurnId
-      } else {
-        delete branchedStored.branchFromSdkSessionId
-        delete branchedStored.branchFromSessionPath
-        delete branchedStored.branchFromSdkCwd
-        delete branchedStored.branchFromSdkTurnId
-      }
+      branchedStored.branchFromSdkSessionId = validatedBranch.branchFromSdkSessionId
+      branchedStored.branchFromSessionPath = validatedBranch.branchFromSessionPath
+      branchedStored.branchFromSdkTurnId = validatedBranch.branchFromSdkTurnId
       await saveStoredSession(branchedStored)
     }
 
@@ -3022,7 +2846,6 @@ export class SessionManager implements ISessionManager {
       branchContextStrategy: validatedBranch?.branchContextStrategy,
       branchFromSdkSessionId: validatedBranch?.branchFromSdkSessionId,
       branchFromSessionPath: validatedBranch?.branchFromSessionPath,
-      branchFromSdkCwd: validatedBranch?.branchFromSdkCwd,
       branchFromSdkTurnId: validatedBranch?.branchFromSdkTurnId,
       branchSeedApplied: validatedBranch ? validatedBranch.branchContextStrategy === 'sdk-fork' : undefined,
       messagesLoaded: !isBranch,  // Branched sessions: lazy-load messages from JSONL
@@ -3254,11 +3077,20 @@ export class SessionManager implements ISessionManager {
             customModels: connection.models?.map(model => {
               if (typeof model === 'string') return model
               const supportsImages = typeof model.supportsImages === 'boolean' ? model.supportsImages : undefined
-              if (model.contextWindow || supportsImages !== undefined) {
+              const supportsThinking = typeof model.supportsThinking === 'boolean' ? model.supportsThinking : undefined
+              const thinkingLevelMap = model.thinkingLevelMap
+              if (
+                model.contextWindow
+                || supportsImages !== undefined
+                || supportsThinking !== undefined
+                || thinkingLevelMap !== undefined
+              ) {
                 return {
                   id: model.id,
                   ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
                   ...(supportsImages !== undefined ? { supportsImages } : {}),
+                  ...(supportsThinking !== undefined ? { supportsThinking } : {}),
+                  ...(thinkingLevelMap !== undefined ? { thinkingLevelMap } : {}),
                 }
               }
               return model.id
@@ -5939,9 +5771,12 @@ export class SessionManager implements ISessionManager {
     if (options?.skillSlugs?.length) {
       try {
         const projectRoot = getResourceProjectRoot(managed.workspace)
+        const skillCwd = managed.workingDirectory ?? projectRoot
         const requiredSources = new Set<string>()
+        const { skills } = await loadPiSkillCatalog(skillCwd)
+        const skillsBySlug = new Map(skills.map(skill => [skill.slug, skill]))
         for (const slug of options.skillSlugs) {
-          const skill = loadSkill(slug)
+          const skill = skillsBySlug.get(slug)
           if (skill?.metadata.requiredSources) {
             for (const src of skill.metadata.requiredSources) {
               requiredSources.add(src)
@@ -6099,19 +5934,6 @@ export class SessionManager implements ISessionManager {
 
       sendSpan.mark('chat.starting')
       const userIteration = managed.messages.filter(message => message.role === 'user').length
-      const autoCompactResult = await runAutoCompactBeforeTurn({
-        sessionId,
-        userIteration,
-        lastCompactedUserIteration: managed.lastAutoCompactedUserIteration,
-        agent,
-        isRetry: _isAuthRetry === true,
-        isHiddenUserMessage: hideUserMessage,
-        log: sessionLog,
-        span: sendSpan,
-      })
-      if (autoCompactResult.nextLastCompactedUserIteration !== undefined) {
-        managed.lastAutoCompactedUserIteration = autoCompactResult.nextLastCompactedUserIteration
-      }
       const chatIterator = agent.chat(effectiveMessage, modelInputAttachments.attachments, {
         ...options,
         userIteration,
@@ -7263,16 +7085,6 @@ export class SessionManager implements ISessionManager {
 
           const sessionPath = getSessionStoragePath(managed.workspace.rootPath, sessionId)
 
-          // Claude branch-cutoff support: persist message UUID + SDK session lineage in sidecar.
-          // Used to guard resumeSessionAt so we only send anchors valid for the parent SDK session.
-          if (event.turnId && managed.sdkSessionId && isClaudeMessageUuid(event.turnId)) {
-            try {
-              await saveClaudeTurnAnchor(sessionPath, assistantMessage.id, managed.sdkSessionId, event.turnId)
-            } catch (error) {
-              sessionLog.warn(`Failed to persist Claude turn anchor for session ${sessionId}:`, error)
-            }
-          }
-
           // Pi branch-cutoff support: persist provider-native turn anchor in session sidecar.
           // Keeps session.jsonl schema unchanged while enabling strict branch cutoffs later.
           if (event.sdkTurnAnchor) {
@@ -7325,7 +7137,12 @@ export class SessionManager implements ISessionManager {
         let toolDisplayMeta: ToolDisplayMeta | undefined
         if (formattedToolInput && Object.keys(formattedToolInput).length > 0) {
           const allSources = loadAllSources(projectRoot)
-          toolDisplayMeta = await resolveToolDisplayMeta(event.toolName, formattedToolInput, projectRoot, allSources)
+          toolDisplayMeta = await resolveToolDisplayMeta(
+            event.toolName,
+            formattedToolInput,
+            managed.workingDirectory ?? projectRoot,
+            allSources,
+          )
         }
 
         // Check if a message with this toolUseId already exists FIRST
@@ -7431,7 +7248,7 @@ export class SessionManager implements ISessionManager {
       }
 
       case 'tool_result': {
-        // toolName comes directly from CraftAgent (resolved via ToolIndex)
+        // toolName comes directly from the normalized Agent event.
         const toolName = event.toolName || 'unknown'
 
         // Format absolute paths to relative paths for better readability
@@ -7474,7 +7291,12 @@ export class SessionManager implements ISessionManager {
           sessionLog.info(`RESULT WITHOUT START: toolUseId=${event.toolUseId}, toolName=${toolName} (creating message from result)`)
           const fallbackProjectRoot = getResourceProjectRoot(managed.workspace)
           const fallbackSources = loadAllSources(fallbackProjectRoot)
-          const fallbackToolDisplayMeta = await resolveToolDisplayMeta(toolName, undefined, fallbackProjectRoot, fallbackSources)
+          const fallbackToolDisplayMeta = await resolveToolDisplayMeta(
+            toolName,
+            undefined,
+            managed.workingDirectory ?? fallbackProjectRoot,
+            fallbackSources,
+          )
 
           const toolMessage: Message = {
             id: generateMessageId(),
@@ -7572,19 +7394,6 @@ export class SessionManager implements ISessionManager {
           // recovery will see awaitingCompaction=false and trigger execution.
           void markStoredCompactionComplete(managed.workspace.rootPath, sessionId)
           sessionLog.info(`Session ${sessionId}: compaction complete, marked pending plan ready`)
-
-          // Emit usage_update so the context count badge refreshes immediately
-          // after compaction, without waiting for the next message
-          if (managed.tokenUsage) {
-            this.sendEvent({
-              type: 'usage_update',
-              sessionId,
-              tokenUsage: {
-                inputTokens: managed.tokenUsage.inputTokens,
-                contextWindow: managed.tokenUsage.contextWindow,
-              },
-            }, workspaceId)
-          }
         }
 
         this.sendEvent({
@@ -7835,7 +7644,7 @@ export class SessionManager implements ISessionManager {
             }
           }
           // Live updates are current context size, not cumulative session input.
-          managed.tokenUsage.contextTokens = event.usage.inputTokens
+          managed.tokenUsage.contextTokens = event.usage.contextTokens
           if (event.usage.contextWindow) {
             managed.tokenUsage.contextWindow = event.usage.contextWindow
           }
@@ -7845,7 +7654,7 @@ export class SessionManager implements ISessionManager {
             type: 'usage_update',
             sessionId: managed.id,
             tokenUsage: {
-              inputTokens: event.usage.inputTokens,
+              contextTokens: event.usage.contextTokens,
               contextWindow: event.usage.contextWindow,
             },
           }, workspaceId)
@@ -7963,7 +7772,9 @@ export class SessionManager implements ISessionManager {
     }
 
     // Resolve @mentions to source/skill slugs
-    const resolved = mentions ? this.resolveAutomationMentions(workspaceRootPath, mentions) : undefined
+    const resolved = mentions
+      ? await this.resolveAutomationMentions(workspaceRootPath, mentions)
+      : undefined
 
     // Ensure labels exist in workspace config before assigning to session
     const resolvedLabels = labels?.length
@@ -8019,7 +7830,8 @@ export class SessionManager implements ISessionManager {
     }
 
     // Send the prompt
-    await this.sendMessage(session.id, prompt, undefined, undefined, {
+    const effectivePrompt = canonicalizeSkillReferences(prompt, resolved?.skillSlugs ?? [])
+    await this.sendMessage(session.id, effectivePrompt, undefined, undefined, {
       skillSlugs: resolved?.skillSlugs,
     })
 
@@ -8029,9 +7841,12 @@ export class SessionManager implements ISessionManager {
   /**
    * Resolve @mentions in automation prompts to source and skill slugs
    */
-  private resolveAutomationMentions(workspaceRootPath: string, mentions: string[]): { sourceSlugs: string[]; skillSlugs: string[] } | undefined {
+  private async resolveAutomationMentions(
+    workspaceRootPath: string,
+    mentions: string[],
+  ): Promise<{ sourceSlugs: string[]; skillSlugs: string[] } | undefined> {
     const sources = loadWorkspaceSources(workspaceRootPath)
-    const skills = loadAllSkills()
+    const { skills } = await loadPiSkillCatalog(workspaceRootPath)
     const sourceSlugs: string[] = []
     const skillSlugs: string[] = []
 

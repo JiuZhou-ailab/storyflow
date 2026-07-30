@@ -1,3 +1,7 @@
+// input: SDK subprocess environment, API/tool metadata, and interceptor filesystem state
+// output: Cross-process metadata storage, error capture, logging, and interceptor configuration
+// pos: Shared bridge between preload interceptors and the main-process Agent event adapter
+
 /**
  * Shared infrastructure for the unified network interceptor.
  *
@@ -233,7 +237,7 @@ export function clearLastApiError(): void {
 
 /**
  * Metadata extracted from tool_use inputs by the SSE stripping/capture stream.
- * Keyed by tool_use_id, consumed by tool-matching.ts / event-adapter.ts.
+ * Keyed by tool_use_id and consumed by the Agent event adapter.
  */
 export interface ToolMetadata {
   intent?: string;
@@ -245,7 +249,7 @@ export interface ToolMetadata {
  * Session-scoped, file-based metadata store for cross-process sharing.
  *
  * The interceptor runs in the SDK subprocess (via --preload / --require),
- * while tool-matching.ts / event-adapter.ts run in the Electron main process.
+ * while the event adapter runs in the Electron main process.
  * These are separate OS processes — globalThis, module-level Maps, etc. are NOT shared.
  *
  * Solution: a single `tool-metadata.json` file in the session directory.

@@ -1073,7 +1073,7 @@ export function handleUsageUpdate(
   const currentTokenUsage = session.tokenUsage
   if (
     currentTokenUsage !== undefined
-    && currentTokenUsage.contextTokens === event.tokenUsage.inputTokens
+    && currentTokenUsage.contextTokens === event.tokenUsage.contextTokens
     && currentTokenUsage.contextWindow === event.tokenUsage.contextWindow
   ) {
     return { state, effects: [] }
@@ -1084,7 +1084,7 @@ export function handleUsageUpdate(
     inputTokens: session.tokenUsage?.inputTokens ?? 0,
     outputTokens: session.tokenUsage?.outputTokens ?? 0,
     totalTokens: session.tokenUsage?.totalTokens ?? 0,
-    contextTokens: event.tokenUsage.inputTokens,
+    contextTokens: event.tokenUsage.contextTokens,
     costUsd: session.tokenUsage?.costUsd ?? 0,
     ...(session.tokenUsage?.cacheReadTokens !== undefined && { cacheReadTokens: session.tokenUsage.cacheReadTokens }),
     ...(session.tokenUsage?.cacheCreationTokens !== undefined && { cacheCreationTokens: session.tokenUsage.cacheCreationTokens }),

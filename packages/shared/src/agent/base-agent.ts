@@ -920,6 +920,14 @@ ${formattedMessages}
     missingSkills: string[];
   }> {
     const workDir = this.config.session?.workingDirectory ?? this.workingDirectory;
+    if (!message.includes('[skill:')) {
+      return {
+        skillPaths: new Map(),
+        cleanMessage: resolveFileMentions(resolveSourceMentions(message), workDir).trim(),
+        missingSkills: [],
+      };
+    }
+
     const { skills } = await loadPiSkillCatalog(workDir);
     const skillSlugs = skills.map(s => s.slug);
 

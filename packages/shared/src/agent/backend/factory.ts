@@ -1,3 +1,7 @@
+// input: LLM connections, core agent configuration, credentials, and host runtime paths
+// output: PiAgent construction, model discovery, connection validation, and runtime capabilities
+// pos: Single Agent Kernel factory; model providers remain connection-level configuration
+
 /**
  * Agent Factory
  *
@@ -46,7 +50,6 @@ import type {
   BackendModelFetchCredentials,
   BackendProviderOptions,
   BackendResolutionContext,
-  ProviderDriver,
   ResolvedBackendConfig,
   StoredConnectionValidationResult,
 } from './internal/driver-types.ts';
@@ -55,30 +58,14 @@ import {
   resolveBackendHostTooling as resolveHostToolingPaths,
   resolveBackendRuntimePaths,
 } from './internal/runtime-resolver.ts';
-import { anthropicDriver } from './internal/drivers/anthropic.ts';
 import { piDriver } from './internal/drivers/pi.ts';
 import { getSourcePath } from '../../sources/storage.ts';
 
-const DRIVER_REGISTRY: Record<AgentProvider, ProviderDriver> = {
-  anthropic: anthropicDriver,
-  pi: piDriver,
-};
-
-function getProviderDriver(provider: AgentProvider): ProviderDriver {
-  const driver = DRIVER_REGISTRY[provider];
-  if (!driver) {
-    throw new Error(`No backend driver registered for provider: ${provider}`);
-  }
-  return driver;
-}
-
 function resolveDriverRuntime(
-  provider: AgentProvider,
   hostRuntime: BackendHostRuntimeContext,
 ) {
-  const driver = getProviderDriver(provider);
   const resolvedPaths = resolveBackendRuntimePaths(hostRuntime);
-  return { driver, resolvedPaths };
+  return { driver: piDriver, resolvedPaths };
 }
 
 /**
@@ -152,7 +139,7 @@ export const createAgent = createBackend;
 
 /**
  * Create backend from a pre-resolved context and provider-agnostic core config.
- * Provider-specific runtime resolution happens via internal driver registry.
+ * Runtime resolution always targets the shared Pi Agent Kernel.
  */
 export function createBackendFromResolvedContext(args: {
   context: ResolvedBackendContext;
@@ -161,7 +148,7 @@ export function createBackendFromResolvedContext(args: {
   providerOptions?: BackendProviderOptions;
 }): AgentBackend {
   const { context, coreConfig, hostRuntime, providerOptions } = args;
-  const { driver, resolvedPaths } = resolveDriverRuntime(context.provider, hostRuntime);
+  const { driver, resolvedPaths } = resolveDriverRuntime(hostRuntime);
 
   const buildArgs = {
     context,
@@ -196,10 +183,8 @@ export function initializeBackendHostRuntime(args: {
 }): void {
   const { hostRuntime } = args;
 
-  for (const provider of getAvailableProviders()) {
-    const { driver, resolvedPaths } = resolveDriverRuntime(provider, hostRuntime);
-    driver.initializeHostRuntime?.({ hostRuntime, resolvedPaths });
-  }
+  const { driver, resolvedPaths } = resolveDriverRuntime(hostRuntime);
+  driver.initializeHostRuntime?.({ hostRuntime, resolvedPaths });
 }
 
 /**
@@ -404,7 +389,7 @@ export function resolveSetupTestConnectionHint(args: {
 
 /**
  * Provider-agnostic model discovery for model refresh flows.
- * Dispatches to provider drivers and keeps provider-specific SDK usage internal.
+ * Uses Pi's model-provider catalog while keeping connection details internal.
  */
 export async function fetchBackendModels(args: {
   connection: LlmConnection;
@@ -413,7 +398,7 @@ export async function fetchBackendModels(args: {
   timeoutMs?: number;
 }): Promise<ModelFetchResult> {
   const provider = providerTypeToAgentProvider(args.connection.providerType);
-  const { driver, resolvedPaths } = resolveDriverRuntime(provider, args.hostRuntime);
+  const { driver, resolvedPaths } = resolveDriverRuntime(args.hostRuntime);
   const timeoutMs = args.timeoutMs ?? 30_000;
 
   driver.initializeHostRuntime?.({
@@ -460,7 +445,7 @@ export async function validateStoredBackendConnection(args: {
     }
 
     const provider = providerTypeToAgentProvider(connection.providerType);
-    const { driver, resolvedPaths } = resolveDriverRuntime(provider, args.hostRuntime);
+    const { driver, resolvedPaths } = resolveDriverRuntime(args.hostRuntime);
 
     driver.initializeHostRuntime?.({
       hostRuntime: args.hostRuntime,
@@ -713,7 +698,7 @@ export async function testBackendConnection(args: {
       capabilities: BACKEND_CAPABILITIES[executionProvider],
     };
 
-    const { driver, resolvedPaths } = resolveDriverRuntime(executionProvider, args.hostRuntime);
+    const { driver, resolvedPaths } = resolveDriverRuntime(args.hostRuntime);
     if (driver.testConnection) {
       const driverResult = await driver.testConnection({
         provider: executionProvider,
@@ -822,18 +807,6 @@ export async function validateConnection(
     });
   }
 
-  const provider = providerTypeToAgentProvider(connection.providerType);
-
-  switch (provider) {
-    case 'anthropic': {
-      return { success: false, error: 'Legacy Anthropic runtime is disabled' };
-    }
-
-    case 'pi':
-      // Pi validates on connect via its auth storage — no pre-flight check available
-      return { success: true };
-
-    default:
-      return { success: true };
-  }
+  // Pi validates non-Anthropic providers on connect via its auth storage.
+  return { success: true };
 }

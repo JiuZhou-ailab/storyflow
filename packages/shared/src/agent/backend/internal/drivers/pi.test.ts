@@ -18,6 +18,19 @@ describe('piDriver.buildRuntime custom endpoint models', () => {
           customEndpoint: { api: 'anthropic-messages', supportsImages: true },
           models: [
             { id: 'vision-model', contextWindow: 262_144, supportsImages: true, supportsThinking: true },
+            {
+              id: 'luna-model',
+              supportsThinking: true,
+              thinkingLevelMap: {
+                off: 'none',
+                minimal: null,
+                low: 'low',
+                medium: 'medium',
+                high: 'high',
+                xhigh: 'xhigh',
+                max: null,
+              },
+            },
             { id: 'text-only-model', supportsImages: false },
             { id: 'plain-model' },
           ],
@@ -35,6 +48,19 @@ describe('piDriver.buildRuntime custom endpoint models', () => {
 
     expect(runtime.customModels).toEqual([
       { id: 'vision-model', contextWindow: 262_144, supportsImages: true, supportsThinking: true },
+      {
+        id: 'luna-model',
+        supportsThinking: true,
+        thinkingLevelMap: {
+          off: 'none',
+          minimal: null,
+          low: 'low',
+          medium: 'medium',
+          high: 'high',
+          xhigh: 'xhigh',
+          max: null,
+        },
+      },
       { id: 'text-only-model', supportsImages: false },
       'plain-model',
     ]);

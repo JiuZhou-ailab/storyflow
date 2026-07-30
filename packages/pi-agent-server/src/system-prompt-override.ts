@@ -7,10 +7,13 @@ import {
   type InlineExtension,
   type Skill,
 } from '@earendil-works/pi-coding-agent';
+import { fingerprint } from './prompt-cache-profile.ts';
 
 export function createSystemPromptOverride(): {
   extension: InlineExtension;
-  set(prompt: string, skills?: Skill[]): void;
+  set(prompt: string, skills?: Skill[], dynamicPrompt?: string): {
+    stablePrefixHash: string;
+  };
 } {
   let systemPrompt: string | undefined;
   return {
@@ -22,8 +25,16 @@ export function createSystemPromptOverride(): {
         ));
       },
     },
-    set(prompt, skills = []) {
-      systemPrompt = [prompt, formatSkillsForPrompt(skills)].filter(Boolean).join('\n\n');
+    set(prompt, skills = [], dynamicPrompt) {
+      const sortedSkills = [...skills].sort((a, b) => {
+        if (a.name !== b.name) return a.name < b.name ? -1 : 1;
+        return a.filePath < b.filePath ? -1 : a.filePath > b.filePath ? 1 : 0;
+      });
+      const stablePrefix = [prompt, formatSkillsForPrompt(sortedSkills)]
+        .filter(Boolean)
+        .join('\n\n');
+      systemPrompt = [stablePrefix, dynamicPrompt].filter(Boolean).join('\n\n');
+      return { stablePrefixHash: fingerprint(stablePrefix) };
     },
   };
 }

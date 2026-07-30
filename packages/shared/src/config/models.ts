@@ -93,6 +93,12 @@ export function normalizeDeprecatedModelId(modelId: string): string {
  */
 export type ModelProvider = 'anthropic' | 'pi';
 
+/** Model-specific mapping from Pi thinking levels to provider effort values. */
+export type ModelThinkingLevelMap = Partial<Record<
+  'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max',
+  string | null
+>>;
+
 /**
  * Full model definition with capabilities and costs.
  * Used throughout the application for model selection and display.
@@ -115,6 +121,8 @@ export interface ModelDefinition {
   contextWindow: number;
   /** Whether this model supports thinking/reasoning effort. Defaults to true when undefined. */
   supportsThinking?: boolean;
+  /** Provider effort mapping; null marks a Pi level unsupported so it is clamped away. */
+  thinkingLevelMap?: ModelThinkingLevelMap;
   /** Explicit per-model image input capability hint, primarily for custom endpoints. */
   supportsImages?: boolean;
 }

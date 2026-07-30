@@ -7,6 +7,7 @@ import {
   AuthStorage as PiAuthStorage,
   ModelRegistry as PiModelRegistry,
 } from '@earendil-works/pi-coding-agent'
+import { clampThinkingLevel } from '@earendil-works/pi-ai'
 import {
   buildCustomEndpointModelDef,
   normalizeCustomEndpointModelEntry,
@@ -44,16 +45,27 @@ describe('normalizeCustomEndpointModelEntry', () => {
   })
 
   it('preserves context window and image support together', () => {
+    const thinkingLevelMap = {
+      off: 'none',
+      minimal: null,
+      low: 'low',
+      medium: 'medium',
+      high: 'high',
+      xhigh: 'xhigh',
+      max: null,
+    } as const
     expect(normalizeCustomEndpointModelEntry({
       id: 'pi/vision-model',
       contextWindow: 262_144,
       supportsImages: true,
       supportsThinking: true,
+      thinkingLevelMap,
     })).toEqual({
       id: 'vision-model',
       contextWindow: 262_144,
       supportsImages: true,
       supportsThinking: true,
+      thinkingLevelMap,
     })
   })
 })
@@ -75,13 +87,26 @@ describe('buildCustomEndpointModelDef', () => {
   })
 
   it('lets per-model overrides enable image input and custom context window', () => {
+    const thinkingLevelMap = {
+      off: 'none',
+      minimal: null,
+      low: 'low',
+      medium: 'medium',
+      high: 'high',
+      xhigh: 'xhigh',
+      max: null,
+    } as const
     const model = buildCustomEndpointModelDef('vision-model', undefined, {
       supportsImages: true,
       supportsThinking: true,
+      thinkingLevelMap,
       contextWindow: 262_144,
     })
     expect(model.input).toEqual(['text', 'image'])
     expect(model.reasoning).toBe(true)
+    expect(model.thinkingLevelMap).toEqual(thinkingLevelMap)
+    expect(clampThinkingLevel(model as never, 'minimal')).toBe('low')
+    expect(clampThinkingLevel(model as never, 'max')).toBe('xhigh')
     expect(model.contextWindow).toBe(262_144)
   })
 })

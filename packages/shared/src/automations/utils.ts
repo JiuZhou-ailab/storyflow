@@ -1,3 +1,7 @@
+// input: Automation prompts, event payloads, environment values, and resolved Skill slugs
+// output: Prompt reference canonicalization and shared automation matching utilities
+// pos: Deterministic utility boundary for Automation handlers and host execution
+
 /**
  * Shared Utilities for Automations System
  *
@@ -72,6 +76,25 @@ export function parsePromptReferences(prompt: string): PromptReferences {
   }
 
   return { mentions };
+}
+
+/**
+ * Convert resolved Automation Skill references into the canonical mention syntax
+ * consumed by BaseAgent. Source references remain unchanged.
+ */
+export function canonicalizeSkillReferences(
+  prompt: string,
+  skillSlugs: readonly string[],
+): string {
+  if (skillSlugs.length === 0) return prompt;
+  const resolvedSkills = new Set(skillSlugs.map(slug => slug.toLowerCase()));
+  return prompt.replace(
+    /(^|[\s(])@([a-zA-Z][a-zA-Z0-9-]*)/g,
+    (match, prefix: string, rawSlug: string) => {
+      const slug = rawSlug.toLowerCase();
+      return resolvedSkills.has(slug) ? `${prefix}[skill:${slug}]` : match;
+    },
+  );
 }
 
 // ============================================================================

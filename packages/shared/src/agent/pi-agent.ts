@@ -2020,13 +2020,11 @@ export class PiAgent extends BaseAgent {
         }
       }
 
-      // For Pi, context parts go into the system prompt (not the user message).
+      // For Pi, context parts go into the system prompt (not the user message),
+      // but stay separate from the stable prefix so Skills can sit between them.
       // Unlike Claude, other LLMs behind Pi don't know to ignore inline context
       // blocks and will echo <session_state>, <sources>, etc. back in their response.
-      const fullSystemPrompt = [
-        systemPrompt,
-        ...contextParts,
-      ].filter(Boolean).join('\n\n');
+      const dynamicSystemPrompt = contextParts.filter(Boolean).join('\n\n');
 
       // User message: attachments + the actual message
       // (skill read directive is already prepended to message by BaseAgent.chat())
@@ -2042,7 +2040,8 @@ export class PiAgent extends BaseAgent {
         type: 'prompt',
         id: turnId,
         message: userMessage,
-        systemPrompt: fullSystemPrompt,
+        systemPrompt,
+        dynamicSystemPrompt,
         images: images.length > 0 ? images : undefined,
       });
 

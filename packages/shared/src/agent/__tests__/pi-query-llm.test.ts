@@ -1,3 +1,7 @@
+// input: PiAgent subprocess RPC requests and synthetic JSONL responses
+// output: Round-trip regression coverage for utility queries and runtime toggles
+// pos: Client-side Pi subprocess protocol contract tests
+
 /**
  * Tests for PiAgent.queryLlm — the subprocess RPC that powers `call_llm`.
  *
@@ -54,6 +58,31 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe('PiAgent.queryLlm — subprocess RPC round-trip', () => {
+  it('round-trips explicit auto-compaction enablement through the subprocess protocol', async () => {
+    const agent = new PiAgent(createConfig());
+    const { sent } = installFakeSubprocess(agent);
+
+    const pending = (agent as any).requestSetAutoCompaction(true) as Promise<boolean>;
+    await flushMicrotasks();
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      type: 'set_auto_compaction',
+      enabled: true,
+    });
+
+    (agent as any).handleLine(JSON.stringify({
+      type: 'set_auto_compaction_result',
+      id: sent[0]!.id,
+      success: true,
+      enabled: true,
+    }));
+
+    await expect(pending).resolves.toBe(true);
+    expect((agent as any).pendingAutoCompactionToggles.size).toBe(0);
+    agent.destroy();
+  });
+
   it('propagates the full LLMQueryRequest shape over the llm_query RPC unchanged', async () => {
     const agent = new PiAgent(createConfig());
     const { sent } = installFakeSubprocess(agent);

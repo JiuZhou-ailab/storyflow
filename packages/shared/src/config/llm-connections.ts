@@ -19,6 +19,10 @@ import {
   type ModelDefinition,
   normalizeDeprecatedModelId,
 } from './models';
+import {
+  THINKING_LEVEL_IDS,
+  type ThinkingLevel,
+} from '../agent/thinking-levels.ts';
 import type { CredentialManager } from '../credentials/manager.ts';
 
 // ============================================================
@@ -591,6 +595,41 @@ export function modelSupportsThinking(
   return isCompatProvider(connection.providerType)
     ? entry.supportsThinking === true
     : entry.supportsThinking !== false;
+}
+
+/** Check one persisted/UI thinking level against the concrete model capability map. */
+export function modelSupportsThinkingLevel(
+  connection: Pick<LlmConnection, 'providerType' | 'models'>,
+  modelId: string,
+  level: ThinkingLevel,
+): boolean {
+  if (!modelSupportsThinking(connection, modelId)) return false;
+
+  const entry = connection.models?.find(model =>
+    (typeof model === 'string' ? model : model.id) === modelId,
+  );
+  return !!entry
+    && typeof entry !== 'string'
+    && entry.thinkingLevelMap?.[level] !== null;
+}
+
+/** Mirror Pi's nearest-level clamp so persisted effort and the model menu stay aligned. */
+export function resolveModelThinkingLevel(
+  connection: Pick<LlmConnection, 'providerType' | 'models'>,
+  modelId: string,
+  level: ThinkingLevel,
+): ThinkingLevel | undefined {
+  if (modelSupportsThinkingLevel(connection, modelId, level)) return level;
+
+  const selectedIndex = THINKING_LEVEL_IDS.indexOf(level);
+  for (let distance = 1; distance < THINKING_LEVEL_IDS.length; distance++) {
+    const lower = THINKING_LEVEL_IDS[selectedIndex - distance];
+    if (lower && modelSupportsThinkingLevel(connection, modelId, lower)) return lower;
+
+    const upper = THINKING_LEVEL_IDS[selectedIndex + distance];
+    if (upper && modelSupportsThinkingLevel(connection, modelId, upper)) return upper;
+  }
+  return undefined;
 }
 
 /**

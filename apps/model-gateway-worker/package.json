@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun test src/index.test.ts"
+    "test": "bun test src/index.test.ts src/managed-auth-flow.test.ts"
   },
   "dependencies": {
+    "@craft-agent/shared": "workspace:*",
     "jose": "^6.0.0"
   }
 }

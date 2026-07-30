@@ -32,7 +32,7 @@ import type { LLMQueryRequest, LLMQueryResult } from '../llm-tool.ts';
 import { AbortReason, type RecoveryMessage } from '../core/index.ts';
 export { AbortReason, type RecoveryMessage };
 
-import type { ModelProvider } from '../../config/models.ts';
+import type { ModelProvider, ModelThinkingLevelMap } from '../../config/models.ts';
 
 // Import LLM connection types for auth
 import type { LlmAuthType, LlmProviderType } from '../../config/llm-connections.ts';
@@ -51,6 +51,7 @@ export interface BackendRuntimeUpdate {
       contextWindow?: number;
       supportsImages?: boolean;
       supportsThinking?: boolean;
+      thinkingLevelMap?: ModelThinkingLevelMap;
     }>;
     [key: string]: unknown;
   };

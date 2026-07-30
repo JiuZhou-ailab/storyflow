@@ -16,24 +16,10 @@ const workspace = {
 let idCounter = 0
 const storedById = new Map<string, any>()
 const deletedIds: string[] = []
-let mockedProvider: 'anthropic' | 'pi' = 'anthropic'
 
 function writeSourceBranchAnchors() {
   const metaDir = join(workspaceRootPath, 'sessions', 'source-1', 'meta')
   mkdirSync(metaDir, { recursive: true })
-  writeFileSync(
-    join(metaDir, 'claude-turn-anchors.json'),
-    JSON.stringify({
-      version: 1,
-      anchors: {
-        m1: {
-          sdkSessionId: 'sdk-parent',
-          sdkMessageUuid: 'msg_parentbranch1',
-        },
-      },
-    }),
-    'utf-8',
-  )
   writeFileSync(
     join(metaDir, 'pi-turn-anchors.json'),
     JSON.stringify({
@@ -184,15 +170,15 @@ mock.module('@craft-agent/shared/agent/backend', () => ({
     throw new Error('not used in this test')
   },
   resolveBackendContext: () => ({
-    provider: mockedProvider,
-    resolvedModel: mockedProvider === 'anthropic' ? 'claude-sonnet-4-20250514' : 'pi/gpt-5',
-    connection: { providerType: mockedProvider === 'anthropic' ? 'anthropic' : 'pi' },
+    provider: 'pi',
+    resolvedModel: 'pi/gpt-5',
+    connection: { providerType: 'pi' },
   }),
   createBackendFromResolvedContext: () => {
     throw new Error('not used in this test')
   },
   cleanupSourceRuntimeArtifacts: async () => {},
-  providerTypeToAgentProvider: () => 'anthropic',
+  providerTypeToAgentProvider: () => 'pi',
   fetchBackendModels: async () => ({ models: [] }),
   initializeBackendHostRuntime: () => {},
   resolveBackendHostTooling: () => ({
@@ -315,7 +301,6 @@ const { SessionManager } = await import('@craft-agent/server-core/sessions')
 
 describe('session branch rollback on preflight failure', () => {
   beforeEach(() => {
-    mockedProvider = 'anthropic'
     idCounter = 0
     storedById.clear()
     deletedIds.length = 0
@@ -326,7 +311,7 @@ describe('session branch rollback on preflight failure', () => {
       id: 'source-1',
       workspaceRootPath,
       llmConnection: undefined,
-      model: 'claude-sonnet-4-20250514',
+      model: 'pi/gpt-5',
       sdkSessionId: 'sdk-parent',
       messages: [
         { id: 'm1', type: 'user', content: 'hello', timestamp: Date.now() - 10 },
@@ -372,7 +357,7 @@ describe('session branch rollback on preflight failure', () => {
     expect(poolStopCalled).toBe(true)
   })
 
-  it('fails branch creation when parent claude sdk session id is missing', async () => {
+  it('fails branch creation when parent Pi session id is missing', async () => {
     const source = storedById.get('source-1')
     source.sdkSessionId = undefined
     storedById.set('source-1', source)
@@ -391,8 +376,6 @@ describe('session branch rollback on preflight failure', () => {
   })
 
   it('runs backend preflight for pi branches and rolls back on failure', async () => {
-    mockedProvider = 'pi'
-
     const manager = new SessionManager()
     let getOrCreateAgentCalled = false
 
@@ -423,8 +406,6 @@ describe('session branch rollback on preflight failure', () => {
   })
 
   it('marks a pending Pi branch as Pi-owned before preflight', async () => {
-    mockedProvider = 'pi'
-
     const manager = new SessionManager()
     ;(manager as any).ensureMessagesLoaded = async (_managed: any) => {}
     ;(manager as any).getOrCreateAgent = async (managed: any) => {

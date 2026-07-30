@@ -31,6 +31,7 @@ import { createApplicationMenu } from './menu'
 import { WindowManager } from './window-manager'
 import { loadWindowState, saveWindowState } from './window-state'
 import {
+  getLlmConnection,
   getWorkspaces,
   getWorkspaceByNameOrId,
   MANAGED_LLM_CONNECTION_SLUG,
@@ -77,6 +78,12 @@ import {
 } from './client-auth'
 import { readClientAuthOverrides } from './client-auth-overrides'
 import { createClientAuthSessionStore } from './client-auth-session-store'
+import {
+  MODEL_ACCESS_BROKER_TOKEN_ENV,
+  MODEL_ACCESS_BROKER_URL_ENV,
+  startManagedModelCliBroker,
+  type ManagedModelCliBroker,
+} from './managed-model-cli-broker'
 import { resolveElectronRuntimePaths } from './runtime-paths'
 import { getAppVersion } from '@craft-agent/shared/version'
 import { normalizeFeedbackIssueInput, submitFeedbackIssue } from './feedback'
@@ -168,6 +175,7 @@ const DEEPLINK_SCHEME = process.env.CRAFT_DEEPLINK_SCHEME || 'craftagents'
 let windowManager: WindowManager | null = null
 let sessionManager: SessionManager | null = null
 let clientAuthService: ClientAuthService | null = null
+let managedModelCliBroker: ManagedModelCliBroker | null = null
 let browserPaneManager: BrowserPaneManager | null = null
 let oauthFlowStore: OAuthFlowStore | null = null
 let moduleSink: EventSink | null = null
@@ -501,6 +509,7 @@ app.whenReady().then(async () => {
             await sessionManager.disposeConnectionRuntimes(MANAGED_LLM_CONNECTION_SLUG)
           } else if (change.modelAccessTokenChanged) {
             await sessionManager.reloadConnectionCredentials(MANAGED_LLM_CONNECTION_SLUG)
+            await getModelRefreshService().refreshNow(MANAGED_LLM_CONNECTION_SLUG)
           }
         } catch (error) {
           mainLog.warn('[client-auth] Failed to propagate auth change to live runtimes:', error)
@@ -590,6 +599,20 @@ app.whenReady().then(async () => {
       const { getServerConfig } = await import('@craft-agent/shared/config')
       const embeddedServerConfig = getServerConfig()
       const serverModeEnabled = embeddedServerConfig.enabled && !isClientOnly
+      const managedConnection = getLlmConnection(MANAGED_LLM_CONNECTION_SLUG)
+
+      if (!serverModeEnabled && !isClientOnly && managedModelAccessConfigured && managedConnection?.baseUrl) {
+        try {
+          managedModelCliBroker = await startManagedModelCliBroker({
+            gatewayBaseUrl: managedConnection.baseUrl,
+            isAuthenticated: () => authService.getState().authenticated,
+            ensureModelAccessToken: (options) => authService.ensureModelAccessToken(options),
+          })
+          Object.assign(process.env, managedModelCliBroker.env)
+        } catch (error) {
+          mainLog.warn('[managed-model-cli] Failed to start local credential broker:', error)
+        }
+      }
 
       // Derive host/port/token from server config (or env overrides)
       const serverToken = serverModeEnabled && embeddedServerConfig.token
@@ -1129,6 +1152,12 @@ const quitCoordinator = createQuitCoordinator({
   prepare: async () => {
     // Ensure Cmd+Q/app quit bypasses layered window close interception (Cmd+W behavior).
     windowManager?.setAppQuitting(true)
+    await managedModelCliBroker?.close().catch(error => {
+      mainLog.warn('[managed-model-cli] Failed to close local credential broker:', error)
+    })
+    managedModelCliBroker = null
+    delete process.env[MODEL_ACCESS_BROKER_URL_ENV]
+    delete process.env[MODEL_ACCESS_BROKER_TOKEN_ENV]
     clientAuthService?.dispose()
     clientAuthService = null
 

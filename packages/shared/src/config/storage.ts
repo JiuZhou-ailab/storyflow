@@ -69,6 +69,7 @@ import {
   normalizeDeprecatedModelId,
   type ModelDefinition,
 } from './models.ts';
+import { cloneManagedModelCatalog } from './managed-model-catalog.ts';
 
 // Config stored in JSON file (credentials stored in encrypted file, not here)
 export interface StoredConfig {
@@ -225,7 +226,19 @@ export function applyBuiltinLlmConnectionDefaults(
   let defaultSlug: string | undefined;
 
   for (const builtin of builtins) {
-    const connection = builtin.connection!;
+    const bundledConnection = builtin.connection!;
+    const managedModels = normalizeLlmConnectionSlug(bundledConnection.slug) === MANAGED_LLM_CONNECTION_SLUG
+      ? cloneManagedModelCatalog()
+      : null;
+    const connection = managedModels
+      ? {
+          ...bundledConnection,
+          models: managedModels,
+          defaultModel: managedModels.some(model => model.id === bundledConnection.defaultModel)
+            ? bundledConnection.defaultModel
+            : managedModels[0]?.id,
+        }
+      : bundledConnection;
     const slug = connection.slug.trim();
     defaultSlug ??= slug;
 

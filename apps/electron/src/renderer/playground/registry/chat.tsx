@@ -15,8 +15,11 @@ import { Button } from '@/components/ui/button'
 import { motion } from 'motion/react'
 import { ArrowUp, Paperclip, ChevronDown, Circle, Sparkles } from 'lucide-react'
 import type { LabelConfig } from '@craft-agent/shared/labels'
+import type { ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels'
 import type { SessionStatus } from '@/config/session-status-config'
-import type { FileAttachment, PermissionRequest, PermissionMode, Workspace } from '../../../shared/types'
+import type { FileAttachment, LlmConnectionWithStatus, PermissionRequest, PermissionMode, Workspace } from '../../../shared/types'
+import type { LlmConnection } from '@config/llm-connections'
+import configDefaults from '../../../../resources/config-defaults.json'
 import { cn } from '@/lib/utils'
 import { AppShellProvider } from '@/context/AppShellContext'
 import { ModalProvider } from '@/context/ModalContext'
@@ -120,6 +123,11 @@ const playgroundWorkspace: Workspace = {
   slug: 'playground-workspace',
   rootPath: '/playground',
   createdAt: 0,
+}
+
+const inputContainerModelConnection: LlmConnectionWithStatus = {
+  ...(configDefaults.builtinLlmConnections[0]!.connection as LlmConnection),
+  isAuthenticated: true,
 }
 
 const playgroundAppShellContext = {
@@ -504,7 +512,7 @@ function InputContainerPlayground({
   disabled = false,
   isProcessing = false,
   placeholder = 'Message Craft Agent...',
-  currentModel = 'claude-sonnet-4-6',
+  currentModel = 'gpt-5.6-sol',
   permissionMode = 'ask',
   workingDirectory = '/Users/demo/projects/craft-agent',
   inputMode = 'freeform',
@@ -525,6 +533,7 @@ function InputContainerPlayground({
 }: InputContainerPlaygroundProps) {
   const playgroundSessionId = 'playground-session'
   const [model, setModel] = React.useState(currentModel)
+  const [thinkingLevel, setThinkingLevel] = React.useState<ThinkingLevel>('high')
   const [mode, setMode] = React.useState<PermissionMode>(permissionMode)
   const [inputValue, setInputValue] = React.useState('')
   const [currentSessionStatus, setCurrentSessionStatus] = React.useState('in-progress')
@@ -716,6 +725,10 @@ function InputContainerPlayground({
             onHeightChange: mockInputCallbacks.onHeightChange,
             onFocusChange: mockInputCallbacks.onFocusChange,
             onStop: mockInputCallbacks.onStop,
+            thinkingLevel,
+            onThinkingLevelChange: setThinkingLevel,
+            currentConnection: inputContainerModelConnection.slug,
+            llmConnections: [inputContainerModelConnection],
           }}
         />
       </div>
@@ -1088,12 +1101,12 @@ export const chatComponents: ComponentEntry[] = [
         control: {
           type: 'select',
           options: [
-            { label: 'Sonnet 4.6', value: 'claude-sonnet-4-6' },
-            { label: 'Opus 4.7', value: 'claude-opus-4-7' },
-            { label: 'Haiku 3.5', value: 'claude-3-5-haiku-20241022' },
+            { label: 'GPT-5.5', value: 'gpt-5.5' },
+            { label: 'GPT-5.6 Sol', value: 'gpt-5.6-sol' },
+            { label: 'GPT-5.6 Terra', value: 'gpt-5.6-terra' },
           ],
         },
-        defaultValue: 'claude-sonnet-4-6',
+        defaultValue: 'gpt-5.6-sol',
       },
       {
         name: 'permissionMode',
