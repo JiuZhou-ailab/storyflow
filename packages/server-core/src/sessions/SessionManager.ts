@@ -2915,6 +2915,84 @@ export class SessionManager implements ISessionManager {
     return managedToSession(managed, isBranch ? { messages: managed.messages } : undefined)
   }
 
+  /**
+   * In-place rewind: truncate craft transcript at a user message and move the
+   * Pi session leaf via native navigateTree. Same session id; no fork/new session.
+   */
+  async rewindUserMessage(
+    sessionId: string,
+    userMessageId: string,
+  ): Promise<{ draftText: string }> {
+    const managed = this.sessions.get(sessionId)
+    if (!managed) {
+      throw new Error(`Session ${sessionId} not found`)
+    }
+
+    await this.ensureMessagesLoaded(managed)
+
+    const messageIndex = managed.messages.findIndex(message => message.id === userMessageId)
+    if (messageIndex === -1) {
+      throw new Error(`Message ${userMessageId} not found in session ${sessionId}`)
+    }
+
+    const target = managed.messages[messageIndex]
+    if (target?.role !== 'user') {
+      throw new Error('Only user messages can be rewound')
+    }
+
+    const draftText = typeof target.content === 'string' ? target.content : ''
+    const userOrdinal = managed.messages
+      .slice(0, messageIndex + 1)
+      .filter(message => message.role === 'user')
+      .length - 1
+
+    if (managed.isProcessing) {
+      await this.cancelProcessing(sessionId, true)
+      // cancel drains async; rewind needs a stable leaf now.
+      managed.stopRequested = true
+      managed.isProcessing = false
+    }
+
+    managed.messageQueue = []
+    managed.streamingText = ''
+
+    const sessionPath = getSessionStoragePath(managed.workspace.rootPath, sessionId)
+    const hasPiTranscript = hasPersistedPiTranscript(sessionPath)
+
+    if (hasPiTranscript) {
+      await (await this.getOrCreateAgent(managed)).rewindUserMessage(userOrdinal)
+    } else if (userOrdinal > 0) {
+      // Mid-history without a provider session file would desync UI transcript from LLM context.
+      throw new Error(
+        'Cannot rewind this message yet: provider session is not initialized. Send one message and try again.',
+      )
+    }
+
+    managed.messages = managed.messages.slice(0, messageIndex)
+
+    const lastUser = [...managed.messages].reverse().find(message => message.role === 'user')
+    const lastFinalAssistant = [...managed.messages].reverse().find(
+      message => message.role === 'assistant' && !message.isIntermediate,
+    )
+    managed.lastMessageRole = lastFinalAssistant ? 'assistant' : lastUser ? 'user' : undefined
+    managed.lastFinalMessageId = lastFinalAssistant?.id
+    managed.messageCount = managed.messages.length
+    if (typeof lastUser?.content === 'string') {
+      managed.preview = lastUser.content.slice(0, 200)
+    }
+
+    this.persistSession(managed)
+    await sessionPersistenceQueue.flush(managed.id)
+
+    this.sendEvent({
+      type: 'messages_rewound',
+      sessionId,
+      messages: managed.messages,
+    }, managed.workspace.id)
+
+    return { draftText }
+  }
+
   private async disposeManagedAgentRuntime(managed: ManagedSession, reason: string): Promise<void> {
     const sessionId = managed.id
 

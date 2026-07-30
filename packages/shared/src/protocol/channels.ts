@@ -29,6 +29,7 @@ export const RPC_CHANNELS = {
     UNREAD_SUMMARY_CHANGED: 'sessions:unreadSummaryChanged',
     CREATE: 'sessions:create',
     DELETE: 'sessions:delete',
+    REWIND: 'sessions:rewind',
     GET_MESSAGES: 'sessions:getMessages',
     RELEASE_MESSAGES: 'sessions:releaseMessages',
     SEND_MESSAGE: 'sessions:sendMessage',

@@ -30,6 +30,7 @@ export const CHANNEL_MAP = {
   releaseSessionMessages: invoke(RPC_CHANNELS.sessions.RELEASE_MESSAGES),
   createSession: invoke(RPC_CHANNELS.sessions.CREATE),
   deleteSession: invoke(RPC_CHANNELS.sessions.DELETE),
+  rewindSession: invoke(RPC_CHANNELS.sessions.REWIND),
   sendMessage: invoke(RPC_CHANNELS.sessions.SEND_MESSAGE),
   rewriteNovelSelection: invoke(RPC_CHANNELS.sessions.REWRITE_NOVEL_SELECTION),
   cancelProcessing: invoke(RPC_CHANNELS.sessions.CANCEL),

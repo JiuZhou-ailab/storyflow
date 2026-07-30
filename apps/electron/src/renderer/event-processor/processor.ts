@@ -44,6 +44,7 @@ import {
   handleUserMessage,
   handleMessageAnnotationsUpdated,
   handleQueuedMessageRemoved,
+  handleMessagesRewound,
   handleSessionShared,
   handleSessionUnshared,
   handleAuthRequest,
@@ -223,6 +224,9 @@ export function processEvent(
 
     case 'queued_message_removed':
       return handleQueuedMessageRemoved(state, event)
+
+    case 'messages_rewound':
+      return handleMessagesRewound(state, event)
 
     default: {
       // Unknown event type - return state unchanged but as new reference

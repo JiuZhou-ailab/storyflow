@@ -480,6 +480,13 @@ export interface AgentBackend {
   ensureBranchReady(): Promise<void>;
 
   /**
+   * In-place rewind to a historical user message (provider-native tree navigation).
+   * userOrdinal is 0-based among user messages on the active conversation path.
+   * Default BaseAgent throws; Pi overrides with navigateTree.
+   */
+  rewindUserMessage(userOrdinal: number): Promise<{ editorText?: string }>;
+
+  /**
    * Check if currently processing a query.
    */
   isProcessing(): boolean;

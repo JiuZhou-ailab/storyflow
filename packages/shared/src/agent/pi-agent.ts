@@ -232,6 +232,12 @@ export class PiAgent extends BaseAgent {
     reject: (error: Error) => void;
   }> = new Map();
 
+  // Pending in-place rewind requests (Pi navigateTree)
+  private pendingRewindUserMessages: Map<string, {
+    resolve: (result: { editorText?: string }) => void;
+    reject: (error: Error) => void;
+  }> = new Map();
+
   // Pending runtime config updates (custom endpoint model capability refresh)
   private pendingRuntimeConfigUpdates: Map<string, {
     resolve: (updated: boolean) => void;
@@ -924,6 +930,10 @@ export class PiAgent extends BaseAgent {
       case 'set_auto_compaction_result':
         // Response to an auto-compaction toggle request
         this.handleSetAutoCompactionResult(msg);
+        break;
+
+      case 'rewind_user_message_result':
+        this.handleRewindUserMessageResult(msg);
         break;
 
       case 'update_runtime_config_result':
@@ -1638,6 +1648,22 @@ export class PiAgent extends BaseAgent {
     pending.resolve(Boolean(msg.enabled));
   }
 
+  private handleRewindUserMessageResult(msg: Record<string, unknown>): void {
+    const id = msg.id as string;
+    const pending = this.pendingRewindUserMessages.get(id);
+    if (!pending) return;
+
+    this.pendingRewindUserMessages.delete(id);
+    if (!msg.success) {
+      pending.reject(new Error(String(msg.errorMessage || 'In-place rewind failed')));
+      return;
+    }
+
+    pending.resolve({
+      editorText: typeof msg.editorText === 'string' ? msg.editorText : undefined,
+    });
+  }
+
   /**
    * Handle update_runtime_config_result from subprocess.
    */
@@ -1709,6 +1735,11 @@ export class PiAgent extends BaseAgent {
       pending.reject(new Error(`Pi subprocess exited unexpectedly (${exitReason})`));
     }
     this.pendingAutoCompactionToggles.clear();
+
+    for (const [, pending] of this.pendingRewindUserMessages) {
+      pending.reject(new Error(`Pi subprocess exited unexpectedly (${exitReason})`));
+    }
+    this.pendingRewindUserMessages.clear();
 
     for (const [, pending] of this.pendingRuntimeConfigUpdates) {
       pending.reject(new Error(`Pi subprocess exited unexpectedly (${exitReason})`));
@@ -1882,6 +1913,38 @@ export class PiAgent extends BaseAgent {
       this.piSessionId = sessionId;
       this.config.onSdkSessionIdUpdate?.(sessionId);
     }
+  }
+
+  /**
+   * In-place rewind via Pi navigateTree (same session file, new leaf).
+   * userOrdinal is 0-based among user messages on the active branch.
+   */
+  override async rewindUserMessage(userOrdinal: number): Promise<{ editorText?: string }> {
+    await this.requestEnsureSessionReady();
+    await this.ensureSubprocess();
+
+    const id = `rewind-user-${++this.rpcIdCounter}`;
+    const timeoutMs = 30_000;
+
+    return new Promise<{ editorText?: string }>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingRewindUserMessages.delete(id);
+        reject(new Error(`rewind_user_message timed out after ${Math.floor(timeoutMs / 1000)}s`));
+      }, timeoutMs);
+
+      this.pendingRewindUserMessages.set(id, {
+        resolve: (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      });
+
+      this.send({ type: 'rewind_user_message', id, userOrdinal });
+    });
   }
 
   // ============================================================

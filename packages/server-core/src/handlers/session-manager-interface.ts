@@ -52,6 +52,7 @@ export interface ISessionManager {
   releaseIdleSessionMessages(sessionId: string): Promise<boolean>
   createSession(workspaceId: string, options?: CreateSessionOptions): Promise<Session>
   deleteSession(sessionId: string): Promise<void>
+  rewindUserMessage(sessionId: string, userMessageId: string): Promise<{ draftText: string }>
 
   // ---------------------------------------------------------------------------
   // Session state

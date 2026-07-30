@@ -40,6 +40,7 @@ import type {
   UserMessageEvent,
   MessageAnnotationsUpdatedEvent,
   QueuedMessageRemovedEvent,
+  MessagesRewoundEvent,
   SessionSharedEvent,
   SessionUnsharedEvent,
   AuthRequestEvent,
@@ -1056,6 +1057,37 @@ export function handleAuthCompleted(
         messages: updatedMessages,
       },
       streaming,
+    },
+    effects: [],
+  }
+}
+
+/**
+ * Handle messages_rewound — replace transcript with the truncated active path.
+ */
+export function handleMessagesRewound(
+  state: SessionState,
+  event: MessagesRewoundEvent,
+): ProcessResult {
+  const { session } = state
+  const lastUser = [...event.messages].reverse().find(m => m.role === 'user')
+  const lastFinalAssistant = [...event.messages].reverse().find(
+    m => m.role === 'assistant' && !m.isIntermediate,
+  )
+  return {
+    state: {
+      session: {
+        ...session,
+        messages: event.messages,
+        messageCount: event.messages.length,
+        lastFinalMessageId: lastFinalAssistant?.id,
+        lastMessageRole: lastFinalAssistant ? 'assistant' : lastUser ? 'user' : undefined,
+        preview: typeof lastUser?.content === 'string'
+          ? lastUser.content.slice(0, 200)
+          : session.preview,
+        isProcessing: false,
+      },
+      streaming: null,
     },
     effects: [],
   }

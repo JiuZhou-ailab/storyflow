@@ -77,13 +77,6 @@ import {
   type ChatOpeningCommand,
   type ChatOpeningPrompt,
 } from "./chat-opening"
-import {
-  buildRewindSessionOptions,
-  canCreateDefaultRewindBranch,
-  canRewindWithoutDroppingHistory,
-  MANAGED_DEFAULT_CONNECTION_SLUG,
-  resolveRewindBranchMessageId,
-} from "./chat-rewind"
 import { handleErrorMessageAction } from "./error-message-actions"
 
 // ============================================================================
@@ -1555,47 +1548,32 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     if (!session) return
     if (message.role !== 'user') return
 
-    const originalContent = typeof message.content === 'string' ? message.content : ''
-    const branchFromMessageId = resolveRewindBranchMessageId(session.messages, message.id)
-    const defaultConnectionSlug = workspaceDefaultLlmConnection
-      ?? llmConnections.find(connection => connection.isDefault)?.slug
-      ?? MANAGED_DEFAULT_CONNECTION_SLUG
-
-    if (!onCreateSession || !onDraftInputChange) {
-      toast.error(t('chat.rewindUnavailable', 'This message cannot be safely rewound.'))
-      return
-    }
-    if (!canRewindWithoutDroppingHistory(session, message.id, branchFromMessageId)) {
-      toast.error(t('chat.rewindUnavailable', 'This message cannot be safely rewound.'))
-      return
-    }
-    if (branchFromMessageId && !session.supportsBranching) {
-      toast.error(t('chat.rewindUnavailable', 'This conversation cannot be rewound yet.'))
-      return
-    }
-    if (!canCreateDefaultRewindBranch(session, branchFromMessageId, defaultConnectionSlug)) {
+    if (!onDraftInputChange) {
       toast.error(t('chat.rewindUnavailable', 'This message cannot be safely rewound.'))
       return
     }
 
     try {
-      const child = await onCreateSession(
-        session.workspaceId,
-        buildRewindSessionOptions(session, branchFromMessageId)
-      )
-      onDraftInputChange(child.id, originalContent)
-      navigate(routes.view.allSessions(child.id))
+      // Pi-native in-place rewind: same session, navigateTree leaf + truncate transcript.
+      const result = await window.electronAPI.rewindSession(session.id, message.id)
+      const draftText = result.draftText ?? ''
+      // Persist draft in App-level ref…
+      onDraftInputChange(session.id, draftText)
+      // …and push into ChatPage's local input state (ref update alone does not re-render the composer).
+      window.dispatchEvent(new CustomEvent('craft:restore-input', {
+        detail: { sessionId: session.id, text: draftText },
+      }))
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent('craft:focus-input', {
-          detail: { sessionId: child.id },
+          detail: { sessionId: session.id },
         }))
       }, 80)
       toast.success(t('chat.rewindReady', 'Edit the restored message, then send to regenerate.'))
     } catch (error) {
-      const messageText = error instanceof Error ? error.message : 'Failed to create rewind branch'
+      const messageText = error instanceof Error ? error.message : 'Failed to rewind conversation'
       toast.error(t('chat.rewindFailed', 'Could not rewind conversation'), { description: messageText })
     }
-  }, [llmConnections, navigate, onCreateSession, onDraftInputChange, session, t, workspaceDefaultLlmConnection])
+  }, [onDraftInputChange, session, t])
   const handleRewindUserMessageRef = React.useRef(handleRewindUserMessage)
   handleRewindUserMessageRef.current = handleRewindUserMessage
 

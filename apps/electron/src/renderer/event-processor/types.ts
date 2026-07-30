@@ -428,6 +428,15 @@ export interface QueuedMessageRemovedEvent {
 }
 
 /**
+ * In-place rewind: transcript truncated at a user message (same session).
+ */
+export interface MessagesRewoundEvent {
+  type: 'messages_rewound'
+  sessionId: string
+  messages: Message[]
+}
+
+/**
  * Session shared event - session was shared to viewer
  */
 export interface SessionSharedEvent {
@@ -533,6 +542,7 @@ export type AgentEvent =
   | UserMessageEvent
   | MessageAnnotationsUpdatedEvent
   | QueuedMessageRemovedEvent
+  | MessagesRewoundEvent
   | SessionSharedEvent
   | SessionUnsharedEvent
   | AuthRequestEvent

@@ -123,6 +123,7 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.sessions.MARK_ALL_READ,
   RPC_CHANNELS.sessions.CREATE,
   RPC_CHANNELS.sessions.DELETE,
+  RPC_CHANNELS.sessions.REWIND,
   RPC_CHANNELS.sessions.GET_MESSAGES,
   RPC_CHANNELS.sessions.RELEASE_MESSAGES,
   RPC_CHANNELS.sessions.SEND_MESSAGE,
@@ -241,6 +242,16 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   // Delete a session
   server.handle(RPC_CHANNELS.sessions.DELETE, async (_ctx, sessionId: string) => {
     return sessionManager.deleteSession(sessionId)
+  })
+
+  // In-place rewind: truncate transcript at a user message via Pi navigateTree
+  server.handle(RPC_CHANNELS.sessions.REWIND, async (_ctx, sessionId: string, userMessageId: string) => {
+    const end = perf.start('rpc.rewindSession', { sessionId })
+    try {
+      return await sessionManager.rewindUserMessage(sessionId, userMessageId)
+    } finally {
+      end()
+    }
   })
 
   // Send a message to a session (with optional file attachments).

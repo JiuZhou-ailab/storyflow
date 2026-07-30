@@ -866,6 +866,13 @@ ${formattedMessages}
     // No-op by default
   }
 
+  /**
+   * In-place rewind via provider-native tree navigation. Default: unsupported.
+   */
+  async rewindUserMessage(_userOrdinal: number): Promise<{ editorText?: string }> {
+    throw new Error(`${this.backendName} does not support in-place rewind`);
+  }
+
   // ============================================================
   // Cleanup (common base, subclasses extend)
   // ============================================================

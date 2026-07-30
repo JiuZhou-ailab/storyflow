@@ -187,6 +187,7 @@ type InboundMessage =
   | { type: 'set_thinking_level'; level: string }
   | { type: 'compact'; id: string; customInstructions?: string }
   | { type: 'set_auto_compaction'; id: string; enabled: boolean }
+  | { type: 'rewind_user_message'; id: string; userOrdinal: number }
   | RuntimeConfigUpdateMessage
   | { type: 'steer'; message: string }
   | { type: 'token_update'; piAuth: { provider: string; credential: PiCredential } }
@@ -259,6 +260,13 @@ interface OutboundSetAutoCompactionResult {
   enabled: boolean;
   errorMessage?: string;
 }
+interface OutboundRewindUserMessageResult {
+  type: 'rewind_user_message_result';
+  id: string;
+  success: boolean;
+  editorText?: string;
+  errorMessage?: string;
+}
 interface OutboundRuntimeConfigUpdateResult {
   type: 'update_runtime_config_result';
   id: string;
@@ -280,6 +288,7 @@ type OutboundMessage =
   | OutboundEnsureSessionReadyResult
   | OutboundCompactResult
   | OutboundSetAutoCompactionResult
+  | OutboundRewindUserMessageResult
   | OutboundRuntimeConfigUpdateResult
   | OutboundSessionIdUpdate
   | OutboundError;
@@ -1663,6 +1672,58 @@ async function handleCompact(msg: Extract<InboundMessage, { type: 'compact' }>):
   }
 }
 
+async function handleRewindUserMessage(
+  msg: Extract<InboundMessage, { type: 'rewind_user_message' }>,
+): Promise<void> {
+  try {
+    const session = await ensureSession();
+
+    // Pi navigateTree refuses mid-stream tree edits. Abort any active turn first.
+    if (session.isStreaming) {
+      await session.abort();
+    }
+
+    const branch = session.sessionManager.getBranch();
+    const userEntries = branch.filter(
+      (entry) => entry.type === 'message' && entry.message?.role === 'user',
+    );
+    const target = userEntries[msg.userOrdinal];
+    if (!target) {
+      throw new Error(
+        `User message ordinal ${msg.userOrdinal} not found on active branch (${userEntries.length} user messages)`,
+      );
+    }
+
+    // Pi-native in-place rewind: same session file, leaf → parent of user message.
+    const result = await session.navigateTree(target.id, { summarize: false });
+    if (result.cancelled) {
+      send({
+        type: 'rewind_user_message_result',
+        id: msg.id,
+        success: false,
+        errorMessage: 'Rewind cancelled',
+      });
+      return;
+    }
+
+    send({
+      type: 'rewind_user_message_result',
+      id: msg.id,
+      success: true,
+      editorText: result.editorText,
+    });
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    debugLog(`[rewind_user_message] Failed: ${errorMsg}`);
+    send({
+      type: 'rewind_user_message_result',
+      id: msg.id,
+      success: false,
+      errorMessage: errorMsg,
+    });
+  }
+}
+
 async function handleSetAutoCompaction(msg: Extract<InboundMessage, { type: 'set_auto_compaction' }>): Promise<void> {
   try {
     const session = await ensureSession();
@@ -1887,6 +1948,10 @@ async function processMessage(msg: InboundMessage): Promise<void> {
 
     case 'set_auto_compaction':
       await handleSetAutoCompaction(msg);
+      break;
+
+    case 'rewind_user_message':
+      await handleRewindUserMessage(msg);
       break;
 
     case 'update_runtime_config':
