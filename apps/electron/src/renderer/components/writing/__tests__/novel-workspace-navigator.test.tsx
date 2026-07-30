@@ -1357,12 +1357,19 @@ describe('novel writing workspace layout', () => {
 
   it('exposes global search from the activity rail backed by the global search dialog', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
-    const activityRailSource = readFileSync(new URL('../../app-shell/ActivityRail.tsx', import.meta.url), 'utf-8')
     const globalSearchSource = readFileSync(new URL('../../app-shell/GlobalSearchDialog.tsx', import.meta.url), 'utf-8')
 
-    expect(activityRailSource).toContain('label="搜索"')
-    expect(activityRailSource).toContain('<Search className="h-4 w-4" />')
-    expect(appShellSource).toContain('onOpenSearch={() => setGlobalSearchOpen(true)}')
+    // Window chrome owns one fixed control group; rail collapse only changes
+    // the navigation content beneath it.
+    expect(appShellSource).toContain('data-testid="activity-rail-titlebar-actions"')
+    expect(appShellSource).toContain('fixed left-0 top-0')
+    expect(appShellSource).toContain('{showActivityRail ? activityRailControls : null}')
+    expect(appShellSource).toContain('aria-label="搜索"')
+    expect(appShellSource).toContain('<Search className="h-4 w-4" />')
+    expect(appShellSource).toContain("aria-label={isActivityRailVisible ? '收起侧边栏' : '展开侧边栏'}")
+    expect(appShellSource).toContain('aria-expanded={isActivityRailVisible}')
+    expect(appShellSource).not.toContain('data-testid="activity-rail-collapsed"')
+    expect(appShellSource).toContain('setGlobalSearchOpen(true)')
     expect(appShellSource).toContain('const [globalSearchOpen, setGlobalSearchOpen]')
     expect(appShellSource).toContain("useAction('app.search', () => setGlobalSearchOpen(true))")
     expect(appShellSource).toContain('<GlobalSearchDialog')
@@ -1371,13 +1378,18 @@ describe('novel writing workspace layout', () => {
     expect(globalSearchSource).toContain('onOpenNovelFile')
   })
 
-  it('keeps global search in the activity rail so compact layout does not hide it', () => {
+  it('keeps global search in fixed window chrome so compact layout does not hide it', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const activityRailSource = readFileSync(new URL('../../app-shell/ActivityRail.tsx', import.meta.url), 'utf-8')
 
     expect(appShellSource).not.toContain('const globalSearchButton =')
     expect(appShellSource).toContain('const showActivityRail = true')
-    expect(activityRailSource).toContain('label="搜索"')
+    expect(appShellSource).toContain('data-testid="activity-rail-titlebar-actions"')
+    expect(appShellSource).toContain('fixed left-0 top-0')
+    expect(appShellSource).not.toContain('activityRailLeadingAction')
+    expect(appShellSource).toContain('aria-label="搜索"')
+    expect(activityRailSource).not.toContain('aria-label="搜索"')
+    expect(activityRailSource).not.toContain('aria-label="收起侧边栏"')
   })
 
   it('left-aligns sidebar item content instead of letting writing catalog labels drift toward the center', () => {

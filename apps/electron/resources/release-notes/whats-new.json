@@ -1,17 +1,19 @@
 {
-  "version": "0.9.54",
-  "digest": "6ab21893b76894db0c12f0fe6f19c031f6dea929d253c299cfc65d2ceb734721",
-  "generatedAt": "2026-07-30T11:53:29.345Z",
-  "title": "What is new in v0.9.54",
-  "summary": "这一版修好编辑历史消息时偶发失败，并让 Rewind 更稳定地留在原会话。",
+  "version": "0.9.55",
+  "digest": "85e5bbfabc44628c712deee04bd9bf24a8049092dd726afd4dc8515af1e6c6be",
+  "generatedAt": "2026-07-30T16:51:04.949Z",
+  "title": "What is new in v0.9.55",
+  "summary": "这一版让桌面工作区的导航和项目起始页更连续、更安静。",
   "highlights": [
-    "编辑历史消息更可靠：修复直播会话里 Rewind 偶发 “Message not found” 的问题；正常发送与排队发送共用同一消息 id。",
-    "编辑历史消息留在原会话：Rewind 使用 Pi 原生 navigateTree 原地截断对话并回填输入框，不再生成 Rewind of … 新会话。"
+    "搜索与折叠更稳定：搜索和侧栏折叠按钮固定在窗口标题栏中，折叠导航内容后仍然随时可用。",
+    "保留侧栏状态：侧栏折叠状态会被记住，下次打开应用时继续使用上次的布局。",
+    "状态信息更克制：任务标题保持左对齐，只在运行、等待、报错或未读时显示状态标记。",
+    "入口和聊天一致：空项目页使用与聊天开启面一致的操作卡片，创建文件、导入文件和打开 Skills 更容易区分。"
   ],
-  "accentColor": "#158456",
+  "accentColor": "#9e651a",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 1,
+    "commitCount": 17,
     "userVisibleCommitCount": 0
   }
 }

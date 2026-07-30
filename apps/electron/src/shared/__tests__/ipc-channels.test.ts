@@ -249,6 +249,7 @@ const EXPECTED_CHANNELS: string[] = [
   'sessions:respondToCredential',
   'sessions:respondToPermission',
   'sessions:respondToUserQuestion',
+  'sessions:rewind',
   'sessions:rewriteNovelSelection',
   'sessions:searchContent',
   'sessions:sendMessage',

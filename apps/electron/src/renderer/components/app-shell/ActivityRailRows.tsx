@@ -69,17 +69,22 @@ export function RecentConversationRow({
     hasPendingPrompt,
     lastMessageRole: meta.lastMessageRole,
   })
-  const statusIndicator = runtimeStatus === 'running' ? (
+  const isRunning = runtimeStatus === 'running'
+  const showStatus = isRunning
+    || runtimeStatus === 'waiting-input'
+    || runtimeStatus === 'error'
+    || meta.hasUnread
+  const statusIndicator = isRunning ? (
     <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground/75" />
   ) : (
     <span className={cn(
-      'h-1.5 w-1.5 rounded-full bg-transparent',
+      'h-1.5 w-1.5 rounded-full',
       meta.hasUnread && 'bg-accent',
       runtimeStatus === 'waiting-input' && 'bg-info',
       runtimeStatus === 'error' && 'bg-destructive',
     )} />
   )
-  const statusLabel = runtimeStatus === 'running'
+  const statusLabel = isRunning
     ? '正在运行'
     : runtimeStatus === 'waiting-input'
       ? '等待处理'
@@ -88,6 +93,7 @@ export function RecentConversationRow({
         : meta.hasUnread
           ? '未读'
           : null
+  // Titles stay left-aligned: only real status occupies the trailing marker slot.
   const row = (
     <div
       data-session-id={meta.id}
@@ -108,18 +114,16 @@ export function RecentConversationRow({
         )}
         onClick={onSelect}
       >
-        {!nested ? (
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">{statusIndicator}</span>
-        ) : null}
-        <span className="min-w-0 flex-1 truncate text-[13px] leading-4 text-foreground/85">
+        <span className="min-w-0 flex-1 truncate text-left text-[13px] leading-4 text-foreground/85">
           {getSessionTitle(meta)}
         </span>
         {statusLabel ? <span className="sr-only">{statusLabel}</span> : null}
-        {nested ? (
+        {showStatus ? (
           <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">{statusIndicator}</span>
-        ) : (
+        ) : null}
+        {!nested ? (
           <span className="shrink-0 text-[11px] text-muted-foreground/70">{formatRelativeTimestamp(meta.lastMessageAt, '')}</span>
-        )}
+        ) : null}
       </button>
     </div>
   )

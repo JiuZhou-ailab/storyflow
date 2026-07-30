@@ -1,6 +1,6 @@
-// input: app shell viewport width requirements
-// output: regression coverage for default shell column sizing
-// pos: protects the default three-column app shell layout contract
+// input: App shell viewport, rail-collapse, panel chrome, and column sizing contracts
+// output: Regression coverage for default shell geometry and native title-bar ownership
+// pos: Protects the continuous desktop workbench from detached or overlapping chrome
 
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'bun:test'
@@ -270,6 +270,47 @@ describe('app shell layout defaults', () => {
     expect(panelStackSource).toContain('index === visiblePanels.length - 1 ? rightSidebarButton : undefined')
   })
 
+  it('limits panel-header no-drag regions to the visible controls', () => {
+    expect(panelHeaderSource).toContain(
+      'titlebar-no-drag min-w-0 w-fit justify-self-start flex items-center',
+    )
+    expect(panelHeaderSource).toContain(
+      'titlebar-no-drag min-w-0 w-fit justify-self-end flex items-center gap-1',
+    )
+  })
+
+  it('keeps rail actions pinned beside the macOS traffic lights across rail collapse', () => {
+    const activityRailControlsSource = appShellSource.slice(
+      appShellSource.indexOf('const activityRailControls'),
+      appShellSource.indexOf('// One rail callback'),
+    )
+
+    expect(appShellSource).not.toContain('ACTIVITY_RAIL_COLLAPSED_WIDTH')
+    expect(appShellSource).not.toContain('data-testid="activity-rail-collapsed"')
+    expect(appShellSource).not.toContain('data-activity-rail-collapsed')
+    expect(rendererCssSource).not.toContain("html[data-activity-rail-collapsed='true']")
+    expect(activityRailControlsSource).toContain('fixed left-0 top-0')
+    expect(activityRailControlsSource).toContain('justify-end')
+    expect(activityRailControlsSource).toContain('px-2')
+    expect(activityRailControlsSource).toContain('translate-y-0.5')
+    expect(activityRailControlsSource).toContain('style={{ width: ACTIVITY_RAIL_WIDTH, height: WINDOW_TITLE_BAR_HEIGHT }}')
+    expect(activityRailControlsSource).not.toContain('left-[84px]')
+    expect(activityRailControlsSource.match(/titlebar-no-drag pointer-events-auto/g)).toHaveLength(2)
+    expect(appShellSource).toContain('{showActivityRail ? activityRailControls : null}')
+    expect(appShellSource.indexOf('{showActivityRail ? activityRailControls : null}')).toBeGreaterThan(
+      appShellSource.indexOf('data-testid="panel-stack-inset"'),
+    )
+    expect(appShellSource).toContain('<AnimatePresence initial={false}>')
+    expect(appShellSource).toContain('data-testid="activity-rail-motion"')
+    expect(appShellSource).toContain('key="activity-rail"')
+    expect(appShellSource).toContain('initial={{ width: 0 }}')
+    expect(appShellSource).toContain('animate={{ width: ACTIVITY_RAIL_WIDTH }}')
+    expect(appShellSource).toContain('exit={{ width: 0 }}')
+    expect(appShellSource).toContain('transition={shouldReduceMotion ? { duration: 0 } : PANEL_SPRING}')
+    expect(appShellSource).not.toContain('activityRailLeadingAction')
+    expect(activityRailSource).toContain('className="titlebar-drag-region shrink-0"')
+  })
+
   it('renders structural panes as one continuous workbench with parent-owned seams', () => {
     expect(PANEL_GAP).toBe(0)
     expect(PANEL_EDGE_INSET).toBe(0)
@@ -287,6 +328,7 @@ describe('app shell layout defaults', () => {
     expect(panelHeaderSource).toContain('border-b border-foreground/[0.06]')
     expect(panelSlotSource).toContain('bg-background')
     expect(panelSlotSource).not.toContain('background-elevated')
+    expect(activityRailSource).toContain('border-r border-foreground/[0.06]')
     expect(tiptapEditorStyles).toContain('background: var(--background)')
     expect(tiptapEditorStyles).not.toContain('--tiptap-manuscript-paper')
     expect(rendererCssSource).toContain('[data-panel-role="navigator"]')

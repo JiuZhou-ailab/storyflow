@@ -16,6 +16,7 @@ const PREFIX = 'craft-'
 export const KEYS = {
   // Chat sidebar
   sidebarVisible: 'sidebar-visible',
+  activityRailVisible: 'activity-rail-visible',
   sidebarWidth: 'sidebar-width',
   sessionListWidth: 'session-list-width',
   novelWorkspaceNavigatorWidth: 'novel-workspace-navigator-width',

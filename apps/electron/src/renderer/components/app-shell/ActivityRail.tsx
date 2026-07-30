@@ -13,13 +13,13 @@ import {
   LoaderCircle,
   Megaphone,
   Plus,
-  Search,
   Settings,
   ShieldAlert,
   SquarePen,
   UserCircle,
   Zap,
 } from 'lucide-react'
+import appPackage from '../../../../package.json'
 import { atom, useAtom, useAtomValue, useStore } from 'jotai'
 import { selectAtom } from 'jotai/utils'
 import { useTranslation } from 'react-i18next'
@@ -85,7 +85,6 @@ export interface ActivityRailProps {
   onOpenFreeConversations?: (options?: { createNew?: boolean }) => void | Promise<void>
   onOpenSources?: () => void
   onOpenSkills?: () => void
-  onOpenSearch?: () => void
   onOpenSettings?: () => void
   onOpenAccount?: () => void
   profile?: {
@@ -139,7 +138,6 @@ export function ActivityRail({
   onOpenFreeConversations,
   onOpenSources,
   onOpenSkills,
-  onOpenSearch,
   onOpenSettings,
   onOpenAccount,
   profile,
@@ -400,17 +398,21 @@ export function ActivityRail({
     <aside
       data-testid="activity-rail"
       aria-label="工作区导航"
-      className="titlebar-no-drag flex h-full shrink-0 flex-col bg-foreground-1.5"
+      className="titlebar-no-drag flex h-full shrink-0 flex-col border-r border-foreground/[0.06] bg-foreground-1.5"
       style={{ width: ACTIVITY_RAIL_WIDTH }}
     >
+      {/* Window-pinned collapse/search controls sit above this draggable title-bar area. */}
       <div
         aria-hidden="true"
         className="titlebar-drag-region shrink-0"
         style={{ height: WINDOW_TITLE_BAR_HEIGHT }}
       />
-      <div className="flex min-h-0 flex-1 flex-col px-2 pt-2">
-        <div className="flex items-center px-2 pb-2">
-          <span className="text-[13px] font-medium text-foreground/80">Storyflow</span>
+      <div className="flex min-h-0 flex-1 flex-col px-2 pt-1">
+        <div className="flex items-center px-1 pb-2">
+          <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-foreground/85">
+            Storyflow
+            <span className="ml-1 text-[11px] font-normal text-muted-foreground/65">v{appPackage.version}</span>
+          </span>
         </div>
 
         <button
@@ -444,14 +446,6 @@ export function ActivityRail({
             disabled={!onOpenSources}
             onClick={onOpenSources}
             dataTutorial="activity-sources"
-          />
-          <SidebarNavItem
-            label="搜索"
-            icon={<Search className="h-4 w-4" />}
-            active={activeItem === 'search'}
-            disabled={!onOpenSearch}
-            onClick={onOpenSearch}
-            dataTutorial="activity-search"
           />
         </nav>
 

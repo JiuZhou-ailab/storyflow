@@ -119,7 +119,7 @@ export function PanelHeader({
 
   const content = (
     <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,auto)_minmax(0,1fr)] items-center gap-1.5">
-      <div className="titlebar-no-drag min-w-0 flex items-center justify-start">
+      <div className="titlebar-no-drag min-w-0 w-fit justify-self-start flex items-center">
         {leadingAction}
       </div>
       <div className="min-w-0 flex items-center justify-center select-none">
@@ -154,7 +154,7 @@ export function PanelHeader({
           )}
         </div>
       </div>
-      <div className="titlebar-no-drag min-w-0 flex items-center justify-end gap-1">
+      <div className="titlebar-no-drag min-w-0 w-fit justify-self-end flex items-center gap-1">
         {centerButton}
         {actions}
         {rightSidebarButton}

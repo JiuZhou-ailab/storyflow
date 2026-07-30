@@ -1,5 +1,5 @@
-// input: Workspace/session state, application update state, navigation state, file-open intent, and shell callbacks
-// output: Desktop app shell with disk-synced project navigation, tabbed writing documents, and main content panels
+// input: Workspace/session state, navigation state, collapsible rail chrome, file-open intent, and shell callbacks
+// output: Desktop app shell with window-pinned title-bar actions, project navigation, and writing panels
 // pos: Top-level renderer layout coordinator for workspace navigation
 
 import * as React from "react"
@@ -7,7 +7,7 @@ import { useTranslation, Trans } from "react-i18next"
 import { useRef, useState, useEffect, useCallback, useMemo } from "react"
 import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai"
 import { selectAtom } from "jotai/utils"
-import { motion, AnimatePresence } from "motion/react"
+import { motion, AnimatePresence, useReducedMotion } from "motion/react"
 import {
   Archive,
   ChevronRight,
@@ -41,6 +41,7 @@ import {
 import { SourceAvatar } from "@/components/ui/source-avatar"
 import { ActivityRail } from "./ActivityRail"
 import { ACTIVITY_RAIL_WIDTH, type ActivityRailItemId } from "./ActivityRail"
+import { PanelLeftRounded } from "@/components/icons/PanelLeftRounded"
 import { FirstRunTour } from "./FirstRunTour"
 import { GlobalSearchDialog } from "./GlobalSearchDialog"
 import { WhatsNewAnnouncementDialog } from "./WhatsNewAnnouncementDialog"
@@ -176,12 +177,14 @@ import {
   PANEL_SASH_HIT_WIDTH,
   PANEL_SASH_LINE_WIDTH,
   PANEL_MIN_WIDTH,
+  PANEL_SPRING,
 } from "./panel-constants"
 import {
   DEFAULT_WORKSPACE_WIDTH,
   getNavigatorResizeMaxWidth,
   shouldResolveInitialShellLayoutWidths,
 } from "./layout-defaults"
+import { WINDOW_TITLE_BAR_HEIGHT } from "./layout-constants"
 import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { rendererPerf } from "@/lib/perf"
@@ -920,6 +923,10 @@ function AppShellContent({
   const [isSidebarVisible, setIsSidebarVisible] = React.useState(() => {
     return storage.get(storage.KEYS.sidebarVisible, !defaultCollapsed)
   })
+  const [isActivityRailVisible, setIsActivityRailVisible] = React.useState(() => {
+    return storage.get(storage.KEYS.activityRailVisible, true)
+  })
+  const shouldReduceMotion = useReducedMotion()
   // Session list width in pixels (min 240, max 480)
   const [sessionListWidth, setSessionListWidth] = React.useState(() => {
     return storage.get(storage.KEYS.sessionListWidth, DEFAULT_WORKSPACE_WIDTH)
@@ -959,9 +966,9 @@ function AppShellContent({
   const isAutoCompact = shellWidth > 0 && shellWidth < MOBILE_THRESHOLD
 
   const effectiveSidebarAndNavigatorHidden = isSidebarAndNavigatorHidden || isAutoCompact
-  // Foundation layer: activity rail is always present (not tied to sidebar/navigator chrome).
+  // Foundation layer: activity rail is always available (not tied to sidebar/navigator chrome).
   const showActivityRail = true
-  const activityRailOffset = ACTIVITY_RAIL_WIDTH
+  const activityRailOffset = isActivityRailVisible ? ACTIVITY_RAIL_WIDTH : 0
 
 
   // What's New overlay
@@ -1582,8 +1589,14 @@ function AppShellContent({
   })
 
   const handleToggleSidebar = useCallback(() => {
+    // With the foundation activity rail owning conversation navigation, ⌘B
+    // collapses that rail. Writing catalog chrome still uses isSidebarVisible.
+    if (showActivityRail && hideSessionListNavigator) {
+      setIsActivityRailVisible(v => !v)
+      return
+    }
     setIsSidebarVisible(v => !v)
-  }, [])
+  }, [hideSessionListNavigator, showActivityRail])
 
   // Sidebar toggle (CMD+B)
   useAction('view.toggleSidebar', handleToggleSidebar)
@@ -1831,14 +1844,6 @@ function AppShellContent({
     document.addEventListener('mousemove', handleMouseMove, true)
     document.addEventListener('mouseup', handleMouseUp, true)
   }, [activityRailOffset, rightWorkspaceVisible, shellWidth, visibleSessionListWidth, workspaceDirectoryWidth])
-
-  // Spring transition config - shared between sidebar and header
-  // Critical damping (no bounce): damping = 2 * sqrt(stiffness * mass)
-  const springTransition = {
-    type: "spring" as const,
-    stiffness: 600,
-    damping: 49,
-  }
 
   const effectiveSessionAtom = React.useMemo(
     () => sessionAtomFamily(effectiveSessionId ?? '__missing__'),
@@ -3747,6 +3752,10 @@ function AppShellContent({
     storage.set(storage.KEYS.sidebarVisible, isSidebarVisible)
   }, [isSidebarVisible])
 
+  React.useEffect(() => {
+    storage.set(storage.KEYS.activityRailVisible, isActivityRailVisible)
+  }, [isActivityRailVisible])
+
   // Listen for sidebar toggle from menu (View → Toggle Sidebar)
   React.useEffect(() => {
     const cleanup = window.electronAPI.onMenuToggleSidebar?.(() => {
@@ -4412,6 +4421,39 @@ function AppShellContent({
     if (isSessionsNavigation(navState)) return 'recent'
     return 'writing'
   }, [globalSearchOpen, navState])
+  const activityRailControls = (
+    <div
+      data-testid="activity-rail-titlebar-actions"
+      className="pointer-events-none fixed left-0 top-0 z-overlay flex shrink-0 translate-y-0.5 items-center justify-end gap-0.5 px-2"
+      style={{ width: ACTIVITY_RAIL_WIDTH, height: WINDOW_TITLE_BAR_HEIGHT }}
+    >
+      <button
+        type="button"
+        aria-label={isActivityRailVisible ? '收起侧边栏' : '展开侧边栏'}
+        aria-expanded={isActivityRailVisible}
+        title={isActivityRailVisible ? '收起侧边栏' : '展开侧边栏'}
+        className="titlebar-no-drag pointer-events-auto flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-[7px] text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+        onClick={() => setIsActivityRailVisible((visible) => !visible)}
+      >
+        <PanelLeftRounded className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        aria-label="搜索"
+        title="搜索"
+        data-tutorial="activity-search"
+        className={cn(
+          'titlebar-no-drag pointer-events-auto flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-[7px] text-muted-foreground outline-none transition-colors',
+          'hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring',
+          activeActivityRailItem === 'search' && 'bg-foreground/[0.07] text-foreground',
+        )}
+        onClick={() => setGlobalSearchOpen(true)}
+      >
+        <Search className="h-4 w-4" />
+      </button>
+    </div>
+  )
+
   // One rail callback for every conversation, free or project. The domain rule
   // lives here, not in two parallel handlers: if the session already belongs to
   // the active runtime, just focus it in place; otherwise perform the EXPLICIT
@@ -4648,43 +4690,54 @@ function AppShellContent({
         className="flex items-stretch relative"
         style={{ height: '100%', paddingRight: PANEL_EDGE_INSET, paddingLeft: 0, gap: showActivityRail ? 0 : PANEL_GAP }}
       >
-        {showActivityRail ? (
-          <ActivityRail
-            activeItem={activeActivityRailItem}
-            workspaces={workspaces}
-            activeWorkspaceId={activeProjectId}
-            activeSessionId={panelCount > 1 ? focusedSessionId : session.selected}
-            onSelectSession={handleActivitySessionSelect}
-            onCreateConversationInProject={handleActivityProjectSessionCreate}
-            activeProjectSessionId={activeProjectId && activeProjectId !== FREE_CONVERSATION_WORKSPACE_ID
-              ? (panelCount > 1 ? focusedSessionId : session.selected)
-              : null}
-            onWorkspaceCreated={onWorkspaceCreatedFromRail ?? onWorkspaceCreated}
-            onOpenProjectInNewWindow={onOpenProjectInNewWindow}
-            onRenameProject={onRenameProject}
-            onSetProjectArchived={onSetProjectArchived}
-            onRemoveProject={onRemoveProject}
-            onOpenFreeConversations={onOpenFreeConversations}
-            onOpenSources={handleSourcesClick}
-            onOpenSkills={handleSkillsClick}
-            onOpenSearch={() => setGlobalSearchOpen(true)}
-            onOpenSettings={() => handleSettingsClick('app')}
-            onOpenAccount={onOpenAccount}
-            profile={profile}
-            onOpenWhatsNew={handleWhatsNewClick}
-            sessionActions={{
-              onRename: onRenameSession,
-              onArchive: onArchiveSession,
-              onDelete: (sessionId) => { void handleDeleteSession(sessionId) },
-            }}
-            whatsNew={{
-              unseen: hasUnseenReleaseNotes,
-              accentColor: whatsNewManifest?.accentColor,
-            }}
-            updateIndicator={updateIndicator}
-            onInstallUpdate={updateChecker.installUpdate}
-          />
-        ) : null}
+        <AnimatePresence initial={false}>
+          {showActivityRail && isActivityRailVisible ? (
+            <motion.div
+              key="activity-rail"
+              data-testid="activity-rail-motion"
+              initial={{ width: 0 }}
+              animate={{ width: ACTIVITY_RAIL_WIDTH }}
+              exit={{ width: 0 }}
+              transition={shouldReduceMotion ? { duration: 0 } : PANEL_SPRING}
+              className="h-full min-w-0 shrink-0 overflow-hidden"
+            >
+              <ActivityRail
+                activeItem={activeActivityRailItem}
+                workspaces={workspaces}
+                activeWorkspaceId={activeProjectId}
+                activeSessionId={panelCount > 1 ? focusedSessionId : session.selected}
+                onSelectSession={handleActivitySessionSelect}
+                onCreateConversationInProject={handleActivityProjectSessionCreate}
+                activeProjectSessionId={activeProjectId && activeProjectId !== FREE_CONVERSATION_WORKSPACE_ID
+                  ? (panelCount > 1 ? focusedSessionId : session.selected)
+                  : null}
+                onWorkspaceCreated={onWorkspaceCreatedFromRail ?? onWorkspaceCreated}
+                onOpenProjectInNewWindow={onOpenProjectInNewWindow}
+                onRenameProject={onRenameProject}
+                onSetProjectArchived={onSetProjectArchived}
+                onRemoveProject={onRemoveProject}
+                onOpenFreeConversations={onOpenFreeConversations}
+                onOpenSources={handleSourcesClick}
+                onOpenSkills={handleSkillsClick}
+                onOpenSettings={() => handleSettingsClick('app')}
+                onOpenAccount={onOpenAccount}
+                profile={profile}
+                onOpenWhatsNew={handleWhatsNewClick}
+                sessionActions={{
+                  onRename: onRenameSession,
+                  onArchive: onArchiveSession,
+                  onDelete: (sessionId) => { void handleDeleteSession(sessionId) },
+                }}
+                whatsNew={{
+                  unseen: hasUnseenReleaseNotes,
+                  accentColor: whatsNewManifest?.accentColor,
+                }}
+                updateIndicator={updateIndicator}
+                onInstallUpdate={updateChecker.installUpdate}
+              />
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
 
         <div
           data-testid="panel-stack-inset"
@@ -5532,6 +5585,7 @@ function AppShellContent({
           </WritingPrimaryContentReadyContext.Provider>
         </div>
 
+        {showActivityRail ? activityRailControls : null}
       </div>
 
       <WhatsNewAnnouncementDialog
