@@ -1,6 +1,6 @@
-// input: Workspace creation steps and workspace connection callbacks
-// output: Full-screen workspace creation flow that calls the typed Electron workspace API
-// pos: Renderer orchestrator for local, existing-folder, and remote workspace setup
+// input: Local project creation and existing remote-project reconnect callbacks
+// output: Full-screen local creation or remote recovery flow
+// pos: Renderer orchestrator that keeps project creation local and reconnect separate
 
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next"
@@ -10,15 +10,10 @@ import { Dithering } from "@paper-design/shaders-react"
 import { FullscreenOverlayBase } from "@craft-agent/ui"
 import { cn } from "@/lib/utils"
 import { overlayTransitionIn } from "@/lib/animations"
-import { AddWorkspaceStep_Choice } from "./AddWorkspaceStep_Choice"
 import { AddWorkspaceStep_CreateNew } from "./AddWorkspaceStep_CreateNew"
-import { AddWorkspaceStep_OpenFolder } from "./AddWorkspaceStep_OpenFolder"
 import { AddWorkspaceStep_ConnectRemote } from "./AddWorkspaceStep_ConnectRemote"
-import type { RemoteServerConnectionInput, Workspace } from "../../../shared/types"
+import type { Workspace } from "../../../shared/types"
 import { toast } from "sonner"
-
-export type WorkspaceCreationInitialStep = 'choice' | 'create' | 'open' | 'remote'
-type CreationStep = WorkspaceCreationInitialStep
 
 interface WorkspaceCreationScreenProps {
   /** Callback when a workspace is created successfully */
@@ -26,7 +21,7 @@ interface WorkspaceCreationScreenProps {
   /** Callback when the screen is dismissed */
   onClose: () => void
   className?: string
-  /** When set, skip choice step and open ConnectRemote in reconnect mode */
+  /** When set, show remote recovery instead of local project creation. */
   reconnectWorkspace?: Workspace
   /** Reconnect an existing remote workspace and resolve only on real success. */
   onReconnectWorkspace?: (workspaceId: string, remoteServer: { url: string; token: string; remoteWorkspaceId: string }) => Promise<void>
@@ -34,39 +29,24 @@ interface WorkspaceCreationScreenProps {
   canClose?: boolean
   /** Optional visible label for the dismiss action, used when returning to project management. */
   closeLabel?: string
-  /** Initial step selected by the action that opened the flow. */
-  initialStep?: WorkspaceCreationInitialStep
 }
 
 interface WorkspaceCreationApi {
-  createWorkspace(
-    folderPath: string,
-    name: string,
-    options?: { remoteServer?: RemoteServerConnectionInput },
-  ): Promise<Workspace>
+  createWorkspace(folderPath: string, name: string): Promise<Workspace>
 }
 
 export async function createWorkspaceAndNotify(
   api: WorkspaceCreationApi,
   folderPath: string,
   name: string,
-  remoteServer: RemoteServerConnectionInput | undefined,
   onWorkspaceCreated: (workspace: Workspace) => void | Promise<void>,
 ): Promise<void> {
-  const workspace = remoteServer
-    ? await api.createWorkspace(folderPath, name, { remoteServer })
-    : await api.createWorkspace(folderPath, name)
-
+  const workspace = await api.createWorkspace(folderPath, name)
   await onWorkspaceCreated(workspace)
 }
 
 /**
- * WorkspaceCreationScreen - Full-screen overlay for creating workspaces
- *
- * Obsidian-style flow:
- * 1. Choice: Create new workspace OR Open existing folder
- * 2a. Create: Enter name + choose location (default or custom)
- * 2b. Open: Browse folder OR create new folder at location
+ * WorkspaceCreationScreen - Full-screen local creation or remote reconnect overlay.
  */
 export function WorkspaceCreationScreen({
   onWorkspaceCreated,
@@ -76,11 +56,8 @@ export function WorkspaceCreationScreen({
   onReconnectWorkspace,
   canClose = true,
   closeLabel,
-  initialStep = 'choice',
 }: WorkspaceCreationScreenProps) {
   const { t } = useTranslation()
-  // Start at 'remote' step directly when reconnecting
-  const [step, setStep] = useState<CreationStep>(reconnectWorkspace ? 'remote' : initialStep)
   const [isCreating, setIsCreating] = useState(false)
   const [dimensions, setDimensions] = useState({ width: 1920, height: 1080 })
 
@@ -105,7 +82,6 @@ export function WorkspaceCreationScreen({
   const handleCreateWorkspace = useCallback(async (
     folderPath: string,
     name: string,
-    remoteServer?: RemoteServerConnectionInput,
   ) => {
     setIsCreating(true)
     try {
@@ -113,7 +89,6 @@ export function WorkspaceCreationScreen({
         window.electronAPI,
         folderPath,
         name,
-        remoteServer,
         onWorkspaceCreated,
       )
     } catch (error) {
@@ -139,55 +114,25 @@ export function WorkspaceCreationScreen({
     }
   }, [onReconnectWorkspace])
 
-  const renderStep = () => {
-    switch (step) {
-      case 'choice':
-        return (
-          <AddWorkspaceStep_Choice
-            onCreateNew={() => setStep('create')}
-            onOpenFolder={() => setStep('open')}
-            onConnectRemote={() => setStep('remote')}
-          />
-        )
-
-      case 'create':
-        return (
-          <AddWorkspaceStep_CreateNew
-            onBack={() => setStep('choice')}
-            onCreate={handleCreateWorkspace}
-            isCreating={isCreating}
-          />
-        )
-
-      case 'open':
-        return (
-          <AddWorkspaceStep_OpenFolder
-            onBack={() => setStep('choice')}
-            onCreate={handleCreateWorkspace}
-            isCreating={isCreating}
-          />
-        )
-
-      case 'remote':
-        return (
-          <AddWorkspaceStep_ConnectRemote
-            onBack={reconnectWorkspace ? onClose : () => setStep('choice')}
-            onCreate={handleCreateWorkspace}
-            isCreating={isCreating}
-            initialUrl={reconnectWorkspace?.remoteServer?.url}
-            reconnectWorkspace={reconnectWorkspace?.remoteServer ? {
-              id: reconnectWorkspace.id,
-              name: reconnectWorkspace.name,
-              remoteWorkspaceId: reconnectWorkspace.remoteServer.remoteWorkspaceId,
-            } : undefined}
-            onUpdate={handleReconnectWorkspace}
-          />
-        )
-
-      default:
-        return null
-    }
-  }
+  const content = reconnectWorkspace?.remoteServer ? (
+    <AddWorkspaceStep_ConnectRemote
+      onBack={handleClose}
+      isCreating={isCreating}
+      initialUrl={reconnectWorkspace.remoteServer.url}
+      reconnectWorkspace={{
+        id: reconnectWorkspace.id,
+        name: reconnectWorkspace.name,
+        remoteWorkspaceId: reconnectWorkspace.remoteServer.remoteWorkspaceId,
+      }}
+      onUpdate={handleReconnectWorkspace}
+    />
+  ) : (
+    <AddWorkspaceStep_CreateNew
+      onBack={handleClose}
+      onCreate={handleCreateWorkspace}
+      isCreating={isCreating}
+    />
+  )
 
   // Get theme colors from CSS variables for the shader
   const shaderColors = useMemo(() => {
@@ -294,7 +239,7 @@ export function WorkspaceCreationScreen({
           transition={overlayTransitionIn}
           className="relative flex flex-1 items-center justify-center p-8"
         >
-          {renderStep()}
+          {content}
         </motion.main>
       </motion.div>
     </FullscreenOverlayBase>

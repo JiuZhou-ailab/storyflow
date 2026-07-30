@@ -64,6 +64,13 @@ const TEXT_EXTENSIONS = new Set([
 /** PDF files — rendered in PDFPreviewOverlay via embedded viewer */
 const PDF_EXTENSIONS = new Set(['pdf'])
 
+/** Video formats Chromium can stream in the workspace file surface. */
+const VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'm4v', 'mov'])
+
+export function isVideoFile(filePath: string): boolean {
+  return VIDEO_EXTENSIONS.has(getExtension(filePath))
+}
+
 /**
  * External-only file extensions — recognized as file links but opened externally.
  * These are included in FILE_EXTENSIONS_PATTERN so linkify.ts detects them as file paths,
@@ -76,7 +83,7 @@ const EXTERNAL_EXTENSIONS = new Set([
   'zip', 'tar', 'gz', 'rar', '7z',  // Archives
   'dmg', 'pkg', 'exe', 'msi',       // Installers
   'mp3', 'wav', 'flac', 'aac',      // Audio
-  'mp4', 'mov', 'avi', 'mkv',       // Video
+  ...VIDEO_EXTENSIONS, 'avi', 'mkv', // Video
   'heic', 'heif', 'tiff', 'tif',    // Images Chromium can't decode
 ])
 

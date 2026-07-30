@@ -1,5 +1,5 @@
-// input: Workspace root paths and git command availability
-// output: Isolated local git snapshot, history, status, and restore helpers
+// input: Workspace root paths, editable text files, and git command availability
+// output: Isolated text-only git snapshot, history, status, and restore helpers
 // pos: Server-side adapter that keeps Storyflow history separate from user git state
 
 import { execFile } from 'child_process'
@@ -49,6 +49,13 @@ const GIT_MAX_BUFFER_BYTES = 1024 * 1024
 const GIT_CONTENT_MAX_BUFFER_BYTES = 16 * 1024 * 1024
 const STORYFLOW_HISTORY_REF = 'refs/storyflow/history'
 const STORYFLOW_INDEX_NAME = 'storyflow-index'
+const STORYFLOW_VERSIONED_FILE_PATHS = [
+  ':(top,glob,icase)**/*.md',
+  ':(top,glob,icase)**/*.txt',
+]
+const STORYFLOW_INTERNAL_PATHS = [
+  ':(top,exclude,glob).craft-agent/**',
+]
 const workspaceOperations = new Map<string, Promise<unknown>>()
 
 interface RunGitOptions {
@@ -130,8 +137,21 @@ async function prepareWorkspaceSnapshot(rootPath: string): Promise<PreparedWorks
   ])
   const indexFile = join(gitDir, STORYFLOW_INDEX_NAME)
 
-  await runGit(rootPath, head ? ['read-tree', head] : ['read-tree', '--empty'], { indexFile })
-  await runGit(rootPath, ['add', '-A', '--', '.'], { indexFile })
+  await runGit(rootPath, ['read-tree', '--empty'], { indexFile })
+  for (const pathspec of STORYFLOW_VERSIONED_FILE_PATHS) {
+    const versionedFiles = await runGit(rootPath, [
+      'ls-files',
+      '--others',
+      '--exclude-standard',
+      '-z',
+      '--',
+      pathspec,
+      ...STORYFLOW_INTERNAL_PATHS,
+    ], { raw: true, indexFile })
+    if (versionedFiles) {
+      await runGit(rootPath, ['add', '-A', '--', pathspec, ...STORYFLOW_INTERNAL_PATHS], { indexFile })
+    }
+  }
 
   const tree = await runGit(rootPath, ['write-tree'], { indexFile })
   if (head && tree === await runGit(rootPath, ['rev-parse', `${head}^{tree}`])) {

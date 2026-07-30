@@ -1,5 +1,5 @@
 // input: Renderer writing workspace file fixtures and search results
-// output: Workspace tree, document-tab behavior, labels, search query, and detection assertions
+// output: Workspace tree, starter-layout, document-tab, label, search-query, and detection assertions
 // pos: Protects the renderer projection of writing workspaces
 
 import { describe, expect, it } from 'bun:test'
@@ -30,8 +30,8 @@ import {
   isShortFormNovelWorkspaceFiles,
   areNovelWorkspaceFilesEqual,
   NOVEL_WORKSPACE_DETECTION_QUERIES,
-  selectDefaultNovelFile,
   selectDefaultNovelTab,
+  shouldUseEmptyProjectStarterLayout,
   summarizeNovelSection,
 } from '../writing-workspace'
 
@@ -167,27 +167,6 @@ describe('writing workspace helpers', () => {
     expect(selectDefaultNovelTab(tree)).toBe('manuscript')
   })
 
-  it('selects the first real file by path without inferring a writing category', () => {
-    expect(selectDefaultNovelFile([
-      { path: '/novel/story/plan.md', relativePath: 'story/plan.md' },
-      { path: '/novel/story/chapters/chapter-02.md', relativePath: 'story/chapters/chapter-02.md' },
-      { path: '/novel/README.md', relativePath: 'README.md' },
-    ])).toEqual({
-      path: '/novel/README.md',
-      relativePath: 'README.md',
-    })
-  })
-
-  it('selects default files without category projection', () => {
-    const functionStart = writingWorkspaceSource.indexOf('export function selectDefaultNovelFile')
-    const functionEnd = writingWorkspaceSource.indexOf('export function summarizeNovelSection', functionStart)
-    const functionSource = writingWorkspaceSource.slice(functionStart, functionEnd)
-
-    expect(functionSource).toContain('sortByRelativePath')
-    expect(functionSource).not.toContain('categorizeNovelPath')
-    expect(functionSource).not.toContain('methodPackId')
-  })
-
   it('keeps open document tabs unique and selects a neighbour when closing the active tab', () => {
     const first = openNovelDocumentTab(
       { workspaceRoot: null, paths: [], activePath: null },
@@ -304,16 +283,6 @@ describe('writing workspace helpers', () => {
     })
     expect(describeNovelWorkspaceFile('story/chapters/prologue.md')).toEqual({
       fallbackTitle: 'Prologue',
-    })
-  })
-
-  it('does not prioritize legacy outline paths over earlier project files', () => {
-    expect(selectDefaultNovelFile([
-      { path: '/novel/bible/characters/alice.md', relativePath: 'bible/characters/alice.md' },
-      { path: '/novel/story/plan.md', relativePath: 'story/plan.md' },
-    ])).toEqual({
-      path: '/novel/bible/characters/alice.md',
-      relativePath: 'bible/characters/alice.md',
     })
   })
 
@@ -598,6 +567,34 @@ describe('writing workspace helpers', () => {
       activeWorkspaceRootPath: '/workspaces/book/',
       sessionWorkingDirectory: '/workspaces/book',
     })).toEqual(['/workspaces/book'])
+  })
+
+  it('uses the single-column starter only for a genuinely empty project conversation', () => {
+    const freshProject = {
+      isSessionsRoute: true,
+      fileCount: 0,
+      directoryCount: 0,
+      loadedMessageCount: 0,
+      persistedMessageCount: 0,
+    }
+
+    expect(shouldUseEmptyProjectStarterLayout(freshProject)).toBe(true)
+    expect(shouldUseEmptyProjectStarterLayout({
+      ...freshProject,
+      loadedMessageCount: 4,
+    })).toBe(false)
+    expect(shouldUseEmptyProjectStarterLayout({
+      ...freshProject,
+      persistedMessageCount: 4,
+    })).toBe(false)
+    expect(shouldUseEmptyProjectStarterLayout({
+      ...freshProject,
+      lastFinalMessageId: 'assistant-1',
+    })).toBe(false)
+    expect(shouldUseEmptyProjectStarterLayout({
+      ...freshProject,
+      directoryCount: 1,
+    })).toBe(false)
   })
 })
 

@@ -22,7 +22,7 @@ describe('chat page header actions', () => {
     expect(chatPageSource).not.toContain('shareButton')
     expect(chatPageSource).toContain('const headerActions = isCompactMode ? compactInfoButton : undefined')
     expect(chatPageSource).toContain('<SessionMenu')
-    expect(activityRailSource).toContain('aria-label="新建自由对话"')
+    expect(activityRailSource).toContain('aria-label="新建任务"')
     expect(activityRailSource).toContain('onCreateConversation={onCreateConversationInProject')
     expect(sessionMenuSource).toContain('<ShareMenuItems sessionId={sessionId}')
   })
@@ -112,6 +112,19 @@ describe('chat page header actions', () => {
     expect(chatPageSource).not.toContain('useActiveWorkspace')
     expect(appShellDestructure).not.toContain('activeWorkspaceId')
     expect(appShellDestructure).not.toContain('workspaces')
+  })
+
+  it('shows removable workspace scope only for an empty project task', () => {
+    const chatInputZoneSource = readFileSync(new URL('../../components/app-shell/input/ChatInputZone.tsx', import.meta.url), 'utf-8')
+    const appShellContextSource = readFileSync(new URL('../../context/AppShellContext.tsx', import.meta.url), 'utf-8')
+
+    expect(chatInputZoneSource).toContain('useSessionChatResources')
+    expect(chatInputZoneSource).toContain('inputProps.isEmptySession')
+    expect(chatInputZoneSource).toContain('runtimeWorkspace?.id !== FREE_CONVERSATION_WORKSPACE_ID')
+    expect(chatInputZoneSource).toContain('onOpenFreeConversations({ createNew: true })')
+    expect(chatInputZoneSource).toContain('data-testid="chat-workspace-context"')
+    expect(chatInputZoneSource).toContain('workspaceContext.name')
+    expect(appShellContextSource).toContain("onOpenFreeConversations: AppShellContextType['onOpenFreeConversations']")
   })
 
   it('uses LLM connection atoms instead of app shell fields', () => {

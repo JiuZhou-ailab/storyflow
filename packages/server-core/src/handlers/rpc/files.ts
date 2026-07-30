@@ -61,6 +61,8 @@ const FILE_SEARCH_MAX_RESULTS = 50
 const FILE_SEARCH_BATCH_MAX_ENTRIES = 5000
 const FILE_LIST_MAX_ROOTS = 64
 const FILE_LIST_MAX_ENTRIES = 5000
+// ponytail: Text reads are whole-buffer; use a streaming/chunked reader before raising this ceiling.
+const TEXT_FILE_READ_MAX_BYTES = 5 * 1024 * 1024
 const inFlightFileSearches = new Map<string, Promise<FileSearchEntry[]>>()
 const inFlightFileSearchBatches = new Map<string, Promise<FileSearchBatchResult[]>>()
 
@@ -483,6 +485,12 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
       const parsedPath = parsePath(safePath)
       readSpan.setMetadata('file', parsedPath.base)
       readSpan.setMetadata('extension', parsedPath.ext || null)
+      const fileStats = await stat(safePath)
+      if (fileStats.size > TEXT_FILE_READ_MAX_BYTES) {
+        throw new Error(
+          `File is too large to read as text (${Math.ceil(fileStats.size / 1024 / 1024)}MB > ${TEXT_FILE_READ_MAX_BYTES / 1024 / 1024}MB limit)`,
+        )
+      }
       readSpan.mark('fs.read.start')
       const content = await readFile(safePath, 'utf-8')
       readSpan.mark('fs.read.done')

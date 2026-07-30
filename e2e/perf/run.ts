@@ -40,7 +40,7 @@ const DIAGNOSTIC_MODE = process.env.PERF_SCENARIOS !== undefined
 const TARGET = {
   startupMs: 3000,
   hubInteractiveMs: 2000,
-  projectOpenMs: 1000,
+  sidebarOpenMs: 100,
   switchP95Ms: 100,
   steadyHeapMb: 500,
   leakPct: 10,
@@ -123,12 +123,11 @@ async function enterWorkspaceWithSessions(live: LaunchedApp): Promise<void> {
   await sleep(200)
 }
 
-/** From a fresh launch: ActivityRail → writing project → project tree + first document ready. */
+/** From a fresh launch: ActivityRail → writing project → project tree ready with no file opened. */
 interface WritingWorkspaceEntryTiming {
   hubReadyAt: number
   projectClickedAt: number
   catalogReadyAt: number
-  documentReadyAt: number
   startupMarks: Record<string, number>
 }
 
@@ -157,14 +156,17 @@ async function enterFirstWritingWorkspace(live: LaunchedApp): Promise<WritingWor
 
   await waitFor(live, `!!document.querySelector('[data-tutorial="writing-catalog"]')`, 45_000, 'writing catalog')
   const catalogReadyAt = Date.now()
-  // The editor stays mounted while a document loads; editability is the current
-  // product contract that content has finished loading into the reusable instance.
-  await waitFor(
+  await sleep(100)
+  const initialTabCount = await evalOn<number>(
     live,
-    `!!document.querySelector('.tiptap-editor--manuscript .ProseMirror[contenteditable="true"]')`,
-    90_000,
-    'first editable writing document',
+    `document.querySelectorAll('[data-panel-role="writing-file-tabs"] [role="tab"]').length`,
   )
+  const initialReadCount = countPerf(live, /writing\.document\.readFile:/)
+  if (initialTabCount !== 0 || initialReadCount !== 0) {
+    throw new Error(
+      `Writing catalog opened ${initialTabCount} tab(s) and read ${initialReadCount} document(s) before user selection`
+    )
+  }
   const legacyChatMounted = await evalOn<boolean>(
     live,
     `!!document.querySelector('[data-tutorial="chat-history"], [data-tutorial="new-session-button"]')`,
@@ -176,7 +178,6 @@ async function enterFirstWritingWorkspace(live: LaunchedApp): Promise<WritingWor
     hubReadyAt,
     projectClickedAt,
     catalogReadyAt,
-    documentReadyAt: Date.now(),
     startupMarks,
   }
 }
@@ -195,7 +196,6 @@ async function openWritingProject(live: LaunchedApp): Promise<string | null> {
 async function runStartup(): Promise<Metric[]> {
   const totalDurations: number[] = []
   const hubDurations: number[] = []
-  const projectOpenDurations: number[] = []
   const catalogDurations: number[] = []
   const devtoolsDurations: number[] = []
   const pageAttachDurations: number[] = []
@@ -210,8 +210,7 @@ async function runStartup(): Promise<Metric[]> {
       startupMarkRuns.push(JSON.stringify(timing.startupMarks))
       hubDurations.push(timing.hubReadyAt - t0)
       catalogDurations.push(timing.catalogReadyAt - timing.projectClickedAt)
-      projectOpenDurations.push(timing.documentReadyAt - timing.projectClickedAt)
-      totalDurations.push(timing.documentReadyAt - t0)
+      totalDurations.push(timing.catalogReadyAt - t0)
     } finally {
       await live.close()
     }
@@ -219,7 +218,6 @@ async function runStartup(): Promise<Metric[]> {
   }
   totalDurations.sort((a, b) => a - b)
   hubDurations.sort((a, b) => a - b)
-  projectOpenDurations.sort((a, b) => a - b)
   catalogDurations.sort((a, b) => a - b)
   devtoolsDurations.sort((a, b) => a - b)
   pageAttachDurations.sort((a, b) => a - b)
@@ -227,11 +225,11 @@ async function runStartup(): Promise<Metric[]> {
     metric('startup', `launch→ActivityRail interactive median (n=${STARTUP_RUNS})`, median(hubDurations), 'ms', TARGET.hubInteractiveMs, {
       note: `runs=[${hubDurations.join(', ')}], devtools=[${devtoolsDurations.join(', ')}], page=[${pageAttachDurations.join(', ')}], renderer=${startupMarkRuns.join('|')}`,
     }),
-    metric('startup', `project click→writing document median (n=${STARTUP_RUNS})`, median(projectOpenDurations), 'ms', TARGET.projectOpenMs, {
-      note: `runs=[${projectOpenDurations.join(', ')}], catalog=[${catalogDurations.join(', ')}]`,
+    metric('startup', `project click→writing catalog P95 (n=${STARTUP_RUNS})`, p95(catalogDurations), 'ms', TARGET.sidebarOpenMs, {
+      note: `runs=[${catalogDurations.join(', ')}] — no file tab or content read before user selection`,
     }),
-    metric('startup', `launch→writing-document median (n=${STARTUP_RUNS})`, median(totalDurations), 'ms', TARGET.startupMs, {
-      note: `runs=[${totalDurations.join(', ')}] — includes opening a writing project + first editable document`,
+    metric('startup', `launch→writing-catalog median (n=${STARTUP_RUNS})`, median(totalDurations), 'ms', TARGET.startupMs, {
+      note: `runs=[${totalDurations.join(', ')}] — includes opening a writing project + metadata-only catalog`,
     }),
   ]
 }

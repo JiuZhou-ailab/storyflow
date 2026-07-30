@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { getDefaultColorThemeForPlatform, getRendererPlatformName } from '../platform'
+import { getDefaultColorThemeForPlatform, getPathBasename, getRendererPlatformName } from '../platform'
 
 describe('getRendererPlatformName', () => {
   it('normalizes Windows navigator platforms to win32', () => {
@@ -27,5 +27,12 @@ describe('getDefaultColorThemeForPlatform', () => {
     expect(getDefaultColorThemeForPlatform('darwin')).toBe('default')
     expect(getDefaultColorThemeForPlatform('linux')).toBe('default')
     expect(getDefaultColorThemeForPlatform('other')).toBe('default')
+  })
+})
+
+describe('getPathBasename', () => {
+  it('reads folder names from Unix and Windows paths', () => {
+    expect(getPathBasename('/Users/zjding/novels/九州/')).toBe('九州')
+    expect(getPathBasename('D:\\写作项目\\九州')).toBe('九州')
   })
 })

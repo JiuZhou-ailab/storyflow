@@ -1,42 +1,73 @@
-import React, { useState, useEffect } from 'react'
+// input: Selected project file path and an optional explicit system-open action
+// output: Bounded inline preview for the shared project document tab
+// pos: Read-only counterpart to the writing editor for non-editable project files
+
+import React, { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { FileText } from 'lucide-react'
+import { ExternalLink, FileText, FileVideo } from 'lucide-react'
 import { Spinner } from '@craft-agent/ui'
+import { classifyFile, isVideoFile } from '@craft-agent/ui/file-classification'
 
 interface FileViewerProps {
   path: string | null
+  onOpenExternal?: (path: string) => void
 }
 
-export function FileViewer({ path }: FileViewerProps) {
+function getFileName(path: string): string {
+  return path.replace(/\\/g, '/').split('/').pop() ?? path
+}
+
+export function FileViewer({ path, onOpenExternal }: FileViewerProps) {
   const { t } = useTranslation()
   const [content, setContent] = useState<string>('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const classification = useMemo(() => path ? classifyFile(path) : null, [path])
+  const isVideo = useMemo(() => path ? isVideoFile(path) : false, [path])
+  const mediaUrl = useMemo(
+    () => path ? `workspace-file://media/${encodeURIComponent(path)}` : '',
+    [path],
+  )
 
   useEffect(() => {
+    let cancelled = false
+    setContent('')
+    setError(null)
+
     if (!path) {
-      setContent('')
-      setError(null)
-      return
+      setIsLoading(false)
+      return () => { cancelled = true }
+    }
+    if (
+      isVideo
+      || classification?.type === 'image'
+      || !classification?.canPreview
+      || !classification.type
+      || classification.type === 'pdf'
+    ) {
+      setIsLoading(false)
+      return () => { cancelled = true }
     }
 
     const loadFile = async () => {
       setIsLoading(true)
-      setError(null)
       try {
         const fileContent = await window.electronAPI.readFile(path)
-        setContent(fileContent)
+        if (!cancelled) setContent(fileContent)
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load file')
-        setContent('')
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load file')
+          setContent('')
+        }
       } finally {
-        setIsLoading(false)
+        if (!cancelled) setIsLoading(false)
       }
     }
 
-    loadFile()
-  }, [path])
+    void loadFile()
+    return () => { cancelled = true }
+  }, [classification, isVideo, path])
 
   if (!path) {
     return (
@@ -50,36 +81,84 @@ export function FileViewer({ path }: FileViewerProps) {
     )
   }
 
+  const fileName = getFileName(path)
+  const previewKind = isVideo
+    ? 'video'
+    : classification?.canPreview && classification.type !== 'pdf'
+    ? classification.type
+    : 'external'
+
   return (
-    <div className="h-full flex flex-col">
+    <div className="flex h-full min-w-0 flex-col bg-background" data-file-viewer-kind={previewKind}>
       {/* File path header */}
-      <div className="px-4 py-3 bg-muted/50 border-b flex items-center gap-2 shrink-0">
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-foreground/[0.06] px-3">
         <FileText className="size-4 text-muted-foreground shrink-0" />
-        <p className="text-xs font-mono text-muted-foreground truncate select-all" title={path}>
-          {path}
+        <p className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground" title={path}>
+          {fileName}
         </p>
+        {onOpenExternal ? (
+          <button
+            type="button"
+            onClick={() => onOpenExternal(path)}
+            className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            {t('common.open')}
+          </button>
+        ) : null}
       </div>
 
       {/* File content */}
-      <ScrollArea className="flex-1">
-        <div className="p-4">
-          {isLoading ? (
-            <div className="flex flex-col items-center justify-center h-32 text-muted-foreground gap-3">
-              <Spinner className="text-lg" />
-              <span className="text-sm font-medium">{t("fileViewer.loadingContent")}</span>
-            </div>
-          ) : error ? (
-            <div className="flex flex-col items-center justify-center h-32 text-destructive gap-2">
-              <p className="text-sm font-medium">{t("fileViewer.errorLoading")}</p>
-              <p className="text-xs">{error}</p>
-            </div>
-          ) : (
-            <pre className="text-sm whitespace-pre-wrap font-mono leading-relaxed selection:bg-foreground/20">
+      {isLoading ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
+          <Spinner className="text-lg" />
+          <span className="text-sm font-medium">{t("fileViewer.loadingContent")}</span>
+        </div>
+      ) : error ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-destructive">
+          <p className="text-sm font-medium">{t("fileViewer.errorLoading")}</p>
+          <p className="text-xs">{error}</p>
+        </div>
+      ) : previewKind === 'image' ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-foreground/[0.02] p-6">
+          <img
+            src={mediaUrl}
+            alt={fileName}
+            className="max-h-full max-w-full object-contain"
+            onError={() => setError(t('fileViewer.errorLoading'))}
+          />
+        </div>
+      ) : previewKind === 'video' ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black p-4">
+          <video
+            src={mediaUrl}
+            aria-label={fileName}
+            className="max-h-full max-w-full"
+            controls
+            preload="metadata"
+            playsInline
+            onError={() => setError(t('fileViewer.errorLoading'))}
+          />
+        </div>
+      ) : previewKind === 'external' ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
+          <div className="flex size-16 items-center justify-center rounded-2xl bg-foreground/[0.04]">
+            <FileVideo className="size-8 opacity-55" />
+          </div>
+          <p className="max-w-md truncate text-sm font-medium text-foreground/80">{fileName}</p>
+          <p className="max-w-md text-xs leading-5">
+            {t('fileViewer.externalPreviewHint', '该文件已在当前标签页打开。为避免大文件占用内存，不会自动读取其完整内容。')}
+          </p>
+        </div>
+      ) : (
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="p-4">
+            <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed selection:bg-foreground/20">
               {content}
             </pre>
-          )}
-        </div>
-      </ScrollArea>
+          </div>
+        </ScrollArea>
+      )}
     </div>
   )
 }

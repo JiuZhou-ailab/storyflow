@@ -1,5 +1,5 @@
 // input: Session/workspace metadata, project disclosure state, runtime indicators, and row callbacks
-// output: Free-conversation and project-tree rows for the ActivityRail
+// output: Compact free-conversation and project-tree rows with low-noise visual and accessible runtime status
 // pos: Visual row primitives for ActivityRail; owns row-level hover, loading, status, and context actions
 
 import * as React from 'react'
@@ -79,6 +79,15 @@ export function RecentConversationRow({
       runtimeStatus === 'error' && 'bg-destructive',
     )} />
   )
+  const statusLabel = runtimeStatus === 'running'
+    ? '正在运行'
+    : runtimeStatus === 'waiting-input'
+      ? '等待处理'
+      : runtimeStatus === 'error'
+        ? '运行出错'
+        : meta.hasUnread
+          ? '未读'
+          : null
   const row = (
     <div
       data-session-id={meta.id}
@@ -95,20 +104,21 @@ export function RecentConversationRow({
         className={cn(
           'flex min-w-0 flex-1 items-center gap-1.5 rounded-[6px] text-left outline-none',
           'focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-60',
-          nested ? 'py-1.5 pl-[30px] pr-2' : 'px-2 py-2',
+          nested ? 'py-1.5 pl-[30px] pr-2' : 'px-2 py-1.5',
         )}
         onClick={onSelect}
       >
         {!nested ? (
           <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">{statusIndicator}</span>
         ) : null}
-        <span className="min-w-0 flex-1 truncate text-[12px] leading-4 text-foreground/90">
+        <span className="min-w-0 flex-1 truncate text-[13px] leading-4 text-foreground/85">
           {getSessionTitle(meta)}
         </span>
+        {statusLabel ? <span className="sr-only">{statusLabel}</span> : null}
         {nested ? (
           <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">{statusIndicator}</span>
         ) : (
-          <span className="shrink-0 text-[10px] text-muted-foreground/55">{formatRelativeTimestamp(meta.lastMessageAt, '')}</span>
+          <span className="shrink-0 text-[11px] text-muted-foreground/70">{formatRelativeTimestamp(meta.lastMessageAt, '')}</span>
         )}
       </button>
     </div>
@@ -213,7 +223,7 @@ export function ProjectFolderRow({
           {expanded
             ? <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
             : <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />}
-          <span className="min-w-0 flex-1 truncate text-[12px] text-foreground/85">{workspace.name}</span>
+          <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/85">{workspace.name}</span>
           {loadingSessions || hasActiveSession ? (
             <Loader2
               className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground/75"
@@ -226,8 +236,8 @@ export function ProjectFolderRow({
         {onCreateConversation ? (
           <button
             type="button"
-            aria-label={`在 ${workspace.name} 中新建对话`}
-            title="新建对话"
+            aria-label={`在 ${workspace.name} 中新建任务`}
+            title="新建任务"
             className="flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-foreground/[0.06] hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
             onClick={() => { void onCreateConversation() }}
           >

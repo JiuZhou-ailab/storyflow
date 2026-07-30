@@ -1,6 +1,8 @@
 // input: Native workspace snapshots, project identity, and confirmed filesystem mutations
-// output: Stable tree projection plus deterministic catalog/selection/expansion transitions
+// output: Stable tree projection, file-open targets, and deterministic catalog/selection/expansion transitions
 // pos: Pure workspace-tree state boundary between filesystem truth and React Arborist
+
+import { isNovelDocumentFilePath } from '@/lib/writing-workspace'
 
 export interface WorkspaceCatalogFile {
   path: string
@@ -31,7 +33,7 @@ const collator = new Intl.Collator(undefined, {
   numeric: true,
   sensitivity: 'base',
 })
-const WORKSPACE_EDITABLE_FILE_EXTENSIONS = new Set(['.md', '.txt'])
+export type WorkspaceFileOpenTarget = 'editor' | 'file-handler'
 
 function joinWorkspacePath(rootPath: string, relativePath: string): string {
   const root = rootPath.replace(/[\\/]+$/, '')
@@ -67,6 +69,10 @@ function getFileExtension(name: string): string | null {
   return match?.[1]?.toLowerCase() ?? null
 }
 
+export function getWorkspaceFileOpenTarget(path: string): WorkspaceFileOpenTarget {
+  return isNovelDocumentFilePath(path) ? 'editor' : 'file-handler'
+}
+
 function normalizeWorkspaceEntryName(input: string): string | null {
   const name = input.trim()
   if (!name || name === '.' || name === '..') return null
@@ -88,7 +94,7 @@ export function resolveWorkspaceCreateRelativePath(
     const extension = getFileExtension(name)
     if (!extension) {
       name = `${name}.md`
-    } else if (!WORKSPACE_EDITABLE_FILE_EXTENSIONS.has(extension) || name.length === extension.length) {
+    } else if (!isNovelDocumentFilePath(name) || name.length === extension.length) {
       return null
     }
   }
@@ -105,7 +111,7 @@ export function resolveWorkspaceImportRelativePath(
   if (!name) return null
 
   const extension = getFileExtension(name)
-  if (!extension || !WORKSPACE_EDITABLE_FILE_EXTENSIONS.has(extension) || name.length === extension.length) {
+  if (!extension || !isNovelDocumentFilePath(name) || name.length === extension.length) {
     return null
   }
 

@@ -1,5 +1,5 @@
 // input: Workspace catalog, scoped session metadata, update status, shell callbacks, current profile, and window chrome inset
-// output: Codex-style sidebar with project conversations, persistent update action, and profile navigation
+// output: Compact hierarchical sidebar with a workspace-aware task action, project conversations, updates, and profile navigation
 // pos: Global navigation surface; every project subtree is fetched and selected through its own runtime domain (ADR 0006)
 
 import * as React from 'react'
@@ -16,6 +16,7 @@ import {
   Search,
   Settings,
   ShieldAlert,
+  SquarePen,
   UserCircle,
   Zap,
 } from 'lucide-react'
@@ -104,13 +105,15 @@ export interface ActivityRailProps {
 
 export type { ActivityRailSessionActions } from './ActivityRailRows'
 
-export const ACTIVITY_RAIL_WIDTH = 252
-const RECENT_SESSION_LIMIT = 8
+export const ACTIVITY_RAIL_WIDTH = 240
+const RECENT_SESSION_LIMIT = 5
+const PROJECT_WORKSPACE_LIMIT = 8
 const activityFreeSessionMetasAtom = atom<SessionMeta[] | null>(null)
 const activityExpandedProjectIdsAtom = atom<Set<string>>(new Set<string>())
 const activityProjectSessionMetasAtom = atom<Record<string, SessionMeta[]>>({})
 const activityActiveWorkspaceIdsAtom = atom<Set<string>>(new Set<string>())
 const activityShowAllRecentAtom = atom(false)
+const activityShowAllProjectsAtom = atom(false)
 const activityArchivedExpandedAtom = atom(false)
 const activitySidebarScrollTopAtom = atom(0)
 const activityUnreadByWorkspaceAtom = atom<Record<string, boolean> | null>(null)
@@ -161,6 +164,7 @@ export function ActivityRail({
   ))
   const [archivedExpanded, setArchivedExpanded] = useAtom(activityArchivedExpandedAtom)
   const [showAllRecent, setShowAllRecent] = useAtom(activityShowAllRecentAtom)
+  const [showAllProjects, setShowAllProjects] = useAtom(activityShowAllProjectsAtom)
   const [expandedProjectIds, setExpandedProjectIds] = useAtom(activityExpandedProjectIdsAtom)
   const [projectSessionMetas, setProjectSessionMetas] = useAtom(activityProjectSessionMetasAtom)
   const [activeWorkspaceIds, setActiveWorkspaceIds] = useAtom(activityActiveWorkspaceIdsAtom)
@@ -173,6 +177,10 @@ export function ActivityRail({
   const refreshGenerationRef = React.useRef(0)
   const activeRefreshGenerationRef = React.useRef(0)
   const canCreateProjects = typeof onWorkspaceCreated === 'function'
+  const canCreateTask = Boolean(
+    (activeWorkspaceId && onCreateConversationInProject)
+    || onOpenFreeConversations,
+  )
   let updateIndicatorLabel: string | null = null
   if (updateIndicator?.kind === 'downloading' && updateIndicator.version) {
     updateIndicatorLabel = t('settings.about.downloading', {
@@ -352,6 +360,10 @@ export function ActivityRail({
       .sort((left, right) => (right.archivedAt ?? 0) - (left.archivedAt ?? 0)),
     [workspaces],
   )
+  const visibleProjectWorkspaces = showAllProjects
+    ? projectWorkspaces
+    : projectWorkspaces.slice(0, PROJECT_WORKSPACE_LIMIT)
+  const hasMoreProjectWorkspaces = projectWorkspaces.length > PROJECT_WORKSPACE_LIMIT
 
   const updateRecentExpanded = React.useCallback((expanded: boolean) => {
     setRecentExpanded(expanded)
@@ -363,11 +375,20 @@ export function ActivityRail({
     storage.set(storage.KEYS.activityProjectsExpanded, expanded)
   }, [])
 
+  const handleCreateTask = React.useCallback(() => {
+    if (activeWorkspaceId && onCreateConversationInProject) {
+      void onCreateConversationInProject(activeWorkspaceId)
+      return
+    }
+
+    void onOpenFreeConversations?.({ createNew: true })
+  }, [activeWorkspaceId, onCreateConversationInProject, onOpenFreeConversations])
+
   const projectCreateTrigger = (
     <button
       type="button"
-      aria-label="新建或导入项目"
-      title="新建或导入项目"
+      aria-label="新建本地项目"
+      title="新建本地项目"
       data-tutorial="activity-project-hub"
       className="flex h-7 w-7 items-center justify-center rounded-[7px] text-muted-foreground opacity-0 outline-none transition-[color,background-color,opacity] hover:bg-foreground/[0.06] hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100 focus-visible:ring-1 focus-visible:ring-ring"
     >
@@ -379,7 +400,7 @@ export function ActivityRail({
     <aside
       data-testid="activity-rail"
       aria-label="工作区导航"
-      className="titlebar-no-drag flex h-full shrink-0 flex-col bg-foreground-2"
+      className="titlebar-no-drag flex h-full shrink-0 flex-col bg-foreground-1.5"
       style={{ width: ACTIVITY_RAIL_WIDTH }}
     >
       <div
@@ -389,10 +410,25 @@ export function ActivityRail({
       />
       <div className="flex min-h-0 flex-1 flex-col px-2 pt-2">
         <div className="flex items-center px-2 pb-2">
-          <span className="text-[12px] font-semibold tracking-wide text-foreground/75">工作区</span>
+          <span className="text-[13px] font-medium text-foreground/80">Storyflow</span>
         </div>
 
-        <nav className="shrink-0 space-y-0.5 pb-3" aria-label="插件导航">
+        <button
+          type="button"
+          aria-label="新建任务"
+          disabled={!canCreateTask}
+          className={cn(
+            'mb-0.5 flex h-8 w-full items-center gap-2 rounded-[8px] bg-foreground/[0.05] px-2.5 text-left text-[13px] font-medium text-foreground/90 outline-none transition-colors',
+            'hover:bg-foreground/[0.075] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring',
+            'disabled:cursor-default disabled:opacity-45',
+          )}
+          onClick={handleCreateTask}
+        >
+          <SquarePen className="h-4 w-4" />
+          <span>新建任务</span>
+        </button>
+
+        <nav className="shrink-0 space-y-0.5 pb-4" aria-label="插件导航">
           <SidebarNavItem
             label="技能"
             icon={<Zap className="h-4 w-4" />}
@@ -428,20 +464,10 @@ export function ActivityRail({
           <section aria-label="自由对话">
             <SidebarSectionHeader
               label="自由对话"
+              count={sessionMetas.length}
               expanded={recentExpanded}
               needsAttention={recentNeedsAttention}
               onToggle={() => updateRecentExpanded(!recentExpanded)}
-              action={onOpenFreeConversations ? (
-                <button
-                  type="button"
-                  aria-label="新建自由对话"
-                  title="新建自由对话"
-                  className="flex h-7 w-7 items-center justify-center rounded-[7px] text-muted-foreground opacity-0 outline-none transition-[color,background-color,opacity] hover:bg-foreground/[0.06] hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:ring-1 focus-visible:ring-ring"
-                  onClick={() => { void onOpenFreeConversations({ createNew: true }) }}
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
-              ) : undefined}
             />
             {recentExpanded ? (
               <div
@@ -480,6 +506,7 @@ export function ActivityRail({
           <section aria-label="项目目录">
             <SidebarSectionHeader
               label="项目"
+              count={projectWorkspaces.length}
               expanded={projectsExpanded}
               onToggle={() => updateProjectsExpanded(!projectsExpanded)}
               action={canCreateProjects ? (
@@ -492,50 +519,61 @@ export function ActivityRail({
             />
             {projectsExpanded ? (
               projectWorkspaces.length > 0 ? (
-                <div className="space-y-0.5 pb-1" data-testid="activity-projects">
-                  {projectWorkspaces.map((workspace) => {
-                    const expanded = expandedProjectIds.has(workspace.id)
-                    return (
-                      <ProjectFolderRow
-                        key={workspace.id}
-                        workspace={workspace}
-                        active={activeWorkspaceId === workspace.id && !activeProjectSessionId}
-                        hasUnread={unreadByWorkspace?.[workspace.id] === true}
-                        hasActiveSession={activeWorkspaceIds.has(workspace.id)}
-                        disabled={!onSelectSession}
-                        expandable={Boolean(onSelectSession)}
-                        expanded={expanded}
-                        onToggleExpanded={() => toggleProjectExpanded(workspace.id)}
-                        sessions={projectSessionMetas[workspace.id]}
-                        loadingSessions={loadingProjectIds.has(workspace.id)}
-                        activeSessionId={activeWorkspaceId === workspace.id ? activeProjectSessionId : null}
-                        onSelectSession={onSelectSession
-                          ? (sessionId) => { void onSelectSession(sessionId, workspace.id) }
-                          : undefined}
-                        onCreateConversation={onCreateConversationInProject
-                          ? () => onCreateConversationInProject(workspace.id)
-                          : undefined}
-                        sessionActions={sessionActions}
-                        onRenameSession={(meta) => {
-                          setRenameTarget({ kind: 'session', id: meta.id, name: getSessionTitle(meta) })
-                          setRenameValue(getSessionTitle(meta))
-                        }}
-                        onOpenInNewWindow={onOpenProjectInNewWindow
-                          ? () => onOpenProjectInNewWindow(workspace.id)
-                          : undefined}
-                        onRename={onRenameProject
-                          ? () => {
-                            setRenameTarget({ kind: 'project', id: workspace.id, name: workspace.name })
-                            setRenameValue(workspace.name)
-                          }
-                          : undefined}
-                        onArchive={onSetProjectArchived
-                          ? () => onSetProjectArchived(workspace.id, true)
-                          : undefined}
-                      />
-                    )
-                  })}
-                </div>
+                <>
+                  <div className="space-y-0.5 pb-1" data-testid="activity-projects">
+                    {visibleProjectWorkspaces.map((workspace) => {
+                      const expanded = expandedProjectIds.has(workspace.id)
+                      return (
+                        <ProjectFolderRow
+                          key={workspace.id}
+                          workspace={workspace}
+                          active={activeWorkspaceId === workspace.id && !activeProjectSessionId}
+                          hasUnread={unreadByWorkspace?.[workspace.id] === true}
+                          hasActiveSession={activeWorkspaceIds.has(workspace.id)}
+                          disabled={!onSelectSession}
+                          expandable={Boolean(onSelectSession)}
+                          expanded={expanded}
+                          onToggleExpanded={() => toggleProjectExpanded(workspace.id)}
+                          sessions={projectSessionMetas[workspace.id]}
+                          loadingSessions={loadingProjectIds.has(workspace.id)}
+                          activeSessionId={activeWorkspaceId === workspace.id ? activeProjectSessionId : null}
+                          onSelectSession={onSelectSession
+                            ? (sessionId) => { void onSelectSession(sessionId, workspace.id) }
+                            : undefined}
+                          onCreateConversation={onCreateConversationInProject
+                            ? () => onCreateConversationInProject(workspace.id)
+                            : undefined}
+                          sessionActions={sessionActions}
+                          onRenameSession={(meta) => {
+                            setRenameTarget({ kind: 'session', id: meta.id, name: getSessionTitle(meta) })
+                            setRenameValue(getSessionTitle(meta))
+                          }}
+                          onOpenInNewWindow={onOpenProjectInNewWindow
+                            ? () => onOpenProjectInNewWindow(workspace.id)
+                            : undefined}
+                          onRename={onRenameProject
+                            ? () => {
+                              setRenameTarget({ kind: 'project', id: workspace.id, name: workspace.name })
+                              setRenameValue(workspace.name)
+                            }
+                            : undefined}
+                          onArchive={onSetProjectArchived
+                            ? () => onSetProjectArchived(workspace.id, true)
+                            : undefined}
+                        />
+                      )
+                    })}
+                  </div>
+                  {hasMoreProjectWorkspaces ? (
+                    <button
+                      type="button"
+                      className="mb-1 w-full rounded-[7px] px-3 py-1.5 text-left text-[11px] text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground"
+                      onClick={() => setShowAllProjects(value => !value)}
+                    >
+                      {showAllProjects ? '收起项目' : `显示全部 ${projectWorkspaces.length} 个项目`}
+                    </button>
+                  ) : null}
+                </>
               ) : (
                 <div className="px-3 py-3 text-xs text-muted-foreground/60">暂无项目</div>
               )
@@ -751,7 +789,7 @@ function SidebarNavItem({
       disabled={disabled}
       data-tutorial={dataTutorial}
       className={cn(
-        'flex w-full items-center gap-2 rounded-[8px] px-2.5 py-2 text-left text-[12px] outline-none transition-colors',
+        'flex h-8 w-full items-center gap-2 rounded-[8px] px-2.5 text-left text-[13px] outline-none transition-colors',
         'text-foreground/75 hover:bg-foreground/[0.045] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring',
         'disabled:cursor-default disabled:opacity-45',
         active && 'bg-foreground/[0.07] font-medium text-foreground',
@@ -769,12 +807,14 @@ function SidebarNavItem({
 
 function SidebarSectionHeader({
   label,
+  count,
   expanded,
   onToggle,
   action,
   needsAttention,
 }: {
   label: string
+  count?: number
   expanded: boolean
   onToggle: () => void
   action?: React.ReactNode
@@ -786,14 +826,17 @@ function SidebarSectionHeader({
       <button
         type="button"
         aria-expanded={expanded}
-        className="flex min-w-0 flex-1 items-center gap-1 rounded-[7px] px-2 py-1.5 text-left text-[13px] font-semibold text-foreground/90 outline-none transition-colors group-hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+        className="flex min-w-0 flex-1 items-center gap-1 rounded-[7px] px-2 py-1.5 text-left text-[12px] font-medium text-muted-foreground/80 outline-none transition-colors group-hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
         onClick={onToggle}
       >
-        <span className="min-w-0 truncate">{label}</span>
+        <span className="min-w-0 truncate">
+          {label}
+          {count !== undefined ? <span className="ml-1 font-normal">({count})</span> : null}
+        </span>
         {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100" />
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-55 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100" />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100" />
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-55 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100" />
         )}
         {needsAttention && !expanded ? (
           <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-info" aria-label="有对话等待处理" />

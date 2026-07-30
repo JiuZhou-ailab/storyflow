@@ -237,6 +237,7 @@ const SessionDraftActionsContext = createContext<SessionDraftActionsContextType 
 
 interface SessionChatResourcesContextType {
   runtimeWorkspace: AppShellContextType['runtimeWorkspace']
+  onOpenFreeConversations: AppShellContextType['onOpenFreeConversations']
   enabledSources?: AppShellContextType['enabledSources']
   skills?: AppShellContextType['skills']
   mentionFiles?: AppShellContextType['mentionFiles']
@@ -349,6 +350,7 @@ export function AppShellProvider({
 
   const sessionChatResources = React.useMemo<SessionChatResourcesContextType>(() => ({
     runtimeWorkspace: value.runtimeWorkspace,
+    onOpenFreeConversations: value.onOpenFreeConversations,
     enabledSources: value.enabledSources,
     skills: value.skills,
     mentionFiles: value.mentionFiles,
@@ -358,6 +360,7 @@ export function AppShellProvider({
     onSessionSourcesChange: value.onSessionSourcesChange,
   }), [
     value.runtimeWorkspace,
+    value.onOpenFreeConversations,
     value.enabledSources,
     value.skills,
     value.mentionFiles,

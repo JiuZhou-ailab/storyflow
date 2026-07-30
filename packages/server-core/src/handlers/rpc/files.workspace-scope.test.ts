@@ -18,6 +18,7 @@ const require = createRequire(import.meta.url)
 const realFsPromises = require('node:fs/promises') as typeof import('node:fs/promises')
 
 let workspaceRootPath = ''
+let staleWorkspaceRootPath = ''
 let workspaceRootRealpathCalls = 0
 let trackedReaddirPath = ''
 let trackedReaddirCalls = 0
@@ -45,7 +46,10 @@ mock.module('fs/promises', () => ({
 
 const { registerFilesHandlers } = await import('./files')
 
-function createFileHarness() {
+function createFileHarness(options: {
+  contextWorkspaceId?: string
+  windowWorkspaceId?: string
+} = {}) {
   const handlers = new Map<string, HandlerFn>()
   const server: RpcServer = {
     handle(channel, handler) {
@@ -60,15 +64,27 @@ function createFileHarness() {
     sessionManager: {
       getSessionPath: () => attachmentSessionPath || null,
     } as unknown as HandlerDeps['sessionManager'],
-    resolveRuntimeWorkspace: (id: string) => id === 'workspace-1'
+    resolveRuntimeWorkspace: (id: string) => {
+      const rootPath = id === 'workspace-1'
+        ? workspaceRootPath
+        : id === 'stale-workspace'
+          ? staleWorkspaceRootPath
+          : null
+      return rootPath
+        ? {
+            id,
+            name: 'Workspace',
+            rootPath,
+            slug: id,
+            createdAt: 0,
+          }
+        : null
+    },
+    windowManager: options.windowWorkspaceId
       ? {
-          id,
-          name: 'Workspace',
-          rootPath: workspaceRootPath,
-          slug: 'workspace',
-          createdAt: 0,
-        }
-      : null,
+          getWorkspaceForWindow: () => options.windowWorkspaceId,
+        } as unknown as HandlerDeps['windowManager']
+      : undefined,
     oauthFlowStore: {} as HandlerDeps['oauthFlowStore'],
     platform: {
       appRootPath: '/',
@@ -91,25 +107,50 @@ function createFileHarness() {
 
   registerFilesHandlers(server, deps)
 
+  const readTextFile = handlers.get(RPC_CHANNELS.file.READ)
   const writeTextFile = handlers.get(RPC_CHANNELS.file.WRITE)
   const searchFiles = handlers.get(RPC_CHANNELS.fs.SEARCH)
   const searchFilesBatch = handlers.get(RPC_CHANNELS.fs.SEARCH_BATCH)
   const listWorkspaceFiles = handlers.get(RPC_CHANNELS.fs.LIST_FILES)
   const storeAttachment = handlers.get(RPC_CHANNELS.file.STORE_ATTACHMENT)
-  if (!writeTextFile || !searchFiles || !searchFilesBatch || !listWorkspaceFiles || !storeAttachment) {
+  if (!readTextFile || !writeTextFile || !searchFiles || !searchFilesBatch || !listWorkspaceFiles || !storeAttachment) {
     throw new Error('file handlers not registered')
   }
 
   const ctx: RequestContext = {
     clientId: 'client-1',
-    workspaceId: 'workspace-1',
+    workspaceId: options.contextWorkspaceId ?? 'workspace-1',
     webContentsId: 1,
   }
 
-  return { writeTextFile, searchFiles, searchFilesBatch, listWorkspaceFiles, storeAttachment, ctx }
+  return { readTextFile, writeTextFile, searchFiles, searchFilesBatch, listWorkspaceFiles, storeAttachment, ctx }
 }
 
 describe('workspace-scoped file RPCs', () => {
+  it('authorizes the current window workspace when the transport context is stale', async () => {
+    workspaceRootPath = await mkdtemp(join(tmpdir(), 'craft-workspace-current-'))
+    staleWorkspaceRootPath = await mkdtemp(join(tmpdir(), 'craft-workspace-stale-'))
+    const currentFile = join(workspaceRootPath, 'screenplay.txt')
+    const staleFile = join(staleWorkspaceRootPath, 'old.txt')
+    const { readTextFile, ctx } = createFileHarness({
+      contextWorkspaceId: 'stale-workspace',
+      windowWorkspaceId: 'workspace-1',
+    })
+
+    try {
+      await writeFile(currentFile, 'current')
+      await writeFile(staleFile, 'stale')
+
+      await expect(readTextFile(ctx, currentFile)).resolves.toBe('current')
+      await expect(readTextFile(ctx, staleFile)).rejects.toThrow('outside current workspace')
+    } finally {
+      rmSync(workspaceRootPath, { recursive: true, force: true })
+      rmSync(staleWorkspaceRootPath, { recursive: true, force: true })
+      workspaceRootPath = ''
+      staleWorkspaceRootPath = ''
+    }
+  })
+
   it('keeps write and search operations inside the active workspace root', async () => {
     workspaceRootPath = await mkdtemp(join(tmpdir(), 'craft-workspace-root-'))
     const outsideRoot = await mkdtemp(join(tmpdir(), 'craft-workspace-outside-'))

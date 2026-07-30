@@ -1,5 +1,5 @@
 // input: Mixed-workspace session metadata delivered through the rail's RPC and atom paths
-// output: Behavioral proof that the rail renders Free Conversations only
+// output: Behavioral proof that the rail scopes free conversations while its task action follows the focused workspace
 // pos: Enforces the ADR 0006 ownership boundary at the surface that broke it
 
 import * as React from 'react'
@@ -106,14 +106,13 @@ describe('ActivityRail free-conversation scope', () => {
 
     expect(html).toContain('自由对话')
     expect(html).not.toContain('最近对话')
-    const createButtonStart = html.indexOf('aria-label="新建自由对话"')
+    const createButtonStart = html.indexOf('aria-label="新建任务"')
     const createButton = html.slice(createButtonStart, html.indexOf('</button>', createButtonStart))
-    expect(createButton).toContain('opacity-0')
-    expect(createButton).toContain('group-hover:opacity-100')
-    expect(createButton).toContain('group-focus-within:opacity-100')
+    expect(createButton).toContain('新建任务')
+    expect(createButton).not.toContain('opacity-0')
   })
 
-  it('creates a fresh free conversation instead of only reopening the list', () => {
+  it('creates in the focused project and falls back to a fresh free conversation', () => {
     const handlerStart = appSource.indexOf('const handleOpenFreeConversations =')
     const handlerEnd = appSource.indexOf('\n\n  useEffect(', handlerStart)
     const handlerSource = appSource.slice(handlerStart, handlerEnd)
@@ -124,6 +123,7 @@ describe('ActivityRail free-conversation scope', () => {
     expect(appShellContextSource).toContain(
       'onOpenFreeConversations: (options?: { createNew?: boolean }) => void | Promise<void>'
     )
-    expect(activityRailSource).toContain('onOpenFreeConversations({ createNew: true })')
+    expect(activityRailSource).toContain('onCreateConversationInProject(activeWorkspaceId)')
+    expect(activityRailSource).toContain('onOpenFreeConversations?.({ createNew: true })')
   })
 })

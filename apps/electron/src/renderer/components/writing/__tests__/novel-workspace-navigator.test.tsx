@@ -20,6 +20,7 @@ let NovelDocumentEditorPanel: typeof import('../NovelDocumentEditorPanel').Novel
 let NovelDocumentTabStrip: typeof import('../NovelDocumentTabStrip').NovelDocumentTabStrip
 let countMarkdownTextCharacters: typeof import('../NovelDocumentEditorPanel').countMarkdownTextCharacters
 let NovelSectionList: typeof import('../NovelSectionList').NovelSectionList
+let FileViewer: typeof import('../../files/FileViewer').FileViewer
 
 function readSourceIfExists(url: URL): string {
   return existsSync(url) ? readFileSync(url, 'utf-8') : ''
@@ -33,10 +34,12 @@ beforeAll(async () => {
   const editorModule = await import('../NovelDocumentEditorPanel')
   const tabStripModule = await import('../NovelDocumentTabStrip')
   const listModule = await import('../NovelSectionList')
+  const fileViewerModule = await import('../../files/FileViewer')
   NovelDocumentEditorPanel = editorModule.NovelDocumentEditorPanel
   NovelDocumentTabStrip = tabStripModule.NovelDocumentTabStrip
   countMarkdownTextCharacters = editorModule.countMarkdownTextCharacters
   NovelSectionList = listModule.NovelSectionList
+  FileViewer = fileViewerModule.FileViewer
 })
 
 describe('novel writing workspace layout', () => {
@@ -696,6 +699,42 @@ describe('novel writing workspace layout', () => {
     expect(treeSource).toContain("openFile(node, 'append')")
     expect(appShellSource).toContain('openMode: NovelDocumentOpenMode')
     expect(appShellSource).toContain('file.path,\n        openMode,')
+  })
+
+  it('streams project images and videos inside the document tab surface', () => {
+    const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const viewerSource = readFileSync(new URL('../../files/FileViewer.tsx', import.meta.url), 'utf-8')
+    const protocolSource = readFileSync(new URL('../../../../main/thumbnail-protocol.ts', import.meta.url), 'utf-8')
+    const rendererHtml = readFileSync(new URL('../../../index.html', import.meta.url), 'utf-8')
+    const selectSource = appShellSource.slice(
+      appShellSource.indexOf('const handleSelectNovelFile ='),
+      appShellSource.indexOf('const handleSelectNovelFileByPath ='),
+    )
+    const videoHtml = renderLocalized(
+      <FileViewer path="/project/cache/episode.mp4" onOpenExternal={() => {}} />
+    )
+    const imageHtml = renderLocalized(
+      <FileViewer path="/project/assets/poster.webp" onOpenExternal={() => {}} />
+    )
+
+    expect(selectSource).not.toContain('onOpenFile(file.path)')
+    expect(appShellSource).toContain('<FileViewer')
+    expect(videoHtml).toContain('data-file-viewer-kind="video"')
+    expect(videoHtml).toContain('<video')
+    expect(videoHtml).toContain('preload="metadata"')
+    expect(videoHtml).toContain('workspace-file://media/%2Fproject%2Fcache%2Fepisode.mp4')
+    expect(imageHtml).toContain('data-file-viewer-kind="image"')
+    expect(imageHtml).toContain('<img')
+    expect(imageHtml).toContain('workspace-file://media/%2Fproject%2Fassets%2Fposter.webp')
+    expect(viewerSource).not.toContain('readFilePreviewDataUrl')
+    expect(protocolSource).toContain("scheme: 'workspace-file'")
+    expect(protocolSource).toContain('isPathWithinProjectRoot')
+    expect(protocolSource).toContain('Readable.toWeb(createReadStream')
+    expect(protocolSource).toContain("'Accept-Ranges': 'bytes'")
+    expect(protocolSource).toContain("headers.set('Content-Range'")
+    expect(rendererHtml).toContain('img-src')
+    expect(rendererHtml).toContain('workspace-file:')
+    expect(rendererHtml).toContain("media-src 'self' workspace-file:")
   })
 
   it('keeps tab state unchanged when saving the active file before close fails', () => {

@@ -8,6 +8,7 @@ import {
   advanceWorkspaceCatalogRevision,
   collectWorkspaceTreeDirectoryIds,
   getDefaultWritingExpandedIds,
+  getWorkspaceFileOpenTarget,
   getWorkspaceTreeExpansionDelta,
   readWorkspaceCatalogRevision,
   reduceWorkspaceStateAfterDeletion,
@@ -141,5 +142,13 @@ describe('workspace file tree model', () => {
     expect(resolveWorkspaceImportRelativePath('', '/Users/me/Desktop/第七章.md')).toBe('第七章.md')
     expect(resolveWorkspaceImportRelativePath('资料', 'C:\\Users\\me\\Desktop\\笔记.TXT')).toBe('资料/笔记.TXT')
     expect(resolveWorkspaceImportRelativePath('资料', '/Users/me/Desktop/附件.docx')).toBeNull()
+  })
+
+  it('opens editable text in the writing surface and delegates every other file type', () => {
+    expect(getWorkspaceFileOpenTarget('/project/正文/01.md')).toBe('editor')
+    expect(getWorkspaceFileOpenTarget('/project/资料/笔记.TXT')).toBe('editor')
+    expect(getWorkspaceFileOpenTarget('/project/数据/config.json')).toBe('file-handler')
+    expect(getWorkspaceFileOpenTarget('/project/图片/角色.png')).toBe('file-handler')
+    expect(getWorkspaceFileOpenTarget('/project/视频/全集.mp4')).toBe('file-handler')
   })
 })

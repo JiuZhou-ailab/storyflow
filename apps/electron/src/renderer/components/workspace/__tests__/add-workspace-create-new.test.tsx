@@ -1,6 +1,6 @@
-// input: New-workspace form props and workspace path inputs
-// output: Regression coverage for blank workspace creation UI and path resolution
-// pos: Protects the user-visible name-and-location-only creation contract
+// input: Local-project form props, selected folder paths, and optional project names
+// output: Regression coverage for the folder-first UI and folder-name fallback
+// pos: Protects the canonical local project creation contract
 
 import * as React from 'react'
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
@@ -14,16 +14,16 @@ mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDo
 setupI18n([initReactI18next])
 
 let AddWorkspaceStep_CreateNew: typeof import('../AddWorkspaceStep_CreateNew').AddWorkspaceStep_CreateNew
-let buildWorkspaceFolderPath: typeof import('../AddWorkspaceStep_CreateNew').buildWorkspaceFolderPath
+let resolveWorkspaceName: typeof import('../AddWorkspaceStep_CreateNew').resolveWorkspaceName
 
 beforeAll(async () => {
   const module = await import('../AddWorkspaceStep_CreateNew')
   AddWorkspaceStep_CreateNew = module.AddWorkspaceStep_CreateNew
-  buildWorkspaceFolderPath = module.buildWorkspaceFolderPath
+  resolveWorkspaceName = module.resolveWorkspaceName
 })
 
 describe('AddWorkspaceStep_CreateNew', () => {
-  it('renders only the project name and location choices', () => {
+  it('renders one local folder picker and one optional project name', () => {
     const html = renderToStaticMarkup(
       <ModalProvider>
         <AddWorkspaceStep_CreateNew
@@ -36,8 +36,9 @@ describe('AddWorkspaceStep_CreateNew', () => {
     )
 
     expect(html.match(/data-slot="input"/g) ?? []).toHaveLength(1)
-    expect(html.match(/type="radio"/g) ?? []).toHaveLength(2)
-    expect(html.match(/name="location"/g) ?? []).toHaveLength(2)
+    expect(html).toContain('No folder selected')
+    expect(html).toContain('Optional')
+    expect(html).not.toContain('type="radio"')
     expect(html).not.toContain('Method Pack')
     expect(html).not.toContain('短篇/中篇小说')
     expect(html).not.toContain('长文小说')
@@ -45,19 +46,8 @@ describe('AddWorkspaceStep_CreateNew', () => {
     expect(html).not.toContain('自由创作')
   })
 
-  it('preserves default and custom project paths for Chinese names on Windows', () => {
-    expect(buildWorkspaceFolderPath({
-      homeDir: 'C:\\Users\\zjding',
-      name: '九州小说',
-      customPath: null,
-      locationOption: 'default',
-    })).toMatch(/^C:\\Users\\zjding\\\.craft-agent\\workspaces\\workspace-[a-z0-9]+$/)
-
-    expect(buildWorkspaceFolderPath({
-      homeDir: 'C:\\Users\\zjding',
-      name: '九州小说',
-      customPath: 'D:\\写作项目',
-      locationOption: 'custom',
-    })).toMatch(/^D:\\写作项目\\workspace-[a-z0-9]+$/)
+  it('uses the folder name only when the optional project name is blank', () => {
+    expect(resolveWorkspaceName('/Users/zjding/novels/九州小说', '')).toBe('九州小说')
+    expect(resolveWorkspaceName('D:\\写作项目\\九州小说', '  自定义名称  ')).toBe('自定义名称')
   })
 })

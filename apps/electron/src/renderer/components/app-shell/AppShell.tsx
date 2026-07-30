@@ -80,6 +80,7 @@ import { ResizableColumn } from "./ResizableColumn"
 import type { ChatDisplayHandle } from "./ChatDisplay"
 import { NovelDocumentEditorPanel, type NovelDocumentEditorPanelHandle, type NovelSelectionAiRequest } from "@/components/writing/NovelDocumentEditorPanel"
 import { NovelDocumentTabStrip } from "@/components/writing/NovelDocumentTabStrip"
+import { FileViewer } from "@/components/files/FileViewer"
 import { NovelVersionHistoryDialog } from "@/components/writing/NovelVersionHistoryDialog"
 import { formatNovelWorkspaceFileTitle } from "@/components/writing/novel-file-display"
 import type {
@@ -97,6 +98,7 @@ import { revealWorkspaceFile } from "@/components/workspace/workspace-file-actio
 import {
   advanceWorkspaceCatalogRevision,
   getDefaultWritingExpandedIds,
+  getWorkspaceFileOpenTarget,
   isSameOrChildWorkspacePath,
   readWorkspaceCatalogRevision,
   reduceWorkspaceStateAfterDeletion,
@@ -214,7 +216,7 @@ import {
   mapSearchResultsToNovelWorkspaceFiles,
   NOVEL_WORKSPACE_DETECTION_QUERIES,
   openNovelDocumentTab,
-  selectDefaultNovelFile,
+  shouldUseEmptyProjectStarterLayout,
   type NovelDocumentOpenMode,
   type NovelDocumentTabsState,
   type NativeWorkspaceCatalog,
@@ -1854,9 +1856,14 @@ function AppShellContent({
     () => selectAtom(effectiveSessionAtom, getNovelFileChangeActivityKey, Object.is),
     [effectiveSessionAtom]
   )
+  const effectiveSessionMessageCountAtom = React.useMemo(
+    () => selectAtom(effectiveSessionAtom, session => session?.messages?.length ?? 0, Object.is),
+    [effectiveSessionAtom]
+  )
   const effectiveSessionIsProcessing = useAtomValue(effectiveSessionProcessingAtom)
   const effectiveSessionFolderPath = useAtomValue(effectiveSessionFolderPathAtom)
   const novelFileChangeActivityKey = useAtomValue(effectiveSessionFileChangeKeyAtom)
+  const effectiveSessionMessageCount = useAtomValue(effectiveSessionMessageCountAtom)
   const [snapshotNovelFileChanges, setSnapshotNovelFileChanges] = React.useState<FileChange[]>([])
   const [snapshotNovelRevert, setSnapshotNovelRevert] = React.useState<{
     sessionId: string
@@ -2357,7 +2364,14 @@ function AppShellContent({
   // afford to lose. Presence follows the workspace, never the route; the route
   // only decides what is shown *inside* each column.
   const showWritingDocumentSurface = showWritingWorkspaceShell
-  const showEmptyProjectSession = isSessionsNavigation(navState) && novelWorkspaceFiles.length === 0
+  const showEmptyProjectSession = shouldUseEmptyProjectStarterLayout({
+    isSessionsRoute: isSessionsNavigation(navState),
+    fileCount: novelWorkspaceFiles.length,
+    directoryCount: novelWorkspaceDirectories.length,
+    loadedMessageCount: effectiveSessionMessageCount,
+    persistedMessageCount: rawEffectiveSessionMeta?.messageCount,
+    lastFinalMessageId: rawEffectiveSessionMeta?.lastFinalMessageId,
+  })
   // Optional callbacks are capability contracts: only claim the embedded review
   // when this shell can actually render it. ChatDisplay owns the fullscreen fallback.
   const canPresentConversationDiffInWorkspace = showWritingDocumentSurface && !isAutoCompact && !showEmptyProjectSession
@@ -2375,10 +2389,6 @@ function AppShellContent({
   const reviewableNovelFileChanges = React.useMemo(
     () => normalizeNovelFileChangePaths(latestNovelFileChanges, novelWorkspaceRoot, novelWorkspaceFiles),
     [latestNovelFileChanges, novelWorkspaceFiles, novelWorkspaceRoot]
-  )
-  const defaultNovelFile = React.useMemo(
-    () => selectDefaultNovelFile(novelWorkspaceFiles),
-    [novelWorkspaceFiles]
   )
   const novelWorkspaceFileByPath = React.useMemo(
     () => new Map(novelWorkspaceFiles.map(file => [file.path, file])),
@@ -2455,14 +2465,13 @@ function AppShellContent({
     }
 
     if (!novelWorkspaceRoot || novelDocumentTabs.workspaceRoot === novelWorkspaceRoot) return
-    const initialPath = defaultNovelFile?.path ?? null
+    // Project entry is metadata-only; content loading starts from an explicit file selection.
     setNovelDocumentTabs({
       workspaceRoot: novelWorkspaceRoot,
-      paths: initialPath ? [initialPath] : [],
-      activePath: initialPath,
+      paths: [],
+      activePath: null,
     })
   }, [
-    defaultNovelFile?.path,
     novelWorkspaceCandidateRoots.length,
     novelWorkspaceRoot,
     novelDocumentTabs.workspaceRoot,
@@ -2498,7 +2507,12 @@ function AppShellContent({
   const [novelVersionsLoading, setNovelVersionsLoading] = React.useState(false)
   const [novelVersionSaving, setNovelVersionSaving] = React.useState(false)
   const [novelVersionRestoringHash, setNovelVersionRestoringHash] = React.useState<string | null>(null)
-  const selectedNovelDocumentPath = selectedNovelFile?.path ?? null
+  const selectedNovelFileOpenTarget = selectedNovelFile
+    ? getWorkspaceFileOpenTarget(selectedNovelFile.path)
+    : null
+  const selectedNovelDocumentPath = selectedNovelFileOpenTarget === 'editor'
+    ? selectedNovelFile?.path ?? null
+    : null
   const novelDocumentEditorRef = React.useRef<NovelDocumentEditorPanelHandle>(null)
   const latestNovelDocumentPathRef = React.useRef<string | null>(null)
   const novelDocumentSwitchStartRef = React.useRef<{ filePath: string; startedAt: number } | null>(null)
@@ -4517,7 +4531,7 @@ function AppShellContent({
   // distinct columns. Sharing one slot is what let a route change (opening a new
   // conversation) silently replace the manuscript.
   const writingDocumentSurface = showNovelDocumentNavigator && novelWorkspaceRoot ? (
-              selectedNovelFile ? (
+              selectedNovelFile ? selectedNovelFileOpenTarget === 'editor' ? (
                 <NovelDocumentEditorPanel
                   ref={novelDocumentEditorRef}
                   file={selectedNovelFile}
@@ -4540,6 +4554,8 @@ function AppShellContent({
                     />
                   )}
                 />
+              ) : (
+                <FileViewer path={selectedNovelFile.path} />
               ) : (
                 <WorkspaceEmptyState
                   workspaceName={activeWorkspace?.name ?? t('writing.workspace')}

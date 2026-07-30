@@ -1,5 +1,5 @@
-// input: File search results, file changes, and workspace/session root paths
-// output: Browser-safe novel workspace projection and document-tab helpers
+// input: Full workspace catalogs, file changes, and workspace/session root paths
+// output: Browser-safe writing-document capability, workspace projection, starter-layout decisions, and tab helpers
 // pos: Renderer adapter between workspace files and writing workspace UI
 
 import type { Message } from '@craft-agent/core'
@@ -37,6 +37,15 @@ export interface NovelDocumentTabsState {
 }
 
 export type NovelDocumentOpenMode = 'append' | 'replace'
+
+const NOVEL_DOCUMENT_FILE_EXTENSIONS = new Set(['md', 'txt'])
+
+export function isNovelDocumentFilePath(filePath: string): boolean {
+  const basename = filePath.replace(/\\/g, '/').split('/').pop() ?? filePath
+  const dotIndex = basename.lastIndexOf('.')
+  if (dotIndex <= 0) return false
+  return NOVEL_DOCUMENT_FILE_EXTENSIONS.has(basename.slice(dotIndex + 1).toLowerCase())
+}
 
 export function openNovelDocumentTab(
   state: NovelDocumentTabsState,
@@ -157,6 +166,29 @@ export interface NovelWorkspaceFileDisplayDescriptor {
 export interface NovelWorkspaceRootCandidates {
   activeWorkspaceRootPath?: string
   sessionWorkingDirectory?: string
+}
+
+export function shouldUseEmptyProjectStarterLayout({
+  isSessionsRoute,
+  fileCount,
+  directoryCount,
+  loadedMessageCount,
+  persistedMessageCount = 0,
+  lastFinalMessageId,
+}: {
+  isSessionsRoute: boolean
+  fileCount: number
+  directoryCount: number
+  loadedMessageCount: number
+  persistedMessageCount?: number
+  lastFinalMessageId?: string
+}): boolean {
+  return isSessionsRoute
+    && fileCount === 0
+    && directoryCount === 0
+    && loadedMessageCount === 0
+    && persistedMessageCount === 0
+    && !lastFinalMessageId
 }
 
 const SHORT_FORM_WORKSPACE_SIGNAL_PATHS = new Set([
@@ -526,16 +558,6 @@ export function selectDefaultNovelTab(tree: NovelWorkspaceTree): NovelWorkspaceT
   if (tree.outline.files.length > 0) return 'outline'
   if (tree.characters.files.length > 0) return 'characters'
   return 'outline'
-}
-
-export function selectDefaultNovelFile(files: NovelWorkspaceFile[]): NovelWorkspaceFile | undefined {
-  let selected: NovelWorkspaceFile | undefined
-  for (const file of files) {
-    if (!selected || sortByRelativePath(file, selected) < 0) {
-      selected = file
-    }
-  }
-  return selected
 }
 
 export function summarizeNovelSection(files: NovelWorkspaceFile[]): NovelSectionSummary {

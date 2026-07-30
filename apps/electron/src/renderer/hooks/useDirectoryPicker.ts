@@ -1,3 +1,7 @@
+// input: Directory selection callback, active transport state, and target filesystem
+// output: Native local picker or active-workspace server browser controls
+// pos: Shared renderer boundary between local OS dialogs and remote workspace browsing
+
 import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
@@ -5,6 +9,14 @@ import { useTransportConnectionState } from './useTransportConnectionState'
 import { toast } from 'sonner'
 
 type ServerBrowserMode = 'browse' | 'manual'
+export type DirectoryPickerTarget = 'active-workspace' | 'local-machine'
+
+export function shouldUseServerDirectoryPicker(
+  connectionMode: 'local' | 'remote' | undefined,
+  target: DirectoryPickerTarget,
+): boolean {
+  return target === 'active-workspace' && connectionMode === 'remote'
+}
 
 interface DirectoryPickerResult {
   /** Open the picker (native dialog in local mode, ServerDirectoryBrowser in remote mode). */
@@ -22,11 +34,12 @@ interface DirectoryPickerResult {
 }
 
 export function useDirectoryPicker(
-  onSelect: (path: string) => void
+  onSelect: (path: string) => void,
+  target: DirectoryPickerTarget = 'active-workspace',
 ): DirectoryPickerResult {
   const { t } = useTranslation()
   const connectionState = useTransportConnectionState()
-  const isRemote = connectionState?.mode === 'remote'
+  const isRemote = shouldUseServerDirectoryPicker(connectionState?.mode, target)
   const canBrowse = isRemote &&
     window.electronAPI.isChannelAvailable(RPC_CHANNELS.fs.LIST_DIRECTORY)
 

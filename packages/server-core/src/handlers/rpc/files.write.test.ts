@@ -3,7 +3,7 @@
 // pos: Guards server-core filesystem RPC behavior at the transport boundary
 
 import { existsSync, rmSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, truncate, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'bun:test'
@@ -150,6 +150,21 @@ describe('file write RPC registration', () => {
     }
   })
 
+  it('rejects unbounded text reads before loading a large file into memory', async () => {
+    const { readTextFile, ctx } = createFileHarness()
+    const root = await mkdtemp(join(homedir(), '.craft-file-read-limit-'))
+    const targetPath = join(root, 'episode.mp4')
+
+    try {
+      await writeFile(targetPath, '')
+      await truncate(targetPath, 5 * 1024 * 1024 + 1)
+
+      await expect(readTextFile(ctx, targetPath)).rejects.toThrow('File is too large to read as text')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('records text write latency marks inside the file RPC handler', async () => {
     const { writeFile, ctx } = createFileHarness()
     const root = await mkdtemp(join(tmpdir(), 'craft-file-write-perf-'))
@@ -259,6 +274,30 @@ describe('file write RPC registration', () => {
       ])
       expect(results.some(result => result.relativePath.startsWith('.craft-agent/'))).toBe(false)
       expect(results.some(result => result.relativePath.startsWith('build/'))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('lists media and structured files without treating extensions as catalog filters', async () => {
+    const { listWorkspaceFiles, ctx } = createFileHarness()
+    const root = await mkdtemp(join(tmpdir(), 'craft-project-media-tree-'))
+
+    try {
+      await writeFile(join(root, 'config.json'), '{}')
+      await writeFile(join(root, 'poster.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+      await writeFile(join(root, 'episode.mp4'), Buffer.from([0x00, 0x00, 0x00, 0x18]))
+
+      const results = await listWorkspaceFiles(ctx, root, []) as Array<{
+        relativePath: string
+        type: string
+      }>
+
+      expect(results.map(result => [result.relativePath, result.type]).sort()).toEqual([
+        ['config.json', 'file'],
+        ['episode.mp4', 'file'],
+        ['poster.png', 'file'],
+      ])
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

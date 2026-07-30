@@ -129,6 +129,181 @@ Fidelity checks:
 
 final result: passed
 
+## Workspace-aware new-task composer QA — 2026-07-30
+
+### Sources
+
+- User reference:
+  `/var/folders/jk/7_pcx4cd3y94_lwnf7hbxcv80000gn/T/codex-clipboard-4d621559-187f-434d-9d96-fd2a90cc8e7a.png`
+- Earlier Storyflow rail:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/30/019fb200-ef23-7fd3-a03a-655a98f32153/activity-rail-after-1119.png`
+- Final Electron full view:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/30/019fb200-ef23-7fd3-a03a-655a98f32153/task-workspace-context-full.png`
+- Final focused composer:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/30/019fb200-ef23-7fd3-a03a-655a98f32153/task-workspace-context-composer.png`
+- Combined focused comparison:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/30/019fb200-ef23-7fd3-a03a-655a98f32153/task-workspace-context-comparison.png`
+
+### Normalization and state
+
+- Source crop: 1402 × 302 pixels at 1× density.
+- Electron capture: 1400 × 1000 CSS pixels and pixels at `deviceScaleFactor=1`.
+- Focused implementation crop: 384 × 231 CSS pixels and pixels at 1×.
+- Combined comparison: 1400 × 320 pixels. The source is a wide Codex
+  composer crop while Storyflow's composer lives in a narrower writing pane,
+  so each side was scaled and centered without claiming pixel-identical width.
+- State: light theme, focused project `400章长篇小说`, newly created empty
+  task, workspace context visible, then context cleared to a fresh free
+  conversation.
+
+### Comparison history
+
+Iteration 1 findings:
+
+- P2: rail text hierarchy was too heavy at the primary action and too small at
+  project/conversation rows.
+- P2: the rail used the 2% foreground surface, making the full-height split
+  more visible than necessary against the main background.
+- P1: the primary action always created a free conversation and exposed no
+  visible project scope above the composer.
+
+Fixes:
+
+- Use 13px/500 for the primary task action, 13px/400 for project and
+  conversation rows, and retain 12px/500 only for section labels.
+- Move the rail to the existing `foreground-1.5` token.
+- Rename the primary action to `新建任务`, align it to the same 225 × 30
+  rendered box as the navigation rows, and create inside the focused project
+  when one is available.
+- Show the project name with the existing Lucide folder and close icons above
+  the composer only while the new task is empty. Closing it opens a fresh free
+  conversation instead of mutating the project session's workspace identity.
+
+Iteration 2 evidence:
+
+- The final full-view capture shows a quieter rail/main boundary while
+  preserving enough surface separation to identify navigation.
+- Computed styles report the task action at 13px/500 and project rows at
+  13px/400.
+- The new-task and first navigation rows both render at 225 × 30 pixels.
+- The focused comparison shows the project name and close affordance in the
+  same above-composer location as the reference. `本地` and branch controls are
+  intentionally omitted per the requested Storyflow scope.
+
+### Required fidelity surfaces
+
+- Fonts and typography: native product font stack is preserved; primary and
+  body weights now follow a restrained 500/400 hierarchy with no 600-weight
+  sidebar action.
+- Spacing and layout rhythm: new-task and navigation rows have identical
+  width/height; the workspace row uses the composer's existing max-width and
+  horizontal padding.
+- Colors and visual tokens: only existing semantic tokens are used. The rail
+  is a 1.5% foreground mix over the main background; hover and active states
+  remain distinguishable.
+- Image quality and assets: no raster assets are required. Existing Lucide
+  `SquarePen`, `Folder`, and `X` icons remain sharp at the captured density.
+- Copy and content: `新建任务`, the actual focused workspace name, and
+  `切换为自由对话` accurately describe the behavior.
+
+### Interaction and build evidence
+
+- Clicking `新建任务` from the focused project created an empty project task
+  and rendered `400章长篇小说` above the composer.
+- Clicking the close control removed the project context and the active
+  runtime returned only sessions under `__storyflow_free__`.
+- No renderer exceptions were captured.
+- 34 focused tests, Electron TypeScript, targeted ESLint, renderer production
+  build, and `git diff --check` passed.
+
+No actionable P0, P1, or P2 differences remain.
+
+final result: passed
+
+## Activity rail visual hierarchy QA — 2026-07-30
+
+### Sources
+
+- Source visual truth:
+  `/var/folders/jk/7_pcx4cd3y94_lwnf7hbxcv80000gn/T/codex-clipboard-b7edabce-02b4-4560-ba8c-42693fb337f3.png`
+- Rendered Electron implementation:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/30/019fb200-ef23-7fd3-a03a-655a98f32153/activity-rail-after-1119.png`
+- Normalized source crop:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/30/019fb200-ef23-7fd3-a03a-655a98f32153/activity-rail-reference.png`
+- Combined comparison:
+  `/Users/dingzhijian/.codex/visualizations/2026/07/30/019fb200-ef23-7fd3-a03a-655a98f32153/activity-rail-comparison.png`
+
+The source is 3344 × 2238 physical pixels. Its 440 × 2238 WorkBuddy sidebar
+crop was normalized to 220 × 1119, matching the reference's 2× density. The
+Electron implementation was captured at a 1400 × 1119 CSS viewport with
+deviceScaleFactor 1; its focused rail is 240 × 1119 pixels. Both use the light
+theme and an idle sidebar state. The synthetic Electron fixture contains 0 free
+conversations and 20 projects, so copy and item counts differ from the source
+while hierarchy, density, spacing, typography, and state treatment remain
+directly comparable.
+
+### Iteration 1
+
+P2 finding:
+
+- The first implementation established the primary conversation action and
+  clearer typography, but still rendered all 20 projects by default. The long
+  continuous list preserved the original density problem.
+
+Root fix:
+
+- Keep the existing last-accessed project ordering, show eight projects by
+  default, and expose the complete count through `显示全部 20 个项目` /
+  `收起项目`.
+
+### Iteration 2
+
+The combined comparison shows the intended hierarchy in both products:
+product identity, a persistent primary creation action, compact tool
+navigation, subdued counted section headers, bounded content lists, and a
+fixed profile footer. Storyflow keeps its own product tokens, Chinese copy,
+project semantics, and existing Lucide dependency.
+
+Focused region comparison was not split further because both normalized rails
+are already full-height focused crops and every relevant label, icon, row,
+spacing interval, and selected state is legible at 1×.
+
+Required fidelity surfaces:
+
+- Fonts and typography: Storyflow keeps Inter/system fallbacks. Primary and
+  tool actions use 13 px labels, section headers use muted 12 px medium labels,
+  content rows remain 12 px, and timestamps move from low-contrast 10 px to
+  readable 11 px.
+- Spacing and layout rhythm: rail width is 240 px; primary and tool rows are
+  32 px; free conversations are limited to five and projects to eight; the
+  existing title-bar, scroll owner, footer, row radii, and project disclosure
+  geometry remain intact.
+- Colors and visual tokens: the implementation reuses existing foreground,
+  muted, hover, selected, focus, runtime, and background tokens. No palette,
+  gradients, shadows, or unrelated decoration were introduced.
+- Image quality and assets: neither design needs raster imagery. The primary
+  action reuses the installed Lucide message-plus icon; no custom SVG, CSS art,
+  or placeholder asset was added.
+- Copy and content: `Storyflow`, `新建对话`, counted section labels, and bounded
+  list controls express current product semantics. Project and conversation
+  names remain source data.
+
+Interaction and runtime evidence:
+
+- The project list rendered eight rows, expanded to all 20 through the visible
+  control, and retained the existing project disclosure behavior.
+- Activating `新建对话` reached the fresh conversation composer.
+- The Electron interaction run captured no renderer exceptions.
+- 33 focused tests pass with 271 assertions.
+- Electron TypeScript check, targeted ESLint, renderer production build, and
+  `git diff --check` pass.
+
+No actionable P0, P1, or P2 differences remain. The remaining 20 px width
+difference from WorkBuddy is intentional: Storyflow retains timestamps,
+project names, and project hover actions that need the additional space.
+
+final result: passed
+
 ## Activity rail project hierarchy QA — 2026-07-29
 
 ### Sources

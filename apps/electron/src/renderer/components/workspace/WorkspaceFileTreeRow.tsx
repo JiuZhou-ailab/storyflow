@@ -3,8 +3,19 @@
 // pos: Presentation layer for one visible workspace file-tree entry
 
 import * as React from 'react'
-import { ChevronRight, FileText, Folder, Pencil, Trash2 } from 'lucide-react'
+import {
+  ChevronRight,
+  File,
+  FileCode2,
+  FileJson2,
+  FileText,
+  Folder,
+  Image as ImageIcon,
+  Pencil,
+  Trash2,
+} from 'lucide-react'
 import type { NodeRendererProps } from 'react-arborist'
+import { classifyFile } from '@craft-agent/ui/file-classification'
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -49,7 +60,20 @@ const ROOT_MENU_ITEM_CLASS = [
 
 function EntryIcon({ entry }: { entry: WorkspaceFileTreeNode }) {
   if (entry.type === 'root' || entry.type === 'directory') return <Folder className="h-3.5 w-3.5" />
-  return <FileText className="h-3.5 w-3.5" />
+
+  switch (classifyFile(entry.path).type) {
+    case 'image':
+      return <ImageIcon className="h-3.5 w-3.5" />
+    case 'json':
+      return <FileJson2 className="h-3.5 w-3.5" />
+    case 'code':
+      return <FileCode2 className="h-3.5 w-3.5" />
+    case 'markdown':
+    case 'text':
+      return <FileText className="h-3.5 w-3.5" />
+    default:
+      return <File className="h-3.5 w-3.5" />
+  }
 }
 
 function RenameInput({ node }: { node: NodeRendererProps<WorkspaceFileTreeNode>['node'] }) {

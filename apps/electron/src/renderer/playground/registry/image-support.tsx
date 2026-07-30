@@ -1,3 +1,7 @@
+// input: Model capability examples and interactive picker-row fixture state
+// output: Playground previews for image-support warnings and compact model picker rows
+// pos: Visual QA registry for chat-input image capability affordances
+
 import * as React from 'react'
 import { Check, Image as ImageIcon } from 'lucide-react'
 import type { ComponentEntry } from './types'
@@ -65,10 +69,10 @@ function PickerRow({
   const { t } = useTranslation()
   const [visionOn, setVisionOn] = React.useState(initialVisionOn)
   return (
-    <div className="w-[260px] mx-auto rounded-md bg-background/80 border border-border/50 px-1 py-1">
-      <div className="flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer hover:bg-foreground/5">
+    <div className="mx-auto w-60 rounded-md border border-border/50 bg-background/80 p-1">
+      <div className="flex cursor-pointer items-center justify-between rounded-[6px] px-2 py-1.5 hover:bg-foreground/[0.07]">
         <div className="text-left">
-          <div className="font-medium text-sm">{modelName}</div>
+          <div className="text-[13px] leading-5">{modelName}</div>
         </div>
         <div className="flex items-center gap-1 ml-3 shrink-0">
           {showVisionToggle && (
@@ -101,7 +105,7 @@ function PickerRow({
             </Tooltip>
           )}
           {isSelected && (
-            <Check className="h-3 w-3 text-foreground" />
+            <Check className="h-3.5 w-3.5 text-foreground" />
           )}
         </div>
       </div>

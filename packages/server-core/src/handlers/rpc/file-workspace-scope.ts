@@ -43,7 +43,10 @@ export async function getWorkspaceRootComparablePaths(rootPath: string): Promise
 }
 
 export function resolveContextWorkspaceId(ctx: RequestContext, deps: HandlerDeps): string | null | undefined {
-  return ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
+  const windowWorkspaceId = ctx.webContentsId == null
+    ? undefined
+    : deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId)
+  return windowWorkspaceId ?? ctx.workspaceId
 }
 
 function resolveContextWorkspace(deps: HandlerDeps, workspaceId: string) {

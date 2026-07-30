@@ -1,9 +1,12 @@
+// input: Renderer thumbnail/media URLs and configured local project roots
+// output: Bounded thumbnails plus project-authorized native file streams
+// pos: Main-process protocol boundary for local visual assets
 /**
- * Thumbnail Protocol Handler
+ * Local File Protocol Handlers
  *
  * Registers a custom `thumbnail://` protocol that serves thumbnail images
- * for files in the session sidebar. The browser handles all async loading
- * natively via <img src="thumbnail://encoded-path" />.
+ * and a `workspace-file://` protocol that streams project media without
+ * copying file bytes through IPC, WebSocket, or renderer JavaScript.
  *
  * Thumbnail generation strategy (cross-platform):
  * - macOS/Windows: nativeImage.createThumbnailFromPath() — uses OS-level
@@ -19,8 +22,12 @@
  */
 
 import { protocol, nativeImage } from 'electron'
+import { createReadStream } from 'fs'
 import { stat } from 'fs/promises'
-import { isAbsolute } from 'path'
+import { isAbsolute, relative, resolve } from 'path'
+import { Readable } from 'stream'
+import { loadStoredConfig } from '@craft-agent/shared/config'
+import { isPathWithinProjectRoot } from '@craft-agent/shared/workspaces'
 import { mainLog } from './logger'
 
 /** Thumbnail output size in pixels (width and height) */
@@ -41,6 +48,32 @@ const OS_THUMBNAIL_EXTENSIONS = new Set([
 
 /** All extensions we can potentially thumbnail */
 const ALL_PREVIEWABLE = new Set([...IMAGE_EXTENSIONS, ...OS_THUMBNAIL_EXTENSIONS])
+
+/** Media formats Chromium can decode directly in the shared project tab. */
+const WORKSPACE_MEDIA_EXTENSIONS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif',
+  'mp4', 'webm', 'm4v', 'mov',
+])
+
+const WORKSPACE_MEDIA_TYPES: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  avif: 'image/avif',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  m4v: 'video/x-m4v',
+  mov: 'video/quicktime',
+}
+
+// ponytail: one-second config cache avoids synchronous JSON reads per Range request;
+// replace with config-change invalidation if storage exposes a process-wide change feed.
+let workspaceRootCache = { expiresAt: 0, roots: [] as string[] }
 
 // In-memory LRU cache: path -> { mtime, data }
 const cache = new Map<string, { mtime: number; data: Buffer }>()
@@ -118,7 +151,70 @@ export function registerThumbnailScheme(): void {
         stream: true,
       },
     },
+    {
+      scheme: 'workspace-file',
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        corsEnabled: true,
+        stream: true,
+      },
+    },
   ])
+}
+
+function isAuthorizedWorkspaceMediaPath(filePath: string): boolean {
+  if (!isAbsolute(filePath)) return false
+
+  const extension = filePath.split('.').pop()?.toLowerCase() ?? ''
+  if (!WORKSPACE_MEDIA_EXTENSIONS.has(extension)) return false
+
+  const now = Date.now()
+  if (now >= workspaceRootCache.expiresAt) {
+    workspaceRootCache = {
+      expiresAt: now + 1_000,
+      roots: loadStoredConfig()?.workspaces
+        .filter((workspace) => !workspace.remoteServer)
+        .map((workspace) => workspace.rootPath) ?? [],
+    }
+  }
+
+  const target = resolve(filePath)
+  const lexicalMatches = workspaceRootCache.roots.filter((rootPath) => {
+    const pathFromRoot = relative(resolve(rootPath), target)
+    return pathFromRoot === '' || (!pathFromRoot.startsWith('..') && !isAbsolute(pathFromRoot))
+  })
+  const candidateRoots = lexicalMatches.length > 0 ? lexicalMatches : workspaceRootCache.roots
+  return candidateRoots.some((rootPath) => isPathWithinProjectRoot(rootPath, filePath))
+}
+
+function parseByteRange(value: string | null, size: number): { start: number; end: number } | null | undefined {
+  if (!value) return undefined
+  const match = /^bytes=(\d*)-(\d*)$/.exec(value)
+  if (!match || size <= 0) return null
+
+  const [, rawStart, rawEnd] = match
+  if (!rawStart && !rawEnd) return null
+
+  if (!rawStart) {
+    const suffixLength = Number(rawEnd)
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return null
+    return { start: Math.max(0, size - suffixLength), end: size - 1 }
+  }
+
+  const start = Number(rawStart)
+  const end = rawEnd ? Number(rawEnd) : size - 1
+  if (
+    !Number.isSafeInteger(start)
+    || !Number.isSafeInteger(end)
+    || start < 0
+    || start >= size
+    || end < start
+  ) {
+    return null
+  }
+  return { start, end: Math.min(end, size - 1) }
 }
 
 /**
@@ -195,5 +291,49 @@ export function registerThumbnailHandler(): void {
     }
   })
 
-  mainLog.info('Registered thumbnail:// protocol handler')
+  protocol.handle('workspace-file', async (request) => {
+    try {
+      const url = new URL(request.url)
+      const filePath = decodeURIComponent(url.pathname.slice(1))
+      if (url.host !== 'media' || !isAuthorizedWorkspaceMediaPath(filePath)) {
+        return new Response(null, { status: 403 })
+      }
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        return new Response(null, { status: 405 })
+      }
+
+      const fileStats = await stat(filePath)
+      if (!fileStats.isFile()) return new Response(null, { status: 404 })
+
+      const range = parseByteRange(request.headers.get('range'), fileStats.size)
+      const headers = new Headers({
+        'Accept-Ranges': 'bytes',
+        'Content-Type': WORKSPACE_MEDIA_TYPES[filePath.split('.').pop()?.toLowerCase() ?? '']
+          ?? 'application/octet-stream',
+        'Last-Modified': fileStats.mtime.toUTCString(),
+      })
+      if (range === null) {
+        headers.set('Content-Range', `bytes */${fileStats.size}`)
+        return new Response(null, { status: 416, headers })
+      }
+
+      const start = range?.start ?? 0
+      const end = range?.end ?? Math.max(0, fileStats.size - 1)
+      headers.set('Content-Length', String(fileStats.size === 0 ? 0 : end - start + 1))
+      if (range) headers.set('Content-Range', `bytes ${start}-${end}/${fileStats.size}`)
+
+      const body = request.method === 'HEAD' || fileStats.size === 0
+        ? null
+        : Readable.toWeb(createReadStream(filePath, { start, end }))
+      return new Response(body as BodyInit | null, {
+        status: range ? 206 : 200,
+        headers,
+      })
+    } catch (error) {
+      mainLog.error('Workspace file protocol error:', error)
+      return new Response(null, { status: 500 })
+    }
+  })
+
+  mainLog.info('Registered thumbnail:// and workspace-file:// protocol handlers')
 }

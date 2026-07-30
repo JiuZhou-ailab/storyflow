@@ -183,8 +183,10 @@ describe('app shell layout defaults', () => {
 
   it('keeps an empty project starter conversation free of file columns', () => {
     expect(appShellSource).toContain(
-      'const showEmptyProjectSession = isSessionsNavigation(navState) && novelWorkspaceFiles.length === 0',
+      'const showEmptyProjectSession = shouldUseEmptyProjectStarterLayout({',
     )
+    expect(appShellSource).toContain('loadedMessageCount: effectiveSessionMessageCount')
+    expect(appShellSource).toContain('persistedMessageCount: rawEffectiveSessionMeta?.messageCount')
     expect(appShellSource).toContain(
       'activeWritingDocumentSurface && rightWorkspaceVisible && canPresentConversationDiffInWorkspace',
     )

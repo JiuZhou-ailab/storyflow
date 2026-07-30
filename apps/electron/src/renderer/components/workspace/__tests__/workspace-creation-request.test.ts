@@ -1,9 +1,9 @@
-// input: Renderer workspace creation API, local or remote request data, and completion callback
+// input: Renderer local workspace creation API and completion callback
 // output: Behavioral checks for the Electron workspace creation request boundary
-// pos: Ensures blank local projects carry no hidden project profile options
+// pos: Ensures local projects carry no remote or hidden profile options
 
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
-import type { RemoteServerConnectionInput, Workspace } from '../../../../shared/types'
+import type { Workspace } from '../../../../shared/types'
 
 mock.module('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '' }))
 mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDocument: () => ({}) }))
@@ -31,7 +31,6 @@ describe('workspace creation request', () => {
       },
       '/projects/new-story',
       '新项目',
-      undefined,
       async (result) => {
         created.push(result)
       },
@@ -41,31 +40,4 @@ describe('workspace creation request', () => {
     expect(created).toEqual([workspace])
   })
 
-  it('sends only remote server configuration for a remote workspace', async () => {
-    const calls: unknown[][] = []
-    const remoteServer: RemoteServerConnectionInput = {
-      url: 'https://storyflow.example.test',
-      token: 'test-token',
-      remoteWorkspaceId: 'remote-1',
-    }
-
-    await createWorkspaceAndNotify(
-      {
-        createWorkspace: async (...args) => {
-          calls.push(args)
-          return workspace
-        },
-      },
-      '/projects/remote-story',
-      '远端项目',
-      remoteServer,
-      () => {},
-    )
-
-    expect(calls).toEqual([[
-      '/projects/remote-story',
-      '远端项目',
-      { remoteServer },
-    ]])
-  })
 })

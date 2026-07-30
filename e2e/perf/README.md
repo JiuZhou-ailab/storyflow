@@ -52,6 +52,7 @@ An explicit `PERF_SCENARIOS` value is diagnostic mode (selected baselines only).
 
 ## Navigation contracts
 
-- **Startup / heavy-writing / memory-leak-docs**: ActivityRail → 400-chapter writing fixture → catalog + Tiptap
+- **Startup**: ActivityRail → 400-chapter writing fixture → metadata-only catalog, with zero file tabs and zero content reads
+- **Heavy-writing / memory-leak-docs**: metadata-only writing catalog → explicitly selected chapter → Tiptap
 - **Switch / memory / continuous-typing**: ActivityRail → non-writing fixture → sessions + chat input
 - **Heavy-search**: writing fixture → activity-search → results

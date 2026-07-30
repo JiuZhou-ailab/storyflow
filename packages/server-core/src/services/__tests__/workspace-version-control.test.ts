@@ -1,8 +1,8 @@
 // input: Temporary workspaces plus the public workspace version-control API
-// output: Git-backed snapshot, history, comparison, status, and restore behavior checks
+// output: Scoped Git snapshot, history, comparison, status, and legacy restore behavior checks
 // pos: Public-seam integration tests for Storyflow workspace history
 
-import { mkdtemp, readFile, realpath, rm, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { describe, expect, it } from 'bun:test'
@@ -28,6 +28,62 @@ async function readUserGitState(root: string) {
 }
 
 describe('workspace version control', () => {
+  it('snapshots only user-editable text artifacts', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'craft-version-scope-'))
+    try {
+      await mkdir(join(root, '.craft-agent'), { recursive: true })
+      await writeFile(join(root, 'chapter.md'), 'chapter\n')
+      await writeFile(join(root, 'notes.txt'), 'notes\n')
+      await writeFile(join(root, 'metadata.json'), '{"title":"draft"}\n')
+      await writeFile(join(root, 'preview.mp4'), 'video bytes\n')
+      await writeFile(join(root, '.craft-agent', 'plan.md'), 'internal\n')
+
+      const result = await createWorkspaceVersion(root, { reason: 'manual' })
+
+      expect(result.changedFiles).toBe(2)
+      expect(await readWorkspaceFileAtCommit(root, result.commitHash as string, 'chapter.md')).toBe('chapter\n')
+      expect(await readWorkspaceFileAtCommit(root, result.commitHash as string, 'notes.txt')).toBe('notes\n')
+      expect(await readWorkspaceFileAtCommit(root, result.commitHash as string, 'metadata.json')).toBeNull()
+      expect(await readWorkspaceFileAtCommit(root, result.commitHash as string, 'preview.mp4')).toBeNull()
+      expect(await readWorkspaceFileAtCommit(root, result.commitHash as string, '.craft-agent/plan.md')).toBeNull()
+
+      await writeFile(join(root, 'metadata.json'), '{"title":"changed"}\n')
+      await writeFile(join(root, 'preview.mp4'), 'changed video bytes\n')
+      await writeFile(join(root, '.craft-agent', 'plan.md'), 'changed internal\n')
+      expect((await getWorkspaceVersionStatus(root)).hasChanges).toBe(false)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('reads and restores non-text files from legacy workspace versions', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'craft-version-legacy-'))
+    try {
+      await writeFile(join(root, 'chapter.md'), 'legacy chapter\n')
+      await writeFile(join(root, 'metadata.json'), '{"version":"legacy"}\n')
+      await Bun.$`git init`.cwd(root).quiet()
+      await Bun.$`git add chapter.md metadata.json`.cwd(root).quiet()
+      await Bun.$`git -c user.name=Legacy -c user.email=legacy@example.test commit --no-gpg-sign -m legacy`.cwd(root).quiet()
+      const legacyCommit = (await Bun.$`git rev-parse HEAD`.cwd(root).quiet().text()).trim()
+      await Bun.$`git update-ref refs/storyflow/history ${legacyCommit}`.cwd(root).quiet()
+
+      await writeFile(join(root, 'chapter.md'), 'current chapter\n')
+      await writeFile(join(root, 'metadata.json'), '{"version":"current"}\n')
+      const current = await createWorkspaceVersion(root, { reason: 'manual' })
+
+      expect(await readWorkspaceFileAtCommit(root, legacyCommit, 'metadata.json')).toBe('{"version":"legacy"}\n')
+      expect(await readWorkspaceFileAtCommit(root, current.commitHash as string, 'metadata.json')).toBeNull()
+
+      const restored = await restoreWorkspaceVersion(root, legacyCommit)
+
+      expect(await readFile(join(root, 'chapter.md'), 'utf-8')).toBe('legacy chapter\n')
+      expect(await readFile(join(root, 'metadata.json'), 'utf-8')).toBe('{"version":"legacy"}\n')
+      expect(await readWorkspaceFileAtCommit(root, restored.restoreCommitHash as string, 'metadata.json')).toBeNull()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('serializes concurrent snapshots and status reads per workspace', async () => {
     const root = await mkdtemp(join(tmpdir(), 'craft-version-concurrent-'))
     try {

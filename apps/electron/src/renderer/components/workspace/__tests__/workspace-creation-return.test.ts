@@ -1,6 +1,6 @@
 // input: WorkspaceCreationScreen source
-// output: Static regression coverage for returning from project creation to the project hub
-// pos: Keeps project creation reversible when launched from project management
+// output: Static regression coverage for local creation and remote recovery separation
+// pos: Keeps remote imports out of normal project creation without removing reconnect
 
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
@@ -14,9 +14,12 @@ describe('WorkspaceCreationScreen return affordance', () => {
     expect(source).toContain('{closeLabel}')
   })
 
-  it('supports opening directly into create, import, or remote connection steps', () => {
-    expect(source).toContain('initialStep')
-    expect(source).toContain("export type WorkspaceCreationInitialStep")
-    expect(source).toContain("reconnectWorkspace ? 'remote' : initialStep")
+  it('shows local creation normally and remote connection only for reconnect', () => {
+    expect(source).toContain('reconnectWorkspace?.remoteServer ?')
+    expect(source).toContain('<AddWorkspaceStep_CreateNew')
+    expect(source).toContain('<AddWorkspaceStep_ConnectRemote')
+    expect(source).not.toContain('AddWorkspaceStep_Choice')
+    expect(source).not.toContain('AddWorkspaceStep_OpenFolder')
+    expect(source).not.toContain('initialStep')
   })
 })
