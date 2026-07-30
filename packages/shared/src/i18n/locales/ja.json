@@ -580,6 +580,7 @@
   "feedback.title": "フィードバック",
   "fileViewer.clickToView": "チャット内のファイルパスをクリックすると、ここに表示されます",
   "fileViewer.errorLoading": "ファイルの読み込みエラー",
+  "fileViewer.externalPreviewHint": "このファイルは現在のタブで開いています。大きなファイルがメモリを消費しないよう、Storyflow はファイル全体を自動では読み込みません。",
   "fileViewer.loadingContent": "コンテンツを読み込み中...",
   "fileViewer.noFileSelected": "ファイルが選択されていません",
   "filter.exclude": "除外",

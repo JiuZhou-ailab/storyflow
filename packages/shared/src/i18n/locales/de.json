@@ -580,6 +580,7 @@
   "feedback.title": "Feedback",
   "fileViewer.clickToView": "Klicke auf einen Dateipfad im Chat, um ihn hier anzuzeigen",
   "fileViewer.errorLoading": "Fehler beim Laden der Datei",
+  "fileViewer.externalPreviewHint": "Diese Datei ist im aktuellen Tab geöffnet. Damit große Dateien keinen Arbeitsspeicher belegen, liest Storyflow die Datei nicht automatisch vollständig ein.",
   "fileViewer.loadingContent": "Inhalt wird geladen...",
   "fileViewer.noFileSelected": "Keine Datei ausgewählt",
   "filter.exclude": "Ausschließen",

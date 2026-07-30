@@ -580,6 +580,7 @@
   "feedback.title": "Feedback",
   "fileViewer.clickToView": "Kattints egy fájl útvonalra a chatben az itt való megtekintéshez",
   "fileViewer.errorLoading": "Hiba a fájl betöltésekor",
+  "fileViewer.externalPreviewHint": "Ez a fájl az aktuális lapon van megnyitva. A nagy fájlok memóriahasználatának elkerüléséhez a Storyflow nem olvassa be automatikusan a teljes fájlt.",
   "fileViewer.loadingContent": "Tartalom betöltése...",
   "fileViewer.noFileSelected": "Nincs kiválasztott fájl",
   "filter.exclude": "Kizárás",

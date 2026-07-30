@@ -580,6 +580,7 @@
   "feedback.title": "Feedback",
   "fileViewer.clickToView": "Kliknij ścieżkę pliku w czacie, aby go tutaj wyświetlić",
   "fileViewer.errorLoading": "Błąd ładowania pliku",
+  "fileViewer.externalPreviewHint": "Ten plik jest otwarty w bieżącej karcie. Aby duże pliki nie zajmowały pamięci, Storyflow nie odczytuje automatycznie całego pliku.",
   "fileViewer.loadingContent": "Ładowanie zawartości...",
   "fileViewer.noFileSelected": "Nie wybrano pliku",
   "filter.exclude": "Wyklucz",

@@ -580,6 +580,7 @@
   "feedback.title": "反馈",
   "fileViewer.clickToView": "点击聊天中的文件路径在此查看",
   "fileViewer.errorLoading": "加载文件出错",
+  "fileViewer.externalPreviewHint": "该文件已在当前标签页打开。为避免大文件占用内存，Storyflow 不会自动读取其完整内容。",
   "fileViewer.loadingContent": "正在加载内容...",
   "fileViewer.noFileSelected": "未选择文件",
   "filter.exclude": "排除",

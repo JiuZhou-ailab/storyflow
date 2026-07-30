@@ -580,6 +580,7 @@
   "feedback.title": "Feedback",
   "fileViewer.clickToView": "Haz clic en una ruta de archivo en el chat para verlo aquí",
   "fileViewer.errorLoading": "Error al cargar archivo",
+  "fileViewer.externalPreviewHint": "Este archivo está abierto en la pestaña actual. Para evitar que los archivos grandes consuman memoria, Storyflow no lee el archivo completo automáticamente.",
   "fileViewer.loadingContent": "Cargando contenido...",
   "fileViewer.noFileSelected": "Ningún archivo seleccionado",
   "filter.exclude": "Excluir",

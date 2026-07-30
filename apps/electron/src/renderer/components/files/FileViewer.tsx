@@ -147,7 +147,7 @@ export function FileViewer({ path, onOpenExternal }: FileViewerProps) {
           </div>
           <p className="max-w-md truncate text-sm font-medium text-foreground/80">{fileName}</p>
           <p className="max-w-md text-xs leading-5">
-            {t('fileViewer.externalPreviewHint', '该文件已在当前标签页打开。为避免大文件占用内存，不会自动读取其完整内容。')}
+            {t('fileViewer.externalPreviewHint')}
           </p>
         </div>
       ) : (
