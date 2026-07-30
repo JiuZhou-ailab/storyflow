@@ -4,7 +4,7 @@
 
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
-import { Clock, Folder, Pencil, Trash2, X } from 'lucide-react'
+import { Clock, Pencil, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CHAT_LAYOUT } from '@/config/layout'
 import { useSessionChatResources } from '@/context/AppShellContext'
@@ -16,6 +16,7 @@ import type { SessionStatus } from '@/config/session-status-config'
 import { ActiveOptionBadges } from '../ActiveOptionBadges'
 import { InputContainer } from './InputContainer'
 import { InputErrorBoundary } from './InputErrorBoundary'
+import { WorkingDirectoryBadge } from './WorkingDirectoryBadge'
 
 export type QueuedInputMessage = Pick<Message, 'id' | 'content' | 'attachments'>
 
@@ -66,8 +67,8 @@ export function ChatInputZone({
   const queuedCount = queuedMessages.length
   const shouldShowOptionBadges = showOptionBadges ?? !compactMode
   const workspaceContext = !compactMode
-    && inputProps.isEmptySession
-    && runtimeWorkspace?.id !== FREE_CONVERSATION_WORKSPACE_ID
+    && runtimeWorkspace
+    && runtimeWorkspace.id !== FREE_CONVERSATION_WORKSPACE_ID
     ? runtimeWorkspace
     : null
   const inputResetKey = `${sessionId}::${inputProps.structuredInput?.type ?? 'freeform'}`
@@ -100,29 +101,33 @@ export function ChatInputZone({
       compactMode ? 'px-2 pb-3' : 'px-3 @xs/panel:px-4 pb-4',
       className,
     )}>
-      {workspaceContext ? (
-        <div
-          className="mb-1.5 flex h-8 min-w-0 items-center gap-2 px-2 text-[13px] text-foreground/80"
-          data-testid="chat-workspace-context"
-        >
-          <Folder className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <span className="min-w-0 flex-1 truncate" title={workspaceContext.rootPath}>
-            {workspaceContext.name}
-          </span>
-          <button
-            type="button"
-            className="flex size-6 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
-            aria-label={`移除工作区 ${workspaceContext.name}`}
-            title="切换为自由对话"
-            onClick={() => { void onOpenFreeConversations({ createNew: true }) }}
-          >
-            <X className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-        </div>
-      ) : null}
-
       {shouldShowOptionBadges && (
         <ActiveOptionBadges
+          leadingContent={workspaceContext && inputProps.onWorkingDirectoryChange ? (
+            <div
+              className="flex min-w-0 items-center gap-1"
+              data-testid="chat-workspace-context"
+            >
+              <WorkingDirectoryBadge
+                workingDirectory={inputProps.workingDirectory ?? workspaceContext.rootPath}
+                onWorkingDirectoryChange={inputProps.onWorkingDirectoryChange}
+                sessionFolderPath={sessionFolderPath}
+                isExpanded
+                workspaceId={inputProps.workspaceId}
+              />
+              {inputProps.isEmptySession && (
+                <button
+                  type="button"
+                  className="flex size-6 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+                  aria-label={`移除工作区 ${workspaceContext.name}`}
+                  title="切换为自由对话"
+                  onClick={() => { void onOpenFreeConversations({ createNew: true }) }}
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          ) : undefined}
           permissionMode={permissionMode}
           onPermissionModeChange={onPermissionModeChange}
           sessionId={sessionId}

@@ -1,10 +1,14 @@
+// input: Context badge content, interaction state, and native button attributes
+// output: Shared accessible button for chat input toolbar controls
+// pos: Visual primitive for file, source, and working-directory selectors
+
 import * as React from 'react'
 import { ChevronDown } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@craft-agent/ui'
 import { FadingText } from '@/components/ui/fading-text'
 import { cn } from '@/lib/utils'
 
-export interface FreeFormInputContextBadgeProps {
+export interface FreeFormInputContextBadgeProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
   /** Left area - fully customizable (icon, avatar stack, etc.) */
   icon: React.ReactNode
   /** Label text - shown in expanded state or collapsed with selection */
@@ -55,6 +59,7 @@ export const FreeFormInputContextBadge = React.forwardRef<HTMLButtonElement, Fre
       className,
       buttonRef,
       'data-tutorial': dataTutorial,
+      ...buttonProps
     },
     ref
   ) {
@@ -66,9 +71,10 @@ export const FreeFormInputContextBadge = React.forwardRef<HTMLButtonElement, Fre
 
     const button = (
       <button
+        {...buttonProps}
         ref={mergedRef as React.Ref<HTMLButtonElement>}
-        type="button"
-        aria-label={label}
+        type={buttonProps.type ?? 'button'}
+        aria-label={buttonProps['aria-label'] ?? label}
         onClick={onClick}
         disabled={disabled}
         data-tutorial={dataTutorial}

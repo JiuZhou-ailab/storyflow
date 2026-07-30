@@ -16,10 +16,12 @@ describe('ActiveOptionBadges label lookup', () => {
     expect(source).not.toContain('flat.find(l => l.id === parsed.id)')
   })
 
-  it('keeps permission mode above the input without restoring status or info buttons', () => {
+  it('keeps context left, labels flexible, and permission mode at the far right', () => {
     expect(source).not.toContain('StateBadge')
     expect(source).not.toContain('FilesPopoverButton')
     expect(source).not.toContain('PermissionModeDropdown')
+    expect(source).toContain('leadingContent?: React.ReactNode')
     expect(source).toContain('<DesktopPermissionModeSelector')
+    expect(source.indexOf('{leadingContent}')).toBeLessThan(source.indexOf('<DesktopPermissionModeSelector'))
   })
 })

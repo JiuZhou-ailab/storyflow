@@ -1,5 +1,5 @@
-// input: Permission mode, session labels, and label editing callbacks
-// output: Permission control and compact label badges above the chat composer
+// input: Leading session context, permission mode, labels, and label editing callbacks
+// output: One-row session context, compact label badges, and permission control
 // pos: Optional session metadata strip above the primary input
 
 import * as React from 'react'
@@ -16,6 +16,8 @@ import type { PermissionMode } from '@craft-agent/shared/agent/modes'
 import { DesktopPermissionModeSelector } from './input/DesktopPermissionModeSelector'
 
 export interface ActiveOptionBadgesProps {
+  /** Session context rendered at the far left of the option row */
+  leadingContent?: React.ReactNode
   /** Current permission mode */
   permissionMode?: PermissionMode
   /** Callback when permission mode changes */
@@ -46,6 +48,7 @@ interface ResolvedLabelEntry {
 }
 
 export function ActiveOptionBadges({
+  leadingContent,
   permissionMode,
   onPermissionModeChange,
   sessionId,
@@ -85,61 +88,63 @@ export function ActiveOptionBadges({
   // shows the same visible strip when stacked. No React re-renders needed.
   const stackRef = useDynamicStack({ gap: 8, minVisible: 20, reservedStart: 0 })
 
-  if (!permissionMode && !hasLabels) return null
+  if (!leadingContent && !permissionMode && !hasLabels) return null
 
   return (
-    <div className={cn("flex items-start gap-2 mb-2 px-px pt-px pb-0.5", className)}>
-      <div className="flex items-start gap-2 min-w-0 flex-1">
-        {permissionMode && (
-          <DesktopPermissionModeSelector
-            permissionMode={permissionMode}
-            onPermissionModeChange={onPermissionModeChange}
-            sessionId={sessionId}
-          />
-        )}
+    <div className={cn("mb-2 flex min-w-0 items-center gap-2 px-px pt-px pb-0.5", className)}>
+      {leadingContent && (
+        <div className="flex min-w-0 shrink items-center">
+          {leadingContent}
+        </div>
+      )}
 
-        {/* Stacking container for label badges.
-         * useDynamicStack sets per-child marginLeft directly via ResizeObserver.
-         * overflow: clip prevents scroll container while py/-my gives shadow room. */}
-        {hasLabels && <div
-          className="flex-1 min-w-0 max-w-full py-0.5 -my-0.5"
-          style={{
-            // shadow-minimal replicated as drop-shadow (traces masked alpha, no clipping).
-            // Ring uses higher blur+opacity for visible border feel (hard 1px ring can't be replicated exactly).
-            // Blur shadows use reduced blur+opacity to stay tight (accounting for no negative spread in drop-shadow).
-            filter: 'drop-shadow(0px 0px 0.5px rgba(var(--foreground-rgb), 0.3)) drop-shadow(0px 1px 0.1px rgba(0,0,0,0.04)) drop-shadow(0px 3px 0.2px rgba(0,0,0,0.03))',
-          }}
-        >
+      <div className="flex min-w-0 flex-1 items-center">
+        {hasLabels && (
           <div
-            ref={stackRef}
-            className="flex items-center min-w-0 py-1 -my-1"
-            style={{ overflow: 'clip' }}
+            className="flex-1 min-w-0 max-w-full py-0.5 -my-0.5"
+            style={{
+              filter: 'drop-shadow(0px 0px 0.5px rgba(var(--foreground-rgb), 0.3)) drop-shadow(0px 1px 0.1px rgba(0,0,0,0.04)) drop-shadow(0px 3px 0.2px rgba(0,0,0,0.03))',
+            }}
           >
-            {resolvedLabels.map(({ config, rawValue, index }) => (
-              <LabelBadge
-                key={`${config.id}-${index}`}
-                label={config}
-                value={rawValue}
-                autoOpen={config.id === autoOpenLabelId}
-                onAutoOpenConsumed={onAutoOpenConsumed}
-                sessionId={sessionId}
-                onValueChange={(newValue) => {
-                  const updated = [...sessionLabels]
-                  updated[index] = formatLabelEntry(config.id, newValue)
-                  onLabelsChange?.(updated)
-                }}
-                onRemove={() => {
-                  if (onLabelsChange) {
-                    onLabelsChange(sessionLabels.filter((_, i) => i !== index))
-                  } else {
-                    onRemoveLabel?.(config.id)
-                  }
-                }}
-              />
-            ))}
+            <div
+              ref={stackRef}
+              className="flex min-w-0 items-center py-1 -my-1"
+              style={{ overflow: 'clip' }}
+            >
+              {resolvedLabels.map(({ config, rawValue, index }) => (
+                <LabelBadge
+                  key={`${config.id}-${index}`}
+                  label={config}
+                  value={rawValue}
+                  autoOpen={config.id === autoOpenLabelId}
+                  onAutoOpenConsumed={onAutoOpenConsumed}
+                  sessionId={sessionId}
+                  onValueChange={(newValue) => {
+                    const updated = [...sessionLabels]
+                    updated[index] = formatLabelEntry(config.id, newValue)
+                    onLabelsChange?.(updated)
+                  }}
+                  onRemove={() => {
+                    if (onLabelsChange) {
+                      onLabelsChange(sessionLabels.filter((_, i) => i !== index))
+                    } else {
+                      onRemoveLabel?.(config.id)
+                    }
+                  }}
+                />
+              ))}
+            </div>
           </div>
-        </div>}
+        )}
       </div>
+
+      {permissionMode && (
+        <DesktopPermissionModeSelector
+          permissionMode={permissionMode}
+          onPermissionModeChange={onPermissionModeChange}
+          sessionId={sessionId}
+        />
+      )}
     </div>
   )
 }

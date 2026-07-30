@@ -114,16 +114,23 @@ describe('chat page header actions', () => {
     expect(appShellDestructure).not.toContain('workspaces')
   })
 
-  it('shows removable workspace scope only for an empty project task', () => {
+  it('keeps the project directory and execution mode on one row above the input', () => {
     const chatInputZoneSource = readFileSync(new URL('../../components/app-shell/input/ChatInputZone.tsx', import.meta.url), 'utf-8')
+    const freeFormInputSource = readFileSync(new URL('../../components/app-shell/input/FreeFormInput.tsx', import.meta.url), 'utf-8')
     const appShellContextSource = readFileSync(new URL('../../context/AppShellContext.tsx', import.meta.url), 'utf-8')
+    const desktopToolbar = freeFormInputSource.slice(
+      freeFormInputSource.indexOf('{/* Desktop: attachment and source controls */}'),
+      freeFormInputSource.indexOf('{/* Spacer */}'),
+    )
 
     expect(chatInputZoneSource).toContain('useSessionChatResources')
-    expect(chatInputZoneSource).toContain('inputProps.isEmptySession')
-    expect(chatInputZoneSource).toContain('runtimeWorkspace?.id !== FREE_CONVERSATION_WORKSPACE_ID')
+    expect(chatInputZoneSource).toContain('runtimeWorkspace.id !== FREE_CONVERSATION_WORKSPACE_ID')
     expect(chatInputZoneSource).toContain('onOpenFreeConversations({ createNew: true })')
     expect(chatInputZoneSource).toContain('data-testid="chat-workspace-context"')
-    expect(chatInputZoneSource).toContain('workspaceContext.name')
+    expect(chatInputZoneSource).toContain('<WorkingDirectoryBadge')
+    expect(chatInputZoneSource).toContain('leadingContent=')
+    expect(chatInputZoneSource).toContain('inputProps.isEmptySession &&')
+    expect(desktopToolbar).not.toContain('<WorkingDirectoryBadge')
     expect(appShellContextSource).toContain("onOpenFreeConversations: AppShellContextType['onOpenFreeConversations']")
   })
 

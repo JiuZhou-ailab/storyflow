@@ -4,7 +4,6 @@
 
 import * as React from 'react'
 import { useTranslation } from "react-i18next"
-import { Command as CommandPrimitive } from 'cmdk'
 import { toast } from 'sonner'
 import { AnimatePresence, motion } from 'motion/react'
 import {
@@ -18,11 +17,9 @@ import {
   Image as ImageIcon,
   X,
 } from 'lucide-react'
-import { Icon_Home, Icon_Folder, Spinner } from '@craft-agent/ui'
+import { Spinner } from '@craft-agent/ui'
 
 import * as storage from '@/lib/local-storage'
-import { useDirectoryPicker } from '@/hooks/useDirectoryPicker'
-import { ServerDirectoryBrowser } from '@/components/ServerDirectoryBrowser'
 import { Button } from '@/components/ui/button'
 import {
   InlineSlashCommand,
@@ -57,11 +54,10 @@ import {
   StyledDropdownMenuSubTrigger,
   StyledDropdownMenuSubContent,
 } from '@/components/ui/styled-dropdown'
-import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { coerceInputText } from '@/lib/input-text'
 import { loadSendMessageKeySetting } from '@/lib/input-settings'
-import { isMac, PATH_SEP, getPathBasename } from '@/lib/platform'
+import { isMac } from '@/lib/platform'
 import { applySmartTypography } from '@/lib/smart-typography'
 import { AttachmentPreview } from '../AttachmentPreview'
 import { ImageSupportWarningBanner } from './ImageSupportWarningBanner'
@@ -95,10 +91,9 @@ import { clearPendingFocusForSession, consumePendingFocusForSession } from './fo
 import {
   getRecentWorkingDirs,
   addRecentWorkingDir,
-  removeRecentWorkingDir,
-  createRecentWorkingDirItems,
 } from './working-directory-history'
 import { CompactPermissionModeSelector } from './CompactPermissionModeSelector'
+import { WorkingDirectoryBadge } from './WorkingDirectoryBadge'
 import { resolveContextUsage } from './context-usage'
 import {
   getPrimaryInputAction,
@@ -2114,14 +2109,13 @@ export function FreeFormInput({
               workingDirectory={workingDirectory}
               onWorkingDirectoryChange={onWorkingDirectoryChange}
               sessionFolderPath={sessionFolderPath}
-              isEmptySession={false}
               workspaceId={workspaceId}
             />
           )}
           </>
           )}
 
-          {/* Desktop: full badges row with labels and working directory */}
+          {/* Desktop: attachment and source controls */}
           {!compactMode && (
           <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
           {/* 1. Attach Files Badge */}
@@ -2212,17 +2206,6 @@ export function FreeFormInput({
                 }}
               />
             </div>
-          )}
-
-          {/* 3. Working Directory Selector Badge */}
-          {onWorkingDirectoryChange && (
-            <WorkingDirectoryBadge
-              workingDirectory={workingDirectory}
-              onWorkingDirectoryChange={onWorkingDirectoryChange}
-              sessionFolderPath={sessionFolderPath}
-              isEmptySession={isEmptySession}
-              workspaceId={workspaceId}
-            />
           )}
 
           </div>
@@ -2451,259 +2434,5 @@ export function FreeFormInput({
         </div>
       </div>
     </form>
-  )
-}
-
-/**
- * Format path for display, with home directory shortened
- */
-function formatPathForDisplay(path: string, homeDir: string): string {
-  let displayPath = path
-  if (homeDir && path.startsWith(homeDir)) {
-    const relativePath = path.slice(homeDir.length)
-    // Remove leading separator if present, show root separator if empty
-    displayPath = relativePath.startsWith(PATH_SEP)
-      ? relativePath.slice(1)
-      : (relativePath || PATH_SEP)
-  }
-  return `in ${displayPath}`
-}
-
-/**
- * WorkingDirectoryBadge - Context badge for selecting working directory
- * Uses cmdk for filterable folder list when there are more than 5 recent folders.
- */
-function WorkingDirectoryBadge({
-  workingDirectory,
-  onWorkingDirectoryChange,
-  sessionFolderPath,
-  isEmptySession = false,
-  workspaceId,
-}: {
-  workingDirectory?: string
-  onWorkingDirectoryChange: (path: string) => void
-  sessionFolderPath?: string
-  isEmptySession?: boolean
-  workspaceId?: string
-}) {
-  const { t } = useTranslation()
-  const [recentDirs, setRecentDirs] = React.useState<string[]>([])
-  const [popoverOpen, setPopoverOpen] = React.useState(false)
-  const [homeDir, setHomeDir] = React.useState<string>('')
-  const [gitBranch, setGitBranch] = React.useState<string | null>(null)
-  const [filter, setFilter] = React.useState('')
-  const inputRef = React.useRef<HTMLInputElement>(null)
-
-  // Load home directory and recent directories on mount
-  React.useEffect(() => {
-    setRecentDirs(getRecentWorkingDirs(workspaceId))
-    window.electronAPI?.getHomeDir?.().then((dir: string) => {
-      if (dir) setHomeDir(dir)
-    })
-  }, [workspaceId])
-
-  // Fetch git branch when working directory changes
-  React.useEffect(() => {
-    if (workingDirectory) {
-      window.electronAPI?.getGitBranch?.(workingDirectory).then((branch: string | null) => {
-        setGitBranch(branch)
-      })
-    } else {
-      setGitBranch(null)
-    }
-  }, [workingDirectory])
-
-  // Reset filter, refresh history, and focus input when popover opens
-  React.useEffect(() => {
-    if (popoverOpen) {
-      setFilter('')
-      setRecentDirs(getRecentWorkingDirs(workspaceId))
-      // Focus input after popover animation completes (only if filter is shown)
-      const timer = setTimeout(() => {
-        inputRef.current?.focus()
-      }, 0)
-      return () => clearTimeout(timer)
-    }
-  }, [popoverOpen, workspaceId])
-
-  const handleFolderSelected = React.useCallback((selectedPath: string) => {
-    setRecentDirs(addRecentWorkingDir(selectedPath, workspaceId))
-    onWorkingDirectoryChange(selectedPath)
-  }, [onWorkingDirectoryChange, workspaceId])
-
-  const {
-    pickDirectory,
-    showServerBrowser,
-    serverBrowserMode,
-    cancelServerBrowser,
-    confirmServerBrowser,
-  } = useDirectoryPicker(handleFolderSelected)
-
-  const handleChooseFolder = () => {
-    setPopoverOpen(false)
-    pickDirectory()
-  }
-
-  const handleSelectRecent = (path: string) => {
-    setRecentDirs(addRecentWorkingDir(path, workspaceId)) // Move to top of recent list
-    onWorkingDirectoryChange(path)
-    setPopoverOpen(false)
-  }
-
-  const handleReset = () => {
-    if (sessionFolderPath) {
-      onWorkingDirectoryChange(sessionFolderPath)
-      setPopoverOpen(false)
-    }
-  }
-
-  const handleRemoveRecent = (e: React.MouseEvent, path: string) => {
-    e.stopPropagation() // Don't trigger the item's onSelect
-    setRecentDirs(removeRecentWorkingDir(path, workspaceId))
-  }
-
-  const filteredRecent = React.useMemo(
-    () => createRecentWorkingDirItems(recentDirs, workingDirectory),
-    [recentDirs, workingDirectory],
-  )
-  // Show filter input only when more than 5 recent folders
-  const showFilter = filteredRecent.length > 5
-
-  // Determine label - "Work in Folder" if not set or at session root, otherwise folder name
-  const hasFolder = !!workingDirectory && workingDirectory !== sessionFolderPath
-  const folderName = hasFolder ? (getPathBasename(workingDirectory) || 'Folder') : 'Work in Folder'
-
-  // Show reset option when a folder is selected and it differs from session folder
-  const showReset = hasFolder && sessionFolderPath && sessionFolderPath !== workingDirectory
-
-  // Styles matching todo-filter-menu.tsx for consistency
-  const MENU_CONTAINER_STYLE = 'min-w-[200px] max-w-[400px] overflow-hidden rounded-[8px] bg-background text-foreground shadow-modal-small p-0'
-  const MENU_LIST_STYLE = 'max-h-[200px] overflow-y-auto p-1 [&_[cmdk-list-sizer]]:space-y-px'
-  const MENU_ITEM_STYLE = 'flex cursor-pointer select-none items-center gap-2 rounded-[6px] px-3 py-1.5 text-[13px] outline-none'
-
-  return (
-    <>
-    <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
-      <PopoverTrigger asChild>
-        <span className="shrink min-w-0 overflow-hidden">
-          <FreeFormInputContextBadge
-            icon={<Icon_Home className="h-4 w-4" />}
-            label={folderName}
-            isExpanded={isEmptySession}
-            hasSelection={hasFolder}
-            showChevron={true}
-            isOpen={popoverOpen}
-            tooltip={
-              hasFolder ? (
-                <span className="flex flex-col gap-0.5">
-                  <span className="font-medium">{t("chat.workingDirectory")}</span>
-                  <span className="text-xs opacity-70">{formatPathForDisplay(workingDirectory, homeDir)}</span>
-                  {gitBranch && <span className="text-xs opacity-70">{t("chat.onBranch", { branch: gitBranch })}</span>}
-                </span>
-              ) : t("chat.chooseWorkingDirectory")
-            }
-          />
-        </span>
-      </PopoverTrigger>
-      <PopoverContent side="top" align="start" sideOffset={8} className={MENU_CONTAINER_STYLE}>
-        <CommandPrimitive shouldFilter={showFilter}>
-          {/* Filter input - only shown when more than 5 recent folders */}
-          {showFilter && (
-            <div className="border-b border-border/50 px-3 py-2">
-              <CommandPrimitive.Input
-                ref={inputRef}
-                value={filter}
-                onValueChange={setFilter}
-                placeholder={t("chat.filterFolders")}
-                className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 placeholder:select-none"
-              />
-            </div>
-          )}
-
-          <CommandPrimitive.List className={MENU_LIST_STYLE}>
-            {/* Current Folder Display - shown at top with checkmark */}
-            {hasFolder && (
-              <CommandPrimitive.Item
-                value={`current-${workingDirectory}`}
-                className={cn(MENU_ITEM_STYLE, 'pointer-events-none bg-foreground/5')}
-                disabled
-              >
-                <Icon_Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <span className="flex-1 min-w-0 truncate">
-                  <span>{folderName}</span>
-                  <span className="text-muted-foreground ml-1.5">{formatPathForDisplay(workingDirectory, homeDir)}</span>
-                </span>
-                <Check className="h-4 w-4 shrink-0" />
-              </CommandPrimitive.Item>
-            )}
-
-            {/* Separator after current folder */}
-            {hasFolder && filteredRecent.length > 0 && (
-              <div className="h-px bg-border my-1 mx-1" />
-            )}
-
-            {/* Recent Directories - filterable (current directory already filtered out via filteredRecent) */}
-            {filteredRecent.map(({ path, name: recentFolderName }) => {
-              return (
-                <CommandPrimitive.Item
-                  key={path}
-                  value={`${recentFolderName} ${path}`}
-                  onSelect={() => handleSelectRecent(path)}
-                  className={cn(MENU_ITEM_STYLE, 'group/item data-[selected=true]:bg-foreground/5')}
-                >
-                  <Icon_Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span className="flex-1 min-w-0 truncate">
-                    <span>{recentFolderName}</span>
-                    <span className="text-muted-foreground ml-1.5">{formatPathForDisplay(path, homeDir)}</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={(e) => handleRemoveRecent(e, path)}
-                    className="shrink-0 h-3 w-3 rounded-[3px] flex items-center justify-center opacity-0 group-hover/item:opacity-100 text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-all"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </CommandPrimitive.Item>
-              )
-            })}
-
-            {/* Empty state when filtering */}
-            {showFilter && (
-              <CommandPrimitive.Empty className="py-3 text-center text-sm text-muted-foreground">
-                {t('chat.noFoldersFound')}
-              </CommandPrimitive.Empty>
-            )}
-          </CommandPrimitive.List>
-
-          {/* Bottom actions - always visible, outside scrollable area */}
-          <div className="border-t border-border/50 p-1">
-            <button
-              type="button"
-              onClick={handleChooseFolder}
-              className={cn(MENU_ITEM_STYLE, 'w-full hover:bg-foreground/5')}
-            >
-              {t('chat.chooseFolder')}
-            </button>
-            {showReset && (
-              <button
-                type="button"
-                onClick={handleReset}
-                className={cn(MENU_ITEM_STYLE, 'w-full hover:bg-foreground/5')}
-              >
-                {t('common.reset')}
-              </button>
-            )}
-          </div>
-        </CommandPrimitive>
-      </PopoverContent>
-    </Popover>
-    <ServerDirectoryBrowser
-      open={showServerBrowser}
-      mode={serverBrowserMode}
-      onSelect={confirmServerBrowser}
-      onCancel={cancelServerBrowser}
-      initialPath={workingDirectory}
-    />
-    </>
   )
 }
