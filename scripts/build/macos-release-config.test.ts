@@ -1,6 +1,6 @@
-// input: macOS release workflow and Electron builder configuration
-// output: Regression coverage that Storyflow macOS releases are signed, notarized, and updateable
-// pos: Release safety guard preventing unsigned or non-updateable macOS artifacts from being published
+// input: Release workflows, marketing deployment workflow, and Electron builder configuration
+// output: Regression coverage for desktop releases and the public landing deployment boundary
+// pos: Release safety guard for signed artifacts, updates, and independent landing delivery
 
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
@@ -72,13 +72,7 @@ describe('macOS release configuration', () => {
     expect(workflow).toContain('bun run release:upload-r2');
     expect(workflow).toContain('deploy-marketing:');
     expect(workflow).toMatch(/deploy-marketing:\n\s+needs: publish-r2/);
-    expect(workflow).toContain('Build marketing site');
-    expect(workflow).toContain('bun run marketing:build');
-    expect(workflow).toContain('Deploy marketing site to Cloudflare Pages');
     expect(workflow).toContain('CLOUDFLARE_PAGES_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_API_TOKEN }}');
-    expect(workflow).toContain('CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_API_TOKEN }}');
-    expect(workflow).toContain('bunx wrangler pages deploy apps/marketing/dist');
-    expect(workflow).toContain("STORYFLOW_PAGES_PROJECT_NAME: ${{ vars.STORYFLOW_PAGES_PROJECT_NAME || 'storyflow' }}");
     expect(workflow).toContain(
       'if [ "$RELEASE_PROFILE" = "full" ] && [ -z "$CLOUDFLARE_PAGES_API_TOKEN" ]; then',
     );
@@ -100,6 +94,30 @@ describe('macOS release configuration', () => {
     expect(workflow).toContain("grep -E '^Storyflow-x64\\.zip$'");
     expect(existsSync(join(rootDir, 'scripts/merge-macos-update-manifests.py'))).toBe(true);
     expect(existsSync(join(rootDir, 'scripts/upload-r2-release-assets.ts'))).toBe(true);
+  });
+
+  test('deploys marketing independently on relevant main changes and reuses it from releases', () => {
+    const releaseWorkflow = readRepoFile('.github/workflows/release.yml');
+    const marketingWorkflow = readRepoFile('.github/workflows/deploy-marketing.yml');
+
+    expect(marketingWorkflow).toMatch(/push:\n\s+branches:\n\s+- main/);
+    expect(marketingWorkflow).toContain('workflow_dispatch:');
+    expect(marketingWorkflow).toContain('workflow_call:');
+    expect(marketingWorkflow).toContain('- "apps/marketing/**"');
+    expect(marketingWorkflow).toContain('- "scripts/build-marketing.ts"');
+    expect(marketingWorkflow).toContain('group: deploy-marketing-production');
+    expect(marketingWorkflow).toContain('cancel-in-progress: false');
+    expect(marketingWorkflow).toMatch(/uses: actions\/checkout@v4\n\s+with:\n\s+ref: main/);
+    expect(marketingWorkflow).toContain('bun test apps/marketing/src/__tests__/downloads.test.ts');
+    expect(marketingWorkflow).toContain('bun run marketing:build');
+    expect(marketingWorkflow).toContain('bunx wrangler pages deploy apps/marketing/dist');
+    expect(marketingWorkflow).toContain(
+      "STORYFLOW_PAGES_PROJECT_NAME: ${{ vars.STORYFLOW_PAGES_PROJECT_NAME || 'storyflow' }}",
+    );
+    expect(releaseWorkflow).toMatch(/deploy-marketing:\n\s+needs: publish-r2/);
+    expect(releaseWorkflow).toContain('uses: ./.github/workflows/deploy-marketing.yml');
+    expect(releaseWorkflow).toContain('secrets: inherit');
+    expect(releaseWorkflow).not.toContain('bunx wrangler pages deploy apps/marketing/dist');
   });
 
   test('official release workflow validates versions and never builds Windows with dev runtime', () => {
