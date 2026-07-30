@@ -613,6 +613,7 @@ async function main(): Promise<void> {
     logLevel: "info",
   });
   await mainContext.watch();
+  await mainContext.rebuild();
   esbuildContexts.push(mainContext);
   console.log("👀 Watching main process...");
 
@@ -627,6 +628,7 @@ async function main(): Promise<void> {
     logLevel: "info",
   });
   await preloadContext.watch();
+  await preloadContext.rebuild();
   esbuildContexts.push(preloadContext);
   console.log("👀 Watching preload...");
 
@@ -641,6 +643,7 @@ async function main(): Promise<void> {
     logLevel: "info",
   });
   await toolbarPreloadContext.watch();
+  await toolbarPreloadContext.rebuild();
   esbuildContexts.push(toolbarPreloadContext);
   console.log("👀 Watching browser toolbar preload...");
 

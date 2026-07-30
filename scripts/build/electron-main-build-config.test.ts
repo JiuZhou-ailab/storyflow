@@ -29,6 +29,20 @@ describe('Electron main process build config', () => {
   test('does not require the unused unzipper S3 optional client during dev main bundling', () => {
     expect(readRepoFile('scripts/electron-dev.ts')).toContain(AWS_S3_CLIENT_EXTERNAL);
   });
+
+  test('waits for watcher initial builds before launching Electron', () => {
+    const source = readRepoFile('scripts/electron-dev.ts');
+    const electronStart = source.indexOf('const electronProc = spawn');
+
+    for (const context of ['mainContext', 'preloadContext', 'toolbarPreloadContext']) {
+      const watch = source.indexOf(`await ${context}.watch()`);
+      const rebuild = source.indexOf(`await ${context}.rebuild()`);
+
+      expect(watch).toBeGreaterThan(-1);
+      expect(rebuild).toBeGreaterThan(watch);
+      expect(rebuild).toBeLessThan(electronStart);
+    }
+  });
 });
 
 describe('desktop auth build config', () => {
