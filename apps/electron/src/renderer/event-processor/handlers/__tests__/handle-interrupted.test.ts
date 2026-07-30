@@ -279,6 +279,52 @@ describe('handleUserMessage queued state', () => {
     expect(next.state.session.messages[1]).toBe(messages[1])
   })
 
+  it('adopts the server message id once an optimistic user message is accepted', () => {
+    const state = makeState([
+      { id: 'optimistic-1', role: 'user', content: 'hello', timestamp: 1000, isPending: true },
+    ])
+
+    const next = handleUserMessage(state, {
+      type: 'user_message',
+      sessionId: 'session-1',
+      status: 'accepted',
+      optimisticMessageId: 'optimistic-1',
+      message: {
+        id: 'server-1',
+        role: 'user',
+        content: 'hello',
+        timestamp: 1001,
+      } as any,
+    })
+
+    expect(next.state.session.messages).toHaveLength(1)
+    expect(next.state.session.messages[0]?.id).toBe('server-1')
+    expect(next.state.session.messages[0]?.isPending).toBe(false)
+    expect(next.state.session.messages[0]?.isQueued).toBe(false)
+  })
+
+  it('keeps the optimistic id while a user message remains queued', () => {
+    const state = makeState([
+      { id: 'optimistic-1', role: 'user', content: 'later', timestamp: 1000, isPending: true },
+    ])
+
+    const next = handleUserMessage(state, {
+      type: 'user_message',
+      sessionId: 'session-1',
+      status: 'queued',
+      optimisticMessageId: 'optimistic-1',
+      message: {
+        id: 'server-other',
+        role: 'user',
+        content: 'later',
+        timestamp: 1001,
+      } as any,
+    })
+
+    expect(next.state.session.messages[0]?.id).toBe('optimistic-1')
+    expect(next.state.session.messages[0]?.isQueued).toBe(true)
+  })
+
   it('keeps the active turn processing when a mid-stream message is queued', () => {
     const state = makeState([
       { id: 'msg-1', role: 'user', content: 'first' },

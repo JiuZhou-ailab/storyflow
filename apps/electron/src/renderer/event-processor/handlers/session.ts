@@ -622,15 +622,13 @@ export function handleUserMessage(
     // - 'processing' → isQueued = false (queued message is now actually running)
     // - 'accepted'   → isQueued = false (agent has the message)
     //
-    // We deliberately do NOT swap `m.id` to the backend's canonical id here.
-    // ChatDisplay's `getTurnKey` keys user-message bubbles by id, and a swap
-    // would unmount/remount the UserMessageBubble — wiping its local timer
-    // state and dropping the queued chip mid-flight. The canonical backend
-    // id is irrelevant to subsequent events: they all use
-    // `event.optimisticMessageId` for routing (see the findIndex above).
+    // Keep the optimistic id while queued so the chip/timer bubble is not remounted.
+    // Once accepted/processing, adopt the server id so rewind and other RPCs that
+    // key by message id hit the same record (server now prefers optimistic ids too).
     updatedMessages = [...session.messages]
     updatedMessages[existingIndex] = {
       ...existingMessage,
+      ...(!nextIsQueued && message.id !== existingMessage.id ? { id: message.id } : {}),
       isPending: false,
       isQueued: nextIsQueued,
     }

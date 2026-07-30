@@ -102,6 +102,7 @@ import { type ThinkingLevel, DEFAULT_THINKING_LEVEL, normalizeThinkingLevel } fr
 import { evaluateAutoLabels } from '@craft-agent/shared/labels/auto'
 import { listLabels, loadLabelConfig } from '@craft-agent/shared/labels/storage'
 import { extractLabelId, resolveSessionLabels } from '@craft-agent/shared/labels'
+import { resolveRewindMessageIndex } from './rewind-resolve'
 import { ensureLabelsExist } from '@craft-agent/shared/labels/crud'
 import { loadStatusConfig } from '@craft-agent/shared/statuses/storage'
 import { AutomationSystem, canonicalizeSkillReferences, createPromptHistoryEntry, appendAutomationHistoryEntry, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
@@ -2922,6 +2923,7 @@ export class SessionManager implements ISessionManager {
   async rewindUserMessage(
     sessionId: string,
     userMessageId: string,
+    options?: { userOrdinal?: number; content?: string },
   ): Promise<{ draftText: string }> {
     const managed = this.sessions.get(sessionId)
     if (!managed) {
@@ -2930,7 +2932,9 @@ export class SessionManager implements ISessionManager {
 
     await this.ensureMessagesLoaded(managed)
 
-    const messageIndex = managed.messages.findIndex(message => message.id === userMessageId)
+    // Prefer id match. Fall back to ordinal/content for live sessions where the
+    // UI still holds a pre-fix optimistic id that never matched the server.
+    const messageIndex = resolveRewindMessageIndex(managed.messages, userMessageId, options)
     if (messageIndex === -1) {
       throw new Error(`Message ${userMessageId} not found in session ${sessionId}`)
     }
@@ -5707,9 +5711,10 @@ export class SessionManager implements ISessionManager {
         throw new Error(`Existing message ${existingMessageId} not found`)
       }
     } else if (!hideUserMessage) {
-      // Create new message
+      // Prefer the renderer's optimistic id so UI and persisted transcript share one key.
+      // (Queued path already does this; diverging here broke rewind on live messages.)
       userMessage = {
-        id: generateMessageId(),
+        id: options?.optimisticMessageId || generateMessageId(),
         role: 'user',
         content: message,
         timestamp: this.monotonic(),

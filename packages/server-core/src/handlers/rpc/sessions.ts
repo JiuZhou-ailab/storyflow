@@ -245,14 +245,22 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   })
 
   // In-place rewind: truncate transcript at a user message via Pi navigateTree
-  server.handle(RPC_CHANNELS.sessions.REWIND, async (_ctx, sessionId: string, userMessageId: string) => {
-    const end = perf.start('rpc.rewindSession', { sessionId })
-    try {
-      return await sessionManager.rewindUserMessage(sessionId, userMessageId)
-    } finally {
-      end()
-    }
-  })
+  server.handle(
+    RPC_CHANNELS.sessions.REWIND,
+    async (
+      _ctx,
+      sessionId: string,
+      userMessageId: string,
+      options?: { userOrdinal?: number; content?: string },
+    ) => {
+      const end = perf.start('rpc.rewindSession', { sessionId })
+      try {
+        return await sessionManager.rewindUserMessage(sessionId, userMessageId, options)
+      } finally {
+        end()
+      }
+    },
+  )
 
   // Send a message to a session (with optional file attachments).
   //

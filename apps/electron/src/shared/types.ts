@@ -333,7 +333,11 @@ export interface ElectronAPI {
   createSession(workspaceId: string, options?: CreateSessionOptions): Promise<Session>
   deleteSession(sessionId: string): Promise<void>
   /** In-place rewind to a user message (Pi navigateTree); stays on the same session. */
-  rewindSession(sessionId: string, userMessageId: string): Promise<{ draftText: string }>
+  rewindSession(
+    sessionId: string,
+    userMessageId: string,
+    options?: { userOrdinal?: number; content?: string },
+  ): Promise<{ draftText: string }>
   sendMessage(sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachmentType[], options?: SendMessageOptions): Promise<void>
   rewriteNovelSelection(sessionId: string, request: NovelSelectionRewriteRequest): Promise<NovelSelectionRewriteResult>
   cancelProcessing(sessionId: string, silent?: boolean): Promise<void>
