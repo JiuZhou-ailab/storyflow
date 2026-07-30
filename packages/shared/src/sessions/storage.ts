@@ -27,6 +27,7 @@ import {
   unlinkSync,
   renameSync,
 } from 'fs';
+import { readdir } from 'fs/promises';
 import { join, basename } from 'path';
 import {
   getLegacyWorkspaceSessionsPath,
@@ -48,7 +49,7 @@ import type { Plan } from '../agent/plan-types.ts';
 import { validateSessionStatus } from '../statuses/validation.ts';
 import { debug } from '../utils/debug.ts';
 import { getStatusCategory } from '../statuses/storage.ts';
-import { readSessionHeader, readSessionJsonl } from './jsonl.ts';
+import { readSessionHeader, readSessionHeaderAsync, readSessionJsonl } from './jsonl.ts';
 import { sessionPersistenceQueue } from './persistence-queue.ts';
 
 // Re-export types for convenience
@@ -475,6 +476,48 @@ export function listSessions(workspaceRootPath: string): SessionMetadata[] {
   span.setMetadata('count', sessions.length);
 
   // Sort by lastUsedAt descending (most recent first)
+  const sorted = sessions.sort((a, b) => b.lastUsedAt - a.lastUsedAt);
+  span.end();
+  return sorted;
+}
+
+/**
+ * Non-blocking session listing for startup restoration.
+ * Reads headers in bounded batches so large histories do not stall the main thread.
+ */
+export async function listSessionsAsync(workspaceRootPath: string): Promise<SessionMetadata[]> {
+  const span = perf.span('session.listSessionsAsync');
+  const sessionDirs = [
+    getLegacyWorkspaceSessionsPath(workspaceRootPath),
+    getWorkspaceSessionsPath(workspaceRootPath),
+  ].filter((sessionsDir, index, dirs) => existsSync(sessionsDir) && dirs.indexOf(sessionsDir) === index);
+  span.mark('readdir');
+  const sessionsById = new Map<string, SessionMetadata>();
+
+  for (const sessionsDir of sessionDirs) {
+    const entries = (await readdir(sessionsDir, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory());
+
+    for (let index = 0; index < entries.length; index += 32) {
+      const batch = entries.slice(index, index + 32);
+      const metadataBatch = await Promise.all(batch.map(async (entry) => {
+        const jsonlFile = join(sessionsDir, entry.name, 'session.jsonl');
+        const readablePath = recoverSessionFile(jsonlFile);
+        if (!readablePath) return null;
+
+        const header = await readSessionHeaderAsync(readablePath);
+        return header ? headerToMetadata(header, workspaceRootPath) : null;
+      }));
+
+      for (const metadata of metadataBatch) {
+        if (metadata) sessionsById.set(metadata.id, metadata);
+      }
+    }
+  }
+
+  span.mark('parsed');
+  const sessions = Array.from(sessionsById.values());
+  span.setMetadata('count', sessions.length);
   const sorted = sessions.sort((a, b) => b.lastUsedAt - a.lastUsedAt);
   span.end();
   return sorted;

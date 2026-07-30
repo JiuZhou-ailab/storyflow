@@ -41,6 +41,7 @@ export {
   saveSession,
   loadSession,
   listSessions,
+  listSessionsAsync,
   deleteSession,
   clearSessionMessages,
   getOrCreateLatestSession,
@@ -123,5 +124,4 @@ export {
   validateBundle,
   MAX_BUNDLE_SIZE_BYTES,
 } from './bundle.ts';
-
 

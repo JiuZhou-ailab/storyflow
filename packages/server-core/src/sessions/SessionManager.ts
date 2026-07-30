@@ -49,7 +49,7 @@ import {
 } from '@craft-agent/shared/workspaces'
 import {
   // Session persistence functions
-  listSessions as listStoredSessions,
+  listSessionsAsync as listStoredSessions,
   loadSession as loadStoredSession,
   saveSession as saveStoredSession,
   createSession as createStoredSession,
@@ -1760,7 +1760,7 @@ export class SessionManager implements ISessionManager {
       // Iterate over each workspace and load its sessions
       for (const workspace of workspaces) {
         const workspaceRootPath = workspace.rootPath
-        const sessionMetadata = listStoredSessions(workspaceRootPath)
+        const sessionMetadata = await listStoredSessions(workspaceRootPath)
         // Load workspace config once per workspace for default working directory
         const wsConfig = loadWorkspaceConfig(workspaceRootPath)
         const wsDefaultWorkingDir = wsConfig?.defaults?.workingDirectory
