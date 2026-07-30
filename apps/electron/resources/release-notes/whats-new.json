@@ -1,19 +1,17 @@
 {
-  "version": "0.9.53",
-  "digest": "c92908289dd271bd992ed60222323893259f82245f1475bfd2c10454df2108f9",
-  "generatedAt": "2026-07-30T11:42:22.121Z",
-  "title": "What is new in v0.9.53",
-  "summary": "这一版把项目还原为真实文件夹，让任务、文件和模型运行都更直接、更稳定；编辑历史消息时也回到同一会话。",
+  "version": "0.9.54",
+  "digest": "6ab21893b76894db0c12f0fe6f19c031f6dea929d253c299cfc65d2ceb734721",
+  "generatedAt": "2026-07-30T11:53:29.345Z",
+  "title": "What is new in v0.9.54",
+  "summary": "这一版修好编辑历史消息时偶发失败，并让 Rewind 更稳定地留在原会话。",
   "highlights": [
-    "项目就是文件夹：导入或新建项目时直接使用所选目录，不再额外创建 workspace-xxx 子目录。",
-    "新任务继承当前项目：在项目中点击“新建任务”会显示当前项目名称；关闭项目上下文即可切换为自由对话。",
-    "侧边栏更安静：统一字体、行高、间距和层级，降低侧边栏与主区域的视觉反差，同时限制默认展示数量。",
-    "真实目录结构：侧边栏按文件系统展示目录、文本、JSON、图片和视频；进入项目时只读取目录元数据，不再自动打开首个文件。"
+    "编辑历史消息更可靠：修复直播会话里 Rewind 偶发 “Message not found” 的问题；正常发送与排队发送共用同一消息 id。",
+    "编辑历史消息留在原会话：Rewind 使用 Pi 原生 navigateTree 原地截断对话并回填输入框，不再生成 Rewind of … 新会话。"
   ],
-  "accentColor": "#1d7eaf",
+  "accentColor": "#158456",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 14,
+    "commitCount": 1,
     "userVisibleCommitCount": 0
   }
 }
