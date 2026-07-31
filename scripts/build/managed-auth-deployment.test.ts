@@ -27,6 +27,8 @@ describe('managed auth deployment', () => {
     expect(workflow).toContain('STORYFLOW_GATEWAY_JWT_CURRENT_SECRET')
     expect(workflow).toContain('model_access_token_invalid')
     expect(workflow).toContain('client_session_token_invalid')
+    expect(workflow).toContain('MODEL_CATALOG_RESPONSE_PATH')
+    expect(workflow).not.toContain('gemini-3.5-flash')
     expect(gatewayDeploy).toBeGreaterThan(0)
     expect(brokerDeploy).toBeGreaterThan(gatewayDeploy)
     expect(workflow).not.toContain('wangsu')

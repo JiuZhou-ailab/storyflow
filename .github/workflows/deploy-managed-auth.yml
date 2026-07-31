@@ -73,7 +73,7 @@ jobs:
             --write-out '%{http_code}' \
             -H 'Authorization: Bearer invalid' \
             -H 'Content-Type: application/json' \
-            -d '{"model":"gemini-3.5-flash","messages":[{"role":"user","content":"ping"}],"max_tokens":1}' \
+            -d '{}' \
             https://storyflow-model.zjding.com/v1/chat/completions)"
           test "$status" = 401
           grep -q '"code":"model_access_token_invalid"' "$RUNNER_TEMP/gateway-negative.json"
@@ -126,14 +126,12 @@ jobs:
             console.log(body.modelAccessToken);
           ')"
 
-          status="$(curl --silent --show-error --output "$RUNNER_TEMP/model-response.json" \
+          status="$(curl --silent --show-error --output "$RUNNER_TEMP/model-catalog-response.json" \
             --write-out '%{http_code}' \
             -H "Authorization: Bearer $MODEL_ACCESS_TOKEN" \
-            -H 'Content-Type: application/json' \
-            -d '{"model":"gemini-3.5-flash","messages":[{"role":"user","content":"Reply OK"}],"max_tokens":4}' \
-            https://storyflow-model.zjding.com/v1/chat/completions)"
+            https://storyflow-model.zjding.com/v1/models)"
           test "$status" = 200
-          MODEL_RESPONSE_PATH="$RUNNER_TEMP/model-response.json" bun --eval '
-            const body = await Bun.file(process.env.MODEL_RESPONSE_PATH).json();
-            if (!Array.isArray(body.choices) || body.choices.length === 0) process.exit(1);
+          MODEL_CATALOG_RESPONSE_PATH="$RUNNER_TEMP/model-catalog-response.json" bun --eval '
+            const body = await Bun.file(process.env.MODEL_CATALOG_RESPONSE_PATH).json();
+            if (!Array.isArray(body.data) || body.data.length === 0) process.exit(1);
           '
