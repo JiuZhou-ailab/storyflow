@@ -72,7 +72,6 @@ jobs:
           case "$VALIDATION_MODE" in
             full|"")
               bun run validate:ci
-              bun run test
               ;;
             electron-hotfix)
               bun test \
