@@ -54,6 +54,7 @@ import type { LlmConnection } from './llm-connections.ts';
 import {
   getDefaultModelForConnection,
   getDefaultModelsForConnection,
+  isManagedLlmConnectionSlug,
   isPiProvider,
   isValidProviderAuthCombination,
   LEGACY_MANAGED_LLM_CONNECTION_SLUG,
@@ -196,6 +197,10 @@ export function applyBuiltinLlmConnectionDefaults(
     changed = true;
   }
 
+  const previousManagedDefaultModel = config.llmConnections.find(
+    connection => normalizeLlmConnectionSlug(connection.slug) === MANAGED_LLM_CONNECTION_SLUG,
+  )?.defaultModel;
+
   const hasCanonicalManagedDefault = builtins.some(
     builtin => normalizeLlmConnectionSlug(builtin.connection!.slug.trim()) === MANAGED_LLM_CONNECTION_SLUG,
   );
@@ -227,8 +232,8 @@ export function applyBuiltinLlmConnectionDefaults(
 
   for (const builtin of builtins) {
     const bundledConnection = builtin.connection!;
-    const managedModels = normalizeLlmConnectionSlug(bundledConnection.slug) === MANAGED_LLM_CONNECTION_SLUG
-      ? cloneManagedModelCatalog()
+    const managedModels = isManagedLlmConnectionSlug(bundledConnection.slug) && bundledConnection.customEndpoint
+      ? cloneManagedModelCatalog(bundledConnection.customEndpoint.api)
       : null;
     const connection = managedModels
       ? {
@@ -275,6 +280,22 @@ export function applyBuiltinLlmConnectionDefaults(
           changed = true;
         }
       }
+    }
+  }
+
+  if (
+    config.defaultLlmConnection === MANAGED_LLM_CONNECTION_SLUG
+    && previousManagedDefaultModel
+  ) {
+    const preferredConnection = config.llmConnections.find(connection =>
+      connection.managed === true
+      && connection.models?.some(model =>
+        (typeof model === 'string' ? model : model.id) === previousManagedDefaultModel
+      )
+    );
+    if (preferredConnection && preferredConnection.slug !== config.defaultLlmConnection) {
+      config.defaultLlmConnection = preferredConnection.slug;
+      changed = true;
     }
   }
 

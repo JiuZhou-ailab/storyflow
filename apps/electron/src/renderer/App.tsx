@@ -49,7 +49,7 @@ import { isBackgroundingToolResult } from './lib/background-task-result'
 import { extractWorkspaceSlugFromPath } from '@craft-agent/shared/utils/workspace-slug'
 import { DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels'
 import {
-  MANAGED_LLM_CONNECTION_SLUG,
+  isManagedLlmConnectionSlug,
   resolveEffectiveConnectionSlug,
 } from '@config/llm-connections'
 import { initRendererPerf } from './lib/perf'
@@ -1493,7 +1493,7 @@ function AppContent() {
         workspaceDefaultLlmConnection,
         llmConnections,
       )
-      if (connectionSlug === MANAGED_LLM_CONNECTION_SLUG) {
+      if (connectionSlug && isManagedLlmConnectionSlug(connectionSlug)) {
         const auth = await loadClientAuthState()
         if (auth && !auth.user) {
           setAccountReturnState('ready')

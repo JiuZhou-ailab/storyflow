@@ -16,8 +16,7 @@ import {
   getDefaultModelsForConnection,
   getDefaultModelForConnection,
   defaultMidStreamBehavior,
-  MANAGED_LLM_CONNECTION_SLUG,
-  normalizeLlmConnectionSlug,
+  isManagedLlmConnectionSlug,
 } from '@craft-agent/shared/config'
 
 // ============================================================
@@ -100,7 +99,7 @@ export function setupTestRequiresApiKey(baseUrl?: string): boolean {
 }
 
 /**
- * Decide how a custom OpenAI/Anthropic-compatible endpoint should be persisted.
+ * Decide how a custom provider-compatible endpoint should be persisted.
  *
  * - Loopback URL with no credential → keyless local model (Ollama, LM Studio).
  * - Loopback URL *with* a credential → real local OpenAI-compat server (vLLM, LiteLLM, etc.);
@@ -117,7 +116,7 @@ export function resolveCustomEndpointSetup(input: {
 }): {
   authType: Extract<LlmConnection['authType'], 'none' | 'api_key_with_endpoint'>
   name?: 'Local Model'
-  piAuthProvider?: 'openai' | 'anthropic'
+  piAuthProvider?: 'openai' | 'anthropic' | 'google'
 } {
   const isKeylessLoopback = isLoopbackBaseUrl(input.baseUrl) && !input.credential
   if (isKeylessLoopback) {
@@ -125,7 +124,11 @@ export function resolveCustomEndpointSetup(input: {
   }
   return {
     authType: 'api_key_with_endpoint',
-    piAuthProvider: input.customEndpointApi === 'anthropic-messages' ? 'anthropic' : 'openai',
+    piAuthProvider: input.customEndpointApi === 'anthropic-messages'
+      ? 'anthropic'
+      : input.customEndpointApi === 'google-generative-ai'
+        ? 'google'
+        : 'openai',
   }
 }
 
@@ -255,9 +258,9 @@ export function isAppManagedConnection(
   connection: string | (Pick<LlmConnection, 'managed' | 'source'> & Partial<Pick<LlmConnection, 'slug'>>) | null | undefined,
 ): boolean {
   if (typeof connection === 'string') {
-    return normalizeLlmConnectionSlug(connection) === MANAGED_LLM_CONNECTION_SLUG
+    return isManagedLlmConnectionSlug(connection)
   }
-  if (connection?.slug && normalizeLlmConnectionSlug(connection.slug) === MANAGED_LLM_CONNECTION_SLUG) {
+  if (connection?.slug && isManagedLlmConnectionSlug(connection.slug)) {
     return true
   }
   return connection?.managed === true || connection?.source === 'builtin'

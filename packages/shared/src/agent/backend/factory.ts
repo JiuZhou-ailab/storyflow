@@ -29,6 +29,7 @@ import type {
 import { PiAgent } from '../pi-agent.ts';
 import {
   getLlmConnection,
+  getLlmConnections,
   getDefaultLlmConnection,
   type LlmConnection,
 } from '../../config/storage.ts';
@@ -36,6 +37,7 @@ import {
 import type { LlmConnectionType, CustomEndpointConfig } from '../../config/llm-connections.ts';
 // Import validation helpers for provider-auth combinations
 import {
+  isManagedLlmConnectionSlug,
   isValidProviderAuthCombination,
 } from '../../config/llm-connections.ts';
 import { parseValidationError, type LlmValidationResult } from '../../config/llm-validation.ts';
@@ -324,6 +326,24 @@ export function resolveSessionConnection(
  */
 export interface ResolvedBackendContext extends BackendResolutionContext {}
 
+export function resolveManagedModelConnection(
+  connection: LlmConnection | null,
+  managedModel: string | undefined,
+  connections: LlmConnection[],
+): LlmConnection | null {
+  if (!connection || !managedModel || !isManagedLlmConnectionSlug(connection.slug)) {
+    return connection;
+  }
+
+  const hasModel = (candidate: LlmConnection) =>
+    candidate.models?.some(model => (typeof model === 'string' ? model : model.id) === managedModel);
+
+  if (hasModel(connection)) return connection;
+  return connections.find(candidate =>
+    isManagedLlmConnectionSlug(candidate.slug) && hasModel(candidate)
+  ) ?? connection;
+}
+
 /**
  * Resolve connection + provider/auth/model/capabilities in one call.
  * This keeps main-process orchestration free from provider-specific branching.
@@ -333,9 +353,13 @@ export function resolveBackendContext(args: {
   workspaceDefaultConnectionSlug?: string;
   managedModel?: string;
 }): ResolvedBackendContext {
-  const connection = resolveSessionConnection(
-    args.sessionConnectionSlug,
-    args.workspaceDefaultConnectionSlug
+  const connection = resolveManagedModelConnection(
+    resolveSessionConnection(
+      args.sessionConnectionSlug,
+      args.workspaceDefaultConnectionSlug
+    ),
+    args.managedModel,
+    getLlmConnections(),
   );
 
   const provider = connection
@@ -371,7 +395,11 @@ export function resolveSetupTestConnectionHint(args: {
     if (args.customEndpoint && args.baseUrl?.trim()) {
       return {
         providerType: 'pi_compat',
-        piAuthProvider: args.customEndpoint.api === 'anthropic-messages' ? 'anthropic' : 'openai',
+        piAuthProvider: args.customEndpoint.api === 'anthropic-messages'
+          ? 'anthropic'
+          : args.customEndpoint.api === 'google-generative-ai'
+            ? 'google'
+            : 'openai',
         customEndpoint: args.customEndpoint,
       };
     }

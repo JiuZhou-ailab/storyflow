@@ -94,6 +94,14 @@ describe('resolveCustomEndpointSetup', () => {
     expect(result).toEqual({ authType: 'api_key_with_endpoint', piAuthProvider: 'anthropic' })
   })
 
+  it('uses the google provider hint for native GenAI protocol', () => {
+    expect(resolveCustomEndpointSetup({
+      baseUrl: 'https://model.example.com/v1beta',
+      credential: 'managed-token',
+      customEndpointApi: 'google-generative-ai',
+    })).toEqual({ authType: 'api_key_with_endpoint', piAuthProvider: 'google' })
+  })
+
   it('treats remote endpoints with a credential as keyed custom endpoints', () => {
     expect(resolveCustomEndpointSetup({
       baseUrl: 'https://api.example.com/v1',

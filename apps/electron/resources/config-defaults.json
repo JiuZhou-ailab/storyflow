@@ -28,7 +28,7 @@
       "enabled": true,
       "connection": {
         "slug": "storyflow-managed",
-        "name": "JiuZhou AI",
+        "name": "GPT (Responses)",
         "providerType": "pi_compat",
         "authType": "api_key_with_endpoint",
         "baseUrl": "https://storyflow-model.zjding.com/v1",
@@ -36,7 +36,67 @@
         "modelSelectionMode": "userDefined3Tier",
         "piAuthProvider": "openai",
         "customEndpoint": {
+          "api": "openai-responses"
+        },
+        "hidden": true,
+        "managed": true,
+        "source": "builtin",
+        "createdAt": 0
+      }
+    },
+    {
+      "enabled": true,
+      "connection": {
+        "slug": "storyflow-managed-deepseek",
+        "name": "DeepSeek (Chat Completions)",
+        "providerType": "pi_compat",
+        "authType": "api_key_with_endpoint",
+        "baseUrl": "https://storyflow-model.zjding.com/v1",
+        "defaultModel": "deepseek-v4-flash",
+        "modelSelectionMode": "userDefined3Tier",
+        "piAuthProvider": "openai",
+        "customEndpoint": {
           "api": "openai-completions"
+        },
+        "hidden": true,
+        "managed": true,
+        "source": "builtin",
+        "createdAt": 0
+      }
+    },
+    {
+      "enabled": true,
+      "connection": {
+        "slug": "storyflow-managed-gemini",
+        "name": "Gemini (GenAI)",
+        "providerType": "pi_compat",
+        "authType": "api_key_with_endpoint",
+        "baseUrl": "https://storyflow-model.zjding.com/v1beta",
+        "defaultModel": "gemini-3.5-flash",
+        "modelSelectionMode": "userDefined3Tier",
+        "piAuthProvider": "google",
+        "customEndpoint": {
+          "api": "google-generative-ai"
+        },
+        "hidden": true,
+        "managed": true,
+        "source": "builtin",
+        "createdAt": 0
+      }
+    },
+    {
+      "enabled": true,
+      "connection": {
+        "slug": "storyflow-managed-anthropic",
+        "name": "Anthropic (Messages)",
+        "providerType": "pi_compat",
+        "authType": "api_key_with_endpoint",
+        "baseUrl": "https://storyflow-model.zjding.com/v1",
+        "defaultModel": "claude-sonnet-5",
+        "modelSelectionMode": "userDefined3Tier",
+        "piAuthProvider": "anthropic",
+        "customEndpoint": {
+          "api": "anthropic-messages"
         },
         "hidden": true,
         "managed": true,

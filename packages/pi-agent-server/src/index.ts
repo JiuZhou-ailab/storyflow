@@ -131,7 +131,11 @@ type PiCredential =
   | { type: 'iam'; accessKeyId: string; secretAccessKey: string; region?: string; sessionToken?: string };
 
 /** Custom endpoint protocol — determines which streaming adapter Pi SDK uses */
-type CustomEndpointApi = 'openai-completions' | 'openai-responses' | 'anthropic-messages';
+type CustomEndpointApi =
+  | 'openai-completions'
+  | 'openai-responses'
+  | 'anthropic-messages'
+  | 'google-generative-ai';
 
 /** Init message from main process — configures the Pi agent server */
 interface InitMessage {
@@ -564,7 +568,7 @@ function createAuthenticatedRegistry(): {
   const modelRegistry = PiModelRegistry.inMemory(authStorage);
 
   // Register custom endpoint models dynamically via Pi SDK's registerProvider API.
-  // This makes arbitrary OpenAI/Anthropic-compatible endpoints work through the Pi SDK
+  // This makes arbitrary provider-compatible endpoints work through the Pi SDK
   // by creating synthetic Model<Api> objects that the SDK requires.
   if (hasCustomEndpoint && initConfig?.customEndpoint) {
     const { api } = initConfig.customEndpoint;

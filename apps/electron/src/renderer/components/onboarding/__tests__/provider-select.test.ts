@@ -8,10 +8,13 @@ import { PROVIDER_CHOICE_IDS } from "../provider-options"
 
 const apiSetupSource = readFileSync(new URL("../APISetupStep.tsx", import.meta.url), "utf8")
 const credentialsSource = readFileSync(new URL("../CredentialsStep.tsx", import.meta.url), "utf8")
+const providerSelectSource = readFileSync(new URL("../ProviderSelectStep.tsx", import.meta.url), "utf8")
 
 describe("ProviderSelectStep choices", () => {
   it("offers only managed default and custom provider modes", () => {
-    expect(PROVIDER_CHOICE_IDS).toEqual(["jiuzhou", "custom_provider"])
+    expect(PROVIDER_CHOICE_IDS).toEqual(["managed_default", "custom_provider"])
+    expect(providerSelectSource).toContain("name: 'Storyflow 托管模型'")
+    expect(providerSelectSource).not.toContain("JiuZhou")
   })
 
   it("keeps managed default selection out of user credential surfaces", () => {

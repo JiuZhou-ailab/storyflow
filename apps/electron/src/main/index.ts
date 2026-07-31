@@ -35,6 +35,7 @@ import {
   getWorkspaces,
   getWorkspaceByNameOrId,
   MANAGED_LLM_CONNECTION_SLUG,
+  MANAGED_LLM_CONNECTION_SLUGS,
   migrateRemoteServerCredentialsOnStartup,
 } from '@craft-agent/shared/config'
 import { initializeDocs } from '@craft-agent/shared/docs'
@@ -506,10 +507,18 @@ app.whenReady().then(async () => {
         try {
           if (!sessionManager) return
           if (!change.session) {
-            await sessionManager.disposeConnectionRuntimes(MANAGED_LLM_CONNECTION_SLUG)
+            await Promise.all(
+              MANAGED_LLM_CONNECTION_SLUGS.map(slug =>
+                sessionManager!.disposeConnectionRuntimes(slug)
+              ),
+            )
           } else if (change.modelAccessTokenChanged) {
-            await sessionManager.reloadConnectionCredentials(MANAGED_LLM_CONNECTION_SLUG)
-            await getModelRefreshService().refreshNow(MANAGED_LLM_CONNECTION_SLUG)
+            await Promise.all(
+              MANAGED_LLM_CONNECTION_SLUGS.map(async slug => {
+                await sessionManager!.reloadConnectionCredentials(slug)
+                await getModelRefreshService().refreshNow(slug)
+              }),
+            )
           }
         } catch (error) {
           mainLog.warn('[client-auth] Failed to propagate auth change to live runtimes:', error)

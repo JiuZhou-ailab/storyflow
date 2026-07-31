@@ -5,16 +5,16 @@
 import { getCredentialManager, type CredentialManager } from '@craft-agent/shared/credentials'
 import {
   LEGACY_MANAGED_LLM_CONNECTION_SLUG,
-  MANAGED_LLM_CONNECTION_SLUG,
+  MANAGED_LLM_CONNECTION_SLUGS,
 } from '@craft-agent/shared/config'
 import type { ClientAuthSession, ClientAuthSessionStore, ClientAuthUser } from './client-auth'
 import { isClientModelAccessTokenFresh } from './client-auth-token-lifecycle'
 
 const CLIENT_AUTH_SESSION_ID = { type: 'client_auth_session' as const }
-const MANAGED_MODEL_CREDENTIAL_ID = {
+const MANAGED_MODEL_CREDENTIAL_IDS = MANAGED_LLM_CONNECTION_SLUGS.map(connectionSlug => ({
   type: 'llm_api_key' as const,
-  connectionSlug: MANAGED_LLM_CONNECTION_SLUG,
-}
+  connectionSlug,
+}))
 const LEGACY_MANAGED_MODEL_CREDENTIAL_ID = {
   type: 'llm_api_key' as const,
   connectionSlug: LEGACY_MANAGED_LLM_CONNECTION_SLUG,
@@ -80,7 +80,7 @@ export function createClientAuthSessionStore(
 async function clearStoredSession(credentialManager: ClientAuthCredentialManager): Promise<void> {
   const results = await Promise.allSettled([
     credentialManager.delete(CLIENT_AUTH_SESSION_ID),
-    credentialManager.delete(MANAGED_MODEL_CREDENTIAL_ID),
+    ...MANAGED_MODEL_CREDENTIAL_IDS.map(id => credentialManager.delete(id)),
     credentialManager.delete(LEGACY_MANAGED_MODEL_CREDENTIAL_ID),
   ])
   const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
@@ -92,12 +92,16 @@ async function syncModelAccessCredential(
   modelAccessToken: string | undefined,
 ): Promise<void> {
   if (modelAccessToken) {
-    await credentialManager.set(MANAGED_MODEL_CREDENTIAL_ID, { value: modelAccessToken })
+    await Promise.all(
+      MANAGED_MODEL_CREDENTIAL_IDS.map(id =>
+        credentialManager.set(id, { value: modelAccessToken })
+      ),
+    )
     await credentialManager.delete(LEGACY_MANAGED_MODEL_CREDENTIAL_ID)
     return
   }
   const results = await Promise.allSettled([
-    credentialManager.delete(MANAGED_MODEL_CREDENTIAL_ID),
+    ...MANAGED_MODEL_CREDENTIAL_IDS.map(id => credentialManager.delete(id)),
     credentialManager.delete(LEGACY_MANAGED_MODEL_CREDENTIAL_ID),
   ])
   const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')

@@ -162,7 +162,7 @@ describe('auth broker worker', () => {
 
     const payload = await verifyModelAccessToken(body.modelAccessToken)
     expect(payload.sub).toBe('feishu:ou_desktop')
-    expect(payload.scopes).toEqual(['model:chat', 'model:video'])
+    expect(payload.scopes).toEqual(['model:chat', 'model:video', 'catalog:read'])
     expect(payload.model_tier).toBe('pro')
     expect(payload.user_name).toBe('Desktop User')
     expect((payload.exp as number) - (payload.iat as number)).toBe(900)
@@ -245,7 +245,7 @@ describe('auth broker worker', () => {
 
     const payload = await verifyModelAccessToken(body.modelAccessToken)
     expect(payload.sub).toBe('neon:neon_user_123')
-    expect(payload.scopes).toEqual(['model:chat', 'model:video'])
+    expect(payload.scopes).toEqual(['model:chat', 'model:video', 'catalog:read'])
     expect(payload.model_tier).toBe('standard')
   })
 

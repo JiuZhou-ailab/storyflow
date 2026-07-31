@@ -3,6 +3,7 @@
 // pos: Guards restart auth persistence without depending on the real credential backend
 
 import { describe, expect, it } from 'bun:test'
+import { MANAGED_LLM_CONNECTION_SLUGS } from '@craft-agent/shared/config'
 import type { StoredCredential } from '@craft-agent/shared/credentials'
 import { createClientAuthSessionStore } from '../client-auth-session-store'
 
@@ -44,10 +45,12 @@ describe('createClientAuthSessionStore', () => {
       modelAccessToken: token,
     })
 
-    expect(records.get(keyFor({
-      type: 'llm_api_key',
-      connectionSlug: 'storyflow-managed',
-    }))).toEqual({ value: token })
+    for (const connectionSlug of MANAGED_LLM_CONNECTION_SLUGS) {
+      expect(records.get(keyFor({
+        type: 'llm_api_key',
+        connectionSlug,
+      }))).toEqual({ value: token })
+    }
     expect(records.has(keyFor({
       type: 'llm_api_key',
       connectionSlug: 'wangsu-default',

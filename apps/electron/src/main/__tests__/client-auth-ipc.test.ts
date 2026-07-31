@@ -27,8 +27,9 @@ describe('client auth IPC propagation', () => {
 
     expect(source).toContain('ensureManagedModelAccessToken: async (forceRefresh)')
     expect(source).toContain('authService.ensureModelAccessToken')
-    expect(source).toContain('reloadConnectionCredentials(MANAGED_LLM_CONNECTION_SLUG)')
-    expect(source).toContain('disposeConnectionRuntimes(MANAGED_LLM_CONNECTION_SLUG)')
+    expect(source).toContain('MANAGED_LLM_CONNECTION_SLUGS.map')
+    expect(source).toContain('reloadConnectionCredentials(slug)')
+    expect(source).toContain('disposeConnectionRuntimes(slug)')
     expect(source).toContain('managedModelAccessAvailable: !serverModeEnabled && managedModelAccessConfigured')
     expect(source).toContain('clientAuthService?.dispose()')
   })

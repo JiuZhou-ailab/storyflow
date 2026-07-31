@@ -62,6 +62,16 @@ export type LlmProviderType =
   | 'pi_compat';
 
 export const MANAGED_LLM_CONNECTION_SLUG = 'storyflow-managed';
+export const MANAGED_DEEPSEEK_CONNECTION_SLUG = 'storyflow-managed-deepseek';
+export const MANAGED_GEMINI_CONNECTION_SLUG = 'storyflow-managed-gemini';
+export const MANAGED_ANTHROPIC_CONNECTION_SLUG = 'storyflow-managed-anthropic';
+
+export const MANAGED_LLM_CONNECTION_SLUGS = [
+  MANAGED_LLM_CONNECTION_SLUG,
+  MANAGED_DEEPSEEK_CONNECTION_SLUG,
+  MANAGED_GEMINI_CONNECTION_SLUG,
+  MANAGED_ANTHROPIC_CONNECTION_SLUG,
+] as const;
 
 /**
  * Migration-only identifier used by releases before the provider-neutral
@@ -73,6 +83,11 @@ export function normalizeLlmConnectionSlug(slug: string): string {
   return slug === LEGACY_MANAGED_LLM_CONNECTION_SLUG
     ? MANAGED_LLM_CONNECTION_SLUG
     : slug;
+}
+
+export function isManagedLlmConnectionSlug(slug: string): boolean {
+  const normalized = normalizeLlmConnectionSlug(slug);
+  return (MANAGED_LLM_CONNECTION_SLUGS as readonly string[]).includes(normalized);
 }
 
 /**
@@ -121,7 +136,11 @@ export type ModelSelectionMode = 'automaticallySyncedFromProvider' | 'userDefine
  * Protocol for custom API endpoints.
  * Determines which streaming adapter the Pi SDK uses for requests.
  */
-export type CustomEndpointApi = 'openai-completions' | 'openai-responses' | 'anthropic-messages';
+export type CustomEndpointApi =
+  | 'openai-completions'
+  | 'openai-responses'
+  | 'anthropic-messages'
+  | 'google-generative-ai';
 
 /**
  * Custom endpoint protocol config.

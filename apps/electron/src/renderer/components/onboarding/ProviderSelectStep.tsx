@@ -1,3 +1,7 @@
+// input: Onboarding provider choice state and translations
+// output: Managed or custom provider selection UI
+// pos: First provider-selection step in desktop onboarding
+
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
 import { Key } from "lucide-react"
@@ -15,7 +19,7 @@ interface ProviderOption {
 }
 
 const PROVIDER_ICONS: Record<ProviderChoice, React.ReactNode> = {
-  jiuzhou: <CraftAgentsSymbol className="size-5 text-accent" />,
+  managed_default: <CraftAgentsSymbol className="size-5 text-accent" />,
   custom_provider: <Key className="size-5" />,
 }
 
@@ -38,10 +42,10 @@ export function ProviderSelectStep({ onSelect, onSkip, errorMessage }: ProviderS
 
   const PROVIDER_OPTIONS = [
     {
-      id: 'jiuzhou',
-      name: 'JiuZhou-AI',
+      id: 'managed_default',
+      name: 'Storyflow 托管模型',
       description: '使用内置托管模型，普通用户无需配置 provider。',
-      icon: PROVIDER_ICONS.jiuzhou,
+      icon: PROVIDER_ICONS.managed_default,
     },
     {
       id: 'custom_provider',

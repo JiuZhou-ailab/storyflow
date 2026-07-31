@@ -21,6 +21,7 @@ import {
   connectionAuthTypeToBackendAuthType,
   providerTypeToAgentProvider,
   resolveBackendContext,
+  resolveManagedModelConnection,
   resolveSetupTestConnectionHint,
   createBackendFromConnection,
   testBackendConnection,
@@ -260,6 +261,22 @@ describe('phase4 backend abstraction APIs', () => {
     expect(resolveBackendContext({}).provider).toBe('pi');
   });
 
+  it('routes a legacy managed session through the connection that owns its model', () => {
+    const managedConnection = (slug: string, model: string): LlmConnection => ({
+      slug,
+      name: slug,
+      providerType: 'pi_compat',
+      authType: 'api_key_with_endpoint',
+      models: [model],
+      createdAt: Date.now(),
+    });
+    const gpt = managedConnection('storyflow-managed', 'gpt-5.5');
+    const deepseek = managedConnection('storyflow-managed-deepseek', 'deepseek-v4-flash');
+
+    expect(resolveManagedModelConnection(gpt, 'deepseek-v4-flash', [gpt, deepseek])).toBe(deepseek);
+    expect(resolveManagedModelConnection(gpt, 'gpt-5.5', [gpt, deepseek])).toBe(gpt);
+  });
+
   it('resolveSetupTestConnectionHint maps provider/baseUrl/piAuthProvider correctly', () => {
     expect(resolveSetupTestConnectionHint({
       provider: 'anthropic',
@@ -287,6 +304,12 @@ describe('phase4 backend abstraction APIs', () => {
       baseUrl: 'https://my-anthropic-proxy.internal/v1',
       customEndpoint: { api: 'anthropic-messages' },
     })).toEqual({ providerType: 'pi_compat', piAuthProvider: 'anthropic', customEndpoint: { api: 'anthropic-messages' } });
+
+    expect(resolveSetupTestConnectionHint({
+      provider: 'pi',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      customEndpoint: { api: 'google-generative-ai' },
+    })).toEqual({ providerType: 'pi_compat', piAuthProvider: 'google', customEndpoint: { api: 'google-generative-ai' } });
   });
 
   it('fetchBackendModels dispatches for pi provider', async () => {

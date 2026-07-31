@@ -37,7 +37,7 @@ export function OnboardingFlowDemo() {
     setCredStatus('idle')
     setErrorMessage(undefined)
 
-    if (choice === 'jiuzhou') {
+    if (choice === 'managed_default') {
       setMethod(null)
       setStep('complete')
       return

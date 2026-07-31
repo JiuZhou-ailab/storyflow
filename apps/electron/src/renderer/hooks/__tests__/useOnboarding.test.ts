@@ -136,8 +136,8 @@ describe('apiSetupMethodToConnectionSetup', () => {
 })
 
 describe('providerChoiceToSetupAction', () => {
-  it('maps JiuZhou to the managed default path instead of a user credential form', () => {
-    expect(providerChoiceToSetupAction('jiuzhou')).toEqual({
+  it('maps the managed choice to the default path instead of a user credential form', () => {
+    expect(providerChoiceToSetupAction('managed_default')).toEqual({
       mode: 'managed-default',
       method: 'managed_default',
     })

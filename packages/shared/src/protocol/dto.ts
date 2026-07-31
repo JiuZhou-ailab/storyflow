@@ -497,7 +497,7 @@ export interface LlmConnectionSetup {
   modelSelectionMode?: 'automaticallySyncedFromProvider' | 'userDefined3Tier'
   /** When true, reject setup if the connection doesn't already exist (reauth guard). */
   updateOnly?: boolean
-  /** Custom endpoint protocol for arbitrary OpenAI/Anthropic-compatible APIs */
+  /** Protocol contract for a user-configured compatible endpoint. */
   customEndpoint?: CustomEndpointConfig
   /** IAM credentials for Pi+Bedrock (piAuthProvider='amazon-bedrock') connections */
   iamCredentials?: {

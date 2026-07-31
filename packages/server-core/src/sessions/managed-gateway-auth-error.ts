@@ -3,10 +3,7 @@
 // pos: Session error normalization boundary for bundled default AI access
 
 import type { TypedError } from '@craft-agent/core/types'
-import {
-  MANAGED_LLM_CONNECTION_SLUG,
-  normalizeLlmConnectionSlug,
-} from '@craft-agent/shared/config'
+import { isManagedLlmConnectionSlug } from '@craft-agent/shared/config'
 
 export const MANAGED_MODEL_ACCESS_UNAVAILABLE_MESSAGE =
   'Default AI access is unavailable on shared or remote servers. Use the local desktop runtime or configure a custom provider.'
@@ -14,8 +11,7 @@ export const MANAGED_MODEL_ACCESS_UNAVAILABLE_MESSAGE =
 export function isManagedDefaultGatewayConnection(
   connectionSlug: string | null | undefined,
 ): connectionSlug is string {
-  return !!connectionSlug
-    && normalizeLlmConnectionSlug(connectionSlug) === MANAGED_LLM_CONNECTION_SLUG
+  return !!connectionSlug && isManagedLlmConnectionSlug(connectionSlug)
 }
 
 export function normalizeManagedDefaultGatewayAuthError(

@@ -8,22 +8,12 @@ import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { applyBuiltinLlmConnectionDefaults, type StoredConfig } from '../storage.ts'
 import type { BuiltinLlmConnectionDefaults, ConfigDefaults } from '../config-defaults-schema.ts'
-import { MANAGED_MODEL_CATALOG } from '../managed-model-catalog.ts'
+import { MANAGED_MODEL_CATALOG, cloneManagedModelCatalog } from '../managed-model-catalog.ts'
 
 const STORAGE_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', 'storage.ts')).href
 const UTILS_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', '..', 'utils', 'index.ts')).href
 const CREDENTIALS_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', '..', 'credentials', 'index.ts')).href
 const BUNDLED_DEFAULTS_PATH = join(import.meta.dir, '../../../../../apps/electron/resources/config-defaults.json')
-const EXPECTED_MANAGED_MODEL_NAMES = [
-  'GPT-5.5',
-  'GPT-5.6 Sol',
-  'GPT-5.6 Terra',
-  'GPT-5.6 Luna',
-  'Gemini 3.5 Flash',
-  'DeepSeek V4 Pro',
-  'DeepSeek V4 Flash',
-]
-
 function makeConfig(overrides: Partial<StoredConfig> = {}): StoredConfig {
   return {
     workspaces: [],
@@ -67,7 +57,7 @@ function makeDefaults(overrides: Partial<BuiltinLlmConnectionDefaults> = {}): Co
         models: ['internal-model'],
         modelSelectionMode: 'userDefined3Tier',
         piAuthProvider: 'openai',
-        customEndpoint: { api: 'anthropic-messages' },
+        customEndpoint: { api: 'openai-responses' },
         hidden: true,
         managed: true,
         source: 'builtin',
@@ -126,114 +116,60 @@ describe('builtin LLM connection defaults', () => {
     expect(defaults.workspaceDefaults.permissionMode).toBe('allow-all')
   })
 
-  it('routes the bundled managed connection through the product model gateway', () => {
+  it('routes each managed model family through its native protocol', () => {
     const defaults = JSON.parse(readFileSync(BUNDLED_DEFAULTS_PATH, 'utf-8')) as ConfigDefaults
-    const connections = defaults.builtinLlmConnections?.map(entry => entry.connection) ?? []
-    const connection = connections.find(entry => entry?.slug === 'storyflow-managed')
+    const builtins = defaults.builtinLlmConnections ?? []
+    const connections = builtins.map(entry => entry.connection)
 
-    expect(connections.map(entry => entry?.slug)).toEqual(['storyflow-managed'])
+    expect(connections.map(entry => entry?.slug)).toEqual([
+      'storyflow-managed',
+      'storyflow-managed-deepseek',
+      'storyflow-managed-gemini',
+      'storyflow-managed-anthropic',
+    ])
+    expect(builtins.map(entry => entry.enabled)).toEqual([true, true, true, true])
     expect(defaults.builtinLlmConnection).toBeUndefined()
+    expect(JSON.stringify(defaults)).not.toContain('JiuZhou')
     expect(JSON.stringify(defaults)).not.toContain('gateway.ai.cloudflare.com')
     expect(JSON.stringify(defaults)).not.toContain('apiKey')
     expect(JSON.stringify(defaults)).not.toContain('revokedApiKeySha256')
-    expect(connection).toMatchObject({
-      slug: 'storyflow-managed',
-      providerType: 'pi_compat',
-      baseUrl: 'https://storyflow-model.zjding.com/v1',
-      defaultModel: 'gpt-5.5',
-      piAuthProvider: 'openai',
-      customEndpoint: { api: 'openai-completions' },
-    })
-    expect(connection?.models).toBeUndefined()
+    expect(connections).toMatchObject([
+      {
+        name: 'GPT (Responses)',
+        baseUrl: 'https://storyflow-model.zjding.com/v1',
+        defaultModel: 'gpt-5.5',
+        customEndpoint: { api: 'openai-responses' },
+      },
+      {
+        name: 'DeepSeek (Chat Completions)',
+        baseUrl: 'https://storyflow-model.zjding.com/v1',
+        defaultModel: 'deepseek-v4-flash',
+        customEndpoint: { api: 'openai-completions' },
+      },
+      {
+        name: 'Gemini (GenAI)',
+        baseUrl: 'https://storyflow-model.zjding.com/v1beta',
+        defaultModel: 'gemini-3.5-flash',
+        customEndpoint: { api: 'google-generative-ai' },
+      },
+      {
+        name: 'Anthropic (Messages)',
+        baseUrl: 'https://storyflow-model.zjding.com/v1',
+        defaultModel: 'claude-sonnet-5',
+        customEndpoint: { api: 'anthropic-messages' },
+      },
+    ])
 
     const config = makeConfig()
     expect(applyBuiltinLlmConnectionDefaults(config, defaults)).toEqual({ changed: true })
-    const managedConnection = config.llmConnections?.find(entry => entry.slug === 'storyflow-managed')
-    const modelIds = managedConnection?.models?.map(model => typeof model === 'string' ? model : model.id)
-    const modelNames = managedConnection?.models?.map(model => typeof model === 'string' ? model : model.name)
-    const modelSeries = managedConnection?.models?.map(model => typeof model === 'string' ? model : model.shortName)
-    const modelContextWindows = Object.fromEntries(
-      managedConnection?.models
-        ?.filter(model => typeof model !== 'string')
-        .map(model => typeof model === 'string' ? [model, undefined] : [model.id, model.contextWindow])
-        ?? [],
-    )
-    const thinkingModelIds = managedConnection?.models
-      ?.filter(model => typeof model !== 'string' && model.supportsThinking === true)
-      .map(model => typeof model === 'string' ? model : model.id)
-    const thinkingLevelMaps = Object.fromEntries(
-      managedConnection?.models
-        ?.filter(model => typeof model !== 'string' && model.supportsThinking === true)
-        .map(model => typeof model === 'string' ? [model, undefined] : [model.id, model.thinkingLevelMap])
-        ?? [],
-    )
-    const imageModelIds = managedConnection?.models
-      ?.filter(model => typeof model !== 'string' && model.supportsImages === true)
-      .map(model => typeof model === 'string' ? model : model.id)
-    const textOnlyModelIds = managedConnection?.models
-      ?.filter(model => typeof model !== 'string' && model.supportsImages === false)
-      .map(model => typeof model === 'string' ? model : model.id)
-
-    expect(managedConnection?.models).toEqual([...MANAGED_MODEL_CATALOG])
-    expect(managedConnection?.models?.every(model => typeof model !== 'string')).toBe(true)
-    expect(modelIds).toEqual([
-      'gpt-5.5',
-      'gpt-5.6-sol',
-      'gpt-5.6-terra',
-      'gpt-5.6-luna',
-      'gemini-3.5-flash',
-      'deepseek-v4-pro',
-      'deepseek-v4-flash',
-    ])
-    expect(modelNames).toEqual(EXPECTED_MANAGED_MODEL_NAMES)
-    expect(modelContextWindows).toEqual({
-      'gpt-5.5': 262_144,
-      'gpt-5.6-sol': 262_144,
-      'gpt-5.6-terra': 262_144,
-      'gpt-5.6-luna': 262_144,
-      'gemini-3.5-flash': 1_000_000,
-      'deepseek-v4-pro': 1_000_000,
-      'deepseek-v4-flash': 1_000_000,
-    })
-    expect(modelSeries).toEqual([
-      'GPT-5',
-      'GPT-5',
-      'GPT-5',
-      'GPT-5',
-      'Gemini 3.5',
-      'DeepSeek V4',
-      'DeepSeek V4',
-    ])
-    expect(thinkingModelIds).toEqual([
-      'gpt-5.5',
-      'gpt-5.6-sol',
-      'gpt-5.6-terra',
-      'gpt-5.6-luna',
-    ])
-    expect(thinkingLevelMaps['gpt-5.5']).toMatchObject({
-      off: 'none',
-      minimal: 'minimal',
-      xhigh: 'xhigh',
-      max: null,
-    })
-    expect(thinkingLevelMaps['gpt-5.6-sol']?.max).toBe('max')
-    expect(thinkingLevelMaps['gpt-5.6-terra']?.max).toBe('max')
-    expect(thinkingLevelMaps['gpt-5.6-luna']).toMatchObject({
-      off: 'none',
-      minimal: null,
-      xhigh: 'xhigh',
-      max: null,
-    })
-    expect(imageModelIds).toEqual([
-      'gpt-5.5',
-      'gpt-5.6-sol',
-      'gpt-5.6-terra',
-      'gpt-5.6-luna',
-      'gemini-3.5-flash',
-    ])
-    expect(textOnlyModelIds).toEqual([
-      'deepseek-v4-pro',
-      'deepseek-v4-flash',
+    expect(config.llmConnections?.map(connection => [
+      connection.slug,
+      connection.models?.map(model => typeof model === 'string' ? model : model.id),
+    ])).toEqual([
+      ['storyflow-managed', ['gpt-5.5', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']],
+      ['storyflow-managed-deepseek', ['deepseek-v4-pro', 'deepseek-v4-flash']],
+      ['storyflow-managed-gemini', ['gemini-3.5-flash']],
+      ['storyflow-managed-anthropic', ['claude-sonnet-5', 'claude-opus-5']],
     ])
   })
 
@@ -254,10 +190,28 @@ describe('builtin LLM connection defaults', () => {
     const models = config.llmConnections?.[0]?.models
 
     expect(result.changed).toBe(true)
-    expect(models).toEqual([...MANAGED_MODEL_CATALOG])
+    expect(models).toEqual(cloneManagedModelCatalog('openai-responses'))
     expect(models?.every(model => typeof model !== 'string')).toBe(true)
     expect(models?.map(model => typeof model === 'string' ? model : model.name))
-      .toEqual(EXPECTED_MANAGED_MODEL_NAMES)
+      .toEqual(['GPT-5.5', 'GPT-5.6 Sol', 'GPT-5.6 Terra', 'GPT-5.6 Luna'])
+    expect(models?.map(model => typeof model === 'string' ? model : model.shortName))
+      .toEqual(['GPT', 'GPT', 'GPT', 'GPT'])
+  })
+
+  it('preserves the previously selected DeepSeek family when splitting the managed connection', () => {
+    const defaults = JSON.parse(readFileSync(BUNDLED_DEFAULTS_PATH, 'utf-8')) as ConfigDefaults
+    const legacyConnection = defaults.builtinLlmConnections?.[0]?.connection
+    const config = makeConfig({
+      defaultLlmConnection: 'storyflow-managed',
+      llmConnections: [{
+        ...legacyConnection!,
+        defaultModel: 'deepseek-v4-flash',
+        models: MANAGED_MODEL_CATALOG.map(model => model.id),
+      }],
+    })
+
+    expect(applyBuiltinLlmConnectionDefaults(config, defaults)).toEqual({ changed: true })
+    expect(config.defaultLlmConnection).toBe('storyflow-managed-deepseek')
   })
 
   it('atomically migrates the legacy managed connection slug to the provider-neutral gateway identity', () => {
@@ -288,7 +242,7 @@ describe('builtin LLM connection defaults', () => {
     expect(config.defaultLlmConnection).toBe('storyflow-managed')
     expect(config.llmConnections?.map(c => c.slug)).toEqual(['storyflow-managed', 'backup-default'])
     expect(config.llmConnections?.find(c => c.slug === 'storyflow-managed')?.models)
-      .toEqual([...MANAGED_MODEL_CATALOG])
+      .toEqual(cloneManagedModelCatalog('openai-responses'))
     expect(config.llmConnections?.find(c => c.slug === 'backup-default')?.models).toEqual(['backup-model'])
   })
 
@@ -353,14 +307,14 @@ describe('builtin LLM connection defaults', () => {
     const result = applyBuiltinLlmConnectionDefaults(config, makeDefaults({
       connection: {
         ...bundled.connection!,
-        name: 'JiuZhou-AI',
+        name: 'Managed AI',
         hidden: false,
       },
     }))
 
     expect(result.changed).toBe(true)
-    expect(config.llmConnections?.[0]?.name).toBe('JiuZhou-AI')
-    expect(config.llmConnections?.[0]?.models).toEqual([...MANAGED_MODEL_CATALOG])
+    expect(config.llmConnections?.[0]?.name).toBe('Managed AI')
+    expect(config.llmConnections?.[0]?.models).toEqual(cloneManagedModelCatalog('openai-responses'))
     expect(config.llmConnections?.[0]?.piAuthProvider).toBe('openai')
     expect(config.llmConnections?.[0]?.hidden).toBe(false)
   })

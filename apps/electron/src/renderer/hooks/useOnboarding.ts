@@ -146,7 +146,7 @@ export type ProviderChoiceSetupAction =
 
 export function providerChoiceToSetupAction(choice: ProviderChoice): ProviderChoiceSetupAction {
   switch (choice) {
-    case 'jiuzhou':
+    case 'managed_default':
       return { mode: 'managed-default', method: 'managed_default' }
     case 'custom_provider':
       return { mode: 'credentials', method: 'pi_api_key' }

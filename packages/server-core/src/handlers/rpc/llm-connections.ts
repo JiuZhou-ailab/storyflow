@@ -3,7 +3,7 @@
 // pos: Server-side RPC boundary for LLM connection management
 
 import { RPC_CHANNELS, type LlmConnectionSetup } from '@craft-agent/shared/protocol'
-import { getLlmConnections, getLlmConnection, addLlmConnection, updateLlmConnection, deleteLlmConnection, getDefaultLlmConnection, setDefaultLlmConnection, touchLlmConnection, isCompatProvider, isAnthropicProvider, getDefaultModelsForConnection, getDefaultModelForConnection, MANAGED_LLM_CONNECTION_SLUG, normalizeLlmConnectionSlug, type LlmConnection, type LlmConnectionWithStatus, toBedrockNativeId, deriveBedrockRegionPrefix } from '@craft-agent/shared/config'
+import { getLlmConnections, getLlmConnection, addLlmConnection, updateLlmConnection, deleteLlmConnection, getDefaultLlmConnection, setDefaultLlmConnection, touchLlmConnection, isCompatProvider, isAnthropicProvider, getDefaultModelsForConnection, getDefaultModelForConnection, isManagedLlmConnectionSlug, type LlmConnection, type LlmConnectionWithStatus, toBedrockNativeId, deriveBedrockRegionPrefix } from '@craft-agent/shared/config'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { isMaskedCredential } from '@craft-agent/shared/utils/mask'
 import { setSetupDeferred } from '@craft-agent/shared/config/storage'
@@ -62,7 +62,7 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
       const existingConnection = getLlmConnection(setup.slug)
       if (!isAvailable(existingConnection ?? setup.slug)) return managedUnavailable
       if (
-        normalizeLlmConnectionSlug(setup.slug) === MANAGED_LLM_CONNECTION_SLUG
+        isManagedLlmConnectionSlug(setup.slug)
         && (!existingConnection || (existingConnection.managed !== true && existingConnection.source !== 'builtin'))
       ) {
         return { success: false, error: 'Managed connection is unavailable' }

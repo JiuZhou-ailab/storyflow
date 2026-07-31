@@ -9,7 +9,7 @@ desktop login
   -> auth broker returns an appSessionToken (absolute 30 days from login)
      plus a short-lived modelAccessToken (15 minutes)
   -> desktop keeps the login session and projects modelAccessToken
-     into the hidden managed connection
+     into the hidden protocol-native managed connections
   -> desktop refreshes both tokens before model access expires
   -> model gateway validates modelAccessToken
   -> model gateway injects the server-only NewAPI key
@@ -78,7 +78,7 @@ verification and delivery policy.
 
 ## Model Gateway
 
-The bundled managed connection points to:
+The bundled managed connections point to:
 
 ```text
 https://storyflow-model.zjding.com/v1
@@ -89,8 +89,12 @@ Only these public routes exist:
 ```text
 GET  /health
 GET  /ready
+GET  /v1/models
 POST /v1/responses
-POST /v1/chat/completions  # legacy desktop compatibility
+POST /v1/chat/completions
+POST /v1/messages
+POST /v1beta/models/:model:generateContent
+POST /v1beta/models/:model:streamGenerateContent
 ```
 
 For model calls, the Worker validates the HS256 token signature, issuer,
@@ -115,11 +119,21 @@ The MVP deliberately uses one NewAPI key and one upstream for both roles. Add
 per-tier model allowlists only when Standard and Pro actually diverge; add
 per-user NewAPI keys only when upstream accounting or revocation requires them.
 
-The active managed endpoint uses Chat Completions
-(`customEndpoint.api=openai-completions`) because it is supported by every model
-currently exposed through the connection. The gateway also accepts Responses
-requests, but that protocol must not become the managed default until every
-exposed model passes the same end-to-end compatibility check.
+Managed models are split by native protocol instead of sharing one converted
+connection:
+
+- GPT uses OpenAI Responses (`/v1/responses`);
+- DeepSeek uses OpenAI Chat Completions (`/v1/chat/completions`);
+- Gemini uses Google GenAI (`/v1beta/models/:model:streamGenerateContent`);
+- Claude Sonnet 5 and Opus 5 use Anthropic Messages (`/v1/messages`).
+
+The static catalog is the offline capability fallback. The authenticated
+gateway intersects explicitly approved dynamic families such as
+`gemini-3.6-*` with the live NewAPI inventory, so unavailable or invented model
+IDs never appear in the desktop picker.
+
+All connections reuse the same short-lived model capability, while the gateway
+replaces its protocol-native auth header with the server-only `NEWAPI_API_KEY`.
 
 ## Local Development
 

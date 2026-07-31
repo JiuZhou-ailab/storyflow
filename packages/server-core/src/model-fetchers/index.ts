@@ -17,6 +17,7 @@
 import type { ModelFetcherMap, ModelFetcherCredentials, FetchableProvider } from '@craft-agent/shared/config'
 import type {
   LlmConnection,
+  CustomEndpointApi,
   ModelDefinition,
   ModelThinkingLevelMap,
 } from '@craft-agent/shared/config'
@@ -27,7 +28,6 @@ import {
   updateLlmConnection,
   isCompatProvider,
   getModelsForProviderType,
-  MANAGED_LLM_CONNECTION_SLUG,
 } from '@craft-agent/shared/config'
 import { MODEL_FETCHERS } from './registry'
 import { handlerLog } from './runtime'
@@ -41,9 +41,10 @@ const COPILOT_REFRESH_INTERVAL_MS = 10 * 60 * 1000
 
 type CredentialReader = Pick<CredentialManager, 'getLlmApiKey' | 'getLlmOAuth'>
 type CredentialResolver = (connection: LlmConnection) => Promise<ModelFetcherCredentials>
+type ManagedGatewayModel = ModelDefinition & { api: CustomEndpointApi }
 
 function isManagedModelCatalogConnection(connection: LlmConnection): boolean {
-  return connection.slug === MANAGED_LLM_CONNECTION_SLUG && connection.managed === true
+  return connection.managed === true && connection.source === 'builtin'
 }
 
 async function fetchManagedModelCatalog(
@@ -52,8 +53,9 @@ async function fetchManagedModelCatalog(
 ): Promise<ModelDefinition[]> {
   if (!connection.baseUrl) throw new Error('Managed model gateway URL is missing')
   if (!credentials.apiKey) throw new Error('Managed model access token is missing')
+  if (!connection.customEndpoint) throw new Error('Managed model protocol is missing')
 
-  const response = await fetch(`${connection.baseUrl.replace(/\/+$/, '')}/models`, {
+  const response = await fetch(new URL('/v1/models', connection.baseUrl), {
     headers: {
       Accept: 'application/json',
       Authorization: `Bearer ${credentials.apiKey}`,
@@ -68,7 +70,10 @@ async function fetchManagedModelCatalog(
     throw new Error('Managed model catalog is invalid')
   }
 
-  const models = (body as { data: unknown[] }).data.map(parseManagedModelDefinition)
+  const models = (body as { data: unknown[] }).data
+    .map(parseManagedModelDefinition)
+    .filter(model => model.api === connection.customEndpoint!.api)
+    .map(({ api: _api, ...model }) => model)
   if (models.length === 0) throw new Error('Managed model catalog is empty')
   if (new Set(models.map(model => model.id)).size !== models.length) {
     throw new Error('Managed model catalog contains duplicate model IDs')
@@ -102,7 +107,7 @@ function parseManagedThinkingLevelMap(value: unknown): ModelThinkingLevelMap | u
   return result as ModelThinkingLevelMap
 }
 
-function parseManagedModelDefinition(item: unknown): ModelDefinition {
+function parseManagedModelDefinition(item: unknown): ManagedGatewayModel {
   if (!item || typeof item !== 'object' || Array.isArray(item)) {
     throw new Error('Managed model catalog contains an invalid model')
   }
@@ -117,6 +122,7 @@ function parseManagedModelDefinition(item: unknown): ModelDefinition {
     supports_thinking: supportsThinking,
     thinking_level_map: thinkingLevelMap,
     supports_images: supportsImages,
+    api,
   } = item as Record<string, unknown>
 
   if (
@@ -133,6 +139,12 @@ function parseManagedModelDefinition(item: unknown): ModelDefinition {
     || contextWindow <= 0
     || typeof supportsThinking !== 'boolean'
     || typeof supportsImages !== 'boolean'
+    || ![
+      'openai-completions',
+      'openai-responses',
+      'anthropic-messages',
+      'google-generative-ai',
+    ].includes(api as string)
   ) {
     throw new Error('Managed model catalog contains an invalid model')
   }
@@ -148,6 +160,7 @@ function parseManagedModelDefinition(item: unknown): ModelDefinition {
     supportsThinking,
     ...(parsedThinkingLevelMap ? { thinkingLevelMap: parsedThinkingLevelMap } : {}),
     supportsImages,
+    api: api as CustomEndpointApi,
   }
 }
 
@@ -220,8 +233,8 @@ class ModelRefreshService {
 
     const isManagedCatalog = isManagedModelCatalogConnection(connection)
 
-    // User-owned compat providers configure models manually. The single managed
-    // compat connection is backed by the authenticated Storyflow catalog.
+    // User-owned compat providers configure models manually. Managed compat
+    // connections are backed by the authenticated Storyflow catalog.
     if (isCompatProvider(connection.providerType) && !isManagedCatalog) {
       return
     }

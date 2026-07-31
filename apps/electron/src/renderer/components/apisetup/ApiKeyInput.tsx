@@ -386,7 +386,13 @@ export function ApiKeyInput({
     const isCustomEndpoint = activePreset === 'custom' && !!effectiveBaseUrl
     const customEndpoint = isCustomEndpoint ? { api: customApi } : undefined
     const resolvedPiAuthProvider = isCustomEndpoint
-      ? (customApi === 'anthropic-messages' ? 'anthropic' : 'openai')
+      ? (
+          customApi === 'anthropic-messages'
+            ? 'anthropic'
+            : customApi === 'google-generative-ai'
+              ? 'google'
+              : 'openai'
+        )
       : effectivePiAuthProvider
 
     onSubmit({

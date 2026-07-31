@@ -169,22 +169,22 @@ describe('FreeFormInput attachment read path', () => {
 describe('FreeFormInput model menu', () => {
   it('groups concrete models under their ordered series', () => {
     expect(groupModelMenuOptions([
-      { id: 'gpt-5.5', name: 'GPT-5.5', series: 'GPT-5' },
-      { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', series: 'GPT-5' },
-      { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', series: 'GPT-5' },
-      { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', series: 'Gemini 3.5' },
+      { id: 'gpt-5.5', name: 'GPT-5.5', series: 'GPT' },
+      { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', series: 'GPT' },
+      { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', series: 'GPT' },
+      { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', series: 'Gemini' },
     ])).toEqual([
       {
-        name: 'GPT-5',
+        name: 'GPT',
         models: [
-          { id: 'gpt-5.5', name: 'GPT-5.5', series: 'GPT-5' },
-          { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', series: 'GPT-5' },
-          { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', series: 'GPT-5' },
+          { id: 'gpt-5.5', name: 'GPT-5.5', series: 'GPT' },
+          { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', series: 'GPT' },
+          { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', series: 'GPT' },
         ],
       },
       {
-        name: 'Gemini 3.5',
-        models: [{ id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', series: 'Gemini 3.5' }],
+        name: 'Gemini',
+        models: [{ id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', series: 'Gemini' }],
       },
     ])
   })
