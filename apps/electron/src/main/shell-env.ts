@@ -28,9 +28,12 @@ const shouldSkipEnvVar = (key: string): boolean => {
 /**
  * Load the user's shell environment and merge it into process.env
  *
- * This should be called early in app startup, before creating any agents.
- * It spawns the user's login shell to get the full environment including
- * PATH modifications from .zshrc, .bashrc, .zprofile, etc.
+ * Spawns the user's login shell to pick up PATH modifications from .zshrc,
+ * .zprofile, etc. Must complete before any agent subprocess is spawned.
+ *
+ * Prefer `startShellEnvLoad()` over awaiting this directly during startup: the
+ * interactive login shell costs on the order of a second on a real machine, and
+ * session discovery does not depend on it.
  */
 export async function loadShellEnv(): Promise<void> {
   // Only needed on macOS where GUI apps have minimal environment
@@ -112,4 +115,24 @@ export async function loadShellEnv(): Promise<void> {
 
     process.env.PATH = newPath
   }
+}
+
+let shellEnvLoad: Promise<void> | null = null
+
+/**
+ * Starts the shell-environment load once and returns the shared promise.
+ *
+ * Session discovery reads JSONL files and credentials; it needs no shell PATH.
+ * Awaiting the login shell before discovery serialized ~2s of `.zshrc` cost in
+ * front of every session/search RPC, so startup kicks this off and only the
+ * agent-spawn path awaits it.
+ */
+export function startShellEnvLoad(): Promise<void> {
+  shellEnvLoad ??= loadShellEnv()
+  return shellEnvLoad
+}
+
+/** Awaits the in-flight shell-environment load, starting it if it never ran. */
+export function whenShellEnvReady(): Promise<void> {
+  return startShellEnvLoad()
 }

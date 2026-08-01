@@ -39,6 +39,61 @@ describe('createInitGatedRpcServer', () => {
     expect(calls).toBe(1)
   })
 
+  it('waits only for the requesting workspace when a scope resolver is supplied', async () => {
+    // ADR 0013: entering one project must not wait on other projects' histories.
+    const handlers = new Map<string, HandlerFn>()
+    const opened = new Set<string>()
+    const waiters = new Map<string, () => void>()
+    const server: RpcServer = {
+      handle(channel, handler) { handlers.set(channel, handler) },
+      push() {},
+      async invokeClient() { return undefined },
+    }
+
+    const gated = createInitGatedRpcServer(
+      server,
+      (scopeId) => {
+        const key = scopeId ?? '__global__'
+        if (opened.has(key)) return Promise.resolve()
+        return new Promise<void>((resolve) => waiters.set(key, resolve))
+      },
+      (ctx) => ctx.workspaceId,
+    )
+    gated.handle('sessions:list', () => 'done')
+
+    const own = handlers.get('sessions:list')?.(context, undefined)
+    const other = handlers.get('sessions:list')?.(
+      { ...context, workspaceId: 'workspace-2' },
+      undefined,
+    )
+
+    waiters.get('workspace-1')?.()
+    await expect(own).resolves.toBe('done')
+
+    let otherSettled = false
+    void other?.then(() => { otherSettled = true })
+    await Promise.resolve()
+    expect(otherSettled).toBe(false)
+    // The global gate was never the thing being awaited.
+    expect(waiters.has('__global__')).toBe(false)
+  })
+
+  it('falls back to the global gate when no scope resolver is supplied', async () => {
+    const handlers = new Map<string, HandlerFn>()
+    const scopes: Array<string | null | undefined> = []
+    const server: RpcServer = {
+      handle(channel, handler) { handlers.set(channel, handler) },
+      push() {},
+      async invokeClient() { return undefined },
+    }
+
+    const gated = createInitGatedRpcServer(server, async (scopeId) => { scopes.push(scopeId) })
+    gated.handle('sessions:list', () => 'done')
+    await handlers.get('sessions:list')?.(context, undefined)
+
+    expect(scopes).toEqual([undefined])
+  })
+
   it('forwards push, client invocation, and workspace routing unchanged', async () => {
     const calls: string[] = []
     const server: RpcServer = {

@@ -26,9 +26,10 @@ import {
 import { CONFIG_DIR, getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, normalizeLlmConnectionSlug, resetManagedAnthropicAuthEnvVars } from '@craft-agent/shared/config'
 import { PrivilegedExecutionBroker } from '@craft-agent/server-core/services'
 import { isValidWorkingDirectory } from '../utils/path-validation'
-import { InitGate } from '@craft-agent/server-core/domain'
+import { InitGate, orderWorkspacesByActiveFirst } from '@craft-agent/server-core/domain'
 import {
   getWorkspaces,
+  getActiveWorkspace,
   getWorkspaceByNameOrId,
   loadConfigDefaults,
   loadPreferences,
@@ -155,6 +156,12 @@ interface SessionRuntimeHooks {
   onSessionStarted: () => void
   onSessionStopped: () => void
   ensureManagedModelAccessToken: (forceRefresh?: boolean) => Promise<{ refreshed: boolean }>
+  /**
+   * Resolves once the environment agent subprocesses inherit (notably PATH) is
+   * ready. Hosts that must discover a login shell start that work at boot and
+   * await it here, so session discovery is not serialized behind it.
+   */
+  whenSubprocessEnvReady: () => Promise<void>
 }
 
 const defaultSessionRuntimeHooks: SessionRuntimeHooks = {
@@ -164,6 +171,7 @@ const defaultSessionRuntimeHooks: SessionRuntimeHooks = {
   ensureManagedModelAccessToken: async () => {
     throw new Error(MANAGED_MODEL_ACCESS_UNAVAILABLE_MESSAGE)
   },
+  whenSubprocessEnvReady: async () => {},
   captureException: (error, context) => {
     const err = error instanceof Error ? error : new Error(String(error))
     if (_platform?.captureError) {
@@ -1187,8 +1195,9 @@ export class SessionManager implements ISessionManager {
 
   /** Wait until initialize() has completed (sessions loaded from disk).
    *  Resolves immediately if already initialized. */
-  waitForInit(): Promise<void> {
-    return this.initGate.wait()
+  waitForInit(scopeWorkspaceId?: string | null): Promise<void> {
+    // ADR 0013: a scoped waiter only needs its own workspace's sessions indexed.
+    return this.initGate.waitFor(scopeWorkspaceId)
   }
 
   /**
@@ -1754,7 +1763,10 @@ export class SessionManager implements ISessionManager {
   // Load all existing sessions from disk into memory (metadata only - messages are lazy-loaded)
   private async loadSessionsFromDisk(): Promise<void> {
     try {
-      const workspaces = listSessionWorkspaces()
+      const workspaces = orderWorkspacesByActiveFirst(
+        listSessionWorkspaces(),
+        getActiveWorkspace()?.id,
+      )
       let totalSessions = 0
       let sessionsSinceYield = 0
 
@@ -1813,6 +1825,10 @@ export class SessionManager implements ISessionManager {
             await new Promise<void>((resolve) => setImmediate(resolve))
           }
         }
+
+        // ADR 0013: open this workspace's gate as soon as its sessions are indexed,
+        // so entering one project never waits on other projects' histories.
+        this.initGate.markScopeReady(workspace.id)
 
         // listStoredSessions() is synchronous per workspace. Yield between
         // roots so workspace/file RPCs remain responsive during restoration.
@@ -3289,6 +3305,10 @@ export class SessionManager implements ISessionManager {
 
     if (!managed.agent) {
       const end = perf.start('agent.create', { sessionId: managed.id })
+
+      // The agent spawns subprocesses that resolve tools from PATH, so this is
+      // where the host's shell-environment discovery must have landed.
+      await sessionRuntimeHooks.whenSubprocessEnvReady()
 
       // Lock the connection after first resolution
       // This ensures the session always uses the same provider

@@ -30,6 +30,7 @@ import { registerTransferHandlers } from './transfer'
 import { registerWorkspaceCoreHandlers } from './workspace'
 import { registerMessagingHandlers } from './messaging'
 import { createInitGatedRpcServer } from './init-gated-server'
+import { resolveContextWorkspaceId } from './file-workspace-scope'
 
 export { createInitGatedRpcServer } from './init-gated-server'
 
@@ -40,7 +41,10 @@ export function registerCoreRpcHandlers(
 ): void {
   const runtimeServer = createInitGatedRpcServer(
     server,
-    () => deps.sessionManager.waitForInit(),
+    (scopeId) => deps.sessionManager.waitForInit(scopeId),
+    // ADR 0013: same workspace resolution the handlers themselves use, so a request
+    // waits for exactly the runtime domain it will read from.
+    (ctx) => resolveContextWorkspaceId(ctx, deps),
   )
 
   registerAuthHandlers(server, deps)

@@ -36,7 +36,8 @@ export interface ISessionManager {
   // Lifecycle
   // ---------------------------------------------------------------------------
 
-  waitForInit(): Promise<void>
+  /** Pass a workspace id to wait only for that workspace's sessions (ADR 0013). */
+  waitForInit(scopeWorkspaceId?: string | null): Promise<void>
   initialize(): Promise<void>
   cleanup(): void
   setEventSink(sink: EventSink): void

@@ -156,16 +156,17 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   // Get all sessions for the calling window's workspace
   // Waits for initialization to complete so sessions are never returned empty during startup
   server.handle(RPC_CHANNELS.sessions.GET, async (ctx) => {
-    try {
-      await sessionManager.waitForInit()
-    } catch (error) {
-      log.error('GET_SESSIONS continuing after initialization failure:', error)
-    }
-    const end = perf.start('rpc.getSessions')
     const windowWorkspaceId = ctx.webContentsId != null
       ? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId)
       : undefined
     const workspaceId = windowWorkspaceId ?? ctx.workspaceId
+    try {
+      // Scoped to the workspace actually read below (ADR 0013).
+      await sessionManager.waitForInit(workspaceId)
+    } catch (error) {
+      log.error('GET_SESSIONS continuing after initialization failure:', error)
+    }
+    const end = perf.start('rpc.getSessions')
     const sessions = sessionManager.getSessions(workspaceId ?? undefined)
     end()
 
@@ -192,7 +193,9 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
       throw new Error('sessions:listByWorkspace requires a workspaceId')
     }
     try {
-      await sessionManager.waitForInit()
+      // Scoped to the requested workspace, which is not necessarily the caller's
+      // own runtime domain (e.g. the rail listing Free Conversations).
+      await sessionManager.waitForInit(workspaceId)
     } catch (error) {
       log.error('LIST_SESSIONS_BY_WORKSPACE continuing after initialization failure:', error)
     }
@@ -202,6 +205,8 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   // Get unread summary across all workspaces
   server.handle(RPC_CHANNELS.sessions.GET_UNREAD_SUMMARY, async () => {
     try {
+      // Cross-workspace aggregate: must wait for global discovery, not one shard,
+      // or the summary would silently omit not-yet-indexed workspaces.
       await sessionManager.waitForInit()
     } catch (error) {
       log.error('GET_UNREAD_SUMMARY continuing after initialization failure:', error)

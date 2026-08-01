@@ -2,7 +2,7 @@
 // output: Desktop main-process bootstrap, IPC bridges, windows, and cleanup
 // pos: Coordinates the Electron shell around the shared Storyflow server core
 
-import { loadShellEnv } from './shell-env'
+import { startShellEnvLoad, whenShellEnvReady } from './shell-env'
 
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, net, shell } from 'electron'
 import { randomUUID } from 'crypto'
@@ -675,6 +675,7 @@ app.whenReady().then(async () => {
               const result = await authService.ensureModelAccessToken({ force: forceRefresh === true })
               return { refreshed: result.refreshed }
             },
+            whenSubprocessEnvReady: whenShellEnvReady,
           })
           setSearchPlatform(p)
           setImageProcessor(p.imageProcessor)
@@ -731,7 +732,10 @@ app.whenReady().then(async () => {
         initializeSessionManager: async (sm) => {
           // Finder/Dock shell discovery exists for Agent subprocesses, not for
           // rendering or editing workspace files, so keep it in runtime phase 2.
-          await loadShellEnv()
+          // It is started, not awaited: an interactive login shell costs ~1-2s of
+          // the user's dotfiles, and session discovery needs nothing from it.
+          // Agent creation awaits it via the whenSubprocessEnvReady hook.
+          startShellEnvLoad()
           await sm.initialize()
         },
         deferRuntimeInitialization: !isHeadless,
