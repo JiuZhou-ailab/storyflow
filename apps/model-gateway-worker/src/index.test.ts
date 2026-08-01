@@ -70,10 +70,19 @@ function makeEnv() {
 }
 
 describe('model gateway worker', () => {
-  it('reports readiness only for the explicit current model key and NewAPI configuration', async () => {
+  it('reports readiness only after NewAPI and Catalog answer their real probes', async () => {
+    const readinessRequests: Request[] = []
+    const fetchStub = async (request: Request) => {
+      readinessRequests.push(request)
+      if (new URL(request.url).pathname === '/v1/models') {
+        return Response.json({ data: [{ id: 'gpt-5.5' }] })
+      }
+      return Response.json({ status: 'ready' })
+    }
     const ready = await handleRequest(
       new Request('https://model.storyflow.example.com/ready'),
       makeEnv(),
+      fetchStub,
     )
     const legacyOnly = await handleRequest(
       new Request('https://model.storyflow.example.com/ready'),
@@ -82,12 +91,45 @@ describe('model gateway worker', () => {
         STORYFLOW_GATEWAY_JWT_CURRENT_SECRET: undefined,
         STORYFLOW_GATEWAY_JWT_SECRET: CURRENT_MODEL_SECRET,
       },
+      fetchStub,
     )
 
     expect(ready.status).toBe(200)
     expect(await ready.json()).toEqual({ status: 'ready' })
+    expect(readinessRequests.map(request => request.url)).toEqual([
+      'https://jzapi.duanju.com/v1/models',
+      'https://storyflow-catalog-origin.example.com/ready',
+    ])
+    expect(readinessRequests[0]?.headers.get('authorization')).toBe('Bearer server-only-newapi-key')
+    expect(readinessRequests[1]?.headers.get('x-storyflow-origin-token')).toBe('server-only-catalog-origin-token')
     expect(legacyOnly.status).toBe(503)
     expect(await legacyOnly.json()).toEqual({
+      status: 'not_ready',
+      code: 'configuration_invalid',
+    })
+  })
+
+  it('fails readiness when either dependency is unavailable or Catalog is unconfigured', async () => {
+    const dependencyUnavailable = await handleRequest(
+      new Request('https://model.storyflow.example.com/ready'),
+      makeEnv(),
+      async (request) => new URL(request.url).pathname === '/v1/models'
+        ? Response.json({ data: [{ id: 'gpt-5.5' }] })
+        : Response.json({ status: 'not_ready' }, { status: 503 }),
+    )
+    const missingCatalogToken = await handleRequest(
+      new Request('https://model.storyflow.example.com/ready'),
+      { ...makeEnv(), CATALOG_ORIGIN_TOKEN: undefined },
+      async () => Response.json({ unexpected: true }),
+    )
+
+    expect(dependencyUnavailable.status).toBe(503)
+    expect(await dependencyUnavailable.json()).toEqual({
+      status: 'not_ready',
+      code: 'dependency_unavailable',
+    })
+    expect(missingCatalogToken.status).toBe(503)
+    expect(await missingCatalogToken.json()).toEqual({
       status: 'not_ready',
       code: 'configuration_invalid',
     })
@@ -282,6 +324,36 @@ describe('model gateway worker', () => {
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ version: 1, status: 'ok', series: [] })
+  })
+
+  it('proxies only the typed v2 catalog routes', async () => {
+    const token = await signTestJwt(CURRENT_MODEL_SECRET, {
+      scopes: ['catalog:read'],
+    })
+    const proxied: string[] = []
+    const fetchStub = async (request: Request) => {
+      proxied.push(request.url)
+      return Response.json({ version: 2, status: 'ok' })
+    }
+    const request = (path: string) => handleRequest(
+      new Request(`https://model.storyflow.example.com${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      makeEnv(),
+      fetchStub,
+    )
+
+    expect((await request('/v2/catalog/sources')).status).toBe(200)
+    expect((await request('/v2/ranking-snapshots?source=dataeye')).status).toBe(200)
+    expect((await request('/v2/rankings?source=goodshort&limit=10')).status).toBe(200)
+    expect((await request('/v2/series/hongguo/123/manifest')).status).toBe(200)
+    expect((await request('/v2/series/goodshort/123/episodes')).status).toBe(404)
+    expect(proxied).toEqual([
+      'https://storyflow-catalog-origin.example.com/v2/catalog/sources',
+      'https://storyflow-catalog-origin.example.com/v2/ranking-snapshots?source=dataeye',
+      'https://storyflow-catalog-origin.example.com/v2/rankings?source=goodshort&limit=10',
+      'https://storyflow-catalog-origin.example.com/v2/series/hongguo/123/manifest',
+    ])
   })
 
   it('rejects expired, unscoped, and unknown-tier tokens', async () => {

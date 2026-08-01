@@ -82,9 +82,10 @@ export async function handleRequest(
     if (request.method !== 'GET') {
       return methodNotAllowed('GET')
     }
-    return getGatewayReadinessError(env)
+    const readinessError = await getGatewayReadinessError(env, fetchImpl)
+    return readinessError
       ? Response.json(
-          { status: 'not_ready', code: 'configuration_invalid' },
+          { status: 'not_ready', code: readinessError },
           { status: 503 },
         )
       : Response.json({ status: 'ready' })
@@ -327,11 +328,50 @@ function getPreviousGatewayKey(env: Env): { id: string, secret: string } | null 
   return id && secret ? { id, secret } : null
 }
 
-function getGatewayReadinessError(env: Env): string | null {
-  if (!getCurrentGatewayKey(env)) return 'Gateway JWT current key is not configured'
-  if (!readRequiredEnv(env.NEWAPI_API_KEY)) return 'NewAPI key is not configured'
-  if (!readRequiredEnv(env.NEWAPI_UPSTREAM_BASE_URL)) return 'NewAPI upstream is not configured'
-  return null
+async function getGatewayReadinessError(
+  env: Env,
+  fetchImpl: FetchLike,
+): Promise<'configuration_invalid' | 'dependency_unavailable' | null> {
+  const newApiKey = readRequiredEnv(env.NEWAPI_API_KEY)
+  const upstreamBaseUrl = readRequiredEnv(env.NEWAPI_UPSTREAM_BASE_URL)
+  const catalogToken = readRequiredEnv(env.CATALOG_ORIGIN_TOKEN)
+  const catalogOrigin = safeHttpsOrigin(env.CATALOG_ORIGIN_URL)
+  if (!getCurrentGatewayKey(env) || !newApiKey || !upstreamBaseUrl || !catalogToken || !catalogOrigin) {
+    return 'configuration_invalid'
+  }
+
+  let modelUrl: URL
+  try {
+    modelUrl = new URL('/v1/models', upstreamBaseUrl)
+  } catch {
+    return 'configuration_invalid'
+  }
+
+  try {
+    const [modelResponse, catalogResponse] = await Promise.all([
+      fetchImpl(new Request(modelUrl, {
+        headers: { authorization: `Bearer ${newApiKey}` },
+        signal: AbortSignal.timeout(5_000),
+      })),
+      fetchImpl(new Request(`${catalogOrigin}/ready`, {
+        headers: { 'X-Storyflow-Origin-Token': catalogToken },
+        signal: AbortSignal.timeout(5_000),
+      })),
+    ])
+    if (!modelResponse.ok || !catalogResponse.ok) return 'dependency_unavailable'
+    const modelCatalog: unknown = await modelResponse.json()
+    if (
+      !modelCatalog
+      || typeof modelCatalog !== 'object'
+      || !Array.isArray((modelCatalog as { data?: unknown }).data)
+      || (modelCatalog as { data: unknown[] }).data.length === 0
+    ) {
+      return 'dependency_unavailable'
+    }
+    return null
+  } catch {
+    return 'dependency_unavailable'
+  }
 }
 
 function methodNotAllowed(allowedMethod: string): Response {
@@ -459,6 +499,10 @@ function isCatalogPath(pathname: string): boolean {
   return pathname === '/v1/series'
     || pathname === '/v1/rankings/daily'
     || /^\/v1\/series\/[0-9]{1,32}\/episodes$/.test(pathname)
+    || pathname === '/v2/catalog/sources'
+    || pathname === '/v2/ranking-snapshots'
+    || pathname === '/v2/rankings'
+    || /^\/v2\/series\/[a-z0-9-]{1,32}\/[A-Za-z0-9_-]{1,64}\/manifest$/.test(pathname)
 }
 
 function safeHttpsOrigin(raw: string | undefined): string | null {
