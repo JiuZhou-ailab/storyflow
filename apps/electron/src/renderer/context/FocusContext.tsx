@@ -34,6 +34,34 @@ interface FocusZone {
   focusFirst?: () => void // Optional: custom focus behavior
 }
 
+function getMountedZoneIds(zones: ReadonlyMap<FocusZoneId, FocusZone>): FocusZoneId[] {
+  return ZONE_ORDER.filter((id) => {
+    const zone = zones.get(id)
+    return Boolean(zone?.ref.current?.isConnected)
+  })
+}
+
+function getAdjacentZoneId(
+  currentZone: FocusZoneId | null,
+  direction: 1 | -1,
+  zones: ReadonlyMap<FocusZoneId, FocusZone>,
+): FocusZoneId | null {
+  const mountedZones = getMountedZoneIds(zones)
+  if (mountedZones.length === 0) return null
+
+  const currentIndex = mountedZones.indexOf(currentZone as FocusZoneId)
+  const baseIndex = currentIndex === -1
+    ? direction === 1 ? 0 : mountedZones.length - 1
+    : currentIndex + direction
+  return mountedZones[(baseIndex + mountedZones.length) % mountedZones.length] ?? null
+}
+
+function getDomFocusZone(): FocusZoneId | null {
+  if (typeof document === 'undefined') return null
+  const zone = document.activeElement?.closest<HTMLElement>('[data-focus-zone]')?.getAttribute('data-focus-zone')
+  return ZONE_ORDER.includes(zone as FocusZoneId) ? zone as FocusZoneId : null
+}
+
 /**
  * Focus state - tracks both the active zone and the intent behind the change
  */
@@ -98,7 +126,7 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
 
   const focusZone = useCallback((id: FocusZoneId, options?: FocusZoneOptions) => {
     const zone = zonesRef.current.get(id)
-    if (!zone) return
+    if (!zone?.ref.current?.isConnected) return
 
     const intent = options?.intent ?? 'programmatic'
     // Default behavior: keyboard navigation moves focus, clicks don't
@@ -130,19 +158,19 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const focusNextZone = useCallback(() => {
-    const currentZone = focusStateRef.current.zone
-    const currentIndex = currentZone ? ZONE_ORDER.indexOf(currentZone) : -1
-    const nextIndex = (currentIndex + 1) % ZONE_ORDER.length
+    const currentZone = getDomFocusZone() ?? focusStateRef.current.zone
+    const nextZone = getAdjacentZoneId(currentZone, 1, zonesRef.current)
+    if (!nextZone) return
     // Tab navigation is explicit keyboard intent - always move focus
-    focusZone(ZONE_ORDER[nextIndex], { intent: 'keyboard', moveFocus: true })
+    focusZone(nextZone, { intent: 'keyboard', moveFocus: true })
   }, [focusZone])
 
   const focusPreviousZone = useCallback(() => {
-    const currentZone = focusStateRef.current.zone
-    const currentIndex = currentZone ? ZONE_ORDER.indexOf(currentZone) : 0
-    const prevIndex = (currentIndex - 1 + ZONE_ORDER.length) % ZONE_ORDER.length
+    const currentZone = getDomFocusZone() ?? focusStateRef.current.zone
+    const previousZone = getAdjacentZoneId(currentZone, -1, zonesRef.current)
+    if (!previousZone) return
     // Shift+Tab navigation is explicit keyboard intent - always move focus
-    focusZone(ZONE_ORDER[prevIndex], { intent: 'keyboard', moveFocus: true })
+    focusZone(previousZone, { intent: 'keyboard', moveFocus: true })
   }, [focusZone])
 
   const isZoneFocused = useCallback((id: FocusZoneId) => {

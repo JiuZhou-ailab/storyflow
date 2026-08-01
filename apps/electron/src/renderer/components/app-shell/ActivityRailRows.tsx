@@ -7,6 +7,7 @@ import {
   Archive,
   ArchiveRestore,
   ArrowUpRight,
+  Copy,
   Folder,
   FolderOpen,
   Loader2,
@@ -16,6 +17,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useAtomValue } from 'jotai'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
   DropdownMenu,
@@ -98,7 +100,7 @@ export function RecentConversationRow({
     <div
       data-session-id={meta.id}
       className={cn(
-        'flex w-full min-w-0 items-center rounded-[6px] transition-colors hover:bg-foreground/[0.045]',
+        'flex w-full min-w-0 items-center rounded-[6px] hover:bg-foreground/[0.045]',
         active && 'bg-foreground/[0.07] text-foreground',
       )}
     >
@@ -128,15 +130,26 @@ export function RecentConversationRow({
     </div>
   )
 
-  if (!sessionActions) return row
+  const handleCopySessionId = React.useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(meta.id)
+      toast.success('已复制到剪贴板')
+    } catch {
+      toast.error('复制失败')
+    }
+  }, [meta.id])
 
-  return (
+  const rowWithActions = sessionActions ? (
     <ContextMenu>
       <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
       <StyledContextMenuContent>
         <StyledContextMenuItem onSelect={onRename}>
           <Pencil className="h-3.5 w-3.5" />
           重命名
+        </StyledContextMenuItem>
+        <StyledContextMenuItem onSelect={() => { void handleCopySessionId() }}>
+          <Copy className="h-3.5 w-3.5" />
+          复制对话 ID
         </StyledContextMenuItem>
         <StyledContextMenuItem onSelect={() => sessionActions.onArchive(meta.id)}>
           <Archive className="h-3.5 w-3.5" />
@@ -152,7 +165,9 @@ export function RecentConversationRow({
         </StyledContextMenuItem>
       </StyledContextMenuContent>
     </ContextMenu>
-  )
+  ) : row
+
+  return rowWithActions
 }
 
 export function ProjectFolderRow({
@@ -207,7 +222,7 @@ export function ProjectFolderRow({
   return (
     <div>
       <div className={cn(
-        'group flex min-w-0 items-center rounded-[6px] transition-colors hover:bg-foreground/[0.045]',
+        'group flex min-w-0 items-center rounded-[6px] hover:bg-foreground/[0.045]',
         active && 'bg-foreground/[0.07] text-foreground',
       )}>
         <button

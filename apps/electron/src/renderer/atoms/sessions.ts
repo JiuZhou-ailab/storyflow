@@ -135,6 +135,13 @@ export const sessionAtomFamily = atomFamily(
  */
 export const sessionMetaMapAtom = atom<Map<string, SessionMeta>>(new Map())
 
+/**
+ * Whether the current runtime workspace has finished loading its session metadata.
+ * Consumers with their own workspace-scoped projection can keep rendering it while
+ * the runtime map is intentionally empty during a workspace switch.
+ */
+export const sessionMetadataReadyAtom = atom(false)
+
 export const sessionMetaAtomFamily = atomFamily(
   (sessionId: string) => atom((get) => get(sessionMetaMapAtom).get(sessionId)),
   (a, b) => a === b

@@ -457,6 +457,7 @@ function geminiModelFromPath(pathname: string): string | null {
 
 function isCatalogPath(pathname: string): boolean {
   return pathname === '/v1/series'
+    || pathname === '/v1/rankings/daily'
     || /^\/v1\/series\/[0-9]{1,32}\/episodes$/.test(pathname)
 }
 

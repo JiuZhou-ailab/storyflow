@@ -1,11 +1,13 @@
-// input: ChatDisplay and ScrollArea source layout contracts.
-// output: Regression coverage for chat transcript scroll containment.
-// pos: Source-level guard for the app-shell chat panel scroll viewport.
+// input: ChatDisplay, prompt TOC, composer, and ScrollArea source contracts.
+// output: Regression coverage for transcript scrolling, prompt navigation, and composer layout.
+// pos: Source-level guard for the app-shell chat panel viewport and navigation.
 
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
+import { resolveActivePromptIndex } from '../PromptTableOfContents'
 
 const chatDisplaySource = readFileSync(new URL('../ChatDisplay.tsx', import.meta.url), 'utf-8')
+const promptTocSource = readFileSync(new URL('../PromptTableOfContents.tsx', import.meta.url), 'utf-8')
 const chatInputZoneSource = readFileSync(new URL('../input/ChatInputZone.tsx', import.meta.url), 'utf-8')
 const freeFormInputSource = readFileSync(new URL('../input/FreeFormInput.tsx', import.meta.url), 'utf-8')
 const scrollAreaSource = readFileSync(new URL('../../ui/scroll-area.tsx', import.meta.url), 'utf-8')
@@ -51,6 +53,24 @@ describe('ChatDisplay scroll layout', () => {
     expect(chatDisplaySource).toContain('onRemoveQueuedMessage={handleRemoveQueuedMessage}')
   })
 
+  it('renders a session prompt toc instead of per-message hover cards', () => {
+    expect(chatDisplaySource).not.toContain('QueryPreviewPopover')
+    expect(chatDisplaySource).not.toContain('getQueryReplyPreview')
+    expect(chatDisplaySource).toContain('<PromptTableOfContents')
+    expect(chatDisplaySource).toContain('const promptTocItems')
+    expect(chatDisplaySource).toContain('scrollToTurnIndex')
+    expect(promptTocSource).toContain('max-h-[50lvh] w-9 overflow-clip')
+    expect(promptTocSource).toContain('data-toc-item-index={index}')
+    expect(promptTocSource).toContain('group-hover/prompt-toc:visible')
+  })
+
+  it('selects the prompt nearest the upper viewport reading line', () => {
+    expect(resolveActivePromptIndex([null, 40, 160, 320], 120)).toBe(1)
+    expect(resolveActivePromptIndex([null, 160, 320], 120)).toBe(1)
+    expect(resolveActivePromptIndex([-320, -40, null], 120)).toBe(1)
+    expect(resolveActivePromptIndex([null, null], 120)).toBe(-1)
+  })
+
   it('reuses label lookup data when adding labels from the composer', () => {
     expect(chatInputZoneSource).toContain('const labelById = React.useMemo')
     expect(chatInputZoneSource).toContain('new Map(flattenLabels(labels).map(label => [label.id, label]))')
@@ -62,7 +82,7 @@ describe('ChatDisplay scroll layout', () => {
     expect(freeFormInputSource).toContain('flex min-w-0 items-center gap-1 px-2 py-2')
     expect(freeFormInputSource).toContain('flex min-w-0 flex-1 items-center gap-1 overflow-hidden')
     expect(freeFormInputSource).toContain('flex min-w-0 max-w-[52%] items-center justify-end shrink-0')
-    expect(freeFormInputSource).toContain('input-toolbar-btn inline-flex !h-7 min-w-0 max-w-[140px]')
+    expect(freeFormInputSource).toContain('input-toolbar-btn inline-flex !h-7 min-w-0 max-w-[240px]')
     expect(freeFormInputSource).toContain('<span className="min-w-0 truncate">{currentModelDisplayName}</span>')
   })
 })

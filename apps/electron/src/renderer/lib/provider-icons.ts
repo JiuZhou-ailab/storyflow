@@ -9,6 +9,7 @@ import awsIcon from '@/assets/provider-icons/aws.svg'
 import azureIcon from '@/assets/provider-icons/azure.svg'
 import claudeIcon from '@/assets/provider-icons/claude.svg'
 import copilotIcon from '@/assets/provider-icons/copilot.svg'
+import deepseekIcon from '@/assets/provider-icons/deepseek.svg'
 import googleIcon from '@/assets/provider-icons/google.svg'
 import huggingfaceIcon from '@/assets/provider-icons/huggingface.svg'
 import kimiIcon from '@/assets/provider-icons/kimi.svg'
@@ -30,6 +31,7 @@ export const providerIcons = {
   aws: awsIcon,
   azure: azureIcon,
   copilot: copilotIcon,
+  deepseek: deepseekIcon,
   google: googleIcon,
   huggingface: huggingfaceIcon,
   kimi: kimiIcon,
@@ -109,6 +111,8 @@ function piAuthProviderToIcon(piAuthProvider: string): ProviderIconKey | null {
       return 'anthropic'
     case 'github-copilot':
       return 'copilot'
+    case 'deepseek':
+      return 'deepseek'
     case 'openrouter':
       return 'openrouter'
     case 'google':
@@ -142,7 +146,6 @@ const PI_AUTH_PROVIDER_DOMAINS: Record<string, string> = {
   groq: 'groq.com',
   xai: 'x.ai',
   cerebras: 'cerebras.ai',
-  deepseek: 'deepseek.com',
   zai: 'z.ai',
 }
 

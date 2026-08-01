@@ -241,9 +241,12 @@ describe('FreeFormInput model menu', () => {
 
   it('uses DeepSeek identity independently of its OpenAI-compatible protocol', () => {
     const source = readFileSync(new URL('../../../icons/ConnectionIcon.tsx', import.meta.url), 'utf-8')
+    const providerIconSource = readFileSync(new URL('../../../../lib/provider-icons.ts', import.meta.url), 'utf-8')
 
     expect(source).toContain('MANAGED_DEEPSEEK_CONNECTION_SLUG')
     expect(source).toContain("? getProviderIcon('pi', null, 'deepseek')")
+    expect(providerIconSource).toContain("import deepseekIcon from '@/assets/provider-icons/deepseek.svg'")
+    expect(providerIconSource).toContain("case 'deepseek':")
   })
 
   it('gives the activity rail a slightly stronger default weight', () => {

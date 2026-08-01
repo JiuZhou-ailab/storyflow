@@ -94,6 +94,29 @@ export const actions = {
     category: 'Navigation',
     when: '!inputFocus',  // Tab should work normally in text inputs
   },
+  'nav.previousZone': {
+    id: 'nav.previousZone',
+    label: 'Focus Previous Zone',
+    defaultHotkey: 'shift+tab',
+    category: 'Navigation',
+    when: '!inputFocus',  // Shift+Tab should work normally outside text inputs
+  },
+  'nav.nextSession': {
+    id: 'nav.nextSession',
+    label: 'Next Session',
+    description: 'Switch to the next session in the current workspace',
+    defaultHotkey: 'ctrl+tab',
+    category: 'Navigation',
+    when: '!menuOpen',
+  },
+  'nav.previousSession': {
+    id: 'nav.previousSession',
+    label: 'Previous Session',
+    description: 'Switch to the previous session in the current workspace',
+    defaultHotkey: 'ctrl+shift+tab',
+    category: 'Navigation',
+    when: '!menuOpen',
+  },
   'nav.goBack': {
     id: 'nav.goBack',
     label: 'Go Back',
@@ -191,6 +214,7 @@ export const actions = {
     description: 'Switch between Explore, Ask, and Execute modes',
     defaultHotkey: 'shift+tab',
     category: 'Chat',
+    when: 'chatFocus && inputFocus && !menuOpen',
   },
   'chat.nextSearchMatch': {
     id: 'chat.nextSearchMatch',

@@ -11,7 +11,7 @@ type SessionLike = Pick<Session, 'name' | 'preview'> & { messages?: Session['mes
  * Sanitize content for display as session title.
  * Strips XML blocks (e.g. <edit_request>) and normalizes whitespace.
  */
-function sanitizePreview(content: string): string {
+export function sanitizePreview(content: string): string {
   return content
     .replace(/<edit_request>[\s\S]*?<\/edit_request>/g, '') // Strip entire edit_request blocks
     .replace(/<[^>]+>/g, '')     // Strip remaining XML/HTML tags

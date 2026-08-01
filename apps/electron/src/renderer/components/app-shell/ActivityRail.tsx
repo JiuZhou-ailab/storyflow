@@ -43,6 +43,7 @@ import {
 import {
   extractSessionMeta,
   sessionMetaMapAtom,
+  sessionMetadataReadyAtom,
   type SessionMeta,
 } from '@/atoms/sessions'
 import { shouldRefreshGlobalSessionMetasForEvent } from '@/atoms/session-status-transition'
@@ -54,6 +55,8 @@ import { sessionIdsWithPendingPromptAtom } from '@/atoms/pending-requests'
 import type { Workspace } from '../../../shared/types'
 import { WINDOW_TITLE_BAR_HEIGHT } from './layout-constants'
 import type { UpdateIndicatorState } from '@/lib/update-indicator'
+import { useFocusActions } from '@/context/FocusContext'
+import { useFocusZone } from '@/hooks/keyboard'
 
 export type ActivityRailItemId =
   | 'recent'
@@ -131,8 +134,9 @@ export function resolveActivityWorkspaceSessionMetas(
   runtimeWorkspaceId: string | null | undefined,
   cachedMetas: readonly SessionMeta[] | undefined,
   runtimeMetas: readonly SessionMeta[],
+  runtimeMetadataReady = true,
 ): readonly SessionMeta[] {
-  return runtimeWorkspaceId === workspaceId
+  return runtimeWorkspaceId === workspaceId && runtimeMetadataReady
     ? runtimeMetas.filter(meta => meta.workspaceId === workspaceId)
     : cachedMetas ?? []
 }
@@ -164,9 +168,12 @@ export function ActivityRail({
   sessionActions,
 }: ActivityRailProps) {
   const { t } = useTranslation()
+  const { focusZone } = useFocusActions()
+  const { zoneRef: navigatorRef } = useFocusZone({ zoneId: 'navigator' })
   const activityStore = useStore()
   const scrollContainerRef = React.useRef<HTMLDivElement>(null)
   const localRuntimeSessionMetas = useAtomValue(runtimeSessionMetasAtom)
+  const runtimeMetadataReady = useAtomValue(sessionMetadataReadyAtom)
   const sessionIdsWithPendingPrompt = useAtomValue(sessionIdsWithPendingPromptAtom)
   const [freeSessionMetas, setFreeSessionMetas] = useAtom(activityFreeSessionMetasAtom)
   const [unreadByWorkspace, setUnreadByWorkspace] = useAtom(activityUnreadByWorkspaceAtom)
@@ -195,6 +202,11 @@ export function ActivityRail({
     (activeWorkspaceId && onCreateConversationInProject)
     || onOpenFreeConversations,
   )
+  const handleNavigatorFocus = React.useCallback(() => {
+    // FocusContext intentionally does not track every focusin to avoid shell-wide
+    // rerenders. The rail is the navigator zone when one of its controls is used.
+    focusZone('navigator', { intent: 'click', moveFocus: false })
+  }, [focusZone])
   let updateIndicatorLabel: string | null = null
   if (updateIndicator?.kind === 'downloading' && updateIndicator.version) {
     updateIndicatorLabel = t('settings.about.downloading', {
@@ -329,10 +341,11 @@ export function ActivityRail({
       runtimeWorkspaceId,
       freeSessionMetas ?? undefined,
       localRuntimeSessionMetas,
+      runtimeMetadataReady,
     )]
       .filter(meta => !meta.hidden && meta.isArchived !== true)
       .sort((left, right) => (right.lastMessageAt ?? right.createdAt ?? 0) - (left.lastMessageAt ?? left.createdAt ?? 0))
-  }, [freeSessionMetas, localRuntimeSessionMetas, runtimeWorkspaceId])
+  }, [freeSessionMetas, localRuntimeSessionMetas, runtimeMetadataReady, runtimeWorkspaceId])
 
   const recentSessions = showAllRecent
     ? sessionMetas
@@ -407,6 +420,9 @@ export function ActivityRail({
 
   return (
     <aside
+      ref={navigatorRef}
+      tabIndex={-1}
+      onFocus={handleNavigatorFocus}
       data-testid="activity-rail"
       aria-label="工作区导航"
       className="titlebar-no-drag flex h-full shrink-0 flex-col border-r border-foreground/[0.06] bg-foreground-1.5 font-medium"
@@ -420,7 +436,7 @@ export function ActivityRail({
       />
       <div className="flex min-h-0 flex-1 flex-col px-2 pt-1">
         <div className="flex items-center px-1 pb-2">
-          <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-foreground/85">
+          <span className="min-w-0 flex-1 truncate text-[16px] font-medium text-foreground/85">
             Storyflow
             <span className="ml-1 text-[11px] font-normal text-muted-foreground/65">v{appPackage.version}</span>
           </span>
@@ -544,6 +560,7 @@ export function ActivityRail({
                             runtimeWorkspaceId,
                             projectSessionMetas[workspace.id],
                             localRuntimeSessionMetas,
+                            runtimeMetadataReady,
                           )]
                             .filter(meta => !meta.hidden && meta.isArchived !== true)
                             .sort((left, right) => (right.lastMessageAt ?? right.createdAt ?? 0) - (left.lastMessageAt ?? left.createdAt ?? 0))}

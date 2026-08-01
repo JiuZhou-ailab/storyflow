@@ -78,6 +78,8 @@ import {
   type ChatOpeningPrompt,
 } from "./chat-opening"
 import { handleErrorMessageAction } from "./error-message-actions"
+import { PromptTableOfContents, type PromptTocItem } from "./PromptTableOfContents"
+import { sanitizePreview } from "@/utils/session"
 
 // ============================================================================
 // CSS Custom Highlight API helper
@@ -722,6 +724,19 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     }
     return turns
   }, [sessionId, transcriptMessages])
+  const promptTocItems = React.useMemo<PromptTocItem[]>(() => {
+    const items: PromptTocItem[] = []
+    allTurns.forEach((turn, turnIndex) => {
+      if (turn.type !== 'user') return
+      const promptNumber = items.length + 1
+      items.push({
+        id: getTurnKey(turn),
+        label: sanitizePreview(turn.message.content) || `Prompt ${promptNumber}`,
+        turnIndex,
+      })
+    })
+    return items
+  }, [allTurns])
   // Ref to track total turn count for scroll handlers
   const totalTurnCountRef = React.useRef(0)
   totalTurnCountRef.current = allTurns.length
@@ -1641,13 +1656,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     return map
   }, [allTurns, pendingFollowUpAnnotations.length])
 
-  const scrollToFollowUpTurn = useCallback((item: {
-    messageId: string
-    annotationId: string
-  }) => {
-    const targetTurnIndex = assistantTurnIndexByMessageId.get(item.messageId)
-    if (targetTurnIndex == null) return
-
+  const scrollToTurnIndex = useCallback((targetTurnIndex: number) => {
+    if (targetTurnIndex < 0 || targetTurnIndex >= allTurns.length) return
+    isStickToBottomRef.current = false
     const ensureVisibleCount = allTurns.length - targetTurnIndex
 
     const scrollToTurn = () => {
@@ -1681,7 +1692,16 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
         void scrollToTurn()
       })
     }
-  }, [assistantTurnIndexByMessageId, allTurns, visibleTurnCount])
+  }, [allTurns, visibleTurnCount])
+
+  const scrollToFollowUpTurn = useCallback((item: {
+    messageId: string
+    annotationId: string
+  }) => {
+    const targetTurnIndex = assistantTurnIndexByMessageId.get(item.messageId)
+    if (targetTurnIndex == null) return
+    scrollToTurnIndex(targetTurnIndex)
+  }, [assistantTurnIndexByMessageId, scrollToTurnIndex])
 
   const handleFollowUpChipClick = useCallback((item: {
     messageId: string
@@ -1730,6 +1750,14 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
           <div className="flex flex-1 flex-col min-h-0 min-w-0 relative z-10">
           {/* === MESSAGES AREA: Scrollable list of message bubbles === */}
           <div className="relative flex-1 min-h-0 overflow-hidden">
+            {!compactMode && !messagesLoading && (
+              <PromptTableOfContents
+                items={promptTocItems}
+                viewportRef={scrollViewportRef}
+                turnRefs={turnRefs}
+                onSelect={scrollToTurnIndex}
+              />
+            )}
             {/* Mask wrapper - fades content at top and bottom over transparent/image backgrounds */}
             <div
               className="h-full min-h-0 overflow-hidden"

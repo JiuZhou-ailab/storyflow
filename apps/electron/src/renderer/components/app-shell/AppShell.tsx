@@ -122,6 +122,7 @@ import {
   ensureSessionMessagesLoadedAtom,
   reconcileSessionTranscriptWorkingSetAtom,
   sessionAtomFamily,
+  sessionMetaMapAtom,
   sessionMetaAtomFamily,
   sendToWorkspaceAtom,
 } from "@/atoms/sessions"
@@ -285,6 +286,12 @@ function isTextEditingTarget(target: EventTarget | null): boolean {
     || tagName === 'textarea'
     || target.isContentEditable
     || target.closest('[contenteditable="true"]') != null
+}
+
+function hasBlockingFocusDialog(): boolean {
+  return document.querySelector(
+    '[data-slot="dialog-content"], [role="alertdialog"], [role="dialog"]:not([data-slot="popover-content"])',
+  ) !== null
 }
 
 /** Filter mode for tri-state filtering: include shows only matching, exclude hides matching */
@@ -940,10 +947,7 @@ function AppShellContent({
     return storage.get(storage.KEYS.workspaceDirectoryWidth, WORKSPACE_DIRECTORY_DEFAULT_WIDTH)
   })
   const [rightWorkspaceVisible, setRightWorkspaceVisible] = React.useState(() => {
-    return storage.get(
-      storage.KEYS.writingWorkspaceVisible,
-      storage.get(storage.KEYS.workspaceDirectoryVisible, true),
-    )
+    return storage.get(storage.KEYS.writingWorkspaceVisible, false)
   })
   const [workspaceDirectoryVisible, setWorkspaceDirectoryVisible] = React.useState(() => {
     // Before independent directory folding existed, workspaceDirectoryVisible
@@ -1566,7 +1570,11 @@ function AppShellContent({
   // Tab navigation between zones
   useAction('nav.nextZone', () => {
     focusNextZone()
-  }, { enabled: () => !document.querySelector('[role="dialog"]') })
+  }, { enabled: () => !hasBlockingFocusDialog() })
+
+  useAction('nav.previousZone', () => {
+    focusPreviousZone()
+  }, { enabled: () => !hasBlockingFocusDialog() })
 
   // Shift+Tab cycles permission mode through enabled modes (textarea handles its own, this handles when focus is elsewhere)
   // In multi-panel, targets the focused panel's session
@@ -1616,6 +1624,28 @@ function AppShellContent({
   const focusPrevPanel = useSetAtom(focusPrevPanelAtom)
   useAction('panel.focusNext', focusNextPanel, { enabled: () => panelCount > 1 })
   useAction('panel.focusPrev', focusPrevPanel, { enabled: () => panelCount > 1 })
+
+  const cycleSession = useCallback((direction: 1 | -1) => {
+    if (!activeWorkspaceId) return
+
+    const sessionIds = [...store.get(sessionMetaMapAtom).values()]
+      .filter(meta => meta.workspaceId === activeWorkspaceId && !meta.hidden && meta.isArchived !== true)
+      .sort((left, right) => (right.lastMessageAt ?? right.createdAt ?? 0) - (left.lastMessageAt ?? left.createdAt ?? 0))
+      .map(meta => meta.id)
+
+    if (sessionIds.length < 2) return
+
+    const currentSessionId = focusedSessionId ?? session.selected
+    const currentIndex = currentSessionId ? sessionIds.indexOf(currentSessionId) : -1
+    const nextIndex = currentIndex === -1
+      ? direction === 1 ? 0 : sessionIds.length - 1
+      : (currentIndex + direction + sessionIds.length) % sessionIds.length
+    const nextSessionId = sessionIds[nextIndex]
+    if (nextSessionId) navigateToSessionInPanel(nextSessionId)
+  }, [activeWorkspaceId, focusedSessionId, navigateToSessionInPanel, session.selected, store])
+
+  useAction('nav.nextSession', () => cycleSession(1))
+  useAction('nav.previousSession', () => cycleSession(-1))
 
   // New chat
   useAction('app.newChat', () => handleNewChat())

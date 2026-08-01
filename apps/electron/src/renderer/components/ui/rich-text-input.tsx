@@ -66,6 +66,10 @@ export function isRichTextDomMutationSafe(
   return !isComposingRefActive && !nativeIsComposing
 }
 
+export function shouldShowRichTextPlaceholder(value: string, isComposing: boolean): boolean {
+  return !value && !isComposing
+}
+
 export interface RichTextInputProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'onChange' | 'onInput' | 'onPaste'> {
   /** Current text value */
   value: string
@@ -557,6 +561,8 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
     const divRef = React.useRef<HTMLDivElement>(null)
     const [isFocused, setIsFocused] = React.useState(false)
     const isComposing = React.useRef(false)
+    // The ref guards DOM writes synchronously; state keeps the composition DOM visible.
+    const [isCompositionActive, setIsCompositionActive] = React.useState(false)
     const lastValueRef = React.useRef(safeValue)
     const cursorPositionRef = React.useRef(0)
     const lastMentionSignatureRef = React.useRef('')
@@ -676,10 +682,12 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
     // Handle composition (IME)
     const handleCompositionStart = React.useCallback(() => {
       isComposing.current = true
+      setIsCompositionActive(true)
     }, [])
 
     const handleCompositionEnd = React.useCallback(() => {
       isComposing.current = false
+      setIsCompositionActive(false)
       handleInput(undefined, { inputType: 'insertFromComposition' })
     }, [handleInput])
 
@@ -813,8 +821,8 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       return () => document.removeEventListener('selectionchange', handleSelectionChange)
     }, [])
 
-    // Show placeholder when input is empty (regardless of focus state)
-    const showPlaceholder = !safeValue
+    // Keep the IME-owned DOM visible while the parent value catches up.
+    const showPlaceholder = shouldShowRichTextPlaceholder(safeValue, isCompositionActive)
 
     // Normalize placeholder to array for RotatingPlaceholder
     const placeholderArray = React.useMemo(() => {

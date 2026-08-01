@@ -169,7 +169,7 @@ export function WorkspaceFileTreeRow({
       data-tutorial={entry.type === 'root' ? 'writing-catalog' : undefined}
       className={cn(
         'group flex h-full min-w-0 items-center gap-1.5 rounded-[6px] px-2 text-[12px] outline-none',
-        'text-foreground/85 hover:bg-sidebar-hover',
+        'text-foreground/85 hover:bg-foreground/[0.045]',
         entry.type === 'root' && 'font-medium',
         (entry.type === 'root' || node.isSelected) && 'bg-foreground/[0.07]',
         node.isFocused && entry.type !== 'root' && 'ring-1 ring-inset ring-ring/60',

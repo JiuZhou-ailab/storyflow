@@ -450,6 +450,7 @@ describe('novel writing workspace layout', () => {
     expect(rowSource).toContain("entry.type === 'root' || entry.type === 'directory'")
     expect(rowSource).toContain("(entry.type === 'root' || node.isSelected)")
     expect(rowSource).toContain("node.isFocused && entry.type !== 'root'")
+    expect(rowSource).toContain('text-foreground/85 hover:bg-foreground/[0.045]')
     expect(rowSource).not.toContain('Library')
   })
 

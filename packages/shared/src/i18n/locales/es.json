@@ -864,6 +864,7 @@
   "session.unreadGroup": "No leídos ({{count}})",
   "sessionMenu.archive": "Archivar",
   "sessionMenu.connectMessaging": "Conectar mensajería",
+  "sessionMenu.copyId": "Copiar ID de conversación",
   "sessionMenu.copyLink": "Copiar enlace",
   "sessionMenu.copyPath": "Copiar ruta",
   "sessionMenu.flag": "Marcar",

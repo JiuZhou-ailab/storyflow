@@ -262,6 +262,28 @@ describe('model gateway worker', () => {
     expect(upstreamCalls).toBe(1)
   })
 
+  it('proxies daily ranking reads through the same catalog capability', async () => {
+    const token = await signTestJwt(CURRENT_MODEL_SECRET, {
+      scopes: ['catalog:read'],
+    })
+    const response = await handleRequest(
+      new Request('https://model.storyflow.example.com/v1/rankings/daily?limit=20', {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      makeEnv(),
+      async (request) => {
+        expect(request.url).toBe(
+          'https://storyflow-catalog-origin.example.com/v1/rankings/daily?limit=20',
+        )
+        expect(request.headers.get('x-storyflow-origin-token')).toBe('server-only-catalog-origin-token')
+        return Response.json({ version: 1, status: 'ok', series: [] })
+      },
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ version: 1, status: 'ok', series: [] })
+  })
+
   it('rejects expired, unscoped, and unknown-tier tokens', async () => {
     const now = Math.floor(Date.now() / 1000)
     const expiredToken = await signTestJwt('broker-signing-secret', { exp: now - 1 })

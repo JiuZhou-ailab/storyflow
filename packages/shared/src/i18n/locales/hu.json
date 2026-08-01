@@ -864,6 +864,7 @@
   "session.unreadGroup": "Olvasatlan ({{count}})",
   "sessionMenu.archive": "Archiválás",
   "sessionMenu.connectMessaging": "Üzenetküldő csatlakoztatása",
+  "sessionMenu.copyId": "Beszélgetésazonosító másolása",
   "sessionMenu.copyLink": "Link másolása",
   "sessionMenu.copyPath": "Útvonal másolása",
   "sessionMenu.flag": "Megjelölés",

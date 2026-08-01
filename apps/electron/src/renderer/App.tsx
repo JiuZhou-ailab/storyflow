@@ -62,6 +62,7 @@ import {
   refreshSessionsMetadataAtom,
   sessionAtomFamily,
   sessionMetaMapAtom,
+  sessionMetadataReadyAtom,
   sessionIdsAtom,
   loadedSessionsAtom,
   forceSessionMessagesReloadAtom,
@@ -566,6 +567,7 @@ function AppContent() {
   ): Promise<Session[]> => {
     const loadingWorkspaceId = workspaceIdForLoad
     setSessionLoadError(null)
+    store.set(sessionMetadataReadyAtom, false)
 
     try {
       const loadedSessions = await withTimeout(
@@ -579,6 +581,7 @@ function AppContent() {
       // Initialize per-session atoms and metadata map
       // NOTE: No sessionsAtom used - sessions are only in per-session atoms
       initializeSessions(loadedSessions)
+      store.set(sessionMetadataReadyAtom, true)
 
       // Initialize unified sessionOptions from session data
       const optionsMap = new Map<string, SessionOptions>()
@@ -615,6 +618,7 @@ function AppContent() {
 
       if (shouldTreatSessionLoadFailureAsTransportFallback(transportState)) {
         console.error('[App] Treating session load failure as transport fallback:', transportState)
+        store.set(sessionMetadataReadyAtom, true)
         setSessionsLoaded(true)
         setSessionLoadError(null)
         lastLoadedSessionsWorkspaceRef.current = loadingWorkspaceId
@@ -622,11 +626,12 @@ function AppContent() {
       }
 
       setSessionLoadError(formatSessionLoadFailure(err))
+      store.set(sessionMetadataReadyAtom, true)
       setSessionsLoaded(true)
       lastLoadedSessionsWorkspaceRef.current = loadingWorkspaceId
       return []
     }
-  }, [initializeSessions, initialSessionId, reconcilePermissionModeState, windowWorkspaceId])
+  }, [initializeSessions, initialSessionId, reconcilePermissionModeState, store, windowWorkspaceId])
 
   const refreshSessionListMetadataFromServer = useCallback(async (options: SessionListRefreshOptions = {}): Promise<SessionListMetadataRefreshResult> => {
     const {
@@ -1951,6 +1956,7 @@ function AppContent() {
     sessionDraftsRef.current.clear()
     store.set(sourcesAtom, [])
     store.set(skillsAtom, [])
+    store.set(sessionMetadataReadyAtom, false)
     store.set(sessionMetaMapAtom, new Map())
     store.set(sessionIdsAtom, [])
 
@@ -1971,6 +1977,7 @@ function AppContent() {
       if (selectionGeneration !== workspaceSelectionGenerationRef.current) return
       console.error('[App] Failed to activate runtime workspace:', error)
       setSessionLoadError(formatSessionLoadFailure(error))
+      store.set(sessionMetadataReadyAtom, true)
       setSessionsLoaded(true)
       lastLoadedSessionsWorkspaceRef.current = workspaceId
     } finally {

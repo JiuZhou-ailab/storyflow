@@ -742,3 +742,38 @@ Fidelity checks:
 - No P0, P1, or P2 visual or interaction differences remain.
 
 final result: passed
+
+## Prompt TOC design QA — 2026-08-01
+
+### Sources
+
+- Source visual truth:
+  `/var/folders/jk/7_pcx4cd3y94_lwnf7hbxcv80000gn/T/codex-clipboard-dff288e3-e238-4f1b-933e-c91e5ef6f81c.png`
+- Current Electron capture:
+  `/var/folders/jk/7_pcx4cd3y94_lwnf7hbxcv80000gn/T/com.openai.sky.CUAService/Electron Screenshot 2026-08-01 at 8.12.44 PM.jpeg`
+
+The source is a 666 × 1402 Retina crop (approximately 333 × 701 CSS pixels at
+2× density) showing the expanded prompt list. The Electron capture is a
+1269 × 768 screenshot at 1× density in the collapsed conversation state.
+Because the interaction states and crops do not match, no fidelity judgment is
+made from these images.
+
+### Required fidelity surfaces
+
+- Fonts and typography: pending an expanded-state capture.
+- Spacing and layout rhythm: pending a visible collapsed rail and expanded list.
+- Colors and visual tokens: implementation uses existing Storyflow semantic
+  tokens; visible comparison is pending.
+- Image quality and asset fidelity: no image assets are part of this component.
+- Copy and content: query labels are sourced from the session's user turns;
+  runtime confirmation is pending.
+
+### Runtime blocker
+
+The latest renderer build completed and the Electron app was refreshed. The Mac
+locked before hover expansion, click navigation, active-query tracking, and
+console inspection could be completed. Computer Use could not unlock it
+automatically. A same-state full-view/focused comparison and interaction run
+therefore remain unavailable.
+
+final result: blocked

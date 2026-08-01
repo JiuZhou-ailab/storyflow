@@ -864,6 +864,7 @@
   "session.unreadGroup": "未读 ({{count}})",
   "sessionMenu.archive": "归档",
   "sessionMenu.connectMessaging": "连接消息平台",
+  "sessionMenu.copyId": "复制会话 ID",
   "sessionMenu.copyLink": "复制链接",
   "sessionMenu.copyPath": "复制路径",
   "sessionMenu.flag": "标记",

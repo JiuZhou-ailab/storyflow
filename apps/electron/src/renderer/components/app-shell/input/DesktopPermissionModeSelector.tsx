@@ -109,7 +109,6 @@ export function DesktopPermissionModeSelector({
           commandGroups={DEFAULT_SLASH_COMMAND_GROUPS}
           activeCommands={[optimisticMode as SlashCommandId]}
           onSelect={handleSelect}
-          showFilter
         />
       </PopoverContent>
     </Popover>

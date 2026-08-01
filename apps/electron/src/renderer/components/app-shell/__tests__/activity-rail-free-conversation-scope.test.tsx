@@ -9,6 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { Provider, createStore } from 'jotai'
 import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
 import { sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
+import { FocusProvider } from '@/context/FocusContext'
 
 const appSource = readFileSync(new URL('../../../App.tsx', import.meta.url), 'utf8')
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf8')
@@ -77,19 +78,21 @@ describe('ActivityRail free-conversation scope', () => {
 
     const html = renderToStaticMarkup(
       <Provider store={store}>
-        <ActivityRail
-          activeItem="recent"
-          workspaces={[{
-            id: PROJECT_WORKSPACE_ID,
-            name: '九州',
-            slug: 'jiuzhou',
-            rootPath: '/tmp/jiuzhou',
-            createdAt: 0,
-          }]}
-          activeWorkspaceId={PROJECT_WORKSPACE_ID}
-          onSelectSession={() => {}}
-          onOpenFreeConversations={() => {}}
-        />
+        <FocusProvider>
+          <ActivityRail
+            activeItem="recent"
+            workspaces={[{
+              id: PROJECT_WORKSPACE_ID,
+              name: '九州',
+              slug: 'jiuzhou',
+              rootPath: '/tmp/jiuzhou',
+              createdAt: 0,
+            }]}
+            activeWorkspaceId={PROJECT_WORKSPACE_ID}
+            onSelectSession={() => {}}
+            onOpenFreeConversations={() => {}}
+          />
+        </FocusProvider>
       </Provider>
     )
 
@@ -104,7 +107,9 @@ describe('ActivityRail free-conversation scope', () => {
     installElectronApi()
     const html = renderToStaticMarkup(
       <Provider store={createStore()}>
-        <ActivityRail activeItem="recent" onOpenFreeConversations={() => {}} />
+        <FocusProvider>
+          <ActivityRail activeItem="recent" onOpenFreeConversations={() => {}} />
+        </FocusProvider>
       </Provider>
     )
 
@@ -135,6 +140,8 @@ describe('ActivityRail free-conversation scope', () => {
     expect(handlerSource).toContain('options?.createNew')
     expect(handlerSource).toContain('routes.action.newSession()')
     expect(handlerSource).toContain('routes.view.allSessions()')
+    expect(activityRailSource).toContain("useFocusZone({ zoneId: 'navigator' })")
+    expect(activityRailSource).toContain('tabIndex={-1}')
     expect(appShellContextSource).toContain(
       'onOpenFreeConversations: (options?: { createNew?: boolean }) => void | Promise<void>'
     )
@@ -173,18 +180,35 @@ describe('ActivityRail free-conversation scope', () => {
     expect(inactive.map(session => session.id)).toEqual(['deleted', 'kept'])
   })
 
+  it('keeps the rail cache visible while the runtime metadata map hydrates', () => {
+    const cachedSnapshot = [meta('cached', PROJECT_WORKSPACE_ID, '缓存对话')]
+    const emptyRuntime: SessionMeta[] = []
+
+    const duringHydration = resolveActivityWorkspaceSessionMetas(
+      PROJECT_WORKSPACE_ID,
+      PROJECT_WORKSPACE_ID,
+      cachedSnapshot,
+      emptyRuntime,
+      false,
+    )
+
+    expect(duringHydration.map(session => session.id)).toEqual(['cached'])
+  })
+
   it('renders the Feishu avatar with an initial fallback and follows auth broadcasts', () => {
     installElectronApi()
     const html = renderToStaticMarkup(
       <Provider store={createStore()}>
-        <ActivityRail
-          activeItem="recent"
-          profile={{
-            name: '飞书用户',
-            avatarUrl: 'https://example.com/feishu-avatar.png',
-          }}
-          onOpenFreeConversations={() => {}}
-        />
+        <FocusProvider>
+          <ActivityRail
+            activeItem="recent"
+            profile={{
+              name: '飞书用户',
+              avatarUrl: 'https://example.com/feishu-avatar.png',
+            }}
+            onOpenFreeConversations={() => {}}
+          />
+        </FocusProvider>
       </Provider>
     )
 

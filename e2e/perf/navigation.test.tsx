@@ -8,6 +8,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { Provider, createStore } from 'jotai'
 import { setupI18n } from '@craft-agent/shared/i18n'
 import { initReactI18next } from 'react-i18next'
+import { FocusProvider } from '../../apps/electron/src/renderer/context/FocusContext'
 import {
   expandWritingChapterDirectoryExpression,
   openFixtureProjectExpression,
@@ -76,26 +77,28 @@ function selectFromRenderedRail(html: string, project: 'writing' | 'sessions'): 
 function renderCurrentProjectRail(): string {
   return renderToStaticMarkup(
     <Provider store={createStore()}>
-      <ActivityRail
-        activeItem="writing"
-        workspaces={[
-          {
-            id: 'perf-novel',
-            name: '400章长篇小说',
-            slug: 'perf-novel',
-            rootPath: '/tmp/perf-novel',
-            createdAt: 1,
-          },
-          {
-            id: 'perf-sessions',
-            name: '长篇小说 02',
-            slug: 'perf-ws-02',
-            rootPath: '/tmp/perf-ws-02',
-            createdAt: 2,
-          },
-        ]}
-        onSelectProject={() => {}}
-      />
+      <FocusProvider>
+        <ActivityRail
+          activeItem="writing"
+          workspaces={[
+            {
+              id: 'perf-novel',
+              name: '400章长篇小说',
+              slug: 'perf-novel',
+              rootPath: '/tmp/perf-novel',
+              createdAt: 1,
+            },
+            {
+              id: 'perf-sessions',
+              name: '长篇小说 02',
+              slug: 'perf-ws-02',
+              rootPath: '/tmp/perf-ws-02',
+              createdAt: 2,
+            },
+          ]}
+          onSelectProject={() => {}}
+        />
+      </FocusProvider>
     </Provider>
   )
 }

@@ -78,6 +78,11 @@ describe('project management entry', () => {
     expect(activityRailSource).not.toContain('退出到作品库')
   })
 
+  it('offers conversation ID copying from the rail context menu', () => {
+    expect(activityRailRowsSource).toContain('navigator.clipboard.writeText(meta.id)')
+    expect(activityRailRowsSource).toContain('复制对话 ID')
+  })
+
   it('keeps plugin navigation at the top of the single workspace sidebar', () => {
     expect(appShellSource).toContain('const showActivityRail = true')
     expect(appShellSource).toContain('<ActivityRail')
@@ -180,6 +185,7 @@ describe('project management entry', () => {
     expect(activityRailSource).not.toContain('onSelectProject?:')
     expect(projectRowSource).not.toContain("role={expandable ? 'button' : undefined}")
     expect(projectRowSource).toContain("active && 'bg-foreground/[0.07] text-foreground'")
+    expect(projectRowSource).toContain("'group flex min-w-0 items-center rounded-[6px] hover:bg-foreground/[0.045]'")
     expect(projectRowSource).toContain('aria-label={`在 ${workspace.name} 中新建任务`}')
     expect(activityRailRowsSource).toContain('const PROJECT_SESSION_LIMIT = 5')
     expect(projectRowSource).toContain('sessions?.slice(0, PROJECT_SESSION_LIMIT)')
@@ -232,6 +238,7 @@ describe('project management entry', () => {
     expect(conversationRowSource).not.toContain('<DropdownMenu')
     expect(conversationRowSource).not.toContain('MoreHorizontal')
     expect(conversationRowSource).not.toContain('<SessionMenu')
+    expect(conversationRowSource).toContain("'flex w-full min-w-0 items-center rounded-[6px] hover:bg-foreground/[0.045]'")
     expect(appShellSource).toContain('onRename: onRenameSession')
     expect(appShellSource).toContain('onArchive: onArchiveSession')
     expect(appShellSource).toContain('onDelete: (sessionId) => { void handleDeleteSession(sessionId) }')

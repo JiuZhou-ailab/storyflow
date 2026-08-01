@@ -1,3 +1,7 @@
+// input: Action definitions, DOM keybinding context, and registered renderer handlers
+// output: Global action dispatch with exact cross-platform hotkey matching
+// pos: Central keyboard shortcut registry for the Electron renderer
+
 import React, { createContext, useContext, useCallback, useRef, useEffect } from 'react'
 import { actions, type ActionId } from './definitions'
 import type { ActionDefinition, ActionHandler } from './types'
@@ -135,14 +139,14 @@ export function useActionRegistry() {
 // Utility functions
 // ─────────────────────────────────────────────
 
-function matchesHotkey(e: KeyboardEvent, hotkey: string): boolean {
+export function matchesHotkey(e: KeyboardEvent, hotkey: string, platformIsMac = isMac): boolean {
   const parts = hotkey.toLowerCase().split('+')
   const key = parts[parts.length - 1]
   const needsMod = parts.includes('mod')
+  const needsCtrl = parts.includes('ctrl')
   const needsShift = parts.includes('shift')
   const needsAlt = parts.includes('alt')
 
-  const modPressed = isMac ? e.metaKey : e.ctrlKey
   const logicalKeyMatches = e.key.toLowerCase() === key
 
   // Handle special keys via physical code where logical values can vary by layout.
@@ -169,11 +173,14 @@ function matchesHotkey(e: KeyboardEvent, hotkey: string): boolean {
     : logicalKeyMatches
 
   // Check modifier requirements
-  const modCorrect = needsMod ? modPressed : !modPressed
+  const expectsMeta = needsMod && platformIsMac
+  const expectsCtrl = needsCtrl || (needsMod && !platformIsMac)
+  const metaCorrect = expectsMeta ? e.metaKey : !e.metaKey
+  const ctrlCorrect = expectsCtrl ? e.ctrlKey : !e.ctrlKey
   const shiftCorrect = needsShift ? e.shiftKey : !e.shiftKey
   const altCorrect = needsAlt ? e.altKey : !e.altKey
 
-  return codeMatches && modCorrect && shiftCorrect && altCorrect
+  return codeMatches && metaCorrect && ctrlCorrect && shiftCorrect && altCorrect
 }
 
 function formatHotkeyDisplay(hotkey: string): string {
@@ -181,6 +188,7 @@ function formatHotkeyDisplay(hotkey: string): string {
 
   const symbols = parts.map(part => {
     if (part === 'mod') return isMac ? '⌘' : 'Ctrl'
+    if (part === 'ctrl') return isMac ? '⌃' : 'Ctrl'
     if (part === 'shift') return isMac ? '⇧' : 'Shift'
     if (part === 'alt') return isMac ? '⌥' : 'Alt'
     if (part === 'escape') return 'Esc'

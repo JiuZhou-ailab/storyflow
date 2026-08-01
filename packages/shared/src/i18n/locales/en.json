@@ -864,6 +864,7 @@
   "session.unreadGroup": "Unread ({{count}})",
   "sessionMenu.archive": "Archive",
   "sessionMenu.connectMessaging": "Connect Messaging",
+  "sessionMenu.copyId": "Copy Conversation ID",
   "sessionMenu.copyLink": "Copy Link",
   "sessionMenu.copyPath": "Copy Path",
   "sessionMenu.flag": "Flag",

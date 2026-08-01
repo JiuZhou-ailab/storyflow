@@ -20,6 +20,7 @@
  * - Rename
  * - Open in New Window
  * - Show in file manager
+ * - Copy conversation ID
  * - Delete
  */
 
@@ -137,6 +138,15 @@ export function SessionMenu({
     if (result?.success && result.path) {
       await navigator.clipboard.writeText(result.path)
       toast.success(t('toast.pathCopied'))
+    }
+  }
+
+  const handleCopySessionId = async () => {
+    try {
+      await navigator.clipboard.writeText(sessionId)
+      toast.success(t('toast.copied'))
+    } catch {
+      toast.error(t('toast.copyFailed'))
     }
   }
 
@@ -329,6 +339,12 @@ export function SessionMenu({
       <MenuItem onClick={handleCopyPath}>
         <Copy className="h-3.5 w-3.5" />
         <span className="flex-1">{t("sessionMenu.copyPath")}</span>
+      </MenuItem>
+
+      {/* Copy conversation ID */}
+      <MenuItem onClick={handleCopySessionId}>
+        <Copy className="h-3.5 w-3.5" />
+        <span className="flex-1">{t("sessionMenu.copyId", { defaultValue: "Copy Conversation ID" })}</span>
       </MenuItem>
 
       <Separator />

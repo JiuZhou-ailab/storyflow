@@ -864,6 +864,7 @@
   "session.unreadGroup": "未読 ({{count}})",
   "sessionMenu.archive": "アーカイブ",
   "sessionMenu.connectMessaging": "メッセージングを接続",
+  "sessionMenu.copyId": "会話 ID をコピー",
   "sessionMenu.copyLink": "リンクをコピー",
   "sessionMenu.copyPath": "パスをコピー",
   "sessionMenu.flag": "フラグ",

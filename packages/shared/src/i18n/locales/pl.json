@@ -864,6 +864,7 @@
   "session.unreadGroup": "Nieprzeczytane ({{count}})",
   "sessionMenu.archive": "Archiwizuj",
   "sessionMenu.connectMessaging": "Połącz komunikator",
+  "sessionMenu.copyId": "Kopiuj identyfikator rozmowy",
   "sessionMenu.copyLink": "Kopiuj link",
   "sessionMenu.copyPath": "Kopiuj ścieżkę",
   "sessionMenu.flag": "Oznacz flagą",

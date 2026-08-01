@@ -4,7 +4,16 @@ import {
   exceedsLongTextLineThreshold,
   isEscapeDuringComposition,
   isRichTextDomMutationSafe,
+  shouldShowRichTextPlaceholder,
 } from '../rich-text-input'
+
+describe('shouldShowRichTextPlaceholder', () => {
+  it('hides the placeholder while the IME owns visible composition text', () => {
+    expect(shouldShowRichTextPlaceholder('', true)).toBe(false)
+    expect(shouldShowRichTextPlaceholder('', false)).toBe(true)
+    expect(shouldShowRichTextPlaceholder('你', true)).toBe(false)
+  })
+})
 
 describe('isRichTextDomMutationSafe', () => {
   it('accepts ordinary input immediately after composition ends', () => {

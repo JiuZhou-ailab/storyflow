@@ -16,7 +16,11 @@ describe('AppShell derived state', () => {
   })
 
   it('keeps workspace session derivation and bucketing scoped to SessionList', () => {
-    expect(appShellSource).not.toContain('sessionMetaMapAtom')
+    // Ctrl+Tab reads the atom only at action time; render-time derivation remains in SessionList.
+    expect(appShellSource).not.toContain('useAtomValue(sessionMetaMapAtom)')
+    expect(appShellSource).not.toContain('const workspaceSessionMetasAtom')
+    expect(appShellSource).not.toContain('for (const meta of metaMap.values())')
+    expect(appShellSource).toContain('store.get(sessionMetaMapAtom)')
     expect(sessionListSource).toContain('const workspaceSessionMetasAtom = useMemo(')
     expect(sessionListSource).toContain('selectAtom(')
     expect(sessionListSource).toContain('for (const meta of metaMap.values())')
