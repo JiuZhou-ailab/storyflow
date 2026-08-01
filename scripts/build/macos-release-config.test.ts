@@ -136,6 +136,15 @@ describe('macOS release configuration', () => {
     expect(workflow).not.toContain('run: bun run electron:dist:dev:win');
   });
 
+  test('publishes the curated version note across release surfaces', () => {
+    const workflow = readRepoFile('.github/workflows/release.yml');
+
+    expect(workflow).toContain('--curated-notes="apps/electron/resources/release-notes/$version.md"');
+    expect(workflow).toContain('--notes-file "$notes_file"');
+    expect(workflow).not.toContain('--generate-notes');
+    expect(workflow).not.toContain('STORYFLOW_WHATS_NEW_OPENAI_API_KEY');
+  });
+
   test('runs packaged macOS E2E on a native runner for each architecture', () => {
     const workflow = readRepoFile('.github/workflows/release.yml');
 

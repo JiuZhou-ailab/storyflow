@@ -41,12 +41,12 @@ export function getWhatsNewStartupAction(input: WhatsNewStartupActionInput): Wha
 
 export function buildWhatsNewAnnouncementCopy(manifest: WhatsNewManifest): WhatsNewAnnouncementCopy {
   return {
-    title: '本次更新指南',
-    versionLabel: `Storyflow 已更新到 v${manifest.version}`,
+    title: 'Storyflow 更新好了',
+    versionLabel: `v${manifest.version}`,
     summary: truncateSummary(normalizeSummary(manifest.summary)),
     guideItems: normalizeGuideItems(manifest.highlights ?? []),
-    primaryActionLabel: '开始使用',
-    secondaryActionLabel: '查看完整更新',
+    primaryActionLabel: '继续使用',
+    secondaryActionLabel: '查看全部更新',
   }
 }
 

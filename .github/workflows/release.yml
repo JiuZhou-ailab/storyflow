@@ -205,8 +205,11 @@ jobs:
       - name: Generate What's New
         env:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
-          STORYFLOW_WHATS_NEW_OPENAI_API_KEY: ${{ secrets.STORYFLOW_WHATS_NEW_OPENAI_API_KEY }}
-        run: bun run release:whats-new -- --version="${RELEASE_TAG#v}"
+        run: |
+          version="${RELEASE_TAG#v}"
+          bun run release:whats-new -- \
+            --version="$version" \
+            --curated-notes="apps/electron/resources/release-notes/$version.md"
 
       - name: Build macOS artifacts
         run: bun run electron:dist:mac -- --arch=${{ matrix.arch }}
@@ -311,8 +314,11 @@ jobs:
         shell: bash
         env:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
-          STORYFLOW_WHATS_NEW_OPENAI_API_KEY: ${{ secrets.STORYFLOW_WHATS_NEW_OPENAI_API_KEY }}
-        run: bun run release:whats-new -- --version="${RELEASE_TAG#v}"
+        run: |
+          version="${RELEASE_TAG#v}"
+          bun run release:whats-new -- \
+            --version="$version" \
+            --curated-notes="apps/electron/resources/release-notes/$version.md"
 
       - name: Build Windows artifacts
         run: bun run electron:dist:win
@@ -369,27 +375,32 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Generate release notes
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          mkdir -p .release-metadata/release-notes
+          bun run release:whats-new -- \
+            --version="$version" \
+            --curated-notes="apps/electron/resources/release-notes/$version.md" \
+            --out-dir=.release-metadata/release-notes \
+            --out-json=.release-metadata/whats-new.json
+
       - name: Create GitHub Release
         env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
         run: |
+          notes_file=".release-metadata/release-notes/${RELEASE_TAG#v}.md"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG"
+            gh release edit "$RELEASE_TAG" --title "Storyflow $RELEASE_TAG" --notes-file "$notes_file"
           elif [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --generate-notes --target "$GITHUB_SHA"
+            gh release create "$RELEASE_TAG" --title "Storyflow $RELEASE_TAG" --notes-file "$notes_file" --target "$GITHUB_SHA"
           else
-            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --generate-notes --verify-tag
+            gh release create "$RELEASE_TAG" --title "Storyflow $RELEASE_TAG" --notes-file "$notes_file" --verify-tag
           fi
-
-      - name: Generate What's New manifest
-        env:
-          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
-          STORYFLOW_WHATS_NEW_OPENAI_API_KEY: ${{ secrets.STORYFLOW_WHATS_NEW_OPENAI_API_KEY }}
-        run: |
-          mkdir -p .release-metadata
-          bun run release:whats-new -- --version="${RELEASE_TAG#v}" --out-json=.release-metadata/whats-new.json
 
       - name: Upload installer scripts to release
         env:

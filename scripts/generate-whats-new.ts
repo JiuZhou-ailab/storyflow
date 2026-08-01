@@ -115,10 +115,20 @@ function normalizeVersion(value: string): string {
 function loadCuratedMarkdown(options: CliOptions): string | undefined {
   if (!options.curatedNotes) return undefined
   if (options.commitsJson && !options.curatedNotesExplicit) return undefined
-  if (!existsSync(options.curatedNotes)) return undefined
+  if (!existsSync(options.curatedNotes)) {
+    if (options.curatedNotesExplicit) {
+      throw new Error(`Curated release notes not found: ${options.curatedNotes}`)
+    }
+    return undefined
+  }
 
   const content = readFileSync(options.curatedNotes, 'utf8').trim()
-  if (!content) return undefined
+  if (!content) {
+    if (options.curatedNotesExplicit) {
+      throw new Error(`Curated release notes are empty: ${options.curatedNotes}`)
+    }
+    return undefined
+  }
   return content.endsWith('\n') ? content : `${content}\n`
 }
 
@@ -138,7 +148,7 @@ function buildCuratedWhatsNewDraft(input: {
       version: input.version,
       digest,
       generatedAt: input.generatedAt,
-      title: `What is new in v${input.version}`,
+      title: `Storyflow v${input.version} 更新说明`,
       summary: extractCuratedSummary(input.markdown),
       highlights: extractWhatsNewHighlights(input.markdown),
       accentColor: accent.hex,

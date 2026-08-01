@@ -53,6 +53,17 @@ There is no TypeScript fallback - if the bundled JSON file is missing, the app w
 
 **Never create `{version}.md` files in feature commits.** Versioned files in `release-notes/` are owned by the release skill — it consolidates pending entries into `{version}.md` at release-prep time and resets the scratch file.
 
-For PRs that add user-visible behavior, append a bullet to the relevant section in [`release-notes/next.md`](release-notes/next.md). Match the tone and depth of recent versioned files (e.g. `0.9.0.md`): bold short title — detailed paragraph — issue reference — commit hash.
+For PRs that add user-visible behavior, append a bullet to the relevant product area in [`release-notes/next.md`](release-notes/next.md). `next.md` is the single source for the in-app announcement, update history, and GitHub Release body.
+
+Write for people using Storyflow:
+
+- Open with one plain sentence about what feels better after updating.
+- Group bullets by user-visible area, not by implementation layer or commit type.
+- Use a short bold outcome followed by one sentence describing what changed for the user.
+- Keep protocol names, internal architecture, CI, signing, and release gates out unless the user must act on them.
+- Do not include issue numbers or commit hashes. The GitHub compare view already owns that history.
+- Prefer calm, direct Chinese. Say “现在可以做什么” before explaining why it works.
+
+At release prep, copy the finished note to `{version}.md`, then reset `next.md` for the following version in the same release commit. The release workflow requires that versioned file and publishes the exact same copy everywhere; it never falls back to GitHub-generated commit notes.
 
 **Why this exists:** during v0.9.0 prep, two feature commits had pre-emptively written `0.8.14.md` and `0.8.15.md` (guessing patch releases), but the changes ended up rolled into a minor. Both files had to be deleted and folded back in — without that cleanup, they would have surfaced as ghost versions in the in-app release-notes panel.

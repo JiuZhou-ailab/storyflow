@@ -5589,13 +5589,6 @@ function AppShellContent({
                         onResizeStart={beginResize}
                         width={workspaceDirectoryWidth}
                         disableAnimation={isResizing === 'directory-dock'}
-                        header={(
-                          <div
-                            aria-hidden="true"
-                            data-panel-role="directory-header"
-                            className="titlebar-drag-region relative z-panel h-[42px] shrink-0 border-b border-foreground/[0.06]"
-                          />
-                        )}
                       >
                         {activityWorkspaceDirectory}
                       </ResizableColumn>

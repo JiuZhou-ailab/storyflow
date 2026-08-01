@@ -125,6 +125,32 @@ describe('generate-whats-new', () => {
     expect(manifest.source.userVisibleCommitCount).toBe(2)
   })
 
+  it('fails when explicitly requested release notes are missing', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'storyflow-whats-new-'))
+    const commitsJson = join(tmp, 'commits.json')
+
+    writeFileSync(commitsJson, '[]')
+
+    const result = spawnSync('bun', [
+      'run',
+      scriptPath,
+      '--version=0.9.28',
+      `--commits-json=${commitsJson}`,
+      `--curated-notes=${join(tmp, 'missing.md')}`,
+      `--out-dir=${join(tmp, 'release-notes')}`,
+    ], {
+      cwd: rootDir,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        STORYFLOW_WHATS_NEW_DISABLE_AI: '1',
+      },
+    })
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('Curated release notes not found')
+  })
+
   it('writes the manifest next to release markdown by default', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'storyflow-whats-new-'))
     const commitsJson = join(tmp, 'commits.json')

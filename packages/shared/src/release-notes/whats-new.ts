@@ -87,7 +87,7 @@ export function buildWhatsNewDraft(input: BuildWhatsNewDraftInput): WhatsNewDraf
       version: input.version,
       digest,
       generatedAt: input.generatedAt,
-      title: `What is new in v${input.version}`,
+      title: `Storyflow v${input.version} 更新说明`,
       summary,
       highlights: extractWhatsNewHighlights(markdown),
       accentColor: accent.hex,
