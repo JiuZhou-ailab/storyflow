@@ -1,16 +1,16 @@
 {
-  "version": "0.9.56",
-  "digest": "185a97a94a1373a17c4aec47d1c26ebae622752aeb35bba0f47ba264d2f5d1da",
-  "generatedAt": "2026-07-31T10:43:55.903Z",
-  "title": "What is new in v0.9.56",
-  "summary": "这一版重做了默认 AI 的协议边界，让不同模型系列走各自原生接口，减少兼容层造成的请求错误。",
+  "version": "0.9.57",
+  "digest": "278d49bdec34621ad5df1cc3aed4a973a8c9efcd5a9f849fb7063d81f9066bba",
+  "generatedAt": "2026-08-01T03:15:01.420Z",
+  "title": "What is new in v0.9.57",
+  "summary": "这一版修复了默认 AI 模型选择器与实际协议连接之间的错位，四个模型系列现在都能稳定显示和切换。",
   "highlights": [
-    "Claude 5 可直接使用：新增 Claude Sonnet 5 与 Claude Opus 5，并通过 Anthropic Messages 协议调用。",
-    "Gemini 目录实时同步：保留 Gemini 3.5，网关提供 Gemini 3.6 系列时自动展示，不再写死尚未开放的模型 ID。",
-    "GPT 使用 Responses API：GPT 5.5 与 GPT 5.6 改走原生 Responses 协议，工具调用与推理参数不再落入 Chat Completions 的兼容限制。",
-    "DeepSeek 保持独立协议：DeepSeek 继续使用 Chat Completions，但不会再携带当前不可用的响应格式。"
+    "完整展示模型系列：最外层统一显示 GPT、Claude、Gemini 与 DeepSeek，不再只剩当前连接对应的 GPT。",
+    "已开始会话也能切换：会话进行中可在四个默认系列之间切换，系统会同步使用该模型对应的原生协议。",
+    "自定义服务保持独立：用户配置的 OpenAI、Anthropic、Gemini 与本地连接仍遵循原有会话锁定边界。",
+    "恢复 Intel Mac 安装包：修复 Intel 架构签名环境不稳定导致的构建中断，双架构发布门禁保持不变。"
   ],
-  "accentColor": "#af1d68",
+  "accentColor": "#158459",
   "accentTextColor": "#ffffff",
   "source": {
     "commitCount": 2,
