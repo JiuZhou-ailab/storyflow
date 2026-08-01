@@ -26,7 +26,6 @@ import {
   removeSessionAtom,
   refreshSessionsMetadataAtom,
   initializeSessionsAtom,
-  syncSessionsToAtomsAtom,
   replaceLoadedSessionAtom,
   updateSessionAtom,
   updateSessionMetaAtom,
@@ -1040,55 +1039,5 @@ describe('refreshSessionsMetadataAtom', () => {
     })
 
     expect(store.get(sessionIdsAtom)).toEqual(['newer', 'older'])
-  })
-})
-
-describe('syncSessionsToAtomsAtom', () => {
-  it('does not notify metadata or id subscribers when synced metadata is unchanged', () => {
-    const syncSource = sessionsAtomSource.slice(
-      sessionsAtomSource.indexOf('export const syncSessionsToAtomsAtom'),
-      sessionsAtomSource.indexOf('// loadedSessionsAtom')
-    )
-    const store = createStore()
-    const sessions = [
-      makeSession({ id: 's1', name: 'First', lastMessageAt: 200 }),
-      makeSession({ id: 's2', name: 'Second', lastMessageAt: 100 }),
-    ]
-
-    store.set(initializeSessionsAtom, sessions)
-    const beforeMetaMap = store.get(sessionMetaMapAtom)
-    const beforeIds = store.get(sessionIdsAtom)
-    const beforeSession = store.get(sessionAtomFamily('s1'))
-    let metaNotifications = 0
-    let idNotifications = 0
-    let sessionNotifications = 0
-    const unsubscribeMeta = store.sub(sessionMetaMapAtom, () => {
-      metaNotifications += 1
-    })
-    const unsubscribeIds = store.sub(sessionIdsAtom, () => {
-      idNotifications += 1
-    })
-    const unsubscribeSession = store.sub(sessionAtomFamily('s1'), () => {
-      sessionNotifications += 1
-    })
-
-    store.set(syncSessionsToAtomsAtom, [
-      makeSession({ id: 's1', name: 'First', lastMessageAt: 200 }),
-      makeSession({ id: 's2', name: 'Second', lastMessageAt: 100 }),
-    ])
-
-    expect(store.get(sessionMetaMapAtom)).toBe(beforeMetaMap)
-    expect(store.get(sessionIdsAtom)).toBe(beforeIds)
-    expect(store.get(sessionAtomFamily('s1'))).toBe(beforeSession)
-    expect(syncSource).toContain('let idsChanged = ids.length !== sessions.length')
-    expect(syncSource).toContain('if (idsChanged) {\n      const nextIds = sessions.map')
-    expect(syncSource).not.toContain('ids.some((id, index) => id !== nextIds[index])')
-    expect(metaNotifications).toBe(0)
-    expect(idNotifications).toBe(0)
-    expect(sessionNotifications).toBe(0)
-
-    unsubscribeMeta()
-    unsubscribeIds()
-    unsubscribeSession()
   })
 })

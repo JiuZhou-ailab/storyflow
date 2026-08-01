@@ -986,21 +986,10 @@ function AppContent() {
     }
   }, [windowWorkspaceId, refreshLlmConnections])
 
-  // Listen for session events - uses centralized event processor for consistent state transitions
-  //
-  // SOURCE OF TRUTH LOGIC:
-  // - During streaming (atom.isProcessing = true): Atom is source of truth
-  //   All events read from and write to atom. This preserves streaming data.
-  // - When not streaming: React state is source of truth
-  //   Events read/write React state, which syncs to atoms via useEffect.
-  // - Handoff events (complete, error, etc.): End streaming, sync atom → React state
-  //
-  // This is simpler and more robust than checking event types - we just ask
-  // "is this session currently streaming?" and route accordingly.
+  // Listen for session events. Per-session atoms are the sole renderer source of truth;
+  // text deltas bypass metadata projection while structural events update both views.
   useEffect(() => {
-    // Handoff events signal end of streaming - need to sync back to React state
-    // Also includes todo_state_changed so status updates immediately reflect in sidebar
-    // async_operation included so shimmer effect on session titles updates in real-time
+    // Handoff events end streaming and may change list-visible metadata.
     const handoffEventTypes = new Set(['complete', 'error', 'interrupted', 'typed_error', 'session_status_changed', 'session_flagged', 'session_unflagged', 'name_changed', 'labels_changed', 'title_generated', 'async_operation'])
     const retryTimeouts = new Set<ReturnType<typeof setTimeout>>()
 
@@ -1163,78 +1152,36 @@ function AppContent() {
         }))
       }
 
-      // Check if session is currently streaming (atom is source of truth)
-      const atomSession = store.get(sessionAtomFamily(sessionId))
-      const isStreaming = atomSession?.isProcessing === true
       const isHandoff = handoffEventTypes.has(event.type)
-      const isTextDeltaFastPath = event.type === 'text_delta' && !!atomSession
-
-      // During streaming, text deltas, or handoff events: use atom as source of truth
-      // This ensures all events during streaming see the complete state
-      if (isStreaming || isHandoff || isTextDeltaFastPath) {
-        const currentSession = atomSession ?? null
-
-        // Process the event
-        const { session: updatedSession, effects } = processAgentEvent(
-          agentEvent,
-          currentSession,
-          workspaceId
-        )
-
-        // text_delta changes only the active session body; avoid rebuilding session metadata
-        // for every streaming chunk.
-        if (event.type === 'text_delta') {
-          store.set(sessionAtomFamily(sessionId), updatedSession)
-        } else {
-          updateSessionDirect(sessionId, () => updatedSession)
-        }
-        if (isHandoff && !updatedSession.isProcessing) {
-          store.set(reconcileCurrentSessionTranscriptWorkingSetAtom)
-        }
-
-        // Handle side effects
-        handleEffects(effects, sessionId, event.type)
-
-        // Handle background task events
-        handleBackgroundTaskEvent(store, sessionId, event, agentEvent)
-
-        // For handoff events, update metadata map for list display
-        // NOTE: No sessionsAtom to sync - atom and metadata are the source of truth
-        if (isHandoff) {
-          // Show notification on complete (when window is not focused)
-          // Skip hidden sessions (mini-agent sessions) - they shouldn't trigger notifications
-          if (event.type === 'complete' && !updatedSession.hidden) {
-            // Get the last assistant/plan message as preview
-            const lastMessage = updatedSession.messages.findLast(
-              m => (m.role === 'assistant' || m.role === 'plan') && !m.isIntermediate
-            )
-            // Strip markdown so OS notifications display clean plain text
-            const rawPreview = lastMessage?.content?.substring(0, 200) || undefined
-            const preview = rawPreview ? stripMarkdown(rawPreview).substring(0, 100) || undefined : undefined
-            showSessionNotification(updatedSession, preview)
-          }
-        }
-
-        return
-      }
-
-      // Not streaming: use per-session atoms directly (no sessionsAtom)
       const currentSession = store.get(sessionAtomFamily(sessionId))
-
       const { session: updatedSession, effects } = processAgentEvent(
         agentEvent,
         currentSession,
         workspaceId
       )
 
-      // Handle side effects
-      handleEffects(effects, sessionId, event.type)
+      // Text deltas change only the active transcript body. All structural events
+      // flow through the metadata-aware update action.
+      if (event.type === 'text_delta') {
+        store.set(sessionAtomFamily(sessionId), updatedSession)
+      } else {
+        updateSessionDirect(sessionId, () => updatedSession)
+      }
+      if (isHandoff && !updatedSession.isProcessing) {
+        store.set(reconcileCurrentSessionTranscriptWorkingSetAtom)
+      }
 
-      // Handle background task events
+      handleEffects(effects, sessionId, event.type)
       handleBackgroundTaskEvent(store, sessionId, event, agentEvent)
 
-      // Update per-session atom
-      updateSessionDirect(sessionId, () => updatedSession)
+      if (event.type === 'complete' && !updatedSession.hidden) {
+        const lastMessage = updatedSession.messages.findLast(
+          m => (m.role === 'assistant' || m.role === 'plan') && !m.isIntermediate
+        )
+        const rawPreview = lastMessage?.content?.substring(0, 200) || undefined
+        const preview = rawPreview ? stripMarkdown(rawPreview).substring(0, 100) || undefined : undefined
+        showSessionNotification(updatedSession, preview)
+      }
     })
 
     return () => {
@@ -1256,6 +1203,10 @@ function AppContent() {
     syncSessionOptionsFromSession,
     applyPermissionModeState,
     reconcilePermissionModeState,
+    setPendingCredentials,
+    setPendingPermissions,
+    setPendingUserQuestions,
+    setSessionOptions,
   ])
 
   // Transport reconnect recovery — refresh session metadata plus active/processing
@@ -1831,13 +1782,13 @@ function AppContent() {
       await window.electronAPI.sessionCommand(session.id, { type: 'rename', name: params.name })
     }
 
+    // Seed the draft before navigation so ChatPage reads it on its first render.
+    if (params.input) {
+      handleInputChange(session.id, params.input)
+    }
+
     // Navigate to the chat view - this sets both selectedSession and activeView
     navigate(routes.view.allSessions(session.id))
-
-    // Pre-fill input if provided (after a small delay to ensure component is mounted)
-    if (params.input) {
-      setTimeout(() => handleInputChange(session.id, params.input!), 100)
-    }
   }, [windowWorkspaceId, handleCreateSession, handleInputChange])
 
   const handleRespondToPermission = useCallback(async (

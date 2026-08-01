@@ -50,12 +50,10 @@ import {
 import { permissionsConfigCache, getAppPermissionsDir } from '../agent/permissions-config.ts';
 import { getWorkspacePath, getWorkspaceSourcesPath } from '../workspaces/storage.ts';
 import { WORKSPACE_STATE_DIR } from '../workspaces/paths.ts';
-import type { LoadedSkill } from '../skills/types.ts';
 import {
   getPiUserSkillsDir,
   invalidateSkillsCache,
 } from '../skills/storage.ts';
-import { loadPiSkillCatalog } from '../skills/pi-catalog.ts';
 import { resolveResourceRoots } from '../resources/resolver.ts';
 import {
   loadStatusConfig,
@@ -152,10 +150,8 @@ export interface ConfigWatcherCallbacks {
   onSourcesListChange?: (sources: LoadedSource[]) => void;
 
   // Skill callbacks
-  /** Called when a specific skill changes (null if deleted) */
-  onSkillChange?: (slug: string, skill: LoadedSkill | null) => void;
-  /** Called when the skills list changes (add/remove folders) */
-  onSkillsListChange?: (skills: LoadedSkill[]) => void;
+  /** Called when the effective Skill catalog may have changed. */
+  onSkillsChange?: () => void;
 
   // Permissions callbacks
   /** Called when app-level default permissions change (~/.craft-agent/permissions/default.json) */
@@ -383,36 +379,6 @@ export class ConfigWatcher {
     debug('[ConfigWatcher] Stopped');
   }
 
-  /**
-   * Watch global config files (config.json, preferences.json)
-   */
-  private watchGlobalConfigs(): void {
-    // Ensure config directory exists
-    if (!existsSync(CONFIG_DIR)) {
-      mkdirSync(CONFIG_DIR, { recursive: true });
-    }
-
-    try {
-      // Watch the config directory for changes to config.json, preferences.json, and theme.json
-      const watcher = watch(CONFIG_DIR, (eventType, filename) => {
-        if (!filename) return;
-
-        if (filename === 'config.json') {
-          this.debounce('config.json', () => this.handleConfigChange());
-        } else if (filename === 'preferences.json') {
-          this.debounce('preferences.json', () => this.handlePreferencesChange());
-        } else if (filename === 'theme.json') {
-          this.debounce('app-theme', () => this.handleAppThemeChange());
-        }
-      });
-
-      this.watchers.push(watcher);
-      debug('[ConfigWatcher] Watching global configs:', CONFIG_DIR);
-    } catch (error) {
-      debug('[ConfigWatcher] Error watching global configs:', error);
-    }
-  }
-
   static getGlobalWatcherState(): {
     started: boolean;
     watcherCount: number;
@@ -573,7 +539,7 @@ export class ConfigWatcher {
               || (file && /^icon\.(svg|png|jpg|jpeg)$/i.test(file))
             ) {
               ConfigWatcher.debounceGlobal('global-skills', () => {
-                ConfigWatcher.forEachGlobalSubscriber(w => void w.handleSkillsChange());
+                ConfigWatcher.forEachGlobalSubscriber(w => w.handleSkillsChange());
               });
             }
           },
@@ -665,16 +631,11 @@ export class ConfigWatcher {
     this.callbacks.onSourcesListChange?.(allSources);
   }
 
-  /** Refresh Pi's complete user/project Skill catalog for this subscriber. */
-  private async handleSkillsChange(): Promise<void> {
+  /** Invalidate discovery; consumers load the catalog only when they need it. */
+  private handleSkillsChange(): void {
     debug('[ConfigWatcher] Skills changed');
     invalidateSkillsCache();
-    try {
-      const catalog = await loadPiSkillCatalog(this.workspaceDir);
-      this.callbacks.onSkillsListChange?.(catalog.skills);
-    } catch (error) {
-      this.callbacks.onError?.(this.workspaceDir, error instanceof Error ? error : new Error(String(error)));
-    }
+    this.callbacks.onSkillsChange?.();
   }
 
   /**
@@ -691,7 +652,7 @@ export class ConfigWatcher {
       (parts[0] === '.pi' || parts[0] === '.agents')
       && parts[1] === 'skills'
     ) {
-      this.debounce('project-skills', () => void this.handleSkillsChange());
+      this.debounce('project-skills', () => this.handleSkillsChange());
       return;
     }
 
@@ -1114,64 +1075,6 @@ export class ConfigWatcher {
     debug('[ConfigWatcher] App theme.json changed');
     const theme = loadAppTheme();
     this.callbacks.onAppThemeChange?.(theme);
-  }
-
-  /**
-   * Watch app-level themes directory (~/.craft-agent/themes/)
-   */
-  private watchAppThemesDir(): void {
-    const themesDir = getAppThemesDir();
-
-    // Create themes directory if it doesn't exist
-    if (!existsSync(themesDir)) {
-      mkdirSync(themesDir, { recursive: true });
-    }
-
-    try {
-      const watcher = watch(themesDir, (eventType, filename) => {
-        if (!filename) return;
-
-        // Only handle .json files
-        if (filename.endsWith('.json')) {
-          const themeId = filename.replace('.json', '');
-          this.debounce(`preset-theme:${themeId}`, () => this.handlePresetThemeChange(themeId));
-        }
-      });
-
-      this.watchers.push(watcher);
-      debug('[ConfigWatcher] Watching app themes directory:', themesDir);
-    } catch (error) {
-      debug('[ConfigWatcher] Error watching app themes directory:', error);
-    }
-  }
-
-  /**
-   * Watch app-level permissions directory (~/.craft-agent/permissions/)
-   * Watches for changes to default.json which contains the default read-only patterns
-   */
-  private watchAppPermissionsDir(): void {
-    const permissionsDir = getAppPermissionsDir();
-
-    // Create permissions directory if it doesn't exist
-    if (!existsSync(permissionsDir)) {
-      mkdirSync(permissionsDir, { recursive: true });
-    }
-
-    try {
-      const watcher = watch(permissionsDir, (eventType, filename) => {
-        if (!filename) return;
-
-        // Only watch default.json - this is where the default patterns live
-        if (filename === 'default.json') {
-          this.debounce('default-permissions', () => this.handleDefaultPermissionsChange());
-        }
-      });
-
-      this.watchers.push(watcher);
-      debug('[ConfigWatcher] Watching app permissions directory:', permissionsDir);
-    } catch (error) {
-      debug('[ConfigWatcher] Error watching app permissions directory:', error);
-    }
   }
 
   /**

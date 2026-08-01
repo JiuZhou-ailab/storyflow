@@ -382,9 +382,9 @@ describe('BroadcastEventMap payload shapes', () => {
     expect(_check).toBe(true)
   })
 
-  it('skills:changed carries (workspaceId, skills)', () => {
+  it('skills:changed is an invalidation scoped to one workspace', () => {
     type Payload = BroadcastEventMap[typeof RPC_CHANNELS.skills.CHANGED]
-    const _check: AssertTuple<Payload, 2> = true
+    const _check: AssertTuple<Payload, 1> = true
     expect(_check).toBe(true)
   })
 })

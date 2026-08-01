@@ -253,30 +253,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     setInputValue(coerceInputText(getDraft(sessionId)))
   }, [getDraft, sessionId])
 
-  // Sync when draft is set externally (e.g., from notifications or shortcuts)
-  // PERFORMANCE NOTE: This bounded polling (max 10 attempts × 50ms = 500ms)
-  // handles external draft injection. Drafts use a ref for typing performance,
-  // so they're not directly reactive. This polling only runs on session switch,
-  // not continuously. Alternative: Add a Jotai atom for draft changes.
-  React.useEffect(() => {
-    let attempts = 0
-    const maxAttempts = 10
-    const interval = setInterval(() => {
-      const currentDraft = coerceInputText(getDraft(sessionId))
-      if (currentDraft !== inputValueRef.current && currentDraft !== '') {
-        setInputValue(currentDraft)
-        clearInterval(interval)
-      }
-      attempts++
-      if (attempts >= maxAttempts) {
-        clearInterval(interval)
-      }
-    }, 50)
-
-    return () => clearInterval(interval)
-  }, [sessionId, getDraft])
-
-  // Listen for restore-input events (queued messages restored to input on abort)
+  // Explicit draft injections (rewind, deep link, queued-message restore).
   React.useEffect(() => {
     const handler = (e: Event) => {
       const { sessionId: targetId, text } = (e as CustomEvent).detail ?? {}
@@ -316,17 +293,17 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onAttachmentsChange(sessionId, attachments)
   }, [sessionId, onAttachmentsChange])
 
-  // Persist the current selection and refresh the global default used by new sessions.
+  // Persist the session selection and the global default used by new sessions.
+  // ConfigWatcher owns refreshing the shared connection catalog after persistence.
   const handleModelChange = React.useCallback(async (model: string, connection?: string) => {
     if (activeWorkspaceId) {
       try {
         await window.electronAPI.setSessionModel(sessionId, activeWorkspaceId, model, connection)
-        await refreshLlmConnections()
       } catch (error) {
         console.error('Failed to change model:', error)
       }
     }
-  }, [sessionId, activeWorkspaceId, refreshLlmConnections])
+  }, [sessionId, activeWorkspaceId])
 
   // Session connection change handler - can only change before first message
   const handleConnectionChange = React.useCallback(async (connectionSlug: string) => {

@@ -6,7 +6,6 @@
  *
  * Used by PiAgent for hot-reloading:
  * - Source config changes (add/update/delete)
- * - Skills config changes
  * - Permissions config changes
  * - Validation errors
  */
@@ -17,7 +16,6 @@ import {
   type ConfigWatcherCallbacks,
 } from '../../config/watcher.ts';
 import type { LoadedSource } from '../../sources/types.ts';
-import type { LoadedSkill } from '../../skills/types.ts';
 import type { ValidationResult } from '../../config/validators.ts';
 import { debug } from '../../utils/debug.ts';
 
@@ -41,19 +39,6 @@ export interface ConfigWatcherManagerCallbacks {
    * @param sources - All current sources
    */
   onSourcesListChange?: (sources: LoadedSource[]) => void;
-
-  /**
-   * Called when a skill config changes.
-   * @param slug - Skill slug
-   * @param skill - Updated skill or null if deleted
-   */
-  onSkillChange?: (slug: string, skill: LoadedSkill | null) => void;
-
-  /**
-   * Called when the skills list changes (add/remove folders).
-   * @param skills - All current skills
-   */
-  onSkillsListChange?: (skills: LoadedSkill[]) => void;
 
   /**
    * Called when workspace permissions change.
@@ -159,16 +144,6 @@ export class ConfigWatcherManager {
       onSourcesListChange: (sources) => {
         this.debug(`Sources list changed: ${sources.length} sources`);
         this.callbacks.onSourcesListChange?.(sources);
-      },
-
-      onSkillChange: (slug, skill) => {
-        this.debug(`Skill changed: ${slug} ${skill ? 'updated' : 'deleted'}`);
-        this.callbacks.onSkillChange?.(slug, skill);
-      },
-
-      onSkillsListChange: (skills) => {
-        this.debug(`Skills list changed: ${skills.length} skills`);
-        this.callbacks.onSkillsListChange?.(skills);
       },
 
       onWorkspacePermissionsChange: (workspaceId) => {

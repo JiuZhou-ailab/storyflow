@@ -626,6 +626,8 @@ export function FreeFormInput({
   // Also cleanup any pending debounced sync
   const inputRef = React.useRef(input)
   inputRef.current = input // Keep ref in sync with state
+  const onSubmitRef = React.useRef(onSubmit)
+  onSubmitRef.current = onSubmit
 
   React.useEffect(() => {
     return () => {
@@ -753,10 +755,10 @@ export function FreeFormInput({
   }, [llmConnections, refreshLlmConnections, t])
 
   const consumeInputDraftSnapshot = React.useCallback((): string => {
-    const snapshot = input.trim()
+    const snapshot = inputRef.current.trim()
     clearInputDraft()
     return snapshot
-  }, [input, clearInputDraft])
+  }, [clearInputDraft])
 
   type PlanApprovalEventDetail = {
     sessionId?: string
@@ -788,12 +790,12 @@ export function FreeFormInput({
         onPermissionModeChange?.('allow-all')
       }
 
-      onSubmit(text, undefined)
+      onSubmitRef.current(text, undefined)
     }
 
     window.addEventListener('craft:approve-plan', handleApprovePlan as EventListener)
     return () => window.removeEventListener('craft:approve-plan', handleApprovePlan as EventListener)
-  }, [sessionId, permissionMode, onPermissionModeChange, onSubmit, consumeInputDraftSnapshot])
+  }, [sessionId, permissionMode, onPermissionModeChange, consumeInputDraftSnapshot])
 
   // Listen for craft:approve-plan-with-compact events (Accept & Compact option)
   // This compacts the conversation first, then executes the plan.
@@ -825,39 +827,12 @@ export function FreeFormInput({
       }
 
       // Send /compact to trigger compaction
-      onSubmit('/compact', undefined)
-
-      // Set up a one-time listener for compaction complete.
-      // This handles the normal case (no reload during compaction).
-      const handleCompactionComplete = async (compactEvent: CustomEvent<{ sessionId?: string }>) => {
-        // Only handle if this is for our session
-        if (compactEvent.detail?.sessionId !== sessionId) {
-          return
-        }
-
-        // Remove the listener (one-time use)
-        window.removeEventListener('craft:compaction-complete', handleCompactionComplete as unknown as EventListener)
-
-        const executionMessage = buildPlanApprovalMessage({
-          planPath,
-          draftInput: draftInputSnapshot,
-        })
-        onSubmit(executionMessage, undefined)
-
-        // Clear the pending state since we just sent the execution message
-        if (sessionId) {
-          await window.electronAPI.sessionCommand(sessionId, {
-            type: 'clearPendingPlanExecution',
-          })
-        }
-      }
-
-      window.addEventListener('craft:compaction-complete', handleCompactionComplete as unknown as EventListener)
+      onSubmitRef.current('/compact', undefined)
     }
 
     window.addEventListener('craft:approve-plan-with-compact', handleApprovePlanWithCompact as unknown as EventListener)
     return () => window.removeEventListener('craft:approve-plan-with-compact', handleApprovePlanWithCompact as unknown as EventListener)
-  }, [sessionId, permissionMode, onPermissionModeChange, onSubmit, consumeInputDraftSnapshot])
+  }, [sessionId, permissionMode, onPermissionModeChange, consumeInputDraftSnapshot])
 
   // Reload recovery: Check for pending plan execution on mount.
   // If the page reloaded after compaction completed (awaitingCompaction = false),
@@ -896,7 +871,7 @@ export function FreeFormInput({
           planPath: pending.planPath,
           draftInput: pending.draftInputSnapshot,
         })
-        onSubmit(executionMessage, undefined)
+        onSubmitRef.current(executionMessage, undefined)
 
         await window.electronAPI.sessionCommand(sessionId, {
           type: 'clearPendingPlanExecution',
@@ -915,16 +890,14 @@ export function FreeFormInput({
     // When compaction finishes after reload, this listener will trigger execution.
     const handleCompactionComplete = async (e: CustomEvent<{ sessionId: string }>) => {
       if (e.detail?.sessionId !== sessionId) return
-      // Small delay to ensure markCompactionComplete has been called
-      await new Promise(resolve => setTimeout(resolve, 100))
-      executePendingPlan()
+      await executePendingPlan()
     }
 
     window.addEventListener('craft:compaction-complete', handleCompactionComplete as unknown as EventListener)
     return () => {
       window.removeEventListener('craft:compaction-complete', handleCompactionComplete as unknown as EventListener)
     }
-  }, [sessionId, onSubmit])
+  }, [sessionId])
 
   // Listen for craft:focus-input events (restore focus after popover/dropdown closes)
   React.useEffect(() => {

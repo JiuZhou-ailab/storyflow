@@ -93,6 +93,35 @@ describe('interaction perf contracts (ADR-0001 CI proxy)', () => {
     expect(freeFormInputSource).toContain('inputRef.current')
   })
 
+  it('restores drafts from explicit events instead of polling component state', () => {
+    expect(chatPageSource).not.toContain('const interval = setInterval(() => {')
+    expect(appSource).not.toContain('setTimeout(() => handleInputChange(session.id, params.input!), 100)')
+  })
+
+  it('scopes pending plan recovery to the session lifecycle', () => {
+    expect(freeFormInputSource).toContain('const onSubmitRef = React.useRef(onSubmit)')
+    expect(freeFormInputSource).toContain('onSubmitRef.current(executionMessage, undefined)')
+    expect(freeFormInputSource).toMatch(
+      /Reload recovery:[\s\S]*?React\.useEffect\([\s\S]*?\}, \[sessionId\]\)/,
+    )
+    expect(freeFormInputSource.match(/'craft:compaction-complete'/g)).toHaveLength(2)
+    expect(freeFormInputSource).not.toContain('await new Promise(resolve => setTimeout(resolve, 100))')
+  })
+
+  it('does not refetch the global model catalog after a session model mutation', () => {
+    const modelChangeHandler = chatPageSource.slice(
+      chatPageSource.indexOf('const handleModelChange'),
+      chatPageSource.indexOf('// Session connection change handler'),
+    )
+    expect(modelChangeHandler).toContain('await window.electronAPI.setSessionModel')
+    expect(modelChangeHandler).not.toContain('refreshLlmConnections()')
+  })
+
+  it('keeps session atoms as the only renderer session source of truth', () => {
+    expect(sessionsAtomSource).not.toContain('syncSessionsToAtomsAtom')
+    expect(appSource).not.toContain('React state is source of truth')
+  })
+
   it('streams text deltas without scanning the full transcript on the common path', () => {
     expect(textHandlerSource).toContain('getLastStreamingMessageIndex')
     expect(textHandlerSource).toContain('appendMessage(session, newMessage, false, false)')
@@ -113,10 +142,8 @@ describe('interaction perf contracts (ADR-0001 CI proxy)', () => {
   })
 
   it('applies text_delta via session atom only (skips metadata map rebuild)', () => {
-    // Structural: this branch sits inside App.tsx's event closure. Asserts the
-    // executable fast-path predicate and that the delta branch writes the session
-    // atom directly while non-delta events keep the meta-aware path.
-    expect(appSource).toMatch(/isTextDeltaFastPath\s*=\s*event\.type === 'text_delta'/)
+    // Structural: the unified event path writes deltas directly while all
+    // structural events keep the metadata-aware action.
     expect(appSource).toMatch(
       /if \(event\.type === 'text_delta'\) \{\s*store\.set\(sessionAtomFamily\(sessionId\), updatedSession\)\s*\} else \{\s*updateSessionDirect\(/,
     )

@@ -78,7 +78,7 @@ describe('ConfigWatcher duplicate guard', () => {
     expect(_getGlobalWatcherState().started).toBe(false);
   });
 
-  it('broadcasts fresh Skills when a Pi-visible store changes', async () => {
+  it('invalidates Skills synchronously without loading every workspace catalog', () => {
     const root = mkdtempSync(join(tmpdir(), 'watcher-global-skill-cache-'));
     const skillsRoot = resolveResourceRoots().skillsPath;
     const slug = `watcher-global-refresh-${process.pid}`;
@@ -88,16 +88,17 @@ describe('ConfigWatcher duplicate guard', () => {
 
       writeSkill(skillsRoot, slug, 'Renamed Skill');
 
-      let broadcastName: string | undefined;
+      let notifications = 0;
       const watcher = new ConfigWatcher(root, {
-        onSkillsListChange: (skills) => {
-          broadcastName = skills.find(s => s.slug === slug)?.metadata.displayName;
+        onSkillsChange: () => {
+          notifications += 1;
         },
       });
 
-      await (watcher as unknown as { handleSkillsChange: () => Promise<void> }).handleSkillsChange();
+      (watcher as unknown as { handleSkillsChange: () => void }).handleSkillsChange();
 
-      expect(broadcastName).toBe('Renamed Skill');
+      expect(notifications).toBe(1);
+      expect(loadAllSkills().find(s => s.slug === slug)?.metadata.displayName).toBe('Renamed Skill');
     } finally {
       invalidateSkillsCache();
       rmSync(skillDir, { recursive: true, force: true });

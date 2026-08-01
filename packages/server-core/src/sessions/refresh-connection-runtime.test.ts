@@ -10,6 +10,7 @@ import { resolveBackendContext } from '@craft-agent/shared/agent/backend'
 import { loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
 import { SessionManager, createManagedSession } from './SessionManager.ts'
 import { buildRestartRequiredSignature } from './runtime-config.ts'
+import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 
 // Regression coverage for the stale-Pi-subprocess bug where toggling
 // `supportsImages` on a custom-endpoint model wrote to disk but never reached
@@ -311,5 +312,24 @@ describe('refreshConnectionRuntime', () => {
       },
     }])
     expect(typeof payload.model).toBe('string')
+  })
+})
+
+describe('global config broadcasts', () => {
+  it('coalesces the per-workspace watcher fanout into one client invalidation', async () => {
+    const sm = new SessionManager()
+    const channels: string[] = []
+    sm.setEventSink(((channel: string) => {
+      channels.push(channel)
+    }) as never)
+
+    const manager = sm as unknown as { broadcastLlmConnectionsChanged: () => void }
+    manager.broadcastLlmConnectionsChanged()
+    manager.broadcastLlmConnectionsChanged()
+    manager.broadcastLlmConnectionsChanged()
+
+    expect(channels).toEqual([])
+    await Promise.resolve()
+    expect(channels).toEqual([RPC_CHANNELS.llmConnections.CHANGED])
   })
 })

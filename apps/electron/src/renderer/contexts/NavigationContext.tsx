@@ -790,9 +790,11 @@ export function NavigationProvider({
                 )
               }, 100)
             } else if (onInputChange) {
-              setTimeout(() => {
-                onInputChange(session.id, parsed.params.input!)
-              }, 100)
+              const text = parsed.params.input
+              onInputChange(session.id, text)
+              window.dispatchEvent(new CustomEvent('craft:restore-input', {
+                detail: { sessionId: session.id, text },
+              }))
             }
           }
           break

@@ -94,7 +94,7 @@ import { type Session, type SessionEvent, type FileAttachment, type SendMessageO
 import { messageToStored, storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta, type TurnMetrics } from '@craft-agent/core/types'
 import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlAsync, getEmojiIcon, resetSummarizationClient, resolveToolIcon, readFileAttachment, selectSpreadMessages, normalizePath, DEFAULT_TITLE_LANGUAGE } from '@craft-agent/shared/utils'
 import { buildNovelSelectionRewritePrompt, sanitizeNovelSelectionReplacement } from '@craft-agent/shared/writing'
-import { loadPiSkillCatalog, invalidateSkillsCache, type LoadedSkill } from '@craft-agent/shared/skills'
+import { loadPiSkillCatalog, invalidateSkillsCache } from '@craft-agent/shared/skills'
 import { invalidateContextFileCache } from '@craft-agent/shared/prompts/system'
 import { getToolIconsDir, getMiniModel } from '@craft-agent/shared/config'
 import { getDefaultSummarizationModel } from '@craft-agent/shared/config/models'
@@ -1213,9 +1213,19 @@ export class SessionManager implements ISessionManager {
 
   private browserPaneManager: IBrowserPaneManager | null = null
   private eventSink: EventSink | null = null
+  private pendingGlobalBroadcasts = new Set<string>()
 
   setEventSink(sink: EventSink): void {
     this.eventSink = sink
+  }
+
+  private broadcastGlobalOnce(key: string, send: () => void): void {
+    if (!this.eventSink || this.pendingGlobalBroadcasts.has(key)) return
+    this.pendingGlobalBroadcasts.add(key)
+    queueMicrotask(() => {
+      this.pendingGlobalBroadcasts.delete(key)
+      if (this.eventSink) send()
+    })
   }
 
   setBrowserPaneManager(bpm: IBrowserPaneManager): void {
@@ -1431,16 +1441,9 @@ export class SessionManager implements ISessionManager {
         sessionLog.info('Default permissions changed')
         this.broadcastDefaultPermissionsChanged()
       },
-      onSkillsListChange: async (skills) => {
-        sessionLog.info(`Skills list changed in ${workspaceRootPath} (${skills.length} skills)`)
-        this.broadcastSkillsChanged(workspaceId, skills)
-      },
-      onSkillChange: async (slug, skill) => {
-        sessionLog.info(`Skill '${slug}' changed:`, skill ? 'updated' : 'deleted')
-        // Broadcast updated list to UI
-        const { loadPiSkillCatalog } = await import('@craft-agent/shared/skills')
-        const { skills } = await loadPiSkillCatalog(resourceProjectRoot ?? workspaceRootPath)
-        this.broadcastSkillsChanged(workspaceId, skills)
+      onSkillsChange: () => {
+        sessionLog.info(`Skills changed in ${workspaceRootPath}`)
+        this.broadcastSkillsChanged(workspaceId)
       },
 
       // Session metadata changes (edits to session.jsonl headers).
@@ -1604,27 +1607,30 @@ export class SessionManager implements ISessionManager {
   }
 
   private broadcastAppThemeChanged(theme: import('@craft-agent/shared/config').ThemeOverrides | null): void {
-    if (!this.eventSink) return
-    sessionLog.info(`Broadcasting app theme changed`)
-    this.eventSink(RPC_CHANNELS.theme.APP_CHANGED, { to: 'all' }, theme)
+    this.broadcastGlobalOnce(RPC_CHANNELS.theme.APP_CHANGED, () => {
+      sessionLog.info(`Broadcasting app theme changed`)
+      this.eventSink?.(RPC_CHANNELS.theme.APP_CHANGED, { to: 'all' }, theme)
+    })
   }
 
   private broadcastLlmConnectionsChanged(): void {
-    if (!this.eventSink) return
-    sessionLog.info('Broadcasting LLM connections changed')
-    this.eventSink(RPC_CHANNELS.llmConnections.CHANGED, { to: 'all' })
+    this.broadcastGlobalOnce(RPC_CHANNELS.llmConnections.CHANGED, () => {
+      sessionLog.info('Broadcasting LLM connections changed')
+      this.eventSink?.(RPC_CHANNELS.llmConnections.CHANGED, { to: 'all' })
+    })
   }
 
-  private broadcastSkillsChanged(workspaceId: string, skills: import('@craft-agent/shared/skills').LoadedSkill[]): void {
+  private broadcastSkillsChanged(workspaceId: string): void {
     if (!this.eventSink) return
-    sessionLog.info(`Broadcasting skills changed (${skills.length} skills)`)
-    this.eventSink(RPC_CHANNELS.skills.CHANGED, { to: 'workspace', workspaceId }, workspaceId, skills)
+    sessionLog.info('Broadcasting skills changed')
+    this.eventSink(RPC_CHANNELS.skills.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
   }
 
   private broadcastDefaultPermissionsChanged(): void {
-    if (!this.eventSink) return
-    sessionLog.info('Broadcasting default permissions changed')
-    this.eventSink(RPC_CHANNELS.permissions.DEFAULTS_CHANGED, { to: 'all' }, null)
+    this.broadcastGlobalOnce(RPC_CHANNELS.permissions.DEFAULTS_CHANGED, () => {
+      sessionLog.info('Broadcasting default permissions changed')
+      this.eventSink?.(RPC_CHANNELS.permissions.DEFAULTS_CHANGED, { to: 'all' }, null)
+    })
   }
 
   /**
@@ -7509,7 +7515,7 @@ export class SessionManager implements ISessionManager {
           // This is done here (backend) rather than in the renderer so it's
           // not affected by CMD+R during compaction. The frontend reload
           // recovery will see awaitingCompaction=false and trigger execution.
-          void markStoredCompactionComplete(managed.workspace.rootPath, sessionId)
+          await markStoredCompactionComplete(managed.workspace.rootPath, sessionId)
           sessionLog.info(`Session ${sessionId}: compaction complete, marked pending plan ready`)
         }
 
