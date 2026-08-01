@@ -144,6 +144,7 @@ win:
 
 nsis:
   oneClick: true
+  include: build/installer.nsh
   # Per-user install to %LOCALAPPDATA%\Programs\ (not Program Files).
   # Bun subprocess cannot read/write files in Program Files due to Windows permissions.
   perMachine: false

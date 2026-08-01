@@ -19,3 +19,4 @@ TypeScript build/dev entrypoints.
 - `resource-staging.test.ts` - regression tests for Electron subprocess resource staging.
 - `resource-staging.ts` - stages built subprocess bundles into Electron resources.
 - `win32.ts` - Windows packaging helpers.
+- `windows-git-installer.test.ts` - guards automatic Git for Windows provisioning in fresh NSIS installs.
