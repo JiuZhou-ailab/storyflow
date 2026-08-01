@@ -8,7 +8,6 @@ import { toast } from 'sonner'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   Paperclip,
-  FolderUp,
   ArrowUp,
   Square,
   Check,
@@ -102,6 +101,7 @@ import {
   getPrimaryInputAction,
   groupModelMenuOptions,
   isCompositionInput,
+  collectDroppedFiles,
   readAttachmentBatch,
   resolveAutoCapitalisedInput,
   shouldShowTextInput,
@@ -697,7 +697,6 @@ export function FreeFormInput({
   const containerRef = React.useRef<HTMLDivElement>(null)
   const sourceButtonRef = React.useRef<HTMLButtonElement>(null)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
-  const folderInputRef = React.useRef<HTMLInputElement>(null)
 
   // Merge refs for RichTextInput
   const internalInputRef = React.useRef<RichTextInputHandle>(null)
@@ -1223,11 +1222,6 @@ export function FreeFormInput({
     fileInputRef.current?.click()
   }
 
-  const handleAttachFolderClick = () => {
-    if (disabled) return
-    folderInputRef.current?.click()
-  }
-
   const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files || files.length === 0) return
@@ -1235,12 +1229,6 @@ export function FreeFormInput({
     await processFileAttachments(Array.from(files))
 
     // Reset input so re-selecting the same file triggers onChange again
-    e.target.value = ''
-  }
-
-  const handleFolderInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
-    await processFileAttachments(files, files.map(file => file.webkitRelativePath || file.name))
     e.target.value = ''
   }
 
@@ -1320,8 +1308,10 @@ export function FreeFormInput({
     setIsDraggingOver(false)
     if (disabled) return
 
-    const files = Array.from(e.dataTransfer.files)
-    await processFileAttachments(files)
+    const droppedFiles = await collectDroppedFiles(e.dataTransfer)
+    const files = droppedFiles.map(({ file }) => file)
+    const relativePaths = droppedFiles.map(({ relativePath }) => relativePath)
+    await processFileAttachments(files, relativePaths)
   }
 
   // Submit message - backend handles queueing and interruption
@@ -1790,27 +1780,18 @@ export function FreeFormInput({
   }
 
   const renderAttachmentPicker = (isExpanded: boolean) => (
-    <div className="flex shrink-0 items-center gap-0.5">
-      <FreeFormInputContextBadge
-        icon={<Paperclip className="h-4 w-4" />}
-        label={attachments.length > 0
-          ? t('chat.filesCount', { count: attachments.length })
-          : t('chat.attachFiles')
-        }
-        isExpanded={isExpanded}
-        hasSelection={attachments.length > 0}
-        onClick={handleAttachClick}
-        tooltip={!isExpanded ? t('chat.attachFiles') : undefined}
-        disabled={disabled}
-      />
-      <FreeFormInputContextBadge
-        icon={<FolderUp className="h-4 w-4" />}
-        label={t('chat.chooseFolder')}
-        onClick={handleAttachFolderClick}
-        tooltip={t('chat.chooseFolder')}
-        disabled={disabled}
-      />
-    </div>
+    <FreeFormInputContextBadge
+      icon={<Paperclip className="h-4 w-4" />}
+      label={attachments.length > 0
+        ? t('chat.filesCount', { count: attachments.length })
+        : t('chat.attachFiles')
+      }
+      isExpanded={isExpanded}
+      hasSelection={attachments.length > 0}
+      onClick={handleAttachClick}
+      tooltip={!isExpanded ? t('chat.attachFiles') : undefined}
+      disabled={disabled}
+    />
   )
 
   return (
@@ -2043,15 +2024,6 @@ export function FreeFormInput({
             className="hidden"
             onChange={handleFileInputChange}
           />
-          <input
-            ref={folderInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={handleFolderInputChange}
-            {...{ webkitdirectory: '' }}
-          />
-
           {/* Compact mode: permission mode drawer + standard icon badges for attach/sources/working dir */}
           {compactMode && (
           <>

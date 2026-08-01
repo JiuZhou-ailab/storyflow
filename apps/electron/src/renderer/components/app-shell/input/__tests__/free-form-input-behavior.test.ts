@@ -1,11 +1,12 @@
-// input: Free-form chat input state combinations and IME composition metadata
-// output: Regression coverage for input transform and primary action decisions
+// input: Chat input state, IME metadata, and dropped file-system entry fixtures
+// output: Regression coverage for input decisions and recursive directory attachments
 // pos: Guards chat composer behavior without importing heavyweight UI dependencies
 
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'fs'
 import { THINKING_LEVELS } from '@craft-agent/shared/agent/thinking-levels'
 import {
+  collectDroppedFiles,
   getPrimaryInputAction,
   groupModelMenuOptions,
   isCompositionInput,
@@ -150,6 +151,54 @@ describe('FreeFormInput behavior helpers', () => {
       ])
     })
   })
+
+  describe('collectDroppedFiles', () => {
+    it('expands dropped directories, drains reader batches, and preserves relative paths', async () => {
+      const rootFile = new File(['root'], 'root.txt', { type: 'text/plain' })
+      const childFile = new File(['child'], 'child.txt', { type: 'text/plain' })
+      const looseFile = new File(['loose'], 'loose.txt', { type: 'text/plain' })
+
+      const fileEntry = (name: string, file: File): FileSystemFileEntry => ({
+        name,
+        fullPath: `/${name}`,
+        isFile: true,
+        isDirectory: false,
+        file: (success) => success(file),
+      } as FileSystemFileEntry)
+      const directoryEntry = (
+        name: string,
+        batches: FileSystemEntry[][],
+      ): FileSystemDirectoryEntry => ({
+        name,
+        fullPath: `/${name}`,
+        isFile: false,
+        isDirectory: true,
+        createReader: () => ({
+          readEntries: (success) => success(batches.shift() ?? []),
+        }),
+      } as FileSystemDirectoryEntry)
+
+      const nested = directoryEntry('nested', [[fileEntry('child.txt', childFile)], []])
+      const project = directoryEntry('project', [
+        [fileEntry('root.txt', rootFile)],
+        [nested],
+        [],
+      ])
+      const dropped = await collectDroppedFiles({
+        items: [
+          { kind: 'file', webkitGetAsEntry: () => project },
+          { kind: 'file', webkitGetAsEntry: () => null, getAsFile: () => looseFile },
+        ],
+        files: [],
+      })
+
+      expect(dropped.map(({ file, relativePath }) => [file.name, relativePath])).toEqual([
+        ['root.txt', 'project/root.txt'],
+        ['child.txt', 'project/nested/child.txt'],
+        ['loose.txt', 'loose.txt'],
+      ])
+    })
+  })
 })
 
 describe('FreeFormInput attachment read path', () => {
@@ -165,20 +214,18 @@ describe('FreeFormInput attachment read path', () => {
     )
   })
 
-  it('offers a native folder picker and preserves each selected relative path', () => {
+  it('uses the existing attachment preview flow for files and dropped directories', () => {
     const source = readFileSync(new URL('../FreeFormInput.tsx', import.meta.url), 'utf-8')
     const pickerStart = source.indexOf('const renderAttachmentPicker')
     const pickerEnd = source.indexOf('\n\n  return (', pickerStart)
     const pickerSource = source.slice(pickerStart, pickerEnd)
 
-    expect(source).toContain('ref={folderInputRef}')
-    expect(source).toContain("webkitdirectory: ''")
-    expect(source).toContain('file.webkitRelativePath || file.name')
-    expect(source).toContain("t('chat.chooseFolder')")
-    expect(source).toContain('{ ...attachment, name: overrideName }')
+    expect(source).toContain('collectDroppedFiles(e.dataTransfer)')
+    expect(source).toContain('processFileAttachments(files, relativePaths)')
     expect(pickerSource).not.toContain('<DropdownMenu>')
-    expect(pickerSource).toContain('onClick={handleAttachFolderClick}')
-    expect(pickerSource).toContain('icon={<FolderUp')
+    expect(pickerSource).toContain('onClick={handleAttachClick}')
+    expect(pickerSource).toContain('icon={<Paperclip')
+    expect(pickerSource).not.toContain('FolderUp')
   })
 })
 
