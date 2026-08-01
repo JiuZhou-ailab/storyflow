@@ -696,6 +696,7 @@ export function FreeFormInput({
   const containerRef = React.useRef<HTMLDivElement>(null)
   const sourceButtonRef = React.useRef<HTMLButtonElement>(null)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
+  const folderInputRef = React.useRef<HTMLInputElement>(null)
 
   // Merge refs for RichTextInput
   const internalInputRef = React.useRef<RichTextInputHandle>(null)
@@ -1138,7 +1139,8 @@ export function FreeFormInput({
     const realPath = hasElectronAPI ? window.electronAPI.getFilePath?.(file) ?? null : null
 
     if (realPath) {
-      return window.electronAPI.readUserAttachment(realPath)
+      const attachment = await window.electronAPI.readUserAttachment(realPath)
+      return attachment && overrideName ? { ...attachment, name: overrideName } : attachment
     }
 
     return new Promise((resolve) => {
@@ -1220,6 +1222,11 @@ export function FreeFormInput({
     fileInputRef.current?.click()
   }
 
+  const handleAttachFolderClick = () => {
+    if (disabled) return
+    folderInputRef.current?.click()
+  }
+
   const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files || files.length === 0) return
@@ -1227,6 +1234,12 @@ export function FreeFormInput({
     await processFileAttachments(Array.from(files))
 
     // Reset input so re-selecting the same file triggers onChange again
+    e.target.value = ''
+  }
+
+  const handleFolderInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    await processFileAttachments(files, files.map(file => file.webkitRelativePath || file.name))
     e.target.value = ''
   }
 
@@ -1775,6 +1788,32 @@ export function FreeFormInput({
     )
   }
 
+  const renderAttachmentPicker = (isExpanded: boolean) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <FreeFormInputContextBadge
+          icon={<Paperclip className="h-4 w-4" />}
+          label={attachments.length > 0
+            ? t('chat.filesCount', { count: attachments.length })
+            : t('chat.attachFiles')
+          }
+          isExpanded={isExpanded}
+          hasSelection={attachments.length > 0}
+          showChevron
+          disabled={disabled}
+        />
+      </DropdownMenuTrigger>
+      <StyledDropdownMenuContent side="top" align="start" sideOffset={6} className="min-w-40">
+        <StyledDropdownMenuItem onSelect={handleAttachClick}>
+          {t('chat.attachFiles')}
+        </StyledDropdownMenuItem>
+        <StyledDropdownMenuItem onSelect={handleAttachFolderClick}>
+          {t('chat.chooseFolder')}
+        </StyledDropdownMenuItem>
+      </StyledDropdownMenuContent>
+    </DropdownMenu>
+  )
+
   return (
     <form onSubmit={handleSubmit}>
       <div
@@ -2005,6 +2044,14 @@ export function FreeFormInput({
             className="hidden"
             onChange={handleFileInputChange}
           />
+          <input
+            ref={folderInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={handleFolderInputChange}
+            {...{ webkitdirectory: '' }}
+          />
 
           {/* Compact mode: permission mode drawer + standard icon badges for attach/sources/working dir */}
           {compactMode && (
@@ -2015,19 +2062,7 @@ export function FreeFormInput({
               onPermissionModeChange={onPermissionModeChange}
             />
           )}
-          <FreeFormInputContextBadge
-            icon={<Paperclip className="h-4 w-4" />}
-            label={attachments.length > 0
-              ? t("chat.filesCount", { count: attachments.length })
-              : t("chat.attach")
-            }
-            isExpanded={false}
-            hasSelection={attachments.length > 0}
-            showChevron={false}
-            onClick={handleAttachClick}
-            tooltip={t("chat.attachFilesTooltip")}
-            disabled={disabled}
-          />
+          {renderAttachmentPicker(false)}
           {onSourcesChange && (
             <div className="relative shrink min-w-0">
               <FreeFormInputContextBadge
@@ -2113,19 +2148,7 @@ export function FreeFormInput({
           {!compactMode && (
           <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
           {/* 1. Attach Files Badge */}
-          <FreeFormInputContextBadge
-            icon={<Paperclip className="h-4 w-4" />}
-            label={attachments.length > 0
-              ? t("chat.filesCount", { count: attachments.length })
-              : t("chat.attachFiles")
-            }
-            isExpanded={isEmptySession}
-            hasSelection={attachments.length > 0}
-            showChevron={false}
-            onClick={handleAttachClick}
-            tooltip={t("chat.attachFilesTooltip")}
-            disabled={disabled}
-          />
+          {renderAttachmentPicker(!!isEmptySession)}
 
           {/* 2. Source Selector Badge - only show if onSourcesChange is provided */}
           {onSourcesChange && (
