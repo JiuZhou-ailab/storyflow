@@ -1706,7 +1706,7 @@ function AppContent() {
             console.warn('[drafts] Attachment missing on restore, dropping:', ref.path)
             return null
           }
-          return attachment
+          return { ...attachment, name: ref.name }
         } catch (err) {
           console.warn('[drafts] Failed to restore attachment, dropping:', ref.path, err)
           return null

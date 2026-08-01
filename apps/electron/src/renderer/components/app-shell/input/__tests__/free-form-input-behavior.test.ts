@@ -6,7 +6,9 @@ import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'fs'
 import { THINKING_LEVELS } from '@craft-agent/shared/agent/thinking-levels'
 import {
+  MAX_DROPPED_ATTACHMENT_FILES,
   collectDroppedFiles,
+  getAttachmentBatchLimitError,
   getPrimaryInputAction,
   groupModelMenuOptions,
   isCompositionInput,
@@ -192,11 +194,56 @@ describe('FreeFormInput behavior helpers', () => {
         files: [],
       })
 
-      expect(dropped.map(({ file, relativePath }) => [file.name, relativePath])).toEqual([
+      expect(dropped.files.map(({ file, relativePath }) => [file.name, relativePath])).toEqual([
         ['root.txt', 'project/root.txt'],
         ['child.txt', 'project/nested/child.txt'],
         ['loose.txt', 'loose.txt'],
       ])
+      expect(dropped.skippedSensitiveFiles).toBe(0)
+    })
+
+    it('skips sensitive files discovered inside a directory but keeps an explicitly dropped file', async () => {
+      const secret = new File(['secret'], '.env', { type: 'text/plain' })
+      const fileEntry = (name: string, file: File): FileSystemFileEntry => ({
+        name,
+        fullPath: `/${name}`,
+        isFile: true,
+        isDirectory: false,
+        file: (success) => success(file),
+      } as FileSystemFileEntry)
+      const project = {
+        name: 'project',
+        fullPath: '/project',
+        isFile: false,
+        isDirectory: true,
+        createReader: () => {
+          const batches: FileSystemEntry[][] = [[fileEntry('.env', secret)], []]
+          return { readEntries: (success: (entries: FileSystemEntry[]) => void) => success(batches.shift() ?? []) }
+        },
+      } as FileSystemDirectoryEntry
+
+      const nested = await collectDroppedFiles({
+        items: [{ kind: 'file', webkitGetAsEntry: () => project }],
+        files: [],
+      })
+      const explicit = await collectDroppedFiles({
+        items: [{ kind: 'file', webkitGetAsEntry: () => fileEntry('.env', secret) }],
+        files: [],
+      })
+
+      expect(nested.files).toEqual([])
+      expect(nested.skippedSensitiveFiles).toBe(1)
+      expect(explicit.files).toHaveLength(1)
+      expect(explicit.skippedSensitiveFiles).toBe(0)
+    })
+
+    it('rejects attachment batches that exceed the file-count limit', () => {
+      const files = Array.from(
+        { length: MAX_DROPPED_ATTACHMENT_FILES + 1 },
+        () => ({ size: 1 }),
+      )
+
+      expect(getAttachmentBatchLimitError(files)).toBe('too_many_files')
     })
   })
 })
@@ -226,6 +273,21 @@ describe('FreeFormInput attachment read path', () => {
     expect(pickerSource).toContain('onClick={handleAttachClick}')
     expect(pickerSource).toContain('icon={<Paperclip')
     expect(pickerSource).not.toContain('FolderUp')
+  })
+
+  it('scopes asynchronous attachment imports to the active session and blocks send while loading', () => {
+    const inputContainerSource = readFileSync(new URL('../InputContainer.tsx', import.meta.url), 'utf-8')
+    const inputSource = readFileSync(new URL('../FreeFormInput.tsx', import.meta.url), 'utf-8')
+
+    expect(inputContainerSource).toContain("`freeform-${freeFormProps.sessionId ?? 'unscoped'}`")
+    expect(inputSource).toContain('if (!hasContent || disabled || loadingCount > 0) return false')
+    expect(inputSource).toContain('disabled={!hasContent || disabled || disableSend || loadingCount > 0}')
+  })
+
+  it('restores a path-backed attachment with its persisted relative display name', () => {
+    const appSource = readFileSync(new URL('../../../../App.tsx', import.meta.url), 'utf-8')
+
+    expect(appSource).toContain('return { ...attachment, name: ref.name }')
   })
 })
 

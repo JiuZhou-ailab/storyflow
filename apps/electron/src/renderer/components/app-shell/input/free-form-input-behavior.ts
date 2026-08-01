@@ -3,6 +3,12 @@
 // pos: Keeps IME-sensitive chat input behavior testable without rendering the composer
 
 import type { FileAttachment } from '../../../../shared/types'
+import { isSensitiveFilePath } from '@craft-agent/shared/utils/file-safety'
+
+export const MAX_DROPPED_ATTACHMENT_FILES = 100
+export const MAX_DROPPED_ATTACHMENT_BYTES = 200 * 1024 * 1024
+
+export type AttachmentBatchLimitError = 'too_many_files' | 'total_size_exceeded'
 
 export interface InputCompositionMeta {
   isComposing?: boolean
@@ -38,6 +44,11 @@ export interface ModelMenuSeries {
 export interface DroppedFile {
   file: File
   relativePath: string
+}
+
+export interface DroppedFileCollection {
+  files: DroppedFile[]
+  skippedSensitiveFiles: number
 }
 
 interface DroppedDataTransferItem {
@@ -99,13 +110,24 @@ function readDirectoryBatch(reader: FileSystemDirectoryReader): Promise<FileSyst
 async function collectDroppedEntry(
   entry: FileSystemEntry,
   parentPath: string,
-  result: DroppedFile[],
+  result: DroppedFileCollection,
 ): Promise<void> {
   const relativePath = parentPath ? `${parentPath}/${entry.name}` : entry.name
 
   if (entry.isFile) {
+    if (parentPath && isSensitiveFilePath(relativePath)) {
+      result.skippedSensitiveFiles++
+      return
+    }
     const file = await readDroppedFile(entry as FileSystemFileEntry)
-    if (file) result.push({ file, relativePath })
+    if (file) {
+      const limitError = getAttachmentBatchLimitError([
+        ...result.files.map(({ file: collectedFile }) => collectedFile),
+        file,
+      ])
+      if (limitError) throw new Error(limitError)
+      result.files.push({ file, relativePath })
+    }
     return
   }
 
@@ -121,13 +143,16 @@ async function collectDroppedEntry(
   }
 }
 
-export async function collectDroppedFiles(dataTransfer: DroppedDataTransfer): Promise<DroppedFile[]> {
+export async function collectDroppedFiles(dataTransfer: DroppedDataTransfer): Promise<DroppedFileCollection> {
   const items = Array.from(dataTransfer.items)
   if (items.length === 0) {
-    return Array.from(dataTransfer.files, file => ({ file, relativePath: file.name }))
+    return {
+      files: Array.from(dataTransfer.files, file => ({ file, relativePath: file.name })),
+      skippedSensitiveFiles: 0,
+    }
   }
 
-  const result: DroppedFile[] = []
+  const result: DroppedFileCollection = { files: [], skippedSensitiveFiles: 0 }
   for (const item of items) {
     if (item.kind !== 'file') continue
 
@@ -138,10 +163,25 @@ export async function collectDroppedFiles(dataTransfer: DroppedDataTransfer): Pr
     }
 
     const file = item.getAsFile?.()
-    if (file) result.push({ file, relativePath: file.name })
+    if (file) {
+      const limitError = getAttachmentBatchLimitError([
+        ...result.files.map(({ file: collectedFile }) => collectedFile),
+        file,
+      ])
+      if (limitError) throw new Error(limitError)
+      result.files.push({ file, relativePath: file.name })
+    }
   }
 
   return result
+}
+
+export function getAttachmentBatchLimitError(
+  files: readonly { size: number }[],
+): AttachmentBatchLimitError | null {
+  if (files.length > MAX_DROPPED_ATTACHMENT_FILES) return 'too_many_files'
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
+  return totalBytes > MAX_DROPPED_ATTACHMENT_BYTES ? 'total_size_exceeded' : null
 }
 
 export function isCompositionInput(meta?: InputCompositionMeta): boolean {

@@ -98,7 +98,9 @@ import { CompactPermissionModeSelector } from './CompactPermissionModeSelector'
 import { WorkingDirectoryBadge } from './WorkingDirectoryBadge'
 import { resolveContextUsage } from './context-usage'
 import {
+  MAX_DROPPED_ATTACHMENT_FILES,
   getPrimaryInputAction,
+  getAttachmentBatchLimitError,
   groupModelMenuOptions,
   isCompositionInput,
   collectDroppedFiles,
@@ -1200,20 +1202,30 @@ export function FreeFormInput({
 
   const processFileAttachments = async (files: File[], overrideNames?: string[]) => {
     if (files.length === 0) return
+    const limitError = getAttachmentBatchLimitError(files)
+    if (limitError) {
+      toast.error(limitError === 'too_many_files'
+        ? `You can attach up to ${MAX_DROPPED_ATTACHMENT_FILES} files at once.`
+        : 'Attachments can total up to 200 MB at once.')
+      return
+    }
 
     setLoadingCount(prev => prev + files.length)
-    const loadedAttachments = await readAttachmentBatch(files, async (file, index) => {
-      try {
-        return await readFileAsAttachment(file, overrideNames?.[index])
-      } catch (error) {
-        console.error('[FreeFormInput] Failed to read file:', error)
-        return null
+    try {
+      const loadedAttachments = await readAttachmentBatch(files, async (file, index) => {
+        try {
+          return await readFileAsAttachment(file, overrideNames?.[index])
+        } catch (error) {
+          console.error('[FreeFormInput] Failed to read file:', error)
+          return null
+        }
+      })
+      if (loadedAttachments.length > 0) {
+        setAttachments(prev => [...prev, ...loadedAttachments])
       }
-    })
-    if (loadedAttachments.length > 0) {
-      setAttachments(prev => [...prev, ...loadedAttachments])
+    } finally {
+      setLoadingCount(prev => prev - files.length)
     }
-    setLoadingCount(prev => prev - files.length)
   }
 
   // File attachment handlers
@@ -1308,16 +1320,26 @@ export function FreeFormInput({
     setIsDraggingOver(false)
     if (disabled) return
 
-    const droppedFiles = await collectDroppedFiles(e.dataTransfer)
-    const files = droppedFiles.map(({ file }) => file)
-    const relativePaths = droppedFiles.map(({ relativePath }) => relativePath)
-    await processFileAttachments(files, relativePaths)
+    try {
+      const droppedFiles = await collectDroppedFiles(e.dataTransfer)
+      if (droppedFiles.skippedSensitiveFiles > 0) {
+        toast.warning(`Skipped ${droppedFiles.skippedSensitiveFiles} sensitive file${droppedFiles.skippedSensitiveFiles === 1 ? '' : 's'}.`)
+      }
+      const files = droppedFiles.files.map(({ file }) => file)
+      const relativePaths = droppedFiles.files.map(({ relativePath }) => relativePath)
+      await processFileAttachments(files, relativePaths)
+    } catch (error) {
+      const limitError = error instanceof Error ? error.message : ''
+      toast.error(limitError === 'too_many_files'
+        ? `You can attach up to ${MAX_DROPPED_ATTACHMENT_FILES} files at once.`
+        : 'Attachments can total up to 200 MB at once.')
+    }
   }
 
   // Submit message - backend handles queueing and interruption
   const submitMessage = React.useCallback(() => {
     const hasContent = input.trim() || attachments.length > 0 || followUpItems.length > 0
-    if (!hasContent || disabled) return false
+    if (!hasContent || disabled || loadingCount > 0) return false
 
     // Tutorial may disable sending to guide user through specific steps
     if (disableSend) return false
@@ -1355,7 +1377,7 @@ export function FreeFormInput({
     })
 
     return true
-  }, [input, attachments, followUpItems, disabled, disableSend, onInputChange, onAttachmentsChange, onSubmit, skillSlugs, sourceSlugs, optimisticSourceSlugs, onSourcesChange, onWorkingDirectoryChange, homeDir])
+  }, [input, attachments, followUpItems, disabled, disableSend, loadingCount, onInputChange, onAttachmentsChange, onSubmit, skillSlugs, sourceSlugs, optimisticSourceSlugs, onSourcesChange, onWorkingDirectoryChange, homeDir])
 
   // Listen for craft:submit-input events (simulate pressing the Send button)
   React.useEffect(() => {
@@ -2432,7 +2454,7 @@ export function FreeFormInput({
               size="icon"
               aria-label={t('shortcuts.sendMessage')}
               className="send-btn h-7 w-7 rounded-full shrink-0 ml-2"
-              disabled={!hasContent || disabled || disableSend}
+              disabled={!hasContent || disabled || disableSend || loadingCount > 0}
               data-tutorial="send-button"
             >
               <ArrowUp className="h-4 w-4" />

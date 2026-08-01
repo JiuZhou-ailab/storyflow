@@ -72,7 +72,9 @@ export function InputContainer({
   const hasInitializedRef = React.useRef(false)
 
   // Create a stable key for the current content
-  const contentKey = mode === 'freeform' ? 'freeform' : `structured-${structuredInput?.type}`
+  const contentKey = mode === 'freeform'
+    ? `freeform-${freeFormProps.sessionId ?? 'unscoped'}`
+    : `structured-${structuredInput?.type}`
 
   // Track mode transitions - animate height for a short period after mode change
   const [isAnimating, setIsAnimating] = React.useState(false)

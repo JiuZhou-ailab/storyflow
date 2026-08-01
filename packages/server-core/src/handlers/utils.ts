@@ -6,6 +6,7 @@ import { basename, dirname, isAbsolute, join, normalize, sep } from 'path'
 import { homedir, tmpdir } from 'os'
 import { realpath } from 'fs/promises'
 import type { Workspace } from '@craft-agent/shared/config'
+import { isSensitiveFilePath } from '@craft-agent/shared/utils/file-safety'
 import { resolveRuntimeWorkspace } from '@craft-agent/shared/workspaces'
 import { loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
 import type { PlatformServices } from '../runtime/platform'
@@ -133,21 +134,7 @@ export async function validateFilePath(
     throw new Error('Access denied: file path is outside allowed directories')
   }
 
-  // Block sensitive files even within allowed directories.
-  // Use [\\/] to match both Unix / and Windows \ separators.
-  const sensitivePatterns = [
-    /\.ssh[\\/]/,
-    /\.gnupg[\\/]/,
-    /\.aws[\\/]credentials/,
-    /\.env$/,
-    /\.env\./,
-    /credentials\.json$/,
-    /secrets?\./i,
-    /\.pem$/,
-    /\.key$/,
-  ]
-
-  if (sensitivePatterns.some(pattern => pattern.test(realFilePath))) {
+  if (isSensitiveFilePath(realFilePath)) {
     throw new Error('Access denied: cannot read sensitive files')
   }
 

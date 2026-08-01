@@ -39,6 +39,7 @@
     "./writing/file-categories": "./src/writing/file-categories.ts",
     "./writing/selection-context": "./src/writing/selection-context.ts",
     "./utils": "./src/utils/index.ts",
+    "./utils/file-safety": "./src/utils/file-safety.ts",
     "./utils/mask": "./src/utils/mask.ts",
     "./utils/toolNames": "./src/utils/toolNames.ts",
     "./utils/logo": "./src/utils/logo.ts",
