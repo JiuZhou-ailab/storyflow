@@ -83,6 +83,23 @@ export class WindowManager {
   private keyboardCloseIntents: Set<number> = new Set()  // webContents.id flagged by Cmd/Ctrl+W before close
   private keyboardCloseIntentTimeouts: Map<number, NodeJS.Timeout> = new Map()  // Auto-clear stale keyboard-close intents
   private isAppQuitting = false  // Skip layered close interception during app quit
+  private beforeWindowDestroyed: ((closingWindow: SavedWindow, remainingWindows: SavedWindow[]) => void) | null = null
+
+  setBeforeWindowDestroyed(
+    handler: (closingWindow: SavedWindow, remainingWindows: SavedWindow[]) => void,
+  ): void {
+    this.beforeWindowDestroyed = handler
+  }
+
+  private toSavedWindow(managed: ManagedWindow): SavedWindow {
+    const url = managed.window.webContents.getURL()
+    return {
+      type: 'main',
+      workspaceId: managed.workspaceId,
+      bounds: managed.window.getBounds(),
+      ...(url && { url }),
+    }
+  }
 
   /**
    * Set the event sink and client resolver for pushing events via the RPC server
@@ -391,7 +408,7 @@ export class WindowManager {
 
         this.pendingCloseTimeouts.set(wcId, setTimeout(() => {
           this.pendingCloseTimeouts.delete(wcId)
-          if (!window.isDestroyed()) window.destroy()
+          if (!window.isDestroyed()) this.forceCloseWindow(wcId)
         }, 3000))
       }
       // If renderer not ready, allow default close behavior
@@ -502,8 +519,12 @@ export class WindowManager {
 
     const managed = this.windows.get(webContentsId)
     if (managed && !managed.window.isDestroyed()) {
-      // Remove close listener temporarily to avoid infinite loop,
-      // then destroy the window directly
+      this.beforeWindowDestroyed?.(
+        this.toSavedWindow(managed),
+        Array.from(this.windows.entries())
+          .filter(([id, candidate]) => id !== webContentsId && !candidate.window.isDestroyed())
+          .map(([, candidate]) => this.toSavedWindow(candidate)),
+      )
       managed.window.destroy()
     }
   }
@@ -588,15 +609,7 @@ export class WindowManager {
    * Used by window-state.ts to save/restore windows
    */
   getWindowStates(): SavedWindow[] {
-    return this.getAllWindows().map(managed => {
-      const url = managed.window.webContents.getURL()
-      return {
-        type: 'main' as const,
-        workspaceId: managed.workspaceId,
-        bounds: managed.window.getBounds(),
-        ...(url && { url }),
-      }
-    })
+    return this.getAllWindows().map(managed => this.toSavedWindow(managed))
   }
 
   /**

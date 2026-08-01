@@ -53,8 +53,11 @@ import { registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-p
 import log, { isDebugMode, mainLog, getLogFilePath, getMessagingGatewayLogFilePath, messagingGatewayLog } from './logger'
 import { configurePerfTracking, enableDebug, formatPerfMetric } from '@craft-agent/shared/utils'
 import {
+  isRestorableWindowWorkspace,
+  resolvePersistedWindowsAfterClose,
   resolveActivateWindowWorkspaceId,
   resolveStartupWindowWorkspaceId,
+  shouldSaveOpenWindowsOnQuit,
   shouldRestoreWorkspaceWindowsOnOrdinaryStartup,
 } from './startup-window'
 import { registerPiModelResolver } from '@craft-agent/shared/config'
@@ -267,15 +270,17 @@ async function createInitialWindows(): Promise<void> {
   const savedState = loadWindowState()
   const workspaces = getWorkspaces()
 
-  const validWorkspaceIds = workspaces.map(ws => ws.id)
-
   if (savedState?.windows.length && shouldRestoreWorkspaceWindowsOnOrdinaryStartup({ savedWindowCount: savedState.windows.length })) {
     // Restore windows from saved state
     let restoredCount = 0
 
     for (const saved of savedState.windows) {
       // Skip invalid workspaces
-      if (!validWorkspaceIds.includes(saved.workspaceId)) continue
+      if (!isRestorableWindowWorkspace(
+        saved.workspaceId,
+        workspaces,
+        workspaceId => Boolean(getCredentialManager().peekRemoteServerToken(workspaceId)),
+      )) continue
 
       mainLog.info(`Restoring window: workspaceId=${saved.workspaceId}, url=${saved.url ?? 'none'}`)
       const win = windowManager.createWindow({
@@ -383,6 +388,10 @@ app.whenReady().then(async () => {
 
     // Initialize window manager
     windowManager = new WindowManager()
+    windowManager.setBeforeWindowDestroyed((closingWindow, remainingWindows) => {
+      const windows = resolvePersistedWindowsAfterClose(remainingWindows, closingWindow)
+      saveWindowState({ windows, lastFocusedWorkspaceId: windows[0]?.workspaceId })
+    })
 
     // Create the application menu (needs windowManager for New Window action)
     createApplicationMenu(windowManager)
@@ -1184,11 +1193,15 @@ const quitCoordinator = createQuitCoordinator({
         lastFocusedWorkspaceId = windowManager.getWorkspaceForWindow(focusedWindow.webContents.id) ?? undefined
       }
 
-      saveWindowState({
-        windows,
-        lastFocusedWorkspaceId,
-      })
-      mainLog.info('Saved window state:', windows.length, 'windows')
+      if (shouldSaveOpenWindowsOnQuit(windows.length)) {
+        saveWindowState({
+          windows,
+          lastFocusedWorkspaceId,
+        })
+        mainLog.info('Saved window state:', windows.length, 'windows')
+      } else {
+        mainLog.info('Preserved last closed window state for next launch')
+      }
     }
 
     if (sessionManager) {

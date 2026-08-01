@@ -5,6 +5,7 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
 
 const createdWindowOptions: any[] = []
+const createdWindows: any[] = []
 
 function createMockWebContents() {
   const listeners: Record<string, Function[]> = {}
@@ -37,6 +38,7 @@ mock.module('electron', () => ({
 
     constructor(opts?: any) {
       createdWindowOptions.push(opts)
+      createdWindows.push(this)
     }
 
     once = mock(() => {})
@@ -48,6 +50,8 @@ mock.module('electron', () => ({
     loadURL = mock(() => {})
     show = mock(() => {})
     isDestroyed = mock(() => false)
+    destroy = mock(() => {})
+    getBounds = mock(() => ({ x: 10, y: 20, width: 1200, height: 800 }))
   },
   Menu: {
     buildFromTemplate: mock(() => ({ popup: mock(() => {}) })),
@@ -89,6 +93,7 @@ const { WindowManager } = await import('../window-manager')
 describe('WindowManager', () => {
   beforeEach(() => {
     createdWindowOptions.length = 0
+    createdWindows.length = 0
   })
 
   it('sets a native window background to avoid packaged paint flashes', () => {
@@ -124,5 +129,28 @@ describe('WindowManager', () => {
 
     const resizeHandlers = win.on.mock.calls.filter((call: unknown[]) => call[0] === 'resize')
     expect(resizeHandlers).toHaveLength(0)
+  })
+
+  it('captures the closing window before it is destroyed', () => {
+    const manager = new WindowManager()
+    const snapshots: unknown[] = []
+    manager.setBeforeWindowDestroyed((closingWindow, remainingWindows) => {
+      snapshots.push({ closingWindow, remainingWindows })
+    })
+
+    const win = manager.createWindow({ workspaceId: 'workspace-1' }) as any
+    win.webContents.getURL = mock(() => 'file:///renderer/index.html?sessionId=session-1')
+    manager.forceCloseWindow(win.webContents.id)
+
+    expect(snapshots).toEqual([{
+      closingWindow: {
+        type: 'main',
+        workspaceId: 'workspace-1',
+        bounds: { x: 10, y: 20, width: 1200, height: 800 },
+        url: 'file:///renderer/index.html?sessionId=session-1',
+      },
+      remainingWindows: [],
+    }])
+    expect(createdWindows[0].destroy).toHaveBeenCalledTimes(1)
   })
 })
