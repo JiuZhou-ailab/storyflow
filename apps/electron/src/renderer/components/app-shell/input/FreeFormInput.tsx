@@ -62,10 +62,12 @@ import { applySmartTypography } from '@/lib/smart-typography'
 import { AttachmentPreview } from '../AttachmentPreview'
 import { ImageSupportWarningBanner } from './ImageSupportWarningBanner'
 import { ANTHROPIC_MODELS, getModelShortName, getModelDisplayName, getModelContextWindow, type ModelDefinition } from '@config/models'
+import { MANAGED_MODEL_CATALOG } from '@config/managed-model-catalog'
 import {
   resolveEffectiveConnectionSlug,
   isCompatProvider,
   isLocalConnection,
+  isManagedLlmConnectionSlug,
   modelSupportsImages,
   modelSupportsThinking,
   modelSupportsThinkingLevel,
@@ -393,6 +395,18 @@ export function FreeFormInput({
     [availableModels],
   )
 
+  const managedModelSeries = React.useMemo(() => {
+    const seriesOrder = [...new Set(MANAGED_MODEL_CATALOG.map(model => model.shortName))]
+    return llmConnections
+      .filter(connection => isManagedLlmConnectionSlug(connection.slug))
+      .flatMap(connection => groupModelMenuOptions(
+        (connection.models || []).map(toModelMenuOption),
+      ).map(series => ({ connection, series })))
+      .sort((left, right) => (
+        seriesOrder.indexOf(left.series.name) - seriesOrder.indexOf(right.series.name)
+      ))
+  }, [llmConnections])
+
   // Get display name for current model (full name, not short name)
   const currentModelDisplayName = React.useMemo(() => {
     const modelToDisplay = connectionDefaultModel ?? currentModel
@@ -417,13 +431,14 @@ export function FreeFormInput({
 
   // Group connections by provider type for hierarchical dropdown
   // Each provider (Anthropic, Pi) can have multiple connections (API Key, OAuth, etc.)
-  const connectionsByProvider = React.useMemo(() => {
+  const customConnectionsByProvider = React.useMemo(() => {
     const groups: Record<string, typeof llmConnections> = {
       'Anthropic': [],
       'Local': [],
       'Storyflow Backend': [],
     }
     for (const conn of llmConnections) {
+      if (isManagedLlmConnectionSlug(conn.slug)) continue
       const provider = conn.providerType || 'anthropic'
       // Group by connection/provider identity; all groups execute through Pi.
       if (provider === 'anthropic') {
@@ -446,6 +461,8 @@ export function FreeFormInput({
 
   // Effective connection: canonical fallback chain (session → workspace default → global default → first)
   const effectiveConnection = resolveEffectiveConnectionSlug(currentConnection, workspaceDefaultConnection, llmConnections)
+  const isManagedEffectiveConnection = !!effectiveConnection
+    && isManagedLlmConnectionSlug(effectiveConnection)
 
   // Effective connection details (with fallbacks) for model list
   // Unlike currentConnectionDetails which is null when no explicit connection is set,
@@ -2269,42 +2286,52 @@ export function FreeFormInput({
                   locked: true,
                 })
               ) : isEmptySession && llmConnections.length > 1 ? (
-                /* Hierarchical view: Provider → Connection → Models (for new sessions with multiple connections) */
-                connectionsByProvider.map(([providerName, connections], index) => (
-                  <React.Fragment key={providerName}>
-                    {/* Provider group label */}
-                    <div className="select-none px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                      {providerName}
-                    </div>
-                    {connections.map((conn) => {
-                      const isCurrentConnection = effectiveConnection === conn.slug
-                      const isAuthenticated = conn.isAuthenticated
-                      return (
-                        <DropdownMenuSub key={conn.slug}>
-                          <StyledDropdownMenuSubTrigger
-                            disabled={!isAuthenticated}
-                            className={cn(
-                              "flex items-center justify-between rounded-[6px] px-2 py-1.5 hover:bg-foreground/[0.07] focus:bg-foreground/[0.07] data-[state=open]:bg-foreground/[0.07]",
-                              isCurrentConnection && "bg-foreground/5"
-                            )}
-                          >
-                            <div className="text-left flex-1">
-                              <div className="flex items-center gap-1.5 text-[13px] leading-5">
-                                <ConnectionIcon connection={conn} size={14} />
-                                {conn.name}
-                                {isCurrentConnection && <Check className="h-3 w-3 text-foreground" />}
-                              </div>
-                              {!isAuthenticated && (
-                                <div className="text-xs text-muted-foreground">{t('settings.ai.notAuthenticated')}</div>
+                <>
+                  {managedModelSeries.map(({ connection, series }) => renderModelSeries({
+                    series,
+                    connection,
+                    selectedModelId: effectiveConnection === connection.slug ? currentModel : undefined,
+                    selectModel: modelId => onModelChange(modelId, connection.slug),
+                  }))}
+                  {managedModelSeries.length > 0 && customConnectionsByProvider.length > 0 && (
+                    <StyledDropdownMenuSeparator className="my-1" />
+                  )}
+                  {/* Hierarchical view for user-configured connections. */}
+                  {customConnectionsByProvider.map(([providerName, connections], index) => (
+                    <React.Fragment key={providerName}>
+                      {/* Provider group label */}
+                      <div className="select-none px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {providerName}
+                      </div>
+                      {connections.map((conn) => {
+                        const isCurrentConnection = effectiveConnection === conn.slug
+                        const isAuthenticated = conn.isAuthenticated
+                        return (
+                          <DropdownMenuSub key={conn.slug}>
+                            <StyledDropdownMenuSubTrigger
+                              disabled={!isAuthenticated}
+                              className={cn(
+                                "flex items-center justify-between rounded-[6px] px-2 py-1.5 hover:bg-foreground/[0.07] focus:bg-foreground/[0.07] data-[state=open]:bg-foreground/[0.07]",
+                                isCurrentConnection && "bg-foreground/5"
                               )}
-                            </div>
-                          </StyledDropdownMenuSubTrigger>
-                          {isAuthenticated && (
-                            <StyledDropdownMenuSubContent className="min-w-[220px]">
-                              {/* Show models for this connection - use provider-specific models as fallback */}
-                              {groupModelMenuOptions(
-                                (conn.models || ANTHROPIC_MODELS).map(toModelMenuOption)
-                              ).map(series => renderModelSeries({
+                            >
+                              <div className="text-left flex-1">
+                                <div className="flex items-center gap-1.5 text-[13px] leading-5">
+                                  <ConnectionIcon connection={conn} size={14} />
+                                  {conn.name}
+                                  {isCurrentConnection && <Check className="h-3 w-3 text-foreground" />}
+                                </div>
+                                {!isAuthenticated && (
+                                  <div className="text-xs text-muted-foreground">{t('settings.ai.notAuthenticated')}</div>
+                                )}
+                              </div>
+                            </StyledDropdownMenuSubTrigger>
+                            {isAuthenticated && (
+                              <StyledDropdownMenuSubContent className="min-w-[220px]">
+                                {/* Show models for this connection - use provider-specific models as fallback */}
+                                {groupModelMenuOptions(
+                                  (conn.models || ANTHROPIC_MODELS).map(toModelMenuOption)
+                                ).map(series => renderModelSeries({
                                   series,
                                   connection: conn,
                                   selectedModelId: isCurrentConnection ? currentModel : undefined,
@@ -2317,21 +2344,29 @@ export function FreeFormInput({
                                     onModelChange(modelId, conn.slug)
                                   },
                                 }))}
-                            </StyledDropdownMenuSubContent>
-                          )}
-                        </DropdownMenuSub>
-                      )
-                    })}
-                    {index < connectionsByProvider.length - 1 && (
-                      <StyledDropdownMenuSeparator className="my-1" />
-                    )}
-                  </React.Fragment>
-                ))
+                              </StyledDropdownMenuSubContent>
+                            )}
+                          </DropdownMenuSub>
+                        )
+                      })}
+                      {index < customConnectionsByProvider.length - 1 && (
+                        <StyledDropdownMenuSeparator className="my-1" />
+                      )}
+                    </React.Fragment>
+                  ))}
+                </>
+              ) : isManagedEffectiveConnection ? (
+                managedModelSeries.map(({ connection, series }) => renderModelSeries({
+                  series,
+                  connection,
+                  selectedModelId: effectiveConnection === connection.slug ? currentModel : undefined,
+                  selectModel: modelId => onModelChange(modelId, connection.slug),
+                }))
               ) : (
                 /* Flat model list (single connection or session started) */
                 <>
                   {/* Indicator showing which connection is being used */}
-                  {!isEmptySession && currentConnectionDetails && llmConnections.length > 1 && (
+                  {!isEmptySession && currentConnectionDetails && llmConnections.length > 1 && !isManagedLlmConnectionSlug(currentConnectionDetails.slug) && (
                     <>
                       <div className="flex items-center gap-2 px-2 py-1.5 text-xs select-none text-muted-foreground">
                         <span>{t('chat.usingConnection', { name: currentConnectionDetails.name })}</span>

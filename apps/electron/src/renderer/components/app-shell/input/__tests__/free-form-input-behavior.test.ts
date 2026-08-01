@@ -203,6 +203,17 @@ describe('FreeFormInput model menu', () => {
     expect(source).not.toContain('thinkingDisabled')
     expect(source).not.toContain('getThinkingLevelNameKey')
   })
+
+  it('projects managed protocol connections as GPT, Claude, Gemini, and DeepSeek series', () => {
+    const source = readFileSync(new URL('../FreeFormInput.tsx', import.meta.url), 'utf-8')
+
+    expect(source).toContain('const managedModelSeries = React.useMemo')
+    expect(source).toContain('isManagedLlmConnectionSlug(connection.slug)')
+    expect(source).toContain('managedModelSeries.map(({ connection, series })')
+    expect(source).toContain('selectModel: modelId => onModelChange(modelId, connection.slug)')
+    expect(source).toContain('const customConnectionsByProvider = React.useMemo')
+    expect(source).toContain('!isManagedLlmConnectionSlug(currentConnectionDetails.slug)')
+  })
 })
 
 describe('FreeFormInput render hot paths', () => {

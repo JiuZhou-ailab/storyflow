@@ -116,7 +116,7 @@ import {
 } from './managed-gateway-auth-error'
 
 // Import from server-core domain utilities
-import { sanitizeForTitle, shouldActivateBrowserOverlay, normalizeBrowserToolName, rollbackFailedBranchCreation, releaseBrowserOwnershipOnForcedStop } from '@craft-agent/server-core/domain'
+import { sanitizeForTitle, shouldActivateBrowserOverlay, normalizeBrowserToolName, rollbackFailedBranchCreation, releaseBrowserOwnershipOnForcedStop, canSwitchSessionModelConnection } from '@craft-agent/server-core/domain'
 import { resizeImageForAPI, resizeIconBuffer } from '@craft-agent/server-core/services'
 export { sanitizeForTitle }
 
@@ -5226,25 +5226,31 @@ export class SessionManager implements ISessionManager {
   /**
    * Update the model for a session
    * Pass null to clear the session-specific model (will use global config)
-   * @param connection - Optional LLM connection slug (only applied if not already locked)
+   * @param connection - Optional LLM connection slug. Locked sessions may only
+   * switch between transports in the app-managed model catalog.
    */
   async updateSessionModel(sessionId: string, workspaceId: string, model: string | null, connection?: string): Promise<void> {
     sessionLog.info(`[updateSessionModel] sessionId=${sessionId}, model=${model}, connection=${connection}`)
     const managed = this.sessions.get(sessionId)
     if (managed) {
       managed.model = model ?? undefined
-      // Also update connection if provided and not already locked
-      if (connection && !managed.connectionLocked) {
+      const connectionChanged = !!connection
+        && connection !== managed.llmConnection
+        && canSwitchSessionModelConnection(!!managed.connectionLocked, managed.llmConnection, connection)
+      const shouldUpdateConnection = !!connection && (
+        connection === managed.llmConnection || connectionChanged
+      )
+      if (shouldUpdateConnection) {
         managed.llmConnection = connection
       }
-      // Persist to disk (include connection if it was updated)
       const updates: { model?: string; llmConnection?: string } = { model: model ?? undefined }
-      if (connection && !managed.connectionLocked) {
+      if (shouldUpdateConnection) {
         updates.llmConnection = connection
       }
       await updateSessionMetadata(managed.workspace.rootPath, sessionId, updates)
-      // Update agent model if it already exists (takes effect on next query)
-      if (managed.agent) {
+      // A protocol change is refreshed by getOrCreateAgent after auth is
+      // reinitialized. Do not transiently apply the new model to the old runtime.
+      if (managed.agent && !connectionChanged) {
         // Fallback chain: session model > workspace default > connection default
         const wsConfig = loadWorkspaceConfig(managed.workspace.rootPath)
         const sessionConn = resolveSessionConnection(managed.llmConnection, wsConfig?.defaults?.defaultLlmConnection)
@@ -5252,10 +5258,18 @@ export class SessionManager implements ISessionManager {
         sessionLog.info(`[updateSessionModel] Calling agent.setModel(${effectiveModel}) [agent exists=${!!managed.agent}, connectionLocked=${managed.connectionLocked}]`)
         managed.agent.setModel(effectiveModel)
       } else {
-        sessionLog.info(`[updateSessionModel] No agent yet, model will apply on next agent creation`)
+        sessionLog.info(`[updateSessionModel] Model and connection will apply on next agent resolution`)
       }
       // Notify renderer of the model change
       this.sendEvent({ type: 'session_model_changed', sessionId, model }, managed.workspace.id)
+      if (connectionChanged) {
+        this.sendEvent({
+          type: 'connection_changed',
+          sessionId,
+          connectionSlug: connection!,
+          supportsBranching: resolveSupportsBranching(managed),
+        }, managed.workspace.id)
+      }
       sessionLog.info(`Session ${sessionId} model updated to: ${model ?? '(global config)'}`)
     }
   }

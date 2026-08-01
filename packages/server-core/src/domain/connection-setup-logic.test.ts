@@ -5,6 +5,7 @@ import {
   setupTestRequiresApiKey,
   resolveCustomEndpointSetup,
   createBuiltInConnection,
+  canSwitchSessionModelConnection,
   isAppManagedConnection,
   isAppManagedConnectionAvailable,
 } from './connection-setup-logic'
@@ -37,6 +38,17 @@ describe('managed connection runtime availability', () => {
     expect(isAppManagedConnectionAvailable('storyflow-managed', false)).toBe(false)
     expect(isAppManagedConnectionAvailable('storyflow-managed', true)).toBe(true)
     expect(isAppManagedConnectionAvailable('pi-api-key', false)).toBe(true)
+  })
+})
+
+describe('managed session model connection switching', () => {
+  it('allows protocol changes only within the app-managed model catalog after lock', () => {
+    expect(canSwitchSessionModelConnection(false, 'pi-api-key', 'anthropic-api')).toBe(true)
+    expect(canSwitchSessionModelConnection(true, 'storyflow-managed', 'storyflow-managed-anthropic')).toBe(true)
+    expect(canSwitchSessionModelConnection(true, 'storyflow-managed-anthropic', 'storyflow-managed-gemini')).toBe(true)
+    expect(canSwitchSessionModelConnection(true, 'storyflow-managed', 'pi-api-key')).toBe(false)
+    expect(canSwitchSessionModelConnection(true, 'pi-api-key', 'storyflow-managed')).toBe(false)
+    expect(canSwitchSessionModelConnection(true, 'pi-api-key', 'anthropic-api')).toBe(false)
   })
 })
 

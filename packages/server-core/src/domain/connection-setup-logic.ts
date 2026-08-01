@@ -273,6 +273,22 @@ export function isAppManagedConnectionAvailable(
   return managedModelAccessAvailable === true || !isAppManagedConnection(connection)
 }
 
+/**
+ * A started session may move between the hidden transports of the same
+ * app-managed model catalog. User-configured providers remain locked.
+ */
+export function canSwitchSessionModelConnection(
+  connectionLocked: boolean,
+  currentConnection: string | undefined,
+  nextConnection: string,
+): boolean {
+  return !connectionLocked || (
+    !!currentConnection
+    && isManagedLlmConnectionSlug(currentConnection)
+    && isManagedLlmConnectionSlug(nextConnection)
+  )
+}
+
 // ============================================================
 // Model Validation
 // ============================================================
