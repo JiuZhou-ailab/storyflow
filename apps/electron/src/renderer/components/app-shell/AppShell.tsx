@@ -135,7 +135,7 @@ import { useLabels } from "@/hooks/useLabels"
 import { useViews } from "@/hooks/useViews"
 import { useContainerWidth } from "@/hooks/useContainerWidth"
 import { useNovelReviewController } from "@/hooks/useNovelReviewController"
-import { loadSkillsForWorkspace } from "@/hooks/useWorkspaceSkills"
+import { clearWorkspaceSkillsCache, invalidateWorkspaceSkillsCache, loadSkillsForWorkspace } from "@/hooks/useWorkspaceSkills"
 import { PERMISSION_MODE_ORDER } from "@craft-agent/shared/agent/modes"
 import { LabelIcon } from "@/components/ui/label-icon"
 import { filterSessionStatuses as filterLabelMenuStates } from "@/components/ui/label-menu"
@@ -918,6 +918,8 @@ function AppShellContent({
   const updateChecker = useUpdateChecker()
   const updateIndicator = getUpdateIndicatorState(updateChecker.updateInfo)
 
+  React.useEffect(() => clearWorkspaceSkillsCache, [])
+
   // Get hotkey labels from centralized action registry
 
   const [isSidebarVisible, setIsSidebarVisible] = React.useState(() => {
@@ -1317,13 +1319,15 @@ function AppShellContent({
       setLocalMcpEnabled(true)
       return
     }
+    let cancelled = false
     window.electronAPI.getWorkspaceSettings(projectWorkspaceId).then((settings) => {
-      if (settings) {
+      if (!cancelled && settings) {
         setLocalMcpEnabled(settings.localMcpEnabled ?? true)
       }
     }).catch((err) => {
       console.error('[Chat] Failed to load workspace settings:', err)
     })
+    return () => { cancelled = true }
   }, [projectWorkspaceId])
 
   // Reset UI state when workspace changes
@@ -1337,6 +1341,9 @@ function AppShellContent({
 
     // Clear transient UI state only on workspace SWITCH (not initial mount)
     if (previousWorkspaceId !== null && previousWorkspaceId !== activeWorkspaceId) {
+      setSources([])
+      setSkills([])
+
       // Clear search state
       setSearchActive(false)
       setSearchQuery('')
@@ -1364,11 +1371,13 @@ function AppShellContent({
   // Load sources from backend on mount
   React.useEffect(() => {
     if (!activeWorkspaceId) return
+    let cancelled = false
     window.electronAPI.getSources(activeWorkspaceId).then((loaded) => {
-      setSources(loaded || [])
+      if (!cancelled) setSources(loaded || [])
     }).catch(err => {
       console.error('[Chat] Failed to load sources:', err)
     })
+    return () => { cancelled = true }
   }, [activeWorkspaceId])
 
   // Subscribe to live source updates (when sources are added/removed dynamically)
@@ -1386,6 +1395,7 @@ function AppShellContent({
   React.useEffect(() => {
     const cleanup = window.electronAPI.onSkillsChanged((workspaceId) => {
       if (!activeWorkspaceId || workspaceId !== activeWorkspaceId) return
+      invalidateWorkspaceSkillsCache(workspaceId)
       loadSkillsForWorkspace(workspaceId, skillDiscoveryCwdRef.current).then((loaded) => {
         setSkills(loaded || [])
       }).catch(err => {
@@ -2247,6 +2257,11 @@ function AppShellContent({
       setNovelWorkspaceDirectories([])
     }
 
+    if (!rightWorkspaceVisible) {
+      setNovelWorkspaceDetecting(false)
+      return
+    }
+
     let cancelled = false
 
     async function detectNovelWorkspace(): Promise<void> {
@@ -2312,7 +2327,7 @@ function AppShellContent({
     return () => {
       cancelled = true
     }
-  }, [activeWritingWorkspaceRoot, loadNovelWorkspaceFiles, markNovelWorkspaceFileChangesCovered, novelWorkspaceCandidateKey, novelWorkspaceCandidateRoots, setNovelWorkspaceCatalogIfChanged])
+  }, [activeWritingWorkspaceRoot, loadNovelWorkspaceFiles, markNovelWorkspaceFileChangesCovered, novelWorkspaceCandidateKey, novelWorkspaceCandidateRoots, rightWorkspaceVisible, setNovelWorkspaceCatalogIfChanged])
 
   React.useEffect(() => {
     if (!novelWorkspaceRoot || !latestNovelFileChangesSignature) return
@@ -3625,11 +3640,13 @@ function AppShellContent({
   React.useEffect(() => {
     if (!activeWorkspaceId) return
     const skillsCwd = activeSessionWorkingDirectory || activeWorkspace?.rootPath
+    let cancelled = false
     loadSkillsForWorkspace(activeWorkspaceId, skillsCwd).then((loaded) => {
-      setSkills(loaded || [])
+      if (!cancelled) setSkills(loaded || [])
     }).catch(err => {
       console.error('[Chat] Failed to load skills:', err)
     })
+    return () => { cancelled = true }
   }, [activeSessionWorkingDirectory, activeWorkspace?.rootPath, activeWorkspaceId])
 
   // Derive "pinned" (non-removable) filters from the current sessionFilter path.

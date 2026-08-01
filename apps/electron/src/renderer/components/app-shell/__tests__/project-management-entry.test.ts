@@ -208,11 +208,14 @@ describe('project management entry', () => {
     expect(activityRailSource).toContain('useAtom(activityShowAllProjectsAtom)')
     expect(activityRailSource).toContain('useAtom(activityArchivedExpandedAtom)')
     expect(activityRailSource).toContain('activityStore.get(activitySidebarScrollTopAtom)')
-    expect(activityRailSource).toContain('useAtomValue(freeRuntimeSessionMetasAtom)')
+    expect(activityRailSource).toContain('useAtomValue(runtimeSessionMetasAtom)')
     expect(activityRailSource).not.toContain('useAtomValue(sessionMetaMapAtom)')
     expect(activityRailSource).toContain('if (freeSessionMetas === null) void refreshFreeSessionMetas()')
     expect(activityRailSource).not.toContain('[refreshFreeSessionMetas, workspaces]')
-    expect(appSource).toContain("key={runtimeWorkspace?.id ?? 'no-runtime'}")
+    expect(appSource).not.toContain("key={runtimeWorkspace?.id ?? 'no-runtime'}")
+    expect(appShellSource).toContain('previousWorkspaceId !== activeWorkspaceId')
+    expect(appShellSource).toContain('setSources([])')
+    expect(appShellSource).toContain('setSkills([])')
   })
 
   it('keeps rail conversation actions in a small right-click menu', () => {
@@ -283,8 +286,10 @@ describe('project management entry', () => {
     expect(panelHeaderSource).toContain('titlebar-drag-region')
   })
 
-  it('remounts the runtime shell when the active room changes', () => {
-    expect(appSource).toContain("key={runtimeWorkspace?.id ?? 'no-runtime'}")
+  it('keeps the runtime shell mounted and defers hidden writing catalogs', () => {
+    expect(appSource).not.toContain("key={runtimeWorkspace?.id ?? 'no-runtime'}")
     expect(appSource).toContain('<WorkspaceSurface')
+    expect(appShellSource).toContain('if (!rightWorkspaceVisible) {')
+    expect(appShellSource).toContain('invalidateWorkspaceSkillsCache(workspaceId)')
   })
 })

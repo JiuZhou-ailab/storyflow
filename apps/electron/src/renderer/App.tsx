@@ -2643,7 +2643,6 @@ function AppContent() {
               )}>
                 <div className="min-h-0 flex-1">
                 <WorkspaceSurface
-                  key={runtimeWorkspace?.id ?? 'no-runtime'}
                   shikiTheme={shikiTheme}
                   contextValue={appShellContextValue}
                   defaultLayout={[20, 32, 48]}

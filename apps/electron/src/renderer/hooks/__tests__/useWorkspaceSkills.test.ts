@@ -3,7 +3,11 @@
 // pos: Guards the AppShell Skill loading boundary
 
 import { describe, expect, it } from 'bun:test'
-import { __resetWorkspaceSkillsLoadCacheForTests, loadSkillsForWorkspace } from '../useWorkspaceSkills'
+import {
+  __resetWorkspaceSkillsLoadCacheForTests,
+  invalidateWorkspaceSkillsCache,
+  loadSkillsForWorkspace,
+} from '../useWorkspaceSkills'
 import type { LoadedSkill } from '../../../shared/types'
 
 const skill: LoadedSkill = {
@@ -18,7 +22,7 @@ const skill: LoadedSkill = {
 }
 
 describe('loadSkillsForWorkspace', () => {
-  it('coalesces concurrent loads and clears the cache after completion', async () => {
+  it('coalesces concurrent loads and reuses the result until the workspace changes', async () => {
     __resetWorkspaceSkillsLoadCacheForTests()
 
     let resolveSkills: (value: LoadedSkill[]) => void
@@ -51,6 +55,16 @@ describe('loadSkillsForWorkspace', () => {
       },
     })
 
+    expect(calls).toBe(1)
+
+    invalidateWorkspaceSkillsCache('workspace-1')
+    await loadSkillsForWorkspace('workspace-1', '/project-a', {
+      getSkills: async () => {
+        calls += 1
+        return []
+      },
+    })
+
     expect(calls).toBe(2)
   })
 
@@ -70,5 +84,21 @@ describe('loadSkillsForWorkspace', () => {
     ])
 
     expect(calls).toEqual(['/project-a', '/project-b'])
+  })
+
+  it('retries a failed load instead of caching the rejection', async () => {
+    __resetWorkspaceSkillsLoadCacheForTests()
+    let calls = 0
+    const api = {
+      getSkills: async () => {
+        calls += 1
+        if (calls === 1) throw new Error('temporary failure')
+        return [skill]
+      },
+    }
+
+    await expect(loadSkillsForWorkspace('workspace-1', '/project-a', api)).rejects.toThrow('temporary failure')
+    expect(await loadSkillsForWorkspace('workspace-1', '/project-a', api)).toEqual([skill])
+    expect(calls).toBe(2)
   })
 })
