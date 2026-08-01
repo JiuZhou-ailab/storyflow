@@ -19,13 +19,12 @@ describe('background task event hot path', () => {
   })
 
   it('routes text deltas with an existing session atom through the direct atom fast path', () => {
-    const fastPathStart = appSource.indexOf("const isTextDeltaFastPath = event.type === 'text_delta' && !!atomSession")
-    const branchStart = appSource.indexOf('if (isStreaming || isHandoff || isTextDeltaFastPath)', fastPathStart)
-    const branchEnd = appSource.indexOf('// Not streaming: use per-session atoms directly', branchStart)
+    const branchStart = appSource.indexOf("if (event.type === 'text_delta') {")
+    const branchEnd = appSource.indexOf('if (isHandoff && !updatedSession.isProcessing)', branchStart)
     const branchSource = appSource.slice(branchStart, branchEnd)
 
-    expect(fastPathStart).toBeGreaterThan(-1)
-    expect(branchStart).toBeGreaterThan(fastPathStart)
+    expect(branchStart).toBeGreaterThan(-1)
+    expect(branchEnd).toBeGreaterThan(branchStart)
     expect(branchSource).toContain("if (event.type === 'text_delta') {")
     expect(branchSource).toContain('store.set(sessionAtomFamily(sessionId), updatedSession)')
     expect(branchSource).toContain('updateSessionDirect(sessionId, () => updatedSession)')

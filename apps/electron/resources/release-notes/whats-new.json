@@ -1,19 +1,19 @@
 {
-  "version": "0.9.57",
-  "digest": "278d49bdec34621ad5df1cc3aed4a973a8c9efcd5a9f849fb7063d81f9066bba",
-  "generatedAt": "2026-08-01T03:15:01.420Z",
-  "title": "What is new in v0.9.57",
-  "summary": "这一版修复了默认 AI 模型选择器与实际协议连接之间的错位，四个模型系列现在都能稳定显示和切换。",
+  "version": "0.9.58",
+  "digest": "cc08e002ded659485899ed7fb7ea51bd17bf3a4507ea3d954c79a111a3be3a0f",
+  "generatedAt": "2026-08-01T06:02:16.335Z",
+  "title": "Storyflow v0.9.58 更新说明",
+  "summary": "这一版让项目打开得更快，侧栏状态更准确，并减少了 Windows 首次安装时的额外配置。",
   "highlights": [
-    "完整展示模型系列：最外层统一显示 GPT、Claude、Gemini 与 DeepSeek，不再只剩当前连接对应的 GPT。",
-    "已开始会话也能切换：会话进行中可在四个默认系列之间切换，系统会同步使用该模型对应的原生协议。",
-    "自定义服务保持独立：用户配置的 OpenAI、Anthropic、Gemini 与本地连接仍遵循原有会话锁定边界。",
-    "恢复 Intel Mac 安装包：修复 Intel 架构签名环境不稳定导致的构建中断，双架构发布门禁保持不变。"
+    "打开项目不用再等全部历史：进入一个项目时只准备当前项目的会话，其他项目继续在后台加载，首次查看会话或搜索都更快。",
+    "侧栏状态及时同步：任务标题、运行状态和未读信息会随当前会话更新，自由对话不会再混入项目列表。",
+    "飞书头像直接显示：使用飞书登录后，侧栏账户入口会显示你的头像。",
+    "DeepSeek 成为默认模型：新用户可以直接从 DeepSeek 开始，Claude 的托管连接也恢复正常。"
   ],
-  "accentColor": "#158459",
+  "accentColor": "#491daf",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 2,
+    "commitCount": 9,
     "userVisibleCommitCount": 0
   }
 }

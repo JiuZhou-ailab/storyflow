@@ -17,10 +17,23 @@ const sessionManagerSource = readFileSync(
 describe('runtime domain separation', () => {
   it('switches rooms through one runtime workspace activation path', () => {
     expect(appSource).toContain('activateRuntimeWorkspace')
-    expect(appSource).toMatch(
-      /activateRuntimeWorkspace\(\s*FREE_CONVERSATION_WORKSPACE_ID,\s*options\?\.createNew \? routes\.action\.newSession\(\) : routes\.view\.allSessions\(\)/,
+
+    const freeConversationsStart = appSource.indexOf('const handleOpenFreeConversations')
+    const freeConversationsEnd = appSource.indexOf('\n  useEffect(() => {', freeConversationsStart)
+    const freeConversationsSource = appSource.slice(freeConversationsStart, freeConversationsEnd)
+    expect(freeConversationsSource).toContain(
+      'const targetRoute = options?.createNew ? routes.action.newSession() : routes.view.allSessions()',
     )
-    expect(appSource).toMatch(/activateRuntimeWorkspace\(\s*workspaceId,/)
+    expect(freeConversationsSource).toContain(
+      'return activateRuntimeWorkspace(FREE_CONVERSATION_WORKSPACE_ID, targetRoute)',
+    )
+
+    const projectSessionStart = appSource.indexOf('const handleSelectProjectSession')
+    const projectSessionEnd = appSource.indexOf('\n\n  // Handle workspace switch', projectSessionStart)
+    const projectSessionSource = appSource.slice(projectSessionStart, projectSessionEnd)
+    expect(projectSessionSource).toContain(
+      'await activateRuntimeWorkspace(workspaceId, routes.view.allSessions(sessionId))',
+    )
   })
 
   it('does not expose a project-directory picker in Free Conversations', () => {
