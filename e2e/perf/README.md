@@ -37,14 +37,22 @@ Env knobs:
 | `PERF_FIXTURE` | `~/.craft-agent-perf-fixture` | Data root |
 | `PERF_SCENARIOS` | all | csv of scenarios |
 | `PERF_STARTUP_RUNS` | 3 | Startup samples |
-| `PERF_SWITCHES` | 20 | Session switch samples |
+| `PERF_SWITCHES` | 40 | Session switch samples |
 | `PERF_LEAK_LOOPS` | 100 | Session-switch leak loops |
 | `PERF_DOC_LOOPS` | 40 | Document open/close leak loops |
-| `PERF_DOC_CHAPTERS` | 60 | Distinct chapters cycled by document leak loops |
+| `PERF_DOC_CHAPTERS` | 60 | Distinct chapters per pass (needs `2 ×` that many chapters in the fixture) |
 
 Scenarios: `startup`, `switch`, `memory-steady`, `memory-leak`, `memory-leak-docs`, `heavy-writing`, `heavy-search`, `continuous-typing`.
 
-`memory-leak-docs` judges the second of two equivalent chapter rings so bounded first-use caches are excluded while per-switch growth still fails the baseline.
+`memory-leak-docs` runs two passes over **disjoint** chapter ranges (warm `[1, N]`, measured `[N+1, 2N]`). The warm pass still excludes one-time bounded-cache setup, but because the measured pass only visits chapters never opened before, per-chapter retention that appears on first touch can still fail the baseline. Two identical passes could not.
+
+`continuous-typing` types with real CDP `Input.dispatchKeyEvent` and samples the window from capture-phase `keydown` to the end of the bubble-phase `input` handler (plus a forced layout read). For a contenteditable composer the text is inserted at `beforeinput`/`input`, so a window that closes at the end of `keydown` misses React's synchronous commit entirely and reports ~0ms. The composer restores persisted drafts, so the scenario focuses it with a real mouse click (a bare `.focus()` gets handed back to a toolbar button) and clears it before sampling. It fails closed if any keystroke is dropped, if the composer is not empty at the start, or if the resulting text does not match what was typed. A `settleP95` diagnostic additionally samples one macrotask later for commit follow-on work; it is reported, not judged.
+
+`switch` alternates large and small transcripts (`buildSwitchRing`) and reports large-session wall-clock as its own metric. The fixture holds one 1000-message session per workspace against a ~28-message median, so an arbitrary id ring reports a size-blind P95.
+
+Percentiles are linearly interpolated. Nearest-rank makes P95 identical to `max()` for any n ≤ 20, which turned one scheduling hiccup into a failed baseline (the same build measured 84ms and 169ms). Notes also carry `max=` so a genuine tail outlier stays visible instead of silently deciding the verdict.
+
+`heavy-search` awaits the debounced ripgrep-backed workspace content pass via `[data-global-search-state]`, not just the first rendered row — the first row is only the in-memory catalog/session-meta filter. It fails if the search engine ends `unavailable`/`error` or returns zero rows.
 
 The generated fixture marks setup as deferred, and the harness sets `CRAFT_CLIENT_AUTH_REQUIRED=false`, so offline baselines are not blocked by onboarding or the desktop login gate.
 

@@ -1,4 +1,4 @@
-// input: Session atom source, streaming hot path, input draft layer, app shell wiring
+// input: Session atoms, panel stack, global-search ranking, and the remaining structural hot paths
 // output: Deterministic CI proxy contracts for continuous/discrete interaction performance
 // pos: ADR-0001 interaction-axis regression guard (re-render/subscription structure, not wall-clock)
 
@@ -12,9 +12,32 @@ import {
   updateSessionAtom,
   loadedSessionsAtom,
   reconcileSessionTranscriptWorkingSetAtom,
+  resolveSessionTranscriptWorkingSet,
+  touchSessionTranscriptAccess,
+  SESSION_TRANSCRIPT_WORKING_SET_EXTRA,
   __resetSessionTranscriptWorkingSetForTests,
 } from '../atoms/sessions'
+import {
+  panelStackAtom,
+  focusedPanelIdAtom,
+  updateFocusedPanelRouteAtom,
+} from '../atoms/panel-stack'
+import { buildGlobalSearchResults } from '../lib/global-search'
 
+/**
+ * Structural fallbacks only.
+ *
+ * These contracts guard behavior that lives inside component closures (App.tsx event
+ * routing, FreeFormInput draft debounce, ChatDisplay turn patching) and cannot be
+ * driven without a DOM. The repo has no DOM test environment — `navigation.test.tsx`
+ * uses `renderToStaticMarkup`, so effects never run and render counts are not
+ * observable — and ADR-0001 forbids adding wall-clock assertions to CI.
+ *
+ * Assertions below therefore match executable code, never comments: a comment is not
+ * a behavioral guarantee, and matching one means deleting the comment reddens CI while
+ * deleting the logic does not. Wall-clock coverage for these paths is the local e2e
+ * layer's job (`e2e/perf/`, scenarios `continuous-typing` and `switch`).
+ */
 const sessionsAtomSource = readFileSync(new URL('../atoms/sessions.ts', import.meta.url), 'utf8')
 const freeFormInputSource = readFileSync(
   new URL('../components/app-shell/input/FreeFormInput.tsx', import.meta.url),
@@ -38,7 +61,6 @@ const textHandlerSource = readFileSync(
   'utf8',
 )
 const appSource = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8')
-const globalSearchSource = readFileSync(new URL('../lib/global-search.ts', import.meta.url), 'utf8')
 
 function msg(id: string, role: Message['role'] = 'user', content = `content:${id}`): Message {
   return { id, role, content, timestamp: Date.now() }
@@ -61,11 +83,13 @@ describe('interaction perf contracts (ADR-0001 CI proxy)', () => {
   })
 
   it('keeps typing drafts local with debounced parent sync (continuous axis)', () => {
-    // FreeFormInput must not write parent draft on every keystroke synchronously.
-    expect(freeFormInputSource).toContain('// Debounced sync to parent')
-    expect(freeFormInputSource).toContain('syncTimeoutRef')
-    expect(freeFormInputSource).toMatch(/setTimeout\([\s\S]*?onInputChange/)
-    // Local ref is the typing source of truth between debounced flushes.
+    // Structural: the debounce lives in a component closure (no DOM env to drive it).
+    // Asserts executable code — a timer wrapping onInputChange, and a local ref used
+    // as the between-flush source of truth — so removing the logic fails the test.
+    expect(freeFormInputSource).toMatch(/syncTimeoutRef\s*=\s*React\.useRef/)
+    expect(freeFormInputSource).toMatch(/syncTimeoutRef\.current\s*=\s*setTimeout\(/)
+    expect(freeFormInputSource).toMatch(/setTimeout\([\s\S]{0,200}?onInputChange\(/)
+    expect(freeFormInputSource).toMatch(/clearTimeout\(syncTimeoutRef\.current\)/)
     expect(freeFormInputSource).toContain('inputRef.current')
   })
 
@@ -89,12 +113,13 @@ describe('interaction perf contracts (ADR-0001 CI proxy)', () => {
   })
 
   it('applies text_delta via session atom only (skips metadata map rebuild)', () => {
-    // Continuous streaming must not thrash SessionList meta subscribers every chunk.
-    expect(appSource).toContain("event.type === 'text_delta'")
-    expect(appSource).toContain('// text_delta changes only the active session body; avoid rebuilding session metadata')
-    expect(appSource).toContain('store.set(sessionAtomFamily(sessionId), updatedSession)')
-    // Non-delta path still uses updateSessionDirect (meta-aware).
-    expect(appSource).toContain('updateSessionDirect(sessionId, () => updatedSession)')
+    // Structural: this branch sits inside App.tsx's event closure. Asserts the
+    // executable fast-path predicate and that the delta branch writes the session
+    // atom directly while non-delta events keep the meta-aware path.
+    expect(appSource).toMatch(/isTextDeltaFastPath\s*=\s*event\.type === 'text_delta'/)
+    expect(appSource).toMatch(
+      /if \(event\.type === 'text_delta'\) \{\s*store\.set\(sessionAtomFamily\(sessionId\), updatedSession\)\s*\} else \{\s*updateSessionDirect\(/,
+    )
   })
 
   it('session list rows subscribe to meta / per-row atoms, not full message arrays', () => {
@@ -105,12 +130,22 @@ describe('interaction perf contracts (ADR-0001 CI proxy)', () => {
   })
 
   it('bounds full transcript residency with a working set reconcile on selection', () => {
+    // Behavioral: the resolver decides residency, so assert the bound directly —
+    // open sessions plus a fixed number of recent extras, never the whole history.
+    __resetSessionTranscriptWorkingSetForTests()
+    for (const id of ['old-1', 'old-2', 'old-3', 'old-4', 'recent-1', 'recent-2']) {
+      touchSessionTranscriptAccess(id)
+    }
+    const resolved = resolveSessionTranscriptWorkingSet(['open-1'])
+    expect(resolved[0]).toBe('open-1')
+    expect(resolved.length).toBe(1 + SESSION_TRANSCRIPT_WORKING_SET_EXTRA)
+    // Extras are the most recently accessed, not an unbounded tail.
+    expect(resolved).toContain('recent-2')
+    expect(resolved).not.toContain('old-1')
+
+    // Structural: the AppShell call site that feeds open ids into the reconcile.
     expect(sessionsAtomSource).toContain('reconcileSessionTranscriptWorkingSetAtom')
-    expect(sessionsAtomSource).toContain('unloadSessionTranscriptAtom')
-    expect(sessionsAtomSource).toContain('SESSION_TRANSCRIPT_WORKING_SET_EXTRA')
-    // Main-process dual: renderer eviction best-effort releases idle main transcripts.
     expect(sessionsAtomSource).toContain('releaseSessionMessages')
-    expect(appShellSource).toContain('reconcileSessionTranscriptWorkingSet')
     expect(appShellSource).toContain('reconcileSessionTranscriptWorkingSet(openIds)')
   })
 
@@ -135,15 +170,22 @@ describe('interaction perf contracts (ADR-0001 CI proxy)', () => {
   })
 
   it('does not rewrite panel stack for same-route writing navigations (chapter switch)', () => {
-    // handleSelectNovelFile re-calls navigate('writing') on every chapter click.
-    // updateFocusedPanelRouteAtom must no-op when focused route is already writing,
-    // otherwise panelStack identity thrash re-renders AppShell and syncs URL.
-    const panelStackSource = readFileSync(
-      new URL('../atoms/panel-stack.ts', import.meta.url),
-      'utf8',
-    )
-    expect(panelStackSource).toContain('if (focused.route === route)')
-    expect(panelStackSource).toContain('// Chapter switches (and other in-surface actions) re-call navigate')
+    // Behavioral: handleSelectNovelFile re-calls navigate('writing') on every chapter
+    // click. An identical focused route must leave panelStack referentially unchanged,
+    // otherwise identity thrash re-renders AppShell and forces a replaceState URL sync.
+    const store = createStore()
+    store.set(updateFocusedPanelRouteAtom, 'writing' as never)
+    const stackAfterFirst = store.get(panelStackAtom)
+    const focusedAfterFirst = store.get(focusedPanelIdAtom)
+    expect(stackAfterFirst.length).toBeGreaterThan(0)
+
+    store.set(updateFocusedPanelRouteAtom, 'writing' as never)
+    expect(store.get(panelStackAtom)).toBe(stackAfterFirst)
+    expect(store.get(focusedPanelIdAtom)).toBe(focusedAfterFirst)
+
+    // A genuinely different route must still update, or navigation would be broken.
+    store.set(updateFocusedPanelRouteAtom, 'allSessions' as never)
+    expect(store.get(panelStackAtom)).not.toBe(stackAfterFirst)
   })
 
   it('keeps one session-switch timer across list and direct navigation entry paths', () => {
@@ -158,8 +200,33 @@ describe('interaction perf contracts (ADR-0001 CI proxy)', () => {
   })
 
   it('caps global search result groups (heavy-search pure bound)', () => {
-    expect(globalSearchSource).toContain('MAX_RESULTS_PER_GROUP = 8')
-    expect(globalSearchSource).toContain('insertBoundedResult')
+    // Behavioral: ranking must stay bounded regardless of catalog size, so a
+    // 400-chapter project cannot turn one keystroke into an unbounded render.
+    const sessions = Array.from({ length: 200 }, (_, i) => ({
+      id: `session-${i}`,
+      workspaceId: 'workspace-1',
+      name: `chapter match ${i}`,
+      hidden: false,
+      lastMessageAt: i,
+    }))
+    const novelFiles = Array.from({ length: 400 }, (_, i) => ({
+      path: `/novel/chapter-match-${i}.md`,
+      name: `chapter match ${i}`,
+    }))
+
+    const results = buildGlobalSearchResults({
+      query: 'match',
+      sessions: sessions as never,
+      novelFiles: novelFiles as never,
+      formatNovelFileTitle: (file: { name?: string; path: string }) => file.name ?? file.path,
+    })
+
+    expect(sessions.length).toBeGreaterThan(8)
+    expect(novelFiles.length).toBeGreaterThan(8)
+    expect(results.sessions.length).toBeLessThanOrEqual(8)
+    expect(results.files.length).toBeLessThanOrEqual(8)
+    // Bounded, not empty — a cap that returns nothing would also "pass" a max check.
+    expect(results.sessions.length + results.files.length).toBeGreaterThan(0)
   })
 
   it('does not rewrite session metadata when only message content changes', () => {

@@ -171,6 +171,9 @@ function GlobalSearchResults({
 
   return (
     <>
+      {/* Non-localized completion signal for the perf harness: content search is
+          debounced + ripgrep-backed, so "first result rendered" does not mean done. */}
+      <div hidden data-global-search-state={searchState} />
       {!hasResults && searchState !== 'searching' ? (
         <CommandEmpty className="py-8 text-xs text-muted-foreground">
           {t('globalSearch.empty', 'No results found.')}
