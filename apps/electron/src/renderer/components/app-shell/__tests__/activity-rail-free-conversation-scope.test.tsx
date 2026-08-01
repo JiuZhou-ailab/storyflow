@@ -1,5 +1,5 @@
-// input: Mixed-workspace session metadata delivered through the rail's RPC and atom paths
-// output: Behavioral proof that the rail scopes free conversations while its task action follows the focused workspace
+// input: Mixed-workspace metadata plus current-runtime and retained-project navigation state
+// output: Behavioral proof that free conversations and the top task action stay in the current runtime domain
 // pos: Enforces the ADR 0006 ownership boundary at the surface that broke it
 
 import * as React from 'react'
@@ -11,6 +11,7 @@ import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
 import { sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
 
 const appSource = readFileSync(new URL('../../../App.tsx', import.meta.url), 'utf8')
+const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf8')
 const appShellContextSource = readFileSync(new URL('../../../context/AppShellContext.tsx', import.meta.url), 'utf8')
 const activityRailSource = readFileSync(new URL('../ActivityRail.tsx', import.meta.url), 'utf8')
 
@@ -56,9 +57,12 @@ function installElectronApi() {
 }
 
 let ActivityRail: typeof import('../ActivityRail').ActivityRail
+let resolveActivityWorkspaceSessionMetas: typeof import('../ActivityRail').resolveActivityWorkspaceSessionMetas
 
 beforeAll(async () => {
-  ActivityRail = (await import('../ActivityRail')).ActivityRail
+  const activityRailModule = await import('../ActivityRail')
+  ActivityRail = activityRailModule.ActivityRail
+  resolveActivityWorkspaceSessionMetas = activityRailModule.resolveActivityWorkspaceSessionMetas
 })
 
 describe('ActivityRail free-conversation scope', () => {
@@ -112,11 +116,22 @@ describe('ActivityRail free-conversation scope', () => {
     expect(createButton).not.toContain('opacity-0')
   })
 
-  it('creates in the focused project and falls back to a fresh free conversation', () => {
+  it('creates in the current runtime instead of a retained project', () => {
     const handlerStart = appSource.indexOf('const handleOpenFreeConversations =')
     const handlerEnd = appSource.indexOf('\n\n  useEffect(', handlerStart)
     const handlerSource = appSource.slice(handlerStart, handlerEnd)
+    const railStart = appShellSource.indexOf('<ActivityRail\n')
+    const railProps = appShellSource.slice(railStart, appShellSource.indexOf('/>', railStart))
+    const projectCreateStart = appShellSource.indexOf('const handleActivityProjectSessionCreate =')
+    const projectCreateSource = appShellSource.slice(
+      projectCreateStart,
+      appShellSource.indexOf('\n\n  const handleSidebarFocus', projectCreateStart),
+    )
 
+    expect(railProps).toContain('runtimeWorkspaceId={activeWorkspaceId}')
+    expect(railProps).toContain('activeWorkspaceId={projectWorkspaceId}')
+    expect(handlerSource).toContain('windowWorkspaceId === FREE_CONVERSATION_WORKSPACE_ID')
+    expect(handlerSource).toContain('navigate(targetRoute)')
     expect(handlerSource).toContain('options?.createNew')
     expect(handlerSource).toContain('routes.action.newSession()')
     expect(handlerSource).toContain('routes.view.allSessions()')
@@ -125,5 +140,57 @@ describe('ActivityRail free-conversation scope', () => {
     )
     expect(activityRailSource).toContain('onCreateConversationInProject(activeWorkspaceId)')
     expect(activityRailSource).toContain('onOpenFreeConversations?.({ createNew: true })')
+    expect(projectCreateSource).toContain('if (workspaceId === activeWorkspaceId)')
+    expect(projectCreateSource.indexOf('navigateToSessionInPanel(session.id)')).toBeLessThan(
+      projectCreateSource.indexOf('await onSelectWorkspace(workspaceId)')
+    )
+  })
+
+  it('treats the active runtime atom as authoritative for create and delete', () => {
+    const staleSnapshot = [
+      meta('deleted', PROJECT_WORKSPACE_ID, '已删除对话'),
+      meta('kept', PROJECT_WORKSPACE_ID, '保留对话'),
+    ]
+    const liveRuntime = [
+      meta('created', PROJECT_WORKSPACE_ID, '刚创建对话'),
+      meta('kept', PROJECT_WORKSPACE_ID, '保留对话'),
+    ]
+
+    const active = resolveActivityWorkspaceSessionMetas(
+      PROJECT_WORKSPACE_ID,
+      PROJECT_WORKSPACE_ID,
+      staleSnapshot,
+      liveRuntime,
+    )
+    expect(active.map(session => session.id)).toEqual(['created', 'kept'])
+
+    const inactive = resolveActivityWorkspaceSessionMetas(
+      PROJECT_WORKSPACE_ID,
+      'another-workspace',
+      staleSnapshot,
+      liveRuntime,
+    )
+    expect(inactive.map(session => session.id)).toEqual(['deleted', 'kept'])
+  })
+
+  it('renders the Feishu avatar with an initial fallback and follows auth broadcasts', () => {
+    installElectronApi()
+    const html = renderToStaticMarkup(
+      <Provider store={createStore()}>
+        <ActivityRail
+          activeItem="recent"
+          profile={{
+            name: '飞书用户',
+            avatarUrl: 'https://example.com/feishu-avatar.png',
+          }}
+          onOpenFreeConversations={() => {}}
+        />
+      </Provider>
+    )
+
+    expect(html).toContain('src="https://example.com/feishu-avatar.png"')
+    expect(html).toContain('飞')
+    expect(appSource).toContain('avatarUrl: user?.avatarUrl')
+    expect(appSource).toContain('onClientAuthStateChanged(setClientAuthState)')
   })
 })

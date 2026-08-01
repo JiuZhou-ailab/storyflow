@@ -73,6 +73,28 @@ describe('client auth broker config', () => {
 })
 
 describe('DefaultClientAuthBrokerClient', () => {
+  it('preserves the Feishu avatar URL from the broker profile', async () => {
+    globalThis.fetch = (async () => Response.json({
+      user: {
+        provider: 'feishu',
+        userId: 'ou_user',
+        name: 'User',
+        avatarUrl: 'https://example.com/user.png',
+      },
+      appSessionToken: 'app-session-token',
+      modelAccessToken: 'model-access-token',
+    })) as unknown as typeof fetch
+
+    const result = await new DefaultClientAuthBrokerClient().exchangeFeishuCode({
+      brokerUrl: 'https://auth.storyflow.example.com',
+      code: 'feishu-code',
+      redirectUri: 'http://localhost:6477/callback',
+      codeVerifier: 'code-verifier',
+    })
+
+    expect(result.user.avatarUrl).toBe('https://example.com/user.png')
+  })
+
   it('does not accept the retired sessionToken response alias', async () => {
     globalThis.fetch = (async () => Response.json({
       user: { provider: 'neon', userId: 'user-1' },

@@ -32,6 +32,7 @@ import {
   StyledDropdownMenuSeparator,
 } from '@/components/ui/styled-dropdown'
 import { RenameDialog } from '@/components/ui/rename-dialog'
+import { CrossfadeAvatar } from '@/components/ui/avatar'
 import { FeedbackDialog } from './FeedbackDialog'
 import { ProjectSwitcherPopover } from './ProjectSwitcherPopover'
 import {
@@ -66,6 +67,8 @@ export type ActivityRailItemId =
 export interface ActivityRailProps {
   activeItem: ActivityRailItemId
   workspaces?: Workspace[]
+  /** Runtime whose local session atom is authoritative for immediate lifecycle updates. */
+  runtimeWorkspaceId?: string | null
   activeWorkspaceId?: string | null
   activeSessionId?: string | null
   /**
@@ -90,6 +93,7 @@ export interface ActivityRailProps {
   profile?: {
     name: string
     detail?: string
+    avatarUrl?: string
   }
   /** Optional release-notes surface inside the profile menu. */
   onOpenWhatsNew?: () => void
@@ -116,15 +120,27 @@ const activityShowAllProjectsAtom = atom(false)
 const activityArchivedExpandedAtom = atom(false)
 const activitySidebarScrollTopAtom = atom(0)
 const activityUnreadByWorkspaceAtom = atom<Record<string, boolean> | null>(null)
-const freeRuntimeSessionMetasAtom = selectAtom(
+const runtimeSessionMetasAtom = selectAtom(
   sessionMetaMapAtom,
-  (metas) => [...metas.values()].filter((meta) => meta.workspaceId === FREE_CONVERSATION_WORKSPACE_ID),
+  (metas) => [...metas.values()],
   (left, right) => left.length === right.length && left.every((meta, index) => meta === right[index]),
 )
+
+export function resolveActivityWorkspaceSessionMetas(
+  workspaceId: string,
+  runtimeWorkspaceId: string | null | undefined,
+  cachedMetas: readonly SessionMeta[] | undefined,
+  runtimeMetas: readonly SessionMeta[],
+): readonly SessionMeta[] {
+  return runtimeWorkspaceId === workspaceId
+    ? runtimeMetas.filter(meta => meta.workspaceId === workspaceId)
+    : cachedMetas ?? []
+}
 
 export function ActivityRail({
   activeItem,
   workspaces = [],
+  runtimeWorkspaceId = null,
   activeWorkspaceId = null,
   activeSessionId = null,
   onSelectSession,
@@ -150,7 +166,7 @@ export function ActivityRail({
   const { t } = useTranslation()
   const activityStore = useStore()
   const scrollContainerRef = React.useRef<HTMLDivElement>(null)
-  const localFreeSessionMetas = useAtomValue(freeRuntimeSessionMetasAtom)
+  const localRuntimeSessionMetas = useAtomValue(runtimeSessionMetasAtom)
   const sessionIdsWithPendingPrompt = useAtomValue(sessionIdsWithPendingPromptAtom)
   const [freeSessionMetas, setFreeSessionMetas] = useAtom(activityFreeSessionMetasAtom)
   const [unreadByWorkspace, setUnreadByWorkspace] = useAtom(activityUnreadByWorkspaceAtom)
@@ -308,20 +324,15 @@ export function ActivityRail({
   }, [expandedProjectIds, refreshActiveWorkspaceIds, refreshFreeSessionMetas, refreshProjectSessionMetas])
 
   const sessionMetas = React.useMemo(() => {
-    const merged = new Map<string, SessionMeta>()
-    for (const meta of freeSessionMetas ?? []) merged.set(meta.id, meta)
-    // Overlay the active workspace's live atom state so optimistic title/read/
-    // processing updates are reflected before the next metadata refresh. That
-    // atom is scoped to whichever workspace is running, so it must be filtered
-    // back down to the free domain — otherwise the open project's sessions
-    // reappear here regardless of what the server returned.
-    for (const meta of localFreeSessionMetas) {
-      merged.set(meta.id, meta)
-    }
-    return [...merged.values()]
+    return [...resolveActivityWorkspaceSessionMetas(
+      FREE_CONVERSATION_WORKSPACE_ID,
+      runtimeWorkspaceId,
+      freeSessionMetas ?? undefined,
+      localRuntimeSessionMetas,
+    )]
       .filter(meta => !meta.hidden && meta.isArchived !== true)
       .sort((left, right) => (right.lastMessageAt ?? right.createdAt ?? 0) - (left.lastMessageAt ?? left.createdAt ?? 0))
-  }, [freeSessionMetas, localFreeSessionMetas])
+  }, [freeSessionMetas, localRuntimeSessionMetas, runtimeWorkspaceId])
 
   const recentSessions = showAllRecent
     ? sessionMetas
@@ -528,7 +539,14 @@ export function ActivityRail({
                           expandable={Boolean(onSelectSession)}
                           expanded={expanded}
                           onToggleExpanded={() => toggleProjectExpanded(workspace.id)}
-                          sessions={projectSessionMetas[workspace.id]}
+                          sessions={[...resolveActivityWorkspaceSessionMetas(
+                            workspace.id,
+                            runtimeWorkspaceId,
+                            projectSessionMetas[workspace.id],
+                            localRuntimeSessionMetas,
+                          )]
+                            .filter(meta => !meta.hidden && meta.isArchived !== true)
+                            .sort((left, right) => (right.lastMessageAt ?? right.createdAt ?? 0) - (left.lastMessageAt ?? left.createdAt ?? 0))}
                           loadingSessions={loadingProjectIds.has(workspace.id)}
                           activeSessionId={activeWorkspaceId === workspace.id ? activeProjectSessionId : null}
                           onSelectSession={onSelectSession
@@ -648,9 +666,19 @@ export function ActivityRail({
                 (activeItem === 'account' || activeItem === 'settings') && 'bg-foreground/[0.07]',
               )}
             >
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-foreground/10 text-[11px] font-semibold text-foreground/80">
-                {getProfileInitial(profile?.name)}
-              </span>
+              {profile?.avatarUrl ? (
+                <CrossfadeAvatar
+                  src={profile.avatarUrl}
+                  alt={`${profile.name}的头像`}
+                  className="size-7 rounded-full"
+                  fallbackClassName="rounded-full bg-foreground/10 text-[11px] font-semibold text-foreground/80"
+                  fallback={getProfileInitial(profile.name)}
+                />
+              ) : (
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-foreground/10 text-[11px] font-semibold text-foreground/80">
+                  {getProfileInitial(profile?.name)}
+                </span>
+              )}
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[12px] font-medium leading-4 text-foreground/90">
                   {profile?.name ?? '本地用户'}

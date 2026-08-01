@@ -169,6 +169,9 @@ function parseClientAuthUser(value: unknown): ClientAuthUser | null {
   const name = typeof record.name === 'string' && record.name.trim()
     ? record.name.trim()
     : undefined
+  const avatarUrl = typeof record.avatarUrl === 'string' && record.avatarUrl.trim()
+    ? record.avatarUrl.trim()
+    : undefined
 
   return {
     provider,
@@ -176,5 +179,6 @@ function parseClientAuthUser(value: unknown): ClientAuthUser | null {
     ...(email ? { email } : {}),
     ...(emailVerified !== undefined ? { emailVerified } : {}),
     ...(name ? { name } : {}),
+    ...(avatarUrl ? { avatarUrl } : {}),
   }
 }

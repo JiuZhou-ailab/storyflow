@@ -224,6 +224,7 @@ export interface ClientAuthUser {
   email?: string
   emailVerified?: boolean
   name?: string
+  avatarUrl?: string
 }
 
 export interface ClientAuthState {

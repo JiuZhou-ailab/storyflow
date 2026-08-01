@@ -163,6 +163,7 @@ export function normalizeBrokerClientAuthUser(
 
   const email = readStringValue(record.email)
   const name = readStringValue(record.name)
+  const avatarUrl = readStringValue(record.avatarUrl)
   const emailVerified = typeof record.emailVerified === 'boolean' ? record.emailVerified : undefined
   return {
     provider,
@@ -170,6 +171,7 @@ export function normalizeBrokerClientAuthUser(
     ...(email ? { email: email.toLowerCase() } : {}),
     ...(emailVerified !== undefined ? { emailVerified } : {}),
     ...(name ? { name } : {}),
+    ...(avatarUrl ? { avatarUrl } : {}),
   }
 }
 

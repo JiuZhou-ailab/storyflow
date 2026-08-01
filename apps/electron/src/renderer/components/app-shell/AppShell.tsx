@@ -4474,6 +4474,12 @@ function AppShellContent({
   }, [activeWorkspaceId, navigateToSessionInPanel, onSelectProjectSession])
 
   const handleActivityProjectSessionCreate = React.useCallback(async (workspaceId: string) => {
+    if (workspaceId === activeWorkspaceId) {
+      const session = await onCreateSession(workspaceId)
+      navigateToSessionInPanel(session.id)
+      return
+    }
+
     await onSelectWorkspace(workspaceId)
     const session = await onCreateSession(workspaceId)
     if (onSelectProjectSession) {
@@ -4481,7 +4487,7 @@ function AppShellContent({
     } else {
       navigateToSessionInPanel(session.id)
     }
-  }, [navigateToSessionInPanel, onCreateSession, onSelectProjectSession, onSelectWorkspace])
+  }, [activeWorkspaceId, navigateToSessionInPanel, onCreateSession, onSelectProjectSession, onSelectWorkspace])
 
   const handleSidebarFocus = React.useCallback((event: React.FocusEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return
@@ -4704,11 +4710,12 @@ function AppShellContent({
               <ActivityRail
                 activeItem={activeActivityRailItem}
                 workspaces={workspaces}
-                activeWorkspaceId={activeProjectId}
+                runtimeWorkspaceId={activeWorkspaceId}
+                activeWorkspaceId={projectWorkspaceId}
                 activeSessionId={panelCount > 1 ? focusedSessionId : session.selected}
                 onSelectSession={handleActivitySessionSelect}
                 onCreateConversationInProject={handleActivityProjectSessionCreate}
-                activeProjectSessionId={activeProjectId && activeProjectId !== FREE_CONVERSATION_WORKSPACE_ID
+                activeProjectSessionId={projectWorkspaceId
                   ? (panelCount > 1 ? focusedSessionId : session.selected)
                   : null}
                 onWorkspaceCreated={onWorkspaceCreatedFromRail ?? onWorkspaceCreated}

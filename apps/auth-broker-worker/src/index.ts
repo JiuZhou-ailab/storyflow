@@ -36,6 +36,7 @@ interface FeishuUserInfo {
   email?: string
   enterpriseEmail?: string
   name?: string
+  avatarUrl?: string
 }
 
 interface NeonIdentity {
@@ -196,6 +197,7 @@ async function exchangeFeishuCode(
       userId: user.openId,
       ...(email ? { email } : {}),
       ...(user.name ? { name: user.name } : {}),
+      ...(user.avatarUrl ? { avatarUrl: user.avatarUrl } : {}),
     }
     const tokens = await createAuthTokens(env, `feishu:${user.openId}`, 'pro', user.name)
 
@@ -492,6 +494,7 @@ function normalizeFeishuUser(raw: Record<string, unknown>): FeishuUserInfo {
     ...(readString(raw.email) ? { email: readString(raw.email) } : {}),
     ...(readString(raw.enterprise_email) ?? readString(raw.enterpriseEmail) ? { enterpriseEmail: readString(raw.enterprise_email) ?? readString(raw.enterpriseEmail) } : {}),
     ...(name ? { name } : {}),
+    ...(readString(raw.avatar_url) ?? readString(raw.avatarUrl) ? { avatarUrl: readString(raw.avatar_url) ?? readString(raw.avatarUrl) } : {}),
   }
 }
 

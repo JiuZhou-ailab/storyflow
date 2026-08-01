@@ -729,6 +729,8 @@ function AppContent() {
     }
   }, [])
 
+  useEffect(() => window.electronAPI.onClientAuthStateChanged(setClientAuthState), [])
+
   // Handle onboarding completion
   const handleOnboardingComplete = useCallback(async () => {
     try {
@@ -2270,10 +2272,14 @@ function AppContent() {
     )
   }, [activeProjectId, activateRuntimeWorkspace])
 
-  const handleOpenFreeConversations = useCallback((options?: { createNew?: boolean }) => activateRuntimeWorkspace(
-    FREE_CONVERSATION_WORKSPACE_ID,
-    options?.createNew ? routes.action.newSession() : routes.view.allSessions(),
-  ), [activateRuntimeWorkspace])
+  const handleOpenFreeConversations = useCallback((options?: { createNew?: boolean }) => {
+    const targetRoute = options?.createNew ? routes.action.newSession() : routes.view.allSessions()
+    if (windowWorkspaceId === FREE_CONVERSATION_WORKSPACE_ID) {
+      navigate(targetRoute)
+      return
+    }
+    return activateRuntimeWorkspace(FREE_CONVERSATION_WORKSPACE_ID, targetRoute)
+  }, [activateRuntimeWorkspace, windowWorkspaceId])
 
   useEffect(() => {
     if (appState !== 'ready' || !pendingReadyRoute) return
@@ -2316,6 +2322,7 @@ function AppContent() {
     return {
       name,
       detail: email && email !== name ? email : undefined,
+      avatarUrl: user?.avatarUrl,
     }
   }, [clientAuthState])
 

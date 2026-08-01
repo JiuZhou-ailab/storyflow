@@ -137,6 +137,7 @@ describe('auth broker worker', () => {
               tenant_key: 'tenant_external',
               enterprise_email: 'Desktop.User@Example.com',
               name: 'Desktop User',
+              avatar_url: 'https://example.com/desktop-user.png',
             },
           })
         }
@@ -152,6 +153,7 @@ describe('auth broker worker', () => {
       userId: 'ou_desktop',
       email: 'desktop.user@example.com',
       name: 'Desktop User',
+      avatarUrl: 'https://example.com/desktop-user.png',
     })
     const sessionPayload = await verifyClientSessionToken(body.appSessionToken)
     expect(sessionPayload.sub).toBe('feishu:ou_desktop')
