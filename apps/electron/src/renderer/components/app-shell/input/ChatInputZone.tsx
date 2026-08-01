@@ -34,7 +34,6 @@ interface ChatInputZoneProps {
   currentSessionStatus?: string
   onSessionStatusChange?: (stateId: string) => void
   queuedMessages?: QueuedInputMessage[]
-  onSendQueuedMessageNow?: (messageId: string) => void
   onEditQueuedMessage?: (message: QueuedInputMessage) => void
   onRemoveQueuedMessage?: (messageId: string) => void
   className?: string
@@ -55,7 +54,6 @@ export function ChatInputZone({
   currentSessionStatus = 'todo',
   onSessionStatusChange,
   queuedMessages = [],
-  onSendQueuedMessageNow,
   onEditQueuedMessage,
   onRemoveQueuedMessage,
   className,
@@ -170,16 +168,6 @@ export function ChatInputZone({
                     title={label}
                   >
                     <span className="min-w-0 flex-1 truncate">{label}</span>
-                    {onSendQueuedMessageNow && (
-                      <button
-                        type="button"
-                        className="shrink-0 rounded-[5px] px-1.5 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10 hover:text-primary"
-                        aria-label={t('chat.sendQueuedNow')}
-                        onClick={() => onSendQueuedMessageNow?.(message.id)}
-                      >
-                        {t('chat.sendQueuedNow')}
-                      </button>
-                    )}
                     {onEditQueuedMessage && (
                       <button
                         type="button"

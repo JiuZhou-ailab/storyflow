@@ -35,12 +35,11 @@ describe('ChatDisplay scroll layout', () => {
     expect(chatInputZoneSource).toContain("t('chat.queuedBadge')")
   })
 
-  it('wires queued message previews to the send-now interruption command', () => {
-    expect(chatInputZoneSource).toContain('onSendQueuedMessageNow?: (messageId: string) => void')
-    expect(chatInputZoneSource).toContain("t('chat.sendQueuedNow')")
-    expect(chatInputZoneSource).toContain('onSendQueuedMessageNow?.(message.id)')
-    expect(chatDisplaySource).toContain("type: 'sendQueuedMessageNow'")
-    expect(chatDisplaySource).toContain('onSendQueuedMessageNow={handleSendQueuedMessageNow}')
+  it('never exposes an action that interrupts the active answer from the queue preview', () => {
+    expect(chatInputZoneSource).not.toContain('onSendQueuedMessageNow')
+    expect(chatInputZoneSource).not.toContain("t('chat.sendQueuedNow')")
+    expect(chatDisplaySource).not.toContain("type: 'sendQueuedMessageNow'")
+    expect(chatDisplaySource).not.toContain('handleSendQueuedMessageNow')
   })
 
   it('wires queued message previews to edit and delete actions', () => {

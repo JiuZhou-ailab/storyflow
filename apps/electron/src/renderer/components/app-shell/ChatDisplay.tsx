@@ -1434,19 +1434,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     })
   }
 
-  const handleSendQueuedMessageNow = useCallback((messageId: string) => {
-    if (!session?.id) return
-    window.electronAPI.sessionCommand(session.id, {
-      type: 'sendQueuedMessageNow',
-      messageId,
-    }).catch(error => {
-      console.error('[ChatDisplay] Failed to send queued message now:', error)
-      toast.error(t('toast.cannotSendRightNow'), {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      })
-    })
-  }, [session?.id, t])
-
   const removeQueuedMessage = useCallback((messageId: string) => {
     if (!session?.id) return Promise.resolve()
     return window.electronAPI.sessionCommand(session.id, {
@@ -2218,7 +2205,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
             currentSessionStatus={session.sessionStatus || 'todo'}
             onSessionStatusChange={onSessionStatusChange}
             queuedMessages={queuedUserMessages}
-            onSendQueuedMessageNow={handleSendQueuedMessageNow}
             onEditQueuedMessage={handleEditQueuedMessage}
             onRemoveQueuedMessage={handleRemoveQueuedMessage}
             inputProps={{
