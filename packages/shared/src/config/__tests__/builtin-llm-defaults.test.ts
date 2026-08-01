@@ -122,8 +122,8 @@ describe('builtin LLM connection defaults', () => {
     const connections = builtins.map(entry => entry.connection)
 
     expect(connections.map(entry => entry?.slug)).toEqual([
-      'storyflow-managed',
       'storyflow-managed-deepseek',
+      'storyflow-managed',
       'storyflow-managed-gemini',
       'storyflow-managed-anthropic',
     ])
@@ -135,16 +135,16 @@ describe('builtin LLM connection defaults', () => {
     expect(JSON.stringify(defaults)).not.toContain('revokedApiKeySha256')
     expect(connections).toMatchObject([
       {
-        name: 'GPT (Responses)',
-        baseUrl: 'https://storyflow-model.zjding.com/v1',
-        defaultModel: 'gpt-5.5',
-        customEndpoint: { api: 'openai-responses' },
-      },
-      {
         name: 'DeepSeek (Chat Completions)',
         baseUrl: 'https://storyflow-model.zjding.com/v1',
         defaultModel: 'deepseek-v4-flash',
         customEndpoint: { api: 'openai-completions' },
+      },
+      {
+        name: 'GPT (Responses)',
+        baseUrl: 'https://storyflow-model.zjding.com/v1',
+        defaultModel: 'gpt-5.5',
+        customEndpoint: { api: 'openai-responses' },
       },
       {
         name: 'Gemini (GenAI)',
@@ -154,7 +154,7 @@ describe('builtin LLM connection defaults', () => {
       },
       {
         name: 'Anthropic (Messages)',
-        baseUrl: 'https://storyflow-model.zjding.com/v1',
+        baseUrl: 'https://storyflow-model.zjding.com',
         defaultModel: 'claude-sonnet-5',
         customEndpoint: { api: 'anthropic-messages' },
       },
@@ -166,16 +166,18 @@ describe('builtin LLM connection defaults', () => {
       connection.slug,
       connection.models?.map(model => typeof model === 'string' ? model : model.id),
     ])).toEqual([
-      ['storyflow-managed', ['gpt-5.5', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']],
       ['storyflow-managed-deepseek', ['deepseek-v4-pro', 'deepseek-v4-flash']],
+      ['storyflow-managed', ['gpt-5.5', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']],
       ['storyflow-managed-gemini', ['gemini-3.5-flash']],
       ['storyflow-managed-anthropic', ['claude-sonnet-5', 'claude-opus-5']],
     ])
+    expect(config.defaultLlmConnection).toBe('storyflow-managed-deepseek')
   })
 
   it('upgrades persisted managed model IDs to the canonical bundled catalog', () => {
     const defaults = JSON.parse(readFileSync(BUNDLED_DEFAULTS_PATH, 'utf-8')) as ConfigDefaults
-    const bundled = defaults.builtinLlmConnections?.[0]?.connection
+    const bundled = defaults.builtinLlmConnections
+      ?.find(entry => entry.connection?.slug === 'storyflow-managed')?.connection
     expect(bundled).toBeDefined()
 
     const config = makeConfig({
@@ -200,7 +202,8 @@ describe('builtin LLM connection defaults', () => {
 
   it('preserves the previously selected DeepSeek family when splitting the managed connection', () => {
     const defaults = JSON.parse(readFileSync(BUNDLED_DEFAULTS_PATH, 'utf-8')) as ConfigDefaults
-    const legacyConnection = defaults.builtinLlmConnections?.[0]?.connection
+    const legacyConnection = defaults.builtinLlmConnections
+      ?.find(entry => entry.connection?.slug === 'storyflow-managed')?.connection
     const config = makeConfig({
       defaultLlmConnection: 'storyflow-managed',
       llmConnections: [{

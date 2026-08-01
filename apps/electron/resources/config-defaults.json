@@ -27,26 +27,6 @@
     {
       "enabled": true,
       "connection": {
-        "slug": "storyflow-managed",
-        "name": "GPT (Responses)",
-        "providerType": "pi_compat",
-        "authType": "api_key_with_endpoint",
-        "baseUrl": "https://storyflow-model.zjding.com/v1",
-        "defaultModel": "gpt-5.5",
-        "modelSelectionMode": "userDefined3Tier",
-        "piAuthProvider": "openai",
-        "customEndpoint": {
-          "api": "openai-responses"
-        },
-        "hidden": true,
-        "managed": true,
-        "source": "builtin",
-        "createdAt": 0
-      }
-    },
-    {
-      "enabled": true,
-      "connection": {
         "slug": "storyflow-managed-deepseek",
         "name": "DeepSeek (Chat Completions)",
         "providerType": "pi_compat",
@@ -57,6 +37,26 @@
         "piAuthProvider": "openai",
         "customEndpoint": {
           "api": "openai-completions"
+        },
+        "hidden": true,
+        "managed": true,
+        "source": "builtin",
+        "createdAt": 0
+      }
+    },
+    {
+      "enabled": true,
+      "connection": {
+        "slug": "storyflow-managed",
+        "name": "GPT (Responses)",
+        "providerType": "pi_compat",
+        "authType": "api_key_with_endpoint",
+        "baseUrl": "https://storyflow-model.zjding.com/v1",
+        "defaultModel": "gpt-5.5",
+        "modelSelectionMode": "userDefined3Tier",
+        "piAuthProvider": "openai",
+        "customEndpoint": {
+          "api": "openai-responses"
         },
         "hidden": true,
         "managed": true,
@@ -91,7 +91,7 @@
         "name": "Anthropic (Messages)",
         "providerType": "pi_compat",
         "authType": "api_key_with_endpoint",
-        "baseUrl": "https://storyflow-model.zjding.com/v1",
+        "baseUrl": "https://storyflow-model.zjding.com",
         "defaultModel": "claude-sonnet-5",
         "modelSelectionMode": "userDefined3Tier",
         "piAuthProvider": "anthropic",
