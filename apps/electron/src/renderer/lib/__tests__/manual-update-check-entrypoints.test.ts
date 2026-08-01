@@ -22,7 +22,7 @@ describe('manual update check entrypoints', () => {
       'activeWritingDocumentSurface && rightWorkspaceVisible && canPresentConversationDiffInWorkspace',
     )
     expect(appShellSource).toContain('const showWorkspaceDirectoryColumn = Boolean(')
-    expect(appShellSource).toContain('&& !conversationDiffSurface')
+    expect(appShellSource).not.toContain('&& !conversationDiffSurface')
   })
 
   it('routes legacy app menu manual update checks through the feedback-aware hook', () => {
