@@ -121,6 +121,21 @@ describe('ActivityRail free-conversation scope', () => {
     expect(createButton).not.toContain('opacity-0')
   })
 
+  it('keeps the create action on the free-conversation section header', () => {
+    installElectronApi()
+    const html = renderToStaticMarkup(
+      <Provider store={createStore()}>
+        <FocusProvider>
+          <ActivityRail activeItem="recent" onOpenFreeConversations={() => {}} />
+        </FocusProvider>
+      </Provider>
+    )
+
+    const sectionStart = html.indexOf('<section aria-label="自由对话">')
+    const sectionHtml = html.slice(sectionStart, html.indexOf('</section>', sectionStart))
+    expect(sectionHtml).toContain('aria-label="新建自由对话"')
+  })
+
   it('creates in the current runtime instead of a retained project', () => {
     const handlerStart = appSource.indexOf('const handleOpenFreeConversations =')
     const handlerEnd = appSource.indexOf('\n\n  useEffect(', handlerStart)

@@ -13,7 +13,7 @@ import {
   Loader2,
   MoreHorizontal,
   Pencil,
-  Plus,
+  SquarePen,
   Trash2,
 } from 'lucide-react'
 import { useAtomValue } from 'jotai'
@@ -252,24 +252,16 @@ export function ProjectFolderRow({
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-label="有未读对话" />
           ) : null}
         </button>
-        {onCreateConversation ? (
-          <button
-            type="button"
-            aria-label={`在 ${workspace.name} 中新建任务`}
-            title="新建任务"
-            className="flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-foreground/[0.06] hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
-            onClick={() => { void onCreateConversation() }}
-          >
-            <Plus className="size-3.5" />
-          </button>
-        ) : null}
         {(onOpenInNewWindow || onRename || onArchive || onRestore || onRemove) ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
                 aria-label={`管理 ${workspace.name}`}
-                className="mr-1 flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-foreground/[0.06] hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100 data-[state=open]:opacity-100"
+                className={cn(
+                  'flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-foreground/[0.06] hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100 data-[state=open]:opacity-100',
+                  !onCreateConversation && 'mr-1',
+                )}
               >
                 <MoreHorizontal className="size-3.5" />
               </button>
@@ -308,6 +300,17 @@ export function ProjectFolderRow({
               ) : null}
             </StyledDropdownMenuContent>
           </DropdownMenu>
+        ) : null}
+        {onCreateConversation ? (
+          <button
+            type="button"
+            aria-label={`在 ${workspace.name} 中新建任务`}
+            title="新建任务"
+            className="mr-1 flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-foreground/[0.06] hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
+            onClick={() => { void onCreateConversation() }}
+          >
+            <SquarePen className="size-3.5" />
+          </button>
         ) : null}
       </div>
       {expandable && expanded ? (

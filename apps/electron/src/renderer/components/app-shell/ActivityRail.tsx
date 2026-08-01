@@ -489,6 +489,17 @@ export function ActivityRail({
               expanded={recentExpanded}
               needsAttention={recentNeedsAttention}
               onToggle={() => updateRecentExpanded(!recentExpanded)}
+              action={onOpenFreeConversations ? (
+                <button
+                  type="button"
+                  aria-label="新建自由对话"
+                  title="新建自由对话"
+                  className="flex h-7 w-7 items-center justify-center rounded-[7px] text-muted-foreground opacity-0 outline-none transition-[color,background-color,opacity] hover:bg-foreground/[0.06] hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:ring-1 focus-visible:ring-ring"
+                  onClick={() => { void onOpenFreeConversations({ createNew: true }) }}
+                >
+                  <SquarePen className="h-4 w-4" />
+                </button>
+              ) : undefined}
             />
             {recentExpanded ? (
               <div

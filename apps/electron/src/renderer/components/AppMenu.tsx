@@ -20,7 +20,6 @@ import {
 import * as Icons from "lucide-react"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@craft-agent/ui"
 import { CraftAgentsSymbol } from "./icons/CraftAgentsSymbol"
-import { SquarePenRounded } from "./icons/SquarePenRounded"
 import { TopBarButton } from "./ui/TopBarButton"
 import {
   EDIT_MENU,
@@ -210,7 +209,7 @@ export function AppMenu({
         <StyledDropdownMenuContent align="start" minWidth="min-w-48">
           {/* File actions at root level */}
           <StyledDropdownMenuItem onClick={onNewChat}>
-            <SquarePenRounded className="h-3.5 w-3.5" />
+            <Icons.SquarePen className="h-3.5 w-3.5" />
             {t("menu.newChat")}
             {newChatHotkey && <DropdownMenuShortcut className="pl-6">{newChatHotkey}</DropdownMenuShortcut>}
           </StyledDropdownMenuItem>
