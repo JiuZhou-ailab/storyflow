@@ -180,7 +180,7 @@ jobs:
           - arch: arm64
             runner: macos-26
           - arch: x64
-            runner: macos-26-intel
+            runner: macos-15-intel
 
     steps:
       - name: Checkout

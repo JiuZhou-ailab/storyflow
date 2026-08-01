@@ -141,7 +141,7 @@ describe('macOS release configuration', () => {
 
     expect(workflow).toContain('runs-on: ${{ matrix.runner }}');
     expect(workflow).toMatch(/- arch: arm64\n\s+runner: macos-26/);
-    expect(workflow).toMatch(/- arch: x64\n\s+runner: macos-26-intel/);
+    expect(workflow).toMatch(/- arch: x64\n\s+runner: macos-15-intel/);
     expect(workflow).toContain('Run packaged core E2E');
   });
 
