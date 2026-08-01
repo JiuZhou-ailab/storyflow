@@ -4730,7 +4730,6 @@ function AppShellContent({
   )
   const showWorkspaceDirectoryColumn = Boolean(
     activityWorkspaceDirectory
-      && !conversationDiffSurface
       && rightWorkspaceVisible
       && !isAutoCompact
       && !showEmptyProjectSession,

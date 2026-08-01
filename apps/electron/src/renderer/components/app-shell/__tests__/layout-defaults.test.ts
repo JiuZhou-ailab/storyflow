@@ -350,9 +350,11 @@ describe('app shell layout defaults', () => {
     expect(localStorageSource).toContain("writingWorkspaceVisible: 'writing-workspace-visible'")
     expect(localStorageSource).toContain("workspaceDirectoryVisible: 'workspace-directory-visible'")
     expect(appShellSource).toContain('const [workspaceDirectoryVisible, setWorkspaceDirectoryVisible]')
-    expect(appShellSource).toMatch(
-      /activityWorkspaceDirectory\s+&& !conversationDiffSurface\s+&& rightWorkspaceVisible\s+&& !isAutoCompact/,
-    )
+    const directoryVisibilityStart = appShellSource.indexOf('const showWorkspaceDirectoryColumn = Boolean(')
+    const directoryVisibilityEnd = appShellSource.indexOf('\n  return (', directoryVisibilityStart)
+    const directoryVisibilitySource = appShellSource.slice(directoryVisibilityStart, directoryVisibilityEnd)
+    expect(directoryVisibilitySource).toContain('activityWorkspaceDirectory')
+    expect(directoryVisibilitySource).not.toContain('conversationDiffSurface')
     expect(appShellSource).not.toContain('WORKSPACE_DIRECTORY_COLLAPSED_WIDTH')
     expect(appShellSource).toContain('const writingWorkspaceDockWidth = novelWorkspaceNavigatorWidth + workspaceDirectoryWidth')
     expect(appShellSource).toContain('width={writingWorkspaceDockWidth}')
