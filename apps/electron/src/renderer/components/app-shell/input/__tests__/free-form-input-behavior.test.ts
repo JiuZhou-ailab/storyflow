@@ -167,12 +167,18 @@ describe('FreeFormInput attachment read path', () => {
 
   it('offers a native folder picker and preserves each selected relative path', () => {
     const source = readFileSync(new URL('../FreeFormInput.tsx', import.meta.url), 'utf-8')
+    const pickerStart = source.indexOf('const renderAttachmentPicker')
+    const pickerEnd = source.indexOf('\n\n  return (', pickerStart)
+    const pickerSource = source.slice(pickerStart, pickerEnd)
 
     expect(source).toContain('ref={folderInputRef}')
     expect(source).toContain("webkitdirectory: ''")
     expect(source).toContain('file.webkitRelativePath || file.name')
     expect(source).toContain("t('chat.chooseFolder')")
     expect(source).toContain('{ ...attachment, name: overrideName }')
+    expect(pickerSource).not.toContain('<DropdownMenu>')
+    expect(pickerSource).toContain('onClick={handleAttachFolderClick}')
+    expect(pickerSource).toContain('icon={<FolderUp')
   })
 })
 

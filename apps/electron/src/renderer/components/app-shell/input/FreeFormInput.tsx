@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   Paperclip,
+  FolderUp,
   ArrowUp,
   Square,
   Check,
@@ -1789,29 +1790,27 @@ export function FreeFormInput({
   }
 
   const renderAttachmentPicker = (isExpanded: boolean) => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <FreeFormInputContextBadge
-          icon={<Paperclip className="h-4 w-4" />}
-          label={attachments.length > 0
-            ? t('chat.filesCount', { count: attachments.length })
-            : t('chat.attachFiles')
-          }
-          isExpanded={isExpanded}
-          hasSelection={attachments.length > 0}
-          showChevron
-          disabled={disabled}
-        />
-      </DropdownMenuTrigger>
-      <StyledDropdownMenuContent side="top" align="start" sideOffset={6} className="min-w-40">
-        <StyledDropdownMenuItem onSelect={handleAttachClick}>
-          {t('chat.attachFiles')}
-        </StyledDropdownMenuItem>
-        <StyledDropdownMenuItem onSelect={handleAttachFolderClick}>
-          {t('chat.chooseFolder')}
-        </StyledDropdownMenuItem>
-      </StyledDropdownMenuContent>
-    </DropdownMenu>
+    <div className="flex shrink-0 items-center gap-0.5">
+      <FreeFormInputContextBadge
+        icon={<Paperclip className="h-4 w-4" />}
+        label={attachments.length > 0
+          ? t('chat.filesCount', { count: attachments.length })
+          : t('chat.attachFiles')
+        }
+        isExpanded={isExpanded}
+        hasSelection={attachments.length > 0}
+        onClick={handleAttachClick}
+        tooltip={!isExpanded ? t('chat.attachFiles') : undefined}
+        disabled={disabled}
+      />
+      <FreeFormInputContextBadge
+        icon={<FolderUp className="h-4 w-4" />}
+        label={t('chat.chooseFolder')}
+        onClick={handleAttachFolderClick}
+        tooltip={t('chat.chooseFolder')}
+        disabled={disabled}
+      />
+    </div>
   )
 
   return (
