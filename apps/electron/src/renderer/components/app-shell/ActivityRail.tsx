@@ -409,7 +409,7 @@ export function ActivityRail({
     <aside
       data-testid="activity-rail"
       aria-label="工作区导航"
-      className="titlebar-no-drag flex h-full shrink-0 flex-col border-r border-foreground/[0.06] bg-foreground-1.5"
+      className="titlebar-no-drag flex h-full shrink-0 flex-col border-r border-foreground/[0.06] bg-foreground-1.5 font-medium"
       style={{ width: ACTIVITY_RAIL_WIDTH }}
     >
       {/* Window-pinned collapse/search controls sit above this draggable title-bar area. */}

@@ -361,12 +361,13 @@ export function FreeFormInput({
   const effectivePlaceholderProp = placeholder ?? defaultPlaceholders
 
   // Derive connectionDefaultModel per-session from the effective connection.
-  // Only non-null for compat providers (custom endpoints with fixed models).
-  // Standard providers (anthropic, pi) → null → normal model picker.
+  // Only non-null for user-configured compat providers with fixed models.
+  // Managed families always keep the cross-series model picker available.
   const connectionDefaultModel = React.useMemo(() => {
     const effectiveSlug = resolveEffectiveConnectionSlug(currentConnection, workspaceDefaultConnection, llmConnections)
     const conn = llmConnections.find(c => c.slug === effectiveSlug)
     if (!conn) return null
+    if (isManagedLlmConnectionSlug(conn.slug)) return null
     if (!isCompatProvider(conn.providerType)) return null
     // Allow model switching when connection has multiple models
     if (conn.models && conn.models.length > 1) return null
@@ -498,6 +499,10 @@ export function FreeFormInput({
       : thinkingLevel,
     [currentModel, effectiveConnectionDetails, thinkingLevel],
   )
+  const selectedThinkingLevel = THINKING_LEVELS.find(({ id }) => id === effectiveThinkingLevel)
+  const currentThinkingLabel = currentModelSupportsThinking && selectedThinkingLevel
+    ? t(selectedThinkingLevel.nameKey)
+    : t('thinking.off')
 
   React.useEffect(() => {
     if (
@@ -1739,7 +1744,6 @@ export function FreeFormInput({
   const renderThinkingMenuItem = () => {
     if (!onThinkingLevelChange || connectionUnavailable) return null
 
-    const selectedLevel = THINKING_LEVELS.find(({ id }) => id === effectiveThinkingLevel)
     return (
       <DropdownMenuSub>
         <StyledDropdownMenuSubTrigger
@@ -1748,8 +1752,8 @@ export function FreeFormInput({
         >
           <span className="flex-1 text-[13px] leading-5">{t('settings.ai.thinking')}</span>
           <span className="text-[12px] text-muted-foreground">
-            {currentModelSupportsThinking && selectedLevel
-              ? t(selectedLevel.nameKey)
+            {currentModelSupportsThinking && selectedThinkingLevel
+              ? t(selectedThinkingLevel.nameKey)
               : t('thinking.notSupported')}
           </span>
         </StyledDropdownMenuSubTrigger>
@@ -2215,7 +2219,7 @@ export function FreeFormInput({
                   <button
                     type="button"
                     className={cn(
-                      "input-toolbar-btn inline-flex !h-7 min-w-0 max-w-[140px] select-none items-center gap-1 rounded-full px-2 text-[12px] transition-colors hover:bg-foreground/[0.07]",
+                      "input-toolbar-btn inline-flex !h-7 min-w-0 max-w-[240px] select-none items-center gap-1 rounded-full px-2 text-[12px] transition-colors hover:bg-foreground/[0.07]",
                       modelDropdownOpen && "bg-foreground/[0.07]",
                       connectionUnavailable && "text-destructive",
                     )}
@@ -2229,6 +2233,9 @@ export function FreeFormInput({
                       <>
                         {effectiveConnectionDetails && llmConnections.length > 1 && storage.get(storage.KEYS.showConnectionIcons, true) && <ConnectionIcon connection={effectiveConnectionDetails} size={14} showTooltip />}
                         <span className="min-w-0 truncate">{currentModelDisplayName}</span>
+                        <span className="shrink-0 text-[11px] text-muted-foreground">
+                          · {t('settings.ai.thinking')}: {currentThinkingLabel}
+                        </span>
                         {!connectionDefaultModel && <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />}
                       </>
                     )}
@@ -2236,7 +2243,7 @@ export function FreeFormInput({
                 </DropdownMenuTrigger>
               </TooltipTrigger>
               <TooltipContent side="top">
-                {t('common.model')}
+                {`${currentModelDisplayName} · ${t('settings.ai.thinking')}: ${currentThinkingLabel}`}
               </TooltipContent>
             </Tooltip>
             <StyledDropdownMenuContent side="top" align="end" sideOffset={6} className="min-w-60">

@@ -1,25 +1,17 @@
-/**
- * ConnectionIcon
- *
- * Displays the provider logo for an LLM connection.
- * Falls back to the first letter of the connection name if no icon is available.
- *
- * Used in:
- * - AI Settings (connections list)
- * - FreeFormInput (model display)
- * - Session List (connection badge)
- * - New Session (model selector group names)
- */
+// input: LLM connection transport metadata and optional display settings
+// output: Provider-branded connection icon with an optional tooltip
+// pos: Shared visual identity boundary for connection surfaces
 
 import { Brain } from 'lucide-react'
 import { getProviderIcon } from '@/lib/provider-icons'
 import { getModelDisplayName } from '@config/models'
+import { MANAGED_DEEPSEEK_CONNECTION_SLUG } from '@config/llm-connections'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@craft-agent/ui'
 import type { LlmConnectionWithStatus } from '../../../shared/types'
 
 interface ConnectionIconProps {
   /** The connection to display an icon for */
-  connection: Pick<LlmConnectionWithStatus, 'name' | 'providerType' | 'baseUrl' | 'piAuthProvider'> & { type?: string; defaultModel?: string }
+  connection: Pick<LlmConnectionWithStatus, 'slug' | 'name' | 'providerType' | 'baseUrl' | 'piAuthProvider'> & { type?: string; defaultModel?: string }
   /** Size in pixels (default: 16) */
   size?: number
   /** Additional CSS classes */
@@ -29,11 +21,13 @@ interface ConnectionIconProps {
 }
 
 export function ConnectionIcon({ connection, size = 16, className = '', showTooltip = false }: ConnectionIconProps) {
-  const providerIcon = getProviderIcon(
-    connection.providerType || connection.type || '',
-    connection.baseUrl,
-    connection.piAuthProvider
-  )
+  const providerIcon = connection.slug === MANAGED_DEEPSEEK_CONNECTION_SLUG
+    ? getProviderIcon('pi', null, 'deepseek')
+    : getProviderIcon(
+      connection.providerType || connection.type || '',
+      connection.baseUrl,
+      connection.piAuthProvider
+    )
 
   const iconElement = providerIcon ? (
     <img

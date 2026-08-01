@@ -26,7 +26,7 @@ import { rendererPerf } from '@/lib/perf'
 import { navigate, routes } from '@/lib/navigate'
 import { coerceInputText } from '@/lib/input-text'
 import { deriveSessionMessagesLoadState, formatSessionLoadFailure } from '@/lib/session-load'
-import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, sessionMessagesLoadedAtomFamily, sessionMetaAtomFamily } from '@/atoms/sessions'
+import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, sessionMessagesLoadedAtomFamily, sessionMetaAtomFamily, updateSessionAtom } from '@/atoms/sessions'
 import { activeSessionListSearchQueryAtom, sessionListSearchActiveAtom } from '@/atoms/session-list-search'
 import { llmConnectionsAtom, refreshLlmConnectionsAtom, workspaceDefaultLlmConnectionAtom } from '@/atoms/llm-connections'
 import { getSessionTitle } from '@/utils/session'
@@ -125,6 +125,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const llmConnections = useAtomValue(llmConnectionsAtom)
   const workspaceDefaultLlmConnection = useAtomValue(workspaceDefaultLlmConnectionAtom)
   const refreshLlmConnections = useSetAtom(refreshLlmConnectionsAtom)
+  const updateSession = useSetAtom(updateSessionAtom)
   const sessionListSearchQuery = useAtomValue(activeSessionListSearchQueryAtom)
   const isSearchModeActive = useAtomValue(sessionListSearchActiveAtom)
 
@@ -299,11 +300,16 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     if (activeWorkspaceId) {
       try {
         await window.electronAPI.setSessionModel(sessionId, activeWorkspaceId, model, connection)
+        updateSession(sessionId, current => current && {
+          ...current,
+          model,
+          ...(connection ? { llmConnection: connection } : {}),
+        })
       } catch (error) {
         console.error('Failed to change model:', error)
       }
     }
-  }, [sessionId, activeWorkspaceId])
+  }, [sessionId, activeWorkspaceId, updateSession])
 
   // Session connection change handler - can only change before first message
   const handleConnectionChange = React.useCallback(async (connectionSlug: string) => {

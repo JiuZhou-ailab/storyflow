@@ -207,12 +207,49 @@ describe('FreeFormInput model menu', () => {
   it('projects managed protocol connections as GPT, Claude, Gemini, and DeepSeek series', () => {
     const source = readFileSync(new URL('../FreeFormInput.tsx', import.meta.url), 'utf-8')
 
+    expect(source).toContain('if (isManagedLlmConnectionSlug(conn.slug)) return null')
     expect(source).toContain('const managedModelSeries = React.useMemo')
     expect(source).toContain('isManagedLlmConnectionSlug(connection.slug)')
     expect(source).toContain('managedModelSeries.map(({ connection, series })')
     expect(source).toContain('selectModel: modelId => onModelChange(modelId, connection.slug)')
     expect(source).toContain('const customConnectionsByProvider = React.useMemo')
     expect(source).toContain('!isManagedLlmConnectionSlug(currentConnectionDetails.slug)')
+  })
+
+  it('keeps the full model name and thinking strength visible in the bottom toolbar', () => {
+    const source = readFileSync(new URL('../FreeFormInput.tsx', import.meta.url), 'utf-8')
+
+    expect(source).toContain('const currentThinkingLabel =')
+    expect(source).toContain(": t('thinking.off')")
+    expect(source).toContain('max-w-[240px]')
+    expect(source).toContain("{t('settings.ai.thinking')}: {currentThinkingLabel}")
+  })
+
+  it('projects a successful model switch into the current window', () => {
+    const source = readFileSync(new URL('../../../../pages/ChatPage.tsx', import.meta.url), 'utf-8')
+    const handlerStart = source.indexOf('const handleModelChange = React.useCallback')
+    const handlerEnd = source.indexOf('// Session connection change handler', handlerStart)
+    const handlerSource = source.slice(handlerStart, handlerEnd)
+
+    expect(source).toContain('updateSessionAtom')
+    expect(handlerSource).toContain('await window.electronAPI.setSessionModel')
+    expect(handlerSource).toContain('updateSession(sessionId, current => current && {')
+    expect(handlerSource.indexOf('await window.electronAPI.setSessionModel')).toBeLessThan(
+      handlerSource.indexOf('updateSession(sessionId, current => current && {'),
+    )
+  })
+
+  it('uses DeepSeek identity independently of its OpenAI-compatible protocol', () => {
+    const source = readFileSync(new URL('../../../icons/ConnectionIcon.tsx', import.meta.url), 'utf-8')
+
+    expect(source).toContain('MANAGED_DEEPSEEK_CONNECTION_SLUG')
+    expect(source).toContain("? getProviderIcon('pi', null, 'deepseek')")
+  })
+
+  it('gives the activity rail a slightly stronger default weight', () => {
+    const source = readFileSync(new URL('../../ActivityRail.tsx', import.meta.url), 'utf-8')
+
+    expect(source).toContain('bg-foreground-1.5 font-medium')
   })
 })
 
