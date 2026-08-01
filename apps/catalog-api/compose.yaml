@@ -1,0 +1,18 @@
+# input: Deployment-only .env secrets and container images
+# output: Loopback catalog API plus outbound Cloudflare Tunnel
+# pos: Repeatable deployment definition for the 172.16.33.103 host
+
+services:
+  catalog-api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:8788:8788"
+
+  tunnel:
+    image: cloudflare/cloudflared:2026.7.3
+    restart: unless-stopped
+    depends_on:
+      - catalog-api
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
