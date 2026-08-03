@@ -428,27 +428,6 @@ function shouldPreferCustomEndpoint(): boolean {
 }
 
 /**
- * Expose the active Pi model API/provider/base URL to the interceptor process.
- * This gives the interceptor a robust routing hint (instead of brittle URL-only matching).
- */
-function setInterceptorApiHints(model: { api?: string; provider?: string; baseUrl?: string } | undefined): void {
-  if (!model) {
-    delete process.env.CRAFT_PI_MODEL_API;
-    delete process.env.CRAFT_PI_MODEL_PROVIDER;
-    delete process.env.CRAFT_PI_MODEL_BASE_URL;
-    return;
-  }
-
-  process.env.CRAFT_PI_MODEL_API = model.api || '';
-  process.env.CRAFT_PI_MODEL_PROVIDER = model.provider || '';
-  process.env.CRAFT_PI_MODEL_BASE_URL = model.baseUrl || '';
-
-  debugLog(
-    `[interceptor-hint] api=${process.env.CRAFT_PI_MODEL_API || '-'} provider=${process.env.CRAFT_PI_MODEL_PROVIDER || '-'} baseUrl=${process.env.CRAFT_PI_MODEL_BASE_URL || '-'}`,
-  );
-}
-
-/**
  * Resolve the API key for custom endpoint auth.
  * Returns empty string for local endpoints (Ollama etc.) that don't need auth.
  */
@@ -773,20 +752,13 @@ async function ensureSession(): Promise<AgentSession> {
           resolvedProvider === 'custom-endpoint';
         if (isCompatible) {
           sessionOptions.model = piModel;
-          setInterceptorApiHints(piModel as { api?: string; provider?: string; baseUrl?: string });
         } else {
           debugLog(`Model ${initConfig.model} resolved to incompatible provider ${resolvedProvider} (expected ${initConfig.piAuth!.provider}), skipping`);
-          setInterceptorApiHints(undefined);
         }
-      } else {
-        setInterceptorApiHints(undefined);
       }
     } catch {
       debugLog(`Could not resolve Pi model: ${initConfig.model}`);
-      setInterceptorApiHints(undefined);
     }
-  } else {
-    setInterceptorApiHints(undefined);
   }
 
   // Create the session — tools flow through customTools + allowlist (see comment above).
@@ -1761,7 +1733,6 @@ async function handleUpdateRuntimeConfig(msg: RuntimeConfigUpdateMessage): Promi
       }
 
       await piSession.setModel(piModel);
-      setInterceptorApiHints(piModel as { api?: string; provider?: string; baseUrl?: string });
       debugLog(`[runtime_config] Updated runtime config and active model: ${piModel.provider}/${piModel.id}`);
     } else {
       debugLog('[runtime_config] Stored update; no active session/model registry yet');
@@ -1795,12 +1766,10 @@ async function handleSetModel(msg: Extract<InboundMessage, { type: 'set_model' }
 
   if (!piModel) {
     debugLog(`[set_model] Could not resolve model: ${msg.model}`);
-    setInterceptorApiHints(undefined);
     return;
   }
   try {
     await piSession.setModel(piModel);
-    setInterceptorApiHints(piModel as { api?: string; provider?: string; baseUrl?: string });
     debugLog(`[set_model] Model changed to: ${msg.model} (resolved: ${piModel.provider}/${piModel.id})`);
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
