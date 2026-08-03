@@ -4,7 +4,7 @@
 
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
 import { readdirSync, rmSync, statSync } from 'fs'
-import { isDefaultGlobalAgentSkillSlug } from '@craft-agent/shared/agent-defaults'
+import { isDefaultGlobalAgentSkillSlug } from '@craft-agent/shared/agent-defaults/skills'
 import { RPC_CHANNELS, type SkillFile } from '@craft-agent/shared/protocol'
 import { isFreeConversationWorkspaceId, resolveRuntimeWorkspace } from '@craft-agent/shared/workspaces'
 import type { RpcServer } from '@craft-agent/server-core/transport'

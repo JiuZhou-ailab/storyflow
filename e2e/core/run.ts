@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { strict as assert } from 'node:assert'
+import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
 import {
   callOn,
   evalOn,
@@ -58,6 +59,7 @@ async function main(): Promise<void> {
     assert.equal(auth.configured, true, 'account smoke must exercise the configured sign-in form')
     assert.equal(auth.authenticated, false, 'account smoke fixture must start signed out')
     await smokeAccountCenter(app)
+    await smokeFreeConversationSkillImport(app)
 
     const workspace = await callOn<{ id: string; rootPath: string } | undefined>(
       app,
@@ -146,6 +148,49 @@ async function main(): Promise<void> {
     model.stop()
     rmSync(fixture.configDir, { recursive: true, force: true })
   }
+}
+
+async function smokeFreeConversationSkillImport(app: LaunchedApp): Promise<void> {
+  const slug = 'core-e2e-market-skill'
+  const result = await callOn<{ skills: { imported: string[] } }>(
+    app,
+    `async function (workspaceId, slug) {
+      const markdown = '---\\nname: ' + slug + '\\ndescription: Core E2E Market Skill\\n---\\n\\nbody\\n'
+      const bundle = {
+        version: 1,
+        exportedAt: Date.now(),
+        resources: { skills: [{
+          slug,
+          files: [{
+            relativePath: 'SKILL.md',
+            contentBase64: btoa(markdown),
+            size: new TextEncoder().encode(markdown).byteLength,
+          }],
+        }] },
+      }
+      return await window.electronAPI.importResources(
+        workspaceId,
+        bundle,
+        'skip',
+        { skillScope: 'project' },
+      )
+    }`,
+    [FREE_CONVERSATION_WORKSPACE_ID, slug],
+  )
+  assert.deepEqual(result.skills.imported, [slug])
+
+  const installed = await callOn<Array<{ slug: string }>>(
+    app,
+    'async function (workspaceId) { return await window.electronAPI.getSkills(workspaceId) }',
+    [FREE_CONVERSATION_WORKSPACE_ID],
+  )
+  assert.ok(installed.some(skill => skill.slug === slug), 'Free Conversations Skill import was not discoverable')
+
+  await callOn<void>(
+    app,
+    'async function (workspaceId, slug) { await window.electronAPI.deleteSkill(workspaceId, slug) }',
+    [FREE_CONVERSATION_WORKSPACE_ID, slug],
+  )
 }
 
 function configureAccountSmokeEnvironment(): void {

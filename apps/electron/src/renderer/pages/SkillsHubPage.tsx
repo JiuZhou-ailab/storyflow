@@ -17,7 +17,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { isDefaultGlobalAgentSkillSlug } from '@craft-agent/shared/agent-defaults'
+import { isDefaultGlobalAgentSkillSlug } from '@craft-agent/shared/agent-defaults/skills'
 import type { MarketSkillSummary } from '@craft-agent/shared/skills/marketplace'
 import { skillsAtom } from '@/atoms/skills'
 import { windowWorkspaceIdAtom, windowWorkspacesAtom } from '@/atoms/sessions'

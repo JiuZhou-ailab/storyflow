@@ -21,7 +21,7 @@
 import * as React from 'react'
 import { useTranslation } from "react-i18next"
 import { toast } from 'sonner'
-import { isDefaultGlobalAgentSkillSlug } from '@craft-agent/shared/agent-defaults'
+import { isDefaultGlobalAgentSkillSlug } from '@craft-agent/shared/agent-defaults/skills'
 import {
   Trash2,
   FolderOpen,

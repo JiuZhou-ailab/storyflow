@@ -13,15 +13,9 @@ import { homedir } from 'os';
 import { join } from 'path';
 import { getBundledAssetsDir } from '../utils/paths.ts';
 import { getPiUserSkillsDir } from '../skills/storage.ts';
+import { DEFAULT_GLOBAL_AGENT_SKILL_SLUGS } from './skill-defaults.ts';
 
-export const DEFAULT_GLOBAL_AGENT_SKILL_SLUGS = [
-  'find-skills',
-  'skill-creator',
-] as const;
-
-export function isDefaultGlobalAgentSkillSlug(slug: string): boolean {
-  return DEFAULT_GLOBAL_AGENT_SKILL_SLUGS.some(defaultSlug => defaultSlug === slug);
-}
+export { DEFAULT_GLOBAL_AGENT_SKILL_SLUGS, isDefaultGlobalAgentSkillSlug } from './skill-defaults.ts';
 
 export const DEFAULT_AGENT_SOURCE_SLUGS = [
   'wangwen-bigdata',
