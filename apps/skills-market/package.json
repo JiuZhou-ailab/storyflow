@@ -1,6 +1,6 @@
 {
   "name": "@craft-agent/skills-market",
-  "version": "0.9.61",
+  "version": "0.9.62",
   "private": true,
   "type": "module",
   "scripts": {

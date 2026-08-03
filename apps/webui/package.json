@@ -1,6 +1,6 @@
 {
   "name": "@craft-agent/webui",
-  "version": "0.9.61",
+  "version": "0.9.62",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",

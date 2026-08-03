@@ -200,21 +200,6 @@ async function smokeAccountCenter(app: LaunchedApp): Promise<void> {
         'startup announcement dismissal',
       )
     }
-    await waitFor(
-      app,
-      `(() => {
-        const element = document.querySelector('${profileSelector}')
-        if (!element) return false
-        const rect = element.getBoundingClientRect()
-        const hit = document.elementFromPoint(
-          rect.left + rect.width / 2,
-          rect.top + rect.height / 2,
-        )
-        return hit === element || element.contains(hit)
-      })()`,
-      15_000,
-      'account profile entry',
-    )
     await clickSelector(app, profileSelector)
     await waitFor(
       app,
@@ -225,15 +210,15 @@ async function smokeAccountCenter(app: LaunchedApp): Promise<void> {
     await clickSelector(app, '[data-tutorial="activity-account"]')
     await waitFor(
       app,
-      `Array.from(document.querySelectorAll('h1')).some(el => el.textContent?.trim() === '账户')
-        || document.body.textContent?.includes('出错了') === true`,
+      `!!document.querySelector('#client-auth-identifier')
+        || !!document.querySelector('[data-testid="root-crash-fallback"]')`,
       15_000,
       'account route result',
     )
     const account = await evalOn<{ crashed: boolean; heading: boolean; signIn: boolean; text: string }>(
       app,
       `({
-        crashed: document.body.textContent?.includes('出错了') === true,
+        crashed: !!document.querySelector('[data-testid="root-crash-fallback"]'),
         heading: Array.from(document.querySelectorAll('h1')).some(el => el.textContent?.trim() === '账户'),
         signIn: !!document.querySelector('#client-auth-identifier'),
         text: document.body.textContent?.trim().slice(0, 500) ?? '',
@@ -250,6 +235,22 @@ async function smokeAccountCenter(app: LaunchedApp): Promise<void> {
 }
 
 async function clickSelector(app: LaunchedApp, selector: string): Promise<void> {
+  const selectorLiteral = JSON.stringify(selector)
+  await waitFor(
+    app,
+    `(() => {
+      const element = document.querySelector(${selectorLiteral})
+      if (!element) return false
+      const rect = element.getBoundingClientRect()
+      const hit = document.elementFromPoint(
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2,
+      )
+      return hit === element || element.contains(hit)
+    })()`,
+    15_000,
+    `clickable target: ${selector}`,
+  )
   const box = await callOn<{ x: number; y: number } | null>(
     app,
     `function (selector) {
@@ -265,13 +266,21 @@ async function clickSelector(app: LaunchedApp, selector: string): Promise<void> 
     [selector],
   )
   assert.ok(box, `click target is missing or hidden: ${selector}`)
-  for (const type of ['mousePressed', 'mouseReleased'] as const) {
-    await app.cdp.send(
-      'Input.dispatchMouseEvent',
-      { type, x: box.x, y: box.y, button: 'left', clickCount: 1 },
-      app.sid,
-    )
-  }
+  await app.cdp.send(
+    'Input.dispatchMouseEvent',
+    { type: 'mouseMoved', x: box.x, y: box.y, button: 'none' },
+    app.sid,
+  )
+  await app.cdp.send(
+    'Input.dispatchMouseEvent',
+    { type: 'mousePressed', x: box.x, y: box.y, button: 'left', buttons: 1, clickCount: 1 },
+    app.sid,
+  )
+  await app.cdp.send(
+    'Input.dispatchMouseEvent',
+    { type: 'mouseReleased', x: box.x, y: box.y, button: 'left', buttons: 0, clickCount: 1 },
+    app.sid,
+  )
 }
 
 function createFixture(): Fixture {
