@@ -12,7 +12,6 @@ import {
   HelpCircle,
   LoaderCircle,
   Megaphone,
-  Plus,
   Settings,
   ShieldAlert,
   SquarePen,
@@ -412,9 +411,9 @@ export function ActivityRail({
       aria-label="新建本地项目"
       title="新建本地项目"
       data-tutorial="activity-project-hub"
-      className="flex h-7 w-7 items-center justify-center rounded-[7px] text-muted-foreground opacity-0 outline-none transition-[color,background-color,opacity] hover:bg-foreground/[0.06] hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100 focus-visible:ring-1 focus-visible:ring-ring"
+      className="flex h-6 w-6 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none transition-[color,background-color,opacity] hover:bg-foreground/[0.06] hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100 focus-visible:ring-1 focus-visible:ring-ring"
     >
-      <Plus className="h-4 w-4" />
+      <SquarePen className="h-3.5 w-3.5" />
     </button>
   )
 
@@ -494,10 +493,10 @@ export function ActivityRail({
                   type="button"
                   aria-label="新建自由对话"
                   title="新建自由对话"
-                  className="flex h-7 w-7 items-center justify-center rounded-[7px] text-muted-foreground opacity-0 outline-none transition-[color,background-color,opacity] hover:bg-foreground/[0.06] hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:ring-1 focus-visible:ring-ring"
+                  className="flex h-6 w-6 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none transition-[color,background-color,opacity] hover:bg-foreground/[0.06] hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:ring-1 focus-visible:ring-ring"
                   onClick={() => { void onOpenFreeConversations({ createNew: true }) }}
                 >
-                  <SquarePen className="h-4 w-4" />
+                  <SquarePen className="h-3.5 w-3.5" />
                 </button>
               ) : undefined}
             />
