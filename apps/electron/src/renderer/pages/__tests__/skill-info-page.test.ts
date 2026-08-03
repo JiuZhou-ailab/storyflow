@@ -24,4 +24,11 @@ describe('SkillInfoPage performance contract', () => {
     expect(skillInfoPageSource).toContain("navigate(routes.view.skills())")
     expect(skillInfoPageSource).toContain("tooltip={t('common.back')}")
   })
+
+  it('uses the shared confirmation instead of deleting immediately from the title menu', () => {
+    expect(skillInfoPageSource).toContain('SkillRemovalDialog')
+    expect(skillInfoPageSource).toContain('isDefaultGlobalAgentSkillSlug(skillDirectorySlug)')
+    expect(skillInfoPageSource).toContain('setRemoveOpen(true)')
+    expect(skillInfoPageSource).not.toContain('window.electronAPI.deleteSkill')
+  })
 })

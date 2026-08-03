@@ -1,5 +1,5 @@
 // input: Web UI credentials, session cookies, and verified desktop identities
-// output: Signed Web UI sessions plus renewable desktop, model, and Skills Market tokens
+// output: Signed Web UI sessions plus renewable desktop, model, and company-scoped Skills Market tokens
 // pos: Server-core JWT boundary shared by browser auth and the local desktop auth broker
 
 import { decodeProtectedHeader, SignJWT, jwtVerify } from 'jose'
@@ -66,6 +66,8 @@ export async function createClientSessionToken(
   subject: string,
   modelTier: 'standard' | 'pro',
   authenticatedAtSeconds = Math.floor(Date.now() / 1000),
+  organizationId?: string,
+  userName?: string,
 ): Promise<string> {
   const nowSeconds = Math.floor(Date.now() / 1000)
   const expiresAtSeconds = authenticatedAtSeconds + CLIENT_SESSION_TOKEN_TTL_SECONDS
@@ -75,6 +77,8 @@ export async function createClientSessionToken(
     scope: 'model:issue',
     model_tier: modelTier,
     auth_time: authenticatedAtSeconds,
+    ...(organizationId ? { organization_id: organizationId } : {}),
+    ...(userName ? { user_name: userName } : {}),
   })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: key.id })
     .setIssuer(MODEL_ACCESS_TOKEN_ISSUER)
@@ -89,7 +93,13 @@ export async function verifyClientSessionToken(
   token: string,
   keys: JwtKeyRing,
   minimumRemainingSeconds = MODEL_ACCESS_TOKEN_TTL_SECONDS,
-): Promise<{ subject: string, modelTier: 'standard' | 'pro', authenticatedAtSeconds: number } | null> {
+): Promise<{
+  subject: string
+  modelTier: 'standard' | 'pro'
+  authenticatedAtSeconds: number
+  organizationId?: string
+  userName?: string
+} | null> {
   try {
     const kid = decodeProtectedHeader(token).kid
     if (typeof kid !== 'string' || !kid.trim()) return null
@@ -123,7 +133,19 @@ export async function verifyClientSessionToken(
     ) {
       return null
     }
-    return { subject: payload.sub, modelTier: payload.model_tier, authenticatedAtSeconds }
+    const organizationId = typeof payload.organization_id === 'string' && payload.organization_id.trim()
+      ? payload.organization_id.trim()
+      : undefined
+    const userName = typeof payload.user_name === 'string' && payload.user_name.trim()
+      ? payload.user_name.trim()
+      : undefined
+    return {
+      subject: payload.sub,
+      modelTier: payload.model_tier,
+      authenticatedAtSeconds,
+      ...(organizationId ? { organizationId } : {}),
+      ...(userName ? { userName } : {}),
+    }
   } catch {
     return null
   }
@@ -162,6 +184,8 @@ export async function createSkillsMarketPublishToken(
   key: JwtSigningKey,
   subject: string,
   parentAuthenticatedAtSeconds: number,
+  organizationId?: string,
+  userName?: string,
 ): Promise<string> {
   const nowSeconds = Math.floor(Date.now() / 1000)
   const expiresAtSeconds = Math.min(
@@ -170,7 +194,11 @@ export async function createSkillsMarketPublishToken(
   )
   if (expiresAtSeconds <= nowSeconds) throw new Error('Client session has reached its maximum lifetime')
 
-  return new SignJWT({ scopes: ['skills:publish'] })
+  return new SignJWT({
+    scopes: ['skills:read', 'skills:publish'],
+    ...(organizationId ? { organization_id: organizationId } : {}),
+    ...(userName ? { user_name: userName } : {}),
+  })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: key.id })
     .setIssuer(MODEL_ACCESS_TOKEN_ISSUER)
     .setAudience(SKILLS_MARKET_TOKEN_AUDIENCE)

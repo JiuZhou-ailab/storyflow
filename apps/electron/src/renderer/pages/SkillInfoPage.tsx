@@ -11,7 +11,8 @@ import { ArrowLeft, Check, X, Minus } from 'lucide-react'
 import { getEditConfig } from '@/components/ui/EditPopover'
 import { ResourceEditActions } from '@/components/ui/resource-edit-actions'
 import { toast } from 'sonner'
-import { SkillMenu } from '@/components/app-shell/SkillMenu'
+import { isDefaultGlobalAgentSkillSlug } from '@craft-agent/shared/agent-defaults'
+import { SkillMenu, SkillRemovalDialog } from '@/components/app-shell/SkillMenu'
 import { SkillAvatar } from '@/components/ui/skill-avatar'
 import { routes, navigate } from '@/lib/navigate'
 import { PublishSkillDialog } from '@/components/app-shell/PublishSkillDialog'
@@ -38,6 +39,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workspaceRootPat
   const skill = skills.find((s) => s.slug === skillSlug) ?? null
   const displayName = skill?.metadata.displayName ?? skill?.metadata.name ?? skillSlug
   const [publishOpen, setPublishOpen] = React.useState(false)
+  const [removeOpen, setRemoveOpen] = React.useState(false)
 
   // Handle open in finder
   const handleOpenInFinder = useCallback(async () => {
@@ -51,21 +53,6 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workspaceRootPat
     }
   }, [canRevealLocally, skill])
 
-  // Handle delete
-  const handleDelete = useCallback(async () => {
-    if (!skill) return
-
-    try {
-      await window.electronAPI.deleteSkill(workspaceId, skillSlug)
-      toast.success(t('skillInfo.deletedSkill', { name: displayName }))
-      navigate(routes.view.skills())
-    } catch (err) {
-      toast.error(t('skillInfo.failedToDelete'), {
-        description: err instanceof Error ? err.message : undefined,
-      })
-    }
-  }, [displayName, skill, t, workspaceId, skillSlug])
-
   // Handle opening in new window
   const handleOpenInNewWindow = useCallback(() => {
     window.electronAPI.openUrl(`craftagents://skills/skill/${skillSlug}?window=focused`)
@@ -73,7 +60,9 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workspaceRootPat
 
   // Get skill name for header
   const skillName = displayName
-  const canDeleteSkill = skill?.origin === 'top-level'
+  const skillDirectorySlug = skill?.path.replace(/\\/g, '/').replace(/\/+$/, '').split('/').at(-1) ?? skillSlug
+  const isDefaultSkill = isDefaultGlobalAgentSkillSlug(skillDirectorySlug)
+  const canRemoveSkill = skill?.origin === 'top-level' && !isDefaultSkill
 
   // Format path to show just the skill-relative portion (skills/{slug}/)
   const formatPath = (path: string) => {
@@ -136,17 +125,19 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workspaceRootPat
         )}
         titleMenu={
           <SkillMenu
-            skillSlug={skillSlug}
-            skillName={skillName}
             onOpenInNewWindow={handleOpenInNewWindow}
             onShowInFinder={handleOpenInFinder}
             canShowInFinder={canRevealLocally}
-            onPublishToMarket={canRevealLocally && canDeleteSkill
+            onPublishToMarket={canRevealLocally && canRemoveSkill
               ? () => setPublishOpen(true)
               : undefined}
-            onDelete={canDeleteSkill ? handleDelete : undefined}
-            canDelete={canDeleteSkill}
-            deleteLabel={t('skillInfo.deleteSkill')}
+            onRemove={canRemoveSkill ? () => setRemoveOpen(true) : undefined}
+            canRemove={canRemoveSkill}
+            removeLabel={canRemoveSkill
+              ? t('skillManagement.removeAction')
+              : t('skillManagement.managedBySource', {
+                  source: isDefaultSkill ? 'Storyflow' : skill?.source ?? 'package',
+                })}
           />
         }
       />
@@ -243,6 +234,13 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workspaceRootPat
         workspaceRootPath={workspaceRootPath}
         open={publishOpen}
         onOpenChange={setPublishOpen}
+      />
+      <SkillRemovalDialog
+        skill={skill}
+        workspaceId={workspaceId}
+        open={removeOpen}
+        onOpenChange={setRemoveOpen}
+        onRemoved={() => navigate(routes.view.skills())}
       />
     </Info_Page>
   )

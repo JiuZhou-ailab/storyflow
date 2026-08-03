@@ -1,5 +1,5 @@
 // input: Public catalog requests, authenticated submissions, Workers AI, D1 metadata, and private R2 packages
-// output: Skills Market catalog APIs, immutable bundles, and synchronously reviewed publication
+// output: Skills Market catalog APIs with publisher provenance, immutable bundles, and synchronously reviewed publication
 // pos: API-only Cloudflare Worker boundary; the Storyflow desktop app owns presentation and installation
 
 import {
@@ -54,9 +54,14 @@ export interface Env {
 interface PublisherIdentity {
   subject: string
   name?: string
+  organizationId?: string
 }
 
 interface PublishedRow {
+  owner_id: string
+  publisher_name: string | null
+  visibility: 'public' | 'company'
+  organization_id: string | null
   slug: string
   version: string
   display_name: string
@@ -71,6 +76,7 @@ interface PublishedRow {
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
 const PUBLIC_CACHE = 'public, max-age=60, stale-while-revalidate=300'
+const PRIVATE_CACHE = 'private, no-store'
 
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
@@ -84,7 +90,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   if (url.pathname === '/health') return json({ status: 'ok', catalog: METHODOLOGY_SEEDS.length })
 
   try {
-    if (url.pathname === '/api/skills' && request.method === 'GET') return await listSkills(url, env)
+    if (url.pathname === '/api/skills' && request.method === 'GET') return await listSkills(request, url, env)
     const bundleMatch = url.pathname.match(/^\/api\/skills\/([^/]+)\/versions\/([^/]+)\/bundle$/)
     if (bundleMatch && (request.method === 'GET' || request.method === 'HEAD')) {
       return await downloadBundle(
@@ -92,12 +98,15 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
         decodeURIComponent(bundleMatch[2]!),
         env,
         request.method === 'HEAD',
+        request,
       )
     }
     const detailMatch = url.pathname.match(/^\/api\/skills\/([^/]+)$/)
-    if (detailMatch && request.method === 'GET') return await getSkillDetail(decodeURIComponent(detailMatch[1]!), env)
+    if (detailMatch && request.method === 'GET') {
+      return await getSkillDetail(decodeURIComponent(detailMatch[1]!), request, env)
+    }
     if (url.pathname === '/api/submissions' && request.method === 'POST') {
-      return await submitSkill(request, env)
+      return await submitSkill(request, url, env)
     }
     if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404)
   } catch (error) {
@@ -108,12 +117,13 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   return json({ error: 'Not found' }, 404)
 }
 
-async function listSkills(url: URL, env: Env): Promise<Response> {
+async function listSkills(request: Request, url: URL, env: Env): Promise<Response> {
+  const identity = await readMarketIdentity(request, env, 'skills:read', false)
   const query = (url.searchParams.get('q') ?? '').trim().toLocaleLowerCase()
   const tag = (url.searchParams.get('tag') ?? '').trim().toLocaleLowerCase()
   const distribution = url.searchParams.get('distribution')
   const seedSummaries = await Promise.all(METHODOLOGY_SEEDS.map(seedSummary))
-  const published = await loadPublishedSummaries(env)
+  const published = await loadPublishedSummaries(env, identity?.organizationId)
   const bySlug = new Map<string, MarketSkillSummary>(seedSummaries.map(item => [item.slug, item]))
   for (const item of published) bySlug.set(item.slug, item)
   const skills = [...bySlug.values()].filter(skill => {
@@ -121,18 +131,24 @@ async function listSkills(url: URL, env: Env): Promise<Response> {
     if (distribution === 'reference-only' && skill.sha256) return false
     if (tag && !skill.tags.some(value => value.toLocaleLowerCase() === tag)) return false
     if (!query) return true
-    return [skill.displayName, skill.summary, skill.author, skill.tags.join(' ')].join(' ').toLocaleLowerCase().includes(query)
+    return [skill.displayName, skill.summary, skill.author, skill.publisher.displayName, skill.tags.join(' ')]
+      .join(' ')
+      .toLocaleLowerCase()
+      .includes(query)
   })
-  return json({ skills, total: skills.length }, 200, { 'cache-control': PUBLIC_CACHE })
+  return json({ skills, total: skills.length }, 200, {
+    'cache-control': identity ? PRIVATE_CACHE : PUBLIC_CACHE,
+  })
 }
 
-async function getSkillDetail(slug: string, env: Env): Promise<Response> {
+async function getSkillDetail(slug: string, request: Request, env: Env): Promise<Response> {
+  const identity = await readMarketIdentity(request, env, 'skills:read', false)
   const seed = METHODOLOGY_SEEDS.find(item => item.slug === slug)
   if (seed) {
     const detail = await seedDetail(seed)
     return json(detail, 200, { 'cache-control': PUBLIC_CACHE })
   }
-  const row = await loadPublishedRow(slug, undefined, env)
+  const row = await loadPublishedRow(slug, undefined, env, identity?.organizationId)
   if (!row) throw new RequestError(404, 'Skill not found')
   const packageObject = await env.PACKAGES?.get(row.object_key)
   if (!packageObject) throw new RequestError(503, 'Published package bytes are unavailable')
@@ -145,26 +161,49 @@ async function getSkillDetail(slug: string, env: Env): Promise<Response> {
     downloadPath: `/api/skills/${encodeURIComponent(row.slug)}/versions/${encodeURIComponent(row.version)}/bundle`,
     installUrl: buildSkillInstallDeepLink(summary),
   }
-  return json(detail, 200, { 'cache-control': PUBLIC_CACHE })
+  return json(detail, 200, { 'cache-control': identity ? PRIVATE_CACHE : PUBLIC_CACHE })
 }
 
-async function downloadBundle(slug: string, version: string, env: Env, headOnly = false): Promise<Response> {
+async function downloadBundle(
+  slug: string,
+  version: string,
+  env: Env,
+  headOnly = false,
+  request?: Request,
+): Promise<Response> {
+  const identity = request
+    ? await readMarketIdentity(request, env, 'skills:read', false)
+    : null
   const seed = METHODOLOGY_SEEDS.find(item => item.slug === slug)
   if (seed) {
     if (version !== '1.0.0' || seed.distribution !== 'installable') throw new RequestError(404, 'Skill version not found')
     const built = await buildSeedBundle(seed)
     return bundleResponse(built.raw, built.sha256, `${slug}-${version}.storyflow-skill.json`, headOnly)
   }
-  const row = await loadPublishedRow(slug, version, env)
+  const row = await loadPublishedRow(slug, version, env, identity?.organizationId)
   if (!row) throw new RequestError(404, 'Skill version not found')
   const object = await env.PACKAGES?.get(row.object_key)
   if (!object) throw new RequestError(503, 'Published package bytes are unavailable')
   const raw = await new Response(object.body).text()
-  return bundleResponse(raw, row.sha256, `${slug}-${version}.storyflow-skill.json`, headOnly)
+  return bundleResponse(
+    raw,
+    row.sha256,
+    `${slug}-${version}.storyflow-skill.json`,
+    headOnly,
+    row.visibility === 'company',
+  )
 }
 
-async function submitSkill(request: Request, env: Env): Promise<Response> {
-  const identity = await requirePublisherIdentity(request, env)
+async function submitSkill(request: Request, url: URL, env: Env): Promise<Response> {
+  const identity = await readMarketIdentity(request, env, 'skills:publish', true)
+  if (!identity) throw new RequestError(401, 'Skills Market publish token required')
+  const visibility = url.searchParams.get('visibility') ?? 'public'
+  if (visibility !== 'public' && visibility !== 'company') {
+    throw new RequestError(400, 'Skill visibility must be public or company')
+  }
+  if (visibility === 'company' && !identity.organizationId) {
+    throw new RequestError(403, 'Company publication requires company membership')
+  }
   if (!env.DB || !env.PACKAGES || !env.AI) throw new RequestError(503, 'Publication services are not configured')
   const contentLength = Number(request.headers.get('content-length') ?? 0)
   if (contentLength > 7 * 1024 * 1024) throw new RequestError(413, 'Submission exceeds 7 MB request limit')
@@ -208,13 +247,16 @@ async function submitSkill(request: Request, env: Env): Promise<Response> {
       env.DB.prepare(`INSERT INTO users (id, access_subject, email, display_name, created_at)
         VALUES (?, ?, ?, ?, ?) ON CONFLICT(access_subject) DO UPDATE SET email=excluded.email, display_name=excluded.display_name`)
         .bind(userId, identity.subject, null, identity.name ?? null, now),
-      env.DB.prepare(`INSERT INTO skills (id, owner_id, slug, display_name, summary, license, tags_json, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(slug) DO UPDATE SET
+      env.DB.prepare(`INSERT INTO skills
+        (id, owner_id, slug, display_name, summary, license, tags_json, visibility, organization_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(slug) DO UPDATE SET
         display_name=excluded.display_name, summary=excluded.summary, license=excluded.license,
-        tags_json=excluded.tags_json, updated_at=excluded.updated_at
+        tags_json=excluded.tags_json, visibility=excluded.visibility,
+        organization_id=excluded.organization_id, updated_at=excluded.updated_at
         WHERE skills.owner_id=excluded.owner_id`)
         .bind(skillId, userId, validated.manifest.slug, validated.manifest.displayName, validated.manifest.summary,
-          validated.manifest.license, JSON.stringify(validated.manifest.tags ?? []), now, now),
+          validated.manifest.license, JSON.stringify(validated.manifest.tags ?? []), visibility,
+          visibility === 'company' ? identity.organizationId ?? null : null, now, now),
       env.DB.prepare(`INSERT INTO skill_versions
         (id, skill_id, submitted_by, version, sha256, object_key, bytes, manifest_json, status,
          submitted_at, published_at, review_json, reviewed_at)
@@ -248,6 +290,8 @@ async function seedSummary(seed: MethodologySeed): Promise<MarketSkillSummary> {
     displayName: seed.displayName,
     summary: seed.summary,
     author: seed.sourceName,
+    publisher: { id: 'storyflow', displayName: 'Storyflow' },
+    visibility: 'public',
     license: seed.license,
     tags: [...seed.tags, seed.distribution === 'installable' ? '可安装' : '仅参考'],
     roots: [...seed.roots],
@@ -278,40 +322,63 @@ async function seedDetail(seed: MethodologySeed): Promise<MarketSkillDetail> {
   return { ...summary, skillMarkdown: '', manifest, downloadPath: '', installUrl: '' }
 }
 
-async function loadPublishedSummaries(env: Env): Promise<MarketSkillSummary[]> {
+async function loadPublishedSummaries(env: Env, organizationId?: string): Promise<MarketSkillSummary[]> {
   if (!env.DB) return []
-  const result = await env.DB.prepare(`SELECT s.slug, v.version, s.display_name, s.summary, s.license,
+  const result = await env.DB.prepare(`SELECT s.owner_id, u.display_name AS publisher_name,
+    s.visibility, s.organization_id,
+    s.slug, v.version, s.display_name, s.summary, s.license,
     s.tags_json, v.sha256, v.published_at, v.object_key, v.manifest_json
-    FROM skills s JOIN skill_versions v ON v.id = s.current_version_id WHERE v.status = 'published'
-    ORDER BY v.published_at DESC LIMIT 200`).all<PublishedRow>()
+    FROM skills s JOIN users u ON u.id = s.owner_id
+    JOIN skill_versions v ON v.id = s.current_version_id
+    WHERE v.status = 'published' AND (s.visibility = 'public' OR s.organization_id = ?)
+    ORDER BY v.published_at DESC LIMIT 200`).bind(organizationId ?? null).all<PublishedRow>()
   return (result.results ?? []).map(row => publishedRowSummary(row, JSON.parse(row.manifest_json) as StoryflowSkillManifest))
 }
 
-async function loadPublishedRow(slug: string, version: string | undefined, env: Env): Promise<PublishedRow | null> {
+async function loadPublishedRow(
+  slug: string,
+  version: string | undefined,
+  env: Env,
+  organizationId?: string,
+): Promise<PublishedRow | null> {
   if (!env.DB) return null
   const versionClause = version ? 'AND v.version = ?' : 'AND v.id = s.current_version_id'
-  const statement = env.DB.prepare(`SELECT s.slug, v.version, s.display_name, s.summary, s.license,
+  const statement = env.DB.prepare(`SELECT s.owner_id, u.display_name AS publisher_name,
+    s.visibility, s.organization_id,
+    s.slug, v.version, s.display_name, s.summary, s.license,
     s.tags_json, v.sha256, v.published_at, v.object_key, v.manifest_json
-    FROM skills s JOIN skill_versions v ON v.skill_id = s.id
-    WHERE s.slug = ? AND v.status = 'published' ${versionClause}`)
-  return version ? statement.bind(slug, version).first<PublishedRow>() : statement.bind(slug).first<PublishedRow>()
+    FROM skills s JOIN users u ON u.id = s.owner_id
+    JOIN skill_versions v ON v.skill_id = s.id
+    WHERE s.slug = ? AND v.status = 'published'
+      AND (s.visibility = 'public' OR s.organization_id = ?) ${versionClause}`)
+  return version
+    ? statement.bind(slug, organizationId ?? null, version).first<PublishedRow>()
+    : statement.bind(slug, organizationId ?? null).first<PublishedRow>()
 }
 
 function publishedRowSummary(row: PublishedRow, manifest: StoryflowSkillManifest): MarketSkillSummary {
   return {
     slug: row.slug, version: row.version, displayName: row.display_name, summary: row.summary,
-    author: manifest.author.name, license: row.license, tags: JSON.parse(row.tags_json) as string[],
+    author: manifest.author.name,
+    publisher: { id: row.owner_id, displayName: row.publisher_name ?? 'Storyflow member' },
+    visibility: row.visibility,
+    license: row.license, tags: JSON.parse(row.tags_json) as string[],
     roots: manifest.contributes?.projectLayout?.roots.map(root => root.path) ?? [],
     publishedAt: row.published_at, sha256: row.sha256,
   }
 }
 
-async function requirePublisherIdentity(
+async function readMarketIdentity(
   request: Request,
   env: Env,
-): Promise<PublisherIdentity> {
+  requiredScope: 'skills:read' | 'skills:publish',
+  required: boolean,
+): Promise<PublisherIdentity | null> {
   const token = readBearerToken(request.headers.get('authorization'))
-  if (!token) throw new RequestError(401, 'Skills Market publish token required')
+  if (!token) {
+    if (required) throw new RequestError(401, 'Skills Market publish token required')
+    return null
+  }
 
   const keyId = env.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID?.trim()
   const secret = env.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET?.trim()
@@ -329,11 +396,12 @@ async function requirePublisherIdentity(
       typeof payload.sub !== 'string'
       || !payload.sub.trim()
       || !Array.isArray(payload.scopes)
-      || !payload.scopes.includes('skills:publish')
+      || !payload.scopes.includes(requiredScope)
     ) throw new Error('invalid capability')
     return {
       subject: payload.sub,
       ...(typeof payload.user_name === 'string' ? { name: payload.user_name } : {}),
+      ...(typeof payload.organization_id === 'string' ? { organizationId: payload.organization_id } : {}),
     }
   } catch {
     throw new RequestError(401, 'Invalid Skills Market publish token')
@@ -360,12 +428,18 @@ async function digestText(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
-function bundleResponse(raw: string, sha256: string, filename: string, headOnly = false): Response {
+function bundleResponse(
+  raw: string,
+  sha256: string,
+  filename: string,
+  headOnly = false,
+  privateCache = false,
+): Response {
   return withCors(new Response(headOnly ? null : raw, {
     headers: {
       'content-type': 'application/vnd.storyflow.skill+json; charset=utf-8',
       'content-disposition': `attachment; filename="${filename}"`,
-      'cache-control': 'public, max-age=31536000, immutable',
+      'cache-control': privateCache ? PRIVATE_CACHE : 'public, max-age=31536000, immutable',
       etag: `"sha256-${sha256}"`,
       'x-content-sha256': sha256,
     },

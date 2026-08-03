@@ -1,5 +1,5 @@
 // input: Desktop auth broker HTTP requests and mocked Feishu/Neon identity providers
-// output: Regression coverage for login exchanges and renewable model-access sessions
+// output: Regression coverage for login exchanges, company identity, and renewable scoped capabilities
 // pos: Tests the deployed HTTPS auth broker used by packaged desktop client auth
 import { describe, expect, it } from 'bun:test'
 import { decodeProtectedHeader, exportJWK, generateKeyPair, jwtVerify, SignJWT } from 'jose'
@@ -170,6 +170,7 @@ describe('auth broker worker', () => {
     expect(body.user).toEqual({
       provider: 'feishu',
       userId: 'ou_desktop',
+      organizationId: 'storyflow',
       email: 'desktop.user@example.com',
       name: 'Desktop User',
       avatarUrl: 'https://example.com/desktop-user.png',
@@ -179,6 +180,7 @@ describe('auth broker worker', () => {
     expect(sessionPayload.scope).toBe('model:issue')
     expect(sessionPayload.model_tier).toBe('pro')
     expect(sessionPayload.user_name).toBe('Desktop User')
+    expect(sessionPayload.organization_id).toBe('storyflow')
     expect((sessionPayload.exp as number) - (sessionPayload.iat as number)).toBe(2_592_000)
 
     const payload = await verifyModelAccessToken(body.modelAccessToken)
@@ -377,11 +379,12 @@ describe('auth broker worker', () => {
       model_tier: 'standard',
       auth_time: now,
       user_name: 'Desktop Author',
+      organization_id: 'storyflow',
     })
       .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: CLIENT_SESSION_KEY_ID })
       .setIssuer('storyflow-auth-broker')
       .setAudience('storyflow-client-auth')
-      .setSubject('neon:author-1')
+      .setSubject('feishu:author-1')
       .setIssuedAt(now)
       .setExpirationTime(now + 2_592_000)
       .sign(new TextEncoder().encode(CLIENT_SESSION_SECRET))
@@ -398,9 +401,10 @@ describe('auth broker worker', () => {
     const body = await res.json() as Record<string, any>
     expect(body.expiresInSeconds).toBe(300)
     const payload = await verifyMarketPublishToken(body.marketPublishToken)
-    expect(payload.sub).toBe('neon:author-1')
-    expect(payload.scopes).toEqual(['skills:publish'])
+    expect(payload.sub).toBe('feishu:author-1')
+    expect(payload.scopes).toEqual(['skills:read', 'skills:publish'])
     expect(payload.user_name).toBe('Desktop Author')
+    expect(payload.organization_id).toBe('storyflow')
     expect(payload).not.toHaveProperty('model_tier')
     expect((payload.exp as number) - (payload.iat as number)).toBe(300)
   })

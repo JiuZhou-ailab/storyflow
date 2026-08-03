@@ -1,5 +1,5 @@
 // input: Auth broker URLs, provider credentials, and broker JSON responses
-// output: Bounded HTTPS broker exchanges and normalized desktop auth capabilities
+// output: Bounded HTTPS broker exchanges and normalized desktop identity with company capabilities
 // pos: Main-process network trust boundary beneath the client auth service
 
 import type {
@@ -189,10 +189,12 @@ export function normalizeBrokerClientAuthUser(
   const email = readStringValue(record.email)
   const name = readStringValue(record.name)
   const avatarUrl = readStringValue(record.avatarUrl)
+  const organizationId = readStringValue(record.organizationId)
   const emailVerified = typeof record.emailVerified === 'boolean' ? record.emailVerified : undefined
   return {
     provider,
     userId,
+    ...(organizationId ? { organizationId } : {}),
     ...(email ? { email: email.toLowerCase() } : {}),
     ...(emailVerified !== undefined ? { emailVerified } : {}),
     ...(name ? { name } : {}),

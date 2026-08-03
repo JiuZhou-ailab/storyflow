@@ -1,5 +1,5 @@
 // input: Electron IPC, local/remote WebSocket transports, and the shared channel map
-// output: The isolated renderer API plus desktop lifecycle and capability bridges
+// output: The isolated renderer API plus desktop lifecycle and token-safe capability bridges
 // pos: Security boundary between untrusted renderer code and privileged desktop services
 
 /**
@@ -455,6 +455,8 @@ client.onConnectionStateChanged((state) => {
   return user
 }
 ;(api as ElectronAPI).submitFeedbackIssue = (input) => ipcRenderer.invoke('feedback:submitIssue', input)
+;(api as ElectronAPI).listSkillsFromMarket = () => ipcRenderer.invoke(SKILLS_MARKET_IPC_CHANNELS.LIST)
+;(api as ElectronAPI).downloadSkillFromMarket = (input) => ipcRenderer.invoke(SKILLS_MARKET_IPC_CHANNELS.DOWNLOAD, input)
 ;(api as ElectronAPI).publishSkillToMarket = (input) => ipcRenderer.invoke(SKILLS_MARKET_IPC_CHANNELS.PUBLISH, input)
 ;(api as ElectronAPI).cancelFeishuSignInClient = async () => {
   await ipcRenderer.invoke(CLIENT_AUTH_IPC_CHANNELS.CANCEL_FEISHU_SIGN_IN)

@@ -1,12 +1,12 @@
-// input: Resource import RPC, a portable Skill bundle, and temporary project/user roots
-// output: Regression proof that the explicit install scope selects the only write root
+// input: Resource import RPC, a portable Skill bundle, and temporary project/user/free-runtime roots
+// output: Regression proof that explicit install scope and hidden runtime resolution select the only write root
 // pos: Isolated transport-boundary check for Market and cross-workspace Skill installation
 
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it, mock } from 'bun:test'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { FREE_CONVERSATION_WORKSPACE_ID, RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import type { ResourceBundle } from '@craft-agent/shared/resources'
 import type { HandlerFn, RequestContext, RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
@@ -15,10 +15,12 @@ const workspaceRoot = mkdtempSync(join(tmpdir(), 'storyflow-resource-scope-'))
 const userSkillsRoot = mkdtempSync(join(tmpdir(), 'storyflow-user-skills-'))
 const credentialsModule = await import('@craft-agent/shared/credentials')
 
-mock.module('@craft-agent/shared/config', () => ({
-  getWorkspaceByNameOrId: (id: string) => id === 'workspace-1'
+mock.module('@craft-agent/shared/workspaces', () => ({
+  isFreeConversationWorkspaceId: (id: string) => id === FREE_CONVERSATION_WORKSPACE_ID,
+  resolveRuntimeWorkspace: (id: string) => id === 'workspace-1' || id === FREE_CONVERSATION_WORKSPACE_ID
     ? { id, rootPath: workspaceRoot, name: 'Workspace' }
     : null,
+  getWorkspaceSkillsPath: (rootPath: string) => join(rootPath, '.pi', 'skills'),
 }))
 mock.module('@craft-agent/shared/credentials', () => ({
   ...credentialsModule,
@@ -29,11 +31,16 @@ mock.module('@craft-agent/shared/skills', () => ({ getPiUserSkillsDir: () => use
 
 const { registerResourcesHandlers } = await import('./resources')
 
-function createHarness(): { importResources: HandlerFn, ctx: RequestContext } {
+function createHarness(): {
+  importResources: HandlerFn
+  ctx: RequestContext
+  pushedEvents: Array<{ channel: string, args: unknown[] }>
+} {
   const handlers = new Map<string, HandlerFn>()
+  const pushedEvents: Array<{ channel: string, args: unknown[] }> = []
   const server: RpcServer = {
     handle(channel, handler) { handlers.set(channel, handler) },
-    push() {},
+    push(channel, _target, ...args) { pushedEvents.push({ channel, args }) },
     async invokeClient() { return undefined },
   }
   const deps = {
@@ -47,6 +54,7 @@ function createHarness(): { importResources: HandlerFn, ctx: RequestContext } {
   return {
     importResources,
     ctx: { clientId: 'client-1', workspaceId: 'workspace-1', webContentsId: 1 },
+    pushedEvents,
   }
 }
 
@@ -70,7 +78,7 @@ afterAll(() => {
 
 describe('Resources Skill install scope', () => {
   it('requires scope and installs Market Skills into the selected project', async () => {
-    const { importResources, ctx } = createHarness()
+    const { importResources, ctx, pushedEvents } = createHarness()
     const bundle = skillBundle('market-skill')
 
     await expect(importResources(ctx, 'workspace-1', bundle, 'skip')).rejects.toThrow('explicit')
@@ -78,5 +86,25 @@ describe('Resources Skill install scope', () => {
 
     expect(existsSync(join(workspaceRoot, '.pi', 'skills', 'market-skill', 'SKILL.md'))).toBe(true)
     expect(existsSync(join(userSkillsRoot, 'market-skill', 'SKILL.md'))).toBe(false)
+    expect(pushedEvents).toEqual([])
+  })
+
+  it('installs Market Skills into the hidden Free Conversations runtime', async () => {
+    const { importResources, ctx, pushedEvents } = createHarness()
+
+    await importResources(
+      ctx,
+      FREE_CONVERSATION_WORKSPACE_ID,
+      skillBundle('free-market-skill'),
+      'skip',
+      { skillScope: 'project' },
+    )
+
+    expect(existsSync(join(workspaceRoot, '.pi', 'skills', 'free-market-skill', 'SKILL.md'))).toBe(true)
+    expect(existsSync(join(userSkillsRoot, 'free-market-skill', 'SKILL.md'))).toBe(false)
+    expect(pushedEvents).toContainEqual({
+      channel: RPC_CHANNELS.skills.CHANGED,
+      args: [FREE_CONVERSATION_WORKSPACE_ID],
+    })
   })
 })

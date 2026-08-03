@@ -1,5 +1,5 @@
 // input: Electron app lifecycle, user config, workspace state, and local server runtime
-// output: Desktop main-process bootstrap, IPC bridges, windows, and cleanup
+// output: Desktop main-process bootstrap, token-safe IPC bridges, windows, and cleanup
 // pos: Coordinates the Electron shell around the shared Storyflow server core
 
 import { startShellEnvLoad, whenShellEnvReady } from './shell-env'
@@ -93,7 +93,11 @@ import {
 import { resolveElectronRuntimePaths } from './runtime-paths'
 import { getAppVersion } from '@craft-agent/shared/version'
 import { normalizeFeedbackIssueInput, submitFeedbackIssue } from './feedback'
-import { publishSkillToMarket } from './skills-market-client'
+import {
+  downloadSkillFromMarket,
+  listSkillsFromMarket,
+  publishSkillToMarket,
+} from './skills-market-client'
 
 // Initialize electron-log for renderer process support
 log.initialize()
@@ -581,10 +585,27 @@ app.whenReady().then(async () => {
       authService.cancelFeishuSignIn()
     })
     ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.SIGN_OUT, () => authService.signOut())
+    const getSkillsMarketToken = async (): Promise<string | undefined> => {
+      return authService.getState().authenticated
+        ? authService.issueSkillsMarketAccessToken()
+        : undefined
+    }
+    ipcMain.handle(SKILLS_MARKET_IPC_CHANNELS.LIST, async () => {
+      return listSkillsFromMarket({
+        token: await getSkillsMarketToken(),
+        fetchImpl: (url, init) => net.fetch(url instanceof URL ? url.toString() : url, init),
+      })
+    })
+    ipcMain.handle(SKILLS_MARKET_IPC_CHANNELS.DOWNLOAD, async (_event, input) => {
+      return downloadSkillFromMarket(input, {
+        token: await getSkillsMarketToken(),
+        fetchImpl: (url, init) => net.fetch(url instanceof URL ? url.toString() : url, init),
+      })
+    })
     ipcMain.handle(SKILLS_MARKET_IPC_CHANNELS.PUBLISH, async (_event, input: SkillMarketPublishInput) => {
       const user = authService.getState().user
       if (!user) throw new Error('Sign in before publishing a Skill')
-      const token = await authService.issueSkillsMarketPublishToken()
+      const token = await authService.issueSkillsMarketAccessToken()
       return publishSkillToMarket(input, {
         author: { name: user.name ?? user.email ?? user.userId },
         token,

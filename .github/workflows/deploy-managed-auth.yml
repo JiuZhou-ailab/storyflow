@@ -1,6 +1,6 @@
 # input: Cloudflare credentials and separate client-session/model-access/Market signing secrets
-# output: Deployed managed-auth Workers plus live negative and scoped capability canaries
-# pos: Reusable production gate that publishes the model gateway before the auth broker
+# output: Deployed model gateway, Skills Market, and auth broker with live capability canaries
+# pos: Reusable production gate that publishes managed services in dependency order
 name: Deploy managed auth
 
 on:
@@ -63,7 +63,9 @@ jobs:
           bun test \
             apps/auth-broker-worker/src/index.test.ts \
             apps/model-gateway-worker/src/index.test.ts \
-            apps/model-gateway-worker/src/managed-auth-flow.test.ts
+            apps/model-gateway-worker/src/managed-auth-flow.test.ts \
+            apps/skills-market/src/index.test.ts \
+            apps/skills-market/src/security.test.ts
 
       - name: Deploy and canary model gateway
         run: |
@@ -83,6 +85,29 @@ jobs:
             https://storyflow-model.zjding.com/v1/chat/completions)"
           test "$status" = 401
           grep -q '"code":"model_access_token_invalid"' "$RUNNER_TEMP/gateway-negative.json"
+
+      - name: Migrate, deploy, and canary Skills Market
+        run: |
+          set -euo pipefail
+          bunx wrangler@4.114.0 d1 migrations apply storyflow-skills-market --remote \
+            --config apps/skills-market/wrangler.toml
+          printf '%s' "$STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET" \
+            | bunx wrangler@4.114.0 secret put STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET \
+                --config apps/skills-market/wrangler.toml >/dev/null
+          bunx wrangler@4.114.0 deploy --config apps/skills-market/wrangler.toml
+
+          curl --fail --silent --show-error --retry 5 --retry-delay 2 \
+            https://storyflow-skills.zjding.com/health > "$RUNNER_TEMP/market-health.json"
+          MARKET_HEALTH_PATH="$RUNNER_TEMP/market-health.json" bun --eval '
+            const body = await Bun.file(process.env.MARKET_HEALTH_PATH).json();
+            if (body.status !== "ok" || !(body.catalog > 0)) process.exit(1);
+          '
+          curl --fail --silent --show-error --retry 5 --retry-delay 2 \
+            https://storyflow-skills.zjding.com/api/skills > "$RUNNER_TEMP/market-public-catalog.json"
+          MARKET_CATALOG_PATH="$RUNNER_TEMP/market-public-catalog.json" bun --eval '
+            const body = await Bun.file(process.env.MARKET_CATALOG_PATH).json();
+            if (!Array.isArray(body.skills) || body.skills.length === 0) process.exit(1);
+          '
 
       - name: Deploy and verify auth broker
         run: |
@@ -113,6 +138,8 @@ jobs:
               scope: "model:issue",
               model_tier: "standard",
               auth_time: now,
+              user_name: "Release Canary",
+              organization_id: "release-canary-company",
             })
               .setProtectedHeader({ alg: "HS256", typ: "JWT", kid: "client-session-2026-07" })
               .setIssuer("storyflow-auth-broker")
@@ -151,7 +178,7 @@ jobs:
             -H "Authorization: Bearer $APP_SESSION_TOKEN" \
             https://storyflow-auth.zjding.com/api/client-auth/skills-market/token)"
           test "$status" = 200
-          MARKET_TOKEN_RESPONSE_PATH="$RUNNER_TEMP/market-token-response.json" bun --eval '
+          MARKET_ACCESS_TOKEN="$(MARKET_TOKEN_RESPONSE_PATH="$RUNNER_TEMP/market-token-response.json" bun --eval '
             import { jwtVerify } from "jose";
             const body = await Bun.file(process.env.MARKET_TOKEN_RESPONSE_PATH).json();
             const { payload } = await jwtVerify(
@@ -159,5 +186,22 @@ jobs:
               new TextEncoder().encode(process.env.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET),
               { issuer: "storyflow-auth-broker", audience: "storyflow-skills-market" },
             );
-            if (body.expiresInSeconds !== 300 || !payload.scopes?.includes("skills:publish")) process.exit(1);
+            if (
+              body.expiresInSeconds !== 300
+              || !payload.scopes?.includes("skills:read")
+              || !payload.scopes?.includes("skills:publish")
+              || payload.user_name !== "Release Canary"
+              || payload.organization_id !== "release-canary-company"
+            ) process.exit(1);
+            console.log(body.marketPublishToken);
+          ')"
+
+          status="$(curl --silent --show-error --output "$RUNNER_TEMP/market-private-catalog.json" \
+            --write-out '%{http_code}' \
+            -H "Authorization: Bearer $MARKET_ACCESS_TOKEN" \
+            https://storyflow-skills.zjding.com/api/skills)"
+          test "$status" = 200
+          MARKET_CATALOG_PATH="$RUNNER_TEMP/market-private-catalog.json" bun --eval '
+            const body = await Bun.file(process.env.MARKET_CATALOG_PATH).json();
+            if (!Array.isArray(body.skills) || body.skills.length === 0) process.exit(1);
           '

@@ -1,5 +1,5 @@
 // input: Desktop client-auth exchange requests and Feishu/Neon identity provider responses
-// output: Public auth config, verified desktop identity, renewable client session, and scoped short-lived capability JWTs
+// output: Public auth config, verified desktop identity with company scope, renewable client session, and scoped short-lived capability JWTs
 // pos: HTTPS auth broker for packaged desktop login without shipping server secrets
 import { createRemoteJWKSet, customFetch, decodeProtectedHeader, jwtVerify, SignJWT, type JWTPayload } from 'jose'
 
@@ -55,6 +55,7 @@ interface ClientSessionPayload extends JWTPayload {
   model_tier?: unknown
   auth_time?: unknown
   user_name?: unknown
+  organization_id?: unknown
 }
 
 const DEFAULT_FEISHU_AUTH_BASE_URL = 'https://accounts.feishu.cn/open-apis/authen/v1/authorize'
@@ -63,6 +64,7 @@ const DEFAULT_GATEWAY_AUDIENCE = 'storyflow-model-gateway'
 const DEFAULT_GATEWAY_ISSUER = 'storyflow-auth-broker'
 const DEFAULT_CLIENT_SESSION_AUDIENCE = 'storyflow-client-auth'
 const DEFAULT_SKILLS_MARKET_AUDIENCE = 'storyflow-skills-market'
+const STORYFLOW_ORGANIZATION_ID = 'storyflow'
 const DEFAULT_CURRENT_KEY_ID = 'current'
 const CLIENT_SESSION_TOKEN_TTL_SECONDS = 2_592_000
 const MODEL_ACCESS_TOKEN_TTL_SECONDS = 900
@@ -200,14 +202,16 @@ async function exchangeFeishuCode(
     }
 
     const email = normalizeEmail(user.enterpriseEmail ?? user.email)
+    const organizationId = isFeishuUserInternal(user, env) ? STORYFLOW_ORGANIZATION_ID : undefined
     const publicUser = {
       provider: 'feishu',
       userId: user.openId,
+      ...(organizationId ? { organizationId } : {}),
       ...(email ? { email } : {}),
       ...(user.name ? { name: user.name } : {}),
       ...(user.avatarUrl ? { avatarUrl: user.avatarUrl } : {}),
     }
-    const tokens = await createAuthTokens(env, `feishu:${user.openId}`, 'pro', user.name)
+    const tokens = await createAuthTokens(env, `feishu:${user.openId}`, 'pro', user.name, organizationId)
 
     return Response.json({
       ok: true,
@@ -288,6 +292,7 @@ async function refreshClientAuthToken(request: Request, env: Env): Promise<Respo
         session.subject,
         session.modelTier,
         session.userName,
+        session.organizationId,
         session.authenticatedAtSeconds,
       ),
     })
@@ -311,6 +316,7 @@ async function issueSkillsMarketToken(request: Request, env: Env): Promise<Respo
         env,
         session.subject,
         session.userName,
+        session.organizationId,
         session.authenticatedAtSeconds + CLIENT_SESSION_TOKEN_TTL_SECONDS,
       ),
       expiresInSeconds: SKILLS_MARKET_TOKEN_TTL_SECONDS,
@@ -329,6 +335,7 @@ async function verifyClientSessionToken(
   modelTier: 'standard' | 'pro'
   authenticatedAtSeconds: number
   userName?: string
+  organizationId?: string
 }> {
   const kid = decodeProtectedHeader(token).kid
   if (typeof kid !== 'string' || !kid.trim()) throw new Error('Client session token key id is required')
@@ -368,11 +375,13 @@ async function verifyClientSessionToken(
     throw new Error('Client session authentication time is invalid')
   }
   const userName = normalizeUserName(payload.user_name)
+  const organizationId = readString(payload.organization_id)
   return {
     subject,
     modelTier: payload.model_tier,
     authenticatedAtSeconds,
     ...(userName ? { userName } : {}),
+    ...(organizationId ? { organizationId } : {}),
   }
 }
 
@@ -391,12 +400,20 @@ async function createAuthTokens(
   subject: string,
   modelTier: 'standard' | 'pro',
   userName?: string,
+  organizationId?: string,
   authenticatedAtSeconds?: number,
 ): Promise<{ appSessionToken: string, modelAccessToken: string }> {
   const authenticationTime = authenticatedAtSeconds ?? Math.floor(Date.now() / 1000)
   const clientSessionExpiresAt = authenticationTime + CLIENT_SESSION_TOKEN_TTL_SECONDS
   return {
-    appSessionToken: await createClientSessionToken(env, subject, modelTier, userName, authenticationTime),
+    appSessionToken: await createClientSessionToken(
+      env,
+      subject,
+      modelTier,
+      userName,
+      organizationId,
+      authenticationTime,
+    ),
     modelAccessToken: await createModelAccessToken(env, subject, modelTier, userName, clientSessionExpiresAt),
   }
 }
@@ -406,6 +423,7 @@ async function createClientSessionToken(
   subject: string,
   modelTier: 'standard' | 'pro',
   userName?: string,
+  organizationId?: string,
   authenticatedAtSeconds = Math.floor(Date.now() / 1000),
 ): Promise<string> {
   const key = getCurrentClientSessionKey(env)
@@ -419,6 +437,7 @@ async function createClientSessionToken(
     model_tier: modelTier,
     auth_time: authenticatedAtSeconds,
     ...(userName ? { user_name: userName } : {}),
+    ...(organizationId ? { organization_id: organizationId } : {}),
   })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: key.id })
     .setIssuer(DEFAULT_GATEWAY_ISSUER)
@@ -463,6 +482,7 @@ async function createSkillsMarketPublishToken(
   env: Env,
   subject: string,
   userName?: string,
+  organizationId?: string,
   parentExpiresAtSeconds?: number,
 ): Promise<string> {
   const key = getCurrentSkillsMarketKey(env)
@@ -475,8 +495,9 @@ async function createSkillsMarketPublishToken(
   if (expiresAtSeconds <= nowSeconds) throw new Error('Client session has reached its maximum lifetime')
 
   return new SignJWT({
-    scopes: ['skills:publish'],
+    scopes: ['skills:read', 'skills:publish'],
     ...(userName ? { user_name: userName } : {}),
+    ...(organizationId ? { organization_id: organizationId } : {}),
   })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: key.id })
     .setIssuer(DEFAULT_GATEWAY_ISSUER)
@@ -610,6 +631,10 @@ function normalizeNeonIdentity(payload: JWTPayload): NeonIdentity {
 
 function isFeishuUserAllowed(user: FeishuUserInfo, env: Env): boolean {
   if (readBoolean(env.CRAFT_WEBUI_FEISHU_ALLOW_ALL_USERS) === true) return true
+  return isFeishuUserInternal(user, env)
+}
+
+function isFeishuUserInternal(user: FeishuUserInfo, env: Env): boolean {
   const tenantKeys = new Set(readCsv(env.CRAFT_WEBUI_FEISHU_INTERNAL_TENANT_KEYS, []))
   return !!user.tenantKey && tenantKeys.has(user.tenantKey)
 }

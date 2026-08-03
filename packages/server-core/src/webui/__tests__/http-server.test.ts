@@ -1,5 +1,5 @@
 // input: Web UI HTTP server config, temporary static files, and mocked auth providers.
-// output: End-to-end HTTP contract tests for login, cookies, auth brokers, and Neon registration.
+// output: End-to-end HTTP contracts for login, cookies, company-scoped auth brokers, and Neon registration.
 // pos: Server-side regression coverage for browser-facing auth and session boundaries.
 
 import { afterEach, describe, expect, it } from 'bun:test'
@@ -777,6 +777,7 @@ describe('startWebuiHttpServer', () => {
       user: {
         provider: 'feishu',
         userId: 'ou_desktop',
+        organizationId: 'storyflow',
         email: 'desktop.user@example.com',
         name: 'Desktop User',
       },
@@ -785,6 +786,25 @@ describe('startWebuiHttpServer', () => {
     const appSession = await verifyClientSessionToken(body.appSessionToken)
     expect(appSession.scope).toBe('model:issue')
     expect(appSession.model_tier).toBe('pro')
+    expect(appSession.organization_id).toBe('storyflow')
+    expect(appSession.user_name).toBe('Desktop User')
+    const marketTokenResponse = await fetch(`${baseUrl}/api/client-auth/skills-market/token`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${body.appSessionToken as string}` },
+    })
+    const marketTokenBody = await marketTokenResponse.json() as Record<string, unknown>
+    const { payload: marketPayload } = await jwtVerify(
+      marketTokenBody.marketPublishToken as string,
+      new TextEncoder().encode(SKILLS_MARKET_SECRET),
+      {
+        algorithms: ['HS256'],
+        issuer: 'storyflow-auth-broker',
+        audience: 'storyflow-skills-market',
+      },
+    )
+    expect(marketPayload.scopes).toEqual(['skills:read', 'skills:publish'])
+    expect(marketPayload.organization_id).toBe('storyflow')
+    expect(marketPayload.user_name).toBe('Desktop User')
     const modelAccess = await verifyModelAccessToken(body.modelAccessToken)
     expect(modelAccess.sub).toBe('feishu:ou_desktop')
     expect(modelAccess.model_tier).toBe('pro')
@@ -943,7 +963,8 @@ describe('startWebuiHttpServer', () => {
       },
     )
     expect(payload.sub).toBe('neon:neon_user_123')
-    expect(payload.scopes).toEqual(['skills:publish'])
+    expect(payload.scopes).toEqual(['skills:read', 'skills:publish'])
+    expect(payload.organization_id).toBeUndefined()
     expect((payload.exp ?? 0) - (payload.iat ?? 0)).toBe(300)
     expect(payload.model_tier).toBeUndefined()
   })

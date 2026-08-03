@@ -3,9 +3,60 @@
 // pos: Small executable check for the desktop-to-Market trust boundary
 
 import { describe, expect, it } from 'bun:test'
-import { publishSkillToMarket } from '../skills-market-client'
+import { sha256Hex } from '@craft-agent/shared/skills/marketplace'
+import {
+  downloadSkillFromMarket,
+  listSkillsFromMarket,
+  publishSkillToMarket,
+} from '../skills-market-client'
 
 describe('Skills Market client', () => {
+  it('keeps authenticated catalog and bundle reads inside the main process', async () => {
+    const raw = JSON.stringify({
+      version: 1,
+      exportedAt: 1,
+      resources: { skills: [{ slug: 'internal-writing', files: [] }] },
+    })
+    const sha256 = await sha256Hex(raw)
+    const calls: string[] = []
+    const fetchImpl = async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      calls.push(url.toString())
+      expect(new Headers(init?.headers).get('authorization')).toBe('Bearer market-access-token')
+      if (url.toString().endsWith('/api/skills')) {
+        return Response.json({
+          total: 1,
+          skills: [{
+            slug: 'internal-writing',
+            version: '1.0.0',
+            displayName: '内部写作',
+            summary: '公司写作流程',
+            author: '内容团队',
+            publisher: { id: 'user_1', displayName: '张三' },
+            visibility: 'company',
+            license: 'Proprietary',
+            tags: ['写作'],
+            roots: [],
+            sha256,
+          }],
+        })
+      }
+      return new Response(raw)
+    }
+
+    const catalog = await listSkillsFromMarket({ token: 'market-access-token', fetchImpl })
+    const downloaded = await downloadSkillFromMarket(
+      { slug: 'internal-writing', version: '1.0.0', sha256 },
+      { token: 'market-access-token', fetchImpl },
+    )
+
+    expect(catalog.skills[0]?.publisher.displayName).toBe('张三')
+    expect(downloaded.bundle.resources.skills?.[0]?.slug).toBe('internal-writing')
+    expect(calls).toEqual([
+      'https://storyflow-skills.zjding.com/api/skills',
+      'https://storyflow-skills.zjding.com/api/skills/internal-writing/versions/1.0.0/bundle',
+    ])
+  })
+
   it('adds publisher metadata and sends the capability only to the fixed Market', async () => {
     const skillText = '---\nname: 剧情因果审查\ndescription: 审查故事因果\n---\n\n正文\n'
     const bytes = Buffer.from(skillText)
@@ -23,12 +74,13 @@ describe('Skills Market client', () => {
         displayName: '剧情因果审查',
         summary: '审查故事因果链',
         license: 'CC-BY-4.0',
+        visibility: 'company',
       },
     }, {
       author: { name: 'Author' },
       token: 'ephemeral-market-token',
       fetchImpl: async (url, init) => {
-        expect(url.toString()).toBe('https://storyflow-skills.zjding.com/api/submissions')
+        expect(url.toString()).toBe('https://storyflow-skills.zjding.com/api/submissions?visibility=company')
         expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer ephemeral-market-token')
         const bundle = JSON.parse(init?.body as string)
         const manifestFile = bundle.resources.skills[0].files.find((file: { relativePath: string }) => file.relativePath === 'storyflow.json')

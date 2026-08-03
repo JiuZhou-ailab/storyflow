@@ -231,7 +231,7 @@ export async function buildCallLlmRequest(
     }
   }
 
-  // Build system prompt with structured output injection if needed
+1    // Build system prompt with structured output injection if needed
   let systemPrompt = (input.systemPrompt as string) || '';
   const outputFormat = input.outputFormat as string | undefined;
   const outputSchema = input.outputSchema as Record<string, unknown> | undefined;

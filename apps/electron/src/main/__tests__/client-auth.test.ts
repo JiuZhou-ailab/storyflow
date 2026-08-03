@@ -652,7 +652,7 @@ describe('client auth', () => {
       },
     })
 
-    expect(await service.issueSkillsMarketPublishToken()).toBe('market-publish-token')
+    expect(await service.issueSkillsMarketAccessToken()).toBe('market-publish-token')
     expect(savedSessions).toEqual([])
   })
 

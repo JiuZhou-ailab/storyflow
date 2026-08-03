@@ -1,5 +1,5 @@
 // input: Shared package DTOs and renderer-facing Electron API contracts
-// output: Re-exported GUI types plus typed preload API surface
+// output: Re-exported GUI types plus typed preload API and Skills Market surface
 // pos: Type boundary between Electron renderer, preload, and shared protocol packages
 
 // =============================================================================
@@ -218,14 +218,17 @@ export const CLIENT_AUTH_IPC_CHANNELS = {
   STATE_CHANGED: 'client-auth:state-changed',
 } as const
 
-/** Desktop-local because the short-lived publish capability must stay in main. */
+/** Desktop-local because short-lived Market capabilities must stay in main. */
 export const SKILLS_MARKET_IPC_CHANNELS = {
+  LIST: 'skills-market:list',
+  DOWNLOAD: 'skills-market:download',
   PUBLISH: 'skills-market:publish',
 } as const
 
 export interface ClientAuthUser {
   provider: 'neon' | 'feishu'
   userId: string
+  organizationId?: string
   email?: string
   emailVerified?: boolean
   name?: string
@@ -628,6 +631,8 @@ export interface ElectronAPI {
   getSkills(workspaceId: string, workingDirectory?: string): Promise<LoadedSkill[]>
   getSkillFiles?(workspaceId: string, skillSlug: string): Promise<SkillFile[]>
   exportSkill(workspaceId: string, skillSlug: string, workingDirectory?: string): Promise<ExportResult>
+  listSkillsFromMarket(): Promise<import('@craft-agent/shared/skills/marketplace').MarketSkillListResponse>
+  downloadSkillFromMarket(input: Pick<import('@craft-agent/shared/skills/marketplace').MarketSkillSummary, 'slug' | 'version' | 'sha256'>): Promise<import('@craft-agent/shared/skills/marketplace').DownloadedMarketSkill>
   publishSkillToMarket(input: import('@craft-agent/shared/skills/marketplace').SkillMarketPublishInput): Promise<import('@craft-agent/shared/skills/marketplace').SkillMarketPublishResult>
   createSkill(workspaceId: string, skillSlug: string, content: string): Promise<LoadedSkill>
   deleteSkill(workspaceId: string, skillSlug: string): Promise<void>

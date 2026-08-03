@@ -73,11 +73,12 @@ describe('client auth broker config', () => {
 })
 
 describe('DefaultClientAuthBrokerClient', () => {
-  it('preserves the Feishu avatar URL from the broker profile', async () => {
+  it('preserves the Feishu profile and company scope from the broker', async () => {
     globalThis.fetch = (async () => Response.json({
       user: {
         provider: 'feishu',
         userId: 'ou_user',
+        organizationId: 'storyflow',
         name: 'User',
         avatarUrl: 'https://example.com/user.png',
       },
@@ -93,6 +94,7 @@ describe('DefaultClientAuthBrokerClient', () => {
     })
 
     expect(result.user.avatarUrl).toBe('https://example.com/user.png')
+    expect(result.user.organizationId).toBe('storyflow')
   })
 
   it('does not accept the retired sessionToken response alias', async () => {

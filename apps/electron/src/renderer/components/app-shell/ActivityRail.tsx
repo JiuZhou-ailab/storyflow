@@ -447,8 +447,8 @@ export function ActivityRail({
           aria-label="新建任务"
           disabled={!canCreateTask}
           className={cn(
-            'mb-0.5 flex h-8 w-full items-center gap-2 rounded-[8px] bg-foreground/[0.05] px-2.5 text-left text-[13px] font-medium text-foreground/90 outline-none transition-colors',
-            'hover:bg-foreground/[0.075] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring',
+            'mb-0.5 flex h-8 w-full items-center gap-2 rounded-[8px] px-2.5 text-left text-[13px] font-medium text-foreground/90 outline-none transition-colors',
+            'hover:bg-foreground/[0.045] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring',
             'disabled:cursor-default disabled:opacity-45',
           )}
           onClick={handleCreateTask}

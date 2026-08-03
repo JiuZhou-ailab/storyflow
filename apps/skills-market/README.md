@@ -18,6 +18,11 @@ Publication is synchronous:
 identity → bounded bytes → deterministic validation → AI review → immutable R2 → D1 visibility
 ```
 
+The authenticated publisher is recorded separately from the package's content
+author. A publication may be `public`, or `company` when the short-lived bearer
+token contains an organization claim. Anonymous readers see public Skills;
+authenticated company members additionally see Skills from their organization.
+
 Invalid packages return `400`; AI rejection returns `422` without writes; an
 unavailable or malformed review returns `503` without writes. Approval returns
 `201` only after the published version is visible. License values remain
@@ -48,7 +53,9 @@ bun run deploy
 The Market secret must equal the auth broker's
 `STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET` and must differ from both client
 session and model-access secrets. Desktop publication uses a five-minute token
-with audience `storyflow-skills-market` and scope `skills:publish`; the token is
-never persisted or exposed to the renderer. Catalog, detail, and bundle GETs
-remain anonymous; `POST /api/submissions` accepts only that bearer capability.
-All other paths, including `/`, return a JSON `404`.
+with audience `storyflow-skills-market` and scopes `skills:read` and
+`skills:publish`; the token is never persisted or exposed to the renderer.
+Catalog, detail, and bundle GETs accept the same optional bearer capability so
+company Skills remain private. Anonymous GETs expose public Skills only, and
+`POST /api/submissions` requires the bearer capability. All other paths,
+including `/`, return a JSON `404`.

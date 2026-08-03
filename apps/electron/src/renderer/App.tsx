@@ -2656,6 +2656,7 @@ function AppContent() {
                   menuNewChatTrigger={menuNewChatTrigger}
                   openGlobalSearchSignal={openGlobalSearchSignal}
                   openWhatsNewSignal={openWhatsNewSignal}
+                  onOpenWhatsNewSignalHandled={() => setOpenWhatsNewSignal(0)}
                   onOpenAccount={() => handleOpenAccountCenter('ready')}
                   profile={activityRailProfile}
                   onWorkspaceCreatedFromRail={projectManagerActions.onWorkspaceCreated}

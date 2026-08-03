@@ -19,6 +19,10 @@ export const DEFAULT_GLOBAL_AGENT_SKILL_SLUGS = [
   'skill-creator',
 ] as const;
 
+export function isDefaultGlobalAgentSkillSlug(slug: string): boolean {
+  return DEFAULT_GLOBAL_AGENT_SKILL_SLUGS.some(defaultSlug => defaultSlug === slug);
+}
+
 export const DEFAULT_AGENT_SOURCE_SLUGS = [
   'wangwen-bigdata',
 ] as const;

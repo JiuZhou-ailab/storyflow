@@ -1,16 +1,47 @@
-// input: Exported single-Skill bundle, publication metadata, author identity, and ephemeral token
-// output: Immutable Skills Market publication result
-// pos: Main-process network boundary that keeps publish capabilities out of the renderer
+// input: Exported single-Skill bundle, publication metadata, fallback author identity, and ephemeral token
+// output: Authenticated catalog reads, verified bundle downloads, and immutable publication results
+// pos: Main-process network boundary that keeps all Skills Market capabilities out of the renderer
 
 import {
   DEFAULT_SKILLS_MARKET_ORIGIN,
+  downloadMarketSkillBundle,
+  parseMarketSkillListResponse,
   prepareMarketSkillBundle,
+  type DownloadedMarketSkill,
+  type MarketSkillListResponse,
+  type MarketSkillSummary,
   type SkillMarketPublishInput,
   type SkillMarketPublishResult,
   type StoryflowSkillManifest,
 } from '@craft-agent/shared/skills/marketplace'
 
 type MarketFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+
+interface MarketClientOptions {
+  token?: string
+  fetchImpl: MarketFetch
+}
+
+export async function listSkillsFromMarket(options: MarketClientOptions): Promise<MarketSkillListResponse> {
+  const response = await options.fetchImpl(`${DEFAULT_SKILLS_MARKET_ORIGIN}/api/skills`, {
+    headers: marketHeaders(options.token),
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!response.ok) throw new Error(`Skills Market request failed (${response.status})`)
+  return parseMarketSkillListResponse(await response.json())
+}
+
+export function downloadSkillFromMarket(
+  input: Pick<MarketSkillSummary, 'slug' | 'version' | 'sha256'>,
+  options: MarketClientOptions,
+): Promise<DownloadedMarketSkill> {
+  return downloadMarketSkillBundle(input, {
+    fetchImpl: (url, init) => options.fetchImpl(url, {
+      ...init,
+      headers: marketHeaders(options.token, init?.headers),
+    }),
+  })
+}
 
 export async function publishSkillToMarket(
   input: SkillMarketPublishInput,
@@ -21,7 +52,9 @@ export async function publishSkillToMarket(
   },
 ): Promise<SkillMarketPublishResult> {
   const bundle = prepareMarketSkillBundle(input, options.author)
-  const response = await options.fetchImpl(`${DEFAULT_SKILLS_MARKET_ORIGIN}/api/submissions`, {
+  const url = new URL('/api/submissions', DEFAULT_SKILLS_MARKET_ORIGIN)
+  url.searchParams.set('visibility', input.publication.visibility)
+  const response = await options.fetchImpl(url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${options.token}`,
@@ -51,4 +84,10 @@ export async function publishSkillToMarket(
     version: body.version,
     sha256: body.sha256,
   }
+}
+
+function marketHeaders(token?: string, initial?: HeadersInit): Headers {
+  const headers = new Headers(initial)
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  return headers
 }

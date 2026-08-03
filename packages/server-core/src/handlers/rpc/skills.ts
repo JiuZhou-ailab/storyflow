@@ -4,8 +4,9 @@
 
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
 import { readdirSync, rmSync, statSync } from 'fs'
+import { isDefaultGlobalAgentSkillSlug } from '@craft-agent/shared/agent-defaults'
 import { RPC_CHANNELS, type SkillFile } from '@craft-agent/shared/protocol'
-import { resolveRuntimeWorkspace } from '@craft-agent/shared/workspaces'
+import { isFreeConversationWorkspaceId, resolveRuntimeWorkspace } from '@craft-agent/shared/workspaces'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
@@ -161,6 +162,9 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
     const skill = await findWorkspaceSkill(workspace, skillSlug)
     if (!skill) throw new Error('Skill not found')
     if (skill.origin === 'package') throw new Error('Packaged Skills must be removed with their package manager')
+    if (isDefaultGlobalAgentSkillSlug(basename(skill.path))) {
+      throw new Error('Default Storyflow Skills cannot be removed')
+    }
 
     const target = basename(skill.filePath) === 'SKILL.md'
       ? skill.path
@@ -168,6 +172,9 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
     rmSync(target, { recursive: true })
     const { invalidateSkillsCache } = await import('@craft-agent/shared/skills')
     invalidateSkillsCache()
+    if (isFreeConversationWorkspaceId(workspaceId)) {
+      server.push(RPC_CHANNELS.skills.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
+    }
     deps.platform.logger?.info(`Deleted skill: ${skillSlug}`)
   })
 

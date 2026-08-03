@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, mock } from 'bun:test'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { FREE_CONVERSATION_WORKSPACE_ID, RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import type { HandlerFn, RequestContext, RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
@@ -24,7 +24,8 @@ let catalogSkill: {
 let invalidated = false
 
 mock.module('@craft-agent/shared/workspaces', () => ({
-  resolveRuntimeWorkspace: (id: string) => id === 'workspace-1'
+  isFreeConversationWorkspaceId: (id: string) => id === FREE_CONVERSATION_WORKSPACE_ID,
+  resolveRuntimeWorkspace: (id: string) => id === 'workspace-1' || id === FREE_CONVERSATION_WORKSPACE_ID
     ? {
         id,
         name: 'Workspace',
@@ -50,11 +51,12 @@ const { registerSkillsHandlers } = await import('./skills')
 
 function createHarness() {
   const handlers = new Map<string, HandlerFn>()
+  const pushedEvents: Array<{ channel: string, args: unknown[] }> = []
   const server: RpcServer = {
     handle(channel, handler) {
       handlers.set(channel, handler)
     },
-    push() {},
+    push(channel, _target, ...args) { pushedEvents.push({ channel, args }) },
     async invokeClient() {
       return undefined
     },
@@ -92,7 +94,7 @@ function createHarness() {
     workspaceId: 'workspace-1',
     webContentsId: 1,
   }
-  return { deleteSkill, exportSkill, ctx }
+  return { deleteSkill, exportSkill, ctx, pushedEvents }
 }
 
 afterEach(() => {
@@ -103,6 +105,31 @@ afterEach(() => {
 })
 
 describe('Skills RPC catalog identity', () => {
+  it('keeps bundled default Skills installed', async () => {
+    workspaceRootPath = mkdtempSync(join(tmpdir(), 'storyflow-default-skill-delete-'))
+    const skillPath = join(workspaceRootPath, '.pi', 'agent', 'skills', 'find-skills')
+    const filePath = join(skillPath, 'SKILL.md')
+    mkdirSync(skillPath, { recursive: true })
+    writeFileSync(filePath, '---\nname: find-skills\ndescription: test\n---\n')
+    catalogSkill = {
+      slug: 'find-skills',
+      metadata: { name: 'find-skills', description: 'test' },
+      content: '',
+      path: skillPath,
+      filePath,
+      scope: 'user',
+      source: 'auto',
+      origin: 'top-level',
+    }
+    const { deleteSkill, ctx } = createHarness()
+
+    await expect(deleteSkill(ctx, 'workspace-1', 'find-skills'))
+      .rejects.toThrow('Default Storyflow Skills cannot be removed')
+
+    expect(existsSync(skillPath)).toBe(true)
+    expect(invalidated).toBe(false)
+  })
+
   it('deletes a top-level Skill whose Pi name is not a filesystem slug', async () => {
     workspaceRootPath = mkdtempSync(join(tmpdir(), 'storyflow-skill-delete-'))
     const skillPath = join(workspaceRootPath, '.agents', 'skills', 'plot-causality-audit')
@@ -125,6 +152,33 @@ describe('Skills RPC catalog identity', () => {
 
     expect(existsSync(skillPath)).toBe(false)
     expect(invalidated).toBe(true)
+  })
+
+  it('refreshes the hidden Free Conversations catalog after deletion', async () => {
+    workspaceRootPath = mkdtempSync(join(tmpdir(), 'storyflow-free-skill-delete-'))
+    const skillPath = join(workspaceRootPath, '.pi', 'skills', 'free-market-skill')
+    const filePath = join(skillPath, 'SKILL.md')
+    mkdirSync(skillPath, { recursive: true })
+    writeFileSync(filePath, '---\nname: free-market-skill\ndescription: test\n---\n')
+    catalogSkill = {
+      slug: 'free-market-skill',
+      metadata: { name: 'free-market-skill', description: 'test' },
+      content: '',
+      path: skillPath,
+      filePath,
+      scope: 'project',
+      source: 'auto',
+      origin: 'top-level',
+    }
+    const { deleteSkill, ctx, pushedEvents } = createHarness()
+
+    await deleteSkill(ctx, FREE_CONVERSATION_WORKSPACE_ID, 'free-market-skill')
+
+    expect(existsSync(skillPath)).toBe(false)
+    expect(pushedEvents).toContainEqual({
+      channel: RPC_CHANNELS.skills.CHANGED,
+      args: [FREE_CONVERSATION_WORKSPACE_ID],
+    })
   })
 
   it('exports the resolved project Skill by its real directory slug', async () => {

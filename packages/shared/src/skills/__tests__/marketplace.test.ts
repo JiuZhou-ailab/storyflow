@@ -56,7 +56,7 @@ describe('Skills Market contract', () => {
     )).rejects.toThrow('checksum')
   })
 
-  test('adds publication metadata without conflating package slug and Skill name', () => {
+  test('adds publication metadata without conflating content attribution and publisher identity', () => {
     const skillMarkdown = '---\nname: 剧情因果审查\ndescription: 审查故事因果\n---\n\n正文\n'
     const bytes = new TextEncoder().encode(skillMarkdown)
     const bundle = prepareMarketSkillBundle({
@@ -65,11 +65,18 @@ describe('Skills Market contract', () => {
         exportedAt: 1,
         resources: { skills: [{
           slug: 'plot-causality-audit',
-          files: [{
-            relativePath: 'SKILL.md',
-            contentBase64: Buffer.from(bytes).toString('base64'),
-            size: bytes.byteLength,
-          }],
+          files: [
+            {
+              relativePath: 'SKILL.md',
+              contentBase64: Buffer.from(bytes).toString('base64'),
+              size: bytes.byteLength,
+            },
+            {
+              relativePath: 'storyflow.json',
+              contentBase64: Buffer.from(JSON.stringify({ author: { name: '内容作者' } })).toString('base64'),
+              size: Buffer.byteLength(JSON.stringify({ author: { name: '内容作者' } })),
+            },
+          ],
         }] },
       },
       publication: {
@@ -78,8 +85,9 @@ describe('Skills Market contract', () => {
         summary: '审查故事因果链',
         license: 'CC-BY-4.0',
         tags: ['写作', '写作'],
+        visibility: 'public',
       },
-    }, { name: '作者' })
+    }, { name: '上传者' })
 
     const packagedSkill = bundle.resources.skills?.[0]
     const manifestFile = packagedSkill?.files.find(file => file.relativePath === 'storyflow.json')
@@ -87,7 +95,7 @@ describe('Skills Market contract', () => {
     expect(manifestFile).toBeDefined()
     expect(JSON.parse(Buffer.from(manifestFile!.contentBase64, 'base64').toString('utf8'))).toMatchObject({
       slug: 'plot-causality-audit',
-      author: { name: '作者' },
+      author: { name: '内容作者' },
       tags: ['写作'],
     })
   })

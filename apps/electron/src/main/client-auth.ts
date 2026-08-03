@@ -1,5 +1,5 @@
 // input: Electron auth environment and Neon Auth email/password credentials
-// output: Client auth state, persisted session handoff, token freshness checks, and auth operations
+// output: Client auth state with company scope, persisted session handoff, token freshness checks, and auth operations
 // pos: Main-process auth boundary used by managed model capabilities without gating local workspaces
 
 import {
@@ -66,6 +66,7 @@ export interface ClientAuthSignUpInput extends ClientAuthSignInInput { name?: st
 export interface ClientAuthUser {
   provider: 'neon' | 'feishu'
   userId: string
+  organizationId?: string
   email?: string
   emailVerified?: boolean
   name?: string
@@ -155,8 +156,8 @@ export interface ClientAuthService {
   getState(): ClientAuthState
   /** Returns a fresh managed-model token, rotating both broker tokens when needed or forced. */
   ensureModelAccessToken(options?: { force?: boolean }): Promise<ClientAuthModelAccessTokenResult>
-  /** Returns an ephemeral publish capability. The token is never persisted. */
-  issueSkillsMarketPublishToken(): Promise<string>
+  /** Returns an ephemeral Market capability for authenticated reads and publication. The token is never persisted. */
+  issueSkillsMarketAccessToken(): Promise<string>
   signIn(input: ClientAuthSignInInput): Promise<ClientAuthUser>
   signUp(input: ClientAuthSignUpInput): Promise<ClientAuthSignUpResult>
   signInWithFeishu(): Promise<ClientAuthUser>
@@ -445,11 +446,11 @@ export function createClientAuthService(
       })
     },
 
-    async issueSkillsMarketPublishToken(): Promise<string> {
+    async issueSkillsMarketAccessToken(): Promise<string> {
       const session = currentSession
       const appSessionToken = readEnv(session?.appSessionToken)
       if (!session || !authBrokerUrl || !authBrokerClient?.issueSkillsMarketToken || !appSessionToken) {
-        throw new Error('Client authentication is required to publish Skills')
+        throw new Error('Client authentication is required for company Skills')
       }
       const generation = tokenLifecycle.generation
       try {

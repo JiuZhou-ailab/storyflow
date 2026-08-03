@@ -1,5 +1,5 @@
-// input: Signed and forged publish capabilities plus concurrent Skill submissions
-// output: Regression coverage for Worker identity verification and atomic publisher ownership
+// input: Signed and forged Market capabilities plus public and company Skill submissions
+// output: Regression coverage for identity, visibility, download authorization, and atomic publisher ownership
 // pos: Security contract tests for the Skills Market trust and persistence boundaries
 
 import { Database, type SQLQueryBindings } from 'bun:sqlite'
@@ -23,6 +23,8 @@ interface TokenOptions {
   keyId?: string
   secret?: string
   scopes?: string[]
+  userName?: string
+  organizationId?: string
 }
 
 const marketEnv = {
@@ -32,7 +34,11 @@ const marketEnv = {
 
 async function marketToken(options: TokenOptions = {}): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
-  return new SignJWT({ scopes: options.scopes ?? ['skills:publish'], user_name: 'Market Author' })
+  return new SignJWT({
+    scopes: options.scopes ?? ['skills:publish'],
+    user_name: options.userName ?? 'Market Author',
+    ...(options.organizationId ? { organization_id: options.organizationId } : {}),
+  })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: options.keyId ?? MARKET_KEY_ID })
     .setIssuer(options.issuer ?? 'storyflow-auth-broker')
     .setAudience(options.audience ?? 'storyflow-skills-market')
@@ -204,6 +210,7 @@ describe('publisher ownership', () => {
     const migration = [
       await Bun.file(new URL('../migrations/0001_initial.sql', import.meta.url)).text(),
       await Bun.file(new URL('../migrations/0002_ai_review.sql', import.meta.url)).text(),
+      await Bun.file(new URL('../migrations/0003_visibility.sql', import.meta.url)).text(),
     ].join('\n')
     const d1 = new SqliteD1Database(migration)
     const packages = new MemoryR2Bucket()
@@ -237,6 +244,108 @@ describe('publisher ownership', () => {
     expect(packages.objects.size).toBe(2)
     d1.database.close()
   })
+
+  test('returns the authenticated publisher separately from content attribution', async () => {
+    const migration = [
+      await Bun.file(new URL('../migrations/0001_initial.sql', import.meta.url)).text(),
+      await Bun.file(new URL('../migrations/0002_ai_review.sql', import.meta.url)).text(),
+      await Bun.file(new URL('../migrations/0003_visibility.sql', import.meta.url)).text(),
+    ].join('\n')
+    const d1 = new SqliteD1Database(migration)
+    const env: Env = {
+      ...marketEnv,
+      DB: d1 as unknown as NonNullable<Env['DB']>,
+      PACKAGES: new MemoryR2Bucket() as unknown as NonNullable<Env['PACKAGES']>,
+      AI: { run: async () => ({ response: JSON.stringify({ approve: true, issues: [] }) }) },
+    }
+    const bundle = await bundleWithVersion('1.0.0', 'publisher-attribution')
+    const token = await marketToken({ subject: 'feishu:writer-one', userName: '张三' })
+
+    const published = await handleRequest(authenticatedSubmission(token, bundle), env)
+    const catalog = await handleRequest(new Request('https://market.test/api/skills'), env)
+    const body = await catalog.json() as {
+      skills: Array<{ slug: string, author: string, publisher: { id: string, displayName: string } }>
+    }
+    const skill = body.skills.find(item => item.slug === 'publisher-attribution')
+
+    expect(published.status).toBe(201)
+    expect(skill?.author).not.toBe('张三')
+    expect(skill?.publisher.displayName).toBe('张三')
+    expect(skill?.publisher.id).toStartWith('user_')
+    d1.database.close()
+  })
+})
+
+describe('company visibility', () => {
+  test('allows only the publisher company to discover and download company Skills', async () => {
+    const migration = [
+      await Bun.file(new URL('../migrations/0001_initial.sql', import.meta.url)).text(),
+      await Bun.file(new URL('../migrations/0002_ai_review.sql', import.meta.url)).text(),
+      await Bun.file(new URL('../migrations/0003_visibility.sql', import.meta.url)).text(),
+    ].join('\n')
+    const d1 = new SqliteD1Database(migration)
+    const env: Env = {
+      ...marketEnv,
+      DB: d1 as unknown as NonNullable<Env['DB']>,
+      PACKAGES: new MemoryR2Bucket() as unknown as NonNullable<Env['PACKAGES']>,
+      AI: { run: async () => ({ response: JSON.stringify({ approve: true, issues: [] }) }) },
+    }
+    const bundle = await bundleWithVersion('1.0.0', 'internal-writing-method')
+    const [companyToken, otherCompanyToken] = await Promise.all([
+      marketToken({
+        subject: 'feishu:writer-one',
+        userName: '张三',
+        organizationId: 'storyflow',
+        scopes: ['skills:read', 'skills:publish'],
+      }),
+      marketToken({
+        subject: 'feishu:writer-two',
+        userName: '李四',
+        organizationId: 'another-company',
+        scopes: ['skills:read', 'skills:publish'],
+      }),
+    ])
+    const noCompanyToken = await marketToken({
+      subject: 'neon:external-writer',
+      scopes: ['skills:read', 'skills:publish'],
+    })
+    const deniedPublish = await handleRequest(new Request(
+      'https://market.test/api/submissions?visibility=company',
+      { method: 'POST', headers: { Authorization: `Bearer ${noCompanyToken}` }, body: bundle },
+    ), env)
+    const publish = await handleRequest(new Request(
+      'https://market.test/api/submissions?visibility=company',
+      { method: 'POST', headers: { Authorization: `Bearer ${companyToken}` }, body: bundle },
+    ), env)
+
+    const anonymousCatalog = await handleRequest(new Request('https://market.test/api/skills'), env)
+    const companyCatalog = await handleRequest(new Request('https://market.test/api/skills', {
+      headers: { Authorization: `Bearer ${companyToken}` },
+    }), env)
+    const otherCompanyCatalog = await handleRequest(new Request('https://market.test/api/skills', {
+      headers: { Authorization: `Bearer ${otherCompanyToken}` },
+    }), env)
+    const anonymousBody = await anonymousCatalog.json() as { skills: Array<{ slug: string }> }
+    const companyBody = await companyCatalog.json() as { skills: Array<{ slug: string, visibility: string }> }
+    const otherCompanyBody = await otherCompanyCatalog.json() as { skills: Array<{ slug: string }> }
+
+    const detailUrl = 'https://market.test/api/skills/internal-writing-method'
+    const bundleUrl = `${detailUrl}/versions/1.0.0/bundle`
+    const [anonymousDetail, companyDetail, otherCompanyBundle, companyBundle] = await Promise.all([
+      handleRequest(new Request(detailUrl), env),
+      handleRequest(new Request(detailUrl, { headers: { Authorization: `Bearer ${companyToken}` } }), env),
+      handleRequest(new Request(bundleUrl, { headers: { Authorization: `Bearer ${otherCompanyToken}` } }), env),
+      handleRequest(new Request(bundleUrl, { headers: { Authorization: `Bearer ${companyToken}` } }), env),
+    ])
+
+    expect([deniedPublish.status, publish.status]).toEqual([403, 201])
+    expect(anonymousBody.skills.some(skill => skill.slug === 'internal-writing-method')).toBeFalse()
+    expect(companyBody.skills.find(skill => skill.slug === 'internal-writing-method')?.visibility).toBe('company')
+    expect(otherCompanyBody.skills.some(skill => skill.slug === 'internal-writing-method')).toBeFalse()
+    expect([anonymousDetail.status, companyDetail.status, otherCompanyBundle.status, companyBundle.status])
+      .toEqual([404, 200, 404, 200])
+    d1.database.close()
+  })
 })
 
 describe('automated publication', () => {
@@ -244,6 +353,7 @@ describe('automated publication', () => {
     const migration = [
       await Bun.file(new URL('../migrations/0001_initial.sql', import.meta.url)).text(),
       await Bun.file(new URL('../migrations/0002_ai_review.sql', import.meta.url)).text(),
+      await Bun.file(new URL('../migrations/0003_visibility.sql', import.meta.url)).text(),
     ].join('\n')
     const approvedBundle = await bundleWithVersion('2.0.0')
 

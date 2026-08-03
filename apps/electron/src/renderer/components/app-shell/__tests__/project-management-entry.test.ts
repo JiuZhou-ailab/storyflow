@@ -1,6 +1,6 @@
 // input: AppShell, panel chrome, ActivityRail row primitives, WorkspaceProjectSidebar, and project-creation source
-// output: Static regression for rail-owned project management IA and compact visual hierarchy
-// pos: Project browsing is rail-only; dialogs are reserved for creation forms
+// output: Static regression for rail-owned project management IA, one-shot shell actions, and compact visual hierarchy
+// pos: Project browsing is rail-only; cross-surface actions are consumed once before the ready shell can remount
 
 import { describe, expect, it } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
@@ -258,7 +258,10 @@ describe('project management entry', () => {
     expect(appSource).toContain('onOpenSettings: canOpenRuntimeNavigation')
     expect(appSource).toContain('onOpenWhatsNew: canOpenRuntimeNavigation ? handleOpenRuntimeWhatsNew : undefined')
     expect(appSource).toContain('openWhatsNewSignal={openWhatsNewSignal}')
-    expect(appShellSource).toContain('if (openWhatsNewSignal > 0)')
+    expect(appSource).toContain('onOpenWhatsNewSignalHandled={() => setOpenWhatsNewSignal(0)}')
+    expect(appShellSource).toContain('if (openWhatsNewSignal <= 0) return')
+    expect(appShellSource).toContain('onOpenWhatsNewSignalHandled()')
+    expect(appShellSource).not.toContain('if (openWhatsNewSignal > 0)')
   })
 
   it('opens a requested runtime route on the first click after activating a fallback project', () => {

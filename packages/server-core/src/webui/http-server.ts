@@ -1,5 +1,5 @@
 // input: Web UI HTTP requests, auth options, static web UI files
-// output: Web-standard Web UI fetch handler, local auth capabilities, and standalone Bun server
+// output: Web-standard Web UI fetch handler, company-scoped auth capabilities, and standalone Bun server
 // pos: Server-core HTTP/auth boundary for browser and desktop client sessions
 
 /**
@@ -447,6 +447,9 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
         options.clientSessionTokenKeyRing.current,
         identity.subject,
         'standard',
+        undefined,
+        undefined,
+        identity.name,
       )
       const modelAccessToken = await createModelAccessToken(options.modelAccessTokenKey, identity.subject, 'standard')
       logger.info(`[webui] Successful Neon client auth broker exchange for ${formatNeonIdentity(identity)}`)
@@ -624,10 +627,14 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
         }
 
         const subject = `feishu:${decision.user.openId}`
+        const organizationId = decision.reason === 'internal' ? 'storyflow' : undefined
         const appSessionToken = await createClientSessionToken(
           options.clientSessionTokenKeyRing.current,
           subject,
           'pro',
+          undefined,
+          organizationId,
+          decision.user.name,
         )
         const modelAccessToken = await createModelAccessToken(
           options.modelAccessTokenKey,
@@ -637,7 +644,10 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
         logger.info(`[webui] Successful Feishu client auth broker exchange (${decision.reason}) for ${formatFeishuIdentity(decision.user)}`)
         return Response.json({
           ok: true,
-          user: toPublicFeishuIdentity(decision.user),
+          user: {
+            ...toPublicFeishuIdentity(decision.user),
+            ...(organizationId ? { organizationId } : {}),
+          },
           appSessionToken,
           modelAccessToken,
         })
@@ -669,6 +679,8 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
           clientSession.subject,
           clientSession.modelTier,
           clientSession.authenticatedAtSeconds,
+          clientSession.organizationId,
+          clientSession.userName,
         ),
         modelAccessToken: await createModelAccessToken(
           options.modelAccessTokenKey,
@@ -703,6 +715,8 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
           options.skillsMarketTokenKey,
           clientSession.subject,
           clientSession.authenticatedAtSeconds,
+          clientSession.organizationId,
+          clientSession.userName,
         ),
         expiresInSeconds: SKILLS_MARKET_TOKEN_TTL_SECONDS,
       })

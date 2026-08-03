@@ -1,5 +1,5 @@
 // input: Skills Market catalog responses, install deep links, and portable Skill bundles
-// output: Browser-safe marketplace contracts, URL construction, and digest verification
+// output: Browser-safe marketplace contracts, publisher provenance, URL construction, and digest verification
 // pos: Shared protocol boundary between the public registry and Storyflow clients
 
 import type { ResourceBundle } from '../resources/types.ts'
@@ -46,6 +46,11 @@ export interface MarketSkillSummary {
   displayName: string
   summary: string
   author: string
+  publisher: {
+    id: string
+    displayName: string
+  }
+  visibility: 'public' | 'company'
   license: string
   tags: string[]
   roots: string[]
@@ -66,6 +71,61 @@ export interface MarketSkillListResponse {
   total: number
 }
 
+export function parseMarketSkillListResponse(value: unknown): MarketSkillListResponse {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Skills Market returned an invalid catalog')
+  }
+  const response = value as Record<string, unknown>
+  if (!Array.isArray(response.skills) || typeof response.total !== 'number') {
+    throw new Error('Skills Market returned an invalid catalog')
+  }
+  return {
+    skills: response.skills.map(parseMarketSkillSummary),
+    total: response.total,
+  }
+}
+
+function parseMarketSkillSummary(value: unknown): MarketSkillSummary {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Skills Market returned an invalid Skill')
+  }
+  const skill = value as Record<string, unknown>
+  const requiredStrings = ['slug', 'version', 'displayName', 'summary', 'author', 'license', 'sha256']
+  if (
+    !requiredStrings.every(key => typeof skill[key] === 'string')
+    || !Array.isArray(skill.tags)
+    || skill.tags.some(tag => typeof tag !== 'string')
+    || !Array.isArray(skill.roots)
+    || skill.roots.some(root => typeof root !== 'string')
+    || (skill.featured !== undefined && typeof skill.featured !== 'boolean')
+    || (skill.publishedAt !== undefined && typeof skill.publishedAt !== 'string')
+  ) {
+    throw new Error('Skills Market returned an invalid Skill')
+  }
+  const publisher = skill.publisher
+  const normalizedPublisher = publisher && typeof publisher === 'object' && !Array.isArray(publisher)
+    && typeof (publisher as Record<string, unknown>).id === 'string'
+    && typeof (publisher as Record<string, unknown>).displayName === 'string'
+    ? publisher as MarketSkillSummary['publisher']
+    : { id: `legacy:${skill.slug as string}`, displayName: skill.author as string }
+  const visibility = skill.visibility === 'company' ? 'company' : 'public'
+  return {
+    slug: skill.slug as string,
+    version: skill.version as string,
+    displayName: skill.displayName as string,
+    summary: skill.summary as string,
+    author: skill.author as string,
+    publisher: normalizedPublisher,
+    visibility,
+    license: skill.license as string,
+    tags: skill.tags as string[],
+    roots: skill.roots as string[],
+    ...(typeof skill.featured === 'boolean' ? { featured: skill.featured } : {}),
+    ...(typeof skill.publishedAt === 'string' ? { publishedAt: skill.publishedAt } : {}),
+    sha256: skill.sha256 as string,
+  }
+}
+
 export interface DownloadedMarketSkill {
   bundle: ResourceBundle
   raw: string
@@ -78,6 +138,7 @@ export interface SkillPublicationMetadata {
   summary: string
   license: string
   tags?: string[]
+  visibility: 'public' | 'company'
 }
 
 export interface SkillMarketPublishInput {
@@ -176,6 +237,15 @@ export function prepareMarketSkillBundle(
       throw new Error(`${STORYFLOW_SKILL_MANIFEST_FILE} must contain valid UTF-8 JSON`)
     }
   }
+  const existingAuthor = existing.author && typeof existing.author === 'object'
+    ? existing.author as Record<string, unknown>
+    : null
+  const authorName = typeof existingAuthor?.name === 'string' && existingAuthor.name.trim()
+    ? existingAuthor.name.trim()
+    : author.name.trim()
+  const authorUrl = typeof existingAuthor?.url === 'string' && existingAuthor.url.trim()
+    ? existingAuthor.url.trim()
+    : author.url?.trim()
 
   const manifest: StoryflowSkillManifest = {
     ...existing,
@@ -186,8 +256,8 @@ export function prepareMarketSkillBundle(
     summary: input.publication.summary.trim(),
     license: input.publication.license.trim(),
     author: {
-      name: author.name.trim(),
-      ...(author.url?.trim() ? { url: author.url.trim() } : {}),
+      name: authorName,
+      ...(authorUrl ? { url: authorUrl } : {}),
     },
     tags: [...new Set((input.publication.tags ?? []).map(tag => tag.trim()).filter(Boolean))],
   }

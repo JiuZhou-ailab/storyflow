@@ -3,8 +3,8 @@
 // pos: Server-side trust boundary for portable source, Skill, and automation bundles
 
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
-import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { getCredentialManager, SOURCE_CREDENTIAL_TYPES } from '@craft-agent/shared/credentials'
+import { isFreeConversationWorkspaceId, resolveRuntimeWorkspace } from '@craft-agent/shared/workspaces'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import type {
@@ -24,7 +24,7 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
   server.handle(
     RPC_CHANNELS.resources.EXPORT,
     async (_ctx, workspaceId: string, options: ExportResourcesOptions) => {
-      const workspace = getWorkspaceByNameOrId(workspaceId)
+      const workspace = resolveRuntimeWorkspace(workspaceId)
       if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
 
       const { exportResources } = await import('@craft-agent/shared/resources')
@@ -54,7 +54,7 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
       mode: ResourceImportMode,
       options: ResourceImportOptions = {},
     ) => {
-      const workspace = getWorkspaceByNameOrId(workspaceId)
+      const workspace = resolveRuntimeWorkspace(workspaceId)
       if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
 
       const hasSkills = Boolean(bundle.resources.skills?.length)
@@ -106,6 +106,9 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
         for (const slug of result.skills.imported) {
           deps.sessionManager.notifyConfigFileChange(workspace.rootPath, `.pi/skills/${slug}/SKILL.md`)
         }
+      }
+      if (isFreeConversationWorkspaceId(workspaceId) && result.skills.imported.length > 0) {
+        server.push(RPC_CHANNELS.skills.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
       }
 
       return result

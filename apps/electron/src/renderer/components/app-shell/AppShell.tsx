@@ -253,8 +253,10 @@ interface AppShellProps {
   menuNewChatTrigger?: number
   /** Monotonic signal for opening global search after entering the ready shell */
   openGlobalSearchSignal?: number
-  /** Monotonic signal for opening release notes after entering the ready shell */
+  /** Positive one-shot signal for opening release notes after entering the ready shell */
   openWhatsNewSignal?: number
+  /** Clears the one-shot release-notes signal before the ready shell can remount. */
+  onOpenWhatsNewSignalHandled: () => void
   /** Open account management */
   onOpenAccount?: () => void
   /** Current signed-in role shown by the sidebar profile item. */
@@ -873,6 +875,7 @@ function AppShellContent({
   menuNewChatTrigger,
   openGlobalSearchSignal = 0,
   openWhatsNewSignal = 0,
+  onOpenWhatsNewSignalHandled,
   onOpenAccount,
   profile,
   onOpenProjectInNewWindow,
@@ -4238,10 +4241,10 @@ function AppShellContent({
   }, [markWhatsNewSeen])
 
   useEffect(() => {
-    if (openWhatsNewSignal > 0) {
-      void handleWhatsNewClick()
-    }
-  }, [handleWhatsNewClick, openWhatsNewSignal])
+    if (openWhatsNewSignal <= 0) return
+    onOpenWhatsNewSignalHandled()
+    void handleWhatsNewClick()
+  }, [handleWhatsNewClick, onOpenWhatsNewSignalHandled, openWhatsNewSignal])
 
   const handleWhatsNewAnnouncementDetailsClick = useCallback(() => {
     setShowWhatsNewAnnouncement(false)

@@ -1,5 +1,5 @@
 // input: Skill ownership, local availability, and action callbacks
-// output: Shared local-management, workspace-transfer, and Skills Market publishing menu
+// output: Shared local-management menu and scope-aware Skill removal confirmation
 // pos: Reusable action surface for Skill list and detail views
 
 /**
@@ -11,15 +11,17 @@
  * Uses MenuComponents context to render with either DropdownMenu or ContextMenu
  * primitives, allowing the same component to work in both scenarios.
  *
- * Provides consistent skill actions:
+ * Provides consistent skill actions and the shared removal confirmation:
  * - Open in New Window
  * - Show in file manager
  * - Publish user-owned Skills to Storyflow Skills Market
- * - Delete
+ * - Remove
  */
 
 import * as React from 'react'
 import { useTranslation } from "react-i18next"
+import { toast } from 'sonner'
+import { isDefaultGlobalAgentSkillSlug } from '@craft-agent/shared/agent-defaults'
 import {
   Trash2,
   FolderOpen,
@@ -28,24 +30,97 @@ import {
   Upload,
 } from 'lucide-react'
 import { useMenuComponents } from '@/components/ui/menu-context'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { getFileManagerName } from '@/lib/platform'
+import type { LoadedSkill } from '../../../shared/types'
 
 export interface SkillMenuProps {
-  /** Skill slug */
-  skillSlug: string
-  /** Skill name for display */
-  skillName: string
   /** Callbacks */
   onOpenInNewWindow: () => void
   onShowInFinder: () => void
-  onDelete?: () => void
+  onRemove?: () => void
   canShowInFinder?: boolean
-  canDelete?: boolean
-  deleteLabel?: string
+  canRemove?: boolean
+  removeLabel?: string
   /** Send to another workspace (omit to hide the option) */
   onSendToWorkspace?: () => void
   /** Publish a locally owned Skill through Storyflow's Market (omit to hide) */
   onPublishToMarket?: () => void
+}
+
+interface SkillRemovalDialogProps {
+  skill: LoadedSkill | null
+  workspaceId: string | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onRemoved?: (skill: LoadedSkill) => void
+}
+
+export function SkillRemovalDialog({
+  skill,
+  workspaceId,
+  open,
+  onOpenChange,
+  onRemoved,
+}: SkillRemovalDialogProps) {
+  const { t } = useTranslation()
+  const [removing, setRemoving] = React.useState(false)
+  const displayName = skill?.metadata.displayName ?? skill?.metadata.name ?? skill?.slug ?? ''
+  const descriptionKey = skill?.scope === 'user'
+    ? 'skillManagement.removeUserDescription'
+    : skill?.scope === 'project'
+      ? 'skillManagement.removeProjectDescription'
+      : 'skillManagement.removeLocalDescription'
+  const skillDirectorySlug = skill?.path.replace(/\\/g, '/').replace(/\/+$/, '').split('/').at(-1) ?? ''
+  const canRemove = skill?.origin === 'top-level' && !isDefaultGlobalAgentSkillSlug(skillDirectorySlug)
+
+  const handleRemove = async () => {
+    if (!skill || !workspaceId || !canRemove || removing) return
+    setRemoving(true)
+    try {
+      await window.electronAPI.deleteSkill(workspaceId, skill.slug)
+      toast.success(t('skillManagement.removed', { name: displayName }))
+      onOpenChange(false)
+      onRemoved?.(skill)
+    } catch (error) {
+      toast.error(t('skillManagement.removeFailed'), {
+        description: error instanceof Error ? error.message : undefined,
+      })
+    } finally {
+      setRemoving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange} busy={removing}>
+      <DialogContent size="sm" showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>{t('skillManagement.removeTitle', { name: displayName })}</DialogTitle>
+          <DialogDescription>{t(descriptionKey)}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" disabled={removing} onClick={() => onOpenChange(false)}>
+            {t('common.cancel')}
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={!skill || !workspaceId || !canRemove || removing}
+            onClick={() => void handleRemove()}
+          >
+            {removing ? t('skillManagement.removing') : t('skillManagement.removeAction')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 /**
@@ -53,14 +128,12 @@ export interface SkillMenuProps {
  * This is the content only, not wrapped in a DropdownMenu or ContextMenu
  */
 export function SkillMenu({
-  skillSlug,
-  skillName,
   onOpenInNewWindow,
   onShowInFinder,
-  onDelete,
+  onRemove,
   canShowInFinder = true,
-  canDelete = true,
-  deleteLabel,
+  canRemove = true,
+  removeLabel,
   onSendToWorkspace,
   onPublishToMarket,
 }: SkillMenuProps) {
@@ -100,10 +173,10 @@ export function SkillMenu({
 
       <Separator />
 
-      {/* Delete */}
-      <MenuItem onClick={canDelete ? onDelete : undefined} variant="destructive" disabled={!canDelete}>
+      {/* Remove */}
+      <MenuItem onClick={canRemove ? onRemove : undefined} variant="destructive" disabled={!canRemove}>
         <Trash2 className="h-3.5 w-3.5" />
-        <span className="flex-1">{deleteLabel || t("sidebarMenu.deleteSkill")}</span>
+        <span className="flex-1">{removeLabel || t('skillManagement.removeAction')}</span>
       </MenuItem>
     </>
   )
