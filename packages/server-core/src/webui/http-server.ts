@@ -1,5 +1,5 @@
 // input: Web UI HTTP requests, auth options, static web UI files
-// output: Web-standard Web UI fetch handler and standalone Bun server
+// output: Web-standard Web UI fetch handler, local auth capabilities, and standalone Bun server
 // pos: Server-core HTTP/auth boundary for browser and desktop client sessions
 
 /**
@@ -22,6 +22,8 @@ import {
   createSessionToken,
   createClientSessionToken,
   createModelAccessToken,
+  createSkillsMarketPublishToken,
+  SKILLS_MARKET_TOKEN_TTL_SECONDS,
   verifyClientSessionToken,
   validateSession,
   buildSessionCookie,
@@ -167,6 +169,8 @@ export interface WebuiHandlerOptions {
   clientSessionTokenKeyRing?: JwtKeyRing
   /** Dedicated current key used only to sign scoped desktop model access tokens. */
   modelAccessTokenKey?: JwtSigningKey
+  /** Dedicated current key used only to sign local Skills Market publish tokens. */
+  skillsMarketTokenKey?: JwtSigningKey
   /** Enables the legacy server-token login form and /api/auth endpoint. Defaults to true. */
   passwordAuthEnabled?: boolean
   /**
@@ -215,12 +219,16 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
     options.clientSessionTokenKeyRing?.previous?.secret,
   ].filter((value): value is string => Boolean(value))
   const modelAccessSecret = options.modelAccessTokenKey?.secret
+  const skillsMarketSecret = options.skillsMarketTokenKey?.secret
   if (
     clientSessionSecrets.includes(secret)
     || modelAccessSecret === secret
     || (modelAccessSecret && clientSessionSecrets.includes(modelAccessSecret))
+    || skillsMarketSecret === secret
+    || (skillsMarketSecret && clientSessionSecrets.includes(skillsMarketSecret))
+    || (skillsMarketSecret && skillsMarketSecret === modelAccessSecret)
   ) {
-    throw new Error('Web UI/RPC, client-session, and model-access signing secrets must be pairwise distinct')
+    throw new Error('Web UI/RPC, client-session, model-access, and Skills Market signing secrets must be pairwise distinct')
   }
 
   const rateLimiter = new RateLimiter(5, 60_000)
@@ -668,6 +676,35 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
           clientSession.modelTier,
           clientSession.authenticatedAtSeconds,
         ),
+      })
+    }
+
+    if (path === '/api/client-auth/skills-market/token' && req.method === 'POST') {
+      if (!options.clientSessionTokenKeyRing || !options.skillsMarketTokenKey) {
+        return Response.json({ error: 'Skills Market token signing is not configured' }, { status: 503 })
+      }
+      const token = readBearerToken(req.headers.get('authorization'))
+      const clientSession = token
+        ? await verifyClientSessionToken(
+            token,
+            options.clientSessionTokenKeyRing,
+            SKILLS_MARKET_TOKEN_TTL_SECONDS,
+          )
+        : null
+      if (!clientSession) {
+        return Response.json({
+          error: 'Invalid client session token',
+          code: 'client_session_token_invalid',
+        }, { status: 401 })
+      }
+      return Response.json({
+        ok: true,
+        marketPublishToken: await createSkillsMarketPublishToken(
+          options.skillsMarketTokenKey,
+          clientSession.subject,
+          clientSession.authenticatedAtSeconds,
+        ),
+        expiresInSeconds: SKILLS_MARKET_TOKEN_TTL_SECONDS,
       })
     }
 

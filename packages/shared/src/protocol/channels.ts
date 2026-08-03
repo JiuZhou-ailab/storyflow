@@ -282,6 +282,7 @@ export const RPC_CHANNELS = {
   skills: {
     GET: 'skills:get',
     GET_FILES: 'skills:getFiles',
+    EXPORT: 'skills:export',
     CREATE: 'skills:create',
     DELETE: 'skills:delete',
     OPEN_EDITOR: 'skills:openEditor',

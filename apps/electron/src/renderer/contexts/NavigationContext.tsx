@@ -62,7 +62,6 @@ import {
 import { isValidSettingsSubpage, type SettingsSubpage } from '../../shared/settings-registry'
 import { sessionMetaMapAtom, updateSessionMetaAtom, type SessionMeta } from '@/atoms/sessions'
 import { sourcesAtom } from '@/atoms/sources'
-import { skillsAtom } from '@/atoms/skills'
 import {
   panelStackAtom,
   pushPanelAtom,
@@ -173,9 +172,6 @@ export function NavigationProvider({
 
   // Read sources from atom (populated by AppShell)
   const sources = useAtomValue(sourcesAtom)
-
-  // Read skills from atom (populated by AppShell)
-  const skills = useAtomValue(skillsAtom)
 
   // =========================================================================
   // DERIVED NAVIGATION STATE (from focused panel + right sidebar)
@@ -626,13 +622,6 @@ export function NavigationProvider({
     [sources]
   )
 
-  const getFirstSkillSlug = useCallback(
-    (): string | null => {
-      return skills[0]?.slug ?? null
-    },
-    [skills]
-  )
-
   // =========================================================================
   // AUTO-SELECTION (pure computation, no side effects)
   // =========================================================================
@@ -677,18 +666,9 @@ export function NavigationProvider({
         return nextState
       }
 
-      // Skills: auto-select first skill
-      if (isSkillsNavigation(nextState) && !nextState.details && !options?.skipAutoSelect) {
-        const firstSkillSlug = getFirstSkillSlug()
-        if (firstSkillSlug) {
-          return { ...nextState, details: { type: 'skill', skillSlug: firstSkillSlug } }
-        }
-        return nextState
-      }
-
       return nextState
     },
-    [store, workspaceId, remoteWorkspaceId, getLastSelectedSessionId, getFirstSessionId, getFirstSourceSlug, getFirstSkillSlug]
+    [store, workspaceId, remoteWorkspaceId, getLastSelectedSessionId, getFirstSessionId, getFirstSourceSlug]
   )
 
   // Ref keeps resolveAutoSelection fresh for reconcileFromUrlParams (defined earlier in the file)
@@ -881,7 +861,9 @@ export function NavigationProvider({
                     return
                   }
                   const importToastId = toast.loading(t('skillsMarket.importing', { slug }))
-                  void window.electronAPI.importResources(targetRuntimeWorkspaceId, downloaded.bundle, 'skip')
+                  void window.electronAPI.importResources(
+                    targetRuntimeWorkspaceId, downloaded.bundle, 'skip', { skillScope: 'project' },
+                  )
                     .then(result => {
                       const bucket = result.skills
                       if (bucket.imported.includes(slug)) {

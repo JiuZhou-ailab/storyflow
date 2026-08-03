@@ -1,8 +1,8 @@
 // input: Skills RPC requests routed through a Free or Project Conversation runtime
-// output: Pi-native Skill listings, user creation, safe deletion, and local open actions
+// output: Pi-native Skill listings, exact package export, user creation, safe deletion, and local open actions
 // pos: Server boundary projecting the active project's Pi Skill catalog
 
-import { basename, join } from 'path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
 import { readdirSync, rmSync, statSync } from 'fs'
 import { RPC_CHANNELS, type SkillFile } from '@craft-agent/shared/protocol'
 import { resolveRuntimeWorkspace } from '@craft-agent/shared/workspaces'
@@ -12,6 +12,7 @@ import type { HandlerDeps } from '../handler-deps'
 export const HANDLED_CHANNELS = [
   RPC_CHANNELS.skills.GET,
   RPC_CHANNELS.skills.GET_FILES,
+  RPC_CHANNELS.skills.EXPORT,
   RPC_CHANNELS.skills.CREATE,
   RPC_CHANNELS.skills.DELETE,
   RPC_CHANNELS.skills.OPEN_EDITOR,
@@ -29,7 +30,13 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
     workingDirectory?: string,
   ) => {
     const { loadPiSkillCatalog } = await import('@craft-agent/shared/skills')
-    return loadPiSkillCatalog(workingDirectory || workspace.rootPath)
+    const workspaceRoot = resolve(workspace.rootPath)
+    const catalogCwd = resolve(workingDirectory || workspaceRoot)
+    const relativeCwd = relative(workspaceRoot, catalogCwd)
+    if (relativeCwd.startsWith('..') || isAbsolute(relativeCwd)) {
+      throw new Error('Skill working directory must be inside the workspace')
+    }
+    return loadPiSkillCatalog(catalogCwd)
   }
 
   const findWorkspaceSkill = async (
@@ -101,6 +108,34 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
 
     return scanDirectory(skillDir)
+  })
+
+  server.handle(RPC_CHANNELS.skills.EXPORT, async (
+    _ctx,
+    workspaceId: string,
+    skillSlug: string,
+    workingDirectory?: string,
+  ) => {
+    const workspace = resolveRuntimeWorkspace(workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const catalog = await loadWorkspaceCatalog(workspace, workingDirectory)
+    const skill = catalog.skills.find(candidate => candidate.slug === skillSlug)
+    if (!skill) throw new Error('Skill not found in the resolved Pi catalog')
+    if (skill.origin !== 'top-level') {
+      throw new Error('Packaged Skills must be published by their package owner')
+    }
+
+    const { exportResources } = await import('@craft-agent/shared/resources')
+    const result = exportResources(
+      workspace.rootPath,
+      { skills: [basename(skill.path)] },
+      dirname(skill.path),
+    )
+    if (result.bundle.resources.skills?.length !== 1) {
+      throw new Error(result.warnings[0] ?? 'Skill could not be exported')
+    }
+    return result
   })
 
   server.handle(RPC_CHANNELS.skills.CREATE, async (

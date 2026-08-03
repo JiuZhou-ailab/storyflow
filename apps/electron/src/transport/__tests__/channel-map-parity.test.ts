@@ -35,6 +35,7 @@ type ApiToChannelMapKeys = Exclude<
   | 'signUpClient' // direct IPC to main process — Neon Auth email/password registration
   | 'signInWithFeishuClient' // direct IPC to main process — Feishu OAuth login
   | 'submitFeedbackIssue' // direct IPC to main process — feedback endpoint/GitHub token stay out of renderer
+  | 'publishSkillToMarket' // direct IPC to main process — ephemeral Market token stays out of renderer
   | 'cancelFeishuSignInClient' // direct IPC to main process — cancels pending Feishu OAuth login
   | 'signOutClient' // direct IPC to main process — clears process-local auth state
   | 'onClientAuthStateChanged' // direct IPC listener — cross-window client auth state sync

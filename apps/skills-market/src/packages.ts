@@ -24,6 +24,7 @@ export interface ValidatedMarketBundle {
   sha256: string
   manifest: StoryflowSkillManifest
   skillMarkdown: string
+  files: ReadonlyMap<string, string>
 }
 
 export async function buildSeedBundle(seed: MethodologySeed): Promise<ValidatedMarketBundle> {
@@ -109,9 +110,7 @@ export async function validateMarketBundle(value: string | unknown): Promise<Val
 
   const skillMarkdown = decoded.get('SKILL.md')
   if (!skillMarkdown) throw new Error('SKILL.md is required')
-  if (!new RegExp(`^name:\\s*["']?${escapeRegExp(skill.slug)}["']?\\s*$`, 'm').test(skillMarkdown)) {
-    throw new Error('SKILL.md name must match the package slug')
-  }
+  if (!/^name:\s*.+$/m.test(skillMarkdown)) throw new Error('SKILL.md needs a non-empty name')
   if (!/^description:\s*.+$/m.test(skillMarkdown) || !skillMarkdown.replace(/^---[\s\S]*?---/, '').trim()) {
     throw new Error('SKILL.md needs description frontmatter and a non-empty body')
   }
@@ -130,6 +129,7 @@ export async function validateMarketBundle(value: string | unknown): Promise<Val
     sha256: await sha256Hex(raw),
     manifest,
     skillMarkdown,
+    files: decoded,
   }
 }
 
@@ -210,8 +210,4 @@ function isAllowedTextPath(path: string): boolean {
   if (path.split('/').includes('scripts')) return false
   const dot = path.lastIndexOf('.')
   return dot >= 0 && ALLOWED_TEXT_EXTENSIONS.has(path.slice(dot).toLowerCase())
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

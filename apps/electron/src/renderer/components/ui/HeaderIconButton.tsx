@@ -23,6 +23,7 @@ export const HeaderIconButton = forwardRef<HTMLButtonElement, HeaderIconButtonPr
       <button
         ref={ref}
         type="button"
+        aria-label={tooltip}
         className={cn(
           "header-icon-btn inline-flex items-center justify-center",
           "h-7 w-7 shrink-0 rounded-[4px] titlebar-no-drag",

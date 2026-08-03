@@ -1,8 +1,6 @@
-/**
- * Resources RPC Handlers
- *
- * Handles workspace resource export/import (sources, skills, automations).
- */
+// input: Workspace identity, portable resource bundles, and explicit Skill install scope
+// output: Resource export/import RPCs rooted in the selected project or user Skill store
+// pos: Server-side trust boundary for portable source, Skill, and automation bundles
 
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
@@ -12,6 +10,7 @@ import type { HandlerDeps } from '../handler-deps'
 import type {
   ResourceBundle,
   ResourceImportMode,
+  ResourceImportOptions,
   ExportResourcesOptions,
 } from '@craft-agent/shared/resources'
 
@@ -48,14 +47,28 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
   // Import a resource bundle into a workspace
   server.handle(
     RPC_CHANNELS.resources.IMPORT,
-    async (_ctx, workspaceId: string, bundle: ResourceBundle, mode: ResourceImportMode) => {
+    async (
+      _ctx,
+      workspaceId: string,
+      bundle: ResourceBundle,
+      mode: ResourceImportMode,
+      options: ResourceImportOptions = {},
+    ) => {
       const workspace = getWorkspaceByNameOrId(workspaceId)
       if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
 
+      const hasSkills = Boolean(bundle.resources.skills?.length)
+      if (hasSkills && options.skillScope !== 'project' && options.skillScope !== 'user') {
+        throw new Error('Skill import requires an explicit project or user scope')
+      }
+
       const { importResources } = await import('@craft-agent/shared/resources')
       const { getPiUserSkillsDir } = await import('@craft-agent/shared/skills')
+      const { getWorkspaceSkillsPath } = await import('@craft-agent/shared/workspaces')
       const credManager = getCredentialManager()
-      const skillsRootPath = getPiUserSkillsDir()
+      const skillsRootPath = options.skillScope === 'project'
+        ? getWorkspaceSkillsPath(workspace.rootPath)
+        : getPiUserSkillsDir()
 
       const result = await importResources(workspace.rootPath, bundle, mode, {
         // Clear all credential types for a source slug on overwrite
@@ -89,8 +102,10 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
       for (const slug of result.sources.imported) {
         deps.sessionManager.notifyConfigFileChange(workspace.rootPath, `sources/${slug}/config.json`)
       }
-      for (const slug of result.skills.imported) {
-        deps.sessionManager.notifyConfigFileChange(workspace.rootPath, `.pi/skills/${slug}/SKILL.md`)
+      if (options.skillScope === 'project') {
+        for (const slug of result.skills.imported) {
+          deps.sessionManager.notifyConfigFileChange(workspace.rootPath, `.pi/skills/${slug}/SKILL.md`)
+        }
       }
 
       return result

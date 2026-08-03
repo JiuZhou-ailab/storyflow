@@ -8,6 +8,7 @@ import type {
   ClientAuthBrokerExchangeResult,
   ClientAuthBrokerTokenRefreshInput,
   ClientAuthBrokerTokenRefreshResult,
+  ClientAuthBrokerMarketTokenResult,
   ClientAuthNeonBrokerExchangeInput,
   ClientAuthUser,
   ClientFeishuBrokerAuthConfig,
@@ -18,6 +19,7 @@ const DEFAULT_NEON_BROKER_EXCHANGE_PATH = '/api/client-auth/neon/exchange'
 const DEFAULT_FEISHU_BROKER_CONFIG_PATH = '/api/client-auth/feishu/config'
 const DEFAULT_FEISHU_BROKER_EXCHANGE_PATH = '/api/client-auth/feishu/exchange'
 const DEFAULT_CLIENT_AUTH_TOKEN_PATH = '/api/client-auth/token'
+const DEFAULT_SKILLS_MARKET_TOKEN_PATH = '/api/client-auth/skills-market/token'
 const DEFAULT_AUTH_BROKER_REQUEST_TIMEOUT_MS = 15_000
 
 export function normalizeClientAuthBrokerUrl(value: string): string {
@@ -103,6 +105,29 @@ export class DefaultClientAuthBrokerClient implements ClientAuthBrokerClient {
     return {
       appSessionToken: requireStringValue(body.appSessionToken, 'app session token'),
       modelAccessToken: requireStringValue(body.modelAccessToken, 'model access token'),
+    }
+  }
+
+  async issueSkillsMarketToken(
+    input: ClientAuthBrokerTokenRefreshInput,
+  ): Promise<ClientAuthBrokerMarketTokenResult> {
+    const endpoint = buildBrokerEndpointUrl(input.brokerUrl, DEFAULT_SKILLS_MARKET_TOKEN_PATH)
+    const body = await requestBrokerJson(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${input.appSessionToken}`,
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(this.requestTimeoutMs),
+    }, 'Skills Market token request failed')
+
+    const expiresInSeconds = body.expiresInSeconds
+    if (typeof expiresInSeconds !== 'number' || !Number.isFinite(expiresInSeconds) || expiresInSeconds <= 0) {
+      throw new Error('Auth broker response did not include a valid Skills Market token lifetime')
+    }
+    return {
+      marketPublishToken: requireStringValue(body.marketPublishToken, 'Skills Market publish token'),
+      expiresInSeconds,
     }
   }
 }

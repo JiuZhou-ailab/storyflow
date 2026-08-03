@@ -1,5 +1,5 @@
 // input: Desktop client auth env vars and local auth broker port settings
-// output: Development auth broker for Electron email/Feishu login
+// output: Development auth broker for Electron login, model access, and Skills Market publication
 // pos: Local-only bootstrap script used by electron-dev when desktop auth needs a broker
 
 import { randomBytes } from 'node:crypto'
@@ -132,6 +132,7 @@ if (clientSessionTokenSecret === modelAccessTokenSecret) {
   console.error('[auth-broker-dev] Client-session and model-access signing secrets must be different.')
   process.exit(1)
 }
+const skillsMarketTokenSecret = readEnv('STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET')
 
 const clientAppId = readEnv('CRAFT_CLIENT_FEISHU_APP_ID')
 if (clientAppId && appId && clientAppId !== appId) {
@@ -146,8 +147,11 @@ if (await isHealthy(port)) {
 }
 
 const secret = readEnv('CRAFT_SERVER_TOKEN') ?? randomBytes(24).toString('hex')
-if (secret === clientSessionTokenSecret || secret === modelAccessTokenSecret) {
-  console.error('[auth-broker-dev] CRAFT_SERVER_TOKEN, client-session, and model-access signing secrets must be pairwise distinct.')
+if (
+  skillsMarketTokenSecret
+  && new Set([secret, clientSessionTokenSecret, modelAccessTokenSecret, skillsMarketTokenSecret]).size !== 4
+) {
+  console.error('[auth-broker-dev] CRAFT_SERVER_TOKEN, client-session, model-access, and Skills Market signing secrets must be pairwise distinct.')
   process.exit(1)
 }
 
@@ -172,6 +176,12 @@ const server = await startWebuiHttpServer({
     id: readEnv('STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID') ?? 'current',
     secret: modelAccessTokenSecret,
   },
+  skillsMarketTokenKey: skillsMarketTokenSecret
+    ? {
+        id: readEnv('STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID') ?? 'current',
+        secret: skillsMarketTokenSecret,
+      }
+    : undefined,
   logger: console as any,
 })
 
@@ -181,6 +191,9 @@ if (neonAuth) {
 }
 if (feishuAuth) {
   console.log('[auth-broker-dev] Feishu exchange endpoint: /api/client-auth/feishu/exchange')
+}
+if (skillsMarketTokenSecret) {
+  console.log('[auth-broker-dev] Skills Market token endpoint: /api/client-auth/skills-market/token')
 }
 
 const shutdown = () => {

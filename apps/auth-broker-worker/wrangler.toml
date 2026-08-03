@@ -9,5 +9,6 @@ routes = [
 [vars]
 STORYFLOW_CLIENT_SESSION_JWT_CURRENT_KEY_ID = "client-session-2026-07"
 STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID = "model-access-2026-07"
+STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID = "skills-market-2026-08"
 STORYFLOW_GATEWAY_JWT_AUDIENCE = "storyflow-model-gateway"
 STORYFLOW_GATEWAY_JWT_ISSUER = "storyflow-auth-broker"

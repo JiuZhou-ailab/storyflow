@@ -72,6 +72,7 @@ CLOUDFLARE_API_TOKEN=...
 CLOUDFLARE_PAGES_API_TOKEN=...
 STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET=...
 STORYFLOW_GATEWAY_JWT_CURRENT_SECRET=...
+STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET=...
 ```
 
 `CRAFT_CLIENT_AUTH_BROKER_URL` is the canonical broker variable. The older
@@ -93,8 +94,10 @@ builds should point it at the first-party feedback Worker custom domain, not the
 `workers.dev` deployment URL, because installed desktop clients must not depend
 on Cloudflare's development hostname being reachable from the user's network.
 
-Skill discovery and publishing use the fixed public SkillHub routes in the
-renderer. They are product identity, not release-time environment variables.
+Skill discovery, publication, and installation use the fixed first-party
+Storyflow Skills Market origin. Desktop publication obtains a five-minute
+`skills:publish` capability from the auth broker; the capability is never
+persisted or exposed to renderer code.
 
 ## Auth Broker / Web UI Server
 
@@ -118,24 +121,28 @@ STORYFLOW_CLIENT_SESSION_JWT_PREVIOUS_KEY_ID=
 STORYFLOW_CLIENT_SESSION_JWT_PREVIOUS_SECRET=
 STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID=model-access-2026-07
 STORYFLOW_GATEWAY_JWT_CURRENT_SECRET=...
+STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID=skills-market-2026-08
+STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET=...
 ```
 
 The desktop app asks the broker for public Feishu config and sends OAuth codes
 back to the broker. The Feishu app secret and user allow policy belong on the
 broker side only. After verifying either Feishu or Neon identity, the broker
-returns two independent capabilities:
+returns two independent capabilities and can mint a third one on demand:
 
 - an `appSessionToken` bounded to 30 days from the original authentication,
   signed only with the client-session key, which may request rotated replacement
   tokens without extending that absolute lifetime;
 - a 15-minute `modelAccessToken`, signed with the model-access key, which may
   call the model gateway but cannot mint another token.
+- a five-minute Market publish token, requested only when the user publishes,
+  signed with the Market key and scoped only to `skills:publish`.
 
 The broker requires a new login during the final 15 minutes of the app session,
 so a model capability can never outlive the parent authentication.
 
-The RPC/Web UI secret, client-session secret, and model-access secret must be
-independently generated and must never share a
+The RPC/Web UI secret, client-session secret, model-access secret, and Market
+secret must be independently generated and must never share a
 value. `STORYFLOW_CLIENT_SESSION_JWT_PREVIOUS_*` is used only while rotating
 existing app sessions. Every runtime requires the explicit `CURRENT_*`
 variables; retired unkeyed secret aliases are rejected.

@@ -72,6 +72,26 @@ export interface DownloadedMarketSkill {
   sha256: string
 }
 
+export interface SkillPublicationMetadata {
+  version: string
+  displayName: string
+  summary: string
+  license: string
+  tags?: string[]
+}
+
+export interface SkillMarketPublishInput {
+  bundle: ResourceBundle
+  publication: SkillPublicationMetadata
+}
+
+export interface SkillMarketPublishResult {
+  status: 'published'
+  slug: string
+  version: string
+  sha256: string
+}
+
 export type MarketFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
@@ -95,6 +115,13 @@ export function validateStoryflowSkillManifest(value: unknown): string[] {
   if (!author || typeof author !== 'object' || Array.isArray(author)
     || typeof (author as Record<string, unknown>).name !== 'string') {
     errors.push('author.name is required')
+  }
+  if (manifest.tags !== undefined && (
+    !Array.isArray(manifest.tags)
+    || manifest.tags.length > 12
+    || manifest.tags.some(tag => typeof tag !== 'string' || !tag.trim() || tag.length > 32)
+  )) {
+    errors.push('tags must contain at most 12 non-empty strings of 32 characters or less')
   }
   const contributes = manifest.contributes
   const projectLayout = contributes && typeof contributes === 'object'
@@ -121,6 +148,69 @@ export function validateStoryflowSkillManifest(value: unknown): string[] {
     }
   }
   return errors
+}
+
+/**
+ * Add publication metadata without mutating the local Skill directory. The
+ * Package Slug comes from the exported directory, not from SKILL.md's name.
+ */
+export function prepareMarketSkillBundle(
+  input: SkillMarketPublishInput,
+  author: StoryflowSkillManifest['author'],
+): ResourceBundle {
+  const skills = input.bundle?.resources?.skills
+  if (input.bundle?.version !== 1 || !Array.isArray(skills) || skills.length !== 1) {
+    throw new Error('Publishing requires exactly one exported Skill')
+  }
+  if (input.bundle.resources.sources || input.bundle.resources.automations) {
+    throw new Error('Publishing accepts only one Skill')
+  }
+
+  const skill = skills[0]!
+  const existingFile = skill.files.find(file => file.relativePath === STORYFLOW_SKILL_MANIFEST_FILE)
+  let existing: Partial<StoryflowSkillManifest> = {}
+  if (existingFile) {
+    try {
+      existing = JSON.parse(decodeBundleText(existingFile.contentBase64)) as Partial<StoryflowSkillManifest>
+    } catch {
+      throw new Error(`${STORYFLOW_SKILL_MANIFEST_FILE} must contain valid UTF-8 JSON`)
+    }
+  }
+
+  const manifest: StoryflowSkillManifest = {
+    ...existing,
+    schemaVersion: 1,
+    slug: skill.slug,
+    version: input.publication.version.trim(),
+    displayName: input.publication.displayName.trim(),
+    summary: input.publication.summary.trim(),
+    license: input.publication.license.trim(),
+    author: {
+      name: author.name.trim(),
+      ...(author.url?.trim() ? { url: author.url.trim() } : {}),
+    },
+    tags: [...new Set((input.publication.tags ?? []).map(tag => tag.trim()).filter(Boolean))],
+  }
+  const errors = validateStoryflowSkillManifest(manifest)
+  if (errors.length > 0) throw new Error(`Invalid publication metadata: ${errors.join('; ')}`)
+
+  const content = `${JSON.stringify(manifest, null, 2)}\n`
+  const bytes = new TextEncoder().encode(content)
+  const manifestFile = {
+    relativePath: STORYFLOW_SKILL_MANIFEST_FILE,
+    contentBase64: encodeBase64(bytes),
+    size: bytes.byteLength,
+  }
+  return {
+    ...input.bundle,
+    exportedAt: Date.now(),
+    resources: {
+      skills: [{
+        ...skill,
+        files: [...skill.files.filter(file => file.relativePath !== STORYFLOW_SKILL_MANIFEST_FILE), manifestFile],
+      }],
+    },
+  }
 }
 
 export function isSafeProjectRelativePath(path: string): boolean {
@@ -177,4 +267,18 @@ export async function sha256Hex(value: string | Uint8Array): Promise<string> {
   owned.set(bytes)
   const digest = await crypto.subtle.digest('SHA-256', owned.buffer)
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000))
+  }
+  return btoa(binary)
+}
+
+function decodeBundleText(value: string): string {
+  const binary = atob(value)
+  const bytes = Uint8Array.from(binary, character => character.charCodeAt(0))
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
 }

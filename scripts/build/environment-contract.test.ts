@@ -65,15 +65,15 @@ describe('environment contract', () => {
     expect(advertisedConfig).not.toContain('storyflow-feedback.d1095245867.workers.dev');
   });
 
-  test('keeps SkillHub identity fixed outside the release environment', () => {
+  test('keeps the first-party Skills Market identity fixed outside the release environment', () => {
     const workflow = readRepoFile('.github/workflows/release.yml');
     const docs = readRepoFile('docs/environment.md');
     const envExample = readRepoFile('.env.example');
-    const skillHubSource = readRepoFile('apps/electron/src/renderer/lib/skillhub.ts');
+    const marketSource = readRepoFile('packages/shared/src/skills/marketplace.ts');
 
     expect([workflow, docs, envExample].join('\n'))
       .not.toContain('VITE_STORYFLOW_SKILLS_MARKET_ENABLED');
-    expect(skillHubSource).toContain("SKILLHUB_ORIGIN = 'https://skillhub.cn'");
+    expect(marketSource).toContain("DEFAULT_SKILLS_MARKET_ORIGIN = 'https://storyflow-skills.zjding.com'");
   });
 
   test('keeps feedback Worker deployment on an explicit manual workflow', () => {

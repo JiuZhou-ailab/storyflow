@@ -1,3 +1,7 @@
+// input: Workspace resources, portable bundle content, and caller-selected Skill placement
+// output: ResourceBundle DTOs plus explicit export/import contracts
+// pos: Shared wire model for local and remote resource transfer
+
 /**
  * Resource Bundle Types
  *
@@ -86,6 +90,17 @@ export interface AutomationBundleEntry {
  * - 'overwrite': Replace existing resources with imported ones
  */
 export type ResourceImportMode = 'skip' | 'overwrite'
+
+/** The host-selected destination for imported Agent Skills. */
+export type SkillInstallScope = 'project' | 'user'
+
+/**
+ * Import placement is transport policy, not package metadata. Bundles without
+ * Skills may omit this; callers importing Skills must choose explicitly.
+ */
+export interface ResourceImportOptions {
+  skillScope?: SkillInstallScope
+}
 
 /**
  * Options for resource export.

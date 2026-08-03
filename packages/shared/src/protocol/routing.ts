@@ -382,6 +382,7 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   // skills — skill content per-workspace (not openEditor/openFinder which are local OS)
   RPC_CHANNELS.skills.GET,
   RPC_CHANNELS.skills.GET_FILES,
+  RPC_CHANNELS.skills.EXPORT,
   RPC_CHANNELS.skills.CREATE,
   RPC_CHANNELS.skills.DELETE,
   RPC_CHANNELS.skills.CHANGED,

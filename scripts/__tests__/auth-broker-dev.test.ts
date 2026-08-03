@@ -1,6 +1,6 @@
 // input: Local auth broker dev script and desktop client auth environment
-// output: Regression coverage for email-only local broker startup
-// pos: Guards the Electron dev bootstrap path that supplies managed gateway credentials
+// output: Regression coverage for email-only local broker startup and scoped capabilities
+// pos: Guards the Electron dev bootstrap path that supplies model and Skills Market credentials
 
 import { afterEach, describe, expect, it } from 'bun:test'
 import { createServer } from 'node:net'

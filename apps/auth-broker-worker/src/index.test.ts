@@ -9,6 +9,8 @@ const CLIENT_SESSION_SECRET = 'client-session-secret'
 const MODEL_ACCESS_SECRET = 'broker-signing-secret'
 const CLIENT_SESSION_KEY_ID = 'client-session-2026-07'
 const MODEL_ACCESS_KEY_ID = 'model-access-2026-07'
+const MARKET_SECRET = 'skills-market-secret'
+const MARKET_KEY_ID = 'skills-market-2026-08'
 const PREVIOUS_CLIENT_SESSION_SECRET = 'previous-client-session-secret'
 const PREVIOUS_CLIENT_SESSION_KEY_ID = 'client-session-2026-06'
 
@@ -23,6 +25,8 @@ function makeEnv(overrides: Record<string, string | undefined> = {}) {
     STORYFLOW_CLIENT_SESSION_JWT_CURRENT_KEY_ID: CLIENT_SESSION_KEY_ID,
     STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID: MODEL_ACCESS_KEY_ID,
     STORYFLOW_GATEWAY_JWT_CURRENT_SECRET: MODEL_ACCESS_SECRET,
+    STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID: MARKET_KEY_ID,
+    STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: MARKET_SECRET,
     ...overrides,
   }
 }
@@ -52,6 +56,21 @@ async function verifyModelAccessToken(token: unknown) {
       algorithms: ['HS256'],
       issuer: 'storyflow-auth-broker',
       audience: 'storyflow-model-gateway',
+    },
+  )
+  return payload
+}
+
+async function verifyMarketPublishToken(token: unknown) {
+  expect(typeof token).toBe('string')
+  expect(decodeProtectedHeader(token as string).kid).toBe(MARKET_KEY_ID)
+  const { payload } = await jwtVerify(
+    token as string,
+    new TextEncoder().encode(MARKET_SECRET),
+    {
+      algorithms: ['HS256'],
+      issuer: 'storyflow-auth-broker',
+      audience: 'storyflow-skills-market',
     },
   )
   return payload
@@ -351,6 +370,41 @@ describe('auth broker worker', () => {
     })
   })
 
+  it('issues a five-minute publish capability from a valid client session', async () => {
+    const now = Math.floor(Date.now() / 1000)
+    const appSessionToken = await new SignJWT({
+      scope: 'model:issue',
+      model_tier: 'standard',
+      auth_time: now,
+      user_name: 'Desktop Author',
+    })
+      .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: CLIENT_SESSION_KEY_ID })
+      .setIssuer('storyflow-auth-broker')
+      .setAudience('storyflow-client-auth')
+      .setSubject('neon:author-1')
+      .setIssuedAt(now)
+      .setExpirationTime(now + 2_592_000)
+      .sign(new TextEncoder().encode(CLIENT_SESSION_SECRET))
+
+    const res = await handleRequest(
+      new Request('https://auth.example.com/api/client-auth/skills-market/token', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${appSessionToken}` },
+      }),
+      makeEnv(),
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as Record<string, any>
+    expect(body.expiresInSeconds).toBe(300)
+    const payload = await verifyMarketPublishToken(body.marketPublishToken)
+    expect(payload.sub).toBe('neon:author-1')
+    expect(payload.scopes).toEqual(['skills:publish'])
+    expect(payload.user_name).toBe('Desktop Author')
+    expect(payload).not.toHaveProperty('model_tier')
+    expect((payload.exp as number) - (payload.iat as number)).toBe(300)
+  })
+
   it('does not extend a client session beyond 30 days from authentication', async () => {
     const now = Math.floor(Date.now() / 1000)
     const appSessionToken = await new SignJWT({
@@ -440,5 +494,19 @@ describe('auth broker worker', () => {
     expect(await res.json()).toEqual({
       error: 'Client session and model access tokens require separate signing secrets',
     })
+  })
+
+  it('fails closed when the Skills Market secret is missing or reused', async () => {
+    const missing = await handleRequest(
+      new Request('https://auth.example.com/ready'),
+      makeEnv({ STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: undefined }),
+    )
+    const reused = await handleRequest(
+      new Request('https://auth.example.com/ready'),
+      makeEnv({ STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: MODEL_ACCESS_SECRET }),
+    )
+
+    expect(missing.status).toBe(503)
+    expect(reused.status).toBe(503)
   })
 })

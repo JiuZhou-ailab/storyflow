@@ -270,6 +270,7 @@ const EXPECTED_CHANNELS: string[] = [
   'skills:changed',
   'skills:create',
   'skills:delete',
+  'skills:export',
   'skills:get',
   'skills:getFiles',
   'skills:openEditor',

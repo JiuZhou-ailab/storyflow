@@ -1,12 +1,11 @@
 // input: Skill ownership, local availability, and action callbacks
-// output: Shared local-management, workspace-transfer, and SkillHub publishing menu
+// output: Shared local-management, workspace-transfer, and Skills Market publishing menu
 // pos: Reusable action surface for Skill list and detail views
 
 /**
  * SkillMenu - Shared menu content for skill actions
  *
  * Used by:
- * - SkillsListPanel (dropdown via "..." button, context menu via right-click)
  * - SkillInfoPage (title dropdown menu)
  *
  * Uses MenuComponents context to render with either DropdownMenu or ContextMenu
@@ -15,7 +14,7 @@
  * Provides consistent skill actions:
  * - Open in New Window
  * - Show in file manager
- * - Publish user-owned Skills to SkillHub
+ * - Publish user-owned Skills to Storyflow Skills Market
  * - Delete
  */
 
@@ -45,8 +44,8 @@ export interface SkillMenuProps {
   deleteLabel?: string
   /** Send to another workspace (omit to hide the option) */
   onSendToWorkspace?: () => void
-  /** Publish a locally owned Skill through SkillHub (omit to hide the option) */
-  onPublishToSkillHub?: () => void
+  /** Publish a locally owned Skill through Storyflow's Market (omit to hide) */
+  onPublishToMarket?: () => void
 }
 
 /**
@@ -63,7 +62,7 @@ export function SkillMenu({
   canDelete = true,
   deleteLabel,
   onSendToWorkspace,
-  onPublishToSkillHub,
+  onPublishToMarket,
 }: SkillMenuProps) {
   const { t } = useTranslation()
 
@@ -92,10 +91,10 @@ export function SkillMenu({
         </MenuItem>
       )}
 
-      {onPublishToSkillHub && (
-        <MenuItem onClick={onPublishToSkillHub}>
+      {onPublishToMarket && (
+        <MenuItem onClick={onPublishToMarket}>
           <Upload className="h-3.5 w-3.5" />
-          <span className="flex-1">{t('skillsList.publishToSkillHub', 'Publish to SkillHub')}</span>
+          <span className="flex-1">{t('skillsList.publishToMarket')}</span>
         </MenuItem>
       )}
 

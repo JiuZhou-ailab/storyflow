@@ -103,12 +103,14 @@ export interface ClientAuthBrokerExchangeResult {
 }
 
 export interface ClientAuthBrokerTokenRefreshResult { appSessionToken: string, modelAccessToken: string }
+export interface ClientAuthBrokerMarketTokenResult { marketPublishToken: string, expiresInSeconds: number }
 
 export interface ClientAuthBrokerClient {
   getFeishuAuthConfig?(input: { brokerUrl: string }): Promise<ClientFeishuBrokerPublicConfig | null>
   exchangeNeonToken(input: ClientAuthNeonBrokerExchangeInput): Promise<ClientAuthBrokerExchangeResult>
   exchangeFeishuCode(input: ClientAuthBrokerExchangeInput): Promise<ClientAuthBrokerExchangeResult>
   refreshModelAccessToken(input: ClientAuthBrokerTokenRefreshInput): Promise<ClientAuthBrokerTokenRefreshResult>
+  issueSkillsMarketToken?(input: ClientAuthBrokerTokenRefreshInput): Promise<ClientAuthBrokerMarketTokenResult>
 }
 
 export interface ClientAuthState {
@@ -153,6 +155,8 @@ export interface ClientAuthService {
   getState(): ClientAuthState
   /** Returns a fresh managed-model token, rotating both broker tokens when needed or forced. */
   ensureModelAccessToken(options?: { force?: boolean }): Promise<ClientAuthModelAccessTokenResult>
+  /** Returns an ephemeral publish capability. The token is never persisted. */
+  issueSkillsMarketPublishToken(): Promise<string>
   signIn(input: ClientAuthSignInInput): Promise<ClientAuthUser>
   signUp(input: ClientAuthSignUpInput): Promise<ClientAuthSignUpResult>
   signInWithFeishu(): Promise<ClientAuthUser>
@@ -350,6 +354,22 @@ export function createClientAuthService(
     })
   }
 
+  async function clearRejectedSession(
+    session: ClientAuthSession,
+    generation: number,
+  ): Promise<void> {
+    if (!tokenLifecycle.isCurrent(generation) || currentSession !== session) return
+    const invalidationGeneration = tokenLifecycle.beginTransition()
+    tokenLifecycle.cancelScheduled()
+    await tokenLifecycle.runExclusive(async () => {
+      if (!tokenLifecycle.isCurrent(invalidationGeneration)) return
+      await deps.sessionStore?.clear()
+      if (!tokenLifecycle.isCurrent(invalidationGeneration)) return
+      currentSession = null
+      await notifyAuthChange(true)
+    })
+  }
+
   async function saveNeonSession(
     providerToken: string,
     verifiedUser: ClientAuthUser,
@@ -404,17 +424,7 @@ export function createClientAuthService(
             appSessionToken,
           })
         } catch (error) {
-          if (isRejectedAppSession(error) && tokenLifecycle.isCurrent(generation) && currentSession === session) {
-            const invalidationGeneration = tokenLifecycle.beginTransition()
-            tokenLifecycle.cancelScheduled()
-            await tokenLifecycle.runExclusive(async () => {
-              if (!tokenLifecycle.isCurrent(invalidationGeneration)) return
-              await deps.sessionStore?.clear()
-              if (!tokenLifecycle.isCurrent(invalidationGeneration)) return
-              currentSession = null
-              await notifyAuthChange(true)
-            })
-          }
+          if (isRejectedAppSession(error)) await clearRejectedSession(session, generation)
           throw error
         }
         const nextSession = {
@@ -433,6 +443,28 @@ export function createClientAuthService(
         tokenLifecycle.schedule(nextSession.modelAccessToken)
         return { token: nextSession.modelAccessToken, refreshed: true }
       })
+    },
+
+    async issueSkillsMarketPublishToken(): Promise<string> {
+      const session = currentSession
+      const appSessionToken = readEnv(session?.appSessionToken)
+      if (!session || !authBrokerUrl || !authBrokerClient?.issueSkillsMarketToken || !appSessionToken) {
+        throw new Error('Client authentication is required to publish Skills')
+      }
+      const generation = tokenLifecycle.generation
+      try {
+        const result = await authBrokerClient.issueSkillsMarketToken({
+          brokerUrl: authBrokerUrl,
+          appSessionToken,
+        })
+        if (!tokenLifecycle.isCurrent(generation) || currentSession !== session) {
+          throw new Error('Client auth session changed')
+        }
+        return result.marketPublishToken
+      } catch (error) {
+        if (isRejectedAppSession(error)) await clearRejectedSession(session, generation)
+        throw error
+      }
     },
 
     async signIn(input: ClientAuthSignInInput): Promise<ClientAuthUser> {

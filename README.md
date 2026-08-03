@@ -27,7 +27,7 @@ storyflow/
 │   ├── electron/            # 主桌面应用：main、preload、renderer
 │   ├── feedback-worker/     # 用户反馈入口：截图上传和 GitHub issue 创建
 │   ├── marketing/           # Storyflow 官网和下载入口
-│   ├── skills-market/       # 公共 Skills 市场、贡献审核和不可变包分发
+│   ├── skills-market/       # Skills Market API、AI 审核和不可变包分发
 │   ├── viewer/              # 共享会话记录查看器
 │   └── webui/               # 无头服务端的浏览器客户端
 ├── packages/
@@ -93,8 +93,8 @@ bun run electron:start
 | `bun run webui:dev` | 启动浏览器客户端 |
 | `bun run viewer:dev` | 启动会话查看器 |
 | `bun run marketing:dev` | 启动 Storyflow 官网 landing 页面 |
-| `bun run skills-market:dev` | 启动冻结的旧 ResourceBundle Market 本地适配器 |
-| `bun run skills-market:test` | 验证旧 Market 的兼容目录、包校验与下载 API |
+| `bun run skills-market:dev` | 启动第一方 Skills Market 的本地 API 适配器 |
+| `bun run skills-market:test` | 验证 Market 的目录、发布审核、包校验与下载 API |
 | `bun run typecheck:all` | 对主要 packages 和 apps 做类型检查 |
 | `bun test` | 运行 Bun 测试 |
 | `bun run validate:ci` | 运行更完整的验证套件 |
@@ -222,7 +222,7 @@ bun run apps/cli/src/index.ts run --workspace-dir . "Inspect this repository"
 ## 来源、技能和自动化
 
 - **Sources**：连接 MCP server、REST API、本地文件和服务集成等外部系统；Craft 全局默认保存在 `~/.craft-agent/sources/`（不再写入共享的 `~/.agents/`），工作区内同名配置可覆盖。
-- **Skills**：统一保存在 `~/.craft-agent/skills/`，在所有项目中复用；项目只提供调用时的上下文，公共 Market 负责发现并导入这一全局事实源。
+- **Skills**：由 Pi 从用户级与项目级目录解析；内容创作 Skills 默认安装到当前项目的 `.pi/skills/`，通用工具可由用户显式选择用户级范围。第一方 Skills Market 负责浏览、AI 审核发布、不可变下载与校验安装，但不参与运行时执行。
 - **Automations**：可根据标签、计划任务、工具事件、权限变化和会话生命周期创建或更新会话。
 
 这些系统的大部分共享逻辑位于 `packages/shared/src`，可复用服务端 handler 位于 `packages/server-core/src/handlers/rpc`。

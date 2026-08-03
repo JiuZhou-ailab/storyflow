@@ -19,4 +19,9 @@ describe('SkillInfoPage performance contract', () => {
     expect(skillInfoPageSource).not.toContain('useActiveWorkspace')
     expect(skillInfoPageSource).toContain('canRevealLocally')
   })
+
+  it('returns to the full Skills Hub now that details no longer have a list navigator', () => {
+    expect(skillInfoPageSource).toContain("navigate(routes.view.skills())")
+    expect(skillInfoPageSource).toContain("tooltip={t('common.back')}")
+  })
 })

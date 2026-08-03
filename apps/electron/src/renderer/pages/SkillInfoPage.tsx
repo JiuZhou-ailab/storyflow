@@ -1,5 +1,5 @@
 // input: Pi-native Skill slug, runtime routing id, and AppShell-populated skills atom
-// output: Skill metadata, instructions, permissions, edit actions, and SkillHub publishing
+// output: Skill metadata, instructions, permissions, edit actions, and first-party publishing
 // pos: Detail page for inspecting and maintaining reusable agent skills
 
 import * as React from 'react'
@@ -7,14 +7,15 @@ import { useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import { useCallback } from 'react'
 import { usePlatform } from '@craft-agent/ui'
-import { Check, X, Minus } from 'lucide-react'
+import { ArrowLeft, Check, X, Minus } from 'lucide-react'
 import { getEditConfig } from '@/components/ui/EditPopover'
 import { ResourceEditActions } from '@/components/ui/resource-edit-actions'
 import { toast } from 'sonner'
 import { SkillMenu } from '@/components/app-shell/SkillMenu'
 import { SkillAvatar } from '@/components/ui/skill-avatar'
 import { routes, navigate } from '@/lib/navigate'
-import { SKILLHUB_PUBLISH_URL } from '@/lib/skillhub'
+import { PublishSkillDialog } from '@/components/app-shell/PublishSkillDialog'
+import { HeaderIconButton } from '@/components/ui/HeaderIconButton'
 import { skillsAtom } from '@/atoms/skills'
 import {
   Info_Page,
@@ -26,15 +27,17 @@ import {
 interface SkillInfoPageProps {
   skillSlug: string
   workspaceId: string
+  workspaceRootPath: string
   canRevealLocally?: boolean
 }
 
-export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally = true }: SkillInfoPageProps) {
+export default function SkillInfoPage({ skillSlug, workspaceId, workspaceRootPath, canRevealLocally = true }: SkillInfoPageProps) {
   const { t } = useTranslation()
   const { onOpenFile } = usePlatform()
   const skills = useAtomValue(skillsAtom)
   const skill = skills.find((s) => s.slug === skillSlug) ?? null
   const displayName = skill?.metadata.displayName ?? skill?.metadata.name ?? skillSlug
+  const [publishOpen, setPublishOpen] = React.useState(false)
 
   // Handle open in finder
   const handleOpenInFinder = useCallback(async () => {
@@ -124,6 +127,13 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
     >
       <Info_Page.Header
         title={skillName}
+        leadingAction={(
+          <HeaderIconButton
+            icon={<ArrowLeft className="h-4 w-4" />}
+            tooltip={t('common.back')}
+            onClick={() => navigate(routes.view.skills())}
+          />
+        )}
         titleMenu={
           <SkillMenu
             skillSlug={skillSlug}
@@ -131,8 +141,8 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
             onOpenInNewWindow={handleOpenInNewWindow}
             onShowInFinder={handleOpenInFinder}
             canShowInFinder={canRevealLocally}
-            onPublishToSkillHub={canRevealLocally && canDeleteSkill
-              ? () => window.electronAPI.openUrl(SKILLHUB_PUBLISH_URL)
+            onPublishToMarket={canRevealLocally && canDeleteSkill
+              ? () => setPublishOpen(true)
               : undefined}
             onDelete={canDeleteSkill ? handleDelete : undefined}
             canDelete={canDeleteSkill}
@@ -227,6 +237,13 @@ export default function SkillInfoPage({ skillSlug, workspaceId, canRevealLocally
 
         </Info_Page.Content>
       )}
+      <PublishSkillDialog
+        skill={skill}
+        workspaceId={workspaceId}
+        workspaceRootPath={workspaceRootPath}
+        open={publishOpen}
+        onOpenChange={setPublishOpen}
+      />
     </Info_Page>
   )
 }

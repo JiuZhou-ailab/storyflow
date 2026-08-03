@@ -160,7 +160,6 @@ import {
 } from "@/contexts/NavigationContext"
 import type { SettingsSubpage } from "../../../shared/types"
 import { SourcesListPanel } from "./SourcesListPanel"
-import { AddSkillPopover, SkillsListPanel } from "./SkillsListPanel"
 import { AutomationsListPanel } from "../automations/AutomationsListPanel"
 import { AUTOMATION_TYPE_TO_FILTER_KIND } from "../automations/types"
 import { useAutomations } from "@/hooks/useAutomations"
@@ -1038,13 +1037,16 @@ function AppShellContent({
   // UNIFIED NAVIGATION STATE - single source of truth from NavigationContext
   // Derived from focused panel's route — all panels are peers
   const navState = useNavigationState()
-  // The Activity Rail already owns conversation navigation in these views, so
-  // the hidden legacy navigator must not keep consuming manuscript width.
-  const hideSessionListNavigator = showActivityRail
-    && !isAutoCompact
-    && (
-      isSessionsNavigation(navState)
-      || (isProjectRuntime && isWritingNavigation(navState))
+  // Skills now owns a full-width Hub. Conversation views use the Activity Rail,
+  // so neither surface should keep the legacy navigator consuming content width.
+  const hideSessionListNavigator = isSkillsNavigation(navState)
+    || (
+      showActivityRail
+      && !isAutoCompact
+      && (
+        isSessionsNavigation(navState)
+        || (isProjectRuntime && isWritingNavigation(navState))
+      )
     )
   const visibleSessionListWidth = hideSessionListNavigator ? 0 : sessionListWidth
 
@@ -1397,16 +1399,21 @@ function AppShellContent({
 
   // Subscribe to live skill updates (when skills are added/removed dynamically)
   React.useEffect(() => {
+    let cancelled = false
     const cleanup = window.electronAPI.onSkillsChanged((workspaceId) => {
       if (!activeWorkspaceId || workspaceId !== activeWorkspaceId) return
       invalidateWorkspaceSkillsCache(workspaceId)
       loadSkillsForWorkspace(workspaceId, skillDiscoveryCwdRef.current).then((loaded) => {
-        setSkills(loaded || [])
+        if (!cancelled) setSkills(loaded || [])
       }).catch(err => {
+        if (cancelled) return
         console.error('[Chat] Failed to refresh skills:', err)
       })
     })
-    return cleanup
+    return () => {
+      cancelled = true
+      cleanup()
+    }
   }, [activeWorkspaceId])
 
   // Handle session source selection changes
@@ -1539,12 +1546,6 @@ function AppShellContent({
     if (!activeWorkspaceId) return
     navigateToSource(source.config.slug)
   }, [activeWorkspaceId, navigateToSource])
-
-  // Handle selecting a skill from the list
-  const handleSkillSelect = React.useCallback((skill: LoadedSkill) => {
-    if (!activeWorkspaceId) return
-    navigate(routes.view.skills(skill.slug))
-  }, [activeWorkspaceId, navigate])
 
   // Handle selecting an automation from the list
   const handleAutomationSelect = React.useCallback((automationId: string) => {
@@ -4291,18 +4292,6 @@ function AppShellContent({
     }
   }, [activeWorkspace])
 
-  // Delete Skill
-  const handleDeleteSkill = useCallback(async (skillSlug: string) => {
-    if (!activeWorkspace) return
-    try {
-      await window.electronAPI.deleteSkill(activeWorkspace.id, skillSlug)
-      toast.success(t('toast.deletedSkill', { slug: skillSlug }))
-    } catch (error) {
-      console.error('[Chat] Failed to delete skill:', error)
-      toast.error(t('toast.failedToDeleteSkill'))
-    }
-  }, [activeWorkspace])
-
   // Respond to menu bar "New Chat" trigger
   const menuTriggerRef = useRef(menuNewChatTrigger)
   useEffect(() => {
@@ -5406,19 +5395,6 @@ function AppShellContent({
                       )}
                     />
                   )}
-                  {/* Add Skill opens a scoped Skill Creator conversation. */}
-                  {isSkillsNavigation(navState) && activeWorkspace && (
-                    <AddSkillPopover
-                      workspace={activeWorkspace}
-                      trigger={
-                        <HeaderIconButton
-                          icon={<Plus className="h-4 w-4" />}
-                          tooltip={t("sidebarMenu.addSkill")}
-                          data-tutorial="add-skill-button"
-                        />
-                      }
-                    />
-                  )}
                   {/* Add Automation button (only for automations mode) */}
                   {isAutomationsNavigation(navState) && isProjectRuntime && activeWorkspace && (
                     <EditPopover
@@ -5448,17 +5424,6 @@ function AppShellContent({
                 onSourceClick={handleSourceSelect}
                 selectedSourceSlug={isSourcesNavigation(navState) && navState.details ? navState.details.sourceSlug : null}
                 localMcpEnabled={localMcpEnabled}
-              />
-            )}
-            {isSkillsNavigation(navState) && activeWorkspaceId && (
-              /* Skills List */
-              <SkillsListPanel
-                skills={skills}
-                workspaceId={activeWorkspaceId}
-                activeWorkspace={activeWorkspace}
-                onSkillClick={handleSkillSelect}
-                onDeleteSkill={handleDeleteSkill}
-                selectedSkillSlug={isSkillsNavigation(navState) && navState.details?.type === 'skill' ? navState.details.skillSlug : null}
               />
             )}
             {isAutomationsNavigation(navState) && isProjectRuntime && (
@@ -5542,9 +5507,11 @@ function AppShellContent({
             )}
             </div>
           }
-          navigatorWidth={isAutoCompact
-            ? navigatorPanelWidth
-            : (effectiveSidebarAndNavigatorHidden ? 0 : visibleSessionListWidth)}
+          navigatorWidth={hideSessionListNavigator
+            ? 0
+            : isAutoCompact
+              ? navigatorPanelWidth
+              : (effectiveSidebarAndNavigatorHidden ? 0 : visibleSessionListWidth)}
           navigatorResizeSash={!effectiveSidebarAndNavigatorHidden && !hideSessionListNavigator ? (
             <div
               ref={sessionListHandleRef}

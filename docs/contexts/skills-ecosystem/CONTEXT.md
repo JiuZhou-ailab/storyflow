@@ -8,6 +8,10 @@ The Skills Ecosystem lets people publish reusable experience while Storyflow ret
 The versioned, installable product distributed by the Market into a selected user or project scope. It contains one Agent Skill, optional Workspace Contributions, and publication metadata.
 _Avoid_: Skill, plugin, extension
 
+**Package Slug**:
+The lowercase, stable Market identity used for ownership, versioning, download URLs, and the installed directory. It is independent from the human-facing `name` inside `SKILL.md`.
+_Avoid_: Agent Skill name, display name
+
 **Agent Skill**:
 The Pi-readable method and instructions contained in `SKILL.md`; it influences Agent reasoning and actions but does not directly control Storyflow UI.
 _Avoid_: Plugin, workflow engine
@@ -31,3 +35,23 @@ _Avoid_: UI plugin, sidebar code, host command
 **Skill Market**:
 The catalog and governance boundary for discovering, publishing, versioning, reviewing, and distributing Skill Packages.
 _Avoid_: Runtime, execution host
+
+**Skills Hub**:
+The native Storyflow page that joins the Resolved Skill Catalog with the public Skill Market. It owns browse, search, install, open, create, and publish interactions, but stores neither runtime Skill truth nor Market publication truth.
+_Avoid_: Market website, second Skill catalog
+
+**Skill Submission**:
+One authenticated request to publish an immutable Skill Package version. Invalid or rejected submissions are request outcomes, not durable catalog entities.
+_Avoid_: Draft, review task, pending version
+
+**Automated Review**:
+The admission decision applied after deterministic package validation and before publication. It may reject a package, but it cannot relax package validation or prove a publisher's license claim.
+_Avoid_: Administrator approval, copyright verification
+
+**Published Skill Version**:
+An immutable, content-addressed Skill Package version that passed deterministic validation and Automated Review and is visible in the public catalog.
+_Avoid_: Mutable release, pending package
+
+**Skill Install Scope**:
+The client-owned choice between `project` and `user` placement. A Market package describes content and can never choose its own local install scope.
+_Avoid_: Package target path, registry-controlled path

@@ -19,7 +19,8 @@ import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@cra
 import { registerAllRpcHandlers } from './handlers/index'
 import { registerCoreRpcHandlers, cleanupSessionFileWatchForClient } from '@craft-agent/server-core/handlers/rpc'
 import type { PlatformServices } from '../runtime/platform'
-import { CLIENT_AUTH_IPC_CHANNELS } from '../shared/types'
+import { CLIENT_AUTH_IPC_CHANNELS, SKILLS_MARKET_IPC_CHANNELS } from '../shared/types'
+import type { SkillMarketPublishInput } from '@craft-agent/shared/skills/marketplace'
 import { createElectronPlatform } from './platform'
 import type { HandlerDeps } from './handlers/handler-deps'
 import { bootstrapServer, releaseServerLock } from '@craft-agent/server-core/bootstrap'
@@ -92,6 +93,7 @@ import {
 import { resolveElectronRuntimePaths } from './runtime-paths'
 import { getAppVersion } from '@craft-agent/shared/version'
 import { normalizeFeedbackIssueInput, submitFeedbackIssue } from './feedback'
+import { publishSkillToMarket } from './skills-market-client'
 
 // Initialize electron-log for renderer process support
 log.initialize()
@@ -579,6 +581,16 @@ app.whenReady().then(async () => {
       authService.cancelFeishuSignIn()
     })
     ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.SIGN_OUT, () => authService.signOut())
+    ipcMain.handle(SKILLS_MARKET_IPC_CHANNELS.PUBLISH, async (_event, input: SkillMarketPublishInput) => {
+      const user = authService.getState().user
+      if (!user) throw new Error('Sign in before publishing a Skill')
+      const token = await authService.issueSkillsMarketPublishToken()
+      return publishSkillToMarket(input, {
+        author: { name: user.name ?? user.email ?? user.userId },
+        token,
+        fetchImpl: (url, init) => net.fetch(url instanceof URL ? url.toString() : url, init),
+      })
+    })
     ipcMain.handle('feedback:submitIssue', async (_event, input: unknown) => {
       return submitFeedbackIssue(normalizeFeedbackIssueInput(input), {
         fetch: (url, init) => net.fetch(url, init),

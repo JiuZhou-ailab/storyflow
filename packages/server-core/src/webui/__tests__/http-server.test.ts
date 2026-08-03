@@ -17,6 +17,8 @@ const CLIENT_SESSION_SECRET = 'test-client-session-secret'
 const CLIENT_SESSION_KEY_ID = 'client-current'
 const MODEL_ACCESS_SECRET = 'test-model-access-secret'
 const MODEL_ACCESS_KEY_ID = 'model-current'
+const SKILLS_MARKET_SECRET = 'test-skills-market-secret'
+const SKILLS_MARKET_KEY_ID = 'market-current'
 const PASSWORD = 'test-password'
 const TEMP_DIRS: string[] = []
 const SERVERS: Array<{ stop: () => void }> = []
@@ -47,6 +49,7 @@ async function createServer(overrides?: {
   passwordAuthEnabled?: boolean
   clientSessionTokenSecret?: string | null
   modelAccessTokenSecret?: string | null
+  skillsMarketTokenSecret?: string | null
 }) {
   const webuiDir = createTestWebuiDir()
   const server = await startWebuiHttpServer({
@@ -76,6 +79,12 @@ async function createServer(overrides?: {
       : {
           id: MODEL_ACCESS_KEY_ID,
           secret: overrides?.modelAccessTokenSecret ?? MODEL_ACCESS_SECRET,
+        },
+    skillsMarketTokenKey: overrides?.skillsMarketTokenSecret === null
+      ? undefined
+      : {
+          id: SKILLS_MARKET_KEY_ID,
+          secret: overrides?.skillsMarketTokenSecret ?? SKILLS_MARKET_SECRET,
         },
   })
 
@@ -906,6 +915,37 @@ describe('startWebuiHttpServer', () => {
     expect(appSession.exp).toBe(loginSession.exp)
     const modelAccess = await verifyModelAccessToken(refreshedBody.modelAccessToken)
     expect(modelAccess.sub).toBe('neon:neon_user_123')
+  })
+
+  it('issues an isolated five-minute Skills Market publish capability', async () => {
+    const { baseUrl } = await createServer({ neonAuth: createNeonAuthConfig() })
+    const login = await fetch(`${baseUrl}/api/client-auth/neon/exchange`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer valid-neon-token' },
+    })
+    const loginBody = await login.json() as Record<string, unknown>
+
+    const issued = await fetch(`${baseUrl}/api/client-auth/skills-market/token`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${loginBody.appSessionToken}` },
+    })
+
+    expect(issued.status).toBe(200)
+    const body = await issued.json() as Record<string, unknown>
+    expect(body.expiresInSeconds).toBe(300)
+    const { payload } = await jwtVerify(
+      body.marketPublishToken as string,
+      new TextEncoder().encode(SKILLS_MARKET_SECRET),
+      {
+        algorithms: ['HS256'],
+        issuer: 'storyflow-auth-broker',
+        audience: 'storyflow-skills-market',
+      },
+    )
+    expect(payload.sub).toBe('neon:neon_user_123')
+    expect(payload.scopes).toEqual(['skills:publish'])
+    expect((payload.exp ?? 0) - (payload.iat ?? 0)).toBe(300)
+    expect(payload.model_tier).toBeUndefined()
   })
 
   it('rejects refresh after the absolute client-session lifetime', async () => {

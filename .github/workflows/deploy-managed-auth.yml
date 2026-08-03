@@ -1,5 +1,5 @@
-# input: Cloudflare credentials and separate client-session/model-access signing secrets
-# output: Deployed managed-auth Workers plus live negative and end-to-end positive canaries
+# input: Cloudflare credentials and separate client-session/model-access/Market signing secrets
+# output: Deployed managed-auth Workers plus live negative and scoped capability canaries
 # pos: Reusable production gate that publishes the model gateway before the auth broker
 name: Deploy managed auth
 
@@ -11,6 +11,8 @@ on:
       STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET:
         required: true
       STORYFLOW_GATEWAY_JWT_CURRENT_SECRET:
+        required: true
+      STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET:
         required: true
   workflow_dispatch:
 
@@ -30,6 +32,7 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}
       STORYFLOW_GATEWAY_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_GATEWAY_JWT_CURRENT_SECRET }}
+      STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET }}
 
     steps:
       - name: Checkout
@@ -46,11 +49,14 @@ jobs:
       - name: Verify deployment inputs
         run: |
           set -euo pipefail
-          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET STORYFLOW_GATEWAY_JWT_CURRENT_SECRET; do
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET STORYFLOW_GATEWAY_JWT_CURRENT_SECRET STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET; do
             test -n "${!name}" || { echo "Missing $name"; exit 1; }
           done
           test "$STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET" != "$STORYFLOW_GATEWAY_JWT_CURRENT_SECRET" \
             || { echo "Client-session and model-access secrets must differ"; exit 1; }
+          test "$STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET" != "$STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET" \
+            && test "$STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET" != "$STORYFLOW_GATEWAY_JWT_CURRENT_SECRET" \
+            || { echo "Skills Market signing secret must be independent"; exit 1; }
 
       - name: Test managed auth contract
         run: |
@@ -86,6 +92,9 @@ jobs:
                 --config apps/auth-broker-worker/wrangler.toml >/dev/null
           printf '%s' "$STORYFLOW_GATEWAY_JWT_CURRENT_SECRET" \
             | bunx wrangler@4.114.0 secret put STORYFLOW_GATEWAY_JWT_CURRENT_SECRET \
+                --config apps/auth-broker-worker/wrangler.toml >/dev/null
+          printf '%s' "$STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET" \
+            | bunx wrangler@4.114.0 secret put STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET \
                 --config apps/auth-broker-worker/wrangler.toml >/dev/null
           bunx wrangler@4.114.0 deploy --config apps/auth-broker-worker/wrangler.toml
 
@@ -134,4 +143,21 @@ jobs:
           MODEL_CATALOG_RESPONSE_PATH="$RUNNER_TEMP/model-catalog-response.json" bun --eval '
             const body = await Bun.file(process.env.MODEL_CATALOG_RESPONSE_PATH).json();
             if (!Array.isArray(body.data) || body.data.length === 0) process.exit(1);
+          '
+
+          status="$(curl --silent --show-error --output "$RUNNER_TEMP/market-token-response.json" \
+            --write-out '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bearer $APP_SESSION_TOKEN" \
+            https://storyflow-auth.zjding.com/api/client-auth/skills-market/token)"
+          test "$status" = 200
+          MARKET_TOKEN_RESPONSE_PATH="$RUNNER_TEMP/market-token-response.json" bun --eval '
+            import { jwtVerify } from "jose";
+            const body = await Bun.file(process.env.MARKET_TOKEN_RESPONSE_PATH).json();
+            const { payload } = await jwtVerify(
+              body.marketPublishToken,
+              new TextEncoder().encode(process.env.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET),
+              { issuer: "storyflow-auth-broker", audience: "storyflow-skills-market" },
+            );
+            if (body.expiresInSeconds !== 300 || !payload.scopes?.includes("skills:publish")) process.exit(1);
           '

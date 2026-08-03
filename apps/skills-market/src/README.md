@@ -1,3 +1,3 @@
 # Worker source
 
-`catalog.ts` curates methods; `packages.ts` builds and validates bundles; `index.ts` owns HTTP/D1/R2; `local-dev.ts` adapts it to Bun; `*.test.ts` lock the public contract.
+`catalog.ts` curates methods; `packages.ts` validates bundles; `review.ts` owns automated admission; `index.ts` owns the API/bearer/D1/R2 boundary; `local-dev.ts` adapts the API to Bun; `*.test.ts` lock the contract.

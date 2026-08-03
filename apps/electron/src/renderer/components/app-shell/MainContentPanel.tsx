@@ -43,11 +43,12 @@ import {
 } from '@/contexts/NavigationContext'
 import { useSessionSelection, useIsMultiSelectActive, useSelectedIds, useSelectedSessionMetas, useSelectionCount } from '@/hooks/useSession'
 import { routes } from '@/lib/navigate'
-import { sourceSelection, skillSelection, automationSelection } from '@/hooks/useEntitySelection'
+import { sourceSelection, automationSelection } from '@/hooks/useEntitySelection'
 import { extractLabelId } from '@craft-agent/shared/labels'
 import type { SessionStatusId } from '@/config/session-status-config'
 import SourceInfoPage from '@/pages/SourceInfoPage'
 import SkillInfoPage from '@/pages/SkillInfoPage'
+import SkillsHubPage from '@/pages/SkillsHubPage'
 import { getSettingsPageComponent } from '@/pages/settings/settings-pages'
 import { AutomationInfoPage } from '../automations/AutomationInfoPage'
 import type { ExecutionEntry } from '../automations/types'
@@ -137,12 +138,6 @@ export function MainContentPanel({
   const sourceSelectionCount = sourceSelection.useSelectionCount()
   const selectedSourceIds = sourceSelection.useSelectedIds()
   const { clearMultiSelect: clearSourceSelection } = sourceSelection.useSelection()
-
-  // Skill multi-select state
-  const isSkillMultiSelectActive = skillSelection.useIsMultiSelectActive()
-  const skillSelectionCount = skillSelection.useSelectionCount()
-  const selectedSkillIds = skillSelection.useSelectedIds()
-  const { clearMultiSelect: clearSkillSelection } = skillSelection.useSelection()
 
   // Automation multi-select state
   const isAutomationMultiSelectActive = automationSelection.useIsMultiSelectActive()
@@ -245,37 +240,24 @@ export function MainContentPanel({
     )
   }
 
-  // Skills navigator - show skill info, multi-select panel, or empty state
+  // Skills uses one full-width native Hub with a dedicated detail route.
   if (isSkillsNavigation(navState)) {
-    if (isSkillMultiSelectActive) {
-      return wrapWithStoplight(
-        <Panel variant="grow" className={className}>
-          <MultiSelectPanel
-            count={skillSelectionCount}
-            entityType="skill"
-            onSendToWorkspace={hasOtherWorkspaces ? () => openSendDialog('skill', selectedSkillIds) : undefined}
-            onClearSelection={clearSkillSelection}
-          />
-        </Panel>
-      )
-    }
     if (navState.details?.type === 'skill') {
       return wrapWithStoplight(
         <Panel variant="grow" className={className}>
           <SkillInfoPage
             skillSlug={navState.details.skillSlug}
             workspaceId={activeWorkspaceId || ''}
+            workspaceRootPath={activeWorkspace?.rootPath ?? ''}
             canRevealLocally={!activeWorkspace?.remoteWorkspaceId}
           />
         </Panel>
       )
     }
-    // No skill selected - empty state
+    // The bare Skills route is the native discovery and management surface.
     return wrapWithStoplight(
       <Panel variant="grow" className={className}>
-        <div className="flex items-center justify-center h-full text-muted-foreground">
-          <p className="text-sm">{t("skillsList.noSkillsConfigured")}</p>
-        </div>
+        <SkillsHubPage />
       </Panel>
     )
   }

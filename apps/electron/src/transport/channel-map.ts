@@ -255,6 +255,7 @@ export const CHANNEL_MAP = {
   // Skills
   getSkills: invoke(RPC_CHANNELS.skills.GET),
   getSkillFiles: invoke(RPC_CHANNELS.skills.GET_FILES),
+  exportSkill: invoke(RPC_CHANNELS.skills.EXPORT),
   createSkill: invoke(RPC_CHANNELS.skills.CREATE),
   deleteSkill: invoke(RPC_CHANNELS.skills.DELETE),
   openSkillInEditor: invoke(RPC_CHANNELS.skills.OPEN_EDITOR),

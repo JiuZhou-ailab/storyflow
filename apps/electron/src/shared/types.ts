@@ -218,6 +218,11 @@ export const CLIENT_AUTH_IPC_CHANNELS = {
   STATE_CHANGED: 'client-auth:state-changed',
 } as const
 
+/** Desktop-local because the short-lived publish capability must stay in main. */
+export const SKILLS_MARKET_IPC_CHANNELS = {
+  PUBLISH: 'skills-market:publish',
+} as const
+
 export interface ClientAuthUser {
   provider: 'neon' | 'feishu'
   userId: string
@@ -622,6 +627,8 @@ export interface ElectronAPI {
   // Skills
   getSkills(workspaceId: string, workingDirectory?: string): Promise<LoadedSkill[]>
   getSkillFiles?(workspaceId: string, skillSlug: string): Promise<SkillFile[]>
+  exportSkill(workspaceId: string, skillSlug: string, workingDirectory?: string): Promise<ExportResult>
+  publishSkillToMarket(input: import('@craft-agent/shared/skills/marketplace').SkillMarketPublishInput): Promise<import('@craft-agent/shared/skills/marketplace').SkillMarketPublishResult>
   createSkill(workspaceId: string, skillSlug: string, content: string): Promise<LoadedSkill>
   deleteSkill(workspaceId: string, skillSlug: string): Promise<void>
   openSkillInEditor(workspaceId: string, skillSlug: string): Promise<void>
@@ -794,7 +801,7 @@ export interface ElectronAPI {
 
   // Resources (cross-workspace export/import)
   exportResources(workspaceId: string, options: ExportResourcesOptions): Promise<ExportResult>
-  importResources(workspaceId: string, bundle: ResourceBundle, mode: ResourceImportMode): Promise<ResourceImportResult>
+  importResources(workspaceId: string, bundle: ResourceBundle, mode: ResourceImportMode, options?: import('@craft-agent/shared/resources').ResourceImportOptions): Promise<ResourceImportResult>
 
   // Messaging gateway — workspaceId is taken from the client handshake (ctx.workspaceId)
   getMessagingConfig(): Promise<{

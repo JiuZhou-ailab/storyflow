@@ -123,6 +123,25 @@ describe('DefaultClientAuthBrokerClient', () => {
     })).rejects.toThrow('Auth broker is unreachable')
   })
 
+  it('requests a short-lived Skills Market capability with the app session', async () => {
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      expect(input.toString()).toBe('https://auth.storyflow.example.com/api/client-auth/skills-market/token')
+      expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer app-session-token')
+      return Response.json({
+        ok: true,
+        marketPublishToken: 'market-publish-token',
+        expiresInSeconds: 300,
+      })
+    }) as unknown as typeof fetch
+
+    const result = await new DefaultClientAuthBrokerClient().issueSkillsMarketToken({
+      brokerUrl: 'https://auth.storyflow.example.com',
+      appSessionToken: 'app-session-token',
+    })
+
+    expect(result).toEqual({ marketPublishToken: 'market-publish-token', expiresInSeconds: 300 })
+  })
+
   it('clears only broker-rejected app sessions during refresh', async () => {
     const makeService = (clear: () => void) => createClientAuthService({
       required: true,

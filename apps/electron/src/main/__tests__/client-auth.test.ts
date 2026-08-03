@@ -625,6 +625,37 @@ describe('client auth', () => {
     expect(cancelCount).toBe(2)
   })
 
+  it('issues a Skills Market token without persisting the capability', async () => {
+    const savedSessions: unknown[] = []
+    const broker: ClientAuthBrokerClient = {
+      ...unusedBrokerMethods,
+      issueSkillsMarketToken: async (input) => {
+        expect(input).toEqual({
+          brokerUrl: 'https://auth.storyflow.example.com',
+          appSessionToken: 'app-session-token',
+        })
+        return { marketPublishToken: 'market-publish-token', expiresInSeconds: 300 }
+      },
+    }
+    const service = createClientAuthService({
+      required: true,
+      authBrokerUrl: 'https://auth.storyflow.example.com',
+    }, {
+      createAuthBrokerClient: () => broker,
+      initialSession: {
+        user: { provider: 'neon', userId: 'user-1' },
+        appSessionToken: 'app-session-token',
+      },
+      sessionStore: {
+        save: async session => { savedSessions.push(session) },
+        clear: async () => {},
+      },
+    })
+
+    expect(await service.issueSkillsMarketPublishToken()).toBe('market-publish-token')
+    expect(savedSessions).toEqual([])
+  })
+
   it('does not let a fresh non-force preflight swallow a forced gateway retry', async () => {
     const now = Date.UTC(2026, 6, 27)
     const freshToken = modelToken(now + 15 * 60 * 1000)

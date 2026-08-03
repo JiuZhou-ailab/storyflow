@@ -21,7 +21,6 @@ const sessionListContextSource = readFileSync(new URL('../../../context/SessionL
 const focusContextSource = readFileSync(new URL('../../../context/FocusContext.tsx', import.meta.url), 'utf-8')
 const escapeInterruptContextSource = readFileSync(new URL('../../../context/EscapeInterruptContext.tsx', import.meta.url), 'utf-8')
 const useSessionSource = readFileSync(new URL('../../../hooks/useSession.ts', import.meta.url), 'utf-8')
-const skillsListPanelSource = readFileSync(new URL('../SkillsListPanel.tsx', import.meta.url), 'utf-8')
 const sourcesListPanelSource = readFileSync(new URL('../SourcesListPanel.tsx', import.meta.url), 'utf-8')
 
 describe('session item subscriptions', () => {
@@ -98,18 +97,6 @@ describe('session item subscriptions', () => {
     expect(sessionListSource).not.toContain('hasPendingPrompt?:')
     expect(sessionListContextSource).not.toContain('hasPendingPrompt')
     expect(sessionItemSource).toContain('useAtomValue(hasPendingPromptAtomFamily(item.id))')
-  })
-
-  it('keeps the skills list off broad app shell context subscriptions', () => {
-    const skillsListCall = appShellSource.slice(
-      appShellSource.indexOf('<SkillsListPanel'),
-      appShellSource.indexOf('/>', appShellSource.indexOf('<SkillsListPanel'))
-    )
-
-    expect(skillsListPanelSource).not.toContain('useAppShellContext')
-    expect(skillsListPanelSource).not.toContain('useActiveWorkspace')
-    expect(skillsListCall).toContain('activeWorkspace={activeWorkspace}')
-    expect(skillsListCall).not.toContain('workspaces={workspaces}')
   })
 
   it('keeps the sources list off broad app shell context subscriptions', () => {

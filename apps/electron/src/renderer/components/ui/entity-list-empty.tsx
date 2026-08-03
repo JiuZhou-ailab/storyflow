@@ -2,7 +2,7 @@
  * EntityListEmptyScreen — Unified empty state for entity lists.
  *
  * Wraps the Empty primitives into a single configurable component
- * used by SessionList, SourcesListPanel, and SkillsListPanel.
+ * used by SessionList and SourcesListPanel.
  */
 
 import * as React from 'react'

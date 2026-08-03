@@ -100,7 +100,7 @@ describe('project default navigation', () => {
     // cross-domain delegates to the runtime-switch primitive.
     expect(appShellSource).toContain('if (workspaceId === activeWorkspaceId)')
     expect(appShellSource).toContain('await onSelectProjectSession(workspaceId, sessionId)')
-    expect(appShellSource).toContain('const hideSessionListNavigator = showActivityRail')
+    expect(appShellSource).toContain('const hideSessionListNavigator = isSkillsNavigation(navState)')
     expect(appShellSource).toContain('isProjectRuntime && isWritingNavigation(navState)')
     expect(appShellSource).toContain('isSessionsNavigation(navState) && (!showActivityRail || isAutoCompact)')
     // The manuscript owns a column outright rather than borrowing the navigator,
@@ -193,10 +193,19 @@ describe('project default navigation', () => {
     expect(appShellSource).toContain('useNavigationActions')
   })
 
-  it('revalidates the runtime route captured by a delayed global Skill install confirmation', () => {
+  it('revalidates the runtime route captured by a delayed project Skill install confirmation', () => {
     expect(navigationContextSource).toContain('const targetRuntimeWorkspaceId = workspaceId')
     expect(navigationContextSource).toContain('runtimeWorkspaceRouteRef.current !== targetRuntimeWorkspaceId')
-    expect(navigationContextSource).toContain('importResources(targetRuntimeWorkspaceId, downloaded.bundle')
+    expect(navigationContextSource).toContain('targetRuntimeWorkspaceId, downloaded.bundle')
+    expect(navigationContextSource).toContain("{ skillScope: 'project' }")
     expect(navigationContextSource).not.toContain('importResources(workspaceId, downloaded.bundle')
+  })
+
+  it('keeps the bare Skills route as the native Hub instead of selecting the first local Skill', () => {
+    expect(navigationContextSource).not.toContain('// Skills: auto-select first skill')
+    expect(navigationContextSource).not.toContain('getFirstSkillSlug')
+    expect(appShellSource).toContain('const hideSessionListNavigator = isSkillsNavigation(navState)')
+    expect(appShellSource).toContain('navigatorWidth={hideSessionListNavigator')
+    expect(mainContentPanelSource).toContain('<SkillsHubPage')
   })
 })

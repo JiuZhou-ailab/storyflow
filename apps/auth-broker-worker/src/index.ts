@@ -1,5 +1,5 @@
 // input: Desktop client-auth exchange requests and Feishu/Neon identity provider responses
-// output: Public auth config, verified desktop identity, renewable client session, and short-lived model access JWT
+// output: Public auth config, verified desktop identity, renewable client session, and scoped short-lived capability JWTs
 // pos: HTTPS auth broker for packaged desktop login without shipping server secrets
 import { createRemoteJWKSet, customFetch, decodeProtectedHeader, jwtVerify, SignJWT, type JWTPayload } from 'jose'
 
@@ -26,6 +26,8 @@ export interface Env {
   STORYFLOW_GATEWAY_JWT_PREVIOUS_SECRET?: string
   STORYFLOW_GATEWAY_JWT_AUDIENCE?: string
   STORYFLOW_GATEWAY_JWT_ISSUER?: string
+  STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID?: string
+  STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET?: string
 }
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
@@ -60,9 +62,11 @@ const DEFAULT_FEISHU_API_BASE_URL = 'https://open.feishu.cn'
 const DEFAULT_GATEWAY_AUDIENCE = 'storyflow-model-gateway'
 const DEFAULT_GATEWAY_ISSUER = 'storyflow-auth-broker'
 const DEFAULT_CLIENT_SESSION_AUDIENCE = 'storyflow-client-auth'
+const DEFAULT_SKILLS_MARKET_AUDIENCE = 'storyflow-skills-market'
 const DEFAULT_CURRENT_KEY_ID = 'current'
 const CLIENT_SESSION_TOKEN_TTL_SECONDS = 2_592_000
 const MODEL_ACCESS_TOKEN_TTL_SECONDS = 900
+const SKILLS_MARKET_TOKEN_TTL_SECONDS = 300
 
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
@@ -123,6 +127,10 @@ export async function handleRequest(
 
   if (url.pathname === '/api/client-auth/token' && request.method === 'POST') {
     return refreshClientAuthToken(request, env)
+  }
+
+  if (url.pathname === '/api/client-auth/skills-market/token' && request.method === 'POST') {
+    return issueSkillsMarketToken(request, env)
   }
 
   return Response.json({ error: 'Not found' }, { status: 404 })
@@ -288,9 +296,34 @@ async function refreshClientAuthToken(request: Request, env: Env): Promise<Respo
   }
 }
 
+async function issueSkillsMarketToken(request: Request, env: Env): Promise<Response> {
+  const configError = getSkillsMarketTokenConfigError(env)
+  if (configError) return Response.json({ error: configError }, { status: 503 })
+
+  const token = readBearerToken(request.headers.get('authorization'))
+  if (!token) return invalidClientSessionResponse()
+
+  try {
+    const session = await verifyClientSessionToken(token, env, SKILLS_MARKET_TOKEN_TTL_SECONDS)
+    return Response.json({
+      ok: true,
+      marketPublishToken: await createSkillsMarketPublishToken(
+        env,
+        session.subject,
+        session.userName,
+        session.authenticatedAtSeconds + CLIENT_SESSION_TOKEN_TTL_SECONDS,
+      ),
+      expiresInSeconds: SKILLS_MARKET_TOKEN_TTL_SECONDS,
+    })
+  } catch {
+    return invalidClientSessionResponse()
+  }
+}
+
 async function verifyClientSessionToken(
   token: string,
   env: Env,
+  minimumRemainingSeconds = MODEL_ACCESS_TOKEN_TTL_SECONDS,
 ): Promise<{
   subject: string
   modelTier: 'standard' | 'pro'
@@ -330,7 +363,7 @@ async function verifyClientSessionToken(
     typeof authenticatedAtSeconds !== 'number'
     || !Number.isFinite(authenticatedAtSeconds)
     || authenticatedAtSeconds > nowSeconds + 60
-    || expiresAtSeconds <= nowSeconds + MODEL_ACCESS_TOKEN_TTL_SECONDS
+    || expiresAtSeconds <= nowSeconds + minimumRemainingSeconds
   ) {
     throw new Error('Client session authentication time is invalid')
   }
@@ -426,6 +459,34 @@ async function createModelAccessToken(
     .sign(new TextEncoder().encode(key.secret))
 }
 
+async function createSkillsMarketPublishToken(
+  env: Env,
+  subject: string,
+  userName?: string,
+  parentExpiresAtSeconds?: number,
+): Promise<string> {
+  const key = getCurrentSkillsMarketKey(env)
+  if (!key) throw new Error('Skills Market token signing is not configured')
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  const expiresAtSeconds = Math.min(
+    nowSeconds + SKILLS_MARKET_TOKEN_TTL_SECONDS,
+    parentExpiresAtSeconds ?? Number.POSITIVE_INFINITY,
+  )
+  if (expiresAtSeconds <= nowSeconds) throw new Error('Client session has reached its maximum lifetime')
+
+  return new SignJWT({
+    scopes: ['skills:publish'],
+    ...(userName ? { user_name: userName } : {}),
+  })
+    .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: key.id })
+    .setIssuer(DEFAULT_GATEWAY_ISSUER)
+    .setAudience(DEFAULT_SKILLS_MARKET_AUDIENCE)
+    .setSubject(subject)
+    .setIssuedAt(nowSeconds)
+    .setExpirationTime(expiresAtSeconds)
+    .sign(new TextEncoder().encode(key.secret))
+}
+
 function getTokenIssuanceConfigError(env: Env): string | null {
   const clientSessionKey = getCurrentClientSessionKey(env)
   const modelAccessKey = getCurrentModelAccessKey(env)
@@ -443,6 +504,8 @@ function getTokenIssuanceConfigError(env: Env): string | null {
 function getBrokerReadinessError(env: Env): string | null {
   const tokenError = getTokenIssuanceConfigError(env)
   if (tokenError) return tokenError
+  const marketTokenError = getSkillsMarketTokenConfigError(env)
+  if (marketTokenError) return marketTokenError
 
   const hasFeishu = !!readString(env.CRAFT_WEBUI_FEISHU_APP_ID)
     && !!readString(env.CRAFT_WEBUI_FEISHU_APP_SECRET)
@@ -480,6 +543,30 @@ function getCurrentModelAccessKey(env: Env): { id: string, secret: string } | nu
     id: readString(env.STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID) ?? DEFAULT_CURRENT_KEY_ID,
     secret,
   }
+}
+
+function getCurrentSkillsMarketKey(env: Env): { id: string, secret: string } | null {
+  const secret = readString(env.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET)
+  if (!secret) return null
+  return {
+    id: readString(env.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID) ?? DEFAULT_CURRENT_KEY_ID,
+    secret,
+  }
+}
+
+function getSkillsMarketTokenConfigError(env: Env): string | null {
+  const clientSessionKey = getCurrentClientSessionKey(env)
+  const modelAccessKey = getCurrentModelAccessKey(env)
+  const marketKey = getCurrentSkillsMarketKey(env)
+  if (!marketKey) return 'Skills Market token signing is not configured'
+  if (
+    marketKey.secret === clientSessionKey?.secret
+    || marketKey.secret === modelAccessKey?.secret
+    || marketKey.secret === getPreviousClientSessionKey(env)?.secret
+  ) {
+    return 'Client session, model access, and Skills Market tokens require separate signing secrets'
+  }
+  return null
 }
 
 function normalizeFeishuUser(raw: Record<string, unknown>): FeishuUserInfo {

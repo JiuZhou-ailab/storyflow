@@ -6,6 +6,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   buildSkillInstallDeepLink,
   downloadMarketSkillBundle,
+  prepareMarketSkillBundle,
   sha256Hex,
   validateStoryflowSkillManifest,
 } from '../marketplace.ts'
@@ -53,5 +54,41 @@ describe('Skills Market contract', () => {
       { slug: 'scene-sequel', version: '1.0.0', sha256: 'b'.repeat(64) },
       { fetchImpl: async () => new Response(raw) },
     )).rejects.toThrow('checksum')
+  })
+
+  test('adds publication metadata without conflating package slug and Skill name', () => {
+    const skillMarkdown = '---\nname: 剧情因果审查\ndescription: 审查故事因果\n---\n\n正文\n'
+    const bytes = new TextEncoder().encode(skillMarkdown)
+    const bundle = prepareMarketSkillBundle({
+      bundle: {
+        version: 1,
+        exportedAt: 1,
+        resources: { skills: [{
+          slug: 'plot-causality-audit',
+          files: [{
+            relativePath: 'SKILL.md',
+            contentBase64: Buffer.from(bytes).toString('base64'),
+            size: bytes.byteLength,
+          }],
+        }] },
+      },
+      publication: {
+        version: '1.0.0',
+        displayName: '剧情因果审查',
+        summary: '审查故事因果链',
+        license: 'CC-BY-4.0',
+        tags: ['写作', '写作'],
+      },
+    }, { name: '作者' })
+
+    const packagedSkill = bundle.resources.skills?.[0]
+    const manifestFile = packagedSkill?.files.find(file => file.relativePath === 'storyflow.json')
+    expect(packagedSkill?.slug).toBe('plot-causality-audit')
+    expect(manifestFile).toBeDefined()
+    expect(JSON.parse(Buffer.from(manifestFile!.contentBase64, 'base64').toString('utf8'))).toMatchObject({
+      slug: 'plot-causality-audit',
+      author: { name: '作者' },
+      tags: ['写作'],
+    })
   })
 })

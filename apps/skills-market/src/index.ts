@@ -1,6 +1,6 @@
-// input: Public catalog requests, Access-authenticated submissions, D1 metadata, and private R2 packages
-// output: Skills Market webpage assets, catalog APIs, immutable bundles, and moderated contributions
-// pos: Single Cloudflare Worker boundary; it distributes Skills but never executes them
+// input: Public catalog requests, authenticated submissions, Workers AI, D1 metadata, and private R2 packages
+// output: Skills Market catalog APIs, immutable bundles, and synchronously reviewed publication
+// pos: API-only Cloudflare Worker boundary; the Storyflow desktop app owns presentation and installation
 
 import {
   buildSkillInstallDeepLink,
@@ -8,13 +8,10 @@ import {
   type MarketSkillSummary,
   type StoryflowSkillManifest,
 } from '@craft-agent/shared/skills/marketplace'
-import { createRemoteJWKSet, customFetch, jwtVerify } from 'jose'
+import { decodeProtectedHeader, jwtVerify } from 'jose'
 import { METHODOLOGY_SEEDS, type MethodologySeed } from './catalog.ts'
 import { buildSeedBundle, validateMarketBundle } from './packages.ts'
-
-interface AssetsBinding {
-  fetch(request: Request): Promise<Response>
-}
+import { ReviewInputError, ReviewUnavailableError, reviewSkillBundle } from './review.ts'
 
 interface R2ObjectLike {
   body: BodyInit | ReadableStream<Uint8Array> | null
@@ -23,7 +20,6 @@ interface R2ObjectLike {
 interface R2BucketLike {
   put(key: string, value: string | ArrayBuffer | Uint8Array, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown>
   get(key: string): Promise<R2ObjectLike | null>
-  delete(key: string): Promise<void>
 }
 
 interface D1Result<T = unknown> {
@@ -43,24 +39,22 @@ interface D1DatabaseLike {
   batch(statements: D1PreparedStatementLike[]): Promise<D1Result[]>
 }
 
+interface WorkersAI {
+  run(model: string, input: Record<string, unknown>): Promise<unknown>
+}
+
 export interface Env {
-  ASSETS: AssetsBinding
   DB?: D1DatabaseLike
   PACKAGES?: R2BucketLike
-  MARKET_ORIGIN?: string
-  ADMIN_EMAILS?: string
-  ACCESS_TEAM_DOMAIN?: string
-  ACCESS_SUBMISSIONS_AUDIENCE?: string
-  ACCESS_ADMIN_AUDIENCE?: string
+  AI?: WorkersAI
+  STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID?: string
+  STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET?: string
 }
 
-interface AccessIdentity {
+interface PublisherIdentity {
   subject: string
-  email?: string
   name?: string
 }
-
-type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 
 interface PublishedRow {
   slug: string
@@ -77,19 +71,14 @@ interface PublishedRow {
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
 const PUBLIC_CACHE = 'public, max-age=60, stale-while-revalidate=300'
-const accessJwksByFetch = new WeakMap<object, Map<string, ReturnType<typeof createRemoteJWKSet>>>()
 
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
-    return handleRequest(request, env, fetch)
+    return handleRequest(request, env)
   },
 }
 
-export async function handleRequest(
-  request: Request,
-  env: Env,
-  fetchImpl: FetchLike = fetch,
-): Promise<Response> {
+export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url)
   if (request.method === 'OPTIONS') return withCors(new Response(null, { status: 204 }))
   if (url.pathname === '/health') return json({ status: 'ok', catalog: METHODOLOGY_SEEDS.length })
@@ -108,11 +97,7 @@ export async function handleRequest(
     const detailMatch = url.pathname.match(/^\/api\/skills\/([^/]+)$/)
     if (detailMatch && request.method === 'GET') return await getSkillDetail(decodeURIComponent(detailMatch[1]!), env)
     if (url.pathname === '/api/submissions' && request.method === 'POST') {
-      return await submitSkill(request, env, fetchImpl)
-    }
-    const publishMatch = url.pathname.match(/^\/api\/admin\/versions\/([^/]+)\/publish$/)
-    if (publishMatch && request.method === 'POST') {
-      return await publishVersion(request, decodeURIComponent(publishMatch[1]!), env, fetchImpl)
+      return await submitSkill(request, env)
     }
     if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404)
   } catch (error) {
@@ -120,7 +105,7 @@ export async function handleRequest(
     return json({ error: error instanceof Error ? error.message : 'Unexpected market error' }, status)
   }
 
-  return env.ASSETS.fetch(request)
+  return json({ error: 'Not found' }, 404)
 }
 
 async function listSkills(url: URL, env: Env): Promise<Response> {
@@ -178,25 +163,51 @@ async function downloadBundle(slug: string, version: string, env: Env, headOnly 
   return bundleResponse(raw, row.sha256, `${slug}-${version}.storyflow-skill.json`, headOnly)
 }
 
-async function submitSkill(request: Request, env: Env, fetchImpl: FetchLike): Promise<Response> {
-  const identity = await requireAccessIdentity(request, env, env.ACCESS_SUBMISSIONS_AUDIENCE, fetchImpl)
-  if (!env.DB || !env.PACKAGES) throw new RequestError(503, 'Contribution storage is not configured')
+async function submitSkill(request: Request, env: Env): Promise<Response> {
+  const identity = await requirePublisherIdentity(request, env)
+  if (!env.DB || !env.PACKAGES || !env.AI) throw new RequestError(503, 'Publication services are not configured')
   const contentLength = Number(request.headers.get('content-length') ?? 0)
   if (contentLength > 7 * 1024 * 1024) throw new RequestError(413, 'Submission exceeds 7 MB request limit')
-  const submitted = await request.text()
-  const validated = await validateMarketBundle(submitted)
+  const submitted = await readBoundedSubmission(request)
+  let validated: Awaited<ReturnType<typeof validateMarketBundle>>
+  try {
+    validated = await validateMarketBundle(submitted)
+  } catch (error) {
+    throw new RequestError(400, error instanceof Error ? error.message : 'Invalid Skill package')
+  }
+  if (METHODOLOGY_SEEDS.some(seed => seed.slug === validated.manifest.slug)) {
+    throw new RequestError(409, 'This Skill slug is reserved by the curated catalog')
+  }
+  let review
+  try {
+    review = await reviewSkillBundle(validated, env.AI)
+  } catch (error) {
+    if (error instanceof ReviewInputError) throw new RequestError(400, error.message)
+    if (error instanceof ReviewUnavailableError) {
+      return json({ error: error.message, code: 'ai_review_unavailable' }, 503)
+    }
+    throw error
+  }
+  if (!review.approve) {
+    return json({
+      error: 'Automated review rejected this Skill',
+      code: 'ai_review_rejected',
+      issues: review.issues,
+    }, 422)
+  }
+
   const versionId = crypto.randomUUID()
   const skillId = `skill_${validated.manifest.slug}`
   const userId = `user_${(await digestText(identity.subject)).slice(0, 24)}`
   const now = new Date().toISOString()
-  const quarantineKey = `quarantine/${versionId}/${validated.sha256}.json`
+  const publishedKey = `packages/${validated.manifest.slug}/${validated.manifest.version}/${validated.sha256}.json`
 
-  await env.PACKAGES.put(quarantineKey, validated.raw, { httpMetadata: { contentType: 'application/json' } })
+  await env.PACKAGES.put(publishedKey, validated.raw, { httpMetadata: { contentType: 'application/json' } })
   try {
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO users (id, access_subject, email, display_name, created_at)
         VALUES (?, ?, ?, ?, ?) ON CONFLICT(access_subject) DO UPDATE SET email=excluded.email, display_name=excluded.display_name`)
-        .bind(userId, identity.subject, identity.email ?? null, identity.name ?? null, now),
+        .bind(userId, identity.subject, null, identity.name ?? null, now),
       env.DB.prepare(`INSERT INTO skills (id, owner_id, slug, display_name, summary, license, tags_json, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(slug) DO UPDATE SET
         display_name=excluded.display_name, summary=excluded.summary, license=excluded.license,
@@ -205,52 +216,28 @@ async function submitSkill(request: Request, env: Env, fetchImpl: FetchLike): Pr
         .bind(skillId, userId, validated.manifest.slug, validated.manifest.displayName, validated.manifest.summary,
           validated.manifest.license, JSON.stringify(validated.manifest.tags ?? []), now, now),
       env.DB.prepare(`INSERT INTO skill_versions
-        (id, skill_id, submitted_by, version, sha256, object_key, bytes, manifest_json, status, submitted_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`)
-        .bind(versionId, skillId, userId, validated.manifest.version, validated.sha256, quarantineKey,
-          validated.bytes, JSON.stringify(validated.manifest), now),
+        (id, skill_id, submitted_by, version, sha256, object_key, bytes, manifest_json, status,
+         submitted_at, published_at, review_json, reviewed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?, ?, ?)`)
+        .bind(versionId, skillId, userId, validated.manifest.version, validated.sha256, publishedKey,
+          validated.bytes, JSON.stringify(validated.manifest), now, now, JSON.stringify(review), now),
+      env.DB.prepare('UPDATE skills SET current_version_id=?, updated_at=? WHERE id=? AND owner_id=?')
+        .bind(versionId, now, skillId, userId),
     ])
   } catch (error) {
-    await env.PACKAGES.delete(quarantineKey)
     if (error instanceof Error && /FOREIGN KEY/i.test(error.message)) {
       throw new RequestError(409, 'This Skill slug belongs to another publisher')
     }
     if (error instanceof Error && /UNIQUE/i.test(error.message)) throw new RequestError(409, 'This version or package already exists')
     throw error
   }
-  return json({ ok: true, versionId, status: 'pending', sha256: validated.sha256 }, 202)
-}
-
-async function publishVersion(
-  request: Request,
-  versionId: string,
-  env: Env,
-  fetchImpl: FetchLike,
-): Promise<Response> {
-  const identity = await requireAccessIdentity(request, env, env.ACCESS_ADMIN_AUDIENCE, fetchImpl)
-  const admins = new Set((env.ADMIN_EMAILS ?? '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean))
-  if (!identity.email || !admins.has(identity.email.toLowerCase())) throw new RequestError(403, 'Administrator access required')
-  if (!env.DB || !env.PACKAGES) throw new RequestError(503, 'Contribution storage is not configured')
-  const row = await env.DB.prepare(`SELECT v.id, v.object_key, v.sha256, v.skill_id, v.version
-    FROM skill_versions v WHERE v.id = ? AND v.status = 'pending'`).bind(versionId)
-    .first<{ id: string, object_key: string, sha256: string, skill_id: string, version: string }>()
-  if (!row) throw new RequestError(404, 'Pending version not found')
-  const object = await env.PACKAGES.get(row.object_key)
-  if (!object) throw new RequestError(409, 'Quarantined package is missing')
-  const raw = await new Response(object.body).text()
-  const validated = await validateMarketBundle(raw)
-  if (validated.sha256 !== row.sha256) throw new RequestError(409, 'Quarantined package checksum changed')
-  const publishedKey = `packages/${validated.manifest.slug}/${row.version}/${row.sha256}.json`
-  await env.PACKAGES.put(publishedKey, raw, { httpMetadata: { contentType: 'application/json' } })
-  const now = new Date().toISOString()
-  await env.DB.batch([
-    env.DB.prepare(`UPDATE skill_versions SET status='published', object_key=?, published_at=? WHERE id=?`)
-      .bind(publishedKey, now, versionId),
-    env.DB.prepare('UPDATE skills SET current_version_id=?, updated_at=? WHERE id=?')
-      .bind(versionId, now, row.skill_id),
-  ])
-  await env.PACKAGES.delete(row.object_key)
-  return json({ ok: true, status: 'published', slug: validated.manifest.slug, version: row.version, sha256: row.sha256 })
+  return json({
+    ok: true,
+    status: 'published',
+    slug: validated.manifest.slug,
+    version: validated.manifest.version,
+    sha256: validated.sha256,
+  }, 201)
 }
 
 async function seedSummary(seed: MethodologySeed): Promise<MarketSkillSummary> {
@@ -319,77 +306,53 @@ function publishedRowSummary(row: PublishedRow, manifest: StoryflowSkillManifest
   }
 }
 
-async function requireAccessIdentity(
+async function requirePublisherIdentity(
   request: Request,
   env: Env,
-  configuredAudience: string | undefined,
-  fetchImpl: FetchLike,
-): Promise<AccessIdentity> {
-  const assertion = request.headers.get('cf-access-jwt-assertion')
-  if (!assertion) throw new RequestError(401, 'Cloudflare Access login required')
+): Promise<PublisherIdentity> {
+  const token = readBearerToken(request.headers.get('authorization'))
+  if (!token) throw new RequestError(401, 'Skills Market publish token required')
 
-  const issuer = requireAccessIssuer(env.ACCESS_TEAM_DOMAIN)
-  const audience = requireAccessAudience(configuredAudience)
+  const keyId = env.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID?.trim()
+  const secret = env.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET?.trim()
+  if (!keyId || !secret) throw new RequestError(503, 'Skills Market identity verification is not configured')
   try {
-    const { payload } = await jwtVerify(assertion, accessJwks(issuer, fetchImpl), {
-      algorithms: ['RS256'],
-      issuer,
-      audience,
-      requiredClaims: ['sub', 'iat', 'nbf', 'exp'],
+    if (decodeProtectedHeader(token).kid !== keyId) throw new Error('unknown key')
+    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
+      algorithms: ['HS256'],
+      issuer: 'storyflow-auth-broker',
+      audience: 'storyflow-skills-market',
+      requiredClaims: ['sub', 'iat', 'exp'],
       clockTolerance: 0,
     })
-    if (typeof payload.sub !== 'string' || !payload.sub.trim()) throw new Error('missing subject')
+    if (
+      typeof payload.sub !== 'string'
+      || !payload.sub.trim()
+      || !Array.isArray(payload.scopes)
+      || !payload.scopes.includes('skills:publish')
+    ) throw new Error('invalid capability')
     return {
       subject: payload.sub,
-      ...(typeof payload.email === 'string' ? { email: payload.email } : {}),
-      ...(typeof payload.name === 'string' ? { name: payload.name } : {}),
+      ...(typeof payload.user_name === 'string' ? { name: payload.user_name } : {}),
     }
   } catch {
-    throw new RequestError(401, 'Invalid Cloudflare Access identity')
+    throw new RequestError(401, 'Invalid Skills Market publish token')
   }
 }
 
-function requireAccessIssuer(value: string | undefined): string {
-  if (!value?.trim()) throw new RequestError(503, 'Cloudflare Access verification is not configured')
+function readBearerToken(value: string | null): string | null {
+  const match = value?.match(/^Bearer\s+([^\s]+)$/i)
+  return match?.[1] ?? null
+}
+
+async function readBoundedSubmission(request: Request): Promise<string> {
+  const bytes = new Uint8Array(await request.arrayBuffer())
+  if (bytes.byteLength > 7 * 1024 * 1024) throw new RequestError(413, 'Submission exceeds 7 MB request limit')
   try {
-    const url = new URL(value.trim())
-    if (
-      url.protocol !== 'https:'
-      || !url.hostname.endsWith('.cloudflareaccess.com')
-      || url.username
-      || url.password
-      || url.pathname !== '/'
-      || url.search
-      || url.hash
-    ) {
-      throw new Error('invalid Access issuer')
-    }
-    return url.origin
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   } catch {
-    throw new RequestError(503, 'Cloudflare Access verification is not configured')
+    throw new RequestError(400, 'Submission must be UTF-8 JSON')
   }
-}
-
-function requireAccessAudience(value: string | undefined): string[] {
-  const audiences = (value ?? '').split(',').map(item => item.trim()).filter(Boolean)
-  if (audiences.length === 0) throw new RequestError(503, 'Cloudflare Access verification is not configured')
-  return audiences
-}
-
-function accessJwks(issuer: string, fetchImpl: FetchLike): ReturnType<typeof createRemoteJWKSet> {
-  const fetchKey = fetchImpl as unknown as object
-  let byIssuer = accessJwksByFetch.get(fetchKey)
-  if (!byIssuer) {
-    byIssuer = new Map()
-    accessJwksByFetch.set(fetchKey, byIssuer)
-  }
-  const existing = byIssuer.get(issuer)
-  if (existing) return existing
-  const jwks = createRemoteJWKSet(new URL('/cdn-cgi/access/certs', `${issuer}/`), {
-    [customFetch]: fetchImpl,
-  })
-  byIssuer.set(issuer, jwks)
-  return jwks
 }
 
 async function digestText(value: string): Promise<string> {
@@ -416,7 +379,8 @@ function json(value: unknown, status = 200, headers?: HeadersInit): Response {
 function withCors(response: Response): Response {
   const headers = new Headers(response.headers)
   headers.set('access-control-allow-origin', '*')
-  headers.set('access-control-allow-methods', 'GET, OPTIONS')
+  headers.set('access-control-allow-methods', 'GET, POST, OPTIONS')
+  headers.set('access-control-allow-headers', 'authorization, content-type')
   headers.set('access-control-expose-headers', 'etag, x-content-sha256')
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }

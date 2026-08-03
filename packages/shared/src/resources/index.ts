@@ -12,6 +12,8 @@ export type {
   SkillBundleEntry,
   AutomationBundleEntry,
   ResourceImportMode,
+  SkillInstallScope,
+  ResourceImportOptions,
   ExportResourcesOptions,
   ExportResult,
   ImportBucketResult,

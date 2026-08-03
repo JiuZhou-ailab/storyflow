@@ -1,55 +1,54 @@
-# Legacy Skills Market
+# Storyflow Skills Market
 
-Frozen Storyflow ResourceBundle registry retained for compatibility and local
-verification. The desktop app now uses SkillHub for public discovery and
-publishing; do not add new catalog features here.
+First-party API and immutable distribution service for Pi-native Storyflow
+Skill Packages. Storyflow's desktop Skills Hub owns presentation and install
+actions; this Worker never renders a web product or executes installed Skills.
 
 | Path | Role |
 | --- | --- |
-| `public/` | Static marketplace UI served by Workers Static Assets. |
-| `src/catalog.ts` | Curated methodology index with provenance and distribution policy. |
-| `src/packages.ts` | Deterministic single-Skill ResourceBundle builder and validator. |
-| `src/index.ts` | Worker API, D1/R2 submission boundary, and static asset fallback. |
-| `migrations/` | Versioned D1 schema. |
+| `src/catalog.ts` | Curated methodology seeds with provenance and distribution policy. |
+| `src/packages.ts` | Deterministic single-Skill ResourceBundle validation. |
+| `src/review.ts` | Synchronous Workers AI admission decision and output validation. |
+| `src/index.ts` | HTTP, bearer identity, D1 publication, and R2 distribution. |
+| `migrations/` | Versioned catalog and review-evidence schema. |
 
-Local browse mode needs no Cloudflare resources:
+Publication is synchronous:
+
+```text
+identity → bounded bytes → deterministic validation → AI review → immutable R2 → D1 visibility
+```
+
+Invalid packages return `400`; AI rejection returns `422` without writes; an
+unavailable or malformed review returns `503` without writes. Approval returns
+`201` only after the published version is visible. License values remain
+publisher declarations; AI review does not prove ownership.
+
+Local anonymous API browse mode needs no Cloudflare resources:
 
 ```bash
 bun run dev:local
 ```
 
-Publishing requires D1, a private R2 bucket, and Cloudflare Access in front of
-`/studio/*`, `/api/submissions`, and `/api/admin/*`. Copy the commented resource
-bindings from `wrangler.resources.example.toml` only after provisioning them.
+Run the executable contract:
 
-Provision and deploy from this directory:
+```bash
+bun run test
+bun run typecheck
+```
+
+Provision and deploy:
 
 ```bash
 bunx wrangler login
-bunx wrangler d1 create storyflow-skills-market
-bunx wrangler r2 bucket create storyflow-skills-market-packages
-# Copy the returned D1 id and both bindings into wrangler.toml.
 bunx wrangler d1 migrations apply storyflow-skills-market --remote
-bunx wrangler secret put ADMIN_EMAILS
-bunx wrangler secret put ACCESS_TEAM_DOMAIN
-bunx wrangler secret put ACCESS_SUBMISSIONS_AUDIENCE
-bunx wrangler secret put ACCESS_ADMIN_AUDIENCE
+bunx wrangler secret put STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET
 bun run deploy
 ```
 
-Before deployment, create Cloudflare Access applications for `/studio/*`,
-`/api/submissions`, and `/api/admin/*`. Set `ACCESS_TEAM_DOMAIN` to the exact
-`https://<team>.cloudflareaccess.com` issuer and set the two audience variables
-to their route-specific Access application AUD tags (comma-separated values are
-accepted during a controlled rotation). The Worker verifies the assertion's
-RS256 signature, issuer, audience, expiry, and not-before claims; missing
-verification configuration fails closed. Access perimeter protection remains a
-deployment requirement, not a substitute for origin verification.
-
-The market never executes Skill code. MVP submissions accept text-only Skill
-packages and remain pending until an administrator publishes an immutable
-content-addressed version.
-
-The desktop no longer links to this service. Existing install deep links and
-ResourceBundle verification remain supported until their data is migrated or
-retired explicitly.
+The Market secret must equal the auth broker's
+`STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET` and must differ from both client
+session and model-access secrets. Desktop publication uses a five-minute token
+with audience `storyflow-skills-market` and scope `skills:publish`; the token is
+never persisted or exposed to the renderer. Catalog, detail, and bundle GETs
+remain anonymous; `POST /api/submissions` accepts only that bearer capability.
+All other paths, including `/`, return a JSON `404`.

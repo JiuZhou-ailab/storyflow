@@ -1,5 +1,5 @@
 // input: Registered Skills RPC handlers, a non-ASCII Pi Skill name, and a temporary Skill directory
-// output: Regression proof that catalog identity is not mistaken for a filesystem slug during deletion
+// output: Regression proof that deletion and export use Pi's resolved catalog identity and path
 // pos: Isolated transport-boundary guard; module mocks must not leak into the shared test process
 
 import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -17,7 +17,7 @@ let catalogSkill: {
   content: string
   path: string
   filePath: string
-  scope: 'user'
+  scope: 'user' | 'project'
   source: string
   origin: 'top-level'
 } | null = null
@@ -83,14 +83,16 @@ function createHarness() {
   registerSkillsHandlers(server, deps)
 
   const deleteSkill = handlers.get(RPC_CHANNELS.skills.DELETE)
+  const exportSkill = handlers.get(RPC_CHANNELS.skills.EXPORT)
   if (!deleteSkill) throw new Error('Skills delete handler not registered')
+  if (!exportSkill) throw new Error('Skills export handler not registered')
 
   const ctx: RequestContext = {
     clientId: 'client-1',
     workspaceId: 'workspace-1',
     webContentsId: 1,
   }
-  return { deleteSkill, ctx }
+  return { deleteSkill, exportSkill, ctx }
 }
 
 afterEach(() => {
@@ -123,5 +125,32 @@ describe('Skills RPC catalog identity', () => {
 
     expect(existsSync(skillPath)).toBe(false)
     expect(invalidated).toBe(true)
+  })
+
+  it('exports the resolved project Skill by its real directory slug', async () => {
+    workspaceRootPath = mkdtempSync(join(tmpdir(), 'storyflow-skill-export-'))
+    const projectRoot = join(workspaceRootPath, 'novel')
+    const skillPath = join(projectRoot, '.agents', 'skills', 'plot-causality-audit')
+    const filePath = join(skillPath, 'SKILL.md')
+    mkdirSync(skillPath, { recursive: true })
+    writeFileSync(filePath, '---\nname: 剧情因果审查\ndescription: test\n---\n\n正文\n')
+    catalogSkill = {
+      slug: '剧情因果审查',
+      metadata: { name: '剧情因果审查', description: 'test' },
+      content: '正文',
+      path: skillPath,
+      filePath,
+      scope: 'project',
+      source: 'auto',
+      origin: 'top-level',
+    }
+    const { exportSkill, ctx } = createHarness()
+
+    const result = await exportSkill(ctx, 'workspace-1', '剧情因果审查', projectRoot) as {
+      bundle: { resources: { skills?: Array<{ slug: string }> } }
+    }
+
+    expect(result.bundle.resources.skills).toHaveLength(1)
+    expect(result.bundle.resources.skills?.[0]?.slug).toBe('plot-causality-audit')
   })
 })

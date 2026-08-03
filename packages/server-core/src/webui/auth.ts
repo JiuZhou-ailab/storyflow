@@ -1,5 +1,5 @@
 // input: Web UI credentials, session cookies, and verified desktop identities
-// output: Signed Web UI sessions plus renewable desktop and scoped model tokens
+// output: Signed Web UI sessions plus renewable desktop, model, and Skills Market tokens
 // pos: Server-core JWT boundary shared by browser auth and the local desktop auth broker
 
 import { decodeProtectedHeader, SignJWT, jwtVerify } from 'jose'
@@ -11,8 +11,10 @@ import { decodeProtectedHeader, SignJWT, jwtVerify } from 'jose'
 const JWT_EXPIRY_SECONDS = 86_400 // 24 hours
 const CLIENT_SESSION_TOKEN_TTL_SECONDS = 2_592_000
 const MODEL_ACCESS_TOKEN_TTL_SECONDS = 900
+export const SKILLS_MARKET_TOKEN_TTL_SECONDS = 300
 const MODEL_ACCESS_TOKEN_ISSUER = 'storyflow-auth-broker'
 const MODEL_ACCESS_TOKEN_AUDIENCE = 'storyflow-model-gateway'
+const SKILLS_MARKET_TOKEN_AUDIENCE = 'storyflow-skills-market'
 const CLIENT_SESSION_TOKEN_AUDIENCE = 'storyflow-client-auth'
 
 export interface JwtPayload {
@@ -86,6 +88,7 @@ export async function createClientSessionToken(
 export async function verifyClientSessionToken(
   token: string,
   keys: JwtKeyRing,
+  minimumRemainingSeconds = MODEL_ACCESS_TOKEN_TTL_SECONDS,
 ): Promise<{ subject: string, modelTier: 'standard' | 'pro', authenticatedAtSeconds: number } | null> {
   try {
     const kid = decodeProtectedHeader(token).kid
@@ -116,7 +119,7 @@ export async function verifyClientSessionToken(
       typeof authenticatedAtSeconds !== 'number'
       || !Number.isFinite(authenticatedAtSeconds)
       || authenticatedAtSeconds > nowSeconds + 60
-      || expiresAtSeconds <= nowSeconds + MODEL_ACCESS_TOKEN_TTL_SECONDS
+      || expiresAtSeconds <= nowSeconds + minimumRemainingSeconds
     ) {
       return null
     }
@@ -149,6 +152,28 @@ export async function createModelAccessToken(
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: key.id })
     .setIssuer(MODEL_ACCESS_TOKEN_ISSUER)
     .setAudience(MODEL_ACCESS_TOKEN_AUDIENCE)
+    .setSubject(subject)
+    .setIssuedAt(nowSeconds)
+    .setExpirationTime(expiresAtSeconds)
+    .sign(new TextEncoder().encode(key.secret))
+}
+
+export async function createSkillsMarketPublishToken(
+  key: JwtSigningKey,
+  subject: string,
+  parentAuthenticatedAtSeconds: number,
+): Promise<string> {
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  const expiresAtSeconds = Math.min(
+    nowSeconds + SKILLS_MARKET_TOKEN_TTL_SECONDS,
+    parentAuthenticatedAtSeconds + CLIENT_SESSION_TOKEN_TTL_SECONDS,
+  )
+  if (expiresAtSeconds <= nowSeconds) throw new Error('Client session has reached its maximum lifetime')
+
+  return new SignJWT({ scopes: ['skills:publish'] })
+    .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: key.id })
+    .setIssuer(MODEL_ACCESS_TOKEN_ISSUER)
+    .setAudience(SKILLS_MARKET_TOKEN_AUDIENCE)
     .setSubject(subject)
     .setIssuedAt(nowSeconds)
     .setExpirationTime(expiresAtSeconds)

@@ -279,7 +279,7 @@ describe('project management entry', () => {
     // SessionList navigator column is redundant for every runtime — not just the
     // free one. Suppressing it also removes the empty column that used to sit
     // between the rail and the chat when a project had no open session.
-    expect(appShellSource).toContain('const hideSessionListNavigator = showActivityRail')
+    expect(appShellSource).toContain('const hideSessionListNavigator = isSkillsNavigation(navState)')
     expect(appShellSource).not.toContain('&& !isProjectRuntime')
     expect(appShellSource).toContain('isProjectRuntime && isWritingNavigation(navState)')
     expect(appShellSource).toContain('isSessionsNavigation(navState) && (!showActivityRail || isAutoCompact)')
@@ -298,5 +298,6 @@ describe('project management entry', () => {
     expect(appSource).toContain('<WorkspaceSurface')
     expect(appShellSource).toContain('if (!rightWorkspaceVisible) {')
     expect(appShellSource).toContain('invalidateWorkspaceSkillsCache(workspaceId)')
+    expect(appShellSource).toContain('if (!cancelled) setSkills(loaded || [])')
   })
 })

@@ -124,8 +124,8 @@ describe('default agent resources', () => {
     const findSkillsDir = join(assetsDir, 'global-skills', 'find-skills');
     const findSkills = readFileSync(join(findSkillsDir, 'SKILL.md'), 'utf-8');
     expect(validateSkillDocumentForSlug(findSkills, 'find-skills')).toBeNull();
-    expect(findSkills).toContain('https://skillhub.cn/');
-    expect(findSkills).toContain('--dir "$HOME/.pi/agent/skills"');
+    expect(findSkills).toContain('https://storyflow-skills.zjding.com/');
+    expect(findSkills).toContain("current project's `.pi/skills`");
     expect(findSkills).toContain("Storyflow uses Pi's native Agent Skills discovery");
     expect(existsSync(join(findSkillsDir, 'LICENSE.txt'))).toBe(true);
 

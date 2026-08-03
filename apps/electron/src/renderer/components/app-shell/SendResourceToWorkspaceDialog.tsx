@@ -154,6 +154,7 @@ function SendResourceToWorkspaceDialogContent({
           url, credentialRef,
           'resources:import',
           remoteWorkspaceId, bundle, mode,
+          resourceType === 'skill' ? { skillScope: 'project' } : {},
         )
       } else {
         // Local target — direct RPC
@@ -161,6 +162,7 @@ function SendResourceToWorkspaceDialogContent({
           selectedWorkspaceId,
           bundle,
           mode,
+          resourceType === 'skill' ? { skillScope: 'project' } : {},
         )
       }
 

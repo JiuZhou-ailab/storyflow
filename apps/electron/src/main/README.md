@@ -26,6 +26,7 @@ Electron main-process shell: app startup, native windows, IPC registration, auth
 - `quit-coordinator.ts` - Idempotent cleanup and updater-safe quit sequencing.
 - `runtime-paths.ts` - Packaged/dev runtime resource path resolver.
 - `shell-env.ts` - User shell environment loader.
+- `skills-market-client.ts` - Authenticated Skill publication without renderer token exposure.
 - `startup-state.ts` - Startup window creation policy.
 - `thumbnail-protocol.ts` - Custom thumbnail protocol.
 - `window-manager.ts` - Native app window lifecycle.

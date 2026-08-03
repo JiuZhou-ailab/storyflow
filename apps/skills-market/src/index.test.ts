@@ -1,14 +1,11 @@
 // input: Worker requests with no Cloudflare persistence bindings
-// output: Public catalog, detail, bundle, and contribution-auth regression checks
+// output: Public catalog, detail, bundle, API-only routing, and publication-auth regression checks
 // pos: Local executable API contract for the Skills Market MVP
 
 import { describe, expect, test } from 'bun:test'
 import { handleRequest, type Env } from './index.ts'
 
-const env: Env = {
-  ASSETS: { fetch: async () => new Response('asset') },
-  MARKET_ORIGIN: 'https://storyflow-skills.zjding.com',
-}
+const env: Env = {}
 
 describe('Skills Market worker', () => {
   test('lists thirty researched methodologies', async () => {
@@ -44,8 +41,11 @@ describe('Skills Market worker', () => {
     expect(metadata.installUrl).toBe('')
   })
 
-  test('requires Access before accepting contributions', async () => {
+  test('serves no standalone web product and requires a publish token', async () => {
+    const root = await handleRequest(new Request('https://market.test/'), env)
     const response = await handleRequest(new Request('https://market.test/api/submissions', { method: 'POST', body: '{}' }), env)
+    expect(root.status).toBe(404)
+    expect(root.headers.get('content-type')).toContain('application/json')
     expect(response.status).toBe(401)
   })
 })
