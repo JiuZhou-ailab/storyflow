@@ -1,7 +1,7 @@
 {
   "version": "0.9.64",
   "digest": "f1262f28803855eae07556ec375ed5391fd9a8fccb474fcd524df61fdf66ae37",
-  "generatedAt": "2026-08-03T17:34:59.779Z",
+  "generatedAt": "2026-08-03T17:47:13.499Z",
   "title": "Storyflow v0.9.64 更新说明",
   "summary": "这一版完善了 Storyflow 内置的 Skills 发现、安装、分享与管理体验。",
   "highlights": [
@@ -13,7 +13,7 @@
   "accentColor": "#418415",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 15,
+    "commitCount": 18,
     "userVisibleCommitCount": 0
   }
 }
