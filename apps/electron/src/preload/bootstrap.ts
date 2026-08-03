@@ -456,6 +456,7 @@ client.onConnectionStateChanged((state) => {
 }
 ;(api as ElectronAPI).submitFeedbackIssue = (input) => ipcRenderer.invoke('feedback:submitIssue', input)
 ;(api as ElectronAPI).listSkillsFromMarket = () => ipcRenderer.invoke(SKILLS_MARKET_IPC_CHANNELS.LIST)
+;(api as ElectronAPI).getSkillDetailFromMarket = (skillSlug) => ipcRenderer.invoke(SKILLS_MARKET_IPC_CHANNELS.DETAIL, skillSlug)
 ;(api as ElectronAPI).downloadSkillFromMarket = (input) => ipcRenderer.invoke(SKILLS_MARKET_IPC_CHANNELS.DOWNLOAD, input)
 ;(api as ElectronAPI).publishSkillToMarket = (input) => ipcRenderer.invoke(SKILLS_MARKET_IPC_CHANNELS.PUBLISH, input)
 ;(api as ElectronAPI).cancelFeishuSignInClient = async () => {

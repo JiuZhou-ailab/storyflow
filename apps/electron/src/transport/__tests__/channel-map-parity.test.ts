@@ -36,6 +36,7 @@ type ApiToChannelMapKeys = Exclude<
   | 'signInWithFeishuClient' // direct IPC to main process — Feishu OAuth login
   | 'submitFeedbackIssue' // direct IPC to main process — feedback endpoint/GitHub token stay out of renderer
   | 'listSkillsFromMarket' // direct IPC to main process — authenticated company catalog reads
+  | 'getSkillDetailFromMarket' // direct IPC to main process — authenticated Skill detail reads
   | 'downloadSkillFromMarket' // direct IPC to main process — authenticated bundle download and verification
   | 'publishSkillToMarket' // direct IPC to main process — ephemeral Market token stays out of renderer
   | 'cancelFeishuSignInClient' // direct IPC to main process — cancels pending Feishu OAuth login

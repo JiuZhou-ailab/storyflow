@@ -5,10 +5,12 @@
 import {
   DEFAULT_SKILLS_MARKET_ORIGIN,
   downloadMarketSkillBundle,
+  parseMarketSkillDetail,
   parseMarketSkillListResponse,
   prepareMarketSkillBundle,
   type DownloadedMarketSkill,
   type MarketSkillListResponse,
+  type MarketSkillDetail,
   type MarketSkillSummary,
   type SkillMarketPublishInput,
   type SkillMarketPublishResult,
@@ -29,6 +31,23 @@ export async function listSkillsFromMarket(options: MarketClientOptions): Promis
   })
   if (!response.ok) throw new Error(`Skills Market request failed (${response.status})`)
   return parseMarketSkillListResponse(await response.json())
+}
+
+export async function getSkillDetailFromMarket(
+  skillSlug: string,
+  options: MarketClientOptions,
+): Promise<MarketSkillDetail> {
+  const response = await options.fetchImpl(
+    `${DEFAULT_SKILLS_MARKET_ORIGIN}/api/skills/${encodeURIComponent(skillSlug)}`,
+    {
+      headers: marketHeaders(options.token),
+      signal: AbortSignal.timeout(15_000),
+    },
+  )
+  if (!response.ok) throw new Error(`Skills Market request failed (${response.status})`)
+  const detail = parseMarketSkillDetail(await response.json())
+  if (detail.slug !== skillSlug) throw new Error('Skills Market returned a mismatched Skill detail')
+  return detail
 }
 
 export function downloadSkillFromMarket(

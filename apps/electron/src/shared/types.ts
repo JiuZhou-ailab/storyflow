@@ -221,6 +221,7 @@ export const CLIENT_AUTH_IPC_CHANNELS = {
 /** Desktop-local because short-lived Market capabilities must stay in main. */
 export const SKILLS_MARKET_IPC_CHANNELS = {
   LIST: 'skills-market:list',
+  DETAIL: 'skills-market:detail',
   DOWNLOAD: 'skills-market:download',
   PUBLISH: 'skills-market:publish',
 } as const
@@ -632,6 +633,7 @@ export interface ElectronAPI {
   getSkillFiles?(workspaceId: string, skillSlug: string): Promise<SkillFile[]>
   exportSkill(workspaceId: string, skillSlug: string, workingDirectory?: string): Promise<ExportResult>
   listSkillsFromMarket(): Promise<import('@craft-agent/shared/skills/marketplace').MarketSkillListResponse>
+  getSkillDetailFromMarket(skillSlug: string): Promise<import('@craft-agent/shared/skills/marketplace').MarketSkillDetail>
   downloadSkillFromMarket(input: Pick<import('@craft-agent/shared/skills/marketplace').MarketSkillSummary, 'slug' | 'version' | 'sha256'>): Promise<import('@craft-agent/shared/skills/marketplace').DownloadedMarketSkill>
   publishSkillToMarket(input: import('@craft-agent/shared/skills/marketplace').SkillMarketPublishInput): Promise<import('@craft-agent/shared/skills/marketplace').SkillMarketPublishResult>
   createSkill(workspaceId: string, skillSlug: string, content: string): Promise<LoadedSkill>

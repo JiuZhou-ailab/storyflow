@@ -95,6 +95,7 @@ import { getAppVersion } from '@craft-agent/shared/version'
 import { normalizeFeedbackIssueInput, submitFeedbackIssue } from './feedback'
 import {
   downloadSkillFromMarket,
+  getSkillDetailFromMarket,
   listSkillsFromMarket,
   publishSkillToMarket,
 } from './skills-market-client'
@@ -592,6 +593,12 @@ app.whenReady().then(async () => {
     }
     ipcMain.handle(SKILLS_MARKET_IPC_CHANNELS.LIST, async () => {
       return listSkillsFromMarket({
+        token: await getSkillsMarketToken(),
+        fetchImpl: (url, init) => net.fetch(url instanceof URL ? url.toString() : url, init),
+      })
+    })
+    ipcMain.handle(SKILLS_MARKET_IPC_CHANNELS.DETAIL, async (_event, skillSlug: string) => {
+      return getSkillDetailFromMarket(skillSlug, {
         token: await getSkillsMarketToken(),
         fetchImpl: (url, init) => net.fetch(url instanceof URL ? url.toString() : url, init),
       })

@@ -6,6 +6,7 @@ import { describe, expect, it } from 'bun:test'
 import { sha256Hex } from '@craft-agent/shared/skills/marketplace'
 import {
   downloadSkillFromMarket,
+  getSkillDetailFromMarket,
   listSkillsFromMarket,
   publishSkillToMarket,
 } from '../skills-market-client'
@@ -36,25 +37,90 @@ describe('Skills Market client', () => {
             license: 'Proprietary',
             tags: ['写作'],
             roots: [],
+            downloadCount: 23,
             sha256,
           }],
+        })
+      }
+      if (url.toString().endsWith('/api/skills/internal-writing')) {
+        return Response.json({
+          slug: 'internal-writing',
+          version: '1.0.0',
+          displayName: '内部写作',
+          summary: '公司写作流程',
+          author: '内容团队',
+          publisher: { id: 'user_1', displayName: '张三' },
+          visibility: 'company',
+          license: 'Proprietary',
+          tags: ['写作'],
+          roots: [],
+          downloadCount: 23,
+          sha256,
+          skillMarkdown: '---\nname: internal-writing\ndescription: 公司写作流程\n---\n\n写作说明',
+          manifest: {
+            schemaVersion: 1,
+            slug: 'internal-writing',
+            version: '1.0.0',
+            displayName: '内部写作',
+            summary: '公司写作流程',
+            license: 'Proprietary',
+            author: { name: '内容团队' },
+          },
+          downloadPath: '/api/skills/internal-writing/versions/1.0.0/bundle',
+          installUrl: 'craftagents://action/install-skill',
         })
       }
       return new Response(raw)
     }
 
     const catalog = await listSkillsFromMarket({ token: 'market-access-token', fetchImpl })
+    const detail = await getSkillDetailFromMarket('internal-writing', { token: 'market-access-token', fetchImpl })
     const downloaded = await downloadSkillFromMarket(
       { slug: 'internal-writing', version: '1.0.0', sha256 },
       { token: 'market-access-token', fetchImpl },
     )
 
     expect(catalog.skills[0]?.publisher.displayName).toBe('张三')
+    expect(catalog.skills[0]?.downloadCount).toBe(23)
+    expect(detail.skillMarkdown).toContain('写作说明')
     expect(downloaded.bundle.resources.skills?.[0]?.slug).toBe('internal-writing')
     expect(calls).toEqual([
       'https://storyflow-skills.zjding.com/api/skills',
+      'https://storyflow-skills.zjding.com/api/skills/internal-writing',
       'https://storyflow-skills.zjding.com/api/skills/internal-writing/versions/1.0.0/bundle',
     ])
+  })
+
+  it('rejects detail bytes for a different Skill slug', async () => {
+    const fetchImpl = async () => Response.json({
+      slug: 'different-skill',
+      version: '1.0.0',
+      displayName: 'Different Skill',
+      summary: 'Wrong detail',
+      author: 'Publisher',
+      publisher: { id: 'publisher', displayName: 'Publisher' },
+      visibility: 'public',
+      license: 'MIT',
+      tags: [],
+      roots: [],
+      downloadCount: 0,
+      sha256: 'a'.repeat(64),
+      skillMarkdown: '# Different Skill',
+      manifest: {
+        schemaVersion: 1,
+        slug: 'different-skill',
+        version: '1.0.0',
+        displayName: 'Different Skill',
+        summary: 'Wrong detail',
+        license: 'MIT',
+        author: { name: 'Publisher' },
+      },
+      downloadPath: '/api/skills/different-skill/versions/1.0.0/bundle',
+      installUrl: 'craftagents://action/install-skill',
+    })
+
+    await expect(getSkillDetailFromMarket('requested-skill', { token: 'token', fetchImpl }))
+      .rejects.toThrow('mismatched Skill detail')
   })
 
   it('adds publisher metadata and sends the capability only to the fixed Market', async () => {
