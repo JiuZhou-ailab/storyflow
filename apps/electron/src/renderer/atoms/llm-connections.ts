@@ -3,6 +3,7 @@
 // pos: Subscription boundary for provider/model selectors outside AppShellContext
 
 import { atom } from 'jotai'
+import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
 import type { LlmConnectionWithStatus } from '../../shared/types'
 import { windowWorkspaceIdAtom } from './sessions'
 
@@ -14,7 +15,7 @@ export const refreshLlmConnectionsAtom = atom(null, async (get, set) => {
   set(llmConnectionsAtom, connections)
 
   const workspaceId = get(windowWorkspaceIdAtom)
-  if (!workspaceId) {
+  if (!workspaceId || workspaceId === FREE_CONVERSATION_WORKSPACE_ID) {
     set(workspaceDefaultLlmConnectionAtom, undefined)
     return
   }
