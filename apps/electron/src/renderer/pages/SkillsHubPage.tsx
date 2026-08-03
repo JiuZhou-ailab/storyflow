@@ -1,5 +1,5 @@
 // input: Pi-native installed Skills, authenticated Skills Market catalog data, and the active workspace
-// output: Native discovery with publisher provenance, installation, creation, opening, and publication actions
+// output: Native popularity-ranked discovery, installation, creation, opening, and publication actions
 // pos: Default Skills route; local Pi catalog remains the authority for installed state
 
 import * as React from 'react'
@@ -8,7 +8,9 @@ import { useTranslation } from 'react-i18next'
 import {
   Check,
   ChevronDown,
+  Compass,
   Download,
+  ExternalLink,
   MoreHorizontal,
   Plus,
   Search,
@@ -18,13 +20,13 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { isDefaultGlobalAgentSkillSlug } from '@craft-agent/shared/agent-defaults/skills'
-import type { MarketSkillSummary } from '@craft-agent/shared/skills/marketplace'
+import type { MarketSkillDetail, MarketSkillSummary } from '@craft-agent/shared/skills/marketplace'
 import { skillsAtom } from '@/atoms/skills'
-import { windowWorkspaceIdAtom, windowWorkspacesAtom } from '@/atoms/sessions'
+import { windowRuntimeWorkspaceAtom, windowWorkspaceIdAtom } from '@/atoms/sessions'
 import { AddSkillPopover } from '@/components/app-shell/AddSkillPopover'
 import { PublishSkillDialog } from '@/components/app-shell/PublishSkillDialog'
 import { SkillRemovalDialog } from '@/components/app-shell/SkillMenu'
-import { SkillAvatar } from '@/components/ui/skill-avatar'
+import { resolveSkillVisual, SkillAvatar } from '@/components/ui/skill-avatar'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -33,57 +35,54 @@ import {
   StyledDropdownMenuItem,
 } from '@/components/ui/styled-dropdown'
 import { Input } from '@/components/ui/input'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Info_Markdown } from '@/components/info'
 import { navigate, routes } from '@/lib/navigate'
 import { cn } from '@/lib/utils'
 import type { LoadedSkill } from '../../shared/types'
+import {
+  filterMarketSkills,
+  getInstalledMarketSlug,
+  isInstallableMarketSkill,
+  normalizeMarketSkillExternalUrl,
+  stripSkillFrontmatter,
+  type CatalogView,
+} from './skills-hub-logic'
 
-type CatalogView = 'company' | 'featured' | 'all'
-const INSTALLED_SKILLS_PREVIEW_LIMIT = 10
+type SkillsTab = 'discover' | 'installed'
 
-export function filterMarketSkills(
-  skills: MarketSkillSummary[],
-  query: string,
-  view: CatalogView,
-): MarketSkillSummary[] {
-  const normalizedQuery = query.trim().toLocaleLowerCase()
-  return skills.filter((skill) => {
-    if (view === 'company' && skill.visibility !== 'company') return false
-    if (!normalizedQuery && view === 'featured' && !skill.featured) return false
-    if (!normalizedQuery) return true
-    return [skill.displayName, skill.summary, skill.author, skill.publisher.displayName, skill.tags.join(' ')]
-      .join(' ')
-      .toLocaleLowerCase()
-      .includes(normalizedQuery)
-  })
-}
-
-export function isInstallableMarketSkill(skill: MarketSkillSummary): boolean {
-  return /^[a-f0-9]{64}$/.test(skill.sha256)
-}
-
-export function getInstalledMarketSlug(skill: LoadedSkill): string | null {
-  if (skill.origin !== 'top-level') return null
-  const segments = skill.path.replace(/\\/g, '/').replace(/\/+$/, '').split('/')
-  return segments.at(-1) || null
+export function getMarketSkillVisual(skill: MarketSkillSummary) {
+  return resolveSkillVisual([skill.slug, skill.displayName, ...skill.tags, ...skill.roots])
 }
 
 export default function SkillsHubPage() {
   const { t } = useTranslation()
   const skills = useAtomValue(skillsAtom)
   const workspaceId = useAtomValue(windowWorkspaceIdAtom)
-  const workspaces = useAtomValue(windowWorkspacesAtom)
-  const workspace = workspaces.find(item => item.id === workspaceId) ?? null
+  const workspace = useAtomValue(windowRuntimeWorkspaceAtom)
   const currentWorkspaceId = React.useRef(workspaceId)
+  const detailRequestId = React.useRef(0)
   currentWorkspaceId.current = workspaceId
 
   const [marketSkills, setMarketSkills] = React.useState<MarketSkillSummary[]>([])
   const [catalogLoading, setCatalogLoading] = React.useState(true)
   const [catalogError, setCatalogError] = React.useState<string | null>(null)
   const [reloadToken, setReloadToken] = React.useState(0)
+  const [activeTab, setActiveTab] = React.useState<SkillsTab>('discover')
   const [query, setQuery] = React.useState('')
   const [catalogView, setCatalogView] = React.useState<CatalogView>('featured')
-  const [showAllInstalled, setShowAllInstalled] = React.useState(false)
   const [installingSlug, setInstallingSlug] = React.useState<string | null>(null)
+  const [selectedMarketSkill, setSelectedMarketSkill] = React.useState<MarketSkillSummary | null>(null)
+  const [marketSkillDetail, setMarketSkillDetail] = React.useState<MarketSkillDetail | null>(null)
+  const [marketSkillDetailLoading, setMarketSkillDetailLoading] = React.useState(false)
+  const [marketSkillDetailError, setMarketSkillDetailError] = React.useState<string | null>(null)
   const [skillToPublish, setSkillToPublish] = React.useState<LoadedSkill | null>(null)
   const [skillToRemove, setSkillToRemove] = React.useState<LoadedSkill | null>(null)
 
@@ -122,9 +121,6 @@ export default function SkillsHubPage() {
       skill.slug,
     ].filter(Boolean).join(' ').toLocaleLowerCase().includes(normalizedQuery))
   }, [query, skills])
-  const visibleInstalledSkills = query || showAllInstalled
-    ? filteredInstalledSkills
-    : filteredInstalledSkills.slice(0, INSTALLED_SKILLS_PREVIEW_LIMIT)
   const filteredMarketSkills = React.useMemo(
     () => filterMarketSkills(marketSkills, query, catalogView),
     [catalogView, marketSkills, query],
@@ -139,6 +135,41 @@ export default function SkillsHubPage() {
 
   const openSkill = React.useCallback((skill: LoadedSkill) => {
     navigate(routes.view.skills(skill.slug))
+  }, [])
+
+  const openMarketSkill = React.useCallback(async (skill: MarketSkillSummary) => {
+    const requestId = ++detailRequestId.current
+    setSelectedMarketSkill(skill)
+    setMarketSkillDetail(null)
+    setMarketSkillDetailError(null)
+    setMarketSkillDetailLoading(true)
+    try {
+      const detail = await window.electronAPI.getSkillDetailFromMarket(skill.slug)
+      if (requestId === detailRequestId.current) {
+        setSelectedMarketSkill(detail)
+        setMarketSkillDetail(detail)
+        setMarketSkills(current => current.map(item => item.slug === detail.slug ? detail : item))
+      }
+    } catch (error) {
+      if (requestId === detailRequestId.current) {
+        setMarketSkillDetailError(error instanceof Error ? error.message : String(error))
+      }
+    } finally {
+      if (requestId === detailRequestId.current) setMarketSkillDetailLoading(false)
+    }
+  }, [])
+
+  const openMarketSkillUrl = React.useCallback((url: string) => {
+    const externalUrl = normalizeMarketSkillExternalUrl(url)
+    if (externalUrl) void window.electronAPI.openUrl(externalUrl)
+  }, [])
+
+  const closeMarketSkill = React.useCallback(() => {
+    detailRequestId.current += 1
+    setSelectedMarketSkill(null)
+    setMarketSkillDetail(null)
+    setMarketSkillDetailError(null)
+    setMarketSkillDetailLoading(false)
   }, [])
 
   const installSkill = React.useCallback(async (skill: MarketSkillSummary) => {
@@ -188,8 +219,8 @@ export default function SkillsHubPage() {
               {t('skillsHub.description', '为你的创作工作流安装和管理 Skills')}
             </p>
           </div>
-          {workspace ? (
-            <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
+            {workspace ? (
               <AddSkillPopover
                 workspace={workspace}
                 trigger={(
@@ -199,37 +230,68 @@ export default function SkillsHubPage() {
                   </Button>
                 )}
               />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={publishableSkills.length === 0}
-                    title={publishableSkills.length === 0
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled
+                title={t('workspace.loadingWorkspaces', '正在加载项目...')}
+              >
+                <Plus aria-hidden="true" />
+                {t('skillsHub.create', '创建 Skill')}
+              </Button>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={!workspace || publishableSkills.length === 0}
+                  title={!workspace
+                    ? t('workspace.loadingWorkspaces', '正在加载项目...')
+                    : publishableSkills.length === 0
                       ? t('skillsHub.noPublishableSkills', '没有可发布的本地 Skill')
                       : undefined}
-                  >
-                    <Upload aria-hidden="true" />
-                    {t('skillsHub.publish', '发布')}
-                    <ChevronDown aria-hidden="true" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <StyledDropdownMenuContent align="end" className="min-w-56">
-                  {publishableSkills.map(skill => (
-                    <StyledDropdownMenuItem key={skill.slug} onClick={() => setSkillToPublish(skill)}>
-                      <SkillAvatar skill={skill} size="sm" workspaceId={workspace.id} />
-                      <span className="min-w-0 truncate">
-                        {skill.metadata.displayName ?? skill.metadata.name}
-                      </span>
-                    </StyledDropdownMenuItem>
-                  ))}
-                </StyledDropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          ) : null}
+                >
+                  <Upload aria-hidden="true" />
+                  {t('skillsHub.publish', '发布')}
+                  <ChevronDown aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <StyledDropdownMenuContent align="end" className="min-w-56">
+                {publishableSkills.map(skill => (
+                  <StyledDropdownMenuItem key={skill.slug} onClick={() => setSkillToPublish(skill)}>
+                    <SkillAvatar skill={skill} size="sm" workspaceId={workspace?.id ?? workspaceId ?? undefined} />
+                    <span className="min-w-0 truncate">
+                      {skill.metadata.displayName ?? skill.metadata.name}
+                    </span>
+                  </StyledDropdownMenuItem>
+                ))}
+              </StyledDropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </header>
 
-        <div className="relative mt-6">
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => {
+            setActiveTab(value as SkillsTab)
+            setQuery('')
+          }}
+          className="mt-6"
+        >
+          <TabsList className="h-9 rounded-md bg-foreground/[0.04] p-0.5">
+            <TabsTrigger value="discover" className="h-8 rounded-[5px] px-4 text-sm">
+              {t('skillsHub.discover', '发现')}
+            </TabsTrigger>
+            <TabsTrigger value="installed" className="h-8 rounded-[5px] px-4 text-sm">
+              {t('skillsHub.installed', '已安装')}
+              <span className="ml-1.5 text-xs tabular-nums text-muted-foreground">{skills.length}</span>
+            </TabsTrigger>
+          </TabsList>
+
+        <div className="relative mt-4">
           <label className="sr-only" htmlFor="skills-hub-search">
             {t('skillsHub.searchLabel', '搜索 Skills')}
           </label>
@@ -242,91 +304,67 @@ export default function SkillsHubPage() {
             type="search"
             value={query}
             onChange={event => setQuery(event.target.value)}
-            placeholder={t('skillsHub.searchPlaceholder', '搜索名称、发布者、内容来源或标签')}
+            placeholder={activeTab === 'discover'
+              ? t('skillsHub.searchPlaceholder', '搜索名称、发布者、内容来源或标签')
+              : t('skillsHub.searchInstalledPlaceholder', '搜索已安装 Skills')}
             className="pl-9"
           />
         </div>
 
-        <section className="mt-9" aria-labelledby="installed-skills-heading">
-          <div className="flex items-baseline justify-between gap-3">
-            <h2 id="installed-skills-heading" className="text-sm font-semibold">
-              {t('skillsHub.installed', '已安装')}
-            </h2>
-            <span className="text-xs tabular-nums text-muted-foreground">
-              {filteredInstalledSkills.length}
-            </span>
-          </div>
+        <TabsContent value="installed" className="mt-5">
           {filteredInstalledSkills.length > 0 ? (
-            <>
-              <div id="installed-skills-grid" className="mt-3 grid grid-cols-2 gap-1 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                {visibleInstalledSkills.map(skill => (
-                  <div
-                    key={skill.slug}
-                    className="group flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-foreground/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    title={skill.metadata.description}
+            <div id="installed-skills-grid" className="grid grid-cols-1 gap-x-8 lg:grid-cols-2">
+              {filteredInstalledSkills.map(skill => (
+                <article key={skill.slug} className="flex min-w-0 items-start gap-3 border-b border-border/60 py-4">
+                  <button
+                    type="button"
+                    onClick={() => openSkill(skill)}
+                    className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    <button
-                      type="button"
-                      onClick={() => openSkill(skill)}
-                      className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <SkillAvatar skill={skill} size="sm" workspaceId={workspaceId ?? undefined} />
-                      <span className="min-w-0 flex-1 truncate text-xs font-medium">
+                    <SkillAvatar skill={skill} size="md" workspaceId={workspaceId ?? undefined} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">
                         {skill.metadata.displayName ?? skill.metadata.name}
                       </span>
-                    </button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label={t('skillManagement.manage', {
-                            name: skill.metadata.displayName ?? skill.metadata.name,
+                      <span className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                        {skill.metadata.description}
+                      </span>
+                    </span>
+                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={t('skillManagement.manage', {
+                          name: skill.metadata.displayName ?? skill.metadata.name,
+                        })}
+                        className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <MoreHorizontal className="size-3.5" aria-hidden="true" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <StyledDropdownMenuContent align="end" className="min-w-48">
+                      {skill.origin === 'top-level'
+                        && !isDefaultGlobalAgentSkillSlug(getInstalledMarketSlug(skill) ?? skill.slug)
+                        && workspaceId ? (
+                        <StyledDropdownMenuItem variant="destructive" onClick={() => setSkillToRemove(skill)}>
+                          <Trash2 className="size-3.5" aria-hidden="true" />
+                          {t('skillManagement.removeAction')}
+                        </StyledDropdownMenuItem>
+                      ) : (
+                        <StyledDropdownMenuItem disabled>
+                          {t('skillManagement.managedBySource', {
+                            source: isDefaultGlobalAgentSkillSlug(getInstalledMarketSlug(skill) ?? skill.slug)
+                              ? 'Storyflow'
+                              : skill.source,
                           })}
-                          className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          <MoreHorizontal className="size-3.5" aria-hidden="true" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <StyledDropdownMenuContent align="end" className="min-w-48">
-                        {skill.origin === 'top-level'
-                          && !isDefaultGlobalAgentSkillSlug(getInstalledMarketSlug(skill) ?? skill.slug)
-                          && workspaceId ? (
-                          <StyledDropdownMenuItem variant="destructive" onClick={() => setSkillToRemove(skill)}>
-                            <Trash2 className="size-3.5" aria-hidden="true" />
-                            {t('skillManagement.removeAction')}
-                          </StyledDropdownMenuItem>
-                        ) : (
-                          <StyledDropdownMenuItem disabled>
-                            {t('skillManagement.managedBySource', {
-                              source: isDefaultGlobalAgentSkillSlug(getInstalledMarketSlug(skill) ?? skill.slug)
-                                ? 'Storyflow'
-                                : skill.source,
-                            })}
-                          </StyledDropdownMenuItem>
-                        )}
-                      </StyledDropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                ))}
-              </div>
-              {!query && filteredInstalledSkills.length > INSTALLED_SKILLS_PREVIEW_LIMIT ? (
-                <button
-                  type="button"
-                  aria-controls="installed-skills-grid"
-                  aria-expanded={showAllInstalled}
-                  onClick={() => setShowAllInstalled(value => !value)}
-                  className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {showAllInstalled
-                    ? t('skillsHub.collapseInstalled', '收起')
-                    : t('skillsHub.showAllInstalled', '显示全部 {{count}} 个', { count: filteredInstalledSkills.length })}
-                  <ChevronDown
-                    className={cn('size-3.5 transition-transform', showAllInstalled && 'rotate-180')}
-                    aria-hidden="true"
-                  />
-                </button>
-              ) : null}
-            </>
+                        </StyledDropdownMenuItem>
+                      )}
+                    </StyledDropdownMenuContent>
+                  </DropdownMenu>
+                </article>
+              ))}
+            </div>
           ) : (
             <p className="mt-3 rounded-lg border border-dashed border-border/80 px-4 py-5 text-sm text-muted-foreground">
               {query
@@ -334,14 +372,21 @@ export default function SkillsHubPage() {
                 : t('skillsHub.noInstalled', '当前项目还没有安装 Skill')}
             </p>
           )}
-        </section>
+        </TabsContent>
 
-        <section className="mt-9" aria-labelledby="discover-skills-heading">
+        <TabsContent value="discover" className="mt-5">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 pb-3">
-            <h2 id="discover-skills-heading" className="text-sm font-semibold">
-              {t('skillsHub.discover', '发现')}
-            </h2>
-            <div className="flex rounded-md bg-foreground/[0.04] p-0.5" role="tablist" aria-label={t('skillsHub.catalogView', '目录范围')}>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => window.electronAPI.openUrl('https://skillhub.cn')}
+            >
+              <Compass aria-hidden="true" />
+              {t('skillsHub.browseSkillHub', '浏览 SkillHub')}
+              <ExternalLink aria-hidden="true" />
+            </Button>
+            <div className="flex rounded-md bg-foreground/[0.04] p-0.5" role="group" aria-label={t('skillsHub.catalogView', '目录范围')}>
               {([
                 ...(marketSkills.some(skill => skill.visibility === 'company') ? ['company'] as const : []),
                 'featured',
@@ -350,8 +395,7 @@ export default function SkillsHubPage() {
                 <button
                   key={view}
                   type="button"
-                  role="tab"
-                  aria-selected={catalogView === view}
+                  aria-pressed={catalogView === view}
                   onClick={() => setCatalogView(view)}
                   className={cn(
                     'rounded-[5px] px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -400,45 +444,51 @@ export default function SkillsHubPage() {
                   const installed = installedBySlug.get(skill.slug)
                   const installing = installingSlug === skill.slug
                   const installable = isInstallableMarketSkill(skill)
+                  const visual = getMarketSkillVisual(skill)
+                  const SkillIcon = visual.icon
                   return (
                     <article key={`${skill.slug}@${skill.version}`} className="flex min-w-0 items-start gap-3 border-b border-border/60 py-4">
-                      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-foreground/[0.03]">
-                        <Zap className="size-4 text-muted-foreground" aria-hidden="true" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex min-w-0 items-baseline gap-2">
-                          <h3 className="truncate text-sm font-medium">{skill.displayName}</h3>
-                          <span className="shrink-0 text-[11px] text-muted-foreground">v{skill.version}</span>
-                        </div>
-                        <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                          {skill.summary}
-                        </p>
-                        <p className="mt-1 truncate text-xs text-muted-foreground">
-                          <button
-                            type="button"
-                            onClick={() => setQuery(skill.publisher.displayName)}
-                            className="rounded-sm font-medium text-foreground/75 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                            aria-label={t('skillsHub.filterPublisher', {
-                              defaultValue: '筛选发布者 {{name}}',
-                              name: skill.publisher.displayName,
-                            })}
-                          >
-                            {t('skillsHub.publishedBy', {
-                              defaultValue: '{{name}} 发布',
-                              name: skill.publisher.displayName,
-                            })}
-                          </button>
-                          {' · '}
-                          {skill.visibility === 'company'
-                            ? t('skillsHub.companyVisibility', '公司内部')
-                            : t('skillsHub.publicVisibility', '公开')}
-                          {' · '}
-                          {t('skillsHub.contentSource', {
-                            defaultValue: '来源：{{source}}',
-                            source: skill.author,
-                          })}
-                        </p>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void openMarketSkill(skill)}
+                        className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        aria-label={t('skillsHub.viewDetail', { defaultValue: '查看 {{name}}', name: skill.displayName })}
+                      >
+                        <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-lg', visual.className)}>
+                          <SkillIcon className="size-4" aria-hidden="true" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex min-w-0 items-baseline gap-2">
+                            <span className="truncate text-sm font-medium">{skill.displayName}</span>
+                            <span className="shrink-0 text-[11px] text-muted-foreground">v{skill.version}</span>
+                          </span>
+                          <span className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                            {skill.summary}
+                          </span>
+                          <span className="mt-1 flex min-w-0 gap-2 overflow-hidden text-xs text-muted-foreground">
+                            <span className="font-medium text-foreground/75">
+                              {t('skillsHub.publishedBy', {
+                                defaultValue: '{{name}} 发布',
+                                name: skill.publisher.displayName,
+                              })}
+                            </span>
+                            <span className="shrink-0">{skill.visibility === 'company'
+                              ? t('skillsHub.companyVisibility', '公司内部')
+                              : t('skillsHub.publicVisibility', '公开')}</span>
+                            <span className="inline-flex shrink-0 items-center gap-1">
+                              <Download className="size-3" aria-hidden="true" />
+                              {t('skillsHub.downloadCount', {
+                                defaultValue: '{{count}} 次下载',
+                                count: skill.downloadCount,
+                              })}
+                            </span>
+                            <span className="truncate">{t('skillsHub.contentSource', {
+                              defaultValue: '来源：{{source}}',
+                              source: skill.author,
+                            })}</span>
+                          </span>
+                        </span>
+                      </button>
                       {installed ? (
                         <Button type="button" size="sm" variant="ghost" className="shrink-0" onClick={() => openSkill(installed)}>
                           <Check aria-hidden="true" />
@@ -469,8 +519,30 @@ export default function SkillsHubPage() {
               </div>
             )}
           </div>
-        </section>
+        </TabsContent>
+        </Tabs>
       </div>
+
+      <MarketSkillDetailDialog
+        skill={selectedMarketSkill}
+        detail={marketSkillDetail}
+        loading={marketSkillDetailLoading}
+        error={marketSkillDetailError}
+        installed={selectedMarketSkill ? installedBySlug.get(selectedMarketSkill.slug) : undefined}
+        installing={selectedMarketSkill?.slug === installingSlug}
+        canInstall={Boolean(workspaceId && marketSkillDetail && !marketSkillDetailError)}
+        onOpenChange={open => { if (!open) closeMarketSkill() }}
+        onRetry={() => { if (selectedMarketSkill) void openMarketSkill(selectedMarketSkill) }}
+        onInstall={() => {
+          const installTarget = marketSkillDetail ?? selectedMarketSkill
+          if (installTarget) void installSkill(installTarget)
+        }}
+        onOpenUrl={openMarketSkillUrl}
+        onOpenInstalled={(skill) => {
+          closeMarketSkill()
+          openSkill(skill)
+        }}
+      />
 
       {workspace ? (
         <PublishSkillDialog
@@ -489,6 +561,118 @@ export default function SkillsHubPage() {
         onOpenChange={open => { if (!open) setSkillToRemove(null) }}
       />
     </main>
+  )
+}
+
+function MarketSkillDetailDialog({
+  skill,
+  detail,
+  loading,
+  error,
+  installed,
+  installing,
+  canInstall,
+  onOpenChange,
+  onRetry,
+  onInstall,
+  onOpenUrl,
+  onOpenInstalled,
+}: {
+  skill: MarketSkillSummary | null
+  detail: MarketSkillDetail | null
+  loading: boolean
+  error: string | null
+  installed?: LoadedSkill
+  installing: boolean
+  canInstall: boolean
+  onOpenChange: (open: boolean) => void
+  onRetry: () => void
+  onInstall: () => void
+  onOpenUrl: (url: string) => void
+  onOpenInstalled: (skill: LoadedSkill) => void
+}) {
+  const { t } = useTranslation()
+  if (!skill) return null
+  const resolvedSkill = detail ?? skill
+  const visual = getMarketSkillVisual(resolvedSkill)
+  const SkillIcon = visual.icon
+  const instructions = detail ? stripSkillFrontmatter(detail.skillMarkdown) : ''
+
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent size="xl" className="max-h-[82vh] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0">
+        <DialogHeader className="px-6 pb-5 pt-6 pr-12">
+          <div className="flex items-start gap-3">
+            <div className={cn('flex size-11 shrink-0 items-center justify-center rounded-lg', visual.className)}>
+              <SkillIcon className="size-5" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <DialogTitle className="truncate">{resolvedSkill.displayName}</DialogTitle>
+              <DialogDescription className="mt-1 leading-relaxed">{resolvedSkill.summary}</DialogDescription>
+              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span>{t('skillsHub.publishedBy', { defaultValue: '{{name}} 发布', name: resolvedSkill.publisher.displayName })}</span>
+                <span>{resolvedSkill.visibility === 'company'
+                  ? t('skillsHub.companyVisibility', '公司内部')
+                  : t('skillsHub.publicVisibility', '公开')}</span>
+                <span>{t('skillsHub.downloadCount', {
+                  defaultValue: '{{count}} 次下载',
+                  count: resolvedSkill.downloadCount,
+                })}</span>
+                <span>{t('skillsHub.contentSource', { defaultValue: '来源：{{source}}', source: resolvedSkill.author })}</span>
+                <span>v{resolvedSkill.version}</span>
+              </div>
+            </div>
+          </div>
+        </DialogHeader>
+
+        <div className="min-h-0 overflow-y-auto border-y border-border/60 px-6 py-5">
+          {loading ? (
+            <div className="space-y-3" aria-label={t('skillsHub.loadingDetail', '正在加载 Skill 内容')}>
+              <div className="h-3 w-1/3 animate-pulse rounded bg-foreground/[0.07] motion-reduce:animate-none" />
+              <div className="h-2.5 w-full animate-pulse rounded bg-foreground/[0.05] motion-reduce:animate-none" />
+              <div className="h-2.5 w-5/6 animate-pulse rounded bg-foreground/[0.05] motion-reduce:animate-none" />
+              <div className="h-2.5 w-3/4 animate-pulse rounded bg-foreground/[0.05] motion-reduce:animate-none" />
+            </div>
+          ) : error ? (
+            <div role="alert" className="rounded-lg border border-destructive/25 bg-destructive/[0.04] px-4 py-4">
+              <p className="text-sm font-medium">{t('skillsHub.detailLoadFailed', 'Skill 内容加载失败')}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{error}</p>
+              <Button type="button" size="sm" variant="outline" className="mt-3" onClick={onRetry}>
+                {t('common.retry', '重试')}
+              </Button>
+            </div>
+          ) : instructions ? (
+            <Info_Markdown mode="full" className="px-0 pb-0" allowImages={false} onUrlClick={onOpenUrl}>
+              {instructions}
+            </Info_Markdown>
+          ) : (
+            <p className="text-sm text-muted-foreground">{t('skillsHub.noInstructions', '这个 Skill 暂无可显示的说明')}</p>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 px-6 py-4">
+          <div className="flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <span>{resolvedSkill.license}</span>
+            {resolvedSkill.tags.map(tag => <span key={tag}>{tag}</span>)}
+          </div>
+          {installed ? (
+            <Button type="button" size="sm" onClick={() => onOpenInstalled(installed)}>
+              <Check aria-hidden="true" />
+              {t('skillsHub.open', '打开')}
+            </Button>
+          ) : isInstallableMarketSkill(resolvedSkill) ? (
+            <Button type="button" size="sm" disabled={!canInstall || installing} onClick={onInstall}>
+              <Download aria-hidden="true" />
+              {installing ? t('skillsHub.installing', '安装中') : t('skillsHub.install', '安装')}
+            </Button>
+          ) : (
+            <Button type="button" size="sm" variant="ghost" disabled>
+              {t('skillsHub.referenceOnly', '仅供参考')}
+            </Button>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
