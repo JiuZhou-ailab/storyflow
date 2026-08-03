@@ -72,6 +72,7 @@ import {
   removeBackgroundTaskById,
   removeBackgroundTaskByToolUseId,
   windowWorkspaceIdAtom,
+  windowRuntimeWorkspaceAtom,
   windowWorkspacesAtom,
   type SessionMeta,
 } from '@/atoms/sessions'
@@ -392,7 +393,7 @@ function AppContent() {
   const [workspaces, setWorkspaces] = useAtom(windowWorkspacesAtom)
   // Window's workspace ID — shared atom so Root/ThemeProvider stays in sync on switch
   const [windowWorkspaceId, setWindowWorkspaceId] = useAtom(windowWorkspaceIdAtom)
-  const [runtimeWorkspace, setRuntimeWorkspace] = useState<Workspace | null>(null)
+  const [runtimeWorkspace, setRuntimeWorkspace] = useAtom(windowRuntimeWorkspaceAtom)
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
   const focusedProjectRoute = useAtomValue(focusedPanelRouteAtom)
   const {
@@ -867,7 +868,7 @@ function AppContent() {
     }
 
     initialize()
-  }, [loadClientAuthState])
+  }, [loadClientAuthState, setRuntimeWorkspace])
 
   // Session selection state
   const [sessionSelection, setSession] = useSession()
@@ -1918,7 +1919,7 @@ function AppContent() {
     } finally {
       setShowResetDialog(false)
     }
-  }, [onboarding, initializeSessions])
+  }, [onboarding, initializeSessions, setRuntimeWorkspace])
 
   const activateRuntimeWorkspace = useCallback(async (
     workspaceId: string,
@@ -1985,7 +1986,7 @@ function AppContent() {
         workspaceSwitchInFlightRef.current = null
       }
     }
-  }, [loadSessionsFromServer, setSession, store, windowWorkspaceId])
+  }, [loadSessionsFromServer, setRuntimeWorkspace, setSession, store, windowWorkspaceId])
 
   // Handle project selection. The project catalog remains independent from the
   // active runtime, while project switches continue to reuse the existing
@@ -2074,7 +2075,7 @@ function AppContent() {
       toast.error('移除项目失败')
       handleRefreshWorkspaces()
     }
-  }, [activeProjectId, handleRefreshWorkspaces, runtimeWorkspace, setWindowWorkspaceId, workspaces])
+  }, [activeProjectId, handleRefreshWorkspaces, runtimeWorkspace, setRuntimeWorkspace, setWindowWorkspaceId, workspaces])
 
   const handleSetProjectArchived = useCallback(async (workspaceId: string, archived: boolean) => {
     const project = workspaces.find(workspace => workspace.id === workspaceId)
@@ -2102,7 +2103,7 @@ function AppContent() {
       toast.error(archived ? '归档项目失败' : '恢复项目失败')
       handleRefreshWorkspaces()
     }
-  }, [handleRefreshWorkspaces, runtimeWorkspace, setWindowWorkspaceId, setWorkspaces, workspaces])
+  }, [handleRefreshWorkspaces, runtimeWorkspace, setRuntimeWorkspace, setWindowWorkspaceId, setWorkspaces, workspaces])
 
   const handleWorkspaceCreated = useCallback(async (workspace: Workspace) => {
     pendingCreatedWorkspaceRef.current = workspace

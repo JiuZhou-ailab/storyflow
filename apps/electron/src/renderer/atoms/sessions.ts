@@ -890,6 +890,9 @@ export const backgroundTasksAtomFamily = atomFamily(
  */
 export const windowWorkspaceIdAtom = atom<string | null>(null)
 
+/** Window's resolved runtime workspace, including the hidden free-conversation workspace. */
+export const windowRuntimeWorkspaceAtom = atom<Workspace | null>(null)
+
 /**
  * Window's workspace list — paired with windowWorkspaceIdAtom for active-workspace lookups.
  * Written by App when workspace state changes, read by focused workspace consumers.

@@ -15,7 +15,7 @@
 import * as React from 'react'
 import { useSetAtom } from 'jotai'
 import { AppShellProvider, type AppShellContextType } from '../context/AppShellContext'
-import { windowWorkspaceIdAtom, windowWorkspacesAtom } from '../atoms/sessions'
+import { windowRuntimeWorkspaceAtom, windowWorkspaceIdAtom, windowWorkspacesAtom } from '../atoms/sessions'
 import type { Workspace } from '../../shared/types'
 
 const PLAYGROUND_WORKSPACE: Workspace = {
@@ -76,16 +76,19 @@ const playgroundValue: AppShellContextType = {
 
 export function PlaygroundAppShellProvider({ children }: { children: React.ReactNode }) {
   const setWindowWorkspaceId = useSetAtom(windowWorkspaceIdAtom)
+  const setRuntimeWorkspace = useSetAtom(windowRuntimeWorkspaceAtom)
   const setWindowWorkspaces = useSetAtom(windowWorkspacesAtom)
 
   React.useEffect(() => {
     setWindowWorkspaceId(PLAYGROUND_WORKSPACE.id)
+    setRuntimeWorkspace(PLAYGROUND_WORKSPACE)
     setWindowWorkspaces([PLAYGROUND_WORKSPACE])
     return () => {
       setWindowWorkspaceId(null)
+      setRuntimeWorkspace(null)
       setWindowWorkspaces([])
     }
-  }, [setWindowWorkspaceId, setWindowWorkspaces])
+  }, [setRuntimeWorkspace, setWindowWorkspaceId, setWindowWorkspaces])
 
   return <AppShellProvider value={playgroundValue}>{children}</AppShellProvider>
 }

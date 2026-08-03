@@ -22,6 +22,9 @@ describe('active workspace subscriptions', () => {
 
   it('keeps the real app and playground provider in sync with the workspace atoms', () => {
     expect(appSource).toContain('useAtom(windowWorkspacesAtom)')
+    expect(appSource).toContain('useAtom(windowRuntimeWorkspaceAtom)')
+    expect(playgroundProviderSource).toContain('windowRuntimeWorkspaceAtom')
+    expect(playgroundProviderSource).toContain('setRuntimeWorkspace(PLAYGROUND_WORKSPACE)')
     expect(playgroundProviderSource).toContain('windowWorkspacesAtom')
     expect(playgroundProviderSource).toContain('setWindowWorkspaces([PLAYGROUND_WORKSPACE])')
   })
