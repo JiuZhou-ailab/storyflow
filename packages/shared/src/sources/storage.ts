@@ -805,31 +805,8 @@ export async function createSource(
   // Save config first to create the directory
   saveSourceConfig(sourceRootPath, config);
 
-  // If icon is a URL, download it immediately
-  // (watcher will also handle this, but doing it here provides immediate feedback)
-  const sourcePath = getSourcePath(sourceRootPath, slug);
-  if (config.icon && isIconUrl(config.icon)) {
-    const iconPath = await downloadIcon(sourcePath, config.icon, 'Sources');
-    if (iconPath) {
-      debug(`[createSource] Icon downloaded for ${slug}: ${iconPath}`);
-    }
-  } else if (!config.icon) {
-    // No icon provided - try to auto-fetch from service URL
-    const { deriveServiceUrl, getHighQualityLogoUrl } = await import('../utils/logo.ts');
-    const { downloadIcon } = await import('../utils/icon.ts');
-    const serviceUrl = deriveServiceUrl(input);
-    if (serviceUrl) {
-      const logoUrl = await getHighQualityLogoUrl(serviceUrl, input.provider);
-      if (logoUrl) {
-        const iconPath = await downloadIcon(sourcePath, logoUrl, `createSource:${slug}`);
-        if (iconPath) {
-          // Store the source URL for reference (not the cached path)
-          config.icon = logoUrl;
-          saveSourceConfig(sourceRootPath, config);
-        }
-      }
-    }
-  }
+  // Icon URL downloads are best-effort work owned by ConfigWatcher. Source
+  // creation must not wait on favicon discovery or any external network.
 
   // Create guide.md with skeleton template
   // (bundled guides removed - agent should search craft-agents-docs MCP for service-specific guidance)

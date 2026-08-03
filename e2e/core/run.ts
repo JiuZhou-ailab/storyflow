@@ -1,5 +1,5 @@
 // input: Built Electron app, a temporary local workspace, and a deterministic OpenAI-compatible HTTP stub
-// output: Assertions for local startup, a real Pi edit turn, isolated version restore, and restart recovery
+// output: Assertions for account lazy-render, local startup, a real Pi edit turn, version restore, and restart recovery
 // pos: Release-gate smoke test for the desktop product's durable core loop
 
 import { spawnSync } from 'node:child_process'
@@ -15,8 +15,10 @@ import { join } from 'node:path'
 import { strict as assert } from 'node:assert'
 import {
   callOn,
+  evalOn,
   launchApp,
   sleep,
+  waitFor,
   type LaunchedApp,
   type LaunchAppOptions,
 } from '../perf/launch.ts'
@@ -44,14 +46,18 @@ async function main(): Promise<void> {
   let app: LaunchedApp | undefined
 
   try {
+    configureAccountSmokeEnvironment()
     configureModel(fixture, model.url)
     app = await launchApp(fixture.configDir, launchOptions)
 
-    const auth = await callOn<{ required: boolean }>(
+    const auth = await callOn<{ required: boolean; configured: boolean; authenticated: boolean }>(
       app,
       'async function () { return await window.electronAPI.getClientAuthState() }',
     )
     assert.equal(auth.required, false, 'local projects must open without client login')
+    assert.equal(auth.configured, true, 'account smoke must exercise the configured sign-in form')
+    assert.equal(auth.authenticated, false, 'account smoke fixture must start signed out')
+    await smokeAccountCenter(app)
 
     const workspace = await callOn<{ id: string; rootPath: string } | undefined>(
       app,
@@ -139,6 +145,132 @@ async function main(): Promise<void> {
     await app?.close().catch(() => {})
     model.stop()
     rmSync(fixture.configDir, { recursive: true, force: true })
+  }
+}
+
+function configureAccountSmokeEnvironment(): void {
+  process.env.CRAFT_CLIENT_AUTH_BROKER_URL = 'https://broker.example.invalid'
+  process.env.CRAFT_CLIENT_NEON_AUTH_BASE_URL = 'https://auth.example.invalid'
+}
+
+async function smokeAccountCenter(app: LaunchedApp): Promise<void> {
+  const rendererErrors: string[] = []
+  const onException = (params: any, sessionId?: string) => {
+    if (sessionId === app.sid) {
+      rendererErrors.push(params.exceptionDetails?.exception?.description ?? params.exceptionDetails?.text ?? 'renderer exception')
+    }
+  }
+  const onConsole = (params: any, sessionId?: string) => {
+    if (sessionId !== app.sid || params.type !== 'error') return
+    rendererErrors.push((params.args ?? [])
+      .map((arg: any) => arg.value ?? arg.description ?? '')
+      .filter(Boolean)
+      .join(' '))
+  }
+  app.cdp.on('Runtime.exceptionThrown', onException)
+  app.cdp.on('Runtime.consoleAPICalled', onConsole)
+
+  try {
+    const profileSelector = '[data-tutorial="activity-profile"]'
+    await waitFor(
+      app,
+      `!!document.querySelector('${profileSelector}')`,
+      15_000,
+      'rendered account profile entry',
+    )
+    // This fixture validates the account route, not the Motion-driven startup transition.
+    // Reveal the already-rendered shell so CDP can exercise the real pointer path.
+    await callOn<void>(app, `function () {
+      const style = document.createElement('style')
+      style.textContent = '.z-splash { display: none !important; }'
+      document.head.append(style)
+    }`)
+    if (await evalOn<boolean>(app, `!!document.querySelector('[role="dialog"]')`)) {
+      for (const type of ['keyDown', 'keyUp'] as const) {
+        await app.cdp.send(
+          'Input.dispatchKeyEvent',
+          { type, key: 'Escape', code: 'Escape' },
+          app.sid,
+        )
+      }
+      await waitFor(
+        app,
+        `!document.querySelector('[role="dialog"]')`,
+        5_000,
+        'startup announcement dismissal',
+      )
+    }
+    await waitFor(
+      app,
+      `(() => {
+        const element = document.querySelector('${profileSelector}')
+        if (!element) return false
+        const rect = element.getBoundingClientRect()
+        const hit = document.elementFromPoint(
+          rect.left + rect.width / 2,
+          rect.top + rect.height / 2,
+        )
+        return hit === element || element.contains(hit)
+      })()`,
+      15_000,
+      'account profile entry',
+    )
+    await clickSelector(app, profileSelector)
+    await waitFor(
+      app,
+      `!!document.querySelector('[data-tutorial="activity-account"]')`,
+      10_000,
+      'account menu item',
+    )
+    await clickSelector(app, '[data-tutorial="activity-account"]')
+    await waitFor(
+      app,
+      `Array.from(document.querySelectorAll('h1')).some(el => el.textContent?.trim() === '账户')
+        || document.body.textContent?.includes('出错了') === true`,
+      15_000,
+      'account route result',
+    )
+    const account = await evalOn<{ crashed: boolean; heading: boolean; signIn: boolean; text: string }>(
+      app,
+      `({
+        crashed: document.body.textContent?.includes('出错了') === true,
+        heading: Array.from(document.querySelectorAll('h1')).some(el => el.textContent?.trim() === '账户'),
+        signIn: !!document.querySelector('#client-auth-identifier'),
+        text: document.body.textContent?.trim().slice(0, 500) ?? '',
+      })`,
+    )
+    assert.deepEqual(rendererErrors, [], `account center emitted renderer errors: ${rendererErrors.join('\n')}`)
+    assert.equal(account.crashed, false, `account center entered the root error boundary: ${account.text}`)
+    assert.equal(account.heading, true, `account center did not render: ${account.text}`)
+    assert.equal(account.signIn, true, `configured account sign-in form did not render: ${account.text}`)
+  } finally {
+    app.cdp.off('Runtime.exceptionThrown', onException)
+    app.cdp.off('Runtime.consoleAPICalled', onConsole)
+  }
+}
+
+async function clickSelector(app: LaunchedApp, selector: string): Promise<void> {
+  const box = await callOn<{ x: number; y: number } | null>(
+    app,
+    `function (selector) {
+      const element = document.querySelector(selector)
+      if (!element) return null
+      const rect = element.getBoundingClientRect()
+      if (rect.width < 2 || rect.height < 2) return null
+      return {
+        x: Math.round(rect.left + rect.width / 2),
+        y: Math.round(rect.top + rect.height / 2),
+      }
+    }`,
+    [selector],
+  )
+  assert.ok(box, `click target is missing or hidden: ${selector}`)
+  for (const type of ['mousePressed', 'mouseReleased'] as const) {
+    await app.cdp.send(
+      'Input.dispatchMouseEvent',
+      { type, x: box.x, y: box.y, button: 'left', clickCount: 1 },
+      app.sid,
+    )
   }
 }
 

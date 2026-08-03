@@ -85,8 +85,6 @@ function getHealthIssueMessage(issue: CredentialHealthIssue, t: (key: string) =>
       return t("settings.ai.credentialCorrupted")
     case 'decryption_failed':
       return t("settings.ai.credentialOtherMachine")
-    case 'no_default_credentials':
-      return t("settings.ai.credentialNotFound")
     default:
       return issue.message || 'Credential issue detected.'
   }

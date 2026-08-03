@@ -94,6 +94,29 @@ describe('PiAgent subprocess error handling', () => {
     agent.destroy()
   })
 
+  it('pushes host-provided managed model access without a stored provider credential', async () => {
+    const agent = new PiAgent(createConfig({
+      connectionSlug: 'test-managed-explicit-access',
+      authType: 'api_key',
+      runtime: { piAuthProvider: 'openai' },
+    }))
+    const sent: unknown[] = []
+    ;(agent as any).subprocess = {}
+    ;(agent as any).send = (message: unknown) => sent.push(message)
+
+    await expect(agent.reloadCredentials({ token: 'managed-model-token' })).resolves.toBe(true)
+    expect(sent).toEqual([{
+      type: 'token_update',
+      piAuth: {
+        provider: 'openai',
+        credential: { type: 'api_key', key: 'managed-model-token' },
+      },
+    }])
+
+    ;(agent as any).subprocess = null
+    agent.destroy()
+  })
+
   it('does not enqueue chat errors for mini_completion_error messages', () => {
     const agent = new PiAgent(createConfig())
 

@@ -27,6 +27,7 @@ import type {
   BackendConfig,
   BackendRuntimeUpdate,
   ChatOptions,
+  ManagedModelAccess,
   SdkMcpServerConfig,
 } from './backend/types.ts';
 import { AbortReason } from './backend/types.ts';
@@ -572,6 +573,13 @@ export class PiAgent extends BaseAgent {
   } | null> {
     const piAuthProvider = getBackendRuntime(this.config).piAuthProvider;
     if (!piAuthProvider) return null;
+
+    if (this.config.managedModelAccess) {
+      return {
+        provider: piAuthProvider,
+        credential: { type: 'api_key', key: this.config.managedModelAccess.token },
+      };
+    }
 
     try {
       const credentialManager = getCredentialManager();
@@ -2207,7 +2215,10 @@ export class PiAgent extends BaseAgent {
     return updated;
   }
 
-  async reloadCredentials(): Promise<boolean> {
+  async reloadCredentials(managedModelAccess?: ManagedModelAccess): Promise<boolean> {
+    if (managedModelAccess) {
+      this.config.managedModelAccess = managedModelAccess;
+    }
     const piAuth = await this.getPiAuth();
     if (!piAuth) return false;
     if (this.subprocess) {

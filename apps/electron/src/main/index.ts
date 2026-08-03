@@ -34,6 +34,7 @@ import {
   getLlmConnection,
   getWorkspaces,
   getWorkspaceByNameOrId,
+  isManagedLlmConnectionSlug,
   MANAGED_LLM_CONNECTION_SLUG,
   MANAGED_LLM_CONNECTION_SLUGS,
   migrateRemoteServerCredentialsOnStartup,
@@ -522,12 +523,25 @@ app.whenReady().then(async () => {
               ),
             )
           } else if (change.modelAccessTokenChanged) {
+            const managedModelAccess = change.session.modelAccessToken
+              ? { token: change.session.modelAccessToken }
+              : undefined
             await Promise.all(
               MANAGED_LLM_CONNECTION_SLUGS.map(async slug => {
-                await sessionManager!.reloadConnectionCredentials(slug)
-                await getModelRefreshService().refreshNow(slug)
+                if (managedModelAccess) {
+                  await sessionManager!.reloadConnectionCredentials(slug, managedModelAccess)
+                } else {
+                  await sessionManager!.disposeConnectionRuntimes(slug)
+                }
               }),
             )
+            // Model discovery is downstream of auth state. Do not make an auth
+            // transition wait on its own credential resolver.
+            for (const slug of MANAGED_LLM_CONNECTION_SLUGS) {
+              void getModelRefreshService().refreshNow(slug).catch(error => {
+                mainLog.warn(`[client-auth] Managed model refresh failed for ${slug}:`, error)
+              })
+            }
           }
         } catch (error) {
           mainLog.warn('[client-auth] Failed to propagate auth change to live runtimes:', error)
@@ -682,7 +696,7 @@ app.whenReady().then(async () => {
                 throw new Error('Default AI access is unavailable while shared server mode is enabled')
               }
               const result = await authService.ensureModelAccessToken({ force: forceRefresh === true })
-              return { refreshed: result.refreshed }
+              return result
             },
             whenSubprocessEnvReady: whenShellEnvReady,
           })
@@ -749,6 +763,15 @@ app.whenReady().then(async () => {
         },
         deferRuntimeInitialization: !isHeadless,
         initModelRefreshService: () => initModelRefreshService(async (connection) => {
+          if (
+            connection.managed === true
+            && connection.source === 'builtin'
+            && isManagedLlmConnectionSlug(connection.slug)
+          ) {
+            if (serverModeEnabled) return {}
+            const result = await authService.ensureModelAccessToken()
+            return { apiKey: result.token }
+          }
           const { getCredentialManager } = await import('@craft-agent/shared/credentials')
           return resolveModelRefreshCredentials(connection, getCredentialManager())
         }),

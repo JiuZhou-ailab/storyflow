@@ -1,11 +1,17 @@
-// input: CredentialManager and a mocked credential backend
-// output: Regression coverage for duplicate in-flight credential reads
-// pos: Guards shared credential storage orchestration without touching real secure storage
+// input: CredentialManager, mocked backends, and isolated connection configuration
+// output: Regression coverage for credential reads, deletion, and storage-health semantics
+// pos: Guards shared credential storage orchestration without touching real user state
 
 import { describe, expect, it } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { CredentialManager } from '../manager.ts';
 import type { CredentialBackend } from '../backends/types.ts';
 import { credentialIdToAccount, type CredentialId, type StoredCredential } from '../types.ts';
+
+const CREDENTIALS_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', 'index.ts')).href;
 
 function createManagerWithBackend(backend: CredentialBackend): CredentialManager {
   const manager = new CredentialManager();
@@ -21,6 +27,62 @@ function createManagerWithBackend(backend: CredentialBackend): CredentialManager
 }
 
 describe('CredentialManager', () => {
+  it('reports a credential backend decryption failure as unhealthy', async () => {
+    const backend: CredentialBackend = {
+      name: 'mock',
+      priority: 1,
+      isAvailable: async () => true,
+      get: async () => null,
+      set: async () => {},
+      delete: async () => false,
+      list: async () => { throw new Error('authentication tag mismatch'); },
+    };
+    const manager = createManagerWithBackend(backend);
+
+    expect(await manager.checkHealth()).toEqual({
+      healthy: false,
+      issues: [{
+        type: 'decryption_failed',
+        message: 'Credentials from another machine detected. Please re-authenticate.',
+        error: 'authentication tag mismatch',
+      }],
+    });
+  });
+
+  it('treats an empty readable store as healthy when provider credentials are not configured', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'craft-agent-credential-health-'));
+    try {
+      writeFileSync(join(configDir, 'config.json'), JSON.stringify({
+        workspaces: [],
+        activeWorkspaceId: null,
+        activeSessionId: null,
+        defaultLlmConnection: 'custom-provider',
+        llmConnections: [{
+          slug: 'custom-provider',
+          name: 'Custom Provider',
+          providerType: 'pi',
+          authType: 'api_key',
+          createdAt: Date.now(),
+        }],
+      }));
+
+      const run = Bun.spawnSync([
+        process.execPath,
+        '--eval',
+        `const { getCredentialManager } = await import('${CREDENTIALS_MODULE_PATH}'); console.log(JSON.stringify(await getCredentialManager().checkHealth()));`,
+      ], {
+        env: { ...process.env, CRAFT_CONFIG_DIR: configDir },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      expect(run.exitCode).toBe(0);
+      expect(JSON.parse(run.stdout.toString())).toEqual({ healthy: true, issues: [] });
+    } finally {
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
   it('coalesces concurrent reads for the same credential id without caching completed reads', async () => {
     const id: CredentialId = { type: 'llm_api_key', connectionSlug: 'default' };
     const stored: StoredCredential = { value: 'sk-test' };

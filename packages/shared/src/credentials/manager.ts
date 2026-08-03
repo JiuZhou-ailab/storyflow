@@ -624,9 +624,8 @@ export class CredentialManager {
   /**
    * Check the health of the credential store.
    *
-   * This validates:
-   * 1. The credential file can be read and decrypted (if it exists)
-   * 2. The default LLM connection has valid credentials
+   * This validates that the credential file can be read and decrypted.
+   * Connection readiness is a separate concern: a readable empty store is healthy.
    *
    * Use this on app startup to detect issues before users hit cryptic errors.
    *
@@ -638,9 +637,11 @@ export class CredentialManager {
     try {
       await this.ensureInitialized();
 
-      // 1. Try to list credentials - this triggers decryption
-      // If file is corrupted or can't be decrypted, this will throw
-      await this.list({});
+      // Probe each backend directly: list() intentionally tolerates individual
+      // backend failures for ordinary reads, while health checks must surface them.
+      for (const backend of this.backends) {
+        await backend.list({});
+      }
 
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -669,33 +670,6 @@ export class CredentialManager {
       }
 
       return { healthy: false, issues };
-    }
-
-    // 2. Check if default connection has credentials
-    // Import lazily to avoid circular dependency
-    try {
-      const { getDefaultLlmConnection, getLlmConnection } = await import('../config/storage.ts');
-      const defaultSlug = getDefaultLlmConnection();
-
-      if (defaultSlug) {
-        const connection = getLlmConnection(defaultSlug);
-        if (connection && connection.authType !== 'none' && connection.authType !== 'environment') {
-          const hasCredentials = await this.hasLlmCredentials(
-            defaultSlug,
-            connection.authType,
-            connection.providerType
-          );
-          if (!hasCredentials) {
-            issues.push({
-              type: 'no_default_credentials',
-              message: `No credentials found for default connection "${connection.name}".`,
-            });
-          }
-        }
-      }
-    } catch (configError) {
-      // Config not yet initialized - skip this check
-      debug('[CredentialManager] Skipping default connection check - config not available');
     }
 
     return {

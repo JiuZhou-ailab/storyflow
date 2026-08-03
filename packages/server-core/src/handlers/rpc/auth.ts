@@ -71,8 +71,8 @@ export function registerAuthHandlers(server: RpcServer, deps: HandlerDeps): void
     }
   })
 
-  // Credential health check - validates credential store is readable and usable
-  // Called on app startup to detect corruption, machine migration, or missing credentials
+  // Credential health check - validates credential storage integrity only.
+  // Connection readiness is reported by the connection/auth boundaries.
   server.handle(RPC_CHANNELS.credentials.HEALTH_CHECK, async () => {
     const manager = getCredentialManager()
     return manager.checkHealth()

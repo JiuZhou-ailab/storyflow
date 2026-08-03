@@ -22,14 +22,17 @@ describe('client auth IPC propagation', () => {
     expect(source).toContain('broadcastClientAuthState(change.state)')
   })
 
-  it('wires managed model-token refresh and revocation into live runtimes', () => {
+  it('wires ephemeral managed model access into runtimes and model discovery', () => {
     const source = readElectronFile('main/index.ts')
 
     expect(source).toContain('ensureManagedModelAccessToken: async (forceRefresh)')
     expect(source).toContain('authService.ensureModelAccessToken')
     expect(source).toContain('MANAGED_LLM_CONNECTION_SLUGS.map')
-    expect(source).toContain('reloadConnectionCredentials(slug)')
+    expect(source).toContain('reloadConnectionCredentials(slug, managedModelAccess)')
     expect(source).toContain('disposeConnectionRuntimes(slug)')
+    expect(source).toContain('isManagedLlmConnectionSlug(connection.slug)')
+    expect(source).toContain('return { apiKey: result.token }')
+    expect(source).toContain('resolveModelRefreshCredentials(connection, getCredentialManager())')
     expect(source).toContain('managedModelAccessAvailable: !serverModeEnabled && managedModelAccessConfigured')
     expect(source).toContain('clientAuthService?.dispose()')
   })

@@ -56,6 +56,11 @@ export interface BackendRuntimeUpdate {
     [key: string]: unknown;
   };
 }
+
+/** Ephemeral Storyflow-managed model capability supplied by the host. */
+export interface ManagedModelAccess {
+  token: string;
+}
 import type { AutomationSystem } from '../../automations/index.ts';
 
 /**
@@ -205,6 +210,9 @@ export interface CoreBackendConfig {
 
   /** Initial thinking level */
   thinkingLevel?: ThinkingLevel;
+
+  /** Host-owned managed model access. It is process memory, never provider credential storage. */
+  managedModelAccess?: ManagedModelAccess;
 
   /** Headless mode flag (disables interactive tools) */
   isHeadless?: boolean;
@@ -512,7 +520,7 @@ export interface AgentBackend {
    * Reload credentials from the shared credential store and push them into an
    * already-running backend. Returns false when an idle restart is required.
    */
-  reloadCredentials?(): Promise<boolean>;
+  reloadCredentials?(managedModelAccess?: ManagedModelAccess): Promise<boolean>;
 
   /**
    * Dispose resources before an idle backend restart. Backends with subprocesses

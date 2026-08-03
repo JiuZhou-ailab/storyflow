@@ -1,6 +1,6 @@
-// input: Encrypted credential manager entries and model-token freshness policy
-// output: Durable client session plus derived managed-model credential projection
-// pos: Main-process persistence bridge between client-auth service and shared secure storage
+// input: Encrypted credential manager entries and renewable client-auth sessions
+// output: Durable identity session plus exact cleanup of legacy managed-token projections
+// pos: Main-process persistence boundary; model capability tokens remain process-local
 
 import { getCredentialManager, type CredentialManager } from '@craft-agent/shared/credentials'
 import {
@@ -36,39 +36,36 @@ export function createClientAuthSessionStore(
         await clearStoredSession(credentialManager)
         return null
       }
-      if (session?.modelAccessToken && !session.appSessionToken) {
+      if (!session) {
+        await clearManagedModelCredentials(credentialManager)
+        return null
+      }
+      if (!session.appSessionToken) {
         await clearStoredSession(credentialManager)
         return null
       }
-      if (session?.modelAccessToken && !isClientModelAccessTokenFresh(session.modelAccessToken)) {
-        if (session.appSessionToken) {
-          const renewableSession = withoutModelAccessToken(session)
-          await credentialManager.set(CLIENT_AUTH_SESSION_ID, {
-            value: JSON.stringify(renewableSession),
-          })
-          await syncModelAccessCredential(credentialManager, undefined)
-          return renewableSession
-        }
-        await clearStoredSession(credentialManager)
-        return null
+
+      const renewableSession = withoutModelAccessToken(session)
+      if (session.modelAccessToken) {
+        await credentialManager.set(CLIENT_AUTH_SESSION_ID, {
+          value: JSON.stringify(renewableSession),
+        })
       }
-      await syncModelAccessCredential(credentialManager, session?.modelAccessToken)
-      return session
+      await clearManagedModelCredentials(credentialManager)
+      return renewableSession
     },
 
     async save(session: ClientAuthSession): Promise<void> {
+      if (!session.appSessionToken) {
+        throw new Error('Client auth session cannot be renewed')
+      }
       if (session.modelAccessToken && !isClientModelAccessTokenFresh(session.modelAccessToken)) {
         throw new Error('Model access token is invalid or expired')
       }
+      await clearManagedModelCredentials(credentialManager)
       await credentialManager.set(CLIENT_AUTH_SESSION_ID, {
-        value: JSON.stringify(session),
+        value: JSON.stringify(withoutModelAccessToken(session)),
       })
-      try {
-        await syncModelAccessCredential(credentialManager, session.modelAccessToken)
-      } catch (error) {
-        await clearStoredSession(credentialManager).catch(() => undefined)
-        throw error
-      }
     },
 
     async clear(): Promise<void> {
@@ -87,19 +84,11 @@ async function clearStoredSession(credentialManager: ClientAuthCredentialManager
   if (failure) throw failure.reason
 }
 
-async function syncModelAccessCredential(
+// ponytail: exact one-release cleanup for pre-migration projections; remove
+// after supported installations can no longer contain these reserved IDs.
+async function clearManagedModelCredentials(
   credentialManager: ClientAuthCredentialManager,
-  modelAccessToken: string | undefined,
 ): Promise<void> {
-  if (modelAccessToken) {
-    await Promise.all(
-      MANAGED_MODEL_CREDENTIAL_IDS.map(id =>
-        credentialManager.set(id, { value: modelAccessToken })
-      ),
-    )
-    await credentialManager.delete(LEGACY_MANAGED_MODEL_CREDENTIAL_ID)
-    return
-  }
   const results = await Promise.allSettled([
     ...MANAGED_MODEL_CREDENTIAL_IDS.map(id => credentialManager.delete(id)),
     credentialManager.delete(LEGACY_MANAGED_MODEL_CREDENTIAL_ID),

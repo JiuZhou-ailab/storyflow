@@ -23,6 +23,7 @@ import {
   type BackendHostRuntimeContext,
   type PostInitResult,
 } from '@craft-agent/shared/agent/backend'
+import type { ManagedModelAccess } from '@craft-agent/shared/agent/backend/types'
 import { CONFIG_DIR, getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, normalizeLlmConnectionSlug, resetManagedAnthropicAuthEnvVars } from '@craft-agent/shared/config'
 import { PrivilegedExecutionBroker } from '@craft-agent/server-core/services'
 import { isValidWorkingDirectory } from '../utils/path-validation'
@@ -155,7 +156,9 @@ interface SessionRuntimeHooks {
   captureException: (error: unknown, context?: { errorSource?: string; sessionId?: string }) => void
   onSessionStarted: () => void
   onSessionStopped: () => void
-  ensureManagedModelAccessToken: (forceRefresh?: boolean) => Promise<{ refreshed: boolean }>
+  ensureManagedModelAccessToken: (
+    forceRefresh?: boolean,
+  ) => Promise<ManagedModelAccess & { refreshed: boolean }>
   /**
    * Resolves once the environment agent subprocesses inherit (notably PATH) is
    * ready. Hosts that must discover a login shell start that work at boot and
@@ -3237,11 +3240,14 @@ export class SessionManager implements ISessionManager {
    * Push a rotated credential into every live backend using this connection.
    * Pi supports this in-place through its existing `token_update` protocol.
    */
-  async reloadConnectionCredentials(connectionSlug: string): Promise<void> {
+  async reloadConnectionCredentials(
+    connectionSlug: string,
+    managedModelAccess?: ManagedModelAccess,
+  ): Promise<void> {
     for (const managed of this.sessions.values()) {
       if (managed.llmConnection !== connectionSlug || !managed.agent) continue
       try {
-        const reloaded = await managed.agent.reloadCredentials?.() ?? false
+        const reloaded = await managed.agent.reloadCredentials?.(managedModelAccess) ?? false
         if (!reloaded && !managed.agent.isProcessing()) {
           await this.disposeManagedAgentRuntime(managed, 'credential reload')
         }
@@ -3265,14 +3271,16 @@ export class SessionManager implements ISessionManager {
   private async ensureManagedCredentialForSession(
     managed: ManagedSession,
     forceRefresh = false,
-  ): Promise<void> {
+  ): Promise<ManagedModelAccess | undefined> {
     const connectionSlug = resolveManagedConnectionSlug(managed)
-    if (!isManagedDefaultGatewayConnection(connectionSlug)) return
+    if (!isManagedDefaultGatewayConnection(connectionSlug)) return undefined
 
     const modelAccess = await sessionRuntimeHooks.ensureManagedModelAccessToken(forceRefresh)
+    const managedModelAccess = { token: modelAccess.token }
     if (modelAccess.refreshed) {
-      await this.reloadConnectionCredentials(connectionSlug)
+      await this.reloadConnectionCredentials(connectionSlug, managedModelAccess)
     }
+    return managedModelAccess
   }
 
   /**
@@ -3286,7 +3294,7 @@ export class SessionManager implements ISessionManager {
    * 4. fallback: no connection configured
    */
   private async getOrCreateAgent(managed: ManagedSession): Promise<AgentInstance> {
-    await this.ensureManagedCredentialForSession(managed)
+    const managedModelAccess = await this.ensureManagedCredentialForSession(managed)
 
     // Refresh runtime config in-place when the connection has drifted since
     // the agent was created. May null out `managed.agent` if the in-place
@@ -3550,6 +3558,7 @@ export class SessionManager implements ISessionManager {
           projectRoot: getResourceProjectRoot(managed.workspace),
           miniModel,
           thinkingLevel: managed.thinkingLevel,
+          managedModelAccess,
           session: sessionConfig,
           onSdkSessionIdUpdate,
         onSdkSessionIdCleared,
@@ -5075,8 +5084,9 @@ export class SessionManager implements ISessionManager {
       return { success: false, error: 'Session not found' }
     }
 
+    let managedModelAccess: ManagedModelAccess | undefined
     try {
-      await this.ensureManagedCredentialForSession(managed)
+      managedModelAccess = await this.ensureManagedCredentialForSession(managed)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Default AI access is unavailable'
       sessionLog.warn(`refreshTitle: Managed model access unavailable: ${message}`)
@@ -5120,6 +5130,7 @@ export class SessionManager implements ISessionManager {
         agent = createBackendFromConnection(managed.llmConnection, {
           workspace: managed.workspace,
           miniModel: resolvedMiniModel,
+          managedModelAccess,
           session: {
             id: `title-${managed.id}`,
             workspaceRootPath: managed.workspace.rootPath,
@@ -6534,7 +6545,7 @@ export class SessionManager implements ISessionManager {
       // after tools may have produced external side effects.
       void sessionRuntimeHooks.ensureManagedModelAccessToken(true)
         .then(result => result.refreshed
-          ? this.reloadConnectionCredentials(connectionSlug)
+          ? this.reloadConnectionCredentials(connectionSlug, { token: result.token })
           : undefined)
         .catch(error => {
           sessionLog.warn(`[auth-retry] Managed credential refresh failed for ${sessionId}: ${error instanceof Error ? error.message : error}`)
@@ -7079,8 +7090,9 @@ export class SessionManager implements ISessionManager {
   private async generateTitle(managed: ManagedSession, userMessage: string): Promise<void> {
     sessionLog.info(`[generateTitle] Starting for session ${managed.id}`)
 
+    let managedModelAccess: ManagedModelAccess | undefined
     try {
-      await this.ensureManagedCredentialForSession(managed)
+      managedModelAccess = await this.ensureManagedCredentialForSession(managed)
     } catch (error) {
       sessionLog.warn(`[generateTitle] Managed model access unavailable: ${error instanceof Error ? error.message : error}`)
       return
@@ -7108,6 +7120,7 @@ export class SessionManager implements ISessionManager {
         agent = createBackendFromConnection(managed.llmConnection, {
           workspace: managed.workspace,
           miniModel: connection ? (getMiniModel(connection) ?? connection.defaultModel) : undefined,
+          managedModelAccess,
           session: {
             id: `title-${managed.id}`,
             workspaceRootPath: managed.workspace.rootPath,
@@ -8002,7 +8015,7 @@ export class SessionManager implements ISessionManager {
       }))
 
     if (messages.length === 0) return null
-    await this.ensureManagedCredentialForSession(managed)
+    const managedModelAccess = await this.ensureManagedCredentialForSession(managed)
 
     const workspaceRootPath = managed.workspace.rootPath
     const wsConfig = loadWorkspaceConfig(workspaceRootPath)
@@ -8040,6 +8053,7 @@ export class SessionManager implements ISessionManager {
           previousPermissionMode: managed.previousPermissionMode,
         },
         miniModel,
+        managedModelAccess,
         envOverrides,
         isHeadless: true,
       },

@@ -26,7 +26,7 @@ const baseInvalidApiKeyError: TypedError = {
 describe('managed default gateway auth error normalization', () => {
   afterEach(() => {
     setSessionRuntimeHooks({
-      ensureManagedModelAccessToken: async () => ({ refreshed: false }),
+      ensureManagedModelAccessToken: async () => ({ token: 'managed-token', refreshed: false }),
     })
   })
 
@@ -54,6 +54,29 @@ describe('managed default gateway auth error normalization', () => {
     expect(normalized).toBe(baseInvalidApiKeyError)
   })
 
+  it('pushes explicit managed model access into matching live runtimes', async () => {
+    const sm = new SessionManager()
+    const managed = createManagedSession({
+      id: 'managed-credential-update',
+      llmConnection: 'storyflow-managed',
+    }, {
+      id: 'ws-test',
+      name: 'Test',
+      rootPath: '/tmp/managed-credential-update',
+      createdAt: Date.now(),
+    } as never, { messagesLoaded: true }) as any
+    const reloadCredentials = jest.fn().mockResolvedValue(true)
+    managed.agent = {
+      reloadCredentials,
+      isProcessing: () => false,
+    }
+    ;(sm as any).sessions.set(managed.id, managed)
+
+    await sm.reloadConnectionCredentials('storyflow-managed', { token: 'managed-model-token' })
+
+    expect(reloadCredentials).toHaveBeenCalledWith({ token: 'managed-model-token' })
+  })
+
   it('force-refreshes and safely retries a managed turn before any tool ran', async () => {
     const sm = new SessionManager()
     const managed = createManagedSession({
@@ -77,7 +100,10 @@ describe('managed default gateway auth error normalization', () => {
     ;(sm as any).sessions.set(managed.id, managed)
     const sendMessage = jest.fn().mockResolvedValue(undefined)
     ;(sm as any).sendMessage = sendMessage
-    const ensureManagedModelAccessToken = jest.fn().mockResolvedValue({ refreshed: true })
+    const ensureManagedModelAccessToken = jest.fn().mockResolvedValue({
+      token: 'managed-token',
+      refreshed: true,
+    })
     setSessionRuntimeHooks({ ensureManagedModelAccessToken })
 
     await (sm as any).processEvent(managed, {
@@ -109,7 +135,10 @@ describe('managed default gateway auth error normalization', () => {
     ;(sm as any).sessions.set(managed.id, managed)
     const sendMessage = jest.fn().mockResolvedValue(undefined)
     ;(sm as any).sendMessage = sendMessage
-    const ensureManagedModelAccessToken = jest.fn().mockResolvedValue({ refreshed: true })
+    const ensureManagedModelAccessToken = jest.fn().mockResolvedValue({
+      token: 'managed-token',
+      refreshed: true,
+    })
     setSessionRuntimeHooks({ ensureManagedModelAccessToken })
 
     await (sm as any).processEvent(managed, {

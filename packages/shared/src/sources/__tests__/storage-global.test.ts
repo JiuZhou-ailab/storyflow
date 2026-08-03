@@ -62,9 +62,8 @@ function writeSource(
 }
 
 afterEach(() => {
-  // createSource writes config before optional icon discovery completes. If the
-  // async test times out in that window, its slug is not returned to the caller,
-  // so clean by this run's unique prefix as a final isolation boundary.
+  // Clean by this run's unique prefix even when createSource fails before its
+  // slug is returned to the caller.
   for (const root of [GLOBAL_SOURCES_DIR, SHARED_AGENTS_SOURCES_DIR]) {
     if (!existsSync(root)) continue;
     for (const entry of readdirSync(root, { withFileTypes: true })) {

@@ -222,7 +222,6 @@ export function credentialIdToAccount(id: CredentialId): string {
 export type CredentialHealthIssueType =
   | 'file_corrupted'         // Credential file exists but can't be parsed
   | 'decryption_failed'      // File exists but can't be decrypted (machine migration)
-  | 'no_default_credentials' // No credentials for the default connection
 
 /** A single credential health issue */
 export interface CredentialHealthIssue {

@@ -330,6 +330,11 @@ jobs:
           CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN: ${{ vars.CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN }}
           CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED: ${{ vars.CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED }}
 
+      - name: Run packaged core E2E
+        run: bun run e2e:core
+        env:
+          CRAFT_E2E_ELECTRON_BIN: ${{ github.workspace }}\apps\electron\release\win-unpacked\Storyflow.exe
+
       - name: Upload Windows artifacts to release
         shell: bash
         env:

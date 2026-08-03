@@ -33,7 +33,7 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
 
   afterEach(() => {
     setSessionRuntimeHooks({
-      ensureManagedModelAccessToken: async () => ({ refreshed: false }),
+      ensureManagedModelAccessToken: async () => ({ token: 'managed-token', refreshed: false }),
     })
     rmSync(tmpRoot, { recursive: true, force: true })
   })
@@ -145,7 +145,7 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
     setSessionRuntimeHooks({
       ensureManagedModelAccessToken: async () => {
         ensureCalls++
-        return { refreshed: false }
+        return { token: 'managed-token', refreshed: false }
       },
     })
 
@@ -182,7 +182,7 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
     setSessionRuntimeHooks({
       ensureManagedModelAccessToken: async () => {
         ensureCalls++
-        return { refreshed: false }
+        return { token: 'managed-token', refreshed: false }
       },
     })
 
@@ -199,7 +199,7 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
     setSessionRuntimeHooks({
       ensureManagedModelAccessToken: async () => {
         ensureCalls++
-        return { refreshed: false }
+        return { token: 'managed-token', refreshed: false }
       },
     })
 
@@ -216,7 +216,7 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
     setSessionRuntimeHooks({
       ensureManagedModelAccessToken: async () => {
         ensureCalls++
-        return { refreshed: false }
+        return { token: 'managed-token', refreshed: false }
       },
     })
 

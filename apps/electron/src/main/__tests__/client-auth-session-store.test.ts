@@ -1,6 +1,6 @@
 // input: Fake credential manager records for desktop client auth sessions
-// output: Regression coverage for encrypted session-store adapter behavior
-// pos: Guards restart auth persistence without depending on the real credential backend
+// output: Regression coverage for renewable session persistence and legacy token cleanup
+// pos: Guards the identity-session boundary without depending on the real credential backend
 
 import { describe, expect, it } from 'bun:test'
 import { MANAGED_LLM_CONNECTION_SLUGS } from '@craft-agent/shared/config'
@@ -16,7 +16,7 @@ function modelToken(exp: number): string {
 }
 
 describe('createClientAuthSessionStore', () => {
-  it('saves, restores, and clears the desktop session and managed model token together', async () => {
+  it('persists only the renewable client session and removes managed model-token projections', async () => {
     const records = new Map<string, StoredCredential>()
     const keyFor = (id: unknown) => JSON.stringify(id)
     const store = createClientAuthSessionStore({
@@ -30,10 +30,9 @@ describe('createClientAuthSessionStore', () => {
     })
 
     const token = modelToken(Math.floor(Date.now() / 1000) + 3600)
-    records.set(keyFor({
-      type: 'llm_api_key',
-      connectionSlug: 'wangsu-default',
-    }), { value: 'legacy-model-token' })
+    for (const connectionSlug of [...MANAGED_LLM_CONNECTION_SLUGS, 'wangsu-default']) {
+      records.set(keyFor({ type: 'llm_api_key', connectionSlug }), { value: 'legacy-model-token' })
+    }
     await store.save({
       user: {
         provider: 'feishu',
@@ -47,10 +46,10 @@ describe('createClientAuthSessionStore', () => {
     })
 
     for (const connectionSlug of MANAGED_LLM_CONNECTION_SLUGS) {
-      expect(records.get(keyFor({
+      expect(records.has(keyFor({
         type: 'llm_api_key',
         connectionSlug,
-      }))).toEqual({ value: token })
+      }))).toBe(false)
     }
     expect(records.has(keyFor({
       type: 'llm_api_key',
@@ -65,7 +64,6 @@ describe('createClientAuthSessionStore', () => {
         avatarUrl: 'https://example.com/user.png',
       },
       appSessionToken: 'app-session-token',
-      modelAccessToken: token,
     })
 
     await store.clear()
