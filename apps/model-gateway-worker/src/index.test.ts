@@ -688,7 +688,11 @@ describe('model gateway worker', () => {
       const response = await handleRequest(
         new Request('https://model.storyflow.example.com/v1/responses', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'x-storyflow-model-call-id': 'not-a-uuid',
+            'x-storyflow-attempt': '999',
+          },
           body: JSON.stringify({ model: 'gpt-5.5', input: [] }),
         }),
         makeEnv(),
@@ -712,6 +716,8 @@ describe('model gateway worker', () => {
         upstream_ray: 'empty-400-ray',
         error: 'empty_response_body',
       })
+      expect(errorSpy.mock.calls[0]?.[0]).not.toHaveProperty('model_call_id')
+      expect(errorSpy.mock.calls[0]?.[0]).not.toHaveProperty('attempt')
     } finally {
       errorSpy.mockRestore()
     }
@@ -732,6 +738,8 @@ describe('model gateway worker', () => {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
             'cf-ray': 'incoming-request-ray',
+            'x-storyflow-model-call-id': '4f4666b0-d5b8-4d5b-9c87-9c58f829f9d4',
+            'x-storyflow-attempt': '1',
           },
           body: JSON.stringify({
             model: 'gpt-5.5',
@@ -753,10 +761,18 @@ describe('model gateway worker', () => {
         upstream_ray: 'upstream-request-ray',
         user: 'feishu:ou_debug',
         user_name: '飞书用户',
+        model_call_id: '4f4666b0-d5b8-4d5b-9c87-9c58f829f9d4',
+        attempt: 1,
+        model: 'gpt-5.5',
+        api: 'openai-responses',
         duration_ms: expect.any(Number),
       })
       expect(Object.keys(errorSpy.mock.calls[0]?.[0] as object).sort()).toEqual([
+        'api',
+        'attempt',
         'duration_ms',
+        'model',
+        'model_call_id',
         'stage',
         'upstream_ray',
         'upstream_status',

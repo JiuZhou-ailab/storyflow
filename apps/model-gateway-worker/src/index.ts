@@ -39,6 +39,10 @@ interface VerifiedGatewayJwtPayload extends GatewayJwtPayload {
 interface GatewayRequestLogDetails {
   user: string
   user_name?: string
+  model_call_id?: string
+  attempt?: number
+  model?: string
+  api?: CustomEndpointApi
   stage?: 'config' | 'upstream'
   upstream_status?: number
   upstream_ray?: string
@@ -188,6 +192,12 @@ export async function handleRequest(
       { status: 403 },
     )
   }
+  const modelLogContext = {
+    ...logIdentity,
+    ...readModelCallContext(request.headers),
+    model: requestedModel,
+    api: requestApi,
+  }
 
   const upstreamHeaders = new Headers()
   copyHeader(request.headers, upstreamHeaders, 'accept')
@@ -217,7 +227,7 @@ export async function handleRequest(
     if (upstreamResponse.status === 400 && !(await upstreamResponse.clone().text()).trim()) {
       logGatewayRequest(startedAt, {
         stage: 'upstream',
-        ...logIdentity,
+        ...modelLogContext,
         upstream_status: 400,
         upstream_ray: upstreamResponse.headers.get('cf-ray') ?? undefined,
         error: 'empty_response_body',
@@ -236,7 +246,7 @@ export async function handleRequest(
     if (upstreamResponse.status === 401 || upstreamResponse.status === 403) {
       logGatewayRequest(startedAt, {
         stage: 'upstream',
-        ...logIdentity,
+        ...modelLogContext,
         upstream_status: upstreamResponse.status,
         upstream_ray: upstreamResponse.headers.get('cf-ray') ?? undefined,
       })
@@ -251,10 +261,10 @@ export async function handleRequest(
     logGatewayRequest(
       startedAt,
       upstreamResponse.ok
-        ? logIdentity
+        ? modelLogContext
         : {
             stage: 'upstream',
-            ...logIdentity,
+            ...modelLogContext,
             upstream_status: upstreamResponse.status,
             upstream_ray: upstreamResponse.headers.get('cf-ray') ?? undefined,
           },
@@ -263,7 +273,7 @@ export async function handleRequest(
   } catch (error) {
     logGatewayRequest(startedAt, {
       stage: 'upstream',
-      ...logIdentity,
+      ...modelLogContext,
       error: error instanceof Error ? error.message.slice(0, 500) : 'Unknown upstream fetch error',
     })
     return Response.json({ error: 'NewAPI gateway is unavailable' }, { status: 502 })
@@ -559,6 +569,19 @@ function normalizeUserName(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
   const normalized = value.replace(/[\u0000-\u001F\u007F]/g, '').trim()
   return normalized ? normalized.slice(0, 100) : undefined
+}
+
+function readModelCallContext(headers: Headers): Pick<GatewayRequestLogDetails, 'model_call_id' | 'attempt'> {
+  const modelCallId = headers.get('x-storyflow-model-call-id')
+  const attempt = headers.get('x-storyflow-attempt')
+  return {
+    ...(modelCallId && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(modelCallId)
+      ? { model_call_id: modelCallId }
+      : {}),
+    ...(attempt && /^(?:0|[1-9]\d?)$/.test(attempt) && Number(attempt) <= 10
+      ? { attempt: Number(attempt) }
+      : {}),
+  }
 }
 
 function logGatewayRequest(

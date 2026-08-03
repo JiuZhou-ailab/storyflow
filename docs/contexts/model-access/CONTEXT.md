@@ -24,9 +24,19 @@ _Avoid_: Credential record, login session
 The ability to read and decrypt Provider Credentials. It says nothing about whether any Model Connection is currently usable.
 _Avoid_: Default connection readiness, managed login status
 
+**Model Call**:
+One logical provider invocation, including at most one Pi-owned replay after a retryable failure.
+_Avoid_: HTTP request, user turn
+
+**Transport Attempt**:
+One outbound provider request within a Model Call. Attempts share a model-call identifier and use a zero-based attempt index.
+_Avoid_: SDK retry budget, duplicate user message
+
 ## Relationships
 
 - An Identity Session may issue Managed Model Access; it is not copied into Provider Credentials.
 - Managed Model Access authorizes only trusted Storyflow-managed connections and remains transient.
 - Provider Credentials remain independent so user-configured providers continue to work without an Identity Session.
 - Connection readiness is evaluated at the connection boundary, separately from Credential Store Health.
+- Pi owns retry classification, backoff, and the single replay budget; provider SDK retries are disabled.
+- Managed Model Access refresh may replay once after an authentication failure, but it is not a transport retry.
