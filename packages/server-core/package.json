@@ -1,6 +1,6 @@
 {
   "name": "@craft-agent/server-core",
-  "version": "0.9.62",
+  "version": "0.9.63",
   "license": "Apache-2.0",
   "description": "Reusable headless server infrastructure for Storyflow",
   "type": "module",

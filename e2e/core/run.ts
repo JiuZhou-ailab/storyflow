@@ -332,6 +332,7 @@ function createFixture(): Fixture {
   writeFileSync(targetFile, ORIGINAL)
 
   git(workspaceRoot, 'init', '--initial-branch=main')
+  git(workspaceRoot, 'config', 'core.autocrlf', 'false')
   git(workspaceRoot, 'config', 'user.name', 'Core E2E')
   git(workspaceRoot, 'config', 'user.email', 'core-e2e@example.invalid')
   git(workspaceRoot, 'add', 'README.md')

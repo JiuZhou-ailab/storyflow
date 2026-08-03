@@ -1,8 +1,8 @@
 {
-  "version": "0.9.62",
+  "version": "0.9.63",
   "digest": "96938198a395c6c1a258e5b8d0216391b99c014ff1613411153fb03c3d8c1b0b",
-  "generatedAt": "2026-08-03T04:32:56.346Z",
-  "title": "Storyflow v0.9.62 更新说明",
+  "generatedAt": "2026-08-03T04:48:21.509Z",
+  "title": "Storyflow v0.9.63 更新说明",
   "summary": "这一版修复了新用户打开账户页面时的错误，也让默认 AI 连接的授权状态更稳定。",
   "highlights": [
     "账户页面可正常打开：Windows 新用户点击左下角账户时，不再进入“出错了”页面，可以正常查看或登录账户。",
@@ -13,7 +13,7 @@
   "accentColor": "#158424",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 1,
+    "commitCount": 2,
     "userVisibleCommitCount": 0
   }
 }
