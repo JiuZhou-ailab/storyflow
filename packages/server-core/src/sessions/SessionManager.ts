@@ -190,24 +190,6 @@ const defaultSessionRuntimeHooks: SessionRuntimeHooks = {
   },
 }
 
-const ONE_SHOT_LLM_MAX_ATTEMPTS = 2
-
-function isRetryableOneShotLlmError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error)
-  const normalized = message.toLowerCase()
-  return (
-    normalized.includes('stream ended before message_stop') ||
-    normalized.includes('econnreset') ||
-    normalized.includes('etimedout') ||
-    normalized.includes('socket hang up') ||
-    normalized.includes('network')
-  )
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
 let sessionRuntimeHooks: SessionRuntimeHooks = defaultSessionRuntimeHooks
 
 export function setSessionRuntimeHooks(hooks: Partial<SessionRuntimeHooks>): void {
@@ -5594,38 +5576,26 @@ export class SessionManager implements ISessionManager {
       throw new Error(`Session ${sessionId} not found`)
     }
 
-    let agent = await this.getOrCreateAgent(managed)
-    let lastError: unknown
+    const agent = await this.getOrCreateAgent(managed)
+    try {
+      return await agent.queryLlm(request)
+    } catch (error) {
+      const connectionSlug = resolveManagedConnectionSlug(managed)
+      const errorText = error instanceof Error ? error.message : String(error)
+      const isManagedAuthError = isManagedDefaultGatewayConnection(connectionSlug)
+        && (
+          errorText.toLowerCase().includes('invalid model access token')
+          || errorText.toLowerCase().includes('model_access_token_invalid')
+        )
+      if (!isManagedAuthError) throw error
 
-    for (let attempt = 1; attempt <= ONE_SHOT_LLM_MAX_ATTEMPTS; attempt += 1) {
-      try {
-        return await agent.queryLlm(request)
-      } catch (error) {
-        lastError = error
-        const connectionSlug = resolveManagedConnectionSlug(managed)
-        const errorText = error instanceof Error ? error.message : String(error)
-        const isManagedAuthError = isManagedDefaultGatewayConnection(connectionSlug)
-          && (
-            errorText.toLowerCase().includes('invalid model access token')
-            || errorText.toLowerCase().includes('model_access_token_invalid')
-          )
-        if (attempt >= ONE_SHOT_LLM_MAX_ATTEMPTS || (!isManagedAuthError && !isRetryableOneShotLlmError(error))) {
-          break
-        }
-        if (isManagedAuthError) {
-          await this.ensureManagedCredentialForSession(managed, true)
-          agent = await this.getOrCreateAgent(managed)
-        }
-        sessionLog.warn('[queryOnce] retrying one-shot LLM request after transient failure', {
-          sessionId,
-          attempt,
-          error: error instanceof Error ? error.message : String(error),
-        })
-        await delay(350 * attempt)
-      }
+      await this.ensureManagedCredentialForSession(managed, true)
+      sessionLog.warn('[queryOnce] retrying one-shot LLM request after managed access refresh', {
+        sessionId,
+        error: errorText,
+      })
+      return (await this.getOrCreateAgent(managed)).queryLlm(request)
     }
-
-    throw lastError instanceof Error ? lastError : new Error(String(lastError))
   }
 
   async rewriteNovelSelection(sessionId: string, request: NovelSelectionRewriteRequest): Promise<NovelSelectionRewriteResult> {

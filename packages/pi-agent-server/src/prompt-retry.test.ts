@@ -1,53 +1,46 @@
-// input: Prompt failures and per-attempt Pi session event snapshots.
-// output: Regression coverage for safe prompt retry decisions.
-// pos: Protects Pi prompt retry policy from unsafe duplicate side effects.
+// input: Retryable failures and Pi auto-retry lifecycle events.
+// output: Regression coverage for intermediate-versus-final failure visibility.
+// pos: Protects the presentation gate around Pi-owned prompt retries.
 
 import { describe, expect, it } from 'bun:test';
 import {
   createPromptAttemptState,
-  isAnthropicMessageStopStreamError,
   recordPromptAttemptEvent,
-  shouldAutoRetryPromptFailure,
+  shouldSuppressRetryingAgentEnd,
+  shouldSuppressRetryablePromptFailure,
 } from './prompt-retry.ts';
 
-describe('Pi prompt retry policy', () => {
-  it('recognizes Anthropic message_stop stream truncation errors', () => {
-    expect(isAnthropicMessageStopStreamError('Anthropic stream ended before message_stop')).toBe(true);
-    expect(isAnthropicMessageStopStreamError('API Error: 503 overloaded_error')).toBe(false);
+describe('Pi prompt retry presentation', () => {
+  it('suppresses a retryable failure while Pi still has budget', () => {
+    const state = createPromptAttemptState();
+    expect(shouldSuppressRetryablePromptFailure('HTTP 524', state)).toBe(true);
+    expect(shouldSuppressRetryablePromptFailure('400 response_format is unavailable', state)).toBe(false);
   });
 
-  it('allows one automatic retry before any assistant output or tool activity', () => {
+  it('exposes the final failed attempt and its terminal agent_end', () => {
     const state = createPromptAttemptState();
-
-    expect(shouldAutoRetryPromptFailure('Anthropic stream ended before message_stop', state)).toBe(true);
-  });
-
-  it('blocks automatic retry after visible assistant output', () => {
-    const state = createPromptAttemptState();
+    state.suppressedRetryableFailure = true;
+    expect(shouldSuppressRetryingAgentEnd({ type: 'agent_end', willRetry: true }, state)).toBe(true);
     recordPromptAttemptEvent(state, {
-      type: 'message_update',
-      assistantMessageEvent: { type: 'text_delta', delta: 'hello' },
+      type: 'auto_retry_start',
+      attempt: 1,
+      maxAttempts: 1,
     });
-
-    expect(shouldAutoRetryPromptFailure('Anthropic stream ended before message_stop', state)).toBe(false);
+    expect(shouldSuppressRetryablePromptFailure('HTTP 524', state)).toBe(false);
+    expect(shouldSuppressRetryingAgentEnd({ type: 'agent_end', willRetry: false }, state)).toBe(false);
+    recordPromptAttemptEvent(state, { type: 'auto_retry_end', success: false });
+    expect(shouldSuppressRetryablePromptFailure('HTTP 524', state)).toBe(false);
   });
 
-  it('blocks automatic retry after tool activity', () => {
+  it('continues suppressing while additional Pi retries remain', () => {
     const state = createPromptAttemptState();
+    state.suppressedRetryableFailure = true;
     recordPromptAttemptEvent(state, {
-      type: 'tool_execution_start',
-      toolName: 'write',
-      toolCallId: 'call_1',
-      args: { path: 'setup-plan.md' },
+      type: 'auto_retry_start',
+      attempt: 1,
+      maxAttempts: 3,
     });
-
-    expect(shouldAutoRetryPromptFailure('Anthropic stream ended before message_stop', state)).toBe(false);
-  });
-
-  it('blocks repeated automatic retries for the same prompt', () => {
-    const state = createPromptAttemptState();
-    state.retryAttempted = true;
-
-    expect(shouldAutoRetryPromptFailure('Anthropic stream ended before message_stop', state)).toBe(false);
+    expect(state.suppressedRetryableFailure).toBe(false);
+    expect(shouldSuppressRetryablePromptFailure('network error', state)).toBe(true);
   });
 });

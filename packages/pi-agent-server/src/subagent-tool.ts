@@ -22,6 +22,7 @@ import {
   type PiSubagentTaskResult,
   type PiSubagentUsage,
 } from '../../shared/src/agent/backend/pi/subagent-contract.ts';
+import { createStoryflowRetrySettings } from './project-resource-loader.ts';
 
 const READ_ONLY_TOOLS = ['read', 'grep', 'find', 'ls'] as const;
 const WORKSPACE_WRITE_TOOLS = [...READ_ONLY_TOOLS, 'edit', 'write', 'bash'] as const;
@@ -64,6 +65,7 @@ export interface CreateSubagentExtensionOptions {
   activeSessions?: Set<AgentSession>;
   thinkingLevel?: Parameters<AgentSession['setThinkingLevel']>[0];
   createSessionHooks(context: SubagentHookContext): InlineExtension;
+  providerHooks?: InlineExtension;
   createSession?: (options: CreateAgentSessionOptions) => Promise<AgentSession>;
 }
 
@@ -204,12 +206,15 @@ export function createSubagentExtension(
                 if (signal?.aborted) {
                   throw new Error('Subagent execution aborted');
                 }
-                const settingsManager = SettingsManager.inMemory();
+                const settingsManager = SettingsManager.inMemory({ retry: createStoryflowRetrySettings() });
                 const resourceLoader = new DefaultResourceLoader({
                   cwd: options.cwd,
                   agentDir: options.agentDir,
                   settingsManager,
-                  extensionFactories: [options.createSessionHooks(hookContext)],
+                  extensionFactories: [
+                    ...(options.providerHooks ? [options.providerHooks] : []),
+                    options.createSessionHooks(hookContext),
+                  ],
                   noExtensions: true,
                   noSkills: true,
                   noPromptTemplates: true,
@@ -246,13 +251,10 @@ export function createSubagentExtension(
                       stopReason?: string;
                       errorMessage?: string;
                     };
-                    if (
-                      message.role === 'assistant'
-                      && message.stopReason === 'error'
-                      && message.errorMessage
-                    ) {
-                      providerError = message.errorMessage;
-                    }
+                    if (message.role !== 'assistant') return;
+                    providerError = message.stopReason === 'error' && message.errorMessage
+                      ? message.errorMessage
+                      : '';
                   });
                 }
 

@@ -30,6 +30,15 @@ export interface ProjectResourceLoaderResult {
   settingsManager: SettingsManager;
 }
 
+export function createStoryflowRetrySettings() {
+  return {
+    enabled: true,
+    maxRetries: 1,
+    baseDelayMs: 2_000,
+    provider: { maxRetries: 0 },
+  };
+}
+
 /**
  * Resolve the global Extensions container into Pi entry paths.
  *
@@ -116,6 +125,7 @@ export async function createProjectResourceLoader(
 
   const settingsManager = SettingsManager.inMemory({
     enableSkillCommands: true,
+    retry: createStoryflowRetrySettings(),
   }, { projectTrusted: true });
   const resourceLoader = new StoryflowResourceLoader(
     {

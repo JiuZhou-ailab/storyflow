@@ -157,6 +157,8 @@ describe('createSubagentExtension', () => {
     expect(createdOptions).toHaveLength(1);
     expect(createdOptions[0]?.tools).toEqual(['read', 'grep', 'find', 'ls']);
     expect(createdOptions[0]?.sessionManager?.isPersisted()).toBe(false);
+    expect(createdOptions[0]?.settingsManager?.getRetrySettings()).toMatchObject({ maxRetries: 1 });
+    expect(createdOptions[0]?.settingsManager?.getProviderRetrySettings()).toMatchObject({ maxRetries: 0 });
     expect(result.details).toMatchObject({
       kind: 'storyflow-subagent',
       results: [{
@@ -669,6 +671,59 @@ describe('createSubagentExtension', () => {
           output: 'model authentication failed',
         }],
       },
+    });
+  });
+
+  test('clears an intermediate provider error after Pi retries successfully', async () => {
+    let listener: ((event: unknown) => void) | undefined;
+    const extension = createSubagentExtension({
+      cwd: '/workspace',
+      agentDir: '/agent',
+      authStorage: {} as never,
+      modelRegistry: {} as never,
+      toolDefinitions: [],
+      createSessionHooks: () => ({ name: 'test-hooks', factory() {} }),
+      async createSession() {
+        return {
+          subscribe(next: (event: unknown) => void) {
+            listener = next;
+            return () => { listener = undefined; };
+          },
+          async prompt() {
+            listener?.({
+              type: 'message_end',
+              message: { role: 'assistant', stopReason: 'error', errorMessage: 'HTTP 520' },
+            });
+            listener?.({
+              type: 'message_end',
+              message: { role: 'assistant', stopReason: 'stop' },
+            });
+          },
+          async waitForIdle() {},
+          async abort() {},
+          dispose() {},
+          getLastAssistantText() { return 'Recovered result.'; },
+          getSessionStats() {
+            return {
+              tokens: { input: 2, output: 1, cacheRead: 0, cacheWrite: 0, total: 3 },
+              cost: 0,
+            };
+          },
+        } as unknown as AgentSession;
+      },
+    });
+    const tool = registerSubagent(extension);
+
+    const result = await tool.execute(
+      'call-provider-retry',
+      { tasks: [{ task: 'inspect', capability: 'read_only' }] },
+      undefined,
+      undefined,
+      { model: undefined } as ExtensionContext,
+    );
+
+    expect(result.details).toMatchObject({
+      results: [{ status: 'completed', output: 'Recovered result.' }],
     });
   });
 });

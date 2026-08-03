@@ -65,6 +65,22 @@ afterEach(() => {
 });
 
 describe('createProjectResourceLoader', () => {
+  it('uses Pi as the single retry owner', async () => {
+    const { settingsManager } = await createProjectResourceLoader({
+      cwd: createRoot(),
+      globalRoot: createRoot(),
+      agentDir: join(createRoot(), 'agent'),
+      userAgentDir: join(createRoot(), 'user-agent'),
+    });
+
+    expect(settingsManager.getRetrySettings()).toEqual({
+      enabled: true,
+      maxRetries: 1,
+      baseDelayMs: 2_000,
+    });
+    expect(settingsManager.getProviderRetrySettings()).toMatchObject({ maxRetries: 0 });
+  });
+
   it('loads Pi project/user Skills and explicit Storyflow resources', async () => {
     const projectRoot = createRoot();
     const globalRoot = createRoot();

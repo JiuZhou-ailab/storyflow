@@ -94,7 +94,7 @@ import { createWebFetchTool } from './tools/web-fetch.ts';
 import { resolveSearchProvider } from './tools/search/resolve-provider.ts';
 import { createSearchTool } from './tools/search/create-search-tool.ts';
 import { createCreateOnlyWriteToolDefinition } from './write-tool.ts';
-import { createProjectResourceLoader } from './project-resource-loader.ts';
+import { createProjectResourceLoader, createStoryflowRetrySettings } from './project-resource-loader.ts';
 import { normalizeCraftToolArgumentsForSchema } from './craft-metadata-schema.ts';
 import { createSystemPromptOverride } from './system-prompt-override.ts';
 import { fingerprintTools } from './prompt-cache-profile.ts';
@@ -112,9 +112,9 @@ import {
 } from './pi-session-sanitizer.ts';
 import {
   createPromptAttemptState,
-  isAnthropicMessageStopStreamError,
   recordPromptAttemptEvent,
-  shouldAutoRetryPromptFailure,
+  shouldSuppressRetryingAgentEnd,
+  shouldSuppressRetryablePromptFailure,
   type PromptAttemptState,
 } from './prompt-retry.ts';
 
@@ -634,6 +634,7 @@ async function ensureSession(): Promise<AgentSession> {
     thinkingLevel: piThinkingLevel,
     toolDefinitions: allTools,
     activeSessions: activeSubagentSessions,
+    providerHooks,
     createSessionHooks: (context: SubagentHookContext) => createSessionToolHooks({
       getSession: () => context.session,
       getUserRequest: () => context.userRequest,
@@ -1033,12 +1034,14 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
     }
 
     // Create minimal ephemeral session
+    const settingsManager = SettingsManager.inMemory({ retry: createStoryflowRetrySettings() });
     const ephemeralOptions: CreateAgentSessionOptions = {
       cwd: resolvedCwd(),
       authStorage,
       modelRegistry,
       tools: [],
       sessionManager: PiSessionManager.inMemory(),
+      settingsManager,
       model: piModel,
       ...(piThinkingLevel ? { thinkingLevel: piThinkingLevel } : {}),
     };
@@ -1050,8 +1053,11 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
       cwd: resolvedCwd(),
       agentDir: initConfig!.agentDir
         || (initConfig!.sessionPath ? join(initConfig!.sessionPath, '.pi-agent') : getAgentDir()),
-      settingsManager: SettingsManager.inMemory(),
-      extensionFactories: [promptOverride.extension],
+      settingsManager,
+      extensionFactories: [
+        promptOverride.extension,
+        createProviderHooks({ enable1MContext: initConfig!.enable1MContext === true }),
+      ],
       noExtensions: true,
       noSkills: true,
       noPromptTemplates: true,
@@ -1219,45 +1225,22 @@ function getAssistantErrorMessage(event: AgentSessionEvent): string | null {
   return msg.errorMessage;
 }
 
-async function retryPromptFromCurrentTranscript(session: AgentSession): Promise<void> {
-  const messages = session.agent.state.messages;
-  const lastMessage = messages[messages.length - 1] as {
-    role?: string;
-    stopReason?: string;
-    errorMessage?: string;
-  } | undefined;
-
-  if (
-    lastMessage?.role === 'assistant' &&
-    lastMessage.stopReason === 'error' &&
-    isAnthropicMessageStopStreamError(lastMessage.errorMessage)
-  ) {
-    session.agent.state.messages = messages.slice(0, -1);
-  }
-
-  await session.agent.continue();
-
-  const retryAwareSession = session as unknown as { waitForRetry?: () => Promise<void> };
-  await retryAwareSession.waitForRetry?.();
-}
-
 function handleSessionEvent(event: AgentSessionEvent): void {
   const promptAttemptState = currentPromptAttemptState;
   if (promptAttemptState) {
     recordPromptAttemptEvent(promptAttemptState, event as unknown as Record<string, unknown>);
 
     const assistantErrorMessage = getAssistantErrorMessage(event);
-    if (assistantErrorMessage && shouldAutoRetryPromptFailure(assistantErrorMessage, promptAttemptState)) {
+    if (assistantErrorMessage && shouldSuppressRetryablePromptFailure(assistantErrorMessage, promptAttemptState)) {
       promptAttemptState.suppressedRetryableFailure = true;
       debugLog(`Suppressing retryable stream failure before automatic retry: ${assistantErrorMessage}`);
       return;
     }
 
-    if (
-      event.type === 'agent_end' &&
-      promptAttemptState.suppressedRetryableFailure &&
-      !promptAttemptState.retryAttempted
-    ) {
+    if (shouldSuppressRetryingAgentEnd(
+      event as unknown as Record<string, unknown>,
+      promptAttemptState,
+    )) {
       debugLog('Suppressing agent_end for retryable stream failure before automatic retry');
       return;
     }
@@ -1393,7 +1376,6 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
   currentUserMessage = msg.message;
   const promptAttemptState = createPromptAttemptState();
   currentPromptAttemptState = promptAttemptState;
-  let session: AgentSession | null = null;
 
   try {
     // If proxy tools changed since last session creation, dispose and recreate.
@@ -1409,7 +1391,7 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
       piSession = null;
     }
 
-    session = await ensureSession();
+    const session = await ensureSession();
 
     // Pi does not auto-reload a caller-provided ResourceLoader. Refresh at the
     // prompt boundary so global Skill edits are visible without restarting the
@@ -1442,7 +1424,7 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
       streamingBehavior: 'followUp',
     });
   } catch (error) {
-    let errorMsg = error instanceof Error ? error.message : String(error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
 
     // No wrapper-side overflow recovery here. The Pi SDK's _checkCompaction
     // already runs `_runAutoCompaction("overflow", true)` on overflow and
@@ -1452,18 +1434,6 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
     // plans/fix-pi-gpt-compaction.md). PiEventAdapter holds the Craft event
     // queue open across the SDK's recovery flow so the recovered turn
     // reaches the UI.
-
-    if (session && shouldAutoRetryPromptFailure(errorMsg, promptAttemptState)) {
-      promptAttemptState.retryAttempted = true;
-      debugLog(`Retrying prompt once after transient stream interruption: ${errorMsg}`);
-      try {
-        await waitForCompaction(session);
-        await retryPromptFromCurrentTranscript(session);
-        return;
-      } catch (retryError) {
-        errorMsg = retryError instanceof Error ? retryError.message : String(retryError);
-      }
-    }
 
     debugLog(`Prompt failed: ${errorMsg}`);
     send({ type: 'error', message: errorMsg, code: 'prompt_error' });

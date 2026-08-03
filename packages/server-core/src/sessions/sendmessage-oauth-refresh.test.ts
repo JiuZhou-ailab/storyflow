@@ -191,6 +191,46 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
     expect(ensureCalls).toBe(1)
   })
 
+  it('delegates one-shot network retries to Pi', async () => {
+    const managed = buildSession('query-once-network-retry')
+    let queryCalls = 0
+    ;(sm as any).getOrCreateAgent = async () => ({
+      queryLlm: async () => {
+        queryCalls++
+        throw new Error('network error')
+      },
+    })
+
+    await expect(sm.queryOnce(managed.id, { prompt: 'summarize' } as never))
+      .rejects.toThrow('network error')
+    expect(queryCalls).toBe(1)
+  })
+
+  it('retries one-shot calls only after refreshing invalid managed access', async () => {
+    const managed = buildSession('query-once-managed-auth-refresh')
+    managed.llmConnection = 'storyflow-managed'
+    let queryCalls = 0
+    let ensureCalls = 0
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: async (forceRefresh) => {
+        if (forceRefresh) ensureCalls++
+        return { token: 'managed-token', refreshed: Boolean(forceRefresh) }
+      },
+    })
+    ;(sm as any).getOrCreateAgent = async () => ({
+      queryLlm: async () => {
+        queryCalls++
+        if (queryCalls === 1) throw new Error('model_access_token_invalid')
+        return { text: 'ok' }
+      },
+    })
+
+    await expect(sm.queryOnce(managed.id, { prompt: 'summarize' } as never))
+      .resolves.toEqual({ text: 'ok' })
+    expect(queryCalls).toBe(2)
+    expect(ensureCalls).toBe(1)
+  })
+
   it('preflights managed model access for manual title refresh', async () => {
     const managed = buildSession('managed-refresh-title')
     managed.llmConnection = 'storyflow-managed'
