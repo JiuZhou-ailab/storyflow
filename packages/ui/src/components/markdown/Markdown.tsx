@@ -58,6 +58,8 @@ export interface MarkdownProps {
    * Callback when a file path is clicked
    */
   onFileClick?: (path: string) => void
+  /** Render Markdown images. Disable for untrusted remote content. */
+  allowImages?: boolean
   /**
    * Enable collapsible headings
    * Requires wrapping in CollapsibleMarkdownProvider
@@ -105,7 +107,8 @@ function createComponents(
   onFileClick?: (path: string) => void,
   collapsibleContext?: CollapsibleContext | null,
   firstMermaidCodeRef?: React.RefObject<string | null>,
-  hideFirstMermaidExpand: boolean = true
+  hideFirstMermaidExpand: boolean = true,
+  allowImages: boolean = true,
 ): Partial<Components> {
   let blockIndex = 0
   const wrapBlock = (
@@ -134,6 +137,7 @@ function createComponents(
   }
 
   const baseComponents: Partial<Components> = {
+    ...(!allowImages ? { img: () => null } : {}),
     // Section wrapper for collapsible headings
     div: ({ node, children, ...props }) => {
       const sectionId = (props as Record<string, unknown>)['data-section-id'] as string | undefined
@@ -507,6 +511,7 @@ export function Markdown({
   id,
   onUrlClick,
   onFileClick,
+  allowImages = true,
   collapsible = false,
   hideFirstMermaidExpand = true,
 }: MarkdownProps) {
@@ -527,8 +532,8 @@ export function Markdown({
   }
 
   const components = React.useMemo(
-    () => wrapWithSafeProxy(createComponents(mode, onUrlClick, onFileClick, collapsible ? collapsibleContext : null, firstMermaidCodeRef, hideFirstMermaidExpand)),
-    [mode, onUrlClick, onFileClick, collapsible, collapsibleContext, hideFirstMermaidExpand]
+    () => wrapWithSafeProxy(createComponents(mode, onUrlClick, onFileClick, collapsible ? collapsibleContext : null, firstMermaidCodeRef, hideFirstMermaidExpand, allowImages)),
+    [mode, onUrlClick, onFileClick, collapsible, collapsibleContext, hideFirstMermaidExpand, allowImages]
   )
 
   // Preprocess to convert raw URLs and file paths to markdown links
@@ -581,13 +586,15 @@ export const MemoizedMarkdown = React.memo(
       return (
         prevProps.id === nextProps.id &&
         prevProps.children === nextProps.children &&
-        prevProps.mode === nextProps.mode
+        prevProps.mode === nextProps.mode &&
+        prevProps.allowImages === nextProps.allowImages
       )
     }
     // Otherwise compare content and mode
     return (
       prevProps.children === nextProps.children &&
-      prevProps.mode === nextProps.mode
+      prevProps.mode === nextProps.mode &&
+      prevProps.allowImages === nextProps.allowImages
     )
   }
 )

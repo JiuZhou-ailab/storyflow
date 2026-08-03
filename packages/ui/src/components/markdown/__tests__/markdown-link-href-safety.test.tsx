@@ -24,4 +24,13 @@ describe('Markdown link href safety', () => {
 
     expect(html).toContain('href="file:///Users/tester/report.pdf"')
   })
+
+  it('can suppress images for untrusted Markdown', () => {
+    const html = renderToStaticMarkup(
+      <Markdown allowImages={false}>{'![tracking pixel](https://example.com/pixel.png)'}</Markdown>,
+    )
+
+    expect(html).not.toContain('<img')
+    expect(html).not.toContain('pixel.png')
+  })
 })

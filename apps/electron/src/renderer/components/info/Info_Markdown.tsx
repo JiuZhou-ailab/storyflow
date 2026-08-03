@@ -24,6 +24,10 @@ export interface Info_MarkdownProps {
   className?: string
   /** Enable fullscreen button (shows Maximize2 icon on hover) */
   fullscreen?: boolean
+  /** Open rendered Markdown links through the host. */
+  onUrlClick?: (url: string) => void
+  /** Render Markdown images. Disable for untrusted remote content. */
+  allowImages?: boolean
 }
 
 export function Info_Markdown({
@@ -32,6 +36,8 @@ export function Info_Markdown({
   mode = 'minimal',
   className,
   fullscreen = false,
+  onUrlClick,
+  allowImages = true,
 }: Info_MarkdownProps) {
   const { t } = useTranslation()
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -69,7 +75,7 @@ export function Info_Markdown({
           </button>
         )}
 
-        <Markdown mode={mode}>{children}</Markdown>
+        <Markdown mode={mode} onUrlClick={onUrlClick} allowImages={allowImages}>{children}</Markdown>
       </div>
 
       {/* Fullscreen overlay - reuses shared component from packages/ui */}
