@@ -211,6 +211,7 @@ describe('publisher ownership', () => {
       await Bun.file(new URL('../migrations/0001_initial.sql', import.meta.url)).text(),
       await Bun.file(new URL('../migrations/0002_ai_review.sql', import.meta.url)).text(),
       await Bun.file(new URL('../migrations/0003_visibility.sql', import.meta.url)).text(),
+      await Bun.file(new URL('../migrations/0004_download_metrics.sql', import.meta.url)).text(),
     ].join('\n')
     const d1 = new SqliteD1Database(migration)
     const packages = new MemoryR2Bucket()
@@ -250,6 +251,7 @@ describe('publisher ownership', () => {
       await Bun.file(new URL('../migrations/0001_initial.sql', import.meta.url)).text(),
       await Bun.file(new URL('../migrations/0002_ai_review.sql', import.meta.url)).text(),
       await Bun.file(new URL('../migrations/0003_visibility.sql', import.meta.url)).text(),
+      await Bun.file(new URL('../migrations/0004_download_metrics.sql', import.meta.url)).text(),
     ].join('\n')
     const d1 = new SqliteD1Database(migration)
     const env: Env = {
@@ -282,6 +284,7 @@ describe('company visibility', () => {
       await Bun.file(new URL('../migrations/0001_initial.sql', import.meta.url)).text(),
       await Bun.file(new URL('../migrations/0002_ai_review.sql', import.meta.url)).text(),
       await Bun.file(new URL('../migrations/0003_visibility.sql', import.meta.url)).text(),
+      await Bun.file(new URL('../migrations/0004_download_metrics.sql', import.meta.url)).text(),
     ].join('\n')
     const d1 = new SqliteD1Database(migration)
     const env: Env = {
@@ -348,12 +351,41 @@ describe('company visibility', () => {
   })
 })
 
+describe('download popularity', () => {
+  test('counts successful bundle GETs and ignores HEAD without changing curated featured skills', async () => {
+    const migration = [
+      await Bun.file(new URL('../migrations/0001_initial.sql', import.meta.url)).text(),
+      await Bun.file(new URL('../migrations/0002_ai_review.sql', import.meta.url)).text(),
+      await Bun.file(new URL('../migrations/0003_visibility.sql', import.meta.url)).text(),
+      await Bun.file(new URL('../migrations/0004_download_metrics.sql', import.meta.url)).text(),
+    ].join('\n')
+    const d1 = new SqliteD1Database(migration)
+    const env: Env = { DB: d1 as unknown as NonNullable<Env['DB']> }
+    const bundleUrl = 'https://market.test/api/skills/world-system-map/versions/1.0.0/bundle'
+
+    await handleRequest(new Request(bundleUrl, { method: 'HEAD' }), env)
+    await handleRequest(new Request(bundleUrl), env)
+    await handleRequest(new Request(bundleUrl), env)
+    const catalog = await handleRequest(new Request('https://market.test/api/skills'), env)
+    const body = await catalog.json() as {
+      skills: Array<{ slug: string, downloadCount: number, featured?: boolean }>
+    }
+
+    expect(body.skills[0]).toMatchObject({ slug: 'world-system-map', downloadCount: 2, featured: true })
+    expect(body.skills.filter(skill => skill.featured)).toHaveLength(8)
+    expect(d1.database.query('SELECT download_count FROM skill_metrics WHERE slug = ?')
+      .get('world-system-map')).toEqual({ download_count: 2 })
+    d1.database.close()
+  })
+})
+
 describe('automated publication', () => {
   test('publishes approved bytes and leaves rejected or malformed reviews invisible', async () => {
     const migration = [
       await Bun.file(new URL('../migrations/0001_initial.sql', import.meta.url)).text(),
       await Bun.file(new URL('../migrations/0002_ai_review.sql', import.meta.url)).text(),
       await Bun.file(new URL('../migrations/0003_visibility.sql', import.meta.url)).text(),
+      await Bun.file(new URL('../migrations/0004_download_metrics.sql', import.meta.url)).text(),
     ].join('\n')
     const approvedBundle = await bundleWithVersion('2.0.0')
 

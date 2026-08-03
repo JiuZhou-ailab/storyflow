@@ -1,4 +1,4 @@
-// input: Skills Market catalog responses, install deep links, and portable Skill bundles
+// input: Skills Market catalog responses with popularity metrics, install deep links, and portable Skill bundles
 // output: Browser-safe marketplace contracts, publisher provenance, URL construction, and digest verification
 // pos: Shared protocol boundary between the public registry and Storyflow clients
 
@@ -54,6 +54,7 @@ export interface MarketSkillSummary {
   license: string
   tags: string[]
   roots: string[]
+  downloadCount: number
   featured?: boolean
   publishedAt?: string
   sha256: string
@@ -85,6 +86,31 @@ export function parseMarketSkillListResponse(value: unknown): MarketSkillListRes
   }
 }
 
+export function parseMarketSkillDetail(value: unknown): MarketSkillDetail {
+  const summary = parseMarketSkillSummary(value)
+  const detail = value as Record<string, unknown>
+  const manifestErrors = validateStoryflowSkillManifest(detail.manifest)
+  if (
+    typeof detail.skillMarkdown !== 'string'
+    || typeof detail.downloadPath !== 'string'
+    || typeof detail.installUrl !== 'string'
+    || manifestErrors.length > 0
+  ) {
+    throw new Error('Skills Market returned an invalid Skill detail')
+  }
+  const manifest = detail.manifest as StoryflowSkillManifest
+  if (manifest.slug !== summary.slug || manifest.version !== summary.version) {
+    throw new Error('Skills Market returned mismatched Skill detail')
+  }
+  return {
+    ...summary,
+    skillMarkdown: detail.skillMarkdown,
+    manifest,
+    downloadPath: detail.downloadPath,
+    installUrl: detail.installUrl,
+  }
+}
+
 function parseMarketSkillSummary(value: unknown): MarketSkillSummary {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Skills Market returned an invalid Skill')
@@ -97,6 +123,11 @@ function parseMarketSkillSummary(value: unknown): MarketSkillSummary {
     || skill.tags.some(tag => typeof tag !== 'string')
     || !Array.isArray(skill.roots)
     || skill.roots.some(root => typeof root !== 'string')
+    || (skill.downloadCount !== undefined && (
+      typeof skill.downloadCount !== 'number'
+      || !Number.isSafeInteger(skill.downloadCount)
+      || skill.downloadCount < 0
+    ))
     || (skill.featured !== undefined && typeof skill.featured !== 'boolean')
     || (skill.publishedAt !== undefined && typeof skill.publishedAt !== 'string')
   ) {
@@ -120,6 +151,7 @@ function parseMarketSkillSummary(value: unknown): MarketSkillSummary {
     license: skill.license as string,
     tags: skill.tags as string[],
     roots: skill.roots as string[],
+    downloadCount: typeof skill.downloadCount === 'number' ? skill.downloadCount : 0,
     ...(typeof skill.featured === 'boolean' ? { featured: skill.featured } : {}),
     ...(typeof skill.publishedAt === 'string' ? { publishedAt: skill.publishedAt } : {}),
     sha256: skill.sha256 as string,

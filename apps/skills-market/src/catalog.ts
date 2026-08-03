@@ -112,7 +112,7 @@ export const METHODOLOGY_SEEDS: readonly MethodologySeed[] = [
     method: '把观察、判断、决定、行动作为持续循环；每次行动都明确预期信号和下一次重新判断条件。',
     roots: ['observations', 'orientation', 'decisions', 'actions'], tags: ['决策', '复盘'],
     sourceName: 'US Air University OODA', sourceUrl: 'https://www.airuniversity.af.edu/News/Display/Article/420819/ooda-loop-makes-its-mark-on-maxwell/',
-    license: 'US-Public-Domain', distribution: 'installable',
+    license: 'US-Public-Domain', distribution: 'installable', featured: true,
   },
   {
     slug: 'after-action-learning', displayName: '行动后复盘',
@@ -120,7 +120,7 @@ export const METHODOLOGY_SEEDS: readonly MethodologySeed[] = [
     method: '分别记录预期、事实、差异原因、可复用经验和有负责人的下一步动作，避免只写感想。',
     roots: ['reviews/context', 'reviews/outcomes', 'reviews/lessons', 'reviews/actions'], tags: ['复盘', '团队'],
     sourceName: 'U.S. Army After Action Review', sourceUrl: 'https://www.army.mil/article/17487/after_action_review_focuses_on_vanguard_oif_deployment',
-    license: 'US-Public-Domain', distribution: 'installable', featured: true,
+    license: 'US-Public-Domain', distribution: 'installable',
   },
   ...referenceOnlySeeds(),
 ]

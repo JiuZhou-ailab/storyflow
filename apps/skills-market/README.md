@@ -23,6 +23,11 @@ author. A publication may be `public`, or `company` when the short-lived bearer
 token contains an organization claim. Anonymous readers see public Skills;
 authenticated company members additionally see Skills from their organization.
 
+Each successfully served bundle `GET` atomically increments that Skill's D1
+download counter; metadata-only `HEAD` requests do not. The catalog exposes the
+counter and derives `Featured` from the eight most-downloaded installable Skills,
+so curated and member-published Skills share one popularity rule.
+
 Invalid packages return `400`; AI rejection returns `422` without writes; an
 unavailable or malformed review returns `503` without writes. Approval returns
 `201` only after the published version is visible. License values remain

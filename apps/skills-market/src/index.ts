@@ -1,5 +1,5 @@
-// input: Public catalog requests, authenticated submissions, Workers AI, D1 metadata, and private R2 packages
-// output: Skills Market catalog APIs with publisher provenance, immutable bundles, and synchronously reviewed publication
+// input: Public catalog and bundle requests, authenticated submissions, Workers AI, D1 metadata, and private R2 packages
+// output: Catalog APIs with download metrics, publisher provenance, immutable bundles, and reviewed publication
 // pos: API-only Cloudflare Worker boundary; the Storyflow desktop app owns presentation and installation
 
 import {
@@ -74,6 +74,11 @@ interface PublishedRow {
   manifest_json: string
 }
 
+interface SkillMetricRow {
+  slug: string
+  download_count: number
+}
+
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
 const PUBLIC_CACHE = 'public, max-age=60, stale-while-revalidate=300'
 const PRIVATE_CACHE = 'private, no-store'
@@ -122,11 +127,15 @@ async function listSkills(request: Request, url: URL, env: Env): Promise<Respons
   const query = (url.searchParams.get('q') ?? '').trim().toLocaleLowerCase()
   const tag = (url.searchParams.get('tag') ?? '').trim().toLocaleLowerCase()
   const distribution = url.searchParams.get('distribution')
-  const seedSummaries = await Promise.all(METHODOLOGY_SEEDS.map(seedSummary))
-  const published = await loadPublishedSummaries(env, identity?.organizationId)
+  const downloadCounts = await loadDownloadCounts(env)
+  const seedSummaries = await Promise.all(METHODOLOGY_SEEDS.map(seed => seedSummary(
+    seed,
+    downloadCounts.get(seed.slug) ?? 0,
+  )))
+  const published = await loadPublishedSummaries(env, identity?.organizationId, downloadCounts)
   const bySlug = new Map<string, MarketSkillSummary>(seedSummaries.map(item => [item.slug, item]))
   for (const item of published) bySlug.set(item.slug, item)
-  const skills = [...bySlug.values()].filter(skill => {
+  const skills = sortMarketSkills([...bySlug.values()]).filter(skill => {
     if (distribution === 'installable' && !skill.sha256) return false
     if (distribution === 'reference-only' && skill.sha256) return false
     if (tag && !skill.tags.some(value => value.toLocaleLowerCase() === tag)) return false
@@ -143,9 +152,10 @@ async function listSkills(request: Request, url: URL, env: Env): Promise<Respons
 
 async function getSkillDetail(slug: string, request: Request, env: Env): Promise<Response> {
   const identity = await readMarketIdentity(request, env, 'skills:read', false)
+  const downloadCount = await loadDownloadCount(env, slug)
   const seed = METHODOLOGY_SEEDS.find(item => item.slug === slug)
   if (seed) {
-    const detail = await seedDetail(seed)
+    const detail = await seedDetail(seed, downloadCount)
     return json(detail, 200, { 'cache-control': PUBLIC_CACHE })
   }
   const row = await loadPublishedRow(slug, undefined, env, identity?.organizationId)
@@ -153,7 +163,7 @@ async function getSkillDetail(slug: string, request: Request, env: Env): Promise
   const packageObject = await env.PACKAGES?.get(row.object_key)
   if (!packageObject) throw new RequestError(503, 'Published package bytes are unavailable')
   const validated = await validateMarketBundle(await new Response(packageObject.body).text())
-  const summary = publishedRowSummary(row, validated.manifest)
+  const summary = publishedRowSummary(row, validated.manifest, downloadCount)
   const detail: MarketSkillDetail = {
     ...summary,
     skillMarkdown: validated.skillMarkdown,
@@ -178,6 +188,7 @@ async function downloadBundle(
   if (seed) {
     if (version !== '1.0.0' || seed.distribution !== 'installable') throw new RequestError(404, 'Skill version not found')
     const built = await buildSeedBundle(seed)
+    if (!headOnly) await recordDownload(env, slug)
     return bundleResponse(built.raw, built.sha256, `${slug}-${version}.storyflow-skill.json`, headOnly)
   }
   const row = await loadPublishedRow(slug, version, env, identity?.organizationId)
@@ -185,6 +196,7 @@ async function downloadBundle(
   const object = await env.PACKAGES?.get(row.object_key)
   if (!object) throw new RequestError(503, 'Published package bytes are unavailable')
   const raw = await new Response(object.body).text()
+  if (!headOnly) await recordDownload(env, slug)
   return bundleResponse(
     raw,
     row.sha256,
@@ -282,7 +294,7 @@ async function submitSkill(request: Request, url: URL, env: Env): Promise<Respon
   }, 201)
 }
 
-async function seedSummary(seed: MethodologySeed): Promise<MarketSkillSummary> {
+async function seedSummary(seed: MethodologySeed, downloadCount: number): Promise<MarketSkillSummary> {
   const built = seed.distribution === 'installable' ? await buildSeedBundle(seed) : null
   return {
     slug: seed.slug,
@@ -295,14 +307,15 @@ async function seedSummary(seed: MethodologySeed): Promise<MarketSkillSummary> {
     license: seed.license,
     tags: [...seed.tags, seed.distribution === 'installable' ? '可安装' : '仅参考'],
     roots: [...seed.roots],
+    downloadCount,
     featured: seed.featured,
     publishedAt: '2026-07-17T00:00:00.000Z',
     sha256: built?.sha256 ?? '',
   }
 }
 
-async function seedDetail(seed: MethodologySeed): Promise<MarketSkillDetail> {
-  const summary = await seedSummary(seed)
+async function seedDetail(seed: MethodologySeed, downloadCount: number): Promise<MarketSkillDetail> {
+  const summary = await seedSummary(seed, downloadCount)
   if (seed.distribution === 'installable') {
     const built = await buildSeedBundle(seed)
     return {
@@ -322,7 +335,11 @@ async function seedDetail(seed: MethodologySeed): Promise<MarketSkillDetail> {
   return { ...summary, skillMarkdown: '', manifest, downloadPath: '', installUrl: '' }
 }
 
-async function loadPublishedSummaries(env: Env, organizationId?: string): Promise<MarketSkillSummary[]> {
+async function loadPublishedSummaries(
+  env: Env,
+  organizationId: string | undefined,
+  downloadCounts: ReadonlyMap<string, number>,
+): Promise<MarketSkillSummary[]> {
   if (!env.DB) return []
   const result = await env.DB.prepare(`SELECT s.owner_id, u.display_name AS publisher_name,
     s.visibility, s.organization_id,
@@ -332,7 +349,11 @@ async function loadPublishedSummaries(env: Env, organizationId?: string): Promis
     JOIN skill_versions v ON v.id = s.current_version_id
     WHERE v.status = 'published' AND (s.visibility = 'public' OR s.organization_id = ?)
     ORDER BY v.published_at DESC LIMIT 200`).bind(organizationId ?? null).all<PublishedRow>()
-  return (result.results ?? []).map(row => publishedRowSummary(row, JSON.parse(row.manifest_json) as StoryflowSkillManifest))
+  return (result.results ?? []).map(row => publishedRowSummary(
+    row,
+    JSON.parse(row.manifest_json) as StoryflowSkillManifest,
+    downloadCounts.get(row.slug) ?? 0,
+  ))
 }
 
 async function loadPublishedRow(
@@ -356,7 +377,11 @@ async function loadPublishedRow(
     : statement.bind(slug, organizationId ?? null).first<PublishedRow>()
 }
 
-function publishedRowSummary(row: PublishedRow, manifest: StoryflowSkillManifest): MarketSkillSummary {
+function publishedRowSummary(
+  row: PublishedRow,
+  manifest: StoryflowSkillManifest,
+  downloadCount: number,
+): MarketSkillSummary {
   return {
     slug: row.slug, version: row.version, displayName: row.display_name, summary: row.summary,
     author: manifest.author.name,
@@ -364,7 +389,43 @@ function publishedRowSummary(row: PublishedRow, manifest: StoryflowSkillManifest
     visibility: row.visibility,
     license: row.license, tags: JSON.parse(row.tags_json) as string[],
     roots: manifest.contributes?.projectLayout?.roots.map(root => root.path) ?? [],
-    publishedAt: row.published_at, sha256: row.sha256,
+    downloadCount, publishedAt: row.published_at, sha256: row.sha256,
+  }
+}
+
+function sortMarketSkills(skills: MarketSkillSummary[]): MarketSkillSummary[] {
+  return [...skills].sort((left, right) => (
+    right.downloadCount - left.downloadCount
+    || (right.publishedAt ?? '').localeCompare(left.publishedAt ?? '')
+    || left.slug.localeCompare(right.slug)
+  ))
+}
+
+async function loadDownloadCounts(env: Env): Promise<Map<string, number>> {
+  if (!env.DB) return new Map()
+  const result = await env.DB.prepare('SELECT slug, download_count FROM skill_metrics').all<SkillMetricRow>()
+  return new Map((result.results ?? []).map(row => [row.slug, row.download_count]))
+}
+
+async function loadDownloadCount(env: Env, slug: string): Promise<number> {
+  if (!env.DB) return 0
+  const row = await env.DB.prepare('SELECT download_count FROM skill_metrics WHERE slug = ?')
+    .bind(slug)
+    .first<Pick<SkillMetricRow, 'download_count'>>()
+  return row?.download_count ?? 0
+}
+
+async function recordDownload(env: Env, slug: string): Promise<void> {
+  if (!env.DB) return
+  const now = new Date().toISOString()
+  try {
+    await env.DB.prepare(`INSERT INTO skill_metrics (slug, download_count, updated_at)
+      VALUES (?, 1, ?) ON CONFLICT(slug) DO UPDATE SET
+      download_count = download_count + 1, updated_at = excluded.updated_at`)
+      .bind(slug, now)
+      .run()
+  } catch (error) {
+    console.error('[skills-market] Failed to record download', { slug, error })
   }
 }
 

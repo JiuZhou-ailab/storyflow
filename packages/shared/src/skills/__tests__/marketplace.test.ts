@@ -6,6 +6,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   buildSkillInstallDeepLink,
   downloadMarketSkillBundle,
+  parseMarketSkillDetail,
   prepareMarketSkillBundle,
   sha256Hex,
   validateStoryflowSkillManifest,
@@ -36,6 +37,32 @@ describe('Skills Market contract', () => {
     expect(url).toContain('craftagents://action/install-skill?')
     expect(url).not.toContain('registry=')
     expect(url).not.toContain('url=')
+  })
+
+  test('parses matching marketplace detail and rejects mismatched content', () => {
+    const detail = {
+      slug: manifest.slug,
+      version: manifest.version,
+      displayName: manifest.displayName,
+      summary: manifest.summary,
+      author: manifest.author.name,
+      publisher: { id: 'user_1', displayName: '发布者' },
+      visibility: 'public',
+      license: manifest.license,
+      tags: ['故事'],
+      roots: ['scenes'],
+      downloadCount: 12,
+      sha256: 'a'.repeat(64),
+      skillMarkdown: '---\nname: scene-sequel\ndescription: Scene workflow\n---\n\n# Instructions',
+      manifest,
+      downloadPath: '/api/skills/scene-sequel/versions/1.0.0/bundle',
+      installUrl: 'craftagents://action/install-skill',
+    }
+    expect(parseMarketSkillDetail(detail)).toMatchObject({ downloadCount: 12 })
+    expect(() => parseMarketSkillDetail({
+      ...detail,
+      manifest: { ...manifest, slug: 'other-skill' },
+    })).toThrow('mismatched')
   })
 
   test('verifies registry bytes before returning a bundle', async () => {

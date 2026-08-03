@@ -10,10 +10,15 @@ const env: Env = {}
 describe('Skills Market worker', () => {
   test('lists thirty researched methodologies', async () => {
     const response = await handleRequest(new Request('https://market.test/api/skills'), env)
-    const body = await response.json() as { total: number, skills: Array<{ sha256: string }> }
+    const body = await response.json() as {
+      total: number
+      skills: Array<{ sha256: string, downloadCount: number, featured?: boolean }>
+    }
     expect(response.status).toBe(200)
     expect(body.total).toBe(30)
     expect(body.skills.filter(skill => skill.sha256).length).toBe(13)
+    expect(body.skills.every(skill => skill.downloadCount === 0)).toBeTrue()
+    expect(body.skills.filter(skill => skill.featured).length).toBe(8)
   })
 
   test('serves deterministic install bundles', async () => {
