@@ -1,6 +1,6 @@
 {
   "name": "storyflow",
-  "version": "0.9.63",
+  "version": "0.9.64",
   "license": "Apache-2.0",
   "description": "Claude Code-like agent for Craft documents",
   "type": "module",
@@ -23,7 +23,6 @@
     "test": "bun test $(git ls-files --cached --others --exclude-standard -- '*.test.ts' '*.test.tsx' '*.test.js' '*.test.jsx' '*.spec.ts' '*.spec.tsx' ':!apps/electron/dist/**' ':!apps/electron/release/**' ':!packages/server-core/src/webui/__tests__/http-server.test.ts') && bun test packages/server-core/src/webui/__tests__/http-server.test.ts && for f in $(git ls-files --cached --others --exclude-standard -- '*.isolated.ts' ':!apps/electron/dist/**' ':!apps/electron/release/**'); do bun test \"./$f\" || exit 1; done",
     "typecheck": "bun run typecheck:shared",
     "typecheck:shared": "cd packages/shared && bun run tsc --noEmit",
-    "typecheck:staged": "bash scripts/typecheck-staged.sh",
     "typecheck:all": "cd packages/core && bun run tsc --noEmit && cd ../shared && bun run tsc --noEmit && cd ../server-core && bun run tsc --noEmit && cd ../server && bun run tsc --noEmit && cd ../session-tools-core && bun run tsc --noEmit && cd ../pi-agent-server && bun run typecheck && cd ../../apps/electron && bun run typecheck && cd ../../packages/ui && bun run tsc --noEmit",
     "server:start": "bun run packages/server/src/index.ts",
     "server:dev": "bun run server:build:subprocess && CRAFT_DEBUG=true CRAFT_BUNDLED_ASSETS_ROOT=$PWD/apps/electron bun run packages/server/src/index.ts",
