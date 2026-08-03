@@ -74,6 +74,7 @@ function addUsage(left: SubagentUsage, right: SubagentUsage): SubagentUsage {
     cacheRead: left.cacheRead + right.cacheRead,
     cacheWrite: left.cacheWrite + right.cacheWrite,
     cost: left.cost + right.cost,
+    modelCalls: (left.modelCalls ?? 0) + (right.modelCalls ?? 0),
   };
 }
 
@@ -83,6 +84,7 @@ const EMPTY_USAGE: SubagentUsage = {
   cacheRead: 0,
   cacheWrite: 0,
   cost: 0,
+  modelCalls: 0,
 };
 
 function getUsage(session: AgentSession): SubagentUsage {
@@ -93,6 +95,7 @@ function getUsage(session: AgentSession): SubagentUsage {
     cacheRead: stats.tokens.cacheRead,
     cacheWrite: stats.tokens.cacheWrite,
     cost: stats.cost,
+    modelCalls: stats.assistantMessages,
   };
 }
 

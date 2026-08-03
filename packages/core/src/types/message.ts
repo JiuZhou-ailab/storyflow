@@ -271,6 +271,8 @@ export interface StoredAttachment {
 export interface TurnUsage {
   inputTokens: number;
   outputTokens: number;
+  /** Provider calls whose usage is included in this turn. */
+  modelCalls?: number;
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
   costUsd?: number;

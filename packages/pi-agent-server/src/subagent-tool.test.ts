@@ -107,6 +107,7 @@ describe('createSubagentExtension', () => {
             total: 165,
           },
           cost: 0.01,
+          assistantMessages: 2,
         };
       },
     } as unknown as AgentSession;
@@ -169,6 +170,7 @@ describe('createSubagentExtension', () => {
         cacheRead: 10,
         cacheWrite: 5,
         cost: 0.01,
+        modelCalls: 2,
       },
     });
     expect(disposed).toBe(true);

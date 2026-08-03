@@ -13,6 +13,7 @@ describe('turn metrics', () => {
       usage: {
         inputTokens: 7_500,
         outputTokens: 1_000,
+        modelCalls: 4,
       },
     }
     const messages: Message[] = [

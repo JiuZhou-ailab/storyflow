@@ -10,6 +10,7 @@ export interface PiSubagentUsage {
   cacheRead: number;
   cacheWrite: number;
   cost: number;
+  modelCalls?: number;
 }
 
 export interface PiSubagentTaskResult {
@@ -52,6 +53,15 @@ export function parsePiSubagentUsage(value: unknown): PiSubagentUsage | null {
     && Number.isFinite(typed[field])
     && typed[field] >= 0
   ))) return null;
+
+  if (
+    typed.modelCalls !== undefined
+    && (
+      typeof typed.modelCalls !== 'number'
+      || !Number.isInteger(typed.modelCalls)
+      || typed.modelCalls < 0
+    )
+  ) return null;
 
   return typed as PiSubagentUsage;
 }

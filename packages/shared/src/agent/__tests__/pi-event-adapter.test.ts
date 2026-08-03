@@ -89,6 +89,7 @@ describe('PiEventAdapter', () => {
         usage: {
           inputTokens: 365,
           outputTokens: 90,
+          modelCalls: 2,
           cacheReadTokens: 50,
           cacheCreationTokens: 15,
           costUsd: 0.03,
@@ -135,6 +136,7 @@ describe('PiEventAdapter', () => {
               cacheRead: 10,
               cacheWrite: 5,
               cost: 0.02,
+              modelCalls: 3,
             },
           },
         },
@@ -162,6 +164,7 @@ describe('PiEventAdapter', () => {
         usage: {
           inputTokens: 500,
           outputTokens: 120,
+          modelCalls: 5,
           cacheReadTokens: 60,
           cacheCreationTokens: 20,
           costUsd: 0.06,
@@ -1141,6 +1144,7 @@ describe('PiEventAdapter', () => {
         usage: {
           inputTokens: 100_000,
           outputTokens: 100,
+          modelCalls: 1,
           cacheReadTokens: 0,
           cacheCreationTokens: 0,
           costUsd: 0.1,

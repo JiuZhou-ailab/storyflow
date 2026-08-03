@@ -3153,6 +3153,11 @@ export const TurnCard = React.memo(function TurnCard({
           </span>
           {metrics.usage && (
             <>
+              {metrics.usage.modelCalls !== undefined && (
+                <span title={`${metrics.usage.modelCalls.toLocaleString()} model calls in this turn`}>
+                  {metrics.usage.modelCalls.toLocaleString()} model calls
+                </span>
+              )}
               <span
                 title={`${metrics.usage.inputTokens.toLocaleString()} aggregate turn input tokens${metrics.usage.cacheReadTokens ? `, including ${metrics.usage.cacheReadTokens.toLocaleString()} cache-read tokens` : ''}${metrics.usage.cacheCreationTokens ? ` and ${metrics.usage.cacheCreationTokens.toLocaleString()} cache-write tokens` : ''}`}
               >

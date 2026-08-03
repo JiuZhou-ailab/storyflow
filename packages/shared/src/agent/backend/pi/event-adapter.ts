@@ -95,6 +95,7 @@ export class PiEventAdapter extends BaseEventAdapter {
   private turnUsage: {
     inputTokens: number;
     outputTokens: number;
+    modelCalls: number;
     cacheReadTokens: number;
     cacheCreationTokens: number;
     costUsd: number;
@@ -237,6 +238,7 @@ export class PiEventAdapter extends BaseEventAdapter {
     this.turnUsage ??= {
       inputTokens: 0,
       outputTokens: 0,
+      modelCalls: 0,
       cacheReadTokens: 0,
       cacheCreationTokens: 0,
       costUsd: 0,
@@ -247,6 +249,7 @@ export class PiEventAdapter extends BaseEventAdapter {
     this.turnUsage.cacheReadTokens += usage.cacheRead;
     this.turnUsage.cacheCreationTokens += usage.cacheWrite;
     this.turnUsage.costUsd += usage.cost;
+    this.turnUsage.modelCalls += usage.modelCalls ?? 0;
   }
 
   protected onTurnStart(): void {
@@ -361,6 +364,7 @@ export class PiEventAdapter extends BaseEventAdapter {
           this.turnUsage ??= {
             inputTokens: 0,
             outputTokens: 0,
+            modelCalls: 0,
             cacheReadTokens: 0,
             cacheCreationTokens: 0,
             costUsd: 0,
@@ -368,6 +372,7 @@ export class PiEventAdapter extends BaseEventAdapter {
           };
           this.turnUsage.inputTokens += contextTokens;
           this.turnUsage.outputTokens += msg.usage.output || 0;
+          this.turnUsage.modelCalls += 1;
           this.turnUsage.cacheReadTokens += cacheReadTokens;
           this.turnUsage.cacheCreationTokens += cacheCreationTokens;
           this.turnUsage.costUsd += msg.usage.cost.total || 0;
