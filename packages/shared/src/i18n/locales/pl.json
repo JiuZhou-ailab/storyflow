@@ -956,8 +956,6 @@
   "settings.appearance.light": "Jasny",
   "settings.appearance.mode": "Tryb",
   "settings.appearance.noToolIcons": "Nie znaleziono mapowań ikon narzędzi",
-  "settings.appearance.richToolDescriptions": "Rozbudowane opisy narzędzi",
-  "settings.appearance.richToolDescriptionsDesc": "Dodaj nazwy akcji i opisy intencji do wszystkich wywołań narzędzi. Zapewnia bogatszy kontekst aktywności w sesjach.",
   "settings.appearance.searchTools": "Szukaj narzędzi...",
   "settings.appearance.system": "System",
   "settings.appearance.themeWarning": "Ostrzeżenie dotyczące motywu:",

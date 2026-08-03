@@ -956,8 +956,6 @@
   "settings.appearance.light": "Hell",
   "settings.appearance.mode": "Modus",
   "settings.appearance.noToolIcons": "Keine Werkzeugsymbol-Zuordnungen gefunden",
-  "settings.appearance.richToolDescriptions": "Ausführliche Werkzeugbeschreibungen",
-  "settings.appearance.richToolDescriptionsDesc": "Aktionsnamen und Absichtsbeschreibungen zu allen Werkzeugaufrufen hinzufügen. Bietet reichhaltigeren Aktivitätskontext in Sitzungen.",
   "settings.appearance.searchTools": "Werkzeuge suchen...",
   "settings.appearance.system": "System",
   "settings.appearance.themeWarning": "Designwarnung:",

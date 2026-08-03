@@ -6,7 +6,7 @@
  * sessions don't run Anthropic-specific credential/endpoint checks.
  */
 
-import { getLastApiError } from '../interceptor-common.ts';
+import { getLastApiError } from '../provider-diagnostics.ts';
 import { type AuthType, getDefaultLlmConnection, getLlmConnection } from '../config/storage.ts';
 import { getCredentialManager } from '../credentials/index.ts';
 import { validateAnthropicConnection } from '../config/llm-validation.ts';

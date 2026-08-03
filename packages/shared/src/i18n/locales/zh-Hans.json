@@ -956,8 +956,6 @@
   "settings.appearance.light": "浅色",
   "settings.appearance.mode": "模式",
   "settings.appearance.noToolIcons": "未找到工具图标映射",
-  "settings.appearance.richToolDescriptions": "丰富的工具描述",
-  "settings.appearance.richToolDescriptionsDesc": "为所有工具调用添加操作名称和意图描述。为会话提供更丰富的活动上下文。",
   "settings.appearance.searchTools": "搜索工具...",
   "settings.appearance.system": "系统",
   "settings.appearance.themeWarning": "主题警告:",

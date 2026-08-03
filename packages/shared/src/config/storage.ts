@@ -94,8 +94,6 @@ export interface StoredConfig {
   spellCheck?: boolean;  // Enable spell check in input (default: false)
   // Power settings
   keepAwakeWhileRunning?: boolean;  // Prevent screen sleep while sessions are running (default: false)
-  // Tool metadata
-  richToolDescriptions?: boolean;  // Add intent/action metadata to all tool calls (default: true)
   // Tools
   browserToolEnabled?: boolean;  // Enable built-in browser tool (default: true). Disable for Playwright/Puppeteer.
   // Prompt caching & context
@@ -143,7 +141,6 @@ const FALLBACK_CONFIG_DEFAULTS: ConfigDefaults = {
     sendMessageKey: 'enter',
     spellCheck: false,
     keepAwakeWhileRunning: false,
-    richToolDescriptions: true,
     extendedPromptCache: false,
     browserToolEnabled: true,
   },
@@ -656,31 +653,8 @@ export function setKeepAwakeWhileRunning(enabled: boolean): void {
 }
 
 /**
- * Get whether rich tool descriptions are enabled.
- * When enabled, all tool calls include intent and display name metadata.
- * Defaults to true if not set.
- */
-export function getRichToolDescriptions(): boolean {
-  const config = loadStoredConfig();
-  if (config?.richToolDescriptions !== undefined) {
-    return config.richToolDescriptions;
-  }
-  return true;
-}
-
-/**
- * Set whether rich tool descriptions are enabled.
- */
-export function setRichToolDescriptions(enabled: boolean): void {
-  const config = loadStoredConfig();
-  if (!config) return;
-  config.richToolDescriptions = enabled;
-  saveConfig(config);
-}
-
-/**
  * Get whether extended prompt cache (1h TTL) is enabled.
- * When enabled, the interceptor upgrades cache_control TTL from 5m to 1h.
+ * Pi maps this preference to provider-native cache retention.
  * Defaults to false if not set.
  */
 export function getExtendedPromptCache(): boolean {

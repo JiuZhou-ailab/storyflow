@@ -8,12 +8,8 @@
  * Tests the Pi SDK AgentEvent / AgentSessionEvent → Craft AgentEvent conversion.
  * Each test provides mock Pi SDK event objects and verifies the AgentEvents produced.
  */
-import { describe, it, expect, beforeEach, afterEach, jest } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { describe, it, expect, beforeEach, jest } from 'bun:test';
 import { PiEventAdapter } from '../backend/pi/event-adapter.ts';
-import { toolMetadataStore } from '../../interceptor-common.ts';
 
 // Helper: collect all events from a generator
 function collect(gen: Generator<any>): any[] {
@@ -22,19 +18,10 @@ function collect(gen: Generator<any>): any[] {
 
 describe('PiEventAdapter', () => {
   let adapter: PiEventAdapter;
-  let sessionDir: string;
 
   beforeEach(() => {
     adapter = new PiEventAdapter();
-    sessionDir = mkdtempSync(join(tmpdir(), 'pi-adapter-'));
-    adapter.setSessionDir(sessionDir);
-    toolMetadataStore.setSessionDir(sessionDir);
     adapter.startTurn();
-  });
-
-  afterEach(() => {
-    toolMetadataStore._clearForTesting();
-    rmSync(sessionDir, { recursive: true, force: true });
   });
 
   // ============================================================
@@ -773,7 +760,7 @@ describe('PiEventAdapter', () => {
       });
     });
 
-    it('should fallback to args metadata when store has no entry', () => {
+    it('should strip deprecated model-visible UI metadata', () => {
       collect(adapter.adaptEvent({ type: 'turn_start' } as any));
       const events = collect(adapter.adaptEvent({
         type: 'tool_execution_start',
@@ -791,9 +778,12 @@ describe('PiEventAdapter', () => {
         type: 'tool_start',
         toolName: 'Bash',
         toolUseId: 'call_no_store',
-        intent: 'Run unit tests',
-        displayName: 'Run Tests',
+        input: { command: 'npm test' },
+        displayName: 'Run Command',
       });
+      expect(events[0].intent).toBeUndefined();
+      expect(events[0].input).not.toHaveProperty('_intent');
+      expect(events[0].input).not.toHaveProperty('_displayName');
     });
 
     it('should preserve edits[] for Pi edit tools while deriving legacy diff fields', () => {
@@ -825,118 +815,6 @@ describe('PiEventAdapter', () => {
             { oldText: 'const b = 1', newText: 'const b = 2' },
           ],
         },
-      });
-    });
-
-    it('should prefer store metadata over args metadata when both exist', () => {
-      collect(adapter.adaptEvent({ type: 'turn_start' } as any));
-
-      toolMetadataStore.set('call_store_wins', {
-        intent: 'Stored intent',
-        displayName: 'Stored name',
-        timestamp: Date.now(),
-      });
-
-      const events = collect(adapter.adaptEvent({
-        type: 'tool_execution_start',
-        toolCallId: 'call_store_wins',
-        toolName: 'bash',
-        args: {
-          command: 'npm test',
-          _intent: 'Args intent',
-          _displayName: 'Args name',
-        },
-      } as any));
-
-      expect(events).toHaveLength(1);
-      expect(events[0]).toMatchObject({
-        type: 'tool_start',
-        toolUseId: 'call_store_wins',
-        intent: 'Stored intent',
-        displayName: 'Stored name',
-      });
-    });
-
-    it('should use canonical metadata from event payload', () => {
-      collect(adapter.adaptEvent({ type: 'turn_start' } as any));
-
-      const events = collect(adapter.adaptEvent({
-        type: 'tool_execution_start',
-        toolCallId: 'call_canonical',
-        toolName: 'bash',
-        args: { command: 'npm test' },
-        toolMetadata: {
-          intent: 'Canonical intent',
-          displayName: 'Canonical name',
-          source: 'interceptor',
-        },
-      } as any));
-
-      expect(events).toHaveLength(1);
-      expect(events[0]).toMatchObject({
-        type: 'tool_start',
-        toolUseId: 'call_canonical',
-        intent: 'Canonical intent',
-        displayName: 'Canonical name',
-      });
-    });
-
-    it('should fallback to base id metadata when toolCallId includes a pipe suffix', () => {
-      collect(adapter.adaptEvent({ type: 'turn_start' } as any));
-
-      toolMetadataStore.set('call_base_id', {
-        intent: 'Stored base intent',
-        displayName: 'Stored base name',
-        timestamp: Date.now(),
-      });
-
-      const events = collect(adapter.adaptEvent({
-        type: 'tool_execution_start',
-        toolCallId: 'call_base_id|fc_123',
-        toolName: 'bash',
-        args: { command: 'npm test' },
-      } as any));
-
-      expect(events).toHaveLength(1);
-      expect(events[0]).toMatchObject({
-        type: 'tool_start',
-        toolUseId: 'call_base_id|fc_123',
-        intent: 'Stored base intent',
-        displayName: 'Stored base name',
-      });
-    });
-
-    it('should prefer canonical metadata over store and args', () => {
-      collect(adapter.adaptEvent({ type: 'turn_start' } as any));
-
-      toolMetadataStore.set('call_canonical_wins', {
-        intent: 'Stored intent',
-        displayName: 'Stored name',
-        timestamp: Date.now(),
-      });
-
-      const events = collect(adapter.adaptEvent({
-        type: 'tool_execution_start',
-        toolCallId: 'call_canonical_wins',
-        toolName: 'bash',
-        args: {
-          command: 'npm test',
-          _intent: 'Args intent',
-          _displayName: 'Args name',
-        },
-        toolMetadata: {
-          intent: 'Canonical intent',
-          displayName: 'Canonical name',
-          source: 'interceptor',
-        },
-      } as any));
-
-      expect(events).toHaveLength(1);
-      expect(events[0]).toMatchObject({
-        type: 'tool_start',
-        toolUseId: 'call_canonical_wins',
-        intent: 'Canonical intent',
-        displayName: 'Canonical name',
       });
     });
 

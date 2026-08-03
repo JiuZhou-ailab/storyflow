@@ -48,7 +48,6 @@ function setupWorkspaceConfigDir() {
         sendMessageKey: 'enter',
         spellCheck: false,
         keepAwakeWhileRunning: false,
-        richToolDescriptions: true,
       },
       workspaceDefaults: {
         thinkingLevel: 'off',

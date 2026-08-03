@@ -110,13 +110,6 @@ export async function buildElectronAppWindows(config: BuildConfig): Promise<void
   // Build main process with shared auth-aware release guards
   buildMainProcess(config);
 
-  // Build unified network interceptor (--require hook for tool metadata)
-  console.log('  Building interceptor...');
-  run(
-    'node ./node_modules/esbuild/bin/esbuild packages/shared/src/unified-network-interceptor.ts --bundle --platform=node --format=cjs --outfile=apps/electron/dist/interceptor.cjs',
-    rootDir
-  );
-
   // Build preload - invoke esbuild directly via node
   console.log('  Building preload...');
   run(

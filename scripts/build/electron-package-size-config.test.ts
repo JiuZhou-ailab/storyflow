@@ -94,10 +94,6 @@ describe('Electron package size configuration', () => {
       const patterns = effectiveFilePatterns(config, platform);
       const positivePatterns = patterns.filter((pattern) => !pattern.startsWith('!'));
 
-      expect(positivePatterns).not.toContain('packages/shared/src/unified-network-interceptor.ts');
-      expect(positivePatterns).not.toContain('packages/shared/src/interceptor-common.ts');
-      expect(positivePatterns).not.toContain('packages/shared/src/feature-flags.ts');
-      expect(positivePatterns).not.toContain('packages/shared/src/interceptor-request-utils.ts');
       expect(positivePatterns.filter((pattern) => /(^|\/)src(\/|$)/.test(pattern))).toEqual([]);
     }
   });

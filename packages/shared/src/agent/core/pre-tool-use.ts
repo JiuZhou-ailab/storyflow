@@ -184,13 +184,10 @@ export function expandToolPaths(
 // ============================================================
 
 /**
- * Strip _intent and _displayName metadata from tool inputs.
+ * Strip legacy _intent and _displayName metadata from tool inputs.
  *
- * These fields are injected into all tool schemas by the network interceptor
- * so Claude provides semantic intent for UI display. They must be stripped
- * before execution to avoid SDK validation errors and MCP server rejections.
- *
- * The event adapter captures the metadata for UI display before this stripping.
+ * Current tool schemas do not expose these UI-only fields. The defensive
+ * cleanup keeps resumed sessions created by older app versions executable.
  *
  * @param toolName - The tool name
  * @param input - The tool input object

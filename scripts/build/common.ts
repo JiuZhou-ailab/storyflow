@@ -374,61 +374,6 @@ export function copyRipgrep(config: BuildConfig): void {
 }
 
 /**
- * Copy network interceptor source files (Anthropic — runs under Bun via --preload)
- */
-export function copyInterceptor(config: BuildConfig): void {
-  const { rootDir, electronDir } = config;
-
-  const sharedSrcDir = join('packages', 'shared', 'src');
-  const sourceDir = join(rootDir, sharedSrcDir);
-  const destDir = join(electronDir, sharedSrcDir);
-
-  const interceptorSource = join(sourceDir, 'unified-network-interceptor.ts');
-  if (!existsSync(interceptorSource)) {
-    throw new Error(`Interceptor not found at ${interceptorSource}`);
-  }
-
-  console.log('Copying interceptor...');
-  mkdirSync(destDir, { recursive: true });
-  copyFileSync(interceptorSource, join(destDir, 'unified-network-interceptor.ts'));
-
-  // Also copy shared infrastructure (imported by unified-network-interceptor.ts at runtime)
-  const commonSource = join(sourceDir, 'interceptor-common.ts');
-  if (existsSync(commonSource)) {
-    copyFileSync(commonSource, join(destDir, 'interceptor-common.ts'));
-  }
-
-  // Copy request utilities (imported by unified-network-interceptor.ts)
-  const requestUtilsSource = join(sourceDir, 'interceptor-request-utils.ts');
-  if (existsSync(requestUtilsSource)) {
-    copyFileSync(requestUtilsSource, join(destDir, 'interceptor-request-utils.ts'));
-  }
-
-  // Copy feature flags (imported by unified-network-interceptor.ts for fast mode / source templates)
-  const featureFlagsSource = join(sourceDir, 'feature-flags.ts');
-  if (existsSync(featureFlagsSource)) {
-    copyFileSync(featureFlagsSource, join(destDir, 'feature-flags.ts'));
-  }
-}
-
-/**
- * Verify the unified interceptor CJS bundle exists (runs under Node.js via --require)
- * Built by `bun run build:interceptor` into apps/electron/dist/
- */
-export function copyInterceptorBundle(config: BuildConfig): void {
-  const { electronDir } = config;
-
-  const source = join(electronDir, 'dist', 'interceptor.cjs');
-  if (!existsSync(source)) {
-    console.warn('Warning: Interceptor bundle not found at', source, '— tool metadata will be unavailable for Pi sessions');
-    return;
-  }
-
-  // Already in dist/ which is included in the packaged app — just verify it exists
-  console.log('Interceptor bundle verified at:', source);
-}
-
-/**
  * Copy Session MCP Server to packaged app resources.
  * The session server provides session-scoped tools (SubmitPlan, config_validate, etc.) for agent sessions.
  */

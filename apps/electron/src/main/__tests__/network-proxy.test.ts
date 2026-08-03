@@ -2,7 +2,7 @@
  * Tests for network proxy bypass rules (NO_PROXY parsing and matching).
  */
 import { describe, it, expect } from 'bun:test';
-import { parseNoProxyRules, shouldBypassProxy } from '../network-proxy-utils';
+import { parseNoProxyRules, shouldBypassProxy } from '@craft-agent/shared/config/proxy-utils';
 
 describe('parseNoProxyRules', () => {
   it('returns empty array for undefined/empty input', () => {

@@ -11,6 +11,8 @@ export interface BackendRuntimeSignatureInput {
   provider: AgentProvider
   authType?: LlmAuthType
   resolvedModel: string
+  enable1MContext?: boolean
+  extendedPromptCache?: boolean
 }
 
 export interface ModelAttachmentFilterResult {
@@ -66,18 +68,20 @@ function normalizeCustomModels(connection: LlmConnection): Array<Record<string, 
  * Concretely, `update_runtime_config` (see `pi-agent.ts:requestRuntimeConfigUpdate`
  * and the matching handler at `pi-agent-server/src/index.ts:handleUpdateRuntimeConfig`)
  * carries `model, providerType, authType, baseUrl, customEndpoint, customModels` —
- * but NOT `piAuthProvider`, and switching `slug`/`providerType`/`authType` mid-life
- * pulls in credential routing and provider-registry state the subprocess doesn't
- * fully reset on a runtime update.
+ * but NOT `piAuthProvider` or process-scoped provider settings. Switching
+ * `slug`/`providerType`/`authType`, 1M context, or cache retention mid-life
+ * therefore requires a clean subprocess.
  */
 export function buildRestartRequiredSignature(input: BackendRuntimeSignatureInput): string {
-  const { connection, provider, authType } = input
+  const { connection, provider, authType, enable1MContext, extendedPromptCache } = input
   return JSON.stringify(definedObject({
     provider,
     authType,
     slug: connection?.slug,
     providerType: connection?.providerType,
     piAuthProvider: connection?.piAuthProvider,
+    enable1MContext,
+    extendedPromptCache,
   }))
 }
 

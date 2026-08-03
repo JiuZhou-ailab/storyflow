@@ -24,7 +24,7 @@ import {
   type PostInitResult,
 } from '@craft-agent/shared/agent/backend'
 import type { ManagedModelAccess } from '@craft-agent/shared/agent/backend/types'
-import { CONFIG_DIR, getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, normalizeLlmConnectionSlug, resetManagedAnthropicAuthEnvVars } from '@craft-agent/shared/config'
+import { CONFIG_DIR, getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, getEnable1MContext, getExtendedPromptCache, normalizeLlmConnectionSlug, resetManagedAnthropicAuthEnvVars } from '@craft-agent/shared/config'
 import { PrivilegedExecutionBroker } from '@craft-agent/server-core/services'
 import { isValidWorkingDirectory } from '../utils/path-validation'
 import { InitGate, orderWorkspacesByActiveFirst } from '@craft-agent/server-core/domain'
@@ -86,7 +86,7 @@ import { loadWorkspaceSources, loadAllSources, getSourcesBySlugs, isSourceUsable
 import { ConfigWatcher, type ConfigWatcherCallbacks } from '@craft-agent/shared/config'
 import { getValidClaudeOAuthToken } from '@craft-agent/shared/auth'
 import { resolveAuthEnvVars } from '@craft-agent/shared/config'
-import { toolMetadataStore, getLastApiError } from '@craft-agent/shared/interceptor'
+import { getLastApiError } from '@craft-agent/shared/provider-diagnostics'
 import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
 import { restoreFiles } from '@craft-agent/shared/utils/bundle-files'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
@@ -3110,6 +3110,8 @@ export class SessionManager implements ISessionManager {
       provider: backendContext.provider,
       authType: backendContext.authType,
       resolvedModel: backendContext.resolvedModel,
+      enable1MContext: getEnable1MContext(),
+      extendedPromptCache: getExtendedPromptCache(),
     }
     const runtimeSignature = buildBackendRuntimeSignature(sigInput)
     const restartSignature = buildRestartRequiredSignature(sigInput)
@@ -3313,6 +3315,8 @@ export class SessionManager implements ISessionManager {
       provider: backendContext.provider,
       authType: backendContext.authType,
       resolvedModel: backendContext.resolvedModel,
+      enable1MContext: getEnable1MContext(),
+      extendedPromptCache: getExtendedPromptCache(),
     }
     const runtimeSignature = buildBackendRuntimeSignature(sigInput)
     const restartSignature = buildRestartRequiredSignature(sigInput)
@@ -3347,13 +3351,6 @@ export class SessionManager implements ISessionManager {
       } else {
         sessionLog.warn(`No LLM connection found for session ${managed.id}, using default anthropic provider`)
       }
-
-      // Set session directory for tool metadata cross-process sharing.
-      // The SDK subprocess reads CRAFT_SESSION_DIR to write tool-metadata.json;
-      // the main process reads it via toolMetadataStore.setSessionDir().
-      const sessionDirForMetadata = getSessionStoragePath(managed.workspace.rootPath, managed.id)
-      process.env.CRAFT_SESSION_DIR = sessionDirForMetadata
-      toolMetadataStore.setSessionDir(sessionDirForMetadata)
 
       // Set up agentReady promise so title generation can await agent creation
       managed.agentReady = new Promise<void>(r => { managed.agentReadyResolve = r })
@@ -3579,7 +3576,7 @@ export class SessionManager implements ISessionManager {
         automationSystem: this.automationSystems.get(managed.workspace.rootPath),
         systemPromptPreset: managed.systemPromptPreset,
         debugMode: _platform?.isDebugMode ? { enabled: true, logFilePath: _platform.getLogFilePath?.() } : undefined,
-        enable1MContext: await (async () => { const { getEnable1MContext } = await import('@craft-agent/shared/config/storage'); return getEnable1MContext(); })(),
+        enable1MContext: getEnable1MContext(),
         // Image resize callback — prevents oversized images from entering conversation history
         onImageResize: async (filePath: string, maxSizeBytes: number): Promise<string | null> => {
           try {
@@ -6029,11 +6026,6 @@ export class SessionManager implements ISessionManager {
       if (attachments?.length) {
         sessionLog.info('Attachments:', attachments.length)
       }
-
-      // Ensure main process reads tool metadata from the correct session directory.
-      // This must be set before each chat() call since multiple sessions share the process.
-      const chatSessionDir = getSessionStoragePath(workspaceRootPath, sessionId)
-      toolMetadataStore.setSessionDir(chatSessionDir)
 
       // Inject interruption context so the LLM knows the previous turn was cut short.
       // Uses <system-reminder> tags so the LLM treats it as transient system guidance

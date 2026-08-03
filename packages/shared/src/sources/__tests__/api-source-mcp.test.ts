@@ -37,6 +37,7 @@ describe('API source MCP server', () => {
     try {
       const tools = await client.listTools();
       expect(tools.map((tool) => tool.name)).toEqual(['api_example']);
+      expect(tools[0]?.inputSchema.properties).not.toHaveProperty('_intent');
 
       const result = await client.callTool('api_example', {
         path: '/health',

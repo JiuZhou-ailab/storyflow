@@ -29,9 +29,6 @@ export abstract class BaseEventAdapter {
   protected turnIndex: number = 0;
   protected currentTurnId: string | null = null;
 
-  /** Session directory for toolMetadataStore lookups (concurrent-session safe) */
-  protected sessionDir: string | undefined;
-
   // Shared state maps — identical in Codex and Copilot adapters
   protected commandOutput: Map<string, string> = new Map();
   protected readCommands: Map<string, ReadCommandInfo> = new Map();
@@ -39,14 +36,6 @@ export abstract class BaseEventAdapter {
 
   constructor(logScope: string) {
     this.log = createLogger(logScope);
-  }
-
-  /**
-   * Set the session directory for concurrent-safe toolMetadataStore lookups.
-   * Called by the agent after creating the adapter.
-   */
-  setSessionDir(dir: string): void {
-    this.sessionDir = dir;
   }
 
   // ============================================================

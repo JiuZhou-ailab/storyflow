@@ -95,14 +95,12 @@ import { resolveSearchProvider } from './tools/search/resolve-provider.ts';
 import { createSearchTool } from './tools/search/create-search-tool.ts';
 import { createCreateOnlyWriteToolDefinition } from './write-tool.ts';
 import { createProjectResourceLoader } from './project-resource-loader.ts';
-import {
-  allowCraftMetadataPropertiesForTool,
-  normalizeCraftToolArgumentsForSchema,
-  stripCraftMetadata,
-} from './craft-metadata-schema.ts';
+import { normalizeCraftToolArgumentsForSchema } from './craft-metadata-schema.ts';
 import { createSystemPromptOverride } from './system-prompt-override.ts';
 import { fingerprintTools } from './prompt-cache-profile.ts';
 import { createToolHooks } from './tool-hooks.ts';
+import { createProviderHooks } from './provider-hooks.ts';
+import { installNetworkProxy } from './network-proxy.ts';
 import {
   createSubagentExtension,
   type SubagentHookContext,
@@ -119,6 +117,8 @@ import {
   shouldAutoRetryPromptFailure,
   type PromptAttemptState,
 } from './prompt-retry.ts';
+
+installNetworkProxy();
 
 // ============================================================
 // Types — JSONL Protocol
@@ -163,6 +163,7 @@ interface InitMessage {
   customEndpoint?: { api: CustomEndpointApi; supportsImages?: boolean };
   customModels?: CustomEndpointModelConfig[];
   piAuth?: { provider: string; credential: PiCredential };
+  enable1MContext?: boolean;
 }
 
 interface RuntimeConfigUpdateMessage {
@@ -204,17 +205,6 @@ interface ProxyToolDef {
   inputSchema: Record<string, unknown>;
 }
 
-/** Canonical tool metadata propagated on Pi tool start events */
-interface ToolExecutionMetadata {
-  intent?: string;
-  displayName?: string;
-  source: 'interceptor';
-}
-
-type EnrichedToolExecutionStartEvent = Extract<AgentSessionEvent, { type: 'tool_execution_start' }> & {
-  toolMetadata?: ToolExecutionMetadata;
-};
-
 type EnrichedAssistantMessageEndEvent = Extract<AgentSessionEvent, { type: 'message_end' }> & {
   sdkTurnAnchor?: string;
   contextWindow?: number;
@@ -222,7 +212,6 @@ type EnrichedAssistantMessageEndEvent = Extract<AgentSessionEvent, { type: 'mess
 
 type OutboundAgentEvent =
   | AgentSessionEvent
-  | EnrichedToolExecutionStartEvent
   | EnrichedAssistantMessageEndEvent;
 
 /** Messages to main process (stdout) */
@@ -655,6 +644,9 @@ async function ensureSession(): Promise<AgentSession> {
     getUserRequest: () => currentUserMessage,
     intentByCallId: new Map(),
   });
+  const providerHooks = createProviderHooks({
+    enable1MContext: initConfig.enable1MContext === true,
+  });
   const subagentExtension = createSubagentExtension({
     cwd,
     agentDir,
@@ -689,6 +681,7 @@ async function ensureSession(): Promise<AgentSession> {
     agentDir,
     extensionFactories: [
       systemPromptOverride.extension,
+      providerHooks,
       toolHooks,
       subagentExtension,
     ],
@@ -866,7 +859,6 @@ async function requestPreToolUseApproval(
 function prepareToolDefinitions(tools: ToolDefinition<any, any>[]): ToolDefinition<any, any>[] {
   return tools.map((tool) => {
     const originalPrepareArguments = tool.prepareArguments;
-    const parameters = allowCraftMetadataPropertiesForTool(tool.name, tool.parameters);
     const prepareArguments: ToolDefinition<any, any>['prepareArguments'] = (args) => {
       const normalized = normalizeCraftToolArgumentsForSchema(tool.name, tool.parameters, args);
       return originalPrepareArguments ? originalPrepareArguments(normalized) : normalized;
@@ -874,7 +866,6 @@ function prepareToolDefinitions(tools: ToolDefinition<any, any>[]): ToolDefiniti
 
     return {
       ...tool,
-      parameters,
       prepareArguments,
     };
   });
@@ -886,7 +877,7 @@ async function prepareToolInput(
 ): Promise<Record<string, unknown>> {
   const sdkToolName = PI_TOOL_NAME_MAP[event.toolName] || event.toolName;
   let input: Record<string, unknown> = { ...event.input };
-  const intent = typeof input._intent === 'string' ? input._intent : undefined;
+  const intent = typeof input.description === 'string' ? input.description : undefined;
 
   // Normalize Pi SDK parameter names for the shared permission pipeline.
   if ((sdkToolName === 'Write' || sdkToolName === 'Edit' || sdkToolName === 'MultiEdit' || sdkToolName === 'NotebookEdit')
@@ -896,7 +887,7 @@ async function prepareToolInput(
 
   const approvedInput = await requestPreToolUseApproval(sdkToolName, input, event.toolCallId);
   if (intent) intentByCallId.set(event.toolCallId, intent);
-  return stripCraftMetadata(approvedInput);
+  return approvedInput;
 }
 
 async function postprocessToolResult(
@@ -1245,21 +1236,6 @@ async function runMiniCompletion(prompt: string): Promise<string | null> {
 // Event Handling
 // ============================================================
 
-function extractToolExecutionMetadata(args: Record<string, unknown> | undefined): ToolExecutionMetadata | undefined {
-  if (!args) return undefined;
-
-  const intent = typeof args._intent === 'string' ? args._intent : undefined;
-  const displayName = typeof args._displayName === 'string' ? args._displayName : undefined;
-
-  if (!intent && !displayName) return undefined;
-
-  return {
-    intent,
-    displayName,
-    source: 'interceptor',
-  };
-}
-
 function getAssistantErrorMessage(event: AgentSessionEvent): string | null {
   if (event.type !== 'message_end') return null;
 
@@ -1349,7 +1325,7 @@ function handleSessionEvent(event: AgentSessionEvent): void {
     }
   }
 
-  // Detect session MCP tool completions + enrich tool starts with canonical metadata
+  // Detect session MCP tool completions.
   if (event.type === 'tool_execution_start') {
     const toolName = event.toolName;
     if (toolName.startsWith('session__') || toolName.startsWith('mcp__session__')) {
@@ -1360,13 +1336,6 @@ function handleSessionEvent(event: AgentSessionEvent): void {
       });
     }
 
-    const toolMetadata = extractToolExecutionMetadata((event.args ?? {}) as Record<string, unknown>);
-    if (toolMetadata) {
-      forwardedEvent = {
-        ...event,
-        toolMetadata,
-      };
-    }
   }
 
   if (event.type === 'tool_execution_end') {

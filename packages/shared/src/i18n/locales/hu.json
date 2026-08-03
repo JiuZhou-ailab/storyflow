@@ -956,8 +956,6 @@
   "settings.appearance.light": "Világos",
   "settings.appearance.mode": "Mód",
   "settings.appearance.noToolIcons": "Nem található eszközikon-hozzárendelés",
-  "settings.appearance.richToolDescriptions": "Részletes eszközleírások",
-  "settings.appearance.richToolDescriptionsDesc": "Műveletek nevének és céljának hozzáadása minden eszközhíváshoz. Gazdagabb tevékenységi kontextust biztosít a munkamenetekben.",
   "settings.appearance.searchTools": "Eszközök keresése...",
   "settings.appearance.system": "Rendszer",
   "settings.appearance.themeWarning": "Témafigyelmeztetés:",

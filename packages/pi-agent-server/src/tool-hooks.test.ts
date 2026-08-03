@@ -32,7 +32,7 @@ describe('createToolHooks', () => {
       type: 'tool_call',
       toolName: 'read',
       toolCallId: 'call-1',
-      input: { path: '/original', _intent: 'inspect' },
+      input: { path: '/original' },
     } as ToolCallEvent;
     await handlers.get('tool_call')!(callEvent as never);
     expect(callEvent.input).toEqual({ path: '/approved' });

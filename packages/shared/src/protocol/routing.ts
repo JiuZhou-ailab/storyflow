@@ -154,10 +154,6 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   RPC_CHANNELS.power.GET_KEEP_AWAKE,
   RPC_CHANNELS.power.SET_KEEP_AWAKE,
 
-  // appearance — local UI preferences
-  RPC_CHANNELS.appearance.GET_RICH_TOOL_DESCRIPTIONS,
-  RPC_CHANNELS.appearance.SET_RICH_TOOL_DESCRIPTIONS,
-
   // user profile — user-level local Markdown context, not workspace/server state
   RPC_CHANNELS.userProfile.READ,
   RPC_CHANNELS.userProfile.WRITE,

@@ -956,8 +956,6 @@
   "settings.appearance.light": "ライト",
   "settings.appearance.mode": "モード",
   "settings.appearance.noToolIcons": "ツールアイコンのマッピングが見つかりません",
-  "settings.appearance.richToolDescriptions": "リッチなツール説明",
-  "settings.appearance.richToolDescriptionsDesc": "すべてのツール呼び出しにアクション名と意図の説明を追加します。セッション内のアクティビティコンテキストをより豊かにします。",
   "settings.appearance.searchTools": "ツールを検索...",
   "settings.appearance.system": "システム",
   "settings.appearance.themeWarning": "テーマの警告：",

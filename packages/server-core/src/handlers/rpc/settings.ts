@@ -5,7 +5,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'path'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
-import { getPreferencesPath, getUserProfilePath, saveUserProfileMarkdown, getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, getWorkspaceByNameOrId, getDefaultLlmConnection, getDefaultThinkingLevel, normalizeLlmConnectionSlug, setDefaultLlmSelection, setDefaultThinkingLevel } from '@craft-agent/shared/config'
+import { getPreferencesPath, getUserProfilePath, saveUserProfileMarkdown, getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, getWorkspaceByNameOrId, getDefaultLlmConnection, getDefaultThinkingLevel, getLlmConnections, normalizeLlmConnectionSlug, setDefaultLlmSelection, setDefaultThinkingLevel } from '@craft-agent/shared/config'
 import { isValidThinkingLevel, normalizeThinkingLevel, THINKING_LEVEL_IDS } from '@craft-agent/shared/agent/thinking-levels'
 
 const VALID_THINKING_LEVELS_LIST = THINKING_LEVEL_IDS.map(id => `'${id}'`).join(', ')
@@ -33,8 +33,6 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.input.GET_SPELL_CHECK,
   RPC_CHANNELS.input.SET_SPELL_CHECK,
   RPC_CHANNELS.power.GET_KEEP_AWAKE,
-  RPC_CHANNELS.appearance.GET_RICH_TOOL_DESCRIPTIONS,
-  RPC_CHANNELS.appearance.SET_RICH_TOOL_DESCRIPTIONS,
   RPC_CHANNELS.caching.GET_EXTENDED_PROMPT_CACHE,
   RPC_CHANNELS.caching.SET_EXTENDED_PROMPT_CACHE,
   RPC_CHANNELS.caching.GET_ENABLE_1M_CONTEXT,
@@ -50,6 +48,12 @@ export const HANDLED_CHANNELS = [
 ] as const
 
 export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): void {
+  const refreshProviderSettings = async () => {
+    await Promise.all(getLlmConnections().map(connection =>
+      deps.sessionManager.refreshConnectionRuntime(connection.slug)
+    ))
+  }
+
   // ============================================================
   // Settings - Default Thinking Level (App-Level)
   // ============================================================
@@ -306,22 +310,6 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   })
 
   // ============================================================
-  // Appearance Settings
-  // ============================================================
-
-  // Get rich tool descriptions setting
-  server.handle(RPC_CHANNELS.appearance.GET_RICH_TOOL_DESCRIPTIONS, async () => {
-    const { getRichToolDescriptions } = await import('@craft-agent/shared/config/storage')
-    return getRichToolDescriptions()
-  })
-
-  // Set rich tool descriptions setting
-  server.handle(RPC_CHANNELS.appearance.SET_RICH_TOOL_DESCRIPTIONS, async (_ctx, enabled: boolean) => {
-    const { setRichToolDescriptions } = await import('@craft-agent/shared/config/storage')
-    setRichToolDescriptions(enabled)
-  })
-
-  // ============================================================
   // Prompt Caching Settings
   // ============================================================
 
@@ -335,6 +323,7 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   server.handle(RPC_CHANNELS.caching.SET_EXTENDED_PROMPT_CACHE, async (_ctx, enabled: boolean) => {
     const { setExtendedPromptCache } = await import('@craft-agent/shared/config/storage')
     setExtendedPromptCache(enabled)
+    await refreshProviderSettings()
   })
 
   // Get 1M context window setting
@@ -347,6 +336,7 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   server.handle(RPC_CHANNELS.caching.SET_ENABLE_1M_CONTEXT, async (_ctx, enabled: boolean) => {
     const { setEnable1MContext } = await import('@craft-agent/shared/config/storage')
     setEnable1MContext(enabled)
+    await refreshProviderSettings()
   })
 
   // ============================================================

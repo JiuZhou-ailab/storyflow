@@ -8,7 +8,6 @@ import {
   buildElectronApp,
   buildMcpServers,
   cleanBuildArtifacts,
-  copyInterceptor,
   copyRipgrep,
   createManifest,
   downloadBun,
@@ -138,7 +137,6 @@ async function prepareRuntime(config: BuildConfig): Promise<void> {
   await downloadBun(config);
   await downloadUv(config);
   copyRipgrep(config);
-  copyInterceptor(config);
   buildMcpServers(config);
 }
 

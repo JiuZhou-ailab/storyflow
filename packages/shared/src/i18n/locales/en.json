@@ -956,8 +956,6 @@
   "settings.appearance.light": "Light",
   "settings.appearance.mode": "Mode",
   "settings.appearance.noToolIcons": "No tool icon mappings found",
-  "settings.appearance.richToolDescriptions": "Rich tool descriptions",
-  "settings.appearance.richToolDescriptionsDesc": "Add action names and intent descriptions to all tool calls. Provides richer activity context in sessions.",
   "settings.appearance.searchTools": "Search tools...",
   "settings.appearance.system": "System",
   "settings.appearance.themeWarning": "Theme warning:",

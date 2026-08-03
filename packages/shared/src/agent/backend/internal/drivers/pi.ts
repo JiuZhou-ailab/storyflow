@@ -237,7 +237,6 @@ export const piDriver: ProviderDriver = {
   buildRuntime: ({ context, providerOptions, resolvedPaths }) => ({
     paths: {
       piServer: resolvedPaths.piServerPath,
-      interceptor: resolvedPaths.interceptorBundlePath,
       node: resolvedPaths.nodeRuntimePath,
     },
     piAuthProvider: providerOptions?.piAuthProvider

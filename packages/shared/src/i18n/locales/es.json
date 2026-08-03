@@ -956,8 +956,6 @@
   "settings.appearance.light": "Claro",
   "settings.appearance.mode": "Modo",
   "settings.appearance.noToolIcons": "No se encontraron asignaciones de iconos de herramientas",
-  "settings.appearance.richToolDescriptions": "Descripciones detalladas de herramientas",
-  "settings.appearance.richToolDescriptionsDesc": "Añade nombres de acción y descripciones de intención a todas las llamadas de herramienta. Proporciona un contexto de actividad más rico en las sesiones.",
   "settings.appearance.searchTools": "Buscar herramientas...",
   "settings.appearance.system": "Sistema",
   "settings.appearance.themeWarning": "Advertencia del tema:",

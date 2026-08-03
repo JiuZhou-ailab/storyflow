@@ -6,7 +6,7 @@ import { describe, expect, it } from 'bun:test'
 import type { LlmConnection } from '@craft-agent/shared/config'
 import type { FileAttachment } from '@craft-agent/shared/protocol'
 import { formatAttachmentContextForModel } from '@craft-agent/shared/utils'
-import { buildBackendRuntimeSignature, filterAttachmentsForModelInput, needsPiRuntimeMigrationSeed } from './runtime-config'
+import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput, needsPiRuntimeMigrationSeed } from './runtime-config'
 
 const baseCompat: LlmConnection = {
   slug: 'local',
@@ -61,6 +61,24 @@ describe('buildBackendRuntimeSignature', () => {
 
   it('ignores non-runtime metadata such as lastUsedAt', () => {
     expect(sig({ ...baseCompat, lastUsedAt: 1 })).toBe(sig({ ...baseCompat, lastUsedAt: 2 }))
+  })
+})
+
+describe('buildRestartRequiredSignature', () => {
+  it('changes when provider-wide context or cache settings change', () => {
+    const base = {
+      connection: baseCompat,
+      provider: 'pi' as const,
+      authType: 'api_key' as const,
+      resolvedModel: 'gemma',
+      enable1MContext: false,
+      extendedPromptCache: false,
+    }
+
+    expect(buildRestartRequiredSignature({ ...base, enable1MContext: true }))
+      .not.toBe(buildRestartRequiredSignature(base))
+    expect(buildRestartRequiredSignature({ ...base, extendedPromptCache: true }))
+      .not.toBe(buildRestartRequiredSignature(base))
   })
 })
 

@@ -12,7 +12,6 @@ const requiredFiles = [
   ['main.cjs', 'main process'],
   ['bootstrap-preload.cjs', 'window preload'],
   ['browser-toolbar-preload.cjs', 'browser toolbar preload'],
-  ['interceptor.cjs', 'Pi network interceptor'],
   ['renderer/index.html', 'renderer entrypoint'],
   ['resources/agent-defaults/global-skills/anysearch/SKILL.md', 'AnySearch Skill'],
   ['resources/agent-defaults/global-skills/anysearch/scripts/anysearch_cli.js', 'AnySearch Node.js runtime'],

@@ -213,7 +213,6 @@ export function createApiTool(
       path: z.string().describe('API endpoint path, e.g., "/search" or "/v1/completions"'),
       method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']).describe('HTTP method - check documentation for correct method per endpoint'),
       params: z.record(z.string(), z.unknown()).optional().describe('Request body (POST/PUT/PATCH) or query parameters (GET). For non-JSON bodies, pass { _rawBody: "raw string content", _contentType: "text/plain" } — _rawBody is sent as-is without JSON encoding, _contentType defaults to text/plain if omitted'),
-      _intent: z.string().optional().describe('REQUIRED: Describe what you are trying to accomplish with this API call (1-2 sentences)'),
   };
 
   return {
@@ -221,7 +220,7 @@ export function createApiTool(
     description,
     inputSchema,
     handler: async (args: z.infer<z.ZodObject<typeof inputSchema>>) => {
-      const { path, method, params, _intent } = args;
+      const { path, method, params } = args;
 
       try {
         // Resolve credential - if it's a token getter function, call it to get fresh token
@@ -292,8 +291,7 @@ export function createApiTool(
           const guarded = await guardLargeResult(buffer, {
             sessionPath,
             toolName: `api_${config.name}`,
-            input: params,
-            intent: _intent,
+            input: { path, method, params },
             summarize,
           });
           if (guarded) {

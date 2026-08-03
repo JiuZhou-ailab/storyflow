@@ -233,7 +233,7 @@ export interface ActivityItem {
   messageId?: string
   /** Optional persisted annotations (used by plan activities) */
   annotations?: AnnotationV1[]
-  displayName?: string  // LLM-generated human-friendly tool name (for MCP tools)
+  displayName?: string  // Locally resolved human-friendly tool name
   toolDisplayMeta?: ToolDisplayMeta  // Embedded metadata with base64 icon (for viewer compatibility)
   timestamp: number
   error?: string

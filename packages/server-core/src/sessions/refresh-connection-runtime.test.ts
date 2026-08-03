@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { resolveBackendContext } from '@craft-agent/shared/agent/backend'
+import { getEnable1MContext, getExtendedPromptCache } from '@craft-agent/shared/config'
 import { loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
 import { SessionManager, createManagedSession } from './SessionManager.ts'
 import { buildRestartRequiredSignature } from './runtime-config.ts'
@@ -90,6 +91,8 @@ function injectSession(
       provider: ctx.provider,
       authType: ctx.authType,
       resolvedModel: ctx.resolvedModel,
+      enable1MContext: getEnable1MContext(),
+      extendedPromptCache: getExtendedPromptCache(),
     })
   }
   managed.isProcessing = opts.isProcessing ?? false

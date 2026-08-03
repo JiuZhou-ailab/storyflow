@@ -692,10 +692,6 @@ export interface ElectronAPI {
   getBrowserToolEnabled(): Promise<boolean>
   setBrowserToolEnabled(enabled: boolean): Promise<void>
 
-  // Appearance settings
-  getRichToolDescriptions(): Promise<boolean>
-  setRichToolDescriptions(enabled: boolean): Promise<void>
-
   // Prompt caching & context
   getExtendedPromptCache(): Promise<boolean>
   setExtendedPromptCache(enabled: boolean): Promise<void>

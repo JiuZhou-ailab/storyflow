@@ -174,8 +174,6 @@ export interface BackendHostRuntimeContext {
   isPackaged: boolean;
   /** Optional runtime override for Node/Bun executable */
   nodeRuntimePath?: string;
-  /** Optional interceptor bundle override (CJS bundle loaded via --require) */
-  interceptorBundlePath?: string;
 }
 
 /**

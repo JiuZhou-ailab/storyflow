@@ -14,7 +14,6 @@ import type { ResolvedBackendRuntimePaths } from './runtime-resolver.ts';
 
 export interface BackendRuntimePaths {
   copilotCli?: string;
-  interceptor?: string;
   sessionServer?: string;
   node?: string;
   bridgeServer?: string;

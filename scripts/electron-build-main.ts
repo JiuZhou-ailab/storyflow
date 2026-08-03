@@ -16,8 +16,6 @@ import { loadEnvFiles } from "./env-loader";
 const ROOT_DIR = join(import.meta.dir, "..");
 const DIST_DIR = join(ROOT_DIR, "apps/electron/dist");
 const OUTPUT_FILE = join(DIST_DIR, "main.cjs");
-const INTERCEPTOR_SOURCE = join(ROOT_DIR, "packages/shared/src/unified-network-interceptor.ts");
-const INTERCEPTOR_OUTPUT = join(DIST_DIR, "interceptor.cjs");
 const SESSION_TOOLS_CORE_DIR = join(ROOT_DIR, "packages/session-tools-core");
 const SESSION_SERVER_DIR = join(ROOT_DIR, "packages/session-mcp-server");
 const SESSION_SERVER_OUTPUT = join(SESSION_SERVER_DIR, "dist/index.js");
@@ -139,39 +137,6 @@ function verifySessionToolsCore(): void {
   }
 
   console.log("✅ Session tools core verified");
-}
-
-// Build the unified network interceptor (bundled CJS loaded via --require into Node-based SDK subprocesses)
-async function buildInterceptor(): Promise<void> {
-  console.log("🔌 Building unified network interceptor...");
-
-  const proc = spawn({
-    cmd: [
-      "bun", "run", "esbuild",
-      INTERCEPTOR_SOURCE,
-      "--bundle",
-      "--platform=node",
-      "--format=cjs",
-      `--outfile=${INTERCEPTOR_OUTPUT}`,
-    ],
-    cwd: ROOT_DIR,
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-
-  const exitCode = await proc.exited;
-
-  if (exitCode !== 0) {
-    console.error("❌ Interceptor build failed with exit code", exitCode);
-    process.exit(exitCode);
-  }
-
-  if (!existsSync(INTERCEPTOR_OUTPUT)) {
-    console.error("❌ Interceptor output not found at", INTERCEPTOR_OUTPUT);
-    process.exit(1);
-  }
-
-  console.log("✅ Interceptor built successfully");
 }
 
 // Build the Session MCP Server (provides session-scoped tools like SubmitPlan for Codex sessions)
@@ -332,9 +297,6 @@ async function main(): Promise<void> {
 
   // Build Pi agent server (subprocess for Pi SDK sessions)
   await buildPiAgentServer();
-
-  // Build unified network interceptor (CJS bundle for Node.js --require)
-  await buildInterceptor();
 
   // Build WhatsApp worker (Baileys subprocess — optional package)
   await buildWhatsAppWorker();

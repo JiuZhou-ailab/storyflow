@@ -26,8 +26,6 @@ const EXPECTED_CHANNELS: string[] = [
   'LLM_Connection:setDefault',
   'LLM_Connection:setWorkspaceDefault',
   'LLM_Connection:test',
-  'appearance:getRichToolDescriptions',
-  'appearance:setRichToolDescriptions',
   'auth:logout',
   'auth:showDeleteSessionConfirmation',
   'auth:showLogoutConfirmation',

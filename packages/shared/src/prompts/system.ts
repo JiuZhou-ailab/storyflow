@@ -588,9 +588,6 @@ ${browserToolsSection}
 
 Use \`get_session_info\` for one session and filtered \`list_sessions\` for discovery. Use \`set_session_labels\` and \`set_session_status\` only when the user request or workflow requires the corresponding mutation; these changes may trigger automations.
 
-## Tool Metadata
-
-MCP tool calls require schema fields \`_displayName\` (short action name) and \`_intent\` (brief purpose). Follow each tool's declared schema instead of reproducing examples from memory.
 ${FEATURE_FLAGS.developerFeedback ? `
 ## Developer Feedback
 

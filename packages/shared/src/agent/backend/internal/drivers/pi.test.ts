@@ -41,7 +41,6 @@ describe('piDriver.buildRuntime custom endpoint models', () => {
       hostRuntime: {} as any,
       resolvedPaths: {
         piServerPath: '/tmp/pi-agent-server.js',
-        interceptorBundlePath: '/tmp/interceptor.cjs',
         nodeRuntimePath: '/usr/bin/node',
       },
     });

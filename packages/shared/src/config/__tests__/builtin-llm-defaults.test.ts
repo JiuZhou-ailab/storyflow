@@ -35,7 +35,6 @@ function makeDefaults(overrides: Partial<BuiltinLlmConnectionDefaults> = {}): Co
       sendMessageKey: 'enter',
       spellCheck: false,
       keepAwakeWhileRunning: false,
-      richToolDescriptions: true,
       extendedPromptCache: false,
       browserToolEnabled: true,
     },
