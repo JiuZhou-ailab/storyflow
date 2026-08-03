@@ -137,7 +137,8 @@ async function main(): Promise<void> {
 
     const recovered = await callOn<Array<{ id: string }>>(
       app,
-      'async function () { return await window.electronAPI.getSessions() }',
+      'async function (workspaceId) { return await window.electronAPI.listSessionsByWorkspace(workspaceId) }',
+      [WORKSPACE_ID],
     )
     assert.ok(recovered.some(candidate => candidate.id === session.id))
     assert.equal(readFileSync(fixture.targetFile, 'utf8'), AGENT_EDIT)
