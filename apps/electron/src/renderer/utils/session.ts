@@ -1,3 +1,7 @@
+// input: Full sessions or lightweight session metadata from the renderer state
+// output: Shared session title, history visibility, unread, status, and display helpers
+// pos: Canonical renderer policy for projecting session state into navigation UI
+
 import * as React from "react"
 import i18next from "i18next"
 import type { Session, Message } from "../../shared/types"
@@ -150,6 +154,12 @@ export function hasUnreadMeta(session: SessionMeta): boolean {
 
 export function hasMessagesMeta(session: SessionMeta): boolean {
   return session.lastFinalMessageId !== undefined
+}
+
+/** Empty sessions are composer drafts until their first user message is durable. */
+export function hasSessionHistoryContent(session: SessionMeta): boolean {
+  return (session.messageCount ?? 0) > 0
+    || Boolean(session.lastFinalMessageId || session.preview || session.name?.trim())
 }
 
 // ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@ import { getDateLocale } from "@craft-agent/shared/i18n"
 import { useAction, useActionLabel } from "@/actions"
 import { Inbox, Archive } from "lucide-react"
 
-import { getSessionStatus } from "@/utils/session"
+import { getSessionStatus, hasSessionHistoryContent } from "@/utils/session"
 import * as storage from "@/lib/local-storage"
 import { KEYS } from "@/lib/local-storage"
 import type { LabelConfig } from "@craft-agent/shared/labels"
@@ -165,7 +165,7 @@ export function SessionList({
       (metaMap) => {
         const result: SessionMeta[] = []
         for (const meta of metaMap.values()) {
-          if (meta.hidden) continue
+          if (meta.hidden || !hasSessionHistoryContent(meta)) continue
           if (
             workspaceId &&
             meta.workspaceId !== workspaceId &&

@@ -47,7 +47,7 @@ import {
 } from '@/atoms/sessions'
 import { shouldRefreshGlobalSessionMetasForEvent } from '@/atoms/session-status-transition'
 import * as storage from '@/lib/local-storage'
-import { getSessionTitle } from '@/utils/session'
+import { getSessionTitle, hasSessionHistoryContent } from '@/utils/session'
 import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
 import { deriveSessionRuntimeStatus, requiresHumanAttention } from '@craft-agent/shared/statuses/runtime'
 import { sessionIdsWithPendingPromptAtom } from '@/atoms/pending-requests'
@@ -201,6 +201,11 @@ export function ActivityRail({
     (activeWorkspaceId && onCreateConversationInProject)
     || onOpenFreeConversations,
   )
+  const selectedSessionId = activeItem === 'recent' ? activeSessionId : null
+  const selectedProjectSessionId = activeItem === 'recent' ? activeProjectSessionId : null
+  const selectedWorkspaceId = activeItem === 'recent' || activeItem === 'writing'
+    ? activeWorkspaceId
+    : null
   const handleNavigatorFocus = React.useCallback(() => {
     // FocusContext intentionally does not track every focusin to avoid shell-wide
     // rerenders. The rail is the navigator zone when one of its controls is used.
@@ -248,7 +253,7 @@ export function ActivityRail({
       const sessions = await window.electronAPI.listSessionsByWorkspace(workspaceId)
       const metas = sessions
         .map(extractSessionMeta)
-        .filter((meta) => !meta.hidden && meta.isArchived !== true)
+        .filter((meta) => !meta.hidden && meta.isArchived !== true && hasSessionHistoryContent(meta))
         .sort((left, right) => (right.lastMessageAt ?? right.createdAt ?? 0) - (left.lastMessageAt ?? left.createdAt ?? 0))
       setProjectSessionMetas((prev) => ({ ...prev, [workspaceId]: metas }))
     } catch (error) {
@@ -342,7 +347,7 @@ export function ActivityRail({
       localRuntimeSessionMetas,
       runtimeMetadataReady,
     )]
-      .filter(meta => !meta.hidden && meta.isArchived !== true)
+      .filter(meta => !meta.hidden && meta.isArchived !== true && hasSessionHistoryContent(meta))
       .sort((left, right) => (right.lastMessageAt ?? right.createdAt ?? 0) - (left.lastMessageAt ?? left.createdAt ?? 0))
   }, [freeSessionMetas, localRuntimeSessionMetas, runtimeMetadataReady, runtimeWorkspaceId])
 
@@ -509,7 +514,7 @@ export function ActivityRail({
                   <RecentConversationRow
                     key={meta.id}
                     meta={meta}
-                    active={activeSessionId === meta.id}
+                    active={selectedSessionId === meta.id}
                     disabled={!onSelectSession}
                     onSelect={() => onSelectSession?.(meta.id, meta.workspaceId)}
                     sessionActions={sessionActions}
@@ -558,7 +563,7 @@ export function ActivityRail({
                         <ProjectFolderRow
                           key={workspace.id}
                           workspace={workspace}
-                          active={activeWorkspaceId === workspace.id && !activeProjectSessionId}
+                          active={selectedWorkspaceId === workspace.id && !selectedProjectSessionId}
                           hasUnread={unreadByWorkspace?.[workspace.id] === true}
                           hasActiveSession={activeWorkspaceIds.has(workspace.id)}
                           disabled={!onSelectSession}
@@ -572,10 +577,10 @@ export function ActivityRail({
                             localRuntimeSessionMetas,
                             runtimeMetadataReady,
                           )]
-                            .filter(meta => !meta.hidden && meta.isArchived !== true)
+                            .filter(meta => !meta.hidden && meta.isArchived !== true && hasSessionHistoryContent(meta))
                             .sort((left, right) => (right.lastMessageAt ?? right.createdAt ?? 0) - (left.lastMessageAt ?? left.createdAt ?? 0))}
                           loadingSessions={loadingProjectIds.has(workspace.id)}
-                          activeSessionId={activeWorkspaceId === workspace.id ? activeProjectSessionId : null}
+                          activeSessionId={selectedWorkspaceId === workspace.id ? selectedProjectSessionId : null}
                           onSelectSession={onSelectSession
                             ? (sessionId) => { void onSelectSession(sessionId, workspace.id) }
                             : undefined}

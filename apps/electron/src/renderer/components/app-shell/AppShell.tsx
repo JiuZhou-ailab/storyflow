@@ -116,7 +116,7 @@ import { getResizeGradientStyle } from "@/hooks/useResizeGradient"
 import { useAction } from "@/actions"
 import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusActions } from "@/context/FocusContext"
-import { getSessionTitle } from "@/utils/session"
+import { getSessionTitle, hasSessionHistoryContent } from "@/utils/session"
 import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, SourceFilter, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange, WhatsNewManifest } from "../../../shared/types"
 import {
   ensureSessionMessagesLoadedAtom,
@@ -1633,7 +1633,10 @@ function AppShellContent({
     if (!activeWorkspaceId) return
 
     const sessionIds = [...store.get(sessionMetaMapAtom).values()]
-      .filter(meta => meta.workspaceId === activeWorkspaceId && !meta.hidden && meta.isArchived !== true)
+      .filter(meta => meta.workspaceId === activeWorkspaceId
+        && !meta.hidden
+        && meta.isArchived !== true
+        && hasSessionHistoryContent(meta))
       .sort((left, right) => (right.lastMessageAt ?? right.createdAt ?? 0) - (left.lastMessageAt ?? left.createdAt ?? 0))
       .map(meta => meta.id)
 

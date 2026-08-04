@@ -1,6 +1,6 @@
-// input: Mixed-workspace metadata plus current-runtime and retained-project navigation state
-// output: Behavioral proof that free conversations and the top task action stay in the current runtime domain
-// pos: Enforces the ADR 0006 ownership boundary at the surface that broke it
+// input: Mixed-workspace metadata plus current-runtime, retained-project, and active navigation state
+// output: Behavioral proof that rail data stays scoped and its selected target remains exclusive
+// pos: Enforces the ADR 0006 ownership and navigation-selection boundaries at the global rail
 
 import * as React from 'react'
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Provider, createStore } from 'jotai'
 import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
-import { sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
+import { sessionMetadataReadyAtom, sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
 import { FocusProvider } from '@/context/FocusContext'
 
 const appSource = readFileSync(new URL('../../../App.tsx', import.meta.url), 'utf8')
@@ -67,6 +67,73 @@ beforeAll(async () => {
 })
 
 describe('ActivityRail free-conversation scope', () => {
+  it('keeps top-level navigation exclusive from stale conversation selection', () => {
+    installElectronApi()
+    const store = createStore()
+    store.set(sessionMetaMapAtom, new Map([
+      ['free-1', meta('free-1', FREE_CONVERSATION_WORKSPACE_ID, '自由对话记录')],
+    ]))
+    store.set(sessionMetadataReadyAtom, true)
+
+    const html = renderToStaticMarkup(
+      <Provider store={store}>
+        <FocusProvider>
+          <ActivityRail
+            activeItem="skills"
+            workspaces={[{
+              id: PROJECT_WORKSPACE_ID,
+              name: '九州',
+              slug: 'jiuzhou',
+              rootPath: '/tmp/jiuzhou',
+              createdAt: 0,
+            }]}
+            runtimeWorkspaceId={FREE_CONVERSATION_WORKSPACE_ID}
+            activeWorkspaceId={PROJECT_WORKSPACE_ID}
+            activeSessionId="free-1"
+            onSelectSession={() => {}}
+            onOpenSkills={() => {}}
+          />
+        </FocusProvider>
+      </Provider>
+    )
+
+    expect(html.match(/aria-current="page"/g)).toHaveLength(1)
+    expect(html).toContain('aria-current="page" data-tutorial="activity-skills"')
+  })
+
+  it('adds a new conversation to history only after its first user message', () => {
+    installElectronApi()
+    const store = createStore()
+    store.set(sessionMetaMapAtom, new Map([
+      ['draft', {
+        ...meta('draft', FREE_CONVERSATION_WORKSPACE_ID, ''),
+        name: undefined,
+        messageCount: 0,
+      }],
+      ['sent', {
+        ...meta('sent', FREE_CONVERSATION_WORKSPACE_ID, '已发送对话'),
+        messageCount: 1,
+      }],
+    ]))
+    store.set(sessionMetadataReadyAtom, true)
+
+    const html = renderToStaticMarkup(
+      <Provider store={store}>
+        <FocusProvider>
+          <ActivityRail
+            activeItem="recent"
+            runtimeWorkspaceId={FREE_CONVERSATION_WORKSPACE_ID}
+            onSelectSession={() => {}}
+          />
+        </FocusProvider>
+      </Provider>
+    )
+
+    expect(html).not.toContain('data-session-id="draft"')
+    expect(html).toContain('data-session-id="sent"')
+    expect(html).toContain('自由对话<span class="ml-1 font-normal">(1)</span>')
+  })
+
   it('never renders a project conversation, even when the atom overlay holds one', () => {
     installElectronApi()
     const store = createStore()
