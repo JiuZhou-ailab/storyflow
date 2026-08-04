@@ -1,5 +1,5 @@
 // input: Repository root and target platform/architecture
-// output: A self-contained Pi agent server executable using Pi's native binary extension loader
+// output: A Pi agent server entrypoint using the packaged Bun runtime on Windows and a native executable elsewhere
 // pos: Canonical cross-platform build entrypoint for the Pi subprocess
 
 import { spawn } from 'bun';
@@ -9,8 +9,8 @@ import { join } from 'node:path';
 export type PiServerPlatform = 'darwin' | 'win32' | 'linux';
 export type PiServerArch = 'x64' | 'arm64';
 
-export function getPiAgentServerBinaryName(platform: PiServerPlatform): string {
-  return platform === 'win32' ? 'pi-agent-server.exe' : 'pi-agent-server';
+export function getPiAgentServerEntryName(platform: PiServerPlatform): string {
+  return platform === 'win32' ? 'index.js' : 'pi-agent-server';
 }
 
 export function getPiAgentServerOutputPath(
@@ -22,7 +22,7 @@ export function getPiAgentServerOutputPath(
     'packages',
     'pi-agent-server',
     'dist',
-    getPiAgentServerBinaryName(platform),
+    getPiAgentServerEntryName(platform),
   );
 }
 
@@ -31,12 +31,23 @@ export function getBunCompileTarget(platform: PiServerPlatform, arch: PiServerAr
   return arch === 'x64' && platform !== 'darwin' ? `${target}-baseline` : target;
 }
 
-export function getPiAgentServerCompileArgs(options: {
+export function getPiAgentServerBuildArgs(options: {
   platform: PiServerPlatform;
   arch: PiServerArch;
   outputPath: string;
   compileExecutablePath?: string;
 }): string[] {
+  if (options.platform === 'win32') {
+    return [
+      'bun',
+      'build',
+      'src/index.ts',
+      '--minify',
+      '--target=bun',
+      `--outfile=${options.outputPath}`,
+    ];
+  }
+
   return [
     'bun',
     'build',
@@ -63,7 +74,7 @@ function hostArch(): PiServerArch {
   throw new Error(`Unsupported Pi agent server architecture: ${process.arch}`);
 }
 
-export async function buildPiAgentServerBinary(options: {
+export async function buildPiAgentServerEntry(options: {
   rootDir: string;
   platform?: PiServerPlatform;
   arch?: PiServerArch;
@@ -84,7 +95,7 @@ export async function buildPiAgentServerBinary(options: {
   mkdirSync(join(packageDir, 'dist'), { recursive: true });
 
   const buildProcess = spawn({
-    cmd: getPiAgentServerCompileArgs({
+    cmd: getPiAgentServerBuildArgs({
       platform,
       arch,
       outputPath,
@@ -105,7 +116,7 @@ export async function buildPiAgentServerBinary(options: {
 if (import.meta.main) {
   const platform = (process.env.CRAFT_BUILD_PLATFORM || hostPlatform()) as PiServerPlatform;
   const arch = (process.env.CRAFT_BUILD_ARCH || hostArch()) as PiServerArch;
-  await buildPiAgentServerBinary({
+  await buildPiAgentServerEntry({
     rootDir: join(import.meta.dir, '..', '..'),
     platform,
     arch,

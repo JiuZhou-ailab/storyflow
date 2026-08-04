@@ -10,7 +10,7 @@ import {
   type BuildConfig,
   type Platform,
 } from './common.ts';
-import { getPiAgentServerBinaryName } from './pi-agent-server.ts';
+import { getPiAgentServerEntryName } from './pi-agent-server.ts';
 
 export interface SubprocessResourceStageConfig {
   rootDir: string;
@@ -53,7 +53,7 @@ export function stageSubprocessResources(config: SubprocessResourceStageConfig):
   copyPiAgentServer(buildConfig);
 
   const piPackagePresent = existsSync(join(config.rootDir, 'packages', 'pi-agent-server', 'src'));
-  const piEntry = join(piDest, getPiAgentServerBinaryName(config.platform));
+  const piEntry = join(piDest, getPiAgentServerEntryName(config.platform));
   if (piPackagePresent && !existsSync(piEntry)) {
     throw new Error(`Pi agent server was not staged at ${piEntry}`);
   }

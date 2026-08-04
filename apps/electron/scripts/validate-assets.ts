@@ -8,7 +8,7 @@ import { join, relative } from 'node:path';
 const electronDir = join(import.meta.dir, '..');
 const distDir = join(electronDir, 'dist');
 const piServerBinary = (process.env.CRAFT_BUILD_PLATFORM || process.platform) === 'win32'
-  ? 'pi-agent-server.exe'
+  ? 'index.js'
   : 'pi-agent-server';
 
 const requiredFiles = [
