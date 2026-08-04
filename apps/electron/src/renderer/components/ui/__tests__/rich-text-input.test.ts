@@ -70,11 +70,11 @@ describe('inferCursorPositionAfterEdit', () => {
 describe('getCursorPosition', () => {
   function withSelectionMocks(
     selection: { rangeCount: number; getRangeAt?: () => { startContainer: Node; startOffset: number } },
-    createRangeImpl?: () => {
+    createRangeImpl: (() => {
       selectNodeContents: () => void
       setEnd: () => void
       cloneContents: () => Node
-    },
+    }) | undefined,
     run: () => void,
   ) {
     const originalWindow = globalThis.window
