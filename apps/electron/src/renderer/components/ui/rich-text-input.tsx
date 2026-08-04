@@ -70,6 +70,38 @@ export function shouldShowRichTextPlaceholder(value: string, isComposing: boolea
   return !value && !isComposing
 }
 
+export function normalizeContentEditableText(text: string): string {
+  return text === '\n' ? '' : text
+}
+
+export function inferCursorPositionAfterEdit(
+  previousText: string,
+  nextText: string,
+  fallback: number,
+): number {
+  if (previousText === nextText) return Math.min(fallback, nextText.length)
+
+  let prefixLength = 0
+  while (
+    prefixLength < previousText.length &&
+    prefixLength < nextText.length &&
+    previousText[prefixLength] === nextText[prefixLength]
+  ) {
+    prefixLength++
+  }
+
+  let suffixLength = 0
+  while (
+    suffixLength < previousText.length - prefixLength &&
+    suffixLength < nextText.length - prefixLength &&
+    previousText[previousText.length - suffixLength - 1] === nextText[nextText.length - suffixLength - 1]
+  ) {
+    suffixLength++
+  }
+
+  return nextText.length - suffixLength
+}
+
 export interface RichTextInputProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'onChange' | 'onInput' | 'onPaste'> {
   /** Current text value */
   value: string
@@ -208,7 +240,7 @@ function renderBadgeHTML(
 // Helper: Extract plain text from contenteditable
 // ============================================================================
 
-function getTextFromElement(element: HTMLElement): string {
+export function getTextFromElement(element: HTMLElement): string {
   let text = ''
 
   // isTopLevel: true for direct children of the contenteditable root
@@ -274,29 +306,38 @@ function getTextFromElement(element: HTMLElement): string {
     processNode(child, true)
   })
 
-  return text
+  return normalizeContentEditableText(text)
 }
 
 // ============================================================================
 // Helper: Get cursor position in text model
 // ============================================================================
 
-function getCursorPosition(element: HTMLElement, fallback: number = 0): number {
+export function getCursorPosition(element: HTMLElement, fallback: number = 0): number {
   const selection = window.getSelection()
   if (!selection || selection.rangeCount === 0) return fallback
 
   const range = selection.getRangeAt(0)
+  // Session switch / innerHTML rebuild can leave a live selection on a foreign
+  // or detached node. Mapping it into this editor yields a wrong caret (often 0)
+  // and breaks both "/" and "@" menu detection which share this cursor.
+  if (!element.contains(range.startContainer)) return fallback
 
-  // Create a range from start of element to cursor
-  const preRange = document.createRange()
-  preRange.selectNodeContents(element)
-  preRange.setEnd(range.startContainer, range.startOffset)
+  try {
+    // Create a range from start of element to cursor
+    const preRange = document.createRange()
+    preRange.selectNodeContents(element)
+    preRange.setEnd(range.startContainer, range.startOffset)
 
-  // Get text length before cursor, excluding badge content
-  const fragment = preRange.cloneContents()
-  const div = document.createElement('div')
-  div.appendChild(fragment)
-  return getTextFromElement(div).length
+    // Get text length before cursor, excluding badge content
+    const fragment = preRange.cloneContents()
+    const div = document.createElement('div')
+    div.appendChild(fragment)
+    return getTextFromElement(div).length
+  } catch {
+    // setEnd/cloneContents can still throw on partially-detached trees
+    return fallback
+  }
 }
 
 // ============================================================================
@@ -557,7 +598,10 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
     forwardedRef
   ) {
     const { t } = useTranslation()
-    const safeValue = React.useMemo(() => coerceInputText(value), [value])
+    const safeValue = React.useMemo(
+      () => normalizeContentEditableText(coerceInputText(value)),
+      [value],
+    )
     const divRef = React.useRef<HTMLDivElement>(null)
     const [isFocused, setIsFocused] = React.useState(false)
     const isComposing = React.useRef(false)
@@ -613,9 +657,12 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       },
       getBoundingClientRect: () => divRef.current?.getBoundingClientRect() ?? new DOMRect(),
       getCaretRect: () => {
+        const element = divRef.current
+        if (!element) return null
         const selection = window.getSelection()
         if (!selection || selection.rangeCount === 0) return null
         const range = selection.getRangeAt(0)
+        if (!element.contains(range.startContainer)) return null
         const rect = range.getBoundingClientRect()
         // If rect has zero dimensions (collapsed selection at line start), use a fallback
         if (rect.width === 0 && rect.height === 0 && rect.x === 0 && rect.y === 0) {
@@ -648,7 +695,17 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       if (!divRef.current) return
 
       const newText = getTextFromElement(divRef.current)
-      const cursorPos = getCursorPosition(divRef.current, cursorPositionRef.current)
+      const fallbackCursor = inferCursorPositionAfterEdit(
+        lastValueRef.current,
+        newText,
+        cursorPositionRef.current,
+      )
+      // Prefer live selection; when missing/stale, use text-diff inference so
+      // FreeFormInput still sees "/" / "@" before the caret and can open menus.
+      const cursorPos = Math.min(
+        getCursorPosition(divRef.current, fallbackCursor),
+        newText.length,
+      )
 
       lastValueRef.current = newText
       cursorPositionRef.current = cursorPos
