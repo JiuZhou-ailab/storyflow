@@ -8,8 +8,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   getBunCompileTarget,
-  getPiAgentServerEntryName,
-  getPiAgentServerBuildArgs,
+  getPiAgentServerBinaryName,
+  getPiAgentServerCompileArgs,
 } from './pi-agent-server.ts';
 import { resolveBuildTargetFromEnv, stageSubprocessResources } from './resource-staging.ts';
 
@@ -39,26 +39,17 @@ describe('Electron subprocess resource staging', () => {
       CRAFT_BUILD_PLATFORM: 'darwin',
       CRAFT_BUILD_ARCH: 'x64',
     })).toEqual({ platform: 'darwin', arch: 'x64' });
-    expect(getPiAgentServerEntryName('darwin')).toBe('pi-agent-server');
-    expect(getPiAgentServerEntryName('win32')).toBe('index.js');
+    expect(getPiAgentServerBinaryName('darwin')).toBe('pi-agent-server');
+    expect(getPiAgentServerBinaryName('win32')).toBe('pi-agent-server.exe');
     expect(getBunCompileTarget('darwin', 'arm64')).toBe('bun-darwin-arm64');
     expect(getBunCompileTarget('linux', 'x64')).toBe('bun-linux-x64-baseline');
     expect(getBunCompileTarget('win32', 'x64')).toBe('bun-windows-x64-baseline');
-    const windowsArgs = getPiAgentServerBuildArgs({
+    expect(getPiAgentServerCompileArgs({
       platform: 'win32',
       arch: 'x64',
-      outputPath: 'index.js',
+      outputPath: 'pi-agent-server.exe',
       compileExecutablePath: 'vendor/bun/bun.exe',
-    });
-    expect(windowsArgs).toContain('--target=bun');
-    expect(windowsArgs).not.toContain('--compile');
-    expect(windowsArgs).not.toContain('--compile-executable-path=vendor/bun/bun.exe');
-    expect(getPiAgentServerBuildArgs({
-      platform: 'darwin',
-      arch: 'arm64',
-      outputPath: 'pi-agent-server',
-      compileExecutablePath: 'vendor/bun/bun',
-    })).toContain('--compile-executable-path=vendor/bun/bun');
+    })).toContain('--compile-executable-path=vendor/bun/bun.exe');
   });
 
   test('copies the native Pi subprocess without legacy runtime resources', () => {

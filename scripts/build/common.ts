@@ -20,7 +20,7 @@ import { tmpdir } from 'os';
 import { createHash } from 'crypto';
 import { loadEnvFiles } from '../env-loader';
 import {
-  getPiAgentServerEntryName,
+  getPiAgentServerBinaryName,
   getPiAgentServerOutputPath,
 } from './pi-agent-server.ts';
 
@@ -386,9 +386,9 @@ export function copyPiAgentServer(config: BuildConfig): void {
 
   const piSourceDir = join(rootDir, 'packages', 'pi-agent-server', 'dist');
   const piDestDir = join(electronDir, 'resources', 'pi-agent-server');
-  const entryName = getPiAgentServerEntryName(platform);
-  const sourcePath = join(piSourceDir, entryName);
-  const destinationPath = join(piDestDir, entryName);
+  const binaryName = getPiAgentServerBinaryName(platform);
+  const sourcePath = join(piSourceDir, binaryName);
+  const destinationPath = join(piDestDir, binaryName);
 
   if (!existsSync(sourcePath)) {
     console.warn(`Warning: Pi agent server not found at ${sourcePath}. Pi SDK sessions will not work.`);
@@ -414,7 +414,7 @@ export function buildPiAgentServer(config: BuildConfig): void {
 
   console.log('Building Pi agent server...');
 
-  // Unix builds use Pi's compiled-binary loader; Windows reuses the packaged Bun runtime.
+  // Pi's compiled-binary loader exposes the bundled Extension API as virtual modules.
   // Optional: skip if package directory is missing (e.g., not synced to OSS).
   if (existsSync(join(piDir, 'src'))) {
     mkdirSync(join(piDir, 'dist'), { recursive: true });
@@ -467,7 +467,7 @@ export function verifyPiAgentServerExists(config: BuildConfig): void {
     electronDir,
     'resources',
     'pi-agent-server',
-    getPiAgentServerEntryName(platform),
+    getPiAgentServerBinaryName(platform),
   );
 
   if (!existsSync(piPath)) {

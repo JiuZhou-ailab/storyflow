@@ -9,7 +9,7 @@ import { existsSync, rmSync, cpSync, statSync, mkdirSync } from "fs";
 import { join, basename } from "path";
 import * as esbuild from "esbuild";
 import { downloadUv, type Platform, type Arch } from "./build/common";
-import { buildPiAgentServerEntry } from "./build/pi-agent-server";
+import { buildPiAgentServerBinary } from "./build/pi-agent-server";
 import { stageSubprocessResources } from "./build/resource-staging";
 import { loadEnvFiles } from "./env-loader";
 
@@ -359,7 +359,7 @@ async function runEsbuild(
 
 async function buildPiAgentServer(): Promise<{ success: boolean; error?: string }> {
   try {
-    await buildPiAgentServerEntry({
+    await buildPiAgentServerBinary({
       rootDir: ROOT_DIR,
       platform: resolveBuildPlatform(),
       arch: resolveBuildArch(),

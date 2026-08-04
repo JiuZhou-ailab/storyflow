@@ -11,7 +11,7 @@ import { spawn } from "bun";
 import { existsSync, statSync, mkdirSync } from "fs";
 import { join } from "path";
 import { validateDesktopAuthBuildEnv } from "./build/desktop-auth-build-config";
-import { buildPiAgentServerEntry } from "./build/pi-agent-server";
+import { buildPiAgentServerBinary } from "./build/pi-agent-server";
 import { loadEnvFiles } from "./env-loader";
 
 const ROOT_DIR = join(import.meta.dir, "..");
@@ -147,7 +147,7 @@ async function buildPiAgentServer(): Promise<void> {
 
   console.log("🥧 Building Pi Agent Server...");
 
-  const outputPath = await buildPiAgentServerEntry({ rootDir: ROOT_DIR });
+  const outputPath = await buildPiAgentServerBinary({ rootDir: ROOT_DIR });
   if (!existsSync(outputPath)) {
     console.error("❌ Pi agent server output not found at", outputPath);
     process.exit(1);
