@@ -434,7 +434,7 @@ export function ActivityRail({
         style={{ height: WINDOW_TITLE_BAR_HEIGHT }}
       />
       <div className="flex min-h-0 flex-1 flex-col px-2 pt-1">
-        <div className="flex items-center px-1 pb-2">
+        <div className="flex items-center px-2.5 pb-2">
           <span className="min-w-0 flex-1 truncate text-[16px] font-medium text-foreground/85">
             Storyflow
             <span className="ml-1 text-[11px] font-normal text-muted-foreground/65">v{appPackage.version}</span>

@@ -777,3 +777,50 @@ automatically. A same-state full-view/focused comparison and interaction run
 therefore remain unavailable.
 
 final result: blocked
+
+## Activity rail system-control alignment — 2026-08-04
+
+### Evidence
+
+- Source visual truth:
+  `/var/folders/jk/7_pcx4cd3y94_lwnf7hbxcv80000gn/T/codex-clipboard-538cf43b-ce1f-4aa4-9094-58cbe736334c.png`
+- Before implementation:
+  `/Users/dingzhijian/.codex/visualizations/2026/08/04/019fccb9-e731-7491-91b5-3ec5cffb9d1f/sidebar-alignment/before.png`
+- Implementation screenshot:
+  `/Users/dingzhijian/.codex/visualizations/2026/08/04/019fccb9-e731-7491-91b5-3ec5cffb9d1f/sidebar-alignment/final-title-aligned.png`
+- Focused source/implementation comparison:
+  `/Users/dingzhijian/.codex/visualizations/2026/08/04/019fccb9-e731-7491-91b5-3ec5cffb9d1f/sidebar-alignment/reference-final-comparison.png`
+
+The source is 3310 × 2064 px. The implementation is a 3188 × 2420 px native
+window capture of a 1526 × 1142 CSS-pixel macOS window at 2× density; the
+capture includes the OS window shadow. State: light theme, expanded activity
+rail, active free conversation.
+
+### Comparison history
+
+- Iteration 1 moved the native controls right from x=18 to x=19 CSS px by
+  following the icon layout box; the user rejected that direction.
+- Iteration 2 uses the rendered glyph column as visual truth and moves the
+  traffic-light origin left to x=17 CSS px, one pixel left of the original
+  baseline and two pixels left of iteration 1.
+- After: the close-button center is x=115.5 physical px and the rendered menu
+  icon column centers at approximately x=114 physical px in the focused crop.
+  No actionable P0/P1/P2 alignment difference remains.
+- Final title pass: moved the `Storyflow` label right by 6 CSS px so its left
+  edge shares the rendered icon-left axis; menu labels and navigation behavior
+  remain unchanged.
+
+### Required fidelity surfaces
+
+- Fonts and typography: unchanged; existing Storyflow type hierarchy remains.
+- Spacing and layout rhythm: the system close button and menu icon column now
+  share one vertical axis; all other spacing is unchanged.
+- Colors and visual tokens: unchanged.
+- Image quality and asset fidelity: no product assets were added or replaced.
+- Copy and content: unchanged.
+
+The production build opened the saved conversation and activity rail without
+new runtime errors. Existing Skills catalog warnings are unrelated. Focused
+layout test: 24 passed, 0 failed.
+
+final result: passed

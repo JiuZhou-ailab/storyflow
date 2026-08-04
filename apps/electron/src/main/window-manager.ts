@@ -15,7 +15,8 @@ const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const WINDOW_SCREEN_MARGIN = 64
 const DEFAULT_MAIN_WINDOW_SIZE = { width: 1400, height: 900 }
 const MIN_WINDOW_SIZE = { width: 800, height: 600 }
-const MACOS_TRAFFIC_LIGHT_POSITION = { x: 18, y: 13 }
+// Keep the 14px close button on the rail icons' rendered center line.
+const MACOS_TRAFFIC_LIGHT_POSITION = { x: 17, y: 13 }
 
 function resolveInitialWindowSize(): { width: number, height: number } {
   const baseSize = DEFAULT_MAIN_WINDOW_SIZE

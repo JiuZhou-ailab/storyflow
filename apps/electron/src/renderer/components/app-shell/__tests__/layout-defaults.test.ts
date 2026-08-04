@@ -1,4 +1,4 @@
-// input: App shell viewport, rail-collapse, panel chrome, and column sizing contracts
+// input: App shell viewport, main-process window geometry, rail-collapse, panel chrome, and column sizing contracts
 // output: Regression coverage for default shell geometry and native title-bar ownership
 // pos: Protects the continuous desktop workbench from detached or overlapping chrome
 
@@ -22,6 +22,7 @@ import {
 
 const appShellSource = readFileSync(new URL('../AppShell.tsx', import.meta.url), 'utf8')
 const appSource = readFileSync(new URL('../../../App.tsx', import.meta.url), 'utf8')
+const windowManagerSource = readFileSync(new URL('../../../../main/window-manager.ts', import.meta.url), 'utf8')
 const activityRailSource = readFileSync(new URL('../ActivityRail.tsx', import.meta.url), 'utf8')
 const panelConstantsSource = readFileSync(new URL('../panel-constants.ts', import.meta.url), 'utf8')
 const panelStackSource = readFileSync(new URL('../PanelStackContainer.tsx', import.meta.url), 'utf8')
@@ -296,6 +297,7 @@ describe('app shell layout defaults', () => {
     expect(activityRailControlsSource).toContain('style={{ width: ACTIVITY_RAIL_WIDTH, height: WINDOW_TITLE_BAR_HEIGHT }}')
     expect(activityRailControlsSource).not.toContain('left-[84px]')
     expect(activityRailControlsSource.match(/titlebar-no-drag pointer-events-auto/g)).toHaveLength(2)
+    expect(activityRailSource).toContain('className="flex items-center px-2.5 pb-2"')
     expect(appShellSource).toContain('{showActivityRail ? activityRailControls : null}')
     expect(appShellSource.indexOf('{showActivityRail ? activityRailControls : null}')).toBeGreaterThan(
       appShellSource.indexOf('data-testid="panel-stack-inset"'),
@@ -309,6 +311,7 @@ describe('app shell layout defaults', () => {
     expect(appShellSource).toContain('transition={shouldReduceMotion ? { duration: 0 } : PANEL_SPRING}')
     expect(appShellSource).not.toContain('activityRailLeadingAction')
     expect(activityRailSource).toContain('className="titlebar-drag-region shrink-0"')
+    expect(windowManagerSource).toContain('const MACOS_TRAFFIC_LIGHT_POSITION = { x: 17, y: 13 }')
   })
 
   it('renders structural panes as one continuous workbench with parent-owned seams', () => {
