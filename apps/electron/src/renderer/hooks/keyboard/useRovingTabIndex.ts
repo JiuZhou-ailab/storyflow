@@ -1,3 +1,7 @@
+// input: Ordered items, keyboard behavior, and navigation callbacks
+// output: Roving-tabindex state and accessible item/container props
+// pos: Shared keyboard focus primitive for renderer entity lists
+
 import { useState, useCallback, useRef, useEffect } from "react"
 
 interface UseRovingTabIndexOptions<T> {
@@ -92,6 +96,8 @@ export function useRovingTabIndex<T>({
   // Note: We only sync state here, no callbacks - this is not user-initiated navigation
   useEffect(() => {
     if (items.length === 0) {
+      // Focus state must remain valid when the external collection shrinks.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveIndexState(0)
     } else if (activeIndex >= items.length) {
       const newIndex = Math.max(0, items.length - 1)

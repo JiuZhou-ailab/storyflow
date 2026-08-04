@@ -2,7 +2,7 @@
 // output: Form for restoring an existing remote project connection
 // pos: Recovery-only surface; normal project creation is local-folder-only
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useCallback } from "react"
 import { useTranslation } from "react-i18next"
 import { ArrowLeft, CheckCircle, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -38,12 +38,11 @@ export function AddWorkspaceStep_ConnectRemote({
   const [testError, setTestError] = useState<string | null>(null)
   const [serverVersion, setServerVersion] = useState<string | null>(null)
 
-  // Reset test state when URL or token changes
-  useEffect(() => {
+  const resetTestResult = () => {
     setTestState('idle')
     setTestError(null)
     setServerVersion(null)
-  }, [serverUrl, token])
+  }
 
   const handleTestConnection = useCallback(async () => {
     if (!serverUrl || !token) return
@@ -112,7 +111,10 @@ export function AddWorkspaceStep_ConnectRemote({
           <div className="bg-background shadow-minimal rounded-lg">
             <Input
               value={serverUrl}
-              onChange={(e) => setServerUrl(e.target.value)}
+              onChange={(e) => {
+                setServerUrl(e.target.value)
+                resetTestResult()
+              }}
               placeholder="ws://192.168.1.100:9100"
               disabled={isCreating}
               autoFocus
@@ -130,7 +132,10 @@ export function AddWorkspaceStep_ConnectRemote({
             <Input
               type="password"
               value={token}
-              onChange={(e) => setToken(e.target.value)}
+              onChange={(e) => {
+                setToken(e.target.value)
+                resetTestResult()
+              }}
               placeholder={t("workspace.serverAuthToken")}
               disabled={isCreating}
               className="border-0 bg-transparent shadow-none"

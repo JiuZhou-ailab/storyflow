@@ -1,3 +1,7 @@
+// input: Workspace icon metadata and renderer IPC image access
+// output: Renderable icon URLs for one or many workspaces
+// pos: Cached renderer boundary for workspace icon loading
+
 /**
  * useWorkspaceIcon Hook
  *
@@ -8,7 +12,7 @@
  * Used by settings pages that display workspace icons.
  */
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import type { Workspace } from '../../shared/types'
 
 // Module-level cache to avoid redundant fetches across component instances
@@ -43,11 +47,10 @@ export function useWorkspaceIcon(workspace: Workspace | undefined): string | und
     return undefined
   })
 
-  // Track the workspace to detect changes
-  const workspaceRef = useRef(workspace)
-
   useEffect(() => {
     if (!workspace?.iconUrl) {
+      // This state mirrors the external image cache and async IPC result.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIconUrl(undefined)
       return
     }

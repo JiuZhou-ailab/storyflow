@@ -99,6 +99,9 @@ export default [
       // React Hooks rules
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
+      'react-hooks/no-deriving-state-in-effects': 'error',
+      'react-hooks/set-state-in-effect': 'error',
+      'react-hooks/set-state-in-render': 'error',
 
       // Custom Craft Agent rules
       'craft-agent/no-direct-navigation-state': 'error',
@@ -160,6 +163,9 @@ export default [
     ],
     rules: {
       'craft-styles/no-nonstandard-shadows': 'off',
+      // Playground controls intentionally reseed local demo state from knobs.
+      'react-hooks/no-deriving-state-in-effects': 'off',
+      'react-hooks/set-state-in-effect': 'off',
     },
   },
 

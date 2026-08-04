@@ -1,3 +1,7 @@
+// input: Entity icon metadata, workspace image IPC, and cached icon assets
+// output: Sanitized renderable source, skill, and status icons
+// pos: Single renderer icon resolution and cache boundary
+
 /**
  * Unified Icon Cache
  *
@@ -582,6 +586,8 @@ export function useEntityIcon(opts: UseEntityIconOptions): ResolvedEntityIcon {
   useEffect(() => {
     // If emoji, no file loading needed - just update state
     if (immediateValue?.type === 'emoji') {
+      // This state reconciles cached/IPC icon data when the external icon identity changes.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResolved({ kind: 'emoji', value: immediateValue.value, colorable: false })
       return
     }

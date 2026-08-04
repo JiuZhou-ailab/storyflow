@@ -331,6 +331,8 @@ export function SessionList({
 
   useEffect(() => {
     if (collapseScopeRef.current === collapseScopeSuffix) return
+    // External persisted UI state is rehydrated only when its storage scope changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCollapsedGroups(readCollapsedGroupsForScope(collapseScopeSuffix))
     collapseScopeRef.current = collapseScopeSuffix
   }, [collapseScopeSuffix, readCollapsedGroupsForScope])

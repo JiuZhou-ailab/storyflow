@@ -1,11 +1,15 @@
 /**
  * BrowserTabBadge
  *
+ * input: Browser instance metadata and native button props
+ * output: Browser tab action badge with favicon fallback
+ * pos: Render-only trigger inside the browser tab strip
+ *
  * Compact badge used in the top bar browser strip.
  * Render-only surface that acts as a dropdown trigger in BrowserTabStrip.
  */
 
-import { forwardRef, useEffect, useState, type ButtonHTMLAttributes } from 'react'
+import { forwardRef, useState, type ButtonHTMLAttributes } from 'react'
 import * as Icons from 'lucide-react'
 import { Spinner } from '@craft-agent/ui'
 import type { BrowserInstanceInfo } from '../../../shared/types'
@@ -33,11 +37,8 @@ export const BrowserTabBadge = forwardRef<HTMLButtonElement, BrowserTabBadgeProp
       : 'text-black/80 hover:bg-black/5')
     : 'text-foreground hover:bg-foreground/[0.03]'
 
-  const [faviconFailed, setFaviconFailed] = useState(false)
-
-  useEffect(() => {
-    setFaviconFailed(false)
-  }, [instance.favicon])
+  const [failedFavicon, setFailedFavicon] = useState<string | null>(null)
+  const faviconFailed = failedFavicon === instance.favicon
 
   return (
     <button
@@ -69,7 +70,7 @@ export const BrowserTabBadge = forwardRef<HTMLButtonElement, BrowserTabBadgeProp
                 src={instance.favicon}
                 alt=""
                 className="h-3 w-3 aspect-square rounded-none object-cover block"
-                onError={() => setFaviconFailed(true)}
+                onError={() => setFailedFavicon(instance.favicon ?? null)}
               />
             </span>
           ) : (
@@ -77,7 +78,7 @@ export const BrowserTabBadge = forwardRef<HTMLButtonElement, BrowserTabBadgeProp
               src={instance.favicon}
               alt=""
               className="h-3 w-3 rounded-sm block"
-              onError={() => setFaviconFailed(true)}
+              onError={() => setFailedFavicon(instance.favicon ?? null)}
             />
           )
         ) : (

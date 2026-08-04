@@ -165,13 +165,6 @@ const FileThumbnail = memo(function FileThumbnail({ file }: { file: SessionFile 
   const [failed, setFailed] = useState(false)
   const [dataUrl, setDataUrl] = useState<string | null>(null)
 
-  // Reset state when file changes (e.g. watcher triggered re-render)
-  useEffect(() => {
-    setLoaded(false)
-    setFailed(false)
-    setDataUrl(null)
-  }, [file.path])
-
   const ext = file.name.split('.').pop()?.toLowerCase() || ''
   const previewableSet = isWebMode ? WEB_PREVIEWABLE_EXTENSIONS : PREVIEWABLE_EXTENSIONS
   const canPreview = previewableSet.has(ext)

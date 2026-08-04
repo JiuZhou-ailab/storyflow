@@ -107,31 +107,35 @@ export function MainContentPanel({
 
   // Execution history for the selected automation
   const selectedAutomationId = isAutomationsNavigation(navState) ? navState.details?.automationId : undefined
-  const [executions, setExecutions] = useState<ExecutionEntry[]>([])
+  const [executionHistory, setExecutionHistory] = useState<{
+    automationId: string
+    entries: ExecutionEntry[]
+  } | null>(null)
 
   useEffect(() => {
-    if (!selectedAutomationId) {
-      setExecutions([])
-      return
-    }
+    if (!selectedAutomationId) return
     let stale = false
 
     // Initial fetch
     getAutomationHistory(selectedAutomationId).then(entries => {
-      if (!stale) setExecutions(entries)
+      if (!stale) setExecutionHistory({ automationId: selectedAutomationId, entries })
     })
 
     // Re-fetch on automation changes (live updates when automations fire)
     const cleanup = window.electronAPI.onAutomationsChanged(() => {
       if (!stale) {
         getAutomationHistory(selectedAutomationId).then(entries => {
-          if (!stale) setExecutions(entries)
+          if (!stale) setExecutionHistory({ automationId: selectedAutomationId, entries })
         })
       }
     })
 
     return () => { stale = true; cleanup() }
   }, [selectedAutomationId, getAutomationHistory])
+
+  const executions = executionHistory && executionHistory.automationId === selectedAutomationId
+    ? executionHistory.entries
+    : []
 
   // Source multi-select state
   const isSourceMultiSelectActive = sourceSelection.useIsMultiSelectActive()

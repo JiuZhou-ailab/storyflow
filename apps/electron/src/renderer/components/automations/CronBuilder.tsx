@@ -1,3 +1,7 @@
+// input: Cron expression, timezone, and controlled update callbacks
+// output: Preset, field, and raw-input cron editing surface
+// pos: Automation schedule editor with local invalid-draft support
+
 /**
  * CronBuilder
  *
@@ -138,6 +142,8 @@ export function CronBuilder({
 
   // Sync raw input and fields
   useEffect(() => {
+    // Preserve an in-progress invalid cron draft while still accepting external resets.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRawInput(value)
     setFields(value.split(/\s+/))
   }, [value])

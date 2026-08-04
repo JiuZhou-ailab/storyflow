@@ -255,6 +255,8 @@ export function useAutomations(
 
   // Initial load
   useEffect(() => {
+    // Automations are hydrated from the workspace filesystem, an external store.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadAndHydrate()
   }, [loadAndHydrate])
 

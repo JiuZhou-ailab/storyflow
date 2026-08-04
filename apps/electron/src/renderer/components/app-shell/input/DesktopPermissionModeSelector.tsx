@@ -44,15 +44,9 @@ export function DesktopPermissionModeSelector({
 }: DesktopPermissionModeSelectorProps) {
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
-  const [optimisticMode, setOptimisticMode] = React.useState(permissionMode)
-
-  React.useEffect(() => {
-    setOptimisticMode(permissionMode)
-  }, [permissionMode])
 
   const handleSelect = React.useCallback((commandId: SlashCommandId) => {
     if (commandId === 'safe' || commandId === 'ask' || commandId === 'allow-all') {
-      setOptimisticMode(commandId)
       onPermissionModeChange?.(commandId)
     }
     setOpen(false)
@@ -81,12 +75,12 @@ export function DesktopPermissionModeSelector({
           data-tutorial="permission-mode-dropdown"
           className={cn(
             'h-[30px] pl-2.5 pr-2 text-xs font-medium rounded-[8px] flex items-center gap-1.5 shadow-tinted outline-none select-none shrink-0',
-            currentStyle[optimisticMode].className,
+            currentStyle[permissionMode].className,
           )}
-          style={{ '--shadow-color': currentStyle[optimisticMode].shadowVar } as React.CSSProperties}
+          style={{ '--shadow-color': currentStyle[permissionMode].shadowVar } as React.CSSProperties}
         >
-          <PermissionModeIcon mode={optimisticMode} className="h-3.5 w-3.5" />
-          <span>{t(`mode.${optimisticMode}`)}</span>
+          <PermissionModeIcon mode={permissionMode} className="h-3.5 w-3.5" />
+          <span>{t(`mode.${permissionMode}`)}</span>
           <ChevronDown className="h-3.5 w-3.5 opacity-60" />
         </button>
       </PopoverTrigger>
@@ -107,7 +101,7 @@ export function DesktopPermissionModeSelector({
       >
         <SlashCommandMenu
           commandGroups={DEFAULT_SLASH_COMMAND_GROUPS}
-          activeCommands={[optimisticMode as SlashCommandId]}
+          activeCommands={[permissionMode as SlashCommandId]}
           onSelect={handleSelect}
         />
       </PopoverContent>

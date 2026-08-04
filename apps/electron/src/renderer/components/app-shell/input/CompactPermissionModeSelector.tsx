@@ -1,3 +1,7 @@
+// input: Current permission mode and its session-scoped update callback
+// output: Compact drawer for switching the chat execution mode
+// pos: Compact permission control inside the free-form input toolbar
+
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check } from 'lucide-react'
@@ -77,21 +81,14 @@ export function CompactPermissionModeSelector({
 }: CompactPermissionModeSelectorProps) {
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
-  // Optimistic local state — updates immediately, syncs with prop
-  const [optimisticMode, setOptimisticMode] = React.useState(permissionMode)
-
-  React.useEffect(() => {
-    setOptimisticMode(permissionMode)
-  }, [permissionMode])
 
   const handleSelect = React.useCallback((mode: PermissionMode) => {
-    setOptimisticMode(mode)
     onPermissionModeChange?.(mode)
     setOpen(false)
   }, [onPermissionModeChange])
 
-  const shortName = t(`mode.${optimisticMode}`)
-  const style = MODE_STYLES[optimisticMode]
+  const shortName = t(`mode.${permissionMode}`)
+  const style = MODE_STYLES[permissionMode]
 
   return (
     <Drawer open={open} onOpenChange={setOpen}>
@@ -105,7 +102,7 @@ export function CompactPermissionModeSelector({
           )}
           style={{ '--shadow-color': style.shadowVar } as React.CSSProperties}
         >
-          <ModeIcon mode={optimisticMode} className="h-3.5 w-3.5" />
+          <ModeIcon mode={permissionMode} className="h-3.5 w-3.5" />
           <span>{shortName}</span>
         </button>
       </DrawerTrigger>
@@ -117,7 +114,7 @@ export function CompactPermissionModeSelector({
 
         <div className="px-4 pb-6 flex flex-col gap-1">
           {PERMISSION_MODE_ORDER.map((mode) => {
-            const isSelected = mode === optimisticMode
+            const isSelected = mode === permissionMode
             return (
               <DrawerClose asChild key={mode}>
                 <button
