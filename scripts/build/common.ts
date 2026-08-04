@@ -407,7 +407,7 @@ export function copyPiAgentServer(config: BuildConfig): void {
  * Shared across all platforms to avoid drift.
  */
 export function buildPiAgentServer(config: BuildConfig): void {
-  const { rootDir, platform, arch } = config;
+  const { rootDir, electronDir, platform, arch } = config;
 
   const piDir = join(rootDir, 'packages', 'pi-agent-server');
   const piOut = getPiAgentServerOutputPath(rootDir, platform);
@@ -428,6 +428,7 @@ export function buildPiAgentServer(config: BuildConfig): void {
           ...process.env,
           CRAFT_BUILD_PLATFORM: platform,
           CRAFT_BUILD_ARCH: arch,
+          CRAFT_BUN: join(electronDir, 'vendor', 'bun', platform === 'win32' ? 'bun.exe' : 'bun'),
         },
       },
     );

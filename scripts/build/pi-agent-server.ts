@@ -31,6 +31,26 @@ export function getBunCompileTarget(platform: PiServerPlatform, arch: PiServerAr
   return arch === 'x64' && platform !== 'darwin' ? `${target}-baseline` : target;
 }
 
+export function getPiAgentServerCompileArgs(options: {
+  platform: PiServerPlatform;
+  arch: PiServerArch;
+  outputPath: string;
+  compileExecutablePath?: string;
+}): string[] {
+  return [
+    'bun',
+    'build',
+    'src/index.ts',
+    '--compile',
+    '--minify',
+    `--target=${getBunCompileTarget(options.platform, options.arch)}`,
+    ...(options.compileExecutablePath
+      ? [`--compile-executable-path=${options.compileExecutablePath}`]
+      : []),
+    `--outfile=${options.outputPath}`,
+  ];
+}
+
 function hostPlatform(): PiServerPlatform {
   if (process.platform === 'darwin' || process.platform === 'win32' || process.platform === 'linux') {
     return process.platform;
@@ -47,6 +67,7 @@ export async function buildPiAgentServerBinary(options: {
   rootDir: string;
   platform?: PiServerPlatform;
   arch?: PiServerArch;
+  compileExecutablePath?: string;
 }): Promise<string> {
   const platform = options.platform ?? hostPlatform();
   const arch = options.arch ?? hostArch();
@@ -55,15 +76,12 @@ export async function buildPiAgentServerBinary(options: {
   mkdirSync(join(packageDir, 'dist'), { recursive: true });
 
   const buildProcess = spawn({
-    cmd: [
-      'bun',
-      'build',
-      'src/index.ts',
-      '--compile',
-      '--minify',
-      `--target=${getBunCompileTarget(platform, arch)}`,
-      `--outfile=${outputPath}`,
-    ],
+    cmd: getPiAgentServerCompileArgs({
+      platform,
+      arch,
+      outputPath,
+      compileExecutablePath: options.compileExecutablePath,
+    }),
     cwd: packageDir,
     stdout: 'inherit',
     stderr: 'inherit',
@@ -82,5 +100,6 @@ if (import.meta.main) {
     rootDir: join(import.meta.dir, '..', '..'),
     platform,
     arch,
+    compileExecutablePath: process.env.CRAFT_BUN,
   });
 }
