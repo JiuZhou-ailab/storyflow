@@ -11,3 +11,7 @@ test('pins fixture line endings instead of weakening byte-exact restore checks',
   expect(source).toContain("git(workspaceRoot, 'config', 'core.autocrlf', 'false')")
   expect(source).toContain("assert.equal(readFileSync(fixture.targetFile, 'utf8'), AGENT_EDIT)")
 })
+
+test('does not let a locked Windows temp directory overwrite the E2E result', () => {
+  expect(source).toContain("process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'EBUSY'")
+})

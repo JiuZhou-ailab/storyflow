@@ -147,7 +147,12 @@ async function main(): Promise<void> {
   } finally {
     await app?.close().catch(() => {})
     model.stop()
-    rmSync(fixture.configDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
+    try {
+      rmSync(fixture.configDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
+    } catch (error) {
+      if (process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'EBUSY') throw error
+      process.stderr.write(`core Electron E2E: cleanup deferred for locked temp directory ${fixture.configDir}\n`)
+    }
   }
 }
 
