@@ -57,6 +57,20 @@ export interface BackendRuntimeUpdate {
   };
 }
 
+export type ConversationRewindBoundary = {
+  retainThroughMessageId: string | null;
+  draftText?: string;
+};
+
+export type ConversationRewindRequest =
+  | { phase: 'prepare'; boundary: ConversationRewindBoundary }
+  | { phase: 'commit'; token: string; expectedRevision: string }
+  | { phase: 'abort'; token: string };
+
+export type ConversationRewindResult =
+  | { phase: 'prepared'; token: string; revision: string }
+  | { phase: 'committed' | 'aborted' };
+
 /** Ephemeral Storyflow-managed model capability supplied by the host. */
 export interface ManagedModelAccess {
   token: string;
@@ -254,11 +268,10 @@ export interface CoreBackendConfig {
   /** Callback when SDK session ID is cleared (e.g., after failed resume) */
   onSdkSessionIdCleared?: () => void;
 
-  /** Atomically project a Pi tree rewind into the host-owned product transcript. */
-  onConversationRewind?: (boundary: {
-    retainThroughMessageId: string | null;
-    draftText?: string;
-  }, options: { validateOnly: boolean }) => Promise<void>;
+  /** Reserve, commit, or abort one Pi-owned rewind against the product transcript. */
+  onConversationRewind?: (
+    request: ConversationRewindRequest,
+  ) => Promise<ConversationRewindResult>;
 
   /**
    * Called when the agent decides the persisted branch-fork metadata

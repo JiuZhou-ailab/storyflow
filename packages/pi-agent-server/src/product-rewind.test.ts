@@ -11,6 +11,7 @@ import {
   PRODUCT_REWIND_BOUNDARY_TYPE,
   PRODUCT_TREE_HEAD_TYPE,
   createProductRewindBoundary,
+  executeProductRewind,
   findProductRewindBoundary,
 } from './product-rewind.ts';
 
@@ -20,6 +21,34 @@ const userEntry = (id: string): SessionEntry => ({
   parentId: null,
   timestamp: new Date(0).toISOString(),
   message: { role: 'user', content: 'prompt', timestamp: 0 },
+});
+
+describe('executeProductRewind', () => {
+  it('restores the Pi leaf and aborts the product reservation when commit fails', async () => {
+    let leaf: string | null = 'old-leaf';
+    const appendedAt: Array<string | null> = [];
+    const aborted: string[] = [];
+
+    await expect(executeProductRewind(
+      { retainThroughMessageId: 'product-1' },
+      {
+        prepare: async () => ({ phase: 'prepared', token: 'token-1', revision: 'revision-1' }),
+        navigate: async () => {
+          leaf = 'new-leaf';
+          return { cancelled: false };
+        },
+        currentLeaf: () => leaf,
+        restoreLeaf: async (leafId) => { leaf = leafId; },
+        appendHead: () => { appendedAt.push(leaf); },
+        commit: async () => { throw new Error('persist failed'); },
+        abort: async (token) => { aborted.push(token); },
+      },
+    )).rejects.toThrow('persist failed');
+
+    expect(leaf).toBe('old-leaf');
+    expect(appendedAt).toEqual(['new-leaf', 'old-leaf']);
+    expect(aborted).toEqual(['token-1']);
+  });
 });
 
 describe('product rewind mapping', () => {

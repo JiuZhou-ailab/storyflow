@@ -27,6 +27,8 @@ import type {
   BackendConfig,
   BackendRuntimeUpdate,
   ChatOptions,
+  ConversationRewindRequest,
+  ConversationRewindResult,
   ManagedModelAccess,
   SdkMcpServerConfig,
 } from './backend/types.ts';
@@ -796,8 +798,7 @@ export class PiAgent extends BaseAgent {
       case 'conversation_rewind_request':
         void this.handleConversationRewindRequest(msg as {
           requestId: string;
-          phase: 'prepare' | 'commit';
-          boundary: { retainThroughMessageId: string | null; draftText?: string };
+          request: ConversationRewindRequest;
         });
         break;
 
@@ -1387,14 +1388,18 @@ export class PiAgent extends BaseAgent {
 
   private async handleConversationRewindRequest(msg: {
     requestId: string;
-    phase: 'prepare' | 'commit';
-    boundary: { retainThroughMessageId: string | null; draftText?: string };
+    request: ConversationRewindRequest;
   }): Promise<void> {
     try {
       const project = this.config.onConversationRewind;
       if (!project) throw new Error('Product transcript rewind is unavailable');
-      await project(msg.boundary, { validateOnly: msg.phase === 'prepare' });
-      this.send({ type: 'conversation_rewind_response', requestId: msg.requestId, success: true });
+      const result: ConversationRewindResult = await project(msg.request);
+      this.send({
+        type: 'conversation_rewind_response',
+        requestId: msg.requestId,
+        success: true,
+        result,
+      });
     } catch (error) {
       this.send({
         type: 'conversation_rewind_response',

@@ -3,6 +3,10 @@
 // pos: Minimal identity contract between Pi-owned session trees and Storyflow-owned messages
 
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
+import type {
+  ConversationRewindBoundary,
+  ConversationRewindResult,
+} from '../../shared/src/agent/backend/types.ts';
 
 export const PRODUCT_REWIND_BOUNDARY_TYPE = 'storyflow-product-rewind-boundary';
 export const PRODUCT_TREE_HEAD_TYPE = 'storyflow-product-tree-head';
@@ -46,4 +50,56 @@ export function findProductRewindBoundary(
     return data as ProductRewindBoundary;
   }
   return undefined;
+}
+
+export async function executeProductRewind<T extends { cancelled: boolean }>(
+  boundary: ConversationRewindBoundary,
+  actions: {
+    prepare: (boundary: ConversationRewindBoundary) => Promise<Extract<ConversationRewindResult, { phase: 'prepared' }>>;
+    navigate: () => Promise<T>;
+    currentLeaf: () => string | null;
+    restoreLeaf: (leafId: string | null) => Promise<void>;
+    appendHead: () => void;
+    commit: (prepared: Extract<ConversationRewindResult, { phase: 'prepared' }>) => Promise<void>;
+    abort: (token: string) => Promise<void>;
+  },
+): Promise<T> {
+  const prepared = await actions.prepare(boundary);
+  const oldLeafId = actions.currentLeaf();
+  let forwardHeadPersisted = false;
+
+  const compensate = async (): Promise<unknown[]> => {
+    const failures: unknown[] = [];
+    try {
+      if (actions.currentLeaf() !== oldLeafId) await actions.restoreLeaf(oldLeafId);
+      if (forwardHeadPersisted) actions.appendHead();
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      await actions.abort(prepared.token);
+    } catch (error) {
+      failures.push(error);
+    }
+    return failures;
+  };
+
+  let result: T;
+  try {
+    result = await actions.navigate();
+    if (!result.cancelled) {
+      actions.appendHead();
+      forwardHeadPersisted = true;
+      await actions.commit(prepared);
+    }
+  } catch (error) {
+    const failures = [error, ...await compensate()];
+    if (failures.length > 1) throw new AggregateError(failures, 'Failed to rewind and restore Pi session');
+    throw error;
+  }
+  if (result.cancelled) {
+    const failures = await compensate();
+    if (failures.length) throw new AggregateError(failures, 'Failed to abort cancelled rewind');
+  }
+  return result;
 }

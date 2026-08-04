@@ -9,7 +9,7 @@ import { createScopedLogger, CONSOLE_LOGGER, type PlatformServices, type Logger 
 import { basename, dirname, join } from 'path'
 import { existsSync, readdirSync } from 'fs'
 import { readFile, writeFile, mkdir } from 'fs/promises'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { type AgentEvent, setPermissionMode, hydratePreviousPermissionMode, getPermissionModeDiagnostics, type PermissionMode, unregisterSessionScopedToolCallbacks, mergeSessionScopedToolCallbacks, AbortReason, type AuthRequest, type AuthResult, type CredentialAuthRequest, type BrowserPaneFns, generateConversationSummary } from '@craft-agent/shared/agent'
 import type { UserQuestionRequest, UserQuestionResponse } from '@craft-agent/session-tools-core'
 import {
@@ -23,7 +23,12 @@ import {
   type BackendHostRuntimeContext,
   type PostInitResult,
 } from '@craft-agent/shared/agent/backend'
-import type { ManagedModelAccess } from '@craft-agent/shared/agent/backend/types'
+import type {
+  ConversationRewindBoundary,
+  ConversationRewindRequest,
+  ConversationRewindResult,
+  ManagedModelAccess,
+} from '@craft-agent/shared/agent/backend/types'
 import { CONFIG_DIR, getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, getEnable1MContext, getExtendedPromptCache, normalizeLlmConnectionSlug, resetManagedAnthropicAuthEnvVars } from '@craft-agent/shared/config'
 import { PrivilegedExecutionBroker } from '@craft-agent/server-core/services'
 import { isValidWorkingDirectory } from '../utils/path-validation'
@@ -696,6 +701,13 @@ interface ManagedSession {
   agent: AgentInstance | null  // Lazy-loaded - null until first message
   messages: Message[]
   isProcessing: boolean
+  pendingConversationRewind?: {
+    token: string
+    boundary: ConversationRewindBoundary
+    revision: string
+    expiresAt: number
+  }
+  rewindCommitInProgress?: boolean
   /** Set when user requests stop - allows event loop to drain before clearing isProcessing */
   stopRequested?: boolean
   lastMessageAt: number
@@ -2962,15 +2974,9 @@ export class SessionManager implements ISessionManager {
       .slice(0, messageIndex)
       .some(message => message.role === 'user')
 
-    if (managed.isProcessing) {
-      await this.cancelProcessing(sessionId, true)
-      // cancel drains async; rewind needs a stable leaf now.
-      managed.stopRequested = true
-      managed.isProcessing = false
+    if (managed.isProcessing || managed.messageQueue.length > 0) {
+      throw new Error('Cannot rewind while this conversation is processing or has queued messages')
     }
-
-    managed.messageQueue = []
-    managed.streamingText = ''
 
     const sessionPath = getSessionStoragePath(managed.workspace.rootPath, sessionId)
     const hasPiTranscript = hasPersistedPiTranscript(sessionPath)
@@ -2982,58 +2988,133 @@ export class SessionManager implements ISessionManager {
       throw new Error(
         'Cannot rewind this message yet: provider session is not initialized. Send one message and try again.',
       )
+    } else {
+      const prepared = await this.handleConversationRewind(managed, {
+        phase: 'prepare',
+        boundary: { retainThroughMessageId: null },
+      })
+      if (prepared.phase !== 'prepared') throw new Error('Failed to prepare local conversation rewind')
+      await this.handleConversationRewind(managed, {
+        phase: 'commit',
+        token: prepared.token,
+        expectedRevision: prepared.revision,
+      })
     }
-
-    await this.projectConversationRewind(managed, {
-      retainThroughMessageId: hasPriorUserMessage
-        ? ([...managed.messages.slice(0, messageIndex)]
-            .reverse()
-            .find(message => message.role !== 'status')?.id ?? null)
-        : null,
-    }, { validateOnly: false })
 
     return { draftText }
   }
 
-  private async projectConversationRewind(
+  private conversationRewindRevision(managed: ManagedSession): string {
+    return createHash('sha256')
+      .update(JSON.stringify({ messages: managed.messages, queue: managed.messageQueue }))
+      .digest('hex')
+  }
+
+  private async handleConversationRewind(
     managed: ManagedSession,
-    boundary: { retainThroughMessageId: string | null; draftText?: string },
-    options: { validateOnly: boolean },
-  ): Promise<void> {
+    request: ConversationRewindRequest,
+  ): Promise<ConversationRewindResult> {
     await this.ensureMessagesLoaded(managed)
 
+    if (request.phase === 'abort') {
+      if (managed.pendingConversationRewind?.token === request.token) {
+        managed.pendingConversationRewind = undefined
+      }
+      return { phase: 'aborted' }
+    }
+
+    if (request.phase === 'prepare') {
+      const retainIndex = request.boundary.retainThroughMessageId === null
+        ? -1
+        : managed.messages.findIndex(message => message.id === request.boundary.retainThroughMessageId)
+      if (request.boundary.retainThroughMessageId !== null && retainIndex === -1) {
+        throw new Error(`Product rewind boundary ${request.boundary.retainThroughMessageId} is no longer on the active transcript`)
+      }
+      if (managed.isProcessing || managed.messageQueue.length > 0 || managed.rewindCommitInProgress) {
+        throw new Error('Cannot prepare rewind while this conversation is processing or has queued messages')
+      }
+      if (
+        managed.pendingConversationRewind
+        && managed.pendingConversationRewind.expiresAt > Date.now()
+      ) {
+        throw new Error('Another conversation rewind is already prepared')
+      }
+
+      const reservation = {
+        token: randomUUID(),
+        boundary: request.boundary,
+        revision: this.conversationRewindRevision(managed),
+        expiresAt: Date.now() + 30_000,
+      }
+      managed.pendingConversationRewind = reservation
+      return { phase: 'prepared', token: reservation.token, revision: reservation.revision }
+    }
+
+    const reservation = managed.pendingConversationRewind
+    if (!reservation || reservation.token !== request.token) {
+      throw new Error('Conversation rewind reservation is missing or no longer active')
+    }
+    managed.pendingConversationRewind = undefined
+    if (reservation.expiresAt <= Date.now()) {
+      throw new Error('Conversation rewind reservation expired')
+    }
+    if (
+      request.expectedRevision !== reservation.revision
+      || this.conversationRewindRevision(managed) !== reservation.revision
+    ) {
+      throw new Error('Conversation changed after rewind was prepared')
+    }
+
+    const boundary = reservation.boundary
     const retainIndex = boundary.retainThroughMessageId === null
       ? -1
       : managed.messages.findIndex(message => message.id === boundary.retainThroughMessageId)
     if (boundary.retainThroughMessageId !== null && retainIndex === -1) {
       throw new Error(`Product rewind boundary ${boundary.retainThroughMessageId} is no longer on the active transcript`)
     }
-    if (options.validateOnly) return
 
-    managed.messageQueue = []
-    managed.streamingText = ''
-    managed.messages = managed.messages.slice(0, retainIndex + 1)
-
-    const lastUser = [...managed.messages].reverse().find(message => message.role === 'user')
-    const lastFinalAssistant = [...managed.messages].reverse().find(
-      message => message.role === 'assistant' && !message.isIntermediate,
-    )
-    managed.lastMessageRole = lastFinalAssistant ? 'assistant' : lastUser ? 'user' : undefined
-    managed.lastFinalMessageId = lastFinalAssistant?.id
-    managed.messageCount = managed.messages.length
-    managed.preview = typeof lastUser?.content === 'string'
-      ? lastUser.content.slice(0, 200)
-      : ''
-
-    this.persistSession(managed)
-    await sessionPersistenceQueue.flush(managed.id)
-
-    this.sendEvent({
-      type: 'messages_rewound',
-      sessionId: managed.id,
+    const snapshot = {
       messages: managed.messages,
-      ...(boundary.draftText !== undefined ? { draftText: boundary.draftText } : {}),
-    }, managed.workspace.id)
+      messageQueue: managed.messageQueue,
+      streamingText: managed.streamingText,
+      lastMessageRole: managed.lastMessageRole,
+      lastFinalMessageId: managed.lastFinalMessageId,
+      messageCount: managed.messageCount,
+      preview: managed.preview,
+    }
+    managed.rewindCommitInProgress = true
+    try {
+      managed.messages = managed.messages.slice(0, retainIndex + 1)
+      const lastUser = [...managed.messages].reverse().find(message => message.role === 'user')
+      const lastFinalAssistant = [...managed.messages].reverse().find(
+        message => message.role === 'assistant' && !message.isIntermediate,
+      )
+      managed.lastMessageRole = lastFinalAssistant ? 'assistant' : lastUser ? 'user' : undefined
+      managed.lastFinalMessageId = lastFinalAssistant?.id
+      managed.messageCount = managed.messages.length
+      managed.preview = typeof lastUser?.content === 'string' ? lastUser.content.slice(0, 200) : ''
+
+      this.enqueuePersistStrict(managed)
+      await this.flushSession(managed.id)
+      this.sendEvent({
+        type: 'messages_rewound',
+        sessionId: managed.id,
+        messages: managed.messages,
+        ...(boundary.draftText !== undefined ? { draftText: boundary.draftText } : {}),
+      }, managed.workspace.id)
+      return { phase: 'committed' }
+    } catch (error) {
+      Object.assign(managed, snapshot)
+      try {
+        this.enqueuePersistStrict(managed)
+        await this.flushSession(managed.id)
+      } catch (restoreError) {
+        throw new AggregateError([error, restoreError], `Failed to rewind and restore product session ${managed.id}`)
+      }
+      throw error
+    } finally {
+      managed.rewindCommitInProgress = false
+    }
   }
 
   private async disposeManagedAgentRuntime(managed: ManagedSession, reason: string): Promise<void> {
@@ -3574,7 +3655,7 @@ export class SessionManager implements ISessionManager {
           onSdkSessionIdUpdate,
           onSdkSessionIdCleared,
           onBranchForkInvalidated,
-          onConversationRewind: (boundary, options) => this.projectConversationRewind(managed, boundary, options),
+          onConversationRewind: request => this.handleConversationRewind(managed, request),
           getRecoveryMessages,
           seedFreshSessionFromRecovery,
           getBranchFallbackMessages,
@@ -5694,6 +5775,12 @@ export class SessionManager implements ISessionManager {
     // Ensure messages are loaded before we try to add new ones
     await this.ensureMessagesLoaded(managed)
     acceptSpan.mark('messages.loaded')
+    if (managed.rewindCommitInProgress) {
+      acceptSpan.setMetadata('status', 'rewind-commit-in-progress')
+      acceptSpan.end()
+      acceptSpanEnded = true
+      throw new Error('Conversation rewind is committing; retry this message')
+    }
 
     const hideUserMessage = options?.hideUserMessage === true
     const modelMessage = options?.oneTimeContext?.trim()

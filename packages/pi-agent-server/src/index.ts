@@ -89,6 +89,11 @@ import type { LLMQueryRequest, LLMQueryResult } from '../../shared/src/agent/llm
 import { readJsonLines } from '../../shared/src/utils/jsonl.ts';
 import type { UserQuestionResponse } from '../../session-tools-core/src/types.ts';
 import { PI_TOOL_NAME_MAP, THINKING_TO_PI } from '../../shared/src/agent/backend/pi/constants.ts';
+import type {
+  ConversationRewindBoundary,
+  ConversationRewindRequest,
+  ConversationRewindResult,
+} from '../../shared/src/agent/backend/types.ts';
 import { getDefaultSummarizationModel } from '../../shared/src/config/models.ts';
 import { createWebFetchTool } from './tools/web-fetch.ts';
 import { resolveSearchProvider } from './tools/search/resolve-provider.ts';
@@ -107,6 +112,7 @@ import {
   PRODUCT_REWIND_BOUNDARY_TYPE,
   PRODUCT_TREE_HEAD_TYPE,
   createProductRewindBoundary,
+  executeProductRewind,
   findProductRewindBoundary,
   type PendingProductRewindBoundary,
   type ProductRewindBoundary,
@@ -203,7 +209,7 @@ type InboundMessage =
   | { type: 'set_thinking_level'; level: string }
   | { type: 'compact'; id: string; customInstructions?: string }
   | { type: 'rewind_user_message'; id: string; visibleUserMessageId: string }
-  | { type: 'conversation_rewind_response'; requestId: string; success: boolean; errorMessage?: string }
+  | { type: 'conversation_rewind_response'; requestId: string; success: boolean; result?: ConversationRewindResult; errorMessage?: string }
   | RuntimeConfigUpdateMessage
   | { type: 'steer'; message: string }
   | { type: 'token_update'; piAuth: { provider: string; credential: PiCredential } }
@@ -278,8 +284,7 @@ interface OutboundExtensionNotification {
 interface OutboundConversationRewindRequest {
   type: 'conversation_rewind_request';
   requestId: string;
-  phase: 'prepare' | 'commit';
-  boundary: Pick<ProductRewindBoundary, 'retainThroughMessageId' | 'draftText'>;
+  request: ConversationRewindRequest;
 }
 interface OutboundError { type: 'error'; message: string; code?: string }
 interface OutboundCredentialUpdate {
@@ -328,7 +333,10 @@ let lastReportedOAuthCredential = '';
 // Pending promises for async handshakes
 const pendingPreToolUse = new Map<string, { resolve: (response: { action: string; input?: Record<string, unknown>; reason?: string }) => void }>();
 const pendingToolExecutions = new Map<string, { resolve: (result: { content: string; isError: boolean }) => void }>();
-const pendingConversationRewinds = new Map<string, { resolve: () => void; reject: (error: Error) => void }>();
+const pendingConversationRewinds = new Map<string, {
+  resolve: (result: ConversationRewindResult) => void;
+  reject: (error: Error) => void;
+}>();
 const activeSubagentSessions = new Set<AgentSession>();
 
 // Proxy tool definitions from main process
@@ -797,27 +805,7 @@ async function ensureSession(): Promise<AgentSession> {
             retainThroughMessageId: boundary.retainThroughMessageId,
             ...(boundary.draftText !== undefined ? { draftText: boundary.draftText } : {}),
           };
-          await requestConversationRewind('prepare', projection);
-
-          const oldLeafId = session.sessionManager.getLeafId();
-          const result = await session.navigateTree(targetId, options);
-          if (result.cancelled) return { cancelled: true };
-          session.sessionManager.appendCustomEntry(PRODUCT_TREE_HEAD_TYPE, { v: 1 });
-
-          try {
-            await requestConversationRewind('commit', projection);
-          } catch (error) {
-            if (oldLeafId !== session.sessionManager.getLeafId()) {
-              if (oldLeafId) {
-                await session.navigateTree(oldLeafId, { summarize: false });
-              } else {
-                session.sessionManager.resetLeaf();
-              }
-              session.sessionManager.appendCustomEntry(PRODUCT_TREE_HEAD_TYPE, { v: 1 });
-            }
-            throw error;
-          }
-          return { cancelled: false };
+          return executeSessionRewind(session, targetId, options, projection);
         },
         switchSession: async () => ({ cancelled: true }),
         reload: () => session.reload(),
@@ -1058,15 +1046,54 @@ function requestHostTool(
 }
 
 function requestConversationRewind(
-  phase: 'prepare' | 'commit',
-  boundary: Pick<ProductRewindBoundary, 'retainThroughMessageId' | 'draftText'>,
-): Promise<void> {
-  const requestId = `rewind-${phase}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const result = new Promise<void>((resolve, reject) => {
+  request: ConversationRewindRequest,
+): Promise<ConversationRewindResult> {
+  const requestId = `rewind-${request.phase}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const result = new Promise<ConversationRewindResult>((resolve, reject) => {
     pendingConversationRewinds.set(requestId, { resolve, reject });
   });
-  send({ type: 'conversation_rewind_request', requestId, phase, boundary });
+  send({ type: 'conversation_rewind_request', requestId, request });
   return result;
+}
+
+async function executeSessionRewind(
+  session: AgentSession,
+  targetId: string,
+  options: Parameters<AgentSession['navigateTree']>[1],
+  boundary: ConversationRewindBoundary,
+) {
+  return executeProductRewind(boundary, {
+    prepare: async (preparedBoundary) => {
+      const result = await requestConversationRewind({ phase: 'prepare', boundary: preparedBoundary });
+      if (result.phase !== 'prepared') throw new Error(`Unexpected rewind prepare result: ${result.phase}`);
+      return result;
+    },
+    navigate: () => session.navigateTree(targetId, options),
+    currentLeaf: () => session.sessionManager.getLeafId(),
+    restoreLeaf: async (leafId) => {
+      if (!leafId) {
+        session.sessionManager.resetLeaf();
+        return;
+      }
+      const restored = await session.navigateTree(leafId, { summarize: false });
+      if (restored.cancelled) throw new Error('Pi rewind rollback was cancelled');
+    },
+    appendHead: () => {
+      session.sessionManager.appendCustomEntry(PRODUCT_TREE_HEAD_TYPE, { v: 1 });
+    },
+    commit: async ({ token, revision }) => {
+      const result = await requestConversationRewind({
+        phase: 'commit',
+        token,
+        expectedRevision: revision,
+      });
+      if (result.phase !== 'committed') throw new Error(`Unexpected rewind commit result: ${result.phase}`);
+    },
+    abort: async (token) => {
+      const result = await requestConversationRewind({ phase: 'abort', token });
+      if (result.phase !== 'aborted') throw new Error(`Unexpected rewind abort result: ${result.phase}`);
+    },
+  });
 }
 
 // ============================================================
@@ -1669,11 +1696,6 @@ async function handleRewindUserMessage(
   try {
     const session = await ensureSession();
 
-    // Pi navigateTree refuses mid-stream tree edits. Abort any active turn first.
-    if (session.isStreaming) {
-      await session.abort();
-    }
-
     const mappedBoundary = findProductRewindBoundary(
       session.sessionManager.getEntries(),
       { visibleUserMessageId: msg.visibleUserMessageId },
@@ -1691,8 +1713,16 @@ async function handleRewindUserMessage(
       throw new Error('Mapped rewind target is not on the active Pi branch');
     }
 
-    // Pi-native in-place rewind: same session file, leaf → parent of user message.
-    const result = await session.navigateTree(target.id, { summarize: false });
+    const projection = {
+      retainThroughMessageId: mappedBoundary.retainThroughMessageId,
+      ...(mappedBoundary.draftText !== undefined ? { draftText: mappedBoundary.draftText } : {}),
+    };
+    const result = await executeSessionRewind(
+      session,
+      target.id,
+      { summarize: false },
+      projection,
+    );
     if (result.cancelled) {
       send({
         type: 'rewind_user_message_result',
@@ -1702,7 +1732,6 @@ async function handleRewindUserMessage(
       });
       return;
     }
-    session.sessionManager.appendCustomEntry(PRODUCT_TREE_HEAD_TYPE, { v: 1 });
 
     send({
       type: 'rewind_user_message_result',
@@ -1892,8 +1921,15 @@ async function processMessage(msg: InboundMessage): Promise<void> {
       const pending = pendingConversationRewinds.get(msg.requestId);
       if (!pending) break;
       pendingConversationRewinds.delete(msg.requestId);
-      if (msg.success) pending.resolve();
-      else pending.reject(new Error(msg.errorMessage || 'Product transcript rewind failed'));
+      if (!msg.success) {
+        pending.reject(new Error(msg.errorMessage || 'Product transcript rewind failed'));
+        break;
+      }
+      if (!msg.result) {
+        pending.reject(new Error('Product transcript rewind returned no result'));
+        break;
+      }
+      pending.resolve(msg.result);
       break;
     }
 
