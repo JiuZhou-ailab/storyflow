@@ -27,5 +27,6 @@ describe('action overlay guards', () => {
     expect(appShellSource).toContain("useAction('nav.nextSession', () => cycleSession(1))")
     expect(appShellSource).toContain("useAction('nav.previousSession', () => cycleSession(-1))")
     expect(appShellSource).toContain('navigateToSessionInPanel(nextSessionId)')
+    expect(appShellSource).toContain('requestAnimationFrame(() => focusChatInputForSession(nextSessionId))')
   })
 })

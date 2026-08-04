@@ -1646,8 +1646,11 @@ function AppShellContent({
       ? direction === 1 ? 0 : sessionIds.length - 1
       : (currentIndex + direction + sessionIds.length) % sessionIds.length
     const nextSessionId = sessionIds[nextIndex]
-    if (nextSessionId) navigateToSessionInPanel(nextSessionId)
-  }, [activeWorkspaceId, focusedSessionId, navigateToSessionInPanel, session.selected, store])
+    if (nextSessionId) {
+      navigateToSessionInPanel(nextSessionId)
+      requestAnimationFrame(() => focusChatInputForSession(nextSessionId))
+    }
+  }, [activeWorkspaceId, focusChatInputForSession, focusedSessionId, navigateToSessionInPanel, session.selected, store])
 
   useAction('nav.nextSession', () => cycleSession(1))
   useAction('nav.previousSession', () => cycleSession(-1))
@@ -4506,12 +4509,11 @@ function AppShellContent({
   ) => {
     if (workspaceId === activeWorkspaceId) {
       navigateToSessionInPanel(sessionId)
-      return
-    }
-    if (onSelectProjectSession) {
+    } else if (onSelectProjectSession) {
       await onSelectProjectSession(workspaceId, sessionId)
     }
-  }, [activeWorkspaceId, navigateToSessionInPanel, onSelectProjectSession])
+    requestAnimationFrame(() => focusChatInputForSession(sessionId))
+  }, [activeWorkspaceId, focusChatInputForSession, navigateToSessionInPanel, onSelectProjectSession])
 
   const handleActivityProjectSessionCreate = React.useCallback(async (workspaceId: string) => {
     if (workspaceId === activeWorkspaceId) {

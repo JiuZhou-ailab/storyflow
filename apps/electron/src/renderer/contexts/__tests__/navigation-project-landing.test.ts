@@ -100,6 +100,8 @@ describe('project default navigation', () => {
     // cross-domain delegates to the runtime-switch primitive.
     expect(appShellSource).toContain('if (workspaceId === activeWorkspaceId)')
     expect(appShellSource).toContain('await onSelectProjectSession(workspaceId, sessionId)')
+    expect(appShellSource).toContain('requestAnimationFrame(() => focusChatInputForSession(sessionId))')
+    expect(sessionListSource).toContain('onFocusChatInput?.(row.item.id)')
     expect(appShellSource).toContain('const hideSessionListNavigator = isSkillsNavigation(navState)')
     expect(appShellSource).toContain('isProjectRuntime && isWritingNavigation(navState)')
     expect(appShellSource).toContain('isSessionsNavigation(navState) && (!showActivityRail || isAutoCompact)')

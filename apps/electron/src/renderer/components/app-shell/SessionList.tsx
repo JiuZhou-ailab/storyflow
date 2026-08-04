@@ -1,3 +1,7 @@
+// input: Session metadata, filters, navigation callbacks, and chat-input focus intent
+// output: Searchable keyboard-accessible session navigator and selection actions
+// pos: Conversation navigation surface between session metadata and the active chat panel
+
 import { useState, useCallback, useEffect, useMemo, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { useAtomValue, useSetAtom } from "jotai"
@@ -657,7 +661,8 @@ export function SessionList({
   const handleSelectSession = useCallback((row: SessionListRow, index: number) => {
     selectSession(row.item.id, index)
     navigateToSession(row.item.id)
-  }, [selectSession, navigateToSession])
+    onFocusChatInput?.(row.item.id)
+  }, [selectSession, navigateToSession, onFocusChatInput])
 
   const handleToggleSelect = useCallback((row: SessionListRow, index: number) => {
     focusZone('navigator', { intent: 'click', moveFocus: false })
