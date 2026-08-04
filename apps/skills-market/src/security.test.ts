@@ -4,11 +4,10 @@
 
 import { Database, type SQLQueryBindings } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { STORYFLOW_SKILL_MANIFEST_FILE } from '@craft-agent/shared/skills/marketplace'
+import { prepareMarketSkillBundle } from '@craft-agent/shared/skills/marketplace'
 import { SignJWT } from 'jose'
-import { METHODOLOGY_SEEDS } from './catalog.ts'
 import { handleRequest, type Env } from './index.ts'
-import { buildSeedBundle, validateMarketBundle } from './packages.ts'
+import { validateMarketBundle } from './packages.ts'
 
 const MARKET_KEY_ID = 'skills-market-test'
 const MARKET_SECRET = 'skills-market-secret'
@@ -182,26 +181,25 @@ function toSqlBinding(value: unknown): SQLQueryBindings {
 }
 
 async function bundleWithVersion(version: string, slug = 'community-method'): Promise<string> {
-  const seed = METHODOLOGY_SEEDS.find(item => item.distribution === 'installable')
-  if (!seed) throw new Error('Installable methodology fixture is missing')
-  const built = await buildSeedBundle(seed)
-  const bundle = structuredClone(built.bundle)
-  if (!bundle.resources.skills?.[0]) throw new Error('Skill fixture is missing')
-  bundle.resources.skills[0].slug = slug
-  const manifestFile = bundle.resources.skills?.[0]?.files.find(file => file.relativePath === STORYFLOW_SKILL_MANIFEST_FILE)
-  if (!manifestFile) throw new Error('Manifest fixture is missing')
-  const manifest = JSON.parse(new TextDecoder().decode(Uint8Array.from(
-    atob(manifestFile.contentBase64),
-    character => character.charCodeAt(0),
-  ))) as { version: string, slug: string }
-  manifest.version = version
-  manifest.slug = slug
-  const content = `${JSON.stringify(manifest, null, 2)}\n`
+  const content = `---\nname: ${slug}\ndescription: Community Skill\n---\n\n# Community Skill\n`
   const bytes = new TextEncoder().encode(content)
-  let binary = ''
-  for (const byte of bytes) binary += String.fromCharCode(byte)
-  manifestFile.contentBase64 = btoa(binary)
-  manifestFile.size = bytes.byteLength
+  const bundle = prepareMarketSkillBundle({
+    bundle: {
+      version: 1,
+      exportedAt: 1,
+      resources: { skills: [{
+        slug,
+        files: [{ relativePath: 'SKILL.md', contentBase64: btoa(content), size: bytes.byteLength }],
+      }] },
+    },
+    publication: {
+      version,
+      displayName: 'Community Skill',
+      summary: 'Community Skill',
+      license: 'Apache-2.0',
+      visibility: 'public',
+    },
+  }, { name: 'Community Author' })
   return (await validateMarketBundle(bundle)).raw
 }
 
@@ -352,7 +350,7 @@ describe('company visibility', () => {
 })
 
 describe('download popularity', () => {
-  test('counts successful bundle GETs and ignores HEAD without changing curated featured skills', async () => {
+  test('counts published bundle GETs and keeps curated recommendation order independent', async () => {
     const migration = [
       await Bun.file(new URL('../migrations/0001_initial.sql', import.meta.url)).text(),
       await Bun.file(new URL('../migrations/0002_ai_review.sql', import.meta.url)).text(),
@@ -360,21 +358,29 @@ describe('download popularity', () => {
       await Bun.file(new URL('../migrations/0004_download_metrics.sql', import.meta.url)).text(),
     ].join('\n')
     const d1 = new SqliteD1Database(migration)
-    const env: Env = { DB: d1 as unknown as NonNullable<Env['DB']> }
-    const bundleUrl = 'https://market.test/api/skills/world-system-map/versions/1.0.0/bundle'
+    const packages = new MemoryR2Bucket()
+    const env: Env = {
+      ...marketEnv,
+      DB: d1 as unknown as NonNullable<Env['DB']>,
+      PACKAGES: packages as unknown as NonNullable<Env['PACKAGES']>,
+      AI: { run: async () => ({ response: JSON.stringify({ approve: true, issues: [] }) }) },
+    }
+    const bundle = await bundleWithVersion('1.0.0', 'download-metric-skill')
+    expect((await handleRequest(await marketSubmission(bundle), env)).status).toBe(201)
+    const bundleUrl = 'https://market.test/api/skills/download-metric-skill/versions/1.0.0/bundle'
 
     await handleRequest(new Request(bundleUrl, { method: 'HEAD' }), env)
     await handleRequest(new Request(bundleUrl), env)
     await handleRequest(new Request(bundleUrl), env)
     const catalog = await handleRequest(new Request('https://market.test/api/skills'), env)
     const body = await catalog.json() as {
-      skills: Array<{ slug: string, downloadCount: number, featured?: boolean }>
+      skills: Array<{ slug: string, downloadCount: number, recommendation?: { order: number } }>
     }
 
-    expect(body.skills[0]).toMatchObject({ slug: 'world-system-map', downloadCount: 2, featured: true })
-    expect(body.skills.filter(skill => skill.featured)).toHaveLength(8)
+    expect(body.skills.slice(0, 3).map(skill => skill.slug)).toEqual(['find-skills', 'grill-me', 'frontend-design'])
+    expect(body.skills.find(skill => skill.slug === 'download-metric-skill')?.downloadCount).toBe(2)
     expect(d1.database.query('SELECT download_count FROM skill_metrics WHERE slug = ?')
-      .get('world-system-map')).toEqual({ download_count: 2 })
+      .get('download-metric-skill')).toEqual({ download_count: 2 })
     d1.database.close()
   })
 })

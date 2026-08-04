@@ -26,7 +26,7 @@ import { windowRuntimeWorkspaceAtom, windowWorkspaceIdAtom } from '@/atoms/sessi
 import { AddSkillPopover } from '@/components/app-shell/AddSkillPopover'
 import { PublishSkillDialog } from '@/components/app-shell/PublishSkillDialog'
 import { SkillRemovalDialog } from '@/components/app-shell/SkillMenu'
-import { resolveSkillVisual, SkillAvatar } from '@/components/ui/skill-avatar'
+import { SkillAvatar, SkillVisualAvatar, resolveSkillVisual } from '@/components/ui/skill-avatar'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -445,7 +445,6 @@ export default function SkillsHubPage() {
                   const installing = installingSlug === skill.slug
                   const installable = isInstallableMarketSkill(skill)
                   const visual = getMarketSkillVisual(skill)
-                  const SkillIcon = visual.icon
                   return (
                     <article key={`${skill.slug}@${skill.version}`} className="flex min-w-0 items-start gap-3 border-b border-border/60 py-4">
                       <button
@@ -454,9 +453,11 @@ export default function SkillsHubPage() {
                         className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         aria-label={t('skillsHub.viewDetail', { defaultValue: '查看 {{name}}', name: skill.displayName })}
                       >
-                        <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-lg', visual.className)}>
-                          <SkillIcon className="size-4" aria-hidden="true" />
-                        </span>
+                        {installed ? (
+                          <SkillAvatar skill={installed} size="md" workspaceId={workspaceId ?? undefined} />
+                        ) : (
+                          <SkillVisualAvatar visual={visual} size="md" alt={skill.displayName} />
+                        )}
                         <span className="min-w-0 flex-1">
                           <span className="flex min-w-0 items-baseline gap-2">
                             <span className="truncate text-sm font-medium">{skill.displayName}</span>
@@ -465,22 +466,36 @@ export default function SkillsHubPage() {
                           <span className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                             {skill.summary}
                           </span>
-                          <span className="mt-1 flex min-w-0 gap-2 overflow-hidden text-xs text-muted-foreground">
+                          <span className="mt-1 flex min-w-0 gap-2 overflow-hidden whitespace-nowrap text-xs text-muted-foreground">
                             <span className="font-medium text-foreground/75">
-                              {t('skillsHub.publishedBy', {
-                                defaultValue: '{{name}} 发布',
-                                name: skill.publisher.displayName,
-                              })}
+                              {skill.recommendation
+                                ? t('skillsHub.recommendedBy', {
+                                  defaultValue: '{{name}} 推荐',
+                                  name: skill.publisher.displayName,
+                                })
+                                : t('skillsHub.publishedBy', {
+                                  defaultValue: '{{name}} 发布',
+                                  name: skill.publisher.displayName,
+                                })}
                             </span>
                             <span className="shrink-0">{skill.visibility === 'company'
                               ? t('skillsHub.companyVisibility', '公司内部')
                               : t('skillsHub.publicVisibility', '公开')}</span>
                             <span className="inline-flex shrink-0 items-center gap-1">
-                              <Download className="size-3" aria-hidden="true" />
-                              {t('skillsHub.downloadCount', {
-                                defaultValue: '{{count}} 次下载',
-                                count: skill.downloadCount,
-                              })}
+                              {skill.recommendation ? (
+                                <>
+                                  <Zap className="size-3" aria-hidden="true" />
+                                  {skill.recommendation.label}
+                                </>
+                              ) : (
+                                <>
+                                  <Download className="size-3" aria-hidden="true" />
+                                  {t('skillsHub.downloadCount', {
+                                    defaultValue: '{{count}} 次下载',
+                                    count: skill.downloadCount,
+                                  })}
+                                </>
+                              )}
                             </span>
                             <span className="truncate">{t('skillsHub.contentSource', {
                               defaultValue: '来源：{{source}}',
@@ -595,7 +610,6 @@ function MarketSkillDetailDialog({
   if (!skill) return null
   const resolvedSkill = detail ?? skill
   const visual = getMarketSkillVisual(resolvedSkill)
-  const SkillIcon = visual.icon
   const instructions = detail ? stripSkillFrontmatter(detail.skillMarkdown) : ''
 
   return (
@@ -603,18 +617,18 @@ function MarketSkillDetailDialog({
       <DialogContent size="xl" className="max-h-[82vh] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0">
         <DialogHeader className="px-6 pb-5 pt-6 pr-12">
           <div className="flex items-start gap-3">
-            <div className={cn('flex size-11 shrink-0 items-center justify-center rounded-lg', visual.className)}>
-              <SkillIcon className="size-5" aria-hidden="true" />
-            </div>
+            <SkillVisualAvatar visual={visual} size="xl" alt={resolvedSkill.displayName} />
             <div className="min-w-0">
               <DialogTitle className="truncate">{resolvedSkill.displayName}</DialogTitle>
               <DialogDescription className="mt-1 leading-relaxed">{resolvedSkill.summary}</DialogDescription>
               <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                <span>{t('skillsHub.publishedBy', { defaultValue: '{{name}} 发布', name: resolvedSkill.publisher.displayName })}</span>
+                <span>{resolvedSkill.recommendation
+                  ? t('skillsHub.recommendedBy', { defaultValue: '{{name}} 推荐', name: resolvedSkill.publisher.displayName })
+                  : t('skillsHub.publishedBy', { defaultValue: '{{name}} 发布', name: resolvedSkill.publisher.displayName })}</span>
                 <span>{resolvedSkill.visibility === 'company'
                   ? t('skillsHub.companyVisibility', '公司内部')
                   : t('skillsHub.publicVisibility', '公开')}</span>
-                <span>{t('skillsHub.downloadCount', {
+                <span>{resolvedSkill.recommendation?.label ?? t('skillsHub.downloadCount', {
                   defaultValue: '{{count}} 次下载',
                   count: resolvedSkill.downloadCount,
                 })}</span>
@@ -665,10 +679,13 @@ function MarketSkillDetailDialog({
               <Download aria-hidden="true" />
               {installing ? t('skillsHub.installing', '安装中') : t('skillsHub.install', '安装')}
             </Button>
-          ) : (
-            <Button type="button" size="sm" variant="ghost" disabled>
-              {t('skillsHub.referenceOnly', '仅供参考')}
+          ) : detail?.manifest.author.url ? (
+            <Button type="button" size="sm" variant="outline" onClick={() => onOpenUrl(detail.manifest.author.url!)}>
+              <ExternalLink aria-hidden="true" />
+              {t('skillsHub.openSource', '查看来源')}
             </Button>
+          ) : (
+            <Button type="button" size="sm" variant="ghost" disabled>{t('skillsHub.referenceOnly', '仅供参考')}</Button>
           )}
         </div>
       </DialogContent>
@@ -681,7 +698,7 @@ function CatalogSkeleton() {
     <div className="grid grid-cols-1 gap-x-8 lg:grid-cols-2" aria-hidden="true">
       {Array.from({ length: 6 }, (_, index) => (
         <div key={index} className="flex items-start gap-3 border-b border-border/60 py-4">
-          <div className="size-10 shrink-0 animate-pulse rounded-lg bg-foreground/[0.06] motion-reduce:animate-none" />
+          <div className="size-5 shrink-0 animate-pulse rounded-[4px] bg-foreground/[0.06] ring-1 ring-border/30 motion-reduce:animate-none" />
           <div className="min-w-0 flex-1 space-y-2 py-0.5">
             <div className="h-3 w-2/5 animate-pulse rounded bg-foreground/[0.07] motion-reduce:animate-none" />
             <div className="h-2.5 w-full animate-pulse rounded bg-foreground/[0.05] motion-reduce:animate-none" />

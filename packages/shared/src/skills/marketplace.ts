@@ -56,6 +56,13 @@ export interface MarketSkillSummary {
   roots: string[]
   downloadCount: number
   featured?: boolean
+  recommendation?: {
+    order: number
+    label: string
+    sourceName: string
+    sourceUrl: string
+    snapshotAt: string
+  }
   publishedAt?: string
   sha256: string
 }
@@ -129,6 +136,7 @@ function parseMarketSkillSummary(value: unknown): MarketSkillSummary {
       || skill.downloadCount < 0
     ))
     || (skill.featured !== undefined && typeof skill.featured !== 'boolean')
+    || !isRecommendation(skill.recommendation)
     || (skill.publishedAt !== undefined && typeof skill.publishedAt !== 'string')
   ) {
     throw new Error('Skills Market returned an invalid Skill')
@@ -153,8 +161,25 @@ function parseMarketSkillSummary(value: unknown): MarketSkillSummary {
     roots: skill.roots as string[],
     downloadCount: typeof skill.downloadCount === 'number' ? skill.downloadCount : 0,
     ...(typeof skill.featured === 'boolean' ? { featured: skill.featured } : {}),
+    ...(skill.recommendation ? { recommendation: skill.recommendation as MarketSkillSummary['recommendation'] } : {}),
     ...(typeof skill.publishedAt === 'string' ? { publishedAt: skill.publishedAt } : {}),
     sha256: skill.sha256 as string,
+  }
+}
+
+function isRecommendation(value: unknown): boolean {
+  if (value === undefined) return true
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const recommendation = value as Record<string, unknown>
+  if (!Number.isSafeInteger(recommendation.order) || (recommendation.order as number) <= 0) return false
+  if (!['label', 'sourceName', 'sourceUrl', 'snapshotAt']
+    .every(key => typeof recommendation[key] === 'string' && Boolean((recommendation[key] as string).trim()))) return false
+  try {
+    const source = new URL(recommendation.sourceUrl as string)
+    return (source.protocol === 'https:' || source.protocol === 'http:')
+      && /^\d{4}-\d{2}-\d{2}$/.test(recommendation.snapshotAt as string)
+  } catch {
+    return false
   }
 }
 

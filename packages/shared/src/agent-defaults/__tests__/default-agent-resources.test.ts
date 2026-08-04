@@ -37,10 +37,12 @@ afterEach(() => {
 });
 
 describe('default agent resources', () => {
-  it('declares only the product Skills and Wangwen BigData Source', () => {
+  it('declares the authenticated product Skills and Wangwen BigData Source', () => {
     expect(DEFAULT_GLOBAL_AGENT_SKILL_SLUGS).toEqual([
       'find-skills',
       'skill-creator',
+      'anysearch',
+      'sn2s-novel-to-screenplay',
     ]);
     expect(DEFAULT_AGENT_SOURCE_SLUGS).toEqual(['wangwen-bigdata']);
     expect(isDefaultGlobalAgentSkillSlug('find-skills')).toBe(true);
@@ -61,10 +63,10 @@ describe('default agent resources', () => {
 
     const result = seedDefaultAgentResources({ assetsDir, agentRootDir });
 
-    expect(result.skills.imported).toEqual(['skill-creator']);
+    expect(result.skills.imported).toEqual(['skill-creator', 'anysearch']);
     expect(result.sources.skipped).toEqual(['demo-source']);
     expect(readFileSync(join(agentRootDir, 'skills', 'skill-creator', 'SKILL.md'), 'utf-8')).toBe('product skill');
-    expect(existsSync(join(agentRootDir, 'skills', 'anysearch'))).toBe(false);
+    expect(readFileSync(join(agentRootDir, 'skills', 'anysearch', 'SKILL.md'), 'utf-8')).toBe('optional skill');
     expect(readFileSync(existingSource, 'utf-8')).toBe('{"name":"User"}\n');
   });
 
@@ -112,7 +114,12 @@ describe('default agent resources', () => {
     }).not.toThrow();
 
     expect(result?.skills.imported).toEqual([]);
-    expect(result?.skills.failed).toEqual(['find-skills', 'skill-creator']);
+    expect(result?.skills.failed).toEqual([
+      'find-skills',
+      'skill-creator',
+      'anysearch',
+      'sn2s-novel-to-screenplay',
+    ]);
     expect(result?.sources.imported).toEqual([]);
     expect(result?.sources.failed).toEqual(['demo-source']);
   });

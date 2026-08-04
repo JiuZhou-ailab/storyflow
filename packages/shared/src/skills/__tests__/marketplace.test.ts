@@ -52,17 +52,31 @@ describe('Skills Market contract', () => {
       tags: ['故事'],
       roots: ['scenes'],
       downloadCount: 12,
+      recommendation: {
+        order: 1,
+        label: '2.8M installs on skills.sh',
+        sourceName: 'skills.sh',
+        sourceUrl: 'https://www.skills.sh/',
+        snapshotAt: '2026-08-04',
+      },
       sha256: 'a'.repeat(64),
       skillMarkdown: '---\nname: scene-sequel\ndescription: Scene workflow\n---\n\n# Instructions',
       manifest,
       downloadPath: '/api/skills/scene-sequel/versions/1.0.0/bundle',
       installUrl: 'craftagents://action/install-skill',
     }
-    expect(parseMarketSkillDetail(detail)).toMatchObject({ downloadCount: 12 })
+    expect(parseMarketSkillDetail(detail)).toMatchObject({
+      downloadCount: 12,
+      recommendation: { order: 1, sourceName: 'skills.sh' },
+    })
     expect(() => parseMarketSkillDetail({
       ...detail,
       manifest: { ...manifest, slug: 'other-skill' },
     })).toThrow('mismatched')
+    expect(() => parseMarketSkillDetail({
+      ...detail,
+      recommendation: { ...detail.recommendation, sourceUrl: 'file:///tmp/skills' },
+    })).toThrow('invalid Skill')
   })
 
   test('verifies registry bytes before returning a bundle', async () => {

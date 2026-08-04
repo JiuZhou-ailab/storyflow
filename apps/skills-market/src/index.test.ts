@@ -8,42 +8,49 @@ import { handleRequest, type Env } from './index.ts'
 const env: Env = {}
 
 describe('Skills Market worker', () => {
-  test('lists thirty researched methodologies', async () => {
+  test('lists twenty popular general Skills plus five Storyflow recommendations', async () => {
     const response = await handleRequest(new Request('https://market.test/api/skills'), env)
     const body = await response.json() as {
       total: number
-      skills: Array<{ sha256: string, downloadCount: number, featured?: boolean }>
+      skills: Array<{
+        slug: string
+        sha256: string
+        downloadCount: number
+        featured?: boolean
+        recommendation?: { order: number, label: string, sourceUrl: string }
+      }>
     }
     expect(response.status).toBe(200)
-    expect(body.total).toBe(30)
-    expect(body.skills.filter(skill => skill.sha256).length).toBe(13)
+    expect(body.total).toBe(25)
+    expect(body.skills.every(skill => skill.sha256 === '')).toBeTrue()
     expect(body.skills.every(skill => skill.downloadCount === 0)).toBeTrue()
-    expect(body.skills.filter(skill => skill.featured).length).toBe(8)
+    expect(body.skills.every(skill => skill.featured)).toBeTrue()
+    expect(body.skills.map(skill => skill.recommendation?.order)).toEqual(Array.from({ length: 25 }, (_, index) => index + 1))
+    expect(body.skills.slice(0, 3).map(skill => skill.slug)).toEqual(['find-skills', 'grill-me', 'frontend-design'])
+    const slugs = body.skills.map(skill => skill.slug)
+    for (const slug of [
+      'skill-creator', 'anysearch', 'sn2s-novel-to-screenplay',
+      'video-to-screenplay', 'discover-hit-dramas',
+    ]) expect(slugs).toContain(slug)
   })
 
-  test('serves deterministic install bundles', async () => {
-    const detail = await handleRequest(new Request('https://market.test/api/skills/world-system-map'), env)
-    const metadata = await detail.json() as { sha256: string, installUrl: string }
-    const bundle = await handleRequest(new Request('https://market.test/api/skills/world-system-map/versions/1.0.0/bundle'), env)
-    expect(bundle.headers.get('x-content-sha256')).toBe(metadata.sha256)
-    expect(metadata.installUrl).toStartWith('craftagents://action/install-skill?')
-  })
-
-  test('answers immutable bundle metadata without a response body', async () => {
-    const response = await handleRequest(new Request(
-      'https://market.test/api/skills/world-system-map/versions/1.0.0/bundle',
-      { method: 'HEAD' },
-    ), env)
-    expect(response.status).toBe(200)
-    expect(response.headers.get('x-content-sha256')).toHaveLength(64)
-    expect(await response.text()).toBe('')
-  })
-
-  test('keeps reference-only methods inert', async () => {
-    const detail = await handleRequest(new Request('https://market.test/api/skills/premise-snowball'), env)
-    const metadata = await detail.json() as { sha256: string, installUrl: string }
+  test('serves traceable recommendation detail without fabricating a package', async () => {
+    const detail = await handleRequest(new Request('https://market.test/api/skills/anysearch'), env)
+    const metadata = await detail.json() as {
+      sha256: string
+      installUrl: string
+      skillMarkdown: string
+      recommendation: { label: string, sourceUrl: string }
+    }
     expect(metadata.sha256).toBe('')
     expect(metadata.installUrl).toBe('')
+    expect(metadata.skillMarkdown).toContain('https://github.com/JiuZhou-ailab/storyflow')
+    expect(metadata.recommendation.label).toContain('34.4K')
+
+    const bundle = await handleRequest(new Request(
+      'https://market.test/api/skills/anysearch/versions/1.0.0/bundle',
+    ), env)
+    expect(bundle.status).toBe(404)
   })
 
   test('serves no standalone web product and requires a publish token', async () => {

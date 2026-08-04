@@ -9,8 +9,8 @@ import {
   type StoryflowSkillManifest,
 } from '@craft-agent/shared/skills/marketplace'
 import { decodeProtectedHeader, jwtVerify } from 'jose'
-import { METHODOLOGY_SEEDS, type MethodologySeed } from './catalog.ts'
-import { buildSeedBundle, validateMarketBundle } from './packages.ts'
+import { CURATED_SKILLS, type CuratedSkill } from './catalog.ts'
+import { validateMarketBundle } from './packages.ts'
 import { ReviewInputError, ReviewUnavailableError, reviewSkillBundle } from './review.ts'
 
 interface R2ObjectLike {
@@ -92,7 +92,7 @@ export default {
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url)
   if (request.method === 'OPTIONS') return withCors(new Response(null, { status: 204 }))
-  if (url.pathname === '/health') return json({ status: 'ok', catalog: METHODOLOGY_SEEDS.length })
+  if (url.pathname === '/health') return json({ status: 'ok', catalog: CURATED_SKILLS.length })
 
   try {
     if (url.pathname === '/api/skills' && request.method === 'GET') return await listSkills(request, url, env)
@@ -128,10 +128,10 @@ async function listSkills(request: Request, url: URL, env: Env): Promise<Respons
   const tag = (url.searchParams.get('tag') ?? '').trim().toLocaleLowerCase()
   const distribution = url.searchParams.get('distribution')
   const downloadCounts = await loadDownloadCounts(env)
-  const seedSummaries = await Promise.all(METHODOLOGY_SEEDS.map(seed => seedSummary(
+  const seedSummaries = CURATED_SKILLS.map(seed => seedSummary(
     seed,
     downloadCounts.get(seed.slug) ?? 0,
-  )))
+  ))
   const published = await loadPublishedSummaries(env, identity?.organizationId, downloadCounts)
   const bySlug = new Map<string, MarketSkillSummary>(seedSummaries.map(item => [item.slug, item]))
   for (const item of published) bySlug.set(item.slug, item)
@@ -153,7 +153,7 @@ async function listSkills(request: Request, url: URL, env: Env): Promise<Respons
 async function getSkillDetail(slug: string, request: Request, env: Env): Promise<Response> {
   const identity = await readMarketIdentity(request, env, 'skills:read', false)
   const downloadCount = await loadDownloadCount(env, slug)
-  const seed = METHODOLOGY_SEEDS.find(item => item.slug === slug)
+  const seed = CURATED_SKILLS.find(item => item.slug === slug)
   if (seed) {
     const detail = await seedDetail(seed, downloadCount)
     return json(detail, 200, { 'cache-control': PUBLIC_CACHE })
@@ -184,13 +184,6 @@ async function downloadBundle(
   const identity = request
     ? await readMarketIdentity(request, env, 'skills:read', false)
     : null
-  const seed = METHODOLOGY_SEEDS.find(item => item.slug === slug)
-  if (seed) {
-    if (version !== '1.0.0' || seed.distribution !== 'installable') throw new RequestError(404, 'Skill version not found')
-    const built = await buildSeedBundle(seed)
-    if (!headOnly) await recordDownload(env, slug)
-    return bundleResponse(built.raw, built.sha256, `${slug}-${version}.storyflow-skill.json`, headOnly)
-  }
   const row = await loadPublishedRow(slug, version, env, identity?.organizationId)
   if (!row) throw new RequestError(404, 'Skill version not found')
   const object = await env.PACKAGES?.get(row.object_key)
@@ -226,7 +219,7 @@ async function submitSkill(request: Request, url: URL, env: Env): Promise<Respon
   } catch (error) {
     throw new RequestError(400, error instanceof Error ? error.message : 'Invalid Skill package')
   }
-  if (METHODOLOGY_SEEDS.some(seed => seed.slug === validated.manifest.slug)) {
+  if (CURATED_SKILLS.some(seed => seed.slug === validated.manifest.slug)) {
     throw new RequestError(409, 'This Skill slug is reserved by the curated catalog')
   }
   let review
@@ -294,45 +287,40 @@ async function submitSkill(request: Request, url: URL, env: Env): Promise<Respon
   }, 201)
 }
 
-async function seedSummary(seed: MethodologySeed, downloadCount: number): Promise<MarketSkillSummary> {
-  const built = seed.distribution === 'installable' ? await buildSeedBundle(seed) : null
+function seedSummary(seed: CuratedSkill, downloadCount: number): MarketSkillSummary {
   return {
     slug: seed.slug,
     version: '1.0.0',
     displayName: seed.displayName,
     summary: seed.summary,
     author: seed.sourceName,
-    publisher: { id: 'storyflow', displayName: 'Storyflow' },
+    publisher: { id: 'storyflow-curation', displayName: 'Storyflow 精品推荐' },
     visibility: 'public',
     license: seed.license,
-    tags: [...seed.tags, seed.distribution === 'installable' ? '可安装' : '仅参考'],
-    roots: [...seed.roots],
+    tags: [...seed.tags, '上游来源'],
+    roots: [],
     downloadCount,
-    featured: seed.featured,
-    publishedAt: '2026-07-17T00:00:00.000Z',
-    sha256: built?.sha256 ?? '',
+    featured: true,
+    recommendation: seed.recommendation,
+    publishedAt: `${seed.recommendation.snapshotAt}T00:00:00.000Z`,
+    sha256: '',
   }
 }
 
-async function seedDetail(seed: MethodologySeed, downloadCount: number): Promise<MarketSkillDetail> {
-  const summary = await seedSummary(seed, downloadCount)
-  if (seed.distribution === 'installable') {
-    const built = await buildSeedBundle(seed)
-    return {
-      ...summary,
-      skillMarkdown: built.skillMarkdown,
-      manifest: built.manifest,
-      downloadPath: `/api/skills/${encodeURIComponent(seed.slug)}/versions/1.0.0/bundle`,
-      installUrl: buildSkillInstallDeepLink(summary),
-    }
-  }
+function seedDetail(seed: CuratedSkill, downloadCount: number): MarketSkillDetail {
+  const summary = seedSummary(seed, downloadCount)
   const manifest: StoryflowSkillManifest = {
     schemaVersion: 1, slug: seed.slug, version: '1.0.0', displayName: seed.displayName,
     summary: seed.summary, license: seed.license, author: { name: seed.sourceName, url: seed.sourceUrl },
-    tags: seed.tags, methodology: { sourceName: seed.sourceName, sourceUrl: seed.sourceUrl, adaptation: 'Reference-only catalog entry.' },
-    contributes: { projectLayout: { roots: seed.roots.map((path, order) => ({ path, order })) } },
+    tags: seed.tags,
+    methodology: {
+      sourceName: seed.recommendation.sourceName,
+      sourceUrl: seed.recommendation.sourceUrl,
+      adaptation: `Popularity snapshot ${seed.recommendation.snapshotAt}: ${seed.recommendation.label}`,
+    },
   }
-  return { ...summary, skillMarkdown: '', manifest, downloadPath: '', installUrl: '' }
+  const skillMarkdown = `---\nname: ${seed.slug}\ndescription: ${JSON.stringify(seed.summary)}\n---\n\n# ${seed.displayName}\n\n${seed.summary}\n\n- 上游：${seed.sourceUrl}\n- 推荐依据：${seed.recommendation.label}\n- 数据快照：${seed.recommendation.snapshotAt}\n\n安装或复用前，请检查上游许可证、脚本和权限。\n`
+  return { ...summary, skillMarkdown, manifest, downloadPath: '', installUrl: '' }
 }
 
 async function loadPublishedSummaries(
@@ -395,7 +383,9 @@ function publishedRowSummary(
 
 function sortMarketSkills(skills: MarketSkillSummary[]): MarketSkillSummary[] {
   return [...skills].sort((left, right) => (
-    right.downloadCount - left.downloadCount
+    (left.recommendation?.order ?? Number.MAX_SAFE_INTEGER)
+      - (right.recommendation?.order ?? Number.MAX_SAFE_INTEGER)
+    || right.downloadCount - left.downloadCount
     || (right.publishedAt ?? '').localeCompare(left.publishedAt ?? '')
     || left.slug.localeCompare(right.slug)
   ))

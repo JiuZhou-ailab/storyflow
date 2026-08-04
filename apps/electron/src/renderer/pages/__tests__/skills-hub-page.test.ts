@@ -50,11 +50,12 @@ describe('SkillsHubPage contracts', () => {
     expect(source).toContain('currentWorkspaceId.current !== targetWorkspaceId')
   })
 
-  it('keeps reference-only entries visible but disables installation', () => {
+  it('keeps reference-only recommendations visible and links to their reviewed source', () => {
     expect(source).toContain('window.electronAPI.listSkillsFromMarket()')
     expect(source).not.toContain('DEFAULT_SKILLS_MARKET_ORIGIN')
     expect(source).toContain('isInstallableMarketSkill(skill)')
     expect(source).toContain("t('skillsHub.referenceOnly', '仅供参考')")
+    expect(source).toContain("t('skillsHub.openSource', '查看来源')")
     expect(isInstallableMarketSkill(marketSkill)).toBe(true)
     expect(isInstallableMarketSkill({ ...marketSkill, sha256: '' })).toBe(false)
   })
@@ -101,14 +102,15 @@ describe('SkillsHubPage contracts', () => {
     expect(stripSkillFrontmatter('---\nname: test\n---\n\n# Instructions')).toBe('# Instructions')
   })
 
-  it('uses stable semantic visuals instead of one catalog icon', () => {
-    expect(source).toContain("import { resolveSkillVisual, SkillAvatar } from '@/components/ui/skill-avatar'")
+  it('uses the installed Skill avatar UI for catalog icons', () => {
+    expect(source).toContain('SkillAvatar, SkillVisualAvatar')
     expect(source).toContain('return resolveSkillVisual([skill.slug, skill.displayName, ...skill.tags, ...skill.roots])')
-    expect(source).toContain('const visual = getMarketSkillVisual(skill)')
-    expect(source).toContain('<SkillIcon className="size-4"')
+    expect(source).toContain('<SkillVisualAvatar')
+    expect(source).not.toContain("'flex size-10 shrink-0 items-center justify-center rounded-lg'")
     expect(skillAvatarSource).toContain('const SKILL_VISUALS')
-    expect(skillAvatarSource).toContain('fallbackIcon={visual.icon}')
-    expect(skillAvatarSource).toContain('fallback={<FallbackIcon')
+    expect(skillAvatarSource).toContain('export function SkillVisualAvatar')
+    expect(skillAvatarSource).toContain('<SkillVisualAvatar')
+    expect(skillAvatarSource.match(/<EntityIcon/g)).toHaveLength(1)
   })
 
   it('manages each installed Skill in place and confirms removal through the shared dialog', () => {
@@ -133,10 +135,12 @@ describe('SkillsHubPage contracts', () => {
     expect(source).toContain("skill.visibility === 'company'")
     expect(source).toContain("t('skillsHub.publishedBy'")
     expect(source).toContain("t('skillsHub.contentSource'")
+    expect(source).toContain('flex min-w-0 gap-2 overflow-hidden whitespace-nowrap text-xs')
   })
 
-  it('shows Market download counts while keeping featured ranking server-owned', () => {
+  it('separates external recommendation evidence from Market download counts', () => {
     expect(source).toContain('skill.downloadCount')
+    expect(source).toContain('skill.recommendation.label')
     expect(source).toContain("t('skillsHub.downloadCount'")
     expect(filterMarketSkills([marketSkill], '', 'featured')).toEqual([marketSkill])
   })

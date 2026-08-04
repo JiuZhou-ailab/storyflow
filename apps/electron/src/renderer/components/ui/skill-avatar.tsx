@@ -19,7 +19,7 @@ import {
 import { EntityIcon } from '@/components/ui/entity-icon'
 import { useEntityIcon } from '@/lib/icon-cache'
 import { cn } from '@/lib/utils'
-import type { IconSize } from '@craft-agent/shared/icons'
+import type { IconSize, ResolvedEntityIcon } from '@craft-agent/shared/icons'
 import type { LoadedSkill } from '../../../shared/types'
 
 interface SkillAvatarProps {
@@ -49,10 +49,49 @@ const SKILL_VISUALS: Array<{
   { keywords: ['灵感', '创意', 'idea', 'ideation'], icon: Lightbulb, className: 'bg-orange-500/10 text-orange-700 dark:text-orange-300' },
 ]
 
-export function resolveSkillVisual(searchableParts: Array<string | undefined>): { icon: LucideIcon, className: string } {
+export interface SkillVisual {
+  icon: LucideIcon
+  className: string
+}
+
+interface SkillVisualAvatarProps {
+  visual: SkillVisual
+  icon?: ResolvedEntityIcon
+  size?: IconSize
+  fluid?: boolean
+  className?: string
+  alt?: string
+}
+
+const FALLBACK_SKILL_ICON: ResolvedEntityIcon = { kind: 'fallback', colorable: false }
+
+export function resolveSkillVisual(searchableParts: Array<string | undefined>): SkillVisual {
   const searchable = searchableParts.filter(Boolean).join(' ').toLocaleLowerCase()
   return SKILL_VISUALS.find(item => item.keywords.some(keyword => searchable.includes(keyword)))
     ?? { icon: Sparkles, className: 'bg-foreground/[0.05] text-muted-foreground' }
+}
+
+export function SkillVisualAvatar({
+  visual,
+  icon = FALLBACK_SKILL_ICON,
+  size = 'md',
+  fluid,
+  className,
+  alt,
+}: SkillVisualAvatarProps) {
+  const FallbackIcon = visual.icon
+
+  return (
+    <EntityIcon
+      icon={icon}
+      size={size}
+      fallbackIcon={visual.icon}
+      fallback={<FallbackIcon className="h-full w-full p-0.5" />}
+      alt={alt}
+      className={cn(icon.kind === 'fallback' && visual.className, className)}
+      containerClassName={fluid ? 'h-full w-full' : undefined}
+    />
+  )
 }
 
 export function SkillAvatar({ skill, size = 'md', fluid, className, workspaceId }: SkillAvatarProps) {
@@ -69,17 +108,15 @@ export function SkillAvatar({ skill, size = 'md', fluid, className, workspaceId 
     skill.metadata.name,
     skill.metadata.description,
   ])
-  const FallbackIcon = visual.icon
 
   return (
-    <EntityIcon
+    <SkillVisualAvatar
+      visual={visual}
       icon={icon}
       size={size}
-      fallbackIcon={visual.icon}
-      fallback={<FallbackIcon className="h-full w-full p-0.5" />}
+      fluid={fluid}
+      className={className}
       alt={skill.metadata.displayName ?? skill.metadata.name}
-      className={cn(icon.kind === 'fallback' && visual.className, className)}
-      containerClassName={fluid ? 'h-full w-full' : undefined}
     />
   )
 }

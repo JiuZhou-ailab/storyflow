@@ -1,6 +1,6 @@
-// input: Curated methodology seeds or untrusted single-Skill ResourceBundle JSON
-// output: Deterministic downloadable bundles and strict text-only package validation
-// pos: Portable package boundary shared by catalog downloads and contribution intake
+// input: Untrusted single-Skill ResourceBundle JSON
+// output: Strict text-only package validation for published Skills
+// pos: Portable publication trust boundary; curated recommendations never become synthetic packages
 
 import type { ResourceBundle } from '@craft-agent/shared/resources'
 import {
@@ -9,9 +9,7 @@ import {
   validateStoryflowSkillManifest,
   sha256Hex,
 } from '@craft-agent/shared/skills/marketplace'
-import type { MethodologySeed } from './catalog.ts'
 
-const FIXED_SEED_EXPORT_TIME = Date.parse('2026-07-17T00:00:00.000Z')
 const MAX_PACKAGE_BYTES = 5 * 1024 * 1024
 const MAX_FILE_BYTES = 512 * 1024
 const MAX_FILES = 128
@@ -25,48 +23,6 @@ export interface ValidatedMarketBundle {
   manifest: StoryflowSkillManifest
   skillMarkdown: string
   files: ReadonlyMap<string, string>
-}
-
-export async function buildSeedBundle(seed: MethodologySeed): Promise<ValidatedMarketBundle> {
-  if (seed.distribution !== 'installable') throw new Error('This methodology is reference-only')
-  const manifest: StoryflowSkillManifest = {
-    schemaVersion: 1,
-    slug: seed.slug,
-    version: '1.0.0',
-    displayName: seed.displayName,
-    summary: seed.summary,
-    license: seed.license,
-    author: { name: 'Storyflow Community Seed', url: seed.sourceUrl },
-    tags: [...seed.tags],
-    methodology: {
-      sourceName: seed.sourceName,
-      sourceUrl: seed.sourceUrl,
-      adaptation: 'Original Storyflow adaptation. Follow the linked source for the upstream method and license.',
-    },
-    contributes: {
-      projectLayout: {
-        roots: seed.roots.map((path, order) => ({ path, order, create: true })),
-      },
-    },
-  }
-  const skillMarkdown = buildSkillMarkdown(seed)
-  const sourceReference = buildSourceReference(seed)
-  const bundle: ResourceBundle = {
-    version: 1,
-    exportedAt: FIXED_SEED_EXPORT_TIME,
-    sourceWorkspace: 'Storyflow Skills Market',
-    resources: {
-      skills: [{
-        slug: seed.slug,
-        files: [
-          textBundleFile('SKILL.md', skillMarkdown),
-          textBundleFile(STORYFLOW_SKILL_MANIFEST_FILE, `${JSON.stringify(manifest, null, 2)}\n`),
-          textBundleFile('references/source.md', sourceReference),
-        ],
-      }],
-    },
-  }
-  return validateMarketBundle(JSON.stringify(bundle))
 }
 
 export async function validateMarketBundle(value: string | unknown): Promise<ValidatedMarketBundle> {
@@ -131,59 +87,6 @@ export async function validateMarketBundle(value: string | unknown): Promise<Val
     skillMarkdown,
     files: decoded,
   }
-}
-
-function buildSkillMarkdown(seed: MethodologySeed): string {
-  const roots = seed.roots.map(path => `- \`${path}/\``).join('\n')
-  return `---
-name: ${seed.slug}
-description: ${JSON.stringify(seed.summary)}
-metadata:
-  displayName: ${JSON.stringify(seed.displayName)}
----
-
-# ${seed.displayName}
-
-${seed.method}
-
-## 使用流程
-
-1. 先确认用户当前任务、已有材料和期望产物；缺失信息会改变结论时再追问。
-2. 第一次使用时，只在当前项目中按需创建下列目录，不移动或覆盖已有内容：
-${roots}
-3. 将事实、观察、判断和待验证项分开记录；不要用方法论术语替代真实证据。
-4. 每轮只维护与当前任务直接相关的文件，输出变更摘要和下一步验证信号。
-5. 如果目录与项目已有结构冲突，优先复用现有结构并说明映射，不创建平行真相源。
-
-## 完成标准
-
-- 产物能从项目文件追溯到输入与判断依据。
-- 新目录服务于真实工作流，而不是为了展示方法论而存在。
-- Agent 停止后，用户仍能独立理解并继续维护这些文件。
-`
-}
-
-function buildSourceReference(seed: MethodologySeed): string {
-  return `# 来源与改造说明
-
-- 上游方法：${seed.sourceName}
-- 来源：${seed.sourceUrl}
-- 许可：${seed.license}
-- Storyflow 改造：本 Skill 使用原创措辞，将方法抽象成项目文件、证据记录和 Agent 执行流程；不复制上游模板、图示或示例。
-`
-}
-
-function textBundleFile(relativePath: string, content: string) {
-  const bytes = new TextEncoder().encode(content)
-  return { relativePath, contentBase64: encodeBase64(bytes), size: bytes.byteLength }
-}
-
-function encodeBase64(bytes: Uint8Array): string {
-  let binary = ''
-  for (let index = 0; index < bytes.length; index += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000))
-  }
-  return btoa(binary)
 }
 
 function decodeUtf8Base64(value: string): string {

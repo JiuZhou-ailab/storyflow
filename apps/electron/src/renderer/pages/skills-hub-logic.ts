@@ -30,7 +30,16 @@ export function filterMarketSkills(
     if (view === 'company' && skill.visibility !== 'company') return false
     if (!normalizedQuery && view === 'featured' && !skill.featured) return false
     if (!normalizedQuery) return true
-    return [skill.displayName, skill.summary, skill.author, skill.publisher.displayName, skill.tags.join(' ')]
+    return [
+      skill.displayName,
+      skill.summary,
+      skill.author,
+      skill.publisher.displayName,
+      skill.tags.join(' '),
+      skill.recommendation?.label,
+      skill.recommendation?.sourceName,
+    ]
+      .filter(Boolean)
       .join(' ')
       .toLocaleLowerCase()
       .includes(normalizedQuery)

@@ -6,7 +6,7 @@ actions; this Worker never renders a web product or executes installed Skills.
 
 | Path | Role |
 | --- | --- |
-| `src/catalog.ts` | Curated methodology seeds with provenance and distribution policy. |
+| `src/catalog.ts` | Dated, source-linked recommendations from public popularity signals and Storyflow's real Skill inventory. |
 | `src/packages.ts` | Deterministic single-Skill ResourceBundle validation. |
 | `src/review.ts` | Synchronous Workers AI admission decision and output validation. |
 | `src/index.ts` | HTTP, bearer identity, D1 publication, and R2 distribution. |
@@ -23,10 +23,10 @@ author. A publication may be `public`, or `company` when the short-lived bearer
 token contains an organization claim. Anonymous readers see public Skills;
 authenticated company members additionally see Skills from their organization.
 
-Each successfully served bundle `GET` atomically increments that Skill's D1
-download counter; metadata-only `HEAD` requests do not. The catalog exposes the
-counter and derives `Featured` from the eight most-downloaded installable Skills,
-so curated and member-published Skills share one popularity rule.
+Each successfully served published bundle `GET` atomically increments that
+Skill's D1 download counter; metadata-only `HEAD` requests do not. Curated
+recommendations keep their external, dated popularity evidence separate from
+Storyflow Market downloads and never expose synthetic install bundles.
 
 Invalid packages return `400`; AI rejection returns `422` without writes; an
 unavailable or malformed review returns `503` without writes. Approval returns
