@@ -99,6 +99,7 @@ import { WorkingDirectoryBadge } from './WorkingDirectoryBadge'
 import { resolveContextUsage } from './context-usage'
 import {
   MAX_DROPPED_ATTACHMENT_FILES,
+  assignSharedInputHandle,
   getPrimaryInputAction,
   getAttachmentBatchLimitError,
   groupModelMenuOptions,
@@ -700,9 +701,18 @@ export function FreeFormInput({
   const sourceButtonRef = React.useRef<HTMLButtonElement>(null)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
-  // Merge refs for RichTextInput
-  const internalInputRef = React.useRef<RichTextInputHandle>(null)
-  const richInputRef = externalInputRef || internalInputRef
+  // Always keep a local handle for slash/@ caret geometry. Parent may pass a
+  // shared textareaRef across session remounts (AnimatePresence mode="sync");
+  // writing that shared ref directly would let the exiting instance null the
+  // survivor and open menus off-screen at (0, 0).
+  const richInputRef = React.useRef<RichTextInputHandle | null>(null)
+  const assignRichInputRef = React.useCallback((handle: RichTextInputHandle | null) => {
+    assignSharedInputHandle(
+      richInputRef,
+      externalInputRef as React.MutableRefObject<RichTextInputHandle | null> | undefined,
+      handle,
+    )
+  }, [externalInputRef])
 
   // Track last caret position for focus restoration (e.g., after permission mode popover closes)
   const lastCaretPositionRef = React.useRef<number | null>(null)
@@ -2001,7 +2011,7 @@ export function FreeFormInput({
         {/* Rich Text Input with inline mention badges */}
         {showTextInput && (
         <RichTextInput
-          ref={richInputRef}
+          ref={assignRichInputRef}
           value={input}
           onChange={handleInputChange}
           onInput={handleRichInput}

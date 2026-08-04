@@ -7,6 +7,7 @@ import { readFileSync } from 'fs'
 import { THINKING_LEVELS } from '@craft-agent/shared/agent/thinking-levels'
 import {
   MAX_DROPPED_ATTACHMENT_FILES,
+  assignSharedInputHandle,
   collectDroppedFiles,
   getAttachmentBatchLimitError,
   getPrimaryInputAction,
@@ -416,5 +417,39 @@ describe('FreeFormInput render hot paths', () => {
     expect(handlerSource).toContain("if (inlineMention.isOpen || textBeforeCursor.includes('@'))")
     expect(handlerSource).toContain("if (inlineLabel.isOpen || textBeforeCursor.includes('#'))")
     expect(handlerSource).not.toContain('// Update inline slash command state\n    inlineSlash.handleInputChange(nextValue, cursorPosition)')
+  })
+
+  it('keeps a local rich-text handle so session remounts cannot null the shared parent ref', () => {
+    const source = readFileSync(new URL('../FreeFormInput.tsx', import.meta.url), 'utf-8')
+    expect(source).toContain('assignSharedInputHandle')
+    expect(source).toContain('ref={assignRichInputRef}')
+    expect(source).not.toContain('const richInputRef = externalInputRef || internalInputRef')
+  })
+})
+
+describe('assignSharedInputHandle', () => {
+  it('preserves the surviving instance when the exiting instance unmounts', () => {
+    const shared = { current: null as string | null }
+    const exiting = { current: null as string | null }
+    const surviving = { current: null as string | null }
+
+    assignSharedInputHandle(exiting, shared, 'exit-handle')
+    assignSharedInputHandle(surviving, shared, 'live-handle')
+    expect(shared.current).toBe('live-handle')
+
+    // AnimatePresence unmount order: exiting instance clears after survivor mounted.
+    assignSharedInputHandle(exiting, shared, null)
+    expect(shared.current).toBe('live-handle')
+    expect(exiting.current).toBeNull()
+    expect(surviving.current).toBe('live-handle')
+  })
+
+  it('clears the shared ref when the owning instance unmounts alone', () => {
+    const shared = { current: null as string | null }
+    const only = { current: null as string | null }
+
+    assignSharedInputHandle(only, shared, 'only-handle')
+    assignSharedInputHandle(only, shared, null)
+    expect(shared.current).toBeNull()
   })
 })

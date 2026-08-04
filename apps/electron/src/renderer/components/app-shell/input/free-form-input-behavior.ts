@@ -229,3 +229,26 @@ export function shouldShowTextInput(_input: {
 }): boolean {
   return true
 }
+
+/**
+ * Publish a local input handle into a parent-shared ref without clobbering a
+ * sibling instance. AnimatePresence mode="sync" can mount two FreeFormInputs
+ * that share ChatDisplay.textareaRef; unmount of the exiting one must not null
+ * the survivor's handle or slash/@ menus lose caret geometry and open at (0,0).
+ */
+export function assignSharedInputHandle<T>(
+  internal: { current: T | null },
+  external: { current: T | null } | null | undefined,
+  handle: T | null,
+): void {
+  const previous = internal.current
+  internal.current = handle
+  if (!external) return
+  if (handle) {
+    external.current = handle
+    return
+  }
+  if (external.current === previous) {
+    external.current = null
+  }
+}
