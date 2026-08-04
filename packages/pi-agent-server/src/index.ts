@@ -278,6 +278,11 @@ interface OutboundConversationRewindRequest {
   boundary: Pick<ProductRewindBoundary, 'retainThroughMessageId' | 'draftText'>;
 }
 interface OutboundError { type: 'error'; message: string; code?: string }
+interface OutboundCredentialUpdate {
+  type: 'credential_update';
+  provider: string;
+  credential: Extract<PiCredential, { type: 'oauth' }>;
+}
 
 type OutboundMessage =
   | OutboundReady
@@ -292,6 +297,7 @@ type OutboundMessage =
   | OutboundSessionIdUpdate
   | OutboundExtensionNotification
   | OutboundConversationRewindRequest
+  | OutboundCredentialUpdate
   | OutboundError;
 
 // ============================================================
@@ -313,6 +319,7 @@ let currentPromptAttemptState: PromptAttemptState | null = null;
 let pendingProductRewindBoundary: PendingProductRewindBoundary | null = null;
 let currentStablePrefixHash: string | null = null;
 let currentToolsetHash: string | null = null;
+let lastReportedOAuthCredential = '';
 
 // Pending promises for async handshakes
 const pendingPreToolUse = new Map<string, { resolve: (response: { action: string; input?: Record<string, unknown>; reason?: string }) => void }>();
@@ -479,6 +486,7 @@ function createAuthenticatedRegistry(): {
     for (const credentialProvider of credentialProviders) {
       authStorage.set(credentialProvider, credential as unknown as AuthCredential);
     }
+    lastReportedOAuthCredential = credential.type === 'oauth' ? JSON.stringify(credential) : '';
     debugLog(`Injected ${credential.type} credential for provider(s): ${credentialProviders.join(', ')}`);
   } else if (initConfig?.apiKey) {
     authStorage.set('anthropic', { type: 'api_key', key: initConfig.apiKey });
@@ -505,6 +513,20 @@ function createAuthenticatedRegistry(): {
   return { authStorage, modelRegistry };
 }
 
+function reportRefreshedOAuthCredential(): void {
+  const provider = initConfig?.piAuth?.provider;
+  if (!provider || !moduleAuthStorage) return;
+
+  const credential = moduleAuthStorage.get(provider);
+  if (credential?.type !== 'oauth') return;
+
+  const fingerprint = JSON.stringify(credential);
+  if (fingerprint === lastReportedOAuthCredential) return;
+
+  lastReportedOAuthCredential = fingerprint;
+  send({ type: 'credential_update', provider, credential });
+}
+
 async function ensureSession(): Promise<AgentSession> {
   if (piSession) return piSession;
   if (!initConfig) throw new Error('Cannot create session: init not received');
@@ -522,25 +544,14 @@ async function ensureSession(): Promise<AgentSession> {
   // Store at module scope for set_model handler
   piModelRegistry = modelRegistry;
 
-  // Build tools: coding tools + web tools wrapped with permission hooks + proxy tools.
-  // Search provider is selected based on the user's LLM connection:
-  //   - OpenAI/OpenRouter → Responses API built-in web_search
-  //   - ChatGPT Plus (openai-codex) → ChatGPT backend responses endpoint
-  //   - Google → Gemini API with googleSearch grounding
-  //   - Custom endpoints → AnySearch (never reuse custom model credentials)
-  //   - Others → DuckDuckGo fallback
-  //
-  // IMPORTANT: resolve dynamically on each search call so token_update refreshes
-  // are used without recreating the session.
+  // Search is an independent capability: use its own AnySearch credential when
+  // configured, otherwise the credential-free DuckDuckGo fallback.
   const searchProvider = {
     get name() {
-      return resolveSearchProvider(initConfig?.piAuth, !!initConfig?.customEndpoint).name;
+      return resolveSearchProvider().name;
     },
     async search(query: string, count: number) {
-      return resolveSearchProvider(
-        initConfig?.piAuth,
-        !!initConfig?.customEndpoint,
-      ).search(query, count);
+      return resolveSearchProvider().search(query, count);
     },
   };
   const searchTool = createSearchTool(searchProvider);
@@ -1196,6 +1207,7 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
         LLM_QUERY_TIMEOUT_MS,
         `queryLlm timed out after ${LLM_QUERY_TIMEOUT_MS / 1000}s`
       );
+      reportRefreshedOAuthCredential();
       debugLog(`[queryLlm] Result length: ${result.trim().length}`);
 
       // If we got no text but captured an error, throw so callers see the real issue
@@ -1297,6 +1309,9 @@ function getAssistantErrorMessage(event: AgentSessionEvent): string | null {
 }
 
 function handleSessionEvent(event: AgentSessionEvent): void {
+  if (event.type === 'agent_settled') {
+    reportRefreshedOAuthCredential();
+  }
   const promptAttemptState = currentPromptAttemptState;
   if (promptAttemptState) {
     recordPromptAttemptEvent(promptAttemptState, event as unknown as Record<string, unknown>);
@@ -1373,10 +1388,11 @@ async function handleInit(msg: Extract<InboundMessage, { type: 'init' }>): Promi
     }
     piSession.dispose();
     piSession = null;
-    moduleAuthStorage = null; // Reset so createAuthenticatedRegistry() creates fresh storage
     debugLog('Cleaned up existing session for re-init');
   }
 
+  moduleAuthStorage = null;
+  lastReportedOAuthCredential = '';
   initConfig = msg;
 
   // Azure OpenAI requires a tenant-specific endpoint URL.
@@ -1936,6 +1952,7 @@ async function processMessage(msg: InboundMessage): Promise<void> {
         if (initConfig) {
           initConfig.piAuth = msg.piAuth;
         }
+        lastReportedOAuthCredential = credential.type === 'oauth' ? JSON.stringify(credential) : '';
         debugLog(`Updated ${credential.type} credential for provider(s): ${credentialProviders.join(', ')}`);
       } else {
         debugLog('token_update received but no authStorage initialized');

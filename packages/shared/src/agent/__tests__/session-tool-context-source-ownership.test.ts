@@ -12,14 +12,14 @@ import {
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createClaudeContext } from '../claude-context.ts';
+import { createSessionToolContext } from '../session-tool-context.ts';
 import { CONFIG_DIR } from '../../config/paths.ts';
 import { getPiUserSkillsDir } from '../../skills/storage.ts';
 import {
   SHARED_AGENTS_SOURCES_DIR,
 } from '../../sources/storage.ts';
 
-const TEST_PREFIX = `claude-context-source-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const TEST_PREFIX = `pi-context-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const touchedPaths = new Set<string>();
 
 afterEach(() => {
@@ -29,7 +29,7 @@ afterEach(() => {
   touchedPaths.clear();
 });
 
-describe('Claude SessionToolContext Source ownership', () => {
+describe('Pi SessionToolContext Source ownership', () => {
   it('does not discover a Source from ~/.agents implicitly', () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), `${TEST_PREFIX}-workspace-`));
     const slug = `${TEST_PREFIX}-shared`;
@@ -50,7 +50,7 @@ describe('Claude SessionToolContext Source ownership', () => {
     }, null, 2));
     const originalDefinition = readFileSync(sharedConfigPath);
 
-    const context = createClaudeContext({
+    const context = createSessionToolContext({
       sessionId: 'test-session',
       workspaceId: 'test-workspace',
       workspacePath: workspaceRoot,
@@ -69,7 +69,7 @@ describe('Claude SessionToolContext Source ownership', () => {
     touchedPaths.add(workspaceRoot);
     touchedPaths.add(globalSkillDir);
 
-    const projectContext = createClaudeContext({
+    const projectContext = createSessionToolContext({
       sessionId: 'project-session',
       workspaceId: 'project-workspace',
       workspacePath: workspaceRoot,

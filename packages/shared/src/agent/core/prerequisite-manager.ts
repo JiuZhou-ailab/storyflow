@@ -1,3 +1,7 @@
+// input: Source guide metadata and observed tool reads
+// output: Required Source guide paths that remain unread
+// pos: Host capability prerequisite tracker; Pi owns Skill loading separately
+
 /**
  * PrerequisiteManager - Prerequisite Reading System
  *
@@ -121,7 +125,6 @@ export class PrerequisiteManager {
 
   private readFiles: Set<string> = new Set();
   private rejectionCounts: Map<string, number> = new Map();
-  private pendingSkillPaths: Set<string> = new Set();
   private workspaceRootPath: string;
   private onDebug?: (message: string) => void;
 
@@ -131,28 +134,11 @@ export class PrerequisiteManager {
   }
 
   /**
-   * Register skill SKILL.md paths as prerequisites.
-   * All tool calls (except Read targeting these paths) are blocked
-   * until the files have been read.
-   */
-  registerSkillPrerequisites(paths: string[]): void {
-    for (const path of paths) {
-      const expanded = expandPath(path);
-      this.pendingSkillPaths.add(expanded);
-      this.onDebug?.(`Prerequisite: registered skill prerequisite ${expanded}`);
-    }
-  }
-
-  /**
    * Check if a tool call's prerequisites are met.
    * Iterates rules, checks if required files have been read.
    * After MAX_REJECTIONS blocks for the same path, allows through gracefully.
    */
   checkPrerequisites(toolName: string): PrerequisiteCheckResult {
-    // Check dynamic skill prerequisites first
-    const skillResult = this.checkSkillPrerequisites(toolName);
-    if (!skillResult.allowed) return skillResult;
-
     for (const rule of RULES) {
       if (!rule.toolMatcher(toolName)) continue;
 
@@ -183,36 +169,8 @@ export class PrerequisiteManager {
   }
 
   /**
-   * Check dynamic skill prerequisites.
-   * If pending skill paths exist and the tool is NOT a Read targeting one of them, block.
-   */
-  private checkSkillPrerequisites(toolName: string): PrerequisiteCheckResult {
-    if (this.pendingSkillPaths.size === 0) return { allowed: true };
-
-    // Allow Read tool through — trackReadTool will clear the prerequisite
-    if (toolName === 'Read') return { allowed: true };
-
-    const pendingList = [...this.pendingSkillPaths].join(', ');
-    const key = `skill:${pendingList}`;
-    const count = (this.rejectionCounts.get(key) ?? 0) + 1;
-    this.rejectionCounts.set(key, count);
-
-    if (count <= PrerequisiteManager.MAX_REJECTIONS) {
-      const blockReason = `You must read the skill instruction files before proceeding. Use Read or \`cat\` via Bash to read: ${pendingList}`;
-      this.onDebug?.(`Skill prerequisite blocked (${count}/${PrerequisiteManager.MAX_REJECTIONS}): ${toolName} — pending: ${pendingList}`);
-      return { allowed: false, blockReason };
-    }
-
-    // Exceeded max rejections — allow through and clear
-    this.onDebug?.(`Skill prerequisite: allowing ${toolName} after ${count} rejections (max reached)`);
-    this.pendingSkillPaths.clear();
-    return { allowed: true };
-  }
-
-  /**
    * Track a Read tool call. Extracts file_path from tool input,
    * normalizes it, and adds to the read set.
-   * Also clears matching pending skill paths.
    */
   trackReadTool(toolInput: Record<string, unknown>): void {
     const filePath = (toolInput.file_path as string) || (toolInput.path as string);
@@ -221,48 +179,18 @@ export class PrerequisiteManager {
     const expanded = expandPath(filePath);
     this.readFiles.add(expanded);
 
-    // Clear matching pending skill path
-    if (this.pendingSkillPaths.has(expanded)) {
-      this.pendingSkillPaths.delete(expanded);
-      this.onDebug?.(`Prerequisite: cleared skill prerequisite ${expanded}`);
-    }
-
     this.onDebug?.(`Prerequisite: tracked read of ${expanded}`);
-  }
-
-  /**
-   * Check if a Bash command is reading a pending skill file.
-   * If it matches, clear the prerequisite and return true.
-   * Called from the pre-tool-use pipeline to allow targeted Bash reads through.
-   */
-  trackBashSkillRead(input: Record<string, unknown>): boolean {
-    const command = input.command as string;
-    if (!command || this.pendingSkillPaths.size === 0) return false;
-
-    let matched = false;
-    for (const path of this.pendingSkillPaths) {
-      if (command.includes(path)) {
-        this.pendingSkillPaths.delete(path);
-        this.readFiles.add(path);
-        this.onDebug?.(`Prerequisite: cleared skill prerequisite via Bash: ${path}`);
-        matched = true;
-      }
-    }
-    return matched;
   }
 
   /**
    * Reset read state. Called on context compaction since the LLM
    * loses the guide content and needs to re-read.
-   * Also clears pending skill paths (model lost the directive).
    */
   resetReadState(): void {
     const count = this.readFiles.size;
-    const skillCount = this.pendingSkillPaths.size;
     this.readFiles.clear();
     this.rejectionCounts.clear();
-    this.pendingSkillPaths.clear();
-    this.onDebug?.(`Prerequisite: reset read state (cleared ${count} reads, ${skillCount} skill prerequisites)`);
+    this.onDebug?.(`Prerequisite: reset read state (cleared ${count} reads)`);
   }
 
   /**

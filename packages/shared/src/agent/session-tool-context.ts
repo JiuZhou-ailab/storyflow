@@ -3,11 +3,8 @@
  * output: SessionToolContext backed by shared runtime services
  * pos: Adapter boundary between session-tools-core contracts and shared implementations
  *
- * Creates a SessionToolContext implementation for Claude with full access
- * to Electron internals, credential managers, MCP validation, etc.
- *
- * This enables the shared handlers in session-tools-core to work with
- * Claude's full feature set.
+ * Gives Pi session tools access to Storyflow-owned files, credentials,
+ * validators, and callbacks without moving those capabilities into Pi.
  */
 
 import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, mkdirSync } from 'fs';
@@ -84,9 +81,9 @@ import {
 export type { SessionToolContext, SessionToolCallbacks } from '@craft-agent/session-tools-core';
 
 /**
- * Options for creating a Claude context
+ * Options for creating the Storyflow session-tool context.
  */
-export interface ClaudeContextOptions {
+export interface SessionToolContextOptions {
   sessionId: string;
   workspacePath: string;
   workspaceId: string;
@@ -96,7 +93,7 @@ export interface ClaudeContextOptions {
 }
 
 /**
- * Create a SessionToolContext for Claude with full capabilities.
+ * Create the host capability context used by Pi session tools.
  *
  * This provides:
  * - Full file system access
@@ -105,7 +102,7 @@ export interface ClaudeContextOptions {
  * - MCP connection validation
  * - Icon management
  */
-export function createClaudeContext(options: ClaudeContextOptions): SessionToolContext {
+export function createSessionToolContext(options: SessionToolContextOptions): SessionToolContext {
   const { sessionId, workspacePath, workspaceId, onPlanSubmitted, onAuthRequest, onAskUserQuestion } = options;
   void workspaceId;
 
@@ -252,7 +249,7 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
       mkdirSync(feedbackDir, { recursive: true });
       const filePath = join(feedbackDir, `${feedback.id}.json`);
       writeFileSync(filePath, JSON.stringify(feedback, null, 2), 'utf-8');
-      debug('claude-context', `Developer feedback written to ${filePath}`);
+      debug('session-tool-context', `Developer feedback written to ${filePath}`);
     },
     // Source management
     loadSourceConfig: (sourceSlug: string): SourceConfig | null => {

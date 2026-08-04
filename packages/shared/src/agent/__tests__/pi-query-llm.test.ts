@@ -147,22 +147,16 @@ describe('PiAgent.queryLlm — subprocess RPC round-trip', () => {
     agent.destroy();
   });
 
-  it('rejects queryLlm and fires refreshAndPushTokens on auth errors for OAuth connections', async () => {
+  it('rejects queryLlm without duplicating Pi OAuth refresh in the host', async () => {
     const agent = new PiAgent(createConfig({ authType: 'oauth' }));
     const { sent } = installFakeSubprocess(agent);
-
-    // Stub refreshAndPushTokens so we can observe the auth-refresh attempt.
-    let refreshAttempts = 0;
-    (agent as any).refreshAndPushTokens = async () => {
-      refreshAttempts++;
-    };
 
     const pending = agent.queryLlm({ prompt: 'hi' });
     await flushMicrotasks();
     expect(sent).toHaveLength(1);
 
-    // Simulate the subprocess dual-emit: generic `error` triggers centralized
-    // auth refresh, then the targeted result rejects this specific promise.
+    // Pi owns OAuth refresh. The generic event remains observable while the
+    // targeted result rejects this specific host-side promise.
     (agent as any).handleLine(JSON.stringify({
       type: 'error',
       code: 'llm_query_error',
@@ -188,9 +182,6 @@ describe('PiAgent.queryLlm — subprocess RPC round-trip', () => {
     expect(rejection).not.toBeNull();
     expect(rejection!.message).toContain('401');
 
-    // Yield once so the async refresh closure schedules.
-    await new Promise((r) => setTimeout(r, 0));
-    expect(refreshAttempts).toBe(1);
     expect((agent as any).pendingLlmQueries.size).toBe(0);
 
     agent.destroy();

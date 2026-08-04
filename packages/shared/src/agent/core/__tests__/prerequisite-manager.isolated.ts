@@ -1,3 +1,7 @@
+// input: Source prerequisite fixtures and tool-call events
+// output: Prerequisite tracking and reset behavior assertions
+// pos: Isolated regression test for host capability prerequisites
+
 /**
  * Tests for PrerequisiteManager
  *
@@ -303,73 +307,6 @@ describe('PrerequisiteManager', () => {
 
       manager.trackReadTool({ file_path: docsPath });
       expect(manager.checkPrerequisites('browser_open').allowed).toBe(true);
-    });
-  });
-
-  // ============================================================
-  // Bash Skill Read Tracking
-  // ============================================================
-
-  describe('trackBashSkillRead', () => {
-    it('clears skill prerequisite when Bash command contains the skill path', () => {
-      const skillPath = '/test/workspace/skills/my-skill/SKILL.md';
-      manager.registerSkillPrerequisites([skillPath]);
-
-      // WebSearch should be blocked (skill prerequisite pending)
-      expect(manager.checkPrerequisites('WebSearch').allowed).toBe(false);
-
-      // Reset rejection count so we can test the block again after clearing
-      manager.resetReadState();
-      manager.registerSkillPrerequisites([skillPath]);
-
-      // Bash cat targeting the skill path should clear the prerequisite
-      const result = manager.trackBashSkillRead({ command: `cat ${skillPath}` });
-      expect(result).toBe(true);
-
-      // Now other tools should be allowed
-      expect(manager.checkPrerequisites('WebSearch').allowed).toBe(true);
-    });
-
-    it('returns false when Bash command does not contain a pending skill path', () => {
-      const skillPath = '/test/workspace/skills/my-skill/SKILL.md';
-      manager.registerSkillPrerequisites([skillPath]);
-
-      const result = manager.trackBashSkillRead({ command: 'ls -la /some/other/path' });
-      expect(result).toBe(false);
-    });
-
-    it('returns false when there are no pending skill paths', () => {
-      const result = manager.trackBashSkillRead({ command: 'cat /any/file' });
-      expect(result).toBe(false);
-    });
-
-    it('returns false when command is missing', () => {
-      manager.registerSkillPrerequisites(['/some/skill/SKILL.md']);
-      const result = manager.trackBashSkillRead({});
-      expect(result).toBe(false);
-    });
-
-    it('clears multiple skill prerequisites from a single command', () => {
-      const skill1 = '/test/workspace/skills/alpha/SKILL.md';
-      const skill2 = '/test/workspace/skills/beta/SKILL.md';
-      manager.registerSkillPrerequisites([skill1, skill2]);
-
-      // Command that contains both paths
-      const result = manager.trackBashSkillRead({
-        command: `cat ${skill1} && cat ${skill2}`,
-      });
-      expect(result).toBe(true);
-
-      // Both should be cleared
-      expect(manager.checkPrerequisites('WebSearch').allowed).toBe(true);
-    });
-
-    it('logs debug message when clearing via Bash', () => {
-      const skillPath = '/test/workspace/skills/my-skill/SKILL.md';
-      manager.registerSkillPrerequisites([skillPath]);
-
-      manager.trackBashSkillRead({ command: `cat ${skillPath}` });
-      expect(debugMessages.some(m => m.includes('cleared skill prerequisite via Bash'))).toBe(true);
     });
   });
 

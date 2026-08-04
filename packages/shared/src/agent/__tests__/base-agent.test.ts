@@ -6,10 +6,14 @@
  * and lifecycle management.
  */
 import { describe, it, expect, beforeEach } from 'bun:test';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { AbortReason } from '../backend/types.ts';
 import {
   TestAgent,
   createMockBackendConfig,
+  createMockSession,
   createMockSource,
   collectEvents,
 } from './test-utils.ts';
@@ -184,6 +188,26 @@ describe('BaseAgent', () => {
       await collectEvents(agent.chat('test message'));
       expect(agent.chatCalls).toHaveLength(1);
       expect(agent.chatCalls[0]?.message).toBe('test message');
+    });
+
+    it('dispatches selected Skills through Pi commands', async () => {
+      const projectRoot = mkdtempSync(join(tmpdir(), 'storyflow-pi-skill-'));
+      const skillDir = join(projectRoot, '.pi', 'skills', 'review-pr');
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(
+        join(skillDir, 'SKILL.md'),
+        '---\nname: review-pr\ndescription: Review a pull request\n---\nReview the pull request.\n',
+      );
+
+      try {
+        const skillAgent = new TestAgent(createMockBackendConfig({
+          session: createMockSession({ workingDirectory: projectRoot }),
+        }));
+        await collectEvents(skillAgent.chat('[skill:review-pr] inspect this'));
+        expect(skillAgent.chatCalls[0]?.message).toBe('/skill:review-pr inspect this');
+      } finally {
+        rmSync(projectRoot, { recursive: true, force: true });
+      }
     });
 
     it('should track abort calls', async () => {

@@ -23,6 +23,10 @@ Agent runtime。产品必须投影 Pi 的公共契约，而不是镜像 Pi 的�
   `agentDir` 表达会话隔离。
 - Storyflow 只保留 Product Host 能力：OS/Electron 生命周期、Workspace 与项目身份、
   内容与协作数据、产品导航、Host 工具权限、远端传输，以及模型凭据和 endpoint 注册。
+- Pi `AuthStorage` 负责 OAuth 刷新与并发锁；Storyflow 只提供初始凭据，并把 Pi 返回的
+  轮换凭据持久化到产品凭据存储，不实现第二套 Provider 刷新器。
+- Web Search 是独立 Host capability，只使用自己的 AnySearch 凭据或无凭据的 fallback；
+  不复用模型 Provider 的 API key/OAuth token，也不在 Storyflow 复制其私有搜索协议。
 - Storyflow 的 UI 和 RPC 只投影 Pi 的公共 state、event、command、diagnostic 和资源契约；
   不复制 Pi 的状态机，不依赖 TUI component，也不建立第二套 Extension registry。
 - Pi 会话树是 rewind/branch 的运行时事实源；Storyflow 只在 Pi Session 中保存稳定的

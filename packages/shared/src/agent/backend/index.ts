@@ -76,7 +76,6 @@ export {
   cleanupSourceRuntimeArtifacts,
   testBackendConnection,
   // Connection validation
-  validateConnection,
 } from './factory.ts';
 
 // Shared infrastructure

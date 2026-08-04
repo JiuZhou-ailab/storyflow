@@ -160,6 +160,7 @@ export class TestAgent extends BaseAgent {
 
   // Expose protected state for testing
   getConfigWatcherManager() { return this.configWatcherManager; }
+  prepareSkill(message: string) { return this.prepareSkillCommand(message); }
 
   // Helper to reset tracking
   resetTracking(): void {

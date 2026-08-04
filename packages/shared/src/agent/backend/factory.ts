@@ -40,10 +40,9 @@ import {
   isManagedLlmConnectionSlug,
   isValidProviderAuthCombination,
 } from '../../config/llm-connections.ts';
-import { parseValidationError, type LlmValidationResult } from '../../config/llm-validation.ts';
+import { parseValidationError } from '../../config/llm-validation.ts';
 import type { ModelFetchResult } from '../../config/model-fetcher.ts';
 // Model resolution utilities
-import { DEFAULT_MODEL } from '../../config/models.ts';
 import { homedir } from 'node:os';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -702,22 +701,6 @@ export async function testBackendConnection(args: {
       capabilities: BACKEND_CAPABILITIES[executionProvider],
     };
 
-    const { driver, resolvedPaths } = resolveDriverRuntime(args.hostRuntime);
-    if (driver.testConnection) {
-      const driverResult = await driver.testConnection({
-        provider: executionProvider,
-        apiKey: trimmedKey,
-        model: testModel,
-        baseUrl: args.baseUrl,
-        connection: args.connection,
-        hostRuntime: args.hostRuntime,
-        resolvedPaths,
-        timeoutMs: args.timeoutMs ?? 20000,
-      });
-      // null = driver declined to handle; fall through to generic subprocess test
-      if (driverResult !== null) return driverResult;
-    }
-
     const cwd = homedir();
     const agent = createBackendFromResolvedContext({
       context,
@@ -778,39 +761,4 @@ export async function testBackendConnection(args: {
   } finally {
     await cm.deleteLlmApiKey(tempSlug).catch(() => {});
   }
-}
-
-// ============================================================
-// Connection Validation
-// ============================================================
-
-/**
- * Validate an LLM connection by dispatching to provider-specific validation.
- *
- * - Direct Anthropic: validates with a minimal Anthropic Messages API request
- * - Other Pi providers: validate on connect when no safe provider-specific preflight exists
- *
- * For more thorough provider-specific validation (model list checks, OAuth refresh, etc.),
- * see the IPC handler in apps/electron/src/main/ipc.ts.
- *
- * @param connection - The LLM connection to validate
- * @param credentials - API key or OAuth token for validation
- * @returns Validation result
- */
-export async function validateConnection(
-  connection: LlmConnection,
-  credentials: { apiKey?: string; oauthToken?: string },
-): Promise<LlmValidationResult> {
-  if (connection.providerType === 'anthropic') {
-    const { validateAnthropicConnection } = await import('../../config/llm-validation.ts');
-    return validateAnthropicConnection({
-      model: connection.defaultModel || DEFAULT_MODEL,
-      apiKey: credentials.apiKey,
-      oauthToken: credentials.oauthToken,
-      baseUrl: connection.baseUrl,
-    });
-  }
-
-  // Pi validates non-Anthropic providers on connect via its auth storage.
-  return { success: true };
 }

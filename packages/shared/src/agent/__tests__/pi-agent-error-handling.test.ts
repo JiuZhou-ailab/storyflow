@@ -1,6 +1,6 @@
-// input: Synthetic subprocess messages and PiAgent runtime configuration
-// output: Assertions for user-visible error and Extension notification mapping
-// pos: Regression coverage for the Pi subprocess protocol boundary
+// input: Pi subprocess protocol messages and host credential fixtures
+// output: Error, credential, and runtime-update regression assertions
+// pos: Host-side PiAgent protocol boundary test
 
 import { describe, expect, it } from 'bun:test'
 import { PiAgent } from '../pi-agent.ts'
@@ -26,6 +26,40 @@ function createConfig(overrides: Partial<BackendConfig> = {}): BackendConfig {
 }
 
 describe('PiAgent subprocess error handling', () => {
+  it('persists OAuth credentials refreshed by Pi', async () => {
+    const agent = new PiAgent(createConfig({
+      connectionSlug: 'openai-codex-test',
+      authType: 'oauth',
+    }))
+    const updates: unknown[] = []
+    ;(agent as any).persistOAuthCredential = async (provider: string, credential: unknown) => {
+      updates.push({ provider, credential })
+    }
+
+    ;(agent as any).handleLine(JSON.stringify({
+      type: 'credential_update',
+      provider: 'openai-codex',
+      credential: {
+        type: 'oauth',
+        access: 'new-access',
+        refresh: 'new-refresh',
+        expires: 123456,
+      },
+    }))
+    await Promise.resolve()
+
+    expect(updates).toEqual([{
+      provider: 'openai-codex',
+      credential: {
+        type: 'oauth',
+        access: 'new-access',
+        refresh: 'new-refresh',
+        expires: 123456,
+      },
+    }])
+    agent.destroy()
+  })
+
   it('preserves Extension notification severity', () => {
     const agent = new PiAgent(createConfig())
     const enqueued: unknown[] = []

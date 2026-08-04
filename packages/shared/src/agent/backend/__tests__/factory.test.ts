@@ -1,3 +1,7 @@
+// input: Provider connections, credentials, and host runtime fixtures
+// output: Pi backend resolution, model discovery, and validation assertions
+// pos: Regression test for the Storyflow-to-Pi backend factory boundary
+
 /**
  * Tests for Agent Factory
  *
@@ -32,7 +36,6 @@ import type { BackendConfig } from '../types.ts';
 import type { Workspace, LlmConnection } from '../../../config/storage.ts';
 import type { SessionConfig as Session } from '../../../sessions/storage.ts';
 import { PiAgent } from '../../pi-agent.ts';
-import { piDriver } from '../internal/drivers/pi.ts';
 import { isValidProviderAuthCombination } from '../../../config/llm-connections.ts';
 
 // Test helpers
@@ -377,36 +380,6 @@ describe('phase4 backend abstraction APIs', () => {
     expect(result.error).toBe('API key is required');
   });
 
-  it('testBackendConnection routes Anthropic setup hints through the Pi driver', async () => {
-    const originalTestConnection = piDriver.testConnection;
-    let observedProvider: string | undefined;
-    let observedProviderType: string | undefined;
-    piDriver.testConnection = async (args) => {
-      observedProvider = args.provider;
-      observedProviderType = args.connection?.providerType;
-      return { success: true };
-    };
-
-    try {
-      const result = await testBackendConnection({
-        provider: 'anthropic',
-        apiKey: '',
-        allowEmptyApiKey: true,
-        model: 'claude-sonnet-4-6',
-        connection: { providerType: 'anthropic' },
-        hostRuntime: {
-          appRootPath: process.cwd(),
-          isPackaged: false,
-        },
-      });
-
-      expect(result).toEqual({ success: true });
-      expect(observedProvider).toBe('pi');
-      expect(observedProviderType).toBe('anthropic');
-    } finally {
-      piDriver.testConnection = originalTestConnection;
-    }
-  });
 });
 
 describe('PiAgent model switching', () => {

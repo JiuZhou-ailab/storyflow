@@ -88,21 +88,11 @@ export interface DriverValidateStoredConnectionArgs extends DriverHostRuntimeArg
   credentialManager: CredentialManager;
 }
 
-export interface DriverTestConnectionArgs extends DriverHostRuntimeArgs {
-  provider: AgentProvider;
-  apiKey: string;
-  model: string;
-  baseUrl?: string;
-  connection?: Pick<LlmConnection, 'providerType' | 'piAuthProvider' | 'customEndpoint'>;
-  timeoutMs: number;
-}
-
 export interface ProviderDriver {
   provider: AgentProvider;
   initializeHostRuntime?: (args: DriverHostRuntimeArgs) => void;
   fetchModels?: (args: DriverFetchModelsArgs) => Promise<ModelFetchResult>;
   validateStoredConnection?: (args: DriverValidateStoredConnectionArgs) => Promise<StoredConnectionValidationResult>;
-  testConnection?: (args: DriverTestConnectionArgs) => Promise<{ success: boolean; error?: string } | null>;
   prepareRuntime?: (args: DriverBuildArgs) => void;
   buildRuntime: (args: DriverBuildArgs) => BackendRuntimePayload;
 }

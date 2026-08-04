@@ -137,7 +137,6 @@ function createMockPermissionManager(overrides?: Partial<PermissionManagerLike>)
 function createMockPrerequisiteManager(overrides?: Partial<PrerequisiteManagerLike>): PrerequisiteManagerLike {
   return {
     checkPrerequisites: () => ({ allowed: true }),
-    trackBashSkillRead: () => false,
     ...overrides,
   };
 }

@@ -17,8 +17,6 @@
  * Runtime behavior (chat, abort, capabilities) is implemented by PiAgent.
  */
 
-import { existsSync } from 'node:fs';
-
 import type { AgentEvent } from '@craft-agent/core/types';
 import type { FileAttachment } from '../utils/files.ts';
 import { expandPath } from '../utils/paths.ts';
@@ -67,7 +65,7 @@ import { buildTitlePrompt, buildRegenerateTitlePrompt, validateTitle } from '../
 import { resolveSystemPromptPresetForWorkingDirectory } from './system-prompt-preset.ts';
 
 // Storyflow mention compatibility; Pi's catalog remains the discovery source of truth.
-import { parseMentions, resolveSkillMentions, resolveSourceMentions, resolveFileMentions } from '../mentions/index.ts';
+import { parseMentions, resolveSourceMentions, resolveFileMentions, WS_ID_CHARS } from '../mentions/index.ts';
 import { loadPiSkillCatalog } from '../skills/pi-catalog.ts';
 
 // ============================================================
@@ -835,94 +833,67 @@ ${formattedMessages}
   }
 
   // ============================================================
-  // Skill Path Resolution (shared across backends)
+  // Pi Skill command preparation
   // ============================================================
 
   /**
-   * Extract skill mentions from a message and resolve their SKILL.md paths.
-   *
-   * Parses [skill:slug] or [skill:workspaceId:slug] mentions, resolves the
-   * corresponding SKILL.md file paths. Does NOT read the files — the model
-   * must read them itself (enforced by PrerequisiteManager).
+   * Map Storyflow's persisted Skill mention to Pi's native /skill:name command.
    *
    * @param message - The user message containing potential skill mentions
    * @returns Object with:
-   *   - skillPaths: Map of slug → resolved SKILL.md absolute path
-   *   - cleanMessage: Message with mentions stripped, or default directive
+   *   - skillCommand: Pi command, or null when no Skill is selected
+   *   - cleanMessage: Message with the selected Skill mention removed
    *   - missingSkills: Array of skill slugs that were mentioned but not found
    */
-  protected async extractSkillPaths(message: string): Promise<{
-    skillPaths: Map<string, string>;
+  protected async prepareSkillCommand(message: string): Promise<{
+    skillCommand: string | null;
     cleanMessage: string;
     missingSkills: string[];
+    hasMultipleSkills: boolean;
   }> {
     const workDir = this.config.session?.workingDirectory ?? this.workingDirectory;
     if (!message.includes('[skill:')) {
       return {
-        skillPaths: new Map(),
+        skillCommand: null,
         cleanMessage: resolveFileMentions(resolveSourceMentions(message), workDir).trim(),
         missingSkills: [],
+        hasMultipleSkills: false,
       };
     }
 
     const { skills } = await loadPiSkillCatalog(workDir);
     const skillSlugs = skills.map(s => s.slug);
 
-    this.debug(`[extractSkillPaths] Available skills: ${skillSlugs.join(', ')}`);
+    this.debug(`[prepareSkillCommand] Available skills: ${skillSlugs.join(', ')}`);
 
     const parsed = parseMentions(message, skillSlugs, []);
-    this.debug(`[extractSkillPaths] Parsed skills: ${JSON.stringify(parsed.skills)}`);
+    this.debug(`[prepareSkillCommand] Parsed skills: ${JSON.stringify(parsed.skills)}`);
     if (parsed.invalidSkills && parsed.invalidSkills.length > 0) {
-      this.debug(`[extractSkillPaths] Invalid skills: ${JSON.stringify(parsed.invalidSkills)}`);
+      this.debug(`[prepareSkillCommand] Invalid skills: ${JSON.stringify(parsed.invalidSkills)}`);
     }
 
-    // Resolve SKILL.md paths for matched skills
-    const skillPaths = new Map<string, string>();
-    for (const slug of parsed.skills) {
-      const skill = skills.find(s => s.slug === slug);
-      if (skill) {
-        const skillMdPath = skill.filePath;
-        if (existsSync(skillMdPath)) {
-          skillPaths.set(slug, skillMdPath);
-          this.debug(`[extractSkillPaths] Resolved skill ${slug} → ${skillMdPath}`);
-        } else {
-          this.debug(`[extractSkillPaths] SKILL.md not found: ${skillMdPath}`);
-        }
-      }
-    }
-
-    // Resolve mentions to semantic markers (like file mentions) instead of stripping them.
-    // This preserves sentence structure: "find the bug in [skill:datadog-api]"
-    // becomes "find the bug in [Mentioned skill: Datadog API (slug: datadog-api)]"
-    const skillNames = new Map(skills.map(s => [s.slug, s.metadata.displayName ?? s.metadata.name]));
-    const withSkills = resolveSkillMentions(message, skillNames);
+    const selectedSkill = parsed.skills[0];
+    const selected = selectedSkill ? skills.find(skill => skill.slug === selectedSkill) : undefined;
+    const skillMentionPattern = new RegExp(`\\[skill:(?:${WS_ID_CHARS}+:)?([\\w-]+)\\]`, 'g');
+    const onlySkillMention = message.replace(skillMentionPattern, '').trim().length === 0;
+    const withSkills = onlySkillMention
+      ? ''
+      : message.replace(skillMentionPattern, (_match, slug: string, offset: number) => {
+          if (message.slice(0, offset).trim().length === 0) return '';
+          const skill = skills.find(item => item.slug === slug);
+          return skill?.metadata.displayName ?? skill?.metadata.name ?? slug;
+        }).trimStart();
     const withSources = resolveSourceMentions(withSkills);
     const resolved = resolveFileMentions(withSources, workDir).trim();
 
-    // If user sent only skill mentions with no other text, add a directive
-    const cleanMessage = (!resolved && skillPaths.size > 0)
-      ? 'Follow the skill instructions from the files listed above.'
-      : resolved;
-
-    this.debug(`[extractSkillPaths] Clean message: "${cleanMessage.slice(0, 100)}...", skills: ${skillPaths.size}`);
+    this.debug(`[prepareSkillCommand] Clean message: "${resolved.slice(0, 100)}...", skill: ${selectedSkill ?? 'none'}`);
 
     return {
-      skillPaths,
-      cleanMessage,
-      missingSkills: parsed.invalidSkills || []
+      skillCommand: selected ? `/skill:${selected.slug}` : null,
+      cleanMessage: resolved,
+      missingSkills: parsed.invalidSkills || [],
+      hasMultipleSkills: parsed.skills.length > 1,
     };
-  }
-
-  /**
-   * Format a directive telling the model to read skill SKILL.md files before proceeding.
-   * Called from chat() — all agents get the same directive prepended to their message.
-   */
-  protected formatSkillDirective(skillPaths: Map<string, string>): string {
-    if (skillPaths.size === 0) return '';
-    const pathList = [...skillPaths.entries()]
-      .map(([slug, path]) => `- ${path} (skill: ${slug})`)
-      .join('\n');
-    return `Before proceeding with the user's request, you MUST read the following skill instruction files using the Read tool or \`cat\` via Bash:\n${pathList}\n\nDo not take any other action until you have read these files.`;
   }
 
   // ============================================================
@@ -931,25 +902,25 @@ ${formattedMessages}
 
   /**
    * Send a message and stream back events.
-   * Validates skill mentions, registers prerequisites, prepends read directive,
-   * then delegates to chatImpl. All skill logic is handled here — chatImpl
-   * never sees skill paths.
+   * Validates Storyflow Skill mentions, maps one selection to Pi's native
+   * command, then delegates to chatImpl.
    */
   async *chat(
     message: string,
     attachments?: FileAttachment[],
     options?: ChatOptions
   ): AsyncGenerator<AgentEvent> {
-    const { skillPaths, cleanMessage, missingSkills } = await this.extractSkillPaths(message);
+    const { skillCommand, cleanMessage, missingSkills, hasMultipleSkills } = await this.prepareSkillCommand(message);
     if (missingSkills.length > 0) {
       yield { type: 'error', message: `Skill(s) not found: ${missingSkills.join(', ')}` };
       yield { type: 'complete' };
       return;
     }
 
-    // Register skill prerequisites — blocks all tools until SKILL.md files are read.
-    if (skillPaths.size > 0) {
-      this.prerequisiteManager.registerSkillPrerequisites([...skillPaths.values()]);
+    if (hasMultipleSkills) {
+      yield { type: 'error', message: 'Pi supports one top-level Skill per turn. Select a single Skill and try again.' };
+      yield { type: 'complete' };
+      return;
     }
 
     // Prepend branch seed context (for seeded branch sessions) and transferred-session summary.
@@ -966,14 +937,13 @@ ${formattedMessages}
       this.config.markTransferredSessionSummaryApplied?.();
     }
 
-    // Prepend read directive to the message so the model reads SKILL.md first.
-    const directive = this.formatSkillDirective(skillPaths);
-    const messageParts = [branchSeedContext, transferredSessionContext, directive, cleanMessage].filter(Boolean);
-    const effectiveMessage = messageParts.join('\n\n');
+    const messageBody = [branchSeedContext, transferredSessionContext, cleanMessage].filter(Boolean).join('\n\n');
+    const effectiveMessage = skillCommand
+      ? `${skillCommand}${messageBody ? ` ${messageBody}` : ''}`
+      : messageBody;
 
-    // Capture the raw user message for source-activation auto-retry. `cleanMessage`
-    // has skill paths stripped but otherwise matches what the user typed — exactly
-    // what we want to resend when an activation forces a turn restart.
+    // The aborted turn already contains Pi's expanded Skill instructions, so a
+    // source-activation retry resends only the resolved user request.
     this.setCurrentTurnUserMessage(cleanMessage);
     this._currentUserIteration = options?.userIteration;
     try {
@@ -990,11 +960,9 @@ ${formattedMessages}
 
   /**
    * Provider-specific chat implementation.
-   * Called by chat() after skill validation, prerequisite registration,
-   * and directive injection. The message already contains any skill
-   * read directives — subclasses don't handle skills at all.
+   * Called by chat() after Skill validation and Pi command mapping.
    *
-   * @param message - User message (may have skill read directive prepended)
+   * @param message - User message (may begin with a Pi Skill command)
    * @param attachments - File attachments
    * @param options - Chat options (resume, retry, etc.)
    */

@@ -4,12 +4,12 @@ import {
   mergeSessionScopedToolCallbacks,
   unregisterSessionScopedToolCallbacks,
 } from '../session-scoped-tool-callback-registry.ts';
-import { createClaudeContext } from '../claude-context.ts';
+import { createSessionToolContext } from '../session-tool-context.ts';
 import { attachSessionSelfManagementBindings } from '../session-self-management-bindings.ts';
 import type { SessionToolContext, SessionInfo } from '@craft-agent/session-tools-core';
 import { SESSION_TOOL_REGISTRY } from '@craft-agent/session-tools-core';
 
-// Minimal noop callbacks for createClaudeContext
+// Minimal noop callbacks for createSessionToolContext
 const noopPlan = () => {};
 const noopAuth = () => {};
 
@@ -28,7 +28,7 @@ function makeSessionInfo(overrides: Partial<SessionInfo> = {}): SessionInfo {
 }
 
 function createBaseContext(sessionId: string): SessionToolContext {
-  return createClaudeContext({
+  return createSessionToolContext({
     sessionId,
     workspacePath: '/tmp/test-workspace',
     workspaceId: 'test-ws',

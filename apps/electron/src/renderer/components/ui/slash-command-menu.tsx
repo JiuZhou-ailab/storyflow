@@ -144,6 +144,19 @@ export function getSlashSkillInsertionText(skill: LoadedSkill): string {
   return `[skill:${skill.slug}] `
 }
 
+export function replaceSlashSkillSelection(
+  value: string,
+  slashStart: number,
+  cursorPosition: number,
+  skill: LoadedSkill,
+): { value: string; cursorPosition: number } {
+  const prompt = `${value.slice(0, slashStart)}${value.slice(cursorPosition)}`
+    .replace(/\[skill:[^\]]+\]\s*/g, '')
+    .trim()
+  const nextValue = `${getSlashSkillInsertionText(skill)}${prompt}`
+  return { value: nextValue, cursorPosition: nextValue.length }
+}
+
 // ============================================================================
 // Shared Styles
 // ============================================================================
@@ -798,21 +811,16 @@ export function useInlineSlashCommand({
   }, [onSelectCommand, slashStart])
 
   const handleSelectSkill = React.useCallback((skill: LoadedSkill): { value: string; cursorPosition: number } => {
-    let result = ''
-    let newCursorPosition = 0
+    let result = { value: '', cursorPosition: 0 }
     if (slashStart >= 0) {
       const { value: currentValue, cursorPosition } = currentInputRef.current
-      const before = currentValue.slice(0, slashStart)
-      const after = currentValue.slice(cursorPosition)
-      const skillText = getSlashSkillInsertionText(skill)
-      result = before + skillText + after
-      newCursorPosition = before.length + skillText.length
+      result = replaceSlashSkillSelection(currentValue, slashStart, cursorPosition, skill)
     }
 
     onSelectSkill?.(skill)
     setIsOpen(false)
 
-    return { value: result, cursorPosition: newCursorPosition }
+    return result
   }, [onSelectSkill, slashStart])
 
   const handleSelectFolder = React.useCallback((path: string): string => {

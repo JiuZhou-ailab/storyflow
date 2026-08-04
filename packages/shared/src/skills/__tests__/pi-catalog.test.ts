@@ -72,8 +72,7 @@ describe('loadPiSkillCatalog', () => {
 
     expect(events.some(event => event.type === 'error')).toBe(false);
     expect(agent.chatCalls).toHaveLength(1);
-    expect(agent.chatCalls[0]?.message)
-      .toContain(join(cwd, '.agents/skills', slug, 'SKILL.md'));
+    expect(agent.chatCalls[0]?.message).toBe(`/skill:${slug} apply it`);
     agent.destroy();
   });
 

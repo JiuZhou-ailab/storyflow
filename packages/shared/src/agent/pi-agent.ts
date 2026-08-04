@@ -54,9 +54,6 @@ import { getCoAuthorPreference } from '../config/preferences.ts';
 // Credential manager for token storage
 import { getCredentialManager } from '../credentials/manager.ts';
 
-// ChatGPT OAuth token refresh (shared with CodexAgent)
-import { refreshChatGptTokens } from '../auth/chatgpt-oauth.ts';
-
 // Session-scoped tool callbacks (for SubmitPlan, source auth, etc.)
 import {
   registerSessionScopedToolCallbacks,
@@ -76,7 +73,7 @@ import {
   SESSION_TOOL_REGISTRY,
   type ToolResult as SessionToolResult,
 } from '@craft-agent/session-tools-core';
-import { createClaudeContext, type SessionToolContext } from './claude-context.ts';
+import { createSessionToolContext, type SessionToolContext } from './session-tool-context.ts';
 import { getPermissionModeDiagnostics } from './mode-manager.ts';
 
 // call_llm pre-execution pipeline
@@ -242,12 +239,6 @@ export class PiAgent extends BaseAgent {
   set onChatGptAuthRequired(cb: ((reason: string) => void) | null) {
     this.onBackendAuthRequired = cb;
   }
-  private tokenRefreshInProgress: Promise<void> | null = null;
-  private oauthRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-
-  // Global mutex: keyed by connectionSlug so multiple PiAgent instances
-  // sharing the same connection don't race concurrent token refreshes.
-  private static globalRefreshMutex: Map<string, Promise<void>> = new Map();
   private needsFreshSessionRecoverySeed: boolean;
 
   // ============================================================
@@ -346,18 +337,6 @@ export class PiAgent extends BaseAgent {
     // Resolve credentials before spawning so we can derive AWS env vars
     // from the same fetch that produces piAuth (single source of truth).
 
-    // Refresh any supported OAuth credential before it approaches expiry so
-    // rotating refresh tokens are persisted in Storyflow, not only inside the
-    // subprocess's in-memory AuthStorage.
-    if (this.config.authType === 'oauth') {
-      const slug = this.config.connectionSlug || 'pi';
-      const stored = await getCredentialManager().getLlmOAuth(slug);
-      if (stored?.refreshToken && (!stored.expiresAt || stored.expiresAt < Date.now() + 5 * 60_000)) {
-        this.debug(`${runtime.piAuthProvider ?? 'OAuth'} token expired or expiring soon — refreshing before session start`);
-        await this.refreshAndPushTokens();
-      }
-    }
-
     // Retrieve auth credentials for the subprocess.
     // Custom endpoint mode must NOT fall back to global API keys — keyless local endpoints
     // are valid, and non-local endpoints should fail explicitly instead of using unrelated creds.
@@ -454,12 +433,6 @@ export class PiAgent extends BaseAgent {
     // Wait for subprocess to report ready
     await this.subprocessReady;
     this.debug('Pi subprocess is ready');
-    try {
-      await this.scheduleOAuthRefresh();
-    } catch (error) {
-      this.debug(`Could not schedule OAuth refresh: ${error}`);
-    }
-
     // Register session-scoped tools with the subprocess. Host-owned tools run
     // in the main process; call_llm stays inside the Pi runtime. Register before
     // any command that creates the Pi session so cold start builds it only once.
@@ -624,124 +597,25 @@ export class PiAgent extends BaseAgent {
     return env;
   }
 
-  /**
-   * Refresh OAuth tokens and push updated credentials to the running subprocess.
-   * Handles both Copilot (Pi SDK) and ChatGPT Plus token refresh.
-   */
-  private async refreshAndPushTokens(): Promise<void> {
+  /** Persist a credential rotated by Pi's native AuthStorage. */
+  private async persistOAuthCredential(
+    provider: string,
+    credential: { type: 'oauth'; access: string; refresh: string; expires: number },
+  ): Promise<void> {
     if (this.config.authType !== 'oauth') return;
 
-    const slug = this.config.connectionSlug || 'pi';
-
-    // Global mutex — if another PiAgent instance on the same connection slug
-    // is already refreshing, just wait for that to finish and push the
-    // (now-fresh) credentials to our subprocess.
-    const existing = PiAgent.globalRefreshMutex.get(slug);
-    if (existing) {
-      this.debug(`Waiting on existing refresh for slug "${slug}"`);
-      await existing;
-      // The other instance refreshed the credential store — push to our subprocess
-      if (this.subprocess) {
-        const piAuth = await this.getPiAuth();
-        if (piAuth) {
-          this.send({ type: 'token_update', piAuth });
-          this.debug('Pushed credentials refreshed by sibling instance');
-        }
-      }
+    const expectedProvider = getBackendRuntime(this.config).piAuthProvider;
+    if (expectedProvider && provider !== expectedProvider) {
+      this.debug(`Ignoring OAuth credential update for unexpected provider: ${provider}`);
       return;
     }
 
-    const refreshPromise = (async () => {
-      const piAuthProvider = getBackendRuntime(this.config).piAuthProvider;
-      const credentialManager = getCredentialManager();
-      const stored = await credentialManager.getLlmOAuth(slug);
-
-      if (!stored?.refreshToken) {
-        this.debug('No refresh token available — re-auth required');
-        this.onBackendAuthRequired?.('No refresh token — please sign in again');
-        return;
-      }
-
-      try {
-        if (piAuthProvider === 'github-copilot') {
-          // Copilot: refresh the short-lived Copilot token using the GitHub access token
-          const { refreshGitHubCopilotToken } = await import('@earendil-works/pi-ai/oauth');
-          const newCreds = await refreshGitHubCopilotToken(stored.refreshToken);
-          await credentialManager.setLlmOAuth(slug, {
-            accessToken: newCreds.access,
-            refreshToken: newCreds.refresh,
-            expiresAt: newCreds.expires,
-          });
-        } else if (piAuthProvider === 'anthropic') {
-          const { refreshAnthropicToken } = await import('@earendil-works/pi-ai/oauth');
-          const newCreds = await refreshAnthropicToken(stored.refreshToken);
-          await credentialManager.setLlmOAuth(slug, {
-            accessToken: newCreds.access,
-            refreshToken: newCreds.refresh,
-            expiresAt: newCreds.expires,
-          });
-        } else if (piAuthProvider === 'openai-codex') {
-          const newTokens = await refreshChatGptTokens(stored.refreshToken);
-          await credentialManager.setLlmOAuth(slug, {
-            accessToken: newTokens.accessToken,
-            idToken: newTokens.idToken,
-            refreshToken: newTokens.refreshToken,
-            expiresAt: newTokens.expiresAt,
-          });
-        } else {
-          throw new Error(`OAuth refresh is not supported for Pi provider: ${piAuthProvider ?? '(missing)'}`);
-        }
-        this.debug('Token refresh successful');
-
-        // Push refreshed credentials to running subprocess
-        if (this.subprocess) {
-          const piAuth = await this.getPiAuth();
-          if (piAuth) {
-            this.send({ type: 'token_update', piAuth });
-            this.debug('Pushed refreshed credentials to subprocess');
-          }
-        }
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        this.debug(`Token refresh failed: ${msg}`);
-        this.onBackendAuthRequired?.(`Token refresh failed: ${msg}`);
-      }
-    })();
-
-    // Store in both instance and global mutex
-    this.tokenRefreshInProgress = refreshPromise;
-    PiAgent.globalRefreshMutex.set(slug, refreshPromise);
-
-    try {
-      await refreshPromise;
-    } finally {
-      this.tokenRefreshInProgress = null;
-      // Only clear global if it's still our promise (no newer refresh started)
-      if (PiAgent.globalRefreshMutex.get(slug) === refreshPromise) {
-        PiAgent.globalRefreshMutex.delete(slug);
-      }
-    }
-  }
-
-  /** Schedule provider-aware refresh before Pi's in-memory auth would rotate it. */
-  private async scheduleOAuthRefresh(): Promise<void> {
-    if (this.oauthRefreshTimer) {
-      clearTimeout(this.oauthRefreshTimer);
-      this.oauthRefreshTimer = null;
-    }
-    if (this.config.authType !== 'oauth') return;
-
-    const slug = this.config.connectionSlug || 'pi';
-    const stored = await getCredentialManager().getLlmOAuth(slug);
-    if (!stored?.refreshToken || !stored.expiresAt) return;
-
-    const delay = Math.max(1_000, stored.expiresAt - Date.now() - 5 * 60_000);
-    this.oauthRefreshTimer = setTimeout(() => {
-      this.oauthRefreshTimer = null;
-      void this.refreshAndPushTokens()
-        .then(() => this.scheduleOAuthRefresh())
-        .catch(error => this.debug(`Scheduled OAuth refresh failed: ${error}`));
-    }, delay);
+    await getCredentialManager().setLlmOAuth(this.config.connectionSlug || 'pi', {
+      accessToken: credential.access,
+      refreshToken: credential.refresh,
+      expiresAt: credential.expires,
+    });
+    this.debug(`Persisted OAuth credential refreshed by Pi for ${provider}`);
   }
 
   /**
@@ -821,6 +695,32 @@ export class PiAgent extends BaseAgent {
         // Pi SDK event -- forward through PiEventAdapter
         this.handleSubprocessEvent(msg.event as Record<string, unknown>);
         break;
+
+      case 'credential_update': {
+        const provider = typeof msg.provider === 'string' ? msg.provider : '';
+        const credential = msg.credential as {
+          type?: string;
+          access?: string;
+          refresh?: string;
+          expires?: number;
+        } | undefined;
+        if (
+          provider
+          && credential?.type === 'oauth'
+          && typeof credential.access === 'string'
+          && typeof credential.refresh === 'string'
+          && typeof credential.expires === 'number'
+        ) {
+          void this.persistOAuthCredential(provider, credential as {
+            type: 'oauth'; access: string; refresh: string; expires: number;
+          }).catch(error => {
+            this.debug(`Failed to persist Pi OAuth credential: ${error instanceof Error ? error.message : String(error)}`);
+          });
+        } else {
+          this.debug('Ignoring malformed credential_update from subprocess');
+        }
+        break;
+      }
 
       case 'pre_tool_use_request':
         // Subprocess needs permission check + transforms before tool execution
@@ -906,23 +806,6 @@ export class PiAgent extends BaseAgent {
         const rawMessage = String(msg.message || 'Unknown subprocess error');
 
         this.debug(`Subprocess error${errorCode ? ` (${errorCode})` : ''}: ${rawMessage}`);
-        const errorMsg = rawMessage.toLowerCase();
-
-        // Detect auth errors and attempt token refresh for OAuth connections
-        if (this.config.authType === 'oauth' && (
-          errorMsg.includes('401') ||
-          errorMsg.includes('421') ||
-          errorMsg.includes('unauthorized') ||
-          errorMsg.includes('misdirected') ||
-          (errorMsg.includes('token') && errorMsg.includes('expired')) ||
-          errorMsg.includes('authentication')
-        )) {
-          this.debug('Auth error detected from subprocess, attempting token refresh');
-          this.refreshAndPushTokens().catch(err => {
-            this.debug(`Token refresh after auth error failed: ${err}`);
-          });
-        }
-
         // A targeted llm_query_result follows llm_query_error and rejects only
         // that request. Other subprocess errors invalidate every pending query.
         if (errorCode !== 'llm_query_error') {
@@ -1314,7 +1197,7 @@ export class PiAgent extends BaseAgent {
     const workspacePath = this.config.workspace.rootPath;
     const workspaceId = this.config.workspace.id;
 
-    this._sessionToolContext = createClaudeContext({
+    this._sessionToolContext = createSessionToolContext({
       sessionId,
       workspacePath,
       workspaceId,
@@ -2219,10 +2102,6 @@ export class PiAgent extends BaseAgent {
    * Used before an idle runtime restart so we don't leave transient children behind.
    */
   private async killSubprocessGracefully(timeoutMs = 2_000): Promise<void> {
-    if (this.oauthRefreshTimer) {
-      clearTimeout(this.oauthRefreshTimer);
-      this.oauthRefreshTimer = null;
-    }
     const child = this.subprocess;
     if (!child) {
       this.killSubprocess();
@@ -2277,10 +2156,6 @@ export class PiAgent extends BaseAgent {
    * Kill the subprocess and clean up resources.
    */
   private killSubprocess(): void {
-    if (this.oauthRefreshTimer) {
-      clearTimeout(this.oauthRefreshTimer);
-      this.oauthRefreshTimer = null;
-    }
     this.stopReadingStdout?.();
     this.stopReadingStdout = null;
 
@@ -2376,15 +2251,7 @@ export class PiAgent extends BaseAgent {
    * Parse a Pi error into a typed AgentError.
    */
   private parsePiError(error: Error): AgentError {
-    const parsed = parseError(error);
-    if (parsed.code !== 'invalid_api_key' || this.config.authType !== 'oauth') {
-      return parsed;
-    }
-
-    this.refreshAndPushTokens().catch(err => {
-      this.debug(`Token refresh from parsePiError failed: ${err}`);
-    });
-    return { ...parsed, canRetry: true };
+    return parseError(error);
   }
 
   // ============================================================

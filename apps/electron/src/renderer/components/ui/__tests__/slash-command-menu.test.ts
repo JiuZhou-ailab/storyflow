@@ -14,6 +14,7 @@ let createSlashSkillItems: typeof import('../slash-command-menu').createSlashSki
 let createSlashFolderItems: typeof import('../slash-command-menu').createSlashFolderItems
 let hasMatchingSlashItems: typeof import('../slash-command-menu').hasMatchingSlashItems
 let getSlashSkillInsertionText: typeof import('../slash-command-menu').getSlashSkillInsertionText
+let replaceSlashSkillSelection: typeof import('../slash-command-menu').replaceSlashSkillSelection
 let parseInlineSlashCommandQuery: typeof import('../slash-command-menu').parseInlineSlashCommandQuery
 let defaultSlashCommandGroups: typeof import('../slash-command-menu').DEFAULT_SLASH_COMMAND_GROUPS
 
@@ -23,6 +24,7 @@ beforeAll(async () => {
   createSlashFolderItems = mod.createSlashFolderItems
   hasMatchingSlashItems = mod.hasMatchingSlashItems
   getSlashSkillInsertionText = mod.getSlashSkillInsertionText
+  replaceSlashSkillSelection = mod.replaceSlashSkillSelection
   parseInlineSlashCommandQuery = mod.parseInlineSlashCommandQuery
   defaultSlashCommandGroups = mod.DEFAULT_SLASH_COMMAND_GROUPS
 })
@@ -75,6 +77,18 @@ describe('slash skill commands', () => {
 
   it('inserts selected Skills as global mention tokens', () => {
     expect(getSlashSkillInsertionText(skill({ slug: 'review-pr' }))).toBe('[skill:review-pr] ')
+  })
+
+  it('keeps one top-level Skill and moves it to the prompt start', () => {
+    expect(replaceSlashSkillSelection(
+      'draft [skill:first] /review-pr more',
+      20,
+      30,
+      skill({ slug: 'review-pr' }),
+    )).toEqual({
+      value: '[skill:review-pr] draft more',
+      cursorPosition: 28,
+    })
   })
 
   it('keeps hyphenated skill names in the slash query', () => {
