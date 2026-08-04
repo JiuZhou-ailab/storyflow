@@ -90,6 +90,7 @@ describe('isLowSignal', () => {
     expect(isLowSignal('oké')).toBe(true);   // Hungarian "ok"
     expect(isLowSignal('danke')).toBe(true);  // German "thanks"
     expect(isLowSignal('mehet')).toBe(true);  // Hungarian "go ahead"
+    expect(isLowSignal('你好你好')).toBe(true);
   });
 
   test('short questions are not low-signal', () => {

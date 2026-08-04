@@ -1,15 +1,24 @@
+// input: Session storage APIs and temporary workspace session files
+// output: Regression coverage for pending-plan transitions and queue-safe session updates
+// pos: Guards read-modify-write persistence at the shared session storage boundary
+
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { StoredSession } from '../types.ts'
+import { clearMetrics, configurePerfTracking } from '../../utils/perf.ts'
 import {
+  clearPendingPlanExecution,
   getPendingPlanExecution,
   countPlanFiles,
+  loadSession,
   markCompactionComplete,
   markPendingPlanExecutionDispatched,
   saveSession,
+  sessionPersistenceQueue,
   setPendingPlanExecution,
+  updateSessionMetadata,
 } from '../storage.ts'
 
 function makeTmpDir(): string {
@@ -44,6 +53,8 @@ describe('pending plan execution persistence', () => {
   })
 
   afterEach(() => {
+    configurePerfTracking({ enabled: false, onMetric: undefined })
+    clearMetrics()
     if (existsSync(workspaceRoot)) {
       rmSync(workspaceRoot, { recursive: true, force: true })
     }
@@ -68,6 +79,31 @@ describe('pending plan execution persistence', () => {
       awaitingCompaction: false,
       executionDispatched: true,
     })
+  })
+
+  it('does not rewrite a session that has no pending plan execution', async () => {
+    const persistedMetrics: string[] = []
+    clearMetrics()
+    configurePerfTracking({
+      enabled: true,
+      onMetric: metric => persistedMetrics.push(metric.name),
+    })
+
+    await clearPendingPlanExecution(workspaceRoot, 'session-1')
+
+    expect(persistedMetrics).not.toContain('session.persist.write')
+  })
+
+  it('applies metadata to the latest queued session snapshot', async () => {
+    const pending = makeStoredSession(workspaceRoot)
+    pending.messages = [{ id: 'assistant-1', type: 'assistant', content: 'done' }]
+    sessionPersistenceQueue.enqueue(pending)
+
+    await updateSessionMetadata(workspaceRoot, 'session-1', { hasUnread: true })
+
+    const persisted = loadSession(workspaceRoot, 'session-1')
+    expect(persisted?.messages.map(message => message.id)).toEqual(['assistant-1'])
+    expect(persisted?.hasUnread).toBe(true)
   })
 
   it('counts markdown plan files without loading plan metadata', () => {

@@ -437,6 +437,11 @@ export function loadSession(workspaceRootPath: string, sessionId: string): Store
   return null;
 }
 
+async function loadSessionForUpdate(workspaceRootPath: string, sessionId: string): Promise<StoredSession | null> {
+  await sessionPersistenceQueue.flush(sessionId);
+  return loadSession(workspaceRootPath, sessionId);
+}
+
 /**
  * List sessions for a workspace
  * Lists sessions from folder structure.
@@ -591,7 +596,7 @@ export function deleteSession(workspaceRootPath: string, sessionId: string): boo
  * Also clears the SDK session ID to start a fresh Claude conversation.
  */
 export async function clearSessionMessages(workspaceRootPath: string, sessionId: string): Promise<void> {
-  const session = loadSession(workspaceRootPath, sessionId);
+  const session = await loadSessionForUpdate(workspaceRootPath, sessionId);
   if (session) {
     // Clear messages and SDK session ID but preserve metadata
     session.messages = [];
@@ -641,7 +646,7 @@ export async function updateSessionSdkId(
   sessionId: string,
   sdkSessionId: string
 ): Promise<void> {
-  const session = loadSession(workspaceRootPath, sessionId);
+  const session = await loadSessionForUpdate(workspaceRootPath, sessionId);
   if (session) {
     session.sdkSessionId = sdkSessionId;
     await saveSession(session);
@@ -689,7 +694,7 @@ export async function updateSessionMetadata(
     | 'archivedAt'
   >>
 ): Promise<void> {
-  const session = loadSession(workspaceRootPath, sessionId);
+  const session = await loadSessionForUpdate(workspaceRootPath, sessionId);
   if (!session) return;
 
   if (updates.isFlagged !== undefined) session.isFlagged = updates.isFlagged;
@@ -783,7 +788,7 @@ export async function setPendingPlanExecution(
   planPath: string,
   draftInputSnapshot?: string,
 ): Promise<void> {
-  const session = loadSession(workspaceRootPath, sessionId);
+  const session = await loadSessionForUpdate(workspaceRootPath, sessionId);
   if (!session) return;
 
   session.pendingPlanExecution = {
@@ -804,7 +809,7 @@ export async function markCompactionComplete(
   workspaceRootPath: string,
   sessionId: string
 ): Promise<void> {
-  const session = loadSession(workspaceRootPath, sessionId);
+  const session = await loadSessionForUpdate(workspaceRootPath, sessionId);
   if (!session?.pendingPlanExecution) return;
 
   session.pendingPlanExecution.awaitingCompaction = false;
@@ -820,7 +825,7 @@ export async function markPendingPlanExecutionDispatched(
   workspaceRootPath: string,
   sessionId: string
 ): Promise<void> {
-  const session = loadSession(workspaceRootPath, sessionId);
+  const session = await loadSessionForUpdate(workspaceRootPath, sessionId);
   if (!session?.pendingPlanExecution) return;
 
   session.pendingPlanExecution.executionDispatched = true;
@@ -836,8 +841,8 @@ export async function clearPendingPlanExecution(
   workspaceRootPath: string,
   sessionId: string
 ): Promise<void> {
-  const session = loadSession(workspaceRootPath, sessionId);
-  if (!session) return;
+  const session = await loadSessionForUpdate(workspaceRootPath, sessionId);
+  if (!session?.pendingPlanExecution) return;
 
   delete session.pendingPlanExecution;
   await saveSession(session);

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { getSessionFilePath } from '@craft-agent/shared/sessions/storage'
+import { getSessionFilePath, sessionPersistenceQueue } from '@craft-agent/shared/sessions/storage'
 import { clearMetrics, configurePerfTracking } from '@craft-agent/shared/utils'
 import { SessionManager, createManagedSession } from './SessionManager.ts'
 
@@ -78,6 +78,13 @@ describe('sendMessage durability', () => {
     return lines.slice(1).map(l => JSON.parse(l)).map(m => m.id as string)
   }
 
+  function readPersistedTitle(sessionId: string): string | undefined {
+    const path = getSessionFilePath(tmpRoot, sessionId)
+    if (!existsSync(path)) return undefined
+    const [header] = readFileSync(path, 'utf-8').trim().split('\n')
+    return JSON.parse(header).name as string | undefined
+  }
+
   function findAcceptMetric(metrics: CapturedPerfMetric[], status: string): CapturedPerfMetric | undefined {
     return metrics.find(metric =>
       metric.name === 'session.sendMessage.accept'
@@ -138,6 +145,39 @@ describe('sendMessage durability', () => {
     expectAcceptMetric(acceptMetricAtAck, 'accepted')
   })
 
+  it('persists the first deterministic title in the same durable acceptance write', async () => {
+    const sessionId = 'durability-first-title'
+    const managed = buildSession(sessionId)
+    managed.name = undefined
+    const observedOrder: string[] = []
+    let titleOnDiskAtAck: string | undefined
+
+    sm.setEventSink((_channel, _target, event) => {
+      if (event?.type === 'user_message' || event?.type === 'title_generated') {
+        observedOrder.push(event.type)
+      }
+    })
+
+    await sm
+      .sendMessage(
+        sessionId,
+        'hello',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => {
+          titleOnDiskAtAck = readPersistedTitle(sessionId)
+          observedOrder.push('ack')
+        },
+      )
+      .catch(() => { /* expected post-ack agent-init failure */ })
+
+    expect(titleOnDiskAtAck).toBe('hello')
+    expect(observedOrder.slice(0, 3)).toEqual(['ack', 'user_message', 'title_generated'])
+  })
+
   it('user message is on disk before onAck fires (mid-stream / queued branch)', async () => {
     const sessionId = 'durability-midstream'
     const managed = buildSession(sessionId)
@@ -168,6 +208,63 @@ describe('sendMessage durability', () => {
     expect(ackedMessageId).not.toBeNull()
     expect(onDiskAtAck).toBe(true)
     expectAcceptMetric(acceptMetricAtAck, 'queued')
+  })
+
+  it('durably completes once with facade, first-event, and turn-usage evidence', async () => {
+    const sessionId = 'agent-readiness-metrics'
+    buildSession(sessionId)
+    const metrics: CapturedPerfMetric[] = []
+    const completedWriteMessageCounts: number[] = []
+    let assistantCompleted = false
+    configurePerfTracking({
+      enabled: true,
+      onMetric: metric => {
+        metrics.push(metric)
+        if (assistantCompleted && metric.name === 'session.persist.write') {
+          completedWriteMessageCounts.push(Number(metric.metadata?.messageCount))
+        }
+      },
+    })
+    sm.setEventSink((_channel, _target, event) => {
+      if (event?.type === 'text_complete') assistantCompleted = true
+    })
+    sm.setActiveViewingSession(sessionId, 'ws_test')
+    ;(sm as unknown as { getOrCreateAgent: () => Promise<unknown> }).getOrCreateAgent = async () => ({
+      getModel: () => 'test-model',
+      setAllSources: () => {},
+      getSessionId: () => undefined,
+      chat: async function* () {
+        yield { type: 'status', message: 'starting' }
+        yield { type: 'text_complete', text: 'done' }
+        yield {
+          type: 'complete',
+          usage: {
+            inputTokens: 13,
+            outputTokens: 7,
+            modelCalls: 1,
+            cacheReadTokens: 5,
+            costUsd: 0,
+            contextTokens: 13,
+            contextWindow: 100,
+          },
+        }
+      },
+    })
+
+    await sm.sendMessage(sessionId, 'hello')
+
+    const sendMetric = metrics.find(metric => metric.name === 'session.sendMessage')
+    const marks = sendMetric?.marks.map(mark => mark.name) ?? []
+    expect(marks).toContain('agent.facade.ready')
+    expect(marks.filter(mark => mark === 'agent.first_event')).toHaveLength(1)
+    expect(sendMetric?.metadata?.usage).toEqual(expect.objectContaining({
+      modelCalls: 1,
+      inputTokens: 13,
+      outputTokens: 7,
+      cacheReadTokens: 5,
+    }))
+    expect(completedWriteMessageCounts).toEqual([2])
+    expect(sessionPersistenceQueue.hasPending(sessionId)).toBe(false)
   })
 })
 

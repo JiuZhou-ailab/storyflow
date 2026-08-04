@@ -1926,26 +1926,23 @@ export class SessionManager implements ISessionManager {
   // Caller must ensure `managed.messagesLoaded` is true.
   private enqueuePersist(managed: ManagedSession): void {
     try {
-      // Filter out transient status messages (progress indicators like "Compacting...")
-      // Error messages are now persisted with rich fields for diagnostics
-      const persistableMessages = managed.messages.filter(m =>
-        m.role !== 'status'
-      )
-
-      const storedSession: StoredSession = {
-        ...pickSessionFields(managed),
-        workspaceRootPath: managed.workspace.rootPath,
-        createdAt: managed.createdAt ?? Date.now(),
-        lastUsedAt: Date.now(),
-        messages: persistableMessages.map(messageToStored),
-        tokenUsage: managed.tokenUsage ?? DEFAULT_TOKEN_USAGE,
-      } as StoredSession
-
-      // Queue for async persistence with debouncing
-      sessionPersistenceQueue.enqueue(storedSession)
+      this.enqueuePersistStrict(managed)
     } catch (error) {
       sessionLog.error(`Failed to queue session ${managed.id} for persistence:`, error)
     }
+  }
+
+  private enqueuePersistStrict(managed: ManagedSession): void {
+    const persistableMessages = managed.messages.filter(m => m.role !== 'status')
+    const storedSession: StoredSession = {
+      ...pickSessionFields(managed),
+      workspaceRootPath: managed.workspace.rootPath,
+      createdAt: managed.createdAt ?? Date.now(),
+      lastUsedAt: Date.now(),
+      messages: persistableMessages.map(messageToStored),
+      tokenUsage: managed.tokenUsage ?? DEFAULT_TOKEN_USAGE,
+    } as StoredSession
+    sessionPersistenceQueue.enqueue(storedSession)
   }
 
   // Flush a specific session immediately (call on session close/switch).
@@ -5088,14 +5085,12 @@ export class SessionManager implements ISessionManager {
     if (managed.isProcessing) return
 
     let needsPersist = false
-    const updates: { lastReadMessageId?: string; hasUnread?: boolean } = {}
 
     // Update lastReadMessageId for legacy/manual unread functionality
     if (managed.messages.length > 0) {
       const lastFinalId = this.getLastFinalAssistantMessageId(managed.messages)
       if (lastFinalId && managed.lastReadMessageId !== lastFinalId) {
         managed.lastReadMessageId = lastFinalId
-        updates.lastReadMessageId = lastFinalId
         needsPersist = true
       }
     }
@@ -5103,14 +5098,12 @@ export class SessionManager implements ISessionManager {
     // Clear hasUnread flag (primary source of truth for NEW badge)
     if (managed.hasUnread) {
       managed.hasUnread = false
-      updates.hasUnread = false
       needsPersist = true
     }
 
     // Persist changes
     if (needsPersist) {
-      const workspaceRootPath = managed.workspace.rootPath
-      await updateSessionMetadata(workspaceRootPath, sessionId, updates)
+      this.persistSession(managed)
       this.emitUnreadSummaryChanged()
     }
   }
@@ -5124,9 +5117,7 @@ export class SessionManager implements ISessionManager {
     if (managed) {
       managed.hasUnread = true
       managed.lastReadMessageId = undefined
-      // Persist to disk
-      const workspaceRootPath = managed.workspace.rootPath
-      await updateSessionMetadata(workspaceRootPath, sessionId, { hasUnread: true, lastReadMessageId: undefined })
+      this.persistSession(managed)
       this.emitUnreadSummaryChanged()
     }
   }
@@ -5136,19 +5127,17 @@ export class SessionManager implements ISessionManager {
    * Called from "Mark All Read" context menu on "All Sessions".
    */
   async markAllSessionsRead(workspaceId: string): Promise<void> {
-    const updates: Promise<void>[] = []
+    let changed = false
     for (const managed of this.sessions.values()) {
       if (managed.workspace.id !== workspaceId) continue
       if (managed.hidden || managed.isArchived) continue
       if (managed.isProcessing) continue
       if (!managed.hasUnread) continue
       managed.hasUnread = false
-      updates.push(
-        updateSessionMetadata(managed.workspace.rootPath, managed.id, { hasUnread: false })
-      )
+      this.persistSession(managed)
+      changed = true
     }
-    if (updates.length > 0) {
-      await Promise.all(updates)
+    if (changed) {
       this.emitUnreadSummaryChanged()
     }
   }
@@ -5846,6 +5835,7 @@ export class SessionManager implements ISessionManager {
     // Add user message with stored attachments for persistence
     // Skip if existingMessageId is provided (message was already created when queued)
     let userMessage: Message | undefined
+    let initialTitle: string | undefined
     if (existingMessageId) {
       // Find existing message (already added when queued)
       userMessage = managed.messages.find(m => m.id === existingMessageId)!
@@ -5868,6 +5858,27 @@ export class SessionManager implements ISessionManager {
       // Update lastMessageRole for badge display
       managed.lastMessageRole = 'user'
 
+      // Compute the deterministic first title before the durability flush so the
+      // accepted message and its initial session metadata become authoritative
+      // in one write. Renderer events still follow the accepted ack below.
+      const isFirstUserMessage = managed.messages.filter(m => m.role === 'user').length === 1
+      if (isFirstUserMessage && !managed.name && !managed.triggeredBy) {
+        // Replace bracket mentions with their display labels (e.g. [skill:ws:commit] -> "Commit")
+        // so titles show human-readable names instead of raw IDs
+        let titleSource = message
+        if (options?.badges) {
+          for (const badge of options.badges) {
+            if (badge.rawText && badge.label) {
+              titleSource = titleSource.replace(badge.rawText, badge.label)
+            }
+          }
+        }
+        // Sanitize: strip any remaining bracket mentions, XML blocks, tags
+        const sanitized = sanitizeForTitle(titleSource)
+        initialTitle = sanitized.slice(0, 50) + (sanitized.length > 50 ? '…' : '')
+        managed.name = initialTitle
+      }
+
       // Persist + flush before announcing — the user message must be
       // genuinely on disk before we tell the renderer "accepted", and
       // `persistSession` is debounced (500ms). #616.
@@ -5885,36 +5896,15 @@ export class SessionManager implements ISessionManager {
         optimisticMessageId: options?.optimisticMessageId
       }, managed.workspace.id)
 
-      // If this is the first user message and no title exists, set one immediately
-      // AI generation will enhance it later, but we always have a title from the start
-      // Automation sessions (triggeredBy set) already have a title and skip AI generation entirely
-      const isFirstUserMessage = managed.messages.filter(m => m.role === 'user').length === 1
-      if (isFirstUserMessage && !managed.name && !managed.triggeredBy) {
-        // Replace bracket mentions with their display labels (e.g. [skill:ws:commit] -> "Commit")
-        // so titles show human-readable names instead of raw IDs
-        let titleSource = message
-        if (options?.badges) {
-          for (const badge of options.badges) {
-            if (badge.rawText && badge.label) {
-              titleSource = titleSource.replace(badge.rawText, badge.label)
-            }
-          }
-        }
-        // Sanitize: strip any remaining bracket mentions, XML blocks, tags
-        const sanitized = sanitizeForTitle(titleSource)
-        const initialTitle = sanitized.slice(0, 50) + (sanitized.length > 50 ? '…' : '')
-        managed.name = initialTitle
-        this.persistSession(managed)
-        // Flush immediately so disk is authoritative before notifying renderer
-        await this.flushSession(managed.id)
+      // AI generation will enhance the initial title later, but greetings and
+      // acknowledgements keep the deterministic title to avoid a cold-path call.
+      if (initialTitle !== undefined) {
         this.sendEvent({
           type: 'title_generated',
           sessionId,
           title: initialTitle,
         }, managed.workspace.id)
 
-        // Keep the deterministic title for greetings/acknowledgements: an AI call
-        // cannot add enough signal to justify delaying the cold path.
         if (!isLowSignal(message)) void this.generateTitle(managed, message)
       }
     } else {
@@ -6081,7 +6071,7 @@ export class SessionManager implements ISessionManager {
     // ~L2956 now sees fresh tokens (or correctly-needs_auth failed sources, since
     // ensureFreshToken mirrors the disk write to source.config in-memory).
     const agent = await this.getOrCreateAgent(managed)
-    sendSpan.mark('agent.ready')
+    sendSpan.mark('agent.facade.ready')
 
     // Always set all sources for context (even if none are enabled), including built-ins
     const allSources = loadAllSources(projectRoot)
@@ -6177,7 +6167,12 @@ export class SessionManager implements ISessionManager {
       })
       sessionLog.info('Got chat iterator, starting iteration...')
 
+      let hasMarkedFirstAgentEvent = false
       for await (const event of chatIterator) {
+        if (!hasMarkedFirstAgentEvent) {
+          sendSpan.mark('agent.first_event')
+          hasMarkedFirstAgentEvent = true
+        }
         if (turnWatchdog.getTimeout()) {
           sessionLog.info('Dropping agent event after turn watchdog timeout', { sessionId, eventType: event.type })
           break
@@ -6294,9 +6289,11 @@ export class SessionManager implements ISessionManager {
             }
           }
 
+          if (event.usage) sendSpan.setMetadata('usage', event.usage)
           sendSpan.mark('chat.complete')
+          await this.onProcessingStopped(sessionId, 'complete')
+          sendSpan.mark('session.flushed')
           sendSpan.end()
-          this.onProcessingStopped(sessionId, 'complete')
           return  // Exit function, skip finally block (onProcessingStopped handles cleanup)
         }
 
@@ -6317,7 +6314,7 @@ export class SessionManager implements ISessionManager {
         sendSpan.end()
       } else if (managed.stopRequested) {
         sessionLog.info('Chat loop completed after stop request - events drained successfully')
-        this.onProcessingStopped(sessionId, 'interrupted')
+        await this.onProcessingStopped(sessionId, 'interrupted')
       } else {
         sessionLog.info('Chat loop exited unexpectedly')
       }
@@ -6342,7 +6339,7 @@ export class SessionManager implements ISessionManager {
         // by setting isProcessing = false directly. All other abort reasons route
         // through onProcessingStopped for queue draining.
         if (reason === AbortReason.UserStop || reason === AbortReason.Redirect || reason === undefined) {
-          this.onProcessingStopped(sessionId, 'interrupted')
+          await this.onProcessingStopped(sessionId, 'interrupted')
         }
       } else {
         sessionLog.error('Error in chat:', error)
@@ -6361,7 +6358,7 @@ export class SessionManager implements ISessionManager {
           error: error instanceof Error ? error.message : 'Unknown error'
         }, managed.workspace.id)
         // Handle error via centralized handler
-        this.onProcessingStopped(sessionId, 'error')
+        if (managed.isProcessing) await this.onProcessingStopped(sessionId, 'error')
       }
     } finally {
       turnWatchdog.stop()
@@ -6372,7 +6369,7 @@ export class SessionManager implements ISessionManager {
         sessionLog.info('Finally block cleanup - unexpected exit')
         sendSpan.mark('chat.unexpected_exit')
         sendSpan.end()
-        this.onProcessingStopped(sessionId, 'interrupted')
+        await this.onProcessingStopped(sessionId, 'interrupted')
       }
     }
   }
@@ -6448,7 +6445,9 @@ export class SessionManager implements ISessionManager {
     setTimeout(() => {
       if (managed.stopRequested && managed.isProcessing) {
         sessionLog.warn('Generator did not complete after stop request, forcing cleanup')
-        this.onProcessingStopped(sessionId, 'timeout')
+        void this.onProcessingStopped(sessionId, 'timeout').catch(error => {
+          sessionLog.error('Failed to stop processing after cancel timeout:', error)
+        })
       }
     }, 5000)
 
@@ -6503,7 +6502,9 @@ export class SessionManager implements ISessionManager {
     setTimeout(() => {
       if (managed.stopRequested && managed.isProcessing) {
         sessionLog.warn('Generator did not complete after queued send-now request, forcing cleanup')
-        this.onProcessingStopped(sessionId, 'timeout')
+        void this.onProcessingStopped(sessionId, 'timeout').catch(error => {
+          sessionLog.error('Failed to stop queued processing after timeout:', error)
+        })
       }
     }, 5000)
   }
@@ -6562,15 +6563,11 @@ export class SessionManager implements ISessionManager {
       try {
         await beforeRetry?.()
 
-        // 1. Reset summarization client so it picks up fresh credentials
-        sessionLog.info(`[auth-retry] Resetting summarization client for session ${sessionId}`)
-        resetSummarizationClient()
-
-        // 2. Dispose the agent — the new agent's postInit() reads fresh auth.
+        // Dispose the agent — the new agent's postInit() reads fresh auth.
         sessionLog.info(`[auth-retry] Destroying agent for session ${sessionId}`)
         await this.disposeManagedAgentRuntime(managed, 'authentication retry')
 
-        // 3. Retry the message
+        // Retry the message
         const retryMessage = managed.lastSentMessage
         const retryAttachments = managed.lastSentAttachments
         const retryStoredAttachments = managed.lastSentStoredAttachments
@@ -6620,7 +6617,9 @@ export class SessionManager implements ISessionManager {
           error: 'Authentication could not be refreshed. Retry or sign in again.',
           timestamp: failedMessage.timestamp,
         }, workspaceId)
-        this.onProcessingStopped(sessionId, 'error')
+        void this.onProcessingStopped(sessionId, 'error').catch(error => {
+          sessionLog.error('Failed to stop processing after authentication refresh failure:', error)
+        })
       }
     })
 
@@ -6705,7 +6704,6 @@ export class SessionManager implements ISessionManager {
         // User is not watching - mark as unread for NEW badge
         if (!managed.hasUnread) {
           managed.hasUnread = true
-          await updateSessionMetadata(managed.workspace.rootPath, sessionId, { hasUnread: true })
           this.emitUnreadSummaryChanged()
         }
       }
@@ -6727,7 +6725,11 @@ export class SessionManager implements ISessionManager {
       this.applyExternalSessionMetadata(managed, pendingHeader)
     }
 
-    // 5. Check queue and process or complete
+    // 5. Commit the complete in-memory snapshot before announcing completion.
+    this.persistSession(managed)
+    await this.flushSession(sessionId)
+
+    // 6. Check queue and process or complete
     if (managed.messageQueue.length > 0) {
       // Has queued messages - process next
       this.processNextQueuedMessage(sessionId)
@@ -6752,9 +6754,6 @@ export class SessionManager implements ISessionManager {
       }, managed.workspace.id)
       managed.pendingTurnMetrics = undefined
     }
-
-    // 6. Always persist
-    this.persistSession(managed)
   }
 
   /**
@@ -6822,7 +6821,9 @@ export class SessionManager implements ISessionManager {
           },
         }, managed.workspace.id)
         // Call onProcessingStopped to handle cleanup and check for more queued messages
-        this.onProcessingStopped(sessionId, 'error')
+        void this.onProcessingStopped(sessionId, 'error').catch(error => {
+          sessionLog.error('Failed to stop processing after queued message failure:', error)
+        })
       })
     })
   }
