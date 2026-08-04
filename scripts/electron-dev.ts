@@ -10,6 +10,7 @@ import { join, basename } from "path";
 import * as esbuild from "esbuild";
 import { downloadUv, type Platform, type Arch } from "./build/common";
 import { buildPiAgentServerBinary } from "./build/pi-agent-server";
+import { stageSubprocessResources } from "./build/resource-staging";
 import { loadEnvFiles } from "./env-loader";
 
 const ROOT_DIR = join(import.meta.dir, "..");
@@ -450,9 +451,14 @@ async function main(): Promise<void> {
 
   await ensureBundledUvForCurrentPlatform();
 
-  copyResources();
-
   await buildAgentRuntime();
+  stageSubprocessResources({
+    rootDir: ROOT_DIR,
+    electronDir: ELECTRON_DIR,
+    platform: resolveBuildPlatform(),
+    arch: resolveBuildArch(),
+  });
+  copyResources();
 
   // Build WhatsApp worker bundle so the adapter can spawn it on demand
   await buildWaWorker();

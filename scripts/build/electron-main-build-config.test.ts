@@ -30,6 +30,17 @@ describe('Electron main process build config', () => {
     expect(readRepoFile('scripts/electron-dev.ts')).toContain(AWS_S3_CLIENT_EXTERNAL);
   });
 
+  test('stages the freshly built Pi runtime before copying Electron resources', () => {
+    const source = readRepoFile('scripts/electron-dev.ts');
+    const buildRuntime = source.indexOf('await buildAgentRuntime();');
+    const stageRuntime = source.indexOf('stageSubprocessResources({');
+    const copyResources = source.indexOf('copyResources();');
+
+    expect(buildRuntime).toBeGreaterThan(-1);
+    expect(stageRuntime).toBeGreaterThan(buildRuntime);
+    expect(copyResources).toBeGreaterThan(stageRuntime);
+  });
+
   test('waits for watcher initial builds before launching Electron', () => {
     const source = readRepoFile('scripts/electron-dev.ts');
     const electronStart = source.indexOf('const electronProc = spawn');
