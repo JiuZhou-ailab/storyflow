@@ -69,7 +69,14 @@ function injectSession(
     { id, name: id, llmConnection },
     workspace as never,
     { messagesLoaded: true },
-  ) as unknown as { agent: AgentStub | null; backendRuntimeSignature?: string; backendRestartSignature?: string; isProcessing: boolean; llmConnection?: string }
+  ) as unknown as {
+    agent: AgentStub | null
+    backendRuntimeSignature?: string
+    backendRestartSignature?: string
+    credentialRestartRequired?: boolean
+    isProcessing: boolean
+    llmConnection?: string
+  }
   managed.agent = agent
   // Force a stale runtime signature so the helper's comparison always reaches
   // the refresh branch — the signature it computes from real disk config will
@@ -149,6 +156,17 @@ describe('refreshConnectionRuntime', () => {
 
     expect(agent.reloadCredentials).toHaveBeenCalledTimes(1)
     expect(managed.agent).toBeNull()
+  })
+
+  it('marks a busy runtime for restart when credentials cannot be hot-reloaded', async () => {
+    const agent = createAgentStub({ isProcessing: true })
+    agent.reloadCredentials = jest.fn().mockResolvedValue(false)
+    const managed = injectSession(sm, 'busy-credential', tmpRoot, 'slug-A', agent)
+
+    await sm.reloadConnectionCredentials('slug-A')
+
+    expect(managed.agent).toBe(agent)
+    expect(managed.credentialRestartRequired).toBe(true)
   })
 
   it('disposes matching runtimes when the managed account signs out', async () => {

@@ -119,6 +119,7 @@ import {
 } from './product-rewind.ts';
 import { createToolHooks } from './tool-hooks.ts';
 import { createProviderHooks } from './provider-hooks.ts';
+import { ProductAuthStorageBackend } from './product-auth-storage.ts';
 import { installNetworkProxy } from './network-proxy.ts';
 import {
   createSubagentExtension,
@@ -212,7 +213,7 @@ type InboundMessage =
   | { type: 'conversation_rewind_response'; requestId: string; success: boolean; result?: ConversationRewindResult; errorMessage?: string }
   | RuntimeConfigUpdateMessage
   | { type: 'steer'; message: string }
-  | { type: 'token_update'; piAuth: { provider: string; credential: PiCredential } }
+  | { type: 'token_update'; id: string; piAuth: { provider: string; credential: PiCredential } }
   | { type: 'shutdown' };
 
 /** Proxy tool definition from main process */
@@ -292,6 +293,12 @@ interface OutboundCredentialUpdate {
   provider: string;
   credential: Extract<PiCredential, { type: 'oauth' }>;
 }
+interface OutboundTokenUpdateResult {
+  type: 'token_update_result';
+  id: string;
+  success: boolean;
+  errorMessage?: string;
+}
 
 type OutboundMessage =
   | OutboundReady
@@ -307,6 +314,7 @@ type OutboundMessage =
   | OutboundExtensionNotification
   | OutboundConversationRewindRequest
   | OutboundCredentialUpdate
+  | OutboundTokenUpdateResult
   | OutboundError;
 
 // ============================================================
@@ -469,41 +477,49 @@ function registerCustomEndpointModels(
   debugLog(`Registered custom endpoint provider=${providerName}: ${baseUrl} with ${allIds.length} model(s) [${allIds.join(', ')}], api: ${api}`);
 }
 
-/**
- * Create an in-memory auth storage pre-loaded with the user's credentials
- * and a model registry backed by it. Used by both the main session and
- * ephemeral queryLlm sessions.
- */
+function reportAuthStorageChange(serialized: string): void {
+  const provider = initConfig?.piAuth?.provider;
+  if (!provider) return;
+  const data = JSON.parse(serialized) as Record<string, PiCredential | undefined>;
+  const credential = data[provider];
+  if (credential?.type !== 'oauth') return;
+
+  const fingerprint = JSON.stringify(credential);
+  if (fingerprint === lastReportedOAuthCredential) return;
+  lastReportedOAuthCredential = fingerprint;
+  if (initConfig?.piAuth) initConfig.piAuth = { provider, credential };
+  send({ type: 'credential_update', provider, credential });
+}
+
+/** Build one Pi-owned AuthStorage shared by main and ephemeral sessions. */
 function createAuthenticatedRegistry(): {
   authStorage: PiAuthStorage;
   modelRegistry: PiModelRegistry;
 } {
-  // Reuse module-level authStorage if already created (allows token_update to mutate it).
-  // Only create a new one on first call or after re-init.
   if (!moduleAuthStorage) {
-    moduleAuthStorage = PiAuthStorage.inMemory();
+    const initialCredentials: Record<string, PiCredential> = {};
+    const hasCustomEndpoint = !!initConfig?.baseUrl?.trim();
+    if (initConfig?.piAuth) {
+      const { provider, credential } = initConfig.piAuth;
+      for (const credentialProvider of resolveRuntimeCredentialProviderNames(
+        provider,
+        hasCustomEndpoint && !!initConfig.customEndpoint,
+      )) {
+        initialCredentials[credentialProvider] = credential;
+      }
+      lastReportedOAuthCredential = credential.type === 'oauth' ? JSON.stringify(credential) : '';
+      debugLog(`Injected ${credential.type} credential for provider(s): ${Object.keys(initialCredentials).join(', ')}`);
+    } else if (initConfig?.apiKey) {
+      initialCredentials.anthropic = { type: 'api_key', key: initConfig.apiKey };
+      debugLog('Injected API key into auth storage (legacy fallback)');
+    }
+    moduleAuthStorage = PiAuthStorage.fromStorage(new ProductAuthStorageBackend(
+      JSON.stringify(initialCredentials),
+      reportAuthStorageChange,
+    ));
   }
   const authStorage = moduleAuthStorage;
   const hasCustomEndpoint = !!initConfig?.baseUrl?.trim();
-  if (initConfig?.piAuth) {
-    const { provider, credential } = initConfig.piAuth;
-    // Pi SDK 0.70.0's AuthCredential union (ApiKeyCredential | OAuthCredential) doesn't
-    // include 'iam' as a first-class member, but the auth storage accepts it at runtime
-    // — the Bedrock provider module reads AWS env directly; this `set` keeps Pi SDK's
-    // internal provider-tracking consistent regardless of credential shape.
-    const credentialProviders = resolveRuntimeCredentialProviderNames(
-      provider,
-      hasCustomEndpoint && !!initConfig.customEndpoint,
-    );
-    for (const credentialProvider of credentialProviders) {
-      authStorage.set(credentialProvider, credential as unknown as AuthCredential);
-    }
-    lastReportedOAuthCredential = credential.type === 'oauth' ? JSON.stringify(credential) : '';
-    debugLog(`Injected ${credential.type} credential for provider(s): ${credentialProviders.join(', ')}`);
-  } else if (initConfig?.apiKey) {
-    authStorage.set('anthropic', { type: 'api_key', key: initConfig.apiKey });
-    debugLog('Injected API key into auth storage (legacy fallback)');
-  }
 
   const modelRegistry = PiModelRegistry.inMemory(authStorage);
 
@@ -523,20 +539,6 @@ function createAuthenticatedRegistry(): {
   }
 
   return { authStorage, modelRegistry };
-}
-
-function reportRefreshedOAuthCredential(): void {
-  const provider = initConfig?.piAuth?.provider;
-  if (!provider || !moduleAuthStorage) return;
-
-  const credential = moduleAuthStorage.get(provider);
-  if (credential?.type !== 'oauth') return;
-
-  const fingerprint = JSON.stringify(credential);
-  if (fingerprint === lastReportedOAuthCredential) return;
-
-  lastReportedOAuthCredential = fingerprint;
-  send({ type: 'credential_update', provider, credential });
 }
 
 async function ensureSession(): Promise<AgentSession> {
@@ -1238,7 +1240,6 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
         LLM_QUERY_TIMEOUT_MS,
         `queryLlm timed out after ${LLM_QUERY_TIMEOUT_MS / 1000}s`
       );
-      reportRefreshedOAuthCredential();
       debugLog(`[queryLlm] Result length: ${result.trim().length}`);
 
       // If we got no text but captured an error, throw so callers see the real issue
@@ -1340,9 +1341,6 @@ function getAssistantErrorMessage(event: AgentSessionEvent): string | null {
 }
 
 function handleSessionEvent(event: AgentSessionEvent): void {
-  if (event.type === 'agent_settled') {
-    reportRefreshedOAuthCredential();
-  }
   const promptAttemptState = currentPromptAttemptState;
   if (promptAttemptState) {
     recordPromptAttemptEvent(promptAttemptState, event as unknown as Record<string, unknown>);
@@ -1978,26 +1976,41 @@ async function processMessage(msg: InboundMessage): Promise<void> {
       }
       break;
 
-    case 'token_update':
-      if (moduleAuthStorage) {
+    case 'token_update': {
+      try {
+        if (!moduleAuthStorage) throw new Error('AuthStorage is not initialized');
         const { provider, credential } = msg.piAuth;
         // See ambient comment at the initial `authStorage.set` call — same shape reason.
         const credentialProviders = resolveRuntimeCredentialProviderNames(
           provider,
           !!initConfig?.baseUrl?.trim() && !!initConfig.customEndpoint,
         );
-        for (const credentialProvider of credentialProviders) {
-          moduleAuthStorage.set(credentialProvider, credential as unknown as AuthCredential);
+        const previousFingerprint = lastReportedOAuthCredential;
+        if (credential.type === 'oauth') lastReportedOAuthCredential = JSON.stringify(credential);
+        try {
+          for (const credentialProvider of credentialProviders) {
+            moduleAuthStorage.set(credentialProvider, credential as unknown as AuthCredential);
+          }
+        } catch (error) {
+          lastReportedOAuthCredential = previousFingerprint;
+          throw error;
         }
         if (initConfig) {
           initConfig.piAuth = msg.piAuth;
         }
-        lastReportedOAuthCredential = credential.type === 'oauth' ? JSON.stringify(credential) : '';
+        if (credential.type !== 'oauth') lastReportedOAuthCredential = '';
         debugLog(`Updated ${credential.type} credential for provider(s): ${credentialProviders.join(', ')}`);
-      } else {
-        debugLog('token_update received but no authStorage initialized');
+        send({ type: 'token_update_result', id: msg.id, success: true });
+      } catch (error) {
+        send({
+          type: 'token_update_result',
+          id: msg.id,
+          success: false,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
       }
       break;
+    }
 
     case 'shutdown':
       handleShutdown();

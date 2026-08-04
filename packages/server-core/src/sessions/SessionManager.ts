@@ -89,7 +89,6 @@ import {
 } from '@craft-agent/shared/sessions'
 import { loadWorkspaceSources, loadAllSources, getSourcesBySlugs, isSourceUsable, type LoadedSource, type McpServerConfig, getSourcesNeedingAuth, getSourceCredentialManager, getSourceServerBuilder, type SourceWithCredential, isApiOAuthProvider, hasRenewEndpoint, SERVER_BUILD_ERRORS, TokenRefreshManager, createTokenGetter } from '@craft-agent/shared/sources'
 import { ConfigWatcher, type ConfigWatcherCallbacks } from '@craft-agent/shared/config'
-import { getValidClaudeOAuthToken } from '@craft-agent/shared/auth'
 import { resolveAuthEnvVars } from '@craft-agent/shared/config'
 import { getLastApiError } from '@craft-agent/shared/provider-diagnostics'
 import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
@@ -99,7 +98,7 @@ import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { CraftMcpClient, McpClientPool, McpPoolServer } from '@craft-agent/shared/mcp'
 import { type Session, type SessionEvent, type FileAttachment, type SendMessageOptions, type OneShotLlmRequest, type OneShotLlmResult, type NovelSelectionRewriteRequest, type NovelSelectionRewriteResult, type UnreadSummary, type RemoteSessionTransferPayload, RPC_CHANNELS, generateMessageId } from '@craft-agent/shared/protocol'
 import { messageToStored, storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta, type TurnMetrics } from '@craft-agent/core/types'
-import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlAsync, getEmojiIcon, resetSummarizationClient, resolveToolIcon, readFileAttachment, selectSpreadMessages, normalizePath, DEFAULT_TITLE_LANGUAGE } from '@craft-agent/shared/utils'
+import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlAsync, getEmojiIcon, resolveToolIcon, readFileAttachment, selectSpreadMessages, normalizePath, DEFAULT_TITLE_LANGUAGE } from '@craft-agent/shared/utils'
 import { buildNovelSelectionRewritePrompt, sanitizeNovelSelectionReplacement } from '@craft-agent/shared/writing'
 import { loadPiSkillCatalog, invalidateSkillsCache } from '@craft-agent/shared/skills'
 import { invalidateContextFileCache } from '@craft-agent/shared/prompts/system'
@@ -879,6 +878,7 @@ interface ManagedSession {
    * the agent must be disposed + recreated rather than refreshed in place.
    */
   backendRestartSignature?: string
+  credentialRestartRequired?: boolean
   // Whether the previous turn was interrupted (for context injection on next message).
   // Ephemeral — not persisted to disk. Cleared after one-shot injection.
   wasInterrupted?: boolean
@@ -1697,14 +1697,13 @@ export class SessionManager implements ISessionManager {
 
       if (!connection) {
         sessionLog.error(`No LLM connection found for slug: ${slug}`)
-        resetSummarizationClient()
         return
       }
 
       sessionLog.info(`Reinitializing auth for connection: ${slug} (${connection.authType})`)
 
       // Resolve auth env vars via shared utility (provider-agnostic)
-      const result = await resolveAuthEnvVars(connection, slug!, manager, getValidClaudeOAuthToken)
+      const result = await resolveAuthEnvVars(connection, slug!, manager)
 
       if (!result.success) {
         sessionLog.error(`Auth resolution failed for ${slug}: ${result.warning}`)
@@ -1715,9 +1714,6 @@ export class SessionManager implements ISessionManager {
         }
         sessionLog.info(`Auth env vars set for connection: ${slug}`)
       }
-
-      // Reset cached summarization client so it picks up new credentials/base URL
-      resetSummarizationClient()
     } catch (error) {
       sessionLog.error('Failed to reinitialize auth:', error)
       throw error
@@ -3156,6 +3152,7 @@ export class SessionManager implements ISessionManager {
     managed.agentReadyResolve = undefined
     managed.backendRuntimeSignature = undefined
     managed.backendRestartSignature = undefined
+    managed.credentialRestartRequired = false
     unregisterSessionScopedToolCallbacks(sessionId)
   }
 
@@ -3345,14 +3342,14 @@ export class SessionManager implements ISessionManager {
       if (managed.llmConnection !== connectionSlug || !managed.agent) continue
       try {
         const reloaded = await managed.agent.reloadCredentials?.(managedModelAccess) ?? false
-        if (!reloaded && !managed.agent.isProcessing()) {
-          await this.disposeManagedAgentRuntime(managed, 'credential reload')
+        if (!reloaded) {
+          if (managed.agent.isProcessing()) managed.credentialRestartRequired = true
+          else await this.disposeManagedAgentRuntime(managed, 'credential reload')
         }
       } catch (error) {
         sessionLog.warn(`reloadConnectionCredentials failed for ${managed.id}: ${error instanceof Error ? error.message : error}`)
-        if (!managed.agent?.isProcessing()) {
-          await this.disposeManagedAgentRuntime(managed, 'failed credential reload')
-        }
+        if (managed.agent?.isProcessing()) managed.credentialRestartRequired = true
+        else await this.disposeManagedAgentRuntime(managed, 'failed credential reload')
       }
     }
   }
@@ -3392,6 +3389,10 @@ export class SessionManager implements ISessionManager {
    */
   private async getOrCreateAgent(managed: ManagedSession): Promise<AgentInstance> {
     const managedModelAccess = await this.ensureManagedCredentialForSession(managed)
+
+    if (managed.credentialRestartRequired && managed.agent && !managed.agent.isProcessing()) {
+      await this.disposeManagedAgentRuntime(managed, 'deferred credential reload')
+    }
 
     // Refresh runtime config in-place when the connection has drifted since
     // the agent was created. May null out `managed.agent` if the in-place
@@ -3656,6 +3657,9 @@ export class SessionManager implements ISessionManager {
           onSdkSessionIdCleared,
           onBranchForkInvalidated,
           onConversationRewind: request => this.handleConversationRewind(managed, request),
+          onCredentialRotated: () => this.reloadConnectionCredentials(
+            managed.llmConnection || connection?.slug || 'pi',
+          ),
           getRecoveryMessages,
           seedFreshSessionFromRecovery,
           getBranchFallbackMessages,

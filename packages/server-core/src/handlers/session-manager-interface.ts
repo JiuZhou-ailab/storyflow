@@ -1,3 +1,7 @@
+// input: Handler-facing session lifecycle, auth, transport, and workspace contracts
+// output: Provider-independent SessionManager interface consumed by RPC handlers
+// pos: Dependency inversion boundary between server handlers and session orchestration
+
 /**
  * ISessionManager — abstract interface for the session lifecycle engine.
  *
@@ -11,6 +15,7 @@ import type { StoredAttachment, AnnotationV1 } from '@craft-agent/core/types'
 import type { PermissionMode } from '@craft-agent/shared/agent/mode-types'
 import type { ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels'
 import type { AuthResult } from '@craft-agent/shared/agent'
+import type { ManagedModelAccess } from '@craft-agent/shared/agent/backend/types'
 import type {
   Session,
   SessionStatus,
@@ -245,6 +250,10 @@ export interface ISessionManager {
    * `getOrCreateAgent`.
    */
   refreshConnectionRuntime(connectionSlug: string): Promise<void>
+  reloadConnectionCredentials(
+    connectionSlug: string,
+    managedModelAccess?: ManagedModelAccess,
+  ): Promise<void>
   completeAuthRequest(sessionId: string, result: AuthResult): Promise<void>
   executePromptAutomation(input: ExecutePromptAutomationInput): Promise<{ sessionId: string }>
 

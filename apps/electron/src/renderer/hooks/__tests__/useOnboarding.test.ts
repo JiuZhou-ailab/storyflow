@@ -64,15 +64,19 @@ describe('apiSetupMethodToConnectionSetup', () => {
     expect(setup.models).toEqual(['model-a'])
   })
 
-  it('claude_oauth includes only credential', () => {
+  it.each([
+    ['claude_oauth', 'claude-max'],
+    ['pi_chatgpt_oauth', 'chatgpt-plus'],
+    ['pi_copilot_oauth', 'github-copilot'],
+  ] as const)('%s persists metadata without forwarding OAuth credentials', (method, expectedSlug) => {
     const setup = apiSetupMethodToConnectionSetup(
-      'claude_oauth',
+      method,
       { credential: 'oauth-token-123' },
       null,
       new Set(),
     )
-    expect(setup.slug).toBe('claude-max')
-    expect(setup.credential).toBe('oauth-token-123')
+    expect(setup.slug).toBe(expectedSlug)
+    expect(setup.credential).toBeUndefined()
     expect(setup.baseUrl).toBeUndefined()
   })
 

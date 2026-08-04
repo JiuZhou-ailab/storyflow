@@ -224,6 +224,32 @@ describe('ModelRefreshService credentials', () => {
     })
   })
 
+  it('lets runtime startup own the initial refresh', () => {
+    const configDir = setupModelRefreshConfigDir()
+
+    const output = runModelRefreshEval(configDir, `
+      let credentialCalls = 0;
+      const service = initModelRefreshService(async () => {
+        credentialCalls += 1;
+        return {};
+      });
+      await service.refreshAfterCredentialChange('pi-api');
+      const beforeStart = credentialCalls;
+      service.startAll();
+      await new Promise(resolve => setTimeout(resolve, 20));
+      const afterStart = credentialCalls;
+      await service.refreshAfterCredentialChange('pi-api');
+      service.stopAll();
+      console.log(JSON.stringify({ beforeStart, afterStart, afterChange: credentialCalls }));
+    `)
+
+    expect(JSON.parse(output)).toEqual({
+      beforeStart: 0,
+      afterStart: 1,
+      afterChange: 2,
+    })
+  })
+
   it('resolves only API-key credentials for API-key auth', async () => {
     const connection: LlmConnection = {
       slug: 'anthropic-api',

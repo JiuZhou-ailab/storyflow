@@ -141,7 +141,7 @@ export function registerOnboardingHandlers(server: RpcServer, deps: HandlerDeps)
 
       const expiresAtDate = tokens.expiresAt ? new Date(tokens.expiresAt).toISOString() : 'never'
       log.info(`[Onboarding] Claude OAuth saved to LLM connection (expires: ${expiresAtDate})`)
-      return { success: true, token: tokens.accessToken }
+      return { success: true }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       log.error('[Onboarding] Exchange Claude code error:', message)

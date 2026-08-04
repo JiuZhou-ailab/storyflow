@@ -220,6 +220,10 @@ export class PiAgent extends BaseAgent {
     resolve: (updated: boolean) => void;
     reject: (error: Error) => void;
   }> = new Map();
+  private pendingCredentialUpdates: Map<string, {
+    resolve: () => void;
+    reject: (error: Error) => void;
+  }> = new Map();
 
   // Pool reference for convenience (from this.config.mcpPool)
   private get mcpPool(): McpClientPool | undefined { return this.config.mcpPool; }
@@ -329,6 +333,7 @@ export class PiAgent extends BaseAgent {
 
     // Build session ID and session dir path upfront (used for spawn env + init command)
     const sessionId = this.config.session?.id || `agent-${Date.now()}`;
+    const endSubprocessReady = perf.start('pi.subprocess.ready', { sessionId });
     const sessionDir = this.config.session
       ? getSessionPath(this.config.workspace.rootPath, sessionId)
       : undefined;
@@ -434,6 +439,7 @@ export class PiAgent extends BaseAgent {
 
     // Wait for subprocess to report ready
     await this.subprocessReady;
+    endSubprocessReady();
     this.debug('Pi subprocess is ready');
     // Register session-scoped tools with the subprocess. Host-owned tools run
     // in the main process; call_llm stays inside the Pi runtime. Register before
@@ -617,6 +623,7 @@ export class PiAgent extends BaseAgent {
       refreshToken: credential.refresh,
       expiresAt: credential.expires,
     });
+    await this.config.onCredentialRotated?.();
     this.debug(`Persisted OAuth credential refreshed by Pi for ${provider}`);
   }
 
@@ -779,6 +786,10 @@ export class PiAgent extends BaseAgent {
         this.handleRuntimeConfigUpdateResult(msg);
         break;
 
+      case 'token_update_result':
+        this.handleCredentialUpdateResult(msg);
+        break;
+
       case 'session_id_update':
         // Pi session ID changed
         if (msg.sessionId) {
@@ -835,6 +846,10 @@ export class PiAgent extends BaseAgent {
         for (const [id, pending] of this.pendingRuntimeConfigUpdates) {
           pending.reject(new Error(rawMessage));
           this.pendingRuntimeConfigUpdates.delete(id);
+        }
+        for (const [id, pending] of this.pendingCredentialUpdates) {
+          pending.reject(new Error(rawMessage));
+          this.pendingCredentialUpdates.delete(id);
         }
 
         // Suppress repeated identical errors to prevent a broken subprocess
@@ -1428,6 +1443,15 @@ export class PiAgent extends BaseAgent {
     pending.resolve(Boolean(msg.updated ?? true));
   }
 
+  private handleCredentialUpdateResult(msg: Record<string, unknown>): void {
+    const id = String(msg.id || '');
+    const pending = this.pendingCredentialUpdates.get(id);
+    if (!pending) return;
+    this.pendingCredentialUpdates.delete(id);
+    if (msg.success) pending.resolve();
+    else pending.reject(new Error(String(msg.errorMessage || 'Credential update failed')));
+  }
+
   /**
    * Handle subprocess exit.
    */
@@ -1479,6 +1503,11 @@ export class PiAgent extends BaseAgent {
       pending.reject(new Error(`Pi subprocess exited unexpectedly (${exitReason})`));
     }
     this.pendingRuntimeConfigUpdates.clear();
+
+    for (const [, pending] of this.pendingCredentialUpdates) {
+      pending.reject(new Error(`Pi subprocess exited unexpectedly (${exitReason})`));
+    }
+    this.pendingCredentialUpdates.clear();
 
   }
 
@@ -1583,6 +1612,30 @@ export class PiAgent extends BaseAgent {
         customEndpoint: runtime.customEndpoint,
         customModels: runtime.customModels,
       });
+    });
+  }
+
+  private async requestCredentialUpdate(piAuth: Awaited<ReturnType<PiAgent['getPiAuth']>>): Promise<void> {
+    if (!this.subprocess || !piAuth) return;
+    const id = `credential-update-${++this.rpcIdCounter}`;
+    const timeoutMs = 15_000;
+
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingCredentialUpdates.delete(id);
+        reject(new Error(`token_update timed out after ${Math.floor(timeoutMs / 1000)}s`));
+      }, timeoutMs);
+      this.pendingCredentialUpdates.set(id, {
+        resolve: () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      });
+      this.send({ type: 'token_update', id, piAuth });
     });
   }
 
@@ -1913,9 +1966,9 @@ export class PiAgent extends BaseAgent {
       this.config.managedModelAccess = managedModelAccess;
     }
     const piAuth = await this.getPiAuth();
-    if (!piAuth) return false;
+    if (!piAuth || piAuth.credential.type === 'iam') return false;
     if (this.subprocess) {
-      this.send({ type: 'token_update', piAuth });
+      await this.requestCredentialUpdate(piAuth);
       this.debug(`Pushed refreshed credential for Pi provider: ${piAuth.provider}`);
     }
     return true;

@@ -545,7 +545,7 @@ app.whenReady().then(async () => {
             // Model discovery is downstream of auth state. Do not make an auth
             // transition wait on its own credential resolver.
             for (const slug of MANAGED_LLM_CONNECTION_SLUGS) {
-              void getModelRefreshService().refreshNow(slug).catch(error => {
+              void getModelRefreshService().refreshAfterCredentialChange(slug).catch(error => {
                 mainLog.warn(`[client-auth] Managed model refresh failed for ${slug}:`, error)
               })
             }

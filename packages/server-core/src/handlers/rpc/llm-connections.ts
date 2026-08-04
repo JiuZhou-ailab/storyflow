@@ -239,6 +239,18 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
         return { success: false, error: 'Default model is required for compatible endpoints.' }
       }
 
+      const credential = setup.credential?.trim()
+      if (
+        pendingConnection.authType === 'oauth'
+        && credential
+        && !isMaskedCredential(credential)
+      ) {
+        return {
+          success: false,
+          error: 'OAuth credentials must be persisted by the provider OAuth flow.',
+        }
+      }
+
       if (isNewConnection) {
         const added = addLlmConnection(pendingConnection)
         if (!added) {
@@ -256,16 +268,9 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
       }
 
       // Store credential if provided (skip masked placeholders from GET_API_KEY)
-      const credential = setup.credential?.trim()
       if (credential && !isMaskedCredential(credential)) {
-        const authType = pendingConnection.authType
-        if (authType === 'oauth') {
-          await manager.setLlmOAuth(setup.slug, { accessToken: credential })
-          deps.platform.logger?.info('Saved OAuth access token to LLM connection')
-        } else {
-          await manager.setLlmApiKey(setup.slug, credential)
-          deps.platform.logger?.info('Saved API key to LLM connection')
-        }
+        await manager.setLlmApiKey(setup.slug, credential)
+        deps.platform.logger?.info('Saved API key to LLM connection')
       }
 
       // Pi+Bedrock IAM credentials — stored separately from API keys
@@ -303,6 +308,7 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
       // not the global default (which may be a different connection).
       await sessionManager.reinitializeAuth(setup.slug)
       deps.platform.logger?.info('Reinitialized auth after LLM connection setup')
+      await sessionManager.reloadConnectionCredentials(setup.slug)
 
       // Clear "Setup later" flag now that user has configured a provider
       setSetupDeferred(false)

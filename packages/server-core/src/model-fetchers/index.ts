@@ -196,6 +196,7 @@ export async function resolveModelRefreshCredentials(
 class ModelRefreshService {
   private timers = new Map<string, ReturnType<typeof setInterval>>()
   private inFlight = new Map<string, Promise<void>>()
+  private started = false
 
   constructor(
     private fetchers: ModelFetcherMap,
@@ -216,6 +217,12 @@ class ModelRefreshService {
     })
     this.inFlight.set(slug, promise)
     return promise
+  }
+
+  /** Credential changes before runtime startup are covered by startAll(). */
+  async refreshAfterCredentialChange(slug: string): Promise<void> {
+    if (!this.started) return
+    await this.refreshConnection(slug)
   }
 
   /**
@@ -322,6 +329,8 @@ class ModelRefreshService {
    * Call on app startup after IPC handlers are registered.
    */
   startAll(): void {
+    if (this.started) return
+    this.started = true
     const connections = getLlmConnections()
 
     for (const conn of connections) {
@@ -358,6 +367,7 @@ class ModelRefreshService {
    * Stop all refresh timers. Call on app quit.
    */
   stopAll(): void {
+    this.started = false
     for (const [slug, timer] of this.timers) {
       clearInterval(timer)
       handlerLog.info(`Stopped model refresh timer for ${slug}`)

@@ -273,6 +273,9 @@ export interface CoreBackendConfig {
     request: ConversationRewindRequest,
   ) => Promise<ConversationRewindResult>;
 
+  /** Fan out a Pi-rotated credential after the product store accepts it. */
+  onCredentialRotated?: () => Promise<void>;
+
   /**
    * Called when the agent decides the persisted branch-fork metadata
    * (branchFromSdkSessionId / branchFromSdkCwd / branchFromSdkTurnId) is

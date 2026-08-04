@@ -196,16 +196,9 @@ export function apiSetupMethodToConnectionSetup(
         customEndpoint: options.customEndpoint,
       }
     case 'claude_oauth':
-      return {
-        slug,
-        credential: normalizeCredentialForSetup(options.credential),
-      }
     case 'pi_chatgpt_oauth':
     case 'pi_copilot_oauth':
-      return {
-        slug,
-        credential: normalizeCredentialForSetup(options.credential),
-      }
+      return { slug }
     case 'pi_api_key':
       return {
         slug,
@@ -727,9 +720,9 @@ export function useOnboarding({
       const connectionSlug = apiSetupMethodToConnectionSetup('claude_oauth', {}, editingSlug, existingSlugs).slug
       const result = await window.electronAPI.exchangeClaudeCode(code.trim(), connectionSlug)
 
-      if (result.success && result.token) {
+      if (result.success) {
         setIsWaitingForCode(false)
-        await saveAndValidateConnection(connectionSlug, 'claude_oauth', result.token, !!editingSlug)
+        await saveAndValidateConnection(connectionSlug, 'claude_oauth', undefined, !!editingSlug)
       } else {
         setState(s => ({
           ...s,

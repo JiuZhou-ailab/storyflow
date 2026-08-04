@@ -1,3 +1,7 @@
+// input: LLM connection auth modes and process environment compatibility state
+// output: Regression coverage for Pi-owned OAuth and isolated Bedrock environment handling
+// pos: Auth ownership contract tests for shared connection resolution
+
 import { afterEach, describe, expect, it } from 'bun:test'
 import type { LlmConnection } from '../storage.ts'
 import {
@@ -64,7 +68,6 @@ describe('Bedrock auth env handling', () => {
       connection,
       connection.slug,
       credentialManager as any,
-      async () => ({}),
     )
 
     expect(result.success).toBe(true)
@@ -108,4 +111,25 @@ describe('Bedrock auth env handling', () => {
       expect(process.env.AWS_REGION).toBe(originalRegion)
     }
   })
+})
+
+it('does not resolve or project Anthropic OAuth outside Pi AuthStorage', async () => {
+  const connection = {
+    slug: 'claude-oauth',
+    name: 'Claude OAuth',
+    providerType: 'anthropic',
+    authType: 'oauth',
+    createdAt: Date.now(),
+  } as LlmConnection
+  const credentialManager = new Proxy({}, {
+    get() {
+      throw new Error('credential manager must not be read for OAuth env projection')
+    },
+  })
+
+  await expect(resolveAuthEnvVars(
+    connection,
+    connection.slug,
+    credentialManager as never,
+  )).resolves.toEqual({ envVars: {}, success: true })
 })
