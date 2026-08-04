@@ -26,6 +26,7 @@ export interface LaunchedApp {
   /** Current page (renderer) session id. Navigation is same-page, so this stays stable. */
   sid: string
   perfLines: PerfLogLine[]
+  processLines: string[]
   launchTimings: {
     spawnedAt: number
     devtoolsReadyAt: number
@@ -61,6 +62,7 @@ export async function launchApp(fixtureDir: string, options: LaunchAppOptions = 
   rmSync(join(fixtureDir, '.server.lock'), { force: true })
 
   const perfLines: PerfLogLine[] = []
+  const processLines: string[] = []
   const userDataDir = mkdtempSync(join(fixtureDir, '.electron-userdata-'))
 
   const spawnedAt = Date.now()
@@ -88,8 +90,11 @@ export async function launchApp(fixtureDir: string, options: LaunchAppOptions = 
     for (const line of raw.split('\n')) {
       const t = line.trim()
       if (!t) continue
-      if (/\[perf\]|session[- ]?switch|text_delta|writing\.document|session-list\.tap/i.test(t)) {
-        perfLines.push({ at: Date.now(), text: unwrap(t) })
+      const text = unwrap(t)
+      processLines.push(text)
+      if (processLines.length > 200) processLines.shift()
+      if (/\[perf\]|session[- ]?switch|text_delta|writing\.document|session-list\.tap/i.test(text)) {
+        perfLines.push({ at: Date.now(), text })
       }
     }
   }
@@ -149,6 +154,7 @@ export async function launchApp(fixtureDir: string, options: LaunchAppOptions = 
       return sid
     },
     perfLines,
+    processLines,
     launchTimings: {
       spawnedAt,
       devtoolsReadyAt,

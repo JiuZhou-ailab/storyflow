@@ -544,7 +544,7 @@ async function waitForAgent(app: LaunchedApp, sessionId: string, targetFile: str
     await sleep(100)
   }
   throw new Error(
-    `Timed out waiting for the real Pi edit turn: state=${JSON.stringify(lastState)} file=${JSON.stringify(readFileSync(targetFile, 'utf8'))}`,
+    `Timed out waiting for the real Pi edit turn: state=${JSON.stringify(lastState)} file=${JSON.stringify(readFileSync(targetFile, 'utf8'))} process=${JSON.stringify(app.processLines.slice(-40))}`,
   )
 }
 
