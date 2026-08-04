@@ -1367,7 +1367,7 @@ export class SessionManager implements ISessionManager {
       return // Already watching this workspace
     }
 
-    sessionLog.info(`Setting up ConfigWatcher for workspace: ${workspaceId} (${workspaceRootPath})`)
+    sessionLog.debug(`Setting up ConfigWatcher for workspace: ${workspaceId} (${workspaceRootPath})`)
     const resourceProjectRoot = isFreeConversationWorkspaceId(workspaceId)
       ? undefined
       : workspaceRootPath
@@ -1552,7 +1552,7 @@ export class SessionManager implements ISessionManager {
         },
       })
       this.automationSystems.set(workspaceRootPath, automationSystem)
-      sessionLog.info(`Initialized AutomationSystem for workspace ${workspaceId}`)
+      sessionLog.debug(`Initialized AutomationSystem for workspace ${workspaceId}`)
     }
   }
 
@@ -1747,6 +1747,7 @@ export class SessionManager implements ISessionManager {
       for (const workspace of workspaces) {
         this.setupConfigWatcher(workspace.rootPath, workspace.id)
       }
+      sessionLog.info('Initialized workspace runtime services', { workspaceCount: workspaces.length })
 
       // Load existing sessions from disk
       await this.loadSessionsFromDisk()
@@ -6099,11 +6100,14 @@ export class SessionManager implements ISessionManager {
       sendSpan.mark('servers.applied')
     }
 
-      sessionLog.info('Starting chat for session:', sessionId)
-      sessionLog.info('Workspace:', JSON.stringify(managed.workspace, null, 2))
-      sessionLog.info('Message:', message)
-      sessionLog.info('Agent model:', agent.getModel())
-      sessionLog.info('process.cwd():', process.cwd())
+      sessionLog.info('Starting chat', {
+        sessionId,
+        workspaceId: managed.workspace.id,
+        messageLength: message.length,
+        attachmentCount: attachments?.length ?? 0,
+        storedAttachmentCount: storedAttachments?.length ?? 0,
+        model: agent.getModel(),
+      })
 
       // Process the message through the agent
       sessionLog.info('Calling agent.chat()...')
@@ -8472,11 +8476,13 @@ export class SessionManager implements ISessionManager {
    */
   cleanup(): void {
     sessionLog.info('Cleaning up resources...')
+    const configWatcherCount = this.configWatchers.size
+    const automationSystemCount = this.automationSystems.size
 
     // Stop all ConfigWatchers (file system watchers)
     for (const [path, watcher] of this.configWatchers) {
       watcher.stop()
-      sessionLog.info(`Stopped config watcher for ${path}`)
+      sessionLog.debug(`Stopped config watcher for ${path}`)
     }
     this.configWatchers.clear()
 
@@ -8484,7 +8490,7 @@ export class SessionManager implements ISessionManager {
     for (const [workspacePath, automationSystem] of this.automationSystems) {
       try {
         automationSystem.dispose()
-        sessionLog.info(`Disposed AutomationSystem for ${workspacePath}`)
+        sessionLog.debug(`Disposed AutomationSystem for ${workspacePath}`)
       } catch (error) {
         sessionLog.error(`Failed to dispose AutomationSystem for ${workspacePath}:`, error)
       }
@@ -8512,6 +8518,6 @@ export class SessionManager implements ISessionManager {
       unregisterSessionScopedToolCallbacks(sessionId)
     }
 
-    sessionLog.info('Cleanup complete')
+    sessionLog.info('Cleanup complete', { configWatcherCount, automationSystemCount })
   }
 }

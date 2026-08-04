@@ -1,3 +1,7 @@
+// input: Runtime environment, debug flag, log level, scope, message, and structured arguments
+// output: Debug-gated logs routed once through Electron, renderer console, or CLI stderr
+// pos: Shared low-level diagnostic logger; transports own timestamps and serialization
+
 // Check CRAFT_DEBUG env var at module load (for SDK subprocess)
 // Guard against browser/renderer contexts where process is undefined
 let debugEnabled = typeof process !== 'undefined' && process.env?.CRAFT_DEBUG === '1';
@@ -28,23 +32,35 @@ function detectEnvironment(): Environment {
   return 'cli';
 }
 
-let electronLog: unknown | null = null;
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+interface LogTarget {
+  debug?: (...args: unknown[]) => void;
+  info?: (...args: unknown[]) => void;
+  warn?: (...args: unknown[]) => void;
+  error?: (...args: unknown[]) => void;
+}
+
+interface ElectronLogTarget extends LogTarget {
+  scope?: (name: string) => LogTarget;
+}
+
+let electronLog: ElectronLogTarget | null = null;
 let electronLogChecked = false;
 
-function getElectronLog(): { info?: (message: string) => void } | null {
+function getElectronLog(): ElectronLogTarget | null {
   if (electronLogChecked) {
-    return (electronLog as { info?: (message: string) => void } | null) ?? null;
+    return electronLog;
   }
   electronLogChecked = true;
   try {
     // Optional dependency - only available in Electron main process.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const loaded = require('electron-log/main');
     electronLog = loaded?.default ?? loaded ?? null;
   } catch {
     electronLog = null;
   }
-  return (electronLog as { info?: (message: string) => void } | null) ?? null;
+  return electronLog;
 }
 
 /**
@@ -84,41 +100,41 @@ function safeStringify(obj: unknown): string {
 }
 
 /**
- * Format a log message with timestamp and optional scope.
+ * Format a standalone CLI log line. Electron and browser consoles already own
+ * timestamps and argument serialization, so they receive the raw arguments.
  */
-function formatMessage(scope: string | undefined, message: string, args: unknown[]): string {
+function formatCliMessage(level: LogLevel, scope: string | undefined, message: string, args: unknown[]): string {
   const timestamp = new Date().toISOString();
+  const levelStr = level.toUpperCase().padEnd(5);
   const scopeStr = scope ? `[${scope}] ` : '';
   const argsStr = args.length > 0
     ? ' ' + args.map(a => typeof a === 'object' ? safeStringify(a) : String(a)).join(' ')
     : '';
-  return `${timestamp} ${scopeStr}${message}${argsStr}\n`;
+  return `${timestamp} ${levelStr} ${scopeStr}${message}${argsStr}\n`;
 }
 
 /**
  * Output log based on environment.
  *
- * All environments output to console.error (or console.log for renderer).
- * In Electron main process, logs also go to electron-log via the main process logger.
+ * Electron main uses electron-log; CLI uses stderr; renderer uses DevTools.
  */
-function output(formatted: string): void {
+function output(level: LogLevel, scope: string | undefined, message: string, args: unknown[]): void {
   const env = detectEnvironment();
 
-  // Mirror debug logs into electron-log when available so they appear in main.log.
   if (env === 'electron-main') {
     const log = getElectronLog();
-    log?.info?.(formatted.trim());
+    const target = scope ? log?.scope?.(scope) ?? log : log;
+    target?.[level]?.(message, ...args);
+    return;
   }
 
   if (env === 'electron-renderer') {
-    // Use console.log in renderer for DevTools
-    console.log(formatted.trim());
+    const target = console[level] ?? console.log;
+    target(scope ? `[${scope}] ${message}` : message, ...args);
   } else if (typeof process !== 'undefined' && process.stderr) {
-    // Use stderr in main/cli to avoid stdout interference
-    process.stderr.write(formatted);
+    process.stderr.write(formatCliMessage(level, scope, message, args));
   } else {
-    // Fallback to console for unexpected environments
-    console.log(formatted.trim());
+    console[level]?.(scope ? `[${scope}] ${message}` : message, ...args);
   }
 }
 
@@ -127,7 +143,7 @@ function output(formatted: string): void {
  * Only logs when debug mode is enabled via --debug flag.
  *
  * Output routing:
- * - Electron main: console + file
+ * - Electron main: electron-log transports
  * - Electron renderer: console (DevTools)
  * - CLI/scripts: console only
  *
@@ -137,7 +153,7 @@ function output(formatted: string): void {
  */
 export function debug(message: string, ...args: unknown[]): void {
   if (!isDebugEnabled()) return;
-  output(formatMessage(undefined, message, args));
+  output('debug', undefined, message, args);
 }
 
 /**
@@ -151,10 +167,9 @@ export function debug(message: string, ...args: unknown[]): void {
  * log.error('Failed to connect', error);
  */
 export function createLogger(scope: string) {
-  const logWithLevel = (level: string, message: string, args: unknown[]) => {
+  const logWithLevel = (level: LogLevel, message: string, args: unknown[]) => {
     if (!isDebugEnabled()) return;
-    const levelStr = level.toUpperCase().padEnd(5);
-    output(formatMessage(scope, `${levelStr} ${message}`, args));
+    output(level, scope, message, args);
   };
 
   return {

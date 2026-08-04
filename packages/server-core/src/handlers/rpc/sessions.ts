@@ -170,7 +170,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
     const sessions = sessionManager.getSessions(workspaceId ?? undefined)
     end()
 
-    log.info('[sessions:get] result', {
+    log.debug('[sessions:get] result', {
       ctxWorkspaceId: ctx.workspaceId,
       webContentsId: ctx.webContentsId,
       windowWorkspaceId,

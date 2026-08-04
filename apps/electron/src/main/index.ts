@@ -110,7 +110,7 @@ if (isDebugMode) {
   configurePerfTracking({
     enabled: true,
     onMetric: metric => {
-      mainLog.info(formatPerfMetric(metric))
+      mainLog.debug(formatPerfMetric(metric))
     },
   })
 }
@@ -1190,7 +1190,7 @@ app.whenReady().then(async () => {
       pendingDeepLink = null
     }
 
-    mainLog.info('App initialized successfully')
+    mainLog.info('Desktop shell initialized successfully')
     if (isDebugMode) {
       mainLog.info('Debug mode enabled - logs at:', getLogFilePath())
     }

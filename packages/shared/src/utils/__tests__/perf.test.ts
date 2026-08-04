@@ -27,5 +27,6 @@ describe('perf utilities', () => {
     expect(formatted).toContain('[PERF] rpc.file.read: 5.25ms')
     expect(formatted).toContain('(path.validated:1.0ms → file.read:5.0ms)')
     expect(formatted).toContain('{"file":"outline.md","status":"ok"}')
+    expect(formatted).not.toMatch(/^\d{4}-\d{2}-\d{2}T/)
   })
 })

@@ -46,7 +46,7 @@ export interface PerfConfig {
   logToFile: boolean;
   logFilePath: string;
   minDurationMs: number; // Only log operations above this threshold
-  onMetric?: (metric: PerfMetric) => void; // Custom handler (e.g., for IPC)
+  onMetric?: (metric: PerfMetric) => void; // Custom output handler (e.g., Electron log)
 }
 
 const config: PerfConfig = {
@@ -101,10 +101,9 @@ export function isPerfEnabled(): boolean {
  * Format a metric for logging
  */
 export function formatPerfMetric(metric: PerfMetric): string {
-  const timestamp = new Date().toISOString();
   const duration = metric.duration?.toFixed(2) ?? 'N/A';
 
-  let line = `${timestamp} [PERF] ${metric.name}: ${duration}ms`;
+  let line = `[PERF] ${metric.name}: ${duration}ms`;
 
   // Add marks breakdown if any
   if (metric.marks.length > 0) {
@@ -139,15 +138,12 @@ function logMetric(metric: PerfMetric): void {
   // Update aggregated stats
   updateAggregatedStats(metric);
 
-  // Call custom handler if set
+  // A custom handler replaces stderr so Electron does not emit every metric twice.
   if (config.onMetric) {
     config.onMetric(metric);
-  }
-
-  // Log to stderr (avoids interfering with stdout)
-  if (metric.duration !== undefined) {
+  } else if (metric.duration !== undefined) {
     const line = formatPerfMetric(metric);
-    process.stderr.write(line + '\n');
+    process.stderr.write(`${new Date().toISOString()} ${line}\n`);
   }
 }
 

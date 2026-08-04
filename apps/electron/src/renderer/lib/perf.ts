@@ -79,8 +79,9 @@ let debugMode = false
  * In Electron renderer, we check if we're in dev mode.
  */
 export function initRendererPerf(isDebug: boolean): void {
+  const wasEnabled = debugMode
   debugMode = isDebug
-  if (debugMode) {
+  if (debugMode && !wasEnabled) {
     perfLog.info('Renderer performance tracking enabled')
   }
 }

@@ -22,6 +22,7 @@ import type { AgentEvent } from '@craft-agent/core/types';
 import { formatAttachmentContextForModel, type FileAttachment } from '../utils/files.ts';
 import { getProxyEnvVars } from '../config/proxy-env.ts';
 import { readJsonLines } from '../utils/jsonl.ts';
+import { perf } from '../utils/perf.ts';
 
 import type {
   BackendConfig,

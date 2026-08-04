@@ -1,3 +1,7 @@
+// input: Electron runtime mode, log events, and messaging gateway diagnostics
+// output: Structured Electron logs plus a bounded dedicated messaging log
+// pos: Desktop observability transport; callers own level and message semantics
+
 import log from 'electron-log/main'
 import { appendFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -52,6 +56,8 @@ if (isDebugMode) {
   log.transports.file.maxSize = 5 * 1024 * 1024 // 5MB
   if (process.env.CRAFT_DISABLE_FILE_LOG === '1') {
     log.transports.file.level = false
+  } else {
+    log.transports.file.level = 'debug'
   }
 
   // Console output in debug mode with readable format
@@ -64,7 +70,12 @@ if (isDebugMode) {
       .join(' ')
     return [`${message.date.toISOString()} ${level} ${scope} ${data}`]
   }
-  log.transports.console.level = 'debug'
+  // Normal source runs stay readable; explicit debug sessions and the perf
+  // harness can still stream every diagnostic to the terminal.
+  const verboseConsole = process.argv.includes('--debug')
+    || process.env.CRAFT_DEBUG === '1'
+    || process.env.CRAFT_DEBUG === 'true'
+  log.transports.console.level = verboseConsole ? 'debug' : 'info'
 } else {
   // Disable file and console transports in production
   log.transports.file.level = false
