@@ -2,8 +2,8 @@
 // output: Saved/restored desktop window state on disk
 // pos: Main-process persistence boundary for Electron window restoration
 
-import { writeFileSync, existsSync, mkdirSync } from 'fs'
-import { readJsonFileSync } from '@craft-agent/shared/utils/files'
+import { existsSync, mkdirSync } from 'fs'
+import { atomicWriteFileSync, readJsonFileSync } from '@craft-agent/shared/utils/files'
 import { mainLog } from './logger'
 import { join } from 'path'
 import { homedir } from 'os'
@@ -35,6 +35,30 @@ export interface WindowState {
 const CONFIG_DIR = join(homedir(), '.craft-agent')
 const WINDOW_STATE_FILE = join(CONFIG_DIR, 'window-state.json')
 
+export function parseWindowState(raw: unknown): WindowState | null {
+  if (!raw || typeof raw !== 'object' || !Array.isArray((raw as WindowState).windows)) {
+    return null
+  }
+
+  const state = raw as WindowState
+  const valid = state.windows.every(window => (
+    window?.type === 'main'
+    && typeof window.workspaceId === 'string'
+    && (window.url === undefined || typeof window.url === 'string')
+    && window.bounds
+    && Number.isFinite(window.bounds.x)
+    && Number.isFinite(window.bounds.y)
+    && Number.isFinite(window.bounds.width)
+    && window.bounds.width > 0
+    && Number.isFinite(window.bounds.height)
+    && window.bounds.height > 0
+  ))
+  if (!valid || (state.lastFocusedWorkspaceId !== undefined && typeof state.lastFocusedWorkspaceId !== 'string')) {
+    return null
+  }
+  return state
+}
+
 /**
  * Save the current window state (windows with bounds and type)
  */
@@ -45,10 +69,10 @@ export function saveWindowState(state: WindowState): void {
       mkdirSync(CONFIG_DIR, { recursive: true })
     }
 
-    writeFileSync(WINDOW_STATE_FILE, JSON.stringify(state, null, 2), 'utf-8')
+    atomicWriteFileSync(WINDOW_STATE_FILE, JSON.stringify(state, null, 2))
     mainLog.info('[WindowState] Saved window state:', state.windows.length, 'windows')
   } catch (error) {
-    mainLog.error('[WindowState] Failed to save window state:', error)
+    mainLog.error('[WindowState] Failed to save window state:', error instanceof Error ? error.message : String(error))
   }
 }
 
@@ -61,11 +85,8 @@ export function loadWindowState(): WindowState | null {
       return null
     }
 
-    const raw = readJsonFileSync(WINDOW_STATE_FILE)
-
-    // Validate format
-    const state = raw as WindowState
-    if (!Array.isArray(state.windows)) {
+    const state = parseWindowState(readJsonFileSync(WINDOW_STATE_FILE))
+    if (!state) {
       mainLog.warn('[WindowState] Invalid window state file, ignoring')
       return null
     }
@@ -73,7 +94,7 @@ export function loadWindowState(): WindowState | null {
     mainLog.info('[WindowState] Loaded window state:', state.windows.length, 'windows')
     return state
   } catch (error) {
-    mainLog.error('[WindowState] Failed to load window state:', error)
+    mainLog.error('[WindowState] Failed to load window state:', error instanceof Error ? error.message : String(error))
     return null
   }
 }
@@ -84,10 +105,10 @@ export function loadWindowState(): WindowState | null {
 export function clearWindowState(): void {
   try {
     if (existsSync(WINDOW_STATE_FILE)) {
-      writeFileSync(WINDOW_STATE_FILE, JSON.stringify({ windows: [] }, null, 2), 'utf-8')
+      atomicWriteFileSync(WINDOW_STATE_FILE, JSON.stringify({ windows: [] }, null, 2))
       mainLog.info('[WindowState] Cleared window state')
     }
   } catch (error) {
-    mainLog.error('[WindowState] Failed to clear window state:', error)
+    mainLog.error('[WindowState] Failed to clear window state:', error instanceof Error ? error.message : String(error))
   }
 }
