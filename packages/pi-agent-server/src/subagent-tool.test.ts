@@ -24,11 +24,15 @@ import { createSubagentExtension } from './subagent-tool.ts';
 
 function registerSubagent(
   extension: ReturnType<typeof createSubagentExtension>,
+  captureTurnStart?: (handler: () => void) => void,
 ): ToolDefinition<any, any> {
   let registered: ToolDefinition<any, any> | undefined;
   extension.factory({
     registerTool(tool) {
       registered = tool;
+    },
+    on(event, handler) {
+      if (event === 'turn_start') captureTurnStart?.(handler as () => void);
     },
   } as ExtensionAPI);
   if (!registered) throw new Error('subagent tool was not registered');
@@ -142,10 +146,8 @@ describe('createSubagentExtension', () => {
     const result = await tool.execute(
       'call-1',
       {
-        tasks: [{
-          task: 'Inspect the runtime boundary.',
-          capability: 'read_only',
-        }],
+        task: 'Inspect the runtime boundary.',
+        capability: 'read_only',
       },
       undefined,
       undefined,
@@ -161,11 +163,11 @@ describe('createSubagentExtension', () => {
     expect(createdOptions[0]?.settingsManager?.getProviderRetrySettings()).toMatchObject({ maxRetries: 0 });
     expect(result.details).toMatchObject({
       kind: 'storyflow-subagent',
-      results: [{
+      result: {
         capability: 'read_only',
         status: 'completed',
         output: 'Inspected the runtime boundary.',
-      }],
+      },
       usage: {
         input: 120,
         output: 30,
@@ -178,9 +180,8 @@ describe('createSubagentExtension', () => {
     expect(disposed).toBe(true);
   });
 
-  test('returns every read-only task in input order with aggregate usage', async () => {
+  test('runs sibling read-only calls as independently visible Pi tools', async () => {
     let sessionIndex = 0;
-    const progress: string[] = [];
     const extension = createSubagentExtension({
       cwd: '/workspace',
       agentDir: '/agent',
@@ -228,40 +229,25 @@ describe('createSubagentExtension', () => {
     });
     const tool = registerSubagent(extension);
 
-    const result = await tool.execute(
-      'call-batch',
-      {
-        tasks: [
-          { task: 'first', capability: 'read_only' },
-          { task: 'second', capability: 'read_only' },
-          { task: 'third', capability: 'read_only' },
-        ],
-      },
-      undefined,
-      update => {
-        const text = update.content.find(part => part.type === 'text')?.text;
-        if (text) progress.push(text);
-      },
-      { model: undefined } as ExtensionContext,
-    );
+    expect((tool.parameters as any).properties.task).toBeDefined();
+    expect((tool.parameters as any).properties.tasks).toBeUndefined();
+    const results = await Promise.all(['first', 'second', 'third'].map((task, index) => (
+      tool.execute(
+        `call-${index + 1}`,
+        { task, capability: 'read_only' },
+        undefined,
+        undefined,
+        { model: undefined } as ExtensionContext,
+      )
+    )));
 
+    expect(tool.executionMode).toBe('parallel');
     expect(sessionIndex).toBe(3);
-    expect(result.details).toMatchObject({
-      results: [
-        { task: 'first', output: 'result-1', status: 'completed' },
-        { task: 'second', output: 'result-2', status: 'completed' },
-        { task: 'third', output: 'result-3', status: 'completed' },
-      ],
-      usage: {
-        input: 60,
-        output: 6,
-        cacheRead: 0,
-        cacheWrite: 0,
-        cost: 0.006,
-      },
-    });
-    expect(progress[0]).toBe('Subagents: 0/3 completed');
-    expect(progress.at(-1)).toBe('Subagents: 3/3 completed');
+    expect(results.map(result => result.details)).toMatchObject([
+      { result: { task: 'first', output: 'result-1', status: 'completed' } },
+      { result: { task: 'second', output: 'result-2', status: 'completed' } },
+      { result: { task: 'third', output: 'result-3', status: 'completed' } },
+    ]);
   });
 
   test('runs at most two read-only tasks concurrently', async () => {
@@ -316,20 +302,70 @@ describe('createSubagentExtension', () => {
     });
     const tool = registerSubagent(extension);
 
-    await tool.execute(
-      'call-concurrent',
-      {
-        tasks: ['one', 'two', 'three', 'four'].map(task => ({
-          task,
-          capability: 'read_only' as const,
-        })),
+    await Promise.all(['one', 'two', 'three', 'four'].map((task, index) => (
+      tool.execute(
+        `call-concurrent-${index}`,
+        { task, capability: 'read_only' },
+        undefined,
+        undefined,
+        { model: undefined } as ExtensionContext,
+      )
+    )));
+
+    expect(peak).toBe(2);
+  });
+
+  test('limits subagent calls per assistant response and resets on the next turn', async () => {
+    let created = 0;
+    let startTurn = () => {};
+    const extension = createSubagentExtension({
+      cwd: '/workspace',
+      agentDir: '/agent',
+      authStorage: {} as never,
+      modelRegistry: {} as never,
+      toolDefinitions: [],
+      createSessionHooks: () => ({ name: 'test-hooks', factory() {} }),
+      async createSession() {
+        created += 1;
+        throw new Error('stop after policy check');
       },
+    });
+    const tool = registerSubagent(extension, handler => {
+      startTurn = handler;
+    });
+
+    for (let index = 0; index < 4; index += 1) {
+      await tool.execute(
+        `call-${index}`,
+        { task: `task-${index}`, capability: 'read_only' },
+        undefined,
+        undefined,
+        { model: undefined } as ExtensionContext,
+      );
+    }
+    const rejected = await tool.execute(
+      'call-5',
+      { task: 'task-5', capability: 'read_only' },
       undefined,
       undefined,
       { model: undefined } as ExtensionContext,
     );
 
-    expect(peak).toBe(2);
+    expect(created).toBe(4);
+    expect(rejected).toMatchObject({
+      isError: true,
+      content: [{ text: 'A maximum of 4 subagent calls is allowed per assistant response' }],
+    });
+
+    startTurn();
+    await tool.execute(
+      'call-next-turn',
+      { task: 'next turn', capability: 'read_only' },
+      undefined,
+      undefined,
+      { model: undefined } as ExtensionContext,
+    );
+    expect(created).toBe(5);
   });
 
   test('runs one workspace-write task with the fixed write toolset', async () => {
@@ -387,10 +423,8 @@ describe('createSubagentExtension', () => {
     const result = await tool.execute(
       'call-write',
       {
-        tasks: [{
-          task: 'Update the file.',
-          capability: 'workspace_write',
-        }],
+        task: 'Update the file.',
+        capability: 'workspace_write',
       } as never,
       undefined,
       undefined,
@@ -400,15 +434,15 @@ describe('createSubagentExtension', () => {
     expect(activeTools).toEqual(['read', 'grep', 'find', 'ls', 'edit', 'write', 'bash']);
     expect(prompt).not.toContain('Do not modify files');
     expect(result.details).toMatchObject({
-      results: [{
+      result: {
         capability: 'workspace_write',
         status: 'completed',
         output: 'Updated the file.',
-      }],
+      },
     });
   });
 
-  test('rejects batched workspace-write tasks before creating a session', async () => {
+  test('rejects workspace-write mixed with sibling subagents', async () => {
     let created = 0;
     const extension = createSubagentExtension({
       cwd: '/workspace',
@@ -427,30 +461,32 @@ describe('createSubagentExtension', () => {
     });
     const tool = registerSubagent(extension);
 
+    const inspect = tool.execute(
+      'call-inspect',
+      { task: 'inspect', capability: 'read_only' },
+      undefined,
+      undefined,
+      { model: undefined } as ExtensionContext,
+    );
     const result = await tool.execute(
-      'call-invalid-write-batch',
-      {
-        tasks: [
-          { task: 'inspect', capability: 'read_only' },
-          { task: 'modify', capability: 'workspace_write' },
-        ],
-      },
+      'call-modify',
+      { task: 'modify', capability: 'workspace_write' },
       undefined,
       undefined,
       { model: undefined } as ExtensionContext,
     );
 
-    expect(created).toBe(0);
+    await inspect;
+    expect(created).toBe(1);
     expect(result).toMatchObject({
       isError: true,
       details: {
         kind: 'storyflow-subagent',
-        results: [],
       },
     });
     expect(result.content[0]).toMatchObject({
       type: 'text',
-      text: 'workspace_write must be the only task in a subagent call',
+      text: 'workspace_write must be the only subagent call in an assistant response',
     });
   });
 
@@ -514,7 +550,8 @@ describe('createSubagentExtension', () => {
     const execution = tool.execute(
       'call-abort',
       {
-        tasks: [{ task: 'wait', capability: 'read_only' }],
+        task: 'wait',
+        capability: 'read_only',
       },
       controller.signal,
       undefined,
@@ -570,34 +607,40 @@ describe('createSubagentExtension', () => {
     });
     const tool = registerSubagent(extension);
 
-    const result = await tool.execute(
-      'call-partial-failure',
-      {
-        tasks: [
-          { task: 'fails', capability: 'read_only' },
-          { task: 'succeeds', capability: 'read_only' },
-        ],
-      },
-      undefined,
-      undefined,
-      { model: undefined } as ExtensionContext,
-    );
+    const results = await Promise.all([
+      tool.execute(
+        'call-fails',
+        { task: 'fails', capability: 'read_only' },
+        undefined,
+        undefined,
+        { model: undefined } as ExtensionContext,
+      ),
+      tool.execute(
+        'call-succeeds',
+        { task: 'succeeds', capability: 'read_only' },
+        undefined,
+        undefined,
+        { model: undefined } as ExtensionContext,
+      ),
+    ]);
 
-    expect(result.isError).toBeFalsy();
-    expect(result.details).toMatchObject({
-      results: [
-        {
+    expect(results.map(result => result.isError)).toEqual([true, false]);
+    expect(results.map(result => result.details)).toMatchObject([
+      {
+        result: {
           task: 'fails',
           status: 'failed',
           output: 'provider unavailable',
         },
-        {
+      },
+      {
+        result: {
           task: 'succeeds',
           status: 'completed',
           output: 'successful result',
         },
-      ],
-    });
+      },
+    ]);
   });
 
   test('treats a provider message error as a failed task', async () => {
@@ -656,7 +699,8 @@ describe('createSubagentExtension', () => {
     const result = await tool.execute(
       'call-provider-error',
       {
-        tasks: [{ task: 'inspect', capability: 'read_only' }],
+        task: 'inspect',
+        capability: 'read_only',
       },
       undefined,
       undefined,
@@ -666,10 +710,10 @@ describe('createSubagentExtension', () => {
     expect(result).toMatchObject({
       isError: true,
       details: {
-        results: [{
+        result: {
           status: 'failed',
           output: 'model authentication failed',
-        }],
+        },
       },
     });
   });
@@ -716,14 +760,14 @@ describe('createSubagentExtension', () => {
 
     const result = await tool.execute(
       'call-provider-retry',
-      { tasks: [{ task: 'inspect', capability: 'read_only' }] },
+      { task: 'inspect', capability: 'read_only' },
       undefined,
       undefined,
       { model: undefined } as ExtensionContext,
     );
 
     expect(result.details).toMatchObject({
-      results: [{ status: 'completed', output: 'Recovered result.' }],
+      result: { status: 'completed', output: 'Recovered result.' },
     });
   });
 });

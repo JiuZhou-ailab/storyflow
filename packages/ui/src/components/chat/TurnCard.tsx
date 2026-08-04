@@ -536,6 +536,7 @@ function getToolDisplayName(name: string): string {
     'TaskUpdate': 'Task Updated',
     'TaskGet': 'Task Read',
     'TaskList': 'Task List',
+    'subagent': 'Subagent',
     'set_session_labels': 'Set Session Labels',
     'set_session_status': 'Set Session Status',
     'get_session_info': 'Get Session Info',
@@ -589,6 +590,9 @@ function formatToolInput(
 
   // For call_llm: model shown as badge, prompt duplicates intent
   if (toolName === 'mcp__session__call_llm') return ''
+  if (toolName === 'subagent' && typeof input.task === 'string') {
+    return input.task.replace(/\s+/g, ' ').trim()
+  }
 
   const parts: string[] = []
 

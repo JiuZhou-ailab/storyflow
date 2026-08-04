@@ -976,37 +976,35 @@ describe('PiEventAdapter', () => {
       expect(events[0].result).toBe('line 1\nline 2\n');
     });
 
-    it('should replace subagent progress with its final result', () => {
+    it('should preserve the final result of an atomic subagent call', () => {
       collect(adapter.adaptEvent({ type: 'turn_start' } as any));
       collect(adapter.adaptEvent({
         type: 'tool_execution_start',
-        toolCallId: 'subagent-progress',
+        toolCallId: 'subagent-call',
         toolName: 'subagent',
-        args: { tasks: [{ task: 'inspect', capability: 'read_only' }] },
-      } as any));
-      collect(adapter.adaptEvent({
-        type: 'tool_execution_update',
-        toolCallId: 'subagent-progress',
-        partialResult: {
-          content: [{ type: 'text', text: 'Subagents: 0/1 completed' }],
-        },
-      } as any));
-      collect(adapter.adaptEvent({
-        type: 'tool_execution_update',
-        toolCallId: 'subagent-progress',
-        partialResult: {
-          content: [{ type: 'text', text: 'Subagents: 1/1 completed' }],
-        },
+        args: { task: 'inspect', capability: 'read_only' },
       } as any));
 
       const events = collect(adapter.adaptEvent({
         type: 'tool_execution_end',
-        toolCallId: 'subagent-progress',
+        toolCallId: 'subagent-call',
         result: {
-          content: [{ type: 'text', text: '### Task 1 (completed)\nfinal finding' }],
+          content: [{ type: 'text', text: 'final finding' }],
           details: {
             kind: 'storyflow-subagent',
-            results: [],
+            result: {
+              task: 'inspect',
+              capability: 'read_only',
+              status: 'completed',
+              output: 'final finding',
+              usage: {
+                input: 0,
+                output: 0,
+                cacheRead: 0,
+                cacheWrite: 0,
+                cost: 0,
+              },
+            },
             usage: {
               input: 0,
               output: 0,
@@ -1019,7 +1017,7 @@ describe('PiEventAdapter', () => {
         isError: false,
       } as any));
 
-      expect(events[0].result).toBe('### Task 1 (completed)\nfinal finding');
+      expect(events[0].result).toBe('final finding');
     });
 
     it('should use description as intent for bash tools', () => {

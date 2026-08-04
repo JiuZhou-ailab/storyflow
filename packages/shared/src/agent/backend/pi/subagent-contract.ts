@@ -23,7 +23,7 @@ export interface PiSubagentTaskResult {
 
 export interface PiSubagentDetails {
   kind: typeof PI_SUBAGENT_DETAILS_KIND;
-  results: PiSubagentTaskResult[];
+  result?: PiSubagentTaskResult;
   usage: PiSubagentUsage;
 }
 

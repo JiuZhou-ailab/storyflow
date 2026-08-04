@@ -8,7 +8,11 @@
  * - extractTaskOutputData() - TaskOutput JSON parsing (internal, tested indirectly)
  */
 
-import { describe, it, expect } from 'bun:test'
+import * as React from 'react'
+import { beforeAll, describe, it, expect, mock } from 'bun:test'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { createInstance } from 'i18next'
+import { I18nextProvider, initReactI18next } from 'react-i18next'
 import {
   groupActivitiesByParent,
   computeLastChildSet,
@@ -16,6 +20,17 @@ import {
   type ActivityGroup,
 } from '../turn-utils'
 import type { ActivityItem } from '../TurnCard'
+
+mock.module('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '' }))
+mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDocument: () => ({}) }))
+
+let TurnCard: typeof import('../TurnCard').TurnCard
+const testI18n = createInstance().use(initReactI18next)
+await testI18n.init({ lng: 'en', resources: { en: { translation: {} } } })
+
+beforeAll(async () => {
+  TurnCard = (await import('../TurnCard')).TurnCard
+})
 
 // ============================================================================
 // Test Helpers
@@ -476,6 +491,35 @@ describe('groupActivitiesByParent', () => {
       expect(isActivityGroup(result[2]!)).toBe(false)
       expect((result[2] as ActivityItem).toolName).toBe('Write')
     })
+  })
+})
+
+describe('native subagent activity projection', () => {
+  it('renders each native subagent call as a first-level task summary', () => {
+    resetCounters()
+    const tasks = [
+      'Research Agent Skills directories',
+      'Research novel writing methods',
+      'Research screenplay genres',
+    ]
+    const html = renderToStaticMarkup(
+      React.createElement(I18nextProvider, { i18n: testI18n },
+        React.createElement(TurnCard, {
+          turnId: 'turn-1',
+          activities: tasks.map((task, index) => createActivity({
+            toolName: 'subagent',
+            status: index === 0 ? 'running' : 'completed',
+            toolInput: { task, capability: 'read_only' },
+          })),
+          isStreaming: true,
+          isComplete: false,
+          defaultExpanded: true,
+        }))
+    )
+
+    for (const task of tasks) expect(html).toContain(task)
+    expect(html).not.toContain('read_only')
+    expect(html).not.toContain('&quot;tasks&quot;')
   })
 })
 
