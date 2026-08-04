@@ -25,6 +25,17 @@ function createConfig(overrides: Partial<BackendConfig> = {}): BackendConfig {
   }
 }
 
+function captureSuccessfulCredentialUpdate(agent: PiAgent, sent: unknown[]): void {
+  ;(agent as any).send = (message: { id: string }) => {
+    sent.push(message)
+    ;(agent as any).handleLine(JSON.stringify({
+      type: 'token_update_result',
+      id: message.id,
+      success: true,
+    }))
+  }
+}
+
 describe('PiAgent subprocess error handling', () => {
   it('persists OAuth credentials refreshed by Pi', async () => {
     const agent = new PiAgent(createConfig({
@@ -136,11 +147,12 @@ describe('PiAgent subprocess error handling', () => {
       provider: 'openai',
       credential: { type: 'api_key', key: 'rotated-token' },
     })
-    ;(agent as any).send = (message: unknown) => sent.push(message)
+    captureSuccessfulCredentialUpdate(agent, sent)
 
     await expect(agent.reloadCredentials()).resolves.toBe(true)
     expect(sent).toEqual([{
       type: 'token_update',
+      id: 'credential-update-1',
       piAuth: {
         provider: 'openai',
         credential: { type: 'api_key', key: 'rotated-token' },
@@ -159,11 +171,12 @@ describe('PiAgent subprocess error handling', () => {
     }))
     const sent: unknown[] = []
     ;(agent as any).subprocess = {}
-    ;(agent as any).send = (message: unknown) => sent.push(message)
+    captureSuccessfulCredentialUpdate(agent, sent)
 
     await expect(agent.reloadCredentials({ token: 'managed-model-token' })).resolves.toBe(true)
     expect(sent).toEqual([{
       type: 'token_update',
+      id: 'credential-update-1',
       piAuth: {
         provider: 'openai',
         credential: { type: 'api_key', key: 'managed-model-token' },

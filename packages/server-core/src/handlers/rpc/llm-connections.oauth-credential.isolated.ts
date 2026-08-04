@@ -1,6 +1,6 @@
 // input: OAuth connection setup RPC payloads and mocked credential persistence
 // output: Regression coverage that generic setup cannot replace structured OAuth credentials
-// pos: Contract test for credential ownership at the LLM setup RPC boundary
+// pos: Isolated contract test for credential ownership at the LLM setup RPC boundary
 
 import { describe, expect, it, mock } from 'bun:test'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
