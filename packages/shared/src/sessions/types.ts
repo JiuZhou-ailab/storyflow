@@ -1,3 +1,7 @@
+// input: Workspace-scoped session metadata, messages, and runtime handoff state
+// output: Persistent JSONL, list-view, and in-memory session contracts
+// pos: Canonical session domain types and persistence field registry
+
 /**
  * Session Types
  *
@@ -44,6 +48,7 @@ export const SESSION_PERSISTENT_FIELDS = [
   'isArchived', 'archivedAt',
   // Branching
   'branchFromMessageId',
+  'branchContextStrategy',
   'branchFromSdkSessionId',
   'branchFromSessionPath',
   'branchFromSdkCwd',
@@ -173,6 +178,8 @@ export interface SessionConfig {
    * Branching semantics are a hard cutoff: model context must not include parent messages after this message.
    */
   branchFromMessageId?: string;
+  /** Runtime context source for the next turn after branching or portable import. */
+  branchContextStrategy?: 'sdk-fork' | 'seeded-fresh-session';
   /**
    * Parent session's SDK session ID (optional, only for provider strategies that support strict SDK-level forking).
    */
@@ -286,6 +293,8 @@ export interface SessionHeader {
   isArchived?: boolean;
   /** Timestamp when session was archived (for retention policy) */
   archivedAt?: number;
+  /** Runtime context source for the next turn after branching or portable import. */
+  branchContextStrategy?: 'sdk-fork' | 'seeded-fresh-session';
   /** One-shot hidden summary injected on the first turn after a remote transfer. */
   transferredSessionSummary?: string;
   /** Whether the transferred-session summary has already been injected. */
@@ -372,4 +381,6 @@ export interface SessionMetadata {
   archivedAt?: number;
   /** Message ID that this session was branched from (hard context cutoff marker). */
   branchFromMessageId?: string;
+  /** Runtime context source for the next turn after branching or portable import. */
+  branchContextStrategy?: 'sdk-fork' | 'seeded-fresh-session';
 }

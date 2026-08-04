@@ -1,3 +1,7 @@
+// input: Session storage, JSONL, bundle, validation, and path modules
+// output: Public workspace-session API surface
+// pos: Sessions package barrel without provider-private transfer contracts
+
 /**
  * Sessions Module
  *
@@ -116,7 +120,6 @@ export {
 export type {
   SessionBundle,
   BundleFile,
-  BundleBranchInfo,
   DispatchMode,
 } from './bundle.ts';
 export {
@@ -124,4 +127,3 @@ export {
   validateBundle,
   MAX_BUNDLE_SIZE_BYTES,
 } from './bundle.ts';
-

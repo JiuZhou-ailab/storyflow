@@ -6,7 +6,7 @@ import { describe, expect, it } from 'bun:test'
 import type { LlmConnection } from '@craft-agent/shared/config'
 import type { FileAttachment } from '@craft-agent/shared/protocol'
 import { formatAttachmentContextForModel } from '@craft-agent/shared/utils'
-import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput, needsPiRuntimeMigrationSeed } from './runtime-config'
+import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput, needsPiRuntimeMigrationSeed, resetPortableForkRuntime, type PortableForkRuntimeState } from './runtime-config'
 
 const baseCompat: LlmConnection = {
   slug: 'local',
@@ -47,6 +47,32 @@ const textAttachment: FileAttachment = {
   size: 12,
   text: 'hello',
 }
+
+it('turns a portable Pi fork into an explicit seeded fresh runtime', () => {
+  const state: PortableForkRuntimeState = {
+    sdkSessionId: 'pi-session',
+    agentRuntime: 'pi' as const,
+    branchFromSdkSessionId: 'parent-session',
+    branchFromSessionPath: '/source/.pi-sessions',
+    branchFromSdkCwd: '/source',
+    branchFromSdkTurnId: 'pi-entry',
+    branchContextStrategy: 'sdk-fork' as const,
+    branchSeedApplied: true,
+  }
+
+  resetPortableForkRuntime(state)
+
+  expect(state).toEqual({
+    sdkSessionId: undefined,
+    agentRuntime: undefined,
+    branchFromSdkSessionId: undefined,
+    branchFromSessionPath: undefined,
+    branchFromSdkCwd: undefined,
+    branchFromSdkTurnId: undefined,
+    branchContextStrategy: 'seeded-fresh-session',
+    branchSeedApplied: false,
+  })
+})
 
 describe('buildBackendRuntimeSignature', () => {
   it('changes when a custom endpoint model image override changes', () => {

@@ -108,7 +108,7 @@ import { extractLabelId, resolveSessionLabels } from '@craft-agent/shared/labels
 import { ensureLabelsExist } from '@craft-agent/shared/labels/crud'
 import { loadStatusConfig } from '@craft-agent/shared/statuses/storage'
 import { AutomationSystem, canonicalizeSkillReferences, createPromptHistoryEntry, appendAutomationHistoryEntry, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
-import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput, needsPiRuntimeMigrationSeed } from './runtime-config'
+import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput, needsPiRuntimeMigrationSeed, resetPortableForkRuntime } from './runtime-config'
 import { captureWriteOriginalContent } from './write-original-content'
 import { SESSION_TURN_HARD_TIMEOUT_MS, SESSION_TURN_IDLE_TIMEOUT_MS, TurnWatchdog, type TurnWatchdogTimeout } from './turn-watchdog'
 import {
@@ -8251,21 +8251,16 @@ export class SessionManager implements ISessionManager {
       tokenUsage: header.tokenUsage ?? DEFAULT_TOKEN_USAGE,
     }
 
-    // Fork-specific: set up SDK branching if branchInfo provided
-    if (mode === 'fork' && bundle.branchInfo) {
-      storedSession.branchFromSdkSessionId = bundle.branchInfo.sdkSessionId
-      storedSession.branchFromSdkTurnId = bundle.branchInfo.sdkTurnId
-      storedSession.branchFromSdkCwd = bundle.branchInfo.sdkCwd
-    }
-
-    // Fork-specific: clear sharing state and attempt resume-first strategy
+    // Portable bundles intentionally omit hidden provider transcripts. A fork
+    // must therefore seed one fresh runtime from product messages; preserving
+    // native IDs would point at state that was never transferred.
     if (mode === 'fork') {
       storedSession.sharedUrl = undefined
       storedSession.sharedId = undefined
+      resetPortableForkRuntime(storedSession)
 
-      // Resume-first: try to find a compatible LLM connection on the target workspace.
-      // If found and the session has an sdkSessionId, preserve it for API-level resume.
-      // If not, clear SDK state and fall back to transferred session summary.
+      // Credentials are target-local. Rebind to a compatible connection when
+      // available, but never treat that as proof the source transcript exists.
       const sourceProviderType = header.llmConnection
         ? getLlmConnection(header.llmConnection)?.providerType
         : undefined
@@ -8273,17 +8268,14 @@ export class SessionManager implements ISessionManager {
         ? this.findCompatibleLlmConnection(workspaceRootPath, sourceProviderType)
         : null
 
-      if (compatibleConnection && storedSession.sdkSessionId) {
-        // Resume path: compatible credentials exist — preserve SDK session ID
-        sessionLog.info(`[import] Fork: compatible ${sourceProviderType} connection "${compatibleConnection}" found — preserving sdkSessionId for resume`)
+      if (compatibleConnection) {
+        sessionLog.info(`[import] Fork: compatible ${sourceProviderType} connection "${compatibleConnection}" found — seeding a fresh runtime`)
         storedSession.llmConnection = compatibleConnection
         storedSession.connectionLocked = false
       } else {
-        // Summary path: no compatible connection or no SDK session — clear for fresh start
         if (storedSession.llmConnection) {
-          sessionLog.info(`[import] Fork: no compatible ${sourceProviderType ?? 'unknown'} connection — clearing, will use summary context`)
+          sessionLog.info(`[import] Fork: no compatible ${sourceProviderType ?? 'unknown'} connection — clearing for target default`)
         }
-        storedSession.sdkSessionId = undefined
         storedSession.llmConnection = undefined
         storedSession.connectionLocked = false
       }

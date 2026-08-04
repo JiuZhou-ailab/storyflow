@@ -1,3 +1,7 @@
+// input: Session JSONL metadata and portable session-directory files
+// output: Regression coverage for bundle integrity, limits, and runtime handoff metadata
+// pos: Portable session bundle contract tests
+
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'fs'
 import { join } from 'path'
@@ -89,6 +93,17 @@ describe('serializeSession', () => {
     expect(bundle!.session.messages[0]!.content).toBe('Hello world')
     expect(bundle!.session.messages[1]!.content).toBe('Hi there!')
     expect(Array.isArray(bundle!.files)).toBe(true)
+  })
+
+  it('preserves the explicit seeded-runtime handoff state', () => {
+    const session = makeStoredSession({
+      branchContextStrategy: 'seeded-fresh-session',
+    })
+    setupSessionDir(tmpDir, session)
+
+    const bundle = serializeSession(tmpDir, session.id)
+
+    expect(bundle?.session.header.branchContextStrategy).toBe('seeded-fresh-session')
   })
 
   it('includes attachment files in bundle', () => {

@@ -30,6 +30,29 @@ export interface PiRuntimeMigrationInput {
   messageCount: number
 }
 
+export interface PortableForkRuntimeState {
+  sdkSessionId?: string
+  agentRuntime?: 'pi' | 'claude-sdk'
+  branchFromSdkSessionId?: string
+  branchFromSessionPath?: string
+  branchFromSdkCwd?: string
+  branchFromSdkTurnId?: string
+  branchContextStrategy?: 'sdk-fork' | 'seeded-fresh-session'
+  branchSeedApplied?: boolean
+}
+
+/** Drop native pointers whose hidden transcripts are not part of a portable bundle. */
+export function resetPortableForkRuntime(state: PortableForkRuntimeState): void {
+  state.sdkSessionId = undefined
+  state.agentRuntime = undefined
+  state.branchFromSdkSessionId = undefined
+  state.branchFromSessionPath = undefined
+  state.branchFromSdkCwd = undefined
+  state.branchFromSdkTurnId = undefined
+  state.branchContextStrategy = 'seeded-fresh-session'
+  state.branchSeedApplied = false
+}
+
 /** Whether a legacy/lost runtime transcript needs a one-shot seeded Pi start. */
 export function needsPiRuntimeMigrationSeed(input: PiRuntimeMigrationInput): boolean {
   // A pending SDK fork is safe to hand to Pi only when its lineage is
