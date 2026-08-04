@@ -1,4 +1,4 @@
-// input: Pi cwd, canonical Pi agent directory, and legacy Storyflow resources
+// input: Pi cwd, canonical Pi agent directory, bundled Bun runtime, and legacy Storyflow resources
 // output: Pi-native resources plus compatibility paths and Storyflow inline Extensions
 // pos: Thin product adapter over Pi's ResourceLoader and package ecosystem
 
@@ -115,6 +115,10 @@ async function seedDefaultPiPackages(
   agentDir: string,
   settingsManager: SettingsManager,
 ): Promise<void> {
+  if (process.env.CRAFT_BUN && !settingsManager.getNpmCommand()?.length) {
+    settingsManager.setNpmCommand(['bun']);
+  }
+
   const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
   let changed = false;
 

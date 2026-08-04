@@ -12,7 +12,7 @@ import { homedir } from 'os'
 import { setupI18n, i18n } from '@craft-agent/shared/i18n'
 setupI18n()
 
-import { join, delimiter } from 'path'
+import { dirname, join, delimiter } from 'path'
 import { existsSync, readFileSync } from 'fs'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@craft-agent/server-core/sessions'
@@ -155,7 +155,7 @@ if (isDebugMode) {
   // Prepend both generic wrappers dir and platform uv dir:
   // - binDir exposes wrapper commands (pdf-tool, docx-tool, ...)
   // - uvPlatformDir exposes raw `uv` for direct shell usage / debugging
-  process.env.PATH = `${runtimePaths.binDir}${delimiter}${runtimePaths.uvPlatformDir}${delimiter}${process.env.PATH}`
+  process.env.PATH = `${dirname(runtimePaths.bunBinary)}${delimiter}${runtimePaths.binDir}${delimiter}${runtimePaths.uvPlatformDir}${delimiter}${process.env.PATH}`
 
   if (!bundledUvExists) {
     mainLog.warn('Bundled uv binary missing, CLI document tools may fail unless uv is available on PATH.', {

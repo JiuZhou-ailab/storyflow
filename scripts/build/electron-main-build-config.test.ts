@@ -41,6 +41,13 @@ describe('Electron main process build config', () => {
     expect(copyResources).toBeGreaterThan(stageRuntime);
   });
 
+  test('puts the packaged Bun runtime on PATH for Pi package installs', () => {
+    const source = readRepoFile('apps/electron/src/main/index.ts');
+
+    expect(source).toContain('process.env.CRAFT_BUN = runtimePaths.bunBinary');
+    expect(source).toContain('`${dirname(runtimePaths.bunBinary)}${delimiter}${runtimePaths.binDir}');
+  });
+
   test('waits for watcher initial builds before launching Electron', () => {
     const source = readRepoFile('scripts/electron-dev.ts');
     const electronStart = source.indexOf('const electronProc = spawn');

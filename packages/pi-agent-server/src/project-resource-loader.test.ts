@@ -1,4 +1,4 @@
-// input: Temporary Pi projects, native resource roots, legacy resources, and filesystem symlinks
+// input: Temporary Pi projects, native resource roots, bundled runtime environment, legacy resources, and filesystem symlinks
 // output: Assertions for Pi-native discovery plus Storyflow compatibility resources
 // pos: Integration contract proving Pi remains the runtime resource authority
 
@@ -23,6 +23,7 @@ import {
 
 const roots: string[] = [];
 const previousPiOffline = process.env.PI_OFFLINE;
+const previousCraftBun = process.env.CRAFT_BUN;
 
 function createRoot(): string {
   const root = mkdtempSync(join(tmpdir(), 'storyflow-pi-resources-'));
@@ -108,6 +109,8 @@ beforeEach(() => {
 afterEach(() => {
   if (previousPiOffline === undefined) delete process.env.PI_OFFLINE;
   else process.env.PI_OFFLINE = previousPiOffline;
+  if (previousCraftBun === undefined) delete process.env.CRAFT_BUN;
+  else process.env.CRAFT_BUN = previousCraftBun;
   for (const root of roots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
   }
@@ -221,6 +224,25 @@ describe('createProjectResourceLoader', () => {
     expect(DEFAULT_PI_PACKAGE_SOURCES).toEqual(['npm:@ayulab/pi-rewind']);
     expect(JSON.parse(readFileSync(join(agentDir, 'settings.json'), 'utf8')).packages)
       .toEqual(['npm:existing-package', 'npm:@ayulab/pi-rewind']);
+  });
+
+  it('uses packaged Bun for Pi packages without replacing a user command', async () => {
+    process.env.CRAFT_BUN = '/packaged/runtime/bun';
+    const cwd = createRoot();
+    const globalRoot = createRoot();
+    const agentDir = join(createRoot(), 'agent');
+
+    await createProjectResourceLoader({ cwd, globalRoot, agentDir });
+    expect(JSON.parse(readFileSync(join(agentDir, 'settings.json'), 'utf8')).npmCommand)
+      .toEqual(['bun']);
+
+    writeFileSync(
+      join(agentDir, 'settings.json'),
+      JSON.stringify({ npmCommand: ['custom-npm'] }),
+    );
+    await createProjectResourceLoader({ cwd, globalRoot, agentDir });
+    expect(JSON.parse(readFileSync(join(agentDir, 'settings.json'), 'utf8')).npmCommand)
+      .toEqual(['custom-npm']);
   });
 
   it('uses Pi as the single retry owner', async () => {
