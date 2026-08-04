@@ -91,8 +91,10 @@ export async function launchApp(fixtureDir: string, options: LaunchAppOptions = 
       const t = line.trim()
       if (!t) continue
       const text = unwrap(t)
-      processLines.push(text)
-      if (processLines.length > 200) processLines.shift()
+      if (!/\[PERF\] (?:session\.getSession|rpc\.getSessionMessages)/.test(text)) {
+        processLines.push(text)
+        if (processLines.length > 200) processLines.shift()
+      }
       if (/\[perf\]|session[- ]?switch|text_delta|writing\.document|session-list\.tap/i.test(text)) {
         perfLines.push({ at: Date.now(), text })
       }
