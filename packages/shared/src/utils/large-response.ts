@@ -21,7 +21,7 @@ import {
 } from './binary-detection.ts';
 
 // ============================================================
-// Constants (re-exported from summarize.ts for convenience)
+// Constants
 // ============================================================
 
 /**
