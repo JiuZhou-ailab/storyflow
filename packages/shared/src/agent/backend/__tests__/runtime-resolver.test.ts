@@ -1,10 +1,7 @@
-/**
- * Tests for runtime-resolver.ts
- *
- * Verifies:
- * - Packaged server path resolution with dist/resources/ preference
- * - Ripgrep path resolution with system rg fallback
- */
+// input: Temporary packaged/development layouts and backend host runtime metadata
+// output: Regression coverage for subprocess and tooling path resolution
+// pos: Contract tests for desktop backend runtime discovery
+
 import { describe, it, expect, afterEach } from 'bun:test';
 import { mkdirSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
@@ -73,6 +70,37 @@ describe('resolveServerPath fallback', () => {
 
     const paths = resolveBackendRuntimePaths(hostRuntime);
     expect(paths.piServerPath).toBe(join(serverDir, 'index.js'));
+  });
+});
+
+describe('resolveBundledRuntimePath', () => {
+  const tmpBase = join(tmpdir(), `bun-resolver-test-${Date.now()}`);
+
+  afterEach(() => {
+    try { rmSync(tmpBase, { recursive: true, force: true }); } catch {}
+  });
+
+  it('finds packaged Bun in either Electron resource layout', () => {
+    const bunName = process.platform === 'win32' ? 'bun.exe' : 'bun';
+
+    for (const location of ['resources', 'app'] as const) {
+      const caseRoot = join(tmpBase, location);
+      const resourcesPath = join(caseRoot, 'resources');
+      const appRoot = join(resourcesPath, 'app');
+      const bunBase = location === 'resources' ? resourcesPath : appRoot;
+      const bunPath = join(bunBase, 'vendor', 'bun', bunName);
+      mkdirSync(join(bunBase, 'vendor', 'bun'), { recursive: true });
+      writeFileSync(bunPath, 'stub');
+
+      const paths = resolveBackendRuntimePaths({
+        appRootPath: appRoot,
+        resourcesPath,
+        isPackaged: true,
+      });
+
+      expect(paths.bundledRuntimePath).toBe(bunPath);
+      expect(paths.nodeRuntimePath).toBe(bunPath);
+    }
   });
 });
 
