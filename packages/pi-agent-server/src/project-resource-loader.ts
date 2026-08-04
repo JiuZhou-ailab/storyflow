@@ -2,7 +2,7 @@
 // output: Pi-native resources plus compatibility paths and Storyflow inline Extensions
 // pos: Thin product adapter over Pi's ResourceLoader and package ecosystem
 
-import { existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -31,6 +31,60 @@ export interface ProjectResourceLoaderOptions {
 export interface ProjectResourceLoaderResult {
   resourceLoader: ResourceLoader;
   settingsManager: SettingsManager;
+}
+
+class ReadOnlySkillCatalogLoader extends DefaultResourceLoader {
+  private readonly packageSettingsManager: SettingsManager;
+  private readonly readOnlyPackageManager: DefaultPackageManager;
+
+  constructor(
+    options: Pick<ProjectResourceLoaderOptions, 'cwd' | 'agentDir'>,
+    private readonly compatibilitySkillPaths: readonly string[],
+  ) {
+    super({
+      cwd: options.cwd,
+      agentDir: options.agentDir,
+      settingsManager: SettingsManager.inMemory({}, { projectTrusted: true }),
+      noExtensions: true,
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
+      noContextFiles: true,
+    });
+    this.packageSettingsManager = SettingsManager.create(options.cwd, options.agentDir, {
+      projectTrusted: true,
+    });
+    this.readOnlyPackageManager = new DefaultPackageManager({
+      cwd: options.cwd,
+      agentDir: options.agentDir,
+      settingsManager: this.packageSettingsManager,
+    });
+  }
+
+  override async reload(): Promise<void> {
+    await this.packageSettingsManager.reload();
+    const resolved = await this.readOnlyPackageManager.resolve(async () => 'skip');
+    await super.reload();
+
+    const enabledSkills = resolved.skills.filter(resource => resource.enabled);
+    const projectSkills = enabledSkills.filter(resource => resource.metadata.scope === 'project');
+    const remainingSkills = enabledSkills.filter(resource => resource.metadata.scope !== 'project');
+    this.extendResources({
+      skillPaths: [
+        ...projectSkills,
+        ...remainingSkills,
+        ...this.compatibilitySkillPaths.map(path => ({
+          path,
+          metadata: {
+            source: 'storyflow-compatibility',
+            scope: 'temporary' as const,
+            origin: 'top-level' as const,
+            baseDir: path,
+          },
+        })),
+      ],
+    });
+  }
 }
 
 export function createStoryflowRetrySettings() {
@@ -149,11 +203,9 @@ export async function createProjectResourceLoader(
     globalRoot: options.globalRoot,
   });
 
-  mkdirSync(roots.skillsPath, { recursive: true });
-  mkdirSync(roots.extensionsPath, { recursive: true });
   const skillPaths = [roots.skillsPath]
     .filter((path, index, paths) => existsSync(path) && paths.indexOf(path) === index);
-  const extensionRoots = [roots.extensionsPath];
+  const extensionRoots = [roots.extensionsPath].filter(existsSync);
   const extensionPaths = extensionRoots.flatMap(discoverGlobalExtensionPaths);
   const managedResourcePaths = extensionRoots;
   for (const resourcePath of managedResourcePaths) {
@@ -162,19 +214,7 @@ export async function createProjectResourceLoader(
 
   // Skills are declarative content, so project Skills remain discoverable without
   // granting project-local executable Extensions the same trust.
-  const projectSkillLoader = new DefaultResourceLoader({
-    cwd: options.cwd,
-    agentDir: options.agentDir,
-    settingsManager: SettingsManager.inMemory(
-      { enableSkillCommands: true },
-      { projectTrusted: true },
-    ),
-    noExtensions: true,
-    noPromptTemplates: true,
-    noThemes: true,
-    noContextFiles: true,
-    additionalSkillPaths: skillPaths,
-  });
+  const projectSkillLoader = new ReadOnlySkillCatalogLoader(options, skillPaths);
 
   const settingsManager = SettingsManager.create(options.cwd, options.agentDir, {
     projectTrusted: false,
@@ -217,4 +257,14 @@ export async function createProjectResourceLoader(
   await resourceLoader.reload();
 
   return { resourceLoader, settingsManager };
+}
+
+export async function createSkillCatalogResourceLoader(
+  options: Pick<ProjectResourceLoaderOptions, 'cwd' | 'globalRoot' | 'agentDir'>,
+): Promise<ResourceLoader> {
+  const roots = resolveResourceRoots({ globalRoot: options.globalRoot });
+  const compatibilitySkillPaths = existsSync(roots.skillsPath) ? [roots.skillsPath] : [];
+  const resourceLoader = new ReadOnlySkillCatalogLoader(options, compatibilitySkillPaths);
+  await resourceLoader.reload();
+  return resourceLoader;
 }

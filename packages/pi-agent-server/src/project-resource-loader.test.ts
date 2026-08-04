@@ -3,6 +3,7 @@
 // pos: Integration contract proving Pi remains the runtime resource authority
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdtempSync,
@@ -63,6 +64,43 @@ function writeExtension(
   );
 }
 
+function writePackageSkill(packageRoot: string, slug: string): void {
+  mkdirSync(packageRoot, { recursive: true });
+  writeFileSync(
+    join(packageRoot, 'package.json'),
+    JSON.stringify({
+      name: slug,
+      version: '1.0.0',
+      pi: { skills: ['./skill'] },
+    }),
+  );
+  writeSkill(packageRoot, 'skill', slug);
+}
+
+function runSkillCatalog(
+  cwd: string,
+  home: string,
+  globalRoot: string,
+): { skills: Array<{ name: string }> } {
+  const result = spawnSync(
+    process.execPath,
+    [join(import.meta.dir, 'index.ts'), '--skill-catalog', cwd],
+    {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        HOME: home,
+        CRAFT_CONFIG_DIR: globalRoot,
+        PI_OFFLINE: '1',
+      },
+    },
+  );
+  expect(result.status, result.stderr).toBe(0);
+  return JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1) || '') as {
+    skills: Array<{ name: string }>;
+  };
+}
+
 beforeEach(() => {
   process.env.PI_OFFLINE = '1';
 });
@@ -76,6 +114,86 @@ afterEach(() => {
 });
 
 describe('createProjectResourceLoader', () => {
+  it('keeps Skill catalog reads free of Extension execution', async () => {
+    const cwd = createRoot();
+    const home = createRoot();
+    const globalRoot = createRoot();
+    const markerPath = join(createRoot(), 'extension-executed');
+    const extensionDir = join(globalRoot, 'extensions');
+    mkdirSync(extensionDir, { recursive: true });
+    writeFileSync(
+      join(extensionDir, 'side-effect.ts'),
+      `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(markerPath)}, 'executed');\nexport default function extension() {}\n`,
+    );
+
+    runSkillCatalog(cwd, home, globalRoot);
+
+    expect(existsSync(markerPath)).toBe(false);
+
+    await createProjectResourceLoader({
+      cwd,
+      globalRoot,
+      agentDir: join(home, '.pi', 'agent'),
+    });
+    expect(existsSync(markerPath)).toBe(true);
+  });
+
+  it('uses the same file-backed package and disabled settings in runtime and catalog mode', async () => {
+    const cwd = createRoot();
+    const home = createRoot();
+    const globalRoot = createRoot();
+    const agentDir = join(home, '.pi', 'agent');
+    const projectPiDir = join(cwd, '.pi');
+
+    writePackageSkill(join(agentDir, 'user-package'), 'user-package-skill');
+    writeFileSync(
+      join(agentDir, 'settings.json'),
+      JSON.stringify({ packages: ['./user-package'] }),
+    );
+    writePackageSkill(join(projectPiDir, 'project-package'), 'project-package-skill');
+    writeSkill(projectPiDir, 'skills', 'disabled-skill');
+    writeFileSync(
+      join(projectPiDir, 'settings.json'),
+      JSON.stringify({
+        packages: ['./project-package'],
+        skills: ['-skills/disabled-skill'],
+      }),
+    );
+
+    const catalog = runSkillCatalog(cwd, home, globalRoot);
+    const names = catalog.skills.map(skill => skill.name);
+
+    expect(names).toContain('user-package-skill');
+    expect(names).toContain('project-package-skill');
+    expect(names).not.toContain('disabled-skill');
+
+    const { resourceLoader } = await createProjectResourceLoader({
+      cwd,
+      globalRoot,
+      agentDir,
+    });
+    const runtimeNames = resourceLoader.getSkills().skills.map(skill => skill.name);
+    expect(runtimeNames).toContain('user-package-skill');
+    expect(runtimeNames).toContain('project-package-skill');
+    expect(runtimeNames).not.toContain('disabled-skill');
+  });
+
+  it('does not create missing legacy resource directories while loading resources', async () => {
+    const cwd = createRoot();
+    const home = createRoot();
+    const globalRoot = createRoot();
+
+    runSkillCatalog(cwd, home, globalRoot);
+    await createProjectResourceLoader({
+      cwd,
+      globalRoot,
+      agentDir: join(home, '.pi', 'agent'),
+    });
+
+    expect(existsSync(join(globalRoot, 'skills'))).toBe(false);
+    expect(existsSync(join(globalRoot, 'extensions'))).toBe(false);
+  });
+
   it('keeps default package management inside the Pi subprocess boundary', () => {
     const sharedBootstrap = readFileSync(
       new URL('../../shared/src/agent-defaults/default-agent-resources.ts', import.meta.url),

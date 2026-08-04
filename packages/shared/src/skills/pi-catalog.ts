@@ -138,27 +138,47 @@ async function loadCatalogInProcess(
   // ESM-only config module. Bun/headless runtimes can load it natively.
   const piPackageName = ['@earendil-works', 'pi-coding-agent'].join('/');
   const {
+    DefaultPackageManager,
     DefaultResourceLoader,
     SettingsManager,
     getAgentDir,
   } = await import(piPackageName) as typeof import('@earendil-works/pi-coding-agent');
 
   const agentDir = options.agentDir ?? getAgentDir();
-  const settingsManager = SettingsManager.inMemory(
-    { enableSkillCommands: true },
-    { projectTrusted: true },
-  );
+  const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: true });
+  const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
+  const resolved = await packageManager.resolve(async () => 'skip');
   const resourceLoader = new DefaultResourceLoader({
     cwd,
     agentDir,
-    settingsManager,
+    settingsManager: SettingsManager.inMemory({}, { projectTrusted: true }),
     noExtensions: true,
+    noSkills: true,
     noPromptTemplates: true,
     noThemes: true,
-    additionalSkillPaths: options.additionalSkillPaths
-      ?? getStoryflowAdditionalSkillPaths(agentDir),
+    noContextFiles: true,
   });
   await resourceLoader.reload();
+  const enabledSkills = resolved.skills.filter(resource => resource.enabled);
+  const projectSkills = enabledSkills.filter(resource => resource.metadata.scope === 'project');
+  const remainingSkills = enabledSkills.filter(resource => resource.metadata.scope !== 'project');
+  const compatibilitySkillPaths = options.additionalSkillPaths
+    ?? getStoryflowAdditionalSkillPaths(agentDir);
+  resourceLoader.extendResources({
+    skillPaths: [
+      ...projectSkills,
+      ...remainingSkills,
+      ...compatibilitySkillPaths.filter(existsSync).map(path => ({
+        path,
+        metadata: {
+          source: 'storyflow-compatibility',
+          scope: 'temporary' as const,
+          origin: 'top-level' as const,
+          baseDir: path,
+        },
+      })),
+    ],
+  });
   return resourceLoader.getSkills() as PiCatalogResult;
 }
 

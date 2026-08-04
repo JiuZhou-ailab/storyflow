@@ -94,7 +94,11 @@ import { createWebFetchTool } from './tools/web-fetch.ts';
 import { resolveSearchProvider } from './tools/search/resolve-provider.ts';
 import { createSearchTool } from './tools/search/create-search-tool.ts';
 import { createCreateOnlyWriteToolDefinition } from './write-tool.ts';
-import { createProjectResourceLoader, createStoryflowRetrySettings } from './project-resource-loader.ts';
+import {
+  createProjectResourceLoader,
+  createSkillCatalogResourceLoader,
+  createStoryflowRetrySettings,
+} from './project-resource-loader.ts';
 import { createExtensionUIContext } from './extension-ui.ts';
 import { normalizeCraftToolArgumentsForSchema } from './craft-metadata-schema.ts';
 import { createSystemPromptOverride } from './system-prompt-override.ts';
@@ -2017,7 +2021,7 @@ function main(): void {
 
 async function runSkillCatalogMode(cwd: string): Promise<void> {
   const agentDir = getAgentDir();
-  const { resourceLoader } = await createProjectResourceLoader({ cwd, agentDir });
+  const resourceLoader = await createSkillCatalogResourceLoader({ cwd, agentDir });
   const catalog = resourceLoader.getSkills();
   process.stdout.write(`${JSON.stringify(catalog)}\n`);
 }

@@ -107,11 +107,7 @@ describe('default agent resources', () => {
     writeFile(join(assetsDir, 'sources', 'demo-source', 'config.json'), '{"name":"Bundled"}\n');
     writeFileSync(agentRootDir, 'occupied by a file');
 
-    let result: ReturnType<typeof seedDefaultAgentResources> | undefined;
-
-    expect(() => {
-      result = seedDefaultAgentResources({ assetsDir, agentRootDir });
-    }).not.toThrow();
+    const result = seedDefaultAgentResources({ assetsDir, agentRootDir });
 
     expect(result?.skills.imported).toEqual([]);
     expect(result?.skills.failed).toEqual([

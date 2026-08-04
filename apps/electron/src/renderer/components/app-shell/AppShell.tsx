@@ -136,7 +136,7 @@ import { useLabels } from "@/hooks/useLabels"
 import { useViews } from "@/hooks/useViews"
 import { useContainerWidth } from "@/hooks/useContainerWidth"
 import { useNovelReviewController } from "@/hooks/useNovelReviewController"
-import { clearWorkspaceSkillsCache, invalidateWorkspaceSkillsCache, loadSkillsForWorkspace } from "@/hooks/useWorkspaceSkills"
+import { invalidateWorkspaceSkillsCache, loadSkillsForWorkspace } from "@/hooks/useWorkspaceSkills"
 import { PERMISSION_MODE_ORDER } from "@craft-agent/shared/agent/modes"
 import { LabelIcon } from "@/components/ui/label-icon"
 import { filterSessionStatuses as filterLabelMenuStates } from "@/components/ui/label-menu"
@@ -926,8 +926,6 @@ function AppShellContent({
   const { t } = useTranslation()
   const updateChecker = useUpdateChecker()
   const updateIndicator = getUpdateIndicatorState(updateChecker.updateInfo)
-
-  React.useEffect(() => clearWorkspaceSkillsCache, [])
 
   // Get hotkey labels from centralized action registry
 

@@ -53,6 +53,19 @@ ${requiredSourcesYaml}---
   );
 }
 
+function writePackageSkill(packageRoot: string, slug: string): void {
+  mkdirSync(packageRoot, { recursive: true });
+  writeFileSync(
+    join(packageRoot, 'package.json'),
+    JSON.stringify({
+      name: slug,
+      version: '1.0.0',
+      pi: { skills: ['./skill'] },
+    }),
+  );
+  writeSkill(packageRoot, 'skill', slug);
+}
+
 afterEach(() => {
   for (const root of roots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
@@ -114,5 +127,36 @@ describe('loadPiSkillCatalog', () => {
       diagnostic.type === 'collision'
       && diagnostic.collision?.name === 'shared-skill'
     ))).toBe(true);
+  });
+
+  it('uses file-backed package and disabled settings in the in-process catalog', async () => {
+    const cwd = createRoot();
+    const agentDir = join(createRoot(), 'agent');
+    const projectPiDir = join(cwd, '.pi');
+
+    writePackageSkill(join(agentDir, 'user-package'), 'user-package-skill');
+    writeFileSync(
+      join(agentDir, 'settings.json'),
+      JSON.stringify({ packages: ['./user-package'] }),
+    );
+    writePackageSkill(join(projectPiDir, 'project-package'), 'project-package-skill');
+    writeSkill(projectPiDir, 'skills', 'disabled-skill');
+    writeFileSync(
+      join(projectPiDir, 'settings.json'),
+      JSON.stringify({
+        packages: ['./project-package'],
+        skills: ['-skills/disabled-skill'],
+      }),
+    );
+
+    const catalog = await loadPiSkillCatalog(cwd, {
+      agentDir,
+      additionalSkillPaths: [],
+    });
+    const names = catalog.skills.map(skill => skill.slug);
+
+    expect(names).toContain('user-package-skill');
+    expect(names).toContain('project-package-skill');
+    expect(names).not.toContain('disabled-skill');
   });
 });

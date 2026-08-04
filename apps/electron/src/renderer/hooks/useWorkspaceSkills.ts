@@ -12,10 +12,6 @@ export function __resetWorkspaceSkillsLoadCacheForTests(): void {
   skillsLoadCache.clear()
 }
 
-export function clearWorkspaceSkillsCache(): void {
-  skillsLoadCache.clear()
-}
-
 export function invalidateWorkspaceSkillsCache(workspaceId: string): void {
   const prefix = `${workspaceId}\0`
   for (const key of skillsLoadCache.keys()) {
