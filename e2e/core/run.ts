@@ -147,7 +147,7 @@ async function main(): Promise<void> {
   } finally {
     await app?.close().catch(() => {})
     model.stop()
-    rmSync(fixture.configDir, { recursive: true, force: true })
+    rmSync(fixture.configDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
   }
 }
 
