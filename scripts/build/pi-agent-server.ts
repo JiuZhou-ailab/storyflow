@@ -3,7 +3,7 @@
 // pos: Canonical cross-platform build entrypoint for the Pi subprocess
 
 import { spawn } from 'bun';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 export type PiServerPlatform = 'darwin' | 'win32' | 'linux';
@@ -73,6 +73,14 @@ export async function buildPiAgentServerBinary(options: {
   const arch = options.arch ?? hostArch();
   const packageDir = join(options.rootDir, 'packages', 'pi-agent-server');
   const outputPath = getPiAgentServerOutputPath(options.rootDir, platform);
+  const bundledBunPath = join(
+    options.rootDir,
+    'apps',
+    'electron',
+    'vendor',
+    'bun',
+    platform === 'win32' ? 'bun.exe' : 'bun',
+  );
   mkdirSync(join(packageDir, 'dist'), { recursive: true });
 
   const buildProcess = spawn({
@@ -80,7 +88,8 @@ export async function buildPiAgentServerBinary(options: {
       platform,
       arch,
       outputPath,
-      compileExecutablePath: options.compileExecutablePath,
+      compileExecutablePath: options.compileExecutablePath
+        ?? (existsSync(bundledBunPath) ? bundledBunPath : undefined),
     }),
     cwd: packageDir,
     stdout: 'inherit',
