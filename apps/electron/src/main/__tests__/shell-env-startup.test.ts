@@ -1,5 +1,5 @@
 // input: The shell-environment loader module and the main-process runtime wiring
-// output: Regression coverage for keeping login-shell discovery off the session-discovery path
+// output: Regression coverage for deferred login-shell discovery and bundled PATH preservation
 // pos: Guards the startup ordering that makes the first session/search RPC fast
 
 import { describe, expect, it } from 'bun:test'
@@ -26,5 +26,10 @@ describe('shell environment startup ordering', () => {
   it('loads the shell exactly once across concurrent callers', () => {
     expect(shellEnvSource).toMatch(/shellEnvLoad \?\?= loadShellEnv\(\)/)
     expect(shellEnvSource).toContain('export function whenShellEnvReady')
+  })
+
+  it('keeps bundled tool paths when merging the login-shell PATH', () => {
+    expect(shellEnvSource).toContain("key === 'PATH' && process.env.PATH")
+    expect(shellEnvSource).toContain('`${process.env.PATH}:${value}`')
   })
 })

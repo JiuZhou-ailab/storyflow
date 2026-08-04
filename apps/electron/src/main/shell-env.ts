@@ -1,5 +1,5 @@
 // input: The current process environment and the user's configured login shell
-// output: A merged Agent tool environment without blocking the Electron main loop
+// output: A merged Agent tool environment that preserves bundled tool paths without blocking startup
 // pos: Deferred Agent-runtime preparation, not part of the workspace shell critical path
 
 /**
@@ -80,7 +80,9 @@ export async function loadShellEnv(): Promise<void> {
         const key = line.substring(0, eq)
         if (shouldSkipEnvVar(key)) continue
         const value = line.substring(eq + 1)
-        process.env[key] = value
+        process.env[key] = key === 'PATH' && process.env.PATH
+          ? `${process.env.PATH}:${value}`
+          : value
         count++
       }
     }
