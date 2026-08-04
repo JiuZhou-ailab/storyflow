@@ -456,7 +456,7 @@ export class ConfigWatcher {
 
         if (filename === 'config.json') {
           ConfigWatcher.debounceGlobal('config.json', () => {
-            ConfigWatcher.forEachGlobalSubscriber(w => w.handleConfigChange());
+            ConfigWatcher.handleGlobalConfigChange();
           });
         } else if (filename === 'preferences.json') {
           ConfigWatcher.debounceGlobal('preferences.json', () => {
@@ -918,6 +918,29 @@ export class ConfigWatcher {
   // Safe Mode & Config Handlers
   // ============================================================
 
+  private static handleGlobalConfigChange(): void {
+    debug('[ConfigWatcher] config.json changed');
+
+    const validation = validateConfig();
+    if (!validation.valid) {
+      debug('[ConfigWatcher] Config validation failed:', validation.errors);
+      ConfigWatcher.forEachGlobalSubscriber(w => (
+        w.callbacks.onValidationError?.('config.json', validation)
+      ));
+      return;
+    }
+
+    const config = loadStoredConfig();
+    if (!config) {
+      ConfigWatcher.forEachGlobalSubscriber(w => (
+        w.callbacks.onError?.('config.json', new Error('Failed to load config'))
+      ));
+      return;
+    }
+
+    ConfigWatcher.forEachGlobalSubscriber(w => w.handleConfigChange(config));
+  }
+
   /**
    * Handle workspace permissions.json change
    */
@@ -934,31 +957,16 @@ export class ConfigWatcher {
   /**
    * Handle config.json change
    */
-  private handleConfigChange(): void {
-    debug('[ConfigWatcher] config.json changed');
+  private handleConfigChange(config: StoredConfig): void {
+    this.callbacks.onConfigChange?.(config);
 
-    const validation = validateConfig();
-    if (!validation.valid) {
-      debug('[ConfigWatcher] Config validation failed:', validation.errors);
-      this.callbacks.onValidationError?.('config.json', validation);
-      return;
-    }
-
-    const config = loadStoredConfig();
-    if (config) {
-      this.callbacks.onConfigChange?.(config);
-
-      // Check for LLM connections changes
-      // Use JSON hash comparison for deep equality check
-      const connections = config.llmConnections || [];
-      const currentHash = JSON.stringify(connections);
-      if (currentHash !== this.lastLlmConnectionsHash) {
-        debug('[ConfigWatcher] LLM connections changed');
-        this.lastLlmConnectionsHash = currentHash;
-        this.callbacks.onLlmConnectionsChange?.(connections);
-      }
-    } else {
-      this.callbacks.onError?.('config.json', new Error('Failed to load config'));
+    // Check for LLM connections changes
+    // Use JSON hash comparison for deep equality check
+    const connections = config.llmConnections || [];
+    const currentHash = JSON.stringify(connections);
+    if (currentHash !== this.lastLlmConnectionsHash) {
+      this.lastLlmConnectionsHash = currentHash;
+      this.callbacks.onLlmConnectionsChange?.(connections);
     }
   }
 

@@ -3,6 +3,7 @@
 // pos: Shared configuration persistence layer used by Electron, server, and tests
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync, readdirSync } from 'fs';
 import { join, dirname, basename } from 'path';
+import { isDeepStrictEqual } from 'node:util';
 import { credentialIdToAccount, getCredentialManager } from '../credentials/index.ts';
 import { getOrCreateLatestSession, type SessionConfig } from '../sessions/index.ts';
 import {
@@ -17,7 +18,7 @@ import { extractWorkspaceSlugFromPath } from '../utils/workspace-slug.ts';
 import { initializeDocs } from '../docs/index.ts';
 import { expandPath, toPortablePath, getBundledAssetsDir } from '../utils/paths.ts';
 import { debug } from '../utils/debug.ts';
-import { readJsonFileSync } from '../utils/files.ts';
+import { atomicWriteFileSync, readJsonFileSync } from '../utils/files.ts';
 import { CONFIG_DIR } from './paths.ts';
 import type { StoredAttachment, StoredMessage } from '@craft-agent/core/types';
 import type { Plan } from '../agent/plan-types.ts';
@@ -527,7 +528,18 @@ export function saveConfig(config: StoredConfig): void {
     })),
   };
 
-  writeFileSync(CONFIG_FILE, JSON.stringify(storageConfig, null, 2), 'utf-8');
+  const serializedConfig = JSON.stringify(storageConfig, null, 2);
+  if (existsSync(CONFIG_FILE)) {
+    try {
+      const persistedConfig = JSON.parse(serializedConfig);
+      if (isDeepStrictEqual(readJsonFileSync(CONFIG_FILE), persistedConfig)) return;
+    } catch (error) {
+      // A valid replacement should repair malformed JSON; real I/O failures stay visible.
+      if (!(error instanceof SyntaxError)) throw error;
+    }
+  }
+
+  atomicWriteFileSync(CONFIG_FILE, serializedConfig);
 }
 
 // Legacy updateApiKey() removed - use setupLlmConnection IPC handler instead.

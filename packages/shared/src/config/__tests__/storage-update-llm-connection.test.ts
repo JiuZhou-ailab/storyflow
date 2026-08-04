@@ -3,7 +3,7 @@
 // pos: Storage-level contract tests for global LLM connection preferences
 
 import { describe, expect, it } from 'bun:test'
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { mkdtempSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { pathToFileURL } from 'url'
@@ -86,7 +86,11 @@ function setup(llmConnections: any[]) {
     return config.llmConnections.find((c: any) => c.slug === slug)
   }
 
-  return { configDir, configPath, runUpdate, runSetDefaultSelection, readConfig, readConnection }
+  function configMtimeNs(): bigint {
+    return statSync(configPath, { bigint: true }).mtimeNs
+  }
+
+  return { configDir, configPath, runUpdate, runSetDefaultSelection, readConfig, readConnection, configMtimeNs }
 }
 
 function makeConnection(overrides: Record<string, unknown> = {}) {
@@ -103,6 +107,32 @@ function makeConnection(overrides: Record<string, unknown> = {}) {
 }
 
 describe('updateLlmConnection – customEndpoint', () => {
+  it('does not rewrite config when the persisted connection is unchanged', () => {
+    const models = [
+      { id: 'model-a', name: 'Model A', contextWindow: 128_000, maxTokens: 8192 },
+      { id: 'model-b', name: 'Model B', contextWindow: 64_000, maxTokens: 4096 },
+    ]
+    const { runUpdate, configMtimeNs } = setup([makeConnection({ models })])
+    const before = configMtimeNs()
+
+    expect(runUpdate('custom-compat', {
+      models: [
+        { maxTokens: 8192, contextWindow: 128_000, name: 'Model A', id: 'model-a' },
+        { maxTokens: 4096, contextWindow: 64_000, name: 'Model B', id: 'model-b' },
+      ],
+    })).toBe(true)
+    expect(configMtimeNs()).toBe(before)
+  })
+
+  it('persists model priority when the same models are reordered', () => {
+    const models = [{ id: 'model-a' }, { id: 'model-b' }]
+    const { runUpdate, readConnection } = setup([makeConnection({ models })])
+
+    expect(runUpdate('custom-compat', { models: [...models].reverse() })).toBe(true)
+    expect(readConnection('custom-compat').models.map((model: { id: string }) => model.id))
+      .toEqual(['model-b', 'model-a'])
+  })
+
   it('preserves customEndpoint when provided in updates', () => {
     const { runUpdate, readConnection } = setup([makeConnection()])
     const customEndpoint = { api: 'anthropic-messages' }
