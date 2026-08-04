@@ -219,7 +219,6 @@ describe('perf writing catalog navigation contract', () => {
         sashLabel="目录"
         onResizeStart={() => {}}
         width={320}
-        header={<div>目录</div>}
       >
         <div role="tree">章节</div>
       </ResizableColumn>

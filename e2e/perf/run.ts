@@ -114,9 +114,11 @@ async function enterWorkspaceWithSessions(live: LaunchedApp): Promise<void> {
     60_000,
     'ActivityRail project buttons'
   )
+  await dismissStartupAnnouncement(live)
 
   const opened = await openNonNovelProject(live)
   if (!opened) throw new Error('Could not open a non-writing fixture project from ActivityRail')
+  await openExpandedProjectSession(live)
 
   // Backend session index for this workspace (300/workspace can take a moment).
   await waitFor(
@@ -147,6 +149,7 @@ async function enterFirstWritingWorkspace(live: LaunchedApp): Promise<WritingWor
     60_000,
     'ActivityRail project buttons'
   )
+  await dismissStartupAnnouncement(live)
   const hubReadyAt = Date.now()
   const startupMarks = await evalOn<Record<string, number>>(
     live,
@@ -162,6 +165,8 @@ async function enterFirstWritingWorkspace(live: LaunchedApp): Promise<WritingWor
   const opened = await openWritingProject(live)
   if (!opened) throw new Error('Could not open the writing fixture project from ActivityRail')
   const projectClickedAt = Date.now()
+  await openExpandedProjectSession(live)
+  await navigateToWritingWorkspace(live)
 
   await waitFor(live, `!!document.querySelector('[data-tutorial="writing-catalog"]')`, 45_000, 'writing catalog')
   const catalogReadyAt = Date.now()
@@ -191,6 +196,32 @@ async function enterFirstWritingWorkspace(live: LaunchedApp): Promise<WritingWor
   }
 }
 
+/** Fresh perf profiles have no release marker, so updates may block the project rail. */
+async function dismissStartupAnnouncement(live: LaunchedApp): Promise<void> {
+  const appeared = await waitFor(
+    live,
+    `Array.from(document.querySelectorAll('button')).some((button) => button.textContent?.trim() === '继续使用')`,
+    2_000,
+    'update announcement',
+  ).then(() => true, () => false)
+  if (!appeared) return
+
+  const dismissed = await evalOn<boolean>(live, `(() => {
+    const button = Array.from(document.querySelectorAll('button'))
+      .find((candidate) => candidate.textContent?.trim() === '继续使用')
+    button?.click()
+    return !!button
+  })()`)
+  if (dismissed) {
+    await waitFor(
+      live,
+      `!Array.from(document.querySelectorAll('button')).some((button) => button.textContent?.trim() === '继续使用')`,
+      5_000,
+      'update announcement dismissed',
+    )
+  }
+}
+
 /** Open the first ActivityRail project whose name is not the deterministic writing fixture. */
 async function openNonNovelProject(live: LaunchedApp): Promise<string | null> {
   return evalOn<string | null>(live, openFixtureProjectExpression('sessions'))
@@ -199,6 +230,40 @@ async function openNonNovelProject(live: LaunchedApp): Promise<string | null> {
 /** Open the deterministic 400-chapter writing fixture from ActivityRail. */
 async function openWritingProject(live: LaunchedApp): Promise<string | null> {
   return evalOn<string | null>(live, openFixtureProjectExpression('writing'))
+}
+
+/** ActivityRail project buttons expand folders; selecting a child session enters the project. */
+async function openExpandedProjectSession(live: LaunchedApp): Promise<void> {
+  const selector = '[data-testid="activity-project-conversations"] [data-session-id] button'
+  await waitFor(live, `!!document.querySelector('${selector}')`, 90_000, 'expanded project session')
+  const opened = await evalOn<boolean>(live, `(() => {
+    const button = document.querySelector('${selector}')
+    if (!(button instanceof HTMLButtonElement)) return false
+    button.click()
+    return true
+  })()`)
+  if (!opened) throw new Error('Could not open a session from the expanded ActivityRail project')
+  await waitFor(
+    live,
+    `!!document.querySelector('[data-testid="activity-project-conversations"] [data-session-id] button[aria-current="page"]')`,
+    90_000,
+    'selected project session',
+  )
+}
+
+/** Same navigation event used by in-app route links after the project runtime is active. */
+async function navigateToWritingWorkspace(live: LaunchedApp): Promise<void> {
+  await evalOn(live, `window.dispatchEvent(new CustomEvent('craft-agent-navigate', {
+    detail: { route: 'writing' },
+    bubbles: true,
+  }))`)
+  await waitFor(
+    live,
+    `!!document.querySelector('[data-tutorial="writing-catalog"], [aria-label="展开右侧栏"]')`,
+    90_000,
+    'writing workspace control',
+  )
+  await evalOn(live, `document.querySelector('[aria-label="展开右侧栏"]')?.click()`)
 }
 
 // ---- Scenario 1: startup ------------------------------------------------
@@ -263,7 +328,7 @@ async function runHeavyWriting(): Promise<Metric[]> {
     const beforeDocumentPaint = countPerf(live, DOCUMENT_PAINT_COMPLETE)
     const t0 = Date.now()
     const opened = await evalOn<'clicked' | 'already-selected' | null>(live, openWritingChapterExpression(200))
-    if (opened !== 'clicked') throw new Error('Could not scroll to and click 第200章')
+    if (opened !== 'clicked') throw new Error(`Could not scroll to and click 第200章 (${opened ?? 'not found'})`)
     await requirePerfLine(
       live,
       DOCUMENT_PAINT_COMPLETE,

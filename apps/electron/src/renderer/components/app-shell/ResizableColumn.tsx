@@ -106,7 +106,7 @@ export function ResizableColumn({
           style={{ width }}
         >
           {header}
-          {header ? (
+          {header || mode === 'directory-dock' ? (
             <div className="min-h-0 flex-1 overflow-auto">{children}</div>
           ) : children}
         </div>
