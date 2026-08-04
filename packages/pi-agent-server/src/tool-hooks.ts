@@ -10,6 +10,7 @@ import type {
 import type { ImageContent, TextContent } from '@earendil-works/pi-ai';
 
 export function createToolHooks(options: {
+  onTurnStart?(): void;
   beforeToolCall(event: ToolCallEvent): Promise<Record<string, unknown>>;
   afterToolCall(event: ToolResultEvent): Promise<{
     content?: (TextContent | ImageContent)[];
@@ -20,6 +21,7 @@ export function createToolHooks(options: {
   return {
     name: 'storyflow-tool-hooks',
     factory(pi) {
+      if (options.onTurnStart) pi.on('turn_start', options.onTurnStart);
       pi.on('tool_call', async (event) => {
         const nextInput = { ...await options.beforeToolCall(event) };
         const input = event.input as Record<string, unknown>;

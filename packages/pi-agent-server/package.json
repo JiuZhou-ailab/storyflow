@@ -4,12 +4,8 @@
   "license": "Apache-2.0",
   "description": "Out-of-process Pi agent server communicating via JSONL over stdio",
   "type": "module",
-  "main": "dist/index.js",
-  "bin": {
-    "pi-agent-server": "./dist/index.js"
-  },
   "scripts": {
-    "build": "bun build src/index.ts --outdir=dist --target=bun --format=esm",
+    "build": "bun ../../scripts/build/pi-agent-server.ts",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "validate": "bun run typecheck && bun run build"
   },

@@ -2,7 +2,7 @@
  * Session Tools Core - Response Helpers
  *
  * Helper functions for creating standardized tool responses.
- * Used by both Claude and Codex implementations.
+ * Used by the Pi session tool implementations.
  */
 
 import type { ToolResult, TextContent } from './types.ts';
@@ -32,7 +32,7 @@ export function successResponse(text: string): ToolResult {
  * distinguishable from successes, we prefix the output text with "[ERROR]".
  * The model can then parse this prefix to understand the tool call failed.
  *
- * This covers all session MCP tool errors (source_test, config_validate,
+ * This covers all session tool errors (source_test, config_validate,
  * skill_validate, SubmitPlan, credential_prompt, oauth triggers, etc.).
  *
  * See also: blockWithReason() in packages/shared/src/agent/mode-manager.ts

@@ -24,7 +24,7 @@ import {
 } from '../../shared/src/agent/backend/pi/subagent-contract.ts';
 import { createStoryflowRetrySettings } from './project-resource-loader.ts';
 
-const READ_ONLY_TOOLS = ['read', 'grep', 'find', 'ls'] as const;
+const READ_ONLY_TOOLS = ['read', 'grep', 'find', 'ls', 'web_search', 'web_fetch'] as const;
 const WORKSPACE_WRITE_TOOLS = [...READ_ONLY_TOOLS, 'edit', 'write', 'bash'] as const;
 const MAX_CONCURRENT_TASKS = 2;
 const MAX_TASKS_PER_TURN = 4;
@@ -239,6 +239,7 @@ export function createSubagentExtension(
                 authStorage: options.authStorage,
                 modelRegistry: options.modelRegistry,
                 model: ctx.model,
+                thinkingLevel: options.thinkingLevel,
                 customTools: options.toolDefinitions.filter(
                   tool => allowedNames.includes(tool.name),
                 ),
@@ -272,12 +273,6 @@ export function createSubagentExtension(
                 await session.abort();
                 throw new Error('Subagent execution aborted');
               }
-              if (ctx.model) {
-                await session.setModel(ctx.model);
-              }
-              if (options.thinkingLevel) {
-                session.setThinkingLevel(options.thinkingLevel);
-              }
               await session.prompt([
                 'Complete this isolated delegated task.',
                 'Use only the available tools. Do not delegate or create sessions.',
@@ -286,7 +281,6 @@ export function createSubagentExtension(
                   : 'Modify only what the task requires and verify the result.',
                 `Task: ${params.task}`,
               ].join('\n'));
-              await session.waitForIdle();
               if (signal?.aborted) {
                 throw new Error('Subagent execution aborted');
               }

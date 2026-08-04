@@ -5,8 +5,20 @@
 import { describe, expect, it } from 'bun:test';
 import { handleAskUserQuestion } from './ask-user-question.ts';
 import type { SessionToolContext } from '../context.ts';
+import { AskUserQuestionSchema } from '../tool-defs.ts';
 
 describe('handleAskUserQuestion', () => {
+  it('accepts free-form-only questions without fake choices', () => {
+    expect(AskUserQuestionSchema.safeParse({
+      questions: [{
+        header: 'Extension',
+        question: 'Checkpoint name',
+        multiSelect: false,
+        options: [],
+      }],
+    }).success).toBe(true);
+  });
+
   it('waits for and returns the user answer', async () => {
     const ctx = {
       sessionId: 'session-1',

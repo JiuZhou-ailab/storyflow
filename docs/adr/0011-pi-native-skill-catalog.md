@@ -25,8 +25,7 @@ runtime 定义，Storyflow 只应拥有产品投影、写入确认和包安装�
 - 技能栏显示 Pi scope，并使用 Pi 返回的精确 `filePath` 打开资源。
   package 来源的 Skill 必须经其包管理器删除。
 - Pi diagnostics 保留在 catalog，并在服务端记录；不另造一套冲突规则。
-- Storyflow Extensions 仍只从显式的 Storyflow 根加载并执行软链接检查。
-  Skill 发现与可执行 Extension 信任是正交边界。
+- Extension 的运行时所有权由 ADR 0018 修订；Skill 与可执行 Extension 的信任仍是正交边界。
 - Market/ResourceBundle 导入仍执行摘要、路径穿越、软链接、frontmatter 和
   禁止静默覆盖检查，安装目标改为 Pi 用户 Skill 目录。
 

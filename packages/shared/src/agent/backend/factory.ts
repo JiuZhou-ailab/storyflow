@@ -43,7 +43,7 @@ import {
 import { parseValidationError, type LlmValidationResult } from '../../config/llm-validation.ts';
 import type { ModelFetchResult } from '../../config/model-fetcher.ts';
 // Model resolution utilities
-import { getModelProvider, DEFAULT_MODEL } from '../../config/models.ts';
+import { DEFAULT_MODEL } from '../../config/models.ts';
 import { homedir } from 'node:os';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -370,7 +370,7 @@ export function resolveBackendContext(args: {
     ? connectionAuthTypeToBackendAuthType(connection.authType)
     : undefined;
 
-  const resolvedModel = resolveModelForProvider(provider, args.managedModel, connection);
+  const resolvedModel = resolveModelForConnection(args.managedModel, connection);
 
   return {
     connection,
@@ -556,11 +556,7 @@ export function createBackendFromConnection(
     connection,
     provider: providerTypeToAgentProvider(connection.providerType || 'anthropic'),
     authType: connectionAuthTypeToBackendAuthType(connection.authType),
-    resolvedModel: resolveModelForProvider(
-      providerTypeToAgentProvider(connection.providerType || 'anthropic'),
-      baseConfig.model,
-      connection
-    ),
+    resolvedModel: resolveModelForConnection(baseConfig.model, connection),
     capabilities: BACKEND_CAPABILITIES[providerTypeToAgentProvider(connection.providerType || 'anthropic')],
   };
 
@@ -619,37 +615,17 @@ export function getDefaultAuthType(provider: AgentProvider): LlmAuthType | undef
 // ============================================================
 
 /**
- * Resolve the model ID for a given provider, validating against the connection's model list.
+ * Resolve the model ID from session selection and its LLM connection.
  *
- * Each provider has different defaults and validation:
- * - Anthropic: falls back to DEFAULT_MODEL (Opus)
- * - Pi: falls back to empty string (Pi selects model internally)
- *
- * @param provider - The agent provider
  * @param managedModel - The model stored on the session (user's choice)
  * @param connection - The LLM connection config (has defaultModel and models[])
  * @returns Resolved model ID string
  */
-export function resolveModelForProvider(
-  provider: AgentProvider,
+export function resolveModelForConnection(
   managedModel: string | undefined,
   connection: LlmConnection | null
 ): string {
-  // Cross-provider guard: if the model belongs to a different provider, fall back
-  // to the connection's default. This prevents e.g. sending a Claude model to Pi.
-  if (managedModel) {
-    const modelProvider = getModelProvider(managedModel);
-    if (modelProvider && modelProvider !== provider) {
-      managedModel = undefined; // Clear — will fall through to connection default
-    }
-  }
-
-  switch (provider) {
-    case 'pi':
-      return managedModel || connection?.defaultModel || '';
-    default:
-      return managedModel || connection?.defaultModel || DEFAULT_MODEL;
-  }
+  return managedModel || connection?.defaultModel || '';
 }
 
 // ============================================================

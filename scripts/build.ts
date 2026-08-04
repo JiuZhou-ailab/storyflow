@@ -6,7 +6,7 @@ import { existsSync } from "fs";
 import { join } from "path";
 import {
   buildElectronApp,
-  buildMcpServers,
+  buildPiAgentServer,
   cleanBuildArtifacts,
   copyRipgrep,
   createManifest,
@@ -15,7 +15,7 @@ import {
   installDependencies,
   loadEnvFile,
   uploadToS3,
-  verifyMcpServersExist,
+  verifyPiAgentServerExists,
   type BuildConfig,
 } from "./build/common.ts";
 import { packageDarwin } from "./build/darwin.ts";
@@ -137,7 +137,7 @@ async function prepareRuntime(config: BuildConfig): Promise<void> {
   await downloadBun(config);
   await downloadUv(config);
   copyRipgrep(config);
-  buildMcpServers(config);
+  buildPiAgentServer(config);
 }
 
 async function buildPackage(config: BuildConfig): Promise<void> {
@@ -150,7 +150,7 @@ async function buildPackage(config: BuildConfig): Promise<void> {
     await packageWindows(config);
   } else {
     await buildElectronApp(config);
-    verifyMcpServersExist(config);
+    verifyPiAgentServerExists(config);
     if (config.platform === "darwin") {
       await packageDarwin(config);
     } else {

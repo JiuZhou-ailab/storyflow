@@ -6,7 +6,6 @@ import { describe, expect, it } from 'bun:test';
 import {
   createPromptAttemptState,
   recordPromptAttemptEvent,
-  shouldSuppressRetryingAgentEnd,
   shouldSuppressRetryablePromptFailure,
 } from './prompt-retry.ts';
 
@@ -17,30 +16,25 @@ describe('Pi prompt retry presentation', () => {
     expect(shouldSuppressRetryablePromptFailure('400 response_format is unavailable', state)).toBe(false);
   });
 
-  it('exposes the final failed attempt and its terminal agent_end', () => {
+  it('exposes the final failed attempt once Pi exhausts retry budget', () => {
     const state = createPromptAttemptState();
-    state.suppressedRetryableFailure = true;
-    expect(shouldSuppressRetryingAgentEnd({ type: 'agent_end', willRetry: true }, state)).toBe(true);
     recordPromptAttemptEvent(state, {
       type: 'auto_retry_start',
       attempt: 1,
       maxAttempts: 1,
     });
     expect(shouldSuppressRetryablePromptFailure('HTTP 524', state)).toBe(false);
-    expect(shouldSuppressRetryingAgentEnd({ type: 'agent_end', willRetry: false }, state)).toBe(false);
     recordPromptAttemptEvent(state, { type: 'auto_retry_end', success: false });
     expect(shouldSuppressRetryablePromptFailure('HTTP 524', state)).toBe(false);
   });
 
   it('continues suppressing while additional Pi retries remain', () => {
     const state = createPromptAttemptState();
-    state.suppressedRetryableFailure = true;
     recordPromptAttemptEvent(state, {
       type: 'auto_retry_start',
       attempt: 1,
       maxAttempts: 3,
     });
-    expect(state.suppressedRetryableFailure).toBe(false);
     expect(shouldSuppressRetryablePromptFailure('network error', state)).toBe(true);
   });
 });

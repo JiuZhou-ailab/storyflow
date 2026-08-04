@@ -86,7 +86,7 @@
     "webui:clean": "rm -rf apps/webui/dist",
     "webui:build": "vite build --config apps/webui/vite.config.ts",
     "webui:typecheck": "cd apps/webui && bun run typecheck",
-    "server:build:subprocess": "cd packages/session-mcp-server && bun run build && cd ../pi-agent-server && bun run build",
+    "server:build:subprocess": "bun run --cwd packages/pi-agent-server build",
     "server:prod": "bun run server:build:subprocess && bun run webui:build && CRAFT_WEBUI_DIR=apps/webui/dist CRAFT_BUNDLED_ASSETS_ROOT=$PWD/apps/electron bun run packages/server/src/index.ts",
     "server:dev:webui": "bun run server:build:subprocess && bun run webui:build && CRAFT_WEBUI_DIR=apps/webui/dist CRAFT_WEBUI_PORT=3100 bun run server:dev",
     "auth-broker:dev": "bun run scripts/auth-broker-dev.ts",

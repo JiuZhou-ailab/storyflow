@@ -86,17 +86,22 @@ function getBundledPiServerPath(): string | undefined {
   const resourcesBase = process.env.CRAFT_RESOURCES_BASE;
   if (!resourcesBase) return undefined;
 
-  const candidate = join(resourcesBase, 'resources', 'pi-agent-server', 'index.js');
-  return existsSync(candidate) ? candidate : undefined;
+  const binaryName = process.platform === 'win32' ? 'pi-agent-server.exe' : 'pi-agent-server';
+  for (const entryName of [binaryName, 'index.js']) {
+    const candidate = join(resourcesBase, 'resources', 'pi-agent-server', entryName);
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
 }
 
 function loadCatalogFromPiSubprocess(cwd: string, piServerPath: string): Promise<PiCatalogResult> {
   const bunRuntime = process.env.CRAFT_BUN || 'bun';
+  const isScript = /\.(?:[cm]?js|ts)$/.test(piServerPath);
 
   return new Promise((resolvePromise, rejectPromise) => {
     execFile(
-      bunRuntime,
-      [piServerPath, '--skill-catalog', cwd],
+      isScript ? bunRuntime : piServerPath,
+      isScript ? [piServerPath, '--skill-catalog', cwd] : ['--skill-catalog', cwd],
       { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 },
       (error, stdout, stderr) => {
         if (error) {

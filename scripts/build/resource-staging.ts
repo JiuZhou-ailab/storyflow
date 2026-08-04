@@ -6,11 +6,11 @@ import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   copyPiAgentServer,
-  copySessionServer,
   type Arch,
   type BuildConfig,
   type Platform,
 } from './common.ts';
+import { getPiAgentServerBinaryName } from './pi-agent-server.ts';
 
 export interface SubprocessResourceStageConfig {
   rootDir: string;
@@ -46,22 +46,14 @@ export function stageSubprocessResources(config: SubprocessResourceStageConfig):
     uploadScript: false,
   };
 
-  const sessionDest = join(config.electronDir, 'resources', 'session-mcp-server');
   const piDest = join(config.electronDir, 'resources', 'pi-agent-server');
 
-  rmSync(sessionDest, { recursive: true, force: true });
   rmSync(piDest, { recursive: true, force: true });
 
-  copySessionServer(buildConfig);
   copyPiAgentServer(buildConfig);
 
-  const sessionEntry = join(sessionDest, 'index.js');
-  if (!existsSync(sessionEntry)) {
-    throw new Error(`Session MCP server was not staged at ${sessionEntry}`);
-  }
-
   const piPackagePresent = existsSync(join(config.rootDir, 'packages', 'pi-agent-server', 'src'));
-  const piEntry = join(piDest, 'index.js');
+  const piEntry = join(piDest, getPiAgentServerBinaryName(config.platform));
   if (piPackagePresent && !existsSync(piEntry)) {
     throw new Error(`Pi agent server was not staged at ${piEntry}`);
   }

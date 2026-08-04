@@ -62,7 +62,10 @@ export const AskUserQuestionSchema = z.object({
     options: z.array(z.object({
       label: z.string().min(1).max(40).describe('Concise option label'),
       description: z.string().min(1).describe('Meaning or trade-off of this option'),
-    })).min(2).max(4),
+    })).max(4).refine(
+      options => options.length === 0 || options.length >= 2,
+      'Provide either no options for free-form input or 2-4 concrete options.',
+    ),
     multiSelect: z.boolean().default(false),
   })).min(1).max(4).refine(
     questions => new Set(questions.map(question => question.question)).size === questions.length,
@@ -251,7 +254,8 @@ export const TOOL_DESCRIPTIONS = {
   ask_user_question: `Ask the user one to four focused questions and wait for their answers.
 
 Use this only when the answer materially changes the result and cannot be inferred safely.
-Each question needs 2-4 concrete options. The UI also provides a free-form answer.
+Each question needs 2-4 concrete options, or no options for free-form-only input.
+The UI also provides a free-form answer alongside concrete options.
 Batch independent questions into one call. Do not continue until the tool returns.`,
   SubmitPlan: `Submit a plan for user review.
 
@@ -363,39 +367,9 @@ The user will see a secure input UI with appropriate fields based on the auth mo
 
   update_user_preferences: `Update stored user preferences. Use this when you learn information about the user that would be helpful to remember for future conversations. This includes their name, timezone, location, preferred language, or any other relevant notes. Only update fields you have confirmed information about - don't guess.`,
 
-  transform_data: `Transform data files using a script and write structured output for datatable/spreadsheet blocks, or extract HTML content for html-preview blocks.
+  transform_data: `Transform session files with Python, Node, or Bun and write an output file for a data or preview block. Input paths precede the output path in argv. Runs without credentials in an isolated subprocess with a 30-second timeout.`,
 
-Use this tool when you need to transform large datasets (20+ rows) into structured JSON for display, or extract/decode content for rich previews. Write a transform script that reads the input file and produces an output file, then reference it via \`"src"\` in your datatable/spreadsheet/html-preview/pdf-preview/image-preview block.
-
-**Workflow:**
-1. Call \`transform_data\` with a script that reads input files and writes output
-2. Output a datatable/spreadsheet block with \`"src": "data/output.json"\`, an html-preview block with \`"src": "data/output.html"\`, a pdf-preview block with \`"src": "data/output.pdf"\`, or an image-preview block with \`"src": "data/output.png"\`
-
-**Script conventions:**
-- Input file paths are passed as command-line arguments (last arg = output file path)
-- Python: \`sys.argv[1:-1]\` = input files, \`sys.argv[-1]\` = output path
-- Node/Bun: \`process.argv.slice(2, -1)\` = input files, \`process.argv.at(-1)\` = output path
-- For datatable/spreadsheet: output must be valid JSON: \`{"title": "...", "columns": [...], "rows": [...]}\`
-- For html-preview: output is an HTML file (any valid HTML)
-
-**Security:** Runs in an isolated subprocess with no access to API keys or credentials. 30-second timeout.`,
-
-  script_sandbox: `Run quick inline diagnostics in a sandboxed subprocess with network isolation.
-
-Use this for short Python/Node/Bun snippets when strict Explore-mode Bash parsing blocks inline diagnostics.
-
-**Behavior:**
-- Executes script source from \`script\` in a temporary file
-- Returns stdout/stderr, exit code, duration, and timeout status
-- Accepts optional input files and stdin
-- Requires enforced network and filesystem isolation; if unsupported or unusable, execution is blocked
-
-**Safety:**
-- Sensitive credential env vars are stripped
-- Input files are restricted to the current session directory
-- Filesystem writes are restricted to the current session directory
-- Timeout is capped (default 5000ms, max 15000ms)
-- Network/filesystem isolation is required in all permission modes; if unavailable, execution is blocked`,
+  script_sandbox: `Run a short Python, Node, or Bun diagnostic in an isolated subprocess. Returns stdout, stderr, exit code, duration, and timeout status. Credentials are stripped; input and writes stay inside the session; execution is blocked if network/filesystem isolation is unavailable.`,
 
   render_template: `Render a source's HTML template with data.
 
@@ -410,60 +384,9 @@ Use this when a source provides HTML templates for rich rendering of its data (e
 
 Templates use Mustache syntax — the tool handles rendering and writes the output HTML to the session data folder.`,
 
-  browser_tool: `Run browser actions using a CLI-like command (string or array input).
+  browser_tool: `Run browser actions through one CLI-like command. Use \`--help\` for the command catalog. String input can batch non-navigation commands with semicolons; array input preserves raw semicolons, tabs, and newlines. Re-snapshot after navigation because page references may change, and call \`release\` when done.`,
 
-All browser interactions use this single tool with strict validation and actionable feedback.
-String mode supports batching with semicolons: \`fill @e1 value; fill @e2 value; click @e3\`
-Batch stops after navigation commands (click, navigate, back, forward) since page state may change.
-
-Array mode bypasses string parsing and preserves raw arguments exactly (recommended for semicolons, tabs, and newlines):
-- \`["evaluate", "var x = 1; var y = 2; x + y"]\`
-- \`["paste", "Name\\tAge\\nAlice\\t30"]\`
-
-Examples:
-- \`--help\`
-- \`open\`
-- \`navigate https://example.com\`
-- \`snapshot\`
-- \`find login button\` — search elements by keyword
-- \`click @e12\`
-- \`click-at 350 200\` — click at pixel coordinates (for canvas elements)
-- \`fill @e5 user@example.com\`
-- \`type Hello World\` — type into currently focused element (no ref needed)
-- \`select @e3 optionValue\`
-- \`select @e75 CNAME --assert-text Target --timeout 3000\`
-- \`set-clipboard Name\\tAge\\nAlice\\t30\` — write text to clipboard
-- \`get-clipboard\` — read clipboard text content
-- \`paste Name\\tAge\\nAlice\\t30\` — set clipboard and trigger Ctrl/Cmd+V
-- \`scroll down 800\`
-- \`evaluate document.title\`
-- \`console 50 error\`
-- \`screenshot\` — raw screenshot
-- \`screenshot --annotated\` — screenshot with @eN labels overlaid on interactive elements
-- \`screenshot-region 100 200 640 480\`
-- \`screenshot-region --ref @e12 --padding 8\`
-- \`screenshot-region --selector div[data-testid="chart"]\`
-- \`window-resize 1440 900\`
-- \`network 50 failed\`
-- \`wait network-idle 8000\`
-- \`key Enter\`
-- \`key k meta\`
-- \`downloads wait 15000\`
-- \`focus [windowId]\` — focus existing browser window (no new window)
-- \`windows\` — list current browser windows and ownership state
-- \`release\` — dismiss the agent control overlay when done
-- \`close\` — close and destroy the browser window
-- \`hide\` — hide the window while preserving state`,
-
-  call_llm: `Invoke a secondary LLM for focused subtasks. Use for:
-- Cost optimization: use a smaller model for simple tasks (summarization, classification)
-- Structured output: JSON schema compliance via prompt instructions
-- Parallel processing: call multiple times in one message - all run simultaneously
-- Context isolation: process content without polluting main context
-
-Put text/content directly in the 'prompt' parameter. Do NOT pass inline text via attachments.
-Only use 'attachments' for existing file paths on disk - the tool loads file content automatically.
-For large files (>2000 lines), use {path, startLine, endLine} to select a portion.`,
+  call_llm: `Invoke a secondary LLM for focused tool-free reasoning, structured output, or context isolation. Sibling calls run in parallel. Put inline content in prompt; attachments are only for existing files, with optional line ranges for large files.`,
 
   spawn_session: `Create a user-visible, durable session with its own conversation history, prompt, connection, model, and sources.
 
@@ -473,12 +396,7 @@ Do not use it for ordinary subtasks or temporary parallel work within the curren
 Call with help=true when you need to discover available connections, models, and sources.
 When spawning, the 'prompt' parameter is required.
 
-Optional overrides: \`model\`, \`llmConnection\`, \`permissionMode\`, \`thinkingLevel\`, \`enabledSourceSlugs\`, \`labels\`, \`workingDirectory\`. Omitted fields inherit from the spawning session or the workspace default.
-
-\`thinkingLevel\` is silently ignored on non-reasoning models (e.g. gpt-4o, gemini-2.5-flash) — the SDK drops the reasoning param rather than erroring. Use it when you want to force deeper reasoning on a supported model, or set it to \`off\` when spawning a session that doesn't need to think.
-
-The spawned session appears in the session list, runs its initial prompt asynchronously, and remains available after the current turn completes.
-Only use 'attachments' for existing file paths on disk — the tool reads them automatically.`,
+Omitted options inherit from the current session or workspace. The session appears in the session list, starts asynchronously, and remains available after this turn. Attachments must be existing files.`,
 
   send_developer_feedback: `Send freeform feedback to the Craft Agent development team.
 
@@ -547,7 +465,7 @@ export interface RegistrySessionToolDef extends SessionToolDefBase {
   handler: SessionToolHandler;
 }
 
-/** Tool executed by backend-specific adapters (Pi/Claude/session-mcp-server). */
+/** Tool executed by the active agent runtime adapter. */
 export interface BackendSessionToolDef extends SessionToolDefBase {
   executionMode: 'backend';
   handler: null;
@@ -604,7 +522,7 @@ export interface SessionToolFilterOptions {
  * Return session tools with optional feature filtering.
  *
  * Callers should use this helper instead of filtering ad hoc so tool visibility
- * stays consistent across Claude, Pi, and session-mcp-server backends.
+ * stays consistent across runtime adapters.
  */
 export function getSessionToolDefs(options?: SessionToolFilterOptions): SessionToolDef[] {
   const includeDeveloperFeedback = options?.includeDeveloperFeedback ?? true;
@@ -681,7 +599,7 @@ export function getSessionSafeBlockedToolNames(options?: SessionToolNameOptions)
 /** Set of session tool names for quick membership checks. */
 export const SESSION_TOOL_NAMES = new Set(SESSION_TOOL_DEFS.map(d => d.name));
 
-/** Session tool names that must be handled by backend-specific adapters (Pi/Claude/session-mcp-server). */
+/** Session tool names that must be handled by the active runtime adapter. */
 export const SESSION_BACKEND_TOOL_NAMES = new Set(
   SESSION_TOOL_DEFS.filter(d => d.executionMode === 'backend').map(d => d.name)
 );

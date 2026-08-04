@@ -1,27 +1,30 @@
-// input: Pi cwd, isolated session directory, user Skills, and Storyflow resources
-// output: Pi-native Skills plus explicit Storyflow Extensions
-// pos: Runtime resource boundary preserving native Skill discovery and Extension isolation
+// input: Pi cwd, canonical Pi agent directory, and legacy Storyflow resources
+// output: Pi-native resources plus compatibility paths and Storyflow inline Extensions
+// pos: Thin product adapter over Pi's ResourceLoader and package ecosystem
 
 import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+  DefaultPackageManager,
   DefaultResourceLoader,
-  getAgentDir,
   SettingsManager,
   type InlineExtension,
+  type ResourceDiagnostic,
   type ResourceLoader,
 } from '@earendil-works/pi-coding-agent';
 
 import { assertSymlinkFreeTree } from '../../shared/src/workspaces/paths.ts';
 import { resolveResourceRoots } from '../../shared/src/resources/resolver.ts';
 
+export const DEFAULT_PI_PACKAGE_SOURCES = [
+  'npm:@ayulab/pi-rewind',
+] as const;
+
 export interface ProjectResourceLoaderOptions {
   cwd: string;
   globalRoot?: string;
   agentDir: string;
-  /** Internal/test override for Pi's canonical user directory. */
-  userAgentDir?: string;
   extensionFactories?: InlineExtension[];
 }
 
@@ -37,6 +40,34 @@ export function createStoryflowRetrySettings() {
     baseDelayMs: 2_000,
     provider: { maxRetries: 0 },
   };
+}
+
+function diagnosticKey(diagnostic: ResourceDiagnostic): string {
+  return JSON.stringify([
+    diagnostic.type,
+    diagnostic.message,
+    diagnostic.path,
+    diagnostic.collision?.resourceType,
+    diagnostic.collision?.name,
+    diagnostic.collision?.winnerPath,
+    diagnostic.collision?.loserPath,
+    diagnostic.collision?.winnerSource,
+    diagnostic.collision?.loserSource,
+  ]);
+}
+
+async function seedDefaultPiPackages(
+  cwd: string,
+  agentDir: string,
+  settingsManager: SettingsManager,
+): Promise<void> {
+  const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
+  let changed = false;
+
+  for (const source of DEFAULT_PI_PACKAGE_SOURCES) {
+    changed = packageManager.addSourceToSettings(source) || changed;
+  }
+  if (changed) await settingsManager.flush();
 }
 
 /**
@@ -82,6 +113,8 @@ class StoryflowResourceLoader extends DefaultResourceLoader {
   constructor(
     options: ConstructorParameters<typeof DefaultResourceLoader>[0],
     private readonly managedResourcePaths: readonly string[],
+    private readonly projectSkillLoader: DefaultResourceLoader,
+    private readonly runtimeSettingsManager: SettingsManager,
   ) {
     super(options);
   }
@@ -94,15 +127,20 @@ class StoryflowResourceLoader extends DefaultResourceLoader {
     for (const resourcePath of this.managedResourcePaths) {
       assertSymlinkFreeTree(resourcePath);
     }
+    await this.projectSkillLoader.reload();
     await super.reload(options);
+    this.runtimeSettingsManager.applyOverrides({
+      enableSkillCommands: true,
+      retry: createStoryflowRetrySettings(),
+    });
   }
 }
 
 /**
  * Build the Pi resource boundary owned by Storyflow.
  *
- * Skills use Pi's complete discovery contract. Extensions remain isolated to
- * Storyflow's explicit global root because they execute code at load time.
+ * Pi owns resource discovery and package settings. Storyflow contributes only
+ * its legacy resource directories and product-specific inline Extensions.
  */
 export async function createProjectResourceLoader(
   options: ProjectResourceLoaderOptions,
@@ -113,8 +151,7 @@ export async function createProjectResourceLoader(
 
   mkdirSync(roots.skillsPath, { recursive: true });
   mkdirSync(roots.extensionsPath, { recursive: true });
-  const userSkillsPath = join(options.userAgentDir ?? getAgentDir(), 'skills');
-  const skillPaths = [userSkillsPath, roots.skillsPath]
+  const skillPaths = [roots.skillsPath]
     .filter((path, index, paths) => existsSync(path) && paths.indexOf(path) === index);
   const extensionRoots = [roots.extensionsPath];
   const extensionPaths = extensionRoots.flatMap(discoverGlobalExtensionPaths);
@@ -123,22 +160,57 @@ export async function createProjectResourceLoader(
     assertSymlinkFreeTree(resourcePath);
   }
 
-  const settingsManager = SettingsManager.inMemory({
-    enableSkillCommands: true,
-    retry: createStoryflowRetrySettings(),
-  }, { projectTrusted: true });
+  // Skills are declarative content, so project Skills remain discoverable without
+  // granting project-local executable Extensions the same trust.
+  const projectSkillLoader = new DefaultResourceLoader({
+    cwd: options.cwd,
+    agentDir: options.agentDir,
+    settingsManager: SettingsManager.inMemory(
+      { enableSkillCommands: true },
+      { projectTrusted: true },
+    ),
+    noExtensions: true,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+    additionalSkillPaths: skillPaths,
+  });
+
+  const settingsManager = SettingsManager.create(options.cwd, options.agentDir, {
+    projectTrusted: false,
+  });
+  await seedDefaultPiPackages(options.cwd, options.agentDir, settingsManager);
   const resourceLoader = new StoryflowResourceLoader(
     {
       cwd: options.cwd,
       agentDir: options.agentDir,
       settingsManager,
       noSkills: false,
-      noExtensions: true,
       additionalSkillPaths: skillPaths,
       additionalExtensionPaths: extensionPaths,
       extensionFactories: options.extensionFactories,
+      skillsOverride(base) {
+        const projectCatalog = projectSkillLoader.getSkills();
+        const projectSkills = projectCatalog.skills.filter(
+          skill => skill.sourceInfo.scope === 'project',
+        );
+        const projectNames = new Set(projectSkills.map(skill => skill.name));
+        const diagnostics = new Map(
+          [...base.diagnostics, ...projectCatalog.diagnostics]
+            .map(diagnostic => [diagnosticKey(diagnostic), diagnostic]),
+        );
+        return {
+          skills: [
+            ...projectSkills,
+            ...base.skills.filter(skill => !projectNames.has(skill.name)),
+          ],
+          diagnostics: [...diagnostics.values()],
+        };
+      },
     },
     managedResourcePaths,
+    projectSkillLoader,
+    settingsManager,
   );
 
   // createAgentSession() does not reload a caller-provided ResourceLoader.

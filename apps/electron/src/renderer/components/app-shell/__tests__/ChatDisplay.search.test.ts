@@ -169,8 +169,7 @@ describe('ChatDisplay search performance contract', () => {
   test('rewinds restore draft text into the composer via craft:restore-input', () => {
     // onDraftInputChange only updates App's draft ref; ChatPage owns local input state
     // and only re-syncs when craft:restore-input fires (same path as abort restore).
-    expect(chatDisplaySource).toContain('window.electronAPI.rewindSession(session.id, message.id,')
-    expect(chatDisplaySource).toContain('userOrdinal')
+    expect(chatDisplaySource).toContain('window.electronAPI.rewindSession(session.id, message.id)')
     expect(chatDisplaySource).toContain("new CustomEvent('craft:restore-input'")
     expect(chatDisplaySource).toContain('detail: { sessionId: session.id, text: draftText }')
   })

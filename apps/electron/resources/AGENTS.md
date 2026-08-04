@@ -38,7 +38,7 @@ These files are used by electron-builder or the app directly, not synced to user
 | `craft-logos/` | Branding assets |
 | `source.png` | Default source icon |
 | `generate-icons.sh` | Icon generation script |
-| `session-mcp-server/` | Bundled MCP server for session tools |
+| `pi-agent-server/` | Bundled Pi AgentSession runtime |
 
 ## Single Source of Truth
 

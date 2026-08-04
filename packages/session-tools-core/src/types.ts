@@ -178,19 +178,6 @@ export interface DeveloperFeedback {
 }
 
 // ============================================================
-// Callback Message (IPC)
-// ============================================================
-
-/**
- * Callback message for IPC with main process.
- * Used by Codex subprocess to communicate via stderr.
- */
-export interface CallbackMessage {
-  __callback__: string;
-  [key: string]: unknown;
-}
-
-// ============================================================
 // Tool Result Types
 // ============================================================
 

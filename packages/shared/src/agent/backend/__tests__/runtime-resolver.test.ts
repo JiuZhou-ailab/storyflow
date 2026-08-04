@@ -15,17 +15,18 @@ import type { BackendHostRuntimeContext } from '../types.ts';
 
 describe('resolveServerPath fallback', () => {
   const tmpBase = join(tmpdir(), `resolver-test-${Date.now()}`);
+  const piBinary = process.platform === 'win32' ? 'pi-agent-server.exe' : 'pi-agent-server';
 
   afterEach(() => {
     try { rmSync(tmpBase, { recursive: true, force: true }); } catch {}
   });
 
   it('finds server in dist/resources/ when resources/ does not exist', () => {
-    // Simulate packaged app where server is at dist/resources/<name>/index.js
+    // Simulate packaged app where the compiled server is under dist/resources.
     const appRoot = join(tmpBase, 'app');
     const serverDir = join(appRoot, 'dist', 'resources', 'pi-agent-server');
     mkdirSync(serverDir, { recursive: true });
-    writeFileSync(join(serverDir, 'index.js'), '// stub');
+    writeFileSync(join(serverDir, piBinary), 'stub');
 
     const hostRuntime: BackendHostRuntimeContext = {
       appRootPath: appRoot,
@@ -34,7 +35,7 @@ describe('resolveServerPath fallback', () => {
     };
 
     const paths = resolveBackendRuntimePaths(hostRuntime);
-    expect(paths.piServerPath).toBe(join(serverDir, 'index.js'));
+    expect(paths.piServerPath).toBe(join(serverDir, piBinary));
   });
 
   it('prefers dist/resources/ over resources/ when both exist', () => {
@@ -45,8 +46,8 @@ describe('resolveServerPath fallback', () => {
     const fallbackDir = join(appRoot, 'dist', 'resources', 'pi-agent-server');
     mkdirSync(primaryDir, { recursive: true });
     mkdirSync(fallbackDir, { recursive: true });
-    writeFileSync(join(primaryDir, 'index.js'), '// primary');
-    writeFileSync(join(fallbackDir, 'index.js'), '// fallback');
+    writeFileSync(join(primaryDir, piBinary), 'primary');
+    writeFileSync(join(fallbackDir, piBinary), 'fallback');
 
     const hostRuntime: BackendHostRuntimeContext = {
       appRootPath: appRoot,
@@ -55,7 +56,7 @@ describe('resolveServerPath fallback', () => {
     };
 
     const paths = resolveBackendRuntimePaths(hostRuntime);
-    expect(paths.piServerPath).toBe(join(fallbackDir, 'index.js'));
+    expect(paths.piServerPath).toBe(join(fallbackDir, piBinary));
   });
 
   it('keeps resources/ as a legacy fallback when dist/resources/ is absent', () => {

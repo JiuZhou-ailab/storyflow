@@ -254,6 +254,12 @@ export interface CoreBackendConfig {
   /** Callback when SDK session ID is cleared (e.g., after failed resume) */
   onSdkSessionIdCleared?: () => void;
 
+  /** Atomically project a Pi tree rewind into the host-owned product transcript. */
+  onConversationRewind?: (boundary: {
+    retainThroughMessageId: string | null;
+    draftText?: string;
+  }, options: { validateOnly: boolean }) => Promise<void>;
+
   /**
    * Called when the agent decides the persisted branch-fork metadata
    * (branchFromSdkSessionId / branchFromSdkCwd / branchFromSdkTurnId) is
@@ -334,6 +340,12 @@ export interface ChatOptions {
   userIteration?: number;
   /** Override thinking level for this message only */
   thinkingOverride?: ThinkingLevel;
+  /** Product transcript boundary paired with the Pi user entry for safe tree rewind. */
+  rewindBoundary?: {
+    visibleUserMessageId?: string;
+    retainThroughMessageId: string | null;
+    draftText?: string;
+  };
 }
 
 /**
@@ -487,10 +499,10 @@ export interface AgentBackend {
 
   /**
    * In-place rewind to a historical user message (provider-native tree navigation).
-   * userOrdinal is 0-based among user messages on the active conversation path.
+   * The product message id must have a stable provider-session mapping.
    * Default BaseAgent throws; Pi overrides with navigateTree.
    */
-  rewindUserMessage(userOrdinal: number): Promise<{ editorText?: string }>;
+  rewindUserMessage(visibleUserMessageId: string): Promise<{ editorText?: string }>;
 
   /**
    * Check if currently processing a query.

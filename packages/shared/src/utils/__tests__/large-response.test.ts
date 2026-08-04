@@ -26,7 +26,7 @@ import {
 describe('tokenLimitFor', () => {
   test('falls back to default when contextWindow is undefined', () => {
     expect(tokenLimitFor(undefined)).toBe(TOKEN_LIMIT);
-    expect(tokenLimitFor(undefined)).toBe(15_000);
+    expect(tokenLimitFor(undefined)).toBe(8_000);
   });
 
   test('falls back to default for zero / negative contextWindow', () => {
@@ -41,8 +41,8 @@ describe('tokenLimitFor', () => {
 
   test('scales linearly in the middle range', () => {
     expect(tokenLimitFor(64_000)).toBe(6_400);
-    expect(tokenLimitFor(128_000)).toBe(12_800);
-    expect(tokenLimitFor(100_000)).toBe(10_000);
+    expect(tokenLimitFor(128_000)).toBe(8_000);
+    expect(tokenLimitFor(100_000)).toBe(8_000);
   });
 
   test('floors at 2_000 for small-window models', () => {
@@ -90,7 +90,7 @@ describe('guardLargeResult contextWindow handling', () => {
     expect(existsSync(join(sessionPath, 'long_responses'))).toBe(true);
   });
 
-  test('passes through a 200k-window model (8k < 15k)', async () => {
+  test('passes through a 200k-window model at the 8k limit', async () => {
     const result = await guardLargeResult(eightKTokenText, {
       sessionPath,
       toolName: 'test_tool',
@@ -101,7 +101,7 @@ describe('guardLargeResult contextWindow handling', () => {
   });
 
   test('preserves existing behavior when contextWindow is undefined', async () => {
-    // No contextWindow → fixed 15k threshold → 8k passes through.
+    // No contextWindow → fixed 8k threshold → 8k passes through.
     const result = await guardLargeResult(eightKTokenText, {
       sessionPath,
       toolName: 'test_tool',
@@ -168,7 +168,7 @@ describe('handleLargeResponse contextWindow handling', () => {
   });
 
   test('contextWindow undefined matches pre-change behavior at 8k input', async () => {
-    // 8k < TOKEN_LIMIT (15k) → null, identical to pre-change behavior.
+    // 8k == TOKEN_LIMIT → null.
     const result = await handleLargeResponse({
       text: eightKTokenText,
       sessionPath,
@@ -176,5 +176,17 @@ describe('handleLargeResponse contextWindow handling', () => {
       summarize: fakeSummarize,
     });
     expect(result).toBeNull();
+  });
+
+  test('honors a smaller remaining turn budget', async () => {
+    const result = await handleLargeResponse({
+      text: 'a'.repeat(8_000),
+      sessionPath,
+      context: { toolName: 'test_tool' },
+      summarize: fakeSummarize,
+      thresholdTokens: 1_000,
+    });
+
+    expect(result?.wasSummarized).toBe(true);
   });
 });

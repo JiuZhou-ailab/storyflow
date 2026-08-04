@@ -320,8 +320,6 @@ export interface SessionToolContext {
 
   /**
    * Update user preferences. Injected by each backend:
-   * - Claude: calls updatePreferences() from config/preferences.ts
-   * - Codex/session-mcp-server: writes directly to preferences.json
    * - Pi: calls updatePreferences() from config/preferences.ts
    */
   updatePreferences?(updates: Record<string, unknown>): void;

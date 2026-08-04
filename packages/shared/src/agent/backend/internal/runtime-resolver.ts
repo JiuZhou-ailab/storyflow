@@ -8,7 +8,6 @@ import { dirname, join, resolve } from 'node:path';
 import type { BackendHostRuntimeContext } from '../types.ts';
 
 export interface ResolvedBackendRuntimePaths {
-  sessionServerPath?: string;
   piServerPath?: string;
   nodeRuntimePath?: string;
   bundledRuntimePath?: string;
@@ -62,17 +61,28 @@ function resolveBundledRuntimePath(hostRuntime: BackendHostRuntimeContext): stri
   return undefined;
 }
 
-function resolveServerPath(hostRuntime: BackendHostRuntimeContext, serverName: string): string | undefined {
+function resolveServerPath(
+  hostRuntime: BackendHostRuntimeContext,
+  serverName: string,
+  entryNames: readonly string[] = ['index.js'],
+): string | undefined {
   if (hostRuntime.isPackaged) {
-    return firstExistingPath([
-      join(hostRuntime.appRootPath, 'dist', 'resources', serverName, 'index.js'),
-      join(hostRuntime.appRootPath, 'resources', serverName, 'index.js'),
-    ]);
+    return firstExistingPath(
+      ['dist/resources', 'resources'].flatMap(resourceRoot =>
+        entryNames.map(entryName =>
+          join(hostRuntime.appRootPath, resourceRoot, serverName, entryName),
+        ),
+      ),
+    );
   }
-  return resolveUpwards(
-    hostRuntime.appRootPath,
-    join('packages', serverName, 'dist', 'index.js'),
-  );
+  for (const entryName of entryNames) {
+    const resolved = resolveUpwards(
+      hostRuntime.appRootPath,
+      join('packages', serverName, 'dist', entryName),
+    );
+    if (resolved) return resolved;
+  }
+  return undefined;
 }
 
 /**
@@ -120,10 +130,10 @@ function resolveRipgrepPath(hostRuntime: BackendHostRuntimeContext): string | un
 
 export function resolveBackendRuntimePaths(hostRuntime: BackendHostRuntimeContext): ResolvedBackendRuntimePaths {
   const bundledRuntimePath = hostRuntime.nodeRuntimePath || resolveBundledRuntimePath(hostRuntime);
+  const piBinary = process.platform === 'win32' ? 'pi-agent-server.exe' : 'pi-agent-server';
 
   return {
-    sessionServerPath: resolveServerPath(hostRuntime, 'session-mcp-server'),
-    piServerPath: resolveServerPath(hostRuntime, 'pi-agent-server'),
+    piServerPath: resolveServerPath(hostRuntime, 'pi-agent-server', [piBinary, 'index.js']),
     nodeRuntimePath: hostRuntime.nodeRuntimePath || bundledRuntimePath || process.execPath,
     bundledRuntimePath,
   };

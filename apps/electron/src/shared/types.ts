@@ -346,7 +346,6 @@ export interface ElectronAPI {
   rewindSession(
     sessionId: string,
     userMessageId: string,
-    options?: { userOrdinal?: number; content?: string },
   ): Promise<{ draftText: string }>
   sendMessage(sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachmentType[], options?: SendMessageOptions): Promise<void>
   rewriteNovelSelection(sessionId: string, request: NovelSelectionRewriteRequest): Promise<NovelSelectionRewriteResult>

@@ -41,8 +41,16 @@ The immutable generated summary copied once to seed a conversation in another Ru
 _Avoid_: Shared conversation, synchronized history
 
 **Agent Kernel**:
-The single shared Agent implementation used by every Runtime Domain; domain differences come from the resolved Workspace rather than separate Agent systems.
+Pi's `AgentSession`, the single Agent runtime used by every Runtime Domain; domain differences come from the resolved Workspace and Host capabilities rather than separate Agent systems.
 _Avoid_: Free-conversation system, project Agent
+
+**Pi Runtime Projection**:
+Storyflow's product representation of Pi's public runtime contracts, events, resources, commands, and state. It maps stable Pi behavior into desktop and cloud surfaces without copying Pi internals.
+_Avoid_: Pi wrapper runtime, Pi UI clone, mirrored Agent state
+
+**Product Host**:
+The Storyflow boundary that owns operating-system lifecycle, Workspace identity, product data, collaboration, navigation, and remote transport while delegating Agent execution to Pi.
+_Avoid_: Agent runtime, orchestration kernel
 
 **Subagent Run**:
 An isolated, temporary execution of the Agent Kernel that returns one result to its parent Conversation without owning persistent history.
@@ -65,21 +73,21 @@ The single `workspaceId → Workspace` resolution boundary; it contains no Agent
 _Avoid_: Domain-specific Agent implementation, orchestration layer, owner wrapper
 
 **Global Resource Root**:
-The single application-owned source of global Skills, Sources, trusted Extensions, and model-connection definitions shared by every Runtime Domain.
-_Avoid_: Project defaults, implicitly discovered user directory
+Pi's canonical user Agent directory for runtime resources, package settings, and Extensions. Storyflow's legacy resource directory is a compatibility input, not a second runtime authority.
+_Avoid_: Per-session Agent directory, Storyflow-only Extension registry
 
 **Project Source Overlay**:
 Project-owned Sources that extend one Project Work Domain without modifying or copying global Sources.
 _Avoid_: Project Skill overlay, global resource copy
 
 **Resource Resolver**:
-The single resource-loading entry point that always reads global Skills and Extensions, and optionally applies one Project Source Overlay over global Sources.
-_Avoid_: Domain-specific loader, resource synchronization layer
+Pi's `DefaultResourceLoader`, which resolves native packages, Extensions, Skills, prompts, themes, and context files. Storyflow supplies only compatibility paths and Host-owned Sources.
+_Avoid_: Domain-specific loader, resource synchronization layer, Storyflow package resolver
 
 **Local User Trust Space**:
 The filesystem authority already held by the operating-system user running Storyflow. Local Agents use this same authority across projects; a Project selects context and defaults, not authorization.
 _Avoid_: Project sandbox, attachment grant
 
 **Trusted Extension**:
-An executable Agent extension installed through the Global Resource Root and instantiated by the shared Agent Kernel.
-_Avoid_: Skill Package extension
+An executable Pi Extension admitted by Pi's package, settings, and project-trust contracts and instantiated by the Agent Kernel.
+_Avoid_: Skill Package extension, Storyflow plugin registry entry

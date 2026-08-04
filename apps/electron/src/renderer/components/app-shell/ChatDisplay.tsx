@@ -1556,16 +1556,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     }
 
     try {
-      // Pi-native in-place rewind: same session, navigateTree leaf + truncate transcript.
-      // userOrdinal/content heal live bubbles that still hold pre-fix optimistic ids.
-      const userOrdinal = session.messages
-        .filter(entry => entry.role === 'user')
-        .findIndex(entry => entry.id === message.id)
       const content = typeof message.content === 'string' ? message.content : undefined
-      const result = await window.electronAPI.rewindSession(session.id, message.id, {
-        ...(userOrdinal >= 0 ? { userOrdinal } : {}),
-        ...(content !== undefined ? { content } : {}),
-      })
+      const result = await window.electronAPI.rewindSession(session.id, message.id)
       const draftText = result.draftText ?? content ?? ''
       // Persist draft in App-level ref…
       onDraftInputChange(session.id, draftText)

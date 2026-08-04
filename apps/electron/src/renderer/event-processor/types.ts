@@ -434,6 +434,7 @@ export interface MessagesRewoundEvent {
   type: 'messages_rewound'
   sessionId: string
   messages: Message[]
+  draftText?: string
 }
 
 /**

@@ -92,7 +92,6 @@ package "4 · 单一 Agent Kernel" as AgentKernel {
   }
 
   note right of PiRuntime
-    当前没有正式 child-session / subagent package。
     Claude Agent runtime 已删除；
     claude-sdk 仅可能作为历史迁移标记出现。
   end note
@@ -100,7 +99,6 @@ package "4 · 单一 Agent Kernel" as AgentKernel {
 
 package "5 · Capability 与工具层" as Capabilities {
   component "@craft-agent/session-tools-core\nCanonical schema + handler registry" as ToolCore
-  component "@craft-agent/session-mcp-server\nstdio MCP 适配器，不拥有 Agent 生命周期" as SessionMcp
   component "Pi Built-in / Custom Tools\nread / edit / bash / search / web" as PiTools
   component "Host Capabilities\nBrowserPane / shell / filesystem / permission" as HostCapabilities
   component "Sources\nMCP / REST / local integrations" as Sources
@@ -160,7 +158,6 @@ PiSession --> PiResources
 PiSession --> PiTools
 
 PiAgent --> ToolCore : backend-mode session tools
-SessionMcp --> ToolCore : 复用 registry
 PiTools --> HostCapabilities : 需要宿主执行时代理
 PiTools --> Sources
 ToolCore --> HostCapabilities

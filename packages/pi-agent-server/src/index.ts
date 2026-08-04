@@ -18,7 +18,6 @@
  * separate process, avoiding bundling issues in the Electron main process.
  */
 
-import http from 'node:http';
 import { join } from 'node:path';
 import { mkdirSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -88,6 +87,7 @@ import { getSessionPlansPath, getSessionPath } from '../../shared/src/sessions/s
 import { buildCallLlmRequest, withTimeout, LLM_QUERY_TIMEOUT_MS } from '../../shared/src/agent/llm-tool.ts';
 import type { LLMQueryRequest, LLMQueryResult } from '../../shared/src/agent/llm-tool.ts';
 import { readJsonLines } from '../../shared/src/utils/jsonl.ts';
+import type { UserQuestionResponse } from '../../session-tools-core/src/types.ts';
 import { PI_TOOL_NAME_MAP, THINKING_TO_PI } from '../../shared/src/agent/backend/pi/constants.ts';
 import { getDefaultSummarizationModel } from '../../shared/src/config/models.ts';
 import { createWebFetchTool } from './tools/web-fetch.ts';
@@ -95,9 +95,18 @@ import { resolveSearchProvider } from './tools/search/resolve-provider.ts';
 import { createSearchTool } from './tools/search/create-search-tool.ts';
 import { createCreateOnlyWriteToolDefinition } from './write-tool.ts';
 import { createProjectResourceLoader, createStoryflowRetrySettings } from './project-resource-loader.ts';
+import { createExtensionUIContext } from './extension-ui.ts';
 import { normalizeCraftToolArgumentsForSchema } from './craft-metadata-schema.ts';
 import { createSystemPromptOverride } from './system-prompt-override.ts';
 import { fingerprintTools } from './prompt-cache-profile.ts';
+import {
+  PRODUCT_REWIND_BOUNDARY_TYPE,
+  PRODUCT_TREE_HEAD_TYPE,
+  createProductRewindBoundary,
+  findProductRewindBoundary,
+  type PendingProductRewindBoundary,
+  type ProductRewindBoundary,
+} from './product-rewind.ts';
 import { createToolHooks } from './tool-hooks.ts';
 import { createProviderHooks } from './provider-hooks.ts';
 import { installNetworkProxy } from './network-proxy.ts';
@@ -113,7 +122,6 @@ import {
 import {
   createPromptAttemptState,
   recordPromptAttemptEvent,
-  shouldSuppressRetryingAgentEnd,
   shouldSuppressRetryablePromptFailure,
   type PromptAttemptState,
 } from './prompt-retry.ts';
@@ -180,19 +188,18 @@ interface RuntimeConfigUpdateMessage {
 /** Messages from main process (stdin) */
 type InboundMessage =
   | InitMessage
-  | { type: 'prompt'; id: string; message: string; systemPrompt: string; dynamicSystemPrompt?: string; images?: Array<{ type: 'image'; data: string; mimeType: string }> }
+  | { type: 'prompt'; id: string; message: string; systemPrompt: string; dynamicSystemPrompt?: string; images?: Array<{ type: 'image'; data: string; mimeType: string }>; rewindBoundary?: PendingProductRewindBoundary }
   | { type: 'register_tools'; tools: ProxyToolDef[] }
   | { type: 'tool_execute_response'; requestId: string; result: { content: string; isError: boolean } }
   | { type: 'pre_tool_use_response'; requestId: string; action: 'allow' | 'block' | 'modify'; input?: Record<string, unknown>; reason?: string }
   | { type: 'abort' }
-  | { type: 'mini_completion'; id: string; prompt: string }
   | { type: 'llm_query'; id: string; request: LLMQueryRequest }
   | { type: 'ensure_session_ready'; id: string }
   | { type: 'set_model'; model: string }
   | { type: 'set_thinking_level'; level: string }
   | { type: 'compact'; id: string; customInstructions?: string }
-  | { type: 'set_auto_compaction'; id: string; enabled: boolean }
-  | { type: 'rewind_user_message'; id: string; userOrdinal: number }
+  | { type: 'rewind_user_message'; id: string; visibleUserMessageId: string }
+  | { type: 'conversation_rewind_response'; requestId: string; success: boolean; errorMessage?: string }
   | RuntimeConfigUpdateMessage
   | { type: 'steer'; message: string }
   | { type: 'token_update'; piAuth: { provider: string; credential: PiCredential } }
@@ -215,7 +222,7 @@ type OutboundAgentEvent =
   | EnrichedAssistantMessageEndEvent;
 
 /** Messages to main process (stdout) */
-interface OutboundReady { type: 'ready'; sessionId: string | null; callbackPort: number }
+interface OutboundReady { type: 'ready'; sessionId: string | null }
 interface OutboundEvent { type: 'event'; event: OutboundAgentEvent }
 interface OutboundPreToolUseReq {
   type: 'pre_tool_use_request';
@@ -225,8 +232,6 @@ interface OutboundPreToolUseReq {
   input: Record<string, unknown>;
 }
 interface OutboundToolExecReq { type: 'tool_execute_request'; requestId: string; toolName: string; args: Record<string, unknown> }
-interface OutboundSessionToolCompleted { type: 'session_tool_completed'; toolName: string; args: Record<string, unknown>; isError: boolean }
-interface OutboundMiniResult { type: 'mini_completion_result'; id: string; text: string | null }
 interface OutboundLlmQueryResult {
   type: 'llm_query_result';
   id: string;
@@ -246,13 +251,6 @@ interface OutboundCompactResult {
   result?: { summary: string; firstKeptEntryId: string; tokensBefore: number };
   errorMessage?: string;
 }
-interface OutboundSetAutoCompactionResult {
-  type: 'set_auto_compaction_result';
-  id: string;
-  success: boolean;
-  enabled: boolean;
-  errorMessage?: string;
-}
 interface OutboundRewindUserMessageResult {
   type: 'rewind_user_message_result';
   id: string;
@@ -268,6 +266,17 @@ interface OutboundRuntimeConfigUpdateResult {
   errorMessage?: string;
 }
 interface OutboundSessionIdUpdate { type: 'session_id_update'; sessionId: string }
+interface OutboundExtensionNotification {
+  type: 'extension_notification';
+  message: string;
+  level?: 'info' | 'warning' | 'error';
+}
+interface OutboundConversationRewindRequest {
+  type: 'conversation_rewind_request';
+  requestId: string;
+  phase: 'prepare' | 'commit';
+  boundary: Pick<ProductRewindBoundary, 'retainThroughMessageId' | 'draftText'>;
+}
 interface OutboundError { type: 'error'; message: string; code?: string }
 
 type OutboundMessage =
@@ -275,15 +284,14 @@ type OutboundMessage =
   | OutboundEvent
   | OutboundPreToolUseReq
   | OutboundToolExecReq
-  | OutboundSessionToolCompleted
-  | OutboundMiniResult
   | OutboundLlmQueryResult
   | OutboundEnsureSessionReadyResult
   | OutboundCompactResult
-  | OutboundSetAutoCompactionResult
   | OutboundRewindUserMessageResult
   | OutboundRuntimeConfigUpdateResult
   | OutboundSessionIdUpdate
+  | OutboundExtensionNotification
+  | OutboundConversationRewindRequest
   | OutboundError;
 
 // ============================================================
@@ -302,26 +310,21 @@ let initConfig: Extract<InboundMessage, { type: 'init' }> | null = null;
 // Mutable state
 let currentUserMessage = '';
 let currentPromptAttemptState: PromptAttemptState | null = null;
+let pendingProductRewindBoundary: PendingProductRewindBoundary | null = null;
 let currentStablePrefixHash: string | null = null;
 let currentToolsetHash: string | null = null;
 
 // Pending promises for async handshakes
 const pendingPreToolUse = new Map<string, { resolve: (response: { action: string; input?: Record<string, unknown>; reason?: string }) => void }>();
 const pendingToolExecutions = new Map<string, { resolve: (result: { content: string; isError: boolean }) => void }>();
+const pendingConversationRewinds = new Map<string, { resolve: () => void; reject: (error: Error) => void }>();
 const activeSubagentSessions = new Set<AgentSession>();
-
-// Pending session MCP tool calls for completion detection
-const pendingSessionToolCalls = new Map<string, { toolName: string; arguments: Record<string, unknown> }>();
 
 // Proxy tool definitions from main process
 let proxyToolDefs: ProxyToolDef[] = [];
 
 // Flag: proxy tools changed since last session creation — session needs recreation
 let toolsChanged = false;
-
-// Callback server for call_llm
-let callbackServer: http.Server | null = null;
-let callbackPort = 0;
 
 // ============================================================
 // JSONL I/O
@@ -358,57 +361,6 @@ function findMostRecentSessionFile(sessionDir: string): string | null {
     }
   }
   return best?.path ?? null;
-}
-
-// ============================================================
-// Callback Server (for call_llm from session MCP server)
-// ============================================================
-
-async function startCallbackServer(): Promise<void> {
-  if (callbackServer) return;
-
-  const server = http.createServer(async (req, res) => {
-    if (req.method !== 'POST' || req.url !== '/call-llm') {
-      res.writeHead(404);
-      res.end();
-      return;
-    }
-    try {
-      const chunks: Buffer[] = [];
-      for await (const chunk of req) chunks.push(chunk as Buffer);
-      const body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>;
-
-      debugLog('Received call_llm request via callback server');
-      const result = await preExecuteCallLlm(body);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(result));
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      debugLog(`call_llm via callback failed: ${msg}`);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: msg }));
-    }
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    server.listen(0, '127.0.0.1', () => {
-      const addr = server.address();
-      callbackPort = typeof addr === 'object' && addr ? addr.port : 0;
-      debugLog(`Callback server listening on 127.0.0.1:${callbackPort}`);
-      resolve();
-    });
-    server.on('error', reject);
-  });
-
-  callbackServer = server;
-}
-
-function stopCallbackServer(): void {
-  if (callbackServer) {
-    callbackServer.close();
-    callbackServer = null;
-    callbackPort = 0;
-  }
 }
 
 // ============================================================
@@ -558,8 +510,9 @@ async function ensureSession(): Promise<AgentSession> {
   if (!initConfig) throw new Error('Cannot create session: init not received');
 
   const cwd = resolvedCwd();
-  const agentDir = initConfig.agentDir
-    || (initConfig.sessionPath ? join(initConfig.sessionPath, '.pi-agent') : getAgentDir());
+  // Pi's agentDir is the user-level runtime/resource root. Session persistence
+  // remains isolated below sessionPath via the explicit PiSessionManager below.
+  const agentDir = initConfig.agentDir || getAgentDir();
   mkdirSync(agentDir, { recursive: true });
   const piThinkingLevel = THINKING_TO_PI[
     initConfig.thinkingLevel as keyof typeof THINKING_TO_PI
@@ -622,6 +575,7 @@ async function ensureSession(): Promise<AgentSession> {
     getSession: () => piSession,
     getUserRequest: () => currentUserMessage,
     intentByCallId: new Map(),
+    toolResultTokens: 0,
   });
   const providerHooks = createProviderHooks({
     enable1MContext: initConfig.enable1MContext === true,
@@ -639,6 +593,7 @@ async function ensureSession(): Promise<AgentSession> {
       getSession: () => context.session,
       getUserRequest: () => context.userRequest,
       intentByCallId: new Map(),
+      toolResultTokens: 0,
     }),
   });
   debugLog(`Session tools: ${builtinDefs.length} builtin + ${webTools.length} web + ${proxyTools.length} proxy = ${allTools.length} total`);
@@ -670,7 +625,14 @@ async function ensureSession(): Promise<AgentSession> {
   sessionOptions.settingsManager = settingsManager;
 
   const extensionToolNames = new Set<string>();
-  for (const extension of resourceLoader.getExtensions().extensions) {
+  const loadedExtensions = resourceLoader.getExtensions();
+  debugLog(
+    `Loaded Pi Extensions: ${loadedExtensions.extensions.map(extension => extension.path).join(', ') || '(none)'}`,
+  );
+  for (const error of loadedExtensions.errors) {
+    debugLog(`Pi Extension load error (${error.path}): ${error.error}`);
+  }
+  for (const extension of loadedExtensions.extensions) {
     for (const toolName of extension.tools.keys()) {
       if (
         toolName === 'subagent'
@@ -766,6 +728,105 @@ async function ensureSession(): Promise<AgentSession> {
   const { session } = await createAgentSession(sessionOptions);
   piSession = session;
 
+  const notifyExtension = (
+    message: string,
+    level?: 'info' | 'warning' | 'error',
+  ): void => send({ type: 'extension_notification', message, level });
+
+  try {
+    await session.bindExtensions({
+      uiContext: createExtensionUIContext(
+        session.extensionRunner.getUIContext(),
+        {
+          askUserQuestion: async (question) => {
+            const result = await requestHostTool('mcp__session__ask_user_question', {
+              questions: [question],
+            });
+            if (result.isError) throw new Error(result.content);
+
+            const parsed = JSON.parse(result.content) as unknown;
+            if (
+              !parsed
+              || typeof parsed !== 'object'
+              || !('answers' in parsed)
+              || !parsed.answers
+              || typeof parsed.answers !== 'object'
+            ) {
+              throw new Error('Host returned an invalid user-question response.');
+            }
+            return parsed as UserQuestionResponse;
+          },
+          notify: notifyExtension,
+        },
+      ),
+      mode: 'rpc',
+      commandContextActions: {
+        waitForIdle: () => session.waitForIdle(),
+        newSession: async () => ({ cancelled: true }),
+        fork: async () => ({ cancelled: true }),
+        navigateTree: async (targetId, options) => {
+          const target = session.sessionManager.getEntry(targetId);
+          if (target?.type !== 'message' || target.message.role !== 'user') {
+            throw new Error('Storyflow currently supports Extension tree navigation only to mapped user messages.');
+          }
+
+          const boundary = findProductRewindBoundary(
+            session.sessionManager.getEntries(),
+            { userEntryId: targetId },
+          );
+          if (!boundary) {
+            throw new Error('This checkpoint predates safe Storyflow rewind mapping and cannot be restored.');
+          }
+
+          const projection = {
+            retainThroughMessageId: boundary.retainThroughMessageId,
+            ...(boundary.draftText !== undefined ? { draftText: boundary.draftText } : {}),
+          };
+          await requestConversationRewind('prepare', projection);
+
+          const oldLeafId = session.sessionManager.getLeafId();
+          const result = await session.navigateTree(targetId, options);
+          if (result.cancelled) return { cancelled: true };
+          session.sessionManager.appendCustomEntry(PRODUCT_TREE_HEAD_TYPE, { v: 1 });
+
+          try {
+            await requestConversationRewind('commit', projection);
+          } catch (error) {
+            if (oldLeafId !== session.sessionManager.getLeafId()) {
+              if (oldLeafId) {
+                await session.navigateTree(oldLeafId, { summarize: false });
+              } else {
+                session.sessionManager.resetLeaf();
+              }
+              session.sessionManager.appendCustomEntry(PRODUCT_TREE_HEAD_TYPE, { v: 1 });
+            }
+            throw error;
+          }
+          return { cancelled: false };
+        },
+        switchSession: async () => ({ cancelled: true }),
+        reload: () => session.reload(),
+      },
+      abortHandler: () => {
+        void session.abort();
+      },
+      shutdownHandler: handleShutdown,
+      onError: (error) => {
+        notifyExtension(
+          `Extension ${error.extensionPath} failed during ${error.event}: ${error.error}`,
+          'error',
+        );
+      },
+    });
+    debugLog(
+      `Pi Extension commands: ${session.extensionRunner.getRegisteredCommands().map(command => command.invocationName).join(', ') || '(none)'}`,
+    );
+  } catch (error) {
+    session.dispose();
+    piSession = null;
+    throw error;
+  }
+
   toolsChanged = false;
   debugLog(`Created Pi session: ${session.sessionId} (${allTools.length} tools)`);
 
@@ -784,10 +845,12 @@ interface SessionToolHookState {
   getSession(): AgentSession | null;
   getUserRequest(): string;
   intentByCallId: Map<string, string>;
+  toolResultTokens: number;
 }
 
 function createSessionToolHooks(state: SessionToolHookState) {
   return createToolHooks({
+    onTurnStart: () => { state.toolResultTokens = 0; },
     beforeToolCall: event => prepareToolInput(event, state.intentByCallId),
     afterToolCall: event => postprocessToolResult(event, state),
   });
@@ -880,7 +943,10 @@ async function postprocessToolResult(
     .map(content => content.text)
     .join('');
   const modelContextWindow = state.getSession()?.agent.state.model?.contextWindow;
-  if (estimateTokens(resultText) <= tokenLimitFor(modelContextWindow) || !initConfig) {
+  const resultTokens = estimateTokens(resultText);
+  const remainingTokens = Math.max(0, tokenLimitFor(modelContextWindow) - state.toolResultTokens);
+  if (resultTokens <= remainingTokens || !initConfig) {
+    state.toolResultTokens += resultTokens;
     return;
   }
 
@@ -897,9 +963,11 @@ async function postprocessToolResult(
       },
       summarize: runMiniCompletion,
       contextWindow: modelContextWindow,
+      thresholdTokens: remainingTokens,
     });
 
     if (largeResult) {
+      state.toolResultTokens += estimateTokens(largeResult.message);
       return {
         content: [{ type: 'text', text: largeResult.message }],
         details: event.details,
@@ -911,6 +979,7 @@ async function postprocessToolResult(
       `Large response handling failed: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+  state.toolResultTokens += resultTokens;
 }
 
 // ============================================================
@@ -951,19 +1020,7 @@ function buildProxyTools(): ToolDefinition<any, any>[] {
         }
       }
 
-      // Execute via main process
-      const requestId = `proxy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-      send({
-        type: 'tool_execute_request',
-        requestId,
-        toolName: def.name,
-        args: params as Record<string, unknown>,
-      });
-
-      const result = await new Promise<{ content: string; isError: boolean }>((resolve) => {
-        pendingToolExecutions.set(requestId, { resolve });
-      });
+      const result = await requestHostTool(def.name, params as Record<string, unknown>);
 
       return {
         content: [{ type: 'text', text: result.content }],
@@ -971,6 +1028,30 @@ function buildProxyTools(): ToolDefinition<any, any>[] {
       };
     },
   }));
+}
+
+function requestHostTool(
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<{ content: string; isError: boolean }> {
+  const requestId = `proxy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const result = new Promise<{ content: string; isError: boolean }>((resolve) => {
+    pendingToolExecutions.set(requestId, { resolve });
+  });
+  send({ type: 'tool_execute_request', requestId, toolName, args });
+  return result;
+}
+
+function requestConversationRewind(
+  phase: 'prepare' | 'commit',
+  boundary: Pick<ProductRewindBoundary, 'retainThroughMessageId' | 'draftText'>,
+): Promise<void> {
+  const requestId = `rewind-${phase}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const result = new Promise<void>((resolve, reject) => {
+    pendingConversationRewinds.set(requestId, { resolve, reject });
+  });
+  send({ type: 'conversation_rewind_request', requestId, phase, boundary });
+  return result;
 }
 
 // ============================================================
@@ -1051,8 +1132,7 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
     promptOverride.set(promptForSession);
     const resourceLoader = new DefaultResourceLoader({
       cwd: resolvedCwd(),
-      agentDir: initConfig!.agentDir
-        || (initConfig!.sessionPath ? join(initConfig!.sessionPath, '.pi-agent') : getAgentDir()),
+      agentDir: initConfig!.agentDir || getAgentDir(),
       settingsManager,
       extensionFactories: [
         promptOverride.extension,
@@ -1082,11 +1162,6 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
     // Collect response text and errors from events
     let result = '';
     let lastError = '';
-    let completionResolve: () => void;
-    const completionPromise = new Promise<void>((resolve) => {
-      completionResolve = resolve;
-    });
-
     const unsub = ephemeralSession.subscribe((event: AgentSessionEvent) => {
       if (event.type === 'message_end') {
         // Only capture assistant messages — Pi SDK emits message_end for user messages too
@@ -1113,15 +1188,11 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
             .join('');
         }
       }
-      if (event.type === 'agent_end') {
-        completionResolve();
-      }
     });
 
     try {
-      await ephemeralSession.prompt(request.prompt);
       await withTimeout(
-        completionPromise,
+        ephemeralSession.prompt(request.prompt),
         LLM_QUERY_TIMEOUT_MS,
         `queryLlm timed out after ${LLM_QUERY_TIMEOUT_MS / 1000}s`
       );
@@ -1232,17 +1303,20 @@ function handleSessionEvent(event: AgentSessionEvent): void {
 
     const assistantErrorMessage = getAssistantErrorMessage(event);
     if (assistantErrorMessage && shouldSuppressRetryablePromptFailure(assistantErrorMessage, promptAttemptState)) {
-      promptAttemptState.suppressedRetryableFailure = true;
       debugLog(`Suppressing retryable stream failure before automatic retry: ${assistantErrorMessage}`);
       return;
     }
 
-    if (shouldSuppressRetryingAgentEnd(
-      event as unknown as Record<string, unknown>,
-      promptAttemptState,
-    )) {
-      debugLog('Suppressing agent_end for retryable stream failure before automatic retry');
-      return;
+  }
+
+  if (event.type === 'message_start' && event.message.role === 'assistant' && pendingProductRewindBoundary && piSession) {
+    const boundary = createProductRewindBoundary(
+      piSession.sessionManager.getBranch(),
+      pendingProductRewindBoundary,
+    );
+    if (boundary) {
+      piSession.sessionManager.appendCustomEntry(PRODUCT_REWIND_BOUNDARY_TYPE, boundary);
+      pendingProductRewindBoundary = null;
     }
   }
 
@@ -1280,32 +1354,6 @@ function handleSessionEvent(event: AgentSessionEvent): void {
     }
   }
 
-  // Detect session MCP tool completions.
-  if (event.type === 'tool_execution_start') {
-    const toolName = event.toolName;
-    if (toolName.startsWith('session__') || toolName.startsWith('mcp__session__')) {
-      const mcpToolName = toolName.replace(/^(mcp__session__|session__)/, '');
-      pendingSessionToolCalls.set(event.toolCallId, {
-        toolName: mcpToolName,
-        arguments: (event.args ?? {}) as Record<string, unknown>,
-      });
-    }
-
-  }
-
-  if (event.type === 'tool_execution_end') {
-    const pending = pendingSessionToolCalls.get(event.toolCallId);
-    if (pending) {
-      pendingSessionToolCalls.delete(event.toolCallId);
-      send({
-        type: 'session_tool_completed',
-        toolName: pending.toolName,
-        args: pending.arguments,
-        isError: !!event.isError,
-      });
-    }
-  }
-
   // Forward all events to main process
   send({ type: 'event', event: forwardedEvent });
 }
@@ -1338,13 +1386,9 @@ async function handleInit(msg: Extract<InboundMessage, { type: 'init' }>): Promi
     debugLog(`Set AZURE_OPENAI_BASE_URL=${msg.baseUrl}`);
   }
 
-  // Start callback server for call_llm (idempotent — skips if already running)
-  await startCallbackServer();
-
   send({
     type: 'ready',
     sessionId: null,
-    callbackPort,
   });
 }
 
@@ -1376,6 +1420,8 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
   currentUserMessage = msg.message;
   const promptAttemptState = createPromptAttemptState();
   currentPromptAttemptState = promptAttemptState;
+  pendingProductRewindBoundary = msg.rewindBoundary ?? null;
+  let sawAgentSettled = false;
 
   try {
     // If proxy tools changed since last session creation, dispose and recreate.
@@ -1393,10 +1439,12 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
 
     const session = await ensureSession();
 
-    // Pi does not auto-reload a caller-provided ResourceLoader. Refresh at the
-    // prompt boundary so global Skill edits are visible without restarting the
-    // session, while the loader remains restricted to explicit Storyflow roots.
-    await session.resourceLoader.reload();
+    // Keep Pi's ResourceLoader and ExtensionRunner on the same generation.
+    // Reloading the loader alone leaves slash commands bound to stale resources.
+    await session.reload();
+    debugLog(
+      `Active Pi Extension commands: ${session.extensionRunner.getRegisteredCommands().map(command => command.invocationName).join(', ') || '(none)'}`,
+    );
 
     currentToolsetHash = fingerprintTools(session.agent.state.tools);
     if (msg.systemPrompt) {
@@ -1412,7 +1460,20 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
     if (unsubscribeEvents) {
       unsubscribeEvents();
     }
-    unsubscribeEvents = session.subscribe(handleSessionEvent);
+    unsubscribeEvents = session.subscribe((event) => {
+      const forward = () => {
+        if (event.type === 'agent_settled') sawAgentSettled = true;
+        handleSessionEvent(event);
+      };
+
+      // Pi persists assistant messages immediately after notifying subscribers.
+      // Defer this one event so sdkTurnAnchor names the assistant entry, not its parent.
+      if (event.type === 'message_end' && event.message.role === 'assistant') {
+        queueMicrotask(forward);
+      } else {
+        forward();
+      }
+    });
 
     // Wait for any in-flight auto-compaction to avoid race (craft-agents-oss#464)
     await waitForCompaction(session);
@@ -1423,6 +1484,12 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
       images: msg.images && msg.images.length > 0 ? msg.images : undefined,
       streamingBehavior: 'followUp',
     });
+
+    // Extension commands can finish without starting an agent turn. Mirror that
+    // completion into the existing stream so the host does not wait forever.
+    if (!sawAgentSettled && session.isIdle) {
+      send({ type: 'event', event: { type: 'agent_settled' } });
+    }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
 
@@ -1437,12 +1504,15 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
 
     debugLog(`Prompt failed: ${errorMsg}`);
     send({ type: 'error', message: errorMsg, code: 'prompt_error' });
-    // Send synthetic agent_end so the main process event queue unblocks
-    send({ type: 'event', event: { type: 'agent_end', messages: [], willRetry: false } });
+    // Prompt preflight/Extension failures may not start a Pi run.
+    if (!sawAgentSettled) {
+      send({ type: 'event', event: { type: 'agent_settled' } });
+    }
   } finally {
     if (currentPromptAttemptState === promptAttemptState) {
       currentPromptAttemptState = null;
     }
+    pendingProductRewindBoundary = null;
   }
 }
 
@@ -1510,20 +1580,6 @@ async function handleAbort(): Promise<void> {
     pending.resolve({ action: 'block', reason: 'Aborted' });
   }
   pendingPreToolUse.clear();
-}
-
-async function handleMiniCompletion(msg: Extract<InboundMessage, { type: 'mini_completion' }>): Promise<void> {
-  // Call queryLlm directly (not runMiniCompletion) so auth errors propagate
-  // as 'error' messages instead of being swallowed and returned as null.
-  // runMiniCompletion is kept for the summarize callback where null is acceptable.
-  try {
-    const result = await queryLlm({ prompt: msg.prompt });
-    send({ type: 'mini_completion_result', id: msg.id, text: result.text || null });
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    debugLog(`[handleMiniCompletion] Error: ${errorMsg}`);
-    send({ type: 'error', message: errorMsg, code: 'mini_completion_error' });
-  }
 }
 
 // INVARIANT: the full LLMQueryRequest shape must pass through this RPC unchanged.
@@ -1598,15 +1654,21 @@ async function handleRewindUserMessage(
       await session.abort();
     }
 
-    const branch = session.sessionManager.getBranch();
-    const userEntries = branch.filter(
-      (entry) => entry.type === 'message' && entry.message?.role === 'user',
+    const mappedBoundary = findProductRewindBoundary(
+      session.sessionManager.getEntries(),
+      { visibleUserMessageId: msg.visibleUserMessageId },
     );
-    const target = userEntries[msg.userOrdinal];
-    if (!target) {
+    if (!mappedBoundary) {
       throw new Error(
-        `User message ordinal ${msg.userOrdinal} not found on active branch (${userEntries.length} user messages)`,
+        'This message predates safe Storyflow rewind mapping and cannot be restored.',
       );
+    }
+    const target = session.sessionManager.getEntry(mappedBoundary.userEntryId);
+    if (!target || target.type !== 'message' || target.message.role !== 'user') {
+      throw new Error('Mapped rewind target is not a Pi user message');
+    }
+    if (!session.sessionManager.getBranch().some(entry => entry.id === target.id)) {
+      throw new Error('Mapped rewind target is not on the active Pi branch');
     }
 
     // Pi-native in-place rewind: same session file, leaf → parent of user message.
@@ -1620,6 +1682,7 @@ async function handleRewindUserMessage(
       });
       return;
     }
+    session.sessionManager.appendCustomEntry(PRODUCT_TREE_HEAD_TYPE, { v: 1 });
 
     send({
       type: 'rewind_user_message_result',
@@ -1634,29 +1697,6 @@ async function handleRewindUserMessage(
       type: 'rewind_user_message_result',
       id: msg.id,
       success: false,
-      errorMessage: errorMsg,
-    });
-  }
-}
-
-async function handleSetAutoCompaction(msg: Extract<InboundMessage, { type: 'set_auto_compaction' }>): Promise<void> {
-  try {
-    const session = await ensureSession();
-    session.setAutoCompactionEnabled(msg.enabled);
-    send({
-      type: 'set_auto_compaction_result',
-      id: msg.id,
-      success: true,
-      enabled: session.autoCompactionEnabled,
-    });
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    debugLog(`[set_auto_compaction] Failed: ${errorMsg}`);
-    send({
-      type: 'set_auto_compaction_result',
-      id: msg.id,
-      success: false,
-      enabled: msg.enabled,
       errorMessage: errorMsg,
     });
   }
@@ -1787,9 +1827,6 @@ function handleShutdown(): void {
     piSession = null;
   }
 
-  // Stop callback server
-  stopCallbackServer();
-
   // Reject pending promises
   for (const [, pending] of pendingPreToolUse) {
     pending.resolve({ action: 'block', reason: 'Server shutting down' });
@@ -1800,6 +1837,11 @@ function handleShutdown(): void {
     pending.resolve({ content: 'Server shutting down', isError: true });
   }
   pendingToolExecutions.clear();
+
+  for (const [, pending] of pendingConversationRewinds) {
+    pending.reject(new Error('Server shutting down'));
+  }
+  pendingConversationRewinds.clear();
 
   process.exit(0);
 }
@@ -1826,16 +1868,21 @@ async function processMessage(msg: InboundMessage): Promise<void> {
       handleToolExecuteResponse(msg);
       break;
 
+    case 'conversation_rewind_response': {
+      const pending = pendingConversationRewinds.get(msg.requestId);
+      if (!pending) break;
+      pendingConversationRewinds.delete(msg.requestId);
+      if (msg.success) pending.resolve();
+      else pending.reject(new Error(msg.errorMessage || 'Product transcript rewind failed'));
+      break;
+    }
+
     case 'pre_tool_use_response':
       handlePreToolUseResponse(msg);
       break;
 
     case 'abort':
       await handleAbort();
-      break;
-
-    case 'mini_completion':
-      await handleMiniCompletion(msg);
       break;
 
     case 'llm_query':
@@ -1856,10 +1903,6 @@ async function processMessage(msg: InboundMessage): Promise<void> {
 
     case 'compact':
       await handleCompact(msg);
-      break;
-
-    case 'set_auto_compaction':
-      await handleSetAutoCompaction(msg);
       break;
 
     case 'rewind_user_message':

@@ -63,4 +63,16 @@ describe('handleMessagesRewound', () => {
     expect(next.state.session.lastFinalMessageId).toBeUndefined()
     expect(next.state.session.messageCount).toBe(0)
   })
+
+  it('restores the mapped product draft for Extension-driven rewind', () => {
+    const state = makeState(['u1', 'a1'])
+    const next = handleMessagesRewound(state, {
+      type: 'messages_rewound',
+      sessionId: 's1',
+      messages: [],
+      draftText: 'rewrite this prompt',
+    })
+
+    expect(next.effects).toEqual([{ type: 'restore_input', text: 'rewrite this prompt' }])
+  })
 })

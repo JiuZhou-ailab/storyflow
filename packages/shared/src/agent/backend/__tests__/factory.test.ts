@@ -21,6 +21,7 @@ import {
   connectionAuthTypeToBackendAuthType,
   providerTypeToAgentProvider,
   resolveBackendContext,
+  resolveModelForConnection,
   resolveManagedModelConnection,
   resolveSetupTestConnectionHint,
   createBackendFromConnection,
@@ -259,6 +260,21 @@ describe('phase4 backend abstraction APIs', () => {
 
   it('resolveBackendContext defaults to the Pi runtime without a stored connection', () => {
     expect(resolveBackendContext({}).provider).toBe('pi');
+  });
+
+  it('keeps the session model selected for an Anthropic connection running on Pi', () => {
+    const connection: LlmConnection = {
+      slug: 'anthropic-direct',
+      name: 'Anthropic',
+      providerType: 'anthropic',
+      authType: 'api_key',
+      defaultModel: 'claude-sonnet-4-6',
+      models: ['claude-sonnet-4-6', 'claude-opus-4-6'],
+      createdAt: Date.now(),
+    };
+
+    expect(resolveModelForConnection('claude-opus-4-6', connection)).toBe('claude-opus-4-6');
+    expect(resolveModelForConnection(undefined, connection)).toBe('claude-sonnet-4-6');
   });
 
   it('routes a legacy managed session through the connection that owns its model', () => {

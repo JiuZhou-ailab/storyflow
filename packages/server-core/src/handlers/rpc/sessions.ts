@@ -256,11 +256,10 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
       _ctx,
       sessionId: string,
       userMessageId: string,
-      options?: { userOrdinal?: number; content?: string },
     ) => {
       const end = perf.start('rpc.rewindSession', { sessionId })
       try {
-        return await sessionManager.rewindUserMessage(sessionId, userMessageId, options)
+        return await sessionManager.rewindUserMessage(sessionId, userMessageId)
       } finally {
         end()
       }

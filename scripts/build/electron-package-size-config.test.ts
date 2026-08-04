@@ -80,7 +80,6 @@ describe('Electron package size configuration', () => {
     ];
 
     expect(allFilePatterns).not.toContain('resources/bridge-mcp-server/**/*');
-    expect(allFilePatterns).not.toContain('resources/session-mcp-server/**/*');
     expect(allFilePatterns).not.toContain('resources/pi-agent-server/**/*');
     expect(allFilePatterns).not.toContain('resources/bin/darwin-arm64/**/*');
     expect(allFilePatterns).not.toContain('resources/bin/win32-x64/**/*');

@@ -1087,7 +1087,9 @@ export function handleMessagesRewound(
       },
       streaming: null,
     },
-    effects: [],
+    effects: event.draftText !== undefined
+      ? [{ type: 'restore_input', text: event.draftText }]
+      : [],
   }
 }
 

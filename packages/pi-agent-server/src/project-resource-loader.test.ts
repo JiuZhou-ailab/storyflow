@@ -1,12 +1,13 @@
-// input: Temporary Pi projects, native Skill roots, legacy resources, and filesystem symlinks
-// output: Assertions for Pi-native Skills plus isolated Storyflow Extensions
-// pos: Integration contract for Pi Skill discovery and Storyflow Extension isolation
+// input: Temporary Pi projects, native resource roots, legacy resources, and filesystem symlinks
+// output: Assertions for Pi-native discovery plus Storyflow compatibility resources
+// pos: Integration contract proving Pi remains the runtime resource authority
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import {
   existsSync,
   mkdtempSync,
   mkdirSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -14,9 +15,13 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { createProjectResourceLoader } from './project-resource-loader.ts';
+import {
+  createProjectResourceLoader,
+  DEFAULT_PI_PACKAGE_SOURCES,
+} from './project-resource-loader.ts';
 
 const roots: string[] = [];
+const previousPiOffline = process.env.PI_OFFLINE;
 
 function createRoot(): string {
   const root = mkdtempSync(join(tmpdir(), 'storyflow-pi-resources-'));
@@ -58,19 +63,53 @@ function writeExtension(
   );
 }
 
+beforeEach(() => {
+  process.env.PI_OFFLINE = '1';
+});
+
 afterEach(() => {
+  if (previousPiOffline === undefined) delete process.env.PI_OFFLINE;
+  else process.env.PI_OFFLINE = previousPiOffline;
   for (const root of roots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
 describe('createProjectResourceLoader', () => {
+  it('keeps default package management inside the Pi subprocess boundary', () => {
+    const sharedBootstrap = readFileSync(
+      new URL('../../shared/src/agent-defaults/default-agent-resources.ts', import.meta.url),
+      'utf8',
+    );
+    const runtimeLoader = readFileSync(new URL('./project-resource-loader.ts', import.meta.url), 'utf8');
+
+    expect(sharedBootstrap).not.toContain("from '@earendil-works/pi-coding-agent'");
+    expect(runtimeLoader).toContain("from '@earendil-works/pi-coding-agent'");
+  });
+
+  it('adds the default Pi package without replacing or duplicating user packages', async () => {
+    const cwd = createRoot();
+    const globalRoot = createRoot();
+    const agentDir = join(createRoot(), 'agent');
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(
+      join(agentDir, 'settings.json'),
+      JSON.stringify({ packages: ['npm:existing-package'] }),
+    );
+
+    await createProjectResourceLoader({ cwd, globalRoot, agentDir });
+    await createProjectResourceLoader({ cwd, globalRoot, agentDir });
+
+    expect(DEFAULT_PI_PACKAGE_SOURCES).toEqual(['npm:@ayulab/pi-rewind']);
+    expect(JSON.parse(readFileSync(join(agentDir, 'settings.json'), 'utf8')).packages)
+      .toEqual(['npm:existing-package', 'npm:@ayulab/pi-rewind']);
+  });
+
   it('uses Pi as the single retry owner', async () => {
     const { settingsManager } = await createProjectResourceLoader({
       cwd: createRoot(),
       globalRoot: createRoot(),
       agentDir: join(createRoot(), 'agent'),
-      userAgentDir: join(createRoot(), 'user-agent'),
     });
 
     expect(settingsManager.getRetrySettings()).toEqual({
@@ -81,11 +120,10 @@ describe('createProjectResourceLoader', () => {
     expect(settingsManager.getProviderRetrySettings()).toMatchObject({ maxRetries: 0 });
   });
 
-  it('loads Pi project/user Skills and explicit Storyflow resources', async () => {
+  it('loads Pi user resources and explicit Storyflow compatibility resources', async () => {
     const projectRoot = createRoot();
     const globalRoot = createRoot();
     const agentDir = join(createRoot(), 'agent');
-    const userAgentDir = join(createRoot(), 'user-agent');
     writeSkill(projectRoot, '.pi/skills', 'project-skill');
     writeSkill(globalRoot, 'skills', 'global-skill');
     writeSkill(projectRoot, '.agents/skills', 'legacy-project-skill');
@@ -96,13 +134,18 @@ describe('createProjectResourceLoader', () => {
       'global-extension',
       'global-extension-tool',
     );
+    writeExtension(
+      agentDir,
+      'extensions',
+      'pi-user-extension',
+      'pi-user-extension-tool',
+    );
     writeExtension(projectRoot, '.pi/extensions', 'project-extension');
 
     const { resourceLoader } = await createProjectResourceLoader({
       cwd: projectRoot,
       globalRoot,
       agentDir,
-      userAgentDir,
     });
 
     expect(resourceLoader.getSkills().skills.map(skill => skill.name)).toEqual(
@@ -113,26 +156,63 @@ describe('createProjectResourceLoader', () => {
         'agent-dir-skill',
       ]),
     );
-    expect(resourceLoader.getExtensions().extensions).toHaveLength(1);
-    expect(resourceLoader.getExtensions().extensions[0]?.resolvedPath)
-      .toContain('global-extension.ts');
-    expect(
-      resourceLoader.getExtensions().extensions[0]?.tools.has('global-extension-tool'),
-    ).toBe(true);
+    const extensions = resourceLoader.getExtensions().extensions;
+    expect(extensions).toHaveLength(2);
+    expect(extensions.some(extension => (
+      extension.resolvedPath.includes('global-extension.ts')
+      && extension.tools.has('global-extension-tool')
+    ))).toBe(true);
+    expect(extensions.some(extension => (
+      extension.resolvedPath.includes('pi-user-extension.ts')
+      && extension.tools.has('pi-user-extension-tool')
+    ))).toBe(true);
+    expect(extensions.some(extension => (
+      extension.resolvedPath.includes('project-extension.ts')
+    ))).toBe(false);
+  });
+
+  it('loads Extensions configured by the Pi package manager', async () => {
+    const cwd = createRoot();
+    const globalRoot = createRoot();
+    const agentDir = join(createRoot(), 'agent');
+    const packageRoot = join(agentDir, 'native-package');
+    mkdirSync(packageRoot, { recursive: true });
+    writeFileSync(
+      join(packageRoot, 'package.json'),
+      JSON.stringify({
+        name: 'native-package',
+        version: '1.0.0',
+        pi: { extensions: ['./index.ts'] },
+      }),
+    );
+    writeExtension(packageRoot, '.', 'index', 'native-package-tool');
+    writeFileSync(
+      join(agentDir, 'settings.json'),
+      JSON.stringify({ packages: ['./native-package'] }),
+    );
+
+    const { resourceLoader } = await createProjectResourceLoader({
+      cwd,
+      globalRoot,
+      agentDir,
+    });
+
+    expect(resourceLoader.getExtensions().extensions.some(extension => (
+      extension.sourceInfo.origin === 'package'
+      && extension.tools.has('native-package-tool')
+    ))).toBe(true);
   });
 
   it('does not create a project overlay while loading legacy global Skills', async () => {
     const cwd = createRoot();
     const globalRoot = createRoot();
     const agentDir = join(createRoot(), 'agent');
-    const userAgentDir = join(createRoot(), 'user-agent');
     writeSkill(globalRoot, 'skills', 'global-only');
 
     const { resourceLoader } = await createProjectResourceLoader({
       cwd,
       globalRoot,
       agentDir,
-      userAgentDir,
     });
 
     expect(resourceLoader.getSkills().skills.map(skill => skill.name))
@@ -144,7 +224,6 @@ describe('createProjectResourceLoader', () => {
     const projectRoot = createRoot();
     const globalRoot = createRoot();
     const agentDir = join(createRoot(), 'agent');
-    const userAgentDir = join(createRoot(), 'user-agent');
     writeSkill(projectRoot, '.pi/skills', 'shared-skill');
     writeSkill(globalRoot, 'skills', 'shared-skill');
 
@@ -152,7 +231,6 @@ describe('createProjectResourceLoader', () => {
       cwd: projectRoot,
       globalRoot,
       agentDir,
-      userAgentDir,
     });
 
     const skills = resourceLoader.getSkills();
@@ -163,12 +241,30 @@ describe('createProjectResourceLoader', () => {
     ))).toBe(true);
   });
 
+  it('reports diagnostics shared by both loaders only once', async () => {
+    const projectRoot = createRoot();
+    const globalRoot = createRoot();
+    const agentDir = join(createRoot(), 'agent');
+    writeSkill(agentDir, 'skills', 'shared-skill');
+    writeSkill(globalRoot, 'skills', 'shared-skill');
+
+    const { resourceLoader } = await createProjectResourceLoader({
+      cwd: projectRoot,
+      globalRoot,
+      agentDir,
+    });
+
+    expect(resourceLoader.getSkills().diagnostics.filter(diagnostic => (
+      diagnostic.type === 'collision'
+      && diagnostic.collision?.name === 'shared-skill'
+    ))).toHaveLength(1);
+  });
+
   it('follows project Skill symlinks through Pi native discovery', async () => {
     const projectRoot = createRoot();
     const outsideRoot = createRoot();
     const globalRoot = createRoot();
     const agentDir = join(createRoot(), 'agent');
-    const userAgentDir = join(createRoot(), 'user-agent');
     writeSkill(outsideRoot, 'skills', 'linked-project-skill');
     mkdirSync(join(projectRoot, '.pi'), { recursive: true });
     symlinkSync(join(outsideRoot, 'skills'), join(projectRoot, '.pi', 'skills'), 'dir');
@@ -177,7 +273,6 @@ describe('createProjectResourceLoader', () => {
       cwd: projectRoot,
       globalRoot,
       agentDir,
-      userAgentDir,
     });
 
     expect(resourceLoader.getSkills().skills.map(skill => skill.name))
@@ -189,7 +284,6 @@ describe('createProjectResourceLoader', () => {
     const outsideRoot = createRoot();
     const globalRoot = createRoot();
     const agentDir = join(createRoot(), 'agent');
-    const userAgentDir = join(createRoot(), 'user-agent');
     writeSkill(outsideRoot, 'skills', 'outside-skill');
     mkdirSync(join(globalRoot, 'skills'), { recursive: true });
     symlinkSync(
@@ -202,7 +296,6 @@ describe('createProjectResourceLoader', () => {
       cwd: projectRoot,
       globalRoot,
       agentDir,
-      userAgentDir,
     });
 
     expect(resourceLoader.getSkills().skills.filter(skill => skill.name === 'outside-skill'))

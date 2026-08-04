@@ -121,7 +121,8 @@ describe('createSubagentExtension', () => {
       agentDir: '/agent',
       authStorage: {} as never,
       modelRegistry: {} as never,
-      toolDefinitions: ['read', 'grep', 'find', 'ls', 'edit', 'write', 'bash'].map(
+      thinkingLevel: 'high',
+      toolDefinitions: ['read', 'grep', 'find', 'ls', 'web_search', 'web_fetch', 'edit', 'write', 'bash'].map(
         name => ({
           name,
           label: name,
@@ -157,7 +158,15 @@ describe('createSubagentExtension', () => {
     );
 
     expect(createdOptions).toHaveLength(1);
-    expect(createdOptions[0]?.tools).toEqual(['read', 'grep', 'find', 'ls']);
+    expect(createdOptions[0]?.tools).toEqual([
+      'read',
+      'grep',
+      'find',
+      'ls',
+      'web_search',
+      'web_fetch',
+    ]);
+    expect(createdOptions[0]?.thinkingLevel).toBe('high');
     expect(createdOptions[0]?.sessionManager?.isPersisted()).toBe(false);
     expect(createdOptions[0]?.settingsManager?.getRetrySettings()).toMatchObject({ maxRetries: 1 });
     expect(createdOptions[0]?.settingsManager?.getProviderRetrySettings()).toMatchObject({ maxRetries: 0 });
@@ -431,7 +440,17 @@ describe('createSubagentExtension', () => {
       { model: undefined } as ExtensionContext,
     );
 
-    expect(activeTools).toEqual(['read', 'grep', 'find', 'ls', 'edit', 'write', 'bash']);
+    expect(activeTools).toEqual([
+      'read',
+      'grep',
+      'find',
+      'ls',
+      'web_search',
+      'web_fetch',
+      'edit',
+      'write',
+      'bash',
+    ]);
     expect(prompt).not.toContain('Do not modify files');
     expect(result.details).toMatchObject({
       result: {

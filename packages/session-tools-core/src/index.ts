@@ -36,9 +36,6 @@ export type {
   UserQuestionRequest,
   UserQuestionResponse,
 
-  // IPC types
-  CallbackMessage,
-
   // Tool result types
   TextContent,
   ToolResult,

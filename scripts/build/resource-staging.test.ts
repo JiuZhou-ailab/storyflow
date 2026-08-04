@@ -6,6 +6,7 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getBunCompileTarget, getPiAgentServerBinaryName } from './pi-agent-server.ts';
 import { resolveBuildTargetFromEnv, stageSubprocessResources } from './resource-staging.ts';
 
 const tempRoots: string[] = [];
@@ -34,16 +35,20 @@ describe('Electron subprocess resource staging', () => {
       CRAFT_BUILD_PLATFORM: 'darwin',
       CRAFT_BUILD_ARCH: 'x64',
     })).toEqual({ platform: 'darwin', arch: 'x64' });
+    expect(getPiAgentServerBinaryName('darwin')).toBe('pi-agent-server');
+    expect(getPiAgentServerBinaryName('win32')).toBe('pi-agent-server.exe');
+    expect(getBunCompileTarget('darwin', 'arm64')).toBe('bun-darwin-arm64');
+    expect(getBunCompileTarget('linux', 'x64')).toBe('bun-linux-x64-baseline');
+    expect(getBunCompileTarget('win32', 'x64')).toBe('bun-windows-x64-baseline');
   });
 
-  test('copies session and Pi subprocess bundles without legacy koffi resources', () => {
+  test('copies the native Pi subprocess without legacy runtime resources', () => {
     const rootDir = createTempRoot();
     const electronDir = join(rootDir, 'apps', 'electron');
     const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
 
-    writeFile(join(rootDir, 'packages', 'session-mcp-server', 'dist', 'index.js'), 'session');
     writeFile(join(rootDir, 'packages', 'pi-agent-server', 'src', 'index.ts'), 'source');
-    writeFile(join(rootDir, 'packages', 'pi-agent-server', 'dist', 'index.js'), 'pi');
+    writeFile(join(rootDir, 'packages', 'pi-agent-server', 'dist', 'pi-agent-server'), 'pi');
 
     stageSubprocessResources({
       rootDir,
@@ -52,8 +57,7 @@ describe('Electron subprocess resource staging', () => {
       arch: 'x64',
     });
 
-    expect(existsSync(join(electronDir, 'resources', 'session-mcp-server', 'index.js'))).toBe(true);
-    expect(existsSync(join(electronDir, 'resources', 'pi-agent-server', 'index.js'))).toBe(true);
+    expect(existsSync(join(electronDir, 'resources', 'pi-agent-server', 'pi-agent-server'))).toBe(true);
     expect(existsSync(join(electronDir, 'resources', 'pi-agent-server', 'node_modules'))).toBe(false);
     expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();

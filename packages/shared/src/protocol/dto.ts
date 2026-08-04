@@ -226,7 +226,7 @@ export type SessionEvent =
   | { type: 'message_annotations_updated'; sessionId: string; messageId: string; annotations: AnnotationV1[] }
   | { type: 'queued_message_removed'; sessionId: string; messageId: string }
   | { type: 'working_directory_error'; sessionId: string; error: string }
-  | { type: 'messages_rewound'; sessionId: string; messages: Message[] }
+  | { type: 'messages_rewound'; sessionId: string; messages: Message[]; draftText?: string }
 
 export interface SendMessageOptions {
   skillSlugs?: string[]

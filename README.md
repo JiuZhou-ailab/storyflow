@@ -34,10 +34,9 @@ storyflow/
 │   ├── core/                # 共享底层类型和工具
 │   ├── messaging-gateway/   # 消息网关集成
 │   ├── messaging-whatsapp-worker/
-│   ├── pi-agent-server/     # 独立进程 Pi SDK 适配器
+│   ├── pi-agent-server/     # Pi AgentSession 的独立进程产品投影
 │   ├── server/              # 独立无头服务入口
 │   ├── server-core/         # RPC 传输、可复用 handler、平台契约
-│   ├── session-mcp-server/  # 会话使用的内置 MCP server
 │   ├── session-tools-core/  # 多运行时共享的工具实现
 │   ├── shared/              # 配置、协议、会话、来源、写作逻辑
 │   └── ui/                  # 共享 React UI、Markdown、diff、chat 组件

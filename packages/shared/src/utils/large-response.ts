@@ -25,14 +25,14 @@ import {
 // ============================================================
 
 /**
- * Default per-result summarization threshold (roughly ~60KB of text).
+ * Default per-turn tool-result budget (roughly ~32KB of text).
  *
  * Prefer {@link tokenLimitFor} at call sites that have the active model's
  * `contextWindow` available — model-aware sizing keeps moderate-context
- * models (e.g. 64k) from filling their window with a few sub-15k tool
+ * models (e.g. 64k) from filling their window with a few individually moderate
  * results that each pass this fixed threshold individually.
  */
-export const TOKEN_LIMIT = 15000;
+export const TOKEN_LIMIT = 8000;
 
 /** Max tokens to send for summarization (~400KB). Beyond this, save to file + preview only. */
 export const MAX_SUMMARIZATION_INPUT = 100000;
@@ -64,8 +64,8 @@ export function estimateTokens(text: string): number {
 
 /**
  * Per-result summarization threshold scaled to the active model's context
- * window. A 200k-window model returns the existing {@link TOKEN_LIMIT}
- * (15k); a 64k-window model returns 6_400; below ~20k window the floor
+ * window. A 200k-window model returns {@link TOKEN_LIMIT} (8k); a 64k-window
+ * model returns 6_400; below ~20k window the floor
  * (2_000) kicks in.
  *
  * Pass `undefined` when the call site has no model context — returns the
@@ -457,6 +457,8 @@ export interface HandleLargeResponseOptions {
   summarize?: (prompt: string) => Promise<string | null>;
   /** Active model's context window — see {@link guardLargeResult}. */
   contextWindow?: number;
+  /** Optional caller budget when several tool results share one model turn. */
+  thresholdTokens?: number;
 }
 
 export interface HandleLargeResponseResult {
@@ -560,10 +562,10 @@ export async function guardLargeResult(
 export async function handleLargeResponse(
   opts: HandleLargeResponseOptions
 ): Promise<HandleLargeResponseResult | null> {
-  const { text, sessionPath, context, summarize, contextWindow } = opts;
+  const { text, sessionPath, context, summarize, contextWindow, thresholdTokens } = opts;
   const estimatedTokens = estimateTokens(text);
 
-  if (estimatedTokens <= tokenLimitFor(contextWindow)) {
+  if (estimatedTokens <= (thresholdTokens ?? tokenLimitFor(contextWindow))) {
     return null; // Not large enough — caller should return as-is
   }
 

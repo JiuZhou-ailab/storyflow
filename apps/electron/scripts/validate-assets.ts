@@ -7,6 +7,9 @@ import { join, relative } from 'node:path';
 
 const electronDir = join(import.meta.dir, '..');
 const distDir = join(electronDir, 'dist');
+const piServerBinary = (process.env.CRAFT_BUILD_PLATFORM || process.platform) === 'win32'
+  ? 'pi-agent-server.exe'
+  : 'pi-agent-server';
 
 const requiredFiles = [
   ['main.cjs', 'main process'],
@@ -26,8 +29,7 @@ const requiredFiles = [
   ['resources/release-notes/whats-new.json', 'update announcement manifest'],
   ['resources/themes/default.json', 'default theme'],
   ['resources/tool-icons/tool-icons.json', 'tool icon manifest'],
-  ['resources/session-mcp-server/index.js', 'session MCP server'],
-  ['resources/pi-agent-server/index.js', 'Pi agent server'],
+  [`resources/pi-agent-server/${piServerBinary}`, 'Pi agent server'],
   ['resources/scripts/markitdown_cli.py', 'document conversion runtime'],
   ['resources/bin/markitdown', 'Unix document conversion launcher'],
   ['resources/bin/markitdown.cmd', 'Windows document conversion launcher'],

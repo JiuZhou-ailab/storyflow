@@ -71,7 +71,7 @@ export {
   providerTypeToAgentProvider,
   // Capabilities and utilities
   BACKEND_CAPABILITIES,
-  resolveModelForProvider,
+  resolveModelForConnection,
   getDefaultAuthType,
   cleanupSourceRuntimeArtifacts,
   testBackendConnection,

@@ -88,6 +88,7 @@ import { getValidClaudeOAuthToken } from '@craft-agent/shared/auth'
 import { resolveAuthEnvVars } from '@craft-agent/shared/config'
 import { getLastApiError } from '@craft-agent/shared/provider-diagnostics'
 import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
+import { isLowSignal } from '@craft-agent/shared/utils'
 import { restoreFiles } from '@craft-agent/shared/utils/bundle-files'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { CraftMcpClient, McpClientPool, McpPoolServer } from '@craft-agent/shared/mcp'
@@ -104,7 +105,6 @@ import { type ThinkingLevel, DEFAULT_THINKING_LEVEL, normalizeThinkingLevel } fr
 import { evaluateAutoLabels } from '@craft-agent/shared/labels/auto'
 import { listLabels, loadLabelConfig } from '@craft-agent/shared/labels/storage'
 import { extractLabelId, resolveSessionLabels } from '@craft-agent/shared/labels'
-import { resolveRewindMessageIndex } from './rewind-resolve'
 import { ensureLabelsExist } from '@craft-agent/shared/labels/crud'
 import { loadStatusConfig } from '@craft-agent/shared/statuses/storage'
 import { AutomationSystem, canonicalizeSkillReferences, createPromptHistoryEntry, appendAutomationHistoryEntry, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
@@ -1760,6 +1760,11 @@ export class SessionManager implements ISessionManager {
       )
       let totalSessions = 0
       let sessionsSinceYield = 0
+      const permissionModeCounts: Record<PermissionMode, number> = {
+        safe: 0,
+        ask: 0,
+        'allow-all': 0,
+      }
 
       // Iterate over each workspace and load its sessions
       for (const workspace of workspaces) {
@@ -1790,7 +1795,9 @@ export class SessionManager implements ISessionManager {
 
           // Initialize mode-manager state for restored sessions even before agent creation.
           // This keeps diagnostics/effective mode aligned with persisted session metadata.
-          setPermissionMode(meta.id, managed.permissionMode ?? 'ask', { changedBy: 'restore' })
+          const restoredPermissionMode = managed.permissionMode ?? 'ask'
+          setPermissionMode(meta.id, restoredPermissionMode, { changedBy: 'restore' })
+          permissionModeCounts[restoredPermissionMode]++
           if (managed.previousPermissionMode) {
             hydratePreviousPermissionMode(meta.id, managed.previousPermissionMode)
           }
@@ -1826,7 +1833,9 @@ export class SessionManager implements ISessionManager {
         await new Promise<void>((resolve) => setImmediate(resolve))
       }
 
-      sessionLog.info(`Loaded ${totalSessions} sessions from disk (metadata only)`)
+      sessionLog.info(`Loaded ${totalSessions} sessions from disk (metadata only)`, {
+        permissionModes: permissionModeCounts,
+      })
     } catch (error) {
       sessionLog.error('Failed to load sessions from disk:', error)
     }
@@ -2930,7 +2939,6 @@ export class SessionManager implements ISessionManager {
   async rewindUserMessage(
     sessionId: string,
     userMessageId: string,
-    options?: { userOrdinal?: number; content?: string },
   ): Promise<{ draftText: string }> {
     const managed = this.sessions.get(sessionId)
     if (!managed) {
@@ -2939,9 +2947,7 @@ export class SessionManager implements ISessionManager {
 
     await this.ensureMessagesLoaded(managed)
 
-    // Prefer id match. Fall back to ordinal/content for live sessions where the
-    // UI still holds a pre-fix optimistic id that never matched the server.
-    const messageIndex = resolveRewindMessageIndex(managed.messages, userMessageId, options)
+    const messageIndex = managed.messages.findIndex(message => message.id === userMessageId)
     if (messageIndex === -1) {
       throw new Error(`Message ${userMessageId} not found in session ${sessionId}`)
     }
@@ -2952,10 +2958,9 @@ export class SessionManager implements ISessionManager {
     }
 
     const draftText = typeof target.content === 'string' ? target.content : ''
-    const userOrdinal = managed.messages
-      .slice(0, messageIndex + 1)
-      .filter(message => message.role === 'user')
-      .length - 1
+    const hasPriorUserMessage = managed.messages
+      .slice(0, messageIndex)
+      .some(message => message.role === 'user')
 
     if (managed.isProcessing) {
       await this.cancelProcessing(sessionId, true)
@@ -2971,15 +2976,43 @@ export class SessionManager implements ISessionManager {
     const hasPiTranscript = hasPersistedPiTranscript(sessionPath)
 
     if (hasPiTranscript) {
-      await (await this.getOrCreateAgent(managed)).rewindUserMessage(userOrdinal)
-    } else if (userOrdinal > 0) {
+      await (await this.getOrCreateAgent(managed)).rewindUserMessage(target.id)
+    } else if (hasPriorUserMessage) {
       // Mid-history without a provider session file would desync UI transcript from LLM context.
       throw new Error(
         'Cannot rewind this message yet: provider session is not initialized. Send one message and try again.',
       )
     }
 
-    managed.messages = managed.messages.slice(0, messageIndex)
+    await this.projectConversationRewind(managed, {
+      retainThroughMessageId: hasPriorUserMessage
+        ? ([...managed.messages.slice(0, messageIndex)]
+            .reverse()
+            .find(message => message.role !== 'status')?.id ?? null)
+        : null,
+    }, { validateOnly: false })
+
+    return { draftText }
+  }
+
+  private async projectConversationRewind(
+    managed: ManagedSession,
+    boundary: { retainThroughMessageId: string | null; draftText?: string },
+    options: { validateOnly: boolean },
+  ): Promise<void> {
+    await this.ensureMessagesLoaded(managed)
+
+    const retainIndex = boundary.retainThroughMessageId === null
+      ? -1
+      : managed.messages.findIndex(message => message.id === boundary.retainThroughMessageId)
+    if (boundary.retainThroughMessageId !== null && retainIndex === -1) {
+      throw new Error(`Product rewind boundary ${boundary.retainThroughMessageId} is no longer on the active transcript`)
+    }
+    if (options.validateOnly) return
+
+    managed.messageQueue = []
+    managed.streamingText = ''
+    managed.messages = managed.messages.slice(0, retainIndex + 1)
 
     const lastUser = [...managed.messages].reverse().find(message => message.role === 'user')
     const lastFinalAssistant = [...managed.messages].reverse().find(
@@ -2988,20 +3021,19 @@ export class SessionManager implements ISessionManager {
     managed.lastMessageRole = lastFinalAssistant ? 'assistant' : lastUser ? 'user' : undefined
     managed.lastFinalMessageId = lastFinalAssistant?.id
     managed.messageCount = managed.messages.length
-    if (typeof lastUser?.content === 'string') {
-      managed.preview = lastUser.content.slice(0, 200)
-    }
+    managed.preview = typeof lastUser?.content === 'string'
+      ? lastUser.content.slice(0, 200)
+      : ''
 
     this.persistSession(managed)
     await sessionPersistenceQueue.flush(managed.id)
 
     this.sendEvent({
       type: 'messages_rewound',
-      sessionId,
+      sessionId: managed.id,
       messages: managed.messages,
+      ...(boundary.draftText !== undefined ? { draftText: boundary.draftText } : {}),
     }, managed.workspace.id)
-
-    return { draftText }
   }
 
   private async disposeManagedAgentRuntime(managed: ManagedSession, reason: string): Promise<void> {
@@ -3540,53 +3572,54 @@ export class SessionManager implements ISessionManager {
           managedModelAccess,
           session: sessionConfig,
           onSdkSessionIdUpdate,
-        onSdkSessionIdCleared,
-        onBranchForkInvalidated,
-        getRecoveryMessages,
-        seedFreshSessionFromRecovery,
-        getBranchFallbackMessages,
-        getBranchSeedMessages,
-        markBranchSeedApplied,
-        getTransferredSessionSummary,
-        markTransferredSessionSummaryApplied,
-        mcpPool: managed.mcpPool,
-        poolServerUrl,
-        envOverrides,
-        // Claude-specific
-        isHeadless: !AGENT_FLAGS.defaultModesEnabled,
-        skipConfigWatcher: true, // Server owns workspace-level ConfigWatcher — don't duplicate in agents
-        automationSystem: this.automationSystems.get(managed.workspace.rootPath),
-        systemPromptPreset: managed.systemPromptPreset,
-        debugMode: _platform?.isDebugMode ? { enabled: true, logFilePath: _platform.getLogFilePath?.() } : undefined,
-        enable1MContext: getEnable1MContext(),
-        // Image resize callback — prevents oversized images from entering conversation history
-        onImageResize: async (filePath: string, maxSizeBytes: number): Promise<string | null> => {
-          try {
-            const buffer = await readFile(filePath)
-            const result = await resizeImageForAPI(buffer, { maxSizeBytes })
-            if (!result) return null
+          onSdkSessionIdCleared,
+          onBranchForkInvalidated,
+          onConversationRewind: (boundary, options) => this.projectConversationRewind(managed, boundary, options),
+          getRecoveryMessages,
+          seedFreshSessionFromRecovery,
+          getBranchFallbackMessages,
+          getBranchSeedMessages,
+          markBranchSeedApplied,
+          getTransferredSessionSummary,
+          markTransferredSessionSummaryApplied,
+          mcpPool: managed.mcpPool,
+          poolServerUrl,
+          envOverrides,
+          // Claude-specific
+          isHeadless: !AGENT_FLAGS.defaultModesEnabled,
+          skipConfigWatcher: true, // Server owns workspace-level ConfigWatcher — don't duplicate in agents
+          automationSystem: this.automationSystems.get(managed.workspace.rootPath),
+          systemPromptPreset: managed.systemPromptPreset,
+          debugMode: _platform?.isDebugMode ? { enabled: true, logFilePath: _platform.getLogFilePath?.() } : undefined,
+          enable1MContext: getEnable1MContext(),
+          // Image resize callback — prevents oversized images from entering conversation history
+          onImageResize: async (filePath: string, maxSizeBytes: number): Promise<string | null> => {
+            try {
+              const buffer = await readFile(filePath)
+              const result = await resizeImageForAPI(buffer, { maxSizeBytes })
+              if (!result) return null
 
-            // Write to session tmp directory (cleaned up with session)
-            const sessionTmpDir = join(sessionPath, 'tmp')
-            await mkdir(sessionTmpDir, { recursive: true })
-            const ext = result.format === 'jpeg' ? 'jpg' : 'png'
-            const outPath = join(sessionTmpDir, `resized-${randomUUID()}.${ext}`)
-            await writeFile(outPath, result.buffer)
+              // Write to session tmp directory (cleaned up with session)
+              const sessionTmpDir = join(sessionPath, 'tmp')
+              await mkdir(sessionTmpDir, { recursive: true })
+              const ext = result.format === 'jpeg' ? 'jpg' : 'png'
+              const outPath = join(sessionTmpDir, `resized-${randomUUID()}.${ext}`)
+              await writeFile(outPath, result.buffer)
 
-            sessionLog.info(`Image resized for Read: ${(buffer.length / 1024 / 1024).toFixed(1)}MB → ${(result.buffer.length / 1024 / 1024).toFixed(1)}MB (→ ${result.width}×${result.height})`)
-            return outPath
-          } catch (err) {
-            sessionLog.error('Image resize failed:', err)
-            return null
-          }
-        },
-        // Source configs for postInit() — backends set up their own runtime state
-        initialSources: {
-          enabledSources,
-          mcpServers,
-          apiServers,
-          enabledSlugs,
-        },
+              sessionLog.info(`Image resized for Read: ${(buffer.length / 1024 / 1024).toFixed(1)}MB → ${(result.buffer.length / 1024 / 1024).toFixed(1)}MB (→ ${result.width}×${result.height})`)
+              return outPath
+            } catch (err) {
+              sessionLog.error('Image resize failed:', err)
+              return null
+            }
+          },
+          // Source configs for postInit() — backends set up their own runtime state
+          initialSources: {
+            enabledSources,
+            mcpServers,
+            apiServers,
+            enabledSlugs,
+          },
         },
       }) as AgentInstance
 
@@ -5789,9 +5822,9 @@ export class SessionManager implements ISessionManager {
           title: initialTitle,
         }, managed.workspace.id)
 
-        // Generate AI title asynchronously using agent's SDK
-        // (waits briefly for agent creation if needed)
-        this.generateTitle(managed, message)
+        // Keep the deterministic title for greetings/acknowledgements: an AI call
+        // cannot add enough signal to justify delaying the cold path.
+        if (!isLowSignal(message)) void this.generateTitle(managed, message)
       }
     } else {
       ackAccepted(generateMessageId(), 'hidden')
@@ -6030,9 +6063,26 @@ export class SessionManager implements ISessionManager {
 
       sendSpan.mark('chat.starting')
       const userIteration = managed.messages.filter(message => message.role === 'user').length
+      const productUserIndex = userMessage
+        ? managed.messages.findIndex(entry => entry.id === userMessage.id)
+        : -1
+      const hasPriorUserMessage = productUserIndex > 0 && managed.messages
+        .slice(0, productUserIndex)
+        .some(entry => entry.role === 'user')
+      const precedingPersistedMessageId = [...managed.messages.slice(0, productUserIndex)]
+        .reverse()
+        .find(entry => entry.role !== 'status')?.id ?? null
+      const rewindBoundary = {
+        ...(userMessage ? { visibleUserMessageId: userMessage.id } : {}),
+        retainThroughMessageId: userMessage
+          ? (hasPriorUserMessage ? precedingPersistedMessageId : null)
+          : ([...managed.messages].reverse().find(entry => entry.role !== 'status')?.id ?? null),
+        ...(userMessage ? { draftText: message } : {}),
+      }
       const chatIterator = agent.chat(effectiveMessage, modelInputAttachments.attachments, {
         ...options,
         userIteration,
+        rewindBoundary,
       })
       sessionLog.info('Got chat iterator, starting iteration...')
 
@@ -7498,6 +7548,7 @@ export class SessionManager implements ISessionManager {
           type: 'info',
           sessionId,
           message: event.message,
+          level: event.level,
           statusType: isCompactionComplete ? 'compaction_complete' : undefined,
           timestamp: infoTimestamp,
         }, workspaceId)

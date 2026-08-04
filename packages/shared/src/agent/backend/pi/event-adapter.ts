@@ -41,17 +41,12 @@ import { parseError } from '../../errors.ts';
  */
 const SDK_AUTOCOMPACT_RACE_SIGNATURE = /_autoCompactionAbortController\.signal/;
 
-/** How long to wait after a held overflow `agent_end` for a `compaction_start`
- *  before giving up and surfacing the original error. The SDK fires
- *  `_checkCompaction` on the same event-queue tick, so the only delay is event
- *  serialization — 5 s is well above any plausible jitter. */
-const OVERFLOW_FALLBACK_TIMEOUT_MS = 5_000;
-
 /**
  * Combined event type the adapter can handle.
- * AgentSessionEvent is a superset of PiAgentEvent (adds compaction_*, auto_retry_*, queue_update).
+ * AgentSessionEvent is a superset of PiAgentEvent. Pi also emits persistence-only
+ * entry_appended events that have no renderer projection.
  */
-type PiEvent = PiAgentEvent | AgentSessionEvent;
+type PiEvent = PiAgentEvent | AgentSessionEvent | { type: 'entry_appended' };
 
 /**
  * Maps Pi SDK events to Craft AgentEvents for UI compatibility.
@@ -61,12 +56,12 @@ type PiEvent = PiAgentEvent | AgentSessionEvent;
  * - message_end → text_complete
  * - tool_execution_start → tool_start
  * - tool_execution_end → tool_result
- * - agent_end → complete
+ * - agent_settled → complete
  * - compaction_start → status
  * - compaction_end → info/error + current context estimate
  * - auto_retry_start → status
  * - auto_retry_end → status
- * - queue_update → ignored (no current UI consumer)
+ * - queue_update / entry_appended → ignored (no current UI consumer)
  */
 export class PiEventAdapter extends BaseEventAdapter {
   // Track tool names from execution_start for proper tool_result correlation
@@ -102,30 +97,9 @@ export class PiEventAdapter extends BaseEventAdapter {
     contextTokens: number;
   } | undefined;
 
-  // ============================================================
-  // Overflow-recovery state machine
-  // ============================================================
-  //
-  // When a Pi-routed assistant message returns a context_length_exceeded
-  // error, the Pi SDK's `_checkCompaction` fires `_runAutoCompaction("overflow",
-  // true)` and, on success, calls `agent.continue()` to retry. That recovered
-  // turn arrives AFTER the original `agent_end`. If we yield `complete` and
-  // call `eventQueue.complete()` on the original `agent_end` (the historic
-  // behavior), the recovered turn lands in a closed iterator. The state
-  // machine below holds the queue open across the SDK's recovery flow so the
-  // recovered response reaches the UI.
-  private overflowState: 'none' | 'held' | 'awaiting' | 'compacting' | 'recovering' = 'none';
-  private heldOverflowError: string | null = null;
-  private fallbackTimerId: ReturnType<typeof setTimeout> | null = null;
-  /** Set when the adapter wants the caller to call `eventQueue.complete()`
-   *  on a non-`agent_end` event (e.g. `compaction_end` failure). Consumed by
-   *  `shouldCompleteQueue()`. */
-  private pendingQueueComplete: boolean = false;
-  /** Caller-supplied callbacks for the asynchronous fallback timer path —
-   *  the timer fires outside `adaptEvent()` so we can't yield through the
-   *  generator. */
-  private onFallbackEvent: ((event: CraftAgentEvent) => void) | null = null;
-  private onFallbackComplete: (() => void) | null = null;
+  // Raw overflow errors stay hidden while Pi attempts its native compact-and-retry.
+  // If Pi settles without recovery or an explicit compaction failure, surface it once.
+  private pendingOverflowError: string | null = null;
 
   constructor() {
     super('pi-event');
@@ -136,70 +110,6 @@ export class PiEventAdapter extends BaseEventAdapter {
    */
   setContextWindow(cw: number): void {
     this.contextWindow = cw;
-  }
-
-  /**
-   * Register handlers invoked when the overflow-recovery fallback timer fires
-   * (the SDK didn't emit a `compaction_start` after a held overflow `agent_end`
-   * within `OVERFLOW_FALLBACK_TIMEOUT_MS`). Adapter calls `onEvent` to enqueue
-   * the buffered original error, then `onComplete` to terminate the iterator.
-   */
-  setOverflowFallbackHandlers(
-    onEvent: (event: CraftAgentEvent) => void,
-    onComplete: () => void,
-  ): void {
-    this.onFallbackEvent = onEvent;
-    this.onFallbackComplete = onComplete;
-  }
-
-  /**
-   * Decide whether the caller should call `eventQueue.complete()` after
-   * processing this SDK event. The historical rule was "always on
-   * `agent_end`"; with overflow recovery we defer completion until the
-   * recovered turn finishes (or recovery fails / times out).
-   */
-  shouldCompleteQueue(isAgentEnd: boolean): boolean {
-    if (this.pendingQueueComplete) {
-      this.pendingQueueComplete = false;
-      return true;
-    }
-    return isAgentEnd && this.overflowState === 'none';
-  }
-
-  /**
-   * Reset overflow-recovery state. Call from session disposal so a stale
-   * fallback timer doesn't fire on a torn-down adapter.
-   */
-  resetOverflowState(): void {
-    this.cancelOverflowFallbackTimer();
-    this.overflowState = 'none';
-    this.heldOverflowError = null;
-    this.pendingQueueComplete = false;
-  }
-
-  private armOverflowFallbackTimer(): void {
-    this.cancelOverflowFallbackTimer();
-    this.fallbackTimerId = setTimeout(() => {
-      this.fallbackTimerId = null;
-      // Re-check state at fire time — a late `compaction_start` may have
-      // already transitioned us to `compacting`.
-      if (this.overflowState !== 'awaiting') return;
-      const errorMessage = this.heldOverflowError ?? 'Context overflow';
-      this.heldOverflowError = null;
-      this.overflowState = 'none';
-      this.log.warn('Overflow recovery fallback fired — SDK emitted no compaction events', {
-        timeoutMs: OVERFLOW_FALLBACK_TIMEOUT_MS,
-      });
-      this.onFallbackEvent?.({ type: 'error', message: errorMessage });
-      this.onFallbackComplete?.();
-    }, OVERFLOW_FALLBACK_TIMEOUT_MS);
-  }
-
-  private cancelOverflowFallbackTimer(): void {
-    if (this.fallbackTimerId !== null) {
-      clearTimeout(this.fallbackTimerId);
-      this.fallbackTimerId = null;
-    }
   }
 
   /**
@@ -259,6 +169,7 @@ export class PiEventAdapter extends BaseEventAdapter {
     this.subTurnCounter = 0;
     this.messageSubTurnId = null;
     this.turnUsage = undefined;
+    this.pendingOverflowError = null;
     this.log.debug('Turn started', { turnIndex: this.turnIndex });
   }
 
@@ -276,23 +187,14 @@ export class PiEventAdapter extends BaseEventAdapter {
         break;
 
       case 'agent_end':
-        // Overflow recovery: hold the queue open while the SDK runs
-        // _runAutoCompaction("overflow") + agent.continue(). The recovered
-        // turn will arrive as a fresh agent_start … agent_end pair.
-        if (this.overflowState === 'held') {
-          this.overflowState = 'awaiting';
-          this.armOverflowFallbackTimer();
-          break;
-        }
-        if (this.overflowState === 'awaiting' || this.overflowState === 'compacting') {
-          // Defensive: an agent_end while still mid-recovery shouldn't happen
-          // in the SDK's normal flow. Keep the queue open and wait for
-          // compaction_end (success → recovering, error → drain).
-          break;
-        }
-        if (this.overflowState === 'recovering') {
-          // Recovered turn just finished — fall through to normal completion.
-          this.overflowState = 'none';
+        // A Pi prompt may contain retries, compaction and queued continuations.
+        // `agent_end` only closes one internal run; `agent_settled` closes all of it.
+        break;
+
+      case 'agent_settled':
+        if (this.pendingOverflowError) {
+          yield { type: 'error', message: this.pendingOverflowError };
+          this.pendingOverflowError = null;
         }
         yield this.completeEvent();
         break;
@@ -307,8 +209,8 @@ export class PiEventAdapter extends BaseEventAdapter {
         break;
 
       case 'turn_end':
-        // Don't emit 'complete' here — agent_end handles it.
-        // Emitting from both causes duplicate messages in session persistence.
+        // Don't emit complete here. Pi owns the full run lifecycle and emits
+        // agent_settled after retries, compaction and queued continuations drain.
         this.currentTurnId = null;
         this.hasStreamedDeltas = false;
         this.hasEmittedFinalText = false;
@@ -392,12 +294,8 @@ export class PiEventAdapter extends BaseEventAdapter {
           // Context overflow: hand recovery to the SDK's _runAutoCompaction
           // and keep the UI quiet until we know the outcome (recovered turn
           // arrives, or compaction fails). Suppress the raw provider error.
-          if (
-            this.overflowState === 'none' &&
-            isContextOverflow(event.message as AssistantMessage, this.contextWindow)
-          ) {
-            this.overflowState = 'held';
-            this.heldOverflowError = msg.errorMessage;
+          if (isContextOverflow(event.message as AssistantMessage, this.contextWindow)) {
+            this.pendingOverflowError = msg.errorMessage;
             break;
           }
 
@@ -415,6 +313,7 @@ export class PiEventAdapter extends BaseEventAdapter {
 
         // Extract text content from the final assistant message
         const textContent = this.extractTextFromMessage(event.message);
+        this.pendingOverflowError = null;
         // Pi SDK stopReason: 'toolUse' means the model will call tools next (intermediate commentary),
         // 'stop'/'end_turn' means final response. Same logic as Claude's stop_reason === 'tool_use'.
         const isIntermediate = msg.stopReason === 'toolUse';
@@ -557,26 +456,12 @@ export class PiEventAdapter extends BaseEventAdapter {
       // ============================================================
 
       case 'compaction_start':
-        // Cancel the overflow fallback timer — the SDK is now actively
-        // recovering, so we no longer need the "no compaction event arrived"
-        // safety net. State transitions: held|awaiting → compacting.
-        if (this.overflowState === 'held' || this.overflowState === 'awaiting') {
-          this.cancelOverflowFallbackTimer();
-          this.overflowState = 'compacting';
-        }
         yield { type: 'status', message: 'Compacting context...', statusType: 'compacting' };
         break;
 
       case 'compaction_end': {
         const compactionEvent = event as Extract<AgentSessionEvent, { type: 'compaction_end' }>;
         if (compactionEvent.result && !compactionEvent.aborted) {
-          // Success: stay open and wait for the recovered agent_end. State
-          // transitions: compacting → recovering. Threshold-only compactions
-          // (state was 'none') just emit the info and continue normally.
-          if (this.overflowState === 'compacting') {
-            this.overflowState = 'recovering';
-            this.heldOverflowError = null;
-          }
           yield {
             type: 'info',
             message: 'Compacted context to fit within limits',
@@ -619,21 +504,7 @@ export class PiEventAdapter extends BaseEventAdapter {
               message: `Context compaction failed: ${compactionEvent.errorMessage}`,
             };
           }
-          // If we were holding the queue open for overflow recovery, finalize
-          // the turn now — no recovered agent_end will arrive on the failure
-          // path. pendingQueueComplete signals the caller to terminate the
-          // iterator since this is a non-agent_end event.
-          if (
-            this.overflowState === 'compacting' ||
-            this.overflowState === 'awaiting' ||
-            this.overflowState === 'held'
-          ) {
-            yield this.completeEvent();
-            this.pendingQueueComplete = true;
-            this.overflowState = 'none';
-            this.heldOverflowError = null;
-            this.cancelOverflowFallbackTimer();
-          }
+          this.pendingOverflowError = null;
         }
         break;
       }
@@ -659,6 +530,9 @@ export class PiEventAdapter extends BaseEventAdapter {
         // Queue contents are currently reflected by existing session/message state.
         // Ignore the event explicitly so newer Pi SDK sessions don't log noisy
         // "Unknown Pi event" warnings until we add a dedicated UI consumer.
+        break;
+
+      case 'entry_appended':
         break;
 
       default:

@@ -58,7 +58,6 @@ COPY packages/server-core/package.json packages/server-core/
 COPY packages/shared/package.json packages/shared/
 COPY packages/core/package.json packages/core/
 COPY packages/session-tools-core/package.json packages/session-tools-core/
-COPY packages/session-mcp-server/package.json packages/session-mcp-server/
 COPY packages/pi-agent-server/package.json packages/pi-agent-server/
 COPY packages/ui/package.json packages/ui/
 COPY packages/messaging-gateway/package.json packages/messaging-gateway/
@@ -73,11 +72,8 @@ RUN bun install --frozen-lockfile
 # Copy source
 COPY . .
 
-# Build MCP helper servers (bundled CJS — required by runtime-resolver.ts)
-RUN bun build packages/session-mcp-server/src/index.ts \
-      --outfile packages/session-mcp-server/dist/index.js --target node --format cjs && \
-    bun build packages/pi-agent-server/src/index.ts \
-      --outfile packages/pi-agent-server/dist/index.js --target node --format cjs
+# Build the Pi runtime subprocess.
+RUN bun run --cwd packages/pi-agent-server build
 
 # Build the WhatsApp worker bundle (CJS, Node target — Bun cannot run it).
 RUN bun run scripts/build-wa-worker.ts

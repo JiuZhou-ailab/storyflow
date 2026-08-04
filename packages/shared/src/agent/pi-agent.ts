@@ -136,9 +136,6 @@ export class PiAgent extends BaseAgent {
   // Pi session ID (managed by subprocess, reported back)
   private piSessionId: string | null = null;
 
-  // Callback server port (managed by subprocess)
-  private callbackPort: number = 0;
-
   // State
   private _isProcessing: boolean = false;
   private abortReason?: AbortReason;
@@ -195,21 +192,7 @@ export class PiAgent extends BaseAgent {
     toolName: string;
   }> = new Map();
 
-  // Pending tool executions (correlation map for subprocess tool_execute_request -> main process -> tool_execute_response)
-  private pendingToolExecutions: Map<string, {
-    resolve: (result: { content: string; isError: boolean }) => void;
-    reject: (error: Error) => void;
-  }> = new Map();
-
-  // Pending mini completions (correlation map for subprocess mini_completion_result)
-  private pendingMiniCompletions: Map<string, {
-    resolve: (text: string | null) => void;
-    reject: (error: Error) => void;
-  }> = new Map();
-
   // Pending llm_query calls (correlation map for subprocess llm_query_result).
-  // Separate from pendingMiniCompletions because the payload shape differs:
-  // queryLlm returns a full LLMQueryResult, not just text.
   private pendingLlmQueries: Map<string, {
     resolve: (result: LLMQueryResult) => void;
     reject: (error: Error) => void;
@@ -227,12 +210,6 @@ export class PiAgent extends BaseAgent {
     reject: (error: Error) => void;
   }> = new Map();
 
-  // Pending auto-compaction toggle requests
-  private pendingAutoCompactionToggles: Map<string, {
-    resolve: (enabled: boolean) => void;
-    reject: (error: Error) => void;
-  }> = new Map();
-
   // Pending in-place rewind requests (Pi navigateTree)
   private pendingRewindUserMessages: Map<string, {
     resolve: (result: { editorText?: string }) => void;
@@ -244,9 +221,6 @@ export class PiAgent extends BaseAgent {
     resolve: (updated: boolean) => void;
     reject: (error: Error) => void;
   }> = new Map();
-
-  // Current user message (for context in summarization)
-  private currentUserMessage: string = '';
 
   // Pool reference for convenience (from this.config.mcpPool)
   private get mcpPool(): McpClientPool | undefined { return this.config.mcpPool; }
@@ -296,17 +270,6 @@ export class PiAgent extends BaseAgent {
     if (config.miniModel) {
       this.adapter.setMiniModel(config.miniModel);
     }
-
-    // Wire the adapter's async overflow fallback into the event queue. The
-    // fallback fires when the SDK doesn't emit a compaction_start after a
-    // held overflow agent_end (e.g. _overflowRecoveryAttempted was already
-    // true). It runs outside adaptEvent() so it can't yield through the
-    // generator — instead, it calls these callbacks to enqueue the buffered
-    // error and terminate the iterator.
-    this.adapter.setOverflowFallbackHandlers(
-      (event) => this.eventQueue.enqueue(event),
-      () => this.eventQueue.complete(),
-    );
 
     if (!config.isHeadless) {
       this.startConfigWatcher();
@@ -358,8 +321,12 @@ export class PiAgent extends BaseAgent {
 
     const nodePath = runtime.paths?.node || process.execPath;
     const cwd = this.resolvedCwd();
+    const piServerIsScript = /\.(?:[cm]?js|ts)$/.test(piServerPath);
+    const executablePath = piServerIsScript ? nodePath : piServerPath;
 
-    this.debug(`Spawning Pi subprocess: ${nodePath} ${piServerPath}`);
+    this.debug(
+      `Spawning Pi subprocess: ${executablePath}${piServerIsScript ? ` ${piServerPath}` : ''}`,
+    );
     this.resetSubprocessErrorDedup();
 
     // Set up ready promise before spawning
@@ -374,7 +341,7 @@ export class PiAgent extends BaseAgent {
       : undefined;
 
     // Pi owns provider protocol handling; no fetch interceptor is preloaded.
-    const args = [piServerPath];
+    const args = piServerIsScript ? [piServerPath] : [];
 
     // Resolve credentials before spawning so we can derive AWS env vars
     // from the same fetch that produces piAuth (single source of truth).
@@ -405,7 +372,7 @@ export class PiAgent extends BaseAgent {
     const awsEnv = this.buildAwsEnv(piAuth, runtime);
 
     // Spawn the subprocess
-    const child = spawn(nodePath, args, {
+    const child = spawn(executablePath, args, {
       cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
@@ -493,17 +460,9 @@ export class PiAgent extends BaseAgent {
       this.debug(`Could not schedule OAuth refresh: ${error}`);
     }
 
-    // Ensure auto-compaction is explicitly enabled for embedded sessions.
-    // PI defaults this to enabled, but we set it proactively for clarity and resilience.
-    try {
-      const enabled = await this.requestSetAutoCompaction(true);
-      this.debug(`PI auto-compaction enabled: ${enabled}`);
-    } catch (error) {
-      this.debug(`Failed to configure PI auto-compaction (continuing): ${error instanceof Error ? error.message : String(error)}`);
-    }
-
     // Register session-scoped tools with the subprocess. Host-owned tools run
-    // in the main process; call_llm stays inside the Pi runtime.
+    // in the main process; call_llm stays inside the Pi runtime. Register before
+    // any command that creates the Pi session so cold start builds it only once.
     this.assertBackendSessionToolParity();
     const sessionToolDefs = getSessionToolProxyDefs();
 
@@ -523,6 +482,7 @@ export class PiAgent extends BaseAgent {
 
     // If pool has source tools, register them with the subprocess.
     this.registerPoolToolsWithSubprocess();
+
   }
 
   /**
@@ -850,8 +810,6 @@ export class PiAgent extends BaseAgent {
 
     switch (type) {
       case 'ready':
-        // Subprocess initialized, callback server listening
-        this.callbackPort = (msg.callbackPort as number) || 0;
         if (msg.sessionId) {
           this.piSessionId = msg.sessionId as string;
           this.config.onSdkSessionIdUpdate?.(this.piSessionId!);
@@ -883,16 +841,6 @@ export class PiAgent extends BaseAgent {
         });
         break;
 
-      case 'session_tool_completed':
-        // Session MCP tool completed -- fire callbacks (SubmitPlan, auth, etc.)
-        this.handleSessionToolCompleted(msg);
-        break;
-
-      case 'mini_completion_result':
-        // Response to a mini_completion request
-        this.handleMiniCompletionResult(msg);
-        break;
-
       case 'llm_query_result': {
         // Response to an llm_query request
         const id = msg.id as string;
@@ -920,11 +868,6 @@ export class PiAgent extends BaseAgent {
         this.handleCompactResult(msg);
         break;
 
-      case 'set_auto_compaction_result':
-        // Response to an auto-compaction toggle request
-        this.handleSetAutoCompactionResult(msg);
-        break;
-
       case 'rewind_user_message_result':
         this.handleRewindUserMessageResult(msg);
         break;
@@ -940,6 +883,22 @@ export class PiAgent extends BaseAgent {
           this.piSessionId = msg.sessionId as string;
           this.config.onSdkSessionIdUpdate?.(this.piSessionId!);
         }
+        break;
+
+      case 'extension_notification':
+        this.eventQueue.enqueue({
+          type: 'info',
+          message: String(msg.message || 'Extension notification'),
+          level: msg.level === 'warning' || msg.level === 'error' ? msg.level : 'info',
+        });
+        break;
+
+      case 'conversation_rewind_request':
+        void this.handleConversationRewindRequest(msg as {
+          requestId: string;
+          phase: 'prepare' | 'commit';
+          boundary: { retainThroughMessageId: string | null; draftText?: string };
+        });
         break;
 
       case 'error': {
@@ -964,25 +923,16 @@ export class PiAgent extends BaseAgent {
           });
         }
 
-        // Reject any pending mini completions so errors propagate immediately.
-        // mini_completion_error is an internal utility-path failure (title/summarization)
-        // and should not surface as a user-visible chat error.
-        for (const [id, pending] of this.pendingMiniCompletions) {
-          pending.reject(new Error(rawMessage));
-          this.pendingMiniCompletions.delete(id);
+        // A targeted llm_query_result follows llm_query_error and rejects only
+        // that request. Other subprocess errors invalidate every pending query.
+        if (errorCode !== 'llm_query_error') {
+          for (const [id, pending] of this.pendingLlmQueries) {
+            pending.reject(new Error(rawMessage));
+            this.pendingLlmQueries.delete(id);
+          }
         }
 
-        // Same treatment for pending llm_query calls. llm_query_error is also an
-        // internal utility-path code (call_llm): the dual-emit from the subprocess
-        // means a targeted `llm_query_result` is sent alongside this generic `error`
-        // to reject the specific pending promise — this loop is the defensive cleanup
-        // for queries that never got a targeted result (subprocess crash, etc.).
-        for (const [id, pending] of this.pendingLlmQueries) {
-          pending.reject(new Error(rawMessage));
-          this.pendingLlmQueries.delete(id);
-        }
-
-        if (errorCode === 'mini_completion_error' || errorCode === 'llm_query_error') {
+        if (errorCode === 'llm_query_error') {
           this.debug(`Ignoring ${errorCode} subprocess error in chat stream`);
           break;
         }
@@ -993,14 +943,10 @@ export class PiAgent extends BaseAgent {
           this.pendingEnsureSessionReady.delete(id);
         }
 
-        // Reject pending compact/toggle requests
+        // Reject pending compact requests
         for (const [id, pending] of this.pendingCompactions) {
           pending.reject(new Error(rawMessage));
           this.pendingCompactions.delete(id);
-        }
-        for (const [id, pending] of this.pendingAutoCompactionToggles) {
-          pending.reject(new Error(rawMessage));
-          this.pendingAutoCompactionToggles.delete(id);
         }
         for (const [id, pending] of this.pendingRuntimeConfigUpdates) {
           pending.reject(new Error(rawMessage));
@@ -1030,8 +976,8 @@ export class PiAgent extends BaseAgent {
           });
         }
 
-        // Note: The subprocess should follow this with a synthetic agent_end event
-        // which will call eventQueue.complete(). If it doesn't, handleSubprocessExit()
+        // The subprocess follows prompt failures with a synthetic agent_settled event.
+        // If it doesn't, handleSubprocessExit()
         // will complete the queue when the process exits.
         break;
       }
@@ -1047,24 +993,12 @@ export class PiAgent extends BaseAgent {
   private handleSubprocessEvent(event: Record<string, unknown>): void {
     // The subprocess sends Pi SDK AgentSessionEvent objects serialized as JSON.
     // Feed them through PiEventAdapter to convert to Craft AgentEvents.
-
-    // Detect session MCP tool completions (same pattern as in-process version)
     const eventType = event.type as string;
-    const adaptedEvent = event;
-
-    if (eventType === 'tool_execution_start') {
-      const toolName = event.toolName as string;
-      if (toolName?.startsWith('session__') || toolName?.startsWith('mcp__session__')) {
-        // Session tool tracking is handled by the subprocess; it sends
-        // session_tool_completed events when appropriate.
-      }
-
-    }
 
     // Adapt event to CraftAgentEvents
     // The event adapter expects typed PiAgentEvent/AgentSessionEvent objects,
     // but since we're receiving plain JSON, we cast through unknown.
-    for (const agentEvent of this.adapter.adaptEvent(adaptedEvent as any)) {
+    for (const agentEvent of this.adapter.adaptEvent(event as any)) {
       // Track Read tool calls for prerequisite checking
       if (agentEvent.type === 'tool_start' && agentEvent.toolName === 'Read') {
         this.prerequisiteManager.trackReadTool(agentEvent.input as Record<string, unknown>);
@@ -1093,13 +1027,9 @@ export class PiAgent extends BaseAgent {
       this.eventQueue.enqueue(agentEvent);
     }
 
-    // Turn-completion is now adapter-driven so overflow recovery can hold the
-    // queue open across the SDK's compaction → agent.continue() sequence
-    // (see PiEventAdapter overflow state machine). The adapter returns true
-    // when the queue should terminate — either on a normal agent_end with no
-    // recovery in flight, or on a compaction_end failure that drains a held
-    // overflow.
-    if (this.adapter.shouldCompleteQueue(eventType === 'agent_end')) {
+    // Pi emits agent_settled only after retries, compaction and queued
+    // continuations have drained. It is the sole stream completion signal.
+    if (eventType === 'agent_settled') {
       this.eventQueue.complete();
     }
   }
@@ -1512,35 +1442,6 @@ export class PiAgent extends BaseAgent {
 
 
   /**
-   * Handle session_tool_completed from subprocess.
-   *
-   * NOTE: For proxy-executed session tools, callbacks (onPlanSubmitted, etc.)
-   * are already fired by executeSessionTool() via the SessionToolContext.
-   * The subprocess sends this event because handleSessionEvent() detects the
-   * mcp__session__ prefix, but we intentionally skip handleSessionMcpToolCompletion()
-   * here to avoid double-firing callbacks.
-   */
-  private handleSessionToolCompleted(msg: Record<string, unknown>): void {
-    const toolName = msg.toolName as string;
-    const isError = msg.isError as boolean;
-    this.debug(`Session tool completed: ${toolName} (isError=${isError})`);
-    // Callbacks already handled by executeSessionTool() — no-op.
-  }
-
-  /**
-   * Handle mini_completion_result from subprocess.
-   */
-  private handleMiniCompletionResult(msg: Record<string, unknown>): void {
-    const id = msg.id as string;
-    const text = msg.text as string | null;
-    const pending = this.pendingMiniCompletions.get(id);
-    if (pending) {
-      this.pendingMiniCompletions.delete(id);
-      pending.resolve(text);
-    }
-  }
-
-  /**
    * Handle ensure_session_ready_result from subprocess.
    */
   private handleEnsureSessionReadyResult(msg: Record<string, unknown>): void {
@@ -1585,24 +1486,6 @@ export class PiAgent extends BaseAgent {
     });
   }
 
-  /**
-   * Handle set_auto_compaction_result from subprocess.
-   */
-  private handleSetAutoCompactionResult(msg: Record<string, unknown>): void {
-    const id = msg.id as string;
-    const success = Boolean(msg.success);
-    const pending = this.pendingAutoCompactionToggles.get(id);
-    if (!pending) return;
-
-    this.pendingAutoCompactionToggles.delete(id);
-    if (!success) {
-      pending.reject(new Error(String(msg.errorMessage || 'Failed to set auto-compaction')));
-      return;
-    }
-
-    pending.resolve(Boolean(msg.enabled));
-  }
-
   private handleRewindUserMessageResult(msg: Record<string, unknown>): void {
     const id = msg.id as string;
     const pending = this.pendingRewindUserMessages.get(id);
@@ -1617,6 +1500,26 @@ export class PiAgent extends BaseAgent {
     pending.resolve({
       editorText: typeof msg.editorText === 'string' ? msg.editorText : undefined,
     });
+  }
+
+  private async handleConversationRewindRequest(msg: {
+    requestId: string;
+    phase: 'prepare' | 'commit';
+    boundary: { retainThroughMessageId: string | null; draftText?: string };
+  }): Promise<void> {
+    try {
+      const project = this.config.onConversationRewind;
+      if (!project) throw new Error('Product transcript rewind is unavailable');
+      await project(msg.boundary, { validateOnly: msg.phase === 'prepare' });
+      this.send({ type: 'conversation_rewind_response', requestId: msg.requestId, success: true });
+    } catch (error) {
+      this.send({
+        type: 'conversation_rewind_response',
+        requestId: msg.requestId,
+        success: false,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /**
@@ -1660,14 +1563,7 @@ export class PiAgent extends BaseAgent {
       this.eventQueue.complete();
     }
 
-    // Reject pending mini completions with error (not null) so callers
-    // get a meaningful error instead of silently returning "no response"
     const exitReason = signal ? `signal ${signal}` : `code ${code}`;
-    for (const [, pending] of this.pendingMiniCompletions) {
-      pending.reject(new Error(`Pi subprocess exited unexpectedly (${exitReason})`));
-    }
-    this.pendingMiniCompletions.clear();
-
     // Reject pending llm_query calls (call_llm in-flight during subprocess crash)
     for (const [, pending] of this.pendingLlmQueries) {
       pending.reject(new Error(`Pi subprocess exited unexpectedly (${exitReason})`));
@@ -1680,16 +1576,11 @@ export class PiAgent extends BaseAgent {
     }
     this.pendingEnsureSessionReady.clear();
 
-    // Reject pending compact/toggle requests
+    // Reject pending compact requests
     for (const [, pending] of this.pendingCompactions) {
       pending.reject(new Error(`Pi subprocess exited unexpectedly (${exitReason})`));
     }
     this.pendingCompactions.clear();
-
-    for (const [, pending] of this.pendingAutoCompactionToggles) {
-      pending.reject(new Error(`Pi subprocess exited unexpectedly (${exitReason})`));
-    }
-    this.pendingAutoCompactionToggles.clear();
 
     for (const [, pending] of this.pendingRewindUserMessages) {
       pending.reject(new Error(`Pi subprocess exited unexpectedly (${exitReason})`));
@@ -1700,12 +1591,6 @@ export class PiAgent extends BaseAgent {
       pending.reject(new Error(`Pi subprocess exited unexpectedly (${exitReason})`));
     }
     this.pendingRuntimeConfigUpdates.clear();
-
-    // Reject all pending tool executions
-    for (const [, pending] of this.pendingToolExecutions) {
-      pending.reject(new Error('Pi subprocess exited'));
-    }
-    this.pendingToolExecutions.clear();
 
   }
 
@@ -1770,36 +1655,6 @@ export class PiAgent extends BaseAgent {
       });
 
       this.send({ type: 'compact', id, customInstructions });
-    });
-  }
-
-  /**
-   * Ask subprocess to enable/disable auto-compaction.
-   */
-  private async requestSetAutoCompaction(enabled: boolean): Promise<boolean> {
-    await this.ensureSubprocess();
-
-    const id = `set-auto-compaction-${++this.rpcIdCounter}`;
-    const timeoutMs = 15_000;
-
-    return new Promise<boolean>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pendingAutoCompactionToggles.delete(id);
-        reject(new Error(`set_auto_compaction timed out after ${Math.floor(timeoutMs / 1000)}s`));
-      }, timeoutMs);
-
-      this.pendingAutoCompactionToggles.set(id, {
-        resolve: (value) => {
-          clearTimeout(timer);
-          resolve(value);
-        },
-        reject: (error) => {
-          clearTimeout(timer);
-          reject(error);
-        },
-      });
-
-      this.send({ type: 'set_auto_compaction', id, enabled });
     });
   }
 
@@ -1870,9 +1725,10 @@ export class PiAgent extends BaseAgent {
 
   /**
    * In-place rewind via Pi navigateTree (same session file, new leaf).
-   * userOrdinal is 0-based among user messages on the active branch.
    */
-  override async rewindUserMessage(userOrdinal: number): Promise<{ editorText?: string }> {
+  override async rewindUserMessage(
+    visibleUserMessageId: string,
+  ): Promise<{ editorText?: string }> {
     await this.requestEnsureSessionReady();
     await this.ensureSubprocess();
 
@@ -1896,7 +1752,11 @@ export class PiAgent extends BaseAgent {
         },
       });
 
-      this.send({ type: 'rewind_user_message', id, userOrdinal });
+      this.send({
+        type: 'rewind_user_message',
+        id,
+        visibleUserMessageId,
+      });
     });
   }
 
@@ -1914,7 +1774,6 @@ export class PiAgent extends BaseAgent {
     this._isProcessing = true;
     this.abortReason = undefined;
     this.eventQueue.reset();
-    this.currentUserMessage = message;
     this.adapter.startTurn();
 
     // Fire UserPromptSubmit hook event (fire-and-forget)
@@ -2059,6 +1918,7 @@ export class PiAgent extends BaseAgent {
         systemPrompt,
         dynamicSystemPrompt,
         images: images.length > 0 ? images : undefined,
+        rewindBoundary: options?.rewindBoundary,
       });
 
       // Yield events as they arrive. After each tool_result, check whether
@@ -2252,12 +2112,6 @@ export class PiAgent extends BaseAgent {
     }
     this.pendingPermissions.clear();
 
-    // Reject all pending tool executions
-    for (const [, pending] of this.pendingToolExecutions) {
-      pending.reject(new Error(`Force aborted: ${reason}`));
-    }
-    this.pendingToolExecutions.clear();
-
     // Signal turn complete to wake up any waiting consumers
     this.eventQueue.complete();
 
@@ -2412,9 +2266,6 @@ export class PiAgent extends BaseAgent {
     }
     this.subprocessReady = null;
     this.subprocessReadyResolve = null;
-    this.callbackPort = 0;
-    this.adapter.resetOverflowState();
-
     if (result) {
       this.debug(`Pi subprocess ${pid ?? '(unknown pid)'} stopped for restart: code=${result.code}, signal=${result.signal}`);
     } else {
@@ -2446,10 +2297,6 @@ export class PiAgent extends BaseAgent {
 
     this.subprocessReady = null;
     this.subprocessReadyResolve = null;
-    this.callbackPort = 0;
-    // Clear any in-flight overflow-recovery state so a stale fallback timer
-    // doesn't fire on a torn-down adapter.
-    this.adapter.resetOverflowState();
   }
 
   // ============================================================
@@ -2457,34 +2304,18 @@ export class PiAgent extends BaseAgent {
   // ============================================================
 
   /**
-   * Run a simple text completion via the subprocess.
-   * Sends a mini_completion request and waits for the result.
+   * Run a simple text completion through the canonical llm_query RPC.
    */
   async runMiniCompletion(prompt: string): Promise<string | null> {
-    // If subprocess isn't running, spawn it
-    await this.ensureSubprocess();
-
-    const id = `mini-${++this.rpcIdCounter}`;
-    const resultPromise = new Promise<string | null>((resolve, reject) => {
-      this.pendingMiniCompletions.set(id, { resolve, reject });
-    });
-
-    this.send({ type: 'mini_completion', id, prompt });
-
-    // Keep this aligned with the subprocess-side queryLlm timeout.
-    const timeout = new Promise<string | null>((resolve) => {
-      setTimeout(() => {
-        if (this.pendingMiniCompletions.has(id)) {
-          this.pendingMiniCompletions.delete(id);
-          this.debug(`[runMiniCompletion] Timed out after ${LLM_QUERY_TIMEOUT_MS / 1000}s`);
-          resolve(null);
-        }
-      }, LLM_QUERY_TIMEOUT_MS);
-    });
-
-    const text = await Promise.race([resultPromise, timeout]);
-    this.debug(`[runMiniCompletion] Result: ${text ? `"${text.slice(0, 200)}"` : 'null'}`);
-    return text;
+    try {
+      const result = await this.queryLlm({ prompt });
+      const text = result.text || null;
+      this.debug(`[runMiniCompletion] Result: ${text ? `"${text.slice(0, 200)}"` : 'null'}`);
+      return text;
+    } catch (error) {
+      this.debug(`[runMiniCompletion] Failed: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
   }
 
   /**

@@ -1,3 +1,7 @@
+// input: Synthetic subprocess messages and PiAgent runtime configuration
+// output: Assertions for user-visible error and Extension notification mapping
+// pos: Regression coverage for the Pi subprocess protocol boundary
+
 import { describe, expect, it } from 'bun:test'
 import { PiAgent } from '../pi-agent.ts'
 import type { BackendConfig } from '../backend/types.ts'
@@ -22,6 +26,25 @@ function createConfig(overrides: Partial<BackendConfig> = {}): BackendConfig {
 }
 
 describe('PiAgent subprocess error handling', () => {
+  it('preserves Extension notification severity', () => {
+    const agent = new PiAgent(createConfig())
+    const enqueued: unknown[] = []
+    ;(agent as any).eventQueue.enqueue = (event: unknown) => enqueued.push(event)
+
+    ;(agent as any).handleLine(JSON.stringify({
+      type: 'extension_notification',
+      message: 'No checkpoints available',
+      level: 'warning',
+    }))
+
+    expect(enqueued).toEqual([{
+      type: 'info',
+      message: 'No checkpoints available',
+      level: 'warning',
+    }])
+    agent.destroy()
+  })
+
   it('maps raw HTML subprocess errors to typed proxy_error events', () => {
     const agent = new PiAgent(createConfig())
 
@@ -117,7 +140,7 @@ describe('PiAgent subprocess error handling', () => {
     agent.destroy()
   })
 
-  it('does not enqueue chat errors for mini_completion_error messages', () => {
+  it('does not enqueue chat errors for llm_query_error messages', () => {
     const agent = new PiAgent(createConfig())
 
     const enqueued: any[] = []
@@ -125,23 +148,13 @@ describe('PiAgent subprocess error handling', () => {
       enqueued.push(event)
     }
 
-    let rejectedMessage = ''
-    ;(agent as any).pendingMiniCompletions.set('mini-1', {
-      resolve: () => {},
-      reject: (error: Error) => {
-        rejectedMessage = error.message
-      },
-    })
-
     ;(agent as any).handleLine(JSON.stringify({
       type: 'error',
-      code: 'mini_completion_error',
+      code: 'llm_query_error',
       message: '<html><head><title>400 Bad Request</title></head><body><center><h1>400 Bad Request</h1></center><hr><center>cloudflare</center></body></html>',
     }))
 
     expect(enqueued).toHaveLength(0)
-    expect((agent as any).pendingMiniCompletions.size).toBe(0)
-    expect(rejectedMessage).toContain('400 Bad Request')
 
     agent.destroy()
   })

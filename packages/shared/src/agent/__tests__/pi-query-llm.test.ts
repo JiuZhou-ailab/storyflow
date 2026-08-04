@@ -1,15 +1,12 @@
 // input: PiAgent subprocess RPC requests and synthetic JSONL responses
-// output: Round-trip regression coverage for utility queries and runtime toggles
+// output: Round-trip regression coverage for the canonical utility-query protocol
 // pos: Client-side Pi subprocess protocol contract tests
 
 /**
  * Tests for PiAgent.queryLlm — the subprocess RPC that powers `call_llm`.
  *
- * These tests are the drift guard for issue #596. The main-process side used to
- * route queryLlm through the mini_completion envelope which only carried `prompt`,
- * silently dropping model/systemPrompt/outputSchema/etc. The round-trip invariant
- * test below ensures the full request shape propagates end-to-end and fails loudly
- * if someone adds a new LLMQueryRequest field and forgets to plumb it through.
+ * These tests are the drift guard for issue #596. Utility completions and call_llm
+ * share this one request envelope so model/systemPrompt/outputSchema cannot drift.
  */
 import { describe, expect, it } from 'bun:test';
 import { PiAgent } from '../pi-agent.ts';
@@ -58,28 +55,27 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe('PiAgent.queryLlm — subprocess RPC round-trip', () => {
-  it('round-trips explicit auto-compaction enablement through the subprocess protocol', async () => {
+  it('routes mini completions through llm_query', async () => {
     const agent = new PiAgent(createConfig());
     const { sent } = installFakeSubprocess(agent);
 
-    const pending = (agent as any).requestSetAutoCompaction(true) as Promise<boolean>;
+    const pending = agent.runMiniCompletion('Summarize this');
     await flushMicrotasks();
 
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({
-      type: 'set_auto_compaction',
-      enabled: true,
+      type: 'llm_query',
+      request: { prompt: 'Summarize this' },
     });
 
     (agent as any).handleLine(JSON.stringify({
-      type: 'set_auto_compaction_result',
+      type: 'llm_query_result',
       id: sent[0]!.id,
-      success: true,
-      enabled: true,
+      result: { text: 'summary', model: 'test-model' },
     }));
 
-    await expect(pending).resolves.toBe(true);
-    expect((agent as any).pendingAutoCompactionToggles.size).toBe(0);
+    await expect(pending).resolves.toBe('summary');
+    expect((agent as any).pendingLlmQueries.size).toBe(0);
     agent.destroy();
   });
 
@@ -165,17 +161,23 @@ describe('PiAgent.queryLlm — subprocess RPC round-trip', () => {
     await flushMicrotasks();
     expect(sent).toHaveLength(1);
 
-    // Simulate the subprocess dual-emit: generic `error` first (triggers
-    // centralized auth refresh), then the targeted `llm_query_result` that
-    // rejects the specific promise.
+    // Simulate the subprocess dual-emit: generic `error` triggers centralized
+    // auth refresh, then the targeted result rejects this specific promise.
     (agent as any).handleLine(JSON.stringify({
       type: 'error',
       code: 'llm_query_error',
       message: 'HTTP 401: Unauthorized',
     }));
+    expect((agent as any).pendingLlmQueries.size).toBe(1);
 
-    // The generic error loop already rejected the pending query, so the targeted
-    // result handler is a no-op. That's fine — the dual-emit is defense-in-depth.
+    (agent as any).handleLine(JSON.stringify({
+      type: 'llm_query_result',
+      id: sent[0]!.id,
+      result: null,
+      errorMessage: 'HTTP 401: Unauthorized',
+      errorCode: 'llm_query_error',
+    }));
+
     let rejection: Error | null = null;
     try {
       await pending;
@@ -191,6 +193,38 @@ describe('PiAgent.queryLlm — subprocess RPC round-trip', () => {
     expect(refreshAttempts).toBe(1);
     expect((agent as any).pendingLlmQueries.size).toBe(0);
 
+    agent.destroy();
+  });
+
+  it('does not reject sibling queries when one llm_query fails', async () => {
+    const agent = new PiAgent(createConfig());
+    const { sent } = installFakeSubprocess(agent);
+
+    const failed = agent.queryLlm({ prompt: 'fails' });
+    const succeeds = agent.queryLlm({ prompt: 'succeeds' });
+    await flushMicrotasks();
+
+    (agent as any).handleLine(JSON.stringify({
+      type: 'error',
+      code: 'llm_query_error',
+      message: 'HTTP 503: unavailable',
+    }));
+    (agent as any).handleLine(JSON.stringify({
+      type: 'llm_query_result',
+      id: sent[0]!.id,
+      result: null,
+      errorMessage: 'HTTP 503: unavailable',
+    }));
+
+    await expect(failed).rejects.toThrow('503');
+    expect((agent as any).pendingLlmQueries.size).toBe(1);
+
+    (agent as any).handleLine(JSON.stringify({
+      type: 'llm_query_result',
+      id: sent[1]!.id,
+      result: { text: 'ok', model: 'test-model' },
+    }));
+    await expect(succeeds).resolves.toMatchObject({ text: 'ok' });
     agent.destroy();
   });
 

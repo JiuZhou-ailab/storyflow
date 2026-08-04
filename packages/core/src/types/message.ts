@@ -585,7 +585,7 @@ export type AgentEventUsage = TurnUsage;
  */
 export type AgentEvent =
   | { type: 'status'; message: string; statusType?: 'compacting' }
-  | { type: 'info'; message: string; statusType?: 'compaction_complete' }
+  | { type: 'info'; message: string; statusType?: 'compaction_complete'; level?: 'info' | 'warning' | 'error' }
   | { type: 'text_delta'; text: string; turnId?: string; parentToolUseId?: string }
   | { type: 'text_complete'; text: string; isIntermediate?: boolean; turnId?: string; parentToolUseId?: string; sdkTurnAnchor?: string }
   | { type: 'tool_start'; toolName: string; toolUseId: string; input: Record<string, unknown>; intent?: string; displayName?: string; turnId?: string; parentToolUseId?: string; toolDisplayMeta?: ToolDisplayMeta }

@@ -56,7 +56,6 @@ export interface ISessionManager {
   rewindUserMessage(
     sessionId: string,
     userMessageId: string,
-    options?: { userOrdinal?: number; content?: string },
   ): Promise<{ draftText: string }>
 
   // ---------------------------------------------------------------------------
