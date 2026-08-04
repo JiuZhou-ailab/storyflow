@@ -651,7 +651,7 @@ export function createSlashFolderItems(recentFolders: string[], homeDir?: string
 }
 
 export function parseInlineSlashCommandQuery(textBeforeCursor: string): { start: number; filter: string } | null {
-  const slashMatch = textBeforeCursor.match(/(?:^|\s)\/([\p{L}\p{N}\p{M}_\-.]{0,100})$/u)
+  const slashMatch = textBeforeCursor.match(/(?:^|\s|[^\x00-\x7F])\/([\p{L}\p{N}\p{M}_\-.]{0,100})$/u)
   if (!slashMatch) return null
 
   return {

@@ -96,6 +96,12 @@ describe('slash skill commands', () => {
     expect(parseInlineSlashCommandQuery('please /review-pr')).toEqual({ start: 7, filter: 'review-pr' })
   })
 
+  it('opens slash commands after no-space CJK text without treating latin words as commands', () => {
+    expect(parseInlineSlashCommandQuery('帮我/')).toEqual({ start: 2, filter: '' })
+    expect(parseInlineSlashCommandQuery('帮我/审查')).toEqual({ start: 2, filter: '审查' })
+    expect(parseInlineSlashCommandQuery('path/to')).toBeNull()
+  })
+
   it('builds sorted folder items from precomputed folder display data', () => {
     const items = createSlashFolderItems([
       '/Users/zjding/work/beta',
