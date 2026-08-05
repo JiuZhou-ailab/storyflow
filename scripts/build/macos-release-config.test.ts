@@ -119,6 +119,7 @@ describe('macOS release configuration', () => {
   test('official release workflow validates versions and never builds Windows with dev runtime', () => {
     const workflow = readRepoFile('.github/workflows/release.yml');
     const validateWorkflow = readRepoFile('.github/workflows/validate.yml');
+    const windowsBuild = readRepoFile('scripts/build/win32.ts');
     const packageManifest = JSON.parse(readRepoFile('package.json')) as {
       scripts: Record<string, string>;
     };
@@ -130,6 +131,7 @@ describe('macOS release configuration', () => {
     expect(validateWorkflow).toContain('run: bun run validate:ci');
     expect(workflow).toContain('run: bun run electron:dist:win');
     expect(workflow).not.toContain('run: bun run electron:dist:dev:win');
+    expect(windowsBuild).toMatch(/buildMainProcess\(config\);\n\s+stageSubprocessResources\(config\);/);
   });
 
   test('publishes the curated version note across release surfaces', () => {

@@ -19,7 +19,6 @@ import {
 } from "./build/common.ts";
 import { packageDarwin } from "./build/darwin.ts";
 import { packageLinux } from "./build/linux.ts";
-import { stageSubprocessResources } from "./build/resource-staging.ts";
 import { buildElectronAppWindows, packageWindows } from "./build/win32.ts";
 
 type BuildPlatform = "darwin" | "linux" | "win32";
@@ -143,7 +142,6 @@ async function buildPackage(config: BuildConfig): Promise<void> {
   process.env.CRAFT_BUILD_ARCH = config.arch;
 
   if (config.platform === "win32") {
-    stageSubprocessResources(config);
     await buildElectronAppWindows(config);
     await packageWindows(config);
   } else {

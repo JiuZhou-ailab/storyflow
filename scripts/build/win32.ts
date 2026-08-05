@@ -1,3 +1,7 @@
+// input: Windows build configuration, downloaded runtimes, and Electron sources
+// output: Built and packaged Windows Electron artifacts with staged subprocess resources
+// pos: Windows-specific release build implementation
+
 /**
  * Windows-specific build logic (Node.js only - no Bun dependencies)
  *
@@ -9,6 +13,7 @@ import { execSync } from 'child_process';
 import { existsSync, mkdirSync, rmSync, readdirSync, statSync, cpSync } from 'fs';
 import { join } from 'path';
 import type { BuildConfig } from './common';
+import { stageSubprocessResources } from './resource-staging';
 
 /**
  * Sleep helper (Node.js replacement for Bun.sleep)
@@ -109,6 +114,7 @@ export async function buildElectronAppWindows(config: BuildConfig): Promise<void
 
   // Build main process with shared auth-aware release guards
   buildMainProcess(config);
+  stageSubprocessResources(config);
 
   // Build preload - invoke esbuild directly via node
   console.log('  Building preload...');
