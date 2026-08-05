@@ -140,6 +140,7 @@ export type ClientAuthNeonService = Pick<
   | 'getClientConfig'
   | 'authenticateWithEmailPassword'
   | 'verifyEmailOtp'
+  | 'getSessionToken'
   | 'getOrganizationToken'
   | 'verifyToken'
 >
@@ -416,8 +417,9 @@ export function createClientAuthService(
 
   async function getNeonProviderToken(sessionCookie: string): Promise<string> {
     const organizationId = readEnv(config.neonAuth?.organizationId)
-    if (!neonAuth || !organizationId) {
-      throw new Error('Neon Auth organization is not configured')
+    if (!neonAuth) throw new Error('Neon Auth is not configured')
+    if (!organizationId) {
+      return neonAuth.getSessionToken({ sessionCookie, origin: config.neonAuthOrigin })
     }
     return neonAuth.getOrganizationToken({
       sessionCookie,

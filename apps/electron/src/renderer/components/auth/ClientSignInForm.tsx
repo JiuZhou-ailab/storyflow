@@ -102,7 +102,7 @@ export function ClientSignInForm({
         })
         if (result.status === 'verification-required') {
           setVerificationEmail(identifier.trim().toLowerCase())
-          setRegistrationNotice('验证码已发送到受邀邮箱，验证后将自动登录。')
+          setRegistrationNotice('验证码已发送到注册邮箱，验证后将自动登录。')
           return
         }
       } else {
@@ -420,11 +420,8 @@ function formatClientAuthErrorMessage(error: unknown): string {
   if (message === 'A full email address is required to create an account') {
     return '创建账号需要输入完整邮箱。'
   }
-  if (message === 'Invitation is invalid') {
-    return '该邮箱尚未接受 Storyflow 邀请，请确认管理员已发送邀请。'
-  }
   if (message === 'Invitation required') {
-    return '该账号尚未获邀，请使用收到邀请的邮箱注册。'
+    return '该邮箱尚未加入当前组织，请联系管理员确认邀请状态。'
   }
   if (message === 'Neon Auth session is required') return '登录状态已失效，请重新登录。'
   if (message === 'Invalid OTP' || message === 'INVALID_OTP') return '邮箱验证码不正确或已过期。'
