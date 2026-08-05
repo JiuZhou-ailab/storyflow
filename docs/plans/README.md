@@ -16,3 +16,4 @@ Implementation plans for scoped product and architecture changes.
 - `2026-06-09-formal-novel-surface-audit.md` - formal novel release-surface audit and cleanup recommendations.
 - `2026-06-09-performance-simplicity-parallel-plan.md` - parallel agent plan for performance and project simplicity work.
 - `2026-07-23-runtime-domain-separation.md` - minimal shared-runtime plan for application-level free conversations and project conversations.
+- `2026-08-05-invite-only-email-auth.md` - invite-only Neon Organization email admission.

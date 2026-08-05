@@ -1,5 +1,5 @@
 // input: Neon Auth configuration and bearer JWTs from browser login flows.
-// output: Public Neon Auth client config and normalized Web UI session identities.
+// output: Public Neon Auth config, normalized identities, and organization-aware session renewal.
 // pos: Identity bridge between Neon Auth and the Craft Web UI session gateway.
 
 import { createRemoteJWKSet, customFetch, jwtVerify, type JWTPayload } from 'jose'
@@ -14,6 +14,7 @@ export interface NeonAuthTokenPayload {
   emailVerified?: unknown
   name?: unknown
   banned?: unknown
+  o?: unknown
 }
 
 export interface NeonAuthIdentity {
@@ -23,6 +24,8 @@ export interface NeonAuthIdentity {
   email?: string
   emailVerified?: boolean
   name?: string
+  organizationId?: string
+  organizationRole?: string
 }
 
 export type NeonAuthEmailPasswordMode = 'sign-in' | 'sign-up'
@@ -36,6 +39,18 @@ export interface NeonAuthEmailPasswordInput {
   callbackURL?: string
 }
 
+export interface NeonAuthEmailOtpInput {
+  email: string
+  otp: string
+  origin?: string
+}
+
+export interface NeonAuthOrganizationTokenInput {
+  sessionCookie: string
+  organizationId: string
+  origin?: string
+}
+
 export interface NeonAuthEmailPasswordUser {
   id?: string
   email?: string
@@ -44,7 +59,7 @@ export interface NeonAuthEmailPasswordUser {
 }
 
 export type NeonAuthEmailPasswordResult =
-  | { status: 'authenticated', token: string, user?: NeonAuthEmailPasswordUser }
+  | { status: 'authenticated', token: string, sessionCookie?: string, user?: NeonAuthEmailPasswordUser }
   | { status: 'verification-required', user?: NeonAuthEmailPasswordUser }
 
 export interface NeonAuthClientConfig {
@@ -73,6 +88,7 @@ export interface NeonAuthConfig {
   issuer?: string
   audience?: string
   usernameEmailDomain?: string
+  organizationId?: string
   emailSignUpEnabled?: boolean
   fetch?: FetchLike
   tokenVerifier?: NeonAuthTokenVerifier
@@ -80,6 +96,7 @@ export interface NeonAuthConfig {
 
 interface NormalizedNeonAuthConfig extends NeonAuthVerifierContext {
   emailSignUpEnabled: boolean
+  organizationId?: string
   fetch?: FetchLike
   tokenVerifier?: NeonAuthTokenVerifier
 }
@@ -129,7 +146,14 @@ export class NeonAuthService {
       throw new Error('Invalid Neon Auth token')
     }
 
-    return normalizeNeonAuthIdentity(payload)
+    const identity = normalizeNeonAuthIdentity(payload)
+    if (
+      this.config.organizationId
+      && (identity.organizationId !== this.config.organizationId || !identity.organizationRole)
+    ) {
+      throw new Error('Invitation required')
+    }
+    return identity
   }
 
   async authenticateWithEmailPassword(input: NeonAuthEmailPasswordInput): Promise<NeonAuthEmailPasswordResult> {
@@ -181,8 +205,9 @@ export class NeonAuthService {
       throw new Error(formatNeonAuthError(`Neon Auth email ${path} failed`, responseBody, res.status))
     }
 
+    const sessionCookie = readSessionCookieHeader(res.headers)
     const token = readAuthAccessToken(responseBody, res.headers)
-      ?? await this.fetchJsonWebToken(readSessionCookieHeader(res.headers), origin)
+      ?? await this.fetchJsonWebToken(sessionCookie, origin)
     const user = readEmailPasswordUser(responseBody)
     if (input.mode === 'sign-up' && user?.emailVerified === false) {
       return {
@@ -194,6 +219,7 @@ export class NeonAuthService {
       return {
         status: 'authenticated',
         token,
+        ...(sessionCookie ? { sessionCookie } : {}),
         ...(user ? { user } : {}),
       }
     }
@@ -206,6 +232,109 @@ export class NeonAuthService {
     }
 
     throw new Error(`Neon Auth email ${path} response did not include an access token`)
+  }
+
+  async verifyEmailOtp(input: NeonAuthEmailOtpInput): Promise<void> {
+    if (!this.config) throw new Error('Neon Auth is not configured')
+    const email = normalizeSignUpEmailIdentifier(readString(input.email))?.email
+    const otp = readString(input.otp)
+    if (!email) throw new Error('A full email address is required')
+    if (!otp || !/^\d{6}$/.test(otp)) throw new Error('A 6-digit verification code is required')
+
+    const res = await (this.config.fetch ?? fetch)(`${this.config.baseUrl}/email-otp/verify-email`, {
+      method: 'POST',
+      headers: buildJsonHeaders(input.origin),
+      body: JSON.stringify({ email, otp }),
+    })
+    const body = await parseJsonObject(res)
+    if (!res.ok) throw new Error(formatNeonAuthError('Neon Auth email verification failed', body, res.status))
+  }
+
+  async getOrganizationToken(input: NeonAuthOrganizationTokenInput): Promise<string> {
+    if (!this.config) throw new Error('Neon Auth is not configured')
+    const sessionCookie = readString(input.sessionCookie)
+    const organizationId = readString(input.organizationId)
+    if (!sessionCookie) throw new Error('Neon Auth session cookie is required')
+    if (!organizationId) throw new Error('Neon Auth organization is required')
+
+    let active = await this.postWithSession('/organization/set-active', { organizationId }, sessionCookie, input.origin)
+    if (!active.ok) {
+      if (active.status === 401) throw new Error('Neon Auth session is required')
+      if (active.status !== 403) {
+        throw new Error(formatNeonAuthError('Neon Auth organization activation failed', active.body, active.status))
+      }
+      const invitations = await this.fetchUserInvitations(sessionCookie, input.origin)
+      const invitation = invitations.find((candidate) => (
+        readString(readValue(candidate, ['organizationId', 'organization_id'])) === organizationId
+        && readString(readValue(candidate, ['status'])) === 'pending'
+      ))
+      const invitationId = readString(readValue(invitation, ['id']))
+      if (!invitationId) throw new Error('Invitation required')
+
+      const accepted = await this.postWithSession(
+        '/organization/accept-invitation',
+        { invitationId },
+        sessionCookie,
+        input.origin,
+      )
+      if (!accepted.ok) {
+        if (accepted.status === 401) throw new Error('Neon Auth session is required')
+        throw new Error(formatNeonAuthError('Neon Auth invitation acceptance failed', accepted.body, accepted.status))
+      }
+      active = await this.postWithSession('/organization/set-active', { organizationId }, sessionCookie, input.origin)
+      if (!active.ok) {
+        if (active.status === 401) throw new Error('Neon Auth session is required')
+        throw new Error(formatNeonAuthError('Neon Auth organization activation failed', active.body, active.status))
+      }
+    }
+
+    const token = await this.fetchJsonWebToken(sessionCookie, readString(input.origin))
+    if (!token) throw new Error('Neon Auth JWT exchange response did not include a token')
+    return token
+  }
+
+  private async postWithSession(
+    path: string,
+    body: Record<string, unknown>,
+    sessionCookie: string,
+    origin: string | undefined,
+  ): Promise<{ ok: boolean, status: number, body: Record<string, unknown> }> {
+    const res = await (this.config?.fetch ?? fetch)(`${this.config?.baseUrl}${path}`, {
+      method: 'POST',
+      headers: {
+        ...buildJsonHeaders(origin),
+        Cookie: sessionCookie,
+      },
+      body: JSON.stringify(body),
+    })
+    return { ok: res.ok, status: res.status, body: await parseJsonObject(res) }
+  }
+
+  private async fetchUserInvitations(
+    sessionCookie: string,
+    origin: string | undefined,
+  ): Promise<Record<string, unknown>[]> {
+    const headers: Record<string, string> = { Accept: 'application/json', Cookie: sessionCookie }
+    const normalizedOrigin = readString(origin)
+    if (normalizedOrigin) headers.Origin = normalizedOrigin
+    const res = await (this.config?.fetch ?? fetch)(`${this.config?.baseUrl}/organization/list-user-invitations`, {
+      method: 'GET',
+      headers,
+    })
+    const body = await parseJsonValue(res)
+    if (!res.ok) {
+      if (res.status === 401) throw new Error('Neon Auth session is required')
+      const errorBody = body && typeof body === 'object' && !Array.isArray(body)
+        ? body as Record<string, unknown>
+        : {}
+      throw new Error(formatNeonAuthError('Neon Auth invitation lookup failed', errorBody, res.status))
+    }
+    const values = Array.isArray(body)
+      ? body
+      : readArray(readValue(body, ['data', 'invitations']))
+    return values.filter((value): value is Record<string, unknown> => (
+      !!value && typeof value === 'object' && !Array.isArray(value)
+    ))
   }
 
   private async fetchJsonWebToken(cookieHeader: string | undefined, origin: string | undefined): Promise<string | undefined> {
@@ -224,10 +353,55 @@ export class NeonAuthService {
     const responseBody = await parseJsonObject(res)
 
     if (!res.ok) {
+      if (res.status === 401) throw new Error('Neon Auth session is required')
       throw new Error(formatNeonAuthError('Neon Auth JWT exchange failed', responseBody, res.status))
     }
 
     return readString(readValue(responseBody, ['token']))
+  }
+}
+
+export async function reauthorizeNeonClientSession<
+  T extends { subject: string, organizationId?: string },
+>(
+  req: Request,
+  neonAuth: NeonAuthService | null,
+  clientSession: T,
+): Promise<T | Response> {
+  if (!clientSession.subject.startsWith('neon:')) return clientSession
+  if (!neonAuth?.isConfigured()) {
+    return Response.json({ error: 'Neon Auth is not configured' }, { status: 503 })
+  }
+
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null
+  const providerToken = readString(body?.providerToken)
+  if (!providerToken) {
+    return Response.json({
+      error: 'Neon Auth session is required',
+      code: 'neon_session_required',
+    }, { status: 401 })
+  }
+
+  try {
+    const identity = await neonAuth.verifyToken(providerToken)
+    if (identity.subject !== clientSession.subject) {
+      return Response.json({
+        error: 'Invalid client session token',
+        code: 'client_session_token_invalid',
+      }, { status: 401 })
+    }
+    return { ...clientSession, organizationId: identity.organizationId }
+  } catch (err) {
+    if (err instanceof Error && err.message === 'Invitation required') {
+      return Response.json({
+        error: 'Invitation required',
+        code: 'invitation_required',
+      }, { status: 403 })
+    }
+    return Response.json({
+      error: 'Neon Auth session is required',
+      code: 'neon_session_required',
+    }, { status: 401 })
   }
 }
 
@@ -242,6 +416,7 @@ function normalizeNeonAuthConfig(config: NeonAuthConfig | undefined): Normalized
     issuer: config?.issuer?.trim() || origin,
     audience: config?.audience?.trim() || origin,
     usernameEmailDomain: normalizeUsernameEmailDomain(config?.usernameEmailDomain),
+    organizationId: readString(config?.organizationId),
     emailSignUpEnabled: config?.emailSignUpEnabled === true,
     fetch: withRequestTimeout(config?.fetch ?? fetch),
     tokenVerifier: config?.tokenVerifier,
@@ -276,6 +451,9 @@ function normalizeNeonAuthIdentity(payload: NeonAuthTokenPayload): NeonAuthIdent
 
   const email = normalizeEmail(readString(payload.email))
   const name = readString(payload.name)
+  const organization = readObject(payload, ['o'])
+  const organizationId = readString(readValue(organization, ['id']))
+  const organizationRole = readString(readValue(organization, ['role']))
   const emailVerified = typeof payload.emailVerified === 'boolean'
     ? payload.emailVerified
     : undefined
@@ -287,6 +465,8 @@ function normalizeNeonAuthIdentity(payload: NeonAuthTokenPayload): NeonAuthIdent
     ...(email ? { email } : {}),
     ...(emailVerified !== undefined ? { emailVerified } : {}),
     ...(name ? { name } : {}),
+    ...(organizationId ? { organizationId } : {}),
+    ...(organizationRole ? { organizationRole } : {}),
   }
 }
 
@@ -363,15 +543,29 @@ function normalizeSignUpEmailIdentifier(value: string | undefined): { email: str
   return { email: trimmed.toLowerCase() }
 }
 
-async function parseJsonObject(res: Response): Promise<Record<string, unknown>> {
-  try {
-    const body = await res.json()
-    return body && typeof body === 'object' && !Array.isArray(body)
-      ? body as Record<string, unknown>
-      : {}
-  } catch {
-    return {}
+function buildJsonHeaders(origin: string | undefined): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
   }
+  const normalizedOrigin = readString(origin)
+  if (normalizedOrigin) headers.Origin = normalizedOrigin
+  return headers
+}
+
+async function parseJsonValue(res: Response): Promise<unknown> {
+  try {
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
+async function parseJsonObject(res: Response): Promise<Record<string, unknown>> {
+  const body = await parseJsonValue(res)
+  return body && typeof body === 'object' && !Array.isArray(body)
+    ? body as Record<string, unknown>
+    : {}
 }
 
 function readAuthAccessToken(body: Record<string, unknown>, headers: Headers): string | undefined {
@@ -438,6 +632,10 @@ function readObject(value: unknown, keys: string[]): Record<string, unknown> | u
   return found && typeof found === 'object' && !Array.isArray(found)
     ? found as Record<string, unknown>
     : undefined
+}
+
+function readArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
 }
 
 function readValue(value: unknown, keys: string[]): unknown {

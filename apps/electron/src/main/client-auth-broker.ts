@@ -97,8 +97,10 @@ export class DefaultClientAuthBrokerClient implements ClientAuthBrokerClient {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${input.appSessionToken}`,
+        ...(input.providerToken ? { 'Content-Type': 'application/json' } : {}),
         Accept: 'application/json',
       },
+      ...(input.providerToken ? { body: JSON.stringify({ providerToken: input.providerToken }) } : {}),
       signal: AbortSignal.timeout(this.requestTimeoutMs),
     }, 'Client auth token refresh failed')
 
@@ -116,8 +118,10 @@ export class DefaultClientAuthBrokerClient implements ClientAuthBrokerClient {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${input.appSessionToken}`,
+        ...(input.providerToken ? { 'Content-Type': 'application/json' } : {}),
         Accept: 'application/json',
       },
+      ...(input.providerToken ? { body: JSON.stringify({ providerToken: input.providerToken }) } : {}),
       signal: AbortSignal.timeout(this.requestTimeoutMs),
     }, 'Skills Market token request failed')
 

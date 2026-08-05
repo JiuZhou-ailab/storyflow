@@ -114,6 +114,18 @@ describe('Neon exchange boundary', () => {
       wsPort: 9100,
       getHealthCheck: () => ({ status: 'ok' }),
       logger,
+      neonAuth: {
+        baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+        organizationId: 'org_storyflow',
+        tokenVerifier: async token => token === 'valid-neon-token'
+          ? {
+              sub: 'user-1',
+              email: 'member@example.com',
+              emailVerified: true,
+              o: { id: 'org_storyflow', role: 'member' },
+            }
+          : null,
+      },
       clientSessionTokenKeyRing: { current: CLIENT_KEY },
       modelAccessTokenKey: MODEL_KEY,
     })
@@ -140,7 +152,11 @@ describe('Neon exchange boundary', () => {
       )
       const refreshed = await handler.fetch(new Request('http://localhost/api/client-auth/token', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${renewable}` },
+        headers: {
+          Authorization: `Bearer ${renewable}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ providerToken: 'valid-neon-token' }),
       }))
       expect(refreshed.status).toBe(200)
       const body = await refreshed.json() as Record<string, string>

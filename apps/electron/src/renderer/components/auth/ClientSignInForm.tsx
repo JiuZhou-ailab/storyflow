@@ -41,6 +41,8 @@ export function ClientSignInForm({
   const [displayName, setDisplayName] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [verificationEmail, setVerificationEmail] = useState<string | null>(null)
+  const [otp, setOtp] = useState('')
   const [authMode, setAuthMode] = useState<EmailAuthMode>('sign-in')
   const [error, setError] = useState<string | null>(null)
   const [registrationNotice, setRegistrationNotice] = useState<string | null>(null)
@@ -82,6 +84,12 @@ export function ClientSignInForm({
     }
 
     try {
+      if (verificationEmail) {
+        await window.electronAPI.verifyClientEmail({ email: verificationEmail, otp })
+        await window.electronAPI.signInClient({ identifier: verificationEmail, password })
+        await onSignedIn()
+        return
+      }
       if (authMode === 'sign-up') {
         if (!identifier.trim().includes('@')) {
           setError('创建账号需要输入完整邮箱。')
@@ -93,9 +101,8 @@ export function ClientSignInForm({
           name: displayName,
         })
         if (result.status === 'verification-required') {
-          setPassword('')
-          setConfirmPassword('')
-          setRegistrationNotice('账号已创建，请先完成邮箱验证，然后返回此处登录。')
+          setVerificationEmail(identifier.trim().toLowerCase())
+          setRegistrationNotice('验证码已发送到受邀邮箱，验证后将自动登录。')
           return
         }
       } else {
@@ -117,6 +124,8 @@ export function ClientSignInForm({
     setRegistrationNotice(null)
     setPassword('')
     setConfirmPassword('')
+    setVerificationEmail(null)
+    setOtp('')
   }
 
   async function handleFeishuSignIn() {
@@ -259,6 +268,30 @@ export function ClientSignInForm({
                   ) : null}
                 </AnimatePresence>
 
+                <AnimatePresence initial={false}>
+                  {verificationEmail ? (
+                    <motion.div
+                      className="space-y-1.5"
+                      initial={prefersReducedMotion ? false : { opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={prefersReducedMotion ? undefined : { opacity: 0, y: -4 }}
+                      transition={{ duration: 0.16, ease: AUTH_MOTION_EASE }}
+                    >
+                      <Label className="text-[13px]" htmlFor="client-auth-otp">邮箱验证码</Label>
+                      <Input
+                        id="client-auth-otp"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        pattern="[0-9]{6}"
+                        maxLength={6}
+                        required
+                        value={otp}
+                        onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                      />
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
+
                 <Button
                   className="w-full"
                   type="submit"
@@ -266,10 +299,12 @@ export function ClientSignInForm({
                 >
                   {submitting
                     ? <Loader2 className="size-4 animate-spin" />
-                    : authMode === 'sign-up'
+                    : verificationEmail
+                      ? <LogIn className="size-4" />
+                      : authMode === 'sign-up'
                       ? <UserPlus className="size-4" />
                       : <LogIn className="size-4" />}
-                  {authMode === 'sign-up' ? '创建账号' : '登录'}
+                  {verificationEmail ? '验证并登录' : authMode === 'sign-up' ? '创建账号' : '登录'}
                 </Button>
               </form>
             ) : null}
@@ -385,5 +420,13 @@ function formatClientAuthErrorMessage(error: unknown): string {
   if (message === 'A full email address is required to create an account') {
     return '创建账号需要输入完整邮箱。'
   }
+  if (message === 'Invitation is invalid') {
+    return '该邮箱尚未接受 Storyflow 邀请，请确认管理员已发送邀请。'
+  }
+  if (message === 'Invitation required') {
+    return '该账号尚未获邀，请使用收到邀请的邮箱注册。'
+  }
+  if (message === 'Neon Auth session is required') return '登录状态已失效，请重新登录。'
+  if (message === 'Invalid OTP' || message === 'INVALID_OTP') return '邮箱验证码不正确或已过期。'
   return message
 }

@@ -15,6 +15,7 @@ export interface Env {
   CRAFT_WEBUI_NEON_AUTH_JWKS_URL?: string
   CRAFT_WEBUI_NEON_AUTH_ISSUER?: string
   CRAFT_WEBUI_NEON_AUTH_AUDIENCE?: string
+  CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID?: string
   CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN?: string
   STORYFLOW_CLIENT_SESSION_JWT_CURRENT_KEY_ID?: string
   STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET?: string
@@ -48,6 +49,8 @@ interface NeonIdentity {
   email?: string
   emailVerified?: boolean
   name?: string
+  organizationId?: string
+  organizationRole?: string
 }
 
 interface ClientSessionPayload extends JWTPayload {
@@ -69,7 +72,6 @@ const DEFAULT_CURRENT_KEY_ID = 'current'
 const CLIENT_SESSION_TOKEN_TTL_SECONDS = 2_592_000
 const MODEL_ACCESS_TOKEN_TTL_SECONDS = 900
 const SKILLS_MARKET_TOKEN_TTL_SECONDS = 300
-
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
     return handleRequest(request, env, fetch)
@@ -128,11 +130,11 @@ export async function handleRequest(
   }
 
   if (url.pathname === '/api/client-auth/token' && request.method === 'POST') {
-    return refreshClientAuthToken(request, env)
+    return refreshClientAuthToken(request, env, fetchImpl)
   }
 
   if (url.pathname === '/api/client-auth/skills-market/token' && request.method === 'POST') {
-    return issueSkillsMarketToken(request, env)
+    return issueSkillsMarketToken(request, env, fetchImpl)
   }
 
   return Response.json({ error: 'Not found' }, { status: 404 })
@@ -231,40 +233,41 @@ async function exchangeNeonToken(
   if (!readString(env.CRAFT_WEBUI_NEON_AUTH_BASE_URL)) {
     return Response.json({ error: 'Neon Auth is not configured' }, { status: 404 })
   }
-  let baseUrl: string
-  let jwksUrl: string
-  try {
-    baseUrl = normalizeNeonAuthUrl(env.CRAFT_WEBUI_NEON_AUTH_BASE_URL)!
-    jwksUrl = normalizeNeonAuthUrl(env.CRAFT_WEBUI_NEON_AUTH_JWKS_URL)
-      ?? `${baseUrl}/.well-known/jwks.json`
-  } catch (error) {
-    return Response.json({
-      error: error instanceof Error ? error.message : 'Neon Auth URL is invalid',
-    }, { status: 503 })
-  }
 
+  const body = await readJsonObject(request).catch((): Record<string, unknown> => ({}))
   const token = readBearerToken(request.headers.get('authorization'))
-    ?? readString((await readJsonObject(request).catch((): Record<string, unknown> => ({}))).token)
+    ?? readString(body.token)
   if (!token) {
     return Response.json({ error: 'Neon Auth token is required' }, { status: 400 })
   }
   const tokenConfigError = getTokenIssuanceConfigError(env)
   if (tokenConfigError) return Response.json({ error: tokenConfigError }, { status: 503 })
+  const neonConfigError = getNeonAuthConfigError(env)
+  if (neonConfigError) return Response.json({ error: neonConfigError }, { status: 503 })
+  const expectedOrganizationId = readString(env.CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID)
+  if (!expectedOrganizationId) {
+    return Response.json({ error: 'Neon Auth organization is not configured' }, { status: 503 })
+  }
 
   try {
-    const origin = new URL(baseUrl).origin
-    const issuer = readString(env.CRAFT_WEBUI_NEON_AUTH_ISSUER) ?? origin
-    const audience = readString(env.CRAFT_WEBUI_NEON_AUTH_AUDIENCE) ?? origin
-    const jwks = createRemoteJWKSet(new URL(jwksUrl), { [customFetch]: fetchImpl })
-    const { payload } = await jwtVerify(token, jwks, { issuer, audience })
-    const identity = normalizeNeonIdentity(payload)
-    const tokens = await createAuthTokens(env, identity.subject, 'standard', identity.name)
+    const identity = await verifyNeonProviderToken(token, env, fetchImpl)
+    if (!isExpectedNeonMember(identity, expectedOrganizationId)) {
+      return invitationRequiredResponse()
+    }
+    const tokens = await createAuthTokens(
+      env,
+      identity.subject,
+      'standard',
+      identity.name,
+      identity.organizationId,
+    )
 
     return Response.json({
       ok: true,
       user: {
         provider: 'neon',
         userId: identity.userId,
+        organizationId: identity.organizationId,
         ...(identity.email ? { email: identity.email } : {}),
         ...(identity.emailVerified !== undefined ? { emailVerified: identity.emailVerified } : {}),
         ...(identity.name ? { name: identity.name } : {}),
@@ -276,53 +279,95 @@ async function exchangeNeonToken(
   }
 }
 
-async function refreshClientAuthToken(request: Request, env: Env): Promise<Response> {
+async function refreshClientAuthToken(
+  request: Request,
+  env: Env,
+  fetchImpl: FetchLike,
+): Promise<Response> {
   const tokenConfigError = getTokenIssuanceConfigError(env)
   if (tokenConfigError) return Response.json({ error: tokenConfigError }, { status: 503 })
+  const authorization = await reauthorizeClientSession(request, env, fetchImpl)
+  if (authorization instanceof Response) return authorization
+  const { session } = authorization
+  return Response.json({
+    ok: true,
+    ...await createAuthTokens(
+      env,
+      session.subject,
+      session.modelTier,
+      session.userName,
+      session.organizationId,
+      session.authenticatedAtSeconds,
+    ),
+  })
+}
 
+async function issueSkillsMarketToken(
+  request: Request,
+  env: Env,
+  fetchImpl: FetchLike,
+): Promise<Response> {
+  const configError = getSkillsMarketTokenConfigError(env)
+  if (configError) return Response.json({ error: configError }, { status: 503 })
+  const authorization = await reauthorizeClientSession(
+    request,
+    env,
+    fetchImpl,
+    SKILLS_MARKET_TOKEN_TTL_SECONDS,
+  )
+  if (authorization instanceof Response) return authorization
+  const { session } = authorization
+  return Response.json({
+    ok: true,
+    marketPublishToken: await createSkillsMarketPublishToken(
+      env,
+      session.subject,
+      session.userName,
+      session.organizationId,
+      session.authenticatedAtSeconds + CLIENT_SESSION_TOKEN_TTL_SECONDS,
+    ),
+    expiresInSeconds: SKILLS_MARKET_TOKEN_TTL_SECONDS,
+  })
+}
+
+async function reauthorizeClientSession(
+  request: Request,
+  env: Env,
+  fetchImpl: FetchLike,
+  minimumRemainingSeconds = MODEL_ACCESS_TOKEN_TTL_SECONDS,
+): Promise<{ session: Awaited<ReturnType<typeof verifyClientSessionToken>> } | Response> {
   const token = readBearerToken(request.headers.get('authorization'))
   if (!token) return invalidClientSessionResponse()
 
+  let session: Awaited<ReturnType<typeof verifyClientSessionToken>>
   try {
-    const session = await verifyClientSessionToken(token, env)
-    return Response.json({
-      ok: true,
-      ...await createAuthTokens(
-        env,
-        session.subject,
-        session.modelTier,
-        session.userName,
-        session.organizationId,
-        session.authenticatedAtSeconds,
-      ),
-    })
+    session = await verifyClientSessionToken(token, env, minimumRemainingSeconds)
   } catch {
     return invalidClientSessionResponse()
   }
-}
+  if (!session.subject.startsWith('neon:')) return { session }
 
-async function issueSkillsMarketToken(request: Request, env: Env): Promise<Response> {
-  const configError = getSkillsMarketTokenConfigError(env)
-  if (configError) return Response.json({ error: configError }, { status: 503 })
-
-  const token = readBearerToken(request.headers.get('authorization'))
-  if (!token) return invalidClientSessionResponse()
+  const providerToken = readString((await readJsonObject(request)).providerToken)
+  if (!providerToken) return neonSessionRequiredResponse()
+  const expectedOrganizationId = readString(env.CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID)
+  if (!expectedOrganizationId) {
+    return Response.json({ error: 'Neon Auth organization is not configured' }, { status: 503 })
+  }
+  const neonConfigError = getNeonAuthConfigError(env)
+  if (neonConfigError) return Response.json({ error: neonConfigError }, { status: 503 })
 
   try {
-    const session = await verifyClientSessionToken(token, env, SKILLS_MARKET_TOKEN_TTL_SECONDS)
-    return Response.json({
-      ok: true,
-      marketPublishToken: await createSkillsMarketPublishToken(
-        env,
-        session.subject,
-        session.userName,
-        session.organizationId,
-        session.authenticatedAtSeconds + CLIENT_SESSION_TOKEN_TTL_SECONDS,
-      ),
-      expiresInSeconds: SKILLS_MARKET_TOKEN_TTL_SECONDS,
-    })
+    const identity = await verifyNeonProviderToken(providerToken, env, fetchImpl)
+    if (identity.subject !== session.subject) return invalidClientSessionResponse()
+    if (!isExpectedNeonMember(identity, expectedOrganizationId)) return invitationRequiredResponse()
+    return {
+      session: {
+        ...session,
+        organizationId: identity.organizationId,
+      },
+    }
   } catch {
-    return invalidClientSessionResponse()
+    return neonSessionRequiredResponse()
   }
 }
 
@@ -390,6 +435,26 @@ function invalidClientSessionResponse(): Response {
     {
       error: 'Invalid client session token',
       code: 'client_session_token_invalid',
+    },
+    { status: 401 },
+  )
+}
+
+function invitationRequiredResponse(): Response {
+  return Response.json(
+    {
+      error: 'Invitation required',
+      code: 'invitation_required',
+    },
+    { status: 403 },
+  )
+}
+
+function neonSessionRequiredResponse(): Response {
+  return Response.json(
+    {
+      error: 'Neon Auth session is required',
+      code: 'neon_session_required',
     },
     { status: 401 },
   )
@@ -527,19 +592,27 @@ function getBrokerReadinessError(env: Env): string | null {
   if (tokenError) return tokenError
   const marketTokenError = getSkillsMarketTokenConfigError(env)
   if (marketTokenError) return marketTokenError
-
   const hasFeishu = !!readString(env.CRAFT_WEBUI_FEISHU_APP_ID)
     && !!readString(env.CRAFT_WEBUI_FEISHU_APP_SECRET)
   const neonBaseUrl = readString(env.CRAFT_WEBUI_NEON_AUTH_BASE_URL)
   if (!hasFeishu && !neonBaseUrl) return 'No login provider is configured'
   if (neonBaseUrl) {
-    try {
-      normalizeNeonAuthUrl(neonBaseUrl)
-    } catch (error) {
-      return error instanceof Error ? error.message : 'Neon Auth URL is invalid'
+    if (!readString(env.CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID)) {
+      return 'Neon Auth organization is not configured'
     }
+    return getNeonAuthConfigError(env)
   }
   return null
+}
+
+function getNeonAuthConfigError(env: Env): string | null {
+  try {
+    normalizeNeonAuthUrl(env.CRAFT_WEBUI_NEON_AUTH_BASE_URL)
+    normalizeNeonAuthUrl(env.CRAFT_WEBUI_NEON_AUTH_JWKS_URL)
+    return null
+  } catch (error) {
+    return error instanceof Error ? error.message : 'Neon Auth URL is invalid'
+  }
 }
 
 function getCurrentClientSessionKey(env: Env): { id: string, secret: string } | null {
@@ -606,6 +679,27 @@ function normalizeFeishuUser(raw: Record<string, unknown>): FeishuUserInfo {
   }
 }
 
+async function verifyNeonProviderToken(
+  token: string,
+  env: Env,
+  fetchImpl: FetchLike,
+): Promise<NeonIdentity> {
+  const baseUrl = normalizeNeonAuthUrl(env.CRAFT_WEBUI_NEON_AUTH_BASE_URL)
+  if (!baseUrl) throw new Error('Neon Auth is not configured')
+  const jwksUrl = normalizeNeonAuthUrl(env.CRAFT_WEBUI_NEON_AUTH_JWKS_URL)
+    ?? `${baseUrl}/.well-known/jwks.json`
+  const origin = new URL(baseUrl).origin
+  const issuer = readString(env.CRAFT_WEBUI_NEON_AUTH_ISSUER) ?? origin
+  const audience = readString(env.CRAFT_WEBUI_NEON_AUTH_AUDIENCE) ?? origin
+  const jwks = createRemoteJWKSet(new URL(jwksUrl), { [customFetch]: fetchImpl })
+  const { payload } = await jwtVerify(token, jwks, { issuer, audience })
+  return normalizeNeonIdentity(payload)
+}
+
+function isExpectedNeonMember(identity: NeonIdentity, organizationId: string): boolean {
+  return identity.organizationId === organizationId && !!identity.organizationRole
+}
+
 function normalizeNeonIdentity(payload: JWTPayload): NeonIdentity {
   const claims = payload as Record<string, unknown>
   if (readBoolean(claims.banned) === true) throw new Error('Neon Auth user is banned')
@@ -616,9 +710,12 @@ function normalizeNeonIdentity(payload: JWTPayload): NeonIdentity {
   const email = normalizeEmail(readString(claims.email))
   const emailVerified = readBoolean(claims.emailVerified)
     ?? readBoolean(claims.email_verified)
-  if (emailVerified === false) throw new Error('Email verification is required')
+  if (emailVerified !== true) throw new Error('Email verification is required')
 
   const name = normalizeUserName(claims.name)
+  const organization = readObject(claims.o)
+  const organizationId = readString(organization?.id)
+  const organizationRole = readString(organization?.role)
   return {
     provider: 'neon',
     subject: `neon:${subject}`,
@@ -626,6 +723,8 @@ function normalizeNeonIdentity(payload: JWTPayload): NeonIdentity {
     ...(email ? { email } : {}),
     ...(emailVerified !== undefined ? { emailVerified } : {}),
     ...(name ? { name } : {}),
+    ...(organizationId ? { organizationId } : {}),
+    ...(organizationRole ? { organizationRole } : {}),
   }
 }
 

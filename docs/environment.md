@@ -47,6 +47,7 @@ GitHub repository vars:
 CRAFT_CLIENT_AUTH_BROKER_URL=https://storyflow-auth.zjding.com
 CRAFT_CLIENT_FEISHU_APP_ID=cli_aa9d901dfbb8dcd3
 CRAFT_CLIENT_NEON_AUTH_BASE_URL=https://your-neon-auth.example.com/neondb/auth
+CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID=org_xxx
 CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN=users.craft.invalid
 CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED=false
 STORYFLOW_FEEDBACK_ENDPOINT=https://storyflow-feedback.zjding.com/api/feedback
@@ -83,11 +84,11 @@ Broker, Neon Auth, and explicit Neon JWKS URLs must use HTTPS. Plain HTTP is
 accepted only for loopback development; packaged-build validation rejects
 loopback and insecure remote endpoints before release.
 
-`CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED` only controls whether the packaged
-desktop UI exposes email registration and allows the local sign-up IPC path.
-Keep it `false` for invite-only or Feishu-only distribution. Set it to `true`
-only after the matching Neon Auth branch allows email sign-up and has a working
-email provider / verification policy.
+`CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID` is public bootstrap configuration. A
+packaged build with Neon login must set it; only JWTs carrying that native Neon
+Organization claim are accepted. `CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED`
+controls whether the desktop exposes registration. Invite-only distribution may
+set it to `true` because Organization membership remains the authorization gate.
 
 `STORYFLOW_FEEDBACK_ENDPOINT` is public client bootstrap configuration. Official
 builds should point it at the first-party feedback Worker custom domain, not the
@@ -113,6 +114,7 @@ CRAFT_WEBUI_FEISHU_ALLOW_ALL_USERS=false
 CRAFT_WEBUI_FEISHU_INTERNAL_TENANT_KEYS=
 CRAFT_WEBUI_AUTH_DATABASE_URL=...
 CRAFT_WEBUI_NEON_AUTH_BASE_URL=...
+CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID=org_xxx
 CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN=users.craft.invalid
 CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED=false
 STORYFLOW_CLIENT_SESSION_JWT_CURRENT_KEY_ID=client-session-2026-07
@@ -127,7 +129,7 @@ STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET=...
 
 The desktop app asks the broker for public Feishu config and sends OAuth codes
 back to the broker. The Feishu app secret and user allow policy belong on the
-broker side only. After verifying either Feishu or Neon identity, the broker
+broker side only. After verifying either Feishu or a Neon Organization identity, the broker
 returns two independent capabilities and can mint a third one on demand:
 
 - an `appSessionToken` bounded to 30 days from the original authentication,
@@ -154,9 +156,9 @@ static gateway token in Electron defaults, build variables, or runtime env.
 `CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED` controls the standalone Web UI email
 registration endpoint and sign-up tab. Email sign-in remains available when it
 is `false`; sign-up requests return 403 before contacting Neon Auth. Neon Auth
-itself must still be configured in the Neon Console or API: enable email/password
-sign-up, pick the verification policy, and configure email delivery. Neon shared
-email supports verification codes; verification links require a custom provider.
+must enable email/password sign-up and verification. Neon Organization owns
+invitations and membership; the broker does not maintain a second admission
+database.
 
 ## Model Gateway Worker
 

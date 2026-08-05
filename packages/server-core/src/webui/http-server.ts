@@ -34,7 +34,7 @@ import {
 import { generateCallbackPage } from '@craft-agent/shared/auth'
 import type { PlatformServices } from '../runtime/platform'
 import { FeishuLoginService, type FeishuAuthConfig } from './feishu-auth'
-import { NeonAuthService, type NeonAuthConfig, type NeonAuthIdentity } from './neon-auth'
+import { NeonAuthService, reauthorizeNeonClientSession, type NeonAuthConfig, type NeonAuthIdentity } from './neon-auth'
 
 // ---------------------------------------------------------------------------
 // MIME types for static file serving
@@ -448,7 +448,7 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
         identity.subject,
         'standard',
         undefined,
-        undefined,
+        identity.organizationId,
         identity.name,
       )
       const modelAccessToken = await createModelAccessToken(options.modelAccessTokenKey, identity.subject, 'standard')
@@ -672,21 +672,23 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
           code: 'client_session_token_invalid',
         }, { status: 401 })
       }
+      const authorizedSession = await reauthorizeNeonClientSession(req, neonAuth, clientSession)
+      if (authorizedSession instanceof Response) return authorizedSession
       return Response.json({
         ok: true,
         appSessionToken: await createClientSessionToken(
           options.clientSessionTokenKeyRing.current,
-          clientSession.subject,
-          clientSession.modelTier,
-          clientSession.authenticatedAtSeconds,
-          clientSession.organizationId,
-          clientSession.userName,
+          authorizedSession.subject,
+          authorizedSession.modelTier,
+          authorizedSession.authenticatedAtSeconds,
+          authorizedSession.organizationId,
+          authorizedSession.userName,
         ),
         modelAccessToken: await createModelAccessToken(
           options.modelAccessTokenKey,
-          clientSession.subject,
-          clientSession.modelTier,
-          clientSession.authenticatedAtSeconds,
+          authorizedSession.subject,
+          authorizedSession.modelTier,
+          authorizedSession.authenticatedAtSeconds,
         ),
       })
     }
@@ -709,14 +711,16 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
           code: 'client_session_token_invalid',
         }, { status: 401 })
       }
+      const authorizedSession = await reauthorizeNeonClientSession(req, neonAuth, clientSession)
+      if (authorizedSession instanceof Response) return authorizedSession
       return Response.json({
         ok: true,
         marketPublishToken: await createSkillsMarketPublishToken(
           options.skillsMarketTokenKey,
-          clientSession.subject,
-          clientSession.authenticatedAtSeconds,
-          clientSession.organizationId,
-          clientSession.userName,
+          authorizedSession.subject,
+          authorizedSession.authenticatedAtSeconds,
+          authorizedSession.organizationId,
+          authorizedSession.userName,
         ),
         expiresInSeconds: SKILLS_MARKET_TOKEN_TTL_SECONDS,
       })
@@ -938,6 +942,8 @@ function toPublicNeonIdentity(identity: NeonAuthIdentity): Record<string, unknow
     ...(identity.email ? { email: identity.email } : {}),
     ...(identity.emailVerified !== undefined ? { emailVerified: identity.emailVerified } : {}),
     ...(identity.name ? { name: identity.name } : {}),
+    ...(identity.organizationId ? { organizationId: identity.organizationId } : {}),
+    ...(identity.organizationRole ? { organizationRole: identity.organizationRole } : {}),
   }
 }
 

@@ -48,9 +48,17 @@ describe('ClientSignInForm layout', () => {
     expect(source).toContain('工作区仍保存在本机')
   })
 
+  it('uses Neon native email verification without collecting a second invitation secret', () => {
+    expect(source).toContain('verifyClientEmail')
+    expect(source).toContain('client-auth-otp')
+    expect(source).toContain('one-time-code')
+    expect(source).not.toContain('invitationCode')
+  })
+
   it('normalizes provider auth errors into product-facing messages', () => {
     expect(source).toContain('formatClientAuthErrorMessage')
     expect(source).toContain('账号或密码不正确')
+    expect(source).toContain('该账号尚未获邀，请使用收到邀请的邮箱注册')
     expect(source).not.toContain('setError(getErrorMessage(err))')
   })
 })

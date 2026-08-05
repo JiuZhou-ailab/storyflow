@@ -27,6 +27,11 @@ const unusedBrokerMethods: ClientAuthBrokerClient = {
   refreshModelAccessToken: async () => { throw new Error('not used') },
 }
 
+const unusedNeonOrganizationMethods = {
+  verifyEmailOtp: async () => {},
+  getOrganizationToken: async () => { throw new Error('not used') },
+}
+
 function neonBroker(user: ClientAuthBrokerExchangeResult['user']): ClientAuthBrokerClient {
   return {
     ...unusedBrokerMethods,
@@ -144,6 +149,7 @@ describe('client auth', () => {
   it('stores the verified Neon Auth identity after password sign-in', async () => {
     const calls: Array<{ email: string, password: string, origin?: string }> = []
     const fakeNeonAuth: ClientAuthNeonService = {
+      ...unusedNeonOrganizationMethods,
       isConfigured: () => true,
       getClientConfig: () => ({
         enabled: true,
@@ -217,6 +223,7 @@ describe('client auth', () => {
   it('keeps email sign-up disabled unless the desktop config explicitly enables it', async () => {
     const calls: Array<{ mode: string }> = []
     const fakeNeonAuth: ClientAuthNeonService = {
+      ...unusedNeonOrganizationMethods,
       isConfigured: () => true,
       getClientConfig: () => ({ enabled: true, emailSignUpEnabled: false }),
       authenticateWithEmailPassword: async (input) => {
@@ -235,7 +242,7 @@ describe('client auth', () => {
       },
       {
         createNeonAuthService: () => fakeNeonAuth,
-        createAuthBrokerClient: () => unusedBrokerMethods,
+        createAuthBrokerClient: () => neonBroker({ provider: 'neon', userId: 'pending-user' }),
       },
     )
 
@@ -318,6 +325,7 @@ describe('client auth', () => {
     const savedSessions: unknown[] = []
     let clearCount = 0
     const fakeNeonAuth: ClientAuthNeonService = {
+      ...unusedNeonOrganizationMethods,
       isConfigured: () => true,
       getClientConfig: () => ({ enabled: true }),
       authenticateWithEmailPassword: async () => ({ status: 'authenticated', token: 'jwt-token' }),
@@ -364,6 +372,7 @@ describe('client auth', () => {
 
   it('rejects a Neon broker login without a renewable app session', async () => {
     const fakeNeonAuth: ClientAuthNeonService = {
+      ...unusedNeonOrganizationMethods,
       isConfigured: () => true,
       getClientConfig: () => ({ enabled: true }),
       authenticateWithEmailPassword: async () => ({ status: 'authenticated', token: 'jwt-token' }),
@@ -401,11 +410,14 @@ describe('client auth', () => {
   })
 
   it('registers a Neon Auth email account and signs in when the provider returns a token', async () => {
+    const events: string[] = []
     const calls: Array<{ mode: string, email: string, password: string, name?: string, origin?: string }> = []
     const fakeNeonAuth: ClientAuthNeonService = {
+      ...unusedNeonOrganizationMethods,
       isConfigured: () => true,
       getClientConfig: () => ({ enabled: true, emailSignUpEnabled: true }),
       authenticateWithEmailPassword: async (input) => {
+        events.push('neon-sign-up')
         calls.push({
           mode: input.mode,
           email: input.email,
@@ -434,12 +446,23 @@ describe('client auth', () => {
       neonAuth: { baseUrl: 'https://auth.example.com', emailSignUpEnabled: true },
     }, {
       createNeonAuthService: () => fakeNeonAuth,
-      createAuthBrokerClient: () => neonBroker({
-        provider: 'neon',
-        userId: 'user-registered',
-        email: 'new@example.com',
-        emailVerified: true,
-        name: 'New User',
+      createAuthBrokerClient: () => ({
+        ...unusedBrokerMethods,
+        exchangeNeonToken: async (input) => {
+          events.push('exchange')
+          expect(input.token).toBe('signup-jwt-token')
+          return {
+            user: {
+              provider: 'neon',
+              userId: 'user-registered',
+              email: 'new@example.com',
+              emailVerified: true,
+              name: 'New User',
+            },
+            appSessionToken: 'app-session-token',
+            modelAccessToken: 'model-access-token',
+          }
+        },
       }),
     })
 
@@ -467,10 +490,12 @@ describe('client auth', () => {
       },
     })
     expect(service.getState().authenticated).toBe(true)
+    expect(events).toEqual(['neon-sign-up', 'exchange'])
   })
 
   it('keeps the client unauthenticated when Neon Auth registration requires email verification', async () => {
     const fakeNeonAuth: ClientAuthNeonService = {
+      ...unusedNeonOrganizationMethods,
       isConfigured: () => true,
       getClientConfig: () => ({ enabled: true, emailSignUpEnabled: true }),
       authenticateWithEmailPassword: async () => ({
@@ -494,7 +519,7 @@ describe('client auth', () => {
       },
       {
         createNeonAuthService: () => fakeNeonAuth,
-        createAuthBrokerClient: () => unusedBrokerMethods,
+        createAuthBrokerClient: () => neonBroker({ provider: 'neon', userId: 'pending-user' }),
       },
     )
 
@@ -517,8 +542,36 @@ describe('client auth', () => {
     expect(service.getState().authenticated).toBe(false)
   })
 
-  it('keeps the client unauthenticated when sign-up returns an unverified token identity', async () => {
+  it('delegates email verification to Neon Auth without exposing the session cookie', async () => {
+    let verificationInput: unknown
+    const service = createClientAuthService({
+      required: true,
+      authBrokerUrl: 'https://auth.storyflow.example.com',
+      neonAuthOrigin: 'http://localhost:9100',
+      neonAuth: { baseUrl: 'https://auth.example.com', emailSignUpEnabled: true },
+    }, {
+      createNeonAuthService: () => ({
+        ...unusedNeonOrganizationMethods,
+        isConfigured: () => true,
+        getClientConfig: () => ({ enabled: true, emailSignUpEnabled: true }),
+        authenticateWithEmailPassword: async () => { throw new Error('not used') },
+        verifyEmailOtp: async (input) => { verificationInput = input },
+        verifyToken: async () => { throw new Error('not used') },
+      }),
+      createAuthBrokerClient: () => unusedBrokerMethods,
+    })
+
+    await service.verifyEmailOtp({ email: 'invitee@example.com', otp: '123456' })
+    expect(verificationInput).toEqual({
+      email: 'invitee@example.com',
+      otp: '123456',
+      origin: 'http://localhost:9100',
+    })
+  })
+
+  it('keeps the client unauthenticated when sign-up does not prove email verification', async () => {
     const fakeNeonAuth: ClientAuthNeonService = {
+      ...unusedNeonOrganizationMethods,
       isConfigured: () => true,
       getClientConfig: () => ({ enabled: true, emailSignUpEnabled: true }),
       authenticateWithEmailPassword: async () => ({ status: 'authenticated', token: 'signup-jwt-token' }),
@@ -529,7 +582,6 @@ describe('client auth', () => {
           userId: 'pending-user',
           subject: 'neon:pending-user',
           email: 'pending@example.com',
-          emailVerified: false,
           name: 'Pending User',
         }
       },
@@ -542,7 +594,7 @@ describe('client auth', () => {
       },
       {
         createNeonAuthService: () => fakeNeonAuth,
-        createAuthBrokerClient: () => unusedBrokerMethods,
+        createAuthBrokerClient: () => neonBroker({ provider: 'neon', userId: 'pending-user' }),
       },
     )
 
@@ -558,7 +610,6 @@ describe('client auth', () => {
         provider: 'neon',
         userId: 'pending-user',
         email: 'pending@example.com',
-        emailVerified: false,
         name: 'Pending User',
       },
     })
@@ -580,6 +631,7 @@ describe('client auth', () => {
         expect(input).toEqual({
           brokerUrl: 'https://auth.storyflow.example.com',
           appSessionToken: 'old-app-session',
+          providerToken: 'fresh-provider-token',
         })
         return {
           appSessionToken: 'rotated-app-session',
@@ -590,11 +642,28 @@ describe('client auth', () => {
     const service = createClientAuthService({
       required: true,
       authBrokerUrl: 'https://auth.storyflow.example.com',
+      neonAuth: { baseUrl: 'https://auth.example.com', organizationId: 'org_storyflow' },
     }, {
       createAuthBrokerClient: () => broker,
+      createNeonAuthService: () => ({
+        ...unusedNeonOrganizationMethods,
+        isConfigured: () => true,
+        getClientConfig: () => ({ enabled: true }),
+        authenticateWithEmailPassword: async () => { throw new Error('not used') },
+        verifyToken: async () => { throw new Error('not used') },
+        getOrganizationToken: async (input) => {
+          expect(input).toEqual({
+            sessionCookie: 'neon-session-cookie',
+            organizationId: 'org_storyflow',
+            origin: undefined,
+          })
+          return 'fresh-provider-token'
+        },
+      }),
       initialSession: {
         user: { provider: 'neon', userId: 'user-1' },
         appSessionToken: 'old-app-session',
+        neonSessionCookie: 'neon-session-cookie',
         modelAccessToken: modelToken(now + 60_000),
       },
       now: () => now,
@@ -618,6 +687,7 @@ describe('client auth', () => {
       user: { provider: 'neon', userId: 'user-1' },
       appSessionToken: 'rotated-app-session',
       modelAccessToken: refreshedModelToken,
+      neonSessionCookie: 'neon-session-cookie',
     }])
     expect(changes).toHaveLength(1)
     expect(scheduledDelays.at(-1)).toBe(13 * 60 * 1000)
@@ -643,7 +713,7 @@ describe('client auth', () => {
     }, {
       createAuthBrokerClient: () => broker,
       initialSession: {
-        user: { provider: 'neon', userId: 'user-1' },
+        user: { provider: 'feishu', userId: 'user-1' },
         appSessionToken: 'app-session-token',
       },
       sessionStore: {
@@ -677,7 +747,7 @@ describe('client auth', () => {
     }, {
       createAuthBrokerClient: () => broker,
       initialSession: {
-        user: { provider: 'neon', userId: 'user-1' },
+        user: { provider: 'feishu', userId: 'user-1' },
         appSessionToken: 'old-app-session',
         modelAccessToken: freshToken,
       },
@@ -710,7 +780,7 @@ describe('client auth', () => {
     }, {
       createAuthBrokerClient: () => broker,
       initialSession: {
-        user: { provider: 'neon', userId: 'old-user' },
+        user: { provider: 'feishu', userId: 'old-user' },
         appSessionToken: 'old-app-session',
       },
       sessionStore: {
@@ -734,6 +804,7 @@ describe('client auth', () => {
       CRAFT_CLIENT_AUTH_REQUIRED: 'true',
       CRAFT_WEBUI_NEON_AUTH_BASE_URL: 'https://auth.example.com',
       CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN: 'users.craft.invalid',
+      CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID: 'org_storyflow',
       CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED: 'true',
     })
 
@@ -743,6 +814,7 @@ describe('client auth', () => {
       neonAuth: {
         baseUrl: 'https://auth.example.com',
         usernameEmailDomain: 'users.craft.invalid',
+        organizationId: 'org_storyflow',
         emailSignUpEnabled: true,
       },
     })

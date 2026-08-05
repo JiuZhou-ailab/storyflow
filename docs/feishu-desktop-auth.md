@@ -16,10 +16,9 @@ desktop login
   -> NewAPI
 ```
 
-Feishu users receive `model_tier=pro`. Neon email users receive
-`model_tier=standard`. Both tiers currently have the same model access; the
-claim is already separate so future policy changes stay inside the model
-gateway.
+Feishu's tenant allowlist and Neon's native Organization membership are the two
+admission boundaries. Feishu users receive `pro`; admitted Neon email users
+receive `standard`.
 
 Every successful refresh may rotate `appSessionToken` and its signing key, but
 preserves the original `auth_time` and absolute 30-day expiry.
@@ -43,8 +42,8 @@ The desktop Feishu flow is:
 3. Feishu redirects to the loopback callback.
 4. The desktop sends the code and verifier to the broker.
 5. The broker exchanges the code with its server-only Feishu secret.
-6. The broker checks the company tenant allowlist and returns the user, a
-   renewable app session, and a short-lived `pro` model access token.
+6. The broker checks the company tenant allowlist and returns the user plus
+   renewable and short-lived tokens.
 
 Add this redirect URL to the Feishu Open Platform application:
 
@@ -61,10 +60,16 @@ CRAFT_WEBUI_FEISHU_INTERNAL_TENANT_KEYS=tenant_key_a,tenant_key_b
 
 ## Email Login
 
-The desktop first verifies email/password with Neon Auth, then sends the Neon
-token to the same auth broker. The broker verifies the JWT against Neon JWKS
-and returns a renewable app session plus a short-lived `standard` model access
-token.
+The desktop verifies email/password with Neon Auth, accepts a matching pending
+native Organization invitation, activates that Organization, and sends its
+signed JWT to the same auth broker. The broker verifies Neon JWKS and the
+configured Organization claim before issuing Storyflow capabilities.
+
+New email registration is invitation-only. The user enters no second invitation
+secret: Neon binds the invitation to the email, email OTP proves ownership, and
+Organization membership is the authorization fact. Electron keeps the Better
+Auth session cookie in the existing encrypted credential store so every renewal
+can obtain a fresh JWT and recheck membership.
 
 Email sign-in and registration are independent switches:
 
@@ -73,8 +78,9 @@ CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED=false
 CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED=false
 ```
 
-Enable registration only after the Neon project has the intended email
-verification and delivery policy.
+Enable registration only after a native Neon Organization invitation can
+complete OTP verification, acceptance, restart recovery, and revoked-member
+rejection.
 
 ## Model Gateway
 
@@ -143,6 +149,7 @@ The built-in local broker requires three independent trust boundaries:
 CRAFT_CLIENT_AUTH_REQUIRED=false
 CRAFT_CLIENT_AUTH_BROKER_URL=http://localhost:9100
 CRAFT_CLIENT_FEISHU_APP_ID=cli_xxx
+CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID=org_xxx
 CRAFT_WEBUI_FEISHU_APP_ID=cli_xxx
 CRAFT_WEBUI_FEISHU_APP_SECRET=server-only-secret
 CRAFT_WEBUI_FEISHU_ALLOW_ALL_USERS=true
@@ -169,6 +176,7 @@ CRAFT_CLIENT_AUTH_REQUIRED=false
 CRAFT_CLIENT_AUTH_BROKER_URL=https://storyflow-auth.zjding.com
 CRAFT_CLIENT_FEISHU_APP_ID=cli_xxx
 CRAFT_CLIENT_NEON_AUTH_BASE_URL=https://your-neon-auth.example.com/neondb/auth
+CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID=org_xxx
 ```
 
 The desktop shell and local projects do not require login. Managed model

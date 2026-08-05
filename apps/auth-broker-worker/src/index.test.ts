@@ -20,6 +20,7 @@ function makeEnv(overrides: Record<string, string | undefined> = {}) {
     CRAFT_WEBUI_FEISHU_APP_SECRET: 'feishu-secret',
     CRAFT_WEBUI_FEISHU_ALLOW_ALL_USERS: 'true',
     CRAFT_WEBUI_NEON_AUTH_BASE_URL: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+    CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID: 'org_storyflow',
     CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN: 'users.craft.invalid',
     STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: CLIENT_SESSION_SECRET,
     STORYFLOW_CLIENT_SESSION_JWT_CURRENT_KEY_ID: CLIENT_SESSION_KEY_ID,
@@ -233,10 +234,34 @@ describe('auth broker worker', () => {
     expect(await res.json()).toEqual({ error: 'Registration required' })
   })
 
+  it('does not attach the company organization to allow-listed external Feishu users', async () => {
+    const res = await handleRequest(
+      new Request('https://auth.example.com/api/client-auth/feishu/exchange', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: 'desktop-code',
+          redirectUri: 'http://localhost:6477/callback',
+          codeVerifier: 'desktop-verifier',
+        }),
+      }),
+      makeEnv({ CRAFT_WEBUI_FEISHU_INTERNAL_TENANT_KEYS: 'tenant_company' }),
+      async (input) => input.toString().endsWith('/open-apis/authen/v2/oauth/token')
+        ? Response.json({ access_token: 'feishu-access-token' })
+        : Response.json({ data: { open_id: 'ou_external', tenant_key: 'tenant_external' } }),
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as Record<string, any>
+    expect(body.user.organizationId).toBeUndefined()
+    expect((await verifyClientSessionToken(body.appSessionToken)).organization_id).toBeUndefined()
+  })
+
   it('exchanges verified Neon Auth JWTs for a standard model access token', async () => {
     const { publicJwk, token } = await createNeonProviderToken({
       email: 'Neon.User@Example.com',
       emailVerified: true,
+      o: { id: 'org_storyflow', slug: 'storyflow-users', role: 'member' },
     })
 
     const res = await handleRequest(
@@ -258,6 +283,7 @@ describe('auth broker worker', () => {
     expect(body.user).toEqual({
       provider: 'neon',
       userId: 'neon_user_123',
+      organizationId: 'org_storyflow',
       email: 'neon.user@example.com',
       emailVerified: true,
     })
@@ -265,11 +291,34 @@ describe('auth broker worker', () => {
     expect(sessionPayload.sub).toBe('neon:neon_user_123')
     expect(sessionPayload.scope).toBe('model:issue')
     expect(sessionPayload.model_tier).toBe('standard')
+    expect(sessionPayload.organization_id).toBe('org_storyflow')
 
     const payload = await verifyModelAccessToken(body.modelAccessToken)
     expect(payload.sub).toBe('neon:neon_user_123')
     expect(payload.scopes).toEqual(['model:chat', 'model:video', 'catalog:read'])
     expect(payload.model_tier).toBe('standard')
+  })
+
+  it('rejects verified Neon identities outside the configured organization', async () => {
+    const { publicJwk, token } = await createNeonProviderToken({
+      email: 'outsider@example.com',
+      emailVerified: true,
+    })
+
+    const res = await handleRequest(
+      new Request('https://auth.example.com/api/client-auth/neon/exchange', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      makeEnv(),
+      async () => Response.json({ keys: [publicJwk] }),
+    )
+
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({
+      error: 'Invitation required',
+      code: 'invitation_required',
+    })
   })
 
   it('does not issue capabilities to unverified or banned Neon identities', async () => {
@@ -319,7 +368,7 @@ describe('auth broker worker', () => {
       .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: PREVIOUS_CLIENT_SESSION_KEY_ID })
       .setIssuer('storyflow-auth-broker')
       .setAudience('storyflow-client-auth')
-      .setSubject('neon:neon_user_123')
+      .setSubject('feishu:legacy-user')
       .setIssuedAt(now)
       .setExpirationTime(authenticatedAt + 2_592_000)
       .sign(new TextEncoder().encode(PREVIOUS_CLIENT_SESSION_SECRET))
@@ -341,7 +390,7 @@ describe('auth broker worker', () => {
     expect(body.ok).toBe(true)
 
     const sessionPayload = await verifyClientSessionToken(body.appSessionToken)
-    expect(sessionPayload.sub).toBe('neon:neon_user_123')
+    expect(sessionPayload.sub).toBe('feishu:legacy-user')
     expect(sessionPayload.scope).toBe('model:issue')
     expect(sessionPayload.model_tier).toBe('standard')
     expect(sessionPayload.user_name).toBe('Desktop User')
@@ -350,10 +399,101 @@ describe('auth broker worker', () => {
     expect((sessionPayload.exp as number) - (sessionPayload.iat as number)).toBeLessThan(2_592_000)
 
     const modelPayload = await verifyModelAccessToken(body.modelAccessToken)
-    expect(modelPayload.sub).toBe('neon:neon_user_123')
+    expect(modelPayload.sub).toBe('feishu:legacy-user')
     expect(modelPayload.model_tier).toBe('standard')
     expect(modelPayload.user_name).toBe('Desktop User')
     expect(modelPayload.exp as number).toBeLessThanOrEqual(sessionPayload.exp as number)
+  })
+
+  it('requires a fresh Neon provider session when renewing capabilities', async () => {
+    const now = Math.floor(Date.now() / 1000)
+    const appSessionToken = await new SignJWT({
+      scope: 'model:issue',
+      model_tier: 'standard',
+      auth_time: now,
+    })
+      .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: CLIENT_SESSION_KEY_ID })
+      .setIssuer('storyflow-auth-broker')
+      .setAudience('storyflow-client-auth')
+      .setSubject('neon:neon_user_123')
+      .setIssuedAt(now)
+      .setExpirationTime(now + 2_592_000)
+      .sign(new TextEncoder().encode(CLIENT_SESSION_SECRET))
+
+    const res = await handleRequest(
+      new Request('https://auth.example.com/api/client-auth/token', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${appSessionToken}` },
+      }),
+      makeEnv(),
+    )
+
+    expect(res.status).toBe(401)
+    expect(await res.json()).toEqual({
+      error: 'Neon Auth session is required',
+      code: 'neon_session_required',
+    })
+  })
+
+  it('rechecks Neon organization membership when renewing capabilities', async () => {
+    const now = Math.floor(Date.now() / 1000)
+    const appSessionToken = await new SignJWT({
+      scope: 'model:issue',
+      model_tier: 'standard',
+      auth_time: now,
+    })
+      .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: CLIENT_SESSION_KEY_ID })
+      .setIssuer('storyflow-auth-broker')
+      .setAudience('storyflow-client-auth')
+      .setSubject('neon:neon_user_123')
+      .setIssuedAt(now)
+      .setExpirationTime(now + 2_592_000)
+      .sign(new TextEncoder().encode(CLIENT_SESSION_SECRET))
+    const { publicJwk, token: providerToken } = await createNeonProviderToken({
+      email: 'revoked@example.com',
+      emailVerified: true,
+    })
+
+    const res = await handleRequest(
+      new Request('https://auth.example.com/api/client-auth/token', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${appSessionToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ providerToken }),
+      }),
+      makeEnv(),
+      async () => Response.json({ keys: [publicJwk] }),
+    )
+
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({
+      error: 'Invitation required',
+      code: 'invitation_required',
+    })
+
+    const active = await createNeonProviderToken({
+      email: 'member@example.com',
+      emailVerified: true,
+      o: { id: 'org_storyflow', slug: 'storyflow-users', role: 'member' },
+    })
+    const renewed = await handleRequest(
+      new Request('https://auth.example.com/api/client-auth/token', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${appSessionToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ providerToken: active.token }),
+      }),
+      makeEnv(),
+      async () => Response.json({ keys: [active.publicJwk] }),
+    )
+
+    expect(renewed.status).toBe(200)
+    const renewedBody = await renewed.json() as Record<string, unknown>
+    expect((await verifyClientSessionToken(renewedBody.appSessionToken)).organization_id).toBe('org_storyflow')
   })
 
   it('rejects invalid client sessions without issuing replacement tokens', async () => {
@@ -419,7 +559,7 @@ describe('auth broker worker', () => {
       .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: CLIENT_SESSION_KEY_ID })
       .setIssuer('storyflow-auth-broker')
       .setAudience('storyflow-client-auth')
-      .setSubject('neon:neon_user_123')
+      .setSubject('feishu:expired-user')
       .setIssuedAt(now)
       .setExpirationTime(now + 300)
       .sign(new TextEncoder().encode(CLIENT_SESSION_SECRET))
@@ -450,7 +590,7 @@ describe('auth broker worker', () => {
       .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: CLIENT_SESSION_KEY_ID })
       .setIssuer('storyflow-auth-broker')
       .setAudience('storyflow-client-auth')
-      .setSubject('neon:neon_user_123')
+      .setSubject('feishu:expiring-user')
       .setIssuedAt(now)
       .setExpirationTime(authenticatedAt + 2_592_000)
       .sign(new TextEncoder().encode(CLIENT_SESSION_SECRET))

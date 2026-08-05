@@ -73,6 +73,7 @@ describe('client auth broker config', () => {
 })
 
 describe('DefaultClientAuthBrokerClient', () => {
+
   it('preserves the Feishu profile and company scope from the broker', async () => {
     globalThis.fetch = (async () => Response.json({
       user: {
@@ -113,6 +114,24 @@ describe('DefaultClientAuthBrokerClient', () => {
     expect(result.modelAccessToken).toBe('model-access-token')
   })
 
+  it('presents a fresh Neon provider token when refreshing capabilities', async () => {
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      expect(input.toString()).toBe('https://auth.storyflow.example.com/api/client-auth/token')
+      expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer app-session-token')
+      expect(JSON.parse(String(init?.body))).toEqual({ providerToken: 'provider-token' })
+      return Response.json({
+        appSessionToken: 'app-session-token',
+        modelAccessToken: 'model-access-token',
+      })
+    }) as unknown as typeof fetch
+
+    await new DefaultClientAuthBrokerClient().refreshModelAccessToken({
+      brokerUrl: 'https://auth.storyflow.example.com',
+      appSessionToken: 'app-session-token',
+      providerToken: 'provider-token',
+    })
+  })
+
   it('bounds half-open broker requests', async () => {
     globalThis.fetch = ((_input, init) => new Promise<Response>((_resolve, reject) => {
       init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
@@ -150,7 +169,7 @@ describe('DefaultClientAuthBrokerClient', () => {
       authBrokerUrl: 'https://auth.storyflow.example.com',
     }, {
       initialSession: {
-        user: { provider: 'neon', userId: 'user-1' },
+        user: { provider: 'feishu', userId: 'user-1' },
         appSessionToken: 'private-app-session',
       },
       sessionStore: { save: async () => {}, clear: async () => { clear() } },

@@ -8,6 +8,14 @@ Model Access defines who owns authentication state for managed and user-configur
 The renewable relationship between a local Storyflow installation and a signed-in account. It may be persisted so the account can be restored after restart.
 _Avoid_: Model credential, provider API key
 
+**Invitation**:
+A native Neon Organization invitation bound to an email address. It is not an account or a session.
+_Avoid_: Registration account, login token
+
+**Organization Membership**:
+The Neon-signed authorization fact that admits an external email identity to Storyflow.
+_Avoid_: Feishu user, Neon user, app session
+
 **Managed Model Access**:
 A short-lived capability derived from an Identity Session and supplied by the host only to Storyflow-managed model runtimes.
 _Avoid_: Stored provider credential, default API key
@@ -34,7 +42,9 @@ _Avoid_: SDK retry budget, duplicate user message
 
 ## Relationships
 
-- An Identity Session may issue Managed Model Access; it is not copied into Provider Credentials.
+- Feishu's tenant allowlist and Neon's Organization membership are independent admission boundaries.
+- A Neon Invitation may establish Organization Membership after the invited email is verified.
+- A Neon Identity Session may issue Managed Model Access only while a fresh JWT proves Organization Membership; it is not copied into Provider Credentials.
 - Managed Model Access authorizes only trusted Storyflow-managed connections and remains transient.
 - Provider Credentials remain independent so user-configured providers continue to work without an Identity Session.
 - Connection readiness is evaluated at the connection boundary, separately from Credential Store Health.

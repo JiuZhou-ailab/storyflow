@@ -11,7 +11,7 @@ Electron main-process shell: app startup, native windows, IPC registration, auth
 - `client-auth-broker.ts` - Bounded HTTPS auth-broker client and response validation.
 - `client-auth.ts` - Desktop client authentication service.
 - `client-auth-token-lifecycle.ts` - Managed model-token refresh lifecycle and concurrency coordinator.
-- `client-auth-session-store.ts` - Encrypted desktop auth session persistence.
+- `client-auth-session-store.ts` - Encrypted desktop auth and Neon session persistence.
 - `deep-link.ts` - Deep-link parsing and dispatch.
 - `feedback.ts` - Feedback issue submission adapter.
 - `index.ts` - Main-process bootstrap.

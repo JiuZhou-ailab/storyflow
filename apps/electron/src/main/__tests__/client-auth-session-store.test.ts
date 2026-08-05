@@ -121,6 +121,7 @@ describe('createClientAuthSessionStore', () => {
       value: JSON.stringify({
         user: { provider: 'neon', userId: 'user-1' },
         appSessionToken: 'renewable-app-session',
+        neonSessionCookie: '__Secure-neon-auth.session_token=encrypted-by-store',
         modelAccessToken: modelToken(Math.floor(Date.now() / 1000) + 60),
       }),
     })
@@ -138,11 +139,13 @@ describe('createClientAuthSessionStore', () => {
     expect(await store.load()).toEqual({
       user: { provider: 'neon', userId: 'user-1' },
       appSessionToken: 'renewable-app-session',
+      neonSessionCookie: '__Secure-neon-auth.session_token=encrypted-by-store',
     })
     expect(records.get(keyFor({ type: 'client_auth_session' }))).toEqual({
       value: JSON.stringify({
         user: { provider: 'neon', userId: 'user-1' },
         appSessionToken: 'renewable-app-session',
+        neonSessionCookie: '__Secure-neon-auth.session_token=encrypted-by-store',
       }),
     })
     expect(records.has(keyFor({

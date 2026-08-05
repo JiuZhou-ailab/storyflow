@@ -61,7 +61,11 @@ export interface ClientFeishuBrokerPublicConfig {
 
 export interface ClientAuthSignInInput { identifier: string, password: string }
 
-export interface ClientAuthSignUpInput extends ClientAuthSignInInput { name?: string }
+export interface ClientAuthSignUpInput extends ClientAuthSignInInput {
+  name?: string
+}
+
+export interface ClientAuthEmailOtpInput { email: string, otp: string }
 
 export interface ClientAuthUser {
   provider: 'neon' | 'feishu'
@@ -77,6 +81,7 @@ export interface ClientAuthSession {
   user: ClientAuthUser
   appSessionToken?: string
   modelAccessToken?: string
+  neonSessionCookie?: string
 }
 
 export type ClientAuthSignUpResult =
@@ -95,7 +100,11 @@ export interface ClientAuthNeonBrokerExchangeInput {
   token: string
 }
 
-export interface ClientAuthBrokerTokenRefreshInput { brokerUrl: string, appSessionToken: string }
+export interface ClientAuthBrokerTokenRefreshInput {
+  brokerUrl: string
+  appSessionToken: string
+  providerToken?: string
+}
 
 export interface ClientAuthBrokerExchangeResult {
   user: ClientAuthUser
@@ -127,7 +136,12 @@ export interface ClientAuthState {
 
 export type ClientAuthNeonService = Pick<
   NeonAuthService,
-  'isConfigured' | 'getClientConfig' | 'authenticateWithEmailPassword' | 'verifyToken'
+  | 'isConfigured'
+  | 'getClientConfig'
+  | 'authenticateWithEmailPassword'
+  | 'verifyEmailOtp'
+  | 'getOrganizationToken'
+  | 'verifyToken'
 >
 
 export interface ClientAuthChange {
@@ -160,6 +174,7 @@ export interface ClientAuthService {
   issueSkillsMarketAccessToken(): Promise<string>
   signIn(input: ClientAuthSignInInput): Promise<ClientAuthUser>
   signUp(input: ClientAuthSignUpInput): Promise<ClientAuthSignUpResult>
+  verifyEmailOtp(input: ClientAuthEmailOtpInput): Promise<void>
   signInWithFeishu(): Promise<ClientAuthUser>
   cancelFeishuSignIn(): void
   signOut(): Promise<void>
@@ -185,6 +200,7 @@ type ClientAuthEnv = Partial<Pick<NodeJS.ProcessEnv,
   | 'CRAFT_CLIENT_NEON_AUTH_JWKS_URL'
   | 'CRAFT_CLIENT_NEON_AUTH_ISSUER'
   | 'CRAFT_CLIENT_NEON_AUTH_AUDIENCE'
+  | 'CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID'
   | 'CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN'
   | 'CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED'
   | 'CRAFT_CLIENT_NEON_AUTH_ORIGIN'
@@ -203,6 +219,7 @@ const BUNDLED_CLIENT_AUTH_ENV: ClientAuthEnv = {
   CRAFT_CLIENT_NEON_AUTH_JWKS_URL: process.env.CRAFT_CLIENT_NEON_AUTH_JWKS_URL,
   CRAFT_CLIENT_NEON_AUTH_ISSUER: process.env.CRAFT_CLIENT_NEON_AUTH_ISSUER,
   CRAFT_CLIENT_NEON_AUTH_AUDIENCE: process.env.CRAFT_CLIENT_NEON_AUTH_AUDIENCE,
+  CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID: process.env.CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID,
   CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN: process.env.CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN,
   CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED: process.env.CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED,
   CRAFT_CLIENT_NEON_AUTH_ORIGIN: process.env.CRAFT_CLIENT_NEON_AUTH_ORIGIN,
@@ -225,6 +242,8 @@ export function createClientAuthConfigFromEnv(env: NodeJS.ProcessEnv): ClientAut
   const jwksUrl = readEnv(env.CRAFT_CLIENT_NEON_AUTH_JWKS_URL) ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_JWKS_URL)
   const issuer = readEnv(env.CRAFT_CLIENT_NEON_AUTH_ISSUER) ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_ISSUER)
   const audience = readEnv(env.CRAFT_CLIENT_NEON_AUTH_AUDIENCE) ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_AUDIENCE)
+  const organizationId = readEnv(env.CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID)
+    ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID)
   const usernameEmailDomain = readEnv(env.CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN)
     ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN)
   const emailSignUpEnabled = readBooleanEnv(env.CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED)
@@ -259,6 +278,7 @@ export function createClientAuthConfigFromEnv(env: NodeJS.ProcessEnv): ClientAut
             ...(jwksUrl ? { jwksUrl } : {}),
             ...(issuer ? { issuer } : {}),
             ...(audience ? { audience } : {}),
+            ...(organizationId ? { organizationId } : {}),
             ...(usernameEmailDomain ? { usernameEmailDomain } : {}),
             emailSignUpEnabled,
           },
@@ -373,6 +393,7 @@ export function createClientAuthService(
 
   async function saveNeonSession(
     providerToken: string,
+    sessionCookie: string | undefined,
     verifiedUser: ClientAuthUser,
   ): Promise<ClientAuthUser> {
     if (!authBrokerUrl || !authBrokerClient) throw new Error('Client auth broker is not configured')
@@ -383,12 +404,26 @@ export function createClientAuthService(
     })
     const user = normalizeBrokerClientAuthUser(brokerResult.user, 'neon')
     const modelAccessToken = requireModelAccessToken(brokerResult)
+    const appSessionToken = requireAppSessionToken(brokerResult)
     await saveCurrentSession({
       user,
-      appSessionToken: requireAppSessionToken(brokerResult),
+      appSessionToken,
       modelAccessToken,
+      ...(sessionCookie ? { neonSessionCookie: sessionCookie } : {}),
     })
     return user
+  }
+
+  async function getNeonProviderToken(sessionCookie: string): Promise<string> {
+    const organizationId = readEnv(config.neonAuth?.organizationId)
+    if (!neonAuth || !organizationId) {
+      throw new Error('Neon Auth organization is not configured')
+    }
+    return neonAuth.getOrganizationToken({
+      sessionCookie,
+      organizationId,
+      origin: config.neonAuthOrigin,
+    })
   }
 
   service = {
@@ -420,18 +455,25 @@ export function createClientAuthService(
         }
         let refreshed: ClientAuthBrokerTokenRefreshResult
         try {
+          const providerToken = session.user.provider === 'neon'
+            ? await getNeonProviderToken(requireNeonSessionCookie(session))
+            : undefined
           refreshed = await authBrokerClient.refreshModelAccessToken({
             brokerUrl: authBrokerUrl,
             appSessionToken,
+            ...(providerToken ? { providerToken } : {}),
           })
         } catch (error) {
-          if (isRejectedAppSession(error)) await clearRejectedSession(session, generation)
+          if (isRejectedAppSession(error) || isRejectedNeonSession(error)) {
+            await clearRejectedSession(session, generation)
+          }
           throw error
         }
         const nextSession = {
           user: session.user,
           appSessionToken: requireAppSessionToken(refreshed),
           modelAccessToken: requireModelAccessToken(refreshed),
+          ...(session.neonSessionCookie ? { neonSessionCookie: session.neonSessionCookie } : {}),
         }
         await tokenLifecycle.runExclusive(async () => {
           tokenLifecycle.assertCurrent(generation)
@@ -454,16 +496,22 @@ export function createClientAuthService(
       }
       const generation = tokenLifecycle.generation
       try {
+        const providerToken = session.user.provider === 'neon'
+          ? await getNeonProviderToken(requireNeonSessionCookie(session))
+          : undefined
         const result = await authBrokerClient.issueSkillsMarketToken({
           brokerUrl: authBrokerUrl,
           appSessionToken,
+          ...(providerToken ? { providerToken } : {}),
         })
         if (!tokenLifecycle.isCurrent(generation) || currentSession !== session) {
           throw new Error('Client auth session changed')
         }
         return result.marketPublishToken
       } catch (error) {
-        if (isRejectedAppSession(error)) await clearRejectedSession(session, generation)
+        if (isRejectedAppSession(error) || isRejectedNeonSession(error)) {
+          await clearRejectedSession(session, generation)
+        }
         throw error
       }
     },
@@ -493,8 +541,11 @@ export function createClientAuthService(
         throw new Error('Email verification is required before signing in')
       }
 
-      const user = toClientAuthUser(await neonAuth.verifyToken(authResult.token))
-      return saveNeonSession(authResult.token, user)
+      const providerToken = authResult.sessionCookie
+        ? await getNeonProviderToken(authResult.sessionCookie)
+        : authResult.token
+      const user = toClientAuthUser(await neonAuth.verifyToken(providerToken))
+      return saveNeonSession(providerToken, authResult.sessionCookie, user)
     },
 
     async signUp(input: ClientAuthSignUpInput): Promise<ClientAuthSignUpResult> {
@@ -504,7 +555,6 @@ export function createClientAuthService(
       if (!emailSignUpEnabled) {
         throw new Error('Email sign-up is disabled')
       }
-
       const identifier = readEnv(input.identifier)
       if (!identifier) {
         throw new Error(clientConfigRequiresUsername(neonAuth.getClientConfig())
@@ -514,7 +564,6 @@ export function createClientAuthService(
       if (!input.password) {
         throw new Error('Password is required')
       }
-
       const authResult = await neonAuth.authenticateWithEmailPassword({
         mode: 'sign-up',
         email: identifier,
@@ -530,12 +579,24 @@ export function createClientAuthService(
         }
       }
 
-      const user = toClientAuthUser(await neonAuth.verifyToken(authResult.token))
-      if (user.emailVerified === false) {
+      const providerToken = authResult.sessionCookie
+        ? await getNeonProviderToken(authResult.sessionCookie)
+        : authResult.token
+      const user = toClientAuthUser(await neonAuth.verifyToken(providerToken))
+      if (user.emailVerified !== true) {
         return { status: 'verification-required', user }
       }
-      const authenticatedUser = await saveNeonSession(authResult.token, user)
+      const authenticatedUser = await saveNeonSession(providerToken, authResult.sessionCookie, user)
       return { status: 'authenticated', user: authenticatedUser }
+    },
+
+    async verifyEmailOtp(input: ClientAuthEmailOtpInput): Promise<void> {
+      if (!neonAuth || !emailPasswordEnabled) throw new Error('Client auth is not configured')
+      await neonAuth.verifyEmailOtp({
+        email: input.email,
+        otp: input.otp,
+        origin: config.neonAuthOrigin,
+      })
     },
 
     async signInWithFeishu(): Promise<ClientAuthUser> {
@@ -655,6 +716,7 @@ export function createClientAuthService(
       tokenLifecycle.dispose()
     },
   }
+
   tokenLifecycle.schedule(currentSession?.modelAccessToken)
   return service
 }
@@ -687,7 +749,19 @@ function toClientAuthUser(identity: NeonAuthIdentity): ClientAuthUser {
     ...(identity.email ? { email: identity.email } : {}),
     ...(identity.emailVerified !== undefined ? { emailVerified: identity.emailVerified } : {}),
     ...(identity.name ? { name: identity.name } : {}),
+    ...(identity.organizationId ? { organizationId: identity.organizationId } : {}),
   }
+}
+
+function requireNeonSessionCookie(session: ClientAuthSession): string {
+  const cookie = readEnv(session.neonSessionCookie)
+  if (!cookie) throw new Error('Neon Auth session is required')
+  return cookie
+}
+
+function isRejectedNeonSession(error: unknown): boolean {
+  return error instanceof Error
+    && ['Invitation required', 'Neon Auth session is required'].includes(error.message)
 }
 
 function toClientAuthUserFromEmailPasswordUser(user: {

@@ -84,6 +84,10 @@ function createNeonAuthConfig(): NeonAuthConfig | undefined {
   const jwksUrl = readFirstEnv('CRAFT_CLIENT_NEON_AUTH_JWKS_URL', 'CRAFT_WEBUI_NEON_AUTH_JWKS_URL')
   const issuer = readFirstEnv('CRAFT_CLIENT_NEON_AUTH_ISSUER', 'CRAFT_WEBUI_NEON_AUTH_ISSUER')
   const audience = readFirstEnv('CRAFT_CLIENT_NEON_AUTH_AUDIENCE', 'CRAFT_WEBUI_NEON_AUTH_AUDIENCE')
+  const organizationId = readFirstEnv(
+    'CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID',
+    'CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID',
+  )
   const usernameEmailDomain = readFirstEnv(
     'CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN',
     'CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN',
@@ -94,6 +98,7 @@ function createNeonAuthConfig(): NeonAuthConfig | undefined {
     ...(jwksUrl ? { jwksUrl } : {}),
     ...(issuer ? { issuer } : {}),
     ...(audience ? { audience } : {}),
+    ...(organizationId ? { organizationId } : {}),
     ...(usernameEmailDomain ? { usernameEmailDomain } : {}),
   }
 }

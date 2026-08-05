@@ -212,6 +212,7 @@ export const CLIENT_AUTH_IPC_CHANNELS = {
   GET_STATE: 'client-auth:get-state',
   SIGN_IN: 'client-auth:sign-in',
   SIGN_UP: 'client-auth:sign-up',
+  VERIFY_EMAIL: 'client-auth:verify-email',
   SIGN_IN_WITH_FEISHU: 'client-auth:sign-in-feishu',
   CANCEL_FEISHU_SIGN_IN: 'client-auth:cancel-feishu-sign-in',
   SIGN_OUT: 'client-auth:sign-out',
@@ -254,6 +255,11 @@ export interface ClientAuthSignInInput {
 
 export interface ClientAuthSignUpInput extends ClientAuthSignInInput {
   name?: string
+}
+
+export interface ClientAuthEmailOtpInput {
+  email: string
+  otp: string
 }
 
 export type ClientAuthSignUpResult =
@@ -376,6 +382,7 @@ export interface ElectronAPI {
   getClientAuthState(): Promise<ClientAuthState>
   signInClient(input: ClientAuthSignInInput): Promise<ClientAuthUser>
   signUpClient(input: ClientAuthSignUpInput): Promise<ClientAuthSignUpResult>
+  verifyClientEmail(input: ClientAuthEmailOtpInput): Promise<void>
   signInWithFeishuClient(): Promise<ClientAuthUser>
   submitFeedbackIssue(input: FeedbackIssueInput): Promise<FeedbackIssueResult>
   cancelFeishuSignInClient(): Promise<void>

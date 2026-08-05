@@ -1,5 +1,5 @@
 // input: Encrypted credential manager entries and renewable client-auth sessions
-// output: Durable identity session plus exact cleanup of legacy managed-token projections
+// output: Durable identity sessions plus exact cleanup of legacy managed-token projections
 // pos: Main-process persistence boundary; model capability tokens remain process-local
 
 import { getCredentialManager, type CredentialManager } from '@craft-agent/shared/credentials'
@@ -7,7 +7,11 @@ import {
   LEGACY_MANAGED_LLM_CONNECTION_SLUG,
   MANAGED_LLM_CONNECTION_SLUGS,
 } from '@craft-agent/shared/config'
-import type { ClientAuthSession, ClientAuthSessionStore, ClientAuthUser } from './client-auth'
+import type {
+  ClientAuthSession,
+  ClientAuthSessionStore,
+  ClientAuthUser,
+} from './client-auth'
 import { isClientModelAccessTokenFresh } from './client-auth-token-lifecycle'
 
 const CLIENT_AUTH_SESSION_ID = { type: 'client_auth_session' as const }
@@ -119,11 +123,15 @@ function parseClientAuthSession(value: string): ClientAuthSession | null {
   const modelAccessToken = typeof record.modelAccessToken === 'string' && record.modelAccessToken.trim()
     ? record.modelAccessToken.trim()
     : undefined
+  const neonSessionCookie = typeof record.neonSessionCookie === 'string' && record.neonSessionCookie.trim()
+    ? record.neonSessionCookie.trim()
+    : undefined
 
   return {
     user,
     ...(appSessionToken ? { appSessionToken } : {}),
     ...(modelAccessToken ? { modelAccessToken } : {}),
+    ...(neonSessionCookie ? { neonSessionCookie } : {}),
   }
 }
 
@@ -131,6 +139,7 @@ function withoutModelAccessToken(session: ClientAuthSession): ClientAuthSession 
   return {
     user: session.user,
     ...(session.appSessionToken ? { appSessionToken: session.appSessionToken } : {}),
+    ...(session.neonSessionCookie ? { neonSessionCookie: session.neonSessionCookie } : {}),
   }
 }
 

@@ -75,6 +75,7 @@ describe('NeonAuthService', () => {
           email: 'Person@Example.com',
           emailVerified: true,
           name: 'Example Person',
+          o: { id: 'org_storyflow', role: 'member' },
         }
       },
     })
@@ -86,6 +87,8 @@ describe('NeonAuthService', () => {
       email: 'person@example.com',
       emailVerified: true,
       name: 'Example Person',
+      organizationId: 'org_storyflow',
+      organizationRole: 'member',
     })
   })
 
@@ -111,6 +114,21 @@ describe('NeonAuthService', () => {
     })
 
     await expect(service.verifyToken('banned-token')).rejects.toThrow('Neon Auth user is banned')
+  })
+
+  it('rejects users outside the configured Neon organization', async () => {
+    const service = new NeonAuthService({
+      baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+      organizationId: 'org_storyflow',
+      tokenVerifier: async () => ({
+        sub: 'user_outsider',
+        email: 'outsider@example.com',
+        emailVerified: true,
+        o: { id: 'org_storyflow' },
+      }),
+    })
+
+    await expect(service.verifyToken('outsider-token')).rejects.toThrow('Invitation required')
   })
 
   it('posts email sign-in to the Neon Auth password endpoint', async () => {
@@ -262,6 +280,7 @@ describe('NeonAuthService', () => {
     })).resolves.toEqual({
       status: 'authenticated',
       token: 'jwt-access-token',
+      sessionCookie: '__Secure-neon-auth.session_token=opaque-session-token',
       user: {
         id: 'user_from_cookie_session',
         email: 'cookie.session@example.com',
@@ -303,6 +322,64 @@ describe('NeonAuthService', () => {
         emailVerified: false,
       },
     })
+  })
+
+  it('verifies OTP and accepts the pending invitation for the configured organization', async () => {
+    const requests: Array<{ url: string, init?: RequestInit }> = []
+    let setActiveCalls = 0
+    const service = new NeonAuthService({
+      baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+      fetch: async (input, init) => {
+        const url = String(input)
+        requests.push({ url, init })
+        if (url.endsWith('/email-otp/verify-email')) return Response.json({ status: true })
+        if (url.endsWith('/organization/set-active')) {
+          setActiveCalls += 1
+          return setActiveCalls === 1
+            ? Response.json({ code: 'USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION' }, { status: 403 })
+            : Response.json({ id: 'org_storyflow' })
+        }
+        if (url.endsWith('/organization/list-user-invitations')) {
+          return Response.json([{ id: 'invite-1', organizationId: 'org_storyflow', status: 'pending' }])
+        }
+        if (url.endsWith('/organization/accept-invitation')) {
+          return Response.json({ id: 'invite-1', status: 'accepted' })
+        }
+        if (url.endsWith('/token')) return Response.json({ token: 'organization-jwt' })
+        return Response.json({ error: 'unexpected' }, { status: 500 })
+      },
+    })
+
+    await expect(service.verifyEmailOtp({
+      email: 'invitee@example.com',
+      otp: '123456',
+      origin: 'https://craft.example.com',
+    })).resolves.toBeUndefined()
+    await expect(service.getOrganizationToken({
+      sessionCookie: '__Secure-neon-auth.session_token=session-secret',
+      organizationId: 'org_storyflow',
+      origin: 'https://craft.example.com',
+    })).resolves.toBe('organization-jwt')
+
+    expect(JSON.parse(String(requests[0]?.init?.body))).toEqual({
+      email: 'invitee@example.com',
+      otp: '123456',
+    })
+    expect(requests.filter(({ url }) => url.endsWith('/organization/set-active'))).toHaveLength(2)
+    const accept = requests.find(({ url }) => url.endsWith('/organization/accept-invitation'))
+    expect(JSON.parse(String(accept?.init?.body))).toEqual({ invitationId: 'invite-1' })
+  })
+
+  it('reports an expired organization session as requiring sign-in', async () => {
+    const service = new NeonAuthService({
+      baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+      fetch: async () => Response.json({ code: 'UNAUTHORIZED' }, { status: 401 }),
+    })
+
+    await expect(service.getOrganizationToken({
+      sessionCookie: '__Secure-neon-auth.session_token=expired',
+      organizationId: 'org_storyflow',
+    })).rejects.toThrow('Neon Auth session is required')
   })
 
   it('keeps sign-up verification-required when Neon Auth returns a token for an unverified email', async () => {
