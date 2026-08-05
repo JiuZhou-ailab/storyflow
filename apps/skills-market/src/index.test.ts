@@ -8,7 +8,7 @@ import { handleRequest, type Env } from './index.ts'
 const env: Env = {}
 
 describe('Skills Market worker', () => {
-  test('lists twenty popular general Skills plus five Storyflow recommendations', async () => {
+  test('lists a focused mix of Storyflow and general recommendations', async () => {
     const response = await handleRequest(new Request('https://market.test/api/skills'), env)
     const body = await response.json() as {
       total: number
@@ -21,17 +21,16 @@ describe('Skills Market worker', () => {
       }>
     }
     expect(response.status).toBe(200)
-    expect(body.total).toBe(25)
+    expect(body.total).toBe(10)
     expect(body.skills.every(skill => skill.sha256 === '')).toBeTrue()
     expect(body.skills.every(skill => skill.downloadCount === 0)).toBeTrue()
     expect(body.skills.every(skill => skill.featured)).toBeTrue()
-    expect(body.skills.map(skill => skill.recommendation?.order)).toEqual(Array.from({ length: 25 }, (_, index) => index + 1))
-    expect(body.skills.slice(0, 3).map(skill => skill.slug)).toEqual(['find-skills', 'grill-me', 'frontend-design'])
-    const slugs = body.skills.map(skill => skill.slug)
-    for (const slug of [
-      'skill-creator', 'anysearch', 'sn2s-novel-to-screenplay',
-      'video-to-screenplay', 'discover-hit-dramas',
-    ]) expect(slugs).toContain(slug)
+    expect(body.skills.map(skill => skill.recommendation?.order)).toEqual(Array.from({ length: 10 }, (_, index) => index + 1))
+    expect(body.skills.map(skill => skill.slug)).toEqual([
+      'sn2s-novel-to-screenplay', 'video-to-screenplay', 'discover-hit-dramas',
+      'hot-video-script-ideation', 'anysearch', 'find-skills', 'grill-me',
+      'research', 'brainstorming', 'skill-creator',
+    ])
   })
 
   test('serves traceable recommendation detail without fabricating a package', async () => {

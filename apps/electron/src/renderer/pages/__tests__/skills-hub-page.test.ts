@@ -130,17 +130,16 @@ describe('SkillsHubPage contracts', () => {
     expect(filterMarketSkills([{ ...marketSkill, featured: false }], '', 'featured')).toEqual([])
   })
 
-  it('searches and displays authenticated publisher provenance separately from content attribution', () => {
-    expect(source).toContain('skill.publisher.displayName')
-    expect(source).toContain("skill.visibility === 'company'")
-    expect(source).toContain("t('skillsHub.publishedBy'")
-    expect(source).toContain("t('skillsHub.contentSource'")
+  it('shows only the content author and Market download count in catalog metadata', () => {
+    expect(source).toContain('{skill.author}</span>')
+    expect(source).toContain('count: skill.downloadCount')
     expect(source).toContain('flex min-w-0 gap-2 overflow-hidden whitespace-nowrap text-xs')
+    expect(source).not.toContain('skill.publisher.displayName')
   })
 
-  it('separates external recommendation evidence from Market download counts', () => {
+  it('keeps recommendation evidence searchable but displays Market download counts', () => {
     expect(source).toContain('skill.downloadCount')
-    expect(source).toContain('skill.recommendation.label')
+    expect(source).not.toContain('skill.recommendation.label')
     expect(source).toContain("t('skillsHub.downloadCount'")
     expect(filterMarketSkills([marketSkill], '', 'featured')).toEqual([marketSkill])
   })

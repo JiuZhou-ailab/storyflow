@@ -467,40 +467,14 @@ export default function SkillsHubPage() {
                             {skill.summary}
                           </span>
                           <span className="mt-1 flex min-w-0 gap-2 overflow-hidden whitespace-nowrap text-xs text-muted-foreground">
-                            <span className="font-medium text-foreground/75">
-                              {skill.recommendation
-                                ? t('skillsHub.recommendedBy', {
-                                  defaultValue: '{{name}} 推荐',
-                                  name: skill.publisher.displayName,
-                                })
-                                : t('skillsHub.publishedBy', {
-                                  defaultValue: '{{name}} 发布',
-                                  name: skill.publisher.displayName,
-                                })}
-                            </span>
-                            <span className="shrink-0">{skill.visibility === 'company'
-                              ? t('skillsHub.companyVisibility', '公司内部')
-                              : t('skillsHub.publicVisibility', '公开')}</span>
+                            <span className="truncate font-medium text-foreground/75">{skill.author}</span>
                             <span className="inline-flex shrink-0 items-center gap-1">
-                              {skill.recommendation ? (
-                                <>
-                                  <Zap className="size-3" aria-hidden="true" />
-                                  {skill.recommendation.label}
-                                </>
-                              ) : (
-                                <>
-                                  <Download className="size-3" aria-hidden="true" />
-                                  {t('skillsHub.downloadCount', {
-                                    defaultValue: '{{count}} 次下载',
-                                    count: skill.downloadCount,
-                                  })}
-                                </>
-                              )}
+                              <Download className="size-3" aria-hidden="true" />
+                              {t('skillsHub.downloadCount', {
+                                defaultValue: '{{count}} 次下载',
+                                count: skill.downloadCount,
+                              })}
                             </span>
-                            <span className="truncate">{t('skillsHub.contentSource', {
-                              defaultValue: '来源：{{source}}',
-                              source: skill.author,
-                            })}</span>
                           </span>
                         </span>
                       </button>
@@ -622,18 +596,11 @@ function MarketSkillDetailDialog({
               <DialogTitle className="truncate">{resolvedSkill.displayName}</DialogTitle>
               <DialogDescription className="mt-1 leading-relaxed">{resolvedSkill.summary}</DialogDescription>
               <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                <span>{resolvedSkill.recommendation
-                  ? t('skillsHub.recommendedBy', { defaultValue: '{{name}} 推荐', name: resolvedSkill.publisher.displayName })
-                  : t('skillsHub.publishedBy', { defaultValue: '{{name}} 发布', name: resolvedSkill.publisher.displayName })}</span>
-                <span>{resolvedSkill.visibility === 'company'
-                  ? t('skillsHub.companyVisibility', '公司内部')
-                  : t('skillsHub.publicVisibility', '公开')}</span>
-                <span>{resolvedSkill.recommendation?.label ?? t('skillsHub.downloadCount', {
+                <span>{resolvedSkill.author}</span>
+                <span>{t('skillsHub.downloadCount', {
                   defaultValue: '{{count}} 次下载',
                   count: resolvedSkill.downloadCount,
                 })}</span>
-                <span>{t('skillsHub.contentSource', { defaultValue: '来源：{{source}}', source: resolvedSkill.author })}</span>
-                <span>v{resolvedSkill.version}</span>
               </div>
             </div>
           </div>
