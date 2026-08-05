@@ -1,3 +1,7 @@
+// input: WhatsApp worker source, Baileys dependencies, and build-time Git metadata
+// output: A self-contained Node-compatible WhatsApp worker bundle
+// pos: Canonical WhatsApp worker build entrypoint reused by development and server packaging
+
 /**
  * WhatsApp worker build script.
  *
@@ -95,13 +99,14 @@ async function main(): Promise<void> {
       // Mark only Electron + Baileys' runtime-optional peers external.
       // Baileys itself and all its required transitive deps get bundled.
       //
-      // The three optional deps below are unused by Storyflow (no link
+      // The optional deps below are unused by Storyflow (no link
       // previews, no terminal QR, no inline image transforms). Baileys
       // guards them with try/catch so they fail silently at runtime.
       "--external:electron",
       "--external:link-preview-js",
       "--external:qrcode-terminal",
       "--external:jimp",
+      "--external:sharp",
     ],
     cwd: ROOT_DIR,
     stdout: "inherit",

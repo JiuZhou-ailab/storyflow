@@ -30,6 +30,12 @@ describe('Electron main process build config', () => {
     expect(readRepoFile('scripts/electron-dev.ts')).toContain(AWS_S3_CLIENT_EXTERNAL);
   });
 
+  test('keeps Baileys optional native image transforms out of WhatsApp worker bundles', () => {
+    for (const entrypoint of ['scripts/build-wa-worker.ts', 'scripts/electron-build-main.ts']) {
+      expect(readRepoFile(entrypoint)).toContain('--external:sharp');
+    }
+  });
+
   test('stages the freshly built Pi runtime before copying Electron resources', () => {
     const source = readRepoFile('scripts/electron-dev.ts');
     const buildRuntime = source.indexOf('await buildAgentRuntime();');

@@ -190,6 +190,7 @@ async function buildWhatsAppWorker(): Promise<void> {
       "--external:link-preview-js",
       "--external:qrcode-terminal",
       "--external:jimp",
+      "--external:sharp",
     ],
     cwd: ROOT_DIR,
     stdout: "inherit",
