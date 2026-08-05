@@ -7,7 +7,7 @@ Core business logic package for Craft Agent:
 - Permission modes and validation
 
 ## Key folders
-- `src/agent/` — `pi-agent.ts`, `pi-agent-host.ts`, tools, permissions
+- `src/agent/` — `pi-agent.ts` lifecycle, `pi-agent-transport.ts` JSONL process boundary, `pi-agent-tool-host.ts` Host tools, `pi-agent-host.ts` product policy
 - `src/sources/` — source storage/types/services
 - `src/sessions/` — session persistence/index
 - `src/config/` — config/preferences/theme/watcher
