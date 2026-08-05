@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { requireSdkForkBranchAnchor } from './SessionManager.ts'
+import { requireSdkForkBranchAnchor } from './pi-turn-anchors.ts'
 
 describe('requireSdkForkBranchAnchor', () => {
   it('rejects Pi fork branches without a Pi cutoff anchor', () => {
