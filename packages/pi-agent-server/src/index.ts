@@ -19,39 +19,24 @@
  */
 
 import { join } from 'node:path';
-import { mkdirSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 
 // Pi SDK
 import {
-  createAgentSession,
-  SessionManager as PiSessionManager,
   AuthStorage as PiAuthStorage,
   ModelRegistry as PiModelRegistry,
-  createReadToolDefinition,
-  createBashToolDefinition,
-  createEditToolDefinition,
-  createGrepToolDefinition,
-  createFindToolDefinition,
-  createLsToolDefinition,
   getAgentDir,
 } from '@earendil-works/pi-coding-agent';
 import type {
   AgentSession,
   AgentSessionEvent,
-  AgentToolResult,
   AuthCredential,
-  CreateAgentSessionOptions,
-  ToolCallEvent,
-  ToolDefinition,
-  ToolResultEvent,
 } from '@earendil-works/pi-coding-agent';
 
 // Pi AI types
 import type {
   AssistantMessage,
-  ImageContent as PiImageContent,
-  TextContent as PiTextContent,
 } from '@earendil-works/pi-ai';
 
 // Pre-register the Bedrock provider module so the Pi SDK doesn't attempt a
@@ -78,16 +63,12 @@ import {
 } from './custom-endpoint-models.ts';
 
 // Direct source imports from shared (bundled by bun build)
-import { handleLargeResponse, estimateTokens, tokenLimitFor } from '../../shared/src/utils/large-response.ts';
-import { getSessionPlansPath, getSessionPath } from '../../shared/src/sessions/storage.ts';
+import { getSessionPath } from '../../shared/src/sessions/storage.ts';
 import { buildCallLlmRequest } from '../../shared/src/agent/llm-tool.ts';
 import type { LLMQueryRequest, LLMQueryResult } from '../../shared/src/agent/llm-tool.ts';
 import { readJsonLines } from '../../shared/src/utils/jsonl.ts';
-import type { UserQuestionResponse } from '../../session-tools-core/src/types.ts';
-import { PI_TOOL_NAME_MAP, THINKING_TO_PI } from '../../shared/src/agent/backend/pi/constants.ts';
+import { THINKING_TO_PI } from '../../shared/src/agent/backend/pi/constants.ts';
 import type {
-  ConversationRewindBoundary,
-  ConversationRewindRequest,
   ConversationRewindResult,
 } from '../../shared/src/agent/backend/types.ts';
 import type {
@@ -97,38 +78,23 @@ import type {
   PiOutboundMessage,
   PiProxyToolDefinition,
 } from '../../shared/src/agent/backend/pi/protocol.ts';
-import { createWebFetchTool } from './tools/web-fetch.ts';
-import { resolveSearchProvider } from './tools/search/resolve-provider.ts';
-import { createSearchTool } from './tools/search/create-search-tool.ts';
-import { createCreateOnlyWriteToolDefinition } from './write-tool.ts';
 import {
-  createProjectResourceLoader,
   createSkillCatalogResourceLoader,
 } from './project-resource-loader.ts';
-import { createExtensionUIContext } from './extension-ui.ts';
-import { normalizeCraftToolArgumentsForSchema } from './craft-metadata-schema.ts';
 import { createSystemPromptOverride } from './system-prompt-override.ts';
 import { fingerprintTools } from './prompt-cache-profile.ts';
 import {
   PRODUCT_REWIND_BOUNDARY_TYPE,
-  PRODUCT_TREE_HEAD_TYPE,
   createProductRewindBoundary,
-  executeProductRewind,
   findProductRewindBoundary,
-  type ProductRewindBoundary,
 } from './product-rewind.ts';
-import { createToolHooks } from './tool-hooks.ts';
-import { createProviderHooks } from './provider-hooks.ts';
 import { ProductAuthStorageBackend } from './product-auth-storage.ts';
 import { queryLlmWithEphemeralPiSession } from './ephemeral-llm-query.ts';
+import { createPrimaryPiSession } from './primary-session.ts';
+import { createPiToolRuntime } from './pi-tool-runtime.ts';
 import { installNetworkProxy } from './network-proxy.ts';
 import {
-  createSubagentExtension,
-  type SubagentHookContext,
-} from './subagent-tool.ts';
-import {
   sanitizeAssistantMessageForResume,
-  sanitizeSessionFileForResume,
   type PiSessionSanitizeResult,
 } from './pi-session-sanitizer.ts';
 import {
@@ -196,21 +162,6 @@ function logSanitizeResult(scope: string, result: PiSessionSanitizeResult): void
     `${scope}: removed ${result.removedToolCalls} incomplete tool call(s), ` +
     `normalized ${result.normalizedToolCalls} tool call(s)`,
   );
-}
-
-/** Find the most recent .jsonl session file in a directory. */
-function findMostRecentSessionFile(sessionDir: string): string | null {
-  if (!existsSync(sessionDir)) return null;
-  let best: { path: string; mtime: number } | null = null;
-  for (const entry of readdirSync(sessionDir)) {
-    if (!entry.endsWith('.jsonl')) continue;
-    const fullPath = join(sessionDir, entry);
-    const mtime = statSync(fullPath).mtimeMs;
-    if (!best || mtime > best.mtime) {
-      best = { path: fullPath, mtime };
-    }
-  }
-  return best?.path ?? null;
 }
 
 // ============================================================
@@ -369,557 +320,56 @@ async function ensureSession(): Promise<AgentSession> {
   if (!initConfig) throw new Error('Cannot create session: init not received');
 
   const cwd = resolvedCwd();
-  // Pi's agentDir is the user-level runtime/resource root. Session persistence
-  // remains isolated below sessionPath via the explicit PiSessionManager below.
   const agentDir = initConfig.agentDir || getAgentDir();
   mkdirSync(agentDir, { recursive: true });
   const piThinkingLevel = THINKING_TO_PI[
     initConfig.thinkingLevel as keyof typeof THINKING_TO_PI
   ];
-
   const { authStorage, modelRegistry } = createAuthenticatedRegistry();
-  // Store at module scope for set_model handler
   piModelRegistry = modelRegistry;
 
-  // Search is an independent capability: use its own AnySearch credential when
-  // configured, otherwise the credential-free DuckDuckGo fallback.
-  const searchProvider = {
-    get name() {
-      return resolveSearchProvider().name;
-    },
-    async search(query: string, count: number) {
-      return resolveSearchProvider().search(query, count);
-    },
-  };
-  const searchTool = createSearchTool(searchProvider);
-  const webFetchTool = createWebFetchTool(() =>
-    initConfig ? getSessionPath(initConfig.workspaceRootPath, initConfig.sessionId) : null
-  );
-  const webTools = [searchTool, webFetchTool];
-
-  // Pi SDK registration contract:
-  //   - `customTools` accepts ToolDefinition[] — our schema-adapted objects go here
-  //   - `tools` is a string[] name allowlist — MUST include every tool we want active,
-  //     otherwise Pi SDK defaults to the built-in [read, bash, edit, write] set and
-  //     silently filters out everything else. Custom tool names with matching built-in
-  //     names override the SDK's raw implementation inside _refreshToolRegistry, so
-  //     our hooked versions take effect (permissions + large-response summarization).
-  //   - Do NOT pass tool *objects* to `tools` — `allowedToolNames = new Set(options.tools)`
-  //     then `.has(name)` returns false for every string lookup → zero tools active.
-  const builtinDefs = [
-    createReadToolDefinition(cwd),
-    createBashToolDefinition(cwd),
-    createEditToolDefinition(cwd),
-    createCreateOnlyWriteToolDefinition(cwd),
-    createGrepToolDefinition(cwd),
-    createFindToolDefinition(cwd),
-    createLsToolDefinition(cwd),
-  ];
-  const proxyTools = buildProxyTools();
-  const allTools = prepareToolDefinitions([...builtinDefs, ...webTools, ...proxyTools]);
-  const toolAllowlist = allTools.map(t => t.name);
-  systemPromptOverride = createSystemPromptOverride();
-  const toolHooks = createSessionToolHooks({
-    getSession: () => piSession,
-    getUserRequest: () => currentUserMessage,
-    intentByCallId: new Map(),
-    toolResultTokens: 0,
-  });
-  const providerHooks = createProviderHooks({
-    enable1MContext: initConfig.enable1MContext === true,
-  });
-  const subagentExtension = createSubagentExtension({
+  const created = await createPrimaryPiSession({
+    config: initConfig,
     cwd,
     agentDir,
     authStorage,
     modelRegistry,
     thinkingLevel: piThinkingLevel,
-    toolDefinitions: allTools,
-    activeSessions: activeSubagentSessions,
-    providerHooks,
-    createSessionHooks: (context: SubagentHookContext) => createSessionToolHooks({
-      getSession: () => context.session,
-      getUserRequest: () => context.userRequest,
-      intentByCallId: new Map(),
-      toolResultTokens: 0,
-    }),
+    activeSubagentSessions,
+    buildProxyTools,
+    prepareToolDefinitions,
+    createSessionToolHooks,
+    getCurrentUserMessage: () => currentUserMessage,
+    requestHostTool,
+    executeSessionRewind,
+    handleShutdown,
+    send,
+    debug: debugLog,
   });
-  debugLog(`Session tools: ${builtinDefs.length} builtin + ${webTools.length} web + ${proxyTools.length} proxy = ${allTools.length} total`);
-
-  // Build session options
-  const sessionOptions: CreateAgentSessionOptions = {
-    cwd,
-    authStorage,
-    modelRegistry,
-    customTools: allTools,
-    tools: toolAllowlist,
-    agentDir,
-    ...(piThinkingLevel ? { thinkingLevel: piThinkingLevel } : {}),
-  };
-
-  // Every session uses the explicit Storyflow ResourceLoader so prompt and
-  // permission hooks cannot be bypassed by non-persisted/free contexts.
-  const { resourceLoader, settingsManager } = await createProjectResourceLoader({
-    cwd,
-    agentDir,
-    extensionFactories: [
-      systemPromptOverride.extension,
-      providerHooks,
-      toolHooks,
-      subagentExtension,
-    ],
-  });
-  sessionOptions.resourceLoader = resourceLoader;
-  sessionOptions.settingsManager = settingsManager;
-
-  const extensionToolNames = new Set<string>();
-  const loadedExtensions = resourceLoader.getExtensions();
-  debugLog(
-    `Loaded Pi Extensions: ${loadedExtensions.extensions.map(extension => extension.path).join(', ') || '(none)'}`,
-  );
-  for (const error of loadedExtensions.errors) {
-    debugLog(`Pi Extension load error (${error.path}): ${error.error}`);
-  }
-  for (const extension of loadedExtensions.extensions) {
-    for (const toolName of extension.tools.keys()) {
-      if (
-        toolName === 'subagent'
-        && extension.path !== '<inline:storyflow-subagent>'
-      ) {
-        throw new Error(
-          `Global Extension tool conflicts with the built-in Storyflow subagent: ${extension.path}`,
-        );
-      }
-      if (toolAllowlist.includes(toolName)) {
-        throw new Error(
-          `Global Extension tool conflicts with a Storyflow tool: ${toolName}`,
-        );
-      }
-      extensionToolNames.add(toolName);
-    }
-  }
-  sessionOptions.tools = [...toolAllowlist, ...extensionToolNames];
-
-  if (initConfig.sessionPath) {
-    // Session resume: use a per-Craft-session directory so the Pi SDK can
-    // persist and resume its own session across subprocess restarts.
-    // continueRecent() loads the existing session if one exists, otherwise
-    // creates a new one — so this handles both first-run and resume.
-    const sessionDir = join(initConfig.sessionPath, '.pi-sessions');
-    mkdirSync(sessionDir, { recursive: true });
-
-    if (initConfig.branchFromSessionPath) {
-      // Branching: fork from the parent session's Pi session file.
-      // Branches must not silently degrade to fresh sessions.
-      const parentPiSessionDir = join(initConfig.branchFromSessionPath, '.pi-sessions');
-      const parentPiSessionFile = findMostRecentSessionFile(parentPiSessionDir);
-      if (!parentPiSessionFile) {
-        throw new Error(`Pi branch preflight failed: no parent Pi session file found in ${parentPiSessionDir}`);
-      }
-
-      debugLog(`Forking Pi session from parent: ${parentPiSessionFile}`);
-      logSanitizeResult(
-        `Sanitized parent Pi session before fork (${parentPiSessionFile})`,
-        sanitizeSessionFileForResume(parentPiSessionFile),
-      );
-      const forkedSessionManager = PiSessionManager.forkFrom(parentPiSessionFile, cwd, sessionDir);
-
-      // Strict branch cutoff: move leaf to the selected parent entry if provided.
-      // This is Pi's equivalent of Claude resumeSessionAt.
-      if (initConfig.branchFromSdkTurnId) {
-        const anchorId = initConfig.branchFromSdkTurnId;
-        const anchorEntry = forkedSessionManager.getEntry(anchorId);
-        if (!anchorEntry) {
-          throw new Error(`Pi branch preflight failed: branch anchor not found: ${anchorId}`);
-        }
-        forkedSessionManager.branch(anchorId);
-        debugLog(`Applied Pi branch cutoff at entry: ${anchorId}`);
-      }
-
-      sessionOptions.sessionManager = forkedSessionManager;
-    } else {
-      const recentPiSessionFile = findMostRecentSessionFile(sessionDir);
-      if (recentPiSessionFile) {
-        logSanitizeResult(
-          `Sanitized Pi session before resume (${recentPiSessionFile})`,
-          sanitizeSessionFileForResume(recentPiSessionFile),
-        );
-      }
-      sessionOptions.sessionManager = PiSessionManager.continueRecent(cwd, sessionDir);
-    }
-  }
-
-  // Set model if specified
-  if (initConfig.model) {
-    try {
-      const piModel = resolvePiModel(modelRegistry, initConfig.model, initConfig.piAuth?.provider, shouldPreferCustomEndpoint());
-      if (piModel) {
-        // Verify resolved model's provider is compatible with the authenticated provider.
-        // Without this, a model that resolves to a different provider (e.g. azure-openai-responses
-        // when authed as github-copilot) would cause "No API key found" at runtime.
-        const resolvedProvider = (piModel as any)?.provider;
-        const isCompatible = !initConfig.piAuth ||
-          resolvedProvider === initConfig.piAuth.provider ||
-          resolvedProvider === 'custom-endpoint';
-        if (isCompatible) {
-          sessionOptions.model = piModel;
-        } else {
-          debugLog(`Model ${initConfig.model} resolved to incompatible provider ${resolvedProvider} (expected ${initConfig.piAuth!.provider}), skipping`);
-        }
-      }
-    } catch {
-      debugLog(`Could not resolve Pi model: ${initConfig.model}`);
-    }
-  }
-
-  // Create the session — tools flow through customTools + allowlist (see comment above).
-  const { session } = await createAgentSession(sessionOptions);
-  piSession = session;
-
-  const notifyExtension = (
-    message: string,
-    level?: 'info' | 'warning' | 'error',
-  ): void => send({ type: 'extension_notification', message, level });
-
-  try {
-    await session.bindExtensions({
-      uiContext: createExtensionUIContext(
-        session.extensionRunner.getUIContext(),
-        {
-          askUserQuestion: async (question) => {
-            const result = await requestHostTool('mcp__session__ask_user_question', {
-              questions: [question],
-            });
-            if (result.isError) throw new Error(result.content);
-
-            const parsed = JSON.parse(result.content) as unknown;
-            if (
-              !parsed
-              || typeof parsed !== 'object'
-              || !('answers' in parsed)
-              || !parsed.answers
-              || typeof parsed.answers !== 'object'
-            ) {
-              throw new Error('Host returned an invalid user-question response.');
-            }
-            return parsed as UserQuestionResponse;
-          },
-          notify: notifyExtension,
-        },
-      ),
-      mode: 'rpc',
-      commandContextActions: {
-        waitForIdle: () => session.waitForIdle(),
-        newSession: async () => ({ cancelled: true }),
-        fork: async () => ({ cancelled: true }),
-        navigateTree: async (targetId, options) => {
-          const target = session.sessionManager.getEntry(targetId);
-          if (target?.type !== 'message' || target.message.role !== 'user') {
-            throw new Error('Storyflow currently supports Extension tree navigation only to mapped user messages.');
-          }
-
-          const boundary = findProductRewindBoundary(
-            session.sessionManager.getEntries(),
-            { userEntryId: targetId },
-          );
-          if (!boundary) {
-            throw new Error('This checkpoint predates safe Storyflow rewind mapping and cannot be restored.');
-          }
-
-          const projection = {
-            retainThroughMessageId: boundary.retainThroughMessageId,
-            ...(boundary.draftText !== undefined ? { draftText: boundary.draftText } : {}),
-          };
-          return executeSessionRewind(session, targetId, options, projection);
-        },
-        switchSession: async () => ({ cancelled: true }),
-        reload: () => session.reload(),
-      },
-      abortHandler: () => {
-        void session.abort();
-      },
-      shutdownHandler: handleShutdown,
-      onError: (error) => {
-        notifyExtension(
-          `Extension ${error.extensionPath} failed during ${error.event}: ${error.error}`,
-          'error',
-        );
-      },
-    });
-    debugLog(
-      `Pi Extension commands: ${session.extensionRunner.getRegisteredCommands().map(command => command.invocationName).join(', ') || '(none)'}`,
-    );
-  } catch (error) {
-    session.dispose();
-    piSession = null;
-    throw error;
-  }
-
+  piSession = created.session;
+  systemPromptOverride = created.systemPromptOverride;
   toolsChanged = false;
-  debugLog(`Created Pi session: ${session.sessionId} (${allTools.length} tools)`);
-
-  // Notify main process of session ID
-  send({ type: 'session_id_update', sessionId: session.sessionId });
-
-  return session;
+  return piSession;
 }
 
 
-// ============================================================
-// Tool Hooks (Permission Enforcement + Large Response Summarization)
-// ============================================================
-
-interface SessionToolHookState {
-  getSession(): AgentSession | null;
-  getUserRequest(): string;
-  intentByCallId: Map<string, string>;
-  toolResultTokens: number;
-}
-
-function createSessionToolHooks(state: SessionToolHookState) {
-  return createToolHooks({
-    onTurnStart: () => { state.toolResultTokens = 0; },
-    beforeToolCall: event => prepareToolInput(event, state.intentByCallId),
-    afterToolCall: event => postprocessToolResult(event, state),
-  });
-}
-
-/**
- * Shared permission enforcement for both coding tools and proxy tools.
- * Checks mode-manager rules and, in Ask mode, prompts the user via the
- * pending-permissions handshake. Throws on deny or block.
- */
-/**
- * Send pre_tool_use_request to main process and wait for response.
- * Returns the (potentially modified) input if approved, throws if blocked.
- * All permission checking, transforms, and source activation happen in the main process.
- */
-async function requestPreToolUseApproval(
-  sdkToolName: string,
-  input: Record<string, unknown>,
-  toolCallId?: string,
-): Promise<Record<string, unknown>> {
-  const requestId = `pi-ptu-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-  send({
-    type: 'pre_tool_use_request',
-    requestId,
-    toolName: sdkToolName,
-    ...(toolCallId ? { toolCallId } : {}),
-    input,
-  });
-
-  const response = await new Promise<{ action: string; input?: Record<string, unknown>; reason?: string }>((resolve) => {
-    pendingPreToolUse.set(requestId, { resolve });
-  });
-
-  if (response.action === 'block') {
-    throw new Error(response.reason || `Tool "${sdkToolName}" is not allowed`);
-  }
-
-  return response.action === 'modify' && response.input ? response.input : input;
-}
-
-function prepareToolDefinitions(tools: ToolDefinition<any, any>[]): ToolDefinition<any, any>[] {
-  return tools.map((tool) => {
-    const originalPrepareArguments = tool.prepareArguments;
-    const prepareArguments: ToolDefinition<any, any>['prepareArguments'] = (args) => {
-      const normalized = normalizeCraftToolArgumentsForSchema(tool.name, tool.parameters, args);
-      return originalPrepareArguments ? originalPrepareArguments(normalized) : normalized;
-    };
-
-    return {
-      ...tool,
-      prepareArguments,
-    };
-  });
-}
-
-async function prepareToolInput(
-  event: ToolCallEvent,
-  intentByCallId: Map<string, string>,
-): Promise<Record<string, unknown>> {
-  const sdkToolName = PI_TOOL_NAME_MAP[event.toolName] || event.toolName;
-  let input: Record<string, unknown> = { ...event.input };
-  const intent = typeof input.description === 'string' ? input.description : undefined;
-
-  // Normalize Pi SDK parameter names for the shared permission pipeline.
-  if ((sdkToolName === 'Write' || sdkToolName === 'Edit' || sdkToolName === 'MultiEdit' || sdkToolName === 'NotebookEdit')
-      && typeof input.path === 'string' && !input.file_path) {
-    input = { ...input, file_path: input.path };
-  }
-
-  const approvedInput = await requestPreToolUseApproval(sdkToolName, input, event.toolCallId);
-  if (intent) intentByCallId.set(event.toolCallId, intent);
-  return approvedInput;
-}
-
-async function postprocessToolResult(
-  event: ToolResultEvent,
-  state: SessionToolHookState,
-): Promise<{
-  content?: (PiTextContent | PiImageContent)[];
-  details?: unknown;
-  isError?: boolean;
-} | void> {
-  const intent = state.intentByCallId.get(event.toolCallId);
-  state.intentByCallId.delete(event.toolCallId);
-  if (event.isError) return;
-
-  const resultText = event.content
-    .filter((content): content is PiTextContent => content.type === 'text')
-    .map(content => content.text)
-    .join('');
-  const modelContextWindow = state.getSession()?.agent.state.model?.contextWindow;
-  const resultTokens = estimateTokens(resultText);
-  const remainingTokens = Math.max(0, tokenLimitFor(modelContextWindow) - state.toolResultTokens);
-  if (resultTokens <= remainingTokens || !initConfig) {
-    state.toolResultTokens += resultTokens;
-    return;
-  }
-
-  try {
-    const sdkToolName = PI_TOOL_NAME_MAP[event.toolName] || event.toolName;
-    const largeResult = await handleLargeResponse({
-      text: resultText,
-      sessionPath: getSessionPath(initConfig.workspaceRootPath, initConfig.sessionId),
-      context: {
-        toolName: sdkToolName,
-        input: event.input,
-        intent,
-        userRequest: state.getUserRequest(),
-      },
-      summarize: runMiniCompletion,
-      contextWindow: modelContextWindow,
-      thresholdTokens: remainingTokens,
-    });
-
-    if (largeResult) {
-      state.toolResultTokens += estimateTokens(largeResult.message);
-      return {
-        content: [{ type: 'text', text: largeResult.message }],
-        details: event.details,
-        isError: event.isError,
-      };
-    }
-  } catch (error) {
-    debugLog(
-      `Large response handling failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-  state.toolResultTokens += resultTokens;
-}
-
-// ============================================================
-// Proxy Tools (tools executed in main process)
-// ============================================================
-
-function buildProxyTools(): ToolDefinition<any, any>[] {
-  debugLog(`Building proxy tools from ${proxyToolDefs.length} definitions: ${proxyToolDefs.map(t => t.name).join(', ')}`);
-
-  return proxyToolDefs.map<ToolDefinition<any, any>>(def => ({
-    name: def.name,
-    label: def.name
-      .replace(/^mcp__.*?__/, '')
-      .replace(/_/g, ' ')
-      .replace(/([a-z])([A-Z])/g, '$1 $2'),
-    description: def.description,
-    // Pi SDK omits tools without promptSnippet from the system prompt's
-    // "Available tools" section, making them invisible to the LLM.
-    // Derive a snippet from the description so proxy tools are listed.
-    promptSnippet: def.description.length > 200
-      ? def.description.slice(0, 197) + '...'
-      : def.description,
-    parameters: def.inputSchema,
-    execute: async (
-      _toolCallId: string,
-      params: any,
-    ): Promise<AgentToolResult<any>> => {
-      if (def.name === 'mcp__session__call_llm') {
-        try {
-          const result = await preExecuteCallLlm(params as Record<string, unknown>);
-          return {
-            content: [{ type: 'text', text: result.text || '(Model returned empty response)' }],
-            details: result.warning ? { warning: result.warning } : undefined,
-          };
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          throw new Error(`call_llm failed: ${message}`);
-        }
-      }
-
-      const result = await requestHostTool(def.name, params as Record<string, unknown>);
-
-      return {
-        content: [{ type: 'text', text: result.content }],
-        details: result.isError ? { isError: true } : undefined,
-      };
-    },
-  }));
-}
-
-function requestHostTool(
-  toolName: string,
-  args: Record<string, unknown>,
-): Promise<{ content: string; isError: boolean }> {
-  const requestId = `proxy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const result = new Promise<{ content: string; isError: boolean }>((resolve) => {
-    pendingToolExecutions.set(requestId, { resolve });
-  });
-  send({ type: 'tool_execute_request', requestId, toolName, args });
-  return result;
-}
-
-function requestConversationRewind(
-  request: ConversationRewindRequest,
-): Promise<ConversationRewindResult> {
-  const requestId = `rewind-${request.phase}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const result = new Promise<ConversationRewindResult>((resolve, reject) => {
-    pendingConversationRewinds.set(requestId, { resolve, reject });
-  });
-  send({ type: 'conversation_rewind_request', requestId, request });
-  return result;
-}
-
-async function executeSessionRewind(
-  session: AgentSession,
-  targetId: string,
-  options: Parameters<AgentSession['navigateTree']>[1],
-  boundary: ConversationRewindBoundary,
-) {
-  return executeProductRewind(boundary, {
-    prepare: async (preparedBoundary) => {
-      const result = await requestConversationRewind({ phase: 'prepare', boundary: preparedBoundary });
-      if (result.phase !== 'prepared') throw new Error(`Unexpected rewind prepare result: ${result.phase}`);
-      return result;
-    },
-    navigate: () => session.navigateTree(targetId, options),
-    currentLeaf: () => session.sessionManager.getLeafId(),
-    restoreLeaf: async (leafId) => {
-      if (!leafId) {
-        session.sessionManager.resetLeaf();
-        return;
-      }
-      const restored = await session.navigateTree(leafId, { summarize: false });
-      if (restored.cancelled) throw new Error('Pi rewind rollback was cancelled');
-    },
-    appendHead: () => {
-      session.sessionManager.appendCustomEntry(PRODUCT_TREE_HEAD_TYPE, { v: 1 });
-    },
-    commit: async ({ token, revision }) => {
-      const result = await requestConversationRewind({
-        phase: 'commit',
-        token,
-        expectedRevision: revision,
-      });
-      if (result.phase !== 'committed') throw new Error(`Unexpected rewind commit result: ${result.phase}`);
-    },
-    abort: async (token) => {
-      const result = await requestConversationRewind({ phase: 'abort', token });
-      if (result.phase !== 'aborted') throw new Error(`Unexpected rewind abort result: ${result.phase}`);
-    },
-  });
-}
+const {
+  createSessionToolHooks,
+  prepareToolDefinitions,
+  buildProxyTools,
+  requestHostTool,
+  executeSessionRewind,
+} = createPiToolRuntime({
+  getConfig: () => initConfig,
+  getProxyToolDefs: () => proxyToolDefs,
+  pendingPreToolUse,
+  pendingToolExecutions,
+  pendingConversationRewinds,
+  send,
+  debug: debugLog,
+  runMiniCompletion,
+  preExecuteCallLlm,
+});
 
 // ============================================================
 // LLM Query (ephemeral session for call_llm + mini completions)
