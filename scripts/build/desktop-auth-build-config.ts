@@ -75,6 +75,8 @@ export function validateDesktopAuthBuildEnv(env: Env): DesktopAuthBuildValidatio
     ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_BASE_URL);
   const neonJwksUrl = readEnv(env.CRAFT_CLIENT_NEON_AUTH_JWKS_URL)
     ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_JWKS_URL);
+  const neonOrganizationId = readEnv(env.CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID)
+    ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID);
   for (const [name, value] of [
     ['CRAFT_CLIENT_NEON_AUTH_BASE_URL', neonBaseUrl],
     ['CRAFT_CLIENT_NEON_AUTH_JWKS_URL', neonJwksUrl],
@@ -82,6 +84,13 @@ export function validateDesktopAuthBuildEnv(env: Env): DesktopAuthBuildValidatio
     const message = validatePackagedNeonUrl(name, value);
     if (message) return { ok: false, message };
   }
+  if (hasNeonLogin && !neonOrganizationId) {
+    return {
+      ok: false,
+      message: 'CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID is required for invite-only email login.',
+    };
+  }
+
   if (!brokerUrl) {
     return {
       ok: false,

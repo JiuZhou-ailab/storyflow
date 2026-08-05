@@ -116,7 +116,7 @@ describe('environment contract', () => {
     expect(workflow).toContain('CRAFT_CLIENT_AUTH_BROKER_URL: ${{ vars.CRAFT_CLIENT_AUTH_BROKER_URL }}');
     expect(workflow).toContain('CRAFT_CLIENT_FEISHU_APP_ID: ${{ vars.CRAFT_CLIENT_FEISHU_APP_ID }}');
     expect(workflow).toContain('CRAFT_CLIENT_NEON_AUTH_BASE_URL: ${{ vars.CRAFT_CLIENT_NEON_AUTH_BASE_URL }}');
-    expect(workflow).not.toContain('CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID:');
+    expect(workflow).toContain('CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID: ${{ vars.CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID }}');
     expect(workflow).toContain('CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED: ${{ vars.CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED }}');
     expect(workflow).not.toContain('CRAFT_CLIENT_GATEWAY_TOKEN');
     expect(docs).toMatch(/GitHub repository vars:[\s\S]*CRAFT_CLIENT_AUTH_BROKER_URL/);
