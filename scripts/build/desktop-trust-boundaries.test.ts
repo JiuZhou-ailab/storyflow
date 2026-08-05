@@ -1,5 +1,5 @@
 // input: Desktop build, package, transport, and telemetry configuration
-// output: Release guards for local-first auth, verified TLS, zero-content telemetry, and production-only assets
+// output: Release guards for required login, verified TLS, zero-content telemetry, and production-only assets
 // pos: Public build/config seam for the Electron trust boundary
 
 import { describe, expect, test } from 'bun:test'
@@ -14,10 +14,16 @@ function readRepoFile(path: string): string {
 }
 
 describe('desktop trust boundaries', () => {
-  test('official releases keep the local desktop shell available before login', () => {
+  test('official releases require authentication before mounting the desktop shell', () => {
     const workflow = readRepoFile('.github/workflows/release.yml')
-    expect(workflow).not.toContain('CRAFT_CLIENT_AUTH_REQUIRED: "true"')
-    expect(workflow.match(/CRAFT_CLIENT_AUTH_REQUIRED: "false"/g)).toHaveLength(2)
+    expect(workflow.match(/CRAFT_CLIENT_AUTH_REQUIRED: "true"/g)).toHaveLength(2)
+    expect(workflow).not.toContain('CRAFT_CLIENT_AUTH_REQUIRED: "false"')
+
+    const rendererEntry = readRepoFile('apps/electron/src/renderer/main.tsx')
+    expect(rendererEntry).toContain('function ClientAuthBootstrap')
+    expect(rendererEntry).toContain('state.required && !state.authenticated')
+    expect(rendererEntry).toContain('<ClientAuthBootstrap>')
+    expect(rendererEntry).not.toContain('authenticated: true')
   })
 
   test('ships no automatic desktop monitoring client or ingest configuration', () => {

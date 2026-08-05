@@ -14,9 +14,14 @@ import { initReactI18next } from 'react-i18next'
 import { useTranslation } from 'react-i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 import { getDefaultColorThemeForPlatform, rendererPlatform } from '@/lib/platform'
+import type { ClientAuthState } from '../shared/types'
 import './index.css'
 
 const App = React.lazy(() => import('./App'))
+const ClientSignInForm = React.lazy(async () => {
+  const module = await import('@/components/auth/ClientSignInForm')
+  return { default: module.ClientSignInForm }
+})
 
 document.documentElement.dataset.platform = rendererPlatform
 
@@ -69,6 +74,75 @@ function AppLoadingFallback() {
   )
 }
 
+function ClientAuthBootstrap({ children }: { children: React.ReactNode }) {
+  const [state, setState] = React.useState<ClientAuthState | null>(null)
+  const [loadError, setLoadError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    let cancelled = false
+    const accept = (nextState: ClientAuthState) => {
+      if (cancelled) return
+      setLoadError(null)
+      setState(nextState)
+    }
+
+    if (!window.electronAPI?.getClientAuthState) {
+      setLoadError('客户端鉴权不可用')
+      return () => { cancelled = true }
+    }
+
+    window.electronAPI.getClientAuthState()
+      .then(accept)
+      .catch((error) => {
+        if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error))
+      })
+    const unsubscribe = window.electronAPI.onClientAuthStateChanged?.(accept)
+    return () => {
+      cancelled = true
+      unsubscribe?.()
+    }
+  }, [])
+
+  const gateActive = loadError != null || !state || (state.required && !state.authenticated)
+  React.useEffect(() => {
+    if (!gateActive) return
+    return window.electronAPI.onCloseRequested?.(() => {
+      window.electronAPI.confirmCloseWindow?.()
+    })
+  }, [gateActive])
+
+  if (loadError) {
+    return (
+      <div className="flex h-screen items-center justify-center px-6 text-sm text-destructive">
+        鉴权初始化失败：{loadError}
+      </div>
+    )
+  }
+  if (!state) return <AppLoadingFallback />
+  if (!state.required || state.authenticated) return <>{children}</>
+  if (!state.configured) {
+    return (
+      <div className="flex h-screen items-center justify-center px-6 text-sm text-destructive">
+        客户端鉴权已启用，但没有可用的登录配置。
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background px-6 py-12">
+      <React.Suspense fallback={<AppLoadingFallback />}>
+        <ClientSignInForm
+          emailPasswordEnabled={state.emailPasswordEnabled}
+          emailSignUpEnabled={state.emailSignUpEnabled}
+          feishuLoginEnabled={state.feishuLoginEnabled}
+          usernameLoginEnabled={state.usernameLoginEnabled === true}
+          onSignedIn={async () => setState(await window.electronAPI.getClientAuthState())}
+        />
+      </React.Suspense>
+    </div>
+  )
+}
+
 /**
  * Root component - loads workspace ID for theme context and renders App
  * App.tsx handles window mode detection internally (main vs tab-content)
@@ -83,9 +157,11 @@ function Root() {
       defaultColorTheme={getDefaultColorThemeForPlatform(rendererPlatform)}
     >
       <UpdateCheckerProvider>
-        <React.Suspense fallback={<AppLoadingFallback />}>
-          <App />
-        </React.Suspense>
+        <ClientAuthBootstrap>
+          <React.Suspense fallback={<AppLoadingFallback />}>
+            <App />
+          </React.Suspense>
+        </ClientAuthBootstrap>
         <Toaster />
       </UpdateCheckerProvider>
     </ThemeProvider>
