@@ -29,7 +29,6 @@ const unusedBrokerMethods: ClientAuthBrokerClient = {
 
 const unusedNeonOrganizationMethods = {
   verifyEmailOtp: async () => {},
-  getSessionToken: async () => { throw new Error('not used') },
   getOrganizationToken: async () => { throw new Error('not used') },
 }
 
@@ -426,19 +425,7 @@ describe('client auth', () => {
           name: input.name,
           origin: input.origin,
         })
-        return {
-          status: 'authenticated',
-          token: 'opaque-signup-token',
-          sessionCookie: 'neon-session-cookie',
-        }
-      },
-      getSessionToken: async (input) => {
-        events.push('neon-session-token')
-        expect(input).toEqual({
-          sessionCookie: 'neon-session-cookie',
-          origin: 'http://localhost:9100',
-        })
-        return 'signup-jwt-token'
+        return { status: 'authenticated', token: 'signup-jwt-token' }
       },
       verifyToken: async (token) => {
         expect(token).toBe('signup-jwt-token')
@@ -503,7 +490,7 @@ describe('client auth', () => {
       },
     })
     expect(service.getState().authenticated).toBe(true)
-    expect(events).toEqual(['neon-sign-up', 'neon-session-token', 'exchange'])
+    expect(events).toEqual(['neon-sign-up', 'exchange'])
   })
 
   it('keeps the client unauthenticated when Neon Auth registration requires email verification', async () => {

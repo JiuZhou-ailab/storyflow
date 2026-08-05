@@ -245,19 +245,21 @@ async function exchangeNeonToken(
   const neonConfigError = getNeonAuthConfigError(env)
   if (neonConfigError) return Response.json({ error: neonConfigError }, { status: 503 })
   const expectedOrganizationId = readString(env.CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID)
+  if (!expectedOrganizationId) {
+    return Response.json({ error: 'Neon Auth organization is not configured' }, { status: 503 })
+  }
 
   try {
     const identity = await verifyNeonProviderToken(token, env, fetchImpl)
-    if (expectedOrganizationId && !isExpectedNeonMember(identity, expectedOrganizationId)) {
+    if (!isExpectedNeonMember(identity, expectedOrganizationId)) {
       return invitationRequiredResponse()
     }
-    const organizationId = expectedOrganizationId ? identity.organizationId : undefined
     const tokens = await createAuthTokens(
       env,
       identity.subject,
       'standard',
       identity.name,
-      organizationId,
+      identity.organizationId,
     )
 
     return Response.json({
@@ -265,7 +267,7 @@ async function exchangeNeonToken(
       user: {
         provider: 'neon',
         userId: identity.userId,
-        ...(organizationId ? { organizationId } : {}),
+        organizationId: identity.organizationId,
         ...(identity.email ? { email: identity.email } : {}),
         ...(identity.emailVerified !== undefined ? { emailVerified: identity.emailVerified } : {}),
         ...(identity.name ? { name: identity.name } : {}),
@@ -348,19 +350,20 @@ async function reauthorizeClientSession(
   const providerToken = readString((await readJsonObject(request)).providerToken)
   if (!providerToken) return neonSessionRequiredResponse()
   const expectedOrganizationId = readString(env.CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID)
+  if (!expectedOrganizationId) {
+    return Response.json({ error: 'Neon Auth organization is not configured' }, { status: 503 })
+  }
   const neonConfigError = getNeonAuthConfigError(env)
   if (neonConfigError) return Response.json({ error: neonConfigError }, { status: 503 })
 
   try {
     const identity = await verifyNeonProviderToken(providerToken, env, fetchImpl)
     if (identity.subject !== session.subject) return invalidClientSessionResponse()
-    if (expectedOrganizationId && !isExpectedNeonMember(identity, expectedOrganizationId)) {
-      return invitationRequiredResponse()
-    }
+    if (!isExpectedNeonMember(identity, expectedOrganizationId)) return invitationRequiredResponse()
     return {
       session: {
         ...session,
-        organizationId: expectedOrganizationId ? identity.organizationId : undefined,
+        organizationId: identity.organizationId,
       },
     }
   } catch {
@@ -593,7 +596,12 @@ function getBrokerReadinessError(env: Env): string | null {
     && !!readString(env.CRAFT_WEBUI_FEISHU_APP_SECRET)
   const neonBaseUrl = readString(env.CRAFT_WEBUI_NEON_AUTH_BASE_URL)
   if (!hasFeishu && !neonBaseUrl) return 'No login provider is configured'
-  if (neonBaseUrl) return getNeonAuthConfigError(env)
+  if (neonBaseUrl) {
+    if (!readString(env.CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID)) {
+      return 'Neon Auth organization is not configured'
+    }
+    return getNeonAuthConfigError(env)
+  }
   return null
 }
 
