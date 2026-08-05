@@ -64,6 +64,13 @@ export interface BroadcastEventMap {
   // Copilot device code event
   [RPC_CHANNELS.copilot.DEVICE_CODE]: [data: { userCode: string; verificationUri: string }]
 
+  // Anthropic OAuth can finish through Pi's local callback before manual code entry.
+  [RPC_CHANNELS.onboarding.CLAUDE_OAUTH_COMPLETED]: [data: {
+    connectionSlug: string
+    success: boolean
+    error?: string
+  }]
+
   // Menu events (per-window, no payload)
   [RPC_CHANNELS.menu.NEW_CHAT]: []
   [RPC_CHANNELS.menu.OPEN_SETTINGS]: []

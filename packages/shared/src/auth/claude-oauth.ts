@@ -1,238 +1,157 @@
-/**
- * Native Claude OAuth with PKCE
- *
- * Implements browser-based OAuth using PKCE (Proof Key for Code Exchange) -
- * the standard secure flow for public clients (desktop/mobile apps) that
- * does not require a client secret.
- *
- * Based on: https://github.com/grll/claude-code-login
- */
-import { randomBytes, createHash } from 'node:crypto'
-import { CLAUDE_OAUTH_CONFIG } from './claude-oauth-config'
-import { openUrl } from '../utils/open-url.ts'
-import { APP_VERSION } from '../version/index.ts'
+// input: Claude OAuth start/cancel/code submission from the product host
+// output: Pi-issued Anthropic OAuth credentials without product-owned PKCE or token exchange
+// pos: Two-step RPC bridge into Pi AuthStorage.login()
 
-// OAuth configuration from shared config
-const CLAUDE_CLIENT_ID = CLAUDE_OAUTH_CONFIG.CLIENT_ID
-const CLAUDE_AUTH_URL = CLAUDE_OAUTH_CONFIG.AUTH_URL
-const CLAUDE_TOKEN_URL = CLAUDE_OAUTH_CONFIG.TOKEN_URL
-const REDIRECT_URI = CLAUDE_OAUTH_CONFIG.REDIRECT_URI
-const OAUTH_SCOPES = CLAUDE_OAUTH_CONFIG.SCOPES
-const STATE_EXPIRY_MS = 10 * 60 * 1000 // 10 minutes
+import { AuthStorage } from '@earendil-works/pi-coding-agent'
+
+const PROVIDER_ID = 'anthropic'
+const FLOW_TTL_MS = 10 * 60 * 1000
 
 export interface ClaudeTokens {
   accessToken: string
   refreshToken?: string
   expiresAt?: number
-  scopes?: string[]
 }
 
-export interface ClaudeOAuthState {
-  state: string
-  codeVerifier: string
-  timestamp: number
+interface PendingFlow {
+  authUrl: Promise<string>
+  completion: Promise<ClaudeTokens>
   expiresAt: number
+  codeSubmitted: boolean
+  cancelled: boolean
+  submitCode(code: string): void
+  cancel(): void
 }
 
-// In-memory state storage for the current OAuth flow
-let currentOAuthState: ClaudeOAuthState | null = null
-
-/**
- * Generate a secure random state parameter
- */
-function generateState(): string {
-  return randomBytes(32).toString('hex')
+export interface PreparedClaudeOAuth {
+  authUrl: string
+  completion: Promise<ClaudeTokens>
+  wasCodeSubmitted(): boolean
+  wasCancelled(): boolean
 }
 
-/**
- * Generate PKCE code verifier and challenge
- */
-function generatePKCE(): { codeVerifier: string; codeChallenge: string } {
-  const codeVerifier = randomBytes(32).toString('base64url')
-  const codeChallenge = createHash('sha256')
-    .update(codeVerifier)
-    .digest('base64url')
-  return { codeVerifier, codeChallenge }
+function deferred<T>(): {
+  promise: Promise<T>
+  resolve(value: T): void
+  reject(error: Error): void
+} {
+  let resolve!: (value: T) => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
 }
 
-/**
- * Prepare the OAuth flow by generating PKCE, state, and the auth URL.
- * Does NOT open the browser — the caller is responsible for that.
- *
- * Returns the authorization URL. The caller should open it on the user's
- * machine (client-side), not on the server.
- */
-export function prepareClaudeOAuth(): string {
-  const state = generateState()
-  const { codeVerifier, codeChallenge } = generatePKCE()
+function createPendingFlow(): PendingFlow {
+  const authStorage = AuthStorage.inMemory()
+  const authUrl = deferred<string>()
+  const authorizationCode = deferred<string>()
+  const abortController = new AbortController()
 
-  const now = Date.now()
-  currentOAuthState = {
-    state,
-    codeVerifier,
-    timestamp: now,
-    expiresAt: now + STATE_EXPIRY_MS,
-  }
-
-  const params = new URLSearchParams({
-    code: 'true',
-    client_id: CLAUDE_CLIENT_ID,
-    response_type: 'code',
-    redirect_uri: REDIRECT_URI,
-    scope: OAUTH_SCOPES,
-    code_challenge: codeChallenge,
-    code_challenge_method: 'S256',
-    state,
+  const login = authStorage.login(PROVIDER_ID, {
+    onAuth: info => authUrl.resolve(info.url),
+    onDeviceCode: () => {},
+    onPrompt: () => authorizationCode.promise,
+    onManualCodeInput: () => authorizationCode.promise,
+    onSelect: async () => undefined,
+    signal: abortController.signal,
+  })
+  void login.catch(error => {
+    authUrl.reject(error instanceof Error ? error : new Error(String(error)))
   })
 
-  return `${CLAUDE_AUTH_URL}?${params.toString()}`
-}
-
-/**
- * Start the OAuth flow by generating the login URL and opening the browser.
- *
- * @deprecated Use prepareClaudeOAuth() + open browser on the client instead.
- * This function opens the browser on the server host, which fails in remote mode.
- */
-export async function startClaudeOAuth(
-  onStatus?: (message: string) => void
-): Promise<string> {
-  onStatus?.('Generating authentication URL...')
-
-  const authUrl = prepareClaudeOAuth()
-
-  // Open browser (server-side — broken in remote mode)
-  onStatus?.('Opening browser for authentication...')
-  await openUrl(authUrl)
-
-  onStatus?.('Waiting for you to copy the authorization code...')
-
-  return authUrl
-}
-
-/**
- * Check if there is a valid OAuth state in progress
- */
-export function hasValidOAuthState(): boolean {
-  if (!currentOAuthState) return false
-  return Date.now() < currentOAuthState.expiresAt
-}
-
-/**
- * Get the current OAuth state (for debugging/display)
- */
-export function getCurrentOAuthState(): ClaudeOAuthState | null {
-  return currentOAuthState
-}
-
-/**
- * Clear the current OAuth state
- */
-export function clearOAuthState(): void {
-  currentOAuthState = null
-}
-
-/**
- * Exchange an authorization code for tokens
- *
- * Call this after the user has authenticated and copied the authorization code
- * from the callback page.
- */
-export async function exchangeClaudeCode(
-  authorizationCode: string,
-  onStatus?: (message: string) => void
-): Promise<ClaudeTokens> {
-  // Verify we have valid state
-  if (!currentOAuthState) {
-    throw new Error('No OAuth state found. Please start the authentication flow again.')
-  }
-
-  if (Date.now() > currentOAuthState.expiresAt) {
-    clearOAuthState()
-    throw new Error('OAuth state expired (older than 10 minutes). Please try again.')
-  }
-
-  // Clean up the authorization code in case it has URL fragments
-  const cleanedCode = authorizationCode.split('#')[0]?.split('&')[0] ?? authorizationCode
-
-  onStatus?.('Exchanging authorization code for tokens...')
-
-  const params = {
-    grant_type: 'authorization_code',
-    client_id: CLAUDE_CLIENT_ID,
-    code: cleanedCode,
-    redirect_uri: REDIRECT_URI,
-    code_verifier: currentOAuthState.codeVerifier,
-    state: currentOAuthState.state,
-  }
-
-  try {
-    const response = await fetch(CLAUDE_TOKEN_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': `CraftAgents/${APP_VERSION}`,
-        Accept: 'application/json',
-      },
-      body: JSON.stringify(params),
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      let errorMessage: string
-      try {
-        const errorJson = JSON.parse(errorText)
-        errorMessage = errorJson.error_description || errorJson.error || errorText
-      } catch {
-        errorMessage = errorText
-      }
-      throw new Error(`Token exchange failed: ${response.status} - ${errorMessage}`)
+  const completion = login.then(() => {
+    const credential = authStorage.get(PROVIDER_ID)
+    if (credential?.type !== 'oauth') {
+      throw new Error('Pi completed OAuth without returning Anthropic credentials')
     }
-
-    const data = (await response.json()) as {
-      access_token: string
-      refresh_token?: string
-      expires_in?: number
-      scope?: string
-    }
-
-    // Clear state after successful exchange
-    clearOAuthState()
-
-    onStatus?.('Authentication successful!')
-
     return {
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token,
-      expiresAt: data.expires_in ? Date.now() + data.expires_in * 1000 : undefined,
-      scopes: data.scope ? data.scope.split(' ') : ['user:inference', 'user:profile'],
+      accessToken: credential.access,
+      refreshToken: credential.refresh,
+      expiresAt: credential.expires,
+    }
+  })
+
+  // Cancellation can reject after the start RPC has already returned. Keep the
+  // completion observed until a handler consumes it.
+  void completion.catch(() => {})
+
+  const flow: PendingFlow = {
+    authUrl: authUrl.promise,
+    completion,
+    expiresAt: Date.now() + FLOW_TTL_MS,
+    codeSubmitted: false,
+    cancelled: false,
+    submitCode(code) {
+      flow.codeSubmitted = true
+      authorizationCode.resolve(code)
+    },
+    cancel() {
+      flow.cancelled = true
+      const error = new Error('OAuth flow cancelled')
+      abortController.abort(error)
+      authUrl.reject(error)
+      authorizationCode.reject(error)
+    },
+  }
+  return flow
+}
+
+let pendingFlow: PendingFlow | null = null
+
+/** Start Pi's Anthropic login and expose its single completion to the RPC bridge. */
+export async function prepareClaudeOAuth(): Promise<PreparedClaudeOAuth> {
+  clearOAuthState()
+  const flow = createPendingFlow()
+  pendingFlow = flow
+  try {
+    const authUrl = await flow.authUrl
+    let expiryTimer: ReturnType<typeof setTimeout>
+    const completion = flow.completion.finally(() => {
+      clearTimeout(expiryTimer)
+      if (pendingFlow === flow) pendingFlow = null
+    })
+    expiryTimer = setTimeout(() => {
+      if (pendingFlow === flow) clearOAuthState()
+    }, FLOW_TTL_MS)
+    // Automatic callback completion may settle without exchangeClaudeCode().
+    void completion.catch(() => {})
+    flow.completion = completion
+    return {
+      authUrl,
+      completion,
+      wasCodeSubmitted: () => flow.codeSubmitted,
+      wasCancelled: () => flow.cancelled,
     }
   } catch (error) {
-    if (error instanceof Error) {
-      throw error
-    }
-    throw new Error(`Token exchange failed: ${String(error)}`)
+    if (pendingFlow === flow) pendingFlow = null
+    throw error
   }
 }
 
-/**
- * Convenience function that combines startClaudeOAuth and exchangeClaudeCode
- * for use cases where the code is provided via a callback
- *
- * @deprecated Use startClaudeOAuth and exchangeClaudeCode separately
- */
-export async function authenticateWithClaude(options?: {
-  onStatus?: (message: string) => void
-  getAuthorizationCode: () => Promise<string>
-}): Promise<ClaudeTokens> {
-  const onStatus = options?.onStatus
-  const getAuthorizationCode = options?.getAuthorizationCode
+export function hasValidOAuthState(): boolean {
+  if (!pendingFlow) return false
+  if (Date.now() < pendingFlow.expiresAt) return true
+  clearOAuthState()
+  return false
+}
 
-  if (!getAuthorizationCode) {
-    throw new Error('getAuthorizationCode callback is required')
+export function clearOAuthState(): void {
+  pendingFlow?.cancel()
+  pendingFlow = null
+}
+
+/** Complete the pending Pi login with the code copied from the browser. */
+export async function exchangeClaudeCode(authorizationCode: string): Promise<ClaudeTokens> {
+  const flow = pendingFlow
+  if (!flow || !hasValidOAuthState()) {
+    throw new Error('OAuth session expired. Please start again.')
   }
 
-  await startClaudeOAuth(onStatus)
-  const code = await getAuthorizationCode()
-  return exchangeClaudeCode(code, onStatus)
+  const code = authorizationCode.trim()
+  if (!code) throw new Error('Authorization code is required')
+  flow.submitCode(code)
+  return flow.completion
 }

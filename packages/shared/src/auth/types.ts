@@ -10,12 +10,6 @@ import type { AuthType, Workspace } from '../config/types.ts';
 /**
  * Unified authentication state
  */
-/** Migration info when user needs to re-authenticate */
-export interface MigrationInfo {
-  reason: 'legacy_token';
-  message: string;
-}
-
 export interface AuthState {
   /** Claude API billing configuration */
   billing: {
@@ -27,8 +21,6 @@ export interface AuthState {
     apiKey: string | null;
     /** Claude Max OAuth token (if using oauth_token auth type) */
     claudeOAuthToken: string | null;
-    /** Migration info if user needs to re-authenticate */
-    migrationRequired?: MigrationInfo;
   };
 
   /** Workspace/MCP configuration */
@@ -48,8 +40,6 @@ export interface SetupNeeds {
   needsCredentials: boolean;
   /** Everything complete → go straight to App */
   isFullyConfigured: boolean;
-  /** User has legacy tokens that need migration */
-  needsMigration?: MigrationInfo;
 }
 
 /**

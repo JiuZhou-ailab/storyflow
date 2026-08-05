@@ -8,8 +8,10 @@ import { isSetupDeferred, setSetupDeferred } from '@craft-agent/shared/config'
 import { prepareClaudeOAuth, exchangeClaudeCode, hasValidOAuthState, clearOAuthState, prepareMcpOAuth } from '@craft-agent/shared/auth'
 import { validateMcpConnection } from '@craft-agent/shared/mcp'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
-import type { RpcServer } from '@craft-agent/server-core/transport'
+import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
+
+let activeClaudeOAuthFlow: { id: symbol; connectionSlug: string } | null = null
 
 // ============================================
 // IPC Handlers
@@ -92,14 +94,45 @@ export function registerOnboardingHandlers(server: RpcServer, deps: HandlerDeps)
 
   // Prepare Claude OAuth flow (server-side only — no browser open).
   // Returns authUrl for the client to open locally via shell.openExternal.
-  server.handle(RPC_CHANNELS.onboarding.START_CLAUDE_OAUTH, async () => {
+  server.handle(RPC_CHANNELS.onboarding.START_CLAUDE_OAUTH, async (ctx, connectionSlug: string) => {
     try {
+      const normalizedSlug = connectionSlug?.trim()
+      if (!normalizedSlug) throw new Error('connectionSlug is required')
       log.info('[Onboarding] Preparing Claude OAuth flow...')
 
-      const authUrl = prepareClaudeOAuth()
+      activeClaudeOAuthFlow = null
+      const prepared = await prepareClaudeOAuth()
+      const flowId = Symbol('claude-oauth-flow')
+      activeClaudeOAuthFlow = { id: flowId, connectionSlug: normalizedSlug }
+
+      // Pi may finish through its localhost callback without manual code entry.
+      // Persist that result here and notify the initiating client. Manual code
+      // submission flips wasCodeSubmitted(), so exactly one path owns the write.
+      void prepared.completion.then(async tokens => {
+        if (prepared.wasCodeSubmitted() || prepared.wasCancelled()) return
+        await getCredentialManager().setLlmOAuth(normalizedSlug, {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresAt: tokens.expiresAt,
+        })
+        pushTyped(server, RPC_CHANNELS.onboarding.CLAUDE_OAUTH_COMPLETED, {
+          to: 'client',
+          clientId: ctx.clientId,
+        }, { connectionSlug: normalizedSlug, success: true })
+      }).catch(error => {
+        if (prepared.wasCodeSubmitted() || prepared.wasCancelled()) return
+        const message = error instanceof Error ? error.message : 'OAuth authentication failed'
+        log.error('[Onboarding] Claude OAuth callback failed:', message)
+        pushTyped(server, RPC_CHANNELS.onboarding.CLAUDE_OAUTH_COMPLETED, {
+          to: 'client',
+          clientId: ctx.clientId,
+        }, { connectionSlug: normalizedSlug, success: false, error: message })
+      }).finally(() => {
+        if (activeClaudeOAuthFlow?.id === flowId) activeClaudeOAuthFlow = null
+      })
 
       log.info('[Onboarding] Claude OAuth URL generated (client will open browser)')
-      return { success: true, authUrl }
+      return { success: true, authUrl: prepared.authUrl }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       log.error('[Onboarding] Prepare Claude OAuth error:', message)
@@ -109,34 +142,29 @@ export function registerOnboardingHandlers(server: RpcServer, deps: HandlerDeps)
 
   // Exchange authorization code for tokens
   server.handle(RPC_CHANNELS.onboarding.EXCHANGE_CLAUDE_CODE, async (_ctx, authorizationCode: string, connectionSlug: string) => {
+    const normalizedSlug = connectionSlug?.trim()
+    const activeFlow = activeClaudeOAuthFlow
+    if (!normalizedSlug || activeFlow?.connectionSlug !== normalizedSlug) {
+      return { success: false, error: 'OAuth connection does not match the active flow.' }
+    }
     try {
-      log.info(`[Onboarding] Exchanging Claude authorization code for connection: ${connectionSlug}`)
+      log.info(`[Onboarding] Exchanging Claude authorization code for connection: ${normalizedSlug}`)
 
       if (!hasValidOAuthState()) {
         log.error('[Onboarding] No valid OAuth state found')
         return { success: false, error: 'OAuth session expired. Please start again.' }
       }
 
-      const tokens = await exchangeClaudeCode(authorizationCode, (status) => {
-        log.info('[Onboarding] Claude code exchange status:', status)
-      })
+      const tokens = await exchangeClaudeCode(authorizationCode)
 
       // Save credentials with refresh token support
       const manager = getCredentialManager()
 
       // Save to new LLM connection system
-      await manager.setLlmOAuth(connectionSlug, {
+      await manager.setLlmOAuth(normalizedSlug, {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         expiresAt: tokens.expiresAt,
-      })
-
-      // Also save to legacy key for validation compatibility
-      await manager.setClaudeOAuthCredentials({
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresAt: tokens.expiresAt,
-        source: 'native',
       })
 
       const expiresAtDate = tokens.expiresAt ? new Date(tokens.expiresAt).toISOString() : 'never'
@@ -146,6 +174,8 @@ export function registerOnboardingHandlers(server: RpcServer, deps: HandlerDeps)
       const message = error instanceof Error ? error.message : 'Unknown error'
       log.error('[Onboarding] Exchange Claude code error:', message)
       return { success: false, error: message }
+    } finally {
+      if (activeClaudeOAuthFlow?.id === activeFlow?.id) activeClaudeOAuthFlow = null
     }
   })
 
@@ -157,6 +187,7 @@ export function registerOnboardingHandlers(server: RpcServer, deps: HandlerDeps)
   // Clear OAuth state (for cancel/reset)
   server.handle(RPC_CHANNELS.onboarding.CLEAR_CLAUDE_OAUTH_STATE, async () => {
     clearOAuthState()
+    activeClaudeOAuthFlow = null
     return { success: true }
   })
 

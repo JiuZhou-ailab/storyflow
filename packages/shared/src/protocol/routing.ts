@@ -328,6 +328,7 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   // (ChatGPT OAuth stays LOCAL_ONLY — requires localhost callback server.)
   RPC_CHANNELS.onboarding.START_CLAUDE_OAUTH,
   RPC_CHANNELS.onboarding.EXCHANGE_CLAUDE_CODE,
+  RPC_CHANNELS.onboarding.CLAUDE_OAUTH_COMPLETED,
   RPC_CHANNELS.onboarding.HAS_CLAUDE_OAUTH_STATE,
   RPC_CHANNELS.onboarding.CLEAR_CLAUDE_OAUTH_STATE,
 

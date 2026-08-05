@@ -20,7 +20,6 @@ Electron main-process shell: app startup, native windows, IPC registration, auth
 - `menu.ts` - Application menu setup.
 - `network-proxy.ts` - Electron session proxy configuration using shared proxy rules.
 - `notifications.ts` - Native notification and badge handling.
-- `onboarding.ts` - Onboarding state helpers.
 - `platform.ts` - Electron implementation of shared platform services.
 - `power-manager.ts` - Power and sleep integration.
 - `quit-coordinator.ts` - Idempotent cleanup and updater-safe quit sequencing.

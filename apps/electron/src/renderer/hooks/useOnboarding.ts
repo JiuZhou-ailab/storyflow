@@ -622,7 +622,7 @@ export function useOnboarding({
         return
       }
 
-      // Claude OAuth (two-step flow - opens browser, user copies code)
+      // Claude OAuth: Pi prefers its local callback; pasted code remains the remote fallback.
       // Remaining method must be claude_oauth
       if (effectiveMethod !== 'claude_oauth') {
         setState(s => ({
@@ -633,10 +633,17 @@ export function useOnboarding({
         return
       }
 
-      const result = await window.electronAPI.startClaudeOAuth()
+      const effectiveEditingSlug = connectionSlugOverride ?? editingSlug
+      const connectionSlug = apiSetupMethodToConnectionSetup(
+        effectiveMethod,
+        {},
+        effectiveEditingSlug,
+        existingSlugs,
+      ).slug
+      const result = await window.electronAPI.startClaudeOAuth(connectionSlug)
 
       if (result.success) {
-        // Browser opened successfully, now waiting for user to copy the code
+        // Wait for Pi's callback; pasted code remains available for remote hosts.
         setIsWaitingForCode(true)
         setState(s => ({ ...s, credentialStatus: 'idle' }))
       } else {
@@ -654,6 +661,29 @@ export function useOnboarding({
       }))
     }
   }, [state.apiSetupMethod, saveAndValidateConnection, editingSlug, existingSlugs])
+
+  // Pi's localhost callback can complete before the user pastes a code. The
+  // server persists that credential once and emits this client-scoped result.
+  useEffect(() => window.electronAPI.onClaudeOAuthCompleted((result) => {
+    setIsWaitingForCode(false)
+    if (!result.success) {
+      setState(s => ({
+        ...s,
+        credentialStatus: 'error',
+        errorMessage: result.error || 'Claude authentication failed',
+      }))
+      return
+    }
+
+    setState(s => ({ ...s, credentialStatus: 'validating', errorMessage: undefined }))
+    const updateOnly = result.connectionSlug === editingSlug || existingSlugs?.has(result.connectionSlug)
+    void saveAndValidateConnection(
+      result.connectionSlug,
+      'claude_oauth',
+      undefined,
+      updateOnly,
+    )
+  }), [saveAndValidateConnection, editingSlug, existingSlugs])
 
   // Map product provider mode → setup action and navigate to the right step.
   const handleSelectProvider = useCallback(async (choice: ProviderChoice) => {

@@ -210,18 +210,7 @@ export class CredentialManager {
     await this.set({ type: 'anthropic_api_key' }, { value: key });
   }
 
-  /** Get Claude OAuth token */
-  async getClaudeOAuth(): Promise<string | null> {
-    const cred = await this.get({ type: 'claude_oauth' });
-    return cred?.value || null;
-  }
-
-  /** Set Claude OAuth token */
-  async setClaudeOAuth(token: string): Promise<void> {
-    await this.set({ type: 'claude_oauth' }, { value: token });
-  }
-
-  /** Get Claude OAuth credentials (with refresh token, expiry, and source) */
+  /** Read legacy Claude OAuth credentials during one-way startup migration. */
   async getClaudeOAuthCredentials(): Promise<{
     accessToken: string;
     refreshToken?: string;
@@ -238,22 +227,6 @@ export class CredentialManager {
       expiresAt: cred.expiresAt,
       source: cred.source as 'native' | 'cli' | undefined,
     };
-  }
-
-  /** Set Claude OAuth credentials (with refresh token, expiry, and source) */
-  async setClaudeOAuthCredentials(credentials: {
-    accessToken: string;
-    refreshToken?: string;
-    expiresAt?: number;
-    /** Where the token came from: 'native' (our OAuth), 'cli' (Claude CLI import) */
-    source?: 'native' | 'cli';
-  }): Promise<void> {
-    await this.set({ type: 'claude_oauth' }, {
-      value: credentials.accessToken,
-      refreshToken: credentials.refreshToken,
-      expiresAt: credentials.expiresAt,
-      source: credentials.source,
-    });
   }
 
   /** Get workspace MCP OAuth credentials */

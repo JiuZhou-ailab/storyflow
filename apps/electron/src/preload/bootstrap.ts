@@ -348,13 +348,13 @@ client.onConnectionStateChanged((state) => {
 // Override the channel-map stub: the server now returns authUrl without opening
 // the browser. We open it locally so it works in remote mode.
 // Claude OAuth is two-step: browser opens → user copies code → pastes in UI.
-;(api as any).startClaudeOAuth = async (): Promise<{
+;(api as any).startClaudeOAuth = async (connectionSlug: string): Promise<{
   success: boolean
   authUrl?: string
   error?: string
 }> => {
   try {
-    const result = await client.invoke('onboarding:startClaudeOAuth')
+    const result = await client.invoke('onboarding:startClaudeOAuth', connectionSlug)
     if (result.success && result.authUrl) {
       await shell.openExternal(result.authUrl)
     }
