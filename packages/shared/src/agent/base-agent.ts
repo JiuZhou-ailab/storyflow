@@ -58,7 +58,7 @@ import { PrerequisiteManager } from './core/prerequisite-manager.ts';
 
 // Automation system for agent events
 import type { AutomationSystem } from '../automations/automation-system.ts';
-import type { AgentEvent as AutomationAgentEvent, SdkAutomationInput } from '../automations/types.ts';
+import type { AgentAutomationInput, AgentEvent as AutomationAgentEvent } from '../automations/types.ts';
 import { getSessionPlansPath, getSessionDataPath, getSessionPath } from '../sessions/storage.ts';
 import { getMiniAgentSystemPrompt } from '../prompts/system.ts';
 import { buildTitlePrompt, buildRegenerateTitlePrompt, validateTitle } from '../utils/title-generator.ts';
@@ -383,7 +383,7 @@ export abstract class BaseAgent implements AgentBackend {
    * Catches all errors — automations must never break the agent flow.
    * @param signal - Optional AbortSignal for cancelling automation execution on abort
    */
-  protected async emitAutomationEvent(event: AutomationAgentEvent, input: SdkAutomationInput, signal?: AbortSignal): Promise<void> {
+  protected async emitAutomationEvent(event: AutomationAgentEvent, input: AgentAutomationInput, signal?: AbortSignal): Promise<void> {
     try {
       await this.automationSystem?.executeAgentEvent(event, input, signal);
     } catch (err) {

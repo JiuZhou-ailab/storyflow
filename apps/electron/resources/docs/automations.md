@@ -74,7 +74,7 @@ craft-agent automation validate
 
 > **Note:** `TodoStateChange` is a deprecated alias for `SessionStatusChange`. Existing configs using the old name will continue to work but will show a deprecation warning during validation.
 
-### Agent Events (passed to Claude SDK)
+### Agent Events (emitted by the Pi runtime)
 
 | Event | Trigger | Match Value |
 |-------|---------|-------------|

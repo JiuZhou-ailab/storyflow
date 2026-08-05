@@ -1,24 +1,23 @@
 /**
- * SDK Bridge - Environment variable building for Claude SDK automation integration
+ * Agent Event Environment - environment variable building for agent automations
  *
- * Maps SDK automation input fields to CRAFT_* environment variables for command execution.
+ * Maps normalized agent event input fields to CRAFT_* environment variables.
  */
 
 import { sanitizeForShell } from './security.ts';
 import { cleanEnv } from './utils.ts';
-import type { AgentEvent, SdkAutomationInput } from './types.ts';
+import type { AgentAutomationInput, AgentEvent } from './types.ts';
 
 /**
- * Build environment variables from SDK automation input.
- * Maps SDK input fields to CRAFT_* environment variables.
+ * Build environment variables from normalized agent automation input.
  */
-export function buildEnvFromSdkInput(event: AgentEvent, input: SdkAutomationInput): Record<string, string> {
+export function buildEnvFromAgentInput(event: AgentEvent, input: AgentAutomationInput): Record<string, string> {
   const env: Record<string, string> = {
     ...cleanEnv(),
     CRAFT_EVENT: event,
   };
 
-  // Map SDK input fields to env vars based on event type
+  // Map agent input fields to env vars based on event type
   // User-provided values are sanitized to prevent shell injection
   switch (event) {
     case 'PreToolUse':

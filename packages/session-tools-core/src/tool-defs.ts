@@ -8,8 +8,7 @@
  * Canonical Zod schemas, descriptions, and handler registry for all
  * session-scoped tools. Consumers derive what they need:
  *
- * - Claude SDK  → `.shape` extracts the plain `{ key: z.string() }` literal
- * - MCP / Pi    → `getToolDefsAsJsonSchema()` auto-converts to JSON Schema
+ * - Pi / MCP → `getToolDefsAsJsonSchema()` auto-converts to JSON Schema
  *
  * Adding a new tool: define the schema, description, handler import, and
  * one entry in SESSION_TOOL_DEFS.

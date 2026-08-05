@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'bun:test';
 import { evaluateConditions } from './conditions.ts';
-import { matcherMatches, matcherMatchesSdk } from './utils.ts';
+import { matcherMatches, matcherMatchesAgentInput } from './utils.ts';
 import type { AutomationCondition } from './types.ts';
 import type { ConditionContext } from './conditions.ts';
 
@@ -498,8 +498,8 @@ describe('matcherMatches with conditions', () => {
   });
 });
 
-describe('matcherMatchesSdk with conditions', () => {
-  it('should pass when SDK matcher and conditions both pass', () => {
+describe('matcherMatchesAgentInput with conditions', () => {
+  it('should pass when agent matcher and conditions both pass', () => {
     const matcher = {
       matcher: '^Bash$',
       conditions: [
@@ -508,14 +508,14 @@ describe('matcherMatchesSdk with conditions', () => {
       actions: [{ type: 'prompt' as const, prompt: 'test' }],
     };
 
-    expect(matcherMatchesSdk(matcher, 'PreToolUse', {
+    expect(matcherMatchesAgentInput(matcher, 'PreToolUse', {
       hook_event_name: 'PreToolUse',
       tool_name: 'Bash',
       tool_input: { command: 'echo hi' },
     })).toBe(true);
   });
 
-  it('should fail when SDK matcher passes but conditions fail', () => {
+  it('should fail when agent matcher passes but conditions fail', () => {
     const matcher = {
       matcher: '^Bash$',
       conditions: [
@@ -524,14 +524,14 @@ describe('matcherMatchesSdk with conditions', () => {
       actions: [{ type: 'prompt' as const, prompt: 'test' }],
     };
 
-    expect(matcherMatchesSdk(matcher, 'PreToolUse', {
+    expect(matcherMatchesAgentInput(matcher, 'PreToolUse', {
       hook_event_name: 'PreToolUse',
       tool_name: 'Bash',
       tool_input: { command: 'echo hi' },
     })).toBe(false);
   });
 
-  it('should fail when SDK matcher does not match regardless of conditions', () => {
+  it('should fail when agent matcher does not match regardless of conditions', () => {
     const matcher = {
       matcher: '^Read$',
       conditions: [
@@ -540,7 +540,7 @@ describe('matcherMatchesSdk with conditions', () => {
       actions: [{ type: 'prompt' as const, prompt: 'test' }],
     };
 
-    expect(matcherMatchesSdk(matcher, 'PreToolUse', {
+    expect(matcherMatchesAgentInput(matcher, 'PreToolUse', {
       hook_event_name: 'PreToolUse',
       tool_name: 'Bash',
     })).toBe(false);

@@ -612,7 +612,7 @@ describe('AutomationSystem', () => {
     });
   });
 
-  describe('buildSdkHooks', () => {
+  describe('buildAgentAutomationMatchers', () => {
     it('should return empty object (command execution removed)', async () => {
       writeFileSync(join(tempDir, AUTOMATIONS_CONFIG_FILE), JSON.stringify({
         automations: {
@@ -627,7 +627,7 @@ describe('AutomationSystem', () => {
         workspaceId: 'test-workspace',
       });
 
-      const result = system.buildSdkHooks();
+      const result = system.buildAgentAutomationMatchers();
       expect(result).toEqual({});
 
       await system.dispose();

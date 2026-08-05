@@ -21,7 +21,7 @@ export type AppEvent =
   | 'SessionStatusChange'
   | 'SchedulerTick';
 
-/** Agent events - passed to Claude SDK */
+/** Agent events emitted by the runtime */
 export type AgentEvent =
   | 'PreToolUse'
   | 'PostToolUse'
@@ -280,13 +280,13 @@ export type AutomationsValidationResult = {
 };
 
 // ============================================================================
-// SDK Types
+// Agent Automation Types
 // ============================================================================
 
 /**
- * SDK automation input type - union of all possible SDK event inputs
+ * Normalized input shared by all agent automation events.
  */
-export interface SdkAutomationInput {
+export interface AgentAutomationInput {
   hook_event_name: string;
   // Tool events
   tool_name?: string;
@@ -309,22 +309,21 @@ export interface SdkAutomationInput {
 }
 
 /**
- * SDK automation callback signature (matches Claude SDK HookCallback type)
+ * Agent automation callback signature.
  */
-export type SdkAutomationCallback = (
-  input: SdkAutomationInput,
+export type AgentAutomationCallback = (
+  input: AgentAutomationInput,
   toolUseId: string,
   options: { signal?: AbortSignal }
 ) => Promise<{ continue: boolean; reason?: string }>;
 
 /**
- * SDK automation matcher format (matches Claude SDK HookCallbackMatcher type)
- * Note: The `hooks` field name is kept as-is to match the Claude SDK interface.
+ * Agent automation callback matcher.
  */
-export interface SdkAutomationCallbackMatcher {
+export interface AgentAutomationMatcher {
   matcher?: string;
   timeout?: number;
-  hooks: SdkAutomationCallback[];
+  callbacks: AgentAutomationCallback[];
 }
 
 // ============================================================================
