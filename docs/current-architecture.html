@@ -648,11 +648,11 @@ pos: Testable companion to current-architecture.puml; performs no real network, 
               <div class="module-grid">
                 <details class="module" data-module="pi-construction" data-kind="runtime" data-search="piagent construction connection model auth runtime paths">
                   <summary><span class="module-icon"></span><span class="module-heading"><span class="module-name">PiAgent Construction</span><span class="module-owner">配置解析，不复制生命周期</span></span><span class="chevron">›</span></summary>
-                  <div class="module-body"><p>连接只决定模型、认证和 runtime path；直接创建 PiAgent。</p><code>packages/shared/src/agent/backend/factory.ts</code></div>
+                  <div class="module-body"><p>连接只解析模型、认证和 runtime path；SessionManager 直接创建 PiAgent。</p><code>packages/shared/src/agent/backend/connection-runtime.ts</code></div>
                 </details>
-                <details class="module" data-module="pi-agent" data-kind="runtime" data-search="piagent baseagent subprocess jsonl permissions proxy tools">
-                  <summary><span class="module-icon"></span><span class="module-heading"><span class="module-name">PiAgent</span><span class="module-owner">主进程侧 runtime adapter</span></span><span class="chevron">›</span></summary>
-                  <div class="module-body"><p>启动隔离子进程，执行权限检查和 backend-mode session tools。</p><code>packages/shared/src/agent/pi-agent.ts</code></div>
+                <details class="module" data-module="pi-agent" data-kind="runtime" data-search="piagent product host subprocess jsonl permissions proxy tools">
+                  <summary><span class="module-icon"></span><span class="module-heading"><span class="module-name">PiAgent</span><span class="module-owner">主进程侧 Product Host 投影</span></span><span class="chevron">›</span></summary>
+                  <div class="module-body"><p>启动隔离子进程，投影宿主权限、工具能力与产品事件。</p><code>packages/shared/src/agent/pi-agent.ts</code></div>
                 </details>
                 <details class="module" data-module="pi-protocol" data-kind="runtime" data-search="pi agent server jsonl command event adapter init prompt">
                   <summary><span class="module-icon"></span><span class="module-heading"><span class="module-name">Pi JSONL Adapter</span><span class="module-owner">进程隔离边界</span></span><span class="chevron">›</span></summary>
@@ -664,7 +664,7 @@ pos: Testable companion to current-architecture.puml; performs no real network, 
                 </details>
                 <details class="module" data-module="pi-models" data-kind="runtime" data-search="authstorage modelregistry provider anthropic openai bedrock custom endpoint">
                   <summary><span class="module-icon"></span><span class="module-heading"><span class="module-name">AuthStorage + ModelRegistry</span><span class="module-owner">Provider adapter</span></span><span class="chevron">›</span></summary>
-                  <div class="module-body"><p>内存凭据与模型注册；Provider 不拥有第二套 Agent。</p><code>packages/pi-agent-server/src/index.ts</code></div>
+                  <div class="module-body"><p>内存凭据与模型注册；Provider 不拥有第二套 Agent。</p><code>packages/pi-agent-server/src/pi-model-runtime.ts</code></div>
                 </details>
                 <details class="module" data-module="pi-session-store" data-kind="data" data-search="pi sessions continueRecent forkFrom branch resume provider truth">
                   <summary><span class="module-icon"></span><span class="module-heading"><span class="module-name">.pi-sessions</span><span class="module-owner">Pi resume / fork 事实源</span></span><span class="chevron">›</span></summary>
