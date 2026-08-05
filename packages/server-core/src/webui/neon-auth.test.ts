@@ -370,6 +370,25 @@ describe('NeonAuthService', () => {
     expect(JSON.parse(String(accept?.init?.body))).toEqual({ invitationId: 'invite-1' })
   })
 
+  it('exchanges a session cookie without requiring an organization', async () => {
+    const requests: string[] = []
+    const service = new NeonAuthService({
+      baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+      fetch: async (input) => {
+        requests.push(String(input))
+        return Response.json({ token: 'session-jwt' })
+      },
+    })
+
+    await expect(service.getSessionToken({
+      sessionCookie: '__Secure-neon-auth.session_token=session-secret',
+      origin: 'https://craft.example.com',
+    })).resolves.toBe('session-jwt')
+    expect(requests).toEqual([
+      'https://ep-test.neonauth.aws.neon.build/neondb/auth/token',
+    ])
+  })
+
   it('reports an expired organization session as requiring sign-in', async () => {
     const service = new NeonAuthService({
       baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',

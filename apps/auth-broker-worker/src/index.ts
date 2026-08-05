@@ -15,7 +15,6 @@ export interface Env {
   CRAFT_WEBUI_NEON_AUTH_JWKS_URL?: string
   CRAFT_WEBUI_NEON_AUTH_ISSUER?: string
   CRAFT_WEBUI_NEON_AUTH_AUDIENCE?: string
-  CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID?: string
   CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN?: string
   STORYFLOW_CLIENT_SESSION_JWT_CURRENT_KEY_ID?: string
   STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET?: string
@@ -49,8 +48,6 @@ interface NeonIdentity {
   email?: string
   emailVerified?: boolean
   name?: string
-  organizationId?: string
-  organizationRole?: string
 }
 
 interface ClientSessionPayload extends JWTPayload {
@@ -244,22 +241,13 @@ async function exchangeNeonToken(
   if (tokenConfigError) return Response.json({ error: tokenConfigError }, { status: 503 })
   const neonConfigError = getNeonAuthConfigError(env)
   if (neonConfigError) return Response.json({ error: neonConfigError }, { status: 503 })
-  const expectedOrganizationId = readString(env.CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID)
-  if (!expectedOrganizationId) {
-    return Response.json({ error: 'Neon Auth organization is not configured' }, { status: 503 })
-  }
-
   try {
     const identity = await verifyNeonProviderToken(token, env, fetchImpl)
-    if (!isExpectedNeonMember(identity, expectedOrganizationId)) {
-      return invitationRequiredResponse()
-    }
     const tokens = await createAuthTokens(
       env,
       identity.subject,
       'standard',
       identity.name,
-      identity.organizationId,
     )
 
     return Response.json({
@@ -267,7 +255,6 @@ async function exchangeNeonToken(
       user: {
         provider: 'neon',
         userId: identity.userId,
-        organizationId: identity.organizationId,
         ...(identity.email ? { email: identity.email } : {}),
         ...(identity.emailVerified !== undefined ? { emailVerified: identity.emailVerified } : {}),
         ...(identity.name ? { name: identity.name } : {}),
@@ -349,21 +336,16 @@ async function reauthorizeClientSession(
 
   const providerToken = readString((await readJsonObject(request)).providerToken)
   if (!providerToken) return neonSessionRequiredResponse()
-  const expectedOrganizationId = readString(env.CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID)
-  if (!expectedOrganizationId) {
-    return Response.json({ error: 'Neon Auth organization is not configured' }, { status: 503 })
-  }
   const neonConfigError = getNeonAuthConfigError(env)
   if (neonConfigError) return Response.json({ error: neonConfigError }, { status: 503 })
 
   try {
     const identity = await verifyNeonProviderToken(providerToken, env, fetchImpl)
     if (identity.subject !== session.subject) return invalidClientSessionResponse()
-    if (!isExpectedNeonMember(identity, expectedOrganizationId)) return invitationRequiredResponse()
     return {
       session: {
         ...session,
-        organizationId: identity.organizationId,
+        organizationId: undefined,
       },
     }
   } catch {
@@ -437,16 +419,6 @@ function invalidClientSessionResponse(): Response {
       code: 'client_session_token_invalid',
     },
     { status: 401 },
-  )
-}
-
-function invitationRequiredResponse(): Response {
-  return Response.json(
-    {
-      error: 'Invitation required',
-      code: 'invitation_required',
-    },
-    { status: 403 },
   )
 }
 
@@ -596,12 +568,7 @@ function getBrokerReadinessError(env: Env): string | null {
     && !!readString(env.CRAFT_WEBUI_FEISHU_APP_SECRET)
   const neonBaseUrl = readString(env.CRAFT_WEBUI_NEON_AUTH_BASE_URL)
   if (!hasFeishu && !neonBaseUrl) return 'No login provider is configured'
-  if (neonBaseUrl) {
-    if (!readString(env.CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID)) {
-      return 'Neon Auth organization is not configured'
-    }
-    return getNeonAuthConfigError(env)
-  }
+  if (neonBaseUrl) return getNeonAuthConfigError(env)
   return null
 }
 
@@ -696,10 +663,6 @@ async function verifyNeonProviderToken(
   return normalizeNeonIdentity(payload)
 }
 
-function isExpectedNeonMember(identity: NeonIdentity, organizationId: string): boolean {
-  return identity.organizationId === organizationId && !!identity.organizationRole
-}
-
 function normalizeNeonIdentity(payload: JWTPayload): NeonIdentity {
   const claims = payload as Record<string, unknown>
   if (readBoolean(claims.banned) === true) throw new Error('Neon Auth user is banned')
@@ -713,9 +676,6 @@ function normalizeNeonIdentity(payload: JWTPayload): NeonIdentity {
   if (emailVerified !== true) throw new Error('Email verification is required')
 
   const name = normalizeUserName(claims.name)
-  const organization = readObject(claims.o)
-  const organizationId = readString(organization?.id)
-  const organizationRole = readString(organization?.role)
   return {
     provider: 'neon',
     subject: `neon:${subject}`,
@@ -723,8 +683,6 @@ function normalizeNeonIdentity(payload: JWTPayload): NeonIdentity {
     ...(email ? { email } : {}),
     ...(emailVerified !== undefined ? { emailVerified } : {}),
     ...(name ? { name } : {}),
-    ...(organizationId ? { organizationId } : {}),
-    ...(organizationRole ? { organizationRole } : {}),
   }
 }
 

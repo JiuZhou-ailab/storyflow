@@ -47,7 +47,6 @@ GitHub repository vars:
 CRAFT_CLIENT_AUTH_BROKER_URL=https://storyflow-auth.zjding.com
 CRAFT_CLIENT_FEISHU_APP_ID=cli_aa9d901dfbb8dcd3
 CRAFT_CLIENT_NEON_AUTH_BASE_URL=https://your-neon-auth.example.com/neondb/auth
-CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID=org_xxx
 CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN=users.craft.invalid
 CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED=false
 STORYFLOW_FEEDBACK_ENDPOINT=https://storyflow-feedback.zjding.com/api/feedback
@@ -84,11 +83,9 @@ Broker, Neon Auth, and explicit Neon JWKS URLs must use HTTPS. Plain HTTP is
 accepted only for loopback development; packaged-build validation rejects
 loopback and insecure remote endpoints before release.
 
-`CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID` is public bootstrap configuration. A
-packaged build with Neon login must set it; only JWTs carrying that native Neon
-Organization claim are accepted. `CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED`
-controls whether the desktop exposes registration. Invite-only distribution may
-set it to `true` because Organization membership remains the authorization gate.
+`CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED` controls whether the desktop exposes
+registration. Authenticated Neon identities must have a verified email; no
+Organization membership is required.
 
 `STORYFLOW_FEEDBACK_ENDPOINT` is public client bootstrap configuration. Official
 builds should point it at the first-party feedback Worker custom domain, not the
@@ -114,7 +111,6 @@ CRAFT_WEBUI_FEISHU_ALLOW_ALL_USERS=false
 CRAFT_WEBUI_FEISHU_INTERNAL_TENANT_KEYS=
 CRAFT_WEBUI_AUTH_DATABASE_URL=...
 CRAFT_WEBUI_NEON_AUTH_BASE_URL=...
-CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID=org_xxx
 CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN=users.craft.invalid
 CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED=false
 STORYFLOW_CLIENT_SESSION_JWT_CURRENT_KEY_ID=client-session-2026-07

@@ -140,7 +140,7 @@ export type ClientAuthNeonService = Pick<
   | 'getClientConfig'
   | 'authenticateWithEmailPassword'
   | 'verifyEmailOtp'
-  | 'getOrganizationToken'
+  | 'getSessionToken'
   | 'verifyToken'
 >
 
@@ -200,7 +200,6 @@ type ClientAuthEnv = Partial<Pick<NodeJS.ProcessEnv,
   | 'CRAFT_CLIENT_NEON_AUTH_JWKS_URL'
   | 'CRAFT_CLIENT_NEON_AUTH_ISSUER'
   | 'CRAFT_CLIENT_NEON_AUTH_AUDIENCE'
-  | 'CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID'
   | 'CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN'
   | 'CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED'
   | 'CRAFT_CLIENT_NEON_AUTH_ORIGIN'
@@ -219,7 +218,6 @@ const BUNDLED_CLIENT_AUTH_ENV: ClientAuthEnv = {
   CRAFT_CLIENT_NEON_AUTH_JWKS_URL: process.env.CRAFT_CLIENT_NEON_AUTH_JWKS_URL,
   CRAFT_CLIENT_NEON_AUTH_ISSUER: process.env.CRAFT_CLIENT_NEON_AUTH_ISSUER,
   CRAFT_CLIENT_NEON_AUTH_AUDIENCE: process.env.CRAFT_CLIENT_NEON_AUTH_AUDIENCE,
-  CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID: process.env.CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID,
   CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN: process.env.CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN,
   CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED: process.env.CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED,
   CRAFT_CLIENT_NEON_AUTH_ORIGIN: process.env.CRAFT_CLIENT_NEON_AUTH_ORIGIN,
@@ -242,8 +240,6 @@ export function createClientAuthConfigFromEnv(env: NodeJS.ProcessEnv): ClientAut
   const jwksUrl = readEnv(env.CRAFT_CLIENT_NEON_AUTH_JWKS_URL) ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_JWKS_URL)
   const issuer = readEnv(env.CRAFT_CLIENT_NEON_AUTH_ISSUER) ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_ISSUER)
   const audience = readEnv(env.CRAFT_CLIENT_NEON_AUTH_AUDIENCE) ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_AUDIENCE)
-  const organizationId = readEnv(env.CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID)
-    ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID)
   const usernameEmailDomain = readEnv(env.CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN)
     ?? readEnv(env.CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN)
   const emailSignUpEnabled = readBooleanEnv(env.CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED)
@@ -278,7 +274,6 @@ export function createClientAuthConfigFromEnv(env: NodeJS.ProcessEnv): ClientAut
             ...(jwksUrl ? { jwksUrl } : {}),
             ...(issuer ? { issuer } : {}),
             ...(audience ? { audience } : {}),
-            ...(organizationId ? { organizationId } : {}),
             ...(usernameEmailDomain ? { usernameEmailDomain } : {}),
             emailSignUpEnabled,
           },
@@ -415,13 +410,9 @@ export function createClientAuthService(
   }
 
   async function getNeonProviderToken(sessionCookie: string): Promise<string> {
-    const organizationId = readEnv(config.neonAuth?.organizationId)
-    if (!neonAuth || !organizationId) {
-      throw new Error('Neon Auth organization is not configured')
-    }
-    return neonAuth.getOrganizationToken({
+    if (!neonAuth) throw new Error('Neon Auth is not configured')
+    return neonAuth.getSessionToken({
       sessionCookie,
-      organizationId,
       origin: config.neonAuthOrigin,
     })
   }
@@ -761,7 +752,7 @@ function requireNeonSessionCookie(session: ClientAuthSession): string {
 
 function isRejectedNeonSession(error: unknown): boolean {
   return error instanceof Error
-    && ['Invitation required', 'Neon Auth session is required'].includes(error.message)
+    && error.message === 'Neon Auth session is required'
 }
 
 function toClientAuthUserFromEmailPasswordUser(user: {

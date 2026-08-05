@@ -190,7 +190,6 @@ function createNeonAuthConfigFromEnv(): NeonAuthConfig | undefined {
     jwksUrl: process.env.CRAFT_WEBUI_NEON_AUTH_JWKS_URL?.trim() || undefined,
     issuer: process.env.CRAFT_WEBUI_NEON_AUTH_ISSUER?.trim() || undefined,
     audience: process.env.CRAFT_WEBUI_NEON_AUTH_AUDIENCE?.trim() || undefined,
-    organizationId: process.env.CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID?.trim() || undefined,
     usernameEmailDomain: process.env.CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN?.trim() || undefined,
     emailSignUpEnabled: parseOptionalBooleanEnv(
       'CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED',
