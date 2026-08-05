@@ -107,7 +107,7 @@ describe('macOS release configuration', () => {
     expect(marketingWorkflow).toContain('- "scripts/build-marketing.ts"');
     expect(marketingWorkflow).toContain('group: deploy-marketing-production');
     expect(marketingWorkflow).toContain('cancel-in-progress: false');
-    expect(marketingWorkflow).toMatch(/uses: actions\/checkout@v4\n\s+with:\n\s+ref: main/);
+    expect(marketingWorkflow).toMatch(/uses: actions\/checkout@v5\n\s+with:\n\s+ref: main/);
     expect(marketingWorkflow).toContain('bun test apps/marketing/src/__tests__/downloads.test.ts');
     expect(marketingWorkflow).toContain('bun run marketing:build');
     expect(marketingWorkflow).toContain('bunx wrangler pages deploy apps/marketing/dist');
