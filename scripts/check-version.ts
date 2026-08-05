@@ -1,5 +1,5 @@
-// input: Workspace package manifests, the root version, and optional RELEASE_VERSION
-// output: Failing or passing version consistency status for release gates
+// input: Workspace package manifests, bun.lock, the root version, and optional RELEASE_VERSION
+// output: Failing or passing manifest and lockfile version consistency for release gates
 // pos: Root release preflight guard before validation and packaging
 
 import { existsSync, readdirSync, readFileSync } from "fs";
@@ -10,8 +10,23 @@ interface PackageManifest {
   version?: string;
 }
 
+interface BunLock {
+  workspaces?: Record<string, PackageManifest>;
+}
+
+export function findLockVersionMismatches(
+  workspaces: Record<string, PackageManifest>,
+  expectedVersion: string,
+): string[] {
+  return Object.entries(workspaces).flatMap(([path, manifest]) => {
+    if (!manifest.version || manifest.version === expectedVersion) return []
+    return [`bun.lock ${manifest.name ?? path}: ${manifest.version} !== ${expectedVersion}`]
+  })
+}
+
 const rootDir = join(import.meta.dir, "..");
 const rootPackagePath = join(rootDir, "package.json");
+const lockPath = join(rootDir, "bun.lock");
 const versionPattern = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 
 function readPackageJson(path: string): PackageManifest {
@@ -59,6 +74,13 @@ for (const packagePath of packagePaths) {
   }
 }
 
+const lock = Bun.JSONC.parse(readFileSync(lockPath, "utf8")) as BunLock;
+if (!lock.workspaces) {
+  mismatches.push("bun.lock: missing workspaces");
+} else {
+  mismatches.push(...findLockVersionMismatches(lock.workspaces, rootVersion));
+}
+
 if (mismatches.length > 0) {
   console.error("Workspace package versions are not aligned:");
   for (const mismatch of mismatches) {
@@ -67,4 +89,4 @@ if (mismatches.length > 0) {
   process.exit(1);
 }
 
-console.log(`All ${packagePaths.length} package versions are aligned at ${rootVersion}.`);
+console.log(`All ${packagePaths.length} package manifests and bun.lock are aligned at ${rootVersion}.`);

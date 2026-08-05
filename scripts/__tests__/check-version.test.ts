@@ -1,11 +1,12 @@
-// input: Root package version and optional release version environment
-// output: Regression proof that release tags cannot diverge from packaged app versions
+// input: Root package version, lockfile workspace versions, and optional release version environment
+// output: Regression proof that release tags and lockfile workspaces cannot diverge from packaged app versions
 // pos: Release preflight coverage for scripts/check-version.ts
 
 import { describe, expect, it } from 'bun:test'
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { findLockVersionMismatches } from '../check-version'
 
 const rootDir = join(import.meta.dir, '..', '..')
 const scriptPath = join(rootDir, 'scripts', 'check-version.ts')
@@ -38,5 +39,14 @@ describe('check-version release guard', () => {
     expect(result.stderr).toContain(
       `Release version ${differentVersion} does not match package version ${packageVersion}.`,
     )
+  })
+
+  it('reports stale workspace versions from bun.lock', () => {
+    expect(findLockVersionMismatches({
+      'packages/shared': { name: '@craft-agent/shared', version: differentVersion },
+      'packages/core': { name: '@craft-agent/core', version: packageVersion },
+    }, packageVersion)).toEqual([
+      `bun.lock @craft-agent/shared: ${differentVersion} !== ${packageVersion}`,
+    ])
   })
 })
