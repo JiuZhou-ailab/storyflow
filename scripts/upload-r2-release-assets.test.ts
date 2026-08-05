@@ -35,7 +35,7 @@ function runUpload(args: string[], assetsDir: string) {
 }
 
 describe("upload-r2-release-assets", () => {
-  test("dry-runs versioned release uploads and stable latest uploads for required release assets", () => {
+  test("publishes immutable assets before latest artifacts and updater manifests", () => {
     const assetsDir = makeAssetsDir();
     const result = runUpload(["--dry-run"], assetsDir);
 
@@ -50,6 +50,19 @@ describe("upload-r2-release-assets", () => {
     expect(result.stdout).not.toContain("https://story-storage.zjding.com/latest/Storyflow-0.9.12-arm64.dmg");
     expect(result.stdout).toContain(`https://story-storage.zjding.com/latest/${releaseAssetFiles.macManifest}`);
     expect(result.stdout).toContain("Published 9 asset(s)");
+
+    const immutableInstaller = result.stdout.indexOf(
+      `releases/v0.9.12/${releaseAssetFiles.macArm64Dmg}`,
+    );
+    const latestInstaller = result.stdout.indexOf(
+      `latest/${releaseAssetFiles.macArm64Dmg}`,
+    );
+    const latestManifest = result.stdout.indexOf(
+      `latest/${releaseAssetFiles.macManifest}`,
+    );
+    expect(immutableInstaller).toBeGreaterThan(-1);
+    expect(latestInstaller).toBeGreaterThan(immutableInstaller);
+    expect(latestManifest).toBeGreaterThan(latestInstaller);
   });
 
   test("fails before upload when a required public asset is missing", () => {

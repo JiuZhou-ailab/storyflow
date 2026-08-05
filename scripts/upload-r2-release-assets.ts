@@ -24,6 +24,11 @@ type UploadTarget = {
   cacheControl: string;
 };
 
+type UploadTask = {
+  filePath: string;
+  target: UploadTarget;
+};
+
 export type ReleaseAssetProfile = "full" | "windows" | "macos" | "metadata";
 
 export type R2ReleaseRetentionPlan = {
@@ -233,7 +238,7 @@ function versionedAliasFor(fileName: string, tag: string): string | undefined {
 }
 
 function wranglerCommand(): string[] {
-  return (process.env.STORYFLOW_R2_WRANGLER_COMMAND ?? "bunx wrangler")
+  return (process.env.STORYFLOW_R2_WRANGLER_COMMAND ?? "bunx wrangler@4.114.0")
     .trim()
     .split(/\s+/)
     .filter(Boolean);
@@ -278,6 +283,24 @@ async function putObjectWithWrangler(params: {
   const exitCode = await child.exited;
   if (exitCode !== 0) {
     throw new Error(`Wrangler upload failed for ${params.target.key} with exit code ${exitCode}`);
+  }
+}
+
+async function uploadTasks(params: {
+  tasks: UploadTask[];
+  bucket: string;
+  publicBaseUrl: string;
+  dryRun: boolean;
+}): Promise<void> {
+  // ponytail: two uploads saturate the hosted runner without making R2 retries noisy.
+  for (let index = 0; index < params.tasks.length; index += 2) {
+    await Promise.all(params.tasks.slice(index, index + 2).map(async ({ filePath, target }) => {
+      const publicUrl = `${params.publicBaseUrl}/${target.key}`;
+      console.log(`${params.dryRun ? "Would upload" : "Uploading"} ${relative(process.cwd(), filePath)} -> ${publicUrl}`);
+      if (!params.dryRun) {
+        await putObjectWithWrangler({ bucket: params.bucket, filePath, target });
+      }
+    }));
   }
 }
 
@@ -455,43 +478,49 @@ async function main(): Promise<void> {
     throw new Error(`Missing required release asset(s): ${missingFiles.join(", ")}`);
   }
 
-  const targetsFor = (fileName: string): UploadTarget[] => {
-    const targets: UploadTarget[] = [
-      {
-        key: `${releasePrefix}/${options.tag}/${fileName}`,
-        cacheControl: "public, max-age=31536000, immutable",
-      },
-      {
-        key: `${latestPrefix}/${fileName}`,
-        cacheControl: "public, max-age=300, must-revalidate",
-      },
-    ];
-    const versionedAlias = versionedAliasFor(fileName, options.tag);
-    if (versionedAlias) {
-      targets.push(
-        {
-          key: `${releasePrefix}/${options.tag}/${versionedAlias}`,
-          cacheControl: "public, max-age=31536000, immutable",
-        },
-      );
-    }
-    return targets;
-  };
+  const releaseTasks: UploadTask[] = [];
+  const latestAssetTasks: UploadTask[] = [];
+  const latestManifestTasks: UploadTask[] = [];
 
   for (const fileName of allFiles) {
     const filePath = join(options.assetsDir, fileName);
+    releaseTasks.push({
+      filePath,
+      target: {
+        key: `${releasePrefix}/${options.tag}/${fileName}`,
+        cacheControl: "public, max-age=31536000, immutable",
+      },
+    });
 
-    for (const target of targetsFor(fileName)) {
-      const publicUrl = `${publicBaseUrl}/${target.key}`;
-      console.log(`${options.dryRun ? "Would upload" : "Uploading"} ${relative(process.cwd(), filePath)} -> ${publicUrl}`);
+    const versionedAlias = versionedAliasFor(fileName, options.tag);
+    if (versionedAlias) {
+      releaseTasks.push({
+        filePath,
+        target: {
+          key: `${releasePrefix}/${options.tag}/${versionedAlias}`,
+          cacheControl: "public, max-age=31536000, immutable",
+        },
+      });
+    }
 
-      if (options.dryRun) {
-        continue;
-      }
-
-      await putObjectWithWrangler({ bucket, filePath, target });
+    const latestTask = {
+      filePath,
+      target: {
+        key: `${latestPrefix}/${fileName}`,
+        cacheControl: "public, max-age=300, must-revalidate",
+      },
+    };
+    if (fileName === releaseAssetFiles.macManifest || fileName === releaseAssetFiles.windowsManifest) {
+      latestManifestTasks.push(latestTask);
+    } else {
+      latestAssetTasks.push(latestTask);
     }
   }
+
+  await uploadTasks({ tasks: releaseTasks, bucket, publicBaseUrl, dryRun: options.dryRun });
+  await uploadTasks({ tasks: latestAssetTasks, bucket, publicBaseUrl, dryRun: options.dryRun });
+  // Publish updater manifests only after every referenced latest artifact exists.
+  await uploadTasks({ tasks: latestManifestTasks, bucket, publicBaseUrl, dryRun: options.dryRun });
 
   console.log(`Published ${allFiles.length} asset(s) to ${publicBaseUrl}/${latestPrefix}`);
 
