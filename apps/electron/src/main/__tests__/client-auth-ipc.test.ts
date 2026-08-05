@@ -51,8 +51,10 @@ describe('client auth IPC propagation', () => {
     const preloadSource = readElectronFile('preload/bootstrap.ts')
 
     expect(mainSource).toContain('CLIENT_AUTH_IPC_CHANNELS.VERIFY_EMAIL')
+    expect(mainSource).toContain('CLIENT_AUTH_IPC_CHANNELS.RESEND_VERIFICATION_EMAIL')
     expect(mainSource).toContain("otp: typeof record.otp === 'string'")
     expect(preloadSource).toContain('CLIENT_AUTH_IPC_CHANNELS.VERIFY_EMAIL, input')
+    expect(preloadSource).toContain('CLIENT_AUTH_IPC_CHANNELS.RESEND_VERIFICATION_EMAIL, input')
   })
 
   it('keeps managed sign-in at the account capability boundary', () => {

@@ -18,7 +18,6 @@ import { SettingsCard, SettingsCardContent } from '@/components/settings/Setting
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 const AUTH_MOTION_EASE = [0.16, 1, 0.3, 1] as const
 
@@ -47,6 +46,7 @@ export function ClientSignInForm({
   const [error, setError] = useState<string | null>(null)
   const [registrationNotice, setRegistrationNotice] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [resendingOtp, setResendingOtp] = useState(false)
   const [feishuSubmitting, setFeishuSubmitting] = useState(false)
   const prefersReducedMotion = useReducedMotion()
   const authPanelMotion = prefersReducedMotion
@@ -65,7 +65,7 @@ export function ClientSignInForm({
     }
   }, [authMode, emailSignUpEnabled])
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleCredentialsSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSubmitting(true)
     setError(null)
@@ -84,12 +84,6 @@ export function ClientSignInForm({
     }
 
     try {
-      if (verificationEmail) {
-        await window.electronAPI.verifyClientEmail({ email: verificationEmail, otp })
-        await window.electronAPI.signInClient({ identifier: verificationEmail, password })
-        await onSignedIn()
-        return
-      }
       if (authMode === 'sign-up') {
         if (!identifier.trim().includes('@')) {
           setError('创建账号需要输入完整邮箱。')
@@ -102,7 +96,7 @@ export function ClientSignInForm({
         })
         if (result.status === 'verification-required') {
           setVerificationEmail(identifier.trim().toLowerCase())
-          setRegistrationNotice('验证码已发送到受邀邮箱，验证后将自动登录。')
+          setOtp('')
           return
         }
       } else {
@@ -115,6 +109,60 @@ export function ClientSignInForm({
     } finally {
       setSubmitting(false)
     }
+  }
+
+  async function handleVerificationSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!verificationEmail) return
+
+    setSubmitting(true)
+    setError(null)
+    setRegistrationNotice(null)
+    let verified = false
+
+    try {
+      await window.electronAPI.verifyClientEmail({ email: verificationEmail, otp })
+      verified = true
+      setIdentifier(verificationEmail)
+      setVerificationEmail(null)
+      setOtp('')
+      setConfirmPassword('')
+      setAuthMode('sign-in')
+
+      await window.electronAPI.signInClient({ identifier: verificationEmail, password })
+      await onSignedIn()
+    } catch (err) {
+      if (verified) {
+        setRegistrationNotice('邮箱验证已完成，可直接登录，无需再次输入验证码。')
+      }
+      setError(formatClientAuthErrorMessage(err))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleResendVerificationEmail() {
+    if (!verificationEmail) return
+
+    setResendingOtp(true)
+    setError(null)
+    setRegistrationNotice(null)
+
+    try {
+      await window.electronAPI.resendClientVerificationEmail({ email: verificationEmail })
+      setRegistrationNotice('新的验证码已发送，请检查收件箱和垃圾邮件。')
+    } catch (err) {
+      setError(formatClientAuthErrorMessage(err))
+    } finally {
+      setResendingOtp(false)
+    }
+  }
+
+  function editVerificationEmail() {
+    setVerificationEmail(null)
+    setOtp('')
+    setError(null)
+    setRegistrationNotice(null)
   }
 
   function switchAuthMode(nextMode: EmailAuthMode) {
@@ -150,12 +198,14 @@ export function ClientSignInForm({
     }
   }
 
-  const formTitle = authMode === 'sign-up' && emailSignUpEnabled
-    ? '创建 Storyflow 账号'
-    : '登录 Storyflow'
-  const formDescription = authMode === 'sign-up' && emailSignUpEnabled
-    ? '注册后可使用 Storyflow 托管模型，本地项目不受影响。'
-    : '登录后可使用 Storyflow 托管模型，本地项目不受影响。'
+  const formTitle = verificationEmail
+    ? '验证邮箱'
+    : authMode === 'sign-up' && emailSignUpEnabled
+      ? '创建 Storyflow 账号'
+      : '登录 Storyflow'
+  const formDescription = verificationEmail
+    ? `验证码已发送至 ${verificationEmail}。`
+    : '登录后可使用 Storyflow 托管模型。'
   const identifierLabel = authMode === 'sign-up'
     ? '邮箱'
     : usernameLoginEnabled ? '用户名或邮箱' : '邮箱'
@@ -166,191 +216,231 @@ export function ClientSignInForm({
   return (
     <motion.section className="w-full max-w-[420px]" {...authPanelMotion}>
       <SettingsCard className="border border-border/60 bg-background shadow-minimal" divided={false}>
-        <SettingsCardContent className="p-6 max-[520px]:p-5">
-          <header className="mb-6">
-            <div className="flex items-center gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-foreground-2 shadow-minimal">
-                <CraftAgentsSymbol className="size-6 text-accent" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                  Storyflow
-                </p>
-                <h1 className="text-[19px] font-semibold leading-6 text-foreground">{formTitle}</h1>
-              </div>
+        <SettingsCardContent className="p-7 max-[520px]:p-5">
+          <header className="mb-7 text-center">
+            <div className="mx-auto flex size-11 items-center justify-center rounded-[10px] bg-foreground-2 shadow-minimal">
+              <CraftAgentsSymbol className="size-7 text-accent" />
             </div>
-            <p className="mt-3 text-[13px] leading-5 text-muted-foreground">{formDescription}</p>
+            <p className="mt-4 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+              Storyflow
+            </p>
+            <h1 className="mt-1 text-[22px] font-semibold leading-7 text-foreground">{formTitle}</h1>
+            <p className="mt-2 text-[13px] leading-5 text-muted-foreground">{formDescription}</p>
           </header>
 
-          <div className="space-y-4">
-            {emailPasswordEnabled ? (
-              <form className="space-y-4" onSubmit={handleSubmit}>
-                {emailSignUpEnabled ? (
-                  <Tabs
-                    value={authMode}
-                    onValueChange={(value) => switchAuthMode(value === 'sign-up' ? 'sign-up' : 'sign-in')}
+          <div className="space-y-5">
+            {verificationEmail ? (
+              <form className="space-y-4" onSubmit={handleVerificationSubmit} aria-busy={submitting || resendingOtp}>
+                <div className="space-y-1.5">
+                  <Label className="text-[13px]" htmlFor="client-auth-otp">邮箱验证码</Label>
+                  <Input
+                    className="h-10"
+                    id="client-auth-otp"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern="[0-9]{6}"
+                    maxLength={6}
+                    required
+                    autoFocus
+                    disabled={submitting || resendingOtp}
+                    value={otp}
+                    onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                    aria-describedby="client-auth-otp-help"
+                  />
+                  <p id="client-auth-otp-help" className="text-[12px] leading-5 text-muted-foreground">
+                    请输入邮件中的 6 位数字验证码。
+                  </p>
+                </div>
+
+                <Button className="h-10 w-full" type="submit" disabled={submitting || resendingOtp}>
+                  {submitting ? <Loader2 className="size-4 animate-spin" /> : <LogIn className="size-4" />}
+                  验证并登录
+                </Button>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={submitting || resendingOtp}
+                    onClick={handleResendVerificationEmail}
                   >
-                    <TabsList className="grid w-full grid-cols-2 bg-foreground-2">
-                      <TabsTrigger value="sign-in">已有账号</TabsTrigger>
-                      <TabsTrigger value="sign-up">创建账号</TabsTrigger>
-                    </TabsList>
-                  </Tabs>
+                    {resendingOtp ? <Loader2 className="size-4 animate-spin" /> : null}
+                    重新发送验证码
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={submitting || resendingOtp}
+                    onClick={editVerificationEmail}
+                  >
+                    修改邮箱
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <>
+                {emailPasswordEnabled ? (
+                  <form
+                    id="client-auth-credentials-form"
+                    className="space-y-4"
+                    onSubmit={handleCredentialsSubmit}
+                    aria-busy={submitting}
+                  >
+                    <div className="space-y-1.5">
+                      <Label className="text-[13px]" htmlFor="client-auth-identifier">
+                        {identifierLabel}
+                      </Label>
+                      <Input
+                        className="h-10"
+                        id="client-auth-identifier"
+                        type={authMode === 'sign-up' ? 'email' : 'text'}
+                        autoComplete={authMode === 'sign-up' ? 'email' : 'username'}
+                        autoFocus
+                        required
+                        disabled={submitting || feishuSubmitting}
+                        value={identifier}
+                        onChange={(event) => setIdentifier(event.target.value)}
+                        placeholder={identifierPlaceholder}
+                      />
+                    </div>
+
+                    <AnimatePresence initial={false}>
+                      {authMode === 'sign-up' ? (
+                        <motion.div
+                          className="space-y-1.5"
+                          initial={prefersReducedMotion ? false : { opacity: 0, y: -4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={prefersReducedMotion ? undefined : { opacity: 0, y: -4 }}
+                          transition={{ duration: 0.16, ease: AUTH_MOTION_EASE }}
+                        >
+                          <Label className="text-[13px]" htmlFor="client-auth-name">名称（选填）</Label>
+                          <Input
+                            className="h-10"
+                            id="client-auth-name"
+                            autoComplete="name"
+                            disabled={submitting || feishuSubmitting}
+                            value={displayName}
+                            onChange={(event) => setDisplayName(event.target.value)}
+                            placeholder="你的名字"
+                          />
+                        </motion.div>
+                      ) : null}
+                    </AnimatePresence>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-[13px]" htmlFor="client-auth-password">密码</Label>
+                      <Input
+                        className="h-10"
+                        id="client-auth-password"
+                        type="password"
+                        autoComplete={authMode === 'sign-up' ? 'new-password' : 'current-password'}
+                        required
+                        disabled={submitting || feishuSubmitting}
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                      />
+                    </div>
+
+                    <AnimatePresence initial={false}>
+                      {authMode === 'sign-up' ? (
+                        <motion.div
+                          className="space-y-1.5"
+                          initial={prefersReducedMotion ? false : { opacity: 0, y: -4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={prefersReducedMotion ? undefined : { opacity: 0, y: -4 }}
+                          transition={{ duration: 0.16, ease: AUTH_MOTION_EASE }}
+                        >
+                          <Label className="text-[13px]" htmlFor="client-auth-confirm-password">确认密码</Label>
+                          <Input
+                            className="h-10"
+                            id="client-auth-confirm-password"
+                            type="password"
+                            autoComplete="new-password"
+                            required
+                            disabled={submitting || feishuSubmitting}
+                            value={confirmPassword}
+                            onChange={(event) => setConfirmPassword(event.target.value)}
+                          />
+                        </motion.div>
+                      ) : null}
+                    </AnimatePresence>
+
+                    <div className={emailSignUpEnabled ? 'grid grid-cols-2 gap-2' : undefined}>
+                      <Button
+                        className="h-10 w-full"
+                        type="submit"
+                        disabled={submitting || feishuSubmitting}
+                      >
+                        {submitting
+                          ? <Loader2 className="size-4 animate-spin" />
+                          : authMode === 'sign-up'
+                            ? <UserPlus className="size-4" />
+                            : <LogIn className="size-4" />}
+                        {authMode === 'sign-up' ? '创建账号' : '登录'}
+                      </Button>
+                      {emailSignUpEnabled ? (
+                        <Button
+                          className="h-10 w-full"
+                          type="button"
+                          variant="outline"
+                          disabled={submitting || feishuSubmitting}
+                          onClick={() => switchAuthMode(authMode === 'sign-up' ? 'sign-in' : 'sign-up')}
+                        >
+                          {authMode === 'sign-up'
+                            ? <LogIn className="size-4" />
+                            : <UserPlus className="size-4" />}
+                          {authMode === 'sign-up' ? '直接登录' : '创建账号'}
+                        </Button>
+                      ) : null}
+                    </div>
+                  </form>
                 ) : null}
 
-                <div className="space-y-1.5">
-                  <Label className="text-[13px]" htmlFor="client-auth-identifier">
-                    {identifierLabel}
-                  </Label>
-                  <Input
-                    id="client-auth-identifier"
-                    type={authMode === 'sign-up' ? 'email' : 'text'}
-                    autoComplete={authMode === 'sign-up' ? 'email' : 'username'}
-                    autoFocus
-                    required
-                    value={identifier}
-                    onChange={(event) => setIdentifier(event.target.value)}
-                    placeholder={identifierPlaceholder}
-                  />
-                </div>
+                {emailPasswordEnabled && feishuLoginEnabled ? (
+                  <div className="flex items-center gap-3" aria-hidden="true">
+                    <div className="h-px flex-1 bg-border/70" />
+                    <span className="text-[12px] text-muted-foreground">或</span>
+                    <div className="h-px flex-1 bg-border/70" />
+                  </div>
+                ) : null}
 
-                <AnimatePresence initial={false}>
-                  {authMode === 'sign-up' ? (
-                    <motion.div
-                      className="space-y-1.5"
-                      initial={prefersReducedMotion ? false : { opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={prefersReducedMotion ? undefined : { opacity: 0, y: -4 }}
-                      transition={{ duration: 0.16, ease: AUTH_MOTION_EASE }}
+                {feishuLoginEnabled ? (
+                  <div className="space-y-2">
+                    <Button
+                      className="h-10 w-full"
+                      type="button"
+                      variant={emailPasswordEnabled ? 'outline' : 'default'}
+                      disabled={feishuSubmitting || submitting}
+                      onClick={handleFeishuSignIn}
                     >
-                      <Label className="text-[13px]" htmlFor="client-auth-name">名称</Label>
-                      <Input
-                        id="client-auth-name"
-                        autoComplete="name"
-                        value={displayName}
-                        onChange={(event) => setDisplayName(event.target.value)}
-                        placeholder="你的名字"
-                      />
-                    </motion.div>
-                  ) : null}
-                </AnimatePresence>
+                      {feishuSubmitting
+                        ? <Loader2 className="size-4 animate-spin" />
+                        : <MessageSquareText className="size-4" />}
+                      使用飞书登录
+                    </Button>
 
-                <div className="space-y-1.5">
-                  <Label className="text-[13px]" htmlFor="client-auth-password">密码</Label>
-                  <Input
-                    id="client-auth-password"
-                    type="password"
-                    autoComplete={authMode === 'sign-up' ? 'new-password' : 'current-password'}
-                    required
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                  />
-                </div>
-
-                <AnimatePresence initial={false}>
-                  {authMode === 'sign-up' ? (
-                    <motion.div
-                      className="space-y-1.5"
-                      initial={prefersReducedMotion ? false : { opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={prefersReducedMotion ? undefined : { opacity: 0, y: -4 }}
-                      transition={{ duration: 0.16, ease: AUTH_MOTION_EASE }}
-                    >
-                      <Label className="text-[13px]" htmlFor="client-auth-confirm-password">确认密码</Label>
-                      <Input
-                        id="client-auth-confirm-password"
-                        type="password"
-                        autoComplete="new-password"
-                        required={authMode === 'sign-up'}
-                        value={confirmPassword}
-                        onChange={(event) => setConfirmPassword(event.target.value)}
-                      />
-                    </motion.div>
-                  ) : null}
-                </AnimatePresence>
-
-                <AnimatePresence initial={false}>
-                  {verificationEmail ? (
-                    <motion.div
-                      className="space-y-1.5"
-                      initial={prefersReducedMotion ? false : { opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={prefersReducedMotion ? undefined : { opacity: 0, y: -4 }}
-                      transition={{ duration: 0.16, ease: AUTH_MOTION_EASE }}
-                    >
-                      <Label className="text-[13px]" htmlFor="client-auth-otp">邮箱验证码</Label>
-                      <Input
-                        id="client-auth-otp"
-                        inputMode="numeric"
-                        autoComplete="one-time-code"
-                        pattern="[0-9]{6}"
-                        maxLength={6}
-                        required
-                        value={otp}
-                        onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                      />
-                    </motion.div>
-                  ) : null}
-                </AnimatePresence>
-
-                <Button
-                  className="w-full"
-                  type="submit"
-                  disabled={submitting || feishuSubmitting}
-                >
-                  {submitting
-                    ? <Loader2 className="size-4 animate-spin" />
-                    : verificationEmail
-                      ? <LogIn className="size-4" />
-                      : authMode === 'sign-up'
-                      ? <UserPlus className="size-4" />
-                      : <LogIn className="size-4" />}
-                  {verificationEmail ? '验证并登录' : authMode === 'sign-up' ? '创建账号' : '登录'}
-                </Button>
-              </form>
-            ) : null}
-
-            {emailPasswordEnabled && feishuLoginEnabled ? (
-              <div className="flex items-center gap-3">
-                <div className="h-px flex-1 bg-border/70" />
-                <span className="text-[12px] text-muted-foreground">或使用飞书</span>
-                <div className="h-px flex-1 bg-border/70" />
-              </div>
-            ) : null}
-
-            {feishuLoginEnabled ? (
-              <div className="space-y-2">
-                <Button
-                  className="w-full"
-                  type="button"
-                  variant={emailPasswordEnabled ? 'outline' : 'default'}
-                  disabled={feishuSubmitting || submitting}
-                  onClick={handleFeishuSignIn}
-                >
-                  {feishuSubmitting ? <Loader2 className="size-4 animate-spin" /> : <MessageSquareText className="size-4" />}
-                  使用飞书登录
-                </Button>
-
-                <AnimatePresence initial={false}>
-                  {feishuSubmitting ? (
-                    <motion.div
-                      initial={prefersReducedMotion ? false : { opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={prefersReducedMotion ? undefined : { opacity: 0, y: -4 }}
-                      transition={{ duration: 0.16, ease: AUTH_MOTION_EASE }}
-                    >
-                      <Button
-                        className="w-full"
-                        type="button"
-                        variant="outline"
-                        onClick={handleCancelFeishuSignIn}
-                      >
-                        取消飞书登录
-                      </Button>
-                    </motion.div>
-                  ) : null}
-                </AnimatePresence>
-              </div>
-            ) : null}
+                    <AnimatePresence initial={false}>
+                      {feishuSubmitting ? (
+                        <motion.div
+                          initial={prefersReducedMotion ? false : { opacity: 0, y: -4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={prefersReducedMotion ? undefined : { opacity: 0, y: -4 }}
+                          transition={{ duration: 0.16, ease: AUTH_MOTION_EASE }}
+                        >
+                          <Button
+                            className="h-10 w-full"
+                            type="button"
+                            variant="outline"
+                            onClick={handleCancelFeishuSignIn}
+                          >
+                            取消飞书登录
+                          </Button>
+                        </motion.div>
+                      ) : null}
+                    </AnimatePresence>
+                  </div>
+                ) : null}
+              </>
+            )}
 
             <AnimatePresence initial={false}>
               {registrationNotice ? (
@@ -360,7 +450,7 @@ export function ClientSignInForm({
                   exit={prefersReducedMotion ? undefined : { opacity: 0, y: -4 }}
                   transition={{ duration: 0.16, ease: AUTH_MOTION_EASE }}
                 >
-                  <Info_Alert variant="info">
+                  <Info_Alert variant="info" role="status" aria-live="polite">
                     <Info_Alert.Description className="mt-0 break-words text-[13px] leading-5">
                       {registrationNotice}
                     </Info_Alert.Description>
@@ -377,7 +467,12 @@ export function ClientSignInForm({
                   exit={prefersReducedMotion ? undefined : { opacity: 0, y: -4 }}
                   transition={{ duration: 0.16, ease: AUTH_MOTION_EASE }}
                 >
-                  <Info_Alert variant="error" icon={<AlertCircle className="size-4" />}>
+                  <Info_Alert
+                    variant="error"
+                    role="alert"
+                    aria-live="assertive"
+                    icon={<AlertCircle className="size-4" />}
+                  >
                     <Info_Alert.Description className="mt-0 break-words text-[13px] leading-5 text-destructive">
                       {error}
                     </Info_Alert.Description>

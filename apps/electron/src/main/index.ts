@@ -590,6 +590,14 @@ app.whenReady().then(async () => {
         otp: typeof record.otp === 'string' ? record.otp : '',
       })
     })
+    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.RESEND_VERIFICATION_EMAIL, async (_event, input: unknown) => {
+      const record = input && typeof input === 'object'
+        ? input as Record<string, unknown>
+        : {}
+      await authService.sendEmailVerificationOtp({
+        email: typeof record.email === 'string' ? record.email : '',
+      })
+    })
     ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.SIGN_IN_WITH_FEISHU, () => authService.signInWithFeishu())
     ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.CANCEL_FEISHU_SIGN_IN, () => {
       authService.cancelFeishuSignIn()

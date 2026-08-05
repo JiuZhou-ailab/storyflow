@@ -29,6 +29,7 @@ const unusedBrokerMethods: ClientAuthBrokerClient = {
 
 const unusedNeonSessionMethods = {
   verifyEmailOtp: async () => {},
+  sendEmailVerificationOtp: async () => {},
   getSessionToken: async () => { throw new Error('not used') },
 }
 
@@ -565,6 +566,32 @@ describe('client auth', () => {
     expect(verificationInput).toEqual({
       email: 'invitee@example.com',
       otp: '123456',
+      origin: 'http://localhost:9100',
+    })
+  })
+
+  it('delegates verification-email resend to Neon Auth', async () => {
+    let resendInput: unknown
+    const service = createClientAuthService({
+      required: true,
+      authBrokerUrl: 'https://auth.storyflow.example.com',
+      neonAuthOrigin: 'http://localhost:9100',
+      neonAuth: { baseUrl: 'https://auth.example.com', emailSignUpEnabled: true },
+    }, {
+      createNeonAuthService: () => ({
+        ...unusedNeonSessionMethods,
+        isConfigured: () => true,
+        getClientConfig: () => ({ enabled: true, emailSignUpEnabled: true }),
+        authenticateWithEmailPassword: async () => { throw new Error('not used') },
+        sendEmailVerificationOtp: async (input) => { resendInput = input },
+        verifyToken: async () => { throw new Error('not used') },
+      }),
+      createAuthBrokerClient: () => unusedBrokerMethods,
+    })
+
+    await service.sendEmailVerificationOtp({ email: 'invitee@example.com' })
+    expect(resendInput).toEqual({
+      email: 'invitee@example.com',
       origin: 'http://localhost:9100',
     })
   })

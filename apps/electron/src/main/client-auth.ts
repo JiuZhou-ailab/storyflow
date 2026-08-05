@@ -66,6 +66,7 @@ export interface ClientAuthSignUpInput extends ClientAuthSignInInput {
 }
 
 export interface ClientAuthEmailOtpInput { email: string, otp: string }
+export interface ClientAuthEmailVerificationInput { email: string }
 
 export interface ClientAuthUser {
   provider: 'neon' | 'feishu'
@@ -140,6 +141,7 @@ export type ClientAuthNeonService = Pick<
   | 'getClientConfig'
   | 'authenticateWithEmailPassword'
   | 'verifyEmailOtp'
+  | 'sendEmailVerificationOtp'
   | 'getSessionToken'
   | 'verifyToken'
 >
@@ -175,6 +177,7 @@ export interface ClientAuthService {
   signIn(input: ClientAuthSignInInput): Promise<ClientAuthUser>
   signUp(input: ClientAuthSignUpInput): Promise<ClientAuthSignUpResult>
   verifyEmailOtp(input: ClientAuthEmailOtpInput): Promise<void>
+  sendEmailVerificationOtp(input: ClientAuthEmailVerificationInput): Promise<void>
   signInWithFeishu(): Promise<ClientAuthUser>
   cancelFeishuSignIn(): void
   signOut(): Promise<void>
@@ -586,6 +589,14 @@ export function createClientAuthService(
       await neonAuth.verifyEmailOtp({
         email: input.email,
         otp: input.otp,
+        origin: config.neonAuthOrigin,
+      })
+    },
+
+    async sendEmailVerificationOtp(input: ClientAuthEmailVerificationInput): Promise<void> {
+      if (!neonAuth || !emailPasswordEnabled) throw new Error('Client auth is not configured')
+      await neonAuth.sendEmailVerificationOtp({
+        email: input.email,
         origin: config.neonAuthOrigin,
       })
     },

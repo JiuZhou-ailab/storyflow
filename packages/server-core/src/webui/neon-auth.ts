@@ -45,6 +45,11 @@ export interface NeonAuthEmailOtpInput {
   origin?: string
 }
 
+export interface NeonAuthEmailVerificationInput {
+  email: string
+  origin?: string
+}
+
 export interface NeonAuthOrganizationTokenInput {
   sessionCookie: string
   organizationId: string
@@ -253,6 +258,20 @@ export class NeonAuthService {
     })
     const body = await parseJsonObject(res)
     if (!res.ok) throw new Error(formatNeonAuthError('Neon Auth email verification failed', body, res.status))
+  }
+
+  async sendEmailVerificationOtp(input: NeonAuthEmailVerificationInput): Promise<void> {
+    if (!this.config) throw new Error('Neon Auth is not configured')
+    const email = normalizeSignUpEmailIdentifier(readString(input.email))?.email
+    if (!email) throw new Error('A full email address is required')
+
+    const res = await (this.config.fetch ?? fetch)(`${this.config.baseUrl}/email-otp/send-verification-otp`, {
+      method: 'POST',
+      headers: buildJsonHeaders(input.origin),
+      body: JSON.stringify({ email, type: 'email-verification' }),
+    })
+    const body = await parseJsonObject(res)
+    if (!res.ok) throw new Error(formatNeonAuthError('Neon Auth verification email failed', body, res.status))
   }
 
   async getOrganizationToken(input: NeonAuthOrganizationTokenInput): Promise<string> {

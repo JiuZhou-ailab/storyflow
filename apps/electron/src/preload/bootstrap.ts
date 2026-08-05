@@ -452,6 +452,9 @@ client.onConnectionStateChanged((state) => {
 ;(api as ElectronAPI).verifyClientEmail = async (input) => {
   await ipcRenderer.invoke(CLIENT_AUTH_IPC_CHANNELS.VERIFY_EMAIL, input)
 }
+;(api as ElectronAPI).resendClientVerificationEmail = async (input) => {
+  await ipcRenderer.invoke(CLIENT_AUTH_IPC_CHANNELS.RESEND_VERIFICATION_EMAIL, input)
+}
 ;(api as ElectronAPI).signInWithFeishuClient = async () => {
   const user = await ipcRenderer.invoke(CLIENT_AUTH_IPC_CHANNELS.SIGN_IN_WITH_FEISHU)
   await readClientAuthState()

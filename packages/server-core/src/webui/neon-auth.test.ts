@@ -65,6 +65,32 @@ describe('NeonAuthService', () => {
     expect(requests).toEqual([])
   })
 
+  it('resends the native email verification OTP without creating another account', async () => {
+    const requests: Array<{ url: string, init?: RequestInit }> = []
+    const service = new NeonAuthService({
+      baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',
+      fetch: async (input, init) => {
+        requests.push({ url: String(input), init })
+        return Response.json({ success: true })
+      },
+    })
+
+    await service.sendEmailVerificationOtp({
+      email: 'Invitee@Example.com',
+      origin: 'http://localhost:9100',
+    })
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.url).toBe(
+      'https://ep-test.neonauth.aws.neon.build/neondb/auth/email-otp/send-verification-otp',
+    )
+    expect(requests[0]?.init?.method).toBe('POST')
+    expect(requests[0]?.init?.body).toBe(JSON.stringify({
+      email: 'invitee@example.com',
+      type: 'email-verification',
+    }))
+  })
+
   it('normalizes a valid Neon Auth token payload into an app identity', async () => {
     const service = new NeonAuthService({
       baseUrl: 'https://ep-test.neonauth.aws.neon.build/neondb/auth',

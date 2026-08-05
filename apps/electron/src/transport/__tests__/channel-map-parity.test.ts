@@ -34,6 +34,7 @@ type ApiToChannelMapKeys = Exclude<
   | 'signInClient' // direct IPC to main process — Neon Auth email/password login
   | 'signUpClient' // direct IPC to main process — Neon Auth email/password registration
   | 'verifyClientEmail' // direct IPC to main process — Neon Auth email OTP verification
+  | 'resendClientVerificationEmail' // direct IPC to main process — Neon Auth email OTP resend
   | 'signInWithFeishuClient' // direct IPC to main process — Feishu OAuth login
   | 'submitFeedbackIssue' // direct IPC to main process — feedback endpoint/GitHub token stay out of renderer
   | 'listSkillsFromMarket' // direct IPC to main process — authenticated company catalog reads
