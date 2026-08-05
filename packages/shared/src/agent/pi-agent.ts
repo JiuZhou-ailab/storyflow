@@ -381,7 +381,7 @@ export class PiAgent extends BaseAgent {
     this.stopReadingStdout = readJsonLines(child.stdout!, (line) => this.handleLine(line));
 
     // Always capture stderr into a bounded ring buffer so callers (e.g. the
-    // connection-test timeout path in factory.ts) can surface it on failure.
+    // connection-test timeout path) can surface it on failure.
     // Keep the CRAFT_DEBUG-gated log for interactive dev work.
     child.stderr?.on('data', (data: Buffer) => {
       const text = data.toString();

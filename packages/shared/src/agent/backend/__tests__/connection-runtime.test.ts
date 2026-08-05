@@ -1,13 +1,13 @@
 // input: Provider connections, credentials, and host runtime fixtures
-// output: Pi backend resolution, model discovery, and validation assertions
-// pos: Regression test for the Storyflow-to-Pi backend factory boundary
+// output: Pi configuration resolution, model discovery, and validation assertions
+// pos: Regression test for the Storyflow-to-Pi configuration boundary
 
 /**
- * Tests for Agent Factory
+ * Tests for Pi connection/runtime configuration.
  *
  * Verifies:
  * - Provider detection from auth type
- * - Backend creation for different providers
+ * - Pi configuration for different providers
  * - LLM connection type mapping
  * - Available providers list
  */
@@ -18,13 +18,13 @@ import {
   initializeBackendHostRuntime,
   connectionAuthTypeToBackendAuthType,
   resolveBackendContext,
+  resolvePiAgentConfig,
   resolveModelForConnection,
   resolveManagedModelConnection,
   resolveSetupTestConnectionHint,
-  createBackendFromConnection,
   testBackendConnection,
   validateStoredBackendConnection,
-} from '../factory.ts';
+} from '../connection-runtime.ts';
 import type { BackendConfig } from '../types.ts';
 import type { Workspace, LlmConnection } from '../../../config/storage.ts';
 import type { SessionConfig as Session } from '../../../sessions/storage.ts';
@@ -125,7 +125,30 @@ describe('isValidProviderAuthCombination', () => {
 
 });
 
-describe('phase4 backend abstraction APIs', () => {
+describe('Pi connection/runtime APIs', () => {
+  it('resolves PiAgent configuration without constructing a runtime', () => {
+    const connection: LlmConnection = {
+      slug: 'openai-direct',
+      name: 'OpenAI',
+      providerType: 'pi',
+      authType: 'oauth',
+      piAuthProvider: 'openai-codex',
+      defaultModel: 'gpt-5.5',
+      createdAt: Date.now(),
+    };
+
+    const config = resolvePiAgentConfig({
+      context: { connection, authType: 'oauth', resolvedModel: 'gpt-5.5' },
+      coreConfig: createTestConfig(),
+      hostRuntime: { appRootPath: process.cwd(), isPackaged: false },
+    });
+
+    expect(config.providerType).toBe('pi');
+    expect(config.connectionSlug).toBe('openai-direct');
+    expect(config.model).toBe('gpt-5.5');
+    expect(config.runtime?.piAuthProvider).toBe('openai-codex');
+  });
+
   it('initializeBackendHostRuntime bootstraps without throwing in dev runtime', () => {
     expect(() => initializeBackendHostRuntime({
       hostRuntime: {

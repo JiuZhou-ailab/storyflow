@@ -1,25 +1,10 @@
 // input: LLM connections, core agent configuration, credentials, and host runtime paths
-// output: PiAgent construction, model discovery, connection validation, and runtime capabilities
-// pos: Single Agent Kernel factory; model providers remain connection-level configuration
+// output: Resolved Pi configuration, model discovery, and connection validation
+// pos: Pure configuration boundary between product connections and the Pi runtime
 
-/**
- * Agent Factory
- *
- * Creates the appropriate AI agent based on configuration.
- * Storyflow sessions use one execution runtime: PiAgent. LLM provider identity
- * remains a connection concern (Anthropic, OpenAI, Bedrock, custom endpoints).
- *
- * All agents implement AgentBackend directly.
- *
- * LLM Connections:
- * - Backends can be created from LLM connection configs
- * - providerType determines Pi model and credential routing
- * - authType determines how credentials are retrieved
- */
+/** Storyflow has one runtime. This module resolves data; callers construct PiAgent directly. */
 
 import type {
-  AgentBackend,
-  BackendConfig,
   AgentProvider,
   LlmAuthType,
   CoreBackendConfig,
@@ -55,16 +40,13 @@ import {
 import { buildPiRuntime, fetchPiModels } from './internal/drivers/pi.ts';
 import { getSourcePath } from '../../sources/storage.ts';
 
-/**
- * Create backend from a pre-resolved context and provider-agnostic core config.
- * Runtime resolution always targets the shared Pi Agent Kernel.
- */
-export function createBackendFromResolvedContext(args: {
+/** Resolve the complete PiAgent configuration without constructing runtime state. */
+export function resolvePiAgentConfig(args: {
   context: ResolvedBackendContext;
   coreConfig: CoreBackendConfig;
   hostRuntime: BackendHostRuntimeContext;
   providerOptions?: BackendProviderOptions;
-}): AgentBackend {
+}): ResolvedBackendConfig {
   const { context, coreConfig, hostRuntime, providerOptions } = args;
   const resolvedPaths = resolveBackendRuntimePaths(hostRuntime);
   const runtime = buildPiRuntime({
@@ -73,7 +55,7 @@ export function createBackendFromResolvedContext(args: {
     providerOptions,
   });
 
-  const config: ResolvedBackendConfig = {
+  return {
     ...coreConfig,
     providerType: context.connection?.providerType ?? 'pi',
     authType: context.authType || 'api_key',
@@ -81,8 +63,6 @@ export function createBackendFromResolvedContext(args: {
     connectionSlug: context.connection?.slug,
     runtime,
   };
-
-  return new PiAgent(config);
 }
 
 /**
@@ -220,6 +200,27 @@ export function resolveBackendContext(args: {
   };
 }
 
+/** Resolve and validate one explicitly selected connection. */
+export function resolveRequiredBackendContext(
+  connectionSlug: string,
+  managedModel?: string,
+): ResolvedBackendContext {
+  const connection = getLlmConnection(connectionSlug);
+  if (!connection) throw new Error(`LLM connection not found: ${connectionSlug}`);
+  if (!isValidProviderAuthCombination(connection.providerType, connection.authType)) {
+    throw new Error(
+      `Invalid LLM connection configuration: provider '${connection.providerType}' `
+      + `does not support auth type '${connection.authType}'. `
+      + `Please update the connection settings for '${connection.name}'.`,
+    );
+  }
+  return {
+    connection,
+    authType: connectionAuthTypeToBackendAuthType(connection.authType),
+    resolvedModel: resolveModelForConnection(managedModel, connection),
+  };
+}
+
 /**
  * Resolve provider hint for setup-time connection tests.
  * Keeps provider-specific hint mapping out of Electron main IPC handlers.
@@ -302,59 +303,6 @@ export async function validateStoredBackendConnection(args: {
     const msg = error instanceof Error ? error.message : String(error);
     return { success: false, error: parseValidationError(msg) };
   }
-}
-
-/**
- * Create backend from an LLM connection slug.
- *
- * @param connectionSlug - The LLM connection slug
- * @param baseConfig - Base backend config (workspace, session, etc.)
- * @returns An initialized AgentBackend instance
- * @throws Error if connection not found or has invalid provider-auth combination
- */
-export function createBackendFromConnection(
-  connectionSlug: string,
-  baseConfig: Omit<BackendConfig, 'authType'>,
-  hostRuntime?: BackendHostRuntimeContext,
-  providerOptions?: BackendProviderOptions,
-): AgentBackend {
-  const connection = getLlmConnection(connectionSlug);
-  if (!connection) {
-    throw new Error(`LLM connection not found: ${connectionSlug}`);
-  }
-
-  // Validate provider-auth combination before creating backend
-  // This catches invalid configurations early with a clear error message
-  if (!isValidProviderAuthCombination(connection.providerType, connection.authType)) {
-    throw new Error(
-      `Invalid LLM connection configuration: provider '${connection.providerType}' ` +
-      `does not support auth type '${connection.authType}'. ` +
-      `Please update the connection settings for '${connection.name}'.`
-    );
-  }
-
-  const context: ResolvedBackendContext = {
-    connection,
-    authType: connectionAuthTypeToBackendAuthType(connection.authType),
-    resolvedModel: resolveModelForConnection(baseConfig.model, connection),
-  };
-
-  if (hostRuntime) {
-    return createBackendFromResolvedContext({
-      context,
-      coreConfig: baseConfig,
-      hostRuntime,
-      providerOptions,
-    });
-  }
-
-  return new PiAgent({
-    ...baseConfig,
-    providerType: connection.providerType,
-    authType: connection.authType,
-    connectionSlug: connection.slug,
-    model: context.resolvedModel,
-  });
 }
 
 // ============================================================
@@ -447,7 +395,7 @@ export async function testBackendConnection(args: {
     };
 
     const cwd = homedir();
-    const agent = createBackendFromResolvedContext({
+    const agent = new PiAgent(resolvePiAgentConfig({
       context,
       coreConfig: {
         workspace: { id: '__test', name: 'Connection Test', slug: '__test', rootPath: cwd, createdAt: 0 },
@@ -463,7 +411,7 @@ export async function testBackendConnection(args: {
       },
       hostRuntime: args.hostRuntime,
       providerOptions: { piAuthProvider: args.connection?.piAuthProvider },
-    });
+    }));
 
     const readAgentStderr = (): string => {
       const maybe = agent as unknown as { getRecentStderr?: () => string };

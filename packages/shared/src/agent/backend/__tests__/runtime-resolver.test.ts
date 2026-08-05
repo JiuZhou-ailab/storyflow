@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { resolveBackendRuntimePaths } from '../internal/runtime-resolver.ts';
-import { resolveBackendHostTooling } from '../factory.ts';
+import { resolveBackendHostTooling } from '../connection-runtime.ts';
 import type { BackendHostRuntimeContext } from '../types.ts';
 
 describe('resolveServerPath fallback', () => {

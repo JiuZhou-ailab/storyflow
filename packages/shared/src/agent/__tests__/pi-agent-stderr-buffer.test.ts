@@ -4,7 +4,7 @@
  * When an LLM connection test times out we have historically had zero context:
  * stderr was routed only to this.debug() which requires CRAFT_DEBUG=1.
  * The ring buffer exposes the most recent stderr chunks unconditionally so
- * callers (factory.ts testBackendConnection timeout path) can surface them.
+ * connection-test callers can surface them.
  */
 import { describe, expect, it } from 'bun:test'
 import { PiAgent } from '../pi-agent.ts'

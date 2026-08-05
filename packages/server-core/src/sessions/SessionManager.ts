@@ -10,15 +10,14 @@ import { basename, dirname, join } from 'path'
 import { existsSync, readdirSync } from 'fs'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
-import { type AgentEvent, setPermissionMode, hydratePreviousPermissionMode, getPermissionModeDiagnostics, type PermissionMode, unregisterSessionScopedToolCallbacks, mergeSessionScopedToolCallbacks, AbortReason, type AuthRequest, type AuthResult, type CredentialAuthRequest, type BrowserPaneFns, generateConversationSummary } from '@craft-agent/shared/agent'
+import { PiAgent, type AgentEvent, setPermissionMode, hydratePreviousPermissionMode, getPermissionModeDiagnostics, type PermissionMode, unregisterSessionScopedToolCallbacks, mergeSessionScopedToolCallbacks, AbortReason, type AuthRequest, type AuthResult, type CredentialAuthRequest, type BrowserPaneFns, generateConversationSummary } from '@craft-agent/shared/agent'
 import type { UserQuestionRequest, UserQuestionResponse } from '@craft-agent/session-tools-core'
 import {
   resolveSessionConnection,
-  createBackendFromConnection,
   resolveBackendContext,
-  createBackendFromResolvedContext,
+  resolveRequiredBackendContext,
+  resolvePiAgentConfig,
   cleanupSourceRuntimeArtifacts,
-  type AgentBackend,
   type BackendHostRuntimeContext,
   type PostInitResult,
 } from '@craft-agent/shared/agent/backend'
@@ -687,8 +686,8 @@ async function resolveToolDisplayMeta(
   return undefined
 }
 
-/** Agent type - unified backend interface for all providers */
-type AgentInstance = AgentBackend
+/** Storyflow's single Agent runtime projection. */
+type AgentInstance = PiAgent
 
 interface ManagedSession {
   id: string
@@ -3607,11 +3606,7 @@ export class SessionManager implements ISessionManager {
         })
       }
 
-      // ============================================================
-      // Construct backend via factory
-      // ============================================================
-
-      managed.agent = createBackendFromResolvedContext({
+      managed.agent = new PiAgent(resolvePiAgentConfig({
         context: backendContext,
         hostRuntime: buildBackendHostRuntimeContext(),
         coreConfig: {
@@ -3672,7 +3667,7 @@ export class SessionManager implements ISessionManager {
             enabledSlugs,
           },
         },
-      }) as AgentInstance
+      }))
 
       sessionLog.info(`Created Pi agent for session ${managed.id} (model: ${backendContext.resolvedModel})${managed.sdkSessionId ? ' (resuming)' : ''}`)
 
@@ -5182,19 +5177,23 @@ export class SessionManager implements ISessionManager {
         const connection = getLlmConnection(managed.llmConnection)
         const resolvedMiniModel = connection ? (getMiniModel(connection) ?? connection.defaultModel) : undefined
 
-        agent = createBackendFromConnection(managed.llmConnection, {
-          workspace: managed.workspace,
-          miniModel: resolvedMiniModel,
-          managedModelAccess,
-          session: {
-            id: `title-${managed.id}`,
-            workspaceRootPath: managed.workspace.rootPath,
-            llmConnection: managed.llmConnection,
-            createdAt: Date.now(),
-            lastUsedAt: Date.now(),
+        agent = new PiAgent(resolvePiAgentConfig({
+          context: resolveRequiredBackendContext(managed.llmConnection),
+          hostRuntime: buildBackendHostRuntimeContext(),
+          coreConfig: {
+            workspace: managed.workspace,
+            miniModel: resolvedMiniModel,
+            managedModelAccess,
+            session: {
+              id: `title-${managed.id}`,
+              workspaceRootPath: managed.workspace.rootPath,
+              llmConnection: managed.llmConnection,
+              createdAt: Date.now(),
+              lastUsedAt: Date.now(),
+            },
+            isHeadless: true,
           },
-          isHeadless: true,
-        }, buildBackendHostRuntimeContext()) as AgentInstance
+        }))
         await agent.postInit()
         isTemporary = true
         sessionLog.info(`refreshTitle: Created temporary agent for session ${sessionId}`)
@@ -7190,19 +7189,23 @@ export class SessionManager implements ISessionManager {
       try {
         const connection = getLlmConnection(managed.llmConnection)
 
-        agent = createBackendFromConnection(managed.llmConnection, {
-          workspace: managed.workspace,
-          miniModel: connection ? (getMiniModel(connection) ?? connection.defaultModel) : undefined,
-          managedModelAccess,
-          session: {
-            id: `title-${managed.id}`,
-            workspaceRootPath: managed.workspace.rootPath,
-            llmConnection: managed.llmConnection,
-            createdAt: Date.now(),
-            lastUsedAt: Date.now(),
+        agent = new PiAgent(resolvePiAgentConfig({
+          context: resolveRequiredBackendContext(managed.llmConnection),
+          hostRuntime: buildBackendHostRuntimeContext(),
+          coreConfig: {
+            workspace: managed.workspace,
+            miniModel: connection ? (getMiniModel(connection) ?? connection.defaultModel) : undefined,
+            managedModelAccess,
+            session: {
+              id: `title-${managed.id}`,
+              workspaceRootPath: managed.workspace.rootPath,
+              llmConnection: managed.llmConnection,
+              createdAt: Date.now(),
+              lastUsedAt: Date.now(),
+            },
+            isHeadless: true,
           },
-          isHeadless: true,
-        }, buildBackendHostRuntimeContext()) as AgentInstance
+        }))
         await agent.postInit()
         isTemporary = true
         sessionLog.info(`[generateTitle] Created temporary agent for session ${managed.id}`)
@@ -8109,7 +8112,7 @@ export class SessionManager implements ISessionManager {
       ...(miniModel ? { ANTHROPIC_DEFAULT_HAIKU_MODEL: miniModel } : {}),
     }
 
-    const agent = createBackendFromResolvedContext({
+    const agent = new PiAgent(resolvePiAgentConfig({
       context: backendContext,
       hostRuntime: buildBackendHostRuntimeContext(),
       coreConfig: {
@@ -8132,7 +8135,7 @@ export class SessionManager implements ISessionManager {
         isHeadless: true,
       },
       providerOptions: { piAuthProvider: backendContext.connection?.piAuthProvider },
-    })
+    }))
 
     try {
       return await generateConversationSummary(messages, agent.runMiniCompletion.bind(agent))

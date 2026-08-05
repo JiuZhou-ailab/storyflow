@@ -7,12 +7,13 @@
  * Naming convention:
  * - PiAgent: the production unified agent runtime
  * - AgentBackend: Interface implemented by the runtime
- * - createBackendFromResolvedContext: Pi construction from resolved connection state
+ * - resolvePiAgentConfig: pure connection-to-Pi configuration resolution
  *
  * Usage:
  * ```typescript
- * import { createBackendFromResolvedContext } from '@craft-agent/shared/agent/backend';
- * const agent = createBackendFromResolvedContext({ context, coreConfig, hostRuntime });
+ * import { PiAgent } from '@craft-agent/shared/agent';
+ * import { resolvePiAgentConfig } from '@craft-agent/shared/agent/backend';
+ * const agent = new PiAgent(resolvePiAgentConfig({ context, coreConfig, hostRuntime }));
  * ```
  */
 
@@ -39,15 +40,15 @@ export type {
 // Enums need to be exported as values, not just types
 export { AbortReason } from './types.ts';
 
-// Factory
+// Connection and Pi runtime configuration
 export {
   // LLM Connection support
   connectionAuthTypeToBackendAuthType,
   resolveSessionConnection,
   resolveBackendContext,
+  resolveRequiredBackendContext,
   resolveSetupTestConnectionHint,
-  createBackendFromConnection,
-  createBackendFromResolvedContext,
+  resolvePiAgentConfig,
   initializeBackendHostRuntime,
   resolveBackendHostTooling,
   fetchBackendModels,
@@ -57,7 +58,7 @@ export {
   cleanupSourceRuntimeArtifacts,
   testBackendConnection,
   // Connection validation
-} from './factory.ts';
+} from './connection-runtime.ts';
 
 // Shared infrastructure
 export { BaseEventAdapter } from './base-event-adapter.ts';

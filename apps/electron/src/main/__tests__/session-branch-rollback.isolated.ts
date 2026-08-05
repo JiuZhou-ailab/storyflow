@@ -168,15 +168,15 @@ mock.module('@craft-agent/shared/agent', () => ({
 mock.module('@craft-agent/shared/agent/backend', () => ({
   ...actualSharedAgentBackendModule,
   resolveSessionConnection: () => null,
-  createBackendFromConnection: () => {
-    throw new Error('not used in this test')
-  },
   resolveBackendContext: () => ({
     provider: 'pi',
     resolvedModel: 'pi/gpt-5',
     connection: { providerType: 'pi' },
   }),
-  createBackendFromResolvedContext: () => {
+  resolveRequiredBackendContext: () => {
+    throw new Error('not used in this test')
+  },
+  resolvePiAgentConfig: () => {
     throw new Error('not used in this test')
   },
   cleanupSourceRuntimeArtifacts: async () => {},
