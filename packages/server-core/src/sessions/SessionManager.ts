@@ -7637,12 +7637,11 @@ export class SessionManager implements ISessionManager {
 
     // Build the stored session from bundle data
     const header = bundle.session.header
+    let importedLegacyAgentRuntime = header.agentRuntime
     const storedSession: StoredSession = {
       id: sessionId,
       workspaceRootPath,
       sdkSessionId: header.sdkSessionId, // Preserved initially; fork logic below may clear it
-      // Read only long enough for createManagedSession() to derive migration state.
-      agentRuntime: header.agentRuntime,
       // Always regenerate sdkCwd for the target workspace.
       // The source sdkCwd points to a path on the originating server
       // which doesn't exist here (cross-server transfer).
@@ -7673,6 +7672,7 @@ export class SessionManager implements ISessionManager {
     // must therefore seed one fresh runtime from product messages; preserving
     // native IDs would point at state that was never transferred.
     if (mode === 'fork') {
+      importedLegacyAgentRuntime = undefined
       storedSession.sharedUrl = undefined
       storedSession.sharedId = undefined
       resetPortableForkRuntime(storedSession)
@@ -7743,7 +7743,7 @@ export class SessionManager implements ISessionManager {
     // Register in-memory — pass session metadata without messages to avoid
     // StoredMessage[] vs Message[] type mismatch, then convert messages separately
     const { messages: bundleMessages, ...sessionMeta } = storedSession
-    const managed = createManagedSession(sessionMeta, workspace, {
+    const managed = createManagedSession({ ...sessionMeta, legacyAgentRuntime: importedLegacyAgentRuntime }, workspace, {
       messagesLoaded: true,
       workingDirectory: storedSession.workingDirectory,
     })

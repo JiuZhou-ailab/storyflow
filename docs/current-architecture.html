@@ -805,7 +805,7 @@ pos: Testable companion to current-architecture.puml; performs no real network, 
         description: "Storyflow 管 managed session；Pi 的 provider-native 恢复与 fork 只认 sessionPath/.pi-sessions。",
         steps: [
           [["session-manager", "session-store"], "创建分支元数据", "选择的 assistant message 必须有可用 Pi turn anchor。", { branchContextStrategy: "sdk-fork", branchFromSessionPath: "/workspaces/demo/sessions/parent", branchFromSdkTurnId: "pi-entry-8f2", branchFromMessageId: "msg-parent-25" }],
-          [["pi-construction", "pi-agent"], "分支仍创建 PiAgent", "legacy claude-sdk 标记只用于迁移判断，不选择另一 runtime。", { agentRuntime: "pi", backend: "PiAgent" }],
+          [["pi-construction", "pi-agent"], "分支仍创建 PiAgent", "legacy claude-sdk 标记只用于读取期迁移判断，不选择另一 runtime。", { backend: "PiAgent", legacyMarker: "read-only" }],
           [["pi-agent", "pi-protocol"], "Init 携带 fork 输入", "branchFromSdkSessionId 可以兼容存在，但 Pi 真正消费 parent path 与 turn anchor。", { type: "init", sessionId: "sess-branch-26", sessionPath: "/workspaces/demo/sessions/branch", branchFromSessionPath: "/workspaces/demo/sessions/parent", branchFromSdkTurnId: "pi-entry-8f2" }],
           [["pi-protocol", "pi-session-store"], "定位父 Pi transcript", "没有父 .pi-sessions 文件时严格失败，不降级成新会话。", { operation: "findMostRecentSessionFile", path: "/workspaces/demo/sessions/parent/.pi-sessions" }],
           [["pi-session", "pi-session-store"], "forkFrom 并裁到 anchor", "新 session 使用独立目录，父 transcript 不被修改。", { operations: ["PiSessionManager.forkFrom(parent, cwd, targetDir)", "sessionManager.branch('pi-entry-8f2')"], target: "/workspaces/demo/sessions/branch/.pi-sessions" }],
