@@ -299,6 +299,27 @@ describe('auth broker worker', () => {
     expect(payload.model_tier).toBe('standard')
   })
 
+  it('accepts verified Neon accounts when organization admission is disabled', async () => {
+    const { publicJwk, token } = await createNeonProviderToken({
+      email: 'open@example.com',
+      emailVerified: true,
+    })
+
+    const res = await handleRequest(
+      new Request('https://auth.example.com/api/client-auth/neon/exchange', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      makeEnv({ CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID: undefined }),
+      async () => Response.json({ keys: [publicJwk] }),
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as Record<string, any>
+    expect(body.user.organizationId).toBeUndefined()
+    expect((await verifyClientSessionToken(body.appSessionToken)).organization_id).toBeUndefined()
+  })
+
   it('rejects verified Neon identities outside the configured organization', async () => {
     const { publicJwk, token } = await createNeonProviderToken({
       email: 'outsider@example.com',
