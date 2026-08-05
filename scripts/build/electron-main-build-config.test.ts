@@ -102,19 +102,15 @@ describe('desktop auth build config', () => {
   test('accepts Neon-only client auth through the shared broker', () => {
     expect(validateDesktopAuthBuildEnv({
       CRAFT_CLIENT_NEON_AUTH_BASE_URL: 'https://auth.example.com',
-      CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID: 'org_storyflow',
       CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
     })).toEqual({ ok: true });
   });
 
-  test('rejects Neon login without an invite-only organization boundary', () => {
+  test('accepts verified-email Neon registration without an organization boundary', () => {
     expect(validateDesktopAuthBuildEnv({
       CRAFT_CLIENT_NEON_AUTH_BASE_URL: 'https://auth.example.com',
       CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
-    })).toEqual({
-      ok: false,
-      message: 'CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID is required for invite-only email login.',
-    });
+    })).toEqual({ ok: true });
   });
 
   test('rejects insecure Neon Auth endpoints in packaged builds', () => {
@@ -192,7 +188,6 @@ describe('desktop auth build config', () => {
       CRAFT_CLIENT_AUTH_BROKER_URL: 'https://auth.storyflow.example.com',
       CRAFT_CLIENT_FEISHU_APP_ID: 'cli_test',
       CRAFT_CLIENT_NEON_AUTH_BASE_URL: 'https://auth.example.com',
-      CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID: 'org_storyflow',
     })).toEqual({ ok: true });
   });
 });

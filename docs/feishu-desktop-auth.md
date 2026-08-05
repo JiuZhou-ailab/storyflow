@@ -149,7 +149,6 @@ The built-in local broker requires three independent trust boundaries:
 CRAFT_CLIENT_AUTH_REQUIRED=true
 CRAFT_CLIENT_AUTH_BROKER_URL=http://localhost:9100
 CRAFT_CLIENT_FEISHU_APP_ID=cli_xxx
-CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID=org_xxx
 CRAFT_WEBUI_FEISHU_APP_ID=cli_xxx
 CRAFT_WEBUI_FEISHU_APP_SECRET=server-only-secret
 CRAFT_WEBUI_FEISHU_ALLOW_ALL_USERS=true
@@ -176,11 +175,9 @@ CRAFT_CLIENT_AUTH_REQUIRED=true
 CRAFT_CLIENT_AUTH_BROKER_URL=https://storyflow-auth.zjding.com
 CRAFT_CLIENT_FEISHU_APP_ID=cli_xxx
 CRAFT_CLIENT_NEON_AUTH_BASE_URL=https://your-neon-auth.example.com/neondb/auth
-CRAFT_CLIENT_NEON_AUTH_ORGANIZATION_ID=org_xxx
 ```
 
-The desktop shell and local projects do not require login. Managed model
-capabilities request authentication only when they are used.
+The desktop shell requires a signed-in Feishu or verified-email identity.
 
 Configure two independent keys:
 

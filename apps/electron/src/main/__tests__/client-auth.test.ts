@@ -27,9 +27,9 @@ const unusedBrokerMethods: ClientAuthBrokerClient = {
   refreshModelAccessToken: async () => { throw new Error('not used') },
 }
 
-const unusedNeonOrganizationMethods = {
+const unusedNeonSessionMethods = {
   verifyEmailOtp: async () => {},
-  getOrganizationToken: async () => { throw new Error('not used') },
+  getSessionToken: async () => { throw new Error('not used') },
 }
 
 function neonBroker(user: ClientAuthBrokerExchangeResult['user']): ClientAuthBrokerClient {
@@ -149,7 +149,7 @@ describe('client auth', () => {
   it('stores the verified Neon Auth identity after password sign-in', async () => {
     const calls: Array<{ email: string, password: string, origin?: string }> = []
     const fakeNeonAuth: ClientAuthNeonService = {
-      ...unusedNeonOrganizationMethods,
+      ...unusedNeonSessionMethods,
       isConfigured: () => true,
       getClientConfig: () => ({
         enabled: true,
@@ -223,7 +223,7 @@ describe('client auth', () => {
   it('keeps email sign-up disabled unless the desktop config explicitly enables it', async () => {
     const calls: Array<{ mode: string }> = []
     const fakeNeonAuth: ClientAuthNeonService = {
-      ...unusedNeonOrganizationMethods,
+      ...unusedNeonSessionMethods,
       isConfigured: () => true,
       getClientConfig: () => ({ enabled: true, emailSignUpEnabled: false }),
       authenticateWithEmailPassword: async (input) => {
@@ -325,7 +325,7 @@ describe('client auth', () => {
     const savedSessions: unknown[] = []
     let clearCount = 0
     const fakeNeonAuth: ClientAuthNeonService = {
-      ...unusedNeonOrganizationMethods,
+      ...unusedNeonSessionMethods,
       isConfigured: () => true,
       getClientConfig: () => ({ enabled: true }),
       authenticateWithEmailPassword: async () => ({ status: 'authenticated', token: 'jwt-token' }),
@@ -372,7 +372,7 @@ describe('client auth', () => {
 
   it('rejects a Neon broker login without a renewable app session', async () => {
     const fakeNeonAuth: ClientAuthNeonService = {
-      ...unusedNeonOrganizationMethods,
+      ...unusedNeonSessionMethods,
       isConfigured: () => true,
       getClientConfig: () => ({ enabled: true }),
       authenticateWithEmailPassword: async () => ({ status: 'authenticated', token: 'jwt-token' }),
@@ -413,7 +413,7 @@ describe('client auth', () => {
     const events: string[] = []
     const calls: Array<{ mode: string, email: string, password: string, name?: string, origin?: string }> = []
     const fakeNeonAuth: ClientAuthNeonService = {
-      ...unusedNeonOrganizationMethods,
+      ...unusedNeonSessionMethods,
       isConfigured: () => true,
       getClientConfig: () => ({ enabled: true, emailSignUpEnabled: true }),
       authenticateWithEmailPassword: async (input) => {
@@ -495,7 +495,7 @@ describe('client auth', () => {
 
   it('keeps the client unauthenticated when Neon Auth registration requires email verification', async () => {
     const fakeNeonAuth: ClientAuthNeonService = {
-      ...unusedNeonOrganizationMethods,
+      ...unusedNeonSessionMethods,
       isConfigured: () => true,
       getClientConfig: () => ({ enabled: true, emailSignUpEnabled: true }),
       authenticateWithEmailPassword: async () => ({
@@ -551,7 +551,7 @@ describe('client auth', () => {
       neonAuth: { baseUrl: 'https://auth.example.com', emailSignUpEnabled: true },
     }, {
       createNeonAuthService: () => ({
-        ...unusedNeonOrganizationMethods,
+        ...unusedNeonSessionMethods,
         isConfigured: () => true,
         getClientConfig: () => ({ enabled: true, emailSignUpEnabled: true }),
         authenticateWithEmailPassword: async () => { throw new Error('not used') },
@@ -571,7 +571,7 @@ describe('client auth', () => {
 
   it('keeps the client unauthenticated when sign-up does not prove email verification', async () => {
     const fakeNeonAuth: ClientAuthNeonService = {
-      ...unusedNeonOrganizationMethods,
+      ...unusedNeonSessionMethods,
       isConfigured: () => true,
       getClientConfig: () => ({ enabled: true, emailSignUpEnabled: true }),
       authenticateWithEmailPassword: async () => ({ status: 'authenticated', token: 'signup-jwt-token' }),
@@ -642,19 +642,18 @@ describe('client auth', () => {
     const service = createClientAuthService({
       required: true,
       authBrokerUrl: 'https://auth.storyflow.example.com',
-      neonAuth: { baseUrl: 'https://auth.example.com', organizationId: 'org_storyflow' },
+      neonAuth: { baseUrl: 'https://auth.example.com' },
     }, {
       createAuthBrokerClient: () => broker,
       createNeonAuthService: () => ({
-        ...unusedNeonOrganizationMethods,
+        ...unusedNeonSessionMethods,
         isConfigured: () => true,
         getClientConfig: () => ({ enabled: true }),
         authenticateWithEmailPassword: async () => { throw new Error('not used') },
         verifyToken: async () => { throw new Error('not used') },
-        getOrganizationToken: async (input) => {
+        getSessionToken: async (input) => {
           expect(input).toEqual({
             sessionCookie: 'neon-session-cookie',
-            organizationId: 'org_storyflow',
             origin: undefined,
           })
           return 'fresh-provider-token'
@@ -804,7 +803,6 @@ describe('client auth', () => {
       CRAFT_CLIENT_AUTH_REQUIRED: 'true',
       CRAFT_WEBUI_NEON_AUTH_BASE_URL: 'https://auth.example.com',
       CRAFT_WEBUI_NEON_AUTH_USERNAME_EMAIL_DOMAIN: 'users.craft.invalid',
-      CRAFT_WEBUI_NEON_AUTH_ORGANIZATION_ID: 'org_storyflow',
       CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED: 'true',
     })
 
@@ -814,7 +812,6 @@ describe('client auth', () => {
       neonAuth: {
         baseUrl: 'https://auth.example.com',
         usernameEmailDomain: 'users.craft.invalid',
-        organizationId: 'org_storyflow',
         emailSignUpEnabled: true,
       },
     })

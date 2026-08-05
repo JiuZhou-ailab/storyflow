@@ -51,6 +51,11 @@ export interface NeonAuthOrganizationTokenInput {
   origin?: string
 }
 
+export interface NeonAuthSessionTokenInput {
+  sessionCookie: string
+  origin?: string
+}
+
 export interface NeonAuthEmailPasswordUser {
   id?: string
   email?: string
@@ -288,6 +293,13 @@ export class NeonAuthService {
       }
     }
 
+    return this.getSessionToken({ sessionCookie, origin: input.origin })
+  }
+
+  async getSessionToken(input: NeonAuthSessionTokenInput): Promise<string> {
+    if (!this.config) throw new Error('Neon Auth is not configured')
+    const sessionCookie = readString(input.sessionCookie)
+    if (!sessionCookie) throw new Error('Neon Auth session cookie is required')
     const token = await this.fetchJsonWebToken(sessionCookie, readString(input.origin))
     if (!token) throw new Error('Neon Auth JWT exchange response did not include a token')
     return token

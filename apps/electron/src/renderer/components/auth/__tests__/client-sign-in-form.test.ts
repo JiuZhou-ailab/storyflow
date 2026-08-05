@@ -58,7 +58,8 @@ describe('ClientSignInForm layout', () => {
   it('normalizes provider auth errors into product-facing messages', () => {
     expect(source).toContain('formatClientAuthErrorMessage')
     expect(source).toContain('账号或密码不正确')
-    expect(source).toContain('该账号尚未获邀，请使用收到邀请的邮箱注册')
+    expect(source).not.toContain('Invitation required')
+    expect(source).not.toContain('Invitation is invalid')
     expect(source).not.toContain('setError(getErrorMessage(err))')
   })
 })
