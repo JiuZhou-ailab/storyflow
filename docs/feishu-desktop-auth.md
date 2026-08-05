@@ -60,16 +60,15 @@ CRAFT_WEBUI_FEISHU_INTERNAL_TENANT_KEYS=tenant_key_a,tenant_key_b
 
 ## Email Login
 
-The desktop verifies email/password with Neon Auth, accepts a matching pending
-native Organization invitation, activates that Organization, and sends its
-signed JWT to the same auth broker. The broker verifies Neon JWKS and the
-configured Organization claim before issuing Storyflow capabilities.
+The desktop verifies email/password with Neon Auth and sends its signed JWT to
+the same auth broker. The broker verifies Neon JWKS and the verified-email
+identity before issuing standard Storyflow capabilities. Organization membership
+is optional metadata rather than a prerequisite for email login.
 
-New email registration is invitation-only. The user enters no second invitation
-secret: Neon binds the invitation to the email, email OTP proves ownership, and
-Organization membership is the authorization fact. Electron keeps the Better
-Auth session cookie in the existing encrypted credential store so every renewal
-can obtain a fresh JWT and recheck membership.
+When email registration is enabled, any address accepted by Neon Auth can sign
+up and use the email OTP to prove ownership. Electron keeps the Better Auth
+session cookie in the existing encrypted credential store so every renewal can
+obtain a fresh JWT and recheck the identity.
 
 Email sign-in and registration are independent switches:
 
@@ -78,9 +77,8 @@ CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED=false
 CRAFT_WEBUI_NEON_AUTH_SIGN_UP_ENABLED=false
 ```
 
-Enable registration only after a native Neon Organization invitation can
-complete OTP verification, acceptance, restart recovery, and revoked-member
-rejection.
+Enable registration only after OTP verification, restart recovery, and rejection
+of unverified or banned identities have been exercised in the target environment.
 
 ## Model Gateway
 
