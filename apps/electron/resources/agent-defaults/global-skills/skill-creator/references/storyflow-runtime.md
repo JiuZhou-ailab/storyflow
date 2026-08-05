@@ -23,9 +23,11 @@ For updates, use the active resource-edit flow. Never call `skill_create` over a
 
 ## Evaluate in the available runtime
 
-- If independent agents are available, run paired with-Skill and baseline evaluations as described in `SKILL.md`.
-- Without independent agents, run the Claude.ai-style inline workflow and disclose that the comparison is not independent.
+- Use Pi's read-only `subagent` for independent runs that need files or tools.
+- Use Pi's `call_llm` only for tool-free critique or structured comparison; it cannot execute or observe a Skill.
+- Without independent agents, run the inline workflow and disclose that the comparison is not independent.
 - Without a browser, generate the review viewer with `--static`.
 - Keep evaluation workspaces outside the finished Skill package.
+- Do not invoke an external agent CLI or create another runtime's command files.
 
 Report the actual path, validation evidence, and any host limitation that prevented the full official loop.

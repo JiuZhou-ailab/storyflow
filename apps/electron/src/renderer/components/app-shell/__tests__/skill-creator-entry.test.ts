@@ -1,8 +1,8 @@
-// input: Bundled official Skill Creator, description optimizer, Storyflow runtime adapter, and renderer creation-entry source
-// output: Contract checks for multilingual generation, the full evaluation loop, and global conversational creation
+// input: Bundled Pi-native Skill Creator, Storyflow runtime adapter, and renderer creation-entry source
+// output: Contract checks for multilingual generation, the Pi evaluation loop, and global conversational creation
 // pos: Prevents Add Skill from regressing to a shallow scaffold or foreign resource owner
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'bun:test'
 import { validateSkillDocumentForSlug } from '@craft-agent/shared/skills'
 
@@ -27,12 +27,9 @@ const skillCreatorSource = readFileSync(
   new URL('../../../../../resources/agent-defaults/global-skills/skill-creator/SKILL.md', import.meta.url),
   'utf-8',
 )
-const descriptionImproverSource = readFileSync(
-  new URL(
-    '../../../../../resources/agent-defaults/global-skills/skill-creator/scripts/improve_description.py',
-    import.meta.url,
-  ),
-  'utf-8',
+const skillCreatorRoot = new URL(
+  '../../../../../resources/agent-defaults/global-skills/skill-creator/',
+  import.meta.url,
 )
 const storyflowRuntimeSource = readFileSync(
   new URL(
@@ -48,15 +45,22 @@ describe('Skill Creator entry', () => {
     expect(skillCreatorSource).toContain('references/storyflow-runtime.md')
     expect(skillCreatorSource).toContain('## Running and evaluating test cases')
     expect(skillCreatorSource).toContain('eval-viewer/generate_review.py')
-    expect(skillCreatorSource).toContain('python -m scripts.run_loop')
+    expect(skillCreatorSource).toContain("Pi's native `subagent` and `call_llm` tools")
+    expect(skillCreatorSource).not.toContain('claude -p')
+    expect(skillCreatorSource).not.toContain('.claude/commands')
+    expect(skillCreatorSource).not.toContain('CLAUDECODE')
+    for (const script of ['run_eval.py', 'improve_description.py', 'run_loop.py', 'generate_report.py']) {
+      expect(existsSync(new URL(`scripts/${script}`, skillCreatorRoot))).toBe(false)
+    }
     expect(skillCreatorSource).toContain('### Choose the Output Language')
     expect(skillCreatorSource).toContain("use the dominant natural language of the user's request")
     expect(skillCreatorSource).toContain('the ASCII kebab-case folder and `name`')
-    expect(descriptionImproverSource).toContain(
-      'Write the new description in the same language as the current description.',
-    )
+    expect(skillCreatorSource).toContain('Include the Skill purpose, current description, and failures')
     expect(storyflowRuntimeSource).toContain('skill_create')
     expect(storyflowRuntimeSource).toContain('skill_validate')
+    expect(storyflowRuntimeSource).toContain("Pi's read-only `subagent`")
+    expect(storyflowRuntimeSource).toContain("Pi's `call_llm`")
+    expect(storyflowRuntimeSource).toContain('Do not invoke an external agent CLI')
     expect(storyflowRuntimeSource).toContain('~/.pi/agent/skills/<slug>/')
     expect(storyflowRuntimeSource).toContain('project `.pi/skills` and `.agents/skills`')
   })
