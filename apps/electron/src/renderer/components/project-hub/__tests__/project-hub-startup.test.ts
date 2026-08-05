@@ -75,10 +75,12 @@ describe('ProjectHub startup integration', () => {
     expect(appSource).not.toContain('PDFPreviewOverlay,')
   })
 
-  it('mounts the local project shell without a renderer login bootstrap', () => {
-    expect(rendererEntrySource).not.toContain('ClientAuthBootstrap')
-    expect(rendererEntrySource).not.toContain('ClientAuthGate')
-    expect(rendererEntrySource).not.toContain('getClientAuthState')
+  it('requires authentication before mounting the project shell', () => {
+    expect(rendererEntrySource).toContain('ClientAuthBootstrap')
+    expect(rendererEntrySource).toContain('getClientAuthState')
+    expect(rendererEntrySource).toContain('state.required && !state.authenticated')
+    expect(rendererEntrySource).toContain('<ClientAuthBootstrap>')
+    expect(rendererEntrySource).toContain('<App />')
   })
 
   it('does not start automatic renderer monitoring', () => {
