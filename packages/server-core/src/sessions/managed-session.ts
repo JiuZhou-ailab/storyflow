@@ -2,15 +2,24 @@
 // output: The server-owned in-memory session aggregate used by SessionManager
 // pos: Explicit session state model separated from lifecycle orchestration
 
-import type { PiAgent, AuthRequest, PermissionMode } from '@craft-agent/shared/agent';
+import type { PiAgent, AgentEvent, AuthRequest, PermissionMode } from '@craft-agent/shared/agent';
+import { resolveBackendContext } from '@craft-agent/shared/agent/backend';
 import type { ConversationRewindBoundary } from '@craft-agent/shared/agent/backend/types';
-import type { Workspace } from '@craft-agent/shared/config';
+import { normalizeLlmConnectionSlug, type Workspace } from '@craft-agent/shared/config';
 import type { McpClientPool } from '@craft-agent/shared/mcp';
-import type { FileAttachment, SendMessageOptions } from '@craft-agent/shared/protocol';
-import type { SessionHeader } from '@craft-agent/shared/sessions';
-import type { TokenRefreshManager } from '@craft-agent/shared/sources';
+import type { FileAttachment, SendMessageOptions, Session } from '@craft-agent/shared/protocol';
+import {
+  getSessionPath as getSessionStoragePath,
+  pickSessionFields,
+  type LegacyAgentRuntime,
+  type SessionHeader,
+} from '@craft-agent/shared/sessions';
+import { getSourceCredentialManager, TokenRefreshManager } from '@craft-agent/shared/sources';
 import type { Message, StoredAttachment, TurnMetrics } from '@craft-agent/core/types';
-import type { ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels';
+import { normalizeThinkingLevel, type ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels';
+import { isFreeConversationWorkspaceId } from '@craft-agent/shared/workspaces';
+import { loadWorkspaceConfig } from '@craft-agent/shared/workspaces';
+import { needsPiRuntimeMigrationSeed } from './runtime-config';
 
 export type AgentInstance = PiAgent;
 
@@ -119,4 +128,156 @@ export interface ManagedSession {
   backendRestartSignature?: string;
   credentialRestartRequired?: boolean;
   wasInterrupted?: boolean;
+}
+
+type SdkForkState = Pick<
+  ManagedSession,
+  | 'branchContextStrategy'
+  | 'branchFromSdkSessionId'
+  | 'branchFromSessionPath'
+  | 'branchFromSdkCwd'
+  | 'branchFromSdkTurnId'
+>;
+
+export function consumePendingSdkFork(state: SdkForkState): boolean {
+  if (state.branchContextStrategy !== 'sdk-fork') return false;
+  clearSdkForkFields(state);
+  return true;
+}
+
+export function clearSdkForkFields(state: SdkForkState): void {
+  state.branchFromSdkSessionId = undefined;
+  state.branchFromSessionPath = undefined;
+  state.branchFromSdkCwd = undefined;
+  state.branchFromSdkTurnId = undefined;
+}
+
+export function createManagedSessionState(
+  source: {
+    id: string;
+    agentRuntime?: LegacyAgentRuntime;
+    legacyAgentRuntime?: LegacyAgentRuntime;
+  } & Partial<ManagedSession>,
+  workspace: Workspace,
+  overrides: Partial<ManagedSession> | undefined,
+  log: (message: string) => void,
+): ManagedSession {
+  const raw = source as Record<string, unknown>;
+  const sourceFields = Object.fromEntries(
+    Object.entries(raw).filter(([, value]) => value !== undefined),
+  ) as Partial<ManagedSession>;
+  const legacyAgentRuntime = raw.legacyAgentRuntime ?? raw.agentRuntime;
+  delete (sourceFields as Record<string, unknown>).agentRuntime;
+  delete (sourceFields as Record<string, unknown>).legacyAgentRuntime;
+
+  if ('thinkingLevel' in sourceFields) {
+    const normalized = normalizeThinkingLevel(sourceFields.thinkingLevel);
+    if (normalized) sourceFields.thinkingLevel = normalized;
+    else delete sourceFields.thinkingLevel;
+  }
+  if (sourceFields.llmConnection) {
+    sourceFields.llmConnection = normalizeLlmConnectionSlug(sourceFields.llmConnection);
+  }
+
+  const managed = {
+    ...sourceFields,
+    workspace,
+    agent: null,
+    messages: [],
+    isProcessing: false,
+    lastMessageAt: (raw.lastMessageAt ?? raw.lastUsedAt ?? Date.now()) as number,
+    streamingText: '',
+    processingGeneration: 0,
+    isFlagged: (raw.isFlagged ?? false) as boolean,
+    messageQueue: [],
+    backgroundShellCommands: new Map(),
+    backgroundTaskOutputs: new Map(),
+    messagesLoaded: false,
+    needsPiMigrationSeed: needsPiRuntimeMigrationSeed({
+      legacyAgentRuntime: legacyAgentRuntime as LegacyAgentRuntime | undefined,
+      hasPiTranscript: false,
+      sdkSessionId: raw.sdkSessionId as string | undefined,
+      messageCount: Array.isArray(raw.messages)
+        ? raw.messages.length
+        : (raw.messageCount as number | undefined) ?? 0,
+    }),
+    tokenRefreshManager: new TokenRefreshManager(getSourceCredentialManager(), { log }),
+    ...overrides,
+  } as ManagedSession;
+
+  if (!managed.workingDirectory) {
+    managed.workingDirectory = isFreeConversationWorkspaceId(workspace.id)
+      ? getSessionStoragePath(workspace.rootPath, managed.id)
+      : workspace.rootPath;
+  }
+  if (managed.branchFromMessageId && !managed.branchContextStrategy) {
+    managed.branchContextStrategy = managed.branchFromSdkSessionId
+      ? 'sdk-fork'
+      : 'seeded-fresh-session';
+  }
+  if (managed.branchContextStrategy === 'seeded-fresh-session' && managed.branchSeedApplied === undefined) {
+    managed.branchSeedApplied = !!managed.sdkSessionId;
+  }
+  return managed;
+}
+
+export function resolveSupportsBranching(managed: ManagedSession): boolean {
+  return managed.agent?.supportsBranching ?? true;
+}
+
+export function resolveManagedConnectionSlug(managed: ManagedSession): string | undefined {
+  const workspaceConfig = loadWorkspaceConfig(managed.workspace.rootPath);
+  return resolveBackendContext({
+    sessionConnectionSlug: managed.llmConnection,
+    workspaceDefaultConnectionSlug: workspaceConfig?.defaults?.defaultLlmConnection,
+    managedModel: managed.model,
+  }).connection?.slug
+    ?? (managed.llmConnection ? normalizeLlmConnectionSlug(managed.llmConnection) : undefined);
+}
+
+export function resolveLiveAssistantBranchability(
+  managed: ManagedSession,
+  event: Extract<AgentEvent, { type: 'text_complete' }>,
+): boolean {
+  return !event.isIntermediate
+    && !!event.turnId
+    && resolveSupportsBranching(managed)
+    && !!event.sdkTurnAnchor;
+}
+
+export function hasPersistedAssistantBranchability(messages: Message[]): boolean {
+  return messages.every(message => (
+    message.role !== 'assistant'
+    || !!message.isIntermediate
+    || typeof message.canBranch === 'boolean'
+  ));
+}
+
+export const DEFAULT_TOKEN_USAGE = {
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
+  contextTokens: 0,
+  costUsd: 0,
+};
+
+export function managedToSession(
+  managed: ManagedSession,
+  overrides?: Partial<Session>,
+): Session {
+  return {
+    ...pickSessionFields(managed),
+    preview: managed.preview,
+    lastMessageRole: managed.lastMessageRole,
+    tokenUsage: managed.tokenUsage,
+    messageCount: managed.messageCount,
+    lastFinalMessageId: managed.lastFinalMessageId,
+    workspaceId: managed.workspace.id,
+    workspaceName: managed.workspace.name,
+    messages: [],
+    isProcessing: managed.isProcessing,
+    sessionFolderPath: getSessionStoragePath(managed.workspace.rootPath, managed.id),
+    supportsBranching: resolveSupportsBranching(managed),
+    ...overrides,
+  } as Session;
 }

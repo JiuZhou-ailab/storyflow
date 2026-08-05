@@ -6,7 +6,7 @@ import type { EventSink } from '@craft-agent/server-core/transport'
 import type { ISessionManager, IBrowserPaneManager, ExecutePromptAutomationInput } from '@craft-agent/server-core/handlers'
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
 import { createScopedLogger, CONSOLE_LOGGER, type PlatformServices, type Logger } from '@craft-agent/server-core/runtime'
-import { basename, dirname, join } from 'path'
+import { basename, join } from 'path'
 import { existsSync, readdirSync } from 'fs'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
@@ -19,15 +19,13 @@ import {
   resolvePiAgentConfig,
   cleanupSourceRuntimeArtifacts,
   type BackendHostRuntimeContext,
-  type PostInitResult,
 } from '@craft-agent/shared/agent/backend'
 import type {
-  ConversationRewindBoundary,
   ConversationRewindRequest,
   ConversationRewindResult,
   ManagedModelAccess,
 } from '@craft-agent/shared/agent/backend/types'
-import { CONFIG_DIR, getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, getEnable1MContext, getExtendedPromptCache, normalizeLlmConnectionSlug, resetManagedAnthropicAuthEnvVars } from '@craft-agent/shared/config'
+import { getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, getEnable1MContext, getExtendedPromptCache, normalizeLlmConnectionSlug, resetManagedAnthropicAuthEnvVars } from '@craft-agent/shared/config'
 import { PrivilegedExecutionBroker } from '@craft-agent/server-core/services'
 import { isValidWorkingDirectory } from '../utils/path-validation'
 import { InitGate, orderWorkspacesByActiveFirst } from '@craft-agent/server-core/domain'
@@ -36,7 +34,6 @@ import {
   getActiveWorkspace,
   getWorkspaceByNameOrId,
   loadConfigDefaults,
-  loadPreferences,
   migrateLegacyCredentials,
   migrateLegacyLlmConnectionsConfig,
   migrateOrphanedDefaultConnections,
@@ -60,13 +57,11 @@ import {
   createSession as createStoredSession,
   deleteSession as deleteStoredSession,
   updateSessionMetadata,
-  canUpdateSdkCwd,
   setPendingPlanExecution as setStoredPendingPlanExecution,
   markCompactionComplete as markStoredCompactionComplete,
   markPendingPlanExecutionDispatched as markStoredPendingPlanExecutionDispatched,
   clearPendingPlanExecution as clearStoredPendingPlanExecution,
   getPendingPlanExecution as getStoredPendingPlanExecution,
-  getSessionAttachmentsPath,
   getSessionPath as getSessionStoragePath,
   ensureSessionDir,
   getSessionFilePath,
@@ -80,13 +75,12 @@ import {
   type DispatchMode,
   type StoredSession,
   type StoredMessage,
-  type SessionMetadata,
   type SessionStatus,
   type SessionHeader,
   type LegacyAgentRuntime,
   pickSessionFields,
 } from '@craft-agent/shared/sessions'
-import { loadWorkspaceSources, loadAllSources, getSourcesBySlugs, isSourceUsable, type LoadedSource, type McpServerConfig, getSourcesNeedingAuth, getSourceCredentialManager, getSourceServerBuilder, type SourceWithCredential, isApiOAuthProvider, hasRenewEndpoint, SERVER_BUILD_ERRORS, TokenRefreshManager, createTokenGetter } from '@craft-agent/shared/sources'
+import { loadWorkspaceSources, loadAllSources, getSourcesBySlugs, isSourceUsable, type LoadedSource, getSourceCredentialManager, getSourceServerBuilder, type SourceWithCredential, isApiOAuthProvider, hasRenewEndpoint, SERVER_BUILD_ERRORS, TokenRefreshManager, createTokenGetter } from '@craft-agent/shared/sources'
 import { ConfigWatcher, type ConfigWatcherCallbacks } from '@craft-agent/shared/config'
 import { resolveAuthEnvVars } from '@craft-agent/shared/config'
 import { getLastApiError } from '@craft-agent/shared/provider-diagnostics'
@@ -94,28 +88,41 @@ import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
 import { isLowSignal } from '@craft-agent/shared/utils'
 import { restoreFiles } from '@craft-agent/shared/utils/bundle-files'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
-import { CraftMcpClient, McpClientPool } from '@craft-agent/shared/mcp'
+import { McpClientPool } from '@craft-agent/shared/mcp'
 import { type Session, type SessionEvent, type FileAttachment, type SendMessageOptions, type OneShotLlmRequest, type OneShotLlmResult, type NovelSelectionRewriteRequest, type NovelSelectionRewriteResult, type UnreadSummary, type RemoteSessionTransferPayload, RPC_CHANNELS, generateMessageId } from '@craft-agent/shared/protocol'
 import { messageToStored, storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta, type TurnMetrics } from '@craft-agent/core/types'
-import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlAsync, getEmojiIcon, resolveToolIcon, readFileAttachment, selectSpreadMessages, normalizePath, DEFAULT_TITLE_LANGUAGE } from '@craft-agent/shared/utils'
+import { formatPathsToRelative, formatToolInputPaths, perf, readFileAttachment, selectSpreadMessages, normalizePath, DEFAULT_TITLE_LANGUAGE } from '@craft-agent/shared/utils'
 import { buildNovelSelectionRewritePrompt, sanitizeNovelSelectionReplacement } from '@craft-agent/shared/writing'
 import { loadPiSkillCatalog, invalidateSkillsCache } from '@craft-agent/shared/skills'
 import { invalidateContextFileCache } from '@craft-agent/shared/prompts/system'
-import { getToolIconsDir, getMiniModel } from '@craft-agent/shared/config'
+import { getMiniModel } from '@craft-agent/shared/config'
 import { getDefaultSummarizationModel } from '@craft-agent/shared/config/models'
 import type { SummarizeCallback } from '@craft-agent/shared/sources'
-import { type ThinkingLevel, DEFAULT_THINKING_LEVEL, normalizeThinkingLevel } from '@craft-agent/shared/agent/thinking-levels'
+import { type ThinkingLevel, normalizeThinkingLevel } from '@craft-agent/shared/agent/thinking-levels'
 import { evaluateAutoLabels } from '@craft-agent/shared/labels/auto'
 import { listLabels, loadLabelConfig } from '@craft-agent/shared/labels/storage'
-import { extractLabelId, resolveSessionLabels } from '@craft-agent/shared/labels'
+import { resolveSessionLabels } from '@craft-agent/shared/labels'
 import { ensureLabelsExist } from '@craft-agent/shared/labels/crud'
 import { loadStatusConfig } from '@craft-agent/shared/statuses/storage'
-import { AutomationSystem, canonicalizeSkillReferences, createPromptHistoryEntry, appendAutomationHistoryEntry, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
-import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput, needsPiRuntimeMigrationSeed, resetPortableForkRuntime } from './runtime-config'
+import { AutomationSystem, canonicalizeSkillReferences, createPromptHistoryEntry, appendAutomationHistoryEntry } from '@craft-agent/shared/automations'
+import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput, resetPortableForkRuntime } from './runtime-config'
 import { captureWriteOriginalContent } from './write-original-content'
-import type { AgentInstance, ManagedSession } from './managed-session'
+import {
+  consumePendingSdkFork,
+  clearSdkForkFields,
+  createManagedSessionState,
+  DEFAULT_TOKEN_USAGE,
+  hasPersistedAssistantBranchability,
+  managedToSession,
+  resolveLiveAssistantBranchability,
+  resolveManagedConnectionSlug,
+  resolveSupportsBranching,
+  type AgentInstance,
+  type ManagedSession,
+} from './managed-session'
 import { getPiTurnAnchor, loadPiTurnAnchors, requireSdkForkBranchAnchor, savePiTurnAnchor } from './pi-turn-anchors'
 import { resolveToolDisplayMeta } from './tool-display'
+export { consumePendingSdkFork } from './managed-session'
 import { SESSION_TURN_HARD_TIMEOUT_MS, SESSION_TURN_IDLE_TIMEOUT_MS, TurnWatchdog, type TurnWatchdogTimeout } from './turn-watchdog'
 import {
   isManagedDefaultGatewayConnection,
@@ -124,8 +131,8 @@ import {
 } from './managed-gateway-auth-error'
 
 // Import from server-core domain utilities
-import { sanitizeForTitle, shouldActivateBrowserOverlay, normalizeBrowserToolName, rollbackFailedBranchCreation, releaseBrowserOwnershipOnForcedStop, canSwitchSessionModelConnection } from '@craft-agent/server-core/domain'
-import { resizeImageForAPI, resizeIconBuffer } from '@craft-agent/server-core/services'
+import { sanitizeForTitle, shouldActivateBrowserOverlay, rollbackFailedBranchCreation, releaseBrowserOwnershipOnForcedStop, canSwitchSessionModelConnection } from '@craft-agent/server-core/domain'
+import { resizeImageForAPI } from '@craft-agent/server-core/services'
 export { sanitizeForTitle }
 
 // Module-level platform ref — set once during init via setSessionPlatform()
@@ -396,186 +403,12 @@ async function applyBridgeUpdates(
  * @param workspaceRootPath - Path to workspace for loading skills/sources
  * @param sources - Loaded sources for the workspace
  */
-type SdkForkState = Pick<
-  ManagedSession,
-  | 'branchContextStrategy'
-  | 'branchFromSdkSessionId'
-  | 'branchFromSessionPath'
-  | 'branchFromSdkCwd'
-  | 'branchFromSdkTurnId'
->
-
-function clearSdkForkFields(state: SdkForkState): void {
-  state.branchFromSdkSessionId = undefined
-  state.branchFromSessionPath = undefined
-  state.branchFromSdkCwd = undefined
-  state.branchFromSdkTurnId = undefined
-}
-
-export function consumePendingSdkFork(state: SdkForkState): boolean {
-  if (state.branchContextStrategy !== 'sdk-fork') return false
-  clearSdkForkFields(state)
-  return true
-}
-
-/**
- * Create a ManagedSession from any session-like source (SessionMetadata, SessionConfig, StoredSession).
- * Spreads all matching fields from the source so new persistent fields automatically propagate.
- * Runtime-only fields get sensible defaults.
- */
 export function createManagedSession(
   source: { id: string; agentRuntime?: LegacyAgentRuntime; legacyAgentRuntime?: LegacyAgentRuntime } & Partial<ManagedSession>,
   workspace: Workspace,
   overrides?: Partial<ManagedSession>,
 ): ManagedSession {
-  const s = source as Record<string, unknown>
-  const sourceFields = Object.fromEntries(
-    Object.entries(s).filter(([, v]) => v !== undefined)
-  ) as Partial<ManagedSession>
-  const legacyAgentRuntime = s.legacyAgentRuntime ?? s.agentRuntime
-  delete (sourceFields as Record<string, unknown>).agentRuntime
-  delete (sourceFields as Record<string, unknown>).legacyAgentRuntime
-
-  if ('thinkingLevel' in sourceFields) {
-    // TODO: Remove legacy 'think' normalization after old persisted session
-    // headers have realistically aged out across upgrades.
-    const normalizedThinkingLevel = normalizeThinkingLevel(sourceFields.thinkingLevel)
-    if (normalizedThinkingLevel) {
-      sourceFields.thinkingLevel = normalizedThinkingLevel
-    } else {
-      delete sourceFields.thinkingLevel
-    }
-  }
-
-  if (sourceFields.llmConnection) {
-    sourceFields.llmConnection = normalizeLlmConnectionSlug(sourceFields.llmConnection)
-  }
-
-  const managed = {
-    // Spread all session-like fields from source (id, name, permissionMode, labels, model, etc.)
-    // This ensures new persistent fields automatically flow through without manual copying.
-    ...sourceFields,
-    // Runtime-only defaults (not persisted)
-    workspace,
-    agent: null,
-    messages: [],
-    isProcessing: false,
-    lastMessageAt: (s.lastMessageAt ?? s.lastUsedAt ?? Date.now()) as number,
-    streamingText: '',
-    processingGeneration: 0,
-    isFlagged: (s.isFlagged ?? false) as boolean,
-    messageQueue: [],
-    backgroundShellCommands: new Map(),
-    backgroundTaskOutputs: new Map(),
-    messagesLoaded: false,
-    needsPiMigrationSeed: needsPiRuntimeMigrationSeed({
-      legacyAgentRuntime: legacyAgentRuntime as LegacyAgentRuntime | undefined,
-      hasPiTranscript: false,
-      sdkSessionId: s.sdkSessionId as string | undefined,
-      messageCount: Array.isArray(s.messages)
-        ? s.messages.length
-        : (s.messageCount as number | undefined) ?? 0,
-    }),
-    tokenRefreshManager: new TokenRefreshManager(getSourceCredentialManager(), {
-      log: (msg) => sessionLog.debug(msg),
-    }),
-    // Caller overrides (permissionMode defaults, thinkingLevel, messagesLoaded, etc.)
-    ...overrides,
-  } as ManagedSession
-
-  // Runtime invariant: every managed session has one concrete working directory.
-  // Persisted sessions keep this field optional only for backward compatibility.
-  // Project sessions fall back to their visible workspace root; application-owned
-  // Free Conversations remain inside their private session storage.
-  if (!managed.workingDirectory) {
-    managed.workingDirectory = isFreeConversationWorkspaceId(workspace.id)
-      ? getSessionStoragePath(workspace.rootPath, managed.id)
-      : workspace.rootPath
-  }
-
-  if (managed.branchFromMessageId && !managed.branchContextStrategy) {
-    managed.branchContextStrategy = managed.branchFromSdkSessionId
-      ? 'sdk-fork'
-      : 'seeded-fresh-session'
-  }
-
-  if (managed.branchContextStrategy === 'seeded-fresh-session' && managed.branchSeedApplied === undefined) {
-    // If an SDK session ID already exists, first turn has already happened.
-    managed.branchSeedApplied = !!managed.sdkSessionId
-  }
-
-  return managed
-}
-
-/**
- * Resolve supportsBranching for a managed session.
- * Prefers the live agent instance; falls back to true for all backends.
- */
-function resolveSupportsBranching(managed: ManagedSession): boolean {
-  // If agent is live, use its instance property (authoritative)
-  if (managed.agent) {
-    return managed.agent.supportsBranching
-  }
-
-  return true // default: branching enabled for all backends
-}
-
-function resolveManagedConnectionSlug(managed: ManagedSession): string | undefined {
-  const workspaceConfig = loadWorkspaceConfig(managed.workspace.rootPath)
-  return resolveBackendContext({
-    sessionConnectionSlug: managed.llmConnection,
-    workspaceDefaultConnectionSlug: workspaceConfig?.defaults?.defaultLlmConnection,
-    managedModel: managed.model,
-  }).connection?.slug
-    ?? (managed.llmConnection ? normalizeLlmConnectionSlug(managed.llmConnection) : undefined)
-}
-
-function resolveLiveAssistantBranchability(
-  managed: ManagedSession,
-  event: Extract<AgentEvent, { type: 'text_complete' }>
-): boolean {
-  if (event.isIntermediate || !event.turnId || !resolveSupportsBranching(managed)) {
-    return false
-  }
-
-  return !!event.sdkTurnAnchor
-}
-
-function hasPersistedAssistantBranchability(messages: Message[]): boolean {
-  for (const message of messages) {
-    if (message.role !== 'assistant' || message.isIntermediate) continue
-    if (typeof message.canBranch !== 'boolean') return false
-  }
-  return true
-}
-
-const DEFAULT_TOKEN_USAGE = {
-  inputTokens: 0, outputTokens: 0, totalTokens: 0,
-  contextTokens: 0, costUsd: 0,
-}
-
-/**
- * Convert a ManagedSession to a renderer-side Session object.
- * Uses pickSessionFields() for persistent fields so new fields propagate automatically.
- */
-function managedToSession(m: ManagedSession, overrides?: Partial<Session>): Session {
-  return {
-    ...pickSessionFields(m),
-    // Pre-computed fields from header (not in SESSION_PERSISTENT_FIELDS)
-    preview: m.preview,
-    lastMessageRole: m.lastMessageRole,
-    tokenUsage: m.tokenUsage,
-    messageCount: m.messageCount,
-    lastFinalMessageId: m.lastFinalMessageId,
-    // Runtime-only fields
-    workspaceId: m.workspace.id,
-    workspaceName: m.workspace.name,
-    messages: [],
-    isProcessing: m.isProcessing,
-    sessionFolderPath: getSessionStoragePath(m.workspace.rootPath, m.id),
-    supportsBranching: resolveSupportsBranching(m),
-    ...overrides,
-  } as Session
+  return createManagedSessionState(source, workspace, overrides, message => sessionLog.debug(message));
 }
 
 // Performance: Batch IPC delta events to reduce renderer load
@@ -7987,7 +7820,7 @@ export class SessionManager implements ISessionManager {
     this.automationSystems.clear()
 
     // Clear all pending delta flush timers
-    for (const [sessionId, timer] of this.deltaFlushTimers) {
+    for (const timer of this.deltaFlushTimers.values()) {
       clearTimeout(timer)
     }
     this.deltaFlushTimers.clear()

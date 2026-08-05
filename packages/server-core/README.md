@@ -8,11 +8,11 @@ Reusable WS/headless server infrastructure extracted from `apps/electron`.
 - Runtime platform contracts (`PlatformServices`) and headless implementation
 - Generic handler dependency contracts
 - Reusable headless bootstrap orchestration
+- Session lifecycle orchestration and its runtime state/persistence projections
 
 ## Out of scope
 
 - Electron UI/main-process window management
 - Renderer channel maps and generated client API wrappers
-- Session/domain business logic (`SessionManager`, handlers)
 
 Those remain in `apps/electron` and are injected into bootstrap at runtime.
