@@ -3,6 +3,7 @@
 // pos: Shared, side-effect-free policy for registering and authenticating custom endpoint models.
 
 import type { ModelThinkingLevelMap } from '../../shared/src/config/models.ts'
+import type { PiCustomEndpointModelConfig } from '../../shared/src/agent/backend/pi/protocol.ts'
 
 export type CustomEndpointInput = 'text' | 'image'
 
@@ -19,14 +20,6 @@ export interface CustomEndpointModelOverrides {
 
 export interface CustomEndpointModelEntry extends CustomEndpointModelOverrides {
   id: string
-}
-
-export type CustomEndpointModelConfig = string | {
-  id: string
-  contextWindow?: number
-  supportsImages?: boolean
-  supportsThinking?: boolean
-  thinkingLevelMap?: ModelThinkingLevelMap
 }
 
 export interface CustomEndpointProviderApiKeyInput {
@@ -90,7 +83,7 @@ export function shouldUseCustomEndpointBearerAuthHeader(providerName: string): b
  * `supportsImages: false` is meaningful because it can override a global
  * endpoint default of `supportsImages: true` for text-only models.
  */
-export function normalizeCustomEndpointModelEntry(model: CustomEndpointModelConfig): CustomEndpointModelEntry {
+export function normalizeCustomEndpointModelEntry(model: PiCustomEndpointModelConfig): CustomEndpointModelEntry {
   if (typeof model === 'string') {
     return { id: stripPiPrefix(model) }
   }

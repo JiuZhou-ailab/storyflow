@@ -1,26 +1,11 @@
 // input: Backend config, source/tool managers, permissions, and session messages
-// output: Common agent behavior used by the Pi runtime
-// pos: Shared lifecycle and policy layer beneath PiAgent
-
-/**
- * BaseAgent Abstract Class
- *
- * Shared base class for the production agent runtime.
- * Extracts common functionality including:
- * - Model/thinking configuration
- * - Permission mode management (via PermissionManager)
- * - Source management (via SourceManager)
- * - Planning heuristics (via PlanningAdvisor)
- * - Config watching (via ConfigWatcherManager)
- * - Usage tracking (via UsageTracker)
- *
- * Runtime behavior (chat, abort, capabilities) is implemented by PiAgent.
- */
+// output: Storyflow Product Host behavior projected into the Pi runtime
+// pos: Pi-specific host policy layer beneath PiAgent, not a runtime abstraction
 
 import type { AgentEvent } from '@craft-agent/core/types';
 import type { FileAttachment } from '../utils/files.ts';
 import { expandPath } from '../utils/paths.ts';
-import { buildTransferredSessionContext } from './conversation-summary.ts';
+import { buildBranchSeedContext, buildTransferredSessionContext } from './conversation-summary.ts';
 import type { ThinkingLevel } from './thinking-levels.ts';
 import { DEFAULT_THINKING_LEVEL, normalizeThinkingLevel } from './thinking-levels.ts';
 import type { PermissionMode } from './mode-manager.ts';
@@ -31,7 +16,6 @@ import { loadAllSources } from '../sources/storage.ts';
 import type { ApiServerConfig } from '../mcp/mcp-pool.ts';
 
 import type {
-  AgentBackend,
   ChatOptions,
   PermissionCallback,
   PlanCallback,
@@ -42,7 +26,6 @@ import type {
   BackendConfig,
   PostInitResult,
   BridgeUpdateContext,
-  RecoveryMessage,
 } from './backend/types.ts';
 import { AbortReason } from './backend/types.ts';
 import type { Workspace } from '../config/storage.ts';
@@ -63,88 +46,22 @@ import { getSessionPlansPath, getSessionDataPath, getSessionPath } from '../sess
 import { getMiniAgentSystemPrompt } from '../prompts/system.ts';
 import { buildTitlePrompt, buildRegenerateTitlePrompt, validateTitle } from '../utils/title-generator.ts';
 import { resolveSystemPromptPresetForWorkingDirectory } from './system-prompt-preset.ts';
-
-// Storyflow mention compatibility; Pi's catalog remains the discovery source of truth.
-import { parseMentions, resolveSourceMentions, resolveFileMentions, WS_ID_CHARS } from '../mentions/index.ts';
-import { loadPiSkillCatalog } from '../skills/pi-catalog.ts';
-
-// ============================================================
-// Mini Agent Configuration
-// ============================================================
-
-/**
- * Mini agent configuration - shared across all backends.
- * Centralized here to avoid duplication between Claude/Codex agents.
- */
-export interface MiniAgentConfig {
-  /** Whether mini agent mode is enabled */
-  enabled: boolean;
-  /** Allowed tools for mini agent mode */
-  tools: readonly string[];
-  /** MCP server keys to include (others filtered out) */
-  mcpServerKeys: readonly string[];
-  /** Thinking/reasoning should be minimized */
-  minimizeThinking: boolean;
-}
+import { preparePiSkillCommand } from './pi-skill-command.ts';
+import {
+  MINI_AGENT_MCP_KEYS,
+  MINI_AGENT_TOOLS,
+  type MiniAgentConfig,
+  type SpawnSessionHelpResult,
+  type SpawnSessionRequest,
+  type SpawnSessionResult,
+} from './pi-agent-host-types.ts';
 
 // ============================================================
-// Spawn Session Types
-// ============================================================
-
-export interface SpawnSessionRequest {
-  prompt: string;
-  name?: string;
-  llmConnection?: string;
-  model?: string;
-  enabledSourceSlugs?: string[];
-  permissionMode?: PermissionMode;
-  thinkingLevel?: ThinkingLevel;
-  labels?: string[];
-  workingDirectory?: string;
-  attachments?: Array<{ path: string; name?: string }>;
-}
-
-export interface SpawnSessionResult {
-  sessionId: string;
-  name: string;
-  status: 'started';
-  connection?: string;
-  model?: string;
-}
-
-export interface SpawnSessionHelpResult {
-  connections: Array<{
-    slug: string;
-    name: string;
-    isDefault: boolean;
-    providerType: string;
-    models: string[];
-    defaultModel?: string;
-  }>;
-  sources: Array<{
-    slug: string;
-    name: string;
-    type: string;
-    enabled: boolean;
-  }>;
-  defaults: {
-    defaultConnection: string | null;
-    permissionMode: string;
-  };
-}
-
-/** Tool list for mini agents - quick config edits only */
-export const MINI_AGENT_TOOLS = ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash'] as const;
-
-/** MCP servers for mini agents - minimal set (docs tools are now bundled in session) */
-export const MINI_AGENT_MCP_KEYS = ['session'] as const;
-
-// ============================================================
-// BaseAgent Abstract Class
+// Pi Agent Product Host
 // ============================================================
 
 /**
- * Abstract base class for agent backends.
+ * Storyflow Product Host behavior used by the single Pi runtime.
  *
  * Provides:
  * - Common state management (model, thinking, workspace, session)
@@ -160,7 +77,7 @@ export const MINI_AGENT_MCP_KEYS = ['session'] as const;
  * - destroy(): Provider-specific cleanup
  * - runMiniCompletion(): Simple text completion using backend's auth
  */
-export abstract class BaseAgent implements AgentBackend {
+export abstract class PiAgentHost {
   // ============================================================
   // Backend Identity
   // ============================================================
@@ -392,7 +309,7 @@ export abstract class BaseAgent implements AgentBackend {
   }
 
   // ============================================================
-  // Model & Thinking Configuration (AgentBackend interface)
+  // Model & Thinking Configuration
   // ============================================================
 
   getModel(): string {
@@ -439,7 +356,7 @@ export abstract class BaseAgent implements AgentBackend {
   }
 
   // ============================================================
-  // Workspace & Session (AgentBackend interface)
+  // Workspace & Session
   // ============================================================
 
   getWorkspace(): Workspace {
@@ -681,68 +598,14 @@ export abstract class BaseAgent implements AgentBackend {
    * @returns Formatted string to prepend to the user message, or null if no context available.
    */
   protected buildRecoveryContext(): string | null {
-    const messages = this.config.getRecoveryMessages?.();
-    if (!messages || messages.length === 0) {
-      return null;
-    }
-
-    // Format messages as a conversation block the agent can understand
-    const formattedMessages = messages
-      .map((m) => {
-        const role = m.type === 'user' ? 'User' : 'Assistant';
-        // Truncate very long messages to avoid bloating context (max ~1000 chars each)
-        const content =
-          m.content.length > 1000
-            ? m.content.slice(0, 1000) + '...[truncated]'
-            : m.content;
-        return `[${role}]: ${content}`;
-      })
-      .join('\n\n');
-
-    return `<conversation_recovery>
-This session was interrupted and is being restored. Here is the recent conversation context:
-
-${formattedMessages}
-
-Please continue the conversation naturally from where we left off.
-</conversation_recovery>
-
-`;
+    return this.promptBuilder.buildRecoveryContext(this.config.getRecoveryMessages?.());
   }
 
   /**
    * Build one-time branch seed context for sessions branched from an earlier message.
    * Ensures the first turn in the new branch only sees transcript up to the selected branch point.
    */
-  protected buildBranchSeedContext(messages?: RecoveryMessage[]): string | null {
-    if (!messages || messages.length === 0) return null;
-
-    // Keep seed payload bounded to avoid oversized first-turn prompts.
-    const bounded = messages.slice(-24);
-
-    const formattedMessages = bounded
-      .map((m) => {
-        const role = m.type === 'user' ? 'User' : 'Assistant';
-        const content =
-          m.content.length > 1200
-            ? m.content.slice(0, 1200) + '...[truncated]'
-            : m.content;
-        return `[${role}]: ${content}`;
-      })
-      .join('\n\n');
-
-    return `<branch_seed_context>
-This is a branched conversation. The context below is the parent transcript up to the selected branch point.
-Ignore and do not assume any parent messages that came after this cutoff.
-
-${formattedMessages}
-</branch_seed_context>`;
-  }
-
-  /**
-   * Clear session ID and notify callbacks.
-   * Called when session resume fails and we need to start fresh.
-   */
+  /** Clear session ID and notify callbacks when resume must start fresh. */
   protected clearSessionForRecovery(): void {
     this.config.onSdkSessionIdCleared?.();
     this.debug('Session cleared for recovery');
@@ -752,12 +615,7 @@ ${formattedMessages}
   // Path Helpers
   // ============================================================
 
-  /**
-   * Get the session storage path for this agent's session.
-   * Convenience wrapper around getSessionPath() with null-checking.
-   *
-   * @returns Session path, or undefined if session/workspace not configured
-   */
+  /** Get this product session's durable storage path. */
   protected getSessionStoragePath(): string | undefined {
     if (!this.config.session?.id || !this.config.workspace.rootPath) return undefined;
     return getSessionPath(this.config.workspace.rootPath, this.config.session.id);
@@ -829,7 +687,7 @@ ${formattedMessages}
       });
     }
 
-    this.debug('Base agent destroyed');
+    this.debug('Pi agent host destroyed');
   }
 
   // ============================================================
@@ -845,55 +703,9 @@ ${formattedMessages}
    *   - cleanMessage: Message with the selected Skill mention removed
    *   - missingSkills: Array of skill slugs that were mentioned but not found
    */
-  protected async prepareSkillCommand(message: string): Promise<{
-    skillCommand: string | null;
-    cleanMessage: string;
-    missingSkills: string[];
-    hasMultipleSkills: boolean;
-  }> {
-    const workDir = this.config.session?.workingDirectory ?? this.workingDirectory;
-    if (!message.includes('[skill:')) {
-      return {
-        skillCommand: null,
-        cleanMessage: resolveFileMentions(resolveSourceMentions(message), workDir).trim(),
-        missingSkills: [],
-        hasMultipleSkills: false,
-      };
-    }
-
-    const { skills } = await loadPiSkillCatalog(workDir);
-    const skillSlugs = skills.map(s => s.slug);
-
-    this.debug(`[prepareSkillCommand] Available skills: ${skillSlugs.join(', ')}`);
-
-    const parsed = parseMentions(message, skillSlugs, []);
-    this.debug(`[prepareSkillCommand] Parsed skills: ${JSON.stringify(parsed.skills)}`);
-    if (parsed.invalidSkills && parsed.invalidSkills.length > 0) {
-      this.debug(`[prepareSkillCommand] Invalid skills: ${JSON.stringify(parsed.invalidSkills)}`);
-    }
-
-    const selectedSkill = parsed.skills[0];
-    const selected = selectedSkill ? skills.find(skill => skill.slug === selectedSkill) : undefined;
-    const skillMentionPattern = new RegExp(`\\[skill:(?:${WS_ID_CHARS}+:)?([\\w-]+)\\]`, 'g');
-    const onlySkillMention = message.replace(skillMentionPattern, '').trim().length === 0;
-    const withSkills = onlySkillMention
-      ? ''
-      : message.replace(skillMentionPattern, (_match, slug: string, offset: number) => {
-          if (message.slice(0, offset).trim().length === 0) return '';
-          const skill = skills.find(item => item.slug === slug);
-          return skill?.metadata.displayName ?? skill?.metadata.name ?? slug;
-        }).trimStart();
-    const withSources = resolveSourceMentions(withSkills);
-    const resolved = resolveFileMentions(withSources, workDir).trim();
-
-    this.debug(`[prepareSkillCommand] Clean message: "${resolved.slice(0, 100)}...", skill: ${selectedSkill ?? 'none'}`);
-
-    return {
-      skillCommand: selected ? `/skill:${selected.slug}` : null,
-      cleanMessage: resolved,
-      missingSkills: parsed.invalidSkills || [],
-      hasMultipleSkills: parsed.skills.length > 1,
-    };
+  protected prepareSkillCommand(message: string) {
+    const workingDirectory = this.config.session?.workingDirectory ?? this.workingDirectory;
+    return preparePiSkillCommand(message, workingDirectory, debugMessage => this.debug(debugMessage));
   }
 
   // ============================================================
@@ -924,7 +736,7 @@ ${formattedMessages}
     }
 
     // Prepend branch seed context (for seeded branch sessions) and transferred-session summary.
-    const branchSeedContext = this.buildBranchSeedContext(this.config.getBranchSeedMessages?.());
+    const branchSeedContext = buildBranchSeedContext(this.config.getBranchSeedMessages?.());
     if (branchSeedContext) {
       this.config.markBranchSeedApplied?.();
     }

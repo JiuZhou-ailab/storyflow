@@ -80,7 +80,7 @@ export function parsePromptReferences(prompt: string): PromptReferences {
 
 /**
  * Convert resolved Automation Skill references into the canonical mention syntax
- * consumed by BaseAgent. Source references remain unchanged.
+ * consumed by the Pi Product Host. Source references remain unchanged.
  */
 export function canonicalizeSkillReferences(
   prompt: string,

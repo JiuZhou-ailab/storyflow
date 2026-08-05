@@ -7,7 +7,7 @@ Core business logic package for Craft Agent:
 - Permission modes and validation
 
 ## Key folders
-- `src/agent/` — `pi-agent.ts`, `base-agent.ts`, tools, permissions
+- `src/agent/` — `pi-agent.ts`, `pi-agent-host.ts`, tools, permissions
 - `src/sources/` — source storage/types/services
 - `src/sessions/` — session persistence/index
 - `src/config/` — config/preferences/theme/watcher
@@ -148,9 +148,9 @@ Key integration points:
 - `TokenRefreshManager` — treats renew-endpoint sources as refreshable even without `refreshToken`
 - `server-builder.ts` — passes a token getter (not static credential) for renew-endpoint sources
 
-## `queryLlm` backend contract
+## `PiAgent.queryLlm` contract
 
-Every `AgentBackend.queryLlm(request: LLMQueryRequest)` implementation MUST:
+`PiAgent.queryLlm(request: LLMQueryRequest)` MUST:
 - honor `request.model` (with backend-specific fallback only when the model is
   unresolvable/unsupported; always report the *effective* model in
   `LLMQueryResult.model`)
@@ -159,7 +159,7 @@ Every `AgentBackend.queryLlm(request: LLMQueryRequest)` implementation MUST:
 SHOULD:
 - honor `request.outputSchema` (at minimum via prompt injection — see
   `buildCallLlmRequest` in `agent/llm-tool.ts`, which already handles this
-  pre-backend)
+  before runtime dispatch)
 
 MAY:
 - honor `request.maxTokens` and `request.temperature` if the underlying SDK

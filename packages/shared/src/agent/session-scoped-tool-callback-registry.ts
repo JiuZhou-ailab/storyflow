@@ -7,7 +7,7 @@
  */
 
 import type { LLMQueryRequest, LLMQueryResult } from './llm-tool.ts';
-import type { SpawnSessionHelpResult, SpawnSessionResult } from './base-agent.ts';
+import type { SpawnSessionHelpResult, SpawnSessionResult } from './pi-agent-host-types.ts';
 import type { BrowserPaneFns } from './browser-tools.ts';
 import type { AuthRequest, UserQuestionRequest, UserQuestionResponse } from '@craft-agent/session-tools-core';
 import { debug } from '../utils/debug.ts';

@@ -81,7 +81,7 @@ package "3 · 应用与会话内核" as ApplicationKernel {
 
 package "4 · 单一 Agent Kernel" as AgentKernel {
   component "PiAgent Construction\n解析 connection / model / auth / runtime path" as PiConstruction
-  component "PiAgent\nBaseAgent 子类；JSONL 子进程客户端" as PiAgent
+  component "PiAgent\nProduct Host 投影；JSONL 子进程客户端" as PiAgent
   component "Provider Adapters\nAnthropic / OpenAI / Bedrock /\nOAuth / Custom Endpoint" as ProviderAdapters
 
   node "@craft-agent/pi-agent-server\n隔离的 Pi runtime 子进程" as PiRuntime {

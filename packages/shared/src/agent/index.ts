@@ -113,19 +113,23 @@ export {
   type PermissionsContext,
 } from './permissions-config.ts';
 
-// Export BaseAgent - shared abstract class for all agent backends
+// Export the Storyflow Product Host layer used by PiAgent
 export {
-  BaseAgent,
-  // Mini agent configuration (centralized for all backends)
+  PiAgentHost,
+} from './pi-agent-host.ts';
+
+export {
   type MiniAgentConfig,
   MINI_AGENT_TOOLS,
   MINI_AGENT_MCP_KEYS,
-} from './base-agent.ts';
+  type SpawnSessionRequest,
+  type SpawnSessionResult,
+  type SpawnSessionHelpResult,
+} from './pi-agent-host-types.ts';
 
 // Export the Pi host boundary while Pi provider adapters handle model switching.
 export {
   // Types
-  type AgentBackend,
   type AgentProvider,
   type BackendConfig,
   type PermissionCallback,

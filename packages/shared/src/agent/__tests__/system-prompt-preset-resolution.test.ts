@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent } from "@craft-agent/core/types";
 import type { FileAttachment } from "../../utils/files.ts";
-import { BaseAgent } from "../base-agent.ts";
+import { PiAgentHost } from "../pi-agent-host.ts";
 import { resolveSystemPromptPresetForWorkingDirectory } from "../system-prompt-preset.ts";
 import type { BackendConfig, ChatOptions } from "../backend/types.ts";
 import { AbortReason } from "../backend/types.ts";
@@ -56,7 +56,7 @@ function createSessionConfig(workingDirectory: string) {
   };
 }
 
-class TestAgent extends BaseAgent {
+class TestAgent extends PiAgentHost {
   protected backendName = "Test";
 
   getResolvedPreset(): string | undefined {
@@ -104,7 +104,7 @@ describe("resolveSystemPromptPresetForWorkingDirectory", () => {
   });
 });
 
-describe("BaseAgent system prompt preset resolution", () => {
+describe("PiAgentHost system prompt preset resolution", () => {
   it("uses the novel preset for full sessions in novel working directories", () => {
     const agent = new TestAgent(
       createBackendConfig({

@@ -9,7 +9,7 @@
  * on the request would be silently dropped.
  */
 import { describe, it, expect, beforeEach } from 'bun:test';
-import type { SpawnSessionRequest, SpawnSessionResult } from '../base-agent.ts';
+import type { SpawnSessionRequest, SpawnSessionResult } from '../pi-agent-host-types.ts';
 import { TestAgent, createMockBackendConfig } from './test-utils.ts';
 
 class SpawnTestAgent extends TestAgent {

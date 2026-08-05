@@ -46,3 +46,25 @@ export async function generateConversationSummary(
 export function buildTransferredSessionContext(summary: string): string {
   return `<session_transfer_summary>\nThis session was transferred from another workspace. The original conversation was summarized before transfer.\nUse the summary below as prior context for the next turn.\n\n${summary}\n</session_transfer_summary>`;
 }
+
+export function buildBranchSeedContext(messages?: RecoveryMessage[]): string | null {
+  if (!messages?.length) return null;
+
+  const transcript = messages
+    .slice(-24)
+    .map(message => {
+      const role = message.type === 'user' ? 'User' : 'Assistant';
+      const content = message.content.length > 1200
+        ? `${message.content.slice(0, 1200)}...[truncated]`
+        : message.content;
+      return `[${role}]: ${content}`;
+    })
+    .join('\n\n');
+
+  return `<branch_seed_context>
+This is a branched conversation. The context below is the parent transcript up to the selected branch point.
+Ignore and do not assume any parent messages that came after this cutoff.
+
+${transcript}
+</branch_seed_context>`;
+}

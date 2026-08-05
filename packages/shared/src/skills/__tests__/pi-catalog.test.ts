@@ -73,7 +73,7 @@ afterEach(() => {
 });
 
 describe('loadPiSkillCatalog', () => {
-  it('lets BaseAgent resolve project .agents Skills from the session working directory', async () => {
+  it('lets the Pi Product Host resolve project .agents Skills from the session working directory', async () => {
     const cwd = createRoot();
     const slug = `runtime-project-skill-${process.pid}`;
     writeSkill(cwd, '.agents/skills', slug);

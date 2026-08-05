@@ -28,8 +28,6 @@ import {
   SessionManager as PiSessionManager,
   AuthStorage as PiAuthStorage,
   ModelRegistry as PiModelRegistry,
-  DefaultResourceLoader,
-  SettingsManager,
   createReadToolDefinition,
   createBashToolDefinition,
   createEditToolDefinition,
@@ -66,8 +64,7 @@ import { bedrockProviderModule } from '@earendil-works/pi-ai/bedrock-provider';
 setBedrockProviderModule(bedrockProviderModule);
 
 // Model resolution (extracted for testability + custom-endpoint precedence)
-import { resolvePiModel, isDeniedMiniModelId, isModelNotFoundError } from './model-resolution.ts';
-import { pickProviderAppropriateMiniModel } from './pick-mini-model.ts';
+import { resolvePiModel } from './model-resolution.ts';
 import {
   buildCustomEndpointModelDef,
   normalizeCustomEndpointModelEntry,
@@ -76,7 +73,6 @@ import {
   resolveRuntimeCredentialProviderNames,
   shouldUseCustomEndpointBearerAuthHeader,
   stripPiPrefix,
-  type CustomEndpointModelConfig,
   type CustomEndpointModelEntry,
   type CustomEndpointModelOverrides,
 } from './custom-endpoint-models.ts';
@@ -84,7 +80,7 @@ import {
 // Direct source imports from shared (bundled by bun build)
 import { handleLargeResponse, estimateTokens, tokenLimitFor } from '../../shared/src/utils/large-response.ts';
 import { getSessionPlansPath, getSessionPath } from '../../shared/src/sessions/storage.ts';
-import { buildCallLlmRequest, withTimeout, LLM_QUERY_TIMEOUT_MS } from '../../shared/src/agent/llm-tool.ts';
+import { buildCallLlmRequest } from '../../shared/src/agent/llm-tool.ts';
 import type { LLMQueryRequest, LLMQueryResult } from '../../shared/src/agent/llm-tool.ts';
 import { readJsonLines } from '../../shared/src/utils/jsonl.ts';
 import type { UserQuestionResponse } from '../../session-tools-core/src/types.ts';
@@ -94,7 +90,13 @@ import type {
   ConversationRewindRequest,
   ConversationRewindResult,
 } from '../../shared/src/agent/backend/types.ts';
-import { getDefaultSummarizationModel } from '../../shared/src/config/models.ts';
+import type {
+  PiCredential,
+  PiCustomEndpointApi,
+  PiInboundMessage,
+  PiOutboundMessage,
+  PiProxyToolDefinition,
+} from '../../shared/src/agent/backend/pi/protocol.ts';
 import { createWebFetchTool } from './tools/web-fetch.ts';
 import { resolveSearchProvider } from './tools/search/resolve-provider.ts';
 import { createSearchTool } from './tools/search/create-search-tool.ts';
@@ -102,7 +104,6 @@ import { createCreateOnlyWriteToolDefinition } from './write-tool.ts';
 import {
   createProjectResourceLoader,
   createSkillCatalogResourceLoader,
-  createStoryflowRetrySettings,
 } from './project-resource-loader.ts';
 import { createExtensionUIContext } from './extension-ui.ts';
 import { normalizeCraftToolArgumentsForSchema } from './craft-metadata-schema.ts';
@@ -114,12 +115,12 @@ import {
   createProductRewindBoundary,
   executeProductRewind,
   findProductRewindBoundary,
-  type PendingProductRewindBoundary,
   type ProductRewindBoundary,
 } from './product-rewind.ts';
 import { createToolHooks } from './tool-hooks.ts';
 import { createProviderHooks } from './provider-hooks.ts';
 import { ProductAuthStorageBackend } from './product-auth-storage.ts';
+import { queryLlmWithEphemeralPiSession } from './ephemeral-llm-query.ts';
 import { installNetworkProxy } from './network-proxy.ts';
 import {
   createSubagentExtension,
@@ -140,184 +141,6 @@ import {
 installNetworkProxy();
 
 // ============================================================
-// Types — JSONL Protocol
-// ============================================================
-
-/** Credential union used in init and token_update messages */
-type PiCredential =
-  | { type: 'api_key'; key: string }
-  | { type: 'oauth'; access: string; refresh: string; expires: number }
-  | { type: 'iam'; accessKeyId: string; secretAccessKey: string; region?: string; sessionToken?: string };
-
-/** Custom endpoint protocol — determines which streaming adapter Pi SDK uses */
-type CustomEndpointApi =
-  | 'openai-completions'
-  | 'openai-responses'
-  | 'anthropic-messages'
-  | 'google-generative-ai';
-
-/** Init message from main process — configures the Pi agent server */
-interface InitMessage {
-  type: 'init';
-  apiKey: string;
-  model: string;
-  cwd: string;
-  thinkingLevel: string;
-  workspaceRootPath: string;
-  /** Explicit resource overlay root. Omit for global-only/free contexts. */
-  projectRoot?: string;
-  sessionId: string;
-  sessionPath: string;
-  workingDirectory: string;
-  plansFolderPath: string;
-  miniModel?: string;
-  agentDir?: string;
-  providerType?: string;
-  authType?: string;
-  workspaceId?: string;
-  baseUrl?: string;
-  branchFromSdkSessionId?: string;
-  branchFromSessionPath?: string;
-  branchFromSdkTurnId?: string;
-  customEndpoint?: { api: CustomEndpointApi; supportsImages?: boolean };
-  customModels?: CustomEndpointModelConfig[];
-  piAuth?: { provider: string; credential: PiCredential };
-  enable1MContext?: boolean;
-}
-
-interface RuntimeConfigUpdateMessage {
-  type: 'update_runtime_config';
-  id: string;
-  model: string;
-  providerType?: string;
-  authType?: string;
-  baseUrl?: string;
-  customEndpoint?: { api: CustomEndpointApi; supportsImages?: boolean };
-  customModels?: CustomEndpointModelConfig[];
-}
-
-/** Messages from main process (stdin) */
-type InboundMessage =
-  | InitMessage
-  | { type: 'prompt'; id: string; message: string; systemPrompt: string; dynamicSystemPrompt?: string; images?: Array<{ type: 'image'; data: string; mimeType: string }>; rewindBoundary?: PendingProductRewindBoundary }
-  | { type: 'register_tools'; tools: ProxyToolDef[] }
-  | { type: 'tool_execute_response'; requestId: string; result: { content: string; isError: boolean } }
-  | { type: 'pre_tool_use_response'; requestId: string; action: 'allow' | 'block' | 'modify'; input?: Record<string, unknown>; reason?: string }
-  | { type: 'abort' }
-  | { type: 'llm_query'; id: string; request: LLMQueryRequest }
-  | { type: 'ensure_session_ready'; id: string }
-  | { type: 'set_model'; model: string }
-  | { type: 'set_thinking_level'; level: string }
-  | { type: 'compact'; id: string; customInstructions?: string }
-  | { type: 'rewind_user_message'; id: string; visibleUserMessageId: string }
-  | { type: 'conversation_rewind_response'; requestId: string; success: boolean; result?: ConversationRewindResult; errorMessage?: string }
-  | RuntimeConfigUpdateMessage
-  | { type: 'steer'; message: string }
-  | { type: 'token_update'; id: string; piAuth: { provider: string; credential: PiCredential } }
-  | { type: 'shutdown' };
-
-/** Proxy tool definition from main process */
-interface ProxyToolDef {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-}
-
-type EnrichedAssistantMessageEndEvent = Extract<AgentSessionEvent, { type: 'message_end' }> & {
-  sdkTurnAnchor?: string;
-  contextWindow?: number;
-};
-
-type OutboundAgentEvent =
-  | AgentSessionEvent
-  | EnrichedAssistantMessageEndEvent;
-
-/** Messages to main process (stdout) */
-interface OutboundReady { type: 'ready'; sessionId: string | null }
-interface OutboundEvent { type: 'event'; event: OutboundAgentEvent }
-interface OutboundPreToolUseReq {
-  type: 'pre_tool_use_request';
-  requestId: string;
-  toolName: string;
-  toolCallId?: string;
-  input: Record<string, unknown>;
-}
-interface OutboundToolExecReq { type: 'tool_execute_request'; requestId: string; toolName: string; args: Record<string, unknown> }
-interface OutboundLlmQueryResult {
-  type: 'llm_query_result';
-  id: string;
-  result: LLMQueryResult | null;
-  errorMessage?: string;
-  /**
-   * When set, signals the main process that a generic `error` with the same code
-   * was also emitted on the error channel (for centralized auth-refresh detection).
-   */
-  errorCode?: string;
-}
-interface OutboundEnsureSessionReadyResult { type: 'ensure_session_ready_result'; id: string; sessionId: string | null }
-interface OutboundCompactResult {
-  type: 'compact_result';
-  id: string;
-  success: boolean;
-  result?: { summary: string; firstKeptEntryId: string; tokensBefore: number };
-  errorMessage?: string;
-}
-interface OutboundRewindUserMessageResult {
-  type: 'rewind_user_message_result';
-  id: string;
-  success: boolean;
-  editorText?: string;
-  errorMessage?: string;
-}
-interface OutboundRuntimeConfigUpdateResult {
-  type: 'update_runtime_config_result';
-  id: string;
-  success: boolean;
-  updated: boolean;
-  errorMessage?: string;
-}
-interface OutboundSessionIdUpdate { type: 'session_id_update'; sessionId: string }
-interface OutboundExtensionNotification {
-  type: 'extension_notification';
-  message: string;
-  level?: 'info' | 'warning' | 'error';
-}
-interface OutboundConversationRewindRequest {
-  type: 'conversation_rewind_request';
-  requestId: string;
-  request: ConversationRewindRequest;
-}
-interface OutboundError { type: 'error'; message: string; code?: string }
-interface OutboundCredentialUpdate {
-  type: 'credential_update';
-  provider: string;
-  credential: Extract<PiCredential, { type: 'oauth' }>;
-}
-interface OutboundTokenUpdateResult {
-  type: 'token_update_result';
-  id: string;
-  success: boolean;
-  errorMessage?: string;
-}
-
-type OutboundMessage =
-  | OutboundReady
-  | OutboundEvent
-  | OutboundPreToolUseReq
-  | OutboundToolExecReq
-  | OutboundLlmQueryResult
-  | OutboundEnsureSessionReadyResult
-  | OutboundCompactResult
-  | OutboundRewindUserMessageResult
-  | OutboundRuntimeConfigUpdateResult
-  | OutboundSessionIdUpdate
-  | OutboundExtensionNotification
-  | OutboundConversationRewindRequest
-  | OutboundCredentialUpdate
-  | OutboundTokenUpdateResult
-  | OutboundError;
-
-// ============================================================
 // State
 // ============================================================
 
@@ -328,12 +151,12 @@ let unsubscribeEvents: (() => void) | null = null;
 let systemPromptOverride: ReturnType<typeof createSystemPromptOverride> | null = null;
 
 // Init config (set on 'init' message)
-let initConfig: Extract<InboundMessage, { type: 'init' }> | null = null;
+let initConfig: Extract<PiInboundMessage, { type: 'init' }> | null = null;
 
 // Mutable state
 let currentUserMessage = '';
 let currentPromptAttemptState: PromptAttemptState | null = null;
-let pendingProductRewindBoundary: PendingProductRewindBoundary | null = null;
+let pendingProductRewindBoundary: Extract<PiInboundMessage, { type: 'prompt' }>['rewindBoundary'] | null = null;
 let currentStablePrefixHash: string | null = null;
 let currentToolsetHash: string | null = null;
 let lastReportedOAuthCredential = '';
@@ -348,7 +171,7 @@ const pendingConversationRewinds = new Map<string, {
 const activeSubagentSessions = new Set<AgentSession>();
 
 // Proxy tool definitions from main process
-let proxyToolDefs: ProxyToolDef[] = [];
+let proxyToolDefs: PiProxyToolDefinition[] = [];
 
 // Flag: proxy tools changed since last session creation — session needs recreation
 let toolsChanged = false;
@@ -357,7 +180,7 @@ let toolsChanged = false;
 // JSONL I/O
 // ============================================================
 
-function send(msg: OutboundMessage): void {
+function send(msg: PiOutboundMessage): void {
   const line = JSON.stringify(msg);
   process.stdout.write(line + '\n');
 }
@@ -441,7 +264,7 @@ const customModelOverrides = new Map<string, CustomEndpointModelOverrides>();
 
 function registerCustomEndpointModels(
   registry: PiModelRegistry,
-  api: CustomEndpointApi,
+  api: PiCustomEndpointApi,
   baseUrl: string,
   models: CustomEndpointModelEntry[],
 ): void {
@@ -1104,207 +927,16 @@ async function executeSessionRewind(
 
 async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
   if (!initConfig) throw new Error('Cannot run queryLlm: init not received');
-
-  debugLog('[queryLlm] Starting');
-  const piThinkingLevel = THINKING_TO_PI[
-    initConfig.thinkingLevel as keyof typeof THINKING_TO_PI
-  ];
-
-  // Pick mini model. If the configured miniModel uses a different provider than
-  // what the user authenticated with (e.g. gemini-2.5-pro when only anthropic
-  // credentials exist), fall back to the default summarization model which uses
-  // the same provider family.
-  let model = request.model ?? initConfig.miniModel ?? getDefaultSummarizationModel();
-
-  // Create authenticated registry upfront — used by both the provider guard and the ephemeral session.
   const { authStorage, modelRegistry } = createAuthenticatedRegistry();
-
-  const piAuthProvider = initConfig.piAuth?.provider;
-
-  // If piAuth is set, ensure the mini model uses the same provider.
-  // Pi SDK will fail with "No API key found" if the model requires a different provider.
-  // Exception: 'custom-endpoint' provider is always compatible because it has its own
-  // API key configured via resolveCustomEndpointApiKey() and doesn't use authStorage.
-  if (initConfig.piAuth) {
-    const authProvider = initConfig.piAuth.provider;
-    const bareModel = model.startsWith('pi/') ? model.slice(3) : model;
-    const resolved = resolvePiModel(modelRegistry, bareModel, authProvider, shouldPreferCustomEndpoint());
-    const resolvedProvider = (resolved as any)?.provider;
-    const isCompatible = resolvedProvider === authProvider || resolvedProvider === 'custom-endpoint';
-    if (!resolved || !isCompatible || isDeniedMiniModelId(model, piAuthProvider)) {
-      // Anthropic: keep Haiku (the cheap/fast mini). For every other provider
-      // Haiku is unresolvable, so walk PI_PREFERRED_DEFAULTS for a model that
-      // actually works under the user's auth.
-      const providerDefault = authProvider === 'anthropic'
-        ? undefined
-        : pickProviderAppropriateMiniModel(authProvider, modelRegistry, shouldPreferCustomEndpoint());
-      const fallback = providerDefault ?? getDefaultSummarizationModel();
-      debugLog(`[queryLlm] Model ${bareModel} incompatible with ${authProvider} (resolved: ${resolvedProvider}), falling back to ${fallback}`);
-      model = fallback;
-    }
-  }
-
-  const runQueryWithModel = async (modelId: string): Promise<string> => {
-    debugLog(`[queryLlm] Using model: ${modelId}`);
-
-    // Resolve model — fail fast if unresolvable so we don't let the Pi SDK
-    // fall back to its own internal default (which may require a provider
-    // the user hasn't authenticated with, surfacing as a misleading
-    // "No API key found for <provider>" error).
-    const piModel = resolvePiModel(modelRegistry, modelId, initConfig!.piAuth?.provider, shouldPreferCustomEndpoint());
-    if (!piModel) {
-      throw new Error(
-        `Could not resolve mini model "${modelId}" for provider "${initConfig!.piAuth?.provider ?? '(unknown)'}"`,
-      );
-    }
-
-    // Create minimal ephemeral session
-    const settingsManager = SettingsManager.inMemory({ retry: createStoryflowRetrySettings() });
-    const ephemeralOptions: CreateAgentSessionOptions = {
-      cwd: resolvedCwd(),
-      authStorage,
-      modelRegistry,
-      tools: [],
-      sessionManager: PiSessionManager.inMemory(),
-      settingsManager,
-      model: piModel,
-      ...(piThinkingLevel ? { thinkingLevel: piThinkingLevel } : {}),
-    };
-    const promptOverride = createSystemPromptOverride();
-    const promptForSession =
-      request.systemPrompt ?? 'Reply with ONLY the requested text. No explanation.';
-    promptOverride.set(promptForSession);
-    const resourceLoader = new DefaultResourceLoader({
-      cwd: resolvedCwd(),
-      agentDir: initConfig!.agentDir || getAgentDir(),
-      settingsManager,
-      extensionFactories: [
-        promptOverride.extension,
-        createProviderHooks({ enable1MContext: initConfig!.enable1MContext === true }),
-      ],
-      noExtensions: true,
-      noSkills: true,
-      noPromptTemplates: true,
-      noThemes: true,
-      noContextFiles: true,
-    });
-    await resourceLoader.reload();
-    ephemeralOptions.resourceLoader = resourceLoader;
-
-    const { session: ephemeralSession } = await createAgentSession(ephemeralOptions);
-
-    // Pi SDK ignores options.model for ephemeral sessions (same issue as options.tools).
-    // Explicitly set the model after creation to ensure the mini model is used.
-    try {
-      await ephemeralSession.setModel(piModel);
-    } catch {
-      debugLog(`[queryLlm] Failed to set model on ephemeral session, proceeding with default`);
-    }
-
-    debugLog(`[queryLlm] Created ephemeral session: ${ephemeralSession.sessionId}`);
-
-    // Collect response text and errors from events
-    let result = '';
-    let lastError = '';
-    const unsub = ephemeralSession.subscribe((event: AgentSessionEvent) => {
-      if (event.type === 'message_end') {
-        // Only capture assistant messages — Pi SDK emits message_end for user messages too
-        const msg = event.message as {
-          role?: string;
-          content?: string | Array<{ type: string; text?: string }>;
-          stopReason?: string;
-          errorMessage?: string;
-        };
-        if (msg.role !== 'assistant') return;
-
-        // Capture API errors from message_end (e.g. auth failures, model errors)
-        if (msg.stopReason === 'error' && msg.errorMessage) {
-          lastError = msg.errorMessage;
-          debugLog(`[queryLlm] API error in message_end: ${msg.errorMessage}`);
-        }
-
-        if (typeof msg.content === 'string') {
-          result = msg.content;
-        } else if (Array.isArray(msg.content)) {
-          result = msg.content
-            .filter((c) => c.type === 'text' && c.text)
-            .map((c) => c.text!)
-            .join('');
-        }
-      }
-    });
-
-    try {
-      await withTimeout(
-        ephemeralSession.prompt(request.prompt),
-        LLM_QUERY_TIMEOUT_MS,
-        `queryLlm timed out after ${LLM_QUERY_TIMEOUT_MS / 1000}s`
-      );
-      debugLog(`[queryLlm] Result length: ${result.trim().length}`);
-
-      // If we got no text but captured an error, throw so callers see the real issue
-      if (!result.trim() && lastError) {
-        throw new Error(lastError);
-      }
-
-      return result.trim();
-    } finally {
-      unsub();
-      ephemeralSession.dispose();
-    }
-  };
-
-  const fallbackCandidates = [
-    // Removed 'pi/gpt-5.1-codex-mini' (#596) — stale on several OpenAI catalogs.
-    // The connection-configured miniModel is still tried via `initConfig.miniModel`.
-    'pi/gpt-5-mini',
-    initConfig.miniModel,
-    getDefaultSummarizationModel(),
-  ].filter((candidate): candidate is string => !!candidate && !isDeniedMiniModelId(candidate, piAuthProvider));
-
-  const triedModels = new Set<string>();
-  let currentModel = model;
-
-  while (true) {
-    triedModels.add(currentModel);
-    try {
-      const text = await runQueryWithModel(currentModel);
-      return { text, model: currentModel };
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      const shouldRetry = isModelNotFoundError(errorMsg);
-
-      if (!shouldRetry) {
-        throw error;
-      }
-
-      const retryModel = fallbackCandidates.find(candidate => {
-        if (triedModels.has(candidate)) return false;
-        try {
-          const resolved = resolvePiModel(modelRegistry, candidate, initConfig!.piAuth?.provider, shouldPreferCustomEndpoint());
-          if (!resolved) return false;
-          if (initConfig!.piAuth) {
-            const rp = (resolved as any).provider;
-            if (rp !== initConfig!.piAuth.provider && rp !== 'custom-endpoint') {
-              return false;
-            }
-          }
-          return true;
-        } catch {
-          return false;
-        }
-      });
-
-      if (!retryModel) {
-        throw error;
-      }
-
-      debugLog(`[queryLlm] Model ${currentModel} not found, retrying with ${retryModel}`);
-      currentModel = retryModel;
-    }
-  }
+  return queryLlmWithEphemeralPiSession(request, {
+    config: initConfig,
+    cwd: resolvedCwd(),
+    authStorage,
+    modelRegistry,
+    preferCustomEndpoint: shouldPreferCustomEndpoint(),
+    debug: debugLog,
+  });
 }
-
 async function preExecuteCallLlm(input: Record<string, unknown>): Promise<LLMQueryResult> {
   const sessionPath = initConfig
     ? getSessionPath(initConfig.workspaceRootPath, initConfig.sessionId)
@@ -1364,7 +996,7 @@ function handleSessionEvent(event: AgentSessionEvent): void {
     }
   }
 
-  let forwardedEvent: OutboundAgentEvent = event;
+  let forwardedEvent: Extract<PiOutboundMessage, { type: 'event' }>['event'] = event;
 
   // Log API errors for debugging and attach provider-native turn anchor for branch cutoffs.
   if (event.type === 'message_end') {
@@ -1406,7 +1038,7 @@ function handleSessionEvent(event: AgentSessionEvent): void {
 // Command Handlers
 // ============================================================
 
-async function handleInit(msg: Extract<InboundMessage, { type: 'init' }>): Promise<void> {
+async function handleInit(msg: Extract<PiInboundMessage, { type: 'init' }>): Promise<void> {
   await abortActiveSubagentSessions();
 
   // Clean up any existing session from a previous init
@@ -1461,7 +1093,7 @@ async function waitForCompaction(session: { isCompacting: boolean }, timeoutMs =
   }
 }
 
-async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): Promise<void> {
+async function handlePrompt(msg: Extract<PiInboundMessage, { type: 'prompt' }>): Promise<void> {
   currentUserMessage = msg.message;
   const promptAttemptState = createPromptAttemptState();
   currentPromptAttemptState = promptAttemptState;
@@ -1561,7 +1193,7 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
   }
 }
 
-function handleRegisterTools(msg: Extract<InboundMessage, { type: 'register_tools' }>): void {
+function handleRegisterTools(msg: Extract<PiInboundMessage, { type: 'register_tools' }>): void {
   // Merge: replace existing tools by name, add new ones
   const incoming = new Map(msg.tools.map(t => [t.name, t]));
   proxyToolDefs = [
@@ -1578,7 +1210,7 @@ function handleRegisterTools(msg: Extract<InboundMessage, { type: 'register_tool
   }
 }
 
-function handleToolExecuteResponse(msg: Extract<InboundMessage, { type: 'tool_execute_response' }>): void {
+function handleToolExecuteResponse(msg: Extract<PiInboundMessage, { type: 'tool_execute_response' }>): void {
   const pending = pendingToolExecutions.get(msg.requestId);
   if (pending) {
     pendingToolExecutions.delete(msg.requestId);
@@ -1588,7 +1220,7 @@ function handleToolExecuteResponse(msg: Extract<InboundMessage, { type: 'tool_ex
   }
 }
 
-function handlePreToolUseResponse(msg: Extract<InboundMessage, { type: 'pre_tool_use_response' }>): void {
+function handlePreToolUseResponse(msg: Extract<PiInboundMessage, { type: 'pre_tool_use_response' }>): void {
   const pending = pendingPreToolUse.get(msg.requestId);
   if (pending) {
     pendingPreToolUse.delete(msg.requestId);
@@ -1631,7 +1263,7 @@ async function handleAbort(): Promise<void> {
 // Adding a field to LLMQueryRequest? Nothing to do here — we pass `msg.request`
 // to queryLlm() verbatim. But verify queryLlm() actually honors the new field;
 // request-propagation + request-honoring are independent (see #596).
-async function handleLlmQuery(msg: Extract<InboundMessage, { type: 'llm_query' }>): Promise<void> {
+async function handleLlmQuery(msg: Extract<PiInboundMessage, { type: 'llm_query' }>): Promise<void> {
   try {
     const result = await queryLlm(msg.request);
     send({ type: 'llm_query_result', id: msg.id, result });
@@ -1646,7 +1278,7 @@ async function handleLlmQuery(msg: Extract<InboundMessage, { type: 'llm_query' }
   }
 }
 
-async function handleEnsureSessionReady(msg: Extract<InboundMessage, { type: 'ensure_session_ready' }>): Promise<void> {
+async function handleEnsureSessionReady(msg: Extract<PiInboundMessage, { type: 'ensure_session_ready' }>): Promise<void> {
   const session = await ensureSession();
   send({
     type: 'ensure_session_ready_result',
@@ -1655,7 +1287,7 @@ async function handleEnsureSessionReady(msg: Extract<InboundMessage, { type: 'en
   });
 }
 
-async function handleCompact(msg: Extract<InboundMessage, { type: 'compact' }>): Promise<void> {
+async function handleCompact(msg: Extract<PiInboundMessage, { type: 'compact' }>): Promise<void> {
   try {
     const session = await ensureSession();
     // Serialize manual /compact behind any in-flight auto-compaction. Public
@@ -1689,7 +1321,7 @@ async function handleCompact(msg: Extract<InboundMessage, { type: 'compact' }>):
 }
 
 async function handleRewindUserMessage(
-  msg: Extract<InboundMessage, { type: 'rewind_user_message' }>,
+  msg: Extract<PiInboundMessage, { type: 'rewind_user_message' }>,
 ): Promise<void> {
   try {
     const session = await ensureSession();
@@ -1749,7 +1381,9 @@ async function handleRewindUserMessage(
   }
 }
 
-async function handleUpdateRuntimeConfig(msg: RuntimeConfigUpdateMessage): Promise<void> {
+async function handleUpdateRuntimeConfig(
+  msg: Extract<PiInboundMessage, { type: 'update_runtime_config' }>,
+): Promise<void> {
   try {
     if (!initConfig) {
       throw new Error('Runtime config update received before init');
@@ -1803,7 +1437,7 @@ async function handleUpdateRuntimeConfig(msg: RuntimeConfigUpdateMessage): Promi
   }
 }
 
-async function handleSetModel(msg: Extract<InboundMessage, { type: 'set_model' }>): Promise<void> {
+async function handleSetModel(msg: Extract<PiInboundMessage, { type: 'set_model' }>): Promise<void> {
   debugLog(`[set_model] Received: ${msg.model}`);
   if (!piSession || !piModelRegistry) {
     debugLog(`[set_model] No active session or model registry, ignoring`);
@@ -1834,7 +1468,7 @@ async function handleSetModel(msg: Extract<InboundMessage, { type: 'set_model' }
   }
 }
 
-async function handleSetThinkingLevel(msg: Extract<InboundMessage, { type: 'set_thinking_level' }>): Promise<void> {
+async function handleSetThinkingLevel(msg: Extract<PiInboundMessage, { type: 'set_thinking_level' }>): Promise<void> {
   debugLog(`[set_thinking_level] Received: ${msg.level}`);
 
   if (!piSession) {
@@ -1897,7 +1531,7 @@ function handleShutdown(): void {
 // Main JSONL Reader Loop
 // ============================================================
 
-async function processMessage(msg: InboundMessage): Promise<void> {
+async function processMessage(msg: PiInboundMessage): Promise<void> {
   switch (msg.type) {
     case 'init':
       await handleInit(msg);
@@ -2027,7 +1661,7 @@ function main(): void {
   readJsonLines(process.stdin, (line) => {
     if (!line.trim()) return;
     try {
-      const msg = JSON.parse(line) as InboundMessage;
+      const msg = JSON.parse(line) as PiInboundMessage;
       processMessage(msg).catch((error) => {
         const errorMsg = error instanceof Error ? error.message : String(error);
         debugLog(`Error processing message: ${errorMsg}`);

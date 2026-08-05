@@ -42,12 +42,13 @@ import type { ThinkingLevel } from './thinking-levels.ts';
 // Import models from centralized registry
 import { getModelById } from '../config/models.ts';
 
-// BaseAgent provides common functionality
-import { BaseAgent } from './base-agent.ts';
+// Storyflow Product Host behavior projected into Pi
+import { PiAgentHost } from './pi-agent-host.ts';
 import { getExtendedPromptCache, type Workspace } from '../config/storage.ts';
 
 // Event adapter
 import { PiEventAdapter } from './backend/pi/event-adapter.ts';
+import type { PiInboundMessage, PiOutboundMessage } from './backend/pi/protocol.ts';
 import { EventQueue } from './backend/event-queue.ts';
 
 // System prompt for Craft Agent context
@@ -117,10 +118,10 @@ export const PI_BACKEND_SESSION_TOOL_NAMES = new Set<string>([
  * Backend implementation using the Pi coding agent SDK via subprocess.
  *
  * Spawns a pi-agent-server subprocess and communicates via JSONL protocol.
- * Extends BaseAgent for common functionality (permission mode, source management,
+ * Extends PiAgentHost for product-owned behavior (permission mode, source management,
  * planning heuristics, config watching, usage tracking).
  */
-export class PiAgent extends BaseAgent {
+export class PiAgent extends PiAgentHost {
   protected backendName = 'Craft Agents Backend';
 
   // ============================================================
@@ -237,7 +238,7 @@ export class PiAgent extends BaseAgent {
 
   // OAuth token refresh (ChatGPT Plus)
   /**
-   * @deprecated Use onBackendAuthRequired (inherited from BaseAgent) instead.
+   * @deprecated Use onBackendAuthRequired (inherited from PiAgentHost) instead.
    * Kept as a getter/setter alias for backward compatibility.
    */
   get onChatGptAuthRequired(): ((reason: string) => void) | null {
@@ -427,7 +428,7 @@ export class PiAgent extends BaseAgent {
       providerType: this.config.providerType,
       authType: this.config.authType,
       workspaceId: this.config.workspace.id,
-      piAuth,
+      ...(piAuth ? { piAuth } : {}),
       baseUrl: runtime.baseUrl,
       customEndpoint: runtime.customEndpoint,
       customModels: runtime.customModels,
@@ -663,7 +664,7 @@ export class PiAgent extends BaseAgent {
   /**
    * Send a JSONL command to the subprocess stdin.
    */
-  private send(cmd: Record<string, unknown>): void {
+  private send(cmd: PiInboundMessage): void {
     if (!this.subprocess?.stdin?.writable) {
       this.debug('Cannot send to subprocess: stdin not writable');
       return;
@@ -678,15 +679,15 @@ export class PiAgent extends BaseAgent {
   private handleLine(line: string): void {
     if (!line.trim()) return;
 
-    let msg: Record<string, unknown>;
+    let msg: PiOutboundMessage;
     try {
-      msg = JSON.parse(line);
+      msg = JSON.parse(line) as PiOutboundMessage;
     } catch {
       this.debug(`Invalid JSONL from subprocess: ${line.slice(0, 200)}`);
       return;
     }
 
-    const type = msg.type as string;
+    const type = msg.type;
 
     if (type !== 'error') {
       this.resetSubprocessErrorDedup();
@@ -1171,7 +1172,7 @@ export class PiAgent extends BaseAgent {
    * Route a proxy tool call to the appropriate handler based on tool name.
    *
    * - Session tools (SubmitPlan, config_validate, etc.) -> session-tools-core handlers
-   * - call_llm -> preExecuteCallLlm (BaseAgent)
+   * - call_llm -> preExecuteCallLlm (PiAgentHost)
    * - mcp__* tools -> MCP server proxy (TODO)
    * - api_* tools -> API source proxy (TODO)
    *
@@ -1247,7 +1248,7 @@ export class PiAgent extends BaseAgent {
     args: Record<string, unknown>,
   ): Promise<{ content: string; isError: boolean }> {
     try {
-      // call_llm uses the shared pre-execution pipeline from BaseAgent
+      // call_llm uses the product-host pre-execution pipeline
       if (toolName === 'call_llm') {
         try {
           const result = await this.preExecuteCallLlm(args);
@@ -1258,7 +1259,7 @@ export class PiAgent extends BaseAgent {
         }
       }
 
-      // spawn_session uses the shared pre-execution pipeline from BaseAgent
+      // spawn_session uses the product-host pre-execution pipeline
       if (toolName === 'spawn_session') {
         try {
           const result = await this.preExecuteSpawnSession(args);
@@ -1824,7 +1825,7 @@ export class PiAgent extends BaseAgent {
 
       // Process attachments
       const attachmentParts: string[] = [];
-      const images: Array<{ type: string; data: string; mimeType: string }> = [];
+      const images: Array<{ type: 'image'; data: string; mimeType: string }> = [];
       for (const att of attachments || []) {
         if (att.mimeType?.startsWith('image/') && att.base64) {
           images.push({
@@ -1844,7 +1845,7 @@ export class PiAgent extends BaseAgent {
       const dynamicSystemPrompt = contextParts.filter(Boolean).join('\n\n');
 
       // User message: attachments + the actual message
-      // (skill read directive is already prepended to message by BaseAgent.chat())
+      // (PiAgentHost.chat() already prepends the Skill command)
       const userParts = [
         ...attachmentParts,
         message,
@@ -2008,7 +2009,7 @@ export class PiAgent extends BaseAgent {
     apiServers: Record<string, unknown>,
     intendedSlugs?: string[]
   ): Promise<void> {
-    // BaseAgent.setSourceServers() handles:
+    // PiAgentHost.setSourceServers() handles:
     //   1. SourceManager state tracking (active slugs)
     //   2. McpClientPool sync (connecting/disconnecting MCP + API sources)
     await super.setSourceServers(mcpServers, apiServers, intendedSlugs);
@@ -2293,7 +2294,7 @@ export class PiAgent extends BaseAgent {
 
   /**
    * Resolve working directory to an absolute path.
-   * BaseAgent stores paths with tilde (~) but Node.js spawn doesn't expand tilde.
+   * Session config may store paths with tilde (~) but Node.js spawn doesn't expand tilde.
    */
   private resolvedCwd(): string {
     const wd = this.workingDirectory;

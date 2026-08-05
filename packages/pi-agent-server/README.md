@@ -5,6 +5,7 @@ Out-of-process product adapter that projects Pi AgentSession into Storyflow's ho
 The release artifact is a Bun compiled binary so Pi's native virtual-module loader can execute npm Extensions without shipping a second dependency tree.
 
 - `src/index.ts` — JSONL process boundary and persistent parent AgentSession lifecycle.
+- `src/ephemeral-llm-query.ts` — Disposable Pi session lifecycle for `call_llm` and mini-completions.
 - `src/subagent-tool.ts` — built-in ephemeral Subagent Run with Host-enforced capability profiles.
 - `src/project-resource-loader.ts` — Pi-native resource/package discovery plus Storyflow compatibility paths.
 - `src/extension-ui.ts` — Pi Extension dialogs projected onto Storyflow's existing structured-question flow.

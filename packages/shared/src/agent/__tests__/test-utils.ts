@@ -12,7 +12,7 @@ import { AbortReason } from '../backend/types.ts';
 import type { Workspace } from '../../config/storage.ts';
 import type { SessionConfig as Session } from '../../sessions/storage.ts';
 import type { LoadedSource } from '../../sources/types.ts';
-import { BaseAgent } from '../base-agent.ts';
+import { PiAgentHost } from '../pi-agent-host.ts';
 
 // ============================================================
 // Mock Workspace Factory
@@ -96,14 +96,14 @@ export function createMockBackendConfig(overrides: Partial<BackendConfig> = {}):
 }
 
 // ============================================================
-// TestAgent - Concrete BaseAgent for Testing
+// TestAgent - Concrete PiAgentHost for Testing
 // ============================================================
 
 /**
- * Concrete implementation of BaseAgent for testing.
+ * Concrete implementation of PiAgentHost for testing.
  * Provides minimal implementations of abstract methods.
  */
-export class TestAgent extends BaseAgent {
+export class TestAgent extends PiAgentHost {
   protected backendName = 'Test';
   // Track calls for verification
   public chatCalls: Array<{ message: string; attachments?: unknown[]; options?: ChatOptions }> = [];

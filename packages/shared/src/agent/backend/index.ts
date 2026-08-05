@@ -1,12 +1,11 @@
 /**
- * Agent Backend Abstraction Layer
+ * Pi Runtime Configuration Boundary
  *
- * This module provides a unified interface for the Pi agent runtime while Pi
- * handles model-provider switching internally.
+ * Pi owns agent execution while this module resolves Storyflow connection,
+ * authentication, and host configuration into Pi inputs.
  *
  * Naming convention:
  * - PiAgent: the production unified agent runtime
- * - AgentBackend: Interface implemented by the runtime
  * - resolvePiAgentConfig: pure connection-to-Pi configuration resolution
  *
  * Usage:
@@ -19,7 +18,6 @@
 
 // Core types
 export type {
-  AgentBackend,
   AgentProvider,
   CoreBackendConfig,
   BackendConfig,

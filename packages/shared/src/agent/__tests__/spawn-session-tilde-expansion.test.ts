@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import type { SpawnSessionRequest, SpawnSessionResult } from '../base-agent.ts';
+import type { SpawnSessionRequest, SpawnSessionResult } from '../pi-agent-host-types.ts';
 import { TestAgent, createMockBackendConfig } from './test-utils.ts';
 
 // Expose the protected preExecuteSpawnSession for direct invocation.

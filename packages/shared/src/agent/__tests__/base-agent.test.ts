@@ -1,7 +1,7 @@
 /**
- * Tests for BaseAgent abstract class
+ * Tests for the Pi Product Host layer
  *
- * Uses TestAgent (concrete implementation) to verify BaseAgent functionality.
+ * Uses TestAgent to verify product-host behavior.
  * Tests model/thinking configuration, permission mode, source management,
  * and lifecycle management.
  */
@@ -18,7 +18,7 @@ import {
   collectEvents,
 } from './test-utils.ts';
 
-describe('BaseAgent', () => {
+describe('PiAgentHost', () => {
   let agent: TestAgent;
 
   beforeEach(() => {
