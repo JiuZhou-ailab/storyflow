@@ -6,7 +6,6 @@ import { existsSync } from "fs";
 import { join } from "path";
 import {
   buildElectronApp,
-  buildPiAgentServer,
   cleanBuildArtifacts,
   copyRipgrep,
   createManifest,
@@ -137,7 +136,6 @@ async function prepareRuntime(config: BuildConfig): Promise<void> {
   await downloadBun(config);
   await downloadUv(config);
   copyRipgrep(config);
-  buildPiAgentServer(config);
 }
 
 async function buildPackage(config: BuildConfig): Promise<void> {
