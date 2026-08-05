@@ -41,7 +41,7 @@ describe('macOS release configuration', () => {
     expect(builderConfig).toMatch(/target:\n\s+- dmg\n\s+- zip/);
   });
 
-  test('fails closed when official release credentials or Pages deployment are unavailable', () => {
+  test('fails closed before draft creation when official release credentials are unavailable', () => {
     const workflow = readRepoFile('.github/workflows/release.yml');
 
     expect(workflow).toContain('preflight-release-secrets:');
@@ -52,7 +52,9 @@ describe('macOS release configuration', () => {
       'for name in STORYFLOW_R2_BUCKET CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID',
     );
     expect(workflow).toContain('missing+=("Missing $name")');
-    expect(workflow).toMatch(/create-release:\n\s+needs:\n\s+- validate\n\s+- preflight-release-secrets/);
+    expect(workflow).toMatch(/create-release:\n\s+needs: preflight-release-secrets/);
+    expect(workflow).toContain('gh release create "$RELEASE_TAG" --draft');
+    expect(workflow).toContain('gh release edit "$RELEASE_TAG" --draft=false');
     expect(workflow).toContain('CRAFT_REQUIRE_MAC_SIGNING: "1"');
     expect(workflow).toContain('timeout-minutes: 360');
     expect(workflow).toContain('CSC_LINK: ${{ secrets.CSC_LINK }}');
@@ -70,15 +72,10 @@ describe('macOS release configuration', () => {
     expect(workflow).not.toContain('STORYFLOW_R2_ACCESS_KEY_ID');
     expect(workflow).toContain('Publish release assets to Cloudflare R2');
     expect(workflow).toContain('bun run release:upload-r2');
-    expect(workflow).toContain('deploy-marketing:');
-    expect(workflow).toMatch(/deploy-marketing:\n\s+needs: publish-r2/);
-    expect(workflow).toContain('CLOUDFLARE_PAGES_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_API_TOKEN }}');
-    expect(workflow).toContain(
-      'if [ "$RELEASE_PROFILE" = "full" ] && [ -z "$CLOUDFLARE_PAGES_API_TOKEN" ]; then',
+    expect(workflow).toContain('Verify public release surfaces');
+    expect(workflow.indexOf('Publish GitHub Release')).toBeGreaterThan(
+      workflow.indexOf('Verify public release surfaces'),
     );
-    expect(workflow).toContain('missing+=("Missing CLOUDFLARE_PAGES_API_TOKEN")');
-    expect(workflow).not.toContain('Skip marketing deploy without Pages token');
-    expect(workflow).not.toContain("if [ -n \"$CLOUDFLARE_PAGES_API_TOKEN\" ]; then");
     expect(workflow).toContain('Annotate macOS update manifest');
     expect(workflow).toContain('${{ matrix.arch }}=$manifest');
     expect(workflow).toContain('latest-mac-${{ matrix.arch }}.yml');
@@ -96,7 +93,7 @@ describe('macOS release configuration', () => {
     expect(existsSync(join(rootDir, 'scripts/upload-r2-release-assets.ts'))).toBe(true);
   });
 
-  test('deploys marketing independently on relevant main changes and reuses it from releases', () => {
+  test('deploys marketing independently from desktop releases', () => {
     const releaseWorkflow = readRepoFile('.github/workflows/release.yml');
     const marketingWorkflow = readRepoFile('.github/workflows/deploy-marketing.yml');
 
@@ -114,9 +111,8 @@ describe('macOS release configuration', () => {
     expect(marketingWorkflow).toContain(
       "STORYFLOW_PAGES_PROJECT_NAME: ${{ vars.STORYFLOW_PAGES_PROJECT_NAME || 'storyflow' }}",
     );
-    expect(releaseWorkflow).toMatch(/deploy-marketing:\n\s+needs: publish-r2/);
-    expect(releaseWorkflow).toContain('uses: ./.github/workflows/deploy-marketing.yml');
-    expect(releaseWorkflow).toContain('secrets: inherit');
+    expect(releaseWorkflow).not.toContain('deploy-marketing:');
+    expect(releaseWorkflow).not.toContain('uses: ./.github/workflows/deploy-marketing.yml');
     expect(releaseWorkflow).not.toContain('bunx wrangler pages deploy apps/marketing/dist');
   });
 
@@ -167,16 +163,17 @@ describe('macOS release configuration', () => {
     expect(workflow).toContain('UPLOAD_PROFILE="macos"');
     expect(workflow).toContain('--profile="$UPLOAD_PROFILE"');
     expect(workflow).toContain('--retain-releases="${STORYFLOW_R2_RETAIN_RELEASES:-5}"');
-    expect(workflow).toContain("if: ${{ github.event_name != 'workflow_dispatch' || inputs.release_profile == 'full' }}");
+    expect(workflow).toContain('A platform hotfix requires an existing release');
   });
 
-  test('macOS release build can skip duplicate dependency install after CI install', () => {
+  test('desktop release builds skip duplicate dependency installs', () => {
     const commonBuild = readRepoFile('scripts/build/common.ts');
     const workflow = readRepoFile('.github/workflows/release.yml');
 
     expect(commonBuild).toContain('CRAFT_SKIP_INSTALL');
     expect(commonBuild).toContain('bun install --frozen-lockfile');
-    expect(workflow).toContain('CRAFT_SKIP_INSTALL: "1"');
+    expect(workflow.match(/CRAFT_SKIP_INSTALL: "1"/g)).toHaveLength(2);
+    expect(workflow).toContain('bun install --frozen-lockfile --linker=hoisted');
   });
 
   test('local unsigned macOS builds disable app and DMG signing explicitly', () => {

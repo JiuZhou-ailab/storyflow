@@ -1,13 +1,19 @@
-# input: Cloudflare credentials and separate client-session/model-access/Market signing secrets
-# output: Deployed model gateway, Skills Market, and auth broker with live capability canaries
-# pos: Reusable production gate that publishes managed services in dependency order
+# input: Optional deploy intent plus separate client-session/model-access/Market signing secrets
+# output: Optionally deployed managed services followed by read-only live capability canaries
+# pos: Shared managed-auth deployment and verification boundary; desktop releases call verify-only mode
 name: Deploy managed auth
 
 on:
   workflow_call:
+    inputs:
+      deploy:
+        description: "Deploy managed services before running live verification"
+        required: false
+        default: true
+        type: boolean
     secrets:
       CLOUDFLARE_API_TOKEN:
-        required: true
+        required: false
       STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET:
         required: true
       STORYFLOW_GATEWAY_JWT_CURRENT_SECRET:
@@ -33,6 +39,7 @@ jobs:
       STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}
       STORYFLOW_GATEWAY_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_GATEWAY_JWT_CURRENT_SECRET }}
       STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET }}
+      DEPLOY_MANAGED_AUTH: ${{ github.event_name != 'workflow_call' || inputs.deploy }}
 
     steps:
       - name: Checkout
@@ -49,9 +56,14 @@ jobs:
       - name: Verify deployment inputs
         run: |
           set -euo pipefail
-          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET STORYFLOW_GATEWAY_JWT_CURRENT_SECRET STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET; do
+          for name in STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET STORYFLOW_GATEWAY_JWT_CURRENT_SECRET STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET; do
             test -n "${!name}" || { echo "Missing $name"; exit 1; }
           done
+          if [ "$DEPLOY_MANAGED_AUTH" = "true" ]; then
+            for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+              test -n "${!name}" || { echo "Missing $name"; exit 1; }
+            done
+          fi
           test "$STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET" != "$STORYFLOW_GATEWAY_JWT_CURRENT_SECRET" \
             || { echo "Client-session and model-access secrets must differ"; exit 1; }
           test "$STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET" != "$STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET" \
@@ -59,6 +71,7 @@ jobs:
             || { echo "Skills Market signing secret must be independent"; exit 1; }
 
       - name: Test managed auth contract
+        if: ${{ github.event_name != 'workflow_call' || inputs.deploy }}
         run: |
           bun test \
             apps/auth-broker-worker/src/index.test.ts \
@@ -67,7 +80,8 @@ jobs:
             apps/skills-market/src/index.test.ts \
             apps/skills-market/src/security.test.ts
 
-      - name: Deploy and canary model gateway
+      - name: Deploy model gateway
+        if: ${{ github.event_name != 'workflow_call' || inputs.deploy }}
         run: |
           set -euo pipefail
           printf '%s' "$STORYFLOW_GATEWAY_JWT_CURRENT_SECRET" \
@@ -75,6 +89,9 @@ jobs:
                 --config apps/model-gateway-worker/wrangler.toml >/dev/null
           bunx wrangler@4.114.0 deploy --config apps/model-gateway-worker/wrangler.toml
 
+      - name: Verify model gateway
+        run: |
+          set -euo pipefail
           curl --fail --silent --show-error --retry 5 --retry-delay 2 \
             https://storyflow-model.zjding.com/ready >/dev/null
           status="$(curl --silent --show-error --output "$RUNNER_TEMP/gateway-negative.json" \
@@ -86,7 +103,8 @@ jobs:
           test "$status" = 401
           grep -q '"code":"model_access_token_invalid"' "$RUNNER_TEMP/gateway-negative.json"
 
-      - name: Migrate, deploy, and canary Skills Market
+      - name: Migrate and deploy Skills Market
+        if: ${{ github.event_name != 'workflow_call' || inputs.deploy }}
         run: |
           set -euo pipefail
           bunx wrangler@4.114.0 d1 migrations apply storyflow-skills-market --remote \
@@ -96,6 +114,9 @@ jobs:
                 --config apps/skills-market/wrangler.toml >/dev/null
           bunx wrangler@4.114.0 deploy --config apps/skills-market/wrangler.toml
 
+      - name: Verify Skills Market
+        run: |
+          set -euo pipefail
           curl --fail --silent --show-error --retry 5 --retry-delay 2 \
             https://storyflow-skills.zjding.com/health > "$RUNNER_TEMP/market-health.json"
           MARKET_HEALTH_PATH="$RUNNER_TEMP/market-health.json" bun --eval '
@@ -109,7 +130,8 @@ jobs:
             if (!Array.isArray(body.skills) || body.skills.length === 0) process.exit(1);
           '
 
-      - name: Deploy and verify auth broker
+      - name: Deploy auth broker
+        if: ${{ github.event_name != 'workflow_call' || inputs.deploy }}
         run: |
           set -euo pipefail
           printf '%s' "$STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET" \
@@ -123,6 +145,9 @@ jobs:
                 --config apps/auth-broker-worker/wrangler.toml >/dev/null
           bunx wrangler@4.114.0 deploy --config apps/auth-broker-worker/wrangler.toml
 
+      - name: Verify managed auth integration
+        run: |
+          set -euo pipefail
           curl --fail --silent --show-error --retry 5 --retry-delay 2 \
             https://storyflow-auth.zjding.com/ready >/dev/null
           status="$(curl --silent --show-error --output "$RUNNER_TEMP/broker-negative.json" \

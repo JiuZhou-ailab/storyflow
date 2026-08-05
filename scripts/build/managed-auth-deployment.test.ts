@@ -1,6 +1,6 @@
 // input: Managed-auth deployment workflow, release workflow, and Worker route configuration
-// output: Regression coverage for ordered infrastructure deployment and release gating
-// pos: Release contract preventing desktop publication before the managed gateway is live
+// output: Regression coverage for optional deployment and mandatory live verification
+// pos: Contract keeping managed-service mutation separate from desktop publication
 
 import { describe, expect, it } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
@@ -13,16 +13,19 @@ function readRepoFile(path: string): string {
 }
 
 describe('managed auth deployment', () => {
-  it('deploys and canaries the gateway before the broker', () => {
+  it('deploys in dependency order and supports read-only verification', () => {
     const workflowPath = join(ROOT, '.github/workflows/deploy-managed-auth.yml')
     expect(existsSync(workflowPath)).toBe(true)
 
     const workflow = readFileSync(workflowPath, 'utf8')
-    const gatewayDeploy = workflow.indexOf('Deploy and canary model gateway')
-    const brokerDeploy = workflow.indexOf('Deploy and verify auth broker')
+    const gatewayDeploy = workflow.indexOf('Deploy model gateway')
+    const brokerDeploy = workflow.indexOf('Deploy auth broker')
 
     expect(workflow).toContain('workflow_call:')
     expect(workflow).toContain('workflow_dispatch:')
+    expect(workflow).toContain('deploy:')
+    expect(workflow).toContain('DEPLOY_MANAGED_AUTH')
+    expect(workflow).toContain('Verify managed auth integration')
     expect(workflow).toContain('STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET')
     expect(workflow).toContain('STORYFLOW_GATEWAY_JWT_CURRENT_SECRET')
     expect(workflow).toContain('STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET')
@@ -36,13 +39,13 @@ describe('managed auth deployment', () => {
     expect(workflow).not.toContain('wangsu')
   })
 
-  it('blocks the desktop release on managed auth deployment', () => {
+  it('verifies live managed auth without redeploying it during desktop release', () => {
     const releaseWorkflow = readRepoFile('.github/workflows/release.yml')
 
-    expect(releaseWorkflow).toContain('deploy-managed-auth:')
-    expect(releaseWorkflow).toMatch(
-      /create-release:\n\s+needs:\n\s+- validate\n\s+- preflight-release-secrets\n\s+- deploy-managed-auth/,
-    )
+    expect(releaseWorkflow).toContain('verify-managed-auth:')
+    expect(releaseWorkflow).toContain('deploy: false')
+    expect(releaseWorkflow).toMatch(/create-release:\n\s+needs: preflight-release-secrets/)
+    expect(releaseWorkflow).toMatch(/verify-release:\n\s+needs:\n\s+- validate\n\s+- verify-managed-auth/)
     expect(readRepoFile('apps/auth-broker-worker/wrangler.toml')).toContain('workers_dev = false')
     expect(readRepoFile('apps/model-gateway-worker/wrangler.toml')).toContain('workers_dev = false')
   })

@@ -1,3 +1,6 @@
+# input: Versioned source, release credentials, validation profile, and artifact profile
+# output: Validated signed desktop artifacts, published GitHub Release, and verified R2 downloads
+# pos: Draft-first desktop release orchestrator; managed services and marketing deploy independently
 name: Release
 
 on:
@@ -108,7 +111,6 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           STORYFLOW_R2_BUCKET: ${{ secrets.STORYFLOW_R2_BUCKET }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_PAGES_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_API_TOKEN }}
           STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}
           STORYFLOW_GATEWAY_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_GATEWAY_JWT_CURRENT_SECRET }}
           STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET }}
@@ -155,18 +157,16 @@ jobs:
             fi
           done
 
-          if [ "$RELEASE_PROFILE" = "full" ] && [ -z "$CLOUDFLARE_PAGES_API_TOKEN" ]; then
-            missing+=("Missing CLOUDFLARE_PAGES_API_TOKEN")
-          fi
-
           if [ ${#missing[@]} -gt 0 ]; then
             printf '%s\n' "${missing[@]}"
             exit 1
           fi
 
-  deploy-managed-auth:
-    needs: validate
+  verify-managed-auth:
+    needs: preflight-release-secrets
     uses: ./.github/workflows/deploy-managed-auth.yml
+    with:
+      deploy: false
     secrets: inherit
 
   build-macos:
@@ -307,7 +307,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile --linker=hoisted
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -324,6 +324,7 @@ jobs:
       - name: Build Windows artifacts
         run: bun run electron:dist:win
         env:
+          CRAFT_SKIP_INSTALL: "1"
           CRAFT_CLIENT_AUTH_REQUIRED: "true"
           CRAFT_CLIENT_AUTH_BROKER_URL: ${{ vars.CRAFT_CLIENT_AUTH_BROKER_URL }}
           CRAFT_CLIENT_FEISHU_APP_ID: ${{ vars.CRAFT_CLIENT_FEISHU_APP_ID }}
@@ -357,10 +358,7 @@ jobs:
           gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
 
   create-release:
-    needs:
-      - validate
-      - preflight-release-secrets
-      - deploy-managed-auth
+    needs: preflight-release-secrets
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -398,14 +396,19 @@ jobs:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+          RELEASE_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_profile || 'full' }}
         run: |
+          set -euo pipefail
           notes_file=".release-metadata/release-notes/${RELEASE_TAG#v}.md"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release edit "$RELEASE_TAG" --title "Storyflow $RELEASE_TAG" --notes-file "$notes_file"
+          elif [ "$RELEASE_PROFILE" != "full" ]; then
+            echo "A platform hotfix requires an existing release: $RELEASE_TAG"
+            exit 1
           elif [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-            gh release create "$RELEASE_TAG" --title "Storyflow $RELEASE_TAG" --notes-file "$notes_file" --target "$GITHUB_SHA"
+            gh release create "$RELEASE_TAG" --draft --title "Storyflow $RELEASE_TAG" --notes-file "$notes_file" --target "$GITHUB_SHA"
           else
-            gh release create "$RELEASE_TAG" --title "Storyflow $RELEASE_TAG" --notes-file "$notes_file" --verify-tag
+            gh release create "$RELEASE_TAG" --draft --title "Storyflow $RELEASE_TAG" --notes-file "$notes_file" --verify-tag
           fi
 
       - name: Upload installer scripts to release
@@ -417,6 +420,8 @@ jobs:
 
   verify-release:
     needs:
+      - validate
+      - verify-managed-auth
       - create-release
       - build-macos
       - build-windows
@@ -488,11 +493,6 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref }}
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -527,6 +527,7 @@ jobs:
           RELEASE_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_profile || 'full' }}
         run: |
           set -euo pipefail
+          bunx wrangler@4.114.0 --version
           UPLOAD_PROFILE="full"
           case "$RELEASE_PROFILE" in
             windows-hotfix)
@@ -543,8 +544,52 @@ jobs:
             --profile="$UPLOAD_PROFILE" \
             --retain-releases="${STORYFLOW_R2_RETAIN_RELEASES:-5}"
 
-  deploy-marketing:
-    needs: publish-r2
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.release_profile == 'full' }}
-    uses: ./.github/workflows/deploy-marketing.yml
-    secrets: inherit
+      - name: Verify public release surfaces
+        shell: bash
+        env:
+          STORYFLOW_R2_PUBLIC_BASE_URL: ${{ vars.STORYFLOW_R2_PUBLIC_BASE_URL || 'https://story-storage.zjding.com' }}
+          STORYFLOW_R2_LATEST_PREFIX: ${{ vars.STORYFLOW_R2_LATEST_PREFIX || 'latest' }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+          RELEASE_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_profile || 'full' }}
+        run: |
+          set -euo pipefail
+          base_url="${STORYFLOW_R2_PUBLIC_BASE_URL%/}/${STORYFLOW_R2_LATEST_PREFIX#/}"
+          version="${RELEASE_TAG#v}"
+          curl_args=(--fail --silent --show-error --retry 5 --retry-delay 2)
+
+          verify_head() {
+            curl "${curl_args[@]}" --head "$base_url/$1" >/dev/null
+          }
+
+          case "$RELEASE_PROFILE" in
+            full)
+              verify_head Storyflow-arm64.dmg
+              verify_head Storyflow-x64.dmg
+              verify_head Storyflow-x64.exe
+              verify_head install-app.sh
+              verify_head install-app.ps1
+              curl "${curl_args[@]}" "$base_url/latest-mac.yml" | grep -F "version: $version"
+              curl "${curl_args[@]}" "$base_url/latest.yml" | grep -F "version: $version"
+              ;;
+            macos-hotfix)
+              verify_head Storyflow-arm64.dmg
+              verify_head Storyflow-x64.dmg
+              verify_head install-app.sh
+              curl "${curl_args[@]}" "$base_url/latest-mac.yml" | grep -F "version: $version"
+              ;;
+            windows-hotfix)
+              verify_head Storyflow-x64.exe
+              verify_head install-app.ps1
+              curl "${curl_args[@]}" "$base_url/latest.yml" | grep -F "version: $version"
+              ;;
+          esac
+
+      - name: Publish GitHub Release
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          if [ "$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft')" = "true" ]; then
+            gh release edit "$RELEASE_TAG" --draft=false
+          fi

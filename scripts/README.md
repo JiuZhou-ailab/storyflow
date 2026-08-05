@@ -35,9 +35,10 @@ Build, validation, packaging, install, and local development entry scripts for t
 ## Release R2 publishing
 
 The release workflow publishes public download assets with `bunx wrangler r2 object put`,
-not S3 access keys. After the R2 upload succeeds, the same release workflow builds the
-marketing site and deploys it to Cloudflare Pages so `story.zjding.com` points at the
-current release's download metadata. Required GitHub settings:
+not S3 access keys. It creates new GitHub releases as drafts, runs validation and signed
+platform builds in parallel, then publishes the draft only after every gate passes.
+Marketing deploys independently because its download links already target stable R2
+`latest/` URLs. Required GitHub settings:
 
 - Secret `STORYFLOW_R2_BUCKET`: `storyflow-downloads`.
 - Secret `CLOUDFLARE_API_TOKEN`: Cloudflare API token with `Account > Workers R2 Storage > Edit`.
@@ -48,6 +49,8 @@ current release's download metadata. Required GitHub settings:
 - Variable `STORYFLOW_R2_RETAIN_RELEASES`: number of immutable `releases/<tag>/` prefixes to keep, default `5`.
 - Variable `STORYFLOW_PAGES_PROJECT_NAME`: Cloudflare Pages project name, default `storyflow`.
 
+Immutable and stable assets upload with bounded concurrency. Canonical updater manifests
+are uploaded last so clients cannot observe a new version before its artifacts exist.
 Installer artifacts are uploaded under stable names in `latest/`, such as
 `Storyflow-arm64.dmg`, so stale web pages cannot keep downloading an old latest alias.
 The immutable `releases/<tag>/` prefix also receives versioned browser-download aliases,
