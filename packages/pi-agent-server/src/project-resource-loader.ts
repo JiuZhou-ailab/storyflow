@@ -1,23 +1,22 @@
-// input: Pi cwd, canonical Pi agent directory, bundled Bun runtime, and legacy Storyflow resources
-// output: Pi-native resources plus compatibility paths and Storyflow inline Extensions
-// pos: Thin product adapter over Pi's ResourceLoader and package ecosystem
+// input: Pi cwd, canonical Pi agent directory, bundled Bun runtime, and legacy Storyflow Skills
+// output: Pi-native resources plus legacy Skill compatibility and Storyflow inline Extensions
+// pos: Thin product policy adapter over Pi's ResourceLoader and package ecosystem
 
-import { existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 
 import {
   DefaultPackageManager,
   DefaultResourceLoader,
   SettingsManager,
   type InlineExtension,
-  type ResourceDiagnostic,
   type ResourceLoader,
 } from '@earendil-works/pi-coding-agent';
 
-import { assertSymlinkFreeTree } from '../../shared/src/workspaces/paths.ts';
 import { resolveResourceRoots } from '../../shared/src/resources/resolver.ts';
 
-export const DEFAULT_PI_PACKAGE_SOURCES = [
+export const DEFAULT_PI_PACKAGE_SOURCES = [] as const;
+
+const DISABLED_PI_PACKAGE_SOURCES = [
   'npm:@ayulab/pi-rewind',
 ] as const;
 
@@ -33,60 +32,6 @@ export interface ProjectResourceLoaderResult {
   settingsManager: SettingsManager;
 }
 
-class ReadOnlySkillCatalogLoader extends DefaultResourceLoader {
-  private readonly packageSettingsManager: SettingsManager;
-  private readonly readOnlyPackageManager: DefaultPackageManager;
-
-  constructor(
-    options: Pick<ProjectResourceLoaderOptions, 'cwd' | 'agentDir'>,
-    private readonly compatibilitySkillPaths: readonly string[],
-  ) {
-    super({
-      cwd: options.cwd,
-      agentDir: options.agentDir,
-      settingsManager: SettingsManager.inMemory({}, { projectTrusted: true }),
-      noExtensions: true,
-      noSkills: true,
-      noPromptTemplates: true,
-      noThemes: true,
-      noContextFiles: true,
-    });
-    this.packageSettingsManager = SettingsManager.create(options.cwd, options.agentDir, {
-      projectTrusted: true,
-    });
-    this.readOnlyPackageManager = new DefaultPackageManager({
-      cwd: options.cwd,
-      agentDir: options.agentDir,
-      settingsManager: this.packageSettingsManager,
-    });
-  }
-
-  override async reload(): Promise<void> {
-    await this.packageSettingsManager.reload();
-    const resolved = await this.readOnlyPackageManager.resolve(async () => 'skip');
-    await super.reload();
-
-    const enabledSkills = resolved.skills.filter(resource => resource.enabled);
-    const projectSkills = enabledSkills.filter(resource => resource.metadata.scope === 'project');
-    const remainingSkills = enabledSkills.filter(resource => resource.metadata.scope !== 'project');
-    this.extendResources({
-      skillPaths: [
-        ...projectSkills,
-        ...remainingSkills,
-        ...this.compatibilitySkillPaths.map(path => ({
-          path,
-          metadata: {
-            source: 'storyflow-compatibility',
-            scope: 'temporary' as const,
-            origin: 'top-level' as const,
-            baseDir: path,
-          },
-        })),
-      ],
-    });
-  }
-}
-
 export function createStoryflowRetrySettings() {
   return {
     enabled: true,
@@ -94,20 +39,6 @@ export function createStoryflowRetrySettings() {
     baseDelayMs: 2_000,
     provider: { maxRetries: 0 },
   };
-}
-
-function diagnosticKey(diagnostic: ResourceDiagnostic): string {
-  return JSON.stringify([
-    diagnostic.type,
-    diagnostic.message,
-    diagnostic.path,
-    diagnostic.collision?.resourceType,
-    diagnostic.collision?.name,
-    diagnostic.collision?.winnerPath,
-    diagnostic.collision?.loserPath,
-    diagnostic.collision?.winnerSource,
-    diagnostic.collision?.loserSource,
-  ]);
 }
 
 async function seedDefaultPiPackages(
@@ -122,57 +53,20 @@ async function seedDefaultPiPackages(
   const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
   let changed = false;
 
+  for (const source of DISABLED_PI_PACKAGE_SOURCES) {
+    changed = packageManager.removeSourceFromSettings(source) || changed;
+  }
   for (const source of DEFAULT_PI_PACKAGE_SOURCES) {
     changed = packageManager.addSourceToSettings(source) || changed;
   }
   if (changed) await settingsManager.flush();
 }
 
-/**
- * Resolve the global Extensions container into Pi entry paths.
- *
- * Pi's ResourceLoader accepts explicit extension entry points, but does not
- * expand a bare additional directory at load time. Keep discovery bounded to
- * Storyflow's one trusted global directory and Pi's documented one-level
- * extension layout.
- */
-function discoverGlobalExtensionPaths(extensionsRoot: string): string[] {
-  const paths: string[] = [];
-  const entries = readdirSync(extensionsRoot, { withFileTypes: true })
-    .sort((left, right) => left.name.localeCompare(right.name));
-
-  for (const entry of entries) {
-    if (entry.name.startsWith('.')) continue;
-    const entryPath = join(extensionsRoot, entry.name);
-
-    if (entry.isFile() && /\.(?:ts|js)$/.test(entry.name)) {
-      paths.push(entryPath);
-      continue;
-    }
-    if (!entry.isDirectory()) continue;
-
-    if (existsSync(join(entryPath, 'package.json'))) {
-      paths.push(entryPath);
-      continue;
-    }
-    for (const indexName of ['index.ts', 'index.js']) {
-      const indexPath = join(entryPath, indexName);
-      if (existsSync(indexPath)) {
-        paths.push(indexPath);
-        break;
-      }
-    }
-  }
-
-  return paths;
-}
-
 class StoryflowResourceLoader extends DefaultResourceLoader {
   constructor(
     options: ConstructorParameters<typeof DefaultResourceLoader>[0],
-    private readonly managedResourcePaths: readonly string[],
-    private readonly projectSkillLoader: DefaultResourceLoader,
     private readonly runtimeSettingsManager: SettingsManager,
+    private readonly skillLoader: DefaultResourceLoader,
   ) {
     super(options);
   }
@@ -180,12 +74,7 @@ class StoryflowResourceLoader extends DefaultResourceLoader {
   override async reload(
     options?: Parameters<DefaultResourceLoader['reload']>[0],
   ): Promise<void> {
-    // Extensions execute code. Revalidate them on every prompt-time reload.
-    // Skills remain under Pi's native discovery and symlink-deduplication rules.
-    for (const resourcePath of this.managedResourcePaths) {
-      assertSymlinkFreeTree(resourcePath);
-    }
-    await this.projectSkillLoader.reload();
+    await this.skillLoader.reload();
     await super.reload(options);
     this.runtimeSettingsManager.applyOverrides({
       enableSkillCommands: true,
@@ -197,8 +86,9 @@ class StoryflowResourceLoader extends DefaultResourceLoader {
 /**
  * Build the Pi resource boundary owned by Storyflow.
  *
- * Pi owns resource discovery and package settings. Storyflow contributes only
- * its legacy resource directories and product-specific inline Extensions.
+ * Pi owns resource discovery, project trust, and package settings. Storyflow
+ * contributes only its legacy Skill directory and product-specific inline
+ * Extensions.
  */
 export async function createProjectResourceLoader(
   options: ProjectResourceLoaderOptions,
@@ -209,21 +99,24 @@ export async function createProjectResourceLoader(
 
   const skillPaths = [roots.skillsPath]
     .filter((path, index, paths) => existsSync(path) && paths.indexOf(path) === index);
-  const extensionRoots = [roots.extensionsPath].filter(existsSync);
-  const extensionPaths = extensionRoots.flatMap(discoverGlobalExtensionPaths);
-  const managedResourcePaths = extensionRoots;
-  for (const resourcePath of managedResourcePaths) {
-    assertSymlinkFreeTree(resourcePath);
-  }
-
-  // Skills are declarative content, so project Skills remain discoverable without
-  // granting project-local executable Extensions the same trust.
-  const projectSkillLoader = new ReadOnlySkillCatalogLoader(options, skillPaths);
 
   const settingsManager = SettingsManager.create(options.cwd, options.agentDir, {
     projectTrusted: false,
   });
+  const skillSettingsManager = SettingsManager.create(options.cwd, options.agentDir, {
+    projectTrusted: true,
+  });
   await seedDefaultPiPackages(options.cwd, options.agentDir, settingsManager);
+  const skillLoader = new DefaultResourceLoader({
+    cwd: options.cwd,
+    agentDir: options.agentDir,
+    settingsManager: skillSettingsManager,
+    noExtensions: true,
+    additionalSkillPaths: skillPaths,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+  });
   const resourceLoader = new StoryflowResourceLoader(
     {
       cwd: options.cwd,
@@ -231,30 +124,11 @@ export async function createProjectResourceLoader(
       settingsManager,
       noSkills: false,
       additionalSkillPaths: skillPaths,
-      additionalExtensionPaths: extensionPaths,
       extensionFactories: options.extensionFactories,
-      skillsOverride(base) {
-        const projectCatalog = projectSkillLoader.getSkills();
-        const projectSkills = projectCatalog.skills.filter(
-          skill => skill.sourceInfo.scope === 'project',
-        );
-        const projectNames = new Set(projectSkills.map(skill => skill.name));
-        const diagnostics = new Map(
-          [...base.diagnostics, ...projectCatalog.diagnostics]
-            .map(diagnostic => [diagnosticKey(diagnostic), diagnostic]),
-        );
-        return {
-          skills: [
-            ...projectSkills,
-            ...base.skills.filter(skill => !projectNames.has(skill.name)),
-          ],
-          diagnostics: [...diagnostics.values()],
-        };
-      },
+      skillsOverride: () => skillLoader.getSkills(),
     },
-    managedResourcePaths,
-    projectSkillLoader,
     settingsManager,
+    skillLoader,
   );
 
   // createAgentSession() does not reload a caller-provided ResourceLoader.
@@ -268,7 +142,19 @@ export async function createSkillCatalogResourceLoader(
 ): Promise<ResourceLoader> {
   const roots = resolveResourceRoots({ globalRoot: options.globalRoot });
   const compatibilitySkillPaths = existsSync(roots.skillsPath) ? [roots.skillsPath] : [];
-  const resourceLoader = new ReadOnlySkillCatalogLoader(options, compatibilitySkillPaths);
+  const settingsManager = SettingsManager.create(options.cwd, options.agentDir, {
+    projectTrusted: true,
+  });
+  const resourceLoader = new DefaultResourceLoader({
+    cwd: options.cwd,
+    agentDir: options.agentDir,
+    settingsManager,
+    noExtensions: true,
+    additionalSkillPaths: compatibilitySkillPaths,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+  });
   await resourceLoader.reload();
   return resourceLoader;
 }

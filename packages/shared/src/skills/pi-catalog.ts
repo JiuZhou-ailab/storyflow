@@ -138,7 +138,6 @@ async function loadCatalogInProcess(
   // ESM-only config module. Bun/headless runtimes can load it natively.
   const piPackageName = ['@earendil-works', 'pi-coding-agent'].join('/');
   const {
-    DefaultPackageManager,
     DefaultResourceLoader,
     SettingsManager,
     getAgentDir,
@@ -146,39 +145,19 @@ async function loadCatalogInProcess(
 
   const agentDir = options.agentDir ?? getAgentDir();
   const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: true });
-  const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
-  const resolved = await packageManager.resolve(async () => 'skip');
+  const compatibilitySkillPaths = options.additionalSkillPaths
+    ?? getStoryflowAdditionalSkillPaths(agentDir);
   const resourceLoader = new DefaultResourceLoader({
     cwd,
     agentDir,
-    settingsManager: SettingsManager.inMemory({}, { projectTrusted: true }),
+    settingsManager,
     noExtensions: true,
-    noSkills: true,
+    additionalSkillPaths: compatibilitySkillPaths.filter(existsSync),
     noPromptTemplates: true,
     noThemes: true,
     noContextFiles: true,
   });
   await resourceLoader.reload();
-  const enabledSkills = resolved.skills.filter(resource => resource.enabled);
-  const projectSkills = enabledSkills.filter(resource => resource.metadata.scope === 'project');
-  const remainingSkills = enabledSkills.filter(resource => resource.metadata.scope !== 'project');
-  const compatibilitySkillPaths = options.additionalSkillPaths
-    ?? getStoryflowAdditionalSkillPaths(agentDir);
-  resourceLoader.extendResources({
-    skillPaths: [
-      ...projectSkills,
-      ...remainingSkills,
-      ...compatibilitySkillPaths.filter(existsSync).map(path => ({
-        path,
-        metadata: {
-          source: 'storyflow-compatibility',
-          scope: 'temporary' as const,
-          origin: 'top-level' as const,
-          baseDir: path,
-        },
-      })),
-    ],
-  });
   return resourceLoader.getSkills() as PiCatalogResult;
 }
 

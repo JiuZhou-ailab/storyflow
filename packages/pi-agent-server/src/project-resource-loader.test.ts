@@ -117,7 +117,7 @@ afterEach(() => {
 });
 
 describe('createProjectResourceLoader', () => {
-  it('keeps Skill catalog reads free of Extension execution', async () => {
+  it('does not execute legacy Storyflow Extensions', async () => {
     const cwd = createRoot();
     const home = createRoot();
     const globalRoot = createRoot();
@@ -138,10 +138,10 @@ describe('createProjectResourceLoader', () => {
       globalRoot,
       agentDir: join(home, '.pi', 'agent'),
     });
-    expect(existsSync(markerPath)).toBe(true);
+    expect(existsSync(markerPath)).toBe(false);
   });
 
-  it('uses the same file-backed package and disabled settings in runtime and catalog mode', async () => {
+  it('uses Pi file-backed settings with explicit project trust boundaries', async () => {
     const cwd = createRoot();
     const home = createRoot();
     const globalRoot = createRoot();
@@ -208,22 +208,22 @@ describe('createProjectResourceLoader', () => {
     expect(runtimeLoader).toContain("from '@earendil-works/pi-coding-agent'");
   });
 
-  it('adds the default Pi package without replacing or duplicating user packages', async () => {
+  it('removes disabled default Pi packages without replacing user packages', async () => {
     const cwd = createRoot();
     const globalRoot = createRoot();
     const agentDir = join(createRoot(), 'agent');
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(
       join(agentDir, 'settings.json'),
-      JSON.stringify({ packages: ['npm:existing-package'] }),
+      JSON.stringify({ packages: ['npm:existing-package', 'npm:@ayulab/pi-rewind'] }),
     );
 
     await createProjectResourceLoader({ cwd, globalRoot, agentDir });
     await createProjectResourceLoader({ cwd, globalRoot, agentDir });
 
-    expect(DEFAULT_PI_PACKAGE_SOURCES).toEqual(['npm:@ayulab/pi-rewind']);
+    expect(DEFAULT_PI_PACKAGE_SOURCES).toEqual([]);
     expect(JSON.parse(readFileSync(join(agentDir, 'settings.json'), 'utf8')).packages)
-      .toEqual(['npm:existing-package', 'npm:@ayulab/pi-rewind']);
+      .toEqual(['npm:existing-package']);
   });
 
   it('uses packaged Bun for Pi packages without replacing a user command', async () => {
@@ -260,7 +260,7 @@ describe('createProjectResourceLoader', () => {
     expect(settingsManager.getProviderRetrySettings()).toMatchObject({ maxRetries: 0 });
   });
 
-  it('loads Pi user resources and explicit Storyflow compatibility resources', async () => {
+  it('loads Pi Skills without executing project or legacy Extensions', async () => {
     const projectRoot = createRoot();
     const globalRoot = createRoot();
     const agentDir = join(createRoot(), 'agent');
@@ -290,18 +290,16 @@ describe('createProjectResourceLoader', () => {
 
     expect(resourceLoader.getSkills().skills.map(skill => skill.name)).toEqual(
       expect.arrayContaining([
-        'project-skill',
         'global-skill',
-        'legacy-project-skill',
         'agent-dir-skill',
+        'project-skill',
+        'legacy-project-skill',
       ]),
     );
     const extensions = resourceLoader.getExtensions().extensions;
-    expect(extensions).toHaveLength(2);
-    expect(extensions.some(extension => (
-      extension.resolvedPath.includes('global-extension.ts')
-      && extension.tools.has('global-extension-tool')
-    ))).toBe(true);
+    expect(extensions).toHaveLength(1);
+    expect(extensions.some(extension => extension.resolvedPath.includes('global-extension.ts')))
+      .toBe(false);
     expect(extensions.some(extension => (
       extension.resolvedPath.includes('pi-user-extension.ts')
       && extension.tools.has('pi-user-extension-tool')
@@ -360,28 +358,7 @@ describe('createProjectResourceLoader', () => {
     expect(existsSync(join(cwd, '.pi'))).toBe(false);
   });
 
-  it('uses Pi collision precedence when project and user Skills share a name', async () => {
-    const projectRoot = createRoot();
-    const globalRoot = createRoot();
-    const agentDir = join(createRoot(), 'agent');
-    writeSkill(projectRoot, '.pi/skills', 'shared-skill');
-    writeSkill(globalRoot, 'skills', 'shared-skill');
-
-    const { resourceLoader } = await createProjectResourceLoader({
-      cwd: projectRoot,
-      globalRoot,
-      agentDir,
-    });
-
-    const skills = resourceLoader.getSkills();
-    expect(skills.skills.filter(skill => skill.name === 'shared-skill')).toHaveLength(1);
-    expect(skills.diagnostics.some(diagnostic => (
-      diagnostic.type === 'collision'
-      && diagnostic.collision?.name === 'shared-skill'
-    ))).toBe(true);
-  });
-
-  it('reports diagnostics shared by both loaders only once', async () => {
+  it('reports Pi collision diagnostics only once', async () => {
     const projectRoot = createRoot();
     const globalRoot = createRoot();
     const agentDir = join(createRoot(), 'agent');
@@ -400,7 +377,7 @@ describe('createProjectResourceLoader', () => {
     ))).toHaveLength(1);
   });
 
-  it('follows project Skill symlinks through Pi native discovery', async () => {
+  it('keeps Pi-native project Skill symlink discovery', async () => {
     const projectRoot = createRoot();
     const outsideRoot = createRoot();
     const globalRoot = createRoot();
