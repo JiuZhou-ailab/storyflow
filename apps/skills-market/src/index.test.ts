@@ -8,7 +8,7 @@ import { handleRequest, type Env } from './index.ts'
 const env: Env = {}
 
 describe('Skills Market worker', () => {
-  test('lists a focused mix of Storyflow and general recommendations', async () => {
+  test('lists a focused mix of Storyflow, writing, and general recommendations', async () => {
     const response = await handleRequest(new Request('https://market.test/api/skills'), env)
     const body = await response.json() as {
       total: number
@@ -21,15 +21,16 @@ describe('Skills Market worker', () => {
       }>
     }
     expect(response.status).toBe(200)
-    expect(body.total).toBe(10)
+    expect(body.total).toBe(15)
     expect(body.skills.every(skill => skill.sha256 === '')).toBeTrue()
     expect(body.skills.every(skill => skill.downloadCount === 0)).toBeTrue()
     expect(body.skills.every(skill => skill.featured)).toBeTrue()
-    expect(body.skills.map(skill => skill.recommendation?.order)).toEqual(Array.from({ length: 10 }, (_, index) => index + 1))
+    expect(body.skills.map(skill => skill.recommendation?.order)).toEqual(Array.from({ length: 15 }, (_, index) => index + 1))
     expect(body.skills.map(skill => skill.slug)).toEqual([
       'sn2s-novel-to-screenplay', 'video-to-screenplay', 'discover-hit-dramas',
-      'hot-video-script-ideation', 'anysearch', 'find-skills', 'grill-me',
-      'research', 'brainstorming', 'skill-creator',
+      'hot-video-script-ideation', 'anysearch', 'g113593', 'fiction-crafter',
+      'novel-evaluator', 'novel-to-drama', 'novel-to-storyboard', 'find-skills',
+      'grill-me', 'research', 'brainstorming', 'skill-creator',
     ])
   })
 
@@ -45,6 +46,15 @@ describe('Skills Market worker', () => {
     expect(metadata.installUrl).toBe('')
     expect(metadata.skillMarkdown).toContain('https://github.com/JiuZhou-ailab/storyflow')
     expect(metadata.recommendation.label).toContain('34.4K')
+
+    const skillHubDetail = await handleRequest(new Request('https://market.test/api/skills/novel-to-drama'), env)
+    const skillHubMetadata = await skillHubDetail.json() as {
+      skillMarkdown: string
+      recommendation: { label: string, sourceUrl: string }
+    }
+    expect(skillHubMetadata.skillMarkdown).toContain('https://skillhub.cn/skills/user_f0835403/novel-to-drama')
+    expect(skillHubMetadata.recommendation.label).toContain('2.6 千')
+    expect(skillHubMetadata.recommendation.sourceUrl).toBe('https://skillhub.cn/')
 
     const bundle = await handleRequest(new Request(
       'https://market.test/api/skills/anysearch/versions/1.0.0/bundle',
