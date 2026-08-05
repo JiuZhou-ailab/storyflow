@@ -629,6 +629,7 @@ export function handleUserMessage(
     updatedMessages[existingIndex] = {
       ...existingMessage,
       ...(!nextIsQueued && message.id !== existingMessage.id ? { id: message.id } : {}),
+      ...(status === 'processing' ? { timestamp: message.timestamp } : {}),
       isPending: false,
       isQueued: nextIsQueued,
     }

@@ -1,3 +1,7 @@
+// input: Session interruption and queued user-message events
+// output: Regression coverage for renderer session state transitions
+// pos: Guards live chat projection across interruption and queue handoff
+
 import { describe, expect, it } from 'bun:test'
 import { handleInterrupted, handleUserMessage } from '../session'
 import { processEvent } from '../../processor'
@@ -347,5 +351,29 @@ describe('handleUserMessage queued state', () => {
 
     expect(next.state.session.isProcessing).toBe(true)
     expect(next.state.session.messages.find(m => m.id === 'msg-2')?.isQueued).toBe(true)
+  })
+
+  it('adopts the replay timestamp when a queued message starts processing', () => {
+    const state = makeState([
+      { id: 'msg-1', role: 'user', content: 'first', timestamp: 1 },
+      { id: 'msg-2', role: 'user', content: 'queued next', timestamp: 2, isQueued: true },
+      { id: 'assistant-1', role: 'assistant', content: 'done', timestamp: 3 },
+    ])
+
+    const next = handleUserMessage(state, {
+      type: 'user_message',
+      sessionId: 'session-1',
+      status: 'processing',
+      message: {
+        id: 'msg-2',
+        role: 'user',
+        content: 'queued next',
+        timestamp: 4,
+      },
+    })
+
+    expect(next.state.session.messages.find(message => message.id === 'msg-2')).toEqual(
+      expect.objectContaining({ timestamp: 4, isQueued: false }),
+    )
   })
 })

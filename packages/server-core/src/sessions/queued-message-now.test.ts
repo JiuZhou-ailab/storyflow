@@ -110,6 +110,37 @@ describe('queued message send-now', () => {
     }))
   })
 
+  it('moves a replayed queued message after the completed response', () => {
+    const { sessionId, managed } = buildProcessingSession()
+    managed.messages = [
+      { id: 'first', role: 'user', content: 'first', timestamp: 1 },
+      { id: 'q1', role: 'user', content: 'later', timestamp: 2, isQueued: true },
+      { id: 'answer', role: 'assistant', content: 'done', timestamp: 3 },
+    ] as never
+    managed.messageQueue = [{ message: 'later', messageId: 'q1' }]
+
+    const events: unknown[] = []
+    sm.setEventSink((_channel, _target, event) => {
+      events.push(event)
+    })
+    const replay = mock(async () => {})
+    const internal = sm as unknown as {
+      sendMessage: typeof replay
+      processNextQueuedMessage(sessionId: string): void
+    }
+    internal.sendMessage = replay
+
+    internal.processNextQueuedMessage(sessionId)
+
+    expect(managed.messages.map(message => message.id)).toEqual(['first', 'answer', 'q1'])
+    expect(managed.messages[2]?.timestamp).toBeGreaterThan(3)
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'user_message',
+      status: 'processing',
+      message: expect.objectContaining({ id: 'q1', isQueued: false }),
+    }))
+  })
+
   it('removes a queued message without interrupting the active turn', async () => {
     const { sessionId, managed, forceAbort } = buildProcessingSession()
     const events: unknown[] = []

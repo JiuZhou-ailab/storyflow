@@ -6738,10 +6738,14 @@ export class SessionManager implements ISessionManager {
 
     // Update UI: queued → processing
     if (next.messageId) {
-      const existingMessage = managed.messages.find(m => m.id === next.messageId)
+      const existingIndex = managed.messages.findIndex(m => m.id === next.messageId)
+      const existingMessage = managed.messages[existingIndex]
       if (existingMessage) {
-        // Clear isQueued flag and persist - prevents re-queueing if crash during processing
+        // Replay starts a new turn after the response that just completed.
         existingMessage.isQueued = false
+        existingMessage.timestamp = this.monotonic()
+        managed.messages.splice(existingIndex, 1)
+        managed.messages.push(existingMessage)
         this.persistSession(managed)
 
         this.sendEvent({
