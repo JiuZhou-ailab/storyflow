@@ -129,6 +129,8 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
       throw new Error(`Workspace not found: ${workspaceId}`)
     }
 
+    sessionManager.setupConfigWatcher(workspace.rootPath, workspace.id)
+
     // Keep WS push routing in sync (works for both GUI and headless)
     server.updateClientWorkspace?.(ctx.clientId, workspaceId)
 

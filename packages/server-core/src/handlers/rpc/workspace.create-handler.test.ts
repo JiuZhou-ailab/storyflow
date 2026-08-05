@@ -1,12 +1,12 @@
-// input: Current and legacy workspace CREATE RPC requests
-// output: Regression coverage for blank roots, remote options, and stale default reuse
-// pos: Guards the server boundary between blank workspace storage and in-memory sessions
+// input: Workspace CREATE and SWITCH RPC requests
+// output: Regression coverage for blank roots, remote options, stale default reuse, and runtime activation
+// pos: Guards the server boundary between workspace storage, active runtimes, and in-memory sessions
 
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { FREE_CONVERSATION_WORKSPACE_ID, RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { CONFIG_DIR, ensureConfigDefaults } from '../../../../shared/src/config/storage.ts'
 import {
   createWorkspaceAtPath,
@@ -77,7 +77,7 @@ beforeAll(() => {
 function createWorkspaceHarness() {
   const handlers = new Map<string, HandlerFn>()
   let reloadSessionsCount = 0
-  let setupConfigWatcherCount = 0
+  const setupConfigWatcherCalls: Array<[string, string]> = []
 
   const server: RpcServer = {
     handle(channel, handler) {
@@ -96,8 +96,8 @@ function createWorkspaceHarness() {
       reloadSessions: () => {
         reloadSessionsCount += 1
       },
-      setupConfigWatcher: () => {
-        setupConfigWatcherCount += 1
+      setupConfigWatcher: (rootPath: string, workspaceId: string) => {
+        setupConfigWatcherCalls.push([rootPath, workspaceId])
       },
     } as unknown as HandlerDeps['sessionManager'],
     oauthFlowStore: {} as HandlerDeps['oauthFlowStore'],
@@ -130,6 +130,10 @@ function createWorkspaceHarness() {
   if (!checkWorkspaceSlug) {
     throw new Error('workspace slug check handler not registered')
   }
+  const switchWorkspace = handlers.get(RPC_CHANNELS.window.SWITCH_WORKSPACE)
+  if (!switchWorkspace) {
+    throw new Error('workspace switch handler not registered')
+  }
 
   const ctx: RequestContext = {
     clientId: 'client-1',
@@ -140,17 +144,30 @@ function createWorkspaceHarness() {
   return {
     createWorkspace,
     checkWorkspaceSlug,
+    switchWorkspace,
     ctx,
     getReloadSessionsCount: () => reloadSessionsCount,
-    getSetupConfigWatcherCount: () => setupConfigWatcherCount,
+    getSetupConfigWatcherCalls: () => setupConfigWatcherCalls,
   }
 }
 
-describe('workspace create RPC registration', () => {
+describe('workspace core RPC registration', () => {
+  it('activates the config watcher when switching to the Free Conversation runtime', async () => {
+    createdWorkspaces.length = 0
+    const { switchWorkspace, ctx, getSetupConfigWatcherCalls } = createWorkspaceHarness()
+
+    await switchWorkspace(ctx, FREE_CONVERSATION_WORKSPACE_ID)
+
+    expect(getSetupConfigWatcherCalls()).toEqual([[
+      join(CONFIG_DIR, 'runtime', 'free'),
+      FREE_CONVERSATION_WORKSPACE_ID,
+    ]])
+  })
+
   it('creates a blank workspace while tolerating legacy method fields', async () => {
     createdWorkspaces.length = 0
     const rootPath = mkdtempSync(join(tmpdir(), 'craft-workspace-create-handler-'))
-    const { createWorkspace, ctx, getReloadSessionsCount, getSetupConfigWatcherCount } = createWorkspaceHarness()
+    const { createWorkspace, ctx, getReloadSessionsCount, getSetupConfigWatcherCalls } = createWorkspaceHarness()
 
     try {
       await createWorkspace(
@@ -162,7 +179,7 @@ describe('workspace create RPC registration', () => {
       )
 
       expect(getReloadSessionsCount()).toBe(1)
-      expect(getSetupConfigWatcherCount()).toBe(1)
+      expect(getSetupConfigWatcherCalls()).toEqual([[rootPath, 'workspace-1']])
       expect(loadWorkspaceConfig(rootPath)?.defaults?.workingDirectory).toBe(rootPath)
       expect(readdirSync(rootPath).filter(entry => !entry.startsWith('.'))).toEqual([])
       expect(existsSync(join(rootPath, '.git'))).toBe(false)
