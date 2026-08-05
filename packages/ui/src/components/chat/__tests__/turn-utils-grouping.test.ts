@@ -1,3 +1,7 @@
+// input: Turn activities and shared TurnCard rendering behavior
+// output: Regression coverage for activity grouping and visible progress projection
+// pos: Guards the shared chat turn normalization and rendering contract
+
 /**
  * Tests for activity grouping and helper utilities in turn-utils.ts
  *
@@ -520,6 +524,27 @@ describe('native subagent activity projection', () => {
     for (const task of tasks) expect(html).toContain(task)
     expect(html).not.toContain('read_only')
     expect(html).not.toContain('&quot;tasks&quot;')
+  })
+})
+
+describe('thinking activity projection', () => {
+  it('renders one thinking indicator for a running intermediate activity', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(I18nextProvider, { i18n: testI18n },
+        React.createElement(TurnCard, {
+          turnId: 'turn-1',
+          activities: [createActivity({
+            type: 'intermediate',
+            status: 'running',
+            content: 'partial commentary',
+          })],
+          isStreaming: true,
+          isComplete: false,
+          defaultExpanded: true,
+        }))
+    )
+
+    expect(html.match(/Thinking\.\.\./g)).toHaveLength(1)
   })
 })
 

@@ -2868,6 +2868,7 @@ export const TurnCard = React.memo(function TurnCard({
   // This properly handles the "gap" state (awaiting) between tool completion and next action,
   // which was previously causing the turn card to "disappear".
   const isThinking = shouldShowThinkingIndicator(turnPhase, isBuffering)
+    && !sortedActivities.some(activity => activity.status === 'running')
 
   return (
     <div className="space-y-1">
