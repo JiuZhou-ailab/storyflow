@@ -122,14 +122,8 @@ export {
   MINI_AGENT_MCP_KEYS,
 } from './base-agent.ts';
 
-// Export backend abstraction - unified interface for AI agents
-// Pi owns execution while its provider adapters handle model switching.
+// Export the Pi host boundary while Pi provider adapters handle model switching.
 export {
-  // Factory (createAgent is the preferred name, createBackend is kept for backward compat)
-  createBackend,
-  createAgent,
-  detectProvider,
-  getAvailableProviders,
   // Types
   type AgentBackend,
   type AgentProvider,

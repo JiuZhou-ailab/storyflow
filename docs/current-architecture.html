@@ -562,7 +562,7 @@ pos: Testable companion to current-architecture.puml; performs no real network, 
             <div class="flow-row">
               <button class="flow-node" data-flow-module="session-store" data-kind="data"><strong>Session Store</strong><small>先持久化再 ACK</small></button><span class="flow-arrow">↔</span>
               <button class="flow-node" data-flow-module="session-manager"><strong>SessionManager</strong><small>唯一生命周期所有者</small></button><span class="flow-arrow">→</span>
-              <button class="flow-node" data-flow-module="agent-factory" data-kind="runtime"><strong>Agent Factory</strong><small>解析模型与认证</small></button><span class="flow-arrow">→</span>
+              <button class="flow-node" data-flow-module="pi-construction" data-kind="runtime"><strong>PiAgent Construction</strong><small>解析模型与认证</small></button><span class="flow-arrow">→</span>
               <button class="flow-node" data-flow-module="pi-agent" data-kind="runtime"><strong>PiAgent</strong><small>宿主侧 adapter</small></button>
             </div>
             <div class="flow-down">↓ JSONL 进程边界</div>
@@ -646,9 +646,9 @@ pos: Testable companion to current-architecture.puml; performs no real network, 
             <details class="layer">
               <summary><span class="layer-number">4</span><span class="layer-title">单一 Agent Kernel</span><span class="layer-meta">Pi runtime only</span><span class="chevron">›</span></summary>
               <div class="module-grid">
-                <details class="module" data-module="agent-factory" data-kind="runtime" data-search="createagent driver registry connection model auth runtime paths">
-                  <summary><span class="module-icon"></span><span class="module-heading"><span class="module-name">createAgent + Driver Registry</span><span class="module-owner">配置解析，不复制生命周期</span></span><span class="chevron">›</span></summary>
-                  <div class="module-body"><p>Provider 只决定模型、认证和 runtime path；始终创建 PiAgent。</p><code>packages/shared/src/agent/backend/factory.ts</code></div>
+                <details class="module" data-module="pi-construction" data-kind="runtime" data-search="piagent construction connection model auth runtime paths">
+                  <summary><span class="module-icon"></span><span class="module-heading"><span class="module-name">PiAgent Construction</span><span class="module-owner">配置解析，不复制生命周期</span></span><span class="chevron">›</span></summary>
+                  <div class="module-body"><p>连接只决定模型、认证和 runtime path；直接创建 PiAgent。</p><code>packages/shared/src/agent/backend/factory.ts</code></div>
                 </details>
                 <details class="module" data-module="pi-agent" data-kind="runtime" data-search="piagent baseagent subprocess jsonl permissions proxy tools">
                   <summary><span class="module-icon"></span><span class="module-heading"><span class="module-name">PiAgent</span><span class="module-owner">主进程侧 runtime adapter</span></span><span class="chevron">›</span></summary>
@@ -765,7 +765,7 @@ pos: Testable companion to current-architecture.puml; performs no real network, 
           ["router", "RoutedClient 选择本地 owner", "sessions:sendMessage 是 REMOTE_ELIGIBLE；当前 Workspace 为本地，所以落到 embedded client。", { classification: "REMOTE_ELIGIBLE", workspaceOwner: "local", target: "EmbeddedServer" }],
           ["rpc-handlers", "Handler 等待持久化 ACK", "用户消息落盘后立即返回；模型流式工作继续在后台运行。", { response: { accepted: true, messageId: "msg-1785225028000-a1b2c3" } }],
           [["session-manager", "session-store"], "SessionManager 创建 managed turn", "会话历史、附件和 optimistic message 在运行 Agent 前成为可恢复事实。", { persisted: true, sessionId: "sess-story-203", store: "{sessionPath}/session.jsonl" }],
-          [["agent-factory", "pi-agent"], "创建唯一 Pi backend", "连接只解析模型和认证；Factory 始终返回 PiAgent。", { providerType: "anthropic", model: "claude-sonnet-4-5", backend: "PiAgent" }],
+          [["pi-construction", "pi-agent"], "创建唯一 Pi backend", "连接只解析模型和认证；直接创建 PiAgent。", { providerType: "anthropic", model: "claude-sonnet-4-5", backend: "PiAgent" }],
           [["pi-agent", "pi-protocol"], "PiAgent 发送 prompt", "systemPrompt 与用户消息通过 JSONL 交给隔离子进程。", { type: "prompt", id: "turn-1", message: "检查第 25 集因果链，并只修改断裂处。", systemPrompt: "[resolved Storyflow context]" }],
           [["pi-session", "pi-models", "provider-api"], "Pi AgentSession 执行", "ModelRegistry 使用内存凭据选择 provider；没有第二套 Agent 生命周期。", { runtime: "Pi AgentSession", provider: "anthropic", authStorage: "in-memory" }],
           [["session-manager", "renderer"], "流式事件回到 UI", "Pi event 经 adapter 和 SessionManager 投影为稳定 SessionEvent。", { channel: "session:event", event: { type: "text_delta", sessionId: "sess-story-203", delta: "第 25 集的断裂点在于…", turnId: "turn-1" } }]
@@ -805,7 +805,7 @@ pos: Testable companion to current-architecture.puml; performs no real network, 
         description: "Storyflow 管 managed session；Pi 的 provider-native 恢复与 fork 只认 sessionPath/.pi-sessions。",
         steps: [
           [["session-manager", "session-store"], "创建分支元数据", "选择的 assistant message 必须有可用 Pi turn anchor。", { branchContextStrategy: "sdk-fork", branchFromSessionPath: "/workspaces/demo/sessions/parent", branchFromSdkTurnId: "pi-entry-8f2", branchFromMessageId: "msg-parent-25" }],
-          [["agent-factory", "pi-agent"], "分支仍创建 PiAgent", "legacy claude-sdk 标记只用于迁移判断，不选择另一 runtime。", { agentRuntime: "pi", backend: "PiAgent" }],
+          [["pi-construction", "pi-agent"], "分支仍创建 PiAgent", "legacy claude-sdk 标记只用于迁移判断，不选择另一 runtime。", { agentRuntime: "pi", backend: "PiAgent" }],
           [["pi-agent", "pi-protocol"], "Init 携带 fork 输入", "branchFromSdkSessionId 可以兼容存在，但 Pi 真正消费 parent path 与 turn anchor。", { type: "init", sessionId: "sess-branch-26", sessionPath: "/workspaces/demo/sessions/branch", branchFromSessionPath: "/workspaces/demo/sessions/parent", branchFromSdkTurnId: "pi-entry-8f2" }],
           [["pi-protocol", "pi-session-store"], "定位父 Pi transcript", "没有父 .pi-sessions 文件时严格失败，不降级成新会话。", { operation: "findMostRecentSessionFile", path: "/workspaces/demo/sessions/parent/.pi-sessions" }],
           [["pi-session", "pi-session-store"], "forkFrom 并裁到 anchor", "新 session 使用独立目录，父 transcript 不被修改。", { operations: ["PiSessionManager.forkFrom(parent, cwd, targetDir)", "sessionManager.branch('pi-entry-8f2')"], target: "/workspaces/demo/sessions/branch/.pi-sessions" }],

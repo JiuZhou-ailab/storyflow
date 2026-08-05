@@ -24,7 +24,6 @@ const baseCompat: LlmConnection = {
 function sig(connection: LlmConnection) {
   return buildBackendRuntimeSignature({
     connection,
-    provider: 'pi',
     authType: 'api_key',
     resolvedModel: 'gemma',
   })
@@ -94,7 +93,6 @@ describe('buildRestartRequiredSignature', () => {
   it('changes when provider-wide context or cache settings change', () => {
     const base = {
       connection: baseCompat,
-      provider: 'pi' as const,
       authType: 'api_key' as const,
       resolvedModel: 'gemma',
       enable1MContext: false,

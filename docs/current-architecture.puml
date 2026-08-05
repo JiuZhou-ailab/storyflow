@@ -80,7 +80,7 @@ package "3 · 应用与会话内核" as ApplicationKernel {
 }
 
 package "4 · 单一 Agent Kernel" as AgentKernel {
-  component "createAgent + Driver Registry\n解析 connection / model / auth / runtime path" as AgentFactory
+  component "PiAgent Construction\n解析 connection / model / auth / runtime path" as PiConstruction
   component "PiAgent\nBaseAgent 子类；JSONL 子进程客户端" as PiAgent
   component "Provider Adapters\nAnthropic / OpenAI / Bedrock /\nOAuth / Custom Endpoint" as ProviderAdapters
 
@@ -147,9 +147,9 @@ SessionManager --> CoreTypes
 RpcHandlers --> CoreTypes
 ResourceResolver --> SharedDomain
 
-SessionManager --> AgentFactory : 每个 managed session
-AgentFactory --> PiAgent : 唯一 backend
-AgentFactory --> ProviderAdapters : 解析配置
+SessionManager --> PiConstruction : 每个 managed session
+PiConstruction --> PiAgent : 唯一 backend
+PiConstruction --> ProviderAdapters : 解析配置
 ProviderAdapters --> PiModels : model + auth
 PiAgent <--> PiProtocol : JSONL commands / events /\nproxy tool requests
 PiProtocol --> PiSession
@@ -173,8 +173,8 @@ SharedDomain --> ProjectFiles
 PiModels --> LlmApis
 Sources --> ExternalSources
 
-CoreTypes -[hidden]down-> AgentFactory
-AgentFactory -[hidden]down-> ToolCore
+CoreTypes -[hidden]down-> PiConstruction
+PiConstruction -[hidden]down-> ToolCore
 ToolCore -[hidden]down-> CraftData
 
 legend bottom

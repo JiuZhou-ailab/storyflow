@@ -57,7 +57,7 @@ describe('Bedrock auth env handling', () => {
     // for non-Anthropic providers (including bedrock); the Pi backend wires
     // AWS credentials in its own postInit() path. The contract this test
     // protects is that none of the Claude-specific Bedrock routing env vars
-    // — which would mis-route the Claude SDK subprocess at AWS — leak out.
+    // — which would mis-route the Pi subprocess at AWS — leak out.
     const connection = createBedrockConnection()
     const credentialManager = {
       getLlmApiKey: async () => 'bedrock-bearer-token',

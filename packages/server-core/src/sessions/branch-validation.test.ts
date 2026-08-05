@@ -2,18 +2,16 @@ import { describe, expect, it } from 'bun:test'
 import { requireSdkForkBranchAnchor } from './SessionManager.ts'
 
 describe('requireSdkForkBranchAnchor', () => {
-  it('rejects SDK fork branches without a provider-native cutoff anchor', () => {
+  it('rejects Pi fork branches without a Pi cutoff anchor', () => {
     expect(() => requireSdkForkBranchAnchor({
-      provider: 'pi',
       branchFromSessionId: 'parent-session',
       branchFromMessageId: 'plan-message',
       branchFromSdkTurnId: undefined,
-    })).toThrow('selected message is missing a provider branch anchor')
+    })).toThrow('selected message is missing a Pi branch anchor')
   })
 
-  it('keeps valid provider-native cutoff anchors', () => {
+  it('keeps valid Pi cutoff anchors', () => {
     expect(requireSdkForkBranchAnchor({
-      provider: 'pi',
       branchFromSessionId: 'parent-session',
       branchFromMessageId: 'assistant-message',
       branchFromSdkTurnId: 'msg_abc123',

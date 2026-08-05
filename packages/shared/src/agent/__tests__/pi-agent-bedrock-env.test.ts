@@ -4,7 +4,6 @@ import type { BackendConfig } from '../backend/types.ts'
 
 function createConfig(): BackendConfig {
   return {
-    provider: 'pi',
     workspace: {
       id: 'ws-test',
       name: 'Test Workspace',

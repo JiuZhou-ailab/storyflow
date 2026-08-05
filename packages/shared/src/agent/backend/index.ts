@@ -7,21 +7,12 @@
  * Naming convention:
  * - PiAgent: the production unified agent runtime
  * - AgentBackend: Interface implemented by the runtime
- * - createAgent: Factory function to create agents
+ * - createBackendFromResolvedContext: Pi construction from resolved connection state
  *
  * Usage:
  * ```typescript
- * import { createAgent, type AgentBackend } from '@craft-agent/shared/agent/backend';
- *
- * const agent = createAgent({
- *   provider: 'pi',
- *   workspace: myWorkspace,
- *   model: 'claude-sonnet-4-6',
- * });
- *
- * for await (const event of agent.chat('Hello')) {
- *   console.log(event);
- * }
+ * import { createBackendFromResolvedContext } from '@craft-agent/shared/agent/backend';
+ * const agent = createBackendFromResolvedContext({ context, coreConfig, hostRuntime });
  * ```
  */
 
@@ -50,29 +41,19 @@ export { AbortReason } from './types.ts';
 
 // Factory
 export {
-  createBackend,
-  createAgent,
-  detectProvider,
-  getAvailableProviders,
-  isProviderAvailable,
   // LLM Connection support
-  connectionTypeToProvider,
   connectionAuthTypeToBackendAuthType,
   resolveSessionConnection,
   resolveBackendContext,
   resolveSetupTestConnectionHint,
-  createConfigFromConnection,
   createBackendFromConnection,
   createBackendFromResolvedContext,
   initializeBackendHostRuntime,
   resolveBackendHostTooling,
   fetchBackendModels,
   validateStoredBackendConnection,
-  providerTypeToAgentProvider,
-  // Capabilities and utilities
-  BACKEND_CAPABILITIES,
+  // Utilities
   resolveModelForConnection,
-  getDefaultAuthType,
   cleanupSourceRuntimeArtifacts,
   testBackendConnection,
   // Connection validation
@@ -85,5 +66,4 @@ export { EventQueue } from './event-queue.ts';
 // Provider-specific event adapter
 export { PiEventAdapter } from './pi/event-adapter.ts';
 
-// Agent implementations are imported directly by factory.ts
-// Consumers should use createAgent() / createBackend() instead of concrete classes
+// Pi is Storyflow's only production agent runtime.

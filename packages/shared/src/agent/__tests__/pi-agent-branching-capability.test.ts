@@ -4,7 +4,6 @@ import type { BackendConfig } from '../backend/types.ts'
 
 function createConfig(sessionOverrides?: Record<string, unknown>): BackendConfig {
   return {
-    provider: 'pi',
     workspace: {
       id: 'ws-test',
       name: 'Test Workspace',

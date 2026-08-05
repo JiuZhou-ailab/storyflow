@@ -170,8 +170,6 @@ export interface BridgeUpdateContext {
   workspaceRootPath: string;
   /** Descriptive context for logging (e.g., 'token refresh', 'source enable') */
   context: string;
-  /** URL of the McpPoolServer HTTP endpoint */
-  poolServerUrl?: string;
 }
 
 /**
@@ -255,12 +253,6 @@ export interface CoreBackendConfig {
    * Owns all MCP source connections in the main process.
    */
   mcpPool?: McpClientPool;
-
-  /**
-   * URL of the McpPoolServer HTTP endpoint for this session.
-   * External SDK subprocesses connect here to access pool-managed MCP tools.
-   */
-  poolServerUrl?: string;
 
   /** Callback when SDK session ID is captured/updated */
   onSdkSessionIdUpdate?: (sdkSessionId: string) => void;
@@ -720,14 +712,6 @@ export interface AgentBackend {
  * Configuration for creating a backend.
  */
 export interface BackendConfig extends CoreBackendConfig {
-  /**
-   * Provider/SDK to use for this backend.
-   * Determines which agent class is instantiated:
-   * - 'anthropic' → PiAgent using Pi's Anthropic provider adapter
-   * - 'pi' → PiAgent (Pi via @earendil-works/pi-coding-agent)
-   */
-  provider: AgentProvider;
-
   /**
    * Full provider type from LLM connection.
    * Includes compat variants and cloud providers.

@@ -8,7 +8,6 @@ import type { BackendConfig } from '../backend/types.ts'
 
 function createConfig(overrides: Partial<BackendConfig> = {}): BackendConfig {
   return {
-    provider: 'pi',
     workspace: {
       id: 'ws-test',
       name: 'Test Workspace',

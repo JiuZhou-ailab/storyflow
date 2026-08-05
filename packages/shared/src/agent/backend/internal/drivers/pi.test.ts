@@ -1,14 +1,16 @@
-import { describe, expect, it } from 'bun:test';
-import { piDriver } from './pi.ts';
+// input: Pi connection metadata and resolved runtime paths
+// output: Regression coverage for direct Pi runtime configuration
+// pos: Focused contract test for the Storyflow-to-Pi configuration bridge
 
-describe('piDriver.buildRuntime custom endpoint models', () => {
+import { describe, expect, it } from 'bun:test';
+import { buildPiRuntime } from './pi.ts';
+
+describe('buildPiRuntime custom endpoint models', () => {
   it('preserves explicit per-model supportsImages values', () => {
-    const runtime = piDriver.buildRuntime({
+    const runtime = buildPiRuntime({
       context: {
-        provider: 'pi',
         authType: 'api_key',
         resolvedModel: 'vision-model',
-        capabilities: { needsHttpPoolServer: false },
         connection: {
           slug: 'custom-endpoint',
           name: 'Custom Endpoint',
@@ -37,8 +39,6 @@ describe('piDriver.buildRuntime custom endpoint models', () => {
           createdAt: Date.now(),
         } as any,
       },
-      coreConfig: {} as any,
-      hostRuntime: {} as any,
       resolvedPaths: {
         piServerPath: '/tmp/pi-agent-server.js',
         nodeRuntimePath: '/usr/bin/node',

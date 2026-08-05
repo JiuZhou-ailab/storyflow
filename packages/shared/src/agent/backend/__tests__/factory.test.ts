@@ -14,16 +14,9 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
 import { join } from 'node:path';
 import {
-  detectProvider,
-  createBackend,
-  createAgent,
   fetchBackendModels,
-  getAvailableProviders,
   initializeBackendHostRuntime,
-  isProviderAvailable,
-  connectionTypeToProvider,
   connectionAuthTypeToBackendAuthType,
-  providerTypeToAgentProvider,
   resolveBackendContext,
   resolveModelForConnection,
   resolveManagedModelConnection,
@@ -62,104 +55,12 @@ function createTestSession(): Session {
 
 function createTestConfig(overrides: Partial<BackendConfig> = {}): BackendConfig {
   return {
-    provider: 'pi',
     workspace: createTestWorkspace(),
     session: createTestSession(),
     isHeadless: true, // Prevent config watchers from starting
     ...overrides,
   };
 }
-
-describe('detectProvider', () => {
-  describe('Pi runtime authentication types', () => {
-    it('should return pi for api_key', () => {
-      expect(detectProvider('api_key')).toBe('pi');
-    });
-
-    it('should return pi for oauth_token', () => {
-      expect(detectProvider('oauth_token')).toBe('pi');
-    });
-  });
-
-  describe('Unknown authentication types', () => {
-    it('should default to pi for unknown types', () => {
-      expect(detectProvider('unknown')).toBe('pi');
-      expect(detectProvider('')).toBe('pi');
-    });
-  });
-});
-
-describe('createBackend / createAgent', () => {
-  describe('Legacy Anthropic runtime selector', () => {
-    it('normalizes direct Anthropic creation to PiAgent', () => {
-      const config = createTestConfig({ provider: 'anthropic' });
-      expect(createBackend(config)).toBeInstanceOf(PiAgent);
-    });
-  });
-
-  describe('Pi provider', () => {
-    it('should create PiAgent for pi provider', () => {
-      const config = createTestConfig({ provider: 'pi' });
-      const agent = createBackend(config);
-
-      expect(agent).toBeInstanceOf(PiAgent);
-    });
-  });
-
-  describe('Unknown provider', () => {
-    it('should throw for unknown provider', () => {
-      const config = createTestConfig({ provider: 'unknown' as any });
-
-      expect(() => createBackend(config)).toThrow('Unknown provider: unknown');
-    });
-  });
-
-  describe('createAgent alias', () => {
-    it('should be an alias for createBackend', () => {
-      expect(createAgent).toBe(createBackend);
-    });
-  });
-});
-
-describe('getAvailableProviders', () => {
-  it('returns only the Pi execution runtime', () => {
-    const providers = getAvailableProviders();
-
-    expect(providers).toEqual(['pi']);
-  });
-});
-
-describe('isProviderAvailable', () => {
-  it('should return false for the legacy Anthropic runtime', () => {
-    expect(isProviderAvailable('anthropic')).toBe(false);
-  });
-
-  it('should return true for pi', () => {
-    expect(isProviderAvailable('pi')).toBe(true);
-  });
-
-  it('should return false for unknown provider', () => {
-    expect(isProviderAvailable('unknown' as any)).toBe(false);
-  });
-});
-
-describe('connectionTypeToProvider', () => {
-  it('should map anthropic type to the Pi runtime', () => {
-    expect(connectionTypeToProvider('anthropic')).toBe('pi');
-  });
-
-  it('should map openai type to pi provider (legacy routing)', () => {
-    expect(connectionTypeToProvider('openai')).toBe('pi');
-  });
-
-  it('should map openai-compat type to pi provider (legacy routing)', () => {
-    expect(connectionTypeToProvider('openai-compat')).toBe('pi');
-  });
-
-  it('should default to pi for unknown types', () => {
-    expect(connectionTypeToProvider('unknown' as any)).toBe('pi');
-  });
-});
 
 describe('connectionAuthTypeToBackendAuthType (legacy)', () => {
   it('should map api_key to api_key', () => {
@@ -172,24 +73,6 @@ describe('connectionAuthTypeToBackendAuthType (legacy)', () => {
 
   it('should map none to undefined', () => {
     expect(connectionAuthTypeToBackendAuthType('none')).toBeUndefined();
-  });
-});
-
-describe('providerTypeToAgentProvider', () => {
-  describe('Anthropic connections', () => {
-    it('should execute anthropic through Pi', () => {
-      expect(providerTypeToAgentProvider('anthropic')).toBe('pi');
-    });
-  });
-
-  describe('Pi SDK providers', () => {
-    it('should map pi to pi', () => {
-      expect(providerTypeToAgentProvider('pi')).toBe('pi');
-    });
-
-    it('should map pi_compat to pi', () => {
-      expect(providerTypeToAgentProvider('pi_compat')).toBe('pi');
-    });
   });
 });
 
@@ -261,8 +144,10 @@ describe('phase4 backend abstraction APIs', () => {
     })).not.toThrow();
   });
 
-  it('resolveBackendContext defaults to the Pi runtime without a stored connection', () => {
-    expect(resolveBackendContext({}).provider).toBe('pi');
+  it('resolveBackendContext remains connection-only without a stored connection', () => {
+    const context = resolveBackendContext({});
+    expect(context).not.toHaveProperty('provider');
+    expect(context).not.toHaveProperty('capabilities');
   });
 
   it('keeps the session model selected for an Anthropic connection running on Pi', () => {
@@ -384,7 +269,7 @@ describe('phase4 backend abstraction APIs', () => {
 
 describe('PiAgent model switching', () => {
   it('setModel updates getModel (regression: setModel used to write config.model but getModel reads _model)', () => {
-    const agent = createBackend(createTestConfig({ provider: 'pi', model: 'claude-opus-4-7' }));
+    const agent = new PiAgent(createTestConfig({ model: 'claude-opus-4-7' }));
 
     expect(agent.getModel()).toBe('claude-opus-4-7');
 

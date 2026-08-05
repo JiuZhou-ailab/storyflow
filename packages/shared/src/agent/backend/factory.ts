@@ -21,20 +21,13 @@ import type {
   AgentBackend,
   BackendConfig,
   AgentProvider,
-  LlmProviderType,
   LlmAuthType,
   CoreBackendConfig,
   BackendHostRuntimeContext,
 } from './types.ts';
 import { PiAgent } from '../pi-agent.ts';
-import {
-  getLlmConnection,
-  getLlmConnections,
-  getDefaultLlmConnection,
-  type LlmConnection,
-} from '../../config/storage.ts';
-// Import deprecated type for legacy migration function only
-import type { LlmConnectionType, CustomEndpointConfig } from '../../config/llm-connections.ts';
+import { getLlmConnection, getLlmConnections, getDefaultLlmConnection, type LlmConnection } from '../../config/storage.ts';
+import type { CustomEndpointConfig } from '../../config/llm-connections.ts';
 // Import validation helpers for provider-auth combinations
 import {
   isManagedLlmConnectionSlug,
@@ -59,84 +52,8 @@ import {
   resolveBackendHostTooling as resolveHostToolingPaths,
   resolveBackendRuntimePaths,
 } from './internal/runtime-resolver.ts';
-import { piDriver } from './internal/drivers/pi.ts';
+import { buildPiRuntime, fetchPiModels } from './internal/drivers/pi.ts';
 import { getSourcePath } from '../../sources/storage.ts';
-
-function resolveDriverRuntime(
-  hostRuntime: BackendHostRuntimeContext,
-) {
-  const resolvedPaths = resolveBackendRuntimePaths(hostRuntime);
-  return { driver: piDriver, resolvedPaths };
-}
-
-/**
- * Detect provider from stored auth type.
- *
- * Maps authentication types to their corresponding providers:
- * - api_key, oauth_token → Pi runtime
- *
- * Note: Provider is now determined by LLM connection type, not auth type.
- * This function is kept for backward compatibility.
- *
- * @param authType - The stored authentication type
- * @returns The detected provider
- */
-export function detectProvider(authType: string): AgentProvider {
-  switch (authType) {
-    case 'api_key':
-    case 'oauth_token':
-      return 'pi';
-
-    // Storyflow has a single execution runtime.
-    default:
-      return 'pi';
-  }
-}
-
-/**
- * Create the appropriate backend based on configuration.
- *
- * @param config - Backend configuration including provider selection
- * @returns An initialized AgentBackend instance
- * @throws Error if the requested provider is not yet implemented
- *
- * @example
- * ```typescript
- * // Create a Pi backend using Anthropic as its model provider
- * const backend = createBackend({
- *   provider: 'pi',
- *   providerType: 'anthropic',
- *   workspace: myWorkspace,
- *   model: 'claude-sonnet-4-6',
- * });
- * ```
- */
-export function createBackend(config: BackendConfig): AgentBackend {
-  switch (config.provider) {
-    case 'anthropic':
-      // Compatibility boundary: provider used to select the Claude SDK. It now
-      // identifies an Anthropic connection that executes through PiAgent.
-      return new PiAgent({
-        ...config,
-        provider: 'pi',
-        providerType: config.providerType ?? 'anthropic',
-      });
-
-    case 'pi':
-      // PiAgent implements AgentBackend directly
-      // Auth is API key based via Pi's AuthStorage
-      return new PiAgent(config);
-
-    default:
-      throw new Error(`Unknown provider: ${config.provider}`);
-  }
-}
-
-/**
- * Create the appropriate agent based on configuration.
- * Alias for createBackend - prefer this name for new code.
- */
-export const createAgent = createBackend;
 
 /**
  * Create backend from a pre-resolved context and provider-agnostic core config.
@@ -149,30 +66,23 @@ export function createBackendFromResolvedContext(args: {
   providerOptions?: BackendProviderOptions;
 }): AgentBackend {
   const { context, coreConfig, hostRuntime, providerOptions } = args;
-  const { driver, resolvedPaths } = resolveDriverRuntime(hostRuntime);
-
-  const buildArgs = {
+  const resolvedPaths = resolveBackendRuntimePaths(hostRuntime);
+  const runtime = buildPiRuntime({
     context,
-    coreConfig,
-    hostRuntime,
     resolvedPaths,
     providerOptions,
-  };
-
-  driver.prepareRuntime?.(buildArgs);
-  const runtime = driver.buildRuntime(buildArgs);
+  });
 
   const config: ResolvedBackendConfig = {
     ...coreConfig,
-    provider: context.provider,
-    providerType: context.connection?.providerType ?? getDefaultProviderType(context.provider),
-    authType: context.authType || getDefaultAuthType(context.provider),
+    providerType: context.connection?.providerType ?? 'pi',
+    authType: context.authType || 'api_key',
     model: context.resolvedModel,
     connectionSlug: context.connection?.slug,
     runtime,
   };
 
-  return createBackend(config);
+  return new PiAgent(config);
 }
 
 /**
@@ -182,10 +92,7 @@ export function createBackendFromResolvedContext(args: {
 export function initializeBackendHostRuntime(args: {
   hostRuntime: BackendHostRuntimeContext;
 }): void {
-  const { hostRuntime } = args;
-
-  const { driver, resolvedPaths } = resolveDriverRuntime(hostRuntime);
-  driver.initializeHostRuntime?.({ hostRuntime, resolvedPaths });
+  resolveBackendRuntimePaths(args.hostRuntime);
 }
 
 /**
@@ -199,70 +106,9 @@ export function resolveBackendHostTooling(args: {
   return resolveHostToolingPaths(args.hostRuntime);
 }
 
-/**
- * Get list of currently available providers.
- *
- * @returns Array of provider identifiers that have working implementations
- */
-export function getAvailableProviders(): AgentProvider[] {
-  return ['pi'];
-}
-
-/**
- * Check if a provider is available for use.
- *
- * @param provider - Provider to check
- * @returns true if the provider has a working implementation
- */
-export function isProviderAvailable(provider: AgentProvider): boolean {
-  return getAvailableProviders().includes(provider);
-}
-
 // ============================================================
 // LLM Connection Support
 // ============================================================
-
-/**
- * Map LlmProviderType to the Storyflow execution runtime.
- *
- * All current connection types execute through PiAgent. The providerType is
- * preserved separately for model/auth routing.
- *
- * @param providerType - The full provider type from LLM connection
- * @returns The agent provider for SDK selection
- */
-export function providerTypeToAgentProvider(providerType: LlmProviderType): AgentProvider {
-  switch (providerType) {
-    case 'anthropic':
-    case 'pi':
-    case 'pi_compat':
-      return 'pi';
-
-    default:
-      // Exhaustive check
-      const _exhaustive: never = providerType;
-      return 'pi';
-  }
-}
-
-/**
- * @deprecated Use providerTypeToAgentProvider instead.
- * Map legacy LLM connection type to agent provider.
- *
- * @param connectionType - The legacy LLM connection type
- * @returns The corresponding agent provider
- */
-export function connectionTypeToProvider(connectionType: LlmConnectionType): AgentProvider {
-  switch (connectionType) {
-    case 'anthropic':
-      return 'pi';
-    case 'openai':
-    case 'openai-compat':
-      return 'pi'; // Legacy OpenAI connections are now routed through Pi
-    default:
-      return 'pi';
-  }
-}
 
 /**
  * @deprecated Use LlmAuthType directly - no mapping needed.
@@ -361,10 +207,6 @@ export function resolveBackendContext(args: {
     getLlmConnections(),
   );
 
-  const provider = connection
-    ? providerTypeToAgentProvider(connection.providerType || 'anthropic')
-    : 'pi';
-
   const authType = connection
     ? connectionAuthTypeToBackendAuthType(connection.authType)
     : undefined;
@@ -373,10 +215,8 @@ export function resolveBackendContext(args: {
 
   return {
     connection,
-    provider,
     authType,
     resolvedModel,
-    capabilities: BACKEND_CAPABILITIES[provider],
   };
 }
 
@@ -424,25 +264,10 @@ export async function fetchBackendModels(args: {
   hostRuntime: BackendHostRuntimeContext;
   timeoutMs?: number;
 }): Promise<ModelFetchResult> {
-  const provider = providerTypeToAgentProvider(args.connection.providerType);
-  const { driver, resolvedPaths } = resolveDriverRuntime(args.hostRuntime);
-  const timeoutMs = args.timeoutMs ?? 30_000;
-
-  driver.initializeHostRuntime?.({
-    hostRuntime: args.hostRuntime,
-    resolvedPaths,
-  });
-
-  if (!driver.fetchModels) {
-    throw new Error(`Model discovery not implemented for provider: ${provider}`);
-  }
-
-  return driver.fetchModels({
+  resolveBackendRuntimePaths(args.hostRuntime);
+  return fetchPiModels({
     connection: args.connection,
     credentials: args.credentials,
-    hostRuntime: args.hostRuntime,
-    resolvedPaths,
-    timeoutMs,
   });
 }
 
@@ -471,55 +296,12 @@ export async function validateStoredBackendConnection(args: {
       return { success: false, error: 'No credentials configured' };
     }
 
-    const provider = providerTypeToAgentProvider(connection.providerType);
-    const { driver, resolvedPaths } = resolveDriverRuntime(args.hostRuntime);
-
-    driver.initializeHostRuntime?.({
-      hostRuntime: args.hostRuntime,
-      resolvedPaths,
-    });
-
-    if (!driver.validateStoredConnection) {
-      return { success: true };
-    }
-
-    return driver.validateStoredConnection({
-      slug: args.slug,
-      connection,
-      credentialManager,
-      hostRuntime: args.hostRuntime,
-      resolvedPaths,
-    });
+    resolveBackendRuntimePaths(args.hostRuntime);
+    return { success: true };
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     return { success: false, error: parseValidationError(msg) };
   }
-}
-
-/**
- * Create backend configuration from an LLM connection.
- *
- * @param connection - The LLM connection config
- * @param baseConfig - Base backend config (workspace, session, etc.)
- * @returns Complete BackendConfig ready for createBackend()
- */
-export function createConfigFromConnection(
-  connection: LlmConnection,
-  baseConfig: Omit<BackendConfig, 'provider' | 'authType' | 'providerType'>
-): BackendConfig {
-  // Use new providerType if available, fall back to legacy type
-  const providerType = connection.providerType || (connection.type ? connectionTypeToProvider(connection.type) as unknown as LlmProviderType : 'anthropic');
-  const provider = providerTypeToAgentProvider(providerType);
-
-  return {
-    ...baseConfig,
-    provider,
-    providerType,
-    authType: connection.authType,
-    connectionSlug: connection.slug,
-    // Use connection's default model if no model specified in baseConfig
-    model: baseConfig.model || connection.defaultModel,
-  };
 }
 
 /**
@@ -532,7 +314,7 @@ export function createConfigFromConnection(
  */
 export function createBackendFromConnection(
   connectionSlug: string,
-  baseConfig: Omit<BackendConfig, 'provider' | 'authType'>,
+  baseConfig: Omit<BackendConfig, 'authType'>,
   hostRuntime?: BackendHostRuntimeContext,
   providerOptions?: BackendProviderOptions,
 ): AgentBackend {
@@ -553,10 +335,8 @@ export function createBackendFromConnection(
 
   const context: ResolvedBackendContext = {
     connection,
-    provider: providerTypeToAgentProvider(connection.providerType || 'anthropic'),
     authType: connectionAuthTypeToBackendAuthType(connection.authType),
     resolvedModel: resolveModelForConnection(baseConfig.model, connection),
-    capabilities: BACKEND_CAPABILITIES[providerTypeToAgentProvider(connection.providerType || 'anthropic')],
   };
 
   if (hostRuntime) {
@@ -568,45 +348,13 @@ export function createBackendFromConnection(
     });
   }
 
-  const config = createConfigFromConnection(connection, {
+  return new PiAgent({
     ...baseConfig,
+    providerType: connection.providerType,
+    authType: connection.authType,
+    connectionSlug: connection.slug,
     model: context.resolvedModel,
   });
-  return createBackend(config);
-}
-
-// ============================================================
-// Backend Capabilities
-// ============================================================
-
-/**
- * Declarative capabilities for each backend provider.
- * Used by the session layer to make decisions without checking provider strings.
- */
-export const BACKEND_CAPABILITIES: Record<AgentProvider, {
-  /** Whether the backend needs an HTTP pool server (external subprocess can't access McpClientPool directly) */
-  needsHttpPoolServer: boolean;
-}> = {
-  anthropic: { needsHttpPoolServer: false },
-  pi: { needsHttpPoolServer: false },
-};
-
-// ============================================================
-// Auth Type Resolution
-// ============================================================
-
-/**
- * Get the default auth type for a provider when none is explicitly specified.
- *
- * - anthropic: undefined (Claude uses env vars, not explicit authType)
- * - pi: 'api_key'
- */
-export function getDefaultAuthType(provider: AgentProvider): LlmAuthType | undefined {
-  switch (provider) {
-    case 'anthropic': return undefined;
-    case 'pi':        return 'api_key';
-    default:          return undefined;
-  }
 }
 
 // ============================================================
@@ -673,7 +421,6 @@ export async function testBackendConnection(args: {
   try {
     const testModel = args.model;
     const providerType = args.connection?.providerType ?? getDefaultProviderType(args.provider);
-    const executionProvider = providerTypeToAgentProvider(providerType);
     const now = Date.now();
     const authType: LlmAuthType = (
       providerType === 'pi_compat'
@@ -695,10 +442,8 @@ export async function testBackendConnection(args: {
 
     const context: ResolvedBackendContext = {
       connection: syntheticConnection,
-      provider: executionProvider,
       authType,
       resolvedModel: testModel,
-      capabilities: BACKEND_CAPABILITIES[executionProvider],
     };
 
     const cwd = homedir();

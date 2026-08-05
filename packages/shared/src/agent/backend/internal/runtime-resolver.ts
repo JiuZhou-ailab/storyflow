@@ -88,10 +88,7 @@ function resolveServerPath(
 }
 
 /**
- * Locate ripgrep. Sourced from `@vscode/ripgrep` since SDK 0.2.113 stopped
- * shipping `vendor/ripgrep/<platform>/rg` (the binary is now compiled into
- * the native `claude` executable, but our search service in
- * `packages/server-core/src/services/search.ts` still calls it directly).
+ * Locate the ripgrep binary used by the host search service.
  */
 function resolveRipgrepPath(hostRuntime: BackendHostRuntimeContext): string | undefined {
   const binaryName = process.platform === 'win32' ? 'rg.exe' : 'rg';

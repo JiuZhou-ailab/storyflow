@@ -1,16 +1,10 @@
-import type {
-  AgentProvider,
-  BackendConfig,
-  BackendHostRuntimeContext,
-  CoreBackendConfig,
-  LlmAuthType,
-  LlmProviderType,
-} from '../types.ts';
+// input: Pi runtime paths, connection resolution, credentials, and model metadata
+// output: Shared data contracts for direct Pi runtime construction and model discovery
+// pos: Internal configuration boundary between Storyflow session orchestration and Pi
+
+import type { AgentProvider, BackendConfig, LlmAuthType, LlmProviderType } from '../types.ts';
 import type { LlmConnection } from '../../../config/storage.ts';
-import type { ModelFetchResult } from '../../../config/model-fetcher.ts';
 import type { ModelThinkingLevelMap } from '../../../config/models.ts';
-import type { CredentialManager } from '../../../credentials/manager.ts';
-import type { ResolvedBackendRuntimePaths } from './runtime-resolver.ts';
 
 export interface BackendRuntimePaths {
   copilotCli?: string;
@@ -38,12 +32,8 @@ export interface BackendRuntimePayload extends Record<string, unknown> {
 
 export interface BackendResolutionContext {
   connection: LlmConnection | null;
-  provider: AgentProvider;
   authType?: LlmAuthType;
   resolvedModel: string;
-  capabilities: {
-    needsHttpPoolServer: boolean;
-  };
 }
 
 export interface BackendProviderOptions {
@@ -57,44 +47,10 @@ export interface BackendModelFetchCredentials {
   oauthIdToken?: string;
 }
 
-export interface DriverHostRuntimeArgs {
-  hostRuntime: BackendHostRuntimeContext;
-  resolvedPaths: ResolvedBackendRuntimePaths;
-}
-
-export interface DriverBuildArgs {
-  context: BackendResolutionContext;
-  coreConfig: CoreBackendConfig;
-  hostRuntime: BackendHostRuntimeContext;
-  resolvedPaths: ResolvedBackendRuntimePaths;
-  providerOptions?: BackendProviderOptions;
-}
-
-export interface DriverFetchModelsArgs extends DriverHostRuntimeArgs {
-  connection: LlmConnection;
-  credentials: BackendModelFetchCredentials;
-  timeoutMs: number;
-}
-
 export interface StoredConnectionValidationResult {
   success: boolean;
   error?: string;
   shouldRefreshModels?: boolean;
-}
-
-export interface DriverValidateStoredConnectionArgs extends DriverHostRuntimeArgs {
-  slug: string;
-  connection: LlmConnection;
-  credentialManager: CredentialManager;
-}
-
-export interface ProviderDriver {
-  provider: AgentProvider;
-  initializeHostRuntime?: (args: DriverHostRuntimeArgs) => void;
-  fetchModels?: (args: DriverFetchModelsArgs) => Promise<ModelFetchResult>;
-  validateStoredConnection?: (args: DriverValidateStoredConnectionArgs) => Promise<StoredConnectionValidationResult>;
-  prepareRuntime?: (args: DriverBuildArgs) => void;
-  buildRuntime: (args: DriverBuildArgs) => BackendRuntimePayload;
 }
 
 /**

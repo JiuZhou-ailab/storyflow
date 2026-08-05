@@ -32,7 +32,6 @@ function createBackendConfig(overrides: Partial<BackendConfig> = {}): BackendCon
   const workspaceRoot = createTempDir();
 
   return {
-    provider: "anthropic",
     workspace: {
       id: "workspace-1",
       name: "Workspace",

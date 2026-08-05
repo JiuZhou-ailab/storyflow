@@ -2,7 +2,7 @@
   "name": "storyflow",
   "version": "0.10.2",
   "license": "Apache-2.0",
-  "description": "Claude Code-like agent for Craft documents",
+  "description": "Pi-native agent workspace for Storyflow",
   "type": "module",
   "private": true,
   "trustedDependencies": [

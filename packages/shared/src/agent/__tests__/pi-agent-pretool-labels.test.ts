@@ -25,7 +25,6 @@ function createConfig(overrides?: {
   const workingDirectory = overrides?.workingDirectory ?? '/tmp/project-root'
 
   return {
-    provider: 'pi',
     workspace: {
       id: 'ws-test',
       name: 'Test Workspace',

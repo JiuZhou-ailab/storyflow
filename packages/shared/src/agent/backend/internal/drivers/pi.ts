@@ -1,9 +1,17 @@
 // input: Provider connection settings, credentials, and the installed Pi model catalog
-// output: Internal Pi driver configuration and model discovery
-// pos: Minimal Storyflow configuration bridge into the Pi runtime
+// output: Direct Pi runtime configuration and model discovery functions
+// pos: Minimal Storyflow configuration bridge into the sole Pi runtime
 
-import type { ProviderDriver } from '../driver-types.ts';
+import type { LlmConnection } from '../../../../config/storage.ts';
 import { getAllPiModels, getPiModelsForAuthProvider } from '../../../../config/models-pi.ts';
+import type { ModelFetchResult } from '../../../../config/model-fetcher.ts';
+import type { ResolvedBackendRuntimePaths } from '../runtime-resolver.ts';
+import type {
+  BackendModelFetchCredentials,
+  BackendProviderOptions,
+  BackendResolutionContext,
+  BackendRuntimePayload,
+} from '../driver-types.ts';
 
 function resolvePiAuthProvider(connection: { providerType?: string; piAuthProvider?: string }): string | undefined {
   return connection.piAuthProvider || (connection.providerType === 'anthropic' ? 'anthropic' : undefined);
@@ -24,9 +32,13 @@ async function fetchCopilotModels(
     .filter(model => availableModelIds.has(model.id.replace(/^pi\//, '')));
 }
 
-export const piDriver: ProviderDriver = {
-  provider: 'pi',
-  buildRuntime: ({ context, providerOptions, resolvedPaths }) => ({
+export function buildPiRuntime(args: {
+  context: BackendResolutionContext;
+  providerOptions?: BackendProviderOptions;
+  resolvedPaths: ResolvedBackendRuntimePaths;
+}): BackendRuntimePayload {
+  const { context, providerOptions, resolvedPaths } = args;
+  return {
     paths: {
       piServer: resolvedPaths.piServerPath,
       node: resolvedPaths.nodeRuntimePath,
@@ -60,23 +72,27 @@ export const piDriver: ProviderDriver = {
       }
       return m.id;
     }),
-  }),
-  fetchModels: async ({ connection, credentials }) => {
-    const piAuthProvider = resolvePiAuthProvider(connection);
-    const copilotGitHubToken = credentials.oauthRefreshToken || credentials.oauthAccessToken;
-    if (piAuthProvider === 'github-copilot' && copilotGitHubToken) {
-      return { models: await fetchCopilotModels(copilotGitHubToken) };
-    }
+  };
+}
 
-    const models = piAuthProvider
-      ? getPiModelsForAuthProvider(piAuthProvider)
-      : getAllPiModels();
+export async function fetchPiModels(args: {
+  connection: LlmConnection;
+  credentials: BackendModelFetchCredentials;
+}): Promise<ModelFetchResult> {
+  const { connection, credentials } = args;
+  const piAuthProvider = resolvePiAuthProvider(connection);
+  const copilotGitHubToken = credentials.oauthRefreshToken || credentials.oauthAccessToken;
+  if (piAuthProvider === 'github-copilot' && copilotGitHubToken) {
+    return { models: await fetchCopilotModels(copilotGitHubToken) };
+  }
 
-    if (models.length === 0) {
-      throw new Error(`No Pi models found for provider: ${piAuthProvider ?? 'all'}`);
-    }
+  const models = piAuthProvider
+    ? getPiModelsForAuthProvider(piAuthProvider)
+    : getAllPiModels();
 
-    return { models };
-  },
-  validateStoredConnection: async () => ({ success: true }),
-};
+  if (models.length === 0) {
+    throw new Error(`No Pi models found for provider: ${piAuthProvider ?? 'all'}`);
+  }
+
+  return { models };
+}

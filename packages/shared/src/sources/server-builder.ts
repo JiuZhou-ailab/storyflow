@@ -30,7 +30,7 @@ export const SERVER_BUILD_ERRORS = {
 } as const;
 
 /**
- * MCP server configuration compatible with Claude Agent SDK
+ * Host MCP server configuration projected into Pi tool definitions.
  * Supports HTTP/SSE (remote) and stdio (local subprocess) transports.
  */
 export type McpServerConfig =

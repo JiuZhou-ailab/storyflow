@@ -95,7 +95,6 @@ function injectSession(
     })
     managed.backendRestartSignature = buildRestartRequiredSignature({
       connection: ctx.connection,
-      provider: ctx.provider,
       authType: ctx.authType,
       resolvedModel: ctx.resolvedModel,
       enable1MContext: getEnable1MContext(),
@@ -291,10 +290,8 @@ describe('refreshConnectionRuntime', () => {
         defaultModel: 'custom-model',
         createdAt: Date.now(),
       },
-      provider: 'pi',
       authType: 'api_key',
       resolvedModel: 'custom-model',
-      capabilities: { needsHttpPoolServer: true },
     } as ReturnType<typeof resolveBackendContext>
 
     await (sm as unknown as {

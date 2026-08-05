@@ -2,9 +2,7 @@
  * Session title generation utilities.
  *
  * Shared helpers for building title prompts and validating results.
- * Actual title generation is handled by agent classes using their respective SDKs:
- * - ClaudeAgent: Uses Claude SDK query()
- * - CodexAgent: Uses OpenAI SDK
+ * Actual title generation uses the Pi runtime's configured mini completion path.
  */
 
 export const DEFAULT_TITLE_LANGUAGE = '简体中文';

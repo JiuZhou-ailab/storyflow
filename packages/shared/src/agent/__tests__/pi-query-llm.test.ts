@@ -15,7 +15,6 @@ import type { LLMQueryRequest, LLMQueryResult } from '../llm-tool.ts';
 
 function createConfig(overrides: Partial<BackendConfig> = {}): BackendConfig {
   return {
-    provider: 'pi',
     workspace: {
       id: 'ws-test',
       name: 'Test Workspace',

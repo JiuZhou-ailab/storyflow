@@ -18,7 +18,6 @@ import {
   resolveBackendContext,
   createBackendFromResolvedContext,
   cleanupSourceRuntimeArtifacts,
-  providerTypeToAgentProvider,
   type AgentBackend,
   type BackendHostRuntimeContext,
   type PostInitResult,
@@ -95,7 +94,7 @@ import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
 import { isLowSignal } from '@craft-agent/shared/utils'
 import { restoreFiles } from '@craft-agent/shared/utils/bundle-files'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
-import { CraftMcpClient, McpClientPool, McpPoolServer } from '@craft-agent/shared/mcp'
+import { CraftMcpClient, McpClientPool } from '@craft-agent/shared/mcp'
 import { type Session, type SessionEvent, type FileAttachment, type SendMessageOptions, type OneShotLlmRequest, type OneShotLlmResult, type NovelSelectionRewriteRequest, type NovelSelectionRewriteResult, type UnreadSummary, type RemoteSessionTransferPayload, RPC_CHANNELS, generateMessageId } from '@craft-agent/shared/protocol'
 import { messageToStored, storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta, type TurnMetrics } from '@craft-agent/core/types'
 import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlAsync, getEmojiIcon, resolveToolIcon, readFileAttachment, selectSpreadMessages, normalizePath, DEFAULT_TITLE_LANGUAGE } from '@craft-agent/shared/utils'
@@ -295,7 +294,6 @@ async function savePiTurnAnchor(sessionPath: string, messageId: string, anchorId
 }
 
 export function requireSdkForkBranchAnchor(input: {
-  provider: string
   branchFromSessionId: string
   branchFromMessageId: string
   branchFromSdkTurnId?: string
@@ -305,7 +303,7 @@ export function requireSdkForkBranchAnchor(input: {
   }
 
   throw new Error(
-    `Cannot create branch yet: selected message is missing a provider branch anchor (${input.provider}; source=${input.branchFromSessionId}; message=${input.branchFromMessageId}). Branch from a completed assistant response and try again.`
+    `Cannot create branch yet: selected message is missing a Pi branch anchor (source=${input.branchFromSessionId}; message=${input.branchFromMessageId}). Branch from a completed assistant response and try again.`
   )
 }
 
@@ -452,8 +450,7 @@ async function applyBridgeUpdates(
   mcpServers: Record<string, import('@craft-agent/shared/agent/backend').SdkMcpServerConfig>,
   sessionId: string,
   workspaceRootPath: string,
-  context: string,
-  poolServerUrl?: string
+  context: string
 ): Promise<void> {
   await agent.applyBridgeUpdates({
     sessionPath,
@@ -462,7 +459,6 @@ async function applyBridgeUpdates(
     sessionId,
     workspaceRootPath,
     context,
-    poolServerUrl,
   })
 }
 
@@ -730,8 +726,6 @@ interface ManagedSession {
   previousPermissionMode?: PermissionMode
   /** Centralized MCP client pool for this session's source connections */
   mcpPool?: McpClientPool
-  /** HTTP MCP server exposing pool tools to external SDK subprocesses */
-  poolServer?: McpPoolServer
   // SDK session ID for conversation continuity
   sdkSessionId?: string
   // Runtime lineage for sdkSessionId and the on-disk SDK transcript.
@@ -1657,7 +1651,7 @@ export class SessionManager implements ISessionManager {
     const intendedSlugs = enabledSources.map(s => s.config.slug)
 
     // Update source runtime config/credentials for backends that need it
-    await applyBridgeUpdates(managed.agent, sessionPath, enabledSources, mcpServers, managed.id, workspaceRootPath, 'source reload', managed.poolServer?.url)
+    await applyBridgeUpdates(managed.agent, sessionPath, enabledSources, mcpServers, managed.id, workspaceRootPath, 'source reload')
 
     await managed.agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
 
@@ -2117,7 +2111,7 @@ export class SessionManager implements ISessionManager {
       const { mcpServers } = await buildServersFromSources(
         enabledSources, sessionPath, managed.tokenRefreshManager
       )
-      await applyBridgeUpdates(managed.agent, sessionPath, enabledSources, mcpServers, managed.id, workspaceRootPath, 'source auth', managed.poolServer?.url)
+      await applyBridgeUpdates(managed.agent, sessionPath, enabledSources, mcpServers, managed.id, workspaceRootPath, 'source auth')
     }
 
     // Send the result as a new message to resume conversation
@@ -2739,15 +2733,12 @@ export class SessionManager implements ISessionManager {
         sessionLog.warn('Branch validation failed: sdk-fork requires parent SDK session ID', {
           workspaceId,
           branchFromSessionId: options.branchFromSessionId,
-          sourceProvider: sourceBackendContext.provider,
-          targetProvider: targetBackendContext.provider,
         })
         throw new Error('Cannot create branch yet: parent session SDK context is not initialized. Send one message in the parent session and try again.')
       }
 
       if (branchContextStrategy === 'sdk-fork') {
         branchFromSdkTurnId = requireSdkForkBranchAnchor({
-          provider: sourceBackendContext.provider,
           branchFromSessionId: options.branchFromSessionId,
           branchFromMessageId: options.branchFromMessageId,
           branchFromSdkTurnId,
@@ -3126,14 +3117,6 @@ export class SessionManager implements ISessionManager {
       }
     }
 
-    if (managed.poolServer) {
-      try {
-        await managed.poolServer.stop()
-      } catch (error) {
-        sessionLog.warn(`Failed to stop pool server for ${sessionId} during ${reason}: ${error instanceof Error ? error.message : error}`)
-      }
-    }
-
     if (managed.mcpPool) {
       try {
         await managed.mcpPool.disconnectAll()
@@ -3143,7 +3126,6 @@ export class SessionManager implements ISessionManager {
     }
 
     managed.agent = null
-    managed.poolServer = undefined
     managed.mcpPool = undefined
     managed.envOverrides = undefined
     managed.agentReady = undefined
@@ -3197,7 +3179,6 @@ export class SessionManager implements ISessionManager {
     const connection = backendContext.connection
     const sigInput = {
       connection,
-      provider: backendContext.provider,
       authType: backendContext.authType,
       resolvedModel: backendContext.resolvedModel,
       enable1MContext: getEnable1MContext(),
@@ -3406,7 +3387,6 @@ export class SessionManager implements ISessionManager {
     const connection = backendContext.connection
     const sigInput = {
       connection,
-      provider: backendContext.provider,
       authType: backendContext.authType,
       resolvedModel: backendContext.resolvedModel,
       enable1MContext: getEnable1MContext(),
@@ -3439,7 +3419,6 @@ export class SessionManager implements ISessionManager {
         }, managed.workspace.id)
       }
 
-      const provider = backendContext.provider
       if (connection) {
         sessionLog.info(`Using LLM connection "${connection.slug}" (${connection.providerType}) for session ${managed.id}`)
       } else {
@@ -3454,8 +3433,8 @@ export class SessionManager implements ISessionManager {
       // ============================================================
 
       const sessionPath = getSessionStoragePath(managed.workspace.rootPath, managed.id)
-      const hasPiTranscript = provider === 'pi' && hasPersistedPiTranscript(sessionPath)
-      const needsRuntimeMigration = provider === 'pi' && needsPiRuntimeMigrationSeed({
+      const hasPiTranscript = hasPersistedPiTranscript(sessionPath)
+      const needsRuntimeMigration = needsPiRuntimeMigrationSeed({
         agentRuntime: managed.agentRuntime,
         branchContextStrategy: managed.branchContextStrategy,
         hasPiTranscript,
@@ -3464,11 +3443,11 @@ export class SessionManager implements ISessionManager {
       })
       let seedFreshSessionFromRecovery = false
 
-      if (provider === 'pi' && hasPiTranscript && managed.agentRuntime !== 'pi') {
+      if (hasPiTranscript && managed.agentRuntime !== 'pi') {
         managed.agentRuntime = 'pi'
         this.persistSession(managed)
       } else if (needsRuntimeMigration) {
-        // Claude SDK and Pi session IDs/transcripts are not interchangeable.
+        // Legacy and Pi session IDs/transcripts are not interchangeable.
         // Retire only the stale runtime pointers; persisted Storyflow messages
         // remain the source for a one-shot seeded Pi start.
         managed.sdkSessionId = undefined
@@ -3498,15 +3477,6 @@ export class SessionManager implements ISessionManager {
 
       // Create centralized MCP client pool (all backends use it)
       managed.mcpPool = new McpClientPool({ debug: (msg) => sessionLog.debug(msg), workspaceRootPath: managed.workspace.rootPath, sessionPath })
-
-      // Backends that run as external subprocesses need an HTTP pool server
-      let poolServerUrl: string | undefined
-      if (backendContext.capabilities.needsHttpPoolServer) {
-        managed.poolServer = new McpPoolServer(managed.mcpPool, { debug: (msg) => sessionLog.debug(msg) })
-        managed.mcpPool.onToolsChanged = () => managed.poolServer?.notifyToolsChanged()
-        poolServerUrl = await managed.poolServer.start()
-        await managed.mcpPool.sync(mcpServers) // Ensure pool has tools before SDK connects
-      }
 
       // Per-session env overrides
       const miniModel = connection ? (getMiniModel(connection) ?? connection.defaultModel) : undefined
@@ -3666,9 +3636,7 @@ export class SessionManager implements ISessionManager {
           getTransferredSessionSummary,
           markTransferredSessionSummaryApplied,
           mcpPool: managed.mcpPool,
-          poolServerUrl,
           envOverrides,
-          // Claude-specific
           isHeadless: !AGENT_FLAGS.defaultModesEnabled,
           skipConfigWatcher: true, // Server owns workspace-level ConfigWatcher — don't duplicate in agents
           automationSystem: this.automationSystems.get(managed.workspace.rootPath),
@@ -3706,7 +3674,7 @@ export class SessionManager implements ISessionManager {
         },
       }) as AgentInstance
 
-      sessionLog.info(`Created ${provider} agent for session ${managed.id} (model: ${backendContext.resolvedModel})${managed.sdkSessionId ? ' (resuming)' : ''}`)
+      sessionLog.info(`Created Pi agent for session ${managed.id} (model: ${backendContext.resolvedModel})${managed.sdkSessionId ? ' (resuming)' : ''}`)
 
       // ============================================================
       // Post-construction: debug callback, auth callback, postInit()
@@ -4517,7 +4485,7 @@ export class SessionManager implements ISessionManager {
           .map(s => s.config.slug)
 
         // Update source runtime config/credentials for backends that need it
-        await applyBridgeUpdates(managed.agent!, sessionPath, allEnabledSources, mcpServers, managed.id, workspaceRootPath, 'source enable', managed.poolServer?.url)
+        await applyBridgeUpdates(managed.agent!, sessionPath, allEnabledSources, mcpServers, managed.id, workspaceRootPath, 'source enable')
 
         await managed.agent!.setSourceServers(mcpServers, apiServers, intendedSlugs)
 
@@ -4994,7 +4962,7 @@ export class SessionManager implements ISessionManager {
 
       // Update source runtime config/credentials for backends that need it
       const usableSources = sources.filter(isSourceUsable)
-      await applyBridgeUpdates(managed.agent, sessionPath, usableSources, mcpServers, managed.id, workspaceRootPath, 'source config change', managed.poolServer?.url)
+      await applyBridgeUpdates(managed.agent, sessionPath, usableSources, mcpServers, managed.id, workspaceRootPath, 'source config change')
 
       await managed.agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
 
@@ -5652,13 +5620,6 @@ export class SessionManager implements ISessionManager {
       managed.agent.dispose()
     }
 
-    // Stop pool server (HTTP MCP server for external SDK subprocesses)
-    if (managed.poolServer) {
-      managed.poolServer.stop().catch(err => {
-        sessionLog.warn(`Failed to stop pool server for ${sessionId}: ${err instanceof Error ? err.message : err}`)
-      })
-    }
-
     this.sessions.delete(sessionId)
 
     // Clean up session metadata in AutomationSystem (prevents memory leak)
@@ -6094,7 +6055,7 @@ export class SessionManager implements ISessionManager {
         const usableSources = sources.filter(isSourceUsable)
         const intendedSlugs = usableSources.map(s => s.config.slug)
         await agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
-        await applyBridgeUpdates(agent, sessionPath, usableSources, mcpServers, sessionId, workspaceRootPath, 'send message', managed.poolServer?.url)
+        await applyBridgeUpdates(agent, sessionPath, usableSources, mcpServers, sessionId, workspaceRootPath, 'send message')
         sessionLog.info(`Applied ${mcpCount} MCP + ${apiCount} API sources to session ${sessionId} (${allSources.length} total)`)
       }
       sendSpan.mark('servers.applied')
