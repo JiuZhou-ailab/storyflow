@@ -18,20 +18,16 @@
  * separate process, avoiding bundling issues in the Electron main process.
  */
 
-import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
 
 // Pi SDK
 import {
-  AuthStorage as PiAuthStorage,
   ModelRegistry as PiModelRegistry,
   getAgentDir,
 } from '@earendil-works/pi-coding-agent';
 import type {
   AgentSession,
   AgentSessionEvent,
-  AuthCredential,
 } from '@earendil-works/pi-coding-agent';
 
 // Pi AI types
@@ -48,20 +44,6 @@ import { setBedrockProviderModule } from '@earendil-works/pi-ai/api/bedrock-conv
 import { bedrockProviderModule } from '@earendil-works/pi-ai/bedrock-provider';
 setBedrockProviderModule(bedrockProviderModule);
 
-// Model resolution (extracted for testability + custom-endpoint precedence)
-import { resolvePiModel } from './model-resolution.ts';
-import {
-  buildCustomEndpointModelDef,
-  normalizeCustomEndpointModelEntry,
-  resolveCustomEndpointProviderApiKey,
-  resolveCustomEndpointProviderName,
-  resolveRuntimeCredentialProviderNames,
-  shouldUseCustomEndpointBearerAuthHeader,
-  stripPiPrefix,
-  type CustomEndpointModelEntry,
-  type CustomEndpointModelOverrides,
-} from './custom-endpoint-models.ts';
-
 // Direct source imports from shared (bundled by bun build)
 import { getSessionPath } from '../../shared/src/sessions/storage.ts';
 import { buildCallLlmRequest } from '../../shared/src/agent/llm-tool.ts';
@@ -72,8 +54,6 @@ import type {
   ConversationRewindResult,
 } from '../../shared/src/agent/backend/types.ts';
 import type {
-  PiCredential,
-  PiCustomEndpointApi,
   PiInboundMessage,
   PiOutboundMessage,
   PiProxyToolDefinition,
@@ -88,8 +68,8 @@ import {
   createProductRewindBoundary,
   findProductRewindBoundary,
 } from './product-rewind.ts';
-import { ProductAuthStorageBackend } from './product-auth-storage.ts';
 import { queryLlmWithEphemeralPiSession } from './ephemeral-llm-query.ts';
+import { PiModelRuntime } from './pi-model-runtime.ts';
 import { createPrimaryPiSession } from './primary-session.ts';
 import { createPiToolRuntime } from './pi-tool-runtime.ts';
 import { installNetworkProxy } from './network-proxy.ts';
@@ -112,7 +92,6 @@ installNetworkProxy();
 
 let piSession: AgentSession | null = null;
 let piModelRegistry: PiModelRegistry | null = null;
-let moduleAuthStorage: PiAuthStorage | null = null;
 let unsubscribeEvents: (() => void) | null = null;
 let systemPromptOverride: ReturnType<typeof createSystemPromptOverride> | null = null;
 
@@ -125,7 +104,6 @@ let currentPromptAttemptState: PromptAttemptState | null = null;
 let pendingProductRewindBoundary: Extract<PiInboundMessage, { type: 'prompt' }>['rewindBoundary'] | null = null;
 let currentStablePrefixHash: string | null = null;
 let currentToolsetHash: string | null = null;
-let lastReportedOAuthCredential = '';
 
 // Pending promises for async handshakes
 const pendingPreToolUse = new Map<string, { resolve: (response: { action: string; input?: Record<string, unknown>; reason?: string }) => void }>();
@@ -168,164 +146,19 @@ function logSanitizeResult(scope: string, result: PiSessionSanitizeResult): void
 // Pi Session Management
 // ============================================================
 
-function resolvedCwd(): string {
-  const wd = initConfig?.cwd || initConfig?.workingDirectory || process.cwd();
-  if (wd.startsWith('~/')) return join(homedir(), wd.slice(2));
-  if (wd === '~') return homedir();
-  return wd;
-}
-
-// Helper: derive preferCustomEndpoint flag from init config
-function shouldPreferCustomEndpoint(): boolean {
-  return Boolean(initConfig?.customEndpoint && initConfig?.baseUrl?.trim());
-}
-
-/**
- * Resolve the API key for custom endpoint auth.
- * Returns empty string for local endpoints (Ollama etc.) that don't need auth.
- */
-function resolveCustomEndpointApiKey(): string {
-  if (initConfig?.piAuth?.credential?.type === 'api_key') {
-    return initConfig.piAuth.credential.key;
-  }
-  const key = initConfig?.apiKey || '';
-  if (!key && initConfig?.baseUrl) {
-    debugLog('[custom-endpoint] Warning: no API key found; using placeholder key for provider registration');
-  }
-  return resolveCustomEndpointProviderApiKey({
-    apiKey: key,
-    baseUrl: initConfig?.baseUrl,
-    authType: initConfig?.authType,
-  });
-}
-
-function getCustomEndpointProviderName(): string {
-  return resolveCustomEndpointProviderName(initConfig?.piAuth?.provider);
-}
-
-/** Model IDs currently registered under the custom-endpoint provider */
-let customEndpointModelIds: Set<string> = new Set();
-
-/**
- * Register (or re-register) the custom-endpoint provider with the given models.
- * Note: registerProvider replaces the entire provider, so we maintain a Set of all
- * known model IDs and always pass the full set.
- */
-const customModelOverrides = new Map<string, CustomEndpointModelOverrides>();
-
-function registerCustomEndpointModels(
-  registry: PiModelRegistry,
-  api: PiCustomEndpointApi,
-  baseUrl: string,
-  models: CustomEndpointModelEntry[],
-): void {
-  for (const m of models) {
-    customEndpointModelIds.add(m.id);
-    if (
-      m.contextWindow
-      || m.supportsImages !== undefined
-      || m.supportsThinking !== undefined
-      || m.thinkingLevelMap !== undefined
-    ) {
-      customModelOverrides.set(m.id, {
-        ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
-        ...(m.supportsImages !== undefined ? { supportsImages: m.supportsImages } : {}),
-        ...(m.supportsThinking !== undefined ? { supportsThinking: m.supportsThinking } : {}),
-        ...(m.thinkingLevelMap !== undefined ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
-      });
-    }
-  }
-  const allIds = [...customEndpointModelIds];
-  const providerName = getCustomEndpointProviderName();
-  registry.registerProvider(providerName, {
-    baseUrl,
-    apiKey: resolveCustomEndpointApiKey(),
-    api,
-    authHeader: shouldUseCustomEndpointBearerAuthHeader(providerName),
-    models: allIds.map(id => buildCustomEndpointModelDef(
-      id,
-      { supportsImages: initConfig?.customEndpoint?.supportsImages === true },
-      customModelOverrides.get(id),
-    )),
-  });
-  debugLog(`Registered custom endpoint provider=${providerName}: ${baseUrl} with ${allIds.length} model(s) [${allIds.join(', ')}], api: ${api}`);
-}
-
-function reportAuthStorageChange(serialized: string): void {
-  const provider = initConfig?.piAuth?.provider;
-  if (!provider) return;
-  const data = JSON.parse(serialized) as Record<string, PiCredential | undefined>;
-  const credential = data[provider];
-  if (credential?.type !== 'oauth') return;
-
-  const fingerprint = JSON.stringify(credential);
-  if (fingerprint === lastReportedOAuthCredential) return;
-  lastReportedOAuthCredential = fingerprint;
-  if (initConfig?.piAuth) initConfig.piAuth = { provider, credential };
-  send({ type: 'credential_update', provider, credential });
-}
-
-/** Build one Pi-owned AuthStorage shared by main and ephemeral sessions. */
-function createAuthenticatedRegistry(): {
-  authStorage: PiAuthStorage;
-  modelRegistry: PiModelRegistry;
-} {
-  if (!moduleAuthStorage) {
-    const initialCredentials: Record<string, PiCredential> = {};
-    const hasCustomEndpoint = !!initConfig?.baseUrl?.trim();
-    if (initConfig?.piAuth) {
-      const { provider, credential } = initConfig.piAuth;
-      for (const credentialProvider of resolveRuntimeCredentialProviderNames(
-        provider,
-        hasCustomEndpoint && !!initConfig.customEndpoint,
-      )) {
-        initialCredentials[credentialProvider] = credential;
-      }
-      lastReportedOAuthCredential = credential.type === 'oauth' ? JSON.stringify(credential) : '';
-      debugLog(`Injected ${credential.type} credential for provider(s): ${Object.keys(initialCredentials).join(', ')}`);
-    } else if (initConfig?.apiKey) {
-      initialCredentials.anthropic = { type: 'api_key', key: initConfig.apiKey };
-      debugLog('Injected API key into auth storage (legacy fallback)');
-    }
-    moduleAuthStorage = PiAuthStorage.fromStorage(new ProductAuthStorageBackend(
-      JSON.stringify(initialCredentials),
-      reportAuthStorageChange,
-    ));
-  }
-  const authStorage = moduleAuthStorage;
-  const hasCustomEndpoint = !!initConfig?.baseUrl?.trim();
-
-  const modelRegistry = PiModelRegistry.inMemory(authStorage);
-
-  // Register custom endpoint models dynamically via Pi SDK's registerProvider API.
-  // This makes arbitrary provider-compatible endpoints work through the Pi SDK
-  // by creating synthetic Model<Api> objects that the SDK requires.
-  if (hasCustomEndpoint && initConfig?.customEndpoint) {
-    const { api } = initConfig.customEndpoint;
-    const modelEntries: CustomEndpointModelEntry[] = (initConfig.customModels?.length
-      ? initConfig.customModels
-      : [initConfig.model || 'default']
-    ).map(normalizeCustomEndpointModelEntry);
-    customEndpointModelIds = new Set();  // Reset on fresh registry creation
-    registerCustomEndpointModels(modelRegistry, api, initConfig.baseUrl!.trim(), modelEntries);
-  } else if (hasCustomEndpoint && !initConfig?.customEndpoint) {
-    debugLog('Custom endpoint without protocol config — models may not resolve. Set customEndpoint.api for proper routing.');
-  }
-
-  return { authStorage, modelRegistry };
-}
+const modelRuntime = new PiModelRuntime(() => initConfig, send, debugLog);
 
 async function ensureSession(): Promise<AgentSession> {
   if (piSession) return piSession;
   if (!initConfig) throw new Error('Cannot create session: init not received');
 
-  const cwd = resolvedCwd();
+  const cwd = modelRuntime.resolvedCwd();
   const agentDir = initConfig.agentDir || getAgentDir();
   mkdirSync(agentDir, { recursive: true });
   const piThinkingLevel = THINKING_TO_PI[
     initConfig.thinkingLevel as keyof typeof THINKING_TO_PI
   ];
-  const { authStorage, modelRegistry } = createAuthenticatedRegistry();
+  const { authStorage, modelRegistry } = modelRuntime.createAuthenticatedRegistry();
   piModelRegistry = modelRegistry;
 
   const created = await createPrimaryPiSession({
@@ -377,13 +210,13 @@ const {
 
 async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
   if (!initConfig) throw new Error('Cannot run queryLlm: init not received');
-  const { authStorage, modelRegistry } = createAuthenticatedRegistry();
+  const { authStorage, modelRegistry } = modelRuntime.createAuthenticatedRegistry();
   return queryLlmWithEphemeralPiSession(request, {
     config: initConfig,
-    cwd: resolvedCwd(),
+    cwd: modelRuntime.resolvedCwd(),
     authStorage,
     modelRegistry,
-    preferCustomEndpoint: shouldPreferCustomEndpoint(),
+    preferCustomEndpoint: modelRuntime.prefersCustomEndpoint(),
     debug: debugLog,
   });
 }
@@ -502,8 +335,7 @@ async function handleInit(msg: Extract<PiInboundMessage, { type: 'init' }>): Pro
     debugLog('Cleaned up existing session for re-init');
   }
 
-  moduleAuthStorage = null;
-  lastReportedOAuthCredential = '';
+  modelRuntime.resetAuth();
   initConfig = msg;
 
   // Azure OpenAI requires a tenant-specific endpoint URL.
@@ -850,24 +682,11 @@ async function handleUpdateRuntimeConfig(
     };
 
     if (piModelRegistry && initConfig.baseUrl?.trim() && initConfig.customEndpoint) {
-      const modelEntries: CustomEndpointModelEntry[] = (initConfig.customModels?.length
-        ? initConfig.customModels
-        : [initConfig.model || 'default']
-      ).map(normalizeCustomEndpointModelEntry);
-
-      customEndpointModelIds = new Set();
-      customModelOverrides.clear();
-      registerCustomEndpointModels(piModelRegistry, initConfig.customEndpoint.api, initConfig.baseUrl.trim(), modelEntries);
+      modelRuntime.refreshCustomEndpointModels(piModelRegistry);
     }
 
     if (piSession && piModelRegistry) {
-      let piModel = resolvePiModel(piModelRegistry, msg.model, initConfig.piAuth?.provider, shouldPreferCustomEndpoint());
-      if (!piModel && initConfig.baseUrl?.trim() && initConfig.customEndpoint) {
-        const bareId = stripPiPrefix(msg.model);
-        registerCustomEndpointModels(piModelRegistry, initConfig.customEndpoint.api, initConfig.baseUrl.trim(), [{ id: bareId }]);
-        piModel = piModelRegistry.find(getCustomEndpointProviderName(), bareId) ?? undefined;
-        debugLog(`[runtime_config] Dynamically registered custom endpoint model: ${bareId}`);
-      }
+      const piModel = modelRuntime.resolveModel(piModelRegistry, msg.model, 'runtime_config');
 
       if (!piModel) {
         throw new Error(`Could not resolve model after runtime update: ${msg.model}`);
@@ -893,17 +712,7 @@ async function handleSetModel(msg: Extract<PiInboundMessage, { type: 'set_model'
     debugLog(`[set_model] No active session or model registry, ignoring`);
     return;
   }
-  let piModel = resolvePiModel(piModelRegistry, msg.model, initConfig?.piAuth?.provider, shouldPreferCustomEndpoint());
-
-  // For custom endpoints, dynamically register unknown models so mid-session switching works.
-  // Uses registerCustomEndpointModels which accumulates into the existing model set
-  // (registerProvider replaces, so we track all IDs and re-register the full set).
-  if (!piModel && initConfig?.baseUrl?.trim() && initConfig?.customEndpoint) {
-    const bareId = stripPiPrefix(msg.model);
-    registerCustomEndpointModels(piModelRegistry, initConfig.customEndpoint.api, initConfig.baseUrl!.trim(), [{ id: bareId }]);
-    piModel = piModelRegistry.find(getCustomEndpointProviderName(), bareId) ?? undefined;
-    debugLog(`[set_model] Dynamically registered custom endpoint model: ${bareId}`);
-  }
+  const piModel = modelRuntime.resolveModel(piModelRegistry, msg.model, 'set_model');
 
   if (!piModel) {
     debugLog(`[set_model] Could not resolve model: ${msg.model}`);
@@ -1062,28 +871,7 @@ async function processMessage(msg: PiInboundMessage): Promise<void> {
 
     case 'token_update': {
       try {
-        if (!moduleAuthStorage) throw new Error('AuthStorage is not initialized');
-        const { provider, credential } = msg.piAuth;
-        // See ambient comment at the initial `authStorage.set` call — same shape reason.
-        const credentialProviders = resolveRuntimeCredentialProviderNames(
-          provider,
-          !!initConfig?.baseUrl?.trim() && !!initConfig.customEndpoint,
-        );
-        const previousFingerprint = lastReportedOAuthCredential;
-        if (credential.type === 'oauth') lastReportedOAuthCredential = JSON.stringify(credential);
-        try {
-          for (const credentialProvider of credentialProviders) {
-            moduleAuthStorage.set(credentialProvider, credential as unknown as AuthCredential);
-          }
-        } catch (error) {
-          lastReportedOAuthCredential = previousFingerprint;
-          throw error;
-        }
-        if (initConfig) {
-          initConfig.piAuth = msg.piAuth;
-        }
-        if (credential.type !== 'oauth') lastReportedOAuthCredential = '';
-        debugLog(`Updated ${credential.type} credential for provider(s): ${credentialProviders.join(', ')}`);
+        modelRuntime.updateCredential(msg.piAuth);
         send({ type: 'token_update_result', id: msg.id, success: true });
       } catch (error) {
         send({

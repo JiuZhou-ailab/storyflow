@@ -7,6 +7,7 @@ The release artifact is a Bun compiled binary so Pi's native virtual-module load
 - `src/index.ts` — JSONL process boundary and persistent parent AgentSession lifecycle.
 - `src/ephemeral-llm-query.ts` — Disposable Pi session lifecycle for `call_llm` and mini-completions.
 - `src/primary-session.ts` — Primary Pi AgentSession construction, resources, Extensions, tools, and resume/branch setup.
+- `src/pi-model-runtime.ts` — Pi provider credentials, custom endpoint registration, and model resolution.
 - `src/pi-tool-runtime.ts` — Permission hooks, large-result handling, Host tool proxying, and atomic product rewind.
 - `src/subagent-tool.ts` — built-in ephemeral Subagent Run with Host-enforced capability profiles.
 - `src/project-resource-loader.ts` — Pi-native resource/package discovery plus Storyflow compatibility paths.
