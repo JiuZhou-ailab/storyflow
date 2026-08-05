@@ -39,8 +39,8 @@ class FakeScheduler {
 }
 
 describe('TurnWatchdog', () => {
-  it('uses a 30 minute default idle timeout window', () => {
-    expect(SESSION_TURN_IDLE_TIMEOUT_MS).toBe(30 * 60 * 1000)
+  it('uses Pi\'s 5 minute default idle timeout window', () => {
+    expect(SESSION_TURN_IDLE_TIMEOUT_MS).toBe(5 * 60 * 1000)
   })
 
   it('fires idle timeout only after a full idle window without progress', () => {

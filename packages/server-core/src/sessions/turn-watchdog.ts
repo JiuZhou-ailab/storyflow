@@ -2,7 +2,7 @@
 // output: A small watchdog for broad session-turn timeout enforcement
 // pos: Isolates long-running turn timeout policy from SessionManager orchestration
 
-export const SESSION_TURN_IDLE_TIMEOUT_MS = 30 * 60 * 1000
+export const SESSION_TURN_IDLE_TIMEOUT_MS = 5 * 60 * 1000
 export const SESSION_TURN_HARD_TIMEOUT_MS = 12 * 60 * 60 * 1000
 
 export type TurnWatchdogTimeoutReason = 'idle' | 'hard'
