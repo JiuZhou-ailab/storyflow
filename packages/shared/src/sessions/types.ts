@@ -29,7 +29,7 @@ import type { StoredAttachment, MessageRole, ToolStatus, AuthRequestType, AuthSt
  */
 export const SESSION_PERSISTENT_FIELDS = [
   // Identity
-  'id', 'workspaceRootPath', 'sdkSessionId', 'agentRuntime', 'sdkCwd',
+  'id', 'workspaceRootPath', 'sdkSessionId', 'sdkCwd',
   // Timestamps
   'createdAt', 'lastUsedAt', 'lastMessageAt',
   // Display
@@ -61,6 +61,9 @@ export const SESSION_PERSISTENT_FIELDS = [
 ] as const;
 
 export type SessionPersistentField = typeof SESSION_PERSISTENT_FIELDS[number];
+
+/** Legacy runtime marker accepted only while reading pre-Pi session headers. */
+export type LegacyAgentRuntime = 'pi' | 'claude-sdk';
 
 /**
  * Session status (user-controlled, never automatic)
@@ -105,8 +108,6 @@ export interface SessionConfig {
   id: string;
   /** SDK session ID (captured after first message) */
   sdkSessionId?: string;
-  /** Runtime that owns sdkSessionId and its persisted transcript. */
-  agentRuntime?: 'pi' | 'claude-sdk';
   /** Workspace root path this session belongs to */
   workspaceRootPath: string;
   /** Optional user-defined name */
@@ -212,6 +213,8 @@ export interface SessionConfig {
  * Stored session with conversation data
  */
 export interface StoredSession extends SessionConfig {
+  /** Legacy read-only header field. New session writes deliberately omit it. */
+  agentRuntime?: LegacyAgentRuntime;
   messages: StoredMessage[];
   tokenUsage: SessionTokenUsage;
 }
@@ -226,8 +229,8 @@ export interface SessionHeader {
   id: string;
   /** SDK session ID (captured after first message) */
   sdkSessionId?: string;
-  /** Runtime that owns sdkSessionId and its persisted transcript. */
-  agentRuntime?: 'pi' | 'claude-sdk';
+  /** Legacy read-only marker retained for migration of pre-Pi headers. */
+  agentRuntime?: LegacyAgentRuntime;
   /** Workspace root path (stored as portable path, e.g., ~/.craft-agent/...) */
   workspaceRootPath: string;
   /** Optional user-defined name */
@@ -329,8 +332,8 @@ export interface SessionMetadata {
   /** Preview of first user message */
   preview?: string;
   sdkSessionId?: string;
-  /** Runtime that owns sdkSessionId and its persisted transcript. */
-  agentRuntime?: 'pi' | 'claude-sdk';
+  /** Internal read-time migration hint; consumed before managed runtime state. */
+  legacyAgentRuntime?: LegacyAgentRuntime;
   /** Whether this session is flagged */
   isFlagged?: boolean;
   /** User-controlled session status */

@@ -351,7 +351,6 @@ export async function getOrCreateSessionById(
     return {
       id: existing.id,
       sdkSessionId: existing.sdkSessionId,
-      agentRuntime: existing.agentRuntime,
       workspaceRootPath: existing.workspaceRootPath,
       name: existing.name,
       createdAt: existing.createdAt,
@@ -550,7 +549,7 @@ function headerToMetadata(header: SessionHeader, workspaceRootPath: string): Ses
     const {
       enabledSourceSlugs: _es, pendingPlanExecution: _pp,
       sessionStatus: _ss, workingDirectory: _wd, sdkCwd: _sc,
-      workspaceRootPath: _wrp, ...headerFields
+      workspaceRootPath: _wrp, agentRuntime: legacyAgentRuntime, ...headerFields
     } = header;
 
     return {
@@ -560,6 +559,7 @@ function headerToMetadata(header: SessionHeader, workspaceRootPath: string): Ses
       planCount: planCount > 0 ? planCount : undefined,
       workingDirectory: workingDir,
       sdkCwd,
+      legacyAgentRuntime,
     } as SessionMetadata;
   } catch (error) {
     debug(`[sessions] Failed to convert header to metadata for session "${header?.id}" in ${workspaceRootPath}:`, error);
@@ -624,7 +624,6 @@ export async function getOrCreateLatestSession(workspaceRootPath: string): Promi
     return {
       id: latest.id,
       sdkSessionId: latest.sdkSessionId,
-      agentRuntime: latest.agentRuntime,
       workspaceRootPath: latest.workspaceRootPath,
       name: latest.name,
       createdAt: latest.createdAt,

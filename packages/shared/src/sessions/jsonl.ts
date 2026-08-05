@@ -120,6 +120,8 @@ export function readSessionJsonl(sessionFile: string): StoredSession | null {
 
     return {
       ...pickSessionFields(header),
+      // Read legacy ownership once for migration; createSessionHeader never writes it.
+      agentRuntime: header.agentRuntime,
       // Path expansion for portable paths
       workspaceRootPath: expandPath(header.workspaceRootPath),
       workingDirectory: workingDir,

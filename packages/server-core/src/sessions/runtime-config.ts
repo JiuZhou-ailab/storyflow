@@ -5,6 +5,7 @@
 import type { LlmAuthType } from '@craft-agent/shared/agent/backend'
 import { isCompatProvider, modelSupportsImages, type LlmConnection } from '@craft-agent/shared/config'
 import type { FileAttachment } from '@craft-agent/shared/protocol'
+import type { LegacyAgentRuntime } from '@craft-agent/shared/sessions'
 
 export interface BackendRuntimeSignatureInput {
   connection: LlmConnection | null
@@ -22,8 +23,7 @@ export interface ModelAttachmentFilterResult {
 }
 
 export interface PiRuntimeMigrationInput {
-  agentRuntime?: 'pi' | 'claude-sdk'
-  branchContextStrategy?: 'sdk-fork' | 'seeded-fresh-session'
+  legacyAgentRuntime?: LegacyAgentRuntime
   hasPiTranscript: boolean
   sdkSessionId?: string
   messageCount: number
@@ -31,7 +31,7 @@ export interface PiRuntimeMigrationInput {
 
 export interface PortableForkRuntimeState {
   sdkSessionId?: string
-  agentRuntime?: 'pi' | 'claude-sdk'
+  agentRuntime?: LegacyAgentRuntime
   branchFromSdkSessionId?: string
   branchFromSessionPath?: string
   branchFromSdkCwd?: string
@@ -54,13 +54,11 @@ export function resetPortableForkRuntime(state: PortableForkRuntimeState): void 
 
 /** Whether a legacy/lost runtime transcript needs a one-shot seeded Pi start. */
 export function needsPiRuntimeMigrationSeed(input: PiRuntimeMigrationInput): boolean {
-  // A pending SDK fork is safe to hand to Pi only when its lineage is
-  // explicitly Pi-owned. Legacy Claude and untagged forks use incompatible
-  // session/turn IDs, so recover them from persisted Storyflow messages.
   if (input.hasPiTranscript) return false
-  if (input.branchContextStrategy === 'sdk-fork') return input.agentRuntime !== 'pi'
-  if (input.agentRuntime === 'pi') return false
-  return Boolean(input.sdkSessionId) || input.messageCount > 1
+  if (input.legacyAgentRuntime === 'pi') return false
+  return input.legacyAgentRuntime === 'claude-sdk'
+    || Boolean(input.sdkSessionId)
+    || input.messageCount > 1
 }
 
 function definedObject<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {

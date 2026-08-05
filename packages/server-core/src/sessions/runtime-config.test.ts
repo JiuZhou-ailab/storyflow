@@ -172,7 +172,7 @@ describe('formatAttachmentContextForModel', () => {
 describe('needsPiRuntimeMigrationSeed', () => {
   it('seeds legacy sessions that have history but no Pi transcript', () => {
     expect(needsPiRuntimeMigrationSeed({
-      agentRuntime: 'claude-sdk',
+      legacyAgentRuntime: 'claude-sdk',
       hasPiTranscript: false,
       sdkSessionId: 'legacy-session',
       messageCount: 4,
@@ -181,30 +181,26 @@ describe('needsPiRuntimeMigrationSeed', () => {
 
   it('does not reseed an existing Pi transcript', () => {
     expect(needsPiRuntimeMigrationSeed({
-      agentRuntime: 'pi',
+      legacyAgentRuntime: 'claude-sdk',
       hasPiTranscript: true,
       sdkSessionId: 'pi-session',
       messageCount: 4,
     })).toBe(false)
   })
 
-  it('does not reinterpret a pending Pi sdk fork as legacy history', () => {
+  it('honors an explicit legacy Pi marker when its transcript is checked elsewhere', () => {
     expect(needsPiRuntimeMigrationSeed({
-      agentRuntime: 'pi',
-      branchContextStrategy: 'sdk-fork',
+      legacyAgentRuntime: 'pi',
       hasPiTranscript: false,
       messageCount: 4,
     })).toBe(false)
   })
 
-  it('seeds Claude and untagged sdk forks instead of passing incompatible IDs to Pi', () => {
-    for (const agentRuntime of ['claude-sdk', undefined] as const) {
-      expect(needsPiRuntimeMigrationSeed({
-        agentRuntime,
-        branchContextStrategy: 'sdk-fork',
-        hasPiTranscript: false,
-        messageCount: 1,
-      })).toBe(true)
-    }
+  it('seeds untagged legacy history instead of trusting an incompatible session id', () => {
+    expect(needsPiRuntimeMigrationSeed({
+      hasPiTranscript: false,
+      sdkSessionId: 'untagged-session',
+      messageCount: 1,
+    })).toBe(true)
   })
 })

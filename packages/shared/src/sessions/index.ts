@@ -22,6 +22,7 @@ export type {
   SessionMetadata,
   SessionHeader,
   SessionPersistentField,
+  LegacyAgentRuntime,
 } from './types.ts';
 
 // Field constants

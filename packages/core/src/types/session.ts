@@ -1,3 +1,7 @@
+// input: Session identifiers, stored messages, and token usage
+// output: Runtime-neutral conversation and list metadata contracts
+// pos: Core session types shared without persistence migration details
+
 /**
  * Session types for conversation management
  *
@@ -19,7 +23,6 @@ export type SessionStatus = 'todo' | 'in_progress' | 'needs_review' | 'done' | '
 export interface Session {
   id: string;                    // Unique identifier (stable, known immediately)
   sdkSessionId?: string;         // SDK session ID (captured after first message)
-  agentRuntime?: 'pi' | 'claude-sdk'; // Runtime that owns sdkSessionId
   workspaceId: string;           // Which workspace this session belongs to
   name?: string;                 // Optional user-defined name
   createdAt: number;
@@ -53,7 +56,6 @@ export interface SessionMetadata {
   messageCount: number;
   preview?: string;        // Preview of first user message
   sdkSessionId?: string;
-  agentRuntime?: 'pi' | 'claude-sdk';
   // Inbox/Archive features
   isArchived?: boolean;    // Whether this session is archived
   isFlagged?: boolean;     // Whether this session is flagged

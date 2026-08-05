@@ -17,6 +17,11 @@ let idCounter = 0
 const storedById = new Map<string, any>()
 const deletedIds: string[] = []
 
+function persistSessionShape(session: any) {
+  const { agentRuntime: _legacyAgentRuntime, ...persisted } = session
+  storedById.set(session.id, persisted)
+}
+
 function writeSourceBranchAnchors() {
   const metaDir = join(workspaceRootPath, 'sessions', 'source-1', 'meta')
   mkdirSync(metaDir, { recursive: true })
@@ -232,7 +237,7 @@ mock.module('@craft-agent/shared/sessions', () => ({
   listSessions: () => [],
   loadSession: (_root: string, id: string) => storedById.get(id) ?? null,
   saveSession: async (session: any) => {
-    storedById.set(session.id, session)
+    persistSessionShape(session)
   },
   createSession: async (_root: string, opts: any) => {
     const id = `child-${++idCounter}`
@@ -274,14 +279,14 @@ mock.module('@craft-agent/shared/sessions', () => ({
   },
   validateBundle: () => true,
   writeSessionJsonl: (_path: string, session: any) => {
-    storedById.set(session.id, session)
+    persistSessionShape(session)
   },
   getOrCreateLatestSession: async () => null,
   sessionPersistenceQueue: { flush: async () => {} },
   pickSessionFields: (s: any) => {
     // Must match SESSION_PERSISTENT_FIELDS to prevent contamination of persistence tests
     const fields = [
-      'id','workspaceRootPath','sdkSessionId','agentRuntime','sdkCwd',
+      'id','workspaceRootPath','sdkSessionId','sdkCwd',
       'createdAt','lastUsedAt','lastMessageAt',
       'name','isFlagged','sessionStatus','labels','hidden',
       'lastReadMessageId','hasUnread',
@@ -406,7 +411,7 @@ describe('session branch rollback on preflight failure', () => {
     expect(storedById.has('child-1')).toBe(false)
   })
 
-  it('marks a pending Pi branch as Pi-owned before preflight', async () => {
+  it('does not persist runtime ownership for a pending Pi branch', async () => {
     const manager = new SessionManager()
     ;(manager as any).ensureMessagesLoaded = async (_managed: any) => {}
     ;(manager as any).getOrCreateAgent = async (managed: any) => {
@@ -423,11 +428,12 @@ describe('session branch rollback on preflight failure', () => {
       branchFromMessageId: 'm1',
     } as any)
 
-    expect((manager as any).sessions.get(session.id)?.agentRuntime).toBe('pi')
-    expect(storedById.get('child-1')?.agentRuntime).toBe('pi')
+    expect((manager as any).sessions.get(session.id)?.agentRuntime).toBeUndefined()
+    expect((manager as any).sessions.get(session.id)?.needsPiMigrationSeed).toBe(false)
+    expect(storedById.get('child-1')?.agentRuntime).toBeUndefined()
   })
 
-  it('preserves legacy runtime ownership when importing a session', async () => {
+  it('consumes legacy runtime ownership without persisting it again', async () => {
     const manager = new SessionManager()
 
     await manager.importSession('ws-1', {
@@ -445,7 +451,8 @@ describe('session branch rollback on preflight failure', () => {
       files: [],
     } as any, 'move')
 
-    expect(storedById.get('legacy-import')?.agentRuntime).toBe('claude-sdk')
-    expect((manager as any).sessions.get('legacy-import')?.agentRuntime).toBe('claude-sdk')
+    expect(storedById.get('legacy-import')?.agentRuntime).toBeUndefined()
+    expect((manager as any).sessions.get('legacy-import')?.agentRuntime).toBeUndefined()
+    expect((manager as any).sessions.get('legacy-import')?.needsPiMigrationSeed).toBe(true)
   })
 })

@@ -83,6 +83,7 @@ import {
   type SessionMetadata,
   type SessionStatus,
   type SessionHeader,
+  type LegacyAgentRuntime,
   pickSessionFields,
 } from '@craft-agent/shared/sessions'
 import { loadWorkspaceSources, loadAllSources, getSourcesBySlugs, isSourceUsable, type LoadedSource, type McpServerConfig, getSourcesNeedingAuth, getSourceCredentialManager, getSourceServerBuilder, type SourceWithCredential, isApiOAuthProvider, hasRenewEndpoint, SERVER_BUILD_ERRORS, TokenRefreshManager, createTokenGetter } from '@craft-agent/shared/sources'
@@ -727,8 +728,8 @@ interface ManagedSession {
   mcpPool?: McpClientPool
   // SDK session ID for conversation continuity
   sdkSessionId?: string
-  // Runtime lineage for sdkSessionId and the on-disk SDK transcript.
-  agentRuntime?: 'pi' | 'claude-sdk'
+  // One-shot migration decision derived from legacy persisted metadata.
+  needsPiMigrationSeed: boolean
   // Token usage for display
   tokenUsage?: {
     inputTokens: number
@@ -905,7 +906,7 @@ export function consumePendingSdkFork(state: SdkForkState): boolean {
  * Runtime-only fields get sensible defaults.
  */
 export function createManagedSession(
-  source: { id: string } & Partial<ManagedSession>,
+  source: { id: string; agentRuntime?: LegacyAgentRuntime; legacyAgentRuntime?: LegacyAgentRuntime } & Partial<ManagedSession>,
   workspace: Workspace,
   overrides?: Partial<ManagedSession>,
 ): ManagedSession {
@@ -913,6 +914,9 @@ export function createManagedSession(
   const sourceFields = Object.fromEntries(
     Object.entries(s).filter(([, v]) => v !== undefined)
   ) as Partial<ManagedSession>
+  const legacyAgentRuntime = s.legacyAgentRuntime ?? s.agentRuntime
+  delete (sourceFields as Record<string, unknown>).agentRuntime
+  delete (sourceFields as Record<string, unknown>).legacyAgentRuntime
 
   if ('thinkingLevel' in sourceFields) {
     // TODO: Remove legacy 'think' normalization after old persisted session
@@ -946,6 +950,14 @@ export function createManagedSession(
     backgroundShellCommands: new Map(),
     backgroundTaskOutputs: new Map(),
     messagesLoaded: false,
+    needsPiMigrationSeed: needsPiRuntimeMigrationSeed({
+      legacyAgentRuntime: legacyAgentRuntime as LegacyAgentRuntime | undefined,
+      hasPiTranscript: false,
+      sdkSessionId: s.sdkSessionId as string | undefined,
+      messageCount: Array.isArray(s.messages)
+        ? s.messages.length
+        : (s.messageCount as number | undefined) ?? 0,
+    }),
     tokenRefreshManager: new TokenRefreshManager(getSourceCredentialManager(), {
       log: (msg) => sessionLog.debug(msg),
     }),
@@ -2823,11 +2835,6 @@ export class SessionManager implements ISessionManager {
         branchedStored.messages = sourceMessages
       }
 
-      // Current branch creation always targets Pi. Persist the owner before
-      // preflight so this pending fork is never mistaken for a legacy Claude
-      // session when no child transcript exists yet.
-      branchedStored.agentRuntime = 'pi'
-      storedSession.agentRuntime = 'pi'
       branchedStored.branchFromMessageId = validatedBranch.sourceMessageId
       branchedStored.branchFromSdkSessionId = validatedBranch.branchFromSdkSessionId
       branchedStored.branchFromSessionPath = validatedBranch.branchFromSessionPath
@@ -2861,6 +2868,9 @@ export class SessionManager implements ISessionManager {
       branchFromSessionPath: validatedBranch?.branchFromSessionPath,
       branchFromSdkTurnId: validatedBranch?.branchFromSdkTurnId,
       branchSeedApplied: validatedBranch ? validatedBranch.branchContextStrategy === 'sdk-fork' : undefined,
+      // The fork is being established by the current Pi runtime. If preflight
+      // fails, branch rollback removes the session instead of persisting ambiguity.
+      needsPiMigrationSeed: false,
       messagesLoaded: !isBranch,  // Branched sessions: lazy-load messages from JSONL
     })
 
@@ -3433,19 +3443,11 @@ export class SessionManager implements ISessionManager {
 
       const sessionPath = getSessionStoragePath(managed.workspace.rootPath, managed.id)
       const hasPiTranscript = hasPersistedPiTranscript(sessionPath)
-      const needsRuntimeMigration = needsPiRuntimeMigrationSeed({
-        agentRuntime: managed.agentRuntime,
-        branchContextStrategy: managed.branchContextStrategy,
-        hasPiTranscript,
-        sdkSessionId: managed.sdkSessionId,
-        messageCount: managed.messages.length,
-      })
+      const needsRuntimeMigration = !hasPiTranscript && managed.needsPiMigrationSeed
+      if (hasPiTranscript) managed.needsPiMigrationSeed = false
       let seedFreshSessionFromRecovery = false
 
-      if (hasPiTranscript && managed.agentRuntime !== 'pi') {
-        managed.agentRuntime = 'pi'
-        this.persistSession(managed)
-      } else if (needsRuntimeMigration) {
+      if (needsRuntimeMigration) {
         // Legacy and Pi session IDs/transcripts are not interchangeable.
         // Retire only the stale runtime pointers; persisted Storyflow messages
         // remain the source for a one-shot seeded Pi start.
@@ -3512,7 +3514,7 @@ export class SessionManager implements ISessionManager {
 
       const onSdkSessionIdUpdate = (sdkSessionId: string) => {
         managed.sdkSessionId = sdkSessionId
-        managed.agentRuntime = 'pi'
+        managed.needsPiMigrationSeed = false
         // Retire branch-only fork metadata now that child session is established
         const parentSdkSessionId = managed.branchFromSdkSessionId
         if (consumePendingSdkFork(managed)) {
@@ -8288,6 +8290,7 @@ export class SessionManager implements ISessionManager {
       id: sessionId,
       workspaceRootPath,
       sdkSessionId: header.sdkSessionId, // Preserved initially; fork logic below may clear it
+      // Read only long enough for createManagedSession() to derive migration state.
       agentRuntime: header.agentRuntime,
       // Always regenerate sdkCwd for the target workspace.
       // The source sdkCwd points to a path on the originating server

@@ -44,6 +44,17 @@ describe('createManagedSession', () => {
     expect(managed.connectionLocked).toBe(true)
   })
 
+  it('consumes legacy runtime ownership into a one-shot Pi migration decision', () => {
+    const managed = createManagedSession({
+      id: 'session_legacy_runtime',
+      legacyAgentRuntime: 'claude-sdk',
+      sdkSessionId: 'claude-session',
+    }, workspace as any)
+
+    expect((managed as unknown as { agentRuntime?: string }).agentRuntime).toBeUndefined()
+    expect(managed.needsPiMigrationSeed).toBe(true)
+  })
+
   it('repairs legacy project sessions without a working directory to the visible workspace root', () => {
     const managed = createManagedSession({
       id: 'session_legacy_project',

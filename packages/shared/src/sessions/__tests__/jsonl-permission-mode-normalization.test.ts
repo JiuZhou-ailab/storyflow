@@ -3,10 +3,10 @@
 // pos: Persistence-boundary contract test for session history
 
 import { afterEach, describe, expect, it } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { makeSessionPathPortable, readSessionHeader, readSessionJsonl, readSessionMessages } from '../jsonl.ts';
+import { makeSessionPathPortable, readSessionHeader, readSessionJsonl, readSessionMessages, writeSessionJsonl } from '../jsonl.ts';
 
 const tempDirs: string[] = [];
 
@@ -84,6 +84,35 @@ describe('session jsonl: permission mode normalization', () => {
     const loaded = readSessionJsonl(sessionFile);
     expect(loaded?.permissionMode).toBe('safe');
     expect(loaded?.previousPermissionMode).toBe('allow-all');
+  });
+
+  it('reads legacy runtime ownership but drops it on the next write', () => {
+    const sessionDir = mkdtempSync(join(tmpdir(), 'session-runtime-migration-'));
+    tempDirs.push(sessionDir);
+
+    const sessionFile = join(sessionDir, 'session.jsonl');
+    writeFileSync(sessionFile, `${JSON.stringify({
+      id: 'legacy-runtime',
+      workspaceRootPath: '/tmp/ws',
+      createdAt: Date.now(),
+      lastUsedAt: Date.now(),
+      agentRuntime: 'claude-sdk',
+      messageCount: 0,
+      tokenUsage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        contextTokens: 0,
+        costUsd: 0,
+      },
+    })}\n`, 'utf-8');
+
+    const loaded = readSessionJsonl(sessionFile);
+    expect(loaded?.agentRuntime).toBe('claude-sdk');
+
+    writeSessionJsonl(sessionFile, loaded!);
+    const rewrittenHeader = JSON.parse(readFileSync(sessionFile, 'utf-8').split('\n')[0]!);
+    expect(rewrittenHeader.agentRuntime).toBeUndefined();
   });
 
   it('loads full sessions while expanding portable paths and skipping corrupt message lines', () => {
