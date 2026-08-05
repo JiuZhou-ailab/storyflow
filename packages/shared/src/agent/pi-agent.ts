@@ -30,6 +30,7 @@ import { AbortReason } from './backend/types.ts';
 import { getBackendRuntime } from './backend/internal/driver-types.ts';
 
 import type { ThinkingLevel } from './thinking-levels.ts';
+import type { Workspace } from '../config/storage.ts';
 
 // System prompt for Craft Agent context
 import { getSystemPrompt } from '../prompts/system.ts';

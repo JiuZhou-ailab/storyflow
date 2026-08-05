@@ -18,69 +18,40 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
-import type { AgentEvent } from '@craft-agent/core/types';
-import { formatAttachmentContextForModel, type FileAttachment } from '../utils/files.ts';
 import { getProxyEnvVars } from '../config/proxy-env.ts';
 import { readJsonLines } from '../utils/jsonl.ts';
 import { perf } from '../utils/perf.ts';
 
 import type {
   BackendConfig,
-  BackendRuntimeUpdate,
-  ChatOptions,
   ConversationRewindRequest,
-  ConversationRewindResult,
-  ManagedModelAccess,
-  SdkMcpServerConfig,
 } from './backend/types.ts';
 import { AbortReason } from './backend/types.ts';
 import { getBackendRuntime } from './backend/internal/driver-types.ts';
-
-import type { PermissionMode } from './mode-manager.ts';
-import type { ThinkingLevel } from './thinking-levels.ts';
 
 // Import models from centralized registry
 import { getModelById } from '../config/models.ts';
 
 // Storyflow Product Host behavior projected into Pi
 import { PiAgentHost } from './pi-agent-host.ts';
-import { getExtendedPromptCache, type Workspace } from '../config/storage.ts';
+import { getExtendedPromptCache } from '../config/storage.ts';
 
 // Event adapter
 import { PiEventAdapter } from './backend/pi/event-adapter.ts';
 import type { PiInboundMessage, PiOutboundMessage } from './backend/pi/protocol.ts';
 import { EventQueue } from './backend/event-queue.ts';
 
-// System prompt for Craft Agent context
-import { getSystemPrompt } from '../prompts/system.ts';
-import { getCoAuthorPreference } from '../config/preferences.ts';
-
 // Credential manager for token storage
 import { getCredentialManager } from '../credentials/manager.ts';
 
-// Session-scoped tool callbacks (for SubmitPlan, source auth, etc.)
-import {
-  registerSessionScopedToolCallbacks,
-  mergeSessionScopedToolCallbacks,
-  unregisterSessionScopedToolCallbacks,
-  getSessionScopedToolCallbacks,
-} from './session-scoped-tool-callback-registry.ts';
-import { setLastPlanFilePath } from './session-plan-state.ts';
-import { attachSessionSelfManagementBindings } from './session-self-management-bindings.ts';
-
 // Session tool proxy definitions (for registering with subprocess)
-import { getSessionToolProxyDefs, SESSION_TOOL_NAMES } from './backend/pi/session-tool-defs.ts';
+import { getSessionToolProxyDefs } from './backend/pi/session-tool-defs.ts';
 
 // Session tool registry (for executing proxy tool calls)
 import {
   SESSION_BACKEND_TOOL_NAMES,
-  SESSION_TOOL_REGISTRY,
-  type ToolResult as SessionToolResult,
 } from '@craft-agent/session-tools-core';
-import { createSessionToolContext, type SessionToolContext } from './session-tool-context.ts';
-import { getPermissionModeDiagnostics } from './mode-manager.ts';
-
-// call_llm pre-execution pipeline
+import type { SessionToolContext } from './session-tool-context.ts';
 
 // McpClientPool for source tool proxying (centralized pool from main process)
 import type { McpClientPool } from '../mcp/mcp-pool.ts';
@@ -90,18 +61,13 @@ import { join } from 'path';
 import { homedir } from 'os';
 
 // Session storage (plans folder path)
-import { getSessionDataPath, getSessionPath, getSessionPlansPath } from '../sessions/storage.ts';
+import { getSessionPath, getSessionPlansPath } from '../sessions/storage.ts';
 
 // Error typing
-import { parseError, type AgentError } from './errors.ts';
-
-// Centralized PreToolUse pipeline
-import { runPreToolUseChecks, type PreToolUseCheckResult } from './core/pre-tool-use.ts';
+import type { AgentError } from './errors.ts';
 
 // LLM tool types
-import { LLM_QUERY_TIMEOUT_MS, type LLMQueryRequest, type LLMQueryResult } from './llm-tool.ts';
-import { executeBrowserToolCommand } from './browser-tool-runtime.ts';
-import { saveBinaryResponse } from '../utils/binary-detection.ts';
+import type { LLMQueryResult } from './llm-tool.ts';
 
 // ============================================================
 // PiAgent Implementation
