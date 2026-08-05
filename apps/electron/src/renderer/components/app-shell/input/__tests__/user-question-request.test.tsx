@@ -1,6 +1,6 @@
 // input: Structured single- and multi-select user questions plus their input shell
-// output: Accessible controls, guarded submission markup, and bounded prompt height
-// pos: Minimal renderer checks for ask_user_question's human input component
+// output: Accessible tab pages, guarded submission markup, and viewport-aware prompt height
+// pos: Minimal renderer checks for ask_user_question's paged human input component
 
 import * as React from 'react'
 import { readFileSync } from 'node:fs'
@@ -11,6 +11,7 @@ import { I18nextProvider, initReactI18next } from 'react-i18next'
 import { UserQuestionRequest } from '../structured/UserQuestionRequest'
 
 const inputContainerSource = readFileSync(new URL('../InputContainer.tsx', import.meta.url), 'utf-8')
+const userQuestionSource = readFileSync(new URL('../structured/UserQuestionRequest.tsx', import.meta.url), 'utf-8')
 
 const testI18n = createInstance().use(initReactI18next)
 await testI18n.init({
@@ -29,7 +30,7 @@ await testI18n.init({
 })
 
 describe('UserQuestionRequest', () => {
-  it('renders native choice controls, free-form answers, and disabled submit initially', () => {
+  it('renders one question per accessible tab page with guarded submission', () => {
     const html = renderToStaticMarkup(
       <I18nextProvider i18n={testI18n}>
         <UserQuestionRequest
@@ -62,14 +63,22 @@ describe('UserQuestionRequest', () => {
       </I18nextProvider>
     )
 
+    expect(html).toContain('role="tablist"')
+    expect(html).toContain('role="tab"')
+    expect(html).toContain('只改当前文件')
+    expect(html).not.toContain('运行类型检查')
     expect(html).toContain('type="radio"')
-    expect(html).toContain('type="checkbox"')
     expect(html).toContain('其他答案')
     expect(html).toContain('disabled=""')
   })
 
-  it('caps the question form below the shared structured-input maximum', () => {
-    expect(inputContainerSource).toContain("structuredInput?.type === 'user_question'")
-    expect(inputContainerSource).toContain('Math.min(defaultStructuredMaxHeight, FALLBACK_HEIGHTS.user_question)')
+  it('uses the shared viewport-aware maximum instead of a user-question hard cap', () => {
+    expect(inputContainerSource).toContain('const structuredMaxHeight = getStructuredInputMaxHeight(viewportHeight)')
+    expect(inputContainerSource).not.toContain("structuredInput?.type === 'user_question'")
+  })
+
+  it('enters free-form mode as soon as the other-answer input receives focus', () => {
+    expect(userQuestionSource).toContain(`onFocus={() => {
+                    setSelected(current => ({ ...current, [question.question]: [] }))`)
   })
 })

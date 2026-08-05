@@ -165,10 +165,7 @@ export function InputContainer({
   const rawTargetHeight = mode === 'freeform'
     ? freeformHeight
     : (structuredHeight ?? FALLBACK_HEIGHTS[structuredInput?.type ?? 'freeform'] ?? FALLBACK_HEIGHTS.freeform)
-  const defaultStructuredMaxHeight = getStructuredInputMaxHeight(viewportHeight)
-  const structuredMaxHeight = structuredInput?.type === 'user_question'
-    ? Math.min(defaultStructuredMaxHeight, FALLBACK_HEIGHTS.user_question)
-    : defaultStructuredMaxHeight
+  const structuredMaxHeight = getStructuredInputMaxHeight(viewportHeight)
   const targetHeight = mode === 'freeform'
     ? rawTargetHeight
     : Math.min(rawTargetHeight, structuredMaxHeight)

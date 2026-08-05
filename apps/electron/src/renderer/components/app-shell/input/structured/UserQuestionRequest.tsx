@@ -1,11 +1,12 @@
 // input: Structured agent questions and a response callback
-// output: Accessible option and free-form answer form
-// pos: Human-in-the-loop structured chat input for ask_user_question
+// output: Accessible tabbed option pages and a free-form answer path
+// pos: Human-in-the-loop paged input for ask_user_question
 
 import * as React from 'react'
-import { CircleHelp, Send, X } from 'lucide-react'
+import { Check, CircleHelp, Send, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import type { UserQuestionRequest as UserQuestionRequestType } from '../../../../../shared/types'
 import type { UserQuestionResponse } from './types'
@@ -24,6 +25,7 @@ export function UserQuestionRequest({
   const { t } = useTranslation()
   const [selected, setSelected] = React.useState<Record<string, string[]>>({})
   const [custom, setCustom] = React.useState<Record<string, string>>({})
+  const [activeQuestion, setActiveQuestion] = React.useState('0')
 
   const buildAnswers = React.useCallback(() => Object.fromEntries(
     request.questions.flatMap((question) => {
@@ -42,69 +44,103 @@ export function UserQuestionRequest({
       'flex h-full flex-col overflow-hidden bg-info/5',
       !unstyled && 'rounded-[8px] border border-info/30 shadow-middle',
     )}>
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <CircleHelp className="h-4 w-4 text-info" />
-          {t('chat.questionRequired', '需要你的选择')}
-        </div>
-        {request.questions.map((question) => (
-          <fieldset key={question.question} className="space-y-2">
-            <legend className="text-xs font-medium text-foreground">
-              <span className="mr-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-                {question.header}
-              </span>
-              {question.question}
-            </legend>
-            <div className="grid gap-1.5">
-              {question.options.map((option) => {
-                const checked = selected[question.question]?.includes(option.label) ?? false
+      <Tabs
+        value={activeQuestion}
+        onValueChange={setActiveQuestion}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <div className="shrink-0 border-b border-border/50 px-4 pt-3">
+          <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+            <CircleHelp className="h-4 w-4 text-info" />
+            {t('chat.questionRequired', '需要你的选择')}
+          </div>
+          <div className="overflow-x-auto">
+            <TabsList
+              aria-label={t('chat.questionRequired', '需要你的选择')}
+              className="h-8 min-w-max justify-start rounded-none bg-transparent p-0"
+            >
+              {request.questions.map((question, index) => {
+                const answered = Boolean(answers[question.question])
                 return (
-                  <label
-                    key={option.label}
-                    className={cn(
-                      'flex cursor-pointer gap-2 rounded-md border px-3 py-2 text-xs transition-colors',
-                      checked ? 'border-info/50 bg-info/10' : 'border-border/50 bg-background hover:bg-muted/40',
-                    )}
+                  <TabsTrigger
+                    key={`${index}:${question.question}`}
+                    value={String(index)}
+                    className="h-8 max-w-[220px] gap-1.5 rounded-t-[6px] rounded-b-none border-b-2 border-transparent px-3 text-xs shadow-none data-[state=active]:border-info data-[state=active]:bg-background data-[state=active]:shadow-none"
                   >
-                    <input
-                      type={question.multiSelect ? 'checkbox' : 'radio'}
-                      name={question.question}
-                      checked={checked}
-                      onChange={() => {
-                        setCustom(current => ({ ...current, [question.question]: '' }))
-                        setSelected(current => {
-                          const existing = current[question.question] ?? []
-                          return {
-                            ...current,
-                            [question.question]: question.multiSelect
-                              ? checked
-                                ? existing.filter(value => value !== option.label)
-                                : [...existing, option.label]
-                              : [option.label],
-                          }
-                        })
-                      }}
-                    />
-                    <span>
-                      <span className="font-medium text-foreground">{option.label}</span>
-                      <span className="ml-1.5 text-muted-foreground">{option.description}</span>
-                    </span>
-                  </label>
+                    <span className="shrink-0 text-muted-foreground">{index + 1}</span>
+                    <span className="truncate">{question.header || question.question}</span>
+                    {answered ? <Check className="h-3 w-3 shrink-0 text-success" aria-label="已回答" /> : null}
+                  </TabsTrigger>
                 )
               })}
-              <input
-                value={custom[question.question] ?? ''}
-                onChange={(event) => {
-                  setSelected(current => ({ ...current, [question.question]: [] }))
-                  setCustom(current => ({ ...current, [question.question]: event.target.value }))
-                }}
-                placeholder={t('chat.questionOther', '其他答案…')}
-                className="h-8 rounded-md border border-border/50 bg-background px-3 text-xs outline-none focus:border-info/60"
-              />
-            </div>
-          </fieldset>
+            </TabsList>
+          </div>
+        </div>
+
+        {request.questions.map((question, index) => (
+          <TabsContent
+            key={`${index}:${question.question}`}
+            value={String(index)}
+            className="mt-0 min-h-0 flex-1 overflow-y-auto p-4"
+          >
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-medium text-foreground">
+                {question.question}
+              </legend>
+              <div className="grid gap-1.5">
+                {question.options.map((option) => {
+                  const checked = selected[question.question]?.includes(option.label) ?? false
+                  return (
+                    <label
+                      key={option.label}
+                      className={cn(
+                        'flex cursor-pointer gap-2 rounded-md border px-3 py-2 text-xs transition-colors',
+                        checked ? 'border-info/50 bg-info/10' : 'border-border/50 bg-background hover:bg-muted/40',
+                      )}
+                    >
+                      <input
+                        type={question.multiSelect ? 'checkbox' : 'radio'}
+                        name={question.question}
+                        checked={checked}
+                        onChange={() => {
+                          setCustom(current => ({ ...current, [question.question]: '' }))
+                          setSelected(current => {
+                            const existing = current[question.question] ?? []
+                            return {
+                              ...current,
+                              [question.question]: question.multiSelect
+                                ? checked
+                                  ? existing.filter(value => value !== option.label)
+                                  : [...existing, option.label]
+                                : [option.label],
+                            }
+                          })
+                        }}
+                      />
+                      <span>
+                        <span className="font-medium text-foreground">{option.label}</span>
+                        <span className="ml-1.5 text-muted-foreground">{option.description}</span>
+                      </span>
+                    </label>
+                  )
+                })}
+                <input
+                  value={custom[question.question] ?? ''}
+                  onFocus={() => {
+                    setSelected(current => ({ ...current, [question.question]: [] }))
+                  }}
+                  onChange={(event) => {
+                    setSelected(current => ({ ...current, [question.question]: [] }))
+                    setCustom(current => ({ ...current, [question.question]: event.target.value }))
+                  }}
+                  placeholder={t('chat.questionOther', '其他答案…')}
+                  className="h-8 rounded-md border border-border/50 bg-background px-3 text-xs outline-none focus:border-info/60"
+                />
+              </div>
+            </fieldset>
+          </TabsContent>
         ))}
-      </div>
+      </Tabs>
       <div className="flex shrink-0 items-center gap-2 border-t border-border/50 px-3 py-2">
         <Button
           size="sm"
