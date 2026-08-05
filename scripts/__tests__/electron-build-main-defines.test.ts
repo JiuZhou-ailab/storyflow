@@ -35,6 +35,21 @@ describe('electron build defines', () => {
     expect(source).toContain('loadEnvFiles({ rootDir: ROOT_DIR, mode: "build" })')
   })
 
+  it('rewrites import.meta.url for CJS so pi-coding-agent can load in Electron main', async () => {
+    const buildMain = await Bun.file(join(import.meta.dir, '..', 'electron-build-main.ts')).text()
+    const electronDev = await Bun.file(join(import.meta.dir, '..', 'electron-dev.ts')).text()
+
+    for (const source of [buildMain, electronDev]) {
+      expect(source).toContain('__import_meta_url')
+      expect(source).toContain('pathToFileURL(__filename).href')
+    }
+    expect(buildMain).toContain('--define:import.meta.url=__import_meta_url')
+    expect(buildMain).toContain('`--banner:js=${IMPORT_META_URL_BANNER}`')
+    expect(buildMain).toContain('import.meta.url was not rewritten for CJS')
+    expect(electronDev).toContain('"import.meta.url": "__import_meta_url"')
+    expect(electronDev).toContain('banner: { js: IMPORT_META_URL_BANNER }')
+  })
+
   it('reads packaged client-auth values through direct process.env properties', async () => {
     const source = await Bun.file(join(import.meta.dir, '..', '..', 'apps/electron/src/main/client-auth.ts')).text()
     const directEnvKeys = [

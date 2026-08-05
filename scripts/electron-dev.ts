@@ -36,6 +36,14 @@ const MAIN_PROCESS_EXTERNAL = [
   "@aws-sdk/client-s3",
 ];
 
+// ESM packages (e.g. @earendil-works/pi-coding-agent) call fileURLToPath(import.meta.url)
+// at module init. esbuild CJS leaves import.meta as {}, which crashes Electron load.
+const IMPORT_META_URL_BANNER =
+  'var __import_meta_url=require("url").pathToFileURL(__filename).href;';
+const IMPORT_META_URL_DEFINE = {
+  "import.meta.url": "__import_meta_url",
+};
+
 // Pi agent server path (subprocess for Pi SDK sessions)
 const PI_AGENT_SERVER_DIR = join(ROOT_DIR, "packages/pi-agent-server");
 
@@ -348,7 +356,11 @@ async function runEsbuild(
       external: MAIN_PROCESS_EXTERNAL,
       ...(options.packagesExternal ? { packages: "external" as const } : {}),
       ...(options.alias ? { alias: options.alias } : {}),
-      define: defines,
+      banner: { js: IMPORT_META_URL_BANNER },
+      define: {
+        ...IMPORT_META_URL_DEFINE,
+        ...defines,
+      },
       logLevel: "warning",
     });
     return { success: true };
@@ -584,7 +596,11 @@ async function main(): Promise<void> {
     outfile: join(ROOT_DIR, "apps/electron/dist/main.cjs"),
     external: MAIN_PROCESS_EXTERNAL,
     alias: MAIN_PROCESS_ALIAS,
-    define: oauthDefines,
+    banner: { js: IMPORT_META_URL_BANNER },
+    define: {
+      ...IMPORT_META_URL_DEFINE,
+      ...oauthDefines,
+    },
     logLevel: "info",
   });
   await mainContext.watch();

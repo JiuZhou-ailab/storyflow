@@ -23,6 +23,13 @@ const WA_WORKER_DIR = join(ROOT_DIR, "packages/messaging-whatsapp-worker");
 const WA_WORKER_SOURCE = join(WA_WORKER_DIR, "src/worker.ts");
 const WA_WORKER_OUTPUT = join(WA_WORKER_DIR, "dist/worker.cjs");
 
+// ESM packages (e.g. @earendil-works/pi-coding-agent) call fileURLToPath(import.meta.url)
+// at module init. esbuild CJS leaves import.meta as {}, which crashes Electron load.
+// Inject a runtime file URL for the bundle and rewrite import.meta.url to it.
+const IMPORT_META_URL_BANNER =
+  'var __import_meta_url=require("url").pathToFileURL(__filename).href;';
+const IMPORT_META_URL_DEFINE = "--define:import.meta.url=__import_meta_url";
+
 function validateDesktopAuthBuildConfig(): void {
   const validation = validateDesktopAuthBuildEnv(process.env);
   if (validation.ok) return;
@@ -254,6 +261,8 @@ async function main(): Promise<void> {
       // fails every Telegram API call with a TypeError.
       "--alias:node-fetch=./apps/electron/src/main/shims/node-fetch.cjs",
       "--alias:abort-controller=./apps/electron/src/main/shims/abort-controller.cjs",
+      `--banner:js=${IMPORT_META_URL_BANNER}`,
+      IMPORT_META_URL_DEFINE,
       ...buildDefines,
     ],
     cwd: ROOT_DIR,
@@ -283,6 +292,18 @@ async function main(): Promise<void> {
 
   if (!verification.valid) {
     console.error("❌ Build verification failed:", verification.error);
+    process.exit(1);
+  }
+
+  // Guard the pi-coding-agent CJS regression: empty import.meta.url → fileURLToPath(undefined).
+  const bundled = await Bun.file(OUTPUT_FILE).text();
+  if (
+    !bundled.includes("__import_meta_url") ||
+    /fileURLToPath\)\(\s*import_meta\w*\.url\s*\)/.test(bundled)
+  ) {
+    console.error(
+      "❌ Build verification failed: import.meta.url was not rewritten for CJS (pi-coding-agent would crash on load)",
+    );
     process.exit(1);
   }
 
