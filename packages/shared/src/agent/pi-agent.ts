@@ -106,14 +106,8 @@ import { saveBinaryResponse } from '../utils/binary-detection.ts';
 // PiAgent Implementation
 // ============================================================
 
-/** Backend-executed session tools currently supported by PiAgent. */
-export const PI_BACKEND_SESSION_TOOL_NAMES = new Set<string>([
-  'call_llm',
-  'spawn_session',
-  'browser_tool',
-]);
-
 import { PiAgentToolHost } from './pi-agent-tool-host.ts';
+export { PI_BACKEND_SESSION_TOOL_NAMES } from './pi-agent-transport.ts';
 
 /** Storyflow Product Host projection over the single Pi AgentSession runtime. */
 export class PiAgent extends PiAgentToolHost {

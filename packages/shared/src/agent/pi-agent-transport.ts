@@ -1,6 +1,6 @@
-// input: Resolved backend/runtime context and Pi subprocess protocol events
-// output: Pi-backed Agent implementation using the shared permission pipeline
-// pos: Provider adapter beneath the shared Agent Kernel
+// input: Resolved runtime config, credentials, and typed Pi JSONL process messages
+// output: Subprocess lifecycle, correlated RPC transport, and provider event delivery
+// pos: Transport layer beneath the Pi tool host and chat lifecycle
 
 /**
  * Pi Backend (Subprocess RPC Client)
