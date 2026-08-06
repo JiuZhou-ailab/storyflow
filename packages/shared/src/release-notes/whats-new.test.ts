@@ -13,13 +13,14 @@ import {
 } from './whats-new'
 
 describe('buildWhatsNewDraft', () => {
-  it('keeps user-visible feature and fix commits while excluding release plumbing', () => {
+  it('keeps user-visible feature, fix, and documentation commits while excluding release plumbing', () => {
     const draft = buildWhatsNewDraft({
       version: '0.9.26',
       generatedAt: '2026-06-01T00:00:00.000Z',
       commits: [
         { hash: 'a'.repeat(40), subject: 'feat: add project profile setup before opening workspace' },
         { hash: 'b'.repeat(40), subject: 'fix: keep queued message visible after redirect' },
+        { hash: 'd'.repeat(40), subject: 'docs: update the beginner guide for project profiles' },
         { hash: 'c'.repeat(40), subject: 'chore: update release workflow cache key' },
       ],
     })
@@ -27,12 +28,14 @@ describe('buildWhatsNewDraft', () => {
     expect(draft.markdown).toContain('# v0.9.26')
     expect(draft.markdown).toContain('Project profile setup before opening workspace')
     expect(draft.markdown).toContain('Keep queued message visible after redirect')
+    expect(draft.markdown).toContain('Update the beginner guide for project profiles')
     expect(draft.markdown).not.toContain('release workflow cache key')
     expect(draft.manifest.version).toBe('0.9.26')
     expect(draft.manifest.digest).toBe(createWhatsNewDigest(draft.markdown))
     expect(draft.manifest.highlights).toEqual([
       'Project profile setup before opening workspace',
       'Keep queued message visible after redirect',
+      'Update the beginner guide for project profiles',
     ])
   })
 })

@@ -203,6 +203,20 @@ describe('ActivityRail free-conversation scope', () => {
     expect(sectionHtml).toContain('aria-label="新建自由对话"')
   })
 
+  it('marks the help menu with a blue dot while update content is unseen', () => {
+    installElectronApi()
+    const html = renderToStaticMarkup(
+      <Provider store={createStore()}>
+        <FocusProvider>
+          <ActivityRail activeItem="recent" whatsNew={{ unseen: true }} />
+        </FocusProvider>
+      </Provider>
+    )
+
+    expect(html).toContain('aria-label="有未读更新"')
+    expect(html).toContain('bg-blue-500')
+  })
+
   it('creates in the current runtime instead of a retained project', () => {
     const handlerStart = appSource.indexOf('const handleOpenFreeConversations =')
     const handlerEnd = appSource.indexOf('\n\n  useEffect(', handlerStart)

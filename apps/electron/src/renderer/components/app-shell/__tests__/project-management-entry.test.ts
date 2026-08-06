@@ -122,14 +122,15 @@ describe('project management entry', () => {
     expect(activityRailSource).not.toContain('dataTutorial="activity-free-conversations"')
   })
 
-  it('keeps one profile item at the bottom and nests secondary actions inside it', () => {
+  it('separates account actions from the bottom help menu', () => {
     expect(activityRailSource).toContain('data-tutorial="activity-profile"')
     expect(activityRailSource).toContain('<DropdownMenuTrigger asChild>')
-    expect(activityRailSource).toContain('账户')
-    expect(activityRailSource).not.toContain('账户与积分')
     expect(activityRailSource).toContain('设置')
+    expect(activityRailSource).toContain('aria-label="帮助菜单"')
+    expect(activityRailSource).toContain('data-tutorial="activity-help-menu"')
     expect(activityRailSource).toContain('新功能')
-    expect(activityRailSource).toContain('帮助与反馈')
+    expect(activityRailSource).toContain('新手教程')
+    expect(activityRailSource).toContain('反馈')
     expect(activityRailSource).not.toContain('aria-label="系统工具"')
     expect(activityRailSource).not.toContain('activity-check-updates')
     expect(appSource).toContain('profile={activityRailProfile}')
@@ -255,7 +256,7 @@ describe('project management entry', () => {
     expect(appSource).toContain('onOpenSources: canOpenRuntimeNavigation')
     expect(appSource).toContain('onOpenSkills: canOpenRuntimeNavigation')
     expect(appSource).toContain('onOpenSearch: canOpenRuntimeNavigation ? handleOpenRuntimeSearch : undefined')
-    expect(appSource).toContain('onOpenSettings: canOpenRuntimeNavigation')
+    expect(appSource).toContain('onOpenSettings: handleOpenGlobalSettings')
     expect(appSource).toContain('onOpenWhatsNew: canOpenRuntimeNavigation ? handleOpenRuntimeWhatsNew : undefined')
     expect(appSource).toContain('openWhatsNewSignal={openWhatsNewSignal}')
     expect(appSource).toContain('onOpenWhatsNewSignalHandled={() => setOpenWhatsNewSignal(0)}')

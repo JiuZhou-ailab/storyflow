@@ -4778,7 +4778,6 @@ function AppShellContent({
                 }}
                 whatsNew={{
                   unseen: hasUnseenReleaseNotes,
-                  accentColor: whatsNewManifest?.accentColor,
                 }}
                 updateIndicator={updateIndicator}
                 onInstallUpdate={updateChecker.installUpdate}

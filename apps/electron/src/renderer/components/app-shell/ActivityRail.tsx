@@ -1,5 +1,5 @@
 // input: Workspace catalog, scoped session metadata, update status, shell callbacks, current profile, and window chrome inset
-// output: Compact hierarchical sidebar with a workspace-aware task action, project conversations, updates, and profile navigation
+// output: Compact hierarchical sidebar with workspace navigation, updates, help, and profile actions
 // pos: Global navigation surface; every project subtree is fetched and selected through its own runtime domain (ADR 0006)
 
 import * as React from 'react'
@@ -9,10 +9,11 @@ import {
   ChevronRight,
   DatabaseZap,
   Download,
+  Gift,
   HelpCircle,
   LoaderCircle,
   LogOut,
-  Megaphone,
+  MessageSquarePlus,
   Settings,
   ShieldAlert,
   SquarePen,
@@ -96,11 +97,10 @@ export interface ActivityRailProps {
     detail?: string
     avatarUrl?: string
   }
-  /** Optional release-notes surface inside the profile menu. */
+  /** Optional release-notes surface inside the help menu. */
   onOpenWhatsNew?: () => void
   whatsNew?: {
     unseen: boolean
-    accentColor?: string
   }
   updateIndicator?: UpdateIndicatorState | null
   onInstallUpdate?: () => void | Promise<void>
@@ -684,106 +684,125 @@ export function ActivityRail({
             </button>
           </div>
         ) : null}
-        <nav aria-label="个人菜单">
-          <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label={`${profile?.name ?? '本地用户'}的个人菜单`}
-              data-tutorial="activity-profile"
-              className={cn(
-                'flex w-full items-center gap-2 rounded-[8px] px-2 py-1.5 text-left outline-none transition-colors',
-                'hover:bg-foreground/[0.045] focus-visible:ring-1 focus-visible:ring-ring',
-                activeItem === 'settings' && 'bg-foreground/[0.07]',
-              )}
-            >
-              {profile?.avatarUrl ? (
-                <CrossfadeAvatar
-                  src={profile.avatarUrl}
-                  alt={`${profile.name}的头像`}
-                  className="size-7 rounded-full"
-                  fallbackClassName="rounded-full bg-foreground/10 text-[11px] font-semibold text-foreground/80"
-                  fallback={getProfileInitial(profile.name)}
-                />
-              ) : (
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-foreground/10 text-[11px] font-semibold text-foreground/80">
-                  {getProfileInitial(profile?.name)}
-                </span>
-              )}
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[12px] font-medium leading-4 text-foreground/90">
-                  {profile?.name ?? '本地用户'}
-                </span>
-                {profile?.detail ? (
-                  <span className="block truncate text-[10px] leading-4 text-muted-foreground/65">
-                    {profile.detail}
+        <div className="flex items-center gap-1">
+          <nav aria-label="个人菜单" className="min-w-0 flex-1">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={`${profile?.name ?? '本地用户'}的个人菜单`}
+                  data-tutorial="activity-profile"
+                  className={cn(
+                    'flex w-full items-center gap-2 rounded-[8px] px-2 py-1.5 text-left outline-none transition-colors',
+                    'hover:bg-foreground/[0.045] focus-visible:ring-1 focus-visible:ring-ring',
+                    activeItem === 'settings' && 'bg-foreground/[0.07]',
+                  )}
+                >
+                  {profile?.avatarUrl ? (
+                    <CrossfadeAvatar
+                      src={profile.avatarUrl}
+                      alt={`${profile.name}的头像`}
+                      className="size-7 rounded-full"
+                      fallbackClassName="rounded-full bg-foreground/10 text-[11px] font-semibold text-foreground/80"
+                      fallback={getProfileInitial(profile.name)}
+                    />
+                  ) : (
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-foreground/10 text-[11px] font-semibold text-foreground/80">
+                      {getProfileInitial(profile?.name)}
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[12px] font-medium leading-4 text-foreground/90">
+                      {profile?.name ?? '本地用户'}
+                    </span>
+                    {profile?.detail ? (
+                      <span className="block truncate text-[10px] leading-4 text-muted-foreground/65">
+                        {profile.detail}
+                      </span>
+                    ) : null}
                   </span>
+                  <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                </button>
+              </DropdownMenuTrigger>
+              <StyledDropdownMenuContent side="top" align="start" sideOffset={6} className="w-[196px]">
+                <StyledDropdownMenuItem
+                  disabled={!onOpenSettings}
+                  onClick={onOpenSettings}
+                  data-tutorial="activity-settings"
+                >
+                  <Settings className="size-4" />
+                  设置
+                </StyledDropdownMenuItem>
+                {onSignOut ? <StyledDropdownMenuSeparator /> : null}
+                {onSignOut ? (
+                  <StyledDropdownMenuItem
+                    onClick={() => { void onSignOut() }}
+                    data-tutorial="activity-sign-out"
+                  >
+                    <LogOut className="size-4" />
+                    退出登录
+                  </StyledDropdownMenuItem>
                 ) : null}
-              </span>
-              {whatsNew?.unseen ? (
-                <span
-                  className="size-1.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: whatsNew.accentColor ?? 'var(--accent)' }}
-                  aria-label="有未读新功能"
-                />
-              ) : null}
-              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-            </button>
-          </DropdownMenuTrigger>
-          <StyledDropdownMenuContent side="top" align="start" sideOffset={6} className="w-[236px]">
-            <StyledDropdownMenuItem
-              disabled={!onOpenSettings}
-              onClick={onOpenSettings}
-              data-tutorial="activity-settings"
-            >
-              <Settings className="size-4" />
-              设置
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuItem
-              disabled={!onOpenWhatsNew}
-              onClick={onOpenWhatsNew}
-              data-tutorial="activity-whats-new"
-            >
-              <Megaphone className="size-4" />
-              <span className="min-w-0 flex-1">
-                {whatsNew?.unseen ? '新功能（未读）' : '新功能'}
-              </span>
-              {whatsNew?.unseen ? (
-                <span
-                  className="size-1.5 rounded-full"
-                  style={{ backgroundColor: whatsNew.accentColor ?? 'var(--accent)' }}
-                  aria-hidden="true"
-                />
-              ) : null}
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuItem
-              onClick={() => window.electronAPI.openUrl('https://ehyg6a9wjd.feishu.cn/docx/MC49dYJYtoRnalxgYi1ceH01nWb')}
-              data-tutorial="activity-beginner-guide"
-            >
-              <BookOpen className="size-4" />
-              新手教程
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuItem
-              onClick={() => setFeedbackOpen(true)}
-              data-tutorial="activity-feedback"
-            >
-              <HelpCircle className="size-4" />
-              帮助与反馈
-            </StyledDropdownMenuItem>
-            {onSignOut ? <StyledDropdownMenuSeparator /> : null}
-            {onSignOut ? (
-              <StyledDropdownMenuItem
-                onClick={() => { void onSignOut() }}
-                data-tutorial="activity-sign-out"
-              >
-                <LogOut className="size-4" />
-                退出登录
-              </StyledDropdownMenuItem>
-            ) : null}
-          </StyledDropdownMenuContent>
-          </DropdownMenu>
-          <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
-        </nav>
+              </StyledDropdownMenuContent>
+            </DropdownMenu>
+          </nav>
+
+          <nav aria-label="帮助菜单">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="帮助菜单"
+                  title="帮助"
+                  data-tutorial="activity-help-menu"
+                  className="relative flex size-10 shrink-0 items-center justify-center rounded-[10px] text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.045] hover:text-foreground data-[state=open]:bg-foreground/[0.07] data-[state=open]:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <HelpCircle className="size-[18px]" aria-hidden="true" />
+                  {whatsNew?.unseen ? (
+                    <span
+                      className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-blue-500"
+                      aria-label="有未读更新"
+                    />
+                  ) : null}
+                </button>
+              </DropdownMenuTrigger>
+              <StyledDropdownMenuContent side="top" align="start" sideOffset={8} className="w-[196px]">
+                <StyledDropdownMenuItem
+                  disabled={!onOpenWhatsNew}
+                  onClick={onOpenWhatsNew}
+                  data-tutorial="activity-whats-new"
+                >
+                  <Gift className="size-4" />
+                  <span className="min-w-0 flex-1">
+                    {whatsNew?.unseen ? '新功能（未读）' : '新功能'}
+                  </span>
+                  {whatsNew?.unseen ? (
+                    <span
+                      className="size-1.5 rounded-full bg-blue-500"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                </StyledDropdownMenuItem>
+                <StyledDropdownMenuSeparator />
+                <StyledDropdownMenuItem
+                  onClick={() => window.electronAPI.openUrl('https://ehyg6a9wjd.feishu.cn/docx/MC49dYJYtoRnalxgYi1ceH01nWb')}
+                  data-tutorial="activity-beginner-guide"
+                >
+                  <BookOpen className="size-4" />
+                  新手教程
+                </StyledDropdownMenuItem>
+                <StyledDropdownMenuItem
+                  onClick={() => setFeedbackOpen(true)}
+                  data-tutorial="activity-feedback"
+                >
+                  <MessageSquarePlus className="size-4" />
+                  帮助与反馈
+                </StyledDropdownMenuItem>
+              </StyledDropdownMenuContent>
+            </DropdownMenu>
+          </nav>
+        </div>
+        <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
       </div>
       {renameTarget ? (
         <RenameDialog

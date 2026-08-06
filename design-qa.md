@@ -129,6 +129,44 @@ Fidelity checks:
 
 final result: passed
 
+## Activity rail help menu QA — 2026-08-06
+
+### Sources
+
+- Codex reference:
+  `/var/folders/jk/7_pcx4cd3y94_lwnf7hbxcv80000gn/T/codex-clipboard-e23387f9-0bc2-47b3-9914-03ae653c8ab7.png`
+- Electron main-window capture:
+  `/Users/dingzhijian/.codex/visualizations/2026/08/06/019fd738-055e-7851-986c-268ab66b0039/help-menu-qa/help-menu-implementation-open-v2.jpg`
+- Focused source/implementation comparison:
+  `/Users/dingzhijian/.codex/visualizations/2026/08/06/019fd738-055e-7851-986c-268ab66b0039/help-menu-qa/help-menu-comparison.png`
+
+The reference is a 742 × 406 Retina crop. The Electron window is 1106 × 768
+in the light theme. The focused comparison normalizes the persistent footer
+geometry; the CUA raster file excludes the transient Radix popup, so its open
+state was inspected in the live CUA capture and accessibility tree instead.
+
+### Root fix and evidence
+
+- Account actions remain in the profile menu; product help now has one separate
+  square question-mark trigger at the bottom-right of the activity rail.
+- The popup opens above and to the right of that trigger, uses the existing
+  196 px dropdown width and native menu density, and keeps the reference's
+  separator after `新功能`.
+- The live Electron accessibility tree exposed one `帮助菜单` containing, in
+  order, `新功能`, `新手教程`, and `帮助与反馈`.
+- Existing release-note, Feishu tutorial, and feedback-dialog handlers are
+  reused. The unread release-note indicator moved with the release-note entry.
+- The profile row remains independently operable and no duplicate help actions
+  remain in its menu.
+
+No actionable P0, P1, or P2 visual or interaction differences remain within
+the requested help-menu scope.
+
+Focused help-menu test, update-entrypoint tests, ActivityRail render tests,
+Electron TypeScript, targeted ESLint, and `git diff --check` passed.
+
+final result: passed
+
 ## Workspace-aware new-task composer QA — 2026-07-30
 
 ### Sources

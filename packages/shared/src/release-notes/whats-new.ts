@@ -59,7 +59,7 @@ export interface ShouldNotifyWhatsNewInput {
   maxPerDay?: number
 }
 
-const USER_VISIBLE_PREFIXES = new Set(['feat', 'fix', 'perf', 'security'])
+const USER_VISIBLE_PREFIXES = new Set(['feat', 'fix', 'perf', 'security', 'docs'])
 const FALLBACK_SUMMARY = 'This update improves the writing workflow and fixes issues from recent builds.'
 
 export function buildWhatsNewDraft(input: BuildWhatsNewDraftInput): WhatsNewDraft {
