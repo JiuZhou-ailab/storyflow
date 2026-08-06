@@ -27,6 +27,17 @@ describe('chat page header actions', () => {
     expect(sessionMenuSource).toContain('<ShareMenuItems sessionId={sessionId}')
   })
 
+  it('places chat titles at the leading edge with an independent menu trigger', () => {
+    const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
+    const panelHeaderSource = readFileSync(new URL('../../components/app-shell/PanelHeader.tsx', import.meta.url), 'utf-8')
+
+    expect(chatPageSource.match(/titleAlign="start"/g)).toHaveLength(3)
+    expect(panelHeaderSource).toContain("titleAlign?: 'start' | 'center'")
+    expect(panelHeaderSource).toContain("titleAlign === 'start'")
+    expect(panelHeaderSource).toContain('<MoreHorizontal')
+    expect(panelHeaderSource).not.toContain('onClick={() => setDropdownOpen(true)}')
+  })
+
   it('uses per-session loaded state instead of subscribing to the whole loaded set', () => {
     const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
     const chatPageComponentSource = chatPageSource.slice(

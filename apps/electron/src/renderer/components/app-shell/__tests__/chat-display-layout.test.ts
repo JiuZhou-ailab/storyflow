@@ -1,5 +1,5 @@
 // input: ChatDisplay, prompt TOC, composer, and ScrollArea source contracts.
-// output: Regression coverage for transcript scrolling, prompt navigation, and composer layout.
+// output: Regression coverage for owned transcript scrolling, prompt navigation, and composer layout.
 // pos: Source-level guard for the app-shell chat panel viewport and navigation.
 
 import { describe, expect, it } from 'bun:test'
@@ -17,7 +17,9 @@ describe('ChatDisplay scroll layout', () => {
     expect(scrollAreaSource).toContain('viewportClassName?: string')
     expect(chatDisplaySource).toContain('className="relative flex-1 min-h-0 overflow-hidden"')
     expect(chatDisplaySource).toContain('className="h-full min-h-0 overflow-hidden"')
-    expect(chatDisplaySource).toContain('viewportClassName="h-full min-h-0 overflow-y-auto"')
+    expect(chatDisplaySource).toContain('viewportClassName="h-full min-h-0 overflow-y-auto overscroll-contain"')
+    expect(chatDisplaySource).toContain('scrollViewportRef.current')
+    expect(chatDisplaySource).not.toContain('scrollIntoView(')
   })
 
   it('renders queued user messages above the input instead of inside the transcript', () => {

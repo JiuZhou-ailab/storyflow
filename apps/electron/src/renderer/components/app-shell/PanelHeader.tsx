@@ -1,5 +1,5 @@
-// input: Panel title metadata, optional title menus, leading controls, and right-side actions
-// output: Centered panel header chrome shared by app shell panels
+// input: Panel title metadata, title alignment, optional title menus, leading controls, and right-side actions
+// output: Accessible centered or leading panel header chrome shared by app shell panels
 // pos: Common header layout primitive for renderer panels
 
 /**
@@ -9,7 +9,7 @@
  * - Fixed 42px height
  * - Title with optional badge
  * - Optional action buttons
- * - Optional title dropdown menu (renders chevron and makes title interactive)
+ * - Optional title dropdown menu with an independent overflow trigger
  * - Automatic padding compensation for macOS traffic lights (via StoplightContext)
  *
  * Usage:
@@ -34,7 +34,7 @@
 import * as React from 'react'
 import { useState } from 'react'
 import { motion } from 'motion/react'
-import { ChevronDown } from 'lucide-react'
+import { MoreHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCompensateForStoplight } from '@/context/StoplightContext'
 import {
@@ -55,8 +55,10 @@ export interface PanelHeaderProps {
   title?: string
   /** Optional badge element (e.g., agent badge) */
   badge?: React.ReactNode
-  /** Optional dropdown menu content for interactive title (renders chevron when provided) */
+  /** Optional dropdown menu content rendered from an independent overflow trigger */
   titleMenu?: React.ReactNode
+  /** Title alignment; defaults to centered for existing panel layouts */
+  titleAlign?: 'start' | 'center'
   /** Optional leading action rendered before the title (e.g., back button in compact mode) */
   leadingAction?: React.ReactNode
   /** Optional center button rendered between title and right actions */
@@ -82,6 +84,7 @@ export function PanelHeader({
   title,
   badge,
   titleMenu,
+  titleAlign = 'center',
   leadingAction,
   centerButton,
   actions,
@@ -97,63 +100,75 @@ export function PanelHeader({
   const contextCompensate = useCompensateForStoplight()
   const shouldCompensate = leadingAction ? false : (compensateForStoplight ?? contextCompensate)
 
-  // Controlled dropdown state for anchoring to chevron while keeping full title clickable
+  // Controlled dropdown state keeps the trigger styling in sync with Radix.
   const [dropdownOpen, setDropdownOpen] = useState(false)
 
-  // Title content - either static or interactive with dropdown
-  // Shimmer effect shows during title regeneration
+  // Shimmer effect shows during title regeneration.
   const titleContent = (
     <motion.div
       initial={false}
       animate={{ opacity: title ? 1 : 0 }}
       transition={{ duration: 0.15 }}
-      className="flex min-w-0 items-center justify-center gap-1"
+      className={cn(
+        'flex min-w-0 items-center gap-1',
+        titleAlign === 'start' ? 'justify-start' : 'justify-center',
+      )}
     >
       <h1 className={cn(
-        "min-w-0 truncate text-center text-[13px] font-medium leading-none",
-        isRegeneratingTitle && "animate-shimmer-text"
+        'min-w-0 truncate text-[13px] font-medium leading-none',
+        titleAlign === 'start' ? 'text-left' : 'text-center',
+        isRegeneratingTitle && 'animate-shimmer-text',
       )}>{title}</h1>
       {badge}
     </motion.div>
   )
 
+  const titleBlock = (
+    <div className="flex min-w-0 max-w-full items-center select-none">
+      {titleContent}
+      {titleMenu && (
+        <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={title}
+              className={cn(
+                'titlebar-no-drag ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
+                'text-muted-foreground transition-colors hover:bg-foreground/[0.03] hover:text-foreground',
+                'focus:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+                dropdownOpen && 'bg-foreground/[0.03] text-foreground',
+              )}
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <StyledDropdownMenuContent align={titleAlign === 'start' ? 'start' : 'center'} sideOffset={8}>
+            {titleMenu}
+          </StyledDropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </div>
+  )
+
   const content = (
-    <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,auto)_minmax(0,1fr)] items-center gap-1.5">
-      <div className="titlebar-no-drag min-w-0 w-fit justify-self-start flex items-center">
+    <div className={cn(
+      'grid w-full min-w-0 items-center gap-1.5',
+      titleAlign === 'start'
+        ? 'grid-cols-[minmax(0,1fr)_auto]'
+        : 'grid-cols-[minmax(0,1fr)_minmax(0,auto)_minmax(0,1fr)]',
+    )}>
+      <div className={cn(
+        'titlebar-no-drag min-w-0 w-fit justify-self-start flex items-center',
+        titleAlign === 'start' && 'w-full',
+      )}>
         {leadingAction}
+        {titleAlign === 'start' && titleBlock}
       </div>
-      <div className="min-w-0 flex items-center justify-center select-none">
-        <div className="max-w-full overflow-hidden">
-          {titleMenu ? (
-            <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
-              {/* Wrapper button for the whole clickable area */}
-              <button
-                type="button"
-                onClick={() => setDropdownOpen(true)}
-                className={cn(
-                  "flex h-7 max-w-full items-center justify-center gap-1 rounded-md px-2 titlebar-no-drag min-w-0",
-                  "hover:bg-foreground/[0.03] transition-colors",
-                  "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                  dropdownOpen && "bg-foreground/[0.03]"
-                )}
-              >
-                {titleContent}
-                {/* Chevron is the actual trigger anchor point */}
-                <DropdownMenuTrigger asChild>
-                  <span className="shrink-0 flex items-center justify-center">
-                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                  </span>
-                </DropdownMenuTrigger>
-              </button>
-              <StyledDropdownMenuContent align="center" sideOffset={8}>
-                {titleMenu}
-              </StyledDropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            titleContent
-          )}
+      {titleAlign === 'center' && (
+        <div className="min-w-0 flex items-center justify-center">
+          {titleBlock}
         </div>
-      </div>
+      )}
       <div className="titlebar-no-drag min-w-0 w-fit justify-self-end flex items-center gap-1">
         {centerButton}
         {actions}

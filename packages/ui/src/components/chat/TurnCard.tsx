@@ -1508,7 +1508,7 @@ function BranchDropdown({ onBranch }: BranchDropdownProps) {
   )
 }
 
-const MAX_HEIGHT = 540
+const PLAN_MAX_HEIGHT = 540
 
 function clearAnnotationMarks(root: HTMLElement): void {
   const annotatedInlineCodeNodes = root.querySelectorAll<HTMLElement>('code[data-ca-annotation-inline-code="true"]')
@@ -1713,7 +1713,7 @@ export function ResponseCard({
   const [copied, setCopied] = useState(false)
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false)
-  // Dark mode detection - scroll fade only shown in dark mode
+  // Dark mode detection - plan scroll fade only shown in dark mode
   const [isDarkMode, setIsDarkMode] = useState(false)
   // Pending text selection waiting for explicit follow-up action
   const interaction = useAnnotationInteractionController()
@@ -1755,8 +1755,10 @@ export function ResponseCard({
   })
   const allowAnnotationIsland = annotationInteractionMode === 'interactive'
 
-  // Detect dark mode from document class and listen for changes
+  // Only framed plans retain an inner scroll surface and need edge fades.
   useEffect(() => {
+    if (variant !== 'plan') return
+
     const checkDarkMode = () => {
       setIsDarkMode(document.documentElement.classList.contains('dark'))
     }
@@ -1766,7 +1768,7 @@ export function ResponseCard({
     const observer = new MutationObserver(checkDarkMode)
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
     return () => observer.disconnect()
-  }, [])
+  }, [variant])
 
   const closeSelectionMenu = useCallback(() => {
     closeAll()
@@ -2450,13 +2452,16 @@ export function ResponseCard({
     return null
   }
 
-  // Completed response or plan - show with max height and footer
+  // Completed responses render inline; plans remain framed, bounded artifacts.
   if (isCompleted || variant === 'plan') {
     const isPlan = variant === 'plan'
 
     return (
       <>
-        <div className="bg-background shadow-minimal rounded-[8px] overflow-hidden relative group">
+        <div className={cn(
+          "relative group",
+          isPlan && "bg-background shadow-minimal rounded-[8px] overflow-hidden"
+        )}>
           {/* Fullscreen button - desktop only; compact mode keeps message chrome minimal */}
           {!compactMode && (
           <button
@@ -2487,21 +2492,23 @@ export function ResponseCard({
             </div>
           )}
 
-          {/* Scrollable content area with subtle fade at edges (dark mode only) */}
+          {/* Ordinary responses follow the transcript scroll; plans stay independently bounded. */}
           <div
             ref={contentRef}
             data-search-root="response"
             onMouseDown={handleSelectionPointerDown}
             onMouseUp={handleTextSelection}
-            className="pl-[22px] pr-[16px] py-3 text-sm overflow-y-auto scrollbar-hover"
-            style={{
-              maxHeight: MAX_HEIGHT,
-              // Subtle fade at top and bottom edges (16px) - only in dark mode for better contrast
+            className={cn(
+              "pl-[22px] pr-[16px] py-3 text-sm",
+              isPlan && "overflow-y-auto scrollbar-hover"
+            )}
+            style={isPlan ? {
+              maxHeight: PLAN_MAX_HEIGHT,
               ...(isDarkMode && {
                 maskImage: 'linear-gradient(to bottom, transparent 0%, black 16px, black calc(100% - 16px), transparent 100%)',
                 WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 16px, black calc(100% - 16px), transparent 100%)',
               }),
-            }}
+            } : undefined}
           >
             <div ref={contentLayerRef} className="relative">
               <Markdown
@@ -2518,7 +2525,10 @@ export function ResponseCard({
           {/* Footer with actions - hidden in compact mode */}
           {!compactMode && (
             <div className={cn(
-              "pl-4 pr-2.5 py-2 border-t border-border/30 flex items-center justify-between bg-muted/20",
+              "flex items-center justify-between",
+              isPlan
+                ? "pl-4 pr-2.5 py-2 border-t border-border/30 bg-muted/20"
+                : "pl-[22px] pr-2.5 pt-1 pb-2",
               SIZE_CONFIG.fontSize
             )}>
               {/* Left side - Copy, View as Markdown, Annotation hint */}
@@ -2607,26 +2617,17 @@ export function ResponseCard({
     )
   }
 
-  // Streaming response - show throttled content with spinner
+  // Streaming responses use the same inline surface as their completed state.
   return (
     <>
-      <div className="bg-background shadow-minimal rounded-[8px] overflow-hidden group">
+      <div className="relative group">
         {/* Content area - uses displayedText (throttled) for performance */}
-        {/* Subtle fade at top and bottom edges (dark mode only) */}
         <div
           ref={contentRef}
           data-search-root="response"
           onMouseDown={handleSelectionPointerDown}
           onMouseUp={handleTextSelection}
-          className="pl-[22px] pr-4 py-3 text-sm overflow-y-auto scrollbar-hover"
-          style={{
-            maxHeight: MAX_HEIGHT,
-            // Subtle fade at top and bottom edges (16px) - only in dark mode for better contrast
-            ...(isDarkMode && {
-              maskImage: 'linear-gradient(to bottom, transparent 0%, black 16px, black calc(100% - 16px), transparent 100%)',
-              WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 16px, black calc(100% - 16px), transparent 100%)',
-            }),
-          }}
+          className="pl-[22px] pr-4 py-3 text-sm"
         >
           <div ref={contentLayerRef} className="relative">
             <Markdown
@@ -2642,7 +2643,7 @@ export function ResponseCard({
 
         {/* Footer - hidden in compact mode */}
         {!compactMode && (
-          <div className={cn("px-4 py-2 border-t border-border/30 flex items-center bg-muted/20", SIZE_CONFIG.fontSize)}>
+          <div className={cn("pl-[22px] pr-4 pt-1 pb-2 flex items-center", SIZE_CONFIG.fontSize)}>
             <div className="flex items-center gap-2 text-muted-foreground">
               <Spinner className={SIZE_CONFIG.spinnerSize} />
               <span>Streaming...</span>

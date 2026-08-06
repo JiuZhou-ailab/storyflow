@@ -1,5 +1,5 @@
 // input: Built Electron app, a temporary local workspace, and a deterministic OpenAI-compatible HTTP stub
-// output: Assertions for account lazy-render, local startup, a real Pi edit turn, version restore, and restart recovery
+// output: Assertions for fixed root viewport, account lazy-render, local startup, a real Pi edit turn, version restore, and restart recovery
 // pos: Release-gate smoke test for the desktop product's durable core loop
 
 import { spawnSync } from 'node:child_process'
@@ -59,6 +59,7 @@ async function main(): Promise<void> {
     assert.equal(auth.configured, true, 'account smoke must exercise the configured sign-in form')
     assert.equal(auth.authenticated, false, 'account smoke fixture must start signed out')
     await smokeAccountCenter(app)
+    await assertRootViewportCannotScroll(app)
     await smokeFreeConversationSkillImport(app)
 
     const workspace = await callOn<{ id: string; rootPath: string } | undefined>(
@@ -197,6 +198,48 @@ async function smokeFreeConversationSkillImport(app: LaunchedApp): Promise<void>
     'async function (workspaceId, slug) { await window.electronAPI.deleteSkill(workspaceId, slug) }',
     [FREE_CONVERSATION_WORKSPACE_ID, slug],
   )
+}
+
+async function assertRootViewportCannotScroll(app: LaunchedApp): Promise<void> {
+  const result = await evalOn<{
+    overflow: string
+    scrollHeight: number
+    clientHeight: number
+    scrollTop: number
+    railTopBefore: number | null
+    railTopAfter: number | null
+  }>(app, `(() => {
+    const root = document.getElementById('root')
+    if (!root) throw new Error('root not mounted')
+
+    const rail = document.querySelector('[data-testid="activity-rail"]')
+    const railTopBefore = rail?.getBoundingClientRect().top ?? null
+    const sentinel = document.createElement('div')
+    sentinel.style.height = window.innerHeight + 'px'
+    sentinel.style.flex = '0 0 auto'
+    root.appendChild(sentinel)
+
+    try {
+      root.scrollTop = 0
+      sentinel.scrollIntoView({ behavior: 'instant', block: 'end' })
+      return {
+        overflow: getComputedStyle(root).overflow,
+        scrollHeight: root.scrollHeight,
+        clientHeight: root.clientHeight,
+        scrollTop: root.scrollTop,
+        railTopBefore,
+        railTopAfter: rail?.getBoundingClientRect().top ?? null,
+      }
+    } finally {
+      sentinel.remove()
+      root.scrollTop = 0
+    }
+  })()`)
+
+  assert.equal(result.overflow, 'clip', 'the app root must not be a scroll container')
+  assert.ok(result.scrollHeight > result.clientHeight, 'root overflow probe did not create overflow')
+  assert.equal(result.scrollTop, 0, 'descendant scrolling moved the app root')
+  assert.equal(result.railTopAfter, result.railTopBefore, 'descendant scrolling moved the app shell')
 }
 
 function configureAccountSmokeEnvironment(): void {

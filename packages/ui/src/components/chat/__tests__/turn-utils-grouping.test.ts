@@ -1,5 +1,5 @@
 // input: Turn activities and shared TurnCard rendering behavior
-// output: Regression coverage for activity grouping and visible progress projection
+// output: Regression coverage for activity grouping, progress projection, and response presentation
 // pos: Guards the shared chat turn normalization and rendering contract
 
 /**
@@ -545,6 +545,50 @@ describe('thinking activity projection', () => {
     )
 
     expect(html.match(/Thinking\.\.\./g)).toHaveLength(1)
+  })
+})
+
+describe('response presentation', () => {
+  it('renders ordinary final responses inline while keeping plans framed', () => {
+    const responseHtml = renderToStaticMarkup(
+      React.createElement(I18nextProvider, { i18n: testI18n },
+        React.createElement(TurnCard, {
+          turnId: 'turn-response',
+          activities: [],
+          response: {
+            text: 'Final response',
+            isStreaming: false,
+            messageId: 'response-1',
+          },
+          isStreaming: false,
+          isComplete: true,
+          compactMode: true,
+        }))
+    )
+
+    expect(responseHtml).toContain('data-search-root="response"')
+    expect(responseHtml).not.toContain('shadow-minimal')
+    expect(responseHtml).not.toContain('overflow-y-auto')
+    expect(responseHtml).not.toContain('max-height:540px')
+
+    const planHtml = renderToStaticMarkup(
+      React.createElement(I18nextProvider, { i18n: testI18n },
+        React.createElement(TurnCard, {
+          turnId: 'turn-plan',
+          activities: [createActivity({
+            type: 'plan',
+            content: 'Plan response',
+            messageId: 'plan-1',
+          })],
+          isStreaming: false,
+          isComplete: true,
+          compactMode: true,
+        }))
+    )
+
+    expect(planHtml).toContain('shadow-minimal')
+    expect(planHtml).toContain('overflow-y-auto')
+    expect(planHtml).toContain('max-height:540px')
   })
 })
 

@@ -824,3 +824,35 @@ new runtime errors. Existing Skills catalog warnings are unrelated. Focused
 layout test: 24 passed, 0 failed.
 
 final result: passed
+
+## Chat titlebar alignment QA — 2026-08-06
+
+### Sources
+
+- Codex reference:
+  `/Users/dingzhijian/.codex/visualizations/2026/08/06/019fd738-055e-7851-986c-268ab66b0039/ui-audit/01-codex-reference.png`
+- Earlier Storyflow implementation:
+  `/Users/dingzhijian/.codex/visualizations/2026/08/06/019fd738-055e-7851-986c-268ab66b0039/ui-audit/02-storyflow-current.jpeg`
+- Final Electron implementation:
+  `/Users/dingzhijian/.codex/visualizations/2026/08/06/019fd738-055e-7851-986c-268ab66b0039/ui-audit/03-storyflow-header-final.jpeg`
+
+### Root fixes and evidence
+
+- Chat titles opt into the shared header's leading layout; settings and other
+  panels retain the centered default.
+- The title is plain heading content and the session menu is a separate native
+  button with a Lucide overflow icon; the invalid nested trigger structure is
+  gone.
+- The two-column leading layout leaves the transcript and composer centered and
+  preserves the existing right-side action region.
+- The live Electron accessibility tree exposes the title as a heading and the
+  overflow control as a popup button. Keyboard activation opened the existing
+  session menu with mark, archive, unread, rename, new-window, copy, and delete
+  actions.
+- The Codex reference and final Electron capture were reviewed together. No
+  actionable P0, P1, or P2 visual or interaction difference remains within the
+  requested titlebar scope.
+
+Focused regression tests, Electron TypeScript, and `git diff --check` passed.
+
+final result: passed

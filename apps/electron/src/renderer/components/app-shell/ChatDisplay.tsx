@@ -433,22 +433,43 @@ function ProcessingIndicator({ startTime, statusMessage }: ProcessingIndicatorPr
   )
 }
 
-/**
- * Scrolls to target element on mount, before browser paint.
- * Uses useLayoutEffect to ensure scroll happens before content is visible.
- */
+function scrollViewportToBottom(
+  viewport: HTMLDivElement | null,
+  behavior: ScrollBehavior = 'auto',
+) {
+  viewport?.scrollTo({ top: viewport.scrollHeight, behavior })
+}
+
+function scrollElementWithinViewport(
+  viewport: HTMLDivElement | null,
+  element: HTMLElement,
+  behavior: ScrollBehavior,
+) {
+  if (!viewport) return
+  const viewportRect = viewport.getBoundingClientRect()
+  const elementRect = element.getBoundingClientRect()
+  viewport.scrollTo({
+    top: viewport.scrollTop
+      + elementRect.top
+      - viewportRect.top
+      - (viewport.clientHeight - elementRect.height) / 2,
+    behavior,
+  })
+}
+
+/** Scrolls the owned viewport before browser paint. */
 function ScrollOnMount({
-  targetRef,
+  viewportRef,
   onScroll,
   skip = false
 }: {
-  targetRef: React.RefObject<HTMLDivElement | null>
+  viewportRef: React.RefObject<HTMLDivElement | null>
   onScroll?: () => void
   skip?: boolean
 }) {
   React.useLayoutEffect(() => {
     if (skip) return
-    targetRef.current?.scrollIntoView({ behavior: 'instant' })
+    scrollViewportToBottom(viewportRef.current)
     onScroll?.()
   }, [skip])
   return null
@@ -604,7 +625,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // Input is only disabled when explicitly disabled (e.g., agent needs activation)
   // User can type during streaming - submitting will stop the stream and send
   const isInputDisabled = disabled
-  const messagesEndRef = React.useRef<HTMLDivElement>(null)
   const scrollViewportRef = React.useRef<HTMLDivElement>(null)
   const prevSessionIdRef = React.useRef<string | null>(null)
   // Reverse pagination: show last N turns initially, load more on scroll up
@@ -915,12 +935,15 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
       // Scroll the turn into view
       const turnEl = turnRefs.current.get(turnId)
-      if (turnEl) {
+      const viewport = scrollViewportRef.current
+      if (turnEl && viewport) {
         const rect = turnEl.getBoundingClientRect()
+        const viewportRect = viewport.getBoundingClientRect()
         const buffer = 128
-        const isVisible = rect.top >= buffer && rect.bottom <= window.innerHeight - buffer
+        const isVisible = rect.top >= viewportRect.top + buffer
+          && rect.bottom <= viewportRect.bottom - buffer
         if (!isVisible) {
-          turnEl.scrollIntoView({ behavior: 'instant', block: 'center' })
+          scrollElementWithinViewport(viewport, turnEl, 'auto')
         }
       }
       shouldScrollToMatchRef.current = false
@@ -1283,7 +1306,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     const resizeObserver = new ResizeObserver(() => {
       // Unfocused panels: always scroll to bottom instantly (user isn't reading them)
       if (!isFocusedPanelRef.current) {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
+        scrollViewportToBottom(viewport)
         return
       }
 
@@ -1295,7 +1318,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       debounceTimer = setTimeout(() => {
         // Skip smooth scroll if we just did an instant scroll (session switch/lazy load)
         if (Date.now() < skipSmoothScrollUntilRef.current) return
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        scrollViewportToBottom(viewport, 'smooth')
       }, 200)
     })
 
@@ -1341,9 +1364,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     isStickToBottomRef.current = true
 
     requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({
-        behavior: isFocusedPanelRef.current ? 'smooth' : 'instant',
-      })
+      scrollViewportToBottom(
+        scrollViewportRef.current,
+        isFocusedPanelRef.current ? 'smooth' : 'auto',
+      )
     })
   }, [session?.id, messageCount, lastMessageId, lastMessageRole])
 
@@ -1398,7 +1422,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     // Immediately scroll to bottom after sending - use requestAnimationFrame
     // to ensure the DOM has updated with the new message
     requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      scrollViewportToBottom(scrollViewportRef.current, 'smooth')
     })
   }
 
@@ -1660,7 +1684,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       const turnContainer = turnRefs.current.get(turnKey)
       if (!turnContainer) return false
 
-      turnContainer.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      scrollElementWithinViewport(scrollViewportRef.current, turnContainer, 'smooth')
       return true
     }
 
@@ -1753,14 +1777,14 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
             <div
               className="h-full min-h-0 overflow-hidden"
               style={{
-                maskImage: 'linear-gradient(to bottom, transparent 0%, black 32px, black calc(100% - 32px), transparent 100%)',
-                WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 32px, black calc(100% - 32px), transparent 100%)'
+                maskImage: 'linear-gradient(to bottom, transparent 0%, black 6px, black calc(100% - 32px), transparent 100%)',
+                WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 6px, black calc(100% - 32px), transparent 100%)'
               }}
             >
               <ScrollArea
                 className="h-full min-w-0"
                 viewportRef={scrollViewportRef}
-                viewportClassName="h-full min-h-0 overflow-y-auto"
+                viewportClassName="h-full min-h-0 overflow-y-auto overscroll-contain"
               >
               <div className={cn(
                 CHAT_LAYOUT.maxWidth,
@@ -1834,7 +1858,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                   {/* Scroll to bottom before paint - fires via useLayoutEffect */}
                   {/* Skip when search is active on session switch - scroll to first match instead */}
                   <ScrollOnMount
-                    targetRef={messagesEndRef}
+                    viewportRef={scrollViewportRef}
                     skip={skipScrollToBottom}
                     onScroll={() => {
                       skipSmoothScrollUntilRef.current = Date.now() + 500
@@ -2188,8 +2212,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                     statusMessage={session.currentStatus?.message}
                   />
                 )}
-                {/* Scroll Anchor: For auto-scroll to bottom */}
-                <div ref={messagesEndRef} />
               </div>
               </ScrollArea>
             </div>

@@ -483,7 +483,8 @@ html[data-font="inter"] {
 
   html, body, #root {
     height: 100%;
-    overflow: hidden;
+    overflow: clip;
+    overscroll-behavior: none;
   }
 
   body {
