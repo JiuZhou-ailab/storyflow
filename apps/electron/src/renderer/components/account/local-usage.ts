@@ -1,53 +1,23 @@
-// input: Workspace metadata and persisted per-session token totals
-// output: Deterministic local usage aggregation by project
-// pos: Pure data model for the App settings local usage visualization
+// input: Persisted per-session token totals for one runtime workspace
+// output: Deterministic usage aggregation for the active project
+// pos: Pure data model for the App settings usage visualization
 
-import type { Session, Workspace } from '../../../shared/types'
-
-interface WorkspaceUsage {
-  id: string
-  name: string
-  totalTokens: number
-}
+import type { Session } from '../../../shared/types'
 
 export interface LocalUsageSummary {
   totalTokens: number
   inputTokens: number
   outputTokens: number
   sessionCount: number
-  workspaceUsage: WorkspaceUsage[]
 }
 
 export function summarizeLocalUsage(
-  workspaces: Pick<Workspace, 'id' | 'name'>[],
-  sessionsByWorkspace: Array<Array<Pick<Session, 'tokenUsage'>>>,
+  sessions: Array<Pick<Session, 'tokenUsage'>>,
 ): LocalUsageSummary {
-  let inputTokens = 0
-  let outputTokens = 0
-  let totalTokens = 0
-  let sessionCount = 0
-
-  const workspaceUsage = workspaces.map((workspace, index) => {
-    const sessions = sessionsByWorkspace[index] ?? []
-    const workspaceTokens = sessions.reduce((sum, session) => {
-      const usage = session.tokenUsage
-      inputTokens += usage?.inputTokens ?? 0
-      outputTokens += usage?.outputTokens ?? 0
-      totalTokens += usage?.totalTokens ?? 0
-      return sum + (usage?.totalTokens ?? 0)
-    }, 0)
-
-    sessionCount += sessions.length
-    return { id: workspace.id, name: workspace.name, totalTokens: workspaceTokens }
-  })
-
-  return {
-    totalTokens,
-    inputTokens,
-    outputTokens,
-    sessionCount,
-    workspaceUsage: workspaceUsage
-      .filter((workspace) => workspace.totalTokens > 0)
-      .sort((a, b) => b.totalTokens - a.totalTokens),
-  }
+  return sessions.reduce<LocalUsageSummary>((summary, session) => ({
+    totalTokens: summary.totalTokens + (session.tokenUsage?.totalTokens ?? 0),
+    inputTokens: summary.inputTokens + (session.tokenUsage?.inputTokens ?? 0),
+    outputTokens: summary.outputTokens + (session.tokenUsage?.outputTokens ?? 0),
+    sessionCount: summary.sessionCount + 1,
+  }), { totalTokens: 0, inputTokens: 0, outputTokens: 0, sessionCount: 0 })
 }

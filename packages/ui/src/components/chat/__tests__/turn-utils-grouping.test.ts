@@ -626,6 +626,27 @@ describe('response presentation', () => {
     expect(html).toContain('data-search-exclude="true"')
     expect(html).not.toContain('74k turn input')
   })
+
+  it('keeps completed turn usage on a plan-only final output', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TooltipProvider, null,
+        React.createElement(I18nextProvider, { i18n: testI18n },
+          React.createElement(TurnCard, {
+            turnId: 'plan-with-usage',
+            activities: [createActivity({
+              type: 'plan',
+              content: 'Plan response',
+              messageId: 'plan-with-usage',
+            })],
+            isStreaming: false,
+            isComplete: true,
+            metrics: { durationMs: 1_000 },
+          }))
+      )
+    )
+
+    expect(html.match(/aria-label="Turn usage"/g)).toHaveLength(1)
+  })
 })
 
 // ============================================================================

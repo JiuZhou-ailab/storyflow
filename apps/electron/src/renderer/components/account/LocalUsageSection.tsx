@@ -1,11 +1,10 @@
-// input: Workspace-scoped session metadata exposed by the existing Electron API
-// output: Read-only local token totals, composition, and project distribution
-// pos: Local usage section inside global App settings
+// input: Current runtime workspace and its persisted per-session token totals
+// output: Read-only token totals and composition for the active project
+// pos: Current-project usage section inside global App settings
 
 import { useEffect, useState } from 'react'
 import { Spinner } from '@craft-agent/ui'
 import { useTranslation } from 'react-i18next'
-import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
 
 import {
   SettingsCard,
@@ -22,41 +21,37 @@ const COMPACT_NUMBER = new Intl.NumberFormat('zh-CN', {
 })
 
 export function LocalUsageSection() {
-  const { workspaces } = useAccountSettings()
+  const { runtimeWorkspace } = useAccountSettings()
   const { t } = useTranslation()
   const [summary, setSummary] = useState<LocalUsageSummary | null>(null)
   const [loadError, setLoadError] = useState(false)
 
   useEffect(() => {
     let cancelled = false
-    const usageWorkspaces = [
-      { id: FREE_CONVERSATION_WORKSPACE_ID, name: t('settings.app.localUsage.freeConversations') },
-      ...workspaces,
-    ]
+    setSummary(null)
+    setLoadError(false)
+
+    if (!runtimeWorkspace) {
+      setLoadError(true)
+      return () => {
+        cancelled = true
+      }
+    }
 
     void (async () => {
-      const successfulWorkspaces: typeof usageWorkspaces = []
-      const sessionsByWorkspace: Array<Array<Pick<Session, 'tokenUsage'>>> = []
-      for (const workspace of usageWorkspaces) {
-        if (cancelled) return
-        try {
-          sessionsByWorkspace.push(await window.electronAPI.listSessionsByWorkspace(workspace.id))
-          successfulWorkspaces.push(workspace)
-        } catch (error) {
-          console.error('[LocalUsageSection] Failed to load workspace usage:', error)
-        }
+      try {
+        const sessions: Array<Pick<Session, 'tokenUsage'>> = await window.electronAPI.listSessionsByWorkspace(runtimeWorkspace.id)
+        if (!cancelled) setSummary(summarizeLocalUsage(sessions))
+      } catch (error) {
+        console.error('[LocalUsageSection] Failed to load workspace usage:', error)
+        if (!cancelled) setLoadError(true)
       }
-      if (cancelled) return
-      setLoadError(successfulWorkspaces.length !== usageWorkspaces.length)
-      setSummary(successfulWorkspaces.length > 0
-        ? summarizeLocalUsage(successfulWorkspaces, sessionsByWorkspace)
-        : null)
     })()
 
     return () => {
       cancelled = true
     }
-  }, [t, workspaces])
+  }, [runtimeWorkspace])
 
   return (
     <SettingsSection
@@ -66,12 +61,7 @@ export function LocalUsageSection() {
       <SettingsCard divided={false}>
         <SettingsCardContent className="p-5">
           {summary ? (
-            <>
-              <UsageContent summary={summary} />
-              {loadError ? (
-                <p className="mt-4 text-xs text-muted-foreground">{t('settings.app.localUsage.partial')}</p>
-              ) : null}
-            </>
+            <UsageContent summary={summary} />
           ) : loadError ? (
             <p className="text-sm text-muted-foreground">{t('settings.app.localUsage.unavailable')}</p>
           ) : (
@@ -92,8 +82,6 @@ function UsageContent({ summary }: { summary: LocalUsageSummary }) {
     ? (summary.inputTokens / compositionTotal) * 100
     : 0
   const outputPercent = compositionTotal > 0 ? 100 - inputPercent : 0
-  const maxWorkspaceTokens = summary.workspaceUsage[0]?.totalTokens ?? 0
-
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -124,31 +112,6 @@ function UsageContent({ summary }: { summary: LocalUsageSummary }) {
         </div>
       </div>
 
-      <div className="space-y-3">
-        <p className="text-xs text-muted-foreground">{t('settings.app.localUsage.byProject')}</p>
-        {summary.workspaceUsage.length > 0 ? (
-          <div className="space-y-3">
-            {summary.workspaceUsage.slice(0, 5).map((workspace) => (
-              <div key={workspace.id} className="space-y-1.5">
-                <div className="flex items-center justify-between gap-4 text-xs">
-                  <span className="truncate text-foreground">{workspace.name}</span>
-                  <span className="shrink-0 tabular-nums text-muted-foreground">
-                    {COMPACT_NUMBER.format(workspace.totalTokens)}
-                  </span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-foreground-2">
-                  <div
-                    className="h-full rounded-full bg-accent"
-                    style={{ width: `${(workspace.totalTokens / maxWorkspaceTokens) * 100}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">{t('settings.app.localUsage.empty')}</p>
-        )}
-      </div>
     </div>
   )
 }
