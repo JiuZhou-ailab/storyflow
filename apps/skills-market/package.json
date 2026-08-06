@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@craft-agent/shared": "workspace:*",
+    "fflate": "^0.8.2",
     "jose": "^6.0.0"
   }
 }

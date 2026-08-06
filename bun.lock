@@ -197,6 +197,7 @@
       "version": "0.10.6",
       "dependencies": {
         "@craft-agent/shared": "workspace:*",
+        "fflate": "^0.8.2",
         "jose": "^6.0.0",
       },
     },
@@ -232,8 +233,8 @@
       "name": "@craft-agent/webui",
       "version": "0.10.6",
       "dependencies": {
-        "@craft-agent/shared": "workspace:*",
         "@craft-agent/server-core": "workspace:*",
+        "@craft-agent/shared": "workspace:*",
         "@craft-agent/ui": "workspace:*",
         "i18next": "^26.0.3",
         "i18next-browser-languagedetector": "^8.2.1",

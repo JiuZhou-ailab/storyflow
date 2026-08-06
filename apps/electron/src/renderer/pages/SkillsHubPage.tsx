@@ -463,7 +463,7 @@ export default function SkillsHubPage() {
                             {skill.summary}
                           </span>
                           <span className="mt-1 flex min-w-0 gap-2 overflow-hidden whitespace-nowrap text-xs text-muted-foreground">
-                            <span className="truncate font-medium text-foreground/75">{skill.author}</span>
+                            <span className="truncate font-medium text-foreground/75">{skill.publisher.displayName}</span>
                             <span className="inline-flex shrink-0 items-center gap-1">
                               <Download className="size-3" aria-hidden="true" />
                               {t('skillsHub.downloadCount', {
@@ -596,7 +596,7 @@ function MarketSkillDetailDialog({
               <DialogTitle className="truncate">{resolvedSkill.displayName}</DialogTitle>
               <DialogDescription className="mt-1 leading-relaxed">{resolvedSkill.summary}</DialogDescription>
               <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                <span>{resolvedSkill.author}</span>
+                <span>{resolvedSkill.publisher.displayName}</span>
                 <span>{t('skillsHub.downloadCount', {
                   defaultValue: '{{count}} 次下载',
                   count: resolvedSkill.downloadCount,

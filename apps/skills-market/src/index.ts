@@ -10,7 +10,7 @@ import {
 } from '@craft-agent/shared/skills/marketplace'
 import { decodeProtectedHeader, jwtVerify } from 'jose'
 import { CURATED_SKILLS, type CuratedSkill } from './catalog.ts'
-import { validateMarketBundle } from './packages.ts'
+import { convertCuratedSkillArchive, readCuratedArchive, validateMarketBundle } from './packages.ts'
 import { ReviewInputError, ReviewUnavailableError, reviewSkillBundle } from './review.ts'
 
 interface R2ObjectLike {
@@ -82,6 +82,7 @@ interface SkillMetricRow {
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
 const PUBLIC_CACHE = 'public, max-age=60, stale-while-revalidate=300'
 const PRIVATE_CACHE = 'private, no-store'
+const curatedPackageLoads = new Map<string, ReturnType<typeof loadCuratedPackageUncached>>()
 
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
@@ -126,7 +127,7 @@ async function listSkills(request: Request, url: URL, env: Env): Promise<Respons
   const identity = await readMarketIdentity(request, env, 'skills:read', false)
   const query = (url.searchParams.get('q') ?? '').trim().toLocaleLowerCase()
   const tag = (url.searchParams.get('tag') ?? '').trim().toLocaleLowerCase()
-  const distribution = url.searchParams.get('distribution')
+  const distribution = url.searchParams.get('distribution') ?? 'installable'
   const downloadCounts = await loadDownloadCounts(env)
   const seedSummaries = CURATED_SKILLS.map(seed => seedSummary(
     seed,
@@ -155,7 +156,7 @@ async function getSkillDetail(slug: string, request: Request, env: Env): Promise
   const downloadCount = await loadDownloadCount(env, slug)
   const seed = CURATED_SKILLS.find(item => item.slug === slug)
   if (seed) {
-    const detail = await seedDetail(seed, downloadCount)
+    const detail = await seedDetail(seed, downloadCount, env)
     return json(detail, 200, { 'cache-control': PUBLIC_CACHE })
   }
   const row = await loadPublishedRow(slug, undefined, env, identity?.organizationId)
@@ -184,6 +185,15 @@ async function downloadBundle(
   const identity = request
     ? await readMarketIdentity(request, env, 'skills:read', false)
     : null
+  const curated = CURATED_SKILLS.find(seed => seed.slug === slug && seed.package?.version === version)
+  if (curated?.package) {
+    const bundle = await loadCuratedPackage(curated, env)
+    if (headOnly) {
+      return bundleResponse('', bundle.sha256, `${slug}-${version}.storyflow-skill.json`, true)
+    }
+    await recordDownload(env, slug)
+    return bundleResponse(bundle.raw, bundle.sha256, `${slug}-${version}.storyflow-skill.json`)
+  }
   const row = await loadPublishedRow(slug, version, env, identity?.organizationId)
   if (!row) throw new RequestError(404, 'Skill version not found')
   const object = await env.PACKAGES?.get(row.object_key)
@@ -288,9 +298,10 @@ async function submitSkill(request: Request, url: URL, env: Env): Promise<Respon
 }
 
 function seedSummary(seed: CuratedSkill, downloadCount: number): MarketSkillSummary {
+  const version = seed.package?.version ?? '1.0.0'
   return {
     slug: seed.slug,
-    version: '1.0.0',
+    version,
     displayName: seed.displayName,
     summary: seed.summary,
     author: seed.sourceName,
@@ -302,13 +313,25 @@ function seedSummary(seed: CuratedSkill, downloadCount: number): MarketSkillSumm
     downloadCount,
     featured: true,
     recommendation: seed.recommendation,
-    publishedAt: `${seed.recommendation.snapshotAt}T00:00:00.000Z`,
-    sha256: '',
+    publishedAt: seed.package
+      ? new Date(seed.package.publishedAt).toISOString()
+      : `${seed.recommendation.snapshotAt}T00:00:00.000Z`,
+    sha256: seed.package?.bundleSha256 ?? '',
   }
 }
 
-function seedDetail(seed: CuratedSkill, downloadCount: number): MarketSkillDetail {
+async function seedDetail(seed: CuratedSkill, downloadCount: number, env: Env): Promise<MarketSkillDetail> {
   const summary = seedSummary(seed, downloadCount)
+  if (seed.package) {
+    const bundle = await loadCuratedPackage(seed, env)
+    return {
+      ...summary,
+      skillMarkdown: bundle.skillMarkdown,
+      manifest: bundle.manifest,
+      downloadPath: `/api/skills/${encodeURIComponent(seed.slug)}/versions/${encodeURIComponent(seed.package.version)}/bundle`,
+      installUrl: buildSkillInstallDeepLink(summary),
+    }
+  }
   const manifest: StoryflowSkillManifest = {
     schemaVersion: 1, slug: seed.slug, version: '1.0.0', displayName: seed.displayName,
     summary: seed.summary, license: seed.license,
@@ -323,6 +346,44 @@ function seedDetail(seed: CuratedSkill, downloadCount: number): MarketSkillDetai
   const sourceLine = seed.sourceUrl ? `\n- 上游：${seed.sourceUrl}` : ''
   const skillMarkdown = `---\nname: ${seed.slug}\ndescription: ${JSON.stringify(seed.summary)}\n---\n\n# ${seed.displayName}\n\n${seed.summary}\n${sourceLine}\n- 推荐依据：${seed.recommendation.label}\n- 数据快照：${seed.recommendation.snapshotAt}\n\n安装或复用前，请检查上游许可证、脚本和权限。\n`
   return { ...summary, skillMarkdown, manifest, downloadPath: '', installUrl: '' }
+}
+
+async function loadCuratedPackage(seed: CuratedSkill, env: Env) {
+  const key = seed.package?.bundleSha256
+  if (!key) throw new RequestError(404, 'Curated Skill package is unavailable')
+  const pending = curatedPackageLoads.get(key) ?? loadCuratedPackageUncached(seed, env)
+  curatedPackageLoads.set(key, pending)
+  try {
+    return await pending
+  } finally {
+    if (curatedPackageLoads.get(key) === pending) curatedPackageLoads.delete(key)
+  }
+}
+
+async function loadCuratedPackageUncached(seed: CuratedSkill, env: Env) {
+  const packageMetadata = seed.package
+  if (!packageMetadata) throw new RequestError(404, 'Curated Skill package is unavailable')
+  try {
+    let archive: Uint8Array
+    if (packageMetadata.objectKey) {
+      const object = await env.PACKAGES?.get(packageMetadata.objectKey)
+      if (!object) throw new Error('pinned package object is missing')
+      archive = await readCuratedArchive(new Response(object.body))
+    } else {
+      const url = new URL('/api/v1/download', 'https://api.skillhub.cn')
+      url.searchParams.set('slug', packageMetadata.sourceSlug)
+      url.searchParams.set('namespace', packageMetadata.namespace)
+      url.searchParams.set('version', packageMetadata.version)
+      const response = await fetch(url, { signal: AbortSignal.timeout(15_000) })
+      if (!response.ok) throw new Error(`upstream returned ${response.status}`)
+      archive = await readCuratedArchive(response)
+    }
+    const bundle = await convertCuratedSkillArchive(seed, archive)
+    if (bundle.sha256 !== packageMetadata.bundleSha256) throw new Error('converted package checksum changed')
+    return bundle
+  } catch (error) {
+    throw new RequestError(503, `Curated Skill package is unavailable: ${error instanceof Error ? error.message : 'unexpected upstream failure'}`)
+  }
 }
 
 async function loadPublishedSummaries(
