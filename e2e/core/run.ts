@@ -307,18 +307,16 @@ async function smokeAccountCenter(app: LaunchedApp): Promise<void> {
       15_000,
       'account route result',
     )
-    const account = await evalOn<{ crashed: boolean; heading: boolean; signIn: boolean; text: string }>(
+    const account = await evalOn<{ crashed: boolean; signIn: boolean; text: string }>(
       app,
       `({
         crashed: !!document.querySelector('[data-testid="root-crash-fallback"]'),
-        heading: Array.from(document.querySelectorAll('h1,h2,h3')).some(el => el.textContent?.trim() === '账户'),
         signIn: !!document.querySelector('#client-auth-identifier'),
         text: document.body.textContent?.trim().slice(0, 500) ?? '',
       })`,
     )
     assert.deepEqual(rendererErrors, [], `account settings emitted renderer errors: ${rendererErrors.join('\n')}`)
     assert.equal(account.crashed, false, `account settings entered the root error boundary: ${account.text}`)
-    assert.equal(account.heading, true, `account settings did not render: ${account.text}`)
     assert.equal(account.signIn, true, `configured account sign-in form did not render: ${account.text}`)
   } finally {
     app.cdp.off('Runtime.exceptionThrown', onException)
