@@ -1,5 +1,5 @@
 // input: Turn activities and shared TurnCard rendering behavior
-// output: Regression coverage for activity grouping, progress projection, and response presentation
+// output: Regression coverage for activity grouping, progress projection, response presentation, and compact usage details
 // pos: Guards the shared chat turn normalization and rendering contract
 
 /**
@@ -17,6 +17,7 @@ import { beforeAll, describe, it, expect, mock } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createInstance } from 'i18next'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
+import { TooltipProvider } from '../../tooltip'
 import {
   groupActivitiesByParent,
   computeLastChildSet,
@@ -30,7 +31,10 @@ mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDo
 
 let TurnCard: typeof import('../TurnCard').TurnCard
 const testI18n = createInstance().use(initReactI18next)
-await testI18n.init({ lng: 'en', resources: { en: { translation: {} } } })
+await testI18n.init({
+  lng: 'en',
+  resources: { en: { translation: { 'chat.turnUsage.title': 'Turn usage' } } },
+})
 
 beforeAll(async () => {
   TurnCard = (await import('../TurnCard')).TurnCard
@@ -589,6 +593,38 @@ describe('response presentation', () => {
     expect(planHtml).toContain('shadow-minimal')
     expect(planHtml).toContain('overflow-y-auto')
     expect(planHtml).toContain('max-height:540px')
+  })
+
+  it('folds completed turn usage into the response action footer', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TooltipProvider, null,
+        React.createElement(I18nextProvider, { i18n: testI18n },
+          React.createElement(TurnCard, {
+            turnId: 'turn-with-usage',
+            activities: [],
+            response: {
+              text: 'Final response',
+              isStreaming: false,
+              messageId: 'response-with-usage',
+            },
+            isStreaming: false,
+            isComplete: true,
+            metrics: {
+              durationMs: 24_196,
+              usage: {
+                modelCalls: 2,
+                inputTokens: 73_944,
+                cacheReadTokens: 39_552,
+                outputTokens: 1_008,
+              },
+            },
+          }))
+      )
+    )
+
+    expect(html.match(/aria-label="Turn usage"/g)).toHaveLength(1)
+    expect(html).toContain('data-search-exclude="true"')
+    expect(html).not.toContain('74k turn input')
   })
 })
 

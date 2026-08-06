@@ -1,5 +1,5 @@
-// input: Session turns, tool activity metadata, annotations, and chat display callbacks
-// output: Rendered assistant/user turn cards with rich blocks and annotation affordances
+// input: Session turns, tool activity metadata, turn metrics, annotations, and chat display callbacks
+// output: Rendered assistant/user turn cards with rich blocks, compact usage details, and annotation affordances
 // pos: Shared chat transcript presentation layer for Electron and viewer surfaces
 
 import * as React from 'react'
@@ -24,6 +24,7 @@ import {
   Pencil,
   FilePenLine,
   GitBranch,
+  Gauge,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { Markdown } from '../markdown'
@@ -1446,6 +1447,8 @@ export interface ResponseCardProps {
   showAcceptPlan?: boolean
   /** Hide footer for compact embedding (EditPopover) */
   compactMode?: boolean
+  /** Durable elapsed time and token usage shown in the response action footer */
+  metrics?: TurnMetrics
   /** Callback to branch the session from this response */
   onBranch?: (options?: { newPanel?: boolean }) => void
   /** Callback to add annotation from selected text */
@@ -1468,6 +1471,62 @@ export interface ResponseCardProps {
 
 interface BranchDropdownProps {
   onBranch: (options?: { newPanel?: boolean }) => void
+}
+
+function TurnUsageTooltip({ metrics }: { metrics: TurnMetrics }) {
+  const { t } = useTranslation()
+  const usage = metrics.usage
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={t('chat.turnUsage.title')}
+          data-search-exclude="true"
+          className={cn(
+            "p-1 rounded-[4px] transition-colors select-none",
+            "text-muted-foreground/60 hover:text-foreground hover:bg-foreground/5",
+            "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          )}
+        >
+          <Gauge className={SIZE_CONFIG.iconSize} />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" align="end" sideOffset={6} className="min-w-52 px-3 py-2">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[11px] leading-4 tabular-nums">
+          <dt className="text-muted-foreground">{t('chat.turnUsage.elapsed')}</dt>
+          <dd className="text-right text-foreground">{formatDuration(metrics.durationMs)}</dd>
+          {usage && (
+            <>
+              {usage.modelCalls !== undefined && (
+                <>
+                  <dt className="text-muted-foreground">{t('chat.turnUsage.modelCalls')}</dt>
+                  <dd className="text-right text-foreground">{usage.modelCalls.toLocaleString()}</dd>
+                </>
+              )}
+              <dt className="text-muted-foreground">{t('chat.turnUsage.turnInput')}</dt>
+              <dd className="text-right text-foreground">{usage.inputTokens.toLocaleString()}</dd>
+              {usage.cacheReadTokens !== undefined && (
+                <>
+                  <dt className="text-muted-foreground">{t('chat.turnUsage.cacheRead')}</dt>
+                  <dd className="text-right text-foreground">{usage.cacheReadTokens.toLocaleString()}</dd>
+                </>
+              )}
+              {usage.cacheCreationTokens !== undefined && (
+                <>
+                  <dt className="text-muted-foreground">{t('chat.turnUsage.cacheWrite')}</dt>
+                  <dd className="text-right text-foreground">{usage.cacheCreationTokens.toLocaleString()}</dd>
+                </>
+              )}
+              <dt className="text-muted-foreground">{t('chat.turnUsage.output')}</dt>
+              <dd className="text-right text-foreground">{usage.outputTokens.toLocaleString()}</dd>
+            </>
+          )}
+        </dl>
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 function BranchDropdown({ onBranch }: BranchDropdownProps) {
@@ -1695,6 +1754,7 @@ export function ResponseCard({
   isLastResponse = true,
   showAcceptPlan = true,
   compactMode = false,
+  metrics,
   onBranch,
   onAddAnnotation,
   onRemoveAnnotation,
@@ -2588,6 +2648,7 @@ export function ResponseCard({
                     />
                   </div>
                 )}
+                {metrics && <TurnUsageTooltip metrics={metrics} />}
                 {onBranch && <BranchDropdown onBranch={onBranch} />}
               </div>
             </div>
@@ -3107,6 +3168,7 @@ export const TurnCard = React.memo(function TurnCard({
                 onAcceptWithCompact={onAcceptPlanWithCompact}
                 isLastResponse={isLastResponse}
                 compactMode={compactMode}
+                metrics={isComplete ? metrics : undefined}
                 onBranch={onBranch && response.messageId && response.canBranch !== false ? (options?: { newPanel?: boolean }) => onBranch(response.messageId!, options) : undefined}
                 sendMessageKey={sendMessageKey}
                 hasActiveFollowUpAnnotations={hasActiveFollowUpAnnotations}
@@ -3139,6 +3201,7 @@ export const TurnCard = React.memo(function TurnCard({
             onAcceptWithCompact={onAcceptPlanWithCompact}
             isLastResponse={isLastResponse}
             compactMode={compactMode}
+            metrics={isComplete ? metrics : undefined}
             onBranch={onBranch && response.messageId && response.canBranch !== false ? (options?: { newPanel?: boolean }) => onBranch(response.messageId!, options) : undefined}
             sendMessageKey={sendMessageKey}
             hasActiveFollowUpAnnotations={hasActiveFollowUpAnnotations}
@@ -3148,34 +3211,6 @@ export const TurnCard = React.memo(function TurnCard({
         </div>
       )}
       {footer}
-      {!compactMode && isComplete && metrics && (
-        <div
-          className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 px-1 pt-1 text-[11px] leading-4 text-muted-foreground/60 tabular-nums select-none"
-          data-search-exclude="true"
-          aria-label="Turn usage"
-        >
-          <span title={`${Math.round(metrics.durationMs).toLocaleString()} milliseconds`}>
-            {formatDuration(metrics.durationMs)} elapsed
-          </span>
-          {metrics.usage && (
-            <>
-              {metrics.usage.modelCalls !== undefined && (
-                <span title={`${metrics.usage.modelCalls.toLocaleString()} model calls in this turn`}>
-                  {metrics.usage.modelCalls.toLocaleString()} model calls
-                </span>
-              )}
-              <span
-                title={`${metrics.usage.inputTokens.toLocaleString()} aggregate turn input tokens${metrics.usage.cacheReadTokens ? `, including ${metrics.usage.cacheReadTokens.toLocaleString()} cache-read tokens` : ''}${metrics.usage.cacheCreationTokens ? ` and ${metrics.usage.cacheCreationTokens.toLocaleString()} cache-write tokens` : ''}`}
-              >
-                {formatTokens(metrics.usage.inputTokens)} turn input
-              </span>
-              <span title={`${metrics.usage.outputTokens.toLocaleString()} output tokens`}>
-                {formatTokens(metrics.usage.outputTokens)} output
-              </span>
-            </>
-          )}
-        </div>
-      )}
     </div>
   )
 }, (prev, next) => {
