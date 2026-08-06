@@ -1,3 +1,7 @@
+// input: Mocked shared configuration and Electron settings RPC registration
+// output: Regression coverage for default thinking level and unreadable user profile handling
+// pos: Isolated settings handler contract test
+
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -21,6 +25,10 @@ mock.module('@craft-agent/shared/config', () => ({
   deleteSessionDraft: () => {},
   getAllSessionDrafts: () => ({}),
   getWorkspaceByNameOrId: () => null,
+  getDefaultLlmConnection: () => null,
+  getLlmConnections: () => [],
+  normalizeLlmConnectionSlug: (slug: string) => slug,
+  setDefaultLlmSelection: () => true,
   getDefaultThinkingLevel: getDefaultThinkingLevelMock,
   setDefaultThinkingLevel: setDefaultThinkingLevelMock,
 }))

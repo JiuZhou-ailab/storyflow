@@ -1,19 +1,16 @@
 {
-  "version": "0.10.5",
-  "digest": "8ae5f03d2d2b8badd44aea0208d74e4652a571a01f389693c1389dcbc098eb46",
-  "generatedAt": "2026-08-05T14:35:55.745Z",
-  "title": "Storyflow v0.10.5 更新说明",
-  "summary": "Storyflow 0.10.5 让登录、会话恢复和工作区切换更稳定。更新后，邮箱账号可以直接完成验证，排队消息与历史会话也会按预期继续执行。",
+  "version": "0.10.6",
+  "digest": "f0985c5c468b007fbdb394c3c4439fd9cfdc7aef2c5f30c7c2f303d6f1c93a04",
+  "generatedAt": "2026-08-06T06:59:07.806Z",
+  "title": "Storyflow v0.10.6 更新说明",
+  "summary": "Storyflow 0.10.6 让 Skills 推荐页更聚焦：已安装的 Skill 不再重复出现，推荐详情也去掉了无效链接和冗余内容。",
   "highlights": [
-    "邮箱验证即可使用：完成邮件验证后即可登录 Storyflow，不再依赖组织邀请；现有飞书登录保持不变。",
-    "Anthropic 授权自动返回：浏览器授权完成后会自动回到 Storyflow，远程环境仍可粘贴授权码完成登录。",
-    "历史会话恢复更一致：Skills、模型调用、登录和历史记录使用同一套运行时，减少切换与恢复时的状态差异。",
-    "排队消息按顺序执行：处理中追加的消息会按照提交顺序继续发送，避免后发消息提前执行。"
+    "推荐列表更干净：发现页只显示尚未安装的 Skills；项目内推荐不再展示重复说明和未公开的来源链接。"
   ],
-  "accentColor": "#847715",
+  "accentColor": "#9e691a",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 1,
-    "userVisibleCommitCount": 0
+    "commitCount": 2,
+    "userVisibleCommitCount": 1
   }
 }
