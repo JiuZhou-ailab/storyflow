@@ -1,5 +1,5 @@
 // input: Electron preload API, persisted app/workspace/session state, and renderer navigation events
-// output: Top-level renderer state orchestration and AppShell context wiring
+// output: Top-level renderer state orchestration, account settings data, and AppShell context wiring
 // pos: Root renderer application component
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { useTheme } from '@/hooks/useTheme'
 import type { ThemeOverrides } from '@config/theme'
 import { useSetAtom, useStore, useAtomValue, useAtom } from 'jotai'
-import type { Session, Workspace, SessionEvent, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, SetupNeeds, SessionStatus, NewChatActionParams, ContentBadge, PermissionModeState, SendMessageOptions, ClientAuthState } from '../shared/types'
+import type { Session, Workspace, SessionEvent, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, SetupNeeds, SessionStatus, NewChatActionParams, ContentBadge, PermissionModeState, SendMessageOptions, ClientAuthState, SettingsSubpage } from '../shared/types'
 import type { SessionDraft, DraftAttachmentRef } from '@craft-agent/shared/config'
 import type { SessionOptions, SessionOptionUpdates } from './hooks/useSessionOptions'
 import { defaultSessionOptions, sessionOptionsAtom, updateSessionOptionsMap } from './hooks/useSessionOptions'
@@ -18,7 +18,7 @@ import {
 } from '../shared/types'
 import { useEventProcessor } from './event-processor'
 import type { AgentEvent, Effect } from './event-processor'
-import type { AppShellContextType } from '@/context/AppShellContext'
+import { AccountSettingsProvider, type AppShellContextType } from '@/context/AppShellContext'
 import { ActivityRailFrame } from '@/components/app-shell/ActivityRailFrame'
 import {
   ProjectHubNavigationActions,
@@ -35,6 +35,7 @@ import { useOnboarding } from '@/hooks/useOnboarding'
 import { useNotifications } from '@/hooks/useNotifications'
 import { useSession } from '@/hooks/useSession'
 import { NavigationProvider } from '@/contexts/NavigationContext'
+import { SettingsDialog } from '@/pages/settings/SettingsNavigator'
 import { navigate, routes, type Route } from './lib/navigate'
 import { attachmentFromContentRef, toDraftRef } from './lib/drafts'
 import { stripMarkdown } from './utils/text'
@@ -119,16 +120,16 @@ const WorkspacePicker = React.lazy(async () => {
   const module = await import('@/components/workspace/WorkspacePicker')
   return { default: module.WorkspacePicker }
 })
-const AccountCenterPage = React.lazy(async () => {
-  const module = await import('@/components/account/AccountCenterPage')
-  return { default: module.AccountCenterPage }
-})
 const FilePreviewRenderer = React.lazy(async () => {
   const module = await import('@/components/file-preview/FilePreviewRenderer')
   return { default: module.FilePreviewRenderer }
 })
 
-type AppState = 'loading' | 'account' | 'onboarding' | 'project-hub' | 'workspace-picker' | 'ready'
+type AppState = 'loading' | 'onboarding' | 'project-hub' | 'workspace-picker' | 'ready'
+
+const GLOBAL_SETTINGS_SUBPAGES: readonly SettingsSubpage[] = [
+  'app', 'ai', 'appearance', 'input', 'server', 'shortcuts', 'preferences',
+]
 
 /** Type for the Jotai store returned by useStore() */
 type JotaiStore = ReturnType<typeof getDefaultStore>
@@ -308,9 +309,9 @@ function AppContent() {
 
   // App state: loading -> check auth -> onboarding or ready
   const [appState, setAppState] = useState<AppState>('loading')
+  const [globalSettingsSubpage, setGlobalSettingsSubpage] = useState<SettingsSubpage | null>(null)
   const [setupNeeds, setSetupNeeds] = useState<SetupNeeds | null>(null)
   const [clientAuthState, setClientAuthState] = useState<ClientAuthState | null>(null)
-  const [accountReturnState, setAccountReturnState] = useState<'project-hub' | 'ready'>('project-hub')
 
   // Keep ProjectHub's first frame lean, then use its idle time to fetch and
   // parse the workspace shell. Opening a project no longer pays the cold
@@ -1434,8 +1435,7 @@ function AppContent() {
       if (connectionSlug && isManagedLlmConnectionSlug(connectionSlug)) {
         const auth = await loadClientAuthState()
         if (auth && !auth.user) {
-          setAccountReturnState('ready')
-          setAppState('account')
+          navigate(routes.view.settings('app'))
           toast.info('请先登录以使用 Storyflow 托管模型')
           return
         }
@@ -2134,20 +2134,14 @@ function AppContent() {
     onboarding.handleCancel()
   }, [onboarding])
 
-  const handleOpenAccountCenter = useCallback((returnState: 'project-hub' | 'ready') => {
-    setAccountReturnState(returnState)
-    setAppState('account')
-  }, [])
+  const handleClientSignedIn = useCallback(async () => {
+    await loadClientAuthState()
+  }, [loadClientAuthState])
 
-  const handleAccountBack = useCallback(() => {
-    setAppState(accountReturnState)
-  }, [accountReturnState])
-
-  const handleAccountSignOut = useCallback(async () => {
+  const handleClientSignOut = useCallback(async () => {
     await window.electronAPI.signOutClient()
     await loadClientAuthState()
-    setAppState(accountReturnState)
-  }, [accountReturnState, loadClientAuthState])
+  }, [loadClientAuthState])
 
   const handleReturnToActiveProject = useCallback(() => {
     if (!activeProjectId) return
@@ -2181,6 +2175,15 @@ function AppContent() {
     setPendingReadyRoute(route)
     setAppState('ready')
   }, [activateRuntimeWorkspace, runtimeNavigationWorkspaceId, windowWorkspaceId])
+
+  const handleOpenGlobalSettings = useCallback(() => {
+    const route = routes.view.settings('app')
+    if (appState === 'project-hub' || !runtimeNavigationWorkspaceId) {
+      setGlobalSettingsSubpage('app')
+      return
+    }
+    handleOpenRuntimeRoute(route)
+  }, [appState, handleOpenRuntimeRoute, runtimeNavigationWorkspaceId])
 
   const handleOpenRuntimeSearch = useCallback(async () => {
     const targetWorkspaceId = runtimeNavigationWorkspaceId
@@ -2283,9 +2286,7 @@ function AppContent() {
       ? () => handleOpenRuntimeRoute(routes.view.skills())
       : undefined,
     onOpenSearch: canOpenRuntimeNavigation ? handleOpenRuntimeSearch : undefined,
-    onOpenSettings: canOpenRuntimeNavigation
-      ? () => handleOpenRuntimeRoute(routes.view.settings('app'))
-      : undefined,
+    onOpenSettings: handleOpenGlobalSettings,
     onOpenWhatsNew: canOpenRuntimeNavigation ? handleOpenRuntimeWhatsNew : undefined,
   }), [
     activeProjectId,
@@ -2296,6 +2297,7 @@ function AppContent() {
     handleOpenRuntimeRoute,
     handleOpenRuntimeSearch,
     handleOpenRuntimeWhatsNew,
+    handleOpenGlobalSettings,
     handleSelectProjectSession,
     projectManagerActions,
     workspaces,
@@ -2309,6 +2311,9 @@ function AppContent() {
     // NOTE: sessions is NOT included - use sessionMetaMapAtom for listing
     // and useSession(id) hook for individual sessions. This prevents memory leaks.
     workspaces,
+    clientAuthState,
+    onClientSignedIn: handleClientSignedIn,
+    onClientSignOut: handleClientSignOut,
     runtimeWorkspace,
     activeProjectId,
     llmConnections,
@@ -2357,6 +2362,9 @@ function AppContent() {
   }), [
     // NOTE: sessions removed to prevent memory leaks - components use atoms instead
     workspaces,
+    clientAuthState,
+    handleClientSignedIn,
+    handleClientSignOut,
     runtimeWorkspace,
     activeProjectId,
     llmConnections,
@@ -2463,33 +2471,6 @@ function AppContent() {
     )
   }
 
-  // Account center — user/avatar entry for account, points, and sign-out actions.
-  if (appState === 'account') {
-    return (
-      <DismissibleLayerProvider>
-        <ModalProvider>
-        <TooltipProvider delayDuration={0}>
-          <WindowCloseHandler />
-          <ActivityRailFrame
-            activeItem="account"
-            {...activityRailProjectProps}
-            onOpenAccount={() => handleOpenAccountCenter(accountReturnState)}
-          >
-            <AccountCenterPage
-              clientAuthState={clientAuthState}
-              workspaces={workspaces}
-              activeWorkspaceId={activeProjectId}
-              onBack={handleAccountBack}
-              onSignedIn={async () => { await loadClientAuthState() }}
-              onSignOut={handleAccountSignOut}
-            />
-          </ActivityRailFrame>
-        </TooltipProvider>
-        </ModalProvider>
-      </DismissibleLayerProvider>
-    )
-  }
-
   // Project catalog — browsing stays in the rail; the main surface no longer duplicates it.
   if (appState === 'project-hub') {
     const hasActiveProjects = workspaces.some(workspace => (
@@ -2507,7 +2488,7 @@ function AppContent() {
           <ActivityRailFrame
             activeItem="recent"
             {...activityRailProjectProps}
-            onOpenAccount={() => handleOpenAccountCenter('project-hub')}
+            onSignOut={clientAuthState?.user ? handleClientSignOut : undefined}
           >
             <div className="flex h-full min-h-0 flex-col items-center justify-center bg-[radial-gradient(ellipse_at_50%_30%,color-mix(in_oklab,var(--foreground)_4%,transparent),transparent_55%)] px-6 py-12">
               <p className="text-[14px] font-medium text-foreground/80">
@@ -2527,6 +2508,20 @@ function AppContent() {
               ) : null}
             </div>
           </ActivityRailFrame>
+          <AccountSettingsProvider value={{
+            clientAuthState,
+            workspaces,
+            runtimeWorkspace,
+            onClientSignedIn: handleClientSignedIn,
+          }}>
+            <SettingsDialog
+              open={globalSettingsSubpage !== null}
+              selectedSubpage={globalSettingsSubpage ?? 'app'}
+              availableSubpages={GLOBAL_SETTINGS_SUBPAGES}
+              onSelectSubpage={setGlobalSettingsSubpage}
+              onClose={() => setGlobalSettingsSubpage(null)}
+            />
+          </AccountSettingsProvider>
         </TooltipProvider>
         </ModalProvider>
       </DismissibleLayerProvider>
@@ -2616,7 +2611,6 @@ function AppContent() {
                   openGlobalSearchSignal={openGlobalSearchSignal}
                   openWhatsNewSignal={openWhatsNewSignal}
                   onOpenWhatsNewSignalHandled={() => setOpenWhatsNewSignal(0)}
-                  onOpenAccount={() => handleOpenAccountCenter('ready')}
                   profile={activityRailProfile}
                   onWorkspaceCreatedFromRail={projectManagerActions.onWorkspaceCreated}
                   onOpenProjectInNewWindow={projectManagerActions.onOpenProjectInNewWindow}

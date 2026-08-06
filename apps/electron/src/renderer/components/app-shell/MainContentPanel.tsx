@@ -2,13 +2,12 @@
  * MainContentPanel - Right panel component for displaying content
  *
  * input: Navigation state, workspace-scoped session metadata, primary writing-content readiness, narrow action contexts, and entity selection atoms
- * output: Independently loaded writing chat plus content panels for sources, skills, settings, and automations
+ * output: Independently loaded writing chat plus content panels for sources, skills, and automations
  * pos: Renderer content router inside the app-shell panel stack
  *
  * Renders content based on the unified NavigationState:
  * - Chats navigator: ChatPage for selected session, or empty state
  * - Sources navigator: SourceInfoPage for selected source, or empty state
- * - Settings navigator: Settings, Preferences, or Shortcuts page
  *
  * The NavigationState is the single source of truth for what to display.
  *
@@ -37,7 +36,6 @@ import {
   isWritingNavigation,
   isSessionsNavigation,
   isSourcesNavigation,
-  isSettingsNavigation,
   isSkillsNavigation,
   isAutomationsNavigation,
 } from '@/contexts/NavigationContext'
@@ -49,7 +47,6 @@ import type { SessionStatusId } from '@/config/session-status-config'
 import SourceInfoPage from '@/pages/SourceInfoPage'
 import SkillInfoPage from '@/pages/SkillInfoPage'
 import SkillsHubPage from '@/pages/SkillsHubPage'
-import { getSettingsPageComponent } from '@/pages/settings/settings-pages'
 import { AutomationInfoPage } from '../automations/AutomationInfoPage'
 import type { ExecutionEntry } from '../automations/types'
 import { automationsAtom } from '@/atoms/automations'
@@ -199,16 +196,6 @@ export function MainContentPanel({
       </Dialog>
     </StoplightProvider>
   )
-
-  // Settings navigator - uses component map from settings-pages.ts
-  if (isSettingsNavigation(navState)) {
-    const SettingsPageComponent = getSettingsPageComponent(navState.subpage)
-    return wrapWithStoplight(
-      <Panel variant="grow" className={className}>
-        <SettingsPageComponent />
-      </Panel>
-    )
-  }
 
   // Sources navigator - show source info, multi-select panel, or empty state
   if (isSourcesNavigation(navState)) {

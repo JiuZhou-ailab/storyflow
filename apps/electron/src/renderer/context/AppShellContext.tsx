@@ -33,6 +33,7 @@ import type {
   LlmConnectionWithStatus,
   TestAutomationResult,
   SendMessageOptions,
+  ClientAuthState,
 } from '../../shared/types'
 import type { SessionStatus as SessionStatusConfig } from '@/config/session-status-config'
 import type { SessionOptions, SessionOptionUpdates } from '../hooks/useSessionOptions'
@@ -47,6 +48,12 @@ export interface AppShellContextType {
   // and useSession(id) hook for individual sessions. This prevents closures
   // from retaining the full messages array and causing memory leaks.
   workspaces: Workspace[]
+  /** Auth state shown in the account section of App settings. */
+  clientAuthState: ClientAuthState | null
+  /** Refresh root-owned auth state after an inline sign-in. */
+  onClientSignedIn: () => Promise<void>
+  /** Sign out and refresh root-owned auth state. */
+  onClientSignOut: () => Promise<void>
   /** Concrete hidden or configured workspace used by the Agent runtime. */
   runtimeWorkspace: Workspace | null
   /** Last active project; remains stable while Free Conversations are open. */
@@ -295,6 +302,25 @@ interface SessionOptionsActionsContextType {
 
 const SessionOptionsActionsContext = createContext<SessionOptionsActionsContextType | null>(null)
 
+export interface AccountSettingsContextType {
+  clientAuthState: AppShellContextType['clientAuthState']
+  workspaces: AppShellContextType['workspaces']
+  runtimeWorkspace: AppShellContextType['runtimeWorkspace']
+  onClientSignedIn: AppShellContextType['onClientSignedIn']
+}
+
+const AccountSettingsContext = createContext<AccountSettingsContextType | null>(null)
+
+export function AccountSettingsProvider({
+  children,
+  value,
+}: {
+  children: React.ReactNode
+  value: AccountSettingsContextType
+}) {
+  return <AccountSettingsContext.Provider value={value}>{children}</AccountSettingsContext.Provider>
+}
+
 export function AppShellProvider({
   children,
   value,
@@ -414,23 +440,45 @@ export function AppShellProvider({
     onSessionOptionsChange: value.onSessionOptionsChange,
   }), [value.onSessionOptionsChange])
 
+  const accountSettings = React.useMemo<AccountSettingsContextType>(() => ({
+    clientAuthState: value.clientAuthState,
+    workspaces: value.workspaces,
+    runtimeWorkspace: value.runtimeWorkspace,
+    onClientSignedIn: value.onClientSignedIn,
+  }), [
+    value.clientAuthState,
+    value.workspaces,
+    value.runtimeWorkspace,
+    value.onClientSignedIn,
+  ])
+
   return (
-    <SessionReadActionsContext.Provider value={sessionReadActions}>
-      <SessionDraftActionsContext.Provider value={sessionDraftActions}>
-        <SessionChatResourcesContext.Provider value={sessionChatResources}>
-          <SessionPanelChromeContext.Provider value={sessionPanelChrome}>
-            <SessionInteractionActionsContext.Provider value={sessionInteractionActions}>
-              <SessionBatchActionsContext.Provider value={sessionBatchActions}>
-                <SessionOptionsActionsContext.Provider value={sessionOptionsActions}>
-                  {children}
-                </SessionOptionsActionsContext.Provider>
-              </SessionBatchActionsContext.Provider>
-            </SessionInteractionActionsContext.Provider>
-          </SessionPanelChromeContext.Provider>
-        </SessionChatResourcesContext.Provider>
-      </SessionDraftActionsContext.Provider>
-    </SessionReadActionsContext.Provider>
+    <AccountSettingsProvider value={accountSettings}>
+      <SessionReadActionsContext.Provider value={sessionReadActions}>
+        <SessionDraftActionsContext.Provider value={sessionDraftActions}>
+          <SessionChatResourcesContext.Provider value={sessionChatResources}>
+            <SessionPanelChromeContext.Provider value={sessionPanelChrome}>
+              <SessionInteractionActionsContext.Provider value={sessionInteractionActions}>
+                <SessionBatchActionsContext.Provider value={sessionBatchActions}>
+                  <SessionOptionsActionsContext.Provider value={sessionOptionsActions}>
+                    {children}
+                  </SessionOptionsActionsContext.Provider>
+                </SessionBatchActionsContext.Provider>
+              </SessionInteractionActionsContext.Provider>
+            </SessionPanelChromeContext.Provider>
+          </SessionChatResourcesContext.Provider>
+        </SessionDraftActionsContext.Provider>
+      </SessionReadActionsContext.Provider>
+    </AccountSettingsProvider>
   )
+}
+
+export function useAccountSettings(): AccountSettingsContextType {
+  const context = useContext(AccountSettingsContext)
+  if (!context) {
+    throw new Error('useAccountSettings must be used within an AccountSettingsProvider')
+  }
+  return context
 }
 
 export function useSessionInteractionActions(): SessionInteractionActionsContextType {

@@ -1,15 +1,10 @@
-/**
- * SettingsNavigator
- *
- * Navigator panel content for settings. Displays a list of settings sections
- * (App, Workspace, Shortcuts, Preferences) that can be selected to show in the details panel.
- *
- * Styling follows SessionList/SourcesListPanel patterns for visual consistency.
- */
+// input: Settings registry, selected subpage, and overlay lifecycle callbacks
+// output: Settings category navigation plus the responsive settings dialog
+// pos: Renderer utility surface that keeps settings outside the workspace panel stack
 
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { MoreHorizontal, AppWindow } from 'lucide-react'
+import { MoreHorizontal, AppWindow, X } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -23,6 +18,9 @@ import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import type { SettingsSubpage } from '../../../shared/types'
 import { SETTINGS_ITEMS } from '../../../shared/menu-schema'
 import { SETTINGS_ICONS } from '@/components/icons/SettingsIcons'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { getSettingsPageComponent } from './settings-pages'
 
 export const meta: DetailsPageMeta = {
   navigator: 'settings',
@@ -34,6 +32,7 @@ interface SettingsNavigatorProps {
   selectedSubpage: SettingsSubpage
   /** Called when a subpage is selected */
   onSelectSubpage: (subpage: SettingsSubpage) => void
+  availableSubpages?: readonly SettingsSubpage[]
 }
 
 interface SettingsItem {
@@ -146,17 +145,20 @@ function SettingsItemRow({ item, isSelected, isFirst, onSelect }: SettingsItemRo
 export default function SettingsNavigator({
   selectedSubpage,
   onSelectSubpage,
+  availableSubpages,
 }: SettingsNavigatorProps) {
   const { t } = useTranslation()
 
   const settingsItems: SettingsItem[] = useMemo(() =>
-    SETTINGS_ITEMS.map((item) => ({
+    SETTINGS_ITEMS
+      .filter(item => !availableSubpages || availableSubpages.includes(item.id))
+      .map((item) => ({
       id: item.id,
       label: t(item.labelKey),
       icon: SETTINGS_ICONS[item.id],
       description: t(item.descriptionKey),
     })),
-    [t]
+    [availableSubpages, t]
   )
 
   return (
@@ -175,5 +177,64 @@ export default function SettingsNavigator({
         </div>
       </div>
     </div>
+  )
+}
+
+interface SettingsDialogProps {
+  open: boolean
+  selectedSubpage: SettingsSubpage
+  onSelectSubpage: (subpage: SettingsSubpage) => void
+  onClose: () => void
+  availableSubpages?: readonly SettingsSubpage[]
+}
+
+export function SettingsDialog({
+  open,
+  selectedSubpage,
+  onSelectSubpage,
+  onClose,
+  availableSubpages,
+}: SettingsDialogProps) {
+  const { t } = useTranslation()
+  const SettingsPageComponent = getSettingsPageComponent(selectedSubpage)
+
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose() }}>
+      <DialogContent
+        showCloseButton={false}
+        onPointerDownOutside={(event) => event.preventDefault()}
+        className="h-[85vh] max-h-[900px] w-[min(960px,calc(100vw-2rem))] max-w-none gap-0 overflow-hidden p-0 sm:max-w-none max-[1023px]:left-0 max-[1023px]:top-0 max-[1023px]:h-full max-[1023px]:max-h-none max-[1023px]:w-full max-[1023px]:max-w-none max-[1023px]:translate-x-0 max-[1023px]:translate-y-0 max-[1023px]:rounded-none"
+      >
+        <DialogTitle className="sr-only">{t('sidebar.settings')}</DialogTitle>
+        <DialogDescription className="sr-only">配置 Storyflow 应用与工作区偏好</DialogDescription>
+        <div className="flex h-full min-h-0">
+          <aside className="flex w-[280px] shrink-0 flex-col border-r border-border/60 bg-foreground-2 max-[720px]:w-[220px]">
+            <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/60 px-4">
+              <h2 className="text-[14px] font-semibold text-foreground">{t('sidebar.settings')}</h2>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-8 rounded-lg"
+                onClick={onClose}
+                aria-label={t('common.close')}
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+            <div className="min-h-0 flex-1">
+              <SettingsNavigator
+                selectedSubpage={selectedSubpage}
+                onSelectSubpage={onSelectSubpage}
+                availableSubpages={availableSubpages}
+              />
+            </div>
+          </aside>
+          <main className="min-w-0 flex-1 bg-background">
+            <SettingsPageComponent />
+          </main>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

@@ -1,5 +1,6 @@
-// input: Account center components
-// output: Barrel exports for account management surfaces
-// pos: Keeps avatar-opened account UI separate from startup and workspace routing
+// input: Account and local usage settings components
+// output: Barrel exports for personal information inside App settings
+// pos: Keeps root-owned auth facts in the settings domain
 
-export { AccountCenterPage } from './AccountCenterPage'
+export { AccountSettingsSection } from './AccountSettingsSection'
+export { LocalUsageSection } from './LocalUsageSection'

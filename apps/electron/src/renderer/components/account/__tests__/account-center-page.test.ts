@@ -1,18 +1,21 @@
-// input: AccountCenterPage source
-// output: Static regression coverage for the avatar-opened factual account surface
-// pos: Keeps account management separate from post-login project routing
+// input: AccountSettingsSection source
+// output: Static regression coverage for factual account settings
+// pos: Keeps account management inside settings and outside app routing
 
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
 
-const source = readFileSync(new URL('../AccountCenterPage.tsx', import.meta.url), 'utf8')
+const source = readFileSync(new URL('../AccountSettingsSection.tsx', import.meta.url), 'utf8')
 
-describe('AccountCenterPage', () => {
-  it('presents factual account information without acting as a startup handoff', () => {
-    expect(source).toContain('>账户</h1>')
+describe('AccountSettingsSection', () => {
+  it('presents factual account information inside App settings', () => {
+    expect(source).toContain("t('settings.app.account.title')")
     expect(source).toContain('ClientAuthUser')
-    expect(source).toContain('登录方式')
-    expect(source).toContain('邮箱状态')
+    expect(source).toContain('CrossfadeAvatar')
+    expect(source).toContain('user.avatarUrl')
+    expect(source).toContain("t('settings.app.account.emailUnbound')")
+    expect(source).not.toContain('AccountFact')
+    expect(source).not.toContain('UserCircle')
     expect(source).not.toContain('积分')
     expect(source).not.toContain('订阅')
     expect(source).not.toContain('待同步')
@@ -20,11 +23,12 @@ describe('AccountCenterPage', () => {
     expect(source).not.toContain('onContinue')
   })
 
-  it('keeps account actions scoped to account management', () => {
-    expect(source).toContain('onBack')
-    expect(source).toContain('onSignedIn')
-    expect(source).toContain('onSignOut')
-    expect(source).toContain('退出登录')
+  it('keeps root-owned auth state as the single source of truth', () => {
+    expect(source).toContain('useAccountSettings()')
+    expect(source).toContain('runtimeWorkspace')
+    expect(source).toContain('onClientSignedIn')
     expect(source).toContain('ClientSignInForm')
+    expect(source).not.toContain('<Dialog')
+    expect(source).not.toContain('onSignOut')
   })
 })

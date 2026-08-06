@@ -1,6 +1,6 @@
 // input: Activity rail props and standalone surface children
 // output: Focus-scoped title-bar frame wrapping the foundation ActivityRail
-// pos: Standalone shell boundary for account and project-catalog surfaces
+// pos: Standalone shell boundary for the project-catalog surface
 
 import type { ReactNode } from 'react'
 import { ActivityRail, type ActivityRailProps } from './ActivityRail'

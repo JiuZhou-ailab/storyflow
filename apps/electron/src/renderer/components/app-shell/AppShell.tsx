@@ -153,7 +153,6 @@ import {
   isWritingNavigation,
   isSessionsNavigation,
   isSourcesNavigation,
-  isSettingsNavigation,
   isSkillsNavigation,
   isAutomationsNavigation,
   type NavigationState,
@@ -170,7 +169,7 @@ import { PanelHeader } from "./PanelHeader"
 import { SendToWorkspaceDialog } from "./SendToWorkspaceDialog"
 import { MessagingDialogHost } from "@/components/messaging/MessagingDialogHost"
 import { EditPopover, getEditConfig, type EditContextKey } from "@/components/ui/EditPopover"
-import SettingsNavigator from "@/pages/settings/SettingsNavigator"
+import { SettingsDialog } from "@/pages/settings/SettingsNavigator"
 import {
   PANEL_GAP,
   PANEL_EDGE_INSET,
@@ -257,8 +256,6 @@ interface AppShellProps {
   openWhatsNewSignal?: number
   /** Clears the one-shot release-notes signal before the ready shell can remount. */
   onOpenWhatsNewSignalHandled: () => void
-  /** Open account management */
-  onOpenAccount?: () => void
   /** Current signed-in role shown by the sidebar profile item. */
   profile?: {
     name: string
@@ -876,7 +873,6 @@ function AppShellContent({
   openGlobalSearchSignal = 0,
   openWhatsNewSignal = 0,
   onOpenWhatsNewSignalHandled,
-  onOpenAccount,
   profile,
   onOpenProjectInNewWindow,
   onRenameProject,
@@ -1030,7 +1026,14 @@ function AppShellContent({
 
   const [session, setSession] = useSession()
   const { resolvedMode, isDark, setMode } = useTheme()
-  const { goBack, goForward, navigateToSource, navigateToSession } = useNavigationActions()
+  const {
+    goBack,
+    goForward,
+    navigateToSource,
+    navigateToSession,
+    settingsSubpage,
+    closeSettings,
+  } = useNavigationActions()
 
   // Double-Esc interrupt feature: first Esc shows warning, second Esc interrupts
   const { handleEscapePress } = useEscapeInterruptActions()
@@ -4458,12 +4461,12 @@ function AppShellContent({
   const showPrimarySidebar = hasPrimarySidebar && showWritingWorkspaceShell
   const activeActivityRailItem = React.useMemo<ActivityRailItemId>(() => {
     if (globalSearchOpen) return 'search'
-    if (isSettingsNavigation(navState) || isAutomationsNavigation(navState)) return 'settings'
+    if (settingsSubpage || isAutomationsNavigation(navState)) return 'settings'
     if (isSourcesNavigation(navState)) return 'sources'
     if (isSkillsNavigation(navState)) return 'skills'
     if (isSessionsNavigation(navState)) return 'recent'
     return 'writing'
-  }, [globalSearchOpen, navState])
+  }, [globalSearchOpen, navState, settingsSubpage])
   const activityRailControls = (
     <div
       data-testid="activity-rail-titlebar-actions"
@@ -4558,9 +4561,6 @@ function AppShellContent({
         default: return t("sidebar.allAutomations")
       }
     }
-
-    // Settings navigator
-    if (isSettingsNavigation(navState)) return t("sidebar.settings")
 
     // Sessions navigator - use sessionFilter
     if (!sessionFilter) return t("sidebar.allSessions")
@@ -4768,7 +4768,7 @@ function AppShellContent({
                 onOpenSources={handleSourcesClick}
                 onOpenSkills={handleSkillsClick}
                 onOpenSettings={() => handleSettingsClick('app')}
-                onOpenAccount={onOpenAccount}
+                onSignOut={contextValue.clientAuthState?.user ? contextValue.onClientSignOut : undefined}
                 profile={profile}
                 onOpenWhatsNew={handleWhatsNewClick}
                 sessionActions={{
@@ -5448,13 +5448,6 @@ function AppShellContent({
                 workspaces={workspaces}
               />
             )}
-            {isSettingsNavigation(navState) && (
-              /* Settings Navigator */
-              <SettingsNavigator
-                selectedSubpage={navState.subpage}
-                onSelectSubpage={(subpage) => handleSettingsClick(subpage)}
-              />
-            )}
             {isSessionsNavigation(navState) && (!showActivityRail || isAutoCompact) && (
               /* Sessions List */
               <>
@@ -5614,6 +5607,13 @@ function AppShellContent({
         accentTextColor={whatsNewManifest?.accentTextColor}
         onOpenChange={handleWhatsNewAnnouncementOpenChange}
         onShowDetails={handleWhatsNewAnnouncementDetailsClick}
+      />
+
+      <SettingsDialog
+        open={settingsSubpage !== null}
+        selectedSubpage={settingsSubpage ?? 'app'}
+        onSelectSubpage={handleSettingsClick}
+        onClose={closeSettings}
       />
 
       {/* What's New overlay */}

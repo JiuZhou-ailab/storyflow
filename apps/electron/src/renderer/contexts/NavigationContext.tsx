@@ -1,5 +1,5 @@
 // input: Typed routes, external deep links, current project identity, and navigation events
-// output: Panel navigation plus explicit side effects such as verified Skills Market imports
+// output: Panel navigation, settings overlay state, and explicit side effects such as verified Skills Market imports
 // pos: Renderer navigation authority; external actions must cross a visible confirmation boundary
 
 /**
@@ -88,6 +88,10 @@ export { isWritingNavigation, isSessionsNavigation, isSourcesNavigation, isSetti
 interface NavigationActionsContextValue {
   /** Navigate to a route */
   navigate: (route: Route, options?: NavigateOptions) => void | Promise<void>
+  /** Settings is a utility overlay, not a panel route. */
+  settingsSubpage: SettingsSubpage | null
+  /** Close the settings overlay without changing the focused panel. */
+  closeSettings: () => void
   /** Go back in history */
   goBack: () => void
   /** Go forward in history */
@@ -172,6 +176,15 @@ export function NavigationProvider({
 
   // Read sources from atom (populated by AppShell)
   const sources = useAtomValue(sourcesAtom)
+
+  // Settings is orthogonal to the workspace panel stack. Keeping it here prevents
+  // opening preferences from replacing (or auto-cleaning) the focused session.
+  const [settingsSubpage, setSettingsSubpage] = useState<SettingsSubpage | null>(null)
+  const settingsSubpageRef = useRef<SettingsSubpage | null>(settingsSubpage)
+  const setSettingsOverlay = useCallback((subpage: SettingsSubpage | null) => {
+    settingsSubpageRef.current = subpage
+    setSettingsSubpage(subpage)
+  }, [])
 
   // =========================================================================
   // DERIVED NAVIGATION STATE (from focused panel + right sidebar)
@@ -300,6 +313,13 @@ export function NavigationProvider({
       url.searchParams.delete('sidebar')
     }
 
+    // Utility overlays keep their own URL state instead of becoming panel routes.
+    if (settingsSubpageRef.current) {
+      url.searchParams.set('settings', settingsSubpageRef.current)
+    } else {
+      url.searchParams.delete('settings')
+    }
+
     const urlStr = url.toString()
 
     if (push) {
@@ -411,6 +431,26 @@ export function NavigationProvider({
         return resolveAutoSelectionRef.current(state)
       }
 
+      const settingsParam = params.get('settings')
+      setSettingsOverlay(
+        settingsParam && isValidSettingsSubpage(settingsParam)
+          ? settingsParam
+          : null,
+      )
+
+      const normalizeRestoredPanelRoute = (rawRoute: ViewRoute): ViewRoute => {
+        const state = parseRouteToNavigationState(rawRoute)
+        if (state && isSettingsNavigation(state)) {
+          setSettingsOverlay(state.subpage)
+          return defaultViewRoute
+        }
+        return normalizePanelRouteForReconcile(
+          rawRoute,
+          resolveForReconcile,
+          shouldSkipAutoSelect ? { skipAutoSelect: true } : undefined,
+        )
+      }
+
       // Restore right sidebar
       if (sidebarParam) {
         const parsed = parseRouteToNavigationState('allSessions', sidebarParam)
@@ -436,20 +476,12 @@ export function NavigationProvider({
             const proportion = parseFloat(entry.slice(colonIdx + 1))
             if (!isNaN(proportion) && proportion > 0 && proportion < 1) {
               const rawRoute = entry.slice(0, colonIdx) as ViewRoute
-              const route = normalizePanelRouteForReconcile(
-                rawRoute,
-                resolveForReconcile,
-                shouldSkipAutoSelect ? { skipAutoSelect: true } : undefined
-              )
+              const route = normalizeRestoredPanelRoute(rawRoute)
               return { route, proportion }
             }
           }
           const rawRoute = entry as ViewRoute
-          const route = normalizePanelRouteForReconcile(
-            rawRoute,
-            resolveForReconcile,
-            shouldSkipAutoSelect ? { skipAutoSelect: true } : undefined
-          )
+          const route = normalizeRestoredPanelRoute(rawRoute)
           return { route, proportion: 0 }
         })
 
@@ -468,11 +500,7 @@ export function NavigationProvider({
       } else if (initialRoute) {
         // Single panel from ?route=
         if (parseRouteToNavigationState(initialRoute)) {
-          const finalRoute = normalizePanelRouteForReconcile(
-            initialRoute as ViewRoute,
-            resolveForReconcile,
-            shouldSkipAutoSelect ? { skipAutoSelect: true } : undefined
-          )
+          const finalRoute = normalizeRestoredPanelRoute(initialRoute as ViewRoute)
           entries = [{ route: finalRoute, proportion: 1 }]
         }
       }
@@ -481,7 +509,7 @@ export function NavigationProvider({
         store.set(reconcilePanelStackAtom, { entries, focusedIndex })
       }
     },
-    [store, setRightSidebarIfChanged]
+    [defaultViewRoute, setSettingsOverlay, setRightSidebarIfChanged, store]
   )
 
   // Keep ref fresh for use in event handlers / effects that capture stale closures
@@ -928,6 +956,28 @@ export function NavigationProvider({
         return
       }
 
+      // Settings is a utility overlay. Resolve and persist its subpage without
+      // mutating the focused panel route or its session lifecycle.
+      let newNavState = parseRouteToNavigationState(route)
+      if (newNavState && isSettingsNavigation(newNavState)) {
+        const isBareSettingsRoute = route === 'settings'
+        if (isBareSettingsRoute) {
+          const savedSubpage = storage.get<string>(storage.KEYS.lastSettingsSubpage, 'app')
+          if (isValidSettingsSubpage(savedSubpage)) {
+            newNavState = { ...newNavState, subpage: savedSubpage }
+          }
+        } else {
+          storage.set(storage.KEYS.lastSettingsSubpage, newNavState.subpage)
+        }
+        setSettingsOverlay(newNavState.subpage)
+        queueMicrotask(() => syncUrlRef.current(false))
+        return
+      }
+
+      if (settingsSubpageRef.current) {
+        setSettingsOverlay(null)
+      }
+
       // For view routes with newPanel: push a panel using lane-aware routing.
       //
       // Important distinction:
@@ -941,22 +991,6 @@ export function NavigationProvider({
           intent: 'explicit',
         })
         return
-      }
-
-      // Parse route to NavigationState
-      let newNavState = parseRouteToNavigationState(route)
-
-      // Settings subpage persistence
-      if (newNavState && isSettingsNavigation(newNavState)) {
-        const isBareSettingsRoute = route === 'settings'
-        if (isBareSettingsRoute) {
-          const savedSubpage = storage.get<string>(storage.KEYS.lastSettingsSubpage, 'app')
-          if (isValidSettingsSubpage(savedSubpage) && savedSubpage !== 'app') {
-            newNavState = { ...newNavState, subpage: savedSubpage as SettingsSubpage }
-          }
-        } else {
-          storage.set(storage.KEYS.lastSettingsSubpage, newNavState.subpage)
-        }
       }
 
       // Suppress auto-select effect
@@ -979,8 +1013,14 @@ export function NavigationProvider({
         store.set(updateFocusedPanelRouteAtom, finalRoute)
       }
     },
-    [isReady, handleActionNavigation, resolveAutoSelection, store, pushPanel, workspaceId]
+    [handleActionNavigation, isReady, pushPanel, resolveAutoSelection, setSettingsOverlay, store, workspaceId]
   )
+
+  const closeSettings = useCallback(() => {
+    if (!settingsSubpageRef.current) return
+    setSettingsOverlay(null)
+    queueMicrotask(() => syncUrlRef.current(false))
+  }, [setSettingsOverlay])
 
   // =========================================================================
   // BACK / FORWARD (browser history)
@@ -1160,12 +1200,16 @@ export function NavigationProvider({
       const routeStr = `${pending.name}${pending.id ? `/${pending.id}` : ''}`
       const navState = parseRouteToNavigationState(routeStr)
       if (navState) {
+        if (isSettingsNavigation(navState)) {
+          void navigate(routeStr as Route)
+          return
+        }
         const resolved = resolveAutoSelection(navState)
         const finalRoute = buildRouteFromNavigationState(resolved) as ViewRoute
         store.set(updateFocusedPanelRouteAtom, finalRoute)
       }
     }
-  }, [isReady, handleActionNavigation, resolveAutoSelection, store])
+  }, [isReady, handleActionNavigation, navigate, resolveAutoSelection, store])
 
   // =========================================================================
   // DEEP LINK LISTENER
@@ -1366,6 +1410,8 @@ export function NavigationProvider({
 
   const actionsValue = useMemo<NavigationActionsContextValue>(() => ({
     navigate,
+    settingsSubpage,
+    closeSettings,
     goBack,
     goForward,
     updateRightSidebar,
@@ -1374,6 +1420,8 @@ export function NavigationProvider({
     navigateToSession,
   }), [
     navigate,
+    settingsSubpage,
+    closeSettings,
     goBack,
     goForward,
     updateRightSidebar,

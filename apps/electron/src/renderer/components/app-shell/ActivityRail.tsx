@@ -11,11 +11,11 @@ import {
   Download,
   HelpCircle,
   LoaderCircle,
+  LogOut,
   Megaphone,
   Settings,
   ShieldAlert,
   SquarePen,
-  UserCircle,
   Zap,
 } from 'lucide-react'
 import appPackage from '../../../../package.json'
@@ -64,7 +64,6 @@ export type ActivityRailItemId =
   | 'skills'
   | 'settings'
   | 'search'
-  | 'account'
 
 export interface ActivityRailProps {
   activeItem: ActivityRailItemId
@@ -91,7 +90,7 @@ export interface ActivityRailProps {
   onOpenSources?: () => void
   onOpenSkills?: () => void
   onOpenSettings?: () => void
-  onOpenAccount?: () => void
+  onSignOut?: () => void | Promise<void>
   profile?: {
     name: string
     detail?: string
@@ -158,7 +157,7 @@ export function ActivityRail({
   onOpenSources,
   onOpenSkills,
   onOpenSettings,
-  onOpenAccount,
+  onSignOut,
   profile,
   onOpenWhatsNew,
   whatsNew,
@@ -695,7 +694,7 @@ export function ActivityRail({
               className={cn(
                 'flex w-full items-center gap-2 rounded-[8px] px-2 py-1.5 text-left outline-none transition-colors',
                 'hover:bg-foreground/[0.045] focus-visible:ring-1 focus-visible:ring-ring',
-                (activeItem === 'account' || activeItem === 'settings') && 'bg-foreground/[0.07]',
+                activeItem === 'settings' && 'bg-foreground/[0.07]',
               )}
             >
               {profile?.avatarUrl ? (
@@ -732,13 +731,6 @@ export function ActivityRail({
             </button>
           </DropdownMenuTrigger>
           <StyledDropdownMenuContent side="top" align="start" sideOffset={6} className="w-[236px]">
-            {onOpenAccount ? (
-              <StyledDropdownMenuItem onClick={onOpenAccount} data-tutorial="activity-account">
-                <UserCircle className="size-4" />
-                账户
-              </StyledDropdownMenuItem>
-            ) : null}
-            {onOpenAccount ? <StyledDropdownMenuSeparator /> : null}
             <StyledDropdownMenuItem
               disabled={!onOpenSettings}
               onClick={onOpenSettings}
@@ -778,6 +770,16 @@ export function ActivityRail({
               <HelpCircle className="size-4" />
               帮助与反馈
             </StyledDropdownMenuItem>
+            {onSignOut ? <StyledDropdownMenuSeparator /> : null}
+            {onSignOut ? (
+              <StyledDropdownMenuItem
+                onClick={() => { void onSignOut() }}
+                data-tutorial="activity-sign-out"
+              >
+                <LogOut className="size-4" />
+                退出登录
+              </StyledDropdownMenuItem>
+            ) : null}
           </StyledDropdownMenuContent>
           </DropdownMenu>
           <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />

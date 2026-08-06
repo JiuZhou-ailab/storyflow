@@ -1,3 +1,7 @@
+// input: View routes and panel mutation requests from renderer navigation
+// output: Single-lane content panels that explicitly exclude utility overlays
+// pos: Canonical renderer panel-state boundary
+
 /**
  * Panel Stack State
  *
@@ -13,7 +17,7 @@ function generatePanelId(): string {
   return `panel-${++nextPanelId}-${Date.now()}`
 }
 
-export type PanelType = 'session' | 'source' | 'settings' | 'skills' | 'other'
+export type PanelType = 'session' | 'source' | 'skills' | 'other'
 export type PanelLaneId = 'main'
 export type OpenIntent = 'implicit' | 'explicit'
 
@@ -29,7 +33,7 @@ export const PANEL_LANE_POLICIES: Record<PanelLaneId, PanelLanePolicy> = {
   main: {
     id: 'main',
     order: 0,
-    allowedTypes: ['session', 'source', 'settings', 'skills', 'other'],
+    allowedTypes: ['session', 'source', 'skills', 'other'],
     locked: false,
     singleton: false,
   },
@@ -72,7 +76,7 @@ export function getPanelTypeFromRoute(route: ViewRoute): PanelType {
     case 'sources':
       return 'source'
     case 'settings':
-      return 'settings'
+      throw new Error('Settings routes belong to the overlay, not the panel stack')
     case 'skills':
       return 'skills'
     default:
@@ -117,7 +121,7 @@ export function parseSessionIdFromRoute(route: ViewRoute): string | null {
 export function routeHasSelectedContent(route: ViewRoute): boolean {
   const navState = parseRouteToNavigationState(route)
   if (!navState) return false
-  if (navState.navigator === 'settings') return true
+  if (navState.navigator === 'settings') return false
   if (navState.navigator === 'writing') return false
   return !!navState.details
 }
@@ -142,6 +146,9 @@ export const pushPanelAtom = atom(
     targetLaneId?: PanelLaneId
     intent?: OpenIntent
   }) => {
+    if (parseRouteToNavigationState(route)?.navigator === 'settings') {
+      throw new Error('Settings routes belong to the overlay, not the panel stack')
+    }
     const stack = get(panelStackAtom)
     let insertAt = stack.length
     if (afterIndex !== undefined && afterIndex >= 0 && afterIndex < stack.length) {
@@ -185,6 +192,9 @@ export const reconcilePanelStackAtom = atom(
     focusedIndex?: number
   }): boolean => {
     if (entries.length === 0) return false
+    if (entries.some(entry => parseRouteToNavigationState(entry.route)?.navigator === 'settings')) {
+      throw new Error('Settings routes belong to the overlay, not the panel stack')
+    }
 
     const current = get(panelStackAtom)
     const used = new Set<string>()
@@ -273,6 +283,9 @@ export const resizePanelsAtom = atom(
 export const updateFocusedPanelRouteAtom = atom(
   null,
   (get, set, route: ViewRoute) => {
+    if (parseRouteToNavigationState(route)?.navigator === 'settings') {
+      throw new Error('Settings routes belong to the overlay, not the panel stack')
+    }
     const stack = get(panelStackAtom)
 
     if (stack.length === 0) {

@@ -36,6 +36,9 @@ function logCall(method: string) {
 // workspace atoms below let workspace-scoped components resolve in playground.
 const playgroundValue: AppShellContextType = {
   workspaces: [PLAYGROUND_WORKSPACE],
+  clientAuthState: null,
+  onClientSignedIn: async () => {},
+  onClientSignOut: async () => {},
   runtimeWorkspace: PLAYGROUND_WORKSPACE,
   activeProjectId: PLAYGROUND_WORKSPACE.id,
   llmConnections: [],

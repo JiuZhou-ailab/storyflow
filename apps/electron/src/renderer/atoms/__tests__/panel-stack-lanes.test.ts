@@ -1,3 +1,7 @@
+// input: Content-panel routes plus invalid settings-overlay routes
+// output: Regression coverage for single-lane ordering and overlay exclusion
+// pos: Executable contract for the renderer panel-state boundary
+
 import { describe, it, expect } from 'bun:test'
 import { createStore } from 'jotai'
 import {
@@ -20,13 +24,13 @@ describe('panel stack single-lane behavior', () => {
 
     store.set(pushPanelAtom, { route: 'allSessions/session/s1' })
     store.set(pushPanelAtom, { route: 'sources/source/github' })
-    store.set(pushPanelAtom, { route: 'settings' })
+    store.set(pushPanelAtom, { route: 'skills/skill/story-ideator' })
 
     const stack = getStack(store)
     expect(stack).toHaveLength(3)
     expect(stack[0].route).toBe('allSessions/session/s1')
     expect(stack[1].route).toBe('sources/source/github')
-    expect(stack[2].route).toBe('settings')
+    expect(stack[2].route).toBe('skills/skill/story-ideator')
     expect(stack.every((p) => p.laneId === 'main')).toBe(true)
   })
 
@@ -130,12 +134,21 @@ describe('panel stack single-lane behavior', () => {
     expect(routeHasSelectedContent('sources/api/source/gmail')).toBe(true)
     expect(routeHasSelectedContent('skills/skill/story-ideator')).toBe(true)
     expect(routeHasSelectedContent('automations/automation/a1')).toBe(true)
-    expect(routeHasSelectedContent('settings/app')).toBe(true)
+    expect(routeHasSelectedContent('settings/app')).toBe(false)
 
     expect(routeHasSelectedContent('allSessions')).toBe(false)
     expect(routeHasSelectedContent('sources')).toBe(false)
     expect(routeHasSelectedContent('sources/api')).toBe(false)
     expect(routeHasSelectedContent('skills')).toBe(false)
     expect(routeHasSelectedContent('automations')).toBe(false)
+  })
+
+  it('rejects settings routes at the panel atom boundary', () => {
+    const store = createStore()
+    expect(() => store.set(pushPanelAtom, { route: 'settings/app' })).toThrow('overlay')
+    expect(() => store.set(updateFocusedPanelRouteAtom, 'settings/app')).toThrow('overlay')
+    expect(() => store.set(reconcilePanelStackAtom, {
+      entries: [{ route: 'settings/app', proportion: 1 }],
+    })).toThrow('overlay')
   })
 })

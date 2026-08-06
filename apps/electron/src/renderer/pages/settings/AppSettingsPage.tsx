@@ -1,5 +1,5 @@
 // input: User preferences, Electron settings IPC, and updater hook state
-// output: App-level settings UI including notifications, network proxy, and about/update controls
+// output: App-level settings UI including account, local usage, notifications, network proxy, and updates
 // pos: Renderer settings page for global application preferences
 
 /**
@@ -36,6 +36,7 @@ import {
   SettingsInput,
 } from '@/components/settings'
 import { useUpdateChecker } from '@/hooks/useUpdateChecker'
+import { AccountSettingsSection, LocalUsageSection } from '@/components/account'
 
 export const meta: DetailsPageMeta = {
   navigator: 'settings',
@@ -210,6 +211,9 @@ export default function AppSettingsPage() {
         <ScrollArea className="h-full">
           <div className="px-5 py-7 max-w-3xl mx-auto">
             <div className="space-y-8">
+              <AccountSettingsSection />
+              <LocalUsageSection />
+
               {/* Notifications */}
               <SettingsSection title={t("settings.notifications.title")}>
                 <SettingsCard>

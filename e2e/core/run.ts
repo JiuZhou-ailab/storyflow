@@ -272,36 +272,34 @@ async function smokeAccountCenter(app: LaunchedApp): Promise<void> {
       15_000,
       'rendered account profile entry',
     )
-    // This fixture validates the account route, not the Motion-driven startup transition.
+    // This fixture validates account settings, not the Motion-driven startup transition.
     // Reveal the already-rendered shell so CDP can exercise the real pointer path.
     await callOn<void>(app, `function () {
       const style = document.createElement('style')
       style.textContent = '.z-splash { display: none !important; }'
       document.head.append(style)
     }`)
-    if (await evalOn<boolean>(app, `!!document.querySelector('[role="dialog"]')`)) {
-      for (const type of ['keyDown', 'keyUp'] as const) {
-        await app.cdp.send(
-          'Input.dispatchKeyEvent',
-          { type, key: 'Escape', code: 'Escape' },
-          app.sid,
-        )
-      }
+    if (await evalOn<boolean>(app, `!!document.querySelector('[role="dialog"] [data-slot="dialog-close"]')`)) {
+      await clickSelector(app, '[role="dialog"] [data-slot="dialog-close"]')
       await waitFor(
         app,
-        `!document.querySelector('[role="dialog"]')`,
+        `!document.querySelector('[role="dialog"] [data-slot="dialog-close"]')`,
         5_000,
         'startup announcement dismissal',
       )
     }
+    if (await evalOn<boolean>(app, `!!document.querySelector('[role="dialog"] #client-auth-identifier')`)) {
+      await clickSelector(app, '[role="dialog"] button[aria-label]')
+      await waitFor(app, `!document.querySelector('#client-auth-identifier')`, 5_000, 'preexisting settings dismissal')
+    }
     await clickSelector(app, profileSelector)
     await waitFor(
       app,
-      `!!document.querySelector('[data-tutorial="activity-account"]')`,
+      `!!document.querySelector('[data-tutorial="activity-settings"]')`,
       10_000,
-      'account menu item',
+      'settings menu item',
     )
-    await clickSelector(app, '[data-tutorial="activity-account"]')
+    await clickSelector(app, '[data-tutorial="activity-settings"]')
     await waitFor(
       app,
       `!!document.querySelector('#client-auth-identifier')
@@ -313,14 +311,14 @@ async function smokeAccountCenter(app: LaunchedApp): Promise<void> {
       app,
       `({
         crashed: !!document.querySelector('[data-testid="root-crash-fallback"]'),
-        heading: Array.from(document.querySelectorAll('h1')).some(el => el.textContent?.trim() === '账户'),
+        heading: Array.from(document.querySelectorAll('h1,h2,h3')).some(el => el.textContent?.trim() === '账户'),
         signIn: !!document.querySelector('#client-auth-identifier'),
         text: document.body.textContent?.trim().slice(0, 500) ?? '',
       })`,
     )
-    assert.deepEqual(rendererErrors, [], `account center emitted renderer errors: ${rendererErrors.join('\n')}`)
-    assert.equal(account.crashed, false, `account center entered the root error boundary: ${account.text}`)
-    assert.equal(account.heading, true, `account center did not render: ${account.text}`)
+    assert.deepEqual(rendererErrors, [], `account settings emitted renderer errors: ${rendererErrors.join('\n')}`)
+    assert.equal(account.crashed, false, `account settings entered the root error boundary: ${account.text}`)
+    assert.equal(account.heading, true, `account settings did not render: ${account.text}`)
     assert.equal(account.signIn, true, `configured account sign-in form did not render: ${account.text}`)
   } finally {
     app.cdp.off('Runtime.exceptionThrown', onException)
