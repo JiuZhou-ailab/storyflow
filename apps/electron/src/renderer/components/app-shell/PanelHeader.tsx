@@ -157,10 +157,7 @@ export function PanelHeader({
         ? 'grid-cols-[minmax(0,1fr)_auto]'
         : 'grid-cols-[minmax(0,1fr)_minmax(0,auto)_minmax(0,1fr)]',
     )}>
-      <div className={cn(
-        'titlebar-no-drag min-w-0 w-fit justify-self-start flex items-center',
-        titleAlign === 'start' && 'w-full',
-      )}>
+      <div className="min-w-0 w-fit justify-self-start flex items-center">
         {leadingAction}
         {titleAlign === 'start' && titleBlock}
       </div>

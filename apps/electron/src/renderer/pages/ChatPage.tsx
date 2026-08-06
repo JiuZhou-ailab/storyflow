@@ -591,8 +591,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
       return (
         <>
-          <div className="h-full flex flex-col">
-            <PanelHeader className="border-b-0" titleAlign="start" title={displayTitle} titleMenu={titleMenu} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
+          <div className="relative h-full flex flex-col">
+            <PanelHeader className="absolute inset-x-0 top-0 border-b-0" titleAlign="start" title={displayTitle} titleMenu={titleMenu} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
             <div className="flex-1 flex flex-col min-h-0">
               <ChatDisplay
                 ref={chatDisplayRef}
@@ -663,8 +663,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
     // Session truly doesn't exist
     return (
-      <div className="h-full flex flex-col">
-        <PanelHeader className="border-b-0" titleAlign="start" title={t('chat.session')} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} />
+      <div className="relative h-full flex flex-col">
+        <PanelHeader className="absolute inset-x-0 top-0 border-b-0" titleAlign="start" title={t('chat.session')} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} />
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
           <AlertCircle className="h-10 w-10" />
           <p className="text-sm">{t('chat.sessionNoLongerExists')}</p>
@@ -675,8 +675,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
   return (
     <>
-      <div className="h-full flex flex-col">
-        <PanelHeader className="border-b-0" titleAlign="start" title={displayTitle} titleMenu={titleMenu} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
+      <div className="relative h-full flex flex-col">
+        <PanelHeader className="absolute inset-x-0 top-0 border-b-0" titleAlign="start" title={displayTitle} titleMenu={titleMenu} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
         <div className="flex-1 flex flex-col min-h-0">
           <ChatDisplay
             ref={chatDisplayRef}

@@ -272,7 +272,9 @@ describe('app shell layout defaults', () => {
   })
 
   it('limits panel-header no-drag regions to the visible controls', () => {
-    expect(panelHeaderSource).toContain(
+    expect(panelHeaderSource).toContain('min-w-0 w-fit justify-self-start flex items-center')
+    expect(panelHeaderSource).not.toContain("titleAlign === 'start' && 'w-full'")
+    expect(panelHeaderSource).not.toContain(
       'titlebar-no-drag min-w-0 w-fit justify-self-start flex items-center',
     )
     expect(panelHeaderSource).toContain(
