@@ -47,6 +47,14 @@ describe('Skills Market worker', () => {
     expect(metadata.skillMarkdown).toContain('https://github.com/JiuZhou-ailab/storyflow')
     expect(metadata.recommendation.label).toContain('34.4K')
 
+    const privateProjectDetail = await handleRequest(new Request('https://market.test/api/skills/video-to-screenplay'), env)
+    const privateProjectMetadata = await privateProjectDetail.json() as {
+      skillMarkdown: string
+      manifest: { author: { url?: string } }
+    }
+    expect(privateProjectMetadata.skillMarkdown).not.toContain('/.agents/skills/video-to-screenplay')
+    expect(privateProjectMetadata.manifest.author.url).toBeUndefined()
+
     const skillHubDetail = await handleRequest(new Request('https://market.test/api/skills/novel-to-drama'), env)
     const skillHubMetadata = await skillHubDetail.json() as {
       skillMarkdown: string

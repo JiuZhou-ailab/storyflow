@@ -16,7 +16,7 @@ export interface CuratedSkill {
   summary: string
   tags: string[]
   sourceName: string
-  sourceUrl: string
+  sourceUrl?: string
   license: string
   recommendation: SkillRecommendation
 }
@@ -57,7 +57,7 @@ function storyflow(
   displayName: string,
   summary: string,
   tags: string[],
-  sourcePath: string,
+  sourcePath: string | null,
   label: string,
   license = 'Apache-2.0',
 ): CuratedSkill {
@@ -67,7 +67,7 @@ function storyflow(
     summary,
     tags: ['Storyflow', ...tags],
     sourceName: 'JiuZhou-ailab/storyflow',
-    sourceUrl: `https://github.com/JiuZhou-ailab/storyflow/tree/main/${sourcePath}`,
+    ...(sourcePath ? { sourceUrl: `https://github.com/JiuZhou-ailab/storyflow/tree/main/${sourcePath}` } : {}),
     license,
     recommendation: {
       order,
@@ -117,15 +117,15 @@ export const CURATED_SKILLS: readonly CuratedSkill[] = [
     'Storyflow 内置'),
   storyflow(2, 'video-to-screenplay', '视频转剧本',
     '使用 Storyflow 登录态与 Gemini 视频理解，把连续短剧批量转换为标准分集剧本。',
-    ['视频', '短剧', '已鉴权'], '.agents/skills/video-to-screenplay',
+    ['视频', '短剧', '已鉴权'], null,
     'Storyflow 项目精品'),
   storyflow(3, 'discover-hit-dramas', '爆款短剧发现',
     '查询来源内榜单证据、历史快照和可直接转剧本的完整剧目。',
-    ['短剧', '榜单', '已鉴权'], '.agents/skills/discover-hit-dramas',
+    ['短剧', '榜单', '已鉴权'], null,
     'Storyflow 项目精品'),
   storyflow(4, 'hot-video-script-ideation', '热点视频灵感',
     '把热点素材拆成可复用结构，并生成原创短视频故事引擎与大纲。',
-    ['视频', '灵感'], '.agents/skills/hot-video-script-ideation',
+    ['视频', '灵感'], null,
     'Storyflow 项目精品'),
   storyflow(5, 'anysearch', 'AnySearch',
     '实时网页、垂直领域、批量搜索与 URL 内容提取；Storyflow 已配置安全鉴权路径。',

@@ -1,5 +1,5 @@
 // input: Pi-native installed Skills, authenticated Skills Market catalog data, and the active workspace
-// output: Native popularity-ranked discovery, installation, creation, opening, and publication actions
+// output: Uninstalled popularity-ranked discovery plus installed Skill management and publication actions
 // pos: Default Skills route; local Pi catalog remains the authority for installed state
 
 import * as React from 'react'
@@ -122,8 +122,9 @@ export default function SkillsHubPage() {
     ].filter(Boolean).join(' ').toLocaleLowerCase().includes(normalizedQuery))
   }, [query, skills])
   const filteredMarketSkills = React.useMemo(
-    () => filterMarketSkills(marketSkills, query, catalogView),
-    [catalogView, marketSkills, query],
+    () => filterMarketSkills(marketSkills, query, catalogView)
+      .filter(skill => !installedBySlug.has(skill.slug)),
+    [catalogView, installedBySlug, marketSkills, query],
   )
   const publishableSkills = React.useMemo(
     () => workspace?.remoteServer ? [] : skills.filter(skill => (
@@ -441,7 +442,6 @@ export default function SkillsHubPage() {
             ) : (
               <div className="grid grid-cols-1 gap-x-8 lg:grid-cols-2">
                 {filteredMarketSkills.map(skill => {
-                  const installed = installedBySlug.get(skill.slug)
                   const installing = installingSlug === skill.slug
                   const installable = isInstallableMarketSkill(skill)
                   const visual = getMarketSkillVisual(skill)
@@ -453,11 +453,7 @@ export default function SkillsHubPage() {
                         className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         aria-label={t('skillsHub.viewDetail', { defaultValue: '查看 {{name}}', name: skill.displayName })}
                       >
-                        {installed ? (
-                          <SkillAvatar skill={installed} size="md" workspaceId={workspaceId ?? undefined} />
-                        ) : (
-                          <SkillVisualAvatar visual={visual} size="md" alt={skill.displayName} />
-                        )}
+                        <SkillVisualAvatar visual={visual} size="md" alt={skill.displayName} />
                         <span className="min-w-0 flex-1">
                           <span className="flex min-w-0 items-baseline gap-2">
                             <span className="truncate text-sm font-medium">{skill.displayName}</span>
@@ -478,12 +474,7 @@ export default function SkillsHubPage() {
                           </span>
                         </span>
                       </button>
-                      {installed ? (
-                        <Button type="button" size="sm" variant="ghost" className="shrink-0" onClick={() => openSkill(installed)}>
-                          <Check aria-hidden="true" />
-                          {t('skillsHub.open', '打开')}
-                        </Button>
-                      ) : installable ? (
+                      {installable ? (
                         <Button
                           type="button"
                           size="sm"
@@ -584,11 +575,20 @@ function MarketSkillDetailDialog({
   if (!skill) return null
   const resolvedSkill = detail ?? skill
   const visual = getMarketSkillVisual(resolvedSkill)
-  const instructions = detail ? stripSkillFrontmatter(detail.skillMarkdown) : ''
+  const instructions = detail && isInstallableMarketSkill(detail)
+    ? stripSkillFrontmatter(detail.skillMarkdown)
+    : ''
+  const showInstructions = loading || Boolean(error) || Boolean(instructions)
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent size="xl" className="max-h-[82vh] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0">
+      <DialogContent
+        size="xl"
+        className={cn(
+          'max-h-[82vh] gap-0 overflow-hidden p-0',
+          showInstructions ? 'grid-rows-[auto_minmax(0,1fr)_auto]' : 'grid-rows-[auto_auto]',
+        )}
+      >
         <DialogHeader className="px-6 pb-5 pt-6 pr-12">
           <div className="flex items-start gap-3">
             <SkillVisualAvatar visual={visual} size="xl" alt={resolvedSkill.displayName} />
@@ -606,30 +606,30 @@ function MarketSkillDetailDialog({
           </div>
         </DialogHeader>
 
-        <div className="min-h-0 overflow-y-auto border-y border-border/60 px-6 py-5">
-          {loading ? (
-            <div className="space-y-3" aria-label={t('skillsHub.loadingDetail', '正在加载 Skill 内容')}>
-              <div className="h-3 w-1/3 animate-pulse rounded bg-foreground/[0.07] motion-reduce:animate-none" />
-              <div className="h-2.5 w-full animate-pulse rounded bg-foreground/[0.05] motion-reduce:animate-none" />
-              <div className="h-2.5 w-5/6 animate-pulse rounded bg-foreground/[0.05] motion-reduce:animate-none" />
-              <div className="h-2.5 w-3/4 animate-pulse rounded bg-foreground/[0.05] motion-reduce:animate-none" />
-            </div>
-          ) : error ? (
-            <div role="alert" className="rounded-lg border border-destructive/25 bg-destructive/[0.04] px-4 py-4">
-              <p className="text-sm font-medium">{t('skillsHub.detailLoadFailed', 'Skill 内容加载失败')}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{error}</p>
-              <Button type="button" size="sm" variant="outline" className="mt-3" onClick={onRetry}>
-                {t('common.retry', '重试')}
-              </Button>
-            </div>
-          ) : instructions ? (
-            <Info_Markdown mode="full" className="px-0 pb-0" allowImages={false} onUrlClick={onOpenUrl}>
-              {instructions}
-            </Info_Markdown>
-          ) : (
-            <p className="text-sm text-muted-foreground">{t('skillsHub.noInstructions', '这个 Skill 暂无可显示的说明')}</p>
-          )}
-        </div>
+        {showInstructions ? (
+          <div className="min-h-0 overflow-y-auto border-y border-border/60 px-6 py-5">
+            {loading ? (
+              <div className="space-y-3" aria-label={t('skillsHub.loadingDetail', '正在加载 Skill 内容')}>
+                <div className="h-3 w-1/3 animate-pulse rounded bg-foreground/[0.07] motion-reduce:animate-none" />
+                <div className="h-2.5 w-full animate-pulse rounded bg-foreground/[0.05] motion-reduce:animate-none" />
+                <div className="h-2.5 w-5/6 animate-pulse rounded bg-foreground/[0.05] motion-reduce:animate-none" />
+                <div className="h-2.5 w-3/4 animate-pulse rounded bg-foreground/[0.05] motion-reduce:animate-none" />
+              </div>
+            ) : error ? (
+              <div role="alert" className="rounded-lg border border-destructive/25 bg-destructive/[0.04] px-4 py-4">
+                <p className="text-sm font-medium">{t('skillsHub.detailLoadFailed', 'Skill 内容加载失败')}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{error}</p>
+                <Button type="button" size="sm" variant="outline" className="mt-3" onClick={onRetry}>
+                  {t('common.retry', '重试')}
+                </Button>
+              </div>
+            ) : instructions ? (
+              <Info_Markdown mode="full" className="px-0 pb-0" allowImages={false} onUrlClick={onOpenUrl}>
+                {instructions}
+              </Info_Markdown>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="flex items-center justify-between gap-3 px-6 py-4">
           <div className="flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">

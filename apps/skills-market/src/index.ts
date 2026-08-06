@@ -311,7 +311,8 @@ function seedDetail(seed: CuratedSkill, downloadCount: number): MarketSkillDetai
   const summary = seedSummary(seed, downloadCount)
   const manifest: StoryflowSkillManifest = {
     schemaVersion: 1, slug: seed.slug, version: '1.0.0', displayName: seed.displayName,
-    summary: seed.summary, license: seed.license, author: { name: seed.sourceName, url: seed.sourceUrl },
+    summary: seed.summary, license: seed.license,
+    author: { name: seed.sourceName, ...(seed.sourceUrl ? { url: seed.sourceUrl } : {}) },
     tags: seed.tags,
     methodology: {
       sourceName: seed.recommendation.sourceName,
@@ -319,7 +320,8 @@ function seedDetail(seed: CuratedSkill, downloadCount: number): MarketSkillDetai
       adaptation: `Popularity snapshot ${seed.recommendation.snapshotAt}: ${seed.recommendation.label}`,
     },
   }
-  const skillMarkdown = `---\nname: ${seed.slug}\ndescription: ${JSON.stringify(seed.summary)}\n---\n\n# ${seed.displayName}\n\n${seed.summary}\n\n- 上游：${seed.sourceUrl}\n- 推荐依据：${seed.recommendation.label}\n- 数据快照：${seed.recommendation.snapshotAt}\n\n安装或复用前，请检查上游许可证、脚本和权限。\n`
+  const sourceLine = seed.sourceUrl ? `\n- 上游：${seed.sourceUrl}` : ''
+  const skillMarkdown = `---\nname: ${seed.slug}\ndescription: ${JSON.stringify(seed.summary)}\n---\n\n# ${seed.displayName}\n\n${seed.summary}\n${sourceLine}\n- 推荐依据：${seed.recommendation.label}\n- 数据快照：${seed.recommendation.snapshotAt}\n\n安装或复用前，请检查上游许可证、脚本和权限。\n`
   return { ...summary, skillMarkdown, manifest, downloadPath: '', installUrl: '' }
 }
 

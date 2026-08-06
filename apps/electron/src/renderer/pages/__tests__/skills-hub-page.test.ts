@@ -1,5 +1,5 @@
 // input: SkillsHubPage source and its catalog/install contracts
-// output: Regression coverage for local authority and safe one-click installation
+// output: Regression coverage for local authority, uninstalled discovery, and safe one-click installation
 // pos: Small source-level check isolated from Electron's browser-only dependency graph
 
 import { describe, expect, it } from 'bun:test'
@@ -43,6 +43,11 @@ describe('SkillsHubPage contracts', () => {
       .toBeNull()
   })
 
+  it('keeps installed Skills out of discovery', () => {
+    expect(source).toContain('.filter(skill => !installedBySlug.has(skill.slug))')
+    expect(source).not.toContain('const installed = installedBySlug.get(skill.slug)')
+  })
+
   it('validates downloads and imports only into the active project', () => {
     expect(source).toContain('window.electronAPI.downloadSkillFromMarket(skill)')
     expect(source).toContain("'skip',")
@@ -50,12 +55,14 @@ describe('SkillsHubPage contracts', () => {
     expect(source).toContain('currentWorkspaceId.current !== targetWorkspaceId')
   })
 
-  it('keeps reference-only recommendations visible and links to their reviewed source', () => {
+  it('keeps reference-only recommendations visible without synthetic Markdown instructions', () => {
     expect(source).toContain('window.electronAPI.listSkillsFromMarket()')
     expect(source).not.toContain('DEFAULT_SKILLS_MARKET_ORIGIN')
     expect(source).toContain('isInstallableMarketSkill(skill)')
     expect(source).toContain("t('skillsHub.referenceOnly', '仅供参考')")
     expect(source).toContain("t('skillsHub.openSource', '查看来源')")
+    expect(source).toContain('detail && isInstallableMarketSkill(detail)')
+    expect(source).toContain("showInstructions ? 'grid-rows-[auto_minmax(0,1fr)_auto]' : 'grid-rows-[auto_auto]'")
     expect(isInstallableMarketSkill(marketSkill)).toBe(true)
     expect(isInstallableMarketSkill({ ...marketSkill, sha256: '' })).toBe(false)
   })
