@@ -4223,6 +4223,7 @@ function AppShellContent({
 
   // Handler for full release-notes history overlay (versioned, newest first)
   const handleWhatsNewClick = useCallback(async () => {
+    setShowWhatsNewAnnouncement(false)
     try {
       const content = await window.electronAPI.getReleaseNotes()
       setReleaseNotesContent(

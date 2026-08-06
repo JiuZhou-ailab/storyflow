@@ -20,6 +20,7 @@ import { I18nextProvider, initReactI18next } from 'react-i18next'
 import { TooltipProvider } from '../../tooltip'
 import {
   groupActivitiesByParent,
+  groupMessagesByTurn,
   computeLastChildSet,
   isActivityGroup,
   type ActivityGroup,
@@ -628,6 +629,17 @@ describe('response presentation', () => {
   })
 
   it('keeps completed turn usage on a plan-only final output', () => {
+    const [turn] = groupMessagesByTurn([{
+      id: 'plan-with-usage',
+      role: 'plan',
+      content: 'Plan response',
+      timestamp: 1,
+      turnMetrics: { durationMs: 1_000 },
+    }])
+
+    expect(turn?.type).toBe('assistant')
+    expect(turn?.type === 'assistant' ? turn.metrics : undefined).toEqual({ durationMs: 1_000 })
+
     const html = renderToStaticMarkup(
       React.createElement(TooltipProvider, null,
         React.createElement(I18nextProvider, { i18n: testI18n },

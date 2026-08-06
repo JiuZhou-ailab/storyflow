@@ -90,7 +90,7 @@ import { restoreFiles } from '@craft-agent/shared/utils/bundle-files'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { McpClientPool } from '@craft-agent/shared/mcp'
 import { type Session, type SessionEvent, type FileAttachment, type SendMessageOptions, type OneShotLlmRequest, type OneShotLlmResult, type NovelSelectionRewriteRequest, type NovelSelectionRewriteResult, type UnreadSummary, type RemoteSessionTransferPayload, RPC_CHANNELS, generateMessageId } from '@craft-agent/shared/protocol'
-import { messageToStored, storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta, type TurnMetrics } from '@craft-agent/core/types'
+import { messageToStored, storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta, type TurnMetrics, type TurnUsage } from '@craft-agent/core/types'
 import { formatPathsToRelative, formatToolInputPaths, perf, readFileAttachment, selectSpreadMessages, normalizePath, DEFAULT_TITLE_LANGUAGE } from '@craft-agent/shared/utils'
 import { buildNovelSelectionRewritePrompt, sanitizeNovelSelectionReplacement } from '@craft-agent/shared/writing'
 import { loadPiSkillCatalog, invalidateSkillsCache } from '@craft-agent/shared/skills'
@@ -1314,6 +1314,36 @@ export class SessionManager implements ISessionManager {
     await sessionPersistenceQueue.flushAll()
   }
 
+  private accumulateTurnUsage(managed: ManagedSession, usage?: TurnUsage): void {
+    if (!usage) return
+    managed.tokenUsage ??= {
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      contextTokens: 0,
+      costUsd: 0,
+    }
+    managed.tokenUsage.inputTokens += usage.inputTokens
+    managed.tokenUsage.outputTokens += usage.outputTokens
+    managed.tokenUsage.totalTokens = managed.tokenUsage.inputTokens + managed.tokenUsage.outputTokens
+    managed.tokenUsage.costUsd += usage.costUsd ?? 0
+    managed.tokenUsage.cacheReadTokens = (managed.tokenUsage.cacheReadTokens ?? 0) + (usage.cacheReadTokens ?? 0)
+    managed.tokenUsage.cacheCreationTokens = (managed.tokenUsage.cacheCreationTokens ?? 0) + (usage.cacheCreationTokens ?? 0)
+    if (usage.contextTokens !== undefined) managed.tokenUsage.contextTokens = usage.contextTokens
+    if (usage.contextWindow) managed.tokenUsage.contextWindow = usage.contextWindow
+  }
+
+  private attachTurnMetrics(managed: ManagedSession, message: Message, usage?: TurnUsage): TurnMetrics {
+    const metrics: TurnMetrics = {
+      durationMs: Math.max(0, Date.now() - (managed.turnStartedAt ?? message.timestamp)),
+      ...(usage && { usage }),
+    }
+    message.turnMetrics = metrics
+    managed.pendingTurnMetrics ??= new Map()
+    managed.pendingTurnMetrics.set(message.id, metrics)
+    return metrics
+  }
+
   private async handlePlanSubmitted(managed: ManagedSession, planPath: string): Promise<void> {
     sessionLog.info(`Plan submitted for session ${managed.id}:`, planPath)
     try {
@@ -1328,7 +1358,7 @@ export class SessionManager implements ISessionManager {
         submitPlanMsg.toolResult = 'Plan submitted for review'
       }
 
-      const planMessage = {
+      const planMessage: Message = {
         id: `plan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         role: 'plan' as const,
         content: planContent,
@@ -1338,6 +1368,9 @@ export class SessionManager implements ISessionManager {
 
       managed.messages.push(planMessage)
       managed.lastMessageRole = 'plan'
+      const turnUsage = managed.agent?.getCurrentTurnUsage()
+      this.accumulateTurnUsage(managed, turnUsage)
+      this.attachTurnMetrics(managed, planMessage, turnUsage)
 
       this.persistSession(managed)
       await this.flushSession(managed.id)
@@ -1355,7 +1388,15 @@ export class SessionManager implements ISessionManager {
 
         await releaseBrowserOwnershipOnForcedStop(this.browserPaneManager, managed.id)
 
-        this.sendEvent({ type: 'complete', sessionId: managed.id, tokenUsage: managed.tokenUsage }, managed.workspace.id)
+        this.sendEvent({
+          type: 'complete',
+          sessionId: managed.id,
+          tokenUsage: managed.tokenUsage,
+          turnMetrics: managed.pendingTurnMetrics
+            ? Array.from(managed.pendingTurnMetrics, ([messageId, metrics]) => ({ messageId, metrics }))
+            : undefined,
+        }, managed.workspace.id)
+        managed.pendingTurnMetrics = undefined
       }
     } catch (error) {
       sessionLog.error(`Failed to read plan file:`, error)
@@ -4338,18 +4379,11 @@ export class SessionManager implements ISessionManager {
     return managed?.enabledSourceSlugs ?? []
   }
 
-  /**
-   * Get the last final assistant message ID from a list of messages
-   * A "final" message is one where:
-   * - role === 'assistant' AND
-   * - isIntermediate !== true (not commentary between tool calls)
-   * Returns undefined if no final assistant message exists
-   */
-  private getLastFinalAssistantMessageId(messages: Message[]): string | undefined {
-    // Iterate backwards to find the most recent final assistant message
+  /** Get the last user-visible final output, including plan-only turns. */
+  private getLastFinalOutputMessageId(messages: Message[]): string | undefined {
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i]
-      if (msg.role === 'assistant' && !msg.isIntermediate) {
+      if ((msg.role === 'assistant' && !msg.isIntermediate) || msg.role === 'plan') {
         return msg.id
       }
     }
@@ -4405,7 +4439,7 @@ export class SessionManager implements ISessionManager {
 
     // Update lastReadMessageId for legacy/manual unread functionality
     if (managed.messages.length > 0) {
-      const lastFinalId = this.getLastFinalAssistantMessageId(managed.messages)
+      const lastFinalId = this.getLastFinalOutputMessageId(managed.messages)
       if (lastFinalId && managed.lastReadMessageId !== lastFinalId) {
         managed.lastReadMessageId = lastFinalId
         needsPersist = true
@@ -5265,7 +5299,7 @@ export class SessionManager implements ISessionManager {
     this.setProcessing(managed, true)
     managed.streamingText = ''
     managed.processingGeneration++
-    managed.turnStartFinalMessageId = this.getLastFinalAssistantMessageId(managed.messages)
+    managed.turnStartFinalMessageId = this.getLastFinalOutputMessageId(managed.messages)
 
     // Reset auth retry flag for this new message (allows one retry per message)
     // IMPORTANT: Skip reset if this is an auth retry call - the flag is already true
@@ -6008,12 +6042,12 @@ export class SessionManager implements ISessionManager {
     //    This is the explicit state machine for NEW badge:
     //    - If user is viewing: mark as read (they saw it complete)
     //    - If user is NOT viewing: mark as unread (they have new content)
-    //    IMPORTANT: only apply this when the turn produced a NEW final assistant message.
+    //    IMPORTANT: only apply this when the turn produced a NEW final output.
     const isViewing = this.isSessionBeingViewed(sessionId, managed.workspace.id)
-    const currentFinalMessageId = this.getLastFinalAssistantMessageId(managed.messages)
-    const didReceiveNewFinalMessage = !!currentFinalMessageId && currentFinalMessageId !== turnStartFinalMessageId
+    const currentFinalMessageId = this.getLastFinalOutputMessageId(managed.messages)
+    const didReceiveNewFinalOutput = !!currentFinalMessageId && currentFinalMessageId !== turnStartFinalMessageId
 
-    if (reason === 'complete' && didReceiveNewFinalMessage) {
+    if (reason === 'complete' && didReceiveNewFinalOutput) {
       if (isViewing) {
         // User is watching - mark as read immediately
         await this.markSessionRead(sessionId)
@@ -7152,45 +7186,14 @@ export class SessionManager implements ISessionManager {
       case 'complete':
         // Complete event from CraftAgent - accumulate usage from this turn
         // Actual 'complete' sent to renderer comes from the finally block in sendMessage
-        if (event.usage) {
-          // Initialize tokenUsage if not set
-          if (!managed.tokenUsage) {
-            managed.tokenUsage = {
-              inputTokens: 0,
-              outputTokens: 0,
-              totalTokens: 0,
-              contextTokens: 0,
-              costUsd: 0,
-            }
-          }
-          // Session totals accumulate the provider-reported totals from each user turn.
-          managed.tokenUsage.inputTokens += event.usage.inputTokens
-          managed.tokenUsage.outputTokens += event.usage.outputTokens
-          managed.tokenUsage.totalTokens = managed.tokenUsage.inputTokens + managed.tokenUsage.outputTokens
-          managed.tokenUsage.costUsd += event.usage.costUsd ?? 0
-          managed.tokenUsage.cacheReadTokens = (managed.tokenUsage.cacheReadTokens ?? 0) + (event.usage.cacheReadTokens ?? 0)
-          managed.tokenUsage.cacheCreationTokens = (managed.tokenUsage.cacheCreationTokens ?? 0) + (event.usage.cacheCreationTokens ?? 0)
-          if (event.usage.contextTokens !== undefined) {
-            managed.tokenUsage.contextTokens = event.usage.contextTokens
-          }
-          // Update context window (use latest value - may change if model switches)
-          if (event.usage.contextWindow) {
-            managed.tokenUsage.contextWindow = event.usage.contextWindow
-          }
-        }
+        this.accumulateTurnUsage(managed, event.usage)
 
         {
-          const finalMessageId = this.getLastFinalAssistantMessageId(managed.messages)
+          const finalMessageId = this.getLastFinalOutputMessageId(managed.messages)
           if (finalMessageId && finalMessageId !== managed.turnStartFinalMessageId) {
             const finalMessage = managed.messages.findLast(message => message.id === finalMessageId)
             if (finalMessage) {
-              const metrics: TurnMetrics = {
-                durationMs: Math.max(0, Date.now() - (managed.turnStartedAt ?? finalMessage.timestamp)),
-                ...(event.usage && { usage: event.usage }),
-              }
-              finalMessage.turnMetrics = metrics
-              managed.pendingTurnMetrics ??= new Map()
-              managed.pendingTurnMetrics.set(finalMessageId, metrics)
+              this.attachTurnMetrics(managed, finalMessage, event.usage)
             }
           }
         }

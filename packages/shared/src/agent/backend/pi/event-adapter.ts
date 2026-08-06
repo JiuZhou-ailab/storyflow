@@ -13,7 +13,7 @@
  * Claude / Codex / Copilot backends.
  */
 
-import type { AgentEvent as CraftAgentEvent } from '@craft-agent/core/types';
+import type { AgentEvent as CraftAgentEvent, TurnUsage } from '@craft-agent/core/types';
 import type {
   AgentEvent as PiAgentEvent,
 } from '@earendil-works/pi-agent-core';
@@ -131,15 +131,16 @@ export class PiEventAdapter extends BaseEventAdapter {
   }
 
   private completeEvent(): CraftAgentEvent {
-    return this.turnUsage
-      ? {
-          type: 'complete',
-          usage: {
-            ...this.turnUsage,
-            contextWindow: this.contextWindow,
-          },
-        }
+    const usage = this.getTurnUsageSnapshot();
+    return usage
+      ? { type: 'complete', usage }
       : { type: 'complete' };
+  }
+
+  getTurnUsageSnapshot(): TurnUsage | undefined {
+    return this.turnUsage
+      ? { ...this.turnUsage, contextWindow: this.contextWindow }
+      : undefined;
   }
 
   private addSubagentUsage(details: unknown): void {

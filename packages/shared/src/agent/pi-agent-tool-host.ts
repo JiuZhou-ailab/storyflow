@@ -325,9 +325,9 @@ export abstract class PiAgentToolHost extends PiAgentTransport {
       sessionId,
       workspacePath,
       workspaceId,
-      onPlanSubmitted: (planPath: string) => {
+      onPlanSubmitted: async (planPath: string) => {
         setLastPlanFilePath(sessionId, planPath);
-        this.onPlanSubmitted?.(planPath);
+        await this.onPlanSubmitted?.(planPath);
       },
       onAuthRequest: (request: unknown) => {
         this.onAuthRequest?.(request as any);

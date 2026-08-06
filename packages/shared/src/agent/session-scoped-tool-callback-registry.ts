@@ -24,7 +24,7 @@ export interface SessionScopedToolCallbacks {
    * Called when a plan is submitted via SubmitPlan tool.
    * Receives the path to the plan markdown file.
    */
-  onPlanSubmitted?: (planPath: string) => void;
+  onPlanSubmitted?: (planPath: string) => void | Promise<void>;
 
   /**
    * Called when authentication is requested via OAuth/credential tools.

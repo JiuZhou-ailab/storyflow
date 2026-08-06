@@ -46,7 +46,7 @@ export interface SessionToolCallbacks {
    * Called when a plan is submitted.
    * Calls the host onPlanSubmitted callback.
    */
-  onPlanSubmitted(planPath: string): void;
+  onPlanSubmitted(planPath: string): void | Promise<void>;
 
   /**
    * Called when authentication is requested.

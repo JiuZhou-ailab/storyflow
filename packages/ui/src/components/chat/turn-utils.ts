@@ -488,6 +488,7 @@ export function groupMessagesByTurn(messages: Message[]): Turn[] {
         displayName: 'Plan',
         timestamp: message.timestamp,
       })
+      currentTurn.metrics = message.turnMetrics
       currentTurn.isStreaming = false
       currentTurn.isComplete = true
       flushCurrentTurn()

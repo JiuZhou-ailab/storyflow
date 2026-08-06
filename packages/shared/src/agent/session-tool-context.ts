@@ -87,7 +87,7 @@ export interface SessionToolContextOptions {
   sessionId: string;
   workspacePath: string;
   workspaceId: string;
-  onPlanSubmitted: (planPath: string) => void;
+  onPlanSubmitted: (planPath: string) => void | Promise<void>;
   onAuthRequest: (request: unknown) => void;
   onAskUserQuestion?: (request: UserQuestionRequest) => Promise<UserQuestionResponse>;
 }

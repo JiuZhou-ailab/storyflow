@@ -44,7 +44,7 @@ export async function handleSubmitPlan(
   }
 
   // Notify via callback (will trigger forceAbort in session manager)
-  ctx.callbacks.onPlanSubmitted(planPath);
+  await ctx.callbacks.onPlanSubmitted(planPath);
 
   return successResponse('Plan submitted for review. Waiting for user feedback.');
 }

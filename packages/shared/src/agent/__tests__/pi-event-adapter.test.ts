@@ -84,6 +84,17 @@ describe('PiEventAdapter', () => {
         },
       } as any));
 
+      expect(adapter.getTurnUsageSnapshot()).toEqual({
+        inputTokens: 365,
+        outputTokens: 90,
+        modelCalls: 2,
+        cacheReadTokens: 50,
+        cacheCreationTokens: 15,
+        costUsd: 0.03,
+        contextTokens: 235,
+        contextWindow: 131_072,
+      });
+
       const events = collect(adapter.adaptEvent({ type: 'agent_settled' } as any));
 
       expect(events).toEqual([{

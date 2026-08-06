@@ -281,7 +281,7 @@ describe('plan submission durability', () => {
     rmSync(tmpRoot, { recursive: true, force: true })
   })
 
-  it('plan message is on disk before the complete event is emitted', async () => {
+  it('persists and emits usage before completing a plan handoff', async () => {
     const sessionId = 'plan-durability'
     const managed = createManagedSession(
       { id: sessionId, name: 'plan durability' },
@@ -294,7 +294,14 @@ describe('plan submission durability', () => {
       { messagesLoaded: true },
     )
     managed.isProcessing = true
+    managed.turnStartedAt = Date.now() - 1_000
     managed.agent = {
+      getCurrentTurnUsage: () => ({
+        inputTokens: 12,
+        outputTokens: 3,
+        cacheReadTokens: 4,
+        costUsd: 0.02,
+      }),
       interruptForHandoff: () => {},
     } as never
     ;(sm as unknown as { sessions: Map<string, unknown> }).sessions.set(sessionId, managed)
@@ -303,17 +310,20 @@ describe('plan submission durability', () => {
     writeFileSync(planPath, '# Test plan', 'utf-8')
 
     let onDiskAtComplete = false
+    let completeEvent: Record<string, unknown> | undefined
     sm.setEventSink((_channel, _target, event) => {
       if (event?.type !== 'complete') return
+      completeEvent = event
 
       const path = getSessionFilePath(tmpRoot, sessionId)
       if (!existsSync(path)) return
 
       const lines = readFileSync(path, 'utf-8').trim().split('\n')
-      onDiskAtComplete = lines
+      const persistedPlan = lines
         .slice(1)
         .map(l => JSON.parse(l))
-        .some(m => m.type === 'plan' && m.content === '# Test plan')
+        .find(m => m.type === 'plan' && m.content === '# Test plan')
+      onDiskAtComplete = persistedPlan?.turnMetrics?.usage?.inputTokens === 12
     })
 
     await (sm as unknown as {
@@ -321,5 +331,25 @@ describe('plan submission durability', () => {
     }).handlePlanSubmitted(managed, planPath)
 
     expect(onDiskAtComplete).toBe(true)
+    expect(completeEvent?.tokenUsage).toEqual(expect.objectContaining({
+      inputTokens: 12,
+      outputTokens: 3,
+      totalTokens: 15,
+      cacheReadTokens: 4,
+      costUsd: 0.02,
+    }))
+    expect(completeEvent?.turnMetrics).toEqual([
+      expect.objectContaining({
+        messageId: expect.stringMatching(/^plan-/),
+        metrics: expect.objectContaining({
+          usage: expect.objectContaining({ inputTokens: 12, outputTokens: 3 }),
+        }),
+      }),
+    ])
+    expect(managed.tokenUsage).toEqual(expect.objectContaining({
+      inputTokens: 12,
+      outputTokens: 3,
+      totalTokens: 15,
+    }))
   })
 })

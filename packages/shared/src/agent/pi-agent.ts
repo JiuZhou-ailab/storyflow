@@ -17,7 +17,7 @@
  * and passed to the subprocess during initialization.
  */
 
-import type { AgentEvent } from '@craft-agent/core/types';
+import type { AgentEvent, TurnUsage } from '@craft-agent/core/types';
 import { formatAttachmentContextForModel, type FileAttachment } from '../utils/files.ts';
 
 import type {
@@ -61,6 +61,10 @@ export { PI_BACKEND_SESSION_TOOL_NAMES } from './pi-agent-transport.ts';
 
 /** Storyflow Product Host projection over the single Pi AgentSession runtime. */
 export class PiAgent extends PiAgentToolHost {
+  getCurrentTurnUsage(): TurnUsage | undefined {
+    return this.adapter.getTurnUsageSnapshot();
+  }
+
   // ============================================================
   // Chat (AsyncGenerator with event queue -- mirrors CopilotAgent)
   // ============================================================
@@ -89,7 +93,9 @@ export class PiAgent extends PiAgentToolHost {
     const sessionId = this.config.session?.id;
     if (sessionId) {
       mergeSessionScopedToolCallbacks(sessionId, {
-        onPlanSubmitted: (planPath) => this.onPlanSubmitted?.(planPath),
+        onPlanSubmitted: async (planPath) => {
+          await this.onPlanSubmitted?.(planPath);
+        },
         onAuthRequest: (request) => this.onAuthRequest?.(request),
         queryFn: (request) => this.queryLlm(request),
       });

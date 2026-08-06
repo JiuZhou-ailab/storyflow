@@ -267,6 +267,7 @@ describe('project management entry', () => {
     expect(appSource).toContain('onOpenWhatsNewSignalHandled={() => setOpenWhatsNewSignal(0)}')
     expect(appShellSource).toContain('if (openWhatsNewSignal <= 0) return')
     expect(appShellSource).toContain('onOpenWhatsNewSignalHandled()')
+    expect(appShellSource).toContain('const handleWhatsNewClick = useCallback(async () => {\n    setShowWhatsNewAnnouncement(false)')
     expect(appShellSource).not.toContain('if (openWhatsNewSignal > 0)')
   })
 
