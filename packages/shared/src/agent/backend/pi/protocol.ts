@@ -9,6 +9,7 @@ import type {
   ConversationRewindRequest,
   ConversationRewindResult,
 } from '../types.ts';
+import type { ConversationRewindErrorCode } from '../../../protocol/dto.ts';
 
 export type PiCredential =
   | { type: 'api_key'; key: string }
@@ -173,6 +174,7 @@ export type PiOutboundMessage =
       id: string;
       success: boolean;
       editorText?: string;
+      errorCode?: ConversationRewindErrorCode;
       errorMessage?: string;
     }
   | {

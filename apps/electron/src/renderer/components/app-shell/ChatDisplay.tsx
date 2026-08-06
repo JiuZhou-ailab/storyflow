@@ -1555,13 +1555,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       return
     }
 
-    try {
-      const content = typeof message.content === 'string' ? message.content : undefined
-      const result = await window.electronAPI.rewindSession(session.id, message.id)
-      const draftText = result.draftText ?? content ?? ''
-      // Persist draft in App-level ref…
+    const content = typeof message.content === 'string' ? message.content : undefined
+    const restoreDraft = (draftText: string) => {
       onDraftInputChange(session.id, draftText)
-      // …and push into ChatPage's local input state (ref update alone does not re-render the composer).
       window.dispatchEvent(new CustomEvent('craft:restore-input', {
         detail: { sessionId: session.id, text: draftText },
       }))
@@ -1570,10 +1566,26 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
           detail: { sessionId: session.id },
         }))
       }, 80)
+    }
+
+    try {
+      const result = await window.electronAPI.rewindSession(session.id, message.id)
+      if (!result.success) {
+        toast.warning(t('chat.rewindLegacyUnavailable'), {
+          description: t('chat.rewindLegacyDescription'),
+          action: content === undefined ? undefined : {
+            label: t('chat.restoreToInput'),
+            onClick: () => restoreDraft(content),
+          },
+        })
+        return
+      }
+      const draftText = result.draftText ?? content ?? ''
+      restoreDraft(draftText)
       toast.success(t('chat.rewindReady', 'Edit the restored message, then send to regenerate.'))
     } catch (error) {
-      const messageText = error instanceof Error ? error.message : 'Failed to rewind conversation'
-      toast.error(t('chat.rewindFailed', 'Could not rewind conversation'), { description: messageText })
+      console.error('[ChatDisplay] Failed to rewind conversation:', error)
+      toast.error(t('chat.rewindFailed', 'Could not rewind conversation'))
     }
   }, [onDraftInputChange, session, t])
   const handleRewindUserMessageRef = React.useRef(handleRewindUserMessage)

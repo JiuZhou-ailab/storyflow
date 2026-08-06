@@ -1,5 +1,5 @@
 // input: Searchable chat turns and a local turn key resolver.
-// output: Regression coverage for ChatDisplay transcript search occurrence extraction.
+// output: Regression coverage for ChatDisplay search and safe rewind recovery behavior.
 // pos: Pure helper tests for app-shell in-chat search performance plumbing.
 
 import { describe, expect, test } from 'bun:test'
@@ -172,6 +172,15 @@ describe('ChatDisplay search performance contract', () => {
     expect(chatDisplaySource).toContain('window.electronAPI.rewindSession(session.id, message.id)')
     expect(chatDisplaySource).toContain("new CustomEvent('craft:restore-input'")
     expect(chatDisplaySource).toContain('detail: { sessionId: session.id, text: draftText }')
+  })
+
+  test('legacy rewinds offer a localized draft-only recovery', () => {
+    expect(chatDisplaySource).toContain('if (!result.success)')
+    expect(chatDisplaySource).toContain("toast.warning(t('chat.rewindLegacyUnavailable')")
+    expect(chatDisplaySource).toContain("description: t('chat.rewindLegacyDescription')")
+    expect(chatDisplaySource).toContain("label: t('chat.restoreToInput')")
+    expect(chatDisplaySource).toContain('onClick: () => restoreDraft(content)')
+    expect(chatDisplaySource).not.toContain('{ description: messageText }')
   })
 
   test('skips assistant turn indexing when no follow-ups are pending', () => {

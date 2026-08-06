@@ -1,5 +1,5 @@
 // input: Pi subprocess protocol messages and host credential fixtures
-// output: Error, credential, and runtime-update regression assertions
+// output: Error, credential, rewind, and runtime-update regression assertions
 // pos: Host-side PiAgent protocol boundary test
 
 import { describe, expect, it } from 'bun:test'
@@ -36,6 +36,28 @@ function captureSuccessfulCredentialUpdate(agent: PiAgent, sent: unknown[]): voi
 }
 
 describe('PiAgent subprocess error handling', () => {
+  it('preserves the legacy rewind error code', async () => {
+    const agent = new PiAgent(createConfig())
+    ;(agent as any).requestEnsureSessionReady = async () => 'pi-session-test'
+    ;(agent as any).ensureSubprocess = async () => {}
+    ;(agent as any).send = (message: { id: string }) => {
+      ;(agent as any).handleLine(JSON.stringify({
+        type: 'rewind_user_message_result',
+        id: message.id,
+        success: false,
+        errorCode: 'REWIND_UNAVAILABLE_LEGACY',
+        errorMessage: 'Legacy rewind mapping is unavailable',
+      }))
+    }
+
+    const rewind = agent.rewindUserMessage('legacy-message')
+
+    await expect(rewind).rejects.toMatchObject({
+      code: 'REWIND_UNAVAILABLE_LEGACY',
+    })
+    agent.destroy()
+  })
+
   it('persists OAuth credentials refreshed by Pi', async () => {
     const agent = new PiAgent(createConfig({
       connectionSlug: 'openai-codex-test',

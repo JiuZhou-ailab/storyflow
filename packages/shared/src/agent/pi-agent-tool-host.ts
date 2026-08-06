@@ -500,7 +500,11 @@ export abstract class PiAgentToolHost extends PiAgentTransport {
 
     this.pendingRewindUserMessages.delete(id);
     if (!msg.success) {
-      pending.reject(new Error(String(msg.errorMessage || 'In-place rewind failed')));
+      const error = Object.assign(
+        new Error(String(msg.errorMessage || 'In-place rewind failed')),
+        typeof msg.errorCode === 'string' ? { code: msg.errorCode } : {},
+      );
+      pending.reject(error);
       return;
     }
 

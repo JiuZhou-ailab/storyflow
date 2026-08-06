@@ -6,7 +6,7 @@
 // Protocol re-exports (channels, DTOs, events, wire types)
 // =============================================================================
 export * from '@craft-agent/shared/protocol'
-import type { UserQuestionResponse } from '@craft-agent/shared/protocol'
+import type { SessionRewindResult, UserQuestionResponse } from '@craft-agent/shared/protocol'
 
 // =============================================================================
 // Package re-exports (convenience for renderer imports)
@@ -357,7 +357,7 @@ export interface ElectronAPI {
   rewindSession(
     sessionId: string,
     userMessageId: string,
-  ): Promise<{ draftText: string }>
+  ): Promise<SessionRewindResult>
   sendMessage(sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachmentType[], options?: SendMessageOptions): Promise<void>
   rewriteNovelSelection(sessionId: string, request: NovelSelectionRewriteRequest): Promise<NovelSelectionRewriteResult>
   cancelProcessing(sessionId: string, silent?: boolean): Promise<void>

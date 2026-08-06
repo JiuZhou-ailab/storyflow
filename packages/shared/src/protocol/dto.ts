@@ -238,6 +238,12 @@ export interface SendMessageOptions {
   hideUserMessage?: boolean
 }
 
+export type ConversationRewindErrorCode = 'REWIND_UNAVAILABLE_LEGACY'
+
+export type SessionRewindResult =
+  | { success: true; draftText: string }
+  | { success: false; errorCode: ConversationRewindErrorCode; errorMessage: string }
+
 export interface OneShotLlmRequest {
   prompt: string
   systemPrompt?: string

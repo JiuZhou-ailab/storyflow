@@ -613,9 +613,14 @@ async function handleRewindUserMessage(
       { visibleUserMessageId: msg.visibleUserMessageId },
     );
     if (!mappedBoundary) {
-      throw new Error(
-        'This message predates safe Storyflow rewind mapping and cannot be restored.',
-      );
+      send({
+        type: 'rewind_user_message_result',
+        id: msg.id,
+        success: false,
+        errorCode: 'REWIND_UNAVAILABLE_LEGACY',
+        errorMessage: 'Legacy rewind mapping is unavailable',
+      });
+      return;
     }
     const target = session.sessionManager.getEntry(mappedBoundary.userEntryId);
     if (!target || target.type !== 'message' || target.message.role !== 'user') {

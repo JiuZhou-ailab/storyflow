@@ -4,7 +4,7 @@
 
 import { readFile, writeFile, stat } from 'fs/promises'
 import { join } from 'path'
-import { RPC_CHANNELS, type FileAttachment, type NovelSelectionRewriteRequest, type SendMessageOptions, type SessionEvent, type SessionFile } from '@craft-agent/shared/protocol'
+import { RPC_CHANNELS, type FileAttachment, type NovelSelectionRewriteRequest, type SendMessageOptions, type SessionEvent, type SessionFile, type SessionRewindResult } from '@craft-agent/shared/protocol'
 import type { StoredAttachment } from '@craft-agent/core/types'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { perf } from '@craft-agent/shared/utils'
@@ -256,10 +256,15 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
       _ctx,
       sessionId: string,
       userMessageId: string,
-    ) => {
+    ): Promise<SessionRewindResult> => {
       const end = perf.start('rpc.rewindSession', { sessionId })
       try {
-        return await sessionManager.rewindUserMessage(sessionId, userMessageId)
+        return { success: true, ...await sessionManager.rewindUserMessage(sessionId, userMessageId) }
+      } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'REWIND_UNAVAILABLE_LEGACY') {
+          return { success: false, errorCode: error.code, errorMessage: error.message }
+        }
+        throw error
       } finally {
         end()
       }
