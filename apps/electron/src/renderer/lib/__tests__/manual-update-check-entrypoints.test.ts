@@ -1,4 +1,4 @@
-// input: Renderer root, panel chrome, sidebar, and legacy menu sources for update actions
+// input: Renderer root, panel chrome, sidebar, and settings update source
 // output: Regression coverage for one global update owner and its persistent sidebar affordance
 // pos: Guards update ownership without reintroducing route-scoped updater controllers
 
@@ -25,11 +25,11 @@ describe('manual update check entrypoints', () => {
     expect(appShellSource).not.toContain('&& !conversationDiffSurface')
   })
 
-  it('routes legacy app menu manual update checks through the feedback-aware hook', () => {
-    const appMenuSource = source('../../components/AppMenu.tsx')
+  it('routes manual update checks through the feedback-aware hook', () => {
+    const settingsSource = source('../../pages/settings/AppSettingsPage.tsx')
 
-    expect(appMenuSource).toContain('void updateChecker.checkForUpdates()')
-    expect(appMenuSource).not.toContain('window.electronAPI.checkForUpdates()')
+    expect(settingsSource).toContain('await updateChecker.checkForUpdates()')
+    expect(settingsSource).not.toContain('window.electronAPI.checkForUpdates()')
   })
 
   it('mounts one global update owner and keeps update readiness separate from release notes', () => {

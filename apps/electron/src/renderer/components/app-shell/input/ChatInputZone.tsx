@@ -6,7 +6,7 @@ import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { Clock, Pencil, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { CHAT_LAYOUT } from '@/config/layout'
+import { CHAT_LAYOUT } from '@craft-agent/ui'
 import { useSessionChatResources } from '@/context/AppShellContext'
 import { flattenLabels, type LabelConfig } from '@craft-agent/shared/labels'
 import type { PermissionMode } from '@craft-agent/shared/agent/modes'
@@ -132,10 +132,6 @@ export function ChatInputZone({
           sessionLabels={sessionLabels}
           labels={labels}
           onLabelsChange={onLabelsChange}
-          onRemoveLabel={(labelId) => {
-            const next = (sessionLabels || []).filter(entry => entry !== labelId && !entry.startsWith(`${labelId}::`))
-            onLabelsChange?.(next)
-          }}
           autoOpenLabelId={autoOpenLabelId}
           onAutoOpenConsumed={() => setAutoOpenLabelId(null)}
         />

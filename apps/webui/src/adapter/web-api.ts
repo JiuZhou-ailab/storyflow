@@ -11,7 +11,7 @@
 import i18n from 'i18next'
 import { toast } from 'sonner'
 import { openExternalUrl } from '@craft-agent/ui'
-import { WsRpcClient } from '../../../electron/src/transport/client'
+import { WsRpcClient } from '@craft-agent/server-core/transport'
 import { buildClientApi } from '../../../electron/src/transport/build-api'
 import { CHANNEL_MAP } from '../../../electron/src/transport/channel-map'
 import type { ElectronAPI, TransportConnectionState } from '../../../electron/src/shared/types'
@@ -164,13 +164,12 @@ export function createWebApi(options: WebApiOptions): {
     // Release notes — serve from server via RPC (same content as Electron)
     getReleaseNotes: () => client.invoke('releaseNotes:get') as Promise<string>,
     getLatestReleaseVersion: () => client.invoke('releaseNotes:getLatestVersion') as Promise<string | undefined>,
-    getWhatsNewManifest: () => client.invoke('releaseNotes:getWhatsNewManifest') as Promise<unknown>,
+    getWhatsNewManifest: () => client.invoke('releaseNotes:getWhatsNewManifest'),
 
     // Menu events — register as keyboard shortcuts
     onMenuNewChat: () => () => {},
     onMenuOpenSettings: () => () => {},
     onMenuKeyboardShortcuts: () => () => {},
-    onMenuToggleFocusMode: () => () => {},
     onMenuToggleSidebar: () => () => {},
     onDeepLinkNavigate: () => () => {},
 

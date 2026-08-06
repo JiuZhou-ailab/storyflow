@@ -115,10 +115,6 @@ const OnboardingWizard = React.lazy(async () => {
   const module = await import('@/components/onboarding/OnboardingWizard')
   return { default: module.OnboardingWizard }
 })
-const ReauthScreen = React.lazy(async () => {
-  const module = await import('@/components/onboarding/ReauthScreen')
-  return { default: module.ReauthScreen }
-})
 const WorkspacePicker = React.lazy(async () => {
   const module = await import('@/components/workspace/WorkspacePicker')
   return { default: module.WorkspacePicker }
@@ -132,7 +128,7 @@ const FilePreviewRenderer = React.lazy(async () => {
   return { default: module.FilePreviewRenderer }
 })
 
-type AppState = 'loading' | 'account' | 'onboarding' | 'reauth' | 'project-hub' | 'workspace-picker' | 'ready'
+type AppState = 'loading' | 'account' | 'onboarding' | 'project-hub' | 'workspace-picker' | 'ready'
 
 /** Type for the Jotai store returned by useStore() */
 type JotaiStore = ReturnType<typeof getDefaultStore>
@@ -762,23 +758,6 @@ function AppContent() {
     onConfigSaved: refreshLlmConnections,
     initialSetupNeeds: setupNeeds || undefined,
   })
-
-  // Reauth login handler - placeholder (reauth is not currently used)
-  const handleReauthLogin = useCallback(async () => {
-    // Re-check setup needs
-    const needs = await window.electronAPI.getSetupNeeds()
-    if (needs.isFullyConfigured) {
-      setAppState('ready')
-    } else {
-      setSetupNeeds(needs)
-      setAppState('onboarding')
-    }
-  }, [])
-
-  // Reauth reset handler - open reset confirmation dialog
-  const handleReauthReset = useCallback(() => {
-    setShowResetDialog(true)
-  }, [])
 
   // Check auth state and get window's workspace ID on mount
   useEffect(() => {
@@ -2449,27 +2428,6 @@ function AppContent() {
   // Loading state - show splash screen
   if (appState === 'loading') {
     return <SplashScreen isExiting={false} />
-  }
-
-  // Reauth state - session expired, need to re-login
-  // ModalProvider + WindowCloseHandler ensures X button works on Windows
-  if (appState === 'reauth') {
-    return (
-      <DismissibleLayerProvider>
-        <ModalProvider>
-          <WindowCloseHandler />
-          <ReauthScreen
-            onLogin={handleReauthLogin}
-            onReset={handleReauthReset}
-          />
-          <ResetConfirmationDialog
-            open={showResetDialog}
-            onConfirm={executeReset}
-            onCancel={() => setShowResetDialog(false)}
-          />
-        </ModalProvider>
-      </DismissibleLayerProvider>
-    )
   }
 
   // Onboarding state

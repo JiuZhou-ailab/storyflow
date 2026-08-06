@@ -21,7 +21,7 @@
  */
 
 import { contextBridge, ipcRenderer, shell, webUtils } from 'electron'
-import { WsRpcClient, type TransportConnectionState } from '../transport/client'
+import { WsRpcClient, type TransportConnectionState } from '@craft-agent/server-core/transport'
 import { RoutedClient } from '../transport/routed-client'
 import { buildClientApi } from '../transport/build-api'
 import { CHANNEL_MAP } from '../transport/channel-map'

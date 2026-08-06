@@ -1,3 +1,7 @@
+// input: Development-only component preview groups
+// output: Unified Playground registry and category lookups
+// pos: Single composition root for the renderer Playground
+
 import type { ComponentEntry, CategoryGroup, Category } from './types'
 import { onboardingComponents } from './onboarding'
 import { chatComponents } from './chat'
@@ -15,7 +19,6 @@ import { editPopoverComponents } from './edit-popover'
 import { automationComponents } from './automations'
 import { entityListComponents } from './entity-lists'
 import { browserUiComponents } from './browser-ui'
-import { plannerComponents } from './planner'
 import { customShadowsComponents } from './custom-shadows'
 import { transportBannerComponents } from './transport-banner'
 import { containerTransitionsComponents } from './container-transitions'
@@ -45,7 +48,6 @@ export const componentRegistry: ComponentEntry[] = [
   ...automationComponents,
   ...entityListComponents,
   ...browserUiComponents,
-  ...plannerComponents,
   ...customShadowsComponents,
   ...transportBannerComponents,
   ...containerTransitionsComponents,
@@ -55,7 +57,7 @@ export const componentRegistry: ComponentEntry[] = [
 ]
 
 export function getCategories(): CategoryGroup[] {
-  const categoryOrder: Category[] = ['Automations', 'Onboarding', 'Agent Setup', 'Project Hub', 'Chat', 'Island', 'Browser', 'Planner', 'Custom Shadows', 'Session List', 'Entity Lists', 'Edit Popover', 'Turn Cards', 'TurnCard Modes', 'Fullscreen', 'Chat Messages', 'Chat Inputs', 'Toast Messages', 'Markdown', 'Icons', 'OAuth', 'Messaging']
+  const categoryOrder: Category[] = ['Automations', 'Onboarding', 'Agent Setup', 'Project Hub', 'Chat', 'Island', 'Browser', 'Custom Shadows', 'Session List', 'Entity Lists', 'Edit Popover', 'Turn Cards', 'TurnCard Modes', 'Fullscreen', 'Chat Messages', 'Chat Inputs', 'Toast Messages', 'Markdown', 'Icons', 'OAuth', 'Messaging']
   const categoryMap = new Map<Category, ComponentEntry[]>()
 
   for (const entry of componentRegistry) {

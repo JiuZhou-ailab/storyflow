@@ -1,3 +1,7 @@
+// input: React component types and Playground control metadata
+// output: Shared preview entry, control, and category contracts
+// pos: Type contract for the development-only Playground registry
+
 import type { ComponentType, ReactNode } from 'react'
 
 export type ControlType =
@@ -20,14 +24,13 @@ export interface ComponentVariant {
   props: Record<string, unknown>
 }
 
-export type Category = 'Sources' | 'Automations' | 'Onboarding' | 'Agent Setup' | 'Project Hub' | 'Chat' | 'Island' | 'Browser' | 'Planner' | 'Custom Shadows' | 'Session List' | 'Entity Lists' | 'Edit Popover' | 'Turn Cards' | 'TurnCard Modes' | 'Fullscreen' | 'Chat Messages' | 'Chat Inputs' | 'Toast Messages' | 'Markdown' | 'Icons' | 'Settings' | 'Messaging' | 'Feedback' | 'OAuth'
+export type Category = 'Sources' | 'Automations' | 'Onboarding' | 'Agent Setup' | 'Project Hub' | 'Chat' | 'Island' | 'Browser' | 'Custom Shadows' | 'Session List' | 'Entity Lists' | 'Edit Popover' | 'Turn Cards' | 'TurnCard Modes' | 'Fullscreen' | 'Chat Messages' | 'Chat Inputs' | 'Toast Messages' | 'Markdown' | 'Icons' | 'Settings' | 'Messaging' | 'Feedback' | 'OAuth'
 
 export interface ComponentEntry {
   id: string
   name: string
   category: Category
   description: string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   component: ComponentType<any>
   props: PropDefinition[]
   variants?: ComponentVariant[]

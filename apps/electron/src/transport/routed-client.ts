@@ -10,8 +10,7 @@
  *   listeners are re-subscribed transparently (make-before-break)
  */
 
-import type { WsRpcClient, TransportConnectionState } from './client'
-import type { RpcClient } from '@craft-agent/server-core/transport'
+import type { RpcClient, WsRpcClient, TransportConnectionState } from '@craft-agent/server-core/transport'
 import type { RemoteServerConfig } from '@craft-agent/core/types'
 import { isLocalOnly, RPC_CHANNELS } from '@craft-agent/shared/protocol'
 

@@ -23,7 +23,7 @@ export const GUI_HANDLED_CHANNELS = [
  * Returns the connected client or null + error message.
  */
 export async function connectToRemote(url: string, token: string, workspaceId?: string) {
-  const { WsRpcClient } = await import('../../transport/client')
+  const { WsRpcClient } = await import('@craft-agent/server-core/transport')
   const client = new WsRpcClient(url, {
     token,
     workspaceId,

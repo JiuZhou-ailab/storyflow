@@ -1,3 +1,7 @@
+// input: Remaining nonstandard shadow implementations
+// output: Playground previews documenting unresolved shadow migrations
+// pos: Development-only shadow audit registry
+
 import * as React from 'react'
 import type { ComponentEntry } from './types'
 import { cn } from '@/lib/utils'
@@ -19,17 +23,6 @@ interface ShadowSpec {
 
 // Only unresolved items stay here intentionally.
 const activeShadowSpecs: ShadowSpec[] = [
-  {
-    id: 'sortable-list-overlay',
-    component: 'SortableList drag overlay',
-    file: 'components/ui/sortable-list.tsx',
-    kind: 'inline',
-    shadow: "boxShadow: '0 0 0 1px rgba(...), 0 15px 15px ...'",
-    border: 'none (1px edge is included inside boxShadow first layer)',
-    hasExplicitBorder: false,
-    previewClassName: 'rounded-[8px] bg-background px-3 py-2 text-sm',
-    previewStyle: { boxShadow: '0 0 0 1px rgba(63, 63, 68, 0.05), 0px 15px 15px 0 rgba(34, 33, 81, 0.25)' },
-  },
   {
     id: 'ui-browser-controls',
     component: 'BrowserControls focus ring',

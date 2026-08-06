@@ -160,28 +160,6 @@ export function hasMentions(
 }
 
 // ============================================================================
-// Legacy compatibility - parseSkillMentions
-// ============================================================================
-
-/**
- * Extract valid [skill:...] mentions from message text (legacy API)
- *
- * @deprecated Use parseMentions() instead
- */
-export function parseSkillMentions(text: string, availableSlugs: string[]): string[] {
-  return parseMentions(text, availableSlugs, []).skills
-}
-
-/**
- * Remove [bracket] mentions from message text (legacy API)
- *
- * @deprecated Use stripAllMentions() instead
- */
-export function stripSkillMentions(text: string): string {
-  return stripAllMentions(text)
-}
-
-// ============================================================================
 // Badge Extraction
 // ============================================================================
 

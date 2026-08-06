@@ -100,20 +100,7 @@ export function resolveBackendHostTooling(args: {
 export function connectionAuthTypeToBackendAuthType(
   authType: LlmAuthType
 ): LlmAuthType | undefined {
-  switch (authType) {
-    case 'api_key':
-    case 'api_key_with_endpoint':
-    case 'oauth':
-    case 'bearer_token':
-    case 'iam_credentials':
-    case 'service_account_file':
-      // Pass through auth types that the backend handles
-      return authType;
-    case 'none':
-    case 'environment':
-      // These auth types don't require explicit credential passing
-      return undefined;
-  }
+  return authType === 'none' || authType === 'environment' ? undefined : authType;
 }
 
 /**

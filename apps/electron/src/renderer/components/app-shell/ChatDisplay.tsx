@@ -68,7 +68,7 @@ import { useTurnCardExpansion } from "@/hooks/useTurnCardExpansion"
 import { useNavigationActions } from "@/contexts/NavigationContext"
 import { navigate, routes } from "@/lib/navigate"
 import { loadSendMessageKeySetting } from "@/lib/input-settings"
-import { CHAT_LAYOUT } from "@/config/layout"
+import { CHAT_LAYOUT } from "@craft-agent/ui"
 import { collectFileChangesFromActivities, getFirstFileChangeIdForActivity } from "@/lib/file-changes"
 import { resolveBranchNewPanelOption } from "./branching"
 import {

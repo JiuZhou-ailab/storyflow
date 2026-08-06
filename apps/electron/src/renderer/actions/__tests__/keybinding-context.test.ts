@@ -1,5 +1,9 @@
+// input: Shared dismissible-layer bridge and synthetic document state
+// output: Keybinding context regression coverage
+// pos: Guards Escape ownership between overlays and chat actions
+
 import { afterEach, describe, expect, it } from 'bun:test'
-import { setDismissibleLayerBridge } from '../../lib/dismissible-layer-bridge'
+import { setDismissibleLayerBridge } from '@craft-agent/ui/dismissible-layer-bridge'
 import { getKeybindingContext } from '../keybinding-context'
 
 const originalDocument = globalThis.document

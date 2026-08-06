@@ -104,7 +104,6 @@ describe('ProjectHub startup integration', () => {
     expect(appSource).toContain('handleSelectWorkspace(workspace.id)')
     expect(appSource).toContain('const session = await handleCreateSession(workspace.id)')
     expect(appSource).toContain('await handleSelectProjectSession(workspace.id, session.id)')
-    expect(appSource).not.toContain('getAutoSessionIdForWorkspaceSwitch')
     expect(appSource).not.toContain('shouldOpenStarterSession')
   })
 

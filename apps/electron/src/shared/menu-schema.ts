@@ -208,14 +208,14 @@ export const MENU_SECTIONS: MenuSection[] = [EDIT_MENU, VIEW_MENU, WINDOW_MENU]
 
 /**
  * Settings item definition
- * Used by both AppMenu (logo dropdown) and SettingsNavigator (sidebar panel)
+ * Used by SettingsNavigator (sidebar panel)
  */
 import { SETTINGS_PAGES, type SettingsSubpage } from './settings-registry'
 
 export interface SettingsMenuItem {
   id: SettingsSubpage
   labelKey: string    // i18n key - resolve with t() at render time
-  icon: string        // Lucide icon name for AppMenu
+  icon: string        // Lucide icon name
   descriptionKey: string // i18n key - resolve with t() at render time
 }
 

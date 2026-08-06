@@ -8,7 +8,7 @@
 
 import { describe, it, expect, mock } from 'bun:test'
 import { RoutedClient } from '../routed-client'
-import type { WsRpcClient, TransportConnectionState } from '../client'
+import type { WsRpcClient, TransportConnectionState } from '@craft-agent/server-core/transport'
 
 // ---------------------------------------------------------------------------
 // Minimal WsRpcClient stub

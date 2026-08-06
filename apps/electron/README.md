@@ -224,7 +224,6 @@ See `CLAUDE.md` for complete route reference.
 | `renderer/contexts/NavigationContext.tsx` | Type-safe routing and navigation handler |
 | `renderer/lib/navigate.ts` | Global navigate() function |
 | `renderer/hooks/useAgentState.ts` | Agent activation state machine (IPC-based) |
-| `renderer/hooks/useBackgroundTasks.ts` | Background task tracking |
 | `renderer/hooks/useStatuses.ts` | Workspace status configuration |
 | `renderer/hooks/useTheme.ts` | Cascading theme resolution |
 | `renderer/components/chat/Chat.tsx` | Main chat layout with resizable panels |

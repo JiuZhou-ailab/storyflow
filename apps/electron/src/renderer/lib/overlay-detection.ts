@@ -1,4 +1,8 @@
-import { getDismissibleLayerBridge } from './dismissible-layer-bridge'
+// input: Shared dismissible-layer state and browser DOM overlays
+// output: Whether an open overlay should consume Escape
+// pos: Keybinding guard between overlays and chat interruption
+
+import { getDismissibleLayerBridge } from '@craft-agent/ui/dismissible-layer-bridge'
 
 /**
  * Overlay Detection Utilities

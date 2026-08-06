@@ -5,7 +5,7 @@
  * without duplicating construction logic.
  */
 
-import type { PlatformServices } from '../runtime/platform'
+import type { PlatformServices } from '@craft-agent/server-core/runtime'
 
 export interface ElectronPlatformOptions {
   app: Electron.App

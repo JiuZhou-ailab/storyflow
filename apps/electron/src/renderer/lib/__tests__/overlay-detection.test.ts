@@ -1,5 +1,9 @@
+// input: Shared dismissible-layer bridge and synthetic document state
+// output: Overlay detection regression coverage
+// pos: Verifies Escape is reserved while a visible overlay is open
+
 import { afterEach, describe, expect, it } from 'bun:test'
-import { setDismissibleLayerBridge } from '../dismissible-layer-bridge'
+import { setDismissibleLayerBridge } from '@craft-agent/ui/dismissible-layer-bridge'
 import { hasOpenOverlay } from '../overlay-detection'
 
 const originalDocument = globalThis.document

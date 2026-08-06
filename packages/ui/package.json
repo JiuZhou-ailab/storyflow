@@ -16,6 +16,7 @@
     "./tooltip": "./src/components/tooltip.tsx",
     "./file-classification": "./src/lib/file-classification.ts",
     "./styled-dropdown": "./src/components/ui/StyledDropdown.tsx",
+    "./dismissible-layer-bridge": "./src/lib/dismissible-layer-bridge.ts",
     "./annotations/follow-up-state": "./src/components/annotations/follow-up-state.ts",
     "./context": "./src/context/index.ts",
     "./styles": "./src/styles/index.css"

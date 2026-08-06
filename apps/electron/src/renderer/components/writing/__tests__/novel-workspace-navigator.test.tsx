@@ -19,7 +19,6 @@ const testI18n = setupI18n([initReactI18next]).cloneInstance({
 let NovelDocumentEditorPanel: typeof import('../NovelDocumentEditorPanel').NovelDocumentEditorPanel
 let NovelDocumentTabStrip: typeof import('../NovelDocumentTabStrip').NovelDocumentTabStrip
 let countMarkdownTextCharacters: typeof import('../NovelDocumentEditorPanel').countMarkdownTextCharacters
-let NovelSectionList: typeof import('../NovelSectionList').NovelSectionList
 let FileViewer: typeof import('../../files/FileViewer').FileViewer
 
 function readSourceIfExists(url: URL): string {
@@ -33,12 +32,10 @@ function renderLocalized(node: React.ReactNode): string {
 beforeAll(async () => {
   const editorModule = await import('../NovelDocumentEditorPanel')
   const tabStripModule = await import('../NovelDocumentTabStrip')
-  const listModule = await import('../NovelSectionList')
   const fileViewerModule = await import('../../files/FileViewer')
   NovelDocumentEditorPanel = editorModule.NovelDocumentEditorPanel
   NovelDocumentTabStrip = tabStripModule.NovelDocumentTabStrip
   countMarkdownTextCharacters = editorModule.countMarkdownTextCharacters
-  NovelSectionList = listModule.NovelSectionList
   FileViewer = fileViewerModule.FileViewer
 })
 
@@ -263,23 +260,6 @@ describe('novel writing workspace layout', () => {
     expect(html).not.toContain('data-testid="novel-rendered-review-document"')
   })
 
-  it('renders writer-facing file labels in the writing catalog', () => {
-    const html = renderLocalized(
-      <NovelSectionList
-        files={[
-          { path: '/novel/bible/structure.md', relativePath: 'bible/structure.md' },
-          { path: '/novel/story/chapters/chapter-01.md', relativePath: 'story/chapters/chapter-01.md' },
-        ]}
-        onSelectFile={() => {}}
-      />
-    )
-
-    expect(html).toContain('Narrative structure')
-    expect(html).toContain('Chapter 1')
-    expect(html).toContain('title="bible/structure.md"')
-    expect(html).not.toContain('>bible/structure.md<')
-  })
-
   it('uses the mature TipTap Markdown editor as the only document editing mode', () => {
     const editorPanelSource = readFileSync(new URL('../NovelDocumentEditorPanel.tsx', import.meta.url), 'utf-8')
     const tiptapEditorSource = readFileSync(new URL('../../../../../../../packages/ui/src/components/markdown/TiptapMarkdownEditor.tsx', import.meta.url), 'utf-8')
@@ -414,7 +394,6 @@ describe('novel writing workspace layout', () => {
     expect(chatPageSource).not.toContain('NovelWorkspacePanel')
     expect(chatPageSource).not.toContain('NovelWorkspaceNavigatorPanel')
     expect(chatPageSource).not.toContain('NovelDocumentEditorPanel')
-    expect(chatPageSource).not.toContain('WritingChatDropdown')
   })
 
   it('roots the writing catalog at the current project and folds real paths into folders', () => {

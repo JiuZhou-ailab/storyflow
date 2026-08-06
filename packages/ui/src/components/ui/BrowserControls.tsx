@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { Spinner } from './LoadingIndicator'
 
 /* ------------------------------------------------------------------ */
-/*  NavButton – small internal button matching TopBarButton styling   */
+/*  NavButton – small internal navigation button                      */
 /* ------------------------------------------------------------------ */
 
 interface NavButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {

@@ -28,8 +28,6 @@ export interface ActiveOptionBadgesProps {
   sessionLabels?: string[]
   /** Available label configs (tree structure) for resolving label display */
   labels?: LabelConfig[]
-  /** Callback when a label is removed (legacy — prefer onLabelsChange) */
-  onRemoveLabel?: (labelId: string) => void
   /** Callback when session labels array changes (value edits or removals) */
   onLabelsChange?: (updatedLabels: string[]) => void
   /** Label ID whose value popover should auto-open (set when a valued label is added via # menu) */
@@ -54,7 +52,6 @@ export function ActiveOptionBadges({
   sessionId,
   sessionLabels = [],
   labels = [],
-  onRemoveLabel,
   onLabelsChange,
   autoOpenLabelId,
   onAutoOpenConsumed,
@@ -124,13 +121,7 @@ export function ActiveOptionBadges({
                     updated[index] = formatLabelEntry(config.id, newValue)
                     onLabelsChange?.(updated)
                   }}
-                  onRemove={() => {
-                    if (onLabelsChange) {
-                      onLabelsChange(sessionLabels.filter((_, i) => i !== index))
-                    } else {
-                      onRemoveLabel?.(config.id)
-                    }
-                  }}
+                  onRemove={() => onLabelsChange?.(sessionLabels.filter((_, i) => i !== index))}
                 />
               ))}
             </div>

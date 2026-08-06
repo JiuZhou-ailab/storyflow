@@ -155,10 +155,8 @@ export default [
   // Temporary exceptions for unresolved shadow migrations.
   {
     files: [
-      'src/renderer/components/ui/sortable-list.tsx',
       'src/main/browser-pane-manager.ts',
       'src/shared/browser-live-fx.ts',
-      'src/renderer/components/KeyboardShortcutsDialog.tsx',
       'src/renderer/playground/**/*.{ts,tsx}',
     ],
     rules: {

@@ -29,7 +29,6 @@ import { validateSourceConfig } from '../config/validators.ts';
 import { CONFIG_DIR } from '../config/paths.ts';
 import { debug } from '../utils/debug.ts';
 import { atomicWriteFileSync, readJsonFileSync } from '../utils/files.ts';
-import { getBuiltinSources, isBuiltinSource, getDocsSource } from './builtin-sources.ts';
 import { expandPath, toPortablePath } from '../utils/paths.ts';
 import {
   getLegacyWorkspaceSourcesPath,
@@ -659,26 +658,14 @@ export function isSourceUsable(source: LoadedSource): boolean {
 
 /**
  * Get sources by slugs for a workspace.
- * Includes both user-configured sources from disk and builtin sources
- * (like craft-agents-docs) that don't have filesystem folders.
+ * Loads configured sources from disk.
  */
 export function getSourcesBySlugs(
   projectRoot: string | undefined,
   slugs: string[],
 ): LoadedSource[] {
-  const consumerRoot = projectRoot ?? GLOBAL_AGENT_ROOT_DIR;
-  const workspaceId = basename(consumerRoot);
   const sources: LoadedSource[] = [];
   for (const slug of slugs) {
-    // Check builtin sources first (they don't exist on disk)
-    if (isBuiltinSource(slug)) {
-      // Currently only craft-agents-docs is a builtin source
-      if (slug === 'craft-agents-docs') {
-        sources.push(getDocsSource(workspaceId, consumerRoot));
-      }
-      continue;
-    }
-    // Load user-configured source from disk
     const source = loadSource(projectRoot, slug);
     if (source) {
       sources.push(source);
@@ -688,19 +675,10 @@ export function getSourcesBySlugs(
 }
 
 /**
- * Load all sources for a workspace INCLUDING built-in sources.
- * Built-in sources (like craft-agents-docs) are always available and merged
- * with user-configured sources from the workspace.
- *
- * Use this when the agent needs visibility into all available sources,
- * including system-provided ones that don't live on disk.
+ * Load all configured sources for a workspace.
  */
 export function loadAllSources(projectRoot?: string): LoadedSource[] {
-  const consumerRoot = projectRoot ?? GLOBAL_AGENT_ROOT_DIR;
-  const workspaceId = basename(consumerRoot);
-  const userSources = loadWorkspaceSources(projectRoot);
-  const builtinSources = getBuiltinSources(workspaceId, consumerRoot);
-  return [...userSources, ...builtinSources];
+  return loadWorkspaceSources(projectRoot);
 }
 
 // ============================================================

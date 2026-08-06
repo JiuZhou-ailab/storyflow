@@ -1,9 +1,13 @@
+// input: Open dismissible layers and the shared UI bridge
+// output: React registration context plus one global Escape/back owner
+// pos: Renderer authority for dismissible layer ordering
+
 import React, { createContext, useContext, useMemo } from 'react'
 import {
   setDismissibleLayerBridge,
   type DismissibleLayerBridge,
   type DismissibleLayerRegistration,
-} from '@/lib/dismissible-layer-bridge'
+} from '@craft-agent/ui/dismissible-layer-bridge'
 
 export interface DismissibleLayer extends Required<Pick<DismissibleLayerRegistration, 'id' | 'type' | 'priority' | 'close'>> {
   isOpen: boolean

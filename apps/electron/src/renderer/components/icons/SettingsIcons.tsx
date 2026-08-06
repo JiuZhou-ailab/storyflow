@@ -1,9 +1,11 @@
+// input: Settings page identifiers and optional SVG class names
+// output: Settings-specific icon components
+// pos: Visual icon registry for SettingsNavigator
+
 /**
  * Settings Icons
  *
- * Custom SVG icons for settings pages. Used by both:
- * - AppMenu (logo dropdown settings submenu)
- * - SettingsNavigator (settings sidebar panel)
+ * Custom SVG icons for SettingsNavigator.
  *
  * These are more detailed than Lucide icons and provide visual consistency
  * across the settings UI.
@@ -211,7 +213,7 @@ export const PreferencesIcon = ({ className }: IconProps) => (
 
 /**
  * Map of settings subpage IDs to their icon components.
- * Used by both AppMenu and SettingsNavigator for consistent icons.
+ * Used by SettingsNavigator for consistent icons.
  */
 export const SETTINGS_ICONS: Record<SettingsSubpage, React.ComponentType<IconProps>> = {
   app: AppSettingsIcon,

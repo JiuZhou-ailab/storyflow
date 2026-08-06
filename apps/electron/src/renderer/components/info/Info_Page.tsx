@@ -12,7 +12,7 @@ import { PanelHeader, type PanelHeaderProps } from '@/components/app-shell/Panel
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Spinner } from '@craft-agent/ui'
 import { cn } from '@/lib/utils'
-import { CHAT_LAYOUT } from '@/config/layout'
+import { CHAT_LAYOUT } from '@craft-agent/ui'
 
 export interface Info_PageProps {
   children: React.ReactNode

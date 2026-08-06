@@ -9,9 +9,13 @@ import { describe, test, expect, afterEach } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { WebSocket } from 'ws'
 import { EVENT_BUFFER_MAX_SIZE, type MessageEnvelope } from '@craft-agent/shared/protocol'
-import { WsRpcServer } from '../transport/server'
-import { WsRpcClient } from '../transport/client'
-import { serializeEnvelope } from '../transport/codec'
+import {
+  serializeEnvelope,
+  WsRpcClient,
+  WsRpcServer,
+  type WsRpcClientOptions,
+  type WsRpcServerOptions,
+} from '@craft-agent/server-core/transport'
 
 // Helpers to manage cleanup
 let servers: WsRpcServer[] = []
@@ -63,8 +67,8 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 2000): Promise<vo
 
 /** Create a server + connected client pair. */
 async function createPair(
-  serverOpts?: Partial<import('../transport/server').WsRpcServerOptions>,
-  clientOpts?: Partial<import('../transport/client').WsRpcClientOptions>,
+  serverOpts?: Partial<WsRpcServerOptions>,
+  clientOpts?: Partial<WsRpcClientOptions>,
 ) {
   let connectedClientId: string | null = null
   const server = trackServer(new WsRpcServer({
