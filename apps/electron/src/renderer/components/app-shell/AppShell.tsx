@@ -256,6 +256,12 @@ interface AppShellProps {
   openWhatsNewSignal?: number
   /** Clears the one-shot release-notes signal before the ready shell can remount. */
   onOpenWhatsNewSignalHandled: () => void
+  /** App-owned update manifest shared by every ActivityRail surface. */
+  whatsNewManifest: WhatsNewManifest | null
+  /** App-owned unread state shared by every ActivityRail surface. */
+  hasUnseenReleaseNotes: boolean
+  /** Clears the App-owned unread state after release notes are opened. */
+  onReleaseNotesSeen: () => void
   /** Current signed-in role shown by the sidebar profile item. */
   profile?: {
     name: string
@@ -873,6 +879,9 @@ function AppShellContent({
   openGlobalSearchSignal = 0,
   openWhatsNewSignal = 0,
   onOpenWhatsNewSignalHandled,
+  whatsNewManifest,
+  hasUnseenReleaseNotes,
+  onReleaseNotesSeen,
   profile,
   onOpenProjectInNewWindow,
   onRenameProject,
@@ -977,38 +986,24 @@ function AppShellContent({
   const [showWhatsNew, setShowWhatsNew] = React.useState(false)
   const [showWhatsNewAnnouncement, setShowWhatsNewAnnouncement] = React.useState(false)
   const [releaseNotesContent, setReleaseNotesContent] = React.useState('')
-  const [whatsNewManifest, setWhatsNewManifest] = React.useState<WhatsNewManifest | null>(null)
-  const [hasUnseenReleaseNotes, setHasUnseenReleaseNotes] = React.useState(false)
   const whatsNewAnnouncementCopy = React.useMemo(
     () => whatsNewManifest ? buildWhatsNewAnnouncementCopy(whatsNewManifest) : null,
     [whatsNewManifest],
   )
 
-  // Check for unseen release notes on mount
+  // The root App loads one manifest for every shell surface; this leaf owns only its dialog.
   useEffect(() => {
-    let cancelled = false
-
-    window.electronAPI.getWhatsNewManifest().then((manifest) => {
-      if (cancelled) return
-      if (!manifest) return
-      setWhatsNewManifest(manifest)
+    if (whatsNewManifest) {
       const lastSeenDigest = storage.get(storage.KEYS.whatsNewLastSeenDigest, '')
       const lastSeenVersion = storage.get(storage.KEYS.whatsNewLastSeenVersion, '')
       const startupAction = getWhatsNewStartupAction({
-        manifest,
+        manifest: whatsNewManifest,
         lastSeenDigest,
         lastSeenVersion,
       })
-      setHasUnseenReleaseNotes(startupAction.hasUnseenReleaseNotes)
       setShowWhatsNewAnnouncement(startupAction.shouldOpenDialog)
-    }).catch((error) => {
-      console.warn('[whats-new] Failed to load update announcement:', error)
-    })
-
-    return () => {
-      cancelled = true
     }
-  }, [])
+  }, [whatsNewManifest])
 
   const [isResizing, setIsResizing] = React.useState<'session-list' | 'novel-workspace-navigator' | 'document-dock' | 'directory-dock' | null>(null)
   const [sessionListHandleY, setSessionListHandleY] = React.useState<number | null>(null)
@@ -4206,10 +4201,9 @@ function AppShellContent({
 
   const markWhatsNewSeen = useCallback(async (manifestOverride?: WhatsNewManifest | null) => {
     const manifest = manifestOverride ?? whatsNewManifest ?? await window.electronAPI.getWhatsNewManifest()
-    setHasUnseenReleaseNotes(false)
+    onReleaseNotesSeen()
 
     if (manifest) {
-      setWhatsNewManifest(manifest)
       storage.set(storage.KEYS.whatsNewLastSeenDigest, manifest.digest)
       storage.set(storage.KEYS.whatsNewLastSeenVersion, manifest.version)
     } else {
@@ -4218,7 +4212,7 @@ function AppShellContent({
         storage.set(storage.KEYS.whatsNewLastSeenVersion, latestVersion)
       }
     }
-  }, [whatsNewManifest])
+  }, [onReleaseNotesSeen, whatsNewManifest])
 
   const handleWhatsNewAnnouncementOpenChange = useCallback((open: boolean) => {
     setShowWhatsNewAnnouncement(open)

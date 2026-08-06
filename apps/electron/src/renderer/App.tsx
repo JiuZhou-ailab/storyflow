@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { useTheme } from '@/hooks/useTheme'
 import type { ThemeOverrides } from '@config/theme'
 import { useSetAtom, useStore, useAtomValue, useAtom } from 'jotai'
-import type { Session, Workspace, SessionEvent, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, SetupNeeds, SessionStatus, NewChatActionParams, ContentBadge, PermissionModeState, SendMessageOptions, ClientAuthState, SettingsSubpage } from '../shared/types'
+import type { Session, Workspace, SessionEvent, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, SetupNeeds, SessionStatus, NewChatActionParams, ContentBadge, PermissionModeState, SendMessageOptions, ClientAuthState, SettingsSubpage, WhatsNewManifest } from '../shared/types'
 import type { SessionDraft, DraftAttachmentRef } from '@craft-agent/shared/config'
 import type { SessionOptions, SessionOptionUpdates } from './hooks/useSessionOptions'
 import { defaultSessionOptions, sessionOptionsAtom, updateSessionOptionsMap } from './hooks/useSessionOptions'
@@ -20,6 +20,7 @@ import { useEventProcessor } from './event-processor'
 import type { AgentEvent, Effect } from './event-processor'
 import { AccountSettingsProvider, type AppShellContextType } from '@/context/AppShellContext'
 import { ActivityRailFrame } from '@/components/app-shell/ActivityRailFrame'
+import { getWhatsNewStartupAction } from '@/components/app-shell/whats-new-announcement'
 import {
   ProjectHubNavigationActions,
   useProjectHubReturnLocation,
@@ -333,7 +334,27 @@ function AppContent() {
   const [pendingReadyRoute, setPendingReadyRoute] = useState<Route | null>(null)
   const [openGlobalSearchSignal, setOpenGlobalSearchSignal] = useState(0)
   const [openWhatsNewSignal, setOpenWhatsNewSignal] = useState(0)
+  const [whatsNewManifest, setWhatsNewManifest] = useState<WhatsNewManifest | null>(null)
+  const [hasUnseenReleaseNotes, setHasUnseenReleaseNotes] = useState(false)
   const shellInteractiveReportedRef = useRef(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void window.electronAPI.getWhatsNewManifest().then((manifest) => {
+      if (cancelled || !manifest) return
+      setWhatsNewManifest(manifest)
+      setHasUnseenReleaseNotes(getWhatsNewStartupAction({
+        manifest,
+        lastSeenDigest: storage.get(storage.KEYS.whatsNewLastSeenDigest, ''),
+        lastSeenVersion: storage.get(storage.KEYS.whatsNewLastSeenVersion, ''),
+      }).hasUnseenReleaseNotes)
+    }).catch((error) => {
+      console.warn('[whats-new] Failed to load update announcement:', error)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (appState === 'loading' || shellInteractiveReportedRef.current) return
@@ -2196,8 +2217,7 @@ function AppContent() {
   }, [activateRuntimeWorkspace, runtimeNavigationWorkspaceId, windowWorkspaceId])
 
   const handleOpenRuntimeWhatsNew = useCallback(async () => {
-    const targetWorkspaceId = runtimeNavigationWorkspaceId
-    if (!targetWorkspaceId) return
+    const targetWorkspaceId = runtimeNavigationWorkspaceId ?? FREE_CONVERSATION_WORKSPACE_ID
     if (targetWorkspaceId !== windowWorkspaceId) {
       await activateRuntimeWorkspace(targetWorkspaceId)
     }
@@ -2287,7 +2307,8 @@ function AppContent() {
       : undefined,
     onOpenSearch: canOpenRuntimeNavigation ? handleOpenRuntimeSearch : undefined,
     onOpenSettings: handleOpenGlobalSettings,
-    onOpenWhatsNew: canOpenRuntimeNavigation ? handleOpenRuntimeWhatsNew : undefined,
+    onOpenWhatsNew: handleOpenRuntimeWhatsNew,
+    whatsNew: { unseen: hasUnseenReleaseNotes },
   }), [
     activeProjectId,
     activityRailProfile,
@@ -2298,6 +2319,7 @@ function AppContent() {
     handleOpenRuntimeSearch,
     handleOpenRuntimeWhatsNew,
     handleOpenGlobalSettings,
+    hasUnseenReleaseNotes,
     handleSelectProjectSession,
     projectManagerActions,
     workspaces,
@@ -2611,6 +2633,9 @@ function AppContent() {
                   openGlobalSearchSignal={openGlobalSearchSignal}
                   openWhatsNewSignal={openWhatsNewSignal}
                   onOpenWhatsNewSignalHandled={() => setOpenWhatsNewSignal(0)}
+                  whatsNewManifest={whatsNewManifest}
+                  hasUnseenReleaseNotes={hasUnseenReleaseNotes}
+                  onReleaseNotesSeen={() => setHasUnseenReleaseNotes(false)}
                   profile={activityRailProfile}
                   onWorkspaceCreatedFromRail={projectManagerActions.onWorkspaceCreated}
                   onOpenProjectInNewWindow={projectManagerActions.onOpenProjectInNewWindow}
