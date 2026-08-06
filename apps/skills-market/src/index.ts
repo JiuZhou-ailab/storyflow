@@ -364,20 +364,9 @@ async function loadCuratedPackageUncached(seed: CuratedSkill, env: Env) {
   const packageMetadata = seed.package
   if (!packageMetadata) throw new RequestError(404, 'Curated Skill package is unavailable')
   try {
-    let archive: Uint8Array
-    if (packageMetadata.objectKey) {
-      const object = await env.PACKAGES?.get(packageMetadata.objectKey)
-      if (!object) throw new Error('pinned package object is missing')
-      archive = await readCuratedArchive(new Response(object.body))
-    } else {
-      const url = new URL('/api/v1/download', 'https://api.skillhub.cn')
-      url.searchParams.set('slug', packageMetadata.sourceSlug)
-      url.searchParams.set('namespace', packageMetadata.namespace)
-      url.searchParams.set('version', packageMetadata.version)
-      const response = await fetch(url, { signal: AbortSignal.timeout(15_000) })
-      if (!response.ok) throw new Error(`upstream returned ${response.status}`)
-      archive = await readCuratedArchive(response)
-    }
+    const object = await env.PACKAGES?.get(packageMetadata.objectKey)
+    if (!object) throw new Error('pinned package object is missing')
+    const archive = await readCuratedArchive(new Response(object.body))
     const bundle = await convertCuratedSkillArchive(seed, archive)
     if (bundle.sha256 !== packageMetadata.bundleSha256) throw new Error('converted package checksum changed')
     return bundle

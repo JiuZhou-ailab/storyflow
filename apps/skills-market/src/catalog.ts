@@ -27,7 +27,7 @@ export interface CuratedSkill {
     publishedAt: number
     archiveSha256: string
     bundleSha256: string
-    objectKey?: string
+    objectKey: string
   }
 }
 
@@ -171,6 +171,7 @@ export const CURATED_SKILLS: readonly CuratedSkill[] = [
     version: '1.0.5', publishedAt: 1776184402155,
     archiveSha256: '9c4f65bcf68d32146469bc46872287deb5ef2f22d111a66fb27a9fba51649f10',
     bundleSha256: 'bf68ffd7d094e70a9c5358f5db3f895fe2d852937edf0c706b4ea90bfd61cc59',
+    objectKey: 'curated/skillhub/user_634bbcdc/g113593/1.0.5/9c4f65bcf68d32146469bc46872287deb5ef2f22d111a66fb27a9fba51649f10.zip',
   }, '2.3 万', '253', '4.4',
     '番茄小说写作助手',
     '面向番茄小说的长篇分章工作流，覆盖黄金开篇、情绪曲线、章节钩子和阶段性数据反馈。',
@@ -179,6 +180,7 @@ export const CURATED_SKILLS: readonly CuratedSkill[] = [
     namespace: 'user_7ca3a4d6', sourceSlug: 'fiction-crafter', version: '1.1.0', publishedAt: 1775639701323,
     archiveSha256: 'a6d1c215b8627bd2aa1885c9fc394d3d464acfb6b110b890fce4ea82ac0ecfdf',
     bundleSha256: 'cba93ffea134cb3abc0565fa9ec1b479b3c7f6827bb578a3bd072420dc9f4ed7',
+    objectKey: 'curated/skillhub/user_7ca3a4d6/fiction-crafter/1.1.0/a6d1c215b8627bd2aa1885c9fc394d3d464acfb6b110b890fce4ea82ac0ecfdf.zip',
   }, '9.2 千', '70', '4.3',
     '小说工匠 Fiction Crafter',
     '从大纲和卷级规划逐章创作长篇爽文，并维护人物、地点、伏笔和剧情连续性。',
@@ -187,6 +189,7 @@ export const CURATED_SKILLS: readonly CuratedSkill[] = [
     namespace: 'user_a75e6679', sourceSlug: 'novel-evaluator', version: '1.0.0', publishedAt: 1775545899274,
     archiveSha256: '435ab8c8bed2180c01a46de9490d5a67e5e6a6106f81235337d8788adb4eafe0',
     bundleSha256: '9d43c6b1578f6037639a6973088ac7eb63dc12b13df27b68614b4ea063bb4374',
+    objectKey: 'curated/skillhub/user_a75e6679/novel-evaluator/1.0.0/435ab8c8bed2180c01a46de9490d5a67e5e6a6106f81235337d8788adb4eafe0.zip',
   }, '6.8 千', '34', '4.4',
     '小说评分系统',
     '从情节、人物、文笔、世界观、情感和创新六个维度审阅小说并给出可执行反馈。',
@@ -195,6 +198,7 @@ export const CURATED_SKILLS: readonly CuratedSkill[] = [
     namespace: 'user_f0835403', sourceSlug: 'novel-to-drama', version: '1.0.1', publishedAt: 1782627874964,
     archiveSha256: '128f558f27b97c36c9021458d2bc462e1e0347d5a009e358a144009e3ba42ecd',
     bundleSha256: '30ec54dc4e703a5bba7c4b6c39aa483f0c1d8ab6b0d27f87acda4f1d8adb4380',
+    objectKey: 'curated/skillhub/user_f0835403/novel-to-drama/1.0.1/128f558f27b97c36c9021458d2bc462e1e0347d5a009e358a144009e3ba42ecd.zip',
   }, '2.6 千', '18', '4.4',
     '小说转剧本',
     '把网络小说片段改编为高密度、强情绪、强钩子的红果短剧拍摄剧本，并支持剧本审核。',
@@ -203,6 +207,7 @@ export const CURATED_SKILLS: readonly CuratedSkill[] = [
     namespace: 'user_5b12983f', sourceSlug: 'novel-to-storyboard', version: '1.0.0', publishedAt: 1777341101704,
     archiveSha256: '1e78f2b805c61708e84d4c39a3b25d15af9fb0a3ad961bb191817457f225ed71',
     bundleSha256: 'cb89c1fc36543628d3462605460bafb1223a746e1b895cbf7fbd73194f31e429',
+    objectKey: 'curated/skillhub/user_5b12983f/novel-to-storyboard/1.0.0/1e78f2b805c61708e84d4c39a3b25d15af9fb0a3ad961bb191817457f225ed71.zip',
   }, '2.7 千', '31', '4.5',
     '剧本转分镜',
     '将小说或剧本文案拆成分镜脚本，同时提取角色特征卡和场景特征卡。',

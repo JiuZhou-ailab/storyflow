@@ -76,6 +76,7 @@ describe('Skills Market packages', () => {
         publishedAt: 1,
         archiveSha256: await sha256Hex(archive),
         bundleSha256: '',
+        objectKey: 'curated/test.zip',
       },
     }
 
