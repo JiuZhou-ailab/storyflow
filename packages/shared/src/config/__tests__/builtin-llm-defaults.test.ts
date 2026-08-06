@@ -167,7 +167,13 @@ describe('builtin LLM connection defaults', () => {
     ])).toEqual([
       ['storyflow-managed-deepseek', ['deepseek-v4-pro', 'deepseek-v4-flash']],
       ['storyflow-managed', ['gpt-5.5', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']],
-      ['storyflow-managed-gemini', ['gemini-3.5-flash']],
+      ['storyflow-managed-gemini', [
+        'gemini-3.6-flash',
+        'gemini-3.5-flash',
+        'gemini-3.1-pro-preview',
+        'gemini-2.5-pro',
+        'gemini-2.5-flash',
+      ]],
       ['storyflow-managed-anthropic', ['claude-sonnet-5', 'claude-opus-5']],
     ])
     expect(config.defaultLlmConnection).toBe('storyflow-managed-deepseek')

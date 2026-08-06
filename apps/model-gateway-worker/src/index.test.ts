@@ -182,10 +182,13 @@ describe('model gateway worker', () => {
       'gpt-5.6-luna',
       'claude-sonnet-5',
       'claude-opus-5',
+      'gemini-3.6-flash',
       'gemini-3.5-flash',
+      'gemini-3.1-pro-preview',
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
       'deepseek-v4-pro',
       'deepseek-v4-flash',
-      'gemini-3.6-flash',
       'gemini-3.6-pro-preview',
     ])
     expect(catalogBody.data.find(model => model.id === 'gpt-5.5')).toMatchObject({
@@ -201,6 +204,11 @@ describe('model gateway worker', () => {
     })
     expect(catalogBody.data.find(model => model.id === 'gemini-3.6-flash')).toMatchObject({
       name: 'Gemini 3.6 Flash',
+      short_name: 'Gemini',
+      api: 'google-generative-ai',
+    })
+    expect(catalogBody.data.find(model => model.id === 'gemini-3.1-pro-preview')).toMatchObject({
+      name: 'Gemini 3.1 Pro Preview',
       short_name: 'Gemini',
       api: 'google-generative-ai',
     })
