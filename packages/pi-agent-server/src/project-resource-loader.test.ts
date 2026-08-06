@@ -258,6 +258,7 @@ describe('createProjectResourceLoader', () => {
       baseDelayMs: 2_000,
     });
     expect(settingsManager.getProviderRetrySettings()).toMatchObject({ maxRetries: 0 });
+    expect(settingsManager.getHttpIdleTimeoutMs()).toBe(5 * 60 * 1000);
   });
 
   it('loads Pi Skills without executing project or legacy Extensions', async () => {
