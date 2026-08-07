@@ -57,13 +57,26 @@ Start by understanding the user's intent. The current conversation might already
 
 ### Choose the Output Language
 
-Treat language as independent from skill behavior. Resolve it once before drafting, then keep it consistent through revisions, examples, evals, and description optimization:
+Treat language as independent from Skill behavior. In Storyflow, the system prompt's
+selected language is the source of truth for human-facing Skill content and generated
+project artifacts. Resolve it once before drafting, then keep it consistent through
+revisions, examples, evals, and description optimization:
 
-1. Follow an explicit requested output or target-audience language.
-2. When updating an existing skill without a language change request, preserve its current language.
-3. Otherwise, use the dominant natural language of the user's request, ignoring code, paths, identifiers, and pasted source text; fall back to English only when the request provides no reliable signal.
+1. Follow an explicit user language or target-audience request when one exists.
+2. Otherwise follow the selected language supplied by the system prompt, even when the
+   current request contains English code, paths, identifiers, or pasted source text.
+3. When updating an existing Skill without a language-change request, preserve its current
+   language unless the system prompt explicitly requires a migration.
+4. If no selected language is available in an isolated runtime, use the dominant natural language of the user's request, ignoring code, paths, identifiers, and pasted source text.
 
-Write newly authored human-readable Skill content in the resolved language, including the frontmatter `description`, headings, instructions, examples, eval prompts, expected outputs, and human-facing resource text. Keep machine-constrained text in its required form: the ASCII kebab-case folder and `name`, YAML/JSON keys, filenames, code, commands, and API identifiers. Preserve technical terms when translating them would reduce precision, and never translate user-provided source material unless the user asks.
+Write newly authored human-readable Skill content in the resolved language, including the
+frontmatter `description`, headings, instructions, examples, eval prompts, expected outputs,
+human-facing resource text, and user-visible files or folders created by its workflow. Keep
+machine-constrained text in its required form: the ASCII kebab-case folder and `name`,
+YAML/JSON keys, stable filenames, code, commands, and API identifiers. The Skill's
+`metadata.displayName` is human-facing and should be localized. Preserve technical terms
+when translating them would reduce precision, and never translate user-provided source
+material unless the user asks.
 
 ### Interview and Research
 

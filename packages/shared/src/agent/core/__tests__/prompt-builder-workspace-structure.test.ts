@@ -73,6 +73,7 @@ describe('PromptBuilder project context', () => {
       '<sources>',
       '<session_state>',
       "**USER'S DATE AND TIME:",
+      '<language_policy_reminder>',
     ]
 
     for (let index = 1; index < markers.length; index++) {

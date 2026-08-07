@@ -2,7 +2,7 @@
 
 ## 准确的 Markdown 格式
 
-每个 `scripts/NNN.md` 都按以下格式编写：
+每个 `project.json` 的 `script_path` 指向的文件都按以下格式编写：
 
 ```markdown
 # 第 1 集｜本集标题
@@ -74,7 +74,7 @@ python3 scripts/screenplay_project.py validate PROJECT_DIR EPISODE_INDEX
 
 ### 人物连续性
 
-- 目标、认知、关系、伤势、持有物、地点和说话方式与 `continuity.md` 一致。
+- 目标、认知、关系、伤势、持有物、地点和说话方式与 `continuity_path` 指向的文件一致。
 - 人物不会提前知道尚未获得的信息。
 - 姓名和身份标签保持稳定。
 

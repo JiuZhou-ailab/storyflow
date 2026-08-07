@@ -12,6 +12,7 @@ import { PERMISSION_MODE_CONFIG } from '../agent/mode-types.ts';
 import { FEATURE_FLAGS } from '../feature-flags.ts';
 import { globSync } from 'glob';
 import { WORKSPACE_STATE_DIR } from '../workspaces/paths.ts';
+import { formatLanguagePolicyForPrompt } from '../i18n/language-policy.ts';
 
 /** Maximum size of CLAUDE.md file to include (10KB) */
 const MAX_CONTEXT_FILE_SIZE = 10 * 1024;
@@ -345,7 +346,10 @@ export type SystemPromptPreset = 'default' | 'mini' | 'novel';
  *
  * @param workspaceRootPath - Root path of the workspace for config file locations
  */
-export function getMiniAgentSystemPrompt(workspaceRootPath?: string): string {
+export function getMiniAgentSystemPrompt(
+  workspaceRootPath?: string,
+  language?: string,
+): string {
   const workspaceContext = workspaceRootPath
     ? `\n## Workspace\nConfig files are in: \`${workspaceRootPath}/.craft-agent\`\n- Statuses: \`.craft-agent/statuses/config.json\`\n- Labels: \`.craft-agent/labels/config.json\`\n- Permissions: \`permissions.json\`\n`
     : '';
@@ -354,6 +358,7 @@ export function getMiniAgentSystemPrompt(workspaceRootPath?: string): string {
 
 ## Your Role
 You help users make targeted changes to configuration files. Be concise and efficient.
+${formatLanguagePolicyForPrompt(language)}
 ${workspaceContext}
 ## Guidelines
 - Make the requested change directly
@@ -403,6 +408,7 @@ Treat novel projects as long-form creative work where manuscript fidelity and co
  * @param _workingDirectory - Retained for positional API compatibility; context discovery is per-turn
  * @param preset - System prompt preset ('default' | 'mini' | custom string)
  * @param _backendName - Deprecated compatibility argument; intentionally ignored
+ * @param language - Optional selected language override, primarily useful for tests and isolated runtimes
  */
 export function getSystemPrompt(
   pinnedPreferencesPrompt?: string,
@@ -411,12 +417,13 @@ export function getSystemPrompt(
   _workingDirectory?: string,
   preset?: SystemPromptPreset | string,
   _backendName?: string,
-  includeCoAuthoredBy?: boolean
+  includeCoAuthoredBy?: boolean,
+  language?: string,
 ): string {
   // Use mini agent prompt for quick edits (pass workspace root for config paths)
   if (preset === 'mini') {
     debug('[getSystemPrompt] 🤖 Generating MINI agent system prompt for workspace:', workspaceRootPath);
-    return getMiniAgentSystemPrompt(workspaceRootPath);
+    return getMiniAgentSystemPrompt(workspaceRootPath, language);
   }
 
   // Use pinned preferences if provided (for session consistency after compaction)
@@ -430,7 +437,7 @@ export function getSystemPrompt(
   // Note: Date/time context is now added to user messages instead of system prompt
   // to enable prompt caching. The system prompt stays static and cacheable.
   // Safe Mode context is also in user messages for the same reason.
-  const basePrompt = getStoryflowAssistantPrompt(resolvedIncludeCoAuthoredBy);
+  const basePrompt = getStoryflowAssistantPrompt(resolvedIncludeCoAuthoredBy, language);
   const presetPrompt = preset === 'novel' ? getNovelWritingSystemPrompt() : '';
   const fullPrompt = `${basePrompt}${presetPrompt}${preferences}${debugContext}`;
 
@@ -494,7 +501,10 @@ rg -n "session|OAuth|\"level\":\"error\"" "${logFilePath}" | tail -n 50
  *
  * @param includeCoAuthoredBy - Whether to include the Co-Authored-By git trailer instruction (default: true)
  */
-function getStoryflowAssistantPrompt(includeCoAuthoredBy: boolean = true): string {
+function getStoryflowAssistantPrompt(
+  includeCoAuthoredBy: boolean = true,
+  language?: string,
+): string {
   const browserToolsSection = getBrowserToolEnabled() ? `
 ## Browser Tools
 
@@ -502,6 +512,8 @@ Before the first \`browser_tool\` call in a session, read \`${DOC_REFS.browserTo
 ` : '';
 
   return `You are Storyflow - an AI assistant for working across connected sources, local files, code, and repeatable workflows. Refer to yourself as Storyflow when asked.
+
+${formatLanguagePolicyForPrompt(language)}
 
 ## Runtime Contracts
 

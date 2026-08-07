@@ -90,6 +90,8 @@ describe('ProjectHub startup integration', () => {
 
   it('keeps locale payloads and external fonts off the startup critical path', () => {
     expect(rendererEntrySource).toContain("setupI18nLazy([LanguageDetector, initReactI18next])")
+    expect(rendererEntrySource).toContain('runtimeI18n.resolvedLanguage')
+    expect(rendererEntrySource).toContain('window.electronAPI?.changeLanguage')
     expect(rendererEntrySource).not.toContain("setupI18n([LanguageDetector, initReactI18next])")
     expect(rendererHtmlSource).not.toContain('fonts.googleapis.com')
     expect(rendererHtmlSource).not.toContain('fonts.gstatic.com')

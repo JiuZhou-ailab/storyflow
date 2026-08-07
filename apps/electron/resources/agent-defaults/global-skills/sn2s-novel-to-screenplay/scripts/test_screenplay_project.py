@@ -52,18 +52,22 @@ class ScreenplayProjectTest(unittest.TestCase):
             self.assertEqual(prepared["episode_count"], 2)
             project = json.loads((project_dir / "project.json").read_text(encoding="utf-8"))
             self.assertEqual(project["split_method"], "author-headings")
+            self.assertEqual(project["language"], "zh-Hans")
+            self.assertEqual(project["layout"]["episodes_dir"], "分集原文")
+            self.assertEqual(project["layout"]["scripts_dir"], "剧本")
+            self.assertTrue((project_dir / "故事元数据.md").is_file())
 
             for episode in (1, 2):
-                script_path = project_dir / f"scripts/{episode:03d}.md"
+                script_path = project_dir / project["episodes"][episode - 1]["script_path"]
                 script_path.write_text(
                     valid_script(episode, project["episodes"][episode - 1]["title"], "我回来了。"),
                     encoding="utf-8",
                 )
                 result = screenplay_project.validate_episode(project_dir, episode)
-                self.assertEqual(result["status"], "valid")
+            self.assertEqual(result["status"], "valid")
 
             snapshot = screenplay_project.checkpoint(project_dir, 1)
-            first_script = project_dir / "scripts/001.md"
+            first_script = project_dir / project["episodes"][0]["script_path"]
             first_script.write_text(valid_script(1, "改坏的版本", "错误版本。"), encoding="utf-8")
             restored = screenplay_project.restore(
                 project_dir,
@@ -106,7 +110,8 @@ class ScreenplayProjectTest(unittest.TestCase):
             source.write_text("# 第一章\n\n" + "正文。" * 100, encoding="utf-8")
             project_dir = root / "screenplay"
             screenplay_project.prepare(source, project_dir, "aligned")
-            script = project_dir / "scripts/001.md"
+            project = json.loads((project_dir / "project.json").read_text(encoding="utf-8"))
+            script = project_dir / project["episodes"][0]["script_path"]
             script.write_text(valid_script(1, "第一章", "测试。"), encoding="utf-8")
             version = Path(screenplay_project.checkpoint(project_dir, 1)["version"])
             with self.assertRaises(screenplay_project.ProjectError):
@@ -138,6 +143,23 @@ class ScreenplayProjectTest(unittest.TestCase):
             )
             self.assertEqual(result["mode"], "rich")
             self.assertGreaterEqual(result["episode_count"], 1)
+
+    def test_prepare_uses_selected_english_layout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "novel.txt"
+            source.write_text("Chapter 1\n\n" + "A story begins." * 100, encoding="utf-8")
+            project_dir = root / "screenplay"
+
+            screenplay_project.prepare(source, project_dir, "compact", "en")
+            project = json.loads((project_dir / "project.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(project["language"], "en")
+            self.assertEqual(project["layout"]["episodes_dir"], "episodes")
+            self.assertEqual(project["layout"]["scripts_dir"], "scripts")
+            self.assertTrue((project_dir / "Story Metadata.md").is_file() is False)
+            self.assertTrue((project_dir / "story-metadata.md").is_file())
+            self.assertTrue((project_dir / "episodes/001-source.md").is_file())
 
     def test_cli_help_is_chinese(self) -> None:
         help_text = screenplay_project.build_parser().format_help()

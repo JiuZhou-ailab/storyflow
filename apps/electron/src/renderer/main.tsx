@@ -169,7 +169,12 @@ function Root() {
 }
 
 async function startRenderer() {
-  await setupI18nLazy([LanguageDetector, initReactI18next])
+  const runtimeI18n = await setupI18nLazy([LanguageDetector, initReactI18next])
+  // The agent and title generator run in Electron's main process. Synchronize
+  // the renderer's detected persisted locale before the first session starts.
+  await window.electronAPI?.changeLanguage?.(
+    runtimeI18n.resolvedLanguage ?? runtimeI18n.language ?? 'en',
+  )
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <RootErrorBoundary>

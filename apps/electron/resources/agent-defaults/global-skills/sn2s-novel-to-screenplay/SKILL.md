@@ -9,6 +9,17 @@ metadata: { displayName: 小说转剧本 }
 在当前 Storyflow Agent 内完整执行 SN2S 方法。使用当前模型分析小说和创作剧本，
 内置本地辅助脚本只负责确定性文件操作。
 
+## 语言与命名
+
+- 遵循系统提示词中的用户选定语言：回答、状态报告、故事元数据、连续性内容和
+  新建的用户可见文件/文件夹名称都使用该语言。
+- 运行 `prepare` 时，把系统提示词给出的语言代码传给 `--language`；如果没有明确
+  代码，使用 `zh-Hans`。不要根据路径、代码或原文片段猜测语言。
+- `project.json`、`scripts/screenplay_project.py`、`project.json` 内的字段名以及脚本
+  命令是运行时契约，保持既有英文格式。创建项目后，始终读取 `project.json` 的
+  `prepared_source`、`metadata_path`、`continuity_path`、`full_screenplay`、
+  `source_path` 和 `script_path`，不要自行拼接英文路径。
+
 ## 加载方法
 
 按需读取：
@@ -35,7 +46,8 @@ python3 scripts/screenplay_project.py --help
 只需要：
 
 1. 小说源文件路径。
-2. 输出目录；未指定时，默认使用源文件旁的 `<source-stem>-screenplay`。
+2. 输出目录；未指定时，默认使用源文件旁边、符合当前语言的项目目录名（例如中文
+   使用 `<source-stem>-剧本`，英文使用 `<source-stem>-screenplay`）。
 3. 转换模式；用户未选择时默认使用 `compact`。可选值为 `compact`、`aligned`
    或 `rich`。
 
@@ -51,7 +63,8 @@ python3 scripts/screenplay_project.py --help
 python3 scripts/screenplay_project.py prepare \
   /absolute/path/to/novel.txt \
   /absolute/path/to/novel-screenplay \
-  --mode compact
+  --mode compact \
+  --language <selected-language-code>
 ```
 
 对于 PDF，使用 Storyflow 常规文档读取能力把文本提取到临时 UTF-8 `.txt`
@@ -64,7 +77,7 @@ python3 scripts/screenplay_project.py prepare \
 
 ## 建立全局故事状态
 
-根据准备好的源文件填写 `story-metadata.md`：
+根据 `project.json` 的 `metadata_path` 填写故事元数据：
 
 - 标题；
 - 简洁的全篇故事梗概；
@@ -72,7 +85,7 @@ python3 scripts/screenplay_project.py prepare \
 - 世界规则、时代和反复出现的地点；
 - 主要人物的身份、目标、冲突、说话方式和关系。
 
-在 `continuity.md` 中记录已确认事实、人物状态、关系变化、未解决伏笔，
+在 `project.json` 的 `continuity_path` 指向的文件中记录已确认事实、人物状态、关系变化、未解决伏笔，
 以及每个已完成分集的简要摘要。
 
 如果源文件过大，无法一次放入上下文，就按顺序处理准备好的分集文件，并把事实
@@ -82,11 +95,11 @@ python3 scripts/screenplay_project.py prepare \
 
 对 `project.json` 中的每个条目：
 
-1. 读取它的 `source_path`、`story-metadata.md` 和 `continuity.md`。
+1. 读取它的 `source_path`、`metadata_path` 和 `continuity_path` 指向的文件。
 2. 按 `references/screenplay-format.md` 创作对应的 `script_path`。
 3. 应用 `references/adaptation-policy.md` 中选定的模式。
 4. 保留主要因果、人物关系、关键反转、必要对白，以及姓名、地点、机构和重要道具。
-5. 用本集结果和遗留伏笔更新 `continuity.md`。
+5. 用本集结果和遗留伏笔更新 `continuity_path` 指向的文件。
 6. 校验本集：
 
 ```bash
@@ -111,7 +124,7 @@ python3 scripts/screenplay_project.py validate PROJECT_DIR EPISODE_INDEX
 python3 scripts/screenplay_project.py merge PROJECT_DIR
 ```
 
-辅助脚本会再次校验每一集并写入 `full-screenplay.md`。它拒绝合并不完整或
+辅助脚本会再次校验每一集并写入 `project.json` 的 `full_screenplay` 指向的文件。它拒绝合并不完整或
 无效的项目，也拒绝覆盖已有合并文件。
 
 报告完成前，确认合并文件存在且非空。
@@ -151,7 +164,7 @@ python3 scripts/screenplay_project.py restore \
 某一集失败时，保留其他成功分集，只继续处理 `pending` 或 `invalid` 分集。
 
 如果故事事实冲突，暂停受影响分集，引用相互冲突的原文；解决冲突并更新
-`continuity.md` 后，只重新校验受影响的剧本。
+`continuity_path` 指向的文件后，只重新校验受影响的剧本。
 
 ## 完成报告
 
@@ -163,7 +176,7 @@ Return:
 - 模式：<compact|aligned|rich>
 - 分集：<count>
 - 已通过校验：<count>/<count>
-- 完整剧本：<full-screenplay.md 绝对路径>
+- 完整剧本：<project.json 的 full_screenplay 绝对路径>
 - 待处理：<仅在仍有未完成事项时填写>
 ```
 

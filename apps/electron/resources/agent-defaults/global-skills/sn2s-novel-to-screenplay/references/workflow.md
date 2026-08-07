@@ -30,26 +30,26 @@
 
 ## 项目结构
 
-`prepare` 创建：
+`prepare` 创建。下面尖括号中的值来自 `project.json`，会按用户选定语言变化：
 
 ```text
 <project>/
 ├── project.json
-├── source.txt
-├── story-metadata.md
-├── continuity.md
-├── episodes/
-│   ├── 001-source.md
+├── <prepared_source>
+├── <metadata_path>
+├── <continuity_path>
+├── <episodes_dir>/
+│   ├── 001-<source-suffix>.md
 │   └── ...
-├── scripts/
+├── <scripts_dir>/
 │   ├── 001.md
 │   └── ...
-├── versions/
-└── full-screenplay.md
+├── <versions_dir>/
+└── <full_screenplay>
 ```
 
-`project.json` 是续作索引。原文分集位于 `episodes/`，生成剧本位于 `scripts/`，
-状态文件只保存故事元数据和连续性。
+`project.json` 是续作索引。原文分集、生成剧本、版本快照和最终合并文件都以其中的
+路径字段为准；不要假设目录或文件名是英文。状态文件只保存故事元数据和连续性。
 
 ## 生命周期
 
@@ -79,7 +79,7 @@
 
 ## 故事状态
 
-首次填写 `story-metadata.md` 后，只能依据原文证据修正。内容包括：
+首次填写 `metadata_path` 指向的文件后，只能依据原文证据修正。内容包括：
 
 - 标题与故事前提；
 - 全篇因果；
@@ -87,7 +87,7 @@
 - 反复出现的地点与重要物品；
 - 主要人物的身份、目标、压力、关系、说话方式和不可更改事实。
 
-每个有效分集完成后维护 `continuity.md`：
+每个有效分集完成后维护 `continuity_path` 指向的文件：
 
 - 已确立事实；
 - 人物当前目标与认知；
@@ -135,8 +135,8 @@
 完整转换必须满足：
 
 1. `project.json` 存在并描述所有分集。
-2. `story-metadata.md` 和 `continuity.md` 包含基于原文的状态。
+2. `metadata_path` 和 `continuity_path` 指向的文件包含基于原文的状态。
 3. 每个分集剧本都存在。
 4. 每个分集都通过确定性格式校验。
 5. 通过跨集因果与连续性审查。
-6. `full-screenplay.md` 存在且非空。
+6. `full_screenplay` 指向的文件存在且非空。

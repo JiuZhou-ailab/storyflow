@@ -91,7 +91,8 @@ import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { McpClientPool } from '@craft-agent/shared/mcp'
 import { type Session, type SessionEvent, type FileAttachment, type SendMessageOptions, type OneShotLlmRequest, type OneShotLlmResult, type NovelSelectionRewriteRequest, type NovelSelectionRewriteResult, type UnreadSummary, type RemoteSessionTransferPayload, RPC_CHANNELS, generateMessageId } from '@craft-agent/shared/protocol'
 import { messageToStored, storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta, type TurnMetrics, type TurnUsage } from '@craft-agent/core/types'
-import { formatPathsToRelative, formatToolInputPaths, perf, readFileAttachment, selectSpreadMessages, normalizePath, DEFAULT_TITLE_LANGUAGE } from '@craft-agent/shared/utils'
+import { formatPathsToRelative, formatToolInputPaths, perf, readFileAttachment, selectSpreadMessages, normalizePath } from '@craft-agent/shared/utils'
+import { getCurrentLanguageName } from '@craft-agent/shared/i18n'
 import { buildNovelSelectionRewritePrompt, sanitizeNovelSelectionReplacement } from '@craft-agent/shared/writing'
 import { loadPiSkillCatalog, invalidateSkillsCache } from '@craft-agent/shared/skills'
 import { invalidateContextFileCache } from '@craft-agent/shared/prompts/system'
@@ -4553,7 +4554,7 @@ export class SessionManager implements ISessionManager {
 
     const assistantResponse = lastAssistantMsg?.content ?? ''
 
-    const titleOptions = { language: DEFAULT_TITLE_LANGUAGE }
+    const titleOptions = { language: getCurrentLanguageName() }
 
     // Use existing agent or create temporary one
     let agent: AgentInstance | null = managed.agent
@@ -6608,7 +6609,7 @@ export class SessionManager implements ISessionManager {
     }
 
     try {
-      const title = await agent.generateTitle(userMessage, { language: DEFAULT_TITLE_LANGUAGE })
+      const title = await agent.generateTitle(userMessage, { language: getCurrentLanguageName() })
       if (title) {
         managed.name = title
         this.persistSession(managed)

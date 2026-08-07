@@ -37,6 +37,22 @@ describe('system prompt guidance', () => {
     expect(prompt).not.toContain('<craft_agent_environment')
   })
 
+  it('injects the selected language and human-visible naming contract', () => {
+    const prompt = getSystemPrompt(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      'zh-Hans',
+    )
+
+    expect(prompt).toContain('使用简体中文回答')
+    expect(prompt).toContain('创建或重命名用户可见的文件、文件夹')
+  })
+
   it('uses backend-neutral debug log querying guidance (rg/grep via Bash)', () => {
     const prompt = getSystemPrompt(
       undefined,

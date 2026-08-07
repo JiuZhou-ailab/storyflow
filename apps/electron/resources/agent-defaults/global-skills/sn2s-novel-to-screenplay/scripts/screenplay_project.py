@@ -19,6 +19,98 @@ from typing import Any
 from xml.etree import ElementTree
 
 MODES = ("compact", "aligned", "rich")
+SUPPORTED_LANGUAGES = ("en", "es", "zh-Hans", "ja", "hu", "de", "pl")
+LANGUAGE_ALIASES = {
+    "zh": "zh-Hans",
+    "zh-cn": "zh-Hans",
+    "chinese": "zh-Hans",
+    "simplified chinese": "zh-Hans",
+    "english": "en",
+    "spanish": "es",
+    "german": "de",
+    "japanese": "ja",
+    "hungarian": "hu",
+    "polish": "pl",
+}
+LANGUAGE_LAYOUTS = {
+    "en": {
+        "language": "en",
+        "source_file": "source.txt",
+        "metadata_file": "story-metadata.md",
+        "continuity_file": "continuity.md",
+        "full_screenplay": "full-screenplay.md",
+        "episodes_dir": "episodes",
+        "scripts_dir": "scripts",
+        "versions_dir": "versions",
+        "episode_source_suffix": "source",
+    },
+    "es": {
+        "language": "es",
+        "source_file": "fuente.txt",
+        "metadata_file": "metadatos-historia.md",
+        "continuity_file": "continuidad.md",
+        "full_screenplay": "guion-completo.md",
+        "episodes_dir": "episodios",
+        "scripts_dir": "guiones",
+        "versions_dir": "versiones",
+        "episode_source_suffix": "fuente",
+    },
+    "zh-Hans": {
+        "language": "zh-Hans",
+        "source_file": "原文.txt",
+        "metadata_file": "故事元数据.md",
+        "continuity_file": "连续性台账.md",
+        "full_screenplay": "完整剧本.md",
+        "episodes_dir": "分集原文",
+        "scripts_dir": "剧本",
+        "versions_dir": "版本",
+        "episode_source_suffix": "原文",
+    },
+    "ja": {
+        "language": "ja",
+        "source_file": "原文.txt",
+        "metadata_file": "物語メタデータ.md",
+        "continuity_file": "連続性台帳.md",
+        "full_screenplay": "完全脚本.md",
+        "episodes_dir": "エピソード",
+        "scripts_dir": "脚本",
+        "versions_dir": "バージョン",
+        "episode_source_suffix": "原文",
+    },
+    "hu": {
+        "language": "hu",
+        "source_file": "forrás.txt",
+        "metadata_file": "történet-metaadatok.md",
+        "continuity_file": "folytonosság.md",
+        "full_screenplay": "teljes-forgatókönyv.md",
+        "episodes_dir": "epizódok",
+        "scripts_dir": "forgatókönyvek",
+        "versions_dir": "verziók",
+        "episode_source_suffix": "forrás",
+    },
+    "de": {
+        "language": "de",
+        "source_file": "quelle.txt",
+        "metadata_file": "story-metadaten.md",
+        "continuity_file": "kontinuität.md",
+        "full_screenplay": "vollständiges-drehbuch.md",
+        "episodes_dir": "episoden",
+        "scripts_dir": "drehbücher",
+        "versions_dir": "versionen",
+        "episode_source_suffix": "quelle",
+    },
+    "pl": {
+        "language": "pl",
+        "source_file": "źródło.txt",
+        "metadata_file": "metadane-historii.md",
+        "continuity_file": "ciągłość.md",
+        "full_screenplay": "pełny-scenariusz.md",
+        "episodes_dir": "odcinki",
+        "scripts_dir": "scenariusze",
+        "versions_dir": "wersje",
+        "episode_source_suffix": "źródło",
+    },
+}
 TEXT_SUFFIXES = {".txt", ".md", ".markdown"}
 MAX_STRUCTURED_CHARS = 20_000
 SUB_SPLIT_CHARS = 3_000
@@ -63,6 +155,234 @@ class ChineseArgumentParser(argparse.ArgumentParser):
 
     def format_help(self) -> str:
         return super().format_help().replace("usage:", "用法：", 1)
+
+
+def _resolve_language(value: str | None) -> str:
+    normalized = (value or "zh-Hans").strip()
+    exact = next(
+        (language for language in SUPPORTED_LANGUAGES if language.lower() == normalized.lower()),
+        None,
+    )
+    if exact:
+        return exact
+
+    alias = LANGUAGE_ALIASES.get(normalized.lower())
+    if alias:
+        return alias
+
+    if normalized.lower().startswith("zh-"):
+        return "zh-Hans"
+    raise ProjectError(
+        f"不支持的语言：{value}。可选值：{', '.join(SUPPORTED_LANGUAGES)}"
+    )
+
+
+def _layout_for_project(project: dict[str, Any]) -> dict[str, str]:
+    raw_layout = project.get("layout")
+    if isinstance(raw_layout, dict):
+        return {str(key): str(value) for key, value in raw_layout.items()}
+
+    # Version 1 projects used the English layout. Keep them readable and do
+    # not silently move user files when a newer runtime opens the project.
+    legacy = dict(LANGUAGE_LAYOUTS["en"])
+    legacy["source_file"] = str(project.get("prepared_source", legacy["source_file"]))
+    legacy["metadata_file"] = str(project.get("metadata_path", legacy["metadata_file"]))
+    legacy["continuity_file"] = str(project.get("continuity_path", legacy["continuity_file"]))
+    legacy["full_screenplay"] = str(project.get("full_screenplay", legacy["full_screenplay"]))
+    return legacy
+
+
+def _metadata_template(language: str) -> str:
+    templates = {
+        "en": """# Story Metadata
+
+## Title
+
+## Story Premise
+
+## Genre and Audience
+
+## World Rules and Key Locations
+
+## Main Characters
+
+## Character Relationships
+""",
+        "es": """# Metadatos de la historia
+
+## Título
+
+## Premisa
+
+## Género y público
+
+## Reglas del mundo y lugares clave
+
+## Personajes principales
+
+## Relaciones entre personajes
+""",
+        "zh-Hans": """# 故事元数据
+
+## 标题
+
+## 故事梗概
+
+## 题材与受众
+
+## 世界观与关键规则
+
+## 主要人物
+
+## 人物关系
+""",
+        "ja": """# 物語メタデータ
+
+## タイトル
+
+## あらすじ
+
+## ジャンルと対象読者
+
+## 世界観と重要なルール
+
+## 主要人物
+
+## 人物関係
+""",
+        "hu": """# Történet metaadatai
+
+## Cím
+
+## Történet alapfelállása
+
+## Műfaj és közönség
+
+## Világszabályok és fontos helyszínek
+
+## Főszereplők
+
+## Szereplők kapcsolatai
+""",
+        "de": """# Story-Metadaten
+
+## Titel
+
+## Handlungskern
+
+## Genre und Zielgruppe
+
+## Weltregeln und wichtige Orte
+
+## Hauptfiguren
+
+## Beziehungen der Figuren
+""",
+        "pl": """# Metadane historii
+
+## Tytuł
+
+## Założenie fabuły
+
+## Gatunek i odbiorcy
+
+## Zasady świata i ważne miejsca
+
+## Główne postacie
+
+## Relacje między postaciami
+""",
+    }
+    return templates[language]
+
+
+def _continuity_template(language: str) -> str:
+    templates = {
+        "en": """# Continuity Ledger
+
+## Confirmed Facts
+
+## Character States and Relationship Changes
+
+## Unresolved Setups and Hooks
+
+## Episode Summaries
+""",
+        "es": """# Registro de continuidad
+
+## Hechos confirmados
+
+## Estados de los personajes y cambios de relaciones
+
+## Cabos sueltos y ganchos sin resolver
+
+## Resúmenes de episodios
+""",
+        "zh-Hans": """# 连续性台账
+
+## 已确认事实
+
+## 人物状态与关系变化
+
+## 未回收伏笔与钩子
+
+## 分集摘要
+""",
+        "ja": """# 連続性台帳
+
+## 確定した事実
+
+## 人物の状態と関係の変化
+
+## 未回収の伏線とフック
+
+## エピソード概要
+""",
+        "hu": """# Folytonossági napló
+
+## Megerősített tények
+
+## A szereplők állapota és a kapcsolatok változása
+
+## Le nem zárt előkészítések és horgok
+
+## Epizódszummárék
+""",
+        "de": """# Kontinuitätsprotokoll
+
+## Bestätigte Fakten
+
+## Figurenstatus und Beziehungsänderungen
+
+## Offene Setups und Hooks
+
+## Episodenzusammenfassungen
+""",
+        "pl": """# Rejestr ciągłości
+
+## Potwierdzone fakty
+
+## Stany postaci i zmiany relacji
+
+## Nierozwiązane wątki i haczyki
+
+## Streszczenia odcinków
+""",
+    }
+    return templates[language]
+
+
+def _episode_source_heading(language: str, index: int, title: str) -> str:
+    labels = {
+        "en": f"Episode {index} | {title}",
+        "es": f"Episodio {index} | {title}",
+        "zh-Hans": f"第 {index} 集｜{title}",
+        "ja": f"第{index}話｜{title}",
+        "hu": f"{index}. epizód | {title}",
+        "de": f"Episode {index} | {title}",
+        "pl": f"Odcinek {index} | {title}",
+    }
+    return labels[language]
 
 
 def _read_text(path: Path) -> str:
@@ -245,7 +565,12 @@ def _episode(project: dict[str, Any], episode_index: int) -> dict[str, Any]:
     raise ProjectError(f"项目中不存在第 {episode_index} 集")
 
 
-def prepare(source: Path, project_dir: Path, mode: str) -> dict[str, Any]:
+def prepare(
+    source: Path,
+    project_dir: Path,
+    mode: str,
+    language: str = "zh-Hans",
+) -> dict[str, Any]:
     if not source.is_file():
         raise ProjectError(f"找不到小说文件：{source}")
     if project_dir.exists() and not project_dir.is_dir():
@@ -253,81 +578,63 @@ def prepare(source: Path, project_dir: Path, mode: str) -> dict[str, Any]:
     if project_dir.exists() and any(project_dir.iterdir()):
         raise ProjectError(f"输出目录不是空目录，拒绝覆盖：{project_dir}")
 
+    resolved_language = _resolve_language(language)
+    layout = dict(LANGUAGE_LAYOUTS[resolved_language])
+
     text = _normalize(_read_text(source))
     if len(text.strip()) < 100:
         raise ProjectError("小说正文不足 100 字")
     episodes, method = _split_episodes(text)
 
     project_dir.mkdir(parents=True, exist_ok=True)
-    (project_dir / "episodes").mkdir(exist_ok=True)
-    (project_dir / "scripts").mkdir(exist_ok=True)
-    (project_dir / "versions").mkdir(exist_ok=True)
-    _atomic_text(project_dir / "source.txt", text)
+    (project_dir / layout["episodes_dir"]).mkdir(exist_ok=True)
+    (project_dir / layout["scripts_dir"]).mkdir(exist_ok=True)
+    (project_dir / layout["versions_dir"]).mkdir(exist_ok=True)
+    _atomic_text(project_dir / layout["source_file"], text)
 
     entries: list[dict[str, Any]] = []
     for episode in episodes:
         index = episode["index"]
-        source_name = f"{index:03d}-source.md"
+        source_name = f"{index:03d}-{layout['episode_source_suffix']}.md"
         script_name = f"{index:03d}.md"
         content = episode["content"]
         _atomic_text(
-            project_dir / "episodes" / source_name,
-            f"# 第 {index} 集｜{episode['title']}\n\n{content}\n",
+            project_dir / layout["episodes_dir"] / source_name,
+            f"# {_episode_source_heading(resolved_language, index, episode['title'])}\n\n{content}\n",
         )
         entries.append(
             {
                 "index": index,
                 "title": episode["title"],
-                "source_path": f"episodes/{source_name}",
-                "script_path": f"scripts/{script_name}",
+                "source_path": f"{layout['episodes_dir']}/{source_name}",
+                "script_path": f"{layout['scripts_dir']}/{script_name}",
                 "source_chars": len(re.sub(r"\s+", "", content)),
                 "status": "pending",
                 "diagnostics": [],
             }
         )
 
-    metadata = """# 故事元数据
-
-## 标题
-
-## 故事梗概
-
-## 题材与受众
-
-## 世界观与关键规则
-
-## 主要人物
-
-## 人物关系
-"""
-    continuity = """# 连续性台账
-
-## 已确认事实
-
-## 人物状态与关系变化
-
-## 未回收伏笔与钩子
-
-## 分集摘要
-"""
-    _atomic_text(project_dir / "story-metadata.md", metadata)
-    _atomic_text(project_dir / "continuity.md", continuity)
+    _atomic_text(project_dir / layout["metadata_file"], _metadata_template(resolved_language))
+    _atomic_text(project_dir / layout["continuity_file"], _continuity_template(resolved_language))
 
     project = {
-        "version": 1,
+        "version": 2,
         "title": source.stem,
         "source_file": str(source.resolve()),
-        "prepared_source": "source.txt",
+        "language": resolved_language,
+        "layout": layout,
+        "prepared_source": layout["source_file"],
         "mode": mode,
         "split_method": method,
-        "metadata_path": "story-metadata.md",
-        "continuity_path": "continuity.md",
-        "full_screenplay": "full-screenplay.md",
+        "metadata_path": layout["metadata_file"],
+        "continuity_path": layout["continuity_file"],
+        "full_screenplay": layout["full_screenplay"],
         "episodes": entries,
     }
     _atomic_json(_project_file(project_dir), project)
     return {
         "project_dir": str(project_dir.resolve()),
+        "language": resolved_language,
         "mode": mode,
         "split_method": method,
         "episode_count": len(entries),
@@ -491,7 +798,8 @@ def checkpoint(project_dir: Path, episode_index: int) -> dict[str, Any]:
     script_path = project_dir / entry["script_path"]
     if not script_path.is_file():
         raise ProjectError(f"找不到第 {episode_index} 集剧本：{script_path}")
-    version_dir = project_dir / "versions" / f"{episode_index:03d}"
+    layout = _layout_for_project(project)
+    version_dir = project_dir / layout["versions_dir"] / f"{episode_index:03d}"
     version_dir.mkdir(parents=True, exist_ok=True)
     version_path = version_dir / f"{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.md"
     shutil.copy2(script_path, version_path)
@@ -503,7 +811,8 @@ def restore(project_dir: Path, episode_index: int, version: Path, *, yes: bool) 
         raise ProjectError("恢复版本会覆盖当前剧本；确认后使用 --yes")
     project = _load_project(project_dir)
     entry = _episode(project, episode_index)
-    version_root = (project_dir / "versions" / f"{episode_index:03d}").resolve()
+    layout = _layout_for_project(project)
+    version_root = (project_dir / layout["versions_dir"] / f"{episode_index:03d}").resolve()
     version_path = version.expanduser().resolve()
     if not version_path.is_file() or version_root not in version_path.parents:
         raise ProjectError(f"版本文件必须位于：{version_root}")
@@ -562,6 +871,11 @@ def build_parser() -> argparse.ArgumentParser:
     prepare_parser.add_argument("source")
     prepare_parser.add_argument("project_dir")
     prepare_parser.add_argument("--mode", choices=MODES, default="compact")
+    prepare_parser.add_argument(
+        "--language",
+        default="zh-Hans",
+        help="用户选定的语言代码；默认 zh-Hans。新建的可见文件和目录会使用该语言。",
+    )
 
     validate_parser = subparsers.add_parser("validate", help="校验一个已生成分集。")
     validate_parser.add_argument("project_dir")
@@ -589,6 +903,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             Path(args.source).expanduser().resolve(),
             Path(args.project_dir).expanduser().resolve(),
             args.mode,
+            getattr(args, "language", "zh-Hans"),
         )
     if args.command == "validate":
         return validate_episode(Path(args.project_dir).expanduser().resolve(), args.episode)

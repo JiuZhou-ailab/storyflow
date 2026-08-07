@@ -3,3 +3,11 @@ export { SUPPORTED_LANGUAGE_CODES, LANGUAGES } from "./languages";
 export type { LanguageCode, LanguageConfig } from "./languages";
 export { getDateLocale } from "./date-locale";
 export { LOCALE_REGISTRY } from "./registry";
+export {
+  formatLanguagePolicyForPrompt,
+  formatLanguageReminderForPrompt,
+  getCurrentLanguageCode,
+  getCurrentLanguageName,
+  getLanguageNativeName,
+  resolveLanguageCode,
+} from "./language-policy";

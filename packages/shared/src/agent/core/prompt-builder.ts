@@ -10,6 +10,7 @@ import {
   getProjectContextFilesPrompt,
   getWorkingDirectoryContext,
 } from '../../prompts/system.ts';
+import { formatLanguageReminderForPrompt } from '../../i18n/language-policy.ts';
 import { getSessionPlansPath, getSessionDataPath, getSessionPath } from '../../sessions/storage.ts';
 import {
   buildWorkspaceStructureSnapshot,
@@ -109,6 +110,9 @@ export class PromptBuilder {
 
     // Current time changes every turn, so it must stay at the dynamic tail.
     parts.push(getDateTimeContext());
+    // Keep a final language reminder after provider-native Skills and other
+    // discovered resources so human-facing output follows the selected locale.
+    parts.push(formatLanguageReminderForPrompt());
 
     return parts;
   }
