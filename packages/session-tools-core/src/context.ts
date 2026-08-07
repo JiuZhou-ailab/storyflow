@@ -291,6 +291,9 @@ export interface SessionToolContext {
    */
   testApiSource?(source: SourceConfig): Promise<ApiTestResult>;
 
+  /** Resolve a host-managed API token without exposing the login capability. */
+  getManagedApiAccessToken?(source: SourceConfig): Promise<string>;
+
   /**
    * Test a Google source (OAuth token validation).
    */

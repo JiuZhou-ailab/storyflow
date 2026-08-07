@@ -80,7 +80,7 @@ import {
   type LegacyAgentRuntime,
   pickSessionFields,
 } from '@craft-agent/shared/sessions'
-import { loadWorkspaceSources, loadAllSources, getSourcesBySlugs, isSourceUsable, type LoadedSource, getSourceCredentialManager, getSourceServerBuilder, type SourceWithCredential, isApiOAuthProvider, hasRenewEndpoint, SERVER_BUILD_ERRORS, TokenRefreshManager, createTokenGetter } from '@craft-agent/shared/sources'
+import { loadWorkspaceSources, loadAllSources, getSourcesBySlugs, isSourceUsable, type LoadedSource, getSourceCredentialManager, getSourceServerBuilder, type SourceWithCredential, isApiOAuthProvider, hasRenewEndpoint, SERVER_BUILD_ERRORS, TokenRefreshManager, createTokenGetter, createStoryflowManagedTokenGetter } from '@craft-agent/shared/sources'
 import { ConfigWatcher, type ConfigWatcherCallbacks } from '@craft-agent/shared/config'
 import { resolveAuthEnvVars } from '@craft-agent/shared/config'
 import { getLastApiError } from '@craft-agent/shared/provider-diagnostics'
@@ -261,11 +261,13 @@ async function buildServersFromSources(
 
   // Load credentials for all sources
   const sourcesWithCreds: SourceWithCredential[] = await Promise.all(
-    sources.map(async (source) => ({
-      source,
-      token: await credManager.getToken(source),
-      credential: await credManager.getApiCredential(source),
-    }))
+    sources.map(async (source) => source.config.api?.authType === 'managed'
+      ? { source, token: null, credential: null }
+      : {
+          source,
+          token: await credManager.getToken(source),
+          credential: await credManager.getApiCredential(source),
+        })
   )
   span.mark('credentials.loaded')
 
@@ -273,6 +275,11 @@ async function buildServersFromSources(
   // Uses TokenRefreshManager for unified refresh logic (DRY principle)
   const getTokenForSource = (source: LoadedSource) => {
     const provider = source.config.provider
+    if (source.config.api?.authType === 'managed') {
+      return createStoryflowManagedTokenGetter({
+        expectedGatewayBaseUrl: source.config.api.baseUrl,
+      })
+    }
     // Provider-specific OAuth (Google, Slack, Microsoft) or generic OAuth (authType: 'oauth')
     if (isApiOAuthProvider(provider) || source.config.api?.authType === 'oauth') {
       const manager = tokenRefreshManager ?? new TokenRefreshManager(credManager, {

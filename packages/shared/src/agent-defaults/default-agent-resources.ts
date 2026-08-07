@@ -18,6 +18,7 @@ import { DEFAULT_GLOBAL_AGENT_SKILL_SLUGS } from './skill-defaults.ts';
 export { DEFAULT_GLOBAL_AGENT_SKILL_SLUGS, isDefaultGlobalAgentSkillSlug } from './skill-defaults.ts';
 
 export const DEFAULT_AGENT_SOURCE_SLUGS = [
+  'storyflow-catalog',
   'wangwen-bigdata',
 ] as const;
 

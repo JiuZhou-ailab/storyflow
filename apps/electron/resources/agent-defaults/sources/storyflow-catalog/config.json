@@ -1,0 +1,114 @@
+{
+  "id": "builtin-storyflow-catalog",
+  "name": "Storyflow Catalog",
+  "slug": "storyflow-catalog",
+  "enabled": false,
+  "provider": "storyflow",
+  "type": "api",
+  "icon": "🎬",
+  "tagline": "红果、GoodShort、ReelShort 与 DataEye 的来源内榜单和媒资覆盖证据",
+  "api": {
+    "baseUrl": "https://storyflow-model.zjding.com",
+    "authType": "managed",
+    "testEndpoint": {
+      "method": "GET",
+      "path": "/v2/catalog/sources"
+    },
+    "operations": [
+      {
+        "name": "list_sources",
+        "description": "列出短剧证据来源、各来源支持的榜单口径、历史快照和转剧本 manifest 能力。",
+        "method": "GET",
+        "path": "/v2/catalog/sources"
+      },
+      {
+        "name": "list_ranking_snapshots",
+        "description": "列出一个证据来源和榜单口径可用的快照键与观测周期。",
+        "method": "GET",
+        "path": "/v2/ranking-snapshots",
+        "parameters": [
+          {
+            "name": "source",
+            "type": "string",
+            "description": "证据来源。",
+            "required": true,
+            "enum": ["hongguo", "goodshort", "reelshort", "dataeye"]
+          },
+          {
+            "name": "rankingKind",
+            "type": "string",
+            "description": "来源内榜单口径；先用 list_sources 确认可用值。"
+          }
+        ]
+      },
+      {
+        "name": "search_rankings",
+        "description": "查询一个或全部证据来源的来源内榜单，返回快照、稳定剧目标识、原始指标和媒资覆盖事实。",
+        "method": "GET",
+        "path": "/v2/rankings",
+        "parameters": [
+          {
+            "name": "source",
+            "type": "string",
+            "description": "证据来源；all 只允许 snapshot=latest 且不能指定 rankingKind。",
+            "default": "all",
+            "enum": ["all", "hongguo", "goodshort", "reelshort", "dataeye"]
+          },
+          {
+            "name": "rankingKind",
+            "type": "string",
+            "description": "单一来源内的榜单口径。"
+          },
+          {
+            "name": "snapshot",
+            "type": "string",
+            "description": "快照键。未明确选择时使用 latest。",
+            "default": "latest"
+          },
+          {
+            "name": "q",
+            "type": "string",
+            "description": "可选标题关键词。"
+          },
+          {
+            "name": "limit",
+            "type": "integer",
+            "description": "每个来源最多返回的条目数。",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 100
+          },
+          {
+            "name": "conversionReady",
+            "type": "boolean",
+            "description": "仅保留当前可直接进入视频转剧本的完整媒资；这不是热度筛选。"
+          }
+        ]
+      },
+      {
+        "name": "get_conversion_manifest",
+        "description": "取得一个剧目的有序完整分集 manifest；媒资不完整或传输形态不受支持时返回明确错误。",
+        "method": "GET",
+        "path": "/v2/series/{source}/{sourceId}/manifest",
+        "parameters": [
+          {
+            "name": "source",
+            "type": "string",
+            "description": "剧目所属证据来源。",
+            "required": true,
+            "enum": ["hongguo", "goodshort", "reelshort", "dataeye"]
+          },
+          {
+            "name": "sourceId",
+            "type": "string",
+            "description": "来源内部剧目 ID，即 Series Key 冒号后的部分。",
+            "required": true
+          }
+        ]
+      }
+    ]
+  },
+  "createdAt": 1786118400000,
+  "updatedAt": 1786118400000,
+  "connectionStatus": "untested"
+}

@@ -479,8 +479,10 @@ async function testApiConnection(
     ? `${source.api.baseUrl}${source.api.testEndpoint.path}`
     : source.api.baseUrl;
 
-  // Try authenticated request if credentials available
-  if (source.isAuthenticated && ctx.credentialManager && source.api.authType !== 'none') {
+  // Managed APIs authenticate through the host login capability, not Source state.
+  const canTestManagedAuth = source.api.authType === 'managed' && !!ctx.getManagedApiAccessToken;
+  const canTestStoredAuth = source.isAuthenticated && !!ctx.credentialManager && source.api.authType !== 'none';
+  if (canTestManagedAuth || canTestStoredAuth) {
     const authResult = await testApiConnectionWithAuth(ctx, source, sourceSlug, testUrl);
     if (authResult.attempted) {
       return authResult;
@@ -513,12 +515,27 @@ async function testApiConnectionWithAuth(
     workspaceId,
   };
 
-  // Get token from credential manager
+  // Resolve managed access through the host; every other API uses the Source credential store.
   let token: string | null = null;
-  try {
-    token = await ctx.credentialManager!.getToken(loadedSource);
-  } catch {
-    // Couldn't get token, will fall through to basic test
+  if (source.api?.authType === 'managed') {
+    try {
+      token = await ctx.getManagedApiAccessToken?.(source) ?? null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Storyflow managed access is unavailable';
+      return {
+        lines: [`✗ ${message}`],
+        success: false,
+        hasError: true,
+        error: message,
+        attempted: true,
+      };
+    }
+  } else {
+    try {
+      token = await ctx.credentialManager!.getToken(loadedSource);
+    } catch {
+      // Couldn't get token, will fall through to basic test
+    }
   }
 
   if (!token) {
@@ -532,6 +549,7 @@ async function testApiConnectionWithAuth(
   switch (source.api!.authType) {
     case 'bearer':
     case 'oauth':
+    case 'managed':
       // Generic OAuth tokens are sent as Bearer tokens
       headers['Authorization'] = `Bearer ${token}`;
       break;
@@ -620,7 +638,9 @@ async function testApiConnectionWithAuth(
       return { lines, success: true, hasError: false, attempted: true };
     } else if (response.status === 401 || response.status === 403) {
       lines.push(`✗ API returned ${response.status} (credentials invalid or expired)`);
-      lines.push('  Re-authenticate the source to refresh credentials');
+      lines.push(source.api!.authType === 'managed'
+        ? '  Sign in to Storyflow again to refresh managed access'
+        : '  Re-authenticate the source to refresh credentials');
       return { lines, success: false, hasError: true, error: `Auth failed: ${response.status}`, attempted: true };
     } else if (response.status === 404) {
       lines.push(`⚠ API returned 404 (endpoint not found)`);
@@ -698,7 +718,9 @@ async function testApiConnectionBasic(
         // Auth required - endpoint is reachable but needs credentials
         success = true;
         lines.push(`⚠ API returned ${response.status} (authentication required)`);
-        if (!source.isAuthenticated) {
+        if (source.api?.authType === 'managed') {
+          lines.push('  Authentication is provided by the active Storyflow login');
+        } else if (!source.isAuthenticated) {
           lines.push('  Authenticate the source to test with credentials');
         } else {
           lines.push('  Source is marked authenticated but credentials could not be retrieved');
@@ -918,6 +940,11 @@ async function checkAuthStatus(
 ): Promise<{ lines: string[]; hasWarning: boolean }> {
   const lines: string[] = [];
   let hasWarning = false;
+
+  if (source.type === 'api' && source.api?.authType === 'managed') {
+    lines.push('ℹ Authentication is provided by the active Storyflow login');
+    return { lines, hasWarning };
+  }
 
   if (source.isAuthenticated) {
     // In Codex context (no validateMcpConnection), MCP source credentials are delivered

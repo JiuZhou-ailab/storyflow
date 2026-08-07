@@ -19,6 +19,7 @@ import {
   isDefaultGlobalAgentSkillSlug,
   seedDefaultAgentResources,
 } from '../default-agent-resources.ts';
+import { validatePermissionsContent, validateSourceConfig } from '../../config/validators.ts';
 import { validateSkillDocumentForSlug } from '../../skills/storage.ts';
 
 let tempDir: string;
@@ -37,7 +38,7 @@ afterEach(() => {
 });
 
 describe('default agent resources', () => {
-  it('declares the authenticated product Skills and Wangwen BigData Source', () => {
+  it('declares the authenticated product Skills and default research Sources', () => {
     expect(DEFAULT_GLOBAL_AGENT_SKILL_SLUGS).toEqual([
       'find-skills',
       'skill-creator',
@@ -45,7 +46,7 @@ describe('default agent resources', () => {
       'storyflow-tutorial',
       'sn2s-novel-to-screenplay',
     ]);
-    expect(DEFAULT_AGENT_SOURCE_SLUGS).toEqual(['wangwen-bigdata']);
+    expect(DEFAULT_AGENT_SOURCE_SLUGS).toEqual(['storyflow-catalog', 'wangwen-bigdata']);
     expect(isDefaultGlobalAgentSkillSlug('find-skills')).toBe(true);
     expect(isDefaultGlobalAgentSkillSlug('skill-creator')).toBe(true);
     expect(isDefaultGlobalAgentSkillSlug('custom-skill')).toBe(false);
@@ -149,6 +150,16 @@ describe('default agent resources', () => {
     expect(wangwenConfig).toContain('"slug": "wangwen-bigdata"');
     expect(wangwenConfig).not.toContain('X-MCP-API-Key');
     expect(wangwenConfig).not.toContain('wwmcp_');
+
+    const catalogDir = join(assetsDir, 'sources', 'storyflow-catalog');
+    const catalogConfig = readFileSync(join(catalogDir, 'config.json'), 'utf-8');
+    const catalogPermissions = readFileSync(join(catalogDir, 'permissions.json'), 'utf-8');
+    expect(catalogConfig).toContain('"slug": "storyflow-catalog"');
+    expect(catalogConfig).toContain('"authType": "managed"');
+    expect(catalogConfig).not.toContain('MODEL_ACCESS_BROKER_TOKEN');
+    expect(validateSourceConfig(JSON.parse(catalogConfig)).valid).toBe(true);
+    expect(validatePermissionsContent(catalogPermissions).valid).toBe(true);
+    expect(readFileSync(join(catalogDir, 'guide.md'), 'utf-8')).not.toContain('SELECT ');
   });
 
 });

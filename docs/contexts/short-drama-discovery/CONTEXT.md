@@ -32,6 +32,10 @@ _Avoid_: Partial URL list, signed HLS as downloadable file
 唯一理解某个爬虫表结构并把它转换为上述领域对象的反腐层。
 _Avoid_: SQL in Skill, generic arbitrary-query adapter
 
+**Catalog Source**:
+通过 Storyflow 身份提供来源化榜单、剧目和媒资覆盖查询的只读数据源；自身不执行采集。
+_Avoid_: Crawler Skill, Skill-owned HTTP client
+
 **Discovery Skill**:
 通过 Storyflow 身份调用 Catalog API、解释结果并衔接视频转剧本的薄交互层。
 _Avoid_: Database client, ranking implementation

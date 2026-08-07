@@ -45,6 +45,7 @@ import type { AgentAutomationInput, AgentEvent as AutomationAgentEvent } from '.
 import { getSessionPlansPath, getSessionDataPath, getSessionPath } from '../sessions/storage.ts';
 import { getMiniAgentSystemPrompt } from '../prompts/system.ts';
 import { buildTitlePrompt, buildRegenerateTitlePrompt, validateTitle } from '../utils/title-generator.ts';
+import { getCurrentLanguageName } from '../i18n/language-policy.ts';
 import { resolveSystemPromptPresetForWorkingDirectory } from './system-prompt-preset.ts';
 import { preparePiSkillCommand } from './pi-skill-command.ts';
 import {
@@ -949,7 +950,10 @@ export abstract class PiAgentHost {
    */
   async generateTitle(message: string, options?: { language?: string }): Promise<string | null> {
     try {
-      const prompt = buildTitlePrompt(message, options);
+      const prompt = buildTitlePrompt(message, {
+        ...options,
+        language: options?.language ?? getCurrentLanguageName(),
+      });
       const result = await this.runMiniCompletion(prompt);
       return validateTitle(result);
     } catch (error) {
@@ -969,7 +973,14 @@ export abstract class PiAgentHost {
    */
   async regenerateTitle(recentUserMessages: string[], lastAssistantResponse: string, options?: { language?: string }): Promise<string | null> {
     try {
-      const prompt = buildRegenerateTitlePrompt(recentUserMessages, lastAssistantResponse, options);
+      const prompt = buildRegenerateTitlePrompt(
+        recentUserMessages,
+        lastAssistantResponse,
+        {
+          ...options,
+          language: options?.language ?? getCurrentLanguageName(),
+        },
+      );
       const result = await this.runMiniCompletion(prompt);
       return validateTitle(result);
     } catch (error) {

@@ -127,6 +127,50 @@ describe('SourceServerBuilder.buildApiConfig', () => {
       'X-Custom-Header': 'custom-value',
     });
   });
+
+  test('maps managed auth to bearer and preserves typed operations', () => {
+    const operations = [{
+      name: 'list_sources',
+      description: 'List source freshness and coverage.',
+      method: 'GET' as const,
+      path: '/v2/catalog/sources',
+    }];
+    const source = createMockSource({
+      provider: 'storyflow',
+      api: {
+        baseUrl: 'https://storyflow-model.zjding.com',
+        authType: 'managed',
+        operations,
+      },
+    });
+
+    const config = builder.buildApiConfig(source);
+
+    expect(config.auth).toEqual({ type: 'bearer', authScheme: 'Bearer' });
+    expect(config.operations).toEqual(operations);
+  });
+});
+
+describe('SourceServerBuilder managed auth boundary', () => {
+  const builder = new SourceServerBuilder();
+  const source = createMockSource({
+    provider: 'storyflow',
+    api: {
+      baseUrl: 'https://storyflow-model.zjding.com',
+      authType: 'managed',
+    },
+  });
+
+  test('does not build a managed Source without a host token getter', async () => {
+    expect(await builder.buildApiServer(source, null)).toBeNull();
+  });
+
+  test('builds a managed Source without a per-Source credential', async () => {
+    const server = await builder.buildApiServer(source, null, async () => 'managed-token');
+
+    expect(server?.type).toBe('sdk');
+    expect(server?.name).toBe('api_test-source');
+  });
 });
 
 describe('buildHeaders with MultiHeaderCredential', () => {

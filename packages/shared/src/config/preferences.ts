@@ -3,8 +3,7 @@ import { join } from 'path';
 import { ensureConfigDir } from './storage.ts';
 import { CONFIG_DIR } from './paths.ts';
 import { readJsonFileSync } from '../utils/files.ts';
-import { i18n } from '../i18n/index.ts';
-import { LOCALE_REGISTRY, type LanguageCode } from '../i18n/registry.ts';
+import { getCurrentLanguageCode, getLanguageNativeName } from '../i18n/language-policy.ts';
 import { formatUserProfileForPrompt } from './user-profile.ts';
 
 export interface UserLocation {
@@ -89,9 +88,8 @@ export function formatPreferencesForPrompt(): string {
 
   // Derive language from the app's i18n setting (Appearance > Language).
   // This replaces the old prefs.language field which is now ignored.
-  const langCode = (i18n.resolvedLanguage ?? 'en') as LanguageCode;
-  const langEntry = LOCALE_REGISTRY[langCode];
-  const langName = langEntry?.nativeName ?? 'English';
+  const langCode = getCurrentLanguageCode();
+  const langName = getLanguageNativeName(langCode);
 
   const hasStructuredPrefs = Object.keys(prefs).length > 0 &&
     Boolean(prefs.name || prefs.timezone || prefs.location || prefs.notes || langCode !== 'en');
@@ -171,9 +169,8 @@ export function formatPreferencesDisplay(): string {
       lines.push('- Location: (not set)');
     }
 
-    const displayLangCode = (i18n.resolvedLanguage ?? 'en') as LanguageCode;
-    const displayLangEntry = LOCALE_REGISTRY[displayLangCode];
-    lines.push(`- Language: ${displayLangEntry?.nativeName ?? 'English'} (via Appearance settings)`);
+    const displayLangCode = getCurrentLanguageCode();
+    lines.push(`- Language: ${getLanguageNativeName(displayLangCode)} (via Appearance settings)`);
 
     if (hasNotes) {
       lines.push('', '**Notes**', prefs.notes!);

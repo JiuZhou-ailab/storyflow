@@ -28,6 +28,7 @@ interface CtxOverrides {
   validateStdioMcpConnection?: SessionToolContext['validateStdioMcpConnection'];
   validateMcpConnection?: SessionToolContext['validateMcpConnection'];
   credentialManager?: SessionToolContext['credentialManager'];
+  getManagedApiAccessToken?: SessionToolContext['getManagedApiAccessToken'];
   isSourceDefinitionReadOnly?: SessionToolContext['isSourceDefinitionReadOnly'];
 }
 
@@ -73,6 +74,7 @@ function createCtx(workspacePath: string, overrides: CtxOverrides = {}): Session
     validateStdioMcpConnection: overrides.validateStdioMcpConnection,
     validateMcpConnection: overrides.validateMcpConnection,
     credentialManager: overrides.credentialManager,
+    getManagedApiAccessToken: overrides.getManagedApiAccessToken,
     isSourceDefinitionReadOnly: overrides.isSourceDefinitionReadOnly,
     activateSourceInSession: overrides.activateSourceInSession,
   } as unknown as SessionToolContext;
@@ -576,6 +578,61 @@ describe('source_test API connection branches', () => {
     expect(stub.calls[0]?.init?.headers).toMatchObject({
       Authorization: 'Basic legacy-token',
     });
+  });
+
+  it('managed auth probes with the active Storyflow login token', async () => {
+    writeApiSource(tempDir, 'storyflow-catalog', {
+      provider: 'storyflow',
+      api: {
+        baseUrl: 'https://storyflow-model.zjding.com',
+        authType: 'managed',
+        testEndpoint: { method: 'GET', path: '/v2/catalog/sources' },
+      },
+    });
+    let stub: ReturnType<typeof installFetchStub>;
+    stub = installFetchStub(() => Response.json({ version: 2, sources: [] }));
+    restoreFetch = stub.restore;
+
+    const result = await handleSourceTest(createCtx(tempDir, {
+      getManagedApiAccessToken: async () => 'storyflow-token',
+    }), { sourceSlug: 'storyflow-catalog', autoEnable: false });
+    const text = result.content[0]?.text ?? '';
+
+    expect(stub.calls[0]?.url).toBe('https://storyflow-model.zjding.com/v2/catalog/sources');
+    expect(stub.calls[0]?.init?.headers).toMatchObject({
+      Authorization: 'Bearer storyflow-token',
+    });
+    expect(text).toContain('API connection successful (authenticated)');
+    expect(text).toContain('Authentication is provided by the active Storyflow login');
+  });
+
+  it('managed auth fails closed when the Storyflow login is unavailable', async () => {
+    writeApiSource(tempDir, 'storyflow-catalog', {
+      provider: 'storyflow',
+      api: {
+        baseUrl: 'https://storyflow-model.zjding.com',
+        authType: 'managed',
+        testEndpoint: { method: 'GET', path: '/v2/catalog/sources' },
+      },
+    });
+    const stub = installFetchStub(() => Response.json({ version: 2, sources: [] }));
+    restoreFetch = stub.restore;
+
+    const result = await handleSourceTest(createCtx(tempDir, {
+      getManagedApiAccessToken: async () => {
+        throw new Error('Storyflow login is required for this managed Source');
+      },
+    }), { sourceSlug: 'storyflow-catalog' });
+    const text = result.content[0]?.text ?? '';
+
+    expect(stub.calls).toHaveLength(0);
+    expect(text).toContain('Storyflow login is required for this managed Source');
+    expect(text).toContain('Validation failed with errors');
+    const persisted = JSON.parse(
+      readFileSync(join(tempDir, 'sources', 'storyflow-catalog', 'config.json'), 'utf-8')
+    ) as SourceConfig;
+    expect(persisted.enabled).toBe(false);
+    expect(persisted.connectionStatus).toBe('error');
   });
 });
 

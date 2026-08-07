@@ -1,0 +1,7 @@
+{
+  "allowedMcpPatterns": [
+    { "pattern": "list", "comment": "读取证据来源和榜单快照" },
+    { "pattern": "search", "comment": "只读查询来源内榜单" },
+    { "pattern": "get", "comment": "读取已验证的转剧本 manifest" }
+  ]
+}

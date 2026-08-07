@@ -1,6 +1,10 @@
 /**
  * Session Tools Core - Types
  *
+ * input: Portable session-tool requests, Source definitions, and host capability values
+ * output: Shared contracts used by session-tools-core handlers and Storyflow adapters
+ * pos: Dependency-free type boundary between portable tools and the product host
+ *
  * Shared type definitions for session-scoped tools used by both
  * Claude (in-process) and Codex (subprocess) implementations.
  */
@@ -246,7 +250,7 @@ export type McpAuthType = 'oauth' | 'bearer' | 'none';
 /**
  * API auth type
  */
-export type ApiAuthType = 'bearer' | 'header' | 'query' | 'basic' | 'oauth' | 'none';
+export type ApiAuthType = 'bearer' | 'header' | 'query' | 'basic' | 'oauth' | 'managed' | 'none';
 
 /**
  * MCP source configuration block
@@ -281,6 +285,22 @@ export interface ApiSourceConfig {
     body?: Record<string, unknown>;
     headers?: Record<string, string>;
   };
+  operations?: Array<{
+    name: string;
+    description: string;
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+    path: string;
+    parameters?: Array<{
+      name: string;
+      type: 'string' | 'integer' | 'number' | 'boolean';
+      description?: string;
+      required?: boolean;
+      enum?: string[];
+      default?: string | number | boolean;
+      minimum?: number;
+      maximum?: number;
+    }>;
+  }>;
   // Google OAuth
   googleService?: GoogleService;
   googleScopes?: string[];

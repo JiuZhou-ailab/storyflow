@@ -11,6 +11,7 @@
  */
 import { describe, it, expect } from 'bun:test';
 import { sourceNeedsAuthentication } from '../../sources/credential-manager.ts';
+import { isSourceUsable } from '../../sources/storage.ts';
 import type { LoadedSource } from '../../sources/types.ts';
 
 // Helper to create mock LoadedSource objects
@@ -256,6 +257,20 @@ describe('sourceNeedsAuthentication', () => {
           isAuthenticated: undefined,
         });
         expect(sourceNeedsAuthentication(source)).toBe(false);
+      });
+    });
+
+    describe('authType: "managed" (host login required)', () => {
+      it('does not request or persist a per-Source credential', () => {
+        const source = createMockSource({
+          type: 'api',
+          provider: 'storyflow',
+          api: { baseUrl: 'https://storyflow-model.zjding.com', authType: 'managed' },
+          isAuthenticated: undefined,
+        });
+
+        expect(sourceNeedsAuthentication(source)).toBe(false);
+        expect(isSourceUsable(source)).toBe(true);
       });
     });
   });

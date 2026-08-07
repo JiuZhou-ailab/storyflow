@@ -1,6 +1,10 @@
 /**
  * SourceManager - Centralized Source State Management
  *
+ * input: Loaded Source definitions, active/intended slug state, and tool errors
+ * output: Source state projection, activation detection, and auth-tool routing
+ * pos: Agent-facing Source state coordinator above storage and credential boundaries
+ *
  * Provides a unified interface for managing external data source state that both
  * PiAgent uses this for source tracking, formatting for
  * context injection, and auto-activation detection.
@@ -354,7 +358,7 @@ export class SourceManager {
 
     // API sources
     if (type === 'api') {
-      if (api?.authType === 'none' || api?.authType === undefined) {
+      if (api?.authType === 'none' || api?.authType === 'managed' || api?.authType === undefined) {
         return null;
       }
 

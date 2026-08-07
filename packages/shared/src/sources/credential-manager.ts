@@ -1351,7 +1351,10 @@ export function sourceNeedsAuthentication(source: LoadedSource): boolean {
 
   // API sources with auth requirements
   if (source.config.type === 'api' && api) {
-    if (api.authType !== 'none' && api.authType !== undefined && !source.config.isAuthenticated) {
+    if (api.authType !== 'none'
+      && api.authType !== 'managed'
+      && api.authType !== undefined
+      && !source.config.isAuthenticated) {
       return true;
     }
   }

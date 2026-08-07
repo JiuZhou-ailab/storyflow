@@ -434,9 +434,47 @@ const ApiOAuthConfigSchema = z.object({
   extraParams: z.record(z.string(), z.string()).optional(),
 });
 
+const ApiOperationParameterSchema = z.object({
+  name: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
+  type: z.enum(['string', 'integer', 'number', 'boolean']),
+  description: z.string().optional(),
+  required: z.boolean().optional(),
+  enum: z.array(z.string()).min(1).optional(),
+  default: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  minimum: z.number().optional(),
+  maximum: z.number().optional(),
+});
+
+const ApiSourceOperationSchema = z.object({
+  name: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
+  description: z.string().min(1),
+  method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']),
+  path: z.string().regex(/^\//, 'Operation path must start with /'),
+  parameters: z.array(ApiOperationParameterSchema).optional(),
+}).superRefine((operation, context) => {
+  const names = new Set<string>();
+  for (const parameter of operation.parameters ?? []) {
+    if (names.has(parameter.name)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate operation parameter: ${parameter.name}`,
+      });
+    }
+    names.add(parameter.name);
+  }
+  for (const placeholder of operation.path.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)) {
+    if (!names.has(placeholder[1]!)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Path placeholder requires a matching parameter: ${placeholder[1]}`,
+      });
+    }
+  }
+});
+
 const ApiSourceConfigSchema = z.object({
   baseUrl: z.string().url(),
-  authType: z.enum(['bearer', 'header', 'query', 'basic', 'oauth', 'none']),
+  authType: z.enum(['bearer', 'header', 'query', 'basic', 'oauth', 'managed', 'none']),
   headerName: z.string().optional(),
   headerNames: z.array(z.string()).optional(),
   queryParam: z.string().optional(),
@@ -450,6 +488,18 @@ const ApiSourceConfigSchema = z.object({
       headers: z.record(z.string(), z.string()).optional(),
     })
     .optional(),
+  operations: z.array(ApiSourceOperationSchema).max(32).optional().superRefine((operations, context) => {
+    const names = new Set<string>();
+    for (const operation of operations ?? []) {
+      if (names.has(operation.name)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate API operation name: ${operation.name}`,
+        });
+      }
+      names.add(operation.name);
+    }
+  }),
   googleService: z.enum(['gmail', 'calendar', 'drive', 'docs', 'sheets', 'youtube', 'searchconsole']).optional(),
   googleScopes: z.array(z.string()).optional(),
   googleOAuthClientId: z.string().optional(),
@@ -498,7 +548,15 @@ export const FolderSourceConfigSchema = z.object({
     }
   },
   { message: 'Config must include type-specific configuration (mcp, api, or local)' }
-);
+).superRefine((source, context) => {
+  if (source.api?.authType === 'managed' && source.provider !== 'storyflow') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['provider'],
+      message: 'Managed API authentication is reserved for the Storyflow provider',
+    });
+  }
+});
 
 /**
  * Validate a source config object (in-memory, no disk reads)

@@ -1,13 +1,12 @@
 /**
- * Dynamic API Tool Factory
- *
- * Creates a single flexible MCP tool per API configuration.
- * Each tool accepts { path, method, params } and auto-injects authentication.
+ * input: API Source configuration, declarative operations, and runtime credentials
+ * output: In-process MCP tools backed by authenticated HTTP requests
+ * pos: Generic API-to-tool adapter for Storyflow Sources
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { ApiConfig } from './types.ts';
+import type { ApiConfig, ApiOperationParameter, ApiSourceOperation } from './types.ts';
 import { debug } from '../utils/debug.ts';
 import { guardLargeResult } from '../utils/large-response.ts';
 import { MAX_DOWNLOAD_SIZE, formatBytes } from '../utils/binary-detection.ts';
@@ -231,7 +230,8 @@ export function createApiTool(
         const url = buildUrl(config.baseUrl, path, method, params, config.auth, resolvedCredential);
         const headers = buildHeaders(config.auth, resolvedCredential, config.defaultHeaders);
 
-        debug(`[api-tools] ${config.name}: ${method} ${url}`);
+        const debugUrl = new URL(url);
+        debug(`[api-tools] ${config.name}: ${method} ${debugUrl.origin}${debugUrl.pathname}`);
 
         const fetchOptions: RequestInit = {
           method,
@@ -251,7 +251,8 @@ export function createApiTool(
           }
         }
 
-        debug(`[api-tools] ${config.name}: headers=${JSON.stringify(fetchOptions.headers)}, bodyLength=${fetchOptions.body ? String(fetchOptions.body).length : 0}`);
+        const headerNames = Object.keys(fetchOptions.headers as Record<string, string>).sort();
+        debug(`[api-tools] ${config.name}: headerNames=${headerNames.join(',')}, bodyLength=${fetchOptions.body ? String(fetchOptions.body).length : 0}`);
 
         const response = await fetch(url, fetchOptions);
 
@@ -312,6 +313,111 @@ export function createApiTool(
   };
 }
 
+function operationParameterSchema(parameter: ApiOperationParameter): z.ZodTypeAny {
+  let schema: z.ZodTypeAny;
+  switch (parameter.type) {
+    case 'integer':
+      schema = z.number().int();
+      break;
+    case 'number':
+      schema = z.number();
+      break;
+    case 'boolean':
+      schema = z.boolean();
+      break;
+    case 'string':
+    default:
+      schema = z.string();
+  }
+
+  if (parameter.enum?.length) {
+    const allowed = new Set(parameter.enum);
+    schema = schema.refine(value => allowed.has(String(value)), {
+      message: `Expected one of: ${parameter.enum.join(', ')}`,
+    });
+  }
+  if (parameter.minimum !== undefined && (parameter.type === 'integer' || parameter.type === 'number')) {
+    schema = schema.refine(value => typeof value === 'number' && value >= parameter.minimum!, {
+      message: `Expected a value greater than or equal to ${parameter.minimum}`,
+    });
+  }
+  if (parameter.maximum !== undefined && (parameter.type === 'integer' || parameter.type === 'number')) {
+    schema = schema.refine(value => typeof value === 'number' && value <= parameter.maximum!, {
+      message: `Expected a value less than or equal to ${parameter.maximum}`,
+    });
+  }
+  if (parameter.description) schema = schema.describe(parameter.description);
+  if (parameter.default !== undefined) {
+    schema = schema.default(parameter.default);
+  } else if (!parameter.required) {
+    schema = schema.optional();
+  }
+  return schema;
+}
+
+function operationInputSchema(operation: ApiSourceOperation): Record<string, z.ZodTypeAny> {
+  return Object.fromEntries(
+    (operation.parameters ?? []).map(parameter => [parameter.name, operationParameterSchema(parameter)]),
+  );
+}
+
+function operationRequest(
+  operation: ApiSourceOperation,
+  args: Record<string, unknown>,
+): { path: string; method: ApiSourceOperation['method']; params?: Record<string, unknown> } {
+  let path = operation.path;
+  const params = { ...args };
+  for (const match of operation.path.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)) {
+    const name = match[1]!;
+    const value = params[name];
+    if (value === undefined || value === null || value === '') {
+      throw new Error(`Missing path parameter: ${name}`);
+    }
+    path = path.replaceAll(`{${name}}`, encodeURIComponent(String(value)));
+    delete params[name];
+  }
+  for (const parameter of operation.parameters ?? []) {
+    if (params[parameter.name] === undefined && parameter.default !== undefined) {
+      params[parameter.name] = parameter.default;
+    }
+  }
+  return {
+    path,
+    method: operation.method,
+    ...(Object.keys(params).length > 0 ? { params } : {}),
+  };
+}
+
+/** Build one stable domain tool backed by the generic authenticated API executor. */
+export function createApiOperationTool(
+  config: ApiConfig,
+  operation: ApiSourceOperation,
+  credential: ApiCredentialSource,
+  sessionPath?: string,
+  summarize?: SummarizeCallback,
+) {
+  const executor = createApiTool(config, credential, sessionPath, summarize);
+  const inputSchema = operationInputSchema(operation);
+  return {
+    name: operation.name,
+    description: operation.description,
+    inputSchema,
+    handler: async (args: Record<string, unknown>) => {
+      try {
+        return await executor.handler(operationRequest(operation, args));
+      } catch (error) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: error instanceof Error ? error.message : 'Invalid API operation input',
+          }],
+          isError: true,
+        };
+      }
+    },
+  };
+}
+
 /**
  * Create an in-process MCP server with a single flexible API tool.
  *
@@ -329,14 +435,23 @@ export function createApiServer(
 ): { type: 'sdk'; name: string; instance: McpServer } {
   debug(`[api-tools] Creating server for ${config.name}${sessionPath ? ` (session: ${sessionPath})` : ''}`);
 
-  const apiTool = createApiTool(config, credential, sessionPath, summarize);
-
   const name = `api_${config.name}`;
   const instance = new McpServer({ name, version: '1.0.0' });
-  instance.registerTool(apiTool.name, {
-    description: apiTool.description,
-    inputSchema: apiTool.inputSchema,
-  }, apiTool.handler);
+  if (config.operations?.length) {
+    for (const operation of config.operations) {
+      const tool = createApiOperationTool(config, operation, credential, sessionPath, summarize);
+      instance.registerTool(tool.name, {
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+      }, tool.handler);
+    }
+  } else {
+    const apiTool = createApiTool(config, credential, sessionPath, summarize);
+    instance.registerTool(apiTool.name, {
+      description: apiTool.description,
+      inputSchema: apiTool.inputSchema,
+    }, apiTool.handler);
+  }
 
   return {
     type: 'sdk',

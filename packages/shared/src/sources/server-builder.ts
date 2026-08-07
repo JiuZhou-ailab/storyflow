@@ -1,14 +1,7 @@
 /**
- * SourceServerBuilder
- *
- * Builds MCP and API server configurations from LoadedSource objects.
- * This module handles URL normalization and server config creation,
- * but does NOT fetch credentials - credentials are passed in.
- *
- * This replaces SourceService's server building logic with a cleaner
- * separation of concerns:
- * - SourceCredentialManager: handles credentials
- * - SourceServerBuilder: handles server configuration
+ * input: Loaded Sources plus host-resolved credentials and token getters
+ * output: MCP and in-process API server configurations
+ * pos: Source connection builder beneath the session runtime
  */
 
 import type { LoadedSource, ApiConfig } from './types.ts';
@@ -217,6 +210,17 @@ export class SourceServerBuilder {
       return createApiServer(config, getToken, sessionPath, summarize);
     }
 
+    // First-party managed APIs use the Storyflow login broker instead of a
+    // per-Source credential. The host supplies a short-lived token getter.
+    if (authType === 'managed') {
+      if (!getToken) {
+        debug(`[SourceServerBuilder] Managed API source ${source.config.slug} has no host token getter`);
+        return null;
+      }
+      const config = this.buildApiConfig(source);
+      return createApiServer(config, getToken, sessionPath, summarize);
+    }
+
     // Public APIs (no auth) can be used immediately
     if (authType === 'none') {
       debug(`[SourceServerBuilder] Building public API server for ${source.config.slug}`);
@@ -275,11 +279,15 @@ export class SourceServerBuilder {
         // Generic OAuth tokens are sent as Bearer tokens
         config.auth = { type: 'bearer', authScheme: api.authScheme ?? 'Bearer' };
         break;
+      case 'managed':
+        config.auth = { type: 'bearer', authScheme: api.authScheme ?? 'Bearer' };
+        break;
       case 'none':
       default:
         config.auth = { type: 'none' };
     }
 
+    config.operations = api.operations;
     return config;
   }
 

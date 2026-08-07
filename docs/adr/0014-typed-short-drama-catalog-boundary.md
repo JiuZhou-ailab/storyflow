@@ -18,12 +18,15 @@ DataEye 周热榜不能与平台日榜共用分值，历史表也可能因唯一
 - 完整分集只通过 Conversion-ready Manifest 暴露；部分媒资只返回数量和原因，不返回 URL。
 - `source:sourceSeriesId` 是跨接口身份；裸数字 `seriesId` 仅作为红果 v1 兼容。
 - Storyflow 网关校验 `catalog:read`，数据库凭据和源站令牌只保留在服务端。
-- Skill 只负责用户意图、参数选择和下一步衔接，不承载领域推断。
+- Catalog 作为 Storyflow 托管的只读 Source 交付，使用具名 typed operations 与 Source guide，不向 Agent 暴露任意 HTTP、SQL 或爬虫控制面。
+- 普通榜单调研方法属于 Source guide；只有跨数据源或衔接视频转剧本的工作流才保留为薄 Skill。
+- Skill 只负责用户意图、参数选择和下一步衔接，不承载数据访问、鉴权或领域推断。
 
 ## 后果
 
-新增数据源必须编写一个明确的 Source Adapter；这增加少量服务端代码，但数据库变化只影响一个边界。
+新增证据来源必须编写一个明确的 Source Adapter；这增加少量服务端代码，但数据库变化只影响一个边界。
 没有完整媒资的海外榜单仍可用于选题，却会明确标记不可直接转换。v1 继续服务旧客户端，新增能力只进入 v2。
+桌面端只发布一个 `storyflow-catalog` Source；Hongguo、GoodShort、ReelShort 与 DataEye 是其中正交的 Evidence Source，不拆成重复连接。
 
 ## 非目标
 

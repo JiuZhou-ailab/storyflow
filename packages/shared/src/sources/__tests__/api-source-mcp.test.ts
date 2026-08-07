@@ -49,4 +49,76 @@ describe('API source MCP server', () => {
       await client.close();
     }
   });
+
+  test('exposes declarative operations as bounded typed tools', async () => {
+    const config: ApiConfig = {
+      name: 'catalog',
+      baseUrl: 'https://catalog.example.com',
+      auth: { type: 'bearer' },
+      operations: [
+        {
+          name: 'list_sources',
+          description: 'List evidence sources.',
+          method: 'GET',
+          path: '/v2/catalog/sources',
+        },
+        {
+          name: 'search_rankings',
+          description: 'Search one source-scoped ranking snapshot.',
+          method: 'GET',
+          path: '/v2/rankings',
+          parameters: [
+            { name: 'source', type: 'string', required: true, enum: ['reelshort', 'hongguo'] },
+            { name: 'limit', type: 'integer', default: 20, minimum: 1, maximum: 100 },
+          ],
+        },
+        {
+          name: 'get_manifest',
+          description: 'Get one conversion manifest.',
+          method: 'GET',
+          path: '/v2/series/{source}/{sourceId}/manifest',
+          parameters: [
+            { name: 'source', type: 'string', required: true },
+            { name: 'sourceId', type: 'string', required: true },
+          ],
+        },
+      ],
+    };
+    const serverConfig = createApiServer(config, async () => 'managed-token');
+    const client = new ApiSourcePoolClient(serverConfig.instance);
+    const calls: Array<{ url: string; authorization?: string }> = [];
+
+    globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+      const headers = init?.headers as Record<string, string> | undefined;
+      calls.push({ url: String(input), authorization: headers?.Authorization });
+      return Response.json({ ok: true });
+    }, { preconnect: originalFetch.preconnect });
+
+    try {
+      const tools = await client.listTools();
+      expect(tools.map(tool => tool.name)).toEqual(['list_sources', 'search_rankings', 'get_manifest']);
+      expect(tools[1]?.inputSchema.required).toEqual(['source']);
+
+      await client.callTool('list_sources', {});
+      await client.callTool('search_rankings', { source: 'reelshort' });
+      await client.callTool('get_manifest', { source: 'reelshort', sourceId: 'book/42' });
+
+      expect(calls).toEqual([
+        {
+          url: 'https://catalog.example.com/v2/catalog/sources',
+          authorization: 'Bearer managed-token',
+        },
+        {
+          url: 'https://catalog.example.com/v2/rankings?source=reelshort&limit=20',
+          authorization: 'Bearer managed-token',
+        },
+        {
+          url: 'https://catalog.example.com/v2/series/reelshort/book%2F42/manifest',
+          authorization: 'Bearer managed-token',
+        },
+      ]);
+    } finally {
+      await client.close();
+    }
+  });
 });

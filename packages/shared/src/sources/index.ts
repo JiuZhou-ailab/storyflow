@@ -13,6 +13,10 @@ export type {
   SourceType,
   SourceMcpAuthType,
   ApiAuthType,
+  ApiOperationMethod,
+  ApiOperationParameterType,
+  ApiOperationParameter,
+  ApiSourceOperation,
   KnownProvider,
   ApiOAuthProvider,
   ApiOAuthConfig,
@@ -27,6 +31,14 @@ export type {
   CreateSourceInput,
   ApiRenewEndpoint,
 } from './types.ts';
+
+export {
+  STORYFLOW_MODEL_ACCESS_BROKER_URL_ENV,
+  STORYFLOW_MODEL_ACCESS_BROKER_TOKEN_ENV,
+  resolveStoryflowManagedAccess,
+  createStoryflowManagedTokenGetter,
+} from './managed-access.ts';
+export type { StoryflowManagedAccessOptions } from './managed-access.ts';
 
 // Constants and helpers
 export {

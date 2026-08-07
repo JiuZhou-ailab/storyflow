@@ -1,5 +1,7 @@
 /**
- * Tests for source config validation - specifically around multi-header auth
+ * input: API Source config fixtures including auth and declarative operation contracts
+ * output: Validation coverage for safe persisted Source configuration
+ * pos: Source config trust-boundary regression tests
  *
  * These tests catch configuration mistakes that led to production bugs:
  * - authType: "none" with headerNames present (headers won't be applied)
@@ -7,7 +9,8 @@
  */
 
 import { describe, test, expect } from 'bun:test';
-import type { ApiSourceConfig, FolderSourceConfig } from '../types.ts';
+import { validateSourceConfig } from '../../config/validators.ts';
+import type { FolderSourceConfig } from '../types.ts';
 
 /**
  * Validate multi-header source config for common misconfigurations.
@@ -238,5 +241,78 @@ describe('Real-world API config examples', () => {
 
     const result = validateMultiHeaderConfig(cloudflareConfig);
     expect(result.valid).toBe(true);
+  });
+});
+
+describe('Declarative API operation config validation', () => {
+  const managedCatalogConfig = {
+    id: 'storyflow-catalog',
+    slug: 'storyflow-catalog',
+    name: 'Storyflow Catalog',
+    type: 'api',
+    enabled: true,
+    provider: 'storyflow',
+    api: {
+      baseUrl: 'https://storyflow-model.zjding.com',
+      authType: 'managed',
+      operations: [{
+        name: 'get_conversion_manifest',
+        description: 'Get the normalized manifest for one source series.',
+        method: 'GET',
+        path: '/v2/series/{source}/{sourceSeriesId}/manifest',
+        parameters: [
+          { name: 'source', type: 'string', required: true },
+          { name: 'sourceSeriesId', type: 'string', required: true },
+        ],
+      }],
+    },
+  } as const;
+
+  test('accepts managed auth and bounded typed operations', () => {
+    expect(validateSourceConfig(managedCatalogConfig).valid).toBe(true);
+  });
+
+  test('rejects duplicate tool names', () => {
+    const operation = managedCatalogConfig.api.operations[0];
+    const config = {
+      ...managedCatalogConfig,
+      api: {
+        ...managedCatalogConfig.api,
+        operations: [operation, operation],
+      },
+    };
+
+    const result = validateSourceConfig(config);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(error => error.message.includes('Duplicate API operation name'))).toBe(true);
+  });
+
+  test('rejects unresolved path placeholders', () => {
+    const config = {
+      ...managedCatalogConfig,
+      api: {
+        ...managedCatalogConfig.api,
+        operations: [{
+          ...managedCatalogConfig.api.operations[0],
+          parameters: [{ name: 'source', type: 'string', required: true }],
+        }],
+      },
+    };
+
+    const result = validateSourceConfig(config);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(error => error.message.includes('sourceSeriesId'))).toBe(true);
+  });
+
+  test('rejects managed auth outside the Storyflow host boundary', () => {
+    const result = validateSourceConfig({
+      ...managedCatalogConfig,
+      provider: 'custom',
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(error => error.path === 'provider')).toBe(true);
   });
 });

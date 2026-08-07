@@ -29,7 +29,35 @@ export type SourceMcpAuthType = 'oauth' | 'bearer' | 'none';
 /**
  * API authentication types
  */
-export type ApiAuthType = 'bearer' | 'header' | 'query' | 'basic' | 'oauth' | 'none';
+export type ApiAuthType = 'bearer' | 'header' | 'query' | 'basic' | 'oauth' | 'managed' | 'none';
+
+export type ApiOperationMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+export type ApiOperationParameterType = 'string' | 'integer' | 'number' | 'boolean';
+
+/** One typed input accepted by a declarative API Source operation. */
+export interface ApiOperationParameter {
+  name: string;
+  type: ApiOperationParameterType;
+  description?: string;
+  required?: boolean;
+  enum?: string[];
+  default?: string | number | boolean;
+  minimum?: number;
+  maximum?: number;
+}
+
+/**
+ * A stable domain operation exposed as its own tool instead of the generic
+ * path/method API escape hatch. `{name}` placeholders consume parameters with
+ * the same name; remaining parameters become query params or a JSON body.
+ */
+export interface ApiSourceOperation {
+  name: string;
+  description: string;
+  method: ApiOperationMethod;
+  path: string;
+  parameters?: ApiOperationParameter[];
+}
 
 /**
  * Google service types for OAuth scope selection
@@ -382,6 +410,7 @@ export interface ApiSourceConfig {
   defaultHeaders?: Record<string, string>; // Headers to include with every request
   testEndpoint?: ApiTestEndpoint; // Endpoint to use for connection testing
   renewEndpoint?: ApiRenewEndpoint; // Optional token renewal endpoint for non-OAuth sources
+  operations?: ApiSourceOperation[]; // Optional typed tools; omitting keeps the flexible API tool
 
   // Google OAuth fields (used when provider is 'google')
   googleService?: GoogleService; // Predefined service for scope selection
@@ -586,4 +615,5 @@ export interface ApiConfig {
   defaultHeaders?: Record<string, string>;
   logo?: string;
   workspaceId?: string;
+  operations?: ApiSourceOperation[];
 }

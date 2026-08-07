@@ -650,7 +650,7 @@ export function isSourceUsable(source: LoadedSource): boolean {
   const authType = source.config.mcp?.authType || source.config.api?.authType;
 
   // Sources with no auth requirement are always usable when enabled
-  if (authType === 'none' || authType === undefined) return true;
+  if (authType === 'none' || authType === 'managed' || authType === undefined) return true;
 
   // Sources requiring auth must be authenticated
   return source.config.isAuthenticated === true;

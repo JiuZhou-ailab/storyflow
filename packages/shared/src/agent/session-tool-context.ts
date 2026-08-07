@@ -59,6 +59,7 @@ import type {
   SourceConnectionStatus,
 } from '../sources/types.ts';
 import { getSourceCredentialManager } from '../sources/credential-manager.ts';
+import { createStoryflowManagedTokenGetter } from '../sources/managed-access.ts';
 import {
   inferGoogleServiceFromUrl,
   inferSlackServiceFromUrl,
@@ -307,6 +308,14 @@ export function createSessionToolContext(options: SessionToolContextOptions): Se
     // MCP validation
     validateStdioMcpConnection,
     validateMcpConnection,
+    getManagedApiAccessToken: async (source: SourceConfig): Promise<string> => {
+      if (source.type !== 'api' || source.api?.authType !== 'managed' || !source.api.baseUrl) {
+        throw new Error('Source does not use Storyflow managed API access');
+      }
+      return createStoryflowManagedTokenGetter({
+        expectedGatewayBaseUrl: source.api.baseUrl,
+      })();
+    },
 
     // Icon helpers (simplified - full implementation would use logo.ts)
     isIconUrl: (value: string): boolean => {
