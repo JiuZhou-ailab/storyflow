@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import threading
 import unittest
+from datetime import datetime
 from http.server import ThreadingHTTPServer
 from urllib.request import Request, urlopen
 
@@ -76,6 +77,44 @@ class CatalogApiCompatibilityTest(unittest.TestCase):
         )
         self.assertEqual([entry["ranking"]["rank"] for entry in entries], [1, 2])
 
+    def test_dataeye_snapshots_use_allowlisted_static_queries(self) -> None:
+        for ranking_kind, week in (
+            ("weekly_hot", "2026-07-27 ~ 2026-08-02"),
+            ("weekly_rank", "2026-07-20 ~ 2026-07-26"),
+        ):
+            period_start, period_end = week.split(" ~ ")
+            cursor = _Cursor(
+                [{"week": week, "observed_at": datetime(2026, 8, 2, 12, 0)}]
+            )
+
+            snapshots = catalog_sources.list_snapshots(
+                cursor, "dataeye", ranking_kind
+            )
+
+            self.assertEqual(
+                cursor.queries,
+                [catalog_sources.DATAEYE_SNAPSHOT_SQL[ranking_kind]],
+            )
+            self.assertEqual(len(snapshots), 1)
+            self.assertEqual(
+                snapshots[0],
+                {
+                    "key": f"dataeye:{ranking_kind}:{period_start}_{period_end}",
+                    "evidenceSource": "dataeye",
+                    "rankingKind": ranking_kind,
+                    "periodStart": period_start,
+                    "periodEnd": period_end,
+                    "observedAt": "2026-08-02T12:00:00+08:00",
+                },
+            )
+
+        invalid_cursor = _Cursor([])
+        with self.assertRaisesRegex(ValueError, "unsupported_ranking_kind"):
+            catalog_sources.list_snapshots(
+                invalid_cursor, "dataeye", "weekly_hot;DROP TABLE"
+            )
+        self.assertEqual(invalid_cursor.queries, [])
+
 
 def _hongguo_row(series_id: str, hot_score: int) -> dict[str, object]:
     return {
@@ -88,6 +127,19 @@ def _hongguo_row(series_id: str, hot_score: int) -> dict[str, object]:
         "hot_score": hot_score,
         "update_time": "2026-08-02T00:00:00Z",
     }
+
+
+class _Cursor:
+    def __init__(self, rows: list[dict[str, object]]) -> None:
+        self.rows = rows
+        self.queries: list[str] = []
+
+    def execute(self, query: str, params: object = None) -> None:
+        del params
+        self.queries.append(query)
+
+    def fetchall(self) -> list[dict[str, object]]:
+        return self.rows
 
 
 if __name__ == "__main__":

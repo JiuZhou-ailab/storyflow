@@ -202,6 +202,21 @@ WHERE week = %s
 ORDER BY ranking, playlet_id
 """
 
+DATAEYE_SNAPSHOT_SQL: dict[str, str] = {
+    "weekly_hot": """
+SELECT week, MAX(update_time) AS observed_at
+FROM dataeye_playlet_hot_list
+GROUP BY week
+ORDER BY week DESC
+""",
+    "weekly_rank": """
+SELECT week, MAX(update_time) AS observed_at
+FROM dataeye_playlet_rank_list
+GROUP BY week
+ORDER BY week DESC
+""",
+}
+
 HONGGUO_DETAIL_SQL = """
 SELECT
   COALESCE(NULLIF(series_id_str, ''), CAST(series_id AS CHAR)) AS series_id,
@@ -268,14 +283,7 @@ def list_snapshots(
         row = cursor.fetchone()
         return _dated_snapshots(source, ranking_kind, [row] if row else [], "period")
 
-    table = (
-        "dataeye_playlet_hot_list"
-        if ranking_kind == "weekly_hot"
-        else "dataeye_playlet_rank_list"
-    )
-    cursor.execute(
-        f"SELECT week, MAX(update_time) AS observed_at FROM {table} GROUP BY week ORDER BY week DESC"
-    )
+    cursor.execute(DATAEYE_SNAPSHOT_SQL[ranking_kind])
     snapshots: list[dict[str, object]] = []
     for row in cursor.fetchall():
         week = parse_week(str(row.get("week") or ""))
