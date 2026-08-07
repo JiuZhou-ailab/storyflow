@@ -214,6 +214,7 @@ mock.module('@craft-agent/shared/sources', () => ({
     constructor(_mgr: unknown, _opts: unknown) {}
   },
   createTokenGetter: () => async () => null,
+  createStoryflowManagedTokenGetter: () => async () => 'managed-test-token',
   // Targeted stubs: prevent SyntaxError in tests that import these from the barrel
   loadSource: () => null,
   API_OAUTH_PROVIDERS: [],
