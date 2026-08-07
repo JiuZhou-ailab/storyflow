@@ -1,9 +1,9 @@
-// input: Turn watchdog timing helper
-// output: Regression coverage for broad turn-level timeout semantics
-// pos: Keeps long-running session timeout behavior simple and isolated
+// input: Turn watchdog hard-limit helper
+// output: Regression coverage for absolute turn timeout semantics
+// pos: Prevents event silence from being misclassified as failure
 
 import { describe, expect, it } from 'bun:test'
-import { SESSION_TURN_IDLE_TIMEOUT_MS, TurnWatchdog } from './turn-watchdog.ts'
+import { SESSION_TURN_HARD_TIMEOUT_MS, TurnWatchdog } from './turn-watchdog.ts'
 
 type TimerCallback = () => void
 
@@ -39,15 +39,14 @@ class FakeScheduler {
 }
 
 describe('TurnWatchdog', () => {
-  it('allows ten minutes without progress before timing out the turn', () => {
-    expect(SESSION_TURN_IDLE_TIMEOUT_MS).toBe(10 * 60 * 1000)
+  it('keeps a twelve-hour absolute safety limit', () => {
+    expect(SESSION_TURN_HARD_TIMEOUT_MS).toBe(12 * 60 * 60 * 1000)
   })
 
-  it('fires idle timeout only after a full idle window without progress', () => {
+  it('does not infer a failed turn from event silence alone', () => {
     const scheduler = new FakeScheduler()
     const timeouts: string[] = []
     const watchdog = new TurnWatchdog({
-      idleTimeoutMs: 100,
       hardTimeoutMs: 1_000,
       now: () => scheduler.now,
       setTimeout: scheduler.setTimeout.bind(scheduler),
@@ -56,44 +55,32 @@ describe('TurnWatchdog', () => {
     })
 
     watchdog.start()
-    scheduler.advance(90)
-    watchdog.markProgress()
-    scheduler.advance(90)
+    scheduler.advance(999)
 
     expect(timeouts).toEqual([])
-
-    scheduler.advance(10)
-
-    expect(timeouts).toEqual(['idle'])
   })
 
-  it('fires hard timeout even when progress keeps resetting the idle window', () => {
+  it('fires only at the absolute safety limit', () => {
     const scheduler = new FakeScheduler()
-    const timeouts: string[] = []
+    const timeouts: Array<{ reason: string; elapsedMs: number }> = []
     const watchdog = new TurnWatchdog({
-      idleTimeoutMs: 100,
       hardTimeoutMs: 250,
       now: () => scheduler.now,
       setTimeout: scheduler.setTimeout.bind(scheduler),
       clearTimeout: scheduler.clearTimeout.bind(scheduler),
-      onTimeout: timeout => timeouts.push(timeout.reason),
+      onTimeout: timeout => timeouts.push(timeout),
     })
 
     watchdog.start()
-    scheduler.advance(90)
-    watchdog.markProgress()
-    scheduler.advance(90)
-    watchdog.markProgress()
-    scheduler.advance(70)
+    scheduler.advance(250)
 
-    expect(timeouts).toEqual(['hard'])
+    expect(timeouts).toEqual([{ reason: 'hard', elapsedMs: 250 }])
   })
 
   it('does not fire after stop clears pending timers', () => {
     const scheduler = new FakeScheduler()
     const timeouts: string[] = []
     const watchdog = new TurnWatchdog({
-      idleTimeoutMs: 100,
       hardTimeoutMs: 250,
       now: () => scheduler.now,
       setTimeout: scheduler.setTimeout.bind(scheduler),

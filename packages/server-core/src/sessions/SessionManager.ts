@@ -124,7 +124,7 @@ import {
 import { getPiTurnAnchor, loadPiTurnAnchors, requireSdkForkBranchAnchor, savePiTurnAnchor } from './pi-turn-anchors'
 import { resolveToolDisplayMeta } from './tool-display'
 export { consumePendingSdkFork } from './managed-session'
-import { SESSION_TURN_HARD_TIMEOUT_MS, SESSION_TURN_IDLE_TIMEOUT_MS, TurnWatchdog, type TurnWatchdogTimeout } from './turn-watchdog'
+import { SESSION_TURN_HARD_TIMEOUT_MS, TurnWatchdog, type TurnWatchdogTimeout } from './turn-watchdog'
 import {
   isManagedDefaultGatewayConnection,
   MANAGED_MODEL_ACCESS_UNAVAILABLE_MESSAGE,
@@ -513,13 +513,11 @@ export class SessionManager implements ISessionManager {
     const managed = this.sessions.get(sessionId)
     if (!managed || !managed.isProcessing || managed.processingGeneration !== generation) return
 
-    const minutes = Math.max(1, Math.round((timeout.reason === 'idle' ? timeout.idleMs : timeout.elapsedMs) / 60000))
+    const minutes = Math.max(1, Math.round(timeout.elapsedMs / 60000))
     const timeoutMessage: Message = {
       id: generateMessageId(),
       role: 'error',
-      content: timeout.reason === 'idle'
-        ? `Agent turn timed out after ${minutes} minutes without progress.`
-        : `Agent turn timed out after ${minutes} minutes.`,
+      content: `Agent turn exceeded the ${minutes}-minute safety limit.`,
       timestamp: this.monotonic(),
       errorCode: 'turn_timeout',
       errorTitle: 'Turn Timed Out',
@@ -530,7 +528,6 @@ export class SessionManager implements ISessionManager {
       sessionId,
       reason: timeout.reason,
       elapsedMs: timeout.elapsedMs,
-      idleMs: timeout.idleMs,
       generation,
     })
 
@@ -5323,7 +5320,6 @@ export class SessionManager implements ISessionManager {
     // This prevents the finally block from clobbering state when a follow-up message arrives.
     const myGeneration = managed.processingGeneration
     const turnWatchdog = new TurnWatchdog({
-      idleTimeoutMs: SESSION_TURN_IDLE_TIMEOUT_MS,
       hardTimeoutMs: SESSION_TURN_HARD_TIMEOUT_MS,
       onTimeout: timeout => this.handleTurnWatchdogTimeout(sessionId, myGeneration, timeout),
     })
@@ -5533,8 +5529,6 @@ export class SessionManager implements ISessionManager {
           sessionLog.info('Dropping stale agent event after newer generation started', { sessionId, eventType: event.type })
           break
         }
-        turnWatchdog.markProgress()
-
         // Log events (skip noisy text_delta)
         if (event.type !== 'text_delta') {
           if (event.type === 'tool_start') {

@@ -1,22 +1,17 @@
-// input: Turn progress timestamps and timeout callbacks
-// output: A small watchdog for broad session-turn timeout enforcement
-// pos: Isolates long-running turn timeout policy from SessionManager orchestration
+// input: Turn start time and an absolute timeout callback
+// output: A small watchdog for the session turn hard safety limit
+// pos: Keeps lifecycle safety bounded without guessing progress from event frequency
 
-export const SESSION_TURN_IDLE_TIMEOUT_MS = 10 * 60 * 1000
 export const SESSION_TURN_HARD_TIMEOUT_MS = 12 * 60 * 60 * 1000
 
-export type TurnWatchdogTimeoutReason = 'idle' | 'hard'
-
 export interface TurnWatchdogTimeout {
-  reason: TurnWatchdogTimeoutReason
+  reason: 'hard'
   elapsedMs: number
-  idleMs: number
 }
 
 type TimerHandle = unknown
 
 interface TurnWatchdogOptions {
-  idleTimeoutMs: number
   hardTimeoutMs: number
   onTimeout: (timeout: TurnWatchdogTimeout) => void
   now?: () => number
@@ -25,7 +20,6 @@ interface TurnWatchdogOptions {
 }
 
 export class TurnWatchdog {
-  private readonly idleTimeoutMs: number
   private readonly hardTimeoutMs: number
   private readonly onTimeout: (timeout: TurnWatchdogTimeout) => void
   private readonly now: () => number
@@ -33,15 +27,12 @@ export class TurnWatchdog {
   private readonly clearTimer: (handle: TimerHandle) => void
 
   private startedAt = 0
-  private lastProgressAt = 0
-  private idleTimer: TimerHandle | null = null
   private hardTimer: TimerHandle | null = null
   private started = false
   private stopped = false
   private timeout: TurnWatchdogTimeout | null = null
 
   constructor(options: TurnWatchdogOptions) {
-    this.idleTimeoutMs = options.idleTimeoutMs
     this.hardTimeoutMs = options.hardTimeoutMs
     this.onTimeout = options.onTimeout
     this.now = options.now ?? Date.now
@@ -56,16 +47,7 @@ export class TurnWatchdog {
     this.started = true
     this.stopped = false
     this.startedAt = now
-    this.lastProgressAt = now
-    this.scheduleIdleTimer()
-    this.hardTimer = this.setTimer(() => this.fire('hard'), this.hardTimeoutMs)
-  }
-
-  markProgress(): void {
-    if (!this.started || this.stopped || this.timeout) return
-
-    this.lastProgressAt = this.now()
-    this.scheduleIdleTimer()
+    this.hardTimer = this.setTimer(() => this.fire(), this.hardTimeoutMs)
   }
 
   stop(): void {
@@ -79,21 +61,13 @@ export class TurnWatchdog {
     return this.timeout
   }
 
-  private scheduleIdleTimer(): void {
-    if (this.idleTimer) {
-      this.clearTimer(this.idleTimer)
-    }
-    this.idleTimer = this.setTimer(() => this.fire('idle'), this.idleTimeoutMs)
-  }
-
-  private fire(reason: TurnWatchdogTimeoutReason): void {
+  private fire(): void {
     if (this.stopped || this.timeout) return
 
     const now = this.now()
     this.timeout = {
-      reason,
+      reason: 'hard',
       elapsedMs: Math.max(0, now - this.startedAt),
-      idleMs: Math.max(0, now - this.lastProgressAt),
     }
     this.stopped = true
     this.clearTimers()
@@ -101,10 +75,6 @@ export class TurnWatchdog {
   }
 
   private clearTimers(): void {
-    if (this.idleTimer) {
-      this.clearTimer(this.idleTimer)
-      this.idleTimer = null
-    }
     if (this.hardTimer) {
       this.clearTimer(this.hardTimer)
       this.hardTimer = null
