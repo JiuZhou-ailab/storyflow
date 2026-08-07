@@ -21,6 +21,12 @@ on:
       STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET:
         required: true
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy managed services before running live verification"
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -34,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      DEPLOY_MANAGED_AUTH: ${{ github.event_name != 'workflow_call' || inputs.deploy }}
+      DEPLOY_MANAGED_AUTH: ${{ inputs.deploy }}
 
     steps:
       - name: Checkout
@@ -72,7 +78,7 @@ jobs:
             || { echo "Skills Market signing secret must be independent"; exit 1; }
 
       - name: Test managed auth contract
-        if: ${{ github.event_name != 'workflow_call' || inputs.deploy }}
+        if: ${{ inputs.deploy }}
         run: |
           bun test \
             apps/auth-broker-worker/src/index.test.ts \
@@ -82,7 +88,7 @@ jobs:
             apps/skills-market/src/security.test.ts
 
       - name: Deploy model gateway
-        if: ${{ github.event_name != 'workflow_call' || inputs.deploy }}
+        if: ${{ inputs.deploy }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -109,7 +115,7 @@ jobs:
           grep -q '"code":"model_access_token_invalid"' "$RUNNER_TEMP/gateway-negative.json"
 
       - name: Migrate and deploy Skills Market
-        if: ${{ github.event_name != 'workflow_call' || inputs.deploy }}
+        if: ${{ inputs.deploy }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -140,7 +146,7 @@ jobs:
           '
 
       - name: Deploy auth broker
-        if: ${{ github.event_name != 'workflow_call' || inputs.deploy }}
+        if: ${{ inputs.deploy }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}

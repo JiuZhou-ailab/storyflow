@@ -173,11 +173,15 @@ describe('managed auth deployment', () => {
 
   it('verifies live managed auth without redeploying it during desktop release', () => {
     const releaseWorkflow = readRepoFile('.github/workflows/release.yml')
+    const deployWorkflow = readRepoFile('.github/workflows/deploy-managed-auth.yml')
 
     expect(releaseWorkflow).toContain('verify-managed-auth:')
     expect(releaseWorkflow).toContain('deploy: false')
     expect(releaseWorkflow).toMatch(/create-release:\n\s+needs: preflight-release-secrets/)
     expect(releaseWorkflow).toMatch(/verify-release:\n\s+needs:\n\s+- validate\n\s+- verify-managed-auth/)
+    expect(deployWorkflow).toContain('DEPLOY_MANAGED_AUTH: ${{ inputs.deploy }}')
+    expect(deployWorkflow).toContain('if: ${{ inputs.deploy }}')
+    expect(deployWorkflow).not.toContain('github.event_name != \'workflow_call\' || inputs.deploy')
     expect(readRepoFile('apps/auth-broker-worker/wrangler.toml')).toContain('workers_dev = false')
     expect(readRepoFile('apps/model-gateway-worker/wrangler.toml')).toContain('workers_dev = false')
   })
