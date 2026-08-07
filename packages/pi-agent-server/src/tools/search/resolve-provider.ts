@@ -1,9 +1,8 @@
-// input: AnySearch's own credential, independent of the selected model provider
-// output: A web search provider that never receives model credentials
+// input: Optional AnySearch credential, independent of the selected model provider
+// output: The primary web search provider; createSearchTool owns DDG fallback
 // pos: Capability router for Storyflow's typed web_search tool
 
 import type { WebSearchProvider } from './types.ts';
-import { DDGSearchProvider } from './providers/ddg.ts';
 
 const ANYSEARCH_ENDPOINT = 'https://api.anysearch.com/mcp';
 
@@ -60,7 +59,5 @@ export class AnySearchProvider implements WebSearchProvider {
 }
 
 export function resolveSearchProvider(): WebSearchProvider {
-  return process.env.ANYSEARCH_API_KEY
-    ? new AnySearchProvider()
-    : new DDGSearchProvider();
+  return new AnySearchProvider();
 }

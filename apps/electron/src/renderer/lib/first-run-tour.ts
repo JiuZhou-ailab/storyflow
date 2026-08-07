@@ -56,6 +56,6 @@ export const FIRST_RUN_TOUR_STEPS: FirstRunTourStep[] = [
     target: 'activity-profile',
     selector: '[data-tutorial="activity-profile"]',
     title: '个人菜单',
-    body: '设置、新功能和帮助反馈统一放在这里。第一次任务前不必逐项配置，用到时再打开即可。',
+    body: '设置、新功能和帮助反馈统一放在这里。长期协作规则可以写入“设置 → 偏好 → 系统指令”，单次任务仍直接在对话里说明。',
   },
 ]

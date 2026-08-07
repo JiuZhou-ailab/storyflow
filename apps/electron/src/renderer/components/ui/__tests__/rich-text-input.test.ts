@@ -4,6 +4,7 @@
 
 import { readFileSync } from 'fs'
 import { afterAll, beforeAll, describe, it, expect } from 'bun:test'
+import { iconCache } from '@/lib/icon-cache'
 import {
   exceedsLongTextLineThreshold,
   getCursorPosition,
@@ -11,7 +12,9 @@ import {
   inferCursorPositionAfterEdit,
   isEscapeDuringComposition,
   isRichTextDomMutationSafe,
+  renderBadgeHTML,
   shouldShowRichTextPlaceholder,
+  textToHTML,
 } from '../rich-text-input'
 
 const originalNode = globalThis.Node
@@ -212,6 +215,51 @@ describe('exceedsLongTextLineThreshold', () => {
   it('detects long pasted text without requiring exact full line count', () => {
     expect(exceedsLongTextLineThreshold(Array.from({ length: 100 }, () => 'x').join('\n'))).toBe(false)
     expect(exceedsLongTextLineThreshold(Array.from({ length: 101 }, () => 'x').join('\n'))).toBe(true)
+  })
+})
+
+describe('renderBadgeHTML', () => {
+  it('keeps cached icon URLs and tooltips inside their HTML attributes', () => {
+    const workspaceId = 'workspace'
+    const sourceSlug = 'source'
+    const untrustedAttributeValue = `https://example.test/icon?a=1&b=" autofocus='yes' <tag>>`
+    const escapedAttributeValue = 'https://example.test/icon?a=1&amp;b=&quot; autofocus=&#39;yes&#39; &lt;tag&gt;&gt;'
+    const source = {
+      config: { slug: sourceSlug, name: 'Source' },
+    } as Parameters<typeof renderBadgeHTML>[3]
+
+    iconCache.set(`source:${workspaceId}:${sourceSlug}`, untrustedAttributeValue)
+    try {
+      const html = renderBadgeHTML(
+        'source',
+        'Source',
+        undefined,
+        source,
+        workspaceId,
+        untrustedAttributeValue,
+      )
+
+      expect(html).toContain(`src="${escapedAttributeValue}"`)
+      expect(html).toContain(`title="${escapedAttributeValue}"`)
+      expect(html).not.toContain('" autofocus=')
+    } finally {
+      iconCache.delete(`source:${workspaceId}:${sourceSlug}`)
+    }
+  })
+})
+
+describe('textToHTML', () => {
+  it('keeps the original mention text inside its data attribute', () => {
+    const html = textToHTML(
+      `[file:dir/a&"'<tag>.md]`,
+      [],
+      [],
+      new Map(),
+      new Map(),
+    )
+
+    expect(html).toContain('data-mention-text="[file:dir/a&amp;&quot;&#39;&lt;tag&gt;.md]"')
+    expect(html).not.toContain('data-mention-text="[file:dir/a&amp;&quot;\'')
   })
 })
 

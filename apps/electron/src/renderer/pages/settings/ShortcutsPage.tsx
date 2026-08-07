@@ -1,8 +1,6 @@
-/**
- * ShortcutsPage
- *
- * Displays keyboard shortcuts reference from the centralized action registry.
- */
+// input: Centralized action registry and component-specific keyboard behaviors
+// output: Reusable shortcut reference content plus the legacy standalone route
+// pos: Renderer settings content shared by Input and the preserved shortcuts deep link
 
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
@@ -125,42 +123,63 @@ function ActionShortcutRow({ actionId }: { actionId: ActionId }) {
   )
 }
 
-export default function ShortcutsPage() {
+interface ShortcutsSettingsContentProps {
+  showTitle?: boolean
+}
+
+export function ShortcutsSettingsContent({ showTitle = false }: ShortcutsSettingsContentProps) {
   const { t } = useTranslation()
   const componentSpecificSections = useComponentSpecificSections()
+
+  return (
+    <>
+      {showTitle && (
+        <h2 className="border-t border-border/60 pt-6 text-base font-semibold text-foreground">
+          {t('settings.shortcuts.title')}
+        </h2>
+      )}
+
+      {/* Registry-driven sections */}
+      {ACTION_CATEGORY_ENTRIES.map(([category, actions]) => (
+        <SettingsSection key={category} title={t(`shortcuts.category.${category.toLowerCase()}`)}>
+          <SettingsCard>
+            {actions.map(action => (
+              <ActionShortcutRow key={action.id} actionId={action.id as ActionId} />
+            ))}
+          </SettingsCard>
+        </SettingsSection>
+      ))}
+
+      {/* Component-specific sections */}
+      {componentSpecificSections.map((section) => (
+        <SettingsSection key={section.title} title={section.title}>
+          <SettingsCard>
+            {section.shortcuts.map((shortcut, index) => (
+              <SettingsRow key={index} label={shortcut.description}>
+                <div className="flex items-center gap-1">
+                  {shortcut.keys.map((key, keyIndex) => (
+                    <Kbd key={keyIndex}>{key}</Kbd>
+                  ))}
+                </div>
+              </SettingsRow>
+            ))}
+          </SettingsCard>
+        </SettingsSection>
+      ))}
+    </>
+  )
+}
+
+export default function ShortcutsPage() {
+  const { t } = useTranslation()
+
   return (
     <div className="h-full flex flex-col">
       <PanelHeader title={t("settings.shortcuts.title")} />
       <div className="flex-1 min-h-0 mask-fade-y">
         <ScrollArea className="h-full">
-          <div className="px-5 py-7 max-w-3xl mx-auto space-y-8">
-            {/* Registry-driven sections */}
-            {ACTION_CATEGORY_ENTRIES.map(([category, actions]) => (
-              <SettingsSection key={category} title={t(`shortcuts.category.${category.toLowerCase()}`)}>
-                <SettingsCard>
-                  {actions.map(action => (
-                    <ActionShortcutRow key={action.id} actionId={action.id as ActionId} />
-                  ))}
-                </SettingsCard>
-              </SettingsSection>
-            ))}
-
-            {/* Component-specific sections */}
-            {componentSpecificSections.map((section) => (
-              <SettingsSection key={section.title} title={section.title}>
-                <SettingsCard>
-                  {section.shortcuts.map((shortcut, index) => (
-                    <SettingsRow key={index} label={shortcut.description}>
-                      <div className="flex items-center gap-1">
-                        {shortcut.keys.map((key, keyIndex) => (
-                          <Kbd key={keyIndex}>{key}</Kbd>
-                        ))}
-                      </div>
-                    </SettingsRow>
-                  ))}
-                </SettingsCard>
-              </SettingsSection>
-            ))}
+          <div className="px-5 py-5 max-w-3xl mx-auto space-y-6">
+            <ShortcutsSettingsContent />
           </div>
         </ScrollArea>
       </div>

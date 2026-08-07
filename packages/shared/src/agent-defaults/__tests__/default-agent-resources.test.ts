@@ -42,6 +42,7 @@ describe('default agent resources', () => {
       'find-skills',
       'skill-creator',
       'anysearch',
+      'storyflow-tutorial',
       'sn2s-novel-to-screenplay',
     ]);
     expect(DEFAULT_AGENT_SOURCE_SLUGS).toEqual(['wangwen-bigdata']);
@@ -114,6 +115,7 @@ describe('default agent resources', () => {
       'find-skills',
       'skill-creator',
       'anysearch',
+      'storyflow-tutorial',
       'sn2s-novel-to-screenplay',
     ]);
     expect(result?.sources.imported).toEqual([]);
@@ -135,6 +137,13 @@ describe('default agent resources', () => {
     expect(findSkills.replace(/\s+/g, ' ')).toContain("current project's `.pi/skills`");
     expect(findSkills).toContain("Storyflow uses Pi's native Agent Skills discovery");
     expect(existsSync(join(findSkillsDir, 'LICENSE.txt'))).toBe(true);
+
+    const tutorial = readFileSync(
+      join(assetsDir, 'global-skills', 'storyflow-tutorial', 'SKILL.md'),
+      'utf-8',
+    );
+    expect(validateSkillDocumentForSlug(tutorial, 'storyflow-tutorial')).toBeNull();
+    expect(tutorial).toContain('设置 → 偏好 → 系统指令');
 
     const wangwenConfig = readFileSync(join(assetsDir, 'sources', 'wangwen-bigdata', 'config.json'), 'utf-8');
     expect(wangwenConfig).toContain('"slug": "wangwen-bigdata"');

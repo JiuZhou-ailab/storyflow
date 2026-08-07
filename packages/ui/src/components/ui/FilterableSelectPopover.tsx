@@ -1,3 +1,7 @@
+// input: Selectable items, popover state, anchor geometry, and toggle callbacks
+// output: Portal-based filterable selector with mouse and keyboard interaction
+// pos: Shared flat-list selection popover for product UI surfaces
+
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
 import { useTranslation } from 'react-i18next'
@@ -134,7 +138,7 @@ export function FilterableSelectPopover<T>({
       setHighlightedIndex(prev => (prev - 1 + filteredItems.length) % filteredItems.length)
       return
     }
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
       e.preventDefault()
       const item = filteredItems[highlightedIndex]
       if (item) handleToggle(item)

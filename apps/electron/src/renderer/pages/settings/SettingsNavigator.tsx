@@ -1,19 +1,12 @@
 // input: Settings registry, selected subpage, and overlay lifecycle callbacks
-// output: Settings category navigation plus the responsive settings dialog
+// output: Compact settings navigation plus the responsive settings dialog
 // pos: Renderer utility surface that keeps settings outside the workspace panel stack
+// Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4
 
-import { useState, useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { MoreHorizontal, AppWindow, X } from 'lucide-react'
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  StyledDropdownMenuContent,
-  StyledDropdownMenuItem,
-} from '@/components/ui/styled-dropdown'
-import { DropdownMenuProvider } from '@/components/ui/menu-context'
+import { ChevronDown, ChevronRight, FolderCog, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Separator } from '@/components/ui/separator'
 import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import type { SettingsSubpage } from '../../../shared/types'
 import { SETTINGS_ITEMS } from '../../../shared/menu-schema'
@@ -39,106 +32,70 @@ interface SettingsItem {
   id: SettingsSubpage
   label: string
   icon: React.ComponentType<{ className?: string }>
-  description: string
 }
 
 interface SettingsItemRowProps {
   item: SettingsItem
   isSelected: boolean
-  isFirst: boolean
+  nested?: boolean
   onSelect: () => void
 }
 
-/**
- * SettingsItemRow - Individual settings item with dropdown menu
- * Tracks menu open state to keep "..." button visible when menu is open
- */
-function SettingsItemRow({ item, isSelected, isFirst, onSelect }: SettingsItemRowProps) {
-  const { t } = useTranslation()
-  const [menuOpen, setMenuOpen] = useState(false)
+const PRIMARY_SETTINGS_SUBPAGES: readonly SettingsSubpage[] = [
+  'app',
+  'ai',
+  'appearance',
+  'input',
+  // Experimental app-level remote access; hidden unless its feature flag is enabled.
+  'server',
+]
+
+export const GLOBAL_SETTINGS_SUBPAGES: readonly SettingsSubpage[] = [
+  ...PRIMARY_SETTINGS_SUBPAGES,
+  // Preserved for existing deep links; its content is surfaced under Input.
+  'shortcuts',
+]
+
+const PROJECT_SETTINGS_SUBPAGES: readonly SettingsSubpage[] = [
+  'workspace',
+  'permissions',
+  'labels',
+  'automations',
+  'messaging',
+]
+
+function SettingsItemRow({ item, isSelected, nested = false, onSelect }: SettingsItemRowProps) {
   const Icon = item.icon
 
-  // Open settings page in a new window via deep link
-  const handleOpenInNewWindow = () => {
-    window.electronAPI.openUrl(`craftagents://settings/${item.id}?window=focused`)
-  }
-
   return (
-    <div className="settings-item" data-selected={isSelected || undefined}>
-      {/* Separator - only show if not first */}
-      {!isFirst && (
-        <div className="settings-separator pl-12 pr-4">
-          <Separator />
-        </div>
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-current={isSelected ? 'page' : undefined}
+      className={cn(
+        'flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm outline-none max-[640px]:justify-center max-[640px]:gap-0 max-[640px]:px-0',
+        'transition-colors duration-75 focus-visible:ring-2 focus-visible:ring-ring',
+        nested && 'pl-8 max-[640px]:pl-0',
+        isSelected
+          ? 'bg-foreground/6 text-foreground'
+          : 'text-foreground/75 hover:bg-foreground/3 hover:text-foreground'
       )}
-      {/* Wrapper for button with proper margins */}
-      <div className="settings-content relative group select-none pl-2 mr-2">
-        {/* Icon - positioned absolutely for consistent alignment */}
-        <div className="absolute left-[20px] top-[14px] z-10">
-          <Icon
-            className={cn(
-              'w-4 h-4 shrink-0',
-              isSelected ? 'text-foreground' : 'text-muted-foreground'
-            )}
-          />
-        </div>
-        {/* Main content button */}
-        <button
-          type="button"
-          onClick={onSelect}
-          className={cn(
-            'flex w-full items-start gap-2 pl-2 pr-4 py-3 text-left text-sm outline-none rounded-[8px]',
-            // Fast hover transition (75ms vs default 150ms)
-            'transition-[background-color] duration-75',
-            isSelected
-              ? 'bg-foreground/5 hover:bg-foreground/7'
-              : 'hover:bg-foreground/2'
-          )}
-        >
-          {/* Spacer for icon */}
-          <div className="w-6 h-5 shrink-0" />
-          {/* Content column */}
-          <div className="flex flex-col min-w-0 flex-1">
-            <span
-              className={cn(
-                'font-medium',
-                isSelected ? 'text-foreground' : 'text-foreground/80'
-              )}
-            >
-              {item.label}
-            </span>
-            <span className="text-xs text-foreground/60 line-clamp-1">
-              {item.description}
-            </span>
-          </div>
-        </button>
-        {/* Action buttons - visible on hover or when menu is open */}
-        <div
-          className={cn(
-            'absolute right-2 top-2 transition-opacity z-10',
-            menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-          )}
-        >
-          <div className="flex items-center rounded-[8px] overflow-hidden border border-transparent hover:border-border/50">
-            <DropdownMenu modal={true} onOpenChange={setMenuOpen}>
-              <DropdownMenuTrigger asChild>
-                <div className="p-1.5 hover:bg-foreground/10 data-[state=open]:bg-foreground/10 cursor-pointer">
-                  <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </DropdownMenuTrigger>
-              <StyledDropdownMenuContent align="end">
-                <DropdownMenuProvider>
-                  <StyledDropdownMenuItem onClick={handleOpenInNewWindow}>
-                    <AppWindow className="h-3.5 w-3.5" />
-                    <span className="flex-1">{t("sessionMenu.openInNewWindow")}</span>
-                  </StyledDropdownMenuItem>
-                </DropdownMenuProvider>
-              </StyledDropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      </div>
-    </div>
+    >
+      <Icon
+        className={cn(
+          'size-4 shrink-0',
+          isSelected ? 'text-foreground' : 'text-muted-foreground'
+        )}
+      />
+      <span
+        className={cn(
+          'min-w-0 truncate max-[640px]:sr-only',
+          isSelected ? 'font-medium' : 'font-normal'
+        )}
+      >
+        {item.label}
+      </span>
+    </button>
   )
 }
 
@@ -148,6 +105,7 @@ export default function SettingsNavigator({
   availableSubpages,
 }: SettingsNavigatorProps) {
   const { t } = useTranslation()
+  const [isProjectGroupExpanded, setIsProjectGroupExpanded] = useState(false)
 
   const settingsItems: SettingsItem[] = useMemo(() =>
     SETTINGS_ITEMS
@@ -156,24 +114,76 @@ export default function SettingsNavigator({
       id: item.id,
       label: t(item.labelKey),
       icon: SETTINGS_ICONS[item.id],
-      description: t(item.descriptionKey),
     })),
     [availableSubpages, t]
   )
 
+  const settingsItemsById = useMemo(
+    () => new Map(settingsItems.map(item => [item.id, item])),
+    [settingsItems]
+  )
+  const primaryItems = PRIMARY_SETTINGS_SUBPAGES.flatMap(id => {
+    const item = settingsItemsById.get(id)
+    return item ? [item] : []
+  })
+  const projectItems = PROJECT_SETTINGS_SUBPAGES.flatMap(id => {
+    const item = settingsItemsById.get(id)
+    return item ? [item] : []
+  })
+  const hasSelectedProjectItem = projectItems.some(item => item.id === selectedSubpage)
+  const isProjectGroupOpen = isProjectGroupExpanded || hasSelectedProjectItem
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto">
-        <div className="pt-2">
-          {settingsItems.map((item, index) => (
+        <div className="space-y-0.5 p-2">
+          {primaryItems.map((item) => (
             <SettingsItemRow
               key={item.id}
               item={item}
-              isSelected={selectedSubpage === item.id}
-              isFirst={index === 0}
+              isSelected={
+                selectedSubpage === item.id
+                || (item.id === 'input' && selectedSubpage === 'shortcuts')
+                || (item.id === 'ai' && selectedSubpage === 'preferences')
+              }
               onSelect={() => onSelectSubpage(item.id)}
             />
           ))}
+          {projectItems.length > 0 && (
+            <div className="pt-2">
+              <button
+                type="button"
+                className={cn(
+                  'flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm outline-none max-[640px]:justify-center max-[640px]:gap-0 max-[640px]:px-0',
+                  'text-foreground/75 transition-colors duration-75 hover:bg-foreground/3 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:bg-foreground/5',
+                  hasSelectedProjectItem && 'text-foreground'
+                )}
+                aria-expanded={isProjectGroupOpen}
+                onClick={() => setIsProjectGroupExpanded(expanded => !expanded)}
+              >
+                <FolderCog className="size-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate max-[640px]:sr-only">
+                  {t('settings.navigation.currentProject')}
+                </span>
+                {isProjectGroupOpen
+                  ? <ChevronDown className="size-3.5 shrink-0 text-muted-foreground max-[640px]:hidden" />
+                  : <ChevronRight className="size-3.5 shrink-0 text-muted-foreground max-[640px]:hidden" />}
+              </button>
+              {isProjectGroupOpen && (
+                <div className="mt-0.5 space-y-0.5">
+                  {projectItems.map((item) => (
+                    <SettingsItemRow
+                      key={item.id}
+                      item={item}
+                      nested
+                      isSelected={selectedSubpage === item.id}
+                      onSelect={() => onSelectSubpage(item.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -208,19 +218,9 @@ export function SettingsDialog({
         <DialogTitle className="sr-only">{t('sidebar.settings')}</DialogTitle>
         <DialogDescription className="sr-only">配置 Storyflow 应用与工作区偏好</DialogDescription>
         <div className="flex h-full min-h-0">
-          <aside className="flex w-[280px] shrink-0 flex-col border-r border-border/60 bg-foreground-2 max-[720px]:w-[220px]">
-            <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/60 px-4">
-              <h2 className="text-[14px] font-semibold text-foreground">{t('sidebar.settings')}</h2>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="size-8 rounded-lg"
-                onClick={onClose}
-                aria-label={t('common.close')}
-              >
-                <X className="size-4" />
-              </Button>
+          <aside className="flex w-[228px] shrink-0 flex-col border-r border-border/60 bg-foreground-2 max-[720px]:w-[208px] max-[640px]:w-14">
+            <div className="flex h-12 shrink-0 items-center border-b border-border/60 px-4">
+              <h2 className="text-[14px] font-semibold text-foreground max-[640px]:sr-only">{t('sidebar.settings')}</h2>
             </div>
             <div className="min-h-0 flex-1">
               <SettingsNavigator
@@ -230,8 +230,19 @@ export function SettingsDialog({
               />
             </div>
           </aside>
-          <main className="min-w-0 flex-1 bg-background">
+          <main className="relative min-w-0 flex-1 bg-background [&_.titlebar-drag-region]:pr-12">
             <SettingsPageComponent />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              data-settings-dialog-close
+              className="titlebar-no-drag absolute right-2 top-[5px] z-panel size-8 rounded-lg max-[640px]:right-0 max-[640px]:top-0 max-[640px]:size-11"
+              onClick={onClose}
+              aria-label={t('common.close')}
+            >
+              <X className="size-4" />
+            </Button>
           </main>
         </div>
       </DialogContent>

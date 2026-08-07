@@ -1,6 +1,9 @@
+// input: Onboarding components and playground mock handlers
+// output: Playground registry entries for custom connection setup states
+// pos: Renderer playground catalog for onboarding primitives
+
 import type { ComponentEntry } from './types'
 import { OnboardingFlowDemo } from '../demos/OnboardingFlowDemo'
-import { ProviderSelectStep } from '@/components/onboarding/ProviderSelectStep'
 import { WelcomeStep } from '@/components/onboarding/WelcomeStep'
 import { APISetupStep } from '@/components/onboarding/APISetupStep'
 import { CredentialsStep } from '@/components/onboarding/CredentialsStep'
@@ -29,24 +32,11 @@ export const onboardingComponents: ComponentEntry[] = [
     id: 'onboarding-flow-demo',
     name: 'Onboarding Flow (Interactive)',
     category: 'Onboarding',
-    description: 'Click through the full onboarding: Welcome → Provider → Credentials → Done',
+    description: 'Click through user-owned connection setup: Welcome → Credentials → Done',
     component: OnboardingFlowDemo,
     props: [],
     variants: [],
     layout: 'full',
-  },
-  {
-    id: 'provider-select-step',
-    name: 'ProviderSelectStep',
-    category: 'Onboarding',
-    description: 'First-launch screen — pick your subscription or API key',
-    component: ProviderSelectStep,
-    props: [],
-    variants: [],
-    mockData: () => ({
-      onSelect: (choice: string) => console.log('[Playground] Provider selected:', choice),
-      onSkip: () => console.log('[Playground] Setup deferred'),
-    }),
   },
   {
     id: 'welcome-step',
@@ -425,7 +415,6 @@ export const onboardingComponents: ComponentEntry[] = [
       className: 'min-h-0 h-full',
       onContinue: noopHandler,
       onBack: noopHandler,
-      onSelectApiSetupMethod: (method: string) => console.log('[Playground] Selected method:', method),
       onSubmitCredential: (data: { apiKey: string; baseUrl?: string; connectionDefaultModel?: string; models?: string[] }) => console.log('[Playground] Submitted:', data),
       onStartOAuth: noopHandler,
       onFinish: noopHandler,
@@ -436,7 +425,6 @@ export const onboardingComponents: ComponentEntry[] = [
       onUseGitBashPath: (path: string) => console.log('[Playground] Use Git Bash path:', path),
       onRecheckGitBash: noopHandler,
       onClearError: noopHandler,
-      onSkipSetup: () => console.log('[Playground] Setup deferred'),
     }),
   },
 ]

@@ -88,7 +88,7 @@ export const PI_BACKEND_SESSION_TOOL_NAMES = new Set<string>([
  * planning heuristics, config watching, usage tracking).
  */
 export abstract class PiAgentTransport extends PiAgentHost {
-  protected backendName = 'Craft Agents Backend';
+  protected backendName = 'Storyflow';
 
   // ============================================================
   // Subprocess State

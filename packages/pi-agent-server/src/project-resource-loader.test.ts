@@ -15,11 +15,19 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+  AuthStorage,
+  createAgentSession,
+  ModelRegistry,
+  SessionManager,
+} from '@earendil-works/pi-coding-agent';
 
 import {
   createProjectResourceLoader,
   DEFAULT_PI_PACKAGE_SOURCES,
 } from './project-resource-loader.ts';
+import { saveSystemInstructionsMarkdown } from '../../shared/src/config/system-instructions.ts';
+import { createSystemPromptOverride } from './system-prompt-override.ts';
 
 const roots: string[] = [];
 const previousPiOffline = process.env.PI_OFFLINE;
@@ -117,6 +125,57 @@ afterEach(() => {
 });
 
 describe('createProjectResourceLoader', () => {
+  it('assembles the Storyflow base with Pi-native global instructions and Skills', async () => {
+    const cwd = createRoot();
+    const agentDir = join(createRoot(), 'agent');
+    const globalRoot = createRoot();
+    mkdirSync(agentDir, { recursive: true });
+    saveSystemInstructionsMarkdown('# User instructions\n\nReply in Chinese.\n', agentDir);
+    writeFileSync(join(cwd, 'AGENTS.md'), '# Project instructions\n\nProtect manuscript prose.\n');
+    writeSkill(agentDir, 'skills', 'outline-architecture');
+
+    const promptController = createSystemPromptOverride();
+    promptController.set('STORYFLOW PRODUCT CONTRACT', '<session_state>ASK</session_state>');
+    const { resourceLoader, settingsManager } = await createProjectResourceLoader({
+      cwd,
+      globalRoot,
+      agentDir,
+      systemPromptOverride: promptController.overrideResourcePrompt,
+      extensionFactories: [promptController.extension],
+    });
+    const authStorage = AuthStorage.inMemory();
+    const modelRegistry = ModelRegistry.inMemory(authStorage);
+    const { session } = await createAgentSession({
+      cwd,
+      agentDir,
+      authStorage,
+      modelRegistry,
+      resourceLoader,
+      settingsManager,
+      sessionManager: SessionManager.inMemory(cwd),
+      tools: ['read'],
+    });
+
+    try {
+      expect(session.systemPrompt).toContain('STORYFLOW PRODUCT CONTRACT');
+      expect(session.systemPrompt).toContain('Reply in Chinese.');
+      expect(session.systemPrompt).toContain('Protect manuscript prose.');
+      expect(session.systemPrompt).toContain('<name>outline-architecture</name>');
+      expect(session.systemPrompt).not.toContain('<session_state>ASK</session_state>');
+      expect(session.systemPrompt.indexOf('STORYFLOW PRODUCT CONTRACT')).toBeLessThan(
+        session.systemPrompt.indexOf('Reply in Chinese.'),
+      );
+      expect(session.systemPrompt.indexOf('Reply in Chinese.')).toBeLessThan(
+        session.systemPrompt.indexOf('Protect manuscript prose.'),
+      );
+      expect(session.systemPrompt.indexOf('Protect manuscript prose.')).toBeLessThan(
+        session.systemPrompt.indexOf('<name>outline-architecture</name>'),
+      );
+    } finally {
+      session.dispose();
+    }
+  });
+
   it('does not execute legacy Storyflow Extensions', async () => {
     const cwd = createRoot();
     const home = createRoot();

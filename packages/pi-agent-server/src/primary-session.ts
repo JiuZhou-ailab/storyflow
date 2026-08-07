@@ -194,6 +194,7 @@ export async function createPrimaryPiSession(context: PrimaryPiSessionContext): 
   const { resourceLoader, settingsManager } = await createProjectResourceLoader({
     cwd,
     agentDir,
+    systemPromptOverride: systemPromptOverride.overrideResourcePrompt,
     extensionFactories: [
       systemPromptOverride.extension,
       providerHooks,

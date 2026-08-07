@@ -284,7 +284,7 @@ function SelectionAiPrompt({
         value={selectionPrompt}
         onChange={(event) => setSelectionPrompt(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === 'Enter') {
+          if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
             event.preventDefault()
             event.stopPropagation()
             void submitSelectionPrompt()
@@ -528,7 +528,7 @@ function RichBlockEditMenu({ editor }: { editor: Editor }) {
           value={code}
           onChange={(e) => setCode(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
               e.preventDefault()
               commitEdit()
             }
@@ -611,7 +611,7 @@ function InlineMathEditMenu({ editor }: { editor: Editor }) {
         value={latex}
         onChange={(e) => setLatex(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
             e.preventDefault()
             commitEdit()
             return

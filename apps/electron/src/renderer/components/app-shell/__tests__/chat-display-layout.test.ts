@@ -62,6 +62,8 @@ describe('ChatDisplay scroll layout', () => {
     expect(chatDisplaySource).toContain('scrollToTurnIndex')
     expect(promptTocSource).toContain('max-h-[50lvh] w-9 overflow-clip')
     expect(promptTocSource).toContain('data-toc-item-index={index}')
+    expect(promptTocSource).toContain("'h-px w-[18px] rounded-full transition-colors'")
+    expect(promptTocSource).not.toContain("'h-0.5 w-[18px]")
     expect(promptTocSource).toContain('group-hover/prompt-toc:visible')
   })
 

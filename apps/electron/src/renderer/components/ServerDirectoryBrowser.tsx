@@ -1,3 +1,7 @@
+// input: Server filesystem APIs, dialog state, and directory selection callbacks
+// output: Browse/manual directory picker for local and remote server workspaces
+// pos: Renderer boundary for selecting a server-side workspace directory
+
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -186,7 +190,7 @@ export function ServerDirectoryBrowser({
           value={pathInput}
           onChange={e => setPathInput(e.target.value)}
           onKeyDown={e => {
-            if (e.key === 'Enter') handlePathSubmit()
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) handlePathSubmit()
           }}
           placeholder={t("common.enterPath")}
           className="flex-1 font-mono text-xs"
@@ -278,7 +282,7 @@ export function ServerDirectoryBrowser({
         value={pathInput}
         onChange={e => setPathInput(e.target.value)}
         onKeyDown={e => {
-          if (e.key === 'Enter') handleSelect()
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSelect()
         }}
         placeholder="/Users/username/projects/my-project"
         className="font-mono text-xs"

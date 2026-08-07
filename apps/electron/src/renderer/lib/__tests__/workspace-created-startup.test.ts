@@ -11,7 +11,7 @@ describe('workspace-created startup route', () => {
   it('creates and opens the project starter conversation', () => {
     const createdHandlerSource = appSource.slice(
       appSource.indexOf('const handleProjectHubWorkspaceCreated'),
-      appSource.indexOf('// Handle cancel during onboarding')
+      appSource.indexOf('const handleClientSignedIn')
     )
 
     expect(createdHandlerSource).toContain('await handleSelectWorkspace(workspace.id)')

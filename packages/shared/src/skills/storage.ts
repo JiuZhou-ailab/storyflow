@@ -15,7 +15,6 @@ import {
   mkdirSync,
   writeFileSync,
 } from 'fs';
-import { homedir } from 'os';
 import { join } from 'path';
 import matter from 'gray-matter';
 import {
@@ -29,6 +28,7 @@ import type {
 } from './types.ts';
 import { resolveResourceRoots } from '../resources/resolver.ts';
 import { assertSymlinkFreeTree } from '../workspaces/paths.ts';
+import { getPiAgentDir } from '../config/pi-user-paths.ts';
 import {
   validateIconValue,
   findIconFile,
@@ -313,16 +313,7 @@ export function isValidSkillSlug(slug: string): boolean {
 
 /** Canonical user Skill directory shared with Pi and skills.sh installers. */
 export function getPiUserSkillsDir(): string {
-  const configuredAgentDir = process.env.PI_CODING_AGENT_DIR;
-  const agentDir = configuredAgentDir === '~'
-    ? homedir()
-    : configuredAgentDir?.startsWith('~/')
-      ? join(homedir(), configuredAgentDir.slice(2))
-      : process.platform === 'win32' && configuredAgentDir?.startsWith('~\\')
-        ? join(homedir(), configuredAgentDir.slice(2))
-        : configuredAgentDir || join(homedir(), '.pi', 'agent');
-
-  return join(agentDir, 'skills');
+  return join(getPiAgentDir(), 'skills');
 }
 
 /**

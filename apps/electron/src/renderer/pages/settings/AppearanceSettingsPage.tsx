@@ -1,3 +1,7 @@
+// input: Theme state, workspace metadata, language options, and tool icon mappings
+// output: Compact global and per-workspace appearance settings
+// pos: Renderer settings page for visual preferences
+
 /**
  * AppearanceSettingsPage
  *
@@ -255,8 +259,8 @@ export default function AppearanceSettingsPage() {
       />
       <div className="flex-1 min-h-0 mask-fade-y">
         <ScrollArea className="h-full">
-          <div className="px-5 py-7 max-w-3xl mx-auto">
-            <div className="space-y-8">
+          <div className="px-5 py-5 max-w-3xl mx-auto">
+            <div className="space-y-6">
 
               {/* Default Theme */}
               <SettingsSection title={t("settings.appearance.defaultTheme")}>

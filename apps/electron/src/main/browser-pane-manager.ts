@@ -11,6 +11,7 @@
 
 import { join, parse as parsePath } from 'path'
 import { existsSync, mkdirSync } from 'fs'
+import { randomUUID } from 'node:crypto'
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
 import { BrowserView, BrowserWindow, app, ipcMain, nativeTheme, session, shell, type Session as ElectronSession } from 'electron'
 import { mainLog } from './logger'
@@ -2497,7 +2498,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   private installThemeObserver(instance: BrowserInstance, allowRetry = true): void {
-    const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const token = randomUUID()
     const urlAtInstall = instance.currentUrl
     instance.themeObserverToken = token
 

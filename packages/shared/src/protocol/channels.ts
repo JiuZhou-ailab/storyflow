@@ -247,6 +247,10 @@ export const RPC_CHANNELS = {
     READ: 'userProfile:read',
     WRITE: 'userProfile:write',
   },
+  systemInstructions: {
+    READ: 'systemInstructions:read',
+    WRITE: 'systemInstructions:write',
+  },
   drafts: {
     GET: 'drafts:get',
     SET: 'drafts:set',

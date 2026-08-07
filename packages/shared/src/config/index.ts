@@ -10,6 +10,8 @@ export * from './models-pi.ts';
 export * from './managed-model-catalog.ts';
 export * from './model-fetcher.ts';
 export * from './preferences.ts';
+export * from './pi-user-paths.ts';
+export * from './system-instructions.ts';
 export * from './user-profile.ts';
 export * from './storage.ts';
 export * from './theme.ts';

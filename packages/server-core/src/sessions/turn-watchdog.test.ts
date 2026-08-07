@@ -39,8 +39,8 @@ class FakeScheduler {
 }
 
 describe('TurnWatchdog', () => {
-  it('keeps the broad turn fallback above Pi\'s provider timeout', () => {
-    expect(SESSION_TURN_IDLE_TIMEOUT_MS).toBe(30 * 60 * 1000)
+  it('allows ten minutes without progress before timing out the turn', () => {
+    expect(SESSION_TURN_IDLE_TIMEOUT_MS).toBe(10 * 60 * 1000)
   })
 
   it('fires idle timeout only after a full idle window without progress', () => {

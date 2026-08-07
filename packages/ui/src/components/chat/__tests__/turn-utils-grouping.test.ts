@@ -1,5 +1,5 @@
 // input: Turn activities and shared TurnCard rendering behavior
-// output: Regression coverage for activity grouping, progress projection, response presentation, and compact usage details
+// output: Regression coverage for activity grouping, progress projection, response actions, and compact usage details
 // pos: Guards the shared chat turn normalization and rendering contract
 
 /**
@@ -554,6 +554,27 @@ describe('thinking activity projection', () => {
 })
 
 describe('response presentation', () => {
+  it('does not render the removed Markdown action', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(I18nextProvider, { i18n: testI18n },
+        React.createElement(TurnCard, {
+          turnId: 'turn-with-legacy-popout',
+          activities: [],
+          response: {
+            text: 'Final response',
+            isStreaming: false,
+            messageId: 'response-with-legacy-popout',
+          },
+          isStreaming: false,
+          isComplete: true,
+          onPopOut: () => {},
+        }))
+    )
+
+    expect(html).toContain('turn-action-btn')
+    expect(html).not.toContain('>Markdown<')
+  })
+
   it('renders ordinary final responses inline while keeping plans framed', () => {
     const responseHtml = renderToStaticMarkup(
       React.createElement(I18nextProvider, { i18n: testI18n },

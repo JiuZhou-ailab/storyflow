@@ -27,18 +27,15 @@ const BetaBadge = ({ label }: { label: string }) => (
  * - 'pi_chatgpt_oauth' → pi + oauth
  * - 'pi_copilot_oauth' → pi + oauth
  * - 'pi_api_key' → pi + api_key
- * - 'managed_default' selects the app-managed built-in connection without
- *   collecting user credentials and is therefore not shown by APISetupStep.
  */
 export type ApiSetupMethod =
-  | 'managed_default'
   | 'anthropic_api_key'
   | 'claude_oauth'
   | 'pi_chatgpt_oauth'
   | 'pi_copilot_oauth'
   | 'pi_api_key'
 
-export type CredentialSetupMethod = Exclude<ApiSetupMethod, 'managed_default'>
+export type CredentialSetupMethod = ApiSetupMethod
 
 /**
  * Map user-owned credential setup methods to the underlying connection types.

@@ -6,6 +6,7 @@ export const DEFAULT_GLOBAL_AGENT_SKILL_SLUGS = [
   'find-skills',
   'skill-creator',
   'anysearch',
+  'storyflow-tutorial',
   'sn2s-novel-to-screenplay',
 ] as const;
 

@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { useTheme } from '@/hooks/useTheme'
 import type { ThemeOverrides } from '@config/theme'
 import { useSetAtom, useStore, useAtomValue, useAtom } from 'jotai'
-import type { Session, Workspace, SessionEvent, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, SetupNeeds, SessionStatus, NewChatActionParams, ContentBadge, PermissionModeState, SendMessageOptions, ClientAuthState, SettingsSubpage, WhatsNewManifest } from '../shared/types'
+import type { Session, Workspace, SessionEvent, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, SessionStatus, NewChatActionParams, ContentBadge, PermissionModeState, SendMessageOptions, ClientAuthState, SettingsSubpage, WhatsNewManifest } from '../shared/types'
 import type { SessionDraft, DraftAttachmentRef } from '@craft-agent/shared/config'
 import type { SessionOptions, SessionOptionUpdates } from './hooks/useSessionOptions'
 import { defaultSessionOptions, sessionOptionsAtom, updateSessionOptionsMap } from './hooks/useSessionOptions'
@@ -32,11 +32,10 @@ import { FocusProvider } from '@/context/FocusContext'
 import { ModalProvider } from '@/context/ModalContext'
 import { DismissibleLayerProvider } from '@/context/DismissibleLayerContext'
 import { useWindowCloseHandler } from '@/hooks/useWindowCloseHandler'
-import { useOnboarding } from '@/hooks/useOnboarding'
 import { useNotifications } from '@/hooks/useNotifications'
 import { useSession } from '@/hooks/useSession'
 import { NavigationProvider } from '@/contexts/NavigationContext'
-import { SettingsDialog } from '@/pages/settings/SettingsNavigator'
+import { GLOBAL_SETTINGS_SUBPAGES, SettingsDialog } from '@/pages/settings/SettingsNavigator'
 import { navigate, routes, type Route } from './lib/navigate'
 import { attachmentFromContentRef, toDraftRef } from './lib/drafts'
 import { stripMarkdown } from './utils/text'
@@ -84,7 +83,7 @@ import {
   invalidateSessionStatusMutation,
   ownsSessionStatusMutation,
 } from '@/atoms/session-status-transition'
-import { focusedPanelRouteAtom } from '@/atoms/panel-stack'
+import { focusedPanelRouteAtom, parseSessionIdFromRoute } from '@/atoms/panel-stack'
 import { pendingCredentialsAtom, pendingPermissionsAtom, pendingUserQuestionsAtom } from '@/atoms/pending-requests'
 import { sourcesAtom } from '@/atoms/sources'
 import { skillsAtom } from '@/atoms/skills'
@@ -113,10 +112,6 @@ const WorkspaceSurface = React.lazy(async () => {
   const module = await loadWorkspaceSurfaceModule()
   return { default: module.WorkspaceSurface }
 })
-const OnboardingWizard = React.lazy(async () => {
-  const module = await import('@/components/onboarding/OnboardingWizard')
-  return { default: module.OnboardingWizard }
-})
 const WorkspacePicker = React.lazy(async () => {
   const module = await import('@/components/workspace/WorkspacePicker')
   return { default: module.WorkspacePicker }
@@ -126,11 +121,7 @@ const FilePreviewRenderer = React.lazy(async () => {
   return { default: module.FilePreviewRenderer }
 })
 
-type AppState = 'loading' | 'onboarding' | 'project-hub' | 'workspace-picker' | 'ready'
-
-const GLOBAL_SETTINGS_SUBPAGES: readonly SettingsSubpage[] = [
-  'app', 'ai', 'appearance', 'input', 'server', 'shortcuts', 'preferences',
-]
+type AppState = 'loading' | 'project-hub' | 'workspace-picker' | 'ready'
 
 /** Type for the Jotai store returned by useStore() */
 type JotaiStore = ReturnType<typeof getDefaultStore>
@@ -308,10 +299,9 @@ function AppContent() {
     })
   }, [])
 
-  // App state: loading -> check auth -> onboarding or ready
+  // App state: loading -> project catalog or active workspace
   const [appState, setAppState] = useState<AppState>('loading')
   const [globalSettingsSubpage, setGlobalSettingsSubpage] = useState<SettingsSubpage | null>(null)
-  const [setupNeeds, setSetupNeeds] = useState<SetupNeeds | null>(null)
   const [clientAuthState, setClientAuthState] = useState<ClientAuthState | null>(null)
 
   // Keep ProjectHub's first frame lean, then use its idle time to fetch and
@@ -394,6 +384,7 @@ function AppContent() {
   const activeViewingSessionIdRef = useRef<string | null>(null)
   const sessionRefreshInFlightRef = useRef<Map<string, Promise<SessionRefreshResult>>>(new Map())
   const sessionListMetadataRefreshInFlightRef = useRef<Map<string, Promise<SessionListMetadataRefreshResult>>>(new Map())
+  const baseSessionCreationRef = useRef<Map<string, Promise<string>>>(new Map())
 
   // Helper to update a session by ID with partial fields
   // Uses per-session atom directly instead of updating an array
@@ -546,6 +537,75 @@ function AppContent() {
     ))
   }, [])
 
+  const createSessionOnServer = useCallback(async (
+    workspaceId: string,
+    options?: import('../shared/types').CreateSessionOptions,
+  ): Promise<Session> => {
+    return window.electronAPI.createSession(workspaceId, options)
+  }, [])
+
+  const handleCreateSession = useCallback(async (
+    workspaceId: string,
+    options?: import('../shared/types').CreateSessionOptions,
+  ): Promise<Session> => {
+    const session = await createSessionOnServer(workspaceId, options)
+    // Add to per-session atom and metadata map (no sessionsAtom)
+    addSession(session)
+    syncSessionOptionsFromSession(session)
+    return session
+  }, [addSession, createSessionOnServer, syncSessionOptionsFromSession])
+
+  // A usable runtime always owns one renderable conversation. Deduplicate
+  // replacement creation across optimistic deletion and session lifecycle events.
+  const ensureBaseSessionId = useCallback((
+    workspaceId: string,
+    workspaceAliases: readonly string[] = [],
+  ): Promise<string> => {
+    const acceptedWorkspaceIds = new Set([workspaceId, ...workspaceAliases])
+    for (const meta of store.get(sessionMetaMapAtom).values()) {
+      if (
+        acceptedWorkspaceIds.has(meta.workspaceId ?? '')
+        && !meta.hidden
+        && !meta.isArchived
+      ) {
+        return Promise.resolve(meta.id)
+      }
+    }
+
+    const existingCreation = baseSessionCreationRef.current.get(workspaceId)
+    if (existingCreation) return existingCreation
+
+    const creation = handleCreateSession(workspaceId)
+      .then(session => session.id)
+      .finally(() => {
+        baseSessionCreationRef.current.delete(workspaceId)
+      })
+    baseSessionCreationRef.current.set(workspaceId, creation)
+    return creation
+  }, [handleCreateSession, store])
+
+  const maintainBaseSessionAfterRemoval = useCallback(async ({
+    sessionId,
+    sessionWorkspaceId,
+    focusReplacement,
+  }: {
+    sessionId: string
+    sessionWorkspaceId?: string
+    focusReplacement: boolean
+  }) => {
+    removeSession(sessionId)
+
+    const activeWorkspaceId = windowWorkspaceId
+    if (!activeWorkspaceId || !sessionWorkspaceId) return
+    const workspaceAliases = windowRemoteWorkspaceId ? [windowRemoteWorkspaceId] : []
+    if (sessionWorkspaceId !== activeWorkspaceId && !workspaceAliases.includes(sessionWorkspaceId)) return
+
+    const replacementId = await ensureBaseSessionId(activeWorkspaceId, workspaceAliases)
+    if (focusReplacement) {
+      navigate(routes.view.allSessions(replacementId))
+    }
+  }, [ensureBaseSessionId, removeSession, windowRemoteWorkspaceId, windowWorkspaceId])
+
   const refreshSessionFromServer = useCallback(async (sessionId: string): Promise<SessionRefreshResult> => {
     const inFlight = sessionRefreshInFlightRef.current.get(sessionId)
     if (inFlight) return inFlight
@@ -589,13 +649,23 @@ function AppContent() {
     store.set(sessionMetadataReadyAtom, false)
 
     try {
-      const loadedSessions = await withTimeout(
+      let loadedSessions = await withTimeout(
         window.electronAPI.getSessions(),
         SESSION_RPC_TIMEOUT_MS,
         'getSessions'
       )
 
       if (selectionGeneration !== workspaceSelectionGenerationRef.current) return []
+
+      // The absence of a conversation is not a product state. Create the base
+      // session before exposing session readiness so the first committed chat
+      // surface is already editable.
+      const hasRenderableSession = loadedSessions.some(session => !session.hidden && !session.isArchived)
+      if (!hasRenderableSession && loadingWorkspaceId) {
+        const baseSession = await createSessionOnServer(loadingWorkspaceId)
+        if (selectionGeneration !== workspaceSelectionGenerationRef.current) return []
+        loadedSessions = [...loadedSessions, baseSession]
+      }
 
       // Initialize per-session atoms and metadata map
       // NOTE: No sessionsAtom used - sessions are only in per-session atoms
@@ -650,7 +720,7 @@ function AppContent() {
       lastLoadedSessionsWorkspaceRef.current = loadingWorkspaceId
       return []
     }
-  }, [initializeSessions, initialSessionId, reconcilePermissionModeState, store, windowWorkspaceId])
+  }, [createSessionOnServer, initializeSessions, initialSessionId, reconcilePermissionModeState, store, windowWorkspaceId])
 
   const refreshSessionListMetadataFromServer = useCallback(async (options: SessionListRefreshOptions = {}): Promise<SessionListMetadataRefreshResult> => {
     const {
@@ -755,33 +825,8 @@ function AppContent() {
 
   useEffect(() => window.electronAPI.onClientAuthStateChanged(setClientAuthState), [])
 
-  // Handle onboarding completion
-  const handleOnboardingComplete = useCallback(async () => {
-    try {
-      // Reload workspaces after onboarding
-      const ws = await window.electronAPI.getWorkspaces()
-      setWorkspaces(ws)
-      await loadClientAuthState()
-      setAppState(resolvePostSetupAppState({
-        windowWorkspaceId,
-        workspaceCount: ws.length,
-      }))
-    } catch (error) {
-      console.error('[App] Failed to load workspaces after onboarding:', error)
-      // Still transition to ready — the app can recover via reconnect
-      setAppState('ready')
-    }
-  }, [loadClientAuthState, windowWorkspaceId])
-
-  // Onboarding hook — onConfigSaved fires immediately when billing is saved,
-  // ensuring connection state updates before the wizard closes.
-  const onboarding = useOnboarding({
-    onComplete: handleOnboardingComplete,
-    onConfigSaved: refreshLlmConnections,
-    initialSetupNeeds: setupNeeds || undefined,
-  })
-
-  // Check auth state and get window's workspace ID on mount
+  // Resolve the window and project catalog on mount. Managed model defaults are
+  // seeded by the runtime before this renderer becomes interactive.
   useEffect(() => {
     const initialize = async () => {
       performance.mark('storyflow.startup-rpc:start')
@@ -807,64 +852,51 @@ function AppContent() {
           setActiveProjectId(initialRuntimeWorkspace.id)
         }
 
-        const needs = await withTimeout(
-          window.electronAPI.getSetupNeeds(),
-          STARTUP_RPC_TIMEOUT_MS,
-          'getSetupNeeds'
-        )
-        performance.mark('storyflow.startup-rpc:setup')
-        setSetupNeeds(needs)
         await loadClientAuthState()
         performance.mark('storyflow.startup-rpc:client-auth')
 
-        if (needs.isFullyConfigured) {
-          const ws = await withTimeout(
-            window.electronAPI.getWorkspaces(),
-            STARTUP_RPC_TIMEOUT_MS,
-            'getWorkspaces'
-          )
-          performance.mark('storyflow.startup-rpc:workspaces')
-          setWorkspaces(ws)
+        const ws = await withTimeout(
+          window.electronAPI.getWorkspaces(),
+          STARTUP_RPC_TIMEOUT_MS,
+          'getWorkspaces'
+        )
+        performance.mark('storyflow.startup-rpc:workspaces')
+        setWorkspaces(ws)
 
-          if (!initialRuntimeWorkspace) {
-            const startupWorkspaceId = selectStartupWorkspaceId(ws)
-            if (startupWorkspaceId) {
-              try {
-                initialRuntimeWorkspace = await withTimeout(
-                  window.electronAPI.resolveRuntimeWorkspace(startupWorkspaceId),
+        if (!initialRuntimeWorkspace) {
+          const startupWorkspaceId = selectStartupWorkspaceId(ws)
+          if (startupWorkspaceId) {
+            try {
+              initialRuntimeWorkspace = await withTimeout(
+                window.electronAPI.resolveRuntimeWorkspace(startupWorkspaceId),
+                STARTUP_RPC_TIMEOUT_MS,
+                'resolveStartupWorkspace'
+              )
+              if (initialRuntimeWorkspace) {
+                await withTimeout(
+                  window.electronAPI.switchWorkspace(startupWorkspaceId),
                   STARTUP_RPC_TIMEOUT_MS,
-                  'resolveStartupWorkspace'
+                  'switchStartupWorkspace'
                 )
-                if (initialRuntimeWorkspace) {
-                  await withTimeout(
-                    window.electronAPI.switchWorkspace(startupWorkspaceId),
-                    STARTUP_RPC_TIMEOUT_MS,
-                    'switchStartupWorkspace'
-                  )
-                  setRuntimeWorkspace(initialRuntimeWorkspace)
-                  setWindowWorkspaceId(initialRuntimeWorkspace.id)
-                  setActiveProjectId(initialRuntimeWorkspace.id)
-                }
-              } catch (error) {
-                console.warn('[App] Failed to restore startup project:', error)
-                initialRuntimeWorkspace = null
+                setRuntimeWorkspace(initialRuntimeWorkspace)
+                setWindowWorkspaceId(initialRuntimeWorkspace.id)
+                setActiveProjectId(initialRuntimeWorkspace.id)
               }
+            } catch (error) {
+              console.warn('[App] Failed to restore startup project:', error)
+              initialRuntimeWorkspace = null
             }
           }
-
-          setAppState(resolvePostSetupAppState({
-            windowWorkspaceId: initialRuntimeWorkspace?.id,
-            workspaceCount: ws.length,
-          }))
-          performance.mark('storyflow.startup-rpc:state-selected')
-        } else {
-          // New user or needs setup - show onboarding
-          setAppState('onboarding')
         }
+
+        setAppState(resolvePostSetupAppState({
+          windowWorkspaceId: initialRuntimeWorkspace?.id,
+          workspaceCount: ws.length,
+        }))
+        performance.mark('storyflow.startup-rpc:state-selected')
       } catch (error) {
-        console.error('Failed to check auth state:', error)
-        // If check fails, show onboarding to be safe
-        setAppState('onboarding')
+        console.error('Failed to initialize app state:', error)
+        setAppState('project-hub')
       }
     }
 
@@ -1140,7 +1172,15 @@ function AppContent() {
       }
 
       if (event.type === 'session_deleted') {
-        removeSession(sessionId)
+        const deletedMeta = store.get(sessionMetaMapAtom).get(sessionId)
+        const focusedSessionId = parseSessionIdFromRoute(store.get(focusedPanelRouteAtom) ?? '')
+        void maintainBaseSessionAfterRemoval({
+          sessionId,
+          sessionWorkspaceId: deletedMeta?.workspaceId,
+          focusReplacement: focusedSessionId === sessionId,
+        }).catch((error) => {
+          console.error('[App] Failed to restore base session after deletion event:', error)
+        })
         return
       }
 
@@ -1206,7 +1246,7 @@ function AppContent() {
     showSessionNotification,
     initializeSessions,
     addSession,
-    removeSession,
+    maintainBaseSessionAfterRemoval,
     syncSessionOptionsFromSession,
     applyPermissionModeState,
     reconcilePermissionModeState,
@@ -1319,15 +1359,6 @@ function AppContent() {
     }
   }, [])
 
-  const handleCreateSession = useCallback(async (workspaceId: string, options?: import('../shared/types').CreateSessionOptions): Promise<Session> => {
-    const session = await window.electronAPI.createSession(workspaceId, options)
-    // Add to per-session atom and metadata map (no sessionsAtom)
-    addSession(session)
-    syncSessionOptionsFromSession(session)
-
-    return session
-  }, [addSession, syncSessionOptionsFromSession])
-
   // Deep link navigation is initialized later after handleInputChange is defined
 
   const handleDeleteSession = useCallback(async (sessionId: string, skipConfirmation = false): Promise<boolean> => {
@@ -1347,17 +1378,30 @@ function AppContent() {
       }
     }
 
+    const deletedMeta = store.get(sessionMetaMapAtom).get(sessionId)
+    const focusedSessionId = parseSessionIdFromRoute(store.get(focusedPanelRouteAtom) ?? '')
     await window.electronAPI.deleteSession(sessionId)
-    // Remove from per-session atom and metadata map (no sessionsAtom)
-    removeSession(sessionId)
+    await maintainBaseSessionAfterRemoval({
+      sessionId,
+      sessionWorkspaceId: deletedMeta?.workspaceId,
+      focusReplacement: focusedSessionId === sessionId,
+    })
     return true
-  }, [store, removeSession])
+  }, [maintainBaseSessionAfterRemoval, store])
 
   // Auto-delete handler for empty sessions (fire-and-forget, no confirmation)
   const handleAutoDeleteEmptySession = useCallback((sessionId: string) => {
-    window.electronAPI.deleteSession(sessionId)
-    removeSession(sessionId)
-  }, [removeSession])
+    const deletedMeta = store.get(sessionMetaMapAtom).get(sessionId)
+    void window.electronAPI.deleteSession(sessionId)
+      .then(() => maintainBaseSessionAfterRemoval({
+        sessionId,
+        sessionWorkspaceId: deletedMeta?.workspaceId,
+        focusReplacement: false,
+      }))
+      .catch((error) => {
+        console.error('[App] Failed to auto-delete empty session:', error)
+      })
+  }, [maintainBaseSessionAfterRemoval, store])
 
   const handleFlagSession = useCallback((sessionId: string) => {
     updateSessionById(sessionId, { isFlagged: true })
@@ -1886,7 +1930,7 @@ function AppContent() {
   }, [])
 
   const handleOpenStoredUserPreferences = useCallback(() => {
-    navigate(routes.view.settings('preferences'))
+    navigate(routes.view.settings('ai'))
   }, [])
 
   // Show reset confirmation dialog
@@ -1905,21 +1949,15 @@ function AppContent() {
       setWindowWorkspaceId(null)
       setRuntimeWorkspace(null)
       setActiveProjectId(null)
-      // Reset setupNeeds to force fresh onboarding start
-      setSetupNeeds({
-        needsBillingConfig: true,
-        needsCredentials: true,
-        isFullyConfigured: false,
-      })
-      // Reset onboarding hook state
-      onboarding.reset()
-      setAppState('onboarding')
+      await refreshLlmConnections()
+      await loadClientAuthState()
+      setAppState('project-hub')
     } catch (error) {
       console.error('Reset failed:', error)
     } finally {
       setShowResetDialog(false)
     }
-  }, [onboarding, initializeSessions, setRuntimeWorkspace])
+  }, [initializeSessions, loadClientAuthState, refreshLlmConnections, setRuntimeWorkspace])
 
   const activateRuntimeWorkspace = useCallback(async (
     workspaceId: string,
@@ -2149,11 +2187,6 @@ function AppContent() {
     handleSelectWorkspace,
     handleWorkspaceCreated,
   ])
-
-  // Handle cancel during onboarding
-  const handleOnboardingCancel = useCallback(() => {
-    onboarding.handleCancel()
-  }, [onboarding])
 
   const handleClientSignedIn = useCallback(async () => {
     await loadClientAuthState()
@@ -2458,39 +2491,6 @@ function AppContent() {
   // Loading state - show splash screen
   if (appState === 'loading') {
     return <SplashScreen isExiting={false} />
-  }
-
-  // Onboarding state
-  // ModalProvider + WindowCloseHandler ensures X button works on Windows
-  // (without this, the close IPC message has no listener and window stays open)
-  if (appState === 'onboarding') {
-    return (
-      <DismissibleLayerProvider>
-        <ModalProvider>
-          <WindowCloseHandler />
-          <OnboardingWizard
-            state={onboarding.state}
-            onContinue={onboarding.handleContinue}
-            onBack={onboarding.handleBack}
-            onSelectProvider={onboarding.handleSelectProvider}
-            onSkipSetup={onboarding.handleSkipSetup}
-            onSelectApiSetupMethod={onboarding.handleSelectApiSetupMethod}
-            onSubmitCredential={onboarding.handleSubmitCredential}
-            onSubmitLocalModel={onboarding.handleSubmitLocalModel}
-            onStartOAuth={onboarding.handleStartOAuth}
-            onFinish={onboarding.handleFinish}
-            isWaitingForCode={onboarding.isWaitingForCode}
-            onSubmitAuthCode={onboarding.handleSubmitAuthCode}
-            onCancelOAuth={onboarding.handleCancelOAuth}
-            copilotDeviceCode={onboarding.copilotDeviceCode}
-            onBrowseGitBash={onboarding.handleBrowseGitBash}
-            onUseGitBashPath={onboarding.handleUseGitBashPath}
-            onRecheckGitBash={onboarding.handleRecheckGitBash}
-            onClearError={onboarding.handleClearError}
-          />
-        </ModalProvider>
-      </DismissibleLayerProvider>
-    )
   }
 
   // Project catalog — browsing stays in the rail; the main surface no longer duplicates it.

@@ -176,7 +176,7 @@ describe('builtin LLM connection defaults', () => {
       ]],
       ['storyflow-managed-anthropic', ['claude-sonnet-5', 'claude-opus-5']],
     ])
-    expect(config.defaultLlmConnection).toBe('storyflow-managed-deepseek')
+    expect(config.defaultLlmConnection).toBe('storyflow-managed')
   })
 
   it('upgrades persisted managed model IDs to the canonical bundled catalog', () => {

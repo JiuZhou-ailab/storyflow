@@ -1,13 +1,6 @@
-/**
- * InputSettingsPage
- *
- * Input behavior settings that control how the chat input works.
- *
- * Settings:
- * - Auto Capitalisation (on/off)
- * - Spell Check (on/off)
- * - Send Message Key (Enter or ⌘+Enter)
- */
+// input: Electron input preferences and the centralized shortcut registry
+// output: Combined input behavior and keyboard shortcut settings
+// pos: Renderer settings page for keyboard-facing interaction preferences
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -17,6 +10,7 @@ import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { routes } from '@/lib/navigate'
 import { isMac } from '@/lib/platform'
 import type { DetailsPageMeta } from '@/lib/navigation-registry'
+import { ShortcutsSettingsContent } from './ShortcutsPage'
 
 import {
   SettingsSection,
@@ -87,8 +81,8 @@ export default function InputSettingsPage() {
       <PanelHeader title={t("settings.input.title")} actions={<HeaderMenu route={routes.view.settings('input')} />} />
       <div className="flex-1 min-h-0 mask-fade-y">
         <ScrollArea className="h-full">
-          <div className="px-5 py-7 max-w-3xl mx-auto">
-            <div className="space-y-8">
+          <div className="px-5 py-5 max-w-3xl mx-auto">
+            <div className="space-y-6">
               {/* Typing Behavior */}
               <SettingsSection title={t("settings.input.typing")} description={t("settings.input.typingDesc")}>
                 <SettingsCard>
@@ -122,6 +116,8 @@ export default function InputSettingsPage() {
                   />
                 </SettingsCard>
               </SettingsSection>
+
+              <ShortcutsSettingsContent showTitle />
             </div>
           </div>
         </ScrollArea>

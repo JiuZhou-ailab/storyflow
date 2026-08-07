@@ -226,7 +226,12 @@ export function applyBuiltinLlmConnectionDefaults(
     }
   }
 
-  let defaultSlug: string | undefined;
+  // Storyflow's provider-neutral managed connection is the product default.
+  // The bundled list order groups model families for presentation and must not
+  // accidentally decide which runtime a new user receives.
+  let defaultSlug = builtins.find(builtin => (
+    normalizeLlmConnectionSlug(builtin.connection!.slug.trim()) === MANAGED_LLM_CONNECTION_SLUG
+  ))?.connection!.slug.trim();
 
   for (const builtin of builtins) {
     const bundledConnection = builtin.connection!;

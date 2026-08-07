@@ -169,7 +169,7 @@ import { PanelHeader } from "./PanelHeader"
 import { SendToWorkspaceDialog } from "./SendToWorkspaceDialog"
 import { MessagingDialogHost } from "@/components/messaging/MessagingDialogHost"
 import { EditPopover, getEditConfig, type EditContextKey } from "@/components/ui/EditPopover"
-import { SettingsDialog } from "@/pages/settings/SettingsNavigator"
+import { GLOBAL_SETTINGS_SUBPAGES, SettingsDialog } from "@/pages/settings/SettingsNavigator"
 import {
   PANEL_GAP,
   PANEL_EDGE_INSET,
@@ -5606,6 +5606,7 @@ function AppShellContent({
       <SettingsDialog
         open={settingsSubpage !== null}
         selectedSubpage={settingsSubpage ?? 'app'}
+        availableSubpages={isProjectRuntime ? undefined : GLOBAL_SETTINGS_SUBPAGES}
         onSelectSubpage={handleSettingsClick}
         onClose={closeSettings}
       />

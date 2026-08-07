@@ -216,6 +216,8 @@ export const CHANNEL_MAP = {
   writePreferences: invoke(RPC_CHANNELS.preferences.WRITE),
   readUserProfile: invoke(RPC_CHANNELS.userProfile.READ),
   writeUserProfile: invoke(RPC_CHANNELS.userProfile.WRITE),
+  readSystemInstructions: invoke(RPC_CHANNELS.systemInstructions.READ),
+  writeSystemInstructions: invoke(RPC_CHANNELS.systemInstructions.WRITE),
 
   // Session Drafts
   getDraft: invoke(RPC_CHANNELS.drafts.GET),

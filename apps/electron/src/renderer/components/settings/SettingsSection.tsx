@@ -1,3 +1,7 @@
+// input: Section titles, descriptions, optional actions, and setting groups
+// output: Compact semantic sections with a restrained visual hierarchy
+// pos: Shared section primitive for settings pages
+
 /**
  * SettingsSection, SettingsGroup, SettingsDivider
  *
@@ -43,19 +47,19 @@ export function SettingsSection({
   action,
 }: SettingsSectionProps) {
   return (
-    <section className={cn('space-y-3', className)}>
+    <section className={cn('space-y-2', className)}>
       <div className="flex items-start justify-between gap-4 pl-1">
         <div className="space-y-0.5">
           <h3
             className={cn(
-              'text-base font-semibold',
+              'text-base font-semibold leading-6',
               variant === 'danger' && 'text-destructive'
             )}
           >
             {title}
           </h3>
           {description && (
-            <p className="text-sm text-muted-foreground">{description}</p>
+            <p className="text-sm leading-5 text-muted-foreground">{description}</p>
           )}
         </div>
         {action && <div className="shrink-0">{action}</div>}

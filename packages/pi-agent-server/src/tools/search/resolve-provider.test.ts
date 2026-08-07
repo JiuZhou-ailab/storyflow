@@ -4,17 +4,16 @@
 
 import { describe, expect, it } from 'bun:test';
 import { AnySearchProvider, resolveSearchProvider } from './resolve-provider.ts';
-import { DDGSearchProvider } from './providers/ddg.ts';
 
 describe('resolveSearchProvider', () => {
-  it('uses AnySearch only when its own credential is configured', () => {
+  it('uses AnySearch by default and treats its credential as optional', () => {
     const previousKey = process.env.ANYSEARCH_API_KEY;
     try {
       process.env.ANYSEARCH_API_KEY = 'as_test';
       expect(resolveSearchProvider()).toBeInstanceOf(AnySearchProvider);
 
       delete process.env.ANYSEARCH_API_KEY;
-      expect(resolveSearchProvider()).toBeInstanceOf(DDGSearchProvider);
+      expect(resolveSearchProvider()).toBeInstanceOf(AnySearchProvider);
     } finally {
       if (previousKey === undefined) delete process.env.ANYSEARCH_API_KEY;
       else process.env.ANYSEARCH_API_KEY = previousKey;

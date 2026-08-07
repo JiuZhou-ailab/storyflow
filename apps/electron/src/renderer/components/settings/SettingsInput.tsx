@@ -1,3 +1,7 @@
+// input: Text setting values, labels, validation state, and change handlers
+// output: Compact text inputs for standalone and card-based settings
+// pos: Shared renderer control for single-line settings values
+
 /**
  * SettingsInput
  *
@@ -69,6 +73,7 @@ export function SettingsInput({
   onKeyDown,
 }: SettingsInputProps) {
   const id = React.useId()
+  const errorId = `${id}-error`
   const [showPassword, setShowPassword] = React.useState(false)
   const isPassword = type === 'password'
   const inputType = isPassword && showPassword ? 'text' : type
@@ -76,8 +81,8 @@ export function SettingsInput({
   return (
     <div
       className={cn(
-        'space-y-2',
-        inCard && 'px-4 py-3.5',
+        'space-y-1',
+        inCard && 'px-4 py-3',
         className
       )}
     >
@@ -92,10 +97,7 @@ export function SettingsInput({
         </div>
       )}
       <div className="flex gap-2">
-        <div className={cn(
-          'relative flex-1 rounded-md shadow-minimal has-[:focus-visible]:bg-background',
-          error && 'ring-1 ring-destructive'
-        )}>
+        <div className="relative flex-1">
           <Input
             id={id}
             type={inputType}
@@ -103,10 +105,13 @@ export function SettingsInput({
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder}
             disabled={disabled}
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? errorId : undefined}
             onBlur={onBlur}
             onKeyDown={onKeyDown}
             className={cn(
-              'bg-muted/50 border-0 shadow-none focus-visible:ring-0 focus-visible:outline-none focus-visible:bg-transparent',
+              'border-foreground/10 bg-muted/40 shadow-none hover:bg-muted/60 focus-visible:border-foreground/25 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-foreground/50',
+              error && 'border-destructive focus-visible:ring-destructive/20',
               isPassword && 'pr-10'
             )}
           />
@@ -127,7 +132,7 @@ export function SettingsInput({
         </div>
         {action}
       </div>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p id={errorId} className="text-sm text-destructive">{error}</p>}
     </div>
   )
 }
@@ -173,13 +178,14 @@ export function SettingsInputRow({
   inCard = true,
 }: SettingsInputRowProps) {
   const id = React.useId()
+  const errorId = `${id}-error`
 
   return (
     <div
       data-layout="settings-row"
       className={cn(
         'flex items-center justify-between',
-        inCard ? 'px-4 py-3.5' : 'py-3',
+        inCard ? 'px-4 py-3' : 'py-3',
         className
       )}
     >
@@ -190,12 +196,9 @@ export function SettingsInputRow({
         {description && (
           <p className={cn(settingsUI.description, settingsUI.labelDescriptionGap)}>{description}</p>
         )}
-        {error && <p className={cn('text-sm text-destructive', settingsUI.labelDescriptionGap)}>{error}</p>}
+        {error && <p id={errorId} className={cn('text-sm text-destructive', settingsUI.labelDescriptionGap)}>{error}</p>}
       </div>
-      <div data-layout="settings-control" className={cn(
-        'ml-4 shrink-0 rounded-md shadow-minimal has-[:focus-visible]:bg-background',
-        error && 'ring-1 ring-destructive'
-      )}>
+      <div data-layout="settings-control" className="ml-4 shrink-0">
         <Input
           id={id}
           type={type}
@@ -203,7 +206,12 @@ export function SettingsInputRow({
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           disabled={disabled}
-          className="w-[200px] bg-muted/50 border-0 shadow-none focus-visible:ring-0 focus-visible:outline-none focus-visible:bg-transparent"
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? errorId : undefined}
+          className={cn(
+            'w-[200px] border-foreground/10 bg-muted/40 shadow-none hover:bg-muted/60 focus-visible:border-foreground/25 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-foreground/50',
+            error && 'border-destructive focus-visible:ring-destructive/20'
+          )}
         />
       </div>
     </div>
@@ -251,13 +259,14 @@ export function SettingsSecretInput({
   onBlur,
 }: SettingsSecretInputProps) {
   const id = React.useId()
+  const errorId = `${id}-error`
   const [showValue, setShowValue] = React.useState(false)
 
   return (
     <div
       className={cn(
-        'space-y-2',
-        inCard && 'px-4 py-3.5',
+        'space-y-1',
+        inCard && 'px-4 py-3',
         className
       )}
     >
@@ -271,10 +280,7 @@ export function SettingsSecretInput({
           )}
         </div>
       )}
-      <div className={cn(
-        'relative rounded-md shadow-minimal bg-muted/50 has-[:focus-visible]:bg-background',
-        error && 'ring-1 ring-destructive'
-      )}>
+      <div className="relative">
         <Input
           id={id}
           type={showValue ? 'text' : 'password'}
@@ -282,8 +288,13 @@ export function SettingsSecretInput({
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           disabled={disabled}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? errorId : undefined}
           onBlur={onBlur}
-          className="pr-10 bg-transparent border-0 shadow-none focus-visible:ring-0 focus-visible:outline-none"
+          className={cn(
+            'pr-10 border-foreground/10 bg-muted/40 shadow-none hover:bg-muted/60 focus-visible:border-foreground/25 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-foreground/50',
+            error && 'border-destructive focus-visible:ring-destructive/20'
+          )}
         />
         <button
           type="button"
@@ -298,7 +309,7 @@ export function SettingsSecretInput({
           )}
         </button>
       </div>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p id={errorId} className="text-sm text-destructive">{error}</p>}
     </div>
   )
 }

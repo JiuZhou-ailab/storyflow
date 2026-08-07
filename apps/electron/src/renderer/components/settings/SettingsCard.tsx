@@ -1,8 +1,12 @@
+// input: Related settings content and optional internal division
+// output: Open settings groups separated by lightweight horizontal rules
+// pos: Shared containment primitive for settings pages
+
 /**
  * SettingsCard
  *
- * Container card with muted background for grouping related settings.
- * Children are separated by internal dividers.
+ * Open group for related settings. Visual hierarchy comes from rules and
+ * spacing instead of another framed surface inside the settings overlay.
  */
 
 import * as React from 'react'
@@ -18,7 +22,7 @@ export interface SettingsCardProps {
 }
 
 /**
- * SettingsCard - Container for grouping related settings
+ * SettingsCard - Open group for related settings
  *
  * @example
  * <SettingsCard>
@@ -32,14 +36,14 @@ export function SettingsCard({ children, className, divided = true }: SettingsCa
   return (
     <div
       className={cn(
-        'rounded-xl bg-background shadow-minimal overflow-hidden',
+        'border-y border-border/60',
         className
       )}
     >
       {divided && childArray.length > 1
         ? childArray.map((child, index) => (
             <React.Fragment key={index}>
-              {index > 0 && <div className="h-px bg-border/50 mx-4" />}
+              {index > 0 && <div className="h-px bg-border/50" />}
               {child}
             </React.Fragment>
           ))
@@ -60,7 +64,7 @@ export function SettingsCardContent({
   children: React.ReactNode
   className?: string
 }) {
-  return <div className={cn('px-4 py-3.5', className)}>{children}</div>
+  return <div className={cn('px-4 py-3', className)}>{children}</div>
 }
 
 /**
@@ -76,7 +80,7 @@ export function SettingsCardFooter({
   return (
     <div
       className={cn(
-        'px-4 py-3 border-t border-border/50 bg-muted/30 flex items-center justify-end gap-2',
+        'px-4 py-3 border-t border-border/50 flex items-center justify-end gap-2',
         className
       )}
     >

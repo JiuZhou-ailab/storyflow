@@ -187,7 +187,20 @@ function isCodeFile(name: string): boolean {
   return ext ? CODE_EXTENSIONS.has(ext) : false
 }
 
-function renderBadgeHTML(
+function escapeHTMLText(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function escapeHTMLAttribute(value: string): string {
+  return escapeHTMLText(value)
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+export function renderBadgeHTML(
   type: MentionItemType,
   label: string,
   skill?: LoadedSkill,
@@ -212,7 +225,7 @@ function renderBadgeHTML(
       iconHtml = `<span class="h-[12px] w-[12px] flex items-center justify-center text-[10px] leading-none shrink-0">${emoji}</span>`
     } else {
       // Use cached icon as img (data URL or external URL)
-      iconHtml = `<img src="${cachedIconUrl}" class="h-[12px] w-[12px] rounded-[2px] shrink-0" alt="" />`
+      iconHtml = `<img src="${escapeHTMLAttribute(cachedIconUrl)}" class="h-[12px] w-[12px] rounded-[2px] shrink-0" alt="" />`
     }
   } else {
     // Fall back to generic SVG icon based on type
@@ -228,8 +241,8 @@ function renderBadgeHTML(
     }
   }
 
-  const escapedLabel = label.replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  const titleAttr = tooltip ? ` title="${tooltip.replace(/"/g, '&quot;')}"` : ''
+  const escapedLabel = escapeHTMLText(label)
+  const titleAttr = tooltip ? ` title="${escapeHTMLAttribute(tooltip)}"` : ''
 
   // Line height is increased when badges are present (see hasMentions in component)
   // Use transform for upward shift - doesn't affect layout flow (works even at start of line)
@@ -429,7 +442,7 @@ function setCursorPosition(element: HTMLElement, targetPosition: number): void {
 // Convert text with mentions to HTML
 // ============================================================================
 
-function textToHTML(
+export function textToHTML(
   text: string,
   skillSlugs: string[],
   sourceSlugs: string[],
@@ -494,7 +507,7 @@ function textToHTML(
     // Add data-mention-text attribute to store original text for extraction
     const withMentionText = badgeHtml.replace(
       'data-mention="true"',
-      `data-mention="true" data-mention-text="${match.fullMatch.replace(/"/g, '&quot;')}"`
+      `data-mention="true" data-mention-text="${escapeHTMLAttribute(match.fullMatch)}"`
     )
     html += withMentionText
     // Zero-width space after badge ensures cursor can be placed after the last badge

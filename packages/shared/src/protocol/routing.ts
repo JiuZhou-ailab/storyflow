@@ -158,6 +158,10 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   RPC_CHANNELS.userProfile.READ,
   RPC_CHANNELS.userProfile.WRITE,
 
+  // system instructions — Pi-native user-level AGENTS.md, never remote workspace state
+  RPC_CHANNELS.systemInstructions.READ,
+  RPC_CHANNELS.systemInstructions.WRITE,
+
   // caching — prompt cache and context settings
   RPC_CHANNELS.caching.GET_EXTENDED_PROMPT_CACHE,
   RPC_CHANNELS.caching.SET_EXTENDED_PROMPT_CACHE,

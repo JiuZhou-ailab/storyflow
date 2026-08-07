@@ -19,6 +19,24 @@ const GIT_CONVENTIONS_HEADING = '## Git Conventions'
 const CO_AUTHOR_TRAILER = 'Co-Authored-By: Storyflow <agents-noreply@craft.do>'
 
 describe('system prompt guidance', () => {
+  it('identifies as Storyflow without exposing internal runtime branding', () => {
+    const prompt = getSystemPrompt(
+      undefined,
+      undefined,
+      '/tmp/workspace',
+      '/tmp/workspace',
+      undefined,
+      'INTERNAL BACKEND',
+      false,
+    )
+
+    expect(prompt).toContain('You are Storyflow')
+    expect(prompt).toContain('Storyflow is the product identity')
+    expect(prompt).not.toContain('INTERNAL BACKEND')
+    expect(prompt).not.toContain('powered by')
+    expect(prompt).not.toContain('<craft_agent_environment')
+  })
+
   it('uses backend-neutral debug log querying guidance (rg/grep via Bash)', () => {
     const prompt = getSystemPrompt(
       undefined,

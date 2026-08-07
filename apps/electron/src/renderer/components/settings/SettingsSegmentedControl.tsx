@@ -1,3 +1,7 @@
+// input: Current value, available options, and selection handlers
+// output: Compact segmented controls with restrained selected-state emphasis
+// pos: Shared multi-option control for settings pages
+
 /**
  * SettingsSegmentedControl
  *
@@ -54,7 +58,7 @@ export function SettingsSegmentedControl<T extends string = string>({
   return (
     <div
       role="radiogroup"
-      className={cn('inline-flex gap-1', className)}
+      className={cn('inline-flex gap-0.5 rounded-md bg-muted/60 p-0.5', className)}
     >
       {options.map((option) => {
         const isSelected = option.value === value
@@ -67,10 +71,10 @@ export function SettingsSegmentedControl<T extends string = string>({
             aria-checked={isSelected}
             onClick={() => onValueChange(option.value)}
             className={cn(
-              'flex items-center gap-1.5 rounded-lg transition-all',
+              'flex items-center gap-1.5 rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50',
               size === 'sm' ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-sm',
               isSelected
-                ? 'bg-background shadow-minimal'
+                ? 'bg-background'
                 : 'bg-transparent hover:bg-foreground/5'
             )}
           >

@@ -10,9 +10,7 @@ import { join, relative } from 'path';
 import { DOC_REFS, APP_ROOT } from '../docs/index.ts';
 import { PERMISSION_MODE_CONFIG } from '../agent/mode-types.ts';
 import { FEATURE_FLAGS } from '../feature-flags.ts';
-import { APP_VERSION } from '../version/index.ts';
 import { globSync } from 'glob';
-import os from 'os';
 import { WORKSPACE_STATE_DIR } from '../workspaces/paths.ts';
 
 /** Maximum size of CLAUDE.md file to include (10KB) */
@@ -329,7 +327,7 @@ export interface SystemPromptOptions {
   workspaceRootPath?: string;
   /** Working directory for context file discovery (monorepo support) */
   workingDirectory?: string;
-  /** Backend name for "powered by X" text (default: 'Claude Code') */
+  /** @deprecated Runtime infrastructure is intentionally not model-visible. */
   backendName?: string;
 }
 
@@ -404,7 +402,7 @@ Treat novel projects as long-form creative work where manuscript fidelity and co
  * @param workspaceRootPath - Root path of the workspace
  * @param _workingDirectory - Retained for positional API compatibility; context discovery is per-turn
  * @param preset - System prompt preset ('default' | 'mini' | custom string)
- * @param backendName - Backend name for "powered by X" text (default: 'Claude Code')
+ * @param _backendName - Deprecated compatibility argument; intentionally ignored
  */
 export function getSystemPrompt(
   pinnedPreferencesPrompt?: string,
@@ -412,7 +410,7 @@ export function getSystemPrompt(
   workspaceRootPath?: string,
   _workingDirectory?: string,
   preset?: SystemPromptPreset | string,
-  backendName?: string,
+  _backendName?: string,
   includeCoAuthoredBy?: boolean
 ): string {
   // Use mini agent prompt for quick edits (pass workspace root for config paths)
@@ -432,7 +430,7 @@ export function getSystemPrompt(
   // Note: Date/time context is now added to user messages instead of system prompt
   // to enable prompt caching. The system prompt stays static and cacheable.
   // Safe Mode context is also in user messages for the same reason.
-  const basePrompt = getCraftAssistantPrompt(backendName, resolvedIncludeCoAuthoredBy);
+  const basePrompt = getStoryflowAssistantPrompt(resolvedIncludeCoAuthoredBy);
   const presetPrompt = preset === 'novel' ? getNovelWritingSystemPrompt() : '';
   const fullPrompt = `${basePrompt}${presetPrompt}${preferences}${debugContext}`;
 
@@ -489,42 +487,25 @@ rg -n "session|OAuth|\"level\":\"error\"" "${logFilePath}" | tail -n 50
 }
 
 /**
- * Get the Storyflow environment marker for SDK JSONL detection.
- * This marker is embedded in the system prompt and allows us to identify
- * Storyflow sessions when importing from Claude Code.
- */
-function getCraftAgentEnvironmentMarker(): string {
-  const platform = process.platform; // 'darwin', 'win32', 'linux'
-  const arch = process.arch; // 'arm64', 'x64'
-  const osVersion = os.release(); // OS kernel version
-
-  return `<craft_agent_environment version="${APP_VERSION}" platform="${platform}" arch="${arch}" os_version="${osVersion}" />`;
-}
-
-/**
- * Get the stable Craft Assistant system prompt.
+ * Get the stable Storyflow product system prompt.
  *
  * This prompt is intentionally concise - detailed documentation lives in
  * ${APP_ROOT}/docs/ and is read on-demand when topics come up.
  *
- * @param backendName - Backend name for "powered by X" text (default: 'Claude Code')
  * @param includeCoAuthoredBy - Whether to include the Co-Authored-By git trailer instruction (default: true)
  */
-function getCraftAssistantPrompt(backendName: string = 'Claude Code', includeCoAuthoredBy: boolean = true): string {
-  const environmentMarker = getCraftAgentEnvironmentMarker();
-
+function getStoryflowAssistantPrompt(includeCoAuthoredBy: boolean = true): string {
   const browserToolsSection = getBrowserToolEnabled() ? `
 ## Browser Tools
 
 Before the first \`browser_tool\` call in a session, read \`${DOC_REFS.browserTools}\`. Use the browser for authenticated, dynamic, UI-only, or one-off tasks; prefer Sources for repeatable integrations. Start with \`browser_tool --help\`, use \`snapshot\` refs for interaction, refresh refs after navigation, and use \`close\`, \`release\`, or \`hide\` when done.
 ` : '';
 
-  return `${environmentMarker}
-
-You are Storyflow - an AI assistant for working across connected sources, local files, code, and repeatable workflows. You are powered by ${backendName}. Refer to yourself as Storyflow when asked.
+  return `You are Storyflow - an AI assistant for working across connected sources, local files, code, and repeatable workflows. Refer to yourself as Storyflow when asked.
 
 ## Runtime Contracts
 
+- Storyflow is the product identity. Treat provider, runtime, and compatibility-path names as implementation details, not as the assistant's identity.
 - Be concise, show brief progress for multi-step work, and use only tools that are actually available.
 - Confirm destructive actions before deleting content.
 - Present local paths and URLs as clickable Markdown links.

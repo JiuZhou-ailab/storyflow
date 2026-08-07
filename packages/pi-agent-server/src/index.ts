@@ -102,7 +102,6 @@ let initConfig: Extract<PiInboundMessage, { type: 'init' }> | null = null;
 let currentUserMessage = '';
 let currentPromptAttemptState: PromptAttemptState | null = null;
 let pendingProductRewindBoundary: Extract<PiInboundMessage, { type: 'prompt' }>['rewindBoundary'] | null = null;
-let currentStablePrefixHash: string | null = null;
 let currentToolsetHash: string | null = null;
 
 // Pending promises for async handshakes
@@ -292,7 +291,7 @@ function handleSessionEvent(event: AgentSessionEvent): void {
       const promptTokens = msg.usage.input + msg.usage.cacheRead + msg.usage.cacheWrite;
       const cacheHitRate = promptTokens > 0 ? msg.usage.cacheRead / promptTokens : 0;
       debugLog(
-        `[prompt-cache] stable_prefix_hash=${currentStablePrefixHash ?? 'unknown'} ` +
+        `[prompt-cache] stable_prefix_hash=${systemPromptOverride?.getStablePrefixHash() ?? 'unknown'} ` +
         `toolset_hash=${currentToolsetHash ?? 'unknown'} prompt_tokens=${promptTokens} ` +
         `cache_read_tokens=${msg.usage.cacheRead} cache_write_tokens=${msg.usage.cacheWrite} ` +
         `cache_hit_rate=${cacheHitRate.toFixed(4)}`,
@@ -398,6 +397,8 @@ async function handlePrompt(msg: Extract<PiInboundMessage, { type: 'prompt' }>):
 
     const session = await ensureSession();
 
+    systemPromptOverride?.set(msg.systemPrompt, msg.dynamicSystemPrompt);
+
     // Keep Pi's ResourceLoader and ExtensionRunner on the same generation.
     // Reloading the loader alone leaves slash commands bound to stale resources.
     await session.reload();
@@ -406,14 +407,6 @@ async function handlePrompt(msg: Extract<PiInboundMessage, { type: 'prompt' }>):
     );
 
     currentToolsetHash = fingerprintTools(session.agent.state.tools);
-    if (msg.systemPrompt) {
-      const profile = systemPromptOverride?.set(
-        msg.systemPrompt,
-        session.resourceLoader.getSkills().skills,
-        msg.dynamicSystemPrompt,
-      );
-      currentStablePrefixHash = profile?.stablePrefixHash ?? null;
-    }
 
     // Wire up event handler
     if (unsubscribeEvents) {

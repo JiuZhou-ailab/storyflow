@@ -84,6 +84,18 @@ _Avoid_: Project Skill overlay, global resource copy
 Pi's `DefaultResourceLoader`, which resolves native packages, Extensions, Skills, prompts, themes, and context files. Storyflow supplies only compatibility paths and Host-owned Sources.
 _Avoid_: Domain-specific loader, resource synchronization layer, Storyflow package resolver
 
+**Product System Prompt**:
+Storyflow's non-user-editable base contract for product identity, capabilities, and Host behavior; it is one input to Pi's prompt builder, not the final assembled prompt.
+_Avoid_: User prompt, complete system prompt, backend identity
+
+**User System Instructions**:
+User-authored global collaboration rules stored in Pi's canonical user-level `AGENTS.md` and applied across Runtime Domains. The Settings module edits this layer only.
+_Avoid_: Product System Prompt, user profile, provider configuration
+
+**Effective System Prompt**:
+The model-visible prompt assembled by Pi from the Product System Prompt, Pi-native prompt/context resources, Skills, date and cwd, followed by Storyflow's per-turn dynamic product state and any authorized Extension mutations.
+_Avoid_: Storyflow prompt string, settings field, duplicated resource assembly
+
 **Local User Trust Space**:
 The filesystem authority already held by the operating-system user running Storyflow. Local Agents use this same authority across projects; a Project selects context and defaults, not authorization.
 _Avoid_: Project sandbox, attachment grant

@@ -1,8 +1,15 @@
+// input: Authentication RPC requests, persisted credentials, and global configuration
+// output: Confirmation dialogs, credential health, and a reset-to-managed-default logout
+// pos: Server authentication boundary shared by Electron and headless hosts
+
 import { unlink } from 'fs/promises'
-import { join } from 'path'
-import { homedir } from 'os'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
+import {
+  getConfigPath,
+  saveConfig,
+  seedBuiltinLlmConnectionFromDefaults,
+} from '@craft-agent/shared/config'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { requestClientConfirmDialog } from '@craft-agent/server-core/transport'
@@ -59,12 +66,21 @@ export function registerAuthHandlers(server: RpcServer, deps: HandlerDeps): void
       }
 
       // Delete the config file
-      const configPath = join(homedir(), '.craft-agent', 'config.json')
-      await unlink(configPath).catch(() => {
+      await unlink(getConfigPath()).catch(() => {
         // Ignore if file doesn't exist
       })
 
-      deps.platform.logger.info('Logout complete - cleared all credentials and config')
+      // Logout clears user-owned state, then restores the product invariant:
+      // every fresh desktop session starts on Storyflow's managed connection.
+      saveConfig({
+        workspaces: [],
+        activeWorkspaceId: null,
+        activeSessionId: null,
+      })
+      await seedBuiltinLlmConnectionFromDefaults()
+      await deps.sessionManager.reinitializeAuth()
+
+      deps.platform.logger.info('Logout complete - cleared user state and restored managed defaults')
     } catch (error) {
       deps.platform.logger.error('Logout error:', error)
       throw error

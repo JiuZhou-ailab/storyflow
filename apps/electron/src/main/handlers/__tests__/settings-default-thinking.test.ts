@@ -1,5 +1,5 @@
 // input: Mocked shared configuration and Electron settings RPC registration
-// output: Regression coverage for default thinking level and unreadable user profile handling
+// output: Regression coverage for default thinking level and user-authored context settings
 // pos: Isolated settings handler contract test
 
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
@@ -15,11 +15,15 @@ type HandlerFn = (ctx: { clientId: string }, ...args: any[]) => Promise<any> | a
 const getDefaultThinkingLevelMock = mock(() => 'think')
 const setDefaultThinkingLevelMock = mock((_level: string) => true)
 let userProfilePath = '/tmp/USER.md'
+let systemInstructionsPath = '/tmp/AGENTS.md'
+const saveSystemInstructionsMarkdownMock = mock((_content: string) => {})
 
 mock.module('@craft-agent/shared/config', () => ({
   getPreferencesPath: () => '/tmp/preferences.json',
   getUserProfilePath: () => userProfilePath,
   saveUserProfileMarkdown: () => {},
+  getSystemInstructionsPath: () => systemInstructionsPath,
+  saveSystemInstructionsMarkdown: saveSystemInstructionsMarkdownMock,
   getSessionDraft: () => null,
   setSessionDraft: () => {},
   deleteSessionDraft: () => {},
@@ -41,6 +45,8 @@ describe('settings default thinking RPC handlers', () => {
     getDefaultThinkingLevelMock.mockClear()
     setDefaultThinkingLevelMock.mockClear()
     userProfilePath = '/tmp/USER.md'
+    systemInstructionsPath = '/tmp/AGENTS.md'
+    saveSystemInstructionsMarkdownMock.mockClear()
 
     const server: RpcServer = {
       handle(channel, handler) {
@@ -123,5 +129,23 @@ describe('settings default thinking RPC handlers', () => {
       exists: false,
       path: userProfilePath,
     })
+  })
+
+  it('returns an empty system instruction document when AGENTS.md does not exist', async () => {
+    systemInstructionsPath = join(tmpdir(), `missing-storyflow-agents-${Date.now()}.md`)
+    const readHandler = handlers.get(RPC_CHANNELS.systemInstructions.READ)
+
+    await expect(readHandler!({ clientId: 'client-1' })).resolves.toEqual({
+      content: '',
+      exists: false,
+      path: systemInstructionsPath,
+    })
+  })
+
+  it('persists system instructions through the dedicated config boundary', async () => {
+    const writeHandler = handlers.get(RPC_CHANNELS.systemInstructions.WRITE)
+
+    await expect(writeHandler!({ clientId: 'client-1' }, '# Rules')).resolves.toEqual({ success: true })
+    expect(saveSystemInstructionsMarkdownMock).toHaveBeenCalledWith('# Rules')
   })
 })

@@ -165,7 +165,7 @@ export class PiAgent extends PiAgentToolHost {
         this.config.workspace.rootPath,
         this.config.session?.workingDirectory,
         this.config.systemPromptPreset,
-        'Craft Agents Backend', // backendName
+        undefined, // deprecated backendName compatibility slot
         getCoAuthorPreference() // respect user's includeCoAuthoredBy preference (#576)
       );
 

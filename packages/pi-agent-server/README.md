@@ -11,6 +11,8 @@ The release artifact is a Bun compiled binary so Pi's native virtual-module load
 - `src/pi-tool-runtime.ts` — Permission hooks, large-result handling, Host tool proxying, and atomic product rewind.
 - `src/subagent-tool.ts` — built-in ephemeral Subagent Run with Host-enforced capability profiles.
 - `src/project-resource-loader.ts` — Pi-native resource/package discovery plus Storyflow compatibility paths.
+- `src/system-prompt-override.ts` — Product base-prompt policy and per-turn dynamic context composition over Pi's native prompt assembly.
+- `src/print-system-prompt.ts` — Safe runtime prompt snapshot without executing user Extensions.
 - `src/extension-ui.ts` — Pi Extension dialogs projected onto Storyflow's existing structured-question flow.
 - `src/product-rewind.ts` — Durable Pi user-entry to Storyflow transcript-cut mapping.
 - `src/tool-hooks.ts` — Pi-native permission and result hooks.

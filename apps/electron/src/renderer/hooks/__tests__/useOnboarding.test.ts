@@ -1,10 +1,13 @@
+// input: Pure custom-connection setup helpers and representative credentials
+// output: Regression coverage for slugs, payload mapping, and credential normalization
+// pos: Unit tests for the renderer connection setup state machine
+
 import { describe, it, expect } from 'bun:test'
 import {
   resolveSlugForMethod,
   apiSetupMethodToConnectionSetup,
   BASE_SLUG_FOR_METHOD,
   normalizeCredentialForSetup,
-  providerChoiceToSetupAction,
 } from '../useOnboarding'
 import type { CredentialSetupMethod } from '@/components/onboarding'
 
@@ -136,22 +139,6 @@ describe('apiSetupMethodToConnectionSetup', () => {
       new Set(['claude-max']),
     )
     expect(setup.slug).toBe('claude-max-2')
-  })
-})
-
-describe('providerChoiceToSetupAction', () => {
-  it('maps the managed choice to the default path instead of a user credential form', () => {
-    expect(providerChoiceToSetupAction('managed_default')).toEqual({
-      mode: 'managed-default',
-      method: 'managed_default',
-    })
-  })
-
-  it('keeps custom provider setup on the credential form path', () => {
-    expect(providerChoiceToSetupAction('custom_provider')).toEqual({
-      mode: 'credentials',
-      method: 'pi_api_key',
-    })
   })
 })
 

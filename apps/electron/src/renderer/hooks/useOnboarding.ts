@@ -17,16 +17,11 @@ import { useState, useCallback, useEffect } from 'react'
 import type {
   OnboardingState,
   OnboardingStep,
-  ApiSetupMethod,
   CredentialSetupMethod,
 } from '@/components/onboarding'
-import type { ProviderChoice } from '@/components/onboarding/ProviderSelectStep'
 import type { LocalModelSubmitData } from '@/components/onboarding/LocalModelStep'
 import type { ApiKeySubmitData } from '@/components/apisetup'
-import {
-  MANAGED_LLM_CONNECTION_SLUG,
-  type CustomEndpointConfig,
-} from '@config/llm-connections'
+import type { CustomEndpointConfig } from '@config/llm-connections'
 import type { ModelDefinition } from '@config/models'
 import { isMaskedCredential } from '@craft-agent/shared/utils/mask'
 import type { SetupNeeds, LlmConnectionSetup } from '../../shared/types'
@@ -59,9 +54,6 @@ interface UseOnboardingReturn {
   handleContinue: () => void
   handleBack: () => void
 
-  // Provider select (new flow)
-  handleSelectProvider: (choice: ProviderChoice) => void
-
   // API Setup (legacy — kept for direct edit)
   handleSelectApiSetupMethod: (method: CredentialSetupMethod) => void
 
@@ -86,9 +78,6 @@ interface UseOnboardingReturn {
   handleRecheckGitBash: () => void
   handleClearError: () => void
 
-  // Skip setup ("Setup later")
-  handleSkipSetup: () => void
-
   // Completion
   handleFinish: () => void
   handleCancel: () => void
@@ -101,8 +90,7 @@ interface UseOnboardingReturn {
 }
 
 // Base slug for each setup method (used as template key in ipc.ts)
-export const BASE_SLUG_FOR_METHOD: Record<ApiSetupMethod, string> = {
-  managed_default: MANAGED_LLM_CONNECTION_SLUG,
+export const BASE_SLUG_FOR_METHOD: Record<CredentialSetupMethod, string> = {
   anthropic_api_key: 'anthropic-api',
   claude_oauth: 'claude-max',
   pi_chatgpt_oauth: 'chatgpt-plus',
@@ -138,19 +126,6 @@ export function normalizeCredentialForSetup(credential?: string): string | undef
     return undefined
   }
   return trimmed
-}
-
-export type ProviderChoiceSetupAction =
-  | { mode: 'managed-default'; method: Extract<ApiSetupMethod, 'managed_default'> }
-  | { mode: 'credentials'; method: Extract<CredentialSetupMethod, 'pi_api_key'> }
-
-export function providerChoiceToSetupAction(choice: ProviderChoice): ProviderChoiceSetupAction {
-  switch (choice) {
-    case 'managed_default':
-      return { mode: 'managed-default', method: 'managed_default' }
-    case 'custom_provider':
-      return { mode: 'credentials', method: 'pi_api_key' }
-  }
 }
 
 // Map ApiSetupMethod to LlmConnectionSetup for the new unified connection system
@@ -219,8 +194,8 @@ export function apiSetupMethodToConnectionSetup(
 export function useOnboarding({
   onComplete,
   initialSetupNeeds,
-  initialStep = 'provider-select',
-  initialApiSetupMethod,
+  initialStep = 'credentials',
+  initialApiSetupMethod = 'pi_api_key',
   onDismiss,
   onConfigSaved,
   editingSlug = null,
@@ -240,7 +215,7 @@ export function useOnboarding({
   })
 
   // Check Git Bash on Windows at mount. If missing, redirect to git-bash step
-  // regardless of the initial step (provider-select skips the welcome gate).
+  // before opening the custom connection form.
   useEffect(() => {
     const checkGitBash = async () => {
       try {
@@ -283,7 +258,7 @@ export function useOnboarding({
     updateOnly?: boolean,
   ): Promise<boolean> => {
     const method = methodOverride ?? state.apiSetupMethod
-    if (!method || method === 'managed_default') {
+    if (!method) {
       return false
     }
 
@@ -335,21 +310,17 @@ export function useOnboarding({
   // Continue to next step
   const handleContinue = useCallback(async () => {
     switch (state.step) {
-      case 'provider-select':
-        // Handled by handleSelectProvider (card click navigates directly)
-        break
-
       case 'welcome':
         // On Windows, check if Git Bash is needed
         if (state.gitBashStatus?.platform === 'win32' && !state.gitBashStatus?.found) {
           setState(s => ({ ...s, step: 'git-bash' }))
         } else {
-          setState(s => ({ ...s, step: 'provider-select' }))
+          setState(s => ({ ...s, step: 'credentials', apiSetupMethod: s.apiSetupMethod ?? 'pi_api_key' }))
         }
         break
 
       case 'git-bash':
-        setState(s => ({ ...s, step: 'provider-select' }))
+        setState(s => ({ ...s, step: 'credentials', apiSetupMethod: s.apiSetupMethod ?? 'pi_api_key' }))
         break
 
       case 'local-model':
@@ -378,19 +349,19 @@ export function useOnboarding({
           onDismiss()
         }
         break
-      case 'provider-select':
-        // If on Windows and Git Bash was needed, go back to git-bash step
-        if (state.gitBashStatus?.platform === 'win32' && state.gitBashStatus?.found === false) {
-          setState(s => ({ ...s, step: 'git-bash' }))
-        } else if (onDismiss) {
+      case 'credentials':
+        if (onDismiss) {
           onDismiss()
+        } else {
+          setState(s => ({ ...s, step: 'welcome', credentialStatus: 'idle', errorMessage: undefined }))
         }
         break
-      case 'credentials':
-        setState(s => ({ ...s, step: 'provider-select', credentialStatus: 'idle', errorMessage: undefined }))
-        break
       case 'local-model':
-        setState(s => ({ ...s, step: 'provider-select', credentialStatus: 'idle', errorMessage: undefined }))
+        if (onDismiss) {
+          onDismiss()
+        } else {
+          setState(s => ({ ...s, step: 'welcome', credentialStatus: 'idle', errorMessage: undefined }))
+        }
         break
     }
   }, [state.step, state.gitBashStatus, initialStep, onDismiss])
@@ -685,54 +656,6 @@ export function useOnboarding({
     )
   }), [saveAndValidateConnection, editingSlug, existingSlugs])
 
-  // Map product provider mode → setup action and navigate to the right step.
-  const handleSelectProvider = useCallback(async (choice: ProviderChoice) => {
-    const action = providerChoiceToSetupAction(choice)
-
-    if (action.mode === 'managed-default') {
-      setState(s => ({
-        ...s,
-        apiSetupMethod: action.method,
-        step: 'complete',
-        credentialStatus: 'validating',
-        completionStatus: 'saving',
-        errorMessage: undefined,
-      }))
-
-      const saved = await window.electronAPI.setDefaultLlmConnection(
-        BASE_SLUG_FOR_METHOD[action.method],
-      )
-
-      if (saved.success) {
-        onConfigSaved?.()
-        setState(s => ({
-          ...s,
-          credentialStatus: 'success',
-          completionStatus: 'complete',
-          step: 'complete',
-        }))
-      } else {
-        setState(s => ({
-          ...s,
-          credentialStatus: 'error',
-          completionStatus: 'saving',
-          step: 'provider-select',
-          errorMessage: saved.error || 'Failed to select the managed provider',
-        }))
-      }
-      return
-    }
-
-    setState(s => ({
-      ...s,
-      apiSetupMethod: action.method,
-      step: 'credentials',
-      credentialStatus: 'idle',
-      errorMessage: undefined,
-    }))
-
-  }, [onConfigSaved])
-
   // Submit authorization code (second step of OAuth flow)
   const handleSubmitAuthCode = useCallback(async (code: string) => {
     if (!code.trim()) {
@@ -816,7 +739,8 @@ export function useOnboarding({
       setState(s => ({
         ...s,
         gitBashStatus: { ...s.gitBashStatus!, found: true, path },
-        step: 'provider-select',
+        step: 'credentials',
+        apiSetupMethod: s.apiSetupMethod ?? 'pi_api_key',
       }))
     } else {
       setState(s => ({
@@ -835,7 +759,8 @@ export function useOnboarding({
         gitBashStatus: status,
         isRecheckingGitBash: false,
         // If found, automatically continue to next step
-        step: status.found ? 'provider-select' : s.step,
+        step: status.found ? 'credentials' : s.step,
+        apiSetupMethod: status.found ? (s.apiSetupMethod ?? 'pi_api_key') : s.apiSetupMethod,
       }))
     } catch (error) {
       console.error('[Onboarding] Failed to recheck Git Bash:', error)
@@ -847,16 +772,6 @@ export function useOnboarding({
     setState(s => ({ ...s, errorMessage: undefined }))
   }, [])
 
-  // Skip setup — user chose "Setup later"
-  const handleSkipSetup = useCallback(async () => {
-    try {
-      await window.electronAPI.deferSetup()
-    } catch (error) {
-      console.error('[Onboarding] Failed to defer setup:', error)
-    }
-    onComplete()
-  }, [onComplete])
-
   // Finish onboarding
   const handleFinish = useCallback(() => {
     onComplete()
@@ -864,8 +779,8 @@ export function useOnboarding({
 
   // Cancel onboarding
   const handleCancel = useCallback(() => {
-    setState(s => ({ ...s, step: 'welcome' }))
-  }, [])
+    setState(s => ({ ...s, step: initialStep }))
+  }, [initialStep])
 
   // Jump directly to credentials step with a pre-set method (for editing existing connections)
   const jumpToCredentials = useCallback((method: CredentialSetupMethod) => {
@@ -900,7 +815,6 @@ export function useOnboarding({
     state,
     handleContinue,
     handleBack,
-    handleSelectProvider,
     handleSelectApiSetupMethod,
     handleSubmitCredential,
     handleSubmitLocalModel,
@@ -916,7 +830,6 @@ export function useOnboarding({
     handleUseGitBashPath,
     handleRecheckGitBash,
     handleClearError,
-    handleSkipSetup,
     handleFinish,
     handleCancel,
     jumpToCredentials,

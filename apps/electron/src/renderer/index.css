@@ -1390,7 +1390,7 @@ html.dark[data-scenic] .fullscreen-overlay-background {
   }
 }
 
-/* TurnCard action buttons (Copy, Markdown) — outside @container/shell,
+/* TurnCard action buttons — outside @container/shell,
    scaled via data-compact attribute passed from the renderer */
 [data-compact] .turn-action-btn {
   min-height: 31px;

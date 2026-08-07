@@ -290,6 +290,8 @@ const EXPECTED_CHANNELS: string[] = [
   'system:homeDir',
   'system:isDebugMode',
   'system:versions',
+  'systemInstructions:read',
+  'systemInstructions:write',
   'tasks:getOutput',
   'theme:appChanged',
   'theme:broadcastPreferences',

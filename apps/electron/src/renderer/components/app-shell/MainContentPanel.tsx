@@ -6,7 +6,7 @@
  * pos: Renderer content router inside the app-shell panel stack
  *
  * Renders content based on the unified NavigationState:
- * - Chats navigator: ChatPage for selected session, or empty state
+ * - Chats navigator: ChatPage for the selected or base session
  * - Sources navigator: SourceInfoPage for selected source, or empty state
  *
  * The NavigationState is the single source of truth for what to display.
@@ -333,9 +333,10 @@ export function MainContentPanel({
     }
     return wrapWithStoplight(
       <Panel variant="grow" className={className}>
-        <div className="flex items-center justify-center h-full text-muted-foreground">
-          <p className="text-sm">{t("session.selectConversation")}</p>
-        </div>
+        <SessionBaseContent
+          activeWorkspaceId={activeWorkspaceId}
+          remoteWorkspaceId={remoteWorkspaceId}
+        />
       </Panel>
     )
   }
@@ -343,10 +344,45 @@ export function MainContentPanel({
   // Fallback (should not happen with proper NavigationState)
   return wrapWithStoplight(
     <Panel variant="grow" className={className}>
-      <div className="flex items-center justify-center h-full text-muted-foreground">
-        <p className="text-sm">{t("session.selectConversation")}</p>
-      </div>
+      <SessionBaseContent
+        activeWorkspaceId={activeWorkspaceId}
+        remoteWorkspaceId={remoteWorkspaceId}
+      />
     </Panel>
+  )
+}
+
+function SessionBaseContent({
+  activeWorkspaceId,
+  remoteWorkspaceId,
+}: {
+  activeWorkspaceId?: string | null
+  remoteWorkspaceId?: string | null
+}) {
+  const sessionIds = useAtomValue(sessionIdsAtom)
+  const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
+  const { state } = useSessionSelection()
+  const { navigateToSession } = useNavigationActions()
+  const baseSessionId = useMemo(() => resolveWritingSessionId({
+    sessionIds,
+    sessionMetaMap,
+    selectedSessionId: state.selected,
+    activeWorkspaceId,
+    remoteWorkspaceId,
+  }), [activeWorkspaceId, remoteWorkspaceId, sessionIds, sessionMetaMap, state.selected])
+
+  useEffect(() => {
+    if (baseSessionId) navigateToSession(baseSessionId)
+  }, [baseSessionId, navigateToSession])
+
+  if (!baseSessionId) return <ChatPanelPlaceholder />
+
+  return (
+    <SessionRouteContent
+      sessionId={baseSessionId}
+      activeWorkspaceId={activeWorkspaceId}
+      remoteWorkspaceId={remoteWorkspaceId}
+    />
   )
 }
 
@@ -557,7 +593,6 @@ function SessionRouteContent({
   activeWorkspaceId?: string | null
   remoteWorkspaceId?: string | null
 }) {
-  const { t } = useTranslation()
   const selectedSessionMeta = useAtomValue(sessionMetaAtomFamily(sessionId))
   const selectedSessionMatchesWorkspace = !activeWorkspaceId || (
     selectedSessionMeta?.workspaceId === activeWorkspaceId
@@ -565,11 +600,7 @@ function SessionRouteContent({
   )
 
   if (!selectedSessionMatchesWorkspace) {
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground">
-        <p className="text-sm">{t("session.noSessionSelected")}</p>
-      </div>
-    )
+    return <ChatPanelPlaceholder />
   }
 
   return (

@@ -1,11 +1,10 @@
 // input: Onboarding state and side-effect handlers supplied by useOnboarding
-// output: The current provider, credential, or completion step
+// output: The current custom-credential or completion step
 // pos: Renderer state-machine view for first-run and connection setup
 
 import { cn } from "@/lib/utils"
 import { WelcomeStep } from "./WelcomeStep"
-import type { ApiSetupMethod, CredentialSetupMethod } from "./APISetupStep"
-import { ProviderSelectStep, type ProviderChoice } from "./ProviderSelectStep"
+import type { CredentialSetupMethod } from "./APISetupStep"
 import { CredentialsStep, type CredentialStatus } from "./CredentialsStep"
 import { LocalModelStep, type LocalModelSubmitData } from "./LocalModelStep"
 import { CompletionStep } from "./CompletionStep"
@@ -16,7 +15,6 @@ import type { CustomEndpointApi } from '@config/llm-connections'
 export type OnboardingStep =
   | 'welcome'
   | 'git-bash'
-  | 'provider-select'
   | 'local-model'
   | 'credentials'
   | 'complete'
@@ -28,7 +26,7 @@ export interface OnboardingState {
   loginStatus: LoginStatus
   credentialStatus: CredentialStatus
   completionStatus: 'saving' | 'complete'
-  apiSetupMethod: ApiSetupMethod | null
+  apiSetupMethod: CredentialSetupMethod | null
   isExistingUser: boolean
   errorMessage?: string
   gitBashStatus?: GitBashStatus
@@ -43,7 +41,6 @@ interface OnboardingWizardProps {
   // Event handlers
   onContinue: () => void
   onBack: () => void
-  onSelectApiSetupMethod: (method: CredentialSetupMethod) => void
   onSubmitCredential: (data: ApiKeySubmitData) => void
   onStartOAuth?: (methodOverride?: CredentialSetupMethod) => void
   onFinish: () => void
@@ -61,11 +58,6 @@ interface OnboardingWizardProps {
   onUseGitBashPath?: (path: string) => void
   onRecheckGitBash?: () => void
   onClearError?: () => void
-
-  // Provider select (new flow)
-  onSelectProvider?: (choice: ProviderChoice) => void
-  /** Called when user chooses "Setup later" on provider select */
-  onSkipSetup?: () => void
 
   // Local model
   onSubmitLocalModel?: (data: LocalModelSubmitData) => void
@@ -88,15 +80,13 @@ interface OnboardingWizardProps {
  *
  * Manages the step-by-step flow for setting up Craft Agent:
  * 1. Welcome
- * 2. Provider Select (Claude / ChatGPT / Copilot / API Key / Local)
- * 3. Credentials (API Key or OAuth) or Local Model
- * 4. Completion
+ * 2. Credentials for a user-owned connection
+ * 3. Completion
  */
 export function OnboardingWizard({
   state,
   onContinue,
   onBack,
-  onSelectApiSetupMethod,
   onSubmitCredential,
   onStartOAuth,
   onFinish,
@@ -111,9 +101,6 @@ export function OnboardingWizard({
   onUseGitBashPath,
   onRecheckGitBash,
   onClearError,
-  // Provider select (new flow)
-  onSelectProvider,
-  onSkipSetup,
   // Local model
   onSubmitLocalModel,
   // Edit mode
@@ -145,15 +132,6 @@ export function OnboardingWizard({
           />
         )
 
-      case 'provider-select':
-        return (
-          <ProviderSelectStep
-            onSelect={onSelectProvider!}
-            onSkip={onSkipSetup}
-            errorMessage={state.errorMessage}
-          />
-        )
-
       case 'local-model':
         return (
           <LocalModelStep
@@ -165,9 +143,7 @@ export function OnboardingWizard({
         )
 
       case 'credentials':
-        // Managed connections never collect user credentials. Keep this view
-        // unreachable even if the state machine is restored from stale state.
-        if (!state.apiSetupMethod || state.apiSetupMethod === 'managed_default') {
+        if (!state.apiSetupMethod) {
           return null
         }
         return (

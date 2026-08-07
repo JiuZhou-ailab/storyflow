@@ -15,7 +15,6 @@ import {
   XCircle,
   Circle,
   MessageCircleDashed,
-  FileText,
   ArrowUpRight,
   Copy,
   Check,
@@ -308,7 +307,7 @@ export interface TurnCardProps {
   onOpenFile?: (path: string) => void
   /** Callback when URL is clicked */
   onOpenUrl?: (url: string) => void
-  /** Callback to open response in Monaco editor */
+  /** @deprecated The response footer no longer exposes a raw Markdown action. */
   onPopOut?: (text: string) => void
   /** Callback to open turn details in a new window */
   onOpenDetails?: () => void
@@ -1427,8 +1426,6 @@ export interface ResponseCardProps {
   onOpenFile?: (path: string) => void
   /** Callback to open URL */
   onOpenUrl?: (url: string) => void
-  /** Callback to open response in Monaco editor */
-  onPopOut?: () => void
   /** Card variant - 'response' for AI messages, 'plan' for plan messages */
   variant?: 'response' | 'plan'
   /** Parent session ID (used to reset local annotation/island UI state on session switches) */
@@ -1744,7 +1741,6 @@ export function ResponseCard({
   streamStartTime,
   onOpenFile,
   onOpenUrl,
-  onPopOut,
   variant = 'response',
   sessionId,
   messageId,
@@ -2591,7 +2587,7 @@ export function ResponseCard({
                 : "pl-[22px] pr-2.5 pt-1 pb-2",
               SIZE_CONFIG.fontSize
             )}>
-              {/* Left side - Copy, View as Markdown, Annotation hint */}
+              {/* Left side - Copy and annotation hint */}
               <div className="flex items-center gap-3">
                 <button
                   onClick={handleCopy}
@@ -2613,19 +2609,6 @@ export function ResponseCard({
                     </>
                   )}
                 </button>
-                {onPopOut && (
-                  <button
-                    onClick={onPopOut}
-                    className={cn(
-                      "turn-action-btn flex items-center gap-1.5 transition-colors select-none",
-                      "text-muted-foreground hover:text-foreground",
-                      "focus:outline-none focus-visible:underline"
-                    )}
-                  >
-                    <FileText className={SIZE_CONFIG.iconSize} />
-                    <span>Markdown</span>
-                  </button>
-                )}
               </div>
 
               {/* Right side */}
@@ -2746,7 +2729,6 @@ export const TurnCard = React.memo(function TurnCard({
   onExpandedActivityGroupsChange,
   onOpenFile,
   onOpenUrl,
-  onPopOut,
   onOpenDetails,
   onOpenActivityDetails,
   onOpenMultiFileDiff,
@@ -3117,7 +3099,6 @@ export const TurnCard = React.memo(function TurnCard({
             sessionId={sessionId}
             onOpenFile={onOpenFile}
             onOpenUrl={onOpenUrl}
-            onPopOut={onPopOut ? () => onPopOut(planActivity.content || '') : undefined}
             variant="plan"
             messageId={planActivity.messageId}
             annotations={planActivity.annotations}
@@ -3157,7 +3138,6 @@ export const TurnCard = React.memo(function TurnCard({
                 sessionId={sessionId}
                 onOpenFile={onOpenFile}
                 onOpenUrl={onOpenUrl}
-                onPopOut={onPopOut ? () => onPopOut(response.text) : undefined}
                 variant={response.isPlan ? 'plan' : 'response'}
                 messageId={response.messageId}
                 annotations={response.annotations}
@@ -3190,7 +3170,6 @@ export const TurnCard = React.memo(function TurnCard({
             sessionId={sessionId}
             onOpenFile={onOpenFile}
             onOpenUrl={onOpenUrl}
-            onPopOut={onPopOut ? () => onPopOut(response.text) : undefined}
             variant={response.isPlan ? 'plan' : 'response'}
             messageId={response.messageId}
             annotations={response.annotations}

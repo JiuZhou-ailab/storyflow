@@ -209,13 +209,13 @@ export default function AppSettingsPage() {
       <PanelHeader title={t("settings.app.title")} actions={<HeaderMenu route={routes.view.settings('app')} helpFeature="app-settings" />} />
       <div className="flex-1 min-h-0 mask-fade-y">
         <ScrollArea className="h-full">
-          <div className="px-5 py-7 max-w-3xl mx-auto">
-            <div className="space-y-8">
+          <div className="px-5 py-5 max-w-3xl mx-auto">
+            <div className="space-y-6">
               <AccountSettingsSection />
               <LocalUsageSection />
 
-              {/* Notifications */}
-              <SettingsSection title={t("settings.notifications.title")}>
+              {/* Everyday app behavior */}
+              <SettingsSection title={t("settings.app.general")}>
                 <SettingsCard>
                   <SettingsToggle
                     label={t("settings.notifications.desktopNotifications")}
@@ -223,24 +223,12 @@ export default function AppSettingsPage() {
                     checked={notificationsEnabled}
                     onCheckedChange={handleNotificationsEnabledChange}
                   />
-                </SettingsCard>
-              </SettingsSection>
-
-              {/* Power */}
-              <SettingsSection title={t("settings.power.title")}>
-                <SettingsCard>
                   <SettingsToggle
                     label={t("settings.power.keepScreenAwake")}
                     description={t("settings.power.keepScreenAwakeDesc")}
                     checked={keepAwakeEnabled}
                     onCheckedChange={handleKeepAwakeEnabledChange}
                   />
-                </SettingsCard>
-              </SettingsSection>
-
-              {/* Tools */}
-              <SettingsSection title={t("settings.tools.title")}>
-                <SettingsCard>
                   <SettingsToggle
                     label={t("settings.tools.builtInBrowser")}
                     description={t("settings.tools.builtInBrowserDesc")}

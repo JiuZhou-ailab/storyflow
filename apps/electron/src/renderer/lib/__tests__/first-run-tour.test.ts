@@ -35,5 +35,6 @@ describe('FIRST_RUN_TOUR_STEPS', () => {
     const profileStep = FIRST_RUN_TOUR_STEPS.find(step => step.target === 'activity-profile')
     expect(profileStep?.selector).toBe('[data-tutorial="activity-profile"]')
     expect(profileStep?.body).toContain('帮助反馈')
+    expect(profileStep?.body).toContain('设置 → 偏好 → 系统指令')
   })
 })

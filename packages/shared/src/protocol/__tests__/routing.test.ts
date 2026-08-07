@@ -76,6 +76,13 @@ describe('channel routing behavior', () => {
     expect(REMOTE_ELIGIBLE_CHANNELS.has(RPC_CHANNELS.userProfile.WRITE)).toBe(false)
   })
 
+  test('system instruction channels are local-only Pi user configuration', () => {
+    expect(LOCAL_ONLY_CHANNELS.has(RPC_CHANNELS.systemInstructions.READ)).toBe(true)
+    expect(LOCAL_ONLY_CHANNELS.has(RPC_CHANNELS.systemInstructions.WRITE)).toBe(true)
+    expect(REMOTE_ELIGIBLE_CHANNELS.has(RPC_CHANNELS.systemInstructions.READ)).toBe(false)
+    expect(REMOTE_ELIGIBLE_CHANNELS.has(RPC_CHANNELS.systemInstructions.WRITE)).toBe(false)
+  })
+
   test('destructive workspace entry mutations are local-only', () => {
     const destructiveChannels = [
       RPC_CHANNELS.file.MOVE_ENTRY,

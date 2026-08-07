@@ -95,7 +95,9 @@ function RenameInput({ node }: { node: NodeRendererProps<WorkspaceFileTreeNode>[
       onKeyDown={(event) => {
         event.stopPropagation()
         if (event.key === 'Escape') node.reset()
-        if (event.key === 'Enter') node.submit(inputRef.current?.value ?? '')
+        if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+          node.submit(inputRef.current?.value ?? '')
+        }
       }}
     />
   )

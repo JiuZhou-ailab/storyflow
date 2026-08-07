@@ -68,6 +68,7 @@ import {
   createWorkspaceLlmConnectionOptions,
   sortLlmConnectionsForDisplay,
 } from './ai-settings-options'
+import { AiContextSettings } from './AiContextSettings'
 
 export const meta: DetailsPageMeta = {
   navigator: 'settings',
@@ -673,7 +674,8 @@ export default function AiSettingsPage() {
 
   // OnboardingWizard hook for editing API connection
   const apiSetupOnboarding = useOnboarding({
-    initialStep: 'provider-select',
+    initialStep: 'credentials',
+    initialApiSetupMethod: 'pi_api_key',
     onConfigSaved: refreshLlmConnections,
     onComplete: () => {
       closeApiSetup()
@@ -964,14 +966,14 @@ export default function AiSettingsPage() {
       <PanelHeader title={t("settings.ai.title")} actions={<HeaderMenu route={routes.view.settings('ai')} />} />
       <div className="flex-1 min-h-0 mask-fade-y">
         <ScrollArea className="h-full">
-          <div className="px-5 py-7 max-w-3xl mx-auto">
+          <div className="px-5 py-5 max-w-3xl mx-auto">
             {/* Credential Health Warning Banner */}
             <CredentialHealthBanner
               issues={credentialHealthIssues}
               onReauthenticate={handleReauthenticate}
             />
 
-            <div className="space-y-8">
+            <div className="space-y-6">
               {/* Default Settings - only show if connections exist */}
               {visibleLlmConnections.length > 0 && (
               <SettingsSection title={t("settings.ai.defaultSection")} description={t("settings.ai.defaultSectionDesc")}>
@@ -1000,6 +1002,8 @@ export default function AiSettingsPage() {
                 </SettingsCard>
               </SettingsSection>
               )}
+
+              <AiContextSettings />
 
               {/* Workspace Overrides - only show if connections exist */}
               {workspaces.length > 0 && visibleLlmConnections.length > 0 && (
@@ -1083,8 +1087,6 @@ export default function AiSettingsPage() {
                   state={apiSetupOnboarding.state}
                   onContinue={apiSetupOnboarding.handleContinue}
                   onBack={isDirectEdit ? handleCloseApiSetup : apiSetupOnboarding.handleBack}
-                  onSelectProvider={apiSetupOnboarding.handleSelectProvider}
-                  onSelectApiSetupMethod={apiSetupOnboarding.handleSelectApiSetupMethod}
                   onSubmitCredential={apiSetupOnboarding.handleSubmitCredential}
                   onSubmitLocalModel={apiSetupOnboarding.handleSubmitLocalModel}
                   onStartOAuth={apiSetupOnboarding.handleStartOAuth}

@@ -1,3 +1,7 @@
+// input: Multiline setting values, labels, limits, and change handlers
+// output: Compact resizable textareas with optional character feedback
+// pos: Shared renderer control for long-form settings content
+
 /**
  * SettingsTextarea
  *
@@ -62,14 +66,15 @@ export function SettingsTextarea({
   inCard = false,
 }: SettingsTextareaProps) {
   const id = React.useId()
+  const errorId = `${id}-error`
   const charCount = value.length
   const isOverLimit = maxLength !== undefined && charCount > maxLength
 
   return (
     <div
       className={cn(
-        'space-y-2',
-        inCard && 'px-4 py-3.5',
+        'space-y-1',
+        inCard && 'px-4 py-3',
         className
       )}
     >
@@ -83,20 +88,20 @@ export function SettingsTextarea({
           )}
         </div>
       )}
-      <div className={cn(
-        'relative rounded-md shadow-minimal has-[:focus-visible]:bg-background',
-        error && 'ring-1 ring-destructive',
-        isOverLimit && 'ring-1 ring-destructive'
-      )}>
+      <div className="relative">
         <Textarea
           id={id}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           rows={rows}
+          maxLength={maxLength}
           disabled={disabled}
+          aria-invalid={Boolean(error || isOverLimit)}
+          aria-describedby={error ? errorId : undefined}
           className={cn(
-            'bg-muted/50 border-0 shadow-none resize-y min-h-[120px] focus-visible:ring-0 focus-visible:outline-none focus-visible:bg-transparent',
+            'min-h-[120px] resize-y border-foreground/10 bg-muted/40 shadow-none hover:bg-muted/60 focus-visible:border-foreground/25 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-foreground/50',
+            (error || isOverLimit) && 'border-destructive focus-visible:ring-destructive/20',
             maxLength && 'pb-6'
           )}
         />
@@ -111,7 +116,7 @@ export function SettingsTextarea({
           </div>
         )}
       </div>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p id={errorId} className="text-sm text-destructive">{error}</p>}
     </div>
   )
 }

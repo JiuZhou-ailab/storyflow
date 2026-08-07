@@ -14,7 +14,6 @@ export { default as PermissionsSettingsPage, meta as PermissionsMeta } from './P
 export { default as LabelsSettingsPage, meta as LabelsMeta } from './LabelsSettingsPage'
 export { default as AutomationsSettingsPage, meta as AutomationsMeta } from './AutomationsSettingsPage'
 export { default as ShortcutsPage, meta as ShortcutsMeta } from './ShortcutsPage'
-export { default as PreferencesPage, meta as PreferencesMeta } from './PreferencesPage'
 
 // Re-export types
 export type { DetailsPageMeta } from '@/lib/navigation-registry'

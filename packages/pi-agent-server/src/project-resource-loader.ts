@@ -25,6 +25,7 @@ export interface ProjectResourceLoaderOptions {
   globalRoot?: string;
   agentDir: string;
   extensionFactories?: InlineExtension[];
+  systemPromptOverride?: (base: string | undefined) => string | undefined;
 }
 
 export interface ProjectResourceLoaderResult {
@@ -126,6 +127,7 @@ export async function createProjectResourceLoader(
       additionalSkillPaths: skillPaths,
       extensionFactories: options.extensionFactories,
       skillsOverride: () => skillLoader.getSkills(),
+      systemPromptOverride: options.systemPromptOverride,
     },
     settingsManager,
     skillLoader,

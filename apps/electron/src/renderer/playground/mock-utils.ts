@@ -294,6 +294,15 @@ export const mockElectronAPI = {
     return { success: true }
   },
 
+  readSystemInstructions: async () => {
+    return { content: '', exists: false, path: '/mock/.pi/agent/AGENTS.md' }
+  },
+
+  writeSystemInstructions: async (content: string) => {
+    console.log('[Playground] writeSystemInstructions called', { length: content.length })
+    return { success: true }
+  },
+
   // FreeFormInput required mocks
   getAutoCapitalisation: async () => false,
 

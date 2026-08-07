@@ -104,7 +104,7 @@ export function PromptTableOfContents({
       onFocusCapture={revealActiveItem}
     >
       <div className="max-h-[50lvh] w-9 overflow-clip">
-        <div className="flex flex-col items-center gap-2 py-1">
+        <div className="flex flex-col items-center gap-px py-1">
           {items.map((item, index) => {
             const active = index === activeIndex
             return (
@@ -117,17 +117,24 @@ export function PromptTableOfContents({
                 data-toc-active={active ? '' : undefined}
                 title={item.label}
                 className={cn(
-                  'h-0.5 w-[18px] shrink-0 rounded-full outline-none',
-                  'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                  active
-                    ? 'bg-foreground'
-                    : 'bg-muted-foreground/40 hover:bg-muted-foreground/75',
+                  'group/toc-tick flex h-[9px] w-9 shrink-0 items-center justify-center rounded-[3px] outline-none',
+                  'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
                 )}
                 onClick={() => {
                   setActiveIndex(index)
                   onSelect(item.turnIndex)
                 }}
-              />
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'h-px w-[18px] rounded-full transition-colors',
+                    active
+                      ? 'bg-foreground'
+                      : 'bg-muted-foreground/40 group-hover/toc-tick:bg-muted-foreground/75',
+                  )}
+                />
+              </button>
             )
           })}
         </div>

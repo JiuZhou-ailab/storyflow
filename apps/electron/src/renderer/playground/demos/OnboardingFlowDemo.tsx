@@ -1,6 +1,6 @@
-// input: Simulated onboarding choices and credential actions
-// output: Interactive managed-default or custom-provider onboarding demo
-// pos: Playground-only walkthrough of the production onboarding state flow
+// input: Simulated custom-provider credential actions
+// output: Interactive user-owned connection setup demo
+// pos: Playground-only walkthrough of the settings connection flow
 
 /**
  * OnboardingFlowDemo — Interactive walkthrough of the new onboarding flow.
@@ -8,52 +8,30 @@
  * Manages its own state so you can click through the entire sequence
  * in the playground without needing real IPC or OAuth.
  *
- * Flow: WelcomeStep → ProviderSelectStep → CredentialsStep → CompletionStep
+ * Flow: WelcomeStep → CredentialsStep → CompletionStep
  */
 import { useState, useCallback, useEffect } from 'react'
 import { ensureMockElectronAPI } from '../mock-utils'
 import { WelcomeStep } from '@/components/onboarding/WelcomeStep'
-import { ProviderSelectStep, type ProviderChoice } from '@/components/onboarding/ProviderSelectStep'
 import { CredentialsStep } from '@/components/onboarding/CredentialsStep'
 import { CompletionStep } from '@/components/onboarding/CompletionStep'
 import type { CredentialSetupMethod } from '@/components/onboarding/APISetupStep'
 import type { CredentialStatus } from '@/components/onboarding/CredentialsStep'
 
-type DemoStep = 'welcome' | 'provider-select' | 'credentials' | 'complete'
+type DemoStep = 'welcome' | 'credentials' | 'complete'
 
 export function OnboardingFlowDemo() {
   useEffect(() => { ensureMockElectronAPI() }, [])
 
   const [step, setStep] = useState<DemoStep>('welcome')
-  const [method, setMethod] = useState<CredentialSetupMethod | null>(null)
+  const [method, setMethod] = useState<CredentialSetupMethod>('pi_api_key')
   const [credStatus, setCredStatus] = useState<CredentialStatus>('idle')
   const [errorMessage, setErrorMessage] = useState<string | undefined>()
 
-  // Track history for the step indicator
-  const [providerChoice, setProviderChoice] = useState<ProviderChoice | null>(null)
-
-  const handleProviderSelect = useCallback((choice: ProviderChoice) => {
-    setProviderChoice(choice)
-    setCredStatus('idle')
-    setErrorMessage(undefined)
-
-    if (choice === 'managed_default') {
-      setMethod(null)
-      setStep('complete')
-      return
-    }
-
-    setMethod('pi_api_key')
-    setStep('credentials')
-  }, [])
-
   const handleBack = useCallback(() => {
     switch (step) {
-      case 'provider-select':
-        setStep('welcome')
-        break
       case 'credentials':
-        setStep('provider-select')
+        setStep('welcome')
         setCredStatus('idle')
         setErrorMessage(undefined)
         break
@@ -78,23 +56,14 @@ export function OnboardingFlowDemo() {
 
   const handleRestart = useCallback(() => {
     setStep('welcome')
-    setMethod(null)
-    setProviderChoice(null)
+    setMethod('pi_api_key')
     setCredStatus('idle')
     setErrorMessage(undefined)
   }, [])
 
-  const handleSkip = useCallback(() => {
-    console.log('[Playground] Setup deferred — dismissing onboarding')
-    // In the real app this calls onComplete() which dismisses onboarding
-    // and shows the main app. In the playground we restart the demo.
-    handleRestart()
-  }, [handleRestart])
-
   // Step labels for the breadcrumb
   const STEP_ORDER: { key: DemoStep; label: string }[] = [
     { key: 'welcome', label: 'Welcome' },
-    { key: 'provider-select', label: 'Provider' },
     { key: 'credentials', label: 'Credentials' },
     { key: 'complete', label: 'Done' },
   ]
@@ -136,15 +105,11 @@ export function OnboardingFlowDemo() {
         {step === 'welcome' && (
           <WelcomeStep
             isExistingUser={false}
-            onContinue={() => setStep('provider-select')}
+            onContinue={() => setStep('credentials')}
           />
         )}
 
-        {step === 'provider-select' && (
-          <ProviderSelectStep onSelect={handleProviderSelect} onSkip={handleSkip} />
-        )}
-
-        {step === 'credentials' && method && (
+        {step === 'credentials' && (
           <CredentialsStep
             apiSetupMethod={method}
             status={credStatus}

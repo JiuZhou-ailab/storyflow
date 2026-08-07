@@ -1,6 +1,6 @@
 {
   "name": "storyflow",
-  "version": "0.10.7",
+  "version": "0.10.8",
   "license": "Apache-2.0",
   "description": "Pi-native agent workspace for Storyflow",
   "type": "module",
@@ -68,7 +68,7 @@
     "sync-secrets": "bash scripts/sync-secrets.sh",
     "fresh-start": "bun run scripts/fresh-start.ts",
     "fresh-start:token": "bun run scripts/fresh-start.ts --token-only",
-    "print:system-prompt": "bun run packages/shared/src/prompts/print-system-prompt.ts",
+    "print:system-prompt": "bun run packages/pi-agent-server/src/print-system-prompt.ts",
     "browser-tool": "bun run scripts/browser-tool.ts",
     "electron:dist": "bun run scripts/build.ts",
     "electron:dist:mac": "bun run scripts/build.ts --platform=darwin",

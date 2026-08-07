@@ -21,6 +21,7 @@ const requiredFiles = [
   ['resources/agent-defaults/global-skills/find-skills/SKILL.md', 'Find Skills Skill'],
   ['resources/agent-defaults/global-skills/find-skills/LICENSE.txt', 'Find Skills license'],
   ['resources/agent-defaults/global-skills/skill-creator/SKILL.md', 'Storyflow Skill Creator'],
+  ['resources/agent-defaults/global-skills/storyflow-tutorial/SKILL.md', 'Storyflow Tutorial Skill'],
   ['resources/agent-defaults/global-skills/sn2s-novel-to-screenplay/SKILL.md', 'SN2S novel-to-screenplay Skill'],
   ['resources/agent-defaults/global-skills/sn2s-novel-to-screenplay/scripts/screenplay_project.py', 'SN2S local project helper'],
   ['resources/config-defaults.json', 'configuration defaults'],

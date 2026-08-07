@@ -1,3 +1,7 @@
+// input: Controlled dialog state, candidate name, and rename submission callback
+// output: Focused rename dialog with cancel, save, and keyboard submission
+// pos: Shared renderer dialog for validating and submitting entity renames
+
 import { useEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import {
@@ -62,7 +66,7 @@ export function RenameDialog({
             onChange={(e) => onValueChange(e.target.value)}
             placeholder={effectivePlaceholder}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
                 handleSubmit()
               }
             }}

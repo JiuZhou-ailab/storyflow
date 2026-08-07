@@ -19,6 +19,11 @@ Agent runtime。产品必须投影 Pi 的公共契约，而不是镜像 Pi 的�
   Extension 生命周期、Skill/Prompt/Theme/Context 发现和 Provider 协议。
 - Pi 的 canonical `agentDir`、file-backed `SettingsManager`、`DefaultPackageManager`
   与 `DefaultResourceLoader` 是用户资源、package 和 Extension 的唯一运行时事实源。
+- Pi 的 System Prompt builder 是最终提示装配权威。Storyflow 只通过
+  `DefaultResourceLoader.systemPromptOverride` 提供不可缺失的产品基础契约；用户全局指令、
+  项目 `AGENTS.md` / `CLAUDE.md`、Skills、日期与工作目录仍由 Pi 原生装配。Storyflow 的
+  `before_agent_start` Extension 只在该稳定前缀后追加每轮动态产品状态，不得手工复制或
+  替换 Pi 已装配的资源。
 - Storyflow Session 的持久化目录继续由显式 `PiSessionManager` 隔离；不得再借用
   `agentDir` 表达会话隔离。
 - Storyflow 只保留 Product Host 能力：OS/Electron 生命周期、Workspace 与项目身份、

@@ -108,6 +108,7 @@ export async function queryLlmWithEphemeralPiSession(
       noPromptTemplates: true,
       noThemes: true,
       noContextFiles: true,
+      systemPromptOverride: promptOverride.overrideResourcePrompt,
     });
     await resourceLoader.reload();
     ephemeralOptions.resourceLoader = resourceLoader;

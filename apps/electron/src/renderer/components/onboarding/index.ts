@@ -1,3 +1,7 @@
+// input: Onboarding step components and their public types
+// output: Stable barrel exports for custom connection setup surfaces
+// pos: Renderer onboarding component boundary
+
 // Shared primitives for building step components
 export {
   StepIcon,
@@ -10,7 +14,6 @@ export {
 } from './primitives'
 
 // Individual steps
-export { ProviderSelectStep, type ProviderChoice } from './ProviderSelectStep'
 export { WelcomeStep } from './WelcomeStep'
 export {
   APISetupStep,

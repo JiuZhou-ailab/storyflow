@@ -1,3 +1,7 @@
+// input: Selectable setting options, current value, and optional search behavior
+// output: Accessible menu selects and compact select rows
+// pos: Shared renderer control for descriptive settings choices
+
 /**
  * SettingsMenuSelect
  *
@@ -114,11 +118,10 @@ export function SettingsMenuSelect({
         <button
           type="button"
           className={cn(
-            'inline-flex items-center h-8 px-3 gap-1 text-sm rounded-lg',
-            'bg-background shadow-minimal',
-            'hover:bg-foreground/[0.02] transition-colors',
+            'inline-flex h-8 items-center gap-1 rounded-md border border-foreground/10 bg-muted/40 px-3 text-sm',
+            'transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50',
             'disabled:cursor-not-allowed disabled:opacity-50',
-            isOpen && 'bg-foreground/[0.02]',
+            isOpen && 'bg-muted/70',
             className
           )}
         >
@@ -245,7 +248,7 @@ export function SettingsMenuSelectRow({
       data-layout="settings-row"
       className={cn(
         'flex items-center justify-between',
-        inCard ? 'px-4 py-3.5' : 'py-3',
+        inCard ? 'px-4 py-3' : 'py-3',
         className
       )}
     >
